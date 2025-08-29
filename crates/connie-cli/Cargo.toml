@@ -1,0 +1,13 @@
+[package]
+name = "connie-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+connie = { workspace = true }
+crossbeam-channel = { workspace = true }
+lsp-server = { workspace = true }
+lsp-types = { workspace = true }
+serde_json = { workspace = true }

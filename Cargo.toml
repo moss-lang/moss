@@ -1,6 +1,16 @@
-[package]
-name = "connie"
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
 version = "0.0.0"
-description = "A programming language"
-license = "MIT"
-include = ["src/lib.rs"]
+edition = "2024"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+connie = { path = "crates/connie" }
+crossbeam-channel = "0.5"
+lsp-server = "0.7"
+lsp-types = "0.97"
+serde_json = "1"

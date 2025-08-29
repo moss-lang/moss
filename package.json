@@ -1,0 +1,15 @@
+{
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/vscode": "^1",
+    "@vscode/vsce": "^3",
+    "esbuild": "^0.25",
+    "prettier": "^3",
+    "prettier-plugin-organize-imports": "^4",
+    "vscode-languageclient": "^9"
+  }
+}

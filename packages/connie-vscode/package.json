@@ -1,0 +1,63 @@
+{
+  "name": "connie-vscode",
+  "displayName": "Connie",
+  "version": "0.0.0",
+  "publisher": "samestep",
+  "description": "Language services for Connie.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/connie-lang/connie",
+    "directory": "packages/connie-vscode"
+  },
+  "private": true,
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:connie"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "connie",
+        "aliases": [
+          "Connie",
+          "connie"
+        ],
+        "extensions": [
+          ".con"
+        ]
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Connie configuration",
+      "properties": {
+        "connie.exe": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "default": null,
+          "description": "Path to Connie executable."
+        },
+        "connie.trace.server": {
+          "scope": "window",
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node && vsce package"
+  }
+}

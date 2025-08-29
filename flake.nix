@@ -22,7 +22,9 @@
       {
         devShell = pkgs.mkShellNoCC {
           buildInputs = [
+            pkgs.bun
             pkgs.nixfmt
+            pkgs.nodejs # Used by vsce.
             (fenix.packages.${system}.stable.toolchain)
           ];
         };
