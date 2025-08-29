@@ -1,0 +1,6 @@
+[package]
+name = "connie"
+version = "0.0.0"
+description = "A programming language"
+license = "MIT"
+include = ["src/lib.rs"]
