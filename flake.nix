@@ -27,6 +27,9 @@
             pkgs.nodejs # Used by vsce.
             (fenix.packages.${system}.stable.toolchain)
           ];
+          shellHook = ''
+            PATH=$PWD/bin:$PATH
+          '';
         };
       }
     );
