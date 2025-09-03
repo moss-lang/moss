@@ -1,0 +1,5 @@
+#!/usr/bin/env connie
+
+fn main() {
+  print("Hello, world!");
+}
