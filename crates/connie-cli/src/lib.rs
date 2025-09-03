@@ -1,2 +1,2 @@
 pub mod lsp;
-mod util;
+pub mod util;
