@@ -25,6 +25,7 @@
             pkgs.bun
             pkgs.nixfmt
             pkgs.nodejs # Used by vsce.
+            pkgs.python3
             (fenix.packages.${system}.stable.toolchain)
           ];
           shellHook = ''
