@@ -20,7 +20,7 @@
         pkgs = import nixpkgs { inherit system; };
       in
       {
-        devShell = pkgs.mkShellNoCC {
+        devShells.default = pkgs.mkShellNoCC {
           buildInputs = [
             pkgs.bun
             pkgs.nixfmt
