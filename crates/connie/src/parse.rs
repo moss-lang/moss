@@ -7,14 +7,6 @@ use crate::lex::{
 };
 
 define_index_type! {
-    pub struct TypeId = u32;
-}
-
-define_index_type! {
-    pub struct ParamId = u32;
-}
-
-define_index_type! {
     pub struct ExprId = u32;
 }
 
@@ -42,19 +34,10 @@ impl<I: Idx> IdRange<I> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum Type {}
-
-#[derive(Clone, Copy, Debug)]
-pub enum Bind {}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Param {
-    pub bind: Bind,
-    pub ty: Option<TypeId>,
+pub enum Expr {
+    String(TokenId),
+    Call(TokenId, ExprId),
 }
-
-#[derive(Clone, Copy, Debug)]
-pub enum Expr {}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Stmt {
@@ -70,15 +53,11 @@ pub struct Block {
 #[derive(Clone, Copy, Debug)]
 pub struct Func {
     pub name: TokenId,
-    pub param: ParamId,
-    pub ty: TypeId,
     pub body: Block,
 }
 
 #[derive(Debug, Default)]
 pub struct Tree {
-    pub types: IndexVec<TypeId, Type>,
-    pub params: IndexVec<ParamId, Param>,
     pub exprs: IndexVec<ExprId, Expr>,
     pub stmts: IndexVec<StmtId, Stmt>,
     pub funcs: IndexVec<FuncId, Func>,
@@ -145,26 +124,18 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn ty(&mut self) -> ParseResult<Type> {
-        todo!()
-    }
-
-    fn ty_id(&mut self) -> ParseResult<TypeId> {
-        let ty = self.ty()?;
-        Ok(self.tree.types.push(ty))
-    }
-
-    fn param(&mut self) -> ParseResult<Param> {
-        todo!()
-    }
-
-    fn param_id(&mut self) -> ParseResult<ParamId> {
-        let param = self.param()?;
-        Ok(self.tree.params.push(param))
-    }
-
     fn expr(&mut self) -> ParseResult<Expr> {
-        todo!()
+        match self.peek() {
+            Str => Ok(Expr::String(self.next())),
+            Name => {
+                let name = self.next();
+                self.expect(LParen)?;
+                let arg = self.expr_id()?;
+                self.expect(RParen)?;
+                Ok(Expr::Call(name, arg))
+            }
+            _ => Err(self.err(Str | Name)),
+        }
     }
 
     fn expr_id(&mut self) -> ParseResult<ExprId> {
@@ -188,6 +159,7 @@ impl<'a> Parser<'a> {
                     let expr = self.expr_id()?;
                     match self.peek() {
                         Semi => {
+                            self.next();
                             stmts.push(Stmt::Expr(expr));
                         }
                         RBrace => {
@@ -206,17 +178,9 @@ impl<'a> Parser<'a> {
         self.expect(Fn)?;
         let name = self.expect(Name)?;
         self.expect(LParen)?;
-        let param = self.param_id()?;
         self.expect(RParen)?;
-        self.expect(Colon)?;
-        let ty = self.ty_id()?;
         let body = self.block()?;
-        Ok(Func {
-            name,
-            param,
-            ty,
-            body,
-        })
+        Ok(Func { name, body })
     }
 
     fn tree(mut self) -> ParseResult<Tree> {

@@ -6,6 +6,12 @@ on:
       - main
 
 jobs:
+  hello:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: cargo run examples/hello.con
+
   build:
     strategy:
       fail-fast: false
@@ -33,7 +39,7 @@ jobs:
             install-script: ""
     runs-on: ${{ matrix.github-os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: ${{ matrix.install-script }}
       - run: rustup target add ${{ matrix.rust-target }}
       - run: cargo build --release --target ${{ matrix.rust-target }}
