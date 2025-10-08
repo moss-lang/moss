@@ -2,8 +2,8 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    fenix = {
-      url = "github:nix-community/fenix";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -12,12 +12,15 @@
       self,
       nixpkgs,
       flake-utils,
-      fenix,
+      rust-overlay,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ (import rust-overlay) ];
+        };
       in
       {
         devShells.default = pkgs.mkShellNoCC {
@@ -26,7 +29,7 @@
             pkgs.nixfmt
             pkgs.nodejs # Used by vsce.
             pkgs.python3
-            (fenix.packages.${system}.stable.toolchain)
+            (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
           ];
           shellHook = ''
             PATH=$PWD/bin:$PATH
