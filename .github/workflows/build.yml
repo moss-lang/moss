@@ -29,12 +29,12 @@ jobs:
             install-script: ""
           - vscode-platform: darwin-x64
             rust-target: x86_64-apple-darwin
-            github-os: macos-13
+            github-os: macos-15-intel
             ext: ""
             install-script: ""
           - vscode-platform: darwin-arm64
             rust-target: aarch64-apple-darwin
-            github-os: macos-14
+            github-os: macos-15
             ext: ""
             install-script: ""
     runs-on: ${{ matrix.github-os }}
