@@ -29,9 +29,9 @@
             pkgs.nixfmt
             pkgs.nodejs # Used by vsce.
             pkgs.python3
+            pkgs.rust-bin.stable.latest.default
             pkgs.wasm-tools
             pkgs.wasmtime
-            pkgs.rust-bin.stable.latest.default
           ];
           shellHook = ''
             PATH=$PWD/bin:$PATH
