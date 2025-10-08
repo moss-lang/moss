@@ -31,7 +31,7 @@
             pkgs.python3
             pkgs.wasm-tools
             pkgs.wasmtime
-            (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
+            pkgs.rust-bin.stable.latest.default
           ];
           shellHook = ''
             PATH=$PWD/bin:$PATH
