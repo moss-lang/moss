@@ -1,16 +1,31 @@
+use itertools::Itertools;
+use logos::Logos;
 use wasm_encoder::{
     CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection, Function,
     FunctionSection, ImportSection, MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::{
-    lex::{TokenStarts, Tokens},
-    parse::Tree,
+    lex::{Token, TokenId, TokenStarts, Tokens},
+    parse::{Expr, Stmt, Tree},
 };
 
 const WASI_P1: &str = "wasi_snapshot_preview1";
 
-pub fn wasm(_: &str, _: &Tokens, _: &TokenStarts, _: &Tree) -> Vec<u8> {
+pub fn wasm(source: &str, _: &Tokens, starts: &TokenStarts, tree: &Tree) -> Vec<u8> {
+    let slice = |token: TokenId| {
+        let start = starts[token].index();
+        let (_, range) = Token::lexer(&source[start..]).spanned().next().unwrap();
+        &source[(range.start + start)..(range.end + start)]
+    };
+
+    assert_eq!(tree.funcs.len(), 1);
+    let main = tree.funcs[0];
+    assert_eq!(slice(main.name), "main");
+    assert_eq!(main.body.stmts.len(), 1);
+    assert!(main.body.expr.is_none());
+    let (stmt,) = main.body.stmts.into_iter().collect_tuple().unwrap();
+
     let mut section_type = TypeSection::new();
     let mut section_import = ImportSection::new();
     let mut section_function = FunctionSection::new();
@@ -45,8 +60,24 @@ pub fn wasm(_: &str, _: &Tokens, _: &TokenStarts, _: &Tree) -> Vec<u8> {
         .export("memory", ExportKind::Memory, 0);
 
     let offset: u32 = 8;
-    let string = "Hello, world!\n";
-    let len = string.len() as u32;
+    let (string, len) = match tree.stmts[stmt] {
+        Stmt::Expr(expr) => match tree.exprs[expr] {
+            Expr::String(_) => unimplemented!(),
+            Expr::Call(name, arg) => {
+                assert_eq!(slice(name), "println");
+                match tree.exprs[arg] {
+                    Expr::Call(_, _) => unimplemented!(),
+                    Expr::String(string) => {
+                        let with_quotes = slice(string);
+                        let without_quotes = &with_quotes[1..with_quotes.len() - 1];
+                        let with_newline = without_quotes.to_owned() + "\n";
+                        let num_bytes = with_newline.len() as u32;
+                        (with_newline, num_bytes)
+                    }
+                }
+            }
+        },
+    };
 
     let mut func = Function::new([]);
     func.instructions()

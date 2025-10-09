@@ -1,9 +1,12 @@
 use enumset::EnumSet;
-use index_vec::{Idx, IndexVec, define_index_type};
+use index_vec::{IndexVec, define_index_type};
 
-use crate::lex::{
-    Token::{self, *},
-    TokenId, Tokens,
+use crate::{
+    lex::{
+        Token::{self, *},
+        TokenId, Tokens,
+    },
+    util::IdRange,
 };
 
 define_index_type! {
@@ -16,21 +19,6 @@ define_index_type! {
 
 define_index_type! {
     pub struct FuncId = u32;
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct IdRange<I> {
-    pub start: I,
-    pub end: I,
-}
-
-impl<I: Idx> IdRange<I> {
-    fn new<T>(v: &mut IndexVec<I, T>, xs: Vec<T>) -> Self {
-        let start = v.next_idx();
-        v.append(&mut IndexVec::from_vec(xs));
-        let end = v.next_idx();
-        Self { start, end }
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
