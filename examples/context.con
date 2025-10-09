@@ -1,0 +1,22 @@
+context Foo {
+  string: String;
+}
+
+context start;
+
+need Foo;
+
+fn print_it() {
+  println(Foo.string);
+}
+
+fn wait_for_it() {
+  print_it();
+}
+
+context end;
+
+fn main() {
+  provide Foo.string = "hello";
+  wait_for_it();
+}

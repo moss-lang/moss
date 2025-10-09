@@ -69,8 +69,23 @@ pub enum Token {
     #[token("}")]
     RBrace,
 
+    #[token("context")]
+    Context,
+
+    #[token("end")]
+    End,
+
     #[token("fn")]
     Fn,
+
+    #[token("need")]
+    Need,
+
+    #[token("provide")]
+    Provide,
+
+    #[token("start")]
+    Start,
 
     #[regex(r"[A-Z_a-z]\w*")]
     Name,
@@ -100,7 +115,12 @@ impl fmt::Display for Token {
             Token::RBracket => write!(f, "`]`"),
             Token::LBrace => write!(f, "`{{`"),
             Token::RBrace => write!(f, "`}}`"),
+            Token::Context => write!(f, "`context`"),
+            Token::End => write!(f, "`end`"),
             Token::Fn => write!(f, "`fn`"),
+            Token::Need => write!(f, "`need`"),
+            Token::Provide => write!(f, "`provide`"),
+            Token::Start => write!(f, "`start`"),
             Token::Name => write!(f, "name"),
             Token::Str => write!(f, "string"),
         }
