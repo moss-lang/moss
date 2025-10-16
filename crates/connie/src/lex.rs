@@ -69,6 +69,9 @@ pub enum Token {
     #[token("}")]
     RBrace,
 
+    #[token("::")]
+    ColonColon,
+
     #[token("context")]
     Context,
 
@@ -115,6 +118,7 @@ impl fmt::Display for Token {
             Token::RBracket => write!(f, "`]`"),
             Token::LBrace => write!(f, "`{{`"),
             Token::RBrace => write!(f, "`}}`"),
+            Token::ColonColon => write!(f, "`::`"),
             Token::Context => write!(f, "`context`"),
             Token::End => write!(f, "`end`"),
             Token::Fn => write!(f, "`fn`"),

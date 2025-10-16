@@ -7,7 +7,7 @@ use wasm_encoder::{
 
 use crate::{
     lex::{Token, TokenId, TokenStarts, Tokens},
-    parse::{Expr, Stmt, Tree},
+    parse::{Expr, Path, Stmt, Tree},
 };
 
 const WASI_P1: &str = "wasi_snapshot_preview1";
@@ -62,11 +62,16 @@ pub fn wasm(source: &str, _: &Tokens, starts: &TokenStarts, tree: &Tree) -> Vec<
     let offset: u32 = 8;
     let (string, len) = match tree.stmts[stmt] {
         Stmt::Expr(expr) => match tree.exprs[expr] {
-            Expr::String(_) => unimplemented!(),
-            Expr::Call(name, arg) => {
-                assert_eq!(slice(name), "println");
-                match tree.exprs[arg] {
-                    Expr::Call(_, _) => unimplemented!(),
+            Expr::Call(callee, args) => {
+                match tree.exprs[callee] {
+                    Expr::Path(Path { name, names }) => {
+                        assert_eq!(slice(name), "println");
+                        assert!(names.is_empty());
+                    }
+                    _ => unimplemented!(),
+                }
+                assert_eq!(args.len(), 1);
+                match tree.exprs[args.start] {
                     Expr::String(string) => {
                         let with_quotes = slice(string);
                         let without_quotes = &with_quotes[1..with_quotes.len() - 1];
@@ -74,9 +79,12 @@ pub fn wasm(source: &str, _: &Tokens, starts: &TokenStarts, tree: &Tree) -> Vec<
                         let num_bytes = with_newline.len() as u32;
                         (with_newline, num_bytes)
                     }
+                    _ => unimplemented!(),
                 }
             }
+            _ => unimplemented!(),
         },
+        _ => unimplemented!(),
     };
 
     let mut func = Function::new([]);
