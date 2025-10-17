@@ -9,6 +9,7 @@ use anyhow::{anyhow, bail};
 use clap::{Parser, Subcommand};
 use connie::{
     lex::lex,
+    lower::lower,
     parse::{ParseError, parse},
     wasm::wasm,
 };
@@ -43,7 +44,8 @@ fn compile(script: &Path) -> anyhow::Result<Vec<u8>> {
             )
         }
     })?;
-    let bytes = wasm(&source, &starts, &tree);
+    let ir = lower(&source, &starts, &tree).map_err(|err| match err {})?;
+    let bytes = wasm(&ir);
     Ok(bytes)
 }
 

@@ -1,55 +1,31 @@
-use itertools::Itertools;
-use logos::Logos;
+use index_vec::{IndexVec, define_index_type};
+use indexmap::IndexSet;
 use wasm_encoder::{
-    CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection, Function,
-    FunctionSection, ImportSection, MemorySection, MemoryType, Module, TypeSection, ValType,
+    CodeSection, DataSection, EntityType, ExportKind, ExportSection, FunctionSection,
+    ImportSection, MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::{
-    lex::{Token, TokenId, TokenStarts},
-    parse::{Expr, Path, Region, RegionId, Stmt, Tree},
+    intern::StrId,
+    lower::{self, IR, Type},
+    util::IdRange,
 };
+
+define_index_type! {
+    pub struct TypeId = u32;
+}
 
 const WASI_P1: &str = "wasi_snapshot_preview1";
 
 struct Wasm<'a> {
-    source: &'a str,
-    starts: &'a TokenStarts,
-    tree: &'a Tree,
+    ir: &'a IR,
+    strings: IndexSet<StrId>,
+    types: IndexVec<TypeId, ValType>,
+    layouts: IndexVec<lower::TypeId, IdRange<TypeId>>,
 }
 
 impl<'a> Wasm<'a> {
-    fn slice(&self, token: TokenId) -> &'a str {
-        let start = self.starts[token].index();
-        let (_, range) = Token::lexer(&self.source[start..])
-            .spanned()
-            .next()
-            .unwrap();
-        &self.source[(range.start + start)..(range.end + start)]
-    }
-
-    fn region(&self, id: RegionId) {
-        let Region { ctxs, regions, .. } = self.tree.regions[id];
-        for ctx in ctxs {
-            for val in self.tree.ctxs[ctx].vals {
-                println!("{:?}", self.tree.vals[val]);
-            }
-        }
-        for region in regions {
-            self.region(region);
-        }
-    }
-
-    fn program(self) -> Vec<u8> {
-        self.region(self.tree.root);
-
-        assert_eq!(self.tree.funcs.len(), 1);
-        let main = self.tree.funcs[0];
-        assert_eq!(self.slice(main.name), "main");
-        assert_eq!(main.body.stmts.len(), 1);
-        assert!(main.body.expr.is_none());
-        let (stmt,) = main.body.stmts.into_iter().collect_tuple().unwrap();
-
+    fn program(mut self) -> Vec<u8> {
         let mut section_type = TypeSection::new();
         let mut section_import = ImportSection::new();
         let mut section_function = FunctionSection::new();
@@ -58,79 +34,56 @@ impl<'a> Wasm<'a> {
         let mut section_code = CodeSection::new();
         let mut section_data = DataSection::new();
 
-        section_type.ty().function([], []);
+        section_memory.memory(MemoryType {
+            minimum: 1,
+            maximum: None,
+            memory64: false,
+            shared: false,
+            page_size_log2: None,
+        });
+        section_export.export("memory", ExportKind::Memory, 0);
+
+        for (id, ty) in self.ir.types.iter_enumerated() {
+            let layout = match ty {
+                Type::String => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
+            };
+            assert_eq!(self.layouts.push(layout), id);
+        }
+
+        let proc_exit = section_import.len();
+        section_import.import(
+            WASI_P1,
+            "proc_exit",
+            EntityType::Function(section_type.len()),
+        );
         section_type.ty().function([ValType::I32], []);
+
+        let fd_write = section_import.len();
+        section_import.import(
+            WASI_P1,
+            "fd_write",
+            EntityType::Function(section_type.len()),
+        );
         section_type.ty().function(
             [ValType::I32, ValType::I32, ValType::I32, ValType::I32],
             [ValType::I32],
         );
 
-        section_import
-            .import(WASI_P1, "fd_write", EntityType::Function(2))
-            .import(WASI_P1, "proc_exit", EntityType::Function(1));
+        for (id, func) in self.ir.funcs.iter_enumerated() {
+            section_function.function(section_type.len());
+            section_type.ty().function(
+                self.layouts[func.param].get(&self.types).iter().copied(),
+                self.layouts[func.result].get(&self.types).iter().copied(),
+            );
+        }
 
-        section_function.function(0);
-
-        section_memory.memory(MemoryType {
-            minimum: 1,
-            maximum: Some(1),
-            memory64: false,
-            shared: false,
-            page_size_log2: None,
-        });
-
-        section_export.export("_start", ExportKind::Func, 2).export(
-            "memory",
-            ExportKind::Memory,
-            0,
-        );
-
-        let offset: u32 = 8;
-        let (string, len) = match self.tree.stmts[stmt] {
-            Stmt::Expr(expr) => match self.tree.exprs[expr] {
-                Expr::Call(callee, args) => {
-                    match self.tree.exprs[callee] {
-                        Expr::Path(Path { name, names }) => {
-                            assert_eq!(self.slice(name), "println");
-                            assert!(names.is_empty());
-                        }
-                        _ => unimplemented!(),
-                    }
-                    assert_eq!(args.len(), 1);
-                    match self.tree.exprs[args.start] {
-                        Expr::String(string) => {
-                            let with_quotes = self.slice(string);
-                            let without_quotes = &with_quotes[1..with_quotes.len() - 1];
-                            let with_newline = without_quotes.to_owned() + "\n";
-                            let num_bytes = with_newline.len() as u32;
-                            (with_newline, num_bytes)
-                        }
-                        _ => unimplemented!(),
-                    }
-                }
-                _ => unimplemented!(),
-            },
-            _ => unimplemented!(),
-        };
-
-        let mut func = Function::new([]);
-        func.instructions()
-            .i32_const(1)
-            .i32_const(0)
-            .i32_const(1)
-            .i32_const((offset + len).next_multiple_of(4) as i32)
-            .call(0)
-            .drop()
-            .i32_const(0)
-            .call(1)
-            .unreachable()
-            .end();
-        section_code.function(&func);
-
-        section_data
-            .active(0, &ConstExpr::i32_const(0), offset.to_le_bytes())
-            .active(0, &ConstExpr::i32_const(4), len.to_le_bytes())
-            .active(0, &ConstExpr::i32_const(8), string.bytes());
+        if let Some(main) = self.ir.main {
+            section_export.export(
+                "_start",
+                ExportKind::Func,
+                section_import.len() + main.raw(),
+            );
+        }
 
         let mut module = Module::new();
         module
@@ -145,11 +98,12 @@ impl<'a> Wasm<'a> {
     }
 }
 
-pub fn wasm(source: &str, starts: &TokenStarts, tree: &Tree) -> Vec<u8> {
+pub fn wasm(ir: &IR) -> Vec<u8> {
     Wasm {
-        source,
-        starts,
-        tree,
+        ir,
+        strings: Default::default(),
+        types: Default::default(),
+        layouts: Default::default(),
     }
     .program()
 }

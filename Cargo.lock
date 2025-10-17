@@ -337,6 +337,7 @@ version = "0.0.0"
 dependencies = [
  "enumset",
  "index_vec",
+ "indexmap",
  "itertools",
  "logos",
  "wasm-encoder 0.240.0",

@@ -1,6 +1,6 @@
 use std::hash::{Hash, Hasher};
 
-use index_vec::{Idx, IndexVec};
+use index_vec::{Idx, IndexSlice, IndexVec};
 
 #[derive(Clone, Copy, Debug)]
 pub struct IdRange<I> {
@@ -22,6 +22,10 @@ impl<I: Idx> IdRange<I> {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn get<'a, T>(&self, xs: &'a IndexSlice<I, [T]>) -> &'a [T] {
+        xs[self.start..self.end].as_raw_slice()
     }
 }
 
