@@ -26,7 +26,7 @@ define_index_type! {
 }
 
 define_index_type! {
-    pub struct DeclId = u32;
+    pub struct ValId = u32;
 }
 
 define_index_type! {
@@ -76,14 +76,15 @@ pub struct Block {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum Decl {
-    Val { name: TokenId, ty: TypeId },
+pub struct Val {
+    pub name: TokenId,
+    pub ty: TypeId,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Ctx {
     pub name: TokenId,
-    pub decls: IdRange<DeclId>,
+    pub vals: IdRange<ValId>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -95,9 +96,9 @@ pub struct Func {
 #[derive(Clone, Copy, Debug)]
 pub struct Region {
     pub ctxs: IdRange<CtxId>,
-    pub regions: IdRange<RegionId>,
     pub needs: IdRange<NeedId>,
     pub funcs: IdRange<FuncId>,
+    pub regions: IdRange<RegionId>,
 }
 
 #[derive(Debug)]
@@ -106,11 +107,11 @@ pub struct Tree {
     pub types: IndexVec<TypeId, Type>,
     pub exprs: IndexVec<ExprId, Expr>,
     pub stmts: IndexVec<StmtId, Stmt>,
-    pub decls: IndexVec<DeclId, Decl>,
+    pub vals: IndexVec<ValId, Val>,
     pub ctxs: IndexVec<CtxId, Ctx>,
-    pub regions: IndexVec<RegionId, Region>,
     pub needs: IndexVec<NeedId, TokenId>,
     pub funcs: IndexVec<FuncId, Func>,
+    pub regions: IndexVec<RegionId, Region>,
     pub root: RegionId,
 }
 
@@ -140,11 +141,11 @@ struct Parser<'a> {
     types: IndexVec<TypeId, Type>,
     exprs: IndexVec<ExprId, Expr>,
     stmts: IndexVec<StmtId, Stmt>,
-    decls: IndexVec<DeclId, Decl>,
+    vals: IndexVec<ValId, Val>,
     ctxs: IndexVec<CtxId, Ctx>,
-    regions: IndexVec<RegionId, Region>,
     needs: IndexVec<NeedId, TokenId>,
     funcs: IndexVec<FuncId, Func>,
+    regions: IndexVec<RegionId, Region>,
 }
 
 impl<'a> Parser<'a> {
@@ -158,11 +159,11 @@ impl<'a> Parser<'a> {
             types: Default::default(),
             exprs: Default::default(),
             stmts: Default::default(),
-            decls: Default::default(),
+            vals: Default::default(),
             ctxs: Default::default(),
-            regions: Default::default(),
             needs: Default::default(),
             funcs: Default::default(),
+            regions: Default::default(),
         }
     }
 
@@ -299,30 +300,29 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn decl(&mut self) -> ParseResult<Decl> {
-        match self.peek() {
-            Name => {
-                let name = self.next();
-                self.expect(Colon)?;
-                let ty = self.ty_id()?;
-                self.expect(Semi)?;
-                Ok(Decl::Val { name, ty })
-            }
-            _ => Err(self.err(EnumSet::only(Name))),
-        }
+    fn val(&mut self) -> ParseResult<Val> {
+        let name = self.expect(Name)?;
+        self.expect(Colon)?;
+        let ty = self.ty_id()?;
+        self.expect(Semi)?;
+        Ok(Val { name, ty })
     }
 
-    fn decls(&mut self) -> ParseResult<IdRange<DeclId>> {
+    fn ctx(&mut self, name: TokenId) -> ParseResult<Ctx> {
         self.expect(LBrace)?;
-        let mut decls = Vec::new();
+        let mut vals = Vec::new();
         loop {
-            if let RBrace = self.peek() {
-                break;
+            match self.peek() {
+                RBrace => break,
+                Name => vals.push(self.val()?),
+                _ => (),
             }
-            decls.push(self.decl()?);
         }
         self.expect(RBrace)?;
-        Ok(IdRange::new(&mut self.decls, decls))
+        Ok(Ctx {
+            name,
+            vals: IdRange::new(&mut self.vals, vals),
+        })
     }
 
     fn need(&mut self) -> ParseResult<TokenId> {
@@ -343,9 +343,9 @@ impl<'a> Parser<'a> {
 
     fn region(&mut self) -> ParseResult<Region> {
         let mut ctxs = Vec::new();
-        let mut regions = Vec::new();
         let mut needs = Vec::new();
         let mut funcs = Vec::new();
+        let mut regions = Vec::new();
         loop {
             match self.peek() {
                 Context => {
@@ -361,15 +361,14 @@ impl<'a> Parser<'a> {
                             self.expect(Semi)?;
                             return Ok(Region {
                                 ctxs: IdRange::new(&mut self.ctxs, ctxs),
-                                regions: IdRange::new(&mut self.regions, regions),
                                 needs: IdRange::new(&mut self.needs, needs),
                                 funcs: IdRange::new(&mut self.funcs, funcs),
+                                regions: IdRange::new(&mut self.regions, regions),
                             });
                         }
                         Name => {
                             let name = self.next();
-                            let decls = self.decls()?;
-                            ctxs.push(Ctx { name, decls });
+                            ctxs.push(self.ctx(name)?);
                         }
                         _ => return Err(self.err(Start | End | Name)),
                     }
@@ -383,9 +382,9 @@ impl<'a> Parser<'a> {
 
     fn tree(mut self) -> ParseResult<Tree> {
         let mut ctxs = Vec::new();
-        let mut regions = Vec::new();
         let mut needs = Vec::new();
         let mut funcs = Vec::new();
+        let mut regions = Vec::new();
         loop {
             match self.peek() {
                 Context => {
@@ -398,8 +397,7 @@ impl<'a> Parser<'a> {
                         }
                         Name => {
                             let name = self.next();
-                            let decls = self.decls()?;
-                            ctxs.push(Ctx { name, decls });
+                            ctxs.push(self.ctx(name)?);
                         }
                         _ => return Err(self.err(Start | Name)),
                     }
@@ -409,9 +407,9 @@ impl<'a> Parser<'a> {
                 Eof => {
                     let region = Region {
                         ctxs: IdRange::new(&mut self.ctxs, ctxs),
-                        regions: IdRange::new(&mut self.regions, regions),
                         needs: IdRange::new(&mut self.needs, needs),
                         funcs: IdRange::new(&mut self.funcs, funcs),
+                        regions: IdRange::new(&mut self.regions, regions),
                     };
                     let root = self.regions.push(region);
                     return Ok(Tree {
@@ -419,11 +417,11 @@ impl<'a> Parser<'a> {
                         types: self.types,
                         exprs: self.exprs,
                         stmts: self.stmts,
-                        decls: self.decls,
+                        vals: self.vals,
                         ctxs: self.ctxs,
-                        regions: self.regions,
                         needs: self.needs,
                         funcs: self.funcs,
+                        regions: self.regions,
                         root,
                     });
                 }
