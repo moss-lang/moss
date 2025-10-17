@@ -43,7 +43,7 @@ fn compile(script: &Path) -> anyhow::Result<Vec<u8>> {
             )
         }
     })?;
-    let bytes = wasm(&source, &tokens, &starts, &tree);
+    let bytes = wasm(&source, &starts, &tree);
     Ok(bytes)
 }
 
