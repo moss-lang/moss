@@ -32,6 +32,7 @@ pub type Path = Option<(PathId, StrId)>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Type {
+    Unit,
     String,
 }
 
@@ -43,7 +44,7 @@ pub struct Var {
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
     String(StrId),
-    Print(InstrId),
+    Println(InstrId),
     Provide(VarId, InstrId, IdRange<InstrId>),
 }
 
@@ -60,6 +61,7 @@ pub struct IR {
     pub paths: IndexVec<PathId, Path>,
     pub types: IndexVec<TypeId, Type>,
     pub vars: IndexVec<VarId, Var>,
+    pub vals: IndexVec<InstrId, TypeId>,
     pub instrs: IndexVec<InstrId, Instr>,
     pub funcs: IndexVec<FuncId, Func>,
     pub main: Option<FuncId>,
@@ -90,7 +92,7 @@ impl<'a> Lower<'a> {
         let Region { ctxs, regions, .. } = self.tree.regions[id];
         for ctx in ctxs {
             for val in self.tree.ctxs[ctx].vals {
-                println!("{:?}", self.tree.vals[val]);
+                // TODO
             }
         }
         for region in regions {

@@ -1,4 +1,7 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    ops::Index,
+};
 
 use index_vec::define_index_type;
 use indexmap::{
@@ -25,11 +28,6 @@ impl Strings {
         Self::default()
     }
 
-    pub fn get(&self, id: StrId) -> &str {
-        let (&(i, j), _) = self.names.get_index(id.index()).unwrap();
-        &self.data[i.index()..j.index()]
-    }
-
     pub fn make(&mut self, name: &str) -> StrId {
         let mut state = DefaultHasher::new();
         name.hash(&mut state);
@@ -46,6 +44,15 @@ impl Strings {
             vacant.insert_hashed_nocheck(hash, (i, j), ());
         }
         id
+    }
+}
+
+impl Index<StrId> for Strings {
+    type Output = str;
+
+    fn index(&self, id: StrId) -> &str {
+        let (&(i, j), _) = self.names.get_index(id.index()).unwrap();
+        &self.data[i.index()..j.index()]
     }
 }
 
