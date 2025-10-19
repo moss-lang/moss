@@ -1,7 +1,7 @@
-use std::mem::{replace, take};
+use std::mem::take;
 
 use index_vec::{IndexVec, define_index_type};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use logos::Logos;
 
 use crate::{
@@ -31,7 +31,7 @@ define_index_type! {
     pub struct FuncId = u32;
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
     Unit,
     String,
@@ -44,9 +44,17 @@ pub struct Var {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
+    End,
+    Unit,
     String(StrId),
+    Param,
     Get(VarId),
-    Provide(VarId, InstrId, IdRange<InstrId>),
+    Provide {
+        var: VarId,
+        val: InstrId,
+        pop: InstrId,
+    },
+    Call(FuncId, InstrId),
     Println(InstrId),
 }
 
@@ -54,13 +62,13 @@ pub enum Instr {
 pub struct Func {
     pub param: TypeId,
     pub result: TypeId,
-    pub body: IdRange<InstrId>,
+    pub start: InstrId,
 }
 
 #[derive(Debug, Default)]
 pub struct IR {
     pub strings: Strings,
-    pub types: IndexVec<TypeId, Type>,
+    pub types: IndexSet<Type>,
     pub vars: IndexVec<VarId, Var>,
     pub vals: IndexVec<InstrId, TypeId>,
     pub instrs: IndexVec<InstrId, Instr>,
@@ -121,7 +129,6 @@ struct Lower<'a> {
     paths: IndexMap<Path, Named>,
     path: PathId,
     funcs: IndexVec<FuncId, (PathId, parse::FuncId)>,
-    instrs: Vec<Instr>,
 }
 
 impl<'a> Lower<'a> {
@@ -134,8 +141,18 @@ impl<'a> Lower<'a> {
         &self.source[(range.start + start)..(range.end + start)]
     }
 
-    fn string(&mut self, token: TokenId) -> StrId {
+    fn name(&mut self, token: TokenId) -> StrId {
         self.ir.strings.make(self.slice(token))
+    }
+
+    fn string(&mut self, token: TokenId) -> StrId {
+        let quoted = self.slice(token);
+        self.ir.strings.make(&quoted[1..quoted.len() - 1])
+    }
+
+    fn ty(&mut self, ty: Type) -> TypeId {
+        let (i, _) = self.ir.types.insert_full(ty);
+        TypeId::from_usize(i)
     }
 
     fn get_path_of(&self, token: TokenId) -> PathId {
@@ -155,11 +172,11 @@ impl<'a> Lower<'a> {
 
     fn get_path(&mut self, path: parse::Path) -> Named {
         let mut id = self.get_path_of(path.name);
-        let Named::Scope = self.paths[id.index()] else {
-            panic!();
-        };
         for name in path.names {
-            let string = self.string(self.tree.names[name]);
+            let Named::Scope = self.paths[id.index()] else {
+                panic!();
+            };
+            let string = self.name(self.tree.names[name]);
             id = PathId::from_usize(self.paths.get_index_of(&Some((id, string))).unwrap());
         }
         self.paths[id.index()]
@@ -175,7 +192,7 @@ impl<'a> Lower<'a> {
     }
 
     fn set_token(&mut self, token: TokenId, named: Named) -> PathId {
-        let name = self.string(token);
+        let name = self.name(token);
         self.set_name(name, named)
     }
 
@@ -189,20 +206,6 @@ impl<'a> Lower<'a> {
 
     fn set_func(&mut self, token: TokenId, id: FuncId) -> PathId {
         self.set_token(token, Named::Func(id))
-    }
-
-    fn expr(&mut self, expr: ExprId) -> InstrId {
-        match self.tree.exprs[expr] {
-            Expr::Path(path) => match self.get_path(path) {
-                Named::Scope => panic!(),
-                Named::Var(var) => todo!(),
-                Named::Type(_) => panic!(),
-                Named::Val(val) => todo!(),
-                Named::Func(func) => todo!(),
-            },
-            Expr::String(token) => todo!(),
-            Expr::Call(callee, args) => todo!(),
-        }
     }
 
     fn region(&mut self, region: RegionId) {
@@ -238,19 +241,71 @@ impl<'a> Lower<'a> {
         }
     }
 
+    fn instr(&mut self, ty: TypeId, instr: Instr) -> InstrId {
+        let id_val = self.ir.vals.push(ty);
+        let id_instr = self.ir.instrs.push(instr);
+        assert_eq!(id_val, id_instr);
+        id_val
+    }
+
+    fn end(&mut self) -> InstrId {
+        let ty = self.ty(Type::Unit); // This is a bit meaningless for an `End` instruction.
+        self.instr(ty, Instr::End)
+    }
+
+    fn expr(&mut self, expr: ExprId) -> InstrId {
+        match self.tree.exprs[expr] {
+            Expr::Path(path) => match self.get_path(path) {
+                Named::Scope => panic!(),
+                Named::Var(var) => {
+                    let ty = self.ir.vars[var].ty;
+                    self.instr(ty, Instr::Get(var))
+                }
+                Named::Type(_) => panic!(),
+                Named::Val(val) => val,
+                Named::Func(_) => panic!(),
+            },
+            Expr::String(token) => {
+                let ty = self.ty(Type::String);
+                let string = self.string(token);
+                self.instr(ty, Instr::String(string))
+            }
+            Expr::Call(callee, args) => match self.tree.exprs[callee] {
+                Expr::Path(path) => {
+                    let func = self.get_path(path).func();
+                    let Func { param, result, .. } = self.ir.funcs[func];
+                    match args.len() {
+                        0 => {
+                            let arg = self.instr(param, Instr::Unit);
+                            self.instr(result, Instr::Call(func, arg))
+                        }
+                        1 => {
+                            let arg = self.expr(args.start);
+                            self.instr(result, Instr::Call(func, arg))
+                        }
+                        _ => todo!(),
+                    }
+                }
+                _ => panic!(),
+            },
+        }
+    }
+
     fn stmts(&mut self, stmts: IdRange<StmtId>) {
         for stmt in stmts {
             match self.tree.stmts[stmt] {
                 Stmt::Provide(path, expr) => {
+                    let ty = self.ty(Type::Unit);
                     let var = self.get_path(path).var();
                     let val = self.expr(expr);
-                    let outer = take(&mut self.instrs);
+                    let pop = self.ir.instrs.len_idx(); // Temporary value we'll replace in a bit.
+                    let id = self.instr(ty, Instr::Provide { var, val, pop });
                     self.stmts(IdRange {
                         start: StmtId::from_raw(stmt.raw() + 1),
                         ..stmts
                     });
-                    let inner = IdRange::new(&mut self.ir.instrs, replace(&mut self.instrs, outer));
-                    self.instrs.push(Instr::Provide(var, val, inner));
+                    let pop = self.ir.instrs.len_idx();
+                    self.ir.instrs[id] = Instr::Provide { var, val, pop };
                     break;
                 }
                 Stmt::Expr(expr) => {
@@ -262,22 +317,39 @@ impl<'a> Lower<'a> {
 
     fn func(&mut self, func: parse::FuncId) -> Func {
         let body = self.tree.funcs[func].body;
-        let param = self.ir.types.push(Type::Unit);
-        let result = self.ir.types.push(Type::Unit);
+        let param = self.ty(Type::Unit);
+        let result = self.ty(Type::Unit);
+        let start = self.ir.instrs.len_idx();
         self.stmts(body.stmts);
+        self.end();
         assert!(body.expr.is_none()); // TODO
         Func {
             param,
             result,
-            body: IdRange::new(&mut self.ir.instrs, take(&mut self.instrs)),
+            start,
         }
     }
 
     fn program(mut self) -> LowerResult<IR> {
         {
             let name = self.ir.strings.make("String");
-            let ty = self.ir.types.push(Type::String);
+            let ty = self.ty(Type::String);
             self.set_name(name, Named::Type(ty));
+        }
+        {
+            let name = self.ir.strings.make("println");
+            let param = self.ty(Type::String);
+            let result = self.ty(Type::Unit);
+            let start = self.ir.instrs.len_idx();
+            let val = self.instr(param, Instr::Param);
+            self.instr(result, Instr::Println(val));
+            self.end();
+            let func = self.ir.funcs.push(Func {
+                param,
+                result,
+                start,
+            });
+            self.set_name(name, Named::Func(func));
         }
         self.region(self.tree.root);
         for (scope, func) in take(&mut self.funcs) {
@@ -299,7 +371,6 @@ pub fn lower(source: &str, starts: &TokenStarts, tree: &Tree) -> LowerResult<IR>
         paths,
         path: PathId::from_usize(i),
         funcs: IndexVec::new(),
-        instrs: Vec::new(),
     }
     .program()
 }

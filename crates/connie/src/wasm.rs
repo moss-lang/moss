@@ -53,7 +53,7 @@ struct Wasm<'a> {
     /// Locals for the current function.
     locals: IndexVec<LocalId, ValType>,
 
-    // Start of local range for each SSA value in the current function.
+    /// Start of local range for each SSA value in the current function.
     variables: HashMap<InstrId, LocalId>,
 
     /// The current function body.
@@ -69,12 +69,16 @@ impl<'a> Wasm<'a> {
         2
     }
 
-    fn get(&mut self, instr: InstrId) {
-        let start = self.variables[&instr];
-        let end = LocalId::from_usize(self.layouts[self.ir.vals[instr]].len());
+    fn get_local(&mut self, ty: lower::TypeId, start: LocalId) {
+        let len = self.layouts[ty].len();
+        let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }) {
             self.body.insn().local_get(localidx.raw());
         }
+    }
+
+    fn get(&mut self, instr: InstrId) {
+        self.get_local(self.ir.vals[instr], self.variables[&instr])
     }
 
     fn set(&mut self, instr: InstrId) {
@@ -90,9 +94,11 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    fn instrs(&mut self, instrs: IdRange<InstrId>) {
-        for instr in instrs {
+    fn instrs(&mut self, param: lower::TypeId, mut instr: InstrId) {
+        loop {
             match self.ir.instrs[instr] {
+                Instr::End => break,
+                Instr::Unit => todo!(),
                 Instr::String(id) => {
                     let string = &self.ir.strings[id];
                     let len = string.len() as i32;
@@ -105,8 +111,12 @@ impl<'a> Wasm<'a> {
                     });
                     self.body.insn().i32_const(offset).i32_const(len);
                 }
+                Instr::Param => {
+                    self.get_local(param, LocalId::from_raw(0));
+                }
                 Instr::Get(_) => todo!(),
-                Instr::Provide(_, _, _) => todo!(),
+                Instr::Provide { var, val, pop } => todo!(),
+                Instr::Call(func, val) => todo!(),
                 Instr::Println(string) => {
                     let println = self.func_println();
                     self.get(string);
@@ -114,6 +124,7 @@ impl<'a> Wasm<'a> {
                 }
             }
             self.set(instr);
+            instr = InstrId::from_raw(instr.raw() + 1);
         }
     }
 
@@ -127,7 +138,8 @@ impl<'a> Wasm<'a> {
         });
         self.section_export.export("memory", ExportKind::Memory, 0);
 
-        for (id, ty) in self.ir.types.iter_enumerated() {
+        for (i, ty) in self.ir.types.iter().enumerate() {
+            let id = lower::TypeId::from_usize(i);
             let layout = match ty {
                 Type::Unit => IdRange::new(&mut self.types, Vec::new()),
                 Type::String => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
@@ -217,7 +229,7 @@ impl<'a> Wasm<'a> {
                 params.get(&self.types).iter().copied(),
                 self.layouts[func.result].get(&self.types).iter().copied(),
             );
-            self.instrs(func.body);
+            self.instrs(func.param, func.start);
             if self.ir.main == Some(id) {
                 self.body.insn().i32_const(0).call(proc_exit).unreachable();
                 self.section_export
