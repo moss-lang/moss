@@ -20,7 +20,7 @@ define_index_type! {
 #[derive(Debug, Default)]
 pub struct Strings {
     data: String,
-    names: IndexMap<(StrLoc, StrLoc), ()>,
+    strings: IndexMap<(StrLoc, StrLoc), ()>,
 }
 
 impl Strings {
@@ -28,22 +28,32 @@ impl Strings {
         Self::default()
     }
 
-    pub fn make(&mut self, name: &str) -> StrId {
+    pub fn make(&mut self, string: &str) -> StrId {
         let mut state = DefaultHasher::new();
-        name.hash(&mut state);
+        string.hash(&mut state);
         let hash = state.finish();
         let entry = self
-            .names
+            .strings
             .raw_entry_mut_v1()
-            .from_hash(hash, |&(i, j)| name == &self.data[i.index()..j.index()]);
+            .from_hash(hash, |&(i, j)| string == &self.data[i.index()..j.index()]);
         let id = StrId::new(entry.index());
         if let RawEntryMut::Vacant(vacant) = entry {
             let i = StrLoc::from_usize(self.data.len());
-            self.data.push_str(name);
+            self.data.push_str(string);
             let j = StrLoc::from_usize(self.data.len());
             vacant.insert_hashed_nocheck(hash, (i, j), ());
         }
         id
+    }
+
+    pub fn get(&self, string: &str) -> Option<StrId> {
+        let mut state = DefaultHasher::new();
+        string.hash(&mut state);
+        let hash = state.finish();
+        self.strings
+            .raw_entry_v1()
+            .index_from_hash(hash, |&(i, j)| string == &self.data[i.index()..j.index()])
+            .map(StrId::from_usize)
     }
 }
 
@@ -51,7 +61,7 @@ impl Index<StrId> for Strings {
     type Output = str;
 
     fn index(&self, id: StrId) -> &str {
-        let (&(i, j), _) = self.names.get_index(id.index()).unwrap();
+        let (&(i, j), _) = self.strings.get_index(id.index()).unwrap();
         &self.data[i.index()..j.index()]
     }
 }
@@ -62,17 +72,32 @@ mod tests {
 
     #[test]
     fn test_same() {
-        let mut names = Strings::new();
-        let a = names.make("foo");
-        let b = names.make("foo");
+        let mut strings = Strings::new();
+        let a = strings.make("foo");
+        let b = strings.make("foo");
         assert_eq!(a, b);
     }
 
     #[test]
     fn test_different() {
-        let mut names = Strings::new();
-        let a = names.make("foo");
-        let b = names.make("bar");
+        let mut strings = Strings::new();
+        let a = strings.make("foo");
+        let b = strings.make("bar");
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_missing() {
+        let strings = Strings::new();
+        let a = strings.get("foo");
+        assert_eq!(a, None);
+    }
+
+    #[test]
+    fn test_present() {
+        let mut strings = Strings::new();
+        let a = strings.make("foo");
+        let b = strings.get("foo");
+        assert_eq!(Some(a), b);
     }
 }

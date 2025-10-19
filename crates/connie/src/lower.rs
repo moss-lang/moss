@@ -5,7 +5,7 @@ use logos::Logos;
 use crate::{
     intern::{StrId, Strings},
     lex::{Token, TokenId, TokenStarts},
-    parse::{self, Ctx, Region, RegionId, Tree},
+    parse::{self, Ctx, Region, RegionId, Tree, Val},
     util::IdRange,
 };
 
@@ -103,34 +103,61 @@ impl<'a> Lower<'a> {
         self.ir.strings.make(self.slice(token))
     }
 
-    fn set(&mut self, token: TokenId, named: Named) -> PathId {
-        let name = self.string(token);
+    fn get(&self, token: TokenId) -> Named {
+        let mut parent = self.path;
+        let string = self.ir.strings.get(self.slice(token)).unwrap();
+        loop {
+            match self.paths.get(&Some((parent, string))) {
+                Some(&named) => return named,
+                None => {
+                    let (parts, _) = self.paths.get_index(parent.index()).unwrap();
+                    let (grandparent, _) = parts.unwrap();
+                    parent = grandparent;
+                }
+            }
+        }
+    }
+
+    fn get_ty(&self, token: TokenId) -> TypeId {
+        match self.get(token) {
+            Named::Type(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    fn set_name(&mut self, name: StrId, named: Named) -> PathId {
         let (i, _) = self.paths.insert_full(Some((self.path, name)), named);
         PathId::from_usize(i)
     }
 
+    fn set_token(&mut self, token: TokenId, named: Named) -> PathId {
+        let name = self.string(token);
+        self.set_name(name, named)
+    }
+
     fn set_scope(&mut self, token: TokenId) -> PathId {
-        self.set(token, Named::Scope)
+        self.set_token(token, Named::Scope)
     }
 
     fn set_var(&mut self, token: TokenId, id: VarId) -> PathId {
-        self.set(token, Named::Var(id))
+        self.set_token(token, Named::Var(id))
     }
 
     fn region(&mut self, id: RegionId) {
         let Region { ctxs, regions, .. } = self.tree.regions[id];
         for ctx in ctxs {
             let Ctx { name, vals } = self.tree.ctxs[ctx];
-            let scope = self.set_scope(name);
+            let parent = self.path;
+            self.path = self.set_scope(name);
             for val in vals {
-                let ty = match self.tree.types[self.tree.vals[val].ty] {
-                    parse::Type::Name(name) => match self.slice(name) {
-                        "String" => Type::String,
-                        _ => todo!(),
-                    },
+                let Val { name, ty } = self.tree.vals[val];
+                let ty = match self.tree.types[ty] {
+                    parse::Type::Name(name) => self.get_ty(name),
                 };
-                self.ir.types.push(ty);
+                let var = self.ir.vars.push(Var { ty });
+                self.set_var(name, var);
             }
+            self.path = parent;
         }
         for region in regions {
             self.region(region);
@@ -138,6 +165,11 @@ impl<'a> Lower<'a> {
     }
 
     fn program(mut self) -> LowerResult<IR> {
+        {
+            let name = self.ir.strings.make("String");
+            let ty = self.ir.types.push(Type::String);
+            self.set_name(name, Named::Type(ty));
+        }
         self.region(self.tree.root);
         // TODO
         Ok(self.ir)
