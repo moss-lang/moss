@@ -105,12 +105,13 @@ impl<'a> Wasm<'a> {
                     });
                     self.body.insn().i32_const(offset).i32_const(len);
                 }
+                Instr::Get(_) => todo!(),
+                Instr::Provide(_, _, _) => todo!(),
                 Instr::Println(string) => {
                     let println = self.func_println();
                     self.get(string);
                     self.body.insn().call(println);
                 }
-                Instr::Provide(_, _, _) => todo!(),
             }
             self.set(instr);
         }
