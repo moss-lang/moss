@@ -229,7 +229,7 @@ impl<'a> Wasm<'a> {
                 params.get(&self.types).iter().copied(),
                 self.layouts[func.result].get(&self.types).iter().copied(),
             );
-            self.instrs(func.param, func.start);
+            self.instrs(func.param, self.ir.bodies[id]);
             if self.ir.main == Some(id) {
                 self.body.insn().i32_const(0).call(proc_exit).unreachable();
                 self.section_export

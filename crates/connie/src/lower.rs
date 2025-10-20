@@ -62,7 +62,6 @@ pub enum Instr {
 pub struct Func {
     pub param: TypeId,
     pub result: TypeId,
-    pub start: InstrId,
 }
 
 #[derive(Debug, Default)]
@@ -74,6 +73,7 @@ pub struct IR {
     pub instrs: IndexVec<InstrId, Instr>,
     pub funcs: IndexVec<FuncId, Func>,
     pub main: Option<FuncId>,
+    pub bodies: IndexVec<FuncId, InstrId>,
 }
 
 type Path = Option<(PathId, StrId)>;
@@ -128,7 +128,7 @@ struct Lower<'a> {
     ir: IR,
     paths: IndexMap<Path, Named>,
     path: PathId,
-    funcs: IndexVec<FuncId, (PathId, parse::FuncId)>,
+    funcs: Vec<(PathId, parse::FuncId, FuncId)>,
 }
 
 impl<'a> Lower<'a> {
@@ -233,7 +233,10 @@ impl<'a> Lower<'a> {
             let _ = need; // TODO
         }
         for func in funcs {
-            let id = self.funcs.push((self.path, func));
+            let param = self.ty(Type::Unit);
+            let result = self.ty(Type::Unit);
+            let id = self.ir.funcs.push(Func { param, result });
+            self.funcs.push((self.path, func, id));
             self.set_func(self.tree.funcs[func].name, id);
         }
         for child in regions {
@@ -315,19 +318,13 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn func(&mut self, func: parse::FuncId) -> Func {
+    fn body(&mut self, func: parse::FuncId) -> InstrId {
         let body = self.tree.funcs[func].body;
-        let param = self.ty(Type::Unit);
-        let result = self.ty(Type::Unit);
         let start = self.ir.instrs.len_idx();
         self.stmts(body.stmts);
         self.end();
         assert!(body.expr.is_none()); // TODO
-        Func {
-            param,
-            result,
-            start,
-        }
+        start
     }
 
     fn program(mut self) -> LowerResult<IR> {
@@ -344,17 +341,17 @@ impl<'a> Lower<'a> {
             let val = self.instr(param, Instr::Param);
             self.instr(result, Instr::Println(val));
             self.end();
-            let func = self.ir.funcs.push(Func {
-                param,
-                result,
-                start,
-            });
-            self.set_name(name, Named::Func(func));
+            let id_type = self.ir.funcs.push(Func { param, result });
+            let id_body = self.ir.bodies.push(start);
+            assert_eq!(id_type, id_body);
+            self.set_name(name, Named::Func(id_type));
         }
         self.region(self.tree.root);
-        for (scope, func) in take(&mut self.funcs) {
+        for (scope, func, id_type) in take(&mut self.funcs) {
             self.path = scope;
-            self.func(func);
+            let start = self.body(func);
+            let id_body = self.ir.bodies.push(start);
+            assert_eq!(id_type, id_body);
         }
         Ok(self.ir)
     }
@@ -370,7 +367,7 @@ pub fn lower(source: &str, starts: &TokenStarts, tree: &Tree) -> LowerResult<IR>
         ir: IR::default(),
         paths,
         path: PathId::from_usize(i),
-        funcs: IndexVec::new(),
+        funcs: Vec::new(),
     }
     .program()
 }
