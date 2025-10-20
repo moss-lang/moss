@@ -14,6 +14,10 @@ use crate::{
 };
 
 define_index_type! {
+    pub struct GlobalId = u32;
+}
+
+define_index_type! {
     pub struct TypeId = u32;
 }
 
@@ -40,6 +44,9 @@ struct Wasm<'a> {
     strings: HashMap<StrId, i32>,
     types: IndexVec<TypeId, ValType>,
     layouts: IndexVec<lower::TypeId, IdRange<TypeId>>,
+
+    /// Start of global range for each var.
+    vars: IndexVec<lower::VarId, GlobalId>,
 
     section_type: TypeSection,
     section_import: ImportSection,
@@ -82,14 +89,15 @@ impl<'a> Wasm<'a> {
     }
 
     fn set(&mut self, instr: InstrId) {
-        let prev = self.variables.insert(instr, self.locals.len_idx());
+        let start = self.locals.len_idx();
+        let prev = self.variables.insert(instr, start);
         assert!(prev.is_none());
-        for &ty in self.layouts[self.ir.vals[instr]]
-            .get(&self.types)
-            .iter()
-            .rev()
-        {
-            let localidx = self.locals.push(ty);
+        let layout = self.layouts[self.ir.vals[instr]];
+        for &ty in layout.get(&self.types) {
+            self.locals.push(ty);
+        }
+        let end = LocalId::from_usize(start.index() + layout.len());
+        for localidx in (IdRange { start, end }).into_iter().rev() {
             self.body.insn().local_set(localidx.raw());
         }
     }
@@ -97,7 +105,7 @@ impl<'a> Wasm<'a> {
     fn instrs(&mut self, param: lower::TypeId, mut instr: InstrId) {
         loop {
             match self.ir.instrs[instr] {
-                Instr::Unit => todo!(),
+                Instr::Unit => {}
                 Instr::String(id) => {
                     let string = &self.ir.strings[id];
                     let len = string.len() as i32;
@@ -113,9 +121,29 @@ impl<'a> Wasm<'a> {
                 Instr::Param => {
                     self.get_local(param, LocalId::from_raw(0));
                 }
-                Instr::Get(_) => todo!(),
-                Instr::Provide { var, val, pop } => todo!(),
-                Instr::Call(func, val) => todo!(),
+                Instr::Get(var) => {
+                    let start = self.vars[var];
+                    let len = self.layouts[self.ir.vars[var].ty].len();
+                    let end = GlobalId::from_usize(start.index() + len);
+                    for globalidx in (IdRange { start, end }) {
+                        self.body.insn().global_get(globalidx.raw());
+                    }
+                }
+                Instr::Provide { var, val, pop: _ } => {
+                    self.get(val);
+                    let start = self.vars[var];
+                    let len = self.layouts[self.ir.vars[var].ty].len();
+                    let end = GlobalId::from_usize(start.index() + len);
+                    for globalidx in (IdRange { start, end }).into_iter().rev() {
+                        self.body.insn().global_set(globalidx.raw());
+                    }
+                    // TODO: Reset it when the `pop` instruction is reached.
+                }
+                Instr::Call(func, val) => {
+                    let funcidx_offset = self.func_println() + 1;
+                    self.get(val);
+                    self.body.insn().call(funcidx_offset + func.raw());
+                }
                 Instr::Println(string) => {
                     let println = self.func_println();
                     self.get(string);
@@ -225,6 +253,12 @@ impl<'a> Wasm<'a> {
 
         let func_offset = self.section_import.len() + self.section_function.len();
 
+        let mut global_offset = 1;
+        for var in &self.ir.vars {
+            self.vars.push(GlobalId::from_usize(global_offset));
+            global_offset += self.layouts[var.ty].len();
+        }
+
         for (id, func) in self.ir.funcs.iter_enumerated() {
             let params = self.layouts[func.param];
             self.section_function.function(self.section_type.len());
@@ -248,6 +282,7 @@ impl<'a> Wasm<'a> {
             self.body = Default::default();
         }
 
+        assert_eq!(self.section_global.len(), self.mem_global());
         self.section_global.global(
             GlobalType {
                 val_type: ValType::I32,
@@ -256,6 +291,18 @@ impl<'a> Wasm<'a> {
             },
             &ConstExpr::i32_const((self.data_offset + 7) / 8 * 8),
         );
+        for var in &self.ir.vars {
+            for ty in self.layouts[var.ty] {
+                self.section_global.global(
+                    GlobalType {
+                        val_type: self.types[ty],
+                        mutable: true,
+                        shared: false,
+                    },
+                    &ConstExpr::i32_const(0),
+                );
+            }
+        }
 
         let mut module = Module::new();
         module
@@ -280,6 +327,7 @@ pub fn wasm(ir: &IR) -> Vec<u8> {
         types: Default::default(),
         layouts: Default::default(),
         variables: Default::default(),
+        vars: Default::default(),
 
         section_type: Default::default(),
         section_import: Default::default(),

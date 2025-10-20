@@ -83,7 +83,6 @@ enum Named {
     Scope,
     Type(TypeId),
     Var(VarId),
-    Val(InstrId),
     Func(FuncId),
 }
 
@@ -98,13 +97,6 @@ impl Named {
     fn var(self) -> VarId {
         match self {
             Self::Var(id) => id,
-            _ => panic!(),
-        }
-    }
-
-    fn val(self) -> InstrId {
-        match self {
-            Self::Val(id) => id,
             _ => panic!(),
         }
     }
@@ -204,10 +196,6 @@ impl<'a> Lower<'a> {
         self.set_token(token, Named::Var(id))
     }
 
-    fn set_func(&mut self, token: TokenId, id: FuncId) -> PathId {
-        self.set_token(token, Named::Func(id))
-    }
-
     fn region(&mut self, region: RegionId) {
         let Region {
             ctxs,
@@ -237,7 +225,11 @@ impl<'a> Lower<'a> {
             let result = self.ty(Type::Unit);
             let id = self.ir.funcs.push(Func { param, result });
             self.funcs.push((self.path, func, id));
-            self.set_func(self.tree.funcs[func].name, id);
+            let name = self.name(self.tree.funcs[func].name);
+            self.set_name(name, Named::Func(id));
+            if &self.ir.strings[name] == "main" {
+                self.ir.main = Some(id);
+            }
         }
         for child in regions {
             self.region(child);
@@ -265,7 +257,6 @@ impl<'a> Lower<'a> {
                     self.instr(ty, Instr::Get(var))
                 }
                 Named::Type(_) => panic!(),
-                Named::Val(val) => val,
                 Named::Func(_) => panic!(),
             },
             Expr::String(token) => {
