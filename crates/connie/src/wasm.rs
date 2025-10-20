@@ -225,25 +225,33 @@ impl<'a> Wasm<'a> {
                     align: 2,
                     memory_index: 0,
                 })
+                .i32_const(1)
+                .local_get(iovec)
+                .i32_const(1)
+                .local_get(iovec)
+                .i32_const(8)
+                .i32_add()
+                .call(fd_write)
+                .drop()
                 .local_get(iovec)
                 .i32_const(0)
                 .i32_store(MemArg {
-                    offset: 8,
+                    offset: 0,
                     align: 2,
                     memory_index: 0,
                 })
                 .local_get(iovec)
                 .i32_const(1)
                 .i32_store(MemArg {
-                    offset: 12,
+                    offset: 4,
                     align: 2,
                     memory_index: 0,
                 })
                 .i32_const(1)
                 .local_get(iovec)
-                .i32_const(2)
+                .i32_const(1)
                 .local_get(iovec)
-                .i32_const(16)
+                .i32_const(8)
                 .i32_add()
                 .call(fd_write)
                 .drop()
