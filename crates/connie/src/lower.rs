@@ -44,7 +44,6 @@ pub struct Var {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
-    End,
     Unit,
     String(StrId),
     Param,
@@ -56,6 +55,7 @@ pub enum Instr {
     },
     Call(FuncId, InstrId),
     Println(InstrId),
+    Return(InstrId),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -69,10 +69,10 @@ pub struct IR {
     pub strings: Strings,
     pub types: IndexSet<Type>,
     pub vars: IndexVec<VarId, Var>,
-    pub vals: IndexVec<InstrId, TypeId>,
-    pub instrs: IndexVec<InstrId, Instr>,
     pub funcs: IndexVec<FuncId, Func>,
     pub main: Option<FuncId>,
+    pub vals: IndexVec<InstrId, TypeId>,
+    pub instrs: IndexVec<InstrId, Instr>,
     pub bodies: IndexVec<FuncId, InstrId>,
 }
 
@@ -251,9 +251,9 @@ impl<'a> Lower<'a> {
         id_val
     }
 
-    fn end(&mut self) -> InstrId {
+    fn ret(&mut self, val: InstrId) -> InstrId {
         let ty = self.ty(Type::Unit); // This is a bit meaningless for an `End` instruction.
-        self.instr(ty, Instr::End)
+        self.instr(ty, Instr::Return(val))
     }
 
     fn expr(&mut self, expr: ExprId) -> InstrId {
@@ -322,8 +322,14 @@ impl<'a> Lower<'a> {
         let body = self.tree.funcs[func].body;
         let start = self.ir.instrs.len_idx();
         self.stmts(body.stmts);
-        self.end();
-        assert!(body.expr.is_none()); // TODO
+        let ret = match body.expr {
+            Some(expr) => self.expr(expr),
+            None => {
+                let ty = self.ty(Type::Unit);
+                self.instr(ty, Instr::Unit)
+            }
+        };
+        self.ret(ret);
         start
     }
 
@@ -339,8 +345,8 @@ impl<'a> Lower<'a> {
             let result = self.ty(Type::Unit);
             let start = self.ir.instrs.len_idx();
             let val = self.instr(param, Instr::Param);
-            self.instr(result, Instr::Println(val));
-            self.end();
+            let ret = self.instr(result, Instr::Println(val));
+            self.ret(ret);
             let id_type = self.ir.funcs.push(Func { param, result });
             let id_body = self.ir.bodies.push(start);
             assert_eq!(id_type, id_body);

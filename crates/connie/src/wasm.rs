@@ -97,7 +97,6 @@ impl<'a> Wasm<'a> {
     fn instrs(&mut self, param: lower::TypeId, mut instr: InstrId) {
         loop {
             match self.ir.instrs[instr] {
-                Instr::End => break,
                 Instr::Unit => todo!(),
                 Instr::String(id) => {
                     let string = &self.ir.strings[id];
@@ -121,6 +120,10 @@ impl<'a> Wasm<'a> {
                     let println = self.func_println();
                     self.get(string);
                     self.body.insn().call(println);
+                }
+                Instr::Return(val) => {
+                    self.get(val);
+                    break;
                 }
             }
             self.set(instr);
