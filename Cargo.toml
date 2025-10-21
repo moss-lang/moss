@@ -13,6 +13,7 @@ connie = { path = "crates/connie" }
 crossbeam-channel = "0.5"
 enumset = "1"
 index_vec = "0.1"
+indexmap = "2"
 itertools = "0.14"
 line-index = "0.1"
 logos = "0.15"
