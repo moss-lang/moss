@@ -27,16 +27,6 @@ jobs:
             github-os: ubuntu-24.04
             ext: ""
             install-script: sudo apt-get install -y musl-tools
-          - vscode-platform: darwin-x64
-            rust-target: x86_64-apple-darwin
-            github-os: macos-15-intel
-            ext: ""
-            install-script: ""
-          - vscode-platform: darwin-arm64
-            rust-target: aarch64-apple-darwin
-            github-os: macos-15
-            ext: ""
-            install-script: ""
     runs-on: ${{ matrix.github-os }}
     steps:
       - uses: actions/checkout@v5
