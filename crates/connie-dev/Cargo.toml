@@ -7,4 +7,7 @@ publish = false
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
+connie = { workspace = true }
 indexmap = { workspace = true }
+itertools = { workspace = true }
+line-index = { workspace = true }

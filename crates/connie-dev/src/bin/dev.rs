@@ -1,6 +1,9 @@
 use std::{
+    collections::HashMap,
+    fmt::Write,
     fs::{self, DirEntry},
     io,
+    ops::Range,
     path::{Path, PathBuf},
     process::Command,
     rc::Rc,
@@ -8,7 +11,31 @@ use std::{
 
 use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
+use connie::{
+    lex::{lex, relex},
+    parse::{ParseError, parse},
+};
 use indexmap::IndexMap;
+use line_index::{LineIndex, TextSize};
+
+const PROFILE: &str = "release-with-debug";
+
+fn get_errors(source: &str) -> Vec<(Range<usize>, String)> {
+    let (tokens, starts) = match lex(source) {
+        Ok(ok) => ok,
+        Err(err) => return vec![(err.byte_range(), err.message().to_string())],
+    };
+    let tree = match parse(&tokens) {
+        Ok(ok) => ok,
+        Err(err) => match err {
+            ParseError::Expected { id, tokens: _ } => {
+                return vec![(relex(source, &starts, id), err.message())];
+            }
+        },
+    };
+    drop(tree);
+    Vec::new()
+}
 
 struct Tests {
     fix: bool,
@@ -58,7 +85,9 @@ impl Tests {
 
     fn example(&mut self, entry: &DirEntry) -> anyhow::Result<()> {
         let path = entry.path();
-        let output = Command::new("connie").arg(&path).output()?;
+        let output = Command::new(format!("target/{PROFILE}/connie"))
+            .arg(&path)
+            .output()?;
         let Some(stem) = path.file_stem() else {
             bail!("no file stem");
         };
@@ -88,11 +117,63 @@ impl Tests {
         Ok(())
     }
 
+    fn errors(&mut self, entry: &DirEntry) -> anyhow::Result<()> {
+        let path = entry.path();
+        let source = itertools::join(
+            fs::read_to_string(&path)?
+                .lines()
+                .filter(|line| !line.starts_with('#')),
+            "\n",
+        );
+        let mut errors = HashMap::new();
+        let lines = LineIndex::new(&source);
+        for (range, message) in get_errors(&source) {
+            let start = lines.line_col(TextSize::new(range.start as u32));
+            let end = lines.line_col(TextSize::new(range.end as u32));
+            if end.line != start.line {
+                bail!("error spanning multiple lines");
+            }
+            errors
+                .entry(start.line)
+                .or_insert_with(Vec::new)
+                .push((start.col, end.col, message));
+        }
+        let mut out = String::new();
+        for (i, line) in source.lines().enumerate() {
+            writeln!(&mut out, "{line}")?;
+            if let Some(errors) = errors.get(&(i as u32)) {
+                for (start, end, message) in errors {
+                    let Some(spaces) = (*start as usize).checked_sub(1) else {
+                        bail!("error at very beginning of line");
+                    };
+                    let carets = (end - start) as usize;
+                    writeln!(&mut out, "#{:spaces$}{:^<carets$} {message}", "", "")?;
+                }
+            }
+        }
+        self.write(path, out.as_bytes())?;
+        Ok(())
+    }
+
     fn test(mut self) -> anyhow::Result<()> {
+        if !Command::new("cargo")
+            .args(["build", "--package=connie-cli", "--profile", PROFILE])
+            .status()?
+            .success()
+        {
+            bail!("`cargo build` failed");
+        }
         for result in fs::read_dir("examples")? {
             let entry = result?;
             self.current = Some(Rc::from(format!("{}", entry.path().display())));
             self.example(&entry)
+                .with_context(|| format!("{}", entry.path().display()))?;
+            self.current = None;
+        }
+        for result in fs::read_dir("tests/errors")? {
+            let entry = result?;
+            self.current = Some(Rc::from(format!("{}", entry.path().display())));
+            self.errors(&entry)
                 .with_context(|| format!("{}", entry.path().display()))?;
             self.current = None;
         }

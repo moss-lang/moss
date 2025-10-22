@@ -365,7 +365,10 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "connie",
  "indexmap",
+ "itertools",
+ "line-index",
 ]
 
 [[package]]

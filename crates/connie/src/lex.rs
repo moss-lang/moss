@@ -177,3 +177,9 @@ pub fn lex(source: &str) -> Result<(Tokens, TokenStarts), LexError> {
     starts.push(ByteIndex::from(eof));
     Ok((tokens, starts))
 }
+
+pub fn relex(source: &str, starts: &TokenStarts, token: TokenId) -> Range<usize> {
+    let start = starts[token].index();
+    let (_, range) = Token::lexer(&source[start..]).spanned().next().unwrap();
+    (range.start + start)..(range.end + start)
+}

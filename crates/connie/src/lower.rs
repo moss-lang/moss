@@ -2,11 +2,10 @@ use std::mem::take;
 
 use index_vec::{IndexVec, define_index_type};
 use indexmap::{IndexMap, IndexSet};
-use logos::Logos;
 
 use crate::{
     intern::{StrId, Strings},
-    lex::{Token, TokenId, TokenStarts},
+    lex::{TokenId, TokenStarts, relex},
     parse::{self, Ctx, Expr, ExprId, Region, RegionId, Stmt, StmtId, Tree, Val},
     util::IdRange,
 };
@@ -125,12 +124,7 @@ struct Lower<'a> {
 
 impl<'a> Lower<'a> {
     fn slice(&self, token: TokenId) -> &'a str {
-        let start = self.starts[token].index();
-        let (_, range) = Token::lexer(&self.source[start..])
-            .spanned()
-            .next()
-            .unwrap();
-        &self.source[(range.start + start)..(range.end + start)]
+        &self.source[relex(self.source, self.starts, token)]
     }
 
     fn name(&mut self, token: TokenId) -> StrId {
