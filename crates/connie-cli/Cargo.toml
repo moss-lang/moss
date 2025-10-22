@@ -2,6 +2,7 @@
 name = "connie-cli"
 version.workspace = true
 edition.workspace = true
+default-run = "connie"
 
 [dependencies]
 anyhow = { workspace = true }

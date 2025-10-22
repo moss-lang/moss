@@ -1,0 +1,10 @@
+[package]
+name = "connie-dev"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+indexmap = { workspace = true }

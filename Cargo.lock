@@ -360,6 +360,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "connie-dev"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "indexmap",
+]
+
+[[package]]
 name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

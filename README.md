@@ -56,6 +56,10 @@ connie build examples/hello.con | wasmtime -
 
 Documentation pending.
 
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
