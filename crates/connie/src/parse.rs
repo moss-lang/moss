@@ -115,13 +115,13 @@ pub struct Tree {
     pub root: RegionId,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ParseError {
     Expected { id: TokenId, tokens: EnumSet<Token> },
 }
 
 impl ParseError {
-    pub fn message(&self) -> String {
+    pub fn message(self) -> String {
         match self {
             ParseError::Expected { id: _, tokens } => format!(
                 "expected {}",

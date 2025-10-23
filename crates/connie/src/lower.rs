@@ -7,6 +7,7 @@ use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
     parse::{self, Ctx, Expr, ExprId, Region, RegionId, Stmt, StmtId, Tree, Val},
+    range::expr_range,
     util::IdRange,
 };
 
@@ -108,7 +109,21 @@ impl Named {
     }
 }
 
-pub enum LowerError {}
+#[derive(Clone, Copy, Debug)]
+pub enum LowerError {
+    ArgCount(parse::ExprId),
+}
+
+impl LowerError {
+    pub fn describe(self, _: &str, _: &TokenStarts, tree: &Tree) -> (IdRange<TokenId>, String) {
+        match self {
+            LowerError::ArgCount(expr) => (
+                expr_range(tree, expr),
+                "wrong number of arguments".to_owned(),
+            ),
+        }
+    }
+}
 
 type LowerResult<T> = Result<T, LowerError>;
 
@@ -242,13 +257,13 @@ impl<'a> Lower<'a> {
         self.instr(ty, Instr::Return(val))
     }
 
-    fn expr(&mut self, expr: ExprId) -> InstrId {
+    fn expr(&mut self, expr: ExprId) -> LowerResult<InstrId> {
         match self.tree.exprs[expr] {
             Expr::Path(path) => match self.get_path(path) {
                 Named::Scope => panic!(),
                 Named::Var(var) => {
                     let ty = self.ir.vars[var].ty;
-                    self.instr(ty, Instr::Get(var))
+                    Ok(self.instr(ty, Instr::Get(var)))
                 }
                 Named::Type(_) => panic!(),
                 Named::Func(_) => panic!(),
@@ -256,22 +271,22 @@ impl<'a> Lower<'a> {
             Expr::String(token) => {
                 let ty = self.ty(Type::String);
                 let string = self.string(token);
-                self.instr(ty, Instr::String(string))
+                Ok(self.instr(ty, Instr::String(string)))
             }
             Expr::Call(callee, args) => match self.tree.exprs[callee] {
                 Expr::Path(path) => {
                     let func = self.get_path(path).func();
                     let Func { param, result, .. } = self.ir.funcs[func];
-                    match args.len() {
-                        0 => {
+                    match (self.ir.types[param.index()], args.len()) {
+                        (Type::Unit, 0) => {
                             let arg = self.instr(param, Instr::Unit);
-                            self.instr(result, Instr::Call(func, arg))
+                            Ok(self.instr(result, Instr::Call(func, arg)))
                         }
-                        1 => {
-                            let arg = self.expr(args.start);
-                            self.instr(result, Instr::Call(func, arg))
+                        (Type::String, 1) => {
+                            let arg = self.expr(args.start)?;
+                            Ok(self.instr(result, Instr::Call(func, arg)))
                         }
-                        _ => todo!(),
+                        _ => Err(LowerError::ArgCount(expr)),
                     }
                 }
                 _ => panic!(),
@@ -279,46 +294,47 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn stmts(&mut self, stmts: IdRange<StmtId>) {
+    fn stmts(&mut self, stmts: IdRange<StmtId>) -> LowerResult<()> {
         for stmt in stmts {
             match self.tree.stmts[stmt] {
                 Stmt::Provide(path, expr) => {
                     let ty = self.ty(Type::Unit);
                     let var = self.get_path(path).var();
-                    let val = self.expr(expr);
+                    let val = self.expr(expr)?;
                     let pop = self.ir.instrs.len_idx(); // Temporary value we'll replace in a bit.
                     let id = self.instr(ty, Instr::Provide { var, val, pop });
                     self.stmts(IdRange {
                         start: StmtId::from_raw(stmt.raw() + 1),
                         ..stmts
-                    });
+                    })?;
                     let pop = self.ir.instrs.len_idx();
                     self.ir.instrs[id] = Instr::Provide { var, val, pop };
                     break;
                 }
                 Stmt::Expr(expr) => {
-                    self.expr(expr);
+                    self.expr(expr)?;
                 }
             }
         }
+        Ok(())
     }
 
-    fn body(&mut self, func: parse::FuncId) -> InstrId {
+    fn body(&mut self, func: parse::FuncId) -> LowerResult<InstrId> {
         let body = self.tree.funcs[func].body;
         let start = self.ir.instrs.len_idx();
-        self.stmts(body.stmts);
+        self.stmts(body.stmts)?;
         let ret = match body.expr {
-            Some(expr) => self.expr(expr),
+            Some(expr) => self.expr(expr)?,
             None => {
                 let ty = self.ty(Type::Unit);
                 self.instr(ty, Instr::Unit)
             }
         };
         self.ret(ret);
-        start
+        Ok(start)
     }
 
-    fn program(mut self) -> LowerResult<IR> {
+    fn program(&mut self) -> LowerResult<()> {
         {
             let name = self.ir.strings.make("String");
             let ty = self.ty(Type::String);
@@ -340,18 +356,18 @@ impl<'a> Lower<'a> {
         self.region(self.tree.root);
         for (scope, func, id_type) in take(&mut self.funcs) {
             self.path = scope;
-            let start = self.body(func);
+            let start = self.body(func)?;
             let id_body = self.ir.bodies.push(start);
             assert_eq!(id_type, id_body);
         }
-        Ok(self.ir)
+        Ok(())
     }
 }
 
 pub fn lower(source: &str, starts: &TokenStarts, tree: &Tree) -> LowerResult<IR> {
     let mut paths = IndexMap::new();
     let (i, _) = paths.insert_full(None, Named::Scope);
-    Lower {
+    let mut lower = Lower {
         source,
         starts,
         tree,
@@ -359,6 +375,6 @@ pub fn lower(source: &str, starts: &TokenStarts, tree: &Tree) -> LowerResult<IR>
         paths,
         path: PathId::from_usize(i),
         funcs: Vec::new(),
-    }
-    .program()
+    };
+    lower.program().map(|()| lower.ir)
 }

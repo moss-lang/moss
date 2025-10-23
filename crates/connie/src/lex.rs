@@ -1,4 +1,7 @@
-use std::{fmt, ops::Range};
+use std::{
+    fmt,
+    ops::{Add, Range},
+};
 
 use enumset::EnumSetType;
 use index_vec::{IndexVec, define_index_type};
@@ -11,6 +14,18 @@ define_index_type! {
 
 define_index_type! {
     pub struct TokenId = u32;
+}
+
+impl Add<i32> for TokenId {
+    type Output = Self;
+
+    fn add(self, rhs: i32) -> Self::Output {
+        Self::from_raw(if rhs < 0 {
+            self.raw() - (-rhs) as u32
+        } else {
+            self.raw() + rhs as u32
+        })
+    }
 }
 
 #[derive(Debug, EnumSetType, Logos)]
@@ -135,15 +150,15 @@ pub type Tokens = IndexVec<TokenId, Token>;
 
 pub type TokenStarts = IndexVec<TokenId, ByteIndex>;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum LexError {
     SourceTooLong,
     InvalidToken { start: ByteIndex, end: ByteIndex },
 }
 
 impl LexError {
-    pub fn byte_range(&self) -> Range<usize> {
-        match *self {
+    pub fn byte_range(self) -> Range<usize> {
+        match self {
             LexError::SourceTooLong => {
                 let max = ByteIndex::from(u32::MAX).index();
                 max..max
@@ -152,7 +167,7 @@ impl LexError {
         }
     }
 
-    pub fn message(&self) -> &str {
+    pub fn message(self) -> &'static str {
         match self {
             LexError::SourceTooLong => "file size exceeds 4 GiB limit",
             LexError::InvalidToken { .. } => "invalid token",

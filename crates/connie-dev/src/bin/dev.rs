@@ -13,6 +13,7 @@ use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
 use connie::{
     lex::{lex, relex},
+    lower::lower,
     parse::{ParseError, parse},
 };
 use indexmap::IndexMap;
@@ -33,7 +34,16 @@ fn get_errors(source: &str) -> Vec<(Range<usize>, String)> {
             }
         },
     };
-    drop(tree);
+    let ir = match lower(source, &starts, &tree) {
+        Ok(ir) => ir,
+        Err(err) => {
+            let (tokens, message) = err.describe(source, &starts, &tree);
+            let start = starts[tokens.start].index();
+            let end = relex(source, &starts, tokens.end - 1).end;
+            return vec![(start..end, message)];
+        }
+    };
+    drop(ir);
     Vec::new()
 }
 

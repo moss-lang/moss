@@ -351,6 +351,7 @@ dependencies = [
  "clap",
  "connie",
  "crossbeam-channel",
+ "index_vec",
  "line-index",
  "lsp-server",
  "lsp-types",

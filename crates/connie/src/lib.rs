@@ -1,6 +1,7 @@
-pub mod intern;
+mod intern;
 pub mod lex;
 pub mod lower;
 pub mod parse;
-pub mod util;
+mod range;
+mod util;
 pub mod wasm;

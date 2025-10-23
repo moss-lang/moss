@@ -1,0 +1,4 @@
+fn main() {
+  println();
+# ^^^^^^^^^ wrong number of arguments
+}

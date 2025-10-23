@@ -8,43 +8,51 @@ use std::{
 use anyhow::{anyhow, bail};
 use clap::{Parser, Subcommand};
 use connie::{
-    lex::lex,
+    lex::{LexError, lex},
     lower::lower,
     parse::{ParseError, parse},
     wasm::wasm,
 };
 use connie_cli::util::err_fail;
+use index_vec::Idx;
 use line_index::{LineIndex, TextSize};
 use wasmtime::{Engine, Linker, Module, Store};
 use wasmtime_wasi::{WasiCtxBuilder, p1::WasiP1Ctx};
 
+struct Compiler<'a> {
+    path: &'a Path,
+    source: &'a str,
+}
+
+impl Compiler<'_> {
+    fn error(&self, byte: impl Idx, message: &str) -> anyhow::Error {
+        // Build the `LineIndex` only on errors rather than always, since ideally we don't need it.
+        let lines = LineIndex::new(self.source);
+        let name = self.path.display();
+        let line_col = lines.line_col(TextSize::new(byte.index() as u32));
+        let line = line_col.line + 1;
+        let col = line_col.col + 1;
+        anyhow!("{name}:{line}:{col} {message}")
+    }
+}
+
 fn compile(script: &Path) -> anyhow::Result<Vec<u8>> {
     let source = fs::read_to_string(script)?;
-    let lines = LineIndex::new(&source);
-    let (tokens, starts) = lex(&source).map_err(|err| {
-        let line_col = lines.line_col(TextSize::new(err.byte_range().start as u32));
-        anyhow!(
-            "{}:{}:{} {}",
-            script.display(),
-            line_col.line + 1,
-            line_col.col + 1,
-            err.message(),
-        )
+    let compiler = Compiler {
+        path: script,
+        source: &source,
+    };
+    let (tokens, starts) = lex(&source).map_err(|err| match err {
+        LexError::SourceTooLong => anyhow!("{}:1:1 {}", script.display(), err.message()),
+        LexError::InvalidToken { start, end: _ } => compiler.error(start, err.message()),
     })?;
     let tree = parse(&tokens).map_err(|err| match err {
-        ParseError::Expected { id, tokens: _ } => {
-            let start = starts[id];
-            let line_col = lines.line_col(TextSize::new(start.raw()));
-            anyhow!(
-                "{}:{}:{} {}",
-                script.display(),
-                line_col.line + 1,
-                line_col.col + 1,
-                err.message(),
-            )
-        }
+        ParseError::Expected { id, tokens: _ } => compiler.error(starts[id], &err.message()),
     })?;
-    let ir = lower(&source, &starts, &tree).map_err(|err| match err {})?;
+    let ir = lower(&source, &starts, &tree).map_err(|err| {
+        let (tokens, message) = err.describe(&source, &starts, &tree);
+        compiler.error(starts[tokens.start], &message)
+    })?;
     let bytes = wasm(&ir);
     Ok(bytes)
 }
