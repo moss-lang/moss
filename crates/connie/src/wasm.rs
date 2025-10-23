@@ -9,7 +9,7 @@ use wasm_encoder::{
 
 use crate::{
     intern::StrId,
-    lower::{self, IR, Instr, InstrId, Type},
+    lower::{self, IR, Instr, InstrId, Type, VarId},
     util::IdRange,
 };
 
@@ -35,6 +35,11 @@ impl AsInstructionSink for Vec<u8> {
     fn insn(&mut self) -> InstructionSink<'_> {
         InstructionSink::new(self)
     }
+}
+
+struct Tmp {
+    ty: lower::TypeId,
+    start: LocalId,
 }
 
 struct Wasm<'a> {
@@ -76,7 +81,16 @@ impl<'a> Wasm<'a> {
         2
     }
 
-    fn get_local(&mut self, ty: lower::TypeId, start: LocalId) {
+    fn make_locals(&mut self, ty: lower::TypeId) -> LocalId {
+        let start = self.locals.len_idx();
+        let layout = self.layouts[ty];
+        for &ty in layout.get(&self.types) {
+            self.locals.push(ty);
+        }
+        start
+    }
+
+    fn get_locals(&mut self, ty: lower::TypeId, start: LocalId) {
         let len = self.layouts[ty].len();
         let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }) {
@@ -84,26 +98,64 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    fn get(&mut self, instr: InstrId) {
-        self.get_local(self.ir.vals[instr], self.variables[&instr])
-    }
-
-    fn set(&mut self, instr: InstrId) {
-        let start = self.locals.len_idx();
-        let prev = self.variables.insert(instr, start);
-        assert!(prev.is_none());
-        let layout = self.layouts[self.ir.vals[instr]];
-        for &ty in layout.get(&self.types) {
-            self.locals.push(ty);
-        }
+    fn set_locals(&mut self, ty: lower::TypeId, start: LocalId) {
+        let layout = self.layouts[ty];
         let end = LocalId::from_usize(start.index() + layout.len());
         for localidx in (IdRange { start, end }).into_iter().rev() {
             self.body.insn().local_set(localidx.raw());
         }
     }
 
-    fn instrs(&mut self, param: lower::TypeId, mut instr: InstrId) {
+    fn get(&mut self, instr: InstrId) {
+        self.get_locals(self.ir.vals[instr], self.variables[&instr])
+    }
+
+    fn set(&mut self, instr: InstrId) {
+        let ty = self.ir.vals[instr];
+        let start = self.make_locals(ty);
+        let prev = self.variables.insert(instr, start);
+        assert!(prev.is_none());
+        self.set_locals(ty, start);
+    }
+
+    fn get_tmp(&mut self, tmp: Tmp) {
+        self.get_locals(tmp.ty, tmp.start);
+    }
+
+    fn set_tmp(&mut self, ty: lower::TypeId) -> Tmp {
+        let start = self.make_locals(ty);
+        self.set_locals(ty, start);
+        Tmp { ty, start }
+    }
+
+    fn get_var(&mut self, var: VarId) {
+        let start = self.vars[var];
+        let len = self.layouts[self.ir.vars[var].ty].len();
+        let end = GlobalId::from_usize(start.index() + len);
+        for globalidx in (IdRange { start, end }) {
+            self.body.insn().global_get(globalidx.raw());
+        }
+    }
+
+    fn set_var(&mut self, var: VarId) {
+        let start = self.vars[var];
+        let len = self.layouts[self.ir.vars[var].ty].len();
+        let end = GlobalId::from_usize(start.index() + len);
+        for globalidx in (IdRange { start, end }).into_iter().rev() {
+            self.body.insn().global_set(globalidx.raw());
+        }
+    }
+
+    fn instrs(
+        &mut self,
+        param: lower::TypeId,
+        mut instr: InstrId,
+        end: Option<InstrId>,
+    ) -> InstrId {
         loop {
+            if end == Some(instr) {
+                break;
+            }
             match self.ir.instrs[instr] {
                 Instr::Unit => {}
                 Instr::String(id) => {
@@ -119,25 +171,17 @@ impl<'a> Wasm<'a> {
                     self.body.insn().i32_const(offset).i32_const(len);
                 }
                 Instr::Param => {
-                    self.get_local(param, LocalId::from_raw(0));
+                    self.get_locals(param, LocalId::from_raw(0));
                 }
-                Instr::Get(var) => {
-                    let start = self.vars[var];
-                    let len = self.layouts[self.ir.vars[var].ty].len();
-                    let end = GlobalId::from_usize(start.index() + len);
-                    for globalidx in (IdRange { start, end }) {
-                        self.body.insn().global_get(globalidx.raw());
-                    }
-                }
-                Instr::Provide { var, val, pop: _ } => {
+                Instr::Get(var) => self.get_var(var),
+                Instr::Provide { var, val, pop } => {
+                    self.get_var(var);
+                    let tmp = self.set_tmp(self.ir.vars[var].ty);
                     self.get(val);
-                    let start = self.vars[var];
-                    let len = self.layouts[self.ir.vars[var].ty].len();
-                    let end = GlobalId::from_usize(start.index() + len);
-                    for globalidx in (IdRange { start, end }).into_iter().rev() {
-                        self.body.insn().global_set(globalidx.raw());
-                    }
-                    // TODO: Reset it when the `pop` instruction is reached.
+                    self.set_var(var);
+                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1), Some(pop));
+                    self.get_tmp(tmp);
+                    self.set_var(var);
                 }
                 Instr::Call(func, val) => {
                     let funcidx_offset = self.func_println() + 1;
@@ -157,6 +201,7 @@ impl<'a> Wasm<'a> {
             self.set(instr);
             instr = InstrId::from_raw(instr.raw() + 1);
         }
+        instr
     }
 
     fn program(mut self) -> Vec<u8> {
@@ -274,7 +319,7 @@ impl<'a> Wasm<'a> {
                 params.get(&self.types).iter().copied(),
                 self.layouts[func.result].get(&self.types).iter().copied(),
             );
-            self.instrs(func.param, self.ir.bodies[id]);
+            self.instrs(func.param, self.ir.bodies[id], None);
             if self.ir.main == Some(id) {
                 self.body.insn().i32_const(0).call(proc_exit).unreachable();
                 self.section_export

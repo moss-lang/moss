@@ -1,0 +1,15 @@
+context Foo {
+  string: String;
+}
+
+fn hi() {
+  provide Foo::string = "hi";
+  println(Foo::string);
+}
+
+fn main() {
+  provide Foo::string = "hello";
+  println(Foo::string);
+  hi();
+  println(Foo::string);
+}
