@@ -25,6 +25,7 @@
       {
         devShells.default = pkgs.mkShellNoCC {
           buildInputs = [
+            pkgs.binaryen
             pkgs.bun
             pkgs.nixfmt
             pkgs.nodejs # Used by vsce.
