@@ -27,13 +27,13 @@
           buildInputs = [
             # Necessary tools.
             pkgs.bun
-            pkgs.nixfmt
             pkgs.nodejs # Used by vsce.
             pkgs.python3
             pkgs.rust-bin.stable.latest.default
 
             # Convenient tools.
             pkgs.binaryen
+            pkgs.nixfmt
             pkgs.wasm-tools
             pkgs.wasmtime
           ];
