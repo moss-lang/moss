@@ -9,18 +9,22 @@ use indexmap::{
     map::{RawEntryApiV1, raw_entry_v1::RawEntryMut},
 };
 
+use crate::util::IdRange;
+
 define_index_type! {
     pub struct StrId = u32;
 }
 
 define_index_type! {
-    struct StrLoc = u32;
+    pub struct StrLoc = u32;
 }
+
+pub type StrRange = IdRange<StrLoc>;
 
 #[derive(Debug, Default)]
 pub struct Strings {
     data: String,
-    strings: IndexMap<(StrLoc, StrLoc), ()>,
+    strings: IndexMap<StrRange, ()>,
 }
 
 impl Strings {
@@ -28,32 +32,78 @@ impl Strings {
         Self::default()
     }
 
-    pub fn make(&mut self, string: &str) -> StrId {
-        let mut state = DefaultHasher::new();
-        string.hash(&mut state);
-        let hash = state.finish();
-        let entry = self
-            .strings
-            .raw_entry_mut_v1()
-            .from_hash(hash, |&(i, j)| string == &self.data[i.index()..j.index()]);
-        let id = StrId::new(entry.index());
-        if let RawEntryMut::Vacant(vacant) = entry {
-            let i = StrLoc::from_usize(self.data.len());
-            self.data.push_str(string);
-            let j = StrLoc::from_usize(self.data.len());
-            vacant.insert_hashed_nocheck(hash, (i, j), ());
-        }
-        id
+    pub fn id_of(&self, range: StrRange) -> StrId {
+        StrId::from_usize(self.strings.get_index_of(&range).unwrap())
     }
 
-    pub fn get(&self, string: &str) -> Option<StrId> {
+    pub fn range_of(&self, id: StrId) -> StrRange {
+        let (&range, _) = self.strings.get_index(id.index()).unwrap();
+        range
+    }
+
+    pub fn ranges(&self) -> impl Iterator<Item = StrRange> {
+        self.strings.keys().copied()
+    }
+
+    fn get_full(&self, string: &str) -> Option<(StrId, StrRange)> {
         let mut state = DefaultHasher::new();
         string.hash(&mut state);
         let hash = state.finish();
         self.strings
             .raw_entry_v1()
-            .index_from_hash(hash, |&(i, j)| string == &self.data[i.index()..j.index()])
-            .map(StrId::from_usize)
+            .from_hash_full(hash, |&StrRange { start, end }| {
+                string == &self.data[start.index()..end.index()]
+            })
+            .map(|(index, &range, ())| (StrId::from_usize(index), range))
+    }
+
+    pub fn get_id(&self, string: &str) -> Option<StrId> {
+        self.get_full(string).map(|(id, _)| id)
+    }
+
+    pub fn get(&self, string: &str) -> Option<StrRange> {
+        self.get_full(string).map(|(_, range)| range)
+    }
+
+    fn make_full(&mut self, string: &str) -> (StrId, StrRange) {
+        let mut state = DefaultHasher::new();
+        string.hash(&mut state);
+        let hash = state.finish();
+        match self
+            .strings
+            .raw_entry_mut_v1()
+            .from_hash(hash, |&StrRange { start, end }| {
+                string == &self.data[start.index()..end.index()]
+            }) {
+            RawEntryMut::Occupied(entry) => (StrId::new(entry.index()), *entry.key()),
+            RawEntryMut::Vacant(entry) => {
+                let id = StrId::new(entry.index());
+                let start = StrLoc::from_usize(self.data.len());
+                self.data.push_str(string);
+                let end = StrLoc::from_usize(self.data.len());
+                let range = StrRange { start, end };
+                entry.insert_hashed_nocheck(hash, range, ());
+                (id, range)
+            }
+        }
+    }
+
+    pub fn make_id(&mut self, string: &str) -> StrId {
+        let (id, _) = self.make_full(string);
+        id
+    }
+
+    pub fn make(&mut self, string: &str) -> StrRange {
+        let (_, range) = self.make_full(string);
+        range
+    }
+}
+
+impl Index<StrRange> for Strings {
+    type Output = str;
+
+    fn index(&self, StrRange { start, end }: StrRange) -> &str {
+        &self.data[start.index()..end.index()]
     }
 }
 
@@ -61,8 +111,7 @@ impl Index<StrId> for Strings {
     type Output = str;
 
     fn index(&self, id: StrId) -> &str {
-        let (&(i, j), _) = self.strings.get_index(id.index()).unwrap();
-        &self.data[i.index()..j.index()]
+        &self[self.range_of(id)]
     }
 }
 

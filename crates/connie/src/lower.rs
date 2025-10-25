@@ -1,6 +1,6 @@
 use std::mem::take;
 
-use index_vec::{IndexVec, define_index_type};
+use index_vec::{IndexSlice, IndexVec, define_index_type};
 use indexmap::{IndexMap, IndexSet};
 
 use crate::{
@@ -8,6 +8,7 @@ use crate::{
     lex::{TokenId, TokenStarts, relex},
     parse::{self, Ctx, Expr, ExprId, Region, RegionId, Stmt, StmtId, Tree, Val},
     range::expr_range,
+    tuples::{TupleRange, Tuples},
     util::IdRange,
 };
 
@@ -24,17 +25,30 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct FuncId = u32;
+}
+
+define_index_type! {
     pub struct InstrId = u32;
 }
 
 define_index_type! {
-    pub struct FuncId = u32;
+    pub struct RefId = u32;
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
-    Unit,
     String,
+    Tuple(TupleRange),
+}
+
+impl Type {
+    pub fn tuple(self) -> TupleRange {
+        match self {
+            Type::Tuple(range) => range,
+            _ => panic!(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -44,8 +58,9 @@ pub struct Var {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
-    Unit,
     String(StrId),
+    Tuple(IdRange<RefId>),
+    Elem(InstrId, usize),
     Param,
     Get(VarId),
     Provide {
@@ -68,11 +83,13 @@ pub struct Func {
 pub struct IR {
     pub strings: Strings,
     pub types: IndexSet<Type>,
+    pub tuples: Tuples<TypeId>,
     pub vars: IndexVec<VarId, Var>,
     pub funcs: IndexVec<FuncId, Func>,
     pub main: Option<FuncId>,
     pub vals: IndexVec<InstrId, TypeId>,
     pub instrs: IndexVec<InstrId, Instr>,
+    pub refs: IndexVec<RefId, InstrId>,
     pub bodies: IndexVec<FuncId, InstrId>,
 }
 
@@ -84,6 +101,7 @@ enum Named {
     Type(TypeId),
     Var(VarId),
     Func(FuncId),
+    Val(InstrId),
 }
 
 impl Named {
@@ -143,12 +161,12 @@ impl<'a> Lower<'a> {
     }
 
     fn name(&mut self, token: TokenId) -> StrId {
-        self.ir.strings.make(self.slice(token))
+        self.ir.strings.make_id(self.slice(token))
     }
 
     fn string(&mut self, token: TokenId) -> StrId {
         let quoted = self.slice(token);
-        self.ir.strings.make(&quoted[1..quoted.len() - 1])
+        self.ir.strings.make_id(&quoted[1..quoted.len() - 1])
     }
 
     fn ty(&mut self, ty: Type) -> TypeId {
@@ -156,9 +174,18 @@ impl<'a> Lower<'a> {
         TypeId::from_usize(i)
     }
 
+    fn ty_tuple(&mut self, elems: &[TypeId]) -> TypeId {
+        let tuple = self.ir.tuples.make(elems);
+        self.ty(Type::Tuple(tuple))
+    }
+
+    fn ty_unit(&mut self) -> TypeId {
+        self.ty_tuple(&[])
+    }
+
     fn get_path_of(&self, token: TokenId) -> PathId {
         let mut parent = self.path;
-        let string = self.ir.strings.get(self.slice(token)).unwrap();
+        let string = self.ir.strings.get_id(self.slice(token)).unwrap();
         loop {
             match self.paths.get_index_of(&Some((parent, string))) {
                 Some(i) => return PathId::from_usize(i),
@@ -205,6 +232,12 @@ impl<'a> Lower<'a> {
         self.set_token(token, Named::Var(id))
     }
 
+    fn parse_ty(&mut self, ty: parse::TypeId) -> TypeId {
+        match self.tree.types[ty] {
+            parse::Type::Name(name) => self.get(name).ty(),
+        }
+    }
+
     fn region(&mut self, region: RegionId) {
         let Region {
             ctxs,
@@ -218,9 +251,7 @@ impl<'a> Lower<'a> {
             self.path = self.set_scope(name);
             for val in vals {
                 let Val { name, ty } = self.tree.vals[val];
-                let ty = match self.tree.types[ty] {
-                    parse::Type::Name(name) => self.get(name).ty(),
-                };
+                let ty = self.parse_ty(ty);
                 let id = self.ir.vars.push(Var { ty });
                 self.set_var(name, id);
             }
@@ -230,11 +261,20 @@ impl<'a> Lower<'a> {
             let _ = need; // TODO
         }
         for func in funcs {
-            let param = self.ty(Type::Unit);
-            let result = self.ty(Type::Unit);
+            let parse::Func {
+                name,
+                params,
+                body: _,
+            } = self.tree.funcs[func];
+            let types = params
+                .into_iter()
+                .map(|param| self.parse_ty(self.tree.params[param].ty))
+                .collect::<Vec<TypeId>>();
+            let param = self.ty_tuple(&types);
+            let result = self.ty_unit();
             let id = self.ir.funcs.push(Func { param, result });
             self.funcs.push((self.path, func, id));
-            let name = self.name(self.tree.funcs[func].name);
+            let name = self.name(name);
             self.set_name(name, Named::Func(id));
             if &self.ir.strings[name] == "main" {
                 self.ir.main = Some(id);
@@ -252,8 +292,15 @@ impl<'a> Lower<'a> {
         id_val
     }
 
+    fn instr_tuple(&mut self, ty: TypeId, vals: &[InstrId]) -> InstrId {
+        let start = self.ir.refs.len_idx();
+        self.ir.refs.extend_from_slice(IndexSlice::new(vals));
+        let end = self.ir.refs.len_idx();
+        self.instr(ty, Instr::Tuple(IdRange { start, end }))
+    }
+
     fn ret(&mut self, val: InstrId) -> InstrId {
-        let ty = self.ty(Type::Unit); // This is a bit meaningless for an `End` instruction.
+        let ty = self.ty_unit(); // This is a bit meaningless for a `Return` instruction.
         self.instr(ty, Instr::Return(val))
     }
 
@@ -261,12 +308,13 @@ impl<'a> Lower<'a> {
         match self.tree.exprs[expr] {
             Expr::Path(path) => match self.get_path(path) {
                 Named::Scope => panic!(),
+                Named::Type(_) => panic!(),
                 Named::Var(var) => {
                     let ty = self.ir.vars[var].ty;
                     Ok(self.instr(ty, Instr::Get(var)))
                 }
-                Named::Type(_) => panic!(),
                 Named::Func(_) => panic!(),
+                Named::Val(val) => Ok(val),
             },
             Expr::String(token) => {
                 let ty = self.ty(Type::String);
@@ -277,17 +325,16 @@ impl<'a> Lower<'a> {
                 Expr::Path(path) => {
                     let func = self.get_path(path).func();
                     let Func { param, result, .. } = self.ir.funcs[func];
-                    match (self.ir.types[param.index()], args.len()) {
-                        (Type::Unit, 0) => {
-                            let arg = self.instr(param, Instr::Unit);
-                            Ok(self.instr(result, Instr::Call(func, arg)))
-                        }
-                        (Type::String, 1) => {
-                            let arg = self.expr(args.start)?;
-                            Ok(self.instr(result, Instr::Call(func, arg)))
-                        }
-                        _ => Err(LowerError::ArgCount(expr)),
+                    let params = &self.ir.tuples[self.ir.types[param.index()].tuple()];
+                    if args.len() != params.len() {
+                        return Err(LowerError::ArgCount(expr));
                     }
+                    let vals = args
+                        .into_iter()
+                        .map(|arg| self.expr(arg))
+                        .collect::<LowerResult<Vec<InstrId>>>()?;
+                    let arg = self.instr_tuple(param, &vals);
+                    Ok(self.instr(result, Instr::Call(func, arg)))
                 }
                 _ => panic!(),
             },
@@ -298,7 +345,7 @@ impl<'a> Lower<'a> {
         for stmt in stmts {
             match self.tree.stmts[stmt] {
                 Stmt::Provide(path, expr) => {
-                    let ty = self.ty(Type::Unit);
+                    let ty = self.ty_unit();
                     let var = self.get_path(path).var();
                     let val = self.expr(expr)?;
                     let pop = self.ir.instrs.len_idx(); // Temporary value we'll replace in a bit.
@@ -319,15 +366,31 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
-    fn body(&mut self, func: parse::FuncId) -> LowerResult<InstrId> {
-        let body = self.tree.funcs[func].body;
+    fn body(&mut self, id: FuncId, func: parse::FuncId) -> LowerResult<InstrId> {
         let start = self.ir.instrs.len_idx();
+        let parse::Func {
+            name: _,
+            params,
+            body,
+        } = self.tree.funcs[func];
+        let tuple_ty = self.ir.funcs[id].param;
+        let tuple_val = self.instr(tuple_ty, Instr::Param);
+        for (index, (param, tuple_loc)) in params
+            .into_iter()
+            .zip(self.ir.types[tuple_ty.index()].tuple())
+            .enumerate()
+        {
+            let ty = self.ir.tuples[tuple_loc];
+            let val = self.instr(ty, Instr::Elem(tuple_val, index));
+            let name = self.tree.params[param].name;
+            self.set_token(name, Named::Val(val));
+        }
         self.stmts(body.stmts)?;
         let ret = match body.expr {
             Some(expr) => self.expr(expr)?,
             None => {
-                let ty = self.ty(Type::Unit);
-                self.instr(ty, Instr::Unit)
+                let ty = self.ty_unit();
+                self.instr_tuple(ty, &[])
             }
         };
         self.ret(ret);
@@ -335,15 +398,16 @@ impl<'a> Lower<'a> {
     }
 
     fn program(&mut self) -> LowerResult<()> {
-        {
-            let name = self.ir.strings.make("String");
+        let string = {
+            let name = self.ir.strings.make_id("String");
             let ty = self.ty(Type::String);
             self.set_name(name, Named::Type(ty));
-        }
+            ty
+        };
         {
-            let name = self.ir.strings.make("println");
-            let param = self.ty(Type::String);
-            let result = self.ty(Type::Unit);
+            let name = self.ir.strings.make_id("println");
+            let param = self.ty_tuple(&[string]);
+            let result = self.ty_unit();
             let start = self.ir.instrs.len_idx();
             let val = self.instr(param, Instr::Param);
             let ret = self.instr(result, Instr::Println(val));
@@ -356,7 +420,7 @@ impl<'a> Lower<'a> {
         self.region(self.tree.root);
         for (scope, func, id_type) in take(&mut self.funcs) {
             self.path = scope;
-            let start = self.body(func)?;
+            let start = self.body(id_type, func)?;
             let id_body = self.ir.bodies.push(start);
             assert_eq!(id_type, id_body);
         }

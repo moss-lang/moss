@@ -10,19 +10,24 @@ use wasm_encoder::{
 use crate::{
     intern::StrId,
     lower::{self, IR, Instr, InstrId, Type, VarId},
+    tuples::TupleLoc,
     util::IdRange,
 };
 
 define_index_type! {
-    pub struct GlobalId = u32;
+    struct GlobalId = u32;
 }
 
 define_index_type! {
-    pub struct TypeId = u32;
+    struct TypeId = u32;
 }
 
 define_index_type! {
-    pub struct LocalId = u32;
+    struct TypeOffset = u32;
+}
+
+define_index_type! {
+    struct LocalId = u32;
 }
 
 const WASI_P1: &str = "wasi_snapshot_preview1";
@@ -49,6 +54,7 @@ struct Wasm<'a> {
     strings: HashMap<StrId, i32>,
     types: IndexVec<TypeId, ValType>,
     layouts: IndexVec<lower::TypeId, IdRange<TypeId>>,
+    offsets: IndexVec<TupleLoc, TypeOffset>,
 
     /// Start of global range for each var.
     vars: IndexVec<lower::VarId, GlobalId>,
@@ -157,7 +163,6 @@ impl<'a> Wasm<'a> {
                 break;
             }
             match self.ir.instrs[instr] {
-                Instr::Unit => {}
                 Instr::String(id) => {
                     let string = &self.ir.strings[id];
                     let len = string.len() as i32;
@@ -169,6 +174,19 @@ impl<'a> Wasm<'a> {
                         offset
                     });
                     self.body.insn().i32_const(offset).i32_const(len);
+                }
+                Instr::Tuple(tuple) => {
+                    for &id in tuple.get(&self.ir.refs) {
+                        self.get(id);
+                    }
+                }
+                Instr::Elem(tuple, index) => {
+                    let ty = self.ir.vals[tuple];
+                    let range = self.ir.types[ty.index()].tuple();
+                    let elem = range.start + index;
+                    let start =
+                        LocalId::from_raw(self.variables[&tuple].raw() + self.offsets[elem].raw());
+                    self.get_locals(self.ir.tuples[elem], start);
                 }
                 Instr::Param => {
                     self.get_locals(param, LocalId::from_raw(0));
@@ -214,14 +232,28 @@ impl<'a> Wasm<'a> {
         });
         self.section_export.export("memory", ExportKind::Memory, 0);
 
-        for (i, ty) in self.ir.types.iter().enumerate() {
+        for (i, &ty) in self.ir.types.iter().enumerate() {
             let id = lower::TypeId::from_usize(i);
             let layout = match ty {
-                Type::Unit => IdRange::new(&mut self.types, Vec::new()),
                 Type::String => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
+                Type::Tuple(elems) => {
+                    let mut types = Vec::new();
+                    for &elem in &self.ir.tuples[elems] {
+                        types.extend_from_slice(self.layouts[elem].get(&self.types));
+                    }
+                    IdRange::new(&mut self.types, types)
+                }
             };
             assert_eq!(self.layouts.push(layout), id);
         }
+        for range in self.ir.tuples.ranges() {
+            let mut offset = TypeOffset::new(0);
+            for &ty in &self.ir.tuples[range] {
+                self.offsets.push(offset);
+                offset = TypeOffset::from_usize(offset.index() + self.layouts[ty].len());
+            }
+        }
+        assert_eq!(self.offsets.len(), self.ir.tuples.count());
 
         self.data_offset = 1;
         self.section_data
@@ -379,7 +411,7 @@ pub fn wasm(ir: &IR) -> Vec<u8> {
         strings: Default::default(),
         types: Default::default(),
         layouts: Default::default(),
-        variables: Default::default(),
+        offsets: Default::default(),
         vars: Default::default(),
 
         section_type: Default::default(),
@@ -392,6 +424,7 @@ pub fn wasm(ir: &IR) -> Vec<u8> {
         section_data: Default::default(),
 
         locals: Default::default(),
+        variables: Default::default(),
         body: Default::default(),
     }
     .program()

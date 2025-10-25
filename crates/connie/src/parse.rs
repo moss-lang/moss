@@ -18,6 +18,10 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct ParamId = u32;
+}
+
+define_index_type! {
     pub struct ExprId = u32;
 }
 
@@ -57,6 +61,12 @@ pub enum Type {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct Param {
+    pub name: TokenId,
+    pub ty: TypeId,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Expr {
     Path(Path),
     String(TokenId),
@@ -90,6 +100,7 @@ pub struct Ctx {
 #[derive(Clone, Copy, Debug)]
 pub struct Func {
     pub name: TokenId,
+    pub params: IdRange<ParamId>,
     pub body: Block,
 }
 
@@ -105,6 +116,7 @@ pub struct Region {
 pub struct Tree {
     pub names: IndexVec<NameId, TokenId>,
     pub types: IndexVec<TypeId, Type>,
+    pub params: IndexVec<ParamId, Param>,
     pub exprs: IndexVec<ExprId, Expr>,
     pub stmts: IndexVec<StmtId, Stmt>,
     pub vals: IndexVec<ValId, Val>,
@@ -139,6 +151,7 @@ struct Parser<'a> {
 
     names: IndexVec<NameId, TokenId>,
     types: IndexVec<TypeId, Type>,
+    params: IndexVec<ParamId, Param>,
     exprs: IndexVec<ExprId, Expr>,
     stmts: IndexVec<StmtId, Stmt>,
     vals: IndexVec<ValId, Val>,
@@ -157,6 +170,7 @@ impl<'a> Parser<'a> {
 
             names: Default::default(),
             types: Default::default(),
+            params: Default::default(),
             exprs: Default::default(),
             stmts: Default::default(),
             vals: Default::default(),
@@ -220,6 +234,13 @@ impl<'a> Parser<'a> {
     fn ty_id(&mut self) -> ParseResult<TypeId> {
         let ty = self.ty()?;
         Ok(self.types.push(ty))
+    }
+
+    fn param(&mut self) -> ParseResult<Param> {
+        let name = self.expect(Name)?;
+        self.expect(Colon)?;
+        let ty = self.ty_id()?;
+        Ok(Param { name, ty })
     }
 
     fn expr_atom(&mut self) -> ParseResult<Expr> {
@@ -336,9 +357,23 @@ impl<'a> Parser<'a> {
         self.expect(Fn)?;
         let name = self.expect(Name)?;
         self.expect(LParen)?;
+        let mut params = Vec::new();
+        loop {
+            if let RParen = self.peek() {
+                break;
+            } else {
+                params.push(self.param()?);
+                if let Comma = self.peek() {
+                    self.next();
+                } else {
+                    break;
+                }
+            }
+        }
+        let params = IdRange::new(&mut self.params, params);
         self.expect(RParen)?;
         let body = self.block()?;
-        Ok(Func { name, body })
+        Ok(Func { name, params, body })
     }
 
     fn region(&mut self) -> ParseResult<Region> {
@@ -415,6 +450,7 @@ impl<'a> Parser<'a> {
                     return Ok(Tree {
                         names: self.names,
                         types: self.types,
+                        params: self.params,
                         exprs: self.exprs,
                         stmts: self.stmts,
                         vals: self.vals,
