@@ -21,16 +21,16 @@ use line_index::{LineIndex, TextSize};
 
 const PROFILE: &str = "release-with-debug";
 
-fn get_errors(source: &str) -> Vec<(Range<usize>, String)> {
+fn get_errors(source: &str) -> Vec<(Option<Range<usize>>, String)> {
     let (tokens, starts) = match lex(source) {
         Ok(ok) => ok,
-        Err(err) => return vec![(err.byte_range(), err.message().to_string())],
+        Err(err) => return vec![(Some(err.byte_range()), err.message().to_string())],
     };
     let tree = match parse(&tokens) {
         Ok(ok) => ok,
         Err(err) => match err {
             ParseError::Expected { id, tokens: _ } => {
-                return vec![(relex(source, &starts, id), err.message())];
+                return vec![(Some(relex(source, &starts, id)), err.message())];
             }
         },
     };
@@ -38,9 +38,16 @@ fn get_errors(source: &str) -> Vec<(Range<usize>, String)> {
         Ok(ir) => ir,
         Err(err) => {
             let (tokens, message) = err.describe(source, &starts, &tree);
-            let start = starts[tokens.start].index();
-            let end = relex(source, &starts, tokens.end - 1).end;
-            return vec![(start..end, message)];
+            let range = tokens.map(|range| {
+                let start = starts[range.start].index();
+                let end = if range.is_empty() {
+                    start
+                } else {
+                    relex(source, &starts, range.end - 1).end
+                };
+                start..end
+            });
+            return vec![(range, message)];
         }
     };
     drop(ir);
@@ -135,31 +142,39 @@ impl Tests {
                 .filter(|line| !line.starts_with('#')),
             "\n",
         );
+        let mut out = String::new();
         let mut errors = HashMap::new();
         let lines = LineIndex::new(&source);
         for (range, message) in get_errors(&source) {
-            let start = lines.line_col(TextSize::new(range.start as u32));
-            let end = lines.line_col(TextSize::new(range.end as u32));
-            if end.line != start.line {
-                bail!("error spanning multiple lines");
+            match range {
+                None => writeln!(&mut out, "# {message}")?,
+                Some(range) => {
+                    let start = lines.line_col(TextSize::new(range.start as u32));
+                    let end = lines.line_col(TextSize::new(range.end as u32));
+                    if end.line != start.line {
+                        bail!("error spanning multiple lines");
+                    }
+                    errors
+                        .entry(start.line)
+                        .or_insert_with(Vec::new)
+                        .push((start.col, end.col, message));
+                }
             }
-            errors
-                .entry(start.line)
-                .or_insert_with(Vec::new)
-                .push((start.col, end.col, message));
         }
-        let mut out = String::new();
         for (i, line) in source.lines().enumerate() {
             writeln!(&mut out, "{line}")?;
-            if let Some(errors) = errors.get(&(i as u32)) {
+            if let Some(errors) = errors.remove(&(i as u32)) {
                 for (start, end, message) in errors {
-                    let Some(spaces) = (*start as usize).checked_sub(1) else {
+                    let Some(spaces) = (start as usize).checked_sub(1) else {
                         bail!("error at very beginning of line");
                     };
                     let carets = (end - start) as usize;
                     writeln!(&mut out, "#{:spaces$}{:^<carets$} {message}", "", "")?;
                 }
             }
+        }
+        if !errors.is_empty() {
+            bail!("not all errors were successfully written back");
         }
         self.write(path, out.as_bytes())?;
         Ok(())

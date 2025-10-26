@@ -129,14 +129,21 @@ impl Named {
 
 #[derive(Clone, Copy, Debug)]
 pub enum LowerError {
+    NoMain,
     ArgCount(parse::ExprId),
 }
 
 impl LowerError {
-    pub fn describe(self, _: &str, _: &TokenStarts, tree: &Tree) -> (IdRange<TokenId>, String) {
+    pub fn describe(
+        self,
+        _: &str,
+        _: &TokenStarts,
+        tree: &Tree,
+    ) -> (Option<IdRange<TokenId>>, String) {
         match self {
+            LowerError::NoMain => (None, "no `main` function".to_owned()),
             LowerError::ArgCount(expr) => (
-                expr_range(tree, expr),
+                Some(expr_range(tree, expr)),
                 "wrong number of arguments".to_owned(),
             ),
         }
@@ -418,6 +425,9 @@ impl<'a> Lower<'a> {
             self.set_name(name, Named::Func(id_type));
         }
         self.region(self.tree.root);
+        if self.ir.main.is_none() {
+            return Err(LowerError::NoMain);
+        }
         for (scope, func, id_type) in take(&mut self.funcs) {
             self.path = scope;
             let start = self.body(id_type, func)?;
