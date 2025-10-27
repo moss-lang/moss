@@ -38,8 +38,10 @@ define_index_type! {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
+    Int,
     String,
     Tuple(TupleRange),
+    List(TypeId),
 }
 
 impl Type {
@@ -58,6 +60,7 @@ pub struct Var {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
+    Int(i32),
     String(StrId),
     Tuple(IdRange<RefId>),
     Elem(InstrId, usize),
@@ -69,8 +72,9 @@ pub enum Instr {
         pop: InstrId,
     },
     Call(FuncId, InstrId),
-    Println(InstrId),
     Return(InstrId),
+    Args,
+    Println(InstrId),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -234,6 +238,10 @@ impl<'a> Lower<'a> {
         self.set_token(token, Named::Var(id))
     }
 
+    fn set_val(&mut self, token: TokenId, id: InstrId) -> PathId {
+        self.set_token(token, Named::Val(id))
+    }
+
     fn parse_ty(&mut self, ty: parse::TypeId) -> TypeId {
         match self.tree.types[ty] {
             parse::Type::Name(name) => self.get(name).ty(),
@@ -318,7 +326,11 @@ impl<'a> Lower<'a> {
                 Named::Func(_) => panic!(),
                 Named::Val(val) => Ok(val),
             },
-            Expr::Int(_) => todo!(),
+            Expr::Int(token) => {
+                let ty = self.ty(Type::Int);
+                let n = self.slice(token).parse().unwrap();
+                Ok(self.instr(ty, Instr::Int(n)))
+            }
             Expr::String(token) => {
                 let ty = self.ty(Type::String);
                 let string = self.string(token);
@@ -350,8 +362,14 @@ impl<'a> Lower<'a> {
     fn stmts(&mut self, stmts: IdRange<StmtId>) -> LowerResult<()> {
         for stmt in stmts {
             match self.tree.stmts[stmt] {
-                Stmt::Let(_, _) => todo!(),
-                Stmt::Var(_, _) => todo!(),
+                Stmt::Let(name, rhs) => {
+                    let val = self.expr(rhs)?;
+                    self.set_val(name, val);
+                }
+                Stmt::Var(name, rhs) => {
+                    let val = self.expr(rhs)?;
+                    self.set_val(name, val);
+                }
                 Stmt::Assign(_, _) => todo!(),
                 Stmt::Provide(path, expr) => {
                     let ty = self.ty_unit();
@@ -393,7 +411,7 @@ impl<'a> Lower<'a> {
             let ty = self.ir.tuples[tuple_loc];
             let val = self.instr(ty, Instr::Elem(tuple_val, index));
             let name = self.tree.params[param].name;
-            self.set_token(name, Named::Val(val));
+            self.set_val(name, val);
         }
         self.stmts(body.stmts)?;
         let ret = match body.expr {
@@ -414,6 +432,18 @@ impl<'a> Lower<'a> {
             self.set_name(name, Named::Type(ty));
             ty
         };
+        {
+            let name = self.ir.strings.make_id("args");
+            let param = self.ty_unit();
+            let result = self.ty(Type::List(string));
+            let start = self.ir.instrs.len_idx();
+            let ret = self.instr(result, Instr::Args);
+            self.ret(ret);
+            let id_type = self.ir.funcs.push(Func { param, result });
+            let id_body = self.ir.bodies.push(start);
+            assert_eq!(id_type, id_body);
+            self.set_name(name, Named::Func(id_type));
+        }
         {
             let name = self.ir.strings.make_id("println");
             let param = self.ty_tuple(&[string]);

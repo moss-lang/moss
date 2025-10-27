@@ -163,6 +163,9 @@ impl<'a> Wasm<'a> {
                 break;
             }
             match self.ir.instrs[instr] {
+                Instr::Int(n) => {
+                    self.body.insn().i32_const(n);
+                }
                 Instr::String(id) => {
                     let string = &self.ir.strings[id];
                     let len = string.len() as i32;
@@ -206,14 +209,15 @@ impl<'a> Wasm<'a> {
                     self.get(val);
                     self.body.insn().call(funcidx_offset + func.raw());
                 }
+                Instr::Return(val) => {
+                    self.get(val);
+                    break;
+                }
+                Instr::Args => todo!(),
                 Instr::Println(string) => {
                     let println = self.func_println();
                     self.get(string);
                     self.body.insn().call(println);
-                }
-                Instr::Return(val) => {
-                    self.get(val);
-                    break;
                 }
             }
             self.set(instr);
@@ -235,6 +239,7 @@ impl<'a> Wasm<'a> {
         for (i, &ty) in self.ir.types.iter().enumerate() {
             let id = lower::TypeId::from_usize(i);
             let layout = match ty {
+                Type::Int => IdRange::new(&mut self.types, vec![ValType::I32]),
                 Type::String => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
                 Type::Tuple(elems) => {
                     let mut types = Vec::new();
@@ -243,6 +248,7 @@ impl<'a> Wasm<'a> {
                     }
                     IdRange::new(&mut self.types, types)
                 }
+                Type::List(_) => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
             };
             assert_eq!(self.layouts.push(layout), id);
         }
