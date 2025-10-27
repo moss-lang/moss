@@ -7,7 +7,7 @@ use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
     parse::{self, Ctx, Expr, ExprId, Region, RegionId, Stmt, StmtId, Tree, Val},
-    range::expr_range,
+    range::{Inclusive, expr_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
 };
@@ -134,12 +134,7 @@ pub enum LowerError {
 }
 
 impl LowerError {
-    pub fn describe(
-        self,
-        _: &str,
-        _: &TokenStarts,
-        tree: &Tree,
-    ) -> (Option<IdRange<TokenId>>, String) {
+    pub fn describe(self, _: &str, _: &TokenStarts, tree: &Tree) -> (Option<Inclusive>, String) {
         match self {
             LowerError::NoMain => (None, "no `main` function".to_owned()),
             LowerError::ArgCount(expr) => (

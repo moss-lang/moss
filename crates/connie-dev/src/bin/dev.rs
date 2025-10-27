@@ -39,12 +39,8 @@ fn get_errors(source: &str) -> Vec<(Option<Range<usize>>, String)> {
         Err(err) => {
             let (tokens, message) = err.describe(source, &starts, &tree);
             let range = tokens.map(|range| {
-                let start = starts[range.start].index();
-                let end = if range.is_empty() {
-                    start
-                } else {
-                    relex(source, &starts, range.end - 1).end
-                };
+                let start = starts[range.first].index();
+                let end = relex(source, &starts, range.last).end;
                 start..end
             });
             return vec![(range, message)];

@@ -27,6 +27,22 @@ impl<I: Idx> IdRange<I> {
     pub fn get<'a, T>(&self, xs: &'a IndexSlice<I, [T]>) -> &'a [T] {
         xs[self.start..self.end].as_raw_slice()
     }
+
+    pub fn first(&self) -> Option<I> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(self.start)
+        }
+    }
+
+    pub fn last(&self) -> Option<I> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(I::from_usize(self.end.index() - 1))
+        }
+    }
 }
 
 impl<I: Ord> PartialEq for IdRange<I> {

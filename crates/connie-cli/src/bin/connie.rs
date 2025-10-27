@@ -8,7 +8,7 @@ use std::{
 use anyhow::{anyhow, bail};
 use clap::{Parser, Subcommand};
 use connie::{
-    lex::{LexError, TokenId, lex},
+    lex::{ByteIndex, LexError, lex},
     lower::lower,
     parse::{ParseError, parse},
     wasm::wasm,
@@ -52,10 +52,10 @@ fn compile(script: &Path) -> anyhow::Result<Vec<u8>> {
     let ir = lower(&source, &starts, &tree).map_err(|err| {
         let (tokens, message) = err.describe(&source, &starts, &tree);
         let start = match tokens {
-            Some(range) => range.start,
-            None => TokenId::new(0),
+            Some(range) => starts[range.first],
+            None => ByteIndex::new(0),
         };
-        compiler.error(starts[start], &message)
+        compiler.error(start, &message)
     })?;
     let bytes = wasm(&ir);
     Ok(bytes)
