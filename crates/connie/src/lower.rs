@@ -318,11 +318,14 @@ impl<'a> Lower<'a> {
                 Named::Func(_) => panic!(),
                 Named::Val(val) => Ok(val),
             },
+            Expr::Int(_) => todo!(),
             Expr::String(token) => {
                 let ty = self.ty(Type::String);
                 let string = self.string(token);
                 Ok(self.instr(ty, Instr::String(string)))
             }
+            Expr::Field(_, _) => todo!(),
+            Expr::Method(_, _, _) => todo!(),
             Expr::Call(callee, args) => match self.tree.exprs[callee] {
                 Expr::Path(path) => {
                     let func = self.get_path(path).func();
@@ -340,12 +343,16 @@ impl<'a> Lower<'a> {
                 }
                 _ => panic!(),
             },
+            Expr::Binary(_, _, _) => todo!(),
         }
     }
 
     fn stmts(&mut self, stmts: IdRange<StmtId>) -> LowerResult<()> {
         for stmt in stmts {
             match self.tree.stmts[stmt] {
+                Stmt::Let(_, _) => todo!(),
+                Stmt::Var(_, _) => todo!(),
+                Stmt::Assign(_, _) => todo!(),
                 Stmt::Provide(path, expr) => {
                     let ty = self.ty_unit();
                     let var = self.get_path(path).var();
@@ -360,6 +367,7 @@ impl<'a> Lower<'a> {
                     self.ir.instrs[id] = Instr::Provide { var, val, pop };
                     break;
                 }
+                Stmt::While(_, _) => todo!(),
                 Stmt::Expr(expr) => {
                     self.expr(expr)?;
                 }

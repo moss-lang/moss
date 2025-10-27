@@ -25,9 +25,20 @@ impl Ranger<'_> {
     fn expr(&self, id: ExprId) -> Inclusive {
         match self.tree.exprs[id] {
             Expr::Path(path) => self.path(path),
-            Expr::String(token) => Inclusive {
+            Expr::Int(token) | Expr::String(token) => Inclusive {
                 first: token,
                 last: token,
+            },
+            Expr::Field(object, field) => Inclusive {
+                first: self.expr(object).first,
+                last: field,
+            },
+            Expr::Method(object, method, args) => Inclusive {
+                first: self.expr(object).first,
+                last: match args.last() {
+                    None => method + 2,
+                    Some(arg) => self.expr(arg).last + 1,
+                },
             },
             Expr::Call(callee, args) => {
                 let Inclusive { first, last } = self.expr(callee);
@@ -37,6 +48,10 @@ impl Ranger<'_> {
                 };
                 Inclusive { first, last }
             }
+            Expr::Binary(lhs, _, rhs) => Inclusive {
+                first: self.expr(lhs).first,
+                last: self.expr(rhs).last,
+            },
         }
     }
 }
