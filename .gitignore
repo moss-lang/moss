@@ -2,6 +2,7 @@
 /.direnv/
 /.envrc
 /packages/connie-vscode/bin/
+/result*
 /target/
 dist/
 node_modules/
