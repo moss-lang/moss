@@ -497,6 +497,9 @@ impl<'a> Wasm<'a> {
                 .local_set(write)
                 .local_get(write)
                 .local_get(prev)
+                .i32_const(1)
+                // These strings are null-terminated.
+                .i32_sub()
                 .local_get(curr)
                 .i32_sub()
                 .i32_store(MemArg {
