@@ -1,12 +1,11 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Write,
-    fs::{self, DirEntry},
-    io,
+    fs, io,
     ops::Range,
     path::{Path, PathBuf},
     process::Command,
-    rc::Rc,
+    sync::Arc,
 };
 
 use anyhow::{Context, bail};
@@ -52,8 +51,8 @@ fn get_errors(source: &str) -> Vec<(Option<Range<usize>>, String)> {
 
 struct Tests {
     fix: bool,
-    current: Option<Rc<str>>,
-    failures: IndexMap<Rc<str>, Vec<PathBuf>>,
+    current: Option<Arc<str>>,
+    failures: IndexMap<Arc<str>, Vec<PathBuf>>,
 }
 
 impl Tests {
@@ -88,7 +87,7 @@ impl Tests {
                     bail!("no current test");
                 };
                 self.failures
-                    .entry(Rc::clone(current))
+                    .entry(Arc::clone(current))
                     .or_default()
                     .push(path);
             }
@@ -96,8 +95,7 @@ impl Tests {
         }
     }
 
-    fn example(&mut self, entry: &DirEntry) -> anyhow::Result<()> {
-        let path = entry.path();
+    fn example(&mut self, path: PathBuf) -> anyhow::Result<()> {
         let output = Command::new(format!("target/{PROFILE}/connie"))
             .arg(&path)
             .output()?;
@@ -130,8 +128,7 @@ impl Tests {
         Ok(())
     }
 
-    fn errors(&mut self, entry: &DirEntry) -> anyhow::Result<()> {
-        let path = entry.path();
+    fn errors(&mut self, path: PathBuf) -> anyhow::Result<()> {
         let source = itertools::join(
             fs::read_to_string(&path)?
                 .lines()
@@ -176,7 +173,7 @@ impl Tests {
         Ok(())
     }
 
-    fn test(mut self) -> anyhow::Result<()> {
+    fn test(mut self, tests: HashSet<String>) -> anyhow::Result<()> {
         if !Command::new("cargo")
             .args(["build", "--package=connie-cli", "--profile", PROFILE])
             .status()?
@@ -185,17 +182,23 @@ impl Tests {
             bail!("`cargo build` failed");
         }
         for result in fs::read_dir("examples")? {
-            let entry = result?;
-            self.current = Some(Rc::from(format!("{}", entry.path().display())));
-            self.example(&entry)
-                .with_context(|| format!("{}", entry.path().display()))?;
+            let path = result?.path();
+            let name = Arc::<str>::from(format!("{}", path.display()));
+            if !tests.is_empty() && !tests.contains(name.as_ref()) {
+                continue;
+            }
+            self.current = Some(Arc::clone(&name));
+            self.example(path).context(name)?;
             self.current = None;
         }
         for result in fs::read_dir("tests/errors")? {
-            let entry = result?;
-            self.current = Some(Rc::from(format!("{}", entry.path().display())));
-            self.errors(&entry)
-                .with_context(|| format!("{}", entry.path().display()))?;
+            let path = result?.path();
+            let name = Arc::<str>::from(format!("{}", path.display()));
+            if !tests.is_empty() && !tests.contains(name.as_ref()) {
+                continue;
+            }
+            self.current = Some(Arc::clone(&name));
+            self.errors(path).context(name)?;
             self.current = None;
         }
         if self.failures.is_empty() {
@@ -226,14 +229,17 @@ enum Commands {
         /// Overwrite expected output with actual output
         #[arg(long)]
         fix: bool,
+
+        /// Run only some tests instead of all
+        test: Vec<String>,
     },
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
     match args.command {
-        Commands::Test { fix } => {
-            if !Command::new("cargo").arg("test").status()?.success() {
+        Commands::Test { fix, test } => {
+            if test.is_empty() && !Command::new("cargo").arg("test").status()?.success() {
                 bail!("`cargo test` failed");
             }
             Tests {
@@ -241,7 +247,7 @@ fn main() -> anyhow::Result<()> {
                 current: None,
                 failures: IndexMap::new(),
             }
-            .test()?;
+            .test(HashSet::from_iter(test))?;
             Ok(())
         }
     }
