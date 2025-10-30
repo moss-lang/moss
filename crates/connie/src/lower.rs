@@ -6,7 +6,7 @@ use indexmap::{IndexMap, IndexSet};
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
-    parse::{self, Ctx, Expr, ExprId, Region, RegionId, Stmt, StmtId, Tree, Val},
+    parse::{self, Binop, Ctx, Expr, ExprId, Region, RegionId, Stmt, StmtId, Tree, Val},
     range::{Inclusive, expr_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -38,6 +38,7 @@ define_index_type! {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
+    Bool,
     Int,
     String,
     Tuple(TupleRange),
@@ -59,11 +60,26 @@ pub struct Var {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum IntArith {
+    Add,
+    Sub,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum IntComp {
+    Less,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Instr {
     Int(i32),
     String(StrId),
     Tuple(IdRange<RefId>),
     Elem(InstrId, u32),
+    IntArith(InstrId, IntArith, InstrId),
+    IntComp(InstrId, IntComp, InstrId),
+    Len(InstrId),
+    Index(InstrId, InstrId),
     Set(InstrId, InstrId),
     Param,
     Get(VarId),
@@ -125,6 +141,13 @@ impl Named {
     fn func(self) -> FuncId {
         match self {
             Self::Func(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    fn val(self) -> InstrId {
+        match self {
+            Self::Val(id) => id,
             _ => panic!(),
         }
     }
@@ -336,7 +359,22 @@ impl<'a> Lower<'a> {
                 Ok(self.instr(ty, Instr::String(string)))
             }
             Expr::Field(_, _) => todo!(),
-            Expr::Method(_, _, _) => todo!(),
+            Expr::Method(object, method, args) => {
+                let val = self.expr(object)?;
+                match (self.ir.types[self.ir.vals[val].index()], self.slice(method)) {
+                    (Type::List(_), "len") => {
+                        assert!(args.is_empty());
+                        let ty = self.ty(Type::Int);
+                        Ok(self.instr(ty, Instr::Len(val)))
+                    }
+                    (Type::List(inner), "get") => {
+                        assert_eq!(args.len(), 1);
+                        let index = self.expr(args.first().unwrap())?;
+                        Ok(self.instr(inner, Instr::Index(val, index)))
+                    }
+                    _ => panic!(),
+                }
+            }
             Expr::Call(callee, args) => match self.tree.exprs[callee] {
                 Expr::Path(path) => {
                     let func = self.get_path(path).func();
@@ -354,7 +392,24 @@ impl<'a> Lower<'a> {
                 }
                 _ => panic!(),
             },
-            Expr::Binary(_, _, _) => todo!(),
+            Expr::Binary(l, op, r) => {
+                let a = self.expr(l)?;
+                let b = self.expr(r)?;
+                Ok(match op {
+                    Binop::Add => {
+                        let ty = self.ty(Type::Int);
+                        self.instr(ty, Instr::IntArith(a, IntArith::Add, b))
+                    }
+                    Binop::Sub => {
+                        let ty = self.ty(Type::Int);
+                        self.instr(ty, Instr::IntArith(a, IntArith::Sub, b))
+                    }
+                    Binop::Less => {
+                        let ty = self.ty(Type::Bool);
+                        self.instr(ty, Instr::IntComp(a, IntComp::Less, b))
+                    }
+                })
+            }
         }
     }
 
@@ -369,7 +424,16 @@ impl<'a> Lower<'a> {
                     let val = self.expr(rhs)?;
                     self.set_val(name, val);
                 }
-                Stmt::Assign(_, _) => todo!(),
+                Stmt::Assign(lhs, rhs) => match self.tree.exprs[lhs] {
+                    Expr::Path(path) => {
+                        assert!(path.names.is_empty());
+                        let before = self.get(path.name).val();
+                        let after = self.expr(rhs)?;
+                        let unit = self.ty_unit();
+                        self.instr(unit, Instr::Set(before, after));
+                    }
+                    _ => panic!(),
+                },
                 Stmt::Provide(path, expr) => {
                     let ty = self.ty_unit();
                     let var = self.get_path(path).var();
@@ -383,7 +447,14 @@ impl<'a> Lower<'a> {
                     self.instr(unit, Instr::End);
                     break;
                 }
-                Stmt::While(_, _) => todo!(),
+                Stmt::While(cond, body) => {
+                    assert!(body.expr.is_none());
+                    let val = self.expr(cond)?;
+                    let unit = self.ty_unit();
+                    self.instr(unit, Instr::While(val));
+                    self.stmts(body.stmts)?;
+                    self.instr(unit, Instr::End);
+                }
                 Stmt::Expr(expr) => {
                     self.expr(expr)?;
                 }
