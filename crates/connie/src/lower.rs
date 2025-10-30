@@ -60,6 +60,12 @@ pub struct Var {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct Depth(pub u32);
+
+#[derive(Clone, Copy, Debug)]
+pub struct Index(pub u32);
+
+#[derive(Clone, Copy, Debug)]
 pub enum IntArith {
     Add,
     Sub,
@@ -75,7 +81,7 @@ pub enum Instr {
     Int(i32),
     String(StrId),
     Tuple(IdRange<RefId>),
-    Elem(InstrId, u32),
+    Elem(InstrId, Index),
     IntArith(InstrId, IntArith, InstrId),
     IntComp(InstrId, IntComp, InstrId),
     Len(InstrId),
@@ -85,7 +91,9 @@ pub enum Instr {
     Get(VarId),
     Call(FuncId, InstrId),
     Bind(VarId, InstrId),
-    While(InstrId),
+    If(InstrId),
+    Loop,
+    Br(Depth),
     End,
     Return(InstrId),
     Args,
@@ -449,10 +457,13 @@ impl<'a> Lower<'a> {
                 }
                 Stmt::While(cond, body) => {
                     assert!(body.expr.is_none());
-                    let val = self.expr(cond)?;
                     let unit = self.ty_unit();
-                    self.instr(unit, Instr::While(val));
+                    self.instr(unit, Instr::Loop);
+                    let val = self.expr(cond)?;
+                    self.instr(unit, Instr::If(val));
                     self.stmts(body.stmts)?;
+                    self.instr(unit, Instr::Br(Depth(1)));
+                    self.instr(unit, Instr::End);
                     self.instr(unit, Instr::End);
                 }
                 Stmt::Expr(expr) => {
@@ -478,7 +489,7 @@ impl<'a> Lower<'a> {
             .enumerate()
         {
             let ty = self.ir.tuples[tuple_loc];
-            let val = self.instr(ty, Instr::Elem(tuple_val, index.try_into().unwrap()));
+            let val = self.instr(ty, Instr::Elem(tuple_val, Index(index.try_into().unwrap())));
             let name = self.tree.params[param].name;
             self.set_val(name, val);
         }

@@ -189,7 +189,7 @@ impl<'a> Wasm<'a> {
                 Instr::Elem(tuple, index) => {
                     let ty = self.ir.vals[tuple];
                     let range = self.ir.types[ty.index()].tuple();
-                    let elem = TupleLoc::from_raw(range.start.raw() + index);
+                    let elem = TupleLoc::from_raw(range.start.raw() + index.0);
                     let start =
                         LocalId::from_raw(self.variables[&tuple].raw() + self.offsets[elem].raw());
                     self.get_locals(self.ir.tuples[elem], start);
@@ -280,12 +280,19 @@ impl<'a> Wasm<'a> {
                     self.get_tmp(tmp);
                     self.set_var(var);
                 }
-                Instr::While(cond) => {
-                    self.body.insn().loop_(BlockType::Empty);
+                Instr::If(cond) => {
                     self.get(cond);
                     self.body.insn().if_(BlockType::Empty);
                     instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
-                    self.body.insn().br(1).end().end();
+                    self.body.insn().end();
+                }
+                Instr::Loop => {
+                    self.body.insn().loop_(BlockType::Empty);
+                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
+                    self.body.insn().end();
+                }
+                Instr::Br(depth) => {
+                    self.body.insn().br(depth.0);
                 }
                 Instr::End => break,
                 Instr::Return(val) => {
