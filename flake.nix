@@ -35,6 +35,7 @@
           commonArgs
           // {
             cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+            cargoExtraArgs = "--locked --package=connie-cli";
           }
         );
         devShells.default = pkgs.mkShellNoCC {
