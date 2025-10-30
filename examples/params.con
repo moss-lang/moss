@@ -1,0 +1,8 @@
+fn foo(second: String, first: String) {
+  println(first);
+  println(second);
+}
+
+fn main() {
+  foo("goodbye", "hello");
+}

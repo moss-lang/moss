@@ -1,8 +1,8 @@
-fn foo(second: String, first: String) {
-  println(first);
-  println(second);
-}
-
 fn main() {
-  foo("goodbye", "hello");
+  let cli = args();
+  var i = 0;
+  while i < cli.len() {
+    println(cli.get(i));
+    i = i + 1;
+  }
 }

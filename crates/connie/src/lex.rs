@@ -96,6 +96,9 @@ pub enum Token {
     #[token("fn")]
     Fn,
 
+    #[token("let")]
+    Let,
+
     #[token("need")]
     Need,
 
@@ -105,11 +108,20 @@ pub enum Token {
     #[token("start")]
     Start,
 
+    #[token("var")]
+    Var,
+
+    #[token("while")]
+    While,
+
     #[regex(r"[A-Z_a-z]\w*")]
     Name,
 
     #[regex(r#""[^"]*""#)]
     Str,
+
+    #[regex(r"\d+")]
+    Int,
 }
 
 impl fmt::Display for Token {
@@ -137,11 +149,15 @@ impl fmt::Display for Token {
             Token::Context => write!(f, "`context`"),
             Token::End => write!(f, "`end`"),
             Token::Fn => write!(f, "`fn`"),
+            Token::Let => write!(f, "`let`"),
             Token::Need => write!(f, "`need`"),
             Token::Provide => write!(f, "`provide`"),
             Token::Start => write!(f, "`start`"),
+            Token::Var => write!(f, "`var`"),
+            Token::While => write!(f, "`while`"),
             Token::Name => write!(f, "name"),
             Token::Str => write!(f, "string"),
+            Token::Int => write!(f, "integer"),
         }
     }
 }

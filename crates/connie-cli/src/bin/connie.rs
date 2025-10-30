@@ -1,6 +1,7 @@
 use std::{
     fs,
     io::{self, IsTerminal, Write},
+    iter,
     path::{Path, PathBuf},
     process::ExitCode,
 };
@@ -20,7 +21,7 @@ use wasmtime::{Engine, Linker, Module, Store};
 use wasmtime_wasi::{WasiCtxBuilder, p1::WasiP1Ctx};
 
 struct Compiler<'a> {
-    path: &'a Path,
+    path: &'a str,
     source: &'a str,
 }
 
@@ -28,7 +29,7 @@ impl Compiler<'_> {
     fn error(&self, byte: impl Idx, message: &str) -> anyhow::Error {
         // Build the `LineIndex` only on errors rather than always, since ideally we don't need it.
         let lines = LineIndex::new(self.source);
-        let name = self.path.display();
+        let name = self.path;
         let line_col = lines.line_col(TextSize::new(byte.index() as u32));
         let line = line_col.line + 1;
         let col = line_col.col + 1;
@@ -36,14 +37,14 @@ impl Compiler<'_> {
     }
 }
 
-fn compile(script: &Path) -> anyhow::Result<Vec<u8>> {
+fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
     let source = fs::read_to_string(script)?;
     let compiler = Compiler {
         path: script,
         source: &source,
     };
     let (tokens, starts) = lex(&source).map_err(|err| match err {
-        LexError::SourceTooLong => anyhow!("{}:1:1 {}", script.display(), err.message()),
+        LexError::SourceTooLong => anyhow!("{script}:1:1 {}", err.message()),
         LexError::InvalidToken { start, end: _ } => compiler.error(start, err.message()),
     })?;
     let tree = parse(&tokens).map_err(|err| match err {
@@ -61,7 +62,7 @@ fn compile(script: &Path) -> anyhow::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn build(script: &Path, output: Option<&Path>) -> anyhow::Result<()> {
+fn build(script: &str, output: Option<&Path>) -> anyhow::Result<()> {
     let bytes = compile(script)?;
     match output {
         Some(out) => {
@@ -78,12 +79,18 @@ fn build(script: &Path, output: Option<&Path>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run(script: &Path, _args: &[String]) -> anyhow::Result<i32> {
+fn run(script: &str, args: &[String]) -> anyhow::Result<i32> {
     let bytes = compile(script)?;
     let engine = Engine::default();
     let mut linker = Linker::new(&engine);
     wasmtime_wasi::p1::add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
-    let wasi_p1 = WasiCtxBuilder::new().inherit_stdout().build_p1();
+    let argv: Vec<&str> = iter::once(script)
+        .chain(args.iter().map(String::as_str))
+        .collect();
+    let wasi_p1 = WasiCtxBuilder::new()
+        .args(&argv)
+        .inherit_stdout()
+        .build_p1();
     let mut store = Store::new(&engine, wasi_p1);
     let module = Module::from_binary(&engine, &bytes)?;
     let instance = linker.instantiate(&mut store, &module)?;
@@ -97,7 +104,7 @@ fn run(script: &Path, _args: &[String]) -> anyhow::Result<i32> {
     }
 }
 
-fn run_exit(script: &Path, args: &[String]) -> ExitCode {
+fn run_exit(script: &str, args: &[String]) -> ExitCode {
     match run(script, args) {
         Ok(exit_code) => ExitCode::from(exit_code as u8),
         Err(err) => err_fail(err),
@@ -114,11 +121,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Run {
-        script: PathBuf,
+        script: String,
         args: Vec<String>,
     },
     Build {
-        script: PathBuf,
+        script: String,
 
         #[arg(short)]
         output: Option<PathBuf>,
@@ -131,7 +138,7 @@ fn main() -> ExitCode {
     if let Some((file, args)) = std::env::args().skip(1).collect::<Vec<_>>().split_first() {
         // Prevent collision with possible future subcommands.
         if file.contains("/") {
-            return run_exit(Path::new(file), args);
+            return run_exit(file, args);
         }
     }
     let args = Cli::parse();

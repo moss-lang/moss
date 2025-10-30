@@ -1,2 +1,1 @@
-hello
-goodbye
+examples/args.con

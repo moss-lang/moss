@@ -67,15 +67,30 @@ pub struct Param {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum Binop {
+    Add,
+    Sub,
+    Less,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Expr {
     Path(Path),
+    Int(TokenId),
     String(TokenId),
+    Field(ExprId, TokenId),
+    Method(ExprId, TokenId, IdRange<ExprId>),
     Call(ExprId, IdRange<ExprId>),
+    Binary(ExprId, Binop, ExprId),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum Stmt {
+    Let(TokenId, ExprId),
+    Var(TokenId, ExprId),
+    Assign(ExprId, ExprId),
     Provide(Path, ExprId),
+    While(ExprId, Block),
     Expr(ExprId),
 }
 
@@ -243,38 +258,104 @@ impl<'a> Parser<'a> {
         Ok(Param { name, ty })
     }
 
+    fn args(&mut self) -> ParseResult<Vec<Expr>> {
+        self.expect(LParen)?;
+        let mut args = Vec::new();
+        loop {
+            if let RParen = self.peek() {
+                self.next();
+                return Ok(args);
+            } else {
+                args.push(self.expr()?);
+                if let Comma = self.peek() {
+                    self.next();
+                }
+            }
+        }
+    }
+
+    fn arg_ids(&mut self) -> ParseResult<IdRange<ExprId>> {
+        let args = self.args()?;
+        Ok(IdRange::new(&mut self.exprs, args))
+    }
+
     fn expr_atom(&mut self) -> ParseResult<Expr> {
         match self.peek() {
+            Int => Ok(Expr::Int(self.next())),
             Str => Ok(Expr::String(self.next())),
             Name => Ok(Expr::Path(self.path()?)),
-            _ => Err(self.err(Str | Name)),
+            _ => Err(self.err(Int | Str | Name)),
+        }
+    }
+
+    fn expr_chain(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.expr_atom()?;
+        loop {
+            match self.peek() {
+                Dot => {
+                    self.next();
+                    let object = self.exprs.push(expr);
+                    let name = self.expect(Name)?;
+                    match self.peek() {
+                        LParen => {
+                            let args = self.arg_ids()?;
+                            expr = Expr::Method(object, name, args);
+                        }
+                        _ => expr = Expr::Field(object, name),
+                    }
+                }
+                LParen => {
+                    let callee = self.exprs.push(expr);
+                    let args = self.arg_ids()?;
+                    expr = Expr::Call(callee, args);
+                }
+                _ => break,
+            }
+        }
+        Ok(expr)
+    }
+
+    fn expr_factor(&mut self) -> ParseResult<Expr> {
+        self.expr_chain()
+    }
+
+    fn expr_term(&mut self) -> ParseResult<Expr> {
+        self.expr_factor()
+    }
+
+    fn expr_quant(&mut self) -> ParseResult<Expr> {
+        let mut lhs = self.expr_term()?;
+        loop {
+            let op = match self.peek() {
+                Plus => Binop::Add,
+                Hyphen => Binop::Sub,
+                _ => break,
+            };
+            self.next();
+            let rhs = self.expr_term()?;
+            lhs = Expr::Binary(self.exprs.push(lhs), op, self.exprs.push(rhs));
+        }
+        Ok(lhs)
+    }
+
+    fn expr_comp(&mut self) -> ParseResult<Expr> {
+        let lhs = self.expr_quant()?;
+        let op = match self.peek() {
+            Less => Some(Binop::Less),
+            _ => None,
+        };
+        match op {
+            None => Ok(lhs),
+            Some(op) => {
+                self.next();
+                let rhs = self.expr_quant()?;
+                Ok(Expr::Binary(self.exprs.push(lhs), op, self.exprs.push(rhs)))
+            }
         }
     }
 
     fn expr(&mut self) -> ParseResult<Expr> {
-        let expr = self.expr_atom()?;
-        match self.peek() {
-            LParen => {
-                self.next();
-                let mut args = Vec::new();
-                loop {
-                    if let RParen = self.peek() {
-                        break;
-                    } else {
-                        args.push(self.expr()?);
-                        if let Comma = self.peek() {
-                            self.next();
-                        } else {
-                            break;
-                        }
-                    }
-                }
-                self.expect(RParen)?;
-                let callee = self.exprs.push(expr);
-                Ok(Expr::Call(callee, IdRange::new(&mut self.exprs, args)))
-            }
-            _ => Ok(expr),
-        }
+        self.expr_comp()
     }
 
     fn expr_id(&mut self) -> ParseResult<ExprId> {
@@ -294,6 +375,22 @@ impl<'a> Parser<'a> {
                         expr: None,
                     });
                 }
+                Let => {
+                    self.next();
+                    let name = self.expect(Name)?;
+                    self.expect(Equal)?;
+                    let expr = self.expr_id()?;
+                    self.expect(Semi)?;
+                    stmts.push(Stmt::Let(name, expr));
+                }
+                Var => {
+                    self.next();
+                    let name = self.expect(Name)?;
+                    self.expect(Equal)?;
+                    let expr = self.expr_id()?;
+                    self.expect(Semi)?;
+                    stmts.push(Stmt::Var(name, expr));
+                }
                 Provide => {
                     self.next();
                     let path = self.path()?;
@@ -302,9 +399,21 @@ impl<'a> Parser<'a> {
                     self.expect(Semi)?;
                     stmts.push(Stmt::Provide(path, expr));
                 }
+                While => {
+                    self.next();
+                    let cond = self.expr_id()?;
+                    let body = self.block()?;
+                    stmts.push(Stmt::While(cond, body))
+                }
                 _ => {
                     let expr = self.expr_id()?;
                     match self.peek() {
+                        Equal => {
+                            self.next();
+                            let rhs = self.expr_id()?;
+                            self.expect(Semi)?;
+                            stmts.push(Stmt::Assign(expr, rhs));
+                        }
                         Semi => {
                             self.next();
                             stmts.push(Stmt::Expr(expr));
@@ -365,8 +474,6 @@ impl<'a> Parser<'a> {
                 params.push(self.param()?);
                 if let Comma = self.peek() {
                     self.next();
-                } else {
-                    break;
                 }
             }
         }

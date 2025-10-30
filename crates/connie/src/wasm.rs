@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use index_vec::{IndexVec, define_index_type};
 use wasm_encoder::{
-    CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection, Function,
-    FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
+    BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
+    Function, FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
     MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::{
     intern::StrId,
-    lower::{self, IR, Instr, InstrId, Type, VarId},
+    lower::{self, IR, Instr, InstrId, IntArith, IntComp, Type, VarId},
     tuples::TupleLoc,
     util::IdRange,
 };
@@ -42,6 +42,13 @@ impl AsInstructionSink for Vec<u8> {
     }
 }
 
+#[derive(Clone, Copy)]
+struct Layout {
+    types: IdRange<TypeId>,
+    size: i32,
+}
+
+#[derive(Clone, Copy)]
 struct Tmp {
     ty: lower::TypeId,
     start: LocalId,
@@ -53,7 +60,7 @@ struct Wasm<'a> {
     data_offset: i32,
     strings: HashMap<StrId, i32>,
     types: IndexVec<TypeId, ValType>,
-    layouts: IndexVec<lower::TypeId, IdRange<TypeId>>,
+    layouts: IndexVec<lower::TypeId, Layout>,
     offsets: IndexVec<TupleLoc, TypeOffset>,
 
     /// Start of global range for each var.
@@ -83,21 +90,25 @@ impl<'a> Wasm<'a> {
         0
     }
 
+    fn func_args(&self) -> u32 {
+        4
+    }
+
     fn func_println(&self) -> u32 {
-        2
+        5
     }
 
     fn make_locals(&mut self, ty: lower::TypeId) -> LocalId {
         let start = self.locals.len_idx();
         let layout = self.layouts[ty];
-        for &ty in layout.get(&self.types) {
+        for &ty in layout.types.get(&self.types) {
             self.locals.push(ty);
         }
         start
     }
 
     fn get_locals(&mut self, ty: lower::TypeId, start: LocalId) {
-        let len = self.layouts[ty].len();
+        let len = self.layouts[ty].types.len();
         let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }) {
             self.body.insn().local_get(localidx.raw());
@@ -106,7 +117,7 @@ impl<'a> Wasm<'a> {
 
     fn set_locals(&mut self, ty: lower::TypeId, start: LocalId) {
         let layout = self.layouts[ty];
-        let end = LocalId::from_usize(start.index() + layout.len());
+        let end = LocalId::from_usize(start.index() + layout.types.len());
         for localidx in (IdRange { start, end }).into_iter().rev() {
             self.body.insn().local_set(localidx.raw());
         }
@@ -136,7 +147,7 @@ impl<'a> Wasm<'a> {
 
     fn get_var(&mut self, var: VarId) {
         let start = self.vars[var];
-        let len = self.layouts[self.ir.vars[var].ty].len();
+        let len = self.layouts[self.ir.vars[var].ty].types.len();
         let end = GlobalId::from_usize(start.index() + len);
         for globalidx in (IdRange { start, end }) {
             self.body.insn().global_get(globalidx.raw());
@@ -145,24 +156,19 @@ impl<'a> Wasm<'a> {
 
     fn set_var(&mut self, var: VarId) {
         let start = self.vars[var];
-        let len = self.layouts[self.ir.vars[var].ty].len();
+        let len = self.layouts[self.ir.vars[var].ty].types.len();
         let end = GlobalId::from_usize(start.index() + len);
         for globalidx in (IdRange { start, end }).into_iter().rev() {
             self.body.insn().global_set(globalidx.raw());
         }
     }
 
-    fn instrs(
-        &mut self,
-        param: lower::TypeId,
-        mut instr: InstrId,
-        end: Option<InstrId>,
-    ) -> InstrId {
+    fn instrs(&mut self, param: lower::TypeId, mut instr: InstrId) -> InstrId {
         loop {
-            if end == Some(instr) {
-                break;
-            }
             match self.ir.instrs[instr] {
+                Instr::Int(n) => {
+                    self.body.insn().i32_const(n);
+                }
                 Instr::String(id) => {
                     let string = &self.ir.strings[id];
                     let len = string.len() as i32;
@@ -183,37 +189,124 @@ impl<'a> Wasm<'a> {
                 Instr::Elem(tuple, index) => {
                     let ty = self.ir.vals[tuple];
                     let range = self.ir.types[ty.index()].tuple();
-                    let elem = range.start + index;
+                    let elem = TupleLoc::from_raw(range.start.raw() + index.0);
                     let start =
                         LocalId::from_raw(self.variables[&tuple].raw() + self.offsets[elem].raw());
                     self.get_locals(self.ir.tuples[elem], start);
+                }
+                Instr::IntArith(a, op, b) => {
+                    self.get(a);
+                    self.get(b);
+                    match op {
+                        IntArith::Add => self.body.insn().i32_add(),
+                        IntArith::Sub => self.body.insn().i32_sub(),
+                    };
+                }
+                Instr::IntComp(a, op, b) => {
+                    self.get(a);
+                    self.get(b);
+                    match op {
+                        IntComp::Less => self.body.insn().i32_lt_s(),
+                    };
+                }
+                Instr::Len(list) => {
+                    self.get(list);
+                    let tmp = self.set_tmp(lower::TypeId::new(
+                        self.ir.types.get_index_of(&Type::Int).unwrap(),
+                    ));
+                    self.body.insn().drop();
+                    self.get_tmp(tmp);
+                }
+                Instr::Index(list, index) => {
+                    self.get(list);
+                    self.get(index);
+                    let int = lower::TypeId::new(self.ir.types.get_index_of(&Type::Int).unwrap());
+                    let tmp = self.set_tmp(int);
+                    self.get_tmp(tmp);
+                    self.body
+                        .insn()
+                        .i32_le_s()
+                        .if_(BlockType::Empty)
+                        .unreachable()
+                        .end();
+                    self.get_tmp(tmp);
+                    let layout = match self.ir.types[self.ir.vals[list].index()] {
+                        Type::List(inner) => self.layouts[inner],
+                        _ => panic!(),
+                    };
+                    self.body.insn().i32_const(layout.size).i32_mul().i32_add();
+                    let pointer = self.set_tmp(int);
+                    let mut offset = 0;
+                    for ty in layout.types {
+                        match self.types[ty] {
+                            ValType::I32 => {
+                                self.get_tmp(pointer);
+                                self.body.insn().i32_load(MemArg {
+                                    offset,
+                                    align: 2,
+                                    memory_index: 0,
+                                });
+                                offset += 4;
+                            }
+                            ValType::I64 => todo!(),
+                            ValType::F32 => todo!(),
+                            ValType::F64 => todo!(),
+                            ValType::V128 => todo!(),
+                            ValType::Ref(_) => todo!(),
+                        }
+                    }
+                }
+                Instr::Set(lhs, rhs) => {
+                    self.get(rhs);
+                    let ty = self.ir.vals[lhs];
+                    let &start = self.variables.get(&lhs).unwrap();
+                    self.set_locals(ty, start);
                 }
                 Instr::Param => {
                     self.get_locals(param, LocalId::from_raw(0));
                 }
                 Instr::Get(var) => self.get_var(var),
-                Instr::Provide { var, val, pop } => {
-                    self.get_var(var);
-                    let tmp = self.set_tmp(self.ir.vars[var].ty);
-                    self.get(val);
-                    self.set_var(var);
-                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1), Some(pop));
-                    self.get_tmp(tmp);
-                    self.set_var(var);
-                }
                 Instr::Call(func, val) => {
                     let funcidx_offset = self.func_println() + 1;
                     self.get(val);
                     self.body.insn().call(funcidx_offset + func.raw());
                 }
+                Instr::Bind(var, val) => {
+                    self.get_var(var);
+                    let tmp = self.set_tmp(self.ir.vars[var].ty);
+                    self.get(val);
+                    self.set_var(var);
+                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
+                    self.get_tmp(tmp);
+                    self.set_var(var);
+                }
+                Instr::If(cond) => {
+                    self.get(cond);
+                    self.body.insn().if_(BlockType::Empty);
+                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
+                    self.body.insn().end();
+                }
+                Instr::Loop => {
+                    self.body.insn().loop_(BlockType::Empty);
+                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
+                    self.body.insn().end();
+                }
+                Instr::Br(depth) => {
+                    self.body.insn().br(depth.0);
+                }
+                Instr::End => break,
+                Instr::Return(val) => {
+                    self.get(val);
+                    break;
+                }
+                Instr::Args => {
+                    let args = self.func_args();
+                    self.body.insn().call(args);
+                }
                 Instr::Println(string) => {
                     let println = self.func_println();
                     self.get(string);
                     self.body.insn().call(println);
-                }
-                Instr::Return(val) => {
-                    self.get(val);
-                    break;
                 }
             }
             self.set(instr);
@@ -234,23 +327,36 @@ impl<'a> Wasm<'a> {
 
         for (i, &ty) in self.ir.types.iter().enumerate() {
             let id = lower::TypeId::from_usize(i);
-            let layout = match ty {
+            let types = match ty {
+                Type::Bool => IdRange::new(&mut self.types, vec![ValType::I32]),
+                Type::Int => IdRange::new(&mut self.types, vec![ValType::I32]),
                 Type::String => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
                 Type::Tuple(elems) => {
                     let mut types = Vec::new();
                     for &elem in &self.ir.tuples[elems] {
-                        types.extend_from_slice(self.layouts[elem].get(&self.types));
+                        types.extend_from_slice(self.layouts[elem].types.get(&self.types));
                     }
                     IdRange::new(&mut self.types, types)
                 }
+                Type::List(_) => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
             };
+            let size = types
+                .get(&self.types)
+                .iter()
+                .map(|&ty| match ty {
+                    ValType::I32 | ValType::F32 => 4,
+                    ValType::I64 | ValType::F64 => 8,
+                    ValType::V128 | ValType::Ref(_) => todo!(),
+                })
+                .sum();
+            let layout = Layout { types, size };
             assert_eq!(self.layouts.push(layout), id);
         }
         for range in self.ir.tuples.ranges() {
             let mut offset = TypeOffset::new(0);
             for &ty in &self.ir.tuples[range] {
                 self.offsets.push(offset);
-                offset = TypeOffset::from_usize(offset.index() + self.layouts[ty].len());
+                offset = TypeOffset::from_usize(offset.index() + self.layouts[ty].types.len());
             }
         }
         assert_eq!(self.offsets.len(), self.ir.tuples.count());
@@ -259,13 +365,25 @@ impl<'a> Wasm<'a> {
         self.section_data
             .active(0, &ConstExpr::i32_const(0), "\n".bytes());
 
-        let proc_exit = self.section_import.len();
+        let args_get = self.section_import.len();
         self.section_import.import(
             WASI_P1,
-            "proc_exit",
+            "args_get",
             EntityType::Function(self.section_type.len()),
         );
-        self.section_type.ty().function([ValType::I32], []);
+        self.section_type
+            .ty()
+            .function([ValType::I32, ValType::I32], [ValType::I32]);
+
+        let args_sizes_get = self.section_import.len();
+        self.section_import.import(
+            WASI_P1,
+            "args_sizes_get",
+            EntityType::Function(self.section_type.len()),
+        );
+        self.section_type
+            .ty()
+            .function([ValType::I32, ValType::I32], [ValType::I32]);
 
         let fd_write = self.section_import.len();
         self.section_import.import(
@@ -278,7 +396,139 @@ impl<'a> Wasm<'a> {
             [ValType::I32],
         );
 
-        assert_eq!(self.section_import.len(), self.func_println());
+        let proc_exit = self.section_import.len();
+        self.section_import.import(
+            WASI_P1,
+            "proc_exit",
+            EntityType::Function(self.section_type.len()),
+        );
+        self.section_type.ty().function([ValType::I32], []);
+
+        assert_eq!(self.section_import.len(), self.func_args());
+        self.section_function.function(self.section_type.len());
+        self.section_type
+            .ty()
+            .function([], [ValType::I32, ValType::I32]);
+        self.section_code.function(&{
+            let pointer = 0;
+            let argc = 1;
+            let size = 2;
+            let argv = 3;
+            let i = 4;
+            let prev = 5;
+            let curr = 6;
+            let write = 7;
+            let mut f = Function::new([(8, ValType::I32)]);
+            f.instructions()
+                .global_get(self.mem_global())
+                .local_tee(pointer)
+                .local_get(pointer)
+                .i32_const(4)
+                .i32_add()
+                .call(args_sizes_get)
+                .if_(BlockType::Empty)
+                .unreachable()
+                .end()
+                .local_get(pointer)
+                .i32_load(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })
+                .local_set(argc)
+                .local_get(pointer)
+                .i32_load(MemArg {
+                    offset: 4,
+                    align: 2,
+                    memory_index: 0,
+                })
+                .local_set(size)
+                .local_get(pointer)
+                .local_get(size)
+                .i32_add()
+                .i32_const(3)
+                .i32_add()
+                .i32_const(2)
+                .i32_shr_u()
+                .i32_const(2)
+                .i32_shl()
+                .local_set(argv)
+                .local_get(argv)
+                .local_get(argc)
+                .i32_const(3)
+                .i32_shl()
+                .i32_add()
+                .global_set(self.mem_global())
+                .local_get(argv)
+                .local_get(pointer)
+                .call(args_get)
+                .if_(BlockType::Empty)
+                .unreachable()
+                .end()
+                .local_get(argc)
+                .local_set(i)
+                .local_get(pointer)
+                .local_get(size)
+                .i32_add()
+                .local_set(prev)
+                .loop_(BlockType::Empty)
+                .local_get(i)
+                .if_(BlockType::Empty)
+                .local_get(i)
+                .i32_const(1)
+                .i32_sub()
+                .local_set(i)
+                .local_get(argv)
+                .local_get(i)
+                .i32_const(2)
+                .i32_shl()
+                .i32_add()
+                .i32_load(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })
+                .local_set(curr)
+                .local_get(argv)
+                .local_get(i)
+                .i32_const(3)
+                .i32_shl()
+                .i32_add()
+                .local_set(write)
+                .local_get(write)
+                .local_get(prev)
+                .i32_const(1)
+                // These strings are null-terminated.
+                .i32_sub()
+                .local_get(curr)
+                .i32_sub()
+                .i32_store(MemArg {
+                    offset: 4,
+                    align: 2,
+                    memory_index: 0,
+                })
+                .local_get(write)
+                .local_get(curr)
+                .i32_store(MemArg {
+                    offset: 0,
+                    align: 2,
+                    memory_index: 0,
+                })
+                .local_get(curr)
+                .local_set(prev)
+                .br(1)
+                .end()
+                .end()
+                .local_get(argv)
+                .local_get(argc)
+                .end();
+            f
+        });
+
+        assert_eq!(
+            self.section_import.len() + self.section_function.len(),
+            self.func_println(),
+        );
         self.section_function.function(self.section_type.len());
         self.section_type
             .ty()
@@ -309,7 +559,9 @@ impl<'a> Wasm<'a> {
                 .i32_const(8)
                 .i32_add()
                 .call(fd_write)
-                .drop()
+                .if_(BlockType::Empty)
+                .unreachable()
+                .end()
                 .local_get(iovec)
                 .i32_const(0)
                 .i32_store(MemArg {
@@ -331,7 +583,9 @@ impl<'a> Wasm<'a> {
                 .i32_const(8)
                 .i32_add()
                 .call(fd_write)
-                .drop()
+                .if_(BlockType::Empty)
+                .unreachable()
+                .end()
                 .end();
             f
         });
@@ -341,25 +595,30 @@ impl<'a> Wasm<'a> {
         let mut global_offset = 1;
         for var in &self.ir.vars {
             self.vars.push(GlobalId::from_usize(global_offset));
-            global_offset += self.layouts[var.ty].len();
+            global_offset += self.layouts[var.ty].types.len();
         }
 
         for (id, func) in self.ir.funcs.iter_enumerated() {
             let params = self.layouts[func.param];
             self.section_function.function(self.section_type.len());
             self.section_type.ty().function(
-                params.get(&self.types).iter().copied(),
-                self.layouts[func.result].get(&self.types).iter().copied(),
+                params.types.get(&self.types).iter().copied(),
+                self.layouts[func.result]
+                    .types
+                    .get(&self.types)
+                    .iter()
+                    .copied(),
             );
-            self.instrs(func.param, self.ir.bodies[id], None);
+            self.instrs(func.param, self.ir.bodies[id]);
             if self.ir.main == Some(id) {
                 self.body.insn().i32_const(0).call(proc_exit).unreachable();
                 self.section_export
                     .export("_start", ExportKind::Func, func_offset + id.raw());
             }
             self.body.insn().end();
-            let mut f =
-                Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
+            let mut f = Function::new_with_locals_types(
+                self.locals.iter().skip(params.types.len()).copied(),
+            );
             f.raw(self.body);
             self.section_code.function(&f);
             self.locals = Default::default();
@@ -371,13 +630,13 @@ impl<'a> Wasm<'a> {
         self.section_global.global(
             GlobalType {
                 val_type: ValType::I32,
-                mutable: false,
+                mutable: true,
                 shared: false,
             },
             &ConstExpr::i32_const((self.data_offset + 7) / 8 * 8),
         );
         for var in &self.ir.vars {
-            for ty in self.layouts[var.ty] {
+            for ty in self.layouts[var.ty].types {
                 self.section_global.global(
                     GlobalType {
                         val_type: self.types[ty],

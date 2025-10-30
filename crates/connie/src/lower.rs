@@ -6,7 +6,7 @@ use indexmap::{IndexMap, IndexSet};
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
-    parse::{self, Ctx, Expr, ExprId, Region, RegionId, Stmt, StmtId, Tree, Val},
+    parse::{self, Binop, Ctx, Expr, ExprId, Region, RegionId, Stmt, StmtId, Tree, Val},
     range::{Inclusive, expr_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -38,8 +38,11 @@ define_index_type! {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
+    Bool,
+    Int,
     String,
     Tuple(TupleRange),
+    List(TypeId),
 }
 
 impl Type {
@@ -57,20 +60,44 @@ pub struct Var {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct Depth(pub u32);
+
+#[derive(Clone, Copy, Debug)]
+pub struct Index(pub u32);
+
+#[derive(Clone, Copy, Debug)]
+pub enum IntArith {
+    Add,
+    Sub,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum IntComp {
+    Less,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Instr {
+    Int(i32),
     String(StrId),
     Tuple(IdRange<RefId>),
-    Elem(InstrId, usize),
+    Elem(InstrId, Index),
+    IntArith(InstrId, IntArith, InstrId),
+    IntComp(InstrId, IntComp, InstrId),
+    Len(InstrId),
+    Index(InstrId, InstrId),
+    Set(InstrId, InstrId),
     Param,
     Get(VarId),
-    Provide {
-        var: VarId,
-        val: InstrId,
-        pop: InstrId,
-    },
     Call(FuncId, InstrId),
-    Println(InstrId),
+    Bind(VarId, InstrId),
+    If(InstrId),
+    Loop,
+    Br(Depth),
+    End,
     Return(InstrId),
+    Args,
+    Println(InstrId),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -122,6 +149,13 @@ impl Named {
     fn func(self) -> FuncId {
         match self {
             Self::Func(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    fn val(self) -> InstrId {
+        match self {
+            Self::Val(id) => id,
             _ => panic!(),
         }
     }
@@ -234,6 +268,10 @@ impl<'a> Lower<'a> {
         self.set_token(token, Named::Var(id))
     }
 
+    fn set_val(&mut self, token: TokenId, id: InstrId) -> PathId {
+        self.set_token(token, Named::Val(id))
+    }
+
     fn parse_ty(&mut self, ty: parse::TypeId) -> TypeId {
         match self.tree.types[ty] {
             parse::Type::Name(name) => self.get(name).ty(),
@@ -318,10 +356,32 @@ impl<'a> Lower<'a> {
                 Named::Func(_) => panic!(),
                 Named::Val(val) => Ok(val),
             },
+            Expr::Int(token) => {
+                let ty = self.ty(Type::Int);
+                let n = self.slice(token).parse().unwrap();
+                Ok(self.instr(ty, Instr::Int(n)))
+            }
             Expr::String(token) => {
                 let ty = self.ty(Type::String);
                 let string = self.string(token);
                 Ok(self.instr(ty, Instr::String(string)))
+            }
+            Expr::Field(_, _) => todo!(),
+            Expr::Method(object, method, args) => {
+                let val = self.expr(object)?;
+                match (self.ir.types[self.ir.vals[val].index()], self.slice(method)) {
+                    (Type::List(_), "len") => {
+                        assert!(args.is_empty());
+                        let ty = self.ty(Type::Int);
+                        Ok(self.instr(ty, Instr::Len(val)))
+                    }
+                    (Type::List(inner), "get") => {
+                        assert_eq!(args.len(), 1);
+                        let index = self.expr(args.first().unwrap())?;
+                        Ok(self.instr(inner, Instr::Index(val, index)))
+                    }
+                    _ => panic!(),
+                }
             }
             Expr::Call(callee, args) => match self.tree.exprs[callee] {
                 Expr::Path(path) => {
@@ -340,25 +400,71 @@ impl<'a> Lower<'a> {
                 }
                 _ => panic!(),
             },
+            Expr::Binary(l, op, r) => {
+                let a = self.expr(l)?;
+                let b = self.expr(r)?;
+                Ok(match op {
+                    Binop::Add => {
+                        let ty = self.ty(Type::Int);
+                        self.instr(ty, Instr::IntArith(a, IntArith::Add, b))
+                    }
+                    Binop::Sub => {
+                        let ty = self.ty(Type::Int);
+                        self.instr(ty, Instr::IntArith(a, IntArith::Sub, b))
+                    }
+                    Binop::Less => {
+                        let ty = self.ty(Type::Bool);
+                        self.instr(ty, Instr::IntComp(a, IntComp::Less, b))
+                    }
+                })
+            }
         }
     }
 
     fn stmts(&mut self, stmts: IdRange<StmtId>) -> LowerResult<()> {
         for stmt in stmts {
             match self.tree.stmts[stmt] {
+                Stmt::Let(name, rhs) => {
+                    let val = self.expr(rhs)?;
+                    self.set_val(name, val);
+                }
+                Stmt::Var(name, rhs) => {
+                    let val = self.expr(rhs)?;
+                    self.set_val(name, val);
+                }
+                Stmt::Assign(lhs, rhs) => match self.tree.exprs[lhs] {
+                    Expr::Path(path) => {
+                        assert!(path.names.is_empty());
+                        let before = self.get(path.name).val();
+                        let after = self.expr(rhs)?;
+                        let unit = self.ty_unit();
+                        self.instr(unit, Instr::Set(before, after));
+                    }
+                    _ => panic!(),
+                },
                 Stmt::Provide(path, expr) => {
                     let ty = self.ty_unit();
                     let var = self.get_path(path).var();
                     let val = self.expr(expr)?;
-                    let pop = self.ir.instrs.len_idx(); // Temporary value we'll replace in a bit.
-                    let id = self.instr(ty, Instr::Provide { var, val, pop });
+                    self.instr(ty, Instr::Bind(var, val));
                     self.stmts(IdRange {
                         start: StmtId::from_raw(stmt.raw() + 1),
                         ..stmts
                     })?;
-                    let pop = self.ir.instrs.len_idx();
-                    self.ir.instrs[id] = Instr::Provide { var, val, pop };
+                    let unit = self.ty_unit();
+                    self.instr(unit, Instr::End);
                     break;
+                }
+                Stmt::While(cond, body) => {
+                    assert!(body.expr.is_none());
+                    let unit = self.ty_unit();
+                    self.instr(unit, Instr::Loop);
+                    let val = self.expr(cond)?;
+                    self.instr(unit, Instr::If(val));
+                    self.stmts(body.stmts)?;
+                    self.instr(unit, Instr::Br(Depth(1)));
+                    self.instr(unit, Instr::End);
+                    self.instr(unit, Instr::End);
                 }
                 Stmt::Expr(expr) => {
                     self.expr(expr)?;
@@ -383,9 +489,9 @@ impl<'a> Lower<'a> {
             .enumerate()
         {
             let ty = self.ir.tuples[tuple_loc];
-            let val = self.instr(ty, Instr::Elem(tuple_val, index));
+            let val = self.instr(ty, Instr::Elem(tuple_val, Index(index.try_into().unwrap())));
             let name = self.tree.params[param].name;
-            self.set_token(name, Named::Val(val));
+            self.set_val(name, val);
         }
         self.stmts(body.stmts)?;
         let ret = match body.expr {
@@ -406,6 +512,18 @@ impl<'a> Lower<'a> {
             self.set_name(name, Named::Type(ty));
             ty
         };
+        {
+            let name = self.ir.strings.make_id("args");
+            let param = self.ty_unit();
+            let result = self.ty(Type::List(string));
+            let start = self.ir.instrs.len_idx();
+            let ret = self.instr(result, Instr::Args);
+            self.ret(ret);
+            let id_type = self.ir.funcs.push(Func { param, result });
+            let id_body = self.ir.bodies.push(start);
+            assert_eq!(id_type, id_body);
+            self.set_name(name, Named::Func(id_type));
+        }
         {
             let name = self.ir.strings.make_id("println");
             let param = self.ty_tuple(&[string]);
