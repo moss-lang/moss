@@ -64,14 +64,13 @@ pub enum Instr {
     String(StrId),
     Tuple(IdRange<RefId>),
     Elem(InstrId, usize),
+    Set(InstrId, InstrId),
     Param,
     Get(VarId),
-    Provide {
-        var: VarId,
-        val: InstrId,
-        pop: InstrId,
-    },
     Call(FuncId, InstrId),
+    Bind(VarId, InstrId),
+    While(InstrId),
+    End,
     Return(InstrId),
     Args,
     Println(InstrId),
@@ -375,14 +374,13 @@ impl<'a> Lower<'a> {
                     let ty = self.ty_unit();
                     let var = self.get_path(path).var();
                     let val = self.expr(expr)?;
-                    let pop = self.ir.instrs.len_idx(); // Temporary value we'll replace in a bit.
-                    let id = self.instr(ty, Instr::Provide { var, val, pop });
+                    self.instr(ty, Instr::Bind(var, val));
                     self.stmts(IdRange {
                         start: StmtId::from_raw(stmt.raw() + 1),
                         ..stmts
                     })?;
-                    let pop = self.ir.instrs.len_idx();
-                    self.ir.instrs[id] = Instr::Provide { var, val, pop };
+                    let unit = self.ty_unit();
+                    self.instr(unit, Instr::End);
                     break;
                 }
                 Stmt::While(_, _) => todo!(),
