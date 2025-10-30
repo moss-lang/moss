@@ -259,9 +259,7 @@ impl<'a> Wasm<'a> {
                 Instr::Set(lhs, rhs) => {
                     self.get(rhs);
                     let ty = self.ir.vals[lhs];
-                    let start = self.make_locals(ty);
-                    let prev = self.variables.insert(lhs, start);
-                    assert!(prev.is_some());
+                    let &start = self.variables.get(&lhs).unwrap();
                     self.set_locals(ty, start);
                 }
                 Instr::Param => {
@@ -462,7 +460,9 @@ impl<'a> Wasm<'a> {
                 .end()
                 .local_get(argc)
                 .local_set(i)
+                .local_get(pointer)
                 .local_get(size)
+                .i32_add()
                 .local_set(prev)
                 .loop_(BlockType::Empty)
                 .local_get(i)
@@ -504,6 +504,8 @@ impl<'a> Wasm<'a> {
                     align: 2,
                     memory_index: 0,
                 })
+                .local_get(curr)
+                .local_set(prev)
                 .br(1)
                 .end()
                 .end()
