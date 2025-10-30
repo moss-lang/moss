@@ -1,0 +1,29 @@
+type U32 = IntLit;
+
+type I32 = RawInt32;
+
+type MemIdx;
+
+val memidx: MemIdx;
+
+fn unreachable();
+
+val align: U32;
+val offset: U32;
+context mem[static memidx, static align, static offset];
+
+fn i32_load[mem](address: I32);
+fn i32_store[mem](address: I32, value: I32);
+
+fn i32_lt_s(a: I32, b: I32);
+fn i32_ge_s(a: I32, b: I32);
+
+context wasm[
+  unreachable,
+
+  i32_load,
+  i32_store,
+
+  i32_lt_s,
+  i32_ge_s,
+];
