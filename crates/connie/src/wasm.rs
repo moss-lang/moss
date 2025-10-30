@@ -182,7 +182,7 @@ impl<'a> Wasm<'a> {
                 Instr::Elem(tuple, index) => {
                     let ty = self.ir.vals[tuple];
                     let range = self.ir.types[ty.index()].tuple();
-                    let elem = range.start + index;
+                    let elem = TupleLoc::from_raw(range.start.raw() + index);
                     let start =
                         LocalId::from_raw(self.variables[&tuple].raw() + self.offsets[elem].raw());
                     self.get_locals(self.ir.tuples[elem], start);

@@ -63,7 +63,7 @@ pub enum Instr {
     Int(i32),
     String(StrId),
     Tuple(IdRange<RefId>),
-    Elem(InstrId, usize),
+    Elem(InstrId, u32),
     Set(InstrId, InstrId),
     Param,
     Get(VarId),
@@ -407,7 +407,7 @@ impl<'a> Lower<'a> {
             .enumerate()
         {
             let ty = self.ir.tuples[tuple_loc];
-            let val = self.instr(ty, Instr::Elem(tuple_val, index));
+            let val = self.instr(ty, Instr::Elem(tuple_val, index.try_into().unwrap()));
             let name = self.tree.params[param].name;
             self.set_val(name, val);
         }
