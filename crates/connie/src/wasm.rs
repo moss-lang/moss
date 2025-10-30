@@ -328,7 +328,9 @@ impl<'a> Wasm<'a> {
                 .i32_const(4)
                 .i32_add()
                 .call(args_sizes_get)
-                .drop()
+                .if_(BlockType::Empty)
+                .unreachable()
+                .end()
                 .local_get(pointer)
                 .i32_load(MemArg {
                     offset: 0,
@@ -362,7 +364,9 @@ impl<'a> Wasm<'a> {
                 .local_get(argv)
                 .local_get(pointer)
                 .call(args_get)
-                .drop()
+                .if_(BlockType::Empty)
+                .unreachable()
+                .end()
                 .local_get(argc)
                 .i32_const(1)
                 .i32_sub()
@@ -450,7 +454,9 @@ impl<'a> Wasm<'a> {
                 .i32_const(8)
                 .i32_add()
                 .call(fd_write)
-                .drop()
+                .if_(BlockType::Empty)
+                .unreachable()
+                .end()
                 .local_get(iovec)
                 .i32_const(0)
                 .i32_store(MemArg {
@@ -472,7 +478,9 @@ impl<'a> Wasm<'a> {
                 .i32_const(8)
                 .i32_add()
                 .call(fd_write)
-                .drop()
+                .if_(BlockType::Empty)
+                .unreachable()
+                .end()
                 .end();
             f
         });
