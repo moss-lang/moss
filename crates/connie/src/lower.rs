@@ -6,22 +6,18 @@ use indexmap::{IndexMap, IndexSet};
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
-    parse::{self, Binop, Ctx, Expr, ExprId, Region, RegionId, Stmt, StmtId, Tree, Val},
+    parse::{self, ExprId, Tree},
     range::{Inclusive, expr_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
 };
 
 define_index_type! {
-    pub struct PathId = u32;
-}
-
-define_index_type! {
     pub struct TypeId = u32;
 }
 
 define_index_type! {
-    pub struct VarId = u32;
+    pub struct ElemId = u32;
 }
 
 define_index_type! {
@@ -29,20 +25,62 @@ define_index_type! {
 }
 
 define_index_type! {
-    pub struct InstrId = u32;
+    pub struct ValId = u32;
+}
+
+define_index_type! {
+    pub struct CtxId = u32;
+}
+
+define_index_type! {
+    pub struct NeedTypeId = u32;
+}
+
+define_index_type! {
+    pub struct NeedFuncId = u32;
+}
+
+define_index_type! {
+    pub struct NeedValId = u32;
+}
+
+define_index_type! {
+    pub struct NeedCtxId = u32;
+}
+
+define_index_type! {
+    pub struct StructId = u32;
+}
+
+define_index_type! {
+    pub struct FieldId = u32;
+}
+
+define_index_type! {
+    pub struct LocalId = u32;
 }
 
 define_index_type! {
     pub struct RefId = u32;
 }
 
+define_index_type! {
+    pub struct PathId = u32;
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
-    Bool,
-    Int,
+    /// Static constant string, usually a literal. Runtime-varying strings are not a primitive type.
     String,
+
+    Bool,
+
+    Int32,
+
+    /// All empty tuples are identically the unit type.
     Tuple(TupleRange),
-    List(TypeId),
+
+    Struct(StructId),
 }
 
 impl Type {
@@ -52,58 +90,177 @@ impl Type {
             _ => panic!(),
         }
     }
+
+    pub fn strukt(self) -> StructId {
+        match self {
+            Type::Struct(id) => id,
+            _ => panic!(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Var {
+pub struct Func {
+    pub needs: Needs,
+    pub param: TypeId,
+    pub result: TypeId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Val {
+    pub needs: Needs,
     pub ty: TypeId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Needs {
+    pub types: IdRange<NeedTypeId>,
+    pub funcs: IdRange<NeedFuncId>,
+    pub vals: IdRange<NeedFuncId>,
+    pub ctxs: IdRange<NeedCtxId>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum NeedKind {
+    Default,
+    Static,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Need<T> {
+    pub kind: NeedKind,
+    pub id: T,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Struct {
+    pub fields: IdRange<TypeId>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Depth(pub u32);
 
 #[derive(Clone, Copy, Debug)]
-pub struct Index(pub u32);
-
-#[derive(Clone, Copy, Debug)]
-pub enum IntArith {
+pub enum Int32Arith {
     Add,
     Sub,
+    Mul,
+    Div,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum IntComp {
+pub enum Int32Comp {
+    Neq,
     Less,
 }
 
+/// When executed, each instruction implicitly defines a mutable local variable.
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
-    Int(i32),
-    String(StrId),
-    Tuple(IdRange<RefId>),
-    Elem(InstrId, Index),
-    IntArith(InstrId, IntArith, InstrId),
-    IntComp(InstrId, IntComp, InstrId),
-    Len(InstrId),
-    Index(InstrId, InstrId),
-    Set(InstrId, InstrId),
-    Param,
-    Get(VarId),
-    Call(FuncId, InstrId),
-    Bind(VarId, InstrId),
-    If(InstrId),
-    Loop,
-    Br(Depth),
-    End,
-    Return(InstrId),
-    Args,
-    Println(InstrId),
-}
+    /// Bind a contextual type until the next [`Instr::End`].
+    ///
+    /// Type: unit.
+    BindType(TypeId, TypeId),
 
-#[derive(Clone, Copy, Debug)]
-pub struct Func {
-    pub param: TypeId,
-    pub result: TypeId,
+    /// Bind a contextual function until the next [`Instr::End`].
+    ///
+    /// Type: unit.
+    BindFunc(FuncId, FuncId),
+
+    /// Bind a contextual value until the next [`Instr::End`].
+    ///
+    /// Type: unit.
+    BindVal(ValId, LocalId),
+
+    /// Get a contextual value.
+    ///
+    /// Type: that of the given value.
+    Val(ValId),
+
+    /// Get the value of the parameter to this function.
+    ///
+    /// Type: this function's parameter type.
+    Param,
+
+    /// Set the left-hand local to the value of the right-hand local.
+    ///
+    /// Type: unit.
+    Set(LocalId, LocalId),
+
+    /// A 32-bit integer constant.
+    ///
+    /// Type: [`Type::Int32`].
+    Int32(i32),
+
+    /// A string constant.
+    ///
+    /// Type: [`Type::String`].
+    String(StrId),
+
+    /// Construct a tuple.
+    ///
+    /// Type: [`Type::Tuple`] with the given element types.
+    Tuple(IdRange<RefId>),
+
+    /// Get an element of a tuple.
+    ///
+    /// Type: the element type.
+    Elem(LocalId, ElemId),
+
+    /// Get a field of a struct.
+    ///
+    /// Type: the field type.
+    Field(LocalId, FieldId),
+
+    /// Compute integer arithmetic.
+    ///
+    /// Type: [`Type::Int32`].
+    Int32Arith(LocalId, Int32Arith, LocalId),
+
+    /// Compare two integers.
+    ///
+    /// Type: [`Type::Bool`].
+    Int32Comp(LocalId, Int32Comp, LocalId),
+
+    /// Call a function.
+    ///
+    /// Type: the function's result type.
+    Call(FuncId, LocalId),
+
+    /// End the current block, clearing any bindings made inside the block.
+    ///
+    /// Type: unit.
+    End,
+
+    /// Start a block.
+    ///
+    /// Type: unit.
+    Block,
+
+    /// Start a block only if the given condition is true.
+    ///
+    /// Type: unit.
+    If(LocalId),
+
+    /// Start a block only if the preceding [`Instr::If`] condition was false.
+    ///
+    /// Type: unit.
+    Else,
+
+    /// Start a loop block.
+    ///
+    /// Type: unit.
+    Loop,
+
+    /// Branch to the end of the block with the given depth, or the beginning if it's a loop block.
+    ///
+    /// Type: unit.
+    Br(Depth),
+
+    /// Return from this function.
+    ///
+    /// Type: unit.
+    Return(LocalId),
 }
 
 #[derive(Debug, Default)]
@@ -111,37 +268,45 @@ pub struct IR {
     pub strings: Strings,
     pub types: IndexSet<Type>,
     pub tuples: Tuples<TypeId>,
-    pub vars: IndexVec<VarId, Var>,
     pub funcs: IndexVec<FuncId, Func>,
+    pub vals: IndexVec<ValId, Val>,
+    pub ctxs: IndexVec<CtxId, Needs>,
+    pub need_types: IndexVec<NeedTypeId, Need<TypeId>>,
+    pub need_funcs: IndexVec<NeedFuncId, Need<FuncId>>,
+    pub need_vals: IndexVec<NeedValId, Need<ValId>>,
+    pub need_ctxs: IndexVec<NeedCtxId, Need<CtxId>>,
+    pub structs: IndexVec<StructId, Struct>,
     pub main: Option<FuncId>,
-    pub vals: IndexVec<InstrId, TypeId>,
-    pub instrs: IndexVec<InstrId, Instr>,
-    pub refs: IndexVec<RefId, InstrId>,
-    pub bodies: IndexVec<FuncId, InstrId>,
+    pub locals: IndexVec<LocalId, TypeId>,
+    pub instrs: IndexVec<LocalId, Instr>,
+    pub refs: IndexVec<RefId, LocalId>,
+    pub bodies: IndexVec<FuncId, LocalId>,
 }
 
 type Path = Option<(PathId, StrId)>;
 
 #[derive(Clone, Copy, Debug)]
 enum Named {
-    Scope,
-    Type(TypeId),
-    Var(VarId),
+    Module,
+    Ty(TypeId),
     Func(FuncId),
-    Val(InstrId),
+    Val(ValId),
+    Ctx(CtxId),
+    Field(FieldId),
+    Local(LocalId),
 }
 
 impl Named {
-    fn ty(self) -> TypeId {
+    fn module(self) {
         match self {
-            Self::Type(id) => id,
+            Self::Module => (),
             _ => panic!(),
         }
     }
 
-    fn var(self) -> VarId {
+    fn ty(self) -> TypeId {
         match self {
-            Self::Var(id) => id,
+            Self::Ty(id) => id,
             _ => panic!(),
         }
     }
@@ -153,9 +318,30 @@ impl Named {
         }
     }
 
-    fn val(self) -> InstrId {
+    fn val(self) -> ValId {
         match self {
             Self::Val(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    fn ctx(self) -> CtxId {
+        match self {
+            Self::Ctx(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    fn field(self) -> FieldId {
+        match self {
+            Self::Field(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    fn local(self) -> LocalId {
+        match self {
+            Self::Local(id) => id,
             _ => panic!(),
         }
     }
@@ -196,7 +382,7 @@ struct Lower<'a> {
     ir: IR,
     paths: IndexMap<Path, Named>,
     path: PathId,
-    funcs: Vec<(PathId, parse::FuncId, FuncId)>,
+    funcs: Vec<(PathId, parse::FndefId, FuncId)>,
 }
 
 impl<'a> Lower<'a> {
