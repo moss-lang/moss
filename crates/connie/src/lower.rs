@@ -276,17 +276,16 @@ pub struct IR {
     pub need_vals: IndexVec<NeedValId, Need<ValId>>,
     pub need_ctxs: IndexVec<NeedCtxId, Need<CtxId>>,
     pub structs: IndexVec<StructId, Struct>,
-    pub main: Option<FuncId>,
     pub locals: IndexVec<LocalId, TypeId>,
     pub instrs: IndexVec<LocalId, Instr>,
     pub refs: IndexVec<RefId, LocalId>,
     pub bodies: IndexVec<FuncId, LocalId>,
 }
 
-type Path = Option<(PathId, StrId)>;
+pub type Path = Option<(PathId, StrId)>;
 
 #[derive(Clone, Copy, Debug)]
-enum Named {
+pub enum Named {
     Module,
     Ty(TypeId),
     Func(FuncId),
@@ -748,14 +747,14 @@ impl<'a> Lower<'a> {
     }
 }
 
-pub fn lower(source: &str, starts: &TokenStarts, tree: &Tree) -> LowerResult<IR> {
+pub fn lower(source: &str, starts: &TokenStarts, tree: &Tree, ir: IR) -> LowerResult<IR> {
     let mut paths = IndexMap::new();
     let (i, _) = paths.insert_full(None, Named::Scope);
     let mut lower = Lower {
         source,
         starts,
         tree,
-        ir: IR::default(),
+        ir,
         paths,
         path: PathId::from_usize(i),
         funcs: Vec::new(),
