@@ -1,15 +1,19 @@
-context Foo {
-  string: String;
+val string: String;
+
+fn print_it[string]() {
+  println(string);
 }
 
 fn hi() {
-  provide Foo::string = "hi";
-  println(Foo::string);
+  print_it[string="hi"]();
+}
+
+fn hello_hi[string]() {
+  print_it();
+  hi();
+  print_it();
 }
 
 fn main() {
-  provide Foo::string = "hello";
-  println(Foo::string);
-  hi();
-  println(Foo::string);
+  hello_hi[string="hello"]();
 }
