@@ -1,35 +1,32 @@
-use indexmap::IndexMap;
+use index_vec::IndexSlice;
 
 use crate::{
     lex::lex,
-    lower::{IR, Named, Path, lower},
+    lower::{IR, Paths, lower},
     parse::parse,
 };
 
-const WASM: &str = include_str!("../../../lib/wasm.con");
-const WASIP1: &str = include_str!("../../../lib/wasip1.con");
-const PRELUDE: &str = include_str!("../../../lib/prelude.con");
+struct Lib {
+    ir: IR,
+}
 
-pub fn prelude() -> (IR, IndexMap<Path, Named>) {
-    let mut ir = IR::default();
-    {
-        let source = WASM;
+impl Lib {
+    fn lib(&mut self, imports: &[&Paths], source: &str) -> Paths {
         let (tokens, starts) = lex(source).unwrap();
         let tree = parse(&tokens).unwrap();
-        ir = lower(source, &starts, &tree, ir).unwrap();
+        let indexed = IndexSlice::new(imports);
+        lower(source, &starts, &tree, &mut self.ir, None, indexed).unwrap()
     }
-    {
-        let source = WASIP1;
-        let (tokens, starts) = lex(source).unwrap();
-        let tree = parse(&tokens).unwrap();
-        ir = lower(source, &starts, &tree, ir).unwrap();
+
+    fn prelude(mut self) -> (IR, Paths) {
+        let wasm = self.lib(&[], include_str!("../../../lib/wasm.con"));
+        let wasip1 = self.lib(&[&wasm], include_str!("../../../lib/wasip1.con"));
+        let wasi = self.lib(&[&wasip1, &wasm], include_str!("../../../lib/wasi.con"));
+        let prelude = self.lib(&[&wasi], include_str!("../../../lib/prelude.con"));
+        (self.ir, prelude)
     }
-    {
-        let source = PRELUDE;
-        let (tokens, starts) = lex(source).unwrap();
-        let tree = parse(&tokens).unwrap();
-        ir = lower(source, &starts, &tree, ir).unwrap();
-    }
-    drop(ir);
-    todo!()
+}
+
+pub fn prelude() -> (IR, Paths) {
+    Lib { ir: IR::default() }.prelude()
 }

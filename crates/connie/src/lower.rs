@@ -1,16 +1,20 @@
-use std::mem::take;
+use std::{collections::HashMap, mem::take, ops::AddAssign};
 
-use index_vec::{IndexSlice, IndexVec, define_index_type};
-use indexmap::{IndexMap, IndexSet};
+use index_vec::{Idx, IndexSlice, IndexVec, define_index_type};
+use indexmap::IndexSet;
 
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
-    parse::{self, ExprId, Tree},
+    parse::{self, ExprId, ImportId, Tree},
     range::{Inclusive, expr_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
 };
+
+define_index_type! {
+    pub struct ModuleId = u32;
+}
 
 define_index_type! {
     pub struct TypeId = u32;
@@ -21,15 +25,23 @@ define_index_type! {
 }
 
 define_index_type! {
-    pub struct FuncId = u32;
+    pub struct TydefId = u32;
 }
 
 define_index_type! {
-    pub struct ValId = u32;
+    pub struct FndefId = u32;
 }
 
 define_index_type! {
-    pub struct CtxId = u32;
+    pub struct ValdefId = u32;
+}
+
+define_index_type! {
+    pub struct CtxdefId = u32;
+}
+
+define_index_type! {
+    pub struct StructdefId = u32;
 }
 
 define_index_type! {
@@ -46,10 +58,6 @@ define_index_type! {
 
 define_index_type! {
     pub struct NeedCtxId = u32;
-}
-
-define_index_type! {
-    pub struct StructId = u32;
 }
 
 define_index_type! {
@@ -80,7 +88,9 @@ pub enum Type {
     /// All empty tuples are identically the unit type.
     Tuple(TupleRange),
 
-    Struct(StructId),
+    Tydef(TydefId),
+
+    Structdef(StructdefId),
 }
 
 impl Type {
@@ -91,23 +101,35 @@ impl Type {
         }
     }
 
-    pub fn strukt(self) -> StructId {
+    pub fn tydef(self) -> TydefId {
         match self {
-            Type::Struct(id) => id,
+            Type::Tydef(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    pub fn structdef(self) -> StructdefId {
+        match self {
+            Type::Structdef(id) => id,
             _ => panic!(),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Func {
+pub struct Tydef {
+    def: Option<TypeId>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Fndef {
     pub needs: Needs,
     pub param: TypeId,
     pub result: TypeId,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Val {
+pub struct Valdef {
     pub needs: Needs,
     pub ty: TypeId,
 }
@@ -121,6 +143,16 @@ pub struct Needs {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct Ctxdef {
+    pub needs: Needs,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Structdef {
+    pub fields: IdRange<TypeId>,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum NeedKind {
     Default,
     Static,
@@ -130,11 +162,6 @@ pub enum NeedKind {
 pub struct Need<T> {
     pub kind: NeedKind,
     pub id: T,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Struct {
-    pub fields: IdRange<TypeId>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -160,22 +187,27 @@ pub enum Instr {
     /// Bind a contextual type until the next [`Instr::End`].
     ///
     /// Type: unit.
-    BindType(TypeId, TypeId),
+    BindType(TydefId, TydefId),
 
     /// Bind a contextual function until the next [`Instr::End`].
     ///
     /// Type: unit.
-    BindFunc(FuncId, FuncId),
+    BindFunc(FndefId, FndefId),
 
     /// Bind a contextual value until the next [`Instr::End`].
     ///
     /// Type: unit.
-    BindVal(ValId, LocalId),
+    BindVal(ValdefId, LocalId),
 
     /// Get a contextual value.
     ///
     /// Type: that of the given value.
-    Val(ValId),
+    Val(ValdefId),
+
+    /// Get the object this method is being called on.
+    ///
+    /// Type: this method's object type.
+    This,
 
     /// Get the value of the parameter to this function.
     ///
@@ -225,7 +257,7 @@ pub enum Instr {
     /// Call a function.
     ///
     /// Type: the function's result type.
-    Call(FuncId, LocalId),
+    Call(FndefId, LocalId),
 
     /// End the current block, clearing any bindings made inside the block.
     ///
@@ -265,92 +297,29 @@ pub enum Instr {
 
 #[derive(Debug, Default)]
 pub struct IR {
+    pub modules: IndexVec<ModuleId, ()>,
     pub strings: Strings,
     pub types: IndexSet<Type>,
     pub tuples: Tuples<TypeId>,
-    pub funcs: IndexVec<FuncId, Func>,
-    pub vals: IndexVec<ValId, Val>,
-    pub ctxs: IndexVec<CtxId, Needs>,
+    pub tydefs: IndexVec<TydefId, Tydef>,
+    pub fndefs: IndexVec<FndefId, Fndef>,
+    pub valdefs: IndexVec<ValdefId, Valdef>,
+    pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
+    pub structdefs: IndexVec<StructdefId, Structdef>,
     pub need_types: IndexVec<NeedTypeId, Need<TypeId>>,
-    pub need_funcs: IndexVec<NeedFuncId, Need<FuncId>>,
-    pub need_vals: IndexVec<NeedValId, Need<ValId>>,
-    pub need_ctxs: IndexVec<NeedCtxId, Need<CtxId>>,
-    pub structs: IndexVec<StructId, Struct>,
+    pub need_funcs: IndexVec<NeedFuncId, Need<FndefId>>,
+    pub need_vals: IndexVec<NeedValId, Need<ValdefId>>,
+    pub need_ctxs: IndexVec<NeedCtxId, Need<CtxdefId>>,
     pub locals: IndexVec<LocalId, TypeId>,
     pub instrs: IndexVec<LocalId, Instr>,
     pub refs: IndexVec<RefId, LocalId>,
-    pub bodies: IndexVec<FuncId, LocalId>,
-}
-
-pub type Path = Option<(PathId, StrId)>;
-
-#[derive(Clone, Copy, Debug)]
-pub enum Named {
-    Module,
-    Ty(TypeId),
-    Func(FuncId),
-    Val(ValId),
-    Ctx(CtxId),
-    Field(FieldId),
-    Local(LocalId),
-}
-
-impl Named {
-    fn module(self) {
-        match self {
-            Self::Module => (),
-            _ => panic!(),
-        }
-    }
-
-    fn ty(self) -> TypeId {
-        match self {
-            Self::Ty(id) => id,
-            _ => panic!(),
-        }
-    }
-
-    fn func(self) -> FuncId {
-        match self {
-            Self::Func(id) => id,
-            _ => panic!(),
-        }
-    }
-
-    fn val(self) -> ValId {
-        match self {
-            Self::Val(id) => id,
-            _ => panic!(),
-        }
-    }
-
-    fn ctx(self) -> CtxId {
-        match self {
-            Self::Ctx(id) => id,
-            _ => panic!(),
-        }
-    }
-
-    fn field(self) -> FieldId {
-        match self {
-            Self::Field(id) => id,
-            _ => panic!(),
-        }
-    }
-
-    fn local(self) -> LocalId {
-        match self {
-            Self::Local(id) => id,
-            _ => panic!(),
-        }
-    }
+    pub bodies: IndexVec<FndefId, LocalId>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum LowerError {
     Undefined(TokenId),
     ArgCount(ExprId),
-    NoMain,
 }
 
 impl LowerError {
@@ -367,21 +336,38 @@ impl LowerError {
                 Some(expr_range(tree, expr)),
                 "wrong number of arguments".to_owned(),
             ),
-            LowerError::NoMain => (None, "no `main` function".to_owned()),
         }
     }
 }
 
 type LowerResult<T> = Result<T, LowerError>;
 
+#[derive(Debug, Default)]
+pub struct Names {
+    pub tydefs: HashMap<(ModuleId, StrId), TydefId>,
+    pub fndefs: HashMap<(ModuleId, StrId), FndefId>,
+    pub valdefs: HashMap<(ModuleId, StrId), ValdefId>,
+    pub ctxdefs: HashMap<(ModuleId, StrId), CtxdefId>,
+    pub structdefs: HashMap<(ModuleId, StrId), StructdefId>,
+    pub fields: HashMap<(ModuleId, StructdefId, StrId), FieldId>,
+    pub methods: HashMap<(ModuleId, StructdefId, StrId), FndefId>,
+}
+
 struct Lower<'a> {
     source: &'a str,
     starts: &'a TokenStarts,
     tree: &'a Tree,
-    ir: IR,
-    paths: IndexMap<Path, Named>,
-    path: PathId,
-    funcs: Vec<(PathId, parse::FndefId, FuncId)>,
+    ir: &'a mut IR,
+    names: &'a mut Names,
+    module: ModuleId,
+    prelude: Option<ModuleId>,
+    imports: &'a IndexSlice<ImportId, [ModuleId]>,
+    tydefs: IndexVec<parse::TydefId, TydefId>,
+    fndefs: IndexVec<parse::FndefId, FndefId>,
+    valdefs: IndexVec<parse::ValdefId, ValdefId>,
+    ctxdefs: IndexVec<parse::CtxdefId, CtxdefId>,
+    structdefs: IndexVec<parse::StructdefId, StructdefId>,
+    funcs: Vec<(PathId, parse::FndefId, FndefId)>,
 }
 
 impl<'a> Lower<'a> {
@@ -473,34 +459,90 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn region(&mut self, region: RegionId) -> LowerResult<()> {
-        let Region {
-            ctxs,
-            needs,
-            funcs,
-            regions,
-        } = self.tree.regions[region];
-        for ctx in ctxs {
-            let Ctx { name, vals } = self.tree.ctxs[ctx];
-            let parent = self.path;
-            self.path = self.set_scope(name);
-            for val in vals {
-                let Val { name, ty } = self.tree.vals[val];
-                let ty = self.parse_ty(ty)?;
-                let id = self.ir.vars.push(Var { ty });
-                self.set_var(name, id);
+    fn imports(&mut self) -> LowerResult<()> {
+        for (id, import) in self.tree.imports.iter_enumerated() {
+            if let Some(name) = import.name {
+                self.set_token(name, Named::Import(id));
             }
-            self.path = parent;
+            let paths = self.imports[id];
+            let root = PathId::new(paths.get_index_of(&None).unwrap());
+            for name in import.using {
+                let string = self.string(self.tree.names[name]);
+                let named = paths[&Some((root, string))];
+                match named {
+                    Named::Module | Named::Import(_) => panic!(),
+                    Named::Ty(_)
+                    | Named::Fndef(_)
+                    | Named::Valdef(_)
+                    | Named::Ctxdef(_)
+                    | Named::Structdef(_)
+                    | Named::Field(_)
+                    | Named::Local(_) => {
+                        self.set_name(string, named);
+                    }
+                }
+            }
         }
-        for need in needs {
-            let _ = need; // TODO
+        Ok(())
+    }
+
+    fn prealloc_impl<I: Idx, J: Idx + AddAssign<usize>, T: Copy + parse::Named, U>(
+        &mut self,
+        old: &IndexVec<I, T>,
+        new: &IndexVec<J, U>,
+        named: impl Fn(J) -> Named,
+    ) -> IndexVec<I, J> {
+        let mut next = new.next_idx();
+        old.iter()
+            .map(|item| {
+                let id = next;
+                next += 1;
+                self.set_token(item.name(), named(id));
+                id
+            })
+            .collect()
+    }
+
+    fn prealloc<I: Idx, J: Idx + AddAssign<usize> + Into<Named>, T: Copy + parse::Named, U>(
+        &mut self,
+        old: &IndexVec<I, T>,
+        new: &IndexVec<J, U>,
+    ) -> IndexVec<I, J> {
+        self.prealloc_impl(old, new, J::into)
+    }
+
+    fn names(&mut self) {
+        self.tydefs = self.prealloc_impl(&self.tree.tydefs, &self.ir.tydefs, |id| {
+            Named::Ty(self.ty(Type::Tydef(id)))
+        });
+        self.fndefs = self.prealloc(&self.tree.fndefs, &self.ir.fndefs);
+        self.valdefs = self.prealloc(&self.tree.valdefs, &self.ir.valdefs);
+        self.ctxdefs = self.prealloc(&self.tree.ctxdefs, &self.ir.ctxdefs);
+        self.structdefs = self.prealloc(&self.tree.structdefs, &self.ir.structdefs);
+    }
+
+    fn decls(&mut self) -> LowerResult<()> {
+        for (id, &parse::Tydef { name: _, def }) in self.tree.tydefs.iter_enumerated() {
+            let tydef = Tydef {
+                def: match def {
+                    Some(ty) => Some(self.parse_ty(ty)?),
+                    None => None,
+                },
+            };
+            assert_eq!(self.ir.tydefs.push(tydef), self.tydefs[id]);
         }
-        for func in funcs {
-            let parse::Func {
+        for (
+            id,
+            parse::Fndef {
+                ty,
                 name,
+                needs,
                 params,
-                body: _,
-            } = self.tree.funcs[func];
+                result,
+                def: _,
+            },
+        ) in self.tree.fndefs.iter_enumerated()
+        {
             let types = params
                 .into_iter()
                 .map(|param| self.parse_ty(self.tree.params[param].ty))
@@ -515,8 +557,22 @@ impl<'a> Lower<'a> {
                 self.ir.main = Some(id);
             }
         }
-        for child in regions {
-            self.region(child)?;
+        for (id, valdef) in self.tree.valdefs.iter_enumerated() {
+            todo!();
+        }
+        for Ctxdef { name, needs } in self.tree.ctxdefs {
+            let parent = self.path;
+            self.path = self.set_scope(name);
+            for val in vals {
+                let Val { name, ty } = self.tree.vals[val];
+                let ty = self.parse_ty(ty)?;
+                let id = self.ir.vars.push(Var { ty });
+                self.set_var(name, id);
+            }
+            self.path = parent;
+        }
+        for (id, structdef) in self.tree.structdefs.iter_enumerated() {
+            todo!();
         }
         Ok(())
     }
@@ -701,42 +757,7 @@ impl<'a> Lower<'a> {
         Ok(start)
     }
 
-    fn program(&mut self) -> LowerResult<()> {
-        let string = {
-            let name = self.ir.strings.make_id("String");
-            let ty = self.ty(Type::String);
-            self.set_name(name, Named::Type(ty));
-            ty
-        };
-        {
-            let name = self.ir.strings.make_id("args");
-            let param = self.ty_unit();
-            let result = self.ty(Type::List(string));
-            let start = self.ir.instrs.len_idx();
-            let ret = self.instr(result, Instr::Args);
-            self.ret(ret);
-            let id_type = self.ir.funcs.push(Func { param, result });
-            let id_body = self.ir.bodies.push(start);
-            assert_eq!(id_type, id_body);
-            self.set_name(name, Named::Func(id_type));
-        }
-        {
-            let name = self.ir.strings.make_id("println");
-            let param = self.ty_tuple(&[string]);
-            let result = self.ty_unit();
-            let start = self.ir.instrs.len_idx();
-            let val = self.instr(param, Instr::Param);
-            let ret = self.instr(result, Instr::Println(val));
-            self.ret(ret);
-            let id_type = self.ir.funcs.push(Func { param, result });
-            let id_body = self.ir.bodies.push(start);
-            assert_eq!(id_type, id_body);
-            self.set_name(name, Named::Func(id_type));
-        }
-        self.region(self.tree.root)?;
-        if self.ir.main.is_none() {
-            return Err(LowerError::NoMain);
-        }
+    fn defs(&mut self) -> LowerResult<()> {
         for (scope, func, id_type) in take(&mut self.funcs) {
             self.path = scope;
             let start = self.body(id_type, func)?;
@@ -745,19 +766,42 @@ impl<'a> Lower<'a> {
         }
         Ok(())
     }
+
+    fn program(&mut self) -> LowerResult<()> {
+        self.imports()?;
+        self.names();
+        self.decls()?;
+        self.defs()?;
+        Ok(())
+    }
 }
 
-pub fn lower(source: &str, starts: &TokenStarts, tree: &Tree, ir: IR) -> LowerResult<IR> {
-    let mut paths = IndexMap::new();
-    let (i, _) = paths.insert_full(None, Named::Scope);
+pub fn lower(
+    source: &str,
+    starts: &TokenStarts,
+    tree: &Tree,
+    ir: &mut IR,
+    prelude: Option<ModuleId>,
+    imports: &IndexSlice<ImportId, [ModuleId]>,
+) -> LowerResult<(ModuleId, Names)> {
+    let mut names = Names::default();
+    let module = ir.modules.push(());
     let mut lower = Lower {
         source,
         starts,
         tree,
         ir,
-        paths,
-        path: PathId::from_usize(i),
+        names: &mut names,
+        module,
+        prelude,
+        imports,
+        tydefs: IndexVec::new(),
+        fndefs: IndexVec::new(),
+        valdefs: IndexVec::new(),
+        ctxdefs: IndexVec::new(),
+        structdefs: IndexVec::new(),
         funcs: Vec::new(),
     };
-    lower.program().map(|()| lower.ir)
+    lower.program()?;
+    Ok((module, names))
 }

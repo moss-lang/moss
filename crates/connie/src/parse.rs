@@ -65,6 +65,10 @@ define_index_type! {
     pub struct StructdefId = u32;
 }
 
+pub trait Named {
+    fn name(self) -> TokenId;
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Path {
     pub name: TokenId,
@@ -159,6 +163,12 @@ pub struct Tydef {
     pub def: Option<TypeId>,
 }
 
+impl Named for Tydef {
+    fn name(self) -> TokenId {
+        self.name
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Fndef {
     pub ty: Option<TokenId>,
@@ -169,10 +179,22 @@ pub struct Fndef {
     pub def: Option<Block>,
 }
 
+impl Named for Fndef {
+    fn name(self) -> TokenId {
+        self.name
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Valdef {
     pub name: TokenId,
     pub ty: TypeId,
+}
+
+impl Named for Valdef {
+    fn name(self) -> TokenId {
+        self.name
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -181,10 +203,22 @@ pub struct Ctxdef {
     pub needs: IdRange<NeedId>,
 }
 
+impl Named for Ctxdef {
+    fn name(self) -> TokenId {
+        self.name
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Structdef {
     pub name: TokenId,
     pub fields: IdRange<ParamId>,
+}
+
+impl Named for Structdef {
+    fn name(self) -> TokenId {
+        self.name
+    }
 }
 
 #[derive(Debug, Default)]

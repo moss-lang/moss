@@ -1,4 +1,0 @@
-# no `main` function
-fn not_main() {}
-
-fn also_not_main() {}

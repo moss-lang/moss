@@ -1,4 +1,4 @@
-type U32 = IntLit;
+type U32 = RawInt32;
 
 type I32 = RawInt32;
 
