@@ -1,13 +1,13 @@
-use std::{collections::HashMap, mem::take, ops::AddAssign};
+use std::{collections::HashMap, mem::take};
 
-use index_vec::{Idx, IndexSlice, IndexVec, define_index_type};
+use index_vec::{IndexSlice, IndexVec, define_index_type};
 use indexmap::IndexSet;
 
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
-    parse::{self, ExprId, ImportId, Tree},
-    range::{Inclusive, expr_range},
+    parse::{self, Expr, ExprId, ImportId, NeedId, Param, Path, Stmt, StmtId, Tree},
+    range::{Inclusive, expr_range, path_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
 };
@@ -45,11 +45,11 @@ define_index_type! {
 }
 
 define_index_type! {
-    pub struct NeedTypeId = u32;
+    pub struct NeedTyId = u32;
 }
 
 define_index_type! {
-    pub struct NeedFuncId = u32;
+    pub struct NeedFnId = u32;
 }
 
 define_index_type! {
@@ -70,10 +70,6 @@ define_index_type! {
 
 define_index_type! {
     pub struct RefId = u32;
-}
-
-define_index_type! {
-    pub struct PathId = u32;
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -136,9 +132,9 @@ pub struct Valdef {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Needs {
-    pub types: IdRange<NeedTypeId>,
-    pub funcs: IdRange<NeedFuncId>,
-    pub vals: IdRange<NeedFuncId>,
+    pub tys: IdRange<NeedTyId>,
+    pub fns: IdRange<NeedFnId>,
+    pub vals: IdRange<NeedValId>,
     pub ctxs: IdRange<NeedCtxId>,
 }
 
@@ -149,13 +145,19 @@ pub struct Ctxdef {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Structdef {
-    pub fields: IdRange<TypeId>,
+    pub fields: TupleRange,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum NeedKind {
-    Default,
+    /// A set of needs that all have their individual kinds.
+    Set,
+
+    /// A need that must be satisfied statically.
     Static,
+
+    /// A need that should be satisfied dynamically.
+    Dynamic,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -203,11 +205,6 @@ pub enum Instr {
     ///
     /// Type: that of the given value.
     Val(ValdefId),
-
-    /// Get the object this method is being called on.
-    ///
-    /// Type: this method's object type.
-    This,
 
     /// Get the value of the parameter to this function.
     ///
@@ -306,19 +303,36 @@ pub struct IR {
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
     pub structdefs: IndexVec<StructdefId, Structdef>,
-    pub need_types: IndexVec<NeedTypeId, Need<TypeId>>,
-    pub need_funcs: IndexVec<NeedFuncId, Need<FndefId>>,
+    pub fields: Tuples<(StrId, TypeId)>,
+    pub need_tys: IndexVec<NeedTyId, Need<TypeId>>,
+    pub need_fns: IndexVec<NeedFnId, Need<FndefId>>,
     pub need_vals: IndexVec<NeedValId, Need<ValdefId>>,
     pub need_ctxs: IndexVec<NeedCtxId, Need<CtxdefId>>,
     pub locals: IndexVec<LocalId, TypeId>,
     pub instrs: IndexVec<LocalId, Instr>,
     pub refs: IndexVec<RefId, LocalId>,
-    pub bodies: IndexVec<FndefId, LocalId>,
+    pub bodies: IndexVec<FndefId, Option<LocalId>>,
+}
+
+type ModuleNames<T> = HashMap<(ModuleId, StrId), T>;
+
+#[derive(Debug, Default)]
+pub struct Names {
+    pub modules: ModuleNames<ModuleId>,
+    pub tydefs: ModuleNames<TydefId>,
+    pub fndefs: ModuleNames<FndefId>,
+    pub valdefs: ModuleNames<ValdefId>,
+    pub ctxdefs: ModuleNames<CtxdefId>,
+    pub structdefs: ModuleNames<StructdefId>,
+    pub methods: HashMap<(ModuleId, StructdefId, StrId), FndefId>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum LowerError {
     Undefined(TokenId),
+    Ambiguous(TokenId),
+    NeedStaticCtx(Path),
+    ThisNotMethod(ExprId),
     ArgCount(ExprId),
 }
 
@@ -332,6 +346,21 @@ impl LowerError {
                 }),
                 "undefined".to_owned(),
             ),
+            LowerError::Ambiguous(token) => (
+                Some(Inclusive {
+                    first: token,
+                    last: token,
+                }),
+                "ambiguous".to_owned(),
+            ),
+            LowerError::NeedStaticCtx(path) => (
+                Some(path_range(tree, path)),
+                "use `static` on individual items, not on `context` dependencies".to_owned(),
+            ),
+            LowerError::ThisNotMethod(expr) => (
+                Some(expr_range(tree, expr)),
+                "cannot use `this` in a function that is not a method".to_owned(),
+            ),
             LowerError::ArgCount(expr) => (
                 Some(expr_range(tree, expr)),
                 "wrong number of arguments".to_owned(),
@@ -341,17 +370,6 @@ impl LowerError {
 }
 
 type LowerResult<T> = Result<T, LowerError>;
-
-#[derive(Debug, Default)]
-pub struct Names {
-    pub tydefs: HashMap<(ModuleId, StrId), TydefId>,
-    pub fndefs: HashMap<(ModuleId, StrId), FndefId>,
-    pub valdefs: HashMap<(ModuleId, StrId), ValdefId>,
-    pub ctxdefs: HashMap<(ModuleId, StrId), CtxdefId>,
-    pub structdefs: HashMap<(ModuleId, StrId), StructdefId>,
-    pub fields: HashMap<(ModuleId, StructdefId, StrId), FieldId>,
-    pub methods: HashMap<(ModuleId, StructdefId, StrId), FndefId>,
-}
 
 struct Lower<'a> {
     source: &'a str,
@@ -363,11 +381,11 @@ struct Lower<'a> {
     prelude: Option<ModuleId>,
     imports: &'a IndexSlice<ImportId, [ModuleId]>,
     tydefs: IndexVec<parse::TydefId, TydefId>,
-    fndefs: IndexVec<parse::FndefId, FndefId>,
+    fndefs: IndexVec<parse::FndefId, (Option<StructdefId>, FndefId)>,
     valdefs: IndexVec<parse::ValdefId, ValdefId>,
     ctxdefs: IndexVec<parse::CtxdefId, CtxdefId>,
     structdefs: IndexVec<parse::StructdefId, StructdefId>,
-    funcs: Vec<(PathId, parse::FndefId, FndefId)>,
+    funcs: Vec<(parse::FndefId, Option<StructdefId>, FndefId)>,
 }
 
 impl<'a> Lower<'a> {
@@ -398,144 +416,226 @@ impl<'a> Lower<'a> {
         self.ty_tuple(&[])
     }
 
-    fn get_path_of(&self, token: TokenId) -> LowerResult<PathId> {
-        let mut parent = self.path;
-        let Some(string) = self.ir.strings.get_id(self.slice(token)) else {
-            return Err(LowerError::Undefined(token));
-        };
-        loop {
-            match self.paths.get_index_of(&Some((parent, string))) {
-                Some(i) => return Ok(PathId::from_usize(i)),
-                None => {
-                    let (parts, _) = self.paths.get_index(parent.index()).unwrap();
-                    let (grandparent, _) = parts.unwrap();
-                    parent = grandparent;
-                }
-            }
-        }
-    }
-
-    fn get_path(&mut self, path: parse::Path) -> LowerResult<Named> {
-        let mut id = self.get_path_of(path.name)?;
-        for name in path.names {
-            let Named::Scope = self.paths[id.index()] else {
-                panic!();
+    fn path(&mut self, path: Path) -> LowerResult<(ModuleId, StrId)> {
+        let mut module = self.module;
+        for name in path.prefix {
+            let token = self.tree.names[name];
+            let string = self.name(token);
+            let Some(&next) = self.names.modules.get(&(module, string)) else {
+                return Err(LowerError::Undefined(token));
             };
-            let string = self.name(self.tree.names[name]);
-            id = PathId::from_usize(self.paths.get_index_of(&Some((id, string))).unwrap());
+            module = next;
         }
-        Ok(self.paths[id.index()])
-    }
-
-    fn get(&self, token: TokenId) -> LowerResult<Named> {
-        Ok(self.paths[self.get_path_of(token)?.index()])
-    }
-
-    fn set_name(&mut self, name: StrId, named: Named) -> PathId {
-        let (i, _) = self.paths.insert_full(Some((self.path, name)), named);
-        PathId::from_usize(i)
-    }
-
-    fn set_token(&mut self, token: TokenId, named: Named) -> PathId {
-        let name = self.name(token);
-        self.set_name(name, named)
-    }
-
-    fn set_scope(&mut self, token: TokenId) -> PathId {
-        self.set_token(token, Named::Scope)
-    }
-
-    fn set_var(&mut self, token: TokenId, id: VarId) -> PathId {
-        self.set_token(token, Named::Var(id))
-    }
-
-    fn set_val(&mut self, token: TokenId, id: InstrId) -> PathId {
-        self.set_token(token, Named::Val(id))
-    }
-
-    fn parse_ty(&mut self, ty: parse::TypeId) -> LowerResult<TypeId> {
-        match self.tree.types[ty] {
-            parse::Type::Name(name) => Ok(self.get(name)?.ty()),
-        }
+        let name = self.name(path.last);
+        Ok((module, name))
     }
 
     fn imports(&mut self) -> LowerResult<()> {
-        for (id, import) in self.tree.imports.iter_enumerated() {
-            if let Some(name) = import.name {
-                self.set_token(name, Named::Import(id));
+        for (import, &module) in self.tree.imports.iter().zip(self.imports) {
+            if let Some(token) = import.name {
+                let name = self.name(token);
+                self.names.modules.insert((self.module, name), module);
             }
-            let paths = self.imports[id];
-            let root = PathId::new(paths.get_index_of(&None).unwrap());
-            for name in import.using {
-                let string = self.string(self.tree.names[name]);
-                let named = paths[&Some((root, string))];
-                match named {
-                    Named::Module | Named::Import(_) => panic!(),
-                    Named::Ty(_)
-                    | Named::Fndef(_)
-                    | Named::Valdef(_)
-                    | Named::Ctxdef(_)
-                    | Named::Structdef(_)
-                    | Named::Field(_)
-                    | Named::Local(_) => {
-                        self.set_name(string, named);
-                    }
+            for using in import.using {
+                let token = self.tree.names[using];
+                let name = self.string(token);
+                let mut found = false;
+                if let Some(&module) = self.names.modules.get(&(module, name)) {
+                    found = true;
+                    self.names.modules.insert((self.module, name), module);
+                }
+                if let Some(&tydef) = self.names.tydefs.get(&(module, name)) {
+                    found = true;
+                    self.names.tydefs.insert((self.module, name), tydef);
+                }
+                if let Some(&fndef) = self.names.fndefs.get(&(module, name)) {
+                    found = true;
+                    self.names.fndefs.insert((self.module, name), fndef);
+                }
+                if let Some(&valdef) = self.names.valdefs.get(&(module, name)) {
+                    found = true;
+                    self.names.valdefs.insert((self.module, name), valdef);
+                }
+                if let Some(&ctxdef) = self.names.ctxdefs.get(&(module, name)) {
+                    found = true;
+                    self.names.ctxdefs.insert((self.module, name), ctxdef);
+                }
+                if let Some(&structdef) = self.names.structdefs.get(&(module, name)) {
+                    found = true;
+                    self.names.structdefs.insert((self.module, name), structdef);
+                }
+                if !found {
+                    return Err(LowerError::Undefined(token));
                 }
             }
         }
         Ok(())
     }
 
-    fn prealloc_impl<I: Idx, J: Idx + AddAssign<usize>, T: Copy + parse::Named, U>(
-        &mut self,
-        old: &IndexVec<I, T>,
-        new: &IndexVec<J, U>,
-        named: impl Fn(J) -> Named,
-    ) -> IndexVec<I, J> {
-        let mut next = new.next_idx();
-        old.iter()
+    fn names(&mut self) -> LowerResult<()> {
+        // We must process struct names before function names so that we can attach methods.
+        let mut next_struct = self.ir.structdefs.next_idx();
+        let mut next_fn = self.ir.fndefs.next_idx();
+        self.structdefs = (self.tree.structdefs.iter())
             .map(|item| {
-                let id = next;
-                next += 1;
-                self.set_token(item.name(), named(id));
+                let id = next_struct;
+                next_struct += 1;
+                let name = self.name(item.name);
+                self.names.structdefs.insert((self.module, name), id);
                 id
             })
-            .collect()
+            .collect();
+        self.fndefs = (self.tree.fndefs.iter())
+            .map(|item| {
+                let id = next_fn;
+                next_fn += 1;
+                let name = self.name(item.name);
+                let structdef = match item.ty {
+                    None => {
+                        self.names.fndefs.insert((self.module, name), id);
+                        None
+                    }
+                    Some(token) => {
+                        let name = self.name(token);
+                        let Some(&structdef) = self.names.structdefs.get(&(self.module, name))
+                        else {
+                            return Err(LowerError::Undefined(token));
+                        };
+                        self.names
+                            .methods
+                            .insert((self.module, structdef, name), id);
+                        Some(structdef)
+                    }
+                };
+                Ok((structdef, id))
+            })
+            .collect::<LowerResult<_>>()?;
+        // Other kinds of things can happen in arbitrary order.
+        let mut next_ty = self.ir.tydefs.next_idx();
+        let mut next_val = self.ir.valdefs.next_idx();
+        let mut next_ctx = self.ir.ctxdefs.next_idx();
+        self.tydefs = (self.tree.tydefs.iter())
+            .map(|item| {
+                let id = next_ty;
+                next_ty += 1;
+                let name = self.name(item.name);
+                self.names.tydefs.insert((self.module, name), id);
+                id
+            })
+            .collect();
+        self.valdefs = (self.tree.valdefs.iter())
+            .map(|item| {
+                let id = next_val;
+                next_val += 1;
+                let name = self.name(item.name);
+                self.names.valdefs.insert((self.module, name), id);
+                id
+            })
+            .collect();
+        self.ctxdefs = (self.tree.ctxdefs.iter())
+            .map(|item| {
+                let id = next_ctx;
+                next_ctx += 1;
+                let name = self.name(item.name);
+                self.names.ctxdefs.insert((self.module, name), id);
+                id
+            })
+            .collect();
+        Ok(())
     }
 
-    fn prealloc<I: Idx, J: Idx + AddAssign<usize> + Into<Named>, T: Copy + parse::Named, U>(
-        &mut self,
-        old: &IndexVec<I, T>,
-        new: &IndexVec<J, U>,
-    ) -> IndexVec<I, J> {
-        self.prealloc_impl(old, new, J::into)
+    fn needs(&mut self, needs: IdRange<NeedId>) -> LowerResult<Needs> {
+        let mut tys = Vec::new();
+        let mut fns = Vec::new();
+        let mut vals = Vec::new();
+        let mut ctxs = Vec::new();
+        for need in needs {
+            let parse::Need { kind, path } = self.tree.needs[need];
+            let key = self.path(path)?;
+            match (
+                self.names.tydefs.get(&key),
+                self.names.fndefs.get(&key),
+                self.names.valdefs.get(&key),
+                self.names.ctxdefs.get(&key),
+                self.names.structdefs.get(&key),
+            ) {
+                (Some(&tydef), None, None, None, None) => {
+                    let kind = match kind {
+                        parse::NeedKind::Default | parse::NeedKind::Static => NeedKind::Static,
+                    };
+                    let id = self.ty(Type::Tydef(tydef));
+                    tys.push(Need { kind, id });
+                }
+                (None, Some(&id), None, None, None) => {
+                    let kind = match kind {
+                        parse::NeedKind::Default => NeedKind::Dynamic,
+                        parse::NeedKind::Static => NeedKind::Static,
+                    };
+                    fns.push(Need { kind, id });
+                }
+                (None, None, Some(&id), None, None) => {
+                    let kind = match kind {
+                        parse::NeedKind::Default => NeedKind::Dynamic,
+                        parse::NeedKind::Static => NeedKind::Static,
+                    };
+                    vals.push(Need { kind, id });
+                }
+                (None, None, None, Some(&id), None) => {
+                    let kind = match kind {
+                        parse::NeedKind::Default => NeedKind::Dynamic,
+                        parse::NeedKind::Static => return Err(LowerError::NeedStaticCtx(path)),
+                    };
+                    ctxs.push(Need { kind, id });
+                }
+                (None, None, None, None, Some(&structdef)) => {
+                    let kind = match kind {
+                        parse::NeedKind::Default | parse::NeedKind::Static => NeedKind::Static,
+                    };
+                    let id = self.ty(Type::Structdef(structdef));
+                    tys.push(Need { kind, id });
+                }
+                (None, None, None, None, None) => return Err(LowerError::Undefined(path.last)),
+                _ => return Err(LowerError::Ambiguous(path.last)),
+            }
+        }
+        Ok(Needs {
+            tys: IdRange::new(&mut self.ir.need_tys, tys),
+            fns: IdRange::new(&mut self.ir.need_fns, fns),
+            vals: IdRange::new(&mut self.ir.need_vals, vals),
+            ctxs: IdRange::new(&mut self.ir.need_ctxs, ctxs),
+        })
     }
 
-    fn names(&mut self) {
-        self.tydefs = self.prealloc_impl(&self.tree.tydefs, &self.ir.tydefs, |id| {
-            Named::Ty(self.ty(Type::Tydef(id)))
-        });
-        self.fndefs = self.prealloc(&self.tree.fndefs, &self.ir.fndefs);
-        self.valdefs = self.prealloc(&self.tree.valdefs, &self.ir.valdefs);
-        self.ctxdefs = self.prealloc(&self.tree.ctxdefs, &self.ir.ctxdefs);
-        self.structdefs = self.prealloc(&self.tree.structdefs, &self.ir.structdefs);
+    fn parse_ty(&mut self, ty: parse::TypeId) -> LowerResult<TypeId> {
+        match self.tree.types[ty] {
+            parse::Type::Path(path) => {
+                let key = self.path(path)?;
+                match (self.names.tydefs.get(&key), self.names.structdefs.get(&key)) {
+                    (Some(&tydef), None) => Ok(self.ty(Type::Tydef(tydef))),
+                    (None, Some(&structdef)) => Ok(self.ty(Type::Structdef(structdef))),
+                    (None, None) => Err(LowerError::Undefined(path.last)),
+                    (Some(_), Some(_)) => Err(LowerError::Ambiguous(path.last)),
+                }
+            }
+        }
     }
 
     fn decls(&mut self) -> LowerResult<()> {
         for (id, &parse::Tydef { name: _, def }) in self.tree.tydefs.iter_enumerated() {
+            let id = self.tydefs[id];
             let tydef = Tydef {
                 def: match def {
                     Some(ty) => Some(self.parse_ty(ty)?),
                     None => None,
                 },
             };
-            assert_eq!(self.ir.tydefs.push(tydef), self.tydefs[id]);
+            assert_eq!(self.ir.tydefs.push(tydef), id);
         }
         for (
-            id,
-            parse::Fndef {
-                ty,
-                name,
+            parse_id,
+            &parse::Fndef {
+                ty: _,
+                name: _,
                 needs,
                 params,
                 result,
@@ -543,176 +643,259 @@ impl<'a> Lower<'a> {
             },
         ) in self.tree.fndefs.iter_enumerated()
         {
-            let types = params
+            let (structdef, id) = self.fndefs[parse_id];
+            self.funcs.push((parse_id, structdef, id));
+            let mut types = Vec::new();
+            if let Some(structdef) = structdef {
+                types.push(self.ty(Type::Structdef(structdef)));
+            }
+            for param in params {
+                types.push(self.parse_ty(self.tree.params[param].ty)?);
+            }
+            let fndef = Fndef {
+                needs: self.needs(needs)?,
+                param: self.ty_tuple(&types),
+                result: match result {
+                    Some(ty) => self.parse_ty(ty)?,
+                    None => self.ty_unit(),
+                },
+            };
+            assert_eq!(self.ir.fndefs.push(fndef), id);
+        }
+        for (id, &parse::Valdef { name: _, needs, ty }) in self.tree.valdefs.iter_enumerated() {
+            let id = self.valdefs[id];
+            let valdef = Valdef {
+                needs: self.needs(needs)?,
+                ty: self.parse_ty(ty)?,
+            };
+            assert_eq!(self.ir.valdefs.push(valdef), id);
+        }
+        for (id, &parse::Ctxdef { name: _, needs }) in self.tree.ctxdefs.iter_enumerated() {
+            let id = self.ctxdefs[id];
+            let ctxdef = Ctxdef {
+                needs: self.needs(needs)?,
+            };
+            assert_eq!(self.ir.ctxdefs.push(ctxdef), id);
+        }
+        for (id, parse::Structdef { name: _, fields }) in self.tree.structdefs.iter_enumerated() {
+            let id = self.structdefs[id];
+            let pairs = fields
                 .into_iter()
-                .map(|param| self.parse_ty(self.tree.params[param].ty))
-                .collect::<LowerResult<Vec<TypeId>>>()?;
-            let param = self.ty_tuple(&types);
-            let result = self.ty_unit();
-            let id = self.ir.funcs.push(Func { param, result });
-            self.funcs.push((self.path, func, id));
-            let name = self.name(name);
-            self.set_name(name, Named::Func(id));
-            if &self.ir.strings[name] == "main" {
-                self.ir.main = Some(id);
-            }
-        }
-        for (id, valdef) in self.tree.valdefs.iter_enumerated() {
-            todo!();
-        }
-        for Ctxdef { name, needs } in self.tree.ctxdefs {
-            let parent = self.path;
-            self.path = self.set_scope(name);
-            for val in vals {
-                let Val { name, ty } = self.tree.vals[val];
-                let ty = self.parse_ty(ty)?;
-                let id = self.ir.vars.push(Var { ty });
-                self.set_var(name, id);
-            }
-            self.path = parent;
-        }
-        for (id, structdef) in self.tree.structdefs.iter_enumerated() {
-            todo!();
+                .map(|param| {
+                    let Param { name, ty } = self.tree.params[param];
+                    Ok((self.name(name), self.parse_ty(ty)?))
+                })
+                .collect::<LowerResult<Vec<_>>>()?;
+            let structdef = Structdef {
+                fields: self.ir.fields.make(&pairs),
+            };
+            assert_eq!(self.ir.structdefs.push(structdef), id);
         }
         Ok(())
     }
 
-    fn instr(&mut self, ty: TypeId, instr: Instr) -> InstrId {
-        let id_val = self.ir.vals.push(ty);
-        let id_instr = self.ir.instrs.push(instr);
-        assert_eq!(id_val, id_instr);
-        id_val
+    fn bodies(&mut self) -> LowerResult<()> {
+        for (fndef, structdef, id_type) in take(&mut self.funcs) {
+            let start = Body {
+                x: self,
+                tree: fndef,
+                ir: id_type,
+                ty: structdef,
+                locals: HashMap::new(),
+            }
+            .body()?;
+            let id_body = self.ir.bodies.push(start);
+            assert_eq!(id_type, id_body);
+        }
+        Ok(())
     }
 
-    fn instr_tuple(&mut self, ty: TypeId, vals: &[InstrId]) -> InstrId {
-        let start = self.ir.refs.len_idx();
-        self.ir.refs.extend_from_slice(IndexSlice::new(vals));
-        let end = self.ir.refs.len_idx();
+    fn program(&mut self) -> LowerResult<()> {
+        self.imports()?;
+        self.names()?;
+        self.decls()?;
+        self.bodies()?;
+        Ok(())
+    }
+}
+
+struct Body<'a, 'b> {
+    x: &'b mut Lower<'a>,
+    tree: parse::FndefId,
+    ir: FndefId,
+    ty: Option<StructdefId>,
+    locals: HashMap<StrId, LocalId>,
+}
+
+impl Body<'_, '_> {
+    fn get(&mut self, token: TokenId) -> LowerResult<LocalId> {
+        let name = self.x.name(token);
+        match self.locals.get(&name) {
+            Some(&local) => Ok(local),
+            None => Err(LowerError::Undefined(token)),
+        }
+    }
+
+    fn set(&mut self, token: TokenId, local: LocalId) {
+        let name = self.x.name(token);
+        self.locals.insert(name, local);
+    }
+
+    fn instr(&mut self, ty: TypeId, instr: Instr) -> LocalId {
+        let id_local = self.x.ir.locals.push(ty);
+        let id_instr = self.x.ir.instrs.push(instr);
+        assert_eq!(id_local, id_instr);
+        id_local
+    }
+
+    fn instr_tuple(&mut self, ty: TypeId, locals: &[LocalId]) -> LocalId {
+        let start = self.x.ir.refs.len_idx();
+        self.x.ir.refs.extend_from_slice(IndexSlice::new(locals));
+        let end = self.x.ir.refs.len_idx();
         self.instr(ty, Instr::Tuple(IdRange { start, end }))
     }
 
-    fn ret(&mut self, val: InstrId) -> InstrId {
-        let ty = self.ty_unit(); // This is a bit meaningless for a `Return` instruction.
-        self.instr(ty, Instr::Return(val))
-    }
-
-    fn expr(&mut self, expr: ExprId) -> LowerResult<InstrId> {
-        match self.tree.exprs[expr] {
-            Expr::Path(path) => match self.get_path(path)? {
-                Named::Scope => panic!(),
-                Named::Type(_) => panic!(),
-                Named::Var(var) => {
-                    let ty = self.ir.vars[var].ty;
-                    Ok(self.instr(ty, Instr::Get(var)))
+    fn expr(&mut self, expr: ExprId) -> LowerResult<LocalId> {
+        match self.x.tree.exprs[expr] {
+            Expr::This => todo!(),
+            Expr::Path(path) => {
+                let (module, name) = self.x.path(path)?;
+                if path.prefix.is_empty()
+                    && let Some(&local) = self.locals.get(&name)
+                {
+                    return Ok(local);
                 }
-                Named::Func(_) => panic!(),
-                Named::Val(val) => Ok(val),
-            },
+                let Some(&val) = self.x.names.valdefs.get(&(module, name)) else {
+                    return Err(LowerError::Undefined(path.last));
+                };
+                let ty = self.x.ir.valdefs[val].ty;
+                Ok(self.instr(ty, Instr::Val(val)))
+            }
             Expr::Int(token) => {
-                let ty = self.ty(Type::Int);
-                let n = self.slice(token).parse().unwrap();
-                Ok(self.instr(ty, Instr::Int(n)))
+                let ty = self.x.ty(Type::Int32);
+                let n = self.x.slice(token).parse().unwrap();
+                Ok(self.instr(ty, Instr::Int32(n)))
             }
             Expr::String(token) => {
-                let ty = self.ty(Type::String);
-                let string = self.string(token);
+                let ty = self.x.ty(Type::String);
+                let string = self.x.string(token);
                 Ok(self.instr(ty, Instr::String(string)))
             }
+            Expr::Struct(_, _) => todo!(),
             Expr::Field(_, _) => todo!(),
             Expr::Method(object, method, args) => {
-                let val = self.expr(object)?;
-                match (self.ir.types[self.ir.vals[val].index()], self.slice(method)) {
-                    (Type::List(_), "len") => {
-                        assert!(args.is_empty());
-                        let ty = self.ty(Type::Int);
-                        Ok(self.instr(ty, Instr::Len(val)))
-                    }
-                    (Type::List(inner), "get") => {
-                        assert_eq!(args.len(), 1);
-                        let index = self.expr(args.first().unwrap())?;
-                        Ok(self.instr(inner, Instr::Index(val, index)))
-                    }
-                    _ => panic!(),
+                let obj = self.expr(object)?;
+                let ty = self.x.ir.locals[obj];
+                let structdef = self.x.ir.types[ty.index()].structdef();
+                let name = self.x.name(method);
+                let Some(&fndef) = self.x.names.methods.get(&(self.x.module, structdef, name))
+                else {
+                    return Err(LowerError::Undefined(method));
+                };
+                let Fndef {
+                    needs: _,
+                    param,
+                    result,
+                } = self.x.ir.fndefs[fndef];
+                let params = &self.x.ir.tuples[self.x.ir.types[param.index()].tuple()];
+                if args.len() != params.len() {
+                    return Err(LowerError::ArgCount(expr));
                 }
+                let mut locals = vec![obj];
+                for arg in args {
+                    locals.push(self.expr(arg)?);
+                }
+                let arg = self.instr_tuple(param, &locals);
+                Ok(self.instr(result, Instr::Call(fndef, arg)))
             }
-            Expr::Call(callee, args) => match self.tree.exprs[callee] {
-                Expr::Path(path) => {
-                    let func = self.get_path(path)?.func();
-                    let Func { param, result, .. } = self.ir.funcs[func];
-                    let params = &self.ir.tuples[self.ir.types[param.index()].tuple()];
-                    if args.len() != params.len() {
-                        return Err(LowerError::ArgCount(expr));
-                    }
-                    let vals = args
-                        .into_iter()
-                        .map(|arg| self.expr(arg))
-                        .collect::<LowerResult<Vec<InstrId>>>()?;
-                    let arg = self.instr_tuple(param, &vals);
-                    Ok(self.instr(result, Instr::Call(func, arg)))
+            Expr::Call(callee, binds, args) => {
+                let key = self.x.path(callee)?;
+                let Some(&fndef) = self.x.names.fndefs.get(&key) else {
+                    return Err(LowerError::Undefined(callee.last));
+                };
+                let Fndef {
+                    needs: _,
+                    param,
+                    result,
+                } = self.x.ir.fndefs[fndef];
+                let params = &self.x.ir.tuples[self.x.ir.types[param.index()].tuple()];
+                if args.len() != params.len() {
+                    return Err(LowerError::ArgCount(expr));
                 }
-                _ => panic!(),
-            },
+                let locals = args
+                    .into_iter()
+                    .map(|arg| self.expr(arg))
+                    .collect::<LowerResult<Vec<LocalId>>>()?;
+                let arg = self.instr_tuple(param, &locals);
+                Ok(self.instr(result, Instr::Call(fndef, arg)))
+            }
             Expr::Binary(l, op, r) => {
                 let a = self.expr(l)?;
                 let b = self.expr(r)?;
-                Ok(match op {
-                    Binop::Add => {
-                        let ty = self.ty(Type::Int);
-                        self.instr(ty, Instr::IntArith(a, IntArith::Add, b))
-                    }
-                    Binop::Sub => {
-                        let ty = self.ty(Type::Int);
-                        self.instr(ty, Instr::IntArith(a, IntArith::Sub, b))
-                    }
-                    Binop::Less => {
-                        let ty = self.ty(Type::Bool);
-                        self.instr(ty, Instr::IntComp(a, IntComp::Less, b))
-                    }
-                })
+                match (
+                    self.x.ir.types[self.x.ir.locals[a].index()],
+                    self.x.ir.types[self.x.ir.locals[b].index()],
+                ) {
+                    (Type::Int32, Type::Int32) => match op {
+                        parse::Binop::Add => {
+                            let ty = self.x.ty(Type::Int32);
+                            Ok(self.instr(ty, Instr::Int32Arith(a, Int32Arith::Add, b)))
+                        }
+                        parse::Binop::Sub => {
+                            let ty = self.x.ty(Type::Int32);
+                            Ok(self.instr(ty, Instr::Int32Arith(a, Int32Arith::Sub, b)))
+                        }
+                        parse::Binop::Mul => {
+                            let ty = self.x.ty(Type::Int32);
+                            Ok(self.instr(ty, Instr::Int32Arith(a, Int32Arith::Mul, b)))
+                        }
+                        parse::Binop::Div => {
+                            let ty = self.x.ty(Type::Int32);
+                            Ok(self.instr(ty, Instr::Int32Arith(a, Int32Arith::Div, b)))
+                        }
+                        parse::Binop::Neq => {
+                            let ty = self.x.ty(Type::Bool);
+                            Ok(self.instr(ty, Instr::Int32Comp(a, Int32Comp::Neq, b)))
+                        }
+                        parse::Binop::Less => {
+                            let ty = self.x.ty(Type::Bool);
+                            Ok(self.instr(ty, Instr::Int32Comp(a, Int32Comp::Less, b)))
+                        }
+                    },
+                    _ => todo!(),
+                }
             }
+            Expr::If(_, _, _) => todo!(),
         }
     }
 
     fn stmts(&mut self, stmts: IdRange<StmtId>) -> LowerResult<()> {
         for stmt in stmts {
-            match self.tree.stmts[stmt] {
+            match self.x.tree.stmts[stmt] {
                 Stmt::Let(name, rhs) => {
-                    let val = self.expr(rhs)?;
-                    self.set_val(name, val);
+                    let local = self.expr(rhs)?;
+                    self.set(name, local);
                 }
                 Stmt::Var(name, rhs) => {
-                    let val = self.expr(rhs)?;
-                    self.set_val(name, val);
+                    let local = self.expr(rhs)?;
+                    self.set(name, local);
                 }
-                Stmt::Assign(lhs, rhs) => match self.tree.exprs[lhs] {
+                Stmt::Assign(lhs, rhs) => match self.x.tree.exprs[lhs] {
                     Expr::Path(path) => {
-                        assert!(path.names.is_empty());
-                        let before = self.get(path.name)?.val();
+                        assert!(path.prefix.is_empty());
+                        let before = self.get(path.last)?;
                         let after = self.expr(rhs)?;
-                        let unit = self.ty_unit();
+                        let unit = self.x.ty_unit();
                         self.instr(unit, Instr::Set(before, after));
                     }
                     _ => panic!(),
                 },
-                Stmt::Provide(path, expr) => {
-                    let ty = self.ty_unit();
-                    let var = self.get_path(path)?.var();
-                    let val = self.expr(expr)?;
-                    self.instr(ty, Instr::Bind(var, val));
-                    self.stmts(IdRange {
-                        start: StmtId::from_raw(stmt.raw() + 1),
-                        ..stmts
-                    })?;
-                    let unit = self.ty_unit();
-                    self.instr(unit, Instr::End);
-                    break;
-                }
                 Stmt::While(cond, body) => {
                     assert!(body.expr.is_none());
-                    let unit = self.ty_unit();
+                    let unit = self.x.ty_unit();
                     self.instr(unit, Instr::Loop);
-                    let val = self.expr(cond)?;
-                    self.instr(unit, Instr::If(val));
+                    let local = self.expr(cond)?;
+                    self.instr(unit, Instr::If(local));
                     self.stmts(body.stmts)?;
                     self.instr(unit, Instr::Br(Depth(1)));
                     self.instr(unit, Instr::End);
@@ -726,53 +909,43 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
-    fn body(&mut self, id: FuncId, func: parse::FuncId) -> LowerResult<InstrId> {
-        let start = self.ir.instrs.len_idx();
-        let parse::Func {
+    fn body(&mut self) -> LowerResult<Option<LocalId>> {
+        let parse::Fndef {
+            ty: _,
             name: _,
+            needs: _,
             params,
-            body,
-        } = self.tree.funcs[func];
-        let tuple_ty = self.ir.funcs[id].param;
-        let tuple_val = self.instr(tuple_ty, Instr::Param);
+            result: _,
+            def,
+        } = self.x.tree.fndefs[self.tree];
+        let Some(body) = def else { return Ok(None) };
+        let start = self.x.ir.instrs.len_idx();
+        let Fndef {
+            needs: _,
+            param: tuple_ty,
+            result: ret_ty,
+        } = self.x.ir.fndefs[self.ir];
+        let tuple_local = self.instr(tuple_ty, Instr::Param);
         for (index, (param, tuple_loc)) in params
             .into_iter()
-            .zip(self.ir.types[tuple_ty.index()].tuple())
+            .zip(self.x.ir.types[tuple_ty.index()].tuple())
             .enumerate()
         {
-            let ty = self.ir.tuples[tuple_loc];
-            let val = self.instr(ty, Instr::Elem(tuple_val, Index(index.try_into().unwrap())));
-            let name = self.tree.params[param].name;
-            self.set_val(name, val);
+            let ty = self.x.ir.tuples[tuple_loc];
+            let local = self.instr(ty, Instr::Elem(tuple_local, ElemId::new(index)));
+            let name = self.x.tree.params[param].name;
+            self.set(name, local);
         }
         self.stmts(body.stmts)?;
         let ret = match body.expr {
             Some(expr) => self.expr(expr)?,
             None => {
-                let ty = self.ty_unit();
+                let ty = self.x.ty_unit();
                 self.instr_tuple(ty, &[])
             }
         };
-        self.ret(ret);
-        Ok(start)
-    }
-
-    fn defs(&mut self) -> LowerResult<()> {
-        for (scope, func, id_type) in take(&mut self.funcs) {
-            self.path = scope;
-            let start = self.body(id_type, func)?;
-            let id_body = self.ir.bodies.push(start);
-            assert_eq!(id_type, id_body);
-        }
-        Ok(())
-    }
-
-    fn program(&mut self) -> LowerResult<()> {
-        self.imports()?;
-        self.names();
-        self.decls()?;
-        self.defs()?;
-        Ok(())
+        self.instr(ret_ty, Instr::Return(ret));
+        Ok(Some(start))
     }
 }
 
@@ -781,17 +954,18 @@ pub fn lower(
     starts: &TokenStarts,
     tree: &Tree,
     ir: &mut IR,
+    names: &mut Names,
     prelude: Option<ModuleId>,
     imports: &IndexSlice<ImportId, [ModuleId]>,
-) -> LowerResult<(ModuleId, Names)> {
-    let mut names = Names::default();
+) -> LowerResult<ModuleId> {
+    assert_eq!(tree.imports.len(), imports.len());
     let module = ir.modules.push(());
     let mut lower = Lower {
         source,
         starts,
         tree,
         ir,
-        names: &mut names,
+        names,
         module,
         prelude,
         imports,
@@ -803,5 +977,5 @@ pub fn lower(
         funcs: Vec::new(),
     };
     lower.program()?;
-    Ok((module, names))
+    Ok(module)
 }

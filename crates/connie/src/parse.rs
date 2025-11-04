@@ -65,14 +65,10 @@ define_index_type! {
     pub struct StructdefId = u32;
 }
 
-pub trait Named {
-    fn name(self) -> TokenId;
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Path {
-    pub name: TokenId,
-    pub names: IdRange<NameId>,
+    pub prefix: IdRange<NameId>,
+    pub last: TokenId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -129,7 +125,7 @@ pub enum Expr {
     Struct(Path, IdRange<FieldId>),
     Field(ExprId, TokenId),
     Method(ExprId, TokenId, IdRange<ExprId>),
-    Call(ExprId, IdRange<BindId>, IdRange<ExprId>),
+    Call(Path, IdRange<BindId>, IdRange<ExprId>),
     Binary(ExprId, Binop, ExprId),
     If(ExprId, Block, Option<Block>),
 }
@@ -139,7 +135,6 @@ pub enum Stmt {
     Let(TokenId, ExprId),
     Var(TokenId, ExprId),
     Assign(ExprId, ExprId),
-    Provide(Path, ExprId),
     While(ExprId, Block),
     Expr(ExprId),
 }
@@ -163,12 +158,6 @@ pub struct Tydef {
     pub def: Option<TypeId>,
 }
 
-impl Named for Tydef {
-    fn name(self) -> TokenId {
-        self.name
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Fndef {
     pub ty: Option<TokenId>,
@@ -179,22 +168,11 @@ pub struct Fndef {
     pub def: Option<Block>,
 }
 
-impl Named for Fndef {
-    fn name(self) -> TokenId {
-        self.name
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Valdef {
     pub name: TokenId,
+    pub needs: IdRange<NeedId>,
     pub ty: TypeId,
-}
-
-impl Named for Valdef {
-    fn name(self) -> TokenId {
-        self.name
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -203,22 +181,10 @@ pub struct Ctxdef {
     pub needs: IdRange<NeedId>,
 }
 
-impl Named for Ctxdef {
-    fn name(self) -> TokenId {
-        self.name
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Structdef {
     pub name: TokenId,
     pub fields: IdRange<ParamId>,
-}
-
-impl Named for Structdef {
-    fn name(self) -> TokenId {
-        self.name
-    }
 }
 
 #[derive(Debug, Default)]
@@ -304,15 +270,16 @@ impl<'a> Parser<'a> {
     }
 
     fn path(&mut self) -> ParseResult<Path> {
-        let name = self.expect(Name)?;
-        let mut names = Vec::new();
+        let mut prefix = Vec::new();
+        let mut last = self.expect(Name)?;
         while let ColonColon = self.peek() {
             self.next();
-            names.push(self.expect(Name)?);
+            prefix.push(last);
+            last = self.expect(Name)?;
         }
         Ok(Path {
-            name,
-            names: IdRange::new(&mut self.tree.names, names),
+            prefix: IdRange::new(&mut self.tree.names, prefix),
+            last,
         })
     }
 
@@ -382,8 +349,9 @@ impl<'a> Parser<'a> {
                 self.expr_id()?
             }
             _ => {
-                let names = IdRange::new(&mut self.tree.names, Vec::new());
-                self.tree.exprs.push(Expr::Path(Path { name, names }))
+                let prefix = IdRange::new(&mut self.tree.names, Vec::new());
+                let last = name;
+                self.tree.exprs.push(Expr::Path(Path { prefix, last }))
             }
         };
         Ok(Field { name, val })
@@ -439,6 +407,28 @@ impl<'a> Parser<'a> {
             Name => {
                 let path = self.path()?;
                 match self.peek() {
+                    LParen => {
+                        let binds = IdRange::new(&mut self.tree.binds, Vec::new());
+                        let args = self.arg_ids()?;
+                        Ok(Expr::Call(path, binds, args))
+                    }
+                    LBracket => {
+                        self.next();
+                        let mut binds = Vec::new();
+                        loop {
+                            if let RBracket = self.peek() {
+                                self.next();
+                                break;
+                            }
+                            binds.push(self.bind()?);
+                            if let Comma = self.peek() {
+                                self.next();
+                            }
+                        }
+                        let binds = IdRange::new(&mut self.tree.binds, Vec::new());
+                        let args = self.arg_ids()?;
+                        Ok(Expr::Call(path, binds, args))
+                    }
                     LBrace => {
                         self.next();
                         let mut fields = Vec::new();
@@ -463,45 +453,16 @@ impl<'a> Parser<'a> {
 
     fn expr_chain(&mut self) -> ParseResult<Expr> {
         let mut expr = self.expr_atom()?;
-        loop {
+        while let Dot = self.peek() {
+            self.next();
+            let object = self.tree.exprs.push(expr);
+            let name = self.expect(Name)?;
             match self.peek() {
-                Dot => {
-                    self.next();
-                    let object = self.tree.exprs.push(expr);
-                    let name = self.expect(Name)?;
-                    match self.peek() {
-                        LParen => {
-                            let args = self.arg_ids()?;
-                            expr = Expr::Method(object, name, args);
-                        }
-                        _ => expr = Expr::Field(object, name),
-                    }
-                }
-                LBracket => {
-                    self.next();
-                    let callee = self.tree.exprs.push(expr);
-                    let mut binds = Vec::new();
-                    loop {
-                        if let RBracket = self.peek() {
-                            self.next();
-                            break;
-                        }
-                        binds.push(self.bind()?);
-                        if let Comma = self.peek() {
-                            self.next();
-                        }
-                    }
-                    let binds = IdRange::new(&mut self.tree.binds, Vec::new());
-                    let args = self.arg_ids()?;
-                    expr = Expr::Call(callee, binds, args);
-                }
                 LParen => {
-                    let callee = self.tree.exprs.push(expr);
-                    let binds = IdRange::new(&mut self.tree.binds, Vec::new());
                     let args = self.arg_ids()?;
-                    expr = Expr::Call(callee, binds, args);
+                    expr = Expr::Method(object, name, args);
                 }
-                _ => break,
+                _ => expr = Expr::Field(object, name),
             }
         }
         Ok(expr)
@@ -737,10 +698,11 @@ impl<'a> Parser<'a> {
     fn valdef(&mut self) -> ParseResult<Valdef> {
         self.expect(Val)?;
         let name = self.expect(Name)?;
+        let needs = self.need_ids()?;
         self.expect(Colon)?;
         let ty = self.ty_id()?;
         self.expect(Semi)?;
-        Ok(Valdef { name, ty })
+        Ok(Valdef { name, needs, ty })
     }
 
     fn ctxdef(&mut self) -> ParseResult<Ctxdef> {

@@ -56,6 +56,10 @@ impl Ranger<'_> {
     }
 }
 
+pub fn path_range(tree: &Tree, path: Path) -> Inclusive {
+    Ranger { tree }.path(path)
+}
+
 pub fn expr_range(tree: &Tree, id: ExprId) -> Inclusive {
     Ranger { tree }.expr(id)
 }
