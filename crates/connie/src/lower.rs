@@ -189,7 +189,7 @@ pub enum Instr {
     /// Bind a contextual type until the next [`Instr::End`].
     ///
     /// Type: unit.
-    BindType(TydefId, TydefId),
+    BindType(TydefId, TypeId),
 
     /// Bind a contextual function until the next [`Instr::End`].
     ///

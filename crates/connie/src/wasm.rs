@@ -9,7 +9,8 @@ use wasm_encoder::{
 
 use crate::{
     intern::StrId,
-    lower::{self, IR, Instr, InstrId, IntArith, IntComp, Type, VarId},
+    lower::{self, FndefId, IR, Instr, Int32Arith, Int32Comp, Names, Type, ValdefId},
+    prelude::Lib,
     tuples::TupleLoc,
     util::IdRange,
 };
@@ -45,7 +46,6 @@ impl AsInstructionSink for Vec<u8> {
 #[derive(Clone, Copy)]
 struct Layout {
     types: IdRange<TypeId>,
-    size: i32,
 }
 
 #[derive(Clone, Copy)]
@@ -56,6 +56,9 @@ struct Tmp {
 
 struct Wasm<'a> {
     ir: &'a IR,
+    names: &'a Names,
+    lib: Lib,
+    main: FndefId,
 
     data_offset: i32,
     strings: HashMap<StrId, i32>,
@@ -63,8 +66,8 @@ struct Wasm<'a> {
     layouts: IndexVec<lower::TypeId, Layout>,
     offsets: IndexVec<TupleLoc, TypeOffset>,
 
-    /// Start of global range for each var.
-    vars: IndexVec<lower::VarId, GlobalId>,
+    /// Start of global range for each `val`.
+    valdefs: IndexVec<ValdefId, GlobalId>,
 
     section_type: TypeSection,
     section_import: ImportSection,
@@ -78,8 +81,8 @@ struct Wasm<'a> {
     /// Locals for the current function.
     locals: IndexVec<LocalId, ValType>,
 
-    /// Start of local range for each SSA value in the current function.
-    variables: HashMap<InstrId, LocalId>,
+    /// Start of local range for each IR local in the current function.
+    variables: HashMap<lower::LocalId, LocalId>,
 
     /// The current function body.
     body: Vec<u8>,
@@ -123,12 +126,12 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    fn get(&mut self, instr: InstrId) {
-        self.get_locals(self.ir.vals[instr], self.variables[&instr])
+    fn get(&mut self, instr: lower::LocalId) {
+        self.get_locals(self.ir.locals[instr], self.variables[&instr])
     }
 
-    fn set(&mut self, instr: InstrId) {
-        let ty = self.ir.vals[instr];
+    fn set(&mut self, instr: lower::LocalId) {
+        let ty = self.ir.locals[instr];
         let start = self.make_locals(ty);
         let prev = self.variables.insert(instr, start);
         assert!(prev.is_none());
@@ -145,28 +148,28 @@ impl<'a> Wasm<'a> {
         Tmp { ty, start }
     }
 
-    fn get_var(&mut self, var: VarId) {
-        let start = self.vars[var];
-        let len = self.layouts[self.ir.vars[var].ty].types.len();
+    fn get_val(&mut self, valdef: ValdefId) {
+        let start = self.valdefs[valdef];
+        let len = self.layouts[self.ir.valdefs[valdef].ty].types.len();
         let end = GlobalId::from_usize(start.index() + len);
         for globalidx in (IdRange { start, end }) {
             self.body.insn().global_get(globalidx.raw());
         }
     }
 
-    fn set_var(&mut self, var: VarId) {
-        let start = self.vars[var];
-        let len = self.layouts[self.ir.vars[var].ty].types.len();
+    fn set_val(&mut self, valdef: ValdefId) {
+        let start = self.valdefs[valdef];
+        let len = self.layouts[self.ir.valdefs[valdef].ty].types.len();
         let end = GlobalId::from_usize(start.index() + len);
         for globalidx in (IdRange { start, end }).into_iter().rev() {
             self.body.insn().global_set(globalidx.raw());
         }
     }
 
-    fn instrs(&mut self, param: lower::TypeId, mut instr: InstrId) -> InstrId {
+    fn instrs(&mut self, param: lower::TypeId, mut instr: lower::LocalId) -> lower::LocalId {
         loop {
             match self.ir.instrs[instr] {
-                Instr::Int(n) => {
+                Instr::Int32(n) => {
                     self.body.insn().i32_const(n);
                 }
                 Instr::String(id) => {
@@ -187,130 +190,77 @@ impl<'a> Wasm<'a> {
                     }
                 }
                 Instr::Elem(tuple, index) => {
-                    let ty = self.ir.vals[tuple];
+                    let ty = self.ir.locals[tuple];
                     let range = self.ir.types[ty.index()].tuple();
-                    let elem = TupleLoc::from_raw(range.start.raw() + index.0);
+                    let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
                     let start =
                         LocalId::from_raw(self.variables[&tuple].raw() + self.offsets[elem].raw());
                     self.get_locals(self.ir.tuples[elem], start);
                 }
-                Instr::IntArith(a, op, b) => {
+                Instr::Int32Arith(a, op, b) => {
                     self.get(a);
                     self.get(b);
                     match op {
-                        IntArith::Add => self.body.insn().i32_add(),
-                        IntArith::Sub => self.body.insn().i32_sub(),
+                        Int32Arith::Add => self.body.insn().i32_add(),
+                        Int32Arith::Sub => self.body.insn().i32_sub(),
+                        Int32Arith::Mul => self.body.insn().i32_mul(),
+                        Int32Arith::Div => self.body.insn().i32_div_s(),
                     };
                 }
-                Instr::IntComp(a, op, b) => {
+                Instr::Int32Comp(a, op, b) => {
                     self.get(a);
                     self.get(b);
                     match op {
-                        IntComp::Less => self.body.insn().i32_lt_s(),
+                        Int32Comp::Neq => self.body.insn().i32_ne(),
+                        Int32Comp::Less => self.body.insn().i32_lt_s(),
                     };
-                }
-                Instr::Len(list) => {
-                    self.get(list);
-                    let tmp = self.set_tmp(lower::TypeId::new(
-                        self.ir.types.get_index_of(&Type::Int).unwrap(),
-                    ));
-                    self.body.insn().drop();
-                    self.get_tmp(tmp);
-                }
-                Instr::Index(list, index) => {
-                    self.get(list);
-                    self.get(index);
-                    let int = lower::TypeId::new(self.ir.types.get_index_of(&Type::Int).unwrap());
-                    let tmp = self.set_tmp(int);
-                    self.get_tmp(tmp);
-                    self.body
-                        .insn()
-                        .i32_le_s()
-                        .if_(BlockType::Empty)
-                        .unreachable()
-                        .end();
-                    self.get_tmp(tmp);
-                    let layout = match self.ir.types[self.ir.vals[list].index()] {
-                        Type::List(inner) => self.layouts[inner],
-                        _ => panic!(),
-                    };
-                    self.body.insn().i32_const(layout.size).i32_mul().i32_add();
-                    let pointer = self.set_tmp(int);
-                    let mut offset = 0;
-                    for ty in layout.types {
-                        match self.types[ty] {
-                            ValType::I32 => {
-                                self.get_tmp(pointer);
-                                self.body.insn().i32_load(MemArg {
-                                    offset,
-                                    align: 2,
-                                    memory_index: 0,
-                                });
-                                offset += 4;
-                            }
-                            ValType::I64 => todo!(),
-                            ValType::F32 => todo!(),
-                            ValType::F64 => todo!(),
-                            ValType::V128 => todo!(),
-                            ValType::Ref(_) => todo!(),
-                        }
-                    }
                 }
                 Instr::Set(lhs, rhs) => {
                     self.get(rhs);
-                    let ty = self.ir.vals[lhs];
+                    let ty = self.ir.locals[lhs];
                     let &start = self.variables.get(&lhs).unwrap();
                     self.set_locals(ty, start);
                 }
                 Instr::Param => {
                     self.get_locals(param, LocalId::from_raw(0));
                 }
-                Instr::Get(var) => self.get_var(var),
-                Instr::Call(func, val) => {
+                Instr::Val(valdef) => self.get_val(valdef),
+                Instr::Call(func, local) => {
                     let funcidx_offset = self.func_println() + 1;
-                    self.get(val);
+                    self.get(local);
                     self.body.insn().call(funcidx_offset + func.raw());
                 }
-                Instr::Bind(var, val) => {
-                    self.get_var(var);
-                    let tmp = self.set_tmp(self.ir.vars[var].ty);
-                    self.get(val);
-                    self.set_var(var);
-                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
+                Instr::BindVal(valdef, local) => {
+                    self.get_val(valdef);
+                    let tmp = self.set_tmp(self.ir.valdefs[valdef].ty);
+                    self.get(local);
+                    self.set_val(valdef);
+                    instr = self.instrs(param, lower::LocalId::from_raw(instr.raw() + 1));
                     self.get_tmp(tmp);
-                    self.set_var(var);
+                    self.set_val(valdef);
                 }
                 Instr::If(cond) => {
                     self.get(cond);
                     self.body.insn().if_(BlockType::Empty);
-                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
+                    instr = self.instrs(param, lower::LocalId::from_raw(instr.raw() + 1));
                     self.body.insn().end();
                 }
                 Instr::Loop => {
                     self.body.insn().loop_(BlockType::Empty);
-                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
+                    instr = self.instrs(param, lower::LocalId::from_raw(instr.raw() + 1));
                     self.body.insn().end();
                 }
                 Instr::Br(depth) => {
                     self.body.insn().br(depth.0);
                 }
                 Instr::End => break,
-                Instr::Return(val) => {
-                    self.get(val);
+                Instr::Return(local) => {
+                    self.get(local);
                     break;
-                }
-                Instr::Args => {
-                    let args = self.func_args();
-                    self.body.insn().call(args);
-                }
-                Instr::Println(string) => {
-                    let println = self.func_println();
-                    self.get(string);
-                    self.body.insn().call(println);
                 }
             }
             self.set(instr);
-            instr = InstrId::from_raw(instr.raw() + 1);
+            instr = lower::LocalId::from_raw(instr.raw() + 1);
         }
         instr
     }
@@ -328,9 +278,9 @@ impl<'a> Wasm<'a> {
         for (i, &ty) in self.ir.types.iter().enumerate() {
             let id = lower::TypeId::from_usize(i);
             let types = match ty {
-                Type::Bool => IdRange::new(&mut self.types, vec![ValType::I32]),
-                Type::Int => IdRange::new(&mut self.types, vec![ValType::I32]),
                 Type::String => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
+                Type::Bool => IdRange::new(&mut self.types, vec![ValType::I32]),
+                Type::Int32 => IdRange::new(&mut self.types, vec![ValType::I32]),
                 Type::Tuple(elems) => {
                     let mut types = Vec::new();
                     for &elem in &self.ir.tuples[elems] {
@@ -338,18 +288,8 @@ impl<'a> Wasm<'a> {
                     }
                     IdRange::new(&mut self.types, types)
                 }
-                Type::List(_) => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
             };
-            let size = types
-                .get(&self.types)
-                .iter()
-                .map(|&ty| match ty {
-                    ValType::I32 | ValType::F32 => 4,
-                    ValType::I64 | ValType::F64 => 8,
-                    ValType::V128 | ValType::Ref(_) => todo!(),
-                })
-                .sum();
-            let layout = Layout { types, size };
+            let layout = Layout { types };
             assert_eq!(self.layouts.push(layout), id);
         }
         for range in self.ir.tuples.ranges() {
@@ -593,28 +533,26 @@ impl<'a> Wasm<'a> {
         let func_offset = self.section_import.len() + self.section_function.len();
 
         let mut global_offset = 1;
-        for var in &self.ir.vars {
-            self.vars.push(GlobalId::from_usize(global_offset));
-            global_offset += self.layouts[var.ty].types.len();
+        for valdef in &self.ir.valdefs {
+            self.valdefs.push(GlobalId::from_usize(global_offset));
+            global_offset += self.layouts[valdef.ty].types.len();
         }
 
-        for (id, func) in self.ir.funcs.iter_enumerated() {
-            let params = self.layouts[func.param];
+        for (id, fndef) in self.ir.fndefs.iter_enumerated() {
+            let params = self.layouts[fndef.param];
             self.section_function.function(self.section_type.len());
             self.section_type.ty().function(
                 params.types.get(&self.types).iter().copied(),
-                self.layouts[func.result]
+                self.layouts[fndef.result]
                     .types
                     .get(&self.types)
                     .iter()
                     .copied(),
             );
-            self.instrs(func.param, self.ir.bodies[id]);
-            if self.ir.main == Some(id) {
-                self.body.insn().i32_const(0).call(proc_exit).unreachable();
-                self.section_export
-                    .export("_start", ExportKind::Func, func_offset + id.raw());
-            }
+            self.instrs(fndef.param, self.ir.bodies[id]);
+            self.body.insn().i32_const(0).call(proc_exit).unreachable();
+            self.section_export
+                .export("_start", ExportKind::Func, func_offset + self.main.raw());
             self.body.insn().end();
             let mut f = Function::new_with_locals_types(
                 self.locals.iter().skip(params.types.len()).copied(),
@@ -635,8 +573,8 @@ impl<'a> Wasm<'a> {
             },
             &ConstExpr::i32_const((self.data_offset + 7) / 8 * 8),
         );
-        for var in &self.ir.vars {
-            for ty in self.layouts[var.ty].types {
+        for valdef in &self.ir.valdefs {
+            for ty in self.layouts[valdef.ty].types {
                 self.section_global.global(
                     GlobalType {
                         val_type: self.types[ty],
@@ -662,16 +600,19 @@ impl<'a> Wasm<'a> {
     }
 }
 
-pub fn wasm(ir: &IR) -> Vec<u8> {
+pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
     Wasm {
         ir,
+        names,
+        lib,
+        main,
 
         data_offset: Default::default(),
         strings: Default::default(),
         types: Default::default(),
         layouts: Default::default(),
         offsets: Default::default(),
-        vars: Default::default(),
+        valdefs: Default::default(),
 
         section_type: Default::default(),
         section_import: Default::default(),
