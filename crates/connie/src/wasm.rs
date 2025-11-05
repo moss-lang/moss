@@ -1,15 +1,15 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, mem::take};
 
 use index_vec::{IndexVec, define_index_type};
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
-    Function, FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink,
-    MemorySection, MemoryType, Module, TypeSection, ValType,
+    Function, FunctionSection, GlobalSection, ImportSection, InstructionSink, MemorySection,
+    MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::{
-    context::{TyId, ValId},
+    context::{Cache, ValId},
     intern::StrId,
     lower::{self, Fndef, FndefId, IR, Instr, Int32Arith, Int32Comp, Names, Type, ValdefId},
     prelude::Lib,
@@ -99,11 +99,6 @@ impl AsInstructionSink for Vec<u8> {
 }
 
 #[derive(Clone, Copy)]
-struct Layout {
-    types: IdRange<TypeId>,
-}
-
-#[derive(Clone, Copy)]
 struct Tmp {
     ty: lower::TypeId,
     start: LocalId,
@@ -115,11 +110,10 @@ struct Wasm<'a> {
     lib: Lib,
     main: FndefId,
     instructions: HashMap<FndefId, Instruction>,
+    cache: Cache<'a>,
 
     data_offset: i32,
     strings: HashMap<StrId, i32>,
-    types: IndexVec<TypeId, ValType>,
-    layouts: IndexVec<TyId, Layout>,
     offsets: IndexVec<TupleLoc, TypeOffset>,
 
     /// Start of global range for each `val`.
@@ -145,17 +139,52 @@ struct Wasm<'a> {
 }
 
 impl<'a> Wasm<'a> {
+    /// Execute `f` for each Wasm type needed to represent `ty` in the current context.
+    fn layout(&mut self, ty: lower::TypeId, mut f: impl FnMut(ValType)) {
+        match self.ir.types[ty.index()] {
+            Type::String => {
+                f(ValType::I32);
+                f(ValType::I32);
+            }
+            Type::Bool => {
+                f(ValType::I32);
+            }
+            Type::Int32 => {
+                f(ValType::I32);
+            }
+            Type::Tuple(elems) => {
+                for &elem in &self.ir.tuples[elems] {
+                    self.layout(elem, &mut f);
+                }
+            }
+            Type::Tydef(_) => todo!(),
+            Type::Structdef(structdef) => {
+                for &(_, field) in &self.ir.fields[self.ir.structdefs[structdef].fields] {
+                    self.layout(field, &mut f);
+                }
+            }
+        }
+    }
+
+    /// Get the number of Wasm types needed to represent `ty` in the current context.
+    ///
+    /// Linear time.
+    fn layout_len(&mut self, ty: lower::TypeId) -> usize {
+        let mut len = 0;
+        self.layout(ty, |_| len += 1);
+        len
+    }
+
     fn make_locals(&mut self, ty: lower::TypeId) -> LocalId {
         let start = self.locals.len_idx();
-        let layout = self.layouts[ty];
-        for &ty in layout.types.get(&self.types) {
-            self.locals.push(ty);
-        }
+        let mut locals = Vec::new();
+        self.layout(ty, |t| locals.push(t));
+        self.locals.append(&mut IndexVec::from_vec(locals));
         start
     }
 
     fn get_locals(&mut self, ty: lower::TypeId, start: LocalId) {
-        let len = self.layouts[ty].types.len();
+        let len = self.layout_len(ty);
         let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }) {
             self.body.insn().local_get(localidx.raw());
@@ -163,8 +192,8 @@ impl<'a> Wasm<'a> {
     }
 
     fn set_locals(&mut self, ty: lower::TypeId, start: LocalId) {
-        let layout = self.layouts[ty];
-        let end = LocalId::from_usize(start.index() + layout.types.len());
+        let len = self.layout_len(ty);
+        let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }).into_iter().rev() {
             self.body.insn().local_set(localidx.raw());
         }
@@ -194,7 +223,7 @@ impl<'a> Wasm<'a> {
 
     fn get_val(&mut self, valdef: ValdefId) {
         let start = self.valdefs[valdef];
-        let len = self.layouts[self.ir.valdefs[valdef].ty].types.len();
+        let len = self.layout_len(self.ir.valdefs[valdef].ty);
         let end = GlobalId::from_usize(start.index() + len);
         for globalidx in (IdRange { start, end }) {
             self.body.insn().global_get(globalidx.raw());
@@ -203,7 +232,7 @@ impl<'a> Wasm<'a> {
 
     fn set_val(&mut self, valdef: ValdefId) {
         let start = self.valdefs[valdef];
-        let len = self.layouts[self.ir.valdefs[valdef].ty].types.len();
+        let len = self.layout_len(self.ir.valdefs[valdef].ty);
         let end = GlobalId::from_usize(start.index() + len);
         for globalidx in (IdRange { start, end }).into_iter().rev() {
             self.body.insn().global_set(globalidx.raw());
@@ -309,6 +338,27 @@ impl<'a> Wasm<'a> {
         instr
     }
 
+    fn fndef(&mut self, fndef: FndefId) {
+        let Fndef {
+            needs: _,
+            param,
+            result,
+        } = self.ir.fndefs[fndef];
+        let mut params = Vec::new();
+        let mut results = Vec::new();
+        self.layout(param, |t| params.push(t));
+        self.layout(result, |t| results.push(t));
+        self.instrs(param, self.ir.bodies[fndef]);
+        self.body.insn().end();
+        let mut f = Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
+        f.raw(take(&mut self.body));
+        self.locals = Default::default();
+        self.variables = Default::default();
+        self.section_code.function(&f);
+        self.section_function.function(self.section_type.len());
+        self.section_type.ty().function(params, results);
+    }
+
     fn program(mut self) -> Vec<u8> {
         self.section_memory.memory(MemoryType {
             minimum: 1,
@@ -351,59 +401,24 @@ impl<'a> Wasm<'a> {
                 .function(params, results.iter().copied());
         }
 
-        let mut global_offset = 1;
-        for valdef in &self.ir.valdefs {
-            self.valdefs.push(GlobalId::from_usize(global_offset));
-            global_offset += self.layouts[valdef.ty].types.len();
-        }
-
-        for (id, fndef) in self.ir.fndefs.iter_enumerated() {
-            let params = self.layouts[fndef.param];
-            self.section_function.function(self.section_type.len());
-            self.section_type.ty().function(
-                params.types.get(&self.types).iter().copied(),
-                self.layouts[fndef.result]
-                    .types
-                    .get(&self.types)
+        let start = self.section_import.len() + self.section_function.len();
+        self.section_function.function(self.section_type.len());
+        self.section_type.ty().function([], []);
+        let mut f = Function::new([]);
+        f.instructions()
+            .call(self.section_import.len() + self.section_function.len())
+            .i32_const(0)
+            .call(
+                WASIP1_IMPORTS
                     .iter()
-                    .copied(),
-            );
-            self.instrs(fndef.param, self.ir.bodies[id]);
-            self.body.insn().i32_const(0).call(proc_exit).unreachable();
-            self.section_export
-                .export("_start", ExportKind::Func, func_offset + self.main.raw());
-            self.body.insn().end();
-            let mut f = Function::new_with_locals_types(
-                self.locals.iter().skip(params.types.len()).copied(),
-            );
-            f.raw(self.body);
-            self.section_code.function(&f);
-            self.locals = Default::default();
-            self.variables = Default::default();
-            self.body = Default::default();
-        }
-
-        assert_eq!(self.section_global.len(), self.mem_global());
-        self.section_global.global(
-            GlobalType {
-                val_type: ValType::I32,
-                mutable: true,
-                shared: false,
-            },
-            &ConstExpr::i32_const((self.data_offset + 7) / 8 * 8),
-        );
-        for valdef in &self.ir.valdefs {
-            for ty in self.layouts[valdef.ty].types {
-                self.section_global.global(
-                    GlobalType {
-                        val_type: self.types[ty],
-                        mutable: true,
-                        shared: false,
-                    },
-                    &ConstExpr::i32_const(0),
-                );
-            }
-        }
+                    .position(|&name| name == "proc_exit")
+                    .unwrap() as u32,
+            )
+            .end();
+        self.section_code.function(&f);
+        self.section_export
+            .export("_start", ExportKind::Func, start);
+        self.fndef(self.main);
 
         let mut module = Module::new();
         module
@@ -427,17 +442,17 @@ pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
             (fndef, instruction)
         })
         .collect();
+    let cache = Cache::new(ir);
     Wasm {
         ir,
         names,
         lib,
         main,
         instructions,
+        cache,
 
         data_offset: Default::default(),
         strings: Default::default(),
-        types: Default::default(),
-        layouts: Default::default(),
         offsets: Default::default(),
         valdefs: Default::default(),
 
