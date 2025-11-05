@@ -1,29 +1,113 @@
+# https://webassembly.github.io/spec/core/syntax/values.html#integers
 type U32 = RawInt32;
 
+# https://webassembly.github.io/spec/core/syntax/types.html#number-types
 type I32 = RawInt32;
 
+# https://webassembly.github.io/spec/core/syntax/modules.html#indices
 type MemIdx;
-
 val memidx: MemIdx;
 
+# https://webassembly.github.io/spec/core/syntax/instructions.html#parametric-instructions
 fn unreachable();
 
+# https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
 val align: U32;
 val offset: U32;
 context mem[static memidx, static align, static offset];
-
-fn i32_load[mem](address: I32);
+val dst: MemIdx;
+val src: MemIdx;
+fn i32_load[mem](address: I32): I32;
+fn i32_load8_s[mem](address: I32): I32;
+fn i32_load8_u[mem](address: I32): I32;
+fn i32_load16_s[mem](address: I32): I32;
+fn i32_load16_u[mem](address: I32): I32;
 fn i32_store[mem](address: I32, value: I32);
+fn i32_store8[mem](address: I32, value: I32);
+fn i32_store16[mem](address: I32, value: I32);
+fn memory_size[static memidx](): I32;
+fn memory_grow[static memidx](pages: I32): I32;
+fn memory_copy[static dst, static src](dst: I32, src: I32, len: I32);
+fn memory_fill[static memidx](start: I32, byte: I32, len: I32);
 
-fn i32_lt_s(a: I32, b: I32);
-fn i32_ge_s(a: I32, b: I32);
+# https://webassembly.github.io/spec/core/syntax/instructions.html#numeric-instructions
+fn i32_eqz(n: I32): I32;
+fn i32_eq(a: I32, b: I32): I32;
+fn i32_ne(a: I32, b: I32): I32;
+fn i32_lt_s(a: I32, b: I32): I32;
+fn i32_lt_u(a: I32, b: I32): I32;
+fn i32_gt_s(a: I32, b: I32): I32;
+fn i32_gt_u(a: I32, b: I32): I32;
+fn i32_le_s(a: I32, b: I32): I32;
+fn i32_le_u(a: I32, b: I32): I32;
+fn i32_ge_s(a: I32, b: I32): I32;
+fn i32_ge_u(a: I32, b: I32): I32;
+fn i32_clz(n: I32): I32;
+fn i32_ctz(n: I32): I32;
+fn i32_popcnt(n: I32): I32;
+fn i32_add(a: I32, b: I32): I32;
+fn i32_sub(a: I32, b: I32): I32;
+fn i32_mul(a: I32, b: I32): I32;
+fn i32_div_s(a: I32, b: I32): I32;
+fn i32_div_u(a: I32, b: I32): I32;
+fn i32_rem_s(a: I32, b: I32): I32;
+fn i32_rem_u(a: I32, b: I32): I32;
+fn i32_and(a: I32, b: I32): I32;
+fn i32_or(a: I32, b: I32): I32;
+fn i32_xor(a: I32, b: I32): I32;
+fn i32_shl(a: I32, b: I32): I32;
+fn i32_shr_s(a: I32, b: I32): I32;
+fn i32_shr_u(a: I32, b: I32): I32;
+fn i32_rotl(a: I32, b: I32): I32;
+fn i32_rotr(a: I32, b: I32): I32;
+fn i32_extend8_s(n: I32): I32;
+fn i32_extend16_s(n: I32): I32;
 
 context wasm[
   unreachable,
 
   i32_load,
+  i32_load8_s,
+  i32_load8_u,
+  i32_load16_s,
+  i32_load16_u,
   i32_store,
+  i32_store8,
+  i32_store16,
+  memory_size,
+  memory_grow,
+  memory_copy,
+  memory_fill,
 
+  i32_eqz,
+  i32_eq,
+  i32_ne,
   i32_lt_s,
+  i32_lt_u,
+  i32_gt_s,
+  i32_gt_u,
+  i32_le_s,
+  i32_le_u,
   i32_ge_s,
+  i32_ge_u,
+  i32_clz,
+  i32_ctz,
+  i32_popcnt,
+  i32_add,
+  i32_sub,
+  i32_mul,
+  i32_div_s,
+  i32_div_u,
+  i32_rem_s,
+  i32_rem_u,
+  i32_and,
+  i32_or,
+  i32_xor,
+  i32_shl,
+  i32_shr_s,
+  i32_shr_u,
+  i32_rotl,
+  i32_rotr,
+  i32_extend8_s,
+  i32_extend16_s,
 ];

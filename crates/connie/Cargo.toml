@@ -9,4 +9,5 @@ index_vec = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 logos = { workspace = true }
+strum = { workspace = true, features = ["derive"] }
 wasm-encoder = { workspace = true }

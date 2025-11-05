@@ -6,7 +6,7 @@ default-run = "connie"
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 connie = { workspace = true }
 crossbeam-channel = { workspace = true }
 index_vec = { workspace = true }

@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 
 use index_vec::{IndexVec, define_index_type};
+use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
-    Function, FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
+    Function, FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink,
     MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::{
+    context::{TyId, ValId},
     intern::StrId,
-    lower::{self, FndefId, IR, Instr, Int32Arith, Int32Comp, Names, Type, ValdefId},
+    lower::{self, Fndef, FndefId, IR, Instr, Int32Arith, Int32Comp, Names, Type, ValdefId},
     prelude::Lib,
     tuples::TupleLoc,
     util::IdRange,
@@ -31,7 +33,60 @@ define_index_type! {
     struct LocalId = u32;
 }
 
-const WASI_P1: &str = "wasi_snapshot_preview1";
+#[derive(Clone, Copy, EnumIter, IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+enum Instruction {
+    Unreachable,
+
+    I32Load,
+    I32Load8S,
+    I32Load8U,
+    I32Load16S,
+    I32Load16U,
+    I32Store,
+    I32Store8,
+    I32Store16,
+    MemorySize,
+    MemoryGrow,
+    MemoryCopy,
+    MemoryFill,
+
+    I32Eqz,
+    I32Eq,
+    I32Ne,
+    I32LtS,
+    I32LtU,
+    I32GtS,
+    I32GtU,
+    I32LeS,
+    I32LeU,
+    I32GeS,
+    I32GeU,
+    I32Clz,
+    I32Ctz,
+    I32Popcnt,
+    I32Add,
+    I32Sub,
+    I32Mul,
+    I32DivS,
+    I32DivU,
+    I32RemS,
+    I32RemU,
+    I32And,
+    I32Or,
+    I32Xor,
+    I32Shl,
+    I32ShrS,
+    I32ShrU,
+    I32Rotl,
+    I32Rotr,
+    I32Extend8S,
+    I32Extend16S,
+}
+
+const WASIP1: &str = "wasi_snapshot_preview1";
+
+const WASIP1_IMPORTS: &[&str] = &["args_get", "args_sizes_get", "fd_write", "proc_exit"];
 
 trait AsInstructionSink {
     fn insn(&mut self) -> InstructionSink<'_>;
@@ -59,15 +114,16 @@ struct Wasm<'a> {
     names: &'a Names,
     lib: Lib,
     main: FndefId,
+    instructions: HashMap<FndefId, Instruction>,
 
     data_offset: i32,
     strings: HashMap<StrId, i32>,
     types: IndexVec<TypeId, ValType>,
-    layouts: IndexVec<lower::TypeId, Layout>,
+    layouts: IndexVec<TyId, Layout>,
     offsets: IndexVec<TupleLoc, TypeOffset>,
 
     /// Start of global range for each `val`.
-    valdefs: IndexVec<ValdefId, GlobalId>,
+    valdefs: IndexVec<ValId, GlobalId>,
 
     section_type: TypeSection,
     section_import: ImportSection,
@@ -89,18 +145,6 @@ struct Wasm<'a> {
 }
 
 impl<'a> Wasm<'a> {
-    fn mem_global(&self) -> u32 {
-        0
-    }
-
-    fn func_args(&self) -> u32 {
-        4
-    }
-
-    fn func_println(&self) -> u32 {
-        5
-    }
-
     fn make_locals(&mut self, ty: lower::TypeId) -> LocalId {
         let start = self.locals.len_idx();
         let layout = self.layouts[ty];
@@ -275,262 +319,37 @@ impl<'a> Wasm<'a> {
         });
         self.section_export.export("memory", ExportKind::Memory, 0);
 
-        for (i, &ty) in self.ir.types.iter().enumerate() {
-            let id = lower::TypeId::from_usize(i);
-            let types = match ty {
-                Type::String => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
-                Type::Bool => IdRange::new(&mut self.types, vec![ValType::I32]),
-                Type::Int32 => IdRange::new(&mut self.types, vec![ValType::I32]),
+        for string in WASIP1_IMPORTS {
+            let name = self.ir.strings.get_id(string).unwrap();
+            let fndef = self.names.fndefs[&(self.lib.wasip1, name)];
+            let Fndef {
+                needs: _,
+                param,
+                result,
+            } = self.ir.fndefs[fndef];
+            let params = self.ir.tuples[self.ir.types[param.index()].tuple()]
+                .iter()
+                .map(|ty| match self.ir.types[ty.index()] {
+                    Type::Int32 => ValType::I32,
+                    _ => panic!(),
+                });
+            let results: &[ValType] = match self.ir.types[result.index()] {
+                Type::Int32 => &[ValType::I32],
                 Type::Tuple(elems) => {
-                    let mut types = Vec::new();
-                    for &elem in &self.ir.tuples[elems] {
-                        types.extend_from_slice(self.layouts[elem].types.get(&self.types));
-                    }
-                    IdRange::new(&mut self.types, types)
+                    assert!(elems.is_empty());
+                    &[]
                 }
+                _ => panic!(),
             };
-            let layout = Layout { types };
-            assert_eq!(self.layouts.push(layout), id);
+            self.section_import.import(
+                WASIP1,
+                string,
+                EntityType::Function(self.section_type.len()),
+            );
+            self.section_type
+                .ty()
+                .function(params, results.iter().copied());
         }
-        for range in self.ir.tuples.ranges() {
-            let mut offset = TypeOffset::new(0);
-            for &ty in &self.ir.tuples[range] {
-                self.offsets.push(offset);
-                offset = TypeOffset::from_usize(offset.index() + self.layouts[ty].types.len());
-            }
-        }
-        assert_eq!(self.offsets.len(), self.ir.tuples.count());
-
-        self.data_offset = 1;
-        self.section_data
-            .active(0, &ConstExpr::i32_const(0), "\n".bytes());
-
-        let args_get = self.section_import.len();
-        self.section_import.import(
-            WASI_P1,
-            "args_get",
-            EntityType::Function(self.section_type.len()),
-        );
-        self.section_type
-            .ty()
-            .function([ValType::I32, ValType::I32], [ValType::I32]);
-
-        let args_sizes_get = self.section_import.len();
-        self.section_import.import(
-            WASI_P1,
-            "args_sizes_get",
-            EntityType::Function(self.section_type.len()),
-        );
-        self.section_type
-            .ty()
-            .function([ValType::I32, ValType::I32], [ValType::I32]);
-
-        let fd_write = self.section_import.len();
-        self.section_import.import(
-            WASI_P1,
-            "fd_write",
-            EntityType::Function(self.section_type.len()),
-        );
-        self.section_type.ty().function(
-            [ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            [ValType::I32],
-        );
-
-        let proc_exit = self.section_import.len();
-        self.section_import.import(
-            WASI_P1,
-            "proc_exit",
-            EntityType::Function(self.section_type.len()),
-        );
-        self.section_type.ty().function([ValType::I32], []);
-
-        assert_eq!(self.section_import.len(), self.func_args());
-        self.section_function.function(self.section_type.len());
-        self.section_type
-            .ty()
-            .function([], [ValType::I32, ValType::I32]);
-        self.section_code.function(&{
-            let pointer = 0;
-            let argc = 1;
-            let size = 2;
-            let argv = 3;
-            let i = 4;
-            let prev = 5;
-            let curr = 6;
-            let write = 7;
-            let mut f = Function::new([(8, ValType::I32)]);
-            f.instructions()
-                .global_get(self.mem_global())
-                .local_tee(pointer)
-                .local_get(pointer)
-                .i32_const(4)
-                .i32_add()
-                .call(args_sizes_get)
-                .if_(BlockType::Empty)
-                .unreachable()
-                .end()
-                .local_get(pointer)
-                .i32_load(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_set(argc)
-                .local_get(pointer)
-                .i32_load(MemArg {
-                    offset: 4,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_set(size)
-                .local_get(pointer)
-                .local_get(size)
-                .i32_add()
-                .i32_const(3)
-                .i32_add()
-                .i32_const(2)
-                .i32_shr_u()
-                .i32_const(2)
-                .i32_shl()
-                .local_set(argv)
-                .local_get(argv)
-                .local_get(argc)
-                .i32_const(3)
-                .i32_shl()
-                .i32_add()
-                .global_set(self.mem_global())
-                .local_get(argv)
-                .local_get(pointer)
-                .call(args_get)
-                .if_(BlockType::Empty)
-                .unreachable()
-                .end()
-                .local_get(argc)
-                .local_set(i)
-                .local_get(pointer)
-                .local_get(size)
-                .i32_add()
-                .local_set(prev)
-                .loop_(BlockType::Empty)
-                .local_get(i)
-                .if_(BlockType::Empty)
-                .local_get(i)
-                .i32_const(1)
-                .i32_sub()
-                .local_set(i)
-                .local_get(argv)
-                .local_get(i)
-                .i32_const(2)
-                .i32_shl()
-                .i32_add()
-                .i32_load(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_set(curr)
-                .local_get(argv)
-                .local_get(i)
-                .i32_const(3)
-                .i32_shl()
-                .i32_add()
-                .local_set(write)
-                .local_get(write)
-                .local_get(prev)
-                .i32_const(1)
-                // These strings are null-terminated.
-                .i32_sub()
-                .local_get(curr)
-                .i32_sub()
-                .i32_store(MemArg {
-                    offset: 4,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_get(write)
-                .local_get(curr)
-                .i32_store(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_get(curr)
-                .local_set(prev)
-                .br(1)
-                .end()
-                .end()
-                .local_get(argv)
-                .local_get(argc)
-                .end();
-            f
-        });
-
-        assert_eq!(
-            self.section_import.len() + self.section_function.len(),
-            self.func_println(),
-        );
-        self.section_function.function(self.section_type.len());
-        self.section_type
-            .ty()
-            .function([ValType::I32, ValType::I32], []);
-        self.section_code.function(&{
-            let iovec = 2;
-            let mut f = Function::new([(1, ValType::I32)]);
-            f.instructions()
-                .global_get(self.mem_global())
-                .local_tee(iovec)
-                .local_get(0)
-                .i32_store(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_get(iovec)
-                .local_get(1)
-                .i32_store(MemArg {
-                    offset: 4,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .i32_const(1)
-                .local_get(iovec)
-                .i32_const(1)
-                .local_get(iovec)
-                .i32_const(8)
-                .i32_add()
-                .call(fd_write)
-                .if_(BlockType::Empty)
-                .unreachable()
-                .end()
-                .local_get(iovec)
-                .i32_const(0)
-                .i32_store(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_get(iovec)
-                .i32_const(1)
-                .i32_store(MemArg {
-                    offset: 4,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .i32_const(1)
-                .local_get(iovec)
-                .i32_const(1)
-                .local_get(iovec)
-                .i32_const(8)
-                .i32_add()
-                .call(fd_write)
-                .if_(BlockType::Empty)
-                .unreachable()
-                .end()
-                .end();
-            f
-        });
-
-        let func_offset = self.section_import.len() + self.section_function.len();
 
         let mut global_offset = 1;
         for valdef in &self.ir.valdefs {
@@ -601,11 +420,19 @@ impl<'a> Wasm<'a> {
 }
 
 pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
+    let instructions = Instruction::iter()
+        .map(|instruction| {
+            let name = ir.strings.get_id(<&str>::from(instruction)).unwrap();
+            let fndef = names.fndefs[&(lib.wasm, name)];
+            (fndef, instruction)
+        })
+        .collect();
     Wasm {
         ir,
         names,
         lib,
         main,
+        instructions,
 
         data_offset: Default::default(),
         strings: Default::default(),
