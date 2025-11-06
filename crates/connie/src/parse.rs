@@ -695,7 +695,10 @@ impl<'a> Parser<'a> {
     fn valdef(&mut self) -> ParseResult<Valdef> {
         self.expect(Val)?;
         let name = self.expect(Name)?;
-        let needs = self.need_ids()?;
+        let needs = match self.peek() {
+            LBracket => self.need_ids()?,
+            _ => IdRange::new(&mut self.tree.needs, Vec::new()),
+        };
         self.expect(Colon)?;
         let ty = self.ty_id()?;
         self.expect(Semi)?;
