@@ -1,5 +1,3 @@
-use index_vec::IndexSlice;
-
 use crate::{
     lex::lex,
     lower::{IR, ModuleId, Names, lower},
@@ -28,7 +26,7 @@ impl Precompile {
             &mut self.ir,
             &mut self.names,
             None,
-            IndexSlice::new(imports),
+            imports,
         )
         .unwrap()
     }

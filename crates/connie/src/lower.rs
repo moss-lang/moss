@@ -6,7 +6,7 @@ use indexmap::IndexSet;
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
-    parse::{self, Expr, ExprId, ImportId, NeedId, Param, Path, Stmt, StmtId, Tree},
+    parse::{self, Expr, ExprId, NeedId, Param, Path, Stmt, StmtId, Tree},
     range::{Inclusive, expr_range, path_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -189,12 +189,12 @@ pub enum Instr {
     /// Bind a contextual type until the next [`Instr::End`].
     ///
     /// Type: unit.
-    BindType(TydefId, TypeId),
+    BindTy(TydefId, TypeId),
 
     /// Bind a contextual function until the next [`Instr::End`].
     ///
     /// Type: unit.
-    BindFunc(FndefId, FndefId),
+    BindFn(FndefId, FndefId),
 
     /// Bind a contextual value until the next [`Instr::End`].
     ///
@@ -379,7 +379,7 @@ struct Lower<'a> {
     names: &'a mut Names,
     module: ModuleId,
     prelude: Option<ModuleId>,
-    imports: &'a IndexSlice<ImportId, [ModuleId]>,
+    imports: &'a [ModuleId],
     tydefs: IndexVec<parse::TydefId, TydefId>,
     fndefs: IndexVec<parse::FndefId, (Option<StructdefId>, FndefId)>,
     valdefs: IndexVec<parse::ValdefId, ValdefId>,
@@ -757,7 +757,7 @@ impl Body<'_, '_> {
 
     fn expr(&mut self, expr: ExprId) -> LowerResult<LocalId> {
         match self.x.tree.exprs[expr] {
-            Expr::This => todo!(),
+            Expr::This(_) => todo!(),
             Expr::Path(path) => {
                 let (module, name) = self.x.path(path)?;
                 if path.prefix.is_empty()
@@ -809,6 +809,9 @@ impl Body<'_, '_> {
                 Ok(self.instr(result, Instr::Call(fndef, arg)))
             }
             Expr::Call(callee, binds, args) => {
+                if !binds.is_empty() {
+                    todo!()
+                }
                 let key = self.x.path(callee)?;
                 let Some(&fndef) = self.x.names.fndefs.get(&key) else {
                     return Err(LowerError::Undefined(callee.last));
@@ -956,7 +959,7 @@ pub fn lower(
     ir: &mut IR,
     names: &mut Names,
     prelude: Option<ModuleId>,
-    imports: &IndexSlice<ImportId, [ModuleId]>,
+    imports: &[ModuleId],
 ) -> LowerResult<ModuleId> {
     assert_eq!(tree.imports.len(), imports.len());
     let module = ir.modules.push(());

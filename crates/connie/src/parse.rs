@@ -118,7 +118,7 @@ pub enum Binop {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Expr {
-    This,
+    This(TokenId),
     Path(Path),
     Int(TokenId),
     String(TokenId),
@@ -398,10 +398,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::If(cond, yes, no))
             }
-            This => {
-                self.next();
-                Ok(Expr::This)
-            }
+            This => Ok(Expr::This(self.next())),
             Int => Ok(Expr::Int(self.next())),
             Str => Ok(Expr::String(self.next())),
             Name => {

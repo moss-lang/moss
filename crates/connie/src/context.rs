@@ -18,6 +18,10 @@ define_index_type! {
     pub struct ValId = u32;
 }
 
+pub enum Constant {
+    Int32(i32),
+}
+
 pub struct Cache<'a> {
     ir: &'a IR,
 }
@@ -31,27 +35,44 @@ impl<'a> Cache<'a> {
         todo!()
     }
 
-    pub fn bind_ty(&mut self, ctx: ContextId, def: TydefId, bind: TypeId) -> ContextId {
+    pub fn bind_ty(&mut self, _ctx: ContextId, _def: TydefId, _bind: TypeId) -> ContextId {
         todo!()
     }
 
-    pub fn bind_fn(&mut self, ctx: ContextId, def: FndefId, bind: FndefId) -> ContextId {
+    pub fn bind_fn(&mut self, _ctx: ContextId, _def: FndefId, _bind: FndefId) -> ContextId {
         todo!()
     }
 
-    pub fn bind_val(&mut self, ctx: ContextId, def: ValdefId, bind: ValdefId) -> ContextId {
+    pub fn bind_val(
+        &mut self,
+        _ctx: ContextId,
+        _def: ValdefId,
+        _bind: Option<Constant>,
+    ) -> ContextId {
         todo!()
     }
 
-    pub fn get_ty(&mut self, ctx: ContextId, ty: TypeId) -> TyId {
+    pub fn bound_ty(&self, _ctx: ContextId, _def: TydefId) -> TypeId {
         todo!()
     }
 
-    pub fn get_fn(&mut self, ctx: ContextId, fndef: FndefId) -> FnId {
+    pub fn bound_fn(&self, _ctx: ContextId, _def: FndefId) -> FndefId {
         todo!()
     }
 
-    pub fn get_val(&mut self, ctx: ContextId, valdef: ValdefId) -> ValId {
+    pub fn bound_val(&self, _ctx: ContextId, _def: ValdefId) -> Option<Constant> {
+        todo!()
+    }
+
+    pub fn index_ty(&mut self, _ctx: ContextId, _ty: TypeId) -> TyId {
+        todo!()
+    }
+
+    pub fn index_fn(&mut self, _ctx: ContextId, _fndef: FndefId) -> FnId {
+        todo!()
+    }
+
+    pub fn index_val(&mut self, _ctx: ContextId, _valdef: ValdefId) -> ValId {
         todo!()
     }
 }

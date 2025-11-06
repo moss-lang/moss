@@ -1,4 +1,7 @@
-use std::{collections::HashMap, mem::take};
+use std::{
+    collections::{HashMap, VecDeque},
+    mem::take,
+};
 
 use index_vec::{IndexVec, define_index_type};
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
@@ -9,7 +12,7 @@ use wasm_encoder::{
 };
 
 use crate::{
-    context::{Cache, ValId},
+    context::{Cache, Constant, ContextId, ValId},
     intern::StrId,
     lower::{self, Fndef, FndefId, IR, Instr, Int32Arith, Int32Comp, Names, Type, ValdefId},
     prelude::Lib,
@@ -111,6 +114,7 @@ struct Wasm<'a> {
     main: FndefId,
     instructions: HashMap<FndefId, Instruction>,
     cache: Cache<'a>,
+    queue: VecDeque<(ContextId, FndefId)>,
 
     data_offset: i32,
     strings: HashMap<StrId, i32>,
@@ -128,6 +132,9 @@ struct Wasm<'a> {
     section_code: CodeSection,
     section_data: DataSection,
 
+    /// The current context.
+    context: ContextId,
+
     /// Locals for the current function.
     locals: IndexVec<LocalId, ValType>,
 
@@ -140,7 +147,7 @@ struct Wasm<'a> {
 
 impl<'a> Wasm<'a> {
     /// Execute `f` for each Wasm type needed to represent `ty` in the current context.
-    fn layout(&mut self, ty: lower::TypeId, mut f: impl FnMut(ValType)) {
+    fn layout(&mut self, ty: lower::TypeId, f: &mut impl FnMut(ValType)) {
         match self.ir.types[ty.index()] {
             Type::String => {
                 f(ValType::I32);
@@ -154,13 +161,13 @@ impl<'a> Wasm<'a> {
             }
             Type::Tuple(elems) => {
                 for &elem in &self.ir.tuples[elems] {
-                    self.layout(elem, &mut f);
+                    self.layout(elem, f);
                 }
             }
             Type::Tydef(_) => todo!(),
             Type::Structdef(structdef) => {
                 for &(_, field) in &self.ir.fields[self.ir.structdefs[structdef].fields] {
-                    self.layout(field, &mut f);
+                    self.layout(field, f);
                 }
             }
         }
@@ -171,14 +178,14 @@ impl<'a> Wasm<'a> {
     /// Linear time.
     fn layout_len(&mut self, ty: lower::TypeId) -> usize {
         let mut len = 0;
-        self.layout(ty, |_| len += 1);
+        self.layout(ty, &mut |_| len += 1);
         len
     }
 
     fn make_locals(&mut self, ty: lower::TypeId) -> LocalId {
         let start = self.locals.len_idx();
         let mut locals = Vec::new();
-        self.layout(ty, |t| locals.push(t));
+        self.layout(ty, &mut |t| locals.push(t));
         self.locals.append(&mut IndexVec::from_vec(locals));
         start
     }
@@ -222,26 +229,59 @@ impl<'a> Wasm<'a> {
     }
 
     fn get_val(&mut self, valdef: ValdefId) {
-        let start = self.valdefs[valdef];
-        let len = self.layout_len(self.ir.valdefs[valdef].ty);
-        let end = GlobalId::from_usize(start.index() + len);
-        for globalidx in (IdRange { start, end }) {
-            self.body.insn().global_get(globalidx.raw());
+        match self.cache.bound_val(self.context, valdef) {
+            Some(Constant::Int32(_)) => todo!(),
+            None => {
+                let val = self.cache.index_val(self.context, valdef);
+                let start = self.valdefs[val];
+                let len = self.layout_len(self.ir.valdefs[valdef].ty);
+                let end = GlobalId::from_usize(start.index() + len);
+                for globalidx in (IdRange { start, end }) {
+                    self.body.insn().global_get(globalidx.raw());
+                }
+            }
         }
     }
 
     fn set_val(&mut self, valdef: ValdefId) {
-        let start = self.valdefs[valdef];
-        let len = self.layout_len(self.ir.valdefs[valdef].ty);
-        let end = GlobalId::from_usize(start.index() + len);
-        for globalidx in (IdRange { start, end }).into_iter().rev() {
-            self.body.insn().global_set(globalidx.raw());
+        match self.cache.bound_val(self.context, valdef) {
+            Some(Constant::Int32(_)) => todo!(),
+            None => {
+                let val = self.cache.index_val(self.context, valdef);
+                let start = self.valdefs[val];
+                let len = self.layout_len(self.ir.valdefs[valdef].ty);
+                let end = GlobalId::from_usize(start.index() + len);
+                for globalidx in (IdRange { start, end }).into_iter().rev() {
+                    self.body.insn().global_set(globalidx.raw());
+                }
+            }
         }
     }
 
     fn instrs(&mut self, param: lower::TypeId, mut instr: lower::LocalId) -> lower::LocalId {
         loop {
             match self.ir.instrs[instr] {
+                Instr::BindTy(_, _) => todo!(),
+                Instr::BindFn(_, _) => todo!(),
+                Instr::BindVal(valdef, local) => {
+                    self.get_val(valdef);
+                    let tmp = self.set_tmp(self.ir.valdefs[valdef].ty);
+                    self.get(local);
+                    self.set_val(valdef);
+                    instr = self.instrs(param, lower::LocalId::from_raw(instr.raw() + 1));
+                    self.get_tmp(tmp);
+                    self.set_val(valdef);
+                }
+                Instr::Val(valdef) => self.get_val(valdef),
+                Instr::Param => {
+                    self.get_locals(param, LocalId::from_raw(0));
+                }
+                Instr::Set(lhs, rhs) => {
+                    self.get(rhs);
+                    let ty = self.ir.locals[lhs];
+                    let &start = self.variables.get(&lhs).unwrap();
+                    self.set_locals(ty, start);
+                }
                 Instr::Int32(n) => {
                     self.body.insn().i32_const(n);
                 }
@@ -270,6 +310,7 @@ impl<'a> Wasm<'a> {
                         LocalId::from_raw(self.variables[&tuple].raw() + self.offsets[elem].raw());
                     self.get_locals(self.ir.tuples[elem], start);
                 }
+                Instr::Field(_, _) => todo!(),
                 Instr::Int32Arith(a, op, b) => {
                     self.get(a);
                     self.get(b);
@@ -288,36 +329,76 @@ impl<'a> Wasm<'a> {
                         Int32Comp::Less => self.body.insn().i32_lt_s(),
                     };
                 }
-                Instr::Set(lhs, rhs) => {
-                    self.get(rhs);
-                    let ty = self.ir.locals[lhs];
-                    let &start = self.variables.get(&lhs).unwrap();
-                    self.set_locals(ty, start);
-                }
-                Instr::Param => {
-                    self.get_locals(param, LocalId::from_raw(0));
-                }
-                Instr::Val(valdef) => self.get_val(valdef),
-                Instr::Call(func, local) => {
-                    let funcidx_offset = self.func_println() + 1;
+                Instr::Call(fndef, local) => {
                     self.get(local);
-                    self.body.insn().call(funcidx_offset + func.raw());
+                    match self
+                        .instructions
+                        .get(&self.cache.bound_fn(self.context, fndef))
+                    {
+                        None => {
+                            // We always make `_start` its own function right after the imports.
+                            let funcidx_offset = self.section_import.len() + 1;
+                            let f = self.cache.index_fn(self.context, fndef);
+                            self.body.insn().call(funcidx_offset + f.raw())
+                        }
+
+                        Some(&Instruction::Unreachable) => self.body.insn().unreachable(),
+
+                        Some(&Instruction::I32Load) => todo!(),
+                        Some(&Instruction::I32Load8S) => todo!(),
+                        Some(&Instruction::I32Load8U) => todo!(),
+                        Some(&Instruction::I32Load16S) => todo!(),
+                        Some(&Instruction::I32Load16U) => todo!(),
+                        Some(&Instruction::I32Store) => todo!(),
+                        Some(&Instruction::I32Store8) => todo!(),
+                        Some(&Instruction::I32Store16) => todo!(),
+                        Some(&Instruction::MemorySize) => todo!(),
+                        Some(&Instruction::MemoryGrow) => todo!(),
+                        Some(&Instruction::MemoryCopy) => todo!(),
+                        Some(&Instruction::MemoryFill) => todo!(),
+
+                        Some(&Instruction::I32Eqz) => self.body.insn().i32_eqz(),
+                        Some(&Instruction::I32Eq) => self.body.insn().i32_eq(),
+                        Some(&Instruction::I32Ne) => self.body.insn().i32_ne(),
+                        Some(&Instruction::I32LtS) => self.body.insn().i32_lt_s(),
+                        Some(&Instruction::I32LtU) => self.body.insn().i32_lt_u(),
+                        Some(&Instruction::I32GtS) => self.body.insn().i32_gt_s(),
+                        Some(&Instruction::I32GtU) => self.body.insn().i32_gt_u(),
+                        Some(&Instruction::I32LeS) => self.body.insn().i32_le_s(),
+                        Some(&Instruction::I32LeU) => self.body.insn().i32_le_u(),
+                        Some(&Instruction::I32GeS) => self.body.insn().i32_ge_s(),
+                        Some(&Instruction::I32GeU) => self.body.insn().i32_ge_u(),
+                        Some(&Instruction::I32Clz) => self.body.insn().i32_clz(),
+                        Some(&Instruction::I32Ctz) => self.body.insn().i32_ctz(),
+                        Some(&Instruction::I32Popcnt) => self.body.insn().i32_popcnt(),
+                        Some(&Instruction::I32Add) => self.body.insn().i32_add(),
+                        Some(&Instruction::I32Sub) => self.body.insn().i32_sub(),
+                        Some(&Instruction::I32Mul) => self.body.insn().i32_mul(),
+                        Some(&Instruction::I32DivS) => self.body.insn().i32_div_s(),
+                        Some(&Instruction::I32DivU) => self.body.insn().i32_div_u(),
+                        Some(&Instruction::I32RemS) => self.body.insn().i32_rem_s(),
+                        Some(&Instruction::I32RemU) => self.body.insn().i32_rem_u(),
+                        Some(&Instruction::I32And) => self.body.insn().i32_and(),
+                        Some(&Instruction::I32Or) => self.body.insn().i32_or(),
+                        Some(&Instruction::I32Xor) => self.body.insn().i32_xor(),
+                        Some(&Instruction::I32Shl) => self.body.insn().i32_shl(),
+                        Some(&Instruction::I32ShrS) => self.body.insn().i32_shr_s(),
+                        Some(&Instruction::I32ShrU) => self.body.insn().i32_shr_u(),
+                        Some(&Instruction::I32Rotl) => self.body.insn().i32_rotl(),
+                        Some(&Instruction::I32Rotr) => self.body.insn().i32_rotr(),
+                        Some(&Instruction::I32Extend8S) => self.body.insn().i32_extend8_s(),
+                        Some(&Instruction::I32Extend16S) => self.body.insn().i32_extend16_s(),
+                    };
                 }
-                Instr::BindVal(valdef, local) => {
-                    self.get_val(valdef);
-                    let tmp = self.set_tmp(self.ir.valdefs[valdef].ty);
-                    self.get(local);
-                    self.set_val(valdef);
-                    instr = self.instrs(param, lower::LocalId::from_raw(instr.raw() + 1));
-                    self.get_tmp(tmp);
-                    self.set_val(valdef);
-                }
+                Instr::End => break,
+                Instr::Block => todo!(),
                 Instr::If(cond) => {
                     self.get(cond);
                     self.body.insn().if_(BlockType::Empty);
                     instr = self.instrs(param, lower::LocalId::from_raw(instr.raw() + 1));
                     self.body.insn().end();
                 }
+                Instr::Else => todo!(),
                 Instr::Loop => {
                     self.body.insn().loop_(BlockType::Empty);
                     instr = self.instrs(param, lower::LocalId::from_raw(instr.raw() + 1));
@@ -326,7 +407,6 @@ impl<'a> Wasm<'a> {
                 Instr::Br(depth) => {
                     self.body.insn().br(depth.0);
                 }
-                Instr::End => break,
                 Instr::Return(local) => {
                     self.get(local);
                     break;
@@ -339,6 +419,7 @@ impl<'a> Wasm<'a> {
     }
 
     fn fndef(&mut self, fndef: FndefId) {
+        let fndef = self.cache.bound_fn(self.context, fndef);
         let Fndef {
             needs: _,
             param,
@@ -346,9 +427,9 @@ impl<'a> Wasm<'a> {
         } = self.ir.fndefs[fndef];
         let mut params = Vec::new();
         let mut results = Vec::new();
-        self.layout(param, |t| params.push(t));
-        self.layout(result, |t| results.push(t));
-        self.instrs(param, self.ir.bodies[fndef]);
+        self.layout(param, &mut |t| params.push(t));
+        self.layout(result, &mut |t| results.push(t));
+        self.instrs(param, self.ir.bodies[fndef].unwrap());
         self.body.insn().end();
         let mut f = Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
         f.raw(take(&mut self.body));
@@ -368,6 +449,16 @@ impl<'a> Wasm<'a> {
             page_size_log2: None,
         });
         self.section_export.export("memory", ExportKind::Memory, 0);
+
+        let mut context = self.cache.empty();
+        let memidx = self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("memidx").unwrap())];
+        let unit = lower::TypeId::new(
+            self.ir
+                .types
+                .get_index_of(&Type::Tuple(self.ir.tuples.get(&[]).unwrap()))
+                .unwrap(),
+        );
+        context = self.cache.bind_ty(context, memidx, unit);
 
         for string in WASIP1_IMPORTS {
             let name = self.ir.strings.get_id(string).unwrap();
@@ -418,7 +509,12 @@ impl<'a> Wasm<'a> {
         self.section_code.function(&f);
         self.section_export
             .export("_start", ExportKind::Func, start);
-        self.fndef(self.main);
+
+        self.queue.push_back((context, self.main));
+        while let Some((context, fndef)) = self.queue.pop_front() {
+            self.context = context;
+            self.fndef(fndef);
+        }
 
         let mut module = Module::new();
         module
@@ -443,6 +539,8 @@ pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         })
         .collect();
     let cache = Cache::new(ir);
+    let queue = VecDeque::new();
+    let context = cache.empty();
     Wasm {
         ir,
         names,
@@ -450,6 +548,7 @@ pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         main,
         instructions,
         cache,
+        queue,
 
         data_offset: Default::default(),
         strings: Default::default(),
@@ -465,6 +564,7 @@ pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         section_code: Default::default(),
         section_data: Default::default(),
 
+        context,
         locals: Default::default(),
         variables: Default::default(),
         body: Default::default(),
