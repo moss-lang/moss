@@ -6,7 +6,7 @@ use indexmap::IndexSet;
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
-    parse::{self, Expr, ExprId, NeedId, Param, Path, Stmt, StmtId, Tree},
+    parse::{self, Block, Expr, ExprId, NeedId, Param, Path, Stmt, StmtId, Tree},
     range::{Inclusive, expr_range, path_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -186,20 +186,25 @@ pub enum Int32Comp {
 /// When executed, each instruction implicitly defines a mutable local variable.
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
-    /// Bind a contextual type until the next [`Instr::End`].
+    /// Bind a contextual type until the next [`Instr::EndBind`].
     ///
     /// Type: unit.
     BindTy(TydefId, TypeId),
 
-    /// Bind a contextual function until the next [`Instr::End`].
+    /// Bind a contextual function until the next [`Instr::EndBind`].
     ///
     /// Type: unit.
     BindFn(FndefId, FndefId),
 
-    /// Bind a contextual value until the next [`Instr::End`].
+    /// Bind a contextual value until the next [`Instr::EndBind`].
     ///
     /// Type: unit.
     BindVal(ValdefId, LocalId),
+
+    /// End the most recent binding.
+    ///
+    /// Type: unit.
+    EndBind,
 
     /// Get a contextual value.
     ///
@@ -256,30 +261,30 @@ pub enum Instr {
     /// Type: the function's result type.
     Call(FndefId, LocalId),
 
-    /// End the current block, clearing any bindings made inside the block.
-    ///
-    /// Type: unit.
-    End,
-
-    /// Start a block.
-    ///
-    /// Type: unit.
-    Block,
-
     /// Start a block only if the given condition is true.
     ///
     /// Type: unit.
-    If(LocalId),
+    If(LocalId, TypeId),
 
     /// Start a block only if the preceding [`Instr::If`] condition was false.
     ///
-    /// Type: unit.
-    Else,
+    /// Type: same as the specified local from the true branch.
+    Else(LocalId),
+
+    /// End the current [`Instr::If`] or [`Instr::Else`] block.
+    ///
+    /// Type: same as the specified local from the false branch.
+    EndIf(LocalId),
 
     /// Start a loop block.
     ///
     /// Type: unit.
     Loop,
+
+    /// End the current [`Instr::Loop`] block.
+    ///
+    /// Type: unit.
+    EndLoop,
 
     /// Branch to the end of the block with the given depth, or the beginning if it's a loop block.
     ///
@@ -929,7 +934,20 @@ impl Body<'_, '_> {
                     _ => todo!(),
                 }
             }
-            Expr::If(_, _, _) => todo!(),
+            Expr::If(cond, yes, no) => {
+                let unit = self.x.ty_unit();
+                let cond = self.expr(cond)?;
+                // We don't know the type yet.
+                let start = self.instr(unit, Instr::If(cond, unit));
+                let mut local = self.block(yes)?;
+                // Rewrite the original instruction now that we know the type.
+                self.x.ir.instrs[start] = Instr::If(cond, self.x.ir.locals[local]);
+                if let Some(block) = no {
+                    self.instr(unit, Instr::Else(local));
+                    local = self.block(block)?;
+                }
+                Ok(self.instr(unit, Instr::EndIf(local)))
+            }
         }
     }
 
@@ -959,11 +977,11 @@ impl Body<'_, '_> {
                     let unit = self.x.ty_unit();
                     self.instr(unit, Instr::Loop);
                     let local = self.expr(cond)?;
-                    self.instr(unit, Instr::If(local));
+                    self.instr(unit, Instr::If(local, unit));
                     self.stmts(body.stmts)?;
-                    self.instr(unit, Instr::Br(Depth(1)));
-                    self.instr(unit, Instr::End);
-                    self.instr(unit, Instr::End);
+                    let fake = self.instr(unit, Instr::Br(Depth(1)));
+                    self.instr(unit, Instr::EndIf(fake));
+                    self.instr(unit, Instr::EndLoop);
                 }
                 Stmt::Expr(expr) => {
                     self.expr(expr)?;
@@ -971,6 +989,17 @@ impl Body<'_, '_> {
             }
         }
         Ok(())
+    }
+
+    fn block(&mut self, block: Block) -> LowerResult<LocalId> {
+        self.stmts(block.stmts)?;
+        match block.expr {
+            Some(expr) => Ok(self.expr(expr)?),
+            None => {
+                let ty = self.x.ty_unit();
+                Ok(self.instr_tuple(ty, &[]))
+            }
+        }
     }
 
     fn body(&mut self) -> LowerResult<Option<LocalId>> {
@@ -1006,14 +1035,7 @@ impl Body<'_, '_> {
             self.set(name, local);
             index += 1;
         }
-        self.stmts(body.stmts)?;
-        let ret = match body.expr {
-            Some(expr) => self.expr(expr)?,
-            None => {
-                let ty = self.x.ty_unit();
-                self.instr_tuple(ty, &[])
-            }
-        };
+        let ret = self.block(body)?;
         self.instr(ret_ty, Instr::Return(ret));
         Ok(Some(start))
     }

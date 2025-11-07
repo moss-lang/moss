@@ -182,10 +182,16 @@ impl<'a> Wasm<'a> {
         len
     }
 
+    /// Get a [`Vec`] of the Wasm types needed to represent `ty` in the current context.
+    fn layout_vec(&mut self, ty: lower::TypeId) -> Vec<ValType> {
+        let mut types = Vec::new();
+        self.layout(ty, &mut |t| types.push(t));
+        types
+    }
+
     fn make_locals(&mut self, ty: lower::TypeId) -> LocalId {
         let start = self.locals.len_idx();
-        let mut locals = Vec::new();
-        self.layout(ty, &mut |t| locals.push(t));
+        let locals = self.layout_vec(ty);
         self.locals.append(&mut IndexVec::from_vec(locals));
         start
     }
@@ -272,6 +278,7 @@ impl<'a> Wasm<'a> {
                     self.get_tmp(tmp);
                     self.set_val(valdef);
                 }
+                Instr::EndBind => break,
                 Instr::Val(valdef) => self.get_val(valdef),
                 Instr::Param => {
                     self.get_locals(param, LocalId::from_raw(0));
@@ -390,18 +397,25 @@ impl<'a> Wasm<'a> {
                         Some(&Instruction::I32Extend16S) => self.body.insn().i32_extend16_s(),
                     };
                 }
-                Instr::End => break,
-                Instr::Block => todo!(),
-                Instr::If(cond) => {
+                Instr::If(cond, ty) => {
+                    let layout = self.layout_vec(ty);
+                    let typeidx = self.section_type.len();
+                    self.section_type.ty().function([], layout);
                     self.get(cond);
-                    self.body.insn().if_(BlockType::Empty);
-                    instr = self.instrs(param, lower::LocalId::from_raw(instr.raw() + 1));
+                    self.body.insn().if_(BlockType::FunctionType(typeidx));
+                }
+                Instr::Else(local) => {
+                    self.get(local);
+                    self.body.insn().else_();
+                }
+                Instr::EndIf(local) => {
+                    self.get(local);
                     self.body.insn().end();
                 }
-                Instr::Else => todo!(),
                 Instr::Loop => {
                     self.body.insn().loop_(BlockType::Empty);
-                    instr = self.instrs(param, lower::LocalId::from_raw(instr.raw() + 1));
+                }
+                Instr::EndLoop => {
                     self.body.insn().end();
                 }
                 Instr::Br(depth) => {
@@ -409,6 +423,7 @@ impl<'a> Wasm<'a> {
                 }
                 Instr::Return(local) => {
                     self.get(local);
+                    self.body.insn().end();
                     break;
                 }
             }
@@ -425,12 +440,9 @@ impl<'a> Wasm<'a> {
             param,
             result,
         } = self.ir.fndefs[fndef];
-        let mut params = Vec::new();
-        let mut results = Vec::new();
-        self.layout(param, &mut |t| params.push(t));
-        self.layout(result, &mut |t| results.push(t));
+        let params = self.layout_vec(param);
+        let results = self.layout_vec(result);
         self.instrs(param, self.ir.bodies[fndef].unwrap());
-        self.body.insn().end();
         let mut f = Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
         f.raw(take(&mut self.body));
         self.locals = Default::default();
