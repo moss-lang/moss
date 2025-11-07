@@ -52,7 +52,7 @@ pub fn prelude() -> (IR, Names, Lib) {
     let mut names = Names::default();
     let preprelude = ir.modules.push(());
     {
-        let name = ir.strings.make_id("String");
+        let name = ir.strings.make_id("StringLit");
         let ty = ir.ty(Type::String);
         let tydef = ir.tydefs.push(Tydef { def: Some(ty) });
         names.tydefs.insert((preprelude, name), tydef);
