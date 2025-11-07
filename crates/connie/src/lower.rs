@@ -114,7 +114,7 @@ impl Type {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Tydef {
-    def: Option<TypeId>,
+    pub def: Option<TypeId>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -314,7 +314,32 @@ pub struct IR {
     pub bodies: IndexVec<FndefId, Option<LocalId>>,
 }
 
+impl IR {
+    pub fn ty(&mut self, ty: Type) -> TypeId {
+        let (i, _) = self.types.insert_full(ty);
+        TypeId::from_usize(i)
+    }
+}
+
 type ModuleNames<T> = HashMap<(ModuleId, StrId), T>;
+
+fn get_name<T: Copy>(
+    prelude: ModuleId,
+    current: ModuleId,
+    names: &ModuleNames<T>,
+    key: (ModuleId, StrId),
+) -> Option<T> {
+    let (module, name) = key;
+    if let Some(&id) = names.get(&(module, name)) {
+        Some(id)
+    } else if module == current
+        && let Some(&id) = names.get(&(prelude, name))
+    {
+        Some(id)
+    } else {
+        None
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct Names {
@@ -378,7 +403,7 @@ struct Lower<'a> {
     ir: &'a mut IR,
     names: &'a mut Names,
     module: ModuleId,
-    prelude: Option<ModuleId>,
+    prelude: ModuleId,
     imports: &'a [ModuleId],
     tydefs: IndexVec<parse::TydefId, TydefId>,
     fndefs: IndexVec<parse::FndefId, (Option<StructdefId>, FndefId)>,
@@ -403,8 +428,7 @@ impl<'a> Lower<'a> {
     }
 
     fn ty(&mut self, ty: Type) -> TypeId {
-        let (i, _) = self.ir.types.insert_full(ty);
-        TypeId::from_usize(i)
+        self.ir.ty(ty)
     }
 
     fn ty_tuple(&mut self, elems: &[TypeId]) -> TypeId {
@@ -428,6 +452,26 @@ impl<'a> Lower<'a> {
         }
         let name = self.name(path.last);
         Ok((module, name))
+    }
+
+    fn tydef(&mut self, key: (ModuleId, StrId)) -> Option<TydefId> {
+        get_name(self.prelude, self.module, &self.names.tydefs, key)
+    }
+
+    fn fndef(&mut self, key: (ModuleId, StrId)) -> Option<FndefId> {
+        get_name(self.prelude, self.module, &self.names.fndefs, key)
+    }
+
+    fn valdef(&mut self, key: (ModuleId, StrId)) -> Option<ValdefId> {
+        get_name(self.prelude, self.module, &self.names.valdefs, key)
+    }
+
+    fn ctxdef(&mut self, key: (ModuleId, StrId)) -> Option<CtxdefId> {
+        get_name(self.prelude, self.module, &self.names.ctxdefs, key)
+    }
+
+    fn structdef(&mut self, key: (ModuleId, StrId)) -> Option<StructdefId> {
+        get_name(self.prelude, self.module, &self.names.structdefs, key)
     }
 
     fn imports(&mut self) -> LowerResult<()> {
@@ -553,41 +597,41 @@ impl<'a> Lower<'a> {
             let parse::Need { kind, path } = self.tree.needs[need];
             let key = self.path(path)?;
             match (
-                self.names.tydefs.get(&key),
-                self.names.fndefs.get(&key),
-                self.names.valdefs.get(&key),
-                self.names.ctxdefs.get(&key),
-                self.names.structdefs.get(&key),
+                self.tydef(key),
+                self.fndef(key),
+                self.valdef(key),
+                self.ctxdef(key),
+                self.structdef(key),
             ) {
-                (Some(&tydef), None, None, None, None) => {
+                (Some(tydef), None, None, None, None) => {
                     let kind = match kind {
                         parse::NeedKind::Default | parse::NeedKind::Static => NeedKind::Static,
                     };
                     let id = self.ty(Type::Tydef(tydef));
                     tys.push(Need { kind, id });
                 }
-                (None, Some(&id), None, None, None) => {
+                (None, Some(id), None, None, None) => {
                     let kind = match kind {
                         parse::NeedKind::Default => NeedKind::Dynamic,
                         parse::NeedKind::Static => NeedKind::Static,
                     };
                     fns.push(Need { kind, id });
                 }
-                (None, None, Some(&id), None, None) => {
+                (None, None, Some(id), None, None) => {
                     let kind = match kind {
                         parse::NeedKind::Default => NeedKind::Dynamic,
                         parse::NeedKind::Static => NeedKind::Static,
                     };
                     vals.push(Need { kind, id });
                 }
-                (None, None, None, Some(&id), None) => {
+                (None, None, None, Some(id), None) => {
                     let kind = match kind {
                         parse::NeedKind::Default => NeedKind::Dynamic,
                         parse::NeedKind::Static => return Err(LowerError::NeedStaticCtx(path)),
                     };
                     ctxs.push(Need { kind, id });
                 }
-                (None, None, None, None, Some(&structdef)) => {
+                (None, None, None, None, Some(structdef)) => {
                     let kind = match kind {
                         parse::NeedKind::Default | parse::NeedKind::Static => NeedKind::Static,
                     };
@@ -610,9 +654,9 @@ impl<'a> Lower<'a> {
         match self.tree.types[ty] {
             parse::Type::Path(path) => {
                 let key = self.path(path)?;
-                match (self.names.tydefs.get(&key), self.names.structdefs.get(&key)) {
-                    (Some(&tydef), None) => Ok(self.ty(Type::Tydef(tydef))),
-                    (None, Some(&structdef)) => Ok(self.ty(Type::Structdef(structdef))),
+                match (self.tydef(key), self.structdef(key)) {
+                    (Some(tydef), None) => Ok(self.ty(Type::Tydef(tydef))),
+                    (None, Some(structdef)) => Ok(self.ty(Type::Structdef(structdef))),
                     (None, None) => Err(LowerError::Undefined(path.last)),
                     (Some(_), Some(_)) => Err(LowerError::Ambiguous(path.last)),
                 }
@@ -765,7 +809,7 @@ impl Body<'_, '_> {
                 {
                     return Ok(local);
                 }
-                let Some(&val) = self.x.names.valdefs.get(&(module, name)) else {
+                let Some(val) = self.x.valdef((module, name)) else {
                     return Err(LowerError::Undefined(path.last));
                 };
                 let ty = self.x.ir.valdefs[val].ty;
@@ -813,7 +857,7 @@ impl Body<'_, '_> {
                     todo!()
                 }
                 let key = self.x.path(callee)?;
-                let Some(&fndef) = self.x.names.fndefs.get(&key) else {
+                let Some(fndef) = self.x.fndef(key) else {
                     return Err(LowerError::Undefined(callee.last));
                 };
                 let Fndef {
@@ -958,7 +1002,7 @@ pub fn lower(
     tree: &Tree,
     ir: &mut IR,
     names: &mut Names,
-    prelude: Option<ModuleId>,
+    prelude: ModuleId,
     imports: &[ModuleId],
 ) -> LowerResult<ModuleId> {
     assert_eq!(tree.imports.len(), imports.len());

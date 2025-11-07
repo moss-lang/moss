@@ -1,6 +1,6 @@
 use crate::{
     lex::lex,
-    lower::{IR, ModuleId, Names, lower},
+    lower::{IR, ModuleId, Names, Tydef, Type, lower},
     parse::parse,
 };
 
@@ -14,6 +14,7 @@ pub struct Lib {
 struct Precompile {
     ir: IR,
     names: Names,
+    preprelude: ModuleId,
 }
 
 impl Precompile {
@@ -25,7 +26,7 @@ impl Precompile {
             &parse(&tokens).unwrap(),
             &mut self.ir,
             &mut self.names,
-            None,
+            self.preprelude,
             imports,
         )
         .unwrap()
@@ -47,9 +48,31 @@ impl Precompile {
 }
 
 pub fn prelude() -> (IR, Names, Lib) {
+    let mut ir = IR::default();
+    let mut names = Names::default();
+    let preprelude = ir.modules.push(());
+    {
+        let name = ir.strings.make_id("String");
+        let ty = ir.ty(Type::String);
+        let tydef = ir.tydefs.push(Tydef { def: Some(ty) });
+        names.tydefs.insert((preprelude, name), tydef);
+    }
+    {
+        let name = ir.strings.make_id("Bool");
+        let ty = ir.ty(Type::Bool);
+        let tydef = ir.tydefs.push(Tydef { def: Some(ty) });
+        names.tydefs.insert((preprelude, name), tydef);
+    }
+    {
+        let name = ir.strings.make_id("RawInt32");
+        let ty = ir.ty(Type::Int32);
+        let tydef = ir.tydefs.push(Tydef { def: Some(ty) });
+        names.tydefs.insert((preprelude, name), tydef);
+    }
     Precompile {
-        ir: IR::default(),
-        names: Names::default(),
+        ir,
+        names,
+        preprelude,
     }
     .prelude()
 }

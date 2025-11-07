@@ -58,7 +58,7 @@ fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
         &tree,
         &mut ir,
         &mut names,
-        Some(lib.prelude),
+        lib.prelude,
         &[],
     )
     .map_err(|err| {
