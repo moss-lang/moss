@@ -826,7 +826,19 @@ impl Body<'_, '_> {
                 Ok(self.instr(ty, Instr::String(string)))
             }
             Expr::Struct(_, _) => todo!(),
-            Expr::Field(_, _) => todo!(),
+            Expr::Field(object, field) => {
+                let obj = self.expr(object)?;
+                let name = self.x.name(field);
+                let fields = &self.x.ir.fields[self.x.ir.structdefs
+                    [self.x.ir.types[self.x.ir.locals[obj].index()].structdef()]
+                .fields];
+                // TODO: Make this not be linear time.
+                let id = FieldId::from_usize(
+                    fields.iter().position(|&(field, _)| field == name).unwrap(),
+                );
+                let (_, ty) = fields[id.index()];
+                Ok(self.instr(ty, Instr::Field(obj, id)))
+            }
             Expr::Method(object, method, args) => {
                 let obj = self.expr(object)?;
                 let ty = self.x.ir.locals[obj];
