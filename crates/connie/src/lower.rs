@@ -384,7 +384,7 @@ impl LowerError {
             ),
             LowerError::ThisNotMethod(expr) => (
                 Some(expr_range(tree, expr)),
-                "cannot use `this` in a function that is not a method".to_owned(),
+                "cannot use `self` in a function that is not a method".to_owned(),
             ),
             LowerError::ArgCount(expr) => (
                 Some(expr_range(tree, expr)),
@@ -745,6 +745,7 @@ impl<'a> Lower<'a> {
                 tree: fndef,
                 ir: id_type,
                 ty: structdef,
+                this: None, // Gets set later if `ty` is `Some`.
                 locals: HashMap::new(),
             }
             .body()?;
@@ -768,6 +769,7 @@ struct Body<'a, 'b> {
     tree: parse::FndefId,
     ir: FndefId,
     ty: Option<StructdefId>,
+    this: Option<LocalId>,
     locals: HashMap<StrId, LocalId>,
 }
 
@@ -801,7 +803,10 @@ impl Body<'_, '_> {
 
     fn expr(&mut self, expr: ExprId) -> LowerResult<LocalId> {
         match self.x.tree.exprs[expr] {
-            Expr::This(_) => todo!(),
+            Expr::This(_) => match self.this {
+                None => Err(LowerError::ThisNotMethod(expr)),
+                Some(local) => Ok(local),
+            },
             Expr::Path(path) => {
                 let (module, name) = self.x.path(path)?;
                 if path.prefix.is_empty()
@@ -985,15 +990,21 @@ impl Body<'_, '_> {
             result: ret_ty,
         } = self.x.ir.fndefs[self.ir];
         let tuple_local = self.instr(tuple_ty, Instr::Param);
-        for (index, (param, tuple_loc)) in params
+        let mut index = 0;
+        if let Some(structdef) = self.ty {
+            let ty = self.x.ty(Type::Structdef(structdef));
+            self.this = Some(self.instr(ty, Instr::Elem(tuple_local, ElemId::new(index))));
+            index += 1;
+        }
+        for (param, tuple_loc) in params
             .into_iter()
             .zip(self.x.ir.types[tuple_ty.index()].tuple())
-            .enumerate()
         {
             let ty = self.x.ir.tuples[tuple_loc];
             let local = self.instr(ty, Instr::Elem(tuple_local, ElemId::new(index)));
             let name = self.x.tree.params[param].name;
             self.set(name, local);
+            index += 1;
         }
         self.stmts(body.stmts)?;
         let ret = match body.expr {
