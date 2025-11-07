@@ -41,7 +41,7 @@ fn get_errors(source: &str) -> Vec<(Option<Range<usize>>, String)> {
         &tree,
         &mut ir,
         &mut names,
-        Some(lib.prelude),
+        lib.prelude,
         &[],
     ) {
         Ok(_) => {}
