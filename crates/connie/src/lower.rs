@@ -482,7 +482,7 @@ impl<'a> Lower<'a> {
             }
             for using in import.using {
                 let token = self.tree.names[using];
-                let name = self.string(token);
+                let name = self.name(token);
                 let mut found = false;
                 if let Some(&module) = self.names.modules.get(&(module, name)) {
                     found = true;
