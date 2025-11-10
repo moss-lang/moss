@@ -12,6 +12,7 @@ clap = "4"
 connie = { path = "crates/connie" }
 crossbeam-channel = "0.5"
 enumset = "1"
+im-rc = "15"
 index_vec = "0.1"
 indexmap = "2"
 itertools = "0.14"

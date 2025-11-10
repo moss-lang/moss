@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 enumset = { workspace = true }
+im-rc = { workspace = true }
 index_vec = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
