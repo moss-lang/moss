@@ -3,7 +3,7 @@ import "./wasm.con" as wasm use I32, offset, unreachable;
 
 context mem[wasm::wasm, static wasm::memidx];
 
-fn i32_load[mem, static offset](address: I32) {
+fn i32_load[mem, static offset](address: I32): I32 {
   wasm::i32_load[wasm::align=2](address)
 }
 
