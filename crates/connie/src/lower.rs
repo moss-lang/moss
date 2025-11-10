@@ -1018,12 +1018,13 @@ impl Body<'_, '_> {
                 let start = self.instr(unit, Instr::If(cond, unit));
                 let mut local = self.block(yes)?;
                 // Rewrite the original instruction now that we know the type.
-                self.x.ir.instrs[start] = Instr::If(cond, self.x.ir.locals[local]);
+                let ty = self.x.ir.locals[local];
+                self.x.ir.instrs[start] = Instr::If(cond, ty);
                 if let Some(block) = no {
-                    self.instr(unit, Instr::Else(local));
+                    self.instr(ty, Instr::Else(local));
                     local = self.block(block)?;
                 }
-                Ok(self.instr(unit, Instr::EndIf(local)))
+                Ok(self.instr(ty, Instr::EndIf(local)))
             }
         }
     }
