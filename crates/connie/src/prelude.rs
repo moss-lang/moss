@@ -1,3 +1,5 @@
+use line_index::{LineIndex, TextSize};
+
 use crate::{
     lex::lex,
     lower::{IR, ModuleId, Names, Tydef, Type, lower},
@@ -20,16 +22,28 @@ struct Precompile {
 impl Precompile {
     fn lib(&mut self, imports: &[ModuleId], source: &str) -> ModuleId {
         let (tokens, starts) = lex(source).unwrap();
-        lower(
+        let tree = parse(&tokens).unwrap();
+        match lower(
             source,
             &starts,
-            &parse(&tokens).unwrap(),
+            &tree,
             &mut self.ir,
             &mut self.names,
             self.preprelude,
             imports,
-        )
-        .unwrap()
+        ) {
+            Ok(module) => module,
+            Err(err) => {
+                let (tokens, message) = err.describe(source, &starts, &tree, &self.ir, &self.names);
+                let line_col = LineIndex::new(source).line_col(TextSize::new(match tokens {
+                    Some(range) => starts[range.first].index() as u32,
+                    None => 0,
+                }));
+                let line = line_col.line + 1;
+                let col = line_col.col + 1;
+                panic!("stdlib file, line {line}, column {col}: {message}")
+            }
+        }
     }
 
     fn prelude(mut self) -> (IR, Names, Lib) {

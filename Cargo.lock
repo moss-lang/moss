@@ -339,6 +339,7 @@ dependencies = [
  "index_vec",
  "indexmap",
  "itertools",
+ "line-index",
  "logos",
  "strum",
  "wasm-encoder 0.240.0",

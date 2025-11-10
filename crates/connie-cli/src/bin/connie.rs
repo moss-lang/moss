@@ -62,7 +62,7 @@ fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
         &[],
     )
     .map_err(|err| {
-        let (tokens, message) = err.describe(&source, &starts, &tree);
+        let (tokens, message) = err.describe(&source, &starts, &tree, &ir, &names);
         let start = match tokens {
             Some(range) => starts[range.first],
             None => ByteIndex::new(0),

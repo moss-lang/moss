@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem::take};
+use std::{collections::HashMap, fmt, mem::take};
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
 use indexmap::IndexSet;
@@ -357,17 +357,72 @@ pub struct Names {
     pub methods: HashMap<(ModuleId, StructdefId, StrId), FndefId>,
 }
 
+struct ErrorCtx<'a> {
+    source: &'a str,
+    starts: &'a TokenStarts,
+    tree: &'a Tree,
+    ir: &'a IR,
+    names: &'a Names,
+}
+
+impl ErrorCtx<'_> {
+    fn path(&self, id: Path) -> Inclusive {
+        path_range(self.tree, id)
+    }
+
+    fn expr(&self, id: ExprId) -> Inclusive {
+        expr_range(self.tree, id)
+    }
+
+    fn ty(&self, id: TypeId) -> FatType<'_, '_> {
+        FatType { ctx: self, id }
+    }
+}
+
+struct FatType<'a, 'b> {
+    ctx: &'b ErrorCtx<'a>,
+    id: TypeId,
+}
+
+impl fmt::Display for FatType<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.ctx.ir.types[self.id.index()] {
+            Type::String => write!(f, "`StringLit`"),
+            Type::Bool => write!(f, "`Bool`"),
+            Type::Int32 => write!(f, "`RawInt32`"),
+            Type::Tuple(_) => write!(f, "a tuple"),
+            Type::Tydef(tydef) => write!(f, "`type` index {tydef:?}"),
+            Type::Structdef(structdef) => write!(f, "`struct` index {structdef:?}"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum LowerError {
     Undefined(TokenId),
     Ambiguous(TokenId),
     NeedStaticCtx(Path),
+    ExpectedType(TypeId, ExprId, TypeId),
     ThisNotMethod(ExprId),
     ArgCount(ExprId),
 }
 
 impl LowerError {
-    pub fn describe(self, _: &str, _: &TokenStarts, tree: &Tree) -> (Option<Inclusive>, String) {
+    pub fn describe(
+        self,
+        source: &str,
+        starts: &TokenStarts,
+        tree: &Tree,
+        ir: &IR,
+        names: &Names,
+    ) -> (Option<Inclusive>, String) {
+        let ctx = ErrorCtx {
+            source,
+            starts,
+            tree,
+            ir,
+            names,
+        };
         match self {
             LowerError::Undefined(token) => (
                 Some(Inclusive {
@@ -384,17 +439,20 @@ impl LowerError {
                 "ambiguous".to_owned(),
             ),
             LowerError::NeedStaticCtx(path) => (
-                Some(path_range(tree, path)),
+                Some(ctx.path(path)),
                 "use `static` on individual items, not on `context` dependencies".to_owned(),
             ),
+            LowerError::ExpectedType(expected, expr, actual) => (
+                Some(ctx.expr(expr)),
+                format!("expected {}, got {}", ctx.ty(expected), ctx.ty(actual)),
+            ),
             LowerError::ThisNotMethod(expr) => (
-                Some(expr_range(tree, expr)),
+                Some(ctx.expr(expr)),
                 "cannot use `self` in a function that is not a method".to_owned(),
             ),
-            LowerError::ArgCount(expr) => (
-                Some(expr_range(tree, expr)),
-                "wrong number of arguments".to_owned(),
-            ),
+            LowerError::ArgCount(expr) => {
+                (Some(ctx.expr(expr)), "wrong number of arguments".to_owned())
+            }
         }
     }
 }
@@ -899,39 +957,40 @@ impl Body<'_, '_> {
                 Ok(self.instr(result, Instr::Call(fndef, arg)))
             }
             Expr::Binary(l, op, r) => {
-                let a = self.expr(l)?;
-                let b = self.expr(r)?;
-                match (
-                    self.x.ir.types[self.x.ir.locals[a].index()],
-                    self.x.ir.types[self.x.ir.locals[b].index()],
-                ) {
-                    (Type::Int32, Type::Int32) => match op {
-                        parse::Binop::Add => {
-                            let ty = self.x.ty(Type::Int32);
-                            Ok(self.instr(ty, Instr::Int32Arith(a, Int32Arith::Add, b)))
+                let local_r = self.expr(l)?;
+                let local_l = self.expr(r)?;
+                let int = self.x.ty(Type::Int32);
+                let ty_l = self.x.ir.locals[local_r];
+                let ty_r = self.x.ir.locals[local_l];
+                match (self.x.ir.types[ty_l.index()], self.x.ir.types[ty_r.index()]) {
+                    (Type::Int32, Type::Int32) => {
+                        match op {
+                            parse::Binop::Add => Ok(self
+                                .instr(int, Instr::Int32Arith(local_r, Int32Arith::Add, local_l))),
+                            parse::Binop::Sub => Ok(self
+                                .instr(int, Instr::Int32Arith(local_r, Int32Arith::Sub, local_l))),
+                            parse::Binop::Mul => Ok(self
+                                .instr(int, Instr::Int32Arith(local_r, Int32Arith::Mul, local_l))),
+                            parse::Binop::Div => Ok(self
+                                .instr(int, Instr::Int32Arith(local_r, Int32Arith::Div, local_l))),
+                            parse::Binop::Neq => {
+                                let bool = self.x.ty(Type::Bool);
+                                Ok(self.instr(
+                                    bool,
+                                    Instr::Int32Comp(local_r, Int32Comp::Neq, local_l),
+                                ))
+                            }
+                            parse::Binop::Less => {
+                                let bool = self.x.ty(Type::Bool);
+                                Ok(self.instr(
+                                    bool,
+                                    Instr::Int32Comp(local_r, Int32Comp::Less, local_l),
+                                ))
+                            }
                         }
-                        parse::Binop::Sub => {
-                            let ty = self.x.ty(Type::Int32);
-                            Ok(self.instr(ty, Instr::Int32Arith(a, Int32Arith::Sub, b)))
-                        }
-                        parse::Binop::Mul => {
-                            let ty = self.x.ty(Type::Int32);
-                            Ok(self.instr(ty, Instr::Int32Arith(a, Int32Arith::Mul, b)))
-                        }
-                        parse::Binop::Div => {
-                            let ty = self.x.ty(Type::Int32);
-                            Ok(self.instr(ty, Instr::Int32Arith(a, Int32Arith::Div, b)))
-                        }
-                        parse::Binop::Neq => {
-                            let ty = self.x.ty(Type::Bool);
-                            Ok(self.instr(ty, Instr::Int32Comp(a, Int32Comp::Neq, b)))
-                        }
-                        parse::Binop::Less => {
-                            let ty = self.x.ty(Type::Bool);
-                            Ok(self.instr(ty, Instr::Int32Comp(a, Int32Comp::Less, b)))
-                        }
-                    },
-                    _ => todo!(),
+                    }
+                    (Type::Int32, _) => Err(LowerError::ExpectedType(int, r, ty_r)),
+                    _ => Err(LowerError::ExpectedType(int, l, ty_l)),
                 }
             }
             Expr::If(cond, yes, no) => {
