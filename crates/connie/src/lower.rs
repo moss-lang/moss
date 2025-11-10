@@ -753,6 +753,9 @@ impl<'a> Lower<'a> {
             let (structdef, id) = self.fndefs[parse_id];
             self.funcs.push((parse_id, structdef, id));
             let mut types = Vec::new();
+            // For methods, we just make the object the first element of the type for the tuple of
+            // parameters, since that way codegen doesn't need to think about the difference between
+            // functions and methods at all.
             if let Some(structdef) = structdef {
                 types.push(self.ty(Type::Structdef(structdef)));
             }
@@ -1078,16 +1081,17 @@ impl Body<'_, '_> {
             result: ret_ty,
         } = self.x.ir.fndefs[self.ir];
         let tuple_local = self.instr(tuple_ty, Instr::Param);
+        let mut types = self.x.ir.types[tuple_ty.index()].tuple().into_iter();
         let mut index = 0;
         if let Some(structdef) = self.ty {
+            // Because methods just have their object as the first parameter, we need to skip past
+            // it so that the rest of the tuple aligns properly with the original parsed parameters.
+            types.next();
             let ty = self.x.ty(Type::Structdef(structdef));
             self.this = Some(self.instr(ty, Instr::Elem(tuple_local, ElemId::new(index))));
             index += 1;
         }
-        for (param, tuple_loc) in params
-            .into_iter()
-            .zip(self.x.ir.types[tuple_ty.index()].tuple())
-        {
+        for (param, tuple_loc) in params.into_iter().zip(types) {
             let ty = self.x.ir.tuples[tuple_loc];
             let local = self.instr(ty, Instr::Elem(tuple_local, ElemId::new(index)));
             let name = self.x.tree.params[param].name;
