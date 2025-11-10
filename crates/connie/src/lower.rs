@@ -503,6 +503,18 @@ impl<'a> Lower<'a> {
         self.ty_tuple(&[])
     }
 
+    /// Recursively dereferences `ty` through `type` aliases.
+    ///
+    /// Very shallow: only works if `ty` itself is an alias, not if it contains aliases.
+    fn resolve(&self, mut ty: TypeId) -> TypeId {
+        while let Type::Tydef(tydef) = self.ir.types[ty.index()]
+            && let Some(id) = self.ir.tydefs[tydef].def
+        {
+            ty = id;
+        }
+        ty
+    }
+
     fn path(&mut self, path: Path) -> LowerResult<(ModuleId, StrId)> {
         let mut module = self.module;
         for name in path.prefix {
@@ -965,7 +977,10 @@ impl Body<'_, '_> {
                 let int = self.x.ty(Type::Int32);
                 let ty_l = self.x.ir.locals[local_r];
                 let ty_r = self.x.ir.locals[local_l];
-                match (self.x.ir.types[ty_l.index()], self.x.ir.types[ty_r.index()]) {
+                match (
+                    self.x.ir.types[self.x.resolve(ty_l).index()],
+                    self.x.ir.types[self.x.resolve(ty_r).index()],
+                ) {
                     (Type::Int32, Type::Int32) => {
                         match op {
                             parse::Binop::Add => Ok(self
