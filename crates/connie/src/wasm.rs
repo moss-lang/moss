@@ -304,8 +304,13 @@ impl<'a> Wasm<'a> {
                     });
                     self.body.insn().i32_const(offset).i32_const(len);
                 }
-                Instr::Tuple(tuple) => {
-                    for &id in tuple.get(&self.ir.refs) {
+                Instr::Tuple(locals) => {
+                    for &id in locals.get(&self.ir.refs) {
+                        self.get(id);
+                    }
+                }
+                Instr::Struct(_, locals) => {
+                    for &id in locals.get(&self.ir.refs) {
                         self.get(id);
                     }
                 }

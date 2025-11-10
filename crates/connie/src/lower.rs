@@ -6,7 +6,7 @@ use indexmap::IndexSet;
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
-    parse::{self, Block, Expr, ExprId, NeedId, Param, Path, Stmt, StmtId, Tree},
+    parse::{self, Block, Expr, ExprId, Field, NeedId, Param, Path, Stmt, StmtId, Tree},
     range::{Inclusive, expr_range, path_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -236,6 +236,11 @@ pub enum Instr {
     /// Type: [`Type::Tuple`] with the given element types.
     Tuple(IdRange<RefId>),
 
+    /// Construct a struct.
+    ///
+    /// Type: the given struct type.
+    Struct(StructdefId, IdRange<RefId>),
+
     /// Get an element of a tuple.
     ///
     /// Type: the element type.
@@ -358,11 +363,8 @@ pub struct Names {
 }
 
 struct ErrorCtx<'a> {
-    source: &'a str,
-    starts: &'a TokenStarts,
     tree: &'a Tree,
     ir: &'a IR,
-    names: &'a Names,
 }
 
 impl ErrorCtx<'_> {
@@ -404,25 +406,20 @@ pub enum LowerError {
     NeedStaticCtx(Path),
     ExpectedType(TypeId, ExprId, TypeId),
     ThisNotMethod(ExprId),
+    MissingField(ExprId, StructdefId, FieldId),
     ArgCount(ExprId),
 }
 
 impl LowerError {
     pub fn describe(
         self,
-        source: &str,
-        starts: &TokenStarts,
+        _: &str,
+        _: &TokenStarts,
         tree: &Tree,
         ir: &IR,
-        names: &Names,
+        _: &Names,
     ) -> (Option<Inclusive>, String) {
-        let ctx = ErrorCtx {
-            source,
-            starts,
-            tree,
-            ir,
-            names,
-        };
+        let ctx = ErrorCtx { tree, ir };
         match self {
             LowerError::Undefined(token) => (
                 Some(Inclusive {
@@ -450,6 +447,13 @@ impl LowerError {
                 Some(ctx.expr(expr)),
                 "cannot use `self` in a function that is not a method".to_owned(),
             ),
+            LowerError::MissingField(expr, structdef, field) => {
+                let (name, _) = ctx.ir.fields[ctx.ir.structdefs[structdef].fields][field.index()];
+                (
+                    Some(ctx.expr(expr)),
+                    format!("missing field `{}`", &ctx.ir.strings[name]),
+                )
+            }
             LowerError::ArgCount(expr) => {
                 (Some(ctx.expr(expr)), "wrong number of arguments".to_owned())
             }
@@ -879,6 +883,14 @@ impl Body<'_, '_> {
         self.instr(ty, Instr::Tuple(IdRange { start, end }))
     }
 
+    fn instr_struct(&mut self, structdef: StructdefId, locals: &[LocalId]) -> LocalId {
+        let ty = self.x.ir.ty(Type::Structdef(structdef));
+        let start = self.x.ir.refs.len_idx();
+        self.x.ir.refs.extend_from_slice(IndexSlice::new(locals));
+        let end = self.x.ir.refs.len_idx();
+        self.instr(ty, Instr::Struct(structdef, IdRange { start, end }))
+    }
+
     fn expr(&mut self, expr: ExprId) -> LowerResult<LocalId> {
         match self.x.tree.exprs[expr] {
             Expr::This(_) => match self.this {
@@ -908,7 +920,28 @@ impl Body<'_, '_> {
                 let string = self.x.string(token);
                 Ok(self.instr(ty, Instr::String(string)))
             }
-            Expr::Struct(_, _) => todo!(),
+            Expr::Struct(path, fields) => {
+                let key = self.x.path(path)?;
+                let Some(structdef) = self.x.structdef(key) else {
+                    return Err(LowerError::Undefined(path.last));
+                };
+                let map = fields
+                    .into_iter()
+                    .map(|field| {
+                        let Field { name, val } = self.x.tree.fields[field];
+                        Ok((self.x.name(name), self.expr(val)?))
+                    })
+                    .collect::<LowerResult<HashMap<StrId, LocalId>>>()?;
+                let locals = self.x.ir.fields[self.x.ir.structdefs[structdef].fields]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (name, _))| match map.get(name) {
+                        Some(&local) => Ok(local),
+                        None => Err(LowerError::MissingField(expr, structdef, FieldId::new(i))),
+                    })
+                    .collect::<LowerResult<Vec<LocalId>>>()?;
+                Ok(self.instr_struct(structdef, &locals))
+            }
             Expr::Field(object, field) => {
                 let obj = self.expr(object)?;
                 let name = self.x.name(field);
