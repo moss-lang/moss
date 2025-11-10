@@ -468,7 +468,7 @@ impl<'a> Wasm<'a> {
         self.section_export.export("memory", ExportKind::Memory, 0);
 
         let mut context = self.cache.empty();
-        let memidx = self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("memidx").unwrap())];
+        let memidx = self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
         let unit = lower::TypeId::new(
             self.ir
                 .types

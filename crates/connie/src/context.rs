@@ -32,7 +32,7 @@ impl<'a> Cache<'a> {
     }
 
     pub fn empty(&self) -> ContextId {
-        todo!()
+        ContextId::new(0)
     }
 
     pub fn bind_ty(&mut self, _ctx: ContextId, _def: TydefId, _bind: TypeId) -> ContextId {
