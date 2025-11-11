@@ -1,6 +1,6 @@
 use std::{
     hash::{Hash, Hasher},
-    ops::{AddAssign, BitXorAssign, SubAssign},
+    ops::{AddAssign, BitXorAssign, Index, SubAssign},
 };
 
 use index_vec::define_index_type;
@@ -8,6 +8,7 @@ use indexmap::IndexSet;
 
 use crate::{
     lower::{FndefId, IR, TydefId, TypeId, ValdefId},
+    tuples::{TupleLoc, TupleRange, Tuples},
     util::default_hash,
 };
 
@@ -20,6 +21,10 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct BuiltinId = u32;
+}
+
+define_index_type! {
     pub struct FnId = u32;
 }
 
@@ -27,7 +32,7 @@ define_index_type! {
     pub struct ValId = u32;
 }
 
-#[derive(Clone, Copy, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 struct UnorderedHash(u64);
 
 impl AddAssign<u64> for UnorderedHash {
@@ -42,16 +47,11 @@ impl SubAssign<u64> for UnorderedHash {
     }
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub enum Constant {
-    Int32(i32),
-}
-
-#[derive(Clone, Default, Eq, PartialEq)]
-struct Context {
-    tydefs: im_rc::HashMap<TydefId, TypeId>,
-    fndefs: im_rc::HashMap<FndefId, FndefId>,
-    valdefs: im_rc::HashMap<ValdefId, Option<Constant>>,
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Context {
+    tydefs: im_rc::HashMap<TydefId, TyId>,
+    fndefs: im_rc::HashMap<FndefId, FnId>,
+    valdefs: im_rc::HashMap<ValdefId, ValId>,
     hash_tydefs: UnorderedHash,
     hash_fndefs: UnorderedHash,
     hash_valdefs: UnorderedHash,
@@ -66,84 +66,199 @@ impl Hash for Context {
 }
 
 impl Context {
-    fn set_ty(&mut self, def: TydefId, bind: TypeId) {
-        if let Some(prev) = self.tydefs.insert(def, bind) {
-            self.hash_tydefs -= default_hash(&(def, prev));
+    pub fn set_ty(&mut self, tydef: TydefId, t: TyId) {
+        if let Some(prev) = self.tydefs.insert(tydef, t) {
+            self.hash_tydefs -= default_hash(&(tydef, prev));
         }
-        self.hash_tydefs += default_hash(&(def, bind));
+        self.hash_tydefs += default_hash(&(tydef, t));
     }
 
-    fn set_fn(&mut self, def: FndefId, bind: FndefId) {
-        if let Some(prev) = self.fndefs.insert(def, bind) {
-            self.hash_fndefs -= default_hash(&(def, prev));
+    pub fn set_fn(&mut self, fndef: FndefId, f: FnId) {
+        if let Some(prev) = self.fndefs.insert(fndef, f) {
+            self.hash_fndefs -= default_hash(&(fndef, prev));
         }
-        self.hash_fndefs += default_hash(&(def, bind));
+        self.hash_fndefs += default_hash(&(fndef, f));
     }
 
-    fn set_val(&mut self, def: ValdefId, bind: Option<Constant>) {
-        if let Some(prev) = self.valdefs.insert(def, bind) {
-            self.hash_valdefs -= default_hash(&(def, prev));
+    pub fn set_val(&mut self, valdef: ValdefId, v: ValId) {
+        if let Some(prev) = self.valdefs.insert(valdef, v) {
+            self.hash_valdefs -= default_hash(&(valdef, prev));
         }
-        self.hash_valdefs += default_hash(&(def, bind));
+        self.hash_valdefs += default_hash(&(valdef, v));
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Ty {
+    String,
+    Bool,
+    Int32,
+    Tuple(TupleRange),
+}
+
+impl Ty {
+    pub fn tuple(self) -> TupleRange {
+        match self {
+            Ty::Tuple(range) => range,
+            _ => panic!(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Fn {
+    Builtin(BuiltinId),
+    Fndef(ContextId, FndefId),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Val {
+    Int32(i32),
+    Dynamic(ValdefId, TyId),
+}
+
+#[derive(Debug)]
 pub struct Cache<'a> {
     ir: &'a IR,
     contexts: IndexSet<Context>,
+    tuples: Tuples<TyId>,
+    tys: IndexSet<Ty>,
+    fns: IndexSet<Fn>,
+    vals: IndexSet<Val>,
 }
 
 impl<'a> Cache<'a> {
     pub fn new(ir: &'a IR) -> Self {
         let mut contexts = IndexSet::new();
         contexts.insert(Context::default());
-        Self { ir, contexts }
+        Self {
+            ir,
+            contexts,
+            tuples: Tuples::new(),
+            tys: IndexSet::new(),
+            fns: IndexSet::new(),
+            vals: IndexSet::new(),
+        }
     }
 
     pub fn empty(&self) -> ContextId {
         ContextId::new(0)
     }
 
-    fn bind(&mut self, ctx: ContextId, f: impl FnOnce(&mut Context)) -> ContextId {
-        let mut context = self.contexts[ctx.index()].clone();
-        f(&mut context);
+    pub fn make_ctx(&mut self, context: Context) -> ContextId {
         let (i, _) = self.contexts.insert_full(context);
         ContextId::from_usize(i)
     }
 
-    pub fn bind_ty(&mut self, ctx: ContextId, def: TydefId, bind: TypeId) -> ContextId {
-        self.bind(ctx, |context| context.set_ty(def, bind))
+    pub fn next_fn(&self) -> FnId {
+        FnId::from_usize(self.fns.len())
     }
 
-    pub fn bind_fn(&mut self, ctx: ContextId, def: FndefId, bind: FndefId) -> ContextId {
-        self.bind(ctx, |context| context.set_fn(def, bind))
+    fn make_ty(&mut self, t: Ty) -> TyId {
+        let (i, _) = self.tys.insert_full(t);
+        TyId::from_usize(i)
     }
 
-    pub fn bind_val(&mut self, ctx: ContextId, def: ValdefId, bind: Option<Constant>) -> ContextId {
-        self.bind(ctx, |context| context.set_val(def, bind))
+    fn make_fn(&mut self, f: Fn) -> FnId {
+        let (i, _) = self.fns.insert_full(f);
+        FnId::from_usize(i)
     }
 
-    pub fn bound_ty(&self, _ctx: ContextId, _def: TydefId) -> TypeId {
+    fn make_val(&mut self, v: Val) -> ValId {
+        let (i, _) = self.vals.insert_full(v);
+        ValId::from_usize(i)
+    }
+
+    pub fn ty_string(&mut self) -> TyId {
+        self.make_ty(Ty::String)
+    }
+
+    pub fn ty_bool(&mut self) -> TyId {
+        self.make_ty(Ty::Bool)
+    }
+
+    pub fn ty_int32(&mut self) -> TyId {
+        self.make_ty(Ty::Int32)
+    }
+
+    pub fn ty_tuple(&mut self, elems: &[TyId]) -> TyId {
+        let tuple = self.tuples.make(elems);
+        self.make_ty(Ty::Tuple(tuple))
+    }
+
+    pub fn ty_unit(&mut self) -> TyId {
+        self.ty_tuple(&[])
+    }
+
+    pub fn fn_builtin(&mut self, builtin: BuiltinId) -> FnId {
+        self.make_fn(Fn::Builtin(builtin))
+    }
+
+    pub fn fn_fndef(&mut self, ctx: ContextId, fndef: FndefId) -> FnId {
+        self.make_fn(Fn::Fndef(ctx, fndef))
+    }
+
+    pub fn val_dynamic(&mut self, valdef: ValdefId, ty: TyId) -> ValId {
+        self.make_val(Val::Dynamic(valdef, ty))
+    }
+
+    pub fn ty(&mut self, _ctx: ContextId, _ty: TypeId) -> TyId {
         todo!()
     }
 
-    pub fn bound_fn(&self, _ctx: ContextId, _def: FndefId) -> FndefId {
+    pub fn fndef(&mut self, _ctx: ContextId, _fndef: FndefId) -> FnId {
         todo!()
     }
 
-    pub fn bound_val(&self, _ctx: ContextId, _def: ValdefId) -> Option<Constant> {
+    pub fn valdef(&mut self, _ctx: ContextId, _valdef: ValdefId) -> ValId {
         todo!()
     }
+}
 
-    pub fn index_ty(&mut self, _ctx: ContextId, _ty: TypeId) -> TyId {
-        todo!()
+impl<'a> Index<ContextId> for Cache<'a> {
+    type Output = Context;
+
+    fn index(&self, id: ContextId) -> &Context {
+        &self.contexts[id.index()]
     }
+}
 
-    pub fn index_fn(&mut self, _ctx: ContextId, _fndef: FndefId) -> FnId {
-        todo!()
+impl<'a> Index<TupleLoc> for Cache<'a> {
+    type Output = TyId;
+
+    fn index(&self, loc: TupleLoc) -> &TyId {
+        &self.tuples[loc]
     }
+}
 
-    pub fn index_val(&mut self, _ctx: ContextId, _valdef: ValdefId) -> ValId {
-        todo!()
+impl<'a> Index<TupleRange> for Cache<'a> {
+    type Output = [TyId];
+
+    fn index(&self, range: TupleRange) -> &[TyId] {
+        &self.tuples[range]
+    }
+}
+
+impl<'a> Index<TyId> for Cache<'a> {
+    type Output = Ty;
+
+    fn index(&self, t: TyId) -> &Ty {
+        &self.tys[t.index()]
+    }
+}
+
+impl<'a> Index<FnId> for Cache<'a> {
+    type Output = Fn;
+
+    fn index(&self, f: FnId) -> &Fn {
+        &self.fns[f.index()]
+    }
+}
+
+impl<'a> Index<ValId> for Cache<'a> {
+    type Output = Val;
+
+    fn index(&self, v: ValId) -> &Val {
+        &self.vals[v.index()]
     }
 }
