@@ -9,6 +9,7 @@ use indexmap::IndexSet;
 
 use crate::{
     lower::{FndefId, IR, StructdefId, TydefId, Type, TypeId, ValdefId},
+    subsets::Subsets,
     tuples::{TupleLoc, TupleRange, Tuples},
     util::default_hash,
 };
@@ -130,7 +131,7 @@ pub enum Val {
 pub struct Cache<'a> {
     ir: &'a IR,
     contexts: IndexSet<Context>,
-    tydefs: Vec<u8>,
+    tydefs: Subsets<TydefId, TypeId>,
     tuples: Tuples<TyId>,
     tys: IndexSet<Ty>,
     fns: IndexSet<Fn>,
@@ -142,31 +143,27 @@ impl<'a> Cache<'a> {
     pub fn new(ir: &'a IR) -> Self {
         let mut contexts = IndexSet::new();
         contexts.insert(Context::default());
-        let mut tydefs = Vec::new();
-        assert!(ir.tydefs.len() <= 8); // TODO: Handle larger bitsets.
+        let mut tydefs = Subsets::new(ir.tydefs.len_idx());
         for &ty in &ir.types {
-            let bitset = match ty {
-                Type::String | Type::Bool | Type::Int32 => 0,
+            let (prev, mut set) = tydefs.push();
+            match ty {
+                Type::String | Type::Bool | Type::Int32 => {}
                 Type::Tuple(elems) => {
-                    let mut bitset = 0;
-                    for elem in &ir.tuples[elems] {
-                        bitset |= tydefs[elem.index()];
+                    for &elem in &ir.tuples[elems] {
+                        set |= prev.get(elem);
                     }
-                    bitset
                 }
-                Type::Tydef(tydef) => match ir.tydefs[tydef].def {
-                    Some(_) => 0,
-                    None => 1 << tydef.index(),
-                },
+                Type::Tydef(tydef) => {
+                    if ir.tydefs[tydef].def.is_none() {
+                        set.include(tydef);
+                    }
+                }
                 Type::Structdef(structdef) => {
-                    let mut bitset = 0;
-                    for (_, field) in &ir.fields[ir.structdefs[structdef].fields] {
-                        bitset |= tydefs[field.index()];
+                    for &(_, field) in &ir.fields[ir.structdefs[structdef].fields] {
+                        set |= prev.get(field);
                     }
-                    bitset
                 }
-            };
-            tydefs.push(bitset);
+            }
         }
         Self {
             ir,
@@ -249,13 +246,8 @@ impl<'a> Cache<'a> {
     fn ty_prune(&mut self, ctx: ContextId, ty: TypeId) -> ContextId {
         let mut subcontext = Context::default();
         let context = &self[ctx];
-        let mut bitset = self.tydefs[ty.index()];
-        while let i = bitset.trailing_zeros()
-            && i < self.ir.tydefs.len_idx().raw()
-        {
-            let tydef = TydefId::from_raw(i);
+        for tydef in self.tydefs.get(ty) {
             subcontext.set_ty(tydef, context.tydefs[&tydef]);
-            bitset &= !(1 << i);
         }
         self.make_ctx(subcontext)
     }
