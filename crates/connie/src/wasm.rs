@@ -166,6 +166,11 @@ impl<'a> Wasm<'a> {
                     self.layout(elem, f);
                 }
             }
+            Ty::Structdef(_, fields) => {
+                for &field in &self.cache[fields] {
+                    self.layout(field, f);
+                }
+            }
         }
     }
 

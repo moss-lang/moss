@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     hash::{Hash, Hasher},
     ops::{AddAssign, BitXorAssign, Index, SubAssign},
 };
@@ -7,7 +8,7 @@ use index_vec::define_index_type;
 use indexmap::IndexSet;
 
 use crate::{
-    lower::{FndefId, IR, TydefId, TypeId, ValdefId},
+    lower::{FndefId, IR, StructdefId, TydefId, Type, TypeId, ValdefId},
     tuples::{TupleLoc, TupleRange, Tuples},
     util::default_hash,
 };
@@ -94,12 +95,20 @@ pub enum Ty {
     Bool,
     Int32,
     Tuple(TupleRange),
+    Structdef(StructdefId, TupleRange),
 }
 
 impl Ty {
     pub fn tuple(self) -> TupleRange {
         match self {
-            Ty::Tuple(range) => range,
+            Ty::Tuple(elems) => elems,
+            _ => panic!(),
+        }
+    }
+
+    pub fn structdef(self) -> TupleRange {
+        match self {
+            Ty::Structdef(_, fields) => fields,
             _ => panic!(),
         }
     }
@@ -121,23 +130,53 @@ pub enum Val {
 pub struct Cache<'a> {
     ir: &'a IR,
     contexts: IndexSet<Context>,
+    tydefs: Vec<u8>,
     tuples: Tuples<TyId>,
     tys: IndexSet<Ty>,
     fns: IndexSet<Fn>,
     vals: IndexSet<Val>,
+    types: HashMap<(ContextId, TypeId), TyId>,
 }
 
 impl<'a> Cache<'a> {
     pub fn new(ir: &'a IR) -> Self {
         let mut contexts = IndexSet::new();
         contexts.insert(Context::default());
+        let mut tydefs = Vec::new();
+        assert!(ir.tydefs.len() <= 8); // TODO: Handle larger bitsets.
+        for &ty in &ir.types {
+            let bitset = match ty {
+                Type::String | Type::Bool | Type::Int32 => 0,
+                Type::Tuple(elems) => {
+                    let mut bitset = 0;
+                    for elem in &ir.tuples[elems] {
+                        bitset |= tydefs[elem.index()];
+                    }
+                    bitset
+                }
+                Type::Tydef(tydef) => match ir.tydefs[tydef].def {
+                    Some(_) => 0,
+                    None => 1 << tydef.index(),
+                },
+                Type::Structdef(structdef) => {
+                    let mut bitset = 0;
+                    for (_, field) in &ir.fields[ir.structdefs[structdef].fields] {
+                        bitset |= tydefs[field.index()];
+                    }
+                    bitset
+                }
+            };
+            tydefs.push(bitset);
+        }
         Self {
             ir,
             contexts,
+            tydefs,
             tuples: Tuples::new(),
             tys: IndexSet::new(),
             fns: IndexSet::new(),
             vals: IndexSet::new(),
+            types: HashMap::new(),
         }
     }
 
@@ -186,6 +225,11 @@ impl<'a> Cache<'a> {
         self.make_ty(Ty::Tuple(tuple))
     }
 
+    pub fn ty_structdef(&mut self, structdef: StructdefId, elems: &[TyId]) -> TyId {
+        let tuple = self.tuples.make(elems);
+        self.make_ty(Ty::Structdef(structdef, tuple))
+    }
+
     pub fn ty_unit(&mut self) -> TyId {
         self.ty_tuple(&[])
     }
@@ -202,8 +246,60 @@ impl<'a> Cache<'a> {
         self.make_val(Val::Dynamic(valdef, ty))
     }
 
-    pub fn ty(&mut self, _ctx: ContextId, _ty: TypeId) -> TyId {
-        todo!()
+    fn ty_prune(&mut self, ctx: ContextId, ty: TypeId) -> ContextId {
+        let mut subcontext = Context::default();
+        let context = &self[ctx];
+        let mut bitset = self.tydefs[ty.index()];
+        while let i = bitset.trailing_zeros()
+            && i < self.ir.tydefs.len_idx().raw()
+        {
+            let tydef = TydefId::from_raw(i);
+            subcontext.set_ty(tydef, context.tydefs[&tydef]);
+            bitset &= !(1 << i);
+        }
+        self.make_ctx(subcontext)
+    }
+
+    fn ty_pruned(&mut self, ctx: ContextId, ty: TypeId) -> TyId {
+        if let Some(&t) = self.types.get(&(ctx, ty)) {
+            return t;
+        }
+        // TODO: Make this not susceptible to stack overflows.
+        let t = match self.ir.types[ty.index()] {
+            Type::String => self.ty_string(),
+            Type::Bool => self.ty_bool(),
+            Type::Int32 => self.ty_int32(),
+            Type::Tuple(elems) => {
+                let types = self.ir.tuples[elems]
+                    .iter()
+                    .map(|&elem| self.ty_pruned(ctx, elem))
+                    .collect::<Vec<TyId>>();
+                self.ty_tuple(&types)
+            }
+            Type::Tydef(tydef) => match self.ir.tydefs[tydef].def {
+                Some(def) => self.ty_pruned(ctx, def),
+                None => self.contexts[ctx.index()].tydefs[&tydef],
+            },
+            Type::Structdef(structdef) => {
+                let types = self.ir.fields[self.ir.structdefs[structdef].fields]
+                    .iter()
+                    .map(|&(_, field)| self.ty_pruned(ctx, field))
+                    .collect::<Vec<TyId>>();
+                self.ty_structdef(structdef, &types)
+            }
+        };
+        self.types.insert((ctx, ty), t);
+        t
+    }
+
+    pub fn ty(&mut self, ctx: ContextId, ty: TypeId) -> TyId {
+        if let Some(&t) = self.types.get(&(ctx, ty)) {
+            return t;
+        }
+        let ctx2 = self.ty_prune(ctx, ty);
+        let t = self.ty_pruned(ctx2, ty);
+        self.types.insert((ctx, ty), t);
+        t
     }
 
     pub fn fndef(&mut self, _ctx: ContextId, _fndef: FndefId) -> FnId {
