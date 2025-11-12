@@ -10,6 +10,7 @@ fn chunks_per_set(len: impl Idx) -> usize {
     len.index().div_ceil(CHUNK_BITS)
 }
 
+#[derive(Clone, Copy)]
 pub struct Subset<'a, I> {
     len: I,
     bits: &'a [Chunk],
@@ -63,6 +64,7 @@ pub struct SubsetMut<'a, I> {
 
 impl<'a, I: Idx> SubsetMut<'a, I> {
     pub fn include(&mut self, i: I) {
+        assert!(i < self.len);
         let index = i.index();
         self.bits[index / CHUNK_BITS] |= 1 << (index % CHUNK_BITS);
     }
@@ -78,9 +80,11 @@ impl<'a, I: Idx> BitOrAssign<Subset<'a, I>> for SubsetMut<'a, I> {
 }
 
 pub struct SubsetsView<'a, I, J> {
-    len: I,
     _j: PhantomData<J>,
-    bits: &'a [Chunk],
+    len: I,
+    left: &'a [Chunk],
+    gap: usize,
+    right: &'a [Chunk],
 }
 
 impl<'a, I: Idx, J> SubsetsView<'a, I, J> {
@@ -95,23 +99,26 @@ impl<'a, I: Idx, J: Idx> SubsetsView<'a, I, J> {
         let start = j.index() * stride;
         Subset {
             len: self.len,
-            bits: &self.bits[start..start + stride],
+            bits: match start.checked_sub(self.left.len() + self.gap) {
+                None => &self.left[start..start + stride],
+                Some(delta) => &self.right[delta..delta + stride],
+            },
         }
     }
 }
 
 #[derive(Debug)]
 pub struct Subsets<I, J> {
-    len: I,
     _j: PhantomData<J>,
+    len: I,
     bits: Vec<Chunk>,
 }
 
 impl<I, J> Subsets<I, J> {
     pub fn new(len: I) -> Self {
         Self {
-            len,
             _j: PhantomData,
+            len,
             bits: Vec::new(),
         }
     }
@@ -120,9 +127,11 @@ impl<I, J> Subsets<I, J> {
 impl<I: Idx, J> Subsets<I, J> {
     fn view(&'_ self) -> SubsetsView<'_, I, J> {
         SubsetsView {
-            len: self.len,
             _j: PhantomData,
-            bits: &self.bits,
+            len: self.len,
+            left: &self.bits,
+            gap: 0,
+            right: &[],
         }
     }
 
@@ -135,24 +144,44 @@ impl<I: Idx, J> Subsets<I, J> {
         for _ in 0..self.chunks_per_set() {
             self.bits.push(0);
         }
-        let (before, after) = self.bits.split_at_mut(split);
-        (
-            SubsetsView {
-                len: self.len,
-                _j: PhantomData,
-                bits: before,
-            },
-            SubsetMut {
-                len: self.len,
-                bits: after,
-            },
-        )
+        let len = self.len;
+        let (left, bits) = self.bits.split_at_mut(split);
+        let view = SubsetsView {
+            _j: PhantomData,
+            len,
+            left,
+            gap: 0,
+            right: &[],
+        };
+        (view, SubsetMut { len, bits })
+    }
+
+    pub fn iter(&'_ self) -> impl Iterator<Item = Subset<'_, I>> {
+        let len = self.len;
+        self.bits
+            .chunks_exact(self.chunks_per_set())
+            .map(move |bits| Subset { len, bits })
     }
 }
 
 impl<I: Idx, J: Idx> Subsets<I, J> {
     pub fn get(&'_ self, j: J) -> Subset<'_, I> {
         self.view().get(j)
+    }
+
+    pub fn get_mut(&'_ mut self, j: J) -> (SubsetsView<'_, I, J>, SubsetMut<'_, I>) {
+        let gap = self.chunks_per_set();
+        let len = self.len;
+        let (left, rest) = self.bits.split_at_mut(j.index() * gap);
+        let (bits, right) = rest.split_at_mut(gap);
+        let view = SubsetsView {
+            _j: PhantomData,
+            len,
+            left,
+            gap,
+            right,
+        };
+        (view, SubsetMut { len, bits })
     }
 }
 
