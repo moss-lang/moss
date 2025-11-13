@@ -88,6 +88,11 @@ const WASIP1: &str = "wasi_snapshot_preview1";
 
 const WASIP1_IMPORTS: &[&str] = &["args_get", "args_sizes_get", "fd_write", "proc_exit"];
 
+enum Builtin {
+    Instruction(Instruction),
+    Import(u32),
+}
+
 trait AsInstructionSink {
     fn insn(&mut self) -> InstructionSink<'_>;
 }
@@ -116,7 +121,7 @@ struct Wasm<'a> {
     lib: Lib,
     main: FndefId,
     cache: Cache<'a>,
-    instructions: IndexVec<BuiltinId, Instruction>,
+    builtins: IndexVec<BuiltinId, Builtin>,
     funcs: IndexVec<FnId, Option<u32>>,
 
     data_offset: i32,
@@ -378,56 +383,61 @@ impl<'a> Wasm<'a> {
                     self.get(local);
                     let f = self.cache.fndef(self.ctx, fndef);
                     match self.cache[f] {
-                        Fn::Builtin(builtin) => {
-                            match self.instructions[builtin] {
-                                Instruction::Unreachable => self.body.insn().unreachable(),
+                        Fn::Builtin(builtin) => match self.builtins[builtin] {
+                            Builtin::Instruction(instruction) => {
+                                match instruction {
+                                    Instruction::Unreachable => self.body.insn().unreachable(),
 
-                                Instruction::I32Load => todo!(),
-                                Instruction::I32Load8S => todo!(),
-                                Instruction::I32Load8U => todo!(),
-                                Instruction::I32Load16S => todo!(),
-                                Instruction::I32Load16U => todo!(),
-                                Instruction::I32Store => todo!(),
-                                Instruction::I32Store8 => todo!(),
-                                Instruction::I32Store16 => todo!(),
-                                Instruction::MemorySize => todo!(),
-                                Instruction::MemoryGrow => todo!(),
-                                Instruction::MemoryCopy => todo!(),
-                                Instruction::MemoryFill => todo!(),
+                                    Instruction::I32Load => todo!(),
+                                    Instruction::I32Load8S => todo!(),
+                                    Instruction::I32Load8U => todo!(),
+                                    Instruction::I32Load16S => todo!(),
+                                    Instruction::I32Load16U => todo!(),
+                                    Instruction::I32Store => todo!(),
+                                    Instruction::I32Store8 => todo!(),
+                                    Instruction::I32Store16 => todo!(),
+                                    Instruction::MemorySize => todo!(),
+                                    Instruction::MemoryGrow => todo!(),
+                                    Instruction::MemoryCopy => todo!(),
+                                    Instruction::MemoryFill => todo!(),
 
-                                Instruction::I32Eqz => self.body.insn().i32_eqz(),
-                                Instruction::I32Eq => self.body.insn().i32_eq(),
-                                Instruction::I32Ne => self.body.insn().i32_ne(),
-                                Instruction::I32LtS => self.body.insn().i32_lt_s(),
-                                Instruction::I32LtU => self.body.insn().i32_lt_u(),
-                                Instruction::I32GtS => self.body.insn().i32_gt_s(),
-                                Instruction::I32GtU => self.body.insn().i32_gt_u(),
-                                Instruction::I32LeS => self.body.insn().i32_le_s(),
-                                Instruction::I32LeU => self.body.insn().i32_le_u(),
-                                Instruction::I32GeS => self.body.insn().i32_ge_s(),
-                                Instruction::I32GeU => self.body.insn().i32_ge_u(),
-                                Instruction::I32Clz => self.body.insn().i32_clz(),
-                                Instruction::I32Ctz => self.body.insn().i32_ctz(),
-                                Instruction::I32Popcnt => self.body.insn().i32_popcnt(),
-                                Instruction::I32Add => self.body.insn().i32_add(),
-                                Instruction::I32Sub => self.body.insn().i32_sub(),
-                                Instruction::I32Mul => self.body.insn().i32_mul(),
-                                Instruction::I32DivS => self.body.insn().i32_div_s(),
-                                Instruction::I32DivU => self.body.insn().i32_div_u(),
-                                Instruction::I32RemS => self.body.insn().i32_rem_s(),
-                                Instruction::I32RemU => self.body.insn().i32_rem_u(),
-                                Instruction::I32And => self.body.insn().i32_and(),
-                                Instruction::I32Or => self.body.insn().i32_or(),
-                                Instruction::I32Xor => self.body.insn().i32_xor(),
-                                Instruction::I32Shl => self.body.insn().i32_shl(),
-                                Instruction::I32ShrS => self.body.insn().i32_shr_s(),
-                                Instruction::I32ShrU => self.body.insn().i32_shr_u(),
-                                Instruction::I32Rotl => self.body.insn().i32_rotl(),
-                                Instruction::I32Rotr => self.body.insn().i32_rotr(),
-                                Instruction::I32Extend8S => self.body.insn().i32_extend8_s(),
-                                Instruction::I32Extend16S => self.body.insn().i32_extend16_s(),
-                            };
-                        }
+                                    Instruction::I32Eqz => self.body.insn().i32_eqz(),
+                                    Instruction::I32Eq => self.body.insn().i32_eq(),
+                                    Instruction::I32Ne => self.body.insn().i32_ne(),
+                                    Instruction::I32LtS => self.body.insn().i32_lt_s(),
+                                    Instruction::I32LtU => self.body.insn().i32_lt_u(),
+                                    Instruction::I32GtS => self.body.insn().i32_gt_s(),
+                                    Instruction::I32GtU => self.body.insn().i32_gt_u(),
+                                    Instruction::I32LeS => self.body.insn().i32_le_s(),
+                                    Instruction::I32LeU => self.body.insn().i32_le_u(),
+                                    Instruction::I32GeS => self.body.insn().i32_ge_s(),
+                                    Instruction::I32GeU => self.body.insn().i32_ge_u(),
+                                    Instruction::I32Clz => self.body.insn().i32_clz(),
+                                    Instruction::I32Ctz => self.body.insn().i32_ctz(),
+                                    Instruction::I32Popcnt => self.body.insn().i32_popcnt(),
+                                    Instruction::I32Add => self.body.insn().i32_add(),
+                                    Instruction::I32Sub => self.body.insn().i32_sub(),
+                                    Instruction::I32Mul => self.body.insn().i32_mul(),
+                                    Instruction::I32DivS => self.body.insn().i32_div_s(),
+                                    Instruction::I32DivU => self.body.insn().i32_div_u(),
+                                    Instruction::I32RemS => self.body.insn().i32_rem_s(),
+                                    Instruction::I32RemU => self.body.insn().i32_rem_u(),
+                                    Instruction::I32And => self.body.insn().i32_and(),
+                                    Instruction::I32Or => self.body.insn().i32_or(),
+                                    Instruction::I32Xor => self.body.insn().i32_xor(),
+                                    Instruction::I32Shl => self.body.insn().i32_shl(),
+                                    Instruction::I32ShrS => self.body.insn().i32_shr_s(),
+                                    Instruction::I32ShrU => self.body.insn().i32_shr_u(),
+                                    Instruction::I32Rotl => self.body.insn().i32_rotl(),
+                                    Instruction::I32Rotr => self.body.insn().i32_rotr(),
+                                    Instruction::I32Extend8S => self.body.insn().i32_extend8_s(),
+                                    Instruction::I32Extend16S => self.body.insn().i32_extend16_s(),
+                                };
+                            }
+                            Builtin::Import(funcidx) => {
+                                self.body.insn().call(funcidx);
+                            }
+                        },
                         Fn::Fndef(_, _) => {
                             // We always make `_start` its own function right after the imports.
                             let funcidx_offset = self.section_import.len() + 1;
@@ -514,9 +524,28 @@ impl<'a> Wasm<'a> {
         });
         self.section_export.export("memory", ExportKind::Memory, 0);
 
+        let mut context = self.cache[self.ctx].clone();
+        let memidx = self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
+        context.set_ty(memidx, self.cache.ty_unit());
+
+        for instruction in Instruction::iter() {
+            let builtin = self.builtins.push(Builtin::Instruction(instruction));
+            let f = self.cache.fn_builtin(builtin);
+            assert_eq!(self.funcs.push(None), f);
+            let name = self.ir.strings.get_id(<&str>::from(instruction)).unwrap();
+            let fndef = self.names.fndefs[&(self.lib.wasm, name)];
+            context.set_fn(fndef, f);
+        }
+
         for string in WASIP1_IMPORTS {
+            let builtin = self
+                .builtins
+                .push(Builtin::Import(self.section_import.len()));
+            let f = self.cache.fn_builtin(builtin);
+            assert_eq!(self.funcs.push(None), f);
             let name = self.ir.strings.get_id(string).unwrap();
             let fndef = self.names.fndefs[&(self.lib.wasip1, name)];
+            context.set_fn(fndef, f);
             let Fndef {
                 needs: _,
                 param,
@@ -548,10 +577,6 @@ impl<'a> Wasm<'a> {
                 .ty()
                 .function(params, results.iter().copied());
         }
-
-        let mut context = self.cache[self.ctx].clone();
-        let memidx = self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
-        context.set_ty(memidx, self.cache.ty_unit());
 
         let start = self.section_import.len() + self.section_function.len();
         self.section_function.function(self.section_type.len());
@@ -595,28 +620,16 @@ impl<'a> Wasm<'a> {
 }
 
 pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
-    let mut funcs = IndexVec::new();
-    let mut cache = Cache::new(ir);
-    let mut context = cache[cache.empty()].clone();
-    let instructions = Instruction::iter()
-        .enumerate()
-        .map(|(i, instruction)| {
-            funcs.push(None);
-            let name = ir.strings.get_id(<&str>::from(instruction)).unwrap();
-            let fndef = names.fndefs[&(lib.wasm, name)];
-            context.set_fn(fndef, cache.fn_builtin(BuiltinId::from_usize(i)));
-            instruction
-        })
-        .collect();
-    let ctx = cache.make_ctx(context);
+    let cache = Cache::new(ir);
+    let ctx = cache.empty();
     Wasm {
         ir,
         names,
         lib,
         main,
         cache,
-        instructions,
-        funcs,
+        builtins: IndexVec::new(),
+        funcs: IndexVec::new(),
 
         data_offset: Default::default(),
         strings: Default::default(),
