@@ -433,6 +433,7 @@ pub struct Cache<'a> {
     fns: IndexSet<Fn>,
     vals: IndexSet<Val>,
     types: HashMap<(ContextId, TypeId), TyId>,
+    fndefs: HashMap<(ContextId, FndefId), FnId>,
 
     /// Bindable tydefs needed by each abstract type.
     type_tydefs: Subsets<TydefId, TypeId>,
@@ -498,6 +499,7 @@ impl<'a> Cache<'a> {
             fns: IndexSet::new(),
             vals: IndexSet::new(),
             types: HashMap::new(),
+            fndefs: HashMap::new(),
             type_tydefs,
             fndef_tydefs: fndefs.tydefs,
             fndef_fndefs: fndefs.fndefs,
@@ -574,8 +576,8 @@ impl<'a> Cache<'a> {
     fn ty_prune(&mut self, ctx: ContextId, ty: TypeId) -> ContextId {
         let mut subcontext = Context::default();
         let context = &self[ctx];
-        for tydef in self.type_tydefs.get(ty) {
-            subcontext.set_ty(tydef, context.tydefs[&tydef]);
+        for def in self.type_tydefs.get(ty) {
+            subcontext.set_ty(def, context.tydefs[&def]);
         }
         self.make_ctx(subcontext)
     }
@@ -622,8 +624,33 @@ impl<'a> Cache<'a> {
         t
     }
 
-    pub fn fndef(&mut self, _ctx: ContextId, _fndef: FndefId) -> FnId {
-        todo!()
+    fn fndef_prune(&mut self, ctx: ContextId, fndef: FndefId) -> ContextId {
+        let mut subcontext = Context::default();
+        let context = &self[ctx];
+        for def in self.fndef_tydefs.get(fndef) {
+            subcontext.set_ty(def, context.tydefs[&def]);
+        }
+        for def in self.fndef_fndefs.get(fndef) {
+            subcontext.set_fn(def, context.fndefs[&def]);
+        }
+        for def in self.fndef_valdefs.get(fndef) {
+            subcontext.set_val(def, context.valdefs[&def]);
+        }
+        self.make_ctx(subcontext)
+    }
+
+    fn fndef_pruned(&mut self, ctx: ContextId, fndef: FndefId) -> FnId {
+        self.make_fn(Fn::Fndef(ctx, fndef))
+    }
+
+    pub fn fndef(&mut self, ctx: ContextId, fndef: FndefId) -> FnId {
+        if let Some(&f) = self.fndefs.get(&(ctx, fndef)) {
+            return f;
+        }
+        let ctx2 = self.fndef_prune(ctx, fndef);
+        let f = self.fndef_pruned(ctx2, fndef);
+        self.fndefs.insert((ctx, fndef), f);
+        f
     }
 
     pub fn valdef(&mut self, _ctx: ContextId, _valdef: ValdefId) -> ValId {
