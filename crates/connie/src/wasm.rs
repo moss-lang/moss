@@ -4,8 +4,8 @@ use index_vec::{IndexVec, define_index_type};
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
-    Function, FunctionSection, GlobalSection, ImportSection, InstructionSink, MemorySection,
-    MemoryType, Module, TypeSection, ValType,
+    Function, FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink,
+    MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::{
@@ -90,7 +90,7 @@ const WASIP1_IMPORTS: &[&str] = &["args_get", "args_sizes_get", "fd_write", "pro
 
 enum Builtin {
     Instruction(Instruction),
-    Import(u32),
+    Function(u32),
 }
 
 trait AsInstructionSink {
@@ -434,15 +434,13 @@ impl<'a> Wasm<'a> {
                                     Instruction::I32Extend16S => self.body.insn().i32_extend16_s(),
                                 };
                             }
-                            Builtin::Import(funcidx) => {
+                            Builtin::Function(funcidx) => {
                                 self.body.insn().call(funcidx);
                             }
                         },
                         Fn::Fndef(_, _) => {
-                            // We always make `_start` its own function right after the imports.
-                            let funcidx_offset = self.section_import.len() + 1;
-                            let funcidx = self.funcs[f].unwrap(); // TODO: This doesn't really work.
-                            self.body.insn().call(funcidx_offset + funcidx);
+                            let funcidx = self.funcs[f].unwrap();
+                            self.body.insn().call(funcidx);
                         }
                     }
                 }
@@ -484,13 +482,16 @@ impl<'a> Wasm<'a> {
         instr
     }
 
+    fn funcidx(&self) -> u32 {
+        // TODO: Handle the case where non-function imports have also been added.
+        self.section_import.len() + self.section_function.len()
+    }
+
     fn func(&mut self, f: FnId) {
         match self.cache[f] {
             Fn::Builtin(_) => panic!(),
             Fn::Fndef(ctx, fndef) => {
-                self.funcs.push(Some(
-                    self.section_import.len() + self.section_function.len(),
-                ));
+                assert_eq!(self.funcs.push(Some(self.funcidx())), f);
                 self.ctx = ctx;
                 let Fndef {
                     needs: _,
@@ -538,9 +539,7 @@ impl<'a> Wasm<'a> {
         }
 
         for string in WASIP1_IMPORTS {
-            let builtin = self
-                .builtins
-                .push(Builtin::Import(self.section_import.len()));
+            let builtin = self.builtins.push(Builtin::Function(self.funcidx()));
             let f = self.cache.fn_builtin(builtin);
             assert_eq!(self.funcs.push(None), f);
             let name = self.ir.strings.get_id(string).unwrap();
@@ -578,32 +577,61 @@ impl<'a> Wasm<'a> {
                 .function(params, results.iter().copied());
         }
 
-        let start = self.section_import.len() + self.section_function.len();
+        let builtin_stack = self.builtins.push(Builtin::Function(self.funcidx()));
+        let f_stack = self.cache.fn_builtin(builtin_stack);
+        assert_eq!(self.funcs.push(None), f_stack);
+        let fndef_stack =
+            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("stack").unwrap())];
+        context.set_fn(fndef_stack, f_stack);
+        let global_stack = self.section_global.len();
         self.section_function.function(self.section_type.len());
-        self.section_type.ty().function([], []);
-        let mut f = Function::new([]);
-        f.instructions()
-            .call(self.section_import.len() + self.section_function.len())
-            .i32_const(0)
-            .call(
-                WASIP1_IMPORTS
-                    .iter()
-                    .position(|&name| name == "proc_exit")
-                    .unwrap() as u32,
-            )
-            .end();
-        self.section_code.function(&f);
-        self.section_export
-            .export("_start", ExportKind::Func, start);
+        self.section_type.ty().function([], [ValType::I32]);
+        self.section_code.function(&{
+            let mut f = Function::new([]);
+            f.instructions().global_get(global_stack).end();
+            f
+        });
+        self.section_global.global(
+            GlobalType {
+                val_type: ValType::I32,
+                mutable: true,
+                shared: false,
+            },
+            // We'll set this dynamically when we codegen the `_start` function, since at that point
+            // we'll know the total length of all the active data segments.
+            &ConstExpr::i32_const(0),
+        );
 
         let ctx = self.cache.make_ctx(context);
-        self.cache.fn_fndef(ctx, self.main);
+        let main = self.cache.fn_fndef(ctx, self.main);
         while let f = self.funcs.len_idx()
             && f < self.cache.next_fn()
         {
             self.ctx = ctx;
             self.func(f);
         }
+
+        let start = self.funcidx();
+        self.section_function.function(self.section_type.len());
+        self.section_type.ty().function([], []);
+        self.section_code.function(&{
+            let mut f = Function::new([]);
+            f.instructions()
+                .i32_const((self.data_offset + 15) / 16 * 16)
+                .global_set(global_stack)
+                .call(self.funcs[main].unwrap())
+                .i32_const(0)
+                .call(
+                    WASIP1_IMPORTS
+                        .iter()
+                        .position(|&name| name == "proc_exit")
+                        .unwrap() as u32,
+                )
+                .end();
+            f
+        });
+        self.section_export
+            .export("_start", ExportKind::Func, start);
 
         let mut module = Module::new();
         module
