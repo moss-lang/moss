@@ -4,11 +4,11 @@ use std::{
     ops::{AddAssign, BitXorAssign, Index, SubAssign},
 };
 
-use index_vec::{Idx, IndexVec, define_index_type, index_vec};
+use index_vec::{Idx, define_index_type, index_vec};
 use indexmap::IndexSet;
 
 use crate::{
-    lower::{CtxdefId, FndefId, IR, Needs, StructdefId, TydefId, Type, TypeId, ValdefId},
+    lower::{CtxdefId, FndefId, IR, Need, Needs, StructdefId, TydefId, Type, TypeId, ValdefId},
     subsets::Subsets,
     tuples::{TupleLoc, TupleRange, Tuples},
     util::default_hash,
@@ -34,11 +34,11 @@ define_index_type! {
     pub struct ValId = u32;
 }
 
+#[derive(Debug)]
 struct NeedSets<I> {
     tydefs: Subsets<TydefId, I>,
     fndefs: Subsets<FndefId, I>,
     valdefs: Subsets<ValdefId, I>,
-    ctxdefs: Subsets<CtxdefId, I>,
 }
 
 impl<I: Idx> NeedSets<I> {
@@ -46,32 +46,58 @@ impl<I: Idx> NeedSets<I> {
         let mut tydefs = Subsets::new(ir.tydefs.len_idx());
         let mut fndefs = Subsets::new(ir.fndefs.len_idx());
         let mut valdefs = Subsets::new(ir.valdefs.len_idx());
-        let mut ctxdefs = Subsets::new(ir.ctxdefs.len_idx());
         for _ in 0..len.index() {
             tydefs.push();
             fndefs.push();
             valdefs.push();
-            ctxdefs.push();
         }
         Self {
             tydefs,
             fndefs,
             valdefs,
-            ctxdefs,
+        }
+    }
+}
+
+impl NeedSets<CtxdefId> {
+    fn fill(&mut self, ir: &IR) {
+        for ctxdef in topological_sort(ir) {
+            let Needs {
+                tys,
+                fns,
+                vals,
+                ctxs,
+            } = ir.ctxdefs[ctxdef].def;
+            let (view_tydefs, mut set_tydefs) = self.tydefs.get_mut(ctxdef);
+            let (view_fndefs, mut set_fndefs) = self.fndefs.get_mut(ctxdef);
+            let (view_valdefs, mut set_valdefs) = self.valdefs.get_mut(ctxdef);
+            for need_ty in tys.get(&ir.need_tys) {
+                set_tydefs.include(need_ty.id);
+            }
+            for need_fn in fns.get(&ir.need_fns) {
+                set_fndefs.include(need_fn.id);
+            }
+            for need_val in vals.get(&ir.need_vals) {
+                set_valdefs.include(need_val.id);
+            }
+            for need_ctx in ctxs.get(&ir.need_ctxs) {
+                set_tydefs |= view_tydefs.get(need_ctx.id);
+                set_fndefs |= view_fndefs.get(need_ctx.id);
+                set_valdefs |= view_valdefs.get(need_ctx.id);
+            }
         }
     }
 }
 
 impl<I> NeedSets<I> {
-    fn direct(
+    fn full(
         ir: &IR,
-        type_tydefs: &Subsets<TydefId, TypeId>,
-        items: impl IntoIterator<Item = (I, Needs)> + ExactSizeIterator,
+        ctxdefs: &NeedSets<CtxdefId>,
+        items: impl IntoIterator<Item = (I, Needs)>,
     ) -> Self {
         let mut tydefs = Subsets::new(ir.tydefs.len_idx());
         let mut fndefs = Subsets::new(ir.fndefs.len_idx());
         let mut valdefs = Subsets::new(ir.valdefs.len_idx());
-        let mut ctxdefs = Subsets::new(ir.ctxdefs.len_idx());
         for (
             _,
             Needs {
@@ -83,252 +109,64 @@ impl<I> NeedSets<I> {
         ) in items
         {
             let (_, mut set_tydefs) = tydefs.push();
-            for need_ty in tys.get(&ir.need_tys) {
-                set_tydefs |= type_tydefs.get(need_ty.id);
-            }
             let (_, mut set_fndefs) = fndefs.push();
+            let (_, mut set_valdefs) = valdefs.push();
+            for need_ty in tys.get(&ir.need_tys) {
+                set_tydefs.include(need_ty.id);
+            }
             for need_fn in fns.get(&ir.need_fns) {
                 set_fndefs.include(need_fn.id);
             }
-            let (_, mut set_valdefs) = valdefs.push();
             for need_val in vals.get(&ir.need_vals) {
                 set_valdefs.include(need_val.id);
             }
-            let (_, mut set_ctxdefs) = ctxdefs.push();
             for need_ctx in ctxs.get(&ir.need_ctxs) {
-                set_ctxdefs.include(need_ctx.id);
+                set_tydefs |= ctxdefs.tydefs.get(need_ctx.id);
+                set_fndefs |= ctxdefs.fndefs.get(need_ctx.id);
+                set_valdefs |= ctxdefs.valdefs.get(need_ctx.id);
             }
         }
         Self {
             tydefs,
             fndefs,
             valdefs,
-            ctxdefs,
         }
     }
 }
 
-#[derive(Clone, Copy)]
-enum DefId {
-    Fn(FndefId),
-    Val(ValdefId),
-    Ctx(CtxdefId),
-}
-
-struct Downstream {
-    fndefs: IndexVec<FndefId, u32>,
-    valdefs: IndexVec<ValdefId, u32>,
-    ctxdefs: IndexVec<CtxdefId, u32>,
-}
-
-impl Downstream {
-    fn new(ir: &IR) -> Self {
-        Self {
-            fndefs: index_vec![0; ir.fndefs.len()],
-            valdefs: index_vec![0; ir.valdefs.len()],
-            ctxdefs: index_vec![0; ir.ctxdefs.len()],
-        }
-    }
-
-    fn accumulate<I>(&mut self, needs: &NeedSets<I>) {
-        for defs in needs.fndefs.iter() {
-            for def in defs {
-                self.fndefs[def] += 1;
-            }
-        }
-        for defs in needs.valdefs.iter() {
-            for def in defs {
-                self.valdefs[def] += 1;
-            }
-        }
-        for defs in needs.ctxdefs.iter() {
-            for def in defs {
-                self.ctxdefs[def] += 1;
-            }
-        }
-    }
-
-    fn decrement<I: Idx>(&mut self, needs: &NeedSets<I>, i: I, mut f: impl FnMut(DefId)) {
-        for def in needs.fndefs.get(i) {
-            let pred = &mut self.fndefs[def];
-            *pred -= 1;
-            if *pred == 0 {
-                f(DefId::Fn(def))
-            }
-        }
-        for def in needs.valdefs.get(i) {
-            let pred = &mut self.valdefs[def];
-            *pred -= 1;
-            if *pred == 0 {
-                f(DefId::Val(def))
-            }
-        }
-        for def in needs.ctxdefs.get(i) {
-            let pred = &mut self.ctxdefs[def];
-            *pred -= 1;
-            if *pred == 0 {
-                f(DefId::Ctx(def))
-            }
-        }
-    }
-}
-
-fn topological_sort(
-    ir: &IR,
-    fndefs: &NeedSets<FndefId>,
-    valdefs: &NeedSets<ValdefId>,
-    ctxdefs: &NeedSets<CtxdefId>,
-) -> Vec<DefId> {
+fn topological_sort(ir: &IR) -> Vec<CtxdefId> {
     // Implementation adapted from here:
     // https://github.com/penrose/penrose/blob/v3.3.0/packages/core/src/utils/Graph.ts#L142-L168
     let mut sorted = Vec::new();
-    let mut downstream = Downstream::new(ir);
-    downstream.accumulate(fndefs);
-    downstream.accumulate(valdefs);
-    downstream.accumulate(ctxdefs);
+    let mut dependents = index_vec![0u32; ir.ctxdefs.len()];
+    for ctxdef in &ir.ctxdefs {
+        for need in ctxdef.def.ctxs.get(&ir.need_ctxs) {
+            dependents[need.id] += 1;
+        }
+    }
     let mut stack = Vec::new();
-    for (def, &succ) in downstream.fndefs.iter_enumerated() {
-        if succ == 0 {
-            stack.push(DefId::Fn(def));
+    for (i, &n) in dependents.iter_enumerated() {
+        if n == 0 {
+            stack.push(i);
         }
     }
-    for (def, &succ) in downstream.valdefs.iter_enumerated() {
-        if succ == 0 {
-            stack.push(DefId::Val(def));
-        }
-    }
-    for (def, &succ) in downstream.ctxdefs.iter_enumerated() {
-        if succ == 0 {
-            stack.push(DefId::Ctx(def));
-        }
-    }
-    while let Some(def) = stack.pop() {
-        sorted.push(def);
-        match def {
-            DefId::Fn(fndef) => downstream.decrement(fndefs, fndef, |id| stack.push(id)),
-            DefId::Val(valdef) => downstream.decrement(valdefs, valdef, |id| stack.push(id)),
-            DefId::Ctx(ctxdef) => downstream.decrement(ctxdefs, ctxdef, |id| stack.push(id)),
+    while let Some(ctxdef) = stack.pop() {
+        sorted.push(ctxdef);
+        for &Need { id, .. } in ir.ctxdefs[ctxdef].def.ctxs.get(&ir.need_ctxs) {
+            let n = &mut dependents[id];
+            *n -= 1;
+            if *n == 0 {
+                stack.push(id);
+            }
         }
     }
     let m = sorted.len();
-    let n = ir.fndefs.len() + ir.valdefs.len() + ir.ctxdefs.len();
+    let n = ir.ctxdefs.len();
     if m != n {
-        panic!("could only sort {m} nodes out of {n} total");
+        panic!("could only sort {m} contexts out of {n} total");
     }
     sorted.reverse();
     sorted
-}
-
-fn transitive_closure(
-    ir: &IR,
-    fndef_direct: &NeedSets<FndefId>,
-    valdef_direct: &NeedSets<ValdefId>,
-    ctxdef_direct: &NeedSets<CtxdefId>,
-) -> (NeedSets<FndefId>, NeedSets<ValdefId>, NeedSets<CtxdefId>) {
-    let mut fndefs = NeedSets::new(ir, ir.fndefs.len_idx());
-    let mut valdefs = NeedSets::new(ir, ir.valdefs.len_idx());
-    let mut ctxdefs = NeedSets::new(ir, ir.ctxdefs.len_idx());
-    for def in topological_sort(ir, fndef_direct, valdef_direct, ctxdef_direct) {
-        match def {
-            DefId::Fn(fndef) => {
-                let (view_tydefs, mut set_tydefs) = fndefs.tydefs.get_mut(fndef);
-                let (view_fndefs, mut set_fndefs) = fndefs.fndefs.get_mut(fndef);
-                let (view_valdefs, mut set_valdefs) = fndefs.valdefs.get_mut(fndef);
-                let (view_ctxdefs, mut set_ctxdefs) = fndefs.ctxdefs.get_mut(fndef);
-                let direct_tydefs = fndef_direct.tydefs.get(fndef);
-                let direct_fndefs = fndef_direct.fndefs.get(fndef);
-                let direct_valdefs = fndef_direct.valdefs.get(fndef);
-                let direct_ctxdefs = fndef_direct.ctxdefs.get(fndef);
-                set_tydefs |= direct_tydefs;
-                set_fndefs |= direct_fndefs;
-                set_valdefs |= direct_valdefs;
-                set_ctxdefs |= direct_ctxdefs;
-                for dep in direct_fndefs {
-                    set_tydefs |= view_tydefs.get(dep);
-                    set_fndefs |= view_fndefs.get(dep);
-                    set_valdefs |= view_valdefs.get(dep);
-                    set_ctxdefs |= view_ctxdefs.get(dep);
-                }
-                for dep in direct_valdefs {
-                    set_tydefs |= valdefs.tydefs.get(dep);
-                    set_fndefs |= valdefs.fndefs.get(dep);
-                    set_valdefs |= valdefs.valdefs.get(dep);
-                    set_ctxdefs |= valdefs.ctxdefs.get(dep);
-                }
-                for dep in direct_ctxdefs {
-                    set_tydefs |= ctxdefs.tydefs.get(dep);
-                    set_fndefs |= ctxdefs.fndefs.get(dep);
-                    set_valdefs |= ctxdefs.valdefs.get(dep);
-                    set_ctxdefs |= ctxdefs.ctxdefs.get(dep);
-                }
-            }
-            DefId::Val(valdef) => {
-                let (view_tydefs, mut set_tydefs) = valdefs.tydefs.get_mut(valdef);
-                let (view_fndefs, mut set_fndefs) = valdefs.fndefs.get_mut(valdef);
-                let (view_valdefs, mut set_valdefs) = valdefs.valdefs.get_mut(valdef);
-                let (view_ctxdefs, mut set_ctxdefs) = valdefs.ctxdefs.get_mut(valdef);
-                let direct_tydefs = valdef_direct.tydefs.get(valdef);
-                let direct_fndefs = valdef_direct.fndefs.get(valdef);
-                let direct_valdefs = valdef_direct.valdefs.get(valdef);
-                let direct_ctxdefs = valdef_direct.ctxdefs.get(valdef);
-                set_tydefs |= direct_tydefs;
-                set_fndefs |= direct_fndefs;
-                set_valdefs |= direct_valdefs;
-                set_ctxdefs |= direct_ctxdefs;
-                for dep in direct_fndefs {
-                    set_tydefs |= fndefs.tydefs.get(dep);
-                    set_fndefs |= fndefs.fndefs.get(dep);
-                    set_valdefs |= fndefs.valdefs.get(dep);
-                    set_ctxdefs |= fndefs.ctxdefs.get(dep);
-                }
-                for dep in direct_valdefs {
-                    set_tydefs |= view_tydefs.get(dep);
-                    set_fndefs |= view_fndefs.get(dep);
-                    set_valdefs |= view_valdefs.get(dep);
-                    set_ctxdefs |= view_ctxdefs.get(dep);
-                }
-                for dep in direct_ctxdefs {
-                    set_tydefs |= ctxdefs.tydefs.get(dep);
-                    set_fndefs |= ctxdefs.fndefs.get(dep);
-                    set_valdefs |= ctxdefs.valdefs.get(dep);
-                    set_ctxdefs |= ctxdefs.ctxdefs.get(dep);
-                }
-            }
-            DefId::Ctx(ctxdef) => {
-                let (view_tydefs, mut set_tydefs) = ctxdefs.tydefs.get_mut(ctxdef);
-                let (view_fndefs, mut set_fndefs) = ctxdefs.fndefs.get_mut(ctxdef);
-                let (view_valdefs, mut set_valdefs) = ctxdefs.valdefs.get_mut(ctxdef);
-                let (view_ctxdefs, mut set_ctxdefs) = ctxdefs.ctxdefs.get_mut(ctxdef);
-                let direct_tydefs = ctxdef_direct.tydefs.get(ctxdef);
-                let direct_fndefs = ctxdef_direct.fndefs.get(ctxdef);
-                let direct_valdefs = ctxdef_direct.valdefs.get(ctxdef);
-                let direct_ctxdefs = ctxdef_direct.ctxdefs.get(ctxdef);
-                set_tydefs |= direct_tydefs;
-                set_fndefs |= direct_fndefs;
-                set_valdefs |= direct_valdefs;
-                set_ctxdefs |= direct_ctxdefs;
-                for dep in direct_fndefs {
-                    set_tydefs |= fndefs.tydefs.get(dep);
-                    set_fndefs |= fndefs.fndefs.get(dep);
-                    set_valdefs |= fndefs.valdefs.get(dep);
-                    set_ctxdefs |= fndefs.ctxdefs.get(dep);
-                }
-                for dep in direct_valdefs {
-                    set_tydefs |= valdefs.tydefs.get(dep);
-                    set_fndefs |= valdefs.fndefs.get(dep);
-                    set_valdefs |= valdefs.valdefs.get(dep);
-                    set_ctxdefs |= valdefs.ctxdefs.get(dep);
-                }
-                for dep in direct_ctxdefs {
-                    set_tydefs |= view_tydefs.get(dep);
-                    set_fndefs |= view_fndefs.get(dep);
-                    set_valdefs |= view_valdefs.get(dep);
-                    set_ctxdefs |= view_ctxdefs.get(dep);
-                }
-            }
-        }
-    }
-    (fndefs, valdefs, ctxdefs)
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -438,14 +276,8 @@ pub struct Cache<'a> {
     /// Bindable tydefs needed by each abstract type.
     type_tydefs: Subsets<TydefId, TypeId>,
 
-    /// Bindable tydefs needed by each fndef.
-    fndef_tydefs: Subsets<TydefId, FndefId>,
-
-    /// Bindable fndefs needed by each fndef.
-    fndef_fndefs: Subsets<FndefId, FndefId>,
-
-    /// Bindable valdefs needed by each fndef.
-    fndef_valdefs: Subsets<ValdefId, FndefId>,
+    /// Bindable defs needed by each fndef.
+    fndef_needs: NeedSets<FndefId>,
 }
 
 impl<'a> Cache<'a> {
@@ -475,22 +307,13 @@ impl<'a> Cache<'a> {
                 }
             }
         }
-        let fndefs = NeedSets::direct(
+        let mut ctxdefs = NeedSets::new(ir, ir.ctxdefs.len_idx());
+        ctxdefs.fill(ir);
+        let fndef_needs = NeedSets::full(
             ir,
-            &type_tydefs,
+            &ctxdefs,
             ir.fndefs.iter_enumerated().map(|(i, def)| (i, def.needs)),
         );
-        let valdefs = NeedSets::direct(
-            ir,
-            &type_tydefs,
-            ir.valdefs.iter_enumerated().map(|(i, def)| (i, def.needs)),
-        );
-        let ctxdefs = NeedSets::direct(
-            ir,
-            &type_tydefs,
-            ir.ctxdefs.iter_enumerated().map(|(i, def)| (i, def.needs)),
-        );
-        let (fndefs, _, _) = transitive_closure(ir, &fndefs, &valdefs, &ctxdefs);
         Self {
             ir,
             contexts,
@@ -501,9 +324,7 @@ impl<'a> Cache<'a> {
             types: HashMap::new(),
             fndefs: HashMap::new(),
             type_tydefs,
-            fndef_tydefs: fndefs.tydefs,
-            fndef_fndefs: fndefs.fndefs,
-            fndef_valdefs: fndefs.valdefs,
+            fndef_needs,
         }
     }
 
@@ -627,13 +448,13 @@ impl<'a> Cache<'a> {
     fn fndef_prune(&mut self, ctx: ContextId, fndef: FndefId) -> ContextId {
         let mut subcontext = Context::default();
         let context = &self[ctx];
-        for def in self.fndef_tydefs.get(fndef) {
+        for def in self.fndef_needs.tydefs.get(fndef) {
             subcontext.set_ty(def, context.tydefs[&def]);
         }
-        for def in self.fndef_fndefs.get(fndef) {
+        for def in self.fndef_needs.fndefs.get(fndef) {
             subcontext.set_fn(def, context.fndefs[&def]);
         }
-        for def in self.fndef_valdefs.get(fndef) {
+        for def in self.fndef_needs.valdefs.get(fndef) {
             subcontext.set_val(def, context.valdefs[&def]);
         }
         self.make_ctx(subcontext)

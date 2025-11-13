@@ -1,7 +1,7 @@
 import "./wasip1.con" as wasi;
 import "./wasm.con" as wasm use I32, offset, unreachable;
 
-context mem[wasm::wasm, static wasm::memidx];
+context mem = wasm::wasm, static wasm::memidx;
 
 fn i32_load[mem, static offset](address: I32): I32 {
   wasm::i32_load[wasm::align=2](address)
@@ -11,15 +11,15 @@ fn i32_store[mem, static offset](address: I32, value: I32) {
   wasm::i32_store[wasm::align=2](address, value)
 }
 
-context basic[wasi::wasip1, mem];
+context basic = wasi::wasip1, mem;
 
 fn stack(): I32;
 
-context scratch[basic, stack];
+context scratch = basic, stack;
 
 fn grow(bytes: I32);
 
-context alloc[scratch, grow];
+context alloc = scratch, grow;
 
 struct String {
   pointer: I32,

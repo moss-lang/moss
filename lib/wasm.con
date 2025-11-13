@@ -14,7 +14,7 @@ fn unreachable();
 # https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
 val align: U32;
 val offset: U32;
-context mem[static memidx, static align, static offset];
+context mem = static memidx, static align, static offset;
 val dst: MemIdx;
 val src: MemIdx;
 fn i32_load[mem](address: I32): I32;
@@ -63,7 +63,7 @@ fn i32_rotr(a: I32, b: I32): I32;
 fn i32_extend8_s(n: I32): I32;
 fn i32_extend16_s(n: I32): I32;
 
-context wasm[
+context wasm =
   unreachable,
 
   i32_load,
@@ -110,4 +110,4 @@ context wasm[
   i32_rotr,
   i32_extend8_s,
   i32_extend16_s,
-];
+;

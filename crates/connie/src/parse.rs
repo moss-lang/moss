@@ -178,7 +178,7 @@ pub struct Valdef {
 #[derive(Clone, Copy, Debug)]
 pub struct Ctxdef {
     pub name: TokenId,
-    pub needs: IdRange<NeedId>,
+    pub def: IdRange<NeedId>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -708,9 +708,20 @@ impl<'a> Parser<'a> {
     fn ctxdef(&mut self) -> ParseResult<Ctxdef> {
         self.expect(Context)?;
         let name = self.expect(Name)?;
-        let needs = self.need_ids()?;
-        self.expect(Semi)?;
-        Ok(Ctxdef { name, needs })
+        self.expect(Equal)?;
+        let mut def = Vec::new();
+        loop {
+            if let Semi = self.peek() {
+                self.next();
+                break;
+            }
+            def.push(self.need()?);
+            if let Comma = self.peek() {
+                self.next();
+            }
+        }
+        let def = IdRange::new(&mut self.tree.needs, def);
+        Ok(Ctxdef { name, def })
     }
 
     fn structdef(&mut self) -> ParseResult<Structdef> {

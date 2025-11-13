@@ -5,9 +5,9 @@ fn args_sizes_get(retptr0: I32, retptr1: I32): I32;
 fn fd_write(fd: I32, iovs: I32, iovs_len: I32, retptr0: I32): I32;
 fn proc_exit(rval: I32);
 
-context wasip1[
+context wasip1 =
   args_get,
   args_sizes_get,
   fd_write,
   proc_exit,
-];
+;

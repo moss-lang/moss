@@ -140,7 +140,7 @@ pub struct Needs {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Ctxdef {
-    pub needs: Needs,
+    pub def: Needs,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -314,7 +314,7 @@ pub struct IR {
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
     pub structdefs: IndexVec<StructdefId, Structdef>,
     pub fields: Tuples<(StrId, TypeId)>,
-    pub need_tys: IndexVec<NeedTyId, Need<TypeId>>,
+    pub need_tys: IndexVec<NeedTyId, Need<TydefId>>,
     pub need_fns: IndexVec<NeedFnId, Need<FndefId>>,
     pub need_vals: IndexVec<NeedValId, Need<ValdefId>>,
     pub need_ctxs: IndexVec<NeedCtxId, Need<CtxdefId>>,
@@ -404,6 +404,7 @@ pub enum LowerError {
     Undefined(TokenId),
     Ambiguous(TokenId),
     NeedStaticCtx(Path),
+    NeedStructdef(Path),
     ExpectedType(TypeId, ExprId, TypeId),
     ThisNotMethod(ExprId),
     MissingField(ExprId, StructdefId, FieldId),
@@ -438,6 +439,10 @@ impl LowerError {
             LowerError::NeedStaticCtx(path) => (
                 Some(ctx.path(path)),
                 "use `static` on individual items, not on `context` dependencies".to_owned(),
+            ),
+            LowerError::NeedStructdef(path) => (
+                Some(ctx.path(path)),
+                "cannot have a concrete `struct` as a dependency".to_owned(),
             ),
             LowerError::ExpectedType(expected, expr, actual) => (
                 Some(ctx.expr(expr)),
@@ -682,11 +687,10 @@ impl<'a> Lower<'a> {
                 self.ctxdef(key),
                 self.structdef(key),
             ) {
-                (Some(tydef), None, None, None, None) => {
+                (Some(id), None, None, None, None) => {
                     let kind = match kind {
                         parse::NeedKind::Default | parse::NeedKind::Static => NeedKind::Static,
                     };
-                    let id = self.ty(Type::Tydef(tydef));
                     tys.push(Need { kind, id });
                 }
                 (None, Some(id), None, None, None) => {
@@ -710,13 +714,7 @@ impl<'a> Lower<'a> {
                     };
                     ctxs.push(Need { kind, id });
                 }
-                (None, None, None, None, Some(structdef)) => {
-                    let kind = match kind {
-                        parse::NeedKind::Default | parse::NeedKind::Static => NeedKind::Static,
-                    };
-                    let id = self.ty(Type::Structdef(structdef));
-                    tys.push(Need { kind, id });
-                }
+                (None, None, None, None, Some(_)) => return Err(LowerError::NeedStructdef(path)),
                 (None, None, None, None, None) => return Err(LowerError::Undefined(path.last)),
                 _ => return Err(LowerError::Ambiguous(path.last)),
             }
@@ -796,10 +794,10 @@ impl<'a> Lower<'a> {
             };
             assert_eq!(self.ir.valdefs.push(valdef), id);
         }
-        for (id, &parse::Ctxdef { name: _, needs }) in self.tree.ctxdefs.iter_enumerated() {
+        for (id, &parse::Ctxdef { name: _, def }) in self.tree.ctxdefs.iter_enumerated() {
             let id = self.ctxdefs[id];
             let ctxdef = Ctxdef {
-                needs: self.needs(needs)?,
+                def: self.needs(def)?,
             };
             assert_eq!(self.ir.ctxdefs.push(ctxdef), id);
         }

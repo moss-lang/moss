@@ -155,13 +155,6 @@ impl<I: Idx, J> Subsets<I, J> {
         };
         (view, SubsetMut { len, bits })
     }
-
-    pub fn iter(&'_ self) -> impl Iterator<Item = Subset<'_, I>> {
-        let len = self.len;
-        self.bits
-            .chunks_exact(self.chunks_per_set())
-            .map(move |bits| Subset { len, bits })
-    }
 }
 
 impl<I: Idx, J: Idx> Subsets<I, J> {
