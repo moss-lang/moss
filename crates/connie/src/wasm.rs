@@ -283,6 +283,8 @@ impl<'a> Wasm<'a> {
     fn instrs(&mut self, param: TyId, mut instr: lower::LocalId) -> lower::LocalId {
         loop {
             match self.ir.instrs[instr] {
+                Instr::Static => todo!(),
+                Instr::EndStatic => todo!(),
                 Instr::BindTy(_, _) => todo!(),
                 Instr::BindFn(_, _) => todo!(),
                 Instr::BindVal(valdef, local) => {

@@ -6,7 +6,7 @@ use indexmap::IndexSet;
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex},
-    parse::{self, Block, Expr, ExprId, Field, NeedId, Param, Path, Stmt, StmtId, Tree},
+    parse::{self, Bind, Block, Expr, ExprId, Field, NeedId, Param, Path, Stmt, StmtId, Tree},
     range::{Inclusive, expr_range, path_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -186,6 +186,16 @@ pub enum Int32Comp {
 /// When executed, each instruction implicitly defines a mutable local variable.
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
+    /// Start a block in which everything is computed at compile time.
+    ///
+    /// Type: unit.
+    Static,
+
+    /// End the current [`Instr::Static`] block.
+    ///
+    /// Type: unit.
+    EndStatic,
+
     /// Bind a contextual type until the next [`Instr::EndBind`].
     ///
     /// Type: unit.
@@ -979,9 +989,6 @@ impl Body<'_, '_> {
                 Ok(self.instr(result, Instr::Call(fndef, arg)))
             }
             Expr::Call(callee, binds, args) => {
-                if !binds.is_empty() {
-                    todo!()
-                }
                 let key = self.x.path(callee)?;
                 let Some(fndef) = self.x.fndef(key) else {
                     return Err(LowerError::Undefined(callee.last));
@@ -991,6 +998,25 @@ impl Body<'_, '_> {
                     param,
                     result,
                 } = self.x.ir.fndefs[fndef];
+                // TODO: Handle dynamic bindings instead of just assuming `NeedKind::Static`.
+                let unit = self.x.ty_unit();
+                self.instr(unit, Instr::Static);
+                let bindings = binds
+                    .get(&self.x.tree.binds)
+                    .iter()
+                    .map(|&Bind { path, val }| {
+                        let key = self.x.path(path)?;
+                        let Some(valdef) = self.x.valdef(key) else {
+                            return Err(LowerError::Undefined(path.last));
+                        };
+                        let local = self.expr(val)?;
+                        Ok((valdef, local))
+                    })
+                    .collect::<LowerResult<Vec<_>>>()?;
+                self.instr(unit, Instr::EndStatic);
+                for (valdef, local) in bindings {
+                    self.instr(unit, Instr::BindVal(valdef, local));
+                }
                 let params = &self.x.ir.tuples[self.x.ir.types[param.index()].tuple()];
                 if args.len() != params.len() {
                     return Err(LowerError::ArgCount(expr));
@@ -1000,7 +1026,11 @@ impl Body<'_, '_> {
                     .map(|arg| self.expr(arg))
                     .collect::<LowerResult<Vec<LocalId>>>()?;
                 let arg = self.instr_tuple(param, &locals);
-                Ok(self.instr(result, Instr::Call(fndef, arg)))
+                let call = self.instr(result, Instr::Call(fndef, arg));
+                for _ in binds {
+                    self.instr(unit, Instr::EndBind);
+                }
+                Ok(call)
             }
             Expr::Binary(l, op, r) => {
                 let local_r = self.expr(l)?;

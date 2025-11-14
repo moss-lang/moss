@@ -422,7 +422,7 @@ impl<'a> Parser<'a> {
                                 self.next();
                             }
                         }
-                        let binds = IdRange::new(&mut self.tree.binds, Vec::new());
+                        let binds = IdRange::new(&mut self.tree.binds, binds);
                         let args = self.arg_ids()?;
                         Ok(Expr::Call(path, binds, args))
                     }
