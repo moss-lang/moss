@@ -123,6 +123,7 @@ struct Wasm<'a> {
     cache: Cache<'a>,
     builtins: IndexVec<BuiltinId, Builtin>,
     funcs: IndexVec<FnId, Option<u32>>,
+    next_funcidx: u32,
 
     data_offset: i32,
     strings: HashMap<StrId, i32>,
@@ -246,6 +247,7 @@ impl<'a> Wasm<'a> {
     fn get_val(&mut self, valdef: ValdefId) {
         let val = self.cache.valdef(self.ctx, valdef);
         match self.cache[val] {
+            Val::Unit => {}
             Val::Int32(n) => {
                 self.body.insn().i32_const(n);
             }
@@ -263,6 +265,7 @@ impl<'a> Wasm<'a> {
     fn set_val(&mut self, valdef: ValdefId) {
         let val = self.cache.valdef(self.ctx, valdef);
         match self.cache[val] {
+            Val::Unit => {}
             Val::Int32(_) => {}
             Val::Dynamic(_, ty) => {
                 let start = self.valdefs[val];
@@ -286,7 +289,7 @@ impl<'a> Wasm<'a> {
                         let val = self.cache.valdef(self.ctx, valdef);
                         match self.cache[val] {
                             // We don't need any temporary locals to restore static bindings.
-                            Val::Int32(_) => self.cache.ty_unit(),
+                            Val::Unit | Val::Int32(_) => self.cache.ty_unit(),
                             Val::Dynamic(_, ty) => ty,
                         }
                     };
@@ -439,8 +442,14 @@ impl<'a> Wasm<'a> {
                             }
                         },
                         Fn::Fndef(_, _) => {
-                            let funcidx = self.funcs[f].unwrap();
-                            self.body.insn().call(funcidx);
+                            let funcidx = self.funcs.get(f).copied().unwrap_or_else(|| {
+                                assert_eq!(f, self.funcs.len_idx());
+                                let funcidx = Some(self.next_funcidx);
+                                self.funcs.push(funcidx);
+                                self.next_funcidx += 1;
+                                funcidx
+                            });
+                            self.body.insn().call(funcidx.unwrap());
                         }
                     }
                 }
@@ -491,7 +500,6 @@ impl<'a> Wasm<'a> {
         match self.cache[f] {
             Fn::Builtin(_) => panic!(),
             Fn::Fndef(ctx, fndef) => {
-                assert_eq!(self.funcs.push(Some(self.funcidx())), f);
                 self.ctx = ctx;
                 let Fndef {
                     needs: _,
@@ -526,8 +534,12 @@ impl<'a> Wasm<'a> {
         self.section_export.export("memory", ExportKind::Memory, 0);
 
         let mut context = self.cache[self.ctx].clone();
-        let memidx = self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
-        context.set_ty(memidx, self.cache.ty_unit());
+        let ty_memidx =
+            self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
+        context.set_ty(ty_memidx, self.cache.ty_unit());
+        let val_memidx =
+            self.names.valdefs[&(self.lib.wasm, self.ir.strings.get_id("memidx").unwrap())];
+        context.set_val(val_memidx, self.cache.val_unit());
 
         for instruction in Instruction::iter() {
             let builtin = self.builtins.push(Builtin::Instruction(instruction));
@@ -604,11 +616,13 @@ impl<'a> Wasm<'a> {
 
         let ctx = self.cache.make_ctx(context);
         let main = self.cache.fn_fndef(ctx, self.main);
-        while let f = self.funcs.len_idx()
-            && f < self.cache.next_fn()
-        {
+        assert_eq!(self.funcs.push(Some(self.funcidx())), main);
+        self.next_funcidx = self.funcidx();
+        let mut next_fn = main;
+        while next_fn < self.cache.next_fn() {
             self.ctx = ctx;
-            self.func(f);
+            self.func(next_fn);
+            next_fn += 1;
         }
 
         let start = self.funcidx();
@@ -658,6 +672,7 @@ pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         cache,
         builtins: IndexVec::new(),
         funcs: IndexVec::new(),
+        next_funcidx: 0,
 
         data_offset: Default::default(),
         strings: Default::default(),

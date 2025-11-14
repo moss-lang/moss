@@ -258,6 +258,7 @@ pub enum Fn {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Val {
+    Unit,
     Int32(i32),
     Dynamic(ValdefId, TyId),
 }
@@ -388,6 +389,10 @@ impl<'a> Cache<'a> {
 
     pub fn fn_fndef(&mut self, ctx: ContextId, fndef: FndefId) -> FnId {
         self.make_fn(Fn::Fndef(ctx, fndef))
+    }
+
+    pub fn val_unit(&mut self) -> ValId {
+        self.make_val(Val::Unit)
     }
 
     pub fn val_dynamic(&mut self, valdef: ValdefId, ty: TyId) -> ValId {
