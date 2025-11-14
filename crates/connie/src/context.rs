@@ -389,10 +389,6 @@ impl<'a> Cache<'a> {
         self.make_fn(Fn::Builtin(builtin))
     }
 
-    pub fn fn_fndef(&mut self, ctx: ContextId, fndef: FndefId) -> FnId {
-        self.make_fn(Fn::Fndef(ctx, fndef))
-    }
-
     pub fn val_unit(&mut self) -> ValId {
         self.make_val(Val::Unit)
     }

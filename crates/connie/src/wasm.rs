@@ -809,7 +809,7 @@ impl<'a> Wasm<'a> {
         );
 
         let ctx = self.cache.make_ctx(context);
-        let main = self.cache.fn_fndef(ctx, self.main);
+        let main = self.cache.fndef(ctx, self.main);
         let main_funcidx = self.funcidx();
         assert_eq!(self.funcs.push(Some(main_funcidx)), main);
         self.next_funcidx = main_funcidx + 1;
