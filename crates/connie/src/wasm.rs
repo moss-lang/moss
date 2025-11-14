@@ -11,7 +11,9 @@ use wasm_encoder::{
 use crate::{
     context::{BuiltinId, Cache, ContextId, Fn, FnId, Ty, TyId, Val, ValId},
     intern::StrId,
-    lower::{self, ElemId, Fndef, FndefId, IR, Instr, Int32Arith, Int32Comp, Names, ValdefId},
+    lower::{
+        self, ElemId, FieldId, Fndef, FndefId, IR, Instr, Int32Arith, Int32Comp, Names, ValdefId,
+    },
     prelude::Lib,
     tuples::TupleLoc,
     util::IdRange,
@@ -363,7 +365,22 @@ impl<'a> Wasm<'a> {
                     let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
                     self.get_locals(self.cache[elem], start);
                 }
-                Instr::Field(_, _) => todo!(),
+                Instr::Field(record, index) => {
+                    let Local { ctx, mut start } = self.variables[&record];
+                    let ty = self.cache.ty(ctx, self.ir.locals[record]);
+                    let range = self.cache[ty].structdef();
+                    // TODO: Make this not be linear time.
+                    for i in (IdRange {
+                        start: FieldId::new(0),
+                        end: index,
+                    }) {
+                        start += self.layout_len(
+                            self.cache[TupleLoc::from_raw(range.start.raw() + i.raw())],
+                        );
+                    }
+                    let field = TupleLoc::from_raw(range.start.raw() + index.raw());
+                    self.get_locals(self.cache[field], start);
+                }
                 Instr::Int32Arith(a, op, b) => {
                     self.get(a);
                     self.get(b);
