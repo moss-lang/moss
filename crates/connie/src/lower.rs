@@ -632,21 +632,22 @@ impl<'a> Lower<'a> {
             .map(|item| {
                 let id = next_fn;
                 next_fn += 1;
-                let name = self.name(item.name);
+                let fn_name = self.name(item.name);
                 let structdef = match item.ty {
                     None => {
-                        self.names.fndefs.insert((self.module, name), id);
+                        self.names.fndefs.insert((self.module, fn_name), id);
                         None
                     }
                     Some(token) => {
-                        let name = self.name(token);
-                        let Some(&structdef) = self.names.structdefs.get(&(self.module, name))
+                        let struct_name = self.name(token);
+                        let Some(&structdef) =
+                            self.names.structdefs.get(&(self.module, struct_name))
                         else {
                             return Err(LowerError::Undefined(token));
                         };
                         self.names
                             .methods
-                            .insert((self.module, structdef, name), id);
+                            .insert((self.module, structdef, fn_name), id);
                         Some(structdef)
                     }
                 };
