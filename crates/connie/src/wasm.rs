@@ -4,7 +4,7 @@ use index_vec::{IndexVec, define_index_type};
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
-    Function, FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink,
+    Function, FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
     MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
@@ -122,6 +122,11 @@ struct Wasm<'a> {
     names: &'a Names,
     lib: Lib,
     main: FndefId,
+    val_memidx: ValdefId,
+    val_dst: ValdefId,
+    val_src: ValdefId,
+    val_align: ValdefId,
+    val_offset: ValdefId,
     cache: Cache<'a>,
     builtins: IndexVec<BuiltinId, Builtin>,
     funcs: IndexVec<FnId, Option<u32>>,
@@ -150,6 +155,9 @@ struct Wasm<'a> {
 
     /// Start of local range for each IR local in the current function.
     variables: HashMap<lower::LocalId, Local>,
+
+    /// Compile-time values computed inside static blocks.
+    statics: HashMap<lower::LocalId, ValId>,
 
     /// The current function body.
     body: Vec<u8>,
@@ -246,12 +254,28 @@ impl<'a> Wasm<'a> {
         Tmp { ty, start }
     }
 
+    fn string(&mut self, id: StrId) {
+        let string = &self.ir.strings[id];
+        let len = string.len() as i32;
+        let &mut offset = self.strings.entry(id).or_insert_with(|| {
+            let offset = self.data_offset;
+            self.section_data
+                .active(0, &ConstExpr::i32_const(offset), string.bytes());
+            self.data_offset += len;
+            offset
+        });
+        self.body.insn().i32_const(offset).i32_const(len);
+    }
+
     fn get_val(&mut self, valdef: ValdefId) {
         let val = self.cache.valdef(self.ctx, valdef);
         match self.cache[val] {
             Val::Unit => {}
             Val::Int32(n) => {
                 self.body.insn().i32_const(n);
+            }
+            Val::String(id) => {
+                self.string(id);
             }
             Val::Dynamic(_, ty) => {
                 let start = self.valdefs[val];
@@ -267,8 +291,8 @@ impl<'a> Wasm<'a> {
     fn set_val(&mut self, valdef: ValdefId) {
         let val = self.cache.valdef(self.ctx, valdef);
         match self.cache[val] {
-            Val::Unit => {}
-            Val::Int32(_) => {}
+            // We don't need to restore anything for static bindings.
+            Val::Unit | Val::Int32(_) | Val::String(_) => {}
             Val::Dynamic(_, ty) => {
                 let start = self.valdefs[val];
                 let len = self.layout_len(ty);
@@ -280,40 +304,100 @@ impl<'a> Wasm<'a> {
         }
     }
 
+    fn val_unit_as_u32(&mut self, valdef: ValdefId) -> u32 {
+        let val = self.cache.valdef(self.ctx, valdef);
+        let Val::Unit = self.cache[val] else {
+            panic!();
+        };
+        0
+    }
+
+    fn val_i32_as_u32(&mut self, valdef: ValdefId) -> u32 {
+        let val = self.cache.valdef(self.ctx, valdef);
+        let Val::Int32(n) = self.cache[val] else {
+            panic!();
+        };
+        n as u32
+    }
+
+    fn val_i32_as_u64(&mut self, valdef: ValdefId) -> u64 {
+        let val = self.cache.valdef(self.ctx, valdef);
+        let Val::Int32(n) = self.cache[val] else {
+            panic!();
+        };
+        n as u64
+    }
+
+    fn memarg(&mut self) -> MemArg {
+        MemArg {
+            offset: self.val_i32_as_u64(self.val_offset),
+            align: self.val_i32_as_u32(self.val_align),
+            memory_index: self.val_unit_as_u32(self.val_memidx),
+        }
+    }
+
     fn instrs(&mut self, param: TyId, mut instr: lower::LocalId) -> lower::LocalId {
         loop {
             match self.ir.instrs[instr] {
-                Instr::Static => todo!(),
-                Instr::EndStatic => todo!(),
-                Instr::BindTy(_, _) => todo!(),
-                Instr::BindFn(_, _) => todo!(),
-                Instr::BindVal(valdef, local) => {
-                    self.get_val(valdef);
-                    let ty = {
-                        let val = self.cache.valdef(self.ctx, valdef);
-                        match self.cache[val] {
-                            // We don't need any temporary locals to restore static bindings.
-                            Val::Unit | Val::Int32(_) => self.cache.ty_unit(),
-                            Val::Dynamic(_, ty) => ty,
+                Instr::Static => {
+                    instr += 1;
+                    loop {
+                        match self.ir.instrs[instr] {
+                            Instr::EndStatic => break,
+                            Instr::Val(valdef) => {
+                                let val = self.cache.valdef(self.ctx, valdef);
+                                self.statics.insert(instr, val);
+                            }
+                            Instr::Int32(n) => {
+                                let val = self.cache.val_int32(n);
+                                self.statics.insert(instr, val);
+                            }
+                            Instr::String(s) => {
+                                let val = self.cache.val_string(s);
+                                self.statics.insert(instr, val);
+                            }
+                            _ => panic!(),
                         }
-                    };
-                    let tmp = self.set_tmp(ty);
-                    self.get(local);
-                    let ctx = self.ctx;
-                    let context = {
+                        instr += 1;
+                    }
+                }
+                Instr::EndStatic => panic!(),
+                Instr::BindVal(valdef, local) => {
+                    if let Some(&val) = self.statics.get(&local) {
+                        let ctx = self.ctx;
                         let mut context = self.cache[self.ctx].clone();
-                        let Local { ctx, start: _ } = self.variables[&local];
-                        let ty = self.cache.ty(ctx, self.ir.locals[local]);
-                        let val = self.cache.val_dynamic(valdef, ty);
                         context.set_val(valdef, val);
-                        context
-                    };
-                    self.ctx = self.cache.make_ctx(context);
-                    self.set_val(valdef);
-                    instr = self.instrs(param, lower::LocalId::from_raw(instr.raw() + 1));
-                    self.ctx = ctx;
-                    self.get_tmp(tmp);
-                    self.set_val(valdef);
+                        self.ctx = self.cache.make_ctx(context);
+                        instr = self.instrs(param, instr + 1);
+                        self.ctx = ctx;
+                    } else {
+                        self.get_val(valdef);
+                        let ty = {
+                            let val = self.cache.valdef(self.ctx, valdef);
+                            match self.cache[val] {
+                                // We don't need any temporary locals to restore static bindings.
+                                Val::Unit | Val::Int32(_) | Val::String(_) => self.cache.ty_unit(),
+                                Val::Dynamic(_, ty) => ty,
+                            }
+                        };
+                        let tmp = self.set_tmp(ty);
+                        self.get(local);
+                        let ctx = self.ctx;
+                        let context = {
+                            let mut context = self.cache[self.ctx].clone();
+                            let Local { ctx, start: _ } = self.variables[&local];
+                            let ty = self.cache.ty(ctx, self.ir.locals[local]);
+                            let val = self.cache.val_dynamic(valdef, ty);
+                            context.set_val(valdef, val);
+                            context
+                        };
+                        self.ctx = self.cache.make_ctx(context);
+                        self.set_val(valdef);
+                        instr = self.instrs(param, instr + 1);
+                        self.ctx = ctx;
+                        self.get_tmp(tmp);
+                        self.set_val(valdef);
+                    }
                 }
                 Instr::EndBind => break,
                 Instr::Val(valdef) => self.get_val(valdef),
@@ -330,16 +414,7 @@ impl<'a> Wasm<'a> {
                     self.body.insn().i32_const(n);
                 }
                 Instr::String(id) => {
-                    let string = &self.ir.strings[id];
-                    let len = string.len() as i32;
-                    let &mut offset = self.strings.entry(id).or_insert_with(|| {
-                        let offset = self.data_offset;
-                        self.section_data
-                            .active(0, &ConstExpr::i32_const(offset), string.bytes());
-                        self.data_offset += len;
-                        offset
-                    });
-                    self.body.insn().i32_const(offset).i32_const(len);
+                    self.string(id);
                 }
                 Instr::Tuple(locals) => {
                     for &id in locals.get(&self.ir.refs) {
@@ -408,52 +483,153 @@ impl<'a> Wasm<'a> {
                         Fn::Builtin(builtin) => match self.builtins[builtin] {
                             Builtin::Instruction(instruction) => {
                                 match instruction {
-                                    Instruction::Unreachable => self.body.insn().unreachable(),
+                                    Instruction::Unreachable => {
+                                        self.body.insn().unreachable();
+                                    }
 
-                                    Instruction::I32Load => todo!(),
-                                    Instruction::I32Load8S => todo!(),
-                                    Instruction::I32Load8U => todo!(),
-                                    Instruction::I32Load16S => todo!(),
-                                    Instruction::I32Load16U => todo!(),
-                                    Instruction::I32Store => todo!(),
-                                    Instruction::I32Store8 => todo!(),
-                                    Instruction::I32Store16 => todo!(),
-                                    Instruction::MemorySize => todo!(),
-                                    Instruction::MemoryGrow => todo!(),
-                                    Instruction::MemoryCopy => todo!(),
-                                    Instruction::MemoryFill => todo!(),
+                                    Instruction::I32Load => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_load(memarg);
+                                    }
+                                    Instruction::I32Load8S => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_load8_s(memarg);
+                                    }
+                                    Instruction::I32Load8U => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_load8_u(memarg);
+                                    }
+                                    Instruction::I32Load16S => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_load16_s(memarg);
+                                    }
+                                    Instruction::I32Load16U => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_load16_u(memarg);
+                                    }
+                                    Instruction::I32Store => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_store(memarg);
+                                    }
+                                    Instruction::I32Store8 => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_store8(memarg);
+                                    }
+                                    Instruction::I32Store16 => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_store16(memarg);
+                                    }
+                                    Instruction::MemorySize => {
+                                        let memidx = self.val_unit_as_u32(self.val_memidx);
+                                        self.body.insn().memory_size(memidx);
+                                    }
+                                    Instruction::MemoryGrow => {
+                                        let memidx = self.val_unit_as_u32(self.val_memidx);
+                                        self.body.insn().memory_grow(memidx);
+                                    }
+                                    Instruction::MemoryCopy => {
+                                        let dst = self.val_unit_as_u32(self.val_dst);
+                                        let src = self.val_unit_as_u32(self.val_src);
+                                        self.body.insn().memory_copy(dst, src);
+                                    }
+                                    Instruction::MemoryFill => {
+                                        let memidx = self.val_unit_as_u32(self.val_memidx);
+                                        self.body.insn().memory_fill(memidx);
+                                    }
 
-                                    Instruction::I32Eqz => self.body.insn().i32_eqz(),
-                                    Instruction::I32Eq => self.body.insn().i32_eq(),
-                                    Instruction::I32Ne => self.body.insn().i32_ne(),
-                                    Instruction::I32LtS => self.body.insn().i32_lt_s(),
-                                    Instruction::I32LtU => self.body.insn().i32_lt_u(),
-                                    Instruction::I32GtS => self.body.insn().i32_gt_s(),
-                                    Instruction::I32GtU => self.body.insn().i32_gt_u(),
-                                    Instruction::I32LeS => self.body.insn().i32_le_s(),
-                                    Instruction::I32LeU => self.body.insn().i32_le_u(),
-                                    Instruction::I32GeS => self.body.insn().i32_ge_s(),
-                                    Instruction::I32GeU => self.body.insn().i32_ge_u(),
-                                    Instruction::I32Clz => self.body.insn().i32_clz(),
-                                    Instruction::I32Ctz => self.body.insn().i32_ctz(),
-                                    Instruction::I32Popcnt => self.body.insn().i32_popcnt(),
-                                    Instruction::I32Add => self.body.insn().i32_add(),
-                                    Instruction::I32Sub => self.body.insn().i32_sub(),
-                                    Instruction::I32Mul => self.body.insn().i32_mul(),
-                                    Instruction::I32DivS => self.body.insn().i32_div_s(),
-                                    Instruction::I32DivU => self.body.insn().i32_div_u(),
-                                    Instruction::I32RemS => self.body.insn().i32_rem_s(),
-                                    Instruction::I32RemU => self.body.insn().i32_rem_u(),
-                                    Instruction::I32And => self.body.insn().i32_and(),
-                                    Instruction::I32Or => self.body.insn().i32_or(),
-                                    Instruction::I32Xor => self.body.insn().i32_xor(),
-                                    Instruction::I32Shl => self.body.insn().i32_shl(),
-                                    Instruction::I32ShrS => self.body.insn().i32_shr_s(),
-                                    Instruction::I32ShrU => self.body.insn().i32_shr_u(),
-                                    Instruction::I32Rotl => self.body.insn().i32_rotl(),
-                                    Instruction::I32Rotr => self.body.insn().i32_rotr(),
-                                    Instruction::I32Extend8S => self.body.insn().i32_extend8_s(),
-                                    Instruction::I32Extend16S => self.body.insn().i32_extend16_s(),
+                                    Instruction::I32Eqz => {
+                                        self.body.insn().i32_eqz();
+                                    }
+                                    Instruction::I32Eq => {
+                                        self.body.insn().i32_eq();
+                                    }
+                                    Instruction::I32Ne => {
+                                        self.body.insn().i32_ne();
+                                    }
+                                    Instruction::I32LtS => {
+                                        self.body.insn().i32_lt_s();
+                                    }
+                                    Instruction::I32LtU => {
+                                        self.body.insn().i32_lt_u();
+                                    }
+                                    Instruction::I32GtS => {
+                                        self.body.insn().i32_gt_s();
+                                    }
+                                    Instruction::I32GtU => {
+                                        self.body.insn().i32_gt_u();
+                                    }
+                                    Instruction::I32LeS => {
+                                        self.body.insn().i32_le_s();
+                                    }
+                                    Instruction::I32LeU => {
+                                        self.body.insn().i32_le_u();
+                                    }
+                                    Instruction::I32GeS => {
+                                        self.body.insn().i32_ge_s();
+                                    }
+                                    Instruction::I32GeU => {
+                                        self.body.insn().i32_ge_u();
+                                    }
+                                    Instruction::I32Clz => {
+                                        self.body.insn().i32_clz();
+                                    }
+                                    Instruction::I32Ctz => {
+                                        self.body.insn().i32_ctz();
+                                    }
+                                    Instruction::I32Popcnt => {
+                                        self.body.insn().i32_popcnt();
+                                    }
+                                    Instruction::I32Add => {
+                                        self.body.insn().i32_add();
+                                    }
+                                    Instruction::I32Sub => {
+                                        self.body.insn().i32_sub();
+                                    }
+                                    Instruction::I32Mul => {
+                                        self.body.insn().i32_mul();
+                                    }
+                                    Instruction::I32DivS => {
+                                        self.body.insn().i32_div_s();
+                                    }
+                                    Instruction::I32DivU => {
+                                        self.body.insn().i32_div_u();
+                                    }
+                                    Instruction::I32RemS => {
+                                        self.body.insn().i32_rem_s();
+                                    }
+                                    Instruction::I32RemU => {
+                                        self.body.insn().i32_rem_u();
+                                    }
+                                    Instruction::I32And => {
+                                        self.body.insn().i32_and();
+                                    }
+                                    Instruction::I32Or => {
+                                        self.body.insn().i32_or();
+                                    }
+                                    Instruction::I32Xor => {
+                                        self.body.insn().i32_xor();
+                                    }
+                                    Instruction::I32Shl => {
+                                        self.body.insn().i32_shl();
+                                    }
+                                    Instruction::I32ShrS => {
+                                        self.body.insn().i32_shr_s();
+                                    }
+                                    Instruction::I32ShrU => {
+                                        self.body.insn().i32_shr_u();
+                                    }
+                                    Instruction::I32Rotl => {
+                                        self.body.insn().i32_rotl();
+                                    }
+                                    Instruction::I32Rotr => {
+                                        self.body.insn().i32_rotr();
+                                    }
+                                    Instruction::I32Extend8S => {
+                                        self.body.insn().i32_extend8_s();
+                                    }
+                                    Instruction::I32Extend16S => {
+                                        self.body.insn().i32_extend16_s();
+                                    }
                                 };
                             }
                             Builtin::Function(funcidx) => {
@@ -505,7 +681,7 @@ impl<'a> Wasm<'a> {
                 }
             }
             self.set(instr);
-            instr = lower::LocalId::from_raw(instr.raw() + 1);
+            instr += 1;
         }
         instr
     }
@@ -535,6 +711,7 @@ impl<'a> Wasm<'a> {
                 f.raw(take(&mut self.body));
                 self.locals = Default::default();
                 self.variables = Default::default();
+                self.statics = Default::default();
                 self.section_code.function(&f);
                 self.section_function.function(self.section_type.len());
                 self.section_type.ty().function(params, results);
@@ -556,9 +733,7 @@ impl<'a> Wasm<'a> {
         let ty_memidx =
             self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
         context.set_ty(ty_memidx, self.cache.ty_unit());
-        let val_memidx =
-            self.names.valdefs[&(self.lib.wasm, self.ir.strings.get_id("memidx").unwrap())];
-        context.set_val(val_memidx, self.cache.val_unit());
+        context.set_val(self.val_memidx, self.cache.val_unit());
 
         for instruction in Instruction::iter() {
             let builtin = self.builtins.push(Builtin::Instruction(instruction));
@@ -635,8 +810,9 @@ impl<'a> Wasm<'a> {
 
         let ctx = self.cache.make_ctx(context);
         let main = self.cache.fn_fndef(ctx, self.main);
-        assert_eq!(self.funcs.push(Some(self.funcidx())), main);
-        self.next_funcidx = self.funcidx();
+        let main_funcidx = self.funcidx();
+        assert_eq!(self.funcs.push(Some(main_funcidx)), main);
+        self.next_funcidx = main_funcidx + 1;
         let mut next_fn = main;
         while next_fn < self.cache.next_fn() {
             self.ctx = ctx;
@@ -683,11 +859,21 @@ impl<'a> Wasm<'a> {
 pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
     let cache = Cache::new(ir);
     let ctx = cache.empty();
+    let val_memidx = names.valdefs[&(lib.wasm, ir.strings.get_id("memidx").unwrap())];
+    let val_dst = names.valdefs[&(lib.wasm, ir.strings.get_id("dst").unwrap())];
+    let val_src = names.valdefs[&(lib.wasm, ir.strings.get_id("src").unwrap())];
+    let val_align = names.valdefs[&(lib.wasm, ir.strings.get_id("align").unwrap())];
+    let val_offset = names.valdefs[&(lib.wasm, ir.strings.get_id("offset").unwrap())];
     Wasm {
         ir,
         names,
         lib,
         main,
+        val_memidx,
+        val_dst,
+        val_src,
+        val_align,
+        val_offset,
         cache,
         builtins: IndexVec::new(),
         funcs: IndexVec::new(),
@@ -709,6 +895,7 @@ pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         ctx,
         locals: Default::default(),
         variables: Default::default(),
+        statics: Default::default(),
         body: Default::default(),
     }
     .program()

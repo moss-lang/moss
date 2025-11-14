@@ -8,6 +8,7 @@ use index_vec::{Idx, define_index_type, index_vec};
 use indexmap::IndexSet;
 
 use crate::{
+    intern::StrId,
     lower::{CtxdefId, FndefId, IR, Need, Needs, StructdefId, TydefId, Type, TypeId, ValdefId},
     subsets::Subsets,
     tuples::{TupleLoc, TupleRange, Tuples},
@@ -260,6 +261,7 @@ pub enum Fn {
 pub enum Val {
     Unit,
     Int32(i32),
+    String(StrId),
     Dynamic(ValdefId, TyId),
 }
 
@@ -395,6 +397,14 @@ impl<'a> Cache<'a> {
         self.make_val(Val::Unit)
     }
 
+    pub fn val_int32(&mut self, n: i32) -> ValId {
+        self.make_val(Val::Int32(n))
+    }
+
+    pub fn val_string(&mut self, s: StrId) -> ValId {
+        self.make_val(Val::String(s))
+    }
+
     pub fn val_dynamic(&mut self, valdef: ValdefId, ty: TyId) -> ValId {
         self.make_val(Val::Dynamic(valdef, ty))
     }
@@ -426,7 +436,7 @@ impl<'a> Cache<'a> {
             }
             Type::Tydef(tydef) => match self.ir.tydefs[tydef].def {
                 Some(def) => self.ty_pruned(ctx, def),
-                None => self.contexts[ctx.index()].tydefs[&tydef],
+                None => self[ctx].tydefs[&tydef],
             },
             Type::Structdef(structdef) => {
                 let types = self.ir.fields[self.ir.structdefs[structdef].fields]
@@ -470,6 +480,9 @@ impl<'a> Cache<'a> {
     }
 
     pub fn fndef(&mut self, ctx: ContextId, fndef: FndefId) -> FnId {
+        if let Some(&f) = self[ctx].fndefs.get(&fndef) {
+            return f;
+        }
         if let Some(&f) = self.fndefs.get(&(ctx, fndef)) {
             return f;
         }
@@ -479,8 +492,8 @@ impl<'a> Cache<'a> {
         f
     }
 
-    pub fn valdef(&mut self, _ctx: ContextId, _valdef: ValdefId) -> ValId {
-        todo!()
+    pub fn valdef(&mut self, ctx: ContextId, valdef: ValdefId) -> ValId {
+        self[ctx].valdefs[&valdef]
     }
 }
 

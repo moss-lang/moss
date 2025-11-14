@@ -196,16 +196,6 @@ pub enum Instr {
     /// Type: unit.
     EndStatic,
 
-    /// Bind a contextual type until the next [`Instr::EndBind`].
-    ///
-    /// Type: unit.
-    BindTy(TydefId, TypeId),
-
-    /// Bind a contextual function until the next [`Instr::EndBind`].
-    ///
-    /// Type: unit.
-    BindFn(FndefId, FndefId),
-
     /// Bind a contextual value until the next [`Instr::EndBind`].
     ///
     /// Type: unit.
@@ -505,8 +495,23 @@ impl<'a> Lower<'a> {
     }
 
     fn string(&mut self, token: TokenId) -> StrId {
+        let mut escaped = String::new();
         let quoted = self.slice(token);
-        self.ir.strings.make_id(&quoted[1..quoted.len() - 1])
+        let mut chars = quoted[1..quoted.len() - 1].chars();
+        while let Some(c) = chars.next() {
+            escaped.push(match c {
+                '\\' => match chars.next() {
+                    Some('"') => '"',
+                    Some('\\') => '\\',
+                    Some('n') => '\n',
+                    Some('r') => '\r',
+                    Some('t') => '\t',
+                    _ => unreachable!(),
+                },
+                _ => c,
+            });
+        }
+        self.ir.strings.make_id(&escaped)
     }
 
     fn ty(&mut self, ty: Type) -> TypeId {

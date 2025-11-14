@@ -1,1 +1,1 @@
-import "./wasi.con" use alloc, args, print, println;
+import "./wasi.con" use String, alloc, args, print, println;

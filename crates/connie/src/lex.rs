@@ -141,7 +141,7 @@ pub enum Token {
     #[regex(r"[A-Z_a-z]\w*")]
     Name,
 
-    #[regex(r#""[^"]*""#)]
+    #[regex(r#""([^"\\]|\\["\\nrt])*""#)]
     Str,
 
     #[regex(r"\d+")]
