@@ -46,6 +46,10 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct MethodId = u32;
+}
+
+define_index_type! {
     pub struct TydefId = u32;
 }
 
@@ -69,6 +73,12 @@ define_index_type! {
 pub struct Path {
     pub prefix: IdRange<NameId>,
     pub last: TokenId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Method {
+    pub ty: TokenId,
+    pub name: TokenId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -149,7 +159,8 @@ pub struct Block {
 pub struct Import {
     pub from: TokenId,
     pub name: Option<TokenId>,
-    pub using: IdRange<NameId>,
+    pub names: IdRange<NameId>,
+    pub methods: IdRange<MethodId>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -190,6 +201,7 @@ pub struct Structdef {
 #[derive(Debug, Default)]
 pub struct Tree {
     pub names: IndexVec<NameId, TokenId>,
+    pub methods: IndexVec<MethodId, Method>,
     pub types: IndexVec<TypeId, Type>,
     pub needs: IndexVec<NeedId, Need>,
     pub binds: IndexVec<BindId, Bind>,
@@ -606,22 +618,36 @@ impl<'a> Parser<'a> {
             }
             _ => None,
         };
-        let mut using = Vec::new();
+        let mut names = Vec::new();
+        let mut methods = Vec::new();
         if let Use = self.peek() {
             self.next();
             loop {
                 if let Semi = self.peek() {
                     break;
                 }
-                using.push(self.expect(Name)?);
+                let name = self.expect(Name)?;
+                match self.peek() {
+                    Dot => {
+                        self.next();
+                        let ty = name;
+                        let name = self.expect(Name)?;
+                        methods.push(Method { ty, name });
+                    }
+                    _ => names.push(name),
+                }
                 if let Comma = self.peek() {
                     self.next();
                 }
             }
         }
         self.expect(Semi)?;
-        let using = IdRange::new(&mut self.tree.names, using);
-        Ok(Import { from, name, using })
+        Ok(Import {
+            from,
+            name,
+            names: IdRange::new(&mut self.tree.names, names),
+            methods: IdRange::new(&mut self.tree.methods, methods),
+        })
     }
 
     fn tydef(&mut self) -> ParseResult<Tydef> {

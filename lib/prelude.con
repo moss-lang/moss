@@ -1,1 +1,10 @@
-import "./wasi.con" use String, alloc, args, print, println, scratch;
+import "./wasi.con" use
+  Args.get,
+  Args.len,
+  String,
+  alloc,
+  args,
+  print,
+  println,
+  scratch,
+;

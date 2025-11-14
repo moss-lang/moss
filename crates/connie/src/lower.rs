@@ -351,6 +351,24 @@ fn get_name<T: Copy>(
     }
 }
 
+fn get_name_method(
+    prelude: ModuleId,
+    current: ModuleId,
+    names: &HashMap<(ModuleId, StructdefId, StrId), FndefId>,
+    key: (ModuleId, StructdefId, StrId),
+) -> Option<FndefId> {
+    let (module, ty, name) = key;
+    if let Some(&id) = names.get(&(module, ty, name)) {
+        Some(id)
+    } else if module == current
+        && let Some(&id) = names.get(&(prelude, ty, name))
+    {
+        Some(id)
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Names {
     pub modules: ModuleNames<ModuleId>,
@@ -573,13 +591,17 @@ impl<'a> Lower<'a> {
         get_name(self.prelude, self.module, &self.names.structdefs, key)
     }
 
+    fn method(&mut self, key: (ModuleId, StructdefId, StrId)) -> Option<FndefId> {
+        get_name_method(self.prelude, self.module, &self.names.methods, key)
+    }
+
     fn imports(&mut self) -> LowerResult<()> {
         for (import, &module) in self.tree.imports.iter().zip(self.imports) {
             if let Some(token) = import.name {
                 let name = self.name(token);
                 self.names.modules.insert((self.module, name), module);
             }
-            for using in import.using {
+            for using in import.names {
                 let token = self.tree.names[using];
                 let name = self.name(token);
                 let mut found = false;
@@ -610,6 +632,18 @@ impl<'a> Lower<'a> {
                 if !found {
                     return Err(LowerError::Undefined(token));
                 }
+            }
+            for using in import.methods {
+                let tokens = self.tree.methods[using];
+                let name = self.name(tokens.ty);
+                let Some(&ty) = self.names.structdefs.get(&(module, name)) else {
+                    return Err(LowerError::Undefined(tokens.ty));
+                };
+                let name = self.name(tokens.name);
+                let Some(&method) = self.names.methods.get(&(module, ty, name)) else {
+                    return Err(LowerError::Undefined(tokens.name));
+                };
+                self.names.methods.insert((self.module, ty, name), method);
             }
         }
         Ok(())
@@ -974,8 +1008,7 @@ impl Body<'_, '_> {
                 let ty = self.x.ir.locals[obj];
                 let structdef = self.x.ir.types[ty.index()].structdef();
                 let name = self.x.name(method);
-                let Some(&fndef) = self.x.names.methods.get(&(self.x.module, structdef, name))
-                else {
+                let Some(fndef) = self.x.method((self.x.module, structdef, name)) else {
                     return Err(LowerError::Undefined(method));
                 };
                 let Fndef {
