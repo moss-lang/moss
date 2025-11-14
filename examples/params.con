@@ -1,8 +1,8 @@
-fn foo(second: String, first: String) {
+fn foo[scratch](second: String, first: String) {
   println(first);
   println(second);
 }
 
-fn main() {
+fn main[scratch]() {
   foo("goodbye", "hello");
 }

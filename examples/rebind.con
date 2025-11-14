@@ -1,19 +1,19 @@
 val string: String;
 
-fn print_it[string]() {
+fn print_it[scratch, string]() {
   println(string);
 }
 
-fn hi() {
+fn hi[scratch]() {
   print_it[string="hi"]();
 }
 
-fn hello_hi[string]() {
+fn hello_hi[scratch, string]() {
   print_it();
   hi();
   print_it();
 }
 
-fn main() {
+fn main[scratch]() {
   hello_hi[string="hello"]();
 }

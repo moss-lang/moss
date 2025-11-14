@@ -1,13 +1,13 @@
 val string: String;
 
-fn print_it[string]() {
+fn print_it[scratch, string]() {
   println(string);
 }
 
-fn wait_for_it[string]() {
+fn wait_for_it[scratch, string]() {
   print_it();
 }
 
-fn main() {
+fn main[scratch]() {
   wait_for_it[string="hello"]();
 }

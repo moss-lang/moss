@@ -1,5 +1,5 @@
 #!/usr/bin/env connie
 
-fn main() {
+fn main[scratch]() {
   println("Hello, world!");
 }
