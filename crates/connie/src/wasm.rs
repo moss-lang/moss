@@ -783,13 +783,14 @@ impl<'a> Wasm<'a> {
                 .function(params, results.iter().copied());
         }
 
+        let global_stack = self.section_global.len();
+
         let builtin_stack = self.builtins.push(Builtin::Function(self.funcidx()));
         let f_stack = self.cache.fn_builtin(builtin_stack);
         assert_eq!(self.funcs.push(None), f_stack);
         let fndef_stack =
             self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("stack").unwrap())];
         context.set_fn(fndef_stack, f_stack);
-        let global_stack = self.section_global.len();
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([], [ValType::I32]);
         self.section_code.function(&{
@@ -797,6 +798,42 @@ impl<'a> Wasm<'a> {
             f.instructions().global_get(global_stack).end();
             f
         });
+
+        let builtin_grow = self.builtins.push(Builtin::Function(self.funcidx()));
+        let f_grow = self.cache.fn_builtin(builtin_grow);
+        assert_eq!(self.funcs.push(None), f_grow);
+        let fndef_grow =
+            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("grow").unwrap())];
+        context.set_fn(fndef_grow, f_grow);
+        self.section_function.function(self.section_type.len());
+        self.section_type.ty().function([ValType::I32], []);
+        self.section_code.function(&{
+            let mut f = Function::new([(1, ValType::I64)]);
+            f.instructions()
+                .global_get(global_stack)
+                .i64_extend_i32_u()
+                .local_get(0)
+                .i64_extend_i32_u()
+                .i64_add()
+                .i64_const(15)
+                .i64_add()
+                .i64_const(4)
+                .i64_shr_u()
+                .i64_const(4)
+                .i64_shl()
+                .local_tee(1)
+                .i64_const(u32::MAX as i64)
+                .i64_gt_u()
+                .if_(BlockType::Empty)
+                .unreachable()
+                .end()
+                .local_get(1)
+                .i32_wrap_i64()
+                .global_set(global_stack)
+                .end();
+            f
+        });
+
         self.section_global.global(
             GlobalType {
                 val_type: ValType::I32,
