@@ -44,7 +44,7 @@ fn Args.get[mem](index: I32): String {
   let end = if wasm::i32_lt_s(next, self.argc) {
     i32_load[offset=0](self.argv + 4 * next)
   } else {
-    self.size
+    self.buffer + self.size
   };
   let length = (end - 1) - pointer; # These strings are null-terminated.
   String { pointer, length }
