@@ -1017,7 +1017,7 @@ impl Body<'_, '_> {
                     result,
                 } = self.x.ir.fndefs[fndef];
                 let params = &self.x.ir.tuples[self.x.ir.types[param.index()].tuple()];
-                if args.len() != params.len() {
+                if args.len() + 1 != params.len() {
                     return Err(LowerError::ArgCount(expr));
                 }
                 let mut locals = vec![obj];
