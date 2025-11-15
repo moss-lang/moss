@@ -660,6 +660,8 @@ impl<'a> Wasm<'a> {
                 Instr::Else(local) => {
                     self.get(local);
                     self.body.insn().else_();
+                    instr += 1;
+                    continue;
                 }
                 Instr::EndIf(local) => {
                     self.get(local);
