@@ -33,6 +33,9 @@ impl Add<i32> for TokenId {
 pub enum Token {
     Eof,
 
+    #[token("!")]
+    Exclam,
+
     #[token("(")]
     LParen,
 
@@ -84,29 +87,50 @@ pub enum Token {
     #[token("}")]
     RBrace,
 
+    #[token("!=")]
+    ExclamEqual,
+
     #[token("::")]
     ColonColon,
+
+    #[token("as")]
+    As,
 
     #[token("context")]
     Context,
 
-    #[token("end")]
-    End,
+    #[token("else")]
+    Else,
 
     #[token("fn")]
     Fn,
 
+    #[token("if")]
+    If,
+
+    #[token("import")]
+    Import,
+
     #[token("let")]
     Let,
 
-    #[token("need")]
-    Need,
+    #[token("self")]
+    This,
 
-    #[token("provide")]
-    Provide,
+    #[token("static")]
+    Static,
 
-    #[token("start")]
-    Start,
+    #[token("struct")]
+    Struct,
+
+    #[token("type")]
+    Type,
+
+    #[token("use")]
+    Use,
+
+    #[token("val")]
+    Val,
 
     #[token("var")]
     Var,
@@ -117,7 +141,7 @@ pub enum Token {
     #[regex(r"[A-Z_a-z]\w*")]
     Name,
 
-    #[regex(r#""[^"]*""#)]
+    #[regex(r#""([^"\\]|\\["\\nrt])*""#)]
     Str,
 
     #[regex(r"\d+")]
@@ -128,6 +152,7 @@ impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Token::Eof => write!(f, "end of file"),
+            Token::Exclam => write!(f, "`!`"),
             Token::LParen => write!(f, "`(`"),
             Token::RParen => write!(f, "`)`"),
             Token::Star => write!(f, "`*`"),
@@ -145,14 +170,21 @@ impl fmt::Display for Token {
             Token::RBracket => write!(f, "`]`"),
             Token::LBrace => write!(f, "`{{`"),
             Token::RBrace => write!(f, "`}}`"),
+            Token::ExclamEqual => write!(f, "`!=`"),
             Token::ColonColon => write!(f, "`::`"),
+            Token::As => write!(f, "`as`"),
             Token::Context => write!(f, "`context`"),
-            Token::End => write!(f, "`end`"),
+            Token::Else => write!(f, "`else`"),
             Token::Fn => write!(f, "`fn`"),
+            Token::If => write!(f, "`if`"),
+            Token::Import => write!(f, "`import`"),
             Token::Let => write!(f, "`let`"),
-            Token::Need => write!(f, "`need`"),
-            Token::Provide => write!(f, "`provide`"),
-            Token::Start => write!(f, "`start`"),
+            Token::This => write!(f, "`self`"),
+            Token::Static => write!(f, "`static`"),
+            Token::Struct => write!(f, "`struct`"),
+            Token::Type => write!(f, "`type`"),
+            Token::Use => write!(f, "`use`"),
+            Token::Val => write!(f, "`val`"),
             Token::Var => write!(f, "`var`"),
             Token::While => write!(f, "`while`"),
             Token::Name => write!(f, "name"),

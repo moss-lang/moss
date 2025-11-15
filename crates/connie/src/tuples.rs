@@ -1,7 +1,4 @@
-use std::{
-    hash::{DefaultHasher, Hash, Hasher},
-    ops::Index,
-};
+use std::{hash::Hash, ops::Index};
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
 use indexmap::{
@@ -9,7 +6,7 @@ use indexmap::{
     map::{RawEntryApiV1, raw_entry_v1::RawEntryMut},
 };
 
-use crate::util::IdRange;
+use crate::util::{IdRange, default_hash};
 
 define_index_type! {
     pub struct TupleId = u32;
@@ -61,9 +58,7 @@ impl<T> Tuples<T> {
 
 impl<T: Eq + Hash> Tuples<T> {
     fn get_full(&self, tuple: &[T]) -> Option<(TupleId, TupleRange)> {
-        let mut state = DefaultHasher::new();
-        tuple.hash(&mut state);
-        let hash = state.finish();
+        let hash = default_hash(&tuple);
         self.tuples
             .raw_entry_v1()
             .from_hash_full(hash, |&TupleRange { start, end }| {
@@ -83,9 +78,7 @@ impl<T: Eq + Hash> Tuples<T> {
 
 impl<T: Clone + Eq + Hash> Tuples<T> {
     fn make_full(&mut self, tuple: &[T]) -> (TupleId, TupleRange) {
-        let mut state = DefaultHasher::new();
-        tuple.hash(&mut state);
-        let hash = state.finish();
+        let hash = default_hash(&tuple);
         match self
             .tuples
             .raw_entry_mut_v1()

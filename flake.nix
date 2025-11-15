@@ -26,7 +26,7 @@
         craneLib = crane.mkLib pkgs;
         commonArgs = {
           pname = "connie";
-          src = craneLib.cleanCargoSource ./.;
+          src = ./.;
           strictDeps = true;
         };
       in

@@ -1,0 +1,3 @@
+fn main[scratch]() {
+  println("\"Hello there,\"\n\\said I.\\");
+}

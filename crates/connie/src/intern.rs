@@ -1,7 +1,4 @@
-use std::{
-    hash::{DefaultHasher, Hash, Hasher},
-    ops::Index,
-};
+use std::ops::Index;
 
 use index_vec::define_index_type;
 use indexmap::{
@@ -9,7 +6,7 @@ use indexmap::{
     map::{RawEntryApiV1, raw_entry_v1::RawEntryMut},
 };
 
-use crate::util::IdRange;
+use crate::util::{IdRange, default_hash};
 
 define_index_type! {
     pub struct StrId = u32;
@@ -46,9 +43,7 @@ impl Strings {
     }
 
     fn get_full(&self, string: &str) -> Option<(StrId, StrRange)> {
-        let mut state = DefaultHasher::new();
-        string.hash(&mut state);
-        let hash = state.finish();
+        let hash = default_hash(&string);
         self.strings
             .raw_entry_v1()
             .from_hash_full(hash, |&StrRange { start, end }| {
@@ -66,9 +61,7 @@ impl Strings {
     }
 
     fn make_full(&mut self, string: &str) -> (StrId, StrRange) {
-        let mut state = DefaultHasher::new();
-        string.hash(&mut state);
-        let hash = state.finish();
+        let hash = default_hash(&string);
         match self
             .strings
             .raw_entry_mut_v1()

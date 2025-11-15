@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, mem::take};
 
 use index_vec::{IndexVec, define_index_type};
+use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
     Function, FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
@@ -8,8 +9,12 @@ use wasm_encoder::{
 };
 
 use crate::{
+    context::{BuiltinId, Cache, ContextId, Fn, FnId, Ty, TyId, Val, ValId},
     intern::StrId,
-    lower::{self, IR, Instr, InstrId, IntArith, IntComp, Type, VarId},
+    lower::{
+        self, ElemId, FieldId, Fndef, FndefId, IR, Instr, Int32Arith, Int32Comp, Names, ValdefId,
+    },
+    prelude::Lib,
     tuples::TupleLoc,
     util::IdRange,
 };
@@ -30,7 +35,65 @@ define_index_type! {
     struct LocalId = u32;
 }
 
-const WASI_P1: &str = "wasi_snapshot_preview1";
+#[derive(Clone, Copy, EnumIter, IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+enum Instruction {
+    Unreachable,
+
+    I32Load,
+    I32Load8S,
+    I32Load8U,
+    I32Load16S,
+    I32Load16U,
+    I32Store,
+    I32Store8,
+    I32Store16,
+    MemorySize,
+    MemoryGrow,
+    MemoryCopy,
+    MemoryFill,
+
+    I32Eqz,
+    I32Eq,
+    I32Ne,
+    I32LtS,
+    I32LtU,
+    I32GtS,
+    I32GtU,
+    I32LeS,
+    I32LeU,
+    I32GeS,
+    I32GeU,
+    I32Clz,
+    I32Ctz,
+    I32Popcnt,
+    I32Add,
+    I32Sub,
+    I32Mul,
+    I32DivS,
+    I32DivU,
+    I32RemS,
+    I32RemU,
+    I32And,
+    I32Or,
+    I32Xor,
+    I32Shl,
+    I32ShrS,
+    I32ShrU,
+    I32Rotl,
+    I32Rotr,
+    I32Extend8S,
+    I32Extend16S,
+}
+
+const WASIP1: &str = "wasi_snapshot_preview1";
+
+const WASIP1_IMPORTS: &[&str] = &["args_get", "args_sizes_get", "fd_write", "proc_exit"];
+
+enum Builtin {
+    Instruction(Instruction),
+    Function(u32),
+}
 
 trait AsInstructionSink {
     fn insn(&mut self) -> InstructionSink<'_>;
@@ -43,28 +106,37 @@ impl AsInstructionSink for Vec<u8> {
 }
 
 #[derive(Clone, Copy)]
-struct Layout {
-    types: IdRange<TypeId>,
-    size: i32,
+struct Local {
+    ctx: ContextId,
+    start: LocalId,
 }
 
 #[derive(Clone, Copy)]
 struct Tmp {
-    ty: lower::TypeId,
+    ty: TyId,
     start: LocalId,
 }
 
 struct Wasm<'a> {
     ir: &'a IR,
+    names: &'a Names,
+    lib: Lib,
+    main: FndefId,
+    val_memidx: ValdefId,
+    val_dst: ValdefId,
+    val_src: ValdefId,
+    val_align: ValdefId,
+    val_offset: ValdefId,
+    cache: Cache<'a>,
+    builtins: IndexVec<BuiltinId, Builtin>,
+    funcs: IndexVec<FnId, Option<u32>>,
+    next_funcidx: u32,
 
     data_offset: i32,
     strings: HashMap<StrId, i32>,
-    types: IndexVec<TypeId, ValType>,
-    layouts: IndexVec<lower::TypeId, Layout>,
-    offsets: IndexVec<TupleLoc, TypeOffset>,
 
-    /// Start of global range for each var.
-    vars: IndexVec<lower::VarId, GlobalId>,
+    /// Start of global range for each `val`.
+    valdefs: IndexVec<ValId, GlobalId>,
 
     section_type: TypeSection,
     section_import: ImportSection,
@@ -75,62 +147,99 @@ struct Wasm<'a> {
     section_code: CodeSection,
     section_data: DataSection,
 
+    /// The current context.
+    ctx: ContextId,
+
     /// Locals for the current function.
     locals: IndexVec<LocalId, ValType>,
 
-    /// Start of local range for each SSA value in the current function.
-    variables: HashMap<InstrId, LocalId>,
+    /// Start of local range for each IR local in the current function.
+    variables: HashMap<lower::LocalId, Local>,
+
+    /// Compile-time values computed inside static blocks.
+    statics: HashMap<lower::LocalId, ValId>,
 
     /// The current function body.
     body: Vec<u8>,
 }
 
 impl<'a> Wasm<'a> {
-    fn mem_global(&self) -> u32 {
-        0
-    }
-
-    fn func_args(&self) -> u32 {
-        4
-    }
-
-    fn func_println(&self) -> u32 {
-        5
-    }
-
-    fn make_locals(&mut self, ty: lower::TypeId) -> LocalId {
-        let start = self.locals.len_idx();
-        let layout = self.layouts[ty];
-        for &ty in layout.types.get(&self.types) {
-            self.locals.push(ty);
+    /// Execute `f` for each Wasm type needed to represent `ty` in the current context.
+    fn layout(&self, ty: TyId, f: &mut impl FnMut(ValType)) {
+        match self.cache[ty] {
+            Ty::String => {
+                f(ValType::I32);
+                f(ValType::I32);
+            }
+            Ty::Bool => {
+                f(ValType::I32);
+            }
+            Ty::Int32 => {
+                f(ValType::I32);
+            }
+            Ty::Tuple(elems) => {
+                for &elem in &self.cache[elems] {
+                    self.layout(elem, f);
+                }
+            }
+            Ty::Structdef(_, fields) => {
+                for &field in &self.cache[fields] {
+                    self.layout(field, f);
+                }
+            }
         }
+    }
+
+    /// Get the number of Wasm types needed to represent `ty` in the current context.
+    ///
+    /// Linear time.
+    fn layout_len(&mut self, ty: TyId) -> usize {
+        let mut len = 0;
+        self.layout(ty, &mut |_| len += 1);
+        len
+    }
+
+    /// Get a [`Vec`] of the Wasm types needed to represent `ty` in the current context.
+    fn layout_vec(&mut self, ty: TyId) -> Vec<ValType> {
+        let mut types = Vec::new();
+        self.layout(ty, &mut |t| types.push(t));
+        types
+    }
+
+    fn make_locals(&mut self, ty: TyId) -> LocalId {
+        let start = self.locals.len_idx();
+        let locals = self.layout_vec(ty);
+        self.locals.append(&mut IndexVec::from_vec(locals));
         start
     }
 
-    fn get_locals(&mut self, ty: lower::TypeId, start: LocalId) {
-        let len = self.layouts[ty].types.len();
+    fn get_locals(&mut self, ty: TyId, start: LocalId) {
+        let len = self.layout_len(ty);
         let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }) {
             self.body.insn().local_get(localidx.raw());
         }
     }
 
-    fn set_locals(&mut self, ty: lower::TypeId, start: LocalId) {
-        let layout = self.layouts[ty];
-        let end = LocalId::from_usize(start.index() + layout.types.len());
+    fn set_locals(&mut self, ty: TyId, start: LocalId) {
+        let len = self.layout_len(ty);
+        let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }).into_iter().rev() {
             self.body.insn().local_set(localidx.raw());
         }
     }
 
-    fn get(&mut self, instr: InstrId) {
-        self.get_locals(self.ir.vals[instr], self.variables[&instr])
+    fn get(&mut self, instr: lower::LocalId) {
+        let Local { ctx, start } = self.variables[&instr];
+        let ty = self.cache.ty(ctx, self.ir.locals[instr]);
+        self.get_locals(ty, start)
     }
 
-    fn set(&mut self, instr: InstrId) {
-        let ty = self.ir.vals[instr];
+    fn set(&mut self, instr: lower::LocalId) {
+        let ctx = self.ctx;
+        let ty = self.cache.ty(ctx, self.ir.locals[instr]);
         let start = self.make_locals(ty);
-        let prev = self.variables.insert(instr, start);
+        let prev = self.variables.insert(instr, Local { ctx, start });
         assert!(prev.is_none());
         self.set_locals(ty, start);
     }
@@ -139,180 +248,477 @@ impl<'a> Wasm<'a> {
         self.get_locals(tmp.ty, tmp.start);
     }
 
-    fn set_tmp(&mut self, ty: lower::TypeId) -> Tmp {
+    fn set_tmp(&mut self, ty: TyId) -> Tmp {
         let start = self.make_locals(ty);
         self.set_locals(ty, start);
         Tmp { ty, start }
     }
 
-    fn get_var(&mut self, var: VarId) {
-        let start = self.vars[var];
-        let len = self.layouts[self.ir.vars[var].ty].types.len();
-        let end = GlobalId::from_usize(start.index() + len);
-        for globalidx in (IdRange { start, end }) {
-            self.body.insn().global_get(globalidx.raw());
+    fn string(&mut self, id: StrId) {
+        let string = &self.ir.strings[id];
+        let len = string.len() as i32;
+        let &mut offset = self.strings.entry(id).or_insert_with(|| {
+            let offset = self.data_offset;
+            self.section_data
+                .active(0, &ConstExpr::i32_const(offset), string.bytes());
+            self.data_offset += len;
+            offset
+        });
+        self.body.insn().i32_const(offset).i32_const(len);
+    }
+
+    fn get_val(&mut self, valdef: ValdefId) {
+        let val = self.cache.valdef(self.ctx, valdef);
+        match self.cache[val] {
+            Val::Unit => {}
+            Val::Int32(n) => {
+                self.body.insn().i32_const(n);
+            }
+            Val::String(id) => {
+                self.string(id);
+            }
+            Val::Dynamic(_, ty) => {
+                let start = self.valdefs[val];
+                let len = self.layout_len(ty);
+                let end = GlobalId::from_usize(start.index() + len);
+                for globalidx in (IdRange { start, end }) {
+                    self.body.insn().global_get(globalidx.raw());
+                }
+            }
         }
     }
 
-    fn set_var(&mut self, var: VarId) {
-        let start = self.vars[var];
-        let len = self.layouts[self.ir.vars[var].ty].types.len();
-        let end = GlobalId::from_usize(start.index() + len);
-        for globalidx in (IdRange { start, end }).into_iter().rev() {
-            self.body.insn().global_set(globalidx.raw());
+    fn set_val(&mut self, valdef: ValdefId) {
+        let val = self.cache.valdef(self.ctx, valdef);
+        match self.cache[val] {
+            // We don't need to restore anything for static bindings.
+            Val::Unit | Val::Int32(_) | Val::String(_) => {}
+            Val::Dynamic(_, ty) => {
+                let start = self.valdefs[val];
+                let len = self.layout_len(ty);
+                let end = GlobalId::from_usize(start.index() + len);
+                for globalidx in (IdRange { start, end }).into_iter().rev() {
+                    self.body.insn().global_set(globalidx.raw());
+                }
+            }
         }
     }
 
-    fn instrs(&mut self, param: lower::TypeId, mut instr: InstrId) -> InstrId {
+    fn val_unit_as_u32(&mut self, valdef: ValdefId) -> u32 {
+        let val = self.cache.valdef(self.ctx, valdef);
+        let Val::Unit = self.cache[val] else {
+            panic!();
+        };
+        0
+    }
+
+    fn val_i32_as_u32(&mut self, valdef: ValdefId) -> u32 {
+        let val = self.cache.valdef(self.ctx, valdef);
+        let Val::Int32(n) = self.cache[val] else {
+            panic!();
+        };
+        n as u32
+    }
+
+    fn val_i32_as_u64(&mut self, valdef: ValdefId) -> u64 {
+        let val = self.cache.valdef(self.ctx, valdef);
+        let Val::Int32(n) = self.cache[val] else {
+            panic!();
+        };
+        n as u64
+    }
+
+    fn memarg(&mut self) -> MemArg {
+        MemArg {
+            offset: self.val_i32_as_u64(self.val_offset),
+            align: self.val_i32_as_u32(self.val_align),
+            memory_index: self.val_unit_as_u32(self.val_memidx),
+        }
+    }
+
+    fn instrs(&mut self, param: TyId, mut instr: lower::LocalId) -> lower::LocalId {
         loop {
             match self.ir.instrs[instr] {
-                Instr::Int(n) => {
+                Instr::Static => {
+                    instr += 1;
+                    loop {
+                        match self.ir.instrs[instr] {
+                            Instr::EndStatic => break,
+                            Instr::Val(valdef) => {
+                                let val = self.cache.valdef(self.ctx, valdef);
+                                self.statics.insert(instr, val);
+                            }
+                            Instr::Int32(n) => {
+                                let val = self.cache.val_int32(n);
+                                self.statics.insert(instr, val);
+                            }
+                            Instr::String(s) => {
+                                let val = self.cache.val_string(s);
+                                self.statics.insert(instr, val);
+                            }
+                            _ => panic!(),
+                        }
+                        instr += 1;
+                    }
+                }
+                Instr::EndStatic => panic!(),
+                Instr::BindVal(valdef, local) => {
+                    if let Some(&val) = self.statics.get(&local) {
+                        let ctx = self.ctx;
+                        let mut context = self.cache[self.ctx].clone();
+                        context.set_val(valdef, val);
+                        self.ctx = self.cache.make_ctx(context);
+                        instr = self.instrs(param, instr + 1);
+                        self.ctx = ctx;
+                    } else {
+                        self.get_val(valdef);
+                        let ty = {
+                            let val = self.cache.valdef(self.ctx, valdef);
+                            match self.cache[val] {
+                                // We don't need any temporary locals to restore static bindings.
+                                Val::Unit | Val::Int32(_) | Val::String(_) => self.cache.ty_unit(),
+                                Val::Dynamic(_, ty) => ty,
+                            }
+                        };
+                        let tmp = self.set_tmp(ty);
+                        self.get(local);
+                        let ctx = self.ctx;
+                        let context = {
+                            let mut context = self.cache[self.ctx].clone();
+                            let Local { ctx, start: _ } = self.variables[&local];
+                            let ty = self.cache.ty(ctx, self.ir.locals[local]);
+                            let val = self.cache.val_dynamic(valdef, ty);
+                            context.set_val(valdef, val);
+                            context
+                        };
+                        self.ctx = self.cache.make_ctx(context);
+                        self.set_val(valdef);
+                        instr = self.instrs(param, instr + 1);
+                        self.ctx = ctx;
+                        self.get_tmp(tmp);
+                        self.set_val(valdef);
+                    }
+                }
+                Instr::EndBind => break,
+                Instr::Val(valdef) => self.get_val(valdef),
+                Instr::Param => {
+                    self.get_locals(param, LocalId::from_raw(0));
+                }
+                Instr::Set(lhs, rhs) => {
+                    self.get(rhs);
+                    let Local { ctx, start } = self.variables[&lhs];
+                    let ty = self.cache.ty(ctx, self.ir.locals[lhs]);
+                    self.set_locals(ty, start);
+                }
+                Instr::Int32(n) => {
                     self.body.insn().i32_const(n);
                 }
                 Instr::String(id) => {
-                    let string = &self.ir.strings[id];
-                    let len = string.len() as i32;
-                    let &mut offset = self.strings.entry(id).or_insert_with(|| {
-                        let offset = self.data_offset;
-                        self.section_data
-                            .active(0, &ConstExpr::i32_const(offset), string.bytes());
-                        self.data_offset += len;
-                        offset
-                    });
-                    self.body.insn().i32_const(offset).i32_const(len);
+                    self.string(id);
                 }
-                Instr::Tuple(tuple) => {
-                    for &id in tuple.get(&self.ir.refs) {
+                Instr::Tuple(locals) => {
+                    for &id in locals.get(&self.ir.refs) {
+                        self.get(id);
+                    }
+                }
+                Instr::Struct(_, locals) => {
+                    for &id in locals.get(&self.ir.refs) {
                         self.get(id);
                     }
                 }
                 Instr::Elem(tuple, index) => {
-                    let ty = self.ir.vals[tuple];
-                    let range = self.ir.types[ty.index()].tuple();
-                    let elem = TupleLoc::from_raw(range.start.raw() + index.0);
-                    let start =
-                        LocalId::from_raw(self.variables[&tuple].raw() + self.offsets[elem].raw());
-                    self.get_locals(self.ir.tuples[elem], start);
+                    let Local { ctx, mut start } = self.variables[&tuple];
+                    let ty = self.cache.ty(ctx, self.ir.locals[tuple]);
+                    let range = self.cache[ty].tuple();
+                    // TODO: Make this not be linear time.
+                    for i in (IdRange {
+                        start: ElemId::new(0),
+                        end: index,
+                    }) {
+                        start += self.layout_len(
+                            self.cache[TupleLoc::from_raw(range.start.raw() + i.raw())],
+                        );
+                    }
+                    let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
+                    self.get_locals(self.cache[elem], start);
                 }
-                Instr::IntArith(a, op, b) => {
+                Instr::Field(record, index) => {
+                    let Local { ctx, mut start } = self.variables[&record];
+                    let ty = self.cache.ty(ctx, self.ir.locals[record]);
+                    let range = self.cache[ty].structdef();
+                    // TODO: Make this not be linear time.
+                    for i in (IdRange {
+                        start: FieldId::new(0),
+                        end: index,
+                    }) {
+                        start += self.layout_len(
+                            self.cache[TupleLoc::from_raw(range.start.raw() + i.raw())],
+                        );
+                    }
+                    let field = TupleLoc::from_raw(range.start.raw() + index.raw());
+                    self.get_locals(self.cache[field], start);
+                }
+                Instr::Int32Arith(a, op, b) => {
                     self.get(a);
                     self.get(b);
                     match op {
-                        IntArith::Add => self.body.insn().i32_add(),
-                        IntArith::Sub => self.body.insn().i32_sub(),
+                        Int32Arith::Add => self.body.insn().i32_add(),
+                        Int32Arith::Sub => self.body.insn().i32_sub(),
+                        Int32Arith::Mul => self.body.insn().i32_mul(),
+                        Int32Arith::Div => self.body.insn().i32_div_s(),
                     };
                 }
-                Instr::IntComp(a, op, b) => {
+                Instr::Int32Comp(a, op, b) => {
                     self.get(a);
                     self.get(b);
                     match op {
-                        IntComp::Less => self.body.insn().i32_lt_s(),
+                        Int32Comp::Neq => self.body.insn().i32_ne(),
+                        Int32Comp::Less => self.body.insn().i32_lt_s(),
                     };
                 }
-                Instr::Len(list) => {
-                    self.get(list);
-                    let tmp = self.set_tmp(lower::TypeId::new(
-                        self.ir.types.get_index_of(&Type::Int).unwrap(),
-                    ));
-                    self.body.insn().drop();
-                    self.get_tmp(tmp);
-                }
-                Instr::Index(list, index) => {
-                    self.get(list);
-                    self.get(index);
-                    let int = lower::TypeId::new(self.ir.types.get_index_of(&Type::Int).unwrap());
-                    let tmp = self.set_tmp(int);
-                    self.get_tmp(tmp);
-                    self.body
-                        .insn()
-                        .i32_le_s()
-                        .if_(BlockType::Empty)
-                        .unreachable()
-                        .end();
-                    self.get_tmp(tmp);
-                    let layout = match self.ir.types[self.ir.vals[list].index()] {
-                        Type::List(inner) => self.layouts[inner],
-                        _ => panic!(),
-                    };
-                    self.body.insn().i32_const(layout.size).i32_mul().i32_add();
-                    let pointer = self.set_tmp(int);
-                    let mut offset = 0;
-                    for ty in layout.types {
-                        match self.types[ty] {
-                            ValType::I32 => {
-                                self.get_tmp(pointer);
-                                self.body.insn().i32_load(MemArg {
-                                    offset,
-                                    align: 2,
-                                    memory_index: 0,
-                                });
-                                offset += 4;
+                Instr::Call(fndef, local) => {
+                    self.get(local);
+                    let f = self.cache.fndef(self.ctx, fndef);
+                    match self.cache[f] {
+                        Fn::Builtin(builtin) => match self.builtins[builtin] {
+                            Builtin::Instruction(instruction) => {
+                                match instruction {
+                                    Instruction::Unreachable => {
+                                        self.body.insn().unreachable();
+                                    }
+
+                                    Instruction::I32Load => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_load(memarg);
+                                    }
+                                    Instruction::I32Load8S => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_load8_s(memarg);
+                                    }
+                                    Instruction::I32Load8U => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_load8_u(memarg);
+                                    }
+                                    Instruction::I32Load16S => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_load16_s(memarg);
+                                    }
+                                    Instruction::I32Load16U => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_load16_u(memarg);
+                                    }
+                                    Instruction::I32Store => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_store(memarg);
+                                    }
+                                    Instruction::I32Store8 => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_store8(memarg);
+                                    }
+                                    Instruction::I32Store16 => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i32_store16(memarg);
+                                    }
+                                    Instruction::MemorySize => {
+                                        let memidx = self.val_unit_as_u32(self.val_memidx);
+                                        self.body.insn().memory_size(memidx);
+                                    }
+                                    Instruction::MemoryGrow => {
+                                        let memidx = self.val_unit_as_u32(self.val_memidx);
+                                        self.body.insn().memory_grow(memidx);
+                                    }
+                                    Instruction::MemoryCopy => {
+                                        let dst = self.val_unit_as_u32(self.val_dst);
+                                        let src = self.val_unit_as_u32(self.val_src);
+                                        self.body.insn().memory_copy(dst, src);
+                                    }
+                                    Instruction::MemoryFill => {
+                                        let memidx = self.val_unit_as_u32(self.val_memidx);
+                                        self.body.insn().memory_fill(memidx);
+                                    }
+
+                                    Instruction::I32Eqz => {
+                                        self.body.insn().i32_eqz();
+                                    }
+                                    Instruction::I32Eq => {
+                                        self.body.insn().i32_eq();
+                                    }
+                                    Instruction::I32Ne => {
+                                        self.body.insn().i32_ne();
+                                    }
+                                    Instruction::I32LtS => {
+                                        self.body.insn().i32_lt_s();
+                                    }
+                                    Instruction::I32LtU => {
+                                        self.body.insn().i32_lt_u();
+                                    }
+                                    Instruction::I32GtS => {
+                                        self.body.insn().i32_gt_s();
+                                    }
+                                    Instruction::I32GtU => {
+                                        self.body.insn().i32_gt_u();
+                                    }
+                                    Instruction::I32LeS => {
+                                        self.body.insn().i32_le_s();
+                                    }
+                                    Instruction::I32LeU => {
+                                        self.body.insn().i32_le_u();
+                                    }
+                                    Instruction::I32GeS => {
+                                        self.body.insn().i32_ge_s();
+                                    }
+                                    Instruction::I32GeU => {
+                                        self.body.insn().i32_ge_u();
+                                    }
+                                    Instruction::I32Clz => {
+                                        self.body.insn().i32_clz();
+                                    }
+                                    Instruction::I32Ctz => {
+                                        self.body.insn().i32_ctz();
+                                    }
+                                    Instruction::I32Popcnt => {
+                                        self.body.insn().i32_popcnt();
+                                    }
+                                    Instruction::I32Add => {
+                                        self.body.insn().i32_add();
+                                    }
+                                    Instruction::I32Sub => {
+                                        self.body.insn().i32_sub();
+                                    }
+                                    Instruction::I32Mul => {
+                                        self.body.insn().i32_mul();
+                                    }
+                                    Instruction::I32DivS => {
+                                        self.body.insn().i32_div_s();
+                                    }
+                                    Instruction::I32DivU => {
+                                        self.body.insn().i32_div_u();
+                                    }
+                                    Instruction::I32RemS => {
+                                        self.body.insn().i32_rem_s();
+                                    }
+                                    Instruction::I32RemU => {
+                                        self.body.insn().i32_rem_u();
+                                    }
+                                    Instruction::I32And => {
+                                        self.body.insn().i32_and();
+                                    }
+                                    Instruction::I32Or => {
+                                        self.body.insn().i32_or();
+                                    }
+                                    Instruction::I32Xor => {
+                                        self.body.insn().i32_xor();
+                                    }
+                                    Instruction::I32Shl => {
+                                        self.body.insn().i32_shl();
+                                    }
+                                    Instruction::I32ShrS => {
+                                        self.body.insn().i32_shr_s();
+                                    }
+                                    Instruction::I32ShrU => {
+                                        self.body.insn().i32_shr_u();
+                                    }
+                                    Instruction::I32Rotl => {
+                                        self.body.insn().i32_rotl();
+                                    }
+                                    Instruction::I32Rotr => {
+                                        self.body.insn().i32_rotr();
+                                    }
+                                    Instruction::I32Extend8S => {
+                                        self.body.insn().i32_extend8_s();
+                                    }
+                                    Instruction::I32Extend16S => {
+                                        self.body.insn().i32_extend16_s();
+                                    }
+                                };
                             }
-                            ValType::I64 => todo!(),
-                            ValType::F32 => todo!(),
-                            ValType::F64 => todo!(),
-                            ValType::V128 => todo!(),
-                            ValType::Ref(_) => todo!(),
+                            Builtin::Function(funcidx) => {
+                                self.body.insn().call(funcidx);
+                            }
+                        },
+                        Fn::Fndef(_, _) => {
+                            let funcidx = self.funcs.get(f).copied().unwrap_or_else(|| {
+                                assert_eq!(f, self.funcs.len_idx());
+                                let funcidx = Some(self.next_funcidx);
+                                self.funcs.push(funcidx);
+                                self.next_funcidx += 1;
+                                funcidx
+                            });
+                            self.body.insn().call(funcidx.unwrap());
                         }
                     }
                 }
-                Instr::Set(lhs, rhs) => {
-                    self.get(rhs);
-                    let ty = self.ir.vals[lhs];
-                    let &start = self.variables.get(&lhs).unwrap();
-                    self.set_locals(ty, start);
-                }
-                Instr::Param => {
-                    self.get_locals(param, LocalId::from_raw(0));
-                }
-                Instr::Get(var) => self.get_var(var),
-                Instr::Call(func, val) => {
-                    let funcidx_offset = self.func_println() + 1;
-                    self.get(val);
-                    self.body.insn().call(funcidx_offset + func.raw());
-                }
-                Instr::Bind(var, val) => {
-                    self.get_var(var);
-                    let tmp = self.set_tmp(self.ir.vars[var].ty);
-                    self.get(val);
-                    self.set_var(var);
-                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
-                    self.get_tmp(tmp);
-                    self.set_var(var);
-                }
-                Instr::If(cond) => {
+                Instr::If(cond, ty) => {
+                    let Local { ctx, start: _ } = self.variables[&cond];
+                    let ty = self.cache.ty(ctx, ty);
+                    let layout = self.layout_vec(ty);
+                    let typeidx = self.section_type.len();
+                    self.section_type.ty().function([], layout);
                     self.get(cond);
-                    self.body.insn().if_(BlockType::Empty);
-                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
+                    self.body.insn().if_(BlockType::FunctionType(typeidx));
+                }
+                Instr::Else(local) => {
+                    self.get(local);
+                    self.body.insn().else_();
+                    instr += 1;
+                    continue;
+                }
+                Instr::EndIf(local) => {
+                    self.get(local);
                     self.body.insn().end();
                 }
                 Instr::Loop => {
                     self.body.insn().loop_(BlockType::Empty);
-                    instr = self.instrs(param, InstrId::from_raw(instr.raw() + 1));
+                }
+                Instr::EndLoop => {
                     self.body.insn().end();
                 }
                 Instr::Br(depth) => {
                     self.body.insn().br(depth.0);
                 }
-                Instr::End => break,
-                Instr::Return(val) => {
-                    self.get(val);
+                Instr::Return(local) => {
+                    self.get(local);
+                    self.body.insn().end();
                     break;
-                }
-                Instr::Args => {
-                    let args = self.func_args();
-                    self.body.insn().call(args);
-                }
-                Instr::Println(string) => {
-                    let println = self.func_println();
-                    self.get(string);
-                    self.body.insn().call(println);
                 }
             }
             self.set(instr);
-            instr = InstrId::from_raw(instr.raw() + 1);
+            instr += 1;
         }
         instr
+    }
+
+    fn funcidx(&self) -> u32 {
+        // TODO: Handle the case where non-function imports have also been added.
+        self.section_import.len() + self.section_function.len()
+    }
+
+    fn func(&mut self, f: FnId) {
+        match self.cache[f] {
+            Fn::Builtin(_) => panic!(),
+            Fn::Fndef(ctx, fndef) => {
+                self.ctx = ctx;
+                let Fndef {
+                    needs: _,
+                    param,
+                    result,
+                } = self.ir.fndefs[fndef];
+                let param = self.cache.ty(self.ctx, param);
+                let result = self.cache.ty(self.ctx, result);
+                let params = self.layout_vec(param);
+                let results = self.layout_vec(result);
+                self.instrs(param, self.ir.bodies[fndef].unwrap());
+                let mut f =
+                    Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
+                f.raw(take(&mut self.body));
+                self.locals = Default::default();
+                self.variables = Default::default();
+                self.statics = Default::default();
+                self.section_code.function(&f);
+                self.section_function.function(self.section_type.len());
+                self.section_type.ty().function(params, results);
+            }
+        }
     }
 
     fn program(mut self) -> Vec<u8> {
@@ -325,328 +731,155 @@ impl<'a> Wasm<'a> {
         });
         self.section_export.export("memory", ExportKind::Memory, 0);
 
-        for (i, &ty) in self.ir.types.iter().enumerate() {
-            let id = lower::TypeId::from_usize(i);
-            let types = match ty {
-                Type::Bool => IdRange::new(&mut self.types, vec![ValType::I32]),
-                Type::Int => IdRange::new(&mut self.types, vec![ValType::I32]),
-                Type::String => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
-                Type::Tuple(elems) => {
-                    let mut types = Vec::new();
-                    for &elem in &self.ir.tuples[elems] {
-                        types.extend_from_slice(self.layouts[elem].types.get(&self.types));
-                    }
-                    IdRange::new(&mut self.types, types)
-                }
-                Type::List(_) => IdRange::new(&mut self.types, vec![ValType::I32, ValType::I32]),
-            };
-            let size = types
-                .get(&self.types)
-                .iter()
-                .map(|&ty| match ty {
-                    ValType::I32 | ValType::F32 => 4,
-                    ValType::I64 | ValType::F64 => 8,
-                    ValType::V128 | ValType::Ref(_) => todo!(),
-                })
-                .sum();
-            let layout = Layout { types, size };
-            assert_eq!(self.layouts.push(layout), id);
-        }
-        for range in self.ir.tuples.ranges() {
-            let mut offset = TypeOffset::new(0);
-            for &ty in &self.ir.tuples[range] {
-                self.offsets.push(offset);
-                offset = TypeOffset::from_usize(offset.index() + self.layouts[ty].types.len());
-            }
-        }
-        assert_eq!(self.offsets.len(), self.ir.tuples.count());
+        let mut context = self.cache[self.ctx].clone();
+        let ty_memidx =
+            self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
+        context.set_ty(ty_memidx, self.cache.ty_unit());
+        context.set_val(self.val_memidx, self.cache.val_unit());
 
-        self.data_offset = 1;
-        self.section_data
-            .active(0, &ConstExpr::i32_const(0), "\n".bytes());
-
-        let args_get = self.section_import.len();
-        self.section_import.import(
-            WASI_P1,
-            "args_get",
-            EntityType::Function(self.section_type.len()),
-        );
-        self.section_type
-            .ty()
-            .function([ValType::I32, ValType::I32], [ValType::I32]);
-
-        let args_sizes_get = self.section_import.len();
-        self.section_import.import(
-            WASI_P1,
-            "args_sizes_get",
-            EntityType::Function(self.section_type.len()),
-        );
-        self.section_type
-            .ty()
-            .function([ValType::I32, ValType::I32], [ValType::I32]);
-
-        let fd_write = self.section_import.len();
-        self.section_import.import(
-            WASI_P1,
-            "fd_write",
-            EntityType::Function(self.section_type.len()),
-        );
-        self.section_type.ty().function(
-            [ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            [ValType::I32],
-        );
-
-        let proc_exit = self.section_import.len();
-        self.section_import.import(
-            WASI_P1,
-            "proc_exit",
-            EntityType::Function(self.section_type.len()),
-        );
-        self.section_type.ty().function([ValType::I32], []);
-
-        assert_eq!(self.section_import.len(), self.func_args());
-        self.section_function.function(self.section_type.len());
-        self.section_type
-            .ty()
-            .function([], [ValType::I32, ValType::I32]);
-        self.section_code.function(&{
-            let pointer = 0;
-            let argc = 1;
-            let size = 2;
-            let argv = 3;
-            let i = 4;
-            let prev = 5;
-            let curr = 6;
-            let write = 7;
-            let mut f = Function::new([(8, ValType::I32)]);
-            f.instructions()
-                .global_get(self.mem_global())
-                .local_tee(pointer)
-                .local_get(pointer)
-                .i32_const(4)
-                .i32_add()
-                .call(args_sizes_get)
-                .if_(BlockType::Empty)
-                .unreachable()
-                .end()
-                .local_get(pointer)
-                .i32_load(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_set(argc)
-                .local_get(pointer)
-                .i32_load(MemArg {
-                    offset: 4,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_set(size)
-                .local_get(pointer)
-                .local_get(size)
-                .i32_add()
-                .i32_const(3)
-                .i32_add()
-                .i32_const(2)
-                .i32_shr_u()
-                .i32_const(2)
-                .i32_shl()
-                .local_set(argv)
-                .local_get(argv)
-                .local_get(argc)
-                .i32_const(3)
-                .i32_shl()
-                .i32_add()
-                .global_set(self.mem_global())
-                .local_get(argv)
-                .local_get(pointer)
-                .call(args_get)
-                .if_(BlockType::Empty)
-                .unreachable()
-                .end()
-                .local_get(argc)
-                .local_set(i)
-                .local_get(pointer)
-                .local_get(size)
-                .i32_add()
-                .local_set(prev)
-                .loop_(BlockType::Empty)
-                .local_get(i)
-                .if_(BlockType::Empty)
-                .local_get(i)
-                .i32_const(1)
-                .i32_sub()
-                .local_set(i)
-                .local_get(argv)
-                .local_get(i)
-                .i32_const(2)
-                .i32_shl()
-                .i32_add()
-                .i32_load(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_set(curr)
-                .local_get(argv)
-                .local_get(i)
-                .i32_const(3)
-                .i32_shl()
-                .i32_add()
-                .local_set(write)
-                .local_get(write)
-                .local_get(prev)
-                .i32_const(1)
-                // These strings are null-terminated.
-                .i32_sub()
-                .local_get(curr)
-                .i32_sub()
-                .i32_store(MemArg {
-                    offset: 4,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_get(write)
-                .local_get(curr)
-                .i32_store(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_get(curr)
-                .local_set(prev)
-                .br(1)
-                .end()
-                .end()
-                .local_get(argv)
-                .local_get(argc)
-                .end();
-            f
-        });
-
-        assert_eq!(
-            self.section_import.len() + self.section_function.len(),
-            self.func_println(),
-        );
-        self.section_function.function(self.section_type.len());
-        self.section_type
-            .ty()
-            .function([ValType::I32, ValType::I32], []);
-        self.section_code.function(&{
-            let iovec = 2;
-            let mut f = Function::new([(1, ValType::I32)]);
-            f.instructions()
-                .global_get(self.mem_global())
-                .local_tee(iovec)
-                .local_get(0)
-                .i32_store(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_get(iovec)
-                .local_get(1)
-                .i32_store(MemArg {
-                    offset: 4,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .i32_const(1)
-                .local_get(iovec)
-                .i32_const(1)
-                .local_get(iovec)
-                .i32_const(8)
-                .i32_add()
-                .call(fd_write)
-                .if_(BlockType::Empty)
-                .unreachable()
-                .end()
-                .local_get(iovec)
-                .i32_const(0)
-                .i32_store(MemArg {
-                    offset: 0,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .local_get(iovec)
-                .i32_const(1)
-                .i32_store(MemArg {
-                    offset: 4,
-                    align: 2,
-                    memory_index: 0,
-                })
-                .i32_const(1)
-                .local_get(iovec)
-                .i32_const(1)
-                .local_get(iovec)
-                .i32_const(8)
-                .i32_add()
-                .call(fd_write)
-                .if_(BlockType::Empty)
-                .unreachable()
-                .end()
-                .end();
-            f
-        });
-
-        let func_offset = self.section_import.len() + self.section_function.len();
-
-        let mut global_offset = 1;
-        for var in &self.ir.vars {
-            self.vars.push(GlobalId::from_usize(global_offset));
-            global_offset += self.layouts[var.ty].types.len();
+        for instruction in Instruction::iter() {
+            let builtin = self.builtins.push(Builtin::Instruction(instruction));
+            let f = self.cache.fn_builtin(builtin);
+            assert_eq!(self.funcs.push(None), f);
+            let name = self.ir.strings.get_id(<&str>::from(instruction)).unwrap();
+            let fndef = self.names.fndefs[&(self.lib.wasm, name)];
+            context.set_fn(fndef, f);
         }
 
-        for (id, func) in self.ir.funcs.iter_enumerated() {
-            let params = self.layouts[func.param];
-            self.section_function.function(self.section_type.len());
-            self.section_type.ty().function(
-                params.types.get(&self.types).iter().copied(),
-                self.layouts[func.result]
-                    .types
-                    .get(&self.types)
+        for string in WASIP1_IMPORTS {
+            let builtin = self.builtins.push(Builtin::Function(self.funcidx()));
+            let f = self.cache.fn_builtin(builtin);
+            assert_eq!(self.funcs.push(None), f);
+            let name = self.ir.strings.get_id(string).unwrap();
+            let fndef = self.names.fndefs[&(self.lib.wasip1, name)];
+            context.set_fn(fndef, f);
+            let Fndef {
+                needs: _,
+                param,
+                result,
+            } = self.ir.fndefs[fndef];
+            let param = self.cache.ty(self.ctx, param);
+            let result = self.cache.ty(self.ctx, result);
+            let params =
+                self.cache[self.cache[param].tuple()]
                     .iter()
-                    .copied(),
+                    .map(|&ty| match self.cache[ty] {
+                        Ty::Int32 => ValType::I32,
+                        _ => panic!(),
+                    });
+            let results: &[ValType] = match self.cache[result] {
+                Ty::Int32 => &[ValType::I32],
+                Ty::Tuple(elems) => {
+                    assert!(elems.is_empty());
+                    &[]
+                }
+                _ => panic!(),
+            };
+            self.section_import.import(
+                WASIP1,
+                string,
+                EntityType::Function(self.section_type.len()),
             );
-            self.instrs(func.param, self.ir.bodies[id]);
-            if self.ir.main == Some(id) {
-                self.body.insn().i32_const(0).call(proc_exit).unreachable();
-                self.section_export
-                    .export("_start", ExportKind::Func, func_offset + id.raw());
-            }
-            self.body.insn().end();
-            let mut f = Function::new_with_locals_types(
-                self.locals.iter().skip(params.types.len()).copied(),
-            );
-            f.raw(self.body);
-            self.section_code.function(&f);
-            self.locals = Default::default();
-            self.variables = Default::default();
-            self.body = Default::default();
+            self.section_type
+                .ty()
+                .function(params, results.iter().copied());
         }
 
-        assert_eq!(self.section_global.len(), self.mem_global());
+        let global_stack = self.section_global.len();
+
+        let builtin_stack = self.builtins.push(Builtin::Function(self.funcidx()));
+        let f_stack = self.cache.fn_builtin(builtin_stack);
+        assert_eq!(self.funcs.push(None), f_stack);
+        let fndef_stack =
+            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("stack").unwrap())];
+        context.set_fn(fndef_stack, f_stack);
+        self.section_function.function(self.section_type.len());
+        self.section_type.ty().function([], [ValType::I32]);
+        self.section_code.function(&{
+            let mut f = Function::new([]);
+            f.instructions().global_get(global_stack).end();
+            f
+        });
+
+        let builtin_grow = self.builtins.push(Builtin::Function(self.funcidx()));
+        let f_grow = self.cache.fn_builtin(builtin_grow);
+        assert_eq!(self.funcs.push(None), f_grow);
+        let fndef_grow =
+            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("grow").unwrap())];
+        context.set_fn(fndef_grow, f_grow);
+        self.section_function.function(self.section_type.len());
+        self.section_type.ty().function([ValType::I32], []);
+        self.section_code.function(&{
+            let mut f = Function::new([(1, ValType::I64)]);
+            f.instructions()
+                .global_get(global_stack)
+                .i64_extend_i32_u()
+                .local_get(0)
+                .i64_extend_i32_u()
+                .i64_add()
+                .i64_const(15)
+                .i64_add()
+                .i64_const(4)
+                .i64_shr_u()
+                .i64_const(4)
+                .i64_shl()
+                .local_tee(1)
+                .i64_const(u32::MAX as i64)
+                .i64_gt_u()
+                .if_(BlockType::Empty)
+                .unreachable()
+                .end()
+                .local_get(1)
+                .i32_wrap_i64()
+                .global_set(global_stack)
+                .end();
+            f
+        });
+
         self.section_global.global(
             GlobalType {
                 val_type: ValType::I32,
                 mutable: true,
                 shared: false,
             },
-            &ConstExpr::i32_const((self.data_offset + 7) / 8 * 8),
+            // We'll set this dynamically when we codegen the `_start` function, since at that point
+            // we'll know the total length of all the active data segments.
+            &ConstExpr::i32_const(0),
         );
-        for var in &self.ir.vars {
-            for ty in self.layouts[var.ty].types {
-                self.section_global.global(
-                    GlobalType {
-                        val_type: self.types[ty],
-                        mutable: true,
-                        shared: false,
-                    },
-                    &ConstExpr::i32_const(0),
-                );
-            }
+
+        let ctx = self.cache.make_ctx(context);
+        let main = self.cache.fndef(ctx, self.main);
+        let main_funcidx = self.funcidx();
+        assert_eq!(self.funcs.push(Some(main_funcidx)), main);
+        self.next_funcidx = main_funcidx + 1;
+        let mut next_fn = main;
+        while next_fn < self.cache.next_fn() {
+            self.ctx = ctx;
+            self.func(next_fn);
+            next_fn += 1;
         }
+
+        let start = self.funcidx();
+        self.section_function.function(self.section_type.len());
+        self.section_type.ty().function([], []);
+        self.section_code.function(&{
+            let mut f = Function::new([]);
+            f.instructions()
+                .i32_const((self.data_offset + 15) / 16 * 16)
+                .global_set(global_stack)
+                .call(self.funcs[main].unwrap())
+                .i32_const(0)
+                .call(
+                    WASIP1_IMPORTS
+                        .iter()
+                        .position(|&name| name == "proc_exit")
+                        .unwrap() as u32,
+                )
+                .end();
+            f
+        });
+        self.section_export
+            .export("_start", ExportKind::Func, start);
 
         let mut module = Module::new();
         module
@@ -662,16 +895,32 @@ impl<'a> Wasm<'a> {
     }
 }
 
-pub fn wasm(ir: &IR) -> Vec<u8> {
+pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
+    let cache = Cache::new(ir);
+    let ctx = cache.empty();
+    let val_memidx = names.valdefs[&(lib.wasm, ir.strings.get_id("memidx").unwrap())];
+    let val_dst = names.valdefs[&(lib.wasm, ir.strings.get_id("dst").unwrap())];
+    let val_src = names.valdefs[&(lib.wasm, ir.strings.get_id("src").unwrap())];
+    let val_align = names.valdefs[&(lib.wasm, ir.strings.get_id("align").unwrap())];
+    let val_offset = names.valdefs[&(lib.wasm, ir.strings.get_id("offset").unwrap())];
     Wasm {
         ir,
+        names,
+        lib,
+        main,
+        val_memidx,
+        val_dst,
+        val_src,
+        val_align,
+        val_offset,
+        cache,
+        builtins: IndexVec::new(),
+        funcs: IndexVec::new(),
+        next_funcidx: 0,
 
         data_offset: Default::default(),
         strings: Default::default(),
-        types: Default::default(),
-        layouts: Default::default(),
-        offsets: Default::default(),
-        vars: Default::default(),
+        valdefs: Default::default(),
 
         section_type: Default::default(),
         section_import: Default::default(),
@@ -682,8 +931,10 @@ pub fn wasm(ir: &IR) -> Vec<u8> {
         section_code: Default::default(),
         section_data: Default::default(),
 
+        ctx,
         locals: Default::default(),
         variables: Default::default(),
+        statics: Default::default(),
         body: Default::default(),
     }
     .program()

@@ -14,6 +14,7 @@ use connie::{
     lex::{lex, relex},
     lower::lower,
     parse::{ParseError, parse},
+    prelude::prelude,
 };
 use indexmap::IndexMap;
 use line_index::{LineIndex, TextSize};
@@ -33,10 +34,19 @@ fn get_errors(source: &str) -> Vec<(Option<Range<usize>>, String)> {
             }
         },
     };
-    let ir = match lower(source, &starts, &tree) {
-        Ok(ir) => ir,
+    let (mut ir, mut names, lib) = prelude();
+    match lower(
+        source,
+        &starts,
+        &tree,
+        &mut ir,
+        &mut names,
+        lib.prelude,
+        &[],
+    ) {
+        Ok(_) => {}
         Err(err) => {
-            let (tokens, message) = err.describe(source, &starts, &tree);
+            let (tokens, message) = err.describe(source, &starts, &tree, &ir, &names);
             let range = tokens.map(|range| {
                 let start = starts[range.first].index();
                 let end = relex(source, &starts, range.last).end;
@@ -45,7 +55,6 @@ fn get_errors(source: &str) -> Vec<(Option<Range<usize>>, String)> {
             return vec![(range, message)];
         }
     };
-    drop(ir);
     Vec::new()
 }
 

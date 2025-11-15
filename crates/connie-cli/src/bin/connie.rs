@@ -12,6 +12,7 @@ use connie::{
     lex::{ByteIndex, LexError, lex},
     lower::lower,
     parse::{ParseError, parse},
+    prelude::prelude,
     wasm::wasm,
 };
 use connie_cli::util::err_fail;
@@ -50,15 +51,26 @@ fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
     let tree = parse(&tokens).map_err(|err| match err {
         ParseError::Expected { id, tokens: _ } => compiler.error(starts[id], &err.message()),
     })?;
-    let ir = lower(&source, &starts, &tree).map_err(|err| {
-        let (tokens, message) = err.describe(&source, &starts, &tree);
+    let (mut ir, mut names, lib) = prelude();
+    let module = lower(
+        &source,
+        &starts,
+        &tree,
+        &mut ir,
+        &mut names,
+        lib.prelude,
+        &[],
+    )
+    .map_err(|err| {
+        let (tokens, message) = err.describe(&source, &starts, &tree, &ir, &names);
         let start = match tokens {
             Some(range) => starts[range.first],
             None => ByteIndex::new(0),
         };
         compiler.error(start, &message)
     })?;
-    let bytes = wasm(&ir);
+    let start = names.fndefs[&(module, ir.strings.get_id("main").unwrap())];
+    let bytes = wasm(&ir, &names, lib, start);
     Ok(bytes)
 }
 

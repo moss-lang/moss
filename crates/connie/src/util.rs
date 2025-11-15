@@ -1,6 +1,12 @@
-use std::hash::{Hash, Hasher};
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use index_vec::{Idx, IndexSlice, IndexVec};
+
+pub fn default_hash(x: &impl Hash) -> u64 {
+    let mut state = DefaultHasher::new();
+    x.hash(&mut state);
+    state.finish()
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct IdRange<I> {

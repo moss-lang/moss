@@ -1,22 +1,13 @@
-context Foo {
-  string: String;
+val string: String;
+
+fn print_it[scratch, string]() {
+  println(string);
 }
 
-context start;
-
-need Foo;
-
-fn print_it() {
-  println(Foo::string);
-}
-
-fn wait_for_it() {
+fn wait_for_it[scratch, string]() {
   print_it();
 }
 
-context end;
-
-fn main() {
-  provide Foo::string = "hello";
-  wait_for_it();
+fn main[scratch]() {
+  wait_for_it[string="hello"]();
 }

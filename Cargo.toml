@@ -8,10 +8,11 @@ edition = "2024"
 
 [workspace.dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
+clap = "4"
 connie = { path = "crates/connie" }
 crossbeam-channel = "0.5"
 enumset = "1"
+im-rc = "15"
 index_vec = "0.1"
 indexmap = "2"
 itertools = "0.14"
@@ -20,6 +21,7 @@ logos = "0.15"
 lsp-server = "0.7"
 lsp-types = "0.97"
 serde_json = "1"
+strum = "0.27"
 wasm-encoder = "0.240"
 wasmtime = "37"
 wasmtime-wasi = "37"
