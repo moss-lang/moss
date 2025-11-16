@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    env,
     fmt::Write,
     fs, io,
     ops::Range,
@@ -60,6 +61,7 @@ fn get_errors(source: &str) -> Vec<(Option<Range<usize>>, String)> {
 
 struct Tests {
     fix: bool,
+    binary: PathBuf,
     current: Option<Arc<str>>,
     failures: IndexMap<Arc<str>, Vec<PathBuf>>,
 }
@@ -105,9 +107,7 @@ impl Tests {
     }
 
     fn example(&mut self, path: PathBuf) -> anyhow::Result<()> {
-        let output = Command::new(format!("target/{PROFILE}/connie"))
-            .arg(&path)
-            .output()?;
+        let output = Command::new(&self.binary).arg(&path).output()?;
         let Some(stem) = path.file_stem() else {
             bail!("no file stem");
         };
@@ -183,13 +183,6 @@ impl Tests {
     }
 
     fn test(mut self, tests: HashSet<String>) -> anyhow::Result<()> {
-        if !Command::new("cargo")
-            .args(["build", "--package=connie-cli", "--profile", PROFILE])
-            .status()?
-            .success()
-        {
-            bail!("`cargo build` failed");
-        }
         for result in fs::read_dir("examples")? {
             let path = result?.path();
             let name = Arc::<str>::from(format!("{}", path.display()));
@@ -239,6 +232,14 @@ enum Commands {
         #[arg(long)]
         fix: bool,
 
+        /// Path to a `connie` binary that should be executed instead of rebuilding
+        #[arg(long)]
+        binary: Option<PathBuf>,
+
+        /// Skip `cargo test`. Useful when another tool has already run them.
+        #[arg(long)]
+        skip_cargo_tests: bool,
+
         /// Run only some tests instead of all
         test: Vec<String>,
     },
@@ -247,12 +248,36 @@ enum Commands {
 fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
     match args.command {
-        Commands::Test { fix, test } => {
-            if test.is_empty() && !Command::new("cargo").arg("test").status()?.success() {
+        Commands::Test {
+            fix,
+            test,
+            binary,
+            skip_cargo_tests,
+        } => {
+            if test.is_empty()
+                && !skip_cargo_tests
+                && !Command::new("cargo").arg("test").status()?.success()
+            {
                 bail!("`cargo test` failed");
             }
+            let binary = match binary {
+                Some(path) => path,
+                None => {
+                    if !Command::new("cargo")
+                        .args(["build", "--package=connie-cli", "--profile", PROFILE])
+                        .status()?
+                        .success()
+                    {
+                        bail!("`cargo build` failed");
+                    }
+                    Path::new("target")
+                        .join(PROFILE)
+                        .join(format!("connie{}", env::consts::EXE_SUFFIX))
+                }
+            };
             Tests {
                 fix,
+                binary,
                 current: None,
                 failures: IndexMap::new(),
             }

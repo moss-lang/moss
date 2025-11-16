@@ -6,44 +6,41 @@ on:
       - main
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-24.04
     steps:
+      - uses: nixbuild/nix-quick-install-action@v34
+      - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: actions/checkout@v5
-      - run: echo $PWD/bin >> $GITHUB_PATH
-      - run: dev test
+      - run: nix flake check
 
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - vscode-platform: win32-x64
-            rust-target: x86_64-pc-windows-gnu
-            github-os: ubuntu-24.04
-            ext: ".exe"
-            install-script: sudo apt-get install -y mingw-w64
-          - vscode-platform: linux-x64
-            rust-target: x86_64-unknown-linux-musl
-            github-os: ubuntu-24.04
-            ext: ""
-            install-script: sudo apt-get install -y musl-tools
-    runs-on: ${{ matrix.github-os }}
+      - run: nix build .#musl
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-x86_64-unknown-linux-musl
+          path: result/bin/connie
+
+      - run: nix build .#windows
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-x86_64-pc-windows-gnu
+          path: result/bin/connie.exe
+
+  linux:
+    needs: build
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - run: ${{ matrix.install-script }}
-      - run: rustup target add ${{ matrix.rust-target }}
-      - run: cargo build --release --target ${{ matrix.rust-target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
-          name: connie-${{ matrix.rust-target }}
-          path: target/${{ matrix.rust-target }}/release/connie${{ matrix.ext }}
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - run: mkdir packages/connie-vscode/bin
-      - run: cp target/${{ matrix.rust-target }}/release/connie${{ matrix.ext }} packages/connie-vscode/bin/connie${{ matrix.ext }}
-      - run: bun run --filter=connie-vscode build -- --target ${{ matrix.vscode-platform }}
-      - uses: actions/upload-artifact@v4
+          name: connie-x86_64-unknown-linux-musl
+      - run: chmod +x connie
+      - run: ./connie --help
+
+  windows:
+    needs: build
+    runs-on: windows-2025
+    steps:
+      - uses: actions/download-artifact@v6
         with:
-          name: connie-vscode-${{ matrix.vscode-platform }}
-          path: packages/connie-vscode/connie-vscode-*.vsix
+          name: connie-x86_64-pc-windows-gnu
+      - run: .\connie.exe --help
