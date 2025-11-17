@@ -32,16 +32,27 @@
         };
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
         src = ./.;
+        defaultPname =
+          craneLib.crateNameFromCargoToml {
+            cargoToml = ./crates/connie/Cargo.toml;
+          };
         commonArgs = {
           inherit src;
           strictDeps = true;
         };
         mkPackage =
           args:
+          let
+            argsWithName =
+              args
+              // {
+                pname = args.pname or defaultPname;
+              };
+          in
           craneLib.buildPackage (
-            args
+            argsWithName
             // {
-              cargoArtifacts = craneLib.buildDepsOnly args;
+              cargoArtifacts = craneLib.buildDepsOnly argsWithName;
             }
           );
         connieCliArgs = commonArgs // {
@@ -121,17 +132,24 @@
           default = connieCli;
         }
         // crossPackages;
-        checks = {
-          cargo = craneLib.cargoTest (
-            commonArgs
-            // {
-              pname = "connie-tests";
-              cargoExtraArgs = "--locked";
-              cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-            }
-          );
-          e2e = devTests;
-        };
+        checks =
+          let
+            cargoTestArgs =
+              commonArgs
+              // {
+                pname = "connie-tests";
+                cargoExtraArgs = "--locked";
+              };
+          in
+          {
+            cargo = craneLib.cargoTest (
+              cargoTestArgs
+              // {
+                cargoArtifacts = craneLib.buildDepsOnly cargoTestArgs;
+              }
+            );
+            e2e = devTests;
+          };
         devShells.default = pkgs.mkShellNoCC {
           buildInputs = [
             # Necessary tools.
