@@ -132,28 +132,15 @@
           touch $out
         '';
         workspacePackageJson = ./package.json;
-        bunDeps =
-          let
-            bunNixSource = pkgs.runCommand "bun-nix-src" { } ''
-              set -euo pipefail
-
-              workDir="$(pwd)/work"
-              mkdir -p "$workDir"
-              cp ${./bun.lock} "$workDir/bun.lock"
-              cp ${./package.json} "$workDir/package.json"
-              cp -R ${./packages} "$workDir/packages"
-
-              cd "$workDir"
-              ${pkgs.bun2nix}/bin/bun2nix -l bun.lock -o bun.nix
-
-              mkdir -p "$out"
-              cp bun.nix "$out/bun.nix"
-              cp -R packages "$out/packages"
-            '';
-          in
-          pkgs.bun2nix.fetchBunDeps {
-            bunNix = "${bunNixSource}/bun.nix";
-          };
+        bunDeps = pkgs.bun2nix.fetchBunDeps {
+          bunNix = "${
+            pkgs.runCommand "bun-nix" { } ''
+              mkdir $out
+              ln -s ${./packages} $out/packages
+              ${pkgs.bun2nix}/bin/bun2nix -l ${./bun.lock} -o $out/bun.nix
+            ''
+          }/bun.nix";
+        };
         vscodePackage = builtins.fromJSON (builtins.readFile ./packages/connie-vscode/package.json);
         hostVsceTargets = {
           "x86_64-linux" = "linux-x64";
