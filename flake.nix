@@ -1,7 +1,6 @@
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
     crane.url = "github:ipetkov/crane";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -16,277 +15,195 @@
     {
       self,
       nixpkgs,
-      flake-utils,
       crane,
       rust-overlay,
       bun2nix,
     }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
-      let
-        overlays = [
-          (import rust-overlay)
-          bun2nix.overlays.default
-        ];
-        pkgs = import nixpkgs {
-          inherit system overlays;
-        };
-        lib = pkgs.lib;
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          targets = [
-            "x86_64-unknown-linux-musl"
-            "x86_64-pc-windows-gnu"
-          ];
-        };
-        craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
-        src = ./.;
-        defaultPname = craneLib.crateNameFromCargoToml {
-          cargoToml = ./crates/connie/Cargo.toml;
-        };
-        commonArgs = {
-          inherit src;
-          strictDeps = true;
-        };
-        mkPackage =
-          args:
-          let
-            argsWithName = args // {
-              pname = args.pname or defaultPname;
-            };
-          in
-          craneLib.buildPackage (
-            argsWithName
-            // {
-              cargoArtifacts = craneLib.buildDepsOnly argsWithName;
-            }
-          );
-        connieCliArgs = commonArgs // {
-          pname = "connie";
-          cargoExtraArgs = "--locked --package=connie-cli";
-        };
-        connieCli = mkPackage connieCliArgs;
-        connieDev = mkPackage (
-          commonArgs
-          // {
-            pname = "connie-dev";
+    let
+      mkOutputs = system: f: {
+        inherit system;
+        outputs = f rec {
+          version = "0.0.0";
+          src = ./.;
+          commonArgs = {
+            pname = "connie";
+            inherit src;
+            strictDeps = true;
+          };
+          # `cargoExtraArgs` default is "--locked": https://crane.dev/API.html
+          cliArgs = {
+            cargoExtraArgs = "--locked --package=connie-cli";
+          };
+          devArgs = {
             cargoExtraArgs = "--locked --package=connie-dev";
-          }
-        );
-        targetEnvNameUpper = target: lib.toUpper (lib.replaceStrings [ "-" ] [ "_" ] target);
-        targetEnvNameLower = target: lib.replaceStrings [ "-" ] [ "_" ] target;
-        mkCrossPackage =
-          {
-            pname,
-            target,
-            cc,
-            ccPrefix,
-            extraArgs ? { },
-          }:
-          let
-            envNameUpper = targetEnvNameUpper target;
-            envNameLower = targetEnvNameLower target;
-            targetArgs = {
-              inherit pname;
-              cargoExtraArgs = "--locked --package=connie-cli --target ${target}";
-              CARGO_BUILD_TARGET = target;
-              nativeBuildInputs = [ cc ];
-              doCheck = false;
-              "AR_${envNameUpper}" = "${cc}/bin/${ccPrefix}-ar";
-              "CC_${envNameUpper}" = "${cc}/bin/${ccPrefix}-gcc";
-              "CARGO_TARGET_${envNameUpper}_AR" = "${cc}/bin/${ccPrefix}-ar";
-              "CARGO_TARGET_${envNameUpper}_LINKER" = "${cc}/bin/${ccPrefix}-gcc";
-              "AR_${envNameLower}" = "${cc}/bin/${ccPrefix}-ar";
-              "CC_${envNameLower}" = "${cc}/bin/${ccPrefix}-gcc";
-            }
-            // extraArgs;
-          in
-          mkPackage (commonArgs // targetArgs);
-        crossPackages = lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
-          musl = mkCrossPackage {
-            pname = "connie-musl";
-            target = "x86_64-unknown-linux-musl";
-            cc = pkgs.pkgsStatic.stdenv.cc;
-            ccPrefix = "x86_64-unknown-linux-musl";
-            extraArgs = {
-              RUSTFLAGS = "-C target-feature=+crt-static";
-            };
           };
-          windows = mkCrossPackage {
-            pname = "connie-windows";
-            target = "x86_64-pc-windows-gnu";
-            cc = pkgs.pkgsCross.mingwW64.stdenv.cc;
-            ccPrefix = "x86_64-w64-mingw32";
-            extraArgs = {
-              buildInputs = [
-                pkgs.pkgsCross.mingwW64.windows.pthreads
-              ];
-            };
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [
+              (import rust-overlay)
+              bun2nix.overlays.default
+            ];
           };
-        };
-        devTests = pkgs.runCommand "connie-dev-tests" { } ''
-          set -euo pipefail
-          cp -r ${src} source
-          chmod -R +w source
-          cd source
-          ${connieDev}/bin/dev test --binary ${connieCli}/bin/connie --skip-cargo-tests
-          touch $out
-        '';
-        workspacePackageJson = ./package.json;
-        bunDeps = pkgs.bun2nix.fetchBunDeps {
-          bunNix = "${
-            pkgs.runCommand "bun-nix" { } ''
-              mkdir $out
-              ln -s ${./packages} $out/packages
-              ${pkgs.bun2nix}/bin/bun2nix -l ${./bun.lock} -o $out/bun.nix
-            ''
-          }/bun.nix";
-        };
-        vscodePackage = builtins.fromJSON (builtins.readFile ./packages/connie-vscode/package.json);
-        hostVsceTargets = {
-          "x86_64-linux" = "linux-x64";
-          "aarch64-linux" = "linux-arm64";
-          "x86_64-darwin" = "darwin-x64";
-          "aarch64-darwin" = "darwin-arm64";
-        };
-        hostVsceTarget = hostVsceTargets.${pkgs.stdenv.hostPlatform.system} or null;
-        defaultVsixTargets = [
-          {
-            target = "linux-x64";
-            exeExtension = "";
-            binaryDrv = crossPackages.musl or null;
-          }
-          {
-            target = "win32-x64";
-            exeExtension = ".exe";
-            binaryDrv = crossPackages.windows or null;
-          }
-        ];
-        hostVsixTargets =
-          lib.optional
-            (hostVsceTarget != null && (!lib.any (t: t.target == hostVsceTarget) defaultVsixTargets))
-            {
-              target = hostVsceTarget;
-              exeExtension = if lib.hasPrefix "win32" hostVsceTarget then ".exe" else "";
-              binaryDrv = connieCli;
-            };
-        availableVsixTargets = lib.filter (t: t.binaryDrv != null) (defaultVsixTargets ++ hostVsixTargets);
-        mkVsixEntry =
-          targetSpec:
-          let
-            vsixFile = "${vscodePackage.name}-${vscodePackage.version}-${targetSpec.target}.vsix";
-            binName = "connie${targetSpec.exeExtension}";
-            drv = pkgs.bun2nix.mkDerivation {
-              pname = "${vscodePackage.name}-${targetSpec.target}";
-              version = vscodePackage.version;
-              packageJson = workspacePackageJson;
-              inherit src bunDeps;
-              strictDeps = true;
-              nativeBuildInputs = [
-                pkgs.bun
-                pkgs.nodejs
-                pkgs.gitMinimal
-                pkgs.bun2nix.hook
-              ];
-              buildPhase = ''
-                runHook preBuild
-                set -euo pipefail
-
-                binDir=packages/connie-vscode/bin
-                rm -rf "$binDir"
-                mkdir -p "$binDir"
-                install -m755 ${targetSpec.binaryDrv}/bin/${binName} "$binDir/${binName}"
-
-                rm -f packages/connie-vscode/*.vsix
-                vsixDir=.nix-vsix
-                rm -rf "$vsixDir"
-                mkdir -p "$vsixDir"
-
-                bun run --filter=connie-vscode build -- --target ${targetSpec.target}
-
-                producedVsix=packages/connie-vscode/${vscodePackage.name}-${targetSpec.target}-${vscodePackage.version}.vsix
-                if [ ! -f "$producedVsix" ]; then
-                  echo "expected VSIX at $producedVsix" >&2
-                  exit 1
-                fi
-                cp "$producedVsix" "$vsixDir/${vsixFile}"
-
-                runHook postBuild
+          craneLib = crane.mkLib pkgs;
+          cacheArgs = {
+            # Reuse built deps across `connie-cli`/`connie-dev`/`cargo test`.
+            cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+          };
+          musl =
+            target:
+            (craneLib.overrideToolchain (
+              p: p.rust-bin.stable.latest.default.override { targets = [ target ]; }
+            )).buildPackage
+              (commonArgs // cliArgs // { CARGO_BUILD_TARGET = target; });
+          windows =
+            crossSystem:
+            let
+              pkgs = import nixpkgs {
+                localSystem = system;
+                crossSystem.config = crossSystem;
+              };
+            in
+            (crane.mkLib pkgs).buildPackage (commonArgs // cliArgs);
+          bunDeps = pkgs.bun2nix.fetchBunDeps {
+            bunNix = "${
+              pkgs.runCommand "connie-bun-nix" { } ''
+                mkdir $out
+                ln -s ${./packages} $out/packages
+                ${pkgs.bun2nix}/bin/bun2nix -l ${./bun.lock} -o $out/bun.nix
+              ''
+            }/bun.nix";
+          };
+          vsixRaw = pkgs.bun2nix.mkDerivation rec {
+            pname = "connie-vsix";
+            inherit version src bunDeps;
+            packageJson = ./package.json;
+            strictDeps = true;
+            nativeBuildInputs = [ pkgs.nodejs ];
+            buildPhase = ''
+              runHook preBuild
+              bun run --filter=connie-vscode build
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              mv packages/connie-vscode/connie-vscode-${version}.vsix $out
+              runHook postInstall
+            '';
+          };
+          vsix =
+            exe:
+            vsixRaw.overrideAttrs (_: {
+              preBuild = ''
+                mkdir packages/connie-vscode/bin
+                cp ${exe} packages/connie-vscode/bin/
               '';
-              installPhase = ''
-                runHook preInstall
-                mkdir -p "$out"
-                cp ".nix-vsix/${vsixFile}" "$out/${vsixFile}"
-                runHook postInstall
-              '';
-            };
-          in
-          {
-            inherit drv vsixFile;
-            target = targetSpec.target;
+            });
+          packages = {
+            default = craneLib.buildPackage (commonArgs // cacheArgs // cliArgs);
+            vscode =
+              let
+                vscodeExtPublisher = "samestep";
+                vscodeExtName = "connie-vscode";
+                vscodeExtUniqueId = "${vscodeExtPublisher}.${vscodeExtName}";
+              in
+              pkgs.runCommand vscodeExtName
+                {
+                  inherit
+                    version
+                    vscodeExtPublisher
+                    vscodeExtName
+                    vscodeExtUniqueId
+                    ;
+                  nativeBuildInputs = [ pkgs.unzip ];
+                }
+                ''
+                  mkdir -p $out/share/vscode/extensions
+                  unzip ${vsixRaw}
+                  ln -s ${packages.default}/bin extension/bin
+                  mv extension $out/share/vscode/extensions/${vscodeExtUniqueId}
+                '';
           };
-        vsixEntries =
-          let
-            entries = map mkVsixEntry availableVsixTargets;
-          in
-          assert entries != [ ];
-          entries;
-        vsixPackages = lib.listToAttrs (
-          map (entry: {
-            name = "vscode-${entry.target}";
-            value = entry.drv;
-          }) vsixEntries
-        );
-      in
-      {
-        packages =
-          (
-            {
-              default = connieCli;
-              vscode = pkgs.linkFarm "connie-vscode" (
-                map (entry: {
-                  name = entry.vsixFile;
-                  path = "${entry.drv}/${entry.vsixFile}";
-                }) vsixEntries
-              );
-            }
-            // vsixPackages
-          )
-          // crossPackages;
-        checks =
-          let
-            cargoTestArgs = commonArgs // {
-              pname = "connie-tests";
-              cargoExtraArgs = "--locked";
-            };
-          in
-          {
-            cargo = craneLib.cargoTest (
-              cargoTestArgs
-              // {
-                cargoArtifacts = craneLib.buildDepsOnly cargoTestArgs;
-              }
+          checks = {
+            cargo = craneLib.cargoTest (commonArgs // cacheArgs);
+            e2e =
+              let
+                dev = craneLib.buildPackage (commonArgs // cacheArgs // devArgs);
+              in
+              pkgs.runCommand "connie-dev-test" { } ''
+                cd ${src}
+                ${dev}/bin/dev test --binary ${packages.default}/bin/connie --skip-cargo-tests
+                touch $out
+              '';
+            vscode = pkgs.writeText "connie-vscode.json" (
+              builtins.toJSON (pkgs.vscode-utils.toExtensionJsonEntry packages.vscode)
             );
-            e2e = devTests;
           };
-        devShells.default = pkgs.mkShellNoCC {
-          buildInputs = [
-            # Necessary tools.
-            pkgs.bun
-            pkgs.bun2nix
-            pkgs.nodejs # Used by vsce.
-            pkgs.python3
-            rustToolchain
+          devShells.default = pkgs.mkShellNoCC {
+            buildInputs = [
+              # Necessary tools.
+              pkgs.bun
+              pkgs.nodejs # Used by vsce.
+              pkgs.python3
+              pkgs.rust-bin.stable.latest.default
 
-            # Convenient tools.
-            pkgs.binaryen
-            pkgs.nixfmt
-            pkgs.wasm-tools
-            pkgs.wasmtime
-          ];
-          shellHook = ''
-            PATH=$PWD/bin:$PATH
-          '';
+              # Convenient tools.
+              pkgs.binaryen
+              pkgs.nixfmt
+              pkgs.wasm-tools
+              pkgs.wasmtime
+            ];
+            shellHook = ''
+              PATH=$PWD/bin:$PATH
+            '';
+          };
         };
-      }
-    );
+      };
+      transpose =
+        list:
+        builtins.zipAttrsWith (_: entries: builtins.foldl' (acc: entry: acc // entry) { } entries) (
+          builtins.map (item: builtins.mapAttrs (_: value: { ${item.system} = value; }) item.outputs) list
+        );
+    in
+    transpose [
+      (mkOutputs "x86_64-linux" (mk: {
+        packages = rec {
+          default = mk.packages.default;
+          vscode = mk.packages.vscode;
+          musl = mk.musl "x86_64-unknown-linux-musl";
+          windows = mk.windows "x86_64-w64-mingw32";
+          vsix-linux-x64 = mk.vsix "${musl}/bin/connie";
+          vsix-win32-x64 = mk.vsix "${windows}/bin/connie.exe";
+        };
+        checks = mk.checks;
+        devShells = mk.devShells;
+      }))
+      (mkOutputs "aarch64-linux" (mk: {
+        packages = rec {
+          default = mk.packages.default;
+          vscode = mk.packages.vscode;
+          musl = mk.musl "aarch64-unknown-linux-musl";
+          vsix-linux-arm64 = mk.vsix "${musl}/bin/connie";
+        };
+        checks = mk.checks;
+        devShells = mk.devShells;
+      }))
+      (mkOutputs "x86_64-darwin" (mk: {
+        packages = rec {
+          default = mk.packages.default;
+          vscode = mk.packages.vscode;
+          vsix-darwin-x64 = mk.vsix "${default}/bin/connie";
+        };
+        checks = mk.checks;
+        devShells = mk.devShells;
+      }))
+      (mkOutputs "aarch64-darwin" (mk: {
+        packages = rec {
+          default = mk.packages.default;
+          vscode = mk.packages.vscode;
+          vsix-darwin-arm64 = mk.vsix "${default}/bin/connie";
+        };
+        checks = mk.checks;
+        devShells = mk.devShells;
+      }))
+    ];
 }

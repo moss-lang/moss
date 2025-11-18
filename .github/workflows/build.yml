@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  build:
+  x86_64-linux:
     runs-on: ubuntu-24.04
     steps:
       - uses: nixbuild/nix-quick-install-action@v34
@@ -17,42 +17,132 @@ jobs:
       - run: nix build --print-build-logs .#musl
       - uses: actions/upload-artifact@v5
         with:
-          name: connie-x86_64-unknown-linux-musl
+          name: connie-linux-x86
           path: result/bin/connie
 
       - run: nix build --print-build-logs .#windows
       - uses: actions/upload-artifact@v5
         with:
-          name: connie-x86_64-pc-windows-gnu
+          name: connie-windows-x86
           path: result/bin/connie.exe
 
-      - run: nix build --print-build-logs .#vscode-linux-x64
+      - run: nix build --print-build-logs .#vsix-linux-x64
       - uses: actions/upload-artifact@v5
         with:
-          name: connie-vscode-linux-x64
-          path: result/connie-vscode-*.vsix
+          name: connie-vsix-linux-x64
+          path: result
 
-      - run: nix build --print-build-logs .#vscode-win32-x64
+      - run: nix build --print-build-logs .#vsix-win32-x64
       - uses: actions/upload-artifact@v5
         with:
-          name: connie-vscode-win32-x64
-          path: result/connie-vscode-*.vsix
+          name: connie-vsix-win32-x64
+          path: result
 
-  linux:
-    needs: build
+  aarch64-linux:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: nixbuild/nix-quick-install-action@v34
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v5
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs .#musl
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-linux-arm
+          path: result/bin/connie
+
+      - run: nix build --print-build-logs .#vsix-linux-arm64
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-vsix-linux-arm64
+          path: result
+
+  x86_64-darwin:
+    runs-on: macos-15-intel
+    steps:
+      - uses: nixbuild/nix-quick-install-action@v34
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v5
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-macos-x86
+          path: result/bin/connie
+
+      - run: nix build --print-build-logs .#vsix-darwin-x64
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-vsix-darwin-x64
+          path: result
+
+  aarch64-darwin:
+    runs-on: macos-15
+    steps:
+      - uses: nixbuild/nix-quick-install-action@v34
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v5
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-macos-arm
+          path: result/bin/connie
+
+      - run: nix build --print-build-logs .#vsix-darwin-arm64
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-vsix-darwin-arm64
+          path: result
+
+  linux-x86:
+    needs: x86_64-linux
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v6
         with:
-          name: connie-x86_64-unknown-linux-musl
+          name: connie-linux-x86
       - run: chmod +x connie
       - run: ./connie --help
 
-  windows:
-    needs: build
+  windows-x86:
+    needs: x86_64-linux
     runs-on: windows-2025
     steps:
       - uses: actions/download-artifact@v6
         with:
-          name: connie-x86_64-pc-windows-gnu
+          name: connie-windows-x86
       - run: .\connie.exe --help
+
+  linux-arm:
+    needs: aarch64-linux
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: connie-linux-arm
+      - run: chmod +x connie
+      - run: ./connie --help
+
+  macos-x86:
+    needs: x86_64-darwin
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: connie-macos-x86
+      - run: chmod +x connie
+      - run: ./connie --help
+
+  macos-arm:
+    needs: aarch64-darwin
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: connie-macos-arm
+      - run: chmod +x connie
+      - run: ./connie --help
