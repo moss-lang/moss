@@ -132,9 +132,28 @@
           touch $out
         '';
         workspacePackageJson = ./package.json;
-        bunDeps = pkgs.bun2nix.fetchBunDeps {
-          bunNix = ./bun.nix;
-        };
+        bunDeps =
+          let
+            bunNixSource = pkgs.runCommand "bun-nix-src" { } ''
+              set -euo pipefail
+
+              workDir="$(pwd)/work"
+              mkdir -p "$workDir"
+              cp ${./bun.lock} "$workDir/bun.lock"
+              cp ${./package.json} "$workDir/package.json"
+              cp -R ${./packages} "$workDir/packages"
+
+              cd "$workDir"
+              ${pkgs.bun2nix}/bin/bun2nix -l bun.lock -o bun.nix
+
+              mkdir -p "$out"
+              cp bun.nix "$out/bun.nix"
+              cp -R packages "$out/packages"
+            '';
+          in
+          pkgs.bun2nix.fetchBunDeps {
+            bunNix = "${bunNixSource}/bun.nix";
+          };
         vscodePackage = builtins.fromJSON (builtins.readFile ./packages/connie-vscode/package.json);
         hostVsceTargets = {
           "x86_64-linux" = "linux-x64";
@@ -156,14 +175,13 @@
           }
         ];
         hostVsixTargets =
-          lib.optional (
-            hostVsceTarget != null
-            && (!lib.any (t: t.target == hostVsceTarget) defaultVsixTargets)
-          ) {
-            target = hostVsceTarget;
-            exeExtension = if lib.hasPrefix "win32" hostVsceTarget then ".exe" else "";
-            binaryDrv = connieCli;
-          };
+          lib.optional
+            (hostVsceTarget != null && (!lib.any (t: t.target == hostVsceTarget) defaultVsixTargets))
+            {
+              target = hostVsceTarget;
+              exeExtension = if lib.hasPrefix "win32" hostVsceTarget then ".exe" else "";
+              binaryDrv = connieCli;
+            };
         availableVsixTargets = lib.filter (t: t.binaryDrv != null) (defaultVsixTargets ++ hostVsixTargets);
         mkVsixEntry =
           targetSpec:
@@ -223,14 +241,13 @@
           let
             entries = map mkVsixEntry availableVsixTargets;
           in
-          assert entries != [ ]; entries;
+          assert entries != [ ];
+          entries;
         vsixPackages = lib.listToAttrs (
-          map (
-            entry: {
-              name = "vscode-${entry.target}";
-              value = entry.drv;
-            }
-          ) vsixEntries
+          map (entry: {
+            name = "vscode-${entry.target}";
+            value = entry.drv;
+          }) vsixEntries
         );
       in
       {
@@ -239,12 +256,10 @@
             {
               default = connieCli;
               vscode = pkgs.linkFarm "connie-vscode" (
-                map (
-                  entry: {
-                    name = entry.vsixFile;
-                    path = "${entry.drv}/${entry.vsixFile}";
-                  }
-                ) vsixEntries
+                map (entry: {
+                  name = entry.vsixFile;
+                  path = "${entry.drv}/${entry.vsixFile}";
+                }) vsixEntries
               );
             }
             // vsixPackages
