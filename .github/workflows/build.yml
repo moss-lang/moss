@@ -12,27 +12,27 @@ jobs:
       - uses: nixbuild/nix-quick-install-action@v34
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: actions/checkout@v5
-      - run: nix flake check
+      - run: nix flake check --print-build-logs
 
-      - run: nix build .#musl
+      - run: nix build --print-build-logs .#musl
       - uses: actions/upload-artifact@v5
         with:
           name: connie-x86_64-unknown-linux-musl
           path: result/bin/connie
 
-      - run: nix build .#windows
+      - run: nix build --print-build-logs .#windows
       - uses: actions/upload-artifact@v5
         with:
           name: connie-x86_64-pc-windows-gnu
           path: result/bin/connie.exe
 
-      - run: nix build .#vscode-linux-x64
+      - run: nix build --print-build-logs .#vscode-linux-x64
       - uses: actions/upload-artifact@v5
         with:
           name: connie-vscode-linux-x64
           path: result/connie-vscode-*.vsix
 
-      - run: nix build .#vscode-win32-x64
+      - run: nix build --print-build-logs .#vscode-win32-x64
       - uses: actions/upload-artifact@v5
         with:
           name: connie-vscode-win32-x64
