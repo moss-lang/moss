@@ -24,10 +24,37 @@
         inherit system;
         outputs = f rec {
           version = "0.0.0";
-          src = ./.;
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [
+              (import rust-overlay)
+              bun2nix.overlays.default
+            ];
+          };
+          # Without source filtering, things get rebuilt too often.
+          filterSource =
+            paths: root:
+            builtins.path {
+              path = root;
+              name = "source";
+              filter = (
+                path: _:
+                let
+                  start = builtins.stringLength (toString root);
+                  string = toString path;
+                  relative = builtins.substring start (builtins.stringLength string - start) string;
+                in
+                builtins.any (allow: relative == allow || pkgs.lib.hasPrefix "${allow}/" relative) paths
+              );
+            };
           commonArgs = {
             pname = "connie";
-            inherit src;
+            src = filterSource [
+              "/Cargo.toml"
+              "/Cargo.lock"
+              "/crates"
+              "/lib"
+            ] ./.;
             strictDeps = true;
           };
           # `cargoExtraArgs` default is "--locked": https://crane.dev/API.html
@@ -36,13 +63,6 @@
           };
           devArgs = {
             cargoExtraArgs = "--locked --package=connie-dev";
-          };
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = [
-              (import rust-overlay)
-              bun2nix.overlays.default
-            ];
           };
           craneLib = crane.mkLib pkgs;
           cacheArgs = {
@@ -82,7 +102,8 @@
           };
           vsixRaw = pkgs.bun2nix.mkDerivation rec {
             pname = "connie-vsix";
-            inherit version src bunDeps;
+            inherit version bunDeps;
+            src = filterSource [ "/package.json" "/bun.lock" "/packages" ] ./.;
             packageJson = ./package.json;
             strictDeps = true;
             nativeBuildInputs = [ pkgs.nodejs ];
@@ -137,7 +158,7 @@
                 dev = craneLib.buildPackage (commonArgs // cacheArgs // devArgs);
               in
               pkgs.runCommand "connie-dev-test" { } ''
-                cd ${src}
+                cd ${./.}
                 ${dev}/bin/dev test --binary ${packages.default}/bin/connie --skip-cargo-tests
                 touch $out
               '';
