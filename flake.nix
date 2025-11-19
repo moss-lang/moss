@@ -86,10 +86,18 @@
             (crane.mkLib pkgs).buildPackage (commonArgs // cliArgs);
           macos =
             package:
-            pkgs.runCommand "connie-standalone" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
+            pkgs.runCommand "connie" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
               mkdir -p $out/bin
               cp ${package}/bin/connie $out/bin/connie
               install_name_tool -change ${pkgs.libiconv}/lib/libiconv.2.dylib /usr/lib/libiconv.2.dylib $out/bin/connie
+            '';
+          standalone =
+            package:
+            pkgs.runCommand "connie-standalone" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
+              if otool -L ${package}/bin/connie | sed 1d | grep /nix/store; then
+                false
+              fi
+              touch $out
             '';
           bunDeps = pkgs.bun2nix.fetchBunDeps {
             bunNix = "${
@@ -215,24 +223,28 @@
         checks = mk.checks;
         devShells = mk.devShells;
       }))
-      (mkOutputs "x86_64-darwin" (mk: {
-        packages = rec {
+      (mkOutputs "x86_64-darwin" (mk: rec {
+        packages = {
           default = mk.packages.default;
-          standalone = mk.macos default;
           vscode = mk.packages.vscode;
-          vsix-darwin-x64 = mk.vsix "${standalone}/bin/connie";
+          standalone = mk.macos packages.default;
+          vsix-darwin-x64 = mk.vsix "${packages.standalone}/bin/connie";
         };
-        checks = mk.checks;
+        checks = mk.checks // {
+          standalone = mk.standalone packages.standalone;
+        };
         devShells = mk.devShells;
       }))
-      (mkOutputs "aarch64-darwin" (mk: {
-        packages = rec {
+      (mkOutputs "aarch64-darwin" (mk: rec {
+        packages = {
           default = mk.packages.default;
-          standalone = mk.macos default;
           vscode = mk.packages.vscode;
-          vsix-darwin-arm64 = mk.vsix "${standalone}/bin/connie";
+          standalone = mk.macos packages.default;
+          vsix-darwin-arm64 = mk.vsix "${packages.standalone}/bin/connie";
         };
-        checks = mk.checks;
+        checks = mk.checks // {
+          standalone = mk.standalone packages.standalone;
+        };
         devShells = mk.devShells;
       }))
     ];
