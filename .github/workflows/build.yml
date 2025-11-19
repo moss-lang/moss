@@ -26,17 +26,17 @@ jobs:
           name: connie-windows-x86
           path: result/bin/connie.exe
 
-      - run: nix build --print-build-logs .#vsix-linux-x64
+      - run: nix build --print-build-logs .#vsix-linux-x64 -o connie-linux-x64.vsix
       - uses: actions/upload-artifact@v5
         with:
           name: connie-vsix-linux-x64
-          path: result
+          path: connie-linux-x64.vsix
 
-      - run: nix build --print-build-logs .#vsix-win32-x64
+      - run: nix build --print-build-logs .#vsix-win32-x64 -o connie-win32-x64.vsix
       - uses: actions/upload-artifact@v5
         with:
           name: connie-vsix-win32-x64
-          path: result
+          path: connie-win32-x64.vsix
 
   linux-x86:
     needs: x86_64-linux
