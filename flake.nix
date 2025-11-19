@@ -94,7 +94,7 @@
           standalone =
             package:
             pkgs.runCommand "connie-standalone" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
-              if otool -L ${package}/bin/connie | sed 1d | grep /nix/store; then
+              if otool -L ${package}/bin/connie | sed 1d | grep /nix/store/; then
                 false
               fi
               touch $out
@@ -136,28 +136,20 @@
             });
           packages = {
             default = craneLib.buildPackage (commonArgs // cacheArgs // cliArgs);
-            vscode =
-              let
-                vscodeExtPublisher = "samestep";
-                vscodeExtName = "connie-vscode";
-                vscodeExtUniqueId = "${vscodeExtPublisher}.${vscodeExtName}";
-              in
-              pkgs.runCommand vscodeExtName
-                {
-                  inherit
-                    version
-                    vscodeExtPublisher
-                    vscodeExtName
-                    vscodeExtUniqueId
-                    ;
-                  nativeBuildInputs = [ pkgs.unzip ];
-                }
-                ''
-                  mkdir -p $out/share/vscode/extensions
-                  unzip ${vsixRaw}
-                  ln -s ${packages.default}/bin extension/bin
-                  mv extension $out/share/vscode/extensions/${vscodeExtUniqueId}
-                '';
+            vscode = pkgs.vscode-utils.buildVscodeExtension rec {
+              vscodeExtPublisher = "samestep";
+              vscodeExtName = "connie-vscode";
+              vscodeExtUniqueId = "${vscodeExtPublisher}.${vscodeExtName}";
+              pname = vscodeExtUniqueId;
+              inherit version;
+              src = vsixRaw;
+              unpackPhase = ''
+                runHook preUnpack
+                unzip $src
+                ln -s ${packages.default}/bin extension/bin
+                runHook postUnpack
+              '';
+            };
           };
           checks = {
             cargo = craneLib.cargoTest (commonArgs // cacheArgs);
@@ -170,9 +162,7 @@
                 ${dev}/bin/dev test --skip-cargo-test --prebuilt ${packages.default}/bin/connie
                 touch $out
               '';
-            vscode = pkgs.writeText "connie-vscode.json" (
-              builtins.toJSON (pkgs.vscode-utils.toExtensionJsonEntry packages.vscode)
-            );
+            inherit (packages) vscode;
           };
           devShells.default = pkgs.mkShellNoCC {
             buildInputs = [
@@ -202,9 +192,7 @@
     in
     transpose [
       (mkOutputs "x86_64-linux" (mk: {
-        packages = rec {
-          default = mk.packages.default;
-          vscode = mk.packages.vscode;
+        packages = mk.packages // rec {
           standalone = mk.musl "x86_64-unknown-linux-musl";
           windows = mk.windows "x86_64-w64-mingw32";
           vsix-linux-x64 = mk.vsix "${standalone}/bin/connie";
@@ -214,9 +202,7 @@
         devShells = mk.devShells;
       }))
       (mkOutputs "aarch64-linux" (mk: {
-        packages = rec {
-          default = mk.packages.default;
-          vscode = mk.packages.vscode;
+        packages = mk.packages // rec {
           standalone = mk.musl "aarch64-unknown-linux-musl";
           vsix-linux-arm64 = mk.vsix "${standalone}/bin/connie";
         };
@@ -224,9 +210,7 @@
         devShells = mk.devShells;
       }))
       (mkOutputs "x86_64-darwin" (mk: rec {
-        packages = {
-          default = mk.packages.default;
-          vscode = mk.packages.vscode;
+        packages = mk.packages // {
           standalone = mk.macos packages.default;
           vsix-darwin-x64 = mk.vsix "${packages.standalone}/bin/connie";
         };
@@ -236,9 +220,7 @@
         devShells = mk.devShells;
       }))
       (mkOutputs "aarch64-darwin" (mk: rec {
-        packages = {
-          default = mk.packages.default;
-          vscode = mk.packages.vscode;
+        packages = mk.packages // {
           standalone = mk.macos packages.default;
           vsix-darwin-arm64 = mk.vsix "${packages.standalone}/bin/connie";
         };
