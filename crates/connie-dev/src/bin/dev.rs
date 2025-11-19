@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    env,
     fmt::Write,
     fs, io,
     ops::Range,
@@ -60,8 +59,8 @@ fn get_errors(source: &str) -> Vec<(Option<Range<usize>>, String)> {
 }
 
 struct Tests {
-    fix: bool,
     binary: PathBuf,
+    fix: bool,
     current: Option<Arc<str>>,
     failures: IndexMap<Arc<str>, Vec<PathBuf>>,
 }
@@ -232,16 +231,16 @@ enum Commands {
         #[arg(long)]
         fix: bool,
 
-        /// Path to a `connie` binary that should be executed instead of rebuilding
-        #[arg(long)]
-        binary: Option<PathBuf>,
-
-        /// Skip `cargo test`. Useful when another tool has already run them.
-        #[arg(long)]
-        skip_cargo_tests: bool,
-
         /// Run only some tests instead of all
         test: Vec<String>,
+
+        /// Skip `cargo test`
+        #[arg(long)]
+        skip_cargo_test: bool,
+
+        /// Use an existing `connie` binary instead of rebuilding
+        #[arg(long)]
+        prebuilt: Option<PathBuf>,
     },
 }
 
@@ -251,33 +250,30 @@ fn main() -> anyhow::Result<()> {
         Commands::Test {
             fix,
             test,
-            binary,
-            skip_cargo_tests,
+            skip_cargo_test,
+            prebuilt,
         } => {
             if test.is_empty()
-                && !skip_cargo_tests
+                && !skip_cargo_test
                 && !Command::new("cargo").arg("test").status()?.success()
             {
                 bail!("`cargo test` failed");
             }
-            let binary = match binary {
-                Some(path) => path,
-                None => {
-                    if !Command::new("cargo")
-                        .args(["build", "--package=connie-cli", "--profile", PROFILE])
-                        .status()?
-                        .success()
-                    {
-                        bail!("`cargo build` failed");
-                    }
-                    Path::new("target")
-                        .join(PROFILE)
-                        .join(format!("connie{}", env::consts::EXE_SUFFIX))
-                }
-            };
             Tests {
+                binary: match prebuilt {
+                    Some(path) => path,
+                    None => {
+                        if !Command::new("cargo")
+                            .args(["build", "--package=connie-cli", "--profile", PROFILE])
+                            .status()?
+                            .success()
+                        {
+                            bail!("`cargo build` failed");
+                        }
+                        PathBuf::from(format!("target/{PROFILE}/connie"))
+                    }
+                },
                 fix,
-                binary,
                 current: None,
                 failures: IndexMap::new(),
             }

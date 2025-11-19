@@ -167,7 +167,7 @@
               in
               pkgs.runCommand "connie-dev-test" { } ''
                 cd ${./.}
-                ${dev}/bin/dev test --binary ${packages.default}/bin/connie --skip-cargo-tests
+                ${dev}/bin/dev test --skip-cargo-test --prebuilt ${packages.default}/bin/connie
                 touch $out
               '';
             vscode = pkgs.writeText "connie-vscode.json" (
