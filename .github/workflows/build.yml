@@ -9,8 +9,7 @@ jobs:
   x86_64-linux:
     runs-on: ubuntu-24.04
     steps:
-      - uses: nixbuild/nix-quick-install-action@v34
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: cachix/install-nix-action@v31
       - uses: actions/checkout@v5
       - run: nix flake check --print-build-logs
 
