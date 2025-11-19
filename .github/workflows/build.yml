@@ -6,44 +6,53 @@ on:
       - main
 
 jobs:
-  test:
+  x86_64-linux:
     runs-on: ubuntu-24.04
     steps:
+      - uses: nixbuild/nix-quick-install-action@v34
+      - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: actions/checkout@v5
-      - run: echo $PWD/bin >> $GITHUB_PATH
-      - run: dev test
+      - run: nix flake check --print-build-logs
 
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - vscode-platform: win32-x64
-            rust-target: x86_64-pc-windows-gnu
-            github-os: ubuntu-24.04
-            ext: ".exe"
-            install-script: sudo apt-get install -y mingw-w64
-          - vscode-platform: linux-x64
-            rust-target: x86_64-unknown-linux-musl
-            github-os: ubuntu-24.04
-            ext: ""
-            install-script: sudo apt-get install -y musl-tools
-    runs-on: ${{ matrix.github-os }}
+      - run: nix build --print-build-logs .#standalone
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-linux-x86
+          path: result/bin/connie
+
+      - run: nix build --print-build-logs .#windows
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-windows-x86
+          path: result/bin/connie.exe
+
+      - run: nix build --print-build-logs .#vsix-linux-x64
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-vsix-linux-x64
+          path: result
+
+      - run: nix build --print-build-logs .#vsix-win32-x64
+      - uses: actions/upload-artifact@v5
+        with:
+          name: connie-vsix-win32-x64
+          path: result
+
+  linux-x86:
+    needs: x86_64-linux
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - run: ${{ matrix.install-script }}
-      - run: rustup target add ${{ matrix.rust-target }}
-      - run: cargo build --release --target ${{ matrix.rust-target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/download-artifact@v6
         with:
-          name: connie-${{ matrix.rust-target }}
-          path: target/${{ matrix.rust-target }}/release/connie${{ matrix.ext }}
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - run: mkdir packages/connie-vscode/bin
-      - run: cp target/${{ matrix.rust-target }}/release/connie${{ matrix.ext }} packages/connie-vscode/bin/connie${{ matrix.ext }}
-      - run: bun run --filter=connie-vscode build -- --target ${{ matrix.vscode-platform }}
-      - uses: actions/upload-artifact@v4
+          name: connie-linux-x86
+      - run: chmod +x connie
+      - run: ./connie --help
+
+  windows-x86:
+    needs: x86_64-linux
+    runs-on: windows-2025
+    steps:
+      - uses: actions/download-artifact@v6
         with:
-          name: connie-vscode-${{ matrix.vscode-platform }}
-          path: packages/connie-vscode/connie-vscode-*.vsix
+          name: connie-windows-x86
+      - run: .\connie.exe --help
