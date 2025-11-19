@@ -64,6 +64,13 @@
               };
             in
             (crane.mkLib pkgs).buildPackage (commonArgs // cliArgs);
+          macos =
+            package:
+            pkgs.runCommand "connie-standalone" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
+              mkdir -p $out/bin
+              cp ${package}/bin/connie $out/bin/connie
+              install_name_tool -change ${pkgs.libiconv}/lib/libiconv.2.dylib /usr/lib/libiconv.2.dylib $out/bin/connie
+            '';
           bunDeps = pkgs.bun2nix.fetchBunDeps {
             bunNix = "${
               pkgs.runCommand "connie-bun-nix" { } ''
@@ -169,9 +176,9 @@
         packages = rec {
           default = mk.packages.default;
           vscode = mk.packages.vscode;
-          musl = mk.musl "x86_64-unknown-linux-musl";
+          standalone = mk.musl "x86_64-unknown-linux-musl";
           windows = mk.windows "x86_64-w64-mingw32";
-          vsix-linux-x64 = mk.vsix "${musl}/bin/connie";
+          vsix-linux-x64 = mk.vsix "${standalone}/bin/connie";
           vsix-win32-x64 = mk.vsix "${windows}/bin/connie.exe";
         };
         checks = mk.checks;
@@ -181,8 +188,8 @@
         packages = rec {
           default = mk.packages.default;
           vscode = mk.packages.vscode;
-          musl = mk.musl "aarch64-unknown-linux-musl";
-          vsix-linux-arm64 = mk.vsix "${musl}/bin/connie";
+          standalone = mk.musl "aarch64-unknown-linux-musl";
+          vsix-linux-arm64 = mk.vsix "${standalone}/bin/connie";
         };
         checks = mk.checks;
         devShells = mk.devShells;
@@ -190,8 +197,9 @@
       (mkOutputs "x86_64-darwin" (mk: {
         packages = rec {
           default = mk.packages.default;
+          standalone = mk.macos default;
           vscode = mk.packages.vscode;
-          vsix-darwin-x64 = mk.vsix "${default}/bin/connie";
+          vsix-darwin-x64 = mk.vsix "${standalone}/bin/connie";
         };
         checks = mk.checks;
         devShells = mk.devShells;
@@ -199,8 +207,9 @@
       (mkOutputs "aarch64-darwin" (mk: {
         packages = rec {
           default = mk.packages.default;
+          standalone = mk.macos default;
           vscode = mk.packages.vscode;
-          vsix-darwin-arm64 = mk.vsix "${default}/bin/connie";
+          vsix-darwin-arm64 = mk.vsix "${standalone}/bin/connie";
         };
         checks = mk.checks;
         devShells = mk.devShells;
