@@ -83,6 +83,12 @@ pub fn prelude() -> (IR, Names, Lib) {
         let tydef = ir.tydefs.push(Tydef { def: Some(ty) });
         names.tydefs.insert((preprelude, name), tydef);
     }
+    {
+        let name = ir.strings.make_id("RawInt64");
+        let ty = ir.ty(Type::Int64);
+        let tydef = ir.tydefs.push(Tydef { def: Some(ty) });
+        names.tydefs.insert((preprelude, name), tydef);
+    }
     Precompile {
         ir,
         names,

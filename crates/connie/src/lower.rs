@@ -81,6 +81,8 @@ pub enum Type {
 
     Int32,
 
+    Int64,
+
     /// All empty tuples are identically the unit type.
     Tuple(TupleRange),
 
@@ -410,6 +412,7 @@ impl fmt::Display for FatType<'_, '_> {
             Type::String => write!(f, "`StringLit`"),
             Type::Bool => write!(f, "`Bool`"),
             Type::Int32 => write!(f, "`RawInt32`"),
+            Type::Int64 => write!(f, "`RawInt64`"),
             Type::Tuple(_) => write!(f, "a tuple"),
             Type::Tydef(tydef) => write!(f, "`type` index {tydef:?}"),
             Type::Structdef(structdef) => write!(f, "`struct` index {structdef:?}"),

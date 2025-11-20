@@ -231,6 +231,7 @@ pub enum Ty {
     String,
     Bool,
     Int32,
+    Int64,
     Tuple(TupleRange),
     Structdef(StructdefId, TupleRange),
 }
@@ -292,7 +293,7 @@ impl<'a> Cache<'a> {
         for &ty in &ir.types {
             let (prev, mut set) = type_tydefs.push();
             match ty {
-                Type::String | Type::Bool | Type::Int32 => {}
+                Type::String | Type::Bool | Type::Int32 | Type::Int64 => {}
                 Type::Tuple(elems) => {
                     for &elem in &ir.tuples[elems] {
                         set |= prev.get(elem);
@@ -371,6 +372,10 @@ impl<'a> Cache<'a> {
         self.make_ty(Ty::Int32)
     }
 
+    pub fn ty_int64(&mut self) -> TyId {
+        self.make_ty(Ty::Int64)
+    }
+
     pub fn ty_tuple(&mut self, elems: &[TyId]) -> TyId {
         let tuple = self.tuples.make(elems);
         self.make_ty(Ty::Tuple(tuple))
@@ -423,6 +428,7 @@ impl<'a> Cache<'a> {
             Type::String => self.ty_string(),
             Type::Bool => self.ty_bool(),
             Type::Int32 => self.ty_int32(),
+            Type::Int64 => self.ty_int64(),
             Type::Tuple(elems) => {
                 let types = self.ir.tuples[elems]
                     .iter()

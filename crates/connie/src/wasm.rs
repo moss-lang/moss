@@ -41,13 +41,24 @@ enum Instruction {
     Unreachable,
 
     I32Load,
+    I64Load,
     I32Load8S,
     I32Load8U,
     I32Load16S,
     I32Load16U,
+    I64Load8S,
+    I64Load8U,
+    I64Load16S,
+    I64Load16U,
+    I64Load32S,
+    I64Load32U,
     I32Store,
+    I64Store,
     I32Store8,
     I32Store16,
+    I64Store8,
+    I64Store16,
+    I64Store32,
     MemorySize,
     MemoryGrow,
     MemoryCopy,
@@ -64,6 +75,17 @@ enum Instruction {
     I32LeU,
     I32GeS,
     I32GeU,
+    I64Eqz,
+    I64Eq,
+    I64Ne,
+    I64LtS,
+    I64LtU,
+    I64GtS,
+    I64GtU,
+    I64LeS,
+    I64LeU,
+    I64GeS,
+    I64GeU,
     I32Clz,
     I32Ctz,
     I32Popcnt,
@@ -82,8 +104,33 @@ enum Instruction {
     I32ShrU,
     I32Rotl,
     I32Rotr,
+    I64Clz,
+    I64Ctz,
+    I64Popcnt,
+    I64Add,
+    I64Sub,
+    I64Mul,
+    I64DivS,
+    I64DivU,
+    I64RemS,
+    I64RemU,
+    I64And,
+    I64Or,
+    I64Xor,
+    I64Shl,
+    I64ShrS,
+    I64ShrU,
+    I64Rotl,
+    I64Rotr,
+    #[strum(serialize = "i64_extend_i32_s")]
+    I64ExtendI32S,
+    #[strum(serialize = "i64_extend_i32_u")]
+    I64ExtendI32U,
     I32Extend8S,
     I32Extend16S,
+    I64Extend8S,
+    I64Extend16S,
+    I64Extend32S,
 }
 
 const WASIP1: &str = "wasi_snapshot_preview1";
@@ -176,6 +223,9 @@ impl<'a> Wasm<'a> {
             }
             Ty::Int32 => {
                 f(ValType::I32);
+            }
+            Ty::Int64 => {
+                f(ValType::I64);
             }
             Ty::Tuple(elems) => {
                 for &elem in &self.cache[elems] {
@@ -491,6 +541,10 @@ impl<'a> Wasm<'a> {
                                         let memarg = self.memarg();
                                         self.body.insn().i32_load(memarg);
                                     }
+                                    Instruction::I64Load => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_load(memarg);
+                                    }
                                     Instruction::I32Load8S => {
                                         let memarg = self.memarg();
                                         self.body.insn().i32_load8_s(memarg);
@@ -507,9 +561,37 @@ impl<'a> Wasm<'a> {
                                         let memarg = self.memarg();
                                         self.body.insn().i32_load16_u(memarg);
                                     }
+                                    Instruction::I64Load8S => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_load8_s(memarg);
+                                    }
+                                    Instruction::I64Load8U => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_load8_u(memarg);
+                                    }
+                                    Instruction::I64Load16S => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_load16_s(memarg);
+                                    }
+                                    Instruction::I64Load16U => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_load16_u(memarg);
+                                    }
+                                    Instruction::I64Load32S => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_load32_s(memarg);
+                                    }
+                                    Instruction::I64Load32U => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_load32_u(memarg);
+                                    }
                                     Instruction::I32Store => {
                                         let memarg = self.memarg();
                                         self.body.insn().i32_store(memarg);
+                                    }
+                                    Instruction::I64Store => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_store(memarg);
                                     }
                                     Instruction::I32Store8 => {
                                         let memarg = self.memarg();
@@ -518,6 +600,18 @@ impl<'a> Wasm<'a> {
                                     Instruction::I32Store16 => {
                                         let memarg = self.memarg();
                                         self.body.insn().i32_store16(memarg);
+                                    }
+                                    Instruction::I64Store8 => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_store8(memarg);
+                                    }
+                                    Instruction::I64Store16 => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_store16(memarg);
+                                    }
+                                    Instruction::I64Store32 => {
+                                        let memarg = self.memarg();
+                                        self.body.insn().i64_store32(memarg);
                                     }
                                     Instruction::MemorySize => {
                                         let memidx = self.val_unit_as_u32(self.val_memidx);
@@ -569,6 +663,39 @@ impl<'a> Wasm<'a> {
                                     }
                                     Instruction::I32GeU => {
                                         self.body.insn().i32_ge_u();
+                                    }
+                                    Instruction::I64Eqz => {
+                                        self.body.insn().i64_eqz();
+                                    }
+                                    Instruction::I64Eq => {
+                                        self.body.insn().i64_eq();
+                                    }
+                                    Instruction::I64Ne => {
+                                        self.body.insn().i64_ne();
+                                    }
+                                    Instruction::I64LtS => {
+                                        self.body.insn().i64_lt_s();
+                                    }
+                                    Instruction::I64LtU => {
+                                        self.body.insn().i64_lt_u();
+                                    }
+                                    Instruction::I64GtS => {
+                                        self.body.insn().i64_gt_s();
+                                    }
+                                    Instruction::I64GtU => {
+                                        self.body.insn().i64_gt_u();
+                                    }
+                                    Instruction::I64LeS => {
+                                        self.body.insn().i64_le_s();
+                                    }
+                                    Instruction::I64LeU => {
+                                        self.body.insn().i64_le_u();
+                                    }
+                                    Instruction::I64GeS => {
+                                        self.body.insn().i64_ge_s();
+                                    }
+                                    Instruction::I64GeU => {
+                                        self.body.insn().i64_ge_u();
                                     }
                                     Instruction::I32Clz => {
                                         self.body.insn().i32_clz();
@@ -624,11 +751,80 @@ impl<'a> Wasm<'a> {
                                     Instruction::I32Rotr => {
                                         self.body.insn().i32_rotr();
                                     }
+                                    Instruction::I64Clz => {
+                                        self.body.insn().i64_clz();
+                                    }
+                                    Instruction::I64Ctz => {
+                                        self.body.insn().i64_ctz();
+                                    }
+                                    Instruction::I64Popcnt => {
+                                        self.body.insn().i64_popcnt();
+                                    }
+                                    Instruction::I64Add => {
+                                        self.body.insn().i64_add();
+                                    }
+                                    Instruction::I64Sub => {
+                                        self.body.insn().i64_sub();
+                                    }
+                                    Instruction::I64Mul => {
+                                        self.body.insn().i64_mul();
+                                    }
+                                    Instruction::I64DivS => {
+                                        self.body.insn().i64_div_s();
+                                    }
+                                    Instruction::I64DivU => {
+                                        self.body.insn().i64_div_u();
+                                    }
+                                    Instruction::I64RemS => {
+                                        self.body.insn().i64_rem_s();
+                                    }
+                                    Instruction::I64RemU => {
+                                        self.body.insn().i64_rem_u();
+                                    }
+                                    Instruction::I64And => {
+                                        self.body.insn().i64_and();
+                                    }
+                                    Instruction::I64Or => {
+                                        self.body.insn().i64_or();
+                                    }
+                                    Instruction::I64Xor => {
+                                        self.body.insn().i64_xor();
+                                    }
+                                    Instruction::I64Shl => {
+                                        self.body.insn().i64_shl();
+                                    }
+                                    Instruction::I64ShrS => {
+                                        self.body.insn().i64_shr_s();
+                                    }
+                                    Instruction::I64ShrU => {
+                                        self.body.insn().i64_shr_u();
+                                    }
+                                    Instruction::I64Rotl => {
+                                        self.body.insn().i64_rotl();
+                                    }
+                                    Instruction::I64Rotr => {
+                                        self.body.insn().i64_rotr();
+                                    }
+                                    Instruction::I64ExtendI32S => {
+                                        self.body.insn().i64_extend_i32_s();
+                                    }
+                                    Instruction::I64ExtendI32U => {
+                                        self.body.insn().i64_extend_i32_u();
+                                    }
                                     Instruction::I32Extend8S => {
                                         self.body.insn().i32_extend8_s();
                                     }
                                     Instruction::I32Extend16S => {
                                         self.body.insn().i32_extend16_s();
+                                    }
+                                    Instruction::I64Extend8S => {
+                                        self.body.insn().i64_extend8_s();
+                                    }
+                                    Instruction::I64Extend16S => {
+                                        self.body.insn().i64_extend16_s();
+                                    }
+                                    Instruction::I64Extend32S => {
+                                        self.body.insn().i64_extend32_s();
                                     }
                                 };
                             }
