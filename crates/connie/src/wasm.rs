@@ -1,6 +1,7 @@
 use std::{collections::HashMap, mem::take};
 
 use index_vec::{IndexVec, define_index_type};
+use indexmap::IndexSet;
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
@@ -134,8 +135,6 @@ enum Instruction {
 }
 
 const WASIP1: &str = "wasi_snapshot_preview1";
-
-const WASIP1_IMPORTS: &[&str] = &["args_get", "args_sizes_get", "fd_write", "proc_exit"];
 
 enum Builtin {
     Instruction(Instruction),
@@ -942,12 +941,31 @@ impl<'a> Wasm<'a> {
             context.set_fn(fndef, f);
         }
 
-        for string in WASIP1_IMPORTS {
+        // We use the ordering from the `context` definition instead of, for instance, just using
+        // the iteration order of `self.names`, since that would be nondeterministic.
+        let wasip1_fndefs: IndexSet<FndefId> = self.ir.ctxdefs
+            [self.names.ctxdefs[&(self.lib.wasip1, self.ir.strings.get_id("wasip1").unwrap())]]
+            .def
+            .fns
+            .get(&self.ir.need_fns)
+            .iter()
+            .map(|need| need.id)
+            .collect();
+        // It isn't ideal to iterate through every name binding from every module just to filter out
+        // all the ones except from the one module we care about, but it's fine for now.
+        let wasip1_names: HashMap<FndefId, StrId> = self
+            .names
+            .fndefs
+            .iter()
+            .filter(|&(&(module, _), &fndef)| {
+                module == self.lib.wasip1 && wasip1_fndefs.contains(&fndef)
+            })
+            .map(|(&(_, name), &fndef)| (fndef, name))
+            .collect();
+        for &fndef in &wasip1_fndefs {
             let builtin = self.builtins.push(Builtin::Function(self.funcidx()));
             let f = self.cache.fn_builtin(builtin);
             assert_eq!(self.funcs.push(None), f);
-            let name = self.ir.strings.get_id(string).unwrap();
-            let fndef = self.names.fndefs[&(self.lib.wasip1, name)];
             context.set_fn(fndef, f);
             let Fndef {
                 needs: _,
@@ -961,6 +979,7 @@ impl<'a> Wasm<'a> {
                     .iter()
                     .map(|&ty| match self.cache[ty] {
                         Ty::Int32 => ValType::I32,
+                        Ty::Int64 => ValType::I64,
                         _ => panic!(),
                     });
             let results: &[ValType] = match self.cache[result] {
@@ -973,7 +992,7 @@ impl<'a> Wasm<'a> {
             };
             self.section_import.import(
                 WASIP1,
-                string,
+                &self.ir.strings[wasip1_names[&fndef]],
                 EntityType::Function(self.section_type.len()),
             );
             self.section_type
@@ -1066,9 +1085,9 @@ impl<'a> Wasm<'a> {
                 .call(self.funcs[main].unwrap())
                 .i32_const(0)
                 .call(
-                    WASIP1_IMPORTS
+                    wasip1_fndefs
                         .iter()
-                        .position(|&name| name == "proc_exit")
+                        .position(|fndef| &self.ir.strings[wasip1_names[fndef]] == "proc_exit")
                         .unwrap() as u32,
                 )
                 .end();

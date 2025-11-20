@@ -1,13 +1,164 @@
-import "./wasm.con" as wasm use I32, MemIdx;
+import "./wasm.con" as wasm use I32, I64;
 
 fn args_get(argv: I32, argv_buf: I32): I32;
 fn args_sizes_get(retptr0: I32, retptr1: I32): I32;
+fn environ_get(environ: I32, environ_buf: I32): I32;
+fn environ_sizes_get(retptr0: I32, retptr1: I32): I32;
+fn clock_res_get(id: I32, retptr0: I32): I32;
+fn clock_time_get(id: I32, precision: I64, retptr0: I32): I32;
+fn fd_advise(fd: I32, offset: I64, len: I64, advice: I32): I32;
+fn fd_allocate(fd: I32, offset: I64, len: I64): I32;
+fn fd_close(fd: I32): I32;
+fn fd_datasync(fd: I32): I32;
+fn fd_fdstat_get(fd: I32, retptr0: I32): I32;
+fn fd_fdstat_set_flags(fd: I32, flags: I32): I32;
+fn fd_fdstat_set_rights(
+  fd: I32,
+  fs_rights_base: I64,
+  fs_rights_inheriting: I64,
+): I32;
+fn fd_filestat_get(fd: I32, retptr0: I32): I32;
+fn fd_filestat_set_size(fd: I32, size: I64): I32;
+fn fd_filestat_set_times(fd: I32, atim: I64, mtim: I64, fst_flags: I32): I32;
+fn fd_pread(fd: I32, iovs: I32, iovs_len: I32, offset: I64, retptr0: I32): I32;
+fn fd_prestat_get(fd: I32, retptr0: I32): I32;
+fn fd_prestat_dir_name(fd: I32, path: I32, path_len: I32): I32;
+fn fd_pwrite(fd: I32, iovs: I32, iovs_len: I32, offset: I64, retptr0: I32): I32;
+fn fd_read(fd: I32, iovs: I32, iovs_len: I32, retptr0: I32): I32;
+fn fd_readdir(fd: I32, buf: I32, buf_len: I32, cookie: I64, retptr0: I32): I32;
+fn fd_renumber(fd: I32, to: I32): I32;
+fn fd_seek(fd: I32, offset: I64, whence: I32, retptr0: I32): I32;
+fn fd_sync(fd: I32): I32;
+fn fd_tell(fd: I32, retptr0: I32): I32;
 fn fd_write(fd: I32, iovs: I32, iovs_len: I32, retptr0: I32): I32;
+fn path_create_directory(fd: I32, path: I32, path_len: I32): I32;
+fn path_filestat_get(
+  fd: I32,
+  flags: I32,
+  path: I32,
+  path_len: I32,
+  retptr0: I32,
+): I32;
+fn path_filestat_set_times(
+  fd: I32,
+  flags: I32,
+  path: I32,
+  path_len: I32,
+  atim: I64,
+  mtim: I64,
+  fst_flags: I32,
+): I32;
+fn path_link(
+  old_fd: I32,
+  old_flags: I32,
+  old_path: I32,
+  old_path_len: I32,
+  new_fd: I32,
+  new_path: I32,
+  new_path_len: I32,
+): I32;
+fn path_open(
+  fd: I32,
+  dirflags: I32,
+  path: I32,
+  path_len: I32,
+  oflags: I32,
+  fs_rights_base: I64,
+  fs_rights_inheriting: I64,
+  fdflags: I32,
+  retptr0: I32,
+): I32;
+fn path_readlink(
+  fd: I32,
+  path: I32,
+  path_len: I32,
+  buf: I32,
+  buf_len: I32,
+  retptr0: I32,
+): I32;
+fn path_remove_directory(fd: I32, path: I32, path_len: I32): I32;
+fn path_rename(
+  fd: I32,
+  old_path: I32,
+  old_path_len: I32,
+  new_fd: I32,
+  new_path: I32,
+  new_path_len: I32,
+): I32;
+fn path_symlink(
+  old_path: I32,
+  old_path_len: I32,
+  fd: I32,
+  new_path: I32,
+  new_path_len: I32,
+): I32;
+fn path_unlink_file(fd: I32, path: I32, path_len: I32): I32;
+fn poll_oneoff(in: I32, out: I32, nsubscriptions: I32, retptr0: I32): I32;
 fn proc_exit(rval: I32);
+fn sched_yield(): I32;
+fn random_get(buf: I32, buf_len: I32): I32;
+fn sock_accept(fd: I32, flags: I32, retptr0: I32): I32;
+fn sock_recv(
+  fd: I32,
+  ri_data: I32,
+  ri_data_len: I32,
+  ri_flags: I32,
+  retptr0: I32,
+  retptr1: I32,
+): I32;
+fn sock_send(
+  fd: I32,
+  si_data: I32,
+  si_data_len: I32,
+  si_flags: I32,
+  retptr0: I32,
+): I32;
+fn sock_shutdown(fd: I32, how: I32): I32;
 
 context wasip1 =
   args_get,
   args_sizes_get,
+  environ_get,
+  environ_sizes_get,
+  clock_res_get,
+  clock_time_get,
+  fd_advise,
+  fd_allocate,
+  fd_close,
+  fd_datasync,
+  fd_fdstat_get,
+  fd_fdstat_set_flags,
+  fd_fdstat_set_rights,
+  fd_filestat_get,
+  fd_filestat_set_size,
+  fd_filestat_set_times,
+  fd_pread,
+  fd_prestat_get,
+  fd_prestat_dir_name,
+  fd_pwrite,
+  fd_read,
+  fd_readdir,
+  fd_renumber,
+  fd_seek,
+  fd_sync,
+  fd_tell,
   fd_write,
+  path_create_directory,
+  path_filestat_get,
+  path_filestat_set_times,
+  path_link,
+  path_open,
+  path_readlink,
+  path_remove_directory,
+  path_rename,
+  path_symlink,
+  path_unlink_file,
+  poll_oneoff,
   proc_exit,
+  sched_yield,
+  random_get,
+  sock_accept,
+  sock_recv,
+  sock_send,
+  sock_shutdown,
 ;
