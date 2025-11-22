@@ -8,16 +8,16 @@ use std::{
 
 use anyhow::{anyhow, bail};
 use clap::{Parser, Subcommand};
-use connie::{
+use index_vec::Idx;
+use line_index::{LineIndex, TextSize};
+use moss_cli::util::err_fail;
+use moss_core::{
     lex::{ByteIndex, LexError, lex},
     lower::lower,
     parse::{ParseError, parse},
     prelude::prelude,
     wasm::wasm,
 };
-use connie_cli::util::err_fail;
-use index_vec::Idx;
-use line_index::{LineIndex, TextSize};
 use wasmtime::{Engine, Linker, Module, Store};
 use wasmtime_wasi::{WasiCtxBuilder, p1::WasiP1Ctx};
 
@@ -124,7 +124,7 @@ fn run_exit(script: &str, args: &[String]) -> ExitCode {
 }
 
 #[derive(Parser)]
-#[command(name = "connie", version)]
+#[command(name = "moss", version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -160,6 +160,6 @@ fn main() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => err_fail(err),
         },
-        Commands::Lsp => connie_cli::lsp::language_server(),
+        Commands::Lsp => moss_cli::lsp::language_server(),
     }
 }

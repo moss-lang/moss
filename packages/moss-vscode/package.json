@@ -1,14 +1,14 @@
 {
-  "name": "connie-vscode",
-  "displayName": "Connie",
+  "name": "moss-vscode",
+  "displayName": "Moss",
   "version": "0.0.0",
-  "publisher": "samestep",
-  "description": "Language services for Connie.",
+  "publisher": "moss-lang",
+  "description": "Language services for Moss.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/connie-lang/connie",
-    "directory": "packages/connie-vscode"
+    "url": "https://github.com/moss-lang/moss",
+    "directory": "packages/moss-vscode"
   },
   "private": true,
   "engines": {
@@ -16,34 +16,34 @@
   },
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onLanguage:connie"
+    "onLanguage:moss"
   ],
   "contributes": {
     "languages": [
       {
-        "id": "connie",
+        "id": "moss",
         "aliases": [
-          "Connie",
-          "connie"
+          "Moss",
+          "moss"
         ],
         "extensions": [
-          ".con"
+          ".moss"
         ]
       }
     ],
     "configuration": {
       "type": "object",
-      "title": "Connie configuration",
+      "title": "Moss configuration",
       "properties": {
-        "connie.exe": {
+        "moss.exe": {
           "type": [
             "null",
             "string"
           ],
           "default": null,
-          "description": "Path to Connie executable."
+          "description": "Path to Moss executable."
         },
-        "connie.trace.server": {
+        "moss.trace.server": {
           "scope": "window",
           "type": "string",
           "enum": [

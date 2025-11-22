@@ -1,4 +1,4 @@
-import "./wasm.con" as wasm use I32, I64;
+import "./wasm.moss" as wasm use I32, I64;
 
 fn args_get(argv: I32, argv_buf: I32): I32;
 fn args_sizes_get(retptr0: I32, retptr1: I32): I32;

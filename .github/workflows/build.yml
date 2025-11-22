@@ -16,26 +16,26 @@ jobs:
       - run: nix build --print-build-logs .#standalone
       - uses: actions/upload-artifact@v5
         with:
-          name: connie-linux-x86
-          path: result/bin/connie
+          name: moss-linux-x86
+          path: result/bin/moss
 
       - run: nix build --print-build-logs .#windows
       - uses: actions/upload-artifact@v5
         with:
-          name: connie-windows-x86
-          path: result/bin/connie.exe
+          name: moss-windows-x86
+          path: result/bin/moss.exe
 
-      - run: nix build --print-build-logs .#vsix-linux-x64 -o connie-linux-x64.vsix
+      - run: nix build --print-build-logs .#vsix-linux-x64 -o moss-linux-x64.vsix
       - uses: actions/upload-artifact@v5
         with:
-          name: connie-vsix-linux-x64
-          path: connie-linux-x64.vsix
+          name: moss-vsix-linux-x64
+          path: moss-linux-x64.vsix
 
-      - run: nix build --print-build-logs .#vsix-win32-x64 -o connie-win32-x64.vsix
+      - run: nix build --print-build-logs .#vsix-win32-x64 -o moss-win32-x64.vsix
       - uses: actions/upload-artifact@v5
         with:
-          name: connie-vsix-win32-x64
-          path: connie-win32-x64.vsix
+          name: moss-vsix-win32-x64
+          path: moss-win32-x64.vsix
 
   linux-x86:
     needs: x86_64-linux
@@ -43,9 +43,9 @@ jobs:
     steps:
       - uses: actions/download-artifact@v6
         with:
-          name: connie-linux-x86
-      - run: chmod +x connie
-      - run: ./connie --help
+          name: moss-linux-x86
+      - run: chmod +x moss
+      - run: ./moss --help
 
   windows-x86:
     needs: x86_64-linux
@@ -53,5 +53,5 @@ jobs:
     steps:
       - uses: actions/download-artifact@v6
         with:
-          name: connie-windows-x86
-      - run: .\connie.exe --help
+          name: moss-windows-x86
+      - run: .\moss.exe --help

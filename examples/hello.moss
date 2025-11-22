@@ -1,4 +1,4 @@
-#!/usr/bin/env connie
+#!/usr/bin/env moss
 
 fn main[scratch]() {
   println("Hello, world!");

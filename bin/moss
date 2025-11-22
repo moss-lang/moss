@@ -22,7 +22,7 @@ def build():
     cmd = [
         "cargo",
         "build",
-        "--package=connie-cli",
+        "--package=moss-cli",
         f"--profile={profile}",
         "--color=always",
     ]
@@ -45,7 +45,7 @@ def build():
 
 
 def run():
-    cmd = [Path(__file__).parent.parent / f"target/{profile}/connie", *sys.argv[1:]]
+    cmd = [Path(__file__).parent.parent / f"target/{profile}/moss", *sys.argv[1:]]
     check(subprocess.run(cmd).returncode)
 
 
