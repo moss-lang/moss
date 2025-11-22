@@ -341,50 +341,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
-name = "connie"
-version = "0.0.0"
-dependencies = [
- "enumset",
- "im-rc",
- "index_vec",
- "indexmap",
- "itertools",
- "line-index",
- "logos",
- "strum",
- "wasm-encoder 0.240.0",
-]
-
-[[package]]
-name = "connie-cli"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "connie",
- "crossbeam-channel",
- "index_vec",
- "line-index",
- "lsp-server",
- "lsp-types",
- "serde_json",
- "wasmtime",
- "wasmtime-wasi",
-]
-
-[[package]]
-name = "connie-dev"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "connie",
- "indexmap",
- "itertools",
- "line-index",
-]
-
-[[package]]
 name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1412,6 +1368,50 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "moss-cli"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crossbeam-channel",
+ "index_vec",
+ "line-index",
+ "lsp-server",
+ "lsp-types",
+ "moss-core",
+ "serde_json",
+ "wasmtime",
+ "wasmtime-wasi",
+]
+
+[[package]]
+name = "moss-core"
+version = "0.0.0"
+dependencies = [
+ "enumset",
+ "im-rc",
+ "index_vec",
+ "indexmap",
+ "itertools",
+ "line-index",
+ "logos",
+ "strum",
+ "wasm-encoder 0.240.0",
+]
+
+[[package]]
+name = "moss-dev"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "indexmap",
+ "itertools",
+ "line-index",
+ "moss-core",
 ]
 
 [[package]]

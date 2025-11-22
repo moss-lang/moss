@@ -1,5 +1,5 @@
-import "./wasip1.con" as wasi;
-import "./wasm.con" as wasm use I32, offset, unreachable;
+import "./wasip1.moss" as wasi;
+import "./wasm.moss" as wasm use I32, offset, unreachable;
 
 context mem = wasm::wasm, static wasm::memidx;
 

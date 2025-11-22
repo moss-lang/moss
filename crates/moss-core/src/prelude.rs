@@ -47,10 +47,10 @@ impl Precompile {
     }
 
     fn prelude(mut self) -> (IR, Names, Lib) {
-        let wasm = self.lib(&[], include_str!("../../../lib/wasm.con"));
-        let wasip1 = self.lib(&[wasm], include_str!("../../../lib/wasip1.con"));
-        let wasi = self.lib(&[wasip1, wasm], include_str!("../../../lib/wasi.con"));
-        let prelude = self.lib(&[wasi], include_str!("../../../lib/prelude.con"));
+        let wasm = self.lib(&[], include_str!("../../../lib/wasm.moss"));
+        let wasip1 = self.lib(&[wasm], include_str!("../../../lib/wasip1.moss"));
+        let wasi = self.lib(&[wasip1, wasm], include_str!("../../../lib/wasi.moss"));
+        let prelude = self.lib(&[wasi], include_str!("../../../lib/prelude.moss"));
         let lib = Lib {
             wasm,
             wasip1,

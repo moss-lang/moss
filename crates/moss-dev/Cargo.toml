@@ -1,5 +1,5 @@
 [package]
-name = "connie-dev"
+name = "moss-dev"
 version.workspace = true
 edition.workspace = true
 publish = false
@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-connie = { workspace = true }
+moss-core = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 line-index = { workspace = true }

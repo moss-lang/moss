@@ -1,18 +1,18 @@
 [package]
-name = "connie-cli"
+name = "moss-cli"
 version.workspace = true
 edition.workspace = true
-default-run = "connie"
+default-run = "moss"
 
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-connie = { workspace = true }
 crossbeam-channel = { workspace = true }
 index_vec = { workspace = true }
 line-index = { workspace = true }
 lsp-server = { workspace = true }
 lsp-types = { workspace = true }
+moss-core = { workspace = true }
 serde_json = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }

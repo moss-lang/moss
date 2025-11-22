@@ -1,4 +1,4 @@
-import "./wasi.con" use
+import "./wasi.moss" use
   Args.get,
   Args.len,
   String,

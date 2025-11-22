@@ -48,7 +48,7 @@
               );
             };
           commonArgs = {
-            pname = "connie";
+            pname = "moss";
             src = filterSource [
               "/Cargo.toml"
               "/Cargo.lock"
@@ -59,14 +59,14 @@
           };
           # `cargoExtraArgs` default is "--locked": https://crane.dev/API.html
           cliArgs = {
-            cargoExtraArgs = "--locked --package=connie-cli";
+            cargoExtraArgs = "--locked --package=moss-cli";
           };
           devArgs = {
-            cargoExtraArgs = "--locked --package=connie-dev";
+            cargoExtraArgs = "--locked --package=moss-dev";
           };
           craneLib = crane.mkLib pkgs;
           cacheArgs = {
-            # Reuse built deps across `connie-cli`/`connie-dev`/`cargo test`.
+            # Reuse built deps across `moss-cli`/`moss-dev`/`cargo test`.
             cargoArtifacts = craneLib.buildDepsOnly commonArgs;
           };
           musl =
@@ -86,22 +86,22 @@
             (crane.mkLib pkgs).buildPackage (commonArgs // cliArgs);
           macos =
             package:
-            pkgs.runCommand "connie" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
+            pkgs.runCommand "moss" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
               mkdir -p $out/bin
-              cp ${package}/bin/connie $out/bin/connie
-              install_name_tool -change ${pkgs.libiconv}/lib/libiconv.2.dylib /usr/lib/libiconv.2.dylib $out/bin/connie
+              cp ${package}/bin/moss $out/bin/moss
+              install_name_tool -change ${pkgs.libiconv}/lib/libiconv.2.dylib /usr/lib/libiconv.2.dylib $out/bin/moss
             '';
           standalone =
             package:
-            pkgs.runCommand "connie-standalone" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
-              if otool -L ${package}/bin/connie | sed 1d | grep /nix/store/; then
+            pkgs.runCommand "moss-standalone" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
+              if otool -L ${package}/bin/moss | sed 1d | grep /nix/store/; then
                 false
               fi
               touch $out
             '';
           bunDeps = pkgs.bun2nix.fetchBunDeps {
             bunNix = "${
-              pkgs.runCommand "connie-bun-nix" { } ''
+              pkgs.runCommand "moss-bun-nix" { } ''
                 mkdir $out
                 ln -s ${./packages} $out/packages
                 ${pkgs.bun2nix}/bin/bun2nix -l ${./bun.lock} -o $out/bun.nix
@@ -109,7 +109,7 @@
             }/bun.nix";
           };
           vsixRaw = pkgs.bun2nix.mkDerivation rec {
-            pname = "connie-vsix";
+            pname = "moss-vsix";
             inherit version bunDeps;
             src = filterSource [ "/package.json" "/bun.lock" "/packages" ] ./.;
             packageJson = ./package.json;
@@ -117,12 +117,12 @@
             nativeBuildInputs = [ pkgs.nodejs ];
             buildPhase = ''
               runHook preBuild
-              bun run --filter=connie-vscode build
+              bun run --filter=moss-vscode build
               runHook postBuild
             '';
             installPhase = ''
               runHook preInstall
-              mv packages/connie-vscode/connie-vscode-${version}.vsix $out
+              mv packages/moss-vscode/moss-vscode-${version}.vsix $out
               runHook postInstall
             '';
           };
@@ -130,15 +130,15 @@
             exe:
             vsixRaw.overrideAttrs (_: {
               preBuild = ''
-                mkdir packages/connie-vscode/bin
-                cp ${exe} packages/connie-vscode/bin/
+                mkdir packages/moss-vscode/bin
+                cp ${exe} packages/moss-vscode/bin/
               '';
             });
           packages = {
             default = craneLib.buildPackage (commonArgs // cacheArgs // cliArgs);
             vscode = pkgs.vscode-utils.buildVscodeExtension rec {
-              vscodeExtPublisher = "samestep";
-              vscodeExtName = "connie-vscode";
+              vscodeExtPublisher = "moss-lang";
+              vscodeExtName = "moss-vscode";
               vscodeExtUniqueId = "${vscodeExtPublisher}.${vscodeExtName}";
               pname = vscodeExtUniqueId;
               inherit version;
@@ -157,9 +157,9 @@
               let
                 dev = craneLib.buildPackage (commonArgs // cacheArgs // devArgs);
               in
-              pkgs.runCommand "connie-dev-test" { } ''
+              pkgs.runCommand "moss-dev-test" { } ''
                 cd ${./.}
-                ${dev}/bin/dev test --skip-cargo-test --prebuilt ${packages.default}/bin/connie
+                ${dev}/bin/dev test --skip-cargo-test --prebuilt ${packages.default}/bin/moss
                 touch $out
               '';
             inherit (packages) vscode;
@@ -195,8 +195,8 @@
         packages = mk.packages // rec {
           standalone = mk.musl "x86_64-unknown-linux-musl";
           windows = mk.windows "x86_64-w64-mingw32";
-          vsix-linux-x64 = mk.vsix "${standalone}/bin/connie";
-          vsix-win32-x64 = mk.vsix "${windows}/bin/connie.exe";
+          vsix-linux-x64 = mk.vsix "${standalone}/bin/moss";
+          vsix-win32-x64 = mk.vsix "${windows}/bin/moss.exe";
         };
         checks = mk.checks;
         devShells = mk.devShells;
@@ -204,7 +204,7 @@
       (mkOutputs "aarch64-linux" (mk: {
         packages = mk.packages // rec {
           standalone = mk.musl "aarch64-unknown-linux-musl";
-          vsix-linux-arm64 = mk.vsix "${standalone}/bin/connie";
+          vsix-linux-arm64 = mk.vsix "${standalone}/bin/moss";
         };
         checks = mk.checks;
         devShells = mk.devShells;
@@ -212,7 +212,7 @@
       (mkOutputs "x86_64-darwin" (mk: rec {
         packages = mk.packages // {
           standalone = mk.macos packages.default;
-          vsix-darwin-x64 = mk.vsix "${packages.standalone}/bin/connie";
+          vsix-darwin-x64 = mk.vsix "${packages.standalone}/bin/moss";
         };
         checks = mk.checks // {
           standalone = mk.standalone packages.standalone;
@@ -222,7 +222,7 @@
       (mkOutputs "aarch64-darwin" (mk: rec {
         packages = mk.packages // {
           standalone = mk.macos packages.default;
-          vsix-darwin-arm64 = mk.vsix "${packages.standalone}/bin/connie";
+          vsix-darwin-arm64 = mk.vsix "${packages.standalone}/bin/moss";
         };
         checks = mk.checks // {
           standalone = mk.standalone packages.standalone;

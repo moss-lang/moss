@@ -19,7 +19,7 @@ def build():
     cmd = [
         "cargo",
         "build",
-        "--package=connie-dev",
+        "--package=moss-dev",
         "--color=always",
     ]
     process = subprocess.Popen(cmd, stderr=subprocess.PIPE)

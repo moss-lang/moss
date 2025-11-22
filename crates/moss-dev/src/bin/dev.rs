@@ -10,14 +10,14 @@ use std::{
 
 use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
-use connie::{
+use indexmap::IndexMap;
+use line_index::{LineIndex, TextSize};
+use moss_core::{
     lex::{lex, relex},
     lower::lower,
     parse::{ParseError, parse},
     prelude::prelude,
 };
-use indexmap::IndexMap;
-use line_index::{LineIndex, TextSize};
 
 const PROFILE: &str = "release-with-debug";
 
@@ -215,7 +215,7 @@ impl Tests {
     }
 }
 
-/// Tools for developing the Connie compiler
+/// Tools for developing the Moss compiler
 #[derive(Parser)]
 #[command(name = "dev")]
 struct Cli {
@@ -238,7 +238,7 @@ enum Commands {
         #[arg(long)]
         skip_cargo_test: bool,
 
-        /// Use an existing `connie` binary instead of rebuilding
+        /// Use an existing `moss` binary instead of rebuilding
         #[arg(long)]
         prebuilt: Option<PathBuf>,
     },
@@ -264,13 +264,13 @@ fn main() -> anyhow::Result<()> {
                     Some(path) => path,
                     None => {
                         if !Command::new("cargo")
-                            .args(["build", "--package=connie-cli", "--profile", PROFILE])
+                            .args(["build", "--package=moss-cli", "--profile", PROFILE])
                             .status()?
                             .success()
                         {
                             bail!("`cargo build` failed");
                         }
-                        PathBuf::from(format!("target/{PROFILE}/connie"))
+                        PathBuf::from(format!("target/{PROFILE}/moss"))
                     }
                 },
                 fix,
