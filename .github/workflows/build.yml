@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: cachix/install-nix-action@v31
-      - uses: actions/checkout@v5
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v6
       - run: nix flake check --print-build-logs
 
       - run: nix build --print-build-logs .#standalone
@@ -37,6 +38,66 @@ jobs:
           name: moss-vsix-win32-x64
           path: moss-win32-x64.vsix
 
+  aarch64-linux:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v6
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs .#standalone
+      - uses: actions/upload-artifact@v5
+        with:
+          name: moss-linux-arm
+          path: result/bin/moss
+
+      - run: nix build --print-build-logs .#vsix-linux-arm64 -o moss-linux-arm64.vsix
+      - uses: actions/upload-artifact@v5
+        with:
+          name: moss-vsix-linux-arm64
+          path: moss-linux-arm64.vsix
+
+  x86_64-darwin:
+    runs-on: macos-15-intel
+    steps:
+      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v6
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs .#standalone
+      - uses: actions/upload-artifact@v5
+        with:
+          name: moss-macos-x86
+          path: result/bin/moss
+
+      - run: nix build --print-build-logs .#vsix-darwin-x64 -o moss-darwin-x64.vsix
+      - uses: actions/upload-artifact@v5
+        with:
+          name: moss-vsix-darwin-x64
+          path: moss-darwin-x64.vsix
+
+  aarch64-darwin:
+    runs-on: macos-15
+    steps:
+      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v6
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs .#standalone
+      - uses: actions/upload-artifact@v5
+        with:
+          name: moss-macos-arm
+          path: result/bin/moss
+
+      - run: nix build --print-build-logs .#vsix-darwin-arm64 -o moss-darwin-arm64.vsix
+      - uses: actions/upload-artifact@v5
+        with:
+          name: moss-vsix-darwin-arm64
+          path: moss-darwin-arm64.vsix
+
   linux-x86:
     needs: x86_64-linux
     runs-on: ubuntu-24.04
@@ -55,3 +116,33 @@ jobs:
         with:
           name: moss-windows-x86
       - run: .\moss.exe --help
+
+  linux-arm:
+    needs: aarch64-linux
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: moss-linux-arm
+      - run: chmod +x moss
+      - run: ./moss --help
+
+  macos-x86:
+    needs: x86_64-darwin
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: moss-macos-x86
+      - run: chmod +x moss
+      - run: ./moss --help
+
+  macos-arm:
+    needs: aarch64-darwin
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: moss-macos-arm
+      - run: chmod +x moss
+      - run: ./moss --help
