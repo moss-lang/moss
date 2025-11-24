@@ -174,7 +174,6 @@
 
               # Convenient tools.
               pkgs.binaryen
-              pkgs.nixfmt
               pkgs.wasm-tools
               pkgs.wasmtime
             ];
