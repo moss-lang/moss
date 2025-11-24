@@ -58,26 +58,6 @@ jobs:
           name: moss-vsix-linux-arm64
           path: moss-linux-arm64.vsix
 
-  x86_64-darwin:
-    runs-on: macos-15-intel
-    steps:
-      - uses: cachix/install-nix-action@v31
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-      - uses: actions/checkout@v6
-      - run: nix flake check --print-build-logs
-
-      - run: nix build --print-build-logs .#standalone
-      - uses: actions/upload-artifact@v5
-        with:
-          name: moss-macos-x86
-          path: result/bin/moss
-
-      - run: nix build --print-build-logs .#vsix-darwin-x64 -o moss-darwin-x64.vsix
-      - uses: actions/upload-artifact@v5
-        with:
-          name: moss-vsix-darwin-x64
-          path: moss-darwin-x64.vsix
-
   aarch64-darwin:
     runs-on: macos-15
     steps:
@@ -124,16 +104,6 @@ jobs:
       - uses: actions/download-artifact@v6
         with:
           name: moss-linux-arm
-      - run: chmod +x moss
-      - run: ./moss --help
-
-  macos-x86:
-    needs: x86_64-darwin
-    runs-on: macos-15-intel
-    steps:
-      - uses: actions/download-artifact@v6
-        with:
-          name: moss-macos-x86
       - run: chmod +x moss
       - run: ./moss --help
 

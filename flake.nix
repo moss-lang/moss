@@ -209,16 +209,6 @@
         checks = mk.checks;
         devShells = mk.devShells;
       }))
-      (mkOutputs "x86_64-darwin" (mk: rec {
-        packages = mk.packages // {
-          standalone = mk.macos packages.default;
-          vsix-darwin-x64 = mk.vsix "${packages.standalone}/bin/moss";
-        };
-        checks = mk.checks // {
-          standalone = mk.standalone packages.standalone;
-        };
-        devShells = mk.devShells;
-      }))
       (mkOutputs "aarch64-darwin" (mk: rec {
         packages = mk.packages // {
           standalone = mk.macos packages.default;
