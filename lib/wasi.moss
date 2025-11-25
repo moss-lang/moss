@@ -34,17 +34,17 @@ struct Args {
 }
 
 fn Args.len(): I32 {
-  self.argc
+  this.argc
 }
 
 fn Args.get[mem](index: I32): String {
-  if wasm::i32_ge_s(index, self.argc) { unreachable() }
-  let pointer = i32_load[offset=0](self.argv + 4 * index);
+  if wasm::i32_ge_s(index, this.argc) { unreachable() }
+  let pointer = i32_load[offset=0](this.argv + 4 * index);
   let next = index + 1;
-  let end = if wasm::i32_lt_s(next, self.argc) {
-    i32_load[offset=0](self.argv + 4 * next)
+  let end = if wasm::i32_lt_s(next, this.argc) {
+    i32_load[offset=0](this.argv + 4 * next)
   } else {
-    self.buffer + self.size
+    this.buffer + this.size
   };
   let length = (end - 1) - pointer; # These strings are null-terminated.
   String { pointer, length }

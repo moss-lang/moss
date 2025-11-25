@@ -471,7 +471,7 @@ impl LowerError {
             ),
             LowerError::ThisNotMethod(expr) => (
                 Some(ctx.expr(expr)),
-                "cannot use `self` in a function that is not a method".to_owned(),
+                "cannot use `this` in a function that is not a method".to_owned(),
             ),
             LowerError::MissingField(expr, structdef, field) => {
                 let (name, _) = ctx.ir.fields[ctx.ir.structdefs[structdef].fields][field.index()];
