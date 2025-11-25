@@ -31,6 +31,13 @@
         ]
       }
     ],
+    "grammars": [
+      {
+        "language": "moss",
+        "scopeName": "source.moss",
+        "path": "./syntaxes/moss.tmLanguage.json"
+      }
+    ],
     "configuration": {
       "type": "object",
       "title": "Moss configuration",

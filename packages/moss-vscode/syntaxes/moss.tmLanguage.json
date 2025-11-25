@@ -1,0 +1,99 @@
+{
+  "name": "Moss",
+  "scopeName": "source.moss",
+  "fileTypes": [".moss"],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#literals"
+    },
+    {
+      "include": "#identifiers"
+    },
+    {
+      "include": "#punctuation"
+    },
+    {
+      "include": "#operators"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.moss",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.moss",
+          "match": "\\b(as|else|if|import|use|while)\\b"
+        },
+        {
+          "name": "keyword.other.moss",
+          "match": "\\b(static|this)\\b"
+        },
+        {
+          "name": "storage.type.moss",
+          "match": "\\b(context|fn|let|struct|type|val|var)\\b"
+        }
+      ]
+    },
+    "literals": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.moss",
+          "match": "\"([^\"\\\\]|\\\\[\"\\\\nrt])*\""
+        },
+        {
+          "name": "constant.numeric.moss",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "entity.name.type.moss",
+          "match": "\\b[A-Z]\\w*\\b"
+        },
+        {
+          "name": "entity.name.namespace.moss",
+          "match": "\\b\\w+(?=::)"
+        },
+        {
+          "name": "entity.name.function.moss",
+          "match": "\\b\\w+(?=\\(|\\[)"
+        },
+        {
+          "name": "variable.other.moss",
+          "match": "\\b\\w+\\b"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.moss",
+          "match": "[\\(\\)\\[\\]\\{\\},\\.;]"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.moss",
+          "match": "!=|::|!|\\*|\\+|-|/|:|<|=|>"
+        }
+      ]
+    }
+  }
+}
