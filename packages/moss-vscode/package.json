@@ -15,9 +15,6 @@
     "vscode": "^1.75.0"
   },
   "main": "./dist/extension.js",
-  "activationEvents": [
-    "onLanguage:moss"
-  ],
   "contributes": {
     "languages": [
       {
