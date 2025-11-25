@@ -25,7 +25,8 @@
         ],
         "extensions": [
           ".moss"
-        ]
+        ],
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
