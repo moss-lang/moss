@@ -15,11 +15,13 @@ context basic = wasi::wasip1, mem;
 
 fn stack(): I32;
 
-context scratch = basic, stack;
+fn reserve(bytes: I32);
 
-fn grow(bytes: I32);
+context scratch = basic, stack, reserve;
 
-context alloc = scratch, grow;
+fn claim(bytes: I32);
+
+context alloc = scratch, claim;
 
 struct String {
   pointer: I32,
@@ -51,6 +53,7 @@ fn Args.get[mem](index: I32): String {
 }
 
 fn args[alloc](): Args {
+  reserve(8);
   let pointer = stack();
   let errno = wasi::args_sizes_get(pointer, pointer + 4);
   if errno != 0 { unreachable() }
@@ -59,18 +62,22 @@ fn args[alloc](): Args {
   let size_argv = 4 * argc;
   let argv = pointer;
   let buffer = argv + size_argv;
-  grow(size_argv + size);
+  reserve(size_argv + size);
+  claim(size_argv + size);
   let errno = wasi::args_get(argv, buffer);
   if errno != 0 { unreachable() }
   Args { argc, size, argv, buffer }
 }
 
 fn print[scratch](str: String) {
+  reserve(12);
   let pointer = stack();
   i32_store[offset=4](pointer, str.length);
   i32_store[offset=0](pointer, str.pointer);
   let errno = wasi::fd_write(1, pointer, 1, pointer + 8);
   if errno != 0 { unreachable() }
+  let size = i32_load[offset=0](pointer + 8);
+  if size != str.length { unreachable() }
 }
 
 fn println[scratch](str: String) {

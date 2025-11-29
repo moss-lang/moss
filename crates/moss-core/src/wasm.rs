@@ -1016,12 +1016,41 @@ impl<'a> Wasm<'a> {
             f
         });
 
-        let builtin_grow = self.builtins.push(Builtin::Function(self.funcidx()));
-        let f_grow = self.cache.fn_builtin(builtin_grow);
-        assert_eq!(self.funcs.push(None), f_grow);
-        let fndef_grow =
-            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("grow").unwrap())];
-        context.set_fn(fndef_grow, f_grow);
+        let builtin_reserve = self.builtins.push(Builtin::Function(self.funcidx()));
+        let f_reserve = self.cache.fn_builtin(builtin_reserve);
+        assert_eq!(self.funcs.push(None), f_reserve);
+        let fndef_reserve =
+            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("reserve").unwrap())];
+        context.set_fn(fndef_reserve, f_reserve);
+        self.section_function.function(self.section_type.len());
+        self.section_type.ty().function([ValType::I32], []);
+        self.section_code.function(&{
+            let mut f = Function::new([]);
+            f.instructions()
+                .global_get(global_stack)
+                .i64_extend_i32_u()
+                .local_get(0)
+                .i64_extend_i32_u()
+                .i64_add()
+                .i64_const(u16::MAX as i64)
+                .i64_add()
+                .i64_const(16)
+                .i64_shr_u()
+                .i32_wrap_i64()
+                .memory_size(0)
+                .i32_sub()
+                .memory_grow(0)
+                .drop()
+                .end();
+            f
+        });
+
+        let builtin_claim = self.builtins.push(Builtin::Function(self.funcidx()));
+        let f_claim = self.cache.fn_builtin(builtin_claim);
+        assert_eq!(self.funcs.push(None), f_claim);
+        let fndef_claim =
+            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("claim").unwrap())];
+        context.set_fn(fndef_claim, f_claim);
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([ValType::I32], []);
         self.section_code.function(&{
