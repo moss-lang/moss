@@ -2,6 +2,9 @@
 
 An experimental programming language, exploring new ways to manage context.
 
+> [!CAUTION]
+> This project is still in its very early stages, and is _extremely_ unstable.
+
 ## Setup
 
 First you must [clone](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) this Git repository; any commands listed below should be run in that clone.
