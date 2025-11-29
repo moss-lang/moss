@@ -1,0 +1,5 @@
+fn main[scratch]() {
+  if true {
+    println("so true");
+  }
+}

@@ -7,6 +7,7 @@ use crate::{
 };
 
 pub struct Lib {
+    pub bool: ModuleId,
     pub wasm: ModuleId,
     pub wasip1: ModuleId,
     pub wasi: ModuleId,
@@ -58,11 +59,16 @@ impl Precompile {
     }
 
     fn prelude(mut self) -> (IR, Names, Lib) {
+        let bool = self.lib(&[], include_str!("../../../lib/bool.moss"));
         let wasm = self.lib(&[], include_str!("../../../lib/wasm.moss"));
         let wasip1 = self.lib(&[wasm], include_str!("../../../lib/wasip1.moss"));
-        let wasi = self.lib(&[wasip1, wasm], include_str!("../../../lib/wasi.moss"));
-        let prelude = self.lib(&[wasi], include_str!("../../../lib/prelude.moss"));
+        let wasi = self.lib(
+            &[bool, wasip1, wasm],
+            include_str!("../../../lib/wasi.moss"),
+        );
+        let prelude = self.lib(&[bool, wasi], include_str!("../../../lib/prelude.moss"));
         let lib = Lib {
+            bool,
             wasm,
             wasip1,
             wasi,

@@ -1,3 +1,4 @@
+import "./bool.moss" use false, true;
 import "./wasip1.moss" as wasi;
 import "./wasm.moss" as wasm use I32, offset, unreachable;
 
@@ -11,7 +12,7 @@ fn i32_store[mem, static offset](address: I32, value: I32) {
   wasm::i32_store[wasm::align=2](address, value)
 }
 
-context basic = wasi::wasip1, mem;
+context basic = false, true, wasi::wasip1, mem;
 
 fn stack(): I32;
 

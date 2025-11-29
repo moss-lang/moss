@@ -1,0 +1,3 @@
+val false: Bool;
+
+val true: Bool;

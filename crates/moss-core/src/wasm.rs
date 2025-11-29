@@ -320,6 +320,9 @@ impl<'a> Wasm<'a> {
         let val = self.cache.valdef(self.ctx, valdef);
         match self.cache[val] {
             Val::Unit => {}
+            Val::Bool(b) => {
+                self.body.insn().i32_const(if b { 1 } else { 0 });
+            }
             Val::Int32(n) => {
                 self.body.insn().i32_const(n);
             }
@@ -341,7 +344,7 @@ impl<'a> Wasm<'a> {
         let val = self.cache.valdef(self.ctx, valdef);
         match self.cache[val] {
             // We don't need to restore anything for static bindings.
-            Val::Unit | Val::Int32(_) | Val::String(_) => {}
+            Val::Unit | Val::Bool(_) | Val::Int32(_) | Val::String(_) => {}
             Val::Dynamic(_, ty) => {
                 let start = self.valdefs[val];
                 let len = self.layout_len(ty);
@@ -425,7 +428,9 @@ impl<'a> Wasm<'a> {
                             let val = self.cache.valdef(self.ctx, valdef);
                             match self.cache[val] {
                                 // We don't need any temporary locals to restore static bindings.
-                                Val::Unit | Val::Int32(_) | Val::String(_) => self.cache.ty_unit(),
+                                Val::Unit | Val::Bool(_) | Val::Int32(_) | Val::String(_) => {
+                                    self.cache.ty_unit()
+                                }
                                 Val::Dynamic(_, ty) => ty,
                             }
                         };
@@ -927,6 +932,13 @@ impl<'a> Wasm<'a> {
         self.section_export.export("memory", ExportKind::Memory, 0);
 
         let mut context = self.cache[self.ctx].clone();
+        let val_false =
+            self.names.valdefs[&(self.lib.bool, self.ir.strings.get_id("false").unwrap())];
+        let val_true =
+            self.names.valdefs[&(self.lib.bool, self.ir.strings.get_id("true").unwrap())];
+        context.set_val(val_false, self.cache.val_bool(false));
+        context.set_val(val_true, self.cache.val_bool(true));
+
         let ty_memidx =
             self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
         context.set_ty(ty_memidx, self.cache.ty_unit());

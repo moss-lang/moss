@@ -235,6 +235,13 @@ impl ParseError {
 
 type ParseResult<T> = Result<T, ParseError>;
 
+/// Whether or not struct literals are allowed when parsing this expression.
+#[derive(Clone, Copy)]
+enum Curly {
+    Yes,
+    No,
+}
+
 struct Parser<'a> {
     tokens: &'a Tokens,
     id: TokenId,
@@ -342,7 +349,7 @@ impl<'a> Parser<'a> {
     fn bind(&mut self) -> ParseResult<Bind> {
         let path = self.path()?;
         self.expect(Equal)?;
-        let val = self.expr_id()?;
+        let val = self.expr_id(Curly::Yes)?;
         Ok(Bind { path, val })
     }
 
@@ -358,7 +365,7 @@ impl<'a> Parser<'a> {
         let val = match self.peek() {
             Equal => {
                 self.next();
-                self.expr_id()?
+                self.expr_id(Curly::Yes)?
             }
             _ => {
                 let prefix = IdRange::new(&mut self.tree.names, Vec::new());
@@ -377,7 +384,7 @@ impl<'a> Parser<'a> {
                 self.next();
                 return Ok(args);
             }
-            args.push(self.expr()?);
+            args.push(self.expr(Curly::Yes)?);
             if let Comma = self.peek() {
                 self.next();
             }
@@ -389,17 +396,19 @@ impl<'a> Parser<'a> {
         Ok(IdRange::new(&mut self.tree.exprs, args))
     }
 
-    fn expr_atom(&mut self) -> ParseResult<Expr> {
+    fn expr_atom(&mut self, curly: Curly) -> ParseResult<Expr> {
         match self.peek() {
             LParen => {
                 self.next();
-                let expr = self.expr()?;
+                let expr = self.expr(Curly::Yes)?;
                 self.expect(RParen)?;
                 Ok(expr)
             }
             If => {
+                // According to the documentation for `Curly` we shouldn't allow this unless `curly`
+                // is `Curly::Yes`, but in this case it's actually fine
                 self.next();
-                let cond = self.expr_id()?;
+                let cond = self.expr_id(Curly::No)?;
                 let yes = self.block()?;
                 let no = match self.peek() {
                     Else => {
@@ -439,6 +448,9 @@ impl<'a> Parser<'a> {
                         Ok(Expr::Call(path, binds, args))
                     }
                     LBrace => {
+                        if let Curly::No = curly {
+                            return Ok(Expr::Path(path));
+                        }
                         self.next();
                         let mut fields = Vec::new();
                         loop {
@@ -460,8 +472,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expr_chain(&mut self) -> ParseResult<Expr> {
-        let mut expr = self.expr_atom()?;
+    fn expr_chain(&mut self, curly: Curly) -> ParseResult<Expr> {
+        let mut expr = self.expr_atom(curly)?;
         while let Dot = self.peek() {
             self.next();
             let object = self.tree.exprs.push(expr);
@@ -477,12 +489,12 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn expr_factor(&mut self) -> ParseResult<Expr> {
-        self.expr_chain()
+    fn expr_factor(&mut self, curly: Curly) -> ParseResult<Expr> {
+        self.expr_chain(curly)
     }
 
-    fn expr_term(&mut self) -> ParseResult<Expr> {
-        let mut lhs = self.expr_factor()?;
+    fn expr_term(&mut self, curly: Curly) -> ParseResult<Expr> {
+        let mut lhs = self.expr_factor(curly)?;
         loop {
             let op = match self.peek() {
                 Star => Binop::Mul,
@@ -490,14 +502,14 @@ impl<'a> Parser<'a> {
                 _ => break,
             };
             self.next();
-            let rhs = self.expr_factor()?;
+            let rhs = self.expr_factor(curly)?;
             lhs = Expr::Binary(self.tree.exprs.push(lhs), op, self.tree.exprs.push(rhs));
         }
         Ok(lhs)
     }
 
-    fn expr_quant(&mut self) -> ParseResult<Expr> {
-        let mut lhs = self.expr_term()?;
+    fn expr_quant(&mut self, curly: Curly) -> ParseResult<Expr> {
+        let mut lhs = self.expr_term(curly)?;
         loop {
             let op = match self.peek() {
                 Plus => Binop::Add,
@@ -505,14 +517,14 @@ impl<'a> Parser<'a> {
                 _ => break,
             };
             self.next();
-            let rhs = self.expr_term()?;
+            let rhs = self.expr_term(curly)?;
             lhs = Expr::Binary(self.tree.exprs.push(lhs), op, self.tree.exprs.push(rhs));
         }
         Ok(lhs)
     }
 
-    fn expr_comp(&mut self) -> ParseResult<Expr> {
-        let lhs = self.expr_quant()?;
+    fn expr_comp(&mut self, curly: Curly) -> ParseResult<Expr> {
+        let lhs = self.expr_quant(curly)?;
         let op = match self.peek() {
             ExclamEqual => Some(Binop::Neq),
             Less => Some(Binop::Less),
@@ -522,7 +534,7 @@ impl<'a> Parser<'a> {
             None => Ok(lhs),
             Some(op) => {
                 self.next();
-                let rhs = self.expr_quant()?;
+                let rhs = self.expr_quant(curly)?;
                 Ok(Expr::Binary(
                     self.tree.exprs.push(lhs),
                     op,
@@ -532,12 +544,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expr(&mut self) -> ParseResult<Expr> {
-        self.expr_comp()
+    fn expr(&mut self, curly: Curly) -> ParseResult<Expr> {
+        self.expr_comp(curly)
     }
 
-    fn expr_id(&mut self) -> ParseResult<ExprId> {
-        let expr = self.expr()?;
+    fn expr_id(&mut self, curly: Curly) -> ParseResult<ExprId> {
+        let expr = self.expr(curly)?;
         Ok(self.tree.exprs.push(expr))
     }
 
@@ -557,7 +569,7 @@ impl<'a> Parser<'a> {
                     self.next();
                     let name = self.expect(Name)?;
                     self.expect(Equal)?;
-                    let expr = self.expr_id()?;
+                    let expr = self.expr_id(Curly::Yes)?;
                     self.expect(Semi)?;
                     stmts.push(Stmt::Let(name, expr));
                 }
@@ -565,18 +577,18 @@ impl<'a> Parser<'a> {
                     self.next();
                     let name = self.expect(Name)?;
                     self.expect(Equal)?;
-                    let expr = self.expr_id()?;
+                    let expr = self.expr_id(Curly::Yes)?;
                     self.expect(Semi)?;
                     stmts.push(Stmt::Var(name, expr));
                 }
                 While => {
                     self.next();
-                    let cond = self.expr_id()?;
+                    let cond = self.expr_id(Curly::No)?;
                     let body = self.block()?;
                     stmts.push(Stmt::While(cond, body))
                 }
                 _ => {
-                    let expr = self.expr()?;
+                    let expr = self.expr(Curly::Yes)?;
                     let expr_id = self.tree.exprs.push(expr);
                     match expr {
                         Expr::If(..) => {
@@ -586,7 +598,7 @@ impl<'a> Parser<'a> {
                         _ => match self.peek() {
                             Equal => {
                                 self.next();
-                                let rhs = self.expr_id()?;
+                                let rhs = self.expr_id(Curly::Yes)?;
                                 self.expect(Semi)?;
                                 stmts.push(Stmt::Assign(expr_id, rhs));
                             }

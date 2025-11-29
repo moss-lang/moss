@@ -1,3 +1,4 @@
+import "./bool.moss" use false, true;
 import "./wasi.moss" use
   Args.get,
   Args.len,

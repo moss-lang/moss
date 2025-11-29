@@ -261,6 +261,7 @@ pub enum Fn {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Val {
     Unit,
+    Bool(bool),
     Int32(i32),
     String(StrId),
     Dynamic(ValdefId, TyId),
@@ -396,6 +397,10 @@ impl<'a> Cache<'a> {
 
     pub fn val_unit(&mut self) -> ValId {
         self.make_val(Val::Unit)
+    }
+
+    pub fn val_bool(&mut self, b: bool) -> ValId {
+        self.make_val(Val::Bool(b))
     }
 
     pub fn val_int32(&mut self, n: i32) -> ValId {
