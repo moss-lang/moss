@@ -1,9 +1,9 @@
 use line_index::{LineIndex, TextSize};
 
 use crate::{
-    lex::lex,
+    lex::{ByteIndex, lex},
     lower::{IR, ModuleId, Names, Tydef, Type, lower},
-    parse::parse,
+    parse::{ParseError, parse},
 };
 
 pub struct Lib {
@@ -20,10 +20,24 @@ struct Precompile {
 }
 
 impl Precompile {
+    fn error(&self, source: &str, byte: ByteIndex, message: &str) {
+        let lines = LineIndex::new(source);
+        let line_col = lines.line_col(TextSize::new(byte.raw()));
+        let line = line_col.line + 1;
+        let col = line_col.col + 1;
+        panic!("stdlib file, line {line}, column {col}: {message}")
+    }
+
     fn lib(&mut self, imports: &[ModuleId], source: &str) -> ModuleId {
         let (tokens, starts) = lex(source).unwrap();
-        let tree = parse(&tokens).unwrap();
-        match lower(
+        let tree = parse(&tokens)
+            .map_err(|err| match err {
+                ParseError::Expected { id, tokens: _ } => {
+                    self.error(source, starts[id], &err.message())
+                }
+            })
+            .unwrap();
+        lower(
             source,
             &starts,
             &tree,
@@ -31,19 +45,16 @@ impl Precompile {
             &mut self.names,
             self.preprelude,
             imports,
-        ) {
-            Ok(module) => module,
-            Err(err) => {
-                let (tokens, message) = err.describe(source, &starts, &tree, &self.ir, &self.names);
-                let line_col = LineIndex::new(source).line_col(TextSize::new(match tokens {
-                    Some(range) => starts[range.first].index() as u32,
-                    None => 0,
-                }));
-                let line = line_col.line + 1;
-                let col = line_col.col + 1;
-                panic!("stdlib file, line {line}, column {col}: {message}")
-            }
-        }
+        )
+        .map_err(|err| {
+            let (tokens, message) = err.describe(source, &starts, &tree, &self.ir, &self.names);
+            let start = match tokens {
+                Some(range) => starts[range.first],
+                None => ByteIndex::new(0),
+            };
+            self.error(source, start, &message)
+        })
+        .unwrap()
     }
 
     fn prelude(mut self) -> (IR, Names, Lib) {
