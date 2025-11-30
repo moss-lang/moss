@@ -565,7 +565,12 @@ impl<'a> Lower<'a> {
         for name in path.prefix {
             let token = self.tree.names[name];
             let string = self.name(token);
-            let Some(&next) = self.names.modules.get(&(module, string)) else {
+            let Some(next) = get_name(
+                self.prelude,
+                self.module,
+                &self.names.modules,
+                (module, string),
+            ) else {
                 return Err(LowerError::Undefined(token));
             };
             module = next;
