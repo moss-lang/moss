@@ -10,3 +10,4 @@ import "./wasi.moss" use
   read,
   scratch,
 ;
+import "./wasm.moss" as wasm;
