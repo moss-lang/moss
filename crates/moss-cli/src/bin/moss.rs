@@ -19,7 +19,7 @@ use moss_core::{
     wasm::wasm,
 };
 use wasmtime::{Engine, Linker, Module, Store};
-use wasmtime_wasi::{WasiCtxBuilder, p1::WasiP1Ctx};
+use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder, p1::WasiP1Ctx};
 
 struct Compiler<'a> {
     path: &'a str,
@@ -101,6 +101,7 @@ fn run(script: &str, args: &[String]) -> anyhow::Result<i32> {
         .collect();
     let wasi_p1 = WasiCtxBuilder::new()
         .args(&argv)
+        .preopened_dir(".", ".", DirPerms::all(), FilePerms::all())?
         .inherit_stdout()
         .build_p1();
     let mut store = Store::new(&engine, wasi_p1);

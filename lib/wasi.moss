@@ -70,14 +70,58 @@ fn args[alloc](): Args {
   Args { argc, size, argv, buffer }
 }
 
+fn read[alloc](path: String): String {
+  reserve(4);
+  let pointer = stack();
+  let fd = 3;
+  let dirflags = 0;
+  let oflags = 0;
+  let fs_rights_base = wasm::i64_extend_i32_u(0);
+  let fs_rights_inheriting = wasm::i64_extend_i32_u(0);
+  let fdflags = 0;
+  let errno = wasi::path_open(
+    fd,
+    dirflags,
+    path.pointer,
+    path.length,
+    oflags,
+    fs_rights_base,
+    fs_rights_inheriting,
+    fdflags,
+    pointer,
+  );
+  if errno != 0 { unreachable() }
+  let fd = i32_load[offset=0](pointer);
+  var length = 0;
+  var more = true;
+  while more {
+    let chunk = 4;
+    reserve(length + chunk + 12);
+    let iovs = pointer + length + chunk;
+    i32_store[offset=0](iovs, pointer + length);
+    i32_store[offset=4](iovs, chunk);
+    let errno = wasi::fd_read(fd, iovs, 1, iovs + 8);
+    if errno != 0 { unreachable() }
+    let size = i32_load[offset=8](iovs);
+    length = length + size;
+    if size != chunk {
+      more = false;
+    }
+  }
+  let errno = wasi::fd_close(fd);
+  if errno != 0 { unreachable() }
+  claim(length);
+  String { pointer, length }
+}
+
 fn print[scratch](str: String) {
   reserve(12);
   let pointer = stack();
-  i32_store[offset=4](pointer, str.length);
   i32_store[offset=0](pointer, str.pointer);
+  i32_store[offset=4](pointer, str.length);
   let errno = wasi::fd_write(1, pointer, 1, pointer + 8);
   if errno != 0 { unreachable() }
-  let size = i32_load[offset=0](pointer + 8);
+  let size = i32_load[offset=8](pointer);
   if size != str.length { unreachable() }
 }
 
