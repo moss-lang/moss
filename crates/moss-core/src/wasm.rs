@@ -449,6 +449,9 @@ impl<'a> Wasm<'a> {
                 Instr::Param => {
                     self.get_locals(param, LocalId::from_raw(0));
                 }
+                Instr::Copy(local) => {
+                    self.get(local);
+                }
                 Instr::Set(lhs, rhs) => {
                     self.get(rhs);
                     let Local { ctx, start } = self.variables[&lhs];

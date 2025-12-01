@@ -1,0 +1,10 @@
+fn main[scratch]() {
+  let foo = "a";
+  var bar = foo;
+  bar = "c";
+  let baz = bar;
+  bar = "b";
+  println(foo);
+  println(bar);
+  println(baz);
+}

@@ -219,6 +219,11 @@ pub enum Instr {
     /// Type: this function's parameter type.
     Param,
 
+    /// Copy the value of another local into a fresh local.
+    ///
+    /// Type: same as the given local.
+    Copy(LocalId),
+
     /// Set the left-hand local to the value of the right-hand local.
     ///
     /// Type: unit.
@@ -1152,11 +1157,15 @@ impl Body<'_, '_> {
             match self.x.tree.stmts[stmt] {
                 Stmt::Let(name, rhs) => {
                     let local = self.expr(rhs)?;
-                    self.set(name, local);
+                    let ty = self.x.ir.locals[local];
+                    let copy = self.instr(ty, Instr::Copy(local));
+                    self.set(name, copy);
                 }
                 Stmt::Var(name, rhs) => {
                     let local = self.expr(rhs)?;
-                    self.set(name, local);
+                    let ty = self.x.ir.locals[local];
+                    let copy = self.instr(ty, Instr::Copy(local));
+                    self.set(name, copy);
                 }
                 Stmt::Assign(lhs, rhs) => match self.x.tree.exprs[lhs] {
                     Expr::Path(path) => {
