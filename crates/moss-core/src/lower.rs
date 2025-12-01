@@ -429,6 +429,7 @@ pub enum LowerError {
     NeedStructdef(Path),
     ExpectedType(TypeId, ExprId, TypeId),
     ThisNotMethod(ExprId),
+    Overflow(ExprId),
     MissingField(ExprId, StructdefId, FieldId),
     ArgCount(ExprId),
 }
@@ -474,6 +475,7 @@ impl LowerError {
                 Some(ctx.expr(expr)),
                 "cannot use `this` in a function that is not a method".to_owned(),
             ),
+            LowerError::Overflow(expr) => (Some(ctx.expr(expr)), "integer too large".to_owned()),
             LowerError::MissingField(expr, structdef, field) => {
                 let (name, _) = ctx.ir.fields[ctx.ir.structdefs[structdef].fields][field.index()];
                 (
@@ -969,7 +971,9 @@ impl Body<'_, '_> {
             }
             Expr::Int(token) => {
                 let ty = self.x.ty(Type::Int32);
-                let n = self.x.slice(token).parse().unwrap();
+                let Ok(n) = self.x.slice(token).parse() else {
+                    return Err(LowerError::Overflow(expr));
+                };
                 Ok(self.instr(ty, Instr::Int32(n)))
             }
             Expr::String(token) => {
