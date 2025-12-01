@@ -122,9 +122,13 @@ pub enum Binop {
     Sub,
     Mul,
     Div,
+    Rem,
     Eq,
     Neq,
-    Less,
+    Lt,
+    Gt,
+    Leq,
+    Geq,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -397,6 +401,30 @@ impl<'a> Parser<'a> {
         Ok(IdRange::new(&mut self.tree.exprs, args))
     }
 
+    fn expr_if(&mut self) -> ParseResult<Expr> {
+        self.expect(If)?;
+        let cond = self.expr_id(Curly::No)?;
+        let yes = self.block()?;
+        let no = match self.peek() {
+            Else => {
+                self.next();
+                match self.peek() {
+                    If => {
+                        let expr = self.expr_if()?;
+                        Some(Block {
+                            stmts: IdRange::new(&mut self.tree.stmts, Vec::new()),
+                            expr: Some(self.tree.exprs.push(expr)),
+                        })
+                    }
+                    LBrace => Some(self.block()?),
+                    _ => return Err(self.err(If | LBrace)),
+                }
+            }
+            _ => None,
+        };
+        Ok(Expr::If(cond, yes, no))
+    }
+
     fn expr_atom(&mut self, curly: Curly) -> ParseResult<Expr> {
         match self.peek() {
             LParen => {
@@ -405,21 +433,7 @@ impl<'a> Parser<'a> {
                 self.expect(RParen)?;
                 Ok(expr)
             }
-            If => {
-                // According to the documentation for `Curly` we shouldn't allow this unless `curly`
-                // is `Curly::Yes`, but in this case it's actually fine
-                self.next();
-                let cond = self.expr_id(Curly::No)?;
-                let yes = self.block()?;
-                let no = match self.peek() {
-                    Else => {
-                        self.next();
-                        Some(self.block()?)
-                    }
-                    _ => None,
-                };
-                Ok(Expr::If(cond, yes, no))
-            }
+            If => self.expr_if(),
             This => Ok(Expr::This(self.next())),
             Int => Ok(Expr::Int(self.next())),
             Str => Ok(Expr::String(self.next())),
@@ -498,6 +512,7 @@ impl<'a> Parser<'a> {
         let mut lhs = self.expr_factor(curly)?;
         loop {
             let op = match self.peek() {
+                Percent => Binop::Rem,
                 Star => Binop::Mul,
                 Slash => Binop::Div,
                 _ => break,
@@ -527,9 +542,12 @@ impl<'a> Parser<'a> {
     fn expr_comp(&mut self, curly: Curly) -> ParseResult<Expr> {
         let lhs = self.expr_quant(curly)?;
         let op = match self.peek() {
-            EqualEqual => Some(Binop::Eq),
+            Less => Some(Binop::Lt),
+            Greater => Some(Binop::Gt),
             ExclamEqual => Some(Binop::Neq),
-            Less => Some(Binop::Less),
+            LessEqual => Some(Binop::Leq),
+            EqualEqual => Some(Binop::Eq),
+            GreaterEqual => Some(Binop::Geq),
             _ => None,
         };
         match op {

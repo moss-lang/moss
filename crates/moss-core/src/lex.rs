@@ -36,6 +36,9 @@ pub enum Token {
     #[token("!")]
     Exclam,
 
+    #[token("%")]
+    Percent,
+
     #[token("(")]
     LParen,
 
@@ -93,8 +96,14 @@ pub enum Token {
     #[token("::")]
     ColonColon,
 
+    #[token("<=")]
+    LessEqual,
+
     #[token("==")]
     EqualEqual,
+
+    #[token(">=")]
+    GreaterEqual,
 
     #[token("as")]
     As,
@@ -156,6 +165,7 @@ impl fmt::Display for Token {
         match self {
             Token::Eof => write!(f, "end of file"),
             Token::Exclam => write!(f, "`!`"),
+            Token::Percent => write!(f, "`%`"),
             Token::LParen => write!(f, "`(`"),
             Token::RParen => write!(f, "`)`"),
             Token::Star => write!(f, "`*`"),
@@ -175,7 +185,9 @@ impl fmt::Display for Token {
             Token::RBrace => write!(f, "`}}`"),
             Token::ExclamEqual => write!(f, "`!=`"),
             Token::ColonColon => write!(f, "`::`"),
+            Token::LessEqual => write!(f, "`<=`"),
             Token::EqualEqual => write!(f, "`==`"),
+            Token::GreaterEqual => write!(f, "`>=`"),
             Token::As => write!(f, "`as`"),
             Token::Context => write!(f, "`context`"),
             Token::Else => write!(f, "`else`"),

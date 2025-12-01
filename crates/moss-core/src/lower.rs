@@ -177,13 +177,17 @@ pub enum Int32Arith {
     Sub,
     Mul,
     Div,
+    Rem,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum Int32Comp {
     Eq,
     Neq,
-    Less,
+    Lt,
+    Gt,
+    Leq,
+    Geq,
 }
 
 /// When executed, each instruction implicitly defines a mutable local variable.
@@ -1090,11 +1094,11 @@ impl Body<'_, '_> {
                 Ok(call)
             }
             Expr::Binary(l, op, r) => {
-                let local_r = self.expr(l)?;
-                let local_l = self.expr(r)?;
+                let local_l = self.expr(l)?;
+                let local_r = self.expr(r)?;
                 let int = self.x.ty(Type::Int32);
-                let ty_l = self.x.ir.locals[local_r];
-                let ty_r = self.x.ir.locals[local_l];
+                let ty_l = self.x.ir.locals[local_l];
+                let ty_r = self.x.ir.locals[local_r];
                 match (
                     self.x.ir.types[self.x.resolve(ty_l).index()],
                     self.x.ir.types[self.x.resolve(ty_r).index()],
@@ -1102,30 +1106,49 @@ impl Body<'_, '_> {
                     (Type::Int32, Type::Int32) => {
                         match op {
                             parse::Binop::Add => Ok(self
-                                .instr(int, Instr::Int32Arith(local_r, Int32Arith::Add, local_l))),
+                                .instr(int, Instr::Int32Arith(local_l, Int32Arith::Add, local_r))),
                             parse::Binop::Sub => Ok(self
-                                .instr(int, Instr::Int32Arith(local_r, Int32Arith::Sub, local_l))),
+                                .instr(int, Instr::Int32Arith(local_l, Int32Arith::Sub, local_r))),
                             parse::Binop::Mul => Ok(self
-                                .instr(int, Instr::Int32Arith(local_r, Int32Arith::Mul, local_l))),
+                                .instr(int, Instr::Int32Arith(local_l, Int32Arith::Mul, local_r))),
                             parse::Binop::Div => Ok(self
-                                .instr(int, Instr::Int32Arith(local_r, Int32Arith::Div, local_l))),
+                                .instr(int, Instr::Int32Arith(local_l, Int32Arith::Div, local_r))),
+                            parse::Binop::Rem => Ok(self
+                                .instr(int, Instr::Int32Arith(local_l, Int32Arith::Rem, local_r))),
                             parse::Binop::Eq => {
                                 let bool = self.x.ty(Type::Bool);
                                 Ok(self
-                                    .instr(bool, Instr::Int32Comp(local_r, Int32Comp::Eq, local_l)))
+                                    .instr(bool, Instr::Int32Comp(local_l, Int32Comp::Eq, local_r)))
                             }
                             parse::Binop::Neq => {
                                 let bool = self.x.ty(Type::Bool);
                                 Ok(self.instr(
                                     bool,
-                                    Instr::Int32Comp(local_r, Int32Comp::Neq, local_l),
+                                    Instr::Int32Comp(local_l, Int32Comp::Neq, local_r),
                                 ))
                             }
-                            parse::Binop::Less => {
+                            parse::Binop::Lt => {
+                                let bool = self.x.ty(Type::Bool);
+                                Ok(self
+                                    .instr(bool, Instr::Int32Comp(local_l, Int32Comp::Lt, local_r)))
+                            }
+                            parse::Binop::Gt => {
+                                let bool = self.x.ty(Type::Bool);
+                                Ok(self
+                                    .instr(bool, Instr::Int32Comp(local_l, Int32Comp::Gt, local_r)))
+                            }
+                            parse::Binop::Leq => {
                                 let bool = self.x.ty(Type::Bool);
                                 Ok(self.instr(
                                     bool,
-                                    Instr::Int32Comp(local_r, Int32Comp::Less, local_l),
+                                    Instr::Int32Comp(local_l, Int32Comp::Leq, local_r),
+                                ))
+                            }
+                            parse::Binop::Geq => {
+                                let bool = self.x.ty(Type::Bool);
+                                Ok(self.instr(
+                                    bool,
+                                    Instr::Int32Comp(local_l, Int32Comp::Geq, local_r),
                                 ))
                             }
                         }

@@ -514,6 +514,7 @@ impl<'a> Wasm<'a> {
                         Int32Arith::Sub => self.body.insn().i32_sub(),
                         Int32Arith::Mul => self.body.insn().i32_mul(),
                         Int32Arith::Div => self.body.insn().i32_div_s(),
+                        Int32Arith::Rem => self.body.insn().i32_rem_s(),
                     };
                 }
                 Instr::Int32Comp(a, op, b) => {
@@ -522,7 +523,10 @@ impl<'a> Wasm<'a> {
                     match op {
                         Int32Comp::Eq => self.body.insn().i32_eq(),
                         Int32Comp::Neq => self.body.insn().i32_ne(),
-                        Int32Comp::Less => self.body.insn().i32_lt_s(),
+                        Int32Comp::Lt => self.body.insn().i32_lt_s(),
+                        Int32Comp::Gt => self.body.insn().i32_gt_s(),
+                        Int32Comp::Leq => self.body.insn().i32_le_s(),
+                        Int32Comp::Geq => self.body.insn().i32_ge_s(),
                     };
                 }
                 Instr::Call(fndef, local) => {
