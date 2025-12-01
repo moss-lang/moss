@@ -319,7 +319,6 @@ impl<'a> Wasm<'a> {
     fn get_val(&mut self, valdef: ValdefId) {
         let val = self.cache.valdef(self.ctx, valdef);
         match self.cache[val] {
-            Val::Unit => {}
             Val::Bool(b) => {
                 self.body.insn().i32_const(if b { 1 } else { 0 });
             }
@@ -344,7 +343,7 @@ impl<'a> Wasm<'a> {
         let val = self.cache.valdef(self.ctx, valdef);
         match self.cache[val] {
             // We don't need to restore anything for static bindings.
-            Val::Unit | Val::Bool(_) | Val::Int32(_) | Val::String(_) => {}
+            Val::Bool(_) | Val::Int32(_) | Val::String(_) => {}
             Val::Dynamic(_, ty) => {
                 let start = self.valdefs[val];
                 let len = self.layout_len(ty);
@@ -354,14 +353,6 @@ impl<'a> Wasm<'a> {
                 }
             }
         }
-    }
-
-    fn val_unit_as_u32(&mut self, valdef: ValdefId) -> u32 {
-        let val = self.cache.valdef(self.ctx, valdef);
-        let Val::Unit = self.cache[val] else {
-            panic!();
-        };
-        0
     }
 
     fn val_i32_as_u32(&mut self, valdef: ValdefId) -> u32 {
@@ -384,7 +375,7 @@ impl<'a> Wasm<'a> {
         MemArg {
             offset: self.val_i32_as_u64(self.val_offset),
             align: self.val_i32_as_u32(self.val_align),
-            memory_index: self.val_unit_as_u32(self.val_memidx),
+            memory_index: self.val_i32_as_u32(self.val_memidx),
         }
     }
 
@@ -428,7 +419,7 @@ impl<'a> Wasm<'a> {
                             let val = self.cache.valdef(self.ctx, valdef);
                             match self.cache[val] {
                                 // We don't need any temporary locals to restore static bindings.
-                                Val::Unit | Val::Bool(_) | Val::Int32(_) | Val::String(_) => {
+                                Val::Bool(_) | Val::Int32(_) | Val::String(_) => {
                                     self.cache.ty_unit()
                                 }
                                 Val::Dynamic(_, ty) => ty,
@@ -526,6 +517,7 @@ impl<'a> Wasm<'a> {
                     self.get(a);
                     self.get(b);
                     match op {
+                        Int32Comp::Eq => self.body.insn().i32_eq(),
                         Int32Comp::Neq => self.body.insn().i32_ne(),
                         Int32Comp::Less => self.body.insn().i32_lt_s(),
                     };
@@ -618,20 +610,20 @@ impl<'a> Wasm<'a> {
                                         self.body.insn().i64_store32(memarg);
                                     }
                                     Instruction::MemorySize => {
-                                        let memidx = self.val_unit_as_u32(self.val_memidx);
+                                        let memidx = self.val_i32_as_u32(self.val_memidx);
                                         self.body.insn().memory_size(memidx);
                                     }
                                     Instruction::MemoryGrow => {
-                                        let memidx = self.val_unit_as_u32(self.val_memidx);
+                                        let memidx = self.val_i32_as_u32(self.val_memidx);
                                         self.body.insn().memory_grow(memidx);
                                     }
                                     Instruction::MemoryCopy => {
-                                        let dst = self.val_unit_as_u32(self.val_dst);
-                                        let src = self.val_unit_as_u32(self.val_src);
+                                        let dst = self.val_i32_as_u32(self.val_dst);
+                                        let src = self.val_i32_as_u32(self.val_src);
                                         self.body.insn().memory_copy(dst, src);
                                     }
                                     Instruction::MemoryFill => {
-                                        let memidx = self.val_unit_as_u32(self.val_memidx);
+                                        let memidx = self.val_i32_as_u32(self.val_memidx);
                                         self.body.insn().memory_fill(memidx);
                                     }
 
@@ -922,15 +914,6 @@ impl<'a> Wasm<'a> {
     }
 
     fn program(mut self) -> Vec<u8> {
-        self.section_memory.memory(MemoryType {
-            minimum: 1,
-            maximum: None,
-            memory64: false,
-            shared: false,
-            page_size_log2: None,
-        });
-        self.section_export.export("memory", ExportKind::Memory, 0);
-
         let mut context = self.cache[self.ctx].clone();
         let val_false =
             self.names.valdefs[&(self.lib.bool, self.ir.strings.get_id("false").unwrap())];
@@ -941,8 +924,22 @@ impl<'a> Wasm<'a> {
 
         let ty_memidx =
             self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
-        context.set_ty(ty_memidx, self.cache.ty_unit());
-        context.set_val(self.val_memidx, self.cache.val_unit());
+        context.set_ty(ty_memidx, self.cache.ty_int32());
+        let memidx_wasi = 0;
+        context.set_val(self.val_memidx, self.cache.val_int32(memidx_wasi as i32));
+        let memidx_valdefs: Vec<ValdefId> = self
+            .cache
+            .fndef_valdefs(self.main)
+            .filter(|&valdef| {
+                // Skip the special WASI memory here, because we always want it to be index zero.
+                valdef != self.val_memidx
+                    && self.ir.types[self.ir.valdefs[valdef].ty.index()]
+                        == lower::Type::Tydef(ty_memidx)
+            })
+            .collect();
+        for (i, &valdef) in memidx_valdefs.iter().enumerate() {
+            context.set_val(valdef, self.cache.val_int32((i + 1) as i32));
+        }
 
         for instruction in Instruction::iter() {
             let builtin = self.builtins.push(Builtin::Instruction(instruction));
@@ -1049,9 +1046,9 @@ impl<'a> Wasm<'a> {
                 .i64_const(16)
                 .i64_shr_u()
                 .i32_wrap_i64()
-                .memory_size(0)
+                .memory_size(memidx_wasi)
                 .i32_sub()
-                .memory_grow(0)
+                .memory_grow(memidx_wasi)
                 .drop()
                 .end();
             f
@@ -1113,6 +1110,25 @@ impl<'a> Wasm<'a> {
             self.ctx = ctx;
             self.func(next_fn);
             next_fn += 1;
+        }
+
+        self.section_export
+            .export("memory", ExportKind::Memory, memidx_wasi);
+        self.section_memory.memory(MemoryType {
+            minimum: ((self.data_offset + 65535) / 65536) as u64,
+            maximum: None,
+            memory64: false,
+            shared: false,
+            page_size_log2: None,
+        });
+        for _ in memidx_valdefs {
+            self.section_memory.memory(MemoryType {
+                minimum: 0,
+                maximum: None,
+                memory64: false,
+                shared: false,
+                page_size_log2: None,
+            });
         }
 
         let start = self.funcidx();

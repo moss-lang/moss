@@ -66,7 +66,10 @@ impl Precompile {
             &[bool, wasip1, wasm],
             include_str!("../../../lib/wasi.moss"),
         );
-        let prelude = self.lib(&[bool, wasi], include_str!("../../../lib/prelude.moss"));
+        let prelude = self.lib(
+            &[bool, wasi, wasm],
+            include_str!("../../../lib/prelude.moss"),
+        );
         let lib = Lib {
             bool,
             wasm,

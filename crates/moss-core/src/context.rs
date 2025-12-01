@@ -260,7 +260,6 @@ pub enum Fn {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Val {
-    Unit,
     Bool(bool),
     Int32(i32),
     String(StrId),
@@ -395,10 +394,6 @@ impl<'a> Cache<'a> {
         self.make_fn(Fn::Builtin(builtin))
     }
 
-    pub fn val_unit(&mut self) -> ValId {
-        self.make_val(Val::Unit)
-    }
-
     pub fn val_bool(&mut self, b: bool) -> ValId {
         self.make_val(Val::Bool(b))
     }
@@ -501,6 +496,10 @@ impl<'a> Cache<'a> {
 
     pub fn valdef(&mut self, ctx: ContextId, valdef: ValdefId) -> ValId {
         self[ctx].valdefs[&valdef]
+    }
+
+    pub fn fndef_valdefs(&self, fndef: FndefId) -> impl Iterator<Item = ValdefId> {
+        self.fndef_needs.valdefs.get(fndef).into_iter()
     }
 }
 

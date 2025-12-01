@@ -181,6 +181,7 @@ pub enum Int32Arith {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Int32Comp {
+    Eq,
     Neq,
     Less,
 }
@@ -428,6 +429,7 @@ pub enum LowerError {
     NeedStructdef(Path),
     ExpectedType(TypeId, ExprId, TypeId),
     ThisNotMethod(ExprId),
+    Overflow(ExprId),
     MissingField(ExprId, StructdefId, FieldId),
     ArgCount(ExprId),
 }
@@ -473,6 +475,7 @@ impl LowerError {
                 Some(ctx.expr(expr)),
                 "cannot use `this` in a function that is not a method".to_owned(),
             ),
+            LowerError::Overflow(expr) => (Some(ctx.expr(expr)), "integer too large".to_owned()),
             LowerError::MissingField(expr, structdef, field) => {
                 let (name, _) = ctx.ir.fields[ctx.ir.structdefs[structdef].fields][field.index()];
                 (
@@ -565,7 +568,12 @@ impl<'a> Lower<'a> {
         for name in path.prefix {
             let token = self.tree.names[name];
             let string = self.name(token);
-            let Some(&next) = self.names.modules.get(&(module, string)) else {
+            let Some(next) = get_name(
+                self.prelude,
+                self.module,
+                &self.names.modules,
+                (module, string),
+            ) else {
                 return Err(LowerError::Undefined(token));
             };
             module = next;
@@ -963,7 +971,9 @@ impl Body<'_, '_> {
             }
             Expr::Int(token) => {
                 let ty = self.x.ty(Type::Int32);
-                let n = self.x.slice(token).parse().unwrap();
+                let Ok(n) = self.x.slice(token).parse() else {
+                    return Err(LowerError::Overflow(expr));
+                };
                 Ok(self.instr(ty, Instr::Int32(n)))
             }
             Expr::String(token) => {
@@ -1094,6 +1104,11 @@ impl Body<'_, '_> {
                                 .instr(int, Instr::Int32Arith(local_r, Int32Arith::Mul, local_l))),
                             parse::Binop::Div => Ok(self
                                 .instr(int, Instr::Int32Arith(local_r, Int32Arith::Div, local_l))),
+                            parse::Binop::Eq => {
+                                let bool = self.x.ty(Type::Bool);
+                                Ok(self
+                                    .instr(bool, Instr::Int32Comp(local_r, Int32Comp::Eq, local_l)))
+                            }
                             parse::Binop::Neq => {
                                 let bool = self.x.ty(Type::Bool);
                                 Ok(self.instr(

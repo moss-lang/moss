@@ -9,4 +9,6 @@ import "./wasi.moss" use
   println,
   read,
   scratch,
+  uint_to_string,
 ;
+import "./wasm.moss" as wasm;
