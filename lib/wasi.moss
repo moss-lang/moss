@@ -99,7 +99,7 @@ fn read[alloc](path: String): String {
   var length = 0;
   var more = true;
   while more {
-    let chunk = 4;
+    let chunk = 65536;
     reserve(length + chunk + 12);
     let iovs = pointer + length + chunk;
     i32_store[offset=0](iovs, pointer + length);
