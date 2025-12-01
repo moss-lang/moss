@@ -526,6 +526,7 @@ impl<'a> Wasm<'a> {
                     self.get(a);
                     self.get(b);
                     match op {
+                        Int32Comp::Eq => self.body.insn().i32_eq(),
                         Int32Comp::Neq => self.body.insn().i32_ne(),
                         Int32Comp::Less => self.body.insn().i32_lt_s(),
                     };

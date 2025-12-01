@@ -181,6 +181,7 @@ pub enum Int32Arith {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Int32Comp {
+    Eq,
     Neq,
     Less,
 }
@@ -1099,6 +1100,11 @@ impl Body<'_, '_> {
                                 .instr(int, Instr::Int32Arith(local_r, Int32Arith::Mul, local_l))),
                             parse::Binop::Div => Ok(self
                                 .instr(int, Instr::Int32Arith(local_r, Int32Arith::Div, local_l))),
+                            parse::Binop::Eq => {
+                                let bool = self.x.ty(Type::Bool);
+                                Ok(self
+                                    .instr(bool, Instr::Int32Comp(local_r, Int32Comp::Eq, local_l)))
+                            }
                             parse::Binop::Neq => {
                                 let bool = self.x.ty(Type::Bool);
                                 Ok(self.instr(

@@ -12,6 +12,10 @@ fn i32_store[mem, static offset](address: I32, value: I32) {
   wasm::i32_store[wasm::align=2](address, value)
 }
 
+fn i32_store8[mem, static offset](address: I32, value: I32) {
+  wasm::i32_store8[wasm::align=0](address, value)
+}
+
 context basic = false, true, wasi::wasip1, mem;
 
 fn stack(): I32;
@@ -128,4 +132,27 @@ fn print[scratch](str: String) {
 fn println[scratch](str: String) {
   print(str);
   print("\n");
+}
+
+fn uint_to_string[alloc](n: I32): String {
+  let max = 10;
+  reserve(max);
+  let start = stack();
+  var value = n;
+  var index = max - 1;
+  var writing = true;
+  while writing {
+    let digit = wasm::i32_rem_u(value, 10);
+    i32_store8[offset=0](start + index, digit + 48);
+    value = wasm::i32_div_u(value, 10);
+    if value == 0 {
+      writing = false;
+    } else {
+      index = index - 1;
+    }
+  }
+  claim(max);
+  let length = max - index;
+  let pointer = start + index;
+  String { pointer, length }
 }

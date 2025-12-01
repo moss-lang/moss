@@ -122,6 +122,7 @@ pub enum Binop {
     Sub,
     Mul,
     Div,
+    Eq,
     Neq,
     Less,
 }
@@ -526,6 +527,7 @@ impl<'a> Parser<'a> {
     fn expr_comp(&mut self, curly: Curly) -> ParseResult<Expr> {
         let lhs = self.expr_quant(curly)?;
         let op = match self.peek() {
+            EqualEqual => Some(Binop::Eq),
             ExclamEqual => Some(Binop::Neq),
             Less => Some(Binop::Less),
             _ => None,

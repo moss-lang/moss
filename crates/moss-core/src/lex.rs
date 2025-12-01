@@ -93,6 +93,9 @@ pub enum Token {
     #[token("::")]
     ColonColon,
 
+    #[token("==")]
+    EqualEqual,
+
     #[token("as")]
     As,
 
@@ -172,6 +175,7 @@ impl fmt::Display for Token {
             Token::RBrace => write!(f, "`}}`"),
             Token::ExclamEqual => write!(f, "`!=`"),
             Token::ColonColon => write!(f, "`::`"),
+            Token::EqualEqual => write!(f, "`==`"),
             Token::As => write!(f, "`as`"),
             Token::Context => write!(f, "`context`"),
             Token::Else => write!(f, "`else`"),
