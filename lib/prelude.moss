@@ -5,6 +5,7 @@ import "./wasi.moss" use
   String,
   alloc,
   args,
+  basic,
   print,
   println,
   read,
