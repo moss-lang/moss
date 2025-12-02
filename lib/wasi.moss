@@ -143,6 +143,16 @@ fn println[scratch](str: String) {
   print("\n");
 }
 
+fn string_to_uint[mem](str: String): I32 {
+  var n = 0;
+  var i = 0;
+  while i < str.length {
+    n = n * 10 + i32_load8_u[offset=0](str.pointer + i) - 48;
+    i = i + 1;
+  }
+  n
+}
+
 fn uint_to_string[alloc](n: I32): String {
   let max = 10;
   reserve(max);
