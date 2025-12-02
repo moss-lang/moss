@@ -1,6 +1,6 @@
 import "./bool.moss" use false, true;
 import "./wasip1.moss" as wasi;
-import "./wasm.moss" as wasm use I32, align, offset, unreachable;
+import "./wasm.moss" as wasm use I32, I64, align, offset, unreachable;
 
 context mem = wasm::wasm, static wasm::memidx;
 
@@ -10,6 +10,10 @@ fn i32_load[mem, static offset](address: I32): I32 {
 
 fn i32_load8_u[mem, static offset](address: I32): I32 {
   wasm::i32_load8_u[align=0](address)
+}
+
+fn i64_load8_u[mem, static offset](address: I32): I64 {
+  wasm::i64_load8_u[align=0](address)
 }
 
 fn i32_store[mem, static offset](address: I32, value: I32) {
@@ -148,8 +152,23 @@ fn string_to_uint32[mem](str: String): I32 {
   var i = 0;
   while i < str.length {
     let d = i32_load8_u[offset=0](str.pointer + i) - 48;
-    if n > wasm::i32_div_u(4294967295 - d, 10) { unreachable() }
+    if wasm::i32_gt_u(n, wasm::i32_div_u(4294967295 - d, 10)) { unreachable() }
     n = n * 10 + d;
+    i = i + 1;
+  }
+  n
+}
+
+fn string_to_uint64[mem](str: String): I64 {
+  var n = wasm::i64_extend_i32_u(0);
+  var i = 0;
+  while i < str.length {
+    let c = i64_load8_u[offset=0](str.pointer + i);
+    let d = wasm::i64_sub(c, wasm::i64_extend_i32_u(48));
+    let m = wasm::i64_sub(wasm::i64_extend_i32_u(0), wasm::i64_extend_i32_u(1));
+    let l = wasm::i64_div_u(wasm::i64_sub(m, d), wasm::i64_extend_i32_u(10));
+    if wasm::i64_gt_u(n, l) { unreachable() }
+    n = wasm::i64_add(wasm::i64_mul(n, wasm::i64_extend_i32_u(10)), d);
     i = i + 1;
   }
   n

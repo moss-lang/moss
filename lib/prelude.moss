@@ -12,6 +12,7 @@ import "./wasi.moss" use
   read,
   scratch,
   string_to_uint32,
+  string_to_uint64,
   uint32_to_string,
 ;
 import "./wasm.moss" as wasm;
