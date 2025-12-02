@@ -143,17 +143,19 @@ fn println[scratch](str: String) {
   print("\n");
 }
 
-fn string_to_uint[mem](str: String): I32 {
+fn string_to_uint32[mem](str: String): I32 {
   var n = 0;
   var i = 0;
   while i < str.length {
-    n = n * 10 + i32_load8_u[offset=0](str.pointer + i) - 48;
+    let d = i32_load8_u[offset=0](str.pointer + i) - 48;
+    if n > wasm::i32_div_u(4294967295 - d, 10) { unreachable() }
+    n = n * 10 + d;
     i = i + 1;
   }
   n
 }
 
-fn uint_to_string[alloc](n: I32): String {
+fn uint32_to_string[alloc](n: I32): String {
   let max = 10;
   reserve(max);
   let start = stack();

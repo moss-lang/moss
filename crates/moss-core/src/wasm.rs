@@ -323,7 +323,7 @@ impl<'a> Wasm<'a> {
                 self.body.insn().i32_const(if b { 1 } else { 0 });
             }
             Val::Int32(n) => {
-                self.body.insn().i32_const(n);
+                self.body.insn().i32_const(n as i32);
             }
             Val::String(id) => {
                 self.string(id);
@@ -360,7 +360,7 @@ impl<'a> Wasm<'a> {
         let Val::Int32(n) = self.cache[val] else {
             panic!();
         };
-        n as u32
+        n
     }
 
     fn val_i32_as_u64(&mut self, valdef: ValdefId) -> u64 {
@@ -459,7 +459,7 @@ impl<'a> Wasm<'a> {
                     self.set_locals(ty, start);
                 }
                 Instr::Int32(n) => {
-                    self.body.insn().i32_const(n);
+                    self.body.insn().i32_const(n as i32);
                 }
                 Instr::String(id) => {
                     self.string(id);
@@ -933,7 +933,7 @@ impl<'a> Wasm<'a> {
             self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
         context.set_ty(ty_memidx, self.cache.ty_int32());
         let memidx_wasi = 0;
-        context.set_val(self.val_memidx, self.cache.val_int32(memidx_wasi as i32));
+        context.set_val(self.val_memidx, self.cache.val_int32(memidx_wasi));
         let memidx_valdefs: Vec<ValdefId> = self
             .cache
             .fndef_valdefs(self.main)
@@ -945,7 +945,7 @@ impl<'a> Wasm<'a> {
             })
             .collect();
         for (i, &valdef) in memidx_valdefs.iter().enumerate() {
-            context.set_val(valdef, self.cache.val_int32((i + 1) as i32));
+            context.set_val(valdef, self.cache.val_int32((i + 1) as u32));
         }
 
         for instruction in Instruction::iter() {

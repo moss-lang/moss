@@ -261,7 +261,7 @@ pub enum Fn {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Val {
     Bool(bool),
-    Int32(i32),
+    Int32(u32),
     String(StrId),
     Dynamic(ValdefId, TyId),
 }
@@ -398,7 +398,7 @@ impl<'a> Cache<'a> {
         self.make_val(Val::Bool(b))
     }
 
-    pub fn val_int32(&mut self, n: i32) -> ValId {
+    pub fn val_int32(&mut self, n: u32) -> ValId {
         self.make_val(Val::Int32(n))
     }
 

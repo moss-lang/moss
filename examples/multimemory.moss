@@ -8,5 +8,5 @@ fn main[alloc, mem1, mem2]() {
   wasm::i32_store[wasm::memidx=mem2, wasm::align=2, wasm::offset=0](0, 5);
   let a = wasm::i32_load[wasm::memidx=mem1, wasm::align=2, wasm::offset=0](0);
   let b = wasm::i32_load[wasm::memidx=mem2, wasm::align=2, wasm::offset=0](0);
-  println(uint_to_string(a + b));
+  println(uint32_to_string(a + b));
 }

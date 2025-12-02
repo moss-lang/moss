@@ -236,7 +236,7 @@ pub enum Instr {
     /// A 32-bit integer constant.
     ///
     /// Type: [`Type::Int32`].
-    Int32(i32),
+    Int32(u32),
 
     /// A string constant.
     ///

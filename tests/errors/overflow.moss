@@ -1,4 +1,4 @@
 fn main[alloc]() {
-  println(uint_to_string(5000000000));
-#                        ^^^^^^^^^^ integer too large
+  println(uint32_to_string(4294967296));
+#                          ^^^^^^^^^^ integer too large
 }
