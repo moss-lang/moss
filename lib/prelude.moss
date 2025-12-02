@@ -14,5 +14,6 @@ import "./wasi.moss" use
   string_to_uint32,
   string_to_uint64,
   uint32_to_string,
+  uint64_to_string,
 ;
 import "./wasm.moss" as wasm;

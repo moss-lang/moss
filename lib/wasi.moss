@@ -24,6 +24,10 @@ fn i32_store8[mem, static offset](address: I32, value: I32) {
   wasm::i32_store8[align=0](address, value)
 }
 
+fn i64_store8[mem, static offset](address: I32, value: I64) {
+  wasm::i64_store8[align=0](address, value)
+}
+
 context basic = false, true, wasi::wasip1, mem;
 
 fn stack(): I32;
@@ -186,6 +190,30 @@ fn uint32_to_string[alloc](n: I32): String {
     i32_store8[offset=0](start + index, digit + 48);
     value = wasm::i32_div_u(value, 10);
     if value == 0 {
+      writing = false;
+    } else {
+      index = index - 1;
+    }
+  }
+  claim(max);
+  let length = max - index;
+  let pointer = start + index;
+  String { pointer, length }
+}
+
+fn uint64_to_string[alloc](n: I64): String {
+  let max = 20;
+  reserve(max);
+  let start = stack();
+  var value = n;
+  var index = max - 1;
+  var writing = true;
+  while writing {
+    let digit = wasm::i64_rem_u(value, wasm::i64_extend_i32_u(10));
+    let char = wasm::i64_add(digit, wasm::i64_extend_i32_u(48));
+    i64_store8[offset=0](start + index, char);
+    value = wasm::i64_div_u(value, wasm::i64_extend_i32_u(10));
+    if wasm::i64_eqz(value) {
       writing = false;
     } else {
       index = index - 1;
