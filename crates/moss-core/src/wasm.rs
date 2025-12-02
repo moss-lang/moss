@@ -123,6 +123,7 @@ enum Instruction {
     I64ShrU,
     I64Rotl,
     I64Rotr,
+    I32WrapI64,
     #[strum(serialize = "i64_extend_i32_s")]
     I64ExtendI32S,
     #[strum(serialize = "i64_extend_i32_u")]
@@ -807,6 +808,9 @@ impl<'a> Wasm<'a> {
                                     }
                                     Instruction::I64Rotr => {
                                         self.body.insn().i64_rotr();
+                                    }
+                                    Instruction::I32WrapI64 => {
+                                        self.body.insn().i32_wrap_i64();
                                     }
                                     Instruction::I64ExtendI32S => {
                                         self.body.insn().i64_extend_i32_s();

@@ -101,6 +101,7 @@ fn i64_shr_s(a: I64, b: I64): I64;
 fn i64_shr_u(a: I64, b: I64): I64;
 fn i64_rotl(a: I64, b: I64): I64;
 fn i64_rotr(a: I64, b: I64): I64;
+fn i32_wrap_i64(n: I64): I32;
 fn i64_extend_i32_s(n: I32): I64;
 fn i64_extend_i32_u(n: I32): I64;
 fn i32_extend8_s(n: I32): I32;
@@ -194,6 +195,7 @@ context wasm =
   i64_shr_u,
   i64_rotl,
   i64_rotr,
+  i32_wrap_i64,
   i64_extend_i32_s,
   i64_extend_i32_u,
   i32_extend8_s,
