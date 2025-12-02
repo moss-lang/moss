@@ -3,6 +3,7 @@ import "./wasi.moss" use
   Args.get,
   Args.len,
   String,
+  String.get,
   alloc,
   args,
   basic,

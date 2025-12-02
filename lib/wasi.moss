@@ -1,19 +1,23 @@
 import "./bool.moss" use false, true;
 import "./wasip1.moss" as wasi;
-import "./wasm.moss" as wasm use I32, offset, unreachable;
+import "./wasm.moss" as wasm use I32, align, offset, unreachable;
 
 context mem = wasm::wasm, static wasm::memidx;
 
 fn i32_load[mem, static offset](address: I32): I32 {
-  wasm::i32_load[wasm::align=2](address)
+  wasm::i32_load[align=2](address)
+}
+
+fn i32_load8_u[mem, static offset](address: I32): I32 {
+  wasm::i32_load8_u[align=0](address)
 }
 
 fn i32_store[mem, static offset](address: I32, value: I32) {
-  wasm::i32_store[wasm::align=2](address, value)
+  wasm::i32_store[align=2](address, value)
 }
 
 fn i32_store8[mem, static offset](address: I32, value: I32) {
-  wasm::i32_store8[wasm::align=0](address, value)
+  wasm::i32_store8[align=0](address, value)
 }
 
 context basic = false, true, wasi::wasip1, mem;
@@ -31,6 +35,11 @@ context alloc = scratch, claim;
 struct String {
   pointer: I32,
   length: I32,
+}
+
+fn String.get[mem](index: I32): I32 {
+  if index >= this.length { unreachable() }
+  i32_load8_u[offset=0](this.pointer + index)
 }
 
 struct Args {
