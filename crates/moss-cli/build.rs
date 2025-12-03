@@ -23,8 +23,12 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     if static_link {
         println!("cargo:rustc-link-lib=static=wasmtime");
-        // wasmtime's static archive brings its own Rust runtime symbols; allow duplicates.
-        println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
+        // wasmtime's static archive can pull in runtime symbols that also come from
+        // the final binary; on ELF allow duplicates explicitly. Darwin's linker
+        // doesn't accept the GNU flag and is lenient enough without it.
+        if !cfg!(target_os = "macos") {
+          println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
+        }
     } else {
         println!("cargo:rustc-link-lib=wasmtime");
     }

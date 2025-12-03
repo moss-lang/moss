@@ -300,10 +300,42 @@
         devShells = mk.devShells;
       }))
       (mkOutputs "aarch64-darwin" (mk: rec {
-        packages = mk.packages // {
-          standalone = mk.packages.default;
-          vsix-darwin-arm64 = mk.vsix "${packages.standalone}/bin/moss";
-        };
+        packages =
+          let
+            wasmtimeStatic = mk.pkgs.rustPlatform.buildRustPackage {
+              pname = "wasmtime-static";
+              version = mk.pkgs.wasmtime.version;
+              src = mk.pkgs.wasmtime.src;
+              cargoHash = mk.pkgs.wasmtime.cargoHash;
+              cargoLock.lockFile = "${mk.pkgs.wasmtime.src}/Cargo.lock";
+              cargoBuildFlags = [ "-p" "wasmtime-c-api" ];
+              nativeBuildInputs = [ mk.pkgs.cmake ];
+              doCheck = false;
+              installPhase = ''
+                runHook preInstall
+                mkdir -p $out/lib
+                cp $(find target -path '*/release/libwasmtime.a' -maxdepth 4 -type f | head -n1) $out/lib/libwasmtime.a
+                test -s $out/lib/libwasmtime.a
+                runHook postInstall
+              '';
+            };
+            staticArgs = mk.commonArgs // mk.cliArgs // {
+              WASMTIME_LIB_DIR = "${wasmtimeStatic}/lib";
+              buildInputs = [ wasmtimeStatic ];
+              env = { MOSS_STATIC_WASMTIME = "1"; };
+              cargoArtifacts = mk.craneLib.buildDepsOnly (mk.commonArgs // mk.cliArgs // {
+                WASMTIME_LIB_DIR = "${wasmtimeStatic}/lib";
+                buildInputs = [ wasmtimeStatic ];
+                env = { MOSS_STATIC_WASMTIME = "1"; };
+                doCheck = false;
+              });
+              doCheck = false;
+            };
+          in
+          mk.packages // rec {
+            standalone = mk.craneLib.buildPackage staticArgs;
+            vsix-darwin-arm64 = mk.vsix "${standalone}/bin/moss";
+          };
         checks = mk.checks // {
           standalone = mk.standalone packages.standalone;
         };
