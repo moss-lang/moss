@@ -16,3 +16,4 @@ moss-core = { workspace = true }
 serde_json = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
+libc = { workspace = true }
