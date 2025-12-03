@@ -23,8 +23,6 @@ moss-core = { path = "crates/moss-core" }
 serde_json = "1"
 strum = "0.27"
 wasm-encoder = "0.241"
-wasmtime = "39"
-wasmtime-wasi = "39"
 
 [profile.release-with-debug]
 inherits = "release"
