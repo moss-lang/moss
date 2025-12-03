@@ -48,6 +48,24 @@
           ] ./.;
           strictDeps = true;
         };
+        binaryen =
+          prev.binaryen.overrideAttrs (old: {
+            cmakeFlags = (old.cmakeFlags or [ ]) ++ [
+              "-DBUILD_STATIC_LIB=ON"
+              "-DBUILD_SHARED_LIB=OFF"
+              "-DBUILD_SHARED_LIBS=OFF"
+            ];
+          });
+        withBinaryen =
+          pkg: args:
+          args
+          // {
+            buildInputs = (args.buildInputs or [ ]) ++ [ pkg ];
+            env = (args.env or { }) // {
+              BINARYEN_LIB_DIR = "${pkg}/lib";
+              BINARYEN_STATIC = "1";
+            };
+          };
         # `cargoExtraArgs` default is "--locked": https://crane.dev/API.html
         cliArgs = {
           cargoExtraArgs = "--locked --package=moss-cli";
@@ -58,7 +76,7 @@
         craneLib = crane.mkLib prev;
         cacheArgs = {
           # Reuse built deps across `moss-cli`/`moss-dev`/`cargo test`.
-          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+          cargoArtifacts = craneLib.buildDepsOnly (withBinaryen binaryen commonArgs);
         };
         b2n = (bun2nix.overlays.default final prev).bun2nix;
         bunDeps = b2n.fetchBunDeps {
@@ -89,7 +107,7 @@
           '';
         };
         packages = {
-          default = craneLib.buildPackage (commonArgs // cacheArgs // cliArgs);
+          default = craneLib.buildPackage (withBinaryen binaryen (commonArgs // cacheArgs // cliArgs));
           vscode = prev.vscode-utils.buildVscodeExtension rec {
             vscodeExtPublisher = "moss-lang";
             vscodeExtName = "moss-vscode";
@@ -122,19 +140,53 @@
             // rec {
               musl =
                 target:
+                let
+                  crossPkgs =
+                    if target == "x86_64-unknown-linux-musl" then pkgs.pkgsCross.musl64 else pkgs.pkgsCross.aarch64-multiplatform-musl;
+                  binaryen =
+                    crossPkgs.binaryen.overrideAttrs (old: {
+                      cmakeFlags = (old.cmakeFlags or [ ]) ++ [
+                        "-DBUILD_STATIC_LIB=ON"
+                        "-DBUILD_SHARED_LIB=OFF"
+                        "-DBUILD_SHARED_LIBS=OFF"
+                      ];
+                    });
+                in
                 (craneLib.overrideToolchain (
                   p: p.rust-bin.stable.latest.default.override { targets = [ target ]; }
                 )).buildPackage
-                  (commonArgs // cliArgs // { CARGO_BUILD_TARGET = target; });
+                  (withBinaryen binaryen (commonArgs // cliArgs // {
+                    CARGO_BUILD_TARGET = target;
+                    env = { BINARYEN_STATIC_STDCPP = "0"; };
+                  }));
               windows =
                 crossSystem:
                 let
                   pkgs = import nixpkgs {
                     localSystem = system;
                     crossSystem.config = crossSystem;
+                    overlays = [ (import rust-overlay) ];
                   };
+                  binaryen =
+                    pkgs.binaryen.overrideAttrs (old: {
+                      cmakeFlags = (old.cmakeFlags or [ ]) ++ [
+                        "-DBUILD_STATIC_LIB=ON"
+                        "-DBUILD_SHARED_LIB=OFF"
+                        "-DBUILD_SHARED_LIBS=OFF"
+                      ];
+                    });
+                  craneLib = crane.mkLib pkgs;
+                  mcfgthreads = pkgs.callPackage "${nixpkgs}/pkgs/os-specific/windows/mcfgthreads" { };
                 in
-                (crane.mkLib pkgs).buildPackage (commonArgs // cliArgs);
+                craneLib.buildPackage (
+                  withBinaryen binaryen (commonArgs // cliArgs // {
+                    buildInputs = (commonArgs.buildInputs or [ ]) ++ [ mcfgthreads ];
+                    env = {
+                      BINARYEN_STATIC_STDCPP = "0";
+                      MCFGTHREAD_LIB_DIR = "${mcfgthreads}/lib";
+                    };
+                  })
+                );
               macos =
                 package:
                 pkgs.runCommand "moss" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
@@ -159,7 +211,7 @@
                   '';
                 });
               checks = {
-                cargo = craneLib.cargoTest (commonArgs // cacheArgs);
+                cargo = craneLib.cargoTest (withBinaryen binaryen (commonArgs // cacheArgs));
                 e2e =
                   let
                     dev = craneLib.buildPackage (commonArgs // cacheArgs // devArgs);
