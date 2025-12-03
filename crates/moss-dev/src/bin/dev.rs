@@ -106,7 +106,10 @@ impl Tests {
     }
 
     fn example(&mut self, path: PathBuf) -> anyhow::Result<()> {
-        let output = Command::new(&self.binary).arg(&path).output()?;
+        let output = Command::new(&self.binary)
+            .args(["run", "--engine=node"])
+            .arg(&path)
+            .output()?;
         let Some(stem) = path.file_stem() else {
             bail!("no file stem");
         };

@@ -97,7 +97,12 @@ fn read[alloc](path: String): String {
   let fd = 3;
   let dirflags = 0;
   let oflags = 0;
-  let fs_rights_base = wasm::i64_extend_i32_u(0);
+  # Request read-related rights for the opened file so hosts that enforce WASI
+  # rights (e.g. Node's WASI) allow subsequent fd_read calls.
+  let fs_rights_base = wasm::i64_or(
+    wasm::i64_or(wasm::i64_extend_i32_u(2), wasm::i64_extend_i32_u(4)),
+    wasm::i64_extend_i32_u(32),
+  ); # fd_read | fd_seek | fd_tell
   let fs_rights_inheriting = wasm::i64_extend_i32_u(0);
   let fdflags = 0;
   let errno = wasi::path_open(
