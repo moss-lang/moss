@@ -13,3 +13,4 @@ line-index = { workspace = true }
 logos = { workspace = true }
 strum = { workspace = true, features = ["derive"] }
 wasm-encoder = { workspace = true }
+llvm-sys = { workspace = true }

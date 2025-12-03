@@ -55,6 +55,13 @@ This is supported by many WebAssembly engines, such as [Wasmtime](https://wasmti
 moss build examples/hello.moss | wasmtime -
 ```
 
+An experimental native backend is available for proof-of-concept testing. It ignores the Moss source and always emits a small native "Hello, world!" object file via LLVM:
+
+```sh
+moss run --backend native examples/hello.moss
+```
+This backend links against LLVM directly and does not need a `clang` binary at runtime. The Nix dev shell sets the necessary `llvm-sys` environment so this works out of the box.
+
 ## Language
 
 Documentation pending.

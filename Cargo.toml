@@ -23,7 +23,30 @@ moss-core = { path = "crates/moss-core" }
 serde_json = "1"
 strum = "0.27"
 wasm-encoder = "0.241"
-wasmtime = "39"
+tempfile = "3"
+llvm-sys = { version = "201", features = ["prefer-static"], default-features = false }
+wasmtime = { version = "39", default-features = false, features = [
+    "async",
+    "cache",
+    "gc",
+    "gc-drc",
+    "gc-null",
+    "wat",
+    "parallel-compilation",
+    "cranelift",
+    "pooling-allocator",
+    "demangle",
+    "addr2line",
+    "coredump",
+    "debug-builtins",
+    "runtime",
+    "component-model",
+    "component-model-async",
+    "threads",
+    "stack-switching",
+    "compile-time-builtins",
+    "std",
+], package = "wasmtime" }
 wasmtime-wasi = "39"
 
 [profile.release-with-debug]
