@@ -14,5 +14,3 @@ lsp-server = { workspace = true }
 lsp-types = { workspace = true }
 moss-core = { workspace = true }
 serde_json = { workspace = true }
-wasmtime = { workspace = true }
-wasmtime-wasi = { workspace = true }

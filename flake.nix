@@ -44,9 +44,13 @@
             "/Cargo.toml"
             "/Cargo.lock"
             "/crates"
+            "/crates/moss-cli/src/wasmtime_ffi.rs"
             "/lib"
           ] ./.;
           strictDeps = true;
+          nativeBuildInputs = [ prev.pkg-config ];
+          buildInputs = [ prev.wasmtime prev.wasmtime.dev prev.wasmtime.lib ];
+          WASMTIME_LIB_DIR = "${prev.wasmtime.lib}/lib";
         };
         # `cargoExtraArgs` default is "--locked": https://crane.dev/API.html
         cliArgs = {
@@ -115,10 +119,11 @@
               overlays = [ (import rust-overlay) ];
             };
             mk = basic pkgs pkgs;
+            mk' = mk // { inherit pkgs; };
           in
-          with mk;
+          with mk';
           f (
-            mk
+            mk'
             // rec {
               musl =
                 target:
@@ -177,6 +182,7 @@
                   pkgs.bun
                   pkgs.nodejs # Used by vsce.
                   pkgs.python3
+                  pkgs.pkg-config
                   pkgs.rust-bin.stable.latest.default
 
                   # Convenient tools.
@@ -215,7 +221,38 @@
     // transpose [
       (mkOutputs "x86_64-linux" (mk: {
         packages = mk.packages // rec {
-          standalone = mk.musl "x86_64-unknown-linux-musl";
+          standalone =
+            let
+              muslCross = mk.pkgs.pkgsCross.musl64;
+              staticWasmtime = mk.pkgs.pkgsStatic.wasmtime.lib;
+              craneLibMusl =
+                mk.craneLib.overrideToolchain (
+                  p: p.rust-bin.stable.latest.default.override {
+                    targets = [ "x86_64-unknown-linux-musl" ];
+                  }
+                );
+            in
+            craneLibMusl.buildPackage (
+              mk.commonArgs
+              // mk.cliArgs
+              // {
+                WASMTIME_LIB_DIR = "${staticWasmtime}/lib";
+                CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
+                cargoArtifacts = craneLibMusl.buildDepsOnly (mk.commonArgs // mk.cliArgs // {
+                  CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
+                  doCheck = false;
+                });
+                env = {
+                  MOSS_STATIC_WASMTIME = "1";
+                  CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER =
+                    "${muslCross.stdenv.cc}/bin/${muslCross.stdenv.cc.targetPrefix}cc";
+                  RUSTFLAGS = "-C panic=abort";
+                };
+                doCheck = false;
+                nativeBuildInputs = [ muslCross.stdenv.cc ];
+                buildInputs = [ staticWasmtime ];
+              }
+            );
           windows = mk.windows "x86_64-w64-mingw32";
           vsix-linux-x64 = mk.vsix "${standalone}/bin/moss";
           vsix-win32-x64 = mk.vsix "${windows}/bin/moss.exe";
@@ -225,17 +262,80 @@
       }))
       (mkOutputs "aarch64-linux" (mk: {
         packages = mk.packages // rec {
-          standalone = mk.musl "aarch64-unknown-linux-musl";
+          standalone =
+            let
+              muslCross = mk.pkgs.pkgsCross.aarch64-multiplatform-musl;
+              staticWasmtime = mk.pkgs.pkgsStatic.wasmtime.lib;
+              craneLibMusl =
+                mk.craneLib.overrideToolchain (
+                  p: p.rust-bin.stable.latest.default.override {
+                    targets = [ "aarch64-unknown-linux-musl" ];
+                  }
+                );
+            in
+            craneLibMusl.buildPackage (
+              mk.commonArgs
+              // mk.cliArgs
+              // {
+                WASMTIME_LIB_DIR = "${staticWasmtime}/lib";
+                CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";
+                cargoArtifacts = craneLibMusl.buildDepsOnly (mk.commonArgs // mk.cliArgs // {
+                  CARGO_BUILD_TARGET = "aarch64-unknown-linux-musl";
+                  doCheck = false;
+                });
+                env = {
+                  MOSS_STATIC_WASMTIME = "1";
+                  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER =
+                    "${muslCross.stdenv.cc}/bin/${muslCross.stdenv.cc.targetPrefix}cc";
+                  RUSTFLAGS = "-C panic=abort";
+                };
+                doCheck = false;
+                nativeBuildInputs = [ muslCross.stdenv.cc ];
+                buildInputs = [ staticWasmtime ];
+              }
+            );
           vsix-linux-arm64 = mk.vsix "${standalone}/bin/moss";
         };
         checks = mk.checks;
         devShells = mk.devShells;
       }))
       (mkOutputs "aarch64-darwin" (mk: rec {
-        packages = mk.packages // {
-          standalone = mk.macos packages.default;
-          vsix-darwin-arm64 = mk.vsix "${packages.standalone}/bin/moss";
-        };
+        packages =
+          let
+            wasmtimeStatic = mk.pkgs.rustPlatform.buildRustPackage {
+              pname = "wasmtime-static";
+              version = mk.pkgs.wasmtime.version;
+              src = mk.pkgs.wasmtime.src;
+              cargoHash = mk.pkgs.wasmtime.cargoHash;
+              cargoLock.lockFile = "${mk.pkgs.wasmtime.src}/Cargo.lock";
+              cargoBuildFlags = [ "-p" "wasmtime-c-api" ];
+              nativeBuildInputs = [ mk.pkgs.cmake ];
+              doCheck = false;
+              installPhase = ''
+                runHook preInstall
+                mkdir -p $out/lib
+                cp $(find target -path '*/release/libwasmtime.a' -maxdepth 4 -type f | head -n1) $out/lib/libwasmtime.a
+                test -s $out/lib/libwasmtime.a
+                runHook postInstall
+              '';
+            };
+            staticArgs = mk.commonArgs // mk.cliArgs // {
+              WASMTIME_LIB_DIR = "${wasmtimeStatic}/lib";
+              buildInputs = [ wasmtimeStatic ];
+              env = { MOSS_STATIC_WASMTIME = "1"; };
+              cargoArtifacts = mk.craneLib.buildDepsOnly (mk.commonArgs // mk.cliArgs // {
+                WASMTIME_LIB_DIR = "${wasmtimeStatic}/lib";
+                buildInputs = [ wasmtimeStatic ];
+                env = { MOSS_STATIC_WASMTIME = "1"; };
+                doCheck = false;
+              });
+              doCheck = false;
+            };
+          in
+          mk.packages // rec {
+            standalone = mk.craneLib.buildPackage staticArgs;
+            vsix-darwin-arm64 = mk.vsix "${standalone}/bin/moss";
+          };
         checks = mk.checks // {
           standalone = mk.standalone packages.standalone;
         };
