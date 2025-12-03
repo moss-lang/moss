@@ -2,6 +2,7 @@ mod context;
 mod intern;
 pub mod lex;
 pub mod lower;
+pub mod native;
 pub mod parse;
 pub mod prelude;
 mod range;

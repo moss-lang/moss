@@ -22,6 +22,18 @@
     let
       basic = final: prev: rec {
         version = "0.0.0";
+        llvm = prev.llvmPackages_20;
+        llvmPrefix = llvm.llvm.dev;
+        llvmConfig = "${llvmPrefix}/bin/llvm-config";
+        nativeEnv =
+          pkgs:
+          {
+            LLVM_SYS_201_PREFIX = pkgs.llvmPackages_20.llvm.dev;
+            LLVM_CONFIG_PATH = "${pkgs.llvmPackages_20.llvm.dev}/bin/llvm-config";
+          }
+          // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isStatic {
+            LLVM_SYS_STATIC = "ON";
+          };
         # Without source filtering, things get rebuilt too often.
         filterSource =
           paths: root:
@@ -47,6 +59,8 @@
             "/lib"
           ] ./.;
           strictDeps = true;
+          buildInputs = [ llvm.llvm prev.zlib prev.libxml2 ];
+          env = nativeEnv prev;
         };
         # `cargoExtraArgs` default is "--locked": https://crane.dev/API.html
         cliArgs = {
@@ -125,7 +139,30 @@
                 (craneLib.overrideToolchain (
                   p: p.rust-bin.stable.latest.default.override { targets = [ target ]; }
                 )).buildPackage
-                  (commonArgs // cliArgs // { CARGO_BUILD_TARGET = target; });
+                  (commonArgs // cliArgs // {
+                    CARGO_BUILD_TARGET = target;
+                    env =
+                      (nativeEnv pkgs)
+                      // {
+                        LLVM_SYS_STATIC = "ON";
+                      }
+                      // (
+                        if target == "x86_64-unknown-linux-musl" then {
+                          LLVM_SYS_201_PREFIX = pkgs.pkgsCross.musl64.llvmPackages_20.llvm.dev;
+                          LLVM_CONFIG_PATH = "${pkgs.pkgsCross.musl64.llvmPackages_20.llvm.dev}/bin/llvm-config";
+                        } else
+                          { }
+                      );
+                    buildInputs =
+                      if target == "x86_64-unknown-linux-musl" then
+                        [
+                          pkgs.pkgsCross.musl64.llvmPackages_20.llvm
+                          pkgs.pkgsCross.musl64.zlib
+                          pkgs.pkgsCross.musl64.libxml2
+                        ]
+                      else
+                        commonArgs.buildInputs;
+                  });
               windows =
                 crossSystem:
                 let
@@ -134,7 +171,7 @@
                     crossSystem.config = crossSystem;
                   };
                 in
-                (crane.mkLib pkgs).buildPackage (commonArgs // cliArgs);
+                (crane.mkLib pkgs).buildPackage (commonArgs // cliArgs // { env = nativeEnv pkgs; });
               macos =
                 package:
                 pkgs.runCommand "moss" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
@@ -178,6 +215,10 @@
                   pkgs.nodejs # Used by vsce.
                   pkgs.python3
                   pkgs.rust-bin.stable.latest.default
+                  llvm.clang
+                  llvm.llvm
+                  pkgs.zlib
+                  pkgs.libxml2
 
                   # Convenient tools.
                   pkgs.binaryen
@@ -186,6 +227,8 @@
                 ];
                 shellHook = ''
                   PATH=$PWD/bin:$PATH
+                  export LLVM_SYS_201_PREFIX=${llvm.llvm.dev}
+                  export LLVM_CONFIG_PATH=${llvm.llvm.dev}/bin/llvm-config
                 '';
               };
             }

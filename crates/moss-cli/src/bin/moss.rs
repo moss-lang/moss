@@ -7,13 +7,14 @@ use std::{
 };
 
 use anyhow::{anyhow, bail};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use index_vec::Idx;
 use line_index::{LineIndex, TextSize};
 use moss_cli::util::err_fail;
 use moss_core::{
     lex::{ByteIndex, LexError, lex},
     lower::lower,
+    native::{NativeModule, native},
     parse::{ParseError, parse},
     prelude::prelude,
     wasm::wasm,
@@ -38,7 +39,18 @@ impl Compiler<'_> {
     }
 }
 
-fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum Backend {
+    Wasm,
+    Native,
+}
+
+enum Artifact {
+    Wasm(Vec<u8>),
+    Native(NativeModule),
+}
+
+fn compile(script: &str, backend: Backend) -> anyhow::Result<Artifact> {
     let source = fs::read_to_string(script)?;
     let compiler = Compiler {
         path: script,
@@ -70,55 +82,89 @@ fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
         compiler.error(start, &message)
     })?;
     let start = names.fndefs[&(module, ir.strings.get_id("main").unwrap())];
-    let bytes = wasm(&ir, &names, lib, start);
-    Ok(bytes)
+    match backend {
+        Backend::Wasm => Ok(Artifact::Wasm(wasm(&ir, &names, lib, start))),
+        Backend::Native => Ok(Artifact::Native(native(&ir, &names, lib, start))),
+    }
 }
 
-fn build(script: &str, output: Option<&Path>) -> anyhow::Result<()> {
-    let bytes = compile(script)?;
-    match output {
-        Some(out) => {
-            fs::write(out, bytes)?;
-        }
-        None => {
-            let mut stdout = io::stdout();
-            if stdout.is_terminal() {
-                bail!("Can't print binary to terminal; redirect or use `-o`");
+fn build(script: &str, output: Option<&Path>, backend: Backend) -> anyhow::Result<()> {
+    match compile(script, backend)? {
+        Artifact::Wasm(bytes) => match output {
+            Some(out) => {
+                fs::write(out, bytes)?;
+                Ok(())
             }
-            stdout.write_all(&bytes)?;
+            None => {
+                let mut stdout = io::stdout();
+                if stdout.is_terminal() {
+                    bail!("Can't print binary to terminal; redirect or use `-o`");
+                }
+                stdout.write_all(&bytes)?;
+                Ok(())
+            }
+        },
+        Artifact::Native(module) => {
+            let object = module
+                .emit_object()
+                .map_err(|msg| anyhow!("native backend failed: {msg}"))?;
+            match output {
+                Some(out) => {
+                    fs::write(out, object)?;
+                    Ok(())
+                }
+                None => {
+                    let mut stdout = io::stdout();
+                    if stdout.is_terminal() {
+                        bail!("Can't print binary to terminal; redirect or use `-o`");
+                    }
+                    stdout.write_all(&object)?;
+                    Ok(())
+                }
+            }
         }
     }
-    Ok(())
 }
 
-fn run(script: &str, args: &[String]) -> anyhow::Result<i32> {
-    let bytes = compile(script)?;
-    let engine = Engine::default();
-    let mut linker = Linker::new(&engine);
-    wasmtime_wasi::p1::add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
-    let argv: Vec<&str> = iter::once(script)
-        .chain(args.iter().map(String::as_str))
-        .collect();
-    let wasi_p1 = WasiCtxBuilder::new()
-        .args(&argv)
-        .preopened_dir(".", ".", DirPerms::all(), FilePerms::all())?
-        .inherit_stdout()
-        .build_p1();
-    let mut store = Store::new(&engine, wasi_p1);
-    let module = Module::from_binary(&engine, &bytes)?;
-    let instance = linker.instantiate(&mut store, &module)?;
-    let start = instance.get_typed_func::<(), ()>(&mut store, "_start")?;
-    match start.call(&mut store, ()) {
-        Ok(()) => Ok(0),
-        Err(err) => match err.downcast_ref::<wasmtime_wasi::I32Exit>() {
-            Some(exit_code) => Ok(exit_code.0),
-            None => Err(err),
-        },
+fn run(script: &str, args: &[String], backend: Backend) -> anyhow::Result<i32> {
+    match compile(script, backend)? {
+        Artifact::Wasm(bytes) => {
+            let engine = Engine::default();
+            let mut linker = Linker::new(&engine);
+            wasmtime_wasi::p1::add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
+            let argv: Vec<&str> = iter::once(script)
+                .chain(args.iter().map(String::as_str))
+                .collect();
+            let wasi_p1 = WasiCtxBuilder::new()
+                .args(&argv)
+                .preopened_dir(".", ".", DirPerms::all(), FilePerms::all())?
+                .inherit_stdout()
+                .build_p1();
+            let mut store = Store::new(&engine, wasi_p1);
+            let module = Module::from_binary(&engine, &bytes)?;
+            let instance = linker.instantiate(&mut store, &module)?;
+            let start = instance.get_typed_func::<(), ()>(&mut store, "_start")?;
+            match start.call(&mut store, ()) {
+                Ok(()) => Ok(0),
+                Err(err) => match err.downcast_ref::<wasmtime_wasi::I32Exit>() {
+                    Some(exit_code) => Ok(exit_code.0),
+                    None => Err(err),
+                },
+            }
+        }
+        Artifact::Native(module) => {
+            if !args.is_empty() {
+                bail!("arguments are not supported for the native backend yet");
+            }
+            module
+                .run()
+                .map_err(|msg| anyhow!("native backend failed: {msg}"))
+        }
     }
 }
 
-fn run_exit(script: &str, args: &[String]) -> ExitCode {
-    match run(script, args) {
+fn run_exit(script: &str, args: &[String], backend: Backend) -> ExitCode {
+    match run(script, args, backend) {
         Ok(exit_code) => ExitCode::from(exit_code as u8),
         Err(err) => err_fail(err),
     }
@@ -136,12 +182,18 @@ enum Commands {
     Run {
         script: String,
         args: Vec<String>,
+
+        #[arg(long, value_enum, default_value_t = Backend::Wasm)]
+        backend: Backend,
     },
     Build {
         script: String,
 
         #[arg(short)]
         output: Option<PathBuf>,
+
+        #[arg(long, value_enum, default_value_t = Backend::Wasm)]
+        backend: Backend,
     },
     Lsp,
 }
@@ -151,13 +203,21 @@ fn main() -> ExitCode {
     if let Some((file, args)) = std::env::args().skip(1).collect::<Vec<_>>().split_first() {
         // Prevent collision with possible future subcommands.
         if file.contains("/") {
-            return run_exit(file, args);
+            return run_exit(file, args, Backend::Wasm);
         }
     }
     let args = Cli::parse();
     match args.command {
-        Commands::Run { script, args } => run_exit(&script, &args),
-        Commands::Build { script, output } => match build(&script, output.as_deref()) {
+        Commands::Run {
+            script,
+            args,
+            backend,
+        } => run_exit(&script, &args, backend),
+        Commands::Build {
+            script,
+            output,
+            backend,
+        } => match build(&script, output.as_deref(), backend) {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => err_fail(err),
         },
