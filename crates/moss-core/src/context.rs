@@ -62,7 +62,7 @@ impl<I: Idx> NeedSets<I> {
 
 impl NeedSets<CtxdefId> {
     fn fill(&mut self, ir: &IR) {
-        for ctxdef in topological_sort(ir) {
+        for ctxdef in topsort(CtxdefGraph(ir)) {
             let Needs {
                 tys,
                 fns,
@@ -135,15 +135,21 @@ impl<I> NeedSets<I> {
     }
 }
 
-fn topological_sort(ir: &IR) -> Vec<CtxdefId> {
+trait Graph {
+    type Id: Idx;
+
+    fn nodes(&self) -> impl ExactSizeIterator<Item = Self::Id>;
+
+    fn arcs(&self, i: Self::Id, f: impl FnMut(Self::Id));
+}
+
+fn topsort<G: Graph>(graph: G) -> Vec<G::Id> {
     // Implementation adapted from here:
     // https://github.com/penrose/penrose/blob/v3.3.0/packages/core/src/utils/Graph.ts#L142-L168
     let mut sorted = Vec::new();
-    let mut dependents = index_vec![0u32; ir.ctxdefs.len()];
-    for ctxdef in &ir.ctxdefs {
-        for need in ctxdef.def.ctxs.get(&ir.need_ctxs) {
-            dependents[need.id] += 1;
-        }
+    let mut dependents = index_vec![0usize; graph.nodes().len()];
+    for i in graph.nodes() {
+        graph.arcs(i, |j| dependents[j] += 1);
     }
     let mut stack = Vec::new();
     for (i, &n) in dependents.iter_enumerated() {
@@ -151,23 +157,69 @@ fn topological_sort(ir: &IR) -> Vec<CtxdefId> {
             stack.push(i);
         }
     }
-    while let Some(ctxdef) = stack.pop() {
-        sorted.push(ctxdef);
-        for &Need { id, .. } in ir.ctxdefs[ctxdef].def.ctxs.get(&ir.need_ctxs) {
-            let n = &mut dependents[id];
+    while let Some(i) = stack.pop() {
+        sorted.push(i);
+        graph.arcs(i, |j| {
+            let n = &mut dependents[j];
             *n -= 1;
             if *n == 0 {
-                stack.push(id);
+                stack.push(j);
             }
-        }
+        });
     }
     let m = sorted.len();
-    let n = ir.ctxdefs.len();
+    let n = graph.nodes().len();
     if m != n {
-        panic!("could only sort {m} contexts out of {n} total");
+        panic!("could only sort {m} out of {n} total");
     }
     sorted.reverse();
     sorted
+}
+
+struct TypeGraph<'a>(&'a IR);
+
+impl Graph for TypeGraph<'_> {
+    type Id = TypeId;
+
+    fn nodes(&self) -> impl ExactSizeIterator<Item = Self::Id> {
+        (0..self.0.types.len()).map(TypeId::from_usize)
+    }
+
+    fn arcs(&self, i: Self::Id, mut f: impl FnMut(Self::Id)) {
+        match self.0.types[i.index()] {
+            Type::String | Type::Bool | Type::Int32 | Type::Int64 => {}
+            Type::Tuple(elems) => {
+                for &elem in &self.0.tuples[elems] {
+                    f(elem);
+                }
+            }
+            Type::Tydef(tydef) => match self.0.tydefs[tydef].def {
+                None => {}
+                Some(def) => f(def),
+            },
+            Type::Structdef(structdef) => {
+                for &(_, field) in &self.0.fields[self.0.structdefs[structdef].fields] {
+                    f(field);
+                }
+            }
+        }
+    }
+}
+
+struct CtxdefGraph<'a>(&'a IR);
+
+impl Graph for CtxdefGraph<'_> {
+    type Id = CtxdefId;
+
+    fn nodes(&self) -> impl ExactSizeIterator<Item = Self::Id> {
+        self.0.ctxdefs.iter_enumerated().map(|(i, _)| i)
+    }
+
+    fn arcs(&self, i: Self::Id, mut f: impl FnMut(Self::Id)) {
+        for &Need { id, .. } in self.0.ctxdefs[i].def.ctxs.get(&self.0.need_ctxs) {
+            f(id);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -290,9 +342,16 @@ impl<'a> Cache<'a> {
         contexts.insert(Context::default());
         // TODO: Represent all these subsets and sparse graphs in a non-quadratic way.
         let mut type_tydefs = Subsets::new(ir.tydefs.len_idx());
-        for &ty in &ir.types {
-            let (prev, mut set) = type_tydefs.push();
-            match ty {
+        for _ in 0..ir.types.len() {
+            type_tydefs.push();
+        }
+        // Even though types in `ir.types` can't directly refer to types that come after them in the
+        // collection, they can do so indirectly via struct fields, since lowering first makes a
+        // placeholder for each struct to allow name resolution to work correctly, then fills in the
+        // actual fields in a second pass.
+        for ty in topsort(TypeGraph(ir)) {
+            let (prev, mut set) = type_tydefs.get_mut(ty);
+            match ir.types[ty.index()] {
                 Type::String | Type::Bool | Type::Int32 | Type::Int64 => {}
                 Type::Tuple(elems) => {
                     for &elem in &ir.tuples[elems] {
