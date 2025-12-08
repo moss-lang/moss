@@ -3,6 +3,7 @@ mod intern;
 pub mod lex;
 pub mod lower;
 pub mod parse;
+pub mod parse_naive;
 pub mod prelude;
 mod range;
 mod subsets;

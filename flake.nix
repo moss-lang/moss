@@ -181,6 +181,7 @@
 
                   # Convenient tools.
                   pkgs.binaryen
+                  pkgs.jdk
                   pkgs.wasm-tools
                   pkgs.wasmtime
                 ];
