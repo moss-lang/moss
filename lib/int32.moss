@@ -1,0 +1,113 @@
+import "./ops.moss" as ops use Arg, Lhs, Rhs;
+import "./wasm.moss" as wasm use I32, I64;
+
+fn nonzero(n: I32): Bool;
+
+fn overflow();
+
+context Ctx = wasm::wasm, nonzero, overflow;
+
+fn check[Ctx](z: I64): I32 {
+  let w = wasm::i32_wrap_i64(z);
+  if nonzero(wasm::i64_ne(wasm::i64_extend_i32_s(w), z)) {
+    overflow();
+  }
+  w
+}
+
+fn eq[Ctx](x: I32, y: I32): Bool {
+  nonzero(wasm::i32_eq(x, y))
+}
+
+fn ne[Ctx](x: I32, y: I32): Bool {
+  nonzero(wasm::i32_ne(x, y))
+}
+
+fn lt[Ctx](x: I32, y: I32): Bool {
+  nonzero(wasm::i32_lt_s(x, y))
+}
+
+fn gt[Ctx](x: I32, y: I32): Bool {
+  nonzero(wasm::i32_gt_s(x, y))
+}
+
+fn le[Ctx](x: I32, y: I32): Bool {
+  nonzero(wasm::i32_le_s(x, y))
+}
+
+fn ge[Ctx](x: I32, y: I32): Bool {
+  nonzero(wasm::i32_ge_s(x, y))
+}
+
+fn neg_checked[Ctx](x: I32): I32 {
+  sub_checked(0, x)
+}
+
+fn add_checked[Ctx](x: I32, y: I32): I32 {
+  check(wasm::i64_add(wasm::i64_extend_i32_s(x), wasm::i64_extend_i32_s(y)))
+}
+
+fn sub_checked[Ctx](x: I32, y: I32): I32 {
+  check(wasm::i64_sub(wasm::i64_extend_i32_s(x), wasm::i64_extend_i32_s(y)))
+}
+
+fn mul_checked[Ctx](x: I32, y: I32): I32 {
+  check(wasm::i64_mul(wasm::i64_extend_i32_s(x), wasm::i64_extend_i32_s(y)))
+}
+
+fn div_checked[Ctx](x: I32, y: I32): I32 {
+  check(wasm::i64_div_s(wasm::i64_extend_i32_s(x), wasm::i64_extend_i32_s(y)))
+}
+
+fn rem_checked[Ctx](x: I32, y: I32): I32 {
+  check(wasm::i64_rem_s(wasm::i64_extend_i32_s(x), wasm::i64_extend_i32_s(y)))
+}
+
+type Int32;
+
+context Integers =
+  Int32,
+  ops::eq[Lhs=Int32, Rhs=Int32],
+  ops::ne[Lhs=Int32, Rhs=Int32],
+  ops::lt[Lhs=Int32, Rhs=Int32],
+  ops::gt[Lhs=Int32, Rhs=Int32],
+  ops::le[Lhs=Int32, Rhs=Int32],
+  ops::ge[Lhs=Int32, Rhs=Int32],
+  ops::Neg[Arg=Int32],
+  ops::Add[Lhs=Int32, Rhs=Int32],
+  ops::Sub[Lhs=Int32, Rhs=Int32],
+  ops::Mul[Lhs=Int32, Rhs=Int32],
+  ops::Div[Lhs=Int32, Rhs=Int32],
+  ops::Rem[Lhs=Int32, Rhs=Int32],
+;
+
+fn callback[Integers]();
+
+fn with_int32_checked[Ctx, callback]() {
+  callback[
+    Int32=I32,
+
+    ops::eq[Lhs=Int32, Rhs=Int32]=eq,
+    ops::ne[Lhs=Int32, Rhs=Int32]=ne,
+    ops::lt[Lhs=Int32, Rhs=Int32]=lt,
+    ops::gt[Lhs=Int32, Rhs=Int32]=gt,
+    ops::le[Lhs=Int32, Rhs=Int32]=le,
+    ops::ge[Lhs=Int32, Rhs=Int32]=ge,
+
+    ops::NegOut[Arg=Int32]=Int32,
+
+    ops::neg[Arg=Int32]=neg_checked,
+
+    ops::AddOut[Lhs=Int32, Rhs=Int32]=Int32,
+    ops::SubOut[Lhs=Int32, Rhs=Int32]=Int32,
+    ops::MulOut[Lhs=Int32, Rhs=Int32]=Int32,
+    ops::DivOut[Lhs=Int32, Rhs=Int32]=Int32,
+    ops::RemOut[Lhs=Int32, Rhs=Int32]=Int32,
+
+    ops::add[Lhs=Int32, Rhs=Int32]=add_checked,
+    ops::sub[Lhs=Int32, Rhs=Int32]=sub_checked,
+    ops::mul[Lhs=Int32, Rhs=Int32]=mul_checked,
+    ops::div[Lhs=Int32, Rhs=Int32]=div_checked,
+    ops::rem[Lhs=Int32, Rhs=Int32]=rem_checked,
+  ]();
+}

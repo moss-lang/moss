@@ -1,0 +1,53 @@
+type Lhs;
+type Rhs;
+
+fn eq[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn ne[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn lt[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn gt[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn le[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn ge[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+
+type Arg;
+
+type NegOut[Arg];
+type NotOut[Arg];
+
+fn neg[Arg, NegOut[Arg]](x: Arg): NegOut[Arg];
+fn not[Arg, NotOut[Arg]](x: Arg): NotOut[Arg];
+
+context Neg[Arg] = NegOut[Arg], neg[Arg, NegOut[Arg]];
+context Not[Arg] = NotOut[Arg], not[Arg, NotOut[Arg]];
+
+type AddOut[Lhs, Rhs];
+type SubOut[Lhs, Rhs];
+type MulOut[Lhs, Rhs];
+type DivOut[Lhs, Rhs];
+type RemOut[Lhs, Rhs];
+type ShlOut[Lhs, Rhs];
+type ShrOut[Lhs, Rhs];
+type AndOut[Lhs, Rhs];
+type OrOut[Lhs, Rhs];
+type XorOut[Lhs, Rhs];
+
+fn add[Lhs, Rhs, AddOut[Lhs, Rhs]](x: Lhs, y: Rhs): AddOut[Lhs, Rhs];
+fn sub[Lhs, Rhs, SubOut[Lhs, Rhs]](x: Lhs, y: Rhs): SubOut[Lhs, Rhs];
+fn mul[Lhs, Rhs, MulOut[Lhs, Rhs]](x: Lhs, y: Rhs): MulOut[Lhs, Rhs];
+fn div[Lhs, Rhs, DivOut[Lhs, Rhs]](x: Lhs, y: Rhs): DivOut[Lhs, Rhs];
+fn rem[Lhs, Rhs, RemOut[Lhs, Rhs]](x: Lhs, y: Rhs): RemOut[Lhs, Rhs];
+fn shl[Lhs, Rhs, ShlOut[Lhs, Rhs]](x: Lhs, y: Rhs): ShlOut[Lhs, Rhs];
+fn shr[Lhs, Rhs, ShrOut[Lhs, Rhs]](x: Lhs, y: Rhs): ShrOut[Lhs, Rhs];
+fn and[Lhs, Rhs, AndOut[Lhs, Rhs]](x: Lhs, y: Rhs): AndOut[Lhs, Rhs];
+fn or[Lhs, Rhs, OrOut[Lhs, Rhs]](x: Lhs, y: Rhs): OrOut[Lhs, Rhs];
+fn xor[Lhs, Rhs, XorOut[Lhs, Rhs]](x: Lhs, y: Rhs): XorOut[Lhs, Rhs];
+
+context Add[Lhs, Rhs] = AddOut[Lhs, Rhs], add[Lhs, Rhs, AddOut[Lhs, Rhs]];
+context Sub[Lhs, Rhs] = SubOut[Lhs, Rhs], sub[Lhs, Rhs, SubOut[Lhs, Rhs]];
+context Mul[Lhs, Rhs] = MulOut[Lhs, Rhs], mul[Lhs, Rhs, MulOut[Lhs, Rhs]];
+context Div[Lhs, Rhs] = DivOut[Lhs, Rhs], div[Lhs, Rhs, DivOut[Lhs, Rhs]];
+context Rem[Lhs, Rhs] = RemOut[Lhs, Rhs], rem[Lhs, Rhs, RemOut[Lhs, Rhs]];
+context Shl[Lhs, Rhs] = ShlOut[Lhs, Rhs], shl[Lhs, Rhs, ShlOut[Lhs, Rhs]];
+context Shr[Lhs, Rhs] = ShrOut[Lhs, Rhs], shr[Lhs, Rhs, ShrOut[Lhs, Rhs]];
+context And[Lhs, Rhs] = AndOut[Lhs, Rhs], and[Lhs, Rhs, AndOut[Lhs, Rhs]];
+context Or[Lhs, Rhs] = OrOut[Lhs, Rhs], or[Lhs, Rhs, OrOut[Lhs, Rhs]];
+context Xor[Lhs, Rhs] = XorOut[Lhs, Rhs], xor[Lhs, Rhs, XorOut[Lhs, Rhs]];
