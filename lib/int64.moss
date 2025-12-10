@@ -32,7 +32,7 @@ fn ge[Ctx](x: I64, y: I64): Bool {
 }
 
 fn neg_unchecked[Ctx](x: I64): I64 {
-  sub_checked(wasm::i64_extend_i32_s(0), x)
+  wasm::i64_sub(wasm::i64_extend_i32_s(0), x)
 }
 
 type Int64;
