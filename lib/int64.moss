@@ -1,0 +1,91 @@
+import "./ops.moss" as ops use Arg, Lhs, Rhs;
+import "./wasm.moss" as wasm use I32, I64;
+
+fn nonzero(n: I32): Bool;
+
+fn overflow();
+
+context Ctx = wasm::wasm, nonzero, overflow;
+
+fn eq[Ctx](x: I64, y: I64): Bool {
+  nonzero(wasm::i64_eq(x, y))
+}
+
+fn ne[Ctx](x: I64, y: I64): Bool {
+  nonzero(wasm::i64_ne(x, y))
+}
+
+fn lt[Ctx](x: I64, y: I64): Bool {
+  nonzero(wasm::i64_lt_s(x, y))
+}
+
+fn gt[Ctx](x: I64, y: I64): Bool {
+  nonzero(wasm::i64_gt_s(x, y))
+}
+
+fn le[Ctx](x: I64, y: I64): Bool {
+  nonzero(wasm::i64_le_s(x, y))
+}
+
+fn ge[Ctx](x: I64, y: I64): Bool {
+  nonzero(wasm::i64_ge_s(x, y))
+}
+
+fn neg_unchecked[Ctx](x: I64): I64 {
+  sub_checked(wasm::i64_extend_i32_s(0), x)
+}
+
+type Int64;
+
+context Integers =
+  Int64,
+  ops::eq[Lhs=Int64, Rhs=Int64],
+  ops::ne[Lhs=Int64, Rhs=Int64],
+  ops::lt[Lhs=Int64, Rhs=Int64],
+  ops::gt[Lhs=Int64, Rhs=Int64],
+  ops::le[Lhs=Int64, Rhs=Int64],
+  ops::ge[Lhs=Int64, Rhs=Int64],
+  ops::NegOut[Arg=Int64]=Int64,
+  ops::Neg[Arg=Int64],
+  ops::AddOut[Lhs=Int64, Rhs=Int64]=Int64,
+  ops::SubOut[Lhs=Int64, Rhs=Int64]=Int64,
+  ops::MulOut[Lhs=Int64, Rhs=Int64]=Int64,
+  ops::DivOut[Lhs=Int64, Rhs=Int64]=Int64,
+  ops::RemOut[Lhs=Int64, Rhs=Int64]=Int64,
+  ops::Add[Lhs=Int64, Rhs=Int64],
+  ops::Sub[Lhs=Int64, Rhs=Int64],
+  ops::Mul[Lhs=Int64, Rhs=Int64],
+  ops::Div[Lhs=Int64, Rhs=Int64],
+  ops::Rem[Lhs=Int64, Rhs=Int64],
+;
+
+fn callback[Integers]();
+
+fn with_int64_unchecked[Ctx, callback]() {
+  callback[
+    Int64=I64,
+
+    ops::eq[Lhs=Int64, Rhs=Int64]=eq,
+    ops::ne[Lhs=Int64, Rhs=Int64]=ne,
+    ops::lt[Lhs=Int64, Rhs=Int64]=lt,
+    ops::gt[Lhs=Int64, Rhs=Int64]=gt,
+    ops::le[Lhs=Int64, Rhs=Int64]=le,
+    ops::ge[Lhs=Int64, Rhs=Int64]=ge,
+
+    ops::NegOut[Arg=Int64]=Int64,
+
+    ops::neg[Arg=Int64]=neg_unchecked,
+
+    ops::AddOut[Lhs=Int64, Rhs=Int64]=Int64,
+    ops::SubOut[Lhs=Int64, Rhs=Int64]=Int64,
+    ops::MulOut[Lhs=Int64, Rhs=Int64]=Int64,
+    ops::DivOut[Lhs=Int64, Rhs=Int64]=Int64,
+    ops::RemOut[Lhs=Int64, Rhs=Int64]=Int64,
+
+    ops::add[Lhs=Int64, Rhs=Int64]=wasm::i64_add,
+    ops::sub[Lhs=Int64, Rhs=Int64]=wasm::i64_sub,
+    ops::mul[Lhs=Int64, Rhs=Int64]=wasm::i64_mul,
+    ops::div[Lhs=Int64, Rhs=Int64]=wasm::i64_div_s,
+    ops::rem[Lhs=Int64, Rhs=Int64]=wasm::i64_rem_s,
+  ]();
+}
