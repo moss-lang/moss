@@ -98,49 +98,73 @@ fn int64_realize_int64[
   static literal_int64[LiteralInt64],
 ](): Int64;
 
-fn uint31_realize[
+fn uint31_realize_uint[
   LiteralUint31,
   Uint,
   static literal_uint31[LiteralUint31],
 ](): Uint;
 
-fn uint32_realize[
+fn uint32_realize_uint[
   LiteralUint32,
   Uint,
   static literal_uint32[LiteralUint32],
 ](): Uint;
 
-fn uint63_realize[
+fn uint63_realize_uint[
   LiteralUint63,
   Uint,
   static literal_uint63[LiteralUint63],
 ](): Uint;
 
-fn uint64_realize[
+fn uint64_realize_uint[
   LiteralUint64,
   Uint,
   static literal_uint64[LiteralUint64],
 ](): Uint;
 
-fn uint_realize[
+fn uint_realize_uint[
   LiteralUint,
   Uint,
   static literal_uint[LiteralUint],
 ](): Uint;
 
-fn int32_realize[
+fn uint31_realize_int[
+  LiteralUint31,
+  Int,
+  static literal_uint31[LiteralUint31],
+](): Int;
+
+fn uint32_realize_int[
+  LiteralUint32,
+  Int,
+  static literal_uint32[LiteralUint32],
+](): Int;
+
+fn int32_realize_int[
   LiteralInt32,
   Int,
   static literal_int32[LiteralInt32],
 ](): Int;
 
-fn int64_realize[
+fn uint63_realize_int[
+  LiteralUint63,
+  Int,
+  static literal_uint63[LiteralUint63],
+](): Int;
+
+fn uint64_realize_int[
+  LiteralUint64,
+  Int,
+  static literal_uint64[LiteralUint64],
+](): Int;
+
+fn int64_realize_int[
   LiteralInt64,
   Int,
   static literal_int64[LiteralInt64],
 ](): Int;
 
-fn int_realize[
+fn int_realize_int[
   LiteralInt,
   Int,
   static literal_int[LiteralInt],
