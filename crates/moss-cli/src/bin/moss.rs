@@ -18,6 +18,9 @@ use moss_core::{
     prelude::prelude,
     wasm::wasm,
 };
+#[path = "../binaryen.rs"]
+mod binaryen;
+use binaryen::{Opt, optimize_wasm, parse_opt};
 use wasmtime::{Engine, Linker, Module, Store};
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder, p1::WasiP1Ctx};
 
@@ -38,7 +41,7 @@ impl Compiler<'_> {
     }
 }
 
-fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
+fn compile(script: &str, opt: Option<Opt>) -> anyhow::Result<Vec<u8>> {
     let source = fs::read_to_string(script)?;
     let compiler = Compiler {
         path: script,
@@ -71,11 +74,14 @@ fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
     })?;
     let start = names.fndefs[&(module, ir.strings.get_id("main").unwrap())];
     let bytes = wasm(&ir, &names, lib, start);
-    Ok(bytes)
+    match opt {
+        Some(opt) => optimize_wasm(bytes, opt),
+        None => Ok(bytes),
+    }
 }
 
-fn build(script: &str, output: Option<&Path>) -> anyhow::Result<()> {
-    let bytes = compile(script)?;
+fn build(script: &str, output: Option<&Path>, opt: Option<Opt>) -> anyhow::Result<()> {
+    let bytes = compile(script, opt)?;
     match output {
         Some(out) => {
             fs::write(out, bytes)?;
@@ -91,8 +97,8 @@ fn build(script: &str, output: Option<&Path>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run(script: &str, args: &[String]) -> anyhow::Result<i32> {
-    let bytes = compile(script)?;
+fn run(script: &str, args: &[String], opt: Option<Opt>) -> anyhow::Result<i32> {
+    let bytes = compile(script, opt)?;
     let engine = Engine::default();
     let mut linker = Linker::new(&engine);
     wasmtime_wasi::p1::add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
@@ -117,8 +123,8 @@ fn run(script: &str, args: &[String]) -> anyhow::Result<i32> {
     }
 }
 
-fn run_exit(script: &str, args: &[String]) -> ExitCode {
-    match run(script, args) {
+fn run_exit(script: &str, args: &[String], opt: Option<Opt>) -> ExitCode {
+    match run(script, args, opt) {
         Ok(exit_code) => ExitCode::from(exit_code as u8),
         Err(err) => err_fail(err),
     }
@@ -136,12 +142,33 @@ enum Commands {
     Run {
         script: String,
         args: Vec<String>,
+        #[arg(
+            short = 'O',
+            long = "opt-level",
+            value_name = "LEVEL",
+            num_args = 0..=1,
+            default_missing_value = "2",
+            value_parser = parse_opt,
+            help = "Binaryen optimization level (0,1,2,3,s,z)"
+        )]
+        opt: Option<Opt>,
     },
     Build {
         script: String,
 
         #[arg(short)]
         output: Option<PathBuf>,
+
+        #[arg(
+            short = 'O',
+            long = "opt-level",
+            value_name = "LEVEL",
+            num_args = 0..=1,
+            default_missing_value = "2",
+            value_parser = parse_opt,
+            help = "Binaryen optimization level (0,1,2,3,s,z)"
+        )]
+        opt: Option<Opt>,
     },
     Lsp,
 }
@@ -151,13 +178,17 @@ fn main() -> ExitCode {
     if let Some((file, args)) = std::env::args().skip(1).collect::<Vec<_>>().split_first() {
         // Prevent collision with possible future subcommands.
         if file.contains("/") {
-            return run_exit(file, args);
+            return run_exit(file, args, None);
         }
     }
     let args = Cli::parse();
     match args.command {
-        Commands::Run { script, args } => run_exit(&script, &args),
-        Commands::Build { script, output } => match build(&script, output.as_deref()) {
+        Commands::Run { script, args, opt } => run_exit(&script, &args, opt),
+        Commands::Build {
+            script,
+            output,
+            opt,
+        } => match build(&script, output.as_deref(), opt) {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => err_fail(err),
         },

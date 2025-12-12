@@ -23,8 +23,19 @@ moss-core = { path = "crates/moss-core" }
 serde_json = "1"
 strum = "0.27"
 wasm-encoder = "0.241"
-wasmtime = "39"
 wasmtime-wasi = "39"
+libc = "0.2"
+
+[workspace.dependencies.wasmtime]
+version = "39"
+default-features = false
+features = [
+  "cranelift",
+  "parallel-compilation",
+  "pooling-allocator",
+  "cache",
+  "wat",
+]
 
 [profile.release-with-debug]
 inherits = "release"
