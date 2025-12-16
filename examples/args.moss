@@ -1,4 +1,6 @@
-fn main[alloc]() {
+assume Std;
+
+fn main() {
   let cli = args();
   var i = 0;
   while i < cli.len() {

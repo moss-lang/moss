@@ -1,4 +1,6 @@
-fn main[scratch]() {
+assume Std;
+
+fn main() {
   if true {
     println("so true");
   }
