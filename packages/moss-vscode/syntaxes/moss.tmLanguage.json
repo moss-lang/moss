@@ -35,7 +35,7 @@
       "patterns": [
         {
           "name": "keyword.control.moss",
-          "match": "\\b(as|else|if|import|use|while)\\b"
+          "match": "\\b(as|assume|else|if|import|use|while)\\b"
         },
         {
           "name": "keyword.other.moss",
