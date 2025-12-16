@@ -1,3 +1,5 @@
-fn main[alloc]() {
+assume Std;
+
+fn main() {
   print(read(args().get(0)));
 }

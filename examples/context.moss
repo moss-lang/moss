@@ -1,13 +1,15 @@
+assume Std;
+
 val string: String;
 
-fn print_it[scratch, string]() {
+fn print_it[string]() {
   println(string);
 }
 
-fn wait_for_it[scratch, string]() {
+fn wait_for_it[string]() {
   print_it();
 }
 
-fn main[scratch]() {
+fn main() {
   wait_for_it[string="hello"]();
 }

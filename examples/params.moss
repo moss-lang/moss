@@ -1,8 +1,10 @@
-fn foo[scratch](second: String, first: String) {
+assume Std;
+
+fn foo(second: String, first: String) {
   println(first);
   println(second);
 }
 
-fn main[scratch]() {
+fn main() {
   foo("goodbye", "hello");
 }
