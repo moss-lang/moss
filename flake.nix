@@ -97,6 +97,11 @@
             pname = vscodeExtUniqueId;
             inherit version;
             src = vsixRaw;
+            # Including `unzip` here is unnecessary on NixOS 25.11 like we use
+            # in this flake, but https://github.com/NixOS/nixpkgs/pull/464215
+            # removed it, so we must explicitly list it to make the overlay work
+            # with unstable Nixpkgs.
+            nativeBuildInputs = [ final.unzip ];
             unpackPhase = ''
               runHook preUnpack
               unzip $src
