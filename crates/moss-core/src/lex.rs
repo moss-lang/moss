@@ -108,6 +108,9 @@ pub enum Token {
     #[token("as")]
     As,
 
+    #[token("assume")]
+    Assume,
+
     #[token("context")]
     Context,
 
@@ -189,6 +192,7 @@ impl fmt::Display for Token {
             Token::EqualEqual => write!(f, "`==`"),
             Token::GreaterEqual => write!(f, "`>=`"),
             Token::As => write!(f, "`as`"),
+            Token::Assume => write!(f, "`assume`"),
             Token::Context => write!(f, "`context`"),
             Token::Else => write!(f, "`else`"),
             Token::Fn => write!(f, "`fn`"),

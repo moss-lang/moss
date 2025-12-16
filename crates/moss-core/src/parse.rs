@@ -46,6 +46,10 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct AssumeId = u32;
+}
+
+define_index_type! {
     pub struct MethodId = u32;
 }
 
@@ -215,6 +219,7 @@ pub struct Tree {
     pub exprs: IndexVec<ExprId, Expr>,
     pub stmts: IndexVec<StmtId, Stmt>,
     pub imports: IndexVec<ImportId, Import>,
+    pub assumes: IndexVec<AssumeId, TokenId>,
     pub tydefs: IndexVec<TydefId, Tydef>,
     pub fndefs: IndexVec<FndefId, Fndef>,
     pub valdefs: IndexVec<ValdefId, Valdef>,
@@ -682,6 +687,13 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn assume(&mut self) -> ParseResult<TokenId> {
+        self.expect(Assume)?;
+        let name = self.expect(Name)?;
+        self.expect(Semi)?;
+        Ok(name)
+    }
+
     fn tydef(&mut self) -> ParseResult<Tydef> {
         self.expect(Type)?;
         let name = self.expect(Name)?;
@@ -806,6 +818,10 @@ impl<'a> Parser<'a> {
                 Import => {
                     let import = self.import()?;
                     self.tree.imports.push(import);
+                }
+                Assume => {
+                    let assume = self.assume()?;
+                    self.tree.assumes.push(assume);
                 }
                 Type => {
                     let tydef = self.tydef()?;
