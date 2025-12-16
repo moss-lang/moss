@@ -1,0 +1,9 @@
+assume Std;
+
+fn example() {
+  println((65536 * 65536).to_string());
+}
+
+fn main() {
+  with_int32_unchecked[callback=example]();
+}
