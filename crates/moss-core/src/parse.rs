@@ -844,7 +844,11 @@ impl<'a> Parser<'a> {
                     self.tree.structdefs.push(structdef);
                 }
                 Eof => return Ok(self.tree),
-                _ => return Err(self.err(Import | Type | Fn | Val | Context | Struct | Eof)),
+                _ => {
+                    return Err(
+                        self.err(Import | Assume | Type | Fn | Val | Context | Struct | Eof)
+                    );
+                }
             }
         }
     }
