@@ -49,10 +49,16 @@ You can alternatively use the `build` command to output [WebAssembly](https://we
 moss build examples/hello.moss | wasm-tools print
 ```
 
-This is supported by many WebAssembly engines, such as [Wasmtime](https://wasmtime.dev/) which is what `moss run` uses internally:
+This is supported by many WebAssembly engines, such as [Wasmtime](https://wasmtime.dev/) which is what `moss run` uses internally by default:
 
 ```sh
 moss build examples/hello.moss | wasmtime -
+```
+
+You can also ask `moss run` to execute with Node/V8 instead of Wasmtime (Node must be on your `PATH`):
+
+```sh
+moss run --engine node examples/hello.moss
 ```
 
 ## Language
