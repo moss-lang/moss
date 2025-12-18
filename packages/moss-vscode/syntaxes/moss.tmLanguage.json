@@ -43,7 +43,7 @@
         },
         {
           "name": "storage.type.moss",
-          "match": "\\b(context|fn|let|struct|type|val|var)\\b"
+          "match": "\\b(bind|context|fn|let|struct|type|val|var)\\b"
         }
       ]
     },

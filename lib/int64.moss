@@ -59,10 +59,8 @@ context Integers =
   ops::Rem[Lhs=Int64, Rhs=Int64],
 ;
 
-fn callback[Integers]();
-
-fn with_int64_unchecked[Ctx, callback]() {
-  callback[
+fn int64_unchecked[Ctx](): bind Integers {
+  bind
     Int64=I64,
 
     ops::eq[Lhs=Int64, Rhs=Int64]=eq,
@@ -87,5 +85,4 @@ fn with_int64_unchecked[Ctx, callback]() {
     ops::mul[Lhs=Int64, Rhs=Int64]=wasm::i64_mul,
     ops::div[Lhs=Int64, Rhs=Int64]=wasm::i64_div_s,
     ops::rem[Lhs=Int64, Rhs=Int64]=wasm::i64_rem_s,
-  ]();
 }

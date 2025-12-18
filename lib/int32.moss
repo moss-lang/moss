@@ -91,10 +91,8 @@ context Integers =
   ops::Rem[Lhs=Int32, Rhs=Int32],
 ;
 
-fn callback[Integers]();
-
-fn with_int32_unchecked[Ctx, callback]() {
-  callback[
+fn int32_unchecked[Ctx](): bind Integers {
+  bind
     Int32=I32,
 
     ops::eq[Lhs=Int32, Rhs=Int32]=eq,
@@ -119,11 +117,10 @@ fn with_int32_unchecked[Ctx, callback]() {
     ops::mul[Lhs=Int32, Rhs=Int32]=wasm::i32_mul,
     ops::div[Lhs=Int32, Rhs=Int32]=wasm::i32_div_s,
     ops::rem[Lhs=Int32, Rhs=Int32]=wasm::i32_rem_s,
-  ]();
 }
 
-fn with_int32_checked[Ctx, callback]() {
-  callback[
+fn int32_checked[Ctx](): bind Integers {
+  bind
     Int32=I32,
 
     ops::eq[Lhs=Int32, Rhs=Int32]=eq,
@@ -148,5 +145,4 @@ fn with_int32_checked[Ctx, callback]() {
     ops::mul[Lhs=Int32, Rhs=Int32]=mul_checked,
     ops::div[Lhs=Int32, Rhs=Int32]=div_checked,
     ops::rem[Lhs=Int32, Rhs=Int32]=rem_checked,
-  ]();
 }
