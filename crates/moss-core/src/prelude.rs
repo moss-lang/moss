@@ -1,10 +1,16 @@
-use std::{collections::HashMap, env, ffi::OsStr, fs, io, path::PathBuf};
+use std::{
+    collections::HashMap,
+    env,
+    ffi::OsStr,
+    fs, io,
+    path::{self, Path, PathBuf},
+};
 
 use line_index::{LineIndex, TextSize};
 
 use crate::{
     intern::StrId,
-    lex::{ByteIndex, lex},
+    lex::{ByteIndex, lex, string},
     lower::{IR, ModuleId, Names, lower},
     parse::{ParseError, parse},
 };
@@ -31,36 +37,45 @@ struct Precompile {
 }
 
 impl Precompile {
-    fn error(&self, source: &str, byte: ByteIndex, message: &str) {
+    fn error(&self, path: &Path, source: &str, byte: ByteIndex, message: &str) {
         let lines = LineIndex::new(source);
         let line_col = lines.line_col(TextSize::new(byte.raw()));
         let line = line_col.line + 1;
         let col = line_col.col + 1;
-        panic!("stdlib file, line {line}, column {col}: {message}")
+        panic!("{}:{line}:{col} {message}", path.display())
     }
 
-    fn lib(&mut self, path: StrId) -> ModuleId {
+    fn lib(&mut self, path: StrId) -> io::Result<ModuleId> {
         if let Some(&module) = self.modules.get(&path) {
-            return module;
+            return Ok(module);
         }
-        let source = fs::read_to_string(self.dir.join(&self.ir.strings[path])).unwrap();
+        let absolute = path::absolute(self.dir.join(&self.ir.strings[path]))?;
+        let source = fs::read_to_string(&absolute)?;
         let (tokens, starts) = lex(&source).unwrap();
         let tree = parse(&tokens)
             .map_err(|err| match err {
                 ParseError::Expected { id, tokens: _ } => {
-                    self.error(&source, starts[id], &err.message())
+                    self.error(&absolute, &source, starts[id], &err.message())
                 }
             })
             .unwrap();
-        let imports = &[]; // TODO
-        lower(
+        let imports = tree
+            .imports
+            .iter()
+            .map(|import| {
+                let s = string(&source, &starts, import.from);
+                let id = self.ir.strings.make_id(&s);
+                self.lib(id)
+            })
+            .collect::<io::Result<Vec<_>>>()?;
+        let module = lower(
             &source,
             &starts,
             &tree,
             &mut self.ir,
             &mut self.names,
             self.preprelude,
-            imports,
+            &imports,
         )
         .map_err(|err| {
             let (tokens, message) = err.describe(&source, &starts, &tree, &self.ir, &self.names);
@@ -68,14 +83,16 @@ impl Precompile {
                 Some(range) => starts[range.first],
                 None => ByteIndex::new(0),
             };
-            self.error(&source, start, &message)
+            self.error(&absolute, &source, start, &message)
         })
-        .unwrap()
+        .unwrap();
+        self.modules.insert(path, module);
+        Ok(module)
     }
 
     fn prelude(mut self) -> io::Result<(IR, Names, Lib)> {
         let path = self.ir.strings.make_id("./prelude.moss");
-        let prelude = self.lib(path);
+        let prelude = self.lib(path)?;
         let bool = self.modules[&self.ir.strings.get_id("./bool.moss").unwrap()];
         let wasm = self.modules[&self.ir.strings.get_id("./wasm.moss").unwrap()];
         let wasip1 = self.modules[&self.ir.strings.get_id("./wasip1.moss").unwrap()];

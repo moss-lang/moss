@@ -5,7 +5,7 @@ use indexmap::IndexSet;
 
 use crate::{
     intern::{StrId, Strings},
-    lex::{TokenId, TokenStarts, relex},
+    lex::{TokenId, TokenStarts, relex, string},
     parse::{self, Bind, Block, Expr, ExprId, Field, NeedId, Param, Path, Stmt, StmtId, Tree},
     range::{Inclusive, expr_range, path_range},
     tuples::{TupleRange, Tuples},
@@ -528,22 +528,7 @@ impl<'a> Lower<'a> {
     }
 
     fn string(&mut self, token: TokenId) -> StrId {
-        let mut escaped = String::new();
-        let quoted = self.slice(token);
-        let mut chars = quoted[1..quoted.len() - 1].chars();
-        while let Some(c) = chars.next() {
-            escaped.push(match c {
-                '\\' => match chars.next() {
-                    Some('"') => '"',
-                    Some('\\') => '\\',
-                    Some('n') => '\n',
-                    Some('r') => '\r',
-                    Some('t') => '\t',
-                    _ => unreachable!(),
-                },
-                _ => c,
-            });
-        }
+        let escaped = string(self.source, self.starts, token);
         self.ir.strings.make_id(&escaped)
     }
 

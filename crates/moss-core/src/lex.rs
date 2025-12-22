@@ -270,3 +270,23 @@ pub fn relex(source: &str, starts: &TokenStarts, token: TokenId) -> Range<usize>
     let (_, range) = Token::lexer(&source[start..]).spanned().next().unwrap();
     (range.start + start)..(range.end + start)
 }
+
+pub fn string(source: &str, starts: &TokenStarts, token: TokenId) -> String {
+    let mut escaped = String::new();
+    let quoted = &source[relex(source, starts, token)];
+    let mut chars = quoted[1..quoted.len() - 1].chars();
+    while let Some(c) = chars.next() {
+        escaped.push(match c {
+            '\\' => match chars.next() {
+                Some('"') => '"',
+                Some('\\') => '\\',
+                Some('n') => '\n',
+                Some('r') => '\r',
+                Some('t') => '\t',
+                _ => unreachable!(),
+            },
+            _ => c,
+        });
+    }
+    escaped
+}
