@@ -1,10 +1,22 @@
+use std::{
+    env,
+    ffi::OsStr,
+    fs, io,
+    path::{Path, PathBuf},
+};
+
 use line_index::{LineIndex, TextSize};
 
 use crate::{
     lex::{ByteIndex, lex},
-    lower::{IR, ModuleId, Names, Tydef, Type, lower},
+    lower::{IR, ModuleId, Names, lower},
     parse::{ParseError, parse},
 };
+
+/// Directory to standard library directory.
+///
+/// Should always be `None` for distribution. Usually set to `Some("lib")` for local development.
+const DIR: Option<&str> = option_env!("MOSS_LIB");
 
 pub struct Lib {
     pub bool: ModuleId,
@@ -58,17 +70,17 @@ impl Precompile {
         .unwrap()
     }
 
-    fn prelude(mut self) -> (IR, Names, Lib) {
-        let bool = self.lib(&[], include_str!("../../../lib/bool.moss"));
-        let wasm = self.lib(&[], include_str!("../../../lib/wasm.moss"));
-        let wasip1 = self.lib(&[wasm], include_str!("../../../lib/wasip1.moss"));
+    fn prelude(mut self, dir: &Path) -> io::Result<(IR, Names, Lib)> {
+        let bool = self.lib(&[], &fs::read_to_string(dir.join("bool.moss"))?);
+        let wasm = self.lib(&[], &fs::read_to_string(dir.join("wasm.moss"))?);
+        let wasip1 = self.lib(&[wasm], &fs::read_to_string(dir.join("wasip1.moss"))?);
         let wasi = self.lib(
             &[bool, wasip1, wasm],
-            include_str!("../../../lib/wasi.moss"),
+            &fs::read_to_string(dir.join("wasi.moss"))?,
         );
         let prelude = self.lib(
             &[bool, wasi, wasm],
-            include_str!("../../../lib/prelude.moss"),
+            &fs::read_to_string(dir.join("prelude.moss"))?,
         );
         let lib = Lib {
             bool,
@@ -77,42 +89,33 @@ impl Precompile {
             wasi,
             prelude,
         };
-        (self.ir, self.names, lib)
+        Ok((self.ir, self.names, lib))
     }
 }
 
+fn get_lib_dir() -> Option<PathBuf> {
+    let exe = fs::canonicalize(env::args().next()?).ok()?;
+    let bin = exe.parent()?;
+    if bin.file_name() != Some(OsStr::new("bin")) {
+        return None;
+    }
+    Some(bin.parent()?.join("lib"))
+}
+
 pub fn prelude() -> (IR, Names, Lib) {
+    let dir = match DIR {
+        Some(dir) => fs::canonicalize(dir).ok(),
+        None => get_lib_dir(),
+    }
+    .unwrap();
     let mut ir = IR::default();
-    let mut names = Names::default();
+    let names = Names::default();
     let preprelude = ir.modules.push(());
-    {
-        let name = ir.strings.make_id("StringLit");
-        let ty = ir.ty(Type::String);
-        let tydef = ir.tydefs.push(Tydef { def: Some(ty) });
-        names.tydefs.insert((preprelude, name), tydef);
-    }
-    {
-        let name = ir.strings.make_id("Bool");
-        let ty = ir.ty(Type::Bool);
-        let tydef = ir.tydefs.push(Tydef { def: Some(ty) });
-        names.tydefs.insert((preprelude, name), tydef);
-    }
-    {
-        let name = ir.strings.make_id("RawInt32");
-        let ty = ir.ty(Type::Int32);
-        let tydef = ir.tydefs.push(Tydef { def: Some(ty) });
-        names.tydefs.insert((preprelude, name), tydef);
-    }
-    {
-        let name = ir.strings.make_id("RawInt64");
-        let ty = ir.ty(Type::Int64);
-        let tydef = ir.tydefs.push(Tydef { def: Some(ty) });
-        names.tydefs.insert((preprelude, name), tydef);
-    }
     Precompile {
         ir,
         names,
         preprelude,
     }
-    .prelude()
+    .prelude(&dir)
+    .unwrap()
 }

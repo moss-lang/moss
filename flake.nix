@@ -40,12 +40,7 @@
           };
         commonArgs = {
           pname = "moss";
-          src = filterSource [
-            "/Cargo.toml"
-            "/Cargo.lock"
-            "/crates"
-            "/lib"
-          ] ./.;
+          src = filterSource [ "/Cargo.toml" "/Cargo.lock" "/crates" ] ./.;
           strictDeps = true;
         };
         # `cargoExtraArgs` default is "--locked": https://crane.dev/API.html
@@ -194,6 +189,7 @@
                   pkgs.wasm-tools
                   pkgs.wasmtime
                 ];
+                MOSS_LIB = "lib";
                 shellHook = ''
                   PATH=$PWD/bin:$PATH
                 '';
