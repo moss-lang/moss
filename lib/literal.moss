@@ -1,3 +1,7 @@
+import "./char.moss" use Char;
+import "./int.moss" use Uint32, Int32, Uint64, Int64, Uint, Int;
+import "./string.moss" use String;
+
 type LiteralUint31;
 type LiteralUint32;
 type LiteralInt32;

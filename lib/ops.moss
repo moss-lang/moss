@@ -1,12 +1,14 @@
+import "./bool.moss" use Bool;
+
 type Lhs;
 type Rhs;
 
-fn eq[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
-fn ne[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
-fn lt[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
-fn gt[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
-fn le[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
-fn ge[Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn eq[Bool, Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn ne[Bool, Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn lt[Bool, Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn gt[Bool, Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn le[Bool, Lhs, Rhs](x: Lhs, y: Rhs): Bool;
+fn ge[Bool, Lhs, Rhs](x: Lhs, y: Rhs): Bool;
 
 type Arg;
 
