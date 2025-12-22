@@ -51,6 +51,10 @@
         # `cargoExtraArgs` default is "--locked": https://crane.dev/API.html
         cliArgs = {
           cargoExtraArgs = "--locked --package=moss-cli";
+          postFixup = ''
+            mkdir -p $out/lib
+            cp -a ${./lib}/. $out/lib/
+          '';
         };
         devArgs = {
           cargoExtraArgs = "--locked --package=moss-dev";
@@ -143,8 +147,9 @@
               macos =
                 package:
                 pkgs.runCommand "moss" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
-                  mkdir -p $out/bin
-                  cp ${package}/bin/moss $out/bin/moss
+                  mkdir -p $out
+                  cp -a ${package}/. $out/
+                  chmod u+w $out/bin
                   install_name_tool -change ${pkgs.libiconv}/lib/libiconv.2.dylib /usr/lib/libiconv.2.dylib $out/bin/moss
                 '';
               standalone =
