@@ -1,13 +1,9 @@
-use std::{
-    env,
-    ffi::OsStr,
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, env, ffi::OsStr, fs, io, path::PathBuf};
 
 use line_index::{LineIndex, TextSize};
 
 use crate::{
+    intern::StrId,
     lex::{ByteIndex, lex},
     lower::{IR, ModuleId, Names, lower},
     parse::{ParseError, parse},
@@ -30,6 +26,8 @@ struct Precompile {
     ir: IR,
     names: Names,
     preprelude: ModuleId,
+    dir: PathBuf,
+    modules: HashMap<StrId, ModuleId>,
 }
 
 impl Precompile {
@@ -41,17 +39,22 @@ impl Precompile {
         panic!("stdlib file, line {line}, column {col}: {message}")
     }
 
-    fn lib(&mut self, imports: &[ModuleId], source: &str) -> ModuleId {
-        let (tokens, starts) = lex(source).unwrap();
+    fn lib(&mut self, path: StrId) -> ModuleId {
+        if let Some(&module) = self.modules.get(&path) {
+            return module;
+        }
+        let source = fs::read_to_string(self.dir.join(&self.ir.strings[path])).unwrap();
+        let (tokens, starts) = lex(&source).unwrap();
         let tree = parse(&tokens)
             .map_err(|err| match err {
                 ParseError::Expected { id, tokens: _ } => {
-                    self.error(source, starts[id], &err.message())
+                    self.error(&source, starts[id], &err.message())
                 }
             })
             .unwrap();
+        let imports = &[]; // TODO
         lower(
-            source,
+            &source,
             &starts,
             &tree,
             &mut self.ir,
@@ -60,28 +63,23 @@ impl Precompile {
             imports,
         )
         .map_err(|err| {
-            let (tokens, message) = err.describe(source, &starts, &tree, &self.ir, &self.names);
+            let (tokens, message) = err.describe(&source, &starts, &tree, &self.ir, &self.names);
             let start = match tokens {
                 Some(range) => starts[range.first],
                 None => ByteIndex::new(0),
             };
-            self.error(source, start, &message)
+            self.error(&source, start, &message)
         })
         .unwrap()
     }
 
-    fn prelude(mut self, dir: &Path) -> io::Result<(IR, Names, Lib)> {
-        let bool = self.lib(&[], &fs::read_to_string(dir.join("bool.moss"))?);
-        let wasm = self.lib(&[], &fs::read_to_string(dir.join("wasm.moss"))?);
-        let wasip1 = self.lib(&[wasm], &fs::read_to_string(dir.join("wasip1.moss"))?);
-        let wasi = self.lib(
-            &[bool, wasip1, wasm],
-            &fs::read_to_string(dir.join("wasi.moss"))?,
-        );
-        let prelude = self.lib(
-            &[bool, wasi, wasm],
-            &fs::read_to_string(dir.join("prelude.moss"))?,
-        );
+    fn prelude(mut self) -> io::Result<(IR, Names, Lib)> {
+        let path = self.ir.strings.make_id("./prelude.moss");
+        let prelude = self.lib(path);
+        let bool = self.modules[&self.ir.strings.get_id("./bool.moss").unwrap()];
+        let wasm = self.modules[&self.ir.strings.get_id("./wasm.moss").unwrap()];
+        let wasip1 = self.modules[&self.ir.strings.get_id("./wasip1.moss").unwrap()];
+        let wasi = self.modules[&self.ir.strings.get_id("./wasi.moss").unwrap()];
         let lib = Lib {
             bool,
             wasm,
@@ -114,11 +112,14 @@ pub fn prelude() -> (IR, Names, Lib) {
     let mut ir = IR::default();
     let names = Names::default();
     let preprelude = ir.modules.push(());
+    let modules = HashMap::new();
     Precompile {
         ir,
         names,
         preprelude,
+        dir,
+        modules,
     }
-    .prelude(&dir)
+    .prelude()
     .unwrap()
 }
