@@ -94,6 +94,9 @@ impl Precompile {
 }
 
 fn get_lib_dir() -> Option<PathBuf> {
+    // We must use `std::fs::canonicalize` here instead of `std::path::absolute` to account for
+    // cases where the path to the compiler executable contains symlinks, as happens in the Nix
+    // build for the VS Code extension, for instance.
     let exe = fs::canonicalize(env::args().next()?).ok()?;
     let bin = exe.parent()?;
     if bin.file_name() != Some(OsStr::new("bin")) {
