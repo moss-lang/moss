@@ -1,3 +1,7 @@
-val false: Bool;
+type Bool;
 
-val true: Bool;
+val false[Bool]: Bool;
+
+val true[Bool]: Bool;
+
+context Booleans = Bool, false[Bool], true[Bool];

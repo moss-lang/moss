@@ -1,11 +1,13 @@
+import "./bool.moss" use Bool;
+import "./int.moss" use Int64;
 import "./ops.moss" as ops use Arg, Lhs, Rhs;
 import "./wasm.moss" as wasm use I32, I64;
 
-fn nonzero(n: I32): Bool;
+fn nonzero[Bool](n: I32): Bool;
 
 fn overflow();
 
-context Ctx = wasm::wasm, nonzero, overflow;
+context Ctx = Bool, wasm::wasm, nonzero[Bool], overflow;
 
 fn eq[Ctx](x: I64, y: I64): Bool {
   nonzero(wasm::i64_eq(x, y))
@@ -35,16 +37,15 @@ fn neg_unchecked[Ctx](x: I64): I64 {
   wasm::i64_sub(wasm::i64_extend_i32_s(0), x)
 }
 
-type Int64;
-
 context Integers =
+  Bool,
   Int64,
-  ops::eq[Lhs=Int64, Rhs=Int64],
-  ops::ne[Lhs=Int64, Rhs=Int64],
-  ops::lt[Lhs=Int64, Rhs=Int64],
-  ops::gt[Lhs=Int64, Rhs=Int64],
-  ops::le[Lhs=Int64, Rhs=Int64],
-  ops::ge[Lhs=Int64, Rhs=Int64],
+  ops::eq[Bool, Lhs=Int64, Rhs=Int64],
+  ops::ne[Bool, Lhs=Int64, Rhs=Int64],
+  ops::lt[Bool, Lhs=Int64, Rhs=Int64],
+  ops::gt[Bool, Lhs=Int64, Rhs=Int64],
+  ops::le[Bool, Lhs=Int64, Rhs=Int64],
+  ops::ge[Bool, Lhs=Int64, Rhs=Int64],
   ops::NegOut[Arg=Int64]=Int64,
   ops::Neg[Arg=Int64],
   ops::AddOut[Lhs=Int64, Rhs=Int64]=Int64,
@@ -63,12 +64,12 @@ fn int64_unchecked[Ctx](): bind Integers {
   bind
     Int64=I64,
 
-    ops::eq[Lhs=Int64, Rhs=Int64]=eq,
-    ops::ne[Lhs=Int64, Rhs=Int64]=ne,
-    ops::lt[Lhs=Int64, Rhs=Int64]=lt,
-    ops::gt[Lhs=Int64, Rhs=Int64]=gt,
-    ops::le[Lhs=Int64, Rhs=Int64]=le,
-    ops::ge[Lhs=Int64, Rhs=Int64]=ge,
+    ops::eq[Bool, Lhs=Int64, Rhs=Int64]=eq,
+    ops::ne[Bool, Lhs=Int64, Rhs=Int64]=ne,
+    ops::lt[Bool, Lhs=Int64, Rhs=Int64]=lt,
+    ops::gt[Bool, Lhs=Int64, Rhs=Int64]=gt,
+    ops::le[Bool, Lhs=Int64, Rhs=Int64]=le,
+    ops::ge[Bool, Lhs=Int64, Rhs=Int64]=ge,
 
     ops::NegOut[Arg=Int64]=Int64,
 

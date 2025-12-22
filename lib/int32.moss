@@ -1,11 +1,13 @@
+import "./bool.moss" use Bool;
+import "./int.moss" use Int32;
 import "./ops.moss" as ops use Arg, Lhs, Rhs;
 import "./wasm.moss" as wasm use I32, I64;
 
-fn nonzero(n: I32): Bool;
+fn nonzero[Bool](n: I32): Bool;
 
 fn overflow();
 
-context Ctx = wasm::wasm, nonzero, overflow;
+context Ctx = Bool, wasm::wasm, nonzero[Bool], overflow;
 
 fn check[Ctx](z: I64): I32 {
   let w = wasm::i32_wrap_i64(z);
@@ -67,16 +69,15 @@ fn rem_checked[Ctx](x: I32, y: I32): I32 {
   check(wasm::i64_rem_s(wasm::i64_extend_i32_s(x), wasm::i64_extend_i32_s(y)))
 }
 
-type Int32;
-
 context Integers =
+  Bool,
   Int32,
-  ops::eq[Lhs=Int32, Rhs=Int32],
-  ops::ne[Lhs=Int32, Rhs=Int32],
-  ops::lt[Lhs=Int32, Rhs=Int32],
-  ops::gt[Lhs=Int32, Rhs=Int32],
-  ops::le[Lhs=Int32, Rhs=Int32],
-  ops::ge[Lhs=Int32, Rhs=Int32],
+  ops::eq[Bool, Lhs=Int32, Rhs=Int32],
+  ops::ne[Bool, Lhs=Int32, Rhs=Int32],
+  ops::lt[Bool, Lhs=Int32, Rhs=Int32],
+  ops::gt[Bool, Lhs=Int32, Rhs=Int32],
+  ops::le[Bool, Lhs=Int32, Rhs=Int32],
+  ops::ge[Bool, Lhs=Int32, Rhs=Int32],
   ops::NegOut[Arg=Int32]=Int32,
   ops::Neg[Arg=Int32],
   ops::AddOut[Lhs=Int32, Rhs=Int32]=Int32,
@@ -95,12 +96,12 @@ fn int32_unchecked[Ctx](): bind Integers {
   bind
     Int32=I32,
 
-    ops::eq[Lhs=Int32, Rhs=Int32]=eq,
-    ops::ne[Lhs=Int32, Rhs=Int32]=ne,
-    ops::lt[Lhs=Int32, Rhs=Int32]=lt,
-    ops::gt[Lhs=Int32, Rhs=Int32]=gt,
-    ops::le[Lhs=Int32, Rhs=Int32]=le,
-    ops::ge[Lhs=Int32, Rhs=Int32]=ge,
+    ops::eq[Bool, Lhs=Int32, Rhs=Int32]=eq,
+    ops::ne[Bool, Lhs=Int32, Rhs=Int32]=ne,
+    ops::lt[Bool, Lhs=Int32, Rhs=Int32]=lt,
+    ops::gt[Bool, Lhs=Int32, Rhs=Int32]=gt,
+    ops::le[Bool, Lhs=Int32, Rhs=Int32]=le,
+    ops::ge[Bool, Lhs=Int32, Rhs=Int32]=ge,
 
     ops::NegOut[Arg=Int32]=Int32,
 
@@ -123,12 +124,12 @@ fn int32_checked[Ctx](): bind Integers {
   bind
     Int32=I32,
 
-    ops::eq[Lhs=Int32, Rhs=Int32]=eq,
-    ops::ne[Lhs=Int32, Rhs=Int32]=ne,
-    ops::lt[Lhs=Int32, Rhs=Int32]=lt,
-    ops::gt[Lhs=Int32, Rhs=Int32]=gt,
-    ops::le[Lhs=Int32, Rhs=Int32]=le,
-    ops::ge[Lhs=Int32, Rhs=Int32]=ge,
+    ops::eq[Bool, Lhs=Int32, Rhs=Int32]=eq,
+    ops::ne[Bool, Lhs=Int32, Rhs=Int32]=ne,
+    ops::lt[Bool, Lhs=Int32, Rhs=Int32]=lt,
+    ops::gt[Bool, Lhs=Int32, Rhs=Int32]=gt,
+    ops::le[Bool, Lhs=Int32, Rhs=Int32]=le,
+    ops::ge[Bool, Lhs=Int32, Rhs=Int32]=ge,
 
     ops::NegOut[Arg=Int32]=Int32,
 
