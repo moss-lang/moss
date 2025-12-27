@@ -39,6 +39,9 @@ pub enum Token {
     #[token("%")]
     Percent,
 
+    #[token("&")]
+    Ampersand,
+
     #[token("(")]
     LParen,
 
@@ -84,8 +87,14 @@ pub enum Token {
     #[token("]")]
     RBracket,
 
+    #[token("^")]
+    Caret,
+
     #[token("{")]
     LBrace,
+
+    #[token("|")]
+    Pipe,
 
     #[token("}")]
     RBrace,
@@ -96,6 +105,9 @@ pub enum Token {
     #[token("::")]
     ColonColon,
 
+    #[token("<<")]
+    LessLess,
+
     #[token("<=")]
     LessEqual,
 
@@ -105,8 +117,17 @@ pub enum Token {
     #[token(">=")]
     GreaterEqual,
 
+    #[token(">>")]
+    GreaterGreater,
+
     #[token("as")]
     As,
+
+    #[token("assume")]
+    Assume,
+
+    #[token("bind")]
+    Bind,
 
     #[token("context")]
     Context,
@@ -166,6 +187,7 @@ impl fmt::Display for Token {
             Token::Eof => write!(f, "end of file"),
             Token::Exclam => write!(f, "`!`"),
             Token::Percent => write!(f, "`%`"),
+            Token::Ampersand => write!(f, "`&`"),
             Token::LParen => write!(f, "`(`"),
             Token::RParen => write!(f, "`)`"),
             Token::Star => write!(f, "`*`"),
@@ -181,14 +203,20 @@ impl fmt::Display for Token {
             Token::Greater => write!(f, "`>`"),
             Token::LBracket => write!(f, "`[`"),
             Token::RBracket => write!(f, "`]`"),
+            Token::Caret => write!(f, "`^`"),
             Token::LBrace => write!(f, "`{{`"),
+            Token::Pipe => write!(f, "`|`"),
             Token::RBrace => write!(f, "`}}`"),
             Token::ExclamEqual => write!(f, "`!=`"),
             Token::ColonColon => write!(f, "`::`"),
+            Token::LessLess => write!(f, "`<<`"),
             Token::LessEqual => write!(f, "`<=`"),
             Token::EqualEqual => write!(f, "`==`"),
             Token::GreaterEqual => write!(f, "`>=`"),
+            Token::GreaterGreater => write!(f, "`>>`"),
             Token::As => write!(f, "`as`"),
+            Token::Assume => write!(f, "`assume`"),
+            Token::Bind => write!(f, "`bind`"),
             Token::Context => write!(f, "`context`"),
             Token::Else => write!(f, "`else`"),
             Token::Fn => write!(f, "`fn`"),
@@ -261,4 +289,24 @@ pub fn relex(source: &str, starts: &TokenStarts, token: TokenId) -> Range<usize>
     let start = starts[token].index();
     let (_, range) = Token::lexer(&source[start..]).spanned().next().unwrap();
     (range.start + start)..(range.end + start)
+}
+
+pub fn string(source: &str, starts: &TokenStarts, token: TokenId) -> String {
+    let mut escaped = String::new();
+    let quoted = &source[relex(source, starts, token)];
+    let mut chars = quoted[1..quoted.len() - 1].chars();
+    while let Some(c) = chars.next() {
+        escaped.push(match c {
+            '\\' => match chars.next() {
+                Some('"') => '"',
+                Some('\\') => '\\',
+                Some('n') => '\n',
+                Some('r') => '\r',
+                Some('t') => '\t',
+                _ => unreachable!(),
+            },
+            _ => c,
+        });
+    }
+    escaped
 }

@@ -35,7 +35,7 @@
       "patterns": [
         {
           "name": "keyword.control.moss",
-          "match": "\\b(as|else|if|import|use|while)\\b"
+          "match": "\\b(as|assume|else|if|import|use|while)\\b"
         },
         {
           "name": "keyword.other.moss",
@@ -43,7 +43,7 @@
         },
         {
           "name": "storage.type.moss",
-          "match": "\\b(context|fn|let|struct|type|val|var)\\b"
+          "match": "\\b(bind|context|fn|let|struct|type|val|var)\\b"
         }
       ]
     },
@@ -91,7 +91,7 @@
       "patterns": [
         {
           "name": "keyword.operator.moss",
-          "match": "!=|::|<=|==|>=|!|%|\\*|\\+|-|/|:|<|=|>"
+          "match": "!=|::|<<|<=|==|>=|>>|!|%|&|\\*|\\+|-|/|:|<|=|>|\\^|\\|"
         }
       ]
     }
