@@ -14,6 +14,10 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct MemberId = u32;
+}
+
+define_index_type! {
     pub struct TypeId = u32;
 }
 
@@ -54,6 +58,14 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct AliasId = u32;
+}
+
+define_index_type! {
+    pub struct TagdefId = u32;
+}
+
+define_index_type! {
     pub struct TydefId = u32;
 }
 
@@ -69,10 +81,6 @@ define_index_type! {
     pub struct CtxdefId = u32;
 }
 
-define_index_type! {
-    pub struct StructdefId = u32;
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Path {
     pub prefix: IdRange<NameId>,
@@ -86,8 +94,21 @@ pub struct Method {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct Member {
+    pub name: TokenId,
+    pub ty: TypeId,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Type {
     Path(Path),
+    Record(IdRange<MemberId>),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Spec {
+    pub path: Path,
+    pub binds: IdRange<BindId>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -99,13 +120,19 @@ pub enum NeedKind {
 #[derive(Clone, Copy, Debug)]
 pub struct Need {
     pub kind: NeedKind,
-    pub path: Path,
+    pub spec: Spec,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Entry {
+    Lit(TokenId),
+    Ref(Spec),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Bind {
-    pub path: Path,
-    pub val: ExprId,
+    pub key: Spec,
+    pub val: Entry,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -173,9 +200,23 @@ pub struct Import {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct Alias {
+    pub name: TokenId,
+    pub needs: IdRange<NeedId>,
+    pub def: TypeId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Tagdef {
+    pub name: TokenId,
+    pub needs: IdRange<NeedId>,
+    pub def: TypeId,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Tydef {
     pub name: TokenId,
-    pub def: Option<TypeId>,
+    pub needs: IdRange<NeedId>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -201,16 +242,11 @@ pub struct Ctxdef {
     pub def: IdRange<NeedId>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Structdef {
-    pub name: TokenId,
-    pub fields: IdRange<ParamId>,
-}
-
 #[derive(Debug, Default)]
 pub struct Tree {
     pub names: IndexVec<NameId, TokenId>,
     pub methods: IndexVec<MethodId, Method>,
+    pub members: IndexVec<MemberId, Member>,
     pub types: IndexVec<TypeId, Type>,
     pub needs: IndexVec<NeedId, Need>,
     pub binds: IndexVec<BindId, Bind>,
@@ -220,11 +256,12 @@ pub struct Tree {
     pub stmts: IndexVec<StmtId, Stmt>,
     pub imports: IndexVec<ImportId, Import>,
     pub assumes: IndexVec<AssumeId, TokenId>,
+    pub aliases: IndexVec<AliasId, Alias>,
+    pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub tydefs: IndexVec<TydefId, Tydef>,
     pub fndefs: IndexVec<FndefId, Fndef>,
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
-    pub structdefs: IndexVec<StructdefId, Structdef>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -312,16 +349,57 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn member(&mut self) -> ParseResult<Member> {
+        let name = self.expect(Name)?;
+        self.expect(Colon)?;
+        let ty = self.ty_id()?;
+        Ok(Member { name, ty })
+    }
+
     fn ty(&mut self) -> ParseResult<Type> {
         match self.peek() {
             Name => Ok(Type::Path(self.path()?)),
-            _ => Err(self.err(EnumSet::only(Name))),
+            LBrace => {
+                let mut members = Vec::new();
+                loop {
+                    if let RBrace = self.peek() {
+                        self.next();
+                        let members = IdRange::new(&mut self.tree.members, members);
+                        return Ok(Type::Record(members));
+                    }
+                    members.push(self.member()?);
+                    if let Comma = self.peek() {
+                        self.next();
+                    }
+                }
+            }
+            _ => Err(self.err(Name | LBrace)),
         }
     }
 
     fn ty_id(&mut self) -> ParseResult<TypeId> {
         let ty = self.ty()?;
         Ok(self.tree.types.push(ty))
+    }
+
+    fn spec(&mut self) -> ParseResult<Spec> {
+        let path = self.path()?;
+        let mut binds = Vec::new();
+        if let LBracket = self.peek() {
+            self.next();
+            loop {
+                if let RBracket = self.peek() {
+                    self.next();
+                    break;
+                }
+                binds.push(self.bind()?);
+                if let Comma = self.peek() {
+                    self.next();
+                }
+            }
+        }
+        let binds = IdRange::new(&mut self.tree.binds, binds);
+        Ok(Spec { path, binds })
     }
 
     fn need(&mut self) -> ParseResult<Need> {
@@ -332,8 +410,8 @@ impl<'a> Parser<'a> {
             }
             _ => NeedKind::Default,
         };
-        let path = self.path()?;
-        Ok(Need { kind, path })
+        let spec = self.spec()?;
+        Ok(Need { kind, spec })
     }
 
     fn needs(&mut self) -> ParseResult<Vec<Need>> {
@@ -357,10 +435,19 @@ impl<'a> Parser<'a> {
     }
 
     fn bind(&mut self) -> ParseResult<Bind> {
-        let path = self.path()?;
-        self.expect(Equal)?;
-        let val = self.expr_id(Curly::Yes)?;
-        Ok(Bind { path, val })
+        let key = self.spec()?;
+        let val = match self.peek() {
+            Equal => {
+                self.next();
+                match self.peek() {
+                    Name => Entry::Ref(self.spec()?),
+                    Str | Int => Entry::Lit(self.next()),
+                    _ => return Err(self.err(Name | Str | Int)),
+                }
+            }
+            _ => Entry::Ref(key),
+        };
+        Ok(Bind { key, val })
     }
 
     fn param(&mut self) -> ParseResult<Param> {
@@ -694,20 +781,6 @@ impl<'a> Parser<'a> {
         Ok(name)
     }
 
-    fn tydef(&mut self) -> ParseResult<Tydef> {
-        self.expect(Type)?;
-        let name = self.expect(Name)?;
-        let def = match self.peek() {
-            Equal => {
-                self.next();
-                Some(self.ty_id()?)
-            }
-            _ => None,
-        };
-        self.expect(Semi)?;
-        Ok(Tydef { name, def })
-    }
-
     fn fndef(&mut self) -> ParseResult<Fndef> {
         self.expect(Fn)?;
         let mut name = self.expect(Name)?;
@@ -794,24 +867,6 @@ impl<'a> Parser<'a> {
         Ok(Ctxdef { name, def })
     }
 
-    fn structdef(&mut self) -> ParseResult<Structdef> {
-        self.expect(Struct)?;
-        let name = self.expect(Name)?;
-        self.expect(LBrace)?;
-        let mut fields = Vec::new();
-        loop {
-            if let RBrace = self.peek() {
-                self.next();
-                let fields = IdRange::new(&mut self.tree.params, fields);
-                return Ok(Structdef { name, fields });
-            }
-            fields.push(self.param()?);
-            if let Comma = self.peek() {
-                self.next();
-            }
-        }
-    }
-
     fn tree(mut self) -> ParseResult<Tree> {
         loop {
             match self.peek() {
@@ -824,8 +879,29 @@ impl<'a> Parser<'a> {
                     self.tree.assumes.push(assume);
                 }
                 Type => {
-                    let tydef = self.tydef()?;
-                    self.tree.tydefs.push(tydef);
+                    self.next();
+                    let name = self.expect(Name)?;
+                    let needs = match self.peek() {
+                        LBracket => self.need_ids()?,
+                        _ => IdRange::new(&mut self.tree.needs, Vec::new()),
+                    };
+                    match self.peek() {
+                        Semi => {
+                            self.next();
+                            self.tree.tydefs.push(Tydef { name, needs });
+                        }
+                        Equal => {
+                            self.next();
+                            let def = self.ty_id()?;
+                            self.expect(Semi)?;
+                            self.tree.aliases.push(Alias { name, needs, def });
+                        }
+                        _ => {
+                            let def = self.ty_id()?;
+                            self.expect(Semi)?;
+                            self.tree.tagdefs.push(Tagdef { name, needs, def });
+                        }
+                    }
                 }
                 Fn => {
                     let fndef = self.fndef()?;
@@ -838,10 +914,6 @@ impl<'a> Parser<'a> {
                 Context => {
                     let ctxdef = self.ctxdef()?;
                     self.tree.ctxdefs.push(ctxdef);
-                }
-                Struct => {
-                    let structdef = self.structdef()?;
-                    self.tree.structdefs.push(structdef);
                 }
                 Eof => return Ok(self.tree),
                 _ => {
