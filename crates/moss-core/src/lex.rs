@@ -39,6 +39,9 @@ pub enum Token {
     #[token("%")]
     Percent,
 
+    #[token("&")]
+    Ampersand,
+
     #[token("(")]
     LParen,
 
@@ -84,8 +87,14 @@ pub enum Token {
     #[token("]")]
     RBracket,
 
+    #[token("^")]
+    Caret,
+
     #[token("{")]
     LBrace,
+
+    #[token("|")]
+    Pipe,
 
     #[token("}")]
     RBrace,
@@ -96,6 +105,9 @@ pub enum Token {
     #[token("::")]
     ColonColon,
 
+    #[token("<<")]
+    LessLess,
+
     #[token("<=")]
     LessEqual,
 
@@ -104,6 +116,9 @@ pub enum Token {
 
     #[token(">=")]
     GreaterEqual,
+
+    #[token(">>")]
+    GreaterGreater,
 
     #[token("as")]
     As,
@@ -172,6 +187,7 @@ impl fmt::Display for Token {
             Token::Eof => write!(f, "end of file"),
             Token::Exclam => write!(f, "`!`"),
             Token::Percent => write!(f, "`%`"),
+            Token::Ampersand => write!(f, "`&`"),
             Token::LParen => write!(f, "`(`"),
             Token::RParen => write!(f, "`)`"),
             Token::Star => write!(f, "`*`"),
@@ -187,13 +203,17 @@ impl fmt::Display for Token {
             Token::Greater => write!(f, "`>`"),
             Token::LBracket => write!(f, "`[`"),
             Token::RBracket => write!(f, "`]`"),
+            Token::Caret => write!(f, "`^`"),
             Token::LBrace => write!(f, "`{{`"),
+            Token::Pipe => write!(f, "`|`"),
             Token::RBrace => write!(f, "`}}`"),
             Token::ExclamEqual => write!(f, "`!=`"),
             Token::ColonColon => write!(f, "`::`"),
+            Token::LessLess => write!(f, "`<<`"),
             Token::LessEqual => write!(f, "`<=`"),
             Token::EqualEqual => write!(f, "`==`"),
             Token::GreaterEqual => write!(f, "`>=`"),
+            Token::GreaterGreater => write!(f, "`>>`"),
             Token::As => write!(f, "`as`"),
             Token::Assume => write!(f, "`assume`"),
             Token::Bind => write!(f, "`bind`"),
