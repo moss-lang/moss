@@ -108,11 +108,6 @@ pub enum Type {
     ///
     /// The fields are sorted lexicographically by name.
     Record(TupleRange),
-
-    /// A structural sum type.
-    ///
-    /// The variants must all be nominal types and are sorted by tag ID.
-    Sum(TupleRange),
 }
 
 impl Type {
@@ -143,22 +138,15 @@ impl Type {
             _ => panic!(),
         }
     }
-
-    pub fn sum(self) -> TupleRange {
-        match self {
-            Type::Sum(range) => range,
-            _ => panic!(),
-        }
-    }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Fn {
     pub ctx: CtxId,
     pub def: FndefId,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Val {
     Opaque(CtxId, ValdefId),
     Uint31(u32),
@@ -198,20 +186,10 @@ pub struct Depth(pub u32);
 /// When executed, each instruction implicitly defines a mutable local variable.
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
-    /// Start a block in which everything is computed at compile time.
-    ///
-    /// Type: unit.
-    Static,
-
-    /// End the current [`Instr::Static`] block.
-    ///
-    /// Type: unit.
-    EndStatic,
-
     /// Bind a contextual value until the next [`Instr::EndBind`].
     ///
     /// Type: unit.
-    BindVal(ValdefId, LocalId),
+    BindCall(FndefId, LocalId),
 
     /// End the most recent binding.
     ///
@@ -221,7 +199,7 @@ pub enum Instr {
     /// Get a contextual value.
     ///
     /// Type: that of the given value.
-    Val(ValdefId),
+    Val(ValdefId, CtxId),
 
     /// Get the value of the parameter to this function.
     ///
@@ -238,45 +216,30 @@ pub enum Instr {
     /// Type: unit.
     Set(LocalId, LocalId),
 
-    /// A 32-bit integer constant.
+    /// Construct a value of a nominal type given a value of its inner type.
     ///
-    /// Type: [`Type::Int32`].
-    Int32(u32),
-
-    /// A string constant.
-    ///
-    /// Type: [`Type::String`].
-    String(StrId),
+    /// Type: the given nominal type.
+    Nominal(TagdefId, LocalId),
 
     /// Construct a tuple.
     ///
     /// Type: [`Type::Tuple`] with the given element types.
     Tuple(IdRange<RefId>),
 
-    /// Construct a struct.
+    /// Construct a record.
     ///
-    /// Type: the given struct type.
-    Struct(StructdefId, IdRange<RefId>),
+    /// Type: the given record type.
+    Record(TypeId, IdRange<RefId>),
 
     /// Get an element of a tuple.
     ///
     /// Type: the element type.
     Elem(LocalId, ElemId),
 
-    /// Get a field of a struct.
+    /// Get a field of a record.
     ///
     /// Type: the field type.
     Field(LocalId, FieldId),
-
-    /// Compute integer arithmetic.
-    ///
-    /// Type: [`Type::Int32`].
-    Int32Arith(LocalId, Int32Arith, LocalId),
-
-    /// Compare two integers.
-    ///
-    /// Type: [`Type::Bool`].
-    Int32Comp(LocalId, Int32Comp, LocalId),
 
     /// Call a function.
     ///
@@ -317,24 +280,28 @@ pub enum Instr {
     ///
     /// Type: unit.
     Return(LocalId),
+
+    /// Return bindings from this function.
+    ///
+    /// Type: unit.
+    ReturnBind(CtxId),
 }
 
 #[derive(Debug, Default)]
 pub struct IR {
     pub modules: IndexVec<ModuleId, ()>,
     pub strings: Strings,
+    pub ctxs: IndexSet<Ctx>,
     pub types: IndexSet<Type>,
     pub tuples: Tuples<TypeId>,
-    pub tydefs: IndexVec<TydefId, Tydef>,
+    pub records: Tuples<(StrId, TypeId)>,
+    pub fns: IndexSet<Fn>,
+    pub vals: IndexSet<Val>,
+    pub tydefs: IndexVec<TydefId, ()>,
     pub fndefs: IndexVec<FndefId, Fndef>,
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
-    pub structdefs: IndexVec<StructdefId, Structdef>,
-    pub fields: Tuples<(StrId, TypeId)>,
-    pub need_tys: IndexVec<NeedTyId, Need<TydefId>>,
-    pub need_fns: IndexVec<NeedFnId, Need<FndefId>>,
-    pub need_vals: IndexVec<NeedValId, Need<ValdefId>>,
-    pub need_ctxs: IndexVec<NeedCtxId, Need<CtxdefId>>,
+    pub tagdefs: IndexVec<TagdefId, TypeId>,
     pub locals: IndexVec<LocalId, TypeId>,
     pub instrs: IndexVec<LocalId, Instr>,
     pub refs: IndexVec<RefId, LocalId>,
@@ -347,8 +314,6 @@ impl IR {
         TypeId::from_usize(i)
     }
 }
-
-type ModuleNames<T> = HashMap<(ModuleId, StrId), T>;
 
 fn get_name<T: Copy>(
     prelude: ModuleId,
@@ -386,15 +351,20 @@ fn get_name_method(
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Named {
+    Module(ModuleId),
+    Tydef(TydefId),
+    Fndef(FndefId),
+    Valdef(ValdefId),
+    Ctxdef(CtxdefId),
+}
+
 #[derive(Debug, Default)]
 pub struct Names {
-    pub modules: ModuleNames<ModuleId>,
-    pub tydefs: ModuleNames<TydefId>,
-    pub fndefs: ModuleNames<FndefId>,
-    pub valdefs: ModuleNames<ValdefId>,
-    pub ctxdefs: ModuleNames<CtxdefId>,
-    pub structdefs: ModuleNames<StructdefId>,
-    pub methods: HashMap<(ModuleId, StructdefId, StrId), FndefId>,
+    pub names: HashMap<(ModuleId, StrId), Named>,
+    pub attached: HashMap<(TagdefId, StrId), FndefId>,
+    pub detached: HashMap<(ModuleId, StrId), FndefId>,
 }
 
 struct ErrorCtx<'a> {
