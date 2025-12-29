@@ -70,7 +70,15 @@ define_index_type! {
 }
 
 define_index_type! {
-    pub struct FndefId = u32;
+    pub struct FuncdefId = u32;
+}
+
+define_index_type! {
+    pub struct AttachdefId = u32;
+}
+
+define_index_type! {
+    pub struct DetachdefId = u32;
 }
 
 define_index_type! {
@@ -221,12 +229,27 @@ pub struct Tydef {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Fndef {
-    pub ty: Option<TokenId>,
     pub name: TokenId,
     pub needs: IdRange<NeedId>,
     pub params: IdRange<ParamId>,
     pub result: Option<TypeId>,
     pub def: Option<Block>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Funcdef {
+    pub fndef: Fndef,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Attachdef {
+    pub ty: TokenId,
+    pub fndef: Fndef,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Detachdef {
+    pub fndef: Fndef,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -259,7 +282,9 @@ pub struct Tree {
     pub aliases: IndexVec<AliasId, Alias>,
     pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub tydefs: IndexVec<TydefId, Tydef>,
-    pub fndefs: IndexVec<FndefId, Fndef>,
+    pub funcdefs: IndexVec<FuncdefId, Funcdef>,
+    pub attachdefs: IndexVec<AttachdefId, Attachdef>,
+    pub detachdefs: IndexVec<DetachdefId, Detachdef>,
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
 }
@@ -781,18 +806,7 @@ impl<'a> Parser<'a> {
         Ok(name)
     }
 
-    fn fndef(&mut self) -> ParseResult<Fndef> {
-        self.expect(Fn)?;
-        let mut name = self.expect(Name)?;
-        let ty = match self.peek() {
-            Dot => {
-                self.next();
-                let ty = Some(name);
-                name = self.expect(Name)?;
-                ty
-            }
-            _ => None,
-        };
+    fn fndef(&mut self, name: TokenId) -> ParseResult<Fndef> {
         let needs = match self.peek() {
             LBracket => self.need_ids()?,
             _ => IdRange::new(&mut self.tree.needs, Vec::new()),
@@ -826,7 +840,6 @@ impl<'a> Parser<'a> {
             _ => return Err(self.err(Semi | LBrace)),
         };
         Ok(Fndef {
-            ty,
             name,
             needs,
             params,
@@ -904,8 +917,34 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Fn => {
-                    let fndef = self.fndef()?;
-                    self.tree.fndefs.push(fndef);
+                    self.next();
+                    match self.peek() {
+                        Name => {
+                            let first = self.next();
+                            match self.peek() {
+                                LBracket | LParen => {
+                                    let name = first;
+                                    let fndef = self.fndef(name)?;
+                                    self.tree.funcdefs.push(Funcdef { fndef });
+                                }
+                                Dot => {
+                                    self.next();
+                                    let ty = first;
+                                    let name = self.expect(Name)?;
+                                    let fndef = self.fndef(name)?;
+                                    self.tree.attachdefs.push(Attachdef { ty, fndef });
+                                }
+                                _ => return Err(self.err(LBracket | LParen | Dot)),
+                            }
+                        }
+                        Dot => {
+                            self.next();
+                            let name = self.expect(Name)?;
+                            let fndef = self.fndef(name)?;
+                            self.tree.detachdefs.push(Detachdef { fndef });
+                        }
+                        _ => return Err(self.err(Name | Dot)),
+                    }
                 }
                 Val => {
                     let valdef = self.valdef()?;
