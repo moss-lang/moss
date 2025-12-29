@@ -17,7 +17,19 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct CtxId = u32;
+}
+
+define_index_type! {
     pub struct TypeId = u32;
+}
+
+define_index_type! {
+    pub struct FnId = u32;
+}
+
+define_index_type! {
+    pub struct ValId = u32;
 }
 
 define_index_type! {
@@ -41,7 +53,7 @@ define_index_type! {
 }
 
 define_index_type! {
-    pub struct StructdefId = u32;
+    pub struct TagdefId = u32;
 }
 
 define_index_type! {
@@ -72,26 +84,52 @@ define_index_type! {
     pub struct RefId = u32;
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Ctx {
+    tys: im_rc::HashMap<TydefId, im_rc::HashMap<CtxId, Option<TypeId>>>,
+    fns: im_rc::HashMap<FndefId, im_rc::HashMap<CtxId, Option<FnId>>>,
+    vals: im_rc::HashMap<ValdefId, im_rc::HashMap<CtxId, Option<ValId>>>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
-    /// Static constant string, usually a literal. Runtime-varying strings are not a primitive type.
-    String,
+    /// An instance of an opaque type symbol in a specific context.
+    Opaque(CtxId, TydefId),
 
-    Bool,
+    /// An inner type made nominal via an outer tag symbol.
+    Nominal(TagdefId, TypeId),
 
-    Int32,
-
-    Int64,
-
+    /// A structural tuple of other types.
+    ///
     /// All empty tuples are identically the unit type.
     Tuple(TupleRange),
 
-    Tydef(TydefId),
+    /// A structural record of other types.
+    ///
+    /// The fields are sorted lexicographically by name.
+    Record(TupleRange),
 
-    Structdef(StructdefId),
+    /// A structural sum type.
+    ///
+    /// The variants must all be nominal types and are sorted by tag ID.
+    Sum(TupleRange),
 }
 
 impl Type {
+    pub fn opaque(self) -> (CtxId, TydefId) {
+        match self {
+            Type::Opaque(ctx, tydef) => (ctx, tydef),
+            _ => panic!(),
+        }
+    }
+
+    pub fn nominal(self) -> (TagdefId, TypeId) {
+        match self {
+            Type::Nominal(tag, ty) => (tag, ty),
+            _ => panic!(),
+        }
+    }
+
     pub fn tuple(self) -> TupleRange {
         match self {
             Type::Tuple(range) => range,
@@ -99,96 +137,63 @@ impl Type {
         }
     }
 
-    pub fn tydef(self) -> TydefId {
+    pub fn record(self) -> TupleRange {
         match self {
-            Type::Tydef(id) => id,
+            Type::Record(range) => range,
             _ => panic!(),
         }
     }
 
-    pub fn structdef(self) -> StructdefId {
+    pub fn sum(self) -> TupleRange {
         match self {
-            Type::Structdef(id) => id,
+            Type::Sum(range) => range,
             _ => panic!(),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Tydef {
-    pub def: Option<TypeId>,
+pub struct Fn {
+    pub ctx: CtxId,
+    pub def: FndefId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Val {
+    Opaque(CtxId, ValdefId),
+    Uint31(u32),
+    Uint32(u32),
+    Int32(i32),
+    Uint63(u64),
+    Uint64(u64),
+    Int64(i64),
+    Uint(StrId),
+    Int(StrId),
+    Char(char),
+    String(StrId),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Fndef {
-    pub needs: Needs,
+    pub ctx: CtxId,
     pub param: TypeId,
     pub result: TypeId,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Valdef {
-    pub needs: Needs,
+    pub ctx: CtxId,
     pub ty: TypeId,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Needs {
-    pub tys: IdRange<NeedTyId>,
-    pub fns: IdRange<NeedFnId>,
-    pub vals: IdRange<NeedValId>,
-    pub ctxs: IdRange<NeedCtxId>,
-}
-
-#[derive(Clone, Copy, Debug)]
 pub struct Ctxdef {
-    pub def: Needs,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Structdef {
-    pub fields: TupleRange,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum NeedKind {
-    /// A set of needs that all have their individual kinds.
-    Set,
-
-    /// A need that must be satisfied statically.
-    Static,
-
-    /// A need that should be satisfied dynamically.
-    Dynamic,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Need<T> {
-    pub kind: NeedKind,
-    pub id: T,
+    pub ctx: CtxId,
+    pub def: CtxId,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Depth(pub u32);
-
-#[derive(Clone, Copy, Debug)]
-pub enum Int32Arith {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum Int32Comp {
-    Eq,
-    Neq,
-    Lt,
-    Gt,
-    Leq,
-    Geq,
-}
 
 /// When executed, each instruction implicitly defines a mutable local variable.
 #[derive(Clone, Copy, Debug)]
