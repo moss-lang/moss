@@ -485,12 +485,17 @@ struct Lower<'a> {
     module: ModuleId,
     prelude: ModuleId,
     imports: &'a [ModuleId],
-    tydefs: IndexVec<parse::TydefId, TydefId>,
-    fndefs: IndexVec<parse::FndefId, (Option<StructdefId>, FndefId)>,
+    aliases: IndexVec<parse::AliasId, TypeId>,
+    tagdefs: IndexVec<parse::TagdefId, (TagdefId, TypeId)>,
+    tydefs: IndexVec<parse::TagdefId, TydefId>,
+    funcdefs: IndexVec<parse::FuncdefId, FndefId>,
+    attachdefs: IndexVec<parse::AttachdefId, (TagdefId, FndefId)>,
+    detachdefs: IndexVec<parse::DetachdefId, FndefId>,
     valdefs: IndexVec<parse::ValdefId, ValdefId>,
     ctxdefs: IndexVec<parse::CtxdefId, CtxdefId>,
-    structdefs: IndexVec<parse::StructdefId, StructdefId>,
-    funcs: Vec<(parse::FndefId, Option<StructdefId>, FndefId)>,
+    funcs: Vec<(parse::FuncdefId, FndefId)>,
+    attaches: Vec<(parse::AttachdefId, TagdefId, FndefId)>,
+    detaches: Vec<(parse::DetachdefId, FndefId)>,
 }
 
 impl<'a> Lower<'a> {
@@ -1250,12 +1255,17 @@ pub fn lower(
         module,
         prelude,
         imports,
+        aliases: IndexVec::new(),
+        tagdefs: IndexVec::new(),
         tydefs: IndexVec::new(),
-        fndefs: IndexVec::new(),
+        funcdefs: IndexVec::new(),
+        attachdefs: IndexVec::new(),
+        detachdefs: IndexVec::new(),
         valdefs: IndexVec::new(),
         ctxdefs: IndexVec::new(),
-        structdefs: IndexVec::new(),
         funcs: Vec::new(),
+        attaches: Vec::new(),
+        detaches: Vec::new(),
     };
     lower.program()?;
     Ok(module)
