@@ -584,51 +584,41 @@ impl<'a> Lower<'a> {
         for (import, &module) in self.tree.imports.iter().zip(self.imports) {
             if let Some(token) = import.name {
                 let name = self.name(token);
-                self.names.modules.insert((self.module, name), module);
+                let named = Named::Module(module);
+                self.names.names.insert((self.module, name), named);
             }
             for using in import.names {
                 let token = self.tree.names[using];
                 let name = self.name(token);
-                let mut found = false;
-                if let Some(&module) = self.names.modules.get(&(module, name)) {
-                    found = true;
-                    self.names.modules.insert((self.module, name), module);
-                }
-                if let Some(&tydef) = self.names.tydefs.get(&(module, name)) {
-                    found = true;
-                    self.names.tydefs.insert((self.module, name), tydef);
-                }
-                if let Some(&fndef) = self.names.fndefs.get(&(module, name)) {
-                    found = true;
-                    self.names.fndefs.insert((self.module, name), fndef);
-                }
-                if let Some(&valdef) = self.names.valdefs.get(&(module, name)) {
-                    found = true;
-                    self.names.valdefs.insert((self.module, name), valdef);
-                }
-                if let Some(&ctxdef) = self.names.ctxdefs.get(&(module, name)) {
-                    found = true;
-                    self.names.ctxdefs.insert((self.module, name), ctxdef);
-                }
-                if let Some(&structdef) = self.names.structdefs.get(&(module, name)) {
-                    found = true;
-                    self.names.structdefs.insert((self.module, name), structdef);
-                }
-                if !found {
-                    return Err(LowerError::Undefined(token));
+                let key = (self.module, name);
+                match self.names.names.get(&(module, name)) {
+                    None => return Err(LowerError::Undefined(token)),
+                    Some(&Named::Module(module)) => {
+                        self.names.names.insert(key, Named::Module(module));
+                    }
+                    Some(&Named::Tydef(tydef)) => {
+                        self.names.names.insert(key, Named::Tydef(tydef));
+                    }
+                    Some(&Named::Fndef(fndef)) => {
+                        self.names.names.insert(key, Named::Fndef(fndef));
+                    }
+                    Some(&Named::Valdef(valdef)) => {
+                        self.names.names.insert(key, Named::Valdef(valdef));
+                    }
+                    Some(&Named::Ctxdef(ctxdef)) => {
+                        self.names.names.insert(key, Named::Ctxdef(ctxdef));
+                    }
                 }
             }
             for using in import.methods {
-                let tokens = self.tree.methods[using];
-                let name = self.name(tokens.ty);
-                let Some(&ty) = self.names.structdefs.get(&(module, name)) else {
-                    return Err(LowerError::Undefined(tokens.ty));
-                };
-                let name = self.name(tokens.name);
-                let Some(&method) = self.names.methods.get(&(module, ty, name)) else {
-                    return Err(LowerError::Undefined(tokens.name));
-                };
-                self.names.methods.insert((self.module, ty, name), method);
+                let token = self.tree.names[using];
+                let name = self.name(token);
+                match self.names.detached.get(&(module, name)) {
+                    None => return Err(LowerError::Undefined(token)),
+                    Some(&fndef) => {
+                        self.names.detached.insert((self.module, name), fndef);
+                    }
+                }
             }
         }
         Ok(())
