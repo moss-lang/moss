@@ -177,6 +177,11 @@ pub enum Val {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct Tydef {
+    pub ctx: CtxId,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Tagdef {
     pub ctx: CtxId,
     pub inner: TypeId,
@@ -322,7 +327,7 @@ pub struct IR {
     pub types: IndexSet<Type>,
     pub tuples: Tuples<TypeId>,
     pub records: Tuples<(StrId, TypeId)>,
-    pub tydefs: IndexVec<TydefId, ()>,
+    pub tydefs: IndexVec<TydefId, Tydef>,
     pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
     pub fndefs: IndexVec<FndefId, Fndef>,
@@ -448,6 +453,7 @@ impl fmt::Display for FatType<'_, '_> {
 pub enum LowerError {
     Undefined(TokenId),
     NotModule(TokenId),
+    NotType(TokenId),
     NotNominal(TokenId),
     NotContext(TokenId),
     BindContext(parse::BindId),
@@ -456,9 +462,6 @@ pub enum LowerError {
     BindAlias(parse::BindId),
     BindMismatch(parse::BindId),
     LitNotVal(TokenId),
-    Ambiguous(TokenId),
-    NeedStaticCtx(Path),
-    NeedStructdef(Path),
     ExpectedType(TypeId, ExprId, TypeId),
     ThisNotMethod(ExprId),
     Overflow(ExprId),
@@ -490,6 +493,13 @@ impl LowerError {
                     last: token,
                 }),
                 "not a module".to_owned(),
+            ),
+            LowerError::NotType(token) => (
+                Some(Inclusive {
+                    first: token,
+                    last: token,
+                }),
+                "not a type".to_owned(),
             ),
             LowerError::NotNominal(token) => (
                 Some(Inclusive {
@@ -527,21 +537,6 @@ impl LowerError {
                     last: token,
                 }),
                 "cannot bind a literal for something other than a `val`".to_owned(),
-            ),
-            LowerError::Ambiguous(token) => (
-                Some(Inclusive {
-                    first: token,
-                    last: token,
-                }),
-                "ambiguous".to_owned(),
-            ),
-            LowerError::NeedStaticCtx(path) => (
-                Some(ctx.path(path)),
-                "use `static` on individual items, not on `context` dependencies".to_owned(),
-            ),
-            LowerError::NeedStructdef(path) => (
-                Some(ctx.path(path)),
-                "cannot have a concrete `struct` as a dependency".to_owned(),
             ),
             LowerError::ExpectedType(expected, expr, actual) => (
                 Some(ctx.expr(expr)),
@@ -927,16 +922,17 @@ impl<'a> Lower<'a> {
         Ok(self.ctx(ctx))
     }
 
-    fn parse_ty(&mut self, ctx: CtxId, ty: parse::TypeId) -> LowerResult<TypeId> {
+    fn parse_ty(&mut self, ty: parse::TypeId) -> LowerResult<TypeId> {
         match self.tree.types[ty] {
-            parse::Type::Path(path) => {
-                let key = self.path(path)?;
-                match (self.tydef(key), self.structdef(key)) {
-                    (Some(tydef), None) => Ok(self.ty(Type::Tydef(tydef))),
-                    (None, Some(structdef)) => Ok(self.ty(Type::Structdef(structdef))),
-                    (None, None) => Err(LowerError::Undefined(path.last)),
-                    (Some(_), Some(_)) => Err(LowerError::Ambiguous(path.last)),
-                }
+            parse::Type::Spec(spec) => {
+                let (named, ctx) = self.spec(spec)?;
+                let ty = match named {
+                    Named::Tydef(tydef) => Type::Opaque(tydef, ctx),
+                    Named::Tagdef(tagdef) => Type::Nominal(tagdef, ctx),
+                    Named::Aliasdef(aliasdef) => Type::Alias(aliasdef, ctx),
+                    _ => return Err(LowerError::NotType(spec.path.last)),
+                };
+                Ok(self.ty(ty))
             }
             parse::Type::Record(members) => todo!(),
         }
@@ -945,24 +941,26 @@ impl<'a> Lower<'a> {
     fn decls(&mut self) -> LowerResult<()> {
         for (id, &parse::Tydef { name, needs }) in self.tree.tydefs.iter_enumerated() {
             let id = self.tydefs[id];
-            assert_eq!(self.ir.tydefs.push(()), id);
+            drop(name);
+            let ctx = self.needs(needs)?;
+            let tydef = Tydef { ctx };
+            assert_eq!(self.ir.tydefs.push(tydef), id);
         }
         for (id, &parse::Tagdef { name, needs, def }) in self.tree.tagdefs.iter_enumerated() {
             let id = self.tagdefs[id];
+            drop(name);
             let ctx = self.needs(needs)?;
-            let inner = self.parse_ty(ctx, def)?;
+            let inner = self.parse_ty(def)?;
             let tagdef = Tagdef { ctx, inner };
             assert_eq!(self.ir.tagdefs.push(tagdef), id);
         }
-        for (id, &parse::Tydef { name: _, def }) in self.tree.tydefs.iter_enumerated() {
-            let id = self.tydefs[id];
-            let tydef = Tydef {
-                def: match def {
-                    Some(ty) => Some(self.parse_ty(ty)?),
-                    None => None,
-                },
-            };
-            assert_eq!(self.ir.tydefs.push(tydef), id);
+        for (id, &parse::Aliasdef { name, needs, def }) in self.tree.aliasdefs.iter_enumerated() {
+            let id = self.aliasdefs[id];
+            drop(name);
+            let ctx = self.needs(needs)?;
+            let def = self.parse_ty(def)?;
+            let aliasdef = Aliasdef { ctx, def };
+            assert_eq!(self.ir.aliasdefs.push(aliasdef), id);
         }
         for (
             parse_id,
