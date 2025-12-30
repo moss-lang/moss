@@ -41,6 +41,14 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct TagdefId = u32;
+}
+
+define_index_type! {
+    pub struct AliasdefId = u32;
+}
+
+define_index_type! {
     pub struct FndefId = u32;
 }
 
@@ -50,10 +58,6 @@ define_index_type! {
 
 define_index_type! {
     pub struct CtxdefId = u32;
-}
-
-define_index_type! {
-    pub struct TagdefId = u32;
 }
 
 define_index_type! {
@@ -98,6 +102,9 @@ pub enum Type {
 
     /// An inner type made nominal via an outer tag symbol.
     Nominal(TagdefId, TypeId),
+
+    /// A structural type alias.
+    Alias(CtxId, AliasdefId),
 
     /// A structural tuple of other types.
     ///
@@ -159,6 +166,18 @@ pub enum Val {
     Int(StrId),
     Char(char),
     String(StrId),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Tagdef {
+    pub ctx: CtxId,
+    pub inner: TypeId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Aliasdef {
+    pub ctx: CtxId,
+    pub def: TypeId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -298,10 +317,11 @@ pub struct IR {
     pub fns: IndexSet<Fn>,
     pub vals: IndexSet<Val>,
     pub tydefs: IndexVec<TydefId, ()>,
+    pub tagdefs: IndexVec<TagdefId, Tagdef>,
+    pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
     pub fndefs: IndexVec<FndefId, Fndef>,
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
-    pub tagdefs: IndexVec<TagdefId, TypeId>,
     pub locals: IndexVec<LocalId, TypeId>,
     pub instrs: IndexVec<LocalId, Instr>,
     pub refs: IndexVec<RefId, LocalId>,
@@ -355,6 +375,8 @@ fn get_name_method(
 enum Named {
     Module(ModuleId),
     Tydef(TydefId),
+    Tagdef(TagdefId),
+    Aliasdef(AliasdefId),
     Fndef(FndefId),
     Valdef(ValdefId),
     Ctxdef(CtxdefId),
@@ -408,6 +430,7 @@ impl fmt::Display for FatType<'_, '_> {
 #[derive(Clone, Copy, Debug)]
 pub enum LowerError {
     Undefined(TokenId),
+    NotNominal(TokenId),
     Ambiguous(TokenId),
     NeedStaticCtx(Path),
     NeedStructdef(Path),
@@ -435,6 +458,13 @@ impl LowerError {
                     last: token,
                 }),
                 "undefined".to_owned(),
+            ),
+            LowerError::NotNominal(token) => (
+                Some(Inclusive {
+                    first: token,
+                    last: token,
+                }),
+                "not a nominal type".to_owned(),
             ),
             LowerError::Ambiguous(token) => (
                 Some(Inclusive {
@@ -485,9 +515,9 @@ struct Lower<'a> {
     module: ModuleId,
     prelude: ModuleId,
     imports: &'a [ModuleId],
-    aliases: IndexVec<parse::AliasId, TypeId>,
-    tagdefs: IndexVec<parse::TagdefId, (TagdefId, TypeId)>,
     tydefs: IndexVec<parse::TagdefId, TydefId>,
+    tagdefs: IndexVec<parse::TagdefId, TagdefId>,
+    aliasdefs: IndexVec<parse::AliasdefId, AliasdefId>,
     funcdefs: IndexVec<parse::FuncdefId, FndefId>,
     attachdefs: IndexVec<parse::AttachdefId, (TagdefId, FndefId)>,
     detachdefs: IndexVec<parse::DetachdefId, FndefId>,
@@ -599,6 +629,12 @@ impl<'a> Lower<'a> {
                     Some(&Named::Tydef(tydef)) => {
                         self.names.names.insert(key, Named::Tydef(tydef));
                     }
+                    Some(&Named::Tagdef(tagdef)) => {
+                        self.names.names.insert(key, Named::Tagdef(tagdef));
+                    }
+                    Some(&Named::Aliasdef(aliasdef)) => {
+                        self.names.names.insert(key, Named::Aliasdef(aliasdef));
+                    }
                     Some(&Named::Fndef(fndef)) => {
                         self.names.names.insert(key, Named::Fndef(fndef));
                     }
@@ -625,54 +661,83 @@ impl<'a> Lower<'a> {
     }
 
     fn names(&mut self) -> LowerResult<()> {
-        // We must process struct names before function names so that we can attach methods.
-        let mut next_struct = self.ir.structdefs.next_idx();
+        let mut next_ty = self.ir.tydefs.next_idx();
+        let mut next_tag = self.ir.tagdefs.next_idx();
+        let mut next_alias = self.ir.aliasdefs.next_idx();
         let mut next_fn = self.ir.fndefs.next_idx();
-        self.structdefs = (self.tree.structdefs.iter())
+        let mut next_val = self.ir.valdefs.next_idx();
+        let mut next_ctx = self.ir.ctxdefs.next_idx();
+        // We must process nominal type names before we can attach methods to them.
+        self.tagdefs = (self.tree.tagdefs.iter())
             .map(|item| {
-                let id = next_struct;
-                next_struct += 1;
+                let id = next_tag;
+                next_tag += 1;
                 let name = self.name(item.name);
-                self.names.structdefs.insert((self.module, name), id);
+                self.names
+                    .names
+                    .insert((self.module, name), Named::Tagdef(id));
                 id
             })
             .collect();
-        self.fndefs = (self.tree.fndefs.iter())
+        self.attachdefs = (self.tree.attachdefs.iter())
             .map(|item| {
                 let id = next_fn;
                 next_fn += 1;
-                let fn_name = self.name(item.name);
-                let structdef = match item.ty {
-                    None => {
-                        self.names.fndefs.insert((self.module, fn_name), id);
-                        None
+                let fn_name = self.name(item.fndef.name);
+                let ty_name = self.name(item.ty);
+                // TODO: Prevent attaching methods to nominal types defined in other modules.
+                match self.names.names.get(&(self.module, ty_name)) {
+                    Some(&Named::Tagdef(tagdef)) => {
+                        self.names.attached.insert((tagdef, fn_name), id);
+                        Ok((tagdef, id))
                     }
-                    Some(token) => {
-                        let struct_name = self.name(token);
-                        let Some(&structdef) =
-                            self.names.structdefs.get(&(self.module, struct_name))
-                        else {
-                            return Err(LowerError::Undefined(token));
-                        };
-                        self.names
-                            .methods
-                            .insert((self.module, structdef, fn_name), id);
-                        Some(structdef)
-                    }
-                };
-                Ok((structdef, id))
+                    Some(_) => Err(LowerError::NotNominal(item.ty)),
+                    None => Err(LowerError::Undefined(item.ty)),
+                }
             })
             .collect::<LowerResult<_>>()?;
         // Other kinds of things can happen in arbitrary order.
-        let mut next_ty = self.ir.tydefs.next_idx();
-        let mut next_val = self.ir.valdefs.next_idx();
-        let mut next_ctx = self.ir.ctxdefs.next_idx();
         self.tydefs = (self.tree.tydefs.iter())
             .map(|item| {
                 let id = next_ty;
                 next_ty += 1;
                 let name = self.name(item.name);
-                self.names.tydefs.insert((self.module, name), id);
+                self.names
+                    .names
+                    .insert((self.module, name), Named::Tydef(id));
+                id
+            })
+            .collect();
+        self.aliasdefs = (self.tree.aliasdefs.iter())
+            .map(|item| {
+                let id = next_alias;
+                next_alias += 1;
+                let name = self.name(item.name);
+                self.names
+                    .names
+                    .insert((self.module, name), Named::Aliasdef(id));
+                id
+            })
+            .collect();
+        self.funcdefs = (self.tree.funcdefs.iter())
+            .map(|item| {
+                let id = next_fn;
+                next_fn += 1;
+                let name = self.name(item.fndef.name);
+                self.names
+                    .names
+                    .insert((self.module, name), Named::Fndef(id));
+                id
+            })
+            .collect();
+        self.detachdefs = (self.tree.detachdefs.iter())
+            .map(|item| {
+                let id = next_fn;
+                next_fn += 1;
+                let name = self.name(item.fndef.name);
+                self.names
+                    .names
+                    .insert((self.module, name), Named::Fndef(id));
                 id
             })
             .collect();
@@ -681,7 +746,9 @@ impl<'a> Lower<'a> {
                 let id = next_val;
                 next_val += 1;
                 let name = self.name(item.name);
-                self.names.valdefs.insert((self.module, name), id);
+                self.names
+                    .names
+                    .insert((self.module, name), Named::Valdef(id));
                 id
             })
             .collect();
@@ -690,7 +757,9 @@ impl<'a> Lower<'a> {
                 let id = next_ctx;
                 next_ctx += 1;
                 let name = self.name(item.name);
-                self.names.ctxdefs.insert((self.module, name), id);
+                self.names
+                    .names
+                    .insert((self.module, name), Named::Ctxdef(id));
                 id
             })
             .collect();
@@ -1245,9 +1314,9 @@ pub fn lower(
         module,
         prelude,
         imports,
-        aliases: IndexVec::new(),
-        tagdefs: IndexVec::new(),
         tydefs: IndexVec::new(),
+        tagdefs: IndexVec::new(),
+        aliasdefs: IndexVec::new(),
         funcdefs: IndexVec::new(),
         attachdefs: IndexVec::new(),
         detachdefs: IndexVec::new(),
