@@ -146,30 +146,41 @@ pub struct Field {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum Unop {
+    Neg,
+    Not,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Binop {
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
     Add,
     Sub,
     Mul,
     Div,
     Rem,
-    Eq,
-    Neq,
-    Lt,
-    Gt,
-    Leq,
-    Geq,
+    Shl,
+    Shr,
+    And,
+    Or,
+    Xor,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum Expr {
-    This(TokenId),
+    Lit(TokenId),
     Path(Path),
-    Int(TokenId),
-    String(TokenId),
-    Struct(Path, IdRange<FieldId>),
+    Tag(Path, ExprId),
+    Record(IdRange<FieldId>),
     Field(ExprId, TokenId),
     Method(ExprId, TokenId, IdRange<ExprId>),
     Call(Path, IdRange<BindId>, IdRange<ExprId>),
+    Unary(Unop, ExprId),
     Binary(ExprId, Binop, ExprId),
     If(ExprId, Block, Option<Block>),
 }
@@ -424,8 +435,14 @@ impl<'a> Parser<'a> {
                 self.next();
                 match self.peek() {
                     Name => Some(Entry::Ref(self.spec()?)),
-                    Str | Int => Some(Entry::Lit(self.next())),
-                    _ => return Err(self.err(Name | Str | Int)),
+                    Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str => {
+                        Some(Entry::Lit(self.next()))
+                    }
+                    _ => {
+                        return Err(self.err(
+                            Name | Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str,
+                        ));
+                    }
                 }
             }
             _ => None,
@@ -538,6 +555,11 @@ impl<'a> Parser<'a> {
     }
 
     fn expr_atom(&mut self, curly: Curly) -> ParseResult<Expr> {
+        let mut expected =
+            LParen | If | Name | Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str;
+        if let Curly::Yes = curly {
+            expected |= RBrace;
+        }
         match self.peek() {
             LParen => {
                 self.next();
@@ -545,9 +567,25 @@ impl<'a> Parser<'a> {
                 self.expect(RParen)?;
                 Ok(expr)
             }
-            If => self.expr_if(),
-            Int => Ok(Expr::Int(self.next())),
-            Str => Ok(Expr::String(self.next())),
+            LBrace => {
+                if let Curly::No = curly {
+                    return Err(self.err(expected));
+                }
+                self.next();
+                let mut fields = Vec::new();
+                loop {
+                    if let RBrace = self.peek() {
+                        self.next();
+                        let fields = IdRange::new(&mut self.tree.fields, fields);
+                        return Ok(Expr::Record(fields));
+                    }
+                    fields.push(self.field()?);
+                    if let Comma = self.peek() {
+                        self.next();
+                    }
+                }
+            }
+            Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str => Ok(Expr::Lit(self.next())),
             Name => {
                 let path = self.path()?;
                 match self.peek() {
@@ -573,28 +611,18 @@ impl<'a> Parser<'a> {
                         let args = self.arg_ids()?;
                         Ok(Expr::Call(path, binds, args))
                     }
-                    LBrace => {
-                        if let Curly::No = curly {
-                            return Ok(Expr::Path(path));
-                        }
-                        self.next();
-                        let mut fields = Vec::new();
-                        loop {
-                            if let RBrace = self.peek() {
-                                self.next();
-                                let fields = IdRange::new(&mut self.tree.fields, fields);
-                                return Ok(Expr::Struct(path, fields));
-                            }
-                            fields.push(self.field()?);
-                            if let Comma = self.peek() {
-                                self.next();
-                            }
+                    token => {
+                        if expected.contains(token) {
+                            let inner = self.expr_atom(curly)?;
+                            Ok(Expr::Tag(path, self.tree.exprs.push(inner)))
+                        } else {
+                            Ok(Expr::Path(path))
                         }
                     }
-                    _ => Ok(Expr::Path(path)),
                 }
             }
-            _ => Err(self.err(LParen | If | Int | Str | Name)),
+            If => self.expr_if(),
+            _ => Err(self.err(expected)),
         }
     }
 
@@ -623,9 +651,9 @@ impl<'a> Parser<'a> {
         let mut lhs = self.expr_factor(curly)?;
         loop {
             let op = match self.peek() {
-                Percent => Binop::Rem,
                 Star => Binop::Mul,
                 Slash => Binop::Div,
+                Percent => Binop::Rem,
                 _ => break,
             };
             self.next();
@@ -653,12 +681,12 @@ impl<'a> Parser<'a> {
     fn expr_comp(&mut self, curly: Curly) -> ParseResult<Expr> {
         let lhs = self.expr_quant(curly)?;
         let op = match self.peek() {
+            EqualEqual => Some(Binop::Eq),
+            ExclamEqual => Some(Binop::Ne),
             Less => Some(Binop::Lt),
             Greater => Some(Binop::Gt),
-            ExclamEqual => Some(Binop::Neq),
-            LessEqual => Some(Binop::Leq),
-            EqualEqual => Some(Binop::Eq),
-            GreaterEqual => Some(Binop::Geq),
+            LessEqual => Some(Binop::Le),
+            GreaterEqual => Some(Binop::Ge),
             _ => None,
         };
         match op {
@@ -676,6 +704,7 @@ impl<'a> Parser<'a> {
     }
 
     fn expr(&mut self, curly: Curly) -> ParseResult<Expr> {
+        // TODO: Handle all the unary and binary operators.
         self.expr_comp(curly)
     }
 
