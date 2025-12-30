@@ -54,7 +54,7 @@ define_index_type! {
 }
 
 define_index_type! {
-    pub struct AliasId = u32;
+    pub struct TydefId = u32;
 }
 
 define_index_type! {
@@ -62,7 +62,7 @@ define_index_type! {
 }
 
 define_index_type! {
-    pub struct TydefId = u32;
+    pub struct AliasdefId = u32;
 }
 
 define_index_type! {
@@ -198,10 +198,9 @@ pub struct Import {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Alias {
+pub struct Tydef {
     pub name: TokenId,
     pub needs: IdRange<NeedId>,
-    pub def: TypeId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -212,9 +211,10 @@ pub struct Tagdef {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Tydef {
+pub struct Aliasdef {
     pub name: TokenId,
     pub needs: IdRange<NeedId>,
+    pub def: TypeId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -268,9 +268,9 @@ pub struct Tree {
     pub stmts: IndexVec<StmtId, Stmt>,
     pub imports: IndexVec<ImportId, Import>,
     pub assumes: IndexVec<AssumeId, TokenId>,
-    pub aliases: IndexVec<AliasId, Alias>,
-    pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub tydefs: IndexVec<TydefId, Tydef>,
+    pub tagdefs: IndexVec<TagdefId, Tagdef>,
+    pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
     pub funcdefs: IndexVec<FuncdefId, Funcdef>,
     pub attachdefs: IndexVec<AttachdefId, Attachdef>,
     pub detachdefs: IndexVec<DetachdefId, Detachdef>,
@@ -896,7 +896,7 @@ impl<'a> Parser<'a> {
                             self.next();
                             let def = self.ty_id()?;
                             self.expect(Semi)?;
-                            self.tree.aliases.push(Alias { name, needs, def });
+                            self.tree.aliasdefs.push(Aliasdef { name, needs, def });
                         }
                         _ => {
                             let def = self.ty_id()?;
