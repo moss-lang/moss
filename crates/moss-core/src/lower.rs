@@ -986,6 +986,7 @@ impl<'a> Lower<'a> {
             assert_eq!(self.ir.fndefs.push(fndef), id);
         }
         for (parse_id, &parse::Attachdef { ty, fndef }) in self.tree.attachdefs.iter_enumerated() {
+            drop(ty);
             let (tagdef, id) = self.attachdefs[parse_id];
             self.attaches.push((parse_id, tagdef, id));
             let fndef = self.parse_fndef(fndef)?;
@@ -997,34 +998,23 @@ impl<'a> Lower<'a> {
             let fndef = self.parse_fndef(fndef)?;
             assert_eq!(self.ir.fndefs.push(fndef), id);
         }
-        for (id, &parse::Valdef { name: _, needs, ty }) in self.tree.valdefs.iter_enumerated() {
+        for (id, &parse::Valdef { name, needs, ty }) in self.tree.valdefs.iter_enumerated() {
             let id = self.valdefs[id];
+            drop(name);
             let valdef = Valdef {
-                needs: self.needs(needs)?,
+                ctx: self.needs(needs)?,
                 ty: self.parse_ty(ty)?,
             };
             assert_eq!(self.ir.valdefs.push(valdef), id);
         }
-        for (id, &parse::Ctxdef { name: _, def }) in self.tree.ctxdefs.iter_enumerated() {
+        for (id, &parse::Ctxdef { name, needs, def }) in self.tree.ctxdefs.iter_enumerated() {
             let id = self.ctxdefs[id];
+            drop(name);
             let ctxdef = Ctxdef {
+                ctx: self.needs(needs)?,
                 def: self.needs(def)?,
             };
             assert_eq!(self.ir.ctxdefs.push(ctxdef), id);
-        }
-        for (id, parse::Structdef { name: _, fields }) in self.tree.structdefs.iter_enumerated() {
-            let id = self.structdefs[id];
-            let pairs = fields
-                .into_iter()
-                .map(|param| {
-                    let Param { name, ty } = self.tree.params[param];
-                    Ok((self.name(name), self.parse_ty(ty)?))
-                })
-                .collect::<LowerResult<Vec<_>>>()?;
-            let structdef = Structdef {
-                fields: self.ir.fields.make(&pairs),
-            };
-            assert_eq!(self.ir.structdefs.push(structdef), id);
         }
         Ok(())
     }
