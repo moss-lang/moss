@@ -88,17 +88,12 @@ define_index_type! {
     pub struct RefId = u32;
 }
 
-type CtxTys = im_rc::HashMap<TydefId, im_rc::HashMap<CtxId, Option<TypeId>>>;
-type CtxFns = im_rc::HashMap<FndefId, im_rc::HashMap<CtxId, Option<Fn>>>;
-type CtxVals = im_rc::HashMap<ValdefId, im_rc::HashMap<CtxId, Option<Val>>>;
-type CtxCtxs = im_rc::HashMap<CtxdefId, im_rc::HashSet<CtxId>>;
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Ctx {
-    tys: CtxTys,
-    fns: CtxFns,
-    vals: CtxVals,
-    ctxs: CtxCtxs,
+    tys: im_rc::HashMap<TydefId, im_rc::HashMap<CtxId, Option<TypeId>>>,
+    fns: im_rc::HashMap<FndefId, im_rc::HashMap<CtxId, Option<Fn>>>,
+    vals: im_rc::HashMap<ValdefId, im_rc::HashMap<CtxId, Option<Val>>>,
+    ctxs: im_rc::HashMap<CtxdefId, im_rc::HashSet<CtxId>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -852,132 +847,84 @@ impl<'a> Lower<'a> {
         Ok((named, ctx))
     }
 
-    fn binds(&mut self, entries: IdRange<parse::BindId>) -> LowerResult<CtxId> {
-        let mut tys: CtxTys = im_rc::HashMap::new();
-        let mut fns: CtxFns = im_rc::HashMap::new();
-        let mut vals: CtxVals = im_rc::HashMap::new();
-        let mut ctxs: CtxCtxs = im_rc::HashMap::new();
-        for bind in entries {
-            let parse::Bind { key, val } = self.tree.binds[bind];
-            let (lhs, ctx) = self.spec(key)?;
-            match val {
-                None => match lhs {
-                    Named::Tydef(tydef) => {
-                        tys.entry(tydef).or_default().insert(ctx, None);
+    fn bind(&mut self, ctx: &mut Ctx, bind: parse::BindId) -> LowerResult<()> {
+        let parse::Bind { key, val } = self.tree.binds[bind];
+        let (lhs, ctx1) = self.spec(key)?;
+        match val {
+            None => match lhs {
+                Named::Tydef(tydef) => {
+                    ctx.tys.entry(tydef).or_default().insert(ctx1, None);
+                }
+                Named::Fndef(fndef) => {
+                    ctx.fns.entry(fndef).or_default().insert(ctx1, None);
+                }
+                Named::Valdef(valdef) => {
+                    ctx.vals.entry(valdef).or_default().insert(ctx1, None);
+                }
+                Named::Ctxdef(ctxdef) => {
+                    ctx.ctxs.entry(ctxdef).or_default().insert(ctx1);
+                }
+                Named::Module(_) => return Err(LowerError::BindModule(bind)),
+                Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
+                Named::Aliasdef(_) => return Err(LowerError::BindAlias(bind)),
+            },
+            Some(parse::Entry::Lit(token)) => match lhs {
+                Named::Valdef(valdef) => {
+                    let val = self.lit(token)?;
+                    ctx.vals.entry(valdef).or_default().insert(ctx1, Some(val));
+                }
+                _ => return Err(LowerError::LitNotVal(token)),
+            },
+            Some(parse::Entry::Ref(spec)) => {
+                let (rhs, ctx2) = self.spec(spec)?;
+                match (lhs, rhs) {
+                    (Named::Tydef(tydef), Named::Tydef(def)) => {
+                        let ty = self.ty(Type::Opaque(def, ctx2));
+                        ctx.tys.entry(tydef).or_default().insert(ctx1, Some(ty));
                     }
-                    Named::Fndef(fndef) => {
-                        fns.entry(fndef).or_default().insert(ctx, None);
+                    (Named::Tydef(tydef), Named::Tagdef(def)) => {
+                        let ty = self.ty(Type::Nominal(def, ctx2));
+                        ctx.tys.entry(tydef).or_default().insert(ctx1, Some(ty));
                     }
-                    Named::Valdef(valdef) => {
-                        vals.entry(valdef).or_default().insert(ctx, None);
+                    (Named::Tydef(tydef), Named::Aliasdef(def)) => {
+                        let ty = self.ty(Type::Alias(def, ctx2));
+                        ctx.tys.entry(tydef).or_default().insert(ctx1, Some(ty));
                     }
-                    Named::Ctxdef(ctxdef) => {
-                        ctxs.entry(ctxdef).or_default().insert(ctx);
+                    (Named::Fndef(fndef), Named::Fndef(def)) => {
+                        let f = Fn { ctx: ctx2, def };
+                        ctx.fns.entry(fndef).or_default().insert(ctx1, Some(f));
                     }
-                    Named::Module(_) => return Err(LowerError::BindModule(bind)),
-                    Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
-                    Named::Aliasdef(_) => return Err(LowerError::BindAlias(bind)),
-                },
-                Some(parse::Entry::Lit(token)) => match lhs {
-                    Named::Valdef(valdef) => {
-                        let val = self.lit(token)?;
-                        vals.entry(valdef).or_default().insert(ctx, Some(val));
+                    (Named::Valdef(valdef), Named::Valdef(def)) => {
+                        let val = Val::Opaque(ctx2, def);
+                        ctx.vals.entry(valdef).or_default().insert(ctx1, Some(val));
                     }
-                    _ => return Err(LowerError::LitNotVal(token)),
-                },
-                Some(parse::Entry::Ref(spec)) => {
-                    let (rhs, ctx2) = self.spec(spec)?;
-                    match (lhs, rhs) {
-                        (Named::Tydef(tydef), Named::Tydef(def)) => {
-                            let ty = self.ty(Type::Opaque(def, ctx2));
-                            tys.entry(tydef).or_default().insert(ctx, Some(ty));
-                        }
-                        (Named::Tydef(tydef), Named::Tagdef(def)) => {
-                            let ty = self.ty(Type::Nominal(def, ctx2));
-                            tys.entry(tydef).or_default().insert(ctx, Some(ty));
-                        }
-                        (Named::Tydef(tydef), Named::Aliasdef(def)) => {
-                            let ty = self.ty(Type::Alias(def, ctx2));
-                            tys.entry(tydef).or_default().insert(ctx, Some(ty));
-                        }
-                        (Named::Fndef(fndef), Named::Fndef(def)) => {
-                            let f = Fn { ctx: ctx2, def };
-                            fns.entry(fndef).or_default().insert(ctx, Some(f));
-                        }
-                        (Named::Valdef(valdef), Named::Valdef(def)) => {
-                            let val = Val::Opaque(ctx2, def);
-                            vals.entry(valdef).or_default().insert(ctx, Some(val));
-                        }
-                        (Named::Ctxdef(_), _) => return Err(LowerError::BindContext(bind)),
-                        (Named::Module(_), _) => return Err(LowerError::BindModule(bind)),
-                        (Named::Tagdef(_), _) => return Err(LowerError::BindNominal(bind)),
-                        (Named::Aliasdef(_), _) => return Err(LowerError::BindAlias(bind)),
-                        _ => return Err(LowerError::BindMismatch(bind)),
-                    }
+                    (Named::Ctxdef(_), _) => return Err(LowerError::BindContext(bind)),
+                    (Named::Module(_), _) => return Err(LowerError::BindModule(bind)),
+                    (Named::Tagdef(_), _) => return Err(LowerError::BindNominal(bind)),
+                    (Named::Aliasdef(_), _) => return Err(LowerError::BindAlias(bind)),
+                    _ => return Err(LowerError::BindMismatch(bind)),
                 }
             }
         }
-        Ok(self.ctx(Ctx {
-            tys,
-            fns,
-            vals,
-            ctxs,
-        }))
+        Ok(())
+    }
+
+    fn binds(&mut self, entries: IdRange<parse::BindId>) -> LowerResult<CtxId> {
+        let mut ctx = Ctx::default();
+        for bind in entries {
+            self.bind(&mut ctx, bind)?;
+        }
+        Ok(self.ctx(ctx))
     }
 
     fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<CtxId> {
-        let mut tys = Vec::new();
-        let mut fns = Vec::new();
-        let mut vals = Vec::new();
-        let mut ctxs = Vec::new();
+        let mut ctx = Ctx::default();
         for need in needs {
-            let parse::Need { kind, path } = self.tree.needs[need];
-            let key = self.path(path)?;
-            match (
-                self.tydef(key),
-                self.fndef(key),
-                self.valdef(key),
-                self.ctxdef(key),
-                self.structdef(key),
-            ) {
-                (Some(id), None, None, None, None) => {
-                    let kind = match kind {
-                        parse::NeedKind::Default | parse::NeedKind::Static => NeedKind::Static,
-                    };
-                    tys.push(Need { kind, id });
-                }
-                (None, Some(id), None, None, None) => {
-                    let kind = match kind {
-                        parse::NeedKind::Default => NeedKind::Dynamic,
-                        parse::NeedKind::Static => NeedKind::Static,
-                    };
-                    fns.push(Need { kind, id });
-                }
-                (None, None, Some(id), None, None) => {
-                    let kind = match kind {
-                        parse::NeedKind::Default => NeedKind::Dynamic,
-                        parse::NeedKind::Static => NeedKind::Static,
-                    };
-                    vals.push(Need { kind, id });
-                }
-                (None, None, None, Some(id), None) => {
-                    let kind = match kind {
-                        parse::NeedKind::Default => NeedKind::Dynamic,
-                        parse::NeedKind::Static => return Err(LowerError::NeedStaticCtx(path)),
-                    };
-                    ctxs.push(Need { kind, id });
-                }
-                (None, None, None, None, Some(_)) => return Err(LowerError::NeedStructdef(path)),
-                (None, None, None, None, None) => return Err(LowerError::Undefined(path.last)),
-                _ => return Err(LowerError::Ambiguous(path.last)),
-            }
+            let parse::Need { kind: _, bind } = self.tree.needs[need];
+            // TODO: Handle `kind`.
+            self.bind(&mut ctx, bind)?;
         }
-        Ok(Needs {
-            tys: IdRange::new(&mut self.ir.need_tys, tys),
-            fns: IdRange::new(&mut self.ir.need_fns, fns),
-            vals: IdRange::new(&mut self.ir.need_vals, vals),
-            ctxs: IdRange::new(&mut self.ir.need_ctxs, ctxs),
-        })
+        Ok(self.ctx(ctx))
     }
 
     fn parse_ty(&mut self, ctx: CtxId, ty: parse::TypeId) -> LowerResult<TypeId> {

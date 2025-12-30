@@ -22,11 +22,11 @@ define_index_type! {
 }
 
 define_index_type! {
-    pub struct NeedId = u32;
+    pub struct BindId = u32;
 }
 
 define_index_type! {
-    pub struct BindId = u32;
+    pub struct NeedId = u32;
 }
 
 define_index_type! {
@@ -110,18 +110,6 @@ pub struct Spec {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum NeedKind {
-    Default,
-    Static,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Need {
-    pub kind: NeedKind,
-    pub spec: Spec,
-}
-
-#[derive(Clone, Copy, Debug)]
 pub enum Entry {
     Lit(TokenId),
     Ref(Spec),
@@ -131,6 +119,18 @@ pub enum Entry {
 pub struct Bind {
     pub key: Spec,
     pub val: Option<Entry>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum NeedKind {
+    Default,
+    Static,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Need {
+    pub kind: NeedKind,
+    pub bind: BindId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -260,8 +260,8 @@ pub struct Tree {
     pub names: IndexVec<NameId, TokenId>,
     pub members: IndexVec<MemberId, Member>,
     pub types: IndexVec<TypeId, Type>,
-    pub needs: IndexVec<NeedId, Need>,
     pub binds: IndexVec<BindId, Bind>,
+    pub needs: IndexVec<NeedId, Need>,
     pub params: IndexVec<ParamId, Param>,
     pub fields: IndexVec<FieldId, Field>,
     pub exprs: IndexVec<ExprId, Expr>,
@@ -416,6 +416,27 @@ impl<'a> Parser<'a> {
         Ok(Spec { path, binds })
     }
 
+    fn bind(&mut self) -> ParseResult<Bind> {
+        let key = self.spec()?;
+        let val = match self.peek() {
+            Equal => {
+                self.next();
+                match self.peek() {
+                    Name => Some(Entry::Ref(self.spec()?)),
+                    Str | Int => Some(Entry::Lit(self.next())),
+                    _ => return Err(self.err(Name | Str | Int)),
+                }
+            }
+            _ => None,
+        };
+        Ok(Bind { key, val })
+    }
+
+    fn bind_id(&mut self) -> ParseResult<BindId> {
+        let bind = self.bind()?;
+        Ok(self.tree.binds.push(bind))
+    }
+
     fn need(&mut self) -> ParseResult<Need> {
         let kind = match self.peek() {
             Static => {
@@ -424,8 +445,8 @@ impl<'a> Parser<'a> {
             }
             _ => NeedKind::Default,
         };
-        let spec = self.spec()?;
-        Ok(Need { kind, spec })
+        let bind = self.bind_id()?;
+        Ok(Need { kind, bind })
     }
 
     fn needs(&mut self) -> ParseResult<Vec<Need>> {
@@ -446,22 +467,6 @@ impl<'a> Parser<'a> {
     fn need_ids(&mut self) -> ParseResult<IdRange<NeedId>> {
         let needs = self.needs()?;
         Ok(IdRange::new(&mut self.tree.needs, needs))
-    }
-
-    fn bind(&mut self) -> ParseResult<Bind> {
-        let key = self.spec()?;
-        let val = match self.peek() {
-            Equal => {
-                self.next();
-                match self.peek() {
-                    Name => Some(Entry::Ref(self.spec()?)),
-                    Str | Int => Some(Entry::Lit(self.next())),
-                    _ => return Err(self.err(Name | Str | Int)),
-                }
-            }
-            _ => None,
-        };
-        Ok(Bind { key, val })
     }
 
     fn param(&mut self) -> ParseResult<Param> {
