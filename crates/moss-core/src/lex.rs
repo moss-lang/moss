@@ -168,11 +168,29 @@ pub enum Token {
     #[regex(r"[A-Z_a-z]\w*")]
     Name,
 
+    #[regex(r"\d+u32")]
+    Uint32,
+
+    #[regex(r"-?\d+i32")]
+    Int32,
+
+    #[regex(r"\d+u64")]
+    Uint64,
+
+    #[regex(r"-?\d+i64")]
+    Int64,
+
+    #[regex(r"\d+u")]
+    Uint,
+
+    #[regex(r"-?\d+")]
+    Int,
+
+    #[regex(r"'.'")]
+    Char,
+
     #[regex(r#""([^"\\\n]|\\["\\nrt])*""#)]
     Str,
-
-    #[regex(r"\d+")]
-    Int,
 }
 
 impl fmt::Display for Token {
@@ -224,8 +242,14 @@ impl fmt::Display for Token {
             Token::Var => write!(f, "`var`"),
             Token::While => write!(f, "`while`"),
             Token::Name => write!(f, "name"),
-            Token::Str => write!(f, "string"),
+            Token::Uint32 => write!(f, "32-bit unsigned integer"),
+            Token::Int32 => write!(f, "32-bit signed integer"),
+            Token::Uint64 => write!(f, "64-bit unsigned integer"),
+            Token::Int64 => write!(f, "64-bit signed integer"),
+            Token::Uint => write!(f, "unsigned integer"),
             Token::Int => write!(f, "integer"),
+            Token::Char => write!(f, "character"),
+            Token::Str => write!(f, "string"),
         }
     }
 }
