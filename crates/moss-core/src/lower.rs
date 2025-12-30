@@ -1020,18 +1020,37 @@ impl<'a> Lower<'a> {
     }
 
     fn bodies(&mut self) -> LowerResult<()> {
-        for (fndef, structdef, id_type) in take(&mut self.funcs) {
+        for (funcdef, id_decl) in take(&mut self.funcs) {
+            let parse::Funcdef { fndef } = self.tree.funcdefs[funcdef];
             let start = Body {
                 x: self,
-                tree: fndef,
-                ir: id_type,
-                ty: structdef,
-                this: None, // Gets set later if `ty` is `Some`.
                 locals: HashMap::new(),
             }
-            .body()?;
+            .body(fndef, id_decl)?;
             let id_body = self.ir.bodies.push(start);
-            assert_eq!(id_type, id_body);
+            assert_eq!(id_decl, id_body);
+        }
+        for (attachdef, _tagdef, id_decl) in take(&mut self.attaches) {
+            // TODO: Handle `this`.
+            let parse::Attachdef { ty: _, fndef } = self.tree.attachdefs[attachdef];
+            let start = Body {
+                x: self,
+                locals: HashMap::new(),
+            }
+            .body(fndef, id_decl)?;
+            let id_body = self.ir.bodies.push(start);
+            assert_eq!(id_decl, id_body);
+        }
+        for (detachdef, id_decl) in take(&mut self.detaches) {
+            // TODO: Handle `this`.
+            let parse::Detachdef { fndef } = self.tree.detachdefs[detachdef];
+            let start = Body {
+                x: self,
+                locals: HashMap::new(),
+            }
+            .body(fndef, id_decl)?;
+            let id_body = self.ir.bodies.push(start);
+            assert_eq!(id_decl, id_body);
         }
         Ok(())
     }
@@ -1047,10 +1066,6 @@ impl<'a> Lower<'a> {
 
 struct Body<'a, 'b> {
     x: &'b mut Lower<'a>,
-    tree: parse::FndefId,
-    ir: FndefId,
-    ty: Option<StructdefId>,
-    this: Option<LocalId>,
     locals: HashMap<StrId, LocalId>,
 }
 
@@ -1361,33 +1376,24 @@ impl Body<'_, '_> {
         }
     }
 
-    fn body(&mut self) -> LowerResult<Option<LocalId>> {
+    fn body(&mut self, fndef: parse::Fndef, id_decl: FndefId) -> LowerResult<Option<LocalId>> {
         let parse::Fndef {
-            ty: _,
             name: _,
             needs: _,
             params,
             result: _,
             def,
-        } = self.x.tree.fndefs[self.tree];
+        } = fndef;
         let Some(body) = def else { return Ok(None) };
         let start = self.x.ir.instrs.len_idx();
         let Fndef {
-            needs: _,
+            ctx: _,
             param: tuple_ty,
             result: ret_ty,
-        } = self.x.ir.fndefs[self.ir];
+        } = self.x.ir.fndefs[id_decl];
         let tuple_local = self.instr(tuple_ty, Instr::Param);
-        let mut types = self.x.ir.types[tuple_ty.index()].tuple().into_iter();
+        let types = self.x.ir.types[tuple_ty.index()].tuple();
         let mut index = 0;
-        if let Some(structdef) = self.ty {
-            // Because methods just have their object as the first parameter, we need to skip past
-            // it so that the rest of the tuple aligns properly with the original parsed parameters.
-            types.next();
-            let ty = self.x.ty(Type::Structdef(structdef));
-            self.this = Some(self.instr(ty, Instr::Elem(tuple_local, ElemId::new(index))));
-            index += 1;
-        }
         for (param, tuple_loc) in params.into_iter().zip(types) {
             let ty = self.x.ir.tuples[tuple_loc];
             let local = self.instr(ty, Instr::Elem(tuple_local, ElemId::new(index)));
