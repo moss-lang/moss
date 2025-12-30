@@ -938,62 +938,63 @@ impl<'a> Lower<'a> {
         }
     }
 
+    fn parse_fndef(&mut self, fndef: parse::Fndef) -> LowerResult<Fndef> {
+        let types = (fndef.params.into_iter())
+            .map(|param| self.parse_ty(self.tree.params[param].ty))
+            .collect::<LowerResult<Vec<TypeId>>>()?;
+        Ok(Fndef {
+            ctx: self.needs(fndef.needs)?,
+            param: self.ty_tuple(&types),
+            result: match fndef.result {
+                Some(ty) => self.parse_ty(ty)?,
+                None => self.ty_unit(),
+            },
+        })
+    }
+
     fn decls(&mut self) -> LowerResult<()> {
         for (id, &parse::Tydef { name, needs }) in self.tree.tydefs.iter_enumerated() {
             let id = self.tydefs[id];
             drop(name);
-            let ctx = self.needs(needs)?;
-            let tydef = Tydef { ctx };
+            let tydef = Tydef {
+                ctx: self.needs(needs)?,
+            };
             assert_eq!(self.ir.tydefs.push(tydef), id);
         }
         for (id, &parse::Tagdef { name, needs, def }) in self.tree.tagdefs.iter_enumerated() {
             let id = self.tagdefs[id];
             drop(name);
-            let ctx = self.needs(needs)?;
-            let inner = self.parse_ty(def)?;
-            let tagdef = Tagdef { ctx, inner };
+            let tagdef = Tagdef {
+                ctx: self.needs(needs)?,
+                inner: self.parse_ty(def)?,
+            };
             assert_eq!(self.ir.tagdefs.push(tagdef), id);
         }
         for (id, &parse::Aliasdef { name, needs, def }) in self.tree.aliasdefs.iter_enumerated() {
             let id = self.aliasdefs[id];
             drop(name);
-            let ctx = self.needs(needs)?;
-            let def = self.parse_ty(def)?;
-            let aliasdef = Aliasdef { ctx, def };
+            let aliasdef = Aliasdef {
+                ctx: self.needs(needs)?,
+                def: self.parse_ty(def)?,
+            };
             assert_eq!(self.ir.aliasdefs.push(aliasdef), id);
         }
-        for (
-            parse_id,
-            &parse::Fndef {
-                ty: _,
-                name: _,
-                needs,
-                params,
-                result,
-                def: _,
-            },
-        ) in self.tree.fndefs.iter_enumerated()
-        {
-            let (structdef, id) = self.fndefs[parse_id];
-            self.funcs.push((parse_id, structdef, id));
-            let mut types = Vec::new();
-            // For methods, we just make the object the first element of the type for the tuple of
-            // parameters, since that way codegen doesn't need to think about the difference between
-            // functions and methods at all.
-            if let Some(structdef) = structdef {
-                types.push(self.ty(Type::Structdef(structdef)));
-            }
-            for param in params {
-                types.push(self.parse_ty(self.tree.params[param].ty)?);
-            }
-            let fndef = Fndef {
-                needs: self.needs(needs)?,
-                param: self.ty_tuple(&types),
-                result: match result {
-                    Some(ty) => self.parse_ty(ty)?,
-                    None => self.ty_unit(),
-                },
-            };
+        for (parse_id, &parse::Funcdef { fndef }) in self.tree.funcdefs.iter_enumerated() {
+            let id = self.funcdefs[parse_id];
+            self.funcs.push((parse_id, id));
+            let fndef = self.parse_fndef(fndef)?;
+            assert_eq!(self.ir.fndefs.push(fndef), id);
+        }
+        for (parse_id, &parse::Attachdef { ty, fndef }) in self.tree.attachdefs.iter_enumerated() {
+            let (tagdef, id) = self.attachdefs[parse_id];
+            self.attaches.push((parse_id, tagdef, id));
+            let fndef = self.parse_fndef(fndef)?;
+            assert_eq!(self.ir.fndefs.push(fndef), id);
+        }
+        for (parse_id, &parse::Detachdef { fndef }) in self.tree.detachdefs.iter_enumerated() {
+            let id = self.detachdefs[parse_id];
+            self.detaches.push((parse_id, id));
+            let fndef = self.parse_fndef(fndef)?;
             assert_eq!(self.ir.fndefs.push(fndef), id);
         }
         for (id, &parse::Valdef { name: _, needs, ty }) in self.tree.valdefs.iter_enumerated() {
