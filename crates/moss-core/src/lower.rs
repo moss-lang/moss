@@ -91,8 +91,8 @@ define_index_type! {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Ctx {
     tys: im_rc::HashMap<TydefId, im_rc::HashMap<CtxId, Option<TypeId>>>,
-    fns: im_rc::HashMap<FndefId, im_rc::HashMap<CtxId, Option<FnId>>>,
-    vals: im_rc::HashMap<ValdefId, im_rc::HashMap<CtxId, Option<ValId>>>,
+    fns: im_rc::HashMap<FndefId, im_rc::HashMap<CtxId, Option<Fn>>>,
+    vals: im_rc::HashMap<ValdefId, im_rc::HashMap<CtxId, Option<Val>>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -314,8 +314,6 @@ pub struct IR {
     pub types: IndexSet<Type>,
     pub tuples: Tuples<TypeId>,
     pub records: Tuples<(StrId, TypeId)>,
-    pub fns: IndexSet<Fn>,
-    pub vals: IndexSet<Val>,
     pub tydefs: IndexVec<TydefId, ()>,
     pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
@@ -329,11 +327,18 @@ pub struct IR {
 }
 
 impl IR {
+    pub fn ctx(&mut self, ctx: Ctx) -> CtxId {
+        let (i, _) = self.ctxs.insert_full(ctx);
+        CtxId::from_usize(i)
+    }
+
     pub fn ty(&mut self, ty: Type) -> TypeId {
         let (i, _) = self.types.insert_full(ty);
         TypeId::from_usize(i)
     }
 }
+
+type ModuleNames<T> = HashMap<(ModuleId, StrId), T>;
 
 fn get_name<T: Copy>(
     prelude: ModuleId,
@@ -399,6 +404,10 @@ impl ErrorCtx<'_> {
         path_range(self.tree, id)
     }
 
+    fn bind(&self, id: parse::BindId) -> Inclusive {
+        todo!()
+    }
+
     fn expr(&self, id: ExprId) -> Inclusive {
         expr_range(self.tree, id)
     }
@@ -430,7 +439,15 @@ impl fmt::Display for FatType<'_, '_> {
 #[derive(Clone, Copy, Debug)]
 pub enum LowerError {
     Undefined(TokenId),
+    NotModule(TokenId),
     NotNominal(TokenId),
+    NotContext(TokenId),
+    BindContext(parse::BindId),
+    BindModule(parse::BindId),
+    BindNominal(parse::BindId),
+    BindAlias(parse::BindId),
+    BindMismatch(parse::BindId),
+    LitNotVal(TokenId),
     Ambiguous(TokenId),
     NeedStaticCtx(Path),
     NeedStructdef(Path),
@@ -459,12 +476,49 @@ impl LowerError {
                 }),
                 "undefined".to_owned(),
             ),
+            LowerError::NotModule(token) => (
+                Some(Inclusive {
+                    first: token,
+                    last: token,
+                }),
+                "not a module".to_owned(),
+            ),
             LowerError::NotNominal(token) => (
                 Some(Inclusive {
                     first: token,
                     last: token,
                 }),
                 "not a nominal type".to_owned(),
+            ),
+            LowerError::NotContext(token) => (
+                Some(Inclusive {
+                    first: token,
+                    last: token,
+                }),
+                "not a piece of context".to_owned(),
+            ),
+            LowerError::BindContext(bind) => (
+                Some(ctx.bind(bind)),
+                "cannot rebind a composite context".to_owned(),
+            ),
+            LowerError::BindModule(bind) => {
+                (Some(ctx.bind(bind)), "cannot bind a module".to_owned())
+            }
+            LowerError::BindNominal(bind) => (
+                Some(ctx.bind(bind)),
+                "cannot bind a nominal type".to_owned(),
+            ),
+            LowerError::BindAlias(bind) => (
+                Some(ctx.bind(bind)),
+                "cannot rebind a type alias".to_owned(),
+            ),
+            LowerError::BindMismatch(bind) => (Some(ctx.bind(bind)), "mismatched kind".to_owned()),
+            LowerError::LitNotVal(token) => (
+                Some(Inclusive {
+                    first: token,
+                    last: token,
+                }),
+                "cannot bind a literal for something other than a `val`".to_owned(),
             ),
             LowerError::Ambiguous(token) => (
                 Some(Inclusive {
@@ -515,7 +569,7 @@ struct Lower<'a> {
     module: ModuleId,
     prelude: ModuleId,
     imports: &'a [ModuleId],
-    tydefs: IndexVec<parse::TagdefId, TydefId>,
+    tydefs: IndexVec<parse::TydefId, TydefId>,
     tagdefs: IndexVec<parse::TagdefId, TagdefId>,
     aliasdefs: IndexVec<parse::AliasdefId, AliasdefId>,
     funcdefs: IndexVec<parse::FuncdefId, FndefId>,
@@ -537,9 +591,16 @@ impl<'a> Lower<'a> {
         self.ir.strings.make_id(self.slice(token))
     }
 
-    fn string(&mut self, token: TokenId) -> StrId {
-        let escaped = string(self.source, self.starts, token);
-        self.ir.strings.make_id(&escaped)
+    fn lit(&mut self, token: TokenId) -> LowerResult<Val> {
+        match self.slice(token).chars().next().unwrap() {
+            '0'..='9' => todo!(),
+            '"' => {
+                let escaped = string(self.source, self.starts, token);
+                let string = self.ir.strings.make_id(&escaped);
+                Ok(Val::String(string))
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn ty(&mut self, ty: Type) -> TypeId {
@@ -567,23 +628,25 @@ impl<'a> Lower<'a> {
         ty
     }
 
-    fn path(&mut self, path: Path) -> LowerResult<(ModuleId, StrId)> {
+    fn path(&mut self, path: Path) -> LowerResult<Named> {
         let mut module = self.module;
         for name in path.prefix {
             let token = self.tree.names[name];
             let string = self.name(token);
-            let Some(next) = get_name(
+            match get_name(
                 self.prelude,
                 self.module,
-                &self.names.modules,
+                &self.names.names,
                 (module, string),
-            ) else {
-                return Err(LowerError::Undefined(token));
-            };
-            module = next;
+            ) {
+                Some(Named::Module(next)) => module = next,
+                Some(_) => return Err(LowerError::NotModule(token)),
+                None => return Err(LowerError::Undefined(token)),
+            }
         }
         let name = self.name(path.last);
-        Ok((module, name))
+        get_name(self.prelude, self.module, &self.names.names, (module, name))
+            .ok_or(LowerError::Undefined(path.last))
     }
 
     fn tydef(&mut self, key: (ModuleId, StrId)) -> Option<TydefId> {
@@ -766,7 +829,54 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
-    fn needs(&mut self, needs: IdRange<NeedId>) -> LowerResult<Needs> {
+    fn spec(&mut self, spec: parse::Spec) -> LowerResult<(Named, CtxId)> {
+        let named = self.path(spec.path)?;
+        let ctx = self.binds(spec.binds)?;
+        Ok((named, ctx))
+    }
+
+    fn binds(&mut self, entries: IdRange<parse::BindId>) -> LowerResult<CtxId> {
+        let mut tys = im_rc::HashMap::new();
+        let mut fns = im_rc::HashMap::new();
+        let mut vals = im_rc::HashMap::new();
+        for bind in entries {
+            let parse::Bind { key, val } = self.tree.binds[bind];
+            let (lhs, ctx) = self.spec(key)?;
+            match val {
+                parse::Entry::Lit(token) => match lhs {
+                    Named::Valdef(valdef) => {
+                        let val = self.lit(token)?;
+                        todo!()
+                    }
+                    _ => return Err(LowerError::LitNotVal(token)),
+                },
+                parse::Entry::Ref(spec) => {
+                    let (rhs, ctx2) = self.spec(spec)?;
+                    match (lhs, rhs) {
+                        (Named::Tydef(tydef), Named::Tydef(tydef2)) => todo!(),
+                        (Named::Tydef(tydef), Named::Tagdef(tagdef)) => todo!(),
+                        (Named::Tydef(tydef), Named::Aliasdef(aliasdef)) => todo!(),
+                        (Named::Fndef(fndef), Named::Fndef(fndef2)) => todo!(),
+                        (Named::Valdef(valdef), Named::Valdef(valdef2)) => todo!(),
+                        (Named::Ctxdef(ctxdef), Named::Ctxdef(ctxdef2)) => {
+                            if !(ctxdef == ctxdef2 && ctx == ctx2) {
+                                // TODO: Use a more elegant method to check for rebinding `context`.
+                                return Err(LowerError::BindContext(bind));
+                            }
+                            todo!()
+                        }
+                        (Named::Module(_), _) => return Err(LowerError::BindModule(bind)),
+                        (Named::Tagdef(_), _) => return Err(LowerError::BindNominal(bind)),
+                        (Named::Aliasdef(_), _) => return Err(LowerError::BindAlias(bind)),
+                        _ => return Err(LowerError::BindMismatch(bind)),
+                    }
+                }
+            }
+        }
+        todo!()
+    }
+
+    fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<CtxId> {
         let mut tys = Vec::new();
         let mut fns = Vec::new();
         let mut vals = Vec::new();
@@ -821,7 +931,7 @@ impl<'a> Lower<'a> {
         })
     }
 
-    fn parse_ty(&mut self, ty: parse::TypeId) -> LowerResult<TypeId> {
+    fn parse_ty(&mut self, ctx: CtxId, ty: parse::TypeId) -> LowerResult<TypeId> {
         match self.tree.types[ty] {
             parse::Type::Path(path) => {
                 let key = self.path(path)?;
@@ -832,10 +942,22 @@ impl<'a> Lower<'a> {
                     (Some(_), Some(_)) => Err(LowerError::Ambiguous(path.last)),
                 }
             }
+            parse::Type::Record(members) => todo!(),
         }
     }
 
     fn decls(&mut self) -> LowerResult<()> {
+        for (id, &parse::Tydef { name, needs }) in self.tree.tydefs.iter_enumerated() {
+            let id = self.tydefs[id];
+            assert_eq!(self.ir.tydefs.push(()), id);
+        }
+        for (id, &parse::Tagdef { name, needs, def }) in self.tree.tagdefs.iter_enumerated() {
+            let id = self.tagdefs[id];
+            let ctx = self.needs(needs)?;
+            let inner = self.parse_ty(ctx, def)?;
+            let tagdef = Tagdef { ctx, inner };
+            assert_eq!(self.ir.tagdefs.push(tagdef), id);
+        }
         for (id, &parse::Tydef { name: _, def }) in self.tree.tydefs.iter_enumerated() {
             let id = self.tydefs[id];
             let tydef = Tydef {
