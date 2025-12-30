@@ -130,7 +130,7 @@ pub enum Entry {
 #[derive(Clone, Copy, Debug)]
 pub struct Bind {
     pub key: Spec,
-    pub val: Entry,
+    pub val: Option<Entry>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -454,12 +454,12 @@ impl<'a> Parser<'a> {
             Equal => {
                 self.next();
                 match self.peek() {
-                    Name => Entry::Ref(self.spec()?),
-                    Str | Int => Entry::Lit(self.next()),
+                    Name => Some(Entry::Ref(self.spec()?)),
+                    Str | Int => Some(Entry::Lit(self.next())),
                     _ => return Err(self.err(Name | Str | Int)),
                 }
             }
-            _ => Entry::Ref(key),
+            _ => None,
         };
         Ok(Bind { key, val })
     }
