@@ -150,12 +150,6 @@ pub enum Token {
     #[token("static")]
     Static,
 
-    #[token("struct")]
-    Struct,
-
-    #[token("this")]
-    This,
-
     #[token("type")]
     Type,
 
@@ -224,8 +218,6 @@ impl fmt::Display for Token {
             Token::Import => write!(f, "`import`"),
             Token::Let => write!(f, "`let`"),
             Token::Static => write!(f, "`static`"),
-            Token::Struct => write!(f, "`struct`"),
-            Token::This => write!(f, "`this`"),
             Token::Type => write!(f, "`type`"),
             Token::Use => write!(f, "`use`"),
             Token::Val => write!(f, "`val`"),

@@ -546,7 +546,6 @@ impl<'a> Parser<'a> {
                 Ok(expr)
             }
             If => self.expr_if(),
-            This => Ok(Expr::This(self.next())),
             Int => Ok(Expr::Int(self.next())),
             Str => Ok(Expr::String(self.next())),
             Name => {
@@ -595,7 +594,7 @@ impl<'a> Parser<'a> {
                     _ => Ok(Expr::Path(path)),
                 }
             }
-            _ => Err(self.err(LParen | If | This | Int | Str | Name)),
+            _ => Err(self.err(LParen | If | Int | Str | Name)),
         }
     }
 
@@ -955,9 +954,7 @@ impl<'a> Parser<'a> {
                 }
                 Eof => return Ok(self.tree),
                 _ => {
-                    return Err(
-                        self.err(Import | Assume | Type | Fn | Val | Context | Struct | Eof)
-                    );
+                    return Err(self.err(Import | Assume | Type | Fn | Val | Context | Eof));
                 }
             }
         }

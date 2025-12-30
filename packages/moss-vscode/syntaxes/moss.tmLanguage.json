@@ -39,11 +39,11 @@
         },
         {
           "name": "keyword.other.moss",
-          "match": "\\b(static|this)\\b"
+          "match": "\\b(static)\\b"
         },
         {
           "name": "storage.type.moss",
-          "match": "\\b(bind|context|fn|let|struct|type|val|var)\\b"
+          "match": "\\b(bind|context|fn|let|type|val|var)\\b"
         }
       ]
     },
