@@ -99,7 +99,7 @@ pub struct Member {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Type {
-    Path(Path),
+    Spec(Spec),
     Record(IdRange<MemberId>),
 }
 
@@ -372,7 +372,7 @@ impl<'a> Parser<'a> {
 
     fn ty(&mut self) -> ParseResult<Type> {
         match self.peek() {
-            Name => Ok(Type::Path(self.path()?)),
+            Name => Ok(Type::Spec(self.spec()?)),
             LBrace => {
                 let mut members = Vec::new();
                 loop {
