@@ -88,23 +88,29 @@ define_index_type! {
     pub struct RefId = u32;
 }
 
+type CtxTys = im_rc::HashMap<TydefId, im_rc::HashMap<CtxId, Option<TypeId>>>;
+type CtxFns = im_rc::HashMap<FndefId, im_rc::HashMap<CtxId, Option<Fn>>>;
+type CtxVals = im_rc::HashMap<ValdefId, im_rc::HashMap<CtxId, Option<Val>>>;
+type CtxCtxs = im_rc::HashMap<CtxdefId, im_rc::HashSet<CtxId>>;
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Ctx {
-    tys: im_rc::HashMap<TydefId, im_rc::HashMap<CtxId, Option<TypeId>>>,
-    fns: im_rc::HashMap<FndefId, im_rc::HashMap<CtxId, Option<Fn>>>,
-    vals: im_rc::HashMap<ValdefId, im_rc::HashMap<CtxId, Option<Val>>>,
+    tys: CtxTys,
+    fns: CtxFns,
+    vals: CtxVals,
+    ctxs: CtxCtxs,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
     /// An instance of an opaque type symbol in a specific context.
-    Opaque(CtxId, TydefId),
+    Opaque(TydefId, CtxId),
 
     /// An inner type made nominal via an outer tag symbol.
-    Nominal(TagdefId, TypeId),
+    Nominal(TagdefId, CtxId),
 
     /// A structural type alias.
-    Alias(CtxId, AliasdefId),
+    Alias(AliasdefId, CtxId),
 
     /// A structural tuple of other types.
     ///
@@ -118,16 +124,23 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn opaque(self) -> (CtxId, TydefId) {
+    pub fn opaque(self) -> (TydefId, CtxId) {
         match self {
-            Type::Opaque(ctx, tydef) => (ctx, tydef),
+            Type::Opaque(tydef, ctx) => (tydef, ctx),
             _ => panic!(),
         }
     }
 
-    pub fn nominal(self) -> (TagdefId, TypeId) {
+    pub fn nominal(self) -> (TagdefId, CtxId) {
         match self {
-            Type::Nominal(tag, ty) => (tag, ty),
+            Type::Nominal(tagdef, ctx) => (tagdef, ctx),
+            _ => panic!(),
+        }
+    }
+
+    pub fn alias(self) -> (AliasdefId, CtxId) {
+        match self {
+            Type::Alias(aliasdef, ctx) => (aliasdef, ctx),
             _ => panic!(),
         }
     }
@@ -603,6 +616,10 @@ impl<'a> Lower<'a> {
         }
     }
 
+    fn ctx(&mut self, ctx: Ctx) -> CtxId {
+        self.ir.ctx(ctx)
+    }
+
     fn ty(&mut self, ty: Type) -> TypeId {
         self.ir.ty(ty)
     }
@@ -836,35 +853,62 @@ impl<'a> Lower<'a> {
     }
 
     fn binds(&mut self, entries: IdRange<parse::BindId>) -> LowerResult<CtxId> {
-        let mut tys = im_rc::HashMap::new();
-        let mut fns = im_rc::HashMap::new();
-        let mut vals = im_rc::HashMap::new();
+        let mut tys: CtxTys = im_rc::HashMap::new();
+        let mut fns: CtxFns = im_rc::HashMap::new();
+        let mut vals: CtxVals = im_rc::HashMap::new();
+        let mut ctxs: CtxCtxs = im_rc::HashMap::new();
         for bind in entries {
             let parse::Bind { key, val } = self.tree.binds[bind];
             let (lhs, ctx) = self.spec(key)?;
             match val {
-                parse::Entry::Lit(token) => match lhs {
+                None => match lhs {
+                    Named::Tydef(tydef) => {
+                        tys.entry(tydef).or_default().insert(ctx, None);
+                    }
+                    Named::Fndef(fndef) => {
+                        fns.entry(fndef).or_default().insert(ctx, None);
+                    }
+                    Named::Valdef(valdef) => {
+                        vals.entry(valdef).or_default().insert(ctx, None);
+                    }
+                    Named::Ctxdef(ctxdef) => {
+                        ctxs.entry(ctxdef).or_default().insert(ctx);
+                    }
+                    Named::Module(_) => return Err(LowerError::BindModule(bind)),
+                    Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
+                    Named::Aliasdef(_) => return Err(LowerError::BindAlias(bind)),
+                },
+                Some(parse::Entry::Lit(token)) => match lhs {
                     Named::Valdef(valdef) => {
                         let val = self.lit(token)?;
-                        todo!()
+                        vals.entry(valdef).or_default().insert(ctx, Some(val));
                     }
                     _ => return Err(LowerError::LitNotVal(token)),
                 },
-                parse::Entry::Ref(spec) => {
+                Some(parse::Entry::Ref(spec)) => {
                     let (rhs, ctx2) = self.spec(spec)?;
                     match (lhs, rhs) {
-                        (Named::Tydef(tydef), Named::Tydef(tydef2)) => todo!(),
-                        (Named::Tydef(tydef), Named::Tagdef(tagdef)) => todo!(),
-                        (Named::Tydef(tydef), Named::Aliasdef(aliasdef)) => todo!(),
-                        (Named::Fndef(fndef), Named::Fndef(fndef2)) => todo!(),
-                        (Named::Valdef(valdef), Named::Valdef(valdef2)) => todo!(),
-                        (Named::Ctxdef(ctxdef), Named::Ctxdef(ctxdef2)) => {
-                            if !(ctxdef == ctxdef2 && ctx == ctx2) {
-                                // TODO: Use a more elegant method to check for rebinding `context`.
-                                return Err(LowerError::BindContext(bind));
-                            }
-                            todo!()
+                        (Named::Tydef(tydef), Named::Tydef(def)) => {
+                            let ty = self.ty(Type::Opaque(def, ctx2));
+                            tys.entry(tydef).or_default().insert(ctx, Some(ty));
                         }
+                        (Named::Tydef(tydef), Named::Tagdef(def)) => {
+                            let ty = self.ty(Type::Nominal(def, ctx2));
+                            tys.entry(tydef).or_default().insert(ctx, Some(ty));
+                        }
+                        (Named::Tydef(tydef), Named::Aliasdef(def)) => {
+                            let ty = self.ty(Type::Alias(def, ctx2));
+                            tys.entry(tydef).or_default().insert(ctx, Some(ty));
+                        }
+                        (Named::Fndef(fndef), Named::Fndef(def)) => {
+                            let f = Fn { ctx: ctx2, def };
+                            fns.entry(fndef).or_default().insert(ctx, Some(f));
+                        }
+                        (Named::Valdef(valdef), Named::Valdef(def)) => {
+                            let val = Val::Opaque(ctx2, def);
+                            vals.entry(valdef).or_default().insert(ctx, Some(val));
+                        }
+                        (Named::Ctxdef(_), _) => return Err(LowerError::BindContext(bind)),
                         (Named::Module(_), _) => return Err(LowerError::BindModule(bind)),
                         (Named::Tagdef(_), _) => return Err(LowerError::BindNominal(bind)),
                         (Named::Aliasdef(_), _) => return Err(LowerError::BindAlias(bind)),
@@ -873,7 +917,12 @@ impl<'a> Lower<'a> {
                 }
             }
         }
-        todo!()
+        Ok(self.ctx(Ctx {
+            tys,
+            fns,
+            vals,
+            ctxs,
+        }))
     }
 
     fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<CtxId> {
