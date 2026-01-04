@@ -455,6 +455,7 @@ pub enum LowerError {
     NotModule(TokenId),
     NotType(TokenId),
     NotNominal(TokenId),
+    NotVal(TokenId),
     NotContext(TokenId),
     BindContext(parse::BindId),
     BindModule(parse::BindId),
@@ -507,6 +508,13 @@ impl LowerError {
                     last: token,
                 }),
                 "not a nominal type".to_owned(),
+            ),
+            LowerError::NotVal(token) => (
+                Some(Inclusive {
+                    first: token,
+                    last: token,
+                }),
+                "not a value".to_owned(),
             ),
             LowerError::NotContext(token) => (
                 Some(Inclusive {
@@ -1067,6 +1075,7 @@ impl<'a> Lower<'a> {
 struct Body<'a, 'b> {
     x: &'b mut Lower<'a>,
     locals: HashMap<StrId, LocalId>,
+    ctx: CtxId,
 }
 
 impl Body<'_, '_> {
@@ -1097,50 +1106,38 @@ impl Body<'_, '_> {
         self.instr(ty, Instr::Tuple(IdRange { start, end }))
     }
 
-    fn instr_struct(&mut self, structdef: StructdefId, locals: &[LocalId]) -> LocalId {
-        let ty = self.x.ir.ty(Type::Structdef(structdef));
+    fn instr_struct(&mut self, ty: TypeId, locals: &[LocalId]) -> LocalId {
         let start = self.x.ir.refs.len_idx();
         self.x.ir.refs.extend_from_slice(IndexSlice::new(locals));
         let end = self.x.ir.refs.len_idx();
-        self.instr(ty, Instr::Struct(structdef, IdRange { start, end }))
+        self.instr(ty, Instr::Record(ty, IdRange { start, end }))
     }
 
     fn expr(&mut self, expr: ExprId) -> LowerResult<LocalId> {
         match self.x.tree.exprs[expr] {
-            Expr::This(_) => match self.this {
-                None => Err(LowerError::ThisNotMethod(expr)),
-                Some(local) => Ok(local),
-            },
+            Expr::Lit(token) => todo!(),
             Expr::Path(path) => {
-                let (module, name) = self.x.path(path)?;
+                let name = self.x.name(path.last);
                 if path.prefix.is_empty()
                     && let Some(&local) = self.locals.get(&name)
                 {
                     return Ok(local);
                 }
-                let Some(val) = self.x.valdef((module, name)) else {
-                    return Err(LowerError::Undefined(path.last));
+                let Named::Valdef(valdef) = self.x.path(path)? else {
+                    return Err(LowerError::NotVal(path.last));
                 };
-                let ty = self.x.ir.valdefs[val].ty;
-                Ok(self.instr(ty, Instr::Val(val)))
+                let ty = self.x.ir.valdefs[valdef].ty;
+                Ok(self.instr(ty, Instr::Val(valdef, self.ctx)))
             }
-            Expr::Int(token) => {
-                let ty = self.x.ty(Type::Int32);
-                let Ok(n) = self.x.slice(token).parse() else {
-                    return Err(LowerError::Overflow(expr));
+            Expr::Tag(path, inner) => {
+                let Named::Tagdef(tagdef) = self.x.path(path)? else {
+                    return Err(LowerError::NotNominal(path.last));
                 };
-                Ok(self.instr(ty, Instr::Int32(n)))
+                let local = self.expr(inner)?;
+                let ty = self.x.ir.locals[local];
+                Ok(self.instr(ty, Instr::Nominal(tagdef, local)))
             }
-            Expr::String(token) => {
-                let ty = self.x.ty(Type::String);
-                let string = self.x.string(token);
-                Ok(self.instr(ty, Instr::String(string)))
-            }
-            Expr::Struct(path, fields) => {
-                let key = self.x.path(path)?;
-                let Some(structdef) = self.x.structdef(key) else {
-                    return Err(LowerError::Undefined(path.last));
-                };
+            Expr::Record(fields) => {
                 let map = fields
                     .into_iter()
                     .map(|field| {
@@ -1148,7 +1145,7 @@ impl Body<'_, '_> {
                         Ok((self.x.name(name), self.expr(val)?))
                     })
                     .collect::<LowerResult<HashMap<StrId, LocalId>>>()?;
-                let locals = self.x.ir.fields[self.x.ir.structdefs[structdef].fields]
+                let locals = self.x.ir.records[self.x.ir.structdefs[structdef].fields]
                     .iter()
                     .enumerate()
                     .map(|(i, (name, _))| match map.get(name) {
@@ -1156,7 +1153,7 @@ impl Body<'_, '_> {
                         None => Err(LowerError::MissingField(expr, structdef, FieldId::new(i))),
                     })
                     .collect::<LowerResult<Vec<LocalId>>>()?;
-                Ok(self.instr_struct(structdef, &locals))
+                Ok(self.instr_record(structdef, &locals))
             }
             Expr::Field(object, field) => {
                 let obj = self.expr(object)?;
@@ -1239,6 +1236,7 @@ impl Body<'_, '_> {
                 }
                 Ok(call)
             }
+            Expr::Unary(op, inner) => todo!(),
             Expr::Binary(l, op, r) => {
                 let local_l = self.expr(l)?;
                 let local_r = self.expr(r)?;
