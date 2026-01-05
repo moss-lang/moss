@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt, mem::take};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt,
+    mem::take,
+};
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
 use indexmap::IndexSet;
@@ -6,7 +10,7 @@ use indexmap::IndexSet;
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex, string},
-    parse::{self, Bind, Block, Expr, ExprId, Field, NeedId, Param, Path, Stmt, StmtId, Tree},
+    parse::{self, Binop, Block, Expr, ExprId, Field, Path, Stmt, StmtId, Tree, Unop},
     range::{Inclusive, expr_range, path_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -371,24 +375,6 @@ fn get_name<T: Copy>(
     }
 }
 
-fn get_name_method(
-    prelude: ModuleId,
-    current: ModuleId,
-    names: &HashMap<(ModuleId, StructdefId, StrId), FndefId>,
-    key: (ModuleId, StructdefId, StrId),
-) -> Option<FndefId> {
-    let (module, ty, name) = key;
-    if let Some(&id) = names.get(&(module, ty, name)) {
-        Some(id)
-    } else if module == current
-        && let Some(&id) = names.get(&(prelude, ty, name))
-    {
-        Some(id)
-    } else {
-        None
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 enum Named {
     Module(ModuleId),
@@ -438,13 +424,11 @@ struct FatType<'a, 'b> {
 impl fmt::Display for FatType<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.ctx.ir.types[self.id.index()] {
-            Type::String => write!(f, "`StringLit`"),
-            Type::Bool => write!(f, "`Bool`"),
-            Type::Int32 => write!(f, "`RawInt32`"),
-            Type::Int64 => write!(f, "`RawInt64`"),
+            Type::Opaque(_, _) => write!(f, "an opaque type"),
+            Type::Nominal(_, _) => write!(f, "a nominal type"),
+            Type::Alias(_, _) => write!(f, "a type alias"),
             Type::Tuple(_) => write!(f, "a tuple"),
-            Type::Tydef(tydef) => write!(f, "`type` index {tydef:?}"),
-            Type::Structdef(structdef) => write!(f, "`struct` index {structdef:?}"),
+            Type::Record(_) => write!(f, "a record"),
         }
     }
 }
@@ -466,7 +450,6 @@ pub enum LowerError {
     ExpectedType(TypeId, ExprId, TypeId),
     ThisNotMethod(ExprId),
     Overflow(ExprId),
-    MissingField(ExprId, StructdefId, FieldId),
     ArgCount(ExprId),
 }
 
@@ -555,13 +538,6 @@ impl LowerError {
                 "cannot use `this` in a function that is not a method".to_owned(),
             ),
             LowerError::Overflow(expr) => (Some(ctx.expr(expr)), "integer too large".to_owned()),
-            LowerError::MissingField(expr, structdef, field) => {
-                let (name, _) = ctx.ir.fields[ctx.ir.structdefs[structdef].fields][field.index()];
-                (
-                    Some(ctx.expr(expr)),
-                    format!("missing field `{}`", &ctx.ir.strings[name]),
-                )
-            }
             LowerError::ArgCount(expr) => {
                 (Some(ctx.expr(expr)), "wrong number of arguments".to_owned())
             }
@@ -631,16 +607,9 @@ impl<'a> Lower<'a> {
         self.ty_tuple(&[])
     }
 
-    /// Recursively dereferences `ty` through `type` aliases.
-    ///
-    /// Very shallow: only works if `ty` itself is an alias, not if it contains aliases.
-    fn resolve(&self, mut ty: TypeId) -> TypeId {
-        while let Type::Tydef(tydef) = self.ir.types[ty.index()]
-            && let Some(id) = self.ir.tydefs[tydef].def
-        {
-            ty = id;
-        }
-        ty
+    fn ty_record(&mut self, fields: &[(StrId, TypeId)]) -> TypeId {
+        let record = self.ir.records.make(fields);
+        self.ty(Type::Record(record))
     }
 
     fn path(&mut self, path: Path) -> LowerResult<Named> {
@@ -664,28 +633,18 @@ impl<'a> Lower<'a> {
             .ok_or(LowerError::Undefined(path.last))
     }
 
-    fn tydef(&mut self, key: (ModuleId, StrId)) -> Option<TydefId> {
-        get_name(self.prelude, self.module, &self.names.tydefs, key)
-    }
-
-    fn fndef(&mut self, key: (ModuleId, StrId)) -> Option<FndefId> {
-        get_name(self.prelude, self.module, &self.names.fndefs, key)
-    }
-
-    fn valdef(&mut self, key: (ModuleId, StrId)) -> Option<ValdefId> {
-        get_name(self.prelude, self.module, &self.names.valdefs, key)
-    }
-
-    fn ctxdef(&mut self, key: (ModuleId, StrId)) -> Option<CtxdefId> {
-        get_name(self.prelude, self.module, &self.names.ctxdefs, key)
-    }
-
-    fn structdef(&mut self, key: (ModuleId, StrId)) -> Option<StructdefId> {
-        get_name(self.prelude, self.module, &self.names.structdefs, key)
-    }
-
-    fn method(&mut self, key: (ModuleId, StructdefId, StrId)) -> Option<FndefId> {
-        get_name_method(self.prelude, self.module, &self.names.methods, key)
+    fn method(&mut self, ty: TypeId, name: StrId) -> Option<FndefId> {
+        if let Type::Nominal(tagdef, _) = self.ir.types[ty.index()]
+            && let Some(&fndef) = self.names.attached.get(&(tagdef, name))
+        {
+            Some(fndef)
+        } else if let Some(&fndef) = self.names.detached.get(&(self.module, name)) {
+            Some(fndef)
+        } else if let Some(&fndef) = self.names.detached.get(&(self.prelude, name)) {
+            Some(fndef)
+        } else {
+            None
+        }
     }
 
     fn imports(&mut self) -> LowerResult<()> {
@@ -1028,11 +987,13 @@ impl<'a> Lower<'a> {
     }
 
     fn bodies(&mut self) -> LowerResult<()> {
+        let ctx = self.ctx(Ctx::default()); // This will get overwritten when we call `body`.
         for (funcdef, id_decl) in take(&mut self.funcs) {
             let parse::Funcdef { fndef } = self.tree.funcdefs[funcdef];
             let start = Body {
                 x: self,
                 locals: HashMap::new(),
+                ctx,
             }
             .body(fndef, id_decl)?;
             let id_body = self.ir.bodies.push(start);
@@ -1044,6 +1005,7 @@ impl<'a> Lower<'a> {
             let start = Body {
                 x: self,
                 locals: HashMap::new(),
+                ctx,
             }
             .body(fndef, id_decl)?;
             let id_body = self.ir.bodies.push(start);
@@ -1055,6 +1017,7 @@ impl<'a> Lower<'a> {
             let start = Body {
                 x: self,
                 locals: HashMap::new(),
+                ctx,
             }
             .body(fndef, id_decl)?;
             let id_body = self.ir.bodies.push(start);
@@ -1106,7 +1069,7 @@ impl Body<'_, '_> {
         self.instr(ty, Instr::Tuple(IdRange { start, end }))
     }
 
-    fn instr_struct(&mut self, ty: TypeId, locals: &[LocalId]) -> LocalId {
+    fn instr_record(&mut self, ty: TypeId, locals: &[LocalId]) -> LocalId {
         let start = self.x.ir.refs.len_idx();
         self.x.ir.refs.extend_from_slice(IndexSlice::new(locals));
         let end = self.x.ir.refs.len_idx();
@@ -1138,29 +1101,28 @@ impl Body<'_, '_> {
                 Ok(self.instr(ty, Instr::Nominal(tagdef, local)))
             }
             Expr::Record(fields) => {
-                let map = fields
+                let sorted = fields
                     .into_iter()
                     .map(|field| {
                         let Field { name, val } = self.x.tree.fields[field];
-                        Ok((self.x.name(name), self.expr(val)?))
+                        Ok((self.x.slice(name), self.expr(val)?))
                     })
-                    .collect::<LowerResult<HashMap<StrId, LocalId>>>()?;
-                let locals = self.x.ir.records[self.x.ir.structdefs[structdef].fields]
+                    .collect::<LowerResult<BTreeMap<&str, LocalId>>>()?;
+                let fields = sorted
                     .iter()
-                    .enumerate()
-                    .map(|(i, (name, _))| match map.get(name) {
-                        Some(&local) => Ok(local),
-                        None => Err(LowerError::MissingField(expr, structdef, FieldId::new(i))),
+                    .map(|(&string, &local)| {
+                        (self.x.ir.strings.make_id(string), self.x.ir.locals[local])
                     })
-                    .collect::<LowerResult<Vec<LocalId>>>()?;
-                Ok(self.instr_record(structdef, &locals))
+                    .collect::<Vec<(StrId, TypeId)>>();
+                let ty = self.x.ty_record(&fields);
+                let locals = sorted.values().copied().collect::<Vec<LocalId>>();
+                Ok(self.instr_record(ty, &locals))
             }
             Expr::Field(object, field) => {
                 let obj = self.expr(object)?;
                 let name = self.x.name(field);
-                let fields = &self.x.ir.fields[self.x.ir.structdefs
-                    [self.x.ir.types[self.x.ir.locals[obj].index()].structdef()]
-                .fields];
+                let fields =
+                    &self.x.ir.records[self.x.ir.types[self.x.ir.locals[obj].index()].record()];
                 // TODO: Make this not be linear time.
                 let id = FieldId::from_usize(
                     fields.iter().position(|&(field, _)| field == name).unwrap(),
@@ -1171,56 +1133,37 @@ impl Body<'_, '_> {
             Expr::Method(object, method, args) => {
                 let obj = self.expr(object)?;
                 let ty = self.x.ir.locals[obj];
-                let structdef = self.x.ir.types[ty.index()].structdef();
                 let name = self.x.name(method);
-                let Some(fndef) = self.x.method((self.x.module, structdef, name)) else {
+                let Some(fndef) = self.x.method(ty, name) else {
                     return Err(LowerError::Undefined(method));
                 };
                 let Fndef {
-                    needs: _,
+                    ctx: _,
                     param,
                     result,
                 } = self.x.ir.fndefs[fndef];
                 let params = &self.x.ir.tuples[self.x.ir.types[param.index()].tuple()];
-                if args.len() + 1 != params.len() {
+                if args.len() != params.len() {
                     return Err(LowerError::ArgCount(expr));
                 }
-                let mut locals = vec![obj];
-                for arg in args {
-                    locals.push(self.expr(arg)?);
-                }
+                let locals = args
+                    .into_iter()
+                    .map(|arg| self.expr(arg))
+                    .collect::<LowerResult<Vec<LocalId>>>()?;
                 let arg = self.instr_tuple(param, &locals);
+                // TODO: Contextually set `this` to `obj`.
                 Ok(self.instr(result, Instr::Call(fndef, arg)))
             }
             Expr::Call(callee, binds, args) => {
-                let key = self.x.path(callee)?;
-                let Some(fndef) = self.x.fndef(key) else {
+                let Named::Fndef(fndef) = self.x.path(callee)? else {
                     return Err(LowerError::Undefined(callee.last));
                 };
                 let Fndef {
-                    needs: _,
+                    ctx: _,
                     param,
                     result,
                 } = self.x.ir.fndefs[fndef];
-                // TODO: Handle dynamic bindings instead of just assuming `NeedKind::Static`.
-                let unit = self.x.ty_unit();
-                self.instr(unit, Instr::Static);
-                let bindings = binds
-                    .get(&self.x.tree.binds)
-                    .iter()
-                    .map(|&Bind { path, val }| {
-                        let key = self.x.path(path)?;
-                        let Some(valdef) = self.x.valdef(key) else {
-                            return Err(LowerError::Undefined(path.last));
-                        };
-                        let local = self.expr(val)?;
-                        Ok((valdef, local))
-                    })
-                    .collect::<LowerResult<Vec<_>>>()?;
-                self.instr(unit, Instr::EndStatic);
-                for (valdef, local) in bindings {
-                    self.instr(unit, Instr::BindVal(valdef, local));
-                }
+                // TODO: Handle bindings attached to function calls.
                 let params = &self.x.ir.tuples[self.x.ir.types[param.index()].tuple()];
                 if args.len() != params.len() {
                     return Err(LowerError::ArgCount(expr));
@@ -1231,74 +1174,35 @@ impl Body<'_, '_> {
                     .collect::<LowerResult<Vec<LocalId>>>()?;
                 let arg = self.instr_tuple(param, &locals);
                 let call = self.instr(result, Instr::Call(fndef, arg));
-                for _ in binds {
-                    self.instr(unit, Instr::EndBind);
-                }
                 Ok(call)
             }
-            Expr::Unary(op, inner) => todo!(),
-            Expr::Binary(l, op, r) => {
-                let local_l = self.expr(l)?;
-                let local_r = self.expr(r)?;
-                let int = self.x.ty(Type::Int32);
-                let ty_l = self.x.ir.locals[local_l];
-                let ty_r = self.x.ir.locals[local_r];
-                match (
-                    self.x.ir.types[self.x.resolve(ty_l).index()],
-                    self.x.ir.types[self.x.resolve(ty_r).index()],
-                ) {
-                    (Type::Int32, Type::Int32) => {
-                        match op {
-                            parse::Binop::Add => Ok(self
-                                .instr(int, Instr::Int32Arith(local_l, Int32Arith::Add, local_r))),
-                            parse::Binop::Sub => Ok(self
-                                .instr(int, Instr::Int32Arith(local_l, Int32Arith::Sub, local_r))),
-                            parse::Binop::Mul => Ok(self
-                                .instr(int, Instr::Int32Arith(local_l, Int32Arith::Mul, local_r))),
-                            parse::Binop::Div => Ok(self
-                                .instr(int, Instr::Int32Arith(local_l, Int32Arith::Div, local_r))),
-                            parse::Binop::Rem => Ok(self
-                                .instr(int, Instr::Int32Arith(local_l, Int32Arith::Rem, local_r))),
-                            parse::Binop::Eq => {
-                                let bool = self.x.ty(Type::Bool);
-                                Ok(self
-                                    .instr(bool, Instr::Int32Comp(local_l, Int32Comp::Eq, local_r)))
-                            }
-                            parse::Binop::Neq => {
-                                let bool = self.x.ty(Type::Bool);
-                                Ok(self.instr(
-                                    bool,
-                                    Instr::Int32Comp(local_l, Int32Comp::Neq, local_r),
-                                ))
-                            }
-                            parse::Binop::Lt => {
-                                let bool = self.x.ty(Type::Bool);
-                                Ok(self
-                                    .instr(bool, Instr::Int32Comp(local_l, Int32Comp::Lt, local_r)))
-                            }
-                            parse::Binop::Gt => {
-                                let bool = self.x.ty(Type::Bool);
-                                Ok(self
-                                    .instr(bool, Instr::Int32Comp(local_l, Int32Comp::Gt, local_r)))
-                            }
-                            parse::Binop::Leq => {
-                                let bool = self.x.ty(Type::Bool);
-                                Ok(self.instr(
-                                    bool,
-                                    Instr::Int32Comp(local_l, Int32Comp::Leq, local_r),
-                                ))
-                            }
-                            parse::Binop::Geq => {
-                                let bool = self.x.ty(Type::Bool);
-                                Ok(self.instr(
-                                    bool,
-                                    Instr::Int32Comp(local_l, Int32Comp::Geq, local_r),
-                                ))
-                            }
-                        }
-                    }
-                    (Type::Int32, _) => Err(LowerError::ExpectedType(int, r, ty_r)),
-                    _ => Err(LowerError::ExpectedType(int, l, ty_l)),
+            Expr::Unary(op, inner) => {
+                let v = self.expr(inner)?;
+                match op {
+                    Unop::Neg => todo!(),
+                    Unop::Not => todo!(),
+                }
+            }
+            Expr::Binary(left, op, right) => {
+                let l = self.expr(left)?;
+                let r = self.expr(right)?;
+                match op {
+                    Binop::Eq => todo!(),
+                    Binop::Ne => todo!(),
+                    Binop::Lt => todo!(),
+                    Binop::Gt => todo!(),
+                    Binop::Le => todo!(),
+                    Binop::Ge => todo!(),
+                    Binop::Add => todo!(),
+                    Binop::Sub => todo!(),
+                    Binop::Mul => todo!(),
+                    Binop::Div => todo!(),
+                    Binop::Rem => todo!(),
+                    Binop::Shl => todo!(),
+                    Binop::Shr => todo!(),
+                    Binop::And => todo!(),
+                    Binop::Or => todo!(),
+                    Binop::Xor => todo!(),
                 }
             }
             Expr::If(cond, yes, no) => {
@@ -1385,10 +1289,11 @@ impl Body<'_, '_> {
         let Some(body) = def else { return Ok(None) };
         let start = self.x.ir.instrs.len_idx();
         let Fndef {
-            ctx: _,
+            ctx,
             param: tuple_ty,
             result: ret_ty,
         } = self.x.ir.fndefs[id_decl];
+        self.ctx = ctx;
         let tuple_local = self.instr(tuple_ty, Instr::Param);
         let types = self.x.ir.types[tuple_ty.index()].tuple();
         let mut index = 0;
