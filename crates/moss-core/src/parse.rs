@@ -176,7 +176,7 @@ pub enum Expr {
     Lit(TokenId),
     Path(Path),
     Tag(Path, ExprId),
-    Record(IdRange<FieldId>),
+    Record(TokenId, IdRange<FieldId>, TokenId),
     Field(ExprId, TokenId),
     Method(ExprId, TokenId, IdRange<ExprId>),
     Call(Path, IdRange<BindId>, IdRange<ExprId>),
@@ -571,13 +571,13 @@ impl<'a> Parser<'a> {
                 if let Curly::No = curly {
                     return Err(self.err(expected));
                 }
-                self.next();
+                let lbrace = self.next();
                 let mut fields = Vec::new();
                 loop {
                     if let RBrace = self.peek() {
-                        self.next();
+                        let rbrace = self.next();
                         let fields = IdRange::new(&mut self.tree.fields, fields);
-                        return Ok(Expr::Record(fields));
+                        return Ok(Expr::Record(lbrace, fields, rbrace));
                     }
                     fields.push(self.field()?);
                     if let Comma = self.peek() {

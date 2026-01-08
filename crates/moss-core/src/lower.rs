@@ -1100,7 +1100,7 @@ impl Body<'_, '_> {
                 let ty = self.x.ir.locals[local];
                 Ok(self.instr(ty, Instr::Nominal(tagdef, local)))
             }
-            Expr::Record(fields) => {
+            Expr::Record(_lbrace, fields, _rbrace) => {
                 let sorted = fields
                     .into_iter()
                     .map(|field| {
