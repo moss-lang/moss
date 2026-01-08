@@ -1,7 +1,8 @@
 use std::{collections::HashMap, mem::take};
 
 use index_vec::{IndexVec, define_index_type};
-use indexmap::IndexSet;
+use indexmap::IndexMap;
+use itertools::Itertools;
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
@@ -12,9 +13,7 @@ use wasm_encoder::{
 use crate::{
     context::{BuiltinId, Cache, ContextId, Fn, FnId, Ty, TyId, Val, ValId},
     intern::StrId,
-    lower::{
-        self, ElemId, FieldId, Fndef, FndefId, IR, Instr, Int32Arith, Int32Comp, Names, ValdefId,
-    },
+    lower::{self, ElemId, FieldId, Fndef, FndefId, IR, Instr, Named, Names, ValdefId},
     prelude::Lib,
     tuples::TupleLoc,
     util::IdRange,
@@ -383,70 +382,9 @@ impl<'a> Wasm<'a> {
     fn instrs(&mut self, param: TyId, mut instr: lower::LocalId) -> lower::LocalId {
         loop {
             match self.ir.instrs[instr] {
-                Instr::Static => {
-                    instr += 1;
-                    loop {
-                        match self.ir.instrs[instr] {
-                            Instr::EndStatic => break,
-                            Instr::Val(valdef) => {
-                                let val = self.cache.valdef(self.ctx, valdef);
-                                self.statics.insert(instr, val);
-                            }
-                            Instr::Int32(n) => {
-                                let val = self.cache.val_int32(n);
-                                self.statics.insert(instr, val);
-                            }
-                            Instr::String(s) => {
-                                let val = self.cache.val_string(s);
-                                self.statics.insert(instr, val);
-                            }
-                            _ => panic!(),
-                        }
-                        instr += 1;
-                    }
-                }
-                Instr::EndStatic => panic!(),
-                Instr::BindVal(valdef, local) => {
-                    if let Some(&val) = self.statics.get(&local) {
-                        let ctx = self.ctx;
-                        let mut context = self.cache[self.ctx].clone();
-                        context.set_val(valdef, val);
-                        self.ctx = self.cache.make_ctx(context);
-                        instr = self.instrs(param, instr + 1);
-                        self.ctx = ctx;
-                    } else {
-                        self.get_val(valdef);
-                        let ty = {
-                            let val = self.cache.valdef(self.ctx, valdef);
-                            match self.cache[val] {
-                                // We don't need any temporary locals to restore static bindings.
-                                Val::Bool(_) | Val::Int32(_) | Val::String(_) => {
-                                    self.cache.ty_unit()
-                                }
-                                Val::Dynamic(_, ty) => ty,
-                            }
-                        };
-                        let tmp = self.set_tmp(ty);
-                        self.get(local);
-                        let ctx = self.ctx;
-                        let context = {
-                            let mut context = self.cache[self.ctx].clone();
-                            let Local { ctx, start: _ } = self.variables[&local];
-                            let ty = self.cache.ty(ctx, self.ir.locals[local]);
-                            let val = self.cache.val_dynamic(valdef, ty);
-                            context.set_val(valdef, val);
-                            context
-                        };
-                        self.ctx = self.cache.make_ctx(context);
-                        self.set_val(valdef);
-                        instr = self.instrs(param, instr + 1);
-                        self.ctx = ctx;
-                        self.get_tmp(tmp);
-                        self.set_val(valdef);
-                    }
-                }
+                Instr::BindCall(fndef, local) => todo!(),
                 Instr::EndBind => break,
-                Instr::Val(valdef) => self.get_val(valdef),
+                Instr::Val(valdef, ctx) => self.get_val(valdef),
                 Instr::Param => {
                     self.get_locals(param, LocalId::from_raw(0));
                 }
@@ -459,18 +397,13 @@ impl<'a> Wasm<'a> {
                     let ty = self.cache.ty(ctx, self.ir.locals[lhs]);
                     self.set_locals(ty, start);
                 }
-                Instr::Int32(n) => {
-                    self.body.insn().i32_const(n as i32);
-                }
-                Instr::String(id) => {
-                    self.string(id);
-                }
+                Instr::Nominal(tagdef, local) => todo!(),
                 Instr::Tuple(locals) => {
                     for &id in locals.get(&self.ir.refs) {
                         self.get(id);
                     }
                 }
-                Instr::Struct(_, locals) => {
+                Instr::Record(_, locals) => {
                     for &id in locals.get(&self.ir.refs) {
                         self.get(id);
                     }
@@ -506,29 +439,6 @@ impl<'a> Wasm<'a> {
                     }
                     let field = TupleLoc::from_raw(range.start.raw() + index.raw());
                     self.get_locals(self.cache[field], start);
-                }
-                Instr::Int32Arith(a, op, b) => {
-                    self.get(a);
-                    self.get(b);
-                    match op {
-                        Int32Arith::Add => self.body.insn().i32_add(),
-                        Int32Arith::Sub => self.body.insn().i32_sub(),
-                        Int32Arith::Mul => self.body.insn().i32_mul(),
-                        Int32Arith::Div => self.body.insn().i32_div_s(),
-                        Int32Arith::Rem => self.body.insn().i32_rem_s(),
-                    };
-                }
-                Instr::Int32Comp(a, op, b) => {
-                    self.get(a);
-                    self.get(b);
-                    match op {
-                        Int32Comp::Eq => self.body.insn().i32_eq(),
-                        Int32Comp::Neq => self.body.insn().i32_ne(),
-                        Int32Comp::Lt => self.body.insn().i32_lt_s(),
-                        Int32Comp::Gt => self.body.insn().i32_gt_s(),
-                        Int32Comp::Leq => self.body.insn().i32_le_s(),
-                        Int32Comp::Geq => self.body.insn().i32_ge_s(),
-                    };
                 }
                 Instr::Call(fndef, local) => {
                     self.get(local);
@@ -884,6 +794,7 @@ impl<'a> Wasm<'a> {
                     self.body.insn().end();
                     break;
                 }
+                Instr::ReturnBind(ctx) => todo!(),
             }
             self.set(instr);
             instr += 1;
@@ -902,7 +813,7 @@ impl<'a> Wasm<'a> {
             Fn::Fndef(ctx, fndef) => {
                 self.ctx = ctx;
                 let Fndef {
-                    needs: _,
+                    ctx: _,
                     param,
                     result,
                 } = self.ir.fndefs[fndef];
@@ -927,14 +838,14 @@ impl<'a> Wasm<'a> {
     fn program(mut self) -> Vec<u8> {
         let mut context = self.cache[self.ctx].clone();
         let val_false =
-            self.names.valdefs[&(self.lib.bool, self.ir.strings.get_id("false").unwrap())];
+            self.names.names[&(self.lib.bool, self.ir.strings.get_id("false").unwrap())].valdef();
         let val_true =
-            self.names.valdefs[&(self.lib.bool, self.ir.strings.get_id("true").unwrap())];
+            self.names.names[&(self.lib.bool, self.ir.strings.get_id("true").unwrap())].valdef();
         context.set_val(val_false, self.cache.val_bool(false));
         context.set_val(val_true, self.cache.val_bool(true));
 
         let ty_memidx =
-            self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
+            self.names.names[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())].tydef();
         context.set_ty(ty_memidx, self.cache.ty_int32());
         let memidx_wasi = 0;
         context.set_val(self.val_memidx, self.cache.val_int32(memidx_wasi));
@@ -944,8 +855,10 @@ impl<'a> Wasm<'a> {
             .filter(|&valdef| {
                 // Skip the special WASI memory here, because we always want it to be index zero.
                 valdef != self.val_memidx
-                    && self.ir.types[self.ir.valdefs[valdef].ty.index()]
-                        == lower::Type::Tydef(ty_memidx)
+                    && match self.ir.types[self.ir.valdefs[valdef].ty.index()] {
+                        lower::Type::Opaque(tydef, _) if tydef == ty_memidx => true,
+                        _ => false,
+                    }
             })
             .collect();
         for (i, &valdef) in memidx_valdefs.iter().enumerate() {
@@ -957,38 +870,30 @@ impl<'a> Wasm<'a> {
             let f = self.cache.fn_builtin(builtin);
             assert_eq!(self.funcs.push(None), f);
             let name = self.ir.strings.get_id(<&str>::from(instruction)).unwrap();
-            let fndef = self.names.fndefs[&(self.lib.wasm, name)];
+            let fndef = self.names.names[&(self.lib.wasm, name)].fndef();
             context.set_fn(fndef, f);
         }
 
-        // We use the ordering from the `context` definition instead of, for instance, just using
-        // the iteration order of `self.names`, since that would be nondeterministic.
-        let wasip1_fndefs: IndexSet<FndefId> = self.ir.ctxdefs
-            [self.names.ctxdefs[&(self.lib.wasip1, self.ir.strings.get_id("wasip1").unwrap())]]
-            .def
-            .fns
-            .get(&self.ir.need_fns)
-            .iter()
-            .map(|need| need.id)
-            .collect();
         // It isn't ideal to iterate through every name binding from every module just to filter out
-        // all the ones except from the one module we care about, but it's fine for now.
-        let wasip1_names: HashMap<FndefId, StrId> = self
+        // all the ones except from the one module we care about, but it's fine for now. We sort by
+        // name in order to achieve determinism.
+        let wasip1_fndefs: IndexMap<StrId, FndefId> = self
             .names
-            .fndefs
+            .names
             .iter()
-            .filter(|&(&(module, _), &fndef)| {
-                module == self.lib.wasip1 && wasip1_fndefs.contains(&fndef)
+            .filter_map(|(&(module, name), &named)| match named {
+                Named::Fndef(fndef) if module == self.lib.wasip1 => Some((name, fndef)),
+                _ => None,
             })
-            .map(|(&(_, name), &fndef)| (fndef, name))
+            .sorted_by_key(|&(name, _)| &self.ir.strings[name])
             .collect();
-        for &fndef in &wasip1_fndefs {
+        for (&name, &fndef) in &wasip1_fndefs {
             let builtin = self.builtins.push(Builtin::Function(self.funcidx()));
             let f = self.cache.fn_builtin(builtin);
             assert_eq!(self.funcs.push(None), f);
             context.set_fn(fndef, f);
             let Fndef {
-                needs: _,
+                ctx: _,
                 param,
                 result,
             } = self.ir.fndefs[fndef];
@@ -1012,7 +917,7 @@ impl<'a> Wasm<'a> {
             };
             self.section_import.import(
                 WASIP1,
-                &self.ir.strings[wasip1_names[&fndef]],
+                &self.ir.strings[name],
                 EntityType::Function(self.section_type.len()),
             );
             self.section_type
@@ -1026,7 +931,7 @@ impl<'a> Wasm<'a> {
         let f_stack = self.cache.fn_builtin(builtin_stack);
         assert_eq!(self.funcs.push(None), f_stack);
         let fndef_stack =
-            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("stack").unwrap())];
+            self.names.names[&(self.lib.wasi, self.ir.strings.get_id("stack").unwrap())].fndef();
         context.set_fn(fndef_stack, f_stack);
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([], [ValType::I32]);
@@ -1040,7 +945,7 @@ impl<'a> Wasm<'a> {
         let f_reserve = self.cache.fn_builtin(builtin_reserve);
         assert_eq!(self.funcs.push(None), f_reserve);
         let fndef_reserve =
-            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("reserve").unwrap())];
+            self.names.names[&(self.lib.wasi, self.ir.strings.get_id("reserve").unwrap())].fndef();
         context.set_fn(fndef_reserve, f_reserve);
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([ValType::I32], []);
@@ -1069,7 +974,7 @@ impl<'a> Wasm<'a> {
         let f_claim = self.cache.fn_builtin(builtin_claim);
         assert_eq!(self.funcs.push(None), f_claim);
         let fndef_claim =
-            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("claim").unwrap())];
+            self.names.names[&(self.lib.wasi, self.ir.strings.get_id("claim").unwrap())].fndef();
         context.set_fn(fndef_claim, f_claim);
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([ValType::I32], []);
@@ -1152,12 +1057,7 @@ impl<'a> Wasm<'a> {
                 .global_set(global_stack)
                 .call(self.funcs[main].unwrap())
                 .i32_const(0)
-                .call(
-                    wasip1_fndefs
-                        .iter()
-                        .position(|fndef| &self.ir.strings[wasip1_names[fndef]] == "proc_exit")
-                        .unwrap() as u32,
-                )
+                .call(wasip1_fndefs[&self.ir.strings.get_id("proc_exit").unwrap()].raw())
                 .end();
             f
         });
@@ -1181,11 +1081,11 @@ impl<'a> Wasm<'a> {
 pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
     let cache = Cache::new(ir);
     let ctx = cache.empty();
-    let val_memidx = names.valdefs[&(lib.wasm, ir.strings.get_id("memidx").unwrap())];
-    let val_dst = names.valdefs[&(lib.wasm, ir.strings.get_id("dst").unwrap())];
-    let val_src = names.valdefs[&(lib.wasm, ir.strings.get_id("src").unwrap())];
-    let val_align = names.valdefs[&(lib.wasm, ir.strings.get_id("align").unwrap())];
-    let val_offset = names.valdefs[&(lib.wasm, ir.strings.get_id("offset").unwrap())];
+    let val_memidx = names.names[&(lib.wasm, ir.strings.get_id("memidx").unwrap())].valdef();
+    let val_dst = names.names[&(lib.wasm, ir.strings.get_id("dst").unwrap())].valdef();
+    let val_src = names.names[&(lib.wasm, ir.strings.get_id("src").unwrap())].valdef();
+    let val_align = names.names[&(lib.wasm, ir.strings.get_id("align").unwrap())].valdef();
+    let val_offset = names.names[&(lib.wasm, ir.strings.get_id("offset").unwrap())].valdef();
     Wasm {
         ir,
         names,
