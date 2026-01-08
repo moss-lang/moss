@@ -1,10 +1,5 @@
 import "./literal.moss" use LiteralUint31;
 
-assume LiteralUint31;
-
-# https://webassembly.github.io/spec/core/syntax/values.html#integers
-type U32 = LiteralUint31;
-
 # https://webassembly.github.io/spec/core/syntax/types.html#number-types
 type I32;
 type I64;
@@ -18,30 +13,30 @@ val memidx[MemIdx]: MemIdx;
 fn unreachable();
 
 # https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
-val align: U32;
-val offset: U32;
-context Mem = static memidx, static align, static offset;
+val align[LiteralUint31]: LiteralUint31;
+val offset[LiteralUint31]: LiteralUint31;
+context Mem[LiteralUint31, MemIdx] = static memidx, static align, static offset;
 val dst[MemIdx]: MemIdx;
 val src[MemIdx]: MemIdx;
-fn i32_load[Types, mem](address: I32): I32;
-fn i64_load[Types, mem](address: I32): I64;
-fn i32_load8_s[Types, mem](address: I32): I32;
-fn i32_load8_u[Types, mem](address: I32): I32;
-fn i32_load16_s[Types, mem](address: I32): I32;
-fn i32_load16_u[Types, mem](address: I32): I32;
-fn i64_load8_s[Types, mem](address: I32): I64;
-fn i64_load8_u[Types, mem](address: I32): I64;
-fn i64_load16_s[Types, mem](address: I32): I64;
-fn i64_load16_u[Types, mem](address: I32): I64;
-fn i64_load32_s[Types, mem](address: I32): I64;
-fn i64_load32_u[Types, mem](address: I32): I64;
-fn i32_store[Types, mem](address: I32, value: I32);
-fn i64_store[Types, mem](address: I32, value: I64);
-fn i32_store8[Types, mem](address: I32, value: I32);
-fn i32_store16[Types, mem](address: I32, value: I32);
-fn i64_store8[Types, mem](address: I32, value: I64);
-fn i64_store16[Types, mem](address: I32, value: I64);
-fn i64_store32[Types, mem](address: I32, value: I64);
+fn i32_load[Types, Mem](address: I32): I32;
+fn i64_load[Types, Mem](address: I32): I64;
+fn i32_load8_s[Types, Mem](address: I32): I32;
+fn i32_load8_u[Types, Mem](address: I32): I32;
+fn i32_load16_s[Types, Mem](address: I32): I32;
+fn i32_load16_u[Types, Mem](address: I32): I32;
+fn i64_load8_s[Types, Mem](address: I32): I64;
+fn i64_load8_u[Types, Mem](address: I32): I64;
+fn i64_load16_s[Types, Mem](address: I32): I64;
+fn i64_load16_u[Types, Mem](address: I32): I64;
+fn i64_load32_s[Types, Mem](address: I32): I64;
+fn i64_load32_u[Types, Mem](address: I32): I64;
+fn i32_store[Types, Mem](address: I32, value: I32);
+fn i64_store[Types, Mem](address: I32, value: I64);
+fn i32_store8[Types, Mem](address: I32, value: I32);
+fn i32_store16[Types, Mem](address: I32, value: I32);
+fn i64_store8[Types, Mem](address: I32, value: I64);
+fn i64_store16[Types, Mem](address: I32, value: I64);
+fn i64_store32[Types, Mem](address: I32, value: I64);
 fn memory_size[Types, static memidx](): I32;
 fn memory_grow[Types, static memidx](pages: I32): I32;
 fn memory_copy[Types, static dst, static src](dst: I32, src: I32, len: I32);
