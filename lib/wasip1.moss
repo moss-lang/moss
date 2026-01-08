@@ -1,4 +1,6 @@
-import "./wasm.moss" as wasm use I32, I64;
+import "./wasm.moss" use I32, I64;
+
+assume I32, I64;
 
 fn args_get(argv: I32, argv_buf: I32): I32;
 fn args_sizes_get(retptr0: I32, retptr1: I32): I32;
@@ -115,7 +117,7 @@ fn sock_send(
 ): I32;
 fn sock_shutdown(fd: I32, how: I32): I32;
 
-context wasip1 =
+context WasiP1 =
   args_get,
   args_sizes_get,
   environ_get,
