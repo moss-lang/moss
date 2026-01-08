@@ -376,7 +376,7 @@ fn get_name<T: Copy>(
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Named {
+pub enum Named {
     Module(ModuleId),
     Tydef(TydefId),
     Tagdef(TagdefId),
@@ -384,6 +384,57 @@ enum Named {
     Fndef(FndefId),
     Valdef(ValdefId),
     Ctxdef(CtxdefId),
+}
+
+impl Named {
+    pub fn module(self) -> ModuleId {
+        match self {
+            Named::Module(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    pub fn tydef(self) -> TydefId {
+        match self {
+            Named::Tydef(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    pub fn tagdef(self) -> TagdefId {
+        match self {
+            Named::Tagdef(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    pub fn aliasdef(self) -> AliasdefId {
+        match self {
+            Named::Aliasdef(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    pub fn fndef(self) -> FndefId {
+        match self {
+            Named::Fndef(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    pub fn valdef(self) -> ValdefId {
+        match self {
+            Named::Valdef(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    pub fn ctxdef(self) -> CtxdefId {
+        match self {
+            Named::Ctxdef(id) => id,
+            _ => panic!(),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
