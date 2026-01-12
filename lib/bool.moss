@@ -3,5 +3,3 @@ type Bool;
 val false[Bool]: Bool;
 
 val true[Bool]: Bool;
-
-context Booleans = Bool, false[Bool], true[Bool];

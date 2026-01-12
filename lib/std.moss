@@ -1,0 +1,114 @@
+import "./bool.moss" use Bool, false, true;
+import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
+import "./io.moss" as io;
+import "./literal.moss" as lit;
+import "./ops.moss" as ops use Arg, Lhs, Rhs;
+import "./string.moss" use .to_string, String;
+import "./this.moss" use This;
+
+type Number;
+
+context Arithmetic[Number] =
+  ops::AddOut[Lhs=Number, Rhs=Number]=Number,
+  ops::SubOut[Lhs=Number, Rhs=Number]=Number,
+  ops::MulOut[Lhs=Number, Rhs=Number]=Number,
+  ops::DivOut[Lhs=Number, Rhs=Number]=Number,
+  ops::RemOut[Lhs=Number, Rhs=Number]=Number,
+  ops::Add[Lhs=Number, Rhs=Number],
+  ops::Sub[Lhs=Number, Rhs=Number],
+  ops::Mul[Lhs=Number, Rhs=Number],
+  ops::Div[Lhs=Number, Rhs=Number],
+  ops::Rem[Lhs=Number, Rhs=Number],
+;
+
+context Negation[Number] =
+  ops::NegOut[Arg=Number]=Number,
+  ops::Neg[Arg=Number],
+;
+
+context Comparison[Number] =
+  Bool,
+  ops::eq[Bool, Lhs=Number, Rhs=Number],
+  ops::ne[Bool, Lhs=Number, Rhs=Number],
+  ops::lt[Bool, Lhs=Number, Rhs=Number],
+  ops::gt[Bool, Lhs=Number, Rhs=Number],
+  ops::le[Bool, Lhs=Number, Rhs=Number],
+  ops::ge[Bool, Lhs=Number, Rhs=Number],
+;
+
+context Std =
+  lit::LiteralUint31,
+  lit::LiteralUint32,
+  lit::LiteralInt32,
+  lit::LiteralUint63,
+  lit::LiteralUint64,
+  lit::LiteralInt64,
+  lit::LiteralUint,
+  lit::LiteralInt,
+  lit::LiteralChar,
+  lit::LiteralString,
+
+  Bool,
+  false[Bool],
+  true[Bool],
+
+  String,
+  lit::string_realize[lit::LiteralString, String],
+
+  Uint32,
+  lit::uint31_realize_uint32[lit::LiteralUint31, Uint32],
+  lit::uint32_realize_uint32[lit::LiteralUint32, Uint32],
+  Arithmetic[Number=Uint32],
+  Comparison[Number=Uint32],
+  .to_string[String, This=Uint32],
+
+  Int32,
+  lit::uint31_realize_int32[lit::LiteralUint31, Int32],
+  lit::int32_realize_int32[lit::LiteralInt32, Int32],
+  Arithmetic[Number=Int32],
+  Negation[Number=Int32],
+  Comparison[Number=Int32],
+  .to_string[String, This=Int32],
+
+  Uint64,
+  lit::uint31_realize_uint64[lit::LiteralUint31, Uint64],
+  lit::uint32_realize_uint64[lit::LiteralUint32, Uint64],
+  lit::uint63_realize_uint64[lit::LiteralUint63, Uint64],
+  lit::uint64_realize_uint64[lit::LiteralUint64, Uint64],
+  Arithmetic[Number=Uint64],
+  Comparison[Number=Uint64],
+  .to_string[String, This=Uint64],
+
+  Int64,
+  lit::uint31_realize_int64[lit::LiteralUint31, Int64],
+  lit::uint32_realize_int64[lit::LiteralUint32, Int64],
+  lit::int32_realize_int64[lit::LiteralInt32, Int64],
+  lit::uint63_realize_int64[lit::LiteralUint63, Int64],
+  lit::int64_realize_int64[lit::LiteralInt64, Int64],
+  Arithmetic[Number=Int64],
+  Negation[Number=Int64],
+  Comparison[Number=Int64],
+  .to_string[String, This=Int64],
+
+  Uint,
+  lit::uint31_realize_uint[lit::LiteralUint31, Uint],
+  lit::uint32_realize_uint[lit::LiteralUint32, Uint],
+  Arithmetic[Number=Uint],
+  Comparison[Number=Uint],
+  .to_string[String, This=Uint],
+
+  Int,
+  lit::uint31_realize_int[lit::LiteralUint31, Int],
+  lit::int32_realize_int[lit::LiteralInt32, Int],
+  Arithmetic[Number=Int],
+  Negation[Number=Int],
+  Comparison[Number=Int],
+  .to_string[String, This=Int],
+
+  io::print,
+;
+
+fn println[Std](string: String) {
+  print(string);
+  print("\n");
+}
