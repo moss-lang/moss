@@ -1,6 +1,5 @@
 import "./bool.moss" use Bool, false, true;
 import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
-import "./io.moss" as io;
 import "./literal.moss" as lit;
 import "./ops.moss" as ops use Arg, Lhs, Rhs;
 import "./string.moss" use .to_string, String;
@@ -35,6 +34,8 @@ context Comparison[Number] =
   ops::le[Bool, Lhs=Number, Rhs=Number],
   ops::ge[Bool, Lhs=Number, Rhs=Number],
 ;
+
+fn print[String](string: String);
 
 context Std =
   lit::LiteralUint31,
@@ -105,7 +106,7 @@ context Std =
   Comparison[Number=Int],
   .to_string[String, This=Int],
 
-  io::print,
+  print,
 ;
 
 fn println[Std](string: String) {

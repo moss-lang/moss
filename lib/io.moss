@@ -1,3 +1,0 @@
-import "./string.moss" use String;
-
-fn print[String](string: String);
