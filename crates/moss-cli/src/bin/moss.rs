@@ -13,7 +13,7 @@ use line_index::{LineIndex, TextSize};
 use moss_cli::util::err_fail;
 use moss_core::{
     lex::{ByteIndex, LexError, lex},
-    lower::lower,
+    lower::{Ctx, lower},
     parse::{ParseError, parse},
     prelude::prelude,
     wasm::wasm,
@@ -69,8 +69,14 @@ fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
         };
         compiler.error(start, &message)
     })?;
-    let start = names.fndefs[&(module, ir.strings.get_id("main").unwrap())];
-    let bytes = wasm(&ir, &names, lib, start);
+    let wasi = {
+        let ctxdef = names.names[&(lib.wasi, ir.strings.get_id("Wasi").unwrap())].ctxdef();
+        let mut ctx = Ctx::default();
+        ctx.ctxs.insert(ctxdef, im_rc::HashSet::new());
+        ir.ctx(ctx)
+    };
+    let start = names.names[&(module, ir.strings.get_id("main").unwrap())].fndef();
+    let bytes = wasm(&mut ir, &names, lib, wasi, start);
     Ok(bytes)
 }
 

@@ -11,20 +11,27 @@ use wasm_encoder::{
 };
 
 use crate::{
-    context::{BuiltinId, Cache, ContextId, Fn, FnId, Ty, TyId, Val, ValId},
     intern::StrId,
-    lower::{self, ElemId, FieldId, Fndef, FndefId, IR, Instr, Named, Names, ValdefId},
+    lower::{self, CtxId, ElemId, FieldId, Fndef, FndefId, IR, Instr, Named, Names, ValdefId},
     prelude::Lib,
-    tuples::TupleLoc,
+    tuples::{TupleLoc, TupleRange, Tuples},
     util::IdRange,
 };
 
 define_index_type! {
-    struct GlobalId = u32;
+    struct TyId = u32;
 }
 
 define_index_type! {
-    struct TypeId = u32;
+    struct FnId = u32;
+}
+
+define_index_type! {
+    struct ValId = u32;
+}
+
+define_index_type! {
+    struct GlobalId = u32;
 }
 
 define_index_type! {
@@ -33,6 +40,21 @@ define_index_type! {
 
 define_index_type! {
     struct LocalId = u32;
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Fill {
+    ctx: CtxId,
+    slots: TupleRange,
+}
+
+// TODO: Make `Slot` more space-efficient rather than redundantly encoding slot metadata.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Slot {
+    Ty(TyId),
+    Fn(FnId),
+    Val(ValId),
+    Ctx(Fill),
 }
 
 #[derive(Clone, Copy, EnumIter, IntoStaticStr)]
@@ -173,7 +195,7 @@ struct Wasm<'a> {
     val_src: ValdefId,
     val_align: ValdefId,
     val_offset: ValdefId,
-    cache: Cache<'a>,
+    slots: Tuples<Slot>,
     builtins: IndexVec<BuiltinId, Builtin>,
     funcs: IndexVec<FnId, Option<u32>>,
     next_funcidx: u32,
@@ -193,8 +215,8 @@ struct Wasm<'a> {
     section_code: CodeSection,
     section_data: DataSection,
 
-    /// The current context.
-    ctx: ContextId,
+    /// The current context fill.
+    fill: Option<Fill>,
 
     /// Locals for the current function.
     locals: IndexVec<LocalId, ValType>,
@@ -835,14 +857,9 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    fn program(mut self) -> Vec<u8> {
-        let mut context = self.cache[self.ctx].clone();
-        let val_false =
-            self.names.names[&(self.lib.bool, self.ir.strings.get_id("false").unwrap())].valdef();
-        let val_true =
-            self.names.names[&(self.lib.bool, self.ir.strings.get_id("true").unwrap())].valdef();
-        context.set_val(val_false, self.cache.val_bool(false));
-        context.set_val(val_true, self.cache.val_bool(true));
+    fn program(mut self, ctx: CtxId) -> Vec<u8> {
+        let context = self.ir.ctxs[ctx.index()];
+        let mut slots = vec![None; context.len()];
 
         let ty_memidx =
             self.names.names[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())].tydef();
@@ -1016,7 +1033,10 @@ impl<'a> Wasm<'a> {
             &ConstExpr::i32_const(0),
         );
 
-        let ctx = self.cache.make_ctx(context);
+        let tuple = self
+            .slots
+            .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
+        let fill = Fill { ctx, slots: tuple };
         let main = self.cache.fndef(ctx, self.main);
         let main_funcidx = self.funcidx();
         assert_eq!(self.funcs.push(Some(main_funcidx)), main);
@@ -1078,9 +1098,7 @@ impl<'a> Wasm<'a> {
     }
 }
 
-pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
-    let cache = Cache::new(ir);
-    let ctx = cache.empty();
+pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, ctx: CtxId, main: FndefId) -> Vec<u8> {
     let val_memidx = names.names[&(lib.wasm, ir.strings.get_id("memidx").unwrap())].valdef();
     let val_dst = names.names[&(lib.wasm, ir.strings.get_id("dst").unwrap())].valdef();
     let val_src = names.names[&(lib.wasm, ir.strings.get_id("src").unwrap())].valdef();
@@ -1096,7 +1114,7 @@ pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         val_src,
         val_align,
         val_offset,
-        cache,
+        slots: Tuples::new(),
         builtins: IndexVec::new(),
         funcs: IndexVec::new(),
         next_funcidx: 0,
@@ -1114,11 +1132,11 @@ pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         section_code: Default::default(),
         section_data: Default::default(),
 
-        ctx,
+        fill: None,
         locals: Default::default(),
         variables: Default::default(),
         statics: Default::default(),
         body: Default::default(),
     }
-    .program()
+    .program(ctx)
 }

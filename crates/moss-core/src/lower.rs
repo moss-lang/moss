@@ -94,10 +94,38 @@ define_index_type! {
 
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Ctx {
-    tys: im_rc::HashMap<TydefId, im_rc::HashMap<CtxId, Option<TypeId>>>,
-    fns: im_rc::HashMap<FndefId, im_rc::HashMap<CtxId, Option<Fn>>>,
-    vals: im_rc::HashMap<ValdefId, im_rc::HashMap<CtxId, Option<Val>>>,
-    ctxs: im_rc::HashMap<CtxdefId, im_rc::HashSet<CtxId>>,
+    pub tys: im_rc::HashMap<TydefId, im_rc::HashMap<CtxId, Option<TypeId>>>,
+    pub fns: im_rc::HashMap<FndefId, im_rc::HashMap<CtxId, Option<Fn>>>,
+    pub vals: im_rc::HashMap<ValdefId, im_rc::HashMap<CtxId, Option<Val>>>,
+    pub ctxs: im_rc::HashMap<CtxdefId, im_rc::HashSet<CtxId>>,
+}
+
+impl Ctx {
+    pub fn len(&self) -> usize {
+        // TODO: Cache this.
+        let mut len = 0;
+        len += self.tys.values().map(|coll| coll.len()).sum::<usize>();
+        len += self.fns.values().map(|coll| coll.len()).sum::<usize>();
+        len += self.vals.values().map(|coll| coll.len()).sum::<usize>();
+        len += self.ctxs.values().map(|coll| coll.len()).sum::<usize>();
+        len
+    }
+
+    pub fn index_ty(&self, def: TydefId, ctx: CtxId) -> usize {
+        todo!()
+    }
+
+    pub fn index_fn(&self, def: FndefId, ctx: CtxId) -> usize {
+        todo!()
+    }
+
+    pub fn index_val(&self, def: ValdefId, ctx: CtxId) -> usize {
+        todo!()
+    }
+
+    pub fn index_ctx(&self, def: CtxdefId, ctx: CtxId) -> usize {
+        todo!()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
