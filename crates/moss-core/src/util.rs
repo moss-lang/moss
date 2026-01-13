@@ -23,7 +23,7 @@ impl<I: Idx> IdRange<I> {
     }
 
     pub fn len(&self) -> usize {
-        self.end.index() - self.start.index()
+        self.end.index().saturating_sub(self.start.index())
     }
 
     pub fn is_empty(&self) -> bool {
