@@ -111,6 +111,10 @@ impl Ctx {
         len
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn index_ty(&self, def: TydefId, ctx: CtxId) -> usize {
         todo!()
     }
@@ -351,7 +355,7 @@ pub enum Instr {
     ReturnBind(CtxId),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct IR {
     pub modules: IndexVec<ModuleId, ()>,
     pub strings: Strings,
@@ -371,8 +375,41 @@ pub struct IR {
     pub bodies: IndexVec<FndefId, Option<LocalId>>,
 }
 
+impl Default for IR {
+    fn default() -> Self {
+        let mut ir = Self {
+            modules: Default::default(),
+            strings: Default::default(),
+            ctxs: Default::default(),
+            types: Default::default(),
+            tuples: Default::default(),
+            records: Default::default(),
+            tydefs: Default::default(),
+            tagdefs: Default::default(),
+            aliasdefs: Default::default(),
+            fndefs: Default::default(),
+            valdefs: Default::default(),
+            ctxdefs: Default::default(),
+            locals: Default::default(),
+            instrs: Default::default(),
+            refs: Default::default(),
+            bodies: Default::default(),
+        };
+        ir.ctxs.insert(Ctx::default());
+        ir
+    }
+}
+
 impl IR {
-    pub fn ctx(&mut self, ctx: Ctx) -> CtxId {
+    pub fn empty_ctx(&self) -> CtxId {
+        CtxId::from_usize(self.ctxs.get_index_of(&Ctx::default()).unwrap())
+    }
+
+    pub fn ctx(&self, ctx: CtxId) -> &Ctx {
+        &self.ctxs[ctx.index()]
+    }
+
+    pub fn make_ctx(&mut self, ctx: Ctx) -> CtxId {
         let (i, _) = self.ctxs.insert_full(ctx);
         CtxId::from_usize(i)
     }
@@ -670,7 +707,7 @@ impl<'a> Lower<'a> {
     }
 
     fn ctx(&mut self, ctx: Ctx) -> CtxId {
-        self.ir.ctx(ctx)
+        self.ir.make_ctx(ctx)
     }
 
     fn ty(&mut self, ty: Type) -> TypeId {
