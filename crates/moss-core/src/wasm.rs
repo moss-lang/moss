@@ -857,8 +857,27 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    fn program(mut self, ctx: CtxId) -> Vec<u8> {
-        let context = self.ir.ctxs[ctx.index()];
+    fn program(mut self, ctx_wasi: CtxId) -> Vec<u8> {
+        let ctx_empty = self.ir.empty_ctx();
+        let ctxdef_wasm =
+            self.names.names[&(self.lib.wasm, self.ir.strings.get_id("Wasm").unwrap())].ctxdef();
+        let ctxdef_wasip1 = self.names.names
+            [&(self.lib.wasip1, self.ir.strings.get_id("WasiP1").unwrap())]
+            .ctxdef();
+        let fill_wasm = {
+            let lower::Ctxdef { ctx: params, def } = self.ir.ctxdefs[ctxdef_wasm];
+            assert!(self.ir.ctx(params).is_empty());
+            let context = self.ir.ctx(def);
+            let mut slots = vec![None; context.len()];
+            let tuple = self
+                .slots
+                .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
+            Fill {
+                ctx: def,
+                slots: tuple,
+            }
+        };
+        let context = self.ir.ctx(ctx_wasi);
         let mut slots = vec![None; context.len()];
 
         let ty_memidx =
