@@ -111,7 +111,8 @@ fn i64_extend16_s[Types](n: I64): I64;
 fn i64_extend32_s[Types](n: I64): I64;
 
 context Wasm =
-  Types,
+  I32,
+  I64,
 
   unreachable,
 
