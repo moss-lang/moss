@@ -92,6 +92,13 @@ define_index_type! {
     pub struct RefId = u32;
 }
 
+pub enum Slot {
+    Ty(TydefId, CtxId, Option<TypeId>),
+    Fn(FndefId, CtxId, Option<Fn>),
+    Val(ValdefId, CtxId, Option<Val>),
+    Ctx(CtxdefId, CtxId),
+}
+
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Ctx {
     pub tys: im_rc::HashMap<TydefId, im_rc::HashMap<CtxId, Option<TypeId>>>,
@@ -113,6 +120,10 @@ impl Ctx {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn get(&self, index: usize) -> Slot {
+        todo!()
     }
 
     pub fn index_ty(&self, def: TydefId, ctx: CtxId) -> usize {

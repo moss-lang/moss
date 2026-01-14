@@ -44,22 +44,7 @@ define_index_type! {
     struct LocalId = u32;
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct Fill {
-    ctx: CtxId,
-    slots: TupleRange,
-}
-
-// TODO: Make `Slot` more space-efficient rather than redundantly encoding slot metadata.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum Slot {
-    Ty(TyId),
-    Fn(FnId),
-    Val(ValId),
-    Ctx(Fill),
-}
-
-#[derive(Clone, Copy, EnumIter, IntoStaticStr)]
+#[derive(Clone, Copy, Debug, EnumIter, Eq, Hash, IntoStaticStr, PartialEq)]
 #[strum(serialize_all = "snake_case")]
 enum Instruction {
     Unreachable,
@@ -159,6 +144,21 @@ enum Instruction {
 }
 
 const WASIP1: &str = "wasi_snapshot_preview1";
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Fill {
+    ctx: CtxId,
+    slots: TupleRange,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Slot {
+    TypeI32,
+    TypeI64,
+    Instruction(Instruction),
+    FunctionWasi(u32),
+    Ctx(Fill),
+}
 
 enum Builtin {
     Instruction(Instruction),
@@ -872,6 +872,15 @@ impl<'a> Wasm<'a> {
             assert!(self.ir.ctx(params).is_empty());
             let context = self.ir.ctx(def);
             let mut slots = vec![None; context.len()];
+            let tydef_i32 = self.named(self.lib.wasm, "I32").tydef();
+            let tydef_i64 = self.named(self.lib.wasm, "I64").tydef();
+            slots[context.index_ty(tydef_i32, ctx_empty)] = Some(Slot::TypeI32);
+            slots[context.index_ty(tydef_i64, ctx_empty)] = Some(Slot::TypeI64);
+            for instruction in Instruction::iter() {
+                let builtin = self.builtins.push(Builtin::Instruction(instruction));
+                let fndef = self.named(self.lib.wasm, <&str>::from(instruction)).fndef();
+                slots[context.index_fn(fndef, ctx_empty)] = Some(Slot::Instruction(instruction));
+            }
             let tuple = self
                 .slots
                 .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
@@ -901,14 +910,6 @@ impl<'a> Wasm<'a> {
             .collect();
         for (i, &valdef) in memidx_valdefs.iter().enumerate() {
             context.set_val(valdef, self.cache.val_int32((i + 1) as u32));
-        }
-
-        for instruction in Instruction::iter() {
-            let builtin = self.builtins.push(Builtin::Instruction(instruction));
-            let f = self.cache.fn_builtin(builtin);
-            assert_eq!(self.funcs.push(None), f);
-            let fndef = self.named(self.lib.wasm, <&str>::from(instruction)).fndef();
-            context.set_fn(fndef, f);
         }
 
         // It isn't ideal to iterate through every name binding from every module just to filter out
