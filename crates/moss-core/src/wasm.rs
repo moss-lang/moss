@@ -12,7 +12,9 @@ use wasm_encoder::{
 
 use crate::{
     intern::StrId,
-    lower::{self, CtxId, ElemId, FieldId, Fndef, FndefId, IR, Instr, Named, Names, ValdefId},
+    lower::{
+        self, CtxId, ElemId, FieldId, Fndef, FndefId, IR, Instr, ModuleId, Named, Names, ValdefId,
+    },
     prelude::Lib,
     tuples::{TupleLoc, TupleRange, Tuples},
     util::IdRange,
@@ -232,6 +234,10 @@ struct Wasm<'a> {
 }
 
 impl<'a> Wasm<'a> {
+    fn named(&self, module: ModuleId, string: &str) -> Named {
+        self.names.names[&(module, self.ir.strings.get_id(string).unwrap())]
+    }
+
     /// Execute `f` for each Wasm type needed to represent `ty` in the current context.
     fn layout(&self, ty: TyId, f: &mut impl FnMut(ValType)) {
         match self.cache[ty] {
@@ -859,11 +865,8 @@ impl<'a> Wasm<'a> {
 
     fn program(mut self, ctx_wasi: CtxId) -> Vec<u8> {
         let ctx_empty = self.ir.empty_ctx();
-        let ctxdef_wasm =
-            self.names.names[&(self.lib.wasm, self.ir.strings.get_id("Wasm").unwrap())].ctxdef();
-        let ctxdef_wasip1 = self.names.names
-            [&(self.lib.wasip1, self.ir.strings.get_id("WasiP1").unwrap())]
-            .ctxdef();
+        let ctxdef_wasm = self.named(self.lib.wasm, "Wasm").ctxdef();
+        let ctxdef_wasip1 = self.named(self.lib.wasip1, "WasiP1").ctxdef();
         let fill_wasm = {
             let lower::Ctxdef { ctx: params, def } = self.ir.ctxdefs[ctxdef_wasm];
             assert!(self.ir.ctx(params).is_empty());
@@ -880,8 +883,7 @@ impl<'a> Wasm<'a> {
         let context = self.ir.ctx(ctx_wasi);
         let mut slots = vec![None; context.len()];
 
-        let ty_memidx =
-            self.names.names[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())].tydef();
+        let ty_memidx = self.named(self.lib.wasm, "MemIdx").tydef();
         context.set_ty(ty_memidx, self.cache.ty_int32());
         let memidx_wasi = 0;
         context.set_val(self.val_memidx, self.cache.val_int32(memidx_wasi));
@@ -905,8 +907,7 @@ impl<'a> Wasm<'a> {
             let builtin = self.builtins.push(Builtin::Instruction(instruction));
             let f = self.cache.fn_builtin(builtin);
             assert_eq!(self.funcs.push(None), f);
-            let name = self.ir.strings.get_id(<&str>::from(instruction)).unwrap();
-            let fndef = self.names.names[&(self.lib.wasm, name)].fndef();
+            let fndef = self.named(self.lib.wasm, <&str>::from(instruction)).fndef();
             context.set_fn(fndef, f);
         }
 
@@ -966,8 +967,7 @@ impl<'a> Wasm<'a> {
         let builtin_stack = self.builtins.push(Builtin::Function(self.funcidx()));
         let f_stack = self.cache.fn_builtin(builtin_stack);
         assert_eq!(self.funcs.push(None), f_stack);
-        let fndef_stack =
-            self.names.names[&(self.lib.wasi, self.ir.strings.get_id("stack").unwrap())].fndef();
+        let fndef_stack = self.named(self.lib.wasi, "stack").fndef();
         context.set_fn(fndef_stack, f_stack);
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([], [ValType::I32]);
@@ -980,8 +980,7 @@ impl<'a> Wasm<'a> {
         let builtin_reserve = self.builtins.push(Builtin::Function(self.funcidx()));
         let f_reserve = self.cache.fn_builtin(builtin_reserve);
         assert_eq!(self.funcs.push(None), f_reserve);
-        let fndef_reserve =
-            self.names.names[&(self.lib.wasi, self.ir.strings.get_id("reserve").unwrap())].fndef();
+        let fndef_reserve = self.named(self.lib.wasi, "reserve").fndef();
         context.set_fn(fndef_reserve, f_reserve);
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([ValType::I32], []);
@@ -1009,8 +1008,7 @@ impl<'a> Wasm<'a> {
         let builtin_claim = self.builtins.push(Builtin::Function(self.funcidx()));
         let f_claim = self.cache.fn_builtin(builtin_claim);
         assert_eq!(self.funcs.push(None), f_claim);
-        let fndef_claim =
-            self.names.names[&(self.lib.wasi, self.ir.strings.get_id("claim").unwrap())].fndef();
+        let fndef_claim = self.named(self.lib.wasi, "claim").fndef();
         context.set_fn(fndef_claim, f_claim);
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([ValType::I32], []);
