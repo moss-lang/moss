@@ -3,17 +3,13 @@ import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
 import "./literal.moss" as lit;
 import "./ops.moss" as ops use Arg, Lhs, Rhs;
 import "./std.moss" use Arithmetic, Number, Std, print;
-import "./types.moss" use I32, I64;
+import "./types.moss" use I32, I64, MemIdx;
 import "./wasip1.moss" as wasip1;
 import "./wasm.moss" as wasm;
 
+context Base = lit::LiteralUint31, I32, I64, MemIdx;
+
 context Wasi =
-  I32,
-  I64,
-
-  wasm::Wasm[I32, I64],
-  wasip1::WasiP1[I32, I64],
-
   lit::LiteralUint31,
   lit::LiteralUint32,
   lit::LiteralInt32,
@@ -43,6 +39,14 @@ context Wasi =
   lit::uint31_realize_int[lit::LiteralUint31, Int=I32],
   lit::int32_realize_int[lit::LiteralInt32, Int=I32],
   lit::string_realize[lit::LiteralString, String=(I32, I32)],
+
+  I32,
+  I64,
+  MemIdx,
+
+  wasm::Wasm[Base],
+  wasm::memidx[Base],
+  wasip1::WasiP1[Base],
 ;
 
 context Bootstrap = Wasi, Bool=I32, Int32=I32, Int64=I64,
