@@ -7,7 +7,7 @@ import "./types.moss" use I32, I64, MemIdx;
 import "./wasip1.moss" as wasip1;
 import "./wasm.moss" as wasm;
 
-context Base = lit::LiteralUint31, I32, I64, MemIdx;
+context Base = lit::LiteralUint32, I32, I64, MemIdx;
 
 context Wasi =
   lit::LiteralUint31,

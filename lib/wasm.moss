@@ -1,7 +1,7 @@
-import "./literal.moss" use LiteralUint31;
+import "./literal.moss" use LiteralUint32;
 import "./types.moss" use I32, I64, MemIdx;
 
-assume LiteralUint31, I32, I64, MemIdx;
+assume LiteralUint32, I32, I64, MemIdx;
 
 # https://webassembly.github.io/spec/core/syntax/modules.html#indices
 val memidx: MemIdx;
@@ -10,8 +10,8 @@ val memidx: MemIdx;
 fn unreachable();
 
 # https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
-val align: LiteralUint31;
-val offset: LiteralUint31;
+val align: LiteralUint32;
+val offset: LiteralUint32;
 context Mem = static memidx, static align, static offset;
 val dst: MemIdx;
 val src: MemIdx;
