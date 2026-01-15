@@ -22,10 +22,11 @@ const DIR: Option<&str> = option_env!("MOSS_LIB");
 
 pub struct Lib {
     pub literal: ModuleId,
+    pub prelude: ModuleId,
+    pub types: ModuleId,
     pub wasm: ModuleId,
     pub wasip1: ModuleId,
     pub wasi: ModuleId,
-    pub prelude: ModuleId,
 }
 
 struct Precompile {
@@ -94,15 +95,17 @@ impl Precompile {
         let path = self.ir.strings.make_id("./prelude.moss");
         let prelude = self.lib(path)?;
         let literal = self.modules[&self.ir.strings.get_id("./literal.moss").unwrap()];
+        let types = self.modules[&self.ir.strings.get_id("./types.moss").unwrap()];
         let wasm = self.modules[&self.ir.strings.get_id("./wasm.moss").unwrap()];
         let wasip1 = self.modules[&self.ir.strings.get_id("./wasip1.moss").unwrap()];
         let wasi = self.modules[&self.ir.strings.get_id("./wasi.moss").unwrap()];
         let lib = Lib {
             literal,
+            prelude,
+            types,
             wasm,
             wasip1,
             wasi,
-            prelude,
         };
         Ok((self.ir, self.names, lib))
     }

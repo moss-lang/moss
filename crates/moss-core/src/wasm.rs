@@ -186,6 +186,9 @@ enum Slot {
     /// The type of string literals.
     TyLitString,
 
+    /// The type of a Wasm `memidx`.
+    TyMemIdx,
+
     /// The Wasm `i32` type.
     TyI32,
 
@@ -912,8 +915,9 @@ impl<'a> Wasm<'a> {
         let ctx_empty = self.ir.empty_ctx();
         let ctxdef_wasm = self.named(self.lib.wasm, "Wasm").ctxdef();
         let ctxdef_wasip1 = self.named(self.lib.wasip1, "WasiP1").ctxdef();
-        let tydef_i32 = self.named(self.lib.wasm, "I32").tydef();
-        let tydef_i64 = self.named(self.lib.wasm, "I64").tydef();
+        let tydef_i32 = self.named(self.lib.types, "I32").tydef();
+        let tydef_i64 = self.named(self.lib.types, "I64").tydef();
+        let tydef_memidx = self.named(self.lib.types, "MemIdx").tydef();
 
         let fill_wasm = {
             let lower::Ctxdef { ctx: params, def } = self.ir.ctxdefs[ctxdef_wasm];
@@ -1007,6 +1011,7 @@ impl<'a> Wasm<'a> {
 
         slots[context.index_ty(tydef_i32, ctx_empty)] = Some(Slot::TyI32);
         slots[context.index_ty(tydef_i64, ctx_empty)] = Some(Slot::TyI64);
+        slots[context.index_ty(tydef_memidx, ctx_empty)] = Some(Slot::TyMemIdx);
 
         // TODO: Fill in the remaining slots for the `Wasi` context.
 
