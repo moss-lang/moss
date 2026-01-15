@@ -3,12 +3,16 @@ import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
 import "./literal.moss" as lit;
 import "./ops.moss" as ops use Arg, Lhs, Rhs;
 import "./std.moss" use Arithmetic, Number, Std, print;
+import "./types.moss" use I32, I64;
 import "./wasip1.moss" as wasip1;
-import "./wasm.moss" as wasm use I32, I64;
+import "./wasm.moss" as wasm;
 
 context Wasi =
-  wasm::Wasm,
-  wasip1::WasiP1,
+  I32,
+  I64,
+
+  wasm::Wasm[I32, I64],
+  wasip1::WasiP1[I32, I64],
 
   lit::LiteralUint31,
   lit::LiteralUint32,

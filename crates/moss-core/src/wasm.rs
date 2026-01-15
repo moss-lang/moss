@@ -145,6 +145,30 @@ enum Instruction {
 
 const WASIP1: &str = "wasi_snapshot_preview1";
 
+/// The range within which a literal integer falls.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum IntLitIn {
+    Uint31,
+    Uint32,
+    Int32,
+    Uint63,
+    Uint64,
+    Int64,
+    Uint,
+    Int,
+}
+
+/// The type of an input literal.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum IntLitOut {
+    Uint32,
+    Int32,
+    Uint64,
+    Int64,
+    Uint,
+    Int,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct Fill {
     ctx: CtxId,
@@ -153,16 +177,38 @@ struct Fill {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Slot {
-    TypeI32,
-    TypeI64,
-    Instruction(Instruction),
-    FunctionWasi(u32),
-    Ctx(Fill),
-}
+    /// The type of integer literals of a specific kind.
+    TyLitInt(IntLitIn),
 
-enum Builtin {
-    Instruction(Instruction),
-    Function(u32),
+    /// The type of character literals.
+    TyLitChar,
+
+    /// The type of string literals.
+    TyLitString,
+
+    /// The Wasm `i32` type.
+    TyI32,
+
+    /// The Wasm `i64` type.
+    TyI64,
+
+    /// The function to process a specific kind of integer literal.
+    FnInt(IntLitIn, IntLitOut),
+
+    /// The function to process a character literal.
+    FnChar,
+
+    /// The function to process a string literal.
+    FnString,
+
+    /// A Wasm instruction.
+    FnInstr(Instruction),
+
+    /// The Wasm `funcidx` of an imported WASI P1 function.
+    FnWasi(u32),
+
+    /// A fill for another context.
+    Ctx(Fill),
 }
 
 trait AsInstructionSink {
@@ -198,7 +244,6 @@ struct Wasm<'a> {
     val_align: ValdefId,
     val_offset: ValdefId,
     slots: Tuples<Slot>,
-    builtins: IndexVec<BuiltinId, Builtin>,
     funcs: IndexVec<FnId, Option<u32>>,
     next_funcidx: u32,
 
@@ -867,20 +912,20 @@ impl<'a> Wasm<'a> {
         let ctx_empty = self.ir.empty_ctx();
         let ctxdef_wasm = self.named(self.lib.wasm, "Wasm").ctxdef();
         let ctxdef_wasip1 = self.named(self.lib.wasip1, "WasiP1").ctxdef();
+        let tydef_i32 = self.named(self.lib.wasm, "I32").tydef();
+        let tydef_i64 = self.named(self.lib.wasm, "I64").tydef();
+
         let fill_wasm = {
             let lower::Ctxdef { ctx: params, def } = self.ir.ctxdefs[ctxdef_wasm];
-            assert!(self.ir.ctx(params).is_empty());
+            assert!(self.ir.ctx(params).is_empty()); // TODO: This is actually wrong.
             let context = self.ir.ctx(def);
             let mut slots = vec![None; context.len()];
-            let tydef_i32 = self.named(self.lib.wasm, "I32").tydef();
-            let tydef_i64 = self.named(self.lib.wasm, "I64").tydef();
-            slots[context.index_ty(tydef_i32, ctx_empty)] = Some(Slot::TypeI32);
-            slots[context.index_ty(tydef_i64, ctx_empty)] = Some(Slot::TypeI64);
+
             for instruction in Instruction::iter() {
-                let builtin = self.builtins.push(Builtin::Instruction(instruction));
                 let fndef = self.named(self.lib.wasm, <&str>::from(instruction)).fndef();
-                slots[context.index_fn(fndef, ctx_empty)] = Some(Slot::Instruction(instruction));
+                slots[context.index_fn(fndef, ctx_empty)] = Some(Slot::FnInstr(instruction));
             }
+
             let tuple = self
                 .slots
                 .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
@@ -889,156 +934,81 @@ impl<'a> Wasm<'a> {
                 slots: tuple,
             }
         };
+
+        let fill_wasip1 = {
+            let lower::Ctxdef { ctx: params, def } = self.ir.ctxdefs[ctxdef_wasip1];
+            assert!(self.ir.ctx(params).is_empty()); // TODO: This is actually wrong.
+            let context = self.ir.ctx(def);
+            let mut slots = vec![None; context.len()];
+
+            // It isn't ideal to iterate through every name binding from every module just to filter
+            // out all the ones except from the one module we care about, but it's fine for now. We
+            // sort by name in order to achieve determinism.
+            let wasip1_fndefs: IndexMap<StrId, FndefId> = self
+                .names
+                .names
+                .iter()
+                .filter_map(|(&(module, name), &named)| match named {
+                    Named::Fndef(fndef) if module == self.lib.wasip1 => Some((name, fndef)),
+                    _ => None,
+                })
+                .sorted_by_key(|&(name, _)| &self.ir.strings[name])
+                .collect();
+            for (&name, &fndef) in &wasip1_fndefs {
+                let Fndef {
+                    ctx: _,
+                    param,
+                    result,
+                } = self.ir.fndefs[fndef];
+                let params = self.ir.tuples[self.ir.ty(param).tuple()].iter().map(|&ty| {
+                    let (tydef, _) = self.ir.ty(ty).opaque();
+                    if tydef == tydef_i32 {
+                        ValType::I32
+                    } else if tydef == tydef_i64 {
+                        ValType::I64
+                    } else {
+                        panic!()
+                    }
+                });
+                let results: &[ValType] = match self.ir.ty(result) {
+                    lower::Type::Opaque(tydef, _) => {
+                        assert_eq!(tydef, tydef_i32);
+                        &[ValType::I32]
+                    }
+                    lower::Type::Tuple(elems) => {
+                        assert!(elems.is_empty());
+                        &[]
+                    }
+                    _ => panic!(),
+                };
+                slots[context.index_fn(fndef, ctx_empty)] =
+                    Some(Slot::FnWasi(self.section_import.len()));
+                self.section_import.import(
+                    WASIP1,
+                    &self.ir.strings[name],
+                    EntityType::Function(self.section_type.len()),
+                );
+                self.section_type
+                    .ty()
+                    .function(params, results.iter().copied());
+            }
+
+            let tuple = self
+                .slots
+                .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
+            Fill {
+                ctx: def,
+                slots: tuple,
+            }
+        };
+
         let context = self.ir.ctx(ctx_wasi);
         let mut slots = vec![None; context.len()];
 
-        let ty_memidx = self.named(self.lib.wasm, "MemIdx").tydef();
-        context.set_ty(ty_memidx, self.cache.ty_int32());
-        let memidx_wasi = 0;
-        context.set_val(self.val_memidx, self.cache.val_int32(memidx_wasi));
-        let memidx_valdefs: Vec<ValdefId> = self
-            .cache
-            .fndef_valdefs(self.main)
-            .filter(|&valdef| {
-                // Skip the special WASI memory here, because we always want it to be index zero.
-                valdef != self.val_memidx
-                    && match self.ir.types[self.ir.valdefs[valdef].ty.index()] {
-                        lower::Type::Opaque(tydef, _) if tydef == ty_memidx => true,
-                        _ => false,
-                    }
-            })
-            .collect();
-        for (i, &valdef) in memidx_valdefs.iter().enumerate() {
-            context.set_val(valdef, self.cache.val_int32((i + 1) as u32));
-        }
+        slots[context.index_ty(tydef_i32, ctx_empty)] = Some(Slot::TyI32);
+        slots[context.index_ty(tydef_i64, ctx_empty)] = Some(Slot::TyI64);
 
-        // It isn't ideal to iterate through every name binding from every module just to filter out
-        // all the ones except from the one module we care about, but it's fine for now. We sort by
-        // name in order to achieve determinism.
-        let wasip1_fndefs: IndexMap<StrId, FndefId> = self
-            .names
-            .names
-            .iter()
-            .filter_map(|(&(module, name), &named)| match named {
-                Named::Fndef(fndef) if module == self.lib.wasip1 => Some((name, fndef)),
-                _ => None,
-            })
-            .sorted_by_key(|&(name, _)| &self.ir.strings[name])
-            .collect();
-        for (&name, &fndef) in &wasip1_fndefs {
-            let builtin = self.builtins.push(Builtin::Function(self.funcidx()));
-            let f = self.cache.fn_builtin(builtin);
-            assert_eq!(self.funcs.push(None), f);
-            context.set_fn(fndef, f);
-            let Fndef {
-                ctx: _,
-                param,
-                result,
-            } = self.ir.fndefs[fndef];
-            let param = self.cache.ty(self.ctx, param);
-            let result = self.cache.ty(self.ctx, result);
-            let params =
-                self.cache[self.cache[param].tuple()]
-                    .iter()
-                    .map(|&ty| match self.cache[ty] {
-                        Ty::Int32 => ValType::I32,
-                        Ty::Int64 => ValType::I64,
-                        _ => panic!(),
-                    });
-            let results: &[ValType] = match self.cache[result] {
-                Ty::Int32 => &[ValType::I32],
-                Ty::Tuple(elems) => {
-                    assert!(elems.is_empty());
-                    &[]
-                }
-                _ => panic!(),
-            };
-            self.section_import.import(
-                WASIP1,
-                &self.ir.strings[name],
-                EntityType::Function(self.section_type.len()),
-            );
-            self.section_type
-                .ty()
-                .function(params, results.iter().copied());
-        }
-
-        let global_stack = self.section_global.len();
-
-        let builtin_stack = self.builtins.push(Builtin::Function(self.funcidx()));
-        let f_stack = self.cache.fn_builtin(builtin_stack);
-        assert_eq!(self.funcs.push(None), f_stack);
-        let fndef_stack = self.named(self.lib.wasi, "stack").fndef();
-        context.set_fn(fndef_stack, f_stack);
-        self.section_function.function(self.section_type.len());
-        self.section_type.ty().function([], [ValType::I32]);
-        self.section_code.function(&{
-            let mut f = Function::new([]);
-            f.instructions().global_get(global_stack).end();
-            f
-        });
-
-        let builtin_reserve = self.builtins.push(Builtin::Function(self.funcidx()));
-        let f_reserve = self.cache.fn_builtin(builtin_reserve);
-        assert_eq!(self.funcs.push(None), f_reserve);
-        let fndef_reserve = self.named(self.lib.wasi, "reserve").fndef();
-        context.set_fn(fndef_reserve, f_reserve);
-        self.section_function.function(self.section_type.len());
-        self.section_type.ty().function([ValType::I32], []);
-        self.section_code.function(&{
-            let mut f = Function::new([]);
-            f.instructions()
-                .global_get(global_stack)
-                .i64_extend_i32_u()
-                .local_get(0)
-                .i64_extend_i32_u()
-                .i64_add()
-                .i64_const(u16::MAX as i64)
-                .i64_add()
-                .i64_const(16)
-                .i64_shr_u()
-                .i32_wrap_i64()
-                .memory_size(memidx_wasi)
-                .i32_sub()
-                .memory_grow(memidx_wasi)
-                .drop()
-                .end();
-            f
-        });
-
-        let builtin_claim = self.builtins.push(Builtin::Function(self.funcidx()));
-        let f_claim = self.cache.fn_builtin(builtin_claim);
-        assert_eq!(self.funcs.push(None), f_claim);
-        let fndef_claim = self.named(self.lib.wasi, "claim").fndef();
-        context.set_fn(fndef_claim, f_claim);
-        self.section_function.function(self.section_type.len());
-        self.section_type.ty().function([ValType::I32], []);
-        self.section_code.function(&{
-            let mut f = Function::new([(1, ValType::I64)]);
-            f.instructions()
-                .global_get(global_stack)
-                .i64_extend_i32_u()
-                .local_get(0)
-                .i64_extend_i32_u()
-                .i64_add()
-                .i64_const(15)
-                .i64_add()
-                .i64_const(4)
-                .i64_shr_u()
-                .i64_const(4)
-                .i64_shl()
-                .local_tee(1)
-                .i64_const(u32::MAX as i64)
-                .i64_gt_u()
-                .if_(BlockType::Empty)
-                .unreachable()
-                .end()
-                .local_get(1)
-                .i32_wrap_i64()
-                .global_set(global_stack)
-                .end();
-            f
-        });
+        // TODO: Fill in the remaining slots for the `Wasi` context.
 
         self.section_global.global(
             GlobalType {
@@ -1075,15 +1045,6 @@ impl<'a> Wasm<'a> {
             shared: false,
             page_size_log2: None,
         });
-        for _ in memidx_valdefs {
-            self.section_memory.memory(MemoryType {
-                minimum: 0,
-                maximum: None,
-                memory64: false,
-                shared: false,
-                page_size_log2: None,
-            });
-        }
 
         let start = self.funcidx();
         self.section_function.function(self.section_type.len());
@@ -1133,7 +1094,6 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, ctx: CtxId, main: FndefId) -> 
         val_align,
         val_offset,
         slots: Tuples::new(),
-        builtins: IndexVec::new(),
         funcs: IndexVec::new(),
         next_funcidx: 0,
 

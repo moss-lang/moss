@@ -21,7 +21,7 @@ use crate::{
 const DIR: Option<&str> = option_env!("MOSS_LIB");
 
 pub struct Lib {
-    pub bool: ModuleId,
+    pub literal: ModuleId,
     pub wasm: ModuleId,
     pub wasip1: ModuleId,
     pub wasi: ModuleId,
@@ -93,12 +93,12 @@ impl Precompile {
     fn prelude(mut self) -> io::Result<(IR, Names, Lib)> {
         let path = self.ir.strings.make_id("./prelude.moss");
         let prelude = self.lib(path)?;
-        let bool = self.modules[&self.ir.strings.get_id("./bool.moss").unwrap()];
+        let literal = self.modules[&self.ir.strings.get_id("./literal.moss").unwrap()];
         let wasm = self.modules[&self.ir.strings.get_id("./wasm.moss").unwrap()];
         let wasip1 = self.modules[&self.ir.strings.get_id("./wasip1.moss").unwrap()];
         let wasi = self.modules[&self.ir.strings.get_id("./wasi.moss").unwrap()];
         let lib = Lib {
-            bool,
+            literal,
             wasm,
             wasip1,
             wasi,

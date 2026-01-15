@@ -420,12 +420,16 @@ impl IR {
         &self.ctxs[ctx.index()]
     }
 
+    pub fn ty(&self, ty: TypeId) -> Type {
+        self.types[ty.index()]
+    }
+
     pub fn make_ctx(&mut self, ctx: Ctx) -> CtxId {
         let (i, _) = self.ctxs.insert_full(ctx);
         CtxId::from_usize(i)
     }
 
-    pub fn ty(&mut self, ty: Type) -> TypeId {
+    pub fn make_ty(&mut self, ty: Type) -> TypeId {
         let (i, _) = self.types.insert_full(ty);
         TypeId::from_usize(i)
     }
@@ -722,7 +726,7 @@ impl<'a> Lower<'a> {
     }
 
     fn ty(&mut self, ty: Type) -> TypeId {
-        self.ir.ty(ty)
+        self.ir.make_ty(ty)
     }
 
     fn ty_tuple(&mut self, elems: &[TypeId]) -> TypeId {
