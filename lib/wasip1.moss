@@ -1,4 +1,4 @@
-import "./wasm.moss" use I32, I64;
+import "./types.moss" use I32, I64;
 
 assume I32, I64;
 

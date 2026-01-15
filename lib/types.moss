@@ -1,0 +1,3 @@
+# https://webassembly.github.io/spec/core/syntax/types.html#number-types
+type I32;
+type I64;
