@@ -1,7 +1,7 @@
 use std::{collections::HashMap, mem::take};
 
 use index_vec::{IndexVec, define_index_type};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
@@ -22,10 +22,6 @@ use crate::{
 
 define_index_type! {
     struct TyId = u32;
-}
-
-define_index_type! {
-    struct FnId = u32;
 }
 
 define_index_type! {
@@ -210,6 +206,9 @@ enum Slot {
     /// The Wasm `funcidx` of an imported WASI P1 function.
     FnWasi(u32),
 
+    /// A defined function in a specific context.
+    FnDef(FndefId, Fill),
+
     /// A fill for another context.
     Ctx(Fill),
 }
@@ -249,11 +248,11 @@ struct Wasm<'a> {
     val_align: ValdefId,
     val_offset: ValdefId,
     slots: Tuples<Slot>,
-    funcs: IndexVec<FnId, Option<u32>>,
-    next_funcidx: u32,
-
     data_offset: i32,
     strings: HashMap<StrId, i32>,
+
+    /// Wasm `funcidx` for each [`Slot::FnWasi`] and [`Slot::FnDef`].
+    funcidxs: IndexSet<Slot>,
 
     /// Start of global range for each `val`.
     valdefs: IndexVec<ValId, GlobalId>,
@@ -286,6 +285,25 @@ struct Wasm<'a> {
 impl<'a> Wasm<'a> {
     fn named(&self, module: ModuleId, string: &str) -> Named {
         self.names.names[&(module, self.ir.strings.get_id(string).unwrap())]
+    }
+
+    fn next_funcidx(&self) -> u32 {
+        self.funcidxs.len() as u32
+    }
+
+    fn get_funcidx(&self, fndef: FndefId, fill: Fill) -> Option<u32> {
+        Some(self.funcidxs.get_index_of(&Slot::FnDef(fndef, fill))? as u32)
+    }
+
+    fn push_func_wasi(&mut self) -> u32 {
+        let funcidx = self.next_funcidx();
+        self.funcidxs.insert(Slot::FnWasi(funcidx));
+        funcidx
+    }
+
+    fn insert_func(&mut self, fndef: FndefId, fill: Fill) -> u32 {
+        let (i, _) = self.funcidxs.insert_full(Slot::FnDef(fndef, fill));
+        i as u32
     }
 
     /// Execute `f` for each Wasm type needed to represent `ty` in the current context.
@@ -988,8 +1006,9 @@ impl<'a> Wasm<'a> {
                     }
                     _ => panic!(),
                 };
-                slots[context.index_fn(fndef, ctx_empty)] =
-                    Some(Slot::FnWasi(self.section_import.len()));
+                let funcidx = self.push_func_wasi();
+                slots[context.index_fn(fndef, ctx_empty)] = Some(Slot::FnWasi(funcidx));
+                assert_eq!(funcidx, self.section_import.len());
                 self.section_import.import(
                     WASIP1,
                     &self.ir.strings[name],
@@ -1021,14 +1040,14 @@ impl<'a> Wasm<'a> {
         let tuple = self
             .slots
             .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
-        let fill = Fill { ctx, slots: tuple };
-        let main = self.cache.fndef(ctx, self.main);
+        let fill = Fill {
+            ctx: ctx_wasi,
+            slots: tuple,
+        };
         let main_funcidx = self.funcidx();
-        assert_eq!(self.funcs.push(Some(main_funcidx)), main);
-        self.next_funcidx = main_funcidx + 1;
-        let mut next_fn = main;
-        while next_fn < self.cache.next_fn() {
-            self.ctx = ctx;
+        let mut next_fn = main_funcidx;
+        while next_fn < self.next_funcidx() {
+            self.fill = Some(fill);
             self.func(next_fn);
             next_fn += 1;
         }
@@ -1059,7 +1078,7 @@ impl<'a> Wasm<'a> {
         self.section_code.function(&{
             let mut f = Function::new([]);
             f.instructions()
-                .call(self.funcs[main].unwrap())
+                .call(self.get_funcidx(self.main, fill).unwrap())
                 .i32_const(0)
                 .call(wasip1_fndefs[&self.ir.strings.get_id("proc_exit").unwrap()].raw())
                 .end();
@@ -1083,27 +1102,22 @@ impl<'a> Wasm<'a> {
 }
 
 pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, ctx: CtxId, main: FndefId) -> Vec<u8> {
-    let val_memidx = names.names[&(lib.wasm, ir.strings.get_id("memidx").unwrap())].valdef();
-    let val_dst = names.names[&(lib.wasm, ir.strings.get_id("dst").unwrap())].valdef();
-    let val_src = names.names[&(lib.wasm, ir.strings.get_id("src").unwrap())].valdef();
-    let val_align = names.names[&(lib.wasm, ir.strings.get_id("align").unwrap())].valdef();
-    let val_offset = names.names[&(lib.wasm, ir.strings.get_id("offset").unwrap())].valdef();
     Wasm {
         ir,
         names,
         lib,
         main,
-        val_memidx,
-        val_dst,
-        val_src,
-        val_align,
-        val_offset,
+        val_memidx: names.names[&(lib.wasm, ir.strings.get_id("memidx").unwrap())].valdef(),
+        val_dst: names.names[&(lib.wasm, ir.strings.get_id("dst").unwrap())].valdef(),
+        val_src: names.names[&(lib.wasm, ir.strings.get_id("src").unwrap())].valdef(),
+        val_align: names.names[&(lib.wasm, ir.strings.get_id("align").unwrap())].valdef(),
+        val_offset: names.names[&(lib.wasm, ir.strings.get_id("offset").unwrap())].valdef(),
         slots: Tuples::new(),
-        funcs: IndexVec::new(),
-        next_funcidx: 0,
-
         data_offset: Default::default(),
         strings: Default::default(),
+
+        funcidxs: IndexSet::new(),
+
         valdefs: Default::default(),
 
         section_type: Default::default(),
