@@ -224,6 +224,8 @@ impl AsInstructionSink for Vec<u8> {
     }
 }
 
+const MEMIDX_WASI: u32 = 0;
+
 #[derive(Clone, Copy)]
 struct Local {
     ctx: ContextId,
@@ -385,7 +387,7 @@ impl<'a> Wasm<'a> {
         let &mut offset = self.strings.entry(id).or_insert_with(|| {
             let offset = self.data_offset;
             self.section_data
-                .active(0, &ConstExpr::i32_const(offset), string.bytes());
+                .active(MEMIDX_WASI, &ConstExpr::i32_const(offset), string.bytes());
             self.data_offset += len;
             offset
         });
@@ -912,6 +914,20 @@ impl<'a> Wasm<'a> {
     }
 
     fn program(mut self, ctx_wasi: CtxId) -> Vec<u8> {
+        // It isn't ideal to iterate through every name binding from every module just to filter
+        // out all the ones except from the one module we care about, but it's fine for now. We
+        // sort by name in order to achieve determinism.
+        let wasip1_fndefs: IndexMap<StrId, FndefId> = self
+            .names
+            .names
+            .iter()
+            .filter_map(|(&(module, name), &named)| match named {
+                Named::Fndef(fndef) if module == self.lib.wasip1 => Some((name, fndef)),
+                _ => None,
+            })
+            .sorted_by_key(|&(name, _)| &self.ir.strings[name])
+            .collect();
+
         let ctx_empty = self.ir.empty_ctx();
         let ctxdef_wasm = self.named(self.lib.wasm, "Wasm").ctxdef();
         let ctxdef_wasip1 = self.named(self.lib.wasip1, "WasiP1").ctxdef();
@@ -945,19 +961,6 @@ impl<'a> Wasm<'a> {
             let context = self.ir.ctx(def);
             let mut slots = vec![None; context.len()];
 
-            // It isn't ideal to iterate through every name binding from every module just to filter
-            // out all the ones except from the one module we care about, but it's fine for now. We
-            // sort by name in order to achieve determinism.
-            let wasip1_fndefs: IndexMap<StrId, FndefId> = self
-                .names
-                .names
-                .iter()
-                .filter_map(|(&(module, name), &named)| match named {
-                    Named::Fndef(fndef) if module == self.lib.wasip1 => Some((name, fndef)),
-                    _ => None,
-                })
-                .sorted_by_key(|&(name, _)| &self.ir.strings[name])
-                .collect();
             for (&name, &fndef) in &wasip1_fndefs {
                 let Fndef {
                     ctx: _,
@@ -1015,17 +1018,6 @@ impl<'a> Wasm<'a> {
 
         // TODO: Fill in the remaining slots for the `Wasi` context.
 
-        self.section_global.global(
-            GlobalType {
-                val_type: ValType::I32,
-                mutable: true,
-                shared: false,
-            },
-            // We'll set this dynamically when we codegen the `_start` function, since at that point
-            // we'll know the total length of all the active data segments.
-            &ConstExpr::i32_const(0),
-        );
-
         let tuple = self
             .slots
             .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
@@ -1041,8 +1033,16 @@ impl<'a> Wasm<'a> {
             next_fn += 1;
         }
 
-        self.section_export
-            .export("memory", ExportKind::Memory, memidx_wasi);
+        self.section_global.global(
+            GlobalType {
+                val_type: ValType::I32,
+                mutable: false,
+                shared: false,
+            },
+            &ConstExpr::i32_const(self.data_offset),
+        );
+
+        assert_eq!(self.section_memory.len(), MEMIDX_WASI);
         self.section_memory.memory(MemoryType {
             minimum: ((self.data_offset + 65535) / 65536) as u64,
             maximum: None,
@@ -1050,6 +1050,8 @@ impl<'a> Wasm<'a> {
             shared: false,
             page_size_log2: None,
         });
+        self.section_export
+            .export("memory", ExportKind::Memory, MEMIDX_WASI);
 
         let start = self.funcidx();
         self.section_function.function(self.section_type.len());
@@ -1057,8 +1059,6 @@ impl<'a> Wasm<'a> {
         self.section_code.function(&{
             let mut f = Function::new([]);
             f.instructions()
-                .i32_const((self.data_offset + 15) / 16 * 16)
-                .global_set(global_stack)
                 .call(self.funcs[main].unwrap())
                 .i32_const(0)
                 .call(wasip1_fndefs[&self.ir.strings.get_id("proc_exit").unwrap()].raw())
