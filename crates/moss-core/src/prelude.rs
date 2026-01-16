@@ -20,6 +20,7 @@ use crate::{
 /// Should always be `None` for distribution. Usually set to `Some("lib")` for local development.
 const DIR: Option<&str> = option_env!("MOSS_LIB");
 
+#[derive(Clone, Copy, Debug)]
 pub struct Lib {
     pub literal: ModuleId,
     pub prelude: ModuleId,
