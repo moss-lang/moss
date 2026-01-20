@@ -11,7 +11,7 @@ use line_index::{LineIndex, TextSize};
 use crate::{
     intern::StrId,
     lex::{ByteIndex, lex, string},
-    lower::{IR, ModuleId, Names, lower},
+    lower::{FndefId, IR, ModuleId, Named, Names, lower},
     parse::{ParseError, parse},
 };
 
@@ -21,6 +21,37 @@ use crate::{
 const DIR: Option<&str> = option_env!("MOSS_LIB");
 
 #[derive(Clone, Copy, Debug)]
+pub struct Lits {
+    pub uint31_realize_uint32: FndefId,
+    pub uint32_realize_uint32: FndefId,
+    pub uint31_realize_int32: FndefId,
+    pub int32_realize_int32: FndefId,
+    pub uint31_realize_uint64: FndefId,
+    pub uint32_realize_uint64: FndefId,
+    pub uint63_realize_uint64: FndefId,
+    pub uint64_realize_uint64: FndefId,
+    pub uint31_realize_int64: FndefId,
+    pub uint32_realize_int64: FndefId,
+    pub int32_realize_int64: FndefId,
+    pub uint63_realize_int64: FndefId,
+    pub int64_realize_int64: FndefId,
+    pub uint31_realize_uint: FndefId,
+    pub uint32_realize_uint: FndefId,
+    pub uint63_realize_uint: FndefId,
+    pub uint64_realize_uint: FndefId,
+    pub uint_realize_uint: FndefId,
+    pub uint31_realize_int: FndefId,
+    pub uint32_realize_int: FndefId,
+    pub int32_realize_int: FndefId,
+    pub uint63_realize_int: FndefId,
+    pub uint64_realize_int: FndefId,
+    pub int64_realize_int: FndefId,
+    pub int_realize_int: FndefId,
+    pub char_realize: FndefId,
+    pub string_realize: FndefId,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Lib {
     pub literal: ModuleId,
     pub prelude: ModuleId,
@@ -28,6 +59,7 @@ pub struct Lib {
     pub wasm: ModuleId,
     pub wasip1: ModuleId,
     pub wasi: ModuleId,
+    pub lits: Lits,
 }
 
 struct Precompile {
@@ -92,6 +124,14 @@ impl Precompile {
         Ok(module)
     }
 
+    fn literal_fndef(&self, lib_literal: ModuleId, name: &str) -> FndefId {
+        let id = self.ir.strings.get_id(name).unwrap();
+        match self.names.names.get(&(lib_literal, id)) {
+            Some(&Named::Fndef(fndef)) => fndef,
+            _ => panic!("missing literal function `{name}`"),
+        }
+    }
+
     fn prelude(mut self) -> io::Result<(IR, Names, Lib)> {
         let path = self.ir.strings.make_id("./prelude.moss");
         let prelude = self.lib(path)?;
@@ -100,6 +140,35 @@ impl Precompile {
         let wasm = self.modules[&self.ir.strings.get_id("./wasm.moss").unwrap()];
         let wasip1 = self.modules[&self.ir.strings.get_id("./wasip1.moss").unwrap()];
         let wasi = self.modules[&self.ir.strings.get_id("./wasi.moss").unwrap()];
+        let lits = Lits {
+            uint31_realize_uint32: self.literal_fndef(literal, "uint31_realize_uint32"),
+            uint32_realize_uint32: self.literal_fndef(literal, "uint32_realize_uint32"),
+            uint31_realize_int32: self.literal_fndef(literal, "uint31_realize_int32"),
+            int32_realize_int32: self.literal_fndef(literal, "int32_realize_int32"),
+            uint31_realize_uint64: self.literal_fndef(literal, "uint31_realize_uint64"),
+            uint32_realize_uint64: self.literal_fndef(literal, "uint32_realize_uint64"),
+            uint63_realize_uint64: self.literal_fndef(literal, "uint63_realize_uint64"),
+            uint64_realize_uint64: self.literal_fndef(literal, "uint64_realize_uint64"),
+            uint31_realize_int64: self.literal_fndef(literal, "uint31_realize_int64"),
+            uint32_realize_int64: self.literal_fndef(literal, "uint32_realize_int64"),
+            int32_realize_int64: self.literal_fndef(literal, "int32_realize_int64"),
+            uint63_realize_int64: self.literal_fndef(literal, "uint63_realize_int64"),
+            int64_realize_int64: self.literal_fndef(literal, "int64_realize_int64"),
+            uint31_realize_uint: self.literal_fndef(literal, "uint31_realize_uint"),
+            uint32_realize_uint: self.literal_fndef(literal, "uint32_realize_uint"),
+            uint63_realize_uint: self.literal_fndef(literal, "uint63_realize_uint"),
+            uint64_realize_uint: self.literal_fndef(literal, "uint64_realize_uint"),
+            uint_realize_uint: self.literal_fndef(literal, "uint_realize_uint"),
+            uint31_realize_int: self.literal_fndef(literal, "uint31_realize_int"),
+            uint32_realize_int: self.literal_fndef(literal, "uint32_realize_int"),
+            int32_realize_int: self.literal_fndef(literal, "int32_realize_int"),
+            uint63_realize_int: self.literal_fndef(literal, "uint63_realize_int"),
+            uint64_realize_int: self.literal_fndef(literal, "uint64_realize_int"),
+            int64_realize_int: self.literal_fndef(literal, "int64_realize_int"),
+            int_realize_int: self.literal_fndef(literal, "int_realize_int"),
+            char_realize: self.literal_fndef(literal, "char_realize"),
+            string_realize: self.literal_fndef(literal, "string_realize"),
+        };
         let lib = Lib {
             literal,
             prelude,
@@ -107,6 +176,7 @@ impl Precompile {
             wasm,
             wasip1,
             wasi,
+            lits,
         };
         Ok((self.ir, self.names, lib))
     }
