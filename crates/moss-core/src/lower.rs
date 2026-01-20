@@ -11,6 +11,7 @@ use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex, string},
     parse::{self, Binop, Block, Expr, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
+    prelude::Base,
     range::{Inclusive, expr_range, path_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -684,8 +685,9 @@ struct Lower<'a> {
     tree: &'a Tree,
     ir: &'a mut IR,
     names: &'a mut Names,
-    module: ModuleId,
+    base: Option<Base>,
     prelude: ModuleId,
+    module: ModuleId,
     imports: &'a [ModuleId],
     tydefs: IndexVec<parse::TydefId, TydefId>,
     tagdefs: IndexVec<parse::TagdefId, TagdefId>,
@@ -1192,6 +1194,10 @@ struct Body<'a, 'b> {
 }
 
 impl Body<'_, '_> {
+    fn base(&self) -> Base {
+        self.x.base.unwrap()
+    }
+
     fn get(&mut self, token: TokenId) -> LowerResult<LocalId> {
         let name = self.x.name(token);
         match self.locals.get(&name) {
@@ -1228,7 +1234,32 @@ impl Body<'_, '_> {
 
     fn expr(&mut self, expr: ExprId) -> LowerResult<LocalId> {
         match self.x.tree.exprs[expr] {
-            Expr::Lit(token) => todo!(),
+            Expr::Lit(token) => {
+                let ty_unit = self.x.ty_unit();
+                let arg = self.instr_tuple(ty_unit, &[]);
+                match self.x.lit(token)? {
+                    Val::Opaque(_, _) => unreachable!(),
+                    Val::Uint31(_) => todo!(),
+                    Val::Uint32(_) => todo!(),
+                    Val::Int32(_) => todo!(),
+                    Val::Uint63(_) => todo!(),
+                    Val::Uint64(_) => todo!(),
+                    Val::Int64(_) => todo!(),
+                    Val::Uint(_) => todo!(),
+                    Val::Int(_) => todo!(),
+                    Val::Char(_) => todo!(),
+                    Val::String(string) => {
+                        let ty_result = self.x.ty(Type::Opaque(
+                            self.base().types.string,
+                            self.x.ir.empty_ctx(),
+                        ));
+                        let fndef = self.base().lits.string_realize;
+                        // TODO: Bind `literal_string`.
+                        let call = self.instr(ty_result, Instr::Call(fndef, arg));
+                        Ok(call)
+                    }
+                }
+            }
             Expr::Path(path) => {
                 let name = self.x.name(path.last);
                 if path.prefix.is_empty()
@@ -1466,6 +1497,7 @@ pub fn lower(
     tree: &Tree,
     ir: &mut IR,
     names: &mut Names,
+    base: Option<Base>,
     prelude: ModuleId,
     imports: &[ModuleId],
 ) -> LowerResult<ModuleId> {
@@ -1477,8 +1509,9 @@ pub fn lower(
         tree,
         ir,
         names,
-        module,
+        base,
         prelude,
+        module,
         imports,
         tydefs: IndexVec::new(),
         tagdefs: IndexVec::new(),
