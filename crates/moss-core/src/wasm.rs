@@ -225,7 +225,7 @@ const MEMIDX_WASI: u32 = 0;
 
 #[derive(Clone, Copy)]
 struct Local {
-    ctx: ContextId,
+    fill: Fill,
     start: LocalId,
 }
 
@@ -263,9 +263,6 @@ struct Wasm<'a> {
     section_export: ExportSection,
     section_code: CodeSection,
     section_data: DataSection,
-
-    /// The current context fill.
-    fill: Option<Fill>,
 
     /// Locals for the current function.
     locals: IndexVec<LocalId, ValType>,
@@ -484,23 +481,22 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    fn instrs(&mut self, param: TyId, mut instr: lower::LocalId) -> lower::LocalId {
+    fn instrs(&mut self, fill: Fill, param: TypeId, mut instr: lower::LocalId) -> lower::LocalId {
         loop {
             match self.ir.instrs[instr] {
                 Instr::BindCall(fndef, local) => todo!(),
                 Instr::EndBind => break,
                 Instr::Val(valdef, ctx) => self.get_val(valdef),
                 Instr::Param => {
-                    self.get_locals(param, LocalId::from_raw(0));
+                    self.get_locals(fill, param, LocalId::from_raw(0));
                 }
                 Instr::Copy(local) => {
                     self.get(local);
                 }
                 Instr::Set(lhs, rhs) => {
                     self.get(rhs);
-                    let Local { ctx, start } = self.variables[&lhs];
-                    let ty = self.cache.ty(ctx, self.ir.locals[lhs]);
-                    self.set_locals(ty, start);
+                    let Local { fill, start } = self.variables[&lhs];
+                    self.set_locals(fill, self.ir.locals[lhs], start);
                 }
                 Instr::Nominal(tagdef, local) => todo!(),
                 Instr::Tuple(locals) => {
@@ -514,36 +510,38 @@ impl<'a> Wasm<'a> {
                     }
                 }
                 Instr::Elem(tuple, index) => {
-                    let Local { ctx, mut start } = self.variables[&tuple];
-                    let ty = self.cache.ty(ctx, self.ir.locals[tuple]);
-                    let range = self.cache[ty].tuple();
+                    let Local { fill, mut start } = self.variables[&tuple];
+                    let ty = self.ir.locals[tuple];
+                    let range = self.ir.ty(ty).tuple(); // TODO: Handle type aliases and bindings.
                     // TODO: Make this not be linear time.
                     for i in (IdRange {
                         start: ElemId::new(0),
                         end: index,
                     }) {
                         start += self.layout_len(
-                            self.cache[TupleLoc::from_raw(range.start.raw() + i.raw())],
+                            fill,
+                            self.ir.tuples[TupleLoc::from_raw(range.start.raw() + i.raw())],
                         );
                     }
                     let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
-                    self.get_locals(self.cache[elem], start);
+                    self.get_locals(fill, self.ir.tuples[elem], start);
                 }
                 Instr::Field(record, index) => {
-                    let Local { ctx, mut start } = self.variables[&record];
-                    let ty = self.cache.ty(ctx, self.ir.locals[record]);
-                    let range = self.cache[ty].structdef();
+                    let Local { fill, mut start } = self.variables[&record];
+                    let ty = self.ir.locals[record];
+                    let range = self.ir.ty(ty).record(); // TODO: Handle type aliases and bindings.
                     // TODO: Make this not be linear time.
                     for i in (IdRange {
                         start: FieldId::new(0),
                         end: index,
                     }) {
-                        start += self.layout_len(
-                            self.cache[TupleLoc::from_raw(range.start.raw() + i.raw())],
-                        );
+                        let (_, field) =
+                            self.ir.records[TupleLoc::from_raw(range.start.raw() + i.raw())];
+                        start += self.layout_len(fill, field);
                     }
-                    let field = TupleLoc::from_raw(range.start.raw() + index.raw());
-                    self.get_locals(self.cache[field], start);
+                    let loc = TupleLoc::from_raw(range.start.raw() + index.raw());
+                    let (_, field) = self.ir.records[loc];
+                    self.get_locals(fill, field, start);
                 }
                 Instr::Call(fndef, local) => {
                     self.get(local);
@@ -923,7 +921,7 @@ impl<'a> Wasm<'a> {
                 // TODO: Account for params and results determined by vals in the context.
                 let params = self.layout_vec(fill, param);
                 let results = self.layout_vec(fill, result);
-                self.instrs(param, self.ir.bodies[fndef].unwrap());
+                self.instrs(fill, param, self.ir.bodies[fndef].unwrap());
                 let mut f =
                     Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
                 f.raw(take(&mut self.body));
@@ -1047,14 +1045,9 @@ impl<'a> Wasm<'a> {
         let tuple = self
             .slots
             .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
-        let fill = Fill {
-            ctx: ctx_wasi,
-            slots: tuple,
-        };
         let main_funcidx = self.funcidx();
         let mut next_fn = main_funcidx;
         while next_fn < self.next_funcidx() {
-            self.fill = Some(fill);
             self.func(next_fn);
             next_fn += 1;
         }
@@ -1085,7 +1078,16 @@ impl<'a> Wasm<'a> {
         self.section_code.function(&{
             let mut f = Function::new([]);
             f.instructions()
-                .call(self.get_funcidx(self.main, fill).unwrap())
+                .call(
+                    self.get_funcidx(
+                        self.main,
+                        Fill {
+                            ctx: ctx_wasi,
+                            slots: tuple,
+                        },
+                    )
+                    .unwrap(),
+                )
                 .i32_const(0)
                 .call(wasip1_fndefs[&self.ir.strings.get_id("proc_exit").unwrap()].raw())
                 .end();
@@ -1136,7 +1138,6 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, ctx: CtxId, main: FndefId) -> 
         section_code: Default::default(),
         section_data: Default::default(),
 
-        fill: None,
         locals: Default::default(),
         variables: Default::default(),
         statics: Default::default(),
