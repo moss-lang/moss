@@ -34,13 +34,14 @@ fn get_errors(source: &str) -> Vec<(Option<Range<usize>>, String)> {
             }
         },
     };
-    let (mut ir, mut names, lib) = prelude();
+    let (mut ir, mut names, base, lib) = prelude();
     match lower(
         source,
         &starts,
         &tree,
         &mut ir,
         &mut names,
+        Some(base),
         lib.prelude,
         &[],
     ) {

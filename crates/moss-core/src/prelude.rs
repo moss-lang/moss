@@ -11,7 +11,7 @@ use line_index::{LineIndex, TextSize};
 use crate::{
     intern::StrId,
     lex::{ByteIndex, lex, string},
-    lower::{FndefId, IR, ModuleId, Named, Names, lower},
+    lower::{FndefId, IR, ModuleId, Named, Names, TydefId, lower},
     parse::{ParseError, parse},
 };
 
@@ -19,6 +19,32 @@ use crate::{
 ///
 /// Should always be `None` for distribution. Usually set to `Some("lib")` for local development.
 const DIR: Option<&str> = option_env!("MOSS_LIB");
+
+#[derive(Clone, Copy, Debug)]
+pub struct Types {
+    pub uint32: TydefId,
+    pub int32: TydefId,
+    pub uint64: TydefId,
+    pub int64: TydefId,
+    pub uint: TydefId,
+    pub int: TydefId,
+    pub char: TydefId,
+    pub string: TydefId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct LitTypes {
+    pub uint31: TydefId,
+    pub uint32: TydefId,
+    pub int32: TydefId,
+    pub uint63: TydefId,
+    pub uint64: TydefId,
+    pub int64: TydefId,
+    pub uint: TydefId,
+    pub int: TydefId,
+    pub char: TydefId,
+    pub string: TydefId,
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Lits {
@@ -52,14 +78,23 @@ pub struct Lits {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct Base {
+    pub types: Types,
+    pub lit_types: LitTypes,
+    pub lits: Lits,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Lib {
+    pub char: ModuleId,
+    pub int: ModuleId,
     pub literal: ModuleId,
     pub prelude: ModuleId,
+    pub string: ModuleId,
     pub types: ModuleId,
     pub wasm: ModuleId,
     pub wasip1: ModuleId,
     pub wasi: ModuleId,
-    pub lits: Lits,
 }
 
 struct Precompile {
@@ -79,7 +114,7 @@ impl Precompile {
         panic!("{}:{line}:{col} {message}", path.display())
     }
 
-    fn lib(&mut self, path: StrId) -> io::Result<ModuleId> {
+    fn lib(&mut self, path: StrId, base: Option<Base>) -> io::Result<ModuleId> {
         if let Some(&module) = self.modules.get(&path) {
             return Ok(module);
         }
@@ -99,7 +134,7 @@ impl Precompile {
             .map(|import| {
                 let s = string(&source, &starts, import.from);
                 let id = self.ir.strings.make_id(&s);
-                self.lib(id)
+                self.lib(id, base)
             })
             .collect::<io::Result<Vec<_>>>()?;
         let module = lower(
@@ -108,6 +143,7 @@ impl Precompile {
             &tree,
             &mut self.ir,
             &mut self.names,
+            base,
             self.preprelude,
             &imports,
         )
@@ -124,61 +160,105 @@ impl Precompile {
         Ok(module)
     }
 
-    fn literal_fndef(&self, lib_literal: ModuleId, name: &str) -> FndefId {
+    fn tydef(&self, module: ModuleId, name: &str) -> TydefId {
         let id = self.ir.strings.get_id(name).unwrap();
-        match self.names.names.get(&(lib_literal, id)) {
-            Some(&Named::Fndef(fndef)) => fndef,
-            _ => panic!("missing literal function `{name}`"),
+        match self.names.names.get(&(module, id)) {
+            Some(&Named::Tydef(def)) => def,
+            _ => panic!("missing base type `{name}`"),
         }
     }
 
-    fn prelude(mut self) -> io::Result<(IR, Names, Lib)> {
-        let path = self.ir.strings.make_id("./prelude.moss");
-        let prelude = self.lib(path)?;
-        let literal = self.modules[&self.ir.strings.get_id("./literal.moss").unwrap()];
+    fn fndef(&self, module: ModuleId, name: &str) -> FndefId {
+        let id = self.ir.strings.get_id(name).unwrap();
+        match self.names.names.get(&(module, id)) {
+            Some(&Named::Fndef(def)) => def,
+            _ => panic!("missing base function `{name}`"),
+        }
+    }
+
+    fn prelude(mut self) -> io::Result<(IR, Names, Base, Lib)> {
+        let path_literal = self.ir.strings.make_id("./literal.moss");
+        let path_int = self.ir.strings.make_id("./int.moss");
+        let path_char = self.ir.strings.make_id("./char.moss");
+        let path_string = self.ir.strings.make_id("./string.moss");
+        let literal = self.lib(path_literal, None)?;
+        let int = self.lib(path_int, None)?;
+        let char = self.lib(path_char, None)?;
+        let string = self.lib(path_string, None)?;
+        let base_types = Types {
+            uint32: self.tydef(int, "Uint32"),
+            int32: self.tydef(int, "Int32"),
+            uint64: self.tydef(int, "Uint64"),
+            int64: self.tydef(int, "Int64"),
+            uint: self.tydef(int, "Uint"),
+            int: self.tydef(int, "Int"),
+            char: self.tydef(char, "Char"),
+            string: self.tydef(string, "String"),
+        };
+        let base_lit_types = LitTypes {
+            uint31: self.tydef(literal, "LiteralUint31"),
+            uint32: self.tydef(literal, "LiteralUint32"),
+            int32: self.tydef(literal, "LiteralInt32"),
+            uint63: self.tydef(literal, "LiteralUint63"),
+            uint64: self.tydef(literal, "LiteralUint64"),
+            int64: self.tydef(literal, "LiteralInt64"),
+            uint: self.tydef(literal, "LiteralUint"),
+            int: self.tydef(literal, "LiteralInt"),
+            char: self.tydef(literal, "LiteralChar"),
+            string: self.tydef(literal, "LiteralString"),
+        };
+        let base_lits = Lits {
+            uint31_realize_uint32: self.fndef(literal, "uint31_realize_uint32"),
+            uint32_realize_uint32: self.fndef(literal, "uint32_realize_uint32"),
+            uint31_realize_int32: self.fndef(literal, "uint31_realize_int32"),
+            int32_realize_int32: self.fndef(literal, "int32_realize_int32"),
+            uint31_realize_uint64: self.fndef(literal, "uint31_realize_uint64"),
+            uint32_realize_uint64: self.fndef(literal, "uint32_realize_uint64"),
+            uint63_realize_uint64: self.fndef(literal, "uint63_realize_uint64"),
+            uint64_realize_uint64: self.fndef(literal, "uint64_realize_uint64"),
+            uint31_realize_int64: self.fndef(literal, "uint31_realize_int64"),
+            uint32_realize_int64: self.fndef(literal, "uint32_realize_int64"),
+            int32_realize_int64: self.fndef(literal, "int32_realize_int64"),
+            uint63_realize_int64: self.fndef(literal, "uint63_realize_int64"),
+            int64_realize_int64: self.fndef(literal, "int64_realize_int64"),
+            uint31_realize_uint: self.fndef(literal, "uint31_realize_uint"),
+            uint32_realize_uint: self.fndef(literal, "uint32_realize_uint"),
+            uint63_realize_uint: self.fndef(literal, "uint63_realize_uint"),
+            uint64_realize_uint: self.fndef(literal, "uint64_realize_uint"),
+            uint_realize_uint: self.fndef(literal, "uint_realize_uint"),
+            uint31_realize_int: self.fndef(literal, "uint31_realize_int"),
+            uint32_realize_int: self.fndef(literal, "uint32_realize_int"),
+            int32_realize_int: self.fndef(literal, "int32_realize_int"),
+            uint63_realize_int: self.fndef(literal, "uint63_realize_int"),
+            uint64_realize_int: self.fndef(literal, "uint64_realize_int"),
+            int64_realize_int: self.fndef(literal, "int64_realize_int"),
+            int_realize_int: self.fndef(literal, "int_realize_int"),
+            char_realize: self.fndef(literal, "char_realize"),
+            string_realize: self.fndef(literal, "string_realize"),
+        };
+        let base = Base {
+            types: base_types,
+            lit_types: base_lit_types,
+            lits: base_lits,
+        };
+        let path_prelude = self.ir.strings.make_id("./prelude.moss");
+        let prelude = self.lib(path_prelude, Some(base))?;
         let types = self.modules[&self.ir.strings.get_id("./types.moss").unwrap()];
         let wasm = self.modules[&self.ir.strings.get_id("./wasm.moss").unwrap()];
         let wasip1 = self.modules[&self.ir.strings.get_id("./wasip1.moss").unwrap()];
         let wasi = self.modules[&self.ir.strings.get_id("./wasi.moss").unwrap()];
-        let lits = Lits {
-            uint31_realize_uint32: self.literal_fndef(literal, "uint31_realize_uint32"),
-            uint32_realize_uint32: self.literal_fndef(literal, "uint32_realize_uint32"),
-            uint31_realize_int32: self.literal_fndef(literal, "uint31_realize_int32"),
-            int32_realize_int32: self.literal_fndef(literal, "int32_realize_int32"),
-            uint31_realize_uint64: self.literal_fndef(literal, "uint31_realize_uint64"),
-            uint32_realize_uint64: self.literal_fndef(literal, "uint32_realize_uint64"),
-            uint63_realize_uint64: self.literal_fndef(literal, "uint63_realize_uint64"),
-            uint64_realize_uint64: self.literal_fndef(literal, "uint64_realize_uint64"),
-            uint31_realize_int64: self.literal_fndef(literal, "uint31_realize_int64"),
-            uint32_realize_int64: self.literal_fndef(literal, "uint32_realize_int64"),
-            int32_realize_int64: self.literal_fndef(literal, "int32_realize_int64"),
-            uint63_realize_int64: self.literal_fndef(literal, "uint63_realize_int64"),
-            int64_realize_int64: self.literal_fndef(literal, "int64_realize_int64"),
-            uint31_realize_uint: self.literal_fndef(literal, "uint31_realize_uint"),
-            uint32_realize_uint: self.literal_fndef(literal, "uint32_realize_uint"),
-            uint63_realize_uint: self.literal_fndef(literal, "uint63_realize_uint"),
-            uint64_realize_uint: self.literal_fndef(literal, "uint64_realize_uint"),
-            uint_realize_uint: self.literal_fndef(literal, "uint_realize_uint"),
-            uint31_realize_int: self.literal_fndef(literal, "uint31_realize_int"),
-            uint32_realize_int: self.literal_fndef(literal, "uint32_realize_int"),
-            int32_realize_int: self.literal_fndef(literal, "int32_realize_int"),
-            uint63_realize_int: self.literal_fndef(literal, "uint63_realize_int"),
-            uint64_realize_int: self.literal_fndef(literal, "uint64_realize_int"),
-            int64_realize_int: self.literal_fndef(literal, "int64_realize_int"),
-            int_realize_int: self.literal_fndef(literal, "int_realize_int"),
-            char_realize: self.literal_fndef(literal, "char_realize"),
-            string_realize: self.literal_fndef(literal, "string_realize"),
-        };
         let lib = Lib {
+            char,
+            int,
             literal,
             prelude,
+            string,
             types,
             wasm,
             wasip1,
             wasi,
-            lits,
         };
-        Ok((self.ir, self.names, lib))
+        Ok((self.ir, self.names, base, lib))
     }
 }
 
@@ -194,7 +274,7 @@ fn get_lib_dir() -> Option<PathBuf> {
     Some(bin.parent()?.join("lib"))
 }
 
-pub fn prelude() -> (IR, Names, Lib) {
+pub fn prelude() -> (IR, Names, Base, Lib) {
     let dir = match DIR {
         Some(dir) => fs::canonicalize(dir).ok(),
         None => get_lib_dir(),
