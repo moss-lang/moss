@@ -13,16 +13,13 @@ use wasm_encoder::{
 use crate::{
     intern::StrId,
     lower::{
-        self, CtxId, ElemId, FieldId, Fndef, FndefId, IR, Instr, ModuleId, Named, Names, ValdefId,
+        self, CtxId, ElemId, FieldId, Fndef, FndefId, IR, Instr, ModuleId, Named, Names, Type,
+        TypeId, ValdefId,
     },
     prelude::Lib,
     tuples::{TupleLoc, TupleRange, Tuples},
     util::IdRange,
 };
-
-define_index_type! {
-    struct TyId = u32;
-}
 
 define_index_type! {
     struct ValId = u32;
@@ -171,6 +168,7 @@ struct Fill {
     slots: TupleRange,
 }
 
+// TODO: These slots need to be able to handle items that still contain some universal quantifiers.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Slot {
     /// The type of integer literals of a specific kind.
@@ -291,6 +289,10 @@ impl<'a> Wasm<'a> {
         self.funcidxs.len() as u32
     }
 
+    fn get_func(&self, funcidx: u32) -> Slot {
+        self.funcidxs[funcidx as usize]
+    }
+
     fn get_funcidx(&self, fndef: FndefId, fill: Fill) -> Option<u32> {
         Some(self.funcidxs.get_index_of(&Slot::FnDef(fndef, fill))? as u32)
     }
@@ -307,29 +309,36 @@ impl<'a> Wasm<'a> {
     }
 
     /// Execute `f` for each Wasm type needed to represent `ty` in the current context.
-    fn layout(&self, ty: TyId, f: &mut impl FnMut(ValType)) {
-        match self.cache[ty] {
-            Ty::String => {
-                f(ValType::I32);
-                f(ValType::I32);
-            }
-            Ty::Bool => {
-                f(ValType::I32);
-            }
-            Ty::Int32 => {
-                f(ValType::I32);
-            }
-            Ty::Int64 => {
-                f(ValType::I64);
-            }
-            Ty::Tuple(elems) => {
-                for &elem in &self.cache[elems] {
-                    self.layout(elem, f);
+    fn layout(&self, fill: Fill, ty: TypeId, f: &mut impl FnMut(ValType)) {
+        match self.ir.ty(ty) {
+            Type::Opaque(tydef, ctx) => {
+                let context = self.ir.ctx(fill.ctx);
+                match self.slots[fill.slots][context.index_ty(tydef, ctx)] {
+                    Slot::TyLitInt(_) => todo!(),
+                    Slot::TyLitChar => todo!(),
+                    Slot::TyLitString => todo!(),
+                    Slot::TyMemIdx => todo!(),
+                    Slot::TyI32 => f(ValType::I32),
+                    Slot::TyI64 => f(ValType::I64),
+                    Slot::FnInt(_, _)
+                    | Slot::FnChar
+                    | Slot::FnString
+                    | Slot::FnInstr(_)
+                    | Slot::FnWasi(_)
+                    | Slot::FnDef(_, _)
+                    | Slot::Ctx(_) => panic!(),
                 }
             }
-            Ty::Structdef(_, fields) => {
-                for &field in &self.cache[fields] {
-                    self.layout(field, f);
+            Type::Nominal(tagdef, ctx) => todo!(),
+            Type::Alias(aliasdef, ctx) => todo!(),
+            Type::Tuple(elems) => {
+                for &elem in &self.ir.tuples[elems] {
+                    self.layout(fill, elem, f);
+                }
+            }
+            Type::Record(fields) => {
+                for &(_, field) in &self.ir.records[fields] {
+                    self.layout(fill, field, f);
                 }
             }
         }
@@ -338,36 +347,36 @@ impl<'a> Wasm<'a> {
     /// Get the number of Wasm types needed to represent `ty` in the current context.
     ///
     /// Linear time.
-    fn layout_len(&mut self, ty: TyId) -> usize {
+    fn layout_len(&mut self, fill: Fill, ty: TypeId) -> usize {
         let mut len = 0;
-        self.layout(ty, &mut |_| len += 1);
+        self.layout(fill, ty, &mut |_| len += 1);
         len
     }
 
     /// Get a [`Vec`] of the Wasm types needed to represent `ty` in the current context.
-    fn layout_vec(&mut self, ty: TyId) -> Vec<ValType> {
+    fn layout_vec(&mut self, fill: Fill, ty: TypeId) -> Vec<ValType> {
         let mut types = Vec::new();
-        self.layout(ty, &mut |t| types.push(t));
+        self.layout(fill, ty, &mut |t| types.push(t));
         types
     }
 
-    fn make_locals(&mut self, ty: TyId) -> LocalId {
+    fn make_locals(&mut self, fill: Fill, ty: TypeId) -> LocalId {
         let start = self.locals.len_idx();
-        let locals = self.layout_vec(ty);
+        let locals = self.layout_vec(fill, ty);
         self.locals.append(&mut IndexVec::from_vec(locals));
         start
     }
 
-    fn get_locals(&mut self, ty: TyId, start: LocalId) {
-        let len = self.layout_len(ty);
+    fn get_locals(&mut self, fill: Fill, ty: TypeId, start: LocalId) {
+        let len = self.layout_len(fill, ty);
         let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }) {
             self.body.insn().local_get(localidx.raw());
         }
     }
 
-    fn set_locals(&mut self, ty: TyId, start: LocalId) {
-        let len = self.layout_len(ty);
+    fn set_locals(&mut self, fill: Fill, ty: TypeId, start: LocalId) {
+        let len = self.layout_len(fill, ty);
         let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }).into_iter().rev() {
             self.body.insn().local_set(localidx.raw());
@@ -903,20 +912,17 @@ impl<'a> Wasm<'a> {
         self.section_import.len() + self.section_function.len()
     }
 
-    fn func(&mut self, f: FnId) {
-        match self.cache[f] {
-            Fn::Builtin(_) => panic!(),
-            Fn::Fndef(ctx, fndef) => {
-                self.ctx = ctx;
+    fn func(&mut self, funcidx: u32) {
+        match self.get_func(funcidx) {
+            Slot::FnDef(fndef, fill) => {
                 let Fndef {
                     ctx: _,
                     param,
                     result,
                 } = self.ir.fndefs[fndef];
-                let param = self.cache.ty(self.ctx, param);
-                let result = self.cache.ty(self.ctx, result);
-                let params = self.layout_vec(param);
-                let results = self.layout_vec(result);
+                // TODO: Account for params and results determined by vals in the context.
+                let params = self.layout_vec(fill, param);
+                let results = self.layout_vec(fill, result);
                 self.instrs(param, self.ir.bodies[fndef].unwrap());
                 let mut f =
                     Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
@@ -928,6 +934,7 @@ impl<'a> Wasm<'a> {
                 self.section_function.function(self.section_type.len());
                 self.section_type.ty().function(params, results);
             }
+            _ => panic!(),
         }
     }
 
