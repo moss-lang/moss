@@ -903,9 +903,7 @@ impl<'a> Lower<'a> {
                 let id = next_fn;
                 next_fn += 1;
                 let name = self.name(item.fndef.name);
-                self.names
-                    .names
-                    .insert((self.module, name), Named::Fndef(id));
+                self.names.detached.insert((self.module, name), id);
                 id
             })
             .collect();
