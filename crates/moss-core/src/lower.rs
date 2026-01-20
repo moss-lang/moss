@@ -743,7 +743,7 @@ impl<'a> Lower<'a> {
         self.ty(Type::Record(record))
     }
 
-    fn path(&mut self, path: Path) -> LowerResult<Named> {
+    fn resolve_prefix(&mut self, path: Path) -> LowerResult<(ModuleId, StrId)> {
         let mut module = self.module;
         for name in path.prefix {
             let token = self.tree.names[name];
@@ -760,8 +760,24 @@ impl<'a> Lower<'a> {
             }
         }
         let name = self.name(path.last);
+        Ok((module, name))
+    }
+
+    fn path(&mut self, path: Path) -> LowerResult<Named> {
+        let (module, name) = self.resolve_prefix(path)?;
         get_name(self.prelude, self.module, &self.names.names, (module, name))
             .ok_or(LowerError::Undefined(path.last))
+    }
+
+    fn detached(&mut self, path: Path) -> LowerResult<FndefId> {
+        let (module, name) = self.resolve_prefix(path)?;
+        get_name(
+            self.prelude,
+            self.module,
+            &self.names.detached,
+            (module, name),
+        )
+        .ok_or(LowerError::Undefined(path.last))
     }
 
     fn method(&mut self, ty: TypeId, name: StrId) -> Option<FndefId> {
@@ -934,7 +950,11 @@ impl<'a> Lower<'a> {
 
     fn spec(&mut self, spec: parse::Spec) -> LowerResult<(Named, CtxId)> {
         let Spec { dot, path, binds } = spec;
-        let named = self.path(path)?;
+        let named = if dot {
+            Named::Fndef(self.detached(path)?)
+        } else {
+            self.path(path)?
+        };
         let ctx = self.binds(binds)?;
         Ok((named, ctx))
     }
