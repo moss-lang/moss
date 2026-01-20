@@ -105,6 +105,7 @@ pub enum Type {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Spec {
+    pub dot: bool,
     pub path: Path,
     pub binds: IdRange<BindId>,
 }
@@ -409,6 +410,13 @@ impl<'a> Parser<'a> {
     }
 
     fn spec(&mut self) -> ParseResult<Spec> {
+        let dot = match self.peek() {
+            Dot => {
+                self.next();
+                true
+            }
+            _ => false,
+        };
         let path = self.path()?;
         let mut binds = Vec::new();
         if let LBracket = self.peek() {
@@ -425,7 +433,7 @@ impl<'a> Parser<'a> {
             }
         }
         let binds = IdRange::new(&mut self.tree.binds, binds);
-        Ok(Spec { path, binds })
+        Ok(Spec { dot, path, binds })
     }
 
     fn bind(&mut self) -> ParseResult<Bind> {
