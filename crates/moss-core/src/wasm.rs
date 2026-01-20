@@ -207,6 +207,9 @@ enum Slot {
     /// A defined function in a specific context.
     FnDef(FndefId, Fill),
 
+    /// A 32-bit unsigned integer constant.
+    ValU32(u32),
+
     /// A fill for another context.
     Ctx(Fill),
 }
@@ -226,12 +229,6 @@ const MEMIDX_WASI: u32 = 0;
 #[derive(Clone, Copy)]
 struct Local {
     fill: Fill,
-    start: LocalId,
-}
-
-#[derive(Clone, Copy)]
-struct Tmp {
-    ty: TyId,
     start: LocalId,
 }
 
@@ -323,6 +320,7 @@ impl<'a> Wasm<'a> {
                     | Slot::FnInstr(_)
                     | Slot::FnWasi(_)
                     | Slot::FnDef(_, _)
+                    | Slot::ValU32(_)
                     | Slot::Ctx(_) => panic!(),
                 }
             }
@@ -381,28 +379,17 @@ impl<'a> Wasm<'a> {
     }
 
     fn get(&mut self, instr: lower::LocalId) {
-        let Local { ctx, start } = self.variables[&instr];
-        let ty = self.cache.ty(ctx, self.ir.locals[instr]);
-        self.get_locals(ty, start)
+        let Local { fill, start } = self.variables[&instr];
+        let ty = self.ir.locals[instr];
+        self.get_locals(fill, ty, start)
     }
 
-    fn set(&mut self, instr: lower::LocalId) {
-        let ctx = self.ctx;
-        let ty = self.cache.ty(ctx, self.ir.locals[instr]);
-        let start = self.make_locals(ty);
-        let prev = self.variables.insert(instr, Local { ctx, start });
+    fn set(&mut self, fill: Fill, instr: lower::LocalId) {
+        let ty = self.ir.locals[instr];
+        let start = self.make_locals(fill, ty);
+        let prev = self.variables.insert(instr, Local { fill, start });
         assert!(prev.is_none());
-        self.set_locals(ty, start);
-    }
-
-    fn get_tmp(&mut self, tmp: Tmp) {
-        self.get_locals(tmp.ty, tmp.start);
-    }
-
-    fn set_tmp(&mut self, ty: TyId) -> Tmp {
-        let start = self.make_locals(ty);
-        self.set_locals(ty, start);
-        Tmp { ty, start }
+        self.set_locals(fill, ty, start);
     }
 
     fn string(&mut self, id: StrId) {
@@ -418,166 +405,120 @@ impl<'a> Wasm<'a> {
         self.body.insn().i32_const(offset).i32_const(len);
     }
 
-    fn get_val(&mut self, valdef: ValdefId) {
-        let val = self.cache.valdef(self.ctx, valdef);
-        match self.cache[val] {
-            Val::Bool(b) => {
-                self.body.insn().i32_const(if b { 1 } else { 0 });
-            }
-            Val::Int32(n) => {
-                self.body.insn().i32_const(n as i32);
-            }
-            Val::String(id) => {
-                self.string(id);
-            }
-            Val::Dynamic(_, ty) => {
-                let start = self.valdefs[val];
-                let len = self.layout_len(ty);
-                let end = GlobalId::from_usize(start.index() + len);
-                for globalidx in (IdRange { start, end }) {
-                    self.body.insn().global_get(globalidx.raw());
-                }
-            }
+    fn val_u32(&mut self, fill: Fill, valdef: ValdefId) -> u32 {
+        let context = self.ir.ctx(fill.ctx);
+        // TODO: Pass the right context to `index_val`.
+        match self.slots[fill.slots][context.index_val(valdef, fill.ctx)] {
+            Slot::ValU32(n) => n,
+            _ => panic!(),
         }
     }
 
-    fn set_val(&mut self, valdef: ValdefId) {
-        let val = self.cache.valdef(self.ctx, valdef);
-        match self.cache[val] {
-            // We don't need to restore anything for static bindings.
-            Val::Bool(_) | Val::Int32(_) | Val::String(_) => {}
-            Val::Dynamic(_, ty) => {
-                let start = self.valdefs[val];
-                let len = self.layout_len(ty);
-                let end = GlobalId::from_usize(start.index() + len);
-                for globalidx in (IdRange { start, end }).into_iter().rev() {
-                    self.body.insn().global_set(globalidx.raw());
-                }
-            }
-        }
-    }
-
-    fn val_i32_as_u32(&mut self, valdef: ValdefId) -> u32 {
-        let val = self.cache.valdef(self.ctx, valdef);
-        let Val::Int32(n) = self.cache[val] else {
-            panic!();
-        };
-        n
-    }
-
-    fn val_i32_as_u64(&mut self, valdef: ValdefId) -> u64 {
-        let val = self.cache.valdef(self.ctx, valdef);
-        let Val::Int32(n) = self.cache[val] else {
-            panic!();
-        };
-        n as u64
-    }
-
-    fn memarg(&mut self) -> MemArg {
+    fn memarg(&mut self, fill: Fill) -> MemArg {
         MemArg {
-            offset: self.val_i32_as_u64(self.val_offset),
-            align: self.val_i32_as_u32(self.val_align),
-            memory_index: self.val_i32_as_u32(self.val_memidx),
+            offset: self.val_u32(fill, self.val_offset).into(),
+            align: self.val_u32(fill, self.val_align),
+            memory_index: self.val_u32(fill, self.val_memidx),
         }
     }
 
-    fn wasm_instruction(&mut self, instruction: Instruction) {
+    fn wasm_instruction(&mut self, fill: Fill, instruction: Instruction) {
         match instruction {
             Instruction::Unreachable => {
                 self.body.insn().unreachable();
             }
 
             Instruction::I32Load => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i32_load(memarg);
             }
             Instruction::I64Load => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_load(memarg);
             }
             Instruction::I32Load8S => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i32_load8_s(memarg);
             }
             Instruction::I32Load8U => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i32_load8_u(memarg);
             }
             Instruction::I32Load16S => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i32_load16_s(memarg);
             }
             Instruction::I32Load16U => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i32_load16_u(memarg);
             }
             Instruction::I64Load8S => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_load8_s(memarg);
             }
             Instruction::I64Load8U => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_load8_u(memarg);
             }
             Instruction::I64Load16S => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_load16_s(memarg);
             }
             Instruction::I64Load16U => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_load16_u(memarg);
             }
             Instruction::I64Load32S => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_load32_s(memarg);
             }
             Instruction::I64Load32U => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_load32_u(memarg);
             }
             Instruction::I32Store => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i32_store(memarg);
             }
             Instruction::I64Store => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_store(memarg);
             }
             Instruction::I32Store8 => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i32_store8(memarg);
             }
             Instruction::I32Store16 => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i32_store16(memarg);
             }
             Instruction::I64Store8 => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_store8(memarg);
             }
             Instruction::I64Store16 => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_store16(memarg);
             }
             Instruction::I64Store32 => {
-                let memarg = self.memarg();
+                let memarg = self.memarg(fill);
                 self.body.insn().i64_store32(memarg);
             }
             Instruction::MemorySize => {
-                let memidx = self.val_i32_as_u32(self.val_memidx);
+                let memidx = self.val_u32(fill, self.val_memidx);
                 self.body.insn().memory_size(memidx);
             }
             Instruction::MemoryGrow => {
-                let memidx = self.val_i32_as_u32(self.val_memidx);
+                let memidx = self.val_u32(fill, self.val_memidx);
                 self.body.insn().memory_grow(memidx);
             }
             Instruction::MemoryCopy => {
-                let dst = self.val_i32_as_u32(self.val_dst);
-                let src = self.val_i32_as_u32(self.val_src);
+                let dst = self.val_u32(fill, self.val_dst);
+                let src = self.val_u32(fill, self.val_src);
                 self.body.insn().memory_copy(dst, src);
             }
             Instruction::MemoryFill => {
-                let memidx = self.val_i32_as_u32(self.val_memidx);
+                let memidx = self.val_u32(fill, self.val_memidx);
                 self.body.insn().memory_fill(memidx);
             }
 
@@ -787,7 +728,7 @@ impl<'a> Wasm<'a> {
             match self.ir.instrs[instr] {
                 Instr::BindCall(fndef, local) => todo!(),
                 Instr::EndBind => break,
-                Instr::Val(valdef, ctx) => self.get_val(valdef),
+                Instr::Val(valdef, ctx) => todo!(),
                 Instr::Param => {
                     self.get_locals(fill, param, LocalId::from_raw(0));
                 }
@@ -857,8 +798,13 @@ impl<'a> Wasm<'a> {
                             self.slots[fill.slots][context.index_fn(fndef, fill.ctx)]
                         }
                     };
-                    let funcidx = self.insert_func(slot);
-                    self.body.insn().call(funcidx);
+                    match slot {
+                        Slot::FnInstr(instruction) => self.wasm_instruction(fill, instruction),
+                        _ => {
+                            let funcidx = self.insert_func(slot);
+                            self.body.insn().call(funcidx);
+                        }
+                    }
                 }
                 Instr::If(cond, ty) => {
                     let Local { fill, start: _ } = self.variables[&cond];
@@ -894,7 +840,7 @@ impl<'a> Wasm<'a> {
                 }
                 Instr::ReturnBind(ctx) => todo!(),
             }
-            self.set(instr);
+            self.set(fill, instr);
             instr += 1;
         }
         instr

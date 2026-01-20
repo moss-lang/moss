@@ -1341,6 +1341,7 @@ dependencies = [
  "anyhow",
  "clap",
  "crossbeam-channel",
+ "im-rc",
  "index_vec",
  "line-index",
  "lsp-server",
