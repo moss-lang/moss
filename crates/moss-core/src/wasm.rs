@@ -300,8 +300,8 @@ impl<'a> Wasm<'a> {
         funcidx
     }
 
-    fn insert_func(&mut self, fndef: FndefId, fill: Fill) -> u32 {
-        let (i, _) = self.funcidxs.insert_full(Slot::FnDef(fndef, fill));
+    fn insert_func(&mut self, slot: Slot) -> u32 {
+        let (i, _) = self.funcidxs.insert_full(slot);
         i as u32
     }
 
@@ -481,6 +481,307 @@ impl<'a> Wasm<'a> {
         }
     }
 
+    fn wasm_instruction(&mut self, instruction: Instruction) {
+        match instruction {
+            Instruction::Unreachable => {
+                self.body.insn().unreachable();
+            }
+
+            Instruction::I32Load => {
+                let memarg = self.memarg();
+                self.body.insn().i32_load(memarg);
+            }
+            Instruction::I64Load => {
+                let memarg = self.memarg();
+                self.body.insn().i64_load(memarg);
+            }
+            Instruction::I32Load8S => {
+                let memarg = self.memarg();
+                self.body.insn().i32_load8_s(memarg);
+            }
+            Instruction::I32Load8U => {
+                let memarg = self.memarg();
+                self.body.insn().i32_load8_u(memarg);
+            }
+            Instruction::I32Load16S => {
+                let memarg = self.memarg();
+                self.body.insn().i32_load16_s(memarg);
+            }
+            Instruction::I32Load16U => {
+                let memarg = self.memarg();
+                self.body.insn().i32_load16_u(memarg);
+            }
+            Instruction::I64Load8S => {
+                let memarg = self.memarg();
+                self.body.insn().i64_load8_s(memarg);
+            }
+            Instruction::I64Load8U => {
+                let memarg = self.memarg();
+                self.body.insn().i64_load8_u(memarg);
+            }
+            Instruction::I64Load16S => {
+                let memarg = self.memarg();
+                self.body.insn().i64_load16_s(memarg);
+            }
+            Instruction::I64Load16U => {
+                let memarg = self.memarg();
+                self.body.insn().i64_load16_u(memarg);
+            }
+            Instruction::I64Load32S => {
+                let memarg = self.memarg();
+                self.body.insn().i64_load32_s(memarg);
+            }
+            Instruction::I64Load32U => {
+                let memarg = self.memarg();
+                self.body.insn().i64_load32_u(memarg);
+            }
+            Instruction::I32Store => {
+                let memarg = self.memarg();
+                self.body.insn().i32_store(memarg);
+            }
+            Instruction::I64Store => {
+                let memarg = self.memarg();
+                self.body.insn().i64_store(memarg);
+            }
+            Instruction::I32Store8 => {
+                let memarg = self.memarg();
+                self.body.insn().i32_store8(memarg);
+            }
+            Instruction::I32Store16 => {
+                let memarg = self.memarg();
+                self.body.insn().i32_store16(memarg);
+            }
+            Instruction::I64Store8 => {
+                let memarg = self.memarg();
+                self.body.insn().i64_store8(memarg);
+            }
+            Instruction::I64Store16 => {
+                let memarg = self.memarg();
+                self.body.insn().i64_store16(memarg);
+            }
+            Instruction::I64Store32 => {
+                let memarg = self.memarg();
+                self.body.insn().i64_store32(memarg);
+            }
+            Instruction::MemorySize => {
+                let memidx = self.val_i32_as_u32(self.val_memidx);
+                self.body.insn().memory_size(memidx);
+            }
+            Instruction::MemoryGrow => {
+                let memidx = self.val_i32_as_u32(self.val_memidx);
+                self.body.insn().memory_grow(memidx);
+            }
+            Instruction::MemoryCopy => {
+                let dst = self.val_i32_as_u32(self.val_dst);
+                let src = self.val_i32_as_u32(self.val_src);
+                self.body.insn().memory_copy(dst, src);
+            }
+            Instruction::MemoryFill => {
+                let memidx = self.val_i32_as_u32(self.val_memidx);
+                self.body.insn().memory_fill(memidx);
+            }
+
+            Instruction::I32Eqz => {
+                self.body.insn().i32_eqz();
+            }
+            Instruction::I32Eq => {
+                self.body.insn().i32_eq();
+            }
+            Instruction::I32Ne => {
+                self.body.insn().i32_ne();
+            }
+            Instruction::I32LtS => {
+                self.body.insn().i32_lt_s();
+            }
+            Instruction::I32LtU => {
+                self.body.insn().i32_lt_u();
+            }
+            Instruction::I32GtS => {
+                self.body.insn().i32_gt_s();
+            }
+            Instruction::I32GtU => {
+                self.body.insn().i32_gt_u();
+            }
+            Instruction::I32LeS => {
+                self.body.insn().i32_le_s();
+            }
+            Instruction::I32LeU => {
+                self.body.insn().i32_le_u();
+            }
+            Instruction::I32GeS => {
+                self.body.insn().i32_ge_s();
+            }
+            Instruction::I32GeU => {
+                self.body.insn().i32_ge_u();
+            }
+            Instruction::I64Eqz => {
+                self.body.insn().i64_eqz();
+            }
+            Instruction::I64Eq => {
+                self.body.insn().i64_eq();
+            }
+            Instruction::I64Ne => {
+                self.body.insn().i64_ne();
+            }
+            Instruction::I64LtS => {
+                self.body.insn().i64_lt_s();
+            }
+            Instruction::I64LtU => {
+                self.body.insn().i64_lt_u();
+            }
+            Instruction::I64GtS => {
+                self.body.insn().i64_gt_s();
+            }
+            Instruction::I64GtU => {
+                self.body.insn().i64_gt_u();
+            }
+            Instruction::I64LeS => {
+                self.body.insn().i64_le_s();
+            }
+            Instruction::I64LeU => {
+                self.body.insn().i64_le_u();
+            }
+            Instruction::I64GeS => {
+                self.body.insn().i64_ge_s();
+            }
+            Instruction::I64GeU => {
+                self.body.insn().i64_ge_u();
+            }
+            Instruction::I32Clz => {
+                self.body.insn().i32_clz();
+            }
+            Instruction::I32Ctz => {
+                self.body.insn().i32_ctz();
+            }
+            Instruction::I32Popcnt => {
+                self.body.insn().i32_popcnt();
+            }
+            Instruction::I32Add => {
+                self.body.insn().i32_add();
+            }
+            Instruction::I32Sub => {
+                self.body.insn().i32_sub();
+            }
+            Instruction::I32Mul => {
+                self.body.insn().i32_mul();
+            }
+            Instruction::I32DivS => {
+                self.body.insn().i32_div_s();
+            }
+            Instruction::I32DivU => {
+                self.body.insn().i32_div_u();
+            }
+            Instruction::I32RemS => {
+                self.body.insn().i32_rem_s();
+            }
+            Instruction::I32RemU => {
+                self.body.insn().i32_rem_u();
+            }
+            Instruction::I32And => {
+                self.body.insn().i32_and();
+            }
+            Instruction::I32Or => {
+                self.body.insn().i32_or();
+            }
+            Instruction::I32Xor => {
+                self.body.insn().i32_xor();
+            }
+            Instruction::I32Shl => {
+                self.body.insn().i32_shl();
+            }
+            Instruction::I32ShrS => {
+                self.body.insn().i32_shr_s();
+            }
+            Instruction::I32ShrU => {
+                self.body.insn().i32_shr_u();
+            }
+            Instruction::I32Rotl => {
+                self.body.insn().i32_rotl();
+            }
+            Instruction::I32Rotr => {
+                self.body.insn().i32_rotr();
+            }
+            Instruction::I64Clz => {
+                self.body.insn().i64_clz();
+            }
+            Instruction::I64Ctz => {
+                self.body.insn().i64_ctz();
+            }
+            Instruction::I64Popcnt => {
+                self.body.insn().i64_popcnt();
+            }
+            Instruction::I64Add => {
+                self.body.insn().i64_add();
+            }
+            Instruction::I64Sub => {
+                self.body.insn().i64_sub();
+            }
+            Instruction::I64Mul => {
+                self.body.insn().i64_mul();
+            }
+            Instruction::I64DivS => {
+                self.body.insn().i64_div_s();
+            }
+            Instruction::I64DivU => {
+                self.body.insn().i64_div_u();
+            }
+            Instruction::I64RemS => {
+                self.body.insn().i64_rem_s();
+            }
+            Instruction::I64RemU => {
+                self.body.insn().i64_rem_u();
+            }
+            Instruction::I64And => {
+                self.body.insn().i64_and();
+            }
+            Instruction::I64Or => {
+                self.body.insn().i64_or();
+            }
+            Instruction::I64Xor => {
+                self.body.insn().i64_xor();
+            }
+            Instruction::I64Shl => {
+                self.body.insn().i64_shl();
+            }
+            Instruction::I64ShrS => {
+                self.body.insn().i64_shr_s();
+            }
+            Instruction::I64ShrU => {
+                self.body.insn().i64_shr_u();
+            }
+            Instruction::I64Rotl => {
+                self.body.insn().i64_rotl();
+            }
+            Instruction::I64Rotr => {
+                self.body.insn().i64_rotr();
+            }
+            Instruction::I32WrapI64 => {
+                self.body.insn().i32_wrap_i64();
+            }
+            Instruction::I64ExtendI32S => {
+                self.body.insn().i64_extend_i32_s();
+            }
+            Instruction::I64ExtendI32U => {
+                self.body.insn().i64_extend_i32_u();
+            }
+            Instruction::I32Extend8S => {
+                self.body.insn().i32_extend8_s();
+            }
+            Instruction::I32Extend16S => {
+                self.body.insn().i32_extend16_s();
+            }
+            Instruction::I64Extend8S => {
+                self.body.insn().i64_extend8_s();
+            }
+            Instruction::I64Extend16S => {
+                self.body.insn().i64_extend16_s();
+            }
+            Instruction::I64Extend32S => {
+                self.body.insn().i64_extend32_s();
+            }
+        };
+    }
+
     fn instrs(&mut self, fill: Fill, param: TypeId, mut instr: lower::LocalId) -> lower::LocalId {
         loop {
             match self.ir.instrs[instr] {
@@ -545,329 +846,23 @@ impl<'a> Wasm<'a> {
                 }
                 Instr::Call(fndef, local) => {
                     self.get(local);
-                    let f = self.cache.fndef(self.ctx, fndef);
-                    match self.cache[f] {
-                        Fn::Builtin(builtin) => match self.builtins[builtin] {
-                            Builtin::Instruction(instruction) => {
-                                match instruction {
-                                    Instruction::Unreachable => {
-                                        self.body.insn().unreachable();
-                                    }
-
-                                    Instruction::I32Load => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_load(memarg);
-                                    }
-                                    Instruction::I64Load => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load(memarg);
-                                    }
-                                    Instruction::I32Load8S => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_load8_s(memarg);
-                                    }
-                                    Instruction::I32Load8U => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_load8_u(memarg);
-                                    }
-                                    Instruction::I32Load16S => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_load16_s(memarg);
-                                    }
-                                    Instruction::I32Load16U => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_load16_u(memarg);
-                                    }
-                                    Instruction::I64Load8S => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load8_s(memarg);
-                                    }
-                                    Instruction::I64Load8U => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load8_u(memarg);
-                                    }
-                                    Instruction::I64Load16S => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load16_s(memarg);
-                                    }
-                                    Instruction::I64Load16U => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load16_u(memarg);
-                                    }
-                                    Instruction::I64Load32S => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load32_s(memarg);
-                                    }
-                                    Instruction::I64Load32U => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load32_u(memarg);
-                                    }
-                                    Instruction::I32Store => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_store(memarg);
-                                    }
-                                    Instruction::I64Store => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_store(memarg);
-                                    }
-                                    Instruction::I32Store8 => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_store8(memarg);
-                                    }
-                                    Instruction::I32Store16 => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_store16(memarg);
-                                    }
-                                    Instruction::I64Store8 => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_store8(memarg);
-                                    }
-                                    Instruction::I64Store16 => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_store16(memarg);
-                                    }
-                                    Instruction::I64Store32 => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_store32(memarg);
-                                    }
-                                    Instruction::MemorySize => {
-                                        let memidx = self.val_i32_as_u32(self.val_memidx);
-                                        self.body.insn().memory_size(memidx);
-                                    }
-                                    Instruction::MemoryGrow => {
-                                        let memidx = self.val_i32_as_u32(self.val_memidx);
-                                        self.body.insn().memory_grow(memidx);
-                                    }
-                                    Instruction::MemoryCopy => {
-                                        let dst = self.val_i32_as_u32(self.val_dst);
-                                        let src = self.val_i32_as_u32(self.val_src);
-                                        self.body.insn().memory_copy(dst, src);
-                                    }
-                                    Instruction::MemoryFill => {
-                                        let memidx = self.val_i32_as_u32(self.val_memidx);
-                                        self.body.insn().memory_fill(memidx);
-                                    }
-
-                                    Instruction::I32Eqz => {
-                                        self.body.insn().i32_eqz();
-                                    }
-                                    Instruction::I32Eq => {
-                                        self.body.insn().i32_eq();
-                                    }
-                                    Instruction::I32Ne => {
-                                        self.body.insn().i32_ne();
-                                    }
-                                    Instruction::I32LtS => {
-                                        self.body.insn().i32_lt_s();
-                                    }
-                                    Instruction::I32LtU => {
-                                        self.body.insn().i32_lt_u();
-                                    }
-                                    Instruction::I32GtS => {
-                                        self.body.insn().i32_gt_s();
-                                    }
-                                    Instruction::I32GtU => {
-                                        self.body.insn().i32_gt_u();
-                                    }
-                                    Instruction::I32LeS => {
-                                        self.body.insn().i32_le_s();
-                                    }
-                                    Instruction::I32LeU => {
-                                        self.body.insn().i32_le_u();
-                                    }
-                                    Instruction::I32GeS => {
-                                        self.body.insn().i32_ge_s();
-                                    }
-                                    Instruction::I32GeU => {
-                                        self.body.insn().i32_ge_u();
-                                    }
-                                    Instruction::I64Eqz => {
-                                        self.body.insn().i64_eqz();
-                                    }
-                                    Instruction::I64Eq => {
-                                        self.body.insn().i64_eq();
-                                    }
-                                    Instruction::I64Ne => {
-                                        self.body.insn().i64_ne();
-                                    }
-                                    Instruction::I64LtS => {
-                                        self.body.insn().i64_lt_s();
-                                    }
-                                    Instruction::I64LtU => {
-                                        self.body.insn().i64_lt_u();
-                                    }
-                                    Instruction::I64GtS => {
-                                        self.body.insn().i64_gt_s();
-                                    }
-                                    Instruction::I64GtU => {
-                                        self.body.insn().i64_gt_u();
-                                    }
-                                    Instruction::I64LeS => {
-                                        self.body.insn().i64_le_s();
-                                    }
-                                    Instruction::I64LeU => {
-                                        self.body.insn().i64_le_u();
-                                    }
-                                    Instruction::I64GeS => {
-                                        self.body.insn().i64_ge_s();
-                                    }
-                                    Instruction::I64GeU => {
-                                        self.body.insn().i64_ge_u();
-                                    }
-                                    Instruction::I32Clz => {
-                                        self.body.insn().i32_clz();
-                                    }
-                                    Instruction::I32Ctz => {
-                                        self.body.insn().i32_ctz();
-                                    }
-                                    Instruction::I32Popcnt => {
-                                        self.body.insn().i32_popcnt();
-                                    }
-                                    Instruction::I32Add => {
-                                        self.body.insn().i32_add();
-                                    }
-                                    Instruction::I32Sub => {
-                                        self.body.insn().i32_sub();
-                                    }
-                                    Instruction::I32Mul => {
-                                        self.body.insn().i32_mul();
-                                    }
-                                    Instruction::I32DivS => {
-                                        self.body.insn().i32_div_s();
-                                    }
-                                    Instruction::I32DivU => {
-                                        self.body.insn().i32_div_u();
-                                    }
-                                    Instruction::I32RemS => {
-                                        self.body.insn().i32_rem_s();
-                                    }
-                                    Instruction::I32RemU => {
-                                        self.body.insn().i32_rem_u();
-                                    }
-                                    Instruction::I32And => {
-                                        self.body.insn().i32_and();
-                                    }
-                                    Instruction::I32Or => {
-                                        self.body.insn().i32_or();
-                                    }
-                                    Instruction::I32Xor => {
-                                        self.body.insn().i32_xor();
-                                    }
-                                    Instruction::I32Shl => {
-                                        self.body.insn().i32_shl();
-                                    }
-                                    Instruction::I32ShrS => {
-                                        self.body.insn().i32_shr_s();
-                                    }
-                                    Instruction::I32ShrU => {
-                                        self.body.insn().i32_shr_u();
-                                    }
-                                    Instruction::I32Rotl => {
-                                        self.body.insn().i32_rotl();
-                                    }
-                                    Instruction::I32Rotr => {
-                                        self.body.insn().i32_rotr();
-                                    }
-                                    Instruction::I64Clz => {
-                                        self.body.insn().i64_clz();
-                                    }
-                                    Instruction::I64Ctz => {
-                                        self.body.insn().i64_ctz();
-                                    }
-                                    Instruction::I64Popcnt => {
-                                        self.body.insn().i64_popcnt();
-                                    }
-                                    Instruction::I64Add => {
-                                        self.body.insn().i64_add();
-                                    }
-                                    Instruction::I64Sub => {
-                                        self.body.insn().i64_sub();
-                                    }
-                                    Instruction::I64Mul => {
-                                        self.body.insn().i64_mul();
-                                    }
-                                    Instruction::I64DivS => {
-                                        self.body.insn().i64_div_s();
-                                    }
-                                    Instruction::I64DivU => {
-                                        self.body.insn().i64_div_u();
-                                    }
-                                    Instruction::I64RemS => {
-                                        self.body.insn().i64_rem_s();
-                                    }
-                                    Instruction::I64RemU => {
-                                        self.body.insn().i64_rem_u();
-                                    }
-                                    Instruction::I64And => {
-                                        self.body.insn().i64_and();
-                                    }
-                                    Instruction::I64Or => {
-                                        self.body.insn().i64_or();
-                                    }
-                                    Instruction::I64Xor => {
-                                        self.body.insn().i64_xor();
-                                    }
-                                    Instruction::I64Shl => {
-                                        self.body.insn().i64_shl();
-                                    }
-                                    Instruction::I64ShrS => {
-                                        self.body.insn().i64_shr_s();
-                                    }
-                                    Instruction::I64ShrU => {
-                                        self.body.insn().i64_shr_u();
-                                    }
-                                    Instruction::I64Rotl => {
-                                        self.body.insn().i64_rotl();
-                                    }
-                                    Instruction::I64Rotr => {
-                                        self.body.insn().i64_rotr();
-                                    }
-                                    Instruction::I32WrapI64 => {
-                                        self.body.insn().i32_wrap_i64();
-                                    }
-                                    Instruction::I64ExtendI32S => {
-                                        self.body.insn().i64_extend_i32_s();
-                                    }
-                                    Instruction::I64ExtendI32U => {
-                                        self.body.insn().i64_extend_i32_u();
-                                    }
-                                    Instruction::I32Extend8S => {
-                                        self.body.insn().i32_extend8_s();
-                                    }
-                                    Instruction::I32Extend16S => {
-                                        self.body.insn().i32_extend16_s();
-                                    }
-                                    Instruction::I64Extend8S => {
-                                        self.body.insn().i64_extend8_s();
-                                    }
-                                    Instruction::I64Extend16S => {
-                                        self.body.insn().i64_extend16_s();
-                                    }
-                                    Instruction::I64Extend32S => {
-                                        self.body.insn().i64_extend32_s();
-                                    }
-                                };
-                            }
-                            Builtin::Function(funcidx) => {
-                                self.body.insn().call(funcidx);
-                            }
-                        },
-                        Fn::Fndef(_, _) => {
-                            let funcidx = self.funcs.get(f).copied().unwrap_or_else(|| {
-                                assert_eq!(f, self.funcs.len_idx());
-                                let funcidx = Some(self.next_funcidx);
-                                self.funcs.push(funcidx);
-                                self.next_funcidx += 1;
-                                funcidx
-                            });
-                            self.body.insn().call(funcidx.unwrap());
+                    let slot = match self.ir.bodies[fndef] {
+                        Some(_) => {
+                            // TODO: Pass the correct fill to `Slot::FnDef`.
+                            Slot::FnDef(fndef, fill)
                         }
-                    }
+                        None => {
+                            let context = self.ir.ctx(fill.ctx);
+                            // TODO: Pass the correct context to `index_fn`.
+                            self.slots[fill.slots][context.index_fn(fndef, fill.ctx)]
+                        }
+                    };
+                    let funcidx = self.insert_func(slot);
+                    self.body.insn().call(funcidx);
                 }
                 Instr::If(cond, ty) => {
-                    let Local { ctx, start: _ } = self.variables[&cond];
-                    let ty = self.cache.ty(ctx, ty);
-                    let layout = self.layout_vec(ty);
+                    let Local { fill, start: _ } = self.variables[&cond];
+                    let layout = self.layout_vec(fill, ty);
                     let typeidx = self.section_type.len();
                     self.section_type.ty().function([], layout);
                     self.get(cond);
