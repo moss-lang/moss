@@ -10,7 +10,7 @@ use indexmap::IndexSet;
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex, string},
-    parse::{self, Binop, Block, Expr, ExprId, Field, Path, Stmt, StmtId, Tree, Unop},
+    parse::{self, Binop, Block, Expr, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
     range::{Inclusive, expr_range, path_range},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -935,8 +935,9 @@ impl<'a> Lower<'a> {
     }
 
     fn spec(&mut self, spec: parse::Spec) -> LowerResult<(Named, CtxId)> {
-        let named = self.path(spec.path)?;
-        let ctx = self.binds(spec.binds)?;
+        let Spec { dot, path, binds } = spec;
+        let named = self.path(path)?;
+        let ctx = self.binds(binds)?;
         Ok((named, ctx))
     }
 
