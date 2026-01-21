@@ -1,6 +1,9 @@
 use crate::{
     lex::TokenId,
-    parse::{Block, Expr, ExprId, Path, Stmt, StmtId, Tree},
+    parse::{
+        Bind, BindId, Binding, BindingId, Block, Entry, Expr, ExprId, Path, Spec, Stmt, StmtId,
+        Tree,
+    },
 };
 
 pub struct Inclusive {
@@ -27,6 +30,44 @@ impl Ranger<'_> {
         };
         let last = path.last;
         Inclusive { first, last }
+    }
+
+    fn spec(&self, spec: Spec) -> Inclusive {
+        let Spec { dot, path, binds } = spec;
+        let Inclusive { first, last } = self.path(path);
+        Inclusive {
+            first: if dot { first - 1 } else { first },
+            last: match binds.last() {
+                None => last,
+                Some(bind) => self.bind(bind).last + 1, // TODO: Handle optional trailing comma.
+            },
+        }
+    }
+
+    fn entry(&self, entry: Entry) -> Inclusive {
+        match entry {
+            Entry::Lit(token) => single(token),
+            Entry::Ref(spec) => self.spec(spec),
+        }
+    }
+
+    fn bind(&self, id: BindId) -> Inclusive {
+        let Bind { key, val } = self.tree.binds[id];
+        let Inclusive { first, last } = self.spec(key);
+        Inclusive {
+            first,
+            last: match val {
+                None => last,
+                Some(entry) => self.entry(entry).last,
+            },
+        }
+    }
+
+    fn binding(&self, id: BindingId) -> Inclusive {
+        match self.tree.bindings[id] {
+            Binding::Single(bind) => self.bind(bind),
+            Binding::Composite(expr) => self.expr(expr),
+        }
     }
 
     fn expr(&self, id: ExprId) -> Inclusive {
@@ -84,6 +125,16 @@ impl Ranger<'_> {
                     range.last + 2
                 };
                 Inclusive { first, last }
+            }
+            Expr::Bind(start, bindings) => {
+                let first = start;
+                Inclusive {
+                    first,
+                    last: match bindings.last() {
+                        None => first + 1,
+                        Some(binding) => self.binding(binding).last,
+                    },
+                }
             }
         }
     }

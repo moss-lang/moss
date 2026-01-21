@@ -1403,6 +1403,7 @@ impl Body<'_, '_> {
                 }
                 Ok(self.instr(ty, Instr::EndIf(local)))
             }
+            Expr::Bind(_, bindings) => todo!(),
         }
     }
 

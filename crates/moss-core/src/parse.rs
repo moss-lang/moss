@@ -38,6 +38,10 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct BindingId = u32;
+}
+
+define_index_type! {
     pub struct ExprId = u32;
 }
 
@@ -174,6 +178,12 @@ pub enum Binop {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum Binding {
+    Single(BindId),
+    Composite(ExprId),
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Expr {
     Lit(TokenId),
     Path(Path),
@@ -185,6 +195,7 @@ pub enum Expr {
     Unary(Unop, ExprId),
     Binary(ExprId, Binop, ExprId),
     If(ExprId, Block, Option<Block>),
+    Bind(TokenId, IdRange<BindingId>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -285,6 +296,7 @@ pub struct Tree {
     pub needs: IndexVec<NeedId, Need>,
     pub params: IndexVec<ParamId, Param>,
     pub fields: IndexVec<FieldId, Field>,
+    pub bindings: IndexVec<BindingId, Binding>,
     pub exprs: IndexVec<ExprId, Expr>,
     pub stmts: IndexVec<StmtId, Stmt>,
     pub imports: IndexVec<ImportId, Import>,
@@ -460,22 +472,26 @@ impl<'a> Parser<'a> {
         Ok(Spec { dot, path, binds })
     }
 
+    fn entry(&mut self) -> ParseResult<Entry> {
+        match self.peek() {
+            Name => Ok(Entry::Ref(self.spec()?)),
+            Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str => {
+                Ok(Entry::Lit(self.next()))
+            }
+            _ => {
+                return Err(
+                    self.err(Name | Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str)
+                );
+            }
+        }
+    }
+
     fn bind(&mut self) -> ParseResult<Bind> {
         let key = self.spec()?;
         let val = match self.peek() {
             Equal => {
                 self.next();
-                match self.peek() {
-                    Name => Some(Entry::Ref(self.spec()?)),
-                    Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str => {
-                        Some(Entry::Lit(self.next()))
-                    }
-                    _ => {
-                        return Err(self.err(
-                            Name | Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str,
-                        ));
-                    }
-                }
+                Some(self.entry()?)
             }
             _ => None,
         };
@@ -586,9 +602,46 @@ impl<'a> Parser<'a> {
         Ok(Expr::If(cond, yes, no))
     }
 
+    fn expr_bind(&mut self) -> ParseResult<Expr> {
+        let start = self.expect(Bind)?;
+        let mut bindings = Vec::new();
+        loop {
+            if let Semi | RBrace = self.peek() {
+                let bindings = IdRange::new(&mut self.tree.bindings, bindings);
+                return Ok(Expr::Bind(start, bindings));
+            }
+            let key = self.spec()?;
+            let binding = match self.peek() {
+                Comma => {
+                    let val = None;
+                    Binding::Single(self.tree.binds.push(Bind { key, val }))
+                }
+                Equal => {
+                    self.next();
+                    let val = Some(self.entry()?);
+                    Binding::Single(self.tree.binds.push(Bind { key, val }))
+                }
+                LParen => {
+                    if key.dot {
+                        return Err(self.err(Comma | Equal));
+                    } else {
+                        let args = self.arg_ids()?;
+                        let expr = Expr::Call(key.path, key.binds, args);
+                        Binding::Composite(self.tree.exprs.push(expr))
+                    }
+                }
+                _ => return Err(self.err(Comma | Equal | LParen)),
+            };
+            bindings.push(binding);
+            if let Comma = self.peek() {
+                self.next();
+            }
+        }
+    }
+
     fn expr_atom(&mut self, curly: Curly) -> ParseResult<Expr> {
         let mut expected =
-            LParen | If | Name | Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str;
+            LParen | Bind | If | Name | Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str;
         if let Curly::Yes = curly {
             expected |= RBrace;
         }
@@ -655,6 +708,7 @@ impl<'a> Parser<'a> {
                 }
             }
             If => self.expr_if(),
+            Bind => self.expr_bind(),
             _ => Err(self.err(expected)),
         }
     }
