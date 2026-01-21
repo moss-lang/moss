@@ -9,6 +9,8 @@ import "./wasm.moss" as wasm;
 
 context Base = lit::LiteralUint32, I32, I64, MemIdx;
 
+type I32Pair[Base] = (I32, I32);
+
 context Wasi =
   lit::LiteralUint31,
   lit::LiteralUint32,
@@ -38,7 +40,7 @@ context Wasi =
   lit::uint32_realize_uint[lit::LiteralUint32, Uint=I32],
   lit::uint31_realize_int[lit::LiteralUint31, Int=I32],
   lit::int32_realize_int[lit::LiteralInt32, Int=I32],
-  lit::string_realize[lit::LiteralString, String=(I32, I32)],
+  lit::string_realize[lit::LiteralString, String=I32Pair[Base]],
 
   I32,
   I64,
@@ -49,7 +51,7 @@ context Wasi =
   wasip1::WasiP1[Base],
 ;
 
-context Bootstrap = Wasi, Bool=I32, Int32=I32, Int64=I64,
+context Bootstrap = Wasi, Bool=I32, Int32=I32, Int64=I64;
 
 fn overflow[Bootstrap]() {
   wasm::unreachable(); # TODO: Give error messages.

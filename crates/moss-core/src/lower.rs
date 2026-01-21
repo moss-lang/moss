@@ -1053,6 +1053,7 @@ impl<'a> Lower<'a> {
                 };
                 Ok(self.ty(ty))
             }
+            parse::Type::Tuple(elements) => todo!(),
             parse::Type::Record(members) => todo!(),
         }
     }

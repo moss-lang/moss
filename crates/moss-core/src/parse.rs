@@ -100,6 +100,7 @@ pub struct Member {
 #[derive(Clone, Copy, Debug)]
 pub enum Type {
     Spec(Spec),
+    Tuple(IdRange<TypeId>),
     Record(IdRange<MemberId>),
 }
 
@@ -386,7 +387,23 @@ impl<'a> Parser<'a> {
     fn ty(&mut self) -> ParseResult<Type> {
         match self.peek() {
             Name => Ok(Type::Spec(self.spec()?)),
+            LParen => {
+                self.next();
+                let mut elements = Vec::new();
+                loop {
+                    if let RParen = self.peek() {
+                        self.next();
+                        let elements = IdRange::new(&mut self.tree.types, elements);
+                        return Ok(Type::Tuple(elements));
+                    }
+                    elements.push(self.ty()?);
+                    if let Comma = self.peek() {
+                        self.next();
+                    }
+                }
+            }
             LBrace => {
+                self.next();
                 let mut members = Vec::new();
                 loop {
                     if let RBrace = self.peek() {
