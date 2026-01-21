@@ -231,11 +231,18 @@ pub struct Aliasdef {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum Return {
+    Unit,
+    Type(TypeId),
+    Bind(Spec),
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Fndef {
     pub name: TokenId,
     pub needs: IdRange<NeedId>,
     pub params: IdRange<ParamId>,
-    pub result: Option<TypeId>,
+    pub result: Return,
     pub def: Option<Block>,
 }
 
@@ -876,9 +883,15 @@ impl<'a> Parser<'a> {
         let result = match self.peek() {
             Colon => {
                 self.next();
-                Some(self.ty_id()?)
+                match self.peek() {
+                    Bind => {
+                        self.next();
+                        Return::Bind(self.spec()?)
+                    }
+                    _ => Return::Type(self.ty_id()?),
+                }
             }
-            _ => None,
+            _ => Return::Unit,
         };
         let def = match self.peek() {
             Semi => {

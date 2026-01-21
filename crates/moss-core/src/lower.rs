@@ -1066,8 +1066,9 @@ impl<'a> Lower<'a> {
             ctx: self.needs(fndef.needs)?,
             param: self.ty_tuple(&types),
             result: match fndef.result {
-                Some(ty) => self.parse_ty(ty)?,
-                None => self.ty_unit(),
+                parse::Return::Unit => self.ty_unit(),
+                parse::Return::Type(ty) => self.parse_ty(ty)?,
+                parse::Return::Bind(_) => todo!(),
             },
         })
     }
