@@ -478,11 +478,7 @@ impl<'a> Parser<'a> {
             Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str => {
                 Ok(Entry::Lit(self.next()))
             }
-            _ => {
-                return Err(
-                    self.err(Name | Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str)
-                );
-            }
+            _ => Err(self.err(Name | Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str)),
         }
     }
 
