@@ -300,7 +300,7 @@ pub struct Tree {
     pub exprs: IndexVec<ExprId, Expr>,
     pub stmts: IndexVec<StmtId, Stmt>,
     pub imports: IndexVec<ImportId, Import>,
-    pub assumes: IndexVec<AssumeId, TokenId>,
+    pub assumes: IndexVec<AssumeId, IdRange<BindId>>,
     pub tydefs: IndexVec<TydefId, Tydef>,
     pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
@@ -905,11 +905,19 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn assume(&mut self) -> ParseResult<TokenId> {
+    fn assume(&mut self) -> ParseResult<IdRange<BindId>> {
         self.expect(Assume)?;
-        let name = self.expect(Name)?;
-        self.expect(Semi)?;
-        Ok(name)
+        let mut binds = Vec::new();
+        loop {
+            if let Semi = self.peek() {
+                self.next();
+                return Ok(IdRange::new(&mut self.tree.binds, binds));
+            }
+            binds.push(self.bind()?);
+            if let Comma = self.peek() {
+                self.next();
+            }
+        }
     }
 
     fn fndef(&mut self, name: TokenId) -> ParseResult<Fndef> {
