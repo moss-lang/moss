@@ -637,7 +637,8 @@ impl<'a> Parser<'a> {
                         Ok(Expr::Call(path, binds, args))
                     }
                     token => {
-                        if expected.contains(token) {
+                        // Only treat as tag if the next token can start an atom, not a block end.
+                        if expected.contains(token) && token != RBrace {
                             let inner = self.expr_atom(curly)?;
                             Ok(Expr::Tag(path, self.tree.exprs.push(inner)))
                         } else {
