@@ -229,6 +229,16 @@ pub enum Val {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum IntType {
+    Uint32,
+    Int32,
+    Uint64,
+    Int64,
+    Uint,
+    Int,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Tydef {
     pub ctx: CtxId,
 }
@@ -728,13 +738,48 @@ impl<'a> Lower<'a> {
         self.ir.strings.make_id(self.slice(token))
     }
 
-    fn lit(&mut self, token: TokenId) -> LowerResult<Val> {
-        match self.slice(token).chars().next().unwrap() {
-            '0'..='9' => todo!(),
+    fn lit(&mut self, token: TokenId) -> LowerResult<(Val, Option<IntType>)> {
+        let slice = self.slice(token);
+        match slice.chars().next().unwrap() {
+            '0'..='9' => {
+                let (digits, int_type) = if let Some(digits) = slice.strip_suffix("u32") {
+                    (digits, IntType::Uint32)
+                } else if let Some(digits) = slice.strip_suffix("i32") {
+                    (digits, IntType::Int32)
+                } else if let Some(digits) = slice.strip_suffix("u64") {
+                    (digits, IntType::Uint64)
+                } else if let Some(digits) = slice.strip_suffix("i64") {
+                    (digits, IntType::Int64)
+                } else if let Some(digits) = slice.strip_suffix("u") {
+                    (digits, IntType::Uint)
+                } else {
+                    (slice, IntType::Int)
+                };
+                let val = match (digits.parse::<u32>(), digits.parse::<i32>()) {
+                    (Ok(n), Ok(_)) => Val::Uint31(n),
+                    (Ok(n), Err(_)) => Val::Uint32(n),
+                    (Err(_), Ok(n)) => Val::Int32(n),
+                    (Err(_), Err(_)) => match (digits.parse::<u64>(), digits.parse::<i64>()) {
+                        (Ok(n), Ok(_)) => Val::Uint63(n),
+                        (Ok(n), Err(_)) => Val::Uint64(n),
+                        (Err(_), Ok(n)) => Val::Int64(n),
+                        (Err(_), Err(_)) => {
+                            // TODO: Check that it's actually all digits.
+                            let string = self.ir.strings.make_id(digits);
+                            if digits.starts_with('-') {
+                                Val::Int(string)
+                            } else {
+                                Val::Uint(string)
+                            }
+                        }
+                    },
+                };
+                Ok((val, Some(int_type)))
+            }
             '"' => {
                 let escaped = string(self.source, self.starts, token);
                 let string = self.ir.strings.make_id(&escaped);
-                Ok(Val::String(string))
+                Ok((Val::String(string), None))
             }
             _ => unreachable!(),
         }
@@ -1001,7 +1046,7 @@ impl<'a> Lower<'a> {
             },
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(valdef) => {
-                    let val = self.lit(token)?;
+                    let (val, _) = self.lit(token)?;
                     ctx.vals.entry(valdef).or_default().insert(ctx1, Some(val));
                 }
                 _ => return Err(LowerError::LitNotVal(token)),
@@ -1265,7 +1310,8 @@ impl Body<'_, '_> {
             Expr::Lit(token) => {
                 let ty_unit = self.x.ty_unit();
                 let arg = self.instr_tuple(ty_unit, &[]);
-                match self.x.lit(token)? {
+                let (val, int_type) = self.x.lit(token)?;
+                match val {
                     Val::Opaque(_, _) => unreachable!(),
                     Val::Uint31(_) => todo!(),
                     Val::Uint32(_) => todo!(),
