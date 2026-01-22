@@ -245,7 +245,7 @@ pub struct Aliasdef {
 pub enum Return {
     Unit,
     Type(TypeId),
-    Bind(Spec),
+    Bind(IdRange<NeedId>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -944,7 +944,17 @@ impl<'a> Parser<'a> {
                 match self.peek() {
                     Bind => {
                         self.next();
-                        Return::Bind(self.spec()?)
+                        let mut needs = Vec::new();
+                        loop {
+                            if let Semi | LBrace = self.peek() {
+                                break;
+                            }
+                            needs.push(self.need()?);
+                            if let Comma = self.peek() {
+                                self.next();
+                            }
+                        }
+                        Return::Bind(IdRange::new(&mut self.tree.needs, needs))
                     }
                     _ => Return::Type(self.ty_id()?),
                 }
