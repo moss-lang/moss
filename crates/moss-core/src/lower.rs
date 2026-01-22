@@ -1053,7 +1053,13 @@ impl<'a> Lower<'a> {
                 };
                 Ok(self.ty(ty))
             }
-            parse::Type::Tuple(elements) => todo!(),
+            parse::Type::Tuple(elems) => {
+                let lowered = elems
+                    .into_iter()
+                    .map(|elem| self.parse_ty(elem))
+                    .collect::<LowerResult<Vec<TypeId>>>()?;
+                Ok(self.ty_tuple(&lowered))
+            }
             parse::Type::Record(members) => todo!(),
         }
     }
