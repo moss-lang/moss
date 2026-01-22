@@ -163,11 +163,11 @@ fn uint64_mul[Bootstrap](x: I64, y: I64): I64 {
 }
 
 fn uint64_div[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_div(x, y) # TODO: Check for overflow.
+  wasm::i64_div_u(x, y) # TODO: Check for overflow.
 }
 
 fn uint64_rem[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_rem(x, y) # TODO: Check for overflow.
+  wasm::i64_rem_u(x, y) # TODO: Check for overflow.
 }
 
 fn int64_add[Bootstrap](x: I64, y: I64): I64 {
@@ -183,11 +183,11 @@ fn int64_mul[Bootstrap](x: I64, y: I64): I64 {
 }
 
 fn int64_div[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_div(x, y) # TODO: Check for overflow.
+  wasm::i64_div_s(x, y) # TODO: Check for overflow.
 }
 
 fn int64_rem[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_rem(x, y) # TODO: Check for overflow.
+  wasm::i64_rem_s(x, y) # TODO: Check for overflow.
 }
 
 fn int64_neg[Bootstrap](x: I64): I64 {
