@@ -1,4 +1,5 @@
 use std::{
+    backtrace::Backtrace,
     collections::{BTreeMap, HashMap},
     fmt,
     mem::take,
@@ -565,8 +566,9 @@ impl fmt::Display for FatType<'_, '_> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub enum LowerError {
+    Todo(TokenId, Backtrace),
     Undefined(TokenId),
     NotModule(TokenId),
     NotType(TokenId),
@@ -596,6 +598,13 @@ impl LowerError {
     ) -> (Option<Inclusive>, String) {
         let ctx = ErrorCtx { tree, ir };
         match self {
+            LowerError::Todo(token, backtrace) => (
+                Some(Inclusive {
+                    first: token,
+                    last: token,
+                }),
+                format!("TODO\n{backtrace}"),
+            ),
             LowerError::Undefined(token) => (
                 Some(Inclusive {
                     first: token,
@@ -703,6 +712,10 @@ struct Lower<'a> {
 }
 
 impl<'a> Lower<'a> {
+    fn todo(&self, token: TokenId) -> LowerError {
+        LowerError::Todo(token, Backtrace::capture())
+    }
+
     fn slice(&self, token: TokenId) -> &'a str {
         &self.source[relex(self.source, self.starts, token)]
     }
@@ -1074,7 +1087,7 @@ impl<'a> Lower<'a> {
             result: match fndef.result {
                 parse::Return::Unit => self.ty_unit(),
                 parse::Return::Type(ty) => self.parse_ty(ty)?,
-                parse::Return::Bind(_) => todo!(),
+                parse::Return::Bind(spec) => return Err(self.todo(spec.path.last)),
             },
         })
     }
