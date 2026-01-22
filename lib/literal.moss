@@ -168,6 +168,12 @@ fn int64_realize_int[
   static literal_int64[LiteralInt64],
 ](): Int;
 
+fn uint_realize_int[
+  LiteralUint,
+  Int,
+  static literal_uint[LiteralUint],
+](): Int;
+
 fn int_realize_int[
   LiteralInt,
   Int,

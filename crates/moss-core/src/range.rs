@@ -11,7 +11,7 @@ pub struct Inclusive {
     pub last: TokenId,
 }
 
-fn single(token: TokenId) -> Inclusive {
+pub fn single(token: TokenId) -> Inclusive {
     Inclusive {
         first: token,
         last: token,

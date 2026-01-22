@@ -13,7 +13,7 @@ use crate::{
     lex::{TokenId, TokenStarts, relex, string},
     parse::{self, Binop, Block, Expr, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
     prelude::Base,
-    range::{Inclusive, expr_range, path_range},
+    range::{Inclusive, expr_range, path_range, single},
     tuples::{TupleRange, Tuples},
     util::IdRange,
 };
@@ -595,6 +595,12 @@ pub enum LowerError {
     BindAlias(parse::BindId),
     BindMismatch(parse::BindId),
     LitNotVal(TokenId),
+    Uint32High(TokenId),
+    Int32Low(TokenId),
+    Int32High(TokenId),
+    Uint64High(TokenId),
+    Int64Low(TokenId),
+    Int64High(TokenId),
     ExpectedType(TypeId, ExprId, TypeId),
     ThisNotMethod(ExprId),
     Overflow(ExprId),
@@ -612,55 +618,17 @@ impl LowerError {
     ) -> (Option<Inclusive>, String) {
         let ctx = ErrorCtx { tree, ir };
         match self {
-            LowerError::Todo(token, backtrace) => (
-                Some(Inclusive {
-                    first: token,
-                    last: token,
-                }),
-                format!("TODO\n{backtrace}"),
-            ),
-            LowerError::Undefined(token) => (
-                Some(Inclusive {
-                    first: token,
-                    last: token,
-                }),
-                "undefined".to_owned(),
-            ),
-            LowerError::NotModule(token) => (
-                Some(Inclusive {
-                    first: token,
-                    last: token,
-                }),
-                "not a module".to_owned(),
-            ),
-            LowerError::NotType(token) => (
-                Some(Inclusive {
-                    first: token,
-                    last: token,
-                }),
-                "not a type".to_owned(),
-            ),
-            LowerError::NotNominal(token) => (
-                Some(Inclusive {
-                    first: token,
-                    last: token,
-                }),
-                "not a nominal type".to_owned(),
-            ),
-            LowerError::NotVal(token) => (
-                Some(Inclusive {
-                    first: token,
-                    last: token,
-                }),
-                "not a value".to_owned(),
-            ),
-            LowerError::NotContext(token) => (
-                Some(Inclusive {
-                    first: token,
-                    last: token,
-                }),
-                "not a piece of context".to_owned(),
-            ),
+            LowerError::Todo(token, backtrace) => {
+                (Some(single(token)), format!("TODO\n{backtrace}"))
+            }
+            LowerError::Undefined(token) => (Some(single(token)), "undefined".to_owned()),
+            LowerError::NotModule(token) => (Some(single(token)), "not a module".to_owned()),
+            LowerError::NotType(token) => (Some(single(token)), "not a type".to_owned()),
+            LowerError::NotNominal(token) => (Some(single(token)), "not a nominal type".to_owned()),
+            LowerError::NotVal(token) => (Some(single(token)), "not a value".to_owned()),
+            LowerError::NotContext(token) => {
+                (Some(single(token)), "not a piece of context".to_owned())
+            }
             LowerError::BindContext(bind) => (
                 Some(ctx.bind(bind)),
                 "cannot rebind a composite context".to_owned(),
@@ -678,11 +646,32 @@ impl LowerError {
             ),
             LowerError::BindMismatch(bind) => (Some(ctx.bind(bind)), "mismatched kind".to_owned()),
             LowerError::LitNotVal(token) => (
-                Some(Inclusive {
-                    first: token,
-                    last: token,
-                }),
+                Some(single(token)),
                 "cannot bind a literal for something other than a `val`".to_owned(),
+            ),
+            LowerError::Uint32High(token) => (
+                Some(single(token)),
+                "too high to fit in 32-bit unsigned integer".to_owned(),
+            ),
+            LowerError::Int32Low(token) => (
+                Some(single(token)),
+                "too low to fit in 32-bit signed integer".to_owned(),
+            ),
+            LowerError::Int32High(token) => (
+                Some(single(token)),
+                "too high to fit in 32-bit signed integer".to_owned(),
+            ),
+            LowerError::Uint64High(token) => (
+                Some(single(token)),
+                "too high to fit in 64-bit unsigned integer".to_owned(),
+            ),
+            LowerError::Int64Low(token) => (
+                Some(single(token)),
+                "too low to fit in 64-bit signed integer".to_owned(),
+            ),
+            LowerError::Int64High(token) => (
+                Some(single(token)),
+                "too high to fit in 64-bit signed integer".to_owned(),
             ),
             LowerError::ExpectedType(expected, expr, actual) => (
                 Some(ctx.expr(expr)),
@@ -1308,31 +1297,149 @@ impl Body<'_, '_> {
     fn expr(&mut self, expr: ExprId) -> LowerResult<LocalId> {
         match self.x.tree.exprs[expr] {
             Expr::Lit(token) => {
+                let Base {
+                    types,
+                    lit_types,
+                    lits,
+                } = self.base();
+                let (tydef_lit, tydef, fndef) = match self.x.lit(token)? {
+                    // Unreachable cases.
+                    (Val::Opaque(_, _), _) => unreachable!(),
+                    (
+                        Val::Uint31(_)
+                        | Val::Uint32(_)
+                        | Val::Int32(_)
+                        | Val::Uint63(_)
+                        | Val::Uint64(_)
+                        | Val::Int64(_)
+                        | Val::Uint(_)
+                        | Val::Int(_),
+                        None,
+                    ) => unreachable!(),
+                    (Val::Char(_) | Val::String(_), Some(_)) => unreachable!(),
+                    (
+                        Val::Int32(_) | Val::Int64(_) | Val::Int(_),
+                        Some(IntType::Uint32 | IntType::Uint64 | IntType::Uint),
+                    ) => unreachable!(),
+
+                    // Integer literals ending in `u32`.
+                    (Val::Uint31(_), Some(IntType::Uint32)) => {
+                        (lit_types.uint31, types.uint32, lits.uint31_realize_uint32)
+                    }
+                    (Val::Uint32(_), Some(IntType::Uint32)) => {
+                        (lit_types.uint32, types.uint32, lits.uint32_realize_uint32)
+                    }
+                    (Val::Uint63(_) | Val::Uint64(_) | Val::Uint(_), Some(IntType::Uint32)) => {
+                        return Err(LowerError::Uint32High(token));
+                    }
+
+                    // Integer literals ending in `i32`.
+                    (Val::Uint31(_), Some(IntType::Int32)) => {
+                        (lit_types.uint31, types.int32, lits.uint31_realize_int32)
+                    }
+                    (Val::Int32(_), Some(IntType::Int32)) => {
+                        (lit_types.int32, types.int32, lits.int32_realize_int32)
+                    }
+                    (Val::Int64(_) | Val::Int(_), Some(IntType::Int32)) => {
+                        return Err(LowerError::Int32Low(token));
+                    }
+                    (
+                        Val::Uint32(_) | Val::Uint63(_) | Val::Uint64(_) | Val::Uint(_),
+                        Some(IntType::Int32),
+                    ) => {
+                        return Err(LowerError::Int32High(token));
+                    }
+
+                    // Integer literals ending in `u64`.
+                    (Val::Uint31(_), Some(IntType::Uint64)) => {
+                        (lit_types.uint31, types.uint64, lits.uint31_realize_uint64)
+                    }
+                    (Val::Uint32(_), Some(IntType::Uint64)) => {
+                        (lit_types.uint32, types.uint64, lits.uint32_realize_uint64)
+                    }
+                    (Val::Uint63(_), Some(IntType::Uint64)) => {
+                        (lit_types.uint63, types.uint64, lits.uint63_realize_uint64)
+                    }
+                    (Val::Uint64(_), Some(IntType::Uint64)) => {
+                        (lit_types.uint64, types.uint64, lits.uint64_realize_uint64)
+                    }
+                    (Val::Uint(_), Some(IntType::Uint64)) => {
+                        return Err(LowerError::Uint64High(token));
+                    }
+
+                    // Integer literals ending in `i64`.
+                    (Val::Uint31(_), Some(IntType::Int64)) => {
+                        (lit_types.uint31, types.int64, lits.uint31_realize_int64)
+                    }
+                    (Val::Uint32(_), Some(IntType::Int64)) => {
+                        (lit_types.uint32, types.int64, lits.uint32_realize_int64)
+                    }
+                    (Val::Int32(_), Some(IntType::Int64)) => {
+                        (lit_types.int32, types.int64, lits.int32_realize_int64)
+                    }
+                    (Val::Uint63(_), Some(IntType::Int64)) => {
+                        (lit_types.uint63, types.int64, lits.uint63_realize_int64)
+                    }
+                    (Val::Int64(_), Some(IntType::Int64)) => {
+                        (lit_types.int64, types.int64, lits.int64_realize_int64)
+                    }
+                    (Val::Int(_), Some(IntType::Int64)) => return Err(LowerError::Int64Low(token)),
+                    (Val::Uint64(_) | Val::Uint(_), Some(IntType::Int64)) => {
+                        return Err(LowerError::Int64High(token));
+                    }
+
+                    // Integer literals ending in `u`.
+                    (Val::Uint31(_), Some(IntType::Uint)) => {
+                        (lit_types.uint31, types.uint, lits.uint31_realize_uint)
+                    }
+                    (Val::Uint32(_), Some(IntType::Uint)) => {
+                        (lit_types.uint32, types.uint, lits.uint32_realize_uint)
+                    }
+                    (Val::Uint63(_), Some(IntType::Uint)) => {
+                        (lit_types.uint63, types.uint, lits.uint63_realize_uint)
+                    }
+                    (Val::Uint64(_), Some(IntType::Uint)) => {
+                        (lit_types.uint64, types.uint, lits.uint64_realize_uint)
+                    }
+                    (Val::Uint(_), Some(IntType::Uint)) => {
+                        (lit_types.uint, types.uint, lits.uint_realize_uint)
+                    }
+
+                    // Integer literals with no suffix.
+                    (Val::Uint31(_), Some(IntType::Int)) => {
+                        (lit_types.uint31, types.int, lits.uint31_realize_int)
+                    }
+                    (Val::Uint32(_), Some(IntType::Int)) => {
+                        (lit_types.uint32, types.int, lits.uint32_realize_int)
+                    }
+                    (Val::Int32(_), Some(IntType::Int)) => {
+                        (lit_types.int32, types.int, lits.int32_realize_int)
+                    }
+                    (Val::Uint63(_), Some(IntType::Int)) => {
+                        (lit_types.uint63, types.int, lits.uint63_realize_int)
+                    }
+                    (Val::Uint64(_), Some(IntType::Int)) => {
+                        (lit_types.uint64, types.int, lits.uint64_realize_int)
+                    }
+                    (Val::Int64(_), Some(IntType::Int)) => {
+                        (lit_types.int64, types.int, lits.int64_realize_int)
+                    }
+                    (Val::Uint(_), Some(IntType::Int)) => {
+                        (lit_types.uint, types.int, lits.uint_realize_int)
+                    }
+                    (Val::Int(_), Some(IntType::Int)) => {
+                        (lit_types.int, types.int, lits.int_realize_int)
+                    }
+
+                    // Other literals.
+                    (Val::Char(_), None) => (lit_types.char, types.char, lits.char_realize),
+                    (Val::String(_), None) => (lit_types.string, types.string, lits.string_realize),
+                };
+                // TODO: Bind the actual literal itself.
+                let ty_result = self.x.ty(Type::Opaque(tydef, self.x.ir.empty_ctx()));
                 let ty_unit = self.x.ty_unit();
                 let arg = self.instr_tuple(ty_unit, &[]);
-                let (val, int_type) = self.x.lit(token)?;
-                match val {
-                    Val::Opaque(_, _) => unreachable!(),
-                    Val::Uint31(_) => todo!(),
-                    Val::Uint32(_) => todo!(),
-                    Val::Int32(_) => todo!(),
-                    Val::Uint63(_) => todo!(),
-                    Val::Uint64(_) => todo!(),
-                    Val::Int64(_) => todo!(),
-                    Val::Uint(_) => todo!(),
-                    Val::Int(_) => todo!(),
-                    Val::Char(_) => todo!(),
-                    Val::String(string) => {
-                        let ty_result = self.x.ty(Type::Opaque(
-                            self.base().types.string,
-                            self.x.ir.empty_ctx(),
-                        ));
-                        let fndef = self.base().lits.string_realize;
-                        // TODO: Bind `literal_string`.
-                        let call = self.instr(ty_result, Instr::Call(fndef, arg));
-                        Ok(call)
-                    }
-                }
+                Ok(self.instr(ty_result, Instr::Call(fndef, arg)))
             }
             Expr::Path(path) => {
                 let name = self.x.name(path.last);
