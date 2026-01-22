@@ -147,6 +147,9 @@ impl Ctx {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
+    /// Not a type for values, but rather a specific binding for a context.
+    Bind(CtxId),
+
     /// An instance of an opaque type symbol in a specific context.
     Opaque(TydefId, CtxId),
 
@@ -557,6 +560,7 @@ struct FatType<'a, 'b> {
 impl fmt::Display for FatType<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.ctx.ir.types[self.id.index()] {
+            Type::Bind(_) => write!(f, "a binding"),
             Type::Opaque(_, _) => write!(f, "an opaque type"),
             Type::Nominal(_, _) => write!(f, "a nominal type"),
             Type::Alias(_, _) => write!(f, "a type alias"),
@@ -1087,7 +1091,10 @@ impl<'a> Lower<'a> {
             result: match fndef.result {
                 parse::Return::Unit => self.ty_unit(),
                 parse::Return::Type(ty) => self.parse_ty(ty)?,
-                parse::Return::Bind(spec) => return Err(self.todo(spec.path.last)),
+                parse::Return::Bind(needs) => {
+                    let ctx = self.needs(needs)?;
+                    self.ty(Type::Bind(ctx))
+                }
             },
         })
     }

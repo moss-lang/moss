@@ -305,6 +305,7 @@ impl<'a> Wasm<'a> {
     /// Execute `f` for each Wasm type needed to represent `ty` in the current context.
     fn layout(&self, fill: Fill, ty: TypeId, f: &mut impl FnMut(ValType)) {
         match self.ir.ty(ty) {
+            Type::Bind(_) => todo!(),
             Type::Opaque(tydef, ctx) => {
                 let context = self.ir.ctx(fill.ctx);
                 match self.slots[fill.slots][context.index_ty(tydef, ctx)] {
