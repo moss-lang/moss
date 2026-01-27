@@ -191,7 +191,7 @@ pub enum Expr {
     Record(TokenId, IdRange<FieldId>, TokenId),
     Field(ExprId, TokenId),
     Method(ExprId, TokenId, IdRange<ExprId>),
-    Call(Path, IdRange<BindId>, IdRange<ExprId>),
+    Call(Path, IdRange<BindId>, IdRange<ExprId>), // Should this be `BindingId` instead of `BindId`?
     Unary(Unop, ExprId),
     Binary(ExprId, Binop, ExprId),
     If(ExprId, Block, Option<Block>),

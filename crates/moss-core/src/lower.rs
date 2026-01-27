@@ -27,6 +27,10 @@ define_index_type! {
 }
 
 define_index_type! {
+    pub struct SlotId = u32;
+}
+
+define_index_type! {
     pub struct TypeId = u32;
 }
 
@@ -101,12 +105,14 @@ pub enum Slot {
     Ctx(CtxdefId, CtxId),
 }
 
+pub type Entries<T> = im_rc::HashMap<CtxId, T>;
+
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Ctx {
-    pub tys: im_rc::HashMap<TydefId, im_rc::HashMap<CtxId, Option<TypeId>>>,
-    pub fns: im_rc::HashMap<FndefId, im_rc::HashMap<CtxId, Option<Fn>>>,
-    pub vals: im_rc::HashMap<ValdefId, im_rc::HashMap<CtxId, Option<Val>>>,
-    pub ctxs: im_rc::HashMap<CtxdefId, im_rc::HashSet<CtxId>>,
+    pub tys: im_rc::HashMap<TydefId, Entries<Option<TypeId>>>,
+    pub fns: im_rc::HashMap<FndefId, Entries<Option<Fn>>>,
+    pub vals: im_rc::HashMap<ValdefId, Entries<Option<Val>>>,
+    pub ctxs: im_rc::HashMap<CtxdefId, Entries<()>>,
 }
 
 impl Ctx {
@@ -587,6 +593,7 @@ pub enum LowerError {
     NotModule(TokenId),
     NotType(TokenId),
     NotNominal(TokenId),
+    NotFn(TokenId),
     NotVal(TokenId),
     NotContext(TokenId),
     BindContext(parse::BindId),
@@ -605,6 +612,7 @@ pub enum LowerError {
     ThisNotMethod(ExprId),
     Overflow(ExprId),
     ArgCount(ExprId),
+    BindMissing(parse::BindId),
 }
 
 impl LowerError {
@@ -626,6 +634,7 @@ impl LowerError {
             LowerError::NotType(token) => (Some(single(token)), "not a type".to_owned()),
             LowerError::NotNominal(token) => (Some(single(token)), "not a nominal type".to_owned()),
             LowerError::NotVal(token) => (Some(single(token)), "not a value".to_owned()),
+            LowerError::NotFn(token) => (Some(single(token)), "not a function".to_owned()),
             LowerError::NotContext(token) => {
                 (Some(single(token)), "not a piece of context".to_owned())
             }
@@ -685,6 +694,10 @@ impl LowerError {
             LowerError::ArgCount(expr) => {
                 (Some(ctx.expr(expr)), "wrong number of arguments".to_owned())
             }
+            LowerError::BindMissing(bind) => (
+                Some(ctx.bind(bind)),
+                "`bind` missing an actual binding".to_owned(),
+            ),
         }
     }
 }
@@ -844,6 +857,18 @@ impl<'a> Lower<'a> {
             Some(fndef)
         } else {
             None
+        }
+    }
+
+    /// Return the most specific key from `entries` that is compatible with the given `ctx`.
+    ///
+    /// If there is no unique most specific key, an error is returned.
+    fn best_fit<T>(&mut self, entries: &Entries<T>, ctx: CtxId) -> LowerResult<CtxId> {
+        if entries.len() == 1 {
+            let &key = entries.keys().next().unwrap(); // TODO: Even this case is already wrong.
+            Ok(key)
+        } else {
+            todo!()
         }
     }
 
@@ -1027,7 +1052,7 @@ impl<'a> Lower<'a> {
                     ctx.vals.entry(valdef).or_default().insert(ctx1, None);
                 }
                 Named::Ctxdef(ctxdef) => {
-                    ctx.ctxs.entry(ctxdef).or_default().insert(ctx1);
+                    ctx.ctxs.entry(ctxdef).or_default().insert(ctx1, ());
                 }
                 Named::Module(_) => return Err(LowerError::BindModule(bind)),
                 Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
@@ -1294,6 +1319,20 @@ impl Body<'_, '_> {
         self.instr(ty, Instr::Record(ty, IdRange { start, end }))
     }
 
+    fn extract_ty(&mut self, tydef: TydefId, ctx: CtxId) -> LowerResult<(LocalId, SlotId)> {
+        let context = self.x.ir.ctx(ctx);
+        let _ = self.x.best_fit(&context.tys[&tydef], ctx)?;
+        todo!()
+    }
+
+    fn extract_fn(&mut self, fndef: FndefId, ctx: CtxId) -> LowerResult<(LocalId, SlotId)> {
+        todo!()
+    }
+
+    fn extract_val(&mut self, valdef: ValdefId, ctx: CtxId) -> LowerResult<(LocalId, SlotId)> {
+        todo!()
+    }
+
     fn expr(&mut self, expr: ExprId) -> LowerResult<LocalId> {
         match self.x.tree.exprs[expr] {
             Expr::Lit(token) => {
@@ -1518,7 +1557,7 @@ impl Body<'_, '_> {
             }
             Expr::Call(callee, binds, args) => {
                 let Named::Fndef(fndef) = self.x.path(callee)? else {
-                    return Err(LowerError::Undefined(callee.last));
+                    return Err(LowerError::NotFn(callee.last));
                 };
                 let Fndef {
                     ctx: _,
@@ -1582,7 +1621,71 @@ impl Body<'_, '_> {
                 }
                 Ok(self.instr(ty, Instr::EndIf(local)))
             }
-            Expr::Bind(_, bindings) => todo!(),
+            Expr::Bind(_, bindings) => {
+                let mut context = Ctx::default();
+                for binding in bindings {
+                    match self.x.tree.bindings[binding] {
+                        parse::Binding::Single(bind) => {
+                            let parse::Bind { key, val } = self.x.tree.binds[bind];
+                            if val.is_none() {
+                                // Should we instead use this syntax to allow for binding a context
+                                // which has previously been assigned to a local variable?
+                                return Err(LowerError::BindMissing(bind));
+                            }
+                            self.x.bind(&mut context, bind)?;
+                            let parse::Bind { key, val } = self.x.tree.binds[bind];
+                            let (lhs, ctx1) = self.x.spec(key)?;
+                            match val {
+                                // Should we instead use this syntax to allow for binding a context
+                                // which has previously been assigned to a local variable?
+                                None => return Err(LowerError::BindMissing(bind)),
+                                Some(parse::Entry::Lit(token)) => todo!(),
+                                Some(parse::Entry::Ref(spec)) => {
+                                    let (rhs, ctx2) = self.x.spec(spec)?;
+                                    match (lhs, rhs) {
+                                        (Named::Tydef(tydef), Named::Tydef(def)) => {
+                                            let (local, slot) = self.extract_ty(def, ctx2)?;
+                                            todo!();
+                                        }
+                                        (Named::Tydef(tydef), Named::Tagdef(def)) => {
+                                            todo!();
+                                        }
+                                        (Named::Tydef(tydef), Named::Aliasdef(def)) => {
+                                            todo!();
+                                        }
+                                        (Named::Fndef(fndef), Named::Fndef(def)) => {
+                                            let (local, slot) = self.extract_fn(def, ctx2)?;
+                                            todo!();
+                                        }
+                                        (Named::Valdef(valdef), Named::Valdef(def)) => {
+                                            let (local, slot) = self.extract_val(def, ctx2)?;
+                                            todo!();
+                                        }
+                                        (Named::Ctxdef(_), _) => {
+                                            return Err(LowerError::BindContext(bind));
+                                        }
+                                        (Named::Module(_), _) => {
+                                            return Err(LowerError::BindModule(bind));
+                                        }
+                                        (Named::Tagdef(_), _) => {
+                                            return Err(LowerError::BindNominal(bind));
+                                        }
+                                        (Named::Aliasdef(_), _) => {
+                                            return Err(LowerError::BindAlias(bind));
+                                        }
+                                        _ => return Err(LowerError::BindMismatch(bind)),
+                                    }
+                                }
+                            }
+                        }
+                        parse::Binding::Composite(expr) => {
+                            let local = self.expr(expr)?;
+                            todo!();
+                        }
+                    }
+                }
+                todo!()
+            }
         }
     }
 
