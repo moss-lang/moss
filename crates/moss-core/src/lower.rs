@@ -151,6 +151,12 @@ impl Ctx {
     }
 }
 
+enum Query {
+    Missing,
+    Ambiguous,
+    Unique(CtxId),
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
     /// Not a type for values, but rather a specific binding for a context.
@@ -860,16 +866,24 @@ impl<'a> Lower<'a> {
         }
     }
 
+    fn more_specific(&self, lhs: CtxId, rhs: CtxId) -> bool {
+        todo!()
+    }
+
+    fn most_specific(&self, ctxs: impl IntoIterator<Item = CtxId>) -> Query {
+        todo!()
+    }
+
     /// Return the most specific key from `entries` that is compatible with the given `ctx`.
     ///
     /// If there is no unique most specific key, an error is returned.
-    fn best_fit<T>(&mut self, entries: &Entries<T>, ctx: CtxId) -> LowerResult<CtxId> {
-        if entries.len() == 1 {
-            let &key = entries.keys().next().unwrap(); // TODO: Even this case is already wrong.
-            Ok(key)
-        } else {
-            todo!()
-        }
+    fn best_fit<T>(&self, entries: &Entries<T>, ctx: CtxId) -> Query {
+        self.most_specific(
+            entries
+                .keys()
+                .copied()
+                .filter(|&key| self.more_specific(ctx, key)),
+        )
     }
 
     fn imports(&mut self) -> LowerResult<()> {
@@ -1321,7 +1335,8 @@ impl Body<'_, '_> {
 
     fn extract_ty(&mut self, tydef: TydefId, ctx: CtxId) -> LowerResult<(LocalId, SlotId)> {
         let context = self.x.ir.ctx(ctx);
-        let _ = self.x.best_fit(&context.tys[&tydef], ctx)?;
+        let _ = self.x.best_fit(&context.tys[&tydef], ctx);
+        context.ctxs.iter().map(|(&ctxdef, _)| todo!());
         todo!()
     }
 
