@@ -1,8 +1,10 @@
 use std::{
     backtrace::Backtrace,
+    cmp::Ordering,
     collections::{BTreeMap, HashMap},
     fmt,
     mem::take,
+    ops::Index,
 };
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
@@ -98,9 +100,13 @@ define_index_type! {
     pub struct RefId = u32;
 }
 
+define_index_type! {
+    pub struct DrillId = u32;
+}
+
 pub enum Slot {
     Ty(TydefId, CtxId, Option<TypeId>),
-    Fn(FndefId, CtxId, Option<Fn>),
+    Fn(FndefId, CtxId, Option<Func>),
     Val(ValdefId, CtxId, Option<Val>),
     Ctx(CtxdefId, CtxId),
 }
@@ -110,7 +116,7 @@ pub type Entries<T> = im_rc::HashMap<CtxId, T>;
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Ctx {
     pub tys: im_rc::HashMap<TydefId, Entries<Option<TypeId>>>,
-    pub fns: im_rc::HashMap<FndefId, Entries<Option<Fn>>>,
+    pub fns: im_rc::HashMap<FndefId, Entries<Option<Func>>>,
     pub vals: im_rc::HashMap<ValdefId, Entries<Option<Val>>>,
     pub ctxs: im_rc::HashMap<CtxdefId, Entries<()>>,
 }
@@ -151,11 +157,48 @@ impl Ctx {
     }
 }
 
-enum Query {
+enum Query<T> {
     Missing,
     Ambiguous,
-    Unique(CtxId),
+    Unique(T),
 }
+
+impl<T> Query<T> {
+    fn map<U>(self, f: impl FnOnce(T) -> U) -> Query<U> {
+        match self {
+            Query::Missing => Query::Missing,
+            Query::Ambiguous => Query::Ambiguous,
+            Query::Unique(x) => Query::Unique(f(x)),
+        }
+    }
+}
+
+impl<T: Copy> Query<T> {
+    fn combine(self, other: Self, f: impl FnOnce(T, T) -> Option<Ordering>) -> Self {
+        match (self, other) {
+            (Query::Missing, Query::Missing) => Query::Missing,
+            // TODO: This is actually incorrect, since even if one part of a query turns up
+            // ambiguous, another part may turn up an answer that's strictly better than all the
+            // possible choices from the first part; but we don't track enough information to know
+            // whether or not that's the case. Is the right solution to track more information from
+            // ambiguous queries so that we can handle this case with as much precision as possible?
+            // Or is the right solution to instead disallow ambiguous entries from coexisting within
+            // the same context at all, being stricter to simplify this query implementation?
+            (Query::Ambiguous, _) | (_, Query::Ambiguous) => Query::Ambiguous,
+            (Query::Unique(x), Query::Missing) | (Query::Missing, Query::Unique(x)) => {
+                Query::Unique(x)
+            }
+            (Query::Unique(x), Query::Unique(y)) => match f(x, y) {
+                None => Query::Ambiguous,
+                Some(Ordering::Greater | Ordering::Equal) => Query::Unique(x),
+                Some(Ordering::Less) => Query::Unique(y),
+            },
+        }
+    }
+}
+
+/// A path from one context downward into a context it contains.
+type Drill = Option<(SlotId, DrillId)>;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Type {
@@ -220,7 +263,7 @@ impl Type {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Fn {
+pub struct Func {
     pub ctx: CtxId,
     pub def: FndefId,
 }
@@ -731,6 +774,15 @@ struct Lower<'a> {
     funcs: Vec<(parse::FuncdefId, FndefId)>,
     attaches: Vec<(parse::AttachdefId, TagdefId, FndefId)>,
     detaches: Vec<(parse::DetachdefId, FndefId)>,
+    drills: IndexSet<Drill>,
+}
+
+impl<'a> Index<DrillId> for Lower<'a> {
+    type Output = Drill;
+
+    fn index(&self, index: DrillId) -> &Self::Output {
+        &self.drills[index.index()]
+    }
 }
 
 impl<'a> Lower<'a> {
@@ -795,6 +847,15 @@ impl<'a> Lower<'a> {
 
     fn ctx(&mut self, ctx: Ctx) -> CtxId {
         self.ir.make_ctx(ctx)
+    }
+
+    fn empty_drill(&self) -> DrillId {
+        DrillId::from_usize(self.drills.get_index_of(&None).unwrap())
+    }
+
+    fn drill(&mut self, drill: Drill) -> DrillId {
+        let (i, _) = self.drills.insert_full(drill);
+        DrillId::from_usize(i)
     }
 
     fn ty(&mut self, ty: Type) -> TypeId {
@@ -870,20 +931,34 @@ impl<'a> Lower<'a> {
         todo!()
     }
 
-    fn most_specific(&self, ctxs: impl IntoIterator<Item = CtxId>) -> Query {
+    /// Compare two contexts on specificity, so [`Ordering::Greater`] means more specific.
+    fn cmp_ctx(&self, lhs: CtxId, rhs: CtxId) -> Option<Ordering> {
+        match (self.more_specific(lhs, rhs), self.more_specific(rhs, lhs)) {
+            (true, true) => Some(Ordering::Equal),
+            (true, false) => Some(Ordering::Greater),
+            (false, true) => Some(Ordering::Less),
+            (false, false) => None,
+        }
+    }
+
+    fn most_specific(&self, ctxs: impl IntoIterator<Item = CtxId>) -> Query<CtxId> {
         todo!()
     }
 
     /// Return the most specific key from `entries` that is compatible with the given `ctx`.
     ///
     /// If there is no unique most specific key, an error is returned.
-    fn best_fit<T>(&self, entries: &Entries<T>, ctx: CtxId) -> Query {
+    fn best_fit<T>(&self, entries: &Entries<T>, ctx: CtxId) -> Query<CtxId> {
         self.most_specific(
             entries
                 .keys()
                 .copied()
                 .filter(|&key| self.more_specific(ctx, key)),
         )
+    }
+
+    fn substitute(&self, param: CtxId, body: CtxId, arg: CtxId) -> CtxId {
+        todo!()
     }
 
     fn imports(&mut self) -> LowerResult<()> {
@@ -1095,7 +1170,7 @@ impl<'a> Lower<'a> {
                         ctx.tys.entry(tydef).or_default().insert(ctx1, Some(ty));
                     }
                     (Named::Fndef(fndef), Named::Fndef(def)) => {
-                        let f = Fn { ctx: ctx2, def };
+                        let f = Func { ctx: ctx2, def };
                         ctx.fns.entry(fndef).or_default().insert(ctx1, Some(f));
                     }
                     (Named::Valdef(valdef), Named::Valdef(def)) => {
@@ -1333,18 +1408,54 @@ impl Body<'_, '_> {
         self.instr(ty, Instr::Record(ty, IdRange { start, end }))
     }
 
-    fn extract_ty(&mut self, tydef: TydefId, ctx: CtxId) -> LowerResult<(LocalId, SlotId)> {
+    fn extract<T>(
+        &mut self,
+        ctx: CtxId,
+        def: impl Copy + Fn(&Ctx) -> &Entries<T>,
+        args: CtxId,
+    ) -> Query<(DrillId, CtxId)> {
         let context = self.x.ir.ctx(ctx);
-        let _ = self.x.best_fit(&context.tys[&tydef], ctx);
-        context.ctxs.iter().map(|(&ctxdef, _)| todo!());
+        let mut best = self
+            .x
+            .best_fit(def(context), args)
+            .map(|key| (self.x.empty_drill(), key));
+        // TODO: Do this without allocating a `Vec`.
+        let children = Vec::from_iter(
+            context
+                .ctxs
+                .iter()
+                .map(|(&ctxdef, entries)| (self.x.ir.ctxdefs[ctxdef], entries))
+                .flat_map(|(ctxdef, entries)| {
+                    let this = &self;
+                    entries
+                        .iter()
+                        .map(move |(&arg, ())| this.x.substitute(ctxdef.ctx, ctxdef.def, arg))
+                }),
+        );
+        // TODO: Do this without allocating a `Vec`.
+        for query in Vec::from_iter(
+            children
+                .into_iter()
+                .map(|child| self.extract(child, def, args)),
+        ) {
+            best = best.combine(query, |(_, lhs), (_, rhs)| self.x.cmp_ctx(lhs, rhs))
+        }
+        best
+    }
+
+    fn extract_ty(&mut self, tydef: TydefId, args: CtxId) -> LowerResult<(LocalId, SlotId)> {
+        match self.extract(self.ctx, |context| &context.tys[&tydef], args) {
+            Query::Missing => todo!(),
+            Query::Ambiguous => todo!(),
+            Query::Unique(_) => todo!(),
+        }
+    }
+
+    fn extract_fn(&mut self, fndef: FndefId, args: CtxId) -> LowerResult<(LocalId, SlotId)> {
         todo!()
     }
 
-    fn extract_fn(&mut self, fndef: FndefId, ctx: CtxId) -> LowerResult<(LocalId, SlotId)> {
-        todo!()
-    }
-
-    fn extract_val(&mut self, valdef: ValdefId, ctx: CtxId) -> LowerResult<(LocalId, SlotId)> {
+    fn extract_val(&mut self, valdef: ValdefId, args: CtxId) -> LowerResult<(LocalId, SlotId)> {
         todo!()
     }
 
@@ -1803,6 +1914,8 @@ pub fn lower(
 ) -> LowerResult<ModuleId> {
     assert_eq!(tree.imports.len(), imports.len());
     let module = ir.modules.push(());
+    let mut drills = IndexSet::new();
+    drills.insert(None);
     let mut lower = Lower {
         source,
         starts,
@@ -1824,6 +1937,7 @@ pub fn lower(
         funcs: Vec::new(),
         attaches: Vec::new(),
         detaches: Vec::new(),
+        drills,
     };
     lower.program()?;
     Ok(module)
