@@ -1411,14 +1411,17 @@ impl Body<'_, '_> {
     fn extract<T>(
         &mut self,
         ctx: CtxId,
-        def: impl Copy + Fn(&Ctx) -> &Entries<T>,
+        def: impl Copy + Fn(&Ctx) -> Option<&Entries<T>>,
         args: CtxId,
     ) -> Query<(DrillId, CtxId)> {
         let context = self.x.ir.ctx(ctx);
-        let mut best = self
-            .x
-            .best_fit(def(context), args)
-            .map(|key| (self.x.empty_drill(), key));
+        let mut best = match def(context) {
+            None => Query::Missing,
+            Some(entries) => self
+                .x
+                .best_fit(entries, args)
+                .map(|key| (self.x.empty_drill(), key)),
+        };
         // TODO: Do this without allocating a `Vec`.
         let children = Vec::from_iter(
             context
@@ -1444,7 +1447,7 @@ impl Body<'_, '_> {
     }
 
     fn extract_ty(&mut self, tydef: TydefId, args: CtxId) -> LowerResult<(LocalId, SlotId)> {
-        match self.extract(self.ctx, |context| &context.tys[&tydef], args) {
+        match self.extract(self.ctx, |context| context.tys.get(&tydef), args) {
             Query::Missing => todo!(),
             Query::Ambiguous => todo!(),
             Query::Unique(_) => todo!(),
