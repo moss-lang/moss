@@ -26,6 +26,16 @@ define_index_type! {
 }
 
 define_index_type! {
+    /// The index of a [`StaticInstr`] in the `statics` field of the [`IR`].
+    pub struct StaticId = u32;
+}
+
+define_index_type! {
+    /// The index of a [`StaticId`] in the `items` field of the [`IR`].
+    pub struct ItemId = u32;
+}
+
+define_index_type! {
     /// The index of a [`Ctx`] in the `ctxs` field of the [`IR`].
     pub struct CtxId = u32;
 }
@@ -93,6 +103,50 @@ define_index_type! {
 define_index_type! {
     /// The index of a [`Drill`] in the `drills` field of the [`IR`].
     pub struct DrillId = u32;
+}
+
+/// An instruction in the static IR.
+///
+/// A sequence of static instructions is used to represent every `type` declaration, every `context`
+/// definition, every `fn` signature, and every `val` type. It is also used to represent the
+/// "contextual needs" that go in square brackets for each of those items.
+///
+/// For types, functions, and values, the static IR snippet will start with `Param`, use `Get` to
+/// access some slots from that context, perhaps use `Ctx` to construct intermediate contexts as
+/// necessary, and eventually return an item that it either extracted or perhaps constructed using
+/// `Tagdef`, `Tuple`, or `Record`.
+///
+/// For contexts, ...
+#[derive(Clone, Copy, Debug)]
+pub enum StaticInstr {
+    /// The parameter context.
+    Param,
+
+    /// A new context providing some number of slots.
+    Ctx(IdRange<ItemId>),
+
+    /// Need a contextual type parametrized by a specific context.
+    PieceTydef(TydefId, StaticId),
+
+    /// Need a contextual function parametrized by a specific context.
+    PieceFndef(FndefId, StaticId),
+
+    /// Need a contextual value parametrized by a specific context.
+    PieceValdef(ValdefId, StaticId),
+
+    /// Need a composite context parametrized by a specific context.
+    PieceCtxdef(CtxdefId, StaticId),
+
+    /// A nominal type parametrized by a specific context.
+    Tagdef(TagdefId, StaticId),
+
+    /// A structural tuple of other types.
+    Tuple(IdRange<ItemId>),
+
+    /// A structural record of other types.
+    Record(), // TODO
+
+    Get(StaticId, SlotId),
 }
 
 pub enum Slot {
@@ -431,6 +485,8 @@ pub enum Instr {
 pub struct IR {
     pub modules: IndexVec<ModuleId, ()>,
     pub strings: Strings,
+    pub statics: IndexVec<StaticId, StaticInstr>,
+    pub items: IndexVec<ItemId, StaticId>,
     pub ctxs: IndexSet<Ctx>,
     pub types: IndexSet<Type>,
     pub tuples: Tuples<TypeId>,
@@ -452,6 +508,8 @@ impl Default for IR {
         let mut ir = Self {
             modules: Default::default(),
             strings: Default::default(),
+            statics: Default::default(),
+            items: Default::default(),
             ctxs: Default::default(),
             types: Default::default(),
             tuples: Default::default(),
