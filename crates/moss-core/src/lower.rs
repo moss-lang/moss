@@ -21,86 +21,77 @@ use crate::{
 };
 
 define_index_type! {
+    /// The unique ID of a module, i.e. a source file, in the `modules` field of the [`IR`].
     pub struct ModuleId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Ctx`] in the `ctxs` field of the [`IR`].
     pub struct CtxId = u32;
 }
 
 define_index_type! {
+    /// The index of an output slot on a context.
     pub struct SlotId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Type`] in the `types` field of the [`IR`].
     pub struct TypeId = u32;
 }
 
 define_index_type! {
-    pub struct FnId = u32;
-}
-
-define_index_type! {
-    pub struct ValId = u32;
-}
-
-define_index_type! {
+    /// The index of an element in a tuple.
     pub struct ElemId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Tydef`] in the `tydefs` field of the [`IR`].
     pub struct TydefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Tagdef`] in the `tagdefs` field of the [`IR`].
     pub struct TagdefId = u32;
 }
 
 define_index_type! {
+    /// The index of an [`Aliasdef`] in the `aliasdefs` field of the [`IR`].
     pub struct AliasdefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Fndef`] in the `fndefs` field of the [`IR`].
     pub struct FndefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Valdef`] in the `valdefs` field of the [`IR`].
     pub struct ValdefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Ctxdef`] in the `ctxdefs` field of the [`IR`].
     pub struct CtxdefId = u32;
 }
 
 define_index_type! {
-    pub struct NeedTyId = u32;
-}
-
-define_index_type! {
-    pub struct NeedFnId = u32;
-}
-
-define_index_type! {
-    pub struct NeedValId = u32;
-}
-
-define_index_type! {
-    pub struct NeedCtxId = u32;
-}
-
-define_index_type! {
+    /// The index of a field in a record.
     pub struct FieldId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`TypeId`]/[`Instr`] in the `locals`/`instrs` field of the [`IR`].
     pub struct LocalId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`LocalId`] in the `refs` field of the [`IR`].
     pub struct RefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Drill`] in the `drills` field of the [`IR`].
     pub struct DrillId = u32;
 }
 
