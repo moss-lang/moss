@@ -22,9 +22,9 @@ lsp-types = "0.97"
 moss-core = { path = "crates/moss-core" }
 serde_json = "1"
 strum = "0.27"
-wasm-encoder = "0.243"
-wasmtime = "39"
-wasmtime-wasi = "39"
+wasm-encoder = "0.244"
+wasmtime = "41"
+wasmtime-wasi = "41"
 
 [profile.release-with-debug]
 inherits = "release"
