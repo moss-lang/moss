@@ -2,7 +2,6 @@ use std::{
     backtrace::Backtrace,
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
-    fmt,
     mem::take,
     ops::Index,
 };
@@ -16,7 +15,6 @@ use crate::{
     parse::{self, Binop, Block, Expr, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
     prelude::Base,
     range::{Inclusive, expr_range, path_range, single},
-    tuples::{TupleRange, Tuples},
     util::IdRange,
 };
 
@@ -36,6 +34,11 @@ define_index_type! {
 }
 
 define_index_type! {
+    /// The index of a [`StrId`] and [`StaticId`] in the `records` field of the [`IR`].
+    pub struct RecordId = u32;
+}
+
+define_index_type! {
     /// The index of a [`Ctx`] in the `ctxs` field of the [`IR`].
     pub struct CtxId = u32;
 }
@@ -43,11 +46,6 @@ define_index_type! {
 define_index_type! {
     /// The index of an output slot on a context.
     pub struct SlotId = u32;
-}
-
-define_index_type! {
-    /// The index of a [`Type`] in the `types` field of the [`IR`].
-    pub struct TypeId = u32;
 }
 
 define_index_type! {
@@ -144,62 +142,26 @@ pub enum StaticInstr {
     Tuple(IdRange<ItemId>),
 
     /// A structural record of other types.
-    Record(), // TODO
+    Record(IdRange<RecordId>),
 
     Get(StaticId, SlotId),
 }
 
-pub enum Slot {
-    Ty(TydefId, CtxId, Option<TypeId>),
-    Fn(FndefId, CtxId, Option<Func>),
-    Val(ValdefId, CtxId, Option<Val>),
-    Ctx(CtxdefId, CtxId),
+#[derive(Clone, Copy, Debug)]
+pub struct Static {
+    pub body: IdRange<StaticId>,
 }
 
-pub type Entries<T> = im_rc::HashMap<CtxId, T>;
+impl Static {
+    fn result(self) -> StaticId {
+        self.body.last().unwrap()
+    }
+}
 
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub struct Ctx {
-    pub tys: im_rc::HashMap<TydefId, Entries<Option<TypeId>>>,
-    pub fns: im_rc::HashMap<FndefId, Entries<Option<Func>>>,
-    pub vals: im_rc::HashMap<ValdefId, Entries<Option<Val>>>,
-    pub ctxs: im_rc::HashMap<CtxdefId, Entries<()>>,
-}
-
-impl Ctx {
-    pub fn len(&self) -> usize {
-        // TODO: Cache this.
-        let mut len = 0;
-        len += self.tys.values().map(|coll| coll.len()).sum::<usize>();
-        len += self.fns.values().map(|coll| coll.len()).sum::<usize>();
-        len += self.vals.values().map(|coll| coll.len()).sum::<usize>();
-        len += self.ctxs.values().map(|coll| coll.len()).sum::<usize>();
-        len
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn get(&self, index: usize) -> Slot {
-        todo!()
-    }
-
-    pub fn index_ty(&self, def: TydefId, ctx: CtxId) -> usize {
-        todo!()
-    }
-
-    pub fn index_fn(&self, def: FndefId, ctx: CtxId) -> usize {
-        todo!()
-    }
-
-    pub fn index_val(&self, def: ValdefId, ctx: CtxId) -> usize {
-        todo!()
-    }
-
-    pub fn index_ctx(&self, def: CtxdefId, ctx: CtxId) -> usize {
-        todo!()
-    }
+    pub param: Static,
+    pub def: Static,
 }
 
 enum Query<T> {
@@ -246,68 +208,6 @@ impl<T: Copy> Query<T> {
 type Drill = Option<(SlotId, DrillId)>;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Type {
-    /// Not a type for values, but rather a specific binding for a context.
-    Bind(CtxId),
-
-    /// An instance of an opaque type symbol in a specific context.
-    Opaque(TydefId, CtxId),
-
-    /// An inner type made nominal via an outer tag symbol.
-    Nominal(TagdefId, CtxId),
-
-    /// A structural type alias.
-    Alias(AliasdefId, CtxId),
-
-    /// A structural tuple of other types.
-    ///
-    /// All empty tuples are identically the unit type.
-    Tuple(TupleRange),
-
-    /// A structural record of other types.
-    ///
-    /// The fields are sorted lexicographically by name.
-    Record(TupleRange),
-}
-
-impl Type {
-    pub fn opaque(self) -> (TydefId, CtxId) {
-        match self {
-            Type::Opaque(tydef, ctx) => (tydef, ctx),
-            _ => panic!(),
-        }
-    }
-
-    pub fn nominal(self) -> (TagdefId, CtxId) {
-        match self {
-            Type::Nominal(tagdef, ctx) => (tagdef, ctx),
-            _ => panic!(),
-        }
-    }
-
-    pub fn alias(self) -> (AliasdefId, CtxId) {
-        match self {
-            Type::Alias(aliasdef, ctx) => (aliasdef, ctx),
-            _ => panic!(),
-        }
-    }
-
-    pub fn tuple(self) -> TupleRange {
-        match self {
-            Type::Tuple(range) => range,
-            _ => panic!(),
-        }
-    }
-
-    pub fn record(self) -> TupleRange {
-        match self {
-            Type::Record(range) => range,
-            _ => panic!(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Func {
     pub ctx: CtxId,
     pub def: FndefId,
@@ -346,31 +246,30 @@ pub struct Tydef {
 #[derive(Clone, Copy, Debug)]
 pub struct Tagdef {
     pub ctx: CtxId,
-    pub inner: TypeId,
+    pub inner: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Aliasdef {
     pub ctx: CtxId,
-    pub def: TypeId,
+    pub def: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Fndef {
     pub ctx: CtxId,
-    pub param: TypeId,
-    pub result: TypeId,
+    pub param: Static,
+    pub result: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Valdef {
     pub ctx: CtxId,
-    pub ty: TypeId,
+    pub ty: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Ctxdef {
-    pub ctx: CtxId,
     pub def: CtxId,
 }
 
@@ -487,10 +386,8 @@ pub struct IR {
     pub strings: Strings,
     pub statics: IndexVec<StaticId, StaticInstr>,
     pub items: IndexVec<ItemId, StaticId>,
-    pub ctxs: IndexSet<Ctx>,
-    pub types: IndexSet<Type>,
-    pub tuples: Tuples<TypeId>,
-    pub records: Tuples<(StrId, TypeId)>,
+    pub records: IndexVec<RecordId, (StrId, StaticId)>,
+    pub ctxs: IndexVec<CtxId, Ctx>,
     pub tydefs: IndexVec<TydefId, Tydef>,
     pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
@@ -510,10 +407,8 @@ impl Default for IR {
             strings: Default::default(),
             statics: Default::default(),
             items: Default::default(),
-            ctxs: Default::default(),
-            types: Default::default(),
-            tuples: Default::default(),
             records: Default::default(),
+            ctxs: Default::default(),
             tydefs: Default::default(),
             tagdefs: Default::default(),
             aliasdefs: Default::default(),
@@ -525,32 +420,28 @@ impl Default for IR {
             refs: Default::default(),
             bodies: Default::default(),
         };
-        ir.ctxs.insert(Ctx::default());
+        let empty = ir
+            .statics
+            .push(StaticInstr::Ctx(IdRange::new(&mut ir.items, Vec::new())));
+        let body = IdRange {
+            start: empty,
+            end: ir.statics.len_idx(),
+        };
+        ir.ctxs.push(Ctx {
+            param: Static { body },
+            def: Static { body },
+        });
         ir
     }
 }
 
 impl IR {
     pub fn empty_ctx(&self) -> CtxId {
-        CtxId::from_usize(self.ctxs.get_index_of(&Ctx::default()).unwrap())
+        CtxId::from_usize(0)
     }
 
-    pub fn ctx(&self, ctx: CtxId) -> &Ctx {
-        &self.ctxs[ctx.index()]
-    }
-
-    pub fn ty(&self, ty: TypeId) -> Type {
-        self.types[ty.index()]
-    }
-
-    pub fn make_ctx(&mut self, ctx: Ctx) -> CtxId {
-        let (i, _) = self.ctxs.insert_full(ctx);
-        CtxId::from_usize(i)
-    }
-
-    pub fn make_ty(&mut self, ty: Type) -> TypeId {
-        let (i, _) = self.types.insert_full(ty);
-        TypeId::from_usize(i)
+    pub fn ctx(&self, ctx: CtxId) -> Ctx {
+        self.ctxs[ctx.index()]
     }
 }
 
@@ -660,28 +551,6 @@ impl ErrorCtx<'_> {
     fn expr(&self, id: ExprId) -> Inclusive {
         expr_range(self.tree, id)
     }
-
-    fn ty(&self, id: TypeId) -> FatType<'_, '_> {
-        FatType { ctx: self, id }
-    }
-}
-
-struct FatType<'a, 'b> {
-    ctx: &'b ErrorCtx<'a>,
-    id: TypeId,
-}
-
-impl fmt::Display for FatType<'_, '_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.ctx.ir.types[self.id.index()] {
-            Type::Bind(_) => write!(f, "a binding"),
-            Type::Opaque(_, _) => write!(f, "an opaque type"),
-            Type::Nominal(_, _) => write!(f, "a nominal type"),
-            Type::Alias(_, _) => write!(f, "a type alias"),
-            Type::Tuple(_) => write!(f, "a tuple"),
-            Type::Record(_) => write!(f, "a record"),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -706,7 +575,6 @@ pub enum LowerError {
     Uint64High(TokenId),
     Int64Low(TokenId),
     Int64High(TokenId),
-    ExpectedType(TypeId, ExprId, TypeId),
     ThisNotMethod(ExprId),
     Overflow(ExprId),
     ArgCount(ExprId),
@@ -779,10 +647,6 @@ impl LowerError {
             LowerError::Int64High(token) => (
                 Some(single(token)),
                 "too high to fit in 64-bit signed integer".to_owned(),
-            ),
-            LowerError::ExpectedType(expected, expr, actual) => (
-                Some(ctx.expr(expr)),
-                format!("expected {}, got {}", ctx.ty(expected), ctx.ty(actual)),
             ),
             LowerError::ThisNotMethod(expr) => (
                 Some(ctx.expr(expr)),
@@ -894,10 +758,6 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn ctx(&mut self, ctx: Ctx) -> CtxId {
-        self.ir.make_ctx(ctx)
-    }
-
     fn empty_drill(&self) -> DrillId {
         DrillId::from_usize(self.drills.get_index_of(&None).unwrap())
     }
@@ -905,24 +765,6 @@ impl<'a> Lower<'a> {
     fn drill(&mut self, drill: Drill) -> DrillId {
         let (i, _) = self.drills.insert_full(drill);
         DrillId::from_usize(i)
-    }
-
-    fn ty(&mut self, ty: Type) -> TypeId {
-        self.ir.make_ty(ty)
-    }
-
-    fn ty_tuple(&mut self, elems: &[TypeId]) -> TypeId {
-        let tuple = self.ir.tuples.make(elems);
-        self.ty(Type::Tuple(tuple))
-    }
-
-    fn ty_unit(&mut self) -> TypeId {
-        self.ty_tuple(&[])
-    }
-
-    fn ty_record(&mut self, fields: &[(StrId, TypeId)]) -> TypeId {
-        let record = self.ir.records.make(fields);
-        self.ty(Type::Record(record))
     }
 
     fn resolve_prefix(&mut self, path: Path) -> LowerResult<(ModuleId, StrId)> {
@@ -974,40 +816,6 @@ impl<'a> Lower<'a> {
         } else {
             None
         }
-    }
-
-    fn more_specific(&self, lhs: CtxId, rhs: CtxId) -> bool {
-        todo!()
-    }
-
-    /// Compare two contexts on specificity, so [`Ordering::Greater`] means more specific.
-    fn cmp_ctx(&self, lhs: CtxId, rhs: CtxId) -> Option<Ordering> {
-        match (self.more_specific(lhs, rhs), self.more_specific(rhs, lhs)) {
-            (true, true) => Some(Ordering::Equal),
-            (true, false) => Some(Ordering::Greater),
-            (false, true) => Some(Ordering::Less),
-            (false, false) => None,
-        }
-    }
-
-    fn most_specific(&self, ctxs: impl IntoIterator<Item = CtxId>) -> Query<CtxId> {
-        todo!()
-    }
-
-    /// Return the most specific key from `entries` that is compatible with the given `ctx`.
-    ///
-    /// If there is no unique most specific key, an error is returned.
-    fn best_fit<T>(&self, entries: &Entries<T>, ctx: CtxId) -> Query<CtxId> {
-        self.most_specific(
-            entries
-                .keys()
-                .copied()
-                .filter(|&key| self.more_specific(ctx, key)),
-        )
-    }
-
-    fn substitute(&self, param: CtxId, body: CtxId, arg: CtxId) -> CtxId {
-        todo!()
     }
 
     fn imports(&mut self) -> LowerResult<()> {
@@ -1175,7 +983,7 @@ impl<'a> Lower<'a> {
         Ok((named, ctx))
     }
 
-    fn bind(&mut self, ctx: &mut Ctx, bind: parse::BindId) -> LowerResult<()> {
+    fn bind(&mut self, bind: parse::BindId) -> LowerResult<()> {
         let parse::Bind { key, val } = self.tree.binds[bind];
         let (lhs, ctx1) = self.spec(key)?;
         match val {
@@ -1237,22 +1045,17 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
-    fn binds(&mut self, entries: IdRange<parse::BindId>) -> LowerResult<CtxId> {
-        let mut ctx = Ctx::default();
-        for bind in entries {
-            self.bind(&mut ctx, bind)?;
-        }
-        Ok(self.ctx(ctx))
-    }
-
-    fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<CtxId> {
-        let mut ctx = Ctx::default();
+    fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Static> {
+        let start = self.ir.statics.next_idx();
         for need in needs {
             let parse::Need { kind: _, bind } = self.tree.needs[need];
             // TODO: Handle `kind`.
-            self.bind(&mut ctx, bind)?;
+            self.bind(bind)?;
         }
-        Ok(self.ctx(ctx))
+        let end = self.ir.statics.next_idx();
+        Ok(Static {
+            body: IdRange { start, end },
+        })
     }
 
     fn parse_ty(&mut self, ty: parse::TypeId) -> LowerResult<TypeId> {
@@ -1297,6 +1100,28 @@ impl<'a> Lower<'a> {
     }
 
     fn decls(&mut self) -> LowerResult<()> {
+        for &decl in &self.tree.decls {
+            match decl {
+                parse::Decl::Tydef(id) => {
+                    let parse::Tydef { name, needs } = self.tree.tydefs[id];
+                    let tydef = Tydef {
+                        ctx: self.needs(needs)?,
+                    };
+                    let lowered = self.ir.tydefs.push(tydef);
+                    let string = self.name(name);
+                    self.names
+                        .names
+                        .insert((self.module, string), Named::Tydef(lowered));
+                }
+                parse::Decl::Tagdef(id) => todo!(),
+                parse::Decl::Aliasdef(id) => todo!(),
+                parse::Decl::Funcdef(id) => todo!(),
+                parse::Decl::Attachdef(id) => todo!(),
+                parse::Decl::Detachdef(id) => todo!(),
+                parse::Decl::Valdef(id) => todo!(),
+                parse::Decl::Ctxdef(id) => todo!(),
+            }
+        }
         for (id, &parse::Tydef { name, needs }) in self.tree.tydefs.iter_enumerated() {
             let id = self.tydefs[id];
             drop(name);
@@ -1405,7 +1230,7 @@ impl<'a> Lower<'a> {
 
     fn program(&mut self) -> LowerResult<()> {
         self.imports()?;
-        self.names()?;
+        // TODO: Don't make declaration order significant.
         self.decls()?;
         self.bodies()?;
         Ok(())
