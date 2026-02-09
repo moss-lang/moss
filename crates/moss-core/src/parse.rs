@@ -89,6 +89,10 @@ define_index_type! {
     pub struct CtxdefId = u32;
 }
 
+define_index_type! {
+    pub struct DeclId = u32;
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Path {
     pub prefix: IdRange<NameId>,
@@ -287,6 +291,18 @@ pub struct Ctxdef {
     pub def: IdRange<NeedId>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum Decl {
+    Tydef(TydefId),
+    Tagdef(TagdefId),
+    Aliasdef(AliasdefId),
+    Funcdef(FuncdefId),
+    Attachdef(AttachdefId),
+    Detachdef(DetachdefId),
+    Valdef(ValdefId),
+    Ctxdef(CtxdefId),
+}
+
 #[derive(Debug, Default)]
 pub struct Tree {
     pub names: IndexVec<NameId, TokenId>,
@@ -309,6 +325,7 @@ pub struct Tree {
     pub detachdefs: IndexVec<DetachdefId, Detachdef>,
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
+    pub decls: IndexVec<DeclId, Decl>, // TODO: Don't make declaration order significant.
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1014,6 +1031,83 @@ impl<'a> Parser<'a> {
         Ok(Ctxdef { name, needs, def })
     }
 
+    fn decl(&mut self) -> ParseResult<Decl> {
+        match self.peek() {
+            Type => {
+                self.next();
+                let name = self.expect(Name)?;
+                let needs = match self.peek() {
+                    LBracket => self.need_ids()?,
+                    _ => IdRange::new(&mut self.tree.needs, Vec::new()),
+                };
+                match self.peek() {
+                    Semi => {
+                        self.next();
+                        let id = self.tree.tydefs.push(Tydef { name, needs });
+                        Ok(Decl::Tydef(id))
+                    }
+                    Equal => {
+                        self.next();
+                        let def = self.ty_id()?;
+                        self.expect(Semi)?;
+                        let id = self.tree.aliasdefs.push(Aliasdef { name, needs, def });
+                        Ok(Decl::Aliasdef(id))
+                    }
+                    _ => {
+                        let def = self.ty_id()?;
+                        self.expect(Semi)?;
+                        let id = self.tree.tagdefs.push(Tagdef { name, needs, def });
+                        Ok(Decl::Tagdef(id))
+                    }
+                }
+            }
+            Fn => {
+                self.next();
+                match self.peek() {
+                    Name => {
+                        let first = self.next();
+                        match self.peek() {
+                            LBracket | LParen => {
+                                let name = first;
+                                let fndef = self.fndef(name)?;
+                                let id = self.tree.funcdefs.push(Funcdef { fndef });
+                                Ok(Decl::Funcdef(id))
+                            }
+                            Dot => {
+                                self.next();
+                                let ty = first;
+                                let name = self.expect(Name)?;
+                                let fndef = self.fndef(name)?;
+                                let id = self.tree.attachdefs.push(Attachdef { ty, fndef });
+                                Ok(Decl::Attachdef(id))
+                            }
+                            _ => Err(self.err(LBracket | LParen | Dot)),
+                        }
+                    }
+                    Dot => {
+                        self.next();
+                        let name = self.expect(Name)?;
+                        let fndef = self.fndef(name)?;
+                        let id = self.tree.detachdefs.push(Detachdef { fndef });
+                        Ok(Decl::Detachdef(id))
+                    }
+                    _ => Err(self.err(Name | Dot)),
+                }
+            }
+            Val => {
+                let valdef = self.valdef()?;
+                let id = self.tree.valdefs.push(valdef);
+                Ok(Decl::Valdef(id))
+            }
+            Context => {
+                let ctxdef = self.ctxdef()?;
+                let id = self.tree.ctxdefs.push(ctxdef);
+                Ok(Decl::Ctxdef(id))
+            }
+            _ => Err(self.err(Type | Fn | Val | Context)),
+        }
+    }
+
     fn tree(mut self) -> ParseResult<Tree> {
         loop {
             match self.peek() {
@@ -1025,72 +1119,10 @@ impl<'a> Parser<'a> {
                     let assume = self.assume()?;
                     self.tree.assumes.push(assume);
                 }
-                Type => {
-                    self.next();
-                    let name = self.expect(Name)?;
-                    let needs = match self.peek() {
-                        LBracket => self.need_ids()?,
-                        _ => IdRange::new(&mut self.tree.needs, Vec::new()),
-                    };
-                    match self.peek() {
-                        Semi => {
-                            self.next();
-                            self.tree.tydefs.push(Tydef { name, needs });
-                        }
-                        Equal => {
-                            self.next();
-                            let def = self.ty_id()?;
-                            self.expect(Semi)?;
-                            self.tree.aliasdefs.push(Aliasdef { name, needs, def });
-                        }
-                        _ => {
-                            let def = self.ty_id()?;
-                            self.expect(Semi)?;
-                            self.tree.tagdefs.push(Tagdef { name, needs, def });
-                        }
-                    }
-                }
-                Fn => {
-                    self.next();
-                    match self.peek() {
-                        Name => {
-                            let first = self.next();
-                            match self.peek() {
-                                LBracket | LParen => {
-                                    let name = first;
-                                    let fndef = self.fndef(name)?;
-                                    self.tree.funcdefs.push(Funcdef { fndef });
-                                }
-                                Dot => {
-                                    self.next();
-                                    let ty = first;
-                                    let name = self.expect(Name)?;
-                                    let fndef = self.fndef(name)?;
-                                    self.tree.attachdefs.push(Attachdef { ty, fndef });
-                                }
-                                _ => return Err(self.err(LBracket | LParen | Dot)),
-                            }
-                        }
-                        Dot => {
-                            self.next();
-                            let name = self.expect(Name)?;
-                            let fndef = self.fndef(name)?;
-                            self.tree.detachdefs.push(Detachdef { fndef });
-                        }
-                        _ => return Err(self.err(Name | Dot)),
-                    }
-                }
-                Val => {
-                    let valdef = self.valdef()?;
-                    self.tree.valdefs.push(valdef);
-                }
-                Context => {
-                    let ctxdef = self.ctxdef()?;
-                    self.tree.ctxdefs.push(ctxdef);
-                }
                 Eof => return Ok(self.tree),
                 _ => {
-                    return Err(self.err(Import | Assume | Type | Fn | Val | Context | Eof));
+                    let decl = self.decl()?;
+                    self.tree.decls.push(decl);
                 }
             }
         }

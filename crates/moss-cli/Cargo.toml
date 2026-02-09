@@ -8,7 +8,6 @@ default-run = "moss"
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 crossbeam-channel = { workspace = true }
-im-rc = { workspace = true }
 index_vec = { workspace = true }
 line-index = { workspace = true }
 lsp-server = { workspace = true }
