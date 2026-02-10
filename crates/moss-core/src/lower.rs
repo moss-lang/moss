@@ -1046,45 +1046,73 @@ impl<'a> Lower<'a> {
         todo!()
     }
 
-    fn spec(&mut self, spec: parse::Spec) -> LowerResult<(Named, StaticId)> {
+    fn spec(&mut self, param: Static, spec: parse::Spec) -> LowerResult<(Named, Vec<StaticId>)> {
         let Spec { dot, path, binds } = spec;
         let named = if dot {
             Named::Fndef(self.detached(path)?)
         } else {
             self.path(path)?
         };
-        let ctx = self.binds(binds)?;
-        Ok((named, ctx))
+        let mut slots = Vec::new();
+        for bind in binds {
+            self.bind(param, &mut slots, bind)?;
+        }
+        Ok((named, slots))
     }
 
-    fn bind(&mut self, slots: &mut Vec<StaticId>, bind: parse::BindId) -> LowerResult<()> {
+    fn bind(
+        &mut self,
+        param: Static,
+        slots: &mut Vec<StaticId>,
+        bind: parse::BindId,
+    ) -> LowerResult<()> {
         let parse::Bind { key, val } = self.tree.binds[bind];
-        let (lhs, ctx1) = self.spec(key)?;
+        let (lhs, ctx1) = self.spec(param, key)?;
         match val {
             None => match lhs {
                 Named::Tydef(tydef) => {
-                    slots.push(self.emit(StaticInstr::PieceTydef {
-                        def: tydef,
-                        ctx: ctx1,
-                    }));
+                    let slot = self
+                        .extract_ty(param, &slots, tydef, ctx1)
+                        .unwrap_or_else(|| {
+                            self.emit(StaticInstr::PieceTydef {
+                                def: tydef,
+                                ctx: ctx1,
+                            })
+                        });
+                    slots.push(slot);
                 }
                 Named::Fndef(fndef) => {
-                    slots.push(self.emit(StaticInstr::PieceFndef {
-                        def: fndef,
-                        ctx: ctx1,
-                    }));
+                    let slot = self
+                        .extract_fn(param, &slots, fndef, ctx1)
+                        .unwrap_or_else(|| {
+                            self.emit(StaticInstr::PieceFndef {
+                                def: fndef,
+                                ctx: ctx1,
+                            })
+                        });
+                    slots.push(slot);
                 }
                 Named::Valdef(valdef) => {
-                    slots.push(self.emit(StaticInstr::PieceValdef {
-                        def: valdef,
-                        ctx: ctx1,
-                    }));
+                    let slot = self
+                        .extract_val(param, &slots, valdef, ctx1)
+                        .unwrap_or_else(|| {
+                            self.emit(StaticInstr::PieceValdef {
+                                def: valdef,
+                                ctx: ctx1,
+                            })
+                        });
+                    slots.push(slot);
                 }
                 Named::Ctxdef(ctxdef) => {
-                    slots.push(self.emit(StaticInstr::PieceCtxdef {
-                        def: ctxdef,
-                        ctx: ctx1,
-                    }));
+                    let slot = self
+                        .extract_ctx(param, &slots, ctxdef, ctx1)
+                        .unwrap_or_else(|| {
+                            self.emit(StaticInstr::PieceCtxdef {
+                                def: ctxdef,
+                                ctx: ctx1,
+                            })
+                        });
+                    slots.push(slot);
                 }
                 Named::Module(_) => return Err(LowerError::BindModule(bind)),
                 Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
@@ -1136,13 +1164,13 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
-    fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Static> {
+    fn needs(&mut self, param: Static, needs: IdRange<parse::NeedId>) -> LowerResult<Static> {
         let start = self.ir.statics.next_idx();
         let mut slots = Vec::new();
         for need in needs {
             let parse::Need { kind: _, bind } = self.tree.needs[need];
             // TODO: Handle `kind`.
-            self.bind(&mut slots, bind)?;
+            self.bind(param, &mut slots, bind)?;
         }
         let slots = IdRange::new(&mut self.ir.items, slots);
         let ctx = self.emit(StaticInstr::Ctx { slots });
@@ -1192,12 +1220,13 @@ impl<'a> Lower<'a> {
     }
 
     fn decls(&mut self) -> LowerResult<()> {
+        let empty = self.ir.ctx(self.ir.empty_ctx()).def;
         for &decl in &self.tree.decls {
             match decl {
                 parse::Decl::Tydef(id) => {
                     let parse::Tydef { name, needs } = self.tree.tydefs[id];
                     let tydef = Tydef {
-                        ctx: self.needs(needs)?,
+                        ctx: self.needs(empty, needs)?,
                     };
                     let lowered = self.ir.tydefs.push(tydef);
                     let string = self.name(name);
