@@ -121,30 +121,55 @@ pub enum StaticInstr {
     Param,
 
     /// A new context providing some number of slots.
-    Ctx(IdRange<ItemId>),
+    Ctx { slots: IdRange<ItemId> },
 
     /// Need a contextual type parametrized by a specific context.
-    PieceTydef(TydefId, StaticId),
+    PieceTydef { def: TydefId, ctx: StaticId },
 
     /// Need a contextual function parametrized by a specific context.
-    PieceFndef(FndefId, StaticId),
+    PieceFndef { def: FndefId, ctx: StaticId },
 
     /// Need a contextual value parametrized by a specific context.
-    PieceValdef(ValdefId, StaticId),
+    PieceValdef { def: ValdefId, ctx: StaticId },
 
     /// Need a composite context parametrized by a specific context.
-    PieceCtxdef(CtxdefId, StaticId),
+    PieceCtxdef { def: CtxdefId, ctx: StaticId },
 
     /// A nominal type parametrized by a specific context.
-    Tagdef(TagdefId, StaticId),
+    Tagdef { def: TagdefId, ctx: StaticId },
 
     /// A structural tuple of other types.
-    Tuple(IdRange<ItemId>),
+    Tuple { elems: IdRange<ItemId> },
 
     /// A structural record of other types.
-    Record(IdRange<RecordId>),
+    Record { fields: IdRange<RecordId> },
 
-    Get(StaticId, SlotId),
+    /// A literal value.
+    Lit { val: Val },
+
+    /// A slot from a context.
+    Get { ctx: StaticId, slot: SlotId },
+
+    /// Constrain a contextual type parametrized by a specific context.
+    BindTydef {
+        def: TydefId,
+        ctx: StaticId,
+        bind: StaticId,
+    },
+
+    /// Constrain a contextual function parametrized by a specific context.
+    BindFndef {
+        def: FndefId,
+        ctx: StaticId,
+        bind: StaticId,
+    },
+
+    /// Constrain a contextual value parametrized by a specific context.
+    BindValdef {
+        def: ValdefId,
+        ctx: StaticId,
+        bind: StaticId,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -240,7 +265,7 @@ pub enum IntType {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Tydef {
-    pub ctx: CtxId,
+    pub ctx: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -420,9 +445,9 @@ impl Default for IR {
             refs: Default::default(),
             bodies: Default::default(),
         };
-        let empty = ir
-            .statics
-            .push(StaticInstr::Ctx(IdRange::new(&mut ir.items, Vec::new())));
+        let empty = ir.statics.push(StaticInstr::Ctx {
+            slots: IdRange::new(&mut ir.items, Vec::new()),
+        });
         let body = IdRange {
             start: empty,
             end: ir.statics.len_idx(),
@@ -972,7 +997,11 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
-    fn spec(&mut self, spec: parse::Spec) -> LowerResult<(Named, CtxId)> {
+    fn emit(&mut self, stat: StaticInstr) -> StaticId {
+        self.ir.statics.push(stat)
+    }
+
+    fn spec(&mut self, spec: parse::Spec) -> LowerResult<(Named, StaticId)> {
         let Spec { dot, path, binds } = spec;
         let named = if dot {
             Named::Fndef(self.detached(path)?)
@@ -983,22 +1012,34 @@ impl<'a> Lower<'a> {
         Ok((named, ctx))
     }
 
-    fn bind(&mut self, bind: parse::BindId) -> LowerResult<()> {
+    fn bind(&mut self, slots: &mut Vec<StaticId>, bind: parse::BindId) -> LowerResult<()> {
         let parse::Bind { key, val } = self.tree.binds[bind];
         let (lhs, ctx1) = self.spec(key)?;
         match val {
             None => match lhs {
                 Named::Tydef(tydef) => {
-                    ctx.tys.entry(tydef).or_default().insert(ctx1, None);
+                    slots.push(self.emit(StaticInstr::PieceTydef {
+                        def: tydef,
+                        ctx: ctx1,
+                    }));
                 }
                 Named::Fndef(fndef) => {
-                    ctx.fns.entry(fndef).or_default().insert(ctx1, None);
+                    slots.push(self.emit(StaticInstr::PieceFndef {
+                        def: fndef,
+                        ctx: ctx1,
+                    }));
                 }
                 Named::Valdef(valdef) => {
-                    ctx.vals.entry(valdef).or_default().insert(ctx1, None);
+                    slots.push(self.emit(StaticInstr::PieceValdef {
+                        def: valdef,
+                        ctx: ctx1,
+                    }));
                 }
                 Named::Ctxdef(ctxdef) => {
-                    ctx.ctxs.entry(ctxdef).or_default().insert(ctx1, ());
+                    slots.push(self.emit(StaticInstr::PieceCtxdef {
+                        def: ctxdef,
+                        ctx: ctx1,
+                    }));
                 }
                 Named::Module(_) => return Err(LowerError::BindModule(bind)),
                 Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
@@ -1007,7 +1048,12 @@ impl<'a> Lower<'a> {
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(valdef) => {
                     let (val, _) = self.lit(token)?;
-                    ctx.vals.entry(valdef).or_default().insert(ctx1, Some(val));
+                    let lit = self.emit(StaticInstr::Lit { val });
+                    slots.push(self.emit(StaticInstr::BindValdef {
+                        def: valdef,
+                        ctx: ctx1,
+                        bind: lit,
+                    }));
                 }
                 _ => return Err(LowerError::LitNotVal(token)),
             },
