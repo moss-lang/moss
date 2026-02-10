@@ -1006,6 +1006,46 @@ impl<'a> Lower<'a> {
         self.ir.statics.push(stat)
     }
 
+    fn extract_ty(
+        &mut self,
+        param: Static,
+        slots: &[StaticId],
+        tydef: TydefId,
+        ctx: StaticId,
+    ) -> Option<StaticId> {
+        todo!()
+    }
+
+    fn extract_fn(
+        &mut self,
+        param: Static,
+        slots: &[StaticId],
+        fndef: FndefId,
+        ctx: StaticId,
+    ) -> Option<StaticId> {
+        todo!()
+    }
+
+    fn extract_val(
+        &mut self,
+        param: Static,
+        slots: &[StaticId],
+        valdef: ValdefId,
+        ctx: StaticId,
+    ) -> Option<StaticId> {
+        todo!()
+    }
+
+    fn extract_ctx(
+        &mut self,
+        param: Static,
+        slots: &[StaticId],
+        ctxdef: CtxdefId,
+        ctx: StaticId,
+    ) -> Option<StaticId> {
+        todo!()
+    }
+
     fn spec(&mut self, spec: parse::Spec) -> LowerResult<(Named, StaticId)> {
         let Spec { dot, path, binds } = spec;
         let named = if dot {
@@ -1332,60 +1372,6 @@ impl Body<'_, '_> {
         self.x.ir.refs.extend_from_slice(IndexSlice::new(locals));
         let end = self.x.ir.refs.len_idx();
         self.instr(ty, Instr::Record(ty, IdRange { start, end }))
-    }
-
-    fn extract<T>(
-        &mut self,
-        ctx: CtxId,
-        def: impl Copy + Fn(&Ctx) -> Option<&Entries<T>>,
-        args: CtxId,
-    ) -> Query<(DrillId, CtxId)> {
-        let context = self.x.ir.ctx(ctx);
-        let mut best = match def(context) {
-            None => Query::Missing,
-            Some(entries) => self
-                .x
-                .best_fit(entries, args)
-                .map(|key| (self.x.empty_drill(), key)),
-        };
-        // TODO: Do this without allocating a `Vec`.
-        let children = Vec::from_iter(
-            context
-                .ctxs
-                .iter()
-                .map(|(&ctxdef, entries)| (self.x.ir.ctxdefs[ctxdef], entries))
-                .flat_map(|(ctxdef, entries)| {
-                    let this = &self;
-                    entries
-                        .iter()
-                        .map(move |(&arg, ())| this.x.substitute(ctxdef.ctx, ctxdef.def, arg))
-                }),
-        );
-        // TODO: Do this without allocating a `Vec`.
-        for query in Vec::from_iter(
-            children
-                .into_iter()
-                .map(|child| self.extract(child, def, args)),
-        ) {
-            best = best.combine(query, |(_, lhs), (_, rhs)| self.x.cmp_ctx(lhs, rhs))
-        }
-        best
-    }
-
-    fn extract_ty(&mut self, tydef: TydefId, args: CtxId) -> LowerResult<(LocalId, SlotId)> {
-        match self.extract(self.ctx, |context| context.tys.get(&tydef), args) {
-            Query::Missing => todo!(),
-            Query::Ambiguous => todo!(),
-            Query::Unique(_) => todo!(),
-        }
-    }
-
-    fn extract_fn(&mut self, fndef: FndefId, args: CtxId) -> LowerResult<(LocalId, SlotId)> {
-        todo!()
-    }
-
-    fn extract_val(&mut self, valdef: ValdefId, args: CtxId) -> LowerResult<(LocalId, SlotId)> {
-        todo!()
     }
 
     fn expr(&mut self, expr: ExprId) -> LowerResult<LocalId> {
