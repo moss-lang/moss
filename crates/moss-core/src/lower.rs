@@ -178,6 +178,11 @@ pub struct Static {
 }
 
 impl Static {
+    fn new(body: IdRange<StaticId>, result: StaticId) -> Self {
+        assert_eq!(body.last(), Some(result));
+        Self { body }
+    }
+
     fn result(self) -> StaticId {
         self.body.last().unwrap()
     }
@@ -453,8 +458,8 @@ impl Default for IR {
             end: ir.statics.len_idx(),
         };
         ir.ctxs.push(Ctx {
-            param: Static { body },
-            def: Static { body },
+            param: Static::new(body, empty),
+            def: Static::new(body, empty),
         });
         ir
     }
@@ -1093,15 +1098,16 @@ impl<'a> Lower<'a> {
 
     fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Static> {
         let start = self.ir.statics.next_idx();
+        let mut slots = Vec::new();
         for need in needs {
             let parse::Need { kind: _, bind } = self.tree.needs[need];
             // TODO: Handle `kind`.
-            self.bind(bind)?;
+            self.bind(&mut slots, bind)?;
         }
+        let slots = IdRange::new(&mut self.ir.items, slots);
+        let ctx = self.emit(StaticInstr::Ctx { slots });
         let end = self.ir.statics.next_idx();
-        Ok(Static {
-            body: IdRange { start, end },
-        })
+        Ok(Static::new(IdRange { start, end }, ctx))
     }
 
     fn parse_ty(&mut self, ty: parse::TypeId) -> LowerResult<TypeId> {
