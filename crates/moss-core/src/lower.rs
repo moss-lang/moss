@@ -1012,7 +1012,7 @@ impl<'a> Lower<'a> {
         slots: &[StaticId],
         tydef: TydefId,
         ctx: StaticId,
-    ) -> Option<StaticId> {
+    ) -> LowerResult<StaticId> {
         todo!()
     }
 
@@ -1022,7 +1022,7 @@ impl<'a> Lower<'a> {
         slots: &[StaticId],
         fndef: FndefId,
         ctx: StaticId,
-    ) -> Option<StaticId> {
+    ) -> LowerResult<StaticId> {
         todo!()
     }
 
@@ -1032,7 +1032,7 @@ impl<'a> Lower<'a> {
         slots: &[StaticId],
         valdef: ValdefId,
         ctx: StaticId,
-    ) -> Option<StaticId> {
+    ) -> LowerResult<StaticId> {
         todo!()
     }
 
@@ -1042,7 +1042,7 @@ impl<'a> Lower<'a> {
         slots: &[StaticId],
         ctxdef: CtxdefId,
         ctx: StaticId,
-    ) -> Option<StaticId> {
+    ) -> LowerResult<StaticId> {
         todo!()
     }
 
@@ -1070,50 +1070,10 @@ impl<'a> Lower<'a> {
         let (lhs, ctx1) = self.spec(param, key)?;
         match val {
             None => match lhs {
-                Named::Tydef(tydef) => {
-                    let slot = self
-                        .extract_ty(param, &slots, tydef, ctx1)
-                        .unwrap_or_else(|| {
-                            self.emit(StaticInstr::PieceTydef {
-                                def: tydef,
-                                ctx: ctx1,
-                            })
-                        });
-                    slots.push(slot);
-                }
-                Named::Fndef(fndef) => {
-                    let slot = self
-                        .extract_fn(param, &slots, fndef, ctx1)
-                        .unwrap_or_else(|| {
-                            self.emit(StaticInstr::PieceFndef {
-                                def: fndef,
-                                ctx: ctx1,
-                            })
-                        });
-                    slots.push(slot);
-                }
-                Named::Valdef(valdef) => {
-                    let slot = self
-                        .extract_val(param, &slots, valdef, ctx1)
-                        .unwrap_or_else(|| {
-                            self.emit(StaticInstr::PieceValdef {
-                                def: valdef,
-                                ctx: ctx1,
-                            })
-                        });
-                    slots.push(slot);
-                }
-                Named::Ctxdef(ctxdef) => {
-                    let slot = self
-                        .extract_ctx(param, &slots, ctxdef, ctx1)
-                        .unwrap_or_else(|| {
-                            self.emit(StaticInstr::PieceCtxdef {
-                                def: ctxdef,
-                                ctx: ctx1,
-                            })
-                        });
-                    slots.push(slot);
-                }
+                Named::Tydef(tydef) => slots.push(self.extract_ty(param, &slots, tydef, ctx1)?),
+                Named::Fndef(fndef) => slots.push(self.extract_fn(param, &slots, fndef, ctx1)?),
+                Named::Valdef(valdef) => slots.push(self.extract_val(param, &slots, valdef, ctx1)?),
+                Named::Ctxdef(ctxdef) => slots.push(self.extract_ctx(param, &slots, ctxdef, ctx1)?),
                 Named::Module(_) => return Err(LowerError::BindModule(bind)),
                 Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
                 Named::Aliasdef(_) => return Err(LowerError::BindAlias(bind)),
@@ -1170,7 +1130,30 @@ impl<'a> Lower<'a> {
         for need in needs {
             let parse::Need { kind: _, bind } = self.tree.needs[need];
             // TODO: Handle `kind`.
-            self.bind(param, &mut slots, bind)?;
+            let parse::Bind { key, val } = self.tree.binds[bind];
+            match val {
+                Some(_) => self.bind(param, &mut slots, bind)?,
+                None => {
+                    let (lhs, ctx) = self.spec(param, key)?;
+                    match lhs {
+                        Named::Tydef(tydef) => {
+                            slots.push(self.emit(StaticInstr::PieceTydef { def: tydef, ctx }))
+                        }
+                        Named::Fndef(fndef) => {
+                            slots.push(self.emit(StaticInstr::PieceFndef { def: fndef, ctx }))
+                        }
+                        Named::Valdef(valdef) => {
+                            slots.push(self.emit(StaticInstr::PieceValdef { def: valdef, ctx }))
+                        }
+                        Named::Ctxdef(ctxdef) => {
+                            slots.push(self.emit(StaticInstr::PieceCtxdef { def: ctxdef, ctx }))
+                        }
+                        Named::Module(_) => return Err(LowerError::BindModule(bind)),
+                        Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
+                        Named::Aliasdef(_) => return Err(LowerError::BindAlias(bind)),
+                    }
+                }
+            }
         }
         let slots = IdRange::new(&mut self.ir.items, slots);
         let ctx = self.emit(StaticInstr::Ctx { slots });
