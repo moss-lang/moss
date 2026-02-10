@@ -10,86 +10,107 @@ use crate::{
 };
 
 define_index_type! {
+    /// The index of a [`TokenId`] in the `names` field of a [`Tree`].
     pub struct NameId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Member`] in the `members` field of a [`Tree`].
     pub struct MemberId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Type`] in the `types` field of a [`Tree`].
     pub struct TypeId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Bind`] in the `binds` field of a [`Tree`].
     pub struct BindId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Need`] in the `needs` field of a [`Tree`].
     pub struct NeedId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Param`] in the `params` field of a [`Tree`].
     pub struct ParamId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Field`] in the `fields` field of a [`Tree`].
     pub struct FieldId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Binding`] in the `bindings` field of a [`Tree`].
     pub struct BindingId = u32;
 }
 
 define_index_type! {
+    /// The index of an [`Expr`] in the `exprs` field of a [`Tree`].
     pub struct ExprId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Stmt`] in the `stmts` field of a [`Tree`].
     pub struct StmtId = u32;
 }
 
 define_index_type! {
+    /// The index of an [`Import`] in the `imports` field of a [`Tree`].
     pub struct ImportId = u32;
 }
 
 define_index_type! {
+    /// The index of an [`IdRange<BindId>`] in the `assumes` field of a [`Tree`].
     pub struct AssumeId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Tydef`] in the `tydefs` field of a [`Tree`].
     pub struct TydefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Tagdef`] in the `tagdefs` field of a [`Tree`].
     pub struct TagdefId = u32;
 }
 
 define_index_type! {
+    /// The index of an [`Aliasdef`] in the `aliasdefs` field of a [`Tree`].
     pub struct AliasdefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Funcdef`] in the `funcdefs` field of a [`Tree`].
     pub struct FuncdefId = u32;
 }
 
 define_index_type! {
+    /// The index of an [`Attachdef`] in the `attachdefs` field of a [`Tree`].
     pub struct AttachdefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Detachdef`] in the `detachdefs` field of a [`Tree`].
     pub struct DetachdefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Valdef`] in the `valdefs` field of a [`Tree`].
     pub struct ValdefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Ctxdef`] in the `ctxdefs` field of a [`Tree`].
     pub struct CtxdefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Decl`] in the `decls` field of a [`Tree`].
     pub struct DeclId = u32;
 }
 
