@@ -120,54 +120,141 @@ pub enum StaticInstr {
     /// The parameter context.
     Param,
 
+    /// An open slot.
+    Open,
+
     /// A new context providing some number of slots.
-    Ctx { slots: IdRange<ItemId> },
+    Ctx {
+        /// Statics used to construct the output slots of the new context.
+        slots: IdRange<ItemId>,
+    },
 
     /// Need a contextual type parametrized by a specific context.
-    PieceTydef { def: TydefId, ctx: StaticId },
+    PieceTydef {
+        /// The contextual type declaration.
+        def: TydefId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: IdRange<ItemId>,
+    },
 
     /// Need a contextual function parametrized by a specific context.
-    PieceFndef { def: FndefId, ctx: StaticId },
+    PieceFndef {
+        /// The contextual function declaration.
+        def: FndefId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: IdRange<ItemId>,
+    },
 
     /// Need a contextual value parametrized by a specific context.
-    PieceValdef { def: ValdefId, ctx: StaticId },
+    PieceValdef {
+        /// The contextual value declaration.
+        def: ValdefId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: IdRange<ItemId>,
+    },
 
     /// Need a composite context parametrized by a specific context.
-    PieceCtxdef { def: CtxdefId, ctx: StaticId },
+    PieceCtxdef {
+        /// The context definition.
+        def: CtxdefId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: IdRange<ItemId>,
+    },
 
     /// A nominal type parametrized by a specific context.
-    Tagdef { def: TagdefId, ctx: StaticId },
+    Tagdef {
+        /// The nominal type definition.
+        def: TagdefId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: IdRange<ItemId>,
+    },
+
+    /// A type alias parametrized by a specific context.
+    Aliasdef {
+        /// The nominal type definition.
+        def: AliasdefId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: IdRange<ItemId>,
+    },
 
     /// A structural tuple of other types.
-    Tuple { elems: IdRange<ItemId> },
+    Tuple {
+        /// The types of the tuple elements.
+        elems: IdRange<ItemId>,
+    },
 
     /// A structural record of other types.
-    Record { fields: IdRange<RecordId> },
+    Record {
+        /// The types and field names of the record elements, in lexicographical order.
+        fields: IdRange<RecordId>,
+    },
 
     /// A literal value.
-    Lit { val: Val },
+    Lit {
+        /// The literal.
+        val: Val,
+    },
 
     /// A slot from a context.
-    Get { ctx: StaticId, slot: SlotId },
+    Get {
+        /// The context.
+        ctx: StaticId,
 
-    /// Constrain a contextual type parametrized by a specific context.
+        /// The output slot index.
+        slot: SlotId,
+    },
+
+    /// Provide a contextual type parametrized by a specific context.
     BindTydef {
+        /// The contextual type declaration.
         def: TydefId,
-        ctx: StaticId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: IdRange<ItemId>,
+
+        /// The type being provided.
         bind: StaticId,
     },
 
-    /// Constrain a contextual function parametrized by a specific context.
+    /// Provide a contextual function parametrized by a specific context.
     BindFndef {
+        /// The contextual function declaration.
         def: FndefId,
-        ctx: StaticId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: IdRange<ItemId>,
+
+        /// The function being provided.
         bind: StaticId,
     },
 
-    /// Constrain a contextual value parametrized by a specific context.
+    /// Provide a contextual value parametrized by a specific context.
     BindValdef {
+        /// The contextual value declaration.
         def: ValdefId,
-        ctx: StaticId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: IdRange<ItemId>,
+
+        /// The value being provided.
+        bind: StaticId,
+    },
+
+    /// Provide a composite context parametrized by a specific context.
+    BindCtxdef {
+        /// The composite context definition.
+        def: CtxdefId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: IdRange<ItemId>,
+
+        /// The context being provided.
         bind: StaticId,
     },
 }
