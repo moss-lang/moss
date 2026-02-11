@@ -1009,9 +1009,9 @@ impl<'a> Lower<'a> {
     fn extract_ty(
         &mut self,
         param: Static,
-        slots: &[StaticId],
+        destruct: &[StaticId],
         tydef: TydefId,
-        ctx: StaticId,
+        construct: &[StaticId],
     ) -> LowerResult<StaticId> {
         todo!()
     }
@@ -1019,9 +1019,9 @@ impl<'a> Lower<'a> {
     fn extract_fn(
         &mut self,
         param: Static,
-        slots: &[StaticId],
+        destruct: &[StaticId],
         fndef: FndefId,
-        ctx: StaticId,
+        construct: &[StaticId],
     ) -> LowerResult<StaticId> {
         todo!()
     }
@@ -1029,9 +1029,9 @@ impl<'a> Lower<'a> {
     fn extract_val(
         &mut self,
         param: Static,
-        slots: &[StaticId],
+        destruct: &[StaticId],
         valdef: ValdefId,
-        ctx: StaticId,
+        construct: &[StaticId],
     ) -> LowerResult<StaticId> {
         todo!()
     }
@@ -1039,41 +1039,55 @@ impl<'a> Lower<'a> {
     fn extract_ctx(
         &mut self,
         param: Static,
-        slots: &[StaticId],
+        destruct: &[StaticId],
         ctxdef: CtxdefId,
-        ctx: StaticId,
+        construct: &[StaticId],
     ) -> LowerResult<StaticId> {
         todo!()
     }
 
-    fn spec(&mut self, param: Static, spec: parse::Spec) -> LowerResult<(Named, Vec<StaticId>)> {
+    /// Resolve the path of a spec and synthesize each of its attached bindings.
+    ///
+    /// The `param` gives the meaning of [`StaticInstr::Param`] in this context.
+    ///
+    /// The `destruct` list gives the set of entrypoints that can be used to synthesize bindings.
+    fn spec(
+        &mut self,
+        param: Static,
+        destruct: &[StaticId],
+        spec: parse::Spec,
+    ) -> LowerResult<(Named, Vec<StaticId>)> {
         let Spec { dot, path, binds } = spec;
         let named = if dot {
             Named::Fndef(self.detached(path)?)
         } else {
             self.path(path)?
         };
-        let mut slots = Vec::new();
-        for bind in binds {
-            self.bind(param, &mut slots, bind)?;
-        }
-        Ok((named, slots))
+        let construct = binds
+            .into_iter()
+            .map(|bind| self.bind(param, &destruct, bind))
+            .collect::<LowerResult<Vec<StaticId>>>()?;
+        Ok((named, construct))
     }
 
     fn bind(
         &mut self,
         param: Static,
-        slots: &mut Vec<StaticId>,
+        destruct: &[StaticId],
         bind: parse::BindId,
-    ) -> LowerResult<()> {
+    ) -> LowerResult<StaticId> {
         let parse::Bind { key, val } = self.tree.binds[bind];
-        let (lhs, ctx1) = self.spec(param, key)?;
+        let (lhs, construct) = self.spec(param, destruct, key)?;
         match val {
             None => match lhs {
-                Named::Tydef(tydef) => slots.push(self.extract_ty(param, &slots, tydef, ctx1)?),
-                Named::Fndef(fndef) => slots.push(self.extract_fn(param, &slots, fndef, ctx1)?),
-                Named::Valdef(valdef) => slots.push(self.extract_val(param, &slots, valdef, ctx1)?),
-                Named::Ctxdef(ctxdef) => slots.push(self.extract_ctx(param, &slots, ctxdef, ctx1)?),
+                Named::Tydef(tydef) => self.extract_ty(param, &slots, tydef, &ctx1),
+                Named::Fndef(fndef) => slots.push(self.extract_fn(param, &slots, fndef, &ctx1)?),
+                Named::Valdef(valdef) => {
+                    slots.push(self.extract_val(param, &slots, valdef, &ctx1)?)
+                }
+                Named::Ctxdef(ctxdef) => {
+                    slots.push(self.extract_ctx(param, &slots, ctxdef, &ctx1)?)
+                }
                 Named::Module(_) => return Err(LowerError::BindModule(bind)),
                 Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
                 Named::Aliasdef(_) => return Err(LowerError::BindAlias(bind)),
@@ -1121,7 +1135,6 @@ impl<'a> Lower<'a> {
                 }
             }
         }
-        Ok(())
     }
 
     fn needs(&mut self, param: Static, needs: IdRange<parse::NeedId>) -> LowerResult<Static> {
