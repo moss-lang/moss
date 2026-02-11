@@ -1080,29 +1080,25 @@ impl<'a> Lower<'a> {
         let (lhs, construct) = self.spec(param, destruct, key)?;
         match val {
             None => match lhs {
-                Named::Tydef(tydef) => self.extract_ty(param, &slots, tydef, &ctx1),
-                Named::Fndef(fndef) => slots.push(self.extract_fn(param, &slots, fndef, &ctx1)?),
-                Named::Valdef(valdef) => {
-                    slots.push(self.extract_val(param, &slots, valdef, &ctx1)?)
-                }
-                Named::Ctxdef(ctxdef) => {
-                    slots.push(self.extract_ctx(param, &slots, ctxdef, &ctx1)?)
-                }
-                Named::Module(_) => return Err(LowerError::BindModule(bind)),
-                Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
-                Named::Aliasdef(_) => return Err(LowerError::BindAlias(bind)),
+                Named::Tydef(tydef) => self.extract_ty(param, destruct, tydef, &construct),
+                Named::Fndef(fndef) => self.extract_fn(param, destruct, fndef, &construct),
+                Named::Valdef(valdef) => self.extract_val(param, destruct, valdef, &construct),
+                Named::Ctxdef(ctxdef) => self.extract_ctx(param, destruct, ctxdef, &construct),
+                Named::Module(_) => Err(LowerError::BindModule(bind)),
+                Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
+                Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
             },
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(valdef) => {
                     let (val, _) = self.lit(token)?;
                     let lit = self.emit(StaticInstr::Lit { val });
-                    slots.push(self.emit(StaticInstr::BindValdef {
+                    Ok(self.emit(StaticInstr::BindValdef {
                         def: valdef,
                         ctx: ctx1,
                         bind: lit,
-                    }));
+                    }))
                 }
-                _ => return Err(LowerError::LitNotVal(token)),
+                _ => Err(LowerError::LitNotVal(token)),
             },
             Some(parse::Entry::Ref(spec)) => {
                 let (rhs, ctx2) = self.spec(spec)?;
@@ -1127,11 +1123,11 @@ impl<'a> Lower<'a> {
                         let val = Val::Opaque(ctx2, def);
                         ctx.vals.entry(valdef).or_default().insert(ctx1, Some(val));
                     }
-                    (Named::Ctxdef(_), _) => return Err(LowerError::BindContext(bind)),
-                    (Named::Module(_), _) => return Err(LowerError::BindModule(bind)),
-                    (Named::Tagdef(_), _) => return Err(LowerError::BindNominal(bind)),
-                    (Named::Aliasdef(_), _) => return Err(LowerError::BindAlias(bind)),
-                    _ => return Err(LowerError::BindMismatch(bind)),
+                    (Named::Ctxdef(_), _) => Err(LowerError::BindContext(bind)),
+                    (Named::Module(_), _) => Err(LowerError::BindModule(bind)),
+                    (Named::Tagdef(_), _) => Err(LowerError::BindNominal(bind)),
+                    (Named::Aliasdef(_), _) => Err(LowerError::BindAlias(bind)),
+                    _ => Err(LowerError::BindMismatch(bind)),
                 }
             }
         }
