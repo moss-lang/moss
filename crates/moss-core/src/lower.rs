@@ -160,24 +160,6 @@ pub enum StaticInstr {
         params: IdRange<ItemId>,
     },
 
-    /// A nominal type parametrized by a specific context.
-    Tagdef {
-        /// The nominal type definition.
-        def: TagdefId,
-
-        /// Statics destructured to satisfy the input slots of the parameter context.
-        params: IdRange<ItemId>,
-    },
-
-    /// A type alias parametrized by a specific context.
-    Aliasdef {
-        /// The nominal type definition.
-        def: AliasdefId,
-
-        /// Statics destructured to satisfy the input slots of the parameter context.
-        params: IdRange<ItemId>,
-    },
-
     /// A structural tuple of other types.
     Tuple {
         /// The types of the tuple elements.
@@ -188,12 +170,6 @@ pub enum StaticInstr {
     Record {
         /// The types and field names of the record elements, in lexicographical order.
         fields: IdRange<RecordId>,
-    },
-
-    /// A literal value.
-    Lit {
-        /// The literal.
-        val: Val,
     },
 
     /// A slot from a context.
@@ -215,6 +191,36 @@ pub enum StaticInstr {
 
         /// The type being provided.
         bind: StaticId,
+
+        /// Statics for the input slots of the right-hand parameter context.
+        args: IdRange<ItemId>,
+    },
+
+    /// Provide a nominal type for a contextual type parametrized by a specific context.
+    BindTagdef {
+        /// The contextual type declaration.
+        def: TydefId,
+
+        /// Statics for the input slots of the left-hand parameter context.
+        params: IdRange<ItemId>,
+
+        /// The nominal type being provided.
+        bind: TagdefId,
+
+        /// Statics for the input slots of the right-hand parameter context.
+        args: IdRange<ItemId>,
+    },
+
+    /// Provide a type alias for a contextual type parametrized by a specific context.
+    BindAliasdef {
+        /// The contextual type declaration.
+        def: TydefId,
+
+        /// Statics for the input slots of the left-hand parameter context.
+        params: IdRange<ItemId>,
+
+        /// The type alias being provided.
+        bind: AliasdefId,
 
         /// Statics for the input slots of the right-hand parameter context.
         args: IdRange<ItemId>,
@@ -248,6 +254,18 @@ pub enum StaticInstr {
 
         /// Statics for the input slots of the right-hand parameter context.
         args: IdRange<ItemId>,
+    },
+
+    /// Provide a literal value for a contextual value parametrized by a specific context.
+    BindLit {
+        /// The contextual value declaration.
+        def: ValdefId,
+
+        /// Statics for the input slots of the left-hand parameter context.
+        params: IdRange<ItemId>,
+
+        /// The literal value being provided.
+        bind: Val,
     },
 
     /// Provide a composite context parametrized by a specific context.
@@ -1182,7 +1200,7 @@ impl<'a> Lower<'a> {
         match val {
             None => match lhs {
                 Named::Tydef(def) => {
-                    let target = self.ir.tydefs[def].ctx;
+                    let Tydef { ctx: target } = self.ir.tydefs[def];
                     let construct = self.invoke_open(param, &destruct_lhs, target)?;
                     let bind = self.extract_ty(param, &slots, def, &construct)?;
                     let params = IdRange::new(&mut self.ir.items, construct);
@@ -1195,7 +1213,11 @@ impl<'a> Lower<'a> {
                     }))
                 }
                 Named::Fndef(def) => {
-                    let target = self.ir.fndefs[def].ctx;
+                    let Fndef {
+                        ctx: target,
+                        param: _,
+                        result: _,
+                    } = self.ir.fndefs[def];
                     let construct = self.invoke_open(param, &destruct_lhs, target)?;
                     let bind = self.extract_fn(param, &slots, def, &construct)?;
                     let params = IdRange::new(&mut self.ir.items, construct);
@@ -1208,7 +1230,7 @@ impl<'a> Lower<'a> {
                     }))
                 }
                 Named::Valdef(def) => {
-                    let target = self.ir.valdefs[def].ctx;
+                    let Valdef { ctx: target, ty: _ } = self.ir.valdefs[def];
                     let construct = self.invoke_open(param, &destruct_lhs, target)?;
                     let bind = self.extract_val(param, &slots, def, &construct)?;
                     let params = IdRange::new(&mut self.ir.items, construct);
@@ -1221,7 +1243,10 @@ impl<'a> Lower<'a> {
                     }))
                 }
                 Named::Ctxdef(def) => {
-                    let target = self.ir.ctxdefs[def].ctx;
+                    let Ctxdef {
+                        ctx: target,
+                        def: _,
+                    } = self.ir.ctxdefs[def];
                     let construct = self.invoke_open(param, &destruct_lhs, target)?;
                     let bind = self.extract_ctx(param, &slots, def, &construct)?;
                     let params = IdRange::new(&mut self.ir.items, construct);
@@ -1238,10 +1263,12 @@ impl<'a> Lower<'a> {
                 Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
             },
             Some(parse::Entry::Lit(token)) => match lhs {
-                Named::Valdef(valdef) => {
-                    let (val, _) = self.lit(token)?;
-                    let lit = self.emit(StaticInstr::Lit { val });
-                    todo!()
+                Named::Valdef(def) => {
+                    let Valdef { ctx: target, ty: _ } = self.ir.valdefs[def];
+                    let construct = self.invoke_open(param, &destruct_lhs, target)?;
+                    let (bind, _) = self.lit(token)?;
+                    let params = IdRange::new(&mut self.ir.items, construct);
+                    Ok(self.emit(StaticInstr::BindLit { def, params, bind }))
                 }
                 _ => Err(LowerError::LitNotVal(token)),
             },
@@ -1269,8 +1296,54 @@ impl<'a> Lower<'a> {
                             args,
                         }))
                     }
-                    (Named::Tydef(def), Named::Tagdef(tagdef)) => todo!(),
-                    (Named::Tydef(def), Named::Aliasdef(aliasdef)) => todo!(),
+                    (Named::Tydef(def), Named::Tagdef(tagdef)) => {
+                        let Tydef { ctx: target_lhs } = self.ir.tydefs[def];
+                        let Tagdef {
+                            ctx: target_rhs,
+                            inner: _,
+                        } = self.ir.tagdefs[tagdef];
+                        let construct_lhs = self.invoke_open(param, &destruct_lhs, target_lhs)?;
+                        let construct_rhs = self.invoke_bind(
+                            param,
+                            &construct_lhs,
+                            target_lhs,
+                            &destruct_rhs,
+                            target_rhs,
+                        )?;
+                        let bind = tagdef;
+                        let params = IdRange::new(&mut self.ir.items, construct_lhs);
+                        let args = IdRange::new(&mut self.ir.items, construct_rhs);
+                        Ok(self.emit(StaticInstr::BindTagdef {
+                            def,
+                            params,
+                            bind,
+                            args,
+                        }))
+                    }
+                    (Named::Tydef(def), Named::Aliasdef(aliasdef)) => {
+                        let Tydef { ctx: target_lhs } = self.ir.tydefs[def];
+                        let Aliasdef {
+                            ctx: target_rhs,
+                            def: _,
+                        } = self.ir.aliasdefs[aliasdef];
+                        let construct_lhs = self.invoke_open(param, &destruct_lhs, target_lhs)?;
+                        let construct_rhs = self.invoke_bind(
+                            param,
+                            &construct_lhs,
+                            target_lhs,
+                            &destruct_rhs,
+                            target_rhs,
+                        )?;
+                        let bind = aliasdef;
+                        let params = IdRange::new(&mut self.ir.items, construct_lhs);
+                        let args = IdRange::new(&mut self.ir.items, construct_rhs);
+                        Ok(self.emit(StaticInstr::BindAliasdef {
+                            def,
+                            params,
+                            bind,
+                            args,
+                        }))
+                    }
                     (Named::Fndef(def), Named::Fndef(fndef)) => {
                         let Fndef {
                             ctx: target_lhs,
@@ -1352,25 +1425,32 @@ impl<'a> Lower<'a> {
                     let (lhs, destruct) = self.spec(param, &slots, key)?;
                     match lhs {
                         Named::Tydef(def) => {
-                            let target = self.ir.tydefs[def].ctx;
+                            let Tydef { ctx: target } = self.ir.tydefs[def];
                             let construct = self.invoke_open(param, &destruct, target)?;
                             let params = IdRange::new(&mut self.ir.items, construct);
                             self.emit(StaticInstr::NeedTydef { def, params })
                         }
                         Named::Fndef(def) => {
-                            let target = self.ir.fndefs[def].ctx;
+                            let Fndef {
+                                ctx: target,
+                                param: _,
+                                result: _,
+                            } = self.ir.fndefs[def];
                             let construct = self.invoke_open(param, &destruct, target)?;
                             let params = IdRange::new(&mut self.ir.items, construct);
                             self.emit(StaticInstr::NeedFndef { def, params })
                         }
                         Named::Valdef(def) => {
-                            let target = self.ir.valdefs[def].ctx;
+                            let Valdef { ctx: target, ty: _ } = self.ir.valdefs[def];
                             let construct = self.invoke_open(param, &destruct, target)?;
                             let params = IdRange::new(&mut self.ir.items, construct);
                             self.emit(StaticInstr::NeedValdef { def, params })
                         }
                         Named::Ctxdef(def) => {
-                            let target = self.ir.ctxdefs[def].ctx;
+                            let Ctxdef {
+                                ctx: target,
+                                def: _,
+                            } = self.ir.ctxdefs[def];
                             let construct = self.invoke_open(param, &destruct, target)?;
                             let params = IdRange::new(&mut self.ir.items, construct);
                             self.emit(StaticInstr::NeedCtxdef { def, params })
