@@ -1087,7 +1087,7 @@ impl<'a> Lower<'a> {
         self.ir.statics.push(stat)
     }
 
-    fn invoke(
+    fn invoke_open(
         &mut self,
         param: Static,
         destruct: &[StaticId],
@@ -1100,7 +1100,7 @@ impl<'a> Lower<'a> {
         &mut self,
         param: Static,
         destruct: &[StaticId],
-        tydef: TydefId,
+        def: TydefId,
         construct: &[StaticId],
     ) -> LowerResult<StaticId> {
         todo!()
@@ -1110,7 +1110,7 @@ impl<'a> Lower<'a> {
         &mut self,
         param: Static,
         destruct: &[StaticId],
-        fndef: FndefId,
+        def: FndefId,
         construct: &[StaticId],
     ) -> LowerResult<StaticId> {
         todo!()
@@ -1120,7 +1120,7 @@ impl<'a> Lower<'a> {
         &mut self,
         param: Static,
         destruct: &[StaticId],
-        valdef: ValdefId,
+        def: ValdefId,
         construct: &[StaticId],
     ) -> LowerResult<StaticId> {
         todo!()
@@ -1130,7 +1130,7 @@ impl<'a> Lower<'a> {
         &mut self,
         param: Static,
         destruct: &[StaticId],
-        ctxdef: CtxdefId,
+        def: CtxdefId,
         construct: &[StaticId],
     ) -> LowerResult<StaticId> {
         todo!()
@@ -1163,17 +1163,65 @@ impl<'a> Lower<'a> {
     fn bind(
         &mut self,
         param: Static,
-        destruct: &[StaticId],
+        slots: &[StaticId],
         bind: parse::BindId,
     ) -> LowerResult<StaticId> {
         let parse::Bind { key, val } = self.tree.binds[bind];
-        let (lhs, construct) = self.spec(param, destruct, key)?;
+        let (lhs, destruct) = self.spec(param, slots, key)?;
         match val {
             None => match lhs {
-                Named::Tydef(tydef) => self.extract_ty(param, destruct, tydef, &construct),
-                Named::Fndef(fndef) => self.extract_fn(param, destruct, fndef, &construct),
-                Named::Valdef(valdef) => self.extract_val(param, destruct, valdef, &construct),
-                Named::Ctxdef(ctxdef) => self.extract_ctx(param, destruct, ctxdef, &construct),
+                Named::Tydef(def) => {
+                    let target = self.ir.tydefs[def].ctx;
+                    let construct = self.invoke_open(param, &destruct, target)?;
+                    let bind = self.extract_ty(param, &slots, def, &construct)?;
+                    let params = IdRange::new(&mut self.ir.items, construct);
+                    let args = params;
+                    Ok(self.emit(StaticInstr::BindTydef {
+                        def,
+                        params,
+                        bind,
+                        args,
+                    }))
+                }
+                Named::Fndef(def) => {
+                    let target = self.ir.fndefs[def].ctx;
+                    let construct = self.invoke_open(param, &destruct, target)?;
+                    let bind = self.extract_fn(param, &slots, def, &construct)?;
+                    let params = IdRange::new(&mut self.ir.items, construct);
+                    let args = params;
+                    Ok(self.emit(StaticInstr::BindFndef {
+                        def,
+                        params,
+                        bind,
+                        args,
+                    }))
+                }
+                Named::Valdef(def) => {
+                    let target = self.ir.valdefs[def].ctx;
+                    let construct = self.invoke_open(param, &destruct, target)?;
+                    let bind = self.extract_val(param, &slots, def, &construct)?;
+                    let params = IdRange::new(&mut self.ir.items, construct);
+                    let args = params;
+                    Ok(self.emit(StaticInstr::BindValdef {
+                        def,
+                        params,
+                        bind,
+                        args,
+                    }))
+                }
+                Named::Ctxdef(def) => {
+                    let target = self.ir.ctxdefs[def].ctx;
+                    let construct = self.invoke_open(param, &destruct, target)?;
+                    let bind = self.extract_ctx(param, &slots, def, &construct)?;
+                    let params = IdRange::new(&mut self.ir.items, construct);
+                    let args = params;
+                    Ok(self.emit(StaticInstr::BindCtxdef {
+                        def,
+                        params,
+                        bind,
+                        args,
+                    }))
+                }
                 Named::Module(_) => Err(LowerError::BindModule(bind)),
                 Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
                 Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
@@ -1237,26 +1285,26 @@ impl<'a> Lower<'a> {
                     match lhs {
                         Named::Tydef(def) => {
                             let target = self.ir.tydefs[def].ctx;
-                            let params = self.invoke(param, &destruct, target)?;
-                            let params = IdRange::new(&mut self.ir.items, params);
+                            let construct = self.invoke_open(param, &destruct, target)?;
+                            let params = IdRange::new(&mut self.ir.items, construct);
                             self.emit(StaticInstr::NeedTydef { def, params })
                         }
                         Named::Fndef(def) => {
                             let target = self.ir.fndefs[def].ctx;
-                            let params = self.invoke(param, &destruct, target)?;
-                            let params = IdRange::new(&mut self.ir.items, params);
+                            let construct = self.invoke_open(param, &destruct, target)?;
+                            let params = IdRange::new(&mut self.ir.items, construct);
                             self.emit(StaticInstr::NeedFndef { def, params })
                         }
                         Named::Valdef(def) => {
                             let target = self.ir.valdefs[def].ctx;
-                            let params = self.invoke(param, &destruct, target)?;
-                            let params = IdRange::new(&mut self.ir.items, params);
+                            let construct = self.invoke_open(param, &destruct, target)?;
+                            let params = IdRange::new(&mut self.ir.items, construct);
                             self.emit(StaticInstr::NeedValdef { def, params })
                         }
                         Named::Ctxdef(def) => {
                             let target = self.ir.ctxdefs[def].ctx;
-                            let params = self.invoke(param, &destruct, target)?;
-                            let params = IdRange::new(&mut self.ir.items, params);
+                            let construct = self.invoke_open(param, &destruct, target)?;
+                            let params = IdRange::new(&mut self.ir.items, construct);
                             self.emit(StaticInstr::NeedCtxdef { def, params })
                         }
                         Named::Module(_) => return Err(LowerError::BindModule(bind)),
