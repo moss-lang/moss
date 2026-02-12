@@ -300,6 +300,10 @@ impl Static {
     }
 }
 
+struct StaticBuilder {
+    start: StaticId,
+}
+
 enum Query<T> {
     Missing,
     Ambiguous,
@@ -1101,8 +1105,29 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
+    fn builder(&self) -> StaticBuilder {
+        StaticBuilder {
+            start: self.ir.statics.next_idx(),
+        }
+    }
+
     fn emit(&mut self, stat: StaticInstr) -> StaticId {
         self.ir.statics.push(stat)
+    }
+
+    fn finish(&self, builder: StaticBuilder, result: StaticId) -> Static {
+        let StaticBuilder { start } = builder;
+        let end = self.ir.statics.next_idx();
+        Static::new(IdRange { start, end }, result)
+    }
+
+    fn invoke(
+        &mut self,
+        param: Static,
+        destruct: &[StaticId],
+        target: Static,
+    ) -> LowerResult<Vec<StaticId>> {
+        todo!()
     }
 
     fn invoke_open(
@@ -1413,7 +1438,7 @@ impl<'a> Lower<'a> {
     }
 
     fn needs(&mut self, param: Static, needs: IdRange<parse::NeedId>) -> LowerResult<Static> {
-        let start = self.ir.statics.next_idx();
+        let builder = self.builder();
         let mut slots = Vec::new();
         for need in needs {
             let parse::Need { kind: _, bind } = self.tree.needs[need];
@@ -1465,28 +1490,36 @@ impl<'a> Lower<'a> {
         }
         let slots = IdRange::new(&mut self.ir.items, slots);
         let ctx = self.emit(StaticInstr::Ctx { slots });
-        let end = self.ir.statics.next_idx();
-        Ok(Static::new(IdRange { start, end }, ctx))
+        Ok(self.finish(builder, ctx))
     }
 
-    fn parse_ty(&mut self, ty: parse::TypeId) -> LowerResult<TypeId> {
+    fn parse_ty(
+        &mut self,
+        param: Static,
+        slots: &[StaticId],
+        ty: parse::TypeId,
+    ) -> LowerResult<StaticId> {
         match self.tree.types[ty] {
             parse::Type::Spec(spec) => {
-                let (named, ctx) = self.spec(spec)?;
-                let ty = match named {
-                    Named::Tydef(tydef) => Type::Opaque(tydef, ctx),
-                    Named::Tagdef(tagdef) => Type::Nominal(tagdef, ctx),
-                    Named::Aliasdef(aliasdef) => Type::Alias(aliasdef, ctx),
+                let (named, destruct) = self.spec(param, slots, spec)?;
+                match named {
+                    Named::Tydef(tydef) => {
+                        let Tydef { ctx: target } = self.ir.tydefs[tydef];
+                        let construct = self.invoke(param, &destruct, target)?;
+                        self.extract_ty(param, slots, tydef, &construct)
+                    }
+                    Named::Tagdef(tagdef) => todo!(),
+                    Named::Aliasdef(aliasdef) => todo!(),
                     _ => return Err(LowerError::NotType(spec.path.last)),
-                };
-                Ok(self.ty(ty))
+                }
             }
             parse::Type::Tuple(elems) => {
                 let lowered = elems
                     .into_iter()
-                    .map(|elem| self.parse_ty(elem))
-                    .collect::<LowerResult<Vec<TypeId>>>()?;
-                Ok(self.ty_tuple(&lowered))
+                    .map(|elem| self.parse_ty(param, slots, elem))
+                    .collect::<LowerResult<Vec<StaticId>>>()?;
+                let elems = IdRange::new(&mut self.ir.items, lowered);
+                Ok(self.emit(StaticInstr::Tuple { elems }))
             }
             parse::Type::Record(members) => todo!(),
         }
@@ -1525,8 +1558,36 @@ impl<'a> Lower<'a> {
                         .names
                         .insert((self.module, string), Named::Tydef(lowered));
                 }
-                parse::Decl::Tagdef(id) => todo!(),
-                parse::Decl::Aliasdef(id) => todo!(),
+                parse::Decl::Tagdef(id) => {
+                    let parse::Tagdef { name, needs, def } = self.tree.tagdefs[id];
+                    let ctx = self.needs(empty, needs)?;
+                    let builder = self.builder();
+                    let param = self.emit(StaticInstr::Param);
+                    let slots = &[param];
+                    let ty = self.parse_ty(ctx, slots, def)?;
+                    let inner = self.finish(builder, ty);
+                    let tagdef = Tagdef { ctx, inner };
+                    let lowered = self.ir.tagdefs.push(tagdef);
+                    let string = self.name(name);
+                    self.names
+                        .names
+                        .insert((self.module, string), Named::Tagdef(lowered));
+                }
+                parse::Decl::Aliasdef(id) => {
+                    let parse::Aliasdef { name, needs, def } = self.tree.aliasdefs[id];
+                    let ctx = self.needs(empty, needs)?;
+                    let builder = self.builder();
+                    let param = self.emit(StaticInstr::Param);
+                    let slots = &[param];
+                    let ty = self.parse_ty(ctx, slots, def)?;
+                    let def = self.finish(builder, ty);
+                    let aliasdef = Aliasdef { ctx, def };
+                    let lowered = self.ir.aliasdefs.push(aliasdef);
+                    let string = self.name(name);
+                    self.names
+                        .names
+                        .insert((self.module, string), Named::Aliasdef(lowered));
+                }
                 parse::Decl::Funcdef(id) => todo!(),
                 parse::Decl::Attachdef(id) => todo!(),
                 parse::Decl::Detachdef(id) => todo!(),
