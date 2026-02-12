@@ -39,11 +39,6 @@ define_index_type! {
 }
 
 define_index_type! {
-    /// The index of a [`Ctx`] in the `ctxs` field of the [`IR`].
-    pub struct CtxId = u32;
-}
-
-define_index_type! {
     /// The index of an output slot on a context.
     pub struct SlotId = u32;
 }
@@ -130,7 +125,7 @@ pub enum StaticInstr {
     },
 
     /// Need a contextual type parametrized by a specific context.
-    PieceTydef {
+    NeedTydef {
         /// The contextual type declaration.
         def: TydefId,
 
@@ -139,7 +134,7 @@ pub enum StaticInstr {
     },
 
     /// Need a contextual function parametrized by a specific context.
-    PieceFndef {
+    NeedFndef {
         /// The contextual function declaration.
         def: FndefId,
 
@@ -148,7 +143,7 @@ pub enum StaticInstr {
     },
 
     /// Need a contextual value parametrized by a specific context.
-    PieceValdef {
+    NeedValdef {
         /// The contextual value declaration.
         def: ValdefId,
 
@@ -157,7 +152,7 @@ pub enum StaticInstr {
     },
 
     /// Need a composite context parametrized by a specific context.
-    PieceCtxdef {
+    NeedCtxdef {
         /// The context definition.
         def: CtxdefId,
 
@@ -215,11 +210,14 @@ pub enum StaticInstr {
         /// The contextual type declaration.
         def: TydefId,
 
-        /// Statics destructured to satisfy the input slots of the parameter context.
+        /// Statics for the input slots of the left-hand parameter context.
         params: IdRange<ItemId>,
 
         /// The type being provided.
         bind: StaticId,
+
+        /// Statics for the input slots of the right-hand parameter context.
+        args: IdRange<ItemId>,
     },
 
     /// Provide a contextual function parametrized by a specific context.
@@ -227,11 +225,14 @@ pub enum StaticInstr {
         /// The contextual function declaration.
         def: FndefId,
 
-        /// Statics destructured to satisfy the input slots of the parameter context.
+        /// Statics for the input slots of the left-hand parameter context.
         params: IdRange<ItemId>,
 
         /// The function being provided.
         bind: StaticId,
+
+        /// Statics for the input slots of the right-hand parameter context.
+        args: IdRange<ItemId>,
     },
 
     /// Provide a contextual value parametrized by a specific context.
@@ -239,11 +240,14 @@ pub enum StaticInstr {
         /// The contextual value declaration.
         def: ValdefId,
 
-        /// Statics destructured to satisfy the input slots of the parameter context.
+        /// Statics for the input slots of the left-hand parameter context.
         params: IdRange<ItemId>,
 
         /// The value being provided.
         bind: StaticId,
+
+        /// Statics for the input slots of the right-hand parameter context.
+        args: IdRange<ItemId>,
     },
 
     /// Provide a composite context parametrized by a specific context.
@@ -251,11 +255,14 @@ pub enum StaticInstr {
         /// The composite context definition.
         def: CtxdefId,
 
-        /// Statics destructured to satisfy the input slots of the parameter context.
+        /// Statics for the input slots of the left-hand parameter context.
         params: IdRange<ItemId>,
 
         /// The context being provided.
         bind: StaticId,
+
+        /// Statics for the input slots of the right-hand parameter context.
+        args: IdRange<ItemId>,
     },
 }
 
@@ -273,12 +280,6 @@ impl Static {
     fn result(self) -> StaticId {
         self.body.last().unwrap()
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Ctx {
-    pub param: Static,
-    pub def: Static,
 }
 
 enum Query<T> {
@@ -362,32 +363,33 @@ pub struct Tydef {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Tagdef {
-    pub ctx: CtxId,
+    pub ctx: Static,
     pub inner: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Aliasdef {
-    pub ctx: CtxId,
+    pub ctx: Static,
     pub def: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Fndef {
-    pub ctx: CtxId,
+    pub ctx: Static,
     pub param: Static,
     pub result: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Valdef {
-    pub ctx: CtxId,
+    pub ctx: Static,
     pub ty: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Ctxdef {
-    pub def: CtxId,
+    pub ctx: Static,
+    pub def: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -504,7 +506,7 @@ pub struct IR {
     pub statics: IndexVec<StaticId, StaticInstr>,
     pub items: IndexVec<ItemId, StaticId>,
     pub records: IndexVec<RecordId, (StrId, StaticId)>,
-    pub ctxs: IndexVec<CtxId, Ctx>,
+    pub empty: Static,
     pub tydefs: IndexVec<TydefId, Tydef>,
     pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
@@ -525,7 +527,6 @@ impl Default for IR {
             statics: Default::default(),
             items: Default::default(),
             records: Default::default(),
-            ctxs: Default::default(),
             tydefs: Default::default(),
             tagdefs: Default::default(),
             aliasdefs: Default::default(),
@@ -544,21 +545,14 @@ impl Default for IR {
             start: empty,
             end: ir.statics.len_idx(),
         };
-        ir.ctxs.push(Ctx {
-            param: Static::new(body, empty),
-            def: Static::new(body, empty),
-        });
+        ir.empty = Static::new(body, empty);
         ir
     }
 }
 
 impl IR {
-    pub fn empty_ctx(&self) -> CtxId {
-        CtxId::from_usize(0)
-    }
-
-    pub fn ctx(&self, ctx: CtxId) -> Ctx {
-        self.ctxs[ctx.index()]
+    pub fn empty(&self) -> Static {
+        self.empty
     }
 }
 
@@ -1093,6 +1087,15 @@ impl<'a> Lower<'a> {
         self.ir.statics.push(stat)
     }
 
+    fn invoke(
+        &mut self,
+        param: Static,
+        destruct: &[StaticId],
+        target: Static,
+    ) -> LowerResult<Vec<StaticId>> {
+        todo!()
+    }
+
     fn extract_ty(
         &mut self,
         param: Static,
@@ -1227,29 +1230,42 @@ impl<'a> Lower<'a> {
             let parse::Need { kind: _, bind } = self.tree.needs[need];
             // TODO: Handle `kind`.
             let parse::Bind { key, val } = self.tree.binds[bind];
-            match val {
-                Some(_) => self.bind(param, &mut slots, bind)?,
+            let slot = match val {
+                Some(_) => self.bind(param, &slots, bind)?,
                 None => {
-                    let (lhs, ctx) = self.spec(param, key)?;
+                    let (lhs, destruct) = self.spec(param, &slots, key)?;
                     match lhs {
-                        Named::Tydef(tydef) => {
-                            slots.push(self.emit(StaticInstr::PieceTydef { def: tydef, ctx }))
+                        Named::Tydef(def) => {
+                            let target = self.ir.tydefs[def].ctx;
+                            let params = self.invoke(param, &destruct, target)?;
+                            let params = IdRange::new(&mut self.ir.items, params);
+                            self.emit(StaticInstr::NeedTydef { def, params })
                         }
-                        Named::Fndef(fndef) => {
-                            slots.push(self.emit(StaticInstr::PieceFndef { def: fndef, ctx }))
+                        Named::Fndef(def) => {
+                            let target = self.ir.fndefs[def].ctx;
+                            let params = self.invoke(param, &destruct, target)?;
+                            let params = IdRange::new(&mut self.ir.items, params);
+                            self.emit(StaticInstr::NeedFndef { def, params })
                         }
-                        Named::Valdef(valdef) => {
-                            slots.push(self.emit(StaticInstr::PieceValdef { def: valdef, ctx }))
+                        Named::Valdef(def) => {
+                            let target = self.ir.valdefs[def].ctx;
+                            let params = self.invoke(param, &destruct, target)?;
+                            let params = IdRange::new(&mut self.ir.items, params);
+                            self.emit(StaticInstr::NeedValdef { def, params })
                         }
-                        Named::Ctxdef(ctxdef) => {
-                            slots.push(self.emit(StaticInstr::PieceCtxdef { def: ctxdef, ctx }))
+                        Named::Ctxdef(def) => {
+                            let target = self.ir.ctxdefs[def].ctx;
+                            let params = self.invoke(param, &destruct, target)?;
+                            let params = IdRange::new(&mut self.ir.items, params);
+                            self.emit(StaticInstr::NeedCtxdef { def, params })
                         }
                         Named::Module(_) => return Err(LowerError::BindModule(bind)),
                         Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
                         Named::Aliasdef(_) => return Err(LowerError::BindAlias(bind)),
                     }
                 }
-            }
+            };
+            slots.push(slot);
         }
         let slots = IdRange::new(&mut self.ir.items, slots);
         let ctx = self.emit(StaticInstr::Ctx { slots });
@@ -1299,7 +1315,7 @@ impl<'a> Lower<'a> {
     }
 
     fn decls(&mut self) -> LowerResult<()> {
-        let empty = self.ir.ctx(self.ir.empty_ctx()).def;
+        let empty = self.ir.empty();
         for &decl in &self.tree.decls {
             match decl {
                 parse::Decl::Tydef(id) => {
