@@ -817,14 +817,6 @@ struct Lower<'a> {
     prelude: ModuleId,
     module: ModuleId,
     imports: &'a [ModuleId],
-    tydefs: IndexVec<parse::TydefId, TydefId>,
-    tagdefs: IndexVec<parse::TagdefId, TagdefId>,
-    aliasdefs: IndexVec<parse::AliasdefId, AliasdefId>,
-    funcdefs: IndexVec<parse::FuncdefId, FndefId>,
-    attachdefs: IndexVec<parse::AttachdefId, (TagdefId, FndefId)>,
-    detachdefs: IndexVec<parse::DetachdefId, FndefId>,
-    valdefs: IndexVec<parse::ValdefId, ValdefId>,
-    ctxdefs: IndexVec<parse::CtxdefId, CtxdefId>,
     funcs: Vec<(parse::FuncdefId, FndefId)>,
     attaches: Vec<(parse::AttachdefId, TagdefId, FndefId)>,
     detaches: Vec<(parse::DetachdefId, FndefId)>,
@@ -1006,110 +998,6 @@ impl<'a> Lower<'a> {
                 }
             }
         }
-        Ok(())
-    }
-
-    fn names(&mut self) -> LowerResult<()> {
-        let mut next_ty = self.ir.tydefs.next_idx();
-        let mut next_tag = self.ir.tagdefs.next_idx();
-        let mut next_alias = self.ir.aliasdefs.next_idx();
-        let mut next_fn = self.ir.fndefs.next_idx();
-        let mut next_val = self.ir.valdefs.next_idx();
-        let mut next_ctx = self.ir.ctxdefs.next_idx();
-        // We must process nominal type names before we can attach methods to them.
-        self.tagdefs = (self.tree.tagdefs.iter())
-            .map(|item| {
-                let id = next_tag;
-                next_tag += 1;
-                let name = self.name(item.name);
-                self.names
-                    .names
-                    .insert((self.module, name), Named::Tagdef(id));
-                id
-            })
-            .collect();
-        self.attachdefs = (self.tree.attachdefs.iter())
-            .map(|item| {
-                let id = next_fn;
-                next_fn += 1;
-                let fn_name = self.name(item.fndef.name);
-                let ty_name = self.name(item.ty);
-                // TODO: Prevent attaching methods to nominal types defined in other modules.
-                match self.names.names.get(&(self.module, ty_name)) {
-                    Some(&Named::Tagdef(tagdef)) => {
-                        self.names.attached.insert((tagdef, fn_name), id);
-                        Ok((tagdef, id))
-                    }
-                    Some(_) => Err(LowerError::NotNominal(item.ty)),
-                    None => Err(LowerError::Undefined(item.ty)),
-                }
-            })
-            .collect::<LowerResult<_>>()?;
-        // Other kinds of things can happen in arbitrary order.
-        self.tydefs = (self.tree.tydefs.iter())
-            .map(|item| {
-                let id = next_ty;
-                next_ty += 1;
-                let name = self.name(item.name);
-                self.names
-                    .names
-                    .insert((self.module, name), Named::Tydef(id));
-                id
-            })
-            .collect();
-        self.aliasdefs = (self.tree.aliasdefs.iter())
-            .map(|item| {
-                let id = next_alias;
-                next_alias += 1;
-                let name = self.name(item.name);
-                self.names
-                    .names
-                    .insert((self.module, name), Named::Aliasdef(id));
-                id
-            })
-            .collect();
-        self.funcdefs = (self.tree.funcdefs.iter())
-            .map(|item| {
-                let id = next_fn;
-                next_fn += 1;
-                let name = self.name(item.fndef.name);
-                self.names
-                    .names
-                    .insert((self.module, name), Named::Fndef(id));
-                id
-            })
-            .collect();
-        self.detachdefs = (self.tree.detachdefs.iter())
-            .map(|item| {
-                let id = next_fn;
-                next_fn += 1;
-                let name = self.name(item.fndef.name);
-                self.names.detached.insert((self.module, name), id);
-                id
-            })
-            .collect();
-        self.valdefs = (self.tree.valdefs.iter())
-            .map(|item| {
-                let id = next_val;
-                next_val += 1;
-                let name = self.name(item.name);
-                self.names
-                    .names
-                    .insert((self.module, name), Named::Valdef(id));
-                id
-            })
-            .collect();
-        self.ctxdefs = (self.tree.ctxdefs.iter())
-            .map(|item| {
-                let id = next_ctx;
-                next_ctx += 1;
-                let name = self.name(item.name);
-                self.names
-                    .names
-                    .insert((self.module, name), Named::Ctxdef(id));
-                id
-            })
-            .collect();
         Ok(())
     }
 
@@ -1509,6 +1397,7 @@ impl<'a> Lower<'a> {
         needs: IdRange<parse::NeedId>,
     ) -> LowerResult<Vec<StaticId>> {
         let mut slots = Vec::new();
+        slots.push(self.emit(StaticInstr::Param));
         for need in needs {
             slots.push(self.need(param, &slots, need)?);
         }
@@ -1596,10 +1485,8 @@ impl<'a> Lower<'a> {
             match decl {
                 parse::Decl::Tydef(id) => {
                     let parse::Tydef { name, needs } = self.tree.tydefs[id];
-                    let tydef = Tydef {
-                        ctx: self.needs(empty, needs)?,
-                    };
-                    let lowered = self.ir.tydefs.push(tydef);
+                    let ctx = self.needs(empty, needs)?;
+                    let lowered = self.ir.tydefs.push(Tydef { ctx });
                     let string = self.name(name);
                     self.names
                         .names
@@ -1613,8 +1500,7 @@ impl<'a> Lower<'a> {
                     let slots = &[param];
                     let ty = self.parse_ty(ctx, slots, def)?;
                     let inner = self.finish(builder, ty);
-                    let tagdef = Tagdef { ctx, inner };
-                    let lowered = self.ir.tagdefs.push(tagdef);
+                    let lowered = self.ir.tagdefs.push(Tagdef { ctx, inner });
                     let string = self.name(name);
                     self.names
                         .names
@@ -1628,8 +1514,7 @@ impl<'a> Lower<'a> {
                     let slots = &[param];
                     let ty = self.parse_ty(ctx, slots, def)?;
                     let def = self.finish(builder, ty);
-                    let aliasdef = Aliasdef { ctx, def };
-                    let lowered = self.ir.aliasdefs.push(aliasdef);
+                    let lowered = self.ir.aliasdefs.push(Aliasdef { ctx, def });
                     let string = self.name(name);
                     self.names
                         .names
@@ -1663,72 +1548,31 @@ impl<'a> Lower<'a> {
                     self.detaches.push((id, lowered));
                     self.names.detached.insert((self.module, fn_name), lowered);
                 }
-                parse::Decl::Valdef(id) => todo!(),
-                parse::Decl::Ctxdef(id) => todo!(),
+                parse::Decl::Valdef(id) => {
+                    let parse::Valdef { name, needs, ty } = self.tree.valdefs[id];
+                    let ctx = self.needs(empty, needs)?;
+                    let builder = self.builder();
+                    let param = self.emit(StaticInstr::Param);
+                    let slots = &[param];
+                    let ty = self.parse_ty(ctx, slots, ty)?;
+                    let ty = self.finish(builder, ty);
+                    let lowered = self.ir.valdefs.push(Valdef { ctx, ty });
+                    let string = self.name(name);
+                    self.names
+                        .names
+                        .insert((self.module, string), Named::Valdef(lowered));
+                }
+                parse::Decl::Ctxdef(id) => {
+                    let parse::Ctxdef { name, needs, def } = self.tree.ctxdefs[id];
+                    let ctx = self.needs(empty, needs)?;
+                    let def = self.needs(ctx, def)?;
+                    let lowered = self.ir.ctxdefs.push(Ctxdef { ctx, def });
+                    let string = self.name(name);
+                    self.names
+                        .names
+                        .insert((self.module, string), Named::Ctxdef(lowered));
+                }
             }
-        }
-        for (id, &parse::Tydef { name, needs }) in self.tree.tydefs.iter_enumerated() {
-            let id = self.tydefs[id];
-            drop(name);
-            let tydef = Tydef {
-                ctx: self.needs(needs)?,
-            };
-            assert_eq!(self.ir.tydefs.push(tydef), id);
-        }
-        for (id, &parse::Tagdef { name, needs, def }) in self.tree.tagdefs.iter_enumerated() {
-            let id = self.tagdefs[id];
-            drop(name);
-            let tagdef = Tagdef {
-                ctx: self.needs(needs)?,
-                inner: self.parse_ty(def)?,
-            };
-            assert_eq!(self.ir.tagdefs.push(tagdef), id);
-        }
-        for (id, &parse::Aliasdef { name, needs, def }) in self.tree.aliasdefs.iter_enumerated() {
-            let id = self.aliasdefs[id];
-            drop(name);
-            let aliasdef = Aliasdef {
-                ctx: self.needs(needs)?,
-                def: self.parse_ty(def)?,
-            };
-            assert_eq!(self.ir.aliasdefs.push(aliasdef), id);
-        }
-        for (parse_id, &parse::Funcdef { fndef }) in self.tree.funcdefs.iter_enumerated() {
-            let id = self.funcdefs[parse_id];
-            self.funcs.push((parse_id, id));
-            let fndef = self.parse_fndef(fndef)?;
-            assert_eq!(self.ir.fndefs.push(fndef), id);
-        }
-        for (parse_id, &parse::Attachdef { ty, fndef }) in self.tree.attachdefs.iter_enumerated() {
-            drop(ty);
-            let (tagdef, id) = self.attachdefs[parse_id];
-            self.attaches.push((parse_id, tagdef, id));
-            let fndef = self.parse_fndef(fndef)?;
-            assert_eq!(self.ir.fndefs.push(fndef), id);
-        }
-        for (parse_id, &parse::Detachdef { fndef }) in self.tree.detachdefs.iter_enumerated() {
-            let id = self.detachdefs[parse_id];
-            self.detaches.push((parse_id, id));
-            let fndef = self.parse_fndef(fndef)?;
-            assert_eq!(self.ir.fndefs.push(fndef), id);
-        }
-        for (id, &parse::Valdef { name, needs, ty }) in self.tree.valdefs.iter_enumerated() {
-            let id = self.valdefs[id];
-            drop(name);
-            let valdef = Valdef {
-                ctx: self.needs(needs)?,
-                ty: self.parse_ty(ty)?,
-            };
-            assert_eq!(self.ir.valdefs.push(valdef), id);
-        }
-        for (id, &parse::Ctxdef { name, needs, def }) in self.tree.ctxdefs.iter_enumerated() {
-            let id = self.ctxdefs[id];
-            drop(name);
-            let ctxdef = Ctxdef {
-                ctx: self.needs(needs)?,
-                def: self.needs(def)?,
-            };
-            assert_eq!(self.ir.ctxdefs.push(ctxdef), id);
         }
         Ok(())
     }
@@ -2294,14 +2138,6 @@ pub fn lower(
         prelude,
         module,
         imports,
-        tydefs: IndexVec::new(),
-        tagdefs: IndexVec::new(),
-        aliasdefs: IndexVec::new(),
-        funcdefs: IndexVec::new(),
-        attachdefs: IndexVec::new(),
-        detachdefs: IndexVec::new(),
-        valdefs: IndexVec::new(),
-        ctxdefs: IndexVec::new(),
         funcs: Vec::new(),
         attaches: Vec::new(),
         detaches: Vec::new(),
