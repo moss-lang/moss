@@ -11,7 +11,7 @@ use index_vec::{IndexSlice, IndexVec, define_index_type};
 use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex, string},
-    parse::{self, Binop, Block, Expr, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
+    parse::{self, Binop, Block, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
     prelude::Base,
     range::{Inclusive, expr_range, path_range, single},
     util::IdRange,
@@ -23,17 +23,17 @@ define_index_type! {
 }
 
 define_index_type! {
-    /// The index of a [`StaticInstr`] in the `statics` field of the [`IR`].
-    pub struct StaticId = u32;
+    /// The index of a [`Instr`] in the `instrs` field of the [`IR`].
+    pub struct InstrId = u32;
 }
 
 define_index_type! {
-    /// The index of a [`StaticId`] in the `items` field of the [`IR`].
+    /// The index of a [`InstrId`] in the `items` field of the [`IR`].
     pub struct ItemId = u32;
 }
 
 define_index_type! {
-    /// The index of a [`StrId`] and [`StaticId`] in the `records` field of the [`IR`].
+    /// The index of a [`StrId`] and [`InstrId`] in the `records` field of the [`IR`].
     pub struct RecordId = u32;
 }
 
@@ -82,35 +82,111 @@ define_index_type! {
     pub struct FieldId = u32;
 }
 
-define_index_type! {
-    /// The index of a [`TypeId`]/[`Instr`] in the `locals`/`instrs` field of the [`IR`].
-    pub struct LocalId = u32;
-}
+pub type InstrList = IdRange<ItemId>;
 
-define_index_type! {
-    /// The index of a [`LocalId`] in the `refs` field of the [`IR`].
-    pub struct RefId = u32;
-}
-
-define_index_type! {
-    /// The index of a [`Drill`] in the `drills` field of the [`IR`].
-    pub struct DrillId = u32;
-}
-
-/// An instruction in the static IR.
-///
-/// A sequence of static instructions is used to represent every `type` declaration, every `context`
-/// definition, every `fn` signature, and every `val` type. It is also used to represent the
-/// "contextual needs" that go in square brackets for each of those items.
-///
-/// For types, functions, and values, the static IR snippet will start with `Param`, use `Get` to
-/// access some slots from that context, perhaps use `Ctx` to construct intermediate contexts as
-/// necessary, and eventually return an item that it either extracted or perhaps constructed using
-/// `Tagdef`, `Tuple`, or `Record`.
-///
-/// For contexts, ...
 #[derive(Clone, Copy, Debug)]
-pub enum StaticInstr {
+pub struct Depth(pub u32);
+
+/// An instruction that produces a runtime value of some type.
+#[derive(Clone, Copy, Debug)]
+pub enum Expr {
+    /// Get the value of the parameter to this function.
+    ///
+    /// Type: this function's parameter type.
+    Param,
+
+    /// Copy the value of another local into a fresh local.
+    ///
+    /// Type: same as the given local.
+    Copy {
+        /// The value to copy.
+        value: InstrId,
+    },
+
+    /// Construct a value of a nominal type given a value of its inner type.
+    ///
+    /// Type: the given nominal type.
+    Nominal {
+        /// The nominal type definition.
+        def: TagdefId,
+
+        /// Statics for the input slots of the parameter context for the nominal type.
+        params: InstrList,
+
+        /// The inner value.
+        inner: InstrId,
+    },
+
+    /// Construct a tuple.
+    ///
+    /// Type: tuple with the given element types.
+    Tuple {
+        /// The elements of the tuple to be constructed.
+        elems: InstrList,
+    },
+
+    /// Construct a record.
+    ///
+    /// Type: the given record type.
+    Record {
+        /// The record fields and their names, in lexicographical order.
+        fields: IdRange<RecordId>,
+    },
+
+    /// Get an element of a tuple.
+    ///
+    /// Type: the element type.
+    Elem {
+        /// The tuple.
+        tuple: InstrId,
+
+        /// The static index of the tuple element to access.
+        index: ElemId,
+    },
+
+    /// Get a field of a record.
+    ///
+    /// Type: the field type.
+    Field {
+        /// The record.
+        record: InstrId,
+
+        /// The static index of the record field to access.
+        index: FieldId,
+    },
+
+    /// Call a contextual function.
+    ///
+    /// Type: the function's result type.
+    Call {
+        /// The function.
+        func: InstrId,
+
+        /// Statics for the input slots of the parameter context for the function.
+        params: InstrList,
+
+        /// The runtime argument value.
+        arg: InstrId,
+    },
+
+    /// Call a non-contextual function.
+    ///
+    /// Type: the function's result type.
+    CallDirect {
+        /// The function.
+        func: FndefId,
+
+        /// Statics for the input slots of the parameter context for the function.
+        params: InstrList,
+
+        /// The runtime argument value.
+        arg: InstrId,
+    },
+}
+
+/// An instruction.
+#[derive(Clone, Copy, Debug)]
+pub enum Instr {
     /// The parameter context.
     Param,
 
@@ -120,7 +196,7 @@ pub enum StaticInstr {
     /// A new context providing some number of slots.
     Ctx {
         /// Statics used to construct the output slots of the new context.
-        slots: IdRange<ItemId>,
+        slots: InstrList,
     },
 
     /// Need a contextual type parametrized by a specific context.
@@ -129,7 +205,7 @@ pub enum StaticInstr {
         def: TydefId,
 
         /// Statics destructured to satisfy the input slots of the parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
     },
 
     /// Need a contextual function parametrized by a specific context.
@@ -138,7 +214,7 @@ pub enum StaticInstr {
         def: FndefId,
 
         /// Statics destructured to satisfy the input slots of the parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
     },
 
     /// Need a contextual value parametrized by a specific context.
@@ -147,7 +223,7 @@ pub enum StaticInstr {
         def: ValdefId,
 
         /// Statics destructured to satisfy the input slots of the parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
     },
 
     /// Need a composite context parametrized by a specific context.
@@ -156,13 +232,13 @@ pub enum StaticInstr {
         def: CtxdefId,
 
         /// Statics destructured to satisfy the input slots of the parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
     },
 
     /// A structural tuple of other types.
     Tuple {
         /// The types of the tuple elements.
-        elems: IdRange<ItemId>,
+        elems: InstrList,
     },
 
     /// A structural record of other types.
@@ -174,7 +250,7 @@ pub enum StaticInstr {
     /// A slot from a context.
     Get {
         /// The context.
-        ctx: StaticId,
+        ctx: InstrId,
 
         /// The output slot index.
         slot: SlotId,
@@ -186,13 +262,13 @@ pub enum StaticInstr {
         def: TydefId,
 
         /// Statics for the input slots of the left-hand parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
 
         /// The type being provided.
-        bind: StaticId,
+        bind: InstrId,
 
         /// Statics for the input slots of the right-hand parameter context.
-        args: IdRange<ItemId>,
+        args: InstrList,
     },
 
     /// Provide a nominal type for a contextual type parametrized by a specific context.
@@ -201,13 +277,13 @@ pub enum StaticInstr {
         def: TydefId,
 
         /// Statics for the input slots of the left-hand parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
 
         /// The nominal type being provided.
         bind: TagdefId,
 
         /// Statics for the input slots of the right-hand parameter context.
-        args: IdRange<ItemId>,
+        args: InstrList,
     },
 
     /// Provide a type alias for a contextual type parametrized by a specific context.
@@ -216,13 +292,13 @@ pub enum StaticInstr {
         def: TydefId,
 
         /// Statics for the input slots of the left-hand parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
 
         /// The type alias being provided.
         bind: AliasdefId,
 
         /// Statics for the input slots of the right-hand parameter context.
-        args: IdRange<ItemId>,
+        args: InstrList,
     },
 
     /// Provide a contextual function parametrized by a specific context.
@@ -231,13 +307,13 @@ pub enum StaticInstr {
         def: FndefId,
 
         /// Statics for the input slots of the left-hand parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
 
         /// The function being provided.
-        bind: StaticId,
+        bind: InstrId,
 
         /// Statics for the input slots of the right-hand parameter context.
-        args: IdRange<ItemId>,
+        args: InstrList,
     },
 
     /// Provide a contextual value parametrized by a specific context.
@@ -246,13 +322,13 @@ pub enum StaticInstr {
         def: ValdefId,
 
         /// Statics for the input slots of the left-hand parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
 
         /// The value being provided.
-        bind: StaticId,
+        bind: InstrId,
 
         /// Statics for the input slots of the right-hand parameter context.
-        args: IdRange<ItemId>,
+        args: InstrList,
     },
 
     /// Provide a literal value for a contextual value parametrized by a specific context.
@@ -261,7 +337,7 @@ pub enum StaticInstr {
         def: ValdefId,
 
         /// Statics for the input slots of the left-hand parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
 
         /// The literal value being provided.
         bind: Val,
@@ -273,43 +349,88 @@ pub enum StaticInstr {
         def: CtxdefId,
 
         /// Statics for the input slots of the left-hand parameter context.
-        params: IdRange<ItemId>,
+        params: InstrList,
 
         /// The context being provided.
-        bind: StaticId,
+        bind: InstrId,
 
         /// Statics for the input slots of the right-hand parameter context.
-        args: IdRange<ItemId>,
+        args: InstrList,
     },
 
     /// A function signature.
     Sig {
         /// The type of the tuple of parameters.
-        param: StaticId,
+        param: InstrId,
 
         /// The result type or context.
-        result: StaticId,
+        result: InstrId,
+    },
+
+    /// Set the left-hand variable to the right-hand value of the right-hand value.
+    Set {
+        /// The variable to set.
+        lhs: InstrId,
+
+        /// The value to use.
+        rhs: InstrId,
+    },
+
+    /// Start a block only if the given condition is true.
+    If {
+        /// The boolean value to test.
+        cond: InstrId,
+    },
+
+    /// Start a block only if the preceding [`Instr::If`] condition was false.
+    Else {
+        /// The value to return from the `if` branch.
+        result: InstrId,
+    },
+
+    /// End the current [`Instr::Else`] block.
+    EndIf {
+        /// The value to return from the `else` branch.
+        result: InstrId,
+    },
+
+    /// Start a loop block.
+    Loop,
+
+    /// End the current [`Instr::Loop`] block.
+    EndLoop,
+
+    /// Branch to the end of the block with the given depth, or the beginning if it's a loop block.
+    Br(Depth),
+
+    /// An instruction whose value is typed by the value of a previous instruction.
+    Expr {
+        /// The type.
+        ty: InstrId,
+
+        /// The value.
+        expr: Expr,
     },
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Static {
-    pub body: IdRange<StaticId>,
+pub struct Body {
+    pub body: IdRange<InstrId>,
 }
 
-impl Static {
-    fn new(body: IdRange<StaticId>, result: StaticId) -> Self {
+impl Body {
+    fn new(body: IdRange<InstrId>, result: InstrId) -> Self {
         assert_eq!(body.last(), Some(result));
         Self { body }
     }
 
-    fn result(self) -> StaticId {
+    fn result(self) -> InstrId {
         self.body.last().unwrap()
     }
 }
 
-struct StaticBuilder {
-    start: StaticId,
+struct Builder {
+    start: InstrId,
 }
 
 enum Query<T> {
@@ -378,193 +499,87 @@ pub enum IntType {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Tydef {
-    pub ctx: Static,
+    pub ctx: Body,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Tagdef {
-    pub ctx: Static,
-    pub inner: Static,
+    pub ctx: Body,
+    pub inner: Body,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Aliasdef {
-    pub ctx: Static,
-    pub def: Static,
+    pub ctx: Body,
+    pub def: Body,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Fndef {
-    pub ctx: Static,
-    pub sig: Static,
+    pub ctx: Body,
+    pub sig: Body,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Valdef {
-    pub ctx: Static,
-    pub ty: Static,
+    pub ctx: Body,
+    pub ty: Body,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Ctxdef {
-    pub ctx: Static,
-    pub def: Static,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Depth(pub u32);
-
-/// When executed, each instruction implicitly defines a mutable local variable.
-#[derive(Clone, Copy, Debug)]
-pub enum Instr {
-    Static(StaticId),
-
-    /// Get the value of the parameter to this function.
-    ///
-    /// Type: this function's parameter type.
-    Param,
-
-    /// Copy the value of another local into a fresh local.
-    ///
-    /// Type: same as the given local.
-    Copy(LocalId),
-
-    /// Set the left-hand local to the value of the right-hand local.
-    ///
-    /// Type: unit.
-    Set(LocalId, LocalId),
-
-    /// Construct a value of a nominal type given a value of its inner type.
-    ///
-    /// Type: the given nominal type.
-    Nominal(TagdefId, LocalId),
-
-    /// Construct a tuple.
-    ///
-    /// Type: [`Type::Tuple`] with the given element types.
-    Tuple(IdRange<RefId>),
-
-    /// Construct a record.
-    ///
-    /// Type: the given record type.
-    Record(StaticId, IdRange<RefId>),
-
-    /// Get an element of a tuple.
-    ///
-    /// Type: the element type.
-    Elem(LocalId, ElemId),
-
-    /// Get a field of a record.
-    ///
-    /// Type: the field type.
-    Field(LocalId, FieldId),
-
-    /// Call a function.
-    ///
-    /// Type: the function's result type.
-    Call(FndefId, LocalId),
-
-    /// Start a block only if the given condition is true.
-    ///
-    /// Type: unit.
-    If(LocalId, StaticId),
-
-    /// Start a block only if the preceding [`Instr::If`] condition was false.
-    ///
-    /// Type: same as the specified local from the true branch.
-    Else(LocalId),
-
-    /// End the current [`Instr::If`] or [`Instr::Else`] block.
-    ///
-    /// Type: same as the specified local from the false branch.
-    EndIf(LocalId),
-
-    /// Start a loop block.
-    ///
-    /// Type: unit.
-    Loop,
-
-    /// End the current [`Instr::Loop`] block.
-    ///
-    /// Type: unit.
-    EndLoop,
-
-    /// Branch to the end of the block with the given depth, or the beginning if it's a loop block.
-    ///
-    /// Type: unit.
-    Br(Depth),
-
-    /// Return from this function.
-    ///
-    /// Type: unit.
-    Return(LocalId),
-
-    /// Return bindings from this function.
-    ///
-    /// Type: unit.
-    ReturnBind(StaticId),
-}
-
-#[derive(Debug)]
-pub struct Body {
-    pub statics: Static,
-    pub dynamics: IdRange<LocalId>,
+    pub ctx: Body,
+    pub def: Body,
 }
 
 #[derive(Debug)]
 pub struct IR {
     pub modules: IndexVec<ModuleId, ()>,
     pub strings: Strings,
-    pub statics: IndexVec<StaticId, StaticInstr>,
-    pub items: IndexVec<ItemId, StaticId>,
-    pub records: IndexVec<RecordId, (StrId, StaticId)>,
-    pub empty: Static,
+    pub instrs: IndexVec<InstrId, Instr>,
+    pub items: IndexVec<ItemId, InstrId>,
+    pub records: IndexVec<RecordId, (StrId, InstrId)>,
+    pub empty: Body,
     pub tydefs: IndexVec<TydefId, Tydef>,
     pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
     pub fndefs: IndexVec<FndefId, Fndef>,
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
-    pub locals: IndexVec<LocalId, StaticId>,
-    pub instrs: IndexVec<LocalId, Instr>,
-    pub refs: IndexVec<RefId, LocalId>,
     pub bodies: IndexVec<FndefId, Option<Body>>,
 }
 
 impl Default for IR {
     fn default() -> Self {
-        let mut statics = IndexVec::new();
+        let mut instrs = IndexVec::new();
         let mut items = IndexVec::new();
-        let empty = statics.push(StaticInstr::Ctx {
+        let empty = instrs.push(Instr::Ctx {
             slots: IdRange::new(&mut items, Vec::new()),
         });
         let body = IdRange {
             start: empty,
-            end: statics.len_idx(),
+            end: instrs.len_idx(),
         };
         Self {
             modules: Default::default(),
             strings: Default::default(),
-            statics,
+            instrs,
             items,
             records: Default::default(),
-            empty: Static::new(body, empty),
+            empty: Body::new(body, empty),
             tydefs: Default::default(),
             tagdefs: Default::default(),
             aliasdefs: Default::default(),
             fndefs: Default::default(),
             valdefs: Default::default(),
             ctxdefs: Default::default(),
-            locals: Default::default(),
-            instrs: Default::default(),
-            refs: Default::default(),
             bodies: Default::default(),
         }
     }
 }
 
 impl IR {
-    pub fn empty(&self) -> Static {
+    pub fn empty(&self) -> Body {
         self.empty
     }
 }
@@ -902,8 +917,8 @@ impl<'a> Lower<'a> {
         .ok_or(LowerError::Undefined(path.last))
     }
 
-    fn method(&mut self, ty: StaticId, name: StrId) -> Option<FndefId> {
-        if let Type::Nominal(tagdef, _) = self.ir.statics[ty]
+    fn method(&mut self, ty: InstrId, name: StrId) -> Option<FndefId> {
+        if let Type::Nominal(tagdef, _) = self.ir.instrs[ty]
             && let Some(&fndef) = self.names.attached.get(&(tagdef, name))
         {
             Some(fndef)
@@ -966,111 +981,111 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
-    fn builder(&self) -> StaticBuilder {
-        StaticBuilder {
-            start: self.ir.statics.next_idx(),
+    fn builder(&self) -> Builder {
+        Builder {
+            start: self.ir.instrs.next_idx(),
         }
     }
 
-    fn emit(&mut self, stat: StaticInstr) -> StaticId {
-        self.ir.statics.push(stat)
+    fn emit(&mut self, instr: Instr) -> InstrId {
+        self.ir.instrs.push(instr)
     }
 
-    fn finish(&self, builder: StaticBuilder, result: StaticId) -> Static {
-        let StaticBuilder { start } = builder;
-        let end = self.ir.statics.next_idx();
-        Static::new(IdRange { start, end }, result)
+    fn finish(&self, builder: Builder, result: InstrId) -> Body {
+        let Builder { start } = builder;
+        let end = self.ir.instrs.next_idx();
+        Body::new(IdRange { start, end }, result)
     }
 
-    fn ty_tuple(&mut self, elems: Vec<StaticId>) -> StaticId {
+    fn ty_tuple(&mut self, elems: Vec<InstrId>) -> InstrId {
         let elems = IdRange::new(&mut self.ir.items, elems);
-        self.emit(StaticInstr::Tuple { elems })
+        self.emit(Instr::Tuple { elems })
     }
 
-    fn ty_unit(&mut self) -> StaticId {
+    fn ty_unit(&mut self) -> InstrId {
         self.ty_tuple(Vec::new())
     }
 
     fn invoke(
         &mut self,
-        param: Static,
-        destruct: &[StaticId],
-        target: Static,
-    ) -> LowerResult<Vec<StaticId>> {
+        param: Body,
+        destruct: &[InstrId],
+        target: Body,
+    ) -> LowerResult<Vec<InstrId>> {
         todo!()
     }
 
     fn invoke_open(
         &mut self,
-        param: Static,
-        destruct: &[StaticId],
-        target: Static,
-    ) -> LowerResult<Vec<StaticId>> {
+        param: Body,
+        destruct: &[InstrId],
+        target: Body,
+    ) -> LowerResult<Vec<InstrId>> {
         todo!()
     }
 
     fn invoke_bind(
         &mut self,
-        param: Static,
-        construct: &[StaticId],
-        source: Static,
-        destruct: &[StaticId],
-        target: Static,
-    ) -> LowerResult<Vec<StaticId>> {
+        param: Body,
+        construct: &[InstrId],
+        source: Body,
+        destruct: &[InstrId],
+        target: Body,
+    ) -> LowerResult<Vec<InstrId>> {
         todo!()
     }
 
     fn extract_ty(
         &mut self,
-        param: Static,
-        destruct: &[StaticId],
+        param: Body,
+        destruct: &[InstrId],
         def: TydefId,
-        construct: &[StaticId],
-    ) -> LowerResult<StaticId> {
+        construct: &[InstrId],
+    ) -> LowerResult<InstrId> {
         todo!()
     }
 
     fn extract_fn(
         &mut self,
-        param: Static,
-        destruct: &[StaticId],
+        param: Body,
+        destruct: &[InstrId],
         def: FndefId,
-        construct: &[StaticId],
-    ) -> LowerResult<StaticId> {
+        construct: &[InstrId],
+    ) -> LowerResult<InstrId> {
         todo!()
     }
 
     fn extract_val(
         &mut self,
-        param: Static,
-        destruct: &[StaticId],
+        param: Body,
+        destruct: &[InstrId],
         def: ValdefId,
-        construct: &[StaticId],
-    ) -> LowerResult<StaticId> {
+        construct: &[InstrId],
+    ) -> LowerResult<InstrId> {
         todo!()
     }
 
     fn extract_ctx(
         &mut self,
-        param: Static,
-        destruct: &[StaticId],
+        param: Body,
+        destruct: &[InstrId],
         def: CtxdefId,
-        construct: &[StaticId],
-    ) -> LowerResult<StaticId> {
+        construct: &[InstrId],
+    ) -> LowerResult<InstrId> {
         todo!()
     }
 
     /// Resolve the path of a spec and synthesize each of its attached bindings.
     ///
-    /// The `param` gives the meaning of [`StaticInstr::Param`] in this context.
+    /// The `param` gives the meaning of [`Instr::Param`] in this context.
     ///
     /// The `destruct` list gives the set of entrypoints that can be used to synthesize bindings.
     fn spec(
         &mut self,
-        param: Static,
-        destruct: &[StaticId],
+        param: Body,
+        destruct: &[InstrId],
         spec: parse::Spec,
-    ) -> LowerResult<(Named, Vec<StaticId>)> {
+    ) -> LowerResult<(Named, Vec<InstrId>)> {
         let Spec { dot, path, binds } = spec;
         let named = if dot {
             Named::Fndef(self.detached(path)?)
@@ -1080,16 +1095,16 @@ impl<'a> Lower<'a> {
         let construct = binds
             .into_iter()
             .map(|bind| self.bind(param, &destruct, bind))
-            .collect::<LowerResult<Vec<StaticId>>>()?;
+            .collect::<LowerResult<Vec<InstrId>>>()?;
         Ok((named, construct))
     }
 
     fn bind(
         &mut self,
-        param: Static,
-        slots: &[StaticId],
+        param: Body,
+        slots: &[InstrId],
         bind: parse::BindId,
-    ) -> LowerResult<StaticId> {
+    ) -> LowerResult<InstrId> {
         let parse::Bind { key, val } = self.tree.binds[bind];
         let (lhs, destruct_lhs) = self.spec(param, slots, key)?;
         match val {
@@ -1100,7 +1115,7 @@ impl<'a> Lower<'a> {
                     let bind = self.extract_ty(param, &slots, def, &construct)?;
                     let params = IdRange::new(&mut self.ir.items, construct);
                     let args = params;
-                    Ok(self.emit(StaticInstr::BindTydef {
+                    Ok(self.emit(Instr::BindTydef {
                         def,
                         params,
                         bind,
@@ -1116,7 +1131,7 @@ impl<'a> Lower<'a> {
                     let bind = self.extract_fn(param, &slots, def, &construct)?;
                     let params = IdRange::new(&mut self.ir.items, construct);
                     let args = params;
-                    Ok(self.emit(StaticInstr::BindFndef {
+                    Ok(self.emit(Instr::BindFndef {
                         def,
                         params,
                         bind,
@@ -1129,7 +1144,7 @@ impl<'a> Lower<'a> {
                     let bind = self.extract_val(param, &slots, def, &construct)?;
                     let params = IdRange::new(&mut self.ir.items, construct);
                     let args = params;
-                    Ok(self.emit(StaticInstr::BindValdef {
+                    Ok(self.emit(Instr::BindValdef {
                         def,
                         params,
                         bind,
@@ -1145,7 +1160,7 @@ impl<'a> Lower<'a> {
                     let bind = self.extract_ctx(param, &slots, def, &construct)?;
                     let params = IdRange::new(&mut self.ir.items, construct);
                     let args = params;
-                    Ok(self.emit(StaticInstr::BindCtxdef {
+                    Ok(self.emit(Instr::BindCtxdef {
                         def,
                         params,
                         bind,
@@ -1162,7 +1177,7 @@ impl<'a> Lower<'a> {
                     let construct = self.invoke_open(param, &destruct_lhs, target)?;
                     let (bind, _) = self.lit(token)?;
                     let params = IdRange::new(&mut self.ir.items, construct);
-                    Ok(self.emit(StaticInstr::BindLit { def, params, bind }))
+                    Ok(self.emit(Instr::BindLit { def, params, bind }))
                 }
                 _ => Err(LowerError::LitNotVal(token)),
             },
@@ -1183,7 +1198,7 @@ impl<'a> Lower<'a> {
                         let bind = self.extract_ty(param, &slots, tydef, &construct_rhs)?;
                         let params = IdRange::new(&mut self.ir.items, construct_lhs);
                         let args = IdRange::new(&mut self.ir.items, construct_rhs);
-                        Ok(self.emit(StaticInstr::BindTydef {
+                        Ok(self.emit(Instr::BindTydef {
                             def,
                             params,
                             bind,
@@ -1207,7 +1222,7 @@ impl<'a> Lower<'a> {
                         let bind = tagdef;
                         let params = IdRange::new(&mut self.ir.items, construct_lhs);
                         let args = IdRange::new(&mut self.ir.items, construct_rhs);
-                        Ok(self.emit(StaticInstr::BindTagdef {
+                        Ok(self.emit(Instr::BindTagdef {
                             def,
                             params,
                             bind,
@@ -1231,7 +1246,7 @@ impl<'a> Lower<'a> {
                         let bind = aliasdef;
                         let params = IdRange::new(&mut self.ir.items, construct_lhs);
                         let args = IdRange::new(&mut self.ir.items, construct_rhs);
-                        Ok(self.emit(StaticInstr::BindAliasdef {
+                        Ok(self.emit(Instr::BindAliasdef {
                             def,
                             params,
                             bind,
@@ -1259,7 +1274,7 @@ impl<'a> Lower<'a> {
                         let bind = self.extract_fn(param, &slots, fndef, &construct_rhs)?;
                         let params = IdRange::new(&mut self.ir.items, construct_lhs);
                         let args = IdRange::new(&mut self.ir.items, construct_rhs);
-                        Ok(self.emit(StaticInstr::BindFndef {
+                        Ok(self.emit(Instr::BindFndef {
                             def,
                             params,
                             bind,
@@ -1287,7 +1302,7 @@ impl<'a> Lower<'a> {
                         let bind = self.extract_val(param, &slots, valdef, &construct_rhs)?;
                         let params = IdRange::new(&mut self.ir.items, construct_lhs);
                         let args = IdRange::new(&mut self.ir.items, construct_rhs);
-                        Ok(self.emit(StaticInstr::BindValdef {
+                        Ok(self.emit(Instr::BindValdef {
                             def,
                             params,
                             bind,
@@ -1306,10 +1321,10 @@ impl<'a> Lower<'a> {
 
     fn need(
         &mut self,
-        param: Static,
-        slots: &[StaticId],
+        param: Body,
+        slots: &[InstrId],
         need: parse::NeedId,
-    ) -> LowerResult<StaticId> {
+    ) -> LowerResult<InstrId> {
         let parse::Need { kind: _, bind } = self.tree.needs[need];
         // TODO: Handle `kind`.
         let parse::Bind { key, val } = self.tree.binds[bind];
@@ -1322,7 +1337,7 @@ impl<'a> Lower<'a> {
                         let Tydef { ctx: target } = self.ir.tydefs[def];
                         let construct = self.invoke_open(param, &destruct, target)?;
                         let params = IdRange::new(&mut self.ir.items, construct);
-                        Ok(self.emit(StaticInstr::NeedTydef { def, params }))
+                        Ok(self.emit(Instr::NeedTydef { def, params }))
                     }
                     Named::Fndef(def) => {
                         let Fndef {
@@ -1331,13 +1346,13 @@ impl<'a> Lower<'a> {
                         } = self.ir.fndefs[def];
                         let construct = self.invoke_open(param, &destruct, target)?;
                         let params = IdRange::new(&mut self.ir.items, construct);
-                        Ok(self.emit(StaticInstr::NeedFndef { def, params }))
+                        Ok(self.emit(Instr::NeedFndef { def, params }))
                     }
                     Named::Valdef(def) => {
                         let Valdef { ctx: target, ty: _ } = self.ir.valdefs[def];
                         let construct = self.invoke_open(param, &destruct, target)?;
                         let params = IdRange::new(&mut self.ir.items, construct);
-                        Ok(self.emit(StaticInstr::NeedValdef { def, params }))
+                        Ok(self.emit(Instr::NeedValdef { def, params }))
                     }
                     Named::Ctxdef(def) => {
                         let Ctxdef {
@@ -1346,7 +1361,7 @@ impl<'a> Lower<'a> {
                         } = self.ir.ctxdefs[def];
                         let construct = self.invoke_open(param, &destruct, target)?;
                         let params = IdRange::new(&mut self.ir.items, construct);
-                        Ok(self.emit(StaticInstr::NeedCtxdef { def, params }))
+                        Ok(self.emit(Instr::NeedCtxdef { def, params }))
                     }
                     Named::Module(_) => Err(LowerError::BindModule(bind)),
                     Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
@@ -1358,31 +1373,31 @@ impl<'a> Lower<'a> {
 
     fn needs_raw(
         &mut self,
-        param: Static,
+        param: Body,
         needs: IdRange<parse::NeedId>,
-    ) -> LowerResult<Vec<StaticId>> {
+    ) -> LowerResult<Vec<InstrId>> {
         let mut slots = Vec::new();
-        slots.push(self.emit(StaticInstr::Param));
+        slots.push(self.emit(Instr::Param));
         for need in needs {
             slots.push(self.need(param, &slots, need)?);
         }
         Ok(slots)
     }
 
-    fn needs(&mut self, param: Static, needs: IdRange<parse::NeedId>) -> LowerResult<Static> {
+    fn needs(&mut self, param: Body, needs: IdRange<parse::NeedId>) -> LowerResult<Body> {
         let builder = self.builder();
         let slots = self.needs_raw(param, needs)?;
         let slots = IdRange::new(&mut self.ir.items, slots);
-        let ctx = self.emit(StaticInstr::Ctx { slots });
+        let ctx = self.emit(Instr::Ctx { slots });
         Ok(self.finish(builder, ctx))
     }
 
     fn parse_ty(
         &mut self,
-        param: Static,
-        slots: &[StaticId],
+        param: Body,
+        slots: &[InstrId],
         ty: parse::TypeId,
-    ) -> LowerResult<StaticId> {
+    ) -> LowerResult<InstrId> {
         match self.tree.types[ty] {
             parse::Type::Spec(spec) => {
                 let (named, destruct) = self.spec(param, slots, spec)?;
@@ -1401,7 +1416,7 @@ impl<'a> Lower<'a> {
                 let lowered = elems
                     .into_iter()
                     .map(|elem| self.parse_ty(param, slots, elem))
-                    .collect::<LowerResult<Vec<StaticId>>>()?;
+                    .collect::<LowerResult<Vec<InstrId>>>()?;
                 Ok(self.ty_tuple(lowered))
             }
             parse::Type::Record(members) => todo!(),
@@ -1419,11 +1434,11 @@ impl<'a> Lower<'a> {
         } = fndef;
         let ctx = self.needs(empty, needs)?;
         let builder = self.builder();
-        let param = self.emit(StaticInstr::Param);
+        let param = self.emit(Instr::Param);
         let slots = &[param];
         let elems = (params.into_iter())
             .map(|arg| self.parse_ty(ctx, slots, self.tree.params[arg].ty))
-            .collect::<LowerResult<Vec<StaticId>>>()?;
+            .collect::<LowerResult<Vec<InstrId>>>()?;
         let param_tuple = self.ty_tuple(elems);
         let result_ty = match result {
             parse::Return::Unit => self.ty_unit(),
@@ -1431,10 +1446,10 @@ impl<'a> Lower<'a> {
             parse::Return::Bind(needs) => {
                 let slots = self.needs_raw(ctx, needs)?;
                 let slots = IdRange::new(&mut self.ir.items, slots);
-                self.emit(StaticInstr::Ctx { slots })
+                self.emit(Instr::Ctx { slots })
             }
         };
-        let signature = self.emit(StaticInstr::Sig {
+        let signature = self.emit(Instr::Sig {
             param: param_tuple,
             result: result_ty,
         });
@@ -1461,7 +1476,7 @@ impl<'a> Lower<'a> {
                     let parse::Tagdef { name, needs, def } = self.tree.tagdefs[id];
                     let ctx = self.needs(empty, needs)?;
                     let builder = self.builder();
-                    let param = self.emit(StaticInstr::Param);
+                    let param = self.emit(Instr::Param);
                     let slots = &[param];
                     let ty = self.parse_ty(ctx, slots, def)?;
                     let inner = self.finish(builder, ty);
@@ -1475,7 +1490,7 @@ impl<'a> Lower<'a> {
                     let parse::Aliasdef { name, needs, def } = self.tree.aliasdefs[id];
                     let ctx = self.needs(empty, needs)?;
                     let builder = self.builder();
-                    let param = self.emit(StaticInstr::Param);
+                    let param = self.emit(Instr::Param);
                     let slots = &[param];
                     let ty = self.parse_ty(ctx, slots, def)?;
                     let def = self.finish(builder, ty);
@@ -1517,7 +1532,7 @@ impl<'a> Lower<'a> {
                     let parse::Valdef { name, needs, ty } = self.tree.valdefs[id];
                     let ctx = self.needs(empty, needs)?;
                     let builder = self.builder();
-                    let param = self.emit(StaticInstr::Param);
+                    let param = self.emit(Instr::Param);
                     let slots = &[param];
                     let ty = self.parse_ty(ctx, slots, ty)?;
                     let ty = self.finish(builder, ty);
@@ -1589,7 +1604,7 @@ impl<'a> Lower<'a> {
 
 struct LowerBody<'a, 'b> {
     x: &'b mut Lower<'a>,
-    locals: HashMap<StrId, LocalId>,
+    locals: HashMap<StrId, InstrId>,
 }
 
 impl LowerBody<'_, '_> {
@@ -1597,7 +1612,7 @@ impl LowerBody<'_, '_> {
         self.x.base.unwrap()
     }
 
-    fn get(&mut self, token: TokenId) -> LowerResult<LocalId> {
+    fn get(&mut self, token: TokenId) -> LowerResult<InstrId> {
         let name = self.x.name(token);
         match self.locals.get(&name) {
             Some(&local) => Ok(local),
@@ -1605,35 +1620,42 @@ impl LowerBody<'_, '_> {
         }
     }
 
-    fn set(&mut self, token: TokenId, local: LocalId) {
+    fn set(&mut self, token: TokenId, local: InstrId) {
         let name = self.x.name(token);
         self.locals.insert(name, local);
     }
 
-    fn instr(&mut self, ty: StaticId, instr: Instr) -> LocalId {
-        let id_local = self.x.ir.locals.push(ty);
-        let id_instr = self.x.ir.instrs.push(instr);
-        assert_eq!(id_local, id_instr);
-        id_local
+    fn instr(&mut self, ty: InstrId, expr: Expr) -> InstrId {
+        self.x.emit(Instr::Expr { ty, expr })
     }
 
-    fn instr_tuple(&mut self, ty: StaticId, locals: &[LocalId]) -> LocalId {
-        let start = self.x.ir.refs.len_idx();
-        self.x.ir.refs.extend_from_slice(IndexSlice::new(locals));
-        let end = self.x.ir.refs.len_idx();
-        self.instr(ty, Instr::Tuple(IdRange { start, end }))
+    fn instr_tuple(&mut self, ty: InstrId, elems: &[InstrId]) -> InstrId {
+        let start = self.x.ir.items.len_idx();
+        self.x.ir.items.extend_from_slice(IndexSlice::new(elems));
+        let end = self.x.ir.items.len_idx();
+        self.instr(
+            ty,
+            Expr::Tuple {
+                elems: IdRange { start, end },
+            },
+        )
     }
 
-    fn instr_record(&mut self, ty: StaticId, locals: &[LocalId]) -> LocalId {
-        let start = self.x.ir.refs.len_idx();
-        self.x.ir.refs.extend_from_slice(IndexSlice::new(locals));
-        let end = self.x.ir.refs.len_idx();
-        self.instr(ty, Instr::Record(ty, IdRange { start, end }))
+    fn instr_record(&mut self, ty: InstrId, fields: &[(StrId, InstrId)]) -> InstrId {
+        let start = self.x.ir.records.len_idx();
+        self.x.ir.records.extend_from_slice(IndexSlice::new(fields));
+        let end = self.x.ir.records.len_idx();
+        self.instr(
+            ty,
+            Expr::Record {
+                fields: IdRange { start, end },
+            },
+        )
     }
 
-    fn expr(&mut self, expr: ExprId) -> LowerResult<LocalId> {
+    fn expr(&mut self, expr: ExprId) -> LowerResult<InstrId> {
         match self.x.tree.exprs[expr] {
-            Expr::Lit(token) => {
+            parse::Expr::Lit(token) => {
                 let Base {
                     types,
                     lit_types,
@@ -1777,7 +1799,7 @@ impl LowerBody<'_, '_> {
                 let arg = self.instr_tuple(ty_unit, &[]);
                 Ok(self.instr(ty_result, Instr::Call(fndef, arg)))
             }
-            Expr::Path(path) => {
+            parse::Expr::Path(path) => {
                 let name = self.x.name(path.last);
                 if path.prefix.is_empty()
                     && let Some(&local) = self.locals.get(&name)
@@ -1790,7 +1812,7 @@ impl LowerBody<'_, '_> {
                 let ty = self.x.ir.valdefs[valdef].ty;
                 Ok(self.instr(ty, Instr::Val(valdef, self.ctx)))
             }
-            Expr::Tag(path, inner) => {
+            parse::Expr::Tag(path, inner) => {
                 let Named::Tagdef(tagdef) = self.x.path(path)? else {
                     return Err(LowerError::NotNominal(path.last));
                 };
@@ -1798,14 +1820,14 @@ impl LowerBody<'_, '_> {
                 let ty = self.x.ir.locals[local];
                 Ok(self.instr(ty, Instr::Nominal(tagdef, local)))
             }
-            Expr::Record(_lbrace, fields, _rbrace) => {
+            parse::Expr::Record(_lbrace, fields, _rbrace) => {
                 let sorted = fields
                     .into_iter()
                     .map(|field| {
                         let Field { name, val } = self.x.tree.fields[field];
                         Ok((self.x.slice(name), self.expr(val)?))
                     })
-                    .collect::<LowerResult<BTreeMap<&str, LocalId>>>()?;
+                    .collect::<LowerResult<BTreeMap<&str, InstrId>>>()?;
                 let fields = sorted
                     .iter()
                     .map(|(&string, &local)| {
@@ -1813,10 +1835,10 @@ impl LowerBody<'_, '_> {
                     })
                     .collect::<Vec<(StrId, TypeId)>>();
                 let ty = self.x.ty_record(&fields);
-                let locals = sorted.values().copied().collect::<Vec<LocalId>>();
+                let locals = sorted.values().copied().collect::<Vec<InstrId>>();
                 Ok(self.instr_record(ty, &locals))
             }
-            Expr::Field(object, field) => {
+            parse::Expr::Field(object, field) => {
                 let obj = self.expr(object)?;
                 let name = self.x.name(field);
                 let fields =
@@ -1828,7 +1850,7 @@ impl LowerBody<'_, '_> {
                 let (_, ty) = fields[id.index()];
                 Ok(self.instr(ty, Instr::Field(obj, id)))
             }
-            Expr::Method(object, method, args) => {
+            parse::Expr::Method(object, method, args) => {
                 let obj = self.expr(object)?;
                 let ty = self.x.ir.locals[obj];
                 let name = self.x.name(method);
@@ -1847,12 +1869,12 @@ impl LowerBody<'_, '_> {
                 let locals = args
                     .into_iter()
                     .map(|arg| self.expr(arg))
-                    .collect::<LowerResult<Vec<LocalId>>>()?;
+                    .collect::<LowerResult<Vec<InstrId>>>()?;
                 let arg = self.instr_tuple(param, &locals);
                 // TODO: Contextually set `this` to `obj`.
                 Ok(self.instr(result, Instr::Call(fndef, arg)))
             }
-            Expr::Call(callee, binds, args) => {
+            parse::Expr::Call(callee, binds, args) => {
                 let Named::Fndef(fndef) = self.x.path(callee)? else {
                     return Err(LowerError::NotFn(callee.last));
                 };
@@ -1869,19 +1891,19 @@ impl LowerBody<'_, '_> {
                 let locals = args
                     .into_iter()
                     .map(|arg| self.expr(arg))
-                    .collect::<LowerResult<Vec<LocalId>>>()?;
+                    .collect::<LowerResult<Vec<InstrId>>>()?;
                 let arg = self.instr_tuple(param, &locals);
                 let call = self.instr(result, Instr::Call(fndef, arg));
                 Ok(call)
             }
-            Expr::Unary(op, inner) => {
+            parse::Expr::Unary(op, inner) => {
                 let v = self.expr(inner)?;
                 match op {
                     Unop::Neg => todo!(),
                     Unop::Not => todo!(),
                 }
             }
-            Expr::Binary(left, op, right) => {
+            parse::Expr::Binary(left, op, right) => {
                 let l = self.expr(left)?;
                 let r = self.expr(right)?;
                 match op {
@@ -1903,7 +1925,7 @@ impl LowerBody<'_, '_> {
                     Binop::Xor => todo!(),
                 }
             }
-            Expr::If(cond, yes, no) => {
+            parse::Expr::If(cond, yes, no) => {
                 let unit = self.x.ty_unit();
                 let cond = self.expr(cond)?;
                 // We don't know the type yet.
@@ -1918,7 +1940,7 @@ impl LowerBody<'_, '_> {
                 }
                 Ok(self.instr(ty, Instr::EndIf(local)))
             }
-            Expr::Bind(_, bindings) => {
+            parse::Expr::Bind(_, bindings) => {
                 let mut context = Ctx::default();
                 for binding in bindings {
                     match self.x.tree.bindings[binding] {
@@ -2002,7 +2024,7 @@ impl LowerBody<'_, '_> {
                     self.set(name, copy);
                 }
                 Stmt::Assign(lhs, rhs) => match self.x.tree.exprs[lhs] {
-                    Expr::Path(path) => {
+                    parse::Expr::Path(path) => {
                         assert!(path.prefix.is_empty());
                         let before = self.get(path.last)?;
                         let after = self.expr(rhs)?;
@@ -2030,7 +2052,7 @@ impl LowerBody<'_, '_> {
         Ok(())
     }
 
-    fn block(&mut self, block: Block) -> LowerResult<LocalId> {
+    fn block(&mut self, block: Block) -> LowerResult<InstrId> {
         self.stmts(block.stmts)?;
         match block.expr {
             Some(expr) => Ok(self.expr(expr)?),
@@ -2050,37 +2072,35 @@ impl LowerBody<'_, '_> {
             def,
         } = fndef;
         let Some(body) = def else { return Ok(None) };
-        let start = self.x.ir.instrs.len_idx();
+        let builder = self.x.builder();
         let Fndef { ctx: _, sig } = self.x.ir.fndefs[id_decl];
-        let StaticInstr::Sig {
+        let Instr::Sig {
             param: tuple_ty,
-            result: ret_ty,
-        } = self.x.ir.statics[sig.result()]
+            result: _,
+        } = self.x.ir.instrs[sig.result()]
         else {
             unreachable!()
         };
-        let tuple_local = self.instr(tuple_ty, Instr::Param);
-        let StaticInstr::Tuple { elems: types } = self.x.ir.statics[tuple_ty] else {
+        let tuple_local = self.instr(tuple_ty, Expr::Param);
+        let Instr::Tuple { elems: types } = self.x.ir.instrs[tuple_ty] else {
             unreachable!()
         };
         let mut index = 0;
         for (param, item) in params.into_iter().zip(types) {
             let ty = self.x.ir.items[item];
-            let local = self.instr(ty, Instr::Elem(tuple_local, ElemId::new(index)));
+            let local = self.instr(
+                ty,
+                Expr::Elem {
+                    tuple: tuple_local,
+                    index: ElemId::new(index),
+                },
+            );
             let name = self.x.tree.params[param].name;
             self.set(name, local);
             index += 1;
         }
         let ret = self.block(body)?;
-        self.instr(ret_ty, Instr::Return(ret));
-        let end = self.x.ir.instrs.len_idx();
-        // TODO: Handle statics properly in function bodies.
-        Ok(Some(Body {
-            statics: Static {
-                body: IdRange::new(&mut self.x.ir.statics, Vec::new()),
-            },
-            dynamics: IdRange { start, end },
-        }))
+        Ok(Some(self.x.finish(builder, ret)))
     }
 }
 
