@@ -902,8 +902,8 @@ impl<'a> Lower<'a> {
         .ok_or(LowerError::Undefined(path.last))
     }
 
-    fn method(&mut self, ty: TypeId, name: StrId) -> Option<FndefId> {
-        if let Type::Nominal(tagdef, _) = self.ir.types[ty.index()]
+    fn method(&mut self, ty: StaticId, name: StrId) -> Option<FndefId> {
+        if let Type::Nominal(tagdef, _) = self.ir.statics[ty]
             && let Some(&fndef) = self.names.attached.get(&(tagdef, name))
         {
             Some(fndef)
@@ -1610,21 +1610,21 @@ impl LowerBody<'_, '_> {
         self.locals.insert(name, local);
     }
 
-    fn instr(&mut self, ty: TypeId, instr: Instr) -> LocalId {
+    fn instr(&mut self, ty: StaticId, instr: Instr) -> LocalId {
         let id_local = self.x.ir.locals.push(ty);
         let id_instr = self.x.ir.instrs.push(instr);
         assert_eq!(id_local, id_instr);
         id_local
     }
 
-    fn instr_tuple(&mut self, ty: TypeId, locals: &[LocalId]) -> LocalId {
+    fn instr_tuple(&mut self, ty: StaticId, locals: &[LocalId]) -> LocalId {
         let start = self.x.ir.refs.len_idx();
         self.x.ir.refs.extend_from_slice(IndexSlice::new(locals));
         let end = self.x.ir.refs.len_idx();
         self.instr(ty, Instr::Tuple(IdRange { start, end }))
     }
 
-    fn instr_record(&mut self, ty: TypeId, locals: &[LocalId]) -> LocalId {
+    fn instr_record(&mut self, ty: StaticId, locals: &[LocalId]) -> LocalId {
         let start = self.x.ir.refs.len_idx();
         self.x.ir.refs.extend_from_slice(IndexSlice::new(locals));
         let end = self.x.ir.refs.len_idx();
@@ -1641,7 +1641,6 @@ impl LowerBody<'_, '_> {
                 } = self.base();
                 let (tydef_lit, tydef, fndef) = match self.x.lit(token)? {
                     // Unreachable cases.
-                    (Val::Opaque(_, _), _) => unreachable!(),
                     (
                         Val::Uint31(_)
                         | Val::Uint32(_)
@@ -2052,16 +2051,21 @@ impl LowerBody<'_, '_> {
         } = fndef;
         let Some(body) = def else { return Ok(None) };
         let start = self.x.ir.instrs.len_idx();
-        let Fndef {
-            ctx,
+        let Fndef { ctx: _, sig } = self.x.ir.fndefs[id_decl];
+        let StaticInstr::Sig {
             param: tuple_ty,
             result: ret_ty,
-        } = self.x.ir.fndefs[id_decl];
+        } = self.x.ir.statics[sig.result()]
+        else {
+            unreachable!()
+        };
         let tuple_local = self.instr(tuple_ty, Instr::Param);
-        let types = self.x.ir.types[tuple_ty.index()].tuple();
+        let StaticInstr::Tuple { elems: types } = self.x.ir.statics[tuple_ty] else {
+            unreachable!()
+        };
         let mut index = 0;
-        for (param, tuple_loc) in params.into_iter().zip(types) {
-            let ty = self.x.ir.tuples[tuple_loc];
+        for (param, item) in params.into_iter().zip(types) {
+            let ty = self.x.ir.items[item];
             let local = self.instr(ty, Instr::Elem(tuple_local, ElemId::new(index)));
             let name = self.x.tree.params[param].name;
             self.set(name, local);
@@ -2069,7 +2073,14 @@ impl LowerBody<'_, '_> {
         }
         let ret = self.block(body)?;
         self.instr(ret_ty, Instr::Return(ret));
-        Ok(Some(start))
+        let end = self.x.ir.instrs.len_idx();
+        // TODO: Handle statics properly in function bodies.
+        Ok(Some(Body {
+            statics: Static {
+                body: IdRange::new(&mut self.x.ir.statics, Vec::new()),
+            },
+            dynamics: IdRange { start, end },
+        }))
     }
 }
 
