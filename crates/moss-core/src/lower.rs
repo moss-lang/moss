@@ -282,6 +282,15 @@ pub enum StaticInstr {
         /// Statics for the input slots of the right-hand parameter context.
         args: IdRange<ItemId>,
     },
+
+    /// A function signature.
+    Sig {
+        /// The type of the tuple of parameters.
+        param: StaticId,
+
+        /// The result type or context.
+        result: StaticId,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -398,8 +407,7 @@ pub struct Aliasdef {
 #[derive(Clone, Copy, Debug)]
 pub struct Fndef {
     pub ctx: Static,
-    pub param: Static,
-    pub result: Static,
+    pub sig: Static,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1121,6 +1129,15 @@ impl<'a> Lower<'a> {
         Static::new(IdRange { start, end }, result)
     }
 
+    fn ty_tuple(&mut self, elems: Vec<StaticId>) -> StaticId {
+        let elems = IdRange::new(&mut self.ir.items, elems);
+        self.emit(StaticInstr::Tuple { elems })
+    }
+
+    fn ty_unit(&mut self) -> StaticId {
+        self.ty_tuple(Vec::new())
+    }
+
     fn invoke(
         &mut self,
         param: Static,
@@ -1240,8 +1257,7 @@ impl<'a> Lower<'a> {
                 Named::Fndef(def) => {
                     let Fndef {
                         ctx: target,
-                        param: _,
-                        result: _,
+                        sig: _,
                     } = self.ir.fndefs[def];
                     let construct = self.invoke_open(param, &destruct_lhs, target)?;
                     let bind = self.extract_fn(param, &slots, def, &construct)?;
@@ -1372,13 +1388,11 @@ impl<'a> Lower<'a> {
                     (Named::Fndef(def), Named::Fndef(fndef)) => {
                         let Fndef {
                             ctx: target_lhs,
-                            param: _,
-                            result: _,
+                            sig: _,
                         } = self.ir.fndefs[def];
                         let Fndef {
                             ctx: target_rhs,
-                            param: _,
-                            result: _,
+                            sig: _,
                         } = self.ir.fndefs[fndef];
                         // TODO: Check compatibility of function signatures.
                         let construct_lhs = self.invoke_open(param, &destruct_lhs, target_lhs)?;
@@ -1437,57 +1451,73 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn needs(&mut self, param: Static, needs: IdRange<parse::NeedId>) -> LowerResult<Static> {
-        let builder = self.builder();
+    fn need(
+        &mut self,
+        param: Static,
+        slots: &[StaticId],
+        need: parse::NeedId,
+    ) -> LowerResult<StaticId> {
+        let parse::Need { kind: _, bind } = self.tree.needs[need];
+        // TODO: Handle `kind`.
+        let parse::Bind { key, val } = self.tree.binds[bind];
+        match val {
+            Some(_) => self.bind(param, &slots, bind),
+            None => {
+                let (lhs, destruct) = self.spec(param, &slots, key)?;
+                match lhs {
+                    Named::Tydef(def) => {
+                        let Tydef { ctx: target } = self.ir.tydefs[def];
+                        let construct = self.invoke_open(param, &destruct, target)?;
+                        let params = IdRange::new(&mut self.ir.items, construct);
+                        Ok(self.emit(StaticInstr::NeedTydef { def, params }))
+                    }
+                    Named::Fndef(def) => {
+                        let Fndef {
+                            ctx: target,
+                            sig: _,
+                        } = self.ir.fndefs[def];
+                        let construct = self.invoke_open(param, &destruct, target)?;
+                        let params = IdRange::new(&mut self.ir.items, construct);
+                        Ok(self.emit(StaticInstr::NeedFndef { def, params }))
+                    }
+                    Named::Valdef(def) => {
+                        let Valdef { ctx: target, ty: _ } = self.ir.valdefs[def];
+                        let construct = self.invoke_open(param, &destruct, target)?;
+                        let params = IdRange::new(&mut self.ir.items, construct);
+                        Ok(self.emit(StaticInstr::NeedValdef { def, params }))
+                    }
+                    Named::Ctxdef(def) => {
+                        let Ctxdef {
+                            ctx: target,
+                            def: _,
+                        } = self.ir.ctxdefs[def];
+                        let construct = self.invoke_open(param, &destruct, target)?;
+                        let params = IdRange::new(&mut self.ir.items, construct);
+                        Ok(self.emit(StaticInstr::NeedCtxdef { def, params }))
+                    }
+                    Named::Module(_) => Err(LowerError::BindModule(bind)),
+                    Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
+                    Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
+                }
+            }
+        }
+    }
+
+    fn needs_raw(
+        &mut self,
+        param: Static,
+        needs: IdRange<parse::NeedId>,
+    ) -> LowerResult<Vec<StaticId>> {
         let mut slots = Vec::new();
         for need in needs {
-            let parse::Need { kind: _, bind } = self.tree.needs[need];
-            // TODO: Handle `kind`.
-            let parse::Bind { key, val } = self.tree.binds[bind];
-            let slot = match val {
-                Some(_) => self.bind(param, &slots, bind)?,
-                None => {
-                    let (lhs, destruct) = self.spec(param, &slots, key)?;
-                    match lhs {
-                        Named::Tydef(def) => {
-                            let Tydef { ctx: target } = self.ir.tydefs[def];
-                            let construct = self.invoke_open(param, &destruct, target)?;
-                            let params = IdRange::new(&mut self.ir.items, construct);
-                            self.emit(StaticInstr::NeedTydef { def, params })
-                        }
-                        Named::Fndef(def) => {
-                            let Fndef {
-                                ctx: target,
-                                param: _,
-                                result: _,
-                            } = self.ir.fndefs[def];
-                            let construct = self.invoke_open(param, &destruct, target)?;
-                            let params = IdRange::new(&mut self.ir.items, construct);
-                            self.emit(StaticInstr::NeedFndef { def, params })
-                        }
-                        Named::Valdef(def) => {
-                            let Valdef { ctx: target, ty: _ } = self.ir.valdefs[def];
-                            let construct = self.invoke_open(param, &destruct, target)?;
-                            let params = IdRange::new(&mut self.ir.items, construct);
-                            self.emit(StaticInstr::NeedValdef { def, params })
-                        }
-                        Named::Ctxdef(def) => {
-                            let Ctxdef {
-                                ctx: target,
-                                def: _,
-                            } = self.ir.ctxdefs[def];
-                            let construct = self.invoke_open(param, &destruct, target)?;
-                            let params = IdRange::new(&mut self.ir.items, construct);
-                            self.emit(StaticInstr::NeedCtxdef { def, params })
-                        }
-                        Named::Module(_) => return Err(LowerError::BindModule(bind)),
-                        Named::Tagdef(_) => return Err(LowerError::BindNominal(bind)),
-                        Named::Aliasdef(_) => return Err(LowerError::BindAlias(bind)),
-                    }
-                }
-            };
-            slots.push(slot);
+            slots.push(self.need(param, &slots, need)?);
         }
+        Ok(slots)
+    }
+
+    fn needs(&mut self, param: Static, needs: IdRange<parse::NeedId>) -> LowerResult<Static> {
+        let builder = self.builder();
+        let slots = self.needs_raw(param, needs)?;
         let slots = IdRange::new(&mut self.ir.items, slots);
         let ctx = self.emit(StaticInstr::Ctx { slots });
         Ok(self.finish(builder, ctx))
@@ -1518,29 +1548,46 @@ impl<'a> Lower<'a> {
                     .into_iter()
                     .map(|elem| self.parse_ty(param, slots, elem))
                     .collect::<LowerResult<Vec<StaticId>>>()?;
-                let elems = IdRange::new(&mut self.ir.items, lowered);
-                Ok(self.emit(StaticInstr::Tuple { elems }))
+                Ok(self.ty_tuple(lowered))
             }
             parse::Type::Record(members) => todo!(),
         }
     }
 
-    fn parse_fndef(&mut self, fndef: parse::Fndef) -> LowerResult<Fndef> {
-        let types = (fndef.params.into_iter())
-            .map(|param| self.parse_ty(self.tree.params[param].ty))
-            .collect::<LowerResult<Vec<TypeId>>>()?;
-        Ok(Fndef {
-            ctx: self.needs(fndef.needs)?,
-            param: self.ty_tuple(&types),
-            result: match fndef.result {
-                parse::Return::Unit => self.ty_unit(),
-                parse::Return::Type(ty) => self.parse_ty(ty)?,
-                parse::Return::Bind(needs) => {
-                    let ctx = self.needs(needs)?;
-                    self.ty(Type::Bind(ctx))
-                }
-            },
-        })
+    fn parse_fndef(&mut self, fndef: parse::Fndef) -> LowerResult<(StrId, FndefId)> {
+        let empty = self.ir.empty();
+        let parse::Fndef {
+            name,
+            needs,
+            params,
+            result,
+            def: _,
+        } = fndef;
+        let ctx = self.needs(empty, needs)?;
+        let builder = self.builder();
+        let param = self.emit(StaticInstr::Param);
+        let slots = &[param];
+        let elems = (params.into_iter())
+            .map(|arg| self.parse_ty(ctx, slots, self.tree.params[arg].ty))
+            .collect::<LowerResult<Vec<StaticId>>>()?;
+        let param_tuple = self.ty_tuple(elems);
+        let result_ty = match result {
+            parse::Return::Unit => self.ty_unit(),
+            parse::Return::Type(ty) => self.parse_ty(ctx, slots, ty)?,
+            parse::Return::Bind(needs) => {
+                let slots = self.needs_raw(ctx, needs)?;
+                let slots = IdRange::new(&mut self.ir.items, slots);
+                self.emit(StaticInstr::Ctx { slots })
+            }
+        };
+        let signature = self.emit(StaticInstr::Sig {
+            param: param_tuple,
+            result: result_ty,
+        });
+        let sig = self.finish(builder, signature);
+        let lowered = self.ir.fndefs.push(Fndef { ctx, sig });
+        let string = self.name(name);
+        Ok((string, lowered))
     }
 
     fn decls(&mut self) -> LowerResult<()> {
@@ -1588,9 +1635,34 @@ impl<'a> Lower<'a> {
                         .names
                         .insert((self.module, string), Named::Aliasdef(lowered));
                 }
-                parse::Decl::Funcdef(id) => todo!(),
-                parse::Decl::Attachdef(id) => todo!(),
-                parse::Decl::Detachdef(id) => todo!(),
+                parse::Decl::Funcdef(id) => {
+                    let parse::Funcdef { fndef } = self.tree.funcdefs[id];
+                    let (fn_name, lowered) = self.parse_fndef(fndef)?;
+                    self.funcs.push((id, lowered));
+                    self.names
+                        .names
+                        .insert((self.module, fn_name), Named::Fndef(lowered));
+                }
+                parse::Decl::Attachdef(id) => {
+                    let parse::Attachdef { ty, fndef } = self.tree.attachdefs[id];
+                    let (fn_name, lowered) = self.parse_fndef(fndef)?;
+                    let ty_name = self.name(ty);
+                    // TODO: Prevent attaching methods to nominal types defined in other modules.
+                    match self.names.names.get(&(self.module, ty_name)) {
+                        Some(&Named::Tagdef(tagdef)) => {
+                            self.attaches.push((id, tagdef, lowered));
+                            self.names.attached.insert((tagdef, fn_name), lowered);
+                        }
+                        Some(_) => return Err(LowerError::NotNominal(ty)),
+                        None => return Err(LowerError::Undefined(ty)),
+                    }
+                }
+                parse::Decl::Detachdef(id) => {
+                    let parse::Detachdef { fndef } = self.tree.detachdefs[id];
+                    let (fn_name, lowered) = self.parse_fndef(fndef)?;
+                    self.detaches.push((id, lowered));
+                    self.names.detached.insert((self.module, fn_name), lowered);
+                }
                 parse::Decl::Valdef(id) => todo!(),
                 parse::Decl::Ctxdef(id) => todo!(),
             }
