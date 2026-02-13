@@ -7,7 +7,6 @@ use std::{
 };
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
-use indexmap::IndexSet;
 
 use crate::{
     intern::{StrId, Strings},
@@ -353,18 +352,8 @@ impl<T: Copy> Query<T> {
     }
 }
 
-/// A path from one context downward into a context it contains.
-type Drill = Option<(SlotId, DrillId)>;
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Func {
-    pub ctx: CtxId,
-    pub def: FndefId,
-}
-
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Val {
-    Opaque(CtxId, ValdefId),
     Uint31(u32),
     Uint32(u32),
     Int32(i32),
@@ -428,20 +417,7 @@ pub struct Depth(pub u32);
 /// When executed, each instruction implicitly defines a mutable local variable.
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
-    /// Bind a contextual value until the next [`Instr::EndBind`].
-    ///
-    /// Type: unit.
-    BindCall(FndefId, LocalId),
-
-    /// End the most recent binding.
-    ///
-    /// Type: unit.
-    EndBind,
-
-    /// Get a contextual value.
-    ///
-    /// Type: that of the given value.
-    Val(ValdefId, CtxId),
+    Static(StaticId),
 
     /// Get the value of the parameter to this function.
     ///
@@ -471,7 +447,7 @@ pub enum Instr {
     /// Construct a record.
     ///
     /// Type: the given record type.
-    Record(TypeId, IdRange<RefId>),
+    Record(StaticId, IdRange<RefId>),
 
     /// Get an element of a tuple.
     ///
@@ -491,7 +467,7 @@ pub enum Instr {
     /// Start a block only if the given condition is true.
     ///
     /// Type: unit.
-    If(LocalId, TypeId),
+    If(LocalId, StaticId),
 
     /// Start a block only if the preceding [`Instr::If`] condition was false.
     ///
@@ -526,7 +502,13 @@ pub enum Instr {
     /// Return bindings from this function.
     ///
     /// Type: unit.
-    ReturnBind(CtxId),
+    ReturnBind(StaticId),
+}
+
+#[derive(Debug)]
+pub struct Body {
+    pub statics: Static,
+    pub dynamics: IdRange<LocalId>,
 }
 
 #[derive(Debug)]
@@ -543,20 +525,30 @@ pub struct IR {
     pub fndefs: IndexVec<FndefId, Fndef>,
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
-    pub locals: IndexVec<LocalId, TypeId>,
+    pub locals: IndexVec<LocalId, StaticId>,
     pub instrs: IndexVec<LocalId, Instr>,
     pub refs: IndexVec<RefId, LocalId>,
-    pub bodies: IndexVec<FndefId, Option<LocalId>>,
+    pub bodies: IndexVec<FndefId, Option<Body>>,
 }
 
 impl Default for IR {
     fn default() -> Self {
-        let mut ir = Self {
+        let mut statics = IndexVec::new();
+        let mut items = IndexVec::new();
+        let empty = statics.push(StaticInstr::Ctx {
+            slots: IdRange::new(&mut items, Vec::new()),
+        });
+        let body = IdRange {
+            start: empty,
+            end: statics.len_idx(),
+        };
+        Self {
             modules: Default::default(),
             strings: Default::default(),
-            statics: Default::default(),
-            items: Default::default(),
+            statics,
+            items,
             records: Default::default(),
+            empty: Static::new(body, empty),
             tydefs: Default::default(),
             tagdefs: Default::default(),
             aliasdefs: Default::default(),
@@ -567,16 +559,7 @@ impl Default for IR {
             instrs: Default::default(),
             refs: Default::default(),
             bodies: Default::default(),
-        };
-        let empty = ir.statics.push(StaticInstr::Ctx {
-            slots: IdRange::new(&mut ir.items, Vec::new()),
-        });
-        let body = IdRange {
-            start: empty,
-            end: ir.statics.len_idx(),
-        };
-        ir.empty = Static::new(body, empty);
-        ir
+        }
     }
 }
 
@@ -820,15 +803,6 @@ struct Lower<'a> {
     funcs: Vec<(parse::FuncdefId, FndefId)>,
     attaches: Vec<(parse::AttachdefId, TagdefId, FndefId)>,
     detaches: Vec<(parse::DetachdefId, FndefId)>,
-    drills: IndexSet<Drill>,
-}
-
-impl<'a> Index<DrillId> for Lower<'a> {
-    type Output = Drill;
-
-    fn index(&self, index: DrillId) -> &Self::Output {
-        &self.drills[index.index()]
-    }
 }
 
 impl<'a> Lower<'a> {
@@ -889,15 +863,6 @@ impl<'a> Lower<'a> {
             }
             _ => unreachable!(),
         }
-    }
-
-    fn empty_drill(&self) -> DrillId {
-        DrillId::from_usize(self.drills.get_index_of(&None).unwrap())
-    }
-
-    fn drill(&mut self, drill: Drill) -> DrillId {
-        let (i, _) = self.drills.insert_full(drill);
-        DrillId::from_usize(i)
     }
 
     fn resolve_prefix(&mut self, path: Path) -> LowerResult<(ModuleId, StrId)> {
@@ -1578,40 +1543,36 @@ impl<'a> Lower<'a> {
     }
 
     fn bodies(&mut self) -> LowerResult<()> {
-        let ctx = self.ctx(Ctx::default()); // This will get overwritten when we call `body`.
         for (funcdef, id_decl) in take(&mut self.funcs) {
             let parse::Funcdef { fndef } = self.tree.funcdefs[funcdef];
-            let start = Body {
+            let body = LowerBody {
                 x: self,
                 locals: HashMap::new(),
-                ctx,
             }
             .body(fndef, id_decl)?;
-            let id_body = self.ir.bodies.push(start);
+            let id_body = self.ir.bodies.push(body);
             assert_eq!(id_decl, id_body);
         }
         for (attachdef, _tagdef, id_decl) in take(&mut self.attaches) {
             // TODO: Handle `this`.
             let parse::Attachdef { ty: _, fndef } = self.tree.attachdefs[attachdef];
-            let start = Body {
+            let body = LowerBody {
                 x: self,
                 locals: HashMap::new(),
-                ctx,
             }
             .body(fndef, id_decl)?;
-            let id_body = self.ir.bodies.push(start);
+            let id_body = self.ir.bodies.push(body);
             assert_eq!(id_decl, id_body);
         }
         for (detachdef, id_decl) in take(&mut self.detaches) {
             // TODO: Handle `this`.
             let parse::Detachdef { fndef } = self.tree.detachdefs[detachdef];
-            let start = Body {
+            let body = LowerBody {
                 x: self,
                 locals: HashMap::new(),
-                ctx,
             }
             .body(fndef, id_decl)?;
-            let id_body = self.ir.bodies.push(start);
+            let id_body = self.ir.bodies.push(body);
             assert_eq!(id_decl, id_body);
         }
         Ok(())
@@ -1626,13 +1587,12 @@ impl<'a> Lower<'a> {
     }
 }
 
-struct Body<'a, 'b> {
+struct LowerBody<'a, 'b> {
     x: &'b mut Lower<'a>,
     locals: HashMap<StrId, LocalId>,
-    ctx: CtxId,
 }
 
-impl Body<'_, '_> {
+impl LowerBody<'_, '_> {
     fn base(&self) -> Base {
         self.x.base.unwrap()
     }
@@ -2082,7 +2042,7 @@ impl Body<'_, '_> {
         }
     }
 
-    fn body(&mut self, fndef: parse::Fndef, id_decl: FndefId) -> LowerResult<Option<LocalId>> {
+    fn body(&mut self, fndef: parse::Fndef, id_decl: FndefId) -> LowerResult<Option<Body>> {
         let parse::Fndef {
             name: _,
             needs: _,
@@ -2097,7 +2057,6 @@ impl Body<'_, '_> {
             param: tuple_ty,
             result: ret_ty,
         } = self.x.ir.fndefs[id_decl];
-        self.ctx = ctx;
         let tuple_local = self.instr(tuple_ty, Instr::Param);
         let types = self.x.ir.types[tuple_ty.index()].tuple();
         let mut index = 0;
@@ -2126,8 +2085,6 @@ pub fn lower(
 ) -> LowerResult<ModuleId> {
     assert_eq!(tree.imports.len(), imports.len());
     let module = ir.modules.push(());
-    let mut drills = IndexSet::new();
-    drills.insert(None);
     let mut lower = Lower {
         source,
         starts,
@@ -2141,7 +2098,6 @@ pub fn lower(
         funcs: Vec::new(),
         attaches: Vec::new(),
         detaches: Vec::new(),
-        drills,
     };
     lower.program()?;
     Ok(module)
