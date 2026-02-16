@@ -1740,6 +1740,11 @@ impl LowerBody<'_, '_> {
         self.x.inline(self.ctx, ctx, construct, body)
     }
 
+    /// Get the fields of a record type.
+    fn fields(&self, ty: InstrId) -> LowerResult<Vec<(StrId, InstrId)>> {
+        todo!()
+    }
+
     fn expect_ty(&self, expected: InstrId, actual: InstrId) -> LowerResult<()> {
         todo!()
     }
@@ -2093,14 +2098,14 @@ impl LowerBody<'_, '_> {
             parse::Expr::Field(object, field) => {
                 let obj = self.expr(object)?;
                 let name = self.x.name(field);
-                let fields =
-                    &self.x.ir.records[self.x.ir.types[self.x.ir.locals[obj].index()].record()];
                 // TODO: Make this not be linear time.
-                let id = FieldId::from_usize(
+                let fields = self.fields(obj.ty)?;
+                let index = FieldId::from_usize(
                     fields.iter().position(|&(field, _)| field == name).unwrap(),
                 );
-                let (_, ty) = fields[id.index()];
-                Ok(self.instr(ty, Instr::Field(obj, id)))
+                let (_, ty) = fields[index.index()];
+                let record = obj.val;
+                Ok(self.instr(ty, Expr::Field { record, index }))
             }
             parse::Expr::Method(object, method, args) => {
                 let obj = self.expr(object)?;
