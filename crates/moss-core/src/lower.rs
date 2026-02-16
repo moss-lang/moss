@@ -1676,6 +1676,15 @@ impl LowerBody<'_, '_> {
         self.x.emit(instr)
     }
 
+    fn ty_record(&mut self, fields: &[(StrId, InstrId)]) -> InstrId {
+        let start = self.x.ir.records.len_idx();
+        self.x.ir.records.extend_from_slice(IndexSlice::new(fields));
+        let end = self.x.ir.records.len_idx();
+        self.emit(Instr::Record {
+            fields: IdRange { start, end },
+        })
+    }
+
     fn instr(&mut self, ty: InstrId, expr: Expr) -> Typed {
         Typed {
             ty,
@@ -2070,16 +2079,16 @@ impl LowerBody<'_, '_> {
                         let Field { name, val } = self.x.tree.fields[field];
                         Ok((self.x.slice(name), self.expr(val)?))
                     })
-                    .collect::<LowerResult<BTreeMap<&str, InstrId>>>()?;
-                let fields = sorted
-                    .iter()
-                    .map(|(&string, &local)| {
-                        (self.x.ir.strings.make_id(string), self.x.ir.locals[local])
+                    .collect::<LowerResult<BTreeMap<&str, Typed>>>()?;
+                let (fields_ty, fields_val): (Vec<_>, Vec<_>) = sorted
+                    .into_iter()
+                    .map(|(string, field)| {
+                        let name = self.x.ir.strings.make_id(string);
+                        ((name, field.ty), (name, field.val))
                     })
-                    .collect::<Vec<(StrId, TypeId)>>();
-                let ty = self.x.ty_record(&fields);
-                let locals = sorted.values().copied().collect::<Vec<InstrId>>();
-                Ok(self.instr_record(ty, &locals))
+                    .unzip();
+                let ty = self.ty_record(&fields_ty);
+                Ok(self.instr_record(ty, &fields_val))
             }
             parse::Expr::Field(object, field) => {
                 let obj = self.expr(object)?;
