@@ -1711,7 +1711,7 @@ impl LowerBody<'_, '_> {
                     lit_vals,
                     lits,
                 } = self.base();
-                let (tydef_lit, tydef, valdef, fndef) = match self.x.lit(token)? {
+                let (tydef_lit, tydef, valdef, fndef, val) = match self.x.lit(token)? {
                     // Unreachable cases.
                     (
                         Val::Uint31(_)
@@ -1731,34 +1731,38 @@ impl LowerBody<'_, '_> {
                     ) => unreachable!(),
 
                     // Integer literals ending in `u32`.
-                    (Val::Uint31(_), Some(IntType::Uint32)) => (
+                    (Val::Uint31(n), Some(IntType::Uint32)) => (
                         lit_types.uint31,
                         types.uint32,
                         lit_vals.uint31,
                         lits.uint31_realize_uint32,
+                        Val::Uint31(n),
                     ),
-                    (Val::Uint32(_), Some(IntType::Uint32)) => (
+                    (Val::Uint32(n), Some(IntType::Uint32)) => (
                         lit_types.uint32,
                         types.uint32,
                         lit_vals.uint32,
                         lits.uint32_realize_uint32,
+                        Val::Uint32(n),
                     ),
                     (Val::Uint63(_) | Val::Uint64(_) | Val::Uint(_), Some(IntType::Uint32)) => {
                         return Err(LowerError::Uint32High(token));
                     }
 
                     // Integer literals ending in `i32`.
-                    (Val::Uint31(_), Some(IntType::Int32)) => (
+                    (Val::Uint31(n), Some(IntType::Int32)) => (
                         lit_types.uint31,
                         types.int32,
                         lit_vals.uint31,
                         lits.uint31_realize_int32,
+                        Val::Uint31(n),
                     ),
-                    (Val::Int32(_), Some(IntType::Int32)) => (
+                    (Val::Int32(n), Some(IntType::Int32)) => (
                         lit_types.int32,
                         types.int32,
                         lit_vals.int32,
                         lits.int32_realize_int32,
+                        Val::Int32(n),
                     ),
                     (Val::Int64(_) | Val::Int(_), Some(IntType::Int32)) => {
                         return Err(LowerError::Int32Low(token));
@@ -1771,64 +1775,73 @@ impl LowerBody<'_, '_> {
                     }
 
                     // Integer literals ending in `u64`.
-                    (Val::Uint31(_), Some(IntType::Uint64)) => (
+                    (Val::Uint31(n), Some(IntType::Uint64)) => (
                         lit_types.uint31,
                         types.uint64,
                         lit_vals.uint31,
                         lits.uint31_realize_uint64,
+                        Val::Uint31(n),
                     ),
-                    (Val::Uint32(_), Some(IntType::Uint64)) => (
+                    (Val::Uint32(n), Some(IntType::Uint64)) => (
                         lit_types.uint32,
                         types.uint64,
                         lit_vals.uint32,
                         lits.uint32_realize_uint64,
+                        Val::Uint32(n),
                     ),
-                    (Val::Uint63(_), Some(IntType::Uint64)) => (
+                    (Val::Uint63(n), Some(IntType::Uint64)) => (
                         lit_types.uint63,
                         types.uint64,
                         lit_vals.uint63,
                         lits.uint63_realize_uint64,
+                        Val::Uint63(n),
                     ),
-                    (Val::Uint64(_), Some(IntType::Uint64)) => (
+                    (Val::Uint64(n), Some(IntType::Uint64)) => (
                         lit_types.uint64,
                         types.uint64,
                         lit_vals.uint64,
                         lits.uint64_realize_uint64,
+                        Val::Uint64(n),
                     ),
                     (Val::Uint(_), Some(IntType::Uint64)) => {
                         return Err(LowerError::Uint64High(token));
                     }
 
                     // Integer literals ending in `i64`.
-                    (Val::Uint31(_), Some(IntType::Int64)) => (
+                    (Val::Uint31(n), Some(IntType::Int64)) => (
                         lit_types.uint31,
                         types.int64,
                         lit_vals.uint31,
                         lits.uint31_realize_int64,
+                        Val::Uint31(n),
                     ),
-                    (Val::Uint32(_), Some(IntType::Int64)) => (
+                    (Val::Uint32(n), Some(IntType::Int64)) => (
                         lit_types.uint32,
                         types.int64,
                         lit_vals.uint32,
                         lits.uint32_realize_int64,
+                        Val::Uint32(n),
                     ),
-                    (Val::Int32(_), Some(IntType::Int64)) => (
+                    (Val::Int32(n), Some(IntType::Int64)) => (
                         lit_types.int32,
                         types.int64,
                         lit_vals.int32,
                         lits.int32_realize_int64,
+                        Val::Int32(n),
                     ),
-                    (Val::Uint63(_), Some(IntType::Int64)) => (
+                    (Val::Uint63(n), Some(IntType::Int64)) => (
                         lit_types.uint63,
                         types.int64,
                         lit_vals.uint63,
                         lits.uint63_realize_int64,
+                        Val::Uint63(n),
                     ),
-                    (Val::Int64(_), Some(IntType::Int64)) => (
+                    (Val::Int64(n), Some(IntType::Int64)) => (
                         lit_types.int64,
                         types.int64,
                         lit_vals.int64,
                         lits.int64_realize_int64,
+                        Val::Int64(n),
                     ),
                     (Val::Int(_), Some(IntType::Int64)) => return Err(LowerError::Int64Low(token)),
                     (Val::Uint64(_) | Val::Uint(_), Some(IntType::Int64)) => {
@@ -1836,93 +1849,114 @@ impl LowerBody<'_, '_> {
                     }
 
                     // Integer literals ending in `u`.
-                    (Val::Uint31(_), Some(IntType::Uint)) => (
+                    (Val::Uint31(n), Some(IntType::Uint)) => (
                         lit_types.uint31,
                         types.uint,
                         lit_vals.uint31,
                         lits.uint31_realize_uint,
+                        Val::Uint31(n),
                     ),
-                    (Val::Uint32(_), Some(IntType::Uint)) => (
+                    (Val::Uint32(n), Some(IntType::Uint)) => (
                         lit_types.uint32,
                         types.uint,
                         lit_vals.uint32,
                         lits.uint32_realize_uint,
+                        Val::Uint32(n),
                     ),
-                    (Val::Uint63(_), Some(IntType::Uint)) => (
+                    (Val::Uint63(n), Some(IntType::Uint)) => (
                         lit_types.uint63,
                         types.uint,
                         lit_vals.uint63,
                         lits.uint63_realize_uint,
+                        Val::Uint63(n),
                     ),
-                    (Val::Uint64(_), Some(IntType::Uint)) => (
+                    (Val::Uint64(n), Some(IntType::Uint)) => (
                         lit_types.uint64,
                         types.uint,
                         lit_vals.uint64,
                         lits.uint64_realize_uint,
+                        Val::Uint64(n),
                     ),
-                    (Val::Uint(_), Some(IntType::Uint)) => (
+                    (Val::Uint(n), Some(IntType::Uint)) => (
                         lit_types.uint,
                         types.uint,
                         lit_vals.uint,
                         lits.uint_realize_uint,
+                        Val::Uint(n),
                     ),
 
                     // Integer literals with no suffix.
-                    (Val::Uint31(_), Some(IntType::Int)) => (
+                    (Val::Uint31(n), Some(IntType::Int)) => (
                         lit_types.uint31,
                         types.int,
                         lit_vals.uint31,
                         lits.uint31_realize_int,
+                        Val::Uint31(n),
                     ),
-                    (Val::Uint32(_), Some(IntType::Int)) => (
+                    (Val::Uint32(n), Some(IntType::Int)) => (
                         lit_types.uint32,
                         types.int,
                         lit_vals.uint32,
                         lits.uint32_realize_int,
+                        Val::Uint32(n),
                     ),
-                    (Val::Int32(_), Some(IntType::Int)) => (
+                    (Val::Int32(n), Some(IntType::Int)) => (
                         lit_types.int32,
                         types.int,
                         lit_vals.int32,
                         lits.int32_realize_int,
+                        Val::Int32(n),
                     ),
-                    (Val::Uint63(_), Some(IntType::Int)) => (
+                    (Val::Uint63(n), Some(IntType::Int)) => (
                         lit_types.uint63,
                         types.int,
                         lit_vals.uint63,
                         lits.uint63_realize_int,
+                        Val::Uint63(n),
                     ),
-                    (Val::Uint64(_), Some(IntType::Int)) => (
+                    (Val::Uint64(n), Some(IntType::Int)) => (
                         lit_types.uint64,
                         types.int,
                         lit_vals.uint64,
                         lits.uint64_realize_int,
+                        Val::Uint64(n),
                     ),
-                    (Val::Int64(_), Some(IntType::Int)) => (
+                    (Val::Int64(n), Some(IntType::Int)) => (
                         lit_types.int64,
                         types.int,
                         lit_vals.int64,
                         lits.int64_realize_int,
+                        Val::Int64(n),
                     ),
-                    (Val::Uint(_), Some(IntType::Int)) => (
+                    (Val::Uint(n), Some(IntType::Int)) => (
                         lit_types.uint,
                         types.int,
                         lit_vals.uint,
                         lits.uint_realize_int,
+                        Val::Uint(n),
                     ),
-                    (Val::Int(_), Some(IntType::Int)) => {
-                        (lit_types.int, types.int, lit_vals.int, lits.int_realize_int)
-                    }
+                    (Val::Int(n), Some(IntType::Int)) => (
+                        lit_types.int,
+                        types.int,
+                        lit_vals.int,
+                        lits.int_realize_int,
+                        Val::Int(n),
+                    ),
 
                     // Other literals.
-                    (Val::Char(_), None) => {
-                        (lit_types.char, types.char, lit_vals.char, lits.char_realize)
-                    }
-                    (Val::String(_), None) => (
+                    (Val::Char(c), None) => (
+                        lit_types.char,
+                        types.char,
+                        lit_vals.char,
+                        lits.char_realize,
+                        Val::Char(c),
+                    ),
+                    (Val::String(s), None) => (
                         lit_types.string,
                         types.string,
                         lit_vals.string,
                         lits.string_realize,
+                        Val::String(s),
                     ),
                 };
 
@@ -1944,9 +1978,13 @@ impl LowerBody<'_, '_> {
                 let ty = self.extract_ty(tydef, &construct_ty)?;
 
                 let construct_val = self.invoke(&[ty_lit], ctx_valdef)?;
-                let val = self.extract_val(valdef, &construct_val)?;
+                let val_lit = self.emit(Instr::BindLit {
+                    def: valdef,
+                    params: IdRange::new(&mut self.x.ir.items, construct_val),
+                    bind: val,
+                });
 
-                let construct_func = self.invoke(&[ty_lit, ty, val], ctx_fndef)?;
+                let construct_func = self.invoke(&[ty_lit, ty, val_lit], ctx_fndef)?;
                 let func = self.extract_fn(fndef, &construct_func)?;
 
                 let params = IdRange::new(&mut self.x.ir.items, construct_func);
