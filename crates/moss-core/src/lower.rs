@@ -401,7 +401,10 @@ pub enum Instr {
     EndLoop,
 
     /// Branch to the end of the block with the given depth, or the beginning if it's a loop block.
-    Br(Depth),
+    Br {
+        /// The number of blocks to exit.
+        depth: Depth,
+    },
 
     /// An instruction whose value is typed by the value of a previous instruction.
     Expr {
@@ -1602,6 +1605,11 @@ impl<'a> Lower<'a> {
     }
 }
 
+struct Typed {
+    ty: InstrId,
+    val: InstrId,
+}
+
 struct LowerBody<'a, 'b> {
     x: &'b mut Lower<'a>,
     locals: HashMap<StrId, InstrId>,
@@ -1625,8 +1633,12 @@ impl LowerBody<'_, '_> {
         self.locals.insert(name, local);
     }
 
+    fn emit(&mut self, instr: Instr) -> InstrId {
+        self.x.emit(instr)
+    }
+
     fn instr(&mut self, ty: InstrId, expr: Expr) -> InstrId {
-        self.x.emit(Instr::Expr { ty, expr })
+        self.emit(Instr::Expr { ty, expr })
     }
 
     fn instr_tuple(&mut self, ty: InstrId, elems: &[InstrId]) -> InstrId {
@@ -1653,7 +1665,7 @@ impl LowerBody<'_, '_> {
         )
     }
 
-    fn expr(&mut self, expr: ExprId) -> LowerResult<InstrId> {
+    fn expr(&mut self, expr: ExprId) -> LowerResult<Typed> {
         match self.x.tree.exprs[expr] {
             parse::Expr::Lit(token) => {
                 let Base {
@@ -2012,15 +2024,13 @@ impl LowerBody<'_, '_> {
         for stmt in stmts {
             match self.x.tree.stmts[stmt] {
                 Stmt::Let(name, rhs) => {
-                    let local = self.expr(rhs)?;
-                    let ty = self.x.ir.locals[local];
-                    let copy = self.instr(ty, Instr::Copy(local));
+                    let Typed { ty, val } = self.expr(rhs)?;
+                    let copy = self.instr(ty, Expr::Copy { value: val });
                     self.set(name, copy);
                 }
                 Stmt::Var(name, rhs) => {
-                    let local = self.expr(rhs)?;
-                    let ty = self.x.ir.locals[local];
-                    let copy = self.instr(ty, Instr::Copy(local));
+                    let Typed { ty, val } = self.expr(rhs)?;
+                    let copy = self.instr(ty, Expr::Copy { value: val });
                     self.set(name, copy);
                 }
                 Stmt::Assign(lhs, rhs) => match self.x.tree.exprs[lhs] {
@@ -2028,21 +2038,22 @@ impl LowerBody<'_, '_> {
                         assert!(path.prefix.is_empty());
                         let before = self.get(path.last)?;
                         let after = self.expr(rhs)?;
-                        let unit = self.x.ty_unit();
-                        self.instr(unit, Instr::Set(before, after));
+                        self.emit(Instr::Set {
+                            lhs: before,
+                            rhs: after.val,
+                        });
                     }
                     _ => panic!(),
                 },
                 Stmt::While(cond, body) => {
                     assert!(body.expr.is_none());
-                    let unit = self.x.ty_unit();
-                    self.instr(unit, Instr::Loop);
+                    self.emit(Instr::Loop);
                     let local = self.expr(cond)?;
-                    self.instr(unit, Instr::If(local, unit));
+                    self.emit(Instr::If { cond: local.val });
                     self.stmts(body.stmts)?;
-                    let fake = self.instr(unit, Instr::Br(Depth(1)));
-                    self.instr(unit, Instr::EndIf(fake));
-                    self.instr(unit, Instr::EndLoop);
+                    let fake = self.emit(Instr::Br { depth: Depth(1) });
+                    self.emit(Instr::EndIf { result: fake });
+                    self.emit(Instr::EndLoop);
                 }
                 Stmt::Expr(expr) => {
                     self.expr(expr)?;
@@ -2052,13 +2063,14 @@ impl LowerBody<'_, '_> {
         Ok(())
     }
 
-    fn block(&mut self, block: Block) -> LowerResult<InstrId> {
+    fn block(&mut self, block: Block) -> LowerResult<Typed> {
         self.stmts(block.stmts)?;
         match block.expr {
             Some(expr) => Ok(self.expr(expr)?),
             None => {
                 let ty = self.x.ty_unit();
-                Ok(self.instr_tuple(ty, &[]))
+                let val = self.instr_tuple(ty, &[]);
+                Ok(Typed { ty, val })
             }
         }
     }
@@ -2100,7 +2112,7 @@ impl LowerBody<'_, '_> {
             index += 1;
         }
         let ret = self.block(body)?;
-        Ok(Some(self.x.finish(builder, ret)))
+        Ok(Some(self.x.finish(builder, ret.val)))
     }
 }
 
