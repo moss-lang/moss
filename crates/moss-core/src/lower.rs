@@ -808,6 +808,7 @@ impl LowerError {
 
 type LowerResult<T> = Result<T, LowerError>;
 
+#[derive(Debug)]
 struct Lower<'a> {
     source: &'a str,
     starts: &'a TokenStarts,
@@ -1614,16 +1615,18 @@ impl<'a> Lower<'a> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct Typed {
     ty: InstrId,
     val: InstrId,
 }
 
+#[derive(Debug)]
 struct LowerBody<'a, 'b> {
     x: &'b mut Lower<'a>,
     ctx: Body,
     slots: Vec<InstrId>,
-    locals: HashMap<StrId, InstrId>,
+    locals: HashMap<StrId, Typed>,
 }
 
 impl LowerBody<'_, '_> {
@@ -1631,7 +1634,7 @@ impl LowerBody<'_, '_> {
         self.x.base.unwrap()
     }
 
-    fn get(&mut self, token: TokenId) -> LowerResult<InstrId> {
+    fn get(&mut self, token: TokenId) -> LowerResult<Typed> {
         let name = self.x.name(token);
         match self.locals.get(&name) {
             Some(&local) => Ok(local),
@@ -1639,20 +1642,23 @@ impl LowerBody<'_, '_> {
         }
     }
 
-    fn set(&mut self, token: TokenId, local: InstrId) {
+    fn set(&mut self, token: TokenId, rhs: Typed) {
         let name = self.x.name(token);
-        self.locals.insert(name, local);
+        self.locals.insert(name, rhs);
     }
 
     fn emit(&mut self, instr: Instr) -> InstrId {
         self.x.emit(instr)
     }
 
-    fn instr(&mut self, ty: InstrId, expr: Expr) -> InstrId {
-        self.emit(Instr::Expr { ty, expr })
+    fn instr(&mut self, ty: InstrId, expr: Expr) -> Typed {
+        Typed {
+            ty,
+            val: self.emit(Instr::Expr { ty, expr }),
+        }
     }
 
-    fn instr_tuple(&mut self, ty: InstrId, elems: &[InstrId]) -> InstrId {
+    fn instr_tuple(&mut self, ty: InstrId, elems: &[InstrId]) -> Typed {
         let start = self.x.ir.items.len_idx();
         self.x.ir.items.extend_from_slice(IndexSlice::new(elems));
         let end = self.x.ir.items.len_idx();
@@ -1664,7 +1670,7 @@ impl LowerBody<'_, '_> {
         )
     }
 
-    fn instr_record(&mut self, ty: InstrId, fields: &[(StrId, InstrId)]) -> InstrId {
+    fn instr_record(&mut self, ty: InstrId, fields: &[(StrId, InstrId)]) -> Typed {
         let start = self.x.ir.records.len_idx();
         self.x.ir.records.extend_from_slice(IndexSlice::new(fields));
         let end = self.x.ir.records.len_idx();
@@ -1945,11 +1951,8 @@ impl LowerBody<'_, '_> {
 
                 let params = IdRange::new(&mut self.x.ir.items, construct_func);
                 let ty_unit = self.x.ty_unit();
-                let arg = self.instr_tuple(ty_unit, &[]);
-                Ok(Typed {
-                    ty,
-                    val: self.instr(ty, Expr::Call { func, params, arg }),
-                })
+                let arg = self.instr_tuple(ty_unit, &[]).val;
+                Ok(self.instr(ty, Expr::Call { func, params, arg }))
             }
             parse::Expr::Path(path) => {
                 let name = self.x.name(path.last);
@@ -2179,7 +2182,7 @@ impl LowerBody<'_, '_> {
                         let before = self.get(path.last)?;
                         let after = self.expr(rhs)?;
                         self.emit(Instr::Set {
-                            lhs: before,
+                            lhs: before.val,
                             rhs: after.val,
                         });
                     }
@@ -2209,7 +2212,7 @@ impl LowerBody<'_, '_> {
             Some(expr) => Ok(self.expr(expr)?),
             None => {
                 let ty = self.x.ty_unit();
-                let val = self.instr_tuple(ty, &[]);
+                let val = self.instr_tuple(ty, &[]).val;
                 Ok(Typed { ty, val })
             }
         }
@@ -2243,7 +2246,7 @@ impl LowerBody<'_, '_> {
             let local = self.instr(
                 ty,
                 Expr::Elem {
-                    tuple: tuple_local,
+                    tuple: tuple_local.val,
                     index: ElemId::new(index),
                 },
             );
