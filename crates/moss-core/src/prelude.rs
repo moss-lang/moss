@@ -11,7 +11,7 @@ use line_index::{LineIndex, TextSize};
 use crate::{
     intern::StrId,
     lex::{ByteIndex, lex, string},
-    lower::{FndefId, IR, ModuleId, Named, Names, TydefId, lower},
+    lower::{FndefId, IR, ModuleId, Named, Names, TydefId, ValdefId, lower},
     parse::{ParseError, parse},
 };
 
@@ -44,6 +44,20 @@ pub struct LitTypes {
     pub int: TydefId,
     pub char: TydefId,
     pub string: TydefId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct LitVals {
+    pub uint31: ValdefId,
+    pub uint32: ValdefId,
+    pub int32: ValdefId,
+    pub uint63: ValdefId,
+    pub uint64: ValdefId,
+    pub int64: ValdefId,
+    pub uint: ValdefId,
+    pub int: ValdefId,
+    pub char: ValdefId,
+    pub string: ValdefId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -82,6 +96,7 @@ pub struct Lits {
 pub struct Base {
     pub types: Types,
     pub lit_types: LitTypes,
+    pub lit_vals: LitVals,
     pub lits: Lits,
 }
 
@@ -177,6 +192,14 @@ impl Precompile {
         }
     }
 
+    fn valdef(&self, module: ModuleId, name: &str) -> ValdefId {
+        let id = self.ir.strings.get_id(name).unwrap();
+        match self.names.names.get(&(module, id)) {
+            Some(&Named::Valdef(def)) => def,
+            _ => panic!("missing base value `{name}`"),
+        }
+    }
+
     fn prelude(mut self) -> io::Result<(IR, Names, Base, Lib)> {
         let path_literal = self.ir.strings.make_id("./literal.moss");
         let path_int = self.ir.strings.make_id("./int.moss");
@@ -207,6 +230,18 @@ impl Precompile {
             int: self.tydef(literal, "LiteralInt"),
             char: self.tydef(literal, "LiteralChar"),
             string: self.tydef(literal, "LiteralString"),
+        };
+        let base_lit_vals = LitVals {
+            uint31: self.valdef(literal, "literal_uint31"),
+            uint32: self.valdef(literal, "literal_uint32"),
+            int32: self.valdef(literal, "literal_int32"),
+            uint63: self.valdef(literal, "literal_uint63"),
+            uint64: self.valdef(literal, "literal_uint64"),
+            int64: self.valdef(literal, "literal_int64"),
+            uint: self.valdef(literal, "literal_uint"),
+            int: self.valdef(literal, "literal_int"),
+            char: self.valdef(literal, "literal_char"),
+            string: self.valdef(literal, "literal_string"),
         };
         let base_lits = Lits {
             uint31_realize_uint32: self.fndef(literal, "uint31_realize_uint32"),
@@ -241,6 +276,7 @@ impl Precompile {
         let base = Base {
             types: base_types,
             lit_types: base_lit_types,
+            lit_vals: base_lit_vals,
             lits: base_lits,
         };
         let path_prelude = self.ir.strings.make_id("./prelude.moss");
