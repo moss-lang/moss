@@ -241,6 +241,15 @@ pub enum Instr {
         params: InstrList,
     },
 
+    /// A nominal type parametrized by a specific context.
+    Tagdef {
+        /// The nominal type definition.
+        def: TagdefId,
+
+        /// Statics destructured to satisfy the input slots of the parameter context.
+        params: InstrList,
+    },
+
     /// A structural tuple of other types.
     Tuple {
         /// The types of the tuple elements.
@@ -1722,6 +1731,10 @@ impl LowerBody<'_, '_> {
         self.x.inline(self.ctx, ctx, construct, body)
     }
 
+    fn expect_ty(&self, expected: InstrId, actual: InstrId) -> LowerResult<()> {
+        todo!()
+    }
+
     fn expr(&mut self, expr: ExprId) -> LowerResult<Typed> {
         match self.x.tree.exprs[expr] {
             parse::Expr::Lit(token) => {
@@ -2032,9 +2045,23 @@ impl LowerBody<'_, '_> {
                 let Named::Tagdef(tagdef) = self.x.path(path)? else {
                     return Err(LowerError::NotNominal(path.last));
                 };
-                let local = self.expr(inner)?;
-                let ty = self.x.ir.locals[local];
-                Ok(self.instr(ty, Instr::Nominal(tagdef, local)))
+                let inside = self.expr(inner)?;
+                let Tagdef { ctx, inner } = self.x.ir.tagdefs[tagdef];
+                let construct = self.invoke(&self.slots, ctx)?;
+                let params = IdRange::new(&mut self.x.ir.items, construct);
+                let ty = self.emit(Instr::Tagdef {
+                    def: tagdef,
+                    params,
+                });
+                self.expect_ty(ty, inside.ty)?;
+                Ok(self.instr(
+                    ty,
+                    Expr::Nominal {
+                        def: tagdef,
+                        params,
+                        inner: inside.val,
+                    },
+                ))
             }
             parse::Expr::Record(_lbrace, fields, _rbrace) => {
                 let sorted = fields
