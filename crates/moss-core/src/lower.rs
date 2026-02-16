@@ -155,6 +155,12 @@ pub enum Expr {
         index: FieldId,
     },
 
+    /// Get a contextual value.
+    Val {
+        /// The value.
+        val: InstrId,
+    },
+
     /// Call a contextual function.
     ///
     /// Type: the function's result type.
@@ -1079,6 +1085,16 @@ impl<'a> Lower<'a> {
         todo!()
     }
 
+    fn inline(
+        &mut self,
+        param: Body,
+        ctx: Body,
+        construct: &[InstrId],
+        body: Body,
+    ) -> LowerResult<InstrId> {
+        todo!()
+    }
+
     /// Resolve the path of a spec and synthesize each of its attached bindings.
     ///
     /// The `param` gives the meaning of [`Instr::Param`] in this context.
@@ -1702,6 +1718,10 @@ impl LowerBody<'_, '_> {
         self.x.extract_ctx(self.ctx, &self.slots, def, construct)
     }
 
+    fn inline(&mut self, ctx: Body, construct: &[InstrId], body: Body) -> LowerResult<InstrId> {
+        self.x.inline(self.ctx, ctx, construct, body)
+    }
+
     fn expr(&mut self, expr: ExprId) -> LowerResult<Typed> {
         match self.x.tree.exprs[expr] {
             parse::Expr::Lit(token) => {
@@ -1995,15 +2015,18 @@ impl LowerBody<'_, '_> {
             parse::Expr::Path(path) => {
                 let name = self.x.name(path.last);
                 if path.prefix.is_empty()
-                    && let Some(&local) = self.locals.get(&name)
+                    && let Some(&typed) = self.locals.get(&name)
                 {
-                    return Ok(local);
+                    return Ok(typed);
                 }
                 let Named::Valdef(valdef) = self.x.path(path)? else {
                     return Err(LowerError::NotVal(path.last));
                 };
-                let ty = self.x.ir.valdefs[valdef].ty;
-                Ok(self.instr(ty, Instr::Val(valdef, self.ctx)))
+                let Valdef { ctx, ty } = self.x.ir.valdefs[valdef];
+                let construct = self.invoke(&self.slots, ctx)?;
+                let val = self.extract_val(valdef, &construct)?;
+                let ty_inlined = self.inline(ctx, &construct, ty)?;
+                Ok(self.instr(ty_inlined, Expr::Val { val }))
             }
             parse::Expr::Tag(path, inner) => {
                 let Named::Tagdef(tagdef) = self.x.path(path)? else {
