@@ -998,20 +998,6 @@ impl<'a> Lower<'a> {
         .ok_or(LowerError::Undefined(path.last))
     }
 
-    fn method(&mut self, ty: InstrId, name: StrId) -> Option<FndefId> {
-        if let Type::Nominal(tagdef, _) = self.ir.instrs[ty]
-            && let Some(&fndef) = self.names.attached.get(&(tagdef, name))
-        {
-            Some(fndef)
-        } else if let Some(&fndef) = self.names.detached.get(&(self.module, name)) {
-            Some(fndef)
-        } else if let Some(&fndef) = self.names.detached.get(&(self.prelude, name)) {
-            Some(fndef)
-        } else {
-            None
-        }
-    }
-
     fn imports(&mut self) -> LowerResult<()> {
         for (import, &module) in self.tree.imports.iter().zip(self.imports) {
             if let Some(token) = import.name {
@@ -1833,14 +1819,34 @@ impl LowerBody<'_, '_> {
         self.x.inline(self.ctx, ctx, construct, body)
     }
 
+    /// Get the nominal type definition of a value, or [`None`] if the value is not nominally typed.
+    fn nominal(&self, ty: InstrId) -> Option<TagdefId> {
+        todo!()
+    }
+
     /// Get the fields of a record type.
     fn fields(&self, ty: InstrId) -> LowerResult<Vec<(StrId, InstrId)>> {
         todo!()
     }
 
     /// Get the parameter type and result type of a function.
-    fn sig(&self, def: SigdefId, construct: &[InstrId]) -> LowerResult<(InstrId, InstrId)> {
+    fn sig(&self, def: SigdefId, construct: &[InstrId]) -> (InstrId, InstrId) {
         todo!()
+    }
+
+    /// Resolve a method call.
+    fn method(&self, ty: InstrId, name: StrId) -> Option<NamedFn> {
+        if let Some(tagdef) = self.nominal(ty)
+            && let Some(&fndef) = self.x.names.attached.get(&(tagdef, name))
+        {
+            Some(fndef)
+        } else if let Some(&fndef) = self.x.names.detached.get(&(self.x.module, name)) {
+            Some(fndef)
+        } else if let Some(&fndef) = self.x.names.detached.get(&(self.x.prelude, name)) {
+            Some(fndef)
+        } else {
+            None
+        }
     }
 
     fn expect_ty(&self, expected: InstrId, actual: InstrId) -> LowerResult<()> {
@@ -2207,27 +2213,27 @@ impl LowerBody<'_, '_> {
             }
             parse::Expr::Method(object, method, args) => {
                 let obj = self.expr(object)?;
-                let ty = self.x.ir.locals[obj];
                 let name = self.x.name(method);
-                let Some(fndef) = self.x.method(ty, name) else {
+                let Some(NamedFn::Sigdef(sigdef)) = self.method(obj.ty, name) else {
+                    // TODO: Process direct calls too.
                     return Err(LowerError::Undefined(method));
                 };
-                let Fndef {
-                    ctx: _,
-                    param,
-                    result,
-                } = self.x.ir.fndefs[fndef];
-                let params = &self.x.ir.tuples[self.x.ir.types[param.index()].tuple()];
-                if args.len() != params.len() {
-                    return Err(LowerError::ArgCount(expr));
-                }
-                let locals = args
+                let Sigdef { ctx, sig } = self.x.ir.sigdefs[sigdef];
+                let construct = self.invoke(&self.slots, ctx)?;
+                let (ty_param, ty_result) = self.sig(sigdef, &construct);
+                let lowered = args
                     .into_iter()
                     .map(|arg| self.expr(arg))
-                    .collect::<LowerResult<Vec<InstrId>>>()?;
-                let arg = self.instr_tuple(param, &locals);
+                    .collect::<LowerResult<Vec<Typed>>>()?;
+                let (args_ty, args_val): (Vec<_>, Vec<_>) =
+                    lowered.into_iter().map(|arg| (arg.ty, arg.val)).unzip();
+                let ty_args = self.ty_tuple(&args_ty);
+                self.expect_ty(ty_param, ty_args)?;
+                let arg = self.instr_tuple(ty_args, &args_val).val;
                 // TODO: Contextually set `this` to `obj`.
-                Ok(self.instr(result, Instr::Call(fndef, arg)))
+                let func = self.extract_sig(sigdef, &construct)?;
+                let params = IdRange::new(&mut self.x.ir.items, construct);
+                Ok(self.instr(ty_result, Expr::Call { func, params, arg }))
             }
             parse::Expr::Call(callee, binds, args) => {
                 let Named::Sigdef(sigdef) = self.x.path(callee)? else {
@@ -2237,7 +2243,7 @@ impl LowerBody<'_, '_> {
                 let Sigdef { ctx, sig } = self.x.ir.sigdefs[sigdef];
                 // TODO: Handle bindings attached to function calls.
                 let construct = self.invoke(&self.slots, ctx)?;
-                let (ty_param, ty_result) = self.sig(sigdef, &construct)?;
+                let (ty_param, ty_result) = self.sig(sigdef, &construct);
                 let lowered = args
                     .into_iter()
                     .map(|arg| self.expr(arg))
