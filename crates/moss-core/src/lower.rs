@@ -3,7 +3,6 @@ use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
     mem::take,
-    ops::Index,
 };
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
