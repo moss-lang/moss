@@ -63,7 +63,12 @@ define_index_type! {
 }
 
 define_index_type! {
-    /// The index of a [`Fndef`] in the `fndefs` field of the [`IR`].
+    /// The index of a [`Sigdef`] in the `sigdefs` field of the [`IR`].
+    pub struct SigdefId = u32;
+}
+
+define_index_type! {
+    /// The index of a [`Sigdef`]/[`Body`] in the `fndefs`/`bodies` field of the [`IR`].
     pub struct FndefId = u32;
 }
 
@@ -215,9 +220,9 @@ pub enum Instr {
     },
 
     /// Need a contextual function parametrized by a specific context.
-    NeedFndef {
+    NeedSigdef {
         /// The contextual function declaration.
-        def: FndefId,
+        def: SigdefId,
 
         /// Statics destructured to satisfy the input slots of the parameter context.
         params: InstrList,
@@ -317,15 +322,30 @@ pub enum Instr {
     },
 
     /// Provide a contextual function parametrized by a specific context.
-    BindFndef {
+    BindSigdef {
         /// The contextual function declaration.
-        def: FndefId,
+        def: SigdefId,
 
         /// Statics for the input slots of the left-hand parameter context.
         params: InstrList,
 
         /// The function being provided.
         bind: InstrId,
+
+        /// Statics for the input slots of the right-hand parameter context.
+        args: InstrList,
+    },
+
+    /// Provide a defined function for a contextual function parametrized by a specific context.
+    BindFndef {
+        /// The contextual function declaration.
+        def: SigdefId,
+
+        /// Statics for the input slots of the left-hand parameter context.
+        params: InstrList,
+
+        /// The function being provided.
+        bind: FndefId,
 
         /// Statics for the input slots of the right-hand parameter context.
         args: InstrList,
@@ -533,7 +553,7 @@ pub struct Aliasdef {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Fndef {
+pub struct Sigdef {
     pub ctx: Body,
     pub sig: Body,
 }
@@ -561,10 +581,11 @@ pub struct IR {
     pub tydefs: IndexVec<TydefId, Tydef>,
     pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
-    pub fndefs: IndexVec<FndefId, Fndef>,
+    pub sigdefs: IndexVec<SigdefId, Sigdef>,
+    pub fndefs: IndexVec<FndefId, Sigdef>,
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
-    pub bodies: IndexVec<FndefId, Option<Body>>,
+    pub bodies: IndexVec<FndefId, Body>,
 }
 
 impl Default for IR {
@@ -588,6 +609,7 @@ impl Default for IR {
             tydefs: Default::default(),
             tagdefs: Default::default(),
             aliasdefs: Default::default(),
+            sigdefs: Default::default(),
             fndefs: Default::default(),
             valdefs: Default::default(),
             ctxdefs: Default::default(),
@@ -628,6 +650,7 @@ pub enum Named {
     Tydef(TydefId),
     Tagdef(TagdefId),
     Aliasdef(AliasdefId),
+    Sigdef(SigdefId),
     Fndef(FndefId),
     Valdef(ValdefId),
     Ctxdef(CtxdefId),
@@ -662,6 +685,13 @@ impl Named {
         }
     }
 
+    pub fn sigdef(self) -> SigdefId {
+        match self {
+            Named::Sigdef(id) => id,
+            _ => panic!(),
+        }
+    }
+
     pub fn fndef(self) -> FndefId {
         match self {
             Named::Fndef(id) => id,
@@ -684,11 +714,42 @@ impl Named {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum NamedFn {
+    Sigdef(SigdefId),
+    Fndef(FndefId),
+}
+
+impl NamedFn {
+    pub fn sigdef(self) -> SigdefId {
+        match self {
+            NamedFn::Sigdef(id) => id,
+            _ => panic!(),
+        }
+    }
+
+    pub fn fndef(self) -> FndefId {
+        match self {
+            NamedFn::Fndef(id) => id,
+            _ => panic!(),
+        }
+    }
+}
+
+impl From<NamedFn> for Named {
+    fn from(named: NamedFn) -> Self {
+        match named {
+            NamedFn::Sigdef(sigdef) => Named::Sigdef(sigdef),
+            NamedFn::Fndef(fndef) => Named::Fndef(fndef),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Names {
     pub names: HashMap<(ModuleId, StrId), Named>,
-    pub attached: HashMap<(TagdefId, StrId), FndefId>,
-    pub detached: HashMap<(ModuleId, StrId), FndefId>,
+    pub attached: HashMap<(TagdefId, StrId), NamedFn>,
+    pub detached: HashMap<(ModuleId, StrId), NamedFn>,
 }
 
 struct ErrorCtx<'a> {
@@ -724,6 +785,7 @@ pub enum LowerError {
     BindModule(parse::BindId),
     BindNominal(parse::BindId),
     BindAlias(parse::BindId),
+    BindDefined(parse::BindId),
     BindMismatch(parse::BindId),
     LitNotVal(TokenId),
     Uint32High(TokenId),
@@ -774,6 +836,10 @@ impl LowerError {
             LowerError::BindAlias(bind) => (
                 Some(ctx.bind(bind)),
                 "cannot rebind a type alias".to_owned(),
+            ),
+            LowerError::BindDefined(bind) => (
+                Some(ctx.bind(bind)),
+                "cannot rebind a defined function".to_owned(),
             ),
             LowerError::BindMismatch(bind) => (Some(ctx.bind(bind)), "mismatched kind".to_owned()),
             LowerError::LitNotVal(token) => (
@@ -921,7 +987,7 @@ impl<'a> Lower<'a> {
             .ok_or(LowerError::Undefined(path.last))
     }
 
-    fn detached(&mut self, path: Path) -> LowerResult<FndefId> {
+    fn detached(&mut self, path: Path) -> LowerResult<NamedFn> {
         let (module, name) = self.resolve_prefix(path)?;
         get_name(
             self.prelude,
@@ -959,26 +1025,8 @@ impl<'a> Lower<'a> {
                 let key = (self.module, name);
                 match self.names.names.get(&(module, name)) {
                     None => return Err(LowerError::Undefined(token)),
-                    Some(&Named::Module(module)) => {
-                        self.names.names.insert(key, Named::Module(module));
-                    }
-                    Some(&Named::Tydef(tydef)) => {
-                        self.names.names.insert(key, Named::Tydef(tydef));
-                    }
-                    Some(&Named::Tagdef(tagdef)) => {
-                        self.names.names.insert(key, Named::Tagdef(tagdef));
-                    }
-                    Some(&Named::Aliasdef(aliasdef)) => {
-                        self.names.names.insert(key, Named::Aliasdef(aliasdef));
-                    }
-                    Some(&Named::Fndef(fndef)) => {
-                        self.names.names.insert(key, Named::Fndef(fndef));
-                    }
-                    Some(&Named::Valdef(valdef)) => {
-                        self.names.names.insert(key, Named::Valdef(valdef));
-                    }
-                    Some(&Named::Ctxdef(ctxdef)) => {
-                        self.names.names.insert(key, Named::Ctxdef(ctxdef));
+                    Some(&named) => {
+                        self.names.names.insert(key, named);
                     }
                 }
             }
@@ -987,8 +1035,8 @@ impl<'a> Lower<'a> {
                 let name = self.name(token);
                 match self.names.detached.get(&(module, name)) {
                     None => return Err(LowerError::Undefined(token)),
-                    Some(&fndef) => {
-                        self.names.detached.insert((self.module, name), fndef);
+                    Some(&named) => {
+                        self.names.detached.insert((self.module, name), named);
                     }
                 }
             }
@@ -1060,11 +1108,11 @@ impl<'a> Lower<'a> {
         todo!()
     }
 
-    fn extract_fn(
+    fn extract_sig(
         &mut self,
         param: Body,
         destruct: &[InstrId],
-        def: FndefId,
+        def: SigdefId,
         construct: &[InstrId],
     ) -> LowerResult<InstrId> {
         todo!()
@@ -1113,7 +1161,7 @@ impl<'a> Lower<'a> {
     ) -> LowerResult<(Named, Vec<InstrId>)> {
         let Spec { dot, path, binds } = spec;
         let named = if dot {
-            Named::Fndef(self.detached(path)?)
+            self.detached(path)?.into()
         } else {
             self.path(path)?
         };
@@ -1147,16 +1195,16 @@ impl<'a> Lower<'a> {
                         args,
                     }))
                 }
-                Named::Fndef(def) => {
-                    let Fndef {
+                Named::Sigdef(def) => {
+                    let Sigdef {
                         ctx: target,
                         sig: _,
-                    } = self.ir.fndefs[def];
+                    } = self.ir.sigdefs[def];
                     let construct = self.invoke_open(param, &destruct_lhs, target)?;
-                    let bind = self.extract_fn(param, &slots, def, &construct)?;
+                    let bind = self.extract_sig(param, &slots, def, &construct)?;
                     let params = IdRange::new(&mut self.ir.items, construct);
                     let args = params;
-                    Ok(self.emit(Instr::BindFndef {
+                    Ok(self.emit(Instr::BindSigdef {
                         def,
                         params,
                         bind,
@@ -1195,6 +1243,7 @@ impl<'a> Lower<'a> {
                 Named::Module(_) => Err(LowerError::BindModule(bind)),
                 Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
                 Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
+                Named::Fndef(_) => Err(LowerError::BindDefined(bind)),
             },
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(def) => {
@@ -1278,12 +1327,40 @@ impl<'a> Lower<'a> {
                             args,
                         }))
                     }
-                    (Named::Fndef(def), Named::Fndef(fndef)) => {
-                        let Fndef {
+                    (Named::Sigdef(def), Named::Sigdef(sigdef)) => {
+                        let Sigdef {
                             ctx: target_lhs,
                             sig: _,
-                        } = self.ir.fndefs[def];
-                        let Fndef {
+                        } = self.ir.sigdefs[def];
+                        let Sigdef {
+                            ctx: target_rhs,
+                            sig: _,
+                        } = self.ir.sigdefs[sigdef];
+                        // TODO: Check compatibility of function signatures.
+                        let construct_lhs = self.invoke_open(param, &destruct_lhs, target_lhs)?;
+                        let construct_rhs = self.invoke_bind(
+                            param,
+                            &construct_lhs,
+                            target_lhs,
+                            &destruct_rhs,
+                            target_rhs,
+                        )?;
+                        let bind = self.extract_sig(param, &slots, sigdef, &construct_rhs)?;
+                        let params = IdRange::new(&mut self.ir.items, construct_lhs);
+                        let args = IdRange::new(&mut self.ir.items, construct_rhs);
+                        Ok(self.emit(Instr::BindSigdef {
+                            def,
+                            params,
+                            bind,
+                            args,
+                        }))
+                    }
+                    (Named::Sigdef(def), Named::Fndef(fndef)) => {
+                        let Sigdef {
+                            ctx: target_lhs,
+                            sig: _,
+                        } = self.ir.sigdefs[def];
+                        let Sigdef {
                             ctx: target_rhs,
                             sig: _,
                         } = self.ir.fndefs[fndef];
@@ -1296,7 +1373,7 @@ impl<'a> Lower<'a> {
                             &destruct_rhs,
                             target_rhs,
                         )?;
-                        let bind = self.extract_fn(param, &slots, fndef, &construct_rhs)?;
+                        let bind = fndef;
                         let params = IdRange::new(&mut self.ir.items, construct_lhs);
                         let args = IdRange::new(&mut self.ir.items, construct_rhs);
                         Ok(self.emit(Instr::BindFndef {
@@ -1338,6 +1415,7 @@ impl<'a> Lower<'a> {
                     (Named::Module(_), _) => Err(LowerError::BindModule(bind)),
                     (Named::Tagdef(_), _) => Err(LowerError::BindNominal(bind)),
                     (Named::Aliasdef(_), _) => Err(LowerError::BindAlias(bind)),
+                    (Named::Fndef(_), _) => Err(LowerError::BindDefined(bind)),
                     _ => Err(LowerError::BindMismatch(bind)),
                 }
             }
@@ -1364,14 +1442,14 @@ impl<'a> Lower<'a> {
                         let params = IdRange::new(&mut self.ir.items, construct);
                         Ok(self.emit(Instr::NeedTydef { def, params }))
                     }
-                    Named::Fndef(def) => {
-                        let Fndef {
+                    Named::Sigdef(def) => {
+                        let Sigdef {
                             ctx: target,
                             sig: _,
-                        } = self.ir.fndefs[def];
+                        } = self.ir.sigdefs[def];
                         let construct = self.invoke_open(param, &destruct, target)?;
                         let params = IdRange::new(&mut self.ir.items, construct);
-                        Ok(self.emit(Instr::NeedFndef { def, params }))
+                        Ok(self.emit(Instr::NeedSigdef { def, params }))
                     }
                     Named::Valdef(def) => {
                         let Valdef { ctx: target, ty: _ } = self.ir.valdefs[def];
@@ -1391,6 +1469,7 @@ impl<'a> Lower<'a> {
                     Named::Module(_) => Err(LowerError::BindModule(bind)),
                     Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
                     Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
+                    Named::Fndef(_) => Err(LowerError::BindDefined(bind)),
                 }
             }
         }
@@ -1448,14 +1527,14 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn parse_fndef(&mut self, fndef: parse::Fndef) -> LowerResult<(StrId, FndefId)> {
+    fn parse_fndef(&mut self, fndef: parse::Fndef) -> LowerResult<(StrId, NamedFn)> {
         let empty = self.ir.empty();
         let parse::Fndef {
             name,
             needs,
             params,
             result,
-            def: _,
+            def,
         } = fndef;
         let ctx = self.needs(empty, needs)?;
         let builder = self.builder();
@@ -1479,7 +1558,10 @@ impl<'a> Lower<'a> {
             result: result_ty,
         });
         let sig = self.finish(builder, signature);
-        let lowered = self.ir.fndefs.push(Fndef { ctx, sig });
+        let lowered = match def {
+            None => NamedFn::Sigdef(self.ir.sigdefs.push(Sigdef { ctx, sig })),
+            Some(_) => NamedFn::Fndef(self.ir.fndefs.push(Sigdef { ctx, sig })),
+        };
         let string = self.name(name);
         Ok((string, lowered))
     }
@@ -1528,10 +1610,12 @@ impl<'a> Lower<'a> {
                 parse::Decl::Funcdef(id) => {
                     let parse::Funcdef { fndef } = self.tree.funcdefs[id];
                     let (fn_name, lowered) = self.parse_fndef(fndef)?;
-                    self.funcs.push((id, lowered));
+                    if let NamedFn::Fndef(defined) = lowered {
+                        self.funcs.push((id, defined));
+                    }
                     self.names
                         .names
-                        .insert((self.module, fn_name), Named::Fndef(lowered));
+                        .insert((self.module, fn_name), lowered.into());
                 }
                 parse::Decl::Attachdef(id) => {
                     let parse::Attachdef { ty, fndef } = self.tree.attachdefs[id];
@@ -1540,7 +1624,9 @@ impl<'a> Lower<'a> {
                     // TODO: Prevent attaching methods to nominal types defined in other modules.
                     match self.names.names.get(&(self.module, ty_name)) {
                         Some(&Named::Tagdef(tagdef)) => {
-                            self.attaches.push((id, tagdef, lowered));
+                            if let NamedFn::Fndef(defined) = lowered {
+                                self.attaches.push((id, tagdef, defined));
+                            }
                             self.names.attached.insert((tagdef, fn_name), lowered);
                         }
                         Some(_) => return Err(LowerError::NotNominal(ty)),
@@ -1550,7 +1636,9 @@ impl<'a> Lower<'a> {
                 parse::Decl::Detachdef(id) => {
                     let parse::Detachdef { fndef } = self.tree.detachdefs[id];
                     let (fn_name, lowered) = self.parse_fndef(fndef)?;
-                    self.detaches.push((id, lowered));
+                    if let NamedFn::Fndef(defined) = lowered {
+                        self.detaches.push((id, defined));
+                    }
                     self.names.detached.insert((self.module, fn_name), lowered);
                 }
                 parse::Decl::Valdef(id) => {
@@ -1729,8 +1817,8 @@ impl LowerBody<'_, '_> {
         self.x.extract_ty(self.ctx, &self.slots, def, construct)
     }
 
-    fn extract_fn(&mut self, def: FndefId, construct: &[InstrId]) -> LowerResult<InstrId> {
-        self.x.extract_fn(self.ctx, &self.slots, def, construct)
+    fn extract_sig(&mut self, def: SigdefId, construct: &[InstrId]) -> LowerResult<InstrId> {
+        self.x.extract_sig(self.ctx, &self.slots, def, construct)
     }
 
     fn extract_val(&mut self, def: ValdefId, construct: &[InstrId]) -> LowerResult<InstrId> {
@@ -1751,7 +1839,7 @@ impl LowerBody<'_, '_> {
     }
 
     /// Get the parameter type and result type of a function.
-    fn sig(&self, def: FndefId, construct: &[InstrId]) -> LowerResult<(InstrId, InstrId)> {
+    fn sig(&self, def: SigdefId, construct: &[InstrId]) -> LowerResult<(InstrId, InstrId)> {
         todo!()
     }
 
@@ -1768,7 +1856,7 @@ impl LowerBody<'_, '_> {
                     lit_vals,
                     lits,
                 } = self.base();
-                let (tydef_lit, tydef, valdef, fndef, val) = match self.x.lit(token)? {
+                let (tydef_lit, tydef, valdef, sigdef, val) = match self.x.lit(token)? {
                     // Unreachable cases.
                     (
                         Val::Uint31(_)
@@ -2023,10 +2111,10 @@ impl LowerBody<'_, '_> {
                     ctx: ctx_valdef,
                     ty: _,
                 } = self.x.ir.valdefs[valdef];
-                let Fndef {
-                    ctx: ctx_fndef,
+                let Sigdef {
+                    ctx: ctx_sigdef,
                     sig: _,
-                } = self.x.ir.fndefs[fndef];
+                } = self.x.ir.sigdefs[sigdef];
 
                 let construct_ty_lit = self.invoke(&[], ctx_tydef_lit)?;
                 let ty_lit = self.extract_ty(tydef_lit, &construct_ty_lit)?;
@@ -2041,8 +2129,8 @@ impl LowerBody<'_, '_> {
                     bind: val,
                 });
 
-                let construct_func = self.invoke(&[ty_lit, ty, val_lit], ctx_fndef)?;
-                let func = self.extract_fn(fndef, &construct_func)?;
+                let construct_func = self.invoke(&[ty_lit, ty, val_lit], ctx_sigdef)?;
+                let func = self.extract_sig(sigdef, &construct_func)?;
 
                 let params = IdRange::new(&mut self.x.ir.items, construct_func);
                 let ty_unit = self.x.ty_unit();
@@ -2142,13 +2230,14 @@ impl LowerBody<'_, '_> {
                 Ok(self.instr(result, Instr::Call(fndef, arg)))
             }
             parse::Expr::Call(callee, binds, args) => {
-                let Named::Fndef(fndef) = self.x.path(callee)? else {
+                let Named::Sigdef(sigdef) = self.x.path(callee)? else {
+                    // TODO: Process direct calls too.
                     return Err(LowerError::NotFn(callee.last));
                 };
-                let Fndef { ctx, sig } = self.x.ir.fndefs[fndef];
+                let Sigdef { ctx, sig } = self.x.ir.sigdefs[sigdef];
                 // TODO: Handle bindings attached to function calls.
                 let construct = self.invoke(&self.slots, ctx)?;
-                let (ty_param, ty_result) = self.sig(fndef, &construct)?;
+                let (ty_param, ty_result) = self.sig(sigdef, &construct)?;
                 let lowered = args
                     .into_iter()
                     .map(|arg| self.expr(arg))
@@ -2158,8 +2247,7 @@ impl LowerBody<'_, '_> {
                 let ty_args = self.ty_tuple(&args_ty);
                 self.expect_ty(ty_param, ty_args)?;
                 let arg = self.instr_tuple(ty_args, &args_val).val;
-                // TODO: Differentiate between direct and indirect calls.
-                let func = self.extract_fn(fndef, &construct)?;
+                let func = self.extract_sig(sigdef, &construct)?;
                 let params = IdRange::new(&mut self.x.ir.items, construct);
                 Ok(self.instr(ty_result, Expr::Call { func, params, arg }))
             }
@@ -2239,8 +2327,11 @@ impl LowerBody<'_, '_> {
                                         (Named::Tydef(tydef), Named::Aliasdef(def)) => {
                                             todo!();
                                         }
-                                        (Named::Fndef(fndef), Named::Fndef(def)) => {
-                                            let (local, slot) = self.extract_fn(def, ctx2)?;
+                                        (Named::Sigdef(sigdef), Named::Sigdef(def)) => {
+                                            let (local, slot) = self.extract_sig(def, ctx2)?;
+                                            todo!();
+                                        }
+                                        (Named::Sigdef(sigdef), Named::Fndef(def)) => {
                                             todo!();
                                         }
                                         (Named::Valdef(valdef), Named::Valdef(def)) => {
@@ -2258,6 +2349,9 @@ impl LowerBody<'_, '_> {
                                         }
                                         (Named::Aliasdef(_), _) => {
                                             return Err(LowerError::BindAlias(bind));
+                                        }
+                                        (Named::Fndef(_), _) => {
+                                            return Err(LowerError::BindDefined(bind));
                                         }
                                         _ => return Err(LowerError::BindMismatch(bind)),
                                     }
@@ -2330,7 +2424,7 @@ impl LowerBody<'_, '_> {
         }
     }
 
-    fn body(&mut self, fndef: parse::Fndef, id_decl: FndefId) -> LowerResult<Option<Body>> {
+    fn body(&mut self, fndef: parse::Fndef, id_decl: FndefId) -> LowerResult<Body> {
         let parse::Fndef {
             name: _,
             needs: _,
@@ -2338,9 +2432,9 @@ impl LowerBody<'_, '_> {
             result: _,
             def,
         } = fndef;
-        let Some(body) = def else { return Ok(None) };
+        let Some(body) = def else { unreachable!() };
         let builder = self.x.builder();
-        let Fndef { ctx: _, sig } = self.x.ir.fndefs[id_decl];
+        let Sigdef { ctx: _, sig } = self.x.ir.fndefs[id_decl];
         let Instr::Sig {
             param: tuple_ty,
             result: _,
@@ -2367,7 +2461,7 @@ impl LowerBody<'_, '_> {
             index += 1;
         }
         let ret = self.block(body)?;
-        Ok(Some(self.x.finish(builder, ret.val)))
+        Ok(self.x.finish(builder, ret.val))
     }
 }
 
