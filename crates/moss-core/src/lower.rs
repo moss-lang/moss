@@ -2067,7 +2067,7 @@ impl LowerBody<'_, '_> {
                     def: tagdef,
                     params,
                 });
-                self.expect_ty(ty, inside.ty)?;
+                self.expect_ty(ty, inside.ty)?; // TODO: Check the inner type, not the outer type.
                 Ok(self.instr(
                     ty,
                     Expr::Nominal {
