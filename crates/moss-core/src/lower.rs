@@ -734,7 +734,6 @@ pub enum LowerError {
     Int64High(TokenId),
     ThisNotMethod(ExprId),
     Overflow(ExprId),
-    ArgCount(ExprId),
     BindMissing(parse::BindId),
 }
 
@@ -810,9 +809,6 @@ impl LowerError {
                 "cannot use `this` in a function that is not a method".to_owned(),
             ),
             LowerError::Overflow(expr) => (Some(ctx.expr(expr)), "integer too large".to_owned()),
-            LowerError::ArgCount(expr) => {
-                (Some(ctx.expr(expr)), "wrong number of arguments".to_owned())
-            }
             LowerError::BindMissing(bind) => (
                 Some(ctx.bind(bind)),
                 "`bind` missing an actual binding".to_owned(),
@@ -1676,6 +1672,15 @@ impl LowerBody<'_, '_> {
         self.x.emit(instr)
     }
 
+    fn ty_tuple(&mut self, elems: &[InstrId]) -> InstrId {
+        let start = self.x.ir.items.len_idx();
+        self.x.ir.items.extend_from_slice(IndexSlice::new(elems));
+        let end = self.x.ir.items.len_idx();
+        self.emit(Instr::Tuple {
+            elems: IdRange { start, end },
+        })
+    }
+
     fn ty_record(&mut self, fields: &[(StrId, InstrId)]) -> InstrId {
         let start = self.x.ir.records.len_idx();
         self.x.ir.records.extend_from_slice(IndexSlice::new(fields));
@@ -1742,6 +1747,11 @@ impl LowerBody<'_, '_> {
 
     /// Get the fields of a record type.
     fn fields(&self, ty: InstrId) -> LowerResult<Vec<(StrId, InstrId)>> {
+        todo!()
+    }
+
+    /// Get the parameter type and result type of a function.
+    fn sig(&self, def: FndefId, construct: &[InstrId]) -> LowerResult<(InstrId, InstrId)> {
         todo!()
     }
 
@@ -2135,23 +2145,23 @@ impl LowerBody<'_, '_> {
                 let Named::Fndef(fndef) = self.x.path(callee)? else {
                     return Err(LowerError::NotFn(callee.last));
                 };
-                let Fndef {
-                    ctx: _,
-                    param,
-                    result,
-                } = self.x.ir.fndefs[fndef];
+                let Fndef { ctx, sig } = self.x.ir.fndefs[fndef];
                 // TODO: Handle bindings attached to function calls.
-                let params = &self.x.ir.tuples[self.x.ir.types[param.index()].tuple()];
-                if args.len() != params.len() {
-                    return Err(LowerError::ArgCount(expr));
-                }
-                let locals = args
+                let construct = self.invoke(&self.slots, ctx)?;
+                let (ty_param, ty_result) = self.sig(fndef, &construct)?;
+                let lowered = args
                     .into_iter()
                     .map(|arg| self.expr(arg))
-                    .collect::<LowerResult<Vec<InstrId>>>()?;
-                let arg = self.instr_tuple(param, &locals);
-                let call = self.instr(result, Instr::Call(fndef, arg));
-                Ok(call)
+                    .collect::<LowerResult<Vec<Typed>>>()?;
+                let (args_ty, args_val): (Vec<_>, Vec<_>) =
+                    lowered.into_iter().map(|arg| (arg.ty, arg.val)).unzip();
+                let ty_args = self.ty_tuple(&args_ty);
+                self.expect_ty(ty_param, ty_args)?;
+                let arg = self.instr_tuple(ty_args, &args_val).val;
+                // TODO: Differentiate between direct and indirect calls.
+                let func = self.extract_fn(fndef, &construct)?;
+                let params = IdRange::new(&mut self.x.ir.items, construct);
+                Ok(self.instr(ty_result, Expr::Call { func, params, arg }))
             }
             parse::Expr::Unary(op, inner) => {
                 let v = self.expr(inner)?;
