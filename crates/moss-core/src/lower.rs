@@ -2288,17 +2288,20 @@ impl LowerBody<'_, '_> {
             parse::Expr::If(cond, yes, no) => {
                 let unit = self.x.ty_unit();
                 let cond = self.expr(cond)?;
-                // We don't know the type yet.
-                let start = self.instr(unit, Instr::If(cond, unit));
-                let mut local = self.block(yes)?;
-                // Rewrite the original instruction now that we know the type.
-                let ty = self.x.ir.locals[local];
-                self.x.ir.instrs[start] = Instr::If(cond, ty);
-                if let Some(block) = no {
-                    self.instr(ty, Instr::Else(local));
-                    local = self.block(block)?;
-                }
-                Ok(self.instr(ty, Instr::EndIf(local)))
+                self.emit(Instr::If { cond: cond.val });
+                let yes = self.block(yes)?;
+                self.emit(Instr::Else { result: yes.val });
+                let no = match no {
+                    None => {
+                        let ty = self.ty_tuple(&[]);
+                        self.instr_tuple(ty, &[])
+                    }
+                    Some(block) => self.block(block)?,
+                };
+                let end = self.emit(Instr::EndIf { result: no.val });
+                let ty = yes.ty;
+                self.expect_ty(ty, no.ty)?;
+                Ok(Typed { ty, val: end })
             }
             parse::Expr::Bind(_, bindings) => {
                 let mut context = Ctx::default();
