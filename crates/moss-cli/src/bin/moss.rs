@@ -70,14 +70,8 @@ fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
         };
         compiler.error(start, &message)
     })?;
-    let wasi = {
-        let ctxdef = names.names[&(lib.wasi, ir.strings.get_id("Wasi").unwrap())].ctxdef();
-        let mut ctx = Ctx::default();
-        ctx.ctxs.insert(ctxdef, Entries::new());
-        ir.make_ctx(ctx)
-    };
     let start = names.names[&(module, ir.strings.get_id("main").unwrap())].fndef();
-    let bytes = wasm(&mut ir, &names, lib, wasi, start);
+    let bytes = wasm(&mut ir, &names, lib, start);
     Ok(bytes)
 }
 
