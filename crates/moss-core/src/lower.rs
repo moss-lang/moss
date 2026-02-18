@@ -266,6 +266,9 @@ pub enum Instr {
         fields: IdRange<RecordId>,
     },
 
+    /// A "type" that represents a context instead of an actual value.
+    Context,
+
     /// A slot from a context.
     Get {
         /// The context.
@@ -1798,6 +1801,10 @@ impl LowerBody<'_, '_> {
         self.x.invoke(self.ctx, destruct, target)
     }
 
+    fn invoke_self_slots(&mut self, target: Body) -> LowerResult<Vec<InstrId>> {
+        self.x.invoke(self.ctx, &self.slots, target)
+    }
+
     fn extract_ty(&mut self, def: TydefId, construct: &[InstrId]) -> LowerResult<InstrId> {
         self.x.extract_ty(self.ctx, &self.slots, def, construct)
     }
@@ -2128,9 +2135,10 @@ impl LowerBody<'_, '_> {
                 let ty = self.extract_ty(tydef, &construct_ty)?;
 
                 let construct_val = self.invoke(&[ty_lit], ctx_valdef)?;
+                let params_val = IdRange::new(&mut self.x.ir.items, construct_val);
                 let val_lit = self.emit(Instr::BindLit {
                     def: valdef,
-                    params: IdRange::new(&mut self.x.ir.items, construct_val),
+                    params: params_val,
                     bind: val,
                 });
 
@@ -2153,7 +2161,7 @@ impl LowerBody<'_, '_> {
                     return Err(LowerError::NotVal(path.last));
                 };
                 let Valdef { ctx, ty } = self.x.ir.valdefs[valdef];
-                let construct = self.invoke(&self.slots, ctx)?;
+                let construct = self.invoke_self_slots(ctx)?;
                 let val = self.extract_val(valdef, &construct)?;
                 let ty_inlined = self.inline(ctx, &construct, ty)?;
                 Ok(self.instr(ty_inlined, Expr::Val { val }))
@@ -2164,7 +2172,7 @@ impl LowerBody<'_, '_> {
                 };
                 let inside = self.expr(inner)?;
                 let Tagdef { ctx, inner } = self.x.ir.tagdefs[tagdef];
-                let construct = self.invoke(&self.slots, ctx)?;
+                let construct = self.invoke_self_slots(ctx)?;
                 let params = IdRange::new(&mut self.x.ir.items, construct);
                 let ty = self.emit(Instr::Tagdef {
                     def: tagdef,
@@ -2218,7 +2226,7 @@ impl LowerBody<'_, '_> {
                     return Err(LowerError::Undefined(method));
                 };
                 let Sigdef { ctx, sig } = self.x.ir.sigdefs[sigdef];
-                let construct = self.invoke(&self.slots, ctx)?;
+                let construct = self.invoke_self_slots(ctx)?;
                 let (ty_param, ty_result) = self.sig(sigdef, &construct);
                 let lowered = args
                     .into_iter()
@@ -2241,7 +2249,7 @@ impl LowerBody<'_, '_> {
                 };
                 let Sigdef { ctx, sig } = self.x.ir.sigdefs[sigdef];
                 // TODO: Handle bindings attached to function calls.
-                let construct = self.invoke(&self.slots, ctx)?;
+                let construct = self.invoke_self_slots(ctx)?;
                 let (ty_param, ty_result) = self.sig(sigdef, &construct);
                 let lowered = args
                     .into_iter()
@@ -2304,75 +2312,18 @@ impl LowerBody<'_, '_> {
                 Ok(Typed { ty, val: end })
             }
             parse::Expr::Bind(_, bindings) => {
-                let mut context = Ctx::default();
+                let mut slots = Vec::new();
                 for binding in bindings {
-                    match self.x.tree.bindings[binding] {
-                        parse::Binding::Single(bind) => {
-                            let parse::Bind { key, val } = self.x.tree.binds[bind];
-                            if val.is_none() {
-                                // Should we instead use this syntax to allow for binding a context
-                                // which has previously been assigned to a local variable?
-                                return Err(LowerError::BindMissing(bind));
-                            }
-                            self.x.bind(&mut context, bind)?;
-                            let parse::Bind { key, val } = self.x.tree.binds[bind];
-                            let (lhs, ctx1) = self.x.spec(key)?;
-                            match val {
-                                // Should we instead use this syntax to allow for binding a context
-                                // which has previously been assigned to a local variable?
-                                None => return Err(LowerError::BindMissing(bind)),
-                                Some(parse::Entry::Lit(token)) => todo!(),
-                                Some(parse::Entry::Ref(spec)) => {
-                                    let (rhs, ctx2) = self.x.spec(spec)?;
-                                    match (lhs, rhs) {
-                                        (Named::Tydef(tydef), Named::Tydef(def)) => {
-                                            let (local, slot) = self.extract_ty(def, ctx2)?;
-                                            todo!();
-                                        }
-                                        (Named::Tydef(tydef), Named::Tagdef(def)) => {
-                                            todo!();
-                                        }
-                                        (Named::Tydef(tydef), Named::Aliasdef(def)) => {
-                                            todo!();
-                                        }
-                                        (Named::Sigdef(sigdef), Named::Sigdef(def)) => {
-                                            let (local, slot) = self.extract_sig(def, ctx2)?;
-                                            todo!();
-                                        }
-                                        (Named::Sigdef(sigdef), Named::Fndef(def)) => {
-                                            todo!();
-                                        }
-                                        (Named::Valdef(valdef), Named::Valdef(def)) => {
-                                            let (local, slot) = self.extract_val(def, ctx2)?;
-                                            todo!();
-                                        }
-                                        (Named::Ctxdef(_), _) => {
-                                            return Err(LowerError::BindContext(bind));
-                                        }
-                                        (Named::Module(_), _) => {
-                                            return Err(LowerError::BindModule(bind));
-                                        }
-                                        (Named::Tagdef(_), _) => {
-                                            return Err(LowerError::BindNominal(bind));
-                                        }
-                                        (Named::Aliasdef(_), _) => {
-                                            return Err(LowerError::BindAlias(bind));
-                                        }
-                                        (Named::Fndef(_), _) => {
-                                            return Err(LowerError::BindDefined(bind));
-                                        }
-                                        _ => return Err(LowerError::BindMismatch(bind)),
-                                    }
-                                }
-                            }
-                        }
-                        parse::Binding::Composite(expr) => {
-                            let local = self.expr(expr)?;
-                            todo!();
-                        }
-                    }
+                    let slot = match self.x.tree.bindings[binding] {
+                        parse::Binding::Single(bind) => self.x.bind(self.ctx, &self.slots, bind)?,
+                        parse::Binding::Composite(expr) => self.expr(expr)?.val,
+                    };
+                    slots.push(slot);
                 }
-                todo!()
+                let slots = IdRange::new(&mut self.x.ir.items, slots);
+                let ty = self.emit(Instr::Context);
+                let val = self.emit(Instr::Ctx { slots });
+                Ok(Typed { ty, val })
             }
         }
     }
