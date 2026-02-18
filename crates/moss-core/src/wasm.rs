@@ -13,7 +13,7 @@ use wasm_encoder::{
 use crate::{
     intern::StrId,
     lower::{
-        self, ElemId, FieldId, FndefId, IR, Instr, ModuleId, Named, Names, Sigdef, SigdefId,
+        self, Body, ElemId, FieldId, FndefId, IR, Instr, ModuleId, Named, Names, Sigdef, SigdefId,
         ValdefId,
     },
     prelude::Lib,
@@ -176,6 +176,9 @@ enum Object {
 
     /// The Wasm `i64` type.
     TyI64,
+
+    /// A function signature, with parameter and result types.
+    Sig(ObjectId, ObjectId),
 
     /// The function to process a specific kind of integer literal.
     FnInt(IntLitIn, IntLitOut),
@@ -388,13 +391,14 @@ impl<'a> Wasm<'a> {
     /// Execute `f` for each Wasm type needed to represent `ty` in the current context.
     fn layout(&self, ty: ObjectId, f: &mut impl FnMut(ValType)) {
         match self.obj(ty) {
+            Object::TyI32 => f(ValType::I32),
+            Object::TyI64 => f(ValType::I64),
             Object::TyLitInt(_)
             | Object::TyLitChar
             | Object::TyLitString
             | Object::TyMemIdx
-            | Object::TyI32 => f(ValType::I32),
-            Object::TyI64 => f(ValType::I64),
-            Object::FnInt(_, _)
+            | Object::Sig(_, _)
+            | Object::FnInt(_, _)
             | Object::FnChar
             | Object::FnString
             | Object::FnInstr(_)
@@ -914,6 +918,79 @@ impl<'a> Wasm<'a> {
         instr
     }
 
+    fn interp(&mut self, ctx: ObjectId, body: Body) -> ObjectId {
+        for instr in body.body {
+            let result = match self.ir.instrs[instr] {
+                Instr::Param => ctx,
+                Instr::Open => todo!(),
+                Instr::Ctx { slots } => todo!(),
+                Instr::NeedTydef { def, params } => todo!(),
+                Instr::NeedSigdef { def, params } => todo!(),
+                Instr::NeedValdef { def, params } => todo!(),
+                Instr::NeedCtxdef { def, params } => todo!(),
+                Instr::Tagdef { def, params } => todo!(),
+                Instr::Tuple { elems } => todo!(),
+                Instr::Record { fields } => todo!(),
+                Instr::Context => todo!(),
+                Instr::Get { ctx, slot } => todo!(),
+                Instr::BindTydef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => todo!(),
+                Instr::BindTagdef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => todo!(),
+                Instr::BindAliasdef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => todo!(),
+                Instr::BindSigdef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => todo!(),
+                Instr::BindFndef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => todo!(),
+                Instr::BindValdef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => todo!(),
+                Instr::BindLit { def, params, bind } => todo!(),
+                Instr::BindCtxdef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => todo!(),
+                Instr::Sig { param, result } => todo!(),
+                Instr::Set { lhs, rhs } => todo!(),
+                Instr::If { cond } => todo!(),
+                Instr::Else { result } => todo!(),
+                Instr::EndIf { result } => todo!(),
+                Instr::Loop => todo!(),
+                Instr::EndLoop => todo!(),
+                Instr::Br { depth } => todo!(),
+                Instr::Expr { ty, expr } => todo!(),
+            };
+            self.variables.insert(instr, result);
+        }
+        todo!()
+    }
+
     fn funcidx(&self) -> u32 {
         // TODO: Handle the case where non-function imports have also been added.
         self.section_import.len() + self.section_function.len()
@@ -921,22 +998,19 @@ impl<'a> Wasm<'a> {
 
     fn func(&mut self, funcidx: u32) {
         match self.get_func(funcidx) {
-            Slot::FnDef(fndef, fill) => {
-                let Fndef {
-                    ctx: _,
-                    param,
-                    result,
-                } = self.ir.fndefs[fndef];
-                // TODO: Account for params and results determined by vals in the context.
-                let params = self.layout_vec(fill, param);
-                let results = self.layout_vec(fill, result);
-                self.instrs(fill, param, self.ir.bodies[fndef].unwrap());
+            Object::FnDef(fndef, ctx) => {
+                let Sigdef { ctx: _, sig } = self.ir.fndefs[fndef];
+                let Object::Sig(param, result) = self.obj(self.interp(ctx, sig)) else {
+                    panic!()
+                };
+                let params = self.layout_vec(param);
+                let results = self.layout_vec(result);
+                self.instrs(ctx, param, self.ir.bodies[fndef]);
                 let mut f =
                     Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
                 f.raw(take(&mut self.body));
                 self.locals = Default::default();
                 self.variables = Default::default();
-                self.statics = Default::default();
                 self.section_code.function(&f);
                 self.section_function.function(self.section_type.len());
                 self.section_type.ty().function(params, results);
