@@ -3,19 +3,16 @@ use std::{collections::HashMap, mem::take};
 use index_vec::{IndexVec, define_index_type};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
+use strum::{EnumIter, IntoStaticStr};
 use wasm_encoder::{
-    BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
-    Function, FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
+    BlockType, CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function,
+    FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
     MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::{
     intern::StrId,
-    lower::{
-        self, CtxId, ElemId, FieldId, Fndef, FndefId, IR, Instr, ModuleId, Named, Names, Type,
-        TypeId, ValdefId,
-    },
+    lower::{self, ElemId, FieldId, FndefId, IR, Instr, ModuleId, Named, Names, Sigdef, ValdefId},
     prelude::Lib,
     tuples::{TupleLoc, TupleRange, Tuples},
     util::IdRange,
@@ -164,7 +161,6 @@ enum IntLitOut {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct Fill {
-    ctx: CtxId,
     slots: TupleRange,
 }
 
@@ -265,10 +261,10 @@ struct Wasm<'a> {
     locals: IndexVec<LocalId, ValType>,
 
     /// Start of local range for each IR local in the current function.
-    variables: HashMap<lower::LocalId, Local>,
+    variables: HashMap<lower::InstrId, Local>,
 
     /// Compile-time values computed inside static blocks.
-    statics: HashMap<lower::LocalId, ValId>,
+    statics: HashMap<lower::InstrId, ValId>,
 
     /// The current function body.
     body: Vec<u8>,
@@ -277,6 +273,97 @@ struct Wasm<'a> {
 impl<'a> Wasm<'a> {
     fn named(&self, module: ModuleId, string: &str) -> Named {
         self.names.names[&(module, self.ir.strings.get_id(string).unwrap())]
+    }
+
+    fn wasip1_fndefs(&self) -> IndexMap<StrId, FndefId> {
+        // It isn't ideal to iterate through every name binding from every module just to filter
+        // out all the ones except from the one module we care about, but it's fine for now. We
+        // sort by name in order to achieve determinism.
+        self.names
+            .names
+            .iter()
+            .filter_map(|(&(module, name), &named)| match named {
+                Named::Fndef(fndef) if module == self.lib.wasip1 => Some((name, fndef)),
+                _ => None,
+            })
+            .sorted_by_key(|&(name, _)| &self.ir.strings[name])
+            .collect()
+    }
+
+    fn wasi_ctx(&mut self, wasip1_fndefs: &IndexMap<StrId, FndefId>) -> Fill {
+        let mut slots = Vec::new();
+        let ctxdef_wasi = self.named(self.lib.wasi, "Wasi").ctxdef();
+        for instr in self.ir.ctxdefs[ctxdef_wasi].def.body {
+            match self.ir.instrs[instr] {
+                Instr::Param => unimplemented!(),
+                Instr::Open => unimplemented!(),
+                Instr::Ctx { slots } => unimplemented!(),
+                Instr::NeedTydef { def, params } => unimplemented!(),
+                Instr::NeedSigdef { def, params } => unimplemented!(),
+                Instr::NeedValdef { def, params } => unimplemented!(),
+                Instr::NeedCtxdef { def, params } => unimplemented!(),
+                Instr::Tagdef { def, params } => unimplemented!(),
+                Instr::Tuple { elems } => unimplemented!(),
+                Instr::Record { fields } => unimplemented!(),
+                Instr::Context => unimplemented!(),
+                Instr::Get { ctx, slot } => unimplemented!(),
+                Instr::BindTydef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => unimplemented!(),
+                Instr::BindTagdef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => unimplemented!(),
+                Instr::BindAliasdef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => unimplemented!(),
+                Instr::BindSigdef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => unimplemented!(),
+                Instr::BindFndef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => unimplemented!(),
+                Instr::BindValdef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => unimplemented!(),
+                Instr::BindLit { def, params, bind } => unimplemented!(),
+                Instr::BindCtxdef {
+                    def,
+                    params,
+                    bind,
+                    args,
+                } => todo!(),
+                Instr::Sig { param, result } => unimplemented!(),
+                Instr::Set { lhs, rhs } => unimplemented!(),
+                Instr::If { cond } => unimplemented!(),
+                Instr::Else { result } => unimplemented!(),
+                Instr::EndIf { result } => unimplemented!(),
+                Instr::Loop => unimplemented!(),
+                Instr::EndLoop => unimplemented!(),
+                Instr::Br { depth } => unimplemented!(),
+                Instr::Expr { ty, expr } => unimplemented!(),
+            }
+        }
+        Fill {
+            slots: self.slots.make(&slots),
+        }
     }
 
     fn next_funcidx(&self) -> u32 {
@@ -878,115 +965,10 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    fn program(mut self, ctx_wasi: CtxId) -> Vec<u8> {
-        // It isn't ideal to iterate through every name binding from every module just to filter
-        // out all the ones except from the one module we care about, but it's fine for now. We
-        // sort by name in order to achieve determinism.
-        let wasip1_fndefs: IndexMap<StrId, FndefId> = self
-            .names
-            .names
-            .iter()
-            .filter_map(|(&(module, name), &named)| match named {
-                Named::Fndef(fndef) if module == self.lib.wasip1 => Some((name, fndef)),
-                _ => None,
-            })
-            .sorted_by_key(|&(name, _)| &self.ir.strings[name])
-            .collect();
+    fn program(mut self) -> Vec<u8> {
+        let wasip1_fndefs = self.wasip1_fndefs();
+        let wasi_ctx = self.wasi_ctx(&wasip1_fndefs);
 
-        let ctx_empty = self.ir.empty_ctx();
-        let ctxdef_wasm = self.named(self.lib.wasm, "Wasm").ctxdef();
-        let ctxdef_wasip1 = self.named(self.lib.wasip1, "WasiP1").ctxdef();
-        let tydef_i32 = self.named(self.lib.types, "I32").tydef();
-        let tydef_i64 = self.named(self.lib.types, "I64").tydef();
-        let tydef_memidx = self.named(self.lib.types, "MemIdx").tydef();
-
-        let fill_wasm = {
-            let lower::Ctxdef { ctx: params, def } = self.ir.ctxdefs[ctxdef_wasm];
-            assert!(self.ir.ctx(params).is_empty()); // TODO: This is actually wrong.
-            let context = self.ir.ctx(def);
-            let mut slots = vec![None; context.len()];
-
-            for instruction in Instruction::iter() {
-                let fndef = self.named(self.lib.wasm, <&str>::from(instruction)).fndef();
-                slots[context.index_fn(fndef, ctx_empty)] = Some(Slot::FnInstr(instruction));
-            }
-
-            let tuple = self
-                .slots
-                .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
-            Fill {
-                ctx: def,
-                slots: tuple,
-            }
-        };
-
-        let fill_wasip1 = {
-            let lower::Ctxdef { ctx: params, def } = self.ir.ctxdefs[ctxdef_wasip1];
-            assert!(self.ir.ctx(params).is_empty()); // TODO: This is actually wrong.
-            let context = self.ir.ctx(def);
-            let mut slots = vec![None; context.len()];
-
-            for (&name, &fndef) in &wasip1_fndefs {
-                let Fndef {
-                    ctx: _,
-                    param,
-                    result,
-                } = self.ir.fndefs[fndef];
-                let params = self.ir.tuples[self.ir.ty(param).tuple()].iter().map(|&ty| {
-                    let (tydef, _) = self.ir.ty(ty).opaque();
-                    if tydef == tydef_i32 {
-                        ValType::I32
-                    } else if tydef == tydef_i64 {
-                        ValType::I64
-                    } else {
-                        panic!()
-                    }
-                });
-                let results: &[ValType] = match self.ir.ty(result) {
-                    lower::Type::Opaque(tydef, _) => {
-                        assert_eq!(tydef, tydef_i32);
-                        &[ValType::I32]
-                    }
-                    lower::Type::Tuple(elems) => {
-                        assert!(elems.is_empty());
-                        &[]
-                    }
-                    _ => panic!(),
-                };
-                let funcidx = self.push_func_wasi();
-                slots[context.index_fn(fndef, ctx_empty)] = Some(Slot::FnWasi(funcidx));
-                assert_eq!(funcidx, self.section_import.len());
-                self.section_import.import(
-                    WASIP1,
-                    &self.ir.strings[name],
-                    EntityType::Function(self.section_type.len()),
-                );
-                self.section_type
-                    .ty()
-                    .function(params, results.iter().copied());
-            }
-
-            let tuple = self
-                .slots
-                .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
-            Fill {
-                ctx: def,
-                slots: tuple,
-            }
-        };
-
-        let context = self.ir.ctx(ctx_wasi);
-        let mut slots = vec![None; context.len()];
-
-        slots[context.index_ty(tydef_i32, ctx_empty)] = Some(Slot::TyI32);
-        slots[context.index_ty(tydef_i64, ctx_empty)] = Some(Slot::TyI64);
-        slots[context.index_ty(tydef_memidx, ctx_empty)] = Some(Slot::TyMemIdx);
-
-        // TODO: Fill in the remaining slots for the `Wasi` context.
-
-        let tuple = self
-            .slots
-            .make(&Vec::from_iter(slots.into_iter().map(|slot| slot.unwrap())));
         let main_funcidx = self.funcidx();
         let mut next_fn = main_funcidx;
         while next_fn < self.next_funcidx() {
@@ -1020,16 +1002,7 @@ impl<'a> Wasm<'a> {
         self.section_code.function(&{
             let mut f = Function::new([]);
             f.instructions()
-                .call(
-                    self.get_funcidx(
-                        self.main,
-                        Fill {
-                            ctx: ctx_wasi,
-                            slots: tuple,
-                        },
-                    )
-                    .unwrap(),
-                )
+                .call(self.get_funcidx(self.main, wasi_ctx).unwrap())
                 .i32_const(0)
                 .call(wasip1_fndefs[&self.ir.strings.get_id("proc_exit").unwrap()].raw())
                 .end();
@@ -1052,7 +1025,7 @@ impl<'a> Wasm<'a> {
     }
 }
 
-pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, ctx: CtxId, main: FndefId) -> Vec<u8> {
+pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
     Wasm {
         ir,
         names,
@@ -1085,5 +1058,5 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, ctx: CtxId, main: FndefId) -> 
         statics: Default::default(),
         body: Default::default(),
     }
-    .program(ctx)
+    .program()
 }
