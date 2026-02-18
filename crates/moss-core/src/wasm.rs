@@ -12,25 +12,22 @@ use wasm_encoder::{
 
 use crate::{
     intern::StrId,
-    lower::{self, ElemId, FieldId, FndefId, IR, Instr, ModuleId, Named, Names, Sigdef, ValdefId},
+    lower::{
+        self, ElemId, FieldId, FndefId, IR, Instr, ModuleId, Named, Names, Sigdef, SigdefId,
+        ValdefId,
+    },
     prelude::Lib,
     tuples::{TupleLoc, TupleRange, Tuples},
     util::IdRange,
 };
 
 define_index_type! {
-    struct ValId = u32;
+    /// The index of an [`Object`] in the `objects` field during [`Wasm`] codegen.
+    struct ObjectId = u32;
 }
 
 define_index_type! {
-    struct GlobalId = u32;
-}
-
-define_index_type! {
-    struct TypeOffset = u32;
-}
-
-define_index_type! {
+    /// The index of a `u32` Wasm local in the `locals` field during [`Wasm`] codegen.
     struct LocalId = u32;
 }
 
@@ -159,14 +156,9 @@ enum IntLitOut {
     Int,
 }
 
+/// A static object.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct Fill {
-    slots: TupleRange,
-}
-
-// TODO: These slots need to be able to handle items that still contain some universal quantifiers.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum Slot {
+enum Object {
     /// The type of integer literals of a specific kind.
     TyLitInt(IntLitIn),
 
@@ -201,13 +193,16 @@ enum Slot {
     FnWasi(u32),
 
     /// A defined function in a specific context.
-    FnDef(FndefId, Fill),
+    FnDef(FndefId, ObjectId),
 
     /// A 32-bit unsigned integer constant.
     ValU32(u32),
 
-    /// A fill for another context.
-    Ctx(Fill),
+    /// A dynamic value with a type, stored in Wasm locals starting at a given index.
+    ValDyn(ObjectId, LocalId),
+
+    /// A context with some output slots.
+    Ctx(TupleRange),
 }
 
 trait AsInstructionSink {
@@ -222,12 +217,6 @@ impl AsInstructionSink for Vec<u8> {
 
 const MEMIDX_WASI: u32 = 0;
 
-#[derive(Clone, Copy)]
-struct Local {
-    fill: Fill,
-    start: LocalId,
-}
-
 struct Wasm<'a> {
     ir: &'a IR,
     names: &'a Names,
@@ -238,15 +227,13 @@ struct Wasm<'a> {
     val_src: ValdefId,
     val_align: ValdefId,
     val_offset: ValdefId,
-    slots: Tuples<Slot>,
     data_offset: i32,
     strings: HashMap<StrId, i32>,
+    objects: IndexSet<Object>,
+    tuples: Tuples<ObjectId>,
 
-    /// Wasm `funcidx` for each [`Slot::FnWasi`] and [`Slot::FnDef`].
-    funcidxs: IndexSet<Slot>,
-
-    /// Start of global range for each `val`.
-    valdefs: IndexVec<ValId, GlobalId>,
+    /// Wasm `funcidx` for each [`Object::FnWasi`] and [`Object::FnDef`].
+    funcidxs: IndexSet<Object>,
 
     section_type: TypeSection,
     section_import: ImportSection,
@@ -260,11 +247,8 @@ struct Wasm<'a> {
     /// Locals for the current function.
     locals: IndexVec<LocalId, ValType>,
 
-    /// Start of local range for each IR local in the current function.
-    variables: HashMap<lower::InstrId, Local>,
-
-    /// Compile-time values computed inside static blocks.
-    statics: HashMap<lower::InstrId, ValId>,
+    /// Type and start of Wasm local range for each IR variable in the current function.
+    variables: HashMap<lower::InstrId, ObjectId>,
 
     /// The current function body.
     body: Vec<u8>,
@@ -275,7 +259,7 @@ impl<'a> Wasm<'a> {
         self.names.names[&(module, self.ir.strings.get_id(string).unwrap())]
     }
 
-    fn wasip1_fndefs(&self) -> IndexMap<StrId, FndefId> {
+    fn wasip1_sigdefs(&self) -> IndexMap<StrId, SigdefId> {
         // It isn't ideal to iterate through every name binding from every module just to filter
         // out all the ones except from the one module we care about, but it's fine for now. We
         // sort by name in order to achieve determinism.
@@ -283,14 +267,28 @@ impl<'a> Wasm<'a> {
             .names
             .iter()
             .filter_map(|(&(module, name), &named)| match named {
-                Named::Fndef(fndef) if module == self.lib.wasip1 => Some((name, fndef)),
+                Named::Sigdef(fndef) if module == self.lib.wasip1 => Some((name, fndef)),
                 _ => None,
             })
             .sorted_by_key(|&(name, _)| &self.ir.strings[name])
             .collect()
     }
 
-    fn wasi_ctx(&mut self, wasip1_fndefs: &IndexMap<StrId, FndefId>) -> Fill {
+    fn mkobj(&mut self, object: Object) -> ObjectId {
+        let (i, _) = self.objects.insert_full(object);
+        ObjectId::from_usize(i)
+    }
+
+    fn mkctx(&mut self, slots: &[ObjectId]) -> ObjectId {
+        let tuple = self.tuples.make(slots);
+        self.mkobj(Object::Ctx(tuple))
+    }
+
+    fn obj(&self, id: ObjectId) -> Object {
+        self.objects[id.index()]
+    }
+
+    fn wasi_ctx(&mut self, wasip1_sigdefs: &IndexMap<StrId, SigdefId>) -> ObjectId {
         let mut slots = Vec::new();
         let ctxdef_wasi = self.named(self.lib.wasi, "Wasi").ctxdef();
         for instr in self.ir.ctxdefs[ctxdef_wasi].def.body {
@@ -361,123 +359,105 @@ impl<'a> Wasm<'a> {
                 Instr::Expr { ty, expr } => unimplemented!(),
             }
         }
-        Fill {
-            slots: self.slots.make(&slots),
-        }
+        self.mkctx(&slots)
     }
 
     fn next_funcidx(&self) -> u32 {
         self.funcidxs.len() as u32
     }
 
-    fn get_func(&self, funcidx: u32) -> Slot {
+    fn get_func(&self, funcidx: u32) -> Object {
         self.funcidxs[funcidx as usize]
     }
 
-    fn get_funcidx(&self, fndef: FndefId, fill: Fill) -> Option<u32> {
-        Some(self.funcidxs.get_index_of(&Slot::FnDef(fndef, fill))? as u32)
+    fn get_funcidx(&self, fndef: FndefId, ctx: ObjectId) -> Option<u32> {
+        Some(self.funcidxs.get_index_of(&Object::FnDef(fndef, ctx))? as u32)
     }
 
     fn push_func_wasi(&mut self) -> u32 {
         let funcidx = self.next_funcidx();
-        self.funcidxs.insert(Slot::FnWasi(funcidx));
+        self.funcidxs.insert(Object::FnWasi(funcidx));
         funcidx
     }
 
-    fn insert_func(&mut self, slot: Slot) -> u32 {
-        let (i, _) = self.funcidxs.insert_full(slot);
+    fn insert_func(&mut self, func: Object) -> u32 {
+        let (i, _) = self.funcidxs.insert_full(func);
         i as u32
     }
 
     /// Execute `f` for each Wasm type needed to represent `ty` in the current context.
-    fn layout(&self, fill: Fill, ty: TypeId, f: &mut impl FnMut(ValType)) {
-        match self.ir.ty(ty) {
-            Type::Bind(_) => todo!(),
-            Type::Opaque(tydef, ctx) => {
-                let context = self.ir.ctx(fill.ctx);
-                match self.slots[fill.slots][context.index_ty(tydef, ctx)] {
-                    Slot::TyLitInt(_) => todo!(),
-                    Slot::TyLitChar => todo!(),
-                    Slot::TyLitString => todo!(),
-                    Slot::TyMemIdx => todo!(),
-                    Slot::TyI32 => f(ValType::I32),
-                    Slot::TyI64 => f(ValType::I64),
-                    Slot::FnInt(_, _)
-                    | Slot::FnChar
-                    | Slot::FnString
-                    | Slot::FnInstr(_)
-                    | Slot::FnWasi(_)
-                    | Slot::FnDef(_, _)
-                    | Slot::ValU32(_)
-                    | Slot::Ctx(_) => panic!(),
-                }
-            }
-            Type::Nominal(tagdef, ctx) => todo!(),
-            Type::Alias(aliasdef, ctx) => todo!(),
-            Type::Tuple(elems) => {
-                for &elem in &self.ir.tuples[elems] {
-                    self.layout(fill, elem, f);
-                }
-            }
-            Type::Record(fields) => {
-                for &(_, field) in &self.ir.records[fields] {
-                    self.layout(fill, field, f);
-                }
-            }
+    fn layout(&self, ty: ObjectId, f: &mut impl FnMut(ValType)) {
+        match self.obj(ty) {
+            Object::TyLitInt(_)
+            | Object::TyLitChar
+            | Object::TyLitString
+            | Object::TyMemIdx
+            | Object::TyI32 => f(ValType::I32),
+            Object::TyI64 => f(ValType::I64),
+            Object::FnInt(_, _)
+            | Object::FnChar
+            | Object::FnString
+            | Object::FnInstr(_)
+            | Object::FnWasi(_)
+            | Object::FnDef(_, _)
+            | Object::ValU32(_)
+            | Object::ValDyn(_, _)
+            | Object::Ctx(_) => panic!(),
         }
     }
 
     /// Get the number of Wasm types needed to represent `ty` in the current context.
     ///
     /// Linear time.
-    fn layout_len(&mut self, fill: Fill, ty: TypeId) -> usize {
+    fn layout_len(&mut self, ty: ObjectId) -> usize {
         let mut len = 0;
-        self.layout(fill, ty, &mut |_| len += 1);
+        self.layout(ty, &mut |_| len += 1);
         len
     }
 
     /// Get a [`Vec`] of the Wasm types needed to represent `ty` in the current context.
-    fn layout_vec(&mut self, fill: Fill, ty: TypeId) -> Vec<ValType> {
+    fn layout_vec(&mut self, ty: ObjectId) -> Vec<ValType> {
         let mut types = Vec::new();
-        self.layout(fill, ty, &mut |t| types.push(t));
+        self.layout(ty, &mut |t| types.push(t));
         types
     }
 
-    fn make_locals(&mut self, fill: Fill, ty: TypeId) -> LocalId {
+    fn make_locals(&mut self, ty: ObjectId) -> LocalId {
         let start = self.locals.len_idx();
-        let locals = self.layout_vec(fill, ty);
+        let locals = self.layout_vec(ty);
         self.locals.append(&mut IndexVec::from_vec(locals));
         start
     }
 
-    fn get_locals(&mut self, fill: Fill, ty: TypeId, start: LocalId) {
-        let len = self.layout_len(fill, ty);
+    fn get_locals(&mut self, ty: ObjectId, start: LocalId) {
+        let len = self.layout_len(ty);
         let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }) {
             self.body.insn().local_get(localidx.raw());
         }
     }
 
-    fn set_locals(&mut self, fill: Fill, ty: TypeId, start: LocalId) {
-        let len = self.layout_len(fill, ty);
+    fn set_locals(&mut self, ty: ObjectId, start: LocalId) {
+        let len = self.layout_len(ty);
         let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }).into_iter().rev() {
             self.body.insn().local_set(localidx.raw());
         }
     }
 
-    fn get(&mut self, instr: lower::LocalId) {
-        let Local { fill, start } = self.variables[&instr];
-        let ty = self.ir.locals[instr];
-        self.get_locals(fill, ty, start)
+    fn get(&mut self, instr: lower::InstrId) {
+        let Object::ValDyn(ty, start) = self.obj(self.variables[&instr]) else {
+            panic!()
+        };
+        self.get_locals(ty, start)
     }
 
-    fn set(&mut self, fill: Fill, instr: lower::LocalId) {
-        let ty = self.ir.locals[instr];
-        let start = self.make_locals(fill, ty);
-        let prev = self.variables.insert(instr, Local { fill, start });
+    fn set(&mut self, ty: ObjectId, instr: lower::InstrId) {
+        let start = self.make_locals(ty);
+        let obj = self.mkobj(Object::ValDyn(ty, start));
+        let prev = self.variables.insert(instr, obj);
         assert!(prev.is_none());
-        self.set_locals(fill, ty, start);
+        self.set_locals(ty, start);
     }
 
     fn string(&mut self, id: StrId) {
@@ -966,8 +946,8 @@ impl<'a> Wasm<'a> {
     }
 
     fn program(mut self) -> Vec<u8> {
-        let wasip1_fndefs = self.wasip1_fndefs();
-        let wasi_ctx = self.wasi_ctx(&wasip1_fndefs);
+        let wasip1_sigdefs = self.wasip1_sigdefs();
+        let wasi_ctx = self.wasi_ctx(&wasip1_sigdefs);
 
         let main_funcidx = self.funcidx();
         let mut next_fn = main_funcidx;
@@ -1004,7 +984,7 @@ impl<'a> Wasm<'a> {
             f.instructions()
                 .call(self.get_funcidx(self.main, wasi_ctx).unwrap())
                 .i32_const(0)
-                .call(wasip1_fndefs[&self.ir.strings.get_id("proc_exit").unwrap()].raw())
+                .call(wasip1_sigdefs[&self.ir.strings.get_id("proc_exit").unwrap()].raw())
                 .end();
             f
         });
@@ -1036,13 +1016,12 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         val_src: names.names[&(lib.wasm, ir.strings.get_id("src").unwrap())].valdef(),
         val_align: names.names[&(lib.wasm, ir.strings.get_id("align").unwrap())].valdef(),
         val_offset: names.names[&(lib.wasm, ir.strings.get_id("offset").unwrap())].valdef(),
-        slots: Tuples::new(),
         data_offset: Default::default(),
         strings: Default::default(),
+        objects: Default::default(),
+        tuples: Default::default(),
 
-        funcidxs: IndexSet::new(),
-
-        valdefs: Default::default(),
+        funcidxs: Default::default(),
 
         section_type: Default::default(),
         section_import: Default::default(),
@@ -1055,7 +1034,6 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
 
         locals: Default::default(),
         variables: Default::default(),
-        statics: Default::default(),
         body: Default::default(),
     }
     .program()
