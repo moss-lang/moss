@@ -855,38 +855,36 @@ impl<'a> Wasm<'a> {
                 }
             }
             Expr::Elem { tuple, index } => {
-                let Local { fill, mut start } = self.variables[&tuple];
-                let ty = self.ir.locals[tuple];
-                let range = self.ir.ty(ty).tuple(); // TODO: Handle type aliases and bindings.
+                let (ty, start) = self.local(tuple);
+                let Object::TyTuple(range) = self.obj(ty) else {
+                    panic!()
+                };
                 // TODO: Make this not be linear time.
                 for i in (IdRange {
                     start: ElemId::new(0),
                     end: index,
                 }) {
-                    start += self.layout_len(
-                        fill,
-                        self.ir.tuples[TupleLoc::from_raw(range.start.raw() + i.raw())],
-                    );
+                    start += self
+                        .layout_len(self.tuples[TupleLoc::from_raw(range.start.raw() + i.raw())]);
                 }
                 let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
-                self.get_locals(fill, self.ir.tuples[elem], start);
+                self.get_locals(self.tuples[elem], start);
             }
             Expr::Field { record, index } => {
-                let Local { fill, mut start } = self.variables[&record];
-                let ty = self.ir.locals[record];
-                let range = self.ir.ty(ty).record(); // TODO: Handle type aliases and bindings.
+                let (ty, start) = self.local(record);
+                let Object::TyTuple(range) = self.obj(ty) else {
+                    panic!()
+                };
                 // TODO: Make this not be linear time.
                 for i in (IdRange {
                     start: FieldId::new(0),
                     end: index,
                 }) {
-                    let (_, field) =
-                        self.ir.records[TupleLoc::from_raw(range.start.raw() + i.raw())];
-                    start += self.layout_len(fill, field);
+                    start += self
+                        .layout_len(self.tuples[TupleLoc::from_raw(range.start.raw() + i.raw())]);
                 }
-                let loc = TupleLoc::from_raw(range.start.raw() + index.raw());
-                let (_, field) = self.ir.records[loc];
-                self.get_locals(fill, field, start);
+                let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
+                self.get_locals(self.tuples[elem], start);
             }
             Expr::Val { val } => todo!(),
             Expr::Call { func, params, arg } => {
