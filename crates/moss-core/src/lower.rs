@@ -97,7 +97,10 @@ pub enum Expr {
     /// Get the value of the parameter to this function.
     ///
     /// Type: this function's parameter type.
-    Param,
+    Param {
+        /// This function's parameter type.
+        ty: InstrId,
+    },
 
     /// Copy the value of another local into a fresh local.
     ///
@@ -415,6 +418,9 @@ pub enum Instr {
 
     /// Start a block only if the given condition is true.
     If {
+        /// The result type of this conditional block.
+        ty: InstrId,
+
         /// The boolean value to test.
         cond: InstrId,
     },
@@ -2296,8 +2302,15 @@ impl LowerBody<'_, '_> {
             parse::Expr::If(cond, yes, no) => {
                 let unit = self.x.ty_unit();
                 let cond = self.expr(cond)?;
-                self.emit(Instr::If { cond: cond.val });
+                // We don't know the type yet.
+                let start = self.emit(Instr::If {
+                    ty: unit,
+                    cond: cond.val,
+                });
                 let yes = self.block(yes)?;
+                // Rewrite the original instruction now that we know the type.
+                let ty = yes.ty;
+                self.x.ir.instrs[start] = Instr::If { ty, cond: cond.val };
                 self.emit(Instr::Else { result: yes.val });
                 let no = match no {
                     None => {
@@ -2307,7 +2320,6 @@ impl LowerBody<'_, '_> {
                     Some(block) => self.block(block)?,
                 };
                 let end = self.emit(Instr::EndIf { result: no.val });
-                let ty = yes.ty;
                 self.expect_ty(ty, no.ty)?;
                 Ok(Typed { ty, val: end })
             }
@@ -2357,7 +2369,11 @@ impl LowerBody<'_, '_> {
                     assert!(body.expr.is_none());
                     self.emit(Instr::Loop);
                     let local = self.expr(cond)?;
-                    self.emit(Instr::If { cond: local.val });
+                    let ty = self.ty_tuple(&[]);
+                    self.emit(Instr::If {
+                        ty,
+                        cond: local.val,
+                    });
                     self.stmts(body.stmts)?;
                     let fake = self.emit(Instr::Br { depth: Depth(1) });
                     self.emit(Instr::EndIf { result: fake });
@@ -2401,7 +2417,7 @@ impl LowerBody<'_, '_> {
         else {
             unreachable!()
         };
-        let tuple_local = self.instr(tuple_ty, Expr::Param);
+        let tuple_local = self.instr(tuple_ty, Expr::Param { ty: tuple_ty });
         let Instr::Tuple { elems: types } = self.x.ir.instrs[tuple_ty] else {
             unreachable!()
         };

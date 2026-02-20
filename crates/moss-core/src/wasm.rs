@@ -13,8 +13,8 @@ use wasm_encoder::{
 use crate::{
     intern::StrId,
     lower::{
-        self, Body, ElemId, FieldId, FndefId, IR, Instr, InstrList, ModuleId, Named, Names, Sigdef,
-        SigdefId, Tagdef, ValdefId,
+        self, Body, ElemId, Expr, FieldId, FndefId, IR, Instr, InstrId, InstrList, ModuleId, Named,
+        Names, Sigdef, SigdefId, Tagdef, ValdefId,
     },
     prelude::Lib,
     tuples::{TupleLoc, TupleRange, Tuples},
@@ -213,6 +213,9 @@ enum Object {
     /// A dynamic value with a type, stored in Wasm locals starting at a given index.
     ValDyn(ObjectId, LocalId),
 
+    /// The "result" of executing a statement that only has side effects.
+    ValStmt,
+
     /// A context with some output slots.
     Ctx(TupleRange),
 }
@@ -314,6 +317,13 @@ impl<'a> Wasm<'a> {
         self.objects[id.index()]
     }
 
+    fn local(&self, x: InstrId) -> (ObjectId, LocalId) {
+        match self.obj(self.variables[&x]) {
+            Object::ValDyn(ty, start) => (ty, start),
+            _ => panic!(),
+        }
+    }
+
     fn wasi_ctx(&mut self, wasip1_sigdefs: &IndexMap<StrId, SigdefId>) -> ObjectId {
         let mut slots = Vec::new();
         let ctxdef_wasi = self.named(self.lib.wasi, "Wasi").ctxdef();
@@ -376,7 +386,7 @@ impl<'a> Wasm<'a> {
                 } => todo!(),
                 Instr::Sig { param, result } => unimplemented!(),
                 Instr::Set { lhs, rhs } => unimplemented!(),
-                Instr::If { cond } => unimplemented!(),
+                Instr::If { ty, cond } => unimplemented!(),
                 Instr::Else { result } => unimplemented!(),
                 Instr::EndIf { result } => unimplemented!(),
                 Instr::Loop => unimplemented!(),
@@ -416,10 +426,17 @@ impl<'a> Wasm<'a> {
         match self.obj(ty) {
             Object::TyI32 => f(ValType::I32),
             Object::TyI64 => f(ValType::I64),
-            Object::TyLitInt(_)
+            Object::TyTuple(elems) => {
+                for &elem in &self.tuples[elems] {
+                    self.layout(elem, f);
+                }
+            }
+            Object::Open
+            | Object::TyLitInt(_)
             | Object::TyLitChar
             | Object::TyLitString
             | Object::TyMemIdx
+            | Object::TyCtx
             | Object::Sig(_, _)
             | Object::FnInt(_, _)
             | Object::FnChar
@@ -429,6 +446,7 @@ impl<'a> Wasm<'a> {
             | Object::FnDef(_, _)
             | Object::ValU32(_)
             | Object::ValDyn(_, _)
+            | Object::ValStmt
             | Object::Ctx(_) => panic!(),
         }
     }
@@ -479,12 +497,10 @@ impl<'a> Wasm<'a> {
         self.get_locals(ty, start)
     }
 
-    fn set(&mut self, ty: ObjectId, instr: lower::InstrId) {
+    fn set(&mut self, ty: ObjectId) -> ObjectId {
         let start = self.make_locals(ty);
-        let obj = self.mkobj(Object::ValDyn(ty, start));
-        let prev = self.variables.insert(instr, obj);
-        assert!(prev.is_none());
         self.set_locals(ty, start);
+        self.mkobj(Object::ValDyn(ty, start))
     }
 
     fn string(&mut self, id: StrId) {
@@ -818,127 +834,84 @@ impl<'a> Wasm<'a> {
         };
     }
 
-    fn instrs(&mut self, fill: Fill, param: TypeId, mut instr: lower::LocalId) -> lower::LocalId {
-        loop {
-            match self.ir.instrs[instr] {
-                Instr::BindCall(fndef, local) => todo!(),
-                Instr::EndBind => break,
-                Instr::Val(valdef, ctx) => todo!(),
-                Instr::Param => {
-                    self.get_locals(fill, param, LocalId::from_raw(0));
-                }
-                Instr::Copy(local) => {
-                    self.get(local);
-                }
-                Instr::Set(lhs, rhs) => {
-                    self.get(rhs);
-                    let Local { fill, start } = self.variables[&lhs];
-                    self.set_locals(fill, self.ir.locals[lhs], start);
-                }
-                Instr::Nominal(tagdef, local) => todo!(),
-                Instr::Tuple(locals) => {
-                    for &id in locals.get(&self.ir.refs) {
-                        self.get(id);
-                    }
-                }
-                Instr::Record(_, locals) => {
-                    for &id in locals.get(&self.ir.refs) {
-                        self.get(id);
-                    }
-                }
-                Instr::Elem(tuple, index) => {
-                    let Local { fill, mut start } = self.variables[&tuple];
-                    let ty = self.ir.locals[tuple];
-                    let range = self.ir.ty(ty).tuple(); // TODO: Handle type aliases and bindings.
-                    // TODO: Make this not be linear time.
-                    for i in (IdRange {
-                        start: ElemId::new(0),
-                        end: index,
-                    }) {
-                        start += self.layout_len(
-                            fill,
-                            self.ir.tuples[TupleLoc::from_raw(range.start.raw() + i.raw())],
-                        );
-                    }
-                    let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
-                    self.get_locals(fill, self.ir.tuples[elem], start);
-                }
-                Instr::Field(record, index) => {
-                    let Local { fill, mut start } = self.variables[&record];
-                    let ty = self.ir.locals[record];
-                    let range = self.ir.ty(ty).record(); // TODO: Handle type aliases and bindings.
-                    // TODO: Make this not be linear time.
-                    for i in (IdRange {
-                        start: FieldId::new(0),
-                        end: index,
-                    }) {
-                        let (_, field) =
-                            self.ir.records[TupleLoc::from_raw(range.start.raw() + i.raw())];
-                        start += self.layout_len(fill, field);
-                    }
-                    let loc = TupleLoc::from_raw(range.start.raw() + index.raw());
-                    let (_, field) = self.ir.records[loc];
-                    self.get_locals(fill, field, start);
-                }
-                Instr::Call(fndef, local) => {
-                    self.get(local);
-                    let slot = match self.ir.bodies[fndef] {
-                        Some(_) => {
-                            // TODO: Pass the correct fill to `Slot::FnDef`.
-                            Slot::FnDef(fndef, fill)
-                        }
-                        None => {
-                            let context = self.ir.ctx(fill.ctx);
-                            // TODO: Pass the correct context to `index_fn`.
-                            self.slots[fill.slots][context.index_fn(fndef, fill.ctx)]
-                        }
-                    };
-                    match slot {
-                        Slot::FnInstr(instruction) => self.wasm_instruction(fill, instruction),
-                        _ => {
-                            let funcidx = self.insert_func(slot);
-                            self.body.insn().call(funcidx);
-                        }
-                    }
-                }
-                Instr::If(cond, ty) => {
-                    let Local { fill, start: _ } = self.variables[&cond];
-                    let layout = self.layout_vec(fill, ty);
-                    let typeidx = self.section_type.len();
-                    self.section_type.ty().function([], layout);
-                    self.get(cond);
-                    self.body.insn().if_(BlockType::FunctionType(typeidx));
-                }
-                Instr::Else(local) => {
-                    self.get(local);
-                    self.body.insn().else_();
-                    instr += 1;
-                    continue;
-                }
-                Instr::EndIf(local) => {
-                    self.get(local);
-                    self.body.insn().end();
-                }
-                Instr::Loop => {
-                    self.body.insn().loop_(BlockType::Empty);
-                }
-                Instr::EndLoop => {
-                    self.body.insn().end();
-                }
-                Instr::Br(depth) => {
-                    self.body.insn().br(depth.0);
-                }
-                Instr::Return(local) => {
-                    self.get(local);
-                    self.body.insn().end();
-                    break;
-                }
-                Instr::ReturnBind(ctx) => todo!(),
+    fn expr(&mut self, expr: Expr) {
+        match expr {
+            Expr::Param { ty } => {
+                let ty = self.variables[&ty];
+                self.get_locals(ty, LocalId::from_raw(0));
             }
-            self.set(fill, instr);
-            instr += 1;
+            Expr::Copy { value } => {
+                self.get(value);
+            }
+            Expr::Nominal { def, params, inner } => todo!(),
+            Expr::Tuple { elems } => {
+                for &id in elems.get(&self.ir.items) {
+                    self.get(id);
+                }
+            }
+            Expr::Record { fields } => {
+                for &(_, id) in fields.get(&self.ir.records) {
+                    self.get(id);
+                }
+            }
+            Expr::Elem { tuple, index } => {
+                let Local { fill, mut start } = self.variables[&tuple];
+                let ty = self.ir.locals[tuple];
+                let range = self.ir.ty(ty).tuple(); // TODO: Handle type aliases and bindings.
+                // TODO: Make this not be linear time.
+                for i in (IdRange {
+                    start: ElemId::new(0),
+                    end: index,
+                }) {
+                    start += self.layout_len(
+                        fill,
+                        self.ir.tuples[TupleLoc::from_raw(range.start.raw() + i.raw())],
+                    );
+                }
+                let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
+                self.get_locals(fill, self.ir.tuples[elem], start);
+            }
+            Expr::Field { record, index } => {
+                let Local { fill, mut start } = self.variables[&record];
+                let ty = self.ir.locals[record];
+                let range = self.ir.ty(ty).record(); // TODO: Handle type aliases and bindings.
+                // TODO: Make this not be linear time.
+                for i in (IdRange {
+                    start: FieldId::new(0),
+                    end: index,
+                }) {
+                    let (_, field) =
+                        self.ir.records[TupleLoc::from_raw(range.start.raw() + i.raw())];
+                    start += self.layout_len(fill, field);
+                }
+                let loc = TupleLoc::from_raw(range.start.raw() + index.raw());
+                let (_, field) = self.ir.records[loc];
+                self.get_locals(fill, field, start);
+            }
+            Expr::Val { val } => todo!(),
+            Expr::Call { func, params, arg } => {
+                self.get(local);
+                let slot = match self.ir.bodies[fndef] {
+                    Some(_) => {
+                        // TODO: Pass the correct fill to `Slot::FnDef`.
+                        Slot::FnDef(fndef, fill)
+                    }
+                    None => {
+                        let context = self.ir.ctx(fill.ctx);
+                        // TODO: Pass the correct context to `index_fn`.
+                        self.slots[fill.slots][context.index_fn(fndef, fill.ctx)]
+                    }
+                };
+                match slot {
+                    Slot::FnInstr(instruction) => self.wasm_instruction(fill, instruction),
+                    _ => {
+                        let funcidx = self.insert_func(slot);
+                        self.body.insn().call(funcidx);
+                    }
+                }
+            }
+            Expr::CallDirect { func, params, arg } => todo!(),
         }
-        instr
     }
 
     fn interp(&mut self, ctx: ObjectId, inputs: &[ObjectId], body: Body) -> ObjectId {
@@ -1028,14 +1001,49 @@ impl<'a> Wasm<'a> {
                     let obj_result = self.variables[&result];
                     self.mkobj(Object::Sig(obj_param, obj_result))
                 }
-                Instr::Set { lhs, rhs } => todo!(),
-                Instr::If { cond } => todo!(),
-                Instr::Else { result } => todo!(),
-                Instr::EndIf { result } => todo!(),
-                Instr::Loop => todo!(),
-                Instr::EndLoop => todo!(),
-                Instr::Br { depth } => todo!(),
-                Instr::Expr { ty, expr } => todo!(),
+                Instr::Set { lhs, rhs } => {
+                    let (ty, start) = self.local(lhs);
+                    self.get(rhs);
+                    self.set_locals(ty, start);
+                    self.mkobj(Object::ValStmt)
+                }
+                Instr::If { ty, cond } => {
+                    let ty = self.variables[&ty];
+                    let layout = self.layout_vec(ty);
+                    let typeidx = self.section_type.len();
+                    self.section_type.ty().function([], layout);
+                    self.get(cond);
+                    self.body.insn().if_(BlockType::FunctionType(typeidx));
+                    self.mkobj(Object::ValStmt)
+                }
+                Instr::Else { result } => {
+                    self.get(result);
+                    self.body.insn().else_();
+                    self.mkobj(Object::ValStmt)
+                }
+                Instr::EndIf { result } => {
+                    self.get(result);
+                    self.body.insn().end();
+                    // TODO: Properly handle the value returned from `if`/`else`.
+                    self.mkobj(Object::ValStmt)
+                }
+                Instr::Loop => {
+                    self.body.insn().loop_(BlockType::Empty);
+                    self.mkobj(Object::ValStmt)
+                }
+                Instr::EndLoop => {
+                    self.body.insn().end();
+                    self.mkobj(Object::ValStmt)
+                }
+                Instr::Br { depth } => {
+                    self.body.insn().br(depth.0);
+                    self.mkobj(Object::ValStmt)
+                }
+                Instr::Expr { ty, expr } => {
+                    let ty = self.variables[&ty];
+                    self.expr(expr);
+                    self.set(ty)
+                }
             };
             self.variables.insert(instr, result);
         }
