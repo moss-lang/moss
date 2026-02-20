@@ -13,8 +13,8 @@ use wasm_encoder::{
 use crate::{
     intern::StrId,
     lower::{
-        self, Body, ElemId, FieldId, FndefId, IR, Instr, ModuleId, Named, Names, Sigdef, SigdefId,
-        ValdefId,
+        self, Body, ElemId, FieldId, FndefId, IR, Instr, InstrList, ModuleId, Named, Names, Sigdef,
+        SigdefId, Tagdef, ValdefId,
     },
     prelude::Lib,
     tuples::{TupleLoc, TupleRange, Tuples},
@@ -159,6 +159,9 @@ enum IntLitOut {
 /// A static object.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Object {
+    /// An open slot.
+    Open,
+
     /// The type of integer literals of a specific kind.
     TyLitInt(IntLitIn),
 
@@ -176,6 +179,12 @@ enum Object {
 
     /// The Wasm `i64` type.
     TyI64,
+
+    /// A tuple or record type.
+    TyTuple(TupleRange),
+
+    /// A "type" that represents a context instead of an actual value.
+    TyCtx,
 
     /// A function signature, with parameter and result types.
     Sig(ObjectId, ObjectId),
@@ -247,17 +256,22 @@ struct Wasm<'a> {
     section_code: CodeSection,
     section_data: DataSection,
 
+    /// Static [`Object`] for each IR value in the current [`Body`].
+    variables: HashMap<lower::InstrId, ObjectId>,
+
     /// Locals for the current function.
     locals: IndexVec<LocalId, ValType>,
-
-    /// Type and start of Wasm local range for each IR variable in the current function.
-    variables: HashMap<lower::InstrId, ObjectId>,
 
     /// The current function body.
     body: Vec<u8>,
 }
 
 impl<'a> Wasm<'a> {
+    /// The empty context.
+    fn empty(&self) -> ObjectId {
+        todo!()
+    }
+
     fn named(&self, module: ModuleId, string: &str) -> Named {
         self.names.names[&(module, self.ir.strings.get_id(string).unwrap())]
     }
@@ -275,6 +289,15 @@ impl<'a> Wasm<'a> {
             })
             .sorted_by_key(|&(name, _)| &self.ir.strings[name])
             .collect()
+    }
+
+    fn list(&self, items: InstrList) -> Vec<ObjectId> {
+        Vec::from_iter(
+            items
+                .get(&self.ir.items)
+                .iter()
+                .map(|item| self.variables[item]),
+        )
     }
 
     fn mkobj(&mut self, object: Object) -> ObjectId {
@@ -918,21 +941,45 @@ impl<'a> Wasm<'a> {
         instr
     }
 
-    fn interp(&mut self, ctx: ObjectId, body: Body) -> ObjectId {
+    fn interp(&mut self, ctx: ObjectId, inputs: &[ObjectId], body: Body) -> ObjectId {
         for instr in body.body {
             let result = match self.ir.instrs[instr] {
                 Instr::Param => ctx,
-                Instr::Open => todo!(),
-                Instr::Ctx { slots } => todo!(),
+                Instr::Open => self.mkobj(Object::Open),
+                Instr::Ctx { slots } => self.mkctx(&self.list(slots)),
                 Instr::NeedTydef { def, params } => todo!(),
                 Instr::NeedSigdef { def, params } => todo!(),
                 Instr::NeedValdef { def, params } => todo!(),
                 Instr::NeedCtxdef { def, params } => todo!(),
-                Instr::Tagdef { def, params } => todo!(),
-                Instr::Tuple { elems } => todo!(),
-                Instr::Record { fields } => todo!(),
-                Instr::Context => todo!(),
-                Instr::Get { ctx, slot } => todo!(),
+                Instr::Tagdef { def, params } => {
+                    let Tagdef {
+                        ctx: ir_ctx,
+                        inner: ir_inner,
+                    } = self.ir.tagdefs[def];
+                    let ctx_ty = self.interp(self.empty(), &self.list(params), ir_ctx);
+                    self.interp(ctx_ty, &[], ir_inner)
+                }
+                Instr::Tuple { elems } => {
+                    let tuple = self.tuples.make(&self.list(elems));
+                    self.mkobj(Object::TyTuple(tuple))
+                }
+                Instr::Record { fields } => {
+                    let objs = Vec::from_iter(
+                        fields
+                            .get(&self.ir.records)
+                            .iter()
+                            .map(|&(_, field)| self.variables[&field]),
+                    );
+                    let tuple = self.tuples.make(&objs);
+                    self.mkobj(Object::TyTuple(tuple))
+                }
+                Instr::Context => self.mkobj(Object::TyCtx),
+                Instr::Get { ctx, slot } => {
+                    let Object::Ctx(slots) = self.obj(self.variables[&ctx]) else {
+                        panic!()
+                    };
+                    self.tuples[slots][slot.index()]
+                }
                 Instr::BindTydef {
                     def,
                     params,
@@ -976,7 +1023,11 @@ impl<'a> Wasm<'a> {
                     bind,
                     args,
                 } => todo!(),
-                Instr::Sig { param, result } => todo!(),
+                Instr::Sig { param, result } => {
+                    let obj_param = self.variables[&param];
+                    let obj_result = self.variables[&result];
+                    self.mkobj(Object::Sig(obj_param, obj_result))
+                }
                 Instr::Set { lhs, rhs } => todo!(),
                 Instr::If { cond } => todo!(),
                 Instr::Else { result } => todo!(),
@@ -1000,12 +1051,13 @@ impl<'a> Wasm<'a> {
         match self.get_func(funcidx) {
             Object::FnDef(fndef, ctx) => {
                 let Sigdef { ctx: _, sig } = self.ir.fndefs[fndef];
-                let Object::Sig(param, result) = self.obj(self.interp(ctx, sig)) else {
+                let signature = self.interp(ctx, &[], sig);
+                let Object::Sig(param, result) = self.obj(signature) else {
                     panic!()
                 };
                 let params = self.layout_vec(param);
                 let results = self.layout_vec(result);
-                self.instrs(ctx, param, self.ir.bodies[fndef]);
+                self.interp(ctx, &[], self.ir.bodies[fndef]);
                 let mut f =
                     Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
                 f.raw(take(&mut self.body));
@@ -1106,8 +1158,8 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         section_code: Default::default(),
         section_data: Default::default(),
 
-        locals: Default::default(),
         variables: Default::default(),
+        locals: Default::default(),
         body: Default::default(),
     }
     .program()
