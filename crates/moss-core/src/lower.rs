@@ -221,7 +221,7 @@ pub enum Instr {
         def: TydefId,
 
         /// A mapping from unfixed inputs to the full inputs of the contextual type.
-        param: InstrList,
+        param: InstrId,
     },
 
     /// Need a contextual function parametrized by a specific context.
@@ -230,7 +230,7 @@ pub enum Instr {
         def: SigdefId,
 
         /// A mapping from unfixed inputs to the full inputs of the contextual function.
-        param: InstrList,
+        param: InstrId,
     },
 
     /// Need a contextual value parametrized by a specific context.
@@ -239,7 +239,7 @@ pub enum Instr {
         def: ValdefId,
 
         /// A mapping from unfixed inputs to the full inputs of the contextual value.
-        param: InstrList,
+        param: InstrId,
     },
 
     /// Need a composite context parametrized by a specific context.
@@ -248,7 +248,7 @@ pub enum Instr {
         def: CtxdefId,
 
         /// A mapping from unfixed inputs to the full inputs of the composite context parameter.
-        param: InstrList,
+        param: InstrId,
     },
 
     /// A nominal type parametrized by a specific context.
@@ -284,15 +284,21 @@ pub enum Instr {
         slot: SlotId,
     },
 
+    /// A binding.
+    Bind {
+        /// The arguments constraining the left-hand side of the binding.
+        args: InstrList,
+
+        /// The right-hand side of the binding.
+        bind: InstrId,
+    },
+
     /// Provide a contextual type parametrized by a specific context.
     BindTydef {
         /// The contextual type declaration.
         def: TydefId,
 
-        /// A mapping from unfixed inputs to the full inputs of the contextual type.
-        param: InstrId,
-
-        /// A mapping from unfixed inputs to a fully concrete type.
+        /// A mapping from unfixed inputs to a binding for a fully concrete type.
         bind: InstrId,
     },
 
@@ -301,10 +307,7 @@ pub enum Instr {
         /// The contextual function declaration.
         def: SigdefId,
 
-        /// A mapping from unfixed inputs to the full inputs of the contextual function.
-        param: InstrId,
-
-        /// A mapping from unfixed inputs to a fully concrete function.
+        /// A mapping from unfixed inputs to a binding for a fully concrete function.
         bind: InstrId,
     },
 
@@ -313,10 +316,7 @@ pub enum Instr {
         /// The contextual value declaration.
         def: ValdefId,
 
-        /// A mapping from unfixed inputs to the full inputs of the contextual value.
-        param: InstrId,
-
-        /// A mapping from unfixed inputs to a fully concrete value.
+        /// A mapping from unfixed inputs to a binding for a fully concrete value.
         bind: InstrId,
     },
 
@@ -325,10 +325,7 @@ pub enum Instr {
         /// The composite context definition.
         def: CtxdefId,
 
-        /// A mapping from unfixed inputs to the full inputs of the composite context parameter.
-        param: InstrList,
-
-        /// A mapping from unfixed inputs to the full inputs of the composite context.
+        /// A mapping from unfixed inputs to a binding for the full inputs of the composite context.
         bind: InstrId,
     },
 
@@ -949,38 +946,16 @@ impl<'a> Lower<'a> {
         self.ty_tuple(Vec::new())
     }
 
-    fn invoke(
-        &mut self,
-        param: Body,
-        destruct: &[InstrId],
-        target: Body,
-    ) -> LowerResult<Vec<InstrId>> {
+    fn invoke(&mut self, destruct: &[InstrId], target: Body) -> LowerResult<Vec<InstrId>> {
         todo!()
     }
 
-    fn invoke_open(
-        &mut self,
-        param: Body,
-        destruct: &[InstrId],
-        target: Body,
-    ) -> LowerResult<Vec<InstrId>> {
-        todo!()
-    }
-
-    fn invoke_bind(
-        &mut self,
-        param: Body,
-        construct: &[InstrId],
-        source: Body,
-        destruct: &[InstrId],
-        target: Body,
-    ) -> LowerResult<Vec<InstrId>> {
+    fn invoke_need(&mut self, destruct: &[InstrId], target: Body) -> LowerResult<Vec<InstrId>> {
         todo!()
     }
 
     fn extract_ty(
         &mut self,
-        param: Body,
         destruct: &[InstrId],
         def: TydefId,
         construct: &[InstrId],
@@ -990,7 +965,6 @@ impl<'a> Lower<'a> {
 
     fn extract_sig(
         &mut self,
-        param: Body,
         destruct: &[InstrId],
         def: SigdefId,
         construct: &[InstrId],
@@ -1000,7 +974,6 @@ impl<'a> Lower<'a> {
 
     fn extract_val(
         &mut self,
-        param: Body,
         destruct: &[InstrId],
         def: ValdefId,
         construct: &[InstrId],
@@ -1010,7 +983,6 @@ impl<'a> Lower<'a> {
 
     fn extract_ctx(
         &mut self,
-        param: Body,
         destruct: &[InstrId],
         def: CtxdefId,
         construct: &[InstrId],
@@ -1304,34 +1276,40 @@ impl<'a> Lower<'a> {
                 let (lhs, destruct) = self.spec(slots, key)?;
                 match lhs {
                     Named::Tydef(def) => {
-                        let Tydef { ctx: target } = self.ir.tydefs[def];
-                        let construct = self.invoke_open(param, &destruct, target)?;
-                        let params = IdRange::new(&mut self.ir.items, construct);
-                        Ok(self.emit(Instr::NeedTydef { def, params }))
+                        let Tydef(target) = self.ir.tydefs[def];
+                        self.emit(Instr::Lambda);
+                        let construct = self.invoke_need(&destruct, target)?;
+                        let items = IdRange::new(&mut self.ir.items, construct);
+                        let result = self.emit(Instr::Stack { items });
+                        let param = self.emit(Instr::EndLambda { result });
+                        Ok(self.emit(Instr::NeedTydef { def, param }))
                     }
                     Named::Sigdef(def) => {
-                        let Sigdef {
-                            ctx: target,
-                            sig: _,
-                        } = self.ir.sigdefs[def];
-                        let construct = self.invoke_open(param, &destruct, target)?;
-                        let params = IdRange::new(&mut self.ir.items, construct);
-                        Ok(self.emit(Instr::NeedSigdef { def, params }))
+                        let Sigdef(target) = self.ir.sigdefs[def];
+                        self.emit(Instr::Lambda);
+                        let construct = self.invoke_need(&destruct, target)?;
+                        let items = IdRange::new(&mut self.ir.items, construct);
+                        let result = self.emit(Instr::Stack { items });
+                        let param = self.emit(Instr::EndLambda { result });
+                        Ok(self.emit(Instr::NeedSigdef { def, param }))
                     }
                     Named::Valdef(def) => {
-                        let Valdef { ctx: target, ty: _ } = self.ir.valdefs[def];
-                        let construct = self.invoke_open(param, &destruct, target)?;
-                        let params = IdRange::new(&mut self.ir.items, construct);
-                        Ok(self.emit(Instr::NeedValdef { def, params }))
+                        let Valdef(target) = self.ir.valdefs[def];
+                        self.emit(Instr::Lambda);
+                        let construct = self.invoke_need(&destruct, target)?;
+                        let items = IdRange::new(&mut self.ir.items, construct);
+                        let result = self.emit(Instr::Stack { items });
+                        let param = self.emit(Instr::EndLambda { result });
+                        Ok(self.emit(Instr::NeedValdef { def, param }))
                     }
                     Named::Ctxdef(def) => {
-                        let Ctxdef {
-                            ctx: target,
-                            def: _,
-                        } = self.ir.ctxdefs[def];
-                        let construct = self.invoke_open(param, &destruct, target)?;
-                        let params = IdRange::new(&mut self.ir.items, construct);
-                        Ok(self.emit(Instr::NeedCtxdef { def, params }))
+                        let Ctxdef(target) = self.ir.ctxdefs[def];
+                        self.emit(Instr::Lambda);
+                        let construct = self.invoke_need(&destruct, target)?;
+                        let items = IdRange::new(&mut self.ir.items, construct);
+                        let result = self.emit(Instr::Stack { items });
+                        let param = self.emit(Instr::EndLambda { result });
+                        Ok(self.emit(Instr::NeedCtxdef { def, param }))
                     }
                     Named::Module(_) => Err(LowerError::BindModule(bind)),
                     Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
@@ -1365,8 +1343,8 @@ impl<'a> Lower<'a> {
                 match named {
                     Named::Tydef(tydef) => {
                         let Tydef(target) = self.ir.tydefs[tydef];
-                        let construct = self.invoke(param, &destruct, target)?;
-                        self.extract_ty(param, slots, tydef, &construct)
+                        let construct = self.invoke(&destruct, target)?;
+                        self.extract_ty(slots, tydef, &construct)
                     }
                     Named::Tagdef(tagdef) => todo!(),
                     Named::Aliasdef(aliasdef) => todo!(),
