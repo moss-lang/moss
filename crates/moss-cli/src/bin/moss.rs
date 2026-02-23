@@ -13,7 +13,7 @@ use line_index::{LineIndex, TextSize};
 use moss_cli::util::err_fail;
 use moss_core::{
     lex::{ByteIndex, LexError, lex},
-    lower::{Ctx, Entries, lower},
+    lower::lower,
     parse::{ParseError, parse},
     prelude::prelude,
     wasm::wasm,

@@ -516,120 +516,115 @@ impl<'a> Wasm<'a> {
         self.body.insn().i32_const(offset).i32_const(len);
     }
 
-    fn val_u32(&mut self, fill: Fill, valdef: ValdefId) -> u32 {
-        let context = self.ir.ctx(fill.ctx);
-        // TODO: Pass the right context to `index_val`.
-        match self.slots[fill.slots][context.index_val(valdef, fill.ctx)] {
-            Slot::ValU32(n) => n,
-            _ => panic!(),
-        }
+    fn val_u32(&mut self, ctx: ObjectId, valdef: ValdefId) -> u32 {
+        todo!()
     }
 
-    fn memarg(&mut self, fill: Fill) -> MemArg {
+    fn memarg(&mut self, ctx: ObjectId) -> MemArg {
         MemArg {
-            offset: self.val_u32(fill, self.val_offset).into(),
-            align: self.val_u32(fill, self.val_align),
-            memory_index: self.val_u32(fill, self.val_memidx),
+            offset: self.val_u32(ctx, self.val_offset).into(),
+            align: self.val_u32(ctx, self.val_align),
+            memory_index: self.val_u32(ctx, self.val_memidx),
         }
     }
 
-    fn wasm_instruction(&mut self, fill: Fill, instruction: Instruction) {
+    fn wasm_instruction(&mut self, ctx: ObjectId, instruction: Instruction) {
         match instruction {
             Instruction::Unreachable => {
                 self.body.insn().unreachable();
             }
 
             Instruction::I32Load => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i32_load(memarg);
             }
             Instruction::I64Load => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_load(memarg);
             }
             Instruction::I32Load8S => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i32_load8_s(memarg);
             }
             Instruction::I32Load8U => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i32_load8_u(memarg);
             }
             Instruction::I32Load16S => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i32_load16_s(memarg);
             }
             Instruction::I32Load16U => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i32_load16_u(memarg);
             }
             Instruction::I64Load8S => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_load8_s(memarg);
             }
             Instruction::I64Load8U => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_load8_u(memarg);
             }
             Instruction::I64Load16S => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_load16_s(memarg);
             }
             Instruction::I64Load16U => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_load16_u(memarg);
             }
             Instruction::I64Load32S => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_load32_s(memarg);
             }
             Instruction::I64Load32U => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_load32_u(memarg);
             }
             Instruction::I32Store => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i32_store(memarg);
             }
             Instruction::I64Store => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_store(memarg);
             }
             Instruction::I32Store8 => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i32_store8(memarg);
             }
             Instruction::I32Store16 => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i32_store16(memarg);
             }
             Instruction::I64Store8 => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_store8(memarg);
             }
             Instruction::I64Store16 => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_store16(memarg);
             }
             Instruction::I64Store32 => {
-                let memarg = self.memarg(fill);
+                let memarg = self.memarg(ctx);
                 self.body.insn().i64_store32(memarg);
             }
             Instruction::MemorySize => {
-                let memidx = self.val_u32(fill, self.val_memidx);
+                let memidx = self.val_u32(ctx, self.val_memidx);
                 self.body.insn().memory_size(memidx);
             }
             Instruction::MemoryGrow => {
-                let memidx = self.val_u32(fill, self.val_memidx);
+                let memidx = self.val_u32(ctx, self.val_memidx);
                 self.body.insn().memory_grow(memidx);
             }
             Instruction::MemoryCopy => {
-                let dst = self.val_u32(fill, self.val_dst);
-                let src = self.val_u32(fill, self.val_src);
+                let dst = self.val_u32(ctx, self.val_dst);
+                let src = self.val_u32(ctx, self.val_src);
                 self.body.insn().memory_copy(dst, src);
             }
             Instruction::MemoryFill => {
-                let memidx = self.val_u32(fill, self.val_memidx);
+                let memidx = self.val_u32(ctx, self.val_memidx);
                 self.body.insn().memory_fill(memidx);
             }
 
@@ -855,7 +850,7 @@ impl<'a> Wasm<'a> {
                 }
             }
             Expr::Elem { tuple, index } => {
-                let (ty, start) = self.local(tuple);
+                let (ty, mut start) = self.local(tuple);
                 let Object::TyTuple(range) = self.obj(ty) else {
                     panic!()
                 };
@@ -871,7 +866,7 @@ impl<'a> Wasm<'a> {
                 self.get_locals(self.tuples[elem], start);
             }
             Expr::Field { record, index } => {
-                let (ty, start) = self.local(record);
+                let (ty, mut start) = self.local(record);
                 let Object::TyTuple(range) = self.obj(ty) else {
                     panic!()
                 };
@@ -887,27 +882,7 @@ impl<'a> Wasm<'a> {
                 self.get_locals(self.tuples[elem], start);
             }
             Expr::Val { val } => todo!(),
-            Expr::Call { func, params, arg } => {
-                self.get(local);
-                let slot = match self.ir.bodies[fndef] {
-                    Some(_) => {
-                        // TODO: Pass the correct fill to `Slot::FnDef`.
-                        Slot::FnDef(fndef, fill)
-                    }
-                    None => {
-                        let context = self.ir.ctx(fill.ctx);
-                        // TODO: Pass the correct context to `index_fn`.
-                        self.slots[fill.slots][context.index_fn(fndef, fill.ctx)]
-                    }
-                };
-                match slot {
-                    Slot::FnInstr(instruction) => self.wasm_instruction(fill, instruction),
-                    _ => {
-                        let funcidx = self.insert_func(slot);
-                        self.body.insn().call(funcidx);
-                    }
-                }
-            }
+            Expr::Call { func, params, arg } => todo!(),
             Expr::CallDirect { func, params, arg } => todo!(),
         }
     }
