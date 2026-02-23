@@ -1030,12 +1030,9 @@ impl<'a> Lower<'a> {
 
     /// Resolve the path of a spec and synthesize each of its attached bindings.
     ///
-    /// The `param` gives the meaning of [`Instr::Param`] in this context.
-    ///
     /// The `destruct` list gives the set of entrypoints that can be used to synthesize bindings.
     fn spec(
         &mut self,
-        param: Body,
         destruct: &[InstrId],
         spec: parse::Spec,
     ) -> LowerResult<(Named, Vec<InstrId>)> {
@@ -1047,19 +1044,14 @@ impl<'a> Lower<'a> {
         };
         let construct = binds
             .into_iter()
-            .map(|bind| self.bind(param, &destruct, bind))
+            .map(|bind| self.bind(&destruct, bind))
             .collect::<LowerResult<Vec<InstrId>>>()?;
         Ok((named, construct))
     }
 
-    fn bind(
-        &mut self,
-        param: Body,
-        slots: &[InstrId],
-        bind: parse::BindId,
-    ) -> LowerResult<InstrId> {
+    fn bind(&mut self, slots: &[InstrId], bind: parse::BindId) -> LowerResult<InstrId> {
         let parse::Bind { key, val } = self.tree.binds[bind];
-        let (lhs, destruct_lhs) = self.spec(param, slots, key)?;
+        let (lhs, destruct_lhs) = self.spec(slots, key)?;
         match val {
             None => match lhs {
                 Named::Tydef(def) => {
@@ -1302,19 +1294,14 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn need(
-        &mut self,
-        param: Body,
-        slots: &[InstrId],
-        need: parse::NeedId,
-    ) -> LowerResult<InstrId> {
+    fn need(&mut self, slots: &[InstrId], need: parse::NeedId) -> LowerResult<InstrId> {
         let parse::Need { kind: _, bind } = self.tree.needs[need];
         // TODO: Handle `kind`.
         let parse::Bind { key, val } = self.tree.binds[bind];
         match val {
-            Some(_) => self.bind(param, &slots, bind),
+            Some(_) => self.bind(slots, bind),
             None => {
-                let (lhs, destruct) = self.spec(param, &slots, key)?;
+                let (lhs, destruct) = self.spec(slots, key)?;
                 match lhs {
                     Named::Tydef(def) => {
                         let Tydef { ctx: target } = self.ir.tydefs[def];
@@ -1355,39 +1342,29 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn needs_raw(
-        &mut self,
-        param: Body,
-        needs: IdRange<parse::NeedId>,
-    ) -> LowerResult<Vec<InstrId>> {
+    fn needs_raw(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Vec<InstrId>> {
         let mut slots = Vec::new();
-        slots.push(self.emit(Instr::Param));
         for need in needs {
-            slots.push(self.need(param, &slots, need)?);
+            slots.push(self.need(&slots, need)?);
         }
         Ok(slots)
     }
 
-    fn needs(&mut self, param: Body, needs: IdRange<parse::NeedId>) -> LowerResult<Body> {
+    fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Body> {
         let builder = self.builder();
-        let slots = self.needs_raw(param, needs)?;
-        let slots = IdRange::new(&mut self.ir.items, slots);
-        let ctx = self.emit(Instr::Ctx { slots });
+        let slots = self.needs_raw(needs)?;
+        let items = IdRange::new(&mut self.ir.items, slots);
+        let ctx = self.emit(Instr::Stack { items });
         Ok(self.finish(builder, ctx))
     }
 
-    fn parse_ty(
-        &mut self,
-        param: Body,
-        slots: &[InstrId],
-        ty: parse::TypeId,
-    ) -> LowerResult<InstrId> {
+    fn parse_ty(&mut self, slots: &[InstrId], ty: parse::TypeId) -> LowerResult<InstrId> {
         match self.tree.types[ty] {
             parse::Type::Spec(spec) => {
-                let (named, destruct) = self.spec(param, slots, spec)?;
+                let (named, destruct) = self.spec(slots, spec)?;
                 match named {
                     Named::Tydef(tydef) => {
-                        let Tydef { ctx: target } = self.ir.tydefs[tydef];
+                        let Tydef(target) = self.ir.tydefs[tydef];
                         let construct = self.invoke(param, &destruct, target)?;
                         self.extract_ty(param, slots, tydef, &construct)
                     }
@@ -1399,7 +1376,7 @@ impl<'a> Lower<'a> {
             parse::Type::Tuple(elems) => {
                 let lowered = elems
                     .into_iter()
-                    .map(|elem| self.parse_ty(param, slots, elem))
+                    .map(|elem| self.parse_ty(slots, elem))
                     .collect::<LowerResult<Vec<InstrId>>>()?;
                 Ok(self.ty_tuple(lowered))
             }
@@ -1408,7 +1385,6 @@ impl<'a> Lower<'a> {
     }
 
     fn parse_fndef(&mut self, fndef: parse::Fndef) -> LowerResult<(StrId, NamedFn)> {
-        let empty = self.ir.empty();
         let parse::Fndef {
             name,
             needs,
@@ -1416,44 +1392,41 @@ impl<'a> Lower<'a> {
             result,
             def,
         } = fndef;
-        let ctx = self.needs(empty, needs)?;
         let builder = self.builder();
-        let param = self.emit(Instr::Param);
-        let slots = &[param];
+        let slots = self.needs_raw(needs)?;
         let elems = (params.into_iter())
-            .map(|arg| self.parse_ty(ctx, slots, self.tree.params[arg].ty))
+            .map(|arg| self.parse_ty(&slots, self.tree.params[arg].ty))
             .collect::<LowerResult<Vec<InstrId>>>()?;
         let param_tuple = self.ty_tuple(elems);
         let result_ty = match result {
             parse::Return::Unit => self.ty_unit(),
-            parse::Return::Type(ty) => self.parse_ty(ctx, slots, ty)?,
+            parse::Return::Type(ty) => self.parse_ty(&slots, ty)?,
             parse::Return::Bind(needs) => {
-                let slots = self.needs_raw(ctx, needs)?;
-                let slots = IdRange::new(&mut self.ir.items, slots);
-                self.emit(Instr::Ctx { slots })
+                let slots = self.needs_raw(needs)?;
+                let items = IdRange::new(&mut self.ir.items, slots);
+                self.emit(Instr::Stack { items })
             }
         };
         let signature = self.emit(Instr::Sig {
             param: param_tuple,
             result: result_ty,
         });
-        let sig = self.finish(builder, signature);
+        let body = self.finish(builder, signature);
         let lowered = match def {
-            None => NamedFn::Sigdef(self.ir.sigdefs.push(Sigdef { ctx, sig })),
-            Some(_) => NamedFn::Fndef(self.ir.fndefs.push(Sigdef { ctx, sig })),
+            None => NamedFn::Sigdef(self.ir.sigdefs.push(Sigdef(body))),
+            Some(_) => NamedFn::Fndef(self.ir.fndefs.push(Sigdef(body))),
         };
         let string = self.name(name);
         Ok((string, lowered))
     }
 
     fn decls(&mut self) -> LowerResult<()> {
-        let empty = self.ir.empty();
         for &decl in &self.tree.decls {
             match decl {
                 parse::Decl::Tydef(id) => {
                     let parse::Tydef { name, needs } = self.tree.tydefs[id];
-                    let ctx = self.needs(empty, needs)?;
-                    let lowered = self.ir.tydefs.push(Tydef { ctx });
+                    let body = self.needs(needs)?;
+                    let lowered = self.ir.tydefs.push(Tydef(body));
                     let string = self.name(name);
                     self.names
                         .names
@@ -1461,13 +1434,11 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Tagdef(id) => {
                     let parse::Tagdef { name, needs, def } = self.tree.tagdefs[id];
-                    let ctx = self.needs(empty, needs)?;
                     let builder = self.builder();
-                    let param = self.emit(Instr::Param);
-                    let slots = &[param];
-                    let ty = self.parse_ty(ctx, slots, def)?;
-                    let inner = self.finish(builder, ty);
-                    let lowered = self.ir.tagdefs.push(Tagdef { ctx, inner });
+                    let slots = self.needs_raw(needs)?;
+                    let ty = self.parse_ty(&slots, def)?;
+                    let body = self.finish(builder, ty);
+                    let lowered = self.ir.tagdefs.push(Tagdef(body));
                     let string = self.name(name);
                     self.names
                         .names
@@ -1475,13 +1446,11 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Aliasdef(id) => {
                     let parse::Aliasdef { name, needs, def } = self.tree.aliasdefs[id];
-                    let ctx = self.needs(empty, needs)?;
                     let builder = self.builder();
-                    let param = self.emit(Instr::Param);
-                    let slots = &[param];
-                    let ty = self.parse_ty(ctx, slots, def)?;
-                    let def = self.finish(builder, ty);
-                    let lowered = self.ir.aliasdefs.push(Aliasdef { ctx, def });
+                    let slots = self.needs_raw(needs)?;
+                    let ty = self.parse_ty(&slots, def)?;
+                    let body = self.finish(builder, ty);
+                    let lowered = self.ir.aliasdefs.push(Aliasdef(body));
                     let string = self.name(name);
                     self.names
                         .names
@@ -1523,13 +1492,11 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Valdef(id) => {
                     let parse::Valdef { name, needs, ty } = self.tree.valdefs[id];
-                    let ctx = self.needs(empty, needs)?;
                     let builder = self.builder();
-                    let param = self.emit(Instr::Param);
-                    let slots = &[param];
-                    let ty = self.parse_ty(ctx, slots, ty)?;
-                    let ty = self.finish(builder, ty);
-                    let lowered = self.ir.valdefs.push(Valdef { ctx, ty });
+                    let slots = self.needs_raw(needs)?;
+                    let ty = self.parse_ty(&slots, ty)?;
+                    let body = self.finish(builder, ty);
+                    let lowered = self.ir.valdefs.push(Valdef(body));
                     let string = self.name(name);
                     self.names
                         .names
