@@ -284,6 +284,12 @@ pub enum Instr {
         slot: SlotId,
     },
 
+    /// A literal value.
+    Lit {
+        /// The literal value.
+        val: Val,
+    },
+
     /// A binding.
     Bind {
         /// The arguments constraining the left-hand side of the binding.
@@ -1027,62 +1033,44 @@ impl<'a> Lower<'a> {
         match val {
             None => match lhs {
                 Named::Tydef(def) => {
-                    let Tydef { ctx: target } = self.ir.tydefs[def];
-                    let construct = self.invoke_open(param, &destruct_lhs, target)?;
-                    let bind = self.extract_ty(param, &slots, def, &construct)?;
-                    let params = IdRange::new(&mut self.ir.items, construct);
-                    let args = params;
-                    Ok(self.emit(Instr::BindTydef {
-                        def,
-                        params,
-                        bind,
-                        args,
-                    }))
+                    let Tydef(target) = self.ir.tydefs[def];
+                    self.emit(Instr::Lambda);
+                    let construct = self.invoke_need(&destruct_lhs, target)?;
+                    let bind = self.extract_ty(&slots, def, &construct)?;
+                    let args = IdRange::new(&mut self.ir.items, construct);
+                    let result = self.emit(Instr::Bind { args, bind });
+                    let bind = self.emit(Instr::EndLambda { result });
+                    Ok(self.emit(Instr::BindTydef { def, bind }))
                 }
                 Named::Sigdef(def) => {
-                    let Sigdef {
-                        ctx: target,
-                        sig: _,
-                    } = self.ir.sigdefs[def];
-                    let construct = self.invoke_open(param, &destruct_lhs, target)?;
-                    let bind = self.extract_sig(param, &slots, def, &construct)?;
-                    let params = IdRange::new(&mut self.ir.items, construct);
-                    let args = params;
-                    Ok(self.emit(Instr::BindSigdef {
-                        def,
-                        params,
-                        bind,
-                        args,
-                    }))
+                    let Sigdef(target) = self.ir.sigdefs[def];
+                    self.emit(Instr::Lambda);
+                    let construct = self.invoke_need(&destruct_lhs, target)?;
+                    let bind = self.extract_sig(&slots, def, &construct)?;
+                    let args = IdRange::new(&mut self.ir.items, construct);
+                    let result = self.emit(Instr::Bind { args, bind });
+                    let bind = self.emit(Instr::EndLambda { result });
+                    Ok(self.emit(Instr::BindSigdef { def, bind }))
                 }
                 Named::Valdef(def) => {
-                    let Valdef { ctx: target, ty: _ } = self.ir.valdefs[def];
-                    let construct = self.invoke_open(param, &destruct_lhs, target)?;
-                    let bind = self.extract_val(param, &slots, def, &construct)?;
-                    let params = IdRange::new(&mut self.ir.items, construct);
-                    let args = params;
-                    Ok(self.emit(Instr::BindValdef {
-                        def,
-                        params,
-                        bind,
-                        args,
-                    }))
+                    let Valdef(target) = self.ir.valdefs[def];
+                    self.emit(Instr::Lambda);
+                    let construct = self.invoke_need(&destruct_lhs, target)?;
+                    let bind = self.extract_val(&slots, def, &construct)?;
+                    let args = IdRange::new(&mut self.ir.items, construct);
+                    let result = self.emit(Instr::Bind { args, bind });
+                    let bind = self.emit(Instr::EndLambda { result });
+                    Ok(self.emit(Instr::BindValdef { def, bind }))
                 }
                 Named::Ctxdef(def) => {
-                    let Ctxdef {
-                        ctx: target,
-                        def: _,
-                    } = self.ir.ctxdefs[def];
-                    let construct = self.invoke_open(param, &destruct_lhs, target)?;
-                    let bind = self.extract_ctx(param, &slots, def, &construct)?;
-                    let params = IdRange::new(&mut self.ir.items, construct);
-                    let args = params;
-                    Ok(self.emit(Instr::BindCtxdef {
-                        def,
-                        params,
-                        bind,
-                        args,
-                    }))
+                    let Ctxdef(target) = self.ir.ctxdefs[def];
+                    self.emit(Instr::Lambda);
+                    let construct = self.invoke_need(&destruct_lhs, target)?;
+                    let bind = self.extract_ctx(&slots, def, &construct)?;
+                    let args = IdRange::new(&mut self.ir.items, construct);
+                    let result = self.emit(Instr::Bind { args, bind });
+                    let bind = self.emit(Instr::EndLambda { result });
+                    Ok(self.emit(Instr::BindCtxdef { def, bind }))
                 }
                 Named::Module(_) => Err(LowerError::BindModule(bind)),
                 Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
@@ -1091,16 +1079,20 @@ impl<'a> Lower<'a> {
             },
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(def) => {
-                    let Valdef { ctx: target, ty: _ } = self.ir.valdefs[def];
-                    let construct = self.invoke_open(param, &destruct_lhs, target)?;
-                    let (bind, _) = self.lit(token)?;
-                    let params = IdRange::new(&mut self.ir.items, construct);
-                    Ok(self.emit(Instr::BindLit { def, params, bind }))
+                    let Valdef(target) = self.ir.valdefs[def];
+                    self.emit(Instr::Lambda);
+                    let construct = self.invoke_need(&destruct_lhs, target)?;
+                    let (val, _) = self.lit(token)?;
+                    let bind = self.emit(Instr::Lit { val });
+                    let args = IdRange::new(&mut self.ir.items, construct);
+                    let result = self.emit(Instr::Bind { args, bind });
+                    let bind = self.emit(Instr::EndLambda { result });
+                    Ok(self.emit(Instr::BindValdef { def, bind }))
                 }
                 _ => Err(LowerError::LitNotVal(token)),
             },
             Some(parse::Entry::Ref(spec)) => {
-                let (rhs, destruct_rhs) = self.spec(param, slots, spec)?;
+                let (rhs, destruct_rhs) = self.spec(slots, spec)?;
                 match (lhs, rhs) {
                     (Named::Tydef(def), Named::Tydef(tydef)) => {
                         let Tydef { ctx: target_lhs } = self.ir.tydefs[def];
