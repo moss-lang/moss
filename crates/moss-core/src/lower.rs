@@ -200,16 +200,19 @@ pub enum Expr {
 /// An instruction.
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
-    /// The parameter context.
-    Param,
+    /// Start a lambda block.
+    Lambda,
 
-    /// An open slot.
-    Open,
+    /// End the current [`Instr::Lambda`] block.
+    EndLambda {
+        /// The item to return from the lambda.
+        result: InstrId,
+    },
 
-    /// A new context providing some number of slots.
-    Ctx {
-        /// Statics used to construct the output slots of the new context.
-        slots: InstrList,
+    /// A tuple of items.
+    Stack {
+        /// The items to stack together.
+        items: InstrList,
     },
 
     /// Need a contextual type parametrized by a specific context.
@@ -217,8 +220,8 @@ pub enum Instr {
         /// The contextual type declaration.
         def: TydefId,
 
-        /// Statics destructured to satisfy the input slots of the parameter context.
-        params: InstrList,
+        /// A mapping from unfixed inputs to the full inputs of the contextual type.
+        param: InstrList,
     },
 
     /// Need a contextual function parametrized by a specific context.
@@ -226,8 +229,8 @@ pub enum Instr {
         /// The contextual function declaration.
         def: SigdefId,
 
-        /// Statics destructured to satisfy the input slots of the parameter context.
-        params: InstrList,
+        /// A mapping from unfixed inputs to the full inputs of the contextual function.
+        param: InstrList,
     },
 
     /// Need a contextual value parametrized by a specific context.
@@ -235,8 +238,8 @@ pub enum Instr {
         /// The contextual value declaration.
         def: ValdefId,
 
-        /// Statics destructured to satisfy the input slots of the parameter context.
-        params: InstrList,
+        /// A mapping from unfixed inputs to the full inputs of the contextual value.
+        param: InstrList,
     },
 
     /// Need a composite context parametrized by a specific context.
@@ -244,8 +247,8 @@ pub enum Instr {
         /// The context definition.
         def: CtxdefId,
 
-        /// Statics destructured to satisfy the input slots of the parameter context.
-        params: InstrList,
+        /// A mapping from unfixed inputs to the full inputs of the composite context parameter.
+        param: InstrList,
     },
 
     /// A nominal type parametrized by a specific context.
@@ -286,44 +289,11 @@ pub enum Instr {
         /// The contextual type declaration.
         def: TydefId,
 
-        /// Statics for the input slots of the left-hand parameter context.
-        params: InstrList,
+        /// A mapping from unfixed inputs to the full inputs of the contextual type.
+        param: InstrId,
 
-        /// The type being provided.
+        /// A mapping from unfixed inputs to a fully concrete type.
         bind: InstrId,
-
-        /// Statics for the input slots of the right-hand parameter context.
-        args: InstrList,
-    },
-
-    /// Provide a nominal type for a contextual type parametrized by a specific context.
-    BindTagdef {
-        /// The contextual type declaration.
-        def: TydefId,
-
-        /// Statics for the input slots of the left-hand parameter context.
-        params: InstrList,
-
-        /// The nominal type being provided.
-        bind: TagdefId,
-
-        /// Statics for the input slots of the right-hand parameter context.
-        args: InstrList,
-    },
-
-    /// Provide a type alias for a contextual type parametrized by a specific context.
-    BindAliasdef {
-        /// The contextual type declaration.
-        def: TydefId,
-
-        /// Statics for the input slots of the left-hand parameter context.
-        params: InstrList,
-
-        /// The type alias being provided.
-        bind: AliasdefId,
-
-        /// Statics for the input slots of the right-hand parameter context.
-        args: InstrList,
     },
 
     /// Provide a contextual function parametrized by a specific context.
@@ -331,29 +301,11 @@ pub enum Instr {
         /// The contextual function declaration.
         def: SigdefId,
 
-        /// Statics for the input slots of the left-hand parameter context.
-        params: InstrList,
+        /// A mapping from unfixed inputs to the full inputs of the contextual function.
+        param: InstrId,
 
-        /// The function being provided.
+        /// A mapping from unfixed inputs to a fully concrete function.
         bind: InstrId,
-
-        /// Statics for the input slots of the right-hand parameter context.
-        args: InstrList,
-    },
-
-    /// Provide a defined function for a contextual function parametrized by a specific context.
-    BindFndef {
-        /// The contextual function declaration.
-        def: SigdefId,
-
-        /// Statics for the input slots of the left-hand parameter context.
-        params: InstrList,
-
-        /// The function being provided.
-        bind: FndefId,
-
-        /// Statics for the input slots of the right-hand parameter context.
-        args: InstrList,
     },
 
     /// Provide a contextual value parametrized by a specific context.
@@ -361,26 +313,11 @@ pub enum Instr {
         /// The contextual value declaration.
         def: ValdefId,
 
-        /// Statics for the input slots of the left-hand parameter context.
-        params: InstrList,
+        /// A mapping from unfixed inputs to the full inputs of the contextual value.
+        param: InstrId,
 
-        /// The value being provided.
+        /// A mapping from unfixed inputs to a fully concrete value.
         bind: InstrId,
-
-        /// Statics for the input slots of the right-hand parameter context.
-        args: InstrList,
-    },
-
-    /// Provide a literal value for a contextual value parametrized by a specific context.
-    BindLit {
-        /// The contextual value declaration.
-        def: ValdefId,
-
-        /// Statics for the input slots of the left-hand parameter context.
-        params: InstrList,
-
-        /// The literal value being provided.
-        bind: Val,
     },
 
     /// Provide a composite context parametrized by a specific context.
@@ -388,14 +325,11 @@ pub enum Instr {
         /// The composite context definition.
         def: CtxdefId,
 
-        /// Statics for the input slots of the left-hand parameter context.
-        params: InstrList,
+        /// A mapping from unfixed inputs to the full inputs of the composite context parameter.
+        param: InstrList,
 
-        /// The context being provided.
+        /// A mapping from unfixed inputs to the full inputs of the composite context.
         bind: InstrId,
-
-        /// Statics for the input slots of the right-hand parameter context.
-        args: InstrList,
     },
 
     /// A function signature.
@@ -543,49 +477,37 @@ pub enum IntType {
     Int,
 }
 
+/// A lambda that takes contextual parameters and returns nothing.
 #[derive(Clone, Copy, Debug)]
-pub struct Tydef {
-    pub ctx: Body,
-}
+pub struct Tydef(Body);
 
+/// A lambda that takes contextual parameters and returns the inner type for this nominal type.
 #[derive(Clone, Copy, Debug)]
-pub struct Tagdef {
-    pub ctx: Body,
-    pub inner: Body,
-}
+pub struct Tagdef(Body);
 
+/// A lambda that takes contextual parameters and returns a type.
 #[derive(Clone, Copy, Debug)]
-pub struct Aliasdef {
-    pub ctx: Body,
-    pub def: Body,
-}
+pub struct Aliasdef(Body);
 
+/// A lambda that takes contextual parameters and returns a function signature.
 #[derive(Clone, Copy, Debug)]
-pub struct Sigdef {
-    pub ctx: Body,
-    pub sig: Body,
-}
+pub struct Sigdef(Body);
 
+/// A lambda that takes contextual parameters and returns a type.
 #[derive(Clone, Copy, Debug)]
-pub struct Valdef {
-    pub ctx: Body,
-    pub ty: Body,
-}
+pub struct Valdef(Body);
 
+/// A lambda that returns a lambda that returns a context.
 #[derive(Clone, Copy, Debug)]
-pub struct Ctxdef {
-    pub ctx: Body,
-    pub def: Body,
-}
+pub struct Ctxdef(Body);
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct IR {
     pub modules: IndexVec<ModuleId, ()>,
     pub strings: Strings,
     pub instrs: IndexVec<InstrId, Instr>,
     pub items: IndexVec<ItemId, InstrId>,
     pub records: IndexVec<RecordId, (StrId, InstrId)>,
-    pub empty: Body,
     pub tydefs: IndexVec<TydefId, Tydef>,
     pub tagdefs: IndexVec<TagdefId, Tagdef>,
     pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
@@ -594,42 +516,6 @@ pub struct IR {
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
     pub bodies: IndexVec<FndefId, Body>,
-}
-
-impl Default for IR {
-    fn default() -> Self {
-        let mut instrs = IndexVec::new();
-        let mut items = IndexVec::new();
-        let empty = instrs.push(Instr::Ctx {
-            slots: IdRange::new(&mut items, Vec::new()),
-        });
-        let body = IdRange {
-            start: empty,
-            end: instrs.len_idx(),
-        };
-        Self {
-            modules: Default::default(),
-            strings: Default::default(),
-            instrs,
-            items,
-            records: Default::default(),
-            empty: Body::new(body, empty),
-            tydefs: Default::default(),
-            tagdefs: Default::default(),
-            aliasdefs: Default::default(),
-            sigdefs: Default::default(),
-            fndefs: Default::default(),
-            valdefs: Default::default(),
-            ctxdefs: Default::default(),
-            bodies: Default::default(),
-        }
-    }
-}
-
-impl IR {
-    pub fn empty(&self) -> Body {
-        self.empty
-    }
 }
 
 type ModuleNames<T> = HashMap<(ModuleId, StrId), T>;
