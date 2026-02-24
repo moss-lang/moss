@@ -181,20 +181,6 @@ pub enum Expr {
         /// The runtime argument value.
         arg: InstrId,
     },
-
-    /// Call a non-contextual function.
-    ///
-    /// Type: the function's result type.
-    CallDirect {
-        /// The function.
-        func: FndefId,
-
-        /// Statics for the input slots of the parameter context for the function.
-        params: InstrList,
-
-        /// The runtime argument value.
-        arg: InstrId,
-    },
 }
 
 /// An instruction.
@@ -500,27 +486,27 @@ pub enum IntType {
 
 /// A lambda that takes contextual parameters and returns nothing.
 #[derive(Clone, Copy, Debug)]
-pub struct Tydef(Body);
+pub struct Tydef(pub Body);
 
 /// A lambda that takes contextual parameters and returns the inner type for this nominal type.
 #[derive(Clone, Copy, Debug)]
-pub struct Tagdef(Body);
+pub struct Tagdef(pub Body);
 
 /// A lambda that takes contextual parameters and returns a type.
 #[derive(Clone, Copy, Debug)]
-pub struct Aliasdef(Body);
+pub struct Aliasdef(pub Body);
 
 /// A lambda that takes contextual parameters and returns a function signature.
 #[derive(Clone, Copy, Debug)]
-pub struct Sigdef(Body);
+pub struct Sigdef(pub Body);
 
 /// A lambda that takes contextual parameters and returns a type.
 #[derive(Clone, Copy, Debug)]
-pub struct Valdef(Body);
+pub struct Valdef(pub Body);
 
 /// A lambda that returns a lambda that returns a context.
 #[derive(Clone, Copy, Debug)]
-pub struct Ctxdef(Body);
+pub struct Ctxdef(pub Body);
 
 #[derive(Debug, Default)]
 pub struct IR {
