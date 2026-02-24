@@ -209,6 +209,15 @@ pub enum Instr {
         result: InstrId,
     },
 
+    /// Apply a lambda to some arguments.
+    Apply {
+        /// The lambda to apply.
+        lambda: InstrId,
+
+        /// The arguments.
+        args: InstrList,
+    },
+
     /// A tuple of items.
     Stack {
         /// The items to stack together.
@@ -251,13 +260,16 @@ pub enum Instr {
         param: InstrId,
     },
 
-    /// A nominal type parametrized by a specific context.
+    /// A lambda from context to a specific nominal type.
     Tagdef {
         /// The nominal type definition.
         def: TagdefId,
+    },
 
-        /// Statics destructured to satisfy the input slots of the parameter context.
-        params: InstrList,
+    /// A lambda from context to a specific type alias.
+    Aliasdef {
+        /// The type alias definition.
+        def: AliasdefId,
     },
 
     /// A structural tuple of other types.
@@ -933,6 +945,13 @@ impl<'a> Lower<'a> {
         }
     }
 
+    fn items(&mut self, instrs: &[InstrId]) -> InstrList {
+        let start = self.ir.items.len_idx();
+        self.ir.items.extend_from_slice(IndexSlice::new(instrs));
+        let end = self.ir.items.len_idx();
+        IdRange { start, end }
+    }
+
     fn emit(&mut self, instr: Instr) -> InstrId {
         self.ir.instrs.push(instr)
     }
@@ -944,7 +963,7 @@ impl<'a> Lower<'a> {
     }
 
     fn ty_tuple(&mut self, elems: Vec<InstrId>) -> InstrId {
-        let elems = IdRange::new(&mut self.ir.items, elems);
+        let elems = self.items(&elems);
         self.emit(Instr::Tuple { elems })
     }
 
@@ -952,11 +971,15 @@ impl<'a> Lower<'a> {
         self.ty_tuple(Vec::new())
     }
 
-    fn invoke(&mut self, destruct: &[InstrId], target: Body) -> LowerResult<Vec<InstrId>> {
+    fn invoke(&mut self, destruct: &[InstrId], target: InstrId) -> LowerResult<Vec<InstrId>> {
         todo!()
     }
 
-    fn invoke_need(&mut self, destruct: &[InstrId], target: Body) -> LowerResult<Vec<InstrId>> {
+    fn invoke_need(
+        &mut self,
+        destruct: &[InstrId],
+        target: Body,
+    ) -> LowerResult<(Vec<InstrId>, Vec<InstrId>)> {
         todo!()
     }
 
@@ -1035,9 +1058,9 @@ impl<'a> Lower<'a> {
                 Named::Tydef(def) => {
                     let Tydef(target) = self.ir.tydefs[def];
                     self.emit(Instr::Lambda);
-                    let construct = self.invoke_need(&destruct_lhs, target)?;
+                    let (construct, _) = self.invoke_need(&destruct_lhs, target)?;
+                    let args = self.items(&construct);
                     let bind = self.extract_ty(&slots, def, &construct)?;
-                    let args = IdRange::new(&mut self.ir.items, construct);
                     let result = self.emit(Instr::Bind { args, bind });
                     let bind = self.emit(Instr::EndLambda { result });
                     Ok(self.emit(Instr::BindTydef { def, bind }))
@@ -1045,9 +1068,9 @@ impl<'a> Lower<'a> {
                 Named::Sigdef(def) => {
                     let Sigdef(target) = self.ir.sigdefs[def];
                     self.emit(Instr::Lambda);
-                    let construct = self.invoke_need(&destruct_lhs, target)?;
+                    let (construct, _) = self.invoke_need(&destruct_lhs, target)?;
+                    let args = self.items(&construct);
                     let bind = self.extract_sig(&slots, def, &construct)?;
-                    let args = IdRange::new(&mut self.ir.items, construct);
                     let result = self.emit(Instr::Bind { args, bind });
                     let bind = self.emit(Instr::EndLambda { result });
                     Ok(self.emit(Instr::BindSigdef { def, bind }))
@@ -1055,9 +1078,9 @@ impl<'a> Lower<'a> {
                 Named::Valdef(def) => {
                     let Valdef(target) = self.ir.valdefs[def];
                     self.emit(Instr::Lambda);
-                    let construct = self.invoke_need(&destruct_lhs, target)?;
+                    let (construct, _) = self.invoke_need(&destruct_lhs, target)?;
                     let bind = self.extract_val(&slots, def, &construct)?;
-                    let args = IdRange::new(&mut self.ir.items, construct);
+                    let args = self.items(&construct);
                     let result = self.emit(Instr::Bind { args, bind });
                     let bind = self.emit(Instr::EndLambda { result });
                     Ok(self.emit(Instr::BindValdef { def, bind }))
@@ -1065,9 +1088,9 @@ impl<'a> Lower<'a> {
                 Named::Ctxdef(def) => {
                     let Ctxdef(target) = self.ir.ctxdefs[def];
                     self.emit(Instr::Lambda);
-                    let construct = self.invoke_need(&destruct_lhs, target)?;
+                    let (construct, _) = self.invoke_need(&destruct_lhs, target)?;
                     let bind = self.extract_ctx(&slots, def, &construct)?;
-                    let args = IdRange::new(&mut self.ir.items, construct);
+                    let args = self.items(&construct);
                     let result = self.emit(Instr::Bind { args, bind });
                     let bind = self.emit(Instr::EndLambda { result });
                     Ok(self.emit(Instr::BindCtxdef { def, bind }))
@@ -1081,10 +1104,10 @@ impl<'a> Lower<'a> {
                 Named::Valdef(def) => {
                     let Valdef(target) = self.ir.valdefs[def];
                     self.emit(Instr::Lambda);
-                    let construct = self.invoke_need(&destruct_lhs, target)?;
+                    let (construct, _) = self.invoke_need(&destruct_lhs, target)?;
                     let (val, _) = self.lit(token)?;
                     let bind = self.emit(Instr::Lit { val });
-                    let args = IdRange::new(&mut self.ir.items, construct);
+                    let args = self.items(&construct);
                     let result = self.emit(Instr::Bind { args, bind });
                     let bind = self.emit(Instr::EndLambda { result });
                     Ok(self.emit(Instr::BindValdef { def, bind }))
@@ -1106,8 +1129,8 @@ impl<'a> Lower<'a> {
                             target_rhs,
                         )?;
                         let bind = self.extract_ty(param, &slots, tydef, &construct_rhs)?;
-                        let params = IdRange::new(&mut self.ir.items, construct_lhs);
-                        let args = IdRange::new(&mut self.ir.items, construct_rhs);
+                        let params = self.items(&construct_lhs);
+                        let args = self.items(&construct_rhs);
                         Ok(self.emit(Instr::BindTydef {
                             def,
                             params,
@@ -1123,15 +1146,14 @@ impl<'a> Lower<'a> {
                         } = self.ir.tagdefs[tagdef];
                         let construct_lhs = self.invoke_open(param, &destruct_lhs, target_lhs)?;
                         let construct_rhs = self.invoke_bind(
-                            param,
                             &construct_lhs,
                             target_lhs,
                             &destruct_rhs,
                             target_rhs,
                         )?;
                         let bind = tagdef;
-                        let params = IdRange::new(&mut self.ir.items, construct_lhs);
-                        let args = IdRange::new(&mut self.ir.items, construct_rhs);
+                        let params = self.items(&construct_lhs);
+                        let args = self.items(&construct_rhs);
                         Ok(self.emit(Instr::BindTagdef {
                             def,
                             params,
@@ -1154,8 +1176,8 @@ impl<'a> Lower<'a> {
                             target_rhs,
                         )?;
                         let bind = aliasdef;
-                        let params = IdRange::new(&mut self.ir.items, construct_lhs);
-                        let args = IdRange::new(&mut self.ir.items, construct_rhs);
+                        let params = self.items(&construct_lhs);
+                        let args = self.items(&construct_rhs);
                         Ok(self.emit(Instr::BindAliasdef {
                             def,
                             params,
@@ -1182,8 +1204,8 @@ impl<'a> Lower<'a> {
                             target_rhs,
                         )?;
                         let bind = self.extract_sig(param, &slots, sigdef, &construct_rhs)?;
-                        let params = IdRange::new(&mut self.ir.items, construct_lhs);
-                        let args = IdRange::new(&mut self.ir.items, construct_rhs);
+                        let params = self.items(&construct_lhs);
+                        let args = self.items(&construct_rhs);
                         Ok(self.emit(Instr::BindSigdef {
                             def,
                             params,
@@ -1210,8 +1232,8 @@ impl<'a> Lower<'a> {
                             target_rhs,
                         )?;
                         let bind = fndef;
-                        let params = IdRange::new(&mut self.ir.items, construct_lhs);
-                        let args = IdRange::new(&mut self.ir.items, construct_rhs);
+                        let params = self.items(&construct_lhs);
+                        let args = self.items(&construct_rhs);
                         Ok(self.emit(Instr::BindFndef {
                             def,
                             params,
@@ -1238,8 +1260,8 @@ impl<'a> Lower<'a> {
                             target_rhs,
                         )?;
                         let bind = self.extract_val(param, &slots, valdef, &construct_rhs)?;
-                        let params = IdRange::new(&mut self.ir.items, construct_lhs);
-                        let args = IdRange::new(&mut self.ir.items, construct_rhs);
+                        let params = self.items(&construct_lhs);
+                        let args = self.items(&construct_rhs);
                         Ok(self.emit(Instr::BindValdef {
                             def,
                             params,
@@ -1270,8 +1292,8 @@ impl<'a> Lower<'a> {
                     Named::Tydef(def) => {
                         let Tydef(target) = self.ir.tydefs[def];
                         self.emit(Instr::Lambda);
-                        let construct = self.invoke_need(&destruct, target)?;
-                        let items = IdRange::new(&mut self.ir.items, construct);
+                        let (construct, _) = self.invoke_need(&destruct, target)?;
+                        let items = self.items(&construct);
                         let result = self.emit(Instr::Stack { items });
                         let param = self.emit(Instr::EndLambda { result });
                         Ok(self.emit(Instr::NeedTydef { def, param }))
@@ -1279,8 +1301,8 @@ impl<'a> Lower<'a> {
                     Named::Sigdef(def) => {
                         let Sigdef(target) = self.ir.sigdefs[def];
                         self.emit(Instr::Lambda);
-                        let construct = self.invoke_need(&destruct, target)?;
-                        let items = IdRange::new(&mut self.ir.items, construct);
+                        let (construct, _) = self.invoke_need(&destruct, target)?;
+                        let items = self.items(&construct);
                         let result = self.emit(Instr::Stack { items });
                         let param = self.emit(Instr::EndLambda { result });
                         Ok(self.emit(Instr::NeedSigdef { def, param }))
@@ -1288,8 +1310,8 @@ impl<'a> Lower<'a> {
                     Named::Valdef(def) => {
                         let Valdef(target) = self.ir.valdefs[def];
                         self.emit(Instr::Lambda);
-                        let construct = self.invoke_need(&destruct, target)?;
-                        let items = IdRange::new(&mut self.ir.items, construct);
+                        let (construct, _) = self.invoke_need(&destruct, target)?;
+                        let items = self.items(&construct);
                         let result = self.emit(Instr::Stack { items });
                         let param = self.emit(Instr::EndLambda { result });
                         Ok(self.emit(Instr::NeedValdef { def, param }))
@@ -1297,8 +1319,8 @@ impl<'a> Lower<'a> {
                     Named::Ctxdef(def) => {
                         let Ctxdef(target) = self.ir.ctxdefs[def];
                         self.emit(Instr::Lambda);
-                        let construct = self.invoke_need(&destruct, target)?;
-                        let items = IdRange::new(&mut self.ir.items, construct);
+                        let (construct, _) = self.invoke_need(&destruct, target)?;
+                        let items = self.items(&construct);
                         let result = self.emit(Instr::Stack { items });
                         let param = self.emit(Instr::EndLambda { result });
                         Ok(self.emit(Instr::NeedCtxdef { def, param }))
@@ -1323,7 +1345,7 @@ impl<'a> Lower<'a> {
     fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Body> {
         let builder = self.builder();
         let slots = self.needs_raw(needs)?;
-        let items = IdRange::new(&mut self.ir.items, slots);
+        let items = self.items(&slots);
         let ctx = self.emit(Instr::Stack { items });
         Ok(self.finish(builder, ctx))
     }
@@ -1373,7 +1395,7 @@ impl<'a> Lower<'a> {
             parse::Return::Type(ty) => self.parse_ty(&slots, ty)?,
             parse::Return::Bind(needs) => {
                 let slots = self.needs_raw(needs)?;
-                let items = IdRange::new(&mut self.ir.items, slots);
+                let items = self.items(&slots);
                 self.emit(Instr::Stack { items })
             }
         };
@@ -1964,7 +1986,7 @@ impl LowerBody<'_, '_> {
                 let ty = self.extract_ty(tydef, &construct_ty)?;
 
                 let construct_val = self.invoke(&[ty_lit], ctx_valdef)?;
-                let params_val = IdRange::new(&mut self.x.ir.items, construct_val);
+                let params_val = self.x.items(&construct_val);
                 let val_lit = self.emit(Instr::BindLit {
                     def: valdef,
                     params: params_val,
@@ -1974,7 +1996,7 @@ impl LowerBody<'_, '_> {
                 let construct_func = self.invoke(&[ty_lit, ty, val_lit], ctx_sigdef)?;
                 let func = self.extract_sig(sigdef, &construct_func)?;
 
-                let params = IdRange::new(&mut self.x.ir.items, construct_func);
+                let params = self.x.items(&construct_func);
                 let ty_unit = self.x.ty_unit();
                 let arg = self.instr_tuple(ty_unit, &[]).val;
                 Ok(self.instr(ty, Expr::Call { func, params, arg }))
@@ -2002,7 +2024,7 @@ impl LowerBody<'_, '_> {
                 let inside = self.expr(inner)?;
                 let Tagdef { ctx, inner } = self.x.ir.tagdefs[tagdef];
                 let construct = self.invoke_self_slots(ctx)?;
-                let params = IdRange::new(&mut self.x.ir.items, construct);
+                let params = self.x.items(&construct);
                 let ty = self.emit(Instr::Tagdef {
                     def: tagdef,
                     params,
@@ -2068,7 +2090,7 @@ impl LowerBody<'_, '_> {
                 let arg = self.instr_tuple(ty_args, &args_val).val;
                 // TODO: Contextually set `this` to `obj`.
                 let func = self.extract_sig(sigdef, &construct)?;
-                let params = IdRange::new(&mut self.x.ir.items, construct);
+                let params = self.x.items(&construct);
                 Ok(self.instr(ty_result, Expr::Call { func, params, arg }))
             }
             parse::Expr::Call(callee, binds, args) => {
@@ -2090,7 +2112,7 @@ impl LowerBody<'_, '_> {
                 self.expect_ty(ty_param, ty_args)?;
                 let arg = self.instr_tuple(ty_args, &args_val).val;
                 let func = self.extract_sig(sigdef, &construct)?;
-                let params = IdRange::new(&mut self.x.ir.items, construct);
+                let params = self.x.items(&construct);
                 Ok(self.instr(ty_result, Expr::Call { func, params, arg }))
             }
             parse::Expr::Unary(op, inner) => {
@@ -2155,7 +2177,7 @@ impl LowerBody<'_, '_> {
                     };
                     slots.push(slot);
                 }
-                let slots = IdRange::new(&mut self.x.ir.items, slots);
+                let params = self.x.items(&slots);
                 let ty = self.emit(Instr::Context);
                 let val = self.emit(Instr::Ctx { slots });
                 Ok(Typed { ty, val })
