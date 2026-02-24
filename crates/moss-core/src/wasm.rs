@@ -848,7 +848,7 @@ impl<'a> Wasm<'a> {
                 self.get_locals(self.tuples[elem], start);
             }
             Expr::Val { val } => todo!(),
-            Expr::Call { func, params, arg } => todo!(),
+            Expr::Call { func, arg } => todo!(),
         }
     }
 
