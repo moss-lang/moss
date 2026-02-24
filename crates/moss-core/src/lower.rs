@@ -2177,7 +2177,7 @@ impl LowerBody<'_, '_> {
                     };
                     slots.push(slot);
                 }
-                let params = self.x.items(&slots);
+                let slots = self.x.items(&slots);
                 let ty = self.emit(Instr::Context);
                 let val = self.emit(Instr::Ctx { slots });
                 Ok(Typed { ty, val })
