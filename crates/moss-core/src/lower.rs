@@ -1270,20 +1270,12 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn needs_raw(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Vec<InstrId>> {
+    fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Vec<InstrId>> {
         let mut slots = Vec::new();
         for need in needs {
             slots.push(self.need(&slots, need)?);
         }
         Ok(slots)
-    }
-
-    fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Body> {
-        let builder = self.builder();
-        let slots = self.needs_raw(needs)?;
-        let items = self.items(&slots);
-        let ctx = self.emit(Instr::Stack { items });
-        Ok(self.finish(builder, ctx))
     }
 
     fn parse_ty(&mut self, slots: &[InstrId], ty: parse::TypeId) -> LowerResult<InstrId> {
@@ -1322,7 +1314,7 @@ impl<'a> Lower<'a> {
             def,
         } = fndef;
         let builder = self.builder();
-        let slots = self.needs_raw(needs)?;
+        let slots = self.needs(needs)?;
         let elems = (params.into_iter())
             .map(|arg| self.parse_ty(&slots, self.tree.params[arg].ty))
             .collect::<LowerResult<Vec<InstrId>>>()?;
@@ -1331,7 +1323,7 @@ impl<'a> Lower<'a> {
             parse::Return::Unit => self.ty_unit(),
             parse::Return::Type(ty) => self.parse_ty(&slots, ty)?,
             parse::Return::Bind(needs) => {
-                let slots = self.needs_raw(needs)?;
+                let slots = self.needs(needs)?;
                 let items = self.items(&slots);
                 self.emit(Instr::Stack { items })
             }
@@ -1354,7 +1346,11 @@ impl<'a> Lower<'a> {
             match decl {
                 parse::Decl::Tydef(id) => {
                     let parse::Tydef { name, needs } = self.tree.tydefs[id];
-                    let body = self.needs(needs)?;
+                    let builder = self.builder();
+                    self.needs(needs)?;
+                    let items = self.items(&[]);
+                    let ctx = self.emit(Instr::Stack { items });
+                    let body = self.finish(builder, ctx);
                     let lowered = self.ir.tydefs.push(Tydef(body));
                     let string = self.name(name);
                     self.names
@@ -1364,7 +1360,7 @@ impl<'a> Lower<'a> {
                 parse::Decl::Tagdef(id) => {
                     let parse::Tagdef { name, needs, def } = self.tree.tagdefs[id];
                     let builder = self.builder();
-                    let slots = self.needs_raw(needs)?;
+                    let slots = self.needs(needs)?;
                     let ty = self.parse_ty(&slots, def)?;
                     let body = self.finish(builder, ty);
                     let lowered = self.ir.tagdefs.push(Tagdef(body));
@@ -1376,7 +1372,7 @@ impl<'a> Lower<'a> {
                 parse::Decl::Aliasdef(id) => {
                     let parse::Aliasdef { name, needs, def } = self.tree.aliasdefs[id];
                     let builder = self.builder();
-                    let slots = self.needs_raw(needs)?;
+                    let slots = self.needs(needs)?;
                     let ty = self.parse_ty(&slots, def)?;
                     let body = self.finish(builder, ty);
                     let lowered = self.ir.aliasdefs.push(Aliasdef(body));
@@ -1422,7 +1418,7 @@ impl<'a> Lower<'a> {
                 parse::Decl::Valdef(id) => {
                     let parse::Valdef { name, needs, ty } = self.tree.valdefs[id];
                     let builder = self.builder();
-                    let slots = self.needs_raw(needs)?;
+                    let slots = self.needs(needs)?;
                     let ty = self.parse_ty(&slots, ty)?;
                     let body = self.finish(builder, ty);
                     let lowered = self.ir.valdefs.push(Valdef(body));
@@ -1433,9 +1429,20 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Ctxdef(id) => {
                     let parse::Ctxdef { name, needs, def } = self.tree.ctxdefs[id];
-                    let ctx = self.needs(empty, needs)?;
-                    let def = self.needs(ctx, def)?;
-                    let lowered = self.ir.ctxdefs.push(Ctxdef { ctx, def });
+                    let builder = self.builder();
+                    let mut slots = Vec::new();
+                    for need in needs {
+                        slots.push(self.need(&slots, need)?);
+                    }
+                    self.emit(Instr::Lambda);
+                    for need in def {
+                        slots.push(self.need(&slots, need)?);
+                    }
+                    let items = self.items(&slots[needs.len()..]);
+                    let result = self.emit(Instr::Stack { items });
+                    let lambda = self.emit(Instr::EndLambda { result });
+                    let body = self.finish(builder, lambda);
+                    let lowered = self.ir.ctxdefs.push(Ctxdef(body));
                     let string = self.name(name);
                     self.names
                         .names
