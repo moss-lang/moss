@@ -14,7 +14,7 @@ use crate::{
     intern::StrId,
     lower::{
         self, Body, ElemId, Expr, FieldId, FndefId, IR, Instr, InstrId, InstrList, ModuleId, Named,
-        Names, Sigdef, SigdefId, Tagdef, ValdefId,
+        Names, Sigdef, SigdefId, ValdefId,
     },
     prelude::Lib,
     tuples::{TupleLoc, TupleRange, Tuples},
@@ -804,7 +804,7 @@ impl<'a> Wasm<'a> {
             Expr::Copy { value } => {
                 self.get(value);
             }
-            Expr::Nominal { def, params, inner } => todo!(),
+            Expr::Nominal { ty, inner } => todo!(),
             Expr::Tuple { elems } => {
                 for &id in elems.get(&self.ir.items) {
                     self.get(id);

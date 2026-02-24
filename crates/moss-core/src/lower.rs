@@ -114,11 +114,8 @@ pub enum Expr {
     ///
     /// Type: the given nominal type.
     Nominal {
-        /// The nominal type definition.
-        def: TagdefId,
-
-        /// Statics for the input slots of the parameter context for the nominal type.
-        params: InstrList,
+        /// The nominal type.
+        ty: InstrId,
 
         /// The inner value.
         inner: InstrId,
@@ -1008,13 +1005,7 @@ impl<'a> Lower<'a> {
         todo!()
     }
 
-    fn inline(
-        &mut self,
-        param: Body,
-        ctx: Body,
-        construct: &[InstrId],
-        body: Body,
-    ) -> LowerResult<InstrId> {
+    fn inline(&mut self, body: Body, construct: &[InstrId]) -> LowerResult<InstrId> {
         todo!()
     }
 
@@ -1043,6 +1034,7 @@ impl<'a> Lower<'a> {
         let parse::Bind { key, val } = self.tree.binds[bind];
         let (lhs, destruct_lhs) = self.spec(slots, key)?;
         match val {
+            // TODO: Use the "extract" functions correctly in this branch.
             None => match lhs {
                 Named::Tydef(def) => {
                     let Tydef(target) = self.ir.tydefs[def];
@@ -1588,6 +1580,10 @@ impl LowerBody<'_, '_> {
         self.x.extract_ctx(&self.slots, def, &self.slots)
     }
 
+    fn inline(&mut self, body: Body, construct: &[InstrId]) -> LowerResult<InstrId> {
+        self.x.inline(body, construct)
+    }
+
     /// Get the nominal type definition of a value, or [`None`] if the value is not nominally typed.
     fn nominal(&self, ty: InstrId) -> Option<TagdefId> {
         todo!()
@@ -1880,38 +1876,31 @@ impl LowerBody<'_, '_> {
                     ),
                 };
 
-                let Tydef { ctx: ctx_tydef_lit } = self.x.ir.tydefs[tydef_lit];
-                let Tydef { ctx: ctx_tydef } = self.x.ir.tydefs[tydef];
-                let Valdef {
-                    ctx: ctx_valdef,
-                    ty: _,
-                } = self.x.ir.valdefs[valdef];
-                let Sigdef {
-                    ctx: ctx_sigdef,
-                    sig: _,
-                } = self.x.ir.sigdefs[sigdef];
+                let Tydef(body_tydef_lit) = self.x.ir.tydefs[tydef_lit];
+                let Tydef(body_tydef) = self.x.ir.tydefs[tydef];
+                let Valdef(body_valdef) = self.x.ir.valdefs[valdef];
+                let Sigdef(body_sigdef) = self.x.ir.sigdefs[sigdef];
 
-                let construct_ty_lit = self.invoke(&[], ctx_tydef_lit)?;
-                let ty_lit = self.extract_ty(tydef_lit, &construct_ty_lit)?;
+                let lambda_ty_lit = self.extract_ty(tydef_lit)?;
+                let construct_ty_lit = self.invoke(lambda_ty_lit)?;
 
-                let construct_ty = self.invoke(&[], ctx_tydef)?;
-                let ty = self.extract_ty(tydef, &construct_ty)?;
+                let lambda_ty = self.extract_ty(tydef)?;
+                let construct_ty = self.invoke(lambda_ty)?;
 
-                let construct_val = self.invoke(&[ty_lit], ctx_valdef)?;
-                let params_val = self.x.items(&construct_val);
-                let val_lit = self.emit(Instr::BindLit {
-                    def: valdef,
-                    params: params_val,
-                    bind: val,
+                let val_lit = self.emit(Instr::Lit { val });
+
+                // TODO: Use "invoke" correctly here.
+                let lambda_func = self.extract_sig(sigdef)?;
+                let construct_func = self.invoke(lambda_func)?;
+
+                let items = self.x.items(&construct_func);
+                let func = self.emit(Instr::Apply {
+                    lambda: lambda_func,
+                    args: items,
                 });
-
-                let construct_func = self.invoke(&[ty_lit, ty, val_lit], ctx_sigdef)?;
-                let func = self.extract_sig(sigdef, &construct_func)?;
-
-                let params = self.x.items(&construct_func);
                 let ty_unit = self.x.ty_unit();
                 let arg = self.instr_tuple(ty_unit, &[]).val;
-                Ok(self.instr(ty, Expr::Call { func, params, arg }))
+                Ok(self.instr(lambda_ty, Expr::Call { func, arg }))
             }
             parse::Expr::Path(path) => {
                 let name = self.x.name(path.last);
@@ -1923,33 +1912,26 @@ impl LowerBody<'_, '_> {
                 let Named::Valdef(valdef) = self.x.path(path)? else {
                     return Err(LowerError::NotVal(path.last));
                 };
-                let Valdef { ctx, ty } = self.x.ir.valdefs[valdef];
-                let construct = self.invoke(ctx)?;
-                let val = self.extract_val(valdef, &construct)?;
-                let ty_inlined = self.inline(ctx, &construct, ty)?;
-                Ok(self.instr(ty_inlined, Expr::Val { val }))
+                let Valdef(body) = self.x.ir.valdefs[valdef];
+                let val = self.extract_val(valdef)?;
+                let construct = self.invoke(val)?;
+                let ty = self.inline(body, &construct)?;
+                Ok(self.instr(ty, Expr::Val { val }))
             }
             parse::Expr::Tag(path, inner) => {
                 let Named::Tagdef(tagdef) = self.x.path(path)? else {
                     return Err(LowerError::NotNominal(path.last));
                 };
                 let inside = self.expr(inner)?;
-                let Tagdef { ctx, inner } = self.x.ir.tagdefs[tagdef];
-                let construct = self.invoke(ctx)?;
-                let params = self.x.items(&construct);
-                let ty = self.emit(Instr::Tagdef {
-                    def: tagdef,
-                    params,
-                });
-                self.expect_ty(ty, inside.ty)?; // TODO: Check the inner type, not the outer type.
-                Ok(self.instr(
-                    ty,
-                    Expr::Nominal {
-                        def: tagdef,
-                        params,
-                        inner: inside.val,
-                    },
-                ))
+                let Tagdef(body) = self.x.ir.tagdefs[tagdef];
+                let lambda = self.emit(Instr::Tagdef { def: tagdef });
+                let construct = self.invoke(lambda)?;
+                let args = self.x.items(&construct);
+                let ty = self.emit(Instr::Apply { lambda, args });
+                let expected = self.inline(body, &construct)?;
+                self.expect_ty(expected, inside.ty)?;
+                let inner = inside.val;
+                Ok(self.instr(ty, Expr::Nominal { ty, inner }))
             }
             parse::Expr::Record(_lbrace, fields, _rbrace) => {
                 let sorted = fields
