@@ -8,6 +8,7 @@ use std::{
 use index_vec::{IndexSlice, IndexVec, define_index_type};
 
 use crate::{
+    dump::dump,
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex, string},
     parse::{self, Binop, Block, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
@@ -539,7 +540,7 @@ fn get_name<T: Copy>(
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Named {
     Module(ModuleId),
     Tydef(TydefId),
@@ -966,6 +967,7 @@ impl<'a> Lower<'a> {
         target: Body,
         destruct: &[InstrId],
     ) -> LowerResult<(Vec<InstrId>, Vec<InstrId>)> {
+        dump(self.ir, self.names);
         todo!()
     }
 
