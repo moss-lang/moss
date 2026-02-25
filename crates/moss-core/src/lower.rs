@@ -960,7 +960,7 @@ impl<'a> Lower<'a> {
     }
 
     fn invoke(&mut self, lambda: InstrId, destruct: &[InstrId]) -> LowerResult<Vec<InstrId>> {
-        todo!()
+        Ok(Vec::new()) // TODO
     }
 
     fn invoke_need(
@@ -971,18 +971,23 @@ impl<'a> Lower<'a> {
         Ok((Vec::new(), Vec::new())) // TODO
     }
 
+    fn extract_stub(&self, slots: &[InstrId]) -> LowerResult<InstrId> {
+        match slots.last() {
+            Some(&last) => Ok(last), // TODO
+            None => {
+                dump(self.ir, self.names);
+                panic!()
+            }
+        }
+    }
+
     fn extract_ty(
         &mut self,
         slots: &[InstrId],
         def: TydefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        dump(self.ir, self.names);
-        println!();
-        println!("slots = {slots:?}");
-        println!("def = {def:?}");
-        println!("destruct = {destruct:?}");
-        todo!()
+        self.extract_stub(slots)
     }
 
     fn extract_sig(
@@ -991,7 +996,7 @@ impl<'a> Lower<'a> {
         def: SigdefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        todo!()
+        self.extract_stub(slots)
     }
 
     fn extract_val(
@@ -1000,7 +1005,7 @@ impl<'a> Lower<'a> {
         def: ValdefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        todo!()
+        self.extract_stub(slots)
     }
 
     fn extract_ctx(
@@ -1009,7 +1014,7 @@ impl<'a> Lower<'a> {
         def: CtxdefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        todo!()
+        self.extract_stub(slots)
     }
 
     fn inline(&mut self, body: Body, construct: &[InstrId]) -> LowerResult<InstrId> {
