@@ -968,8 +968,7 @@ impl<'a> Lower<'a> {
         target: Body,
         destruct: &[InstrId],
     ) -> LowerResult<(Vec<InstrId>, Vec<InstrId>)> {
-        dump(self.ir, self.names);
-        todo!()
+        Ok((Vec::new(), Vec::new())) // TODO
     }
 
     fn extract_ty(
@@ -978,6 +977,11 @@ impl<'a> Lower<'a> {
         def: TydefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
+        dump(self.ir, self.names);
+        println!();
+        println!("slots = {slots:?}");
+        println!("def = {def:?}");
+        println!("destruct = {destruct:?}");
         todo!()
     }
 
