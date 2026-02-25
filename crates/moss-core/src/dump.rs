@@ -4,7 +4,7 @@ use index_vec::{IndexVec, index_vec};
 
 use crate::{
     intern::StrId,
-    lower::{Body, IR, Instr, InstrId, ModuleId, Named, Names, Tydef},
+    lower::{Body, IR, Instr, InstrId, InstrList, ModuleId, Named, Names, Tydef},
 };
 
 struct Dump<'a> {
@@ -12,6 +12,7 @@ struct Dump<'a> {
     names: &'a Names,
     source: HashMap<Named, (ModuleId, StrId)>,
     printed: IndexVec<InstrId, bool>,
+    indent: usize,
 }
 
 impl<'a> Dump<'a> {
@@ -37,38 +38,59 @@ impl<'a> Dump<'a> {
         self.named_raw(named, name)
     }
 
+    fn items(&self, items: InstrList) {
+        let mut first = true;
+        for item in items {
+            if !first {
+                print!(",");
+            }
+            first = false;
+
+            print!(" %{}", self.ir.items[item].index());
+        }
+    }
+
     fn instr(&mut self, instr: InstrId) {
-        print!("    %{} = ", instr.index());
+        let instruction = self.ir.instrs[instr];
+        print!("    ");
+        if let Instr::EndLambda { .. } = instruction {
+            self.indent -= 1;
+        }
+        for _ in 0..self.indent {
+            print!("  ")
+        }
+        print!("%{} = ", instr.index());
         if self.printed[instr] {
             println!("duplicate");
             return;
         }
 
         self.printed[instr] = true;
-        match self.ir.instrs[instr] {
-            Instr::Lambda => print!("lambda {{"),
-            Instr::EndLambda { result } => todo!(),
+        match instruction {
+            Instr::Lambda => {
+                print!("lambda");
+                self.indent += 1;
+            }
+            Instr::EndLambda { result } => {
+                print!("end lambda returning %{}", result.index());
+            }
             Instr::Apply { lambda, args } => todo!(),
             Instr::Stack { items } => {
                 print!("stack");
-
-                let mut first = true;
-                for item in items {
-                    if !first {
-                        print!(",");
-                    }
-                    first = false;
-
-                    print!(" %{}", self.ir.items[item].index());
-                }
+                self.items(items);
             }
-            Instr::NeedTydef { def, param } => todo!(),
+            Instr::NeedTydef { def, param } => {
+                print!("need type #{} via %{}", def.index(), param.index());
+            }
             Instr::NeedSigdef { def, param } => todo!(),
             Instr::NeedValdef { def, param } => todo!(),
             Instr::NeedCtxdef { def, param } => todo!(),
             Instr::Tagdef { def } => todo!(),
             Instr::Aliasdef { def } => todo!(),
-            Instr::Tuple { elems } => todo!(),
+            Instr::Tuple { elems } => {
+                print!("tuple");
+                self.items(elems);
+            }
             Instr::Record { fields } => todo!(),
             Instr::Context => todo!(),
             Instr::Fndef { def } => todo!(),
@@ -93,6 +115,7 @@ impl<'a> Dump<'a> {
     }
 
     fn body(&mut self, body: Body) {
+        self.indent = 0;
         for instr in body.body {
             self.instr(instr);
         }
@@ -150,8 +173,16 @@ impl<'a> Dump<'a> {
 
                     println!("unfinished {{");
                     println!("  {{");
+                    self.indent = 0;
                 }
-                Some(_) => todo!(),
+                Some(before) => {
+                    if before + 1 != instr {
+                        println!("  }}");
+                        println!();
+                        println!("  {{");
+                        self.indent = 0;
+                    }
+                }
             }
             self.instr(instr);
             prev = Some(instr);
@@ -169,6 +200,7 @@ pub fn dump(ir: &IR, names: &Names) {
         names,
         source: HashMap::new(),
         printed: index_vec![false; ir.instrs.len()],
+        indent: 0,
     }
     .program();
 }
