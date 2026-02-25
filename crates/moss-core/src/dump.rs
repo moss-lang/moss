@@ -4,7 +4,10 @@ use index_vec::{IndexVec, index_vec};
 
 use crate::{
     intern::StrId,
-    lower::{Body, IR, Instr, InstrId, InstrList, ModuleId, Named, Names, Tydef},
+    lower::{
+        Aliasdef, Body, Ctxdef, Expr, IR, Instr, InstrId, InstrList, ModuleId, Named, Names,
+        Sigdef, Tagdef, Tydef, Valdef,
+    },
 };
 
 struct Dump<'a> {
@@ -16,26 +19,59 @@ struct Dump<'a> {
 }
 
 impl<'a> Dump<'a> {
-    fn named_raw(&self, named: Named, name: StrId) -> Option<Body> {
-        match named {
-            Named::Module(_) => todo!(),
+    fn named_raw(&self, named: Named, name: Option<StrId>) -> Option<Body> {
+        let body = match named {
+            Named::Module(id) => {
+                print!("module #{}", id.index());
+                None
+            }
             Named::Tydef(def) => {
-                print!("type #{} \"{}\"", def.index(), &self.ir.strings[name]);
+                print!("type #{}", def.index());
                 let Tydef(body) = self.ir.tydefs[def];
                 Some(body)
             }
-            Named::Tagdef(def) => todo!(),
-            Named::Aliasdef(def) => todo!(),
-            Named::Sigdef(def) => todo!(),
-            Named::Fndef(def) => todo!(),
-            Named::Valdef(def) => todo!(),
-            Named::Ctxdef(def) => todo!(),
+            Named::Tagdef(def) => {
+                print!("tag #{}", def.index());
+                let Tagdef(body) = self.ir.tagdefs[def];
+                Some(body)
+            }
+            Named::Aliasdef(def) => {
+                print!("alias #{}", def.index());
+                let Aliasdef(body) = self.ir.aliasdefs[def];
+                Some(body)
+            }
+            Named::Sigdef(def) => {
+                print!("sig #{}", def.index());
+                let Sigdef(body) = self.ir.sigdefs[def];
+                Some(body)
+            }
+            Named::Fndef(def) => {
+                print!("fn #{}", def.index());
+                let Sigdef(body) = self.ir.fndefs[def];
+                Some(body)
+            }
+            Named::Valdef(def) => {
+                print!("val #{}", def.index());
+                let Valdef(body) = self.ir.valdefs[def];
+                Some(body)
+            }
+            Named::Ctxdef(def) => {
+                print!("context #{}", def.index());
+                let Ctxdef(body) = self.ir.ctxdefs[def];
+                Some(body)
+            }
+        };
+        if let Some(string) = name {
+            print!(" \"{}\"", &self.ir.strings[string]);
         }
+        body
     }
 
     fn named(&self, named: Named) -> Option<Body> {
-        let (_, name) = self.source[&named];
-        self.named_raw(named, name)
+        match self.source.get(&named) {
+            Some(&(_, name)) => self.named_raw(named, Some(name)),
+            None => self.named_raw(named, None),
+        }
     }
 
     fn items(&self, items: InstrList) {
@@ -50,16 +86,38 @@ impl<'a> Dump<'a> {
         }
     }
 
+    fn expr(&self, expr: Expr) {
+        match expr {
+            Expr::Param { ty } => {
+                print!("param typed %{}", ty.index());
+            }
+            Expr::Copy { value } => todo!(),
+            Expr::Nominal { ty, inner } => todo!(),
+            Expr::Tuple { elems } => todo!(),
+            Expr::Record { fields } => todo!(),
+            Expr::Elem { tuple, index } => {
+                print!("element {} from %{}", index.index(), tuple.index());
+            }
+            Expr::Field { record, index } => todo!(),
+            Expr::Val { val } => todo!(),
+            Expr::Call { func, arg } => todo!(),
+        }
+    }
+
     fn instr(&mut self, instr: InstrId) {
         let instruction = self.ir.instrs[instr];
         print!("    ");
-        if let Instr::EndLambda { .. } = instruction {
+        if let Instr::EndLambda { result: _ } = instruction {
             self.indent -= 1;
         }
         for _ in 0..self.indent {
             print!("  ")
         }
-        print!("%{} = ", instr.index());
+        print!("%{}", instr.index());
+        if let Instr::Expr { ty, expr: _ } = instruction {
+            print!(": %{}", ty.index());
+        }
+        print!(" = ");
         if self.printed[instr] {
             println!("duplicate");
             return;
@@ -74,17 +132,34 @@ impl<'a> Dump<'a> {
             Instr::EndLambda { result } => {
                 print!("end lambda returning %{}", result.index());
             }
-            Instr::Apply { lambda, args } => todo!(),
+            Instr::Apply { lambda, args } => {
+                print!("apply %{} to", lambda.index());
+                self.items(args);
+            }
             Instr::Stack { items } => {
                 print!("stack");
                 self.items(items);
             }
             Instr::NeedTydef { def, param } => {
-                print!("need type #{} via %{}", def.index(), param.index());
+                print!("need ");
+                self.named(Named::Tydef(def));
+                print!(" via %{}", param.index());
             }
-            Instr::NeedSigdef { def, param } => todo!(),
-            Instr::NeedValdef { def, param } => todo!(),
-            Instr::NeedCtxdef { def, param } => todo!(),
+            Instr::NeedSigdef { def, param } => {
+                print!("need ");
+                self.named(Named::Sigdef(def));
+                print!(" via %{}", param.index());
+            }
+            Instr::NeedValdef { def, param } => {
+                print!("need ");
+                self.named(Named::Valdef(def));
+                print!(" via %{}", param.index());
+            }
+            Instr::NeedCtxdef { def, param } => {
+                print!("need ");
+                self.named(Named::Ctxdef(def));
+                print!(" via %{}", param.index());
+            }
             Instr::Tagdef { def } => todo!(),
             Instr::Aliasdef { def } => todo!(),
             Instr::Tuple { elems } => {
@@ -96,12 +171,34 @@ impl<'a> Dump<'a> {
             Instr::Fndef { def } => todo!(),
             Instr::Get { ctx, slot } => todo!(),
             Instr::Lit { val } => todo!(),
-            Instr::Bind { args, bind } => todo!(),
-            Instr::BindTydef { def, bind } => todo!(),
-            Instr::BindSigdef { def, bind } => todo!(),
-            Instr::BindValdef { def, bind } => todo!(),
-            Instr::BindCtxdef { def, bind } => todo!(),
-            Instr::Sig { param, result } => todo!(),
+            Instr::Bind { args, bind } => {
+                print!("bind");
+                self.items(args);
+                print!(" to %{}", bind.index());
+            }
+            Instr::BindTydef { def, bind } => {
+                print!("bind ");
+                self.named(Named::Tydef(def));
+                print!(" with %{}", bind.index());
+            }
+            Instr::BindSigdef { def, bind } => {
+                print!("bind ");
+                self.named(Named::Sigdef(def));
+                print!(" with %{}", bind.index());
+            }
+            Instr::BindValdef { def, bind } => {
+                print!("bind ");
+                self.named(Named::Valdef(def));
+                print!(" with %{}", bind.index());
+            }
+            Instr::BindCtxdef { def, bind } => {
+                print!("bind ");
+                self.named(Named::Ctxdef(def));
+                print!(" with %{}", bind.index());
+            }
+            Instr::Sig { param, result } => {
+                print!("sig from %{} to %{}", param.index(), result.index());
+            }
             Instr::Set { lhs, rhs } => todo!(),
             Instr::If { ty, cond } => todo!(),
             Instr::Else { result } => todo!(),
@@ -109,7 +206,9 @@ impl<'a> Dump<'a> {
             Instr::Loop => todo!(),
             Instr::EndLoop => todo!(),
             Instr::Br { depth } => todo!(),
-            Instr::Expr { ty, expr } => todo!(),
+            Instr::Expr { ty: _, expr } => {
+                self.expr(expr);
+            }
         }
         println!();
     }
@@ -120,7 +219,6 @@ impl<'a> Dump<'a> {
             self.instr(instr);
         }
         println!("    return %{}", body.result().index());
-        println!("  }}");
     }
 
     fn program(&mut self) {
@@ -138,7 +236,8 @@ impl<'a> Dump<'a> {
             }
             first = false;
 
-            print!("module #{} {{", module.index());
+            self.named(Named::Module(module));
+            print!(" {{");
 
             for &named in by_module.get(&module).into_iter().flatten() {
                 let (original, name) = self.source[&named];
@@ -148,10 +247,14 @@ impl<'a> Dump<'a> {
 
                 println!();
                 print!("  ");
-                let contents = self.named_raw(named, name);
-                println!(" {{");
-                if let Some(body) = contents {
-                    self.body(body);
+                let contents = self.named_raw(named, Some(name));
+                match contents {
+                    None => println!(";"),
+                    Some(body) => {
+                        println!(" {{");
+                        self.body(body);
+                        println!("  }}");
+                    }
                 }
             }
 
