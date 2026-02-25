@@ -6,6 +6,7 @@ use std::{
 };
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
+use indexmap::IndexMap;
 
 use crate::{
     dump::dump,
@@ -406,7 +407,7 @@ impl Body {
         Self { body }
     }
 
-    fn result(self) -> InstrId {
+    pub fn result(self) -> InstrId {
         self.body.last().unwrap()
     }
 }
@@ -520,7 +521,7 @@ pub struct IR {
     pub bodies: IndexVec<FndefId, Body>,
 }
 
-type ModuleNames<T> = HashMap<(ModuleId, StrId), T>;
+type ModuleNames<T> = IndexMap<(ModuleId, StrId), T>;
 
 fn get_name<T: Copy>(
     prelude: ModuleId,
@@ -643,9 +644,9 @@ impl From<NamedFn> for Named {
 
 #[derive(Debug, Default)]
 pub struct Names {
-    pub names: HashMap<(ModuleId, StrId), Named>,
-    pub attached: HashMap<(TagdefId, StrId), NamedFn>,
-    pub detached: HashMap<(ModuleId, StrId), NamedFn>,
+    pub names: IndexMap<(ModuleId, StrId), Named>,
+    pub attached: IndexMap<(TagdefId, StrId), NamedFn>,
+    pub detached: IndexMap<(ModuleId, StrId), NamedFn>,
 }
 
 struct ErrorCtx<'a> {
