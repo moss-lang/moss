@@ -506,18 +506,48 @@ pub struct Ctxdef(pub Body);
 
 #[derive(Debug, Default)]
 pub struct IR {
+    /// Basically just counts how many modules there are.
     pub modules: IndexVec<ModuleId, ()>,
+
+    /// String interning.
     pub strings: Strings,
+
+    /// Arena of instructions.
+    ///
+    /// Basically composed of a sequence of "blocks" where each block is a contiguous range of
+    /// instructions in this arena.
     pub instrs: IndexVec<InstrId, Instr>,
+
+    /// Arena of indices into the instructions array.
+    ///
+    /// Used for instructions that contain lists of references to other instruction IDs.
     pub items: IndexVec<ItemId, InstrId>,
+
+    /// Arena of (string, instruction) pairs, like `items` but used for record fields.
     pub records: IndexVec<RecordId, (StrId, InstrId)>,
+
+    /// Contextual types, i.e. ones that aren't given a definition in the source code.
     pub tydefs: IndexVec<TydefId, Tydef>,
+
+    /// Nominal types.
     pub tagdefs: IndexVec<TagdefId, Tagdef>,
+
+    /// Type aliases.
     pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
+
+    /// Contextual functions.
     pub sigdefs: IndexVec<SigdefId, Sigdef>,
+
+    /// Functions that are given definitions.
     pub fndefs: IndexVec<FndefId, Sigdef>,
+
+    /// Contextual values.
     pub valdefs: IndexVec<ValdefId, Valdef>,
+
+    /// Composite contexts.
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
+
+    /// Actual function bodies.
     pub bodies: IndexVec<FndefId, Body>,
 }
 
