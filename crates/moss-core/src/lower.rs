@@ -1322,15 +1322,14 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn parse_fndef(&mut self, fndef: parse::Fndef) -> LowerResult<(StrId, NamedFn)> {
+    fn parse_sig(&mut self, fndef: parse::Fndef) -> LowerResult<(Vec<InstrId>, InstrId, InstrId)> {
         let parse::Fndef {
-            name,
+            name: _,
             needs,
             params,
             result,
-            def,
+            def: _,
         } = fndef;
-        let builder = self.builder();
         let slots = self.needs(needs)?;
         let elems = (params.into_iter())
             .map(|arg| self.parse_ty(&slots, self.tree.params[arg].ty))
@@ -1345,6 +1344,19 @@ impl<'a> Lower<'a> {
                 self.emit(Instr::Stack { items })
             }
         };
+        Ok((slots, param_tuple, result_ty))
+    }
+
+    fn parse_fndef(&mut self, fndef: parse::Fndef) -> LowerResult<(StrId, NamedFn)> {
+        let parse::Fndef {
+            name,
+            needs: _,
+            params: _,
+            result: _,
+            def,
+        } = fndef;
+        let builder = self.builder();
+        let (_, param_tuple, result_ty) = self.parse_sig(fndef)?;
         let signature = self.emit(Instr::Sig {
             param: param_tuple,
             result: result_ty,
@@ -1638,6 +1650,7 @@ impl LowerBody<'_, '_> {
 
     /// Get the parameter type and result type of a function.
     fn sig(&self, func: InstrId) -> (InstrId, InstrId) {
+        dump(self.x.ir, self.x.names);
         todo!()
     }
 
@@ -2188,16 +2201,10 @@ impl LowerBody<'_, '_> {
             result: _,
             def,
         } = fndef;
-        let Some(body) = def else { unreachable!() };
+        let body = def.unwrap();
         let builder = self.x.builder();
-        let Sigdef(sig) = self.x.ir.fndefs[id_decl];
-        let Instr::Sig {
-            param: tuple_ty,
-            result: _,
-        } = self.x.ir.instrs[sig.result()]
-        else {
-            unreachable!()
-        };
+        let (slots, tuple_ty, _) = self.x.parse_sig(fndef).unwrap();
+        self.slots = slots;
         let tuple_local = self.instr(tuple_ty, Expr::Param { ty: tuple_ty });
         let Instr::Tuple { elems: types } = self.x.ir.instrs[tuple_ty] else {
             unreachable!()
