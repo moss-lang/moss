@@ -830,7 +830,12 @@ struct Lower<'a> {
 
 impl<'a> Lower<'a> {
     fn todo(&self, token: TokenId) -> LowerError {
+        dump(self.ir, self.names);
         LowerError::Todo(token, Backtrace::capture())
+    }
+
+    fn todo_no_loc(&self) -> LowerError {
+        self.todo(TokenId::from_raw(0))
     }
 
     fn slice(&self, token: TokenId) -> &'a str {
@@ -990,7 +995,7 @@ impl<'a> Lower<'a> {
     }
 
     fn invoke(&mut self, lambda: InstrId, destruct: &[InstrId]) -> LowerResult<Vec<InstrId>> {
-        Ok(Vec::new()) // TODO
+        Err(self.todo_no_loc())
     }
 
     fn invoke_need(
@@ -998,17 +1003,7 @@ impl<'a> Lower<'a> {
         target: Body,
         destruct: &[InstrId],
     ) -> LowerResult<(Vec<InstrId>, Vec<InstrId>)> {
-        Ok((Vec::new(), Vec::new())) // TODO
-    }
-
-    fn extract_stub(&self, slots: &[InstrId]) -> LowerResult<InstrId> {
-        match slots.last() {
-            Some(&last) => Ok(last), // TODO
-            None => {
-                dump(self.ir, self.names);
-                panic!()
-            }
-        }
+        Err(self.todo_no_loc())
     }
 
     fn extract_ty(
@@ -1017,7 +1012,7 @@ impl<'a> Lower<'a> {
         def: TydefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        self.extract_stub(slots)
+        Err(self.todo_no_loc())
     }
 
     fn extract_sig(
@@ -1026,7 +1021,7 @@ impl<'a> Lower<'a> {
         def: SigdefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        self.extract_stub(slots)
+        Err(self.todo_no_loc())
     }
 
     fn extract_val(
@@ -1035,7 +1030,7 @@ impl<'a> Lower<'a> {
         def: ValdefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        self.extract_stub(slots)
+        Err(self.todo_no_loc())
     }
 
     fn extract_ctx(
@@ -1044,11 +1039,11 @@ impl<'a> Lower<'a> {
         def: CtxdefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        self.extract_stub(slots)
+        Err(self.todo_no_loc())
     }
 
     fn inline(&mut self, body: Body, construct: &[InstrId]) -> LowerResult<InstrId> {
-        todo!()
+        Err(self.todo_no_loc())
     }
 
     /// Resolve the path of a spec and synthesize each of its attached bindings.
@@ -1306,8 +1301,8 @@ impl<'a> Lower<'a> {
                         let args = self.items(&construct);
                         Ok(self.emit(Instr::Apply { lambda, args }))
                     }
-                    Named::Tagdef(tagdef) => todo!(),
-                    Named::Aliasdef(aliasdef) => todo!(),
+                    Named::Tagdef(tagdef) => Err(self.todo_no_loc()),
+                    Named::Aliasdef(aliasdef) => Err(self.todo_no_loc()),
                     _ => return Err(LowerError::NotType(spec.path.last)),
                 }
             }
@@ -1318,7 +1313,7 @@ impl<'a> Lower<'a> {
                     .collect::<LowerResult<Vec<InstrId>>>()?;
                 Ok(self.ty_tuple(lowered))
             }
-            parse::Type::Record(members) => todo!(),
+            parse::Type::Record(members) => Err(self.todo_no_loc()),
         }
     }
 
@@ -1645,12 +1640,11 @@ impl LowerBody<'_, '_> {
 
     /// Get the fields of a record type.
     fn fields(&self, ty: InstrId) -> LowerResult<Vec<(StrId, InstrId)>> {
-        todo!()
+        Err(self.x.todo_no_loc())
     }
 
     /// Get the parameter type and result type of a function.
     fn sig(&self, func: InstrId) -> (InstrId, InstrId) {
-        dump(self.x.ir, self.x.names);
         todo!()
     }
 
@@ -1670,7 +1664,7 @@ impl LowerBody<'_, '_> {
     }
 
     fn expect_ty(&self, expected: InstrId, actual: InstrId) -> LowerResult<()> {
-        todo!()
+        Err(self.x.todo_no_loc())
     }
 
     fn expr(&mut self, expr: ExprId) -> LowerResult<Typed> {
@@ -2067,30 +2061,30 @@ impl LowerBody<'_, '_> {
             parse::Expr::Unary(op, inner) => {
                 let v = self.expr(inner)?;
                 match op {
-                    Unop::Neg => todo!(),
-                    Unop::Not => todo!(),
+                    Unop::Neg => Err(self.x.todo_no_loc()),
+                    Unop::Not => Err(self.x.todo_no_loc()),
                 }
             }
             parse::Expr::Binary(left, op, right) => {
                 let l = self.expr(left)?;
                 let r = self.expr(right)?;
                 match op {
-                    Binop::Eq => todo!(),
-                    Binop::Ne => todo!(),
-                    Binop::Lt => todo!(),
-                    Binop::Gt => todo!(),
-                    Binop::Le => todo!(),
-                    Binop::Ge => todo!(),
-                    Binop::Add => todo!(),
-                    Binop::Sub => todo!(),
-                    Binop::Mul => todo!(),
-                    Binop::Div => todo!(),
-                    Binop::Rem => todo!(),
-                    Binop::Shl => todo!(),
-                    Binop::Shr => todo!(),
-                    Binop::And => todo!(),
-                    Binop::Or => todo!(),
-                    Binop::Xor => todo!(),
+                    Binop::Eq => Err(self.x.todo_no_loc()),
+                    Binop::Ne => Err(self.x.todo_no_loc()),
+                    Binop::Lt => Err(self.x.todo_no_loc()),
+                    Binop::Gt => Err(self.x.todo_no_loc()),
+                    Binop::Le => Err(self.x.todo_no_loc()),
+                    Binop::Ge => Err(self.x.todo_no_loc()),
+                    Binop::Add => Err(self.x.todo_no_loc()),
+                    Binop::Sub => Err(self.x.todo_no_loc()),
+                    Binop::Mul => Err(self.x.todo_no_loc()),
+                    Binop::Div => Err(self.x.todo_no_loc()),
+                    Binop::Rem => Err(self.x.todo_no_loc()),
+                    Binop::Shl => Err(self.x.todo_no_loc()),
+                    Binop::Shr => Err(self.x.todo_no_loc()),
+                    Binop::And => Err(self.x.todo_no_loc()),
+                    Binop::Or => Err(self.x.todo_no_loc()),
+                    Binop::Xor => Err(self.x.todo_no_loc()),
                 }
             }
             parse::Expr::If(cond, yes, no) => {
