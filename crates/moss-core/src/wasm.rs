@@ -330,7 +330,7 @@ impl<'a> Wasm<'a> {
         for instr in self.ir.ctxdefs[ctxdef_wasi].0.body {
             match self.ir.instrs[instr] {
                 Instr::Lambda => todo!(),
-                Instr::EndLambda { result } => todo!(),
+                Instr::EndLambda { start, result } => todo!(),
                 Instr::Apply { lambda, args } => todo!(),
                 Instr::Stack { items } => unimplemented!(),
                 Instr::NeedTydef { def, param } => unimplemented!(),
@@ -856,7 +856,7 @@ impl<'a> Wasm<'a> {
         for instr in body.body {
             let result = match self.ir.instrs[instr] {
                 Instr::Lambda => todo!(),
-                Instr::EndLambda { result } => todo!(),
+                Instr::EndLambda { start, result } => todo!(),
                 Instr::Apply { lambda, args } => todo!(),
                 Instr::Stack { items } => self.mkctx(&self.list(items)),
                 Instr::NeedTydef { def, param } => todo!(),
