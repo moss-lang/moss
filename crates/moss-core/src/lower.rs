@@ -187,6 +187,9 @@ pub enum Instr {
 
     /// End the current [`Instr::Lambda`] block.
     EndLambda {
+        /// The [`Instr::Lambda`] instruction this closes.
+        start: InstrId,
+
         /// The item to return from the lambda.
         result: InstrId,
     },
@@ -994,8 +997,87 @@ impl<'a> Lower<'a> {
         self.ty_tuple(Vec::new())
     }
 
-    fn invoke(&mut self, lambda: InstrId, destruct: &[InstrId]) -> LowerResult<Vec<InstrId>> {
-        Err(self.todo_no_loc())
+    fn invoke(
+        &mut self,
+        lambda: InstrId,
+        destruct: &[InstrId],
+    ) -> LowerResult<Option<Vec<InstrId>>> {
+        let start = match self.ir.instrs[lambda] {
+            Instr::Lambda => todo!(),
+            Instr::EndLambda { start, result: _ } => start,
+            Instr::Apply { lambda, args } => todo!(),
+            Instr::Stack { items } => todo!(),
+            Instr::NeedTydef { def: _, param }
+            | Instr::NeedSigdef { def: _, param }
+            | Instr::NeedValdef { def: _, param }
+            | Instr::NeedCtxdef { def: _, param } => return self.invoke(param, destruct),
+            Instr::Tagdef { def } => todo!(),
+            Instr::Aliasdef { def } => todo!(),
+            Instr::Tuple { elems } => todo!(),
+            Instr::Record { fields } => todo!(),
+            Instr::Context => todo!(),
+            Instr::Fndef { def } => todo!(),
+            Instr::Get { ctx, slot } => todo!(),
+            Instr::Lit { val } => todo!(),
+            Instr::Bind { args, bind } => todo!(),
+            Instr::BindTydef { def, bind } => todo!(),
+            Instr::BindSigdef { def, bind } => todo!(),
+            Instr::BindValdef { def, bind } => todo!(),
+            Instr::BindCtxdef { def, bind } => todo!(),
+            Instr::Sig { param, result } => todo!(),
+            Instr::Set { lhs, rhs } => todo!(),
+            Instr::If { ty, cond } => todo!(),
+            Instr::Else { result } => todo!(),
+            Instr::EndIf { result } => todo!(),
+            Instr::Loop => todo!(),
+            Instr::EndLoop => todo!(),
+            Instr::Br { depth } => todo!(),
+            Instr::Expr { ty, expr } => todo!(),
+        };
+        for instr in (IdRange {
+            start: start + 1,
+            end: lambda,
+        }) {
+            match self.ir.instrs[instr] {
+                Instr::Lambda => todo!(),
+                Instr::EndLambda { start, result } => todo!(),
+                Instr::Apply { lambda, args } => todo!(),
+                Instr::Stack { items } => {
+                    assert!(items.is_empty());
+                }
+                Instr::NeedTydef { def, param } => todo!(),
+                Instr::NeedSigdef { def, param } => todo!(),
+                Instr::NeedValdef { def, param } => todo!(),
+                Instr::NeedCtxdef { def, param } => todo!(),
+                Instr::Tagdef { def } => todo!(),
+                Instr::Aliasdef { def } => todo!(),
+                Instr::Tuple { elems } => todo!(),
+                Instr::Record { fields } => todo!(),
+                Instr::Context => todo!(),
+                Instr::Fndef { def } => todo!(),
+                Instr::Get { ctx, slot } => todo!(),
+                Instr::Lit { val } => todo!(),
+                Instr::Bind { args, bind } => todo!(),
+                Instr::BindTydef { def, bind } => todo!(),
+                Instr::BindSigdef { def, bind } => todo!(),
+                Instr::BindValdef { def, bind } => todo!(),
+                Instr::BindCtxdef { def, bind } => todo!(),
+                Instr::Sig { param, result } => todo!(),
+                Instr::Set { lhs, rhs } => todo!(),
+                Instr::If { ty, cond } => todo!(),
+                Instr::Else { result } => todo!(),
+                Instr::EndIf { result } => todo!(),
+                Instr::Loop => todo!(),
+                Instr::EndLoop => todo!(),
+                Instr::Br { depth } => todo!(),
+                Instr::Expr { ty, expr } => todo!(),
+            }
+        }
+        Ok(Some(Vec::new()))
+    }
+
+    fn invoke_force(&mut self, lambda: InstrId, destruct: &[InstrId]) -> LowerResult<Vec<InstrId>> {
+        Ok(self.invoke(lambda, destruct)?.unwrap()) // TODO: Return an actual error here.
     }
 
     fn invoke_need(
@@ -1003,7 +1085,43 @@ impl<'a> Lower<'a> {
         target: Body,
         destruct: &[InstrId],
     ) -> LowerResult<(Vec<InstrId>, Vec<InstrId>)> {
-        Err(self.todo_no_loc())
+        for instr in target.body {
+            match self.ir.instrs[instr] {
+                Instr::Lambda => return Err(self.todo_no_loc()),
+                Instr::EndLambda { start, result } => todo!(),
+                Instr::Apply { lambda, args } => todo!(),
+                Instr::Stack { items } => {
+                    assert!(items.is_empty());
+                }
+                Instr::NeedTydef { def, param } => todo!(),
+                Instr::NeedSigdef { def, param } => todo!(),
+                Instr::NeedValdef { def, param } => todo!(),
+                Instr::NeedCtxdef { def, param } => todo!(),
+                Instr::Tagdef { def } => todo!(),
+                Instr::Aliasdef { def } => todo!(),
+                Instr::Tuple { elems } => todo!(),
+                Instr::Record { fields } => todo!(),
+                Instr::Context => todo!(),
+                Instr::Fndef { def } => todo!(),
+                Instr::Get { ctx, slot } => todo!(),
+                Instr::Lit { val } => todo!(),
+                Instr::Bind { args, bind } => todo!(),
+                Instr::BindTydef { def, bind } => todo!(),
+                Instr::BindSigdef { def, bind } => todo!(),
+                Instr::BindValdef { def, bind } => todo!(),
+                Instr::BindCtxdef { def, bind } => todo!(),
+                Instr::Sig { param, result } => todo!(),
+                Instr::Set { lhs, rhs } => todo!(),
+                Instr::If { ty, cond } => todo!(),
+                Instr::Else { result } => todo!(),
+                Instr::EndIf { result } => todo!(),
+                Instr::Loop => todo!(),
+                Instr::EndLoop => todo!(),
+                Instr::Br { depth } => todo!(),
+                Instr::Expr { ty, expr } => todo!(),
+            }
+        }
+        Ok((Vec::new(), Vec::new()))
     }
 
     fn extract_ty(
@@ -1012,7 +1130,52 @@ impl<'a> Lower<'a> {
         def: TydefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        Err(self.todo_no_loc())
+        let mut options = Vec::new();
+        for &slot in slots {
+            match self.ir.instrs[slot] {
+                Instr::Lambda => todo!(),
+                Instr::EndLambda { start, result } => todo!(),
+                Instr::Apply { lambda, args } => todo!(),
+                Instr::Stack { items } => todo!(),
+                Instr::NeedTydef { def: tydef, param } => {
+                    if tydef != def {
+                        continue;
+                    }
+                    if self.invoke(param, destruct)?.is_some() {
+                        options.push(slot);
+                    }
+                }
+                Instr::NeedSigdef { def, param } => todo!(),
+                Instr::NeedValdef { def, param } => todo!(),
+                Instr::NeedCtxdef { def, param } => todo!(),
+                Instr::Tagdef { def } => todo!(),
+                Instr::Aliasdef { def } => todo!(),
+                Instr::Tuple { elems } => todo!(),
+                Instr::Record { fields } => todo!(),
+                Instr::Context => todo!(),
+                Instr::Fndef { def } => todo!(),
+                Instr::Get { ctx, slot } => todo!(),
+                Instr::Lit { val } => todo!(),
+                Instr::Bind { args, bind } => todo!(),
+                Instr::BindTydef { def, bind } => todo!(),
+                Instr::BindSigdef { def, bind } => todo!(),
+                Instr::BindValdef { def, bind } => todo!(),
+                Instr::BindCtxdef { def, bind } => todo!(),
+                Instr::Sig { param, result } => todo!(),
+                Instr::Set { lhs, rhs } => todo!(),
+                Instr::If { ty, cond } => todo!(),
+                Instr::Else { result } => todo!(),
+                Instr::EndIf { result } => todo!(),
+                Instr::Loop => todo!(),
+                Instr::EndLoop => todo!(),
+                Instr::Br { depth } => todo!(),
+                Instr::Expr { ty, expr } => todo!(),
+            }
+        }
+        if options.len() != 1 {
+            panic!()
+        }
+        Ok(options[0])
     }
 
     fn extract_sig(
@@ -1075,42 +1238,42 @@ impl<'a> Lower<'a> {
             None => match lhs {
                 Named::Tydef(def) => {
                     let Tydef(target) = self.ir.tydefs[def];
-                    self.emit(Instr::Lambda);
+                    let start = self.emit(Instr::Lambda);
                     let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
                     let args = self.items(&construct);
                     let bind = self.extract_ty(slots, def, &construct)?;
                     let result = self.emit(Instr::Bind { args, bind });
-                    let bind = self.emit(Instr::EndLambda { result });
+                    let bind = self.emit(Instr::EndLambda { start, result });
                     Ok(self.emit(Instr::BindTydef { def, bind }))
                 }
                 Named::Sigdef(def) => {
                     let Sigdef(target) = self.ir.sigdefs[def];
-                    self.emit(Instr::Lambda);
+                    let start = self.emit(Instr::Lambda);
                     let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
                     let args = self.items(&construct);
                     let bind = self.extract_sig(slots, def, &construct)?;
                     let result = self.emit(Instr::Bind { args, bind });
-                    let bind = self.emit(Instr::EndLambda { result });
+                    let bind = self.emit(Instr::EndLambda { start, result });
                     Ok(self.emit(Instr::BindSigdef { def, bind }))
                 }
                 Named::Valdef(def) => {
                     let Valdef(target) = self.ir.valdefs[def];
-                    self.emit(Instr::Lambda);
+                    let start = self.emit(Instr::Lambda);
                     let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
                     let bind = self.extract_val(slots, def, &construct)?;
                     let args = self.items(&construct);
                     let result = self.emit(Instr::Bind { args, bind });
-                    let bind = self.emit(Instr::EndLambda { result });
+                    let bind = self.emit(Instr::EndLambda { start, result });
                     Ok(self.emit(Instr::BindValdef { def, bind }))
                 }
                 Named::Ctxdef(def) => {
                     let Ctxdef(target) = self.ir.ctxdefs[def];
-                    self.emit(Instr::Lambda);
+                    let start = self.emit(Instr::Lambda);
                     let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
                     let bind = self.extract_ctx(slots, def, &construct)?;
                     let args = self.items(&construct);
                     let result = self.emit(Instr::Bind { args, bind });
-                    let bind = self.emit(Instr::EndLambda { result });
+                    let bind = self.emit(Instr::EndLambda { start, result });
                     Ok(self.emit(Instr::BindCtxdef { def, bind }))
                 }
                 Named::Module(_) => Err(LowerError::BindModule(bind)),
@@ -1121,13 +1284,13 @@ impl<'a> Lower<'a> {
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(def) => {
                     let Valdef(target) = self.ir.valdefs[def];
-                    self.emit(Instr::Lambda);
+                    let start = self.emit(Instr::Lambda);
                     let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
                     let (val, _) = self.lit(token)?;
                     let bind = self.emit(Instr::Lit { val });
                     let args = self.items(&construct);
                     let result = self.emit(Instr::Bind { args, bind });
-                    let bind = self.emit(Instr::EndLambda { result });
+                    let bind = self.emit(Instr::EndLambda { start, result });
                     Ok(self.emit(Instr::BindValdef { def, bind }))
                 }
                 _ => Err(LowerError::LitNotVal(token)),
@@ -1145,12 +1308,12 @@ impl<'a> Lower<'a> {
                             _ => return Err(LowerError::BindMismatch(bind)),
                         };
                         let Tydef(target_lhs) = self.ir.tydefs[def];
-                        self.emit(Instr::Lambda);
+                        let start = self.emit(Instr::Lambda);
                         let (construct_lhs, mut needs) =
                             self.invoke_need(target_lhs, &destruct_lhs)?;
                         let args_lhs = self.items(&construct_lhs);
                         destruct_rhs.append(&mut needs);
-                        let construct_rhs = self.invoke(lambda, &destruct_rhs)?;
+                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
                         let args_rhs = self.items(&construct_rhs);
                         let bind = self.emit(Instr::Apply {
                             lambda,
@@ -1160,7 +1323,7 @@ impl<'a> Lower<'a> {
                             args: args_lhs,
                             bind,
                         });
-                        let bind = self.emit(Instr::EndLambda { result });
+                        let bind = self.emit(Instr::EndLambda { start, result });
                         Ok(self.emit(Instr::BindTydef { def, bind }))
                     }
                     Named::Sigdef(def) => {
@@ -1173,12 +1336,12 @@ impl<'a> Lower<'a> {
                         };
                         // TODO: Check compatibility of function signatures.
                         let Sigdef(target_lhs) = self.ir.sigdefs[def];
-                        self.emit(Instr::Lambda);
+                        let start = self.emit(Instr::Lambda);
                         let (construct_lhs, mut needs) =
                             self.invoke_need(target_lhs, &destruct_lhs)?;
                         let args_lhs = self.items(&construct_lhs);
                         destruct_rhs.append(&mut needs);
-                        let construct_rhs = self.invoke(lambda, &destruct_rhs)?;
+                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
                         let args_rhs = self.items(&construct_rhs);
                         let bind = self.emit(Instr::Apply {
                             lambda,
@@ -1188,7 +1351,7 @@ impl<'a> Lower<'a> {
                             args: args_lhs,
                             bind,
                         });
-                        let bind = self.emit(Instr::EndLambda { result });
+                        let bind = self.emit(Instr::EndLambda { start, result });
                         Ok(self.emit(Instr::BindSigdef { def, bind }))
                     }
                     Named::Valdef(def) => {
@@ -1200,12 +1363,12 @@ impl<'a> Lower<'a> {
                         };
                         // TODO: Check compatibility of value types.
                         let Valdef(target_lhs) = self.ir.valdefs[def];
-                        self.emit(Instr::Lambda);
+                        let start = self.emit(Instr::Lambda);
                         let (construct_lhs, mut needs) =
                             self.invoke_need(target_lhs, &destruct_lhs)?;
                         let args_lhs = self.items(&construct_lhs);
                         destruct_rhs.append(&mut needs);
-                        let construct_rhs = self.invoke(lambda, &destruct_rhs)?;
+                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
                         let args_rhs = self.items(&construct_rhs);
                         let bind = self.emit(Instr::Apply {
                             lambda,
@@ -1215,7 +1378,7 @@ impl<'a> Lower<'a> {
                             args: args_lhs,
                             bind,
                         });
-                        let bind = self.emit(Instr::EndLambda { result });
+                        let bind = self.emit(Instr::EndLambda { start, result });
                         Ok(self.emit(Instr::BindValdef { def, bind }))
                     }
                     Named::Ctxdef(_) => Err(LowerError::BindContext(bind)),
@@ -1239,38 +1402,38 @@ impl<'a> Lower<'a> {
                 match lhs {
                     Named::Tydef(def) => {
                         let Tydef(target) = self.ir.tydefs[def];
-                        self.emit(Instr::Lambda);
+                        let start = self.emit(Instr::Lambda);
                         let (construct, _) = self.invoke_need(target, &destruct)?;
                         let items = self.items(&construct);
                         let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { result });
+                        let param = self.emit(Instr::EndLambda { start, result });
                         Ok(self.emit(Instr::NeedTydef { def, param }))
                     }
                     Named::Sigdef(def) => {
                         let Sigdef(target) = self.ir.sigdefs[def];
-                        self.emit(Instr::Lambda);
+                        let start = self.emit(Instr::Lambda);
                         let (construct, _) = self.invoke_need(target, &destruct)?;
                         let items = self.items(&construct);
                         let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { result });
+                        let param = self.emit(Instr::EndLambda { start, result });
                         Ok(self.emit(Instr::NeedSigdef { def, param }))
                     }
                     Named::Valdef(def) => {
                         let Valdef(target) = self.ir.valdefs[def];
-                        self.emit(Instr::Lambda);
+                        let start = self.emit(Instr::Lambda);
                         let (construct, _) = self.invoke_need(target, &destruct)?;
                         let items = self.items(&construct);
                         let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { result });
+                        let param = self.emit(Instr::EndLambda { start, result });
                         Ok(self.emit(Instr::NeedValdef { def, param }))
                     }
                     Named::Ctxdef(def) => {
                         let Ctxdef(target) = self.ir.ctxdefs[def];
-                        self.emit(Instr::Lambda);
+                        let start = self.emit(Instr::Lambda);
                         let (construct, _) = self.invoke_need(target, &destruct)?;
                         let items = self.items(&construct);
                         let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { result });
+                        let param = self.emit(Instr::EndLambda { start, result });
                         Ok(self.emit(Instr::NeedCtxdef { def, param }))
                     }
                     Named::Module(_) => Err(LowerError::BindModule(bind)),
@@ -1297,7 +1460,7 @@ impl<'a> Lower<'a> {
                 match named {
                     Named::Tydef(tydef) => {
                         let lambda = self.extract_ty(slots, tydef, &destruct)?;
-                        let construct = self.invoke(lambda, &destruct)?;
+                        let construct = self.invoke_force(lambda, &destruct)?;
                         let args = self.items(&construct);
                         Ok(self.emit(Instr::Apply { lambda, args }))
                     }
@@ -1458,13 +1621,13 @@ impl<'a> Lower<'a> {
                     for need in needs {
                         slots.push(self.need(&slots, need)?);
                     }
-                    self.emit(Instr::Lambda);
+                    let start = self.emit(Instr::Lambda);
                     for need in def {
                         slots.push(self.need(&slots, need)?);
                     }
                     let items = self.items(&slots[needs.len()..]);
                     let result = self.emit(Instr::Stack { items });
-                    let lambda = self.emit(Instr::EndLambda { result });
+                    let lambda = self.emit(Instr::EndLambda { start, result });
                     let body = self.finish(builder, lambda);
                     let lowered = self.ir.ctxdefs.push(Ctxdef(body));
                     let string = self.name(name);
@@ -1609,8 +1772,8 @@ impl LowerBody<'_, '_> {
         )
     }
 
-    fn invoke(&mut self, lambda: InstrId) -> LowerResult<Vec<InstrId>> {
-        self.x.invoke(lambda, &self.slots)
+    fn invoke_force(&mut self, lambda: InstrId) -> LowerResult<Vec<InstrId>> {
+        self.x.invoke_force(lambda, &self.slots)
     }
 
     fn extract_ty(&mut self, def: TydefId) -> LowerResult<InstrId> {
@@ -1931,16 +2094,16 @@ impl LowerBody<'_, '_> {
                 let Sigdef(body_sigdef) = self.x.ir.sigdefs[sigdef];
 
                 let lambda_ty_lit = self.extract_ty(tydef_lit)?;
-                let construct_ty_lit = self.invoke(lambda_ty_lit)?;
+                let construct_ty_lit = self.invoke_force(lambda_ty_lit)?;
 
                 let lambda_ty = self.extract_ty(tydef)?;
-                let construct_ty = self.invoke(lambda_ty)?;
+                let construct_ty = self.invoke_force(lambda_ty)?;
 
                 let val_lit = self.emit(Instr::Lit { val });
 
                 // TODO: Use "invoke" correctly here.
                 let lambda_func = self.extract_sig(sigdef)?;
-                let construct_func = self.invoke(lambda_func)?;
+                let construct_func = self.invoke_force(lambda_func)?;
 
                 let items = self.x.items(&construct_func);
                 let func = self.emit(Instr::Apply {
@@ -1963,7 +2126,7 @@ impl LowerBody<'_, '_> {
                 };
                 let Valdef(body) = self.x.ir.valdefs[valdef];
                 let val = self.extract_val(valdef)?;
-                let construct = self.invoke(val)?;
+                let construct = self.invoke_force(val)?;
                 let ty = self.inline(body, &construct)?;
                 Ok(self.instr(ty, Expr::Val { val }))
             }
@@ -1974,7 +2137,7 @@ impl LowerBody<'_, '_> {
                 let inside = self.expr(inner)?;
                 let Tagdef(body) = self.x.ir.tagdefs[tagdef];
                 let lambda = self.emit(Instr::Tagdef { def: tagdef });
-                let construct = self.invoke(lambda)?;
+                let construct = self.invoke_force(lambda)?;
                 let args = self.x.items(&construct);
                 let ty = self.emit(Instr::Apply { lambda, args });
                 let expected = self.inline(body, &construct)?;
@@ -2021,7 +2184,7 @@ impl LowerBody<'_, '_> {
                     Some(NamedFn::Fndef(fndef)) => self.emit(Instr::Fndef { def: fndef }),
                     None => return Err(LowerError::Undefined(method)),
                 };
-                let construct = self.invoke(lambda)?;
+                let construct = self.invoke_force(lambda)?;
                 let args = self.x.items(&construct);
                 let func = self.emit(Instr::Apply { lambda, args });
                 let (ty_param, ty_result) = self.sig(func);
@@ -2043,7 +2206,7 @@ impl LowerBody<'_, '_> {
                     Named::Fndef(fndef) => self.emit(Instr::Fndef { def: fndef }),
                     _ => return Err(LowerError::NotFn(callee.last)),
                 };
-                let construct = self.invoke(lambda)?;
+                let construct = self.invoke_force(lambda)?;
                 let args = self.x.items(&construct);
                 let func = self.emit(Instr::Apply { lambda, args });
                 let (ty_param, ty_result) = self.sig(func);

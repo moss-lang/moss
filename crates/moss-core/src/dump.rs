@@ -107,7 +107,11 @@ impl<'a> Dump<'a> {
     fn instr(&mut self, instr: InstrId) {
         let instruction = self.ir.instrs[instr];
         print!("    ");
-        if let Instr::EndLambda { result: _ } = instruction {
+        if let Instr::EndLambda {
+            start: _,
+            result: _,
+        } = instruction
+        {
             self.indent -= 1;
         }
         for _ in 0..self.indent {
@@ -129,8 +133,12 @@ impl<'a> Dump<'a> {
                 print!("lambda");
                 self.indent += 1;
             }
-            Instr::EndLambda { result } => {
-                print!("end lambda returning %{}", result.index());
+            Instr::EndLambda { start, result } => {
+                print!(
+                    "end lambda %{} returning %{}",
+                    start.index(),
+                    result.index(),
+                );
             }
             Instr::Apply { lambda, args } => {
                 print!("apply %{} to", lambda.index());
