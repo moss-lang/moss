@@ -978,6 +978,12 @@ impl<'a> Lower<'a> {
         IdRange { start, end }
     }
 
+    fn map_items(&mut self, mapped: &HashMap<InstrId, InstrId>, items: InstrList) -> InstrList {
+        let items_mapped =
+            Vec::from_iter(items.into_iter().map(|item| mapped[&self.ir.items[item]]));
+        self.items(&items_mapped)
+    }
+
     fn emit(&mut self, instr: Instr) -> InstrId {
         self.ir.instrs.push(instr)
     }
@@ -1014,14 +1020,17 @@ impl<'a> Lower<'a> {
 
     fn duplicate(&mut self, mapped: &mut HashMap<InstrId, InstrId>, instr: InstrId) {
         let mapped_instr = match self.ir.instrs[instr] {
-            Instr::Lambda => todo!(),
-            Instr::EndLambda { start, result } => todo!(),
+            Instr::Lambda => self.emit(Instr::Lambda),
+            Instr::EndLambda { start, result } => self.emit(Instr::EndLambda {
+                start: mapped[&start],
+                result: mapped[&result],
+            }),
             Instr::Apply { lambda, args } => todo!(),
             Instr::Stack { items } => {
-                let items_mapped =
-                    Vec::from_iter(items.into_iter().map(|item| mapped[&self.ir.items[item]]));
-                let items_reified = self.items(&items_mapped);
-                self.emit(Instr::Stack { items })
+                let items_mapped = self.map_items(mapped, items);
+                self.emit(Instr::Stack {
+                    items: items_mapped,
+                })
             }
             Instr::NeedTydef { def, param } => todo!(),
             Instr::NeedSigdef { def, param } => todo!(),
@@ -1035,7 +1044,13 @@ impl<'a> Lower<'a> {
             Instr::Fndef { def } => todo!(),
             Instr::Get { ctx, slot } => todo!(),
             Instr::Lit { val } => todo!(),
-            Instr::Bind { args, bind } => todo!(),
+            Instr::Bind { args, bind } => {
+                let args_mapped = self.map_items(mapped, args);
+                self.emit(Instr::Bind {
+                    args: args_mapped,
+                    bind: mapped[&bind],
+                })
+            }
             Instr::BindTydef { def, bind } => todo!(),
             Instr::BindSigdef { def, bind } => todo!(),
             Instr::BindValdef { def, bind } => todo!(),
@@ -1070,41 +1085,15 @@ impl<'a> Lower<'a> {
         let Instr::EndLambda { start, result: _ } = self.ir.instrs[right] else {
             panic!()
         };
+        let mut mapped = HashMap::new();
         let mut instr = start + 1;
         while instr < right {
             match self.ir.instrs[instr] {
-                Instr::Lambda => todo!(),
-                Instr::EndLambda { start, result } => todo!(),
-                Instr::Apply { lambda, args } => todo!(),
-                Instr::Stack { items } => {
-                    assert!(items.is_empty());
-                }
                 Instr::NeedTydef { def, param } => todo!(),
                 Instr::NeedSigdef { def, param } => todo!(),
                 Instr::NeedValdef { def, param } => todo!(),
                 Instr::NeedCtxdef { def, param } => todo!(),
-                Instr::Tagdef { def } => todo!(),
-                Instr::Aliasdef { def } => todo!(),
-                Instr::Tuple { elems } => todo!(),
-                Instr::Record { fields } => todo!(),
-                Instr::Context => todo!(),
-                Instr::Fndef { def } => todo!(),
-                Instr::Get { ctx, slot } => todo!(),
-                Instr::Lit { val } => todo!(),
-                Instr::Bind { args, bind } => todo!(),
-                Instr::BindTydef { def, bind } => todo!(),
-                Instr::BindSigdef { def, bind } => todo!(),
-                Instr::BindValdef { def, bind } => todo!(),
-                Instr::BindCtxdef { def, bind } => todo!(),
-                Instr::Sig { param, result } => todo!(),
-                Instr::Set { lhs, rhs } => todo!(),
-                Instr::If { ty, cond } => todo!(),
-                Instr::Else { result } => todo!(),
-                Instr::EndIf { result } => todo!(),
-                Instr::Loop => todo!(),
-                Instr::EndLoop => todo!(),
-                Instr::Br { depth } => todo!(),
-                Instr::Expr { ty, expr } => todo!(),
+                _ => self.duplicate(&mut mapped, instr),
             }
             instr += 1;
         }
@@ -1293,7 +1282,14 @@ impl<'a> Lower<'a> {
                 Instr::Get { ctx, slot } => todo!(),
                 Instr::Lit { val } => todo!(),
                 Instr::Bind { args, bind } => todo!(),
-                Instr::BindTydef { def, bind } => todo!(),
+                Instr::BindTydef { def: tydef, bind } => {
+                    if tydef != def {
+                        continue;
+                    }
+                    if self.left_domain_more_specific(lambda, bind)? {
+                        options.push(slot);
+                    }
+                }
                 Instr::BindSigdef { def, bind } => todo!(),
                 Instr::BindValdef { def, bind } => todo!(),
                 Instr::BindCtxdef { def, bind } => todo!(),
