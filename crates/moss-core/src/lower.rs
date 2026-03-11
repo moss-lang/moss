@@ -1012,6 +1012,58 @@ impl<'a> Lower<'a> {
         }
     }
 
+    fn duplicate(&mut self, mapped: &mut HashMap<InstrId, InstrId>, instr: InstrId) {
+        let mapped_instr = match self.ir.instrs[instr] {
+            Instr::Lambda => todo!(),
+            Instr::EndLambda { start, result } => todo!(),
+            Instr::Apply { lambda, args } => todo!(),
+            Instr::Stack { items } => {
+                let items_mapped =
+                    Vec::from_iter(items.into_iter().map(|item| mapped[&self.ir.items[item]]));
+                let items_reified = self.items(&items_mapped);
+                self.emit(Instr::Stack { items })
+            }
+            Instr::NeedTydef { def, param } => todo!(),
+            Instr::NeedSigdef { def, param } => todo!(),
+            Instr::NeedValdef { def, param } => todo!(),
+            Instr::NeedCtxdef { def, param } => todo!(),
+            Instr::Tagdef { def } => todo!(),
+            Instr::Aliasdef { def } => todo!(),
+            Instr::Tuple { elems } => todo!(),
+            Instr::Record { fields } => todo!(),
+            Instr::Context => todo!(),
+            Instr::Fndef { def } => todo!(),
+            Instr::Get { ctx, slot } => todo!(),
+            Instr::Lit { val } => todo!(),
+            Instr::Bind { args, bind } => todo!(),
+            Instr::BindTydef { def, bind } => todo!(),
+            Instr::BindSigdef { def, bind } => todo!(),
+            Instr::BindValdef { def, bind } => todo!(),
+            Instr::BindCtxdef { def, bind } => todo!(),
+            Instr::Sig { param, result } => todo!(),
+            Instr::Set { lhs, rhs } => todo!(),
+            Instr::If { ty, cond } => todo!(),
+            Instr::Else { result } => todo!(),
+            Instr::EndIf { result } => todo!(),
+            Instr::Loop => todo!(),
+            Instr::EndLoop => todo!(),
+            Instr::Br { depth } => todo!(),
+            Instr::Expr { ty, expr } => todo!(),
+        };
+        let prev = mapped.insert(instr, mapped_instr);
+        assert!(prev.is_none());
+    }
+
+    fn duplicate_range(
+        &mut self,
+        mapped: &mut HashMap<InstrId, InstrId>,
+        instrs: IdRange<InstrId>,
+    ) {
+        for instr in instrs {
+            self.duplicate(mapped, instr);
+        }
+    }
+
     fn left_domain_more_specific(&mut self, left: InstrId, right: InstrId) -> LowerResult<bool> {
         let start_dummy = self.emit(Instr::Lambda);
         let mut needs = Vec::new();
@@ -1154,17 +1206,29 @@ impl<'a> Lower<'a> {
         target: Body,
         destruct: &[InstrId],
     ) -> LowerResult<(Vec<InstrId>, Vec<InstrId>)> {
-        eprintln!("target = {target:?}, destruct = {destruct:?}");
+        let mut construct = Vec::new();
+        let mut mapped = HashMap::new();
         let mut instr = target.body.start;
         while instr < target.body.end {
             match self.ir.instrs[instr] {
-                Instr::Lambda => instr = self.find_end_lambda(instr),
-                Instr::EndLambda { start, result } => todo!(),
-                Instr::Apply { lambda, args } => todo!(),
-                Instr::Stack { items } => {
-                    assert!(items.is_empty());
+                Instr::Lambda => {
+                    mapped.insert(instr, self.emit(Instr::Lambda));
+                    let start = instr + 1;
+                    let end = self.find_end_lambda(instr);
+                    let range = IdRange { start, end };
+                    self.duplicate_range(&mut mapped, range);
+                    instr = end;
                 }
-                Instr::NeedTydef { def, param } => return Err(self.todo_no_loc()),
+                Instr::EndLambda {
+                    start: _,
+                    result: _,
+                } => self.duplicate(&mut mapped, instr),
+                Instr::Apply { lambda, args } => todo!(),
+                Instr::Stack { items: _ } => self.duplicate(&mut mapped, instr),
+                Instr::NeedTydef { def, param } => {
+                    let extracted = self.extract_ty_lambda(destruct, def, param)?;
+                    construct.push(extracted); // TODO: I don't think this is quite right.
+                }
                 Instr::NeedSigdef { def, param } => todo!(),
                 Instr::NeedValdef { def, param } => todo!(),
                 Instr::NeedCtxdef { def, param } => todo!(),
@@ -1193,7 +1257,7 @@ impl<'a> Lower<'a> {
             }
             instr += 1;
         }
-        Ok((Vec::new(), Vec::new()))
+        Ok((construct, Vec::new()))
     }
 
     fn extract_ty_lambda(
