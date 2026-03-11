@@ -997,6 +997,75 @@ impl<'a> Lower<'a> {
         self.ty_tuple(Vec::new())
     }
 
+    fn find_end_lambda(&self, start: InstrId) -> InstrId {
+        let mut instr = start;
+        loop {
+            instr += 1;
+            if let Instr::EndLambda {
+                start: this_start,
+                result: _,
+            } = self.ir.instrs[instr]
+                && this_start == start
+            {
+                return instr;
+            }
+        }
+    }
+
+    fn left_domain_more_specific(&mut self, left: InstrId, right: InstrId) -> LowerResult<bool> {
+        let start_dummy = self.emit(Instr::Lambda);
+        let mut needs = Vec::new();
+        let Instr::EndLambda { start, result: _ } = self.ir.instrs[right] else {
+            panic!()
+        };
+        let mut instr = start + 1;
+        while instr < right {
+            match self.ir.instrs[instr] {
+                Instr::Lambda => todo!(),
+                Instr::EndLambda { start, result } => todo!(),
+                Instr::Apply { lambda, args } => todo!(),
+                Instr::Stack { items } => {
+                    assert!(items.is_empty());
+                }
+                Instr::NeedTydef { def, param } => todo!(),
+                Instr::NeedSigdef { def, param } => todo!(),
+                Instr::NeedValdef { def, param } => todo!(),
+                Instr::NeedCtxdef { def, param } => todo!(),
+                Instr::Tagdef { def } => todo!(),
+                Instr::Aliasdef { def } => todo!(),
+                Instr::Tuple { elems } => todo!(),
+                Instr::Record { fields } => todo!(),
+                Instr::Context => todo!(),
+                Instr::Fndef { def } => todo!(),
+                Instr::Get { ctx, slot } => todo!(),
+                Instr::Lit { val } => todo!(),
+                Instr::Bind { args, bind } => todo!(),
+                Instr::BindTydef { def, bind } => todo!(),
+                Instr::BindSigdef { def, bind } => todo!(),
+                Instr::BindValdef { def, bind } => todo!(),
+                Instr::BindCtxdef { def, bind } => todo!(),
+                Instr::Sig { param, result } => todo!(),
+                Instr::Set { lhs, rhs } => todo!(),
+                Instr::If { ty, cond } => todo!(),
+                Instr::Else { result } => todo!(),
+                Instr::EndIf { result } => todo!(),
+                Instr::Loop => todo!(),
+                Instr::EndLoop => todo!(),
+                Instr::Br { depth } => todo!(),
+                Instr::Expr { ty, expr } => todo!(),
+            }
+            instr += 1;
+        }
+        let success = self.invoke(right, &needs)?.is_some();
+        let items = self.items(&[]);
+        let dummy = self.emit(Instr::Stack { items });
+        self.emit(Instr::EndLambda {
+            start: start_dummy,
+            result: dummy,
+        });
+        Ok(success)
+    }
+
     fn invoke(
         &mut self,
         lambda: InstrId,
@@ -1085,15 +1154,17 @@ impl<'a> Lower<'a> {
         target: Body,
         destruct: &[InstrId],
     ) -> LowerResult<(Vec<InstrId>, Vec<InstrId>)> {
-        for instr in target.body {
+        eprintln!("target = {target:?}, destruct = {destruct:?}");
+        let mut instr = target.body.start;
+        while instr < target.body.end {
             match self.ir.instrs[instr] {
-                Instr::Lambda => return Err(self.todo_no_loc()),
+                Instr::Lambda => instr = self.find_end_lambda(instr),
                 Instr::EndLambda { start, result } => todo!(),
                 Instr::Apply { lambda, args } => todo!(),
                 Instr::Stack { items } => {
                     assert!(items.is_empty());
                 }
-                Instr::NeedTydef { def, param } => todo!(),
+                Instr::NeedTydef { def, param } => return Err(self.todo_no_loc()),
                 Instr::NeedSigdef { def, param } => todo!(),
                 Instr::NeedValdef { def, param } => todo!(),
                 Instr::NeedCtxdef { def, param } => todo!(),
@@ -1120,15 +1191,16 @@ impl<'a> Lower<'a> {
                 Instr::Br { depth } => todo!(),
                 Instr::Expr { ty, expr } => todo!(),
             }
+            instr += 1;
         }
         Ok((Vec::new(), Vec::new()))
     }
 
-    fn extract_ty(
+    fn extract_ty_lambda(
         &mut self,
         slots: &[InstrId],
         def: TydefId,
-        destruct: &[InstrId],
+        lambda: InstrId,
     ) -> LowerResult<InstrId> {
         let mut options = Vec::new();
         for &slot in slots {
@@ -1141,7 +1213,7 @@ impl<'a> Lower<'a> {
                     if tydef != def {
                         continue;
                     }
-                    if self.invoke(param, destruct)?.is_some() {
+                    if self.left_domain_more_specific(lambda, param)? {
                         options.push(slot);
                     }
                 }
@@ -1176,6 +1248,21 @@ impl<'a> Lower<'a> {
             panic!()
         }
         Ok(options[0])
+    }
+
+    fn extract_ty(
+        &mut self,
+        slots: &[InstrId],
+        def: TydefId,
+        destruct: &[InstrId],
+    ) -> LowerResult<InstrId> {
+        let Tydef(target) = self.ir.tydefs[def];
+        let start = self.emit(Instr::Lambda);
+        let (construct, _) = self.invoke_need(target, destruct)?;
+        let items = self.items(&construct);
+        let result = self.emit(Instr::Stack { items });
+        let lambda = self.emit(Instr::EndLambda { start, result });
+        self.extract_ty_lambda(slots, def, lambda)
     }
 
     fn extract_sig(
@@ -1225,7 +1312,7 @@ impl<'a> Lower<'a> {
         };
         let construct = binds
             .into_iter()
-            .map(|bind| self.bind(&destruct, bind))
+            .map(|bind| self.bind(destruct, bind))
             .collect::<LowerResult<Vec<InstrId>>>()?;
         Ok((named, construct))
     }
