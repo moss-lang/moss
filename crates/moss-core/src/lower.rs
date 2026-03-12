@@ -1043,7 +1043,7 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn duplicate(&mut self, mapped: &mut InstrMap, instr: InstrId) {
+    fn duplicate(&mut self, mapped: &mut InstrMap, instr: InstrId) -> LowerResult<()> {
         let mapped_instr = match self.ir.instrs[instr] {
             Instr::Lambda => self.emit(Instr::Lambda),
             Instr::EndLambda { start, result } => self.emit(Instr::EndLambda {
@@ -1063,18 +1063,38 @@ impl<'a> Lower<'a> {
                     items: items_mapped,
                 })
             }
-            Instr::NeedTydef { def, param } => todo!(),
-            Instr::NeedSigdef { def, param } => todo!(),
-            Instr::NeedValdef { def, param } => todo!(),
-            Instr::NeedCtxdef { def, param } => todo!(),
-            Instr::Tagdef { def } => todo!(),
-            Instr::Aliasdef { def } => todo!(),
-            Instr::Tuple { elems } => todo!(),
+            Instr::NeedTydef { def, param } => self.emit(Instr::NeedTydef {
+                def,
+                param: mapped.get(param),
+            }),
+            Instr::NeedSigdef { def, param } => self.emit(Instr::NeedSigdef {
+                def,
+                param: mapped.get(param),
+            }),
+            Instr::NeedValdef { def, param } => self.emit(Instr::NeedValdef {
+                def,
+                param: mapped.get(param),
+            }),
+            Instr::NeedCtxdef { def, param } => self.emit(Instr::NeedCtxdef {
+                def,
+                param: mapped.get(param),
+            }),
+            Instr::Tagdef { def } => self.emit(Instr::Tagdef { def }),
+            Instr::Aliasdef { def } => self.emit(Instr::Aliasdef { def }),
+            Instr::Tuple { elems } => {
+                let elems_mapped = self.map_items(mapped, elems);
+                self.emit(Instr::Tuple {
+                    elems: elems_mapped,
+                })
+            }
             Instr::Record { fields } => todo!(),
-            Instr::Context => todo!(),
-            Instr::Fndef { def } => todo!(),
-            Instr::Get { ctx, slot } => todo!(),
-            Instr::Lit { val } => todo!(),
+            Instr::Context => self.emit(Instr::Context),
+            Instr::Fndef { def } => self.emit(Instr::Fndef { def }),
+            Instr::Get { ctx, slot } => self.emit(Instr::Get {
+                ctx: mapped.get(ctx),
+                slot,
+            }),
+            Instr::Lit { val } => self.emit(Instr::Lit { val }),
             Instr::Bind { args, bind } => {
                 let args_mapped = self.map_items(mapped, args);
                 self.emit(Instr::Bind {
@@ -1082,11 +1102,26 @@ impl<'a> Lower<'a> {
                     bind: mapped.get(bind),
                 })
             }
-            Instr::BindTydef { def, bind } => todo!(),
-            Instr::BindSigdef { def, bind } => todo!(),
-            Instr::BindValdef { def, bind } => todo!(),
-            Instr::BindCtxdef { def, bind } => todo!(),
-            Instr::Sig { param, result } => todo!(),
+            Instr::BindTydef { def, bind } => self.emit(Instr::BindTydef {
+                def,
+                bind: mapped.get(bind),
+            }),
+            Instr::BindSigdef { def, bind } => self.emit(Instr::BindSigdef {
+                def,
+                bind: mapped.get(bind),
+            }),
+            Instr::BindValdef { def, bind } => self.emit(Instr::BindValdef {
+                def,
+                bind: mapped.get(bind),
+            }),
+            Instr::BindCtxdef { def, bind } => self.emit(Instr::BindCtxdef {
+                def,
+                bind: mapped.get(bind),
+            }),
+            Instr::Sig { param, result } => self.emit(Instr::Sig {
+                param: mapped.get(param),
+                result: mapped.get(result),
+            }),
             Instr::Set { lhs, rhs } => todo!(),
             Instr::If { ty, cond } => todo!(),
             Instr::Else { result } => todo!(),
@@ -1097,12 +1132,18 @@ impl<'a> Lower<'a> {
             Instr::Expr { ty, expr } => todo!(),
         };
         mapped.insert(instr, mapped_instr);
+        Ok(())
     }
 
-    fn duplicate_range(&mut self, mapped: &mut InstrMap, instrs: IdRange<InstrId>) {
+    fn duplicate_range(
+        &mut self,
+        mapped: &mut InstrMap,
+        instrs: IdRange<InstrId>,
+    ) -> LowerResult<()> {
         for instr in instrs {
-            self.duplicate(mapped, instr);
+            self.duplicate(mapped, instr)?;
         }
+        Ok(())
     }
 
     /// Try to synthesize a mapping from the left lambda's domain to the right's.
@@ -1124,7 +1165,7 @@ impl<'a> Lower<'a> {
                 Instr::NeedSigdef { def, param } => todo!(),
                 Instr::NeedValdef { def, param } => todo!(),
                 Instr::NeedCtxdef { def, param } => todo!(),
-                _ => self.duplicate(&mut mapped, instr),
+                _ => self.duplicate(&mut mapped, instr)?,
             }
             instr += 1;
         }
@@ -1187,14 +1228,14 @@ impl<'a> Lower<'a> {
                         start,
                         end: end + 1,
                     };
-                    self.duplicate_range(&mut mapped, range);
+                    self.duplicate_range(&mut mapped, range)?;
                     instr = end;
                 }
                 Instr::NeedTydef { def, param } => todo!(),
                 Instr::NeedSigdef { def, param } => todo!(),
                 Instr::NeedValdef { def, param } => todo!(),
                 Instr::NeedCtxdef { def, param } => todo!(),
-                _ => self.duplicate(&mut mapped, instr),
+                _ => self.duplicate(&mut mapped, instr)?,
             }
             instr += 1;
         }
@@ -1222,7 +1263,7 @@ impl<'a> Lower<'a> {
                         start,
                         end: end + 1,
                     };
-                    self.duplicate_range(&mut mapped, range);
+                    self.duplicate_range(&mut mapped, range)?;
                     instr = end;
                 }
                 Instr::NeedTydef { def, param } => {
@@ -1232,7 +1273,7 @@ impl<'a> Lower<'a> {
                 Instr::NeedSigdef { def, param } => todo!(),
                 Instr::NeedValdef { def, param } => todo!(),
                 Instr::NeedCtxdef { def, param } => todo!(),
-                _ => self.duplicate(&mut mapped, instr),
+                _ => self.duplicate(&mut mapped, instr)?,
             }
             instr += 1;
         }
@@ -1262,7 +1303,7 @@ impl<'a> Lower<'a> {
                 }
                 Instr::NeedSigdef { def: _, param: _ } | Instr::NeedValdef { def: _, param: _ } => {
                 }
-                Instr::NeedCtxdef { def, param } => todo!(),
+                Instr::NeedCtxdef { def, param } => return Err(self.todo_no_loc()),
                 Instr::Tagdef { def } => todo!(),
                 Instr::Aliasdef { def } => todo!(),
                 Instr::Tuple { elems } => todo!(),
