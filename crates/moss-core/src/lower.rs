@@ -1050,7 +1050,13 @@ impl<'a> Lower<'a> {
                 start: mapped.get(start),
                 result: mapped.get(result),
             }),
-            Instr::Apply { lambda, args } => todo!(),
+            Instr::Apply { lambda, args } => {
+                let args_mapped = self.map_items(mapped, args);
+                self.emit(Instr::Apply {
+                    lambda: mapped.get(lambda),
+                    args: args_mapped,
+                })
+            }
             Instr::Stack { items } => {
                 let items_mapped = self.map_items(mapped, items);
                 self.emit(Instr::Stack {
@@ -1169,46 +1175,28 @@ impl<'a> Lower<'a> {
             Instr::Br { depth } => todo!(),
             Instr::Expr { ty, expr } => todo!(),
         };
-        for instr in (IdRange {
-            start: start + 1,
-            end: lambda,
-        }) {
+        let mut construct = Vec::new();
+        let mut mapped = InstrMap::new();
+        let mut instr = start + 1;
+        while instr < lambda {
             match self.ir.instrs[instr] {
-                Instr::Lambda => todo!(),
-                Instr::EndLambda { start, result } => todo!(),
-                Instr::Apply { lambda, args } => todo!(),
-                Instr::Stack { items } => {
-                    assert!(items.is_empty());
+                Instr::Lambda => {
+                    mapped.insert(instr, self.emit(Instr::Lambda));
+                    let start = instr + 1;
+                    let end = self.find_end_lambda(instr);
+                    let range = IdRange { start, end };
+                    self.duplicate_range(&mut mapped, range);
+                    instr = end;
                 }
                 Instr::NeedTydef { def, param } => todo!(),
                 Instr::NeedSigdef { def, param } => todo!(),
                 Instr::NeedValdef { def, param } => todo!(),
                 Instr::NeedCtxdef { def, param } => todo!(),
-                Instr::Tagdef { def } => todo!(),
-                Instr::Aliasdef { def } => todo!(),
-                Instr::Tuple { elems } => todo!(),
-                Instr::Record { fields } => todo!(),
-                Instr::Context => todo!(),
-                Instr::Fndef { def } => todo!(),
-                Instr::Get { ctx, slot } => todo!(),
-                Instr::Lit { val } => todo!(),
-                Instr::Bind { args, bind } => todo!(),
-                Instr::BindTydef { def, bind } => todo!(),
-                Instr::BindSigdef { def, bind } => todo!(),
-                Instr::BindValdef { def, bind } => todo!(),
-                Instr::BindCtxdef { def, bind } => todo!(),
-                Instr::Sig { param, result } => todo!(),
-                Instr::Set { lhs, rhs } => todo!(),
-                Instr::If { ty, cond } => todo!(),
-                Instr::Else { result } => todo!(),
-                Instr::EndIf { result } => todo!(),
-                Instr::Loop => todo!(),
-                Instr::EndLoop => todo!(),
-                Instr::Br { depth } => todo!(),
-                Instr::Expr { ty, expr } => todo!(),
+                _ => self.duplicate(&mut mapped, instr),
             }
+            instr += 1;
         }
-        Ok(Some(Vec::new()))
+        Ok(Some(construct))
     }
 
     fn invoke_force(&mut self, lambda: InstrId, destruct: &[InstrId]) -> LowerResult<Vec<InstrId>> {
@@ -1233,12 +1221,6 @@ impl<'a> Lower<'a> {
                     self.duplicate_range(&mut mapped, range);
                     instr = end;
                 }
-                Instr::EndLambda {
-                    start: _,
-                    result: _,
-                } => self.duplicate(&mut mapped, instr),
-                Instr::Apply { lambda, args } => todo!(),
-                Instr::Stack { items: _ } => self.duplicate(&mut mapped, instr),
                 Instr::NeedTydef { def, param } => {
                     let extracted = self.extract_ty_lambda(destruct, def, param)?;
                     construct.push(extracted); // TODO: I don't think this is quite right.
@@ -1246,28 +1228,7 @@ impl<'a> Lower<'a> {
                 Instr::NeedSigdef { def, param } => todo!(),
                 Instr::NeedValdef { def, param } => todo!(),
                 Instr::NeedCtxdef { def, param } => todo!(),
-                Instr::Tagdef { def } => todo!(),
-                Instr::Aliasdef { def } => todo!(),
-                Instr::Tuple { elems } => todo!(),
-                Instr::Record { fields } => todo!(),
-                Instr::Context => todo!(),
-                Instr::Fndef { def } => todo!(),
-                Instr::Get { ctx, slot } => todo!(),
-                Instr::Lit { val } => todo!(),
-                Instr::Bind { args, bind } => todo!(),
-                Instr::BindTydef { def, bind } => todo!(),
-                Instr::BindSigdef { def, bind } => todo!(),
-                Instr::BindValdef { def, bind } => todo!(),
-                Instr::BindCtxdef { def, bind } => todo!(),
-                Instr::Sig { param, result } => todo!(),
-                Instr::Set { lhs, rhs } => todo!(),
-                Instr::If { ty, cond } => todo!(),
-                Instr::Else { result } => todo!(),
-                Instr::EndIf { result } => todo!(),
-                Instr::Loop => todo!(),
-                Instr::EndLoop => todo!(),
-                Instr::Br { depth } => todo!(),
-                Instr::Expr { ty, expr } => todo!(),
+                _ => self.duplicate(&mut mapped, instr),
             }
             instr += 1;
         }
@@ -1295,8 +1256,8 @@ impl<'a> Lower<'a> {
                         options.push(slot);
                     }
                 }
-                Instr::NeedSigdef { def, param } => todo!(),
-                Instr::NeedValdef { def, param } => todo!(),
+                Instr::NeedSigdef { def: _, param: _ } | Instr::NeedValdef { def: _, param: _ } => {
+                }
                 Instr::NeedCtxdef { def, param } => todo!(),
                 Instr::Tagdef { def } => todo!(),
                 Instr::Aliasdef { def } => todo!(),
