@@ -90,6 +90,28 @@ define_index_type! {
 
 pub type InstrList = IdRange<ItemId>;
 
+#[derive(Debug)]
+struct InstrMap(HashMap<InstrId, InstrId>);
+
+impl InstrMap {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    fn insert(&mut self, key: InstrId, val: InstrId) {
+        let prev = self.0.insert(key, val);
+        assert!(prev.is_none());
+    }
+
+    /// Return the instruction that `instr` is mapped to.
+    ///
+    /// If `instr` is not mapped to anything explicitly, this method assumes `instr` itself is
+    /// already in scope, and just returns it.
+    fn get(&self, instr: InstrId) -> InstrId {
+        self.0.get(&instr).copied().unwrap_or(instr)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Depth(pub u32);
 
@@ -978,9 +1000,12 @@ impl<'a> Lower<'a> {
         IdRange { start, end }
     }
 
-    fn map_items(&mut self, mapped: &HashMap<InstrId, InstrId>, items: InstrList) -> InstrList {
-        let items_mapped =
-            Vec::from_iter(items.into_iter().map(|item| mapped[&self.ir.items[item]]));
+    fn map_items(&mut self, mapped: &InstrMap, items: InstrList) -> InstrList {
+        let items_mapped = Vec::from_iter(
+            items
+                .into_iter()
+                .map(|item| mapped.get(self.ir.items[item])),
+        );
         self.items(&items_mapped)
     }
 
@@ -1018,12 +1043,12 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn duplicate(&mut self, mapped: &mut HashMap<InstrId, InstrId>, instr: InstrId) {
+    fn duplicate(&mut self, mapped: &mut InstrMap, instr: InstrId) {
         let mapped_instr = match self.ir.instrs[instr] {
             Instr::Lambda => self.emit(Instr::Lambda),
             Instr::EndLambda { start, result } => self.emit(Instr::EndLambda {
-                start: mapped[&start],
-                result: mapped[&result],
+                start: mapped.get(start),
+                result: mapped.get(result),
             }),
             Instr::Apply { lambda, args } => todo!(),
             Instr::Stack { items } => {
@@ -1048,7 +1073,7 @@ impl<'a> Lower<'a> {
                 let args_mapped = self.map_items(mapped, args);
                 self.emit(Instr::Bind {
                     args: args_mapped,
-                    bind: mapped[&bind],
+                    bind: mapped.get(bind),
                 })
             }
             Instr::BindTydef { def, bind } => todo!(),
@@ -1065,27 +1090,27 @@ impl<'a> Lower<'a> {
             Instr::Br { depth } => todo!(),
             Instr::Expr { ty, expr } => todo!(),
         };
-        let prev = mapped.insert(instr, mapped_instr);
-        assert!(prev.is_none());
+        mapped.insert(instr, mapped_instr);
     }
 
-    fn duplicate_range(
-        &mut self,
-        mapped: &mut HashMap<InstrId, InstrId>,
-        instrs: IdRange<InstrId>,
-    ) {
+    fn duplicate_range(&mut self, mapped: &mut InstrMap, instrs: IdRange<InstrId>) {
         for instr in instrs {
             self.duplicate(mapped, instr);
         }
     }
 
+    /// Try to synthesize a mapping from the left lambda's domain to the right's.
+    ///
+    /// Both lambdas must currently be in scope.
+    ///
+    /// The synthesized mapping is not used; only its success or failure is returned as a boolean.
     fn left_domain_more_specific(&mut self, left: InstrId, right: InstrId) -> LowerResult<bool> {
         let start_dummy = self.emit(Instr::Lambda);
         let mut needs = Vec::new();
         let Instr::EndLambda { start, result: _ } = self.ir.instrs[right] else {
             panic!()
         };
-        let mut mapped = HashMap::new();
+        let mut mapped = InstrMap::new();
         let mut instr = start + 1;
         while instr < right {
             match self.ir.instrs[instr] {
@@ -1196,7 +1221,7 @@ impl<'a> Lower<'a> {
         destruct: &[InstrId],
     ) -> LowerResult<(Vec<InstrId>, Vec<InstrId>)> {
         let mut construct = Vec::new();
-        let mut mapped = HashMap::new();
+        let mut mapped = InstrMap::new();
         let mut instr = target.body.start;
         while instr < target.body.end {
             match self.ir.instrs[instr] {
