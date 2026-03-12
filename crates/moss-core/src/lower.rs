@@ -1181,10 +1181,12 @@ impl<'a> Lower<'a> {
         while instr < lambda {
             match self.ir.instrs[instr] {
                 Instr::Lambda => {
-                    mapped.insert(instr, self.emit(Instr::Lambda));
-                    let start = instr + 1;
+                    let start = instr;
                     let end = self.find_end_lambda(instr);
-                    let range = IdRange { start, end };
+                    let range = IdRange {
+                        start,
+                        end: end + 1,
+                    };
                     self.duplicate_range(&mut mapped, range);
                     instr = end;
                 }
@@ -1214,10 +1216,12 @@ impl<'a> Lower<'a> {
         while instr < target.body.end {
             match self.ir.instrs[instr] {
                 Instr::Lambda => {
-                    mapped.insert(instr, self.emit(Instr::Lambda));
-                    let start = instr + 1;
+                    let start = instr;
                     let end = self.find_end_lambda(instr);
-                    let range = IdRange { start, end };
+                    let range = IdRange {
+                        start,
+                        end: end + 1,
+                    };
                     self.duplicate_range(&mut mapped, range);
                     instr = end;
                 }
