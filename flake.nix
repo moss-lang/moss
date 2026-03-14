@@ -53,6 +53,7 @@
         };
         devArgs = {
           cargoExtraArgs = "--locked --package=moss-dev";
+          MOSS_LIB = "lib";
         };
         craneLib = crane.mkLib prev;
         cacheArgs = {
