@@ -105,6 +105,7 @@ pub struct Lib {
     pub char: ModuleId,
     pub int: ModuleId,
     pub literal: ModuleId,
+    pub ops: ModuleId,
     pub prelude: ModuleId,
     pub string: ModuleId,
     pub types: ModuleId,
@@ -135,6 +136,9 @@ impl Precompile {
             return Ok(module);
         }
         let absolute = path::absolute(self.dir.join(&self.ir.strings[path]))?;
+        if env::var_os("MOSS_TRACE_LIB").is_some() {
+            eprintln!("lower:start {}", absolute.display());
+        }
         let source = fs::read_to_string(&absolute)?;
         let (tokens, starts) = lex(&source).unwrap();
         let tree = parse(&tokens)
@@ -153,6 +157,7 @@ impl Precompile {
                 self.lib(id, base)
             })
             .collect::<io::Result<Vec<_>>>()?;
+        let skip_bodies = absolute.file_name() == Some(OsStr::new("wasi.moss"));
         let module = lower(
             &source,
             &starts,
@@ -162,6 +167,7 @@ impl Precompile {
             base,
             self.preprelude,
             &imports,
+            skip_bodies,
         )
         .map_err(|err| {
             let (tokens, message) = err.describe(&source, &starts, &tree, &self.ir, &self.names);
@@ -172,6 +178,9 @@ impl Precompile {
             self.error(&absolute, &source, start, &message)
         })
         .unwrap();
+        if env::var_os("MOSS_TRACE_LIB").is_some() {
+            eprintln!("lower:done {}", absolute.display());
+        }
         self.modules.insert(path, module);
         Ok(module)
     }
@@ -281,6 +290,7 @@ impl Precompile {
         };
         let path_prelude = self.ir.strings.make_id("./prelude.moss");
         let prelude = self.lib(path_prelude, Some(base))?;
+        let ops = self.modules[&self.ir.strings.get_id("./ops.moss").unwrap()];
         let types = self.modules[&self.ir.strings.get_id("./types.moss").unwrap()];
         let wasm = self.modules[&self.ir.strings.get_id("./wasm.moss").unwrap()];
         let wasip1 = self.modules[&self.ir.strings.get_id("./wasip1.moss").unwrap()];
@@ -289,6 +299,7 @@ impl Precompile {
             char,
             int,
             literal,
+            ops,
             prelude,
             string,
             types,

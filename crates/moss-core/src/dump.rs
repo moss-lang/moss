@@ -91,16 +91,34 @@ impl<'a> Dump<'a> {
             Expr::Param { ty } => {
                 print!("param typed %{}", ty.index());
             }
-            Expr::Copy { value } => todo!(),
-            Expr::Nominal { ty, inner } => todo!(),
-            Expr::Tuple { elems } => todo!(),
-            Expr::Record { fields } => todo!(),
+            Expr::Copy { value } => {
+                print!("copy %{}", value.index());
+            }
+            Expr::Nominal { ty, inner } => {
+                print!("nominal %{} from %{}", ty.index(), inner.index());
+            }
+            Expr::Tuple { elems } => {
+                print!("tuple");
+                self.items(elems);
+            }
+            Expr::Record { fields } => {
+                print!("record");
+                for &(name, value) in fields.get(&self.ir.records) {
+                    print!(" {}=%{}", &self.ir.strings[name], value.index());
+                }
+            }
             Expr::Elem { tuple, index } => {
                 print!("element {} from %{}", index.index(), tuple.index());
             }
-            Expr::Field { record, index } => todo!(),
-            Expr::Val { val } => todo!(),
-            Expr::Call { func, arg } => todo!(),
+            Expr::Field { record, index } => {
+                print!("field {} from %{}", index.index(), record.index());
+            }
+            Expr::Val { val } => {
+                print!("value %{}", val.index());
+            }
+            Expr::Call { func, arg } => {
+                print!("call %{} with %{}", func.index(), arg.index());
+            }
         }
     }
 
@@ -168,17 +186,37 @@ impl<'a> Dump<'a> {
                 self.named(Named::Ctxdef(def));
                 print!(" via %{}", param.index());
             }
-            Instr::Tagdef { def } => todo!(),
-            Instr::Aliasdef { def } => todo!(),
+            Instr::Tagdef { def } => {
+                print!("tag ");
+                self.named(Named::Tagdef(def));
+            }
+            Instr::Aliasdef { def } => {
+                print!("alias ");
+                self.named(Named::Aliasdef(def));
+            }
             Instr::Tuple { elems } => {
                 print!("tuple");
                 self.items(elems);
             }
-            Instr::Record { fields } => todo!(),
-            Instr::Context => todo!(),
-            Instr::Fndef { def } => todo!(),
-            Instr::Get { ctx, slot } => todo!(),
-            Instr::Lit { val } => todo!(),
+            Instr::Record { fields } => {
+                print!("record");
+                for &(name, value) in fields.get(&self.ir.records) {
+                    print!(" {}=%{}", &self.ir.strings[name], value.index());
+                }
+            }
+            Instr::Context => {
+                print!("context");
+            }
+            Instr::Fndef { def } => {
+                print!("fn ");
+                self.named(Named::Fndef(def));
+            }
+            Instr::Get { ctx, slot } => {
+                print!("get slot {} from %{}", slot.index(), ctx.index());
+            }
+            Instr::Lit { val } => {
+                print!("lit {:?}", val);
+            }
             Instr::Bind { args, bind } => {
                 print!("bind");
                 self.items(args);
@@ -207,13 +245,27 @@ impl<'a> Dump<'a> {
             Instr::Sig { param, result } => {
                 print!("sig from %{} to %{}", param.index(), result.index());
             }
-            Instr::Set { lhs, rhs } => todo!(),
-            Instr::If { ty, cond } => todo!(),
-            Instr::Else { result } => todo!(),
-            Instr::EndIf { result } => todo!(),
-            Instr::Loop => todo!(),
-            Instr::EndLoop => todo!(),
-            Instr::Br { depth } => todo!(),
+            Instr::Set { lhs, rhs } => {
+                print!("set %{} to %{}", lhs.index(), rhs.index());
+            }
+            Instr::If { ty, cond } => {
+                print!("if %{} producing %{}", cond.index(), ty.index());
+            }
+            Instr::Else { result } => {
+                print!("else with %{}", result.index());
+            }
+            Instr::EndIf { result } => {
+                print!("end if with %{}", result.index());
+            }
+            Instr::Loop => {
+                print!("loop");
+            }
+            Instr::EndLoop => {
+                print!("end loop");
+            }
+            Instr::Br { depth } => {
+                print!("br {}", depth.0);
+            }
             Instr::Expr { ty: _, expr } => {
                 self.expr(expr);
             }

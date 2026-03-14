@@ -6,6 +6,9 @@ import "./string.moss" use .to_string, String;
 import "./this.moss" use This;
 
 type Number;
+type Args;
+
+context alloc = ;
 
 context Arithmetic[Number] =
   ops::AddOut[Lhs=Number, Rhs=Number]=Number,
@@ -36,6 +39,12 @@ context Comparison[Number] =
 ;
 
 fn print[String](string: String);
+fn args[Args](): Args;
+fn read[String](path: String): String;
+fn uint32_to_string[String, Uint32](n: Uint32): String;
+fn uint64_to_string[String, Uint64](n: Uint64): String;
+fn .len[Int](): Int;
+fn .get[String, Int](index: Int): String;
 
 context Std =
   lit::LiteralUint31,
@@ -106,6 +115,14 @@ context Std =
   Comparison[Number=Int],
   .to_string[String, This=Int],
 
+  Args,
+  args[Args],
+  read[String],
+  uint32_to_string[String, Uint32],
+  uint64_to_string[String, Uint64],
+  .len[Int, This=Args],
+  .get[String, Int, This=Args],
+
   print,
 ;
 
@@ -113,3 +130,5 @@ fn println[Std](string: String) {
   print(string);
   print("\n");
 }
+
+fn int32_unchecked(): bind Std;

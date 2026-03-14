@@ -61,6 +61,7 @@ fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
         Some(base),
         lib.prelude,
         &[],
+        false,
     )
     .map_err(|err| {
         let (tokens, message) = err.describe(&source, &starts, &tree, &ir, &names);

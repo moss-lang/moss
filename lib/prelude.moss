@@ -1,6 +1,19 @@
 import "./bool.moss" use Bool, false, true;
 import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
-import "./std.moss" use Std, print, println;
+import "./std.moss" use
+  Args,
+  Std,
+  alloc,
+  args,
+  int32_unchecked,
+  .get,
+  .len,
+  print,
+  println,
+  read,
+  uint32_to_string,
+  uint64_to_string,
+;
 import "./string.moss" use .to_string, String;
 import "./this.moss" use This, this;
 import "./wasi.moss" use Wasi;

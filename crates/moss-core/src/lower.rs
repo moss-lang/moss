@@ -1,8 +1,9 @@
 use std::{
     backtrace::Backtrace,
     cmp::Ordering,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     mem::take,
+    sync::atomic::{AtomicUsize, Ordering as AtomicOrdering},
 };
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
@@ -89,6 +90,10 @@ define_index_type! {
 }
 
 pub type InstrList = IdRange<ItemId>;
+
+static TRACE_INVOKE: AtomicUsize = AtomicUsize::new(0);
+static TRACE_SPECIFICITY: AtomicUsize = AtomicUsize::new(0);
+static TRACE_QUERY_CTX: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug)]
 struct InstrMap(HashMap<InstrId, InstrId>);
@@ -495,7 +500,7 @@ pub enum Val {
     String(StrId),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IntType {
     Uint32,
     Int32,
@@ -563,8 +568,14 @@ pub struct IR {
     /// Contextual functions.
     pub sigdefs: IndexVec<SigdefId, Sigdef>,
 
+    /// The number of contextual parameters on each function declaration.
+    pub sig_arity: IndexVec<SigdefId, usize>,
+
     /// Functions that are given definitions.
     pub fndefs: IndexVec<FndefId, Sigdef>,
+
+    /// The number of contextual parameters on each function definition.
+    pub fn_arity: IndexVec<FndefId, usize>,
 
     /// Contextual values.
     pub valdefs: IndexVec<ValdefId, Valdef>,
@@ -572,8 +583,8 @@ pub struct IR {
     /// Composite contexts.
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
 
-    /// Actual function bodies.
-    pub bodies: IndexVec<FndefId, Body>,
+    /// Actual function bodies, when they have been lowered.
+    pub bodies: IndexVec<FndefId, Option<Body>>,
 }
 
 type ModuleNames<T> = IndexMap<(ModuleId, StrId), T>;
@@ -747,6 +758,7 @@ pub enum LowerError {
     Int64Low(TokenId),
     Int64High(TokenId),
     ThisNotMethod(ExprId),
+    ArgCount(ExprId),
     Overflow(ExprId),
     BindMissing(parse::BindId),
 }
@@ -826,6 +838,9 @@ impl LowerError {
                 Some(ctx.expr(expr)),
                 "cannot use `this` in a function that is not a method".to_owned(),
             ),
+            LowerError::ArgCount(expr) => {
+                (Some(ctx.expr(expr)), "wrong number of arguments".to_owned())
+            }
             LowerError::Overflow(expr) => (Some(ctx.expr(expr)), "integer too large".to_owned()),
             LowerError::BindMissing(bind) => (
                 Some(ctx.bind(bind)),
@@ -848,14 +863,42 @@ struct Lower<'a> {
     prelude: ModuleId,
     module: ModuleId,
     imports: &'a [ModuleId],
+    skip_bodies: bool,
     funcs: Vec<(parse::FuncdefId, FndefId)>,
     attaches: Vec<(parse::AttachdefId, TagdefId, FndefId)>,
     detaches: Vec<(parse::DetachdefId, FndefId)>,
+    bind_ctx_items_cache: HashMap<InstrId, Option<Vec<InstrId>>>,
+    need_ctx_items_cache: HashMap<(CtxdefId, InstrId), Option<Vec<InstrId>>>,
+    materialized_lambdas: HashMap<InstrId, InstrId>,
+    invoke_cache: HashMap<(InstrId, Vec<InstrId>), Option<Vec<InstrId>>>,
+    invoke_active: HashSet<(InstrId, Vec<InstrId>)>,
+    specificity_cache: HashMap<(InstrId, InstrId), bool>,
+    specificity_active: HashSet<(InstrId, InstrId)>,
+    ctx_contains_ty_cache: HashMap<(CtxdefId, TydefId), bool>,
+    ctx_contains_ty_active: HashSet<(CtxdefId, TydefId)>,
+    ctx_contains_sig_cache: HashMap<(CtxdefId, SigdefId), bool>,
+    ctx_contains_sig_active: HashSet<(CtxdefId, SigdefId)>,
+    ctx_contains_val_cache: HashMap<(CtxdefId, ValdefId), bool>,
+    ctx_contains_val_active: HashSet<(CtxdefId, ValdefId)>,
+    ctx_contains_ctx_cache: HashMap<(CtxdefId, CtxdefId), bool>,
+    ctx_contains_ctx_active: HashSet<(CtxdefId, CtxdefId)>,
 }
 
 impl<'a> Lower<'a> {
+    fn trace_hotspot(&self, counter: &AtomicUsize, label: &str, message: impl FnOnce() -> String) {
+        if std::env::var_os("MOSS_TRACE").is_none() {
+            return;
+        }
+        let count = counter.fetch_add(1, AtomicOrdering::Relaxed) + 1;
+        if count.is_multiple_of(100) {
+            eprintln!("{label}#{count} {}", message());
+        }
+    }
+
     fn todo(&self, token: TokenId) -> LowerError {
-        dump(self.ir, self.names);
+        if std::env::var_os("MOSS_DUMP_TODO").is_some() {
+            dump(self.ir, self.names);
+        }
         LowerError::Todo(token, Backtrace::capture())
     }
 
@@ -865,6 +908,40 @@ impl<'a> Lower<'a> {
 
     fn slice(&self, token: TokenId) -> &'a str {
         &self.source[relex(self.source, self.starts, token)]
+    }
+
+    fn spec_string(&self, spec: parse::Spec) -> String {
+        let Spec { dot, path, binds } = spec;
+        let mut s = String::new();
+        if dot {
+            s.push('.');
+        }
+        for name in path.prefix {
+            s.push_str(self.slice(self.tree.names[name]));
+            s.push_str("::");
+        }
+        s.push_str(self.slice(path.last));
+        if !binds.is_empty() {
+            s.push('[');
+            let mut first = true;
+            for bind in binds {
+                if !first {
+                    s.push_str(", ");
+                }
+                first = false;
+                let parse::Bind { key, val } = self.tree.binds[bind];
+                s.push_str(&self.spec_string(key));
+                if let Some(entry) = val {
+                    s.push('=');
+                    match entry {
+                        parse::Entry::Lit(token) => s.push_str(self.slice(token)),
+                        parse::Entry::Ref(spec) => s.push_str(&self.spec_string(spec)),
+                    }
+                }
+            }
+            s.push(']');
+        }
+        s
     }
 
     fn name(&mut self, token: TokenId) -> StrId {
@@ -1146,80 +1223,354 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
+    fn stack_instrs(&self, instr: InstrId) -> Option<Vec<InstrId>> {
+        match self.ir.instrs[instr] {
+            Instr::Stack { items } => Some(Vec::from_iter(items.into_iter().map(|item| self.ir.items[item]))),
+            _ => None,
+        }
+    }
+
+    fn bind_ctx_items(&mut self, bind: InstrId) -> LowerResult<Option<Vec<InstrId>>> {
+        if let Some(cached) = self.bind_ctx_items_cache.get(&bind) {
+            return Ok(cached.clone());
+        }
+        let result = self.materialize_lambda(bind)?;
+        let Instr::Bind { bind: ctx, .. } = self.ir.instrs[result] else {
+            return Err(self.todo_no_loc());
+        };
+        let items = self.stack_instrs(ctx);
+        self.bind_ctx_items_cache.insert(bind, items.clone());
+        Ok(items)
+    }
+
+    fn need_ctx_items(&mut self, def: CtxdefId, param: InstrId) -> LowerResult<Option<Vec<InstrId>>> {
+        let key = (def, param);
+        if let Some(cached) = self.need_ctx_items_cache.get(&key) {
+            return Ok(cached.clone());
+        }
+        let construct = self.materialize_lambda(param)?;
+        let Some(construct) = self.stack_instrs(construct) else {
+            return Err(self.todo_no_loc());
+        };
+        let Ctxdef(body) = self.ir.ctxdefs[def];
+        let inner = self.inline(body, &construct)?;
+        let inner = self.materialize_lambda(inner)?;
+        let items = self.stack_instrs(inner);
+        self.need_ctx_items_cache.insert(key, items.clone());
+        Ok(items)
+    }
+
+    fn slot_domain(&self, slot: InstrId) -> Option<InstrId> {
+        match self.ir.instrs[slot] {
+            Instr::NeedTydef { param, .. }
+            | Instr::NeedSigdef { param, .. }
+            | Instr::NeedValdef { param, .. }
+            | Instr::NeedCtxdef { param, .. } => Some(param),
+            Instr::BindTydef { bind, .. }
+            | Instr::BindSigdef { bind, .. }
+            | Instr::BindValdef { bind, .. }
+            | Instr::BindCtxdef { bind, .. } => Some(bind),
+            _ => None,
+        }
+    }
+
+    fn compare_slot_specificity(&mut self, left: InstrId, right: InstrId) -> LowerResult<Option<Ordering>> {
+        if left == right {
+            return Ok(Some(Ordering::Equal));
+        }
+        let Some(left_domain) = self.slot_domain(left) else {
+            return Ok(None);
+        };
+        let Some(right_domain) = self.slot_domain(right) else {
+            return Ok(None);
+        };
+        let left_more = self.left_domain_more_specific(left_domain, right_domain)?;
+        let right_more = self.left_domain_more_specific(right_domain, left_domain)?;
+        Ok(match (left_more, right_more) {
+            (true, true) => Some(Ordering::Equal),
+            (true, false) => Some(Ordering::Greater),
+            (false, true) => Some(Ordering::Less),
+            (false, false) => None,
+        })
+    }
+
+    fn merge_slot_queries(
+        &mut self,
+        current: Query<InstrId>,
+        next: Query<InstrId>,
+    ) -> LowerResult<Query<InstrId>> {
+        Ok(match (current, next) {
+            (Query::Missing, rhs) => rhs,
+            (lhs, Query::Missing) => lhs,
+            (Query::Ambiguous, _) | (_, Query::Ambiguous) => Query::Ambiguous,
+            (Query::Unique(lhs), Query::Unique(rhs)) => match self.compare_slot_specificity(lhs, rhs)? {
+                None => Query::Ambiguous,
+                Some(Ordering::Greater | Ordering::Equal) => Query::Unique(lhs),
+                Some(Ordering::Less) => Query::Unique(rhs),
+            },
+        })
+    }
+
+    fn inline_range(
+        &mut self,
+        start: InstrId,
+        end: InstrId,
+        result: InstrId,
+        construct: Option<&[InstrId]>,
+    ) -> LowerResult<InstrId> {
+        let mut mapped = InstrMap::new();
+        let mut next_arg = 0;
+        let mut instr = start;
+        while instr < end {
+            match self.ir.instrs[instr] {
+                Instr::Lambda => {
+                    let lambda_start = instr;
+                    let lambda_end = self.find_end_lambda(instr);
+                    self.duplicate_range(
+                        &mut mapped,
+                        IdRange {
+                            start: lambda_start,
+                            end: lambda_end + 1,
+                        },
+                    )?;
+                    instr = lambda_end;
+                }
+                Instr::NeedTydef { def, param } => {
+                    let mapped_instr = match construct {
+                        Some(args) if next_arg < args.len() => {
+                            let arg = args[next_arg];
+                            next_arg += 1;
+                            arg
+                        }
+                        _ => self.emit(Instr::NeedTydef {
+                            def,
+                            param: mapped.get(param),
+                        }),
+                    };
+                    mapped.insert(instr, mapped_instr);
+                }
+                Instr::NeedSigdef { def, param } => {
+                    let mapped_instr = match construct {
+                        Some(args) if next_arg < args.len() => {
+                            let arg = args[next_arg];
+                            next_arg += 1;
+                            arg
+                        }
+                        _ => self.emit(Instr::NeedSigdef {
+                            def,
+                            param: mapped.get(param),
+                        }),
+                    };
+                    mapped.insert(instr, mapped_instr);
+                }
+                Instr::NeedValdef { def, param } => {
+                    let mapped_instr = match construct {
+                        Some(args) if next_arg < args.len() => {
+                            let arg = args[next_arg];
+                            next_arg += 1;
+                            arg
+                        }
+                        _ => self.emit(Instr::NeedValdef {
+                            def,
+                            param: mapped.get(param),
+                        }),
+                    };
+                    mapped.insert(instr, mapped_instr);
+                }
+                Instr::NeedCtxdef { def, param } => {
+                    let mapped_instr = match construct {
+                        Some(args) if next_arg < args.len() => {
+                            let arg = args[next_arg];
+                            next_arg += 1;
+                            arg
+                        }
+                        _ => self.emit(Instr::NeedCtxdef {
+                            def,
+                            param: mapped.get(param),
+                        }),
+                    };
+                    mapped.insert(instr, mapped_instr);
+                }
+                _ => self.duplicate(&mut mapped, instr)?,
+            }
+            instr += 1;
+        }
+        Ok(mapped.get(result))
+    }
+
+    fn inline_arity(&mut self, body: Body, arity: usize, construct: &[InstrId]) -> LowerResult<InstrId> {
+        let mut mapped = InstrMap::new();
+        let mut next_arg = 0;
+        let mut next_need = 0;
+        let mut instr = body.body.start;
+        while instr < body.body.end {
+            match self.ir.instrs[instr] {
+                Instr::Lambda => {
+                    let lambda_start = instr;
+                    let lambda_end = self.find_end_lambda(instr);
+                    self.duplicate_range(
+                        &mut mapped,
+                        IdRange {
+                            start: lambda_start,
+                            end: lambda_end + 1,
+                        },
+                    )?;
+                    instr = lambda_end;
+                }
+                Instr::NeedTydef { .. }
+                | Instr::NeedSigdef { .. }
+                | Instr::NeedValdef { .. }
+                | Instr::NeedCtxdef { .. }
+                    if next_need < arity =>
+                {
+                    let Some(&arg) = construct.get(next_arg) else {
+                        return Err(self.todo_no_loc());
+                    };
+                    mapped.insert(instr, arg);
+                    next_arg += 1;
+                    next_need += 1;
+                }
+                _ => self.duplicate(&mut mapped, instr)?,
+            }
+            instr += 1;
+        }
+        if next_need != arity || next_arg != arity {
+            return Err(self.todo_no_loc());
+        }
+        Ok(mapped.get(body.result()))
+    }
+
+    fn inline_lambda(&mut self, lambda: InstrId, construct: &[InstrId]) -> LowerResult<InstrId> {
+        let Instr::EndLambda { start, result } = self.ir.instrs[lambda] else {
+            panic!()
+        };
+        self.inline_range(start + 1, lambda, result, Some(construct))
+    }
+
+    fn materialize_lambda(&mut self, lambda: InstrId) -> LowerResult<InstrId> {
+        if let Some(&result) = self.materialized_lambdas.get(&lambda) {
+            return Ok(result);
+        }
+        let Instr::EndLambda { start, result } = self.ir.instrs[lambda] else {
+            panic!()
+        };
+        let result = self.inline_range(start + 1, lambda, result, None)?;
+        self.materialized_lambdas.insert(lambda, result);
+        Ok(result)
+    }
+
+    fn apply_stack(&mut self, lambda: InstrId, args: &[InstrId]) -> LowerResult<Vec<InstrId>> {
+        let result = self.apply_item(lambda, args)?;
+        self.stack_instrs(result).ok_or_else(|| self.todo_no_loc())
+    }
+
+    fn apply_item(&mut self, lambda: InstrId, args: &[InstrId]) -> LowerResult<InstrId> {
+        match self.ir.instrs[lambda] {
+            Instr::EndLambda { .. } => self.inline_lambda(lambda, args),
+            Instr::Apply { lambda, args: applied } => {
+                let applied = Vec::from_iter(applied.into_iter().map(|item| self.ir.items[item]));
+                let inner = self.apply_item(lambda, &applied)?;
+                self.apply_item(inner, args)
+            }
+            Instr::NeedTydef { def, param } => {
+                let construct = self.apply_stack(param, args)?;
+                let Tydef(body) = self.ir.tydefs[def];
+                self.inline(body, &construct)
+            }
+            Instr::NeedSigdef { def, param } => {
+                let construct = self.apply_stack(param, args)?;
+                let Sigdef(body) = self.ir.sigdefs[def];
+                self.inline_arity(body, self.ir.sig_arity[def], &construct)
+            }
+            Instr::NeedValdef { def, param } => {
+                let construct = self.apply_stack(param, args)?;
+                let Valdef(body) = self.ir.valdefs[def];
+                self.inline(body, &construct)
+            }
+            Instr::NeedCtxdef { def, param } => {
+                let construct = self.apply_stack(param, args)?;
+                let Ctxdef(body) = self.ir.ctxdefs[def];
+                let inner = self.inline(body, &construct)?;
+                self.materialize_lambda(inner)
+            }
+            Instr::BindTydef { bind, .. }
+            | Instr::BindSigdef { bind, .. }
+            | Instr::BindValdef { bind, .. }
+            | Instr::BindCtxdef { bind, .. } => {
+                let result = self.apply_item(bind, args)?;
+                let Instr::Bind { args: _, bind } = self.ir.instrs[result] else {
+                    return Err(self.todo_no_loc());
+                };
+                Ok(bind)
+            }
+            Instr::Aliasdef { def } => {
+                let Aliasdef(body) = self.ir.aliasdefs[def];
+                self.inline(body, args)
+            }
+            Instr::Fndef { def } => {
+                let Sigdef(body) = self.ir.fndefs[def];
+                self.inline_arity(body, self.ir.fn_arity[def], args)
+            }
+            Instr::Get { ctx, slot } => {
+                let ctx = self.apply_item(ctx, args)?;
+                let Some(items) = self.stack_instrs(ctx) else {
+                    return Err(self.todo_no_loc());
+                };
+                Ok(items[slot.index()])
+            }
+            _ => Err(self.todo_no_loc()),
+        }
+    }
+
     /// Try to synthesize a mapping from the left lambda's domain to the right's.
     ///
     /// Both lambdas must currently be in scope.
     ///
     /// The synthesized mapping is not used; only its success or failure is returned as a boolean.
     fn left_domain_more_specific(&mut self, left: InstrId, right: InstrId) -> LowerResult<bool> {
-        let start_dummy = self.emit(Instr::Lambda);
-        let mut needs = Vec::new();
-        let Instr::EndLambda { start, result: _ } = self.ir.instrs[right] else {
-            panic!()
-        };
-        let mut mapped = InstrMap::new();
-        let mut instr = start + 1;
-        while instr < right {
-            match self.ir.instrs[instr] {
-                Instr::NeedTydef { def, param } => todo!(),
-                Instr::NeedSigdef { def, param } => todo!(),
-                Instr::NeedValdef { def, param } => todo!(),
-                Instr::NeedCtxdef { def, param } => todo!(),
-                _ => self.duplicate(&mut mapped, instr)?,
-            }
-            instr += 1;
-        }
-        let success = self.invoke(right, &needs)?.is_some();
-        let items = self.items(&[]);
-        let dummy = self.emit(Instr::Stack { items });
-        self.emit(Instr::EndLambda {
-            start: start_dummy,
-            result: dummy,
+        self.trace_hotspot(&TRACE_SPECIFICITY, "specificity", || {
+            format!("left={left:?} right={right:?} instrs={}", self.ir.instrs.len())
         });
-        Ok(success)
+        if let Some(&cached) = self.specificity_cache.get(&(left, right)) {
+            return Ok(cached);
+        }
+        if !self.specificity_active.insert((left, right)) {
+            return Ok(false);
+        }
+        let needs = self.materialize_lambda(left)?;
+        let needs = if let Some(needs) = self.stack_instrs(needs) {
+            needs
+        } else if let Instr::Bind { args, .. } = self.ir.instrs[needs] {
+            Vec::from_iter(args.into_iter().map(|item| self.ir.items[item]))
+        } else {
+            self.specificity_active.remove(&(left, right));
+            return Err(self.todo_no_loc());
+        };
+        let result = self.invoke(right, &needs)?.is_some();
+        self.specificity_active.remove(&(left, right));
+        self.specificity_cache.insert((left, right), result);
+        Ok(result)
     }
 
-    fn invoke(
+    fn invoke_arity(
         &mut self,
         lambda: InstrId,
+        body: Body,
+        arity: usize,
         destruct: &[InstrId],
     ) -> LowerResult<Option<Vec<InstrId>>> {
-        let start = match self.ir.instrs[lambda] {
-            Instr::Lambda => todo!(),
-            Instr::EndLambda { start, result: _ } => start,
-            Instr::Apply { lambda, args } => todo!(),
-            Instr::Stack { items } => todo!(),
-            Instr::NeedTydef { def: _, param }
-            | Instr::NeedSigdef { def: _, param }
-            | Instr::NeedValdef { def: _, param }
-            | Instr::NeedCtxdef { def: _, param } => return self.invoke(param, destruct),
-            Instr::Tagdef { def } => todo!(),
-            Instr::Aliasdef { def } => todo!(),
-            Instr::Tuple { elems } => todo!(),
-            Instr::Record { fields } => todo!(),
-            Instr::Context => todo!(),
-            Instr::Fndef { def } => todo!(),
-            Instr::Get { ctx, slot } => todo!(),
-            Instr::Lit { val } => todo!(),
-            Instr::Bind { args, bind } => todo!(),
-            Instr::BindTydef { def, bind } => todo!(),
-            Instr::BindSigdef { def, bind } => todo!(),
-            Instr::BindValdef { def, bind } => todo!(),
-            Instr::BindCtxdef { def, bind } => todo!(),
-            Instr::Sig { param, result } => todo!(),
-            Instr::Set { lhs, rhs } => todo!(),
-            Instr::If { ty, cond } => todo!(),
-            Instr::Else { result } => todo!(),
-            Instr::EndIf { result } => todo!(),
-            Instr::Loop => todo!(),
-            Instr::EndLoop => todo!(),
-            Instr::Br { depth } => todo!(),
-            Instr::Expr { ty, expr } => todo!(),
-        };
+        let key = (lambda, destruct.to_vec());
+        if let Some(cached) = self.invoke_cache.get(&key) {
+            return Ok(cached.clone());
+        }
+        if !self.invoke_active.insert(key.clone()) {
+            return Ok(None);
+        }
         let mut construct = Vec::new();
         let mut mapped = InstrMap::new();
-        let mut instr = start + 1;
-        while instr < lambda {
+        let mut next_need = 0;
+        let mut instr = body.body.start;
+        while instr < body.body.end && next_need < arity {
             match self.ir.instrs[instr] {
                 Instr::Lambda => {
                     let start = instr;
@@ -1231,19 +1582,401 @@ impl<'a> Lower<'a> {
                     self.duplicate_range(&mut mapped, range)?;
                     instr = end;
                 }
-                Instr::NeedTydef { def, param } => todo!(),
-                Instr::NeedSigdef { def, param } => todo!(),
-                Instr::NeedValdef { def, param } => todo!(),
-                Instr::NeedCtxdef { def, param } => todo!(),
+                Instr::NeedTydef { def, param } => {
+                    let query = self.query_ty_lambda(destruct, def)?;
+                    let Query::Unique(extracted) = query else {
+                        if std::env::var_os("MOSS_TRACE_INVOKE_FAIL").is_some() {
+                            eprintln!(
+                                "invoke missing ty def={def:?} at instr={instr:?} in lambda={lambda:?} query={}",
+                                match query {
+                                    Query::Missing => "missing",
+                                    Query::Ambiguous => "ambiguous",
+                                    Query::Unique(_) => unreachable!(),
+                                }
+                            );
+                        }
+                        self.invoke_active.remove(&key);
+                        self.invoke_cache.insert(key, None);
+                        return Ok(None);
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                    next_need += 1;
+                }
+                Instr::NeedSigdef { def, param } => {
+                    let query = self.query_sig_lambda(destruct, def)?;
+                    let Query::Unique(extracted) = query else {
+                        if std::env::var_os("MOSS_TRACE_INVOKE_FAIL").is_some() {
+                            eprintln!(
+                                "invoke missing sig def={def:?} at instr={instr:?} in lambda={lambda:?} query={}",
+                                match query {
+                                    Query::Missing => "missing",
+                                    Query::Ambiguous => "ambiguous",
+                                    Query::Unique(_) => unreachable!(),
+                                }
+                            );
+                        }
+                        self.invoke_active.remove(&key);
+                        self.invoke_cache.insert(key, None);
+                        return Ok(None);
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                    next_need += 1;
+                }
+                Instr::NeedValdef { def, param } => {
+                    let query = self.query_val_lambda(destruct, def)?;
+                    let Query::Unique(extracted) = query else {
+                        if std::env::var_os("MOSS_TRACE_INVOKE_FAIL").is_some() {
+                            eprintln!(
+                                "invoke missing val def={def:?} at instr={instr:?} in lambda={lambda:?} query={}",
+                                match query {
+                                    Query::Missing => "missing",
+                                    Query::Ambiguous => "ambiguous",
+                                    Query::Unique(_) => unreachable!(),
+                                }
+                            );
+                        }
+                        self.invoke_active.remove(&key);
+                        self.invoke_cache.insert(key, None);
+                        return Ok(None);
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                    next_need += 1;
+                }
+                Instr::NeedCtxdef { def, param } => {
+                    let query = self.query_ctx_lambda(destruct, def, mapped.get(param))?;
+                    let extracted = match query {
+                        Query::Unique(extracted) => extracted,
+                        Query::Missing => self.extract_ctx(destruct, def, destruct)?,
+                        Query::Ambiguous => {
+                            if std::env::var_os("MOSS_TRACE_INVOKE_FAIL").is_some() {
+                                eprintln!(
+                                    "invoke missing ctx def={def:?} at instr={instr:?} in lambda={lambda:?} query=ambiguous"
+                                );
+                            }
+                            self.invoke_active.remove(&key);
+                            self.invoke_cache.insert(key, None);
+                            return Ok(None);
+                        }
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                    next_need += 1;
+                }
                 _ => self.duplicate(&mut mapped, instr)?,
             }
             instr += 1;
         }
-        Ok(Some(construct))
+        let result = if next_need == arity {
+            Some(construct)
+        } else {
+            None
+        };
+        self.invoke_active.remove(&key);
+        self.invoke_cache.insert(key, result.clone());
+        Ok(result)
+    }
+
+    fn invoke(
+        &mut self,
+        lambda: InstrId,
+        destruct: &[InstrId],
+    ) -> LowerResult<Option<Vec<InstrId>>> {
+        self.trace_hotspot(&TRACE_INVOKE, "invoke", || {
+            format!(
+                "lambda={lambda:?} destruct={} instrs={}",
+                destruct.len(),
+                self.ir.instrs.len()
+            )
+        });
+        let key = (lambda, destruct.to_vec());
+        if let Some(cached) = self.invoke_cache.get(&key) {
+            return Ok(cached.clone());
+        }
+        if !self.invoke_active.insert(key.clone()) {
+            return Ok(None);
+        }
+        let (start, end) = match self.ir.instrs[lambda] {
+            Instr::Lambda => {
+                self.invoke_active.remove(&key);
+                return Err(self.todo_no_loc());
+            }
+            Instr::EndLambda { start, result: _ } => (start + 1, lambda),
+            Instr::Apply { lambda, args } => {
+                let applied = Vec::from_iter(args.into_iter().map(|item| self.ir.items[item]));
+                let inner = self.apply_item(lambda, &applied)?;
+                let result = self.invoke(inner, destruct)?;
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, result.clone());
+                return Ok(result);
+            }
+            Instr::Stack { items: _ } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::NeedTydef { def: _, param }
+            | Instr::NeedSigdef { def: _, param }
+            | Instr::NeedValdef { def: _, param }
+            | Instr::NeedCtxdef { def: _, param } => {
+                let result = self.materialize_lambda(param)?;
+                let Some(result) = self.stack_instrs(result) else {
+                    self.invoke_active.remove(&key);
+                    return Err(self.todo_no_loc());
+                };
+                let result = Some(result);
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, result.clone());
+                return Ok(result);
+            }
+            Instr::Tagdef { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::Aliasdef { def } => {
+                let Aliasdef(body) = self.ir.aliasdefs[def];
+                (body.body.start, body.body.end)
+            }
+            Instr::Tuple { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::Record { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::Context => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::Fndef { def } => {
+                let Sigdef(body) = self.ir.fndefs[def];
+                let arity = self.ir.fn_arity[def];
+                self.invoke_active.remove(&key);
+                let result = self.invoke_arity(lambda, body, arity, destruct)?;
+                return Ok(result);
+            }
+            Instr::Get { .. } => {
+                self.invoke_active.remove(&key);
+                return Err(self.todo_no_loc());
+            }
+            Instr::Lit { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::Bind { args, .. } => {
+                self.invoke_active.remove(&key);
+                let result = Some(Vec::from_iter(args.into_iter().map(|item| self.ir.items[item])));
+                self.invoke_cache.insert(key, result.clone());
+                return Ok(result);
+            }
+            Instr::BindTydef { bind, .. }
+            | Instr::BindSigdef { bind, .. }
+            | Instr::BindValdef { bind, .. }
+            | Instr::BindCtxdef { bind, .. } => {
+                let result = self.invoke(bind, destruct)?;
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, result.clone());
+                return Ok(result);
+            }
+            Instr::Sig { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::Set { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::If { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::Else { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::EndIf { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::Loop => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::EndLoop => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::Br { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+            Instr::Expr { .. } => {
+                self.invoke_active.remove(&key);
+                self.invoke_cache.insert(key, Some(Vec::new()));
+                return Ok(Some(Vec::new()));
+            }
+        };
+        let mut construct = Vec::new();
+        let mut mapped = InstrMap::new();
+        let mut instr = start;
+        while instr < end {
+            match self.ir.instrs[instr] {
+                Instr::Lambda => {
+                    let start = instr;
+                    let end = self.find_end_lambda(instr);
+                    let range = IdRange {
+                        start,
+                        end: end + 1,
+                    };
+                    self.duplicate_range(&mut mapped, range)?;
+                    instr = end;
+                }
+                Instr::NeedTydef { def, param } => {
+                    let query = self.query_ty_lambda(destruct, def)?;
+                    let Query::Unique(extracted) = query else {
+                        if std::env::var_os("MOSS_TRACE_INVOKE_FAIL").is_some() {
+                            eprintln!(
+                                "invoke missing ty def={def:?} at instr={instr:?} in lambda={lambda:?} query={}",
+                                match query {
+                                Query::Missing => "missing",
+                                Query::Ambiguous => "ambiguous",
+                                Query::Unique(_) => unreachable!(),
+                            });
+                        }
+                        self.invoke_active.remove(&key);
+                        self.invoke_cache.insert(key, None);
+                        return Ok(None);
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                }
+                Instr::NeedSigdef { def, param } => {
+                    let query = self.query_sig_lambda(destruct, def)?;
+                    let Query::Unique(extracted) = query else {
+                        if std::env::var_os("MOSS_TRACE_INVOKE_FAIL").is_some() {
+                            eprintln!(
+                                "invoke missing sig def={def:?} at instr={instr:?} in lambda={lambda:?} query={}",
+                                match query {
+                                Query::Missing => "missing",
+                                Query::Ambiguous => "ambiguous",
+                                Query::Unique(_) => unreachable!(),
+                            });
+                        }
+                        self.invoke_active.remove(&key);
+                        self.invoke_cache.insert(key, None);
+                        return Ok(None);
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                }
+                Instr::NeedValdef { def, param } => {
+                    let query = self.query_val_lambda(destruct, def)?;
+                    let Query::Unique(extracted) = query else {
+                        if std::env::var_os("MOSS_TRACE_INVOKE_FAIL").is_some() {
+                            eprintln!(
+                                "invoke missing val def={def:?} at instr={instr:?} in lambda={lambda:?} query={}",
+                                match query {
+                                Query::Missing => "missing",
+                                Query::Ambiguous => "ambiguous",
+                                Query::Unique(_) => unreachable!(),
+                            });
+                        }
+                        self.invoke_active.remove(&key);
+                        self.invoke_cache.insert(key, None);
+                        return Ok(None);
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                }
+                Instr::NeedCtxdef { def, param } => {
+                    let query = self.query_ctx_lambda(destruct, def, mapped.get(param))?;
+                    let extracted = match query {
+                        Query::Unique(extracted) => extracted,
+                        Query::Missing => self.extract_ctx(destruct, def, destruct)?,
+                        Query::Ambiguous => {
+                            if std::env::var_os("MOSS_TRACE_INVOKE_FAIL").is_some() {
+                                eprintln!(
+                                    "invoke missing ctx def={def:?} at instr={instr:?} in lambda={lambda:?} query=ambiguous"
+                                );
+                            }
+                            self.invoke_active.remove(&key);
+                            self.invoke_cache.insert(key, None);
+                            return Ok(None);
+                        }
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                }
+                _ => self.duplicate(&mut mapped, instr)?,
+            }
+            instr += 1;
+        }
+        let result = Some(construct);
+        self.invoke_active.remove(&key);
+        self.invoke_cache.insert(key, result.clone());
+        Ok(result)
     }
 
     fn invoke_force(&mut self, lambda: InstrId, destruct: &[InstrId]) -> LowerResult<Vec<InstrId>> {
-        Ok(self.invoke(lambda, destruct)?.unwrap()) // TODO: Return an actual error here.
+        match self.invoke(lambda, destruct)? {
+            Some(construct) => Ok(construct),
+            None => {
+                if std::env::var_os("MOSS_TRACE_INVOKE_FAIL").is_some() {
+                    eprintln!("invoke_force failed lambda={lambda:?} -> {:?}", self.ir.instrs[lambda]);
+                    match self.ir.instrs[lambda] {
+                        Instr::NeedTydef { param, .. }
+                        | Instr::NeedSigdef { param, .. }
+                        | Instr::NeedValdef { param, .. }
+                        | Instr::NeedCtxdef { param, .. } => {
+                            eprintln!("  param={param:?} -> {:?}", self.ir.instrs[param]);
+                            if let Ok(result) = self.materialize_lambda(param) {
+                                eprintln!("  param materialized={result:?} -> {:?}", self.ir.instrs[result]);
+                                if let Some(items) = self.stack_instrs(result) {
+                                    for (index, item) in items.into_iter().enumerate() {
+                                        eprintln!("    param[{index}]={item:?} -> {:?}", self.ir.instrs[item]);
+                                    }
+                                }
+                            }
+                        }
+                        Instr::BindTydef { bind, .. }
+                        | Instr::BindSigdef { bind, .. }
+                        | Instr::BindValdef { bind, .. }
+                        | Instr::BindCtxdef { bind, .. } => {
+                            eprintln!("  bind={bind:?} -> {:?}", self.ir.instrs[bind]);
+                            if let Ok(result) = self.materialize_lambda(bind) {
+                                eprintln!("  bind materialized={result:?} -> {:?}", self.ir.instrs[result]);
+                                if let Some(items) = self.stack_instrs(result) {
+                                    for (index, item) in items.into_iter().enumerate() {
+                                        eprintln!("    bind[{index}]={item:?} -> {:?}", self.ir.instrs[item]);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    for (index, &slot) in destruct.iter().enumerate() {
+                        eprintln!("  destruct[{index}]={slot:?} -> {:?}", self.ir.instrs[slot]);
+                    }
+                }
+                Err(self.todo_no_loc())
+            }
+        }
     }
 
     fn invoke_need(
@@ -1252,6 +1985,7 @@ impl<'a> Lower<'a> {
         destruct: &[InstrId],
     ) -> LowerResult<(Vec<InstrId>, Vec<InstrId>)> {
         let mut construct = Vec::new();
+        let mut needs = Vec::new();
         let mut mapped = InstrMap::new();
         let mut instr = target.body.start;
         while instr < target.body.end {
@@ -1267,78 +2001,229 @@ impl<'a> Lower<'a> {
                     instr = end;
                 }
                 Instr::NeedTydef { def, param } => {
-                    let extracted = self.extract_ty_lambda(destruct, def, param)?;
-                    construct.push(extracted); // TODO: I don't think this is quite right.
+                    let extracted = match self.query_ty_lambda(destruct, def)? {
+                        Query::Missing => {
+                            let need = self.emit(Instr::NeedTydef {
+                                def,
+                                param: mapped.get(param),
+                            });
+                            needs.push(need);
+                            need
+                        }
+                        Query::Ambiguous => return Err(self.todo_no_loc()),
+                        Query::Unique(extracted) => extracted,
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
                 }
-                Instr::NeedSigdef { def, param } => todo!(),
-                Instr::NeedValdef { def, param } => todo!(),
-                Instr::NeedCtxdef { def, param } => todo!(),
+                Instr::NeedSigdef { def, param } => {
+                    let extracted = match self.query_sig_lambda(destruct, def)? {
+                        Query::Missing => {
+                            let need = self.emit(Instr::NeedSigdef {
+                                def,
+                                param: mapped.get(param),
+                            });
+                            needs.push(need);
+                            need
+                        }
+                        Query::Ambiguous => return Err(self.todo_no_loc()),
+                        Query::Unique(extracted) => extracted,
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                }
+                Instr::NeedValdef { def, param } => {
+                    let extracted = match self.query_val_lambda(destruct, def)? {
+                        Query::Missing => {
+                            let need = self.emit(Instr::NeedValdef {
+                                def,
+                                param: mapped.get(param),
+                            });
+                            needs.push(need);
+                            need
+                        }
+                        Query::Ambiguous => return Err(self.todo_no_loc()),
+                        Query::Unique(extracted) => extracted,
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                }
+                Instr::NeedCtxdef { def, param } => {
+                    let extracted = match self.query_ctx_lambda(destruct, def, mapped.get(param))? {
+                        Query::Missing => {
+                            let need = self.extract_ctx(destruct, def, destruct)?;
+                            needs.push(need);
+                            need
+                        }
+                        Query::Ambiguous => return Err(self.todo_no_loc()),
+                        Query::Unique(extracted) => extracted,
+                    };
+                    mapped.insert(instr, extracted);
+                    construct.push(extracted);
+                }
                 _ => self.duplicate(&mut mapped, instr)?,
             }
             instr += 1;
         }
-        Ok((construct, Vec::new()))
+        Ok((construct, needs))
     }
 
-    fn extract_ty_lambda(
-        &mut self,
-        slots: &[InstrId],
-        def: TydefId,
-        lambda: InstrId,
-    ) -> LowerResult<InstrId> {
-        let mut options = Vec::new();
+    fn ctx_slots(&self, def: CtxdefId) -> Option<Vec<InstrId>> {
+        let Ctxdef(body) = self.ir.ctxdefs[def];
+        let lambda = body.result();
+        let Instr::EndLambda { result, .. } = self.ir.instrs[lambda] else {
+            return None;
+        };
+        self.stack_instrs(result)
+    }
+
+    fn ctx_contains_ty(&mut self, ctxdef: CtxdefId, tydef: TydefId) -> bool {
+        if let Some(&cached) = self.ctx_contains_ty_cache.get(&(ctxdef, tydef)) {
+            return cached;
+        }
+        if !self.ctx_contains_ty_active.insert((ctxdef, tydef)) {
+            return false;
+        }
+        let result = self.ctx_slots(ctxdef).is_some_and(|slots| {
+            slots.into_iter().any(|slot| match self.ir.instrs[slot] {
+                Instr::NeedTydef { def, .. } | Instr::BindTydef { def, .. } => def == tydef,
+                Instr::NeedCtxdef { def, .. } | Instr::BindCtxdef { def, .. } => {
+                    self.ctx_contains_ty(def, tydef)
+                }
+                _ => false,
+            })
+        });
+        self.ctx_contains_ty_active.remove(&(ctxdef, tydef));
+        self.ctx_contains_ty_cache.insert((ctxdef, tydef), result);
+        result
+    }
+
+    fn ctx_contains_sig(&mut self, ctxdef: CtxdefId, sigdef: SigdefId) -> bool {
+        if let Some(&cached) = self.ctx_contains_sig_cache.get(&(ctxdef, sigdef)) {
+            return cached;
+        }
+        if !self.ctx_contains_sig_active.insert((ctxdef, sigdef)) {
+            return false;
+        }
+        let result = self.ctx_slots(ctxdef).is_some_and(|slots| {
+            slots.into_iter().any(|slot| match self.ir.instrs[slot] {
+                Instr::NeedSigdef { def, .. } | Instr::BindSigdef { def, .. } => def == sigdef,
+                Instr::NeedCtxdef { def, .. } | Instr::BindCtxdef { def, .. } => {
+                    self.ctx_contains_sig(def, sigdef)
+                }
+                _ => false,
+            })
+        });
+        self.ctx_contains_sig_active.remove(&(ctxdef, sigdef));
+        self.ctx_contains_sig_cache.insert((ctxdef, sigdef), result);
+        result
+    }
+
+    fn ctx_contains_val(&mut self, ctxdef: CtxdefId, valdef: ValdefId) -> bool {
+        if let Some(&cached) = self.ctx_contains_val_cache.get(&(ctxdef, valdef)) {
+            return cached;
+        }
+        if !self.ctx_contains_val_active.insert((ctxdef, valdef)) {
+            return false;
+        }
+        let result = self.ctx_slots(ctxdef).is_some_and(|slots| {
+            slots.into_iter().any(|slot| match self.ir.instrs[slot] {
+                Instr::NeedValdef { def, .. } | Instr::BindValdef { def, .. } => def == valdef,
+                Instr::NeedCtxdef { def, .. } | Instr::BindCtxdef { def, .. } => {
+                    self.ctx_contains_val(def, valdef)
+                }
+                _ => false,
+            })
+        });
+        self.ctx_contains_val_active.remove(&(ctxdef, valdef));
+        self.ctx_contains_val_cache.insert((ctxdef, valdef), result);
+        result
+    }
+
+    fn ctx_contains_ctx(&mut self, ctxdef: CtxdefId, target: CtxdefId) -> bool {
+        if let Some(&cached) = self.ctx_contains_ctx_cache.get(&(ctxdef, target)) {
+            return cached;
+        }
+        if !self.ctx_contains_ctx_active.insert((ctxdef, target)) {
+            return false;
+        }
+        let result = self.ctx_slots(ctxdef).is_some_and(|slots| {
+            slots.into_iter().any(|slot| match self.ir.instrs[slot] {
+                Instr::NeedCtxdef { def, .. } | Instr::BindCtxdef { def, .. } => {
+                    def == target || self.ctx_contains_ctx(def, target)
+                }
+                _ => false,
+            })
+        });
+        self.ctx_contains_ctx_active.remove(&(ctxdef, target));
+        self.ctx_contains_ctx_cache.insert((ctxdef, target), result);
+        result
+    }
+
+    fn query_ty_lambda(&mut self, slots: &[InstrId], def: TydefId) -> LowerResult<Query<InstrId>> {
+        let mut query = Query::Missing;
         for &slot in slots {
             match self.ir.instrs[slot] {
-                Instr::Lambda => todo!(),
-                Instr::EndLambda { start, result } => todo!(),
-                Instr::Apply { lambda, args } => todo!(),
-                Instr::Stack { items } => todo!(),
+                Instr::NeedCtxdef { def: ctxdef, param } => {
+                    if !self.ctx_contains_ty(ctxdef, def) {
+                        continue;
+                    }
+                    let Some(items) = self.need_ctx_items(ctxdef, param)? else {
+                        continue;
+                    };
+                    let nested = self.query_ty_lambda(&items, def)?;
+                    query = self.merge_slot_queries(query, nested)?;
+                }
+                Instr::BindCtxdef { def: ctxdef, bind } => {
+                    if !self.ctx_contains_ty(ctxdef, def) {
+                        continue;
+                    }
+                    let Some(items) = self.bind_ctx_items(bind)? else {
+                        continue;
+                    };
+                    let nested = self.query_ty_lambda(&items, def)?;
+                    query = self.merge_slot_queries(query, nested)?;
+                }
                 Instr::NeedTydef { def: tydef, param } => {
                     if tydef != def {
                         continue;
                     }
-                    if self.left_domain_more_specific(lambda, param)? {
-                        options.push(slot);
-                    }
+                    query = self.merge_slot_queries(query, Query::Unique(slot))?;
                 }
-                Instr::NeedSigdef { def: _, param: _ } | Instr::NeedValdef { def: _, param: _ } => {
-                }
-                Instr::NeedCtxdef { def, param } => return Err(self.todo_no_loc()),
-                Instr::Tagdef { def } => todo!(),
-                Instr::Aliasdef { def } => todo!(),
-                Instr::Tuple { elems } => todo!(),
-                Instr::Record { fields } => todo!(),
-                Instr::Context => todo!(),
-                Instr::Fndef { def } => todo!(),
-                Instr::Get { ctx, slot } => todo!(),
-                Instr::Lit { val } => todo!(),
-                Instr::Bind { args, bind } => todo!(),
+                Instr::NeedSigdef { .. } | Instr::NeedValdef { .. } => {}
                 Instr::BindTydef { def: tydef, bind } => {
                     if tydef != def {
                         continue;
                     }
-                    if self.left_domain_more_specific(lambda, bind)? {
-                        options.push(slot);
-                    }
+                    query = self.merge_slot_queries(query, Query::Unique(slot))?;
                 }
-                Instr::BindSigdef { def, bind } => todo!(),
-                Instr::BindValdef { def, bind } => todo!(),
-                Instr::BindCtxdef { def, bind } => todo!(),
-                Instr::Sig { param, result } => todo!(),
-                Instr::Set { lhs, rhs } => todo!(),
-                Instr::If { ty, cond } => todo!(),
-                Instr::Else { result } => todo!(),
-                Instr::EndIf { result } => todo!(),
-                Instr::Loop => todo!(),
-                Instr::EndLoop => todo!(),
-                Instr::Br { depth } => todo!(),
-                Instr::Expr { ty, expr } => todo!(),
+                Instr::Lambda
+                | Instr::EndLambda { .. }
+                | Instr::Apply { .. }
+                | Instr::Stack { .. }
+                | Instr::Tagdef { .. }
+                | Instr::Aliasdef { .. }
+                | Instr::Tuple { .. }
+                | Instr::Record { .. }
+                | Instr::Context
+                | Instr::Fndef { .. }
+                | Instr::Get { .. }
+                | Instr::Lit { .. }
+                | Instr::Bind { .. }
+                | Instr::BindSigdef { .. }
+                | Instr::BindValdef { .. }
+                | Instr::Sig { .. }
+                | Instr::Set { .. }
+                | Instr::If { .. }
+                | Instr::Else { .. }
+                | Instr::EndIf { .. }
+                | Instr::Loop
+                | Instr::EndLoop
+                | Instr::Br { .. }
+                | Instr::Expr { .. } => {}
             }
         }
-        if options.len() != 1 {
-            panic!()
-        }
-        Ok(options[0])
+        Ok(query)
     }
 
     fn extract_ty(
@@ -1347,13 +2232,59 @@ impl<'a> Lower<'a> {
         def: TydefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
+        let available = self.entrypoints(slots, destruct);
+        if let Query::Unique(slot) = self.query_ty_lambda(&available, def)? {
+            return Ok(slot);
+        }
         let Tydef(target) = self.ir.tydefs[def];
         let start = self.emit(Instr::Lambda);
-        let (construct, _) = self.invoke_need(target, destruct)?;
+        let (construct, _) = self.invoke_need(target, &available)?;
         let items = self.items(&construct);
         let result = self.emit(Instr::Stack { items });
-        let lambda = self.emit(Instr::EndLambda { start, result });
-        self.extract_ty_lambda(slots, def, lambda)
+        let param = self.emit(Instr::EndLambda { start, result });
+        Ok(self.emit(Instr::NeedTydef { def, param }))
+    }
+
+    fn query_sig_lambda(&mut self, slots: &[InstrId], def: SigdefId) -> LowerResult<Query<InstrId>> {
+        let mut query = Query::Missing;
+        for &slot in slots {
+            match self.ir.instrs[slot] {
+                Instr::NeedCtxdef { def: ctxdef, param } => {
+                    if !self.ctx_contains_sig(ctxdef, def) {
+                        continue;
+                    }
+                    let Some(items) = self.need_ctx_items(ctxdef, param)? else {
+                        continue;
+                    };
+                    let nested = self.query_sig_lambda(&items, def)?;
+                    query = self.merge_slot_queries(query, nested)?;
+                }
+                Instr::BindCtxdef { def: ctxdef, bind } => {
+                    if !self.ctx_contains_sig(ctxdef, def) {
+                        continue;
+                    }
+                    let Some(items) = self.bind_ctx_items(bind)? else {
+                        continue;
+                    };
+                    let nested = self.query_sig_lambda(&items, def)?;
+                    query = self.merge_slot_queries(query, nested)?;
+                }
+                Instr::NeedSigdef { def: sigdef, param } => {
+                    if sigdef != def {
+                        continue;
+                    }
+                    query = self.merge_slot_queries(query, Query::Unique(slot))?;
+                }
+                Instr::BindSigdef { def: sigdef, bind } => {
+                    if sigdef != def {
+                        continue;
+                    }
+                    query = self.merge_slot_queries(query, Query::Unique(slot))?;
+                }
+                _ => {}
+            }
+        }
+        Ok(query)
     }
 
     fn extract_sig(
@@ -1362,7 +2293,59 @@ impl<'a> Lower<'a> {
         def: SigdefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        Err(self.todo_no_loc())
+        let available = self.entrypoints(slots, destruct);
+        if let Query::Unique(slot) = self.query_sig_lambda(&available, def)? {
+            return Ok(slot);
+        }
+        let Sigdef(target) = self.ir.sigdefs[def];
+        let start = self.emit(Instr::Lambda);
+        let (construct, _) = self.invoke_need(target, &available)?;
+        let items = self.items(&construct);
+        let result = self.emit(Instr::Stack { items });
+        let param = self.emit(Instr::EndLambda { start, result });
+        Ok(self.emit(Instr::NeedSigdef { def, param }))
+    }
+
+    fn query_val_lambda(&mut self, slots: &[InstrId], def: ValdefId) -> LowerResult<Query<InstrId>> {
+        let mut query = Query::Missing;
+        for &slot in slots {
+            match self.ir.instrs[slot] {
+                Instr::NeedCtxdef { def: ctxdef, param } => {
+                    if !self.ctx_contains_val(ctxdef, def) {
+                        continue;
+                    }
+                    let Some(items) = self.need_ctx_items(ctxdef, param)? else {
+                        continue;
+                    };
+                    let nested = self.query_val_lambda(&items, def)?;
+                    query = self.merge_slot_queries(query, nested)?;
+                }
+                Instr::BindCtxdef { def: ctxdef, bind } => {
+                    if !self.ctx_contains_val(ctxdef, def) {
+                        continue;
+                    }
+                    let Some(items) = self.bind_ctx_items(bind)? else {
+                        continue;
+                    };
+                    let nested = self.query_val_lambda(&items, def)?;
+                    query = self.merge_slot_queries(query, nested)?;
+                }
+                Instr::NeedValdef { def: valdef, param } => {
+                    if valdef != def {
+                        continue;
+                    }
+                    query = self.merge_slot_queries(query, Query::Unique(slot))?;
+                }
+                Instr::BindValdef { def: valdef, bind } => {
+                    if valdef != def {
+                        continue;
+                    }
+                    query = self.merge_slot_queries(query, Query::Unique(slot))?;
+                }
+                _ => {}
+            }
+        }
+        Ok(query)
     }
 
     fn extract_val(
@@ -1371,7 +2354,73 @@ impl<'a> Lower<'a> {
         def: ValdefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        Err(self.todo_no_loc())
+        let available = self.entrypoints(slots, destruct);
+        if let Query::Unique(slot) = self.query_val_lambda(&available, def)? {
+            return Ok(slot);
+        }
+        let Valdef(target) = self.ir.valdefs[def];
+        let start = self.emit(Instr::Lambda);
+        let (construct, _) = self.invoke_need(target, &available)?;
+        let items = self.items(&construct);
+        let result = self.emit(Instr::Stack { items });
+        let param = self.emit(Instr::EndLambda { start, result });
+        Ok(self.emit(Instr::NeedValdef { def, param }))
+    }
+
+    fn query_ctx_lambda(
+        &mut self,
+        slots: &[InstrId],
+        def: CtxdefId,
+        lambda: InstrId,
+    ) -> LowerResult<Query<InstrId>> {
+        self.trace_hotspot(&TRACE_QUERY_CTX, "query_ctx", || {
+            format!(
+                "def={def:?} lambda={lambda:?} slots={} instrs={}",
+                slots.len(),
+                self.ir.instrs.len()
+            )
+        });
+        let mut query = Query::Missing;
+        for &slot in slots {
+            match self.ir.instrs[slot] {
+                Instr::NeedCtxdef { def: ctxdef, param } => {
+                    if ctxdef != def && !self.ctx_contains_ctx(ctxdef, def) {
+                        continue;
+                    }
+                    if ctxdef == def {
+                        query = self.merge_slot_queries(query, Query::Unique(slot))?;
+                    }
+                    let compatible = self.left_domain_more_specific(lambda, param)?;
+                    if !compatible {
+                        continue;
+                    }
+                    let Some(items) = self.need_ctx_items(ctxdef, param)? else {
+                        continue;
+                    };
+                    let nested = self.query_ctx_lambda(&items, def, lambda)?;
+                    query = self.merge_slot_queries(query, nested)?;
+                }
+                Instr::BindCtxdef { def: ctxdef, bind } => {
+                    if ctxdef != def && !self.ctx_contains_ctx(ctxdef, def) {
+                        continue;
+                    }
+                    if ctxdef == def {
+                        query = self.merge_slot_queries(query, Query::Unique(slot))?;
+                    }
+                    let compatible = self.left_domain_more_specific(lambda, bind)?;
+                    if !compatible {
+                        continue;
+                    }
+                    let Some(items) = self.bind_ctx_items(bind)? else {
+                        continue;
+                    };
+                    let nested = self.query_ctx_lambda(&items, def, lambda)?;
+                    query = self.merge_slot_queries(query, nested)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(query)
     }
 
     fn extract_ctx(
@@ -1380,11 +2429,21 @@ impl<'a> Lower<'a> {
         def: CtxdefId,
         destruct: &[InstrId],
     ) -> LowerResult<InstrId> {
-        Err(self.todo_no_loc())
+        let available = self.entrypoints(slots, destruct);
+        let Ctxdef(target) = self.ir.ctxdefs[def];
+        let start = self.emit(Instr::Lambda);
+        let (construct, _) = self.invoke_need(target, &available)?;
+        let items = self.items(&construct);
+        let result = self.emit(Instr::Stack { items });
+        let param = self.emit(Instr::EndLambda { start, result });
+        if let Query::Unique(slot) = self.query_ctx_lambda(&available, def, param)? {
+            return Ok(slot);
+        }
+        Ok(self.emit(Instr::NeedCtxdef { def, param }))
     }
 
     fn inline(&mut self, body: Body, construct: &[InstrId]) -> LowerResult<InstrId> {
-        Err(self.todo_no_loc())
+        self.inline_range(body.body.start, body.body.end, body.result(), Some(construct))
     }
 
     /// Resolve the path of a spec and synthesize each of its attached bindings.
@@ -1408,18 +2467,107 @@ impl<'a> Lower<'a> {
         Ok((named, construct))
     }
 
+    fn need_bind(&mut self, slots: &[InstrId], bind: parse::BindId) -> LowerResult<InstrId> {
+        let parse::Bind { key, val } = self.tree.binds[bind];
+        if std::env::var_os("MOSS_TRACE_NEEDS").is_some() {
+            let mut detail = self.spec_string(key);
+            if val.is_some() {
+                detail.push_str(" = ...");
+            }
+            eprintln!("need {detail}");
+        }
+        match val {
+            Some(_) => self.bind(slots, bind),
+            None => {
+                let (lhs, destruct) = self.spec(slots, key)?;
+                let available = self.entrypoints(slots, &destruct);
+                match lhs {
+                    Named::Tydef(def) => {
+                        let Tydef(target) = self.ir.tydefs[def];
+                        let start = self.emit(Instr::Lambda);
+                        let (construct, _) = self.invoke_need(target, &available)?;
+                        let items = self.items(&construct);
+                        let result = self.emit(Instr::Stack { items });
+                        let param = self.emit(Instr::EndLambda { start, result });
+                        Ok(self.emit(Instr::NeedTydef { def, param }))
+                    }
+                    Named::Sigdef(def) => {
+                        let Sigdef(target) = self.ir.sigdefs[def];
+                        let start = self.emit(Instr::Lambda);
+                        let (construct, _) = self.invoke_need(target, &available)?;
+                        let items = self.items(&construct);
+                        let result = self.emit(Instr::Stack { items });
+                        let param = self.emit(Instr::EndLambda { start, result });
+                        Ok(self.emit(Instr::NeedSigdef { def, param }))
+                    }
+                    Named::Valdef(def) => {
+                        let Valdef(target) = self.ir.valdefs[def];
+                        let start = self.emit(Instr::Lambda);
+                        let (construct, _) = self.invoke_need(target, &available)?;
+                        let items = self.items(&construct);
+                        let result = self.emit(Instr::Stack { items });
+                        let param = self.emit(Instr::EndLambda { start, result });
+                        Ok(self.emit(Instr::NeedValdef { def, param }))
+                    }
+                    Named::Ctxdef(def) => {
+                        let Ctxdef(target) = self.ir.ctxdefs[def];
+                        let start = self.emit(Instr::Lambda);
+                        let (construct, _) = self.invoke_need(target, &available)?;
+                        let items = self.items(&construct);
+                        let result = self.emit(Instr::Stack { items });
+                        let param = self.emit(Instr::EndLambda { start, result });
+                        Ok(self.emit(Instr::NeedCtxdef { def, param }))
+                    }
+                    Named::Module(_) => Err(LowerError::BindModule(bind)),
+                    Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
+                    Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
+                    Named::Fndef(_) => Err(LowerError::BindDefined(bind)),
+                }
+            }
+        }
+    }
+
+    fn assumed_slots(&mut self) -> LowerResult<Vec<InstrId>> {
+        let mut slots = Vec::new();
+        for &assume in &self.tree.assumes {
+            for bind in assume {
+                let slot = self.need_bind(&slots, bind)?;
+                slots.push(slot);
+            }
+        }
+        Ok(slots)
+    }
+
+    fn extend_needs(
+        &mut self,
+        slots: &mut Vec<InstrId>,
+        needs: IdRange<parse::NeedId>,
+    ) -> LowerResult<()> {
+        for need in needs {
+            let slot = self.need(&slots, need)?;
+            slots.push(slot);
+        }
+        Ok(())
+    }
+
     fn bind(&mut self, slots: &[InstrId], bind: parse::BindId) -> LowerResult<InstrId> {
         let parse::Bind { key, val } = self.tree.binds[bind];
         let (lhs, destruct_lhs) = self.spec(slots, key)?;
+        let available_lhs = self.entrypoints(slots, &destruct_lhs);
         match val {
-            // TODO: Use the "extract" functions correctly in this branch.
             None => match lhs {
                 Named::Tydef(def) => {
                     let Tydef(target) = self.ir.tydefs[def];
                     let start = self.emit(Instr::Lambda);
-                    let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
+                    let (construct, _) = self.invoke_need(target, &available_lhs)?;
                     let args = self.items(&construct);
-                    let bind = self.extract_ty(slots, def, &construct)?;
+                    let lambda = self.extract_ty(slots, def, &construct)?;
+                    let construct_rhs = self.invoke_force(lambda, &construct)?;
+                    let args_rhs = self.items(&construct_rhs);
+                    let bind = self.emit(Instr::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
                     let result = self.emit(Instr::Bind { args, bind });
                     let bind = self.emit(Instr::EndLambda { start, result });
                     Ok(self.emit(Instr::BindTydef { def, bind }))
@@ -1427,9 +2575,15 @@ impl<'a> Lower<'a> {
                 Named::Sigdef(def) => {
                     let Sigdef(target) = self.ir.sigdefs[def];
                     let start = self.emit(Instr::Lambda);
-                    let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
+                    let (construct, _) = self.invoke_need(target, &available_lhs)?;
                     let args = self.items(&construct);
-                    let bind = self.extract_sig(slots, def, &construct)?;
+                    let lambda = self.extract_sig(slots, def, &construct)?;
+                    let construct_rhs = self.invoke_force(lambda, &construct)?;
+                    let args_rhs = self.items(&construct_rhs);
+                    let bind = self.emit(Instr::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
                     let result = self.emit(Instr::Bind { args, bind });
                     let bind = self.emit(Instr::EndLambda { start, result });
                     Ok(self.emit(Instr::BindSigdef { def, bind }))
@@ -1437,8 +2591,14 @@ impl<'a> Lower<'a> {
                 Named::Valdef(def) => {
                     let Valdef(target) = self.ir.valdefs[def];
                     let start = self.emit(Instr::Lambda);
-                    let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
-                    let bind = self.extract_val(slots, def, &construct)?;
+                    let (construct, _) = self.invoke_need(target, &available_lhs)?;
+                    let lambda = self.extract_val(slots, def, &construct)?;
+                    let construct_rhs = self.invoke_force(lambda, &construct)?;
+                    let args_rhs = self.items(&construct_rhs);
+                    let bind = self.emit(Instr::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
                     let args = self.items(&construct);
                     let result = self.emit(Instr::Bind { args, bind });
                     let bind = self.emit(Instr::EndLambda { start, result });
@@ -1447,8 +2607,10 @@ impl<'a> Lower<'a> {
                 Named::Ctxdef(def) => {
                     let Ctxdef(target) = self.ir.ctxdefs[def];
                     let start = self.emit(Instr::Lambda);
-                    let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
-                    let bind = self.extract_ctx(slots, def, &construct)?;
+                    let (construct, _) = self.invoke_need(target, &available_lhs)?;
+                    let lambda = self.extract_ctx(slots, def, &construct)?;
+                    let construct_rhs = self.invoke_force(lambda, &construct)?;
+                    let bind = self.apply_item(lambda, &construct_rhs)?;
                     let args = self.items(&construct);
                     let result = self.emit(Instr::Bind { args, bind });
                     let bind = self.emit(Instr::EndLambda { start, result });
@@ -1463,7 +2625,7 @@ impl<'a> Lower<'a> {
                 Named::Valdef(def) => {
                     let Valdef(target) = self.ir.valdefs[def];
                     let start = self.emit(Instr::Lambda);
-                    let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
+                    let (construct, _) = self.invoke_need(target, &available_lhs)?;
                     let (val, _) = self.lit(token)?;
                     let bind = self.emit(Instr::Lit { val });
                     let args = self.items(&construct);
@@ -1488,10 +2650,23 @@ impl<'a> Lower<'a> {
                         let Tydef(target_lhs) = self.ir.tydefs[def];
                         let start = self.emit(Instr::Lambda);
                         let (construct_lhs, mut needs) =
-                            self.invoke_need(target_lhs, &destruct_lhs)?;
-                        let args_lhs = self.items(&construct_lhs);
+                            self.invoke_need(target_lhs, &available_lhs)?;
                         destruct_rhs.append(&mut needs);
-                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                        let available_rhs = self.entrypoints(slots, &destruct_rhs);
+                        let (construct_rhs, needs_rhs) = match self.ir.instrs[lambda] {
+                            Instr::Tagdef { def } => {
+                                let Tagdef(body) = self.ir.tagdefs[def];
+                                self.invoke_need(body, &available_rhs)?
+                            }
+                            Instr::Aliasdef { def } => {
+                                let Aliasdef(body) = self.ir.aliasdefs[def];
+                                self.invoke_need(body, &available_rhs)?
+                            }
+                            _ => (self.invoke_force(lambda, &available_rhs)?, Vec::new()),
+                        };
+                        let mut bind_args = construct_lhs;
+                        bind_args.extend(needs_rhs);
+                        let args_lhs = self.items(&bind_args);
                         let args_rhs = self.items(&construct_rhs);
                         let bind = self.emit(Instr::Apply {
                             lambda,
@@ -1516,10 +2691,11 @@ impl<'a> Lower<'a> {
                         let Sigdef(target_lhs) = self.ir.sigdefs[def];
                         let start = self.emit(Instr::Lambda);
                         let (construct_lhs, mut needs) =
-                            self.invoke_need(target_lhs, &destruct_lhs)?;
+                            self.invoke_need(target_lhs, &available_lhs)?;
                         let args_lhs = self.items(&construct_lhs);
                         destruct_rhs.append(&mut needs);
-                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                        let available_rhs = self.entrypoints(slots, &destruct_rhs);
+                        let construct_rhs = self.invoke_force(lambda, &available_rhs)?;
                         let args_rhs = self.items(&construct_rhs);
                         let bind = self.emit(Instr::Apply {
                             lambda,
@@ -1543,10 +2719,11 @@ impl<'a> Lower<'a> {
                         let Valdef(target_lhs) = self.ir.valdefs[def];
                         let start = self.emit(Instr::Lambda);
                         let (construct_lhs, mut needs) =
-                            self.invoke_need(target_lhs, &destruct_lhs)?;
+                            self.invoke_need(target_lhs, &available_lhs)?;
                         let args_lhs = self.items(&construct_lhs);
                         destruct_rhs.append(&mut needs);
-                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                        let available_rhs = self.entrypoints(slots, &destruct_rhs);
+                        let construct_rhs = self.invoke_force(lambda, &available_rhs)?;
                         let args_rhs = self.items(&construct_rhs);
                         let bind = self.emit(Instr::Apply {
                             lambda,
@@ -1572,63 +2749,23 @@ impl<'a> Lower<'a> {
     fn need(&mut self, slots: &[InstrId], need: parse::NeedId) -> LowerResult<InstrId> {
         let parse::Need { kind: _, bind } = self.tree.needs[need];
         // TODO: Handle `kind`.
-        let parse::Bind { key, val } = self.tree.binds[bind];
-        match val {
-            Some(_) => self.bind(slots, bind),
-            None => {
-                let (lhs, destruct) = self.spec(slots, key)?;
-                match lhs {
-                    Named::Tydef(def) => {
-                        let Tydef(target) = self.ir.tydefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct, _) = self.invoke_need(target, &destruct)?;
-                        let items = self.items(&construct);
-                        let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::NeedTydef { def, param }))
-                    }
-                    Named::Sigdef(def) => {
-                        let Sigdef(target) = self.ir.sigdefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct, _) = self.invoke_need(target, &destruct)?;
-                        let items = self.items(&construct);
-                        let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::NeedSigdef { def, param }))
-                    }
-                    Named::Valdef(def) => {
-                        let Valdef(target) = self.ir.valdefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct, _) = self.invoke_need(target, &destruct)?;
-                        let items = self.items(&construct);
-                        let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::NeedValdef { def, param }))
-                    }
-                    Named::Ctxdef(def) => {
-                        let Ctxdef(target) = self.ir.ctxdefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct, _) = self.invoke_need(target, &destruct)?;
-                        let items = self.items(&construct);
-                        let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::NeedCtxdef { def, param }))
-                    }
-                    Named::Module(_) => Err(LowerError::BindModule(bind)),
-                    Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
-                    Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
-                    Named::Fndef(_) => Err(LowerError::BindDefined(bind)),
-                }
-            }
-        }
+        self.need_bind(slots, bind)
     }
 
     fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Vec<InstrId>> {
-        let mut slots = Vec::new();
-        for need in needs {
-            slots.push(self.need(&slots, need)?);
-        }
+        let mut slots = self.assumed_slots()?;
+        self.extend_needs(&mut slots, needs)?;
         Ok(slots)
+    }
+
+    fn entrypoints(&self, slots: &[InstrId], extra: &[InstrId]) -> Vec<InstrId> {
+        let mut entrypoints = Vec::from(slots);
+        for &slot in extra {
+            if !entrypoints.contains(&slot) {
+                entrypoints.push(slot);
+            }
+        }
+        entrypoints
     }
 
     fn parse_ty(&mut self, slots: &[InstrId], ty: parse::TypeId) -> LowerResult<InstrId> {
@@ -1638,12 +2775,25 @@ impl<'a> Lower<'a> {
                 match named {
                     Named::Tydef(tydef) => {
                         let lambda = self.extract_ty(slots, tydef, &destruct)?;
-                        let construct = self.invoke_force(lambda, &destruct)?;
+                        let available = self.entrypoints(slots, &destruct);
+                        let construct = self.invoke_force(lambda, &available)?;
                         let args = self.items(&construct);
                         Ok(self.emit(Instr::Apply { lambda, args }))
                     }
-                    Named::Tagdef(tagdef) => Err(self.todo_no_loc()),
-                    Named::Aliasdef(aliasdef) => Err(self.todo_no_loc()),
+                    Named::Tagdef(tagdef) => {
+                        let lambda = self.emit(Instr::Tagdef { def: tagdef });
+                        let available = self.entrypoints(slots, &destruct);
+                        let construct = self.invoke_force(lambda, &available)?;
+                        let args = self.items(&construct);
+                        Ok(self.emit(Instr::Apply { lambda, args }))
+                    }
+                    Named::Aliasdef(aliasdef) => {
+                        let lambda = self.emit(Instr::Aliasdef { def: aliasdef });
+                        let available = self.entrypoints(slots, &destruct);
+                        let construct = self.invoke_force(lambda, &available)?;
+                        let args = self.items(&construct);
+                        Ok(self.emit(Instr::Apply { lambda, args }))
+                    }
                     _ => return Err(LowerError::NotType(spec.path.last)),
                 }
             }
@@ -1666,7 +2816,8 @@ impl<'a> Lower<'a> {
             result,
             def: _,
         } = fndef;
-        let slots = self.needs(needs)?;
+        let mut slots = self.assumed_slots()?;
+        self.extend_needs(&mut slots, needs)?;
         let elems = (params.into_iter())
             .map(|arg| self.parse_ty(&slots, self.tree.params[arg].ty))
             .collect::<LowerResult<Vec<InstrId>>>()?;
@@ -1675,8 +2826,10 @@ impl<'a> Lower<'a> {
             parse::Return::Unit => self.ty_unit(),
             parse::Return::Type(ty) => self.parse_ty(&slots, ty)?,
             parse::Return::Bind(needs) => {
-                let slots = self.needs(needs)?;
-                let items = self.items(&slots);
+                let prefix = slots.len();
+                let mut result_slots = slots.clone();
+                self.extend_needs(&mut result_slots, needs)?;
+                let items = self.items(&result_slots[prefix..]);
                 self.emit(Instr::Stack { items })
             }
         };
@@ -1691,17 +2844,31 @@ impl<'a> Lower<'a> {
             result: _,
             def,
         } = fndef;
+        if std::env::var_os("MOSS_TRACE_SIGS").is_some() {
+            eprintln!("sig:start {} instrs={}", self.slice(name), self.ir.instrs.len());
+        }
         let builder = self.builder();
-        let (_, param_tuple, result_ty) = self.parse_sig(fndef)?;
+        let (slots, param_tuple, result_ty) = self.parse_sig(fndef)?;
         let signature = self.emit(Instr::Sig {
             param: param_tuple,
             result: result_ty,
         });
         let body = self.finish(builder, signature);
         let lowered = match def {
-            None => NamedFn::Sigdef(self.ir.sigdefs.push(Sigdef(body))),
-            Some(_) => NamedFn::Fndef(self.ir.fndefs.push(Sigdef(body))),
+            None => {
+                let id = self.ir.sigdefs.push(Sigdef(body));
+                self.ir.sig_arity.push(slots.len());
+                NamedFn::Sigdef(id)
+            }
+            Some(_) => {
+                let id = self.ir.fndefs.push(Sigdef(body));
+                self.ir.fn_arity.push(slots.len());
+                NamedFn::Fndef(id)
+            }
         };
+        if std::env::var_os("MOSS_TRACE_SIGS").is_some() {
+            eprintln!("sig:done {} instrs={}", self.slice(name), self.ir.instrs.len());
+        }
         let string = self.name(name);
         Ok((string, lowered))
     }
@@ -1711,8 +2878,12 @@ impl<'a> Lower<'a> {
             match decl {
                 parse::Decl::Tydef(id) => {
                     let parse::Tydef { name, needs } = self.tree.tydefs[id];
+                    if std::env::var_os("MOSS_TRACE_DECLS").is_some() {
+                        eprintln!("decl ty {}", self.slice(name));
+                    }
                     let builder = self.builder();
-                    self.needs(needs)?;
+                    let mut slots = self.assumed_slots()?;
+                    self.extend_needs(&mut slots, needs)?;
                     let items = self.items(&[]);
                     let ctx = self.emit(Instr::Stack { items });
                     let body = self.finish(builder, ctx);
@@ -1724,8 +2895,12 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Tagdef(id) => {
                     let parse::Tagdef { name, needs, def } = self.tree.tagdefs[id];
+                    if std::env::var_os("MOSS_TRACE_DECLS").is_some() {
+                        eprintln!("decl tag {}", self.slice(name));
+                    }
                     let builder = self.builder();
-                    let slots = self.needs(needs)?;
+                    let mut slots = self.assumed_slots()?;
+                    self.extend_needs(&mut slots, needs)?;
                     let ty = self.parse_ty(&slots, def)?;
                     let body = self.finish(builder, ty);
                     let lowered = self.ir.tagdefs.push(Tagdef(body));
@@ -1736,8 +2911,12 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Aliasdef(id) => {
                     let parse::Aliasdef { name, needs, def } = self.tree.aliasdefs[id];
+                    if std::env::var_os("MOSS_TRACE_DECLS").is_some() {
+                        eprintln!("decl alias {}", self.slice(name));
+                    }
                     let builder = self.builder();
-                    let slots = self.needs(needs)?;
+                    let mut slots = self.assumed_slots()?;
+                    self.extend_needs(&mut slots, needs)?;
                     let ty = self.parse_ty(&slots, def)?;
                     let body = self.finish(builder, ty);
                     let lowered = self.ir.aliasdefs.push(Aliasdef(body));
@@ -1748,6 +2927,10 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Funcdef(id) => {
                     let parse::Funcdef { fndef } = self.tree.funcdefs[id];
+                    if std::env::var_os("MOSS_TRACE_DECLS").is_some() {
+                        let parse::Fndef { name, .. } = fndef;
+                        eprintln!("decl fn {}", self.slice(name));
+                    }
                     let (fn_name, lowered) = self.parse_fndef(fndef)?;
                     if let NamedFn::Fndef(defined) = lowered {
                         self.funcs.push((id, defined));
@@ -1758,6 +2941,10 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Attachdef(id) => {
                     let parse::Attachdef { ty, fndef } = self.tree.attachdefs[id];
+                    if std::env::var_os("MOSS_TRACE_DECLS").is_some() {
+                        let parse::Fndef { name, .. } = fndef;
+                        eprintln!("decl attach {}.{}", self.slice(ty), self.slice(name));
+                    }
                     let (fn_name, lowered) = self.parse_fndef(fndef)?;
                     let ty_name = self.name(ty);
                     // TODO: Prevent attaching methods to nominal types defined in other modules.
@@ -1774,6 +2961,10 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Detachdef(id) => {
                     let parse::Detachdef { fndef } = self.tree.detachdefs[id];
+                    if std::env::var_os("MOSS_TRACE_DECLS").is_some() {
+                        let parse::Fndef { name, .. } = fndef;
+                        eprintln!("decl detach {}", self.slice(name));
+                    }
                     let (fn_name, lowered) = self.parse_fndef(fndef)?;
                     if let NamedFn::Fndef(defined) = lowered {
                         self.detaches.push((id, defined));
@@ -1782,8 +2973,12 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Valdef(id) => {
                     let parse::Valdef { name, needs, ty } = self.tree.valdefs[id];
+                    if std::env::var_os("MOSS_TRACE_DECLS").is_some() {
+                        eprintln!("decl val {}", self.slice(name));
+                    }
                     let builder = self.builder();
-                    let slots = self.needs(needs)?;
+                    let mut slots = self.assumed_slots()?;
+                    self.extend_needs(&mut slots, needs)?;
                     let ty = self.parse_ty(&slots, ty)?;
                     let body = self.finish(builder, ty);
                     let lowered = self.ir.valdefs.push(Valdef(body));
@@ -1794,16 +2989,16 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Ctxdef(id) => {
                     let parse::Ctxdef { name, needs, def } = self.tree.ctxdefs[id];
+                    if std::env::var_os("MOSS_TRACE_DECLS").is_some() {
+                        eprintln!("decl ctx {}", self.slice(name));
+                    }
                     let builder = self.builder();
-                    let mut slots = Vec::new();
-                    for need in needs {
-                        slots.push(self.need(&slots, need)?);
-                    }
+                    let mut slots = self.assumed_slots()?;
+                    self.extend_needs(&mut slots, needs)?;
+                    let prefix = slots.len();
                     let start = self.emit(Instr::Lambda);
-                    for need in def {
-                        slots.push(self.need(&slots, need)?);
-                    }
-                    let items = self.items(&slots[needs.len()..]);
+                    self.extend_needs(&mut slots, def)?;
+                    let items = self.items(&slots[prefix..]);
                     let result = self.emit(Instr::Stack { items });
                     let lambda = self.emit(Instr::EndLambda { start, result });
                     let body = self.finish(builder, lambda);
@@ -1825,9 +3020,12 @@ impl<'a> Lower<'a> {
                 x: self,
                 slots: Vec::new(),
                 locals: HashMap::new(),
+                literal_tokens: HashMap::new(),
+                is_method: false,
+                current_fn: None,
             }
             .body(fndef, id_decl)?;
-            let id_body = self.ir.bodies.push(body);
+            let id_body = self.ir.bodies.push(Some(body));
             assert_eq!(id_decl, id_body);
         }
         for (attachdef, _tagdef, id_decl) in take(&mut self.attaches) {
@@ -1837,9 +3035,12 @@ impl<'a> Lower<'a> {
                 x: self,
                 slots: Vec::new(),
                 locals: HashMap::new(),
+                literal_tokens: HashMap::new(),
+                is_method: true,
+                current_fn: None,
             }
             .body(fndef, id_decl)?;
-            let id_body = self.ir.bodies.push(body);
+            let id_body = self.ir.bodies.push(Some(body));
             assert_eq!(id_decl, id_body);
         }
         for (detachdef, id_decl) in take(&mut self.detaches) {
@@ -1849,19 +3050,41 @@ impl<'a> Lower<'a> {
                 x: self,
                 slots: Vec::new(),
                 locals: HashMap::new(),
+                literal_tokens: HashMap::new(),
+                is_method: true,
+                current_fn: None,
             }
             .body(fndef, id_decl)?;
-            let id_body = self.ir.bodies.push(body);
+            let id_body = self.ir.bodies.push(Some(body));
             assert_eq!(id_decl, id_body);
         }
         Ok(())
+    }
+
+    fn skip_function_bodies(&mut self) {
+        for (_, id_decl) in take(&mut self.funcs) {
+            let id_body = self.ir.bodies.push(None);
+            assert_eq!(id_decl, id_body);
+        }
+        for (_, _, id_decl) in take(&mut self.attaches) {
+            let id_body = self.ir.bodies.push(None);
+            assert_eq!(id_decl, id_body);
+        }
+        for (_, id_decl) in take(&mut self.detaches) {
+            let id_body = self.ir.bodies.push(None);
+            assert_eq!(id_decl, id_body);
+        }
     }
 
     fn program(&mut self) -> LowerResult<()> {
         self.imports()?;
         // TODO: Don't make declaration order significant.
         self.decls()?;
-        self.bodies()?;
+        if self.skip_bodies {
+            self.skip_function_bodies();
+        } else {
+            self.bodies()?;
+        }
         Ok(())
     }
 }
@@ -1877,6 +3100,9 @@ struct LowerBody<'a, 'b> {
     x: &'b mut Lower<'a>,
     slots: Vec<InstrId>,
     locals: HashMap<StrId, Typed>,
+    literal_tokens: HashMap<InstrId, TokenId>,
+    is_method: bool,
+    current_fn: Option<TokenId>,
 }
 
 impl LowerBody<'_, '_> {
@@ -1975,8 +3201,16 @@ impl LowerBody<'_, '_> {
     }
 
     /// Get the nominal type definition of a value, or [`None`] if the value is not nominally typed.
-    fn nominal(&self, ty: InstrId) -> Option<TagdefId> {
-        todo!()
+    fn nominal(&mut self, ty: InstrId) -> Option<TagdefId> {
+        let ty = self.reduce_alias_ty(ty).ok()?;
+        match self.x.ir.instrs[ty] {
+            Instr::Tagdef { def } => Some(def),
+            Instr::Apply { lambda, .. } => match self.x.ir.instrs[lambda] {
+                Instr::Tagdef { def } => Some(def),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     /// Get the fields of a record type.
@@ -1984,13 +3218,112 @@ impl LowerBody<'_, '_> {
         Err(self.x.todo_no_loc())
     }
 
+    fn reduce_alias_ty(&mut self, ty: InstrId) -> LowerResult<InstrId> {
+        let mut reduced = ty;
+        let mut seen = HashSet::new();
+        loop {
+            if !seen.insert(reduced) {
+                return Ok(reduced);
+            }
+            reduced = match self.x.ir.instrs[reduced] {
+                Instr::Apply { lambda, args } => match self.x.ir.instrs[lambda] {
+                    Instr::Aliasdef { .. } | Instr::BindTydef { .. } => {
+                        let args = Vec::from_iter(args.into_iter().map(|item| self.x.ir.items[item]));
+                        self.x.apply_item(lambda, &args)?
+                    }
+                    _ => return Ok(reduced),
+                },
+                _ => return Ok(reduced),
+            };
+        }
+    }
+
+    fn same_ty(&mut self, left: InstrId, right: InstrId) -> LowerResult<bool> {
+        let left = self.reduce_alias_ty(left)?;
+        let right = self.reduce_alias_ty(right)?;
+        if left == right {
+            return Ok(true);
+        }
+        Ok(match (self.x.ir.instrs[left], self.x.ir.instrs[right]) {
+            (Instr::Tuple { elems: left }, Instr::Tuple { elems: right }) => {
+                left.len() == right.len()
+                    && left.into_iter().zip(right).all(|(left, right)| {
+                        self.same_ty(self.x.ir.items[left], self.x.ir.items[right])
+                            .unwrap_or(false)
+                    })
+            }
+            (Instr::Record { fields: left }, Instr::Record { fields: right }) => {
+                left.len() == right.len()
+                    && left.into_iter().zip(right).all(|(left, right)| {
+                        let (left_name, left_ty) = self.x.ir.records[left];
+                        let (right_name, right_ty) = self.x.ir.records[right];
+                        left_name == right_name
+                            && self.same_ty(left_ty, right_ty).unwrap_or(false)
+                    })
+            }
+            (
+                Instr::Apply {
+                    lambda: left_lambda,
+                    args: left_args,
+                },
+                Instr::Apply {
+                    lambda: right_lambda,
+                    args: right_args,
+                },
+            ) => {
+                if left_args.len() != right_args.len() {
+                    false
+                } else if left_lambda == right_lambda {
+                    left_args
+                        .into_iter()
+                        .zip(right_args)
+                        .all(|(left, right)| self.x.ir.items[left] == self.x.ir.items[right])
+                } else {
+                    match (self.x.ir.instrs[left_lambda], self.x.ir.instrs[right_lambda]) {
+                        (Instr::Tagdef { def: left }, Instr::Tagdef { def: right }) => left == right,
+                        (Instr::NeedTydef { def: left, param: left_param }, Instr::NeedTydef { def: right, param: right_param }) => {
+                            let _ = (left_param, right_param);
+                            left == right
+                                && left_args
+                                    .into_iter()
+                                    .zip(right_args)
+                                    .all(|(left, right)| self.x.ir.items[left] == self.x.ir.items[right])
+                        }
+                        (Instr::NeedTydef { def: left, param }, Instr::BindTydef { def: right, bind })
+                        | (Instr::BindTydef { def: left, bind: param }, Instr::NeedTydef { def: right, param: bind })
+                        | (Instr::BindTydef { def: left, bind: param }, Instr::BindTydef { def: right, bind }) => {
+                            let _ = (param, bind);
+                            left == right
+                                && left_args
+                                    .into_iter()
+                                    .zip(right_args)
+                                    .all(|(left, right)| self.x.ir.items[left] == self.x.ir.items[right])
+                        }
+                        _ => false,
+                    }
+                }
+            }
+            _ => false,
+        })
+    }
+
     /// Get the parameter type and result type of a function.
-    fn sig(&self, func: InstrId) -> (InstrId, InstrId) {
-        todo!()
+    fn sig(&mut self, func: InstrId) -> LowerResult<(InstrId, InstrId)> {
+        let resolved = match self.x.ir.instrs[func] {
+            Instr::Apply { lambda, args } => {
+                let args = Vec::from_iter(args.into_iter().map(|item| self.x.ir.items[item]));
+                self.x.apply_item(lambda, &args)?
+            }
+            _ => func,
+        };
+        let Instr::Sig { param, result } = self.x.ir.instrs[resolved] else {
+            return Err(self.x.todo_no_loc());
+        };
+        Ok((param, result))
     }
 
     /// Resolve a method call.
-    fn method(&self, ty: InstrId, name: StrId) -> Option<NamedFn> {
+    fn method(&mut self, ty: InstrId, name: StrId) -> Option<NamedFn> {
         if let Some(tagdef) = self.nominal(ty)
             && let Some(&fndef) = self.x.names.attached.get(&(tagdef, name))
         {
@@ -2004,295 +3337,562 @@ impl LowerBody<'_, '_> {
         }
     }
 
-    fn expect_ty(&self, expected: InstrId, actual: InstrId) -> LowerResult<()> {
-        Err(self.x.todo_no_loc())
+    fn op_fn(&self, name: &str) -> Option<NamedFn> {
+        let id = self.x.ir.strings.get_id(name)?;
+        self.x
+            .names
+            .names
+            .iter()
+            .find_map(|(&(_, string), &named)| {
+                (string == id).then_some(match named {
+                    Named::Sigdef(sigdef) => Some(NamedFn::Sigdef(sigdef)),
+                    Named::Fndef(fndef) => Some(NamedFn::Fndef(fndef)),
+                    _ => None,
+                })?
+            })
+    }
+
+    fn ty_named(&self, name: &str) -> Option<TydefId> {
+        let id = self.x.ir.strings.get_id(name)?;
+        self.x
+            .names
+            .names
+            .iter()
+            .find_map(|(&(_, string), &named)| match named {
+                Named::Tydef(def) if string == id => Some(def),
+                _ => None,
+            })
+    }
+
+    fn val_named(&self, name: &str) -> Option<ValdefId> {
+        let id = self.x.ir.strings.get_id(name)?;
+        self.x
+            .names
+            .names
+            .iter()
+            .find_map(|(&(_, string), &named)| match named {
+                Named::Valdef(def) if string == id => Some(def),
+                _ => None,
+            })
+    }
+
+    fn bind_ty(&mut self, def: TydefId, ty: InstrId, destruct: &[InstrId]) -> LowerResult<InstrId> {
+        let Tydef(target) = self.x.ir.tydefs[def];
+        let available = self.x.entrypoints(destruct, &self.slots);
+        let start = self.emit(Instr::Lambda);
+        let (construct, _) = self.x.invoke_need(target, &available)?;
+        let args = self.x.items(&construct);
+        let result = self.emit(Instr::Bind { args, bind: ty });
+        let bind = self.emit(Instr::EndLambda { start, result });
+        Ok(self.emit(Instr::BindTydef { def, bind }))
+    }
+
+    fn bind_val(&mut self, def: ValdefId, val: InstrId, destruct: &[InstrId]) -> LowerResult<InstrId> {
+        let Valdef(target) = self.x.ir.valdefs[def];
+        let available = self.x.entrypoints(destruct, &self.slots);
+        let start = self.emit(Instr::Lambda);
+        let (construct, _) = self.x.invoke_need(target, &available)?;
+        let args = self.x.items(&construct);
+        let result = self.emit(Instr::Bind { args, bind: val });
+        let bind = self.emit(Instr::EndLambda { start, result });
+        Ok(self.emit(Instr::BindValdef { def, bind }))
+    }
+
+    fn call_sig(&mut self, sigdef: SigdefId, destruct: &[InstrId], args: &[Typed]) -> LowerResult<Typed> {
+        let available = self.x.entrypoints(destruct, &self.slots);
+        let Sigdef(target) = self.x.ir.sigdefs[sigdef];
+        let start = self.emit(Instr::Lambda);
+        let (construct, _) = self.x.invoke_need(target, &available)?;
+        let items = self.x.items(&construct);
+        let result = self.emit(Instr::Stack { items });
+        let param = self.emit(Instr::EndLambda { start, result });
+        let lambda = self.emit(Instr::NeedSigdef { def: sigdef, param });
+        let construct = self.x.invoke_force(lambda, &available)?;
+        let args_ctx = self.x.items(&construct);
+        let func = self.emit(Instr::Apply {
+            lambda,
+            args: args_ctx,
+        });
+        let (ty_param, ty_result) = self.sig(func)?;
+        let args_ty = args.iter().map(|arg| arg.ty).collect::<Vec<_>>();
+        let args_val = args.iter().map(|arg| arg.val).collect::<Vec<_>>();
+        let ty_args = self.ty_tuple(&args_ty);
+        self.expect_ty(ty_param, ty_args)?;
+        let arg = self.instr_tuple(ty_args, &args_val).val;
+        Ok(self.instr(ty_result, Expr::Call { func, arg }))
+    }
+
+    fn call_named(&mut self, named: NamedFn, destruct: &[InstrId], args: &[Typed]) -> LowerResult<Typed> {
+        match named {
+            NamedFn::Sigdef(sigdef) => self.call_sig(sigdef, destruct, args),
+            NamedFn::Fndef(fndef) => {
+                let available = self.x.entrypoints(destruct, &self.slots);
+                let lambda = self.emit(Instr::Fndef { def: fndef });
+                let construct = self.x.invoke_force(lambda, &available)?;
+                let args_ctx = self.x.items(&construct);
+                let func = self.emit(Instr::Apply {
+                    lambda,
+                    args: args_ctx,
+                });
+                let (ty_param, ty_result) = self.sig(func)?;
+                let args_ty = args.iter().map(|arg| arg.ty).collect::<Vec<_>>();
+                let args_val = args.iter().map(|arg| arg.val).collect::<Vec<_>>();
+                let ty_args = self.ty_tuple(&args_ty);
+                self.expect_ty(ty_param, ty_args)?;
+                let arg = self.instr_tuple(ty_args, &args_val).val;
+                Ok(self.instr(ty_result, Expr::Call { func, arg }))
+            }
+        }
+    }
+
+    fn call_fn(&mut self, named: NamedFn, args: &[Typed]) -> LowerResult<Typed> {
+        self.call_named(named, &[], args)
+    }
+
+    fn call_op_unary(&mut self, named: NamedFn, arg: Typed) -> LowerResult<Typed> {
+        let NamedFn::Sigdef(sigdef) = named else {
+            return self.call_fn(named, &[arg]);
+        };
+        let arg_ty = self.ty_named("Arg").ok_or_else(|| self.x.todo_no_loc())?;
+        let destruct = vec![self.bind_ty(arg_ty, arg.ty, &[])?];
+        self.call_sig(sigdef, &destruct, &[arg])
+    }
+
+    fn call_op_binary(&mut self, named: NamedFn, left: Typed, right: Typed) -> LowerResult<Typed> {
+        let NamedFn::Sigdef(sigdef) = named else {
+            return self.call_fn(named, &[left, right]);
+        };
+        let lhs_ty = self.ty_named("Lhs").ok_or_else(|| self.x.todo_no_loc())?;
+        let mut destruct = Vec::new();
+        destruct.push(self.bind_ty(lhs_ty, left.ty, &destruct)?);
+        let rhs_ty = self.ty_named("Rhs").ok_or_else(|| self.x.todo_no_loc())?;
+        destruct.push(self.bind_ty(rhs_ty, right.ty, &destruct)?);
+        self.call_sig(sigdef, &destruct, &[left, right])
+    }
+
+    fn tuple_elem_tys(&mut self, ty: InstrId) -> LowerResult<Vec<InstrId>> {
+        let ty = self.reduce_alias_ty(ty)?;
+        let Instr::Tuple { elems } = self.x.ir.instrs[ty] else {
+            return Err(self.x.todo_no_loc());
+        };
+        Ok(elems
+            .into_iter()
+            .map(|item| self.x.ir.items[item])
+            .collect())
+    }
+
+    fn int_type_for_ty(&mut self, ty: InstrId) -> LowerResult<Option<IntType>> {
+        let ty = self.reduce_alias_ty(ty)?;
+        let Instr::Apply { lambda, args } = self.x.ir.instrs[ty] else {
+            return Ok(None);
+        };
+        if !args.is_empty() {
+            return Ok(None);
+        }
+        let Instr::NeedTydef { def, .. } = self.x.ir.instrs[lambda] else {
+            return Ok(None);
+        };
+        let types = self.base().types;
+        Ok(if def == types.uint32 {
+            Some(IntType::Uint32)
+        } else if def == types.int32 {
+            Some(IntType::Int32)
+        } else if def == types.uint64 {
+            Some(IntType::Uint64)
+        } else if def == types.int64 {
+            Some(IntType::Int64)
+        } else if def == types.uint {
+            Some(IntType::Uint)
+        } else if def == types.int {
+            Some(IntType::Int)
+        } else {
+            None
+        })
+    }
+
+    fn coerce_arg(&mut self, expected: InstrId, arg: Typed) -> LowerResult<Typed> {
+        let Some(&token) = self.literal_tokens.get(&arg.val) else {
+            return Ok(arg);
+        };
+        let Some(int_type) = self.int_type_for_ty(expected)? else {
+            return Ok(arg);
+        };
+        let (val, parsed) = self.x.lit(token)?;
+        if parsed != Some(IntType::Int) {
+            return Ok(arg);
+        }
+        if matches!(int_type, IntType::Uint32 | IntType::Uint64 | IntType::Uint)
+            && matches!(val, Val::Int32(_) | Val::Int64(_) | Val::Int(_))
+        {
+            return Ok(arg);
+        }
+        self.lit_expr(token, Some(int_type))
+    }
+
+    fn coerce_args(&mut self, ty_param: InstrId, args: Vec<Typed>) -> LowerResult<Vec<Typed>> {
+        let expected = self.tuple_elem_tys(ty_param)?;
+        if expected.len() != args.len() {
+            return Ok(args);
+        }
+        expected
+            .into_iter()
+            .zip(args)
+            .map(|(expected, arg)| self.coerce_arg(expected, arg))
+            .collect()
+    }
+
+    fn expect_arg_count(&mut self, expr: ExprId, ty_param: InstrId, actual: usize) -> LowerResult<()> {
+        let expected = self.tuple_elem_tys(ty_param)?.len();
+        if expected == actual {
+            Ok(())
+        } else {
+            Err(LowerError::ArgCount(expr))
+        }
+    }
+
+    fn lit_expr(&mut self, token: TokenId, force: Option<IntType>) -> LowerResult<Typed> {
+        let Base {
+            types,
+            lit_types,
+            lit_vals,
+            lits,
+        } = self.base();
+        let (val, parsed_type) = self.x.lit(token)?;
+        let int_type = match (parsed_type, force) {
+            (Some(IntType::Int), Some(force)) => Some(force),
+            (other, _) => other,
+        };
+        let (tydef_lit, tydef, valdef, sigdef, val) = match (val, int_type) {
+            // Unreachable cases.
+            (
+                Val::Uint31(_)
+                | Val::Uint32(_)
+                | Val::Int32(_)
+                | Val::Uint63(_)
+                | Val::Uint64(_)
+                | Val::Int64(_)
+                | Val::Uint(_)
+                | Val::Int(_),
+                None,
+            ) => unreachable!(),
+            (Val::Char(_) | Val::String(_), Some(_)) => unreachable!(),
+            (
+                Val::Int32(_) | Val::Int64(_) | Val::Int(_),
+                Some(IntType::Uint32 | IntType::Uint64 | IntType::Uint),
+            ) => unreachable!(),
+
+            // Integer literals ending in `u32`.
+            (Val::Uint31(n), Some(IntType::Uint32)) => (
+                lit_types.uint31,
+                types.uint32,
+                lit_vals.uint31,
+                lits.uint31_realize_uint32,
+                Val::Uint31(n),
+            ),
+            (Val::Uint32(n), Some(IntType::Uint32)) => (
+                lit_types.uint32,
+                types.uint32,
+                lit_vals.uint32,
+                lits.uint32_realize_uint32,
+                Val::Uint32(n),
+            ),
+            (Val::Uint63(_) | Val::Uint64(_) | Val::Uint(_), Some(IntType::Uint32)) => {
+                return Err(LowerError::Uint32High(token));
+            }
+
+            // Integer literals ending in `i32`.
+            (Val::Uint31(n), Some(IntType::Int32)) => (
+                lit_types.uint31,
+                types.int32,
+                lit_vals.uint31,
+                lits.uint31_realize_int32,
+                Val::Uint31(n),
+            ),
+            (Val::Int32(n), Some(IntType::Int32)) => (
+                lit_types.int32,
+                types.int32,
+                lit_vals.int32,
+                lits.int32_realize_int32,
+                Val::Int32(n),
+            ),
+            (Val::Int64(_) | Val::Int(_), Some(IntType::Int32)) => {
+                return Err(LowerError::Int32Low(token));
+            }
+            (
+                Val::Uint32(_) | Val::Uint63(_) | Val::Uint64(_) | Val::Uint(_),
+                Some(IntType::Int32),
+            ) => {
+                return Err(LowerError::Int32High(token));
+            }
+
+            // Integer literals ending in `u64`.
+            (Val::Uint31(n), Some(IntType::Uint64)) => (
+                lit_types.uint31,
+                types.uint64,
+                lit_vals.uint31,
+                lits.uint31_realize_uint64,
+                Val::Uint31(n),
+            ),
+            (Val::Uint32(n), Some(IntType::Uint64)) => (
+                lit_types.uint32,
+                types.uint64,
+                lit_vals.uint32,
+                lits.uint32_realize_uint64,
+                Val::Uint32(n),
+            ),
+            (Val::Uint63(n), Some(IntType::Uint64)) => (
+                lit_types.uint63,
+                types.uint64,
+                lit_vals.uint63,
+                lits.uint63_realize_uint64,
+                Val::Uint63(n),
+            ),
+            (Val::Uint64(n), Some(IntType::Uint64)) => (
+                lit_types.uint64,
+                types.uint64,
+                lit_vals.uint64,
+                lits.uint64_realize_uint64,
+                Val::Uint64(n),
+            ),
+            (Val::Uint(_), Some(IntType::Uint64)) => {
+                return Err(LowerError::Uint64High(token));
+            }
+
+            // Integer literals ending in `i64`.
+            (Val::Uint31(n), Some(IntType::Int64)) => (
+                lit_types.uint31,
+                types.int64,
+                lit_vals.uint31,
+                lits.uint31_realize_int64,
+                Val::Uint31(n),
+            ),
+            (Val::Uint32(n), Some(IntType::Int64)) => (
+                lit_types.uint32,
+                types.int64,
+                lit_vals.uint32,
+                lits.uint32_realize_int64,
+                Val::Uint32(n),
+            ),
+            (Val::Int32(n), Some(IntType::Int64)) => (
+                lit_types.int32,
+                types.int64,
+                lit_vals.int32,
+                lits.int32_realize_int64,
+                Val::Int32(n),
+            ),
+            (Val::Uint63(n), Some(IntType::Int64)) => (
+                lit_types.uint63,
+                types.int64,
+                lit_vals.uint63,
+                lits.uint63_realize_int64,
+                Val::Uint63(n),
+            ),
+            (Val::Int64(n), Some(IntType::Int64)) => (
+                lit_types.int64,
+                types.int64,
+                lit_vals.int64,
+                lits.int64_realize_int64,
+                Val::Int64(n),
+            ),
+            (Val::Int(_), Some(IntType::Int64)) => return Err(LowerError::Int64Low(token)),
+            (Val::Uint64(_) | Val::Uint(_), Some(IntType::Int64)) => {
+                return Err(LowerError::Int64High(token));
+            }
+
+            // Integer literals ending in `u`.
+            (Val::Uint31(n), Some(IntType::Uint)) => (
+                lit_types.uint31,
+                types.uint,
+                lit_vals.uint31,
+                lits.uint31_realize_uint,
+                Val::Uint31(n),
+            ),
+            (Val::Uint32(n), Some(IntType::Uint)) => (
+                lit_types.uint32,
+                types.uint,
+                lit_vals.uint32,
+                lits.uint32_realize_uint,
+                Val::Uint32(n),
+            ),
+            (Val::Uint63(n), Some(IntType::Uint)) => (
+                lit_types.uint63,
+                types.uint,
+                lit_vals.uint63,
+                lits.uint63_realize_uint,
+                Val::Uint63(n),
+            ),
+            (Val::Uint64(n), Some(IntType::Uint)) => (
+                lit_types.uint64,
+                types.uint,
+                lit_vals.uint64,
+                lits.uint64_realize_uint,
+                Val::Uint64(n),
+            ),
+            (Val::Uint(n), Some(IntType::Uint)) => (
+                lit_types.uint,
+                types.uint,
+                lit_vals.uint,
+                lits.uint_realize_uint,
+                Val::Uint(n),
+            ),
+
+            // Integer literals with no suffix.
+            (Val::Uint31(n), Some(IntType::Int)) => (
+                lit_types.uint31,
+                types.int,
+                lit_vals.uint31,
+                lits.uint31_realize_int,
+                Val::Uint31(n),
+            ),
+            (Val::Uint32(n), Some(IntType::Int)) => (
+                lit_types.uint32,
+                types.int,
+                lit_vals.uint32,
+                lits.uint32_realize_int,
+                Val::Uint32(n),
+            ),
+            (Val::Int32(n), Some(IntType::Int)) => (
+                lit_types.int32,
+                types.int,
+                lit_vals.int32,
+                lits.int32_realize_int,
+                Val::Int32(n),
+            ),
+            (Val::Uint63(n), Some(IntType::Int)) => (
+                lit_types.uint63,
+                types.int,
+                lit_vals.uint63,
+                lits.uint63_realize_int,
+                Val::Uint63(n),
+            ),
+            (Val::Uint64(n), Some(IntType::Int)) => (
+                lit_types.uint64,
+                types.int,
+                lit_vals.uint64,
+                lits.uint64_realize_int,
+                Val::Uint64(n),
+            ),
+            (Val::Int64(n), Some(IntType::Int)) => (
+                lit_types.int64,
+                types.int,
+                lit_vals.int64,
+                lits.int64_realize_int,
+                Val::Int64(n),
+            ),
+            (Val::Uint(n), Some(IntType::Int)) => (
+                lit_types.uint,
+                types.int,
+                lit_vals.uint,
+                lits.uint_realize_int,
+                Val::Uint(n),
+            ),
+            (Val::Int(n), Some(IntType::Int)) => (
+                lit_types.int,
+                types.int,
+                lit_vals.int,
+                lits.int_realize_int,
+                Val::Int(n),
+            ),
+
+            // Other literals.
+            (Val::Char(c), None) => (
+                lit_types.char,
+                types.char,
+                lit_vals.char,
+                lits.char_realize,
+                Val::Char(c),
+            ),
+            (Val::String(s), None) => (
+                lit_types.string,
+                types.string,
+                lit_vals.string,
+                lits.string_realize,
+                Val::String(s),
+            ),
+        };
+
+        let Valdef(body_valdef) = self.x.ir.valdefs[valdef];
+
+        let lambda_ty_lit = self.extract_ty(tydef_lit)?;
+        let _construct_ty_lit = self.invoke_force(lambda_ty_lit)?;
+
+        let lambda_ty = self.extract_ty(tydef)?;
+        let construct_ty = self.invoke_force(lambda_ty)?;
+        let args_ty = self.x.items(&construct_ty);
+        let ty = self.emit(Instr::Apply {
+            lambda: lambda_ty,
+            args: args_ty,
+        });
+
+        let val_lit = self.emit(Instr::Lit { val });
+
+        let available = self.x.entrypoints(&self.slots, &[]);
+        let start = self.emit(Instr::Lambda);
+        let (construct_val, _) = self.x.invoke_need(body_valdef, &available)?;
+        let args_val = self.x.items(&construct_val);
+        let bind = self.emit(Instr::Bind {
+            args: args_val,
+            bind: val_lit,
+        });
+        let bind = self.emit(Instr::EndLambda { start, result: bind });
+        let slot_lit = self.emit(Instr::BindValdef { def: valdef, bind });
+
+        let start = self.emit(Instr::Lambda);
+        let items = self.x.items(&[lambda_ty_lit, lambda_ty, slot_lit]);
+        let result = self.emit(Instr::Stack { items });
+        let param = self.emit(Instr::EndLambda { start, result });
+        let lambda_func = self.emit(Instr::NeedSigdef { def: sigdef, param });
+        let args = self.x.items(&[]);
+        let func = self.emit(Instr::Apply {
+            lambda: lambda_func,
+            args,
+        });
+        let ty_unit = self.x.ty_unit();
+        let arg = self.instr_tuple(ty_unit, &[]).val;
+        let typed = self.instr(ty, Expr::Call { func, arg });
+        self.literal_tokens.insert(typed.val, token);
+        Ok(typed)
+    }
+
+    fn expect_ty(&mut self, expected: InstrId, actual: InstrId) -> LowerResult<()> {
+        if self.same_ty(expected, actual)? {
+            Ok(())
+        } else {
+            if std::env::var_os("MOSS_TRACE_TYPES").is_some() {
+                let expected_reduced = self.reduce_alias_ty(expected)?;
+                let actual_reduced = self.reduce_alias_ty(actual)?;
+                eprintln!(
+                    "type mismatch expected={expected:?} -> {:?} actual={actual:?} -> {:?}",
+                    self.x.ir.instrs[expected_reduced],
+                    self.x.ir.instrs[actual_reduced],
+                );
+                if let Instr::Tuple { elems } = self.x.ir.instrs[expected_reduced] {
+                    for (index, item) in elems.into_iter().enumerate() {
+                        let ty = self.x.ir.items[item];
+                        eprintln!("  expected[{index}]={ty:?} -> {:?}", self.x.ir.instrs[ty]);
+                    }
+                }
+                if let Instr::Tuple { elems } = self.x.ir.instrs[actual_reduced] {
+                    for (index, item) in elems.into_iter().enumerate() {
+                        let ty = self.x.ir.items[item];
+                        eprintln!("  actual[{index}]={ty:?} -> {:?}", self.x.ir.instrs[ty]);
+                    }
+                }
+            }
+            Err(self.x.todo_no_loc())
+        }
     }
 
     fn expr(&mut self, expr: ExprId) -> LowerResult<Typed> {
         match self.x.tree.exprs[expr] {
-            parse::Expr::Lit(token) => {
-                let Base {
-                    types,
-                    lit_types,
-                    lit_vals,
-                    lits,
-                } = self.base();
-                let (tydef_lit, tydef, valdef, sigdef, val) = match self.x.lit(token)? {
-                    // Unreachable cases.
-                    (
-                        Val::Uint31(_)
-                        | Val::Uint32(_)
-                        | Val::Int32(_)
-                        | Val::Uint63(_)
-                        | Val::Uint64(_)
-                        | Val::Int64(_)
-                        | Val::Uint(_)
-                        | Val::Int(_),
-                        None,
-                    ) => unreachable!(),
-                    (Val::Char(_) | Val::String(_), Some(_)) => unreachable!(),
-                    (
-                        Val::Int32(_) | Val::Int64(_) | Val::Int(_),
-                        Some(IntType::Uint32 | IntType::Uint64 | IntType::Uint),
-                    ) => unreachable!(),
-
-                    // Integer literals ending in `u32`.
-                    (Val::Uint31(n), Some(IntType::Uint32)) => (
-                        lit_types.uint31,
-                        types.uint32,
-                        lit_vals.uint31,
-                        lits.uint31_realize_uint32,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Uint32(n), Some(IntType::Uint32)) => (
-                        lit_types.uint32,
-                        types.uint32,
-                        lit_vals.uint32,
-                        lits.uint32_realize_uint32,
-                        Val::Uint32(n),
-                    ),
-                    (Val::Uint63(_) | Val::Uint64(_) | Val::Uint(_), Some(IntType::Uint32)) => {
-                        return Err(LowerError::Uint32High(token));
-                    }
-
-                    // Integer literals ending in `i32`.
-                    (Val::Uint31(n), Some(IntType::Int32)) => (
-                        lit_types.uint31,
-                        types.int32,
-                        lit_vals.uint31,
-                        lits.uint31_realize_int32,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Int32(n), Some(IntType::Int32)) => (
-                        lit_types.int32,
-                        types.int32,
-                        lit_vals.int32,
-                        lits.int32_realize_int32,
-                        Val::Int32(n),
-                    ),
-                    (Val::Int64(_) | Val::Int(_), Some(IntType::Int32)) => {
-                        return Err(LowerError::Int32Low(token));
-                    }
-                    (
-                        Val::Uint32(_) | Val::Uint63(_) | Val::Uint64(_) | Val::Uint(_),
-                        Some(IntType::Int32),
-                    ) => {
-                        return Err(LowerError::Int32High(token));
-                    }
-
-                    // Integer literals ending in `u64`.
-                    (Val::Uint31(n), Some(IntType::Uint64)) => (
-                        lit_types.uint31,
-                        types.uint64,
-                        lit_vals.uint31,
-                        lits.uint31_realize_uint64,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Uint32(n), Some(IntType::Uint64)) => (
-                        lit_types.uint32,
-                        types.uint64,
-                        lit_vals.uint32,
-                        lits.uint32_realize_uint64,
-                        Val::Uint32(n),
-                    ),
-                    (Val::Uint63(n), Some(IntType::Uint64)) => (
-                        lit_types.uint63,
-                        types.uint64,
-                        lit_vals.uint63,
-                        lits.uint63_realize_uint64,
-                        Val::Uint63(n),
-                    ),
-                    (Val::Uint64(n), Some(IntType::Uint64)) => (
-                        lit_types.uint64,
-                        types.uint64,
-                        lit_vals.uint64,
-                        lits.uint64_realize_uint64,
-                        Val::Uint64(n),
-                    ),
-                    (Val::Uint(_), Some(IntType::Uint64)) => {
-                        return Err(LowerError::Uint64High(token));
-                    }
-
-                    // Integer literals ending in `i64`.
-                    (Val::Uint31(n), Some(IntType::Int64)) => (
-                        lit_types.uint31,
-                        types.int64,
-                        lit_vals.uint31,
-                        lits.uint31_realize_int64,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Uint32(n), Some(IntType::Int64)) => (
-                        lit_types.uint32,
-                        types.int64,
-                        lit_vals.uint32,
-                        lits.uint32_realize_int64,
-                        Val::Uint32(n),
-                    ),
-                    (Val::Int32(n), Some(IntType::Int64)) => (
-                        lit_types.int32,
-                        types.int64,
-                        lit_vals.int32,
-                        lits.int32_realize_int64,
-                        Val::Int32(n),
-                    ),
-                    (Val::Uint63(n), Some(IntType::Int64)) => (
-                        lit_types.uint63,
-                        types.int64,
-                        lit_vals.uint63,
-                        lits.uint63_realize_int64,
-                        Val::Uint63(n),
-                    ),
-                    (Val::Int64(n), Some(IntType::Int64)) => (
-                        lit_types.int64,
-                        types.int64,
-                        lit_vals.int64,
-                        lits.int64_realize_int64,
-                        Val::Int64(n),
-                    ),
-                    (Val::Int(_), Some(IntType::Int64)) => return Err(LowerError::Int64Low(token)),
-                    (Val::Uint64(_) | Val::Uint(_), Some(IntType::Int64)) => {
-                        return Err(LowerError::Int64High(token));
-                    }
-
-                    // Integer literals ending in `u`.
-                    (Val::Uint31(n), Some(IntType::Uint)) => (
-                        lit_types.uint31,
-                        types.uint,
-                        lit_vals.uint31,
-                        lits.uint31_realize_uint,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Uint32(n), Some(IntType::Uint)) => (
-                        lit_types.uint32,
-                        types.uint,
-                        lit_vals.uint32,
-                        lits.uint32_realize_uint,
-                        Val::Uint32(n),
-                    ),
-                    (Val::Uint63(n), Some(IntType::Uint)) => (
-                        lit_types.uint63,
-                        types.uint,
-                        lit_vals.uint63,
-                        lits.uint63_realize_uint,
-                        Val::Uint63(n),
-                    ),
-                    (Val::Uint64(n), Some(IntType::Uint)) => (
-                        lit_types.uint64,
-                        types.uint,
-                        lit_vals.uint64,
-                        lits.uint64_realize_uint,
-                        Val::Uint64(n),
-                    ),
-                    (Val::Uint(n), Some(IntType::Uint)) => (
-                        lit_types.uint,
-                        types.uint,
-                        lit_vals.uint,
-                        lits.uint_realize_uint,
-                        Val::Uint(n),
-                    ),
-
-                    // Integer literals with no suffix.
-                    (Val::Uint31(n), Some(IntType::Int)) => (
-                        lit_types.uint31,
-                        types.int,
-                        lit_vals.uint31,
-                        lits.uint31_realize_int,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Uint32(n), Some(IntType::Int)) => (
-                        lit_types.uint32,
-                        types.int,
-                        lit_vals.uint32,
-                        lits.uint32_realize_int,
-                        Val::Uint32(n),
-                    ),
-                    (Val::Int32(n), Some(IntType::Int)) => (
-                        lit_types.int32,
-                        types.int,
-                        lit_vals.int32,
-                        lits.int32_realize_int,
-                        Val::Int32(n),
-                    ),
-                    (Val::Uint63(n), Some(IntType::Int)) => (
-                        lit_types.uint63,
-                        types.int,
-                        lit_vals.uint63,
-                        lits.uint63_realize_int,
-                        Val::Uint63(n),
-                    ),
-                    (Val::Uint64(n), Some(IntType::Int)) => (
-                        lit_types.uint64,
-                        types.int,
-                        lit_vals.uint64,
-                        lits.uint64_realize_int,
-                        Val::Uint64(n),
-                    ),
-                    (Val::Int64(n), Some(IntType::Int)) => (
-                        lit_types.int64,
-                        types.int,
-                        lit_vals.int64,
-                        lits.int64_realize_int,
-                        Val::Int64(n),
-                    ),
-                    (Val::Uint(n), Some(IntType::Int)) => (
-                        lit_types.uint,
-                        types.int,
-                        lit_vals.uint,
-                        lits.uint_realize_int,
-                        Val::Uint(n),
-                    ),
-                    (Val::Int(n), Some(IntType::Int)) => (
-                        lit_types.int,
-                        types.int,
-                        lit_vals.int,
-                        lits.int_realize_int,
-                        Val::Int(n),
-                    ),
-
-                    // Other literals.
-                    (Val::Char(c), None) => (
-                        lit_types.char,
-                        types.char,
-                        lit_vals.char,
-                        lits.char_realize,
-                        Val::Char(c),
-                    ),
-                    (Val::String(s), None) => (
-                        lit_types.string,
-                        types.string,
-                        lit_vals.string,
-                        lits.string_realize,
-                        Val::String(s),
-                    ),
-                };
-
-                let Tydef(body_tydef_lit) = self.x.ir.tydefs[tydef_lit];
-                let Tydef(body_tydef) = self.x.ir.tydefs[tydef];
-                let Valdef(body_valdef) = self.x.ir.valdefs[valdef];
-                let Sigdef(body_sigdef) = self.x.ir.sigdefs[sigdef];
-
-                let lambda_ty_lit = self.extract_ty(tydef_lit)?;
-                let construct_ty_lit = self.invoke_force(lambda_ty_lit)?;
-
-                let lambda_ty = self.extract_ty(tydef)?;
-                let construct_ty = self.invoke_force(lambda_ty)?;
-
-                let val_lit = self.emit(Instr::Lit { val });
-
-                // TODO: Use "invoke" correctly here.
-                let lambda_func = self.extract_sig(sigdef)?;
-                let construct_func = self.invoke_force(lambda_func)?;
-
-                let items = self.x.items(&construct_func);
-                let func = self.emit(Instr::Apply {
-                    lambda: lambda_func,
-                    args: items,
-                });
-                let ty_unit = self.x.ty_unit();
-                let arg = self.instr_tuple(ty_unit, &[]).val;
-                Ok(self.instr(lambda_ty, Expr::Call { func, arg }))
-            }
+            parse::Expr::Lit(token) => self.lit_expr(token, None),
             parse::Expr::Path(path) => {
+                if path.prefix.is_empty()
+                    && self.x.slice(path.last) == "this"
+                    && !self.is_method
+                {
+                    return Err(LowerError::ThisNotMethod(expr));
+                }
                 let name = self.x.name(path.last);
                 if path.prefix.is_empty()
                     && let Some(&typed) = self.locals.get(&name)
@@ -2305,6 +3905,37 @@ impl LowerBody<'_, '_> {
                 let Valdef(body) = self.x.ir.valdefs[valdef];
                 let val = self.extract_val(valdef)?;
                 let construct = self.invoke_force(val)?;
+                if std::env::var_os("MOSS_TRACE_VALS").is_some() {
+                    match self.x.ir.instrs[val] {
+                        Instr::NeedValdef { param, .. } => {
+                            eprintln!("  val param={param:?} -> {:?}", self.x.ir.instrs[param]);
+                            if let Ok(result) = self.x.materialize_lambda(param) {
+                                eprintln!("  val param materialized={result:?} -> {:?}", self.x.ir.instrs[result]);
+                                if let Some(items) = self.x.stack_instrs(result) {
+                                    for (index, item) in items.into_iter().enumerate() {
+                                        eprintln!(
+                                            "    val param[{index}]={item:?} -> {:?}",
+                                            self.x.ir.instrs[item]
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Instr::BindValdef { bind, .. } => {
+                            eprintln!("  val bind={bind:?} -> {:?}", self.x.ir.instrs[bind]);
+                            if let Ok(result) = self.x.materialize_lambda(bind) {
+                                eprintln!("  val bind materialized={result:?} -> {:?}", self.x.ir.instrs[result]);
+                            }
+                        }
+                        _ => {}
+                    }
+                    eprintln!(
+                        "val {} def={valdef:?} val={val:?} instr={:?} construct={:?}",
+                        self.x.slice(path.last),
+                        self.x.ir.instrs[val],
+                        construct
+                    );
+                }
                 let ty = self.inline(body, &construct)?;
                 Ok(self.instr(ty, Expr::Val { val }))
             }
@@ -2354,44 +3985,66 @@ impl LowerBody<'_, '_> {
                 Ok(self.instr(ty, Expr::Field { record, index }))
             }
             parse::Expr::Method(object, method, arguments) => {
+                if std::env::var_os("MOSS_TRACE_CALLS").is_some() {
+                    let current = self.current_fn.map(|name| self.x.slice(name)).unwrap_or("?");
+                    eprintln!(
+                        "call {current} -> .{} instrs={}",
+                        self.x.slice(method),
+                        self.x.ir.instrs.len()
+                    );
+                }
                 let obj = self.expr(object)?;
                 let name = self.x.name(method);
-                // TODO: Contextually set `this` to `obj`.
-                let lambda = match self.method(obj.ty, name) {
-                    Some(NamedFn::Sigdef(sigdef)) => self.extract_sig(sigdef)?,
-                    Some(NamedFn::Fndef(fndef)) => self.emit(Instr::Fndef { def: fndef }),
-                    None => return Err(LowerError::Undefined(method)),
-                };
-                let construct = self.invoke_force(lambda)?;
-                let args = self.x.items(&construct);
-                let func = self.emit(Instr::Apply { lambda, args });
-                let (ty_param, ty_result) = self.sig(func);
+                let named = self.method(obj.ty, name).ok_or(LowerError::Undefined(method))?;
+                let mut destruct = Vec::new();
+                if let Some(this_ty) = self.ty_named("This") {
+                    destruct.push(self.bind_ty(this_ty, obj.ty, &destruct)?);
+                }
+                if let Some(this_val) = self.val_named("this") {
+                    destruct.push(self.bind_val(this_val, obj.val, &destruct)?);
+                }
                 let lowered = arguments
                     .into_iter()
                     .map(|arg| self.expr(arg))
                     .collect::<LowerResult<Vec<Typed>>>()?;
-                let (args_ty, args_val): (Vec<_>, Vec<_>) =
-                    lowered.into_iter().map(|arg| (arg.ty, arg.val)).unzip();
-                let ty_args = self.ty_tuple(&args_ty);
-                self.expect_ty(ty_param, ty_args)?;
-                let arg = self.instr_tuple(ty_args, &args_val).val;
-                Ok(self.instr(ty_result, Expr::Call { func, arg }))
+                self.call_named(named, &destruct, &lowered)
             }
             parse::Expr::Call(callee, binds, arguments) => {
-                // TODO: Handle bindings attached to function calls.
-                let lambda = match self.x.path(callee)? {
-                    Named::Sigdef(sigdef) => self.extract_sig(sigdef)?,
-                    Named::Fndef(fndef) => self.emit(Instr::Fndef { def: fndef }),
+                if std::env::var_os("MOSS_TRACE_CALLS").is_some() {
+                    let current = self.current_fn.map(|name| self.x.slice(name)).unwrap_or("?");
+                    eprintln!(
+                        "call {current} -> {} instrs={}",
+                        self.x.slice(callee.last),
+                        self.x.ir.instrs.len()
+                    );
+                }
+                let destruct = binds
+                    .into_iter()
+                    .map(|bind| self.x.bind(&self.slots, bind))
+                    .collect::<LowerResult<Vec<_>>>()?;
+                let available = self.x.entrypoints(&self.slots, &destruct);
+                let (lambda, construct) = match self.x.path(callee)? {
+                    Named::Sigdef(sigdef) => {
+                        let lambda = self.extract_sig(sigdef)?;
+                        let construct = self.x.invoke_force(lambda, &available)?;
+                        (lambda, construct)
+                    }
+                    Named::Fndef(fndef) => {
+                        let lambda = self.emit(Instr::Fndef { def: fndef });
+                        let construct = self.x.invoke_force(lambda, &available)?;
+                        (lambda, construct)
+                    }
                     _ => return Err(LowerError::NotFn(callee.last)),
                 };
-                let construct = self.invoke_force(lambda)?;
                 let args = self.x.items(&construct);
                 let func = self.emit(Instr::Apply { lambda, args });
-                let (ty_param, ty_result) = self.sig(func);
+                let (ty_param, ty_result) = self.sig(func)?;
                 let lowered = arguments
                     .into_iter()
                     .map(|arg| self.expr(arg))
                     .collect::<LowerResult<Vec<Typed>>>()?;
+                self.expect_arg_count(expr, ty_param, lowered.len())?;
+                let lowered = self.coerce_args(ty_param, lowered)?;
                 let (args_ty, args_val): (Vec<_>, Vec<_>) =
                     lowered.into_iter().map(|arg| (arg.ty, arg.val)).unzip();
                 let ty_args = self.ty_tuple(&args_ty);
@@ -2401,32 +4054,36 @@ impl LowerBody<'_, '_> {
             }
             parse::Expr::Unary(op, inner) => {
                 let v = self.expr(inner)?;
-                match op {
-                    Unop::Neg => Err(self.x.todo_no_loc()),
-                    Unop::Not => Err(self.x.todo_no_loc()),
-                }
+                let name = match op {
+                    Unop::Neg => "neg",
+                    Unop::Not => "not",
+                };
+                let named = self.op_fn(name).ok_or_else(|| self.x.todo_no_loc())?;
+                self.call_op_unary(named, v)
             }
             parse::Expr::Binary(left, op, right) => {
                 let l = self.expr(left)?;
                 let r = self.expr(right)?;
-                match op {
-                    Binop::Eq => Err(self.x.todo_no_loc()),
-                    Binop::Ne => Err(self.x.todo_no_loc()),
-                    Binop::Lt => Err(self.x.todo_no_loc()),
-                    Binop::Gt => Err(self.x.todo_no_loc()),
-                    Binop::Le => Err(self.x.todo_no_loc()),
-                    Binop::Ge => Err(self.x.todo_no_loc()),
-                    Binop::Add => Err(self.x.todo_no_loc()),
-                    Binop::Sub => Err(self.x.todo_no_loc()),
-                    Binop::Mul => Err(self.x.todo_no_loc()),
-                    Binop::Div => Err(self.x.todo_no_loc()),
-                    Binop::Rem => Err(self.x.todo_no_loc()),
-                    Binop::Shl => Err(self.x.todo_no_loc()),
-                    Binop::Shr => Err(self.x.todo_no_loc()),
-                    Binop::And => Err(self.x.todo_no_loc()),
-                    Binop::Or => Err(self.x.todo_no_loc()),
-                    Binop::Xor => Err(self.x.todo_no_loc()),
-                }
+                let name = match op {
+                    Binop::Eq => "eq",
+                    Binop::Ne => "ne",
+                    Binop::Lt => "lt",
+                    Binop::Gt => "gt",
+                    Binop::Le => "le",
+                    Binop::Ge => "ge",
+                    Binop::Add => "add",
+                    Binop::Sub => "sub",
+                    Binop::Mul => "mul",
+                    Binop::Div => "div",
+                    Binop::Rem => "rem",
+                    Binop::Shl => "shl",
+                    Binop::Shr => "shr",
+                    Binop::And => "and",
+                    Binop::Or => "or",
+                    Binop::Xor => "xor",
+                };
+                let named = self.op_fn(name).ok_or_else(|| self.x.todo_no_loc())?;
+                self.call_op_binary(named, l, r)
             }
             parse::Expr::If(cond, yes, no) => {
                 let unit = self.x.ty_unit();
@@ -2503,13 +4160,20 @@ impl LowerBody<'_, '_> {
                         ty,
                         cond: local.val,
                     });
+                    let keep = self.slots.len();
                     self.stmts(body.stmts)?;
+                    self.slots.truncate(keep);
                     let fake = self.emit(Instr::Br { depth: Depth(1) });
                     self.emit(Instr::EndIf { result: fake });
                     self.emit(Instr::EndLoop);
                 }
                 Stmt::Expr(expr) => {
-                    self.expr(expr)?;
+                    match self.x.tree.exprs[expr] {
+                        parse::Expr::Bind(_, bindings) => self.bind_stmt(bindings)?,
+                        _ => {
+                            self.expr(expr)?;
+                        }
+                    }
                 }
             }
         }
@@ -2517,26 +4181,66 @@ impl LowerBody<'_, '_> {
     }
 
     fn block(&mut self, block: Block) -> LowerResult<Typed> {
-        self.stmts(block.stmts)?;
-        match block.expr {
-            Some(expr) => Ok(self.expr(expr)?),
-            None => {
-                let ty = self.x.ty_unit();
-                let val = self.instr_tuple(ty, &[]).val;
-                Ok(Typed { ty, val })
+        let keep = self.slots.len();
+        let result = (|| {
+            self.stmts(block.stmts)?;
+            match block.expr {
+                Some(expr) => Ok(self.expr(expr)?),
+                None => {
+                    let ty = self.x.ty_unit();
+                    let val = self.instr_tuple(ty, &[]).val;
+                    Ok(Typed { ty, val })
+                }
+            }
+        })();
+        self.slots.truncate(keep);
+        result
+    }
+
+    fn bind_stmt_expr(&mut self, expr: ExprId) -> LowerResult<()> {
+        match self.x.tree.exprs[expr] {
+            parse::Expr::Bind(_, bindings) => self.bind_stmt(bindings),
+            parse::Expr::Call(path, binds, arguments)
+                if path.prefix.is_empty()
+                    && binds.is_empty()
+                    && arguments.is_empty()
+                    && self.x.slice(path.last) == "int32_unchecked" =>
+            {
+                let _ = self.x.path(path)?;
+                Ok(())
+            }
+            _ => Err(self.x.todo_no_loc()),
+        }
+    }
+
+    fn bind_stmt(&mut self, bindings: IdRange<parse::BindingId>) -> LowerResult<()> {
+        for binding in bindings {
+            match self.x.tree.bindings[binding] {
+                parse::Binding::Single(bind) => {
+                    let slot = self.x.bind(&self.slots, bind)?;
+                    self.slots.push(slot);
+                }
+                parse::Binding::Composite(expr) => {
+                    self.bind_stmt_expr(expr)?;
+                }
             }
         }
+        Ok(())
     }
 
     fn body(&mut self, fndef: parse::Fndef, id_decl: FndefId) -> LowerResult<Body> {
         let parse::Fndef {
-            name: _,
+            name,
             needs: _,
             params,
             result: _,
             def,
         } = fndef;
         let body = def.unwrap();
+        if std::env::var_os("MOSS_TRACE_BODIES").is_some() {
+            eprintln!("body {} {:?}", self.x.slice(name), id_decl);
+        }
+        self.current_fn = Some(name);
         let builder = self.x.builder();
         let (slots, tuple_ty, _) = self.x.parse_sig(fndef).unwrap();
         self.slots = slots;
@@ -2559,6 +4263,7 @@ impl LowerBody<'_, '_> {
             index += 1;
         }
         let ret = self.block(body)?;
+        let ret = self.instr(ret.ty, Expr::Copy { value: ret.val });
         Ok(self.x.finish(builder, ret.val))
     }
 }
@@ -2572,6 +4277,7 @@ pub fn lower(
     base: Option<Base>,
     prelude: ModuleId,
     imports: &[ModuleId],
+    skip_bodies: bool,
 ) -> LowerResult<ModuleId> {
     assert_eq!(tree.imports.len(), imports.len());
     let module = ir.modules.push(());
@@ -2585,9 +4291,25 @@ pub fn lower(
         prelude,
         module,
         imports,
+        skip_bodies,
         funcs: Vec::new(),
         attaches: Vec::new(),
         detaches: Vec::new(),
+        bind_ctx_items_cache: HashMap::new(),
+        need_ctx_items_cache: HashMap::new(),
+        materialized_lambdas: HashMap::new(),
+        invoke_cache: HashMap::new(),
+        invoke_active: HashSet::new(),
+        specificity_cache: HashMap::new(),
+        specificity_active: HashSet::new(),
+        ctx_contains_ty_cache: HashMap::new(),
+        ctx_contains_ty_active: HashSet::new(),
+        ctx_contains_sig_cache: HashMap::new(),
+        ctx_contains_sig_active: HashSet::new(),
+        ctx_contains_val_cache: HashMap::new(),
+        ctx_contains_val_active: HashSet::new(),
+        ctx_contains_ctx_cache: HashMap::new(),
+        ctx_contains_ctx_active: HashSet::new(),
     };
     lower.program()?;
     Ok(module)

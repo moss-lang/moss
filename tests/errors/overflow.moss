@@ -1,4 +1,4 @@
 fn main[alloc]() {
   println(uint32_to_string(4294967296));
-#                          ^^^^^^^^^^ integer too large
+#                          ^^^^^^^^^^ too high to fit in 32-bit unsigned integer
 }

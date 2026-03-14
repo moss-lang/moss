@@ -44,6 +44,7 @@ fn get_errors(source: &str) -> Vec<(Option<Range<usize>>, String)> {
         Some(base),
         lib.prelude,
         &[],
+        false,
     ) {
         Ok(_) => {}
         Err(err) => {
