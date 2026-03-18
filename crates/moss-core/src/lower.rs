@@ -15,6 +15,7 @@ use crate::{
     parse::{self, Binop, Block, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
     prelude::Base,
     range::{Inclusive, expr_range, path_range, single},
+    tuples::TupleRange,
     util::IdRange,
 };
 
@@ -86,6 +87,93 @@ define_index_type! {
 define_index_type! {
     /// The index of a field in a record.
     pub struct FieldId = u32;
+}
+
+define_index_type! {
+    struct NodeId = u32;
+}
+
+type EdgeList = TupleRange;
+
+type Level = u8;
+
+enum Node {
+    Lambda {
+        level: Level,
+        needs: EdgeList,
+        result: NodeId,
+    },
+    Apply {
+        lambda: NodeId,
+        args: EdgeList,
+    },
+    List {
+        items: EdgeList,
+    },
+    NeedTydef {
+        level: Level,
+        def: TydefId,
+        param: NodeId,
+    },
+    NeedSigdef {
+        level: Level,
+        def: SigdefId,
+        param: NodeId,
+    },
+    NeedValdef {
+        level: Level,
+        def: ValdefId,
+        param: NodeId,
+    },
+    NeedCtxdef {
+        level: Level,
+        def: CtxdefId,
+        param: NodeId,
+    },
+    Tagdef {
+        def: TagdefId,
+    },
+    Aliasdef {
+        def: AliasdefId,
+    },
+    Tuple {
+        elems: EdgeList,
+    },
+    Context,
+    Fndef {
+        def: FndefId,
+    },
+    Get {
+        ctx: NodeId,
+        slot: SlotId,
+    },
+    Lit {
+        val: Val,
+    },
+    Bind {
+        args: EdgeList,
+        bind: NodeId,
+    },
+    BindTydef {
+        def: TydefId,
+        bind: NodeId,
+    },
+    BindSigdef {
+        def: SigdefId,
+        bind: NodeId,
+    },
+    BindValdef {
+        def: ValdefId,
+        bind: NodeId,
+    },
+    BindCtxdef {
+        def: CtxdefId,
+        bind: NodeId,
+    },
+    Sig {
+        param: NodeId,
+        result: NodeId,
+    },
 }
 
 pub type InstrList = IdRange<ItemId>;
@@ -1028,160 +1116,9 @@ impl<'a> Lower<'a> {
         self.ty_tuple(Vec::new())
     }
 
-    fn find_end_lambda(&self, start: InstrId) -> InstrId {
-        let mut instr = start;
-        loop {
-            instr += 1;
-            if let Instr::EndLambda {
-                start: this_start,
-                result: _,
-            } = self.ir.instrs[instr]
-                && this_start == start
-            {
-                return instr;
-            }
-        }
-    }
-
-    fn duplicate(&mut self, mapped: &mut InstrMap, instr: InstrId) -> LowerResult<()> {
-        let mapped_instr = match self.ir.instrs[instr] {
-            Instr::Lambda => self.emit(Instr::Lambda),
-            Instr::EndLambda { start, result } => self.emit(Instr::EndLambda {
-                start: mapped.get(start),
-                result: mapped.get(result),
-            }),
-            Instr::Apply { lambda, args } => {
-                let args_mapped = self.map_items(mapped, args);
-                self.emit(Instr::Apply {
-                    lambda: mapped.get(lambda),
-                    args: args_mapped,
-                })
-            }
-            Instr::Stack { items } => {
-                let items_mapped = self.map_items(mapped, items);
-                self.emit(Instr::Stack {
-                    items: items_mapped,
-                })
-            }
-            Instr::NeedTydef { def, param } => self.emit(Instr::NeedTydef {
-                def,
-                param: mapped.get(param),
-            }),
-            Instr::NeedSigdef { def, param } => self.emit(Instr::NeedSigdef {
-                def,
-                param: mapped.get(param),
-            }),
-            Instr::NeedValdef { def, param } => self.emit(Instr::NeedValdef {
-                def,
-                param: mapped.get(param),
-            }),
-            Instr::NeedCtxdef { def, param } => self.emit(Instr::NeedCtxdef {
-                def,
-                param: mapped.get(param),
-            }),
-            Instr::Tagdef { def } => self.emit(Instr::Tagdef { def }),
-            Instr::Aliasdef { def } => self.emit(Instr::Aliasdef { def }),
-            Instr::Tuple { elems } => {
-                let elems_mapped = self.map_items(mapped, elems);
-                self.emit(Instr::Tuple {
-                    elems: elems_mapped,
-                })
-            }
-            Instr::Record { fields } => todo!(),
-            Instr::Context => self.emit(Instr::Context),
-            Instr::Fndef { def } => self.emit(Instr::Fndef { def }),
-            Instr::Get { ctx, slot } => self.emit(Instr::Get {
-                ctx: mapped.get(ctx),
-                slot,
-            }),
-            Instr::Lit { val } => self.emit(Instr::Lit { val }),
-            Instr::Bind { args, bind } => {
-                let args_mapped = self.map_items(mapped, args);
-                self.emit(Instr::Bind {
-                    args: args_mapped,
-                    bind: mapped.get(bind),
-                })
-            }
-            Instr::BindTydef { def, bind } => self.emit(Instr::BindTydef {
-                def,
-                bind: mapped.get(bind),
-            }),
-            Instr::BindSigdef { def, bind } => self.emit(Instr::BindSigdef {
-                def,
-                bind: mapped.get(bind),
-            }),
-            Instr::BindValdef { def, bind } => self.emit(Instr::BindValdef {
-                def,
-                bind: mapped.get(bind),
-            }),
-            Instr::BindCtxdef { def, bind } => self.emit(Instr::BindCtxdef {
-                def,
-                bind: mapped.get(bind),
-            }),
-            Instr::Sig { param, result } => self.emit(Instr::Sig {
-                param: mapped.get(param),
-                result: mapped.get(result),
-            }),
-            Instr::Set { lhs, rhs } => todo!(),
-            Instr::If { ty, cond } => todo!(),
-            Instr::Else { result } => todo!(),
-            Instr::EndIf { result } => todo!(),
-            Instr::Loop => todo!(),
-            Instr::EndLoop => todo!(),
-            Instr::Br { depth } => todo!(),
-            Instr::Expr { ty, expr } => todo!(),
-        };
-        mapped.insert(instr, mapped_instr);
-        Ok(())
-    }
-
-    fn duplicate_range(
-        &mut self,
-        mapped: &mut InstrMap,
-        instrs: IdRange<InstrId>,
-    ) -> LowerResult<()> {
-        for instr in instrs {
-            self.duplicate(mapped, instr)?;
-        }
-        Ok(())
-    }
-
-    /// Try to synthesize a mapping from the left lambda's domain to the right's.
-    ///
-    /// Both lambdas must currently be in scope.
-    ///
-    /// The synthesized mapping is not used; only its success or failure is returned as a boolean.
-    fn left_domain_more_specific(&mut self, left: InstrId, right: InstrId) -> LowerResult<bool> {
-        let start_dummy = self.emit(Instr::Lambda);
-        let mut needs = Vec::new();
-        let Instr::EndLambda { start, result: _ } = self.ir.instrs[right] else {
-            panic!()
-        };
-        let mut mapped = InstrMap::new();
-        let mut instr = start + 1;
-        while instr < right {
-            match self.ir.instrs[instr] {
-                Instr::NeedTydef { def, param } => todo!(),
-                Instr::NeedSigdef { def, param } => todo!(),
-                Instr::NeedValdef { def, param } => todo!(),
-                Instr::NeedCtxdef { def, param } => todo!(),
-                _ => self.duplicate(&mut mapped, instr)?,
-            }
-            instr += 1;
-        }
-        let success = self.invoke(right, &needs)?.is_some();
-        let items = self.items(&[]);
-        let dummy = self.emit(Instr::Stack { items });
-        self.emit(Instr::EndLambda {
-            start: start_dummy,
-            result: dummy,
-        });
-        Ok(success)
-    }
-
     fn invoke(
         &mut self,
-        lambda: InstrId,
+        lambda: NodeId,
         destruct: &[InstrId],
     ) -> LowerResult<Option<Vec<InstrId>>> {
         let start = match self.ir.instrs[lambda] {
