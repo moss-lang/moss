@@ -6,7 +6,7 @@ use std::{
 };
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 
 use crate::{
     dump::dump,
@@ -15,7 +15,7 @@ use crate::{
     parse::{self, Binop, Block, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
     prelude::Base,
     range::{Inclusive, expr_range, path_range, single},
-    tuples::TupleRange,
+    tuples::{TupleRange, Tuples},
     util::IdRange,
 };
 
@@ -93,22 +93,33 @@ define_index_type! {
     struct NodeId = u32;
 }
 
-type EdgeList = TupleRange;
+type NodeList = TupleRange;
 
-type Level = u8;
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Level(u8);
 
+impl Level {
+    const ZERO: Self = Self(0);
+
+    fn succ(self) -> Self {
+        Self(self.0.strict_add(1))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Node {
+    Nothing,
     Lambda {
         level: Level,
-        needs: EdgeList,
+        needs: NodeList,
         result: NodeId,
     },
     Apply {
         lambda: NodeId,
-        args: EdgeList,
+        args: NodeList,
     },
     List {
-        items: EdgeList,
+        items: NodeList,
     },
     NeedTydef {
         level: Level,
@@ -137,7 +148,7 @@ enum Node {
         def: AliasdefId,
     },
     Tuple {
-        elems: EdgeList,
+        elems: NodeList,
     },
     Context,
     Fndef {
@@ -151,7 +162,7 @@ enum Node {
         val: Val,
     },
     Bind {
-        args: EdgeList,
+        args: NodeList,
         bind: NodeId,
     },
     BindTydef {
@@ -664,6 +675,20 @@ pub struct IR {
     pub bodies: IndexVec<FndefId, Body>,
 }
 
+/// The supplemental graph data structure used internally by the lowering phase.
+#[derive(Debug)]
+pub struct Graph {
+    nodes: IndexSet<Node>,
+    lists: Tuples<NodeId>,
+    tydefs: IndexVec<TydefId, NodeId>,
+    tagdefs: IndexVec<TagdefId, NodeId>,
+    aliasdefs: IndexVec<AliasdefId, NodeId>,
+    sigdefs: IndexVec<SigdefId, NodeId>,
+    fndefs: IndexVec<FndefId, NodeId>,
+    valdefs: IndexVec<ValdefId, NodeId>,
+    ctxdefs: IndexVec<CtxdefId, NodeId>,
+}
+
 type ModuleNames<T> = IndexMap<(ModuleId, StrId), T>;
 
 fn get_name<T: Copy>(
@@ -931,6 +956,7 @@ struct Lower<'a> {
     starts: &'a TokenStarts,
     tree: &'a Tree,
     ir: &'a mut IR,
+    graph: &'a mut Graph,
     names: &'a mut Names,
     base: Option<Base>,
     prelude: ModuleId,
@@ -1075,6 +1101,14 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
+    fn mk_node(&mut self, node: Node) -> NodeId {
+        todo!()
+    }
+
+    fn mk_node_list(&mut self, nodes: &[NodeId]) -> NodeList {
+        todo!()
+    }
+
     fn builder(&self) -> Builder {
         Builder {
             start: self.ir.instrs.next_idx(),
@@ -1116,207 +1150,60 @@ impl<'a> Lower<'a> {
         self.ty_tuple(Vec::new())
     }
 
-    fn invoke(
-        &mut self,
-        lambda: NodeId,
-        destruct: &[InstrId],
-    ) -> LowerResult<Option<Vec<InstrId>>> {
-        let start = match self.ir.instrs[lambda] {
-            Instr::Lambda => todo!(),
-            Instr::EndLambda { start, result: _ } => start,
-            Instr::Apply { lambda, args } => todo!(),
-            Instr::Stack { items } => todo!(),
-            Instr::NeedTydef { def: _, param }
-            | Instr::NeedSigdef { def: _, param }
-            | Instr::NeedValdef { def: _, param }
-            | Instr::NeedCtxdef { def: _, param } => return self.invoke(param, destruct),
-            Instr::Tagdef { def } => todo!(),
-            Instr::Aliasdef { def } => todo!(),
-            Instr::Tuple { elems } => todo!(),
-            Instr::Record { fields } => todo!(),
-            Instr::Context => todo!(),
-            Instr::Fndef { def } => todo!(),
-            Instr::Get { ctx, slot } => todo!(),
-            Instr::Lit { val } => todo!(),
-            Instr::Bind { args, bind } => todo!(),
-            Instr::BindTydef { def, bind } => todo!(),
-            Instr::BindSigdef { def, bind } => todo!(),
-            Instr::BindValdef { def, bind } => todo!(),
-            Instr::BindCtxdef { def, bind } => todo!(),
-            Instr::Sig { param, result } => todo!(),
-            Instr::Set { lhs, rhs } => todo!(),
-            Instr::If { ty, cond } => todo!(),
-            Instr::Else { result } => todo!(),
-            Instr::EndIf { result } => todo!(),
-            Instr::Loop => todo!(),
-            Instr::EndLoop => todo!(),
-            Instr::Br { depth } => todo!(),
-            Instr::Expr { ty, expr } => todo!(),
-        };
-        let mut construct = Vec::new();
-        let mut mapped = InstrMap::new();
-        let mut instr = start + 1;
-        while instr < lambda {
-            match self.ir.instrs[instr] {
-                Instr::Lambda => {
-                    let start = instr;
-                    let end = self.find_end_lambda(instr);
-                    let range = IdRange {
-                        start,
-                        end: end + 1,
-                    };
-                    self.duplicate_range(&mut mapped, range)?;
-                    instr = end;
-                }
-                Instr::NeedTydef { def, param } => todo!(),
-                Instr::NeedSigdef { def, param } => todo!(),
-                Instr::NeedValdef { def, param } => todo!(),
-                Instr::NeedCtxdef { def, param } => todo!(),
-                _ => self.duplicate(&mut mapped, instr)?,
-            }
-            instr += 1;
-        }
-        Ok(Some(construct))
+    fn serialize(&mut self, lambda: NodeId) -> Body {
+        todo!()
     }
 
-    fn invoke_force(&mut self, lambda: InstrId, destruct: &[InstrId]) -> LowerResult<Vec<InstrId>> {
+    fn invoke(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Option<Vec<NodeId>>> {
+        todo!()
+    }
+
+    fn invoke_force(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Vec<NodeId>> {
         Ok(self.invoke(lambda, destruct)?.unwrap()) // TODO: Return an actual error here.
     }
 
     fn invoke_need(
         &mut self,
-        target: Body,
-        destruct: &[InstrId],
-    ) -> LowerResult<(Vec<InstrId>, Vec<InstrId>)> {
-        let mut construct = Vec::new();
-        let mut mapped = InstrMap::new();
-        let mut instr = target.body.start;
-        while instr < target.body.end {
-            match self.ir.instrs[instr] {
-                Instr::Lambda => {
-                    let start = instr;
-                    let end = self.find_end_lambda(instr);
-                    let range = IdRange {
-                        start,
-                        end: end + 1,
-                    };
-                    self.duplicate_range(&mut mapped, range)?;
-                    instr = end;
-                }
-                Instr::NeedTydef { def, param } => {
-                    let extracted = self.extract_ty_lambda(destruct, def, param)?;
-                    construct.push(extracted); // TODO: I don't think this is quite right.
-                }
-                Instr::NeedSigdef { def, param } => todo!(),
-                Instr::NeedValdef { def, param } => todo!(),
-                Instr::NeedCtxdef { def, param } => todo!(),
-                _ => self.duplicate(&mut mapped, instr)?,
-            }
-            instr += 1;
-        }
-        Ok((construct, Vec::new()))
-    }
-
-    fn extract_ty_lambda(
-        &mut self,
-        slots: &[InstrId],
-        def: TydefId,
-        lambda: InstrId,
-    ) -> LowerResult<InstrId> {
-        let mut options = Vec::new();
-        for &slot in slots {
-            match self.ir.instrs[slot] {
-                Instr::Lambda => todo!(),
-                Instr::EndLambda { start, result } => todo!(),
-                Instr::Apply { lambda, args } => todo!(),
-                Instr::Stack { items } => todo!(),
-                Instr::NeedTydef { def: tydef, param } => {
-                    if tydef != def {
-                        continue;
-                    }
-                    if self.left_domain_more_specific(lambda, param)? {
-                        options.push(slot);
-                    }
-                }
-                Instr::NeedSigdef { def: _, param: _ } | Instr::NeedValdef { def: _, param: _ } => {
-                }
-                Instr::NeedCtxdef { def, param } => return Err(self.todo_no_loc()),
-                Instr::Tagdef { def } => todo!(),
-                Instr::Aliasdef { def } => todo!(),
-                Instr::Tuple { elems } => todo!(),
-                Instr::Record { fields } => todo!(),
-                Instr::Context => todo!(),
-                Instr::Fndef { def } => todo!(),
-                Instr::Get { ctx, slot } => todo!(),
-                Instr::Lit { val } => todo!(),
-                Instr::Bind { args, bind } => todo!(),
-                Instr::BindTydef { def: tydef, bind } => {
-                    if tydef != def {
-                        continue;
-                    }
-                    if self.left_domain_more_specific(lambda, bind)? {
-                        options.push(slot);
-                    }
-                }
-                Instr::BindSigdef { def, bind } => todo!(),
-                Instr::BindValdef { def, bind } => todo!(),
-                Instr::BindCtxdef { def, bind } => todo!(),
-                Instr::Sig { param, result } => todo!(),
-                Instr::Set { lhs, rhs } => todo!(),
-                Instr::If { ty, cond } => todo!(),
-                Instr::Else { result } => todo!(),
-                Instr::EndIf { result } => todo!(),
-                Instr::Loop => todo!(),
-                Instr::EndLoop => todo!(),
-                Instr::Br { depth } => todo!(),
-                Instr::Expr { ty, expr } => todo!(),
-            }
-        }
-        if options.len() != 1 {
-            panic!()
-        }
-        Ok(options[0])
+        level: Level,
+        target: NodeId,
+        destruct: &[NodeId],
+    ) -> LowerResult<(Vec<NodeId>, Vec<NodeId>)> {
+        todo!()
     }
 
     fn extract_ty(
         &mut self,
-        slots: &[InstrId],
+        slots: &[NodeId],
         def: TydefId,
-        destruct: &[InstrId],
-    ) -> LowerResult<InstrId> {
-        let Tydef(target) = self.ir.tydefs[def];
-        let start = self.emit(Instr::Lambda);
-        let (construct, _) = self.invoke_need(target, destruct)?;
-        let items = self.items(&construct);
-        let result = self.emit(Instr::Stack { items });
-        let lambda = self.emit(Instr::EndLambda { start, result });
-        self.extract_ty_lambda(slots, def, lambda)
+        destruct: &[NodeId],
+    ) -> LowerResult<NodeId> {
+        Err(self.todo_no_loc())
     }
 
     fn extract_sig(
         &mut self,
-        slots: &[InstrId],
+        slots: &[NodeId],
         def: SigdefId,
-        destruct: &[InstrId],
-    ) -> LowerResult<InstrId> {
+        destruct: &[NodeId],
+    ) -> LowerResult<NodeId> {
         Err(self.todo_no_loc())
     }
 
     fn extract_val(
         &mut self,
-        slots: &[InstrId],
+        slots: &[NodeId],
         def: ValdefId,
-        destruct: &[InstrId],
-    ) -> LowerResult<InstrId> {
+        destruct: &[NodeId],
+    ) -> LowerResult<NodeId> {
         Err(self.todo_no_loc())
     }
 
     fn extract_ctx(
         &mut self,
-        slots: &[InstrId],
+        slots: &[NodeId],
         def: CtxdefId,
-        destruct: &[InstrId],
-    ) -> LowerResult<InstrId> {
+        destruct: &[NodeId],
+    ) -> LowerResult<NodeId> {
         Err(self.todo_no_loc())
     }
 
@@ -1329,9 +1216,9 @@ impl<'a> Lower<'a> {
     /// The `destruct` list gives the set of entrypoints that can be used to synthesize bindings.
     fn spec(
         &mut self,
-        destruct: &[InstrId],
+        destruct: &[NodeId],
         spec: parse::Spec,
-    ) -> LowerResult<(Named, Vec<InstrId>)> {
+    ) -> LowerResult<(Named, Vec<NodeId>)> {
         let Spec { dot, path, binds } = spec;
         let named = if dot {
             self.detached(path)?.into()
@@ -1341,11 +1228,11 @@ impl<'a> Lower<'a> {
         let construct = binds
             .into_iter()
             .map(|bind| self.bind(destruct, bind))
-            .collect::<LowerResult<Vec<InstrId>>>()?;
+            .collect::<LowerResult<Vec<_>>>()?;
         Ok((named, construct))
     }
 
-    fn bind(&mut self, slots: &[InstrId], bind: parse::BindId) -> LowerResult<InstrId> {
+    fn bind(&mut self, level: Level, slots: &[NodeId], bind: parse::BindId) -> LowerResult<NodeId> {
         let parse::Bind { key, val } = self.tree.binds[bind];
         let (lhs, destruct_lhs) = self.spec(slots, key)?;
         match val {
@@ -1506,7 +1393,9 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn need(&mut self, slots: &[InstrId], need: parse::NeedId) -> LowerResult<InstrId> {
+    // TODO: Both `need` and `needs` must somehow keep track of the "need" nodes they generate, so
+    // those nodes can be collected for a "lambda" node to be generated.
+    fn need(&mut self, level: Level, slots: &[NodeId], need: parse::NeedId) -> LowerResult<NodeId> {
         let parse::Need { kind: _, bind } = self.tree.needs[need];
         // TODO: Handle `kind`.
         let parse::Bind { key, val } = self.tree.binds[bind];
@@ -1516,13 +1405,18 @@ impl<'a> Lower<'a> {
                 let (lhs, destruct) = self.spec(slots, key)?;
                 match lhs {
                     Named::Tydef(def) => {
-                        let Tydef(target) = self.ir.tydefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct, _) = self.invoke_need(target, &destruct)?;
-                        let items = self.items(&construct);
-                        let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::NeedTydef { def, param }))
+                        let target = self.graph.tydefs[def];
+                        let (construct, needs) =
+                            self.invoke_need(level.succ(), target, &destruct)?;
+                        let needs = self.mk_node_list(&needs);
+                        let items = self.mk_node_list(&construct);
+                        let result = self.mk_node(Node::List { items });
+                        let param = self.mk_node(Node::Lambda {
+                            level,
+                            needs,
+                            result,
+                        });
+                        Ok(self.mk_node(Node::NeedTydef { level, def, param }))
                     }
                     Named::Sigdef(def) => {
                         let Sigdef(target) = self.ir.sigdefs[def];
@@ -1560,15 +1454,15 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn needs(&mut self, needs: IdRange<parse::NeedId>) -> LowerResult<Vec<InstrId>> {
+    fn needs(&mut self, level: Level, needs: IdRange<parse::NeedId>) -> LowerResult<Vec<NodeId>> {
         let mut slots = Vec::new();
         for need in needs {
-            slots.push(self.need(&slots, need)?);
+            slots.push(self.need(level, &slots, need)?);
         }
         Ok(slots)
     }
 
-    fn parse_ty(&mut self, slots: &[InstrId], ty: parse::TypeId) -> LowerResult<InstrId> {
+    fn parse_ty(&mut self, slots: &[NodeId], ty: parse::TypeId) -> LowerResult<NodeId> {
         match self.tree.types[ty] {
             parse::Type::Spec(spec) => {
                 let (named, destruct) = self.spec(slots, spec)?;
@@ -1648,11 +1542,15 @@ impl<'a> Lower<'a> {
             match decl {
                 parse::Decl::Tydef(id) => {
                     let parse::Tydef { name, needs } = self.tree.tydefs[id];
-                    let builder = self.builder();
-                    self.needs(needs)?;
-                    let items = self.items(&[]);
-                    let ctx = self.emit(Instr::Stack { items });
-                    let body = self.finish(builder, ctx);
+                    let slots = self.needs(Level::ZERO, needs)?;
+                    let need_nodes = self.mk_node_list(&slots);
+                    let result = self.mk_node(Node::Nothing);
+                    let lambda = self.mk_node(Node::Lambda {
+                        level: Level::ZERO,
+                        needs: need_nodes,
+                        result,
+                    });
+                    let body = self.serialize(lambda);
                     let lowered = self.ir.tydefs.push(Tydef(body));
                     let string = self.name(name);
                     self.names
@@ -1661,10 +1559,15 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Tagdef(id) => {
                     let parse::Tagdef { name, needs, def } = self.tree.tagdefs[id];
-                    let builder = self.builder();
-                    let slots = self.needs(needs)?;
+                    let slots = self.needs(Level::ZERO, needs)?;
+                    let need_nodes = self.mk_node_list(&slots);
                     let ty = self.parse_ty(&slots, def)?;
-                    let body = self.finish(builder, ty);
+                    let lambda = self.mk_node(Node::Lambda {
+                        level: Level::ZERO,
+                        needs: need_nodes,
+                        result: ty,
+                    });
+                    let body = self.serialize(lambda);
                     let lowered = self.ir.tagdefs.push(Tagdef(body));
                     let string = self.name(name);
                     self.names
@@ -1673,10 +1576,15 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Aliasdef(id) => {
                     let parse::Aliasdef { name, needs, def } = self.tree.aliasdefs[id];
-                    let builder = self.builder();
-                    let slots = self.needs(needs)?;
+                    let slots = self.needs(Level::ZERO, needs)?;
+                    let need_nodes = self.mk_node_list(&slots);
                     let ty = self.parse_ty(&slots, def)?;
-                    let body = self.finish(builder, ty);
+                    let lambda = self.mk_node(Node::Lambda {
+                        level: Level::ZERO,
+                        needs: need_nodes,
+                        result: ty,
+                    });
+                    let body = self.serialize(lambda);
                     let lowered = self.ir.aliasdefs.push(Aliasdef(body));
                     let string = self.name(name);
                     self.names
@@ -1731,14 +1639,12 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Ctxdef(id) => {
                     let parse::Ctxdef { name, needs, def } = self.tree.ctxdefs[id];
-                    let builder = self.builder();
                     let mut slots = Vec::new();
                     for need in needs {
-                        slots.push(self.need(&slots, need)?);
+                        slots.push(self.need(Level::ZERO, &slots, need)?);
                     }
-                    let start = self.emit(Instr::Lambda);
                     for need in def {
-                        slots.push(self.need(&slots, need)?);
+                        slots.push(self.need(Level::ZERO.succ(), &slots, need)?);
                     }
                     let items = self.items(&slots[needs.len()..]);
                     let result = self.emit(Instr::Stack { items });
@@ -2505,6 +2411,7 @@ pub fn lower(
     starts: &TokenStarts,
     tree: &Tree,
     ir: &mut IR,
+    graph: &mut Graph,
     names: &mut Names,
     base: Option<Base>,
     prelude: ModuleId,
@@ -2517,6 +2424,7 @@ pub fn lower(
         starts,
         tree,
         ir,
+        graph,
         names,
         base,
         prelude,
