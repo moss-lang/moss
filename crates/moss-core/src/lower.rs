@@ -1109,6 +1109,15 @@ impl<'a> Lower<'a> {
         todo!()
     }
 
+    fn ty_tuple(&mut self, elems: Vec<NodeId>) -> NodeId {
+        let elems = self.mk_node_list(&elems);
+        self.mk_node(Node::Tuple { elems })
+    }
+
+    fn ty_unit(&mut self) -> NodeId {
+        self.ty_tuple(Vec::new())
+    }
+
     fn builder(&self) -> Builder {
         Builder {
             start: self.ir.instrs.next_idx(),
@@ -1139,15 +1148,6 @@ impl<'a> Lower<'a> {
         let Builder { start } = builder;
         let end = self.ir.instrs.next_idx();
         Body::new(IdRange { start, end }, result)
-    }
-
-    fn ty_tuple(&mut self, elems: Vec<InstrId>) -> InstrId {
-        let elems = self.items(&elems);
-        self.emit(Instr::Tuple { elems })
-    }
-
-    fn ty_unit(&mut self) -> InstrId {
-        self.ty_tuple(Vec::new())
     }
 
     fn serialize(&mut self, lambda: NodeId) -> Body {
@@ -1460,31 +1460,46 @@ impl<'a> Lower<'a> {
                         Ok(self.mk_node(Node::NeedTydef { level, def, param }))
                     }
                     Named::Sigdef(def) => {
-                        let Sigdef(target) = self.ir.sigdefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct, _) = self.invoke_need(target, &destruct)?;
-                        let items = self.items(&construct);
-                        let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::NeedSigdef { def, param }))
+                        let target = self.graph.sigdefs[def];
+                        let (construct, needs) =
+                            self.invoke_need(level.succ(), target, &destruct)?;
+                        let needs = self.mk_node_list(&needs);
+                        let items = self.mk_node_list(&construct);
+                        let result = self.mk_node(Node::List { items });
+                        let param = self.mk_node(Node::Lambda {
+                            level: level.succ(),
+                            needs,
+                            result,
+                        });
+                        Ok(self.mk_node(Node::NeedSigdef { level, def, param }))
                     }
                     Named::Valdef(def) => {
-                        let Valdef(target) = self.ir.valdefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct, _) = self.invoke_need(target, &destruct)?;
-                        let items = self.items(&construct);
-                        let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::NeedValdef { def, param }))
+                        let target = self.graph.valdefs[def];
+                        let (construct, needs) =
+                            self.invoke_need(level.succ(), target, &destruct)?;
+                        let needs = self.mk_node_list(&needs);
+                        let items = self.mk_node_list(&construct);
+                        let result = self.mk_node(Node::List { items });
+                        let param = self.mk_node(Node::Lambda {
+                            level: level.succ(),
+                            needs,
+                            result,
+                        });
+                        Ok(self.mk_node(Node::NeedValdef { level, def, param }))
                     }
                     Named::Ctxdef(def) => {
-                        let Ctxdef(target) = self.ir.ctxdefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct, _) = self.invoke_need(target, &destruct)?;
-                        let items = self.items(&construct);
-                        let result = self.emit(Instr::Stack { items });
-                        let param = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::NeedCtxdef { def, param }))
+                        let target = self.graph.ctxdefs[def];
+                        let (construct, needs) =
+                            self.invoke_need(level.succ(), target, &destruct)?;
+                        let needs = self.mk_node_list(&needs);
+                        let items = self.mk_node_list(&construct);
+                        let result = self.mk_node(Node::List { items });
+                        let param = self.mk_node(Node::Lambda {
+                            level: level.succ(),
+                            needs,
+                            result,
+                        });
+                        Ok(self.mk_node(Node::NeedCtxdef { level, def, param }))
                     }
                     Named::Module(_) => Err(LowerError::BindModule(bind)),
                     Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
@@ -1506,13 +1521,13 @@ impl<'a> Lower<'a> {
     fn parse_ty(&mut self, slots: &[NodeId], ty: parse::TypeId) -> LowerResult<NodeId> {
         match self.tree.types[ty] {
             parse::Type::Spec(spec) => {
-                let (named, destruct) = self.spec(slots, spec)?;
+                let (named, destruct) = self.spec(Level::ZERO, slots, spec)?;
                 match named {
                     Named::Tydef(tydef) => {
                         let lambda = self.extract_ty(slots, tydef, &destruct)?;
                         let construct = self.invoke_force(lambda, &destruct)?;
-                        let args = self.items(&construct);
-                        Ok(self.emit(Instr::Apply { lambda, args }))
+                        let args = self.mk_node_list(&construct);
+                        Ok(self.mk_node(Node::Apply { lambda, args }))
                     }
                     Named::Tagdef(tagdef) => Err(self.todo_no_loc()),
                     Named::Aliasdef(aliasdef) => Err(self.todo_no_loc()),
@@ -1523,14 +1538,14 @@ impl<'a> Lower<'a> {
                 let lowered = elems
                     .into_iter()
                     .map(|elem| self.parse_ty(slots, elem))
-                    .collect::<LowerResult<Vec<InstrId>>>()?;
+                    .collect::<LowerResult<Vec<_>>>()?;
                 Ok(self.ty_tuple(lowered))
             }
             parse::Type::Record(members) => Err(self.todo_no_loc()),
         }
     }
 
-    fn parse_sig(&mut self, fndef: parse::Fndef) -> LowerResult<(Vec<InstrId>, InstrId, InstrId)> {
+    fn parse_sig(&mut self, fndef: parse::Fndef) -> LowerResult<(Vec<NodeId>, NodeId, NodeId)> {
         let parse::Fndef {
             name: _,
             needs,
@@ -1538,18 +1553,24 @@ impl<'a> Lower<'a> {
             result,
             def: _,
         } = fndef;
-        let slots = self.needs(needs)?;
+        let slots = self.needs(Level::ZERO, needs)?;
         let elems = (params.into_iter())
             .map(|arg| self.parse_ty(&slots, self.tree.params[arg].ty))
-            .collect::<LowerResult<Vec<InstrId>>>()?;
+            .collect::<LowerResult<Vec<_>>>()?;
         let param_tuple = self.ty_tuple(elems);
         let result_ty = match result {
             parse::Return::Unit => self.ty_unit(),
             parse::Return::Type(ty) => self.parse_ty(&slots, ty)?,
             parse::Return::Bind(needs) => {
-                let slots = self.needs(needs)?;
-                let items = self.items(&slots);
-                self.emit(Instr::Stack { items })
+                let slots = self.needs(Level::ZERO.succ(), needs)?;
+                let need_nodes = self.mk_node_list(&slots);
+                let items = self.mk_node_list(&slots);
+                let result = self.mk_node(Node::List { items });
+                self.mk_node(Node::Lambda {
+                    level: Level::ZERO.succ(),
+                    needs: need_nodes,
+                    result,
+                })
             }
         };
         Ok((slots, param_tuple, result_ty))
@@ -1563,13 +1584,18 @@ impl<'a> Lower<'a> {
             result: _,
             def,
         } = fndef;
-        let builder = self.builder();
-        let (_, param_tuple, result_ty) = self.parse_sig(fndef)?;
-        let signature = self.emit(Instr::Sig {
+        let (slots, param_tuple, result_ty) = self.parse_sig(fndef)?;
+        let need_nodes = self.mk_node_list(&slots);
+        let signature = self.mk_node(Node::Sig {
             param: param_tuple,
             result: result_ty,
         });
-        let body = self.finish(builder, signature);
+        let lambda = self.mk_node(Node::Lambda {
+            level: Level::ZERO,
+            needs: need_nodes,
+            result: signature,
+        });
+        let body = self.serialize(lambda);
         let lowered = match def {
             None => NamedFn::Sigdef(self.ir.sigdefs.push(Sigdef(body))),
             Some(_) => NamedFn::Fndef(self.ir.fndefs.push(Sigdef(body))),
@@ -1668,10 +1694,15 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Valdef(id) => {
                     let parse::Valdef { name, needs, ty } = self.tree.valdefs[id];
-                    let builder = self.builder();
-                    let slots = self.needs(needs)?;
+                    let slots = self.needs(Level::ZERO, needs)?;
+                    let need_nodes = self.mk_node_list(&slots);
                     let ty = self.parse_ty(&slots, ty)?;
-                    let body = self.finish(builder, ty);
+                    let lambda = self.mk_node(Node::Lambda {
+                        level: Level::ZERO,
+                        needs: need_nodes,
+                        result: ty,
+                    });
+                    let body = self.serialize(lambda);
                     let lowered = self.ir.valdefs.push(Valdef(body));
                     let string = self.name(name);
                     self.names
@@ -1687,10 +1718,21 @@ impl<'a> Lower<'a> {
                     for need in def {
                         slots.push(self.need(Level::ZERO.succ(), &slots, need)?);
                     }
-                    let items = self.items(&slots[needs.len()..]);
-                    let result = self.emit(Instr::Stack { items });
-                    let lambda = self.emit(Instr::EndLambda { start, result });
-                    let body = self.finish(builder, lambda);
+                    let needs_inner = self.mk_node_list(&slots[needs.len()..]);
+                    let needs_outer = self.mk_node_list(&slots[..needs.len()]);
+                    let items = self.mk_node_list(&slots[needs.len()..]);
+                    let result = self.mk_node(Node::List { items });
+                    let lambda_inner = self.mk_node(Node::Lambda {
+                        level: Level::ZERO.succ(),
+                        needs: needs_inner,
+                        result,
+                    });
+                    let lambda_outer = self.mk_node(Node::Lambda {
+                        level: Level::ZERO,
+                        needs: needs_outer,
+                        result: lambda_inner,
+                    });
+                    let body = self.serialize(lambda_outer);
                     let lowered = self.ir.ctxdefs.push(Ctxdef(body));
                     let string = self.name(name);
                     self.names
