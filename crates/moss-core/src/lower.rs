@@ -1216,6 +1216,7 @@ impl<'a> Lower<'a> {
     /// The `destruct` list gives the set of entrypoints that can be used to synthesize bindings.
     fn spec(
         &mut self,
+        level: Level,
         destruct: &[NodeId],
         spec: parse::Spec,
     ) -> LowerResult<(Named, Vec<NodeId>)> {
@@ -1227,56 +1228,79 @@ impl<'a> Lower<'a> {
         };
         let construct = binds
             .into_iter()
-            .map(|bind| self.bind(destruct, bind))
+            .map(|bind| self.bind(level, destruct, bind))
             .collect::<LowerResult<Vec<_>>>()?;
         Ok((named, construct))
     }
 
     fn bind(&mut self, level: Level, slots: &[NodeId], bind: parse::BindId) -> LowerResult<NodeId> {
         let parse::Bind { key, val } = self.tree.binds[bind];
-        let (lhs, destruct_lhs) = self.spec(slots, key)?;
+        let (lhs, destruct_lhs) = self.spec(level, slots, key)?;
         match val {
-            // TODO: Use the "extract" functions correctly in this branch.
             None => match lhs {
                 Named::Tydef(def) => {
-                    let Tydef(target) = self.ir.tydefs[def];
-                    let start = self.emit(Instr::Lambda);
-                    let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
-                    let args = self.items(&construct);
-                    let bind = self.extract_ty(slots, def, &construct)?;
-                    let result = self.emit(Instr::Bind { args, bind });
-                    let bind = self.emit(Instr::EndLambda { start, result });
-                    Ok(self.emit(Instr::BindTydef { def, bind }))
+                    let lambda = self.extract_ty(slots, def, &destruct_lhs)?;
+                    let target = self.graph.tydefs[def];
+                    let (construct, needs) =
+                        self.invoke_need(level.succ(), target, &destruct_lhs)?;
+                    let needs = self.mk_node_list(&needs);
+                    let args = self.mk_node_list(&construct);
+                    let bind = self.mk_node(Node::Apply { lambda, args });
+                    let result = self.mk_node(Node::Bind { args, bind });
+                    let bind = self.mk_node(Node::Lambda {
+                        level: level.succ(),
+                        needs,
+                        result,
+                    });
+                    Ok(self.mk_node(Node::BindTydef { def, bind }))
                 }
                 Named::Sigdef(def) => {
-                    let Sigdef(target) = self.ir.sigdefs[def];
-                    let start = self.emit(Instr::Lambda);
-                    let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
-                    let args = self.items(&construct);
-                    let bind = self.extract_sig(slots, def, &construct)?;
-                    let result = self.emit(Instr::Bind { args, bind });
-                    let bind = self.emit(Instr::EndLambda { start, result });
-                    Ok(self.emit(Instr::BindSigdef { def, bind }))
+                    let lambda = self.extract_sig(slots, def, &destruct_lhs)?;
+                    let target = self.graph.sigdefs[def];
+                    let (construct, needs) =
+                        self.invoke_need(level.succ(), target, &destruct_lhs)?;
+                    let needs = self.mk_node_list(&needs);
+                    let args = self.mk_node_list(&construct);
+                    let bind = self.mk_node(Node::Apply { lambda, args });
+                    let result = self.mk_node(Node::Bind { args, bind });
+                    let bind = self.mk_node(Node::Lambda {
+                        level: level.succ(),
+                        needs,
+                        result,
+                    });
+                    Ok(self.mk_node(Node::BindSigdef { def, bind }))
                 }
                 Named::Valdef(def) => {
-                    let Valdef(target) = self.ir.valdefs[def];
-                    let start = self.emit(Instr::Lambda);
-                    let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
-                    let bind = self.extract_val(slots, def, &construct)?;
-                    let args = self.items(&construct);
-                    let result = self.emit(Instr::Bind { args, bind });
-                    let bind = self.emit(Instr::EndLambda { start, result });
-                    Ok(self.emit(Instr::BindValdef { def, bind }))
+                    let lambda = self.extract_val(slots, def, &destruct_lhs)?;
+                    let target = self.graph.valdefs[def];
+                    let (construct, needs) =
+                        self.invoke_need(level.succ(), target, &destruct_lhs)?;
+                    let needs = self.mk_node_list(&needs);
+                    let args = self.mk_node_list(&construct);
+                    let bind = self.mk_node(Node::Apply { lambda, args });
+                    let result = self.mk_node(Node::Bind { args, bind });
+                    let bind = self.mk_node(Node::Lambda {
+                        level: level.succ(),
+                        needs,
+                        result,
+                    });
+                    Ok(self.mk_node(Node::BindValdef { def, bind }))
                 }
                 Named::Ctxdef(def) => {
-                    let Ctxdef(target) = self.ir.ctxdefs[def];
-                    let start = self.emit(Instr::Lambda);
-                    let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
-                    let bind = self.extract_ctx(slots, def, &construct)?;
-                    let args = self.items(&construct);
-                    let result = self.emit(Instr::Bind { args, bind });
-                    let bind = self.emit(Instr::EndLambda { start, result });
-                    Ok(self.emit(Instr::BindCtxdef { def, bind }))
+                    let lambda = self.extract_ctx(slots, def, &destruct_lhs)?;
+                    let target = self.graph.ctxdefs[def];
+                    let (construct, needs) =
+                        self.invoke_need(level.succ(), target, &destruct_lhs)?;
+                    let needs = self.mk_node_list(&needs);
+                    let args = self.mk_node_list(&construct);
+                    let bind = self.mk_node(Node::Apply { lambda, args });
+                    let result = self.mk_node(Node::Bind { args, bind });
+                    let bind = self.mk_node(Node::Lambda {
+                        level: level.succ(),
+                        needs,
+                        result,
+                    });
+                    Ok(self.mk_node(Node::BindCtxdef { def, bind }))
                 }
                 Named::Module(_) => Err(LowerError::BindModule(bind)),
                 Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
@@ -1285,76 +1309,89 @@ impl<'a> Lower<'a> {
             },
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(def) => {
-                    let Valdef(target) = self.ir.valdefs[def];
-                    let start = self.emit(Instr::Lambda);
-                    let (construct, _) = self.invoke_need(target, &destruct_lhs)?;
+                    let target = self.graph.valdefs[def];
+                    let (construct, needs) =
+                        self.invoke_need(level.succ(), target, &destruct_lhs)?;
+                    let needs = self.mk_node_list(&needs);
                     let (val, _) = self.lit(token)?;
-                    let bind = self.emit(Instr::Lit { val });
-                    let args = self.items(&construct);
-                    let result = self.emit(Instr::Bind { args, bind });
-                    let bind = self.emit(Instr::EndLambda { start, result });
-                    Ok(self.emit(Instr::BindValdef { def, bind }))
+                    let bind = self.mk_node(Node::Lit { val });
+                    let args = self.mk_node_list(&construct);
+                    let result = self.mk_node(Node::Bind { args, bind });
+                    let bind = self.mk_node(Node::Lambda {
+                        level: level.succ(),
+                        needs,
+                        result,
+                    });
+                    Ok(self.mk_node(Node::BindValdef { def, bind }))
                 }
                 _ => Err(LowerError::LitNotVal(token)),
             },
             Some(parse::Entry::Ref(spec)) => {
-                let (rhs, mut destruct_rhs) = self.spec(slots, spec)?;
+                let (rhs, mut destruct_rhs) = self.spec(level, slots, spec)?;
                 match lhs {
                     Named::Tydef(def) => {
                         let lambda = match rhs {
                             Named::Tydef(tydef) => self.extract_ty(slots, tydef, &destruct_rhs)?,
-                            Named::Tagdef(tagdef) => self.emit(Instr::Tagdef { def: tagdef }),
+                            Named::Tagdef(tagdef) => self.mk_node(Node::Tagdef { def: tagdef }),
                             Named::Aliasdef(aliasdef) => {
-                                self.emit(Instr::Aliasdef { def: aliasdef })
+                                self.mk_node(Node::Aliasdef { def: aliasdef })
                             }
                             _ => return Err(LowerError::BindMismatch(bind)),
                         };
-                        let Tydef(target_lhs) = self.ir.tydefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct_lhs, mut needs) =
-                            self.invoke_need(target_lhs, &destruct_lhs)?;
-                        let args_lhs = self.items(&construct_lhs);
-                        destruct_rhs.append(&mut needs);
+                        let target_lhs = self.graph.tydefs[def];
+                        let (construct_lhs, mut needs_vec) =
+                            self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
+                        let needs = self.mk_node_list(&needs_vec);
+                        let args_lhs = self.mk_node_list(&construct_lhs);
+                        destruct_rhs.append(&mut needs_vec);
                         let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                        let args_rhs = self.items(&construct_rhs);
-                        let bind = self.emit(Instr::Apply {
+                        let args_rhs = self.mk_node_list(&construct_rhs);
+                        let bind = self.mk_node(Node::Apply {
                             lambda,
                             args: args_rhs,
                         });
-                        let result = self.emit(Instr::Bind {
+                        let result = self.mk_node(Node::Bind {
                             args: args_lhs,
                             bind,
                         });
-                        let bind = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::BindTydef { def, bind }))
+                        let bind = self.mk_node(Node::Lambda {
+                            level: level.succ(),
+                            needs,
+                            result,
+                        });
+                        Ok(self.mk_node(Node::BindTydef { def, bind }))
                     }
                     Named::Sigdef(def) => {
                         let lambda = match rhs {
                             Named::Sigdef(sigdef) => {
                                 self.extract_sig(slots, sigdef, &destruct_rhs)?
                             }
-                            Named::Fndef(fndef) => self.emit(Instr::Fndef { def: fndef }),
+                            Named::Fndef(fndef) => self.mk_node(Node::Fndef { def: fndef }),
                             _ => return Err(LowerError::BindMismatch(bind)),
                         };
                         // TODO: Check compatibility of function signatures.
-                        let Sigdef(target_lhs) = self.ir.sigdefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct_lhs, mut needs) =
-                            self.invoke_need(target_lhs, &destruct_lhs)?;
-                        let args_lhs = self.items(&construct_lhs);
-                        destruct_rhs.append(&mut needs);
+                        let target_lhs = self.graph.sigdefs[def];
+                        let (construct_lhs, mut needs_vec) =
+                            self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
+                        let needs = self.mk_node_list(&needs_vec);
+                        let args_lhs = self.mk_node_list(&construct_lhs);
+                        destruct_rhs.append(&mut needs_vec);
                         let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                        let args_rhs = self.items(&construct_rhs);
-                        let bind = self.emit(Instr::Apply {
+                        let args_rhs = self.mk_node_list(&construct_rhs);
+                        let bind = self.mk_node(Node::Apply {
                             lambda,
                             args: args_rhs,
                         });
-                        let result = self.emit(Instr::Bind {
+                        let result = self.mk_node(Node::Bind {
                             args: args_lhs,
                             bind,
                         });
-                        let bind = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::BindSigdef { def, bind }))
+                        let bind = self.mk_node(Node::Lambda {
+                            level: level.succ(),
+                            needs,
+                            result,
+                        });
+                        Ok(self.mk_node(Node::BindSigdef { def, bind }))
                     }
                     Named::Valdef(def) => {
                         let lambda = match rhs {
@@ -1364,24 +1401,28 @@ impl<'a> Lower<'a> {
                             _ => return Err(LowerError::BindMismatch(bind)),
                         };
                         // TODO: Check compatibility of value types.
-                        let Valdef(target_lhs) = self.ir.valdefs[def];
-                        let start = self.emit(Instr::Lambda);
-                        let (construct_lhs, mut needs) =
-                            self.invoke_need(target_lhs, &destruct_lhs)?;
-                        let args_lhs = self.items(&construct_lhs);
-                        destruct_rhs.append(&mut needs);
+                        let target_lhs = self.graph.valdefs[def];
+                        let (construct_lhs, mut needs_vec) =
+                            self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
+                        let needs = self.mk_node_list(&needs_vec);
+                        let args_lhs = self.mk_node_list(&construct_lhs);
+                        destruct_rhs.append(&mut needs_vec);
                         let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                        let args_rhs = self.items(&construct_rhs);
-                        let bind = self.emit(Instr::Apply {
+                        let args_rhs = self.mk_node_list(&construct_rhs);
+                        let bind = self.mk_node(Node::Apply {
                             lambda,
                             args: args_rhs,
                         });
-                        let result = self.emit(Instr::Bind {
+                        let result = self.mk_node(Node::Bind {
                             args: args_lhs,
                             bind,
                         });
-                        let bind = self.emit(Instr::EndLambda { start, result });
-                        Ok(self.emit(Instr::BindValdef { def, bind }))
+                        let bind = self.mk_node(Node::Lambda {
+                            level: level.succ(),
+                            needs,
+                            result,
+                        });
+                        Ok(self.mk_node(Node::BindValdef { def, bind }))
                     }
                     Named::Ctxdef(_) => Err(LowerError::BindContext(bind)),
                     Named::Module(_) => Err(LowerError::BindModule(bind)),
@@ -1400,9 +1441,9 @@ impl<'a> Lower<'a> {
         // TODO: Handle `kind`.
         let parse::Bind { key, val } = self.tree.binds[bind];
         match val {
-            Some(_) => self.bind(slots, bind),
+            Some(_) => self.bind(level, slots, bind),
             None => {
-                let (lhs, destruct) = self.spec(slots, key)?;
+                let (lhs, destruct) = self.spec(level, slots, key)?;
                 match lhs {
                     Named::Tydef(def) => {
                         let target = self.graph.tydefs[def];
@@ -1412,7 +1453,7 @@ impl<'a> Lower<'a> {
                         let items = self.mk_node_list(&construct);
                         let result = self.mk_node(Node::List { items });
                         let param = self.mk_node(Node::Lambda {
-                            level,
+                            level: level.succ(),
                             needs,
                             result,
                         });
