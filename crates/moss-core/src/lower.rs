@@ -216,13 +216,13 @@ pub struct Depth(pub u32);
 
 /// An instruction that produces a runtime value of some type.
 #[derive(Clone, Copy, Debug)]
-pub enum Expr<StaticId> {
+pub enum Expr {
     /// Get the value of the parameter to this function.
     ///
     /// Type: this function's parameter type.
     Param {
         /// This function's parameter type.
-        ty: StaticId,
+        ty: NodeId,
     },
 
     /// Copy the value of another local into a fresh local.
@@ -238,7 +238,7 @@ pub enum Expr<StaticId> {
     /// Type: the given nominal type.
     Nominal {
         /// The nominal type.
-        ty: StaticId,
+        ty: NodeId,
 
         /// The inner value.
         inner: InstrId,
@@ -285,7 +285,7 @@ pub enum Expr<StaticId> {
     /// Get a contextual value.
     Val {
         /// The value.
-        val: StaticId,
+        val: NodeId,
     },
 
     /// Call a contextual function.
@@ -293,7 +293,7 @@ pub enum Expr<StaticId> {
     /// Type: the function's result type.
     Call {
         /// The function.
-        func: StaticId,
+        func: NodeId,
 
         /// The runtime argument value.
         arg: InstrId,
@@ -303,184 +303,10 @@ pub enum Expr<StaticId> {
 /// An instruction.
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
-    /// Start a lambda block.
-    Lambda,
-
-    /// End the current [`Instr::Lambda`] block.
-    EndLambda {
-        /// The [`Instr::Lambda`] instruction this closes.
-        start: InstrId,
-
-        /// The item to return from the lambda.
-        result: InstrId,
-    },
-
-    /// Apply a lambda to some arguments.
-    Apply {
-        /// The lambda to apply.
-        lambda: InstrId,
-
-        /// The arguments.
-        args: InstrList,
-    },
-
-    /// A tuple of items.
-    Stack {
-        /// The items to stack together.
-        items: InstrList,
-    },
-
-    /// Need a contextual type parametrized by a specific context.
-    NeedTydef {
-        /// The contextual type declaration.
-        def: TydefId,
-
-        /// A mapping from unfixed inputs to the full inputs of the contextual type.
-        param: InstrId,
-    },
-
-    /// Need a contextual function parametrized by a specific context.
-    NeedSigdef {
-        /// The contextual function declaration.
-        def: SigdefId,
-
-        /// A mapping from unfixed inputs to the full inputs of the contextual function.
-        param: InstrId,
-    },
-
-    /// Need a contextual value parametrized by a specific context.
-    NeedValdef {
-        /// The contextual value declaration.
-        def: ValdefId,
-
-        /// A mapping from unfixed inputs to the full inputs of the contextual value.
-        param: InstrId,
-    },
-
-    /// Need a composite context parametrized by a specific context.
-    NeedCtxdef {
-        /// The context definition.
-        def: CtxdefId,
-
-        /// A mapping from unfixed inputs to the full inputs of the composite context parameter.
-        param: InstrId,
-    },
-
-    /// A lambda from context to a specific nominal type.
-    Tagdef {
-        /// The nominal type definition.
-        def: TagdefId,
-    },
-
-    /// A lambda from context to a specific type alias.
-    Aliasdef {
-        /// The type alias definition.
-        def: AliasdefId,
-    },
-
-    /// A structural tuple of other types.
-    Tuple {
-        /// The types of the tuple elements.
-        elems: InstrList,
-    },
-
-    /// A structural record of other types.
-    Record {
-        /// The types and field names of the record elements, in lexicographical order.
-        fields: IdRange<RecordId>,
-    },
-
-    /// A "type" that represents a context instead of an actual value.
-    Context,
-
-    /// A lambda from context to a specific defined function.
-    Fndef {
-        /// The function definition.
-        def: FndefId,
-    },
-
-    /// A slot from a context.
-    Get {
-        /// The context.
-        ctx: InstrId,
-
-        /// The output slot index.
-        slot: SlotId,
-    },
-
-    /// A literal value.
-    Lit {
-        /// The literal value.
-        val: Val,
-    },
-
-    /// A binding.
-    Bind {
-        /// The arguments constraining the left-hand side of the binding.
-        args: InstrList,
-
-        /// The right-hand side of the binding.
-        bind: InstrId,
-    },
-
-    /// Provide a contextual type parametrized by a specific context.
-    BindTydef {
-        /// The contextual type declaration.
-        def: TydefId,
-
-        /// A mapping from unfixed inputs to a binding for a fully concrete type.
-        bind: InstrId,
-    },
-
-    /// Provide a contextual function parametrized by a specific context.
-    BindSigdef {
-        /// The contextual function declaration.
-        def: SigdefId,
-
-        /// A mapping from unfixed inputs to a binding for a fully concrete function.
-        bind: InstrId,
-    },
-
-    /// Provide a contextual value parametrized by a specific context.
-    BindValdef {
-        /// The contextual value declaration.
-        def: ValdefId,
-
-        /// A mapping from unfixed inputs to a binding for a fully concrete value.
-        bind: InstrId,
-    },
-
-    /// Provide a composite context parametrized by a specific context.
-    BindCtxdef {
-        /// The composite context definition.
-        def: CtxdefId,
-
-        /// A mapping from unfixed inputs to a binding for the full inputs of the composite context.
-        bind: InstrId,
-    },
-
-    /// A function signature.
-    Sig {
-        /// The type of the tuple of parameters.
-        param: InstrId,
-
-        /// The result type or context.
-        result: InstrId,
-    },
-
-    /// Set the left-hand variable to the right-hand value of the right-hand value.
-    Set {
-        /// The variable to set.
-        lhs: InstrId,
-
-        /// The value to use.
-        rhs: InstrId,
-    },
-
     /// Start a block only if the given condition is true.
     If {
         /// The result type of this conditional block.
-        ty: InstrId,
+        ty: NodeId,
 
         /// The boolean value to test.
         cond: InstrId,
@@ -513,10 +339,10 @@ pub enum Instr {
     /// An instruction whose value is typed by the value of a previous instruction.
     Expr {
         /// The type.
-        ty: InstrId,
+        ty: NodeId,
 
         /// The value.
-        expr: Expr<InstrId>,
+        expr: Expr,
     },
 }
 
@@ -606,27 +432,27 @@ pub enum IntType {
 
 /// A lambda that takes contextual parameters and returns nothing.
 #[derive(Clone, Copy, Debug)]
-pub struct Tydef(pub Body);
+pub struct Tydef(pub NodeId);
 
 /// A lambda that takes contextual parameters and returns the inner type for this nominal type.
 #[derive(Clone, Copy, Debug)]
-pub struct Tagdef(pub Body);
+pub struct Tagdef(pub NodeId);
 
 /// A lambda that takes contextual parameters and returns a type.
 #[derive(Clone, Copy, Debug)]
-pub struct Aliasdef(pub Body);
+pub struct Aliasdef(pub NodeId);
 
 /// A lambda that takes contextual parameters and returns a function signature.
 #[derive(Clone, Copy, Debug)]
-pub struct Sigdef(pub Body);
+pub struct Sigdef(pub NodeId);
 
 /// A lambda that takes contextual parameters and returns a type.
 #[derive(Clone, Copy, Debug)]
-pub struct Valdef(pub Body);
+pub struct Valdef(pub NodeId);
 
 /// A lambda that returns a lambda that returns a context.
 #[derive(Clone, Copy, Debug)]
-pub struct Ctxdef(pub Body);
+pub struct Ctxdef(pub NodeId);
 
 #[derive(Debug, Default)]
 pub struct IR {
@@ -636,10 +462,16 @@ pub struct IR {
     /// String interning.
     pub strings: Strings,
 
+    /// Hash-consed arena of static nodes, like types and contexts.
+    pub nodes: IndexSet<Node>,
+
+    /// Hash-consed arena of lists of indices into the node arena.
+    pub lists: Tuples<NodeId>,
+
     /// Arena of instructions.
     ///
     /// Basically composed of a sequence of "blocks" where each block is a contiguous range of
-    /// instructions in this arena.
+    /// instructions in this arena, corresponding to a single function body.
     pub instrs: IndexVec<InstrId, Instr>,
 
     /// Arena of indices into the instructions array.
@@ -673,20 +505,6 @@ pub struct IR {
 
     /// Actual function bodies.
     pub bodies: IndexVec<FndefId, Body>,
-}
-
-/// The supplemental graph data structure used internally by the lowering phase.
-#[derive(Debug, Default)]
-pub struct Graph {
-    nodes: IndexSet<Node>,
-    lists: Tuples<NodeId>,
-    tydefs: IndexVec<TydefId, NodeId>,
-    tagdefs: IndexVec<TagdefId, NodeId>,
-    aliasdefs: IndexVec<AliasdefId, NodeId>,
-    sigdefs: IndexVec<SigdefId, NodeId>,
-    fndefs: IndexVec<FndefId, NodeId>,
-    valdefs: IndexVec<ValdefId, NodeId>,
-    ctxdefs: IndexVec<CtxdefId, NodeId>,
 }
 
 type ModuleNames<T> = IndexMap<(ModuleId, StrId), T>;
@@ -956,7 +774,6 @@ struct Lower<'a> {
     starts: &'a TokenStarts,
     tree: &'a Tree,
     ir: &'a mut IR,
-    graph: &'a mut Graph,
     names: &'a mut Names,
     base: Option<Base>,
     prelude: ModuleId,
@@ -1158,10 +975,6 @@ impl<'a> Lower<'a> {
         Body::new(IdRange { start, end }, result)
     }
 
-    fn serialize(&mut self, lambda: NodeId) -> Body {
-        todo!()
-    }
-
     fn invoke(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Option<Vec<NodeId>>> {
         todo!()
     }
@@ -1248,7 +1061,7 @@ impl<'a> Lower<'a> {
             None => match lhs {
                 Named::Tydef(def) => {
                     let lambda = self.extract_ty(slots, def, &destruct_lhs)?;
-                    let target = self.graph.tydefs[def];
+                    let Tydef(target) = self.ir.tydefs[def];
                     let (construct, needs) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
                     let needs = self.mk_node_list(&needs);
@@ -1264,7 +1077,7 @@ impl<'a> Lower<'a> {
                 }
                 Named::Sigdef(def) => {
                     let lambda = self.extract_sig(slots, def, &destruct_lhs)?;
-                    let target = self.graph.sigdefs[def];
+                    let Sigdef(target) = self.ir.sigdefs[def];
                     let (construct, needs) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
                     let needs = self.mk_node_list(&needs);
@@ -1280,7 +1093,7 @@ impl<'a> Lower<'a> {
                 }
                 Named::Valdef(def) => {
                     let lambda = self.extract_val(slots, def, &destruct_lhs)?;
-                    let target = self.graph.valdefs[def];
+                    let Valdef(target) = self.ir.valdefs[def];
                     let (construct, needs) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
                     let needs = self.mk_node_list(&needs);
@@ -1296,7 +1109,7 @@ impl<'a> Lower<'a> {
                 }
                 Named::Ctxdef(def) => {
                     let lambda = self.extract_ctx(slots, def, &destruct_lhs)?;
-                    let target = self.graph.ctxdefs[def];
+                    let Ctxdef(target) = self.ir.ctxdefs[def];
                     let (construct, needs) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
                     let needs = self.mk_node_list(&needs);
@@ -1317,7 +1130,7 @@ impl<'a> Lower<'a> {
             },
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(def) => {
-                    let target = self.graph.valdefs[def];
+                    let Valdef(target) = self.ir.valdefs[def];
                     let (construct, needs) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
                     let needs = self.mk_node_list(&needs);
@@ -1346,7 +1159,7 @@ impl<'a> Lower<'a> {
                             }
                             _ => return Err(LowerError::BindMismatch(bind)),
                         };
-                        let target_lhs = self.graph.tydefs[def];
+                        let Tydef(target_lhs) = self.ir.tydefs[def];
                         let (construct_lhs, mut needs_vec) =
                             self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
                         let needs = self.mk_node_list(&needs_vec);
@@ -1378,7 +1191,7 @@ impl<'a> Lower<'a> {
                             _ => return Err(LowerError::BindMismatch(bind)),
                         };
                         // TODO: Check compatibility of function signatures.
-                        let target_lhs = self.graph.sigdefs[def];
+                        let Sigdef(target_lhs) = self.ir.sigdefs[def];
                         let (construct_lhs, mut needs_vec) =
                             self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
                         let needs = self.mk_node_list(&needs_vec);
@@ -1409,7 +1222,7 @@ impl<'a> Lower<'a> {
                             _ => return Err(LowerError::BindMismatch(bind)),
                         };
                         // TODO: Check compatibility of value types.
-                        let target_lhs = self.graph.valdefs[def];
+                        let Valdef(target_lhs) = self.ir.valdefs[def];
                         let (construct_lhs, mut needs_vec) =
                             self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
                         let needs = self.mk_node_list(&needs_vec);
@@ -1454,7 +1267,7 @@ impl<'a> Lower<'a> {
                 let (lhs, destruct) = self.spec(level, slots, key)?;
                 match lhs {
                     Named::Tydef(def) => {
-                        let target = self.graph.tydefs[def];
+                        let Tydef(target) = self.ir.tydefs[def];
                         let (construct, needs) =
                             self.invoke_need(level.succ(), target, &destruct)?;
                         let needs = self.mk_node_list(&needs);
@@ -1468,7 +1281,7 @@ impl<'a> Lower<'a> {
                         Ok(self.mk_node(Node::NeedTydef { level, def, param }))
                     }
                     Named::Sigdef(def) => {
-                        let target = self.graph.sigdefs[def];
+                        let Sigdef(target) = self.ir.sigdefs[def];
                         let (construct, needs) =
                             self.invoke_need(level.succ(), target, &destruct)?;
                         let needs = self.mk_node_list(&needs);
@@ -1482,7 +1295,7 @@ impl<'a> Lower<'a> {
                         Ok(self.mk_node(Node::NeedSigdef { level, def, param }))
                     }
                     Named::Valdef(def) => {
-                        let target = self.graph.valdefs[def];
+                        let Valdef(target) = self.ir.valdefs[def];
                         let (construct, needs) =
                             self.invoke_need(level.succ(), target, &destruct)?;
                         let needs = self.mk_node_list(&needs);
@@ -1496,7 +1309,7 @@ impl<'a> Lower<'a> {
                         Ok(self.mk_node(Node::NeedValdef { level, def, param }))
                     }
                     Named::Ctxdef(def) => {
-                        let target = self.graph.ctxdefs[def];
+                        let Ctxdef(target) = self.ir.ctxdefs[def];
                         let (construct, needs) =
                             self.invoke_need(level.succ(), target, &destruct)?;
                         let needs = self.mk_node_list(&needs);
@@ -1598,12 +1411,11 @@ impl<'a> Lower<'a> {
             param: param_tuple,
             result: result_ty,
         });
-        let lambda = self.mk_node(Node::Lambda {
+        let body = self.mk_node(Node::Lambda {
             level: Level::ZERO,
             needs: need_nodes,
             result: signature,
         });
-        let body = self.serialize(lambda);
         let lowered = match def {
             None => NamedFn::Sigdef(self.ir.sigdefs.push(Sigdef(body))),
             Some(_) => NamedFn::Fndef(self.ir.fndefs.push(Sigdef(body))),
@@ -1620,12 +1432,11 @@ impl<'a> Lower<'a> {
                     let slots = self.needs(Level::ZERO, needs)?;
                     let need_nodes = self.mk_node_list(&slots);
                     let result = self.mk_node(Node::Nothing);
-                    let lambda = self.mk_node(Node::Lambda {
+                    let body = self.mk_node(Node::Lambda {
                         level: Level::ZERO,
                         needs: need_nodes,
                         result,
                     });
-                    let body = self.serialize(lambda);
                     let lowered = self.ir.tydefs.push(Tydef(body));
                     let string = self.name(name);
                     self.names
@@ -1637,12 +1448,11 @@ impl<'a> Lower<'a> {
                     let slots = self.needs(Level::ZERO, needs)?;
                     let need_nodes = self.mk_node_list(&slots);
                     let ty = self.parse_ty(&slots, def)?;
-                    let lambda = self.mk_node(Node::Lambda {
+                    let body = self.mk_node(Node::Lambda {
                         level: Level::ZERO,
                         needs: need_nodes,
                         result: ty,
                     });
-                    let body = self.serialize(lambda);
                     let lowered = self.ir.tagdefs.push(Tagdef(body));
                     let string = self.name(name);
                     self.names
@@ -1654,12 +1464,11 @@ impl<'a> Lower<'a> {
                     let slots = self.needs(Level::ZERO, needs)?;
                     let need_nodes = self.mk_node_list(&slots);
                     let ty = self.parse_ty(&slots, def)?;
-                    let lambda = self.mk_node(Node::Lambda {
+                    let body = self.mk_node(Node::Lambda {
                         level: Level::ZERO,
                         needs: need_nodes,
                         result: ty,
                     });
-                    let body = self.serialize(lambda);
                     let lowered = self.ir.aliasdefs.push(Aliasdef(body));
                     let string = self.name(name);
                     self.names
@@ -1705,12 +1514,11 @@ impl<'a> Lower<'a> {
                     let slots = self.needs(Level::ZERO, needs)?;
                     let need_nodes = self.mk_node_list(&slots);
                     let ty = self.parse_ty(&slots, ty)?;
-                    let lambda = self.mk_node(Node::Lambda {
+                    let body = self.mk_node(Node::Lambda {
                         level: Level::ZERO,
                         needs: need_nodes,
                         result: ty,
                     });
-                    let body = self.serialize(lambda);
                     let lowered = self.ir.valdefs.push(Valdef(body));
                     let string = self.name(name);
                     self.names
@@ -1730,17 +1538,16 @@ impl<'a> Lower<'a> {
                     let needs_outer = self.mk_node_list(&slots[..needs.len()]);
                     let items = self.mk_node_list(&slots[needs.len()..]);
                     let result = self.mk_node(Node::List { items });
-                    let lambda_inner = self.mk_node(Node::Lambda {
+                    let lambda = self.mk_node(Node::Lambda {
                         level: Level::ZERO.succ(),
                         needs: needs_inner,
                         result,
                     });
-                    let lambda_outer = self.mk_node(Node::Lambda {
+                    let body = self.mk_node(Node::Lambda {
                         level: Level::ZERO,
                         needs: needs_outer,
-                        result: lambda_inner,
+                        result: lambda,
                     });
-                    let body = self.serialize(lambda_outer);
                     let lowered = self.ir.ctxdefs.push(Ctxdef(body));
                     let string = self.name(name);
                     self.names
@@ -1831,7 +1638,7 @@ impl LowerBody<'_, '_> {
         self.locals.insert(name, rhs);
     }
 
-    fn emit(&mut self, expr: Expr<NodeId>) -> InstrId {
+    fn emit(&mut self, instr: Instr) -> InstrId {
         todo!()
     }
 
@@ -1843,10 +1650,10 @@ impl LowerBody<'_, '_> {
         self.x.ty_record(fields)
     }
 
-    fn instr(&mut self, ty: NodeId, expr: Expr<NodeId>) -> Typed {
+    fn instr(&mut self, ty: NodeId, expr: Expr) -> Typed {
         Typed {
             ty,
-            val: self.emit(expr),
+            val: self.emit(Instr::Expr { ty, expr }),
         }
     }
 
@@ -2492,7 +2299,6 @@ pub fn lower(
     starts: &TokenStarts,
     tree: &Tree,
     ir: &mut IR,
-    graph: &mut Graph,
     names: &mut Names,
     base: Option<Base>,
     prelude: ModuleId,
@@ -2505,7 +2311,6 @@ pub fn lower(
         starts,
         tree,
         ir,
-        graph,
         names,
         base,
         prelude,

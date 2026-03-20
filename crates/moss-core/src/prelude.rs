@@ -11,7 +11,7 @@ use line_index::{LineIndex, TextSize};
 use crate::{
     intern::StrId,
     lex::{ByteIndex, lex, string},
-    lower::{Graph, IR, ModuleId, Named, Names, SigdefId, TydefId, ValdefId, lower},
+    lower::{IR, ModuleId, Named, Names, SigdefId, TydefId, ValdefId, lower},
     parse::{ParseError, parse},
 };
 
@@ -115,7 +115,6 @@ pub struct Lib {
 
 struct Precompile {
     ir: IR,
-    graph: Graph,
     names: Names,
     preprelude: ModuleId,
     dir: PathBuf,
@@ -159,7 +158,6 @@ impl Precompile {
             &starts,
             &tree,
             &mut self.ir,
-            &mut self.graph,
             &mut self.names,
             base,
             self.preprelude,
@@ -321,13 +319,11 @@ pub fn prelude() -> (IR, Names, Base, Lib) {
     }
     .unwrap();
     let mut ir = IR::default();
-    let graph = Graph::default();
     let names = Names::default();
     let preprelude = ir.modules.push(());
     let modules = HashMap::new();
     Precompile {
         ir,
-        graph,
         names,
         preprelude,
         dir,
