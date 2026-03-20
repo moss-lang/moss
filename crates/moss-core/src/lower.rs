@@ -676,7 +676,7 @@ pub struct IR {
 }
 
 /// The supplemental graph data structure used internally by the lowering phase.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Graph {
     nodes: IndexSet<Node>,
     lists: Tuples<NodeId>,
@@ -1801,7 +1801,7 @@ struct Typed {
 #[derive(Debug)]
 struct LowerBody<'a, 'b> {
     x: &'b mut Lower<'a>,
-    slots: Vec<InstrId>,
+    slots: Vec<NodeId>,
     locals: HashMap<StrId, Typed>,
 }
 
@@ -1876,23 +1876,23 @@ impl LowerBody<'_, '_> {
         )
     }
 
-    fn invoke_force(&mut self, lambda: InstrId) -> LowerResult<Vec<InstrId>> {
+    fn invoke_force(&mut self, lambda: NodeId) -> LowerResult<Vec<NodeId>> {
         self.x.invoke_force(lambda, &self.slots)
     }
 
-    fn extract_ty(&mut self, def: TydefId) -> LowerResult<InstrId> {
+    fn extract_ty(&mut self, def: TydefId) -> LowerResult<NodeId> {
         self.x.extract_ty(&self.slots, def, &self.slots)
     }
 
-    fn extract_sig(&mut self, def: SigdefId) -> LowerResult<InstrId> {
+    fn extract_sig(&mut self, def: SigdefId) -> LowerResult<NodeId> {
         self.x.extract_sig(&self.slots, def, &self.slots)
     }
 
-    fn extract_val(&mut self, def: ValdefId) -> LowerResult<InstrId> {
+    fn extract_val(&mut self, def: ValdefId) -> LowerResult<NodeId> {
         self.x.extract_val(&self.slots, def, &self.slots)
     }
 
-    fn extract_ctx(&mut self, def: CtxdefId) -> LowerResult<InstrId> {
+    fn extract_ctx(&mut self, def: CtxdefId) -> LowerResult<NodeId> {
         self.x.extract_ctx(&self.slots, def, &self.slots)
     }
 
@@ -2209,8 +2209,8 @@ impl LowerBody<'_, '_> {
                 let lambda_func = self.extract_sig(sigdef)?;
                 let construct_func = self.invoke_force(lambda_func)?;
 
-                let items = self.x.items(&construct_func);
-                let func = self.emit(Instr::Apply {
+                let items = self.x.mk_node_list(&construct_func);
+                let func = self.x.mk_node(Node::Apply {
                     lambda: lambda_func,
                     args: items,
                 });
