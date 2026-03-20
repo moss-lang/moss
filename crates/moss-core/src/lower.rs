@@ -9,7 +9,6 @@ use index_vec::{IndexSlice, IndexVec, define_index_type};
 use indexmap::{IndexMap, IndexSet};
 
 use crate::{
-    dump::dump,
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex, string},
     parse::{self, Binop, Block, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
@@ -90,7 +89,7 @@ define_index_type! {
 }
 
 define_index_type! {
-    struct NodeId = u32;
+    pub struct NodeId = u32;
 }
 
 type NodeList = TupleRange;
@@ -298,11 +297,25 @@ pub enum Expr {
         /// The runtime argument value.
         arg: InstrId,
     },
+
+    /// Yield a context instead of a value.
+    ///
+    /// Type: [`Node::Context`].
+    Bind { ctx: NodeId },
 }
 
 /// An instruction.
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
+    /// Set the left-hand variable to the right-hand value of the right-hand value.
+    Set {
+        /// The variable to set.
+        lhs: InstrId,
+
+        /// The value to use.
+        rhs: InstrId,
+    },
+
     /// Start a block only if the given condition is true.
     If {
         /// The result type of this conditional block.
@@ -786,7 +799,6 @@ struct Lower<'a> {
 
 impl<'a> Lower<'a> {
     fn todo(&self, token: TokenId) -> LowerError {
-        dump(self.ir, self.names);
         LowerError::Todo(token, Backtrace::capture())
     }
 
@@ -1028,7 +1040,7 @@ impl<'a> Lower<'a> {
         Err(self.todo_no_loc())
     }
 
-    fn inline(&mut self, body: Body, construct: &[InstrId]) -> LowerResult<InstrId> {
+    fn inline(&mut self, lambda: NodeId, construct: &[NodeId]) -> LowerResult<NodeId> {
         Err(self.todo_no_loc())
     }
 
@@ -1701,27 +1713,27 @@ impl LowerBody<'_, '_> {
         self.x.extract_ctx(&self.slots, def, &self.slots)
     }
 
-    fn inline(&mut self, body: Body, construct: &[InstrId]) -> LowerResult<InstrId> {
-        self.x.inline(body, construct)
+    fn inline(&mut self, lambda: NodeId, construct: &[NodeId]) -> LowerResult<NodeId> {
+        self.x.inline(lambda, construct)
     }
 
     /// Get the nominal type definition of a value, or [`None`] if the value is not nominally typed.
-    fn nominal(&self, ty: InstrId) -> Option<TagdefId> {
+    fn nominal(&self, ty: NodeId) -> Option<TagdefId> {
         todo!()
     }
 
     /// Get the fields of a record type.
-    fn fields(&self, ty: InstrId) -> LowerResult<Vec<(StrId, InstrId)>> {
+    fn fields(&self, ty: NodeId) -> LowerResult<Vec<(StrId, NodeId)>> {
         Err(self.x.todo_no_loc())
     }
 
     /// Get the parameter type and result type of a function.
-    fn sig(&self, func: InstrId) -> (InstrId, InstrId) {
+    fn sig(&self, func: NodeId) -> (NodeId, NodeId) {
         todo!()
     }
 
     /// Resolve a method call.
-    fn method(&self, ty: InstrId, name: StrId) -> Option<NamedFn> {
+    fn method(&self, ty: NodeId, name: StrId) -> Option<NamedFn> {
         if let Some(tagdef) = self.nominal(ty)
             && let Some(&fndef) = self.x.names.attached.get(&(tagdef, name))
         {
@@ -1735,7 +1747,7 @@ impl LowerBody<'_, '_> {
         }
     }
 
-    fn expect_ty(&self, expected: InstrId, actual: InstrId) -> LowerResult<()> {
+    fn expect_ty(&self, expected: NodeId, actual: NodeId) -> LowerResult<()> {
         Err(self.x.todo_no_loc())
     }
 
@@ -2045,10 +2057,10 @@ impl LowerBody<'_, '_> {
                 };
                 let inside = self.expr(inner)?;
                 let Tagdef(body) = self.x.ir.tagdefs[tagdef];
-                let lambda = self.emit(Instr::Tagdef { def: tagdef });
+                let lambda = self.x.mk_node(Node::Tagdef { def: tagdef });
                 let construct = self.invoke_force(lambda)?;
-                let args = self.x.items(&construct);
-                let ty = self.emit(Instr::Apply { lambda, args });
+                let args = self.x.mk_node_list(&construct);
+                let ty = self.x.mk_node(Node::Apply { lambda, args });
                 let expected = self.inline(body, &construct)?;
                 self.expect_ty(expected, inside.ty)?;
                 let inner = inside.val;
@@ -2090,12 +2102,12 @@ impl LowerBody<'_, '_> {
                 // TODO: Contextually set `this` to `obj`.
                 let lambda = match self.method(obj.ty, name) {
                     Some(NamedFn::Sigdef(sigdef)) => self.extract_sig(sigdef)?,
-                    Some(NamedFn::Fndef(fndef)) => self.emit(Instr::Fndef { def: fndef }),
+                    Some(NamedFn::Fndef(fndef)) => self.x.mk_node(Node::Fndef { def: fndef }),
                     None => return Err(LowerError::Undefined(method)),
                 };
                 let construct = self.invoke_force(lambda)?;
-                let args = self.x.items(&construct);
-                let func = self.emit(Instr::Apply { lambda, args });
+                let args = self.x.mk_node_list(&construct);
+                let func = self.x.mk_node(Node::Apply { lambda, args });
                 let (ty_param, ty_result) = self.sig(func);
                 let lowered = arguments
                     .into_iter()
@@ -2112,12 +2124,12 @@ impl LowerBody<'_, '_> {
                 // TODO: Handle bindings attached to function calls.
                 let lambda = match self.x.path(callee)? {
                     Named::Sigdef(sigdef) => self.extract_sig(sigdef)?,
-                    Named::Fndef(fndef) => self.emit(Instr::Fndef { def: fndef }),
+                    Named::Fndef(fndef) => self.x.mk_node(Node::Fndef { def: fndef }),
                     _ => return Err(LowerError::NotFn(callee.last)),
                 };
                 let construct = self.invoke_force(lambda)?;
-                let args = self.x.items(&construct);
-                let func = self.emit(Instr::Apply { lambda, args });
+                let args = self.x.mk_node_list(&construct);
+                let func = self.x.mk_node(Node::Apply { lambda, args });
                 let (ty_param, ty_result) = self.sig(func);
                 let lowered = arguments
                     .into_iter()
@@ -2187,15 +2199,17 @@ impl LowerBody<'_, '_> {
                 let mut slots = Vec::new();
                 for binding in bindings {
                     let slot = match self.x.tree.bindings[binding] {
-                        parse::Binding::Single(bind) => self.x.bind(&self.slots, bind)?,
-                        parse::Binding::Composite(expr) => self.expr(expr)?.val,
+                        parse::Binding::Single(bind) => {
+                            self.x.bind(Level::ZERO, &self.slots, bind)?
+                        }
+                        parse::Binding::Composite(expr) => todo!(),
                     };
                     slots.push(slot);
                 }
-                let items = self.x.items(&slots);
-                let ty = self.emit(Instr::Context);
-                let val = self.emit(Instr::Stack { items });
-                Ok(Typed { ty, val })
+                let items = self.x.mk_node_list(&slots);
+                let ty = self.x.mk_node(Node::Context);
+                let ctx = self.x.mk_node(Node::List { items });
+                Ok(self.instr(ty, Expr::Bind { ctx }))
             }
         }
     }
@@ -2277,7 +2291,7 @@ impl LowerBody<'_, '_> {
         };
         let mut index = 0;
         for (param, item) in params.into_iter().zip(types) {
-            let ty = self.x.ir.items[item];
+            let ty = self.x.ir.lists[item];
             let local = self.instr(
                 ty,
                 Expr::Elem {
