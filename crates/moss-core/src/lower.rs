@@ -216,13 +216,13 @@ pub struct Depth(pub u32);
 
 /// An instruction that produces a runtime value of some type.
 #[derive(Clone, Copy, Debug)]
-pub enum Expr {
+pub enum Expr<StaticId> {
     /// Get the value of the parameter to this function.
     ///
     /// Type: this function's parameter type.
     Param {
         /// This function's parameter type.
-        ty: InstrId,
+        ty: StaticId,
     },
 
     /// Copy the value of another local into a fresh local.
@@ -238,7 +238,7 @@ pub enum Expr {
     /// Type: the given nominal type.
     Nominal {
         /// The nominal type.
-        ty: InstrId,
+        ty: StaticId,
 
         /// The inner value.
         inner: InstrId,
@@ -285,7 +285,7 @@ pub enum Expr {
     /// Get a contextual value.
     Val {
         /// The value.
-        val: InstrId,
+        val: StaticId,
     },
 
     /// Call a contextual function.
@@ -293,7 +293,7 @@ pub enum Expr {
     /// Type: the function's result type.
     Call {
         /// The function.
-        func: InstrId,
+        func: StaticId,
 
         /// The runtime argument value.
         arg: InstrId,
@@ -516,7 +516,7 @@ pub enum Instr {
         ty: InstrId,
 
         /// The value.
-        expr: Expr,
+        expr: Expr<InstrId>,
     },
 }
 
@@ -1101,6 +1101,10 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
+    fn node(&mut self, id: NodeId) -> Node {
+        todo!()
+    }
+
     fn mk_node(&mut self, node: Node) -> NodeId {
         todo!()
     }
@@ -1109,13 +1113,17 @@ impl<'a> Lower<'a> {
         todo!()
     }
 
-    fn ty_tuple(&mut self, elems: Vec<NodeId>) -> NodeId {
-        let elems = self.mk_node_list(&elems);
+    fn ty_tuple(&mut self, elems: &[NodeId]) -> NodeId {
+        let elems = self.mk_node_list(elems);
         self.mk_node(Node::Tuple { elems })
     }
 
+    fn ty_record(&mut self, fields: &[(StrId, NodeId)]) -> NodeId {
+        todo!()
+    }
+
     fn ty_unit(&mut self) -> NodeId {
-        self.ty_tuple(Vec::new())
+        self.ty_tuple(&[])
     }
 
     fn builder(&self) -> Builder {
@@ -1539,7 +1547,7 @@ impl<'a> Lower<'a> {
                     .into_iter()
                     .map(|elem| self.parse_ty(slots, elem))
                     .collect::<LowerResult<Vec<_>>>()?;
-                Ok(self.ty_tuple(lowered))
+                Ok(self.ty_tuple(&lowered))
             }
             parse::Type::Record(members) => Err(self.todo_no_loc()),
         }
@@ -1557,7 +1565,7 @@ impl<'a> Lower<'a> {
         let elems = (params.into_iter())
             .map(|arg| self.parse_ty(&slots, self.tree.params[arg].ty))
             .collect::<LowerResult<Vec<_>>>()?;
-        let param_tuple = self.ty_tuple(elems);
+        let param_tuple = self.ty_tuple(&elems);
         let result_ty = match result {
             parse::Return::Unit => self.ty_unit(),
             parse::Return::Type(ty) => self.parse_ty(&slots, ty)?,
@@ -1794,7 +1802,7 @@ impl<'a> Lower<'a> {
 
 #[derive(Clone, Copy, Debug)]
 struct Typed {
-    ty: InstrId,
+    ty: NodeId,
     val: InstrId,
 }
 
@@ -1823,36 +1831,26 @@ impl LowerBody<'_, '_> {
         self.locals.insert(name, rhs);
     }
 
-    fn emit(&mut self, instr: Instr) -> InstrId {
-        self.x.emit(instr)
+    fn emit(&mut self, expr: Expr<NodeId>) -> InstrId {
+        todo!()
     }
 
-    fn ty_tuple(&mut self, elems: &[InstrId]) -> InstrId {
-        let start = self.x.ir.items.len_idx();
-        self.x.ir.items.extend_from_slice(IndexSlice::new(elems));
-        let end = self.x.ir.items.len_idx();
-        self.emit(Instr::Tuple {
-            elems: IdRange { start, end },
-        })
+    fn ty_tuple(&mut self, elems: &[NodeId]) -> NodeId {
+        self.x.ty_tuple(elems)
     }
 
-    fn ty_record(&mut self, fields: &[(StrId, InstrId)]) -> InstrId {
-        let start = self.x.ir.records.len_idx();
-        self.x.ir.records.extend_from_slice(IndexSlice::new(fields));
-        let end = self.x.ir.records.len_idx();
-        self.emit(Instr::Record {
-            fields: IdRange { start, end },
-        })
+    fn ty_record(&mut self, fields: &[(StrId, NodeId)]) -> NodeId {
+        self.x.ty_record(fields)
     }
 
-    fn instr(&mut self, ty: InstrId, expr: Expr) -> Typed {
+    fn instr(&mut self, ty: NodeId, expr: Expr<NodeId>) -> Typed {
         Typed {
             ty,
-            val: self.emit(Instr::Expr { ty, expr }),
+            val: self.emit(expr),
         }
     }
 
-    fn instr_tuple(&mut self, ty: InstrId, elems: &[InstrId]) -> Typed {
+    fn instr_tuple(&mut self, ty: NodeId, elems: &[InstrId]) -> Typed {
         let start = self.x.ir.items.len_idx();
         self.x.ir.items.extend_from_slice(IndexSlice::new(elems));
         let end = self.x.ir.items.len_idx();
@@ -1864,7 +1862,7 @@ impl LowerBody<'_, '_> {
         )
     }
 
-    fn instr_record(&mut self, ty: InstrId, fields: &[(StrId, InstrId)]) -> Typed {
+    fn instr_record(&mut self, ty: NodeId, fields: &[(StrId, InstrId)]) -> Typed {
         let start = self.x.ir.records.len_idx();
         self.x.ir.records.extend_from_slice(IndexSlice::new(fields));
         let end = self.x.ir.records.len_idx();
@@ -2203,7 +2201,7 @@ impl LowerBody<'_, '_> {
                 let lambda_ty = self.extract_ty(tydef)?;
                 let construct_ty = self.invoke_force(lambda_ty)?;
 
-                let val_lit = self.emit(Instr::Lit { val });
+                let val_lit = self.x.mk_node(Node::Lit { val });
 
                 // TODO: Use "invoke" correctly here.
                 let lambda_func = self.extract_sig(sigdef)?;
@@ -2467,7 +2465,7 @@ impl LowerBody<'_, '_> {
         let (slots, tuple_ty, _) = self.x.parse_sig(fndef).unwrap();
         self.slots = slots;
         let tuple_local = self.instr(tuple_ty, Expr::Param { ty: tuple_ty });
-        let Instr::Tuple { elems: types } = self.x.ir.instrs[tuple_ty] else {
+        let Node::Tuple { elems: types } = self.x.node(tuple_ty) else {
             unreachable!()
         };
         let mut index = 0;
