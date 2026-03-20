@@ -327,40 +327,7 @@ impl<'a> Wasm<'a> {
     fn wasi_ctx(&mut self, wasip1_sigdefs: &IndexMap<StrId, SigdefId>) -> ObjectId {
         let mut slots = Vec::new();
         let ctxdef_wasi = self.named(self.lib.wasi, "Wasi").ctxdef();
-        for instr in self.ir.ctxdefs[ctxdef_wasi].0.body {
-            match self.ir.instrs[instr] {
-                Instr::Lambda => todo!(),
-                Instr::EndLambda { start, result } => todo!(),
-                Instr::Apply { lambda, args } => todo!(),
-                Instr::Stack { items } => unimplemented!(),
-                Instr::NeedTydef { def, param } => unimplemented!(),
-                Instr::NeedSigdef { def, param } => unimplemented!(),
-                Instr::NeedValdef { def, param } => unimplemented!(),
-                Instr::NeedCtxdef { def, param } => unimplemented!(),
-                Instr::Tagdef { def } => unimplemented!(),
-                Instr::Aliasdef { def } => todo!(),
-                Instr::Tuple { elems } => unimplemented!(),
-                Instr::Record { fields } => unimplemented!(),
-                Instr::Context => unimplemented!(),
-                Instr::Fndef { def } => todo!(),
-                Instr::Get { ctx, slot } => unimplemented!(),
-                Instr::Lit { val } => todo!(),
-                Instr::Bind { args, bind } => todo!(),
-                Instr::BindTydef { def, bind } => unimplemented!(),
-                Instr::BindSigdef { def, bind } => unimplemented!(),
-                Instr::BindValdef { def, bind } => unimplemented!(),
-                Instr::BindCtxdef { def, bind } => todo!(),
-                Instr::Sig { param, result } => unimplemented!(),
-                Instr::Set { lhs, rhs } => unimplemented!(),
-                Instr::If { ty, cond } => unimplemented!(),
-                Instr::Else { result } => unimplemented!(),
-                Instr::EndIf { result } => unimplemented!(),
-                Instr::Loop => unimplemented!(),
-                Instr::EndLoop => unimplemented!(),
-                Instr::Br { depth } => unimplemented!(),
-                Instr::Expr { ty, expr } => unimplemented!(),
-            }
-        }
+        todo!();
         self.mkctx(&slots)
     }
 
@@ -797,10 +764,7 @@ impl<'a> Wasm<'a> {
 
     fn expr(&mut self, expr: Expr) {
         match expr {
-            Expr::Param { ty } => {
-                let ty = self.variables[&ty];
-                self.get_locals(ty, LocalId::from_raw(0));
-            }
+            Expr::Param { ty } => todo!(),
             Expr::Copy { value } => {
                 self.get(value);
             }
@@ -849,55 +813,13 @@ impl<'a> Wasm<'a> {
             }
             Expr::Val { val } => todo!(),
             Expr::Call { func, arg } => todo!(),
+            Expr::Bind { ctx } => todo!(),
         }
     }
 
     fn interp(&mut self, ctx: ObjectId, inputs: &[ObjectId], body: Body) -> ObjectId {
         for instr in body.body {
             let result = match self.ir.instrs[instr] {
-                Instr::Lambda => todo!(),
-                Instr::EndLambda { start, result } => todo!(),
-                Instr::Apply { lambda, args } => todo!(),
-                Instr::Stack { items } => self.mkctx(&self.list(items)),
-                Instr::NeedTydef { def, param } => todo!(),
-                Instr::NeedSigdef { def, param } => todo!(),
-                Instr::NeedValdef { def, param } => todo!(),
-                Instr::NeedCtxdef { def, param } => todo!(),
-                Instr::Tagdef { def } => todo!(),
-                Instr::Aliasdef { def } => todo!(),
-                Instr::Tuple { elems } => {
-                    let tuple = self.tuples.make(&self.list(elems));
-                    self.mkobj(Object::TyTuple(tuple))
-                }
-                Instr::Record { fields } => {
-                    let objs = Vec::from_iter(
-                        fields
-                            .get(&self.ir.records)
-                            .iter()
-                            .map(|&(_, field)| self.variables[&field]),
-                    );
-                    let tuple = self.tuples.make(&objs);
-                    self.mkobj(Object::TyTuple(tuple))
-                }
-                Instr::Context => self.mkobj(Object::TyCtx),
-                Instr::Fndef { def } => todo!(),
-                Instr::Get { ctx, slot } => {
-                    let Object::Ctx(slots) = self.obj(self.variables[&ctx]) else {
-                        panic!()
-                    };
-                    self.tuples[slots][slot.index()]
-                }
-                Instr::Lit { val } => todo!(),
-                Instr::Bind { args, bind } => todo!(),
-                Instr::BindTydef { def, bind } => todo!(),
-                Instr::BindSigdef { def, bind } => todo!(),
-                Instr::BindValdef { def, bind } => todo!(),
-                Instr::BindCtxdef { def, bind } => todo!(),
-                Instr::Sig { param, result } => {
-                    let obj_param = self.variables[&param];
-                    let obj_result = self.variables[&result];
-                    self.mkobj(Object::Sig(obj_param, obj_result))
-                }
                 Instr::Set { lhs, rhs } => {
                     let (ty, start) = self.local(lhs);
                     self.get(rhs);
@@ -905,7 +827,7 @@ impl<'a> Wasm<'a> {
                     self.mkobj(Object::ValStmt)
                 }
                 Instr::If { ty, cond } => {
-                    let ty = self.variables[&ty];
+                    let ty = todo!();
                     let layout = self.layout_vec(ty);
                     let typeidx = self.section_type.len();
                     self.section_type.ty().function([], layout);
@@ -937,7 +859,7 @@ impl<'a> Wasm<'a> {
                     self.mkobj(Object::ValStmt)
                 }
                 Instr::Expr { ty, expr } => {
-                    let ty = self.variables[&ty];
+                    let ty = todo!();
                     self.expr(expr);
                     self.set(ty)
                 }
@@ -956,7 +878,7 @@ impl<'a> Wasm<'a> {
         match self.get_func(funcidx) {
             Object::FnDef(fndef, ctx) => {
                 let Sigdef(sig) = self.ir.fndefs[fndef];
-                let signature = self.interp(ctx, &[], sig);
+                let signature = self.interp(ctx, &[], todo!());
                 let Object::Sig(param, result) = self.obj(signature) else {
                     panic!()
                 };
