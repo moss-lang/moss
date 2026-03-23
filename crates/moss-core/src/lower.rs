@@ -95,7 +95,7 @@ define_index_type! {
 type NodeList = TupleRange;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct Level(u8);
+pub struct Level(u8);
 
 impl Level {
     const ZERO: Self = Self(0);
@@ -106,7 +106,7 @@ impl Level {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum Node {
+pub enum Node {
     Nothing,
     Lambda {
         level: Level,
@@ -931,15 +931,16 @@ impl<'a> Lower<'a> {
     }
 
     fn node(&mut self, id: NodeId) -> Node {
-        todo!()
+        self.ir.nodes[id.index()]
     }
 
     fn mk_node(&mut self, node: Node) -> NodeId {
-        todo!()
+        let (i, _) = self.ir.nodes.insert_full(node);
+        NodeId::from_usize(i)
     }
 
     fn mk_node_list(&mut self, nodes: &[NodeId]) -> NodeList {
-        todo!()
+        self.ir.lists.make(nodes)
     }
 
     fn ty_tuple(&mut self, elems: &[NodeId]) -> NodeId {
