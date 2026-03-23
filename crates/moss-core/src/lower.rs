@@ -9,6 +9,7 @@ use index_vec::{IndexSlice, IndexVec, define_index_type};
 use indexmap::{IndexMap, IndexSet};
 
 use crate::{
+    dump::dump,
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex, string},
     parse::{self, Binop, Block, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
@@ -799,6 +800,7 @@ struct Lower<'a> {
 
 impl<'a> Lower<'a> {
     fn todo(&self, token: TokenId) -> LowerError {
+        dump(self.ir, self.names);
         LowerError::Todo(token, Backtrace::capture())
     }
 
@@ -1002,7 +1004,8 @@ impl<'a> Lower<'a> {
         target: NodeId,
         destruct: &[NodeId],
     ) -> LowerResult<(Vec<NodeId>, Vec<NodeId>)> {
-        todo!()
+        eprintln!("invoke_need(level = {level:?}, target = {target:?}, destruct = {destruct:?})");
+        Err(self.todo_no_loc())
     }
 
     fn extract_ty(
