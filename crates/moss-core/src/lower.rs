@@ -1267,9 +1267,13 @@ impl<'a> Lower<'a> {
         }
     }
 
-    // TODO: Both `need` and `needs` must somehow keep track of the "need" nodes they generate, so
-    // those nodes can be collected for a "lambda" node to be generated.
-    fn need(&mut self, level: Level, slots: &[NodeId], need: parse::NeedId) -> LowerResult<NodeId> {
+    fn need(
+        &mut self,
+        level: Level,
+        params: &mut Vec<NodeId>,
+        slots: &[NodeId],
+        need: parse::NeedId,
+    ) -> LowerResult<NodeId> {
         let parse::Need { kind: _, bind } = self.tree.needs[need];
         // TODO: Handle `kind`.
         let parse::Bind { key, val } = self.tree.binds[bind];
@@ -1290,7 +1294,9 @@ impl<'a> Lower<'a> {
                             needs,
                             result,
                         });
-                        Ok(self.mk_node(Node::NeedTydef { level, def, param }))
+                        let node = self.mk_node(Node::NeedTydef { level, def, param });
+                        params.push(node);
+                        Ok(node)
                     }
                     Named::Sigdef(def) => {
                         let Sigdef(target) = self.ir.sigdefs[def];
@@ -1304,7 +1310,9 @@ impl<'a> Lower<'a> {
                             needs,
                             result,
                         });
-                        Ok(self.mk_node(Node::NeedSigdef { level, def, param }))
+                        let node = self.mk_node(Node::NeedSigdef { level, def, param });
+                        params.push(node);
+                        Ok(node)
                     }
                     Named::Valdef(def) => {
                         let Valdef(target) = self.ir.valdefs[def];
@@ -1318,7 +1326,9 @@ impl<'a> Lower<'a> {
                             needs,
                             result,
                         });
-                        Ok(self.mk_node(Node::NeedValdef { level, def, param }))
+                        let node = self.mk_node(Node::NeedValdef { level, def, param });
+                        params.push(node);
+                        Ok(node)
                     }
                     Named::Ctxdef(def) => {
                         let Ctxdef(target) = self.ir.ctxdefs[def];
@@ -1332,7 +1342,9 @@ impl<'a> Lower<'a> {
                             needs,
                             result,
                         });
-                        Ok(self.mk_node(Node::NeedCtxdef { level, def, param }))
+                        let node = self.mk_node(Node::NeedCtxdef { level, def, param });
+                        params.push(node);
+                        Ok(node)
                     }
                     Named::Module(_) => Err(LowerError::BindModule(bind)),
                     Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
@@ -1343,10 +1355,15 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn needs(&mut self, level: Level, needs: IdRange<parse::NeedId>) -> LowerResult<Vec<NodeId>> {
+    fn needs(
+        &mut self,
+        level: Level,
+        params: &mut Vec<NodeId>,
+        needs: IdRange<parse::NeedId>,
+    ) -> LowerResult<Vec<NodeId>> {
         let mut slots = Vec::new();
         for need in needs {
-            slots.push(self.need(level, &slots, need)?);
+            slots.push(self.need(level, params, &slots, need)?);
         }
         Ok(slots)
     }
@@ -1386,7 +1403,8 @@ impl<'a> Lower<'a> {
             result,
             def: _,
         } = fndef;
-        let slots = self.needs(Level::ZERO, needs)?;
+        let mut param_nodes = Vec::new();
+        let slots = self.needs(Level::ZERO, &mut param_nodes, needs)?;
         let elems = (params.into_iter())
             .map(|arg| self.parse_ty(&slots, self.tree.params[arg].ty))
             .collect::<LowerResult<Vec<_>>>()?;
@@ -1395,8 +1413,9 @@ impl<'a> Lower<'a> {
             parse::Return::Unit => self.ty_unit(),
             parse::Return::Type(ty) => self.parse_ty(&slots, ty)?,
             parse::Return::Bind(needs) => {
-                let slots = self.needs(Level::ZERO.succ(), needs)?;
-                let need_nodes = self.mk_node_list(&slots);
+                let mut param_nodes = Vec::new();
+                let slots = self.needs(Level::ZERO.succ(), &mut param_nodes, needs)?;
+                let need_nodes = self.mk_node_list(&param_nodes);
                 let items = self.mk_node_list(&slots);
                 let result = self.mk_node(Node::List { items });
                 self.mk_node(Node::Lambda {
@@ -1406,7 +1425,7 @@ impl<'a> Lower<'a> {
                 })
             }
         };
-        Ok((slots, param_tuple, result_ty))
+        Ok((param_nodes, param_tuple, result_ty))
     }
 
     fn parse_fndef(&mut self, fndef: parse::Fndef) -> LowerResult<(StrId, NamedFn)> {
@@ -1417,8 +1436,8 @@ impl<'a> Lower<'a> {
             result: _,
             def,
         } = fndef;
-        let (slots, param_tuple, result_ty) = self.parse_sig(fndef)?;
-        let need_nodes = self.mk_node_list(&slots);
+        let (params, param_tuple, result_ty) = self.parse_sig(fndef)?;
+        let need_nodes = self.mk_node_list(&params);
         let signature = self.mk_node(Node::Sig {
             param: param_tuple,
             result: result_ty,
@@ -1441,8 +1460,9 @@ impl<'a> Lower<'a> {
             match decl {
                 parse::Decl::Tydef(id) => {
                     let parse::Tydef { name, needs } = self.tree.tydefs[id];
-                    let slots = self.needs(Level::ZERO, needs)?;
-                    let need_nodes = self.mk_node_list(&slots);
+                    let mut params = Vec::new();
+                    let slots = self.needs(Level::ZERO, &mut params, needs)?;
+                    let need_nodes = self.mk_node_list(&params);
                     let result = self.mk_node(Node::Nothing);
                     let body = self.mk_node(Node::Lambda {
                         level: Level::ZERO,
@@ -1457,8 +1477,9 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Tagdef(id) => {
                     let parse::Tagdef { name, needs, def } = self.tree.tagdefs[id];
-                    let slots = self.needs(Level::ZERO, needs)?;
-                    let need_nodes = self.mk_node_list(&slots);
+                    let mut params = Vec::new();
+                    let slots = self.needs(Level::ZERO, &mut params, needs)?;
+                    let need_nodes = self.mk_node_list(&params);
                     let ty = self.parse_ty(&slots, def)?;
                     let body = self.mk_node(Node::Lambda {
                         level: Level::ZERO,
@@ -1473,8 +1494,9 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Aliasdef(id) => {
                     let parse::Aliasdef { name, needs, def } = self.tree.aliasdefs[id];
-                    let slots = self.needs(Level::ZERO, needs)?;
-                    let need_nodes = self.mk_node_list(&slots);
+                    let mut params = Vec::new();
+                    let slots = self.needs(Level::ZERO, &mut params, needs)?;
+                    let need_nodes = self.mk_node_list(&params);
                     let ty = self.parse_ty(&slots, def)?;
                     let body = self.mk_node(Node::Lambda {
                         level: Level::ZERO,
@@ -1523,8 +1545,9 @@ impl<'a> Lower<'a> {
                 }
                 parse::Decl::Valdef(id) => {
                     let parse::Valdef { name, needs, ty } = self.tree.valdefs[id];
-                    let slots = self.needs(Level::ZERO, needs)?;
-                    let need_nodes = self.mk_node_list(&slots);
+                    let mut params = Vec::new();
+                    let slots = self.needs(Level::ZERO, &mut params, needs)?;
+                    let need_nodes = self.mk_node_list(&params);
                     let ty = self.parse_ty(&slots, ty)?;
                     let body = self.mk_node(Node::Lambda {
                         level: Level::ZERO,
@@ -1540,14 +1563,21 @@ impl<'a> Lower<'a> {
                 parse::Decl::Ctxdef(id) => {
                     let parse::Ctxdef { name, needs, def } = self.tree.ctxdefs[id];
                     let mut slots = Vec::new();
+                    let mut params_outer = Vec::new();
                     for need in needs {
-                        slots.push(self.need(Level::ZERO, &slots, need)?);
+                        slots.push(self.need(Level::ZERO, &mut params_outer, &slots, need)?);
                     }
+                    let mut params_inner = Vec::new();
                     for need in def {
-                        slots.push(self.need(Level::ZERO.succ(), &slots, need)?);
+                        slots.push(self.need(
+                            Level::ZERO.succ(),
+                            &mut params_inner,
+                            &slots,
+                            need,
+                        )?);
                     }
-                    let needs_inner = self.mk_node_list(&slots[needs.len()..]);
-                    let needs_outer = self.mk_node_list(&slots[..needs.len()]);
+                    let needs_inner = self.mk_node_list(&params_inner);
+                    let needs_outer = self.mk_node_list(&params_outer);
                     let items = self.mk_node_list(&slots[needs.len()..]);
                     let result = self.mk_node(Node::List { items });
                     let lambda = self.mk_node(Node::Lambda {
