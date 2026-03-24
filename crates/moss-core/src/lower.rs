@@ -991,7 +991,54 @@ impl<'a> Lower<'a> {
     }
 
     fn invoke(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Option<Vec<NodeId>>> {
-        todo!()
+        match self.node(lambda) {
+            Node::Nothing => todo!(),
+            Node::Lambda {
+                level,
+                needs,
+                result,
+            } => {
+                for need in needs {
+                    todo!();
+                }
+                Ok(Some(Vec::new()))
+            }
+            Node::Apply { lambda, args } => todo!(),
+            Node::List { items } => todo!(),
+            Node::NeedTydef {
+                level: _,
+                def: _,
+                param,
+            }
+            | Node::NeedSigdef {
+                level: _,
+                def: _,
+                param,
+            }
+            | Node::NeedValdef {
+                level: _,
+                def: _,
+                param,
+            }
+            | Node::NeedCtxdef {
+                level: _,
+                def: _,
+                param,
+            } => self.invoke(param, destruct),
+            Node::Tagdef { def } => todo!(),
+            Node::Aliasdef { def } => todo!(),
+            Node::Tuple { elems } => todo!(),
+            Node::Context => todo!(),
+            Node::Fndef { def } => todo!(),
+            Node::Get { ctx, slot } => todo!(),
+            Node::Lit { val } => todo!(),
+            Node::Bind { args, bind } => todo!(),
+            Node::BindTydef { def, bind } => todo!(),
+            Node::BindSigdef { def, bind } => todo!(),
+            Node::BindValdef { def, bind } => todo!(),
+            Node::BindCtxdef { def, bind } => todo!(),
+            Node::Sig { param, result } => todo!(),
+        }
     }
 
     fn invoke_force(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Vec<NodeId>> {
@@ -1004,17 +1051,93 @@ impl<'a> Lower<'a> {
         target: NodeId,
         destruct: &[NodeId],
     ) -> LowerResult<(Vec<NodeId>, Vec<NodeId>)> {
-        eprintln!("invoke_need(level = {level:?}, target = {target:?}, destruct = {destruct:?})");
-        Err(self.todo_no_loc())
+        match self.node(target) {
+            Node::Nothing => todo!(),
+            Node::Lambda {
+                level: _,
+                needs,
+                result: _,
+            } => {
+                for &need in &self.ir.lists[needs] {
+                    match self.node(need) {
+                        Node::NeedTydef { level, def, param } => todo!(),
+                        Node::NeedSigdef { level, def, param } => todo!(),
+                        Node::NeedValdef { level, def, param } => todo!(),
+                        Node::NeedCtxdef { level, def, param } => todo!(),
+                        _ => unreachable!(),
+                    }
+                }
+                Ok((Vec::new(), Vec::new()))
+            }
+            Node::Apply { lambda, args } => todo!(),
+            Node::List { items } => todo!(),
+            Node::NeedTydef { level, def, param } => todo!(),
+            Node::NeedSigdef { level, def, param } => todo!(),
+            Node::NeedValdef { level, def, param } => todo!(),
+            Node::NeedCtxdef { level, def, param } => todo!(),
+            Node::Tagdef { def } => todo!(),
+            Node::Aliasdef { def } => todo!(),
+            Node::Tuple { elems } => todo!(),
+            Node::Context => todo!(),
+            Node::Fndef { def } => todo!(),
+            Node::Get { ctx, slot } => todo!(),
+            Node::Lit { val } => todo!(),
+            Node::Bind { args, bind } => todo!(),
+            Node::BindTydef { def, bind } => todo!(),
+            Node::BindSigdef { def, bind } => todo!(),
+            Node::BindValdef { def, bind } => todo!(),
+            Node::BindCtxdef { def, bind } => todo!(),
+            Node::Sig { param, result } => todo!(),
+        }
     }
 
     fn extract_ty(
         &mut self,
         slots: &[NodeId],
-        def: TydefId,
+        tydef: TydefId,
         destruct: &[NodeId],
     ) -> LowerResult<NodeId> {
-        Err(self.todo_no_loc())
+        let mut options = Vec::new();
+        for &slot in slots {
+            match self.node(slot) {
+                Node::Nothing => todo!(),
+                Node::Lambda {
+                    level,
+                    needs,
+                    result,
+                } => todo!(),
+                Node::Apply { lambda, args } => todo!(),
+                Node::List { items } => todo!(),
+                Node::NeedTydef { level, def, param } => {
+                    if def != tydef {
+                        continue;
+                    }
+                    if self.invoke(param, destruct)?.is_some() {
+                        options.push(slot);
+                    }
+                }
+                Node::NeedSigdef { level, def, param } => todo!(),
+                Node::NeedValdef { level, def, param } => todo!(),
+                Node::NeedCtxdef { level, def, param } => todo!(),
+                Node::Tagdef { def } => todo!(),
+                Node::Aliasdef { def } => todo!(),
+                Node::Tuple { elems } => todo!(),
+                Node::Context => todo!(),
+                Node::Fndef { def } => todo!(),
+                Node::Get { ctx, slot } => todo!(),
+                Node::Lit { val } => todo!(),
+                Node::Bind { args, bind } => todo!(),
+                Node::BindTydef { def, bind } => todo!(),
+                Node::BindSigdef { def, bind } => todo!(),
+                Node::BindValdef { def, bind } => todo!(),
+                Node::BindCtxdef { def, bind } => todo!(),
+                Node::Sig { param, result } => todo!(),
+            }
+        }
+        if options.len() != 1 {
+            todo!()
+        }
+        Ok(options[0])
     }
 
     fn extract_sig(
