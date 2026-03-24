@@ -647,6 +647,31 @@ pub struct Names {
     pub names: IndexMap<(ModuleId, StrId), Named>,
     pub attached: IndexMap<(TagdefId, StrId), NamedFn>,
     pub detached: IndexMap<(ModuleId, StrId), NamedFn>,
+
+    /// Absolute ordering of global bindings.
+    ///
+    /// Not semantically important, but used for human-readable IR dumps.
+    pub order: Vec<Named>,
+}
+
+impl Names {
+    fn create_named(&mut self, module: ModuleId, name: StrId, named: Named) {
+        let prev = self.names.insert((module, name), named);
+        assert!(prev.is_none());
+        self.order.push(named);
+    }
+
+    fn create_attached(&mut self, tagdef: TagdefId, name: StrId, named: NamedFn) {
+        let prev = self.attached.insert((tagdef, name), named);
+        assert!(prev.is_none());
+        self.order.push(named.into());
+    }
+
+    fn create_detached(&mut self, module: ModuleId, name: StrId, named: NamedFn) {
+        let prev = self.detached.insert((module, name), named);
+        assert!(prev.is_none());
+        self.order.push(named.into());
+    }
 }
 
 struct ErrorCtx<'a> {
@@ -932,7 +957,7 @@ impl<'a> Lower<'a> {
         Ok(())
     }
 
-    fn node(&mut self, id: NodeId) -> Node {
+    fn node(&self, id: NodeId) -> Node {
         self.ir.nodes[id.index()]
     }
 
@@ -1060,7 +1085,7 @@ impl<'a> Lower<'a> {
             } => {
                 for &need in &self.ir.lists[needs] {
                     match self.node(need) {
-                        Node::NeedTydef { level, def, param } => todo!(),
+                        Node::NeedTydef { level, def, param } => return Err(self.todo_no_loc()),
                         Node::NeedSigdef { level, def, param } => todo!(),
                         Node::NeedValdef { level, def, param } => todo!(),
                         Node::NeedCtxdef { level, def, param } => todo!(),
@@ -1588,7 +1613,7 @@ impl<'a> Lower<'a> {
                 parse::Decl::Tydef(id) => {
                     let parse::Tydef { name, needs } = self.tree.tydefs[id];
                     let mut params = Vec::new();
-                    let slots = self.needs(Level::ZERO, &mut params, needs)?;
+                    self.needs(Level::ZERO, &mut params, needs)?;
                     let need_nodes = self.mk_node_list(&params);
                     let result = self.mk_node(Node::Nothing);
                     let body = self.mk_node(Node::Lambda {
@@ -1599,8 +1624,7 @@ impl<'a> Lower<'a> {
                     let lowered = self.ir.tydefs.push(Tydef(body));
                     let string = self.name(name);
                     self.names
-                        .names
-                        .insert((self.module, string), Named::Tydef(lowered));
+                        .create_named(self.module, string, Named::Tydef(lowered));
                 }
                 parse::Decl::Tagdef(id) => {
                     let parse::Tagdef { name, needs, def } = self.tree.tagdefs[id];
@@ -1616,8 +1640,7 @@ impl<'a> Lower<'a> {
                     let lowered = self.ir.tagdefs.push(Tagdef(body));
                     let string = self.name(name);
                     self.names
-                        .names
-                        .insert((self.module, string), Named::Tagdef(lowered));
+                        .create_named(self.module, string, Named::Tagdef(lowered));
                 }
                 parse::Decl::Aliasdef(id) => {
                     let parse::Aliasdef { name, needs, def } = self.tree.aliasdefs[id];
@@ -1633,8 +1656,7 @@ impl<'a> Lower<'a> {
                     let lowered = self.ir.aliasdefs.push(Aliasdef(body));
                     let string = self.name(name);
                     self.names
-                        .names
-                        .insert((self.module, string), Named::Aliasdef(lowered));
+                        .create_named(self.module, string, Named::Aliasdef(lowered));
                 }
                 parse::Decl::Funcdef(id) => {
                     let parse::Funcdef { fndef } = self.tree.funcdefs[id];
@@ -1643,8 +1665,7 @@ impl<'a> Lower<'a> {
                         self.funcs.push((id, defined));
                     }
                     self.names
-                        .names
-                        .insert((self.module, fn_name), lowered.into());
+                        .create_named(self.module, fn_name, lowered.into());
                 }
                 parse::Decl::Attachdef(id) => {
                     let parse::Attachdef { ty, fndef } = self.tree.attachdefs[id];
@@ -1656,7 +1677,7 @@ impl<'a> Lower<'a> {
                             if let NamedFn::Fndef(defined) = lowered {
                                 self.attaches.push((id, tagdef, defined));
                             }
-                            self.names.attached.insert((tagdef, fn_name), lowered);
+                            self.names.create_attached(tagdef, fn_name, lowered);
                         }
                         Some(_) => return Err(LowerError::NotNominal(ty)),
                         None => return Err(LowerError::Undefined(ty)),
@@ -1668,7 +1689,7 @@ impl<'a> Lower<'a> {
                     if let NamedFn::Fndef(defined) = lowered {
                         self.detaches.push((id, defined));
                     }
-                    self.names.detached.insert((self.module, fn_name), lowered);
+                    self.names.create_detached(self.module, fn_name, lowered);
                 }
                 parse::Decl::Valdef(id) => {
                     let parse::Valdef { name, needs, ty } = self.tree.valdefs[id];
@@ -1684,8 +1705,7 @@ impl<'a> Lower<'a> {
                     let lowered = self.ir.valdefs.push(Valdef(body));
                     let string = self.name(name);
                     self.names
-                        .names
-                        .insert((self.module, string), Named::Valdef(lowered));
+                        .create_named(self.module, string, Named::Valdef(lowered));
                 }
                 parse::Decl::Ctxdef(id) => {
                     let parse::Ctxdef { name, needs, def } = self.tree.ctxdefs[id];
@@ -1720,8 +1740,7 @@ impl<'a> Lower<'a> {
                     let lowered = self.ir.ctxdefs.push(Ctxdef(body));
                     let string = self.name(name);
                     self.names
-                        .names
-                        .insert((self.module, string), Named::Ctxdef(lowered));
+                        .create_named(self.module, string, Named::Ctxdef(lowered));
                 }
             }
         }
