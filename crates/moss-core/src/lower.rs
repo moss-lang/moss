@@ -4,6 +4,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     fmt,
     mem::take,
+    ops::{Add, Sub},
 };
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
@@ -96,14 +97,32 @@ define_index_type! {
 
 pub type NodeList = TupleRange;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Level(u8);
 
 impl Level {
     const ZERO: Self = Self(0);
 
+    const ONE: Self = Self(1);
+
     fn succ(self) -> Self {
-        Self(self.0.strict_add(1))
+        self + Self::ONE
+    }
+}
+
+impl Add for Level {
+    type Output = Level;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0.strict_add(rhs.0))
+    }
+}
+
+impl Sub for Level {
+    type Output = Level;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0.strict_sub(rhs.0))
     }
 }
 
@@ -1022,6 +1041,94 @@ impl<'a> Lower<'a> {
         Body::new(IdRange { start, end }, result)
     }
 
+    fn raise_helper(
+        &mut self,
+        cache: &mut HashMap<NodeId, NodeId>,
+        node: NodeId,
+        floor: Level,
+        add: Level,
+    ) -> NodeId {
+        let answer = match self.node(node) {
+            Node::Nothing => node,
+            Node::Lambda {
+                level,
+                needs,
+                result,
+            } => {
+                if level < floor {
+                    node
+                } else {
+                    let needs = Vec::from_iter(
+                        needs
+                            .into_iter()
+                            .map(|loc| self.raise_helper(cache, self.ir.lists[loc], floor, add)),
+                    );
+                    let needs = self.mk_node_list(&needs);
+                    let result = self.raise_helper(cache, result, floor, add);
+                    self.mk_node(Node::Lambda {
+                        level: level + add,
+                        needs,
+                        result,
+                    })
+                }
+            }
+            Node::Apply { lambda, args } => {
+                let lambda = self.raise_helper(cache, lambda, floor, add);
+                let args = Vec::from_iter(
+                    args.into_iter()
+                        .map(|loc| self.raise_helper(cache, self.ir.lists[loc], floor, add)),
+                );
+                let args = self.mk_node_list(&args);
+                self.mk_node(Node::Apply { lambda, args })
+            }
+            Node::List { items } => {
+                let items = Vec::from_iter(
+                    items
+                        .into_iter()
+                        .map(|loc| self.raise_helper(cache, self.ir.lists[loc], floor, add)),
+                );
+                let items = self.mk_node_list(&items);
+                self.mk_node(Node::List { items })
+            }
+            Node::NeedTydef { level, def, param } => {
+                if level < floor {
+                    node
+                } else {
+                    let param = self.raise_helper(cache, param, floor, add);
+                    self.mk_node(Node::NeedTydef {
+                        level: level + add,
+                        def,
+                        param,
+                    })
+                }
+            }
+            Node::NeedSigdef { level, def, param } => todo!(),
+            Node::NeedValdef { level, def, param } => todo!(),
+            Node::NeedCtxdef { level, def, param } => todo!(),
+            Node::Tagdef { def } => todo!(),
+            Node::Aliasdef { def } => todo!(),
+            Node::Tuple { elems } => todo!(),
+            Node::Context => todo!(),
+            Node::Fndef { def } => todo!(),
+            Node::Get { ctx, slot } => todo!(),
+            Node::Lit { val } => todo!(),
+            Node::Bind { args, bind } => todo!(),
+            Node::BindTydef { def, bind } => todo!(),
+            Node::BindSigdef { def, bind } => todo!(),
+            Node::BindValdef { def, bind } => todo!(),
+            Node::BindCtxdef { def, bind } => todo!(),
+            Node::Sig { param, result } => todo!(),
+        };
+        cache.insert(node, answer);
+        answer
+    }
+
+    /// Return a new node where all levels at least `floor` are incremented by `add`.
+    fn raise(&mut self, node: NodeId, floor: Level, add: Level) -> NodeId {
+        // TODO: Use a smarter and less temporary hashing strategy.
+        self.raise_helper(&mut HashMap::new(), node, floor, add)
+    }
+
     fn invoke(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Option<Vec<NodeId>>> {
         match self.node(lambda) {
             Node::Nothing => todo!(),
@@ -1086,16 +1193,42 @@ impl<'a> Lower<'a> {
         match self.node(target) {
             Node::Nothing => todo!(),
             Node::Lambda {
-                level: _,
-                needs,
+                level: floor,
+                needs: _,
                 result: _,
             } => {
-                for &need in &self.ir.lists[needs] {
+                let raised = self.raise(target, floor, level - floor);
+                let Node::Lambda {
+                    level: _,
+                    needs,
+                    result: _,
+                } = self.node(raised)
+                else {
+                    unreachable!()
+                };
+                for loc in needs {
+                    let need = self.ir.lists[loc];
                     match self.node(need) {
-                        Node::NeedTydef { level, def, param } => return Err(self.todo_no_loc()),
-                        Node::NeedSigdef { level, def, param } => todo!(),
-                        Node::NeedValdef { level, def, param } => todo!(),
-                        Node::NeedCtxdef { level, def, param } => todo!(),
+                        Node::NeedTydef {
+                            level: _,
+                            def,
+                            param,
+                        } => return Err(self.todo_no_loc()),
+                        Node::NeedSigdef {
+                            level: _,
+                            def,
+                            param,
+                        } => todo!(),
+                        Node::NeedValdef {
+                            level: _,
+                            def,
+                            param,
+                        } => todo!(),
+                        Node::NeedCtxdef {
+                            level: _,
+                            def,
+                            param,
+                        } => todo!(),
                         _ => unreachable!(),
                     }
                 }
