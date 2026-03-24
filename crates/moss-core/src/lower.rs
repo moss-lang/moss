@@ -2,6 +2,7 @@ use std::{
     backtrace::Backtrace,
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
+    fmt,
     mem::take,
 };
 
@@ -93,7 +94,7 @@ define_index_type! {
     pub struct NodeId = u32;
 }
 
-type NodeList = TupleRange;
+pub type NodeList = TupleRange;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Level(u8);
@@ -103,6 +104,12 @@ impl Level {
 
     fn succ(self) -> Self {
         Self(self.0.strict_add(1))
+    }
+}
+
+impl fmt::Display for Level {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
