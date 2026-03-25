@@ -1256,11 +1256,11 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn extract_ty(
+    fn extract_ty_lambda(
         &mut self,
         slots: &[NodeId],
         tydef: TydefId,
-        destruct: &[NodeId],
+        lambda: NodeId,
     ) -> LowerResult<NodeId> {
         let mut options = Vec::new();
         for &slot in slots {
@@ -1277,9 +1277,7 @@ impl<'a> Lower<'a> {
                     if def != tydef {
                         continue;
                     }
-                    if self.invoke(param, destruct)?.is_some() {
-                        options.push(slot);
-                    }
+                    self.todo_no_loc();
                 }
                 Node::NeedSigdef { level, def, param } => todo!(),
                 Node::NeedValdef { level, def, param } => todo!(),
@@ -1305,8 +1303,30 @@ impl<'a> Lower<'a> {
         Ok(options[0])
     }
 
+    fn extract_ty(
+        &mut self,
+        level: Level,
+        slots: &[NodeId],
+        def: TydefId,
+        destruct: &[NodeId],
+    ) -> LowerResult<NodeId> {
+        let Tydef(target) = self.ir.tydefs[def];
+        let raised = self.raise(target, Level::ZERO, level);
+        let (construct, needs) = self.invoke_need(level, raised, destruct)?;
+        let needs = self.mk_node_list(&needs);
+        let items = self.mk_node_list(&construct);
+        let result = self.mk_node(Node::List { items });
+        let lambda = self.mk_node(Node::Lambda {
+            level,
+            needs,
+            result,
+        });
+        self.extract_ty_lambda(slots, def, lambda)
+    }
+
     fn extract_sig(
         &mut self,
+        level: Level,
         slots: &[NodeId],
         def: SigdefId,
         destruct: &[NodeId],
@@ -1316,6 +1336,7 @@ impl<'a> Lower<'a> {
 
     fn extract_val(
         &mut self,
+        level: Level,
         slots: &[NodeId],
         def: ValdefId,
         destruct: &[NodeId],
@@ -1325,6 +1346,7 @@ impl<'a> Lower<'a> {
 
     fn extract_ctx(
         &mut self,
+        level: Level,
         slots: &[NodeId],
         def: CtxdefId,
         destruct: &[NodeId],
@@ -1364,7 +1386,7 @@ impl<'a> Lower<'a> {
         match val {
             None => match lhs {
                 Named::Tydef(def) => {
-                    let lambda = self.extract_ty(slots, def, &destruct_lhs)?;
+                    let lambda = self.extract_ty(level.succ(), slots, def, &destruct_lhs)?;
                     let Tydef(target) = self.ir.tydefs[def];
                     let (construct, needs) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
@@ -1380,7 +1402,7 @@ impl<'a> Lower<'a> {
                     Ok(self.mk_node(Node::BindTydef { def, bind }))
                 }
                 Named::Sigdef(def) => {
-                    let lambda = self.extract_sig(slots, def, &destruct_lhs)?;
+                    let lambda = self.extract_sig(level.succ(), slots, def, &destruct_lhs)?;
                     let Sigdef(target) = self.ir.sigdefs[def];
                     let (construct, needs) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
@@ -1396,7 +1418,7 @@ impl<'a> Lower<'a> {
                     Ok(self.mk_node(Node::BindSigdef { def, bind }))
                 }
                 Named::Valdef(def) => {
-                    let lambda = self.extract_val(slots, def, &destruct_lhs)?;
+                    let lambda = self.extract_val(level.succ(), slots, def, &destruct_lhs)?;
                     let Valdef(target) = self.ir.valdefs[def];
                     let (construct, needs) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
@@ -1412,7 +1434,7 @@ impl<'a> Lower<'a> {
                     Ok(self.mk_node(Node::BindValdef { def, bind }))
                 }
                 Named::Ctxdef(def) => {
-                    let lambda = self.extract_ctx(slots, def, &destruct_lhs)?;
+                    let lambda = self.extract_ctx(level.succ(), slots, def, &destruct_lhs)?;
                     let Ctxdef(target) = self.ir.ctxdefs[def];
                     let (construct, needs) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
@@ -1456,7 +1478,9 @@ impl<'a> Lower<'a> {
                 match lhs {
                     Named::Tydef(def) => {
                         let lambda = match rhs {
-                            Named::Tydef(tydef) => self.extract_ty(slots, tydef, &destruct_rhs)?,
+                            Named::Tydef(tydef) => {
+                                self.extract_ty(level.succ(), slots, tydef, &destruct_rhs)?
+                            }
                             Named::Tagdef(tagdef) => self.mk_node(Node::Tagdef { def: tagdef }),
                             Named::Aliasdef(aliasdef) => {
                                 self.mk_node(Node::Aliasdef { def: aliasdef })
@@ -1489,7 +1513,7 @@ impl<'a> Lower<'a> {
                     Named::Sigdef(def) => {
                         let lambda = match rhs {
                             Named::Sigdef(sigdef) => {
-                                self.extract_sig(slots, sigdef, &destruct_rhs)?
+                                self.extract_sig(level.succ(), slots, sigdef, &destruct_rhs)?
                             }
                             Named::Fndef(fndef) => self.mk_node(Node::Fndef { def: fndef }),
                             _ => return Err(LowerError::BindMismatch(bind)),
@@ -1521,7 +1545,7 @@ impl<'a> Lower<'a> {
                     Named::Valdef(def) => {
                         let lambda = match rhs {
                             Named::Valdef(valdef) => {
-                                self.extract_val(slots, valdef, &destruct_rhs)?
+                                self.extract_val(level.succ(), slots, valdef, &destruct_rhs)?
                             }
                             _ => return Err(LowerError::BindMismatch(bind)),
                         };
@@ -1666,7 +1690,7 @@ impl<'a> Lower<'a> {
                 let (named, destruct) = self.spec(Level::ZERO, slots, spec)?;
                 match named {
                     Named::Tydef(tydef) => {
-                        let lambda = self.extract_ty(slots, tydef, &destruct)?;
+                        let lambda = self.extract_ty(Level::ONE, slots, tydef, &destruct)?;
                         let construct = self.invoke_force(lambda, &destruct)?;
                         let args = self.mk_node_list(&construct);
                         Ok(self.mk_node(Node::Apply { lambda, args }))
@@ -1706,12 +1730,12 @@ impl<'a> Lower<'a> {
             parse::Return::Type(ty) => self.parse_ty(&slots, ty)?,
             parse::Return::Bind(needs) => {
                 let mut param_nodes = Vec::new();
-                let slots = self.needs(Level::ZERO.succ(), &mut param_nodes, needs)?;
+                let slots = self.needs(Level::ONE, &mut param_nodes, needs)?;
                 let need_nodes = self.mk_node_list(&param_nodes);
                 let items = self.mk_node_list(&slots);
                 let result = self.mk_node(Node::List { items });
                 self.mk_node(Node::Lambda {
-                    level: Level::ZERO.succ(),
+                    level: Level::ONE,
                     needs: need_nodes,
                     result,
                 })
@@ -1856,19 +1880,14 @@ impl<'a> Lower<'a> {
                     }
                     let mut params_inner = Vec::new();
                     for need in def {
-                        slots.push(self.need(
-                            Level::ZERO.succ(),
-                            &mut params_inner,
-                            &slots,
-                            need,
-                        )?);
+                        slots.push(self.need(Level::ONE, &mut params_inner, &slots, need)?);
                     }
                     let needs_inner = self.mk_node_list(&params_inner);
                     let needs_outer = self.mk_node_list(&params_outer);
                     let items = self.mk_node_list(&slots[needs.len()..]);
                     let result = self.mk_node(Node::List { items });
                     let lambda = self.mk_node(Node::Lambda {
-                        level: Level::ZERO.succ(),
+                        level: Level::ONE,
                         needs: needs_inner,
                         result,
                     });
@@ -2014,19 +2033,22 @@ impl LowerBody<'_, '_> {
     }
 
     fn extract_ty(&mut self, def: TydefId) -> LowerResult<NodeId> {
-        self.x.extract_ty(&self.slots, def, &self.slots)
+        self.x.extract_ty(Level::ONE, &self.slots, def, &self.slots)
     }
 
     fn extract_sig(&mut self, def: SigdefId) -> LowerResult<NodeId> {
-        self.x.extract_sig(&self.slots, def, &self.slots)
+        self.x
+            .extract_sig(Level::ONE, &self.slots, def, &self.slots)
     }
 
     fn extract_val(&mut self, def: ValdefId) -> LowerResult<NodeId> {
-        self.x.extract_val(&self.slots, def, &self.slots)
+        self.x
+            .extract_val(Level::ONE, &self.slots, def, &self.slots)
     }
 
     fn extract_ctx(&mut self, def: CtxdefId) -> LowerResult<NodeId> {
-        self.x.extract_ctx(&self.slots, def, &self.slots)
+        self.x
+            .extract_ctx(Level::ONE, &self.slots, def, &self.slots)
     }
 
     fn inline(&mut self, lambda: NodeId, construct: &[NodeId]) -> LowerResult<NodeId> {
