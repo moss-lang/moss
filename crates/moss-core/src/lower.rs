@@ -1286,7 +1286,10 @@ impl<'a> Lower<'a> {
                     if def != tydef {
                         continue;
                     }
-                    self.todo_no_loc();
+                    eprintln!(
+                        "extract_ty_lambda(slots = {slots:?}, tydef = {tydef:?}, lambda = {lambda:?}): slot = {slot:?}"
+                    );
+                    return Err(self.todo_no_loc());
                 }
                 Node::NeedSigdef { level, def, param } => todo!(),
                 Node::NeedValdef { level, def, param } => todo!(),
