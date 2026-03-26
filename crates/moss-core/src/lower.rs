@@ -1261,8 +1261,51 @@ impl<'a> Lower<'a> {
     /// The given lambdas `alpha` and `beta` must have the same result shape, but may have different
     /// input shapes. This method constructs a third lambda, `gamma`, such that feeding the result
     /// of `gamma` into `beta` yields the same result as just using `alpha` by itself.
-    fn synthesize(&mut self, alpha: NodeId, beta: NodeId) -> LowerResult<NodeId> {
-        todo!()
+    fn synthesize(&mut self, alpha: NodeId, beta: NodeId) -> LowerResult<Option<NodeId>> {
+        let (
+            Node::Lambda {
+                level: level_alpha,
+                needs: needs_alpha,
+                result: _,
+            },
+            Node::Lambda {
+                level: level_beta,
+                needs: _,
+                result: _,
+            },
+        ) = (self.node(alpha), self.node(beta))
+        else {
+            panic!()
+        };
+        let raised = self.raise(beta, level_beta, (level_alpha - level_beta).succ());
+        let Node::Lambda {
+            level: _,
+            needs: needs_beta,
+            result: _,
+        } = self.node(raised)
+        else {
+            panic!()
+        };
+        let constraints = vec![Vec::<NodeId>::new(); needs_beta.len()];
+        // TODO: Populate `constraints`.
+        let Some(results) = constraints
+            .into_iter()
+            .map(|list| match list.len() {
+                0 => panic!("underconstrained"),
+                1 => Some(list[0]),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Ok(None);
+        };
+        let items = self.mk_node_list(&results);
+        let result = self.mk_node(Node::List { items });
+        Ok(Some(self.mk_node(Node::Lambda {
+            level: level_alpha,
+            needs: needs_alpha,
+            result,
+        })))
     }
 
     fn extract_ty_lambda(
@@ -1282,14 +1325,17 @@ impl<'a> Lower<'a> {
                 } => todo!(),
                 Node::Apply { lambda, args } => todo!(),
                 Node::List { items } => todo!(),
-                Node::NeedTydef { level, def, param } => {
+                Node::NeedTydef {
+                    level: _,
+                    def,
+                    param,
+                } => {
                     if def != tydef {
                         continue;
                     }
-                    eprintln!(
-                        "extract_ty_lambda(slots = {slots:?}, tydef = {tydef:?}, lambda = {lambda:?}): slot = {slot:?}"
-                    );
-                    return Err(self.todo_no_loc());
+                    if self.synthesize(lambda, param)?.is_some() {
+                        options.push(slot);
+                    }
                 }
                 Node::NeedSigdef { level, def, param } => todo!(),
                 Node::NeedValdef { level, def, param } => todo!(),
