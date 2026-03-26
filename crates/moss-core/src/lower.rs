@@ -1256,6 +1256,15 @@ impl<'a> Lower<'a> {
         }
     }
 
+    /// Given two lambdas, return a third lambda that composes with the latter to match the former.
+    ///
+    /// The given lambdas `alpha` and `beta` must have the same result shape, but may have different
+    /// input shapes. This method constructs a third lambda, `gamma`, such that feeding the result
+    /// of `gamma` into `beta` yields the same result as just using `alpha` by itself.
+    fn synthesize(&mut self, alpha: NodeId, beta: NodeId) -> LowerResult<NodeId> {
+        todo!()
+    }
+
     fn extract_ty_lambda(
         &mut self,
         slots: &[NodeId],
