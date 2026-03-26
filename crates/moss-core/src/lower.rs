@@ -1102,22 +1102,90 @@ impl<'a> Lower<'a> {
                     })
                 }
             }
-            Node::NeedSigdef { level, def, param } => todo!(),
-            Node::NeedValdef { level, def, param } => todo!(),
-            Node::NeedCtxdef { level, def, param } => todo!(),
-            Node::Tagdef { def } => todo!(),
-            Node::Aliasdef { def } => todo!(),
-            Node::Tuple { elems } => todo!(),
-            Node::Context => todo!(),
-            Node::Fndef { def } => todo!(),
-            Node::Get { ctx, slot } => todo!(),
-            Node::Lit { val } => todo!(),
-            Node::Bind { args, bind } => todo!(),
-            Node::BindTydef { def, bind } => todo!(),
-            Node::BindSigdef { def, bind } => todo!(),
-            Node::BindValdef { def, bind } => todo!(),
-            Node::BindCtxdef { def, bind } => todo!(),
-            Node::Sig { param, result } => todo!(),
+            Node::NeedSigdef { level, def, param } => {
+                if level < floor {
+                    node
+                } else {
+                    let param = self.raise_helper(cache, param, floor, add);
+                    self.mk_node(Node::NeedSigdef {
+                        level: level + add,
+                        def,
+                        param,
+                    })
+                }
+            }
+            Node::NeedValdef { level, def, param } => {
+                if level < floor {
+                    node
+                } else {
+                    let param = self.raise_helper(cache, param, floor, add);
+                    self.mk_node(Node::NeedValdef {
+                        level: level + add,
+                        def,
+                        param,
+                    })
+                }
+            }
+            Node::NeedCtxdef { level, def, param } => {
+                if level < floor {
+                    node
+                } else {
+                    let param = self.raise_helper(cache, param, floor, add);
+                    self.mk_node(Node::NeedCtxdef {
+                        level: level + add,
+                        def,
+                        param,
+                    })
+                }
+            }
+            Node::Tagdef { def: _ } => node,
+            Node::Aliasdef { def: _ } => node,
+            Node::Tuple { elems } => {
+                let elems = Vec::from_iter(
+                    elems
+                        .into_iter()
+                        .map(|loc| self.raise_helper(cache, self.ir.lists[loc], floor, add)),
+                );
+                let elems = self.mk_node_list(&elems);
+                self.mk_node(Node::Tuple { elems })
+            }
+            Node::Context => node,
+            Node::Fndef { def: _ } => node,
+            Node::Get { ctx, slot } => {
+                let ctx = self.raise_helper(cache, ctx, floor, add);
+                self.mk_node(Node::Get { ctx, slot })
+            }
+            Node::Lit { val: _ } => node,
+            Node::Bind { args, bind } => {
+                let args = Vec::from_iter(
+                    args.into_iter()
+                        .map(|loc| self.raise_helper(cache, self.ir.lists[loc], floor, add)),
+                );
+                let args = self.mk_node_list(&args);
+                let bind = self.raise_helper(cache, bind, floor, add);
+                self.mk_node(Node::Bind { args, bind })
+            }
+            Node::BindTydef { def, bind } => {
+                let bind = self.raise_helper(cache, bind, floor, add);
+                self.mk_node(Node::BindTydef { def, bind })
+            }
+            Node::BindSigdef { def, bind } => {
+                let bind = self.raise_helper(cache, bind, floor, add);
+                self.mk_node(Node::BindSigdef { def, bind })
+            }
+            Node::BindValdef { def, bind } => {
+                let bind = self.raise_helper(cache, bind, floor, add);
+                self.mk_node(Node::BindValdef { def, bind })
+            }
+            Node::BindCtxdef { def, bind } => {
+                let bind = self.raise_helper(cache, bind, floor, add);
+                self.mk_node(Node::BindCtxdef { def, bind })
+            }
+            Node::Sig { param, result } => {
+                let param = self.raise_helper(cache, param, floor, add);
+                let result = self.raise_helper(cache, result, floor, add);
+                self.mk_node(Node::Sig { param, result })
+            }
         };
         cache.insert(node, answer);
         answer
