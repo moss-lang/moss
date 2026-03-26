@@ -1265,6 +1265,7 @@ impl<'a> Lower<'a> {
                 needs: _,
                 result: _,
             } => {
+                let mut construct = Vec::new();
                 let raised = self.raise(target, floor, level - floor);
                 let Node::Lambda {
                     level: _,
@@ -1281,7 +1282,30 @@ impl<'a> Lower<'a> {
                             level: _,
                             def,
                             param,
-                        } => return Err(self.todo_no_loc()),
+                        } => {
+                            let (callee, synth) = self.extract_ty_lambda(destruct, def, param)?;
+                            let Node::Lambda {
+                                level: level_synth,
+                                needs: needs_synth,
+                                result: result_synth,
+                            } = self.node(synth)
+                            else {
+                                panic!()
+                            };
+                            let Node::List { items } = self.node(result_synth) else {
+                                panic!()
+                            };
+                            let result_composite = self.mk_node(Node::Apply {
+                                lambda: callee,
+                                args: items,
+                            });
+                            let composite = self.mk_node(Node::Lambda {
+                                level: level_synth,
+                                needs: needs_synth,
+                                result: result_composite,
+                            });
+                            construct.push(composite);
+                        }
                         Node::NeedSigdef {
                             level: _,
                             def,
@@ -1300,7 +1324,7 @@ impl<'a> Lower<'a> {
                         _ => unreachable!(),
                     }
                 }
-                Ok((Vec::new(), Vec::new()))
+                Ok((construct, Vec::new()))
             }
             Node::Apply { lambda, args } => todo!(),
             Node::List { items } => todo!(),
@@ -1376,12 +1400,34 @@ impl<'a> Lower<'a> {
         })))
     }
 
+    /// Like `synthesize`, but where `beta` returns a [`Node::Bind`] that must be unwrapped first.
+    fn synthesize_bind(&mut self, alpha: NodeId, beta: NodeId) -> LowerResult<Option<NodeId>> {
+        let Node::Lambda {
+            level,
+            needs,
+            result,
+        } = self.node(beta)
+        else {
+            panic!()
+        };
+        let Node::Bind { args, bind: _ } = self.node(result) else {
+            panic!()
+        };
+        let result = self.mk_node(Node::List { items: args });
+        let beta = self.mk_node(Node::Lambda {
+            level,
+            needs,
+            result,
+        });
+        self.synthesize(alpha, beta)
+    }
+
     fn extract_ty_lambda(
         &mut self,
         slots: &[NodeId],
         tydef: TydefId,
         lambda: NodeId,
-    ) -> LowerResult<NodeId> {
+    ) -> LowerResult<(NodeId, NodeId)> {
         let mut options = Vec::new();
         for &slot in slots {
             match self.node(slot) {
@@ -1401,13 +1447,21 @@ impl<'a> Lower<'a> {
                     if def != tydef {
                         continue;
                     }
-                    if self.synthesize(lambda, param)?.is_some() {
-                        options.push(slot);
+                    if let Some(synth) = self.synthesize(lambda, param)? {
+                        options.push((slot, synth));
                     }
                 }
-                Node::NeedSigdef { level, def, param } => todo!(),
-                Node::NeedValdef { level, def, param } => todo!(),
-                Node::NeedCtxdef { level, def, param } => todo!(),
+                Node::NeedSigdef {
+                    level: _,
+                    def: _,
+                    param: _,
+                } => {}
+                Node::NeedValdef {
+                    level: _,
+                    def: _,
+                    param: _,
+                } => {}
+                Node::NeedCtxdef { level, def, param } => return Err(self.todo_no_loc()),
                 Node::Tagdef { def } => todo!(),
                 Node::Aliasdef { def } => todo!(),
                 Node::Tuple { elems } => todo!(),
@@ -1416,7 +1470,14 @@ impl<'a> Lower<'a> {
                 Node::Get { ctx, slot } => todo!(),
                 Node::Lit { val } => todo!(),
                 Node::Bind { args, bind } => todo!(),
-                Node::BindTydef { def, bind } => todo!(),
+                Node::BindTydef { def, bind } => {
+                    if def != tydef {
+                        continue;
+                    }
+                    if let Some(synth) = self.synthesize_bind(lambda, bind)? {
+                        options.push((slot, synth));
+                    }
+                }
                 Node::BindSigdef { def, bind } => todo!(),
                 Node::BindValdef { def, bind } => todo!(),
                 Node::BindCtxdef { def, bind } => todo!(),
@@ -1447,7 +1508,7 @@ impl<'a> Lower<'a> {
             needs,
             result,
         });
-        self.extract_ty_lambda(slots, def, lambda)
+        Ok(self.extract_ty_lambda(slots, def, lambda)?.0)
     }
 
     fn extract_sig(
