@@ -833,6 +833,91 @@ impl LowerError {
 
 type LowerResult<T> = Result<T, LowerError>;
 
+trait Transform {
+    fn check(&self, id: NodeId) -> Option<NodeId>;
+    fn floor(&self) -> Level;
+    fn map(&self, node: Node) -> Node;
+    fn put(&mut self, key: NodeId, val: NodeId);
+}
+
+struct Raise {
+    floor: Level,
+    add: Level,
+    cache: HashMap<NodeId, NodeId>, // TODO: Use a smarter and less temporary hashing strategy.
+}
+
+impl Transform for Raise {
+    fn check(&self, id: NodeId) -> Option<NodeId> {
+        self.cache.get(&id).copied()
+    }
+
+    fn floor(&self) -> Level {
+        self.floor
+    }
+
+    fn map(&self, node: Node) -> Node {
+        match node {
+            Node::Lambda {
+                level,
+                needs,
+                result,
+            } => Node::Lambda {
+                level: level + self.add,
+                needs,
+                result,
+            },
+            Node::NeedTydef { level, def, param } => Node::NeedTydef {
+                level: level + self.add,
+                def,
+                param,
+            },
+            Node::NeedSigdef { level, def, param } => Node::NeedSigdef {
+                level: level + self.add,
+                def,
+                param,
+            },
+            Node::NeedValdef { level, def, param } => Node::NeedValdef {
+                level: level + self.add,
+                def,
+                param,
+            },
+            Node::NeedCtxdef { level, def, param } => Node::NeedCtxdef {
+                level: level + self.add,
+                def,
+                param,
+            },
+            _ => node,
+        }
+    }
+
+    fn put(&mut self, key: NodeId, val: NodeId) {
+        self.cache.insert(key, val);
+    }
+}
+
+struct Substitute {
+    floor: Level,
+    mapping: HashMap<NodeId, NodeId>,
+}
+
+impl Transform for Substitute {
+    fn check(&self, id: NodeId) -> Option<NodeId> {
+        self.mapping.get(&id).copied()
+    }
+
+    fn floor(&self) -> Level {
+        self.floor
+    }
+
+    fn map(&self, node: Node) -> Node {
+        node
+    }
+
+    fn put(&mut self, key: NodeId, val: NodeId) {
+        self.mapping.insert(key, val);
+    }
+}
+
 #[derive(Debug)]
 struct Lower<'a> {
     source: &'a str,
@@ -1041,207 +1126,151 @@ impl<'a> Lower<'a> {
         Body::new(IdRange { start, end }, result)
     }
 
-    fn raise_helper(
+    fn map_nodes(
         &mut self,
-        cache: &mut HashMap<NodeId, NodeId>,
-        node: NodeId,
-        floor: Level,
-        add: Level,
-    ) -> NodeId {
-        if let Some(&mapped) = cache.get(&node) {
+        nodes: NodeList,
+        mut f: impl FnMut(&mut Self, NodeId) -> NodeId,
+    ) -> NodeList {
+        let mapped = Vec::from_iter(nodes.into_iter().map(|loc| f(self, self.ir.lists[loc])));
+        self.mk_node_list(&mapped)
+    }
+
+    fn transforms(&mut self, map: &mut impl Transform, nodes: NodeList) -> NodeList {
+        self.map_nodes(nodes, |this, node| this.transform(map, node))
+    }
+
+    fn transform(&mut self, map: &mut impl Transform, node: NodeId) -> NodeId {
+        if let Some(mapped) = map.check(node) {
             return mapped;
         }
-        let answer = match self.node(node) {
-            Node::Nothing => node,
+        let mapped = match self.node(node) {
+            Node::Nothing => self.mk_node(map.map(Node::Nothing)),
             Node::Lambda {
                 level,
                 needs,
                 result,
             } => {
-                if level < floor {
+                if level < map.floor() {
                     node
                 } else {
-                    let needs = Vec::from_iter(
-                        needs
-                            .into_iter()
-                            .map(|loc| self.raise_helper(cache, self.ir.lists[loc], floor, add)),
-                    );
-                    let needs = self.mk_node_list(&needs);
-                    let result = self.raise_helper(cache, result, floor, add);
-                    self.mk_node(Node::Lambda {
-                        level: level + add,
+                    let needs = self.transforms(map, needs);
+                    let result = self.transform(map, result);
+                    self.mk_node(map.map(Node::Lambda {
+                        level,
                         needs,
                         result,
-                    })
+                    }))
                 }
             }
             Node::Apply { lambda, args } => {
-                let lambda = self.raise_helper(cache, lambda, floor, add);
-                let args = Vec::from_iter(
-                    args.into_iter()
-                        .map(|loc| self.raise_helper(cache, self.ir.lists[loc], floor, add)),
-                );
-                let args = self.mk_node_list(&args);
-                self.mk_node(Node::Apply { lambda, args })
+                let lambda = self.transform(map, lambda);
+                let args = self.transforms(map, args);
+                self.mk_node(map.map(Node::Apply { lambda, args }))
             }
             Node::List { items } => {
-                let items = Vec::from_iter(
-                    items
-                        .into_iter()
-                        .map(|loc| self.raise_helper(cache, self.ir.lists[loc], floor, add)),
-                );
-                let items = self.mk_node_list(&items);
-                self.mk_node(Node::List { items })
+                let items = self.transforms(map, items);
+                self.mk_node(map.map(Node::List { items }))
             }
             Node::NeedTydef { level, def, param } => {
-                if level < floor {
+                if level < map.floor() {
                     node
                 } else {
-                    let param = self.raise_helper(cache, param, floor, add);
-                    self.mk_node(Node::NeedTydef {
-                        level: level + add,
-                        def,
-                        param,
-                    })
+                    let param = self.transform(map, param);
+                    self.mk_node(map.map(Node::NeedTydef { level, def, param }))
                 }
             }
             Node::NeedSigdef { level, def, param } => {
-                if level < floor {
+                if level < map.floor() {
                     node
                 } else {
-                    let param = self.raise_helper(cache, param, floor, add);
-                    self.mk_node(Node::NeedSigdef {
-                        level: level + add,
-                        def,
-                        param,
-                    })
+                    let param = self.transform(map, param);
+                    self.mk_node(map.map(Node::NeedSigdef { level, def, param }))
                 }
             }
             Node::NeedValdef { level, def, param } => {
-                if level < floor {
+                if level < map.floor() {
                     node
                 } else {
-                    let param = self.raise_helper(cache, param, floor, add);
-                    self.mk_node(Node::NeedValdef {
-                        level: level + add,
-                        def,
-                        param,
-                    })
+                    let param = self.transform(map, param);
+                    self.mk_node(map.map(Node::NeedValdef { level, def, param }))
                 }
             }
             Node::NeedCtxdef { level, def, param } => {
-                if level < floor {
+                if level < map.floor() {
                     node
                 } else {
-                    let param = self.raise_helper(cache, param, floor, add);
-                    self.mk_node(Node::NeedCtxdef {
-                        level: level + add,
-                        def,
-                        param,
-                    })
+                    let param = self.transform(map, param);
+                    self.mk_node(map.map(Node::NeedCtxdef { level, def, param }))
                 }
             }
-            Node::Tagdef { def: _ } => node,
-            Node::Aliasdef { def: _ } => node,
+            Node::Tagdef { def } => self.mk_node(map.map(Node::Tagdef { def })),
+            Node::Aliasdef { def } => self.mk_node(map.map(Node::Aliasdef { def })),
             Node::Tuple { elems } => {
-                let elems = Vec::from_iter(
-                    elems
-                        .into_iter()
-                        .map(|loc| self.raise_helper(cache, self.ir.lists[loc], floor, add)),
-                );
-                let elems = self.mk_node_list(&elems);
-                self.mk_node(Node::Tuple { elems })
+                let elems = self.transforms(map, elems);
+                self.mk_node(map.map(Node::Tuple { elems }))
             }
-            Node::Context => node,
-            Node::Fndef { def: _ } => node,
+            Node::Context => self.mk_node(map.map(Node::Context)),
+            Node::Fndef { def } => self.mk_node(map.map(Node::Fndef { def })),
             Node::Get { ctx, slot } => {
-                let ctx = self.raise_helper(cache, ctx, floor, add);
-                self.mk_node(Node::Get { ctx, slot })
+                let ctx = self.transform(map, ctx);
+                self.mk_node(map.map(Node::Get { ctx, slot }))
             }
-            Node::Lit { val: _ } => node,
+            Node::Lit { val } => self.mk_node(map.map(Node::Lit { val })),
             Node::Bind { args, bind } => {
-                let args = Vec::from_iter(
-                    args.into_iter()
-                        .map(|loc| self.raise_helper(cache, self.ir.lists[loc], floor, add)),
-                );
-                let args = self.mk_node_list(&args);
-                let bind = self.raise_helper(cache, bind, floor, add);
-                self.mk_node(Node::Bind { args, bind })
+                let args = self.transforms(map, args);
+                let bind = self.transform(map, bind);
+                self.mk_node(map.map(Node::Bind { args, bind }))
             }
             Node::BindTydef { def, bind } => {
-                let bind = self.raise_helper(cache, bind, floor, add);
-                self.mk_node(Node::BindTydef { def, bind })
+                let bind = self.transform(map, bind);
+                self.mk_node(map.map(Node::BindTydef { def, bind }))
             }
             Node::BindSigdef { def, bind } => {
-                let bind = self.raise_helper(cache, bind, floor, add);
-                self.mk_node(Node::BindSigdef { def, bind })
+                let bind = self.transform(map, bind);
+                self.mk_node(map.map(Node::BindSigdef { def, bind }))
             }
             Node::BindValdef { def, bind } => {
-                let bind = self.raise_helper(cache, bind, floor, add);
-                self.mk_node(Node::BindValdef { def, bind })
+                let bind = self.transform(map, bind);
+                self.mk_node(map.map(Node::BindValdef { def, bind }))
             }
             Node::BindCtxdef { def, bind } => {
-                let bind = self.raise_helper(cache, bind, floor, add);
-                self.mk_node(Node::BindCtxdef { def, bind })
+                let bind = self.transform(map, bind);
+                self.mk_node(map.map(Node::BindCtxdef { def, bind }))
             }
             Node::Sig { param, result } => {
-                let param = self.raise_helper(cache, param, floor, add);
-                let result = self.raise_helper(cache, result, floor, add);
-                self.mk_node(Node::Sig { param, result })
+                let param = self.transform(map, param);
+                let result = self.transform(map, result);
+                self.mk_node(map.map(Node::Sig { param, result }))
             }
         };
-        cache.insert(node, answer);
-        answer
+        map.put(node, mapped);
+        mapped
     }
 
     /// Return a new node where all levels at least `floor` are incremented by `add`.
     fn raise(&mut self, node: NodeId, floor: Level, add: Level) -> NodeId {
-        // TODO: Use a smarter and less temporary hashing strategy.
-        self.raise_helper(&mut HashMap::new(), node, floor, add)
-    }
-
-    fn substitute_helper(&mut self, mapping: &mut HashMap<NodeId, NodeId>, node: NodeId) -> NodeId {
-        if let Some(&mapped) = mapping.get(&node) {
-            return mapped;
-        }
-        let answer = match self.node(node) {
-            Node::Nothing => node,
-            Node::Lambda {
-                level,
-                needs,
-                result,
-            } => todo!(),
-            Node::Apply { lambda, args } => todo!(),
-            Node::List { items } => todo!(),
-            Node::NeedTydef { level, def, param } => todo!(),
-            Node::NeedSigdef { level, def, param } => todo!(),
-            Node::NeedValdef { level, def, param } => todo!(),
-            Node::NeedCtxdef { level, def, param } => todo!(),
-            Node::Tagdef { def: _ } => node,
-            Node::Aliasdef { def: _ } => node,
-            Node::Tuple { elems } => todo!(),
-            Node::Context => node,
-            Node::Fndef { def: _ } => node,
-            Node::Get { ctx, slot } => todo!(),
-            Node::Lit { val: _ } => node,
-            Node::Bind { args, bind } => todo!(),
-            Node::BindTydef { def, bind } => todo!(),
-            Node::BindSigdef { def, bind } => todo!(),
-            Node::BindValdef { def, bind } => todo!(),
-            Node::BindCtxdef { def, bind } => todo!(),
-            Node::Sig { param, result } => todo!(),
+        let mut map = Raise {
+            floor,
+            add,
+            cache: HashMap::new(),
         };
-        mapping.insert(node, answer);
-        answer
+        self.transform(&mut map, node)
     }
 
-    fn substitute_list(&mut self, before: NodeList, after: NodeList, node: NodeId) -> NodeId {
+    fn substitute(
+        &mut self,
+        floor: Level,
+        before: NodeList,
+        after: NodeList,
+        node: NodeId,
+    ) -> NodeId {
         assert_eq!(before.len(), after.len());
         let mut mapping = HashMap::new();
         for (&x, &y) in (self.ir.lists[before].iter()).zip(self.ir.lists[after].iter()) {
             mapping.insert(x, y);
         }
-        self.substitute_helper(&mut mapping, node)
+        let mut map = Substitute { floor, mapping };
+        self.transform(&mut map, node)
     }
 
     /// Explode a [`Node::NeedCtxdef`] into a list of individual pieces of context.
@@ -1269,7 +1298,7 @@ impl<'a> Lower<'a> {
             panic!()
         };
         assert_eq!(level_target, level); // The original level should have been zero.
-        let substituted = self.substitute_list(needs_target, items, result_target);
+        let substituted = self.substitute(level, needs_target, items, result_target);
         eprintln!("explode(level = {level:?}, def = {def:?}, param = {param:?}");
         eprintln!("  items = {:?}", &self.ir.lists[items]);
         eprintln!("  target = {target:?}");
