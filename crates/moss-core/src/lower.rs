@@ -1048,6 +1048,9 @@ impl<'a> Lower<'a> {
         floor: Level,
         add: Level,
     ) -> NodeId {
+        if let Some(&mapped) = cache.get(&node) {
+            return mapped;
+        }
         let answer = match self.node(node) {
             Node::Nothing => node,
             Node::Lambda {
@@ -1195,6 +1198,83 @@ impl<'a> Lower<'a> {
     fn raise(&mut self, node: NodeId, floor: Level, add: Level) -> NodeId {
         // TODO: Use a smarter and less temporary hashing strategy.
         self.raise_helper(&mut HashMap::new(), node, floor, add)
+    }
+
+    fn substitute_helper(&mut self, mapping: &mut HashMap<NodeId, NodeId>, node: NodeId) -> NodeId {
+        if let Some(&mapped) = mapping.get(&node) {
+            return mapped;
+        }
+        let answer = match self.node(node) {
+            Node::Nothing => node,
+            Node::Lambda {
+                level,
+                needs,
+                result,
+            } => todo!(),
+            Node::Apply { lambda, args } => todo!(),
+            Node::List { items } => todo!(),
+            Node::NeedTydef { level, def, param } => todo!(),
+            Node::NeedSigdef { level, def, param } => todo!(),
+            Node::NeedValdef { level, def, param } => todo!(),
+            Node::NeedCtxdef { level, def, param } => todo!(),
+            Node::Tagdef { def: _ } => node,
+            Node::Aliasdef { def: _ } => node,
+            Node::Tuple { elems } => todo!(),
+            Node::Context => node,
+            Node::Fndef { def: _ } => node,
+            Node::Get { ctx, slot } => todo!(),
+            Node::Lit { val: _ } => node,
+            Node::Bind { args, bind } => todo!(),
+            Node::BindTydef { def, bind } => todo!(),
+            Node::BindSigdef { def, bind } => todo!(),
+            Node::BindValdef { def, bind } => todo!(),
+            Node::BindCtxdef { def, bind } => todo!(),
+            Node::Sig { param, result } => todo!(),
+        };
+        mapping.insert(node, answer);
+        answer
+    }
+
+    fn substitute_list(&mut self, before: NodeList, after: NodeList, node: NodeId) -> NodeId {
+        assert_eq!(before.len(), after.len());
+        let mut mapping = HashMap::new();
+        for (&x, &y) in (self.ir.lists[before].iter()).zip(self.ir.lists[after].iter()) {
+            mapping.insert(x, y);
+        }
+        self.substitute_helper(&mut mapping, node)
+    }
+
+    /// Explode a [`Node::NeedCtxdef`] into a list of individual pieces of context.
+    fn explode(&mut self, level: Level, def: CtxdefId, param: NodeId) -> LowerResult<Vec<NodeId>> {
+        let Node::Lambda {
+            level: _,
+            needs,
+            result,
+        } = self.node(param)
+        else {
+            panic!()
+        };
+        assert!(needs.is_empty()); // TODO: Handle partially-applied parametric composite contexts.
+        let Node::List { items } = self.node(result) else {
+            panic!()
+        };
+        let Ctxdef(target) = self.ir.ctxdefs[def];
+        let raised = self.raise(target, Level::ZERO, level);
+        let Node::Lambda {
+            level: level_target,
+            needs: needs_target,
+            result: result_target,
+        } = self.node(raised)
+        else {
+            panic!()
+        };
+        assert_eq!(level_target, level); // The original level should have been zero.
+        let substituted = self.substitute_list(needs_target, items, result_target);
+        eprintln!("explode(level = {level:?}, def = {def:?}, param = {param:?}");
+        eprintln!("  items = {:?}", &self.ir.lists[items]);
+        eprintln!("  target = {target:?}");
+        eprintln!("  substituted = {substituted:?}");
+        Err(self.todo_no_loc())
     }
 
     fn invoke(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Option<Vec<NodeId>>> {
@@ -1461,7 +1541,15 @@ impl<'a> Lower<'a> {
                     def: _,
                     param: _,
                 } => {}
-                Node::NeedCtxdef { level, def, param } => return Err(self.todo_no_loc()),
+                Node::NeedCtxdef { level, def, param } => {
+                    let exploded = self.explode(level, def, param)?;
+                    eprintln!(
+                        "extract_ty_lambda(slots = {slots:?}, tydef = {tydef:?}, lambda = {lambda:?}"
+                    );
+                    eprintln!("  slot = {slot:?}");
+                    eprintln!("  exploded = {exploded:?}");
+                    return Err(self.todo_no_loc());
+                }
                 Node::Tagdef { def } => todo!(),
                 Node::Aliasdef { def } => todo!(),
                 Node::Tuple { elems } => todo!(),
