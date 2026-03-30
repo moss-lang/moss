@@ -11,7 +11,7 @@ use index_vec::{IndexSlice, IndexVec, define_index_type};
 use indexmap::{IndexMap, IndexSet};
 
 use crate::{
-    dump::dump,
+    dump::{dump, dump_dot_focus, dump_focus_text},
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex, string},
     parse::{self, Binop, Block, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
@@ -1299,10 +1299,39 @@ impl<'a> Lower<'a> {
         };
         assert_eq!(level_target, level); // The original level should have been zero.
         let substituted = self.substitute(level, needs_target, items, result_target);
-        eprintln!("explode(level = {level:?}, def = {def:?}, param = {param:?}");
+        eprintln!("explode(level = {level:?}, def = {def:?}, param = {param:?})");
         eprintln!("  items = {:?}", &self.ir.lists[items]);
         eprintln!("  target = {target:?}");
         eprintln!("  substituted = {substituted:?}");
+        if let Ok(path) = std::env::var("MOSS_DUMP_DOT") {
+            let mut roots = vec![
+                ("param".into(), param),
+                ("target".into(), target),
+                ("substituted".into(), substituted),
+            ];
+            for (i, &item) in self.ir.lists[items].iter().enumerate() {
+                roots.push((format!("item{i}"), item));
+            }
+            let dot = dump_dot_focus(self.ir, self.names, &roots);
+            match std::fs::write(&path, dot) {
+                Ok(()) => eprintln!("  dot = {path}"),
+                Err(error) => eprintln!("  failed to write dot to {path}: {error}"),
+            }
+            if let Some(dir) = std::path::Path::new(&path).parent() {
+                let texts = dump_focus_text(self.ir, self.names, &roots);
+                let mut wrote = 0usize;
+                for (node, text) in texts {
+                    let path = dir.join(format!("{}.txt", node.index()));
+                    match std::fs::write(&path, text) {
+                        Ok(()) => wrote += 1,
+                        Err(error) => {
+                            eprintln!("  failed to write {}: {error}", path.display());
+                        }
+                    }
+                }
+                eprintln!("  text = {} files in {}", wrote, dir.display());
+            }
+        }
         Err(self.todo_no_loc())
     }
 
