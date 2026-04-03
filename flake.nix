@@ -169,7 +169,7 @@
                   let
                     dev = craneLib.buildPackage (commonArgs // cacheArgs // devArgs);
                   in
-                  pkgs.runCommand "moss-dev-test" { } ''
+                  pkgs.runCommand "moss-dev-test" { buildInputs = [ pkgs.nodejs ]; } ''
                     cd ${./.}
                     ${dev}/bin/dev test --skip-cargo-test --prebuilt ${packages.default}/bin/moss
                     touch $out
