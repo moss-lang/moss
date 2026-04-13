@@ -1692,12 +1692,22 @@ impl<'a> Lower<'a> {
                 Named::Tydef(def) => {
                     let lambda = self.extract_ty(level.succ(), slots, def, &destruct_lhs)?;
                     let Tydef(target) = self.ir.tydefs[def];
-                    let (construct, needs) =
+                    let (construct_lhs, mut needs_vec) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs);
-                    let args = self.mk_node_list(&construct);
-                    let bind = self.mk_node(Node::Apply { lambda, args });
-                    let result = self.mk_node(Node::Bind { args, bind });
+                    let needs = self.mk_node_list(&needs_vec);
+                    let args_lhs = self.mk_node_list(&construct_lhs);
+                    let mut destruct_rhs = destruct_lhs;
+                    destruct_rhs.append(&mut needs_vec);
+                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                    let args_rhs = self.mk_node_list(&construct_rhs);
+                    let bind = self.mk_node(Node::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
+                    let result = self.mk_node(Node::Bind {
+                        args: args_lhs,
+                        bind,
+                    });
                     let bind = self.mk_node(Node::Lambda {
                         level: level.succ(),
                         needs,
@@ -1708,12 +1718,22 @@ impl<'a> Lower<'a> {
                 Named::Sigdef(def) => {
                     let lambda = self.extract_sig(level.succ(), slots, def, &destruct_lhs)?;
                     let Sigdef(target) = self.ir.sigdefs[def];
-                    let (construct, needs) =
+                    let (construct_lhs, mut needs_vec) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs);
-                    let args = self.mk_node_list(&construct);
-                    let bind = self.mk_node(Node::Apply { lambda, args });
-                    let result = self.mk_node(Node::Bind { args, bind });
+                    let needs = self.mk_node_list(&needs_vec);
+                    let args_lhs = self.mk_node_list(&construct_lhs);
+                    let mut destruct_rhs = destruct_lhs;
+                    destruct_rhs.append(&mut needs_vec);
+                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                    let args_rhs = self.mk_node_list(&construct_rhs);
+                    let bind = self.mk_node(Node::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
+                    let result = self.mk_node(Node::Bind {
+                        args: args_lhs,
+                        bind,
+                    });
                     let bind = self.mk_node(Node::Lambda {
                         level: level.succ(),
                         needs,
@@ -1724,12 +1744,22 @@ impl<'a> Lower<'a> {
                 Named::Valdef(def) => {
                     let lambda = self.extract_val(level.succ(), slots, def, &destruct_lhs)?;
                     let Valdef(target) = self.ir.valdefs[def];
-                    let (construct, needs) =
+                    let (construct_lhs, mut needs_vec) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs);
-                    let args = self.mk_node_list(&construct);
-                    let bind = self.mk_node(Node::Apply { lambda, args });
-                    let result = self.mk_node(Node::Bind { args, bind });
+                    let needs = self.mk_node_list(&needs_vec);
+                    let args_lhs = self.mk_node_list(&construct_lhs);
+                    let mut destruct_rhs = destruct_lhs;
+                    destruct_rhs.append(&mut needs_vec);
+                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                    let args_rhs = self.mk_node_list(&construct_rhs);
+                    let bind = self.mk_node(Node::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
+                    let result = self.mk_node(Node::Bind {
+                        args: args_lhs,
+                        bind,
+                    });
                     let bind = self.mk_node(Node::Lambda {
                         level: level.succ(),
                         needs,
@@ -1740,12 +1770,22 @@ impl<'a> Lower<'a> {
                 Named::Ctxdef(def) => {
                     let lambda = self.extract_ctx(level.succ(), slots, def, &destruct_lhs)?;
                     let Ctxdef(target) = self.ir.ctxdefs[def];
-                    let (construct, needs) =
+                    let (construct_lhs, mut needs_vec) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs);
-                    let args = self.mk_node_list(&construct);
-                    let bind = self.mk_node(Node::Apply { lambda, args });
-                    let result = self.mk_node(Node::Bind { args, bind });
+                    let needs = self.mk_node_list(&needs_vec);
+                    let args_lhs = self.mk_node_list(&construct_lhs);
+                    let mut destruct_rhs = destruct_lhs;
+                    destruct_rhs.append(&mut needs_vec);
+                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                    let args_rhs = self.mk_node_list(&construct_rhs);
+                    let bind = self.mk_node(Node::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
+                    let result = self.mk_node(Node::Bind {
+                        args: args_lhs,
+                        bind,
+                    });
                     let bind = self.mk_node(Node::Lambda {
                         level: level.succ(),
                         needs,
