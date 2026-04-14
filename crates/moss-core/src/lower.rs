@@ -1274,7 +1274,12 @@ impl<'a> Lower<'a> {
     }
 
     /// Explode a [`Node::NeedCtxdef`] into a list of individual pieces of context.
-    fn explode(&mut self, level: Level, def: CtxdefId, param: NodeId) -> LowerResult<Vec<NodeId>> {
+    fn explode(
+        &mut self,
+        level: Level,
+        def: CtxdefId,
+        param: NodeId,
+    ) -> LowerResult<(NodeList, NodeList)> {
         let Node::Lambda {
             level: _,
             needs,
@@ -1299,40 +1304,22 @@ impl<'a> Lower<'a> {
         };
         assert_eq!(level_target, level); // The original level should have been zero.
         let substituted = self.substitute(level, needs_target, items, result_target);
-        eprintln!("explode(level = {level:?}, def = {def:?}, param = {param:?})");
-        eprintln!("  items = {:?}", &self.ir.lists[items]);
-        eprintln!("  target = {target:?}");
-        eprintln!("  substituted = {substituted:?}");
-        if let Ok(path) = std::env::var("MOSS_DUMP_DOT") {
-            let mut roots = vec![
-                ("param".into(), param),
-                ("target".into(), target),
-                ("substituted".into(), substituted),
-            ];
-            for (i, &item) in self.ir.lists[items].iter().enumerate() {
-                roots.push((format!("item{i}"), item));
-            }
-            let dot = dump_dot_focus(self.ir, self.names, &roots);
-            match std::fs::write(&path, dot) {
-                Ok(()) => eprintln!("  dot = {path}"),
-                Err(error) => eprintln!("  failed to write dot to {path}: {error}"),
-            }
-            if let Some(dir) = std::path::Path::new(&path).parent() {
-                let texts = dump_focus_text(self.ir, self.names, &roots);
-                let mut wrote = 0usize;
-                for (node, text) in texts {
-                    let path = dir.join(format!("{}.txt", node.index()));
-                    match std::fs::write(&path, text) {
-                        Ok(()) => wrote += 1,
-                        Err(error) => {
-                            eprintln!("  failed to write {}: {error}", path.display());
-                        }
-                    }
-                }
-                eprintln!("  text = {} files in {}", wrote, dir.display());
-            }
-        }
-        Err(self.todo_no_loc())
+        let Node::Lambda {
+            level: level_substituted,
+            needs: needs_substituted,
+            result: result_substituted,
+        } = self.node(substituted)
+        else {
+            panic!()
+        };
+        assert_eq!(level_substituted, level.succ());
+        let Node::List {
+            items: items_result,
+        } = self.node(result_substituted)
+        else {
+            panic!()
+        };
+        Ok((needs_substituted, items_result))
     }
 
     fn invoke(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Option<Vec<NodeId>>> {
@@ -1600,12 +1587,45 @@ impl<'a> Lower<'a> {
                     param: _,
                 } => {}
                 Node::NeedCtxdef { level, def, param } => {
-                    let exploded = self.explode(level, def, param)?;
+                    let (needs, results) = self.explode(level, def, param)?;
                     eprintln!(
                         "extract_ty_lambda(slots = {slots:?}, tydef = {tydef:?}, lambda = {lambda:?}"
                     );
                     eprintln!("  slot = {slot:?}");
-                    eprintln!("  exploded = {exploded:?}");
+                    eprintln!("  needs = {:?}", &self.ir.lists[needs]);
+                    eprintln!("  results = {:?}", &self.ir.lists[results]);
+                    if let Ok(path) = std::env::var("MOSS_DUMP_DOT") {
+                        let mut roots = vec![
+                            ("slot".into(), slot),
+                            ("lambda".into(), lambda),
+                            ("param".into(), param),
+                        ];
+                        for (i, &need) in self.ir.lists[needs].iter().enumerate() {
+                            roots.push((format!("need{i}"), need));
+                        }
+                        for (i, &result) in self.ir.lists[results].iter().enumerate() {
+                            roots.push((format!("result{i}"), result));
+                        }
+                        let dot = dump_dot_focus(self.ir, self.names, &roots);
+                        match std::fs::write(&path, dot) {
+                            Ok(()) => eprintln!("  dot = {path}"),
+                            Err(error) => eprintln!("  failed to write dot to {path}: {error}"),
+                        }
+                        if let Some(dir) = std::path::Path::new(&path).parent() {
+                            let texts = dump_focus_text(self.ir, self.names, &roots);
+                            let mut wrote = 0usize;
+                            for (node, text) in texts {
+                                let path = dir.join(format!("{}.txt", node.index()));
+                                match std::fs::write(&path, text) {
+                                    Ok(()) => wrote += 1,
+                                    Err(error) => {
+                                        eprintln!("  failed to write {}: {error}", path.display());
+                                    }
+                                }
+                            }
+                            eprintln!("  text = {} files in {}", wrote, dir.display());
+                        }
+                    }
                     return Err(self.todo_no_loc());
                 }
                 Node::Tagdef { def } => todo!(),
@@ -1721,12 +1741,22 @@ impl<'a> Lower<'a> {
                 Named::Tydef(def) => {
                     let lambda = self.extract_ty(level.succ(), slots, def, &destruct_lhs)?;
                     let Tydef(target) = self.ir.tydefs[def];
-                    let (construct, needs) =
+                    let (construct_lhs, mut needs_vec) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs);
-                    let args = self.mk_node_list(&construct);
-                    let bind = self.mk_node(Node::Apply { lambda, args });
-                    let result = self.mk_node(Node::Bind { args, bind });
+                    let needs = self.mk_node_list(&needs_vec);
+                    let args_lhs = self.mk_node_list(&construct_lhs);
+                    let mut destruct_rhs = destruct_lhs;
+                    destruct_rhs.append(&mut needs_vec);
+                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                    let args_rhs = self.mk_node_list(&construct_rhs);
+                    let bind = self.mk_node(Node::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
+                    let result = self.mk_node(Node::Bind {
+                        args: args_lhs,
+                        bind,
+                    });
                     let bind = self.mk_node(Node::Lambda {
                         level: level.succ(),
                         needs,
@@ -1737,12 +1767,22 @@ impl<'a> Lower<'a> {
                 Named::Sigdef(def) => {
                     let lambda = self.extract_sig(level.succ(), slots, def, &destruct_lhs)?;
                     let Sigdef(target) = self.ir.sigdefs[def];
-                    let (construct, needs) =
+                    let (construct_lhs, mut needs_vec) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs);
-                    let args = self.mk_node_list(&construct);
-                    let bind = self.mk_node(Node::Apply { lambda, args });
-                    let result = self.mk_node(Node::Bind { args, bind });
+                    let needs = self.mk_node_list(&needs_vec);
+                    let args_lhs = self.mk_node_list(&construct_lhs);
+                    let mut destruct_rhs = destruct_lhs;
+                    destruct_rhs.append(&mut needs_vec);
+                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                    let args_rhs = self.mk_node_list(&construct_rhs);
+                    let bind = self.mk_node(Node::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
+                    let result = self.mk_node(Node::Bind {
+                        args: args_lhs,
+                        bind,
+                    });
                     let bind = self.mk_node(Node::Lambda {
                         level: level.succ(),
                         needs,
@@ -1753,12 +1793,22 @@ impl<'a> Lower<'a> {
                 Named::Valdef(def) => {
                     let lambda = self.extract_val(level.succ(), slots, def, &destruct_lhs)?;
                     let Valdef(target) = self.ir.valdefs[def];
-                    let (construct, needs) =
+                    let (construct_lhs, mut needs_vec) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs);
-                    let args = self.mk_node_list(&construct);
-                    let bind = self.mk_node(Node::Apply { lambda, args });
-                    let result = self.mk_node(Node::Bind { args, bind });
+                    let needs = self.mk_node_list(&needs_vec);
+                    let args_lhs = self.mk_node_list(&construct_lhs);
+                    let mut destruct_rhs = destruct_lhs;
+                    destruct_rhs.append(&mut needs_vec);
+                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                    let args_rhs = self.mk_node_list(&construct_rhs);
+                    let bind = self.mk_node(Node::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
+                    let result = self.mk_node(Node::Bind {
+                        args: args_lhs,
+                        bind,
+                    });
                     let bind = self.mk_node(Node::Lambda {
                         level: level.succ(),
                         needs,
@@ -1769,12 +1819,22 @@ impl<'a> Lower<'a> {
                 Named::Ctxdef(def) => {
                     let lambda = self.extract_ctx(level.succ(), slots, def, &destruct_lhs)?;
                     let Ctxdef(target) = self.ir.ctxdefs[def];
-                    let (construct, needs) =
+                    let (construct_lhs, mut needs_vec) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs);
-                    let args = self.mk_node_list(&construct);
-                    let bind = self.mk_node(Node::Apply { lambda, args });
-                    let result = self.mk_node(Node::Bind { args, bind });
+                    let needs = self.mk_node_list(&needs_vec);
+                    let args_lhs = self.mk_node_list(&construct_lhs);
+                    let mut destruct_rhs = destruct_lhs;
+                    destruct_rhs.append(&mut needs_vec);
+                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                    let args_rhs = self.mk_node_list(&construct_rhs);
+                    let bind = self.mk_node(Node::Apply {
+                        lambda,
+                        args: args_rhs,
+                    });
+                    let result = self.mk_node(Node::Bind {
+                        args: args_lhs,
+                        bind,
+                    });
                     let bind = self.mk_node(Node::Lambda {
                         level: level.succ(),
                         needs,
