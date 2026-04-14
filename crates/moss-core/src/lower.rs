@@ -1274,7 +1274,12 @@ impl<'a> Lower<'a> {
     }
 
     /// Explode a [`Node::NeedCtxdef`] into a list of individual pieces of context.
-    fn explode(&mut self, level: Level, def: CtxdefId, param: NodeId) -> LowerResult<Vec<NodeId>> {
+    fn explode(
+        &mut self,
+        level: Level,
+        def: CtxdefId,
+        param: NodeId,
+    ) -> LowerResult<(NodeList, NodeList)> {
         let Node::Lambda {
             level: _,
             needs,
@@ -1299,11 +1304,22 @@ impl<'a> Lower<'a> {
         };
         assert_eq!(level_target, level); // The original level should have been zero.
         let substituted = self.substitute(level, needs_target, items, result_target);
-        eprintln!("explode(level = {level:?}, def = {def:?}, param = {param:?}");
-        eprintln!("  items = {:?}", &self.ir.lists[items]);
-        eprintln!("  target = {target:?}");
-        eprintln!("  substituted = {substituted:?}");
-        Err(self.todo_no_loc())
+        let Node::Lambda {
+            level: level_substituted,
+            needs: needs_substituted,
+            result: result_substituted,
+        } = self.node(substituted)
+        else {
+            panic!()
+        };
+        assert_eq!(level_substituted, level.succ());
+        let Node::List {
+            items: items_result,
+        } = self.node(result_substituted)
+        else {
+            panic!()
+        };
+        Ok((needs_substituted, items_result))
     }
 
     fn invoke(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Option<Vec<NodeId>>> {
@@ -1571,12 +1587,13 @@ impl<'a> Lower<'a> {
                     param: _,
                 } => {}
                 Node::NeedCtxdef { level, def, param } => {
-                    let exploded = self.explode(level, def, param)?;
+                    let (needs, results) = self.explode(level, def, param)?;
                     eprintln!(
                         "extract_ty_lambda(slots = {slots:?}, tydef = {tydef:?}, lambda = {lambda:?}"
                     );
                     eprintln!("  slot = {slot:?}");
-                    eprintln!("  exploded = {exploded:?}");
+                    eprintln!("  needs = {:?}", &self.ir.lists[needs]);
+                    eprintln!("  results = {:?}", &self.ir.lists[results]);
                     return Err(self.todo_no_loc());
                 }
                 Node::Tagdef { def } => todo!(),
