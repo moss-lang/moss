@@ -1581,8 +1581,31 @@ impl<'a> Lower<'a> {
                 param: _,
             } => Ok(None),
             Node::NeedCtxdef { level, def, param } => {
+                let mut options = Vec::new();
                 let exploded = self.explode(level, def, param)?;
-                Ok(self.extract_ty_lambda_list(exploded, tydef, lambda)?)
+                let args = self.mk_node_list(&[]); // TODO: Handle partially-applied contexts.
+                let ctx = self.mk_node(Node::Apply { lambda: slot, args });
+                let owned = self.ir.lists[exploded].to_vec(); // TODO: Don't make a `Vec` here.
+                for (i, node) in owned.into_iter().enumerate() {
+                    if let Some((extracted, synth)) =
+                        self.try_extract_ty_lambda(node, tydef, lambda)?
+                    {
+                        if extracted != node {
+                            // This can happen if a context is nested in another context. Need to
+                            // fix by explicitly encoding the chain of `Node::Get` instead of just
+                            // returning the possibly-modified node.
+                            todo!();
+                        }
+                        let id = SlotId::from_usize(i);
+                        let got = self.mk_node(Node::Get { ctx, slot: id });
+                        options.push((got, synth));
+                    }
+                }
+                if options.len() == 1 {
+                    Ok(Some(options[0]))
+                } else {
+                    Ok(None)
+                }
             }
             Node::Tagdef { def } => todo!(),
             Node::Aliasdef { def } => todo!(),
@@ -1605,26 +1628,6 @@ impl<'a> Lower<'a> {
             Node::BindValdef { def, bind } => todo!(),
             Node::BindCtxdef { def, bind } => todo!(),
             Node::Sig { param, result } => todo!(),
-        }
-    }
-
-    fn extract_ty_lambda_list(
-        &mut self,
-        slots: NodeList,
-        tydef: TydefId,
-        lambda: NodeId,
-    ) -> LowerResult<Option<(NodeId, NodeId)>> {
-        let slots = self.ir.lists[slots].to_vec();
-        let mut options = Vec::new();
-        for slot in slots {
-            if let Some(option) = self.try_extract_ty_lambda(slot, tydef, lambda)? {
-                options.push(option);
-            }
-        }
-        if options.len() == 1 {
-            Ok(Some(options[0]))
-        } else {
-            Ok(None)
         }
     }
 
