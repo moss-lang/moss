@@ -881,9 +881,9 @@ pub fn dump_dot_focus(ir: &IR, names: &Names, roots: &[(String, NodeId)]) -> Str
 
     let mut out = String::new();
     out.push_str("digraph IR {\n");
-    out.push_str("  graph [rankdir=LR, splines=true, overlap=false, fontname=\"Menlo\"];\n");
+    out.push_str("  graph [rankdir=LR, splines=true, overlap=false, fontname=\"monospace\"];\n");
     out.push_str(
-        "  node [shape=box, style=\"rounded,filled\", fillcolor=\"#f8f8f8\", color=\"#444444\", fontname=\"Menlo\", fontsize=10];\n",
+        "  node [shape=box, style=\"rounded,filled\", fillcolor=\"#f8f8f8\", color=\"#444444\", fontname=\"monospace\", fontsize=10];\n",
     );
     out.push_str("  edge [color=\"#666666\"];\n");
 
