@@ -1274,12 +1274,7 @@ impl<'a> Lower<'a> {
     }
 
     /// Explode a [`Node::NeedCtxdef`] into a list of individual pieces of context.
-    fn explode(
-        &mut self,
-        level: Level,
-        def: CtxdefId,
-        param: NodeId,
-    ) -> LowerResult<(NodeList, NodeList)> {
+    fn explode(&mut self, level: Level, def: CtxdefId, param: NodeId) -> LowerResult<NodeList> {
         let Node::Lambda {
             level: _,
             needs,
@@ -1306,7 +1301,7 @@ impl<'a> Lower<'a> {
         let substituted = self.substitute(level, needs_target, items, result_target);
         let Node::Lambda {
             level: level_substituted,
-            needs: needs_substituted,
+            needs: _,
             result: result_substituted,
         } = self.node(substituted)
         else {
@@ -1319,7 +1314,7 @@ impl<'a> Lower<'a> {
         else {
             panic!()
         };
-        Ok((needs_substituted, items_result))
+        Ok(items_result)
     }
 
     fn invoke(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Option<Vec<NodeId>>> {
@@ -1547,6 +1542,92 @@ impl<'a> Lower<'a> {
         self.synthesize(alpha, beta)
     }
 
+    fn try_extract_ty_lambda(
+        &mut self,
+        slot: NodeId,
+        tydef: TydefId,
+        lambda: NodeId,
+    ) -> LowerResult<Option<(NodeId, NodeId)>> {
+        match self.node(slot) {
+            Node::Nothing => todo!(),
+            Node::Lambda {
+                level,
+                needs,
+                result,
+            } => todo!(),
+            Node::Apply { lambda, args } => todo!(),
+            Node::List { items } => todo!(),
+            Node::NeedTydef {
+                level: _,
+                def,
+                param,
+            } => {
+                if def == tydef
+                    && let Some(synth) = self.synthesize(lambda, param)?
+                {
+                    Ok(Some((slot, synth)))
+                } else {
+                    Ok(None)
+                }
+            }
+            Node::NeedSigdef {
+                level: _,
+                def: _,
+                param: _,
+            } => Ok(None),
+            Node::NeedValdef {
+                level: _,
+                def: _,
+                param: _,
+            } => Ok(None),
+            Node::NeedCtxdef { level, def, param } => {
+                let exploded = self.explode(level, def, param)?;
+                Ok(self.extract_ty_lambda_list(exploded, tydef, lambda)?)
+            }
+            Node::Tagdef { def } => todo!(),
+            Node::Aliasdef { def } => todo!(),
+            Node::Tuple { elems } => todo!(),
+            Node::Context => todo!(),
+            Node::Fndef { def } => todo!(),
+            Node::Get { ctx, slot } => todo!(),
+            Node::Lit { val } => todo!(),
+            Node::Bind { args, bind } => todo!(),
+            Node::BindTydef { def, bind } => {
+                if def == tydef
+                    && let Some(synth) = self.synthesize_bind(lambda, bind)?
+                {
+                    Ok(Some((slot, synth)))
+                } else {
+                    Ok(None)
+                }
+            }
+            Node::BindSigdef { def, bind } => todo!(),
+            Node::BindValdef { def, bind } => todo!(),
+            Node::BindCtxdef { def, bind } => todo!(),
+            Node::Sig { param, result } => todo!(),
+        }
+    }
+
+    fn extract_ty_lambda_list(
+        &mut self,
+        slots: NodeList,
+        tydef: TydefId,
+        lambda: NodeId,
+    ) -> LowerResult<Option<(NodeId, NodeId)>> {
+        let slots = self.ir.lists[slots].to_vec();
+        let mut options = Vec::new();
+        for slot in slots {
+            if let Some(option) = self.try_extract_ty_lambda(slot, tydef, lambda)? {
+                options.push(option);
+            }
+        }
+        if options.len() == 1 {
+            Ok(Some(options[0]))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn extract_ty_lambda(
         &mut self,
         slots: &[NodeId],
@@ -1555,67 +1636,8 @@ impl<'a> Lower<'a> {
     ) -> LowerResult<(NodeId, NodeId)> {
         let mut options = Vec::new();
         for &slot in slots {
-            match self.node(slot) {
-                Node::Nothing => todo!(),
-                Node::Lambda {
-                    level,
-                    needs,
-                    result,
-                } => todo!(),
-                Node::Apply { lambda, args } => todo!(),
-                Node::List { items } => todo!(),
-                Node::NeedTydef {
-                    level: _,
-                    def,
-                    param,
-                } => {
-                    if def != tydef {
-                        continue;
-                    }
-                    if let Some(synth) = self.synthesize(lambda, param)? {
-                        options.push((slot, synth));
-                    }
-                }
-                Node::NeedSigdef {
-                    level: _,
-                    def: _,
-                    param: _,
-                } => {}
-                Node::NeedValdef {
-                    level: _,
-                    def: _,
-                    param: _,
-                } => {}
-                Node::NeedCtxdef { level, def, param } => {
-                    let (needs, results) = self.explode(level, def, param)?;
-                    eprintln!(
-                        "extract_ty_lambda(slots = {slots:?}, tydef = {tydef:?}, lambda = {lambda:?}"
-                    );
-                    eprintln!("  slot = {slot:?}");
-                    eprintln!("  needs = {:?}", &self.ir.lists[needs]);
-                    eprintln!("  results = {:?}", &self.ir.lists[results]);
-                    return Err(self.todo_no_loc());
-                }
-                Node::Tagdef { def } => todo!(),
-                Node::Aliasdef { def } => todo!(),
-                Node::Tuple { elems } => todo!(),
-                Node::Context => todo!(),
-                Node::Fndef { def } => todo!(),
-                Node::Get { ctx, slot } => todo!(),
-                Node::Lit { val } => todo!(),
-                Node::Bind { args, bind } => todo!(),
-                Node::BindTydef { def, bind } => {
-                    if def != tydef {
-                        continue;
-                    }
-                    if let Some(synth) = self.synthesize_bind(lambda, bind)? {
-                        options.push((slot, synth));
-                    }
-                }
-                Node::BindSigdef { def, bind } => todo!(),
-                Node::BindValdef { def, bind } => todo!(),
-                Node::BindCtxdef { def, bind } => todo!(),
-                Node::Sig { param, result } => todo!(),
+            if let Some(option) = self.try_extract_ty_lambda(slot, tydef, lambda)? {
+                options.push(option);
             }
         }
         if options.len() != 1 {
