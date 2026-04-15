@@ -1402,30 +1402,32 @@ impl<'a> Lower<'a> {
                             level: _,
                             def,
                             param,
-                        } => {
-                            let (callee, synth) = self.extract_ty_lambda(destruct, def, param)?;
-                            let Node::Lambda {
-                                level: level_synth,
-                                needs: needs_synth,
-                                result: result_synth,
-                            } = self.node(synth)
-                            else {
-                                panic!()
-                            };
-                            let Node::List { items } = self.node(result_synth) else {
-                                panic!()
-                            };
-                            let result_composite = self.mk_node(Node::Apply {
-                                lambda: callee,
-                                args: items,
-                            });
-                            let composite = self.mk_node(Node::Lambda {
-                                level: level_synth,
-                                needs: needs_synth,
-                                result: result_composite,
-                            });
-                            construct.push(composite);
-                        }
+                        } => match self.extract_ty_lambda(destruct, def, param)? {
+                            Some((callee, synth)) => {
+                                let Node::Lambda {
+                                    level: level_synth,
+                                    needs: needs_synth,
+                                    result: result_synth,
+                                } = self.node(synth)
+                                else {
+                                    panic!()
+                                };
+                                let Node::List { items } = self.node(result_synth) else {
+                                    panic!()
+                                };
+                                let result_composite = self.mk_node(Node::Apply {
+                                    lambda: callee,
+                                    args: items,
+                                });
+                                let composite = self.mk_node(Node::Lambda {
+                                    level: level_synth,
+                                    needs: needs_synth,
+                                    result: result_composite,
+                                });
+                                construct.push(composite);
+                            }
+                            None => return Err(self.todo_no_loc()),
+                        },
                         Node::NeedSigdef {
                             level: _,
                             def,
@@ -1435,30 +1437,32 @@ impl<'a> Lower<'a> {
                             level: _,
                             def,
                             param,
-                        } => {
-                            let (callee, synth) = self.extract_val_lambda(destruct, def, param)?;
-                            let Node::Lambda {
-                                level: level_synth,
-                                needs: needs_synth,
-                                result: result_synth,
-                            } = self.node(synth)
-                            else {
-                                panic!()
-                            };
-                            let Node::List { items } = self.node(result_synth) else {
-                                panic!()
-                            };
-                            let result_composite = self.mk_node(Node::Apply {
-                                lambda: callee,
-                                args: items,
-                            });
-                            let composite = self.mk_node(Node::Lambda {
-                                level: level_synth,
-                                needs: needs_synth,
-                                result: result_composite,
-                            });
-                            construct.push(composite);
-                        }
+                        } => match self.extract_val_lambda(destruct, def, param)? {
+                            Some((callee, synth)) => {
+                                let Node::Lambda {
+                                    level: level_synth,
+                                    needs: needs_synth,
+                                    result: result_synth,
+                                } = self.node(synth)
+                                else {
+                                    panic!()
+                                };
+                                let Node::List { items } = self.node(result_synth) else {
+                                    panic!()
+                                };
+                                let result_composite = self.mk_node(Node::Apply {
+                                    lambda: callee,
+                                    args: items,
+                                });
+                                let composite = self.mk_node(Node::Lambda {
+                                    level: level_synth,
+                                    needs: needs_synth,
+                                    result: result_composite,
+                                });
+                                construct.push(composite);
+                            }
+                            None => return Err(self.todo_no_loc()),
+                        },
                         Node::NeedCtxdef {
                             level: _,
                             def,
@@ -1659,17 +1663,18 @@ impl<'a> Lower<'a> {
         slots: &[NodeId],
         tydef: TydefId,
         lambda: NodeId,
-    ) -> LowerResult<(NodeId, NodeId)> {
+    ) -> LowerResult<Option<(NodeId, NodeId)>> {
         let mut options = Vec::new();
         for &slot in slots {
             if let Some(option) = self.try_extract_ty_lambda(slot, tydef, lambda)? {
                 options.push(option);
             }
         }
-        if options.len() != 1 {
-            todo!()
+        if options.len() == 1 {
+            Ok(Some(options[0]))
+        } else {
+            Ok(None)
         }
-        Ok(options[0])
     }
 
     fn extract_ty(
@@ -1690,7 +1695,10 @@ impl<'a> Lower<'a> {
             needs,
             result,
         });
-        Ok(self.extract_ty_lambda(slots, def, lambda)?.0)
+        match self.extract_ty_lambda(slots, def, lambda)? {
+            Some((node, _)) => Ok(node),
+            None => Err(todo!()),
+        }
     }
 
     fn extract_sig(
@@ -1797,21 +1805,18 @@ impl<'a> Lower<'a> {
         slots: &[NodeId],
         valdef: ValdefId,
         lambda: NodeId,
-    ) -> LowerResult<(NodeId, NodeId)> {
+    ) -> LowerResult<Option<(NodeId, NodeId)>> {
         let mut options = Vec::new();
         for &slot in slots {
             if let Some(option) = self.try_extract_val_lambda(slot, valdef, lambda)? {
                 options.push(option);
             }
         }
-        if options.len() != 1 {
-            eprintln!(
-                "extract_val_lambda(slots = {slots:?}, valdef = {valdef:?}, lambda = {lambda:?})"
-            );
-            eprintln!("  options = {options:?}");
-            return Err(self.todo_no_loc());
+        if options.len() == 1 {
+            Ok(Some(options[0]))
+        } else {
+            Ok(None)
         }
-        Ok(options[0])
     }
 
     fn extract_val(
@@ -1832,7 +1837,10 @@ impl<'a> Lower<'a> {
             needs,
             result,
         });
-        Ok(self.extract_val_lambda(slots, def, lambda)?.0)
+        match self.extract_val_lambda(slots, def, lambda)? {
+            Some((node, _)) => Ok(node),
+            None => Err(todo!()),
+        }
     }
 
     fn extract_ctx(
