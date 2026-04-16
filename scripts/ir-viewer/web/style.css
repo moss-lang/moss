@@ -18,7 +18,8 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   color: var(--ink);
   background:
     radial-gradient(circle at top left, rgba(248, 210, 140, 0.55), transparent 32%),
@@ -35,8 +36,10 @@ input {
 .page {
   display: grid;
   gap: 1rem;
-  min-height: 100vh;
+  height: 100vh;
   padding: 1rem;
+  overflow: hidden;
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .topbar,
@@ -111,6 +114,7 @@ button:hover {
   grid-template-columns: minmax(18rem, 32rem) minmax(0, 1fr);
   gap: 1rem;
   min-height: 0;
+  overflow: hidden;
 }
 
 .pane {
@@ -134,13 +138,9 @@ button:hover {
   border-bottom: 1px solid rgba(107, 93, 74, 0.12);
 }
 
-.lines,
-.graph {
+.lines {
   min-height: 0;
   overflow: auto;
-}
-
-.lines {
   padding: 0.5rem;
 }
 
@@ -180,12 +180,42 @@ button:hover {
 }
 
 .graph {
-  padding: 1rem;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(15, 118, 110, 0.07), transparent 18%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.2));
+  cursor: grab;
+  touch-action: none;
 }
 
 .graph svg {
-  width: 100%;
+  display: block;
+  width: auto;
   height: auto;
+  max-width: none;
+  max-height: none;
+  user-select: none;
+}
+
+.graph.is-panning {
+  cursor: grabbing;
+}
+
+.graph svg text {
+  font-family: monospace !important;
+}
+
+.graph-viewport {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.graph-canvas {
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 .empty {
@@ -200,11 +230,23 @@ button:hover {
 }
 
 @media (max-width: 980px) {
+  body,
+  .page {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
   .panes {
     grid-template-columns: 1fr;
+    overflow: visible;
   }
 
   .raw-pane {
     max-height: 48vh;
+  }
+
+  .graph-pane {
+    min-height: 52vh;
   }
 }

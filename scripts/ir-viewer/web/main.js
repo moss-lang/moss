@@ -23,6 +23,18 @@ const state = {
   viz: null,
   renderToken: 0,
   lastMtimeMs: null,
+  graphView: {
+    scale: 1,
+    minScale: 0.08,
+    maxScale: 4,
+    offsetX: 0,
+    offsetY: 0,
+    pointerId: null,
+    panStartX: 0,
+    panStartY: 0,
+    svgWidth: 0,
+    svgHeight: 0,
+  },
 };
 
 const NODE_SHAPES = {
@@ -58,6 +70,9 @@ async function main() {
   wireEvents();
   await loadIr({ preserveSelection: false });
   setInterval(pollForUpdates, 1500);
+  window.addEventListener("resize", () => {
+    fitGraphToViewport();
+  });
 }
 
 function wireEvents() {
@@ -142,6 +157,16 @@ function wireEvents() {
     }
     checkbox.checked = !checkbox.checked;
     checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  dom.graph.addEventListener("wheel", onGraphWheel, { passive: false });
+  dom.graph.addEventListener("pointerdown", onGraphPointerDown);
+  dom.graph.addEventListener("pointermove", onGraphPointerMove);
+  dom.graph.addEventListener("pointerup", onGraphPointerUp);
+  dom.graph.addEventListener("pointercancel", onGraphPointerUp);
+  dom.graph.addEventListener("pointerleave", onGraphPointerUp);
+  dom.graph.addEventListener("dblclick", () => {
+    fitGraphToViewport();
   });
 }
 
@@ -524,13 +549,154 @@ async function renderGraph() {
     if (token !== state.renderToken) {
       return;
     }
-    dom.graph.replaceChildren(svg);
+    mountGraph(svg);
   } catch (error) {
     if (token !== state.renderToken) {
       return;
     }
     dom.graph.replaceChildren(errorNode(String(error)));
   }
+}
+
+function mountGraph(svg) {
+  const viewBox = svg.viewBox.baseVal;
+  const width =
+    viewBox && viewBox.width > 0
+      ? viewBox.width
+      : Number(svg.getAttribute("width") ?? "0");
+  const height =
+    viewBox && viewBox.height > 0
+      ? viewBox.height
+      : Number(svg.getAttribute("height") ?? "0");
+
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+
+  const viewport = document.createElement("div");
+  viewport.className = "graph-viewport";
+
+  const canvas = document.createElement("div");
+  canvas.className = "graph-canvas";
+  canvas.append(svg);
+  viewport.append(canvas);
+
+  dom.graph.replaceChildren(viewport);
+
+  state.graphView.svgWidth = width;
+  state.graphView.svgHeight = height;
+  fitGraphToViewport();
+}
+
+function graphCanvas() {
+  return dom.graph.querySelector(".graph-canvas");
+}
+
+function fitGraphToViewport() {
+  const canvas = graphCanvas();
+  if (!canvas) {
+    return;
+  }
+
+  const { svgWidth, svgHeight, minScale, maxScale } = state.graphView;
+  if (svgWidth <= 0 || svgHeight <= 0) {
+    state.graphView.scale = 1;
+    state.graphView.offsetX = 0;
+    state.graphView.offsetY = 0;
+    applyGraphTransform();
+    return;
+  }
+
+  const bounds = dom.graph.getBoundingClientRect();
+  const scaleX = (bounds.width - 32) / svgWidth;
+  const scaleY = (bounds.height - 32) / svgHeight;
+  const scale = clamp(Math.min(scaleX, scaleY, 1), minScale, maxScale);
+
+  state.graphView.scale = scale;
+  state.graphView.offsetX = (bounds.width - svgWidth * scale) / 2;
+  state.graphView.offsetY = (bounds.height - svgHeight * scale) / 2;
+  applyGraphTransform();
+}
+
+function applyGraphTransform() {
+  const canvas = graphCanvas();
+  if (!canvas) {
+    return;
+  }
+
+  canvas.style.transform = `translate(${state.graphView.offsetX}px, ${state.graphView.offsetY}px) scale(${state.graphView.scale})`;
+}
+
+function onGraphWheel(event) {
+  const canvas = graphCanvas();
+  if (!canvas) {
+    return;
+  }
+
+  event.preventDefault();
+
+  const before = clientToGraphPoint(event.clientX, event.clientY);
+  const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+  state.graphView.scale = clamp(
+    state.graphView.scale * factor,
+    state.graphView.minScale,
+    state.graphView.maxScale,
+  );
+
+  const rect = dom.graph.getBoundingClientRect();
+  state.graphView.offsetX = event.clientX - rect.left - before.x * state.graphView.scale;
+  state.graphView.offsetY = event.clientY - rect.top - before.y * state.graphView.scale;
+  applyGraphTransform();
+}
+
+function onGraphPointerDown(event) {
+  if (event.button !== 0) {
+    return;
+  }
+
+  const canvas = graphCanvas();
+  if (!canvas) {
+    return;
+  }
+
+  state.graphView.pointerId = event.pointerId;
+  state.graphView.panStartX = event.clientX - state.graphView.offsetX;
+  state.graphView.panStartY = event.clientY - state.graphView.offsetY;
+  dom.graph.classList.add("is-panning");
+  dom.graph.setPointerCapture(event.pointerId);
+}
+
+function onGraphPointerMove(event) {
+  if (state.graphView.pointerId !== event.pointerId) {
+    return;
+  }
+
+  state.graphView.offsetX = event.clientX - state.graphView.panStartX;
+  state.graphView.offsetY = event.clientY - state.graphView.panStartY;
+  applyGraphTransform();
+}
+
+function onGraphPointerUp(event) {
+  if (state.graphView.pointerId !== event.pointerId) {
+    return;
+  }
+
+  state.graphView.pointerId = null;
+  dom.graph.classList.remove("is-panning");
+  if (dom.graph.hasPointerCapture(event.pointerId)) {
+    dom.graph.releasePointerCapture(event.pointerId);
+  }
+}
+
+function clientToGraphPoint(clientX, clientY) {
+  const rect = dom.graph.getBoundingClientRect();
+  return {
+    x: (clientX - rect.left - state.graphView.offsetX) / state.graphView.scale,
+    y: (clientY - rect.top - state.graphView.offsetY) / state.graphView.scale,
+  };
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function buildFocus(ir, selectedLines) {
