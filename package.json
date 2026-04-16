@@ -1,9 +1,13 @@
 {
   "private": true,
+  "scripts": {
+    "ir-viewer": "bun run scripts/ir-viewer/server.ts"
+  },
   "workspaces": [
     "packages/*"
   ],
   "devDependencies": {
+    "@viz-js/viz": "^3.20.0",
     "@types/node": "^25",
     "@types/vscode": "^1",
     "@vscode/vsce": "^3",
