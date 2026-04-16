@@ -5,7 +5,8 @@ const workspaceRoot = resolve(import.meta.dir, "..", "..");
 const clientDir = join(import.meta.dir, "web");
 const buildDir = join(import.meta.dir, ".build");
 const irPath = resolve(process.cwd(), process.argv[2] ?? "scratch/ir.txt");
-const port = Number(process.env.PORT ?? "3176");
+const portEnv = process.env.PORT;
+const port = portEnv == null ? 0 : Number(portEnv);
 
 mkdirSync(buildDir, { recursive: true });
 
@@ -101,3 +102,6 @@ const server = Bun.serve({
 console.log(`IR viewer: http://localhost:${server.port}`);
 console.log(`IR file:   ${irPath}`);
 console.log(`cwd:       ${workspaceRoot}`);
+if (portEnv == null) {
+  console.log("port:      auto-selected");
+}
