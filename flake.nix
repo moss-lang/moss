@@ -186,6 +186,7 @@
 
                   # Convenient tools.
                   pkgs.binaryen
+                  pkgs.graphviz
                   pkgs.wasm-tools
                   pkgs.wasmtime
                 ];
