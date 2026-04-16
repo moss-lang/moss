@@ -1,5 +1,3 @@
-import { instance as createViz } from "@viz-js/viz";
-
 const dom = {
   status: document.querySelector("#status"),
   summary: document.querySelector("#summary"),
@@ -20,7 +18,6 @@ const state = {
   selectedLines: new Set(),
   filterText: "",
   showSelectedOnly: false,
-  viz: null,
   renderToken: 0,
   lastMtimeMs: null,
   graphView: {
@@ -66,7 +63,6 @@ main().catch((error) => {
 });
 
 async function main() {
-  state.viz = await createViz();
   wireEvents();
   await loadIr({ preserveSelection: false });
   setInterval(pollForUpdates, 1500);
@@ -545,11 +541,22 @@ async function renderGraph() {
 
   try {
     const dot = renderDot(state.ir, focus);
-    const svg = await state.viz.renderSVGElement(dot);
+    const response = await fetch("/api/render-svg", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ dot }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error ?? `render failed with ${response.status}`);
+    }
+    const svgText = await response.text();
     if (token !== state.renderToken) {
       return;
     }
-    mountGraph(svg);
+    mountGraph(svgText);
   } catch (error) {
     if (token !== state.renderToken) {
       return;
@@ -558,19 +565,12 @@ async function renderGraph() {
   }
 }
 
-function mountGraph(svg) {
-  const viewBox = svg.viewBox.baseVal;
-  const width =
-    viewBox && viewBox.width > 0
-      ? viewBox.width
-      : Number(svg.getAttribute("width") ?? "0");
-  const height =
-    viewBox && viewBox.height > 0
-      ? viewBox.height
-      : Number(svg.getAttribute("height") ?? "0");
-
-  svg.removeAttribute("width");
-  svg.removeAttribute("height");
+function mountGraph(svgText) {
+  const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
+  const svg = doc.documentElement;
+  if (!(svg instanceof SVGSVGElement) || svg.tagName !== "svg") {
+    throw new Error("render response did not contain an SVG document");
+  }
 
   const viewport = document.createElement("div");
   viewport.className = "graph-viewport";
@@ -581,6 +581,21 @@ function mountGraph(svg) {
   viewport.append(canvas);
 
   dom.graph.replaceChildren(viewport);
+
+  const viewBox = svg.viewBox.baseVal;
+  const width =
+    viewBox && viewBox.width > 0
+      ? viewBox.width
+      : Number(svg.getAttribute("width") ?? "0");
+  const height =
+    viewBox && viewBox.height > 0
+      ? viewBox.height
+      : Number(svg.getAttribute("height") ?? "0");
+
+  svg.setAttribute("width", String(width));
+  svg.setAttribute("height", String(height));
+  svg.style.width = `${width}px`;
+  svg.style.height = `${height}px`;
 
   state.graphView.svgWidth = width;
   state.graphView.svgHeight = height;

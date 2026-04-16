@@ -43,6 +43,36 @@ function notFound(message: string): Response {
   return json({ error: message }, 404);
 }
 
+async function renderSvg(dot: string): Promise<Response> {
+  const proc = Bun.spawn(["dot", "-Tsvg"], {
+    stdin: new Blob([dot]),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  if (exitCode !== 0) {
+    return json(
+      {
+        error: stderr.trim() || `dot exited with code ${exitCode}`,
+      },
+      500,
+    );
+  }
+
+  return new Response(stdout, {
+    headers: {
+      "content-type": "image/svg+xml; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
+
 const server = Bun.serve({
   port,
   async fetch(req) {
@@ -93,6 +123,21 @@ const server = Bun.serve({
       } catch {
         return notFound(`IR dump not found: ${irPath}`);
       }
+    }
+
+    if (url.pathname === "/api/render-svg" && req.method === "POST") {
+      let payload;
+      try {
+        payload = await req.json();
+      } catch {
+        return json({ error: "invalid JSON request body" }, 400);
+      }
+
+      if (typeof payload?.dot !== "string" || payload.dot.length === 0) {
+        return json({ error: "request body must include non-empty `dot`" }, 400);
+      }
+
+      return renderSvg(payload.dot);
     }
 
     return new Response("not found", { status: 404 });
