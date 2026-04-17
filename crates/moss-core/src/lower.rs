@@ -1461,7 +1461,18 @@ impl<'a> Lower<'a> {
                                 });
                                 construct.push(composite);
                             }
-                            None => return Err(self.todo_no_loc()),
+                            None => {
+                                eprintln!(
+                                    "invoke_need(level={level:?}, target={target:?}, destruct={destruct:?})"
+                                );
+                                eprintln!("  construct = {construct:?}");
+                                eprintln!("  raised = {raised:?}");
+                                eprintln!("  needs = {:?}", &self.ir.lists[needs]);
+                                eprintln!("  need = {need:?}");
+                                eprintln!("  def = {def:?}");
+                                eprintln!("  param = {param:?}");
+                                return Err(self.todo_no_loc());
+                            }
                         },
                         Node::NeedCtxdef {
                             level: _,
