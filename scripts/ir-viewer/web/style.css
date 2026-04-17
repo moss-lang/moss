@@ -35,15 +35,12 @@ input {
 
 .page {
   display: grid;
-  gap: 1rem;
+  gap: 0;
   height: 100vh;
-  padding: 1rem;
+  padding: 1rem 1rem 1rem;
   overflow: hidden;
-  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
-.topbar,
-.toolbar,
 .pane {
   background: var(--panel);
   border: 1px solid rgba(107, 93, 74, 0.18);
@@ -51,30 +48,9 @@ input {
   box-shadow: var(--shadow);
 }
 
-.topbar,
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-}
-
-.topbar h1 {
-  margin: 0 0 0.25rem;
-  font-size: 1.2rem;
-}
-
-.topbar p,
-.graph-meta,
-#summary {
+.graph-meta {
   margin: 0;
   color: var(--muted);
-}
-
-.controls,
-.toolbar {
-  flex-wrap: wrap;
 }
 
 button {
@@ -84,6 +60,7 @@ button {
   color: var(--ink);
   cursor: pointer;
   padding: 0.55rem 0.85rem;
+  white-space: nowrap;
 }
 
 button:hover {
@@ -101,7 +78,7 @@ button:hover {
 }
 
 #filter {
-  min-width: min(28rem, 100%);
+  min-width: min(18rem, 100%);
   flex: 1 1 18rem;
   border: 1px solid rgba(107, 93, 74, 0.22);
   border-radius: 999px;
@@ -124,18 +101,44 @@ button:hover {
   overflow: hidden;
 }
 
-.pane-title,
-.graph-meta {
+.pane > .pane-title,
+.pane-header {
   padding: 0.9rem 1rem;
 }
 
-.pane-title {
+.pane > .pane-title {
   border-bottom: 1px solid rgba(107, 93, 74, 0.16);
+}
+
+.pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(107, 93, 74, 0.16);
+}
+
+.raw-pane-header {
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+}
+
+.raw-pane-header #filter {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.pane-title {
   font-weight: 700;
+  padding: 0;
+  flex: 0 0 auto;
 }
 
 .graph-meta {
-  border-bottom: 1px solid rgba(107, 93, 74, 0.12);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  text-align: right;
 }
 
 .lines {
@@ -243,6 +246,7 @@ button:hover {
   .panes {
     grid-template-columns: 1fr;
     overflow: visible;
+    gap: 1rem;
   }
 
   .raw-pane {
@@ -251,5 +255,14 @@ button:hover {
 
   .graph-pane {
     min-height: 52vh;
+  }
+
+  .pane-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .raw-pane-header #filter {
+    width: 100%;
   }
 }
