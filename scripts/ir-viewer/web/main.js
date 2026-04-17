@@ -151,6 +151,9 @@ function wireEvents() {
     if (!(checkbox instanceof HTMLInputElement) || checkbox.disabled) {
       return;
     }
+    // Each row is a label, so cancel the native label toggle before applying
+    // the explicit state change. Otherwise row clicks toggle twice and flicker.
+    event.preventDefault();
     checkbox.checked = !checkbox.checked;
     checkbox.dispatchEvent(new Event("change", { bubbles: true }));
   });
