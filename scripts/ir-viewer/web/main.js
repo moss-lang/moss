@@ -660,9 +660,7 @@ function buildFocus(ir, selectedLines) {
       continue;
     }
     for (const nodeId of line.rootIds) {
-      const labels = roots.get(nodeId) ?? [];
-      labels.push(rootLabel(line));
-      roots.set(nodeId, labels);
+      roots.set(nodeId, true);
       queue.push(nodeId);
     }
   }
@@ -706,16 +704,6 @@ function buildFocus(ir, selectedLines) {
   return { roots, keep, materialized };
 }
 
-function rootLabel(line) {
-  if (line.kind === "def") {
-    return line.text.slice(0, line.text.lastIndexOf(" = "));
-  }
-  if (line.kind === "node") {
-    return line.text.slice(0, line.text.indexOf(" = "));
-  }
-  return `line ${line.index + 1}`;
-}
-
 function renderDot(ir, focus) {
   const parts = [];
   parts.push("digraph IR {");
@@ -749,9 +737,6 @@ function materializedLabel(ir, focus, nodeId) {
   const lines = [`%${nodeId}`];
   for (const def of ir.defsByNode.get(nodeId) ?? []) {
     lines.push(def);
-  }
-  if (focus.roots.has(nodeId)) {
-    lines.push(`roots: ${focus.roots.get(nodeId).join(", ")}`);
   }
   lines.push(...renderNodePretty(ir, focus.materialized, nodeId, 0, new Set()));
   return lines.join("\n");
