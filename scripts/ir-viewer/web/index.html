@@ -8,45 +8,25 @@
   </head>
   <body>
     <div class="page">
-      <header class="topbar">
-        <div>
-          <h1>Moss IR Viewer</h1>
-          <p id="status">Loading…</p>
-        </div>
-        <div class="controls">
-          <button id="reload" type="button">Reload</button>
-          <button id="select-visible" type="button">Select Visible</button>
-          <button id="clear-visible" type="button">Clear Visible</button>
-          <button id="clear-all" type="button">Clear All</button>
-          <label class="checkbox-pill">
-            <input id="auto-reload" type="checkbox" checked />
-            Auto-reload
-          </label>
-        </div>
-      </header>
-
-      <section class="toolbar">
-        <input
-          id="filter"
-          type="search"
-          placeholder="Filter lines by text"
-          autocomplete="off"
-        />
-        <label class="checkbox-pill">
-          <input id="show-selected-only" type="checkbox" />
-          Selected only
-        </label>
-        <div id="summary"></div>
-      </section>
-
       <main class="panes">
         <section class="pane raw-pane">
-          <div class="pane-title">Raw IR</div>
+          <div class="pane-header raw-pane-header">
+            <div class="pane-title">Raw IR</div>
+            <input
+              id="filter"
+              type="search"
+              placeholder="Filter lines by text"
+              autocomplete="off"
+            />
+            <button id="clear-all" type="button">Clear All</button>
+          </div>
           <div id="lines" class="lines"></div>
         </section>
         <section class="pane graph-pane">
-          <div class="pane-title">Focused Graph</div>
-          <div id="graph-meta" class="graph-meta"></div>
+          <div class="pane-header">
+            <div class="pane-title">Focused Graph</div>
+            <div id="graph-meta" class="graph-meta"></div>
+          </div>
           <div id="graph" class="graph"></div>
         </section>
       </main>

@@ -1,23 +1,15 @@
 const dom = {
-  status: document.querySelector("#status"),
-  summary: document.querySelector("#summary"),
   graphMeta: document.querySelector("#graph-meta"),
   lines: document.querySelector("#lines"),
   graph: document.querySelector("#graph"),
   filter: document.querySelector("#filter"),
-  reload: document.querySelector("#reload"),
-  selectVisible: document.querySelector("#select-visible"),
-  clearVisible: document.querySelector("#clear-visible"),
   clearAll: document.querySelector("#clear-all"),
-  autoReload: document.querySelector("#auto-reload"),
-  showSelectedOnly: document.querySelector("#show-selected-only"),
 };
 
 const state = {
   ir: null,
   selectedLines: new Set(),
   filterText: "",
-  showSelectedOnly: false,
   renderToken: 0,
   lastMtimeMs: null,
   graphView: {
@@ -59,7 +51,7 @@ const NODE_SHAPES = {
 };
 
 main().catch((error) => {
-  dom.status.textContent = `Failed to start viewer: ${String(error)}`;
+  console.error("Failed to start viewer", error);
 });
 
 async function main() {
@@ -72,46 +64,14 @@ async function main() {
 }
 
 function wireEvents() {
-  dom.reload.addEventListener("click", () => {
-    void loadIr({ preserveSelection: true });
-  });
-
   dom.filter.addEventListener("input", () => {
     state.filterText = dom.filter.value;
     renderLines();
-    updateSummary();
-  });
-
-  dom.showSelectedOnly.addEventListener("change", () => {
-    state.showSelectedOnly = dom.showSelectedOnly.checked;
-    renderLines();
-    updateSummary();
-  });
-
-  dom.selectVisible.addEventListener("click", () => {
-    for (const line of visibleLines()) {
-      if (line.rootIds.length > 0) {
-        state.selectedLines.add(line.index);
-      }
-    }
-    renderLines();
-    updateSummary();
-    void renderGraph();
-  });
-
-  dom.clearVisible.addEventListener("click", () => {
-    for (const line of visibleLines()) {
-      state.selectedLines.delete(line.index);
-    }
-    renderLines();
-    updateSummary();
-    void renderGraph();
   });
 
   dom.clearAll.addEventListener("click", () => {
     state.selectedLines.clear();
     renderLines();
-    updateSummary();
     void renderGraph();
   });
 
@@ -131,7 +91,6 @@ function wireEvents() {
       state.selectedLines.delete(lineIndex);
     }
     syncLineSelection(target.closest(".line"), target.checked);
-    updateSummary();
     void renderGraph();
   });
 
@@ -170,10 +129,6 @@ function wireEvents() {
 }
 
 async function pollForUpdates() {
-  if (!dom.autoReload.checked) {
-    return;
-  }
-
   try {
     const response = await fetch("/api/meta", { cache: "no-store" });
     if (!response.ok) {
@@ -184,20 +139,16 @@ async function pollForUpdates() {
       await loadIr({ preserveSelection: true });
     }
   } catch {
-    // Ignore polling failures; the explicit reload button stays available.
+    // Ignore polling failures; the next poll will retry.
   }
 }
 
 async function loadIr({ preserveSelection }) {
-  dom.status.textContent = "Loading IR dump…";
-
   const response = await fetch("/api/ir", { cache: "no-store" });
   const payload = await response.json();
   if (!response.ok) {
-    dom.status.textContent = payload.error ?? "Failed to load IR dump";
     state.ir = null;
     renderLines();
-    updateSummary();
     await renderGraph();
     return;
   }
@@ -212,9 +163,7 @@ async function loadIr({ preserveSelection }) {
     }
   }
 
-  dom.status.textContent = `${payload.path} • ${state.ir.lines.length} lines • ${state.ir.nodes.size} nodes`;
   renderLines();
-  updateSummary();
   await renderGraph();
 }
 
@@ -456,9 +405,6 @@ function visibleLines() {
 
   const needle = state.filterText.trim().toLowerCase();
   return state.ir.lines.filter((line) => {
-    if (state.showSelectedOnly && !state.selectedLines.has(line.index)) {
-      return false;
-    }
     if (!needle) {
       return true;
     }
@@ -509,18 +455,6 @@ function syncLineSelection(row, checked) {
     return;
   }
   row.classList.toggle("selected", checked);
-}
-
-function updateSummary() {
-  if (!state.ir) {
-    dom.summary.textContent = "";
-    return;
-  }
-
-  const total = state.ir.lines.length;
-  const visible = visibleLines().length;
-  const selected = state.selectedLines.size;
-  dom.summary.textContent = `${selected} selected • ${visible}/${total} visible`;
 }
 
 async function renderGraph() {
