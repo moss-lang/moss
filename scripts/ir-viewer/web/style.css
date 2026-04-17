@@ -9,7 +9,6 @@
   --accent: #0f766e;
   --accent-soft: #d8f1ee;
   --selected: #fff0c7;
-  --shadow: 0 18px 48px rgba(67, 44, 16, 0.15);
 }
 
 * {
@@ -45,7 +44,6 @@ input {
   background: var(--panel);
   border: 1px solid rgba(107, 93, 74, 0.18);
   border-radius: 18px;
-  box-shadow: var(--shadow);
 }
 
 .graph-meta {
