@@ -1378,132 +1378,112 @@ impl<'a> Lower<'a> {
         target: NodeId,
         destruct: &[NodeId],
     ) -> LowerResult<(Vec<NodeId>, Vec<NodeId>)> {
-        match self.node(target) {
-            Node::Nothing => todo!(),
-            Node::Lambda {
-                level: floor,
-                needs: _,
-                result: _,
-            } => {
-                let mut construct = Vec::new();
-                let raised = self.raise(target, floor, level - floor);
-                let Node::Lambda {
+        let Node::Lambda {
+            level: floor,
+            needs: _,
+            result: _,
+        } = self.node(target)
+        else {
+            panic!()
+        };
+        let mut construct = Vec::new();
+        let raised = self.raise(target, floor, level - floor);
+        let Node::Lambda {
+            level: _,
+            needs,
+            result: _,
+        } = self.node(raised)
+        else {
+            unreachable!()
+        };
+        for loc in needs {
+            let need = self.ir.lists[loc];
+            match self.node(need) {
+                Node::NeedTydef {
                     level: _,
-                    needs,
-                    result: _,
-                } = self.node(raised)
-                else {
-                    unreachable!()
-                };
-                for loc in needs {
-                    let need = self.ir.lists[loc];
-                    match self.node(need) {
-                        Node::NeedTydef {
-                            level: _,
-                            def,
-                            param,
-                        } => match self.extract_ty_lambda(destruct, def, param)? {
-                            Some((callee, synth)) => {
-                                let Node::Lambda {
-                                    level: level_synth,
-                                    needs: needs_synth,
-                                    result: result_synth,
-                                } = self.node(synth)
-                                else {
-                                    panic!()
-                                };
-                                let Node::List { items } = self.node(result_synth) else {
-                                    panic!()
-                                };
-                                let result_composite = self.mk_node(Node::Apply {
-                                    lambda: callee,
-                                    args: items,
-                                });
-                                let composite = self.mk_node(Node::Lambda {
-                                    level: level_synth,
-                                    needs: needs_synth,
-                                    result: result_composite,
-                                });
-                                construct.push(composite);
-                            }
-                            None => return Err(self.todo_no_loc()),
-                        },
-                        Node::NeedSigdef {
-                            level: _,
-                            def,
-                            param,
-                        } => todo!(),
-                        Node::NeedValdef {
-                            level: _,
-                            def,
-                            param,
-                        } => match self.extract_val_lambda(destruct, def, param)? {
-                            Some((callee, synth)) => {
-                                let Node::Lambda {
-                                    level: level_synth,
-                                    needs: needs_synth,
-                                    result: result_synth,
-                                } = self.node(synth)
-                                else {
-                                    panic!()
-                                };
-                                let Node::List { items } = self.node(result_synth) else {
-                                    panic!()
-                                };
-                                let result_composite = self.mk_node(Node::Apply {
-                                    lambda: callee,
-                                    args: items,
-                                });
-                                let composite = self.mk_node(Node::Lambda {
-                                    level: level_synth,
-                                    needs: needs_synth,
-                                    result: result_composite,
-                                });
-                                construct.push(composite);
-                            }
-                            None => {
-                                eprintln!(
-                                    "invoke_need(level={level:?}, target={target:?}, destruct={destruct:?})"
-                                );
-                                eprintln!("  construct = {construct:?}");
-                                eprintln!("  raised = {raised:?}");
-                                eprintln!("  needs = {:?}", &self.ir.lists[needs]);
-                                eprintln!("  need = {need:?}");
-                                eprintln!("  def = {def:?}");
-                                eprintln!("  param = {param:?}");
-                                return Err(self.todo_no_loc());
-                            }
-                        },
-                        Node::NeedCtxdef {
-                            level: _,
-                            def,
-                            param,
-                        } => todo!(),
-                        _ => unreachable!(),
+                    def,
+                    param,
+                } => match self.extract_ty_lambda(destruct, def, param)? {
+                    Some((callee, synth)) => {
+                        let Node::Lambda {
+                            level: level_synth,
+                            needs: needs_synth,
+                            result: result_synth,
+                        } = self.node(synth)
+                        else {
+                            panic!()
+                        };
+                        let Node::List { items } = self.node(result_synth) else {
+                            panic!()
+                        };
+                        let result_composite = self.mk_node(Node::Apply {
+                            lambda: callee,
+                            args: items,
+                        });
+                        let composite = self.mk_node(Node::Lambda {
+                            level: level_synth,
+                            needs: needs_synth,
+                            result: result_composite,
+                        });
+                        construct.push(composite);
                     }
-                }
-                Ok((construct, Vec::new()))
+                    None => return Err(self.todo_no_loc()),
+                },
+                Node::NeedSigdef {
+                    level: _,
+                    def,
+                    param,
+                } => todo!(),
+                Node::NeedValdef {
+                    level: _,
+                    def,
+                    param,
+                } => match self.extract_val_lambda(destruct, def, param)? {
+                    Some((callee, synth)) => {
+                        let Node::Lambda {
+                            level: level_synth,
+                            needs: needs_synth,
+                            result: result_synth,
+                        } = self.node(synth)
+                        else {
+                            panic!()
+                        };
+                        let Node::List { items } = self.node(result_synth) else {
+                            panic!()
+                        };
+                        let result_composite = self.mk_node(Node::Apply {
+                            lambda: callee,
+                            args: items,
+                        });
+                        let composite = self.mk_node(Node::Lambda {
+                            level: level_synth,
+                            needs: needs_synth,
+                            result: result_composite,
+                        });
+                        construct.push(composite);
+                    }
+                    None => {
+                        eprintln!(
+                            "invoke_need(level={level:?}, target={target:?}, destruct={destruct:?})"
+                        );
+                        eprintln!("  construct = {construct:?}");
+                        eprintln!("  raised = {raised:?}");
+                        eprintln!("  needs = {:?}", &self.ir.lists[needs]);
+                        eprintln!("  need = {need:?}");
+                        eprintln!("  def = {def:?}");
+                        eprintln!("  param = {param:?}");
+                        return Err(self.todo_no_loc());
+                    }
+                },
+                Node::NeedCtxdef {
+                    level: _,
+                    def,
+                    param,
+                } => todo!(),
+                _ => unreachable!(),
             }
-            Node::Apply { lambda, args } => todo!(),
-            Node::List { items } => todo!(),
-            Node::NeedTydef { level, def, param } => todo!(),
-            Node::NeedSigdef { level, def, param } => todo!(),
-            Node::NeedValdef { level, def, param } => todo!(),
-            Node::NeedCtxdef { level, def, param } => todo!(),
-            Node::Tagdef { def } => todo!(),
-            Node::Aliasdef { def } => todo!(),
-            Node::Tuple { elems } => todo!(),
-            Node::Context => todo!(),
-            Node::Fndef { def } => todo!(),
-            Node::Get { ctx, slot } => todo!(),
-            Node::Lit { val } => todo!(),
-            Node::Bind { args, bind } => todo!(),
-            Node::BindTydef { def, bind } => todo!(),
-            Node::BindSigdef { def, bind } => todo!(),
-            Node::BindValdef { def, bind } => todo!(),
-            Node::BindCtxdef { def, bind } => todo!(),
-            Node::Sig { param, result } => todo!(),
         }
+        Ok((construct, Vec::new()))
     }
 
     /// Given two lambdas, return a third lambda that composes with the latter to match the former.
