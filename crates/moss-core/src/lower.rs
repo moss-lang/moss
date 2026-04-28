@@ -2593,7 +2593,7 @@ impl LowerBody<'_, '_> {
     }
 
     fn emit(&mut self, instr: Instr) -> InstrId {
-        todo!()
+        self.x.emit(instr)
     }
 
     fn ty_tuple(&mut self, elems: &[NodeId]) -> NodeId {
