@@ -9,6 +9,7 @@ const dom = {
 const state = {
   ir: null,
   selectedLines: new Set(),
+  persistedSelectionKeys: new Set(),
   filterText: "",
   renderToken: 0,
   lastMtimeMs: null,
@@ -71,6 +72,7 @@ function wireEvents() {
 
   dom.clearAll.addEventListener("click", () => {
     state.selectedLines.clear();
+    state.persistedSelectionKeys.clear();
     renderLines();
     void renderGraph();
   });
@@ -85,10 +87,13 @@ function wireEvents() {
       return;
     }
     const lineIndex = Number(rawIndex);
+    const line = state.ir?.lines.find((entry) => entry.index === lineIndex);
     if (target.checked) {
       state.selectedLines.add(lineIndex);
+      syncPersistedSelection(line, true);
     } else {
       state.selectedLines.delete(lineIndex);
+      syncPersistedSelection(line, false);
     }
     syncLineSelection(target.closest(".line"), target.checked);
     void renderGraph();
@@ -153,12 +158,14 @@ async function loadIr({ preserveSelection }) {
     return;
   }
 
-  const previous = preserveSelection ? new Set(state.selectedLines) : new Set();
   state.ir = parseIr(payload.text, payload.path);
   state.lastMtimeMs = payload.mtimeMs;
   state.selectedLines.clear();
+  if (!preserveSelection) {
+    state.persistedSelectionKeys.clear();
+  }
   for (const line of state.ir.lines) {
-    if (previous.has(line.index) && line.rootIds.length > 0) {
+    if (state.persistedSelectionKeys.has(lineSelectionKey(line))) {
       state.selectedLines.add(line.index);
     }
   }
@@ -455,6 +462,25 @@ function syncLineSelection(row, checked) {
     return;
   }
   row.classList.toggle("selected", checked);
+}
+
+function syncPersistedSelection(line, selected) {
+  const key = lineSelectionKey(line);
+  if (key == null) {
+    return;
+  }
+  if (selected) {
+    state.persistedSelectionKeys.add(key);
+  } else {
+    state.persistedSelectionKeys.delete(key);
+  }
+}
+
+function lineSelectionKey(line) {
+  if (!line || line.rootIds.length === 0) {
+    return null;
+  }
+  return `${line.kind}:${line.rootIds.join(",")}:${line.text}`;
 }
 
 async function renderGraph() {
