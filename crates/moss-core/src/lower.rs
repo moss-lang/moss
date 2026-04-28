@@ -1386,7 +1386,6 @@ impl<'a> Lower<'a> {
         else {
             panic!()
         };
-        let mut construct = Vec::new();
         let raised = self.raise(target, floor, level - floor);
         let Node::Lambda {
             level: _,
@@ -1396,6 +1395,8 @@ impl<'a> Lower<'a> {
         else {
             unreachable!()
         };
+        let mut construct = Vec::new();
+        let mut propagate = Vec::new();
         for loc in needs {
             let need = self.ir.lists[loc];
             match self.node(need) {
@@ -1427,7 +1428,16 @@ impl<'a> Lower<'a> {
                         });
                         construct.push(composite);
                     }
-                    None => return Err(self.todo_no_loc()),
+                    None => {
+                        // TODO: Instead of clumsily constructing `before` and `after` on the fly
+                        // here, get better asymptotic complexity by maintaining a running mapping.
+                        let prefix = self.ir.lists[needs][..construct.len()].to_vec();
+                        let before = self.mk_node_list(&prefix);
+                        let after = self.mk_node_list(&construct);
+                        let substituted = self.substitute(level, before, after, need);
+                        construct.push(substituted);
+                        propagate.push(substituted);
+                    }
                 },
                 Node::NeedSigdef {
                     level: _,
@@ -1463,16 +1473,14 @@ impl<'a> Lower<'a> {
                         construct.push(composite);
                     }
                     None => {
-                        eprintln!(
-                            "invoke_need(level={level:?}, target={target:?}, destruct={destruct:?})"
-                        );
-                        eprintln!("  construct = {construct:?}");
-                        eprintln!("  raised = {raised:?}");
-                        eprintln!("  needs = {:?}", &self.ir.lists[needs]);
-                        eprintln!("  need = {need:?}");
-                        eprintln!("  def = {def:?}");
-                        eprintln!("  param = {param:?}");
-                        return Err(self.todo_no_loc());
+                        // TODO: Instead of clumsily constructing `before` and `after` on the fly
+                        // here, get better asymptotic complexity by maintaining a running mapping.
+                        let prefix = self.ir.lists[needs][..construct.len()].to_vec();
+                        let before = self.mk_node_list(&prefix);
+                        let after = self.mk_node_list(&construct);
+                        let substituted = self.substitute(level, before, after, need);
+                        construct.push(substituted);
+                        propagate.push(substituted);
                     }
                 },
                 Node::NeedCtxdef {
@@ -1483,7 +1491,7 @@ impl<'a> Lower<'a> {
                 _ => unreachable!(),
             }
         }
-        Ok((construct, Vec::new()))
+        Ok((construct, propagate))
     }
 
     /// Given two lambdas, return a third lambda that composes with the latter to match the former.
