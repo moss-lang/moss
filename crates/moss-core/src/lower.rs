@@ -1,6 +1,6 @@
 use std::{
     backtrace::Backtrace,
-    cmp::Ordering,
+    cmp::{self, Ordering},
     collections::{BTreeMap, HashMap},
     fmt,
     mem::take,
@@ -1515,7 +1515,8 @@ impl<'a> Lower<'a> {
         else {
             panic!()
         };
-        let raised = self.raise(beta, level_beta, (level_alpha - level_beta).succ());
+        let level = cmp::max(level_alpha, level_beta);
+        let raised = self.raise(beta, level_beta, (level - level_beta).succ());
         let Node::Lambda {
             level: _,
             needs: needs_beta,
@@ -1537,11 +1538,19 @@ impl<'a> Lower<'a> {
         else {
             return Ok(None);
         };
+        let needs = self.transforms(
+            &mut Raise {
+                floor: level_alpha,
+                add: level - level_alpha,
+                cache: HashMap::new(),
+            },
+            needs_alpha,
+        );
         let items = self.mk_node_list(&results);
         let result = self.mk_node(Node::List { items });
         Ok(Some(self.mk_node(Node::Lambda {
-            level: level_alpha,
-            needs: needs_alpha,
+            level,
+            needs,
             result,
         })))
     }
