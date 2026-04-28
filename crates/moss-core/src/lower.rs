@@ -1,6 +1,6 @@
 use std::{
     backtrace::Backtrace,
-    cmp::{self, Ordering},
+    cmp::Ordering,
     collections::{BTreeMap, HashMap},
     fmt,
     mem::take,
@@ -1554,6 +1554,105 @@ impl<'a> Lower<'a> {
         Ok((construct, propagate))
     }
 
+    fn unify(
+        &mut self,
+        constraints: &mut HashMap<NodeId, Option<NodeId>>,
+        a: NodeId,
+        b: NodeId,
+    ) -> LowerResult<NodeId> {
+        match (self.node(a), self.node(b)) {
+            (Node::Nothing, Node::Nothing) => todo!(),
+            (
+                Node::Lambda {
+                    level: _,
+                    needs: _,
+                    result: _,
+                },
+                Node::Lambda {
+                    level: _,
+                    needs: _,
+                    result: _,
+                },
+            ) => todo!(),
+            (Node::Apply { lambda: _, args: _ }, Node::Apply { lambda: _, args: _ }) => todo!(),
+            (Node::List { items: _ }, Node::List { items: _ }) => {
+                eprintln!("unify(a={a:?}, b={b:?})");
+                Err(self.todo_no_loc())
+            }
+            (
+                Node::NeedTydef {
+                    level: _,
+                    def: _,
+                    param: _,
+                },
+                Node::NeedTydef {
+                    level: _,
+                    def: _,
+                    param: _,
+                },
+            ) => todo!(),
+            (
+                Node::NeedSigdef {
+                    level: _,
+                    def: _,
+                    param: _,
+                },
+                Node::NeedSigdef {
+                    level: _,
+                    def: _,
+                    param: _,
+                },
+            ) => todo!(),
+            (
+                Node::NeedValdef {
+                    level: _,
+                    def: _,
+                    param: _,
+                },
+                Node::NeedValdef {
+                    level: _,
+                    def: _,
+                    param: _,
+                },
+            ) => todo!(),
+            (
+                Node::NeedCtxdef {
+                    level: _,
+                    def: _,
+                    param: _,
+                },
+                Node::NeedCtxdef {
+                    level: _,
+                    def: _,
+                    param: _,
+                },
+            ) => todo!(),
+            (Node::Tagdef { def: _ }, Node::Tagdef { def: _ }) => todo!(),
+            (Node::Aliasdef { def: _ }, Node::Aliasdef { def: _ }) => todo!(),
+            (Node::Tuple { elems: _ }, Node::Tuple { elems: _ }) => todo!(),
+            (Node::Context, Node::Context) => todo!(),
+            (Node::Fndef { def: _ }, Node::Fndef { def: _ }) => todo!(),
+            (Node::Get { ctx: _, slot: _ }, Node::Get { ctx: _, slot: _ }) => todo!(),
+            (Node::Lit { val: _ }, Node::Lit { val: _ }) => todo!(),
+            (Node::Bind { args: _, bind: _ }, Node::Bind { args: _, bind: _ }) => todo!(),
+            (Node::BindTydef { def: _, bind: _ }, Node::BindTydef { def: _, bind: _ }) => todo!(),
+            (Node::BindSigdef { def: _, bind: _ }, Node::BindSigdef { def: _, bind: _ }) => todo!(),
+            (Node::BindValdef { def: _, bind: _ }, Node::BindValdef { def: _, bind: _ }) => todo!(),
+            (Node::BindCtxdef { def: _, bind: _ }, Node::BindCtxdef { def: _, bind: _ }) => todo!(),
+            (
+                Node::Sig {
+                    param: _,
+                    result: _,
+                },
+                Node::Sig {
+                    param: _,
+                    result: _,
+                },
+            ) => todo!(),
+            other => todo!("{other:?}"),
+        }
+    }
+
     /// Given two lambdas, return a third lambda that composes with the latter to match the former.
     ///
     /// The given lambdas `alpha` and `beta` must have the same result shape, but may have different
@@ -1564,7 +1663,7 @@ impl<'a> Lower<'a> {
             Node::Lambda {
                 level: level_alpha,
                 needs: needs_alpha,
-                result: _,
+                result: result_alpha,
             },
             Node::Lambda {
                 level: level_beta,
@@ -1575,42 +1674,36 @@ impl<'a> Lower<'a> {
         else {
             panic!()
         };
-        let level = cmp::max(level_alpha, level_beta);
-        let raised = self.raise(beta, level_beta, (level - level_beta).succ());
+        let level = level_alpha.succ().max(level_beta);
+        let raised = self.raise(beta, level_beta, level - level_beta);
         let Node::Lambda {
             level: _,
             needs: needs_beta,
-            result: _,
+            result: result_beta,
         } = self.node(raised)
         else {
             panic!()
         };
-        let constraints = vec![Vec::<NodeId>::new(); needs_beta.len()];
-        // TODO: Populate `constraints`.
-        let Some(results) = constraints
-            .into_iter()
-            .map(|list| match list.len() {
-                0 => panic!("underconstrained"),
-                1 => Some(list[0]),
-                _ => None,
-            })
+        let mut constraints =
+            HashMap::from_iter(self.ir.lists[needs_beta].iter().map(|&need| (need, None)));
+        self.unify(&mut constraints, result_alpha, result_beta)?;
+        if !constraints.is_empty() {
+            eprintln!("synthesize(alpha={alpha:?}, beta={beta:?})");
+            eprintln!("  raised = {raised:?}");
+            return Err(self.todo_no_loc());
+        }
+        let Some(results) = self.ir.lists[needs_beta]
+            .iter()
+            .map(|&need| constraints[&need])
             .collect::<Option<Vec<_>>>()
         else {
             return Ok(None);
         };
-        let needs = self.transforms(
-            &mut Raise {
-                floor: level_alpha,
-                add: level - level_alpha,
-                cache: HashMap::new(),
-            },
-            needs_alpha,
-        );
         let items = self.mk_node_list(&results);
         let result = self.mk_node(Node::List { items });
         Ok(Some(self.mk_node(Node::Lambda {
-            level,
-            needs,
+            level: level_alpha,
+            needs: needs_alpha,
             result,
         })))
     }
