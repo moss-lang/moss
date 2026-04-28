@@ -1559,7 +1559,18 @@ impl<'a> Lower<'a> {
         constraints: &mut HashMap<NodeId, Option<NodeId>>,
         a: NodeId,
         b: NodeId,
-    ) -> LowerResult<NodeId> {
+    ) -> LowerResult<()> {
+        if constraints.contains_key(&a) {
+            panic!(); // TODO: Document the asymmetry of `unify`.
+        }
+        constraints.entry(b).and_modify(|option| match option {
+            None => *option = Some(a),
+            Some(prev) => {
+                if a != *prev {
+                    *option = None;
+                }
+            }
+        });
         match (self.node(a), self.node(b)) {
             (Node::Nothing, Node::Nothing) => todo!(),
             (
@@ -1573,11 +1584,17 @@ impl<'a> Lower<'a> {
                     needs: _,
                     result: _,
                 },
-            ) => todo!(),
-            (Node::Apply { lambda: _, args: _ }, Node::Apply { lambda: _, args: _ }) => todo!(),
-            (Node::List { items: _ }, Node::List { items: _ }) => {
-                eprintln!("unify(a={a:?}, b={b:?})");
+            ) => {
+                eprintln!("unify(constraints={constraints:?}, a={a:?}, b={b:?})");
                 Err(self.todo_no_loc())
+            }
+            (Node::Apply { lambda: _, args: _ }, Node::Apply { lambda: _, args: _ }) => todo!(),
+            (Node::List { items: items_a }, Node::List { items: items_b }) => {
+                assert_eq!(items_a.len(), items_b.len());
+                for (item_a, item_b) in items_a.into_iter().zip(items_b) {
+                    self.unify(constraints, self.ir.lists[item_a], self.ir.lists[item_b])?;
+                }
+                Ok(())
             }
             (
                 Node::NeedTydef {
