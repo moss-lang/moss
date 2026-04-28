@@ -1769,6 +1769,114 @@ impl<'a> Lower<'a> {
         }
     }
 
+    fn try_extract_sig_lambda(
+        &mut self,
+        slot: NodeId,
+        sigdef: SigdefId,
+        lambda: NodeId,
+    ) -> LowerResult<Option<(NodeId, NodeId)>> {
+        match self.node(slot) {
+            Node::Nothing => todo!(),
+            Node::Lambda {
+                level,
+                needs,
+                result,
+            } => todo!(),
+            Node::Apply { lambda, args } => todo!(),
+            Node::List { items } => todo!(),
+            Node::NeedTydef {
+                level: _,
+                def: _,
+                param: _,
+            } => Ok(None),
+            Node::NeedSigdef {
+                level: _,
+                def,
+                param,
+            } => {
+                if def == sigdef
+                    && let Some(synth) = self.synthesize(lambda, param)?
+                {
+                    Ok(Some((slot, synth)))
+                } else {
+                    Ok(None)
+                }
+            }
+            Node::NeedValdef {
+                level: _,
+                def: _,
+                param: _,
+            } => Ok(None),
+            Node::NeedCtxdef { level, def, param } => {
+                let mut options = Vec::new();
+                let exploded = self.explode(level, def, param)?;
+                let args = self.mk_node_list(&[]); // TODO: Handle partially-applied contexts.
+                let ctx = self.mk_node(Node::Apply { lambda: slot, args });
+                let owned = self.ir.lists[exploded].to_vec(); // TODO: Don't make a `Vec` here.
+                for (i, node) in owned.into_iter().enumerate() {
+                    if let Some((extracted, synth)) =
+                        self.try_extract_sig_lambda(node, sigdef, lambda)?
+                    {
+                        if extracted != node {
+                            // This can happen if a context is nested in another context. Need to
+                            // fix by explicitly encoding the chain of `Node::Get` instead of just
+                            // returning the possibly-modified node.
+                            todo!();
+                        }
+                        let id = SlotId::from_usize(i);
+                        let got = self.mk_node(Node::Get { ctx, slot: id });
+                        options.push((got, synth));
+                    }
+                }
+                if options.len() == 1 {
+                    Ok(Some(options[0]))
+                } else {
+                    Ok(None)
+                }
+            }
+            Node::Tagdef { def } => todo!(),
+            Node::Aliasdef { def } => todo!(),
+            Node::Tuple { elems } => todo!(),
+            Node::Context => todo!(),
+            Node::Fndef { def } => todo!(),
+            Node::Get { ctx, slot } => todo!(),
+            Node::Lit { val } => todo!(),
+            Node::Bind { args, bind } => todo!(),
+            Node::BindTydef { def: _, bind: _ } => Ok(None),
+            Node::BindSigdef { def, bind } => {
+                if def == sigdef
+                    && let Some(synth) = self.synthesize_bind(lambda, bind)?
+                {
+                    Ok(Some((slot, synth)))
+                } else {
+                    Ok(None)
+                }
+            }
+            Node::BindValdef { def: _, bind: _ } => Ok(None),
+            Node::BindCtxdef { def, bind } => todo!(),
+            Node::Sig { param, result } => todo!(),
+        }
+    }
+
+    fn extract_sig_lambda(
+        &mut self,
+        slots: &[NodeId],
+        sigdef: SigdefId,
+        lambda: NodeId,
+    ) -> LowerResult<Option<(NodeId, NodeId)>> {
+        let mut options = Vec::new();
+        for &slot in slots {
+            if let Some(option) = self.try_extract_sig_lambda(slot, sigdef, lambda)? {
+                options.push(option);
+            }
+        }
+        if options.len() == 1 {
+            Ok(Some(options[0]))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn extract_sig(
         &mut self,
         level: Level,
@@ -1776,7 +1884,21 @@ impl<'a> Lower<'a> {
         def: SigdefId,
         destruct: &[NodeId],
     ) -> LowerResult<NodeId> {
-        Err(self.todo_no_loc())
+        let Sigdef(target) = self.ir.sigdefs[def];
+        let raised = self.raise(target, Level::ZERO, level);
+        let (construct, needs) = self.invoke_need(level, raised, destruct)?;
+        let needs = self.mk_node_list(&needs);
+        let items = self.mk_node_list(&construct);
+        let result = self.mk_node(Node::List { items });
+        let lambda = self.mk_node(Node::Lambda {
+            level,
+            needs,
+            result,
+        });
+        match self.extract_sig_lambda(slots, def, lambda)? {
+            Some((node, _)) => Ok(node),
+            None => Err(todo!()),
+        }
     }
 
     fn try_extract_val_lambda(
