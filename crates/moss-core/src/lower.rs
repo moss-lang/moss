@@ -3,8 +3,8 @@ use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
     fmt,
-    mem::take,
-    ops::{Add, Sub},
+    mem::{replace, take},
+    ops::{Add, Index, IndexMut, Sub},
 };
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
@@ -129,6 +129,43 @@ impl Sub for Level {
 impl fmt::Display for Level {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// A set of [`Level`]s.
+#[derive(Clone, Copy, Debug)]
+struct LevelSet {
+    lo: u128,
+    hi: u128,
+}
+
+impl LevelSet {
+    /// Return the lowest level such that everything at least as high in `self` is at least `level`.
+    fn reduce(self, level: Level) -> Level {
+        todo!()
+    }
+}
+
+/// A mapping from [`Level`] to [`Level`].
+struct LevelMap([Level; 256]);
+
+impl Default for LevelMap {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
+impl Index<Level> for LevelMap {
+    type Output = Level;
+
+    fn index(&self, level: Level) -> &Level {
+        &self.0[usize::from(level.0)]
+    }
+}
+
+impl IndexMut<Level> for LevelMap {
+    fn index_mut(&mut self, level: Level) -> &mut Level {
+        &mut self.0[usize::from(level.0)]
     }
 }
 
@@ -1245,6 +1282,61 @@ impl<'a> Lower<'a> {
         };
         map.put(node, mapped);
         mapped
+    }
+
+    /// Return the [`Level`] of all free variables in the given `node`.
+    fn free(&mut self, node: NodeId) -> LevelSet {
+        todo!()
+    }
+
+    fn normalizes(&mut self, map: &mut LevelMap, nodes: NodeList) -> NodeList {
+        self.map_nodes(nodes, |this, node| this.normalize(map, node))
+    }
+
+    fn normalize(&mut self, map: &mut LevelMap, node: NodeId) -> NodeId {
+        match self.node(node) {
+            Node::Nothing => node,
+            Node::Lambda {
+                level,
+                needs,
+                result,
+            } => {
+                let free = self.free(node);
+                let reduced = free.reduce(level);
+                let prev = replace(&mut map[level], reduced);
+                let needs = self.normalizes(map, needs);
+                let result = self.normalize(map, result);
+                map[level] = prev;
+                self.mk_node(Node::Lambda {
+                    level: reduced,
+                    needs,
+                    result,
+                })
+            }
+            Node::Apply { lambda, args } => todo!(),
+            Node::List { items } => todo!(),
+            Node::NeedTydef { level, def, param } => {
+                let level = map[level];
+                let param = self.normalize(map, param);
+                self.mk_node(Node::NeedTydef { level, def, param })
+            }
+            Node::NeedSigdef { level, def, param } => todo!(),
+            Node::NeedValdef { level, def, param } => todo!(),
+            Node::NeedCtxdef { level, def, param } => todo!(),
+            Node::Tagdef { def } => todo!(),
+            Node::Aliasdef { def } => todo!(),
+            Node::Tuple { elems } => todo!(),
+            Node::Context => todo!(),
+            Node::Fndef { def } => todo!(),
+            Node::Get { ctx, slot } => todo!(),
+            Node::Lit { val } => todo!(),
+            Node::Bind { args, bind } => todo!(),
+            Node::BindTydef { def, bind } => todo!(),
+            Node::BindSigdef { def, bind } => todo!(),
+            Node::BindValdef { def, bind } => todo!(),
+            Node::BindCtxdef { def, bind } => todo!(),
+            Node::Sig { param, result } => todo!(),
+        }
     }
 
     /// Return a new node where all levels at least `floor` are incremented by `add`.
