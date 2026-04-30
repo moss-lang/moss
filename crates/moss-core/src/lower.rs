@@ -1,4 +1,5 @@
 use std::{
+    array,
     backtrace::Backtrace,
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
@@ -151,7 +152,7 @@ struct LevelMap([Level; 256]);
 
 impl Default for LevelMap {
     fn default() -> Self {
-        todo!()
+        Self(array::from_fn(|level| Level(level.try_into().unwrap())))
     }
 }
 
@@ -1320,16 +1321,28 @@ impl<'a> Lower<'a> {
                 let param = self.normalize(map, param);
                 self.mk_node(Node::NeedTydef { level, def, param })
             }
-            Node::NeedSigdef { level, def, param } => todo!(),
-            Node::NeedValdef { level, def, param } => todo!(),
-            Node::NeedCtxdef { level, def, param } => todo!(),
-            Node::Tagdef { def } => todo!(),
-            Node::Aliasdef { def } => todo!(),
+            Node::NeedSigdef { level, def, param } => {
+                let level = map[level];
+                let param = self.normalize(map, param);
+                self.mk_node(Node::NeedSigdef { level, def, param })
+            }
+            Node::NeedValdef { level, def, param } => {
+                let level = map[level];
+                let param = self.normalize(map, param);
+                self.mk_node(Node::NeedValdef { level, def, param })
+            }
+            Node::NeedCtxdef { level, def, param } => {
+                let level = map[level];
+                let param = self.normalize(map, param);
+                self.mk_node(Node::NeedCtxdef { level, def, param })
+            }
+            Node::Tagdef { def: _ } => node,
+            Node::Aliasdef { def: _ } => node,
             Node::Tuple { elems } => todo!(),
-            Node::Context => todo!(),
-            Node::Fndef { def } => todo!(),
+            Node::Context => node,
+            Node::Fndef { def: _ } => node,
             Node::Get { ctx, slot } => todo!(),
-            Node::Lit { val } => todo!(),
+            Node::Lit { val: _ } => node,
             Node::Bind { args, bind } => todo!(),
             Node::BindTydef { def, bind } => todo!(),
             Node::BindSigdef { def, bind } => todo!(),
@@ -1795,7 +1808,9 @@ impl<'a> Lower<'a> {
         };
         let mut constraints =
             HashMap::from_iter(self.ir.lists[needs_beta].iter().map(|&need| (need, None)));
-        self.unify(&mut constraints, result_alpha, result_beta)?;
+        let normalized_alpha = self.normalize(&mut LevelMap::default(), result_alpha);
+        let normalized_beta = self.normalize(&mut LevelMap::default(), result_beta);
+        self.unify(&mut constraints, normalized_alpha, normalized_beta)?;
         if !constraints.is_empty() {
             eprintln!("synthesize(alpha={alpha:?}, beta={beta:?})");
             eprintln!("  raised = {raised:?}");
