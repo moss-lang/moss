@@ -5,7 +5,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     fmt,
     mem::{replace, take},
-    ops::{Add, Index, IndexMut, Sub},
+    ops::{Add, BitOr, Index, IndexMut, Sub},
 };
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
@@ -141,9 +141,32 @@ struct LevelSet {
 }
 
 impl LevelSet {
+    fn empty() -> Self {
+        Self { lo: 0, hi: 0 }
+    }
+
+    fn without(self, level: Level) -> Self {
+        let mask = !(1u128 << level.0);
+        Self {
+            lo: self.lo & mask,
+            hi: self.hi & mask,
+        }
+    }
+
     /// Return the lowest level such that everything at least as high in `self` is at least `level`.
     fn reduce(self, level: Level) -> Level {
         todo!()
+    }
+}
+
+impl BitOr for LevelSet {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self {
+        Self {
+            lo: self.lo | rhs.lo,
+            hi: self.hi | rhs.hi,
+        }
     }
 }
 
@@ -1285,9 +1308,61 @@ impl<'a> Lower<'a> {
         mapped
     }
 
+    /// Return the union of [`Lower::free`] for all the given `nodes`.
+    fn frees(&mut self, nodes: NodeList) -> LevelSet {
+        let mut levels = LevelSet::empty();
+        for loc in nodes {
+            let node = self.ir.lists[loc];
+            levels = levels | self.free(node);
+        }
+        levels
+    }
+
     /// Return the [`Level`] of all free variables in the given `node`.
     fn free(&mut self, node: NodeId) -> LevelSet {
-        todo!()
+        match self.node(node) {
+            Node::Nothing => LevelSet::empty(),
+            Node::Lambda {
+                level,
+                needs,
+                result,
+            } => (self.frees(needs) | self.free(result)).without(level),
+            Node::Apply { lambda, args } => self.free(lambda) | self.frees(args),
+            Node::List { items } => self.frees(items),
+            Node::NeedTydef {
+                level: _,
+                def: _,
+                param,
+            } => self.free(param),
+            Node::NeedSigdef {
+                level: _,
+                def: _,
+                param,
+            } => self.free(param),
+            Node::NeedValdef {
+                level: _,
+                def: _,
+                param,
+            } => self.free(param),
+            Node::NeedCtxdef {
+                level: _,
+                def: _,
+                param,
+            } => self.free(param),
+            Node::Tagdef { def: _ } => LevelSet::empty(),
+            Node::Aliasdef { def: _ } => LevelSet::empty(),
+            Node::Tuple { elems } => self.frees(elems),
+            Node::Context => LevelSet::empty(),
+            Node::Fndef { def: _ } => LevelSet::empty(),
+            Node::Get { ctx, slot: _ } => self.free(ctx),
+            Node::Lit { val: _ } => LevelSet::empty(),
+            Node::Bind { args, bind } => self.frees(args) | self.free(bind),
+            Node::BindTydef { def: _, bind } => self.free(bind),
+            Node::BindSigdef { def: _, bind } => self.free(bind),
+            Node::BindValdef { def: _, bind } => self.free(bind),
+            Node::BindCtxdef { def: _, bind } => self.free(bind),
+            Node::Sig { param, result } => self.free(param) | self.free(result),
+        }
     }
 
     fn normalizes(&mut self, map: &mut LevelMap, nodes: NodeList) -> NodeList {
@@ -1315,7 +1390,10 @@ impl<'a> Lower<'a> {
                 })
             }
             Node::Apply { lambda, args } => todo!(),
-            Node::List { items } => todo!(),
+            Node::List { items } => {
+                let items = self.normalizes(map, items);
+                self.mk_node(Node::List { items })
+            }
             Node::NeedTydef { level, def, param } => {
                 let level = map[level];
                 let param = self.normalize(map, param);
