@@ -145,12 +145,13 @@ impl LevelSet {
         Self { lo: 0, hi: 0 }
     }
 
-    fn without(self, level: Level) -> Self {
-        let mask = !(1u128 << level.0);
-        Self {
-            lo: self.lo & mask,
-            hi: self.hi & mask,
-        }
+    fn without(mut self, level: Level) -> Self {
+        let shift = level.0;
+        match shift.checked_sub(128) {
+            None => self.lo &= !(1u128 << shift),
+            Some(shift) => self.hi &= !(1u128 << shift),
+        };
+        self
     }
 
     /// Return the lowest level such that everything at least as high in `self` is at least `level`.
