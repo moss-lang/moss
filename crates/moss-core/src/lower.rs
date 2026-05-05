@@ -1398,7 +1398,11 @@ impl<'a> Lower<'a> {
                     result,
                 })
             }
-            Node::Apply { lambda, args } => todo!(),
+            Node::Apply { lambda, args } => {
+                let lambda = self.normalize(map, lambda);
+                let args = self.normalizes(map, args);
+                self.mk_node(Node::Apply { lambda, args })
+            }
             Node::List { items } => {
                 let items = self.normalizes(map, items);
                 self.mk_node(Node::List { items })
@@ -1425,17 +1429,43 @@ impl<'a> Lower<'a> {
             }
             Node::Tagdef { def: _ } => node,
             Node::Aliasdef { def: _ } => node,
-            Node::Tuple { elems } => todo!(),
+            Node::Tuple { elems } => {
+                let elems = self.normalizes(map, elems);
+                self.mk_node(Node::Tuple { elems })
+            }
             Node::Context => node,
             Node::Fndef { def: _ } => node,
-            Node::Get { ctx, slot } => todo!(),
+            Node::Get { ctx, slot } => {
+                let ctx = self.normalize(map, ctx);
+                self.mk_node(Node::Get { ctx, slot })
+            }
             Node::Lit { val: _ } => node,
-            Node::Bind { args, bind } => todo!(),
-            Node::BindTydef { def, bind } => todo!(),
-            Node::BindSigdef { def, bind } => todo!(),
-            Node::BindValdef { def, bind } => todo!(),
-            Node::BindCtxdef { def, bind } => todo!(),
-            Node::Sig { param, result } => todo!(),
+            Node::Bind { args, bind } => {
+                let args = self.normalizes(map, args);
+                let bind = self.normalize(map, bind);
+                self.mk_node(Node::Bind { args, bind })
+            }
+            Node::BindTydef { def, bind } => {
+                let bind = self.normalize(map, bind);
+                self.mk_node(Node::BindTydef { def, bind })
+            }
+            Node::BindSigdef { def, bind } => {
+                let bind = self.normalize(map, bind);
+                self.mk_node(Node::BindSigdef { def, bind })
+            }
+            Node::BindValdef { def, bind } => {
+                let bind = self.normalize(map, bind);
+                self.mk_node(Node::BindValdef { def, bind })
+            }
+            Node::BindCtxdef { def, bind } => {
+                let bind = self.normalize(map, bind);
+                self.mk_node(Node::BindCtxdef { def, bind })
+            }
+            Node::Sig { param, result } => {
+                let param = self.normalize(map, param);
+                let result = self.normalize(map, result);
+                self.mk_node(Node::Sig { param, result })
+            }
         }
     }
 
