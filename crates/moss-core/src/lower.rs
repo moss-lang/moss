@@ -156,7 +156,15 @@ impl LevelSet {
 
     /// Return the lowest level such that everything at least as high in `self` is at least `level`.
     fn reduce(self, level: Level) -> Level {
-        todo!()
+        let shift = level.0;
+        match shift.checked_sub(128) {
+            None => Level(
+                (128 - u128::leading_zeros(self.lo & !(!0u128 << shift)))
+                    .try_into()
+                    .unwrap(),
+            ),
+            Some(_) => todo!(),
+        }
     }
 }
 
