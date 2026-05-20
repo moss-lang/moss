@@ -1,4 +1,0 @@
-fn main() {
-  println(this);
-#         ^^^^ cannot use `this` in a function that is not a method
-}
