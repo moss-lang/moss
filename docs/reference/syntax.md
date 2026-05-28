@@ -71,17 +71,36 @@ Here is a comprehensive list of all tokens. A token can be written as either a l
 
 A nonterminal in the grammar is written as a bold capitalized word. A local variable in a parametric declaration is written as a bold lowercase word. The top-level node is a **File**. A **List** is a possibly-empty sequence of items separated by the comma token `,` with an optional trailing comma.
 
+Note that as currently written, this grammar is ambiguous.
+
 - **Literal** = _uint32_ | _int32_ | _uint64_ | _int64_ | _uint_ | _int_ | _char_ | _string_
 - **Path** = _name_ (`::` _name_)\*
-- **Type** = TODO
-- **Spec** = `.`? **Path** (`[` **List**\[**Bind**\] `]`)?
+- **Type** = **Spec** | `(` **List**\[**Type**\] `)` | `{` **List**\[_name_ `:` **Type**\] `}`
+- **Spec** = `.`? **Path** (`[` **List**\[**Binding**\] `]`)?
 - **Entry** = **Spec** | **Literal**
-- **Bind** = **Spec** (`=` **Entry**)?
-- **Need** = `static`? **Bind**
+- **Binding** = **Spec** (`=` **Entry**)?
+- **Need** = `static`? **Binding**
 - **Needs** = (`[` **List**\[**Need**\] `]`)?
-- **Block** = TODO
+- **Tag** = **Path** **Expr**
+- **Record** = `{` **List**\[_name_ `=` **Expr**\] `}`
+- **Field** = **Expr** `.` _name_
+- **Method** = **Expr** `.` _name_ `(` **List**\[**Expr**\] `)`
+- **Call** = **Path** (`[` **List**\[**Binding**\] `]`)? `(` **List**\[**Expr**\] `)`
+- **Unop** = `!`
+- **Unary** = **Unop** **Expr**
+- **Binop** = `%` | `&` | `*` | `+` | `-` | `/` | `<` | `=` | `>` | `^` | `!=` | `<<` | `<=` | `==` | `>=` | `>>`
+- **Binary** = **Expr** **Binop** **Expr**
+- **If** = `if` **Expr** **Block** (`else` **Block**)?
+- **Bind** = `bind` **List**\[**Binding** | **Call**\]
+- **Expr** = **Literal** | **Path** | **Tag** | **Record** | **Field** | **Method** | **Call** | **Unary** | **Binary** | **If** | **Bind**
+- **Let** = `let` _name_ `=` **Expr** `;`
+- **Var** = `var` _name_ `=` **Expr** `;`
+- **Assign** = **Expr** `=` **Expr** `;`
+- **While** = `while` **Expr** **Block**
+- **Stmt** = **Let** | **Var** | **Assign** | **While** | (**Expr** `;`)
+- **Block** = `{` **Stmt**\* **Expr**? `}`
 - **Import** = `import` _string_ (`as` _name_)? (`use` **List**\[_name_ | `.` _name_\])? `;`
-- **Assume** = `assume` **List**\[**Bind**\] `;`
+- **Assume** = `assume` **List**\[**Binding**\] `;`
 - **Tydef** = `type` _name_ **Needs** `;`
 - **Aliasdef** = `type` _name_ **Needs** `=` **Type** `;`
 - **Tagdef** = `type` _name_ **Needs** **Type** `;`
