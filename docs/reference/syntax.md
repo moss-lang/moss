@@ -88,7 +88,7 @@ Note that as currently written, this grammar is ambiguous.
 - **Call** = **Path** (`[` **List**\[**Binding**\] `]`)? `(` **List**\[**Expr**\] `)`
 - **Unop** = `!`
 - **Unary** = **Unop** **Expr**
-- **Binop** = `%` | `&` | `*` | `+` | `-` | `/` | `<` | `=` | `>` | `^` | `!=` | `<<` | `<=` | `==` | `>=` | `>>`
+- **Binop** = `%` | `&` | `*` | `+` | `-` | `/` | `<` | `=` | `>` | `^` | `|` | `!=` | `<<` | `<=` | `==` | `>=` | `>>`
 - **Binary** = **Expr** **Binop** **Expr**
 - **If** = `if` **Expr** **Block** (`else` (**If** | **Block**))?
 - **Bind** = `bind` **List**\[**Binding** | **Call**\]
