@@ -65,7 +65,7 @@ Here is a comprehensive list of all tokens. A token can be written as either a l
   - _uint_: must end with `u`
   - _int_: may begin with `-`, no suffix
 - _char_: delimited by single quotes
-- _string_: delimited by double quotes, may include escape sequences `\\`, `\n`, `\r`, `\t`
+- _string_: delimited by double quotes, may include escape sequences `\"`, `\\`, `\n`, `\r`, `\t`
 
 ## Grammar
 
@@ -82,7 +82,7 @@ Note that as currently written, this grammar is ambiguous.
 - **Need** = `static`? **Binding**
 - **Needs** = (`[` **List**\[**Need**\] `]`)?
 - **Tag** = **Path** **Expr**
-- **Record** = `{` **List**\[_name_ `=` **Expr**\] `}`
+- **Record** = `{` **List**\[_name_ (`=` **Expr**)?\] `}`
 - **Field** = **Expr** `.` _name_
 - **Method** = **Expr** `.` _name_ `(` **List**\[**Expr**\] `)`
 - **Call** = **Path** (`[` **List**\[**Binding**\] `]`)? `(` **List**\[**Expr**\] `)`
@@ -90,14 +90,14 @@ Note that as currently written, this grammar is ambiguous.
 - **Unary** = **Unop** **Expr**
 - **Binop** = `%` | `&` | `*` | `+` | `-` | `/` | `<` | `=` | `>` | `^` | `!=` | `<<` | `<=` | `==` | `>=` | `>>`
 - **Binary** = **Expr** **Binop** **Expr**
-- **If** = `if` **Expr** **Block** (`else` **Block**)?
+- **If** = `if` **Expr** **Block** (`else` (**If** | **Block**))?
 - **Bind** = `bind` **List**\[**Binding** | **Call**\]
-- **Expr** = **Literal** | **Path** | **Tag** | **Record** | **Field** | **Method** | **Call** | **Unary** | **Binary** | **If** | **Bind**
+- **Expr** = `(` **Expr** `)` | **Literal** | **Path** | **Tag** | **Record** | **Field** | **Method** | **Call** | **Unary** | **Binary** | **If** | **Bind**
 - **Let** = `let` _name_ `=` **Expr** `;`
 - **Var** = `var` _name_ `=` **Expr** `;`
 - **Assign** = **Expr** `=` **Expr** `;`
 - **While** = `while` **Expr** **Block**
-- **Stmt** = **Let** | **Var** | **Assign** | **While** | (**Expr** `;`)
+- **Stmt** = **Let** | **Var** | **Assign** | **If** | **While** | (**Expr** `;`)
 - **Block** = `{` **Stmt**\* **Expr**? `}`
 - **Import** = `import` _string_ (`as` _name_)? (`use` **List**\[_name_ | `.` _name_\])? `;`
 - **Assume** = `assume` **List**\[**Binding**\] `;`
@@ -106,8 +106,8 @@ Note that as currently written, this grammar is ambiguous.
 - **Tagdef** = `type` _name_ **Needs** **Type** `;`
 - **Fndef** = **Needs** `(` **List**\[_name_ `:` **Type**\] `)` (`:` (**Type** | `bind` **List**\[**Need**\]))? (`;` | **Block**)
 - **Funcdef** = `fn` _name_ **Fndef**
-- **Attachdef** = `fn` `.` _name_ **Fndef**
-- **Detachdef** = `fn` _name_ `.` _name_ **Fndef**
+- **Attachdef** = `fn` _name_ `.` _name_ **Fndef**
+- **Detachdef** = `fn` `.` _name_ **Fndef**
 - **Valdef** = `val` _name_ **Needs** `:` **Type** `;`
 - **Ctxdef** = `context` _name_ **Needs** `=` **List**\[**Need**\] `;`
 - **Decl** = **Tydef** | **Aliasdef** | **Tagdef** | **Funcdef** | **Attachdef** | **Detachdef** | **Valdef** | **Ctxdef**
