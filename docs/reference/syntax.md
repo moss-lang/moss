@@ -56,7 +56,7 @@ Here is a comprehensive list of all tokens. A token can be written as either a l
   - `val`
   - `var`
   - `while`
-- _name_: must start with a letter or underscore that can be followed by zero or more letters, underscores, or numbers
+- _symbol_: must start with a letter or underscore that can be followed by zero or more letters, underscores, or numbers
 - integer literals
   - _uint32_: must end with `u32`
   - _int32_: may begin with `-`, must end with `i32`
@@ -74,17 +74,17 @@ A nonterminal in the grammar is written as a bold capitalized word. A local vari
 Note that as currently written, this grammar is ambiguous.
 
 - **Literal** = _uint32_ | _int32_ | _uint64_ | _int64_ | _uint_ | _int_ | _char_ | _string_
-- **Path** = _name_ (`::` _name_)\*
-- **Type** = **Spec** | `(` **List**\[**Type**\] `)` | `{` **List**\[_name_ `:` **Type**\] `}`
+- **Path** = _symbol_ (`::` _symbol_)\*
+- **Type** = **Spec** | `(` **List**\[**Type**\] `)` | `{` **List**\[_symbol_ `:` **Type**\] `}`
 - **Spec** = `.`? **Path** (`[` **List**\[**Binding**\] `]`)?
 - **Entry** = **Spec** | **Literal**
 - **Binding** = **Spec** (`=` **Entry**)?
 - **Need** = `static`? **Binding**
 - **Needs** = (`[` **List**\[**Need**\] `]`)?
 - **Tag** = **Path** **Expr**
-- **Record** = `{` **List**\[_name_ (`=` **Expr**)?\] `}`
-- **Field** = **Expr** `.` _name_
-- **Method** = **Expr** `.` _name_ `(` **List**\[**Expr**\] `)`
+- **Record** = `{` **List**\[_symbol_ (`=` **Expr**)?\] `}`
+- **Field** = **Expr** `.` _symbol_
+- **Method** = **Expr** `.` _symbol_ `(` **List**\[**Expr**\] `)`
 - **Call** = **Path** (`[` **List**\[**Binding**\] `]`)? `(` **List**\[**Expr**\] `)`
 - **Unop** = `!`
 - **Unary** = **Unop** **Expr**
@@ -93,22 +93,22 @@ Note that as currently written, this grammar is ambiguous.
 - **If** = `if` **Expr** **Block** (`else` (**If** | **Block**))?
 - **Bind** = `bind` **List**\[**Binding** | **Call**\]
 - **Expr** = `(` **Expr** `)` | **Literal** | **Path** | **Tag** | **Record** | **Field** | **Method** | **Call** | **Unary** | **Binary** | **If** | **Bind**
-- **Let** = `let` _name_ `=` **Expr** `;`
-- **Var** = `var` _name_ `=` **Expr** `;`
+- **Let** = `let` _symbol_ `=` **Expr** `;`
+- **Var** = `var` _symbol_ `=` **Expr** `;`
 - **Assign** = **Expr** `=` **Expr** `;`
 - **While** = `while` **Expr** **Block**
 - **Stmt** = **Let** | **Var** | **Assign** | **If** | **While** | (**Expr** `;`)
 - **Block** = `{` **Stmt**\* **Expr**? `}`
-- **Import** = `import` _string_ (`as` _name_)? (`use` **List**\[_name_ | `.` _name_\])? `;`
+- **Import** = `import` _string_ (`as` _symbol_)? (`use` **List**\[`.`? _symbol_\])? `;`
 - **Assume** = `assume` **List**\[**Binding**\] `;`
-- **Tydef** = `type` _name_ **Needs** `;`
-- **Aliasdef** = `type` _name_ **Needs** `=` **Type** `;`
-- **Tagdef** = `type` _name_ **Needs** **Type** `;`
-- **Fndef** = **Needs** `(` **List**\[_name_ `:` **Type**\] `)` (`:` (**Type** | `bind` **List**\[**Need**\]))? (`;` | **Block**)
-- **Funcdef** = `fn` _name_ **Fndef**
-- **Attachdef** = `fn` _name_ `.` _name_ **Fndef**
-- **Detachdef** = `fn` `.` _name_ **Fndef**
-- **Valdef** = `val` _name_ **Needs** `:` **Type** `;`
-- **Ctxdef** = `context` _name_ **Needs** `=` **List**\[**Need**\] `;`
+- **Tydef** = `type` _symbol_ **Needs** `;`
+- **Aliasdef** = `type` _symbol_ **Needs** `=` **Type** `;`
+- **Tagdef** = `type` _symbol_ **Needs** **Type** `;`
+- **Fndef** = **Needs** `(` **List**\[_symbol_ `:` **Type**\] `)` (`:` (**Type** | `bind` **List**\[**Need**\]))? (`;` | **Block**)
+- **Funcdef** = `fn` _symbol_ **Fndef**
+- **Attachdef** = `fn` _symbol_ `.` _symbol_ **Fndef**
+- **Detachdef** = `fn` `.` _symbol_ **Fndef**
+- **Valdef** = `val` _symbol_ **Needs** `:` **Type** `;`
+- **Ctxdef** = `context` _symbol_ **Needs** `=` **List**\[**Need**\] `;`
 - **Decl** = **Tydef** | **Aliasdef** | **Tagdef** | **Funcdef** | **Attachdef** | **Detachdef** | **Valdef** | **Ctxdef**
 - **File** = (**Import** | **Assume** | **Decl**)\* _end_
