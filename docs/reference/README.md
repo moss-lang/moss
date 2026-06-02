@@ -4,3 +4,4 @@ This section of the documentation is a language specification. For everything be
 
 - [**Syntax**](syntax.md)
 - [**Scoping**](scoping.md)
+- [**Context**](context.md)
