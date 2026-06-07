@@ -100,7 +100,7 @@ Note that as currently written, this grammar is ambiguous.
 - **Stmt** = **Let** | **Var** | **Assign** | **If** | **While** | (**Expr** `;`)
 - **Block** = `{` **Stmt**\* **Expr**? `}`
 - **Import** = `import` _string_ (`as` _symbol_)? (`use` **List**\[`.`? _symbol_\])? `;`
-- **Assume** = `assume` **List**\[**Binding**\] `;`
+- **Assume** = `assume` **List**\[**Need**\] `;`
 - **Tydef** = `type` _symbol_ **Needs** `;`
 - **Aliasdef** = `type` _symbol_ **Needs** `=` **Type** `;`
 - **Tagdef** = `type` _symbol_ **Needs** **Type** `;`
