@@ -1378,14 +1378,27 @@ impl<'a> Lower<'a> {
     /// Satisfy a single `need` from the available context `destruct`, building the composite
     /// lambda that provides it, or `None` if nothing in `destruct` does.
     fn resolve_need(&mut self, need: NodeId, destruct: &[NodeId]) -> LowerResult<Option<NodeId>> {
-        let (kind, param) = match self.node(need) {
-            Node::NeedTydef { def, param, .. } => (DefKind::Ty(def), param),
-            Node::NeedSigdef { def, param, .. } => (DefKind::Sig(def), param),
-            Node::NeedValdef { def, param, .. } => (DefKind::Val(def), param),
-            Node::NeedCtxdef { def, param, .. } => (DefKind::Ctx(def), param),
+        let (kind, param, level) = match self.node(need) {
+            Node::NeedTydef { def, param, level } => (DefKind::Ty(def), param, level),
+            Node::NeedSigdef { def, param, level } => (DefKind::Sig(def), param, level),
+            Node::NeedValdef { def, param, level } => (DefKind::Val(def), param, level),
+            Node::NeedCtxdef { def, param, level } => (DefKind::Ctx(def), param, level),
             _ => panic!(), // a needs list contains only `Need*` nodes
         };
         let Some((callee, synth)) = self.extract_lambda(destruct, kind, param)? else {
+            // No single slot provides this need. A composite context can instead be *synthesized*
+            // from its members scattered across `destruct` (e.g. `Bootstrap` assembled from `Wasi`
+            // plus the type bindings supplied at a call site).
+            if let DefKind::Ctx(def) = kind {
+                let Node::Lambda { result, .. } = self.node(param) else {
+                    panic!()
+                };
+                let Node::List { items } = self.node(result) else {
+                    panic!()
+                };
+                let outer = self.ir.lists[items].to_vec();
+                return Ok(Some(self.extract_ctx(level, destruct, def, &outer)?));
+            }
             return Ok(None);
         };
         let Node::Lambda {
@@ -2436,6 +2449,20 @@ impl<'a> Lower<'a> {
         let mut providers = Vec::new();
         let mut propagate = Vec::new();
         for member in members {
+            // A member that is already a binding (e.g. `Bool=I32` in the context's definition) is
+            // fixed by the definition and provides itself; only an open `Need*` member is resolved
+            // against `slots`, propagating as a fresh need if nothing satisfies it.
+            let is_need = matches!(
+                self.node(member),
+                Node::NeedTydef { .. }
+                    | Node::NeedSigdef { .. }
+                    | Node::NeedValdef { .. }
+                    | Node::NeedCtxdef { .. }
+            );
+            if !is_need {
+                providers.push(member);
+                continue;
+            }
             match self.resolve_need(member, slots)? {
                 Some(provider) => providers.push(provider),
                 None => {
@@ -3954,7 +3981,7 @@ impl LowerBody<'_, '_> {
                         parse::Binding::Single(bind) => {
                             self.x.bind(Level::ZERO, &self.slots, bind)?
                         }
-                        parse::Binding::Composite(expr) => todo!(),
+                        parse::Binding::Composite(expr) => self.composite_bind(expr)?,
                     };
                     slots.push(slot);
                 }
@@ -3964,6 +3991,32 @@ impl LowerBody<'_, '_> {
                 Ok(self.instr(ty, Expr::Bind { ctx }))
             }
         }
+    }
+
+    /// Lower a composite binding `bind f[..]()` -- a binding whose value is the context produced by
+    /// calling a context-returning function. The call's own `[..]` bindings, together with the
+    /// ambient context, satisfy the callee's needs; the result is the callee applied to that
+    /// construct, which reduces to the context the call yields and serves as one frame slot.
+    fn composite_bind(&mut self, expr: ExprId) -> LowerResult<NodeId> {
+        let parse::Expr::Call(callee, binds, args) = self.x.tree.exprs[expr] else {
+            // Only call-shaped composite bindings are supported for now.
+            return Err(self.x.todo_no_loc());
+        };
+        // A context-producing call takes no value arguments.
+        assert!(args.into_iter().next().is_none());
+        let lambda = match self.x.path(callee)? {
+            Named::Fndef(fndef) => self.x.mk_node(Node::Fndef { def: fndef }),
+            Named::Sigdef(sigdef) => self.extract_sig(sigdef)?,
+            _ => return Err(LowerError::NotFn(callee.last)),
+        };
+        // Resolve the callee's needs against the ambient context plus the call's bindings.
+        let mut destruct = self.slots.clone();
+        for bind in binds {
+            destruct.push(self.x.bind(Level::ZERO, &self.slots, bind)?);
+        }
+        let construct = self.x.invoke_force(lambda, &destruct)?;
+        let args = self.x.mk_node_list(&construct);
+        Ok(self.x.mk_node(Node::Apply { lambda, args }))
     }
 
     fn stmts(&mut self, stmts: IdRange<StmtId>) -> LowerResult<()> {

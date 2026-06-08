@@ -305,5 +305,13 @@ fn bootstrap[Bootstrap](): bind Std {
 }
 
 fn std[Wasi](): bind Std {
-  bind bootstrap[Bool=I32, Int32=I32, Int64=I64]()
+  bind bootstrap[
+    Bool=I32,
+    Uint32=I32,
+    Int32=I32,
+    Uint64=I64,
+    Int64=I64,
+    Uint=I32,
+    Int=I32,
+  ]()
 }
