@@ -3142,28 +3142,28 @@ impl<'a> Lower<'a> {
                     let parse::Ctxdef { name, needs, def } = self.tree.ctxdefs[id];
                     let mut slots = Vec::new();
                     let mut params_outer = Vec::new();
-                    // A file-level `assume` seeds the base of the outer context.
-                    for assume in self.tree.assumes.iter().copied() {
-                        for bind in assume {
-                            slots.push(self.need_bind(
-                                Level::ZERO,
-                                &mut params_outer,
-                                &slots,
-                                bind,
-                            )?);
-                        }
-                    }
-                    let outer_count = slots.len();
                     for need in needs {
                         slots.push(self.need(Level::ZERO, &mut params_outer, &slots, need)?);
                     }
                     let mut params_inner = Vec::new();
+                    // A file-level `assume` seeds the base of the context available to the
+                    // members of this composite context, not its outer parameter list: members
+                    // need the assumed context, but a use site like `[Mem]` should not have to
+                    // supply it again, so a non-parametric context stays nullary at its uses.
+                    // (For the prelude this coincides with the members' own folded needs, which
+                    // already bubble the assumed context into `params_inner`.)
+                    for assume in self.tree.assumes.iter().copied() {
+                        for bind in assume {
+                            slots.push(self.need_bind(Level::ONE, &mut params_inner, &slots, bind)?);
+                        }
+                    }
+                    let member_base = slots.len();
                     for need in def {
                         slots.push(self.need(Level::ONE, &mut params_inner, &slots, need)?);
                     }
                     let needs_inner = self.mk_node_list(&params_inner);
                     let needs_outer = self.mk_node_list(&params_outer);
-                    let items = self.mk_node_list(&slots[outer_count + needs.len()..]);
+                    let items = self.mk_node_list(&slots[member_base..]);
                     let result = self.mk_node(Node::List { items });
                     let lambda = self.mk_node(Node::Lambda {
                         level: Level::ONE,
