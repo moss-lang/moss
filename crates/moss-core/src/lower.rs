@@ -2384,6 +2384,14 @@ impl<'a> Lower<'a> {
         }
     }
 
+    /// Resolve a composite-context definition from the available context `slots`.
+    ///
+    /// Unlike [`Lower::extract`], which finds a single slot that satisfies a `Ty`/`Sig`/`Val` need,
+    /// a composite context is *synthesized* from its members: the context is exploded into its
+    /// individual member needs, each is resolved against `slots` (or propagated as a fresh need if
+    /// no slot satisfies it), and the per-member providers are bundled into one context-valued
+    /// lambda whose `result` is the `List` of those providers. This mirrors the shape that the
+    /// `need` arm builds for a `NeedCtxdef` and that [`Lower::explode`]/[`Lower::invoke`] consume.
     fn extract_ctx(
         &mut self,
         level: Level,
@@ -2391,7 +2399,38 @@ impl<'a> Lower<'a> {
         def: CtxdefId,
         destruct: &[NodeId],
     ) -> LowerResult<NodeId> {
-        Err(self.todo_no_loc())
+        // Build the outer-parameter construct (e.g. `[Base]`) into the `param` lambda that
+        // `explode` expects, then explode `def` into its individual member needs at this level.
+        let outer = self.mk_node_list(destruct);
+        let result = self.mk_node(Node::List { items: outer });
+        let needs = self.mk_node_list(&[]);
+        let param = self.mk_node(Node::Lambda {
+            level,
+            needs,
+            result,
+        });
+        let members = self.explode(level, def, param)?;
+        let members = self.ir.lists[members].to_vec();
+        // Resolve each member against `slots`, propagating any unsatisfied member as a fresh need.
+        let mut providers = Vec::new();
+        let mut propagate = Vec::new();
+        for member in members {
+            match self.resolve_need(member, slots)? {
+                Some(provider) => providers.push(provider),
+                None => {
+                    providers.push(member);
+                    propagate.push(member);
+                }
+            }
+        }
+        let needs = self.mk_node_list(&propagate);
+        let items = self.mk_node_list(&providers);
+        let result = self.mk_node(Node::List { items });
+        Ok(self.mk_node(Node::Lambda {
+            level: level.succ(),
+            needs,
+            result,
+        }))
     }
 
     /// Build a `BindTydef` slot binding the (nullary) type `def` to the (nullary) type `rhs`,
