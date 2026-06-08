@@ -2929,6 +2929,9 @@ impl LowerBody<'_, '_> {
                     lit_types,
                     lit_vals,
                     lits,
+                    numerals: _,
+                    builders: _,
+                    arith: _,
                 } = self.base();
                 let (tydef_lit, tydef, valdef, sigdef, val) = match self.x.lit(token)? {
                     // Unreachable cases.

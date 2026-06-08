@@ -1,8 +1,9 @@
 import "./bool.moss" use Bool, false, true;
+import "./char.moss" use Char, char_from_codepoint;
 import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
 import "./literal.moss" as lit;
 import "./ops.moss" as ops use Arg, Lhs, Rhs;
-import "./string.moss" use .to_string, String;
+import "./string.moss" use .to_string, String, StringBuilder, string_builder, set_char, build;
 import "./this.moss" use This;
 
 type Number;
@@ -79,8 +80,22 @@ context Std =
   false[Bool],
   true[Bool],
 
+  Char,
+  char_from_codepoint,
+
   String,
+  StringBuilder,
+  string_builder,
+  set_char,
+  build,
   lit::string_realize[lit::LiteralString, String],
+
+  Numerals[Number=Uint32],
+  Numerals[Number=Int32],
+  Numerals[Number=Uint64],
+  Numerals[Number=Int64],
+  Numerals[Number=Uint],
+  Numerals[Number=Int],
 
   Uint32,
   lit::uint31_realize_uint32[lit::LiteralUint31, Uint32],

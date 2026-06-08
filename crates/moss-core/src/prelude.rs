@@ -92,12 +92,52 @@ pub struct Lits {
     pub string_realize: SigdefId,
 }
 
+/// The contextual digit values and radix used to desugar numeric literals.
+#[derive(Clone, Copy, Debug)]
+pub struct Numerals {
+    pub digit0: ValdefId,
+    pub digit1: ValdefId,
+    pub digit2: ValdefId,
+    pub digit3: ValdefId,
+    pub digit4: ValdefId,
+    pub digit5: ValdefId,
+    pub digit6: ValdefId,
+    pub digit7: ValdefId,
+    pub digit8: ValdefId,
+    pub digit9: ValdefId,
+    pub radix: ValdefId,
+}
+
+/// The contextual operations used to desugar string and character literals.
+#[derive(Clone, Copy, Debug)]
+pub struct Builders {
+    pub char_from_codepoint: SigdefId,
+    pub string_builder: SigdefId,
+    pub set_char: SigdefId,
+    pub build: SigdefId,
+}
+
+/// The arithmetic operations (and their output types) used to combine numeric digits.
+#[derive(Clone, Copy, Debug)]
+pub struct Arith {
+    pub add: SigdefId,
+    pub mul: SigdefId,
+    pub add_out: TydefId,
+    pub mul_out: TydefId,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Base {
     pub types: Types,
     pub lit_types: LitTypes,
     pub lit_vals: LitVals,
     pub lits: Lits,
+    /// The digit/radix values, or [`None`] while the prelude module that declares them is itself
+    /// being lowered (in which case the literal desugar resolves them by name from the current
+    /// module instead).
+    pub numerals: Option<Numerals>,
+    pub builders: Builders,
+    pub arith: Arith,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -205,10 +245,12 @@ impl Precompile {
         let path_int = self.ir.strings.make_id("./int.moss");
         let path_char = self.ir.strings.make_id("./char.moss");
         let path_string = self.ir.strings.make_id("./string.moss");
+        let path_ops = self.ir.strings.make_id("./ops.moss");
         let literal = self.lib(path_literal, None)?;
         let int = self.lib(path_int, None)?;
         let char = self.lib(path_char, None)?;
         let string = self.lib(path_string, None)?;
+        let ops = self.lib(path_ops, None)?;
         let base_types = Types {
             uint32: self.tydef(int, "Uint32"),
             int32: self.tydef(int, "Int32"),
@@ -273,14 +315,49 @@ impl Precompile {
             char_realize: self.sigdef(literal, "char_realize"),
             string_realize: self.sigdef(literal, "string_realize"),
         };
+        let base_builders = Builders {
+            char_from_codepoint: self.sigdef(char, "char_from_codepoint"),
+            string_builder: self.sigdef(string, "string_builder"),
+            set_char: self.sigdef(string, "set_char"),
+            build: self.sigdef(string, "build"),
+        };
+        let base_arith = Arith {
+            add: self.sigdef(ops, "add"),
+            mul: self.sigdef(ops, "mul"),
+            add_out: self.tydef(ops, "AddOut"),
+            mul_out: self.tydef(ops, "MulOut"),
+        };
+        // The digit/radix values live in `std.moss`, which is lowered as part of the prelude below
+        // and so is not yet available here. During that lowering the literal desugar resolves them
+        // by name from the current module; afterwards we fill them in for downstream compilation.
         let base = Base {
             types: base_types,
             lit_types: base_lit_types,
             lit_vals: base_lit_vals,
             lits: base_lits,
+            numerals: None,
+            builders: base_builders,
+            arith: base_arith,
         };
         let path_prelude = self.ir.strings.make_id("./prelude.moss");
         let prelude = self.lib(path_prelude, Some(base))?;
+        let std = self.modules[&self.ir.strings.get_id("./std.moss").unwrap()];
+        let base = Base {
+            numerals: Some(Numerals {
+                digit0: self.valdef(std, "digit0"),
+                digit1: self.valdef(std, "digit1"),
+                digit2: self.valdef(std, "digit2"),
+                digit3: self.valdef(std, "digit3"),
+                digit4: self.valdef(std, "digit4"),
+                digit5: self.valdef(std, "digit5"),
+                digit6: self.valdef(std, "digit6"),
+                digit7: self.valdef(std, "digit7"),
+                digit8: self.valdef(std, "digit8"),
+                digit9: self.valdef(std, "digit9"),
+                radix: self.valdef(std, "radix"),
+            }),
+            ..base
+        };
         let types = self.modules[&self.ir.strings.get_id("./types.moss").unwrap()];
         let wasm = self.modules[&self.ir.strings.get_id("./wasm.moss").unwrap()];
         let wasip1 = self.modules[&self.ir.strings.get_id("./wasip1.moss").unwrap()];
