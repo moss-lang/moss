@@ -2,7 +2,7 @@ import "./bool.moss" use Bool, false, true;
 import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
 import "./literal.moss" as lit;
 import "./ops.moss" as ops use Arg, Lhs, Rhs;
-import "./std.moss" use Std, print;
+import "./std.moss" use Std, print, Numerals, Number;
 import "./string.moss" use String;
 import "./types.moss" use I32, I64, MemIdx;
 import "./wasip1.moss" as wasip1;
@@ -46,6 +46,9 @@ context Wasi =
   lit::uint31_realize_int[lit::LiteralUint31, Int=I32],
   lit::int32_realize_int[lit::LiteralInt32, Int=I32],
   lit::string_realize[lit::LiteralString, String=I32Pair[Base]],
+
+  Numerals[Number=I32],
+  Numerals[Number=I64],
 
   wasm::Wasm[Base],
   wasm::memidx[Base],
