@@ -961,7 +961,62 @@ impl<'a> Wasm<'a> {
         }
     }
 
+    fn dbg_node(&self, tag: &str, node: lower::NodeId, depth: usize) {
+        if depth > 6 {
+            return;
+        }
+        let n = self.ir.nodes[node.index()];
+        eprintln!("{}{tag} %{} = {n:?}", "  ".repeat(depth), node.index());
+        use lower::Node::*;
+        let kids: Vec<lower::NodeId> = match n {
+            Lambda { needs, result, .. } => self.ir.lists[needs]
+                .iter()
+                .copied()
+                .chain([result])
+                .collect(),
+            Apply { lambda, args } => [lambda]
+                .into_iter()
+                .chain(self.ir.lists[args].iter().copied())
+                .collect(),
+            List { items } | Tuple { elems: items } => self.ir.lists[items].to_vec(),
+            NeedTydef { param, .. }
+            | NeedSigdef { param, .. }
+            | NeedValdef { param, .. }
+            | NeedCtxdef { param, .. } => vec![param],
+            Get { ctx, .. } => vec![ctx],
+            Bind { args, bind } => self.ir.lists[args].iter().copied().chain([bind]).collect(),
+            BindTydef { bind, .. }
+            | BindSigdef { bind, .. }
+            | BindValdef { bind, .. }
+            | BindCtxdef { bind, .. } => vec![bind],
+            Sig { param, result } => vec![param, result],
+            _ => vec![],
+        };
+        for k in kids {
+            self.dbg_node("", k, depth + 1);
+        }
+    }
+
     fn program(mut self) -> Vec<u8> {
+        if std::env::var("MOSS_DBG").is_ok() {
+            let Sigdef(sig) = self.ir.fndefs[self.main];
+            eprintln!("=== main sig node ===");
+            self.dbg_node("sig", sig, 0);
+            eprintln!("=== main body ===");
+            let body = self.ir.bodies[self.main];
+            for instr in body.body {
+                eprintln!("i{} = {:?}", instr.index(), self.ir.instrs[instr]);
+                if let Instr::Expr { ty, expr } = self.ir.instrs[instr] {
+                    self.dbg_node("  ty", ty, 1);
+                    match expr {
+                        Expr::Call { func, .. } => self.dbg_node("  func", func, 1),
+                        Expr::Val { val } => self.dbg_node("  val", val, 1),
+                        Expr::Bind { ctx } => self.dbg_node("  ctx", ctx, 1),
+                        _ => {}
+                    }
+                }
+            }
+        }
         let wasip1_sigdefs = self.wasip1_sigdefs();
         let wasi_ctx = self.wasi_ctx(&wasip1_sigdefs);
 
