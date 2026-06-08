@@ -13,6 +13,10 @@ context Base = lit::LiteralUint32, I32, I64, MemIdx;
 type I32Pair[Base] = (I32, I32);
 
 context Wasi =
+  I32,
+  I64,
+  MemIdx,
+
   lit::LiteralUint31,
   lit::LiteralUint32,
   lit::LiteralInt32,
@@ -42,10 +46,6 @@ context Wasi =
   lit::uint31_realize_int[lit::LiteralUint31, Int=I32],
   lit::int32_realize_int[lit::LiteralInt32, Int=I32],
   lit::string_realize[lit::LiteralString, String=I32Pair[Base]],
-
-  I32,
-  I64,
-  MemIdx,
 
   wasm::Wasm[Base],
   wasm::memidx[Base],
