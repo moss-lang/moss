@@ -1997,9 +1997,10 @@ impl<'a> Lower<'a> {
 
     /// Reduce several candidate resolutions for the same need to a single one, following the
     /// context model's "most specific wins" rule. Candidate `A` is at least as specific as `B` when
-    /// `synthesize(A, B)` succeeds (`A` is an instance of `B`); the winner is the unique candidate
-    /// that is at least as specific as every other. If there is no such greatest element, resolution
-    /// is genuinely ambiguous and yields `None`.
+    /// [`Lower::at_least_as_specific`] holds (`A` is an instance of `B`, and a bound need dominates
+    /// the abstract version of the same definition); the winner is the unique candidate that is at
+    /// least as specific as every other. If there is no such greatest element, resolution is
+    /// genuinely ambiguous and yields `None`.
     fn unique_option(
         &mut self,
         options: &[(NodeId, NodeId)],
@@ -2016,13 +2017,319 @@ impl<'a> Lower<'a> {
         // candidate is a valid choice; if none dominates all others, resolution is ambiguous.
         'candidate: for i in 0..options.len() {
             for j in 0..options.len() {
-                if i != j && self.synthesize(composites[i], composites[j])?.is_none() {
+                if i != j && !self.at_least_as_specific(composites[i], composites[j])? {
                     continue 'candidate;
                 }
             }
             return Ok(Some(options[i]));
         }
         Ok(None)
+    }
+
+    /// Reduce `node` toward weak-head normal form like [`Lower::reduce`], but **stop at a binding
+    /// head** instead of projecting it to its bound value. Where `reduce` turns
+    /// `Apply { BindTydef { bind, .. }, args }` into the value `bind` denotes (erasing the binding),
+    /// this leaves the application stuck on the `Bind*` head so the binding is still observable.
+    ///
+    /// This is scoped to specificity ranking ([`Lower::at_least_as_specific`]): a bound need must
+    /// be distinguishable from the abstract need it provides, and that distinction lives precisely
+    /// in the binding that the normal `reduce` projects away. Everything else — `Apply`-β,
+    /// `Get`-projection out of composite contexts, and `Fndef`/`Aliasdef` unfolding — matches
+    /// `reduce`. Leave `reduce` itself untouched: the digit desugar relies on its projection.
+    fn head_reduce(&mut self, node: NodeId) -> LowerResult<NodeId> {
+        match self.node(node) {
+            Node::Apply { lambda, args } => {
+                let head = self.head_reduce(lambda)?;
+                match self.node(head) {
+                    Node::Lambda { .. } => {
+                        let args = self.ir.lists[args].to_vec();
+                        let inlined = self.inline(head, &args)?;
+                        self.head_reduce(inlined)
+                    }
+                    // Unlike `reduce`, a binding head does NOT project: leave the application stuck
+                    // on the `Bind*` so the binding stays observable for specificity ranking.
+                    _ => Ok(self.mk_node(Node::Apply { lambda: head, args })),
+                }
+            }
+            Node::Get { ctx, slot } => {
+                let ctx = self.head_reduce(ctx)?;
+                match self.node(ctx) {
+                    Node::Apply {
+                        lambda: curried,
+                        args,
+                    } => match self.node(curried) {
+                        Node::NeedCtxdef { level, def, param } => {
+                            assert!(args.is_empty()); // TODO: Handle parametrized composite contexts.
+                            let exploded = self.explode(level, def, param)?;
+                            let single = self.ir.lists[exploded][slot.index()];
+                            self.head_reduce(single)
+                        }
+                        _ => Ok(self.mk_node(Node::Get { ctx, slot })),
+                    },
+                    Node::List { items } => {
+                        let elem = self.ir.lists[items][slot.index()];
+                        self.head_reduce(elem)
+                    }
+                    _ => Ok(self.mk_node(Node::Get { ctx, slot })),
+                }
+            }
+            Node::Fndef { def } => {
+                let body = self.ir.fndefs[def].0;
+                self.head_reduce(body)
+            }
+            Node::Aliasdef { def } => {
+                let body = self.ir.aliasdefs[def].0;
+                self.head_reduce(body)
+            }
+            // Already in weak-head normal form (including `Bind*`, which we deliberately keep stuck).
+            _ => Ok(node),
+        }
+    }
+
+    /// Decide whether candidate `a` is **at least as specific** as candidate `b`, directionally.
+    ///
+    /// This is the specificity comparison used by [`Lower::unique_option`]. Like
+    /// [`Lower::synthesize`]'s match it strips the two candidate lambdas and treats `b`'s input
+    /// needs as holes to be filled from `a`, but it reports only whether the shapes match (no
+    /// adapter is synthesized, and holes need not be uniquely solved). Crucially, it compares heads
+    /// with [`Lower::head_reduce`] rather than the projecting [`Lower::reduce`], so a **bound** need
+    /// (`Bind { def }`) can be told apart from the **abstract** version (`Need { def }`) of the same
+    /// definition: the former is strictly more specific than the latter.
+    fn at_least_as_specific(&mut self, a: NodeId, b: NodeId) -> LowerResult<bool> {
+        let (
+            Node::Lambda {
+                level: la,
+                needs: _,
+                result: ra,
+            },
+            Node::Lambda {
+                level: lb,
+                needs: nb,
+                result: rb,
+            },
+        ) = (self.node(a), self.node(b))
+        else {
+            panic!()
+        };
+        let mut constraints =
+            HashMap::from_iter(self.ir.lists[nb].iter().map(|&need| (need, None)));
+        let mut env = Renaming::identity();
+        env.bind(la, lb);
+        self.spec_unify(&env, &mut constraints, ra, rb)
+    }
+
+    /// Directional structural match for [`Lower::at_least_as_specific`]: like [`Lower::unify`] but
+    /// (1) reduces heads with the non-projecting [`Lower::head_reduce`], and (2) applies the
+    /// directional specificity rule when both sides are bindings/needs of the same definition:
+    /// `Bind { def }` is ≥-specific than `Need { def }` (true), but `Need { def }` is not
+    /// ≥-specific than `Bind { def }` (false). `Bind`/`Bind` of the same def recurses into the
+    /// bound values; `Need`/`Need` compares structurally (def + level via the renaming). Holes
+    /// (`b`'s input needs) are filled from `a` but are never required to be uniquely solved.
+    fn spec_unify(
+        &mut self,
+        env: &Renaming,
+        constraints: &mut HashMap<NodeId, Option<NodeId>>,
+        a: NodeId,
+        b: NodeId,
+    ) -> LowerResult<bool> {
+        if constraints.contains_key(&b) {
+            // `b` is a hole; record a witness but never fail on conflicts (we don't require a
+            // unique solution, only that the shapes line up).
+            match constraints.get_mut(&b).unwrap() {
+                slot @ None => *slot = Some(a),
+                Some(prev) if *prev == a => {}
+                other => *other = None,
+            }
+            return Ok(true);
+        }
+        let a = self.head_reduce(a)?;
+        let b = self.head_reduce(b)?;
+        match (self.node(a), self.node(b)) {
+            (
+                Node::Lambda {
+                    level: la,
+                    needs: na,
+                    result: ra,
+                },
+                Node::Lambda {
+                    level: lb,
+                    needs: nb,
+                    result: rb,
+                },
+            ) => {
+                let mut env = *env;
+                env.bind(la, lb);
+                Ok(self.spec_unify_list(&env, constraints, na, nb)?
+                    && self.spec_unify(&env, constraints, ra, rb)?)
+            }
+            (
+                Node::Apply {
+                    lambda: fa,
+                    args: aa,
+                },
+                Node::Apply {
+                    lambda: fb,
+                    args: ab,
+                },
+            ) => Ok(self.spec_unify(env, constraints, fa, fb)?
+                && self.spec_unify_list(env, constraints, aa, ab)?),
+            (Node::List { items: ia }, Node::List { items: ib }) => {
+                self.spec_unify_list(env, constraints, ia, ib)
+            }
+            (Node::Tuple { elems: ea }, Node::Tuple { elems: eb }) => {
+                self.spec_unify_list(env, constraints, ea, eb)
+            }
+            (
+                Node::Sig {
+                    param: pa,
+                    result: ra,
+                },
+                Node::Sig {
+                    param: pb,
+                    result: rb,
+                },
+            ) => Ok(self.spec_unify(env, constraints, pa, pb)?
+                && self.spec_unify(env, constraints, ra, rb)?),
+            (
+                Node::Get {
+                    ctx: ca,
+                    slot: sa,
+                },
+                Node::Get {
+                    ctx: cb,
+                    slot: sb,
+                },
+            ) => Ok(sa == sb && self.spec_unify(env, constraints, ca, cb)?),
+            // Same-definition specificity: a binding dominates the abstract need it provides.
+            (Node::BindTydef { def: da, bind: ba }, Node::BindTydef { def: db, bind: bb }) => {
+                Ok(da == db && self.spec_unify(env, constraints, ba, bb)?)
+            }
+            (Node::BindSigdef { def: da, bind: ba }, Node::BindSigdef { def: db, bind: bb }) => {
+                Ok(da == db && self.spec_unify(env, constraints, ba, bb)?)
+            }
+            (Node::BindValdef { def: da, bind: ba }, Node::BindValdef { def: db, bind: bb }) => {
+                Ok(da == db && self.spec_unify(env, constraints, ba, bb)?)
+            }
+            (Node::BindCtxdef { def: da, bind: ba }, Node::BindCtxdef { def: db, bind: bb }) => {
+                Ok(da == db && self.spec_unify(env, constraints, ba, bb)?)
+            }
+            // `a` is bound where `b` is the abstract need of the same def: `a` is strictly MORE
+            // specific, so it is ≥-specific than `b` — true.
+            (Node::BindTydef { def: da, .. }, Node::NeedTydef { def: db, .. }) => Ok(da == db),
+            (Node::BindSigdef { def: da, .. }, Node::NeedSigdef { def: db, .. }) => Ok(da == db),
+            (Node::BindValdef { def: da, .. }, Node::NeedValdef { def: db, .. }) => Ok(da == db),
+            (Node::BindCtxdef { def: da, .. }, Node::NeedCtxdef { def: db, .. }) => Ok(da == db),
+            // `a` is the abstract need where `b` is bound: `a` is strictly LESS specific, so it is
+            // NOT ≥-specific than `b` — false.
+            (Node::NeedTydef { .. }, Node::BindTydef { .. })
+            | (Node::NeedSigdef { .. }, Node::BindSigdef { .. })
+            | (Node::NeedValdef { .. }, Node::BindValdef { .. })
+            | (Node::NeedCtxdef { .. }, Node::BindCtxdef { .. }) => Ok(false),
+            (
+                Node::NeedTydef {
+                    level: la,
+                    def: da,
+                    param: pa,
+                },
+                Node::NeedTydef {
+                    level: lb,
+                    def: db,
+                    param: pb,
+                },
+            ) => Ok(da == db
+                && env.a_of_b[lb] == la
+                && self.spec_unify(env, constraints, pa, pb)?),
+            (
+                Node::NeedSigdef {
+                    level: la,
+                    def: da,
+                    param: pa,
+                },
+                Node::NeedSigdef {
+                    level: lb,
+                    def: db,
+                    param: pb,
+                },
+            ) => Ok(da == db
+                && env.a_of_b[lb] == la
+                && self.spec_unify(env, constraints, pa, pb)?),
+            (
+                Node::NeedValdef {
+                    level: la,
+                    def: da,
+                    param: pa,
+                },
+                Node::NeedValdef {
+                    level: lb,
+                    def: db,
+                    param: pb,
+                },
+            ) => Ok(da == db
+                && env.a_of_b[lb] == la
+                && self.spec_unify(env, constraints, pa, pb)?),
+            (
+                Node::NeedCtxdef {
+                    level: la,
+                    def: da,
+                    param: pa,
+                },
+                Node::NeedCtxdef {
+                    level: lb,
+                    def: db,
+                    param: pb,
+                },
+            ) => Ok(da == db
+                && env.a_of_b[lb] == la
+                && self.spec_unify(env, constraints, pa, pb)?),
+            (
+                Node::Bind {
+                    args: aa,
+                    bind: ba,
+                },
+                Node::Bind {
+                    args: ab,
+                    bind: bb,
+                },
+            ) => Ok(self.spec_unify_list(env, constraints, aa, ab)?
+                && self.spec_unify(env, constraints, ba, bb)?),
+            (Node::Nothing, Node::Nothing) => Ok(true),
+            (Node::Context, Node::Context) => Ok(true),
+            (Node::Tagdef { def: da }, Node::Tagdef { def: db }) => Ok(da == db),
+            (Node::Fndef { def: da }, Node::Fndef { def: db }) => Ok(da == db),
+            (Node::Lit { val: va }, Node::Lit { val: vb }) => Ok(va == vb),
+            (Node::Aliasdef { .. }, _) | (_, Node::Aliasdef { .. }) => Err(self.todo_no_loc()),
+            (x, y) => {
+                if std::mem::discriminant(&x) == std::mem::discriminant(&y) {
+                    Err(self.todo_no_loc())
+                } else {
+                    Ok(false)
+                }
+            }
+        }
+    }
+
+    /// [`Lower::spec_unify`] applied position by position to two lists of equal length.
+    fn spec_unify_list(
+        &mut self,
+        env: &Renaming,
+        constraints: &mut HashMap<NodeId, Option<NodeId>>,
+        a: NodeList,
+        b: NodeList,
+    ) -> LowerResult<bool> {
+        if a.len() != b.len() {
+            return Ok(false);
+        }
+        let pairs: Vec<(NodeId, NodeId)> = self.ir.lists[a]
+            .iter()
+            .copied()
+            .zip(self.ir.lists[b].iter().copied())
+            .collect();
+        for (x, y) in pairs {
+            if !self.spec_unify(env, constraints, x, y)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// Collect the slots that satisfy a need of definition `kind`. Succeeds when, up to the
