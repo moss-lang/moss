@@ -95,6 +95,7 @@ pub struct Lits {
 /// The contextual digit values and radix used to desugar numeric literals.
 #[derive(Clone, Copy, Debug)]
 pub struct Numerals {
+    pub number: TydefId,
     pub digit0: ValdefId,
     pub digit1: ValdefId,
     pub digit2: ValdefId,
@@ -124,6 +125,8 @@ pub struct Arith {
     pub mul: SigdefId,
     pub add_out: TydefId,
     pub mul_out: TydefId,
+    pub lhs: TydefId,
+    pub rhs: TydefId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -326,6 +329,8 @@ impl Precompile {
             mul: self.sigdef(ops, "mul"),
             add_out: self.tydef(ops, "AddOut"),
             mul_out: self.tydef(ops, "MulOut"),
+            lhs: self.tydef(ops, "Lhs"),
+            rhs: self.tydef(ops, "Rhs"),
         };
         // The digit/radix values live in `std.moss`, which is lowered as part of the prelude below
         // and so is not yet available here. During that lowering the literal desugar resolves them
@@ -344,6 +349,7 @@ impl Precompile {
         let std = self.modules[&self.ir.strings.get_id("./std.moss").unwrap()];
         let base = Base {
             numerals: Some(Numerals {
+                number: self.tydef(std, "Number"),
                 digit0: self.valdef(std, "digit0"),
                 digit1: self.valdef(std, "digit1"),
                 digit2: self.valdef(std, "digit2"),

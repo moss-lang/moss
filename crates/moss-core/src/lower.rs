@@ -16,7 +16,7 @@ use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex, string},
     parse::{self, Binop, Block, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
-    prelude::Base,
+    prelude::{Arith, Base, Builders},
     range::{Inclusive, expr_range, path_range, single},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -1455,7 +1455,12 @@ impl<'a> Lower<'a> {
             Node::Tuple { elems } => todo!(),
             Node::Context => todo!(),
             Node::Fndef { def } => todo!(),
-            Node::Get { ctx, slot } => match self.node(ctx) {
+            Node::Get { ctx, slot } => match {
+                // Reduce the context first so a nested-context accessor (a `Get` chain) collapses to
+                // the stuck `Apply { NeedCtxdef }` (or `List`) form the cases below expect.
+                let ctx = self.reduce(ctx)?;
+                self.node(ctx)
+            } {
                 Node::Nothing => todo!(),
                 Node::Lambda {
                     level,
@@ -1871,22 +1876,21 @@ impl<'a> Lower<'a> {
                 let owned = self.ir.lists[exploded].to_vec(); // TODO: Don't make a `Vec` here.
                 for (i, node) in owned.into_iter().enumerate() {
                     if let Some((extracted, synth)) = self.try_extract_lambda(node, kind, lambda)? {
-                        if extracted != node {
-                            // This can happen if a context is nested in another context. Need to
-                            // fix by explicitly encoding the chain of `Node::Get` instead of just
-                            // returning the possibly-modified node.
-                            todo!();
-                        }
                         let id = SlotId::from_usize(i);
                         let got = self.mk_node(Node::Get { ctx, slot: id });
-                        options.push((got, synth));
+                        // `extracted` is the entrypoint into `node`. If `node` itself was a nested
+                        // context, `extracted` is a `Get` chain rooted at `node`; rebase it onto the
+                        // accessor `got` that reaches `node` from this (outer) context. Otherwise
+                        // `node` was directly satisfying and `extracted == node`, so use `got`.
+                        let rebased = if extracted == node {
+                            got
+                        } else {
+                            self.rebase_get(extracted, node, got)
+                        };
+                        options.push((rebased, synth));
                     }
                 }
-                if options.len() == 1 {
-                    Ok(Some(options[0]))
-                } else {
-                    Ok(None)
-                }
+                self.unique_option(&options)
             }
             Node::Tagdef { def } => todo!(),
             Node::Aliasdef { def } => todo!(),
@@ -1907,6 +1911,26 @@ impl<'a> Lower<'a> {
             }
             Node::BindCtxdef { def, bind } => todo!(),
             Node::Sig { param, result } => todo!(),
+        }
+    }
+
+    /// Rewrite the `Get`/`Apply` accessor chain `node`, replacing every reference to `from` (the
+    /// inner context member that the chain was originally rooted at) with `to` (the accessor that
+    /// reaches that member from an enclosing context).
+    fn rebase_get(&mut self, node: NodeId, from: NodeId, to: NodeId) -> NodeId {
+        if node == from {
+            return to;
+        }
+        match self.node(node) {
+            Node::Get { ctx, slot } => {
+                let ctx = self.rebase_get(ctx, from, to);
+                self.mk_node(Node::Get { ctx, slot })
+            }
+            Node::Apply { lambda, args } => {
+                let lambda = self.rebase_get(lambda, from, to);
+                self.mk_node(Node::Apply { lambda, args })
+            }
+            _ => node,
         }
     }
 
@@ -1938,17 +1962,72 @@ impl<'a> Lower<'a> {
         lambda: NodeId,
         bind: NodeId,
     ) -> LowerResult<Option<(NodeId, NodeId)>> {
-        if kind == want
-            && let Some(synth) = self.synthesize_bind(lambda, bind)?
-        {
-            Ok(Some((slot, synth)))
-        } else {
-            Ok(None)
+        if kind == want {
+            if let Some(synth) = self.synthesize_bind(lambda, bind)? {
+                return Ok(Some((slot, synth)));
+            }
         }
+        Ok(None)
     }
 
-    /// Collect the slots that satisfy a need of definition `kind`; succeed only if exactly one
-    /// does. (Cross-frame search and intra-frame specificity are not yet modeled here.)
+    /// The composite a candidate `(callee, synth)` resolves to: the synthesized adapter's binder
+    /// wrapped around an application of `callee` to the adapter's result.
+    fn composite(&mut self, callee: NodeId, synth: NodeId) -> NodeId {
+        let Node::Lambda {
+            level,
+            needs,
+            result,
+        } = self.node(synth)
+        else {
+            panic!()
+        };
+        let Node::List { items } = self.node(result) else {
+            panic!()
+        };
+        let result = self.mk_node(Node::Apply {
+            lambda: callee,
+            args: items,
+        });
+        self.mk_node(Node::Lambda {
+            level,
+            needs,
+            result,
+        })
+    }
+
+    /// Reduce several candidate resolutions for the same need to a single one, following the
+    /// context model's "most specific wins" rule. Candidate `A` is at least as specific as `B` when
+    /// `synthesize(A, B)` succeeds (`A` is an instance of `B`); the winner is the unique candidate
+    /// that is at least as specific as every other. If there is no such greatest element, resolution
+    /// is genuinely ambiguous and yields `None`.
+    fn unique_option(
+        &mut self,
+        options: &[(NodeId, NodeId)],
+    ) -> LowerResult<Option<(NodeId, NodeId)>> {
+        if options.is_empty() {
+            return Ok(None);
+        }
+        let composites = options
+            .iter()
+            .map(|&(callee, synth)| self.composite(callee, synth))
+            .collect::<Vec<_>>();
+        // The winner must be at least as specific as every other candidate. Any candidate that
+        // dominates all others is mutually equivalent to every other dominator, so the first such
+        // candidate is a valid choice; if none dominates all others, resolution is ambiguous.
+        'candidate: for i in 0..options.len() {
+            for j in 0..options.len() {
+                if i != j && self.synthesize(composites[i], composites[j])?.is_none() {
+                    continue 'candidate;
+                }
+            }
+            return Ok(Some(options[i]));
+        }
+        Ok(None)
+    }
+
+    /// Collect the slots that satisfy a need of definition `kind`. Succeeds when, up to the
+    /// equivalence of mutually-adaptable candidates, exactly one does. (Cross-frame search and the
+    /// general "most specific" partial order are not yet modeled.)
     fn extract_lambda(
         &mut self,
         slots: &[NodeId],
@@ -1961,11 +2040,7 @@ impl<'a> Lower<'a> {
                 options.push(option);
             }
         }
-        if options.len() == 1 {
-            Ok(Some(options[0]))
-        } else {
-            Ok(None)
-        }
+        self.unique_option(&options)
     }
 
     /// The body node of the target definition named by `kind`.
@@ -2012,6 +2087,43 @@ impl<'a> Lower<'a> {
         Err(self.todo_no_loc())
     }
 
+    /// Build a `BindTydef` slot binding the (nullary) type `def` to the (nullary) type `rhs`,
+    /// resolved against `slots`. This mirrors the `bind` method's `Entry::Ref`/`Named::Tydef`
+    /// branch but for two type definitions known directly rather than via the parse tree.
+    fn bind_tydef(
+        &mut self,
+        level: Level,
+        slots: &[NodeId],
+        def: TydefId,
+        rhs: TydefId,
+    ) -> LowerResult<NodeId> {
+        let destruct_rhs: Vec<NodeId> = Vec::new();
+        let lambda = self.extract(level.succ(), slots, DefKind::Ty(rhs), &destruct_rhs)?;
+        let Tydef(target_lhs) = self.ir.tydefs[def];
+        let destruct_lhs: Vec<NodeId> = Vec::new();
+        let (construct_lhs, mut needs_vec) = self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
+        let needs = self.mk_node_list(&needs_vec);
+        let args_lhs = self.mk_node_list(&construct_lhs);
+        let mut destruct_rhs = destruct_rhs;
+        destruct_rhs.append(&mut needs_vec);
+        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+        let args_rhs = self.mk_node_list(&construct_rhs);
+        let bind = self.mk_node(Node::Apply {
+            lambda,
+            args: args_rhs,
+        });
+        let result = self.mk_node(Node::Bind {
+            args: args_lhs,
+            bind,
+        });
+        let bind = self.mk_node(Node::Lambda {
+            level: level.succ(),
+            needs,
+            result,
+        });
+        Ok(self.mk_node(Node::BindTydef { def, bind }))
+    }
+
     /// Apply a `Lambda` to a `construct` (one resolved value per need) by substituting the needs,
     /// yielding the lambda's result with those needs filled in.
     fn inline(&mut self, lambda: NodeId, construct: &[NodeId]) -> LowerResult<NodeId> {
@@ -2041,29 +2153,50 @@ impl<'a> Lower<'a> {
                         let inlined = self.inline(head, &args)?;
                         self.reduce(inlined)
                     }
+                    // Applying a binding projects out the value it binds: the binding's lambda maps
+                    // the leftover needs to a `Bind { args, bind }`, whose `bind` is the bound value.
+                    // This makes a bound type compare equal to the type it is bound to, which the
+                    // literal desugar relies on when disambiguating a digit by an explicit binding.
+                    Node::BindTydef { bind, .. }
+                    | Node::BindSigdef { bind, .. }
+                    | Node::BindValdef { bind, .. }
+                    | Node::BindCtxdef { bind, .. } => {
+                        let args = self.ir.lists[args].to_vec();
+                        let inlined = self.inline(bind, &args)?;
+                        let reduced = self.reduce(inlined)?;
+                        match self.node(reduced) {
+                            Node::Bind { bind, .. } => self.reduce(bind),
+                            _ => Ok(reduced),
+                        }
+                    }
                     // Applying an opaque head (a need, a nominal type): a stuck application, in WHNF.
                     _ => Ok(self.mk_node(Node::Apply { lambda: head, args })),
                 }
             }
-            Node::Get { ctx, slot } => match self.node(ctx) {
-                Node::Apply {
-                    lambda: curried,
-                    args,
-                } => match self.node(curried) {
-                    Node::NeedCtxdef { level, def, param } => {
-                        assert!(args.is_empty()); // TODO: Handle parametrized composite contexts.
-                        let exploded = self.explode(level, def, param)?;
-                        let single = self.ir.lists[exploded][slot.index()];
-                        self.reduce(single)
+            Node::Get { ctx, slot } => {
+                // Reduce the context first so a nested-context accessor (a `Get` chain) collapses to
+                // the stuck `Apply { NeedCtxdef }` (or `List`) form the cases below expect.
+                let ctx = self.reduce(ctx)?;
+                match self.node(ctx) {
+                    Node::Apply {
+                        lambda: curried,
+                        args,
+                    } => match self.node(curried) {
+                        Node::NeedCtxdef { level, def, param } => {
+                            assert!(args.is_empty()); // TODO: Handle parametrized composite contexts.
+                            let exploded = self.explode(level, def, param)?;
+                            let single = self.ir.lists[exploded][slot.index()];
+                            self.reduce(single)
+                        }
+                        _ => todo!(),
+                    },
+                    Node::List { items } => {
+                        let elem = self.ir.lists[items][slot.index()];
+                        self.reduce(elem)
                     }
                     _ => todo!(),
-                },
-                Node::List { items } => {
-                    let elem = self.ir.lists[items][slot.index()];
-                    self.reduce(elem)
                 }
-                _ => todo!(),
-            },
+            }
             // Opaque heads, already in weak-head normal form.
             Node::Lambda { .. }
             | Node::Sig { .. }
@@ -2853,6 +2986,213 @@ impl LowerBody<'_, '_> {
             .extract(Level::ONE, &self.slots, DefKind::Val(def), &self.slots)
     }
 
+    /// Like [`LowerBody::extract_val`], but resolve against `slots` (used for the disambiguating
+    /// type bindings the literal desugar pushes on top of the body's own context).
+    fn extract_val_in(&mut self, slots: &[NodeId], def: ValdefId) -> LowerResult<NodeId> {
+        self.x.extract(Level::ONE, slots, DefKind::Val(def), slots)
+    }
+
+    /// Like [`LowerBody::extract_sig`], but resolve against `slots`.
+    fn extract_sig_in(&mut self, slots: &[NodeId], def: SigdefId) -> LowerResult<NodeId> {
+        self.x.extract(Level::ONE, slots, DefKind::Sig(def), slots)
+    }
+
+    /// The valdef for the digit `n` (`0..=9`), resolving through [`Base::numerals`] or, while the
+    /// declaring prelude module is itself being lowered, by name from the current module.
+    fn digit_valdef(&mut self, n: u8) -> LowerResult<ValdefId> {
+        let name = format!("digit{n}");
+        if let Some(numerals) = self.base().numerals {
+            Ok(match n {
+                0 => numerals.digit0,
+                1 => numerals.digit1,
+                2 => numerals.digit2,
+                3 => numerals.digit3,
+                4 => numerals.digit4,
+                5 => numerals.digit5,
+                6 => numerals.digit6,
+                7 => numerals.digit7,
+                8 => numerals.digit8,
+                9 => numerals.digit9,
+                _ => unreachable!(),
+            })
+        } else {
+            self.local_valdef(&name)
+        }
+    }
+
+    /// The `radix` valdef, resolved like [`LowerBody::digit_valdef`].
+    fn radix_valdef(&mut self) -> LowerResult<ValdefId> {
+        match self.base().numerals {
+            Some(numerals) => Ok(numerals.radix),
+            None => self.local_valdef("radix"),
+        }
+    }
+
+    /// Look up a valdef by name in the current module (falling back to the prelude module).
+    fn local_valdef(&mut self, name: &str) -> LowerResult<ValdefId> {
+        let id = self.x.ir.strings.make_id(name);
+        match get_name(self.x.prelude, self.x.module, &self.x.names.names, (self.x.module, id)) {
+            Some(Named::Valdef(def)) => Ok(def),
+            _ => Err(self.x.todo_no_loc()),
+        }
+    }
+
+    /// Resolve a digit value `n` at concrete type `ty` (a [`TydefId`]), emitting an `Expr::Val`.
+    fn digit(&mut self, ty: TydefId, n: u8) -> LowerResult<Typed> {
+        let def = self.digit_valdef(n)?;
+        self.val_at(ty, def)
+    }
+
+    /// Resolve the `radix` value at concrete type `ty`, emitting an `Expr::Val`.
+    fn radix(&mut self, ty: TydefId) -> LowerResult<Typed> {
+        let def = self.radix_valdef()?;
+        self.val_at(ty, def)
+    }
+
+    /// Resolve a numeric value `def` (a digit or `radix`) under the binding `Number=ty`, emitting
+    /// an `Expr::Val`. Without the binding the value would be ambiguous, since `Std` provides
+    /// `Numerals[Number=...]` for every numeric type at once.
+    fn val_at(&mut self, ty: TydefId, def: ValdefId) -> LowerResult<Typed> {
+        let number = self.number_tydef()?;
+        let bind = self.x.bind_tydef(Level::ZERO, &self.slots, number, ty)?;
+        let mut slots = self.slots.clone();
+        slots.push(bind);
+        let val = self.extract_val_in(&slots, def)?;
+        // The value's type is `Number`, which the binding pins to `ty`; build that concrete type
+        // directly rather than inlining the (generic) valdef body, whose `Number` need is already
+        // satisfied by the binding.
+        let result = self.ty_of(ty)?;
+        Ok(self.instr(result, Expr::Val { val }))
+    }
+
+    /// Construct the type node for a nullary concrete type `ty`.
+    fn ty_of(&mut self, ty: TydefId) -> LowerResult<NodeId> {
+        let lambda = self.extract_ty(ty)?;
+        let construct = self.invoke_force(lambda)?;
+        let args = self.x.mk_node_list(&construct);
+        Ok(self.x.mk_node(Node::Apply { lambda, args }))
+    }
+
+    /// The `Number` tydef that the digit/radix values are generic over.
+    fn number_tydef(&mut self) -> LowerResult<TydefId> {
+        match self.base().numerals {
+            Some(numerals) => Ok(numerals.number),
+            None => self.local_tydef("Number"),
+        }
+    }
+
+    /// Look up a tydef by name in the current module (falling back to the prelude module).
+    fn local_tydef(&mut self, name: &str) -> LowerResult<TydefId> {
+        let id = self.x.ir.strings.make_id(name);
+        match get_name(self.x.prelude, self.x.module, &self.x.names.names, (self.x.module, id)) {
+            Some(Named::Tydef(def)) => Ok(def),
+            _ => Err(self.x.todo_no_loc()),
+        }
+    }
+
+    /// Apply a binary arithmetic operation `sigdef` (`add` or `mul`) at type `ty` to `lhs`/`rhs`,
+    /// resolving the operation under the bindings `Lhs=ty, Rhs=ty` so that `Std`'s per-type
+    /// `Arithmetic[Number=...]` entries do not make it ambiguous.
+    fn op2(&mut self, ty: TydefId, sigdef: SigdefId, lhs: Typed, rhs: Typed) -> LowerResult<Typed> {
+        let Arith { lhs: lhs_ty, rhs: rhs_ty, .. } = self.base().arith;
+        let bind_lhs = self.x.bind_tydef(Level::ZERO, &self.slots, lhs_ty, ty)?;
+        let bind_rhs = self.x.bind_tydef(Level::ZERO, &self.slots, rhs_ty, ty)?;
+        let mut slots = self.slots.clone();
+        slots.push(bind_lhs);
+        slots.push(bind_rhs);
+        let lambda = self.extract_sig_in(&slots, sigdef)?;
+        let construct = self.x.invoke_force(lambda, &slots)?;
+        let args = self.x.mk_node_list(&construct);
+        let func = self.x.mk_node(Node::Apply { lambda, args });
+        let (ty_param, ty_result) = self.sig(func)?;
+        let args_ty = [lhs.ty, rhs.ty];
+        let ty_args = self.ty_tuple(&args_ty);
+        self.expect_ty(ty_param, ty_args)?;
+        let arg = self.instr_tuple(ty_args, &[lhs.val, rhs.val]).val;
+        Ok(self.instr(ty_result, Expr::Call { func, arg }))
+    }
+
+    /// The decimal digits (each `0..=9`) of a numeric literal token, ignoring its type suffix.
+    fn decimal_digits(&self, token: TokenId) -> Vec<u8> {
+        let slice = self.x.slice(token);
+        let digits = slice
+            .strip_suffix("u32")
+            .or_else(|| slice.strip_suffix("i32"))
+            .or_else(|| slice.strip_suffix("u64"))
+            .or_else(|| slice.strip_suffix("i64"))
+            .or_else(|| slice.strip_suffix("u"))
+            .unwrap_or(slice);
+        digits.bytes().map(|b| b - b'0').collect()
+    }
+
+    /// Build a numeric literal of decimal `digits` at concrete type `ty` by Horner's method over
+    /// the contextual digit values and `add`/`mul`.
+    fn numeric(&mut self, ty: TydefId, digits: &[u8]) -> LowerResult<Typed> {
+        let Arith { add, mul, .. } = self.base().arith;
+        let mut iter = digits.iter().copied();
+        let first = iter.next().expect("a numeric literal has at least one digit");
+        let mut acc = self.digit(ty, first)?;
+        for d in iter {
+            let radix = self.radix(ty)?;
+            let scaled = self.op2(ty, mul, acc, radix)?;
+            let digit = self.digit(ty, d)?;
+            acc = self.op2(ty, add, scaled, digit)?;
+        }
+        Ok(acc)
+    }
+
+    /// Build a `Uint` numeric literal of value `n` (used for string lengths, indices, and code
+    /// points), reusing the numeric desugar.
+    fn uint(&mut self, n: u32) -> LowerResult<Typed> {
+        let ty = self.base().types.uint;
+        let digits: Vec<u8> = n
+            .to_string()
+            .bytes()
+            .map(|b| b - b'0')
+            .collect();
+        self.numeric(ty, &digits)
+    }
+
+    /// Call a contextual function `sigdef` (taking no disambiguating bindings) on `args`.
+    fn call_sig(&mut self, sigdef: SigdefId, args: &[Typed]) -> LowerResult<Typed> {
+        let lambda = self.extract_sig(sigdef)?;
+        let construct = self.invoke_force(lambda)?;
+        let items = self.x.mk_node_list(&construct);
+        let func = self.x.mk_node(Node::Apply { lambda, args: items });
+        let (ty_param, ty_result) = self.sig(func)?;
+        let args_ty: Vec<NodeId> = args.iter().map(|a| a.ty).collect();
+        let args_val: Vec<InstrId> = args.iter().map(|a| a.val).collect();
+        let ty_args = self.ty_tuple(&args_ty);
+        self.expect_ty(ty_param, ty_args)?;
+        let arg = self.instr_tuple(ty_args, &args_val).val;
+        Ok(self.instr(ty_result, Expr::Call { func, arg }))
+    }
+
+    /// Build a character literal from its Unicode code point `c`.
+    fn char_lit(&mut self, c: char) -> LowerResult<Typed> {
+        let Builders { char_from_codepoint, .. } = self.base().builders;
+        let codepoint = self.uint(c as u32)?;
+        self.call_sig(char_from_codepoint, &[codepoint])
+    }
+
+    /// Build a string literal from its characters by filling a string builder.
+    fn string_lit(&mut self, chars: &[char]) -> LowerResult<Typed> {
+        let Builders {
+            string_builder,
+            set_char,
+            build,
+            ..
+        } = self.base().builders;
+        let len = self.uint(chars.len() as u32)?;
+        let mut builder = self.call_sig(string_builder, &[len])?;
+        for (i, &c) in chars.iter().enumerate() {
+            let index = self.uint(i as u32)?;
+            let character = self.char_lit(c)?;
+            builder = self.call_sig(set_char, &[builder, index, character])?;
+        }
+        self.call_sig(build, &[builder])
+    }
+
     fn extract_ctx(&mut self, def: CtxdefId) -> LowerResult<NodeId> {
         self.x
             .extract_ctx(Level::ONE, &self.slots, def, &self.slots)
@@ -2924,16 +3264,10 @@ impl LowerBody<'_, '_> {
     fn expr(&mut self, expr: ExprId) -> LowerResult<Typed> {
         match self.x.tree.exprs[expr] {
             parse::Expr::Lit(token) => {
-                let Base {
-                    types,
-                    lit_types,
-                    lit_vals,
-                    lits,
-                    numerals: _,
-                    builders: _,
-                    arith: _,
-                } = self.base();
-                let (tydef_lit, tydef, valdef, sigdef, val) = match self.x.lit(token)? {
+                let types = self.base().types;
+                // The concrete type is fixed by the suffix. The range-check error cases ensure the
+                // literal fits in that type; the desugar then builds the value contextually.
+                let tydef = match self.x.lit(token)? {
                     // Unreachable cases.
                     (
                         Val::Uint31(_)
@@ -2953,39 +3287,13 @@ impl LowerBody<'_, '_> {
                     ) => unreachable!(),
 
                     // Integer literals ending in `u32`.
-                    (Val::Uint31(n), Some(IntType::Uint32)) => (
-                        lit_types.uint31,
-                        types.uint32,
-                        lit_vals.uint31,
-                        lits.uint31_realize_uint32,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Uint32(n), Some(IntType::Uint32)) => (
-                        lit_types.uint32,
-                        types.uint32,
-                        lit_vals.uint32,
-                        lits.uint32_realize_uint32,
-                        Val::Uint32(n),
-                    ),
+                    (Val::Uint31(_) | Val::Uint32(_), Some(IntType::Uint32)) => types.uint32,
                     (Val::Uint63(_) | Val::Uint64(_) | Val::Uint(_), Some(IntType::Uint32)) => {
                         return Err(LowerError::Uint32High(token));
                     }
 
                     // Integer literals ending in `i32`.
-                    (Val::Uint31(n), Some(IntType::Int32)) => (
-                        lit_types.uint31,
-                        types.int32,
-                        lit_vals.uint31,
-                        lits.uint31_realize_int32,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Int32(n), Some(IntType::Int32)) => (
-                        lit_types.int32,
-                        types.int32,
-                        lit_vals.int32,
-                        lits.int32_realize_int32,
-                        Val::Int32(n),
-                    ),
+                    (Val::Uint31(_) | Val::Int32(_), Some(IntType::Int32)) => types.int32,
                     (Val::Int64(_) | Val::Int(_), Some(IntType::Int32)) => {
                         return Err(LowerError::Int32Low(token));
                     }
@@ -2997,216 +3305,60 @@ impl LowerBody<'_, '_> {
                     }
 
                     // Integer literals ending in `u64`.
-                    (Val::Uint31(n), Some(IntType::Uint64)) => (
-                        lit_types.uint31,
-                        types.uint64,
-                        lit_vals.uint31,
-                        lits.uint31_realize_uint64,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Uint32(n), Some(IntType::Uint64)) => (
-                        lit_types.uint32,
-                        types.uint64,
-                        lit_vals.uint32,
-                        lits.uint32_realize_uint64,
-                        Val::Uint32(n),
-                    ),
-                    (Val::Uint63(n), Some(IntType::Uint64)) => (
-                        lit_types.uint63,
-                        types.uint64,
-                        lit_vals.uint63,
-                        lits.uint63_realize_uint64,
-                        Val::Uint63(n),
-                    ),
-                    (Val::Uint64(n), Some(IntType::Uint64)) => (
-                        lit_types.uint64,
-                        types.uint64,
-                        lit_vals.uint64,
-                        lits.uint64_realize_uint64,
-                        Val::Uint64(n),
-                    ),
+                    (
+                        Val::Uint31(_) | Val::Uint32(_) | Val::Uint63(_) | Val::Uint64(_),
+                        Some(IntType::Uint64),
+                    ) => types.uint64,
                     (Val::Uint(_), Some(IntType::Uint64)) => {
                         return Err(LowerError::Uint64High(token));
                     }
 
                     // Integer literals ending in `i64`.
-                    (Val::Uint31(n), Some(IntType::Int64)) => (
-                        lit_types.uint31,
-                        types.int64,
-                        lit_vals.uint31,
-                        lits.uint31_realize_int64,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Uint32(n), Some(IntType::Int64)) => (
-                        lit_types.uint32,
-                        types.int64,
-                        lit_vals.uint32,
-                        lits.uint32_realize_int64,
-                        Val::Uint32(n),
-                    ),
-                    (Val::Int32(n), Some(IntType::Int64)) => (
-                        lit_types.int32,
-                        types.int64,
-                        lit_vals.int32,
-                        lits.int32_realize_int64,
-                        Val::Int32(n),
-                    ),
-                    (Val::Uint63(n), Some(IntType::Int64)) => (
-                        lit_types.uint63,
-                        types.int64,
-                        lit_vals.uint63,
-                        lits.uint63_realize_int64,
-                        Val::Uint63(n),
-                    ),
-                    (Val::Int64(n), Some(IntType::Int64)) => (
-                        lit_types.int64,
-                        types.int64,
-                        lit_vals.int64,
-                        lits.int64_realize_int64,
-                        Val::Int64(n),
-                    ),
+                    (
+                        Val::Uint31(_)
+                        | Val::Uint32(_)
+                        | Val::Int32(_)
+                        | Val::Uint63(_)
+                        | Val::Int64(_),
+                        Some(IntType::Int64),
+                    ) => types.int64,
                     (Val::Int(_), Some(IntType::Int64)) => return Err(LowerError::Int64Low(token)),
                     (Val::Uint64(_) | Val::Uint(_), Some(IntType::Int64)) => {
                         return Err(LowerError::Int64High(token));
                     }
 
                     // Integer literals ending in `u`.
-                    (Val::Uint31(n), Some(IntType::Uint)) => (
-                        lit_types.uint31,
-                        types.uint,
-                        lit_vals.uint31,
-                        lits.uint31_realize_uint,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Uint32(n), Some(IntType::Uint)) => (
-                        lit_types.uint32,
-                        types.uint,
-                        lit_vals.uint32,
-                        lits.uint32_realize_uint,
-                        Val::Uint32(n),
-                    ),
-                    (Val::Uint63(n), Some(IntType::Uint)) => (
-                        lit_types.uint63,
-                        types.uint,
-                        lit_vals.uint63,
-                        lits.uint63_realize_uint,
-                        Val::Uint63(n),
-                    ),
-                    (Val::Uint64(n), Some(IntType::Uint)) => (
-                        lit_types.uint64,
-                        types.uint,
-                        lit_vals.uint64,
-                        lits.uint64_realize_uint,
-                        Val::Uint64(n),
-                    ),
-                    (Val::Uint(n), Some(IntType::Uint)) => (
-                        lit_types.uint,
-                        types.uint,
-                        lit_vals.uint,
-                        lits.uint_realize_uint,
-                        Val::Uint(n),
-                    ),
+                    (
+                        Val::Uint31(_)
+                        | Val::Uint32(_)
+                        | Val::Uint63(_)
+                        | Val::Uint64(_)
+                        | Val::Uint(_),
+                        Some(IntType::Uint),
+                    ) => types.uint,
 
                     // Integer literals with no suffix.
-                    (Val::Uint31(n), Some(IntType::Int)) => (
-                        lit_types.uint31,
-                        types.int,
-                        lit_vals.uint31,
-                        lits.uint31_realize_int,
-                        Val::Uint31(n),
-                    ),
-                    (Val::Uint32(n), Some(IntType::Int)) => (
-                        lit_types.uint32,
-                        types.int,
-                        lit_vals.uint32,
-                        lits.uint32_realize_int,
-                        Val::Uint32(n),
-                    ),
-                    (Val::Int32(n), Some(IntType::Int)) => (
-                        lit_types.int32,
-                        types.int,
-                        lit_vals.int32,
-                        lits.int32_realize_int,
-                        Val::Int32(n),
-                    ),
-                    (Val::Uint63(n), Some(IntType::Int)) => (
-                        lit_types.uint63,
-                        types.int,
-                        lit_vals.uint63,
-                        lits.uint63_realize_int,
-                        Val::Uint63(n),
-                    ),
-                    (Val::Uint64(n), Some(IntType::Int)) => (
-                        lit_types.uint64,
-                        types.int,
-                        lit_vals.uint64,
-                        lits.uint64_realize_int,
-                        Val::Uint64(n),
-                    ),
-                    (Val::Int64(n), Some(IntType::Int)) => (
-                        lit_types.int64,
-                        types.int,
-                        lit_vals.int64,
-                        lits.int64_realize_int,
-                        Val::Int64(n),
-                    ),
-                    (Val::Uint(n), Some(IntType::Int)) => (
-                        lit_types.uint,
-                        types.int,
-                        lit_vals.uint,
-                        lits.uint_realize_int,
-                        Val::Uint(n),
-                    ),
-                    (Val::Int(n), Some(IntType::Int)) => (
-                        lit_types.int,
-                        types.int,
-                        lit_vals.int,
-                        lits.int_realize_int,
-                        Val::Int(n),
-                    ),
+                    (
+                        Val::Uint31(_)
+                        | Val::Uint32(_)
+                        | Val::Int32(_)
+                        | Val::Uint63(_)
+                        | Val::Uint64(_)
+                        | Val::Int64(_)
+                        | Val::Uint(_)
+                        | Val::Int(_),
+                        Some(IntType::Int),
+                    ) => types.int,
 
-                    // Other literals.
-                    (Val::Char(c), None) => (
-                        lit_types.char,
-                        types.char,
-                        lit_vals.char,
-                        lits.char_realize,
-                        Val::Char(c),
-                    ),
-                    (Val::String(s), None) => (
-                        lit_types.string,
-                        types.string,
-                        lit_vals.string,
-                        lits.string_realize,
-                        Val::String(s),
-                    ),
+                    // Character and string literals.
+                    (Val::Char(c), None) => return self.char_lit(c),
+                    (Val::String(s), None) => {
+                        let chars: Vec<char> = self.x.ir.strings[s].chars().collect();
+                        return self.string_lit(&chars);
+                    }
                 };
-
-                let Tydef(body_tydef_lit) = self.x.ir.tydefs[tydef_lit];
-                let Tydef(body_tydef) = self.x.ir.tydefs[tydef];
-                let Valdef(body_valdef) = self.x.ir.valdefs[valdef];
-                let Sigdef(body_sigdef) = self.x.ir.sigdefs[sigdef];
-
-                let lambda_ty_lit = self.extract_ty(tydef_lit)?;
-                let construct_ty_lit = self.invoke_force(lambda_ty_lit)?;
-
-                let lambda_ty = self.extract_ty(tydef)?;
-                let construct_ty = self.invoke_force(lambda_ty)?;
-
-                let val_lit = self.x.mk_node(Node::Lit { val });
-
-                // TODO: Use "invoke" correctly here.
-                let lambda_func = self.extract_sig(sigdef)?;
-                let construct_func = self.invoke_force(lambda_func)?;
-
-                let items = self.x.mk_node_list(&construct_func);
-                let func = self.x.mk_node(Node::Apply {
-                    lambda: lambda_func,
-                    args: items,
-                });
-                let ty_unit = self.x.ty_unit();
-                let arg = self.instr_tuple(ty_unit, &[]).val;
-                Ok(self.instr(lambda_ty, Expr::Call { func, arg }))
+                let digits = self.decimal_digits(token);
+                self.numeric(tydef, &digits)
             }
             parse::Expr::Path(path) => {
                 let name = self.x.name(path.last);
