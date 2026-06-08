@@ -1528,12 +1528,15 @@ impl<'a> Lower<'a> {
                 Node::BindCtxdef { def, bind } => todo!(),
                 Node::Sig { param, result } => todo!(),
             },
-            Node::Lit { val } => todo!(),
-            Node::Bind { args, bind } => todo!(),
-            Node::BindTydef { def, bind } => todo!(),
-            Node::BindSigdef { def, bind } => todo!(),
-            Node::BindValdef { def, bind } => todo!(),
-            Node::BindCtxdef { def, bind } => todo!(),
+            // A ground literal has no needs, so it takes no constructed arguments.
+            Node::Lit { val: _ } => Ok(Some(Vec::new())),
+            // A binding's needs live in its inner `bind` lambda; invoking the binding resolves
+            // those, just as applying the binding (in `reduce`) feeds them to that same lambda.
+            Node::Bind { args: _, bind }
+            | Node::BindTydef { def: _, bind }
+            | Node::BindSigdef { def: _, bind }
+            | Node::BindValdef { def: _, bind }
+            | Node::BindCtxdef { def: _, bind } => self.invoke(bind, destruct),
             Node::Sig { param, result } => todo!(),
         }
     }
