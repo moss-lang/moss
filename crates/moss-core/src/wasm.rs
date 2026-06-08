@@ -5,7 +5,7 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use strum::{EnumIter, IntoStaticStr};
 use wasm_encoder::{
-    BlockType, CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function,
+    BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection, Function,
     FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
     MemorySection, MemoryType, Module, TypeSection, ValType,
 };
@@ -250,6 +250,9 @@ struct Wasm<'a> {
     /// Wasm `funcidx` for each [`Object::FnWasi`] and [`Object::FnDef`].
     funcidxs: IndexSet<Object>,
 
+    /// Wasm `funcidx` of each imported WASI P1 function, by name.
+    wasi_funcidx: HashMap<StrId, u32>,
+
     section_type: TypeSection,
     section_import: ImportSection,
     section_function: FunctionSection,
@@ -271,8 +274,39 @@ struct Wasm<'a> {
 
 impl<'a> Wasm<'a> {
     /// The empty context.
-    fn empty(&self) -> ObjectId {
-        todo!()
+    fn empty(&mut self) -> ObjectId {
+        self.mkctx(&[])
+    }
+
+    /// Monomorphize a static IR `node` against a concrete context `ctx`, producing the
+    /// corresponding codegen [`Object`]. This is the backend analogue of lowering's
+    /// `reduce`/`invoke`: it resolves contextual references, reduces applications, and unfolds
+    /// transparent definitions, but bottoms out in target [`Object`]s instead of IR nodes.
+    fn eval(&mut self, node: lower::NodeId, ctx: ObjectId) -> ObjectId {
+        match self.ir.nodes[node.index()] {
+            lower::Node::Sig { param, result } => {
+                let param = self.eval(param, ctx);
+                let result = self.eval(result, ctx);
+                self.mkobj(Object::Sig(param, result))
+            }
+            lower::Node::Tuple { elems } => {
+                let items = self.ir.lists[elems].to_vec();
+                let objs: Vec<ObjectId> = items.into_iter().map(|e| self.eval(e, ctx)).collect();
+                let tuple = self.tuples.make(&objs);
+                self.mkobj(Object::TyTuple(tuple))
+            }
+            // A definition's body is a lambda over its contextual needs. Instantiating it against
+            // `ctx` means binding those needs and evaluating the result. (Milestone B: bind the
+            // needs from `ctx`; for now only the no-need case is exercised.)
+            lower::Node::Lambda { needs, result, .. } => {
+                if self.ir.lists[needs].is_empty() {
+                    self.eval(result, ctx)
+                } else {
+                    todo!("eval: Lambda with needs (milestone B)")
+                }
+            }
+            other => todo!("eval: {other:?} (milestone B)"),
+        }
     }
 
     fn named(&self, module: ModuleId, string: &str) -> Named {
@@ -325,10 +359,28 @@ impl<'a> Wasm<'a> {
     }
 
     fn wasi_ctx(&mut self, wasip1_sigdefs: &IndexMap<StrId, SigdefId>) -> ObjectId {
-        let mut slots = Vec::new();
-        let ctxdef_wasi = self.named(self.lib.wasi, "Wasi").ctxdef();
-        todo!();
-        self.mkctx(&slots)
+        // MILESTONE A: minimal root context. The empty `main` ignores the context entirely, so we
+        // only need to (a) import `proc_exit` so `_start` can call it, and (b) return *some* Ctx
+        // to key `FnDef(main, ctx)`.
+        //
+        // TODO(milestone B): build the full `Wasi` context as an `Object::Ctx`, in `lib/wasi.moss`
+        // member order: I32/I64/MemIdx -> Ty*; the ten `lit::Literal*` -> TyLit*; the realizers ->
+        // FnInt/FnChar/FnString; `Numerals[Number=I32/I64]` -> nested Ctx of digit/radix ValU32;
+        // `wasm::Wasm[Base]` -> nested Ctx of FnInstr (+ memidx/align/offset ValU32); and
+        // `wasip1::WasiP1[Base]` -> nested Ctx of FnWasi, importing *every* wasip1 function with
+        // its eval'd signature. Then `eval` must resolve `Need*`/`Get` against this Ctx.
+        for (&name, _) in wasip1_sigdefs {
+            if &self.ir.strings[name] == "proc_exit" {
+                // `proc_exit : (i32) -> ()`.
+                let typeidx = self.section_type.len();
+                self.section_type.ty().function([ValType::I32], []);
+                let funcidx = self.push_func_wasi();
+                self.section_import
+                    .import(WASIP1, "proc_exit", EntityType::Function(typeidx));
+                self.wasi_funcidx.insert(name, funcidx);
+            }
+        }
+        self.empty()
     }
 
     fn next_funcidx(&self) -> u32 {
@@ -762,13 +814,17 @@ impl<'a> Wasm<'a> {
         };
     }
 
-    fn expr(&mut self, expr: Expr) {
+    fn expr(&mut self, ctx: ObjectId, expr: Expr) {
         match expr {
-            Expr::Param { ty } => todo!(),
+            Expr::Param { ty } => {
+                // The function parameter occupies the first locals, `[0, layout_len(param))`.
+                let ty = self.eval(ty, ctx);
+                self.get_locals(ty, LocalId::from_usize(0));
+            }
             Expr::Copy { value } => {
                 self.get(value);
             }
-            Expr::Nominal { ty, inner } => todo!(),
+            Expr::Nominal { ty, inner } => todo!("expr: Nominal (milestone B)"),
             Expr::Tuple { elems } => {
                 for &id in elems.get(&self.ir.items) {
                     self.get(id);
@@ -811,9 +867,9 @@ impl<'a> Wasm<'a> {
                 let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
                 self.get_locals(self.tuples[elem], start);
             }
-            Expr::Val { val } => todo!(),
-            Expr::Call { func, arg } => todo!(),
-            Expr::Bind { ctx } => todo!(),
+            Expr::Val { val } => todo!("expr: Val (milestone B)"),
+            Expr::Call { func, arg } => todo!("expr: Call (milestone B)"),
+            Expr::Bind { ctx } => todo!("expr: Bind (milestone B)"),
         }
     }
 
@@ -827,7 +883,7 @@ impl<'a> Wasm<'a> {
                     self.mkobj(Object::ValStmt)
                 }
                 Instr::If { ty, cond } => {
-                    let ty = todo!();
+                    let ty = self.eval(ty, ctx);
                     let layout = self.layout_vec(ty);
                     let typeidx = self.section_type.len();
                     self.section_type.ty().function([], layout);
@@ -859,14 +915,14 @@ impl<'a> Wasm<'a> {
                     self.mkobj(Object::ValStmt)
                 }
                 Instr::Expr { ty, expr } => {
-                    let ty = todo!();
-                    self.expr(expr);
+                    let ty = self.eval(ty, ctx);
+                    self.expr(ctx, expr);
                     self.set(ty)
                 }
             };
             self.variables.insert(instr, result);
         }
-        todo!()
+        self.variables[&body.result()]
     }
 
     fn funcidx(&self) -> u32 {
@@ -878,13 +934,20 @@ impl<'a> Wasm<'a> {
         match self.get_func(funcidx) {
             Object::FnDef(fndef, ctx) => {
                 let Sigdef(sig) = self.ir.fndefs[fndef];
-                let signature = self.interp(ctx, &[], todo!());
+                // Monomorphize the signature against the context to lay out params and results.
+                let signature = self.eval(sig, ctx);
                 let Object::Sig(param, result) = self.obj(signature) else {
                     panic!()
                 };
                 let params = self.layout_vec(param);
                 let results = self.layout_vec(result);
-                self.interp(ctx, &[], self.ir.bodies[fndef]);
+                // The parameter occupies the first locals; body instructions add more after it.
+                self.make_locals(param);
+                let body = self.ir.bodies[fndef];
+                self.interp(ctx, &[], body);
+                // Leave the body's result value on the operand stack, then close the function.
+                self.get(body.result());
+                self.body.insn().end();
                 let mut f =
                     Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
                 f.raw(take(&mut self.body));
@@ -901,6 +964,10 @@ impl<'a> Wasm<'a> {
     fn program(mut self) -> Vec<u8> {
         let wasip1_sigdefs = self.wasip1_sigdefs();
         let wasi_ctx = self.wasi_ctx(&wasip1_sigdefs);
+
+        // Register `main` itself as the first defined function, monomorphized against the root
+        // context. The worklist loop below then emits it (and anything it transitively calls).
+        self.insert_func(Object::FnDef(self.main, wasi_ctx));
 
         let main_funcidx = self.funcidx();
         let mut next_fn = main_funcidx;
@@ -930,14 +997,16 @@ impl<'a> Wasm<'a> {
             .export("memory", ExportKind::Memory, MEMIDX_WASI);
 
         let start = self.funcidx();
+        let main_funcidx = self.get_funcidx(self.main, wasi_ctx).unwrap();
+        let proc_exit = self.wasi_funcidx[&self.ir.strings.get_id("proc_exit").unwrap()];
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([], []);
         self.section_code.function(&{
             let mut f = Function::new([]);
             f.instructions()
-                .call(self.get_funcidx(self.main, wasi_ctx).unwrap())
+                .call(main_funcidx)
                 .i32_const(0)
-                .call(wasip1_sigdefs[&self.ir.strings.get_id("proc_exit").unwrap()].raw())
+                .call(proc_exit)
                 .end();
             f
         });
@@ -975,6 +1044,7 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         tuples: Default::default(),
 
         funcidxs: Default::default(),
+        wasi_funcidx: Default::default(),
 
         section_type: Default::default(),
         section_import: Default::default(),
