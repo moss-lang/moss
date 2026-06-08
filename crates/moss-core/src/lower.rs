@@ -16,7 +16,7 @@ use crate::{
     intern::{StrId, Strings},
     lex::{TokenId, TokenStarts, relex, string},
     parse::{self, Binop, Block, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
-    prelude::{Arith, Base, Builders},
+    prelude::{Arith, Base, Builders, Numerals},
     range::{Inclusive, expr_range, path_range, single},
     tuples::{TupleRange, Tuples},
     util::IdRange,
@@ -3285,8 +3285,53 @@ impl<'a> Lower<'a> {
         self.imports()?;
         // TODO: Don't make declaration order significant.
         self.decls()?;
+        // The module that declares the digit/radix values (`std.moss`) may itself contain numeric
+        // literals (e.g. a string literal's sizes and code points). Its own declarations are now
+        // registered, so seed `base.numerals` from them before lowering bodies, giving its literals
+        // the same contextual digit resolution that every downstream module gets.
+        self.seed_numerals();
         self.bodies()?;
         Ok(())
+    }
+
+    /// If `base.numerals` is not yet populated and the current module declares the digit/radix
+    /// values and the `Number` type (i.e. this is `std.moss`), fill in [`Base::numerals`] from
+    /// those just-registered declarations.
+    fn seed_numerals(&mut self) {
+        match self.base {
+            Some(Base { numerals: Some(_), .. }) | None => return,
+            Some(_) => {}
+        }
+        let module = self.module;
+        let names = &self.names.names;
+        let strings = &self.ir.strings;
+        let valdef = |name: &str| match names.get(&(module, strings.get_id(name)?)) {
+            Some(&Named::Valdef(def)) => Some(def),
+            _ => None,
+        };
+        let tydef = |name: &str| match names.get(&(module, strings.get_id(name)?)) {
+            Some(&Named::Tydef(def)) => Some(def),
+            _ => None,
+        };
+        let numerals = (|| {
+            Some(Numerals {
+                number: tydef("Number")?,
+                digit0: valdef("digit0")?,
+                digit1: valdef("digit1")?,
+                digit2: valdef("digit2")?,
+                digit3: valdef("digit3")?,
+                digit4: valdef("digit4")?,
+                digit5: valdef("digit5")?,
+                digit6: valdef("digit6")?,
+                digit7: valdef("digit7")?,
+                digit8: valdef("digit8")?,
+                digit9: valdef("digit9")?,
+                radix: valdef("radix")?,
+            })
+        })();
+        if let Some(numerals) = numerals {
+            self.base.as_mut().unwrap().numerals = Some(numerals);
+        }
     }
 }
 
@@ -3394,55 +3439,49 @@ impl LowerBody<'_, '_> {
         self.x.extract(Level::ONE, slots, DefKind::Sig(def), slots)
     }
 
-    /// The valdef for the digit `n` (`0..=9`), resolving through [`Base::numerals`] or, while the
-    /// declaring prelude module is itself being lowered, by name from the current module.
-    fn digit_valdef(&mut self, n: u8) -> LowerResult<ValdefId> {
-        let name = format!("digit{n}");
-        if let Some(numerals) = self.base().numerals {
-            Ok(match n {
-                0 => numerals.digit0,
-                1 => numerals.digit1,
-                2 => numerals.digit2,
-                3 => numerals.digit3,
-                4 => numerals.digit4,
-                5 => numerals.digit5,
-                6 => numerals.digit6,
-                7 => numerals.digit7,
-                8 => numerals.digit8,
-                9 => numerals.digit9,
-                _ => unreachable!(),
-            })
-        } else {
-            self.local_valdef(&name)
+    /// The [`Numerals`] (digit/radix valdefs and the `Number` tydef) used to desugar numeric
+    /// literals. Always populated by the time any literal is lowered: the prelude precompile fills
+    /// [`Base::numerals`] as soon as the module that declares them (`std.moss`) has been lowered,
+    /// before any later prelude module (or downstream code) whose body contains a literal.
+    fn numerals(&self) -> Numerals {
+        self.base()
+            .numerals
+            .expect("digit/radix valdefs must be available when lowering a numeric literal")
+    }
+
+    /// The valdef for the digit `n` (`0..=9`), resolved contextually at the literal's type by
+    /// [`LowerBody::val_at`].
+    fn digit_valdef(&self, n: u8) -> ValdefId {
+        let numerals = self.numerals();
+        match n {
+            0 => numerals.digit0,
+            1 => numerals.digit1,
+            2 => numerals.digit2,
+            3 => numerals.digit3,
+            4 => numerals.digit4,
+            5 => numerals.digit5,
+            6 => numerals.digit6,
+            7 => numerals.digit7,
+            8 => numerals.digit8,
+            9 => numerals.digit9,
+            _ => unreachable!(),
         }
     }
 
-    /// The `radix` valdef, resolved like [`LowerBody::digit_valdef`].
-    fn radix_valdef(&mut self) -> LowerResult<ValdefId> {
-        match self.base().numerals {
-            Some(numerals) => Ok(numerals.radix),
-            None => self.local_valdef("radix"),
-        }
-    }
-
-    /// Look up a valdef by name in the current module (falling back to the prelude module).
-    fn local_valdef(&mut self, name: &str) -> LowerResult<ValdefId> {
-        let id = self.x.ir.strings.make_id(name);
-        match get_name(self.x.prelude, self.x.module, &self.x.names.names, (self.x.module, id)) {
-            Some(Named::Valdef(def)) => Ok(def),
-            _ => Err(self.x.todo_no_loc()),
-        }
+    /// The `radix` valdef, resolved contextually like [`LowerBody::digit_valdef`].
+    fn radix_valdef(&self) -> ValdefId {
+        self.numerals().radix
     }
 
     /// Resolve a digit value `n` at concrete type `ty` (a [`TydefId`]), emitting an `Expr::Val`.
     fn digit(&mut self, ty: TydefId, n: u8) -> LowerResult<Typed> {
-        let def = self.digit_valdef(n)?;
+        let def = self.digit_valdef(n);
         self.val_at(ty, def)
     }
 
     /// Resolve the `radix` value at concrete type `ty`, emitting an `Expr::Val`.
     fn radix(&mut self, ty: TydefId) -> LowerResult<Typed> {
-        let def = self.radix_valdef()?;
+        let def = self.radix_valdef();
         self.val_at(ty, def)
     }
 
@@ -3450,7 +3489,7 @@ impl LowerBody<'_, '_> {
     /// an `Expr::Val`. Without the binding the value would be ambiguous, since `Std` provides
     /// `Numerals[Number=...]` for every numeric type at once.
     fn val_at(&mut self, ty: TydefId, def: ValdefId) -> LowerResult<Typed> {
-        let number = self.number_tydef()?;
+        let number = self.numerals().number;
         let bind = self.x.bind_tydef(Level::ZERO, &self.slots, number, ty)?;
         let mut slots = self.slots.clone();
         slots.push(bind);
@@ -3468,23 +3507,6 @@ impl LowerBody<'_, '_> {
         let construct = self.invoke_force(lambda)?;
         let args = self.x.mk_node_list(&construct);
         Ok(self.x.mk_node(Node::Apply { lambda, args }))
-    }
-
-    /// The `Number` tydef that the digit/radix values are generic over.
-    fn number_tydef(&mut self) -> LowerResult<TydefId> {
-        match self.base().numerals {
-            Some(numerals) => Ok(numerals.number),
-            None => self.local_tydef("Number"),
-        }
-    }
-
-    /// Look up a tydef by name in the current module (falling back to the prelude module).
-    fn local_tydef(&mut self, name: &str) -> LowerResult<TydefId> {
-        let id = self.x.ir.strings.make_id(name);
-        match get_name(self.x.prelude, self.x.module, &self.x.names.names, (self.x.module, id)) {
-            Some(Named::Tydef(def)) => Ok(def),
-            _ => Err(self.x.todo_no_loc()),
-        }
     }
 
     /// Apply a binary arithmetic operation `sigdef` (`add` or `mul`) at type `ty` to `lhs`/`rhs`,
