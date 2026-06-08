@@ -1,3 +1,18 @@
+import "./char.moss" use Char;
+import "./int.moss" use Uint;
+
 type String;
 
 fn .to_string[String](): String;
+
+type StringBuilder;
+
+fn string_builder[StringBuilder, Uint](size: Uint): StringBuilder;
+
+fn set_char[StringBuilder, Char, Uint](
+  builder: StringBuilder,
+  index: Uint,
+  character: Char,
+): StringBuilder;
+
+fn build[String, StringBuilder](builder: StringBuilder): String;

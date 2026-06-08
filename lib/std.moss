@@ -7,6 +7,32 @@ import "./this.moss" use This;
 
 type Number;
 
+val digit0[Number]: Number;
+val digit1[Number]: Number;
+val digit2[Number]: Number;
+val digit3[Number]: Number;
+val digit4[Number]: Number;
+val digit5[Number]: Number;
+val digit6[Number]: Number;
+val digit7[Number]: Number;
+val digit8[Number]: Number;
+val digit9[Number]: Number;
+val radix[Number]: Number;
+
+context Numerals[Number] =
+  digit0[Number],
+  digit1[Number],
+  digit2[Number],
+  digit3[Number],
+  digit4[Number],
+  digit5[Number],
+  digit6[Number],
+  digit7[Number],
+  digit8[Number],
+  digit9[Number],
+  radix[Number],
+;
+
 context Arithmetic[Number] =
   ops::AddOut[Lhs=Number, Rhs=Number]=Number,
   ops::SubOut[Lhs=Number, Rhs=Number]=Number,
