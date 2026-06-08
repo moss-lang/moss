@@ -1257,24 +1257,12 @@ impl<'a> Wasm<'a> {
         let body = self.ir.bodies[self.main];
         let instrs: Vec<InstrId> = body.body.into_iter().collect();
         for instr in instrs {
-            let (kind, node) = match self.ir.instrs[instr] {
-                Instr::Expr {
-                    expr: Expr::Val { val },
-                    ..
-                } => ("Val ", val),
-                Instr::Expr {
-                    expr: Expr::Call { func, .. },
-                    ..
-                } => ("Call", func),
-                _ => continue,
-            };
-            let o = self.eval(node, root_env);
-            eprintln!(
-                "  i{} {kind} %{} -> {:?}",
-                instr.index(),
-                node.index(),
-                self.obj(o)
-            );
+            // Evaluate each instruction's *type* node — these are the `Get{Std, slot}` projections,
+            // which test ctxdef-order resolution without forcing the B2 value desugar.
+            if let Instr::Expr { ty, .. } = self.ir.instrs[instr] {
+                let o = self.eval(ty, root_env);
+                eprintln!("  i{} ty %{} -> {:?}", instr.index(), ty.index(), self.obj(o));
+            }
         }
     }
 

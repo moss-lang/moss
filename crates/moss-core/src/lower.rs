@@ -1397,7 +1397,7 @@ impl<'a> Lower<'a> {
                     panic!()
                 };
                 let outer = self.ir.lists[items].to_vec();
-                return Ok(Some(self.extract_ctx(level, destruct, def, &outer)?));
+                return Ok(Some(self.extract_ctx(level, destruct, def, &outer, true)?));
             }
             return Ok(None);
         };
@@ -1874,14 +1874,13 @@ impl<'a> Lower<'a> {
         lambda: NodeId,
     ) -> LowerResult<Option<(NodeId, NodeId)>> {
         match self.node(slot) {
-            Node::Nothing => todo!(),
-            Node::Lambda {
-                level,
-                needs,
-                result,
-            } => todo!(),
-            Node::Apply { lambda, args } => todo!(),
-            Node::List { items } => todo!(),
+            // A slot whose shape is not one of the matchable forms below simply does not provide
+            // this need. (These were `todo!()`; they get reached when assembling a `bind <Ctx>`
+            // return member-wise against providers that include desugared value bindings such as
+            // `false = 0`, whose value reduces to an `Apply` of literal/digit functions. Treating
+            // them as "no match" lets ctxdef-order assembly keep an unprovided member inline rather
+            // than panic. TODO: match these shapes properly when such a slot should provide.)
+            Node::Nothing | Node::Lambda { .. } | Node::Apply { .. } | Node::List { .. } => Ok(None),
             Node::NeedTydef { def, param, .. } => {
                 self.match_need(kind, DefKind::Ty(def), slot, lambda, param)
             }
@@ -2432,6 +2431,11 @@ impl<'a> Lower<'a> {
         slots: &[NodeId],
         def: CtxdefId,
         destruct: &[NodeId],
+        // When `false`, an unsatisfied member is kept inline (as its own `Need*`) and NOT exposed as
+        // a fresh need of the assembled context. Used by `bind <Ctx>` returns, where the assembled
+        // value must be a complete, need-free, ctxdef-ordered context even if some members (e.g.
+        // `print`/`to_string` in the prototype) have no provider yet.
+        propagate: bool,
     ) -> LowerResult<NodeId> {
         // Build the outer-parameter construct (e.g. `[Base]`) into the `param` lambda that
         // `explode` expects, then explode `def` into its individual member needs at this level.
@@ -2447,7 +2451,7 @@ impl<'a> Lower<'a> {
         let members = self.ir.lists[members].to_vec();
         // Resolve each member against `slots`, propagating any unsatisfied member as a fresh need.
         let mut providers = Vec::new();
-        let mut propagate = Vec::new();
+        let mut propagate_needs = Vec::new();
         for member in members {
             // A member that is already a binding (e.g. `Bool=I32` in the context's definition) is
             // fixed by the definition and provides itself; only an open `Need*` member is resolved
@@ -2467,11 +2471,13 @@ impl<'a> Lower<'a> {
                 Some(provider) => providers.push(provider),
                 None => {
                     providers.push(member);
-                    propagate.push(member);
+                    if propagate {
+                        propagate_needs.push(member);
+                    }
                 }
             }
         }
-        let needs = self.mk_node_list(&propagate);
+        let needs = self.mk_node_list(&propagate_needs);
         let items = self.mk_node_list(&providers);
         let result = self.mk_node(Node::List { items });
         Ok(self.mk_node(Node::Lambda {
@@ -2757,7 +2763,7 @@ impl<'a> Lower<'a> {
                     Ok(self.mk_node(Node::BindValdef { def, bind }))
                 }
                 Named::Ctxdef(def) => {
-                    let lambda = self.extract_ctx(level.succ(), slots, def, &destruct_lhs)?;
+                    let lambda = self.extract_ctx(level.succ(), slots, def, &destruct_lhs, true)?;
                     let Ctxdef(target) = self.ir.ctxdefs[def];
                     let (construct_lhs, mut needs_vec) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
@@ -3649,7 +3655,7 @@ impl LowerBody<'_, '_> {
 
     fn extract_ctx(&mut self, def: CtxdefId) -> LowerResult<NodeId> {
         self.x
-            .extract_ctx(Level::ONE, &self.slots, def, &self.slots)
+            .extract_ctx(Level::ONE, &self.slots, def, &self.slots, true)
     }
 
     fn inline(&mut self, lambda: NodeId, construct: &[NodeId]) -> LowerResult<NodeId> {
@@ -4095,7 +4101,7 @@ impl LowerBody<'_, '_> {
         } = fndef;
         let body = def.unwrap();
         let builder = self.x.builder();
-        let (slots, tuple_ty, _) = self.x.parse_sig(fndef).unwrap();
+        let (slots, tuple_ty, result_ty) = self.x.parse_sig(fndef).unwrap();
         self.slots = slots;
         let tuple_local = self.instr(tuple_ty, Expr::Param { ty: tuple_ty });
         let Node::Tuple { elems: types } = self.x.node(tuple_ty) else {
@@ -4116,7 +4122,87 @@ impl LowerBody<'_, '_> {
             index += 1;
         }
         let ret = self.block(body)?;
-        Ok(self.x.finish(builder, ret.val))
+        // A `bind <Ctx>` return must yield a context whose slots are in `<Ctx>`'s *ctxdef* order,
+        // because every consumer (e.g. `main`'s `Get{Std, slot}`) picks `slot` by `explode`-ing the
+        // ctxdef. The body's `bind` lists members in source/bind order, so re-assemble it in ctxdef
+        // order via `extract_ctx` (which `explode`s the def and resolves each member against the
+        // body's bindings plus the ambient context).
+        let result_val = if let parse::Return::Bind(_) = fndef.result {
+            self.reassemble_bind_return(result_ty, ret.val)?
+        } else {
+            ret.val
+        };
+        Ok(self.x.finish(builder, result_val))
+    }
+
+    /// Re-assemble a `bind <Ctx>` return value so its context is ctxdef-ordered. `result_ty` is the
+    /// return-type lambda `parse_sig` produced (its result is a list of the annotation's needs);
+    /// `body_result` is the body's `Expr::Bind { ctx }` instruction (bind order). Returns a fresh
+    /// `Expr::Bind` whose context lists each annotated context's members in ctxdef order.
+    fn reassemble_bind_return(
+        &mut self,
+        result_ty: NodeId,
+        body_result: InstrId,
+    ) -> LowerResult<InstrId> {
+        let Node::Lambda {
+            result: ret_list, ..
+        } = self.x.node(result_ty)
+        else {
+            panic!("bind-return type is not a lambda")
+        };
+        let Node::List { items: ret_needs } = self.x.node(ret_list) else {
+            panic!("bind-return type result is not a list")
+        };
+        // The body's bindings are the providers we resolve members against, alongside the ambient
+        // context (`self.slots`); follow a `Copy` to reach the underlying `Bind`, as codegen does.
+        let mut bind_instr = body_result;
+        let ctx = loop {
+            match self.x.ir.instrs[bind_instr] {
+                Instr::Expr {
+                    expr: Expr::Bind { ctx },
+                    ..
+                } => break ctx,
+                Instr::Expr {
+                    expr: Expr::Copy { value },
+                    ..
+                } => bind_instr = value,
+                other => panic!("bind-return body result is not a `bind`: {other:?}"),
+            }
+        };
+        let Node::List { items: binds } = self.x.node(ctx) else {
+            panic!("bind ctx is not a list")
+        };
+        let mut providers = self.slots.clone();
+        providers.extend(self.x.ir.lists[binds].iter().copied());
+        // Assemble each annotated context in ctxdef order. (In practice a `bind <Ctx>` return names
+        // exactly one composite context, e.g. `Std`.)
+        let mut assembled = Vec::new();
+        for need in self.x.ir.lists[ret_needs].to_vec() {
+            match self.x.node(need) {
+                Node::NeedCtxdef { def, .. } => {
+                    let lambda = self.x.extract_ctx(Level::ONE, &providers, def, &[], false)?;
+                    // `extract_ctx` returns `Lambda { needs: [], result: List[members] }`; the
+                    // returned context *is* those members, so splice them in directly.
+                    let Node::Lambda { result, .. } = self.x.node(lambda) else {
+                        unreachable!()
+                    };
+                    let Node::List { items } = self.x.node(result) else {
+                        unreachable!()
+                    };
+                    assembled.extend(self.x.ir.lists[items].iter().copied());
+                }
+                // A non-context need in the return annotation provides itself (resolved against the
+                // body's bindings if possible).
+                _ => match self.x.resolve_need(need, &providers)? {
+                    Some(provider) => assembled.push(provider),
+                    None => assembled.push(need),
+                },
+            }
+        }
+        let items = self.x.mk_node_list(&assembled);
+        let new_ctx = self.x.mk_node(Node::List { items });
+        let ty = self.x.mk_node(Node::Context);
+        Ok(self.instr(ty, Expr::Bind { ctx: new_ctx }).val)
     }
 }
 
