@@ -3986,7 +3986,14 @@ impl LowerBody<'_, '_> {
     fn block(&mut self, block: Block) -> LowerResult<Typed> {
         self.stmts(block.stmts)?;
         match block.expr {
-            Some(expr) => Ok(self.expr(expr)?),
+            // A trailing expression that is a bare local (or any already-emitted instruction)
+            // yields an `InstrId` that is not the last one emitted, which would violate the body
+            // invariant that the result is the final instruction. Materialize it with a `Copy`,
+            // exactly as `let`/`var` do, so the body always ends with its result.
+            Some(expr) => {
+                let Typed { ty, val } = self.expr(expr)?;
+                Ok(self.instr(ty, Expr::Copy { value: val }))
+            }
             None => {
                 let ty = self.x.ty_unit();
                 let val = self.instr_tuple(ty, &[]).val;
