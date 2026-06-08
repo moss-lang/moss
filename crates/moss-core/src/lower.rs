@@ -4,8 +4,8 @@ use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
     fmt,
-    mem::{replace, take},
-    ops::{Add, BitOr, Index, IndexMut, Sub},
+    mem::take,
+    ops::{Add, Index, IndexMut, Sub},
 };
 
 use index_vec::{IndexSlice, IndexVec, define_index_type};
@@ -133,53 +133,32 @@ impl fmt::Display for Level {
     }
 }
 
-/// A set of [`Level`]s.
-#[derive(Clone, Copy, Debug)]
-struct LevelSet {
-    lo: u128,
-    hi: u128,
+/// A correspondence between `a`-side and `b`-side [`Level`]s, threaded through
+/// [`Lower::unify`] as it descends under matching binders. Equivalence of two
+/// terms is decided against this renaming rather than by canonicalizing levels;
+/// the caller seeds it with the correspondence of the enclosing context.
+#[derive(Clone, Copy)]
+struct Renaming {
+    /// Maps each `b`-side level to the `a`-side level it corresponds to.
+    a_of_b: LevelMap,
 }
 
-impl LevelSet {
-    fn empty() -> Self {
-        Self { lo: 0, hi: 0 }
-    }
-
-    fn without(mut self, level: Level) -> Self {
-        let shift = level.0;
-        match shift.checked_sub(128) {
-            None => self.lo &= !(1u128 << shift),
-            Some(shift) => self.hi &= !(1u128 << shift),
-        };
-        self
-    }
-
-    /// Return the lowest level such that everything at least as high in `self` is at least `level`.
-    fn reduce(self, level: Level) -> Level {
-        let shift = level.0;
-        match shift.checked_sub(128) {
-            None => Level(
-                (128 - u128::leading_zeros(self.lo & !(!0u128 << shift)))
-                    .try_into()
-                    .unwrap(),
-            ),
-            Some(_) => todo!(),
-        }
-    }
-}
-
-impl BitOr for LevelSet {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self {
+impl Renaming {
+    /// The identity correspondence: `a` and `b` share their enclosing context.
+    fn identity() -> Self {
         Self {
-            lo: self.lo | rhs.lo,
-            hi: self.hi | rhs.hi,
+            a_of_b: LevelMap::default(),
         }
+    }
+
+    /// Record that we have descended under binder `a` on the left and `b` on the right.
+    fn bind(&mut self, a: Level, b: Level) {
+        self.a_of_b[b] = a;
     }
 }
 
 /// A mapping from [`Level`] to [`Level`].
+#[derive(Clone, Copy)]
 struct LevelMap([Level; 256]);
 
 impl Default for LevelMap {
@@ -1317,158 +1296,6 @@ impl<'a> Lower<'a> {
         mapped
     }
 
-    /// Return the union of [`Lower::free`] for all the given `nodes`.
-    fn frees(&mut self, nodes: NodeList) -> LevelSet {
-        let mut levels = LevelSet::empty();
-        for loc in nodes {
-            let node = self.ir.lists[loc];
-            levels = levels | self.free(node);
-        }
-        levels
-    }
-
-    /// Return the [`Level`] of all free variables in the given `node`.
-    fn free(&mut self, node: NodeId) -> LevelSet {
-        match self.node(node) {
-            Node::Nothing => LevelSet::empty(),
-            Node::Lambda {
-                level,
-                needs,
-                result,
-            } => (self.frees(needs) | self.free(result)).without(level),
-            Node::Apply { lambda, args } => self.free(lambda) | self.frees(args),
-            Node::List { items } => self.frees(items),
-            Node::NeedTydef {
-                level: _,
-                def: _,
-                param,
-            } => self.free(param),
-            Node::NeedSigdef {
-                level: _,
-                def: _,
-                param,
-            } => self.free(param),
-            Node::NeedValdef {
-                level: _,
-                def: _,
-                param,
-            } => self.free(param),
-            Node::NeedCtxdef {
-                level: _,
-                def: _,
-                param,
-            } => self.free(param),
-            Node::Tagdef { def: _ } => LevelSet::empty(),
-            Node::Aliasdef { def: _ } => LevelSet::empty(),
-            Node::Tuple { elems } => self.frees(elems),
-            Node::Context => LevelSet::empty(),
-            Node::Fndef { def: _ } => LevelSet::empty(),
-            Node::Get { ctx, slot: _ } => self.free(ctx),
-            Node::Lit { val: _ } => LevelSet::empty(),
-            Node::Bind { args, bind } => self.frees(args) | self.free(bind),
-            Node::BindTydef { def: _, bind } => self.free(bind),
-            Node::BindSigdef { def: _, bind } => self.free(bind),
-            Node::BindValdef { def: _, bind } => self.free(bind),
-            Node::BindCtxdef { def: _, bind } => self.free(bind),
-            Node::Sig { param, result } => self.free(param) | self.free(result),
-        }
-    }
-
-    fn normalizes(&mut self, map: &mut LevelMap, nodes: NodeList) -> NodeList {
-        self.map_nodes(nodes, |this, node| this.normalize(map, node))
-    }
-
-    fn normalize(&mut self, map: &mut LevelMap, node: NodeId) -> NodeId {
-        match self.node(node) {
-            Node::Nothing => node,
-            Node::Lambda {
-                level,
-                needs,
-                result,
-            } => {
-                let free = self.free(node);
-                let reduced = free.reduce(level);
-                let prev = replace(&mut map[level], reduced);
-                let needs = self.normalizes(map, needs);
-                let result = self.normalize(map, result);
-                map[level] = prev;
-                self.mk_node(Node::Lambda {
-                    level: reduced,
-                    needs,
-                    result,
-                })
-            }
-            Node::Apply { lambda, args } => {
-                let lambda = self.normalize(map, lambda);
-                let args = self.normalizes(map, args);
-                self.mk_node(Node::Apply { lambda, args })
-            }
-            Node::List { items } => {
-                let items = self.normalizes(map, items);
-                self.mk_node(Node::List { items })
-            }
-            Node::NeedTydef { level, def, param } => {
-                let level = map[level];
-                let param = self.normalize(map, param);
-                self.mk_node(Node::NeedTydef { level, def, param })
-            }
-            Node::NeedSigdef { level, def, param } => {
-                let level = map[level];
-                let param = self.normalize(map, param);
-                self.mk_node(Node::NeedSigdef { level, def, param })
-            }
-            Node::NeedValdef { level, def, param } => {
-                let level = map[level];
-                let param = self.normalize(map, param);
-                self.mk_node(Node::NeedValdef { level, def, param })
-            }
-            Node::NeedCtxdef { level, def, param } => {
-                let level = map[level];
-                let param = self.normalize(map, param);
-                self.mk_node(Node::NeedCtxdef { level, def, param })
-            }
-            Node::Tagdef { def: _ } => node,
-            Node::Aliasdef { def: _ } => node,
-            Node::Tuple { elems } => {
-                let elems = self.normalizes(map, elems);
-                self.mk_node(Node::Tuple { elems })
-            }
-            Node::Context => node,
-            Node::Fndef { def: _ } => node,
-            Node::Get { ctx, slot } => {
-                let ctx = self.normalize(map, ctx);
-                self.mk_node(Node::Get { ctx, slot })
-            }
-            Node::Lit { val: _ } => node,
-            Node::Bind { args, bind } => {
-                let args = self.normalizes(map, args);
-                let bind = self.normalize(map, bind);
-                self.mk_node(Node::Bind { args, bind })
-            }
-            Node::BindTydef { def, bind } => {
-                let bind = self.normalize(map, bind);
-                self.mk_node(Node::BindTydef { def, bind })
-            }
-            Node::BindSigdef { def, bind } => {
-                let bind = self.normalize(map, bind);
-                self.mk_node(Node::BindSigdef { def, bind })
-            }
-            Node::BindValdef { def, bind } => {
-                let bind = self.normalize(map, bind);
-                self.mk_node(Node::BindValdef { def, bind })
-            }
-            Node::BindCtxdef { def, bind } => {
-                let bind = self.normalize(map, bind);
-                self.mk_node(Node::BindCtxdef { def, bind })
-            }
-            Node::Sig { param, result } => {
-                let param = self.normalize(map, param);
-                let result = self.normalize(map, result);
-                self.mk_node(Node::Sig { param, result })
-            }
-        }
-    }
-
     /// Return a new node where all levels at least `floor` are incremented by `add`.
     fn raise(&mut self, node: NodeId, floor: Level, add: Level) -> NodeId {
         let mut map = Raise {
@@ -1776,120 +1603,194 @@ impl<'a> Lower<'a> {
         Ok((construct, propagate))
     }
 
+    /// Match `a` against `b`, solving for the metavariables in `constraints` (the needs of
+    /// the `b` side) and deciding level equivalence against `env`.
+    ///
+    /// Returns `Ok(true)` if the terms match (with `constraints` possibly refined), `Ok(false)`
+    /// if they are structurally inequivalent, and `Err` only for genuine compiler errors. The
+    /// relation is asymmetric: the only metavariables are on the `b` side, recorded in
+    /// `constraints`; a metavariable is solved by binding it to the corresponding `a` node.
     fn unify(
         &mut self,
+        env: &Renaming,
         constraints: &mut HashMap<NodeId, Option<NodeId>>,
         a: NodeId,
         b: NodeId,
-    ) -> LowerResult<()> {
-        if constraints.contains_key(&a) {
-            panic!(); // TODO: Document the asymmetry of `unify`.
-        }
-        constraints.entry(b).and_modify(|option| match option {
-            None => *option = Some(a),
-            Some(prev) => {
-                if a != *prev {
-                    *option = None;
-                }
+    ) -> LowerResult<bool> {
+        debug_assert!(!constraints.contains_key(&a)); // asymmetry: metavariables are on `b`.
+        if constraints.contains_key(&b) {
+            match constraints.get_mut(&b).unwrap() {
+                slot @ None => *slot = Some(a),
+                Some(prev) if *prev == a => {}
+                other => *other = None, // conflicting solutions: leave unsolved
             }
-        });
+            return Ok(true);
+        }
         match (self.node(a), self.node(b)) {
-            (Node::Nothing, Node::Nothing) => todo!(),
             (
                 Node::Lambda {
-                    level: _,
-                    needs: _,
-                    result: _,
+                    level: la,
+                    needs: na,
+                    result: ra,
                 },
                 Node::Lambda {
-                    level: _,
-                    needs: _,
-                    result: _,
+                    level: lb,
+                    needs: nb,
+                    result: rb,
                 },
             ) => {
-                eprintln!("unify(constraints={constraints:?}, a={a:?}, b={b:?})");
-                Err(self.todo_no_loc())
+                let mut env = *env;
+                env.bind(la, lb);
+                Ok(self.unify_list(&env, constraints, na, nb)?
+                    && self.unify(&env, constraints, ra, rb)?)
             }
-            (Node::Apply { lambda: _, args: _ }, Node::Apply { lambda: _, args: _ }) => todo!(),
-            (Node::List { items: items_a }, Node::List { items: items_b }) => {
-                assert_eq!(items_a.len(), items_b.len());
-                for (item_a, item_b) in items_a.into_iter().zip(items_b) {
-                    self.unify(constraints, self.ir.lists[item_a], self.ir.lists[item_b])?;
+            (
+                Node::Apply {
+                    lambda: fa,
+                    args: aa,
+                },
+                Node::Apply {
+                    lambda: fb,
+                    args: ab,
+                },
+            ) => Ok(self.unify(env, constraints, fa, fb)?
+                && self.unify_list(env, constraints, aa, ab)?),
+            (Node::List { items: ia }, Node::List { items: ib }) => {
+                self.unify_list(env, constraints, ia, ib)
+            }
+            (Node::Tuple { elems: ea }, Node::Tuple { elems: eb }) => {
+                self.unify_list(env, constraints, ea, eb)
+            }
+            (
+                Node::Sig {
+                    param: pa,
+                    result: ra,
+                },
+                Node::Sig {
+                    param: pb,
+                    result: rb,
+                },
+            ) => Ok(self.unify(env, constraints, pa, pb)? && self.unify(env, constraints, ra, rb)?),
+            (
+                Node::NeedTydef {
+                    level: la,
+                    def: da,
+                    param: pa,
+                },
+                Node::NeedTydef {
+                    level: lb,
+                    def: db,
+                    param: pb,
+                },
+            ) => Ok(da == db && env.a_of_b[lb] == la && self.unify(env, constraints, pa, pb)?),
+            (
+                Node::NeedSigdef {
+                    level: la,
+                    def: da,
+                    param: pa,
+                },
+                Node::NeedSigdef {
+                    level: lb,
+                    def: db,
+                    param: pb,
+                },
+            ) => Ok(da == db && env.a_of_b[lb] == la && self.unify(env, constraints, pa, pb)?),
+            (
+                Node::NeedValdef {
+                    level: la,
+                    def: da,
+                    param: pa,
+                },
+                Node::NeedValdef {
+                    level: lb,
+                    def: db,
+                    param: pb,
+                },
+            ) => Ok(da == db && env.a_of_b[lb] == la && self.unify(env, constraints, pa, pb)?),
+            (
+                Node::NeedCtxdef {
+                    level: la,
+                    def: da,
+                    param: pa,
+                },
+                Node::NeedCtxdef {
+                    level: lb,
+                    def: db,
+                    param: pb,
+                },
+            ) => Ok(da == db && env.a_of_b[lb] == la && self.unify(env, constraints, pa, pb)?),
+            (
+                Node::Get {
+                    ctx: ca,
+                    slot: sa,
+                },
+                Node::Get {
+                    ctx: cb,
+                    slot: sb,
+                },
+            ) => Ok(sa == sb && self.unify(env, constraints, ca, cb)?),
+            (
+                Node::Bind {
+                    args: aa,
+                    bind: ba,
+                },
+                Node::Bind {
+                    args: ab,
+                    bind: bb,
+                },
+            ) => Ok(self.unify_list(env, constraints, aa, ab)?
+                && self.unify(env, constraints, ba, bb)?),
+            (Node::BindTydef { def: da, bind: ba }, Node::BindTydef { def: db, bind: bb }) => {
+                Ok(da == db && self.unify(env, constraints, ba, bb)?)
+            }
+            (Node::BindSigdef { def: da, bind: ba }, Node::BindSigdef { def: db, bind: bb }) => {
+                Ok(da == db && self.unify(env, constraints, ba, bb)?)
+            }
+            (Node::BindValdef { def: da, bind: ba }, Node::BindValdef { def: db, bind: bb }) => {
+                Ok(da == db && self.unify(env, constraints, ba, bb)?)
+            }
+            (Node::BindCtxdef { def: da, bind: ba }, Node::BindCtxdef { def: db, bind: bb }) => {
+                Ok(da == db && self.unify(env, constraints, ba, bb)?)
+            }
+            (Node::Nothing, Node::Nothing) => Ok(true),
+            (Node::Context, Node::Context) => Ok(true),
+            (Node::Tagdef { def: da }, Node::Tagdef { def: db }) => Ok(da == db),
+            (Node::Fndef { def: da }, Node::Fndef { def: db }) => Ok(da == db),
+            (Node::Lit { val: va }, Node::Lit { val: vb }) => Ok(va == vb),
+            // Aliases are transparent and must be unfolded before comparison; not yet handled.
+            (Node::Aliasdef { .. }, _) | (_, Node::Aliasdef { .. }) => Err(self.todo_no_loc()),
+            (x, y) => {
+                if std::mem::discriminant(&x) == std::mem::discriminant(&y) {
+                    Err(self.todo_no_loc()) // same shape, this arm isn't implemented yet
+                } else {
+                    Ok(false) // different shapes: not unifiable
                 }
-                Ok(())
             }
-            (
-                Node::NeedTydef {
-                    level: _,
-                    def: _,
-                    param: _,
-                },
-                Node::NeedTydef {
-                    level: _,
-                    def: _,
-                    param: _,
-                },
-            ) => todo!(),
-            (
-                Node::NeedSigdef {
-                    level: _,
-                    def: _,
-                    param: _,
-                },
-                Node::NeedSigdef {
-                    level: _,
-                    def: _,
-                    param: _,
-                },
-            ) => todo!(),
-            (
-                Node::NeedValdef {
-                    level: _,
-                    def: _,
-                    param: _,
-                },
-                Node::NeedValdef {
-                    level: _,
-                    def: _,
-                    param: _,
-                },
-            ) => todo!(),
-            (
-                Node::NeedCtxdef {
-                    level: _,
-                    def: _,
-                    param: _,
-                },
-                Node::NeedCtxdef {
-                    level: _,
-                    def: _,
-                    param: _,
-                },
-            ) => todo!(),
-            (Node::Tagdef { def: _ }, Node::Tagdef { def: _ }) => todo!(),
-            (Node::Aliasdef { def: _ }, Node::Aliasdef { def: _ }) => todo!(),
-            (Node::Tuple { elems: _ }, Node::Tuple { elems: _ }) => todo!(),
-            (Node::Context, Node::Context) => todo!(),
-            (Node::Fndef { def: _ }, Node::Fndef { def: _ }) => todo!(),
-            (Node::Get { ctx: _, slot: _ }, Node::Get { ctx: _, slot: _ }) => todo!(),
-            (Node::Lit { val: _ }, Node::Lit { val: _ }) => todo!(),
-            (Node::Bind { args: _, bind: _ }, Node::Bind { args: _, bind: _ }) => todo!(),
-            (Node::BindTydef { def: _, bind: _ }, Node::BindTydef { def: _, bind: _ }) => todo!(),
-            (Node::BindSigdef { def: _, bind: _ }, Node::BindSigdef { def: _, bind: _ }) => todo!(),
-            (Node::BindValdef { def: _, bind: _ }, Node::BindValdef { def: _, bind: _ }) => todo!(),
-            (Node::BindCtxdef { def: _, bind: _ }, Node::BindCtxdef { def: _, bind: _ }) => todo!(),
-            (
-                Node::Sig {
-                    param: _,
-                    result: _,
-                },
-                Node::Sig {
-                    param: _,
-                    result: _,
-                },
-            ) => todo!(),
-            other => todo!("{other:?}"),
         }
+    }
+
+    /// [`Lower::unify`] applied position by position to two lists of equal length.
+    fn unify_list(
+        &mut self,
+        env: &Renaming,
+        constraints: &mut HashMap<NodeId, Option<NodeId>>,
+        a: NodeList,
+        b: NodeList,
+    ) -> LowerResult<bool> {
+        if a.len() != b.len() {
+            return Ok(false);
+        }
+        let pairs: Vec<(NodeId, NodeId)> = self.ir.lists[a]
+            .iter()
+            .copied()
+            .zip(self.ir.lists[b].iter().copied())
+            .collect();
+        for (x, y) in pairs {
+            if !self.unify(env, constraints, x, y)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// Given two lambdas, return a third lambda that composes with the latter to match the former.
@@ -1906,32 +1807,22 @@ impl<'a> Lower<'a> {
             },
             Node::Lambda {
                 level: level_beta,
-                needs: _,
-                result: _,
+                needs: needs_beta,
+                result: result_beta,
             },
         ) = (self.node(alpha), self.node(beta))
         else {
             panic!()
         };
-        let level = level_alpha.succ().max(level_beta);
-        let raised = self.raise(beta, level_beta, level - level_beta);
-        let Node::Lambda {
-            level: _,
-            needs: needs_beta,
-            result: result_beta,
-        } = self.node(raised)
-        else {
-            panic!()
-        };
+        // The needs of `beta` are the metavariables to solve for.
         let mut constraints =
             HashMap::from_iter(self.ir.lists[needs_beta].iter().map(|&need| (need, None)));
-        let normalized_alpha = self.normalize(&mut LevelMap::default(), result_alpha);
-        let normalized_beta = self.normalize(&mut LevelMap::default(), result_beta);
-        self.unify(&mut constraints, normalized_alpha, normalized_beta)?;
-        if !constraints.is_empty() {
-            eprintln!("synthesize(alpha={alpha:?}, beta={beta:?})");
-            eprintln!("  raised = {raised:?}");
-            return Err(self.todo_no_loc());
+        // Relate the two stripped binders; the rest of the correspondence is the identity,
+        // i.e. `alpha` and `beta` are compared under a shared enclosing context.
+        let mut env = Renaming::identity();
+        env.bind(level_alpha, level_beta);
+        if !self.unify(&env, &mut constraints, result_alpha, result_beta)? {
+            return Ok(None);
         }
         let Some(results) = self.ir.lists[needs_beta]
             .iter()
