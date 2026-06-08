@@ -2780,7 +2780,12 @@ impl<'a> Lower<'a> {
                 _ => Err(LowerError::LitNotVal(token)),
             },
             Some(parse::Entry::Ref(spec)) => {
-                let (rhs, mut destruct_rhs) = self.spec(level, slots, spec)?;
+                let (rhs, rhs_binds) = self.spec(level, slots, spec)?;
+                // The right-hand side is invoked against the ambient context (`slots`) as well as
+                // its own bindings, so a referenced implementation can resolve the context it needs
+                // (e.g. `ops::add[...]=uint32_add`, where `uint32_add` itself needs `Wasi`).
+                let mut destruct_rhs = slots.to_vec();
+                destruct_rhs.extend(rhs_binds);
                 match lhs {
                     Named::Tydef(def) => {
                         let lambda = match rhs {
