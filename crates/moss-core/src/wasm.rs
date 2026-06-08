@@ -3,7 +3,7 @@ use std::{collections::HashMap, mem::take};
 use index_vec::{IndexVec, define_index_type};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use strum::{EnumIter, IntoStaticStr};
+use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection, Function,
     FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
@@ -29,6 +29,11 @@ define_index_type! {
 define_index_type! {
     /// The index of a `u32` Wasm local in the `locals` field during [`Wasm`] codegen.
     struct LocalId = u32;
+}
+
+define_index_type! {
+    /// The index of an interned environment in the `envs` field during [`Wasm`] codegen.
+    struct EnvId = u32;
 }
 
 #[derive(Clone, Copy, Debug, EnumIter, Eq, Hash, IntoStaticStr, PartialEq)]
@@ -204,8 +209,14 @@ enum Object {
     /// The Wasm `funcidx` of an imported WASI P1 function.
     FnWasi(u32),
 
-    /// A defined function in a specific context.
-    FnDef(FndefId, ObjectId),
+    /// A defined function with its needs bound by an environment.
+    FnDef(FndefId, EnvId),
+
+    /// A deferred `eval(node, env)` — a lazy context slot, forced on projection.
+    Thunk(lower::NodeId, EnvId),
+
+    /// A lambda value (an un-applied `Node::Lambda`) capturing its defining environment.
+    Closure(lower::NodeId, EnvId),
 
     /// A 32-bit unsigned integer constant.
     ValU32(u32),
@@ -247,6 +258,9 @@ struct Wasm<'a> {
     objects: IndexSet<Object>,
     tuples: Tuples<ObjectId>,
 
+    /// Interned environments: each binds a function/lambda's need-nodes to construct [`Object`]s.
+    envs: IndexSet<Box<[(lower::NodeId, ObjectId)]>>,
+
     /// Wasm `funcidx` for each [`Object::FnWasi`] and [`Object::FnDef`].
     funcidxs: IndexSet<Object>,
 
@@ -278,34 +292,162 @@ impl<'a> Wasm<'a> {
         self.mkctx(&[])
     }
 
-    /// Monomorphize a static IR `node` against a concrete context `ctx`, producing the
-    /// corresponding codegen [`Object`]. This is the backend analogue of lowering's
-    /// `reduce`/`invoke`: it resolves contextual references, reduces applications, and unfolds
-    /// transparent definitions, but bottoms out in target [`Object`]s instead of IR nodes.
-    fn eval(&mut self, node: lower::NodeId, ctx: ObjectId) -> ObjectId {
+    /// Intern an environment binding need-nodes to construct [`Object`]s.
+    fn mkenv(&mut self, pairs: &[(lower::NodeId, ObjectId)]) -> EnvId {
+        let (i, _) = self.envs.insert_full(pairs.to_vec().into_boxed_slice());
+        EnvId::from_usize(i)
+    }
+
+    /// The empty environment (binds nothing).
+    fn env_empty(&mut self) -> EnvId {
+        self.mkenv(&[])
+    }
+
+    /// Look up a need-node in an environment.
+    fn env_get(&self, env: EnvId, node: lower::NodeId) -> Option<ObjectId> {
+        self.envs[env.index()]
+            .iter()
+            .find(|(n, _)| *n == node)
+            .map(|(_, o)| *o)
+    }
+
+    /// Build a child environment by binding `needs` (a function/lambda's need list) positionally to
+    /// `args`, on top of the bindings already in `base`.
+    fn extend_env(&mut self, base: EnvId, needs: lower::NodeList, args: &[ObjectId]) -> EnvId {
+        let need_nodes: Vec<lower::NodeId> = self.ir.lists[needs].to_vec();
+        assert_eq!(need_nodes.len(), args.len());
+        let mut pairs: Vec<(lower::NodeId, ObjectId)> = self.envs[base.index()].to_vec();
+        for (n, a) in need_nodes.into_iter().zip(args.iter().copied()) {
+            pairs.push((n, a));
+        }
+        self.mkenv(&pairs)
+    }
+
+    /// Monomorphize a static IR `node` against an environment `env` (binding the enclosing
+    /// function's needs), producing the corresponding codegen [`Object`]. The backend analogue of
+    /// lowering's `reduce`: β-reduce `Apply`, project `Get`, unfold transparent defs, fold literals,
+    /// and resolve `Need*` from `env`. Contexts are built lazily (slots are [`Object::Thunk`]s).
+    fn eval(&mut self, node: lower::NodeId, env: EnvId) -> ObjectId {
         match self.ir.nodes[node.index()] {
             lower::Node::Sig { param, result } => {
-                let param = self.eval(param, ctx);
-                let result = self.eval(result, ctx);
+                let param = self.eval(param, env);
+                let result = self.eval(result, env);
                 self.mkobj(Object::Sig(param, result))
             }
             lower::Node::Tuple { elems } => {
                 let items = self.ir.lists[elems].to_vec();
-                let objs: Vec<ObjectId> = items.into_iter().map(|e| self.eval(e, ctx)).collect();
+                let objs: Vec<ObjectId> = items.into_iter().map(|e| self.eval(e, env)).collect();
                 let tuple = self.tuples.make(&objs);
                 self.mkobj(Object::TyTuple(tuple))
             }
-            // A definition's body is a lambda over its contextual needs. Instantiating it against
-            // `ctx` means binding those needs and evaluating the result. (Milestone B: bind the
-            // needs from `ctx`; for now only the no-need case is exercised.)
-            lower::Node::Lambda { needs, result, .. } => {
-                if self.ir.lists[needs].is_empty() {
-                    self.eval(result, ctx)
+            // A bare lambda is a value: a closure capturing its defining environment. Applying it
+            // (see `apply`) binds its needs and evaluates its result.
+            lower::Node::Lambda { .. } => self.mkobj(Object::Closure(node, env)),
+            // A need resolves to whatever the enclosing function was given for it.
+            lower::Node::NeedTydef { .. }
+            | lower::Node::NeedSigdef { .. }
+            | lower::Node::NeedValdef { .. }
+            | lower::Node::NeedCtxdef { .. } => self
+                .env_get(env, node)
+                .unwrap_or_else(|| panic!("eval: unbound need %{}", node.index())),
+            lower::Node::Apply { lambda, args } => {
+                let head = self.eval(lambda, env);
+                let args = self.ir.lists[args].to_vec();
+                let argobjs: Vec<ObjectId> = args.into_iter().map(|a| self.eval(a, env)).collect();
+                self.apply(head, &argobjs)
+            }
+            // A context is a tuple of slots, each a deferred eval — built lazily so projecting one
+            // slot (e.g. `println`) does not force its siblings (e.g. the arithmetic with `if`s).
+            lower::Node::List { items } => {
+                let item_nodes: Vec<lower::NodeId> = self.ir.lists[items].to_vec();
+                let slots: Vec<ObjectId> = item_nodes
+                    .into_iter()
+                    .map(|n| self.mkobj(Object::Thunk(n, env)))
+                    .collect();
+                self.mkctx(&slots)
+            }
+            lower::Node::Get { ctx, slot } => {
+                let ctx = self.eval(ctx, env);
+                let Object::Ctx(range) = self.obj(ctx) else {
+                    panic!("eval: Get on non-context {:?}", self.obj(ctx))
+                };
+                let len = range.end.raw() - range.start.raw();
+                assert!(
+                    slot.raw() < len,
+                    "eval: Get slot {} out of bounds (ctx has {} slots)",
+                    slot.raw(),
+                    len
+                );
+                let slot_obj = self.tuples[TupleLoc::from_raw(range.start.raw() + slot.raw())];
+                self.force(slot_obj)
+            }
+            lower::Node::Fndef { def } => self.mkobj(Object::FnDef(def, env)),
+            // Transparent definitions unfold to their bodies.
+            lower::Node::Aliasdef { def } => {
+                let body = self.ir.aliasdefs[def].0;
+                self.eval(body, env)
+            }
+            lower::Node::Context => self.mkobj(Object::TyCtx),
+            lower::Node::Nothing => self.mkobj(Object::Open),
+            lower::Node::Lit { val } => self.fold_lit(val),
+            // A `Bind { args, bind }` (the body of a binding's lambda) projects to its bound value.
+            lower::Node::Bind { bind, .. } => self.eval(bind, env),
+            // Bindings construct context entries; as a value, a binding is a closure over its `bind`
+            // lambda, projected when applied (see `apply`).
+            lower::Node::BindTydef { bind, .. }
+            | lower::Node::BindSigdef { bind, .. }
+            | lower::Node::BindValdef { bind, .. }
+            | lower::Node::BindCtxdef { bind, .. } => self.mkobj(Object::Closure(bind, env)),
+            other => todo!("eval: {other:?} (milestone B2)"),
+        }
+    }
+
+    /// Force a slot object: if it is a deferred [`Object::Thunk`], evaluate it; otherwise return it.
+    fn force(&mut self, obj: ObjectId) -> ObjectId {
+        match self.obj(obj) {
+            Object::Thunk(node, env) => self.eval(node, env),
+            _ => obj,
+        }
+    }
+
+    /// Apply a head [`Object`] to already-evaluated arguments, mirroring `reduce`'s `Apply` case.
+    fn apply(&mut self, head: ObjectId, args: &[ObjectId]) -> ObjectId {
+        match self.obj(head) {
+            // Inline a lambda value: bind its needs to the args atop its captured environment.
+            Object::Closure(lnode, capt) => {
+                let lower::Node::Lambda { needs, result, .. } = self.ir.nodes[lnode.index()] else {
+                    panic!("apply: closure over non-lambda")
+                };
+                let childenv = self.extend_env(capt, needs, args);
+                self.eval(result, childenv)
+            }
+            // A `Fndef` applied to its context construct binds the function's needs to those args.
+            // A context-returning function (e.g. `bootstrap`) is a context *constructor*: evaluate
+            // its body to the context it builds. A value-returning function stays an `FnDef` to call.
+            Object::FnDef(def, _) if !args.is_empty() => {
+                let Sigdef(sig) = self.ir.fndefs[def];
+                let lower::Node::Lambda { needs, .. } = self.ir.nodes[sig.index()] else {
+                    panic!("apply: fndef sig is not a lambda")
+                };
+                let base = self.env_empty();
+                let env = self.extend_env(base, needs, args);
+                if self.returns_ctx(def) {
+                    self.eval_ctx_body(def, env)
                 } else {
-                    todo!("eval: Lambda with needs (milestone B)")
+                    self.mkobj(Object::FnDef(def, env))
                 }
             }
-            other => todo!("eval: {other:?} (milestone B)"),
+            // Already a value; applying to no further context arguments is the identity.
+            _ if args.is_empty() => head,
+            other => todo!("apply: {other:?} to {} args", args.len()),
+        }
+    }
+
+    /// Fold a literal value to a codegen [`Object`].
+    fn fold_lit(&mut self, val: lower::Val) -> ObjectId {
+        match val {
+            lower::Val::Uint31(n) | lower::Val::Uint32(n) => self.mkobj(Object::ValU32(n)),
+            other => todo!("fold_lit: {other:?} (milestone B2)"),
         }
     }
 
@@ -358,17 +500,14 @@ impl<'a> Wasm<'a> {
         }
     }
 
+    /// Build the root `Wasi` context as an `Object::Ctx`, in `lib/wasi.moss`'s `Wasi` member order
+    /// (which is the slot order lowering used). All leaves are concrete target Objects.
+    ///
+    /// B1 builds every slot that `hello`'s resolution reaches (types, literal types, realizers,
+    /// `Numerals`, `Wasm` instructions, `memidx`). The `WasiP1` sub-context is a placeholder for now
+    /// (B2: import every wasip1 function with its eval'd signature, in declaration order). `proc_exit`
+    /// is still imported separately for `_start`.
     fn wasi_ctx(&mut self, wasip1_sigdefs: &IndexMap<StrId, SigdefId>) -> ObjectId {
-        // MILESTONE A: minimal root context. The empty `main` ignores the context entirely, so we
-        // only need to (a) import `proc_exit` so `_start` can call it, and (b) return *some* Ctx
-        // to key `FnDef(main, ctx)`.
-        //
-        // TODO(milestone B): build the full `Wasi` context as an `Object::Ctx`, in `lib/wasi.moss`
-        // member order: I32/I64/MemIdx -> Ty*; the ten `lit::Literal*` -> TyLit*; the realizers ->
-        // FnInt/FnChar/FnString; `Numerals[Number=I32/I64]` -> nested Ctx of digit/radix ValU32;
-        // `wasm::Wasm[Base]` -> nested Ctx of FnInstr (+ memidx/align/offset ValU32); and
-        // `wasip1::WasiP1[Base]` -> nested Ctx of FnWasi, importing *every* wasip1 function with
-        // its eval'd signature. Then `eval` must resolve `Need*`/`Get` against this Ctx.
         for (&name, _) in wasip1_sigdefs {
             if &self.ir.strings[name] == "proc_exit" {
                 // `proc_exit : (i32) -> ()`.
@@ -380,7 +519,72 @@ impl<'a> Wasm<'a> {
                 self.wasi_funcidx.insert(name, funcidx);
             }
         }
-        self.empty()
+
+        use IntLitIn::*;
+        use IntLitOut as O;
+        let leaves: &[Object] = &[
+            // types
+            Object::TyI32,
+            Object::TyI64,
+            Object::TyMemIdx,
+            // literal types
+            Object::TyLitInt(Uint31),
+            Object::TyLitInt(Uint32),
+            Object::TyLitInt(Int32),
+            Object::TyLitInt(Uint63),
+            Object::TyLitInt(Uint64),
+            Object::TyLitInt(Int64),
+            Object::TyLitInt(Uint),
+            Object::TyLitInt(Int),
+            Object::TyLitChar,
+            Object::TyLitString,
+            // realizers (in `wasi.moss` order; out-types per the `=I32`/`=I64` bindings there)
+            Object::FnInt(Uint31, O::Uint32),
+            Object::FnInt(Uint32, O::Uint32),
+            Object::FnInt(Uint31, O::Int32),
+            Object::FnInt(Int32, O::Int32),
+            Object::FnInt(Uint31, O::Uint64),
+            Object::FnInt(Uint32, O::Uint64),
+            Object::FnInt(Uint63, O::Uint64),
+            Object::FnInt(Uint64, O::Uint64),
+            Object::FnInt(Uint31, O::Int64),
+            Object::FnInt(Uint32, O::Int64),
+            Object::FnInt(Int32, O::Int64),
+            Object::FnInt(Uint63, O::Int64),
+            Object::FnInt(Int64, O::Int64),
+            Object::FnInt(Uint31, O::Uint),
+            Object::FnInt(Uint32, O::Uint),
+            Object::FnInt(Uint31, O::Int),
+            Object::FnInt(Int32, O::Int),
+            Object::FnString,
+        ];
+        let mut slots: Vec<ObjectId> = leaves.iter().map(|&o| self.mkobj(o)).collect();
+
+        // `Numerals[Number=I32]` and `Numerals[Number=I64]`: nested Ctx of `digit0..digit9, radix`.
+        for _ in 0..2 {
+            let digits: Vec<ObjectId> =
+                (0..=10u32).map(|n| self.mkobj(Object::ValU32(n))).collect();
+            let nums = self.mkctx(&digits);
+            slots.push(nums);
+        }
+
+        // `wasm::Wasm[Base]`: nested Ctx of `FnInstr`, in `Instruction` order (== `wasm.moss`'s
+        // `Wasm` member order).
+        let instrs: Vec<ObjectId> = Instruction::iter()
+            .map(|i| self.mkobj(Object::FnInstr(i)))
+            .collect();
+        let wasm_ctx = self.mkctx(&instrs);
+        slots.push(wasm_ctx);
+
+        // `wasm::memidx[Base]`.
+        let memidx = self.mkobj(Object::ValU32(MEMIDX_WASI));
+        slots.push(memidx);
+
+        // `wasip1::WasiP1[Base]`: placeholder (B2 builds the imports).
+        let wasip1 = self.mkobj(Object::Open);
+        slots.push(wasip1);
+
+        self.mkctx(&slots)
     }
 
     fn next_funcidx(&self) -> u32 {
@@ -391,8 +595,8 @@ impl<'a> Wasm<'a> {
         self.funcidxs[funcidx as usize]
     }
 
-    fn get_funcidx(&self, fndef: FndefId, ctx: ObjectId) -> Option<u32> {
-        Some(self.funcidxs.get_index_of(&Object::FnDef(fndef, ctx))? as u32)
+    fn get_funcidx(&self, fndef: FndefId, env: EnvId) -> Option<u32> {
+        Some(self.funcidxs.get_index_of(&Object::FnDef(fndef, env))? as u32)
     }
 
     fn push_func_wasi(&mut self) -> u32 {
@@ -429,6 +633,8 @@ impl<'a> Wasm<'a> {
             | Object::FnInstr(_)
             | Object::FnWasi(_)
             | Object::FnDef(_, _)
+            | Object::Thunk(_, _)
+            | Object::Closure(_, _)
             | Object::ValU32(_)
             | Object::ValDyn(_, _)
             | Object::ValStmt
@@ -814,11 +1020,11 @@ impl<'a> Wasm<'a> {
         };
     }
 
-    fn expr(&mut self, ctx: ObjectId, expr: Expr) {
+    fn expr(&mut self, env: EnvId, expr: Expr) {
         match expr {
             Expr::Param { ty } => {
                 // The function parameter occupies the first locals, `[0, layout_len(param))`.
-                let ty = self.eval(ty, ctx);
+                let ty = self.eval(ty, env);
                 self.get_locals(ty, LocalId::from_usize(0));
             }
             Expr::Copy { value } => {
@@ -873,7 +1079,7 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    fn interp(&mut self, ctx: ObjectId, inputs: &[ObjectId], body: Body) -> ObjectId {
+    fn interp(&mut self, env: EnvId, inputs: &[ObjectId], body: Body) -> ObjectId {
         for instr in body.body {
             let result = match self.ir.instrs[instr] {
                 Instr::Set { lhs, rhs } => {
@@ -883,7 +1089,7 @@ impl<'a> Wasm<'a> {
                     self.mkobj(Object::ValStmt)
                 }
                 Instr::If { ty, cond } => {
-                    let ty = self.eval(ty, ctx);
+                    let ty = self.eval(ty, env);
                     let layout = self.layout_vec(ty);
                     let typeidx = self.section_type.len();
                     self.section_type.ty().function([], layout);
@@ -915,8 +1121,8 @@ impl<'a> Wasm<'a> {
                     self.mkobj(Object::ValStmt)
                 }
                 Instr::Expr { ty, expr } => {
-                    let ty = self.eval(ty, ctx);
-                    self.expr(ctx, expr);
+                    let ty = self.eval(ty, env);
+                    self.expr(env, expr);
                     self.set(ty)
                 }
             };
@@ -932,10 +1138,16 @@ impl<'a> Wasm<'a> {
 
     fn func(&mut self, funcidx: u32) {
         match self.get_func(funcidx) {
-            Object::FnDef(fndef, ctx) => {
+            Object::FnDef(fndef, env) => {
                 let Sigdef(sig) = self.ir.fndefs[fndef];
-                // Monomorphize the signature against the context to lay out params and results.
-                let signature = self.eval(sig, ctx);
+                // Monomorphize the signature against the environment (which binds the fndef's
+                // needs) to lay out params and results. `env` already binds the sig lambda's needs,
+                // so evaluate its *result* directly rather than re-applying the lambda.
+                let lower::Node::Lambda { result: sig_result, .. } = self.ir.nodes[sig.index()]
+                else {
+                    panic!("fndef sig is not a lambda")
+                };
+                let signature = self.eval(sig_result, env);
                 let Object::Sig(param, result) = self.obj(signature) else {
                     panic!()
                 };
@@ -944,7 +1156,7 @@ impl<'a> Wasm<'a> {
                 // The parameter occupies the first locals; body instructions add more after it.
                 self.make_locals(param);
                 let body = self.ir.bodies[fndef];
-                self.interp(ctx, &[], body);
+                self.interp(env, &[], body);
                 // Leave the body's result value on the operand stack, then close the function.
                 self.get(body.result());
                 self.body.insn().end();
@@ -958,6 +1170,111 @@ impl<'a> Wasm<'a> {
                 self.section_type.ty().function(params, results);
             }
             _ => panic!(),
+        }
+    }
+
+    /// The root environment for `main`: its needs bound to the concrete root context. `main`'s
+    /// sole need (if any) is its `Std`, built from the root `Wasi` via the `std` bridge.
+    fn root_env(&mut self, wasi_ctx: ObjectId) -> EnvId {
+        let Sigdef(sig) = self.ir.fndefs[self.main];
+        let lower::Node::Lambda { needs, .. } = self.ir.nodes[sig.index()] else {
+            panic!("main sig is not a lambda")
+        };
+        let need_nodes: Vec<lower::NodeId> = self.ir.lists[needs].to_vec();
+        if need_nodes.is_empty() {
+            return self.env_empty();
+        }
+        let std_ctx = self.build_std(wasi_ctx);
+        let pairs: Vec<(lower::NodeId, ObjectId)> =
+            need_nodes.into_iter().map(|n| (n, std_ctx)).collect();
+        self.mkenv(&pairs)
+    }
+
+    /// Does `def`'s signature return a context (`bind ...`) rather than a value? Such a function is
+    /// a context *constructor*; applying it statically yields the context its body builds.
+    fn returns_ctx(&self, def: FndefId) -> bool {
+        // The fndef body is `Lambda { result: Sig { param, result: <return type> } }`. A `bind`
+        // return type was lowered to a `Lambda` (returning the context's slot list); a value return
+        // type is an ordinary type node.
+        let Sigdef(sig) = self.ir.fndefs[def];
+        let lower::Node::Lambda { result: sigresult, .. } = self.ir.nodes[sig.index()] else {
+            return false;
+        };
+        let lower::Node::Sig { result, .. } = self.ir.nodes[sigresult.index()] else {
+            return false;
+        };
+        matches!(self.ir.nodes[result.index()], lower::Node::Lambda { .. })
+    }
+
+    /// Evaluate the context built by a context-constructor `def`'s body, under `env` (which binds
+    /// the def's needs). The body's result is a `Bind { ctx }`, possibly reached through a `Copy`.
+    fn eval_ctx_body(&mut self, def: FndefId, env: EnvId) -> ObjectId {
+        let body = self.ir.bodies[def];
+        let mut instr = body.result();
+        let ctx = loop {
+            match self.ir.instrs[instr] {
+                Instr::Expr {
+                    expr: Expr::Bind { ctx },
+                    ..
+                } => break ctx,
+                Instr::Expr {
+                    expr: Expr::Copy { value },
+                    ..
+                } => instr = value,
+                other => panic!("ctx-ctor body result is not a `bind`: {other:?}"),
+            }
+        };
+        self.eval(ctx, env)
+    }
+
+    /// Construct the `Std` context Object via the `std` bridge (`fn std[Wasi](): bind Std`) against
+    /// the root `Wasi` context. `std`'s body is `bind bootstrap(...)`, a single-frame context that
+    /// *forwards* `bootstrap`'s `Std`; unwrap that frame to expose `Std`'s members directly.
+    fn build_std(&mut self, wasi_ctx: ObjectId) -> ObjectId {
+        let std_def = self.named(self.lib.wasi, "std").fndef();
+        let Sigdef(sig) = self.ir.fndefs[std_def];
+        let lower::Node::Lambda { needs, .. } = self.ir.nodes[sig.index()] else {
+            panic!("std sig is not a lambda")
+        };
+        let wasi_need = self.ir.lists[needs].to_vec()[0];
+        let std_env = self.mkenv(&[(wasi_need, wasi_ctx)]);
+        let wrapped = self.eval_ctx_body(std_def, std_env);
+        let Object::Ctx(range) = self.obj(wrapped) else {
+            panic!("std bridge did not produce a context")
+        };
+        if range.end.raw() - range.start.raw() == 1 {
+            let slot0 = self.tuples[range.start];
+            self.force(slot0)
+        } else {
+            wrapped
+        }
+    }
+
+    /// B1 validation: evaluate each `Val`/`Call` projection in `main`'s body against `root_env` and
+    /// log the resulting [`Object`], confirming context resolution works without emitting code.
+    fn validate(&mut self, root_env: EnvId) {
+        eprintln!("=== B1 validation: main's projections ===");
+        let body = self.ir.bodies[self.main];
+        let instrs: Vec<InstrId> = body.body.into_iter().collect();
+        for instr in instrs {
+            let (kind, node) = match self.ir.instrs[instr] {
+                Instr::Expr {
+                    expr: Expr::Val { val },
+                    ..
+                } => ("Val ", val),
+                Instr::Expr {
+                    expr: Expr::Call { func, .. },
+                    ..
+                } => ("Call", func),
+                _ => continue,
+            };
+            let o = self.eval(node, root_env);
+            eprintln!(
+                "  i{} {kind} %{} -> {:?}",
+                instr.index(),
+                node.index(),
+                self.obj(o)
+            );
         }
     }
 
@@ -1020,9 +1337,20 @@ impl<'a> Wasm<'a> {
         let wasip1_sigdefs = self.wasip1_sigdefs();
         let wasi_ctx = self.wasi_ctx(&wasip1_sigdefs);
 
+        // The runtime hands `main` its `Std`; the backend constructs that `Std` from the root
+        // `Wasi` via the `std` bridge, and binds it as `main`'s sole need.
+        let root_env = self.root_env(wasi_ctx);
+
+        // B1 validation: check that `main`'s context projections resolve to sane Objects, without
+        // emitting any code. (`MOSS_B1=1` stops here; the emission path is milestone B2.)
+        if std::env::var("MOSS_B1").is_ok() {
+            self.validate(root_env);
+            return Vec::new();
+        }
+
         // Register `main` itself as the first defined function, monomorphized against the root
         // context. The worklist loop below then emits it (and anything it transitively calls).
-        self.insert_func(Object::FnDef(self.main, wasi_ctx));
+        self.insert_func(Object::FnDef(self.main, root_env));
 
         let main_funcidx = self.funcidx();
         let mut next_fn = main_funcidx;
@@ -1052,7 +1380,7 @@ impl<'a> Wasm<'a> {
             .export("memory", ExportKind::Memory, MEMIDX_WASI);
 
         let start = self.funcidx();
-        let main_funcidx = self.get_funcidx(self.main, wasi_ctx).unwrap();
+        let main_funcidx = self.get_funcidx(self.main, root_env).unwrap();
         let proc_exit = self.wasi_funcidx[&self.ir.strings.get_id("proc_exit").unwrap()];
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([], []);
@@ -1097,6 +1425,7 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         strings: Default::default(),
         objects: Default::default(),
         tuples: Default::default(),
+        envs: Default::default(),
 
         funcidxs: Default::default(),
         wasi_funcidx: Default::default(),
