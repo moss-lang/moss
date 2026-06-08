@@ -1,0 +1,34 @@
+# QUESTION: Is a type alias (`type X = T`, an Aliasdef) transparently equal to
+# the type it abbreviates, or is it a distinct opaque type?
+#
+# The compiler keeps Aliasdef and Tagdef as separate node kinds: `type X T`
+# (Tagdef) is clearly nominal/distinct, but `type X = T` (Aliasdef) could go
+# either way. This matters for how `expect_ty`/`synthesize` decide equality:
+# whether they must transparently unfold aliases before comparing.
+#
+# `make()` returns `MyString`; `takes_string` wants a `String`.
+#
+#   Interpretation A — aliases are transparent (MyString == String):
+#                                                                => prints "hi"
+#   Interpretation B — aliases are opaque/nominal (MyString != String):
+#                                                                => COMPILE ERROR
+#
+# ANSWER (confirmed): Interpretation A. Aliases are transparent -- that's the
+# whole reason `Aliasdef` and `Tagdef` are separate. So this prints "hi". The
+# equality routine must unfold aliases before comparing.
+
+assume Std;
+
+type MyString = String;
+
+fn make(): MyString {
+  "hi"
+}
+
+fn takes_string(x: String) {
+  println(x);
+}
+
+fn main() {
+  takes_string(make());
+}
