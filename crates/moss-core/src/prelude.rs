@@ -72,9 +72,10 @@ pub struct Arith {
 #[derive(Clone, Copy, Debug)]
 pub struct Base {
     pub types: Types,
-    /// The digit/radix values, or [`None`] while the prelude module that declares them is itself
-    /// being lowered (in which case the literal desugar resolves them by name from the current
-    /// module instead).
+    /// The digit/radix values, or [`None`] before the prelude module that declares them
+    /// (`std.moss`) has been lowered. The precompile fills this in as soon as `std.moss` is
+    /// lowered, so it is always [`Some`] by the time any module containing a numeric literal is
+    /// lowered, and the literal desugar resolves the digits contextually through it.
     pub numerals: Option<Numerals>,
     pub builders: Builders,
     pub arith: Arith,
@@ -99,6 +100,11 @@ struct Precompile {
     preprelude: ModuleId,
     dir: PathBuf,
     modules: HashMap<StrId, ModuleId>,
+    /// The base context threaded into each module as it is lowered. [`None`] until the types,
+    /// builders, and arithmetic it references have themselves been lowered; its [`Base::numerals`]
+    /// field stays [`None`] only until `std.moss` (which declares the digit/radix values) is
+    /// lowered, after which it is filled in for every later module.
+    base: Option<Base>,
 }
 
 impl Precompile {
@@ -110,7 +116,7 @@ impl Precompile {
         panic!("{}:{line}:{col} {message}", path.display())
     }
 
-    fn lib(&mut self, path: StrId, base: Option<Base>) -> io::Result<ModuleId> {
+    fn lib(&mut self, path: StrId) -> io::Result<ModuleId> {
         if let Some(&module) = self.modules.get(&path) {
             return Ok(module);
         }
@@ -130,7 +136,7 @@ impl Precompile {
             .map(|import| {
                 let s = string(&source, &starts, import.from);
                 let id = self.ir.strings.make_id(&s);
-                self.lib(id, base)
+                self.lib(id)
             })
             .collect::<io::Result<Vec<_>>>()?;
         let module = lower(
@@ -139,7 +145,7 @@ impl Precompile {
             &tree,
             &mut self.ir,
             &mut self.names,
-            base,
+            self.base,
             self.preprelude,
             &imports,
         )
@@ -153,31 +159,36 @@ impl Precompile {
         })
         .unwrap();
         self.modules.insert(path, module);
+        // `std.moss` declares the digit/radix values that numeric literals desugar to. As soon as
+        // it has been lowered, fill in `base.numerals` (with stable valdef ids) so that every later
+        // module's literals resolve their digits contextually through `Base` rather than failing.
+        if self.ir.strings.get_id("./std.moss") == Some(path) {
+            self.fill_numerals(module);
+        }
         Ok(module)
     }
 
-    fn tydef(&self, module: ModuleId, name: &str) -> TydefId {
-        let id = self.ir.strings.get_id(name).unwrap();
-        match self.names.names.get(&(module, id)) {
-            Some(&Named::Tydef(def)) => def,
-            _ => panic!("missing base type `{name}`"),
-        }
-    }
-
-    fn sigdef(&self, module: ModuleId, name: &str) -> SigdefId {
-        let id = self.ir.strings.get_id(name).unwrap();
-        match self.names.names.get(&(module, id)) {
-            Some(&Named::Sigdef(def)) => def,
-            _ => panic!("missing base function `{name}`"),
-        }
-    }
-
-    fn valdef(&self, module: ModuleId, name: &str) -> ValdefId {
-        let id = self.ir.strings.get_id(name).unwrap();
-        match self.names.names.get(&(module, id)) {
-            Some(&Named::Valdef(def)) => def,
-            _ => panic!("missing base value `{name}`"),
-        }
+    /// Populate `base.numerals` from the digit/radix values declared in the (now-lowered) `std`
+    /// module.
+    fn fill_numerals(&mut self, std: ModuleId) {
+        let base = self
+            .base
+            .as_mut()
+            .expect("base must be built before std.moss is lowered");
+        base.numerals = Some(Numerals {
+            number: tydef(&self.ir, &self.names, std, "Number"),
+            digit0: valdef(&self.ir, &self.names, std, "digit0"),
+            digit1: valdef(&self.ir, &self.names, std, "digit1"),
+            digit2: valdef(&self.ir, &self.names, std, "digit2"),
+            digit3: valdef(&self.ir, &self.names, std, "digit3"),
+            digit4: valdef(&self.ir, &self.names, std, "digit4"),
+            digit5: valdef(&self.ir, &self.names, std, "digit5"),
+            digit6: valdef(&self.ir, &self.names, std, "digit6"),
+            digit7: valdef(&self.ir, &self.names, std, "digit7"),
+            digit8: valdef(&self.ir, &self.names, std, "digit8"),
+            digit9: valdef(&self.ir, &self.names, std, "digit9"),
+            radix: valdef(&self.ir, &self.names, std, "radix"),
+        });
     }
 
     fn prelude(mut self) -> io::Result<(IR, Names, Base, Lib)> {
@@ -186,64 +197,50 @@ impl Precompile {
         let path_char = self.ir.strings.make_id("./char.moss");
         let path_string = self.ir.strings.make_id("./string.moss");
         let path_ops = self.ir.strings.make_id("./ops.moss");
-        let literal = self.lib(path_literal, None)?;
-        let int = self.lib(path_int, None)?;
-        let char = self.lib(path_char, None)?;
-        let string = self.lib(path_string, None)?;
-        let ops = self.lib(path_ops, None)?;
+        let literal = self.lib(path_literal)?;
+        let int = self.lib(path_int)?;
+        let char = self.lib(path_char)?;
+        let string = self.lib(path_string)?;
+        let ops = self.lib(path_ops)?;
         let base_types = Types {
-            uint32: self.tydef(int, "Uint32"),
-            int32: self.tydef(int, "Int32"),
-            uint64: self.tydef(int, "Uint64"),
-            int64: self.tydef(int, "Int64"),
-            uint: self.tydef(int, "Uint"),
-            int: self.tydef(int, "Int"),
-            char: self.tydef(char, "Char"),
-            string: self.tydef(string, "String"),
+            uint32: tydef(&self.ir, &self.names, int, "Uint32"),
+            int32: tydef(&self.ir, &self.names, int, "Int32"),
+            uint64: tydef(&self.ir, &self.names, int, "Uint64"),
+            int64: tydef(&self.ir, &self.names, int, "Int64"),
+            uint: tydef(&self.ir, &self.names, int, "Uint"),
+            int: tydef(&self.ir, &self.names, int, "Int"),
+            char: tydef(&self.ir, &self.names, char, "Char"),
+            string: tydef(&self.ir, &self.names, string, "String"),
         };
         let base_builders = Builders {
-            char_from_codepoint: self.sigdef(char, "char_from_codepoint"),
-            string_builder: self.sigdef(string, "string_builder"),
-            set_char: self.sigdef(string, "set_char"),
-            build: self.sigdef(string, "build"),
+            char_from_codepoint: sigdef(&self.ir, &self.names, char, "char_from_codepoint"),
+            string_builder: sigdef(&self.ir, &self.names, string, "string_builder"),
+            set_char: sigdef(&self.ir, &self.names, string, "set_char"),
+            build: sigdef(&self.ir, &self.names, string, "build"),
         };
         let base_arith = Arith {
-            add: self.sigdef(ops, "add"),
-            mul: self.sigdef(ops, "mul"),
-            add_out: self.tydef(ops, "AddOut"),
-            mul_out: self.tydef(ops, "MulOut"),
-            lhs: self.tydef(ops, "Lhs"),
-            rhs: self.tydef(ops, "Rhs"),
+            add: sigdef(&self.ir, &self.names, ops, "add"),
+            mul: sigdef(&self.ir, &self.names, ops, "mul"),
+            add_out: tydef(&self.ir, &self.names, ops, "AddOut"),
+            mul_out: tydef(&self.ir, &self.names, ops, "MulOut"),
+            lhs: tydef(&self.ir, &self.names, ops, "Lhs"),
+            rhs: tydef(&self.ir, &self.names, ops, "Rhs"),
         };
-        // The digit/radix values live in `std.moss`, which is lowered as part of the prelude below
-        // and so is not yet available here. During that lowering the literal desugar resolves them
-        // by name from the current module; afterwards we fill them in for downstream compilation.
-        let base = Base {
+        // The digit/radix values live in `std.moss`, which is lowered as part of the prelude below.
+        // `numerals` therefore starts out `None`, but `lib` fills it in as soon as `std.moss` has
+        // been lowered (before any later module's literals are desugared).
+        self.base = Some(Base {
             types: base_types,
             numerals: None,
             builders: base_builders,
             arith: base_arith,
-        };
+        });
         let path_prelude = self.ir.strings.make_id("./prelude.moss");
-        let prelude = self.lib(path_prelude, Some(base))?;
-        let std = self.modules[&self.ir.strings.get_id("./std.moss").unwrap()];
-        let base = Base {
-            numerals: Some(Numerals {
-                number: self.tydef(std, "Number"),
-                digit0: self.valdef(std, "digit0"),
-                digit1: self.valdef(std, "digit1"),
-                digit2: self.valdef(std, "digit2"),
-                digit3: self.valdef(std, "digit3"),
-                digit4: self.valdef(std, "digit4"),
-                digit5: self.valdef(std, "digit5"),
-                digit6: self.valdef(std, "digit6"),
-                digit7: self.valdef(std, "digit7"),
-                digit8: self.valdef(std, "digit8"),
-                digit9: self.valdef(std, "digit9"),
-                radix: self.valdef(std, "radix"),
-            }),
-            ..base
-        };
+        let prelude = self.lib(path_prelude)?;
+        let base = self
+            .base
+            .expect("base.numerals must be filled in once std.moss has been lowered");
+        debug_assert!(base.numerals.is_some(), "std.moss should have been lowered");
         let types = self.modules[&self.ir.strings.get_id("./types.moss").unwrap()];
         let wasm = self.modules[&self.ir.strings.get_id("./wasm.moss").unwrap()];
         let wasip1 = self.modules[&self.ir.strings.get_id("./wasip1.moss").unwrap()];
@@ -260,6 +257,30 @@ impl Precompile {
             wasi,
         };
         Ok((self.ir, self.names, base, lib))
+    }
+}
+
+fn tydef(ir: &IR, names: &Names, module: ModuleId, name: &str) -> TydefId {
+    let id = ir.strings.get_id(name).unwrap();
+    match names.names.get(&(module, id)) {
+        Some(&Named::Tydef(def)) => def,
+        _ => panic!("missing base type `{name}`"),
+    }
+}
+
+fn sigdef(ir: &IR, names: &Names, module: ModuleId, name: &str) -> SigdefId {
+    let id = ir.strings.get_id(name).unwrap();
+    match names.names.get(&(module, id)) {
+        Some(&Named::Sigdef(def)) => def,
+        _ => panic!("missing base function `{name}`"),
+    }
+}
+
+fn valdef(ir: &IR, names: &Names, module: ModuleId, name: &str) -> ValdefId {
+    let id = ir.strings.get_id(name).unwrap();
+    match names.names.get(&(module, id)) {
+        Some(&Named::Valdef(def)) => def,
+        _ => panic!("missing base value `{name}`"),
     }
 }
 
@@ -291,6 +312,7 @@ pub fn prelude() -> (IR, Names, Base, Lib) {
         preprelude,
         dir,
         modules,
+        base: None,
     }
     .prelude()
     .unwrap()
