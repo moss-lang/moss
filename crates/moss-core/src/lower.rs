@@ -2009,8 +2009,68 @@ impl<'a> Lower<'a> {
         Err(self.todo_no_loc())
     }
 
+    /// Apply a `Lambda` to a `construct` (one resolved value per need) by substituting the needs,
+    /// yielding the lambda's result with those needs filled in.
     fn inline(&mut self, lambda: NodeId, construct: &[NodeId]) -> LowerResult<NodeId> {
-        Err(self.todo_no_loc())
+        let Node::Lambda {
+            level,
+            needs,
+            result,
+        } = self.node(lambda)
+        else {
+            panic!()
+        };
+        let after = self.mk_node_list(construct);
+        Ok(self.substitute(level, needs, after, result))
+    }
+
+    /// Reduce `node` toward weak-head normal form: β-reduce applications, project out of
+    /// contexts, and follow needs, until the head is irreducible (a `Lambda`, `Sig`, type, ...).
+    fn reduce(&mut self, node: NodeId) -> LowerResult<NodeId> {
+        match self.node(node) {
+            Node::Apply { lambda, args } => {
+                let head = self.reduce(lambda)?;
+                match self.node(head) {
+                    Node::Lambda { .. } => {
+                        let args = self.ir.lists[args].to_vec();
+                        let inlined = self.inline(head, &args)?;
+                        self.reduce(inlined)
+                    }
+                    _ => todo!(),
+                }
+            }
+            Node::Get { ctx, slot } => match self.node(ctx) {
+                Node::Apply {
+                    lambda: curried,
+                    args,
+                } => match self.node(curried) {
+                    Node::NeedCtxdef { level, def, param } => {
+                        assert!(args.is_empty()); // TODO: Handle parametrized composite contexts.
+                        let exploded = self.explode(level, def, param)?;
+                        let single = self.ir.lists[exploded][slot.index()];
+                        self.reduce(single)
+                    }
+                    _ => todo!(),
+                },
+                Node::List { items } => {
+                    let elem = self.ir.lists[items][slot.index()];
+                    self.reduce(elem)
+                }
+                _ => todo!(),
+            },
+            // Already in weak-head normal form.
+            Node::Lambda { .. }
+            | Node::Sig { .. }
+            | Node::Tuple { .. }
+            | Node::Tagdef { .. }
+            | Node::Aliasdef { .. }
+            | Node::Fndef { .. }
+            | Node::Context
+            | Node::Nothing
+            | Node::Lit { .. }
+            | Node::List { .. } => Ok(node),
+            _ => todo!(),
+        }
     }
 
     /// Resolve the path of a spec and synthesize each of its attached bindings.
@@ -2762,8 +2822,12 @@ impl LowerBody<'_, '_> {
     }
 
     /// Get the parameter type and result type of a function.
-    fn sig(&self, func: NodeId) -> (NodeId, NodeId) {
-        todo!()
+    fn sig(&mut self, func: NodeId) -> LowerResult<(NodeId, NodeId)> {
+        let reduced = self.x.reduce(func)?;
+        let Node::Sig { param, result } = self.x.node(reduced) else {
+            panic!()
+        };
+        Ok((param, result))
     }
 
     /// Resolve a method call.
@@ -3142,7 +3206,7 @@ impl LowerBody<'_, '_> {
                 let construct = self.invoke_force(lambda)?;
                 let args = self.x.mk_node_list(&construct);
                 let func = self.x.mk_node(Node::Apply { lambda, args });
-                let (ty_param, ty_result) = self.sig(func);
+                let (ty_param, ty_result) = self.sig(func)?;
                 let lowered = arguments
                     .into_iter()
                     .map(|arg| self.expr(arg))
@@ -3164,7 +3228,7 @@ impl LowerBody<'_, '_> {
                 let construct = self.invoke_force(lambda)?;
                 let args = self.x.mk_node_list(&construct);
                 let func = self.x.mk_node(Node::Apply { lambda, args });
-                let (ty_param, ty_result) = self.sig(func);
+                let (ty_param, ty_result) = self.sig(func)?;
                 let lowered = arguments
                     .into_iter()
                     .map(|arg| self.expr(arg))
