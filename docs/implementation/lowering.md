@@ -106,14 +106,27 @@ WebAssembly. Codegen is a **separate, later phase**; everything below is lowerin
 
 The engine — resolution, the env-threaded `unify`, the transparent/opaque
 `reduce`, signature extraction, type-equality, the literal desugar, binding-aware
-specificity, and `assume`-folding — lowers essentially the entire prelude
-(`lib/*.moss`): declarations and function bodies, including `println`'s string
-literal desugaring all the way through the contextual chain. Precompilation
-reaches the WASI/codegen-binding files (`wasip1.moss`, `wasm.moss`, `wasi.moss`).
-`wasm.rs` codegen is **untouched**.
+specificity, and `assume`-folding — lowers the **entire core standard library**
+(`std.moss` and dependencies): declarations and function bodies, including
+`println`'s string literal desugaring all the way through the contextual chain
+(string builder → `char_from_codepoint` → `Uint` codepoint → Horner digits →
+arithmetic ops). Precompilation continues through `wasip1.moss`/`wasm.moss` into
+`wasi.moss`, whose `bootstrap` body is the current frontier.
+
+The immediate next blocker is a **lowering** hole, not codegen: `invoke`'s
+`Node::BindTydef` arm (`invoke` is the application engine that resolves a
+contextual lambda's needs into a construct, and several of its arms are still
+`todo!()`). It's reached via `numeric → digit → val_at → bind_tydef` while
+desugaring a literal under a `Number=T` binding. `wasm.rs` codegen is entirely
+**untouched**.
 
 ## Remaining work
 
+- **Finish `invoke` (the application engine)** — the immediate frontier. Several
+  `invoke` arms are still `todo!()`; the next is `Node::BindTydef` (peeling a
+  type-binding wrapper to invoke its inner lambda). Filling these — by analogy to
+  how `reduce` handles the same node kinds, but producing a construct rather than
+  a reduced value — is what stands between here and the prelude lowering fully.
 - **Codegen (`wasm.rs`)** — the big one, entirely unstarted: every `Expr` arm
   (`Call`/`Val`/`Param`/…), monomorphization of contextual values (Wasm globals
   vs extra params), string data segments, the realize/IO intrinsics, layouts.
