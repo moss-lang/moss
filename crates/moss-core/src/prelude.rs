@@ -32,66 +32,6 @@ pub struct Types {
     pub string: TydefId,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct LitTypes {
-    pub uint31: TydefId,
-    pub uint32: TydefId,
-    pub int32: TydefId,
-    pub uint63: TydefId,
-    pub uint64: TydefId,
-    pub int64: TydefId,
-    pub uint: TydefId,
-    pub int: TydefId,
-    pub char: TydefId,
-    pub string: TydefId,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct LitVals {
-    pub uint31: ValdefId,
-    pub uint32: ValdefId,
-    pub int32: ValdefId,
-    pub uint63: ValdefId,
-    pub uint64: ValdefId,
-    pub int64: ValdefId,
-    pub uint: ValdefId,
-    pub int: ValdefId,
-    pub char: ValdefId,
-    pub string: ValdefId,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Lits {
-    pub uint31_realize_uint32: SigdefId,
-    pub uint32_realize_uint32: SigdefId,
-    pub uint31_realize_int32: SigdefId,
-    pub int32_realize_int32: SigdefId,
-    pub uint31_realize_uint64: SigdefId,
-    pub uint32_realize_uint64: SigdefId,
-    pub uint63_realize_uint64: SigdefId,
-    pub uint64_realize_uint64: SigdefId,
-    pub uint31_realize_int64: SigdefId,
-    pub uint32_realize_int64: SigdefId,
-    pub int32_realize_int64: SigdefId,
-    pub uint63_realize_int64: SigdefId,
-    pub int64_realize_int64: SigdefId,
-    pub uint31_realize_uint: SigdefId,
-    pub uint32_realize_uint: SigdefId,
-    pub uint63_realize_uint: SigdefId,
-    pub uint64_realize_uint: SigdefId,
-    pub uint_realize_uint: SigdefId,
-    pub uint31_realize_int: SigdefId,
-    pub uint32_realize_int: SigdefId,
-    pub int32_realize_int: SigdefId,
-    pub uint63_realize_int: SigdefId,
-    pub uint64_realize_int: SigdefId,
-    pub int64_realize_int: SigdefId,
-    pub uint_realize_int: SigdefId,
-    pub int_realize_int: SigdefId,
-    pub char_realize: SigdefId,
-    pub string_realize: SigdefId,
-}
-
 /// The contextual digit values and radix used to desugar numeric literals.
 #[derive(Clone, Copy, Debug)]
 pub struct Numerals {
@@ -132,9 +72,6 @@ pub struct Arith {
 #[derive(Clone, Copy, Debug)]
 pub struct Base {
     pub types: Types,
-    pub lit_types: LitTypes,
-    pub lit_vals: LitVals,
-    pub lits: Lits,
     /// The digit/radix values, or [`None`] while the prelude module that declares them is itself
     /// being lowered (in which case the literal desugar resolves them by name from the current
     /// module instead).
@@ -264,60 +201,6 @@ impl Precompile {
             char: self.tydef(char, "Char"),
             string: self.tydef(string, "String"),
         };
-        let base_lit_types = LitTypes {
-            uint31: self.tydef(literal, "LiteralUint31"),
-            uint32: self.tydef(literal, "LiteralUint32"),
-            int32: self.tydef(literal, "LiteralInt32"),
-            uint63: self.tydef(literal, "LiteralUint63"),
-            uint64: self.tydef(literal, "LiteralUint64"),
-            int64: self.tydef(literal, "LiteralInt64"),
-            uint: self.tydef(literal, "LiteralUint"),
-            int: self.tydef(literal, "LiteralInt"),
-            char: self.tydef(literal, "LiteralChar"),
-            string: self.tydef(literal, "LiteralString"),
-        };
-        let base_lit_vals = LitVals {
-            uint31: self.valdef(literal, "literal_uint31"),
-            uint32: self.valdef(literal, "literal_uint32"),
-            int32: self.valdef(literal, "literal_int32"),
-            uint63: self.valdef(literal, "literal_uint63"),
-            uint64: self.valdef(literal, "literal_uint64"),
-            int64: self.valdef(literal, "literal_int64"),
-            uint: self.valdef(literal, "literal_uint"),
-            int: self.valdef(literal, "literal_int"),
-            char: self.valdef(literal, "literal_char"),
-            string: self.valdef(literal, "literal_string"),
-        };
-        let base_lits = Lits {
-            uint31_realize_uint32: self.sigdef(literal, "uint31_realize_uint32"),
-            uint32_realize_uint32: self.sigdef(literal, "uint32_realize_uint32"),
-            uint31_realize_int32: self.sigdef(literal, "uint31_realize_int32"),
-            int32_realize_int32: self.sigdef(literal, "int32_realize_int32"),
-            uint31_realize_uint64: self.sigdef(literal, "uint31_realize_uint64"),
-            uint32_realize_uint64: self.sigdef(literal, "uint32_realize_uint64"),
-            uint63_realize_uint64: self.sigdef(literal, "uint63_realize_uint64"),
-            uint64_realize_uint64: self.sigdef(literal, "uint64_realize_uint64"),
-            uint31_realize_int64: self.sigdef(literal, "uint31_realize_int64"),
-            uint32_realize_int64: self.sigdef(literal, "uint32_realize_int64"),
-            int32_realize_int64: self.sigdef(literal, "int32_realize_int64"),
-            uint63_realize_int64: self.sigdef(literal, "uint63_realize_int64"),
-            int64_realize_int64: self.sigdef(literal, "int64_realize_int64"),
-            uint31_realize_uint: self.sigdef(literal, "uint31_realize_uint"),
-            uint32_realize_uint: self.sigdef(literal, "uint32_realize_uint"),
-            uint63_realize_uint: self.sigdef(literal, "uint63_realize_uint"),
-            uint64_realize_uint: self.sigdef(literal, "uint64_realize_uint"),
-            uint_realize_uint: self.sigdef(literal, "uint_realize_uint"),
-            uint31_realize_int: self.sigdef(literal, "uint31_realize_int"),
-            uint32_realize_int: self.sigdef(literal, "uint32_realize_int"),
-            int32_realize_int: self.sigdef(literal, "int32_realize_int"),
-            uint63_realize_int: self.sigdef(literal, "uint63_realize_int"),
-            uint64_realize_int: self.sigdef(literal, "uint64_realize_int"),
-            int64_realize_int: self.sigdef(literal, "int64_realize_int"),
-            uint_realize_int: self.sigdef(literal, "uint_realize_int"),
-            int_realize_int: self.sigdef(literal, "int_realize_int"),
-            char_realize: self.sigdef(literal, "char_realize"),
-            string_realize: self.sigdef(literal, "string_realize"),
-        };
         let base_builders = Builders {
             char_from_codepoint: self.sigdef(char, "char_from_codepoint"),
             string_builder: self.sigdef(string, "string_builder"),
@@ -337,9 +220,6 @@ impl Precompile {
         // by name from the current module; afterwards we fill them in for downstream compilation.
         let base = Base {
             types: base_types,
-            lit_types: base_lit_types,
-            lit_vals: base_lit_vals,
-            lits: base_lits,
             numerals: None,
             builders: base_builders,
             arith: base_arith,

@@ -1,7 +1,6 @@
 import "./bool.moss" use Bool, false, true;
 import "./char.moss" use Char, char_from_codepoint;
 import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
-import "./literal.moss" as lit;
 import "./ops.moss" as ops use Arg, Lhs, Rhs;
 import "./string.moss" use .to_string, String, StringBuilder, string_builder, set_char, build;
 import "./this.moss" use This;
@@ -65,35 +64,19 @@ context Comparison[Number] =
 fn print[String](string: String);
 
 context Std =
-  lit::LiteralUint31,
-  lit::LiteralUint32,
-  lit::LiteralInt32,
-  lit::LiteralUint63,
-  lit::LiteralUint64,
-  lit::LiteralInt64,
-  lit::LiteralUint,
-  lit::LiteralInt,
-  lit::LiteralChar,
-  lit::LiteralString,
-
   Bool,
   false[Bool],
   true[Bool],
 
   String,
-  lit::string_realize[lit::LiteralString, String],
 
   Uint32,
-  lit::uint31_realize_uint32[lit::LiteralUint31, Uint32],
-  lit::uint32_realize_uint32[lit::LiteralUint32, Uint32],
   Numerals[Number=Uint32],
   Arithmetic[Number=Uint32],
   Comparison[Number=Uint32],
   .to_string[String, This=Uint32],
 
   Int32,
-  lit::uint31_realize_int32[lit::LiteralUint31, Int32],
-  lit::int32_realize_int32[lit::LiteralInt32, Int32],
   Numerals[Number=Int32],
   Arithmetic[Number=Int32],
   Negation[Number=Int32],
@@ -101,21 +84,12 @@ context Std =
   .to_string[String, This=Int32],
 
   Uint64,
-  lit::uint31_realize_uint64[lit::LiteralUint31, Uint64],
-  lit::uint32_realize_uint64[lit::LiteralUint32, Uint64],
-  lit::uint63_realize_uint64[lit::LiteralUint63, Uint64],
-  lit::uint64_realize_uint64[lit::LiteralUint64, Uint64],
   Numerals[Number=Uint64],
   Arithmetic[Number=Uint64],
   Comparison[Number=Uint64],
   .to_string[String, This=Uint64],
 
   Int64,
-  lit::uint31_realize_int64[lit::LiteralUint31, Int64],
-  lit::uint32_realize_int64[lit::LiteralUint32, Int64],
-  lit::int32_realize_int64[lit::LiteralInt32, Int64],
-  lit::uint63_realize_int64[lit::LiteralUint63, Int64],
-  lit::int64_realize_int64[lit::LiteralInt64, Int64],
   Numerals[Number=Int64],
   Arithmetic[Number=Int64],
   Negation[Number=Int64],
@@ -123,16 +97,12 @@ context Std =
   .to_string[String, This=Int64],
 
   Uint,
-  lit::uint31_realize_uint[lit::LiteralUint31, Uint],
-  lit::uint32_realize_uint[lit::LiteralUint32, Uint],
   Numerals[Number=Uint],
   Arithmetic[Number=Uint],
   Comparison[Number=Uint],
   .to_string[String, This=Uint],
 
   Int,
-  lit::uint31_realize_int[lit::LiteralUint31, Int],
-  lit::int32_realize_int[lit::LiteralInt32, Int],
   Numerals[Number=Int],
   Arithmetic[Number=Int],
   Negation[Number=Int],
