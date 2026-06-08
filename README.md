@@ -57,7 +57,7 @@ moss build examples/hello.moss | wasmtime -
 
 ## Language
 
-Documentation pending.
+See the [`docs`](docs) folder.
 
 ## Contributing
 
