@@ -143,9 +143,9 @@ down**:
 
 1. Look in the topmost frame for candidates that satisfy the need.
 2. If exactly one candidate satisfies it, use it.
-3. If two or more candidates in *that same frame* satisfy it and none is an upper
-   bound — i.e. there is no single candidate at least as specific as all the
-   others — that is an **ambiguity error**.
+3. If two or more candidates in *that same frame* satisfy it, the most specific
+   one wins — but only if there is a unique most specific one. If the matching
+   candidates have no single most-specific member, that is an **ambiguity error**.
 4. If the frame has no candidate, continue to the frame below.
 
 So a binding in a higher frame **shadows** one in a lower frame without
@@ -160,9 +160,26 @@ fn main() {
 }
 ```
 
-> The precise notion of "more specific" — the partial order under which one
-> candidate can be an upper bound of others — is not yet fully pinned down. Until
-> it is, treat "two distinct candidates in one frame" as ambiguous.
+### What "most specific" means
+
+Specificity is not a new mechanism: it is the same adaptation check —
+`synthesize` — that decides whether a candidate satisfies a need in the first
+place. `synthesize(a, b)` succeeds exactly when `b` is general enough to be
+adapted into `a`, i.e. when `a` is an *instance* of `b`. So:
+
+- A candidate **satisfies** a need when the need is an instance of the candidate
+  (the candidate is general enough to produce what is needed).
+- Candidate `A` is **at least as specific as** candidate `B` when
+  `synthesize(A, B)` succeeds — when `A` is an instance of `B`.
+
+Within a frame, the winner is the matching candidate that is at least as specific
+as every other matching candidate (the greatest element under this order). Two
+mutually-adaptable candidates are equivalent and either may be chosen; if no
+single candidate dominates all the others, resolution is ambiguous.
+
+This is a preorder defined entirely by `synthesize`, so it costs nothing new to
+implement: the resolver already calls `synthesize` to test satisfaction, and
+reuses it pairwise to rank the survivors.
 
 ### Providing more than is needed
 

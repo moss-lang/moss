@@ -95,9 +95,9 @@ build(b)
 Characters are produced from their Unicode code points via a contextual
 `char_from_codepoint`, reusing the numeric machinery above. The sizes, indices,
 and code points are themselves numeric literals; in the current prototype they
-use a fixed internal integer type (`Uint32`). (This couples `Char`/`String` to
-the integer context and leaves "which integer type" as a prototype choice; both
-are easy to revisit.)
+use a fixed internal integer type (`Uint`). (This couples `Char`/`String` to the
+integer context and leaves "which integer type" as a prototype choice; both are
+easy to revisit.)
 
 ## Correctness, folding, and the cost question
 
