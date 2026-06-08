@@ -1375,18 +1375,58 @@ impl<'a> Lower<'a> {
         Ok(items_result)
     }
 
+    /// Satisfy a single `need` from the available context `destruct`, building the composite
+    /// lambda that provides it, or `None` if nothing in `destruct` does.
+    fn resolve_need(&mut self, need: NodeId, destruct: &[NodeId]) -> LowerResult<Option<NodeId>> {
+        let (kind, param) = match self.node(need) {
+            Node::NeedTydef { def, param, .. } => (DefKind::Ty(def), param),
+            Node::NeedSigdef { def, param, .. } => (DefKind::Sig(def), param),
+            Node::NeedValdef { def, param, .. } => (DefKind::Val(def), param),
+            Node::NeedCtxdef { def, param, .. } => (DefKind::Ctx(def), param),
+            _ => panic!(), // a needs list contains only `Need*` nodes
+        };
+        let Some((callee, synth)) = self.extract_lambda(destruct, kind, param)? else {
+            return Ok(None);
+        };
+        let Node::Lambda {
+            level: level_synth,
+            needs: needs_synth,
+            result: result_synth,
+        } = self.node(synth)
+        else {
+            panic!()
+        };
+        let Node::List { items } = self.node(result_synth) else {
+            panic!()
+        };
+        let result_composite = self.mk_node(Node::Apply {
+            lambda: callee,
+            args: items,
+        });
+        Ok(Some(self.mk_node(Node::Lambda {
+            level: level_synth,
+            needs: needs_synth,
+            result: result_composite,
+        })))
+    }
+
     fn invoke(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Option<Vec<NodeId>>> {
         match self.node(lambda) {
             Node::Nothing => todo!(),
             Node::Lambda {
-                level,
+                level: _,
                 needs,
-                result,
+                result: _,
             } => {
-                for need in needs {
-                    todo!();
+                let mut construct = Vec::new();
+                for loc in needs {
+                    let need = self.ir.lists[loc];
+                    match self.resolve_need(need, destruct)? {
+                        Some(composite) => construct.push(composite),
+                        None => return Ok(None),
+                    }
                 }
-                Ok(Some(Vec::new()))
+                Ok(Some(construct))
             }
             Node::Apply { lambda, args } => todo!(),
             Node::List { items } => todo!(),
@@ -1517,96 +1557,18 @@ impl<'a> Lower<'a> {
         let mut propagate = Vec::new();
         for loc in needs {
             let need = self.ir.lists[loc];
-            match self.node(need) {
-                Node::NeedTydef {
-                    level: _,
-                    def,
-                    param,
-                } => match self.extract_lambda(destruct, DefKind::Ty(def), param)? {
-                    Some((callee, synth)) => {
-                        let Node::Lambda {
-                            level: level_synth,
-                            needs: needs_synth,
-                            result: result_synth,
-                        } = self.node(synth)
-                        else {
-                            panic!()
-                        };
-                        let Node::List { items } = self.node(result_synth) else {
-                            panic!()
-                        };
-                        let result_composite = self.mk_node(Node::Apply {
-                            lambda: callee,
-                            args: items,
-                        });
-                        let composite = self.mk_node(Node::Lambda {
-                            level: level_synth,
-                            needs: needs_synth,
-                            result: result_composite,
-                        });
-                        construct.push(composite);
-                    }
-                    None => {
-                        // TODO: Instead of clumsily constructing `before` and `after` on the fly
-                        // here, get better asymptotic complexity by maintaining a running mapping.
-                        let prefix = self.ir.lists[needs][..construct.len()].to_vec();
-                        let before = self.mk_node_list(&prefix);
-                        let after = self.mk_node_list(&construct);
-                        let substituted = self.substitute(level, before, after, need);
-                        construct.push(substituted);
-                        propagate.push(substituted);
-                    }
-                },
-                Node::NeedSigdef {
-                    level: _,
-                    def,
-                    param,
-                } => todo!(),
-                Node::NeedValdef {
-                    level: _,
-                    def,
-                    param,
-                } => match self.extract_lambda(destruct, DefKind::Val(def), param)? {
-                    Some((callee, synth)) => {
-                        let Node::Lambda {
-                            level: level_synth,
-                            needs: needs_synth,
-                            result: result_synth,
-                        } = self.node(synth)
-                        else {
-                            panic!()
-                        };
-                        let Node::List { items } = self.node(result_synth) else {
-                            panic!()
-                        };
-                        let result_composite = self.mk_node(Node::Apply {
-                            lambda: callee,
-                            args: items,
-                        });
-                        let composite = self.mk_node(Node::Lambda {
-                            level: level_synth,
-                            needs: needs_synth,
-                            result: result_composite,
-                        });
-                        construct.push(composite);
-                    }
-                    None => {
-                        // TODO: Instead of clumsily constructing `before` and `after` on the fly
-                        // here, get better asymptotic complexity by maintaining a running mapping.
-                        let prefix = self.ir.lists[needs][..construct.len()].to_vec();
-                        let before = self.mk_node_list(&prefix);
-                        let after = self.mk_node_list(&construct);
-                        let substituted = self.substitute(level, before, after, need);
-                        construct.push(substituted);
-                        propagate.push(substituted);
-                    }
-                },
-                Node::NeedCtxdef {
-                    level: _,
-                    def,
-                    param,
-                } => todo!(),
-                _ => unreachable!(),
+            match self.resolve_need(need, destruct)? {
+                Some(composite) => construct.push(composite),
+                None => {
+                    // TODO: Instead of clumsily constructing `before` and `after` on the fly here,
+                    // get better asymptotic complexity by maintaining a running mapping.
+                    let prefix = self.ir.lists[needs][..construct.len()].to_vec();
+                    let before = self.mk_node_list(&prefix);
+                    let after = self.mk_node_list(&construct);
+                    let substituted = self.substitute(level, before, after, need);
+                    construct.push(substituted);
+                    propagate.push(substituted);
+                }
             }
         }
         Ok((construct, propagate))
