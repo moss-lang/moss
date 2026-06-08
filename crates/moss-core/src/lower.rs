@@ -2838,6 +2838,16 @@ impl<'a> Lower<'a> {
     ) -> LowerResult<NodeId> {
         let parse::Need { kind: _, bind } = self.tree.needs[need];
         // TODO: Handle `kind`.
+        self.need_bind(level, params, slots, bind)
+    }
+
+    fn need_bind(
+        &mut self,
+        level: Level,
+        params: &mut Vec<NodeId>,
+        slots: &[NodeId],
+        bind: parse::BindId,
+    ) -> LowerResult<NodeId> {
         let parse::Bind { key, val } = self.tree.binds[bind];
         match val {
             Some(_) => self.bind(level, slots, bind),
@@ -2924,6 +2934,17 @@ impl<'a> Lower<'a> {
         needs: IdRange<parse::NeedId>,
     ) -> LowerResult<Vec<NodeId>> {
         let mut slots = Vec::new();
+        // A file-level `assume` seeds the base of every declaration's resolution
+        // context, so its bindings act like additional `[needs]` prepended to
+        // each declaration. For now we fold them flatly into the front of the
+        // slots (the bottom frame), with the declaration's own needs above them.
+        if level == Level::ZERO {
+            for assume in self.tree.assumes.iter().copied() {
+                for bind in assume {
+                    slots.push(self.need_bind(level, params, &slots, bind)?);
+                }
+            }
+        }
         for need in needs {
             slots.push(self.need(level, params, &slots, need)?);
         }
@@ -3121,6 +3142,18 @@ impl<'a> Lower<'a> {
                     let parse::Ctxdef { name, needs, def } = self.tree.ctxdefs[id];
                     let mut slots = Vec::new();
                     let mut params_outer = Vec::new();
+                    // A file-level `assume` seeds the base of the outer context.
+                    for assume in self.tree.assumes.iter().copied() {
+                        for bind in assume {
+                            slots.push(self.need_bind(
+                                Level::ZERO,
+                                &mut params_outer,
+                                &slots,
+                                bind,
+                            )?);
+                        }
+                    }
+                    let outer_count = slots.len();
                     for need in needs {
                         slots.push(self.need(Level::ZERO, &mut params_outer, &slots, need)?);
                     }
@@ -3130,7 +3163,7 @@ impl<'a> Lower<'a> {
                     }
                     let needs_inner = self.mk_node_list(&params_inner);
                     let needs_outer = self.mk_node_list(&params_outer);
-                    let items = self.mk_node_list(&slots[needs.len()..]);
+                    let items = self.mk_node_list(&slots[outer_count + needs.len()..]);
                     let result = self.mk_node(Node::List { items });
                     let lambda = self.mk_node(Node::Lambda {
                         level: Level::ONE,
