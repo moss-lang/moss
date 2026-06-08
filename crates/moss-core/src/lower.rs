@@ -1451,10 +1451,17 @@ impl<'a> Lower<'a> {
                 param,
             } => self.invoke(param, destruct),
             Node::Tagdef { def } => todo!(),
-            Node::Aliasdef { def } => todo!(),
+            // Transparent definitions unfold to their bodies, mirroring `reduce`.
+            Node::Aliasdef { def } => {
+                let body = self.ir.aliasdefs[def].0;
+                self.invoke(body, destruct)
+            }
             Node::Tuple { elems } => todo!(),
             Node::Context => todo!(),
-            Node::Fndef { def } => todo!(),
+            Node::Fndef { def } => {
+                let body = self.ir.fndefs[def].0;
+                self.invoke(body, destruct)
+            }
             Node::Get { ctx, slot } => match {
                 // Reduce the context first so a nested-context accessor (a `Get` chain) collapses to
                 // the stuck `Apply { NeedCtxdef }` (or `List`) form the cases below expect.
@@ -1909,7 +1916,9 @@ impl<'a> Lower<'a> {
             Node::BindValdef { def, bind } => {
                 self.match_bind(kind, DefKind::Val(def), slot, lambda, bind)
             }
-            Node::BindCtxdef { def, bind } => todo!(),
+            Node::BindCtxdef { def, bind } => {
+                self.match_bind(kind, DefKind::Ctx(def), slot, lambda, bind)
+            }
             Node::Sig { param, result } => todo!(),
         }
     }
