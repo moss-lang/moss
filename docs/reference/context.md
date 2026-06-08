@@ -162,24 +162,31 @@ fn main() {
 
 ### What "most specific" means
 
-Specificity is not a new mechanism: it is the same adaptation check —
-`synthesize` — that decides whether a candidate satisfies a need in the first
-place. `synthesize(a, b)` succeeds exactly when `b` is general enough to be
-adapted into `a`, i.e. when `a` is an *instance* of `b`. So:
+Candidate `A` is **at least as specific as** candidate `B` when `A` is an
+*instance* of `B` — when `B` is general enough that `A` is a special case of it.
+The winner among matching candidates is the one at least as specific as every
+other (the greatest element under this order); two mutually-instance candidates
+are equivalent and either may be chosen; if no single candidate dominates all the
+others, resolution is ambiguous.
 
-- A candidate **satisfies** a need when the need is an instance of the candidate
-  (the candidate is general enough to produce what is needed).
-- Candidate `A` is **at least as specific as** candidate `B` when
-  `synthesize(A, B)` succeeds — when `A` is an instance of `B`.
+Two parts make up this instance relation:
 
-Within a frame, the winner is the matching candidate that is at least as specific
-as every other matching candidate (the greatest element under this order). Two
-mutually-adaptable candidates are equivalent and either may be chosen; if no
-single candidate dominates all the others, resolution is ambiguous.
+- **Solving a candidate's open inputs** (what `synthesize` does): `B`'s input
+  needs are holes that `A` may fill, so a candidate that pins them is more
+  specific than one that leaves them open.
+- **Binding-awareness**: a need that is provided *bound* — `Bind{def}=V`, the
+  same definition pinned to a value — is strictly more specific than the same
+  need left *abstract* (`Need{def}`). This is the common, pervasive case: e.g.
+  `Std` provides an operator's output type both bound (`MulOut[…]=Number`) and
+  abstract (inside the operator bundle), and the bound one must win.
 
-This is a preorder defined entirely by `synthesize`, so it costs nothing new to
-implement: the resolver already calls `synthesize` to test satisfaction, and
-reuses it pairwise to rank the survivors.
+This is directional (`A` instance of `B` does not imply the reverse) and used
+**only** to rank candidates — it is not the relation used for ordinary type
+equivalence, where treating an abstract need as a wildcard would be unsound.
+
+> The precise partial order is still being worked out (e.g. how parametric needs
+> compare). The implementation lives in `at_least_as_specific`; see
+> [the lowering notes](/docs/implementation/lowering.md).
 
 ### Providing more than is needed
 
