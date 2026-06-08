@@ -1597,6 +1597,9 @@ impl<'a> Lower<'a> {
             }
             return Ok(true);
         }
+        // Decide equivalence up to reduction; needs stay opaque, so this leaves them comparable.
+        let a = self.reduce(a)?;
+        let b = self.reduce(b)?;
         match (self.node(a), self.node(b)) {
             (
                 Node::Lambda {
@@ -2024,8 +2027,10 @@ impl<'a> Lower<'a> {
         Ok(self.substitute(level, needs, after, result))
     }
 
-    /// Reduce `node` toward weak-head normal form: β-reduce applications, project out of
-    /// contexts, and follow needs, until the head is irreducible (a `Lambda`, `Sig`, type, ...).
+    /// Reduce `node` toward weak-head normal form: β-reduce applications, project out of contexts,
+    /// and unfold transparent definitions, until the head is irreducible. The opaque heads — the
+    /// nominal `Tagdef` and the contextual `Need*` — are left in place: their declarations' bodies
+    /// are metadata (a type's body is "nothing", a sig's is a signature), not substitutable values.
     fn reduce(&mut self, node: NodeId) -> LowerResult<NodeId> {
         match self.node(node) {
             Node::Apply { lambda, args } => {
@@ -2036,7 +2041,8 @@ impl<'a> Lower<'a> {
                         let inlined = self.inline(head, &args)?;
                         self.reduce(inlined)
                     }
-                    _ => todo!(),
+                    // Applying an opaque head (a need, a nominal type): a stuck application, in WHNF.
+                    _ => Ok(self.mk_node(Node::Apply { lambda: head, args })),
                 }
             }
             Node::Get { ctx, slot } => match self.node(ctx) {
@@ -2058,19 +2064,64 @@ impl<'a> Lower<'a> {
                 }
                 _ => todo!(),
             },
-            // Already in weak-head normal form.
+            // Opaque heads, already in weak-head normal form.
             Node::Lambda { .. }
             | Node::Sig { .. }
             | Node::Tuple { .. }
             | Node::Tagdef { .. }
-            | Node::Aliasdef { .. }
-            | Node::Fndef { .. }
             | Node::Context
             | Node::Nothing
             | Node::Lit { .. }
-            | Node::List { .. } => Ok(node),
+            | Node::List { .. }
+            | Node::NeedTydef { .. }
+            | Node::NeedSigdef { .. }
+            | Node::NeedValdef { .. }
+            | Node::NeedCtxdef { .. }
+            | Node::Bind { .. }
+            | Node::BindTydef { .. }
+            | Node::BindSigdef { .. }
+            | Node::BindValdef { .. }
+            | Node::BindCtxdef { .. } => Ok(node),
+            // Transparent definitions unfold to their bodies.
+            Node::Fndef { def } => {
+                let body = self.ir.fndefs[def].0;
+                self.reduce(body)
+            }
+            Node::Aliasdef { def } => {
+                let body = self.ir.aliasdefs[def].0;
+                self.reduce(body)
+            }
             _ => todo!(),
         }
+    }
+
+    /// The signature (a `Sig`) of a contextual function `def`, given the `param` captured by its
+    /// need and the `args` resolving `param`'s leftover needs. Scoped to signature queries: a `sig`
+    /// declaration's body returns a signature, which is metadata, not a substitutable value, so this
+    /// must not be folded into the general `reduce`.
+    fn signature(&mut self, def: SigdefId, param: NodeId, args: NodeList) -> LowerResult<NodeId> {
+        let Node::Lambda {
+            level,
+            needs,
+            result,
+        } = self.node(param)
+        else {
+            panic!()
+        };
+        let Node::List { items } = self.node(result) else {
+            panic!()
+        };
+        let body = self.raise(self.ir.sigdefs[def].0, Level::ZERO, level);
+        let construct = self.ir.lists[items].to_vec();
+        let inlined = self.inline(body, &construct)?;
+        let sig_lambda = self.mk_node(Node::Lambda {
+            level,
+            needs,
+            result: inlined,
+        });
+        let args = self.ir.lists[args].to_vec();
+        let applied = self.inline(sig_lambda, &args)?;
+        self.reduce(applied)
     }
 
     /// Resolve the path of a spec and synthesize each of its attached bindings.
@@ -2824,7 +2875,19 @@ impl LowerBody<'_, '_> {
     /// Get the parameter type and result type of a function.
     fn sig(&mut self, func: NodeId) -> LowerResult<(NodeId, NodeId)> {
         let reduced = self.x.reduce(func)?;
-        let Node::Sig { param, result } = self.x.node(reduced) else {
+        let sig = match self.x.node(reduced) {
+            // A defined function reduces all the way to its signature.
+            Node::Sig { .. } => reduced,
+            // A contextual function is a stuck application; read its signature from the `sig` decl.
+            Node::Apply { lambda, args } => {
+                let Node::NeedSigdef { def, param, .. } = self.x.node(lambda) else {
+                    panic!()
+                };
+                self.x.signature(def, param, args)?
+            }
+            _ => panic!(),
+        };
+        let Node::Sig { param, result } = self.x.node(sig) else {
             panic!()
         };
         Ok((param, result))
@@ -2845,8 +2908,17 @@ impl LowerBody<'_, '_> {
         }
     }
 
-    fn expect_ty(&self, expected: NodeId, actual: NodeId) -> LowerResult<()> {
-        Err(self.x.todo_no_loc())
+    /// Check that an `actual` type matches an `expected` type, up to reduction.
+    fn expect_ty(&mut self, expected: NodeId, actual: NodeId) -> LowerResult<()> {
+        let mut constraints = HashMap::new();
+        if self
+            .x
+            .unify(&Renaming::identity(), &mut constraints, expected, actual)?
+        {
+            Ok(())
+        } else {
+            Err(self.x.todo_no_loc()) // TODO: a real type-mismatch error
+        }
     }
 
     fn expr(&mut self, expr: ExprId) -> LowerResult<Typed> {
