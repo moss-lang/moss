@@ -55,7 +55,16 @@ context Wasi =
   wasip1::WasiP1[Base],
 ;
 
-context Bootstrap = Wasi, Bool=I32, Int32=I32, Int64=I64;
+context Bootstrap =
+  Wasi,
+  Bool=I32,
+  Uint32=I32,
+  Int32=I32,
+  Uint64=I64,
+  Int64=I64,
+  Uint=I32,
+  Int=I32,
+;
 
 fn overflow[Bootstrap]() {
   wasm::unreachable(); # TODO: Give error messages.
