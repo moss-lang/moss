@@ -1877,6 +1877,15 @@ impl<'a> Lower<'a> {
             }
             Node::NeedCtxdef { level, def, param } => {
                 let mut options = Vec::new();
+                // A composite-context need is satisfied directly by a slot for the same context,
+                // exactly as the other `Need*` arms match their own kind via `match_need`. (The
+                // explode-and-search-inside below additionally lets a *member* need be satisfied
+                // from within this context.)
+                if let Some(option) =
+                    self.match_need(kind, DefKind::Ctx(def), slot, lambda, param)?
+                {
+                    options.push(option);
+                }
                 let exploded = self.explode(level, def, param)?;
                 let args = self.mk_node_list(&[]); // TODO: Handle partially-applied contexts.
                 let ctx = self.mk_node(Node::Apply { lambda: slot, args });
