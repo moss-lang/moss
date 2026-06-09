@@ -2117,7 +2117,45 @@ impl<'a> Lower<'a> {
             }
             return Ok(Some(options[i]));
         }
+        // No candidate dominates by specificity, but several candidates may *denote the same value*
+        // reached by different syntactic routes -- e.g. resolving `Numerals[Number=I32]` while
+        // assembling `bootstrap`'s `bind Std` finds both Wasi's direct `Numerals[I32]` member and
+        // each sibling `Numerals[<T>]=Numerals[I32]` bridge, all of which reduce to that same Wasi
+        // member. Such candidates are incomparable under specificity (a `Get`-projection vs a
+        // `BindCtxdef`) yet interchangeable: collapse candidates whose composites reduce to the same
+        // value, and if exactly one value remains, that value is unambiguous. Genuine ambiguity
+        // (e.g. `Foo=A` vs `Foo=B`) survives because those reduce to distinct values.
+        let mut canon = Vec::with_capacity(options.len());
+        for &composite in &composites {
+            canon.push(self.reduce_composite(composite)?);
+        }
+        if let Some(&first) = canon.first()
+            && canon.iter().all(|&c| c == first)
+        {
+            return Ok(Some(options[0]));
+        }
         Ok(None)
+    }
+
+    /// The reduced value a candidate composite denotes: its body (the application of the chosen
+    /// provider to the adapter's results) in weak-head normal form, wrapped back under the adapter's
+    /// binder. Two candidates with identical reduced composites resolve to the same value and are
+    /// therefore interchangeable (see [`Lower::unique_option`]'s value-equivalence collapse).
+    fn reduce_composite(&mut self, composite: NodeId) -> LowerResult<NodeId> {
+        let Node::Lambda {
+            level,
+            needs,
+            result,
+        } = self.node(composite)
+        else {
+            panic!()
+        };
+        let result = self.reduce(result)?;
+        Ok(self.mk_node(Node::Lambda {
+            level,
+            needs,
+            result,
+        }))
     }
 
     /// Reduce `node` toward weak-head normal form like [`Lower::reduce`], but **stop at a binding
