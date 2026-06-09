@@ -161,6 +161,21 @@ enum IntLitOut {
     Int,
 }
 
+/// A backend-implemented contextual function (prototype intrinsics for the string/print surface).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Intrinsic {
+    /// `string_builder(size: Uint) -> StringBuilder` — bump-allocate `size` bytes.
+    BuilderNew,
+    /// `set_char(b, i: Uint, c: Char) -> StringBuilder` — `i32.store8(b.ptr + i, c)`; return `b`.
+    SetChar,
+    /// `build(b) -> String` — `b` already laid out as `(ptr, size)`; identity.
+    Build,
+    /// `char_from_codepoint(cp: Uint) -> Char` — identity (ASCII, `Char` = i32).
+    CharFromCp,
+    /// `print(s: String)` — write `s`'s `(ptr,len)` as an iovec and `fd_write` to stdout.
+    Print,
+}
+
 /// A static object.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Object {
@@ -208,6 +223,10 @@ enum Object {
 
     /// The Wasm `funcidx` of an imported WASI P1 function.
     FnWasi(u32),
+
+    /// A backend intrinsic: a contextual function (`string_builder`/`set_char`/`build`/
+    /// `char_from_codepoint`/`print`) the prototype implements directly in codegen.
+    FnIntrinsic(Intrinsic),
 
     /// A defined function with its needs bound by an environment.
     FnDef(FndefId, EnvId),
@@ -266,6 +285,12 @@ struct Wasm<'a> {
 
     /// Wasm `funcidx` of each imported WASI P1 function, by name.
     wasi_funcidx: HashMap<StrId, u32>,
+
+    /// Sigdefs the backend implements as [`Intrinsic`]s (the string/print surface).
+    intrinsics: HashMap<SigdefId, Intrinsic>,
+
+    /// Index of the mutable global used as the bump-allocation heap pointer.
+    heap_global: u32,
 
     section_type: TypeSection,
     section_import: ImportSection,
@@ -366,6 +391,12 @@ impl<'a> Wasm<'a> {
             // A bare lambda is a value: a closure capturing its defining environment. Applying it
             // (see `apply`) binds its needs and evaluates its result.
             lower::Node::Lambda { .. } => self.mkobj(Object::Closure(node, env)),
+            // An unbound `sig` for one of the prototype's backend-implemented contextual functions
+            // resolves to its intrinsic (the bridge left these inline, with no provider).
+            lower::Node::NeedSigdef { def, .. } if self.intrinsics.contains_key(&def) => {
+                let intr = self.intrinsics[&def];
+                self.mkobj(Object::FnIntrinsic(intr))
+            }
             // A need resolves to whatever the enclosing function was given for it.
             lower::Node::NeedTydef { .. }
             | lower::Node::NeedSigdef { .. }
@@ -460,6 +491,8 @@ impl<'a> Wasm<'a> {
                     self.mkobj(Object::FnDef(def, env))
                 }
             }
+            // An intrinsic ignores its (static) context construct; the runtime arg comes via `Call`.
+            Object::FnIntrinsic(_) => head,
             // Already a value; applying to no further context arguments is the identity.
             _ if args.is_empty() => head,
             other => todo!("apply: {other:?} to {} args", args.len()),
@@ -532,13 +565,23 @@ impl<'a> Wasm<'a> {
     /// is still imported separately for `_start`.
     fn wasi_ctx(&mut self, wasip1_sigdefs: &IndexMap<StrId, SigdefId>) -> ObjectId {
         for (&name, _) in wasip1_sigdefs {
-            if &self.ir.strings[name] == "proc_exit" {
-                // `proc_exit : (i32) -> ()`.
+            let sig: Option<(&str, &[ValType], &[ValType])> = match &self.ir.strings[name] {
+                "proc_exit" => Some(("proc_exit", &[ValType::I32], &[])),
+                "fd_write" => Some((
+                    "fd_write",
+                    &[ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+                    &[ValType::I32],
+                )),
+                _ => None,
+            };
+            if let Some((import_name, params, results)) = sig {
                 let typeidx = self.section_type.len();
-                self.section_type.ty().function([ValType::I32], []);
+                self.section_type
+                    .ty()
+                    .function(params.iter().copied(), results.iter().copied());
                 let funcidx = self.push_func_wasi();
                 self.section_import
-                    .import(WASIP1, "proc_exit", EntityType::Function(typeidx));
+                    .import(WASIP1, import_name, EntityType::Function(typeidx));
                 self.wasi_funcidx.insert(name, funcidx);
             }
         }
@@ -655,6 +698,7 @@ impl<'a> Wasm<'a> {
             | Object::FnString
             | Object::FnInstr(_)
             | Object::FnWasi(_)
+            | Object::FnIntrinsic(_)
             | Object::FnDef(_, _)
             | Object::Thunk(_, _)
             | Object::Closure(_, _)
@@ -1043,6 +1087,105 @@ impl<'a> Wasm<'a> {
         };
     }
 
+    /// Push a value [`Object`]'s runtime representation onto the operand stack.
+    fn materialize(&mut self, obj: ObjectId) {
+        match self.obj(obj) {
+            Object::ValU32(n) => {
+                self.body.insn().i32_const(n as i32);
+            }
+            Object::ValDyn(ty, start) => self.get_locals(ty, start),
+            other => todo!("materialize: {other:?}"),
+        }
+    }
+
+    /// Append a fresh i32 local and return its index (scratch for intrinsics).
+    fn tmp(&mut self) -> u32 {
+        let id = self.locals.len_idx();
+        self.locals.push(ValType::I32);
+        id.raw()
+    }
+
+    /// Emit a call given the already-evaluated callee head, with its runtime argument(s) already on
+    /// the operand stack.
+    fn emit_call(&mut self, head: ObjectId) {
+        match self.obj(head) {
+            Object::FnDef(def, fenv) => {
+                let funcidx = self.insert_func(Object::FnDef(def, fenv));
+                self.body.insn().call(funcidx);
+            }
+            // Numeric instructions ignore `ctx`; memory instructions would need `val_u32` (milestone
+            // C). `hello`'s arithmetic is numeric-only, so a placeholder context suffices.
+            Object::FnInstr(instr) => {
+                let ctx = self.mkobj(Object::Open);
+                self.wasm_instruction(ctx, instr);
+            }
+            Object::FnWasi(funcidx) => {
+                self.body.insn().call(funcidx);
+            }
+            Object::FnIntrinsic(intr) => self.emit_intrinsic(intr),
+            other => todo!("emit_call: {other:?}"),
+        }
+    }
+
+    /// Emit a backend intrinsic, consuming its runtime argument(s) from the operand stack and
+    /// leaving its result there.
+    fn emit_intrinsic(&mut self, intr: Intrinsic) {
+        let store = MemArg { offset: 0, align: 2, memory_index: MEMIDX_WASI };
+        let store8 = MemArg { offset: 0, align: 0, memory_index: MEMIDX_WASI };
+        match intr {
+            // `build(b)` / `char_from_codepoint(cp)` are identities on the layout already on the
+            // stack (`(ptr,size)` / the codepoint).
+            Intrinsic::Build | Intrinsic::CharFromCp => {}
+            // `string_builder(size)`: ptr = heap; heap += size; result `(ptr, size)`.
+            Intrinsic::BuilderNew => {
+                let size = self.tmp();
+                let ptr = self.tmp();
+                self.body.insn().local_set(size);
+                self.body.insn().global_get(self.heap_global).local_set(ptr);
+                self.body
+                    .insn()
+                    .global_get(self.heap_global)
+                    .local_get(size)
+                    .i32_add()
+                    .global_set(self.heap_global);
+                self.body.insn().local_get(ptr).local_get(size);
+            }
+            // `set_char(b=(ptr,size), index, char)`: `store8(ptr+index, char)`; result `(ptr,size)`.
+            Intrinsic::SetChar => {
+                let c = self.tmp();
+                let i = self.tmp();
+                let sz = self.tmp();
+                let p = self.tmp();
+                self.body.insn().local_set(c).local_set(i).local_set(sz).local_set(p);
+                self.body
+                    .insn()
+                    .local_get(p)
+                    .local_get(i)
+                    .i32_add()
+                    .local_get(c)
+                    .i32_store8(store8);
+                self.body.insn().local_get(p).local_get(sz);
+            }
+            // `print(s=(ptr,len))`: write iovec `{ptr,len}` at `[0,8)`, `fd_write(1,0,1,8)`, drop.
+            Intrinsic::Print => {
+                let fd_write = self.wasi_funcidx[&self.ir.strings.get_id("fd_write").unwrap()];
+                let len = self.tmp();
+                let ptr = self.tmp();
+                self.body.insn().local_set(len).local_set(ptr);
+                self.body.insn().i32_const(0).local_get(ptr).i32_store(store); // iovec.buf
+                self.body.insn().i32_const(4).local_get(len).i32_store(store); // iovec.buf_len
+                self.body
+                    .insn()
+                    .i32_const(1) // fd = stdout
+                    .i32_const(0) // iovs ptr
+                    .i32_const(1) // iovs_len
+                    .i32_const(8) // retptr0
+                    .call(fd_write)
+                    .drop();
+            }
+        }
+    }
+
     fn expr(&mut self, env: EnvId, expr: Expr) {
         match expr {
             Expr::Param { ty } => {
@@ -1096,9 +1239,17 @@ impl<'a> Wasm<'a> {
                 let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
                 self.get_locals(self.tuples[elem], start);
             }
-            Expr::Val { val } => todo!("expr: Val (milestone B)"),
-            Expr::Call { func, arg } => todo!("expr: Call (milestone B)"),
-            Expr::Bind { ctx } => todo!("expr: Bind (milestone B)"),
+            Expr::Val { val } => {
+                let obj = self.eval(val, env);
+                self.materialize(obj);
+            }
+            Expr::Call { func, arg } => {
+                let head = self.eval(func, env);
+                // Push the runtime argument, then emit the call/instruction/intrinsic.
+                self.get(arg);
+                self.emit_call(head);
+            }
+            Expr::Bind { ctx } => todo!("expr: Bind (milestone C)"),
         }
     }
 
@@ -1370,10 +1521,12 @@ impl<'a> Wasm<'a> {
             next_fn += 1;
         }
 
+        // Global 0 is the mutable bump-allocation heap pointer (`heap_global`), starting past the
+        // static data (which itself starts past the reserved `[0,16)` print scratch).
         self.section_global.global(
             GlobalType {
                 val_type: ValType::I32,
-                mutable: false,
+                mutable: true,
                 shared: false,
             },
             &ConstExpr::i32_const(self.data_offset),
@@ -1432,7 +1585,9 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         val_src: names.names[&(lib.wasm, ir.strings.get_id("src").unwrap())].valdef(),
         val_align: names.names[&(lib.wasm, ir.strings.get_id("align").unwrap())].valdef(),
         val_offset: names.names[&(lib.wasm, ir.strings.get_id("offset").unwrap())].valdef(),
-        data_offset: Default::default(),
+        // Reserve `[0,16)` of linear memory as print scratch (iovec + retptr); static data and the
+        // heap start at 16.
+        data_offset: 16,
         strings: Default::default(),
         objects: Default::default(),
         tuples: Default::default(),
@@ -1440,6 +1595,26 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
 
         funcidxs: Default::default(),
         wasi_funcidx: Default::default(),
+        intrinsics: {
+            let mut m = HashMap::new();
+            for (&(_, s), &named) in &names.names {
+                if let Named::Sigdef(d) = named {
+                    let intr = match &ir.strings[s] {
+                        "string_builder" => Some(Intrinsic::BuilderNew),
+                        "set_char" => Some(Intrinsic::SetChar),
+                        "build" => Some(Intrinsic::Build),
+                        "char_from_codepoint" => Some(Intrinsic::CharFromCp),
+                        "print" => Some(Intrinsic::Print),
+                        _ => None,
+                    };
+                    if let Some(intr) = intr {
+                        m.insert(d, intr);
+                    }
+                }
+            }
+            m
+        },
+        heap_global: 0,
 
         section_type: Default::default(),
         section_import: Default::default(),
