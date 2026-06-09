@@ -2607,10 +2607,26 @@ impl<'a> Lower<'a> {
         // context), not a blanket equation.
         let mut tybinds: HashMap<TydefId, NodeId> = HashMap::new();
         for &slot in &slots {
-            if let Node::BindTydef { def, .. } = self.node(slot) {
-                let args = self.mk_node_list(&[]);
-                let applied = self.mk_node(Node::Apply { lambda: slot, args });
-                let value = self.reduce(applied)?;
+            if let Node::BindTydef { def, bind } = self.node(slot) {
+                // Project the bind's bound value while *preserving its context-projection form*.
+                //
+                // The bound value of an in-scope `Uint=I32` slot is a `Get`-projection out of the
+                // abstract enclosing context (`Get{..}(Apply(NeedCtxdef(Bootstrap)))`). A full
+                // `reduce` of the nullary application would explode that abstract context and
+                // collapse the projection all the way to a bare `NeedTydef(I32)`. But the bridge
+                // bind we must match against (`Numerals[Uint]=Numerals[I32]`) refers to that same
+                // `I32` through the *same* `Get{Bootstrap}` projection, since its RHS was lowered
+                // against the same abstract context. Collapsing to a bare need on the need side
+                // produces two irreconcilable forms of the same free `I32` -- a bare need vs a stuck
+                // `Get` -- which `unify` cannot bridge (the abstract `Bootstrap` `Get` never reduces
+                // to the bare need). So β-reduce only as far as the `Bind`, then take its bound value
+                // *unreduced*, leaving the projection intact so both sides coincide under `unify`.
+                let inlined = self.inline(bind, &[])?;
+                let reduced = self.reduce(inlined)?;
+                let value = match self.node(reduced) {
+                    Node::Bind { bind, .. } => bind,
+                    _ => reduced,
+                };
                 tybinds.entry(def).or_insert(value);
             }
         }
