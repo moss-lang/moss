@@ -2470,7 +2470,12 @@ impl<'a> Lower<'a> {
                 continue;
             }
             let n = self.node(id);
-            if let Node::NeedTydef { def, .. } = n
+            // Skip the member root itself (`id != node`): rewriting a direct nullary type member
+            // (e.g. `Bool`/`Int`) into its bound value would strip its `Need*` head, so it would
+            // bypass `resolve_need`'s `Get`-projection and reach eval unbound. Only strictly-nested
+            // abstract refs are rewritten; the root stays a `Need*` and is projected explicitly.
+            if id != node
+                && let Node::NeedTydef { def, .. } = n
                 && let Some(&value) = tybinds.get(&def)
             {
                 before.push(id);
