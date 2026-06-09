@@ -2853,6 +2853,7 @@ impl<'a> Lower<'a> {
                 // The right-hand side is invoked against the ambient context (`slots`) as well as
                 // its own bindings, so a referenced implementation can resolve the context it needs
                 // (e.g. `ops::add[...]=uint32_add`, where `uint32_add` itself needs `Wasi`).
+                let rhs_binds_saved = rhs_binds.clone();
                 let mut destruct_rhs = slots.to_vec();
                 destruct_rhs.extend(rhs_binds);
                 match lhs {
@@ -2956,7 +2957,31 @@ impl<'a> Lower<'a> {
                     Named::Ctxdef(def) => {
                         let lambda = match rhs {
                             Named::Ctxdef(rhs_def) => {
-                                self.extract(level.succ(), slots, DefKind::Ctx(rhs_def), &destruct_rhs)?
+                                // Forward an existing concrete provider of the RHS context (e.g.
+                                // Wasi's `Numerals[Number=I32]`) rather than re-deriving the ctxdef
+                                // with `extract`, which only applies the outer param and leaves the
+                                // inner member-needs open. Build the RHS context need (mirroring
+                                // `need`) and resolve it, which tries `extract_lambda` first.
+                                let Ctxdef(rhs_target) = self.ir.ctxdefs[rhs_def];
+                                let (rhs_construct, rhs_needs) =
+                                    self.invoke_need(level.succ(), rhs_target, &rhs_binds_saved)?;
+                                let rhs_needs = self.mk_node_list(&rhs_needs);
+                                let rhs_items = self.mk_node_list(&rhs_construct);
+                                let rhs_result = self.mk_node(Node::List { items: rhs_items });
+                                let rhs_param = self.mk_node(Node::Lambda {
+                                    level: level.succ(),
+                                    needs: rhs_needs,
+                                    result: rhs_result,
+                                });
+                                let rhs_need = self.mk_node(Node::NeedCtxdef {
+                                    level,
+                                    def: rhs_def,
+                                    param: rhs_param,
+                                });
+                                match self.resolve_need(rhs_need, &destruct_rhs)? {
+                                    Some(provider) => provider,
+                                    None => return Err(LowerError::BindMismatch(bind)),
+                                }
                             }
                             _ => return Err(LowerError::BindMismatch(bind)),
                         };
