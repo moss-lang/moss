@@ -1640,6 +1640,21 @@ impl<'a> Lower<'a> {
         Ok((construct, propagate))
     }
 
+    /// Strip redundant nullary application wrappers: `Apply { X, [] }` (applying `X` to zero
+    /// arguments) denotes the same value as `X`. Used only for equivalence comparison in [`Lower::unify`]
+    /// and [`Lower::spec_unify`]; the canonical reduced form keeps the wrapper because the `Get`
+    /// projection in [`Lower::reduce`]/[`Lower::invoke`] pattern-matches on the stuck
+    /// `Apply { NeedCtxdef, [] }` shape.
+    fn peel_nullary_apply(&self, mut node: NodeId) -> NodeId {
+        while let Node::Apply { lambda, args } = self.node(node) {
+            if !self.ir.lists[args].is_empty() {
+                break;
+            }
+            node = lambda;
+        }
+        node
+    }
+
     /// Match `a` against `b`, solving for the metavariables in `constraints` (the needs of
     /// the `b` side) and deciding level equivalence against `env`.
     ///
@@ -1664,8 +1679,18 @@ impl<'a> Lower<'a> {
             return Ok(true);
         }
         // Decide equivalence up to reduction; needs stay opaque, so this leaves them comparable.
+        // Peel any redundant nullary application (`Apply { X, [] }` denotes the same value as `X`):
+        // `reduce` leaves a stuck head wrapped in its nullary `Apply` (the pervasive
+        // `Apply { member, [] }` projection shape), so the very same context member can arrive here
+        // as `Apply { NeedTydef, [] }` on one side and bare `NeedTydef` on the other. Without peeling,
+        // `unify` would compare those two references to the *same* type and wrongly reject -- the
+        // mismatch that stalled the composite digit-context bridge (`Numerals[Uint]=Numerals[I32]`)
+        // at the `bind Std` assembly. `reduce` itself must keep the wrapper (`invoke`/`reduce`'s
+        // `Get` arms expect the stuck `Apply { NeedCtxdef, [] }` form), so peel only here.
         let a = self.reduce(a)?;
+        let a = self.peel_nullary_apply(a);
         let b = self.reduce(b)?;
+        let b = self.peel_nullary_apply(b);
         match (self.node(a), self.node(b)) {
             (
                 Node::Lambda {
@@ -2211,8 +2236,12 @@ impl<'a> Lower<'a> {
             }
             return Ok(true);
         }
+        // See `unify`: a stuck nullary application `Apply { X, [] }` denotes the same value as `X`,
+        // so peel it for comparison (specificity must agree on the two equivalent reference shapes).
         let a = self.head_reduce(a)?;
+        let a = self.peel_nullary_apply(a);
         let b = self.head_reduce(b)?;
+        let b = self.peel_nullary_apply(b);
         match (self.node(a), self.node(b)) {
             (
                 Node::Lambda {
