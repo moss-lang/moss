@@ -176,6 +176,17 @@ enum Intrinsic {
     Print,
 }
 
+/// A backend-implemented contextual *type* (the string/char surface). Like [`Intrinsic`], these
+/// are declared in `lib` but left unbound (no provider in the `bootstrap` bridge), so the backend
+/// supplies their concrete Wasm representation directly when `eval` reaches the abstract reference.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum IntrinsicTy {
+    /// `Char` — a Unicode code point, represented as `i32`.
+    Char,
+    /// `StringBuilder` — `(i32 ptr, i32 size)`, same layout as `String`.
+    StringBuilder,
+}
+
 /// A static object.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Object {
@@ -289,6 +300,9 @@ struct Wasm<'a> {
     /// Sigdefs the backend implements as [`Intrinsic`]s (the string/print surface).
     intrinsics: HashMap<SigdefId, Intrinsic>,
 
+    /// Tydefs the backend implements directly (the string/char surface); see [`IntrinsicTy`].
+    intrinsic_tys: HashMap<lower::TydefId, IntrinsicTy>,
+
     /// Index of the mutable global used as the bump-allocation heap pointer.
     heap_global: u32,
 
@@ -397,6 +411,18 @@ impl<'a> Wasm<'a> {
                 let intr = self.intrinsics[&def];
                 self.mkobj(Object::FnIntrinsic(intr))
             }
+            // An unbound reference to a backend-implemented type resolves to its concrete Wasm
+            // representation (the bridge left these inline, with no provider).
+            lower::Node::NeedTydef { def, .. } if self.intrinsic_tys.contains_key(&def) => {
+                match self.intrinsic_tys[&def] {
+                    IntrinsicTy::Char => self.mkobj(Object::TyI32),
+                    IntrinsicTy::StringBuilder => {
+                        let i32 = self.mkobj(Object::TyI32);
+                        let tuple = self.tuples.make(&[i32, i32]);
+                        self.mkobj(Object::TyTuple(tuple))
+                    }
+                }
+            }
             // A need resolves to whatever the enclosing function was given for it.
             lower::Node::NeedTydef { .. }
             | lower::Node::NeedSigdef { .. }
@@ -491,8 +517,10 @@ impl<'a> Wasm<'a> {
                     self.mkobj(Object::FnDef(def, env))
                 }
             }
-            // An intrinsic ignores its (static) context construct; the runtime arg comes via `Call`.
-            Object::FnIntrinsic(_) => head,
+            // A function-like leaf (intrinsic, Wasm instruction, or imported WASI function) ignores
+            // its (static) context construct; its runtime arguments arrive at the `Call` site, where
+            // emission consumes them.
+            Object::FnIntrinsic(_) | Object::FnInstr(_) | Object::FnWasi(_) => head,
             // Already a value; applying to no further context arguments is the identity.
             _ if args.is_empty() => head,
             other => todo!("apply: {other:?} to {} args", args.len()),
@@ -1609,6 +1637,22 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
                     };
                     if let Some(intr) = intr {
                         m.insert(d, intr);
+                    }
+                }
+            }
+            m
+        },
+        intrinsic_tys: {
+            let mut m = HashMap::new();
+            for (&(_, s), &named) in &names.names {
+                if let Named::Tydef(d) = named {
+                    let ty = match &ir.strings[s] {
+                        "Char" => Some(IntrinsicTy::Char),
+                        "StringBuilder" => Some(IntrinsicTy::StringBuilder),
+                        _ => None,
+                    };
+                    if let Some(ty) = ty {
+                        m.insert(d, ty);
                     }
                 }
             }
