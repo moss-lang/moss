@@ -2453,6 +2453,70 @@ impl<'a> Lower<'a> {
         }
     }
 
+    /// Rewrite `node`, replacing every abstract type reference `NeedTydef { def, .. }` whose `def`
+    /// is bound in `tybinds` with the type it is bound to. Used to resolve a composite member's
+    /// abstract type references (e.g. `Uint32`) through the in-scope type-binds (e.g. `Uint32=I32`)
+    /// before matching, so the two sides of a context-to-context bridge agree on the concrete type.
+    fn resolve_tyrefs(&mut self, node: NodeId, tybinds: &HashMap<TydefId, NodeId>) -> NodeId {
+        if tybinds.is_empty() {
+            return node;
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let mut before = Vec::new();
+        let mut after = Vec::new();
+        let mut stack = vec![node];
+        while let Some(id) = stack.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            let n = self.node(id);
+            if let Node::NeedTydef { def, .. } = n
+                && let Some(&value) = tybinds.get(&def)
+            {
+                before.push(id);
+                after.push(value);
+                continue; // replace the whole reference; don't descend into it
+            }
+            match n {
+                Node::Lambda { needs, result, .. } => {
+                    stack.extend(self.ir.lists[needs].iter().copied());
+                    stack.push(result);
+                }
+                Node::Apply { lambda, args } => {
+                    stack.push(lambda);
+                    stack.extend(self.ir.lists[args].iter().copied());
+                }
+                Node::List { items } | Node::Tuple { elems: items } => {
+                    stack.extend(self.ir.lists[items].iter().copied())
+                }
+                Node::NeedTydef { param, .. }
+                | Node::NeedSigdef { param, .. }
+                | Node::NeedValdef { param, .. }
+                | Node::NeedCtxdef { param, .. } => stack.push(param),
+                Node::Get { ctx, .. } => stack.push(ctx),
+                Node::Bind { args, bind } => {
+                    stack.extend(self.ir.lists[args].iter().copied());
+                    stack.push(bind);
+                }
+                Node::BindTydef { bind, .. }
+                | Node::BindSigdef { bind, .. }
+                | Node::BindValdef { bind, .. }
+                | Node::BindCtxdef { bind, .. } => stack.push(bind),
+                Node::Sig { param, result } => {
+                    stack.push(param);
+                    stack.push(result);
+                }
+                _ => {}
+            }
+        }
+        if before.is_empty() {
+            return node;
+        }
+        let before = self.mk_node_list(&before);
+        let after = self.mk_node_list(&after);
+        self.substitute(Level::ZERO, before, after, node)
+    }
+
     /// Resolve a composite-context definition from the available context `slots`.
     ///
     /// Unlike [`Lower::extract`], which finds a single slot that satisfies a `Ty`/`Sig`/`Val` need,
@@ -2501,10 +2565,26 @@ impl<'a> Lower<'a> {
             .iter()
             .map(|&slot| self.raise(slot, Level::ZERO, level.succ()))
             .collect();
+        // Build a map from each nullary type-def bound in the (raised) `slots` to the type it is
+        // bound to. A member's abstract reference to such a type (e.g. `Uint32`) is then resolved
+        // through the bind (e.g. `Uint32=I32`) before matching, so a context-to-context bridge
+        // (`Numerals[Uint32]=Numerals[I32]`) and the need (`Numerals[Uint32]`) agree on the concrete
+        // type. The identity is sound -- it is a *declared* bind in scope (see the `Bootstrap`
+        // context), not a blanket equation.
+        let mut tybinds: HashMap<TydefId, NodeId> = HashMap::new();
+        for &slot in &slots {
+            if let Node::BindTydef { def, .. } = self.node(slot) {
+                let args = self.mk_node_list(&[]);
+                let applied = self.mk_node(Node::Apply { lambda: slot, args });
+                let value = self.reduce(applied)?;
+                tybinds.entry(def).or_insert(value);
+            }
+        }
         // Resolve each member against `slots`, propagating any unsatisfied member as a fresh need.
         let mut providers = Vec::new();
         let mut propagate_needs = Vec::new();
         for member in members {
+            let member = self.resolve_tyrefs(member, &tybinds);
             // A member that is already a binding (e.g. `Bool=I32` in the context's definition) is
             // fixed by the definition and provides itself; only an open `Need*` member is resolved
             // against `slots`, propagating as a fresh need if nothing satisfies it.
