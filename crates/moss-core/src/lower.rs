@@ -4340,3 +4340,45 @@ pub fn lower(
     lower.program()?;
     Ok(module)
 }
+
+#[cfg(test)]
+mod ctxbind_repro {
+    use super::*;
+    use crate::lex::lex;
+    use crate::parse::parse;
+
+    /// Lower a self-contained source with no prelude/base (`base: None`, no imports).
+    fn lower_str(src: &str) -> LowerResult<(IR, Names, ModuleId)> {
+        let (tokens, starts) = lex(src).unwrap();
+        let tree = parse(&tokens).unwrap();
+        let mut ir = IR::default();
+        let mut names = Names::default();
+        let preprelude = ir.modules.push(());
+        let module = lower(src, &starts, &tree, &mut ir, &mut names, None, preprelude, &[])?;
+        Ok((ir, names, module))
+    }
+
+    /// Isolated reproduction of the composite-context bridging bug that blocks the
+    /// backend (`hello` panics at `wasm.rs:366`). A `bind <Ctx>` return that bridges
+    /// one instance of a parametric composite context to another instance exercises
+    /// `synthesize_bind` matching a `BindCtxdef` against a `NeedCtxdef`.
+    ///
+    /// IGNORED: currently fails. NOTE on fidelity: standalone, the RHS provider
+    /// (`Inner[P=B]`) is an *abstract need*, so this fails during bind *construction*
+    /// (`extract` -> `todo!`), whereas the prelude's `Numerals[Uint]=Numerals[I32]`
+    /// has a *concrete* RHS (Wasi's `Numerals[I32]`) and instead fails later in
+    /// `synthesize_bind` at `unify`. Both are the same root cause: a need and a bind
+    /// at different nesting depths with free references to different enclosing
+    /// contexts that `synthesize`'s identity `Renaming` seed does not relate. See
+    /// `scratch/backend-synthesize-ctxbind-handoff3.md`.
+    #[test]
+    #[ignore = "composite-context bind/need synthesis (de Bruijn outer-correspondence) unimplemented"]
+    fn composite_context_bind() {
+        let src = "type A; type B; type P;\n\
+val item[P]: P;\n\
+context Inner[P] = item[P];\n\
+context Outer = Inner[P=A];\n\
+fn provide[Inner[P=B]](): bind Outer { bind Inner[P=A]=Inner[P=B] }\n";
+        lower_str(src).unwrap();
+    }
+}
