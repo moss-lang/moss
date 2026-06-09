@@ -2485,6 +2485,22 @@ impl<'a> Lower<'a> {
         });
         let members = self.explode(level, def, param)?;
         let members = self.ir.lists[members].to_vec();
+        // Raise the ambient `slots` into the same frame as the exploded members before matching;
+        // otherwise `synthesize` compares a member and a slot whose free references to the (shared)
+        // enclosing context sit at different levels.
+        //
+        // The amount is `level.succ()`, not `level`, because a composite context is a *two-level*
+        // lambda -- `Lambda(level)[parameters] -> Lambda(level+1)[needs] -> members`. `explode`
+        // raises the ctxdef by `level` and substitutes the parameters away, landing the members
+        // under the inner *needs* binder at `level.succ()` (it asserts `level_substituted ==
+        // level.succ()`). So an exploded member's free references live in a `level.succ()`-deep
+        // frame, while a `slot` is a plain entrypoint at the bare frame. Raising by `level` alone
+        // would match only the parameter binder and leave the slots one level shallow -- under-
+        // reaching the members by exactly the inner needs binder.
+        let slots: Vec<NodeId> = slots
+            .iter()
+            .map(|&slot| self.raise(slot, Level::ZERO, level.succ()))
+            .collect();
         // Resolve each member against `slots`, propagating any unsatisfied member as a fresh need.
         let mut providers = Vec::new();
         let mut propagate_needs = Vec::new();
@@ -2503,7 +2519,7 @@ impl<'a> Lower<'a> {
                 providers.push(member);
                 continue;
             }
-            match self.resolve_need(member, slots)? {
+            match self.resolve_need(member, &slots)? {
                 Some(provider) => providers.push(provider),
                 None => {
                     providers.push(member);
