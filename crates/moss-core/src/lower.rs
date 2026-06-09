@@ -1415,7 +1415,15 @@ impl<'a> Lower<'a> {
 
     /// Satisfy a single `need` from the available context `destruct`, building the composite
     /// lambda that provides it, or `None` if nothing in `destruct` does.
-    fn resolve_need(&mut self, need: NodeId, destruct: &[NodeId]) -> LowerResult<Option<NodeId>> {
+    fn resolve_need(
+        &mut self,
+        need: NodeId,
+        destruct: &[NodeId],
+        // The frame `destruct` sits at, threaded into a composite need's nested `extract_ctx` so
+        // already-raised slots are raised by only the per-nesting delta. Top-level callers (whose
+        // `destruct` is un-raised) pass `Level::ZERO`.
+        slots_level: Level,
+    ) -> LowerResult<Option<NodeId>> {
         let (kind, param, level) = match self.node(need) {
             Node::NeedTydef { def, param, level } => (DefKind::Ty(def), param, level),
             Node::NeedSigdef { def, param, level } => (DefKind::Sig(def), param, level),
@@ -1435,7 +1443,20 @@ impl<'a> Lower<'a> {
                     panic!()
                 };
                 let outer = self.ir.lists[items].to_vec();
-                return Ok(Some(self.extract_ctx(level, destruct, def, &outer, true)?));
+                // For a *nested* composite (slots already at `slots_level`), explode at the parent
+                // frame so this composite's members land in the SAME frame as the sibling providers
+                // already in `destruct` -- no re-raise, so the siblings' free references to the
+                // shared enclosing context stay put and match. (A uniform re-raise would shift those
+                // free refs along with the binder frame and mismatch.) Top-level callers
+                // (`slots_level == 0`) keep exploding at the need's own level.
+                let ctx_level = if slots_level > Level::ZERO {
+                    slots_level - Level::ONE
+                } else {
+                    level
+                };
+                return Ok(Some(self.extract_ctx(
+                    ctx_level, destruct, slots_level, def, &outer, true,
+                )?));
             }
             return Ok(None);
         };
@@ -1472,7 +1493,7 @@ impl<'a> Lower<'a> {
                 let mut construct = Vec::new();
                 for loc in needs {
                     let need = self.ir.lists[loc];
-                    match self.resolve_need(need, destruct)? {
+                    match self.resolve_need(need, destruct, Level::ZERO)? {
                         Some(composite) => construct.push(composite),
                         None => return Ok(None),
                     }
@@ -1623,7 +1644,7 @@ impl<'a> Lower<'a> {
         let mut propagate = Vec::new();
         for loc in needs {
             let need = self.ir.lists[loc];
-            match self.resolve_need(need, destruct)? {
+            match self.resolve_need(need, destruct, Level::ZERO)? {
                 Some(composite) => construct.push(composite),
                 None => {
                     // TODO: Instead of clumsily constructing `before` and `after` on the fly here,
@@ -2601,6 +2622,13 @@ impl<'a> Lower<'a> {
         &mut self,
         level: Level,
         slots: &[NodeId],
+        // The de Bruijn frame the incoming `slots` already sit at. Top-level callers pass
+        // `Level::ZERO` (un-raised slots). A *nested* composite synthesis (a composite member of
+        // another composite, reached via `resolve_need`'s composite branch) passes the parent's
+        // member frame, so the slots are raised by only the per-nesting delta rather than the full
+        // `level.succ()` again -- otherwise they would be double-raised and fail to align with this
+        // composite's exploded members.
+        slots_level: Level,
         def: CtxdefId,
         destruct: &[NodeId],
         // When `false`, an unsatisfied member is kept inline (as its own `Need*`) and NOT exposed as
@@ -2633,9 +2661,9 @@ impl<'a> Lower<'a> {
         // frame, while a `slot` is a plain entrypoint at the bare frame. Raising by `level` alone
         // would match only the parameter binder and leave the slots one level shallow -- under-
         // reaching the members by exactly the inner needs binder.
-        let slots: Vec<NodeId> = slots
+        let mut slots: Vec<NodeId> = slots
             .iter()
-            .map(|&slot| self.raise(slot, Level::ZERO, level.succ()))
+            .map(|&slot| self.raise(slot, Level::ZERO, level.succ() - slots_level))
             .collect();
         // Build a map from each nullary type-def bound in the (raised) `slots` to the type it is
         // bound to. A member's abstract reference to such a type (e.g. `Uint32`) is then resolved
@@ -2685,12 +2713,25 @@ impl<'a> Lower<'a> {
             );
             if !is_need {
                 providers.push(member);
+                // Expose this fixed member (e.g. `MulOut=Number`) to *later* members' resolution:
+                // a sibling composite member (e.g. `Mul`, which needs `MulOut`) is synthesized
+                // against `slots`, and its sub-members live among the earlier members of *this*
+                // context, not in the outer `slots`. The member already sits in this composite's
+                // `level.succ()` member frame, matching the (raised) `slots`.
+                slots.push(member);
                 continue;
             }
-            match self.resolve_need(member, &slots)? {
-                Some(provider) => providers.push(provider),
+            // Resolve against the working `slots`, which now carry the frame (`level.succ()`) of
+            // this composite's members -- so a composite member's nested synthesis raises by only
+            // the per-nesting delta (see `slots_level`).
+            match self.resolve_need(member, &slots, level.succ())? {
+                Some(provider) => {
+                    providers.push(provider);
+                    slots.push(provider);
+                }
                 None => {
                     providers.push(member);
+                    slots.push(member);
                     if propagate {
                         propagate_needs.push(member);
                     }
@@ -2983,7 +3024,7 @@ impl<'a> Lower<'a> {
                     Ok(self.mk_node(Node::BindValdef { def, bind }))
                 }
                 Named::Ctxdef(def) => {
-                    let lambda = self.extract_ctx(level.succ(), slots, def, &destruct_lhs, true)?;
+                    let lambda = self.extract_ctx(level.succ(), slots, Level::ZERO, def, &destruct_lhs, true)?;
                     let Ctxdef(target) = self.ir.ctxdefs[def];
                     let (construct_lhs, mut needs_vec) =
                         self.invoke_need(level.succ(), target, &destruct_lhs)?;
@@ -3162,7 +3203,7 @@ impl<'a> Lower<'a> {
                                     def: rhs_def,
                                     param: rhs_param,
                                 });
-                                match self.resolve_need(rhs_need, &destruct_rhs)? {
+                                match self.resolve_need(rhs_need, &destruct_rhs, Level::ZERO)? {
                                     Some(provider) => provider,
                                     None => return Err(LowerError::BindMismatch(bind)),
                                 }
@@ -3929,7 +3970,7 @@ impl LowerBody<'_, '_> {
 
     fn extract_ctx(&mut self, def: CtxdefId) -> LowerResult<NodeId> {
         self.x
-            .extract_ctx(Level::ONE, &self.slots, def, &self.slots, true)
+            .extract_ctx(Level::ONE, &self.slots, Level::ZERO, def, &self.slots, true)
     }
 
     fn inline(&mut self, lambda: NodeId, construct: &[NodeId]) -> LowerResult<NodeId> {
@@ -4469,7 +4510,7 @@ impl LowerBody<'_, '_> {
                         }
                         continue;
                     }
-                    let lambda = self.x.extract_ctx(Level::ONE, &providers, def, &[], false)?;
+                    let lambda = self.x.extract_ctx(Level::ONE, &providers, Level::ZERO, def, &[], false)?;
                     // `extract_ctx` returns `Lambda { needs: [], result: List[members] }`; the
                     // returned context *is* those members, so splice them in directly.
                     let Node::Lambda { result, .. } = self.x.node(lambda) else {
@@ -4482,7 +4523,7 @@ impl LowerBody<'_, '_> {
                 }
                 // A non-context need in the return annotation provides itself (resolved against the
                 // body's bindings if possible).
-                _ => match self.x.resolve_need(need, &providers)? {
+                _ => match self.x.resolve_need(need, &providers, Level::ZERO)? {
                     Some(provider) => assembled.push(provider),
                     None => assembled.push(need),
                 },
