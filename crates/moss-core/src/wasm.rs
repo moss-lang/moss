@@ -303,11 +303,34 @@ impl<'a> Wasm<'a> {
         self.mkenv(&[])
     }
 
-    /// Look up a need-node in an environment.
+    /// The contextual-definition identity of a `Need*` node: its kind and `def`. Two references to
+    /// the same contextual definition that differ only in de Bruijn level or via-`param` are
+    /// distinct nodes but share this key.
+    fn need_key(&self, node: lower::NodeId) -> Option<(u8, usize)> {
+        Some(match self.ir.nodes[node.index()] {
+            lower::Node::NeedTydef { def, .. } => (0, def.index()),
+            lower::Node::NeedSigdef { def, .. } => (1, def.index()),
+            lower::Node::NeedValdef { def, .. } => (2, def.index()),
+            lower::Node::NeedCtxdef { def, .. } => (3, def.index()),
+            _ => return None,
+        })
+    }
+
+    /// Look up a need-node in an environment. First by exact node; then, since the same contextual
+    /// definition is referenced by distinct nodes at different de Bruijn levels (the env binds it
+    /// once), fall back to matching by contextual-definition identity `(kind, def)`.
     fn env_get(&self, env: EnvId, node: lower::NodeId) -> Option<ObjectId> {
-        self.envs[env.index()]
+        if let Some(o) = self.envs[env.index()]
             .iter()
             .find(|(n, _)| *n == node)
+            .map(|(_, o)| *o)
+        {
+            return Some(o);
+        }
+        let key = self.need_key(node)?;
+        self.envs[env.index()]
+            .iter()
+            .find(|(n, _)| self.need_key(*n) == Some(key))
             .map(|(_, o)| *o)
     }
 
