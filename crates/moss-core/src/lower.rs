@@ -2953,7 +2953,36 @@ impl<'a> Lower<'a> {
                         });
                         Ok(self.mk_node(Node::BindValdef { def, bind }))
                     }
-                    Named::Ctxdef(_) => Err(LowerError::BindContext(bind)),
+                    Named::Ctxdef(def) => {
+                        let lambda = match rhs {
+                            Named::Ctxdef(rhs_def) => {
+                                self.extract(level.succ(), slots, DefKind::Ctx(rhs_def), &destruct_rhs)?
+                            }
+                            _ => return Err(LowerError::BindMismatch(bind)),
+                        };
+                        let Ctxdef(target_lhs) = self.ir.ctxdefs[def];
+                        let (construct_lhs, mut needs_vec) =
+                            self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
+                        let needs = self.mk_node_list(&needs_vec);
+                        let args_lhs = self.mk_node_list(&construct_lhs);
+                        destruct_rhs.append(&mut needs_vec);
+                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
+                        let args_rhs = self.mk_node_list(&construct_rhs);
+                        let bind = self.mk_node(Node::Apply {
+                            lambda,
+                            args: args_rhs,
+                        });
+                        let result = self.mk_node(Node::Bind {
+                            args: args_lhs,
+                            bind,
+                        });
+                        let bind = self.mk_node(Node::Lambda {
+                            level: level.succ(),
+                            needs,
+                            result,
+                        });
+                        Ok(self.mk_node(Node::BindCtxdef { def, bind }))
+                    }
                     Named::Module(_) => Err(LowerError::BindModule(bind)),
                     Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
                     Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),

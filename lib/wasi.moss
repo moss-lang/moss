@@ -301,6 +301,15 @@ fn bootstrap[Bootstrap](): bind Std {
     ops::ge[Bool, Lhs=Int, Rhs=Int]=wasm::i32_ge_s,
     # TODO: .to_string
 
+    # Bridge each numeric type's digit context to the underlying Wasm type's, so
+    # that integer/string literals (which desugar to digit arithmetic) resolve.
+    Numerals[Number=Uint32]=Numerals[Number=I32],
+    Numerals[Number=Int32]=Numerals[Number=I32],
+    Numerals[Number=Uint64]=Numerals[Number=I64],
+    Numerals[Number=Int64]=Numerals[Number=I64],
+    Numerals[Number=Uint]=Numerals[Number=I32],
+    Numerals[Number=Int]=Numerals[Number=I32],
+
     # TODO: print
 }
 
