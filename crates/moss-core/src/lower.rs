@@ -1375,6 +1375,44 @@ impl<'a> Lower<'a> {
         Ok(items_result)
     }
 
+    /// If one of `binds` is a call that *forwards* the whole composite context `target` -- i.e. a
+    /// context-returning function call whose return type is `bind <target>` (`std`'s
+    /// `bind bootstrap()`, where `bootstrap: bind Std`) -- return that call node together with the
+    /// number of members `target` has. The call's runtime value is those members flattened in
+    /// ctxdef order, so the caller can forward member `k` as `Get { ctx: call, slot: k }`.
+    fn forwarding_bind(
+        &mut self,
+        binds: &[NodeId],
+        target: CtxdefId,
+    ) -> LowerResult<Option<(NodeId, usize)>> {
+        for &bind in binds {
+            let reduced = self.reduce(bind)?;
+            let Node::Sig { result: ret, .. } = self.node(reduced) else {
+                continue;
+            };
+            let ret = self.reduce(ret)?;
+            let Node::Lambda { result: ret_list, .. } = self.node(ret) else {
+                continue;
+            };
+            let Node::List { items } = self.node(ret_list) else {
+                continue;
+            };
+            // Only a single-context return (`bind Std`) is a pure forward.
+            let [only] = self.ir.lists[items] else {
+                continue;
+            };
+            let Node::NeedCtxdef { level, def, param } = self.node(only) else {
+                continue;
+            };
+            if def != target {
+                continue;
+            }
+            let members = self.explode(level, def, param)?;
+            return Ok(Some((bind, self.ir.lists[members].len())));
+        }
+        Ok(None)
+    }
+
     /// Satisfy a single `need` from the available context `destruct`, building the composite
     /// lambda that provides it, or `None` if nothing in `destruct` does.
     fn resolve_need(&mut self, need: NodeId, destruct: &[NodeId]) -> LowerResult<Option<NodeId>> {
@@ -1875,11 +1913,9 @@ impl<'a> Lower<'a> {
     ) -> LowerResult<Option<(NodeId, NodeId)>> {
         match self.node(slot) {
             // A slot whose shape is not one of the matchable forms below simply does not provide
-            // this need. (These were `todo!()`; they get reached when assembling a `bind <Ctx>`
-            // return member-wise against providers that include desugared value bindings such as
-            // `false = 0`, whose value reduces to an `Apply` of literal/digit functions. Treating
-            // them as "no match" lets ctxdef-order assembly keep an unprovided member inline rather
-            // than panic. TODO: match these shapes properly when such a slot should provide.)
+            // this need. (Reached when assembling a `bind <Ctx>` return member-wise against
+            // providers that include desugared value bindings such as `false = 0`, whose value
+            // reduces to a non-context.)
             Node::Nothing | Node::Lambda { .. } | Node::Apply { .. } | Node::List { .. } => Ok(None),
             Node::NeedTydef { def, param, .. } => {
                 self.match_need(kind, DefKind::Ty(def), slot, lambda, param)
@@ -4172,14 +4208,29 @@ impl LowerBody<'_, '_> {
         let Node::List { items: binds } = self.x.node(ctx) else {
             panic!("bind ctx is not a list")
         };
+        let bind_nodes: Vec<NodeId> = self.x.ir.lists[binds].to_vec();
         let mut providers = self.slots.clone();
-        providers.extend(self.x.ir.lists[binds].iter().copied());
+        providers.extend(bind_nodes.iter().copied());
         // Assemble each annotated context in ctxdef order. (In practice a `bind <Ctx>` return names
         // exactly one composite context, e.g. `Std`.)
         let mut assembled = Vec::new();
         for need in self.x.ir.lists[ret_needs].to_vec() {
             match self.x.node(need) {
                 Node::NeedCtxdef { def, .. } => {
+                    // If a single body binding *forwards* this exact context -- e.g. `std`'s
+                    // `bind bootstrap()`, where `bootstrap` returns `bind Std` -- its members can't
+                    // be re-resolved member-by-member (they're sealed inside that call's returned
+                    // context). Instead forward them positionally: the call's runtime value (via the
+                    // backend's `eval_ctx_body`) is the members flattened in ctxdef order, so member
+                    // `k` is `Get { ctx: <call>, slot: k }`.
+                    let forwarded = self.x.forwarding_bind(&bind_nodes, def)?;
+                    if let Some((call, count)) = forwarded {
+                        for k in 0..count {
+                            let id = SlotId::from_usize(k);
+                            assembled.push(self.x.mk_node(Node::Get { ctx: call, slot: id }));
+                        }
+                        continue;
+                    }
                     let lambda = self.x.extract_ctx(Level::ONE, &providers, def, &[], false)?;
                     // `extract_ctx` returns `Lambda { needs: [], result: List[members] }`; the
                     // returned context *is* those members, so splice them in directly.
