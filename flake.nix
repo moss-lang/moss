@@ -43,16 +43,22 @@
           src = filterSource [ "/Cargo.toml" "/Cargo.lock" "/crates" ] ./.;
           strictDeps = true;
         };
+        # Bundle the Moss standard library next to `bin/`, where `get_lib_dir` (in
+        # `crates/moss-core/src/prelude.rs`) expects it when `MOSS_LIB` is unset.
+        libFixup = ''
+          mkdir -p $out/lib
+          cp -a ${./lib}/. $out/lib/
+        '';
         # `cargoExtraArgs` default is "--locked": https://crane.dev/API.html
         cliArgs = {
           cargoExtraArgs = "--locked --package=moss-cli";
-          postFixup = ''
-            mkdir -p $out/lib
-            cp -a ${./lib}/. $out/lib/
-          '';
+          postFixup = libFixup;
         };
         devArgs = {
           cargoExtraArgs = "--locked --package=moss-dev";
+          # `dev test` lowers the error-suite sources in-process, so `dev` needs the standard
+          # library exactly like the `moss` CLI does.
+          postFixup = libFixup;
         };
         craneLib = crane.mkLib prev;
         cacheArgs = {
