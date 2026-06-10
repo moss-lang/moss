@@ -199,6 +199,13 @@ enum MatchMode {
     /// so bindings stay observable, and lets a `BindDef` dominate the `Need` of the same
     /// definition.
     Spec,
+    /// Equality of fully *reduced* canonical values ([`Lower::unique_option`]'s collapse of
+    /// candidates that denote the same value via different routes). Like [`MatchMode::Equiv`],
+    /// except a stuck need is identified by its definition and arguments alone: the same
+    /// context member reached directly and through a nested context materializes its free
+    /// references at different de Bruijn depths (which can even collide numerically with the
+    /// compared binders), yet denotes the same thing, so levels are not compared at all.
+    Value,
 }
 
 /// A mapping from [`Level`] to [`Level`].
@@ -839,6 +846,8 @@ pub enum LowerError {
     ThisNotMethod(ExprId),
     Overflow(ExprId),
     BindMissing(parse::BindId),
+    ArgCount(ExprId),
+    Unresolved,
 }
 
 impl LowerError {
@@ -921,6 +930,11 @@ impl LowerError {
                 Some(ctx.bind(bind)),
                 "`bind` missing an actual binding".to_owned(),
             ),
+            LowerError::ArgCount(expr) => (
+                Some(ctx.expr(expr)),
+                "wrong number of arguments".to_owned(),
+            ),
+            LowerError::Unresolved => (None, "cannot resolve from context".to_owned()),
         }
     }
 }
@@ -1448,6 +1462,17 @@ impl<'a> Lower<'a> {
             panic!() // a needs list contains only `Need` nodes
         };
         let Some((callee, synth)) = self.extract_lambda(destruct, kind, param)? else {
+            if std::env::var("MOSS_DBG_RESOLVE").is_ok()
+                && let DefKind::Ctx(_) = kind
+            {
+                eprintln!(
+                    "resolve_need FALLBACK to member-wise synthesis: kind={kind:?} level={level} slots_level={slots_level}"
+                );
+                self.dbg_tree("need param", param, 0);
+                for (i, &slot) in destruct.iter().enumerate() {
+                    self.dbg_tree(&format!("slot {i}"), slot, 0);
+                }
+            }
             // No single slot provides this need. A composite context can instead be *synthesized*
             // from its members scattered across `destruct` (e.g. `Bootstrap` assembled from `Wasi`
             // plus the type bindings supplied at a call site).
@@ -1561,7 +1586,7 @@ impl<'a> Lower<'a> {
     }
 
     fn invoke_force(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Vec<NodeId>> {
-        Ok(self.invoke(lambda, destruct)?.unwrap()) // TODO: Return an actual error here.
+        self.invoke(lambda, destruct)?.ok_or(LowerError::Unresolved)
     }
 
     fn invoke_need(
@@ -1666,7 +1691,7 @@ impl<'a> Lower<'a> {
         // comparable. `Spec` must not project bindings away (`head_reduce`), since the binding is
         // exactly what makes a candidate more specific.
         let (a, b) = match mode {
-            MatchMode::Equiv => (self.reduce(a)?, self.reduce(b)?),
+            MatchMode::Equiv | MatchMode::Value => (self.reduce(a)?, self.reduce(b)?),
             MatchMode::Spec => (self.head_reduce(a)?, self.head_reduce(b)?),
         };
         let a = self.peel_nullary_apply(a);
@@ -1729,7 +1754,10 @@ impl<'a> Lower<'a> {
                     param: pb,
                 },
             ) => Ok(da == db
-                && env.a_of_b[lb] == la
+                // Levels must correspond through the renaming -- except in [`MatchMode::Value`],
+                // which compares fully reduced values where a stuck need is identified by its
+                // definition and arguments alone.
+                && (mode == MatchMode::Value || env.a_of_b[lb] == la)
                 && self.match_terms(mode, env, constraints, pa, pb)?),
             (
                 Node::Get {
@@ -2059,10 +2087,37 @@ impl<'a> Lower<'a> {
         for &composite in &composites {
             canon.push(self.reduce_composite(composite)?);
         }
-        if let Some(&first) = canon.first()
-            && canon.iter().all(|&c| c == first)
-        {
-            return Ok(Some(options[0]));
+        if let Some(&first) = canon.first() {
+            let mut all_same = true;
+            for &c in &canon[1..] {
+                // Compare canonical values with the level-insensitive [`MatchMode::Value`]: the
+                // same member reached directly vs through a nested context reduces to the same
+                // stuck need materialized at different depths. An unimplemented comparison
+                // (`Err`) conservatively counts as a difference, leaving the result ambiguous.
+                let same = c == first
+                    || self
+                        .match_terms(
+                            MatchMode::Value,
+                            &Renaming::identity(),
+                            &mut HashMap::new(),
+                            first,
+                            c,
+                        )
+                        .unwrap_or(false);
+                if !same {
+                    all_same = false;
+                    break;
+                }
+            }
+            if all_same {
+                return Ok(Some(options[0]));
+            }
+        }
+        if std::env::var("MOSS_DBG_RESOLVE").is_ok() {
+            eprintln!("unique_option AMBIGUOUS: {} candidates", options.len());
+            for (i, &c) in canon.iter().enumerate() {
+                self.dbg_tree(&format!("canon {i}"), c, 0);
+            }
         }
         Ok(None)
     }
@@ -2232,7 +2287,49 @@ impl<'a> Lower<'a> {
         });
         match self.extract_lambda(slots, kind, lambda)? {
             Some((node, _)) => Ok(node),
-            None => Err(todo!()),
+            None => {
+                if std::env::var("MOSS_DBG_RESOLVE").is_ok() {
+                    eprintln!("extract FAILED: kind={kind:?} level={level}");
+                    self.dbg_tree("need lambda", lambda, 0);
+                    for (i, &slot) in slots.iter().enumerate() {
+                        self.dbg_tree(&format!("slot {i}"), slot, 0);
+                    }
+                }
+                Err(LowerError::Unresolved)
+            }
+        }
+    }
+
+    /// Debug helper (the lowering analogue of `wasm.rs`'s `dbg_node`): print the tree under
+    /// `node`. Used by the `MOSS_DBG_RESOLVE`-gated dumps of failed/ambiguous resolutions.
+    fn dbg_tree(&self, tag: &str, node: NodeId, depth: usize) {
+        if depth > 8 {
+            return;
+        }
+        let n = self.node(node);
+        eprintln!("{}{tag} %{} = {n:?}", "  ".repeat(depth), node.index());
+        let kids: Vec<NodeId> = match n {
+            Node::Lambda { needs, result, .. } => self.ir.lists[needs]
+                .iter()
+                .copied()
+                .chain([result])
+                .collect(),
+            Node::Apply { lambda, args } => [lambda]
+                .into_iter()
+                .chain(self.ir.lists[args].iter().copied())
+                .collect(),
+            Node::List { items } | Node::Tuple { elems: items } => self.ir.lists[items].to_vec(),
+            Node::Need { param, .. } => vec![param],
+            Node::Get { ctx, .. } => vec![ctx],
+            Node::Bind { args, bind } => {
+                self.ir.lists[args].iter().copied().chain([bind]).collect()
+            }
+            Node::BindDef { bind, .. } => vec![bind],
+            Node::Sig { param, result } => vec![param, result],
+            _ => vec![],
+        };
+        for k in kids {
+            self.dbg_tree("", k, depth + 1);
         }
     }
 
@@ -2690,8 +2787,12 @@ impl<'a> Lower<'a> {
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(def) => {
                     let Valdef(target) = self.ir.valdefs[def];
+                    // As in `need_bind`: the bound definition's own needs resolve against the
+                    // ambient context as well as the spec's attached bindings.
+                    let mut destruct_all = slots.to_vec();
+                    destruct_all.extend(destruct_lhs.iter().copied());
                     let (construct, needs) =
-                        self.invoke_need(level.succ(), target, &destruct_lhs)?;
+                        self.invoke_need(level.succ(), target, &destruct_all)?;
                     let needs = self.mk_node_list(&needs);
                     let (val, _) = self.lit(token)?;
                     let bind = self.mk_node(Node::Lit { val });
@@ -2785,7 +2886,22 @@ impl<'a> Lower<'a> {
             None => {
                 let (lhs, destruct) = self.spec(level, slots, key)?;
                 let def = Self::bind_def_kind(lhs, bind)?;
-                let node = self.mk_need_def(level, def, &destruct)?;
+                // At declaration level, the need's parameters resolve against everything in
+                // scope at its introduction: the ambient `slots` (e.g. a file-level
+                // `assume Std`) as well as the spec's own attached bindings. Resolving against
+                // the same scope that later call sites and bodies use keeps the need's
+                // parameter construct in the same *shape* those sites build, so provider
+                // matching compares like against like. Composite-context members (lowered at
+                // deeper levels) keep resolving against only their attached bindings: their
+                // sibling slots are *open* member needs, not the providers a use site sees.
+                let destruct_all = if level == Level::ZERO {
+                    let mut all = slots.to_vec();
+                    all.extend(destruct);
+                    all
+                } else {
+                    destruct
+                };
+                let node = self.mk_need_def(level, def, &destruct_all)?;
                 params.push(node);
                 Ok(node)
             }
@@ -3317,6 +3433,21 @@ impl LowerBody<'_, '_> {
         Ok(self.x.mk_node(Node::Apply { lambda, args }))
     }
 
+    /// The nullary type definition a type node refers to, if its reduced head is an abstract
+    /// type reference. Used to recover the operand type for the `Lhs`/`Rhs`/`This`
+    /// disambiguating bindings of operator and method desugars.
+    fn tydef_of(&mut self, ty: NodeId) -> LowerResult<Option<TydefId>> {
+        let reduced = self.x.reduce(ty)?;
+        let peeled = self.x.peel_nullary_apply(reduced);
+        Ok(match self.x.node(peeled) {
+            Node::Need {
+                def: DefKind::Ty(def),
+                ..
+            } => Some(def),
+            _ => None,
+        })
+    }
+
     /// Apply a binary arithmetic operation `sigdef` (`add` or `mul`) at type `ty` to `lhs`/`rhs`,
     /// resolving the operation under the bindings `Lhs=ty, Rhs=ty` so that `Std`'s per-type
     /// `Arithmetic[Number=...]` entries do not make it ambiguous.
@@ -3431,7 +3562,14 @@ impl LowerBody<'_, '_> {
 
     /// Get the nominal type definition of a value, or [`None`] if the value is not nominally typed.
     fn nominal(&self, ty: NodeId) -> Option<TagdefId> {
-        todo!()
+        let mut node = ty;
+        loop {
+            match self.x.node(node) {
+                Node::Apply { lambda, .. } => node = lambda,
+                Node::Tagdef { def } => return Some(def),
+                _ => return None,
+            }
+        }
     }
 
     /// Get the fields of a record type.
@@ -3478,6 +3616,23 @@ impl LowerBody<'_, '_> {
         } else {
             None
         }
+    }
+
+    /// Check that a call's argument count matches the function's parameter tuple, with a real
+    /// error (rather than a structural type mismatch) when it doesn't.
+    fn expect_arg_count(
+        &mut self,
+        expr: ExprId,
+        ty_param: NodeId,
+        count: usize,
+    ) -> LowerResult<()> {
+        let reduced = self.x.reduce(ty_param)?;
+        if let Node::Tuple { elems } = self.x.node(reduced)
+            && elems.len() != count
+        {
+            return Err(LowerError::ArgCount(expr));
+        }
+        Ok(())
     }
 
     /// Check that an `actual` type matches an `expected` type, up to reduction.
@@ -3606,9 +3761,39 @@ impl LowerBody<'_, '_> {
                     return Err(LowerError::NotVal(path.last));
                 };
                 let Valdef(body) = self.x.ir.valdefs[valdef];
-                let val = self.extract_val(valdef)?;
-                let construct = self.invoke_force(val)?;
-                let ty = self.inline(body, &construct)?;
+                let val = self.extract_val(valdef).map_err(|err| match err {
+                    // `this` is an ordinary contextual value; only methods have it in scope, so
+                    // failing to resolve it gets the dedicated error.
+                    LowerError::Unresolved if valdef == self.base().this_val => {
+                        LowerError::ThisNotMethod(expr)
+                    }
+                    other => other,
+                })?;
+                // A provider that reduces to a ground string/char literal (e.g. the call-site
+                // binding `string="hello"`) cannot be materialized statically by the backend;
+                // desugar it here exactly like a source literal of the same value.
+                let args = self.x.mk_node_list(&[]);
+                let applied = self.x.mk_node(Node::Apply { lambda: val, args });
+                if let Ok(reduced) = self.x.reduce(applied)
+                    && let Node::Lit { val: lit } = self.x.node(reduced)
+                {
+                    match lit {
+                        Val::String(s) => {
+                            let chars: Vec<char> = self.x.ir.strings[s].chars().collect();
+                            return self.string_lit(&chars);
+                        }
+                        Val::Char(c) => return self.char_lit(c),
+                        _ => {}
+                    }
+                }
+                // The value's type is the valdef's declared type with the valdef's own needs
+                // resolved against the ambient context -- NOT the provider's construct: a fully
+                // applied provider (e.g. `true[Bool]` inside `Std`) has no needs left, while the
+                // declared type still mentions the valdef's parameters (e.g. `Bool`).
+                let raised = self.x.raise(body, Level::ZERO, Level::ONE);
+                let slots = self.slots.clone();
+                let (construct, _) = self.x.invoke_need(Level::ONE, raised, &slots)?;
+                let ty = self.inline(raised, &construct)?;
                 Ok(self.instr(ty, Expr::Val { val }))
             }
             parse::Expr::Tag(path, inner) => {
@@ -3659,13 +3844,22 @@ impl LowerBody<'_, '_> {
             parse::Expr::Method(object, method, arguments) => {
                 let obj = self.expr(object)?;
                 let name = self.x.name(method);
-                // TODO: Contextually set `this` to `obj`.
+                // A detached method is declared once but provided per receiver type (e.g.
+                // `Std`'s six `.to_string[This=...]` instances); bind `This` to the receiver's
+                // type so resolution picks that receiver's instance. The bound implementation
+                // takes the receiver as its first runtime parameter.
+                let mut slots = self.slots.clone();
+                if let Some(obj_tydef) = self.tydef_of(obj.ty)? {
+                    let this = self.base().this;
+                    let bind = self.x.bind_tydef(Level::ZERO, &self.slots, this, obj_tydef)?;
+                    slots.push(bind);
+                }
                 let lambda = match self.method(obj.ty, name) {
-                    Some(NamedFn::Sigdef(sigdef)) => self.extract_sig(sigdef)?,
+                    Some(NamedFn::Sigdef(sigdef)) => self.extract_sig_in(&slots, sigdef)?,
                     Some(NamedFn::Fndef(fndef)) => self.x.mk_node(Node::Fndef { def: fndef }),
                     None => return Err(LowerError::Undefined(method)),
                 };
-                let construct = self.invoke_force(lambda)?;
+                let construct = self.x.invoke_force(lambda, &slots)?;
                 let args = self.x.mk_node_list(&construct);
                 let func = self.x.mk_node(Node::Apply { lambda, args });
                 let (ty_param, ty_result) = self.sig(func)?;
@@ -3673,21 +3867,29 @@ impl LowerBody<'_, '_> {
                     .into_iter()
                     .map(|arg| self.expr(arg))
                     .collect::<LowerResult<Vec<Typed>>>()?;
-                let (args_ty, args_val): (Vec<_>, Vec<_>) =
+                let (mut args_ty, mut args_val): (Vec<_>, Vec<_>) =
                     lowered.into_iter().map(|arg| (arg.ty, arg.val)).unzip();
+                args_ty.insert(0, obj.ty);
+                args_val.insert(0, obj.val);
+                self.expect_arg_count(expr, ty_param, args_ty.len())?;
                 let ty_args = self.ty_tuple(&args_ty);
                 self.expect_ty(ty_param, ty_args)?;
                 let arg = self.instr_tuple(ty_args, &args_val).val;
                 Ok(self.instr(ty_result, Expr::Call { func, arg }))
             }
             parse::Expr::Call(callee, binds, arguments) => {
-                // TODO: Handle bindings attached to function calls.
                 let lambda = match self.x.path(callee)? {
                     Named::Sigdef(sigdef) => self.extract_sig(sigdef)?,
                     Named::Fndef(fndef) => self.x.mk_node(Node::Fndef { def: fndef }),
                     _ => return Err(LowerError::NotFn(callee.last)),
                 };
-                let construct = self.invoke_force(lambda)?;
+                // The callee's needs resolve against the ambient context plus the call's own
+                // `[..]` bindings, exactly as in `composite_bind`.
+                let mut destruct = self.slots.clone();
+                for bind in binds {
+                    destruct.push(self.x.bind(Level::ZERO, &self.slots, bind)?);
+                }
+                let construct = self.x.invoke_force(lambda, &destruct)?;
                 let args = self.x.mk_node_list(&construct);
                 let func = self.x.mk_node(Node::Apply { lambda, args });
                 let (ty_param, ty_result) = self.sig(func)?;
@@ -3697,6 +3899,7 @@ impl LowerBody<'_, '_> {
                     .collect::<LowerResult<Vec<Typed>>>()?;
                 let (args_ty, args_val): (Vec<_>, Vec<_>) =
                     lowered.into_iter().map(|arg| (arg.ty, arg.val)).unzip();
+                self.expect_arg_count(expr, ty_param, args_ty.len())?;
                 let ty_args = self.ty_tuple(&args_ty);
                 self.expect_ty(ty_param, ty_args)?;
                 let arg = self.instr_tuple(ty_args, &args_val).val;
@@ -3712,24 +3915,31 @@ impl LowerBody<'_, '_> {
             parse::Expr::Binary(left, op, right) => {
                 let l = self.expr(left)?;
                 let r = self.expr(right)?;
-                match op {
-                    Binop::Eq => Err(self.x.todo_no_loc()),
-                    Binop::Ne => Err(self.x.todo_no_loc()),
-                    Binop::Lt => Err(self.x.todo_no_loc()),
-                    Binop::Gt => Err(self.x.todo_no_loc()),
-                    Binop::Le => Err(self.x.todo_no_loc()),
-                    Binop::Ge => Err(self.x.todo_no_loc()),
-                    Binop::Add => Err(self.x.todo_no_loc()),
-                    Binop::Sub => Err(self.x.todo_no_loc()),
-                    Binop::Mul => Err(self.x.todo_no_loc()),
-                    Binop::Div => Err(self.x.todo_no_loc()),
-                    Binop::Rem => Err(self.x.todo_no_loc()),
-                    Binop::Shl => Err(self.x.todo_no_loc()),
-                    Binop::Shr => Err(self.x.todo_no_loc()),
-                    Binop::And => Err(self.x.todo_no_loc()),
-                    Binop::Or => Err(self.x.todo_no_loc()),
-                    Binop::Xor => Err(self.x.todo_no_loc()),
-                }
+                let arith = self.base().arith;
+                let sigdef = match op {
+                    Binop::Eq => arith.eq,
+                    Binop::Ne => arith.ne,
+                    Binop::Lt => arith.lt,
+                    Binop::Gt => arith.gt,
+                    Binop::Le => arith.le,
+                    Binop::Ge => arith.ge,
+                    Binop::Add => arith.add,
+                    Binop::Sub => arith.sub,
+                    Binop::Mul => arith.mul,
+                    Binop::Div => arith.div,
+                    Binop::Rem => arith.rem,
+                    Binop::Shl => arith.shl,
+                    Binop::Shr => arith.shr,
+                    Binop::And => arith.and,
+                    Binop::Or => arith.or,
+                    Binop::Xor => arith.xor,
+                };
+                // Desugar to the contextual operation, disambiguated at the left operand's type
+                // (mixed-type operations are not supported yet).
+                let Some(ty) = self.tydef_of(l.ty)? else {
+                    return Err(self.x.todo_no_loc());
+                };
+                self.op2(ty, sigdef, l, r)
             }
             parse::Expr::If(cond, yes, no) => {
                 let unit = self.x.ty_unit();

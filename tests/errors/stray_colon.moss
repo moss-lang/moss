@@ -1,2 +1,2 @@
 fn foo(): ;
-#         ^ expected name
+#         ^ expected `{` or name

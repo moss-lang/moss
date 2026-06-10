@@ -58,11 +58,27 @@ pub struct Builders {
     pub build: SigdefId,
 }
 
-/// The arithmetic operations (and their output types) used to combine numeric digits.
+/// The contextual operator surface from `ops.moss`: the binary operations (used both by the
+/// numeric-literal desugar and by binary-operator expressions) and their `Lhs`/`Rhs`
+/// disambiguation types.
 #[derive(Clone, Copy, Debug)]
 pub struct Arith {
     pub add: SigdefId,
+    pub sub: SigdefId,
     pub mul: SigdefId,
+    pub div: SigdefId,
+    pub rem: SigdefId,
+    pub shl: SigdefId,
+    pub shr: SigdefId,
+    pub and: SigdefId,
+    pub or: SigdefId,
+    pub xor: SigdefId,
+    pub eq: SigdefId,
+    pub ne: SigdefId,
+    pub lt: SigdefId,
+    pub gt: SigdefId,
+    pub le: SigdefId,
+    pub ge: SigdefId,
     pub add_out: TydefId,
     pub mul_out: TydefId,
     pub lhs: TydefId,
@@ -72,6 +88,12 @@ pub struct Arith {
 #[derive(Clone, Copy, Debug)]
 pub struct Base {
     pub types: Types,
+    /// The `This` type from `this.moss`: a method call binds it to the receiver's type to pick
+    /// the receiver-specific instance of a detached method (e.g. `.to_string[This=Int]`).
+    pub this: TydefId,
+    /// The `this` contextual value from `this.moss`: failing to resolve it means the enclosing
+    /// function is not a method, which has its own dedicated error.
+    pub this_val: ValdefId,
     /// The digit/radix values, or [`None`] before the prelude module that declares them
     /// (`std.moss`) has been lowered. The precompile fills this in as soon as `std.moss` is
     /// lowered, so it is always [`Some`] by the time any module containing a numeric literal is
@@ -197,11 +219,13 @@ impl Precompile {
         let path_char = self.ir.strings.make_id("./char.moss");
         let path_string = self.ir.strings.make_id("./string.moss");
         let path_ops = self.ir.strings.make_id("./ops.moss");
+        let path_this = self.ir.strings.make_id("./this.moss");
         let literal = self.lib(path_literal)?;
         let int = self.lib(path_int)?;
         let char = self.lib(path_char)?;
         let string = self.lib(path_string)?;
         let ops = self.lib(path_ops)?;
+        let this = self.lib(path_this)?;
         let base_types = Types {
             uint32: tydef(&self.ir, &self.names, int, "Uint32"),
             int32: tydef(&self.ir, &self.names, int, "Int32"),
@@ -220,7 +244,21 @@ impl Precompile {
         };
         let base_arith = Arith {
             add: sigdef(&self.ir, &self.names, ops, "add"),
+            sub: sigdef(&self.ir, &self.names, ops, "sub"),
             mul: sigdef(&self.ir, &self.names, ops, "mul"),
+            div: sigdef(&self.ir, &self.names, ops, "div"),
+            rem: sigdef(&self.ir, &self.names, ops, "rem"),
+            shl: sigdef(&self.ir, &self.names, ops, "shl"),
+            shr: sigdef(&self.ir, &self.names, ops, "shr"),
+            and: sigdef(&self.ir, &self.names, ops, "and"),
+            or: sigdef(&self.ir, &self.names, ops, "or"),
+            xor: sigdef(&self.ir, &self.names, ops, "xor"),
+            eq: sigdef(&self.ir, &self.names, ops, "eq"),
+            ne: sigdef(&self.ir, &self.names, ops, "ne"),
+            lt: sigdef(&self.ir, &self.names, ops, "lt"),
+            gt: sigdef(&self.ir, &self.names, ops, "gt"),
+            le: sigdef(&self.ir, &self.names, ops, "le"),
+            ge: sigdef(&self.ir, &self.names, ops, "ge"),
             add_out: tydef(&self.ir, &self.names, ops, "AddOut"),
             mul_out: tydef(&self.ir, &self.names, ops, "MulOut"),
             lhs: tydef(&self.ir, &self.names, ops, "Lhs"),
@@ -231,6 +269,8 @@ impl Precompile {
         // been lowered (before any later module's literals are desugared).
         self.base = Some(Base {
             types: base_types,
+            this: tydef(&self.ir, &self.names, this, "This"),
+            this_val: valdef(&self.ir, &self.names, this, "this"),
             numerals: None,
             builders: base_builders,
             arith: base_arith,

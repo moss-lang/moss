@@ -251,6 +251,10 @@ enum Object {
     /// A 32-bit unsigned integer constant.
     ValU32(u32),
 
+    /// A static string value, materialized on demand by copying its bytes to the heap and
+    /// leaving the `(ptr, len)` pair (the `String`/`StringBuilder` layout) on the stack.
+    ValStr(StrId),
+
     /// A dynamic value with a type, stored in Wasm locals starting at a given index.
     ValDyn(ObjectId, LocalId),
 
@@ -529,6 +533,9 @@ impl<'a> Wasm<'a> {
     fn fold_lit(&mut self, val: lower::Val) -> ObjectId {
         match val {
             lower::Val::Uint31(n) | lower::Val::Uint32(n) => self.mkobj(Object::ValU32(n)),
+            // A char is its code point (`Char` = i32, ASCII for now), like `char_from_codepoint`.
+            lower::Val::Char(c) => self.mkobj(Object::ValU32(c as u32)),
+            lower::Val::String(s) => self.mkobj(Object::ValStr(s)),
             other => todo!("fold_lit: {other:?} (milestone B2)"),
         }
     }
@@ -729,6 +736,7 @@ impl<'a> Wasm<'a> {
             | Object::Thunk(_, _)
             | Object::Closure(_, _)
             | Object::ValU32(_)
+            | Object::ValStr(_)
             | Object::ValDyn(_, _)
             | Object::ValStmt
             | Object::Ctx(_) => panic!(),
@@ -1119,6 +1127,32 @@ impl<'a> Wasm<'a> {
             Object::ValU32(n) => {
                 self.body.insn().i32_const(n as i32);
             }
+            // A static string: bump-allocate its length (as `string_builder` does), store each
+            // byte (as `set_char` does), and leave the `(ptr, len)` pair on the stack.
+            Object::ValStr(s) => {
+                let bytes: Vec<u8> = self.ir.strings[s].bytes().collect();
+                let ptr = self.tmp();
+                self.body.insn().global_get(self.heap_global).local_set(ptr);
+                self.body
+                    .insn()
+                    .global_get(self.heap_global)
+                    .i32_const(bytes.len() as i32)
+                    .i32_add()
+                    .global_set(self.heap_global);
+                for (i, &b) in bytes.iter().enumerate() {
+                    let store8 = MemArg {
+                        offset: i as u64,
+                        align: 0,
+                        memory_index: MEMIDX_WASI,
+                    };
+                    self.body
+                        .insn()
+                        .local_get(ptr)
+                        .i32_const(b as i32)
+                        .i32_store8(store8);
+                }
+                self.body.insn().local_get(ptr).i32_const(bytes.len() as i32);
+            }
             Object::ValDyn(ty, start) => self.get_locals(ty, start),
             other => todo!("materialize: {other:?}"),
         }
@@ -1266,7 +1300,19 @@ impl<'a> Wasm<'a> {
                 self.get_locals(self.tuples[elem], start);
             }
             Expr::Val { val } => {
-                let obj = self.eval(val, env);
+                let mut obj = self.eval(val, env);
+                // A contextual value can surface as a closure over its binding's lambda (e.g. a
+                // `BindDef` member like `true=1` reached through a context projection). With no
+                // needs left to supply, applying it to nothing projects out the bound value.
+                while let Object::Closure(lnode, _) = self.obj(obj) {
+                    let lower::Node::Lambda { needs, .. } = self.ir.nodes[lnode.index()] else {
+                        break;
+                    };
+                    if !needs.is_empty() {
+                        break;
+                    }
+                    obj = self.apply(obj, &[]);
+                }
                 self.materialize(obj);
             }
             Expr::Call { func, arg } => {
