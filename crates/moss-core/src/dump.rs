@@ -88,24 +88,9 @@ impl<'a> Dump<'a> {
                 self.list(items);
                 print!("]");
             }
-            Node::NeedTydef { level, def, param } => {
+            Node::Need { level, def, param } => {
                 print!("need({level}) ");
-                self.named(Named::Tydef(def));
-                print!(" via %{}", param.index());
-            }
-            Node::NeedSigdef { level, def, param } => {
-                print!("need({level}) ");
-                self.named(Named::Sigdef(def));
-                print!(" via %{}", param.index());
-            }
-            Node::NeedValdef { level, def, param } => {
-                print!("need({level}) ");
-                self.named(Named::Valdef(def));
-                print!(" via %{}", param.index());
-            }
-            Node::NeedCtxdef { level, def, param } => {
-                print!("need({level}) ");
-                self.named(Named::Ctxdef(def));
+                self.named(def.into());
                 print!(" via %{}", param.index());
             }
             Node::Tagdef { def } => {
@@ -145,24 +130,9 @@ impl<'a> Dump<'a> {
                 self.list(args);
                 print!("] using %{}", bind.index());
             }
-            Node::BindTydef { def, bind } => {
+            Node::BindDef { def, bind } => {
                 print!("bind ");
-                self.named(Named::Tydef(def));
-                print!(" via %{}", bind.index());
-            }
-            Node::BindSigdef { def, bind } => {
-                print!("bind ");
-                self.named(Named::Sigdef(def));
-                print!(" via %{}", bind.index());
-            }
-            Node::BindValdef { def, bind } => {
-                print!("bind ");
-                self.named(Named::Valdef(def));
-                print!(" via %{}", bind.index());
-            }
-            Node::BindCtxdef { def, bind } => {
-                print!("bind ");
-                self.named(Named::Ctxdef(def));
+                self.named(def.into());
                 print!(" via %{}", bind.index());
             }
             Node::Sig { param, result } => {

@@ -347,10 +347,10 @@ impl<'a> Wasm<'a> {
     /// distinct nodes but share this key.
     fn need_key(&self, node: lower::NodeId) -> Option<(u8, usize)> {
         Some(match self.ir.nodes[node.index()] {
-            lower::Node::NeedTydef { def, .. } => (0, def.index()),
-            lower::Node::NeedSigdef { def, .. } => (1, def.index()),
-            lower::Node::NeedValdef { def, .. } => (2, def.index()),
-            lower::Node::NeedCtxdef { def, .. } => (3, def.index()),
+            lower::Node::Need { def: lower::DefKind::Ty(def), .. } => (0, def.index()),
+            lower::Node::Need { def: lower::DefKind::Sig(def), .. } => (1, def.index()),
+            lower::Node::Need { def: lower::DefKind::Val(def), .. } => (2, def.index()),
+            lower::Node::Need { def: lower::DefKind::Ctx(def), .. } => (3, def.index()),
             _ => return None,
         })
     }
@@ -407,13 +407,17 @@ impl<'a> Wasm<'a> {
             lower::Node::Lambda { .. } => self.mkobj(Object::Closure(node, env)),
             // An unbound `sig` for one of the prototype's backend-implemented contextual functions
             // resolves to its intrinsic (the bridge left these inline, with no provider).
-            lower::Node::NeedSigdef { def, .. } if self.intrinsics.contains_key(&def) => {
+            lower::Node::Need { def: lower::DefKind::Sig(def), .. }
+                if self.intrinsics.contains_key(&def) =>
+            {
                 let intr = self.intrinsics[&def];
                 self.mkobj(Object::FnIntrinsic(intr))
             }
             // An unbound reference to a backend-implemented type resolves to its concrete Wasm
             // representation (the bridge left these inline, with no provider).
-            lower::Node::NeedTydef { def, .. } if self.intrinsic_tys.contains_key(&def) => {
+            lower::Node::Need { def: lower::DefKind::Ty(def), .. }
+                if self.intrinsic_tys.contains_key(&def) =>
+            {
                 match self.intrinsic_tys[&def] {
                     IntrinsicTy::Char => self.mkobj(Object::TyI32),
                     IntrinsicTy::StringBuilder => {
@@ -424,10 +428,7 @@ impl<'a> Wasm<'a> {
                 }
             }
             // A need resolves to whatever the enclosing function was given for it.
-            lower::Node::NeedTydef { .. }
-            | lower::Node::NeedSigdef { .. }
-            | lower::Node::NeedValdef { .. }
-            | lower::Node::NeedCtxdef { .. } => self
+            lower::Node::Need { .. } => self
                 .env_get(env, node)
                 .unwrap_or_else(|| panic!("eval: unbound need %{}", node.index())),
             lower::Node::Apply { lambda, args } => {
@@ -474,10 +475,7 @@ impl<'a> Wasm<'a> {
             lower::Node::Bind { bind, .. } => self.eval(bind, env),
             // Bindings construct context entries; as a value, a binding is a closure over its `bind`
             // lambda, projected when applied (see `apply`).
-            lower::Node::BindTydef { bind, .. }
-            | lower::Node::BindSigdef { bind, .. }
-            | lower::Node::BindValdef { bind, .. }
-            | lower::Node::BindCtxdef { bind, .. } => self.mkobj(Object::Closure(bind, env)),
+            lower::Node::BindDef { bind, .. } => self.mkobj(Object::Closure(bind, env)),
             other => todo!("eval: {other:?} (milestone B2)"),
         }
     }
@@ -1486,16 +1484,10 @@ impl<'a> Wasm<'a> {
                 .chain(self.ir.lists[args].iter().copied())
                 .collect(),
             List { items } | Tuple { elems: items } => self.ir.lists[items].to_vec(),
-            NeedTydef { param, .. }
-            | NeedSigdef { param, .. }
-            | NeedValdef { param, .. }
-            | NeedCtxdef { param, .. } => vec![param],
+            Need { param, .. } => vec![param],
             Get { ctx, .. } => vec![ctx],
             Bind { args, bind } => self.ir.lists[args].iter().copied().chain([bind]).collect(),
-            BindTydef { bind, .. }
-            | BindSigdef { bind, .. }
-            | BindValdef { bind, .. }
-            | BindCtxdef { bind, .. } => vec![bind],
+            BindDef { bind, .. } => vec![bind],
             Sig { param, result } => vec![param, result],
             _ => vec![],
         };

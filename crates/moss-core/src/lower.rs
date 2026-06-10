@@ -1,3 +1,34 @@
+//! Lowering: from the parse [`Tree`] to the [`IR`].
+//!
+//! Lowering works in two layers:
+//!
+//! - The **static layer** ([`Lower`]) turns declarations into [`Node`] graphs. Nodes form a small
+//!   lambda calculus, hash-consed in [`IR::nodes`] so that structurally equal terms share one
+//!   [`NodeId`]: [`Node::Lambda`] binds a frame of contextual parameters at a de Bruijn
+//!   [`Level`]; [`Node::Need`] is an abstract reference to a contextual definition (a hole to be
+//!   satisfied from the enclosing context); [`Node::BindDef`] is the concrete counterpart that
+//!   satisfies one. A composite context (`context C = ...`) is a two-level lambda whose result is
+//!   the `List` of its members, taken apart by [`Lower::explode`].
+//!
+//! - The **body layer** ([`LowerBody`]) turns function bodies into [`Instr`] sequences, desugaring
+//!   literals through the contextual digit/radix values ([`Base::numerals`]) and resolving every
+//!   call and value reference against the body's context.
+//!
+//! The heart of the static layer is *context resolution*: a [`Node::Need`] is satisfied from a
+//! set of in-scope slots by [`Lower::resolve_need`]/[`Lower::extract_lambda`], which adapt a
+//! candidate provider to the need's shape with [`Lower::synthesize`] and pick among multiple
+//! candidates by specificity ([`Lower::unique_option`]). Term comparison is centralized in
+//! [`Lower::match_terms`], parameterized by [`MatchMode`]: plain equivalence up to reduction, or
+//! the directional "at least as specific" relation. Reduction to weak-head normal form is
+//! [`Lower::reduce`] (which projects bindings to their bound values) and [`Lower::head_reduce`]
+//! (which keeps binding heads observable, for specificity ranking).
+//!
+//! Because nodes are hash-consed and definition bodies are immutable once pushed, the expensive
+//! traversals are pure functions of their arguments; [`Lower`] memoizes them (`explode_cache`,
+//! `raise_cache`, `subst_cache`), which is what makes resolution affordable: composite contexts
+//! are re-exploded at every need-resolution step, and without the caches lowering re-walks the
+//! same definition graphs millions of times.
+
 use std::{
     array,
     backtrace::Backtrace,
@@ -134,7 +165,7 @@ impl fmt::Display for Level {
 }
 
 /// A correspondence between `a`-side and `b`-side [`Level`]s, threaded through
-/// [`Lower::unify`] as it descends under matching binders. Equivalence of two
+/// [`Lower::match_terms`] as it descends under matching binders. Equivalence of two
 /// terms is decided against this renaming rather than by canonicalizing levels;
 /// the caller seeds it with the correspondence of the enclosing context.
 #[derive(Clone, Copy)]
@@ -155,6 +186,19 @@ impl Renaming {
     fn bind(&mut self, a: Level, b: Level) {
         self.a_of_b[b] = a;
     }
+}
+
+/// Which relation [`Lower::match_terms`] decides.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum MatchMode {
+    /// Equivalence up to full reduction ([`Lower::reduce`]). Used to solve `synthesize`'s
+    /// metavariables and to check expected against actual types.
+    Equiv,
+    /// The directional "`a` is at least as specific as `b`" relation
+    /// ([`Lower::at_least_as_specific`]). Reduces with the non-projecting [`Lower::head_reduce`]
+    /// so bindings stay observable, and lets a `BindDef` dominate the `Need` of the same
+    /// definition.
+    Spec,
 }
 
 /// A mapping from [`Level`] to [`Level`].
@@ -181,9 +225,12 @@ impl IndexMut<Level> for LevelMap {
     }
 }
 
-/// Which kind of contextual definition an `extract` is resolving, paired with its id.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum DefKind {
+/// Which kind of contextual definition a [`Node::Need`]/[`Node::BindDef`] (or an `extract`)
+/// refers to, paired with its id. The four kinds — abstract types, function signatures,
+/// contextual values, and composite contexts — behave identically almost everywhere; code that
+/// genuinely cares (e.g. composite-context explosion) matches on the kind explicitly.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum DefKind {
     Ty(TydefId),
     Sig(SigdefId),
     Val(ValdefId),
@@ -205,24 +252,12 @@ pub enum Node {
     List {
         items: NodeList,
     },
-    NeedTydef {
+    /// An abstract reference to a contextual definition: a "hole" to be satisfied from the
+    /// enclosing context, carrying the binder `level` it was introduced at and the `param`
+    /// lambda that constructs the definition's own parameters.
+    Need {
         level: Level,
-        def: TydefId,
-        param: NodeId,
-    },
-    NeedSigdef {
-        level: Level,
-        def: SigdefId,
-        param: NodeId,
-    },
-    NeedValdef {
-        level: Level,
-        def: ValdefId,
-        param: NodeId,
-    },
-    NeedCtxdef {
-        level: Level,
-        def: CtxdefId,
+        def: DefKind,
         param: NodeId,
     },
     Tagdef {
@@ -249,20 +284,10 @@ pub enum Node {
         args: NodeList,
         bind: NodeId,
     },
-    BindTydef {
-        def: TydefId,
-        bind: NodeId,
-    },
-    BindSigdef {
-        def: SigdefId,
-        bind: NodeId,
-    },
-    BindValdef {
-        def: ValdefId,
-        bind: NodeId,
-    },
-    BindCtxdef {
-        def: CtxdefId,
+    /// A binding that satisfies the contextual definition `def` with the value produced by the
+    /// `bind` lambda — the concrete counterpart of [`Node::Need`] for the same `def`.
+    BindDef {
+        def: DefKind,
         bind: NodeId,
     },
     Sig {
@@ -695,6 +720,17 @@ impl Named {
     }
 }
 
+impl From<DefKind> for Named {
+    fn from(def: DefKind) -> Self {
+        match def {
+            DefKind::Ty(id) => Named::Tydef(id),
+            DefKind::Sig(id) => Named::Sigdef(id),
+            DefKind::Val(id) => Named::Valdef(id),
+            DefKind::Ctx(id) => Named::Ctxdef(id),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum NamedFn {
     Sigdef(SigdefId),
@@ -924,22 +960,7 @@ impl Transform for Raise {
                 needs,
                 result,
             },
-            Node::NeedTydef { level, def, param } => Node::NeedTydef {
-                level: level + self.add,
-                def,
-                param,
-            },
-            Node::NeedSigdef { level, def, param } => Node::NeedSigdef {
-                level: level + self.add,
-                def,
-                param,
-            },
-            Node::NeedValdef { level, def, param } => Node::NeedValdef {
-                level: level + self.add,
-                def,
-                param,
-            },
-            Node::NeedCtxdef { level, def, param } => Node::NeedCtxdef {
+            Node::Need { level, def, param } => Node::Need {
                 level: level + self.add,
                 def,
                 param,
@@ -990,6 +1011,19 @@ struct Lower<'a> {
     funcs: Vec<(parse::FuncdefId, FndefId)>,
     attaches: Vec<(parse::AttachdefId, TagdefId, FndefId)>,
     detaches: Vec<(parse::DetachdefId, FndefId)>,
+
+    /// Memo for [`Lower::explode`]. Sound because a ctxdef's body is immutable once pushed and
+    /// nodes are hash-consed, so the result is a pure function of the arguments; and profitable
+    /// because need resolution re-explodes the same composite contexts constantly.
+    explode_cache: HashMap<(Level, CtxdefId, NodeId), NodeList>,
+
+    /// Shared per-`(floor, add)` caches for [`Lower::raise`], replacing the fresh per-call cache
+    /// so repeated raises of the same nodes don't re-walk their (large) graphs.
+    raise_cache: HashMap<(Level, Level), HashMap<NodeId, NodeId>>,
+
+    /// Shared per-`(floor, before, after)` mappings for [`Lower::substitute`]; the mapping doubles
+    /// as the transform's cache, so sharing it memoizes substitution across calls.
+    subst_cache: HashMap<(Level, NodeList, NodeList), HashMap<NodeId, NodeId>>,
 }
 
 impl<'a> Lower<'a> {
@@ -1229,36 +1263,12 @@ impl<'a> Lower<'a> {
                 let items = self.transforms(map, items);
                 self.mk_node(map.map(Node::List { items }))
             }
-            Node::NeedTydef { level, def, param } => {
+            Node::Need { level, def, param } => {
                 if level < map.floor() {
                     node
                 } else {
                     let param = self.transform(map, param);
-                    self.mk_node(map.map(Node::NeedTydef { level, def, param }))
-                }
-            }
-            Node::NeedSigdef { level, def, param } => {
-                if level < map.floor() {
-                    node
-                } else {
-                    let param = self.transform(map, param);
-                    self.mk_node(map.map(Node::NeedSigdef { level, def, param }))
-                }
-            }
-            Node::NeedValdef { level, def, param } => {
-                if level < map.floor() {
-                    node
-                } else {
-                    let param = self.transform(map, param);
-                    self.mk_node(map.map(Node::NeedValdef { level, def, param }))
-                }
-            }
-            Node::NeedCtxdef { level, def, param } => {
-                if level < map.floor() {
-                    node
-                } else {
-                    let param = self.transform(map, param);
-                    self.mk_node(map.map(Node::NeedCtxdef { level, def, param }))
+                    self.mk_node(map.map(Node::Need { level, def, param }))
                 }
             }
             Node::Tagdef { def } => self.mk_node(map.map(Node::Tagdef { def })),
@@ -1279,21 +1289,9 @@ impl<'a> Lower<'a> {
                 let bind = self.transform(map, bind);
                 self.mk_node(map.map(Node::Bind { args, bind }))
             }
-            Node::BindTydef { def, bind } => {
+            Node::BindDef { def, bind } => {
                 let bind = self.transform(map, bind);
-                self.mk_node(map.map(Node::BindTydef { def, bind }))
-            }
-            Node::BindSigdef { def, bind } => {
-                let bind = self.transform(map, bind);
-                self.mk_node(map.map(Node::BindSigdef { def, bind }))
-            }
-            Node::BindValdef { def, bind } => {
-                let bind = self.transform(map, bind);
-                self.mk_node(map.map(Node::BindValdef { def, bind }))
-            }
-            Node::BindCtxdef { def, bind } => {
-                let bind = self.transform(map, bind);
-                self.mk_node(map.map(Node::BindCtxdef { def, bind }))
+                self.mk_node(map.map(Node::BindDef { def, bind }))
             }
             Node::Sig { param, result } => {
                 let param = self.transform(map, param);
@@ -1307,12 +1305,17 @@ impl<'a> Lower<'a> {
 
     /// Return a new node where all levels at least `floor` are incremented by `add`.
     fn raise(&mut self, node: NodeId, floor: Level, add: Level) -> NodeId {
-        let mut map = Raise {
-            floor,
-            add,
-            cache: HashMap::new(),
-        };
-        self.transform(&mut map, node)
+        // Raising by zero is the identity (hash-consing returns the very same ids).
+        if add == Level::ZERO {
+            return node;
+        }
+        // Take the shared cache for this `(floor, add)` out of `self` while `transform` runs
+        // (it needs `&mut self`), and put it back afterwards.
+        let cache = self.raise_cache.remove(&(floor, add)).unwrap_or_default();
+        let mut map = Raise { floor, add, cache };
+        let raised = self.transform(&mut map, node);
+        self.raise_cache.insert((floor, add), map.cache);
+        raised
     }
 
     fn substitute(
@@ -1323,16 +1326,27 @@ impl<'a> Lower<'a> {
         node: NodeId,
     ) -> NodeId {
         assert_eq!(before.len(), after.len());
-        let mut mapping = HashMap::new();
-        for (&x, &y) in (self.ir.lists[before].iter()).zip(self.ir.lists[after].iter()) {
-            mapping.insert(x, y);
-        }
+        // Take the shared mapping for this substitution out of `self` while `transform` runs;
+        // it doubles as the transform's cache, so putting it back memoizes across calls.
+        let key = (floor, before, after);
+        let mapping = match self.subst_cache.remove(&key) {
+            Some(mapping) => mapping,
+            None => (self.ir.lists[before].iter().copied())
+                .zip(self.ir.lists[after].iter().copied())
+                .collect(),
+        };
         let mut map = Substitute { floor, mapping };
-        self.transform(&mut map, node)
+        let substituted = self.transform(&mut map, node);
+        self.subst_cache.insert(key, map.mapping);
+        substituted
     }
 
-    /// Explode a [`Node::NeedCtxdef`] into a list of individual pieces of context.
+    /// Explode a composite-context need (`Node::Need` of kind [`DefKind::Ctx`]) into a list of
+    /// individual pieces of context.
     fn explode(&mut self, level: Level, def: CtxdefId, param: NodeId) -> LowerResult<NodeList> {
+        if let Some(&items) = self.explode_cache.get(&(level, def, param)) {
+            return Ok(items);
+        }
         let Node::Lambda {
             level: _,
             needs,
@@ -1372,6 +1386,7 @@ impl<'a> Lower<'a> {
         else {
             panic!()
         };
+        self.explode_cache.insert((level, def, param), items_result);
         Ok(items_result)
     }
 
@@ -1401,7 +1416,12 @@ impl<'a> Lower<'a> {
             let [only] = self.ir.lists[items] else {
                 continue;
             };
-            let Node::NeedCtxdef { level, def, param } = self.node(only) else {
+            let Node::Need {
+                level,
+                def: DefKind::Ctx(def),
+                param,
+            } = self.node(only)
+            else {
                 continue;
             };
             if def != target {
@@ -1424,12 +1444,8 @@ impl<'a> Lower<'a> {
         // `destruct` is un-raised) pass `Level::ZERO`.
         slots_level: Level,
     ) -> LowerResult<Option<NodeId>> {
-        let (kind, param, level) = match self.node(need) {
-            Node::NeedTydef { def, param, level } => (DefKind::Ty(def), param, level),
-            Node::NeedSigdef { def, param, level } => (DefKind::Sig(def), param, level),
-            Node::NeedValdef { def, param, level } => (DefKind::Val(def), param, level),
-            Node::NeedCtxdef { def, param, level } => (DefKind::Ctx(def), param, level),
-            _ => panic!(), // a needs list contains only `Need*` nodes
+        let Node::Need { def: kind, param, level } = self.node(need) else {
+            panic!() // a needs list contains only `Need` nodes
         };
         let Some((callee, synth)) = self.extract_lambda(destruct, kind, param)? else {
             // No single slot provides this need. A composite context can instead be *synthesized*
@@ -1484,7 +1500,6 @@ impl<'a> Lower<'a> {
 
     fn invoke(&mut self, lambda: NodeId, destruct: &[NodeId]) -> LowerResult<Option<Vec<NodeId>>> {
         match self.node(lambda) {
-            Node::Nothing => todo!(),
             Node::Lambda {
                 level: _,
                 needs,
@@ -1500,116 +1515,48 @@ impl<'a> Lower<'a> {
                 }
                 Ok(Some(construct))
             }
-            Node::Apply { lambda, args } => todo!(),
-            Node::List { items } => todo!(),
-            Node::NeedTydef {
-                level: _,
-                def: _,
-                param,
-            }
-            | Node::NeedSigdef {
-                level: _,
-                def: _,
-                param,
-            }
-            | Node::NeedValdef {
-                level: _,
-                def: _,
-                param,
-            }
-            | Node::NeedCtxdef {
-                level: _,
-                def: _,
-                param,
-            } => self.invoke(param, destruct),
-            Node::Tagdef { def } => todo!(),
+            Node::Need { param, .. } => self.invoke(param, destruct),
             // Transparent definitions unfold to their bodies, mirroring `reduce`.
             Node::Aliasdef { def } => {
                 let body = self.ir.aliasdefs[def].0;
                 self.invoke(body, destruct)
             }
-            Node::Tuple { elems } => todo!(),
-            Node::Context => todo!(),
             Node::Fndef { def } => {
                 let body = self.ir.fndefs[def].0;
                 self.invoke(body, destruct)
             }
             Node::Get { ctx, slot } => match {
                 // Reduce the context first so a nested-context accessor (a `Get` chain) collapses to
-                // the stuck `Apply { NeedCtxdef }` (or `List`) form the cases below expect.
+                // the stuck `Apply { Need }` (or `List`) form the cases below expect.
                 let ctx = self.reduce(ctx)?;
                 self.node(ctx)
             } {
-                Node::Nothing => todo!(),
-                Node::Lambda {
-                    level,
-                    needs,
-                    result,
-                } => todo!(),
                 Node::Apply {
                     lambda: curried,
                     args,
                 } => match self.node(curried) {
-                    Node::Nothing => todo!(),
-                    Node::Lambda {
+                    Node::Need {
                         level,
-                        needs,
-                        result,
-                    } => todo!(),
-                    Node::Apply { lambda, args } => todo!(),
-                    Node::List { items } => todo!(),
-                    Node::NeedTydef { level, def, param } => todo!(),
-                    Node::NeedSigdef { level, def, param } => todo!(),
-                    Node::NeedValdef { level, def, param } => todo!(),
-                    Node::NeedCtxdef { level, def, param } => {
+                        def: DefKind::Ctx(def),
+                        param,
+                    } => {
                         assert!(args.is_empty()); // TODO: Handle parametrized composite contexts.
                         let exploded = self.explode(level, def, param)?;
                         let single = self.ir.lists[exploded][slot.index()];
                         self.invoke(single, destruct)
                     }
-                    Node::Tagdef { def } => todo!(),
-                    Node::Aliasdef { def } => todo!(),
-                    Node::Tuple { elems } => todo!(),
-                    Node::Context => todo!(),
-                    Node::Fndef { def } => todo!(),
-                    Node::Get { ctx, slot } => todo!(),
-                    Node::Lit { val } => todo!(),
-                    Node::Bind { args, bind } => todo!(),
-                    Node::BindTydef { def, bind } => todo!(),
-                    Node::BindSigdef { def, bind } => todo!(),
-                    Node::BindValdef { def, bind } => todo!(),
-                    Node::BindCtxdef { def, bind } => todo!(),
-                    Node::Sig { param, result } => todo!(),
+                    _ => todo!(),
                 },
-                Node::List { items } => todo!(),
-                Node::NeedTydef { level, def, param } => todo!(),
-                Node::NeedSigdef { level, def, param } => todo!(),
-                Node::NeedValdef { level, def, param } => todo!(),
-                Node::NeedCtxdef { level, def, param } => todo!(),
-                Node::Tagdef { def } => todo!(),
-                Node::Aliasdef { def } => todo!(),
-                Node::Tuple { elems } => todo!(),
-                Node::Context => todo!(),
-                Node::Fndef { def } => todo!(),
-                Node::Get { ctx, slot } => todo!(),
-                Node::Lit { val } => todo!(),
-                Node::Bind { args, bind } => todo!(),
-                Node::BindTydef { def, bind } => todo!(),
-                Node::BindSigdef { def, bind } => todo!(),
-                Node::BindValdef { def, bind } => todo!(),
-                Node::BindCtxdef { def, bind } => todo!(),
-                Node::Sig { param, result } => todo!(),
+                _ => todo!(),
             },
             // A ground literal has no needs, so it takes no constructed arguments.
             Node::Lit { val: _ } => Ok(Some(Vec::new())),
             // A binding's needs live in its inner `bind` lambda; invoking the binding resolves
             // those, just as applying the binding (in `reduce`) feeds them to that same lambda.
-            Node::Bind { args: _, bind }
-            | Node::BindTydef { def: _, bind }
-            | Node::BindSigdef { def: _, bind }
-            | Node::BindValdef { def: _, bind }
-            | Node::BindCtxdef { def: _, bind } => self.invoke(bind, destruct),
-            Node::Sig { param, result } => todo!(),
+            Node::Bind { args: _, bind } | Node::BindDef { def: _, bind } => {
+                self.invoke(bind, destruct)
+            }
+            _ => todo!(),
         }
     }
 
@@ -1662,10 +1609,10 @@ impl<'a> Lower<'a> {
     }
 
     /// Strip redundant nullary application wrappers: `Apply { X, [] }` (applying `X` to zero
-    /// arguments) denotes the same value as `X`. Used only for equivalence comparison in [`Lower::unify`]
-    /// and [`Lower::spec_unify`]; the canonical reduced form keeps the wrapper because the `Get`
+    /// arguments) denotes the same value as `X`. Used only for comparison in
+    /// [`Lower::match_terms`]; the canonical reduced form keeps the wrapper because the `Get`
     /// projection in [`Lower::reduce`]/[`Lower::invoke`] pattern-matches on the stuck
-    /// `Apply { NeedCtxdef, [] }` shape.
+    /// `Apply { Need, [] }` shape.
     fn peel_nullary_apply(&self, mut node: NodeId) -> NodeId {
         while let Node::Apply { lambda, args } = self.node(node) {
             if !self.ir.lists[args].is_empty() {
@@ -1676,21 +1623,37 @@ impl<'a> Lower<'a> {
         node
     }
 
-    /// Match `a` against `b`, solving for the metavariables in `constraints` (the needs of
-    /// the `b` side) and deciding level equivalence against `env`.
+    /// Match `a` against `b` under the relation selected by `mode`, solving for the
+    /// metavariables in `constraints` (the needs of the `b` side) and deciding level equivalence
+    /// against `env`.
     ///
     /// Returns `Ok(true)` if the terms match (with `constraints` possibly refined), `Ok(false)`
     /// if they are structurally inequivalent, and `Err` only for genuine compiler errors. The
     /// relation is asymmetric: the only metavariables are on the `b` side, recorded in
     /// `constraints`; a metavariable is solved by binding it to the corresponding `a` node.
-    fn unify(
+    /// (In [`MatchMode::Spec`], a hole records a witness but is never required to be uniquely
+    /// solved, and conflicts never fail — only the shapes must line up.)
+    ///
+    /// Before comparing, each side is brought to weak-head normal form by the `mode`'s reduction
+    /// and then stripped of redundant nullary application wrappers ([`Lower::peel_nullary_apply`]):
+    /// reduction leaves a stuck head wrapped in its nullary `Apply` (the pervasive
+    /// `Apply { member, [] }` projection shape), so the very same context member can arrive here
+    /// as `Apply { Need, [] }` on one side and a bare `Need` on the other. Without peeling, the
+    /// match would compare those two references to the *same* definition and wrongly reject —
+    /// the mismatch that stalled the composite digit-context bridge
+    /// (`Numerals[Uint]=Numerals[I32]`) at the `bind Std` assembly. The reducers themselves must
+    /// keep the wrapper (`invoke`/`reduce`'s `Get` arms expect the stuck `Apply { Need, [] }`
+    /// form), so peel only here.
+    fn match_terms(
         &mut self,
+        mode: MatchMode,
         env: &Renaming,
         constraints: &mut HashMap<NodeId, Option<NodeId>>,
         a: NodeId,
         b: NodeId,
     ) -> LowerResult<bool> {
-        debug_assert!(!constraints.contains_key(&a)); // asymmetry: metavariables are on `b`.
+        // Asymmetry: metavariables are on `b`.
+        debug_assert!(mode == MatchMode::Spec || !constraints.contains_key(&a));
         if constraints.contains_key(&b) {
             match constraints.get_mut(&b).unwrap() {
                 slot @ None => *slot = Some(a),
@@ -1699,18 +1662,14 @@ impl<'a> Lower<'a> {
             }
             return Ok(true);
         }
-        // Decide equivalence up to reduction; needs stay opaque, so this leaves them comparable.
-        // Peel any redundant nullary application (`Apply { X, [] }` denotes the same value as `X`):
-        // `reduce` leaves a stuck head wrapped in its nullary `Apply` (the pervasive
-        // `Apply { member, [] }` projection shape), so the very same context member can arrive here
-        // as `Apply { NeedTydef, [] }` on one side and bare `NeedTydef` on the other. Without peeling,
-        // `unify` would compare those two references to the *same* type and wrongly reject -- the
-        // mismatch that stalled the composite digit-context bridge (`Numerals[Uint]=Numerals[I32]`)
-        // at the `bind Std` assembly. `reduce` itself must keep the wrapper (`invoke`/`reduce`'s
-        // `Get` arms expect the stuck `Apply { NeedCtxdef, [] }` form), so peel only here.
-        let a = self.reduce(a)?;
+        // Decide the relation up to the mode's reduction; needs stay opaque, so this leaves them
+        // comparable. `Spec` must not project bindings away (`head_reduce`), since the binding is
+        // exactly what makes a candidate more specific.
+        let (a, b) = match mode {
+            MatchMode::Equiv => (self.reduce(a)?, self.reduce(b)?),
+            MatchMode::Spec => (self.head_reduce(a)?, self.head_reduce(b)?),
+        };
         let a = self.peel_nullary_apply(a);
-        let b = self.reduce(b)?;
         let b = self.peel_nullary_apply(b);
         match (self.node(a), self.node(b)) {
             (
@@ -1727,8 +1686,8 @@ impl<'a> Lower<'a> {
             ) => {
                 let mut env = *env;
                 env.bind(la, lb);
-                Ok(self.unify_list(&env, constraints, na, nb)?
-                    && self.unify(&env, constraints, ra, rb)?)
+                Ok(self.match_terms_list(mode, &env, constraints, na, nb)?
+                    && self.match_terms(mode, &env, constraints, ra, rb)?)
             }
             (
                 Node::Apply {
@@ -1739,13 +1698,13 @@ impl<'a> Lower<'a> {
                     lambda: fb,
                     args: ab,
                 },
-            ) => Ok(self.unify(env, constraints, fa, fb)?
-                && self.unify_list(env, constraints, aa, ab)?),
+            ) => Ok(self.match_terms(mode, env, constraints, fa, fb)?
+                && self.match_terms_list(mode, env, constraints, aa, ab)?),
             (Node::List { items: ia }, Node::List { items: ib }) => {
-                self.unify_list(env, constraints, ia, ib)
+                self.match_terms_list(mode, env, constraints, ia, ib)
             }
             (Node::Tuple { elems: ea }, Node::Tuple { elems: eb }) => {
-                self.unify_list(env, constraints, ea, eb)
+                self.match_terms_list(mode, env, constraints, ea, eb)
             }
             (
                 Node::Sig {
@@ -1756,55 +1715,22 @@ impl<'a> Lower<'a> {
                     param: pb,
                     result: rb,
                 },
-            ) => Ok(self.unify(env, constraints, pa, pb)? && self.unify(env, constraints, ra, rb)?),
+            ) => Ok(self.match_terms(mode, env, constraints, pa, pb)?
+                && self.match_terms(mode, env, constraints, ra, rb)?),
             (
-                Node::NeedTydef {
+                Node::Need {
                     level: la,
                     def: da,
                     param: pa,
                 },
-                Node::NeedTydef {
+                Node::Need {
                     level: lb,
                     def: db,
                     param: pb,
                 },
-            ) => Ok(da == db && env.a_of_b[lb] == la && self.unify(env, constraints, pa, pb)?),
-            (
-                Node::NeedSigdef {
-                    level: la,
-                    def: da,
-                    param: pa,
-                },
-                Node::NeedSigdef {
-                    level: lb,
-                    def: db,
-                    param: pb,
-                },
-            ) => Ok(da == db && env.a_of_b[lb] == la && self.unify(env, constraints, pa, pb)?),
-            (
-                Node::NeedValdef {
-                    level: la,
-                    def: da,
-                    param: pa,
-                },
-                Node::NeedValdef {
-                    level: lb,
-                    def: db,
-                    param: pb,
-                },
-            ) => Ok(da == db && env.a_of_b[lb] == la && self.unify(env, constraints, pa, pb)?),
-            (
-                Node::NeedCtxdef {
-                    level: la,
-                    def: da,
-                    param: pa,
-                },
-                Node::NeedCtxdef {
-                    level: lb,
-                    def: db,
-                    param: pb,
-                },
-            ) => Ok(da == db && env.a_of_b[lb] == la && self.unify(env, constraints, pa, pb)?),
+            ) => Ok(da == db
+                && env.a_of_b[lb] == la
+                && self.match_terms(mode, env, constraints, pa, pb)?),
             (
                 Node::Get {
                     ctx: ca,
@@ -1814,7 +1740,7 @@ impl<'a> Lower<'a> {
                     ctx: cb,
                     slot: sb,
                 },
-            ) => Ok(sa == sb && self.unify(env, constraints, ca, cb)?),
+            ) => Ok(sa == sb && self.match_terms(mode, env, constraints, ca, cb)?),
             (
                 Node::Bind {
                     args: aa,
@@ -1824,20 +1750,19 @@ impl<'a> Lower<'a> {
                     args: ab,
                     bind: bb,
                 },
-            ) => Ok(self.unify_list(env, constraints, aa, ab)?
-                && self.unify(env, constraints, ba, bb)?),
-            (Node::BindTydef { def: da, bind: ba }, Node::BindTydef { def: db, bind: bb }) => {
-                Ok(da == db && self.unify(env, constraints, ba, bb)?)
+            ) => Ok(self.match_terms_list(mode, env, constraints, aa, ab)?
+                && self.match_terms(mode, env, constraints, ba, bb)?),
+            (Node::BindDef { def: da, bind: ba }, Node::BindDef { def: db, bind: bb }) => {
+                Ok(da == db && self.match_terms(mode, env, constraints, ba, bb)?)
             }
-            (Node::BindSigdef { def: da, bind: ba }, Node::BindSigdef { def: db, bind: bb }) => {
-                Ok(da == db && self.unify(env, constraints, ba, bb)?)
+            // The directional specificity rule: a binding dominates the abstract need of the same
+            // definition, so `a` bound vs `b` abstract is ≥-specific (true), and `a` abstract vs
+            // `b` bound is not (false). Under `Equiv` a binding and a need are simply different
+            // shapes (`reduce` would have projected a *bound* head to its value already).
+            (Node::BindDef { def: da, .. }, Node::Need { def: db, .. }) => {
+                Ok(mode == MatchMode::Spec && da == db)
             }
-            (Node::BindValdef { def: da, bind: ba }, Node::BindValdef { def: db, bind: bb }) => {
-                Ok(da == db && self.unify(env, constraints, ba, bb)?)
-            }
-            (Node::BindCtxdef { def: da, bind: ba }, Node::BindCtxdef { def: db, bind: bb }) => {
-                Ok(da == db && self.unify(env, constraints, ba, bb)?)
-            }
+            (Node::Need { .. }, Node::BindDef { .. }) => Ok(false),
             (Node::Nothing, Node::Nothing) => Ok(true),
             (Node::Context, Node::Context) => Ok(true),
             (Node::Tagdef { def: da }, Node::Tagdef { def: db }) => Ok(da == db),
@@ -1849,15 +1774,16 @@ impl<'a> Lower<'a> {
                 if std::mem::discriminant(&x) == std::mem::discriminant(&y) {
                     Err(self.todo_no_loc()) // same shape, this arm isn't implemented yet
                 } else {
-                    Ok(false) // different shapes: not unifiable
+                    Ok(false) // different shapes: not matchable
                 }
             }
         }
     }
 
-    /// [`Lower::unify`] applied position by position to two lists of equal length.
-    fn unify_list(
+    /// [`Lower::match_terms`] applied position by position to two lists of equal length.
+    fn match_terms_list(
         &mut self,
+        mode: MatchMode,
         env: &Renaming,
         constraints: &mut HashMap<NodeId, Option<NodeId>>,
         a: NodeList,
@@ -1872,7 +1798,7 @@ impl<'a> Lower<'a> {
             .zip(self.ir.lists[b].iter().copied())
             .collect();
         for (x, y) in pairs {
-            if !self.unify(env, constraints, x, y)? {
+            if !self.match_terms(mode, env, constraints, x, y)? {
                 return Ok(false);
             }
         }
@@ -1907,7 +1833,13 @@ impl<'a> Lower<'a> {
         // i.e. `alpha` and `beta` are compared under a shared enclosing context.
         let mut env = Renaming::identity();
         env.bind(level_alpha, level_beta);
-        if !self.unify(&env, &mut constraints, result_alpha, result_beta)? {
+        if !self.match_terms(
+            MatchMode::Equiv,
+            &env,
+            &mut constraints,
+            result_alpha,
+            result_beta,
+        )? {
             return Ok(None);
         }
         let Some(results) = self.ir.lists[needs_beta]
@@ -1963,16 +1895,11 @@ impl<'a> Lower<'a> {
             // providers that include desugared value bindings such as `false = 0`, whose value
             // reduces to a non-context.)
             Node::Nothing | Node::Lambda { .. } | Node::Apply { .. } | Node::List { .. } => Ok(None),
-            Node::NeedTydef { def, param, .. } => {
-                self.match_need(kind, DefKind::Ty(def), slot, lambda, param)
-            }
-            Node::NeedSigdef { def, param, .. } => {
-                self.match_need(kind, DefKind::Sig(def), slot, lambda, param)
-            }
-            Node::NeedValdef { def, param, .. } => {
-                self.match_need(kind, DefKind::Val(def), slot, lambda, param)
-            }
-            Node::NeedCtxdef { level, def, param } => {
+            Node::Need {
+                level,
+                def: DefKind::Ctx(def),
+                param,
+            } => {
                 let mut options = Vec::new();
                 // A composite-context need is satisfied directly by a slot for the same context,
                 // exactly as the other `Need*` arms match their own kind via `match_need`. (The
@@ -2005,27 +1932,9 @@ impl<'a> Lower<'a> {
                 }
                 self.unique_option(&options)
             }
-            Node::Tagdef { def } => todo!(),
-            Node::Aliasdef { def } => todo!(),
-            Node::Tuple { elems } => todo!(),
-            Node::Context => todo!(),
-            Node::Fndef { def } => todo!(),
-            Node::Get { ctx, slot } => todo!(),
-            Node::Lit { val } => todo!(),
-            Node::Bind { args, bind } => todo!(),
-            Node::BindTydef { def, bind } => {
-                self.match_bind(kind, DefKind::Ty(def), slot, lambda, bind)
-            }
-            Node::BindSigdef { def, bind } => {
-                self.match_bind(kind, DefKind::Sig(def), slot, lambda, bind)
-            }
-            Node::BindValdef { def, bind } => {
-                self.match_bind(kind, DefKind::Val(def), slot, lambda, bind)
-            }
-            Node::BindCtxdef { def, bind } => {
-                self.match_bind(kind, DefKind::Ctx(def), slot, lambda, bind)
-            }
-            Node::Sig { param, result } => todo!(),
+            Node::Need { def, param, .. } => self.match_need(kind, def, slot, lambda, param),
+            Node::BindDef { def, bind } => self.match_bind(kind, def, slot, lambda, bind),
+            _ => todo!(),
         }
     }
 
@@ -2143,7 +2052,7 @@ impl<'a> Lower<'a> {
         // assembling `bootstrap`'s `bind Std` finds both Wasi's direct `Numerals[I32]` member and
         // each sibling `Numerals[<T>]=Numerals[I32]` bridge, all of which reduce to that same Wasi
         // member. Such candidates are incomparable under specificity (a `Get`-projection vs a
-        // `BindCtxdef`) yet interchangeable: collapse candidates whose composites reduce to the same
+        // `BindDef`) yet interchangeable: collapse candidates whose composites reduce to the same
         // value, and if exactly one value remains, that value is unambiguous. Genuine ambiguity
         // (e.g. `Foo=A` vs `Foo=B`) survives because those reduce to distinct values.
         let mut canon = Vec::with_capacity(options.len());
@@ -2181,7 +2090,7 @@ impl<'a> Lower<'a> {
 
     /// Reduce `node` toward weak-head normal form like [`Lower::reduce`], but **stop at a binding
     /// head** instead of projecting it to its bound value. Where `reduce` turns
-    /// `Apply { BindTydef { bind, .. }, args }` into the value `bind` denotes (erasing the binding),
+    /// `Apply { BindDef { bind, .. }, args }` into the value `bind` denotes (erasing the binding),
     /// this leaves the application stuck on the `Bind*` head so the binding is still observable.
     ///
     /// This is scoped to specificity ranking ([`Lower::at_least_as_specific`]): a bound need must
@@ -2211,7 +2120,11 @@ impl<'a> Lower<'a> {
                         lambda: curried,
                         args,
                     } => match self.node(curried) {
-                        Node::NeedCtxdef { level, def, param } => {
+                        Node::Need {
+                            level,
+                            def: DefKind::Ctx(def),
+                            param,
+                        } => {
                             assert!(args.is_empty()); // TODO: Handle parametrized composite contexts.
                             let exploded = self.explode(level, def, param)?;
                             let single = self.ir.lists[exploded][slot.index()];
@@ -2268,225 +2181,7 @@ impl<'a> Lower<'a> {
             HashMap::from_iter(self.ir.lists[nb].iter().map(|&need| (need, None)));
         let mut env = Renaming::identity();
         env.bind(la, lb);
-        self.spec_unify(&env, &mut constraints, ra, rb)
-    }
-
-    /// Directional structural match for [`Lower::at_least_as_specific`]: like [`Lower::unify`] but
-    /// (1) reduces heads with the non-projecting [`Lower::head_reduce`], and (2) applies the
-    /// directional specificity rule when both sides are bindings/needs of the same definition:
-    /// `Bind { def }` is ≥-specific than `Need { def }` (true), but `Need { def }` is not
-    /// ≥-specific than `Bind { def }` (false). `Bind`/`Bind` of the same def recurses into the
-    /// bound values; `Need`/`Need` compares structurally (def + level via the renaming). Holes
-    /// (`b`'s input needs) are filled from `a` but are never required to be uniquely solved.
-    fn spec_unify(
-        &mut self,
-        env: &Renaming,
-        constraints: &mut HashMap<NodeId, Option<NodeId>>,
-        a: NodeId,
-        b: NodeId,
-    ) -> LowerResult<bool> {
-        if constraints.contains_key(&b) {
-            // `b` is a hole; record a witness but never fail on conflicts (we don't require a
-            // unique solution, only that the shapes line up).
-            match constraints.get_mut(&b).unwrap() {
-                slot @ None => *slot = Some(a),
-                Some(prev) if *prev == a => {}
-                other => *other = None,
-            }
-            return Ok(true);
-        }
-        // See `unify`: a stuck nullary application `Apply { X, [] }` denotes the same value as `X`,
-        // so peel it for comparison (specificity must agree on the two equivalent reference shapes).
-        let a = self.head_reduce(a)?;
-        let a = self.peel_nullary_apply(a);
-        let b = self.head_reduce(b)?;
-        let b = self.peel_nullary_apply(b);
-        match (self.node(a), self.node(b)) {
-            (
-                Node::Lambda {
-                    level: la,
-                    needs: na,
-                    result: ra,
-                },
-                Node::Lambda {
-                    level: lb,
-                    needs: nb,
-                    result: rb,
-                },
-            ) => {
-                let mut env = *env;
-                env.bind(la, lb);
-                Ok(self.spec_unify_list(&env, constraints, na, nb)?
-                    && self.spec_unify(&env, constraints, ra, rb)?)
-            }
-            (
-                Node::Apply {
-                    lambda: fa,
-                    args: aa,
-                },
-                Node::Apply {
-                    lambda: fb,
-                    args: ab,
-                },
-            ) => Ok(self.spec_unify(env, constraints, fa, fb)?
-                && self.spec_unify_list(env, constraints, aa, ab)?),
-            (Node::List { items: ia }, Node::List { items: ib }) => {
-                self.spec_unify_list(env, constraints, ia, ib)
-            }
-            (Node::Tuple { elems: ea }, Node::Tuple { elems: eb }) => {
-                self.spec_unify_list(env, constraints, ea, eb)
-            }
-            (
-                Node::Sig {
-                    param: pa,
-                    result: ra,
-                },
-                Node::Sig {
-                    param: pb,
-                    result: rb,
-                },
-            ) => Ok(self.spec_unify(env, constraints, pa, pb)?
-                && self.spec_unify(env, constraints, ra, rb)?),
-            (
-                Node::Get {
-                    ctx: ca,
-                    slot: sa,
-                },
-                Node::Get {
-                    ctx: cb,
-                    slot: sb,
-                },
-            ) => Ok(sa == sb && self.spec_unify(env, constraints, ca, cb)?),
-            // Same-definition specificity: a binding dominates the abstract need it provides.
-            (Node::BindTydef { def: da, bind: ba }, Node::BindTydef { def: db, bind: bb }) => {
-                Ok(da == db && self.spec_unify(env, constraints, ba, bb)?)
-            }
-            (Node::BindSigdef { def: da, bind: ba }, Node::BindSigdef { def: db, bind: bb }) => {
-                Ok(da == db && self.spec_unify(env, constraints, ba, bb)?)
-            }
-            (Node::BindValdef { def: da, bind: ba }, Node::BindValdef { def: db, bind: bb }) => {
-                Ok(da == db && self.spec_unify(env, constraints, ba, bb)?)
-            }
-            (Node::BindCtxdef { def: da, bind: ba }, Node::BindCtxdef { def: db, bind: bb }) => {
-                Ok(da == db && self.spec_unify(env, constraints, ba, bb)?)
-            }
-            // `a` is bound where `b` is the abstract need of the same def: `a` is strictly MORE
-            // specific, so it is ≥-specific than `b` — true.
-            (Node::BindTydef { def: da, .. }, Node::NeedTydef { def: db, .. }) => Ok(da == db),
-            (Node::BindSigdef { def: da, .. }, Node::NeedSigdef { def: db, .. }) => Ok(da == db),
-            (Node::BindValdef { def: da, .. }, Node::NeedValdef { def: db, .. }) => Ok(da == db),
-            (Node::BindCtxdef { def: da, .. }, Node::NeedCtxdef { def: db, .. }) => Ok(da == db),
-            // `a` is the abstract need where `b` is bound: `a` is strictly LESS specific, so it is
-            // NOT ≥-specific than `b` — false.
-            (Node::NeedTydef { .. }, Node::BindTydef { .. })
-            | (Node::NeedSigdef { .. }, Node::BindSigdef { .. })
-            | (Node::NeedValdef { .. }, Node::BindValdef { .. })
-            | (Node::NeedCtxdef { .. }, Node::BindCtxdef { .. }) => Ok(false),
-            (
-                Node::NeedTydef {
-                    level: la,
-                    def: da,
-                    param: pa,
-                },
-                Node::NeedTydef {
-                    level: lb,
-                    def: db,
-                    param: pb,
-                },
-            ) => Ok(da == db
-                && env.a_of_b[lb] == la
-                && self.spec_unify(env, constraints, pa, pb)?),
-            (
-                Node::NeedSigdef {
-                    level: la,
-                    def: da,
-                    param: pa,
-                },
-                Node::NeedSigdef {
-                    level: lb,
-                    def: db,
-                    param: pb,
-                },
-            ) => Ok(da == db
-                && env.a_of_b[lb] == la
-                && self.spec_unify(env, constraints, pa, pb)?),
-            (
-                Node::NeedValdef {
-                    level: la,
-                    def: da,
-                    param: pa,
-                },
-                Node::NeedValdef {
-                    level: lb,
-                    def: db,
-                    param: pb,
-                },
-            ) => Ok(da == db
-                && env.a_of_b[lb] == la
-                && self.spec_unify(env, constraints, pa, pb)?),
-            (
-                Node::NeedCtxdef {
-                    level: la,
-                    def: da,
-                    param: pa,
-                },
-                Node::NeedCtxdef {
-                    level: lb,
-                    def: db,
-                    param: pb,
-                },
-            ) => Ok(da == db
-                && env.a_of_b[lb] == la
-                && self.spec_unify(env, constraints, pa, pb)?),
-            (
-                Node::Bind {
-                    args: aa,
-                    bind: ba,
-                },
-                Node::Bind {
-                    args: ab,
-                    bind: bb,
-                },
-            ) => Ok(self.spec_unify_list(env, constraints, aa, ab)?
-                && self.spec_unify(env, constraints, ba, bb)?),
-            (Node::Nothing, Node::Nothing) => Ok(true),
-            (Node::Context, Node::Context) => Ok(true),
-            (Node::Tagdef { def: da }, Node::Tagdef { def: db }) => Ok(da == db),
-            (Node::Fndef { def: da }, Node::Fndef { def: db }) => Ok(da == db),
-            (Node::Lit { val: va }, Node::Lit { val: vb }) => Ok(va == vb),
-            (Node::Aliasdef { .. }, _) | (_, Node::Aliasdef { .. }) => Err(self.todo_no_loc()),
-            (x, y) => {
-                if std::mem::discriminant(&x) == std::mem::discriminant(&y) {
-                    Err(self.todo_no_loc())
-                } else {
-                    Ok(false)
-                }
-            }
-        }
-    }
-
-    /// [`Lower::spec_unify`] applied position by position to two lists of equal length.
-    fn spec_unify_list(
-        &mut self,
-        env: &Renaming,
-        constraints: &mut HashMap<NodeId, Option<NodeId>>,
-        a: NodeList,
-        b: NodeList,
-    ) -> LowerResult<bool> {
-        if a.len() != b.len() {
-            return Ok(false);
-        }
-        let pairs: Vec<(NodeId, NodeId)> = self.ir.lists[a]
-            .iter()
-            .copied()
-            .zip(self.ir.lists[b].iter().copied())
-            .collect();
-        for (x, y) in pairs {
-            if !self.spec_unify(env, constraints, x, y)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
+        self.match_terms(MatchMode::Spec, &env, &mut constraints, ra, rb)
     }
 
     /// Collect the slots that satisfy a need of definition `kind`. Succeeds when, up to the
@@ -2541,7 +2236,7 @@ impl<'a> Lower<'a> {
         }
     }
 
-    /// Rewrite `node`, replacing every abstract type reference `NeedTydef { def, .. }` whose `def`
+    /// Rewrite `node`, replacing every abstract type reference (a `Need` of kind `Ty`) whose `def`
     /// is bound in `tybinds` with the type it is bound to. Used to resolve a composite member's
     /// abstract type references (e.g. `Uint32`) through the in-scope type-binds (e.g. `Uint32=I32`)
     /// before matching, so the two sides of a context-to-context bridge agree on the concrete type.
@@ -2563,7 +2258,7 @@ impl<'a> Lower<'a> {
             // bypass `resolve_need`'s `Get`-projection and reach eval unbound. Only strictly-nested
             // abstract refs are rewritten; the root stays a `Need*` and is projected explicitly.
             if id != node
-                && let Node::NeedTydef { def, .. } = n
+                && let Node::Need { def: DefKind::Ty(def), .. } = n
                 && let Some(&value) = tybinds.get(&def)
             {
                 before.push(id);
@@ -2582,19 +2277,13 @@ impl<'a> Lower<'a> {
                 Node::List { items } | Node::Tuple { elems: items } => {
                     stack.extend(self.ir.lists[items].iter().copied())
                 }
-                Node::NeedTydef { param, .. }
-                | Node::NeedSigdef { param, .. }
-                | Node::NeedValdef { param, .. }
-                | Node::NeedCtxdef { param, .. } => stack.push(param),
+                Node::Need { param, .. } => stack.push(param),
                 Node::Get { ctx, .. } => stack.push(ctx),
                 Node::Bind { args, bind } => {
                     stack.extend(self.ir.lists[args].iter().copied());
                     stack.push(bind);
                 }
-                Node::BindTydef { bind, .. }
-                | Node::BindSigdef { bind, .. }
-                | Node::BindValdef { bind, .. }
-                | Node::BindCtxdef { bind, .. } => stack.push(bind),
+                Node::BindDef { bind, .. } => stack.push(bind),
                 Node::Sig { param, result } => {
                     stack.push(param);
                     stack.push(result);
@@ -2617,7 +2306,7 @@ impl<'a> Lower<'a> {
     /// individual member needs, each is resolved against `slots` (or propagated as a fresh need if
     /// no slot satisfies it), and the per-member providers are bundled into one context-valued
     /// lambda whose `result` is the `List` of those providers. This mirrors the shape that the
-    /// `need` arm builds for a `NeedCtxdef` and that [`Lower::explode`]/[`Lower::invoke`] consume.
+    /// `need` arm builds for a composite-context need and that [`Lower::explode`]/[`Lower::invoke`] consume.
     fn extract_ctx(
         &mut self,
         level: Level,
@@ -2673,20 +2362,20 @@ impl<'a> Lower<'a> {
         // context), not a blanket equation.
         let mut tybinds: HashMap<TydefId, NodeId> = HashMap::new();
         for &slot in &slots {
-            if let Node::BindTydef { def, bind } = self.node(slot) {
+            if let Node::BindDef { def: DefKind::Ty(def), bind } = self.node(slot) {
                 // Project the bind's bound value while *preserving its context-projection form*.
                 //
                 // The bound value of an in-scope `Uint=I32` slot is a `Get`-projection out of the
-                // abstract enclosing context (`Get{..}(Apply(NeedCtxdef(Bootstrap)))`). A full
+                // abstract enclosing context (`Get{..}(Apply(Need(Bootstrap)))`). A full
                 // `reduce` of the nullary application would explode that abstract context and
-                // collapse the projection all the way to a bare `NeedTydef(I32)`. But the bridge
+                // collapse the projection all the way to a bare `Need(I32)`. But the bridge
                 // bind we must match against (`Numerals[Uint]=Numerals[I32]`) refers to that same
                 // `I32` through the *same* `Get{Bootstrap}` projection, since its RHS was lowered
                 // against the same abstract context. Collapsing to a bare need on the need side
                 // produces two irreconcilable forms of the same free `I32` -- a bare need vs a stuck
-                // `Get` -- which `unify` cannot bridge (the abstract `Bootstrap` `Get` never reduces
+                // `Get` -- which `match_terms` cannot bridge (the abstract `Bootstrap` `Get` never reduces
                 // to the bare need). So β-reduce only as far as the `Bind`, then take its bound value
-                // *unreduced*, leaving the projection intact so both sides coincide under `unify`.
+                // *unreduced*, leaving the projection intact so both sides coincide under `match_terms`.
                 let inlined = self.inline(bind, &[])?;
                 let reduced = self.reduce(inlined)?;
                 let value = match self.node(reduced) {
@@ -2704,13 +2393,7 @@ impl<'a> Lower<'a> {
             // A member that is already a binding (e.g. `Bool=I32` in the context's definition) is
             // fixed by the definition and provides itself; only an open `Need*` member is resolved
             // against `slots`, propagating as a fresh need if nothing satisfies it.
-            let is_need = matches!(
-                self.node(member),
-                Node::NeedTydef { .. }
-                    | Node::NeedSigdef { .. }
-                    | Node::NeedValdef { .. }
-                    | Node::NeedCtxdef { .. }
-            );
+            let is_need = matches!(self.node(member), Node::Need { .. });
             if !is_need {
                 providers.push(member);
                 // Expose this fixed member (e.g. `MulOut=Number`) to *later* members' resolution:
@@ -2748,7 +2431,7 @@ impl<'a> Lower<'a> {
         }))
     }
 
-    /// Build a `BindTydef` slot binding the (nullary) type `def` to the (nullary) type `rhs`,
+    /// Build a type-bind slot binding the (nullary) type `def` to the (nullary) type `rhs`,
     /// resolved against `slots`. This mirrors the `bind` method's `Entry::Ref`/`Named::Tydef`
     /// branch but for two type definitions known directly rather than via the parse tree.
     fn bind_tydef(
@@ -2758,14 +2441,30 @@ impl<'a> Lower<'a> {
         def: TydefId,
         rhs: TydefId,
     ) -> LowerResult<NodeId> {
-        let destruct_rhs: Vec<NodeId> = Vec::new();
-        let lambda = self.extract(level.succ(), slots, DefKind::Ty(rhs), &destruct_rhs)?;
-        let Tydef(target_lhs) = self.ir.tydefs[def];
-        let destruct_lhs: Vec<NodeId> = Vec::new();
-        let (construct_lhs, mut needs_vec) = self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
+        let lambda = self.extract(level.succ(), slots, DefKind::Ty(rhs), &[])?;
+        self.mk_bind_def(level, DefKind::Ty(def), lambda, &[], Vec::new())
+    }
+
+    /// Build the [`Node::BindDef`] node binding `def` to the provider `lambda`.
+    ///
+    /// This is the common tail of every binding form: invoke the bound definition's own target
+    /// against `destruct_lhs` (the bindings attached to the left-hand spec) to get the
+    /// left-hand construct and any leftover needs, resolve `lambda` against `destruct_rhs`
+    /// extended with those leftover needs, and wrap the applied provider in a `Bind` that
+    /// records the left-hand construct, all under a lambda taking the leftover needs.
+    fn mk_bind_def(
+        &mut self,
+        level: Level,
+        def: DefKind,
+        lambda: NodeId,
+        destruct_lhs: &[NodeId],
+        mut destruct_rhs: Vec<NodeId>,
+    ) -> LowerResult<NodeId> {
+        let target_lhs = self.target(def);
+        let (construct_lhs, mut needs_vec) =
+            self.invoke_need(level.succ(), target_lhs, destruct_lhs)?;
         let needs = self.mk_node_list(&needs_vec);
         let args_lhs = self.mk_node_list(&construct_lhs);
-        let mut destruct_rhs = destruct_rhs;
         destruct_rhs.append(&mut needs_vec);
         let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
         let args_rhs = self.mk_node_list(&construct_rhs);
@@ -2782,7 +2481,43 @@ impl<'a> Lower<'a> {
             needs,
             result,
         });
-        Ok(self.mk_node(Node::BindTydef { def, bind }))
+        Ok(self.mk_node(Node::BindDef { def, bind }))
+    }
+
+    /// Build the [`Node::Need`] node for an abstract reference to `def`, with its `param` lambda
+    /// constructed by invoking the definition's target against `destruct`.
+    fn mk_need_def(
+        &mut self,
+        level: Level,
+        def: DefKind,
+        destruct: &[NodeId],
+    ) -> LowerResult<NodeId> {
+        let target = self.target(def);
+        let (construct, needs) = self.invoke_need(level.succ(), target, destruct)?;
+        let needs = self.mk_node_list(&needs);
+        let items = self.mk_node_list(&construct);
+        let result = self.mk_node(Node::List { items });
+        let param = self.mk_node(Node::Lambda {
+            level: level.succ(),
+            needs,
+            result,
+        });
+        Ok(self.mk_node(Node::Need { level, def, param }))
+    }
+
+    /// The [`DefKind`] for a binding's left-hand side, or the appropriate error for a `Named`
+    /// that cannot be (re)bound.
+    fn bind_def_kind(lhs: Named, bind: parse::BindId) -> LowerResult<DefKind> {
+        match lhs {
+            Named::Tydef(def) => Ok(DefKind::Ty(def)),
+            Named::Sigdef(def) => Ok(DefKind::Sig(def)),
+            Named::Valdef(def) => Ok(DefKind::Val(def)),
+            Named::Ctxdef(def) => Ok(DefKind::Ctx(def)),
+            Named::Module(_) => Err(LowerError::BindModule(bind)),
+            Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
+            Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
+            Named::Fndef(_) => Err(LowerError::BindDefined(bind)),
+        }
     }
 
     /// Apply a `Lambda` to a `construct` (one resolved value per need) by substituting the needs,
@@ -2818,10 +2553,7 @@ impl<'a> Lower<'a> {
                     // the leftover needs to a `Bind { args, bind }`, whose `bind` is the bound value.
                     // This makes a bound type compare equal to the type it is bound to, which the
                     // literal desugar relies on when disambiguating a digit by an explicit binding.
-                    Node::BindTydef { bind, .. }
-                    | Node::BindSigdef { bind, .. }
-                    | Node::BindValdef { bind, .. }
-                    | Node::BindCtxdef { bind, .. } => {
+                    Node::BindDef { bind, .. } => {
                         let args = self.ir.lists[args].to_vec();
                         let inlined = self.inline(bind, &args)?;
                         let reduced = self.reduce(inlined)?;
@@ -2836,14 +2568,18 @@ impl<'a> Lower<'a> {
             }
             Node::Get { ctx, slot } => {
                 // Reduce the context first so a nested-context accessor (a `Get` chain) collapses to
-                // the stuck `Apply { NeedCtxdef }` (or `List`) form the cases below expect.
+                // the stuck `Apply { Need }` (or `List`) form the cases below expect.
                 let ctx = self.reduce(ctx)?;
                 match self.node(ctx) {
                     Node::Apply {
                         lambda: curried,
                         args,
                     } => match self.node(curried) {
-                        Node::NeedCtxdef { level, def, param } => {
+                        Node::Need {
+                            level,
+                            def: DefKind::Ctx(def),
+                            param,
+                        } => {
                             assert!(args.is_empty()); // TODO: Handle parametrized composite contexts.
                             let exploded = self.explode(level, def, param)?;
                             let single = self.ir.lists[exploded][slot.index()];
@@ -2867,15 +2603,9 @@ impl<'a> Lower<'a> {
             | Node::Nothing
             | Node::Lit { .. }
             | Node::List { .. }
-            | Node::NeedTydef { .. }
-            | Node::NeedSigdef { .. }
-            | Node::NeedValdef { .. }
-            | Node::NeedCtxdef { .. }
+            | Node::Need { .. }
             | Node::Bind { .. }
-            | Node::BindTydef { .. }
-            | Node::BindSigdef { .. }
-            | Node::BindValdef { .. }
-            | Node::BindCtxdef { .. } => Ok(node),
+            | Node::BindDef { .. } => Ok(node),
             // Transparent definitions unfold to their bodies.
             Node::Fndef { def } => {
                 let body = self.ir.fndefs[def].0;
@@ -2944,116 +2674,19 @@ impl<'a> Lower<'a> {
         let parse::Bind { key, val } = self.tree.binds[bind];
         let (lhs, destruct_lhs) = self.spec(level, slots, key)?;
         match val {
-            None => match lhs {
-                Named::Tydef(def) => {
-                    let lambda = self.extract(level.succ(), slots, DefKind::Ty(def), &destruct_lhs)?;
-                    let Tydef(target) = self.ir.tydefs[def];
-                    let (construct_lhs, mut needs_vec) =
-                        self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs_vec);
-                    let args_lhs = self.mk_node_list(&construct_lhs);
-                    let mut destruct_rhs = destruct_lhs;
-                    destruct_rhs.append(&mut needs_vec);
-                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                    let args_rhs = self.mk_node_list(&construct_rhs);
-                    let bind = self.mk_node(Node::Apply {
-                        lambda,
-                        args: args_rhs,
-                    });
-                    let result = self.mk_node(Node::Bind {
-                        args: args_lhs,
-                        bind,
-                    });
-                    let bind = self.mk_node(Node::Lambda {
-                        level: level.succ(),
-                        needs,
-                        result,
-                    });
-                    Ok(self.mk_node(Node::BindTydef { def, bind }))
-                }
-                Named::Sigdef(def) => {
-                    let lambda = self.extract(level.succ(), slots, DefKind::Sig(def), &destruct_lhs)?;
-                    let Sigdef(target) = self.ir.sigdefs[def];
-                    let (construct_lhs, mut needs_vec) =
-                        self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs_vec);
-                    let args_lhs = self.mk_node_list(&construct_lhs);
-                    let mut destruct_rhs = destruct_lhs;
-                    destruct_rhs.append(&mut needs_vec);
-                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                    let args_rhs = self.mk_node_list(&construct_rhs);
-                    let bind = self.mk_node(Node::Apply {
-                        lambda,
-                        args: args_rhs,
-                    });
-                    let result = self.mk_node(Node::Bind {
-                        args: args_lhs,
-                        bind,
-                    });
-                    let bind = self.mk_node(Node::Lambda {
-                        level: level.succ(),
-                        needs,
-                        result,
-                    });
-                    Ok(self.mk_node(Node::BindSigdef { def, bind }))
-                }
-                Named::Valdef(def) => {
-                    let lambda = self.extract(level.succ(), slots, DefKind::Val(def), &destruct_lhs)?;
-                    let Valdef(target) = self.ir.valdefs[def];
-                    let (construct_lhs, mut needs_vec) =
-                        self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs_vec);
-                    let args_lhs = self.mk_node_list(&construct_lhs);
-                    let mut destruct_rhs = destruct_lhs;
-                    destruct_rhs.append(&mut needs_vec);
-                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                    let args_rhs = self.mk_node_list(&construct_rhs);
-                    let bind = self.mk_node(Node::Apply {
-                        lambda,
-                        args: args_rhs,
-                    });
-                    let result = self.mk_node(Node::Bind {
-                        args: args_lhs,
-                        bind,
-                    });
-                    let bind = self.mk_node(Node::Lambda {
-                        level: level.succ(),
-                        needs,
-                        result,
-                    });
-                    Ok(self.mk_node(Node::BindValdef { def, bind }))
-                }
-                Named::Ctxdef(def) => {
-                    let lambda = self.extract_ctx(level.succ(), slots, Level::ZERO, def, &destruct_lhs, true)?;
-                    let Ctxdef(target) = self.ir.ctxdefs[def];
-                    let (construct_lhs, mut needs_vec) =
-                        self.invoke_need(level.succ(), target, &destruct_lhs)?;
-                    let needs = self.mk_node_list(&needs_vec);
-                    let args_lhs = self.mk_node_list(&construct_lhs);
-                    let mut destruct_rhs = destruct_lhs;
-                    destruct_rhs.append(&mut needs_vec);
-                    let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                    let args_rhs = self.mk_node_list(&construct_rhs);
-                    let bind = self.mk_node(Node::Apply {
-                        lambda,
-                        args: args_rhs,
-                    });
-                    let result = self.mk_node(Node::Bind {
-                        args: args_lhs,
-                        bind,
-                    });
-                    let bind = self.mk_node(Node::Lambda {
-                        level: level.succ(),
-                        needs,
-                        result,
-                    });
-                    Ok(self.mk_node(Node::BindCtxdef { def, bind }))
-                }
-                Named::Module(_) => Err(LowerError::BindModule(bind)),
-                Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
-                Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
-                Named::Fndef(_) => Err(LowerError::BindDefined(bind)),
-            },
+            // A bare `bind <def>[..]`: the definition provides itself, resolved from `slots`.
+            None => {
+                let def = Self::bind_def_kind(lhs, bind)?;
+                let lambda = match def {
+                    DefKind::Ctx(ctxdef) => {
+                        self.extract_ctx(level.succ(), slots, Level::ZERO, ctxdef, &destruct_lhs, true)?
+                    }
+                    _ => self.extract(level.succ(), slots, def, &destruct_lhs)?,
+                };
+                let destruct_rhs = destruct_lhs.clone();
+                self.mk_bind_def(level, def, lambda, &destruct_lhs, destruct_rhs)
+            }
+            // `bind <val>=<literal>`: only a `val` can be bound to a literal.
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(def) => {
                     let Valdef(target) = self.ir.valdefs[def];
@@ -3069,10 +2702,14 @@ impl<'a> Lower<'a> {
                         needs,
                         result,
                     });
-                    Ok(self.mk_node(Node::BindValdef { def, bind }))
+                    Ok(self.mk_node(Node::BindDef {
+                        def: DefKind::Val(def),
+                        bind,
+                    }))
                 }
                 _ => Err(LowerError::LitNotVal(token)),
             },
+            // `bind <def>[..]=<ref>[..]`: the right-hand side provides the left-hand definition.
             Some(parse::Entry::Ref(spec)) => {
                 let (rhs, rhs_binds) = self.spec(level, slots, spec)?;
                 // The right-hand side is invoked against the ambient context (`slots`) as well as
@@ -3081,163 +2718,44 @@ impl<'a> Lower<'a> {
                 let rhs_binds_saved = rhs_binds.clone();
                 let mut destruct_rhs = slots.to_vec();
                 destruct_rhs.extend(rhs_binds);
-                match lhs {
-                    Named::Tydef(def) => {
-                        let lambda = match rhs {
-                            Named::Tydef(tydef) => {
-                                self.extract(level.succ(), slots, DefKind::Ty(tydef), &destruct_rhs)?
-                            }
-                            Named::Tagdef(tagdef) => self.mk_node(Node::Tagdef { def: tagdef }),
-                            Named::Aliasdef(aliasdef) => {
-                                self.mk_node(Node::Aliasdef { def: aliasdef })
-                            }
-                            _ => return Err(LowerError::BindMismatch(bind)),
-                        };
-                        let Tydef(target_lhs) = self.ir.tydefs[def];
-                        let (construct_lhs, mut needs_vec) =
-                            self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
-                        let needs = self.mk_node_list(&needs_vec);
-                        let args_lhs = self.mk_node_list(&construct_lhs);
-                        destruct_rhs.append(&mut needs_vec);
-                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                        let args_rhs = self.mk_node_list(&construct_rhs);
-                        let bind = self.mk_node(Node::Apply {
-                            lambda,
-                            args: args_rhs,
-                        });
-                        let result = self.mk_node(Node::Bind {
-                            args: args_lhs,
-                            bind,
-                        });
-                        let bind = self.mk_node(Node::Lambda {
-                            level: level.succ(),
-                            needs,
-                            result,
-                        });
-                        Ok(self.mk_node(Node::BindTydef { def, bind }))
+                let def = Self::bind_def_kind(lhs, bind)?;
+                let lambda = match (def, rhs) {
+                    (DefKind::Ty(_), Named::Tydef(tydef)) => {
+                        self.extract(level.succ(), slots, DefKind::Ty(tydef), &destruct_rhs)?
                     }
-                    Named::Sigdef(def) => {
-                        let lambda = match rhs {
-                            Named::Sigdef(sigdef) => {
-                                self.extract(level.succ(), slots, DefKind::Sig(sigdef), &destruct_rhs)?
-                            }
-                            Named::Fndef(fndef) => self.mk_node(Node::Fndef { def: fndef }),
-                            _ => return Err(LowerError::BindMismatch(bind)),
-                        };
-                        // TODO: Check compatibility of function signatures.
-                        let Sigdef(target_lhs) = self.ir.sigdefs[def];
-                        let (construct_lhs, mut needs_vec) =
-                            self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
-                        let needs = self.mk_node_list(&needs_vec);
-                        let args_lhs = self.mk_node_list(&construct_lhs);
-                        destruct_rhs.append(&mut needs_vec);
-                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                        let args_rhs = self.mk_node_list(&construct_rhs);
-                        let bind = self.mk_node(Node::Apply {
-                            lambda,
-                            args: args_rhs,
-                        });
-                        let result = self.mk_node(Node::Bind {
-                            args: args_lhs,
-                            bind,
-                        });
-                        let bind = self.mk_node(Node::Lambda {
-                            level: level.succ(),
-                            needs,
-                            result,
-                        });
-                        Ok(self.mk_node(Node::BindSigdef { def, bind }))
+                    (DefKind::Ty(_), Named::Tagdef(tagdef)) => {
+                        self.mk_node(Node::Tagdef { def: tagdef })
                     }
-                    Named::Valdef(def) => {
-                        let lambda = match rhs {
-                            Named::Valdef(valdef) => {
-                                self.extract(level.succ(), slots, DefKind::Val(valdef), &destruct_rhs)?
-                            }
-                            _ => return Err(LowerError::BindMismatch(bind)),
-                        };
-                        // TODO: Check compatibility of value types.
-                        let Valdef(target_lhs) = self.ir.valdefs[def];
-                        let (construct_lhs, mut needs_vec) =
-                            self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
-                        let needs = self.mk_node_list(&needs_vec);
-                        let args_lhs = self.mk_node_list(&construct_lhs);
-                        destruct_rhs.append(&mut needs_vec);
-                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                        let args_rhs = self.mk_node_list(&construct_rhs);
-                        let bind = self.mk_node(Node::Apply {
-                            lambda,
-                            args: args_rhs,
-                        });
-                        let result = self.mk_node(Node::Bind {
-                            args: args_lhs,
-                            bind,
-                        });
-                        let bind = self.mk_node(Node::Lambda {
-                            level: level.succ(),
-                            needs,
-                            result,
-                        });
-                        Ok(self.mk_node(Node::BindValdef { def, bind }))
+                    (DefKind::Ty(_), Named::Aliasdef(aliasdef)) => {
+                        self.mk_node(Node::Aliasdef { def: aliasdef })
                     }
-                    Named::Ctxdef(def) => {
-                        let lambda = match rhs {
-                            Named::Ctxdef(rhs_def) => {
-                                // Forward an existing concrete provider of the RHS context (e.g.
-                                // Wasi's `Numerals[Number=I32]`) rather than re-deriving the ctxdef
-                                // with `extract`, which only applies the outer param and leaves the
-                                // inner member-needs open. Build the RHS context need (mirroring
-                                // `need`) and resolve it, which tries `extract_lambda` first.
-                                let Ctxdef(rhs_target) = self.ir.ctxdefs[rhs_def];
-                                let (rhs_construct, rhs_needs) =
-                                    self.invoke_need(level.succ(), rhs_target, &rhs_binds_saved)?;
-                                let rhs_needs = self.mk_node_list(&rhs_needs);
-                                let rhs_items = self.mk_node_list(&rhs_construct);
-                                let rhs_result = self.mk_node(Node::List { items: rhs_items });
-                                let rhs_param = self.mk_node(Node::Lambda {
-                                    level: level.succ(),
-                                    needs: rhs_needs,
-                                    result: rhs_result,
-                                });
-                                let rhs_need = self.mk_node(Node::NeedCtxdef {
-                                    level,
-                                    def: rhs_def,
-                                    param: rhs_param,
-                                });
-                                match self.resolve_need(rhs_need, &destruct_rhs, Level::ZERO)? {
-                                    Some(provider) => provider,
-                                    None => return Err(LowerError::BindMismatch(bind)),
-                                }
-                            }
-                            _ => return Err(LowerError::BindMismatch(bind)),
-                        };
-                        let Ctxdef(target_lhs) = self.ir.ctxdefs[def];
-                        let (construct_lhs, mut needs_vec) =
-                            self.invoke_need(level.succ(), target_lhs, &destruct_lhs)?;
-                        let needs = self.mk_node_list(&needs_vec);
-                        let args_lhs = self.mk_node_list(&construct_lhs);
-                        destruct_rhs.append(&mut needs_vec);
-                        let construct_rhs = self.invoke_force(lambda, &destruct_rhs)?;
-                        let args_rhs = self.mk_node_list(&construct_rhs);
-                        let bind = self.mk_node(Node::Apply {
-                            lambda,
-                            args: args_rhs,
-                        });
-                        let result = self.mk_node(Node::Bind {
-                            args: args_lhs,
-                            bind,
-                        });
-                        let bind = self.mk_node(Node::Lambda {
-                            level: level.succ(),
-                            needs,
-                            result,
-                        });
-                        Ok(self.mk_node(Node::BindCtxdef { def, bind }))
+                    // TODO: Check compatibility of function signatures.
+                    (DefKind::Sig(_), Named::Sigdef(sigdef)) => {
+                        self.extract(level.succ(), slots, DefKind::Sig(sigdef), &destruct_rhs)?
                     }
-                    Named::Module(_) => Err(LowerError::BindModule(bind)),
-                    Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
-                    Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
-                    Named::Fndef(_) => Err(LowerError::BindDefined(bind)),
-                }
+                    (DefKind::Sig(_), Named::Fndef(fndef)) => {
+                        self.mk_node(Node::Fndef { def: fndef })
+                    }
+                    // TODO: Check compatibility of value types.
+                    (DefKind::Val(_), Named::Valdef(valdef)) => {
+                        self.extract(level.succ(), slots, DefKind::Val(valdef), &destruct_rhs)?
+                    }
+                    (DefKind::Ctx(_), Named::Ctxdef(rhs_def)) => {
+                        // Forward an existing concrete provider of the RHS context (e.g.
+                        // Wasi's `Numerals[Number=I32]`) rather than re-deriving the ctxdef
+                        // with `extract`, which only applies the outer param and leaves the
+                        // inner member-needs open. Build the RHS context need (mirroring
+                        // `need`) and resolve it, which tries `extract_lambda` first.
+                        let rhs_need =
+                            self.mk_need_def(level, DefKind::Ctx(rhs_def), &rhs_binds_saved)?;
+                        match self.resolve_need(rhs_need, &destruct_rhs, Level::ZERO)? {
+                            Some(provider) => provider,
+                            None => return Err(LowerError::BindMismatch(bind)),
+                        }
+                    }
+                    _ => return Err(LowerError::BindMismatch(bind)),
+                };
+                self.mk_bind_def(level, def, lambda, &destruct_lhs, destruct_rhs)
             }
         }
     }
@@ -3266,76 +2784,10 @@ impl<'a> Lower<'a> {
             Some(_) => self.bind(level, slots, bind),
             None => {
                 let (lhs, destruct) = self.spec(level, slots, key)?;
-                match lhs {
-                    Named::Tydef(def) => {
-                        let Tydef(target) = self.ir.tydefs[def];
-                        let (construct, needs) =
-                            self.invoke_need(level.succ(), target, &destruct)?;
-                        let needs = self.mk_node_list(&needs);
-                        let items = self.mk_node_list(&construct);
-                        let result = self.mk_node(Node::List { items });
-                        let param = self.mk_node(Node::Lambda {
-                            level: level.succ(),
-                            needs,
-                            result,
-                        });
-                        let node = self.mk_node(Node::NeedTydef { level, def, param });
-                        params.push(node);
-                        Ok(node)
-                    }
-                    Named::Sigdef(def) => {
-                        let Sigdef(target) = self.ir.sigdefs[def];
-                        let (construct, needs) =
-                            self.invoke_need(level.succ(), target, &destruct)?;
-                        let needs = self.mk_node_list(&needs);
-                        let items = self.mk_node_list(&construct);
-                        let result = self.mk_node(Node::List { items });
-                        let param = self.mk_node(Node::Lambda {
-                            level: level.succ(),
-                            needs,
-                            result,
-                        });
-                        let node = self.mk_node(Node::NeedSigdef { level, def, param });
-                        params.push(node);
-                        Ok(node)
-                    }
-                    Named::Valdef(def) => {
-                        let Valdef(target) = self.ir.valdefs[def];
-                        let (construct, needs) =
-                            self.invoke_need(level.succ(), target, &destruct)?;
-                        let needs = self.mk_node_list(&needs);
-                        let items = self.mk_node_list(&construct);
-                        let result = self.mk_node(Node::List { items });
-                        let param = self.mk_node(Node::Lambda {
-                            level: level.succ(),
-                            needs,
-                            result,
-                        });
-                        let node = self.mk_node(Node::NeedValdef { level, def, param });
-                        params.push(node);
-                        Ok(node)
-                    }
-                    Named::Ctxdef(def) => {
-                        let Ctxdef(target) = self.ir.ctxdefs[def];
-                        let (construct, needs) =
-                            self.invoke_need(level.succ(), target, &destruct)?;
-                        let needs = self.mk_node_list(&needs);
-                        let items = self.mk_node_list(&construct);
-                        let result = self.mk_node(Node::List { items });
-                        let param = self.mk_node(Node::Lambda {
-                            level: level.succ(),
-                            needs,
-                            result,
-                        });
-                        let node = self.mk_node(Node::NeedCtxdef { level, def, param });
-                        params.push(node);
-                        Ok(node)
-                    }
-                    Named::Module(_) => Err(LowerError::BindModule(bind)),
-                    Named::Tagdef(_) => Err(LowerError::BindNominal(bind)),
-                    Named::Aliasdef(_) => Err(LowerError::BindAlias(bind)),
-                    Named::Fndef(_) => Err(LowerError::BindDefined(bind)),
-                }
+                let def = Self::bind_def_kind(lhs, bind)?;
+                let node = self.mk_need_def(level, def, &destruct)?;
+                params.push(node);
+                Ok(node)
             }
         }
     }
@@ -3995,7 +3447,12 @@ impl LowerBody<'_, '_> {
             Node::Sig { .. } => reduced,
             // A contextual function is a stuck application; read its signature from the `sig` decl.
             Node::Apply { lambda, args } => {
-                let Node::NeedSigdef { def, param, .. } = self.x.node(lambda) else {
+                let Node::Need {
+                    def: DefKind::Sig(def),
+                    param,
+                    ..
+                } = self.x.node(lambda)
+                else {
                     panic!()
                 };
                 self.x.signature(def, param, args)?
@@ -4026,10 +3483,13 @@ impl LowerBody<'_, '_> {
     /// Check that an `actual` type matches an `expected` type, up to reduction.
     fn expect_ty(&mut self, expected: NodeId, actual: NodeId) -> LowerResult<()> {
         let mut constraints = HashMap::new();
-        if self
-            .x
-            .unify(&Renaming::identity(), &mut constraints, expected, actual)?
-        {
+        if self.x.match_terms(
+            MatchMode::Equiv,
+            &Renaming::identity(),
+            &mut constraints,
+            expected,
+            actual,
+        )? {
             Ok(())
         } else {
             Err(self.x.todo_no_loc()) // TODO: a real type-mismatch error
@@ -4495,7 +3955,10 @@ impl LowerBody<'_, '_> {
         let mut assembled = Vec::new();
         for need in self.x.ir.lists[ret_needs].to_vec() {
             match self.x.node(need) {
-                Node::NeedCtxdef { def, .. } => {
+                Node::Need {
+                    def: DefKind::Ctx(def),
+                    ..
+                } => {
                     // If a single body binding *forwards* this exact context -- e.g. `std`'s
                     // `bind bootstrap()`, where `bootstrap` returns `bind Std` -- its members can't
                     // be re-resolved member-by-member (they're sealed inside that call's returned
@@ -4561,6 +4024,9 @@ pub fn lower(
         funcs: Vec::new(),
         attaches: Vec::new(),
         detaches: Vec::new(),
+        explode_cache: HashMap::new(),
+        raise_cache: HashMap::new(),
+        subst_cache: HashMap::new(),
     };
     lower.program()?;
     Ok(module)
@@ -4586,13 +4052,13 @@ mod ctxbind_repro {
     /// Isolated reproduction of the composite-context bridging bug that blocks the
     /// backend (`hello` panics at `wasm.rs:366`). A `bind <Ctx>` return that bridges
     /// one instance of a parametric composite context to another instance exercises
-    /// `synthesize_bind` matching a `BindCtxdef` against a `NeedCtxdef`.
+    /// `synthesize_bind` matching a context `BindDef` against a context `Need`.
     ///
     /// IGNORED: currently fails. NOTE on fidelity: standalone, the RHS provider
     /// (`Inner[P=B]`) is an *abstract need*, so this fails during bind *construction*
     /// (`extract` -> `todo!`), whereas the prelude's `Numerals[Uint]=Numerals[I32]`
     /// has a *concrete* RHS (Wasi's `Numerals[I32]`) and instead fails later in
-    /// `synthesize_bind` at `unify`. Both are the same root cause: a need and a bind
+    /// `synthesize_bind` at `match_terms`. Both are the same root cause: a need and a bind
     /// at different nesting depths with free references to different enclosing
     /// contexts that `synthesize`'s identity `Renaming` seed does not relate. See
     /// `scratch/backend-synthesize-ctxbind-handoff3.md`.
