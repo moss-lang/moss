@@ -19,7 +19,7 @@ use crate::{
     prelude::{Arith, Base, Builders, Numerals},
     range::{Inclusive, expr_range, path_range, single},
     tuples::{TupleRange, Tuples},
-    util::IdRange,
+    util::{FxBuildHasher, IdRange},
 };
 
 define_index_type! {
@@ -561,7 +561,7 @@ pub struct IR {
     pub strings: Strings,
 
     /// Hash-consed arena of static nodes, like types and contexts.
-    pub nodes: IndexSet<Node>,
+    pub nodes: IndexSet<Node, FxBuildHasher>,
 
     /// Hash-consed arena of lists of indices into the node arena.
     pub lists: Tuples<NodeId>,
@@ -901,7 +901,7 @@ trait Transform {
 struct Raise {
     floor: Level,
     add: Level,
-    cache: HashMap<NodeId, NodeId>, // TODO: Use a smarter and less temporary hashing strategy.
+    cache: HashMap<NodeId, NodeId, FxBuildHasher>,
 }
 
 impl Transform for Raise {
@@ -955,7 +955,7 @@ impl Transform for Raise {
 
 struct Substitute {
     floor: Level,
-    mapping: HashMap<NodeId, NodeId>,
+    mapping: HashMap<NodeId, NodeId, FxBuildHasher>,
 }
 
 impl Transform for Substitute {
@@ -1310,7 +1310,7 @@ impl<'a> Lower<'a> {
         let mut map = Raise {
             floor,
             add,
-            cache: HashMap::new(),
+            cache: HashMap::default(),
         };
         self.transform(&mut map, node)
     }
@@ -1323,7 +1323,7 @@ impl<'a> Lower<'a> {
         node: NodeId,
     ) -> NodeId {
         assert_eq!(before.len(), after.len());
-        let mut mapping = HashMap::new();
+        let mut mapping = HashMap::default();
         for (&x, &y) in (self.ir.lists[before].iter()).zip(self.ir.lists[after].iter()) {
             mapping.insert(x, y);
         }

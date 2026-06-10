@@ -1,9 +1,83 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{BuildHasherDefault, Hash, Hasher};
 
 use index_vec::{Idx, IndexSlice, IndexVec};
 
+/// A fast, non-cryptographic hasher (the `FxHash` algorithm used by `rustc` and Firefox).
+///
+/// The IR is full of small integer keys (node ids, levels, string ids) that get hashed
+/// constantly during lowering; the standard-library `SipHash` is far stronger than we need for
+/// internal hash-consing, so we use this instead.
+#[derive(Default)]
+pub struct FxHasher {
+    hash: usize,
+}
+
+// Constant from `rustc-hash`: an odd 64-bit multiplier with a good bit-mixing pattern.
+const FX_SEED: usize = 0x51_7c_c1_b7_27_22_0a_95;
+
+impl FxHasher {
+    #[inline]
+    fn add(&mut self, i: usize) {
+        self.hash = (self.hash.rotate_left(5) ^ i).wrapping_mul(FX_SEED);
+    }
+}
+
+impl Hasher for FxHasher {
+    #[inline]
+    fn write(&mut self, mut bytes: &[u8]) {
+        while bytes.len() >= 8 {
+            self.add(usize::from_ne_bytes(bytes[..8].try_into().unwrap()));
+            bytes = &bytes[8..];
+        }
+        if bytes.len() >= 4 {
+            self.add(u32::from_ne_bytes(bytes[..4].try_into().unwrap()) as usize);
+            bytes = &bytes[4..];
+        }
+        if bytes.len() >= 2 {
+            self.add(u16::from_ne_bytes(bytes[..2].try_into().unwrap()) as usize);
+            bytes = &bytes[2..];
+        }
+        if let Some(&b) = bytes.first() {
+            self.add(b as usize);
+        }
+    }
+
+    #[inline]
+    fn write_u8(&mut self, i: u8) {
+        self.add(i as usize);
+    }
+
+    #[inline]
+    fn write_u16(&mut self, i: u16) {
+        self.add(i as usize);
+    }
+
+    #[inline]
+    fn write_u32(&mut self, i: u32) {
+        self.add(i as usize);
+    }
+
+    #[inline]
+    fn write_u64(&mut self, i: u64) {
+        self.add(i as usize);
+    }
+
+    #[inline]
+    fn write_usize(&mut self, i: usize) {
+        self.add(i);
+    }
+
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.hash as u64
+    }
+}
+
+/// A [`std::hash::BuildHasher`] for [`FxHasher`], for use with `HashMap`/`IndexSet` etc.
+pub type FxBuildHasher = BuildHasherDefault<FxHasher>;
+
 pub fn default_hash(x: &impl Hash) -> u64 {
-    let mut state = DefaultHasher::new();
+    let mut state = FxHasher::default();
     x.hash(&mut state);
     state.finish()
 }
