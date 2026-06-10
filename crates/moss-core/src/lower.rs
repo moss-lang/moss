@@ -182,7 +182,7 @@ impl IndexMut<Level> for LevelMap {
 }
 
 /// Which kind of contextual definition an `extract` is resolving, paired with its id.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum DefKind {
     Ty(TydefId),
     Sig(SigdefId),
@@ -990,6 +990,10 @@ struct Lower<'a> {
     funcs: Vec<(parse::FuncdefId, FndefId)>,
     attaches: Vec<(parse::AttachdefId, TagdefId, FndefId)>,
     detaches: Vec<(parse::DetachdefId, FndefId)>,
+    /// Memoizes [`Lower::extract`] results, which depend only on its inputs. The literal desugar
+    /// in particular re-extracts the same prelude signatures (`set_char`, `build`, the digit/radix
+    /// values, ...) once per character of a string literal, all against the same `slots`.
+    extract_memo: HashMap<(Level, DefKind, Vec<NodeId>, Vec<NodeId>), NodeId, FxBuildHasher>,
 }
 
 impl<'a> Lower<'a> {
@@ -2524,6 +2528,10 @@ impl<'a> Lower<'a> {
         kind: DefKind,
         destruct: &[NodeId],
     ) -> LowerResult<NodeId> {
+        let memo_key = (level, kind, slots.to_vec(), destruct.to_vec());
+        if let Some(&node) = self.extract_memo.get(&memo_key) {
+            return Ok(node);
+        }
         let target = self.target(kind);
         let raised = self.raise(target, Level::ZERO, level);
         let (construct, needs) = self.invoke_need(level, raised, destruct)?;
@@ -2536,7 +2544,10 @@ impl<'a> Lower<'a> {
             result,
         });
         match self.extract_lambda(slots, kind, lambda)? {
-            Some((node, _)) => Ok(node),
+            Some((node, _)) => {
+                self.extract_memo.insert(memo_key, node);
+                Ok(node)
+            }
             None => Err(todo!()),
         }
     }
@@ -4561,6 +4572,7 @@ pub fn lower(
         funcs: Vec::new(),
         attaches: Vec::new(),
         detaches: Vec::new(),
+        extract_memo: HashMap::default(),
     };
     lower.program()?;
     Ok(module)
