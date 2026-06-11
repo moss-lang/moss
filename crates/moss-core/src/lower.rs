@@ -186,6 +186,24 @@ impl Renaming {
         }
     }
 
+    /// The correspondence for two terms whose binders sit at `a` and `b`: their enclosing
+    /// frames correspond with the uniform shift `a - b`. The two sides of a [`Lower::synthesize`]
+    /// are raised from a shared origin by possibly different amounts (e.g. a need's construct is
+    /// raised into the resolution frame while a bind's arguments were built unraised), so a free
+    /// reference at level `k` on the `b` side reaches the same frame as `k + a - b` on the `a`
+    /// side. The identity is the `a == b` special case.
+    fn shifted(a: Level, b: Level) -> Self {
+        let mut a_of_b = LevelMap::default();
+        let shift = i16::from(a.0) - i16::from(b.0);
+        for k in 0..=u8::MAX {
+            let v = i16::from(k) + shift;
+            if (0..=i16::from(u8::MAX)).contains(&v) {
+                a_of_b[Level(k)] = Level(v as u8);
+            }
+        }
+        Self { a_of_b }
+    }
+
     /// Record that we have descended under binder `a` on the left and `b` on the right.
     fn bind(&mut self, a: Level, b: Level) {
         self.a_of_b[b] = a;
@@ -1620,16 +1638,27 @@ impl<'a> Lower<'a> {
         mode: MatchMode,
         env: &Renaming,
         constraints: &mut HashMap<NodeId, Option<NodeId>>,
+        a_holes: &mut HashMap<NodeId, Option<NodeId>>,
         a: NodeId,
         b: NodeId,
     ) -> LowerResult<bool> {
-        // Asymmetry: metavariables are on `b`.
-        debug_assert!(mode == MatchMode::Spec || !constraints.contains_key(&a));
         if constraints.contains_key(&b) {
             match constraints.get_mut(&b).unwrap() {
                 slot @ None => *slot = Some(a),
                 Some(prev) if *prev == a => {}
                 other => *other = None, // conflicting solutions: leave unsolved
+            }
+            return Ok(true);
+        }
+        // An `a`-side hole: a leftover need of the *requirement* (e.g. a body re-deriving
+        // `foo`'s construct where `foo`'s `T` parameter is pinned only inside the provider).
+        // It is solved by whatever the provider supplies; like `b`-side holes in `Spec` mode,
+        // conflicts never fail, since the solutions only witness the match.
+        if a_holes.contains_key(&a) {
+            match a_holes.get_mut(&a).unwrap() {
+                slot @ None => *slot = Some(b),
+                Some(prev) if *prev == b => {}
+                other => *other = None,
             }
             return Ok(true);
         }
@@ -1657,8 +1686,8 @@ impl<'a> Lower<'a> {
             ) => {
                 let mut env = *env;
                 env.bind(la, lb);
-                Ok(self.match_terms_list(mode, &env, constraints, na, nb)?
-                    && self.match_terms(mode, &env, constraints, ra, rb)?)
+                Ok(self.match_terms_list(mode, &env, constraints, a_holes, na, nb)?
+                    && self.match_terms(mode, &env, constraints, a_holes, ra, rb)?)
             }
             (
                 Node::Apply {
@@ -1669,13 +1698,13 @@ impl<'a> Lower<'a> {
                     lambda: fb,
                     args: ab,
                 },
-            ) => Ok(self.match_terms(mode, env, constraints, fa, fb)?
-                && self.match_terms_list(mode, env, constraints, aa, ab)?),
+            ) => Ok(self.match_terms(mode, env, constraints, a_holes, fa, fb)?
+                && self.match_terms_list(mode, env, constraints, a_holes, aa, ab)?),
             (Node::List { items: ia }, Node::List { items: ib }) => {
-                self.match_terms_list(mode, env, constraints, ia, ib)
+                self.match_terms_list(mode, env, constraints, a_holes, ia, ib)
             }
             (Node::Tuple { elems: ea }, Node::Tuple { elems: eb }) => {
-                self.match_terms_list(mode, env, constraints, ea, eb)
+                self.match_terms_list(mode, env, constraints, a_holes, ea, eb)
             }
             (
                 Node::Sig {
@@ -1686,8 +1715,8 @@ impl<'a> Lower<'a> {
                     param: pb,
                     result: rb,
                 },
-            ) => Ok(self.match_terms(mode, env, constraints, pa, pb)?
-                && self.match_terms(mode, env, constraints, ra, rb)?),
+            ) => Ok(self.match_terms(mode, env, constraints, a_holes, pa, pb)?
+                && self.match_terms(mode, env, constraints, a_holes, ra, rb)?),
             (
                 Node::Need {
                     level: la,
@@ -1704,7 +1733,7 @@ impl<'a> Lower<'a> {
                 // which compares fully reduced values where a stuck need is identified by its
                 // definition and arguments alone.
                 && (mode == MatchMode::Value || env.a_of_b[lb] == la)
-                && self.match_terms(mode, env, constraints, pa, pb)?),
+                && self.match_terms(mode, env, constraints, a_holes, pa, pb)?),
             (
                 Node::Get {
                     ctx: ca,
@@ -1714,7 +1743,7 @@ impl<'a> Lower<'a> {
                     ctx: cb,
                     slot: sb,
                 },
-            ) => Ok(sa == sb && self.match_terms(mode, env, constraints, ca, cb)?),
+            ) => Ok(sa == sb && self.match_terms(mode, env, constraints, a_holes, ca, cb)?),
             (
                 Node::Bind {
                     args: aa,
@@ -1724,10 +1753,10 @@ impl<'a> Lower<'a> {
                     args: ab,
                     bind: bb,
                 },
-            ) => Ok(self.match_terms_list(mode, env, constraints, aa, ab)?
-                && self.match_terms(mode, env, constraints, ba, bb)?),
+            ) => Ok(self.match_terms_list(mode, env, constraints, a_holes, aa, ab)?
+                && self.match_terms(mode, env, constraints, a_holes, ba, bb)?),
             (Node::BindDef { def: da, bind: ba }, Node::BindDef { def: db, bind: bb }) => {
-                Ok(da == db && self.match_terms(mode, env, constraints, ba, bb)?)
+                Ok(da == db && self.match_terms(mode, env, constraints, a_holes, ba, bb)?)
             }
             // The directional specificity rule: a binding dominates the abstract need of the same
             // definition, so `a` bound vs `b` abstract is ≥-specific (true), and `a` abstract vs
@@ -1760,6 +1789,7 @@ impl<'a> Lower<'a> {
         mode: MatchMode,
         env: &Renaming,
         constraints: &mut HashMap<NodeId, Option<NodeId>>,
+        a_holes: &mut HashMap<NodeId, Option<NodeId>>,
         a: NodeList,
         b: NodeList,
     ) -> LowerResult<bool> {
@@ -1772,7 +1802,7 @@ impl<'a> Lower<'a> {
             .zip(self.ir.lists[b].iter().copied())
             .collect();
         for (x, y) in pairs {
-            if !self.match_terms(mode, env, constraints, x, y)? {
+            if !self.match_terms(mode, env, constraints, a_holes, x, y)? {
                 return Ok(false);
             }
         }
@@ -1800,36 +1830,54 @@ impl<'a> Lower<'a> {
         else {
             panic!()
         };
-        // The needs of `beta` are the metavariables to solve for.
-        let mut constraints =
-            HashMap::from_iter(self.ir.lists[needs_beta].iter().map(|&need| (need, None)));
-        // Relate the two stripped binders; the rest of the correspondence is the identity,
-        // i.e. `alpha` and `beta` are compared under a shared enclosing context.
-        let mut env = Renaming::identity();
-        env.bind(level_alpha, level_beta);
-        if !self.match_terms(
-            MatchMode::Equiv,
-            &env,
-            &mut constraints,
-            result_alpha,
-            result_beta,
-        )? {
-            return Ok(None);
+        // Two candidate correspondences for the enclosing frames. First the identity (with only
+        // the stripped binders related): `alpha` and `beta` share their enclosing context. If
+        // that fails and the binders sit at different levels, retry with the uniform shift
+        // `level_alpha - level_beta`: the two sides share their enclosing context's *origin* but
+        // were raised from it by different amounts (e.g. a need's construct is raised into the
+        // resolution frame while a bind's arguments were built unraised), so a free reference at
+        // level `k` on the `beta` side reaches the same frame as `k + shift` on the `alpha`
+        // side. Trying identity first keeps every resolution that works today unchanged.
+        let mut identity = Renaming::identity();
+        identity.bind(level_alpha, level_beta);
+        let mut envs = vec![identity];
+        if level_alpha != level_beta {
+            envs.push(Renaming::shifted(level_alpha, level_beta));
         }
-        let Some(results) = self.ir.lists[needs_beta]
-            .iter()
-            .map(|&need| constraints[&need])
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Ok(None);
-        };
-        let items = self.mk_node_list(&results);
-        let result = self.mk_node(Node::List { items });
-        Ok(Some(self.mk_node(Node::Lambda {
-            level: level_alpha,
-            needs: needs_alpha,
-            result,
-        })))
+        for env in envs {
+            // The needs of `beta` are the metavariables to solve for, afresh per attempt; the
+            // needs of `alpha` (the requirement's unresolved leftovers) are holes solvable by
+            // whatever the provider supplies.
+            let mut constraints =
+                HashMap::from_iter(self.ir.lists[needs_beta].iter().map(|&need| (need, None)));
+            let mut a_holes =
+                HashMap::from_iter(self.ir.lists[needs_alpha].iter().map(|&need| (need, None)));
+            if !self.match_terms(
+                MatchMode::Equiv,
+                &env,
+                &mut constraints,
+                &mut a_holes,
+                result_alpha,
+                result_beta,
+            )? {
+                continue;
+            }
+            let Some(results) = self.ir.lists[needs_beta]
+                .iter()
+                .map(|&need| constraints[&need])
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            let items = self.mk_node_list(&results);
+            let result = self.mk_node(Node::List { items });
+            return Ok(Some(self.mk_node(Node::Lambda {
+                level: level_alpha,
+                needs: needs_alpha,
+                result,
+            })));
+        }
+        Ok(None)
     }
 
     /// Like `synthesize`, but where `beta` returns a [`Node::Bind`] that must be unwrapped first.
@@ -1964,6 +2012,11 @@ impl<'a> Lower<'a> {
             if let Some(synth) = self.synthesize_bind(lambda, bind)? {
                 return Ok(Some((slot, synth)));
             }
+            if std::env::var("MOSS_DBG_RESOLVE").is_ok() {
+                eprintln!("match_bind MISS: kind={kind:?}");
+                self.dbg_tree("alpha (need lambda)", lambda, 0);
+                self.dbg_tree("beta (bind)", bind, 0);
+            }
         }
         Ok(None)
     }
@@ -2045,6 +2098,7 @@ impl<'a> Lower<'a> {
                         .match_terms(
                             MatchMode::Value,
                             &Renaming::identity(),
+                            &mut HashMap::new(),
                             &mut HashMap::new(),
                             first,
                             c,
@@ -2182,7 +2236,7 @@ impl<'a> Lower<'a> {
             HashMap::from_iter(self.ir.lists[nb].iter().map(|&need| (need, None)));
         let mut env = Renaming::identity();
         env.bind(la, lb);
-        self.match_terms(MatchMode::Spec, &env, &mut constraints, ra, rb)
+        self.match_terms(MatchMode::Spec, &env, &mut constraints, &mut HashMap::new(), ra, rb)
     }
 
     /// Collect the slots that satisfy a need of definition `kind`. Succeeds when, up to the
@@ -2770,8 +2824,13 @@ impl<'a> Lower<'a> {
                     }
                     _ => self.extract(level.succ(), slots, def, &destruct_lhs)?,
                 };
-                let destruct_rhs = destruct_lhs.clone();
-                self.mk_bind_def(level, def, lambda, &destruct_lhs, destruct_rhs)
+                // As in `need_bind`: the bound definition's own needs (e.g. an `assume`-folded
+                // context) resolve against the ambient context as well as the spec's attached
+                // bindings.
+                let mut destruct_all = slots.to_vec();
+                destruct_all.extend(destruct_lhs);
+                let destruct_rhs = destruct_all.clone();
+                self.mk_bind_def(level, def, lambda, &destruct_all, destruct_rhs)
             }
             // `bind <val>=<literal>`: only a `val` can be bound to a literal. A literal must
             // never reach the backend as a raw value (the bound type is contextual, so the
@@ -2866,7 +2925,11 @@ impl<'a> Lower<'a> {
                     }
                     _ => return Err(LowerError::BindMismatch(bind)),
                 };
-                self.mk_bind_def(level, def, lambda, &destruct_lhs, destruct_rhs)
+                // As in `need_bind`: the bound definition's own needs resolve against the
+                // ambient context as well as the spec's attached bindings.
+                let mut destruct_all = slots.to_vec();
+                destruct_all.extend(destruct_lhs);
+                self.mk_bind_def(level, def, lambda, &destruct_all, destruct_rhs)
             }
         }
     }
@@ -3631,6 +3694,7 @@ impl LowerBody<'_, '_> {
             MatchMode::Equiv,
             &Renaming::identity(),
             &mut constraints,
+            &mut HashMap::new(),
             expected,
             actual,
         )? {
