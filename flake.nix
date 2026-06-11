@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     crane.url = "github:ipetkov/crane";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -102,10 +102,6 @@
             pname = vscodeExtUniqueId;
             inherit version;
             src = vsixRaw;
-            # Including `unzip` here is unnecessary on NixOS 25.11 like we use
-            # in this flake, but https://github.com/NixOS/nixpkgs/pull/464215
-            # removed it, so we must explicitly list it to make the overlay work
-            # with unstable Nixpkgs.
             nativeBuildInputs = [ final.unzip ];
             unpackPhase = ''
               runHook preUnpack
@@ -190,12 +186,6 @@
                   pkgs.nodejs # Used by vsce.
                   pkgs.python3
                   pkgs.rust-bin.stable.latest.default
-
-                  # Convenient tools.
-                  pkgs.binaryen
-                  pkgs.graphviz
-                  pkgs.wasm-tools
-                  pkgs.wasmtime
                 ];
                 MOSS_LIB = "lib";
                 shellHook = ''

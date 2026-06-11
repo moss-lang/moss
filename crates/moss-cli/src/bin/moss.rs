@@ -113,7 +113,7 @@ fn run(script: &str, args: &[String]) -> anyhow::Result<i32> {
         Ok(()) => Ok(0),
         Err(err) => match err.downcast_ref::<wasmtime_wasi::I32Exit>() {
             Some(exit_code) => Ok(exit_code.0),
-            None => Err(err),
+            None => Err(err.into()),
         },
     }
 }
