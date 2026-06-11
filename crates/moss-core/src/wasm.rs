@@ -41,6 +41,30 @@ define_index_type! {
 enum Instruction {
     Unreachable,
 
+    I32Load,
+    I64Load,
+    I32Load8S,
+    I32Load8U,
+    I32Load16S,
+    I32Load16U,
+    I64Load8S,
+    I64Load8U,
+    I64Load16S,
+    I64Load16U,
+    I64Load32S,
+    I64Load32U,
+    I32Store,
+    I64Store,
+    I32Store8,
+    I32Store16,
+    I64Store8,
+    I64Store16,
+    I64Store32,
+    MemorySize,
+    MemoryGrow,
+    MemoryCopy,
+    MemoryFill,
+
     I32Eqz,
     I32Eq,
     I32Ne,
@@ -407,9 +431,10 @@ impl<'a> Wasm<'a> {
             }
             lower::Node::Context => self.mkobj(Object::TyCtx),
             lower::Node::Nothing => self.mkobj(Object::Open),
-            // A dynamic context value: read from the globals its `SetDyn` stores to. The type is
-            // monomorphized under the *current* environment, which is the binding site's (the
-            // value reaches consumers through closures captured there).
+            // A dynamic binding's value. This backend conveys dynamic bindings through Wasm
+            // globals (see `Expr::Dyn` emission); the type is monomorphized under the *current*
+            // environment, which is the binding site's (the value reaches consumers through
+            // closures captured there).
             lower::Node::Dyn { slot } => {
                 let ty = self.eval(self.ir.dyns[slot], env);
                 let base = self.dyn_global(slot, ty);
@@ -692,9 +717,90 @@ impl<'a> Wasm<'a> {
     }
 
     fn wasm_instruction(&mut self, instruction: Instruction) {
+        /// A memarg at offset zero in the WASI memory, with the given alignment exponent.
+        fn memarg(align: u32) -> MemArg {
+            MemArg {
+                offset: 0,
+                align,
+                memory_index: MEMIDX_WASI,
+            }
+        }
+
         match instruction {
             Instruction::Unreachable => {
                 self.body.insn().unreachable();
+            }
+
+            // The memarg immediates are not customizable for now: `memidx` and `offset` are
+            // always zero, and each instruction uses its natural alignment.
+            Instruction::I32Load => {
+                self.body.insn().i32_load(memarg(2));
+            }
+            Instruction::I64Load => {
+                self.body.insn().i64_load(memarg(3));
+            }
+            Instruction::I32Load8S => {
+                self.body.insn().i32_load8_s(memarg(0));
+            }
+            Instruction::I32Load8U => {
+                self.body.insn().i32_load8_u(memarg(0));
+            }
+            Instruction::I32Load16S => {
+                self.body.insn().i32_load16_s(memarg(1));
+            }
+            Instruction::I32Load16U => {
+                self.body.insn().i32_load16_u(memarg(1));
+            }
+            Instruction::I64Load8S => {
+                self.body.insn().i64_load8_s(memarg(0));
+            }
+            Instruction::I64Load8U => {
+                self.body.insn().i64_load8_u(memarg(0));
+            }
+            Instruction::I64Load16S => {
+                self.body.insn().i64_load16_s(memarg(1));
+            }
+            Instruction::I64Load16U => {
+                self.body.insn().i64_load16_u(memarg(1));
+            }
+            Instruction::I64Load32S => {
+                self.body.insn().i64_load32_s(memarg(2));
+            }
+            Instruction::I64Load32U => {
+                self.body.insn().i64_load32_u(memarg(2));
+            }
+            Instruction::I32Store => {
+                self.body.insn().i32_store(memarg(2));
+            }
+            Instruction::I64Store => {
+                self.body.insn().i64_store(memarg(3));
+            }
+            Instruction::I32Store8 => {
+                self.body.insn().i32_store8(memarg(0));
+            }
+            Instruction::I32Store16 => {
+                self.body.insn().i32_store16(memarg(1));
+            }
+            Instruction::I64Store8 => {
+                self.body.insn().i64_store8(memarg(0));
+            }
+            Instruction::I64Store16 => {
+                self.body.insn().i64_store16(memarg(1));
+            }
+            Instruction::I64Store32 => {
+                self.body.insn().i64_store32(memarg(2));
+            }
+            Instruction::MemorySize => {
+                self.body.insn().memory_size(MEMIDX_WASI);
+            }
+            Instruction::MemoryGrow => {
+                self.body.insn().memory_grow(MEMIDX_WASI);
+            }
+            Instruction::MemoryCopy => {
+                self.body.insn().memory_copy(MEMIDX_WASI, MEMIDX_WASI);
+            }
+            Instruction::MemoryFill => {
+                self.body.insn().memory_fill(MEMIDX_WASI);
             }
 
             Instruction::I32Eqz => {
@@ -1075,6 +1181,20 @@ impl<'a> Wasm<'a> {
                 self.emit_call(head);
             }
             Expr::Bind { .. } => todo!("expr: Bind (milestone C)"),
+            // Package a dynamic binding's value. This backend conveys dynamic bindings through
+            // Wasm globals: write the value to the slot's globals (popping in reverse, like
+            // `set_locals`), then read it back so it remains this expression's value.
+            Expr::Dyn { slot, value } => {
+                let ty = self.eval(self.ir.dyns[slot], env);
+                let base = self.dyn_global(slot, ty);
+                self.get(value);
+                for i in (0..self.layout_len(ty)).rev() {
+                    self.body.insn().global_set(base + i as u32);
+                }
+                for i in 0..self.layout_len(ty) {
+                    self.body.insn().global_get(base + i as u32);
+                }
+            }
         }
     }
 
@@ -1085,17 +1205,6 @@ impl<'a> Wasm<'a> {
                     let (ty, start) = self.local(lhs);
                     self.get(rhs);
                     self.set_locals(ty, start);
-                    self.mkobj(Object::ValStmt)
-                }
-                Instr::SetDyn { slot, value } => {
-                    let ty = self.eval(self.ir.dyns[slot], env);
-                    let base = self.dyn_global(slot, ty);
-                    self.get(value);
-                    // The value's layout is on the stack in order; pop into the globals in
-                    // reverse, mirroring `set_locals`.
-                    for i in (0..self.layout_len(ty)).rev() {
-                        self.body.insn().global_set(base + i as u32);
-                    }
                     self.mkobj(Object::ValStmt)
                 }
                 Instr::If { ty, cond } => {

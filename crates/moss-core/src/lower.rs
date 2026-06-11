@@ -288,10 +288,10 @@ pub enum Node {
         ctx: NodeId,
         slot: SlotId,
     },
-    /// The value of a dynamic context slot: a runtime value computed by the body that
-    /// introduced the binding (see [`Instr::SetDyn`]), identified position-independently so
-    /// that consumers in other (monomorphized) bodies can read it. The slot's type lives in
-    /// [`IR::dyns`].
+    /// The value of a dynamic binding occurrence: a runtime value packaged by the introducing
+    /// body's matching [`Expr::Dyn`], identified position-independently so that consumers in
+    /// other (monomorphized) bodies can correlate with it. The slot's type lives in
+    /// [`IR::dyns`]; how the value travels between bodies is the backend's choice.
     Dyn {
         slot: DynId,
     },
@@ -405,6 +405,24 @@ pub enum Expr {
     ///
     /// Type: [`Node::Context`].
     Bind { ctx: NodeId },
+
+    /// Package the runtime `value` as the value of the dynamic binding occurrence `slot`,
+    /// bridging the instruction dataflow into the static node graph: the binding whose bound
+    /// value is `Node::Dyn { slot }` is satisfied, at runtime, by this expression's value.
+    ///
+    /// This is ordinary by-value dataflow — each evaluation packages a fresh value — and says
+    /// nothing about *how* the value travels to the bodies that consume the binding; the
+    /// backend chooses an execution model (e.g. Wasm globals, or extra parameters on the
+    /// monomorphized consumers).
+    ///
+    /// Type: same as `value` (the packaged value is the expression's value).
+    Dyn {
+        /// The dynamic binding occurrence being satisfied.
+        slot: DynId,
+
+        /// The runtime value of the binding.
+        value: InstrId,
+    },
 }
 
 /// An instruction.
@@ -450,16 +468,6 @@ pub enum Instr {
     Br {
         /// The number of blocks to exit.
         depth: Depth,
-    },
-
-    /// Set the dynamic context slot `slot` to the value of `value`, making it readable through
-    /// [`Node::Dyn`] by any body that consumes the binding this slot backs.
-    SetDyn {
-        /// The dynamic slot to set.
-        slot: DynId,
-
-        /// The value to store.
-        value: InstrId,
     },
 
     /// An instruction whose value is typed by the value of a previous instruction.
@@ -592,7 +600,7 @@ pub struct IR {
     /// Actual function bodies.
     pub bodies: IndexVec<FndefId, Body>,
 
-    /// The type node of each dynamic context-value slot ([`Node::Dyn`]/[`Instr::SetDyn`]).
+    /// The type node of each dynamic binding occurrence ([`Node::Dyn`]/[`Expr::Dyn`]).
     pub dyns: IndexVec<DynId, NodeId>,
 }
 
@@ -3953,8 +3961,9 @@ impl LowerBody<'_, '_> {
     /// Lower a binding in a body position, intercepting the literal binds that need *runtime*
     /// construction: a string, char, or multi-digit numeric literal desugars exactly like an
     /// expression literal of the same value, with the construction emitted into the current
-    /// body and the result stored to a fresh dynamic context slot ([`Instr::SetDyn`]) that the
-    /// binding's consumers read through [`Node::Dyn`]. Everything else (including single-digit
+    /// body and packaged as a fresh dynamic binding occurrence ([`Expr::Dyn`]) that the
+    /// binding's consumers correlate with through [`Node::Dyn`]. Everything else (including
+    /// single-digit
     /// numeric literals, which are satisfied statically by the contextual digit values)
     /// delegates to [`Lower::bind`].
     fn bind_dyn(
@@ -4000,10 +4009,13 @@ impl LowerBody<'_, '_> {
             }
         };
         let slot = self.x.ir.dyns.push(typed.ty);
-        self.emit(Instr::SetDyn {
-            slot,
-            value: typed.val,
-        });
+        self.instr(
+            typed.ty,
+            Expr::Dyn {
+                slot,
+                value: typed.val,
+            },
+        );
         let bind_value = self.x.mk_node(Node::Dyn { slot });
         let needs = self.x.mk_node_list(&needs);
         let args = self.x.mk_node_list(&construct);

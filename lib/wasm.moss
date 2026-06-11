@@ -8,9 +8,34 @@ val memidx: MemIdx;
 # https://webassembly.github.io/spec/core/syntax/instructions.html#parametric-instructions
 fn unreachable();
 
-# TODO: Re-introduce the memory instructions (loads/stores and `memory_*`). Their previous
-# declarations took the memarg immediates (`memidx`/`align`/`offset`) as `static` contextual
-# values, which relied on the old literal system; the replacement design is open.
+# https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
+# The memarg immediates are not customizable for now: `memidx` and `offset` are always zero,
+# and each instruction uses its natural alignment. (Customizing them used to go through
+# `static` contextual values, which relied on the removed literal system; a replacement
+# design is TODO.)
+fn i32_load(address: I32): I32;
+fn i64_load(address: I32): I64;
+fn i32_load8_s(address: I32): I32;
+fn i32_load8_u(address: I32): I32;
+fn i32_load16_s(address: I32): I32;
+fn i32_load16_u(address: I32): I32;
+fn i64_load8_s(address: I32): I64;
+fn i64_load8_u(address: I32): I64;
+fn i64_load16_s(address: I32): I64;
+fn i64_load16_u(address: I32): I64;
+fn i64_load32_s(address: I32): I64;
+fn i64_load32_u(address: I32): I64;
+fn i32_store(address: I32, value: I32);
+fn i64_store(address: I32, value: I64);
+fn i32_store8(address: I32, value: I32);
+fn i32_store16(address: I32, value: I32);
+fn i64_store8(address: I32, value: I64);
+fn i64_store16(address: I32, value: I64);
+fn i64_store32(address: I32, value: I64);
+fn memory_size(): I32;
+fn memory_grow(pages: I32): I32;
+fn memory_copy(dst: I32, src: I32, len: I32);
+fn memory_fill(start: I32, byte: I32, len: I32);
 
 # https://webassembly.github.io/spec/core/syntax/instructions.html#numeric-instructions
 fn i32_eqz(n: I32): I32;
@@ -82,6 +107,30 @@ fn i64_extend32_s(n: I64): I64;
 
 context Wasm =
   unreachable,
+
+  i32_load,
+  i64_load,
+  i32_load8_s,
+  i32_load8_u,
+  i32_load16_s,
+  i32_load16_u,
+  i64_load8_s,
+  i64_load8_u,
+  i64_load16_s,
+  i64_load16_u,
+  i64_load32_s,
+  i64_load32_u,
+  i32_store,
+  i64_store,
+  i32_store8,
+  i32_store16,
+  i64_store8,
+  i64_store16,
+  i64_store32,
+  memory_size,
+  memory_grow,
+  memory_copy,
+  memory_fill,
 
   i32_eqz,
   i32_eq,
