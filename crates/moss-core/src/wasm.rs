@@ -1,4 +1,7 @@
-use std::{collections::HashMap, mem::take};
+use std::{
+    collections::{HashMap, HashSet},
+    mem::take,
+};
 
 use index_vec::{IndexVec, define_index_type};
 use indexmap::{IndexMap, IndexSet};
@@ -267,10 +270,12 @@ struct Wasm<'a> {
     /// the rest back dynamic context slots (see [`Wasm::dyn_global`]).
     global_types: Vec<ValType>,
 
-    /// The first global index backing each `(slot, monomorphized type)` pair of a dynamic
-    /// context slot. Keyed by type as well as slot because a slot in a generic body can be
-    /// monomorphized at more than one concrete type.
-    dyn_globals: HashMap<(lower::DynId, ObjectId), u32>,
+    /// The first global index conveying each `(dynamic binding, monomorphized type)` pair,
+    /// where a dynamic binding is identified by its producing instruction (`Node::Dyn`). Keyed
+    /// by type as well, because a binding in a generic body can be monomorphized at more than
+    /// one concrete type. This is this backend's chosen execution model for dynamic context
+    /// values; the IR itself is agnostic (a different backend could pass extra parameters).
+    dyn_globals: HashMap<(lower::InstrId, ObjectId), u32>,
 
     section_type: TypeSection,
     section_import: ImportSection,
@@ -431,14 +436,21 @@ impl<'a> Wasm<'a> {
             }
             lower::Node::Context => self.mkobj(Object::TyCtx),
             lower::Node::Nothing => self.mkobj(Object::Open),
-            // A dynamic binding's value. This backend conveys dynamic bindings through Wasm
-            // globals (see `Expr::Dyn` emission); the type is monomorphized under the *current*
-            // environment, which is the binding site's (the value reaches consumers through
-            // closures captured there).
-            lower::Node::Dyn { slot } => {
-                let ty = self.eval(self.ir.dyns[slot], env);
-                let base = self.dyn_global(slot, ty);
-                self.mkobj(Object::ValGlobal(ty, base))
+            // A dynamic binding's value. In the frame that produced it, it is simply that
+            // instruction's value; in any other frame, it arrives through this backend's
+            // conveyance for dynamic context values -- the Wasm globals spilled at the call
+            // edge (`spill_dyns`). The type is monomorphized under the *current* environment,
+            // which is the binding site's (the value reaches consumers through closures
+            // captured there).
+            lower::Node::Dyn { instr } => {
+                if let Some(&obj) = self.variables.get(&instr) {
+                    obj
+                } else {
+                    let ty_node = self.dyn_ty_node(instr);
+                    let ty = self.eval(ty_node, env);
+                    let base = self.dyn_global(instr, ty);
+                    self.mkobj(Object::ValGlobal(ty, base))
+                }
             }
             // A `Bind { args, bind }` (the body of a binding's lambda) projects to its bound value.
             lower::Node::Bind { bind, .. } => self.eval(bind, env),
@@ -449,18 +461,145 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    /// The first global index backing dynamic context slot `slot` at monomorphized type `ty`,
-    /// allocating `ty`'s layout in fresh globals on first use.
-    fn dyn_global(&mut self, slot: lower::DynId, ty: ObjectId) -> u32 {
-        if let Some(&base) = self.dyn_globals.get(&(slot, ty)) {
+    /// The first global index conveying the dynamic binding produced by `instr` at
+    /// monomorphized type `ty`, allocating `ty`'s layout in fresh globals on first use.
+    fn dyn_global(&mut self, instr: lower::InstrId, ty: ObjectId) -> u32 {
+        if let Some(&base) = self.dyn_globals.get(&(instr, ty)) {
             return base;
         }
         let base = self.global_types.len() as u32;
         let mut types = Vec::new();
         self.layout(ty, &mut |vt| types.push(vt));
         self.global_types.extend(types);
-        self.dyn_globals.insert((slot, ty), base);
+        self.dyn_globals.insert((instr, ty), base);
         base
+    }
+
+    /// The declared type node of the dynamic binding produced by `instr`.
+    fn dyn_ty_node(&self, instr: lower::InstrId) -> lower::NodeId {
+        let Instr::Expr { ty, .. } = self.ir.instrs[instr] else {
+            panic!("a dynamic binding's producing instruction is not an expression")
+        };
+        ty
+    }
+
+    /// Collect the dynamic bindings ([`lower::Node::Dyn`]) reachable through `env`: the
+    /// dynamic context values a function monomorphized against `env` can consume. This is a
+    /// purely syntactic walk over the static node graph (through closures, thunks, and nested
+    /// environments) -- nothing is forced or evaluated -- so it sees exactly what the callee's
+    /// fully concretized context contains.
+    fn collect_dyns(&self, env: EnvId, out: &mut Vec<(lower::InstrId, EnvId)>) {
+        let mut seen_nodes: HashSet<(lower::NodeId, EnvId)> = HashSet::new();
+        let mut seen_objs: HashSet<ObjectId> = HashSet::new();
+        let mut seen_outs: HashSet<(lower::InstrId, EnvId)> = HashSet::new();
+        let mut node_work: Vec<(lower::NodeId, EnvId)> = Vec::new();
+        let mut obj_work: Vec<ObjectId> = Vec::new();
+        let mut env_work: Vec<EnvId> = vec![env];
+        let mut seen_envs: HashSet<EnvId> = HashSet::new();
+        while !node_work.is_empty() || !obj_work.is_empty() || !env_work.is_empty() {
+            if let Some(e) = env_work.pop() {
+                if seen_envs.insert(e) {
+                    for &(node, obj) in self.envs[e.index()].iter() {
+                        node_work.push((node, e));
+                        obj_work.push(obj);
+                    }
+                }
+                continue;
+            }
+            if let Some(obj) = obj_work.pop() {
+                if !seen_objs.insert(obj) {
+                    continue;
+                }
+                match self.obj(obj) {
+                    Object::Closure(node, e) | Object::Thunk(node, e) => {
+                        node_work.push((node, e));
+                    }
+                    Object::FnDef(_, e) => env_work.push(e),
+                    Object::Ctx(range) => {
+                        for loc in range.start.index()..range.end.index() {
+                            obj_work.push(self.tuples[TupleLoc::from_usize(loc)]);
+                        }
+                    }
+                    Object::Sig(a, b) => {
+                        obj_work.push(a);
+                        obj_work.push(b);
+                    }
+                    Object::TyTuple(elems) => {
+                        for &elem in &self.tuples[elems] {
+                            obj_work.push(elem);
+                        }
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            if let Some((node, e)) = node_work.pop() {
+                if !seen_nodes.insert((node, e)) {
+                    continue;
+                }
+                use lower::Node::*;
+                match self.ir.nodes[node.index()] {
+                    Dyn { instr } => {
+                        if seen_outs.insert((instr, e)) {
+                            out.push((instr, e));
+                        }
+                    }
+                    Lambda { needs, result, .. } => {
+                        for &n in &self.ir.lists[needs] {
+                            node_work.push((n, e));
+                        }
+                        node_work.push((result, e));
+                    }
+                    Apply { lambda, args } => {
+                        node_work.push((lambda, e));
+                        for &n in &self.ir.lists[args] {
+                            node_work.push((n, e));
+                        }
+                    }
+                    List { items } | Tuple { elems: items } => {
+                        for &n in &self.ir.lists[items] {
+                            node_work.push((n, e));
+                        }
+                    }
+                    Need { param, .. } => node_work.push((param, e)),
+                    Get { ctx, .. } => node_work.push((ctx, e)),
+                    Bind { args, bind } => {
+                        for &n in &self.ir.lists[args] {
+                            node_work.push((n, e));
+                        }
+                        node_work.push((bind, e));
+                    }
+                    BindDef { bind, .. } => node_work.push((bind, e)),
+                    Sig { param, result } => {
+                        node_work.push((param, e));
+                        node_work.push((result, e));
+                    }
+                    Fndef { .. } | Aliasdef { .. } | Tagdef { .. } | Context | Nothing => {}
+                }
+            }
+        }
+    }
+
+    /// Spill the dynamic bindings a callee (monomorphized against `env`) can consume into
+    /// this backend's conveyance for them -- Wasm globals -- for every binding whose value
+    /// lives in the *current* frame (i.e. was produced by an instruction of the function being
+    /// emitted). Bindings produced elsewhere are already in their globals: this frame received
+    /// them the same way and never moved them.
+    fn spill_dyns(&mut self, env: EnvId) {
+        let mut dyns = Vec::new();
+        self.collect_dyns(env, &mut dyns);
+        for (instr, e) in dyns {
+            if !self.variables.contains_key(&instr) {
+                continue;
+            }
+            let ty_node = self.dyn_ty_node(instr);
+            let ty = self.eval(ty_node, e);
+            let base = self.dyn_global(instr, ty);
+            self.get(instr);
+            for i in (0..self.layout_len(ty)).rev() {
+                self.body.insn().global_set(base + i as u32);
+            }
+        }
     }
 
     /// Force a slot object: if it is a deferred [`Object::Thunk`], evaluate it; otherwise return it.
@@ -1032,6 +1171,9 @@ impl<'a> Wasm<'a> {
     fn emit_call(&mut self, head: ObjectId) {
         match self.obj(head) {
             Object::FnDef(def, fenv) => {
+                // Convey any current-frame dynamic bindings the callee can consume before
+                // transferring control to it.
+                self.spill_dyns(fenv);
                 let funcidx = self.insert_func(Object::FnDef(def, fenv));
                 self.body.insn().call(funcidx);
             }
@@ -1181,20 +1323,6 @@ impl<'a> Wasm<'a> {
                 self.emit_call(head);
             }
             Expr::Bind { .. } => todo!("expr: Bind (milestone C)"),
-            // Package a dynamic binding's value. This backend conveys dynamic bindings through
-            // Wasm globals: write the value to the slot's globals (popping in reverse, like
-            // `set_locals`), then read it back so it remains this expression's value.
-            Expr::Dyn { slot, value } => {
-                let ty = self.eval(self.ir.dyns[slot], env);
-                let base = self.dyn_global(slot, ty);
-                self.get(value);
-                for i in (0..self.layout_len(ty)).rev() {
-                    self.body.insn().global_set(base + i as u32);
-                }
-                for i in 0..self.layout_len(ty) {
-                    self.body.insn().global_get(base + i as u32);
-                }
-            }
         }
     }
 

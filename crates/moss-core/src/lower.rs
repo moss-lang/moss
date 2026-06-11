@@ -83,11 +83,6 @@ define_index_type! {
 }
 
 define_index_type! {
-    /// The index of a dynamic context-value slot in the `dyns` field of the [`IR`].
-    pub struct DynId = u32;
-}
-
-define_index_type! {
     /// The index of a [`Tydef`] in the `tydefs` field of the [`IR`].
     pub struct TydefId = u32;
 }
@@ -306,12 +301,14 @@ pub enum Node {
         ctx: NodeId,
         slot: SlotId,
     },
-    /// The value of a dynamic binding occurrence: a runtime value packaged by the introducing
-    /// body's matching [`Expr::Dyn`], identified position-independently so that consumers in
-    /// other (monomorphized) bodies can correlate with it. The slot's type lives in
-    /// [`IR::dyns`]; how the value travels between bodies is the backend's choice.
+    /// The value of a dynamic binding: the runtime value produced by the referenced
+    /// instruction of the introducing body. The static node graph carries only this reference;
+    /// the value's type is the instruction's, and how the value travels to the (monomorphized)
+    /// bodies that consume the binding is entirely the backend's choice -- it sees each
+    /// function's fully concretized context, so it knows which dynamic values are live at any
+    /// call edge and can convey them however it likes (Wasm globals, extra parameters, ...).
     Dyn {
-        slot: DynId,
+        instr: InstrId,
     },
     Bind {
         args: NodeList,
@@ -424,23 +421,6 @@ pub enum Expr {
     /// Type: [`Node::Context`].
     Bind { ctx: NodeId },
 
-    /// Package the runtime `value` as the value of the dynamic binding occurrence `slot`,
-    /// bridging the instruction dataflow into the static node graph: the binding whose bound
-    /// value is `Node::Dyn { slot }` is satisfied, at runtime, by this expression's value.
-    ///
-    /// This is ordinary by-value dataflow — each evaluation packages a fresh value — and says
-    /// nothing about *how* the value travels to the bodies that consume the binding; the
-    /// backend chooses an execution model (e.g. Wasm globals, or extra parameters on the
-    /// monomorphized consumers).
-    ///
-    /// Type: same as `value` (the packaged value is the expression's value).
-    Dyn {
-        /// The dynamic binding occurrence being satisfied.
-        slot: DynId,
-
-        /// The runtime value of the binding.
-        value: InstrId,
-    },
 }
 
 /// An instruction.
@@ -617,9 +597,6 @@ pub struct IR {
 
     /// Actual function bodies.
     pub bodies: IndexVec<FndefId, Body>,
-
-    /// The type node of each dynamic binding occurrence ([`Node::Dyn`]/[`Expr::Dyn`]).
-    pub dyns: IndexVec<DynId, NodeId>,
 }
 
 type ModuleNames<T> = IndexMap<(ModuleId, StrId), T>;
@@ -1261,7 +1238,7 @@ impl<'a> Lower<'a> {
                 let ctx = self.transform(map, ctx);
                 self.mk_node(map.map(Node::Get { ctx, slot }))
             }
-            Node::Dyn { slot } => self.mk_node(map.map(Node::Dyn { slot })),
+            Node::Dyn { instr } => self.mk_node(map.map(Node::Dyn { instr })),
             Node::Bind { args, bind } => {
                 let args = self.transforms(map, args);
                 let bind = self.transform(map, bind);
@@ -1770,7 +1747,7 @@ impl<'a> Lower<'a> {
             (Node::Context, Node::Context) => Ok(true),
             (Node::Tagdef { def: da }, Node::Tagdef { def: db }) => Ok(da == db),
             (Node::Fndef { def: da }, Node::Fndef { def: db }) => Ok(da == db),
-            (Node::Dyn { slot: sa }, Node::Dyn { slot: sb }) => Ok(sa == sb),
+            (Node::Dyn { instr: ia }, Node::Dyn { instr: ib }) => Ok(ia == ib),
             // Aliases are transparent and must be unfolded before comparison; not yet handled.
             (Node::Aliasdef { .. }, _) | (_, Node::Aliasdef { .. }) => Err(self.todo_no_loc()),
             (x, y) => {
@@ -4025,9 +4002,8 @@ impl LowerBody<'_, '_> {
     /// Lower a binding in a body position, intercepting the literal binds that need *runtime*
     /// construction: a string, char, or multi-digit numeric literal desugars exactly like an
     /// expression literal of the same value, with the construction emitted into the current
-    /// body and packaged as a fresh dynamic binding occurrence ([`Expr::Dyn`]) that the
-    /// binding's consumers correlate with through [`Node::Dyn`]. Everything else (including
-    /// single-digit
+    /// body and the binding's value being a [`Node::Dyn`] reference to the constructed
+    /// instruction. Everything else (including single-digit
     /// numeric literals, which are satisfied statically by the contextual digit values)
     /// delegates to [`Lower::bind`].
     fn bind_dyn(
@@ -4072,15 +4048,7 @@ impl LowerBody<'_, '_> {
                 self.numeric(ty, &digits)?
             }
         };
-        let slot = self.x.ir.dyns.push(typed.ty);
-        self.instr(
-            typed.ty,
-            Expr::Dyn {
-                slot,
-                value: typed.val,
-            },
-        );
-        let bind_value = self.x.mk_node(Node::Dyn { slot });
+        let bind_value = self.x.mk_node(Node::Dyn { instr: typed.val });
         let needs = self.x.mk_node_list(&needs);
         let args = self.x.mk_node_list(&construct);
         let result = self.x.mk_node(Node::Bind {

@@ -113,8 +113,8 @@ impl<'a> Dump<'a> {
             Node::Get { ctx, slot } => {
                 print!("slot {} of %{}", slot.index(), ctx.index());
             }
-            Node::Dyn { slot } => {
-                print!("dynamic slot {}", slot.index());
+            Node::Dyn { instr } => {
+                print!("dynamic value of instruction {}", instr.index());
             }
             Node::Bind { args, bind } => {
                 print!("bind for [");
