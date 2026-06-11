@@ -28,6 +28,7 @@ jobs:
             cargo-update.txt
 
   x86_64-linux:
+    needs: lock
     runs-on: ubuntu-24.04
     steps:
       - uses: cachix/install-nix-action@v31
@@ -63,6 +64,7 @@ jobs:
           path: moss-win32-x64.vsix
 
   aarch64-linux:
+    needs: lock
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: cachix/install-nix-action@v31
@@ -86,6 +88,7 @@ jobs:
           path: moss-linux-arm64.vsix
 
   aarch64-darwin:
+    needs: lock
     runs-on: macos-26
     steps:
       - uses: cachix/install-nix-action@v31
