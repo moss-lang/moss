@@ -29,7 +29,7 @@ impl Add<i32> for TokenId {
 }
 
 #[derive(Debug, EnumSetType, Logos)]
-#[logos(skip r"(#[^\n]+|\s)+")]
+#[logos(skip r"(#[^\n]*|\s)+")]
 pub enum Token {
     Eof,
 
