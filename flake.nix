@@ -171,6 +171,7 @@
                 });
               checks = {
                 cargo = craneLib.cargoTest (commonArgs // cacheArgs);
+                fmt = craneLib.cargoFmt commonArgs;
                 e2e =
                   let
                     dev = craneLib.buildPackage (commonArgs // cacheArgs // devArgs);

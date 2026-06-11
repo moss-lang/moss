@@ -420,7 +420,6 @@ pub enum Expr {
     ///
     /// Type: [`Node::Context`].
     Bind { ctx: NodeId },
-
 }
 
 /// An instruction.
@@ -887,10 +886,9 @@ impl LowerError {
                 Some(ctx.bind(bind)),
                 "`bind` missing an actual binding".to_owned(),
             ),
-            LowerError::ArgCount(expr) => (
-                Some(ctx.expr(expr)),
-                "wrong number of arguments".to_owned(),
-            ),
+            LowerError::ArgCount(expr) => {
+                (Some(ctx.expr(expr)), "wrong number of arguments".to_owned())
+            }
             LowerError::Unresolved => (None, "cannot resolve from context".to_owned()),
         }
     }
@@ -1361,7 +1359,10 @@ impl<'a> Lower<'a> {
                 continue;
             };
             let ret = self.reduce(ret)?;
-            let Node::Lambda { result: ret_list, .. } = self.node(ret) else {
+            let Node::Lambda {
+                result: ret_list, ..
+            } = self.node(ret)
+            else {
                 continue;
             };
             let Node::List { items } = self.node(ret_list) else {
@@ -1399,7 +1400,12 @@ impl<'a> Lower<'a> {
         // `destruct` is un-raised) pass `Level::ZERO`.
         slots_level: Level,
     ) -> LowerResult<Option<NodeId>> {
-        let Node::Need { def: kind, param, level } = self.node(need) else {
+        let Node::Need {
+            def: kind,
+            param,
+            level,
+        } = self.node(need)
+        else {
             panic!() // a needs list contains only `Need` nodes
         };
         let Some((callee, synth)) = self.extract_lambda(destruct, kind, param)? else {
@@ -1437,7 +1443,12 @@ impl<'a> Lower<'a> {
                     level
                 };
                 return Ok(Some(self.extract_ctx(
-                    ctx_level, destruct, slots_level, def, &outer, true,
+                    ctx_level,
+                    destruct,
+                    slots_level,
+                    def,
+                    &outer,
+                    true,
                 )?));
             }
             return Ok(None);
@@ -1663,8 +1674,10 @@ impl<'a> Lower<'a> {
             ) => {
                 let mut env = *env;
                 env.bind(la, lb);
-                Ok(self.match_terms_list(mode, &env, constraints, a_holes, na, nb)?
-                    && self.match_terms(mode, &env, constraints, a_holes, ra, rb)?)
+                Ok(
+                    self.match_terms_list(mode, &env, constraints, a_holes, na, nb)?
+                        && self.match_terms(mode, &env, constraints, a_holes, ra, rb)?,
+                )
             }
             (
                 Node::Apply {
@@ -1711,26 +1724,11 @@ impl<'a> Lower<'a> {
                 // definition and arguments alone.
                 && (mode == MatchMode::Value || env.a_of_b[lb] == la)
                 && self.match_terms(mode, env, constraints, a_holes, pa, pb)?),
-            (
-                Node::Get {
-                    ctx: ca,
-                    slot: sa,
-                },
-                Node::Get {
-                    ctx: cb,
-                    slot: sb,
-                },
-            ) => Ok(sa == sb && self.match_terms(mode, env, constraints, a_holes, ca, cb)?),
-            (
-                Node::Bind {
-                    args: aa,
-                    bind: ba,
-                },
-                Node::Bind {
-                    args: ab,
-                    bind: bb,
-                },
-            ) => Ok(self.match_terms_list(mode, env, constraints, a_holes, aa, ab)?
+            (Node::Get { ctx: ca, slot: sa }, Node::Get { ctx: cb, slot: sb }) => {
+                Ok(sa == sb && self.match_terms(mode, env, constraints, a_holes, ca, cb)?)
+            }
+            (Node::Bind { args: aa, bind: ba }, Node::Bind { args: ab, bind: bb }) => Ok(self
+                .match_terms_list(mode, env, constraints, a_holes, aa, ab)?
                 && self.match_terms(mode, env, constraints, a_holes, ba, bb)?),
             (Node::BindDef { def: da, bind: ba }, Node::BindDef { def: db, bind: bb }) => {
                 Ok(da == db && self.match_terms(mode, env, constraints, a_holes, ba, bb)?)
@@ -1893,7 +1891,9 @@ impl<'a> Lower<'a> {
             // this need. (Reached when assembling a `bind <Ctx>` return member-wise against
             // providers that include desugared value bindings such as `false = 0`, whose value
             // reduces to a non-context.)
-            Node::Nothing | Node::Lambda { .. } | Node::Apply { .. } | Node::List { .. } => Ok(None),
+            Node::Nothing | Node::Lambda { .. } | Node::Apply { .. } | Node::List { .. } => {
+                Ok(None)
+            }
             Node::Need {
                 level,
                 def: DefKind::Ctx(def),
@@ -2213,7 +2213,14 @@ impl<'a> Lower<'a> {
             HashMap::from_iter(self.ir.lists[nb].iter().map(|&need| (need, None)));
         let mut env = Renaming::identity();
         env.bind(la, lb);
-        self.match_terms(MatchMode::Spec, &env, &mut constraints, &mut HashMap::new(), ra, rb)
+        self.match_terms(
+            MatchMode::Spec,
+            &env,
+            &mut constraints,
+            &mut HashMap::new(),
+            ra,
+            rb,
+        )
     }
 
     /// Collect the slots that satisfy a need of definition `kind`. Succeeds when, up to the
@@ -2332,7 +2339,10 @@ impl<'a> Lower<'a> {
             // bypass `resolve_need`'s `Get`-projection and reach eval unbound. Only strictly-nested
             // abstract refs are rewritten; the root stays a `Need*` and is projected explicitly.
             if id != node
-                && let Node::Need { def: DefKind::Ty(def), .. } = n
+                && let Node::Need {
+                    def: DefKind::Ty(def),
+                    ..
+                } = n
                 && let Some(&value) = tybinds.get(&def)
             {
                 before.push(id);
@@ -2436,7 +2446,11 @@ impl<'a> Lower<'a> {
         // context), not a blanket equation.
         let mut tybinds: HashMap<TydefId, NodeId> = HashMap::new();
         for &slot in &slots {
-            if let Node::BindDef { def: DefKind::Ty(def), bind } = self.node(slot) {
+            if let Node::BindDef {
+                def: DefKind::Ty(def),
+                bind,
+            } = self.node(slot)
+            {
                 // Project the bind's bound value while *preserving its context-projection form*.
                 //
                 // The bound value of an in-scope `Uint=I32` slot is a `Get`-projection out of the
@@ -2796,9 +2810,14 @@ impl<'a> Lower<'a> {
             None => {
                 let def = Self::bind_def_kind(lhs, bind)?;
                 let lambda = match def {
-                    DefKind::Ctx(ctxdef) => {
-                        self.extract_ctx(level.succ(), slots, Level::ZERO, ctxdef, &destruct_lhs, true)?
-                    }
+                    DefKind::Ctx(ctxdef) => self.extract_ctx(
+                        level.succ(),
+                        slots,
+                        Level::ZERO,
+                        ctxdef,
+                        &destruct_lhs,
+                        true,
+                    )?,
                     _ => self.extract(level.succ(), slots, def, &destruct_lhs)?,
                 };
                 // As in `need_bind`: the bound definition's own needs (e.g. an `assume`-folded
@@ -2830,7 +2849,10 @@ impl<'a> Lower<'a> {
                     let bind = match self.lit(token)? {
                         (Val::Uint31(n), _) if n <= 9 => {
                             // The literal's concrete type is the valdef's declared type.
-                            let Node::Lambda { result: ty_node, .. } = self.node(target) else {
+                            let Node::Lambda {
+                                result: ty_node, ..
+                            } = self.node(target)
+                            else {
                                 panic!()
                             };
                             let Some(ty) = self.tydef_of(ty_node)? else {
@@ -2987,7 +3009,8 @@ impl<'a> Lower<'a> {
                 let (named, destruct) = self.spec(Level::ZERO, slots, spec)?;
                 match named {
                     Named::Tydef(tydef) => {
-                        let lambda = self.extract(Level::ONE, slots, DefKind::Ty(tydef), &destruct)?;
+                        let lambda =
+                            self.extract(Level::ONE, slots, DefKind::Ty(tydef), &destruct)?;
                         let construct = self.invoke_force(lambda, &destruct)?;
                         let args = self.mk_node_list(&construct);
                         Ok(self.mk_node(Node::Apply { lambda, args }))
@@ -3184,7 +3207,12 @@ impl<'a> Lower<'a> {
                     // already bubble the assumed context into `params_inner`.)
                     for assume in self.tree.assumes.iter().copied() {
                         for bind in assume {
-                            slots.push(self.need_bind(Level::ONE, &mut params_inner, &slots, bind)?);
+                            slots.push(self.need_bind(
+                                Level::ONE,
+                                &mut params_inner,
+                                &slots,
+                                bind,
+                            )?);
                         }
                     }
                     let member_base = slots.len();
@@ -3272,7 +3300,10 @@ impl<'a> Lower<'a> {
     /// those just-registered declarations.
     fn seed_numerals(&mut self) {
         match self.base {
-            Some(Base { numerals: Some(_), .. }) | None => return,
+            Some(Base {
+                numerals: Some(_), ..
+            })
+            | None => return,
             Some(_) => {}
         }
         let module = self.module;
@@ -3486,7 +3517,11 @@ impl LowerBody<'_, '_> {
     /// resolving the operation under the bindings `Lhs=ty, Rhs=ty` so that `Std`'s per-type
     /// `Arithmetic[Number=...]` entries do not make it ambiguous.
     fn op2(&mut self, ty: TydefId, sigdef: SigdefId, lhs: Typed, rhs: Typed) -> LowerResult<Typed> {
-        let Arith { lhs: lhs_ty, rhs: rhs_ty, .. } = self.base().arith;
+        let Arith {
+            lhs: lhs_ty,
+            rhs: rhs_ty,
+            ..
+        } = self.base().arith;
         let bind_lhs = self.x.bind_tydef(Level::ZERO, &self.slots, lhs_ty, ty)?;
         let bind_rhs = self.x.bind_tydef(Level::ZERO, &self.slots, rhs_ty, ty)?;
         let mut slots = self.slots.clone();
@@ -3522,7 +3557,9 @@ impl LowerBody<'_, '_> {
     fn numeric(&mut self, ty: TydefId, digits: &[u8]) -> LowerResult<Typed> {
         let Arith { add, mul, .. } = self.base().arith;
         let mut iter = digits.iter().copied();
-        let first = iter.next().expect("a numeric literal has at least one digit");
+        let first = iter
+            .next()
+            .expect("a numeric literal has at least one digit");
         let mut acc = self.digit(ty, first)?;
         for d in iter {
             let radix = self.radix(ty)?;
@@ -3537,11 +3574,7 @@ impl LowerBody<'_, '_> {
     /// points), reusing the numeric desugar.
     fn uint(&mut self, n: u32) -> LowerResult<Typed> {
         let ty = self.base().types.uint;
-        let digits: Vec<u8> = n
-            .to_string()
-            .bytes()
-            .map(|b| b - b'0')
-            .collect();
+        let digits: Vec<u8> = n.to_string().bytes().map(|b| b - b'0').collect();
         self.numeric(ty, &digits)
     }
 
@@ -3550,7 +3583,10 @@ impl LowerBody<'_, '_> {
         let lambda = self.extract_sig(sigdef)?;
         let construct = self.invoke_force(lambda)?;
         let items = self.x.mk_node_list(&construct);
-        let func = self.x.mk_node(Node::Apply { lambda, args: items });
+        let func = self.x.mk_node(Node::Apply {
+            lambda,
+            args: items,
+        });
         let (ty_param, ty_result) = self.sig(func)?;
         let args_ty: Vec<NodeId> = args.iter().map(|a| a.ty).collect();
         let args_val: Vec<InstrId> = args.iter().map(|a| a.val).collect();
@@ -3562,7 +3598,10 @@ impl LowerBody<'_, '_> {
 
     /// Build a character literal from its Unicode code point `c`.
     fn char_lit(&mut self, c: char) -> LowerResult<Typed> {
-        let Builders { char_from_codepoint, .. } = self.base().builders;
+        let Builders {
+            char_from_codepoint,
+            ..
+        } = self.base().builders;
         let codepoint = self.uint(c as u32)?;
         self.call_sig(char_from_codepoint, &[codepoint])
     }
@@ -3864,7 +3903,9 @@ impl LowerBody<'_, '_> {
                 let mut slots = self.slots.clone();
                 if let Some(obj_tydef) = self.x.tydef_of(obj.ty)? {
                     let this = self.base().this;
-                    let bind = self.x.bind_tydef(Level::ZERO, &self.slots, this, obj_tydef)?;
+                    let bind = self
+                        .x
+                        .bind_tydef(Level::ZERO, &self.slots, this, obj_tydef)?;
                     slots.push(bind);
                 }
                 let lambda = match self.method(obj.ty, name) {
@@ -4038,7 +4079,10 @@ impl LowerBody<'_, '_> {
             }
             _ => {
                 // The literal's concrete type is the valdef's declared type.
-                let Node::Lambda { result: ty_node, .. } = self.x.node(target) else {
+                let Node::Lambda {
+                    result: ty_node, ..
+                } = self.x.node(target)
+                else {
                     panic!()
                 };
                 let Some(ty) = self.x.tydef_of(ty_node)? else {
@@ -4262,11 +4306,16 @@ impl LowerBody<'_, '_> {
                     if let Some((call, count)) = forwarded {
                         for k in 0..count {
                             let id = SlotId::from_usize(k);
-                            assembled.push(self.x.mk_node(Node::Get { ctx: call, slot: id }));
+                            assembled.push(self.x.mk_node(Node::Get {
+                                ctx: call,
+                                slot: id,
+                            }));
                         }
                         continue;
                     }
-                    let lambda = self.x.extract_ctx(Level::ONE, &providers, Level::ZERO, def, &[], false)?;
+                    let lambda =
+                        self.x
+                            .extract_ctx(Level::ONE, &providers, Level::ZERO, def, &[], false)?;
                     // `extract_ctx` returns `Lambda { needs: [], result: List[members] }`; the
                     // returned context *is* those members, so splice them in directly.
                     let Node::Lambda { result, .. } = self.x.node(lambda) else {

@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     intern::StrId,
-    lower::{
-        Aliasdef, Ctxdef, IR, Named, Names, Node, NodeList, Sigdef, Tagdef, Tydef, Valdef,
-    },
+    lower::{Aliasdef, Ctxdef, IR, Named, Names, Node, NodeList, Sigdef, Tagdef, Tydef, Valdef},
 };
 
 struct Dump<'a> {

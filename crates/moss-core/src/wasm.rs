@@ -8,16 +8,16 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
-    BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection, Function,
-    FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
+    BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
+    Function, FunctionSection, GlobalSection, GlobalType, ImportSection, InstructionSink, MemArg,
     MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::{
     intern::StrId,
     lower::{
-        self, Body, ElemId, Expr, FieldId, FndefId, IR, Instr, InstrId, ModuleId, Named,
-        Names, Sigdef, SigdefId,
+        self, Body, ElemId, Expr, FieldId, FndefId, IR, Instr, InstrId, ModuleId, Named, Names,
+        Sigdef, SigdefId,
     },
     prelude::Lib,
     tuples::{TupleLoc, TupleRange, Tuples},
@@ -313,10 +313,22 @@ impl<'a> Wasm<'a> {
     /// distinct nodes but share this key.
     fn need_key(&self, node: lower::NodeId) -> Option<(u8, usize)> {
         Some(match self.ir.nodes[node.index()] {
-            lower::Node::Need { def: lower::DefKind::Ty(def), .. } => (0, def.index()),
-            lower::Node::Need { def: lower::DefKind::Sig(def), .. } => (1, def.index()),
-            lower::Node::Need { def: lower::DefKind::Val(def), .. } => (2, def.index()),
-            lower::Node::Need { def: lower::DefKind::Ctx(def), .. } => (3, def.index()),
+            lower::Node::Need {
+                def: lower::DefKind::Ty(def),
+                ..
+            } => (0, def.index()),
+            lower::Node::Need {
+                def: lower::DefKind::Sig(def),
+                ..
+            } => (1, def.index()),
+            lower::Node::Need {
+                def: lower::DefKind::Val(def),
+                ..
+            } => (2, def.index()),
+            lower::Node::Need {
+                def: lower::DefKind::Ctx(def),
+                ..
+            } => (3, def.index()),
             _ => return None,
         })
     }
@@ -373,26 +385,26 @@ impl<'a> Wasm<'a> {
             lower::Node::Lambda { .. } => self.mkobj(Object::Closure(node, env)),
             // An unbound `sig` for one of the prototype's backend-implemented contextual functions
             // resolves to its intrinsic (the bridge left these inline, with no provider).
-            lower::Node::Need { def: lower::DefKind::Sig(def), .. }
-                if self.intrinsics.contains_key(&def) =>
-            {
+            lower::Node::Need {
+                def: lower::DefKind::Sig(def),
+                ..
+            } if self.intrinsics.contains_key(&def) => {
                 let intr = self.intrinsics[&def];
                 self.mkobj(Object::FnIntrinsic(intr))
             }
             // An unbound reference to a backend-implemented type resolves to its concrete Wasm
             // representation (the bridge left these inline, with no provider).
-            lower::Node::Need { def: lower::DefKind::Ty(def), .. }
-                if self.intrinsic_tys.contains_key(&def) =>
-            {
-                match self.intrinsic_tys[&def] {
-                    IntrinsicTy::Char => self.mkobj(Object::TyI32),
-                    IntrinsicTy::StringBuilder => {
-                        let i32 = self.mkobj(Object::TyI32);
-                        let tuple = self.tuples.make(&[i32, i32]);
-                        self.mkobj(Object::TyTuple(tuple))
-                    }
+            lower::Node::Need {
+                def: lower::DefKind::Ty(def),
+                ..
+            } if self.intrinsic_tys.contains_key(&def) => match self.intrinsic_tys[&def] {
+                IntrinsicTy::Char => self.mkobj(Object::TyI32),
+                IntrinsicTy::StringBuilder => {
+                    let i32 = self.mkobj(Object::TyI32);
+                    let tuple = self.tuples.make(&[i32, i32]);
+                    self.mkobj(Object::TyTuple(tuple))
                 }
-            }
+            },
             // A need resolves to whatever the enclosing function was given for it.
             lower::Node::Need { .. } => self
                 .env_get(env, node)
@@ -1191,8 +1203,16 @@ impl<'a> Wasm<'a> {
     /// Emit a backend intrinsic, consuming its runtime argument(s) from the operand stack and
     /// leaving its result there.
     fn emit_intrinsic(&mut self, intr: Intrinsic) {
-        let store = MemArg { offset: 0, align: 2, memory_index: MEMIDX_WASI };
-        let store8 = MemArg { offset: 0, align: 0, memory_index: MEMIDX_WASI };
+        let store = MemArg {
+            offset: 0,
+            align: 2,
+            memory_index: MEMIDX_WASI,
+        };
+        let store8 = MemArg {
+            offset: 0,
+            align: 0,
+            memory_index: MEMIDX_WASI,
+        };
         match intr {
             // `build(b)` / `char_from_codepoint(cp)` are identities on the layout already on the
             // stack (`(ptr,size)` / the codepoint).
@@ -1217,7 +1237,12 @@ impl<'a> Wasm<'a> {
                 let i = self.tmp();
                 let sz = self.tmp();
                 let p = self.tmp();
-                self.body.insn().local_set(c).local_set(i).local_set(sz).local_set(p);
+                self.body
+                    .insn()
+                    .local_set(c)
+                    .local_set(i)
+                    .local_set(sz)
+                    .local_set(p);
                 self.body
                     .insn()
                     .local_get(p)
@@ -1233,8 +1258,16 @@ impl<'a> Wasm<'a> {
                 let len = self.tmp();
                 let ptr = self.tmp();
                 self.body.insn().local_set(len).local_set(ptr);
-                self.body.insn().i32_const(0).local_get(ptr).i32_store(store); // iovec.buf
-                self.body.insn().i32_const(4).local_get(len).i32_store(store); // iovec.buf_len
+                self.body
+                    .insn()
+                    .i32_const(0)
+                    .local_get(ptr)
+                    .i32_store(store); // iovec.buf
+                self.body
+                    .insn()
+                    .i32_const(4)
+                    .local_get(len)
+                    .i32_store(store); // iovec.buf_len
                 self.body
                     .insn()
                     .i32_const(1) // fd = stdout
@@ -1390,7 +1423,9 @@ impl<'a> Wasm<'a> {
                 // Monomorphize the signature against the environment (which binds the fndef's
                 // needs) to lay out params and results. `env` already binds the sig lambda's needs,
                 // so evaluate its *result* directly rather than re-applying the lambda.
-                let lower::Node::Lambda { result: sig_result, .. } = self.ir.nodes[sig.index()]
+                let lower::Node::Lambda {
+                    result: sig_result, ..
+                } = self.ir.nodes[sig.index()]
                 else {
                     panic!("fndef sig is not a lambda")
                 };
@@ -1444,7 +1479,10 @@ impl<'a> Wasm<'a> {
         // return type was lowered to a `Lambda` (returning the context's slot list); a value return
         // type is an ordinary type node.
         let Sigdef(sig) = self.ir.fndefs[def];
-        let lower::Node::Lambda { result: sigresult, .. } = self.ir.nodes[sig.index()] else {
+        let lower::Node::Lambda {
+            result: sigresult, ..
+        } = self.ir.nodes[sig.index()]
+        else {
             return false;
         };
         let lower::Node::Sig { result, .. } = self.ir.nodes[sigresult.index()] else {
@@ -1508,7 +1546,12 @@ impl<'a> Wasm<'a> {
             // which test ctxdef-order resolution without forcing the B2 value desugar.
             if let Instr::Expr { ty, .. } = self.ir.instrs[instr] {
                 let o = self.eval(ty, root_env);
-                eprintln!("  i{} ty %{} -> {:?}", instr.index(), ty.index(), self.obj(o));
+                eprintln!(
+                    "  i{} ty %{} -> {:?}",
+                    instr.index(),
+                    ty.index(),
+                    self.obj(o)
+                );
             }
         }
     }
