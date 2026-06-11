@@ -32,7 +32,6 @@
 use std::{
     array,
     backtrace::Backtrace,
-    cmp::Ordering,
     collections::{BTreeMap, HashMap},
     fmt,
     mem::take,
@@ -48,7 +47,7 @@ use crate::{
     lex::{TokenId, TokenStarts, relex, string},
     parse::{self, Binop, Block, ExprId, Field, Path, Spec, Stmt, StmtId, Tree, Unop},
     prelude::{Arith, Base, Builders, Numerals},
-    range::{Inclusive, expr_range, path_range, single},
+    range::{Inclusive, expr_range, single},
     tuples::{TupleRange, Tuples},
     util::IdRange,
 };
@@ -305,28 +304,6 @@ pub enum Node {
 
 pub type InstrList = IdRange<ItemId>;
 
-#[derive(Debug)]
-struct InstrMap(HashMap<InstrId, InstrId>);
-
-impl InstrMap {
-    fn new() -> Self {
-        Self(HashMap::new())
-    }
-
-    fn insert(&mut self, key: InstrId, val: InstrId) {
-        let prev = self.0.insert(key, val);
-        assert!(prev.is_none());
-    }
-
-    /// Return the instruction that `instr` is mapped to.
-    ///
-    /// If `instr` is not mapped to anything explicitly, this method assumes `instr` itself is
-    /// already in scope, and just returns it.
-    fn get(&self, instr: InstrId) -> InstrId {
-        self.0.get(&instr).copied().unwrap_or(instr)
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Depth(pub u32);
 
@@ -494,46 +471,6 @@ impl Body {
 
 struct Builder {
     start: InstrId,
-}
-
-enum Query<T> {
-    Missing,
-    Ambiguous,
-    Unique(T),
-}
-
-impl<T> Query<T> {
-    fn map<U>(self, f: impl FnOnce(T) -> U) -> Query<U> {
-        match self {
-            Query::Missing => Query::Missing,
-            Query::Ambiguous => Query::Ambiguous,
-            Query::Unique(x) => Query::Unique(f(x)),
-        }
-    }
-}
-
-impl<T: Copy> Query<T> {
-    fn combine(self, other: Self, f: impl FnOnce(T, T) -> Option<Ordering>) -> Self {
-        match (self, other) {
-            (Query::Missing, Query::Missing) => Query::Missing,
-            // TODO: This is actually incorrect, since even if one part of a query turns up
-            // ambiguous, another part may turn up an answer that's strictly better than all the
-            // possible choices from the first part; but we don't track enough information to know
-            // whether or not that's the case. Is the right solution to track more information from
-            // ambiguous queries so that we can handle this case with as much precision as possible?
-            // Or is the right solution to instead disallow ambiguous entries from coexisting within
-            // the same context at all, being stricter to simplify this query implementation?
-            (Query::Ambiguous, _) | (_, Query::Ambiguous) => Query::Ambiguous,
-            (Query::Unique(x), Query::Missing) | (Query::Missing, Query::Unique(x)) => {
-                Query::Unique(x)
-            }
-            (Query::Unique(x), Query::Unique(y)) => match f(x, y) {
-                None => Query::Ambiguous,
-                Some(Ordering::Greater | Ordering::Equal) => Query::Unique(x),
-                Some(Ordering::Less) => Query::Unique(y),
-            },
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -803,15 +740,10 @@ impl Names {
 
 struct ErrorCtx<'a> {
     tree: &'a Tree,
-    ir: &'a IR,
 }
 
 impl ErrorCtx<'_> {
-    fn path(&self, id: Path) -> Inclusive {
-        path_range(self.tree, id)
-    }
-
-    fn bind(&self, id: parse::BindId) -> Inclusive {
+    fn bind(&self, _id: parse::BindId) -> Inclusive {
         todo!()
     }
 
@@ -856,10 +788,10 @@ impl LowerError {
         _: &str,
         _: &TokenStarts,
         tree: &Tree,
-        ir: &IR,
+        _: &IR,
         _: &Names,
     ) -> (Option<Inclusive>, String) {
-        let ctx = ErrorCtx { tree, ir };
+        let ctx = ErrorCtx { tree };
         match self {
             LowerError::Todo(token, backtrace) => {
                 (Some(single(token)), format!("TODO\n{backtrace}"))
@@ -1192,7 +1124,7 @@ impl<'a> Lower<'a> {
         self.mk_node(Node::Tuple { elems })
     }
 
-    fn ty_record(&mut self, fields: &[(StrId, NodeId)]) -> NodeId {
+    fn ty_record(&mut self, _fields: &[(StrId, NodeId)]) -> NodeId {
         todo!()
     }
 
@@ -1204,22 +1136,6 @@ impl<'a> Lower<'a> {
         Builder {
             start: self.ir.instrs.next_idx(),
         }
-    }
-
-    fn items(&mut self, instrs: &[InstrId]) -> InstrList {
-        let start = self.ir.items.len_idx();
-        self.ir.items.extend_from_slice(IndexSlice::new(instrs));
-        let end = self.ir.items.len_idx();
-        IdRange { start, end }
-    }
-
-    fn map_items(&mut self, mapped: &InstrMap, items: InstrList) -> InstrList {
-        let items_mapped = Vec::from_iter(
-            items
-                .into_iter()
-                .map(|item| mapped.get(self.ir.items[item])),
-        );
-        self.items(&items_mapped)
     }
 
     fn emit(&mut self, instr: Instr) -> InstrId {
@@ -2712,7 +2628,6 @@ impl<'a> Lower<'a> {
                 let body = self.ir.aliasdefs[def].0;
                 self.reduce(body)
             }
-            _ => todo!(),
         }
     }
 
@@ -2943,8 +2858,8 @@ impl<'a> Lower<'a> {
                         let args = self.mk_node_list(&construct);
                         Ok(self.mk_node(Node::Apply { lambda, args }))
                     }
-                    Named::Tagdef(tagdef) => Err(self.todo_no_loc()),
-                    Named::Aliasdef(aliasdef) => Err(self.todo_no_loc()),
+                    Named::Tagdef(_) => Err(self.todo_no_loc()),
+                    Named::Aliasdef(_) => Err(self.todo_no_loc()),
                     _ => return Err(LowerError::NotType(spec.path.last)),
                 }
             }
@@ -2955,7 +2870,7 @@ impl<'a> Lower<'a> {
                     .collect::<LowerResult<Vec<_>>>()?;
                 Ok(self.ty_tuple(&lowered))
             }
-            parse::Type::Record(members) => Err(self.todo_no_loc()),
+            parse::Type::Record(_) => Err(self.todo_no_loc()),
         }
     }
 
@@ -3174,7 +3089,7 @@ impl<'a> Lower<'a> {
                 slots: Vec::new(),
                 locals: HashMap::new(),
             }
-            .body(fndef, id_decl)?;
+            .body(fndef)?;
             let id_body = self.ir.bodies.push(body);
             assert_eq!(id_decl, id_body);
         }
@@ -3186,7 +3101,7 @@ impl<'a> Lower<'a> {
                 slots: Vec::new(),
                 locals: HashMap::new(),
             }
-            .body(fndef, id_decl)?;
+            .body(fndef)?;
             let id_body = self.ir.bodies.push(body);
             assert_eq!(id_decl, id_body);
         }
@@ -3198,7 +3113,7 @@ impl<'a> Lower<'a> {
                 slots: Vec::new(),
                 locals: HashMap::new(),
             }
-            .body(fndef, id_decl)?;
+            .body(fndef)?;
             let id_body = self.ir.bodies.push(body);
             assert_eq!(id_decl, id_body);
         }
@@ -3551,11 +3466,6 @@ impl LowerBody<'_, '_> {
         self.call_sig(build, &[builder])
     }
 
-    fn extract_ctx(&mut self, def: CtxdefId) -> LowerResult<NodeId> {
-        self.x
-            .extract_ctx(Level::ONE, &self.slots, Level::ZERO, def, &self.slots, true)
-    }
-
     fn inline(&mut self, lambda: NodeId, construct: &[NodeId]) -> LowerResult<NodeId> {
         self.x.inline(lambda, construct)
     }
@@ -3573,7 +3483,7 @@ impl LowerBody<'_, '_> {
     }
 
     /// Get the fields of a record type.
-    fn fields(&self, ty: NodeId) -> LowerResult<Vec<(StrId, NodeId)>> {
+    fn fields(&self, _ty: NodeId) -> LowerResult<Vec<(StrId, NodeId)>> {
         Err(self.x.todo_no_loc())
     }
 
@@ -3906,7 +3816,7 @@ impl LowerBody<'_, '_> {
                 Ok(self.instr(ty_result, Expr::Call { func, arg }))
             }
             parse::Expr::Unary(op, inner) => {
-                let v = self.expr(inner)?;
+                let _v = self.expr(inner)?;
                 match op {
                     Unop::Neg => Err(self.x.todo_no_loc()),
                     Unop::Not => Err(self.x.todo_no_loc()),
@@ -4076,7 +3986,7 @@ impl LowerBody<'_, '_> {
         }
     }
 
-    fn body(&mut self, fndef: parse::Fndef, id_decl: FndefId) -> LowerResult<Body> {
+    fn body(&mut self, fndef: parse::Fndef) -> LowerResult<Body> {
         let parse::Fndef {
             name: _,
             needs: _,

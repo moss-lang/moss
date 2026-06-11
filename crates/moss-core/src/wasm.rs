@@ -13,7 +13,7 @@ use wasm_encoder::{
 use crate::{
     intern::StrId,
     lower::{
-        self, Body, ElemId, Expr, FieldId, FndefId, IR, Instr, InstrId, InstrList, ModuleId, Named,
+        self, Body, ElemId, Expr, FieldId, FndefId, IR, Instr, InstrId, ModuleId, Named,
         Names, Sigdef, SigdefId, ValdefId,
     },
     prelude::Lib,
@@ -223,9 +223,6 @@ enum Object {
     /// The function to process a specific kind of integer literal.
     FnInt(IntLitIn, IntLitOut),
 
-    /// The function to process a character literal.
-    FnChar,
-
     /// The function to process a string literal.
     FnString,
 
@@ -330,11 +327,6 @@ struct Wasm<'a> {
 }
 
 impl<'a> Wasm<'a> {
-    /// The empty context.
-    fn empty(&mut self) -> ObjectId {
-        self.mkctx(&[])
-    }
-
     /// Intern an environment binding need-nodes to construct [`Object`]s.
     fn mkenv(&mut self, pairs: &[(lower::NodeId, ObjectId)]) -> EnvId {
         let (i, _) = self.envs.insert_full(pairs.to_vec().into_boxed_slice());
@@ -559,15 +551,6 @@ impl<'a> Wasm<'a> {
             .collect()
     }
 
-    fn list(&self, items: InstrList) -> Vec<ObjectId> {
-        Vec::from_iter(
-            items
-                .get(&self.ir.items)
-                .iter()
-                .map(|item| self.variables[item]),
-        )
-    }
-
     fn mkobj(&mut self, object: Object) -> ObjectId {
         let (i, _) = self.objects.insert_full(object);
         ObjectId::from_usize(i)
@@ -727,7 +710,6 @@ impl<'a> Wasm<'a> {
             | Object::TyCtx
             | Object::Sig(_, _)
             | Object::FnInt(_, _)
-            | Object::FnChar
             | Object::FnString
             | Object::FnInstr(_)
             | Object::FnWasi(_)
@@ -808,7 +790,7 @@ impl<'a> Wasm<'a> {
         self.body.insn().i32_const(offset).i32_const(len);
     }
 
-    fn val_u32(&mut self, ctx: ObjectId, valdef: ValdefId) -> u32 {
+    fn val_u32(&mut self, _ctx: ObjectId, _valdef: ValdefId) -> u32 {
         todo!()
     }
 
@@ -1127,32 +1109,9 @@ impl<'a> Wasm<'a> {
             Object::ValU32(n) => {
                 self.body.insn().i32_const(n as i32);
             }
-            // A static string: bump-allocate its length (as `string_builder` does), store each
-            // byte (as `set_char` does), and leave the `(ptr, len)` pair on the stack.
-            Object::ValStr(s) => {
-                let bytes: Vec<u8> = self.ir.strings[s].bytes().collect();
-                let ptr = self.tmp();
-                self.body.insn().global_get(self.heap_global).local_set(ptr);
-                self.body
-                    .insn()
-                    .global_get(self.heap_global)
-                    .i32_const(bytes.len() as i32)
-                    .i32_add()
-                    .global_set(self.heap_global);
-                for (i, &b) in bytes.iter().enumerate() {
-                    let store8 = MemArg {
-                        offset: i as u64,
-                        align: 0,
-                        memory_index: MEMIDX_WASI,
-                    };
-                    self.body
-                        .insn()
-                        .local_get(ptr)
-                        .i32_const(b as i32)
-                        .i32_store8(store8);
-                }
-                self.body.insn().local_get(ptr).i32_const(bytes.len() as i32);
-            }
+            // A static string: emit (and intern) its bytes as a data segment, leaving the
+            // `(ptr, len)` pair on the stack.
+            Object::ValStr(s) => self.string(s),
             Object::ValDyn(ty, start) => self.get_locals(ty, start),
             other => todo!("materialize: {other:?}"),
         }
@@ -1256,7 +1215,7 @@ impl<'a> Wasm<'a> {
             Expr::Copy { value } => {
                 self.get(value);
             }
-            Expr::Nominal { ty, inner } => todo!("expr: Nominal (milestone B)"),
+            Expr::Nominal { .. } => todo!("expr: Nominal (milestone B)"),
             Expr::Tuple { elems } => {
                 for &id in elems.get(&self.ir.items) {
                     self.get(id);
@@ -1321,11 +1280,11 @@ impl<'a> Wasm<'a> {
                 self.get(arg);
                 self.emit_call(head);
             }
-            Expr::Bind { ctx } => todo!("expr: Bind (milestone C)"),
+            Expr::Bind { .. } => todo!("expr: Bind (milestone C)"),
         }
     }
 
-    fn interp(&mut self, env: EnvId, inputs: &[ObjectId], body: Body) -> ObjectId {
+    fn interp(&mut self, env: EnvId, body: Body) -> ObjectId {
         for instr in body.body {
             let result = match self.ir.instrs[instr] {
                 Instr::Set { lhs, rhs } => {
@@ -1402,7 +1361,7 @@ impl<'a> Wasm<'a> {
                 // The parameter occupies the first locals; body instructions add more after it.
                 self.make_locals(param);
                 let body = self.ir.bodies[fndef];
-                self.interp(env, &[], body);
+                self.interp(env, body);
                 // Leave the body's result value on the operand stack, then close the function.
                 self.get(body.result());
                 self.body.insn().end();
