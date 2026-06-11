@@ -1,29 +1,27 @@
 # QUESTION: Is the concrete type of an unsuffixed numeric literal determined
 # by the literal itself, or by the type the surrounding context demands?
 #
-# `lib/literal.moss` defines `LiteralUint31` together with a family of
-# `*_realize_*` functions that can realize one literal into many concrete
-# numeric types (Uint32, Int32, Uint64, ..., Int). That machinery only makes
-# sense if a literal's target type can be *chosen by context*. But today
-# `Lower::lit` hard-assigns `IntType::Int` to any unsuffixed literal, and the
-# `Expr::Lit` arm in `expr` picks the realize function from that fixed
-# `IntType` without ever consulting the expected parameter type.
+# (Historical note: `lib/literal.moss` once defined `LiteralUint31` together
+# with a family of `*_realize_*` functions that could realize one literal into
+# many concrete numeric types — machinery that only made sense if a literal's
+# target type could be *chosen by context*. That system has been removed:
+# literals now desugar at lowering time into the contextual digit/builder
+# surface, with the concrete type fixed up front by `Lower::lit`'s suffix
+# classification.)
 #
 # Below, `42` has no suffix but is passed where a `Uint32` is expected.
 #
 #   Interpretation A — "suffix/literal determines the type":
 #     `42` is `Int`; the call's `expect_ty(Uint32, Int)` fails.  => COMPILE ERROR
 #
-#   Interpretation B — "context determines the type" (realize is driven by the
-#   expected type):
-#     `42 : LiteralUint31` is realized into `Uint32`.            => prints "42"
+#   Interpretation B — "context determines the type" (the desugar is driven by
+#   the expected type):
+#     `42` desugars at `Number=Uint32`.                          => prints "42"
 #
 # ANSWER (confirmed): Interpretation A. The concrete type is determined ENTIRELY
 # by the suffix (or its absence); an unsuffixed literal is `Int`, and `Std` only
 # guarantees `Int` is at least as wide as `i32`. So this program is a COMPILE
-# ERROR. (Caveat: the actual *lowering* of literals is an unsolved design
-# problem -- see the conversation -- so this file is a forward-looking spec, not
-# yet runnable.)
+# ERROR.
 
 assume Std;
 

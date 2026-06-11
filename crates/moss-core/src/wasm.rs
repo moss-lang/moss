@@ -14,7 +14,7 @@ use crate::{
     intern::StrId,
     lower::{
         self, Body, ElemId, Expr, FieldId, FndefId, IR, Instr, InstrId, ModuleId, Named,
-        Names, Sigdef, SigdefId, ValdefId,
+        Names, Sigdef, SigdefId,
     },
     prelude::Lib,
     tuples::{TupleLoc, TupleRange, Tuples},
@@ -40,30 +40,6 @@ define_index_type! {
 #[strum(serialize_all = "snake_case")]
 enum Instruction {
     Unreachable,
-
-    I32Load,
-    I64Load,
-    I32Load8S,
-    I32Load8U,
-    I32Load16S,
-    I32Load16U,
-    I64Load8S,
-    I64Load8U,
-    I64Load16S,
-    I64Load16U,
-    I64Load32S,
-    I64Load32U,
-    I32Store,
-    I64Store,
-    I32Store8,
-    I32Store16,
-    I64Store8,
-    I64Store16,
-    I64Store32,
-    MemorySize,
-    MemoryGrow,
-    MemoryCopy,
-    MemoryFill,
 
     I32Eqz,
     I32Eq,
@@ -137,30 +113,6 @@ enum Instruction {
 
 const WASIP1: &str = "wasi_snapshot_preview1";
 
-/// The range within which a literal integer falls.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum IntLitIn {
-    Uint31,
-    Uint32,
-    Int32,
-    Uint63,
-    Uint64,
-    Int64,
-    Uint,
-    Int,
-}
-
-/// The type of an input literal.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum IntLitOut {
-    Uint32,
-    Int32,
-    Uint64,
-    Int64,
-    Uint,
-    Int,
-}
-
 /// A backend-implemented contextual function (prototype intrinsics for the string/print surface).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Intrinsic {
@@ -193,15 +145,6 @@ enum Object {
     /// An open slot.
     Open,
 
-    /// The type of integer literals of a specific kind.
-    TyLitInt(IntLitIn),
-
-    /// The type of character literals.
-    TyLitChar,
-
-    /// The type of string literals.
-    TyLitString,
-
     /// The type of a Wasm `memidx`.
     TyMemIdx,
 
@@ -219,12 +162,6 @@ enum Object {
 
     /// A function signature, with parameter and result types.
     Sig(ObjectId, ObjectId),
-
-    /// The function to process a specific kind of integer literal.
-    FnInt(IntLitIn, IntLitOut),
-
-    /// The function to process a string literal.
-    FnString,
 
     /// A Wasm instruction.
     FnInstr(Instruction),
@@ -248,12 +185,13 @@ enum Object {
     /// A 32-bit unsigned integer constant.
     ValU32(u32),
 
-    /// A static string value, materialized on demand by copying its bytes to the heap and
-    /// leaving the `(ptr, len)` pair (the `String`/`StringBuilder` layout) on the stack.
-    ValStr(StrId),
-
     /// A dynamic value with a type, stored in Wasm locals starting at a given index.
     ValDyn(ObjectId, LocalId),
+
+    /// A dynamic context value with a type, stored in Wasm globals starting at a given index.
+    /// Unlike [`Object::ValDyn`], this is frame-independent: the body that introduced the
+    /// binding stores it (`Instr::SetDyn`), and any consuming body can read it.
+    ValGlobal(ObjectId, u32),
 
     /// The "result" of executing a statement that only has side effects.
     ValStmt,
@@ -279,13 +217,7 @@ struct Wasm<'a> {
     names: &'a Names,
     lib: Lib,
     main: FndefId,
-    val_memidx: ValdefId,
-    val_dst: ValdefId,
-    val_src: ValdefId,
-    val_align: ValdefId,
-    val_offset: ValdefId,
     data_offset: i32,
-    strings: HashMap<StrId, i32>,
     objects: IndexSet<Object>,
     tuples: Tuples<ObjectId>,
 
@@ -306,6 +238,15 @@ struct Wasm<'a> {
 
     /// Index of the mutable global used as the bump-allocation heap pointer.
     heap_global: u32,
+
+    /// The Wasm type of every allocated global, in index order. Index 0 is the heap pointer;
+    /// the rest back dynamic context slots (see [`Wasm::dyn_global`]).
+    global_types: Vec<ValType>,
+
+    /// The first global index backing each `(slot, monomorphized type)` pair of a dynamic
+    /// context slot. Keyed by type as well as slot because a slot in a generic body can be
+    /// monomorphized at more than one concrete type.
+    dyn_globals: HashMap<(lower::DynId, ObjectId), u32>,
 
     section_type: TypeSection,
     section_import: ImportSection,
@@ -466,7 +407,14 @@ impl<'a> Wasm<'a> {
             }
             lower::Node::Context => self.mkobj(Object::TyCtx),
             lower::Node::Nothing => self.mkobj(Object::Open),
-            lower::Node::Lit { val } => self.fold_lit(val),
+            // A dynamic context value: read from the globals its `SetDyn` stores to. The type is
+            // monomorphized under the *current* environment, which is the binding site's (the
+            // value reaches consumers through closures captured there).
+            lower::Node::Dyn { slot } => {
+                let ty = self.eval(self.ir.dyns[slot], env);
+                let base = self.dyn_global(slot, ty);
+                self.mkobj(Object::ValGlobal(ty, base))
+            }
             // A `Bind { args, bind }` (the body of a binding's lambda) projects to its bound value.
             lower::Node::Bind { bind, .. } => self.eval(bind, env),
             // Bindings construct context entries; as a value, a binding is a closure over its `bind`
@@ -474,6 +422,20 @@ impl<'a> Wasm<'a> {
             lower::Node::BindDef { bind, .. } => self.mkobj(Object::Closure(bind, env)),
             other => todo!("eval: {other:?} (milestone B2)"),
         }
+    }
+
+    /// The first global index backing dynamic context slot `slot` at monomorphized type `ty`,
+    /// allocating `ty`'s layout in fresh globals on first use.
+    fn dyn_global(&mut self, slot: lower::DynId, ty: ObjectId) -> u32 {
+        if let Some(&base) = self.dyn_globals.get(&(slot, ty)) {
+            return base;
+        }
+        let base = self.global_types.len() as u32;
+        let mut types = Vec::new();
+        self.layout(ty, &mut |vt| types.push(vt));
+        self.global_types.extend(types);
+        self.dyn_globals.insert((slot, ty), base);
+        base
     }
 
     /// Force a slot object: if it is a deferred [`Object::Thunk`], evaluate it; otherwise return it.
@@ -518,17 +480,6 @@ impl<'a> Wasm<'a> {
             // Already a value; applying to no further context arguments is the identity.
             _ if args.is_empty() => head,
             other => todo!("apply: {other:?} to {} args", args.len()),
-        }
-    }
-
-    /// Fold a literal value to a codegen [`Object`].
-    fn fold_lit(&mut self, val: lower::Val) -> ObjectId {
-        match val {
-            lower::Val::Uint31(n) | lower::Val::Uint32(n) => self.mkobj(Object::ValU32(n)),
-            // A char is its code point (`Char` = i32, ASCII for now), like `char_from_codepoint`.
-            lower::Val::Char(c) => self.mkobj(Object::ValU32(c as u32)),
-            lower::Val::String(s) => self.mkobj(Object::ValStr(s)),
-            other => todo!("fold_lit: {other:?} (milestone B2)"),
         }
     }
 
@@ -602,43 +553,11 @@ impl<'a> Wasm<'a> {
             }
         }
 
-        use IntLitIn::*;
-        use IntLitOut as O;
         let leaves: &[Object] = &[
             // types
             Object::TyI32,
             Object::TyI64,
             Object::TyMemIdx,
-            // literal types
-            Object::TyLitInt(Uint31),
-            Object::TyLitInt(Uint32),
-            Object::TyLitInt(Int32),
-            Object::TyLitInt(Uint63),
-            Object::TyLitInt(Uint64),
-            Object::TyLitInt(Int64),
-            Object::TyLitInt(Uint),
-            Object::TyLitInt(Int),
-            Object::TyLitChar,
-            Object::TyLitString,
-            // realizers (in `wasi.moss` order; out-types per the `=I32`/`=I64` bindings there)
-            Object::FnInt(Uint31, O::Uint32),
-            Object::FnInt(Uint32, O::Uint32),
-            Object::FnInt(Uint31, O::Int32),
-            Object::FnInt(Int32, O::Int32),
-            Object::FnInt(Uint31, O::Uint64),
-            Object::FnInt(Uint32, O::Uint64),
-            Object::FnInt(Uint63, O::Uint64),
-            Object::FnInt(Uint64, O::Uint64),
-            Object::FnInt(Uint31, O::Int64),
-            Object::FnInt(Uint32, O::Int64),
-            Object::FnInt(Int32, O::Int64),
-            Object::FnInt(Uint63, O::Int64),
-            Object::FnInt(Int64, O::Int64),
-            Object::FnInt(Uint31, O::Uint),
-            Object::FnInt(Uint32, O::Uint),
-            Object::FnInt(Uint31, O::Int),
-            Object::FnInt(Int32, O::Int),
-            Object::FnString,
         ];
         let mut slots: Vec<ObjectId> = leaves.iter().map(|&o| self.mkobj(o)).collect();
 
@@ -703,14 +622,9 @@ impl<'a> Wasm<'a> {
                 }
             }
             Object::Open
-            | Object::TyLitInt(_)
-            | Object::TyLitChar
-            | Object::TyLitString
             | Object::TyMemIdx
             | Object::TyCtx
             | Object::Sig(_, _)
-            | Object::FnInt(_, _)
-            | Object::FnString
             | Object::FnInstr(_)
             | Object::FnWasi(_)
             | Object::FnIntrinsic(_)
@@ -718,8 +632,8 @@ impl<'a> Wasm<'a> {
             | Object::Thunk(_, _)
             | Object::Closure(_, _)
             | Object::ValU32(_)
-            | Object::ValStr(_)
             | Object::ValDyn(_, _)
+            | Object::ValGlobal(_, _)
             | Object::ValStmt
             | Object::Ctx(_) => panic!(),
         }
@@ -777,129 +691,10 @@ impl<'a> Wasm<'a> {
         self.mkobj(Object::ValDyn(ty, start))
     }
 
-    fn string(&mut self, id: StrId) {
-        let string = &self.ir.strings[id];
-        let len = string.len() as i32;
-        let &mut offset = self.strings.entry(id).or_insert_with(|| {
-            let offset = self.data_offset;
-            self.section_data
-                .active(MEMIDX_WASI, &ConstExpr::i32_const(offset), string.bytes());
-            self.data_offset += len;
-            offset
-        });
-        self.body.insn().i32_const(offset).i32_const(len);
-    }
-
-    fn val_u32(&mut self, _ctx: ObjectId, _valdef: ValdefId) -> u32 {
-        todo!()
-    }
-
-    fn memarg(&mut self, ctx: ObjectId) -> MemArg {
-        MemArg {
-            offset: self.val_u32(ctx, self.val_offset).into(),
-            align: self.val_u32(ctx, self.val_align),
-            memory_index: self.val_u32(ctx, self.val_memidx),
-        }
-    }
-
-    fn wasm_instruction(&mut self, ctx: ObjectId, instruction: Instruction) {
+    fn wasm_instruction(&mut self, instruction: Instruction) {
         match instruction {
             Instruction::Unreachable => {
                 self.body.insn().unreachable();
-            }
-
-            Instruction::I32Load => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i32_load(memarg);
-            }
-            Instruction::I64Load => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_load(memarg);
-            }
-            Instruction::I32Load8S => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i32_load8_s(memarg);
-            }
-            Instruction::I32Load8U => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i32_load8_u(memarg);
-            }
-            Instruction::I32Load16S => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i32_load16_s(memarg);
-            }
-            Instruction::I32Load16U => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i32_load16_u(memarg);
-            }
-            Instruction::I64Load8S => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_load8_s(memarg);
-            }
-            Instruction::I64Load8U => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_load8_u(memarg);
-            }
-            Instruction::I64Load16S => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_load16_s(memarg);
-            }
-            Instruction::I64Load16U => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_load16_u(memarg);
-            }
-            Instruction::I64Load32S => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_load32_s(memarg);
-            }
-            Instruction::I64Load32U => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_load32_u(memarg);
-            }
-            Instruction::I32Store => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i32_store(memarg);
-            }
-            Instruction::I64Store => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_store(memarg);
-            }
-            Instruction::I32Store8 => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i32_store8(memarg);
-            }
-            Instruction::I32Store16 => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i32_store16(memarg);
-            }
-            Instruction::I64Store8 => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_store8(memarg);
-            }
-            Instruction::I64Store16 => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_store16(memarg);
-            }
-            Instruction::I64Store32 => {
-                let memarg = self.memarg(ctx);
-                self.body.insn().i64_store32(memarg);
-            }
-            Instruction::MemorySize => {
-                let memidx = self.val_u32(ctx, self.val_memidx);
-                self.body.insn().memory_size(memidx);
-            }
-            Instruction::MemoryGrow => {
-                let memidx = self.val_u32(ctx, self.val_memidx);
-                self.body.insn().memory_grow(memidx);
-            }
-            Instruction::MemoryCopy => {
-                let dst = self.val_u32(ctx, self.val_dst);
-                let src = self.val_u32(ctx, self.val_src);
-                self.body.insn().memory_copy(dst, src);
-            }
-            Instruction::MemoryFill => {
-                let memidx = self.val_u32(ctx, self.val_memidx);
-                self.body.insn().memory_fill(memidx);
             }
 
             Instruction::I32Eqz => {
@@ -1109,10 +904,12 @@ impl<'a> Wasm<'a> {
             Object::ValU32(n) => {
                 self.body.insn().i32_const(n as i32);
             }
-            // A static string: emit (and intern) its bytes as a data segment, leaving the
-            // `(ptr, len)` pair on the stack.
-            Object::ValStr(s) => self.string(s),
             Object::ValDyn(ty, start) => self.get_locals(ty, start),
+            Object::ValGlobal(ty, base) => {
+                for i in 0..self.layout_len(ty) {
+                    self.body.insn().global_get(base + i as u32);
+                }
+            }
             other => todo!("materialize: {other:?}"),
         }
     }
@@ -1132,11 +929,8 @@ impl<'a> Wasm<'a> {
                 let funcidx = self.insert_func(Object::FnDef(def, fenv));
                 self.body.insn().call(funcidx);
             }
-            // Numeric instructions ignore `ctx`; memory instructions would need `val_u32` (milestone
-            // C). `hello`'s arithmetic is numeric-only, so a placeholder context suffices.
             Object::FnInstr(instr) => {
-                let ctx = self.mkobj(Object::Open);
-                self.wasm_instruction(ctx, instr);
+                self.wasm_instruction(instr);
             }
             Object::FnWasi(funcidx) => {
                 self.body.insn().call(funcidx);
@@ -1291,6 +1085,17 @@ impl<'a> Wasm<'a> {
                     let (ty, start) = self.local(lhs);
                     self.get(rhs);
                     self.set_locals(ty, start);
+                    self.mkobj(Object::ValStmt)
+                }
+                Instr::SetDyn { slot, value } => {
+                    let ty = self.eval(self.ir.dyns[slot], env);
+                    let base = self.dyn_global(slot, ty);
+                    self.get(value);
+                    // The value's layout is on the stack in order; pop into the globals in
+                    // reverse, mirroring `set_locals`.
+                    for i in (0..self.layout_len(ty)).rev() {
+                        self.body.insn().global_set(base + i as u32);
+                    }
                     self.mkobj(Object::ValStmt)
                 }
                 Instr::If { ty, cond } => {
@@ -1547,7 +1352,9 @@ impl<'a> Wasm<'a> {
         }
 
         // Global 0 is the mutable bump-allocation heap pointer (`heap_global`), starting past the
-        // static data (which itself starts past the reserved `[0,16)` print scratch).
+        // static data (which itself starts past the reserved `[0,16)` print scratch). The globals
+        // after it back dynamic context slots, zero-initialized (their `SetDyn`s run before any
+        // consumer can read them).
         self.section_global.global(
             GlobalType {
                 val_type: ValType::I32,
@@ -1556,6 +1363,20 @@ impl<'a> Wasm<'a> {
             },
             &ConstExpr::i32_const(self.data_offset),
         );
+        for &val_type in &self.global_types[1..] {
+            let init = match val_type {
+                ValType::I64 => ConstExpr::i64_const(0),
+                _ => ConstExpr::i32_const(0),
+            };
+            self.section_global.global(
+                GlobalType {
+                    val_type,
+                    mutable: true,
+                    shared: false,
+                },
+                &init,
+            );
+        }
 
         assert_eq!(self.section_memory.len(), MEMIDX_WASI);
         self.section_memory.memory(MemoryType {
@@ -1605,15 +1426,9 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         names,
         lib,
         main,
-        val_memidx: names.names[&(lib.wasm, ir.strings.get_id("memidx").unwrap())].valdef(),
-        val_dst: names.names[&(lib.wasm, ir.strings.get_id("dst").unwrap())].valdef(),
-        val_src: names.names[&(lib.wasm, ir.strings.get_id("src").unwrap())].valdef(),
-        val_align: names.names[&(lib.wasm, ir.strings.get_id("align").unwrap())].valdef(),
-        val_offset: names.names[&(lib.wasm, ir.strings.get_id("offset").unwrap())].valdef(),
         // Reserve `[0,16)` of linear memory as print scratch (iovec + retptr); static data and the
         // heap start at 16.
         data_offset: 16,
-        strings: Default::default(),
         objects: Default::default(),
         tuples: Default::default(),
         envs: Default::default(),
@@ -1656,6 +1471,8 @@ pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
             m
         },
         heap_global: 0,
+        global_types: vec![ValType::I32],
+        dyn_globals: HashMap::new(),
 
         section_type: Default::default(),
         section_import: Default::default(),

@@ -83,6 +83,11 @@ define_index_type! {
 }
 
 define_index_type! {
+    /// The index of a dynamic context-value slot in the `dyns` field of the [`IR`].
+    pub struct DynId = u32;
+}
+
+define_index_type! {
     /// The index of a [`Tydef`] in the `tydefs` field of the [`IR`].
     pub struct TydefId = u32;
 }
@@ -283,8 +288,12 @@ pub enum Node {
         ctx: NodeId,
         slot: SlotId,
     },
-    Lit {
-        val: Val,
+    /// The value of a dynamic context slot: a runtime value computed by the body that
+    /// introduced the binding (see [`Instr::SetDyn`]), identified position-independently so
+    /// that consumers in other (monomorphized) bodies can read it. The slot's type lives in
+    /// [`IR::dyns`].
+    Dyn {
+        slot: DynId,
     },
     Bind {
         args: NodeList,
@@ -443,6 +452,16 @@ pub enum Instr {
         depth: Depth,
     },
 
+    /// Set the dynamic context slot `slot` to the value of `value`, making it readable through
+    /// [`Node::Dyn`] by any body that consumes the binding this slot backs.
+    SetDyn {
+        /// The dynamic slot to set.
+        slot: DynId,
+
+        /// The value to store.
+        value: InstrId,
+    },
+
     /// An instruction whose value is typed by the value of a previous instruction.
     Expr {
         /// The type.
@@ -572,6 +591,9 @@ pub struct IR {
 
     /// Actual function bodies.
     pub bodies: IndexVec<FndefId, Body>,
+
+    /// The type node of each dynamic context-value slot ([`Node::Dyn`]/[`Instr::SetDyn`]).
+    pub dyns: IndexVec<DynId, NodeId>,
 }
 
 type ModuleNames<T> = IndexMap<(ModuleId, StrId), T>;
@@ -1213,7 +1235,7 @@ impl<'a> Lower<'a> {
                 let ctx = self.transform(map, ctx);
                 self.mk_node(map.map(Node::Get { ctx, slot }))
             }
-            Node::Lit { val } => self.mk_node(map.map(Node::Lit { val })),
+            Node::Dyn { slot } => self.mk_node(map.map(Node::Dyn { slot })),
             Node::Bind { args, bind } => {
                 let args = self.transforms(map, args);
                 let bind = self.transform(map, bind);
@@ -1490,8 +1512,8 @@ impl<'a> Lower<'a> {
                 },
                 _ => todo!(),
             },
-            // A ground literal has no needs, so it takes no constructed arguments.
-            Node::Lit { val: _ } => Ok(Some(Vec::new())),
+            // A ground dynamic value has no needs, so it takes no constructed arguments.
+            Node::Dyn { .. } => Ok(Some(Vec::new())),
             // A binding's needs live in its inner `bind` lambda; invoking the binding resolves
             // those, just as applying the binding (in `reduce`) feeds them to that same lambda.
             Node::Bind { args: _, bind } | Node::BindDef { def: _, bind } => {
@@ -1711,7 +1733,7 @@ impl<'a> Lower<'a> {
             (Node::Context, Node::Context) => Ok(true),
             (Node::Tagdef { def: da }, Node::Tagdef { def: db }) => Ok(da == db),
             (Node::Fndef { def: da }, Node::Fndef { def: db }) => Ok(da == db),
-            (Node::Lit { val: va }, Node::Lit { val: vb }) => Ok(va == vb),
+            (Node::Dyn { slot: sa }, Node::Dyn { slot: sb }) => Ok(sa == sb),
             // Aliases are transparent and must be unfolded before comparison; not yet handled.
             (Node::Aliasdef { .. }, _) | (_, Node::Aliasdef { .. }) => Err(self.todo_no_loc()),
             (x, y) => {
@@ -2444,6 +2466,51 @@ impl<'a> Lower<'a> {
         }))
     }
 
+    /// The nullary type definition a type node refers to, if its reduced head is an abstract
+    /// type reference. Used to recover the concrete type for the `Lhs`/`Rhs`/`This`/`Number`
+    /// disambiguating bindings of the operator, method, and literal desugars.
+    fn tydef_of(&mut self, ty: NodeId) -> LowerResult<Option<TydefId>> {
+        let reduced = self.reduce(ty)?;
+        let peeled = self.peel_nullary_apply(reduced);
+        Ok(match self.node(peeled) {
+            Node::Need {
+                def: DefKind::Ty(def),
+                ..
+            } => Some(def),
+            _ => None,
+        })
+    }
+
+    /// The provider node for the digit value `n` (`0..=9`) at concrete type `ty`, resolved from
+    /// `slots` under the binding `Number=ty`. This is the static, node-level counterpart of
+    /// [`LowerBody::val_at`]: a single-digit literal *bind* is satisfied by the contextual digit
+    /// value itself, with no runtime construction, so it stays usable in positions that are
+    /// evaluated statically (e.g. a context constructor's `bind` list).
+    fn digit_provider(&mut self, slots: &[NodeId], ty: TydefId, n: u8) -> LowerResult<NodeId> {
+        let numerals = self
+            .base
+            .expect("literal binds require the base context")
+            .numerals
+            .expect("digit valdefs must be available when lowering a numeric literal");
+        let def = match n {
+            0 => numerals.digit0,
+            1 => numerals.digit1,
+            2 => numerals.digit2,
+            3 => numerals.digit3,
+            4 => numerals.digit4,
+            5 => numerals.digit5,
+            6 => numerals.digit6,
+            7 => numerals.digit7,
+            8 => numerals.digit8,
+            9 => numerals.digit9,
+            _ => unreachable!(),
+        };
+        let bind = self.bind_tydef(Level::ZERO, slots, numerals.number, ty)?;
+        let mut slots = slots.to_vec();
+        slots.push(bind);
+        self.extract(Level::ONE, &slots, DefKind::Val(def), &slots)
+    }
+
     /// Build a type-bind slot binding the (nullary) type `def` to the (nullary) type `rhs`,
     /// resolved against `slots`. This mirrors the `bind` method's `Entry::Ref`/`Named::Tydef`
     /// branch but for two type definitions known directly rather than via the parse tree.
@@ -2614,11 +2681,11 @@ impl<'a> Lower<'a> {
             | Node::Tagdef { .. }
             | Node::Context
             | Node::Nothing
-            | Node::Lit { .. }
             | Node::List { .. }
             | Node::Need { .. }
             | Node::Bind { .. }
-            | Node::BindDef { .. } => Ok(node),
+            | Node::BindDef { .. }
+            | Node::Dyn { .. } => Ok(node),
             // Transparent definitions unfold to their bodies.
             Node::Fndef { def } => {
                 let body = self.ir.fndefs[def].0;
@@ -2698,7 +2765,14 @@ impl<'a> Lower<'a> {
                 let destruct_rhs = destruct_lhs.clone();
                 self.mk_bind_def(level, def, lambda, &destruct_lhs, destruct_rhs)
             }
-            // `bind <val>=<literal>`: only a `val` can be bound to a literal.
+            // `bind <val>=<literal>`: only a `val` can be bound to a literal. A literal must
+            // never reach the backend as a raw value (the bound type is contextual, so the
+            // backend cannot know its concrete representation); it desugars like an expression
+            // literal instead. A single-digit number is satisfied *statically* by the
+            // contextual digit value itself ([`Lower::digit_provider`]), which is the only form
+            // a declaration (or a statically-evaluated context constructor like `bootstrap`)
+            // can use. Strings, chars, and multi-digit numbers need runtime construction in an
+            // enclosing body, which [`LowerBody::bind_dyn`] intercepts before delegating here.
             Some(parse::Entry::Lit(token)) => match lhs {
                 Named::Valdef(def) => {
                     let Valdef(target) = self.ir.valdefs[def];
@@ -2709,8 +2783,21 @@ impl<'a> Lower<'a> {
                     let (construct, needs) =
                         self.invoke_need(level.succ(), target, &destruct_all)?;
                     let needs = self.mk_node_list(&needs);
-                    let (val, _) = self.lit(token)?;
-                    let bind = self.mk_node(Node::Lit { val });
+                    let bind = match self.lit(token)? {
+                        (Val::Uint31(n), _) if n <= 9 => {
+                            // The literal's concrete type is the valdef's declared type.
+                            let Node::Lambda { result: ty_node, .. } = self.node(target) else {
+                                panic!()
+                            };
+                            let Some(ty) = self.tydef_of(ty_node)? else {
+                                return Err(self.todo(token));
+                            };
+                            self.digit_provider(slots, ty, n as u8)?
+                        }
+                        // A dynamic literal bind in a static position (a declaration's needs
+                        // list): not supported, because there is no body to construct it in.
+                        _ => return Err(self.todo(token)),
+                    };
                     let args = self.mk_node_list(&construct);
                     let result = self.mk_node(Node::Bind { args, bind });
                     let bind = self.mk_node(Node::Lambda {
@@ -2783,8 +2870,7 @@ impl<'a> Lower<'a> {
         slots: &[NodeId],
         need: parse::NeedId,
     ) -> LowerResult<NodeId> {
-        let parse::Need { kind: _, bind } = self.tree.needs[need];
-        // TODO: Handle `kind`.
+        let parse::Need { bind } = self.tree.needs[need];
         self.need_bind(level, params, slots, bind)
     }
 
@@ -3348,21 +3434,6 @@ impl LowerBody<'_, '_> {
         Ok(self.x.mk_node(Node::Apply { lambda, args }))
     }
 
-    /// The nullary type definition a type node refers to, if its reduced head is an abstract
-    /// type reference. Used to recover the operand type for the `Lhs`/`Rhs`/`This`
-    /// disambiguating bindings of operator and method desugars.
-    fn tydef_of(&mut self, ty: NodeId) -> LowerResult<Option<TydefId>> {
-        let reduced = self.x.reduce(ty)?;
-        let peeled = self.x.peel_nullary_apply(reduced);
-        Ok(match self.x.node(peeled) {
-            Node::Need {
-                def: DefKind::Ty(def),
-                ..
-            } => Some(def),
-            _ => None,
-        })
-    }
-
     /// Apply a binary arithmetic operation `sigdef` (`add` or `mul`) at type `ty` to `lhs`/`rhs`,
     /// resolving the operation under the bindings `Lhs=ty, Rhs=ty` so that `Std`'s per-type
     /// `Arithmetic[Number=...]` entries do not make it ambiguous.
@@ -3679,23 +3750,6 @@ impl LowerBody<'_, '_> {
                     }
                     other => other,
                 })?;
-                // A provider that reduces to a ground string/char literal (e.g. the call-site
-                // binding `string="hello"`) cannot be materialized statically by the backend;
-                // desugar it here exactly like a source literal of the same value.
-                let args = self.x.mk_node_list(&[]);
-                let applied = self.x.mk_node(Node::Apply { lambda: val, args });
-                if let Ok(reduced) = self.x.reduce(applied)
-                    && let Node::Lit { val: lit } = self.x.node(reduced)
-                {
-                    match lit {
-                        Val::String(s) => {
-                            let chars: Vec<char> = self.x.ir.strings[s].chars().collect();
-                            return self.string_lit(&chars);
-                        }
-                        Val::Char(c) => return self.char_lit(c),
-                        _ => {}
-                    }
-                }
                 // The value's type is the valdef's declared type with the valdef's own needs
                 // resolved against the ambient context -- NOT the provider's construct: a fully
                 // applied provider (e.g. `true[Bool]` inside `Std`) has no needs left, while the
@@ -3759,7 +3813,7 @@ impl LowerBody<'_, '_> {
                 // type so resolution picks that receiver's instance. The bound implementation
                 // takes the receiver as its first runtime parameter.
                 let mut slots = self.slots.clone();
-                if let Some(obj_tydef) = self.tydef_of(obj.ty)? {
+                if let Some(obj_tydef) = self.x.tydef_of(obj.ty)? {
                     let this = self.base().this;
                     let bind = self.x.bind_tydef(Level::ZERO, &self.slots, this, obj_tydef)?;
                     slots.push(bind);
@@ -3797,7 +3851,8 @@ impl LowerBody<'_, '_> {
                 // `[..]` bindings, exactly as in `composite_bind`.
                 let mut destruct = self.slots.clone();
                 for bind in binds {
-                    destruct.push(self.x.bind(Level::ZERO, &self.slots, bind)?);
+                    let slots = self.slots.clone();
+                    destruct.push(self.bind_dyn(Level::ZERO, &slots, bind)?);
                 }
                 let construct = self.x.invoke_force(lambda, &destruct)?;
                 let args = self.x.mk_node_list(&construct);
@@ -3846,7 +3901,7 @@ impl LowerBody<'_, '_> {
                 };
                 // Desugar to the contextual operation, disambiguated at the left operand's type
                 // (mixed-type operations are not supported yet).
-                let Some(ty) = self.tydef_of(l.ty)? else {
+                let Some(ty) = self.x.tydef_of(l.ty)? else {
                     return Err(self.x.todo_no_loc());
                 };
                 self.op2(ty, sigdef, l, r)
@@ -3880,7 +3935,8 @@ impl LowerBody<'_, '_> {
                 for binding in bindings {
                     let slot = match self.x.tree.bindings[binding] {
                         parse::Binding::Single(bind) => {
-                            self.x.bind(Level::ZERO, &self.slots, bind)?
+                            let slots = self.slots.clone();
+                            self.bind_dyn(Level::ZERO, &slots, bind)?
                         }
                         parse::Binding::Composite(expr) => self.composite_bind(expr)?,
                     };
@@ -3892,6 +3948,78 @@ impl LowerBody<'_, '_> {
                 Ok(self.instr(ty, Expr::Bind { ctx }))
             }
         }
+    }
+
+    /// Lower a binding in a body position, intercepting the literal binds that need *runtime*
+    /// construction: a string, char, or multi-digit numeric literal desugars exactly like an
+    /// expression literal of the same value, with the construction emitted into the current
+    /// body and the result stored to a fresh dynamic context slot ([`Instr::SetDyn`]) that the
+    /// binding's consumers read through [`Node::Dyn`]. Everything else (including single-digit
+    /// numeric literals, which are satisfied statically by the contextual digit values)
+    /// delegates to [`Lower::bind`].
+    fn bind_dyn(
+        &mut self,
+        level: Level,
+        slots: &[NodeId],
+        bind: parse::BindId,
+    ) -> LowerResult<NodeId> {
+        let parse::Bind { key, val } = self.x.tree.binds[bind];
+        let Some(parse::Entry::Lit(token)) = val else {
+            return self.x.bind(level, slots, bind);
+        };
+        let lit = match self.x.lit(token)? {
+            // Single-digit numerics resolve statically; let `Lower::bind` handle them.
+            (Val::Uint31(n), _) if n <= 9 => return self.x.bind(level, slots, bind),
+            (lit, _) => lit,
+        };
+        let (lhs, destruct_lhs) = self.x.spec(level, slots, key)?;
+        let Named::Valdef(def) = lhs else {
+            return Err(LowerError::LitNotVal(token));
+        };
+        let Valdef(target) = self.x.ir.valdefs[def];
+        let mut destruct_all = slots.to_vec();
+        destruct_all.extend(destruct_lhs.iter().copied());
+        let (construct, needs) = self.x.invoke_need(level.succ(), target, &destruct_all)?;
+        // Construct the value in the current body, like an expression literal.
+        let typed = match lit {
+            Val::Char(c) => self.char_lit(c)?,
+            Val::String(s) => {
+                let chars: Vec<char> = self.x.ir.strings[s].chars().collect();
+                self.string_lit(&chars)?
+            }
+            _ => {
+                // The literal's concrete type is the valdef's declared type.
+                let Node::Lambda { result: ty_node, .. } = self.x.node(target) else {
+                    panic!()
+                };
+                let Some(ty) = self.x.tydef_of(ty_node)? else {
+                    return Err(self.x.todo(token));
+                };
+                let digits = self.decimal_digits(token);
+                self.numeric(ty, &digits)?
+            }
+        };
+        let slot = self.x.ir.dyns.push(typed.ty);
+        self.emit(Instr::SetDyn {
+            slot,
+            value: typed.val,
+        });
+        let bind_value = self.x.mk_node(Node::Dyn { slot });
+        let needs = self.x.mk_node_list(&needs);
+        let args = self.x.mk_node_list(&construct);
+        let result = self.x.mk_node(Node::Bind {
+            args,
+            bind: bind_value,
+        });
+        let bind = self.x.mk_node(Node::Lambda {
+            level: level.succ(),
+            needs,
+            result,
+        });
+        Ok(self.x.mk_node(Node::BindDef {
+            def: DefKind::Val(def),
+            bind,
+        }))
     }
 
     /// Lower a composite binding `bind f[..]()` -- a binding whose value is the context produced by
@@ -3913,7 +4041,8 @@ impl LowerBody<'_, '_> {
         // Resolve the callee's needs against the ambient context plus the call's bindings.
         let mut destruct = self.slots.clone();
         for bind in binds {
-            destruct.push(self.x.bind(Level::ZERO, &self.slots, bind)?);
+            let slots = self.slots.clone();
+            destruct.push(self.bind_dyn(Level::ZERO, &slots, bind)?);
         }
         let construct = self.x.invoke_force(lambda, &destruct)?;
         let args = self.x.mk_node_list(&construct);

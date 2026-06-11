@@ -107,7 +107,6 @@ pub struct Base {
 pub struct Lib {
     pub char: ModuleId,
     pub int: ModuleId,
-    pub literal: ModuleId,
     pub prelude: ModuleId,
     pub string: ModuleId,
     pub types: ModuleId,
@@ -214,13 +213,11 @@ impl Precompile {
     }
 
     fn prelude(mut self) -> io::Result<(IR, Names, Base, Lib)> {
-        let path_literal = self.ir.strings.make_id("./literal.moss");
         let path_int = self.ir.strings.make_id("./int.moss");
         let path_char = self.ir.strings.make_id("./char.moss");
         let path_string = self.ir.strings.make_id("./string.moss");
         let path_ops = self.ir.strings.make_id("./ops.moss");
         let path_this = self.ir.strings.make_id("./this.moss");
-        let literal = self.lib(path_literal)?;
         let int = self.lib(path_int)?;
         let char = self.lib(path_char)?;
         let string = self.lib(path_string)?;
@@ -288,7 +285,6 @@ impl Precompile {
         let lib = Lib {
             char,
             int,
-            literal,
             prelude,
             string,
             types,

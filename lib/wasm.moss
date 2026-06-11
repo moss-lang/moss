@@ -1,7 +1,6 @@
-import "./literal.moss" use LiteralUint32;
 import "./types.moss" use I32, I64, MemIdx;
 
-assume LiteralUint32, I32, I64, MemIdx;
+assume I32, I64, MemIdx;
 
 # https://webassembly.github.io/spec/core/syntax/modules.html#indices
 val memidx: MemIdx;
@@ -9,35 +8,9 @@ val memidx: MemIdx;
 # https://webassembly.github.io/spec/core/syntax/instructions.html#parametric-instructions
 fn unreachable();
 
-# https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
-val align: LiteralUint32;
-val offset: LiteralUint32;
-context Mem = static memidx, static align, static offset;
-val dst: MemIdx;
-val src: MemIdx;
-fn i32_load[Mem](address: I32): I32;
-fn i64_load[Mem](address: I32): I64;
-fn i32_load8_s[Mem](address: I32): I32;
-fn i32_load8_u[Mem](address: I32): I32;
-fn i32_load16_s[Mem](address: I32): I32;
-fn i32_load16_u[Mem](address: I32): I32;
-fn i64_load8_s[Mem](address: I32): I64;
-fn i64_load8_u[Mem](address: I32): I64;
-fn i64_load16_s[Mem](address: I32): I64;
-fn i64_load16_u[Mem](address: I32): I64;
-fn i64_load32_s[Mem](address: I32): I64;
-fn i64_load32_u[Mem](address: I32): I64;
-fn i32_store[Mem](address: I32, value: I32);
-fn i64_store[Mem](address: I32, value: I64);
-fn i32_store8[Mem](address: I32, value: I32);
-fn i32_store16[Mem](address: I32, value: I32);
-fn i64_store8[Mem](address: I32, value: I64);
-fn i64_store16[Mem](address: I32, value: I64);
-fn i64_store32[Mem](address: I32, value: I64);
-fn memory_size[static memidx](): I32;
-fn memory_grow[static memidx](pages: I32): I32;
-fn memory_copy[static dst, static src](dst: I32, src: I32, len: I32);
-fn memory_fill[static memidx](start: I32, byte: I32, len: I32);
+# TODO: Re-introduce the memory instructions (loads/stores and `memory_*`). Their previous
+# declarations took the memarg immediates (`memidx`/`align`/`offset`) as `static` contextual
+# values, which relied on the old literal system; the replacement design is open.
 
 # https://webassembly.github.io/spec/core/syntax/instructions.html#numeric-instructions
 fn i32_eqz(n: I32): I32;
@@ -109,30 +82,6 @@ fn i64_extend32_s(n: I64): I64;
 
 context Wasm =
   unreachable,
-
-  i32_load,
-  i64_load,
-  i32_load8_s,
-  i32_load8_u,
-  i32_load16_s,
-  i32_load16_u,
-  i64_load8_s,
-  i64_load8_u,
-  i64_load16_s,
-  i64_load16_u,
-  i64_load32_s,
-  i64_load32_u,
-  i32_store,
-  i64_store,
-  i32_store8,
-  i32_store16,
-  i64_store8,
-  i64_store16,
-  i64_store32,
-  memory_size,
-  memory_grow,
-  memory_copy,
-  memory_fill,
 
   i32_eqz,
   i32_eq,

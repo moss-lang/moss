@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     intern::StrId,
     lower::{
-        Aliasdef, Ctxdef, IR, Named, Names, Node, NodeList, Sigdef, Tagdef, Tydef, Val, Valdef,
+        Aliasdef, Ctxdef, IR, Named, Names, Node, NodeList, Sigdef, Tagdef, Tydef, Valdef,
     },
 };
 
@@ -113,18 +113,9 @@ impl<'a> Dump<'a> {
             Node::Get { ctx, slot } => {
                 print!("slot {} of %{}", slot.index(), ctx.index());
             }
-            Node::Lit { val } => match val {
-                Val::Uint31(n) => print!("uint31 {n}"),
-                Val::Uint32(n) => print!("uint32 {n}"),
-                Val::Int32(n) => print!("int32 {n}"),
-                Val::Uint63(n) => print!("uint63 {n}"),
-                Val::Uint64(n) => print!("uint64 {n}"),
-                Val::Int64(n) => print!("int64 {n}"),
-                Val::Uint(s) => print!("uint {}", &self.ir.strings[s]),
-                Val::Int(s) => print!("int {}", &self.ir.strings[s]),
-                Val::Char(c) => print!("c {c:?}"),
-                Val::String(s) => print!("string {s:?}"),
-            },
+            Node::Dyn { slot } => {
+                print!("dynamic slot {}", slot.index());
+            }
             Node::Bind { args, bind } => {
                 print!("bind for [");
                 self.list(args);

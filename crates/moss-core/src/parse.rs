@@ -153,14 +153,7 @@ pub struct Bind {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum NeedKind {
-    Default,
-    Static,
-}
-
-#[derive(Clone, Copy, Debug)]
 pub struct Need {
-    pub kind: NeedKind,
     pub bind: BindId,
 }
 
@@ -538,15 +531,8 @@ impl<'a> Parser<'a> {
     }
 
     fn need(&mut self) -> ParseResult<Need> {
-        let kind = match self.peek() {
-            Static => {
-                self.next();
-                NeedKind::Static
-            }
-            _ => NeedKind::Default,
-        };
         let bind = self.bind_id()?;
-        Ok(Need { kind, bind })
+        Ok(Need { bind })
     }
 
     fn needs(&mut self) -> ParseResult<Vec<Need>> {

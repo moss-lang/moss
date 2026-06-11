@@ -147,9 +147,6 @@ pub enum Token {
     #[token("let")]
     Let,
 
-    #[token("static")]
-    Static,
-
     #[token("type")]
     Type,
 
@@ -235,7 +232,6 @@ impl fmt::Display for Token {
             Token::If => write!(f, "`if`"),
             Token::Import => write!(f, "`import`"),
             Token::Let => write!(f, "`let`"),
-            Token::Static => write!(f, "`static`"),
             Token::Type => write!(f, "`type`"),
             Token::Use => write!(f, "`use`"),
             Token::Val => write!(f, "`val`"),

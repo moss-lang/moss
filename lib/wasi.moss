@@ -1,6 +1,5 @@
 import "./bool.moss" use Bool, false, true;
 import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
-import "./literal.moss" as lit;
 import "./ops.moss" as ops use Arg, Lhs, Rhs;
 import "./std.moss" use Std, print, Numerals, Number;
 import "./string.moss" use String;
@@ -8,7 +7,7 @@ import "./types.moss" use I32, I64, MemIdx;
 import "./wasip1.moss" as wasip1;
 import "./wasm.moss" as wasm;
 
-context Base = lit::LiteralUint32, I32, I64, MemIdx;
+context Base = I32, I64, MemIdx;
 
 type I32Pair[Base] = (I32, I32);
 
@@ -16,36 +15,6 @@ context Wasi =
   I32,
   I64,
   MemIdx,
-
-  lit::LiteralUint31,
-  lit::LiteralUint32,
-  lit::LiteralInt32,
-  lit::LiteralUint63,
-  lit::LiteralUint64,
-  lit::LiteralInt64,
-  lit::LiteralUint,
-  lit::LiteralInt,
-  lit::LiteralChar,
-  lit::LiteralString,
-
-  lit::uint31_realize_uint32[lit::LiteralUint31, Uint32=I32],
-  lit::uint32_realize_uint32[lit::LiteralUint32, Uint32=I32],
-  lit::uint31_realize_int32[lit::LiteralUint31, Int32=I32],
-  lit::int32_realize_int32[lit::LiteralInt32, Int32=I32],
-  lit::uint31_realize_uint64[lit::LiteralUint31, Uint64=I64],
-  lit::uint32_realize_uint64[lit::LiteralUint32, Uint64=I64],
-  lit::uint63_realize_uint64[lit::LiteralUint63, Uint64=I64],
-  lit::uint64_realize_uint64[lit::LiteralUint64, Uint64=I64],
-  lit::uint31_realize_int64[lit::LiteralUint31, Int64=I64],
-  lit::uint32_realize_int64[lit::LiteralUint32, Int64=I64],
-  lit::int32_realize_int64[lit::LiteralInt32, Int64=I64],
-  lit::uint63_realize_int64[lit::LiteralUint63, Int64=I64],
-  lit::int64_realize_int64[lit::LiteralInt64, Int64=I64],
-  lit::uint31_realize_uint[lit::LiteralUint31, Uint=I32],
-  lit::uint32_realize_uint[lit::LiteralUint32, Uint=I32],
-  lit::uint31_realize_int[lit::LiteralUint31, Int=I32],
-  lit::int32_realize_int[lit::LiteralInt32, Int=I32],
-  lit::string_realize[lit::LiteralString, String=I32Pair[Base]],
 
   Numerals[Number=I32],
   Numerals[Number=I64],
