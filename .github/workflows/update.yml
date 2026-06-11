@@ -172,7 +172,7 @@ jobs:
             cat nix-flake-update.txt
             echo '```'
             echo '```'
-            cat cargo-lock.txt
+            cat cargo-update.txt
             echo '```'
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
