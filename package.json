@@ -1,8 +1,5 @@
 {
   "private": true,
-  "scripts": {
-    "ir-viewer": "bun run scripts/ir-viewer/server.ts"
-  },
   "workspaces": [
     "packages/*"
   ],

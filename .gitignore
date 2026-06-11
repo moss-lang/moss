@@ -5,7 +5,6 @@
 /.envrc
 /packages/moss-vscode/bin/
 /result*
-/scripts/ir-viewer/.build/
 /target/
 dist/
 node_modules/
