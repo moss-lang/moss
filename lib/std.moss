@@ -1,0 +1,125 @@
+import "./bool.moss" use Bool, false, true;
+import "./char.moss" use Char, char_from_codepoint;
+import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
+import "./ops.moss" as ops use Arg, Lhs, Rhs;
+import "./string.moss" use .to_string, String, StringBuilder, string_builder, set_char, build;
+import "./this.moss" use This;
+
+type Number;
+
+val digit0[Number]: Number;
+val digit1[Number]: Number;
+val digit2[Number]: Number;
+val digit3[Number]: Number;
+val digit4[Number]: Number;
+val digit5[Number]: Number;
+val digit6[Number]: Number;
+val digit7[Number]: Number;
+val digit8[Number]: Number;
+val digit9[Number]: Number;
+val radix[Number]: Number;
+
+context Numerals[Number] =
+  digit0[Number],
+  digit1[Number],
+  digit2[Number],
+  digit3[Number],
+  digit4[Number],
+  digit5[Number],
+  digit6[Number],
+  digit7[Number],
+  digit8[Number],
+  digit9[Number],
+  radix[Number],
+;
+
+context Arithmetic[Number] =
+  ops::AddOut[Lhs=Number, Rhs=Number]=Number,
+  ops::SubOut[Lhs=Number, Rhs=Number]=Number,
+  ops::MulOut[Lhs=Number, Rhs=Number]=Number,
+  ops::DivOut[Lhs=Number, Rhs=Number]=Number,
+  ops::RemOut[Lhs=Number, Rhs=Number]=Number,
+  ops::Add[Lhs=Number, Rhs=Number],
+  ops::Sub[Lhs=Number, Rhs=Number],
+  ops::Mul[Lhs=Number, Rhs=Number],
+  ops::Div[Lhs=Number, Rhs=Number],
+  ops::Rem[Lhs=Number, Rhs=Number],
+;
+
+context Negation[Number] =
+  ops::NegOut[Arg=Number]=Number,
+  ops::Neg[Arg=Number],
+;
+
+context Comparison[Number] =
+  Bool,
+  ops::eq[Bool, Lhs=Number, Rhs=Number],
+  ops::ne[Bool, Lhs=Number, Rhs=Number],
+  ops::lt[Bool, Lhs=Number, Rhs=Number],
+  ops::gt[Bool, Lhs=Number, Rhs=Number],
+  ops::le[Bool, Lhs=Number, Rhs=Number],
+  ops::ge[Bool, Lhs=Number, Rhs=Number],
+;
+
+fn print[String](string: String);
+
+context Std =
+  Bool,
+  false[Bool],
+  true[Bool],
+
+  String,
+
+  Uint32,
+  Numerals[Number=Uint32],
+  Arithmetic[Number=Uint32],
+  Comparison[Number=Uint32],
+  .to_string[String, This=Uint32],
+
+  Int32,
+  Numerals[Number=Int32],
+  Arithmetic[Number=Int32],
+  Negation[Number=Int32],
+  Comparison[Number=Int32],
+  .to_string[String, This=Int32],
+
+  Uint64,
+  Numerals[Number=Uint64],
+  Arithmetic[Number=Uint64],
+  Comparison[Number=Uint64],
+  .to_string[String, This=Uint64],
+
+  Int64,
+  Numerals[Number=Int64],
+  Arithmetic[Number=Int64],
+  Negation[Number=Int64],
+  Comparison[Number=Int64],
+  .to_string[String, This=Int64],
+
+  Uint,
+  Numerals[Number=Uint],
+  Arithmetic[Number=Uint],
+  Comparison[Number=Uint],
+  .to_string[String, This=Uint],
+
+  Int,
+  Numerals[Number=Int],
+  Arithmetic[Number=Int],
+  Negation[Number=Int],
+  Comparison[Number=Int],
+  .to_string[String, This=Int],
+
+  Char,
+  char_from_codepoint,
+  StringBuilder,
+  string_builder,
+  set_char,
+  build,
+
+  print,
+;
+
+fn println[Std](string: String) {
+  print(string);
+  print("\n");
+}

@@ -29,7 +29,7 @@ impl Add<i32> for TokenId {
 }
 
 #[derive(Debug, EnumSetType, Logos)]
-#[logos(skip r"(#[^\n]+|\s)+")]
+#[logos(skip r"(#[^\n]*|\s)+")]
 pub enum Token {
     Eof,
 
@@ -38,6 +38,9 @@ pub enum Token {
 
     #[token("%")]
     Percent,
+
+    #[token("&")]
+    Ampersand,
 
     #[token("(")]
     LParen,
@@ -84,8 +87,14 @@ pub enum Token {
     #[token("]")]
     RBracket,
 
+    #[token("^")]
+    Caret,
+
     #[token("{")]
     LBrace,
+
+    #[token("|")]
+    Pipe,
 
     #[token("}")]
     RBrace,
@@ -96,6 +105,9 @@ pub enum Token {
     #[token("::")]
     ColonColon,
 
+    #[token("<<")]
+    LessLess,
+
     #[token("<=")]
     LessEqual,
 
@@ -105,8 +117,17 @@ pub enum Token {
     #[token(">=")]
     GreaterEqual,
 
+    #[token(">>")]
+    GreaterGreater,
+
     #[token("as")]
     As,
+
+    #[token("assume")]
+    Assume,
+
+    #[token("bind")]
+    Bind,
 
     #[token("context")]
     Context,
@@ -126,15 +147,6 @@ pub enum Token {
     #[token("let")]
     Let,
 
-    #[token("static")]
-    Static,
-
-    #[token("struct")]
-    Struct,
-
-    #[token("this")]
-    This,
-
     #[token("type")]
     Type,
 
@@ -153,11 +165,29 @@ pub enum Token {
     #[regex(r"[A-Z_a-z]\w*")]
     Name,
 
+    #[regex(r"\d+u32")]
+    Uint32,
+
+    #[regex(r"-?\d+i32")]
+    Int32,
+
+    #[regex(r"\d+u64")]
+    Uint64,
+
+    #[regex(r"-?\d+i64")]
+    Int64,
+
+    #[regex(r"\d+u")]
+    Uint,
+
+    #[regex(r"-?\d+")]
+    Int,
+
+    #[regex(r"'.'")]
+    Char,
+
     #[regex(r#""([^"\\\n]|\\["\\nrt])*""#)]
     Str,
-
-    #[regex(r"\d+")]
-    Int,
 }
 
 impl fmt::Display for Token {
@@ -166,6 +196,7 @@ impl fmt::Display for Token {
             Token::Eof => write!(f, "end of file"),
             Token::Exclam => write!(f, "`!`"),
             Token::Percent => write!(f, "`%`"),
+            Token::Ampersand => write!(f, "`&`"),
             Token::LParen => write!(f, "`(`"),
             Token::RParen => write!(f, "`)`"),
             Token::Star => write!(f, "`*`"),
@@ -181,31 +212,40 @@ impl fmt::Display for Token {
             Token::Greater => write!(f, "`>`"),
             Token::LBracket => write!(f, "`[`"),
             Token::RBracket => write!(f, "`]`"),
+            Token::Caret => write!(f, "`^`"),
             Token::LBrace => write!(f, "`{{`"),
+            Token::Pipe => write!(f, "`|`"),
             Token::RBrace => write!(f, "`}}`"),
             Token::ExclamEqual => write!(f, "`!=`"),
             Token::ColonColon => write!(f, "`::`"),
+            Token::LessLess => write!(f, "`<<`"),
             Token::LessEqual => write!(f, "`<=`"),
             Token::EqualEqual => write!(f, "`==`"),
             Token::GreaterEqual => write!(f, "`>=`"),
+            Token::GreaterGreater => write!(f, "`>>`"),
             Token::As => write!(f, "`as`"),
+            Token::Assume => write!(f, "`assume`"),
+            Token::Bind => write!(f, "`bind`"),
             Token::Context => write!(f, "`context`"),
             Token::Else => write!(f, "`else`"),
             Token::Fn => write!(f, "`fn`"),
             Token::If => write!(f, "`if`"),
             Token::Import => write!(f, "`import`"),
             Token::Let => write!(f, "`let`"),
-            Token::Static => write!(f, "`static`"),
-            Token::Struct => write!(f, "`struct`"),
-            Token::This => write!(f, "`this`"),
             Token::Type => write!(f, "`type`"),
             Token::Use => write!(f, "`use`"),
             Token::Val => write!(f, "`val`"),
             Token::Var => write!(f, "`var`"),
             Token::While => write!(f, "`while`"),
             Token::Name => write!(f, "name"),
-            Token::Str => write!(f, "string"),
+            Token::Uint32 => write!(f, "32-bit unsigned integer"),
+            Token::Int32 => write!(f, "32-bit signed integer"),
+            Token::Uint64 => write!(f, "64-bit unsigned integer"),
+            Token::Int64 => write!(f, "64-bit signed integer"),
+            Token::Uint => write!(f, "unsigned integer"),
             Token::Int => write!(f, "integer"),
+            Token::Char => write!(f, "character"),
+            Token::Str => write!(f, "string"),
         }
     }
 }
@@ -261,4 +301,24 @@ pub fn relex(source: &str, starts: &TokenStarts, token: TokenId) -> Range<usize>
     let start = starts[token].index();
     let (_, range) = Token::lexer(&source[start..]).spanned().next().unwrap();
     (range.start + start)..(range.end + start)
+}
+
+pub fn string(source: &str, starts: &TokenStarts, token: TokenId) -> String {
+    let mut escaped = String::new();
+    let quoted = &source[relex(source, starts, token)];
+    let mut chars = quoted[1..quoted.len() - 1].chars();
+    while let Some(c) = chars.next() {
+        escaped.push(match c {
+            '\\' => match chars.next() {
+                Some('"') => '"',
+                Some('\\') => '\\',
+                Some('n') => '\n',
+                Some('r') => '\r',
+                Some('t') => '\t',
+                _ => unreachable!(),
+            },
+            _ => c,
+        });
+    }
+    escaped
 }

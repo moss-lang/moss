@@ -1,4 +1,6 @@
-fn main[scratch]() {
+assume Std;
+
+fn main() {
   let foo = "a";
   var bar = foo;
   bar = "c";

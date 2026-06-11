@@ -1,6 +1,9 @@
 use crate::{
     lex::TokenId,
-    parse::{Block, Expr, ExprId, Path, Stmt, StmtId, Tree},
+    parse::{
+        Bind, BindId, Binding, BindingId, Block, Entry, Expr, ExprId, Path, Spec, Stmt, StmtId,
+        Tree,
+    },
 };
 
 pub struct Inclusive {
@@ -8,7 +11,7 @@ pub struct Inclusive {
     pub last: TokenId,
 }
 
-fn single(token: TokenId) -> Inclusive {
+pub fn single(token: TokenId) -> Inclusive {
     Inclusive {
         first: token,
         last: token,
@@ -29,20 +32,56 @@ impl Ranger<'_> {
         Inclusive { first, last }
     }
 
+    fn spec(&self, spec: Spec) -> Inclusive {
+        let Spec { dot, path, binds } = spec;
+        let Inclusive { first, last } = self.path(path);
+        Inclusive {
+            first: if dot { first - 1 } else { first },
+            last: match binds.last() {
+                None => last,
+                Some(bind) => self.bind(bind).last + 1, // TODO: Handle optional trailing comma.
+            },
+        }
+    }
+
+    fn entry(&self, entry: Entry) -> Inclusive {
+        match entry {
+            Entry::Lit(token) => single(token),
+            Entry::Ref(spec) => self.spec(spec),
+        }
+    }
+
+    fn bind(&self, id: BindId) -> Inclusive {
+        let Bind { key, val } = self.tree.binds[id];
+        let Inclusive { first, last } = self.spec(key);
+        Inclusive {
+            first,
+            last: match val {
+                None => last,
+                Some(entry) => self.entry(entry).last,
+            },
+        }
+    }
+
+    fn binding(&self, id: BindingId) -> Inclusive {
+        match self.tree.bindings[id] {
+            Binding::Single(bind) => self.bind(bind),
+            Binding::Composite(expr) => self.expr(expr),
+        }
+    }
+
     fn expr(&self, id: ExprId) -> Inclusive {
         match self.tree.exprs[id] {
-            Expr::This(token) => single(token),
+            Expr::Lit(token) => single(token),
             Expr::Path(path) => self.path(path),
-            Expr::Int(token) => single(token),
-            Expr::String(token) => single(token),
-            Expr::Struct(path, fields) => {
-                let first = self.path(path).first;
-                let last = match fields.last() {
-                    None => first + 2,
-                    Some(field) => self.expr(self.tree.fields[field].val).last + 1,
-                };
-                Inclusive { first, last }
-            }
+            Expr::Tag(path, inner) => Inclusive {
+                first: self.path(path).first,
+                last: self.expr(inner).last,
+            },
+            Expr::Record(lbrace, _, rbrace) => Inclusive {
+                first: lbrace,
+                last: rbrace,
+            },
             Expr::Field(object, field) => Inclusive {
                 first: self.expr(object).first,
                 last: field,
@@ -62,6 +101,13 @@ impl Ranger<'_> {
                 };
                 Inclusive { first, last }
             }
+            Expr::Unary(_, inner) => {
+                let Inclusive { first, last } = self.expr(inner);
+                Inclusive {
+                    first: first - 1,
+                    last,
+                }
+            }
             Expr::Binary(lhs, _, rhs) => Inclusive {
                 first: self.expr(lhs).first,
                 last: self.expr(rhs).last,
@@ -79,6 +125,16 @@ impl Ranger<'_> {
                     range.last + 2
                 };
                 Inclusive { first, last }
+            }
+            Expr::Bind(start, bindings) => {
+                let first = start;
+                Inclusive {
+                    first,
+                    last: match bindings.last() {
+                        None => first + 1,
+                        Some(binding) => self.binding(binding).last,
+                    },
+                }
             }
         }
     }
@@ -151,10 +207,6 @@ impl Ranger<'_> {
             }
         }
     }
-}
-
-pub fn path_range(tree: &Tree, path: Path) -> Inclusive {
-    Ranger { tree }.path(path)
 }
 
 pub fn expr_range(tree: &Tree, id: ExprId) -> Inclusive {

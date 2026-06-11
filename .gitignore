@@ -1,5 +1,6 @@
 .DS_Store
 *.vsix
+/.claude/
 /.direnv/
 /.envrc
 /packages/moss-vscode/bin/

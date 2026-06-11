@@ -10,63 +10,108 @@ use crate::{
 };
 
 define_index_type! {
+    /// The index of a [`TokenId`] in the `names` field of a [`Tree`].
     pub struct NameId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Member`] in the `members` field of a [`Tree`].
+    pub struct MemberId = u32;
+}
+
+define_index_type! {
+    /// The index of a [`Type`] in the `types` field of a [`Tree`].
     pub struct TypeId = u32;
 }
 
 define_index_type! {
-    pub struct NeedId = u32;
-}
-
-define_index_type! {
+    /// The index of a [`Bind`] in the `binds` field of a [`Tree`].
     pub struct BindId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Need`] in the `needs` field of a [`Tree`].
+    pub struct NeedId = u32;
+}
+
+define_index_type! {
+    /// The index of a [`Param`] in the `params` field of a [`Tree`].
     pub struct ParamId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Field`] in the `fields` field of a [`Tree`].
     pub struct FieldId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Binding`] in the `bindings` field of a [`Tree`].
+    pub struct BindingId = u32;
+}
+
+define_index_type! {
+    /// The index of an [`Expr`] in the `exprs` field of a [`Tree`].
     pub struct ExprId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Stmt`] in the `stmts` field of a [`Tree`].
     pub struct StmtId = u32;
 }
 
 define_index_type! {
+    /// The index of an [`Import`] in the `imports` field of a [`Tree`].
     pub struct ImportId = u32;
 }
 
 define_index_type! {
-    pub struct MethodId = u32;
+    /// The index of an [`IdRange<BindId>`] in the `assumes` field of a [`Tree`].
+    pub struct AssumeId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Tydef`] in the `tydefs` field of a [`Tree`].
     pub struct TydefId = u32;
 }
 
 define_index_type! {
-    pub struct FndefId = u32;
+    /// The index of a [`Tagdef`] in the `tagdefs` field of a [`Tree`].
+    pub struct TagdefId = u32;
 }
 
 define_index_type! {
+    /// The index of an [`Aliasdef`] in the `aliasdefs` field of a [`Tree`].
+    pub struct AliasdefId = u32;
+}
+
+define_index_type! {
+    /// The index of a [`Funcdef`] in the `funcdefs` field of a [`Tree`].
+    pub struct FuncdefId = u32;
+}
+
+define_index_type! {
+    /// The index of an [`Attachdef`] in the `attachdefs` field of a [`Tree`].
+    pub struct AttachdefId = u32;
+}
+
+define_index_type! {
+    /// The index of a [`Detachdef`] in the `detachdefs` field of a [`Tree`].
+    pub struct DetachdefId = u32;
+}
+
+define_index_type! {
+    /// The index of a [`Valdef`] in the `valdefs` field of a [`Tree`].
     pub struct ValdefId = u32;
 }
 
 define_index_type! {
+    /// The index of a [`Ctxdef`] in the `ctxdefs` field of a [`Tree`].
     pub struct CtxdefId = u32;
 }
 
 define_index_type! {
-    pub struct StructdefId = u32;
+    /// The index of a [`Decl`] in the `decls` field of a [`Tree`].
+    pub struct DeclId = u32;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -76,32 +121,40 @@ pub struct Path {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Method {
-    pub ty: TokenId,
+pub struct Member {
     pub name: TokenId,
+    pub ty: TypeId,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum Type {
-    Path(Path),
+    Spec(Spec),
+    Tuple(IdRange<TypeId>),
+    Record(IdRange<MemberId>),
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum NeedKind {
-    Default,
-    Static,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Need {
-    pub kind: NeedKind,
+pub struct Spec {
+    pub dot: bool,
     pub path: Path,
+    pub binds: IdRange<BindId>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Entry {
+    Lit(TokenId),
+    Ref(Spec),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Bind {
-    pub path: Path,
-    pub val: ExprId,
+    pub key: Spec,
+    pub val: Option<Entry>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Need {
+    pub bind: BindId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -117,32 +170,50 @@ pub struct Field {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum Unop {
+    Neg,
+    Not,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub enum Binop {
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
     Add,
     Sub,
     Mul,
     Div,
     Rem,
-    Eq,
-    Neq,
-    Lt,
-    Gt,
-    Leq,
-    Geq,
+    Shl,
+    Shr,
+    And,
+    Or,
+    Xor,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Binding {
+    Single(BindId),
+    Composite(ExprId),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum Expr {
-    This(TokenId),
+    Lit(TokenId),
     Path(Path),
-    Int(TokenId),
-    String(TokenId),
-    Struct(Path, IdRange<FieldId>),
+    Tag(Path, ExprId),
+    Record(TokenId, IdRange<FieldId>, TokenId),
     Field(ExprId, TokenId),
     Method(ExprId, TokenId, IdRange<ExprId>),
-    Call(Path, IdRange<BindId>, IdRange<ExprId>),
+    Call(Path, IdRange<BindId>, IdRange<ExprId>), // Should this be `BindingId` instead of `BindId`?
+    Unary(Unop, ExprId),
     Binary(ExprId, Binop, ExprId),
     If(ExprId, Block, Option<Block>),
+    Bind(TokenId, IdRange<BindingId>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -165,23 +236,59 @@ pub struct Import {
     pub from: TokenId,
     pub name: Option<TokenId>,
     pub names: IdRange<NameId>,
-    pub methods: IdRange<MethodId>,
+    pub methods: IdRange<NameId>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Tydef {
     pub name: TokenId,
-    pub def: Option<TypeId>,
+    pub needs: IdRange<NeedId>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Tagdef {
+    pub name: TokenId,
+    pub needs: IdRange<NeedId>,
+    pub def: TypeId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Aliasdef {
+    pub name: TokenId,
+    pub needs: IdRange<NeedId>,
+    pub def: TypeId,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Return {
+    Unit,
+    Type(TypeId),
+    Bind(IdRange<NeedId>),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Fndef {
-    pub ty: Option<TokenId>,
     pub name: TokenId,
     pub needs: IdRange<NeedId>,
     pub params: IdRange<ParamId>,
-    pub result: Option<TypeId>,
+    pub result: Return,
     pub def: Option<Block>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Funcdef {
+    pub fndef: Fndef,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Attachdef {
+    pub ty: TokenId,
+    pub fndef: Fndef,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Detachdef {
+    pub fndef: Fndef,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -194,32 +301,45 @@ pub struct Valdef {
 #[derive(Clone, Copy, Debug)]
 pub struct Ctxdef {
     pub name: TokenId,
+    pub needs: IdRange<NeedId>,
     pub def: IdRange<NeedId>,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Structdef {
-    pub name: TokenId,
-    pub fields: IdRange<ParamId>,
+pub enum Decl {
+    Tydef(TydefId),
+    Tagdef(TagdefId),
+    Aliasdef(AliasdefId),
+    Funcdef(FuncdefId),
+    Attachdef(AttachdefId),
+    Detachdef(DetachdefId),
+    Valdef(ValdefId),
+    Ctxdef(CtxdefId),
 }
 
 #[derive(Debug, Default)]
 pub struct Tree {
     pub names: IndexVec<NameId, TokenId>,
-    pub methods: IndexVec<MethodId, Method>,
+    pub members: IndexVec<MemberId, Member>,
     pub types: IndexVec<TypeId, Type>,
-    pub needs: IndexVec<NeedId, Need>,
     pub binds: IndexVec<BindId, Bind>,
+    pub needs: IndexVec<NeedId, Need>,
     pub params: IndexVec<ParamId, Param>,
     pub fields: IndexVec<FieldId, Field>,
+    pub bindings: IndexVec<BindingId, Binding>,
     pub exprs: IndexVec<ExprId, Expr>,
     pub stmts: IndexVec<StmtId, Stmt>,
     pub imports: IndexVec<ImportId, Import>,
+    pub assumes: IndexVec<AssumeId, IdRange<BindId>>,
     pub tydefs: IndexVec<TydefId, Tydef>,
-    pub fndefs: IndexVec<FndefId, Fndef>,
+    pub tagdefs: IndexVec<TagdefId, Tagdef>,
+    pub aliasdefs: IndexVec<AliasdefId, Aliasdef>,
+    pub funcdefs: IndexVec<FuncdefId, Funcdef>,
+    pub attachdefs: IndexVec<AttachdefId, Attachdef>,
+    pub detachdefs: IndexVec<DetachdefId, Detachdef>,
     pub valdefs: IndexVec<ValdefId, Valdef>,
     pub ctxdefs: IndexVec<CtxdefId, Ctxdef>,
-    pub structdefs: IndexVec<StructdefId, Structdef>,
+    pub decls: IndexVec<DeclId, Decl>, // TODO: Don't make declaration order significant.
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -307,10 +427,47 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn member(&mut self) -> ParseResult<Member> {
+        let name = self.expect(Name)?;
+        self.expect(Colon)?;
+        let ty = self.ty_id()?;
+        Ok(Member { name, ty })
+    }
+
     fn ty(&mut self) -> ParseResult<Type> {
         match self.peek() {
-            Name => Ok(Type::Path(self.path()?)),
-            _ => Err(self.err(EnumSet::only(Name))),
+            Name => Ok(Type::Spec(self.spec()?)),
+            LParen => {
+                self.next();
+                let mut elements = Vec::new();
+                loop {
+                    if let RParen = self.peek() {
+                        self.next();
+                        let elements = IdRange::new(&mut self.tree.types, elements);
+                        return Ok(Type::Tuple(elements));
+                    }
+                    elements.push(self.ty()?);
+                    if let Comma = self.peek() {
+                        self.next();
+                    }
+                }
+            }
+            LBrace => {
+                self.next();
+                let mut members = Vec::new();
+                loop {
+                    if let RBrace = self.peek() {
+                        self.next();
+                        let members = IdRange::new(&mut self.tree.members, members);
+                        return Ok(Type::Record(members));
+                    }
+                    members.push(self.member()?);
+                    if let Comma = self.peek() {
+                        self.next();
+                    }
+                }
+            }
+            _ => Err(self.err(Name | LBrace)),
         }
     }
 
@@ -319,16 +476,63 @@ impl<'a> Parser<'a> {
         Ok(self.tree.types.push(ty))
     }
 
-    fn need(&mut self) -> ParseResult<Need> {
-        let kind = match self.peek() {
-            Static => {
+    fn spec(&mut self) -> ParseResult<Spec> {
+        let dot = match self.peek() {
+            Dot => {
                 self.next();
-                NeedKind::Static
+                true
             }
-            _ => NeedKind::Default,
+            _ => false,
         };
         let path = self.path()?;
-        Ok(Need { kind, path })
+        let mut binds = Vec::new();
+        if let LBracket = self.peek() {
+            self.next();
+            loop {
+                if let RBracket = self.peek() {
+                    self.next();
+                    break;
+                }
+                binds.push(self.bind()?);
+                if let Comma = self.peek() {
+                    self.next();
+                }
+            }
+        }
+        let binds = IdRange::new(&mut self.tree.binds, binds);
+        Ok(Spec { dot, path, binds })
+    }
+
+    fn entry(&mut self) -> ParseResult<Entry> {
+        match self.peek() {
+            Name => Ok(Entry::Ref(self.spec()?)),
+            Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str => {
+                Ok(Entry::Lit(self.next()))
+            }
+            _ => Err(self.err(Name | Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str)),
+        }
+    }
+
+    fn bind(&mut self) -> ParseResult<Bind> {
+        let key = self.spec()?;
+        let val = match self.peek() {
+            Equal => {
+                self.next();
+                Some(self.entry()?)
+            }
+            _ => None,
+        };
+        Ok(Bind { key, val })
+    }
+
+    fn bind_id(&mut self) -> ParseResult<BindId> {
+        let bind = self.bind()?;
+        Ok(self.tree.binds.push(bind))
+    }
+
+    fn need(&mut self) -> ParseResult<Need> {
+        let bind = self.bind_id()?;
+        Ok(Need { bind })
     }
 
     fn needs(&mut self) -> ParseResult<Vec<Need>> {
@@ -349,13 +553,6 @@ impl<'a> Parser<'a> {
     fn need_ids(&mut self) -> ParseResult<IdRange<NeedId>> {
         let needs = self.needs()?;
         Ok(IdRange::new(&mut self.tree.needs, needs))
-    }
-
-    fn bind(&mut self) -> ParseResult<Bind> {
-        let path = self.path()?;
-        self.expect(Equal)?;
-        let val = self.expr_id(Curly::Yes)?;
-        Ok(Bind { path, val })
     }
 
     fn param(&mut self) -> ParseResult<Param> {
@@ -425,7 +622,49 @@ impl<'a> Parser<'a> {
         Ok(Expr::If(cond, yes, no))
     }
 
+    fn expr_bind(&mut self) -> ParseResult<Expr> {
+        let start = self.expect(Bind)?;
+        let mut bindings = Vec::new();
+        loop {
+            if let Semi | RBrace = self.peek() {
+                let bindings = IdRange::new(&mut self.tree.bindings, bindings);
+                return Ok(Expr::Bind(start, bindings));
+            }
+            let key = self.spec()?;
+            let binding = match self.peek() {
+                Comma => {
+                    let val = None;
+                    Binding::Single(self.tree.binds.push(Bind { key, val }))
+                }
+                Equal => {
+                    self.next();
+                    let val = Some(self.entry()?);
+                    Binding::Single(self.tree.binds.push(Bind { key, val }))
+                }
+                LParen => {
+                    if key.dot {
+                        return Err(self.err(Comma | Equal));
+                    } else {
+                        let args = self.arg_ids()?;
+                        let expr = Expr::Call(key.path, key.binds, args);
+                        Binding::Composite(self.tree.exprs.push(expr))
+                    }
+                }
+                _ => return Err(self.err(Comma | Equal | LParen)),
+            };
+            bindings.push(binding);
+            if let Comma = self.peek() {
+                self.next();
+            }
+        }
+    }
+
     fn expr_atom(&mut self, curly: Curly) -> ParseResult<Expr> {
+        let mut expected =
+            LParen | Bind | If | Name | Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str;
+        if let Curly::Yes = curly {
+            expected |= RBrace;
+        }
         match self.peek() {
             LParen => {
                 self.next();
@@ -433,10 +672,25 @@ impl<'a> Parser<'a> {
                 self.expect(RParen)?;
                 Ok(expr)
             }
-            If => self.expr_if(),
-            This => Ok(Expr::This(self.next())),
-            Int => Ok(Expr::Int(self.next())),
-            Str => Ok(Expr::String(self.next())),
+            LBrace => {
+                if let Curly::No = curly {
+                    return Err(self.err(expected));
+                }
+                let lbrace = self.next();
+                let mut fields = Vec::new();
+                loop {
+                    if let RBrace = self.peek() {
+                        let rbrace = self.next();
+                        let fields = IdRange::new(&mut self.tree.fields, fields);
+                        return Ok(Expr::Record(lbrace, fields, rbrace));
+                    }
+                    fields.push(self.field()?);
+                    if let Comma = self.peek() {
+                        self.next();
+                    }
+                }
+            }
+            Uint32 | Int32 | Uint64 | Int64 | Uint | Int | Char | Str => Ok(Expr::Lit(self.next())),
             Name => {
                 let path = self.path()?;
                 match self.peek() {
@@ -462,28 +716,20 @@ impl<'a> Parser<'a> {
                         let args = self.arg_ids()?;
                         Ok(Expr::Call(path, binds, args))
                     }
-                    LBrace => {
-                        if let Curly::No = curly {
-                            return Ok(Expr::Path(path));
-                        }
-                        self.next();
-                        let mut fields = Vec::new();
-                        loop {
-                            if let RBrace = self.peek() {
-                                self.next();
-                                let fields = IdRange::new(&mut self.tree.fields, fields);
-                                return Ok(Expr::Struct(path, fields));
-                            }
-                            fields.push(self.field()?);
-                            if let Comma = self.peek() {
-                                self.next();
-                            }
+                    token => {
+                        // Only treat as tag if the next token can start an atom, not a block end.
+                        if expected.contains(token) && token != RBrace {
+                            let inner = self.expr_atom(curly)?;
+                            Ok(Expr::Tag(path, self.tree.exprs.push(inner)))
+                        } else {
+                            Ok(Expr::Path(path))
                         }
                     }
-                    _ => Ok(Expr::Path(path)),
                 }
             }
-            _ => Err(self.err(LParen | If | This | Int | Str | Name)),
+            If => self.expr_if(),
+            Bind => self.expr_bind(),
+            _ => Err(self.err(expected)),
         }
     }
 
@@ -512,9 +758,9 @@ impl<'a> Parser<'a> {
         let mut lhs = self.expr_factor(curly)?;
         loop {
             let op = match self.peek() {
-                Percent => Binop::Rem,
                 Star => Binop::Mul,
                 Slash => Binop::Div,
+                Percent => Binop::Rem,
                 _ => break,
             };
             self.next();
@@ -542,12 +788,12 @@ impl<'a> Parser<'a> {
     fn expr_comp(&mut self, curly: Curly) -> ParseResult<Expr> {
         let lhs = self.expr_quant(curly)?;
         let op = match self.peek() {
+            EqualEqual => Some(Binop::Eq),
+            ExclamEqual => Some(Binop::Ne),
             Less => Some(Binop::Lt),
             Greater => Some(Binop::Gt),
-            ExclamEqual => Some(Binop::Neq),
-            LessEqual => Some(Binop::Leq),
-            EqualEqual => Some(Binop::Eq),
-            GreaterEqual => Some(Binop::Geq),
+            LessEqual => Some(Binop::Le),
+            GreaterEqual => Some(Binop::Ge),
             _ => None,
         };
         match op {
@@ -565,6 +811,7 @@ impl<'a> Parser<'a> {
     }
 
     fn expr(&mut self, curly: Curly) -> ParseResult<Expr> {
+        // TODO: Handle all the unary and binary operators.
         self.expr_comp(curly)
     }
 
@@ -655,18 +902,18 @@ impl<'a> Parser<'a> {
         if let Use = self.peek() {
             self.next();
             loop {
-                if let Semi = self.peek() {
-                    break;
-                }
-                let name = self.expect(Name)?;
                 match self.peek() {
+                    Semi => break,
+                    Name => {
+                        let name = self.next();
+                        names.push(name);
+                    }
                     Dot => {
                         self.next();
-                        let ty = name;
                         let name = self.expect(Name)?;
-                        methods.push(Method { ty, name });
+                        methods.push(name);
                     }
-                    _ => names.push(name),
+                    _ => (),
                 }
                 if let Comma = self.peek() {
                     self.next();
@@ -678,36 +925,26 @@ impl<'a> Parser<'a> {
             from,
             name,
             names: IdRange::new(&mut self.tree.names, names),
-            methods: IdRange::new(&mut self.tree.methods, methods),
+            methods: IdRange::new(&mut self.tree.names, methods),
         })
     }
 
-    fn tydef(&mut self) -> ParseResult<Tydef> {
-        self.expect(Type)?;
-        let name = self.expect(Name)?;
-        let def = match self.peek() {
-            Equal => {
+    fn assume(&mut self) -> ParseResult<IdRange<BindId>> {
+        self.expect(Assume)?;
+        let mut binds = Vec::new();
+        loop {
+            if let Semi = self.peek() {
                 self.next();
-                Some(self.ty_id()?)
+                return Ok(IdRange::new(&mut self.tree.binds, binds));
             }
-            _ => None,
-        };
-        self.expect(Semi)?;
-        Ok(Tydef { name, def })
+            binds.push(self.bind()?);
+            if let Comma = self.peek() {
+                self.next();
+            }
+        }
     }
 
-    fn fndef(&mut self) -> ParseResult<Fndef> {
-        self.expect(Fn)?;
-        let mut name = self.expect(Name)?;
-        let ty = match self.peek() {
-            Dot => {
-                self.next();
-                let ty = Some(name);
-                name = self.expect(Name)?;
-                ty
-            }
-            _ => None,
-        };
+    fn fndef(&mut self, name: TokenId) -> ParseResult<Fndef> {
         let needs = match self.peek() {
             LBracket => self.need_ids()?,
             _ => IdRange::new(&mut self.tree.needs, Vec::new()),
@@ -728,9 +965,25 @@ impl<'a> Parser<'a> {
         let result = match self.peek() {
             Colon => {
                 self.next();
-                Some(self.ty_id()?)
+                match self.peek() {
+                    Bind => {
+                        self.next();
+                        let mut needs = Vec::new();
+                        loop {
+                            if let Semi | LBrace = self.peek() {
+                                break;
+                            }
+                            needs.push(self.need()?);
+                            if let Comma = self.peek() {
+                                self.next();
+                            }
+                        }
+                        Return::Bind(IdRange::new(&mut self.tree.needs, needs))
+                    }
+                    _ => Return::Type(self.ty_id()?),
+                }
             }
-            _ => None,
+            _ => Return::Unit,
         };
         let def = match self.peek() {
             Semi => {
@@ -741,7 +994,6 @@ impl<'a> Parser<'a> {
             _ => return Err(self.err(Semi | LBrace)),
         };
         Ok(Fndef {
-            ty,
             name,
             needs,
             params,
@@ -766,6 +1018,10 @@ impl<'a> Parser<'a> {
     fn ctxdef(&mut self) -> ParseResult<Ctxdef> {
         self.expect(Context)?;
         let name = self.expect(Name)?;
+        let needs = match self.peek() {
+            LBracket => self.need_ids()?,
+            _ => IdRange::new(&mut self.tree.needs, Vec::new()),
+        };
         self.expect(Equal)?;
         let mut def = Vec::new();
         loop {
@@ -779,24 +1035,83 @@ impl<'a> Parser<'a> {
             }
         }
         let def = IdRange::new(&mut self.tree.needs, def);
-        Ok(Ctxdef { name, def })
+        Ok(Ctxdef { name, needs, def })
     }
 
-    fn structdef(&mut self) -> ParseResult<Structdef> {
-        self.expect(Struct)?;
-        let name = self.expect(Name)?;
-        self.expect(LBrace)?;
-        let mut fields = Vec::new();
-        loop {
-            if let RBrace = self.peek() {
+    fn decl(&mut self) -> ParseResult<Decl> {
+        match self.peek() {
+            Type => {
                 self.next();
-                let fields = IdRange::new(&mut self.tree.params, fields);
-                return Ok(Structdef { name, fields });
+                let name = self.expect(Name)?;
+                let needs = match self.peek() {
+                    LBracket => self.need_ids()?,
+                    _ => IdRange::new(&mut self.tree.needs, Vec::new()),
+                };
+                match self.peek() {
+                    Semi => {
+                        self.next();
+                        let id = self.tree.tydefs.push(Tydef { name, needs });
+                        Ok(Decl::Tydef(id))
+                    }
+                    Equal => {
+                        self.next();
+                        let def = self.ty_id()?;
+                        self.expect(Semi)?;
+                        let id = self.tree.aliasdefs.push(Aliasdef { name, needs, def });
+                        Ok(Decl::Aliasdef(id))
+                    }
+                    _ => {
+                        let def = self.ty_id()?;
+                        self.expect(Semi)?;
+                        let id = self.tree.tagdefs.push(Tagdef { name, needs, def });
+                        Ok(Decl::Tagdef(id))
+                    }
+                }
             }
-            fields.push(self.param()?);
-            if let Comma = self.peek() {
+            Fn => {
                 self.next();
+                match self.peek() {
+                    Name => {
+                        let first = self.next();
+                        match self.peek() {
+                            LBracket | LParen => {
+                                let name = first;
+                                let fndef = self.fndef(name)?;
+                                let id = self.tree.funcdefs.push(Funcdef { fndef });
+                                Ok(Decl::Funcdef(id))
+                            }
+                            Dot => {
+                                self.next();
+                                let ty = first;
+                                let name = self.expect(Name)?;
+                                let fndef = self.fndef(name)?;
+                                let id = self.tree.attachdefs.push(Attachdef { ty, fndef });
+                                Ok(Decl::Attachdef(id))
+                            }
+                            _ => Err(self.err(LBracket | LParen | Dot)),
+                        }
+                    }
+                    Dot => {
+                        self.next();
+                        let name = self.expect(Name)?;
+                        let fndef = self.fndef(name)?;
+                        let id = self.tree.detachdefs.push(Detachdef { fndef });
+                        Ok(Decl::Detachdef(id))
+                    }
+                    _ => Err(self.err(Name | Dot)),
+                }
             }
+            Val => {
+                let valdef = self.valdef()?;
+                let id = self.tree.valdefs.push(valdef);
+                Ok(Decl::Valdef(id))
+            }
+            Context => {
+                let ctxdef = self.ctxdef()?;
+                let id = self.tree.ctxdefs.push(ctxdef);
+                Ok(Decl::Ctxdef(id))
+            }
+            _ => Err(self.err(Type | Fn | Val | Context)),
         }
     }
 
@@ -807,28 +1122,15 @@ impl<'a> Parser<'a> {
                     let import = self.import()?;
                     self.tree.imports.push(import);
                 }
-                Type => {
-                    let tydef = self.tydef()?;
-                    self.tree.tydefs.push(tydef);
-                }
-                Fn => {
-                    let fndef = self.fndef()?;
-                    self.tree.fndefs.push(fndef);
-                }
-                Val => {
-                    let valdef = self.valdef()?;
-                    self.tree.valdefs.push(valdef);
-                }
-                Context => {
-                    let ctxdef = self.ctxdef()?;
-                    self.tree.ctxdefs.push(ctxdef);
-                }
-                Struct => {
-                    let structdef = self.structdef()?;
-                    self.tree.structdefs.push(structdef);
+                Assume => {
+                    let assume = self.assume()?;
+                    self.tree.assumes.push(assume);
                 }
                 Eof => return Ok(self.tree),
-                _ => return Err(self.err(Import | Type | Fn | Val | Context | Struct | Eof)),
+                _ => {
+                    let decl = self.decl()?;
+                    self.tree.decls.push(decl);
+                }
             }
         }
     }

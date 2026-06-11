@@ -1356,7 +1356,6 @@ name = "moss-core"
 version = "0.0.0"
 dependencies = [
  "enumset",
- "im-rc",
  "index_vec",
  "indexmap",
  "itertools",

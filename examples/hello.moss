@@ -1,5 +1,7 @@
 #!/usr/bin/env moss
 
-fn main[scratch]() {
+assume Std;
+
+fn main() {
   println("Hello, world!");
 }

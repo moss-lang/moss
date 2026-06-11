@@ -1,8 +1,0 @@
-fn main[alloc]() {
-  let cli = args();
-  var i = 0;
-  while i < cli.len() {
-    println(cli.get(i));
-    i = i + 1;
-  }
-}

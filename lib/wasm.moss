@@ -1,46 +1,41 @@
-# https://webassembly.github.io/spec/core/syntax/values.html#integers
-type U32 = RawInt32;
+import "./types.moss" use I32, I64, MemIdx;
 
-# https://webassembly.github.io/spec/core/syntax/types.html#number-types
-type I32 = RawInt32;
-type I64 = RawInt64;
+assume I32, I64, MemIdx;
 
 # https://webassembly.github.io/spec/core/syntax/modules.html#indices
-type MemIdx;
 val memidx: MemIdx;
 
 # https://webassembly.github.io/spec/core/syntax/instructions.html#parametric-instructions
 fn unreachable();
 
 # https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
-val align: U32;
-val offset: U32;
-context mem = static memidx, static align, static offset;
-val dst: MemIdx;
-val src: MemIdx;
-fn i32_load[mem](address: I32): I32;
-fn i64_load[mem](address: I32): I64;
-fn i32_load8_s[mem](address: I32): I32;
-fn i32_load8_u[mem](address: I32): I32;
-fn i32_load16_s[mem](address: I32): I32;
-fn i32_load16_u[mem](address: I32): I32;
-fn i64_load8_s[mem](address: I32): I64;
-fn i64_load8_u[mem](address: I32): I64;
-fn i64_load16_s[mem](address: I32): I64;
-fn i64_load16_u[mem](address: I32): I64;
-fn i64_load32_s[mem](address: I32): I64;
-fn i64_load32_u[mem](address: I32): I64;
-fn i32_store[mem](address: I32, value: I32);
-fn i64_store[mem](address: I32, value: I64);
-fn i32_store8[mem](address: I32, value: I32);
-fn i32_store16[mem](address: I32, value: I32);
-fn i64_store8[mem](address: I32, value: I64);
-fn i64_store16[mem](address: I32, value: I64);
-fn i64_store32[mem](address: I32, value: I64);
-fn memory_size[static memidx](): I32;
-fn memory_grow[static memidx](pages: I32): I32;
-fn memory_copy[static dst, static src](dst: I32, src: I32, len: I32);
-fn memory_fill[static memidx](start: I32, byte: I32, len: I32);
+# The memarg immediates are not customizable for now: `memidx` and `offset` are always zero,
+# and each instruction uses its natural alignment. (Customizing them used to go through
+# `static` contextual values, which relied on the removed literal system; a replacement
+# design is TODO.)
+fn i32_load(address: I32): I32;
+fn i64_load(address: I32): I64;
+fn i32_load8_s(address: I32): I32;
+fn i32_load8_u(address: I32): I32;
+fn i32_load16_s(address: I32): I32;
+fn i32_load16_u(address: I32): I32;
+fn i64_load8_s(address: I32): I64;
+fn i64_load8_u(address: I32): I64;
+fn i64_load16_s(address: I32): I64;
+fn i64_load16_u(address: I32): I64;
+fn i64_load32_s(address: I32): I64;
+fn i64_load32_u(address: I32): I64;
+fn i32_store(address: I32, value: I32);
+fn i64_store(address: I32, value: I64);
+fn i32_store8(address: I32, value: I32);
+fn i32_store16(address: I32, value: I32);
+fn i64_store8(address: I32, value: I64);
+fn i64_store16(address: I32, value: I64);
+fn i64_store32(address: I32, value: I64);
+fn memory_size(): I32;
+fn memory_grow(pages: I32): I32;
+fn memory_copy(dst: I32, src: I32, len: I32);
+fn memory_fill(start: I32, byte: I32, len: I32);
 
 # https://webassembly.github.io/spec/core/syntax/instructions.html#numeric-instructions
 fn i32_eqz(n: I32): I32;
@@ -110,7 +105,7 @@ fn i64_extend8_s(n: I64): I64;
 fn i64_extend16_s(n: I64): I64;
 fn i64_extend32_s(n: I64): I64;
 
-context wasm =
+context Wasm =
   unreachable,
 
   i32_load,

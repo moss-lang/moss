@@ -1,22 +1,8 @@
-import "./bool.moss" use false, true;
-import "./wasi.moss" use
-  Args.get,
-  Args.len,
-  String,
-  String.get,
-  alloc,
-  args,
-  basic,
-  claim,
-  print,
-  println,
-  read,
-  reserve,
-  scratch,
-  stack,
-  string_to_uint32,
-  string_to_uint64,
-  uint32_to_string,
-  uint64_to_string,
-;
+import "./bool.moss" use Bool, false, true;
+import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
+import "./std.moss" use Std, print, println;
+import "./string.moss" use .to_string, String;
+import "./this.moss" use This, this;
+import "./wasi.moss" use Wasi;
+import "./wasip1.moss" as wasip1;
 import "./wasm.moss" as wasm;

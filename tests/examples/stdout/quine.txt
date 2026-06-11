@@ -1,3 +1,0 @@
-fn main[alloc]() {
-  print(read(args().get(0)));
-}

@@ -1,7 +1,11 @@
-use std::{collections::HashMap, mem::take};
+use std::{
+    collections::{HashMap, HashSet},
+    mem::take,
+};
 
 use index_vec::{IndexVec, define_index_type};
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
+use itertools::Itertools;
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, EntityType, ExportKind, ExportSection,
@@ -10,33 +14,32 @@ use wasm_encoder::{
 };
 
 use crate::{
-    context::{BuiltinId, Cache, ContextId, Fn, FnId, Ty, TyId, Val, ValId},
     intern::StrId,
     lower::{
-        self, ElemId, FieldId, Fndef, FndefId, IR, Instr, Int32Arith, Int32Comp, Names, ValdefId,
+        self, Body, ElemId, Expr, FieldId, FndefId, IR, Instr, InstrId, ModuleId, Named, Names,
+        Sigdef, SigdefId,
     },
     prelude::Lib,
-    tuples::TupleLoc,
+    tuples::{TupleLoc, TupleRange, Tuples},
     util::IdRange,
 };
 
 define_index_type! {
-    struct GlobalId = u32;
+    /// The index of an [`Object`] in the `objects` field during [`Wasm`] codegen.
+    struct ObjectId = u32;
 }
 
 define_index_type! {
-    struct TypeId = u32;
-}
-
-define_index_type! {
-    struct TypeOffset = u32;
-}
-
-define_index_type! {
+    /// The index of a `u32` Wasm local in the `locals` field during [`Wasm`] codegen.
     struct LocalId = u32;
 }
 
-#[derive(Clone, Copy, EnumIter, IntoStaticStr)]
+define_index_type! {
+    /// The index of an interned environment in the `envs` field during [`Wasm`] codegen.
+    struct EnvId = u32;
+}
+
+#[derive(Clone, Copy, Debug, EnumIter, Eq, Hash, IntoStaticStr, PartialEq)]
 #[strum(serialize_all = "snake_case")]
 enum Instruction {
     Unreachable,
@@ -137,9 +140,91 @@ enum Instruction {
 
 const WASIP1: &str = "wasi_snapshot_preview1";
 
-enum Builtin {
-    Instruction(Instruction),
-    Function(u32),
+/// A backend-implemented contextual function (prototype intrinsics for the string/print surface).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Intrinsic {
+    /// `string_builder(size: Uint) -> StringBuilder` — bump-allocate `size` bytes.
+    BuilderNew,
+    /// `set_char(b, i: Uint, c: Char) -> StringBuilder` — `i32.store8(b.ptr + i, c)`; return `b`.
+    SetChar,
+    /// `build(b) -> String` — `b` already laid out as `(ptr, size)`; identity.
+    Build,
+    /// `char_from_codepoint(cp: Uint) -> Char` — identity (ASCII, `Char` = i32).
+    CharFromCp,
+    /// `print(s: String)` — write `s`'s `(ptr,len)` as an iovec and `fd_write` to stdout.
+    Print,
+}
+
+/// A backend-implemented contextual *type* (the string/char surface). Like [`Intrinsic`], these
+/// are declared in `lib` but left unbound (no provider in the `bootstrap` bridge), so the backend
+/// supplies their concrete Wasm representation directly when `eval` reaches the abstract reference.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum IntrinsicTy {
+    /// `Char` — a Unicode code point, represented as `i32`.
+    Char,
+    /// `StringBuilder` — `(i32 ptr, i32 size)`, same layout as `String`.
+    StringBuilder,
+}
+
+/// A static object.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Object {
+    /// An open slot.
+    Open,
+
+    /// The type of a Wasm `memidx`.
+    TyMemIdx,
+
+    /// The Wasm `i32` type.
+    TyI32,
+
+    /// The Wasm `i64` type.
+    TyI64,
+
+    /// A tuple or record type.
+    TyTuple(TupleRange),
+
+    /// A "type" that represents a context instead of an actual value.
+    TyCtx,
+
+    /// A function signature, with parameter and result types.
+    Sig(ObjectId, ObjectId),
+
+    /// A Wasm instruction.
+    FnInstr(Instruction),
+
+    /// The Wasm `funcidx` of an imported WASI P1 function.
+    FnWasi(u32),
+
+    /// A backend intrinsic: a contextual function (`string_builder`/`set_char`/`build`/
+    /// `char_from_codepoint`/`print`) the prototype implements directly in codegen.
+    FnIntrinsic(Intrinsic),
+
+    /// A defined function with its needs bound by an environment.
+    FnDef(FndefId, EnvId),
+
+    /// A deferred `eval(node, env)` — a lazy context slot, forced on projection.
+    Thunk(lower::NodeId, EnvId),
+
+    /// A lambda value (an un-applied `Node::Lambda`) capturing its defining environment.
+    Closure(lower::NodeId, EnvId),
+
+    /// A 32-bit unsigned integer constant.
+    ValU32(u32),
+
+    /// A dynamic value with a type, stored in Wasm locals starting at a given index.
+    ValDyn(ObjectId, LocalId),
+
+    /// A dynamic context value with a type, stored in Wasm globals starting at a given index.
+    /// Unlike [`Object::ValDyn`], this is frame-independent: the body that introduced the
+    /// binding stores it (`Instr::SetDyn`), and any consuming body can read it.
+    ValGlobal(ObjectId, u32),
+
+    /// The "result" of executing a statement that only has side effects.
+    ValStmt,
+
+    /// A context with some output slots.
+    Ctx(TupleRange),
 }
 
 trait AsInstructionSink {
@@ -152,38 +237,45 @@ impl AsInstructionSink for Vec<u8> {
     }
 }
 
-#[derive(Clone, Copy)]
-struct Local {
-    ctx: ContextId,
-    start: LocalId,
-}
-
-#[derive(Clone, Copy)]
-struct Tmp {
-    ty: TyId,
-    start: LocalId,
-}
+const MEMIDX_WASI: u32 = 0;
 
 struct Wasm<'a> {
     ir: &'a IR,
     names: &'a Names,
     lib: Lib,
     main: FndefId,
-    val_memidx: ValdefId,
-    val_dst: ValdefId,
-    val_src: ValdefId,
-    val_align: ValdefId,
-    val_offset: ValdefId,
-    cache: Cache<'a>,
-    builtins: IndexVec<BuiltinId, Builtin>,
-    funcs: IndexVec<FnId, Option<u32>>,
-    next_funcidx: u32,
-
     data_offset: i32,
-    strings: HashMap<StrId, i32>,
+    objects: IndexSet<Object>,
+    tuples: Tuples<ObjectId>,
 
-    /// Start of global range for each `val`.
-    valdefs: IndexVec<ValId, GlobalId>,
+    /// Interned environments: each binds a function/lambda's need-nodes to construct [`Object`]s.
+    envs: IndexSet<Box<[(lower::NodeId, ObjectId)]>>,
+
+    /// Wasm `funcidx` for each [`Object::FnWasi`] and [`Object::FnDef`].
+    funcidxs: IndexSet<Object>,
+
+    /// Wasm `funcidx` of each imported WASI P1 function, by name.
+    wasi_funcidx: HashMap<StrId, u32>,
+
+    /// Sigdefs the backend implements as [`Intrinsic`]s (the string/print surface).
+    intrinsics: HashMap<SigdefId, Intrinsic>,
+
+    /// Tydefs the backend implements directly (the string/char surface); see [`IntrinsicTy`].
+    intrinsic_tys: HashMap<lower::TydefId, IntrinsicTy>,
+
+    /// Index of the mutable global used as the bump-allocation heap pointer.
+    heap_global: u32,
+
+    /// The Wasm type of every allocated global, in index order. Index 0 is the heap pointer;
+    /// the rest back dynamic context slots (see [`Wasm::dyn_global`]).
+    global_types: Vec<ValType>,
+
+    /// The first global index conveying each `(dynamic binding, monomorphized type)` pair,
+    /// where a dynamic binding is identified by its producing instruction (`Node::Dyn`). Keyed
+    /// by type as well, because a binding in a generic body can be monomorphized at more than
+    /// one concrete type. This is this backend's chosen execution model for dynamic context
+    /// values; the IR itself is agnostic (a different backend could pass extra parameters).
+    dyn_globals: HashMap<(lower::InstrId, ObjectId), u32>,
 
     section_type: TypeSection,
     section_import: ImportSection,
@@ -194,76 +286,559 @@ struct Wasm<'a> {
     section_code: CodeSection,
     section_data: DataSection,
 
-    /// The current context.
-    ctx: ContextId,
+    /// Static [`Object`] for each IR value in the current [`Body`].
+    variables: HashMap<lower::InstrId, ObjectId>,
 
     /// Locals for the current function.
     locals: IndexVec<LocalId, ValType>,
-
-    /// Start of local range for each IR local in the current function.
-    variables: HashMap<lower::LocalId, Local>,
-
-    /// Compile-time values computed inside static blocks.
-    statics: HashMap<lower::LocalId, ValId>,
 
     /// The current function body.
     body: Vec<u8>,
 }
 
 impl<'a> Wasm<'a> {
+    /// Intern an environment binding need-nodes to construct [`Object`]s.
+    fn mkenv(&mut self, pairs: &[(lower::NodeId, ObjectId)]) -> EnvId {
+        let (i, _) = self.envs.insert_full(pairs.to_vec().into_boxed_slice());
+        EnvId::from_usize(i)
+    }
+
+    /// The empty environment (binds nothing).
+    fn env_empty(&mut self) -> EnvId {
+        self.mkenv(&[])
+    }
+
+    /// The contextual-definition identity of a `Need*` node: its kind and `def`. Two references to
+    /// the same contextual definition that differ only in de Bruijn level or via-`param` are
+    /// distinct nodes but share this key.
+    fn need_key(&self, node: lower::NodeId) -> Option<(u8, usize)> {
+        Some(match self.ir.nodes[node.index()] {
+            lower::Node::Need {
+                def: lower::DefKind::Ty(def),
+                ..
+            } => (0, def.index()),
+            lower::Node::Need {
+                def: lower::DefKind::Sig(def),
+                ..
+            } => (1, def.index()),
+            lower::Node::Need {
+                def: lower::DefKind::Val(def),
+                ..
+            } => (2, def.index()),
+            lower::Node::Need {
+                def: lower::DefKind::Ctx(def),
+                ..
+            } => (3, def.index()),
+            _ => return None,
+        })
+    }
+
+    /// Look up a need-node in an environment. First by exact node; then, since the same contextual
+    /// definition is referenced by distinct nodes at different de Bruijn levels (the env binds it
+    /// once), fall back to matching by contextual-definition identity `(kind, def)`.
+    fn env_get(&self, env: EnvId, node: lower::NodeId) -> Option<ObjectId> {
+        if let Some(o) = self.envs[env.index()]
+            .iter()
+            .find(|(n, _)| *n == node)
+            .map(|(_, o)| *o)
+        {
+            return Some(o);
+        }
+        let key = self.need_key(node)?;
+        self.envs[env.index()]
+            .iter()
+            .find(|(n, _)| self.need_key(*n) == Some(key))
+            .map(|(_, o)| *o)
+    }
+
+    /// Build a child environment by binding `needs` (a function/lambda's need list) positionally to
+    /// `args`, on top of the bindings already in `base`.
+    fn extend_env(&mut self, base: EnvId, needs: lower::NodeList, args: &[ObjectId]) -> EnvId {
+        let need_nodes: Vec<lower::NodeId> = self.ir.lists[needs].to_vec();
+        assert_eq!(need_nodes.len(), args.len());
+        let mut pairs: Vec<(lower::NodeId, ObjectId)> = self.envs[base.index()].to_vec();
+        for (n, a) in need_nodes.into_iter().zip(args.iter().copied()) {
+            pairs.push((n, a));
+        }
+        self.mkenv(&pairs)
+    }
+
+    /// Monomorphize a static IR `node` against an environment `env` (binding the enclosing
+    /// function's needs), producing the corresponding codegen [`Object`]. The backend analogue of
+    /// lowering's `reduce`: β-reduce `Apply`, project `Get`, unfold transparent defs, fold literals,
+    /// and resolve `Need*` from `env`. Contexts are built lazily (slots are [`Object::Thunk`]s).
+    fn eval(&mut self, node: lower::NodeId, env: EnvId) -> ObjectId {
+        match self.ir.nodes[node.index()] {
+            lower::Node::Sig { param, result } => {
+                let param = self.eval(param, env);
+                let result = self.eval(result, env);
+                self.mkobj(Object::Sig(param, result))
+            }
+            lower::Node::Tuple { elems } => {
+                let items = self.ir.lists[elems].to_vec();
+                let objs: Vec<ObjectId> = items.into_iter().map(|e| self.eval(e, env)).collect();
+                let tuple = self.tuples.make(&objs);
+                self.mkobj(Object::TyTuple(tuple))
+            }
+            // A bare lambda is a value: a closure capturing its defining environment. Applying it
+            // (see `apply`) binds its needs and evaluates its result.
+            lower::Node::Lambda { .. } => self.mkobj(Object::Closure(node, env)),
+            // An unbound `sig` for one of the prototype's backend-implemented contextual functions
+            // resolves to its intrinsic (the bridge left these inline, with no provider).
+            lower::Node::Need {
+                def: lower::DefKind::Sig(def),
+                ..
+            } if self.intrinsics.contains_key(&def) => {
+                let intr = self.intrinsics[&def];
+                self.mkobj(Object::FnIntrinsic(intr))
+            }
+            // An unbound reference to a backend-implemented type resolves to its concrete Wasm
+            // representation (the bridge left these inline, with no provider).
+            lower::Node::Need {
+                def: lower::DefKind::Ty(def),
+                ..
+            } if self.intrinsic_tys.contains_key(&def) => match self.intrinsic_tys[&def] {
+                IntrinsicTy::Char => self.mkobj(Object::TyI32),
+                IntrinsicTy::StringBuilder => {
+                    let i32 = self.mkobj(Object::TyI32);
+                    let tuple = self.tuples.make(&[i32, i32]);
+                    self.mkobj(Object::TyTuple(tuple))
+                }
+            },
+            // A need resolves to whatever the enclosing function was given for it.
+            lower::Node::Need { .. } => self
+                .env_get(env, node)
+                .unwrap_or_else(|| panic!("eval: unbound need %{}", node.index())),
+            lower::Node::Apply { lambda, args } => {
+                let head = self.eval(lambda, env);
+                let args = self.ir.lists[args].to_vec();
+                let argobjs: Vec<ObjectId> = args.into_iter().map(|a| self.eval(a, env)).collect();
+                self.apply(head, &argobjs)
+            }
+            // A context is a tuple of slots, each a deferred eval — built lazily so projecting one
+            // slot (e.g. `println`) does not force its siblings (e.g. the arithmetic with `if`s).
+            lower::Node::List { items } => {
+                let item_nodes: Vec<lower::NodeId> = self.ir.lists[items].to_vec();
+                let slots: Vec<ObjectId> = item_nodes
+                    .into_iter()
+                    .map(|n| self.mkobj(Object::Thunk(n, env)))
+                    .collect();
+                self.mkctx(&slots)
+            }
+            lower::Node::Get { ctx, slot } => {
+                let ctx = self.eval(ctx, env);
+                let Object::Ctx(range) = self.obj(ctx) else {
+                    panic!("eval: Get on non-context {:?}", self.obj(ctx))
+                };
+                let len = range.end.raw() - range.start.raw();
+                assert!(
+                    slot.raw() < len,
+                    "eval: Get slot {} out of bounds (ctx has {} slots)",
+                    slot.raw(),
+                    len
+                );
+                let slot_obj = self.tuples[TupleLoc::from_raw(range.start.raw() + slot.raw())];
+                self.force(slot_obj)
+            }
+            lower::Node::Fndef { def } => self.mkobj(Object::FnDef(def, env)),
+            // Transparent definitions unfold to their bodies.
+            lower::Node::Aliasdef { def } => {
+                let body = self.ir.aliasdefs[def].0;
+                self.eval(body, env)
+            }
+            lower::Node::Context => self.mkobj(Object::TyCtx),
+            lower::Node::Nothing => self.mkobj(Object::Open),
+            // A dynamic binding's value. In the frame that produced it, it is simply that
+            // instruction's value; in any other frame, it arrives through this backend's
+            // conveyance for dynamic context values -- the Wasm globals spilled at the call
+            // edge (`spill_dyns`). The type is monomorphized under the *current* environment,
+            // which is the binding site's (the value reaches consumers through closures
+            // captured there).
+            lower::Node::Dyn { instr } => {
+                if let Some(&obj) = self.variables.get(&instr) {
+                    obj
+                } else {
+                    let ty_node = self.dyn_ty_node(instr);
+                    let ty = self.eval(ty_node, env);
+                    let base = self.dyn_global(instr, ty);
+                    self.mkobj(Object::ValGlobal(ty, base))
+                }
+            }
+            // A `Bind { args, bind }` (the body of a binding's lambda) projects to its bound value.
+            lower::Node::Bind { bind, .. } => self.eval(bind, env),
+            // Bindings construct context entries; as a value, a binding is a closure over its `bind`
+            // lambda, projected when applied (see `apply`).
+            lower::Node::BindDef { bind, .. } => self.mkobj(Object::Closure(bind, env)),
+            other => todo!("eval: {other:?} (milestone B2)"),
+        }
+    }
+
+    /// The first global index conveying the dynamic binding produced by `instr` at
+    /// monomorphized type `ty`, allocating `ty`'s layout in fresh globals on first use.
+    fn dyn_global(&mut self, instr: lower::InstrId, ty: ObjectId) -> u32 {
+        if let Some(&base) = self.dyn_globals.get(&(instr, ty)) {
+            return base;
+        }
+        let base = self.global_types.len() as u32;
+        let mut types = Vec::new();
+        self.layout(ty, &mut |vt| types.push(vt));
+        self.global_types.extend(types);
+        self.dyn_globals.insert((instr, ty), base);
+        base
+    }
+
+    /// The declared type node of the dynamic binding produced by `instr`.
+    fn dyn_ty_node(&self, instr: lower::InstrId) -> lower::NodeId {
+        let Instr::Expr { ty, .. } = self.ir.instrs[instr] else {
+            panic!("a dynamic binding's producing instruction is not an expression")
+        };
+        ty
+    }
+
+    /// Collect the dynamic bindings ([`lower::Node::Dyn`]) reachable through `env`: the
+    /// dynamic context values a function monomorphized against `env` can consume. This is a
+    /// purely syntactic walk over the static node graph (through closures, thunks, and nested
+    /// environments) -- nothing is forced or evaluated -- so it sees exactly what the callee's
+    /// fully concretized context contains.
+    fn collect_dyns(&self, env: EnvId, out: &mut Vec<(lower::InstrId, EnvId)>) {
+        let mut seen_nodes: HashSet<(lower::NodeId, EnvId)> = HashSet::new();
+        let mut seen_objs: HashSet<ObjectId> = HashSet::new();
+        let mut seen_outs: HashSet<(lower::InstrId, EnvId)> = HashSet::new();
+        let mut node_work: Vec<(lower::NodeId, EnvId)> = Vec::new();
+        let mut obj_work: Vec<ObjectId> = Vec::new();
+        let mut env_work: Vec<EnvId> = vec![env];
+        let mut seen_envs: HashSet<EnvId> = HashSet::new();
+        while !node_work.is_empty() || !obj_work.is_empty() || !env_work.is_empty() {
+            if let Some(e) = env_work.pop() {
+                if seen_envs.insert(e) {
+                    for &(node, obj) in self.envs[e.index()].iter() {
+                        node_work.push((node, e));
+                        obj_work.push(obj);
+                    }
+                }
+                continue;
+            }
+            if let Some(obj) = obj_work.pop() {
+                if !seen_objs.insert(obj) {
+                    continue;
+                }
+                match self.obj(obj) {
+                    Object::Closure(node, e) | Object::Thunk(node, e) => {
+                        node_work.push((node, e));
+                    }
+                    Object::FnDef(_, e) => env_work.push(e),
+                    Object::Ctx(range) => {
+                        for loc in range.start.index()..range.end.index() {
+                            obj_work.push(self.tuples[TupleLoc::from_usize(loc)]);
+                        }
+                    }
+                    Object::Sig(a, b) => {
+                        obj_work.push(a);
+                        obj_work.push(b);
+                    }
+                    Object::TyTuple(elems) => {
+                        for &elem in &self.tuples[elems] {
+                            obj_work.push(elem);
+                        }
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            if let Some((node, e)) = node_work.pop() {
+                if !seen_nodes.insert((node, e)) {
+                    continue;
+                }
+                use lower::Node::*;
+                match self.ir.nodes[node.index()] {
+                    Dyn { instr } => {
+                        if seen_outs.insert((instr, e)) {
+                            out.push((instr, e));
+                        }
+                    }
+                    Lambda { needs, result, .. } => {
+                        for &n in &self.ir.lists[needs] {
+                            node_work.push((n, e));
+                        }
+                        node_work.push((result, e));
+                    }
+                    Apply { lambda, args } => {
+                        node_work.push((lambda, e));
+                        for &n in &self.ir.lists[args] {
+                            node_work.push((n, e));
+                        }
+                    }
+                    List { items } | Tuple { elems: items } => {
+                        for &n in &self.ir.lists[items] {
+                            node_work.push((n, e));
+                        }
+                    }
+                    Need { param, .. } => node_work.push((param, e)),
+                    Get { ctx, .. } => node_work.push((ctx, e)),
+                    Bind { args, bind } => {
+                        for &n in &self.ir.lists[args] {
+                            node_work.push((n, e));
+                        }
+                        node_work.push((bind, e));
+                    }
+                    BindDef { bind, .. } => node_work.push((bind, e)),
+                    Sig { param, result } => {
+                        node_work.push((param, e));
+                        node_work.push((result, e));
+                    }
+                    Fndef { .. } | Aliasdef { .. } | Tagdef { .. } | Context | Nothing => {}
+                }
+            }
+        }
+    }
+
+    /// Spill the dynamic bindings a callee (monomorphized against `env`) can consume into
+    /// this backend's conveyance for them -- Wasm globals -- for every binding whose value
+    /// lives in the *current* frame (i.e. was produced by an instruction of the function being
+    /// emitted). Bindings produced elsewhere are already in their globals: this frame received
+    /// them the same way and never moved them.
+    fn spill_dyns(&mut self, env: EnvId) {
+        let mut dyns = Vec::new();
+        self.collect_dyns(env, &mut dyns);
+        for (instr, e) in dyns {
+            if !self.variables.contains_key(&instr) {
+                continue;
+            }
+            let ty_node = self.dyn_ty_node(instr);
+            let ty = self.eval(ty_node, e);
+            let base = self.dyn_global(instr, ty);
+            self.get(instr);
+            for i in (0..self.layout_len(ty)).rev() {
+                self.body.insn().global_set(base + i as u32);
+            }
+        }
+    }
+
+    /// Force a slot object: if it is a deferred [`Object::Thunk`], evaluate it; otherwise return it.
+    fn force(&mut self, obj: ObjectId) -> ObjectId {
+        match self.obj(obj) {
+            Object::Thunk(node, env) => self.eval(node, env),
+            _ => obj,
+        }
+    }
+
+    /// Apply a head [`Object`] to already-evaluated arguments, mirroring `reduce`'s `Apply` case.
+    fn apply(&mut self, head: ObjectId, args: &[ObjectId]) -> ObjectId {
+        match self.obj(head) {
+            // Inline a lambda value: bind its needs to the args atop its captured environment.
+            Object::Closure(lnode, capt) => {
+                let lower::Node::Lambda { needs, result, .. } = self.ir.nodes[lnode.index()] else {
+                    panic!("apply: closure over non-lambda")
+                };
+                let childenv = self.extend_env(capt, needs, args);
+                self.eval(result, childenv)
+            }
+            // A `Fndef` applied to its context construct binds the function's needs to those args.
+            // A context-returning function (e.g. `bootstrap`) is a context *constructor*: evaluate
+            // its body to the context it builds. A value-returning function stays an `FnDef` to call.
+            Object::FnDef(def, _) if !args.is_empty() => {
+                let Sigdef(sig) = self.ir.fndefs[def];
+                let lower::Node::Lambda { needs, .. } = self.ir.nodes[sig.index()] else {
+                    panic!("apply: fndef sig is not a lambda")
+                };
+                let base = self.env_empty();
+                let env = self.extend_env(base, needs, args);
+                if self.returns_ctx(def) {
+                    self.eval_ctx_body(def, env)
+                } else {
+                    self.mkobj(Object::FnDef(def, env))
+                }
+            }
+            // A function-like leaf (intrinsic, Wasm instruction, or imported WASI function) ignores
+            // its (static) context construct; its runtime arguments arrive at the `Call` site, where
+            // emission consumes them.
+            Object::FnIntrinsic(_) | Object::FnInstr(_) | Object::FnWasi(_) => head,
+            // Already a value; applying to no further context arguments is the identity.
+            _ if args.is_empty() => head,
+            other => todo!("apply: {other:?} to {} args", args.len()),
+        }
+    }
+
+    fn named(&self, module: ModuleId, string: &str) -> Named {
+        self.names.names[&(module, self.ir.strings.get_id(string).unwrap())]
+    }
+
+    fn wasip1_sigdefs(&self) -> IndexMap<StrId, SigdefId> {
+        // It isn't ideal to iterate through every name binding from every module just to filter
+        // out all the ones except from the one module we care about, but it's fine for now. We
+        // sort by name in order to achieve determinism.
+        self.names
+            .names
+            .iter()
+            .filter_map(|(&(module, name), &named)| match named {
+                Named::Sigdef(fndef) if module == self.lib.wasip1 => Some((name, fndef)),
+                _ => None,
+            })
+            .sorted_by_key(|&(name, _)| &self.ir.strings[name])
+            .collect()
+    }
+
+    fn mkobj(&mut self, object: Object) -> ObjectId {
+        let (i, _) = self.objects.insert_full(object);
+        ObjectId::from_usize(i)
+    }
+
+    fn mkctx(&mut self, slots: &[ObjectId]) -> ObjectId {
+        let tuple = self.tuples.make(slots);
+        self.mkobj(Object::Ctx(tuple))
+    }
+
+    fn obj(&self, id: ObjectId) -> Object {
+        self.objects[id.index()]
+    }
+
+    fn local(&self, x: InstrId) -> (ObjectId, LocalId) {
+        match self.obj(self.variables[&x]) {
+            Object::ValDyn(ty, start) => (ty, start),
+            _ => panic!(),
+        }
+    }
+
+    /// Build the root `Wasi` context as an `Object::Ctx`, in `lib/wasi.moss`'s `Wasi` member order
+    /// (which is the slot order lowering used). All leaves are concrete target Objects.
+    ///
+    /// B1 builds every slot that `hello`'s resolution reaches (types, literal types, realizers,
+    /// `Numerals`, `Wasm` instructions, `memidx`). The `WasiP1` sub-context is a placeholder for now
+    /// (B2: import every wasip1 function with its eval'd signature, in declaration order). `proc_exit`
+    /// is still imported separately for `_start`.
+    fn wasi_ctx(&mut self, wasip1_sigdefs: &IndexMap<StrId, SigdefId>) -> ObjectId {
+        for (&name, _) in wasip1_sigdefs {
+            let sig: Option<(&str, &[ValType], &[ValType])> = match &self.ir.strings[name] {
+                "proc_exit" => Some(("proc_exit", &[ValType::I32], &[])),
+                "fd_write" => Some((
+                    "fd_write",
+                    &[ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+                    &[ValType::I32],
+                )),
+                _ => None,
+            };
+            if let Some((import_name, params, results)) = sig {
+                let typeidx = self.section_type.len();
+                self.section_type
+                    .ty()
+                    .function(params.iter().copied(), results.iter().copied());
+                let funcidx = self.push_func_wasi();
+                self.section_import
+                    .import(WASIP1, import_name, EntityType::Function(typeidx));
+                self.wasi_funcidx.insert(name, funcidx);
+            }
+        }
+
+        let leaves: &[Object] = &[
+            // types
+            Object::TyI32,
+            Object::TyI64,
+            Object::TyMemIdx,
+        ];
+        let mut slots: Vec<ObjectId> = leaves.iter().map(|&o| self.mkobj(o)).collect();
+
+        // `Numerals[Number=I32]` and `Numerals[Number=I64]`: nested Ctx of `digit0..digit9, radix`.
+        for _ in 0..2 {
+            let digits: Vec<ObjectId> =
+                (0..=10u32).map(|n| self.mkobj(Object::ValU32(n))).collect();
+            let nums = self.mkctx(&digits);
+            slots.push(nums);
+        }
+
+        // `wasm::Wasm[Base]`: nested Ctx of `FnInstr`, in `Instruction` order (== `wasm.moss`'s
+        // `Wasm` member order).
+        let instrs: Vec<ObjectId> = Instruction::iter()
+            .map(|i| self.mkobj(Object::FnInstr(i)))
+            .collect();
+        let wasm_ctx = self.mkctx(&instrs);
+        slots.push(wasm_ctx);
+
+        // `wasm::memidx[Base]`.
+        let memidx = self.mkobj(Object::ValU32(MEMIDX_WASI));
+        slots.push(memidx);
+
+        // `wasip1::WasiP1[Base]`: placeholder (B2 builds the imports).
+        let wasip1 = self.mkobj(Object::Open);
+        slots.push(wasip1);
+
+        self.mkctx(&slots)
+    }
+
+    fn next_funcidx(&self) -> u32 {
+        self.funcidxs.len() as u32
+    }
+
+    fn get_func(&self, funcidx: u32) -> Object {
+        self.funcidxs[funcidx as usize]
+    }
+
+    fn get_funcidx(&self, fndef: FndefId, env: EnvId) -> Option<u32> {
+        Some(self.funcidxs.get_index_of(&Object::FnDef(fndef, env))? as u32)
+    }
+
+    fn push_func_wasi(&mut self) -> u32 {
+        let funcidx = self.next_funcidx();
+        self.funcidxs.insert(Object::FnWasi(funcidx));
+        funcidx
+    }
+
+    fn insert_func(&mut self, func: Object) -> u32 {
+        let (i, _) = self.funcidxs.insert_full(func);
+        i as u32
+    }
+
     /// Execute `f` for each Wasm type needed to represent `ty` in the current context.
-    fn layout(&self, ty: TyId, f: &mut impl FnMut(ValType)) {
-        match self.cache[ty] {
-            Ty::String => {
-                f(ValType::I32);
-                f(ValType::I32);
-            }
-            Ty::Bool => {
-                f(ValType::I32);
-            }
-            Ty::Int32 => {
-                f(ValType::I32);
-            }
-            Ty::Int64 => {
-                f(ValType::I64);
-            }
-            Ty::Tuple(elems) => {
-                for &elem in &self.cache[elems] {
+    fn layout(&self, ty: ObjectId, f: &mut impl FnMut(ValType)) {
+        match self.obj(ty) {
+            Object::TyI32 => f(ValType::I32),
+            Object::TyI64 => f(ValType::I64),
+            Object::TyTuple(elems) => {
+                for &elem in &self.tuples[elems] {
                     self.layout(elem, f);
                 }
             }
-            Ty::Structdef(_, fields) => {
-                for &field in &self.cache[fields] {
-                    self.layout(field, f);
-                }
-            }
+            Object::Open
+            | Object::TyMemIdx
+            | Object::TyCtx
+            | Object::Sig(_, _)
+            | Object::FnInstr(_)
+            | Object::FnWasi(_)
+            | Object::FnIntrinsic(_)
+            | Object::FnDef(_, _)
+            | Object::Thunk(_, _)
+            | Object::Closure(_, _)
+            | Object::ValU32(_)
+            | Object::ValDyn(_, _)
+            | Object::ValGlobal(_, _)
+            | Object::ValStmt
+            | Object::Ctx(_) => panic!(),
         }
     }
 
     /// Get the number of Wasm types needed to represent `ty` in the current context.
     ///
     /// Linear time.
-    fn layout_len(&mut self, ty: TyId) -> usize {
+    fn layout_len(&mut self, ty: ObjectId) -> usize {
         let mut len = 0;
         self.layout(ty, &mut |_| len += 1);
         len
     }
 
     /// Get a [`Vec`] of the Wasm types needed to represent `ty` in the current context.
-    fn layout_vec(&mut self, ty: TyId) -> Vec<ValType> {
+    fn layout_vec(&mut self, ty: ObjectId) -> Vec<ValType> {
         let mut types = Vec::new();
         self.layout(ty, &mut |t| types.push(t));
         types
     }
 
-    fn make_locals(&mut self, ty: TyId) -> LocalId {
+    fn make_locals(&mut self, ty: ObjectId) -> LocalId {
         let start = self.locals.len_idx();
         let locals = self.layout_vec(ty);
         self.locals.append(&mut IndexVec::from_vec(locals));
         start
     }
 
-    fn get_locals(&mut self, ty: TyId, start: LocalId) {
+    fn get_locals(&mut self, ty: ObjectId, start: LocalId) {
         let len = self.layout_len(ty);
         let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }) {
@@ -271,7 +846,7 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    fn set_locals(&mut self, ty: TyId, start: LocalId) {
+    fn set_locals(&mut self, ty: ObjectId, start: LocalId) {
         let len = self.layout_len(ty);
         let end = LocalId::from_usize(start.index() + len);
         for localidx in (IdRange { start, end }).into_iter().rev() {
@@ -279,616 +854,561 @@ impl<'a> Wasm<'a> {
         }
     }
 
-    fn get(&mut self, instr: lower::LocalId) {
-        let Local { ctx, start } = self.variables[&instr];
-        let ty = self.cache.ty(ctx, self.ir.locals[instr]);
+    fn get(&mut self, instr: lower::InstrId) {
+        let Object::ValDyn(ty, start) = self.obj(self.variables[&instr]) else {
+            panic!()
+        };
         self.get_locals(ty, start)
     }
 
-    fn set(&mut self, instr: lower::LocalId) {
-        let ctx = self.ctx;
-        let ty = self.cache.ty(ctx, self.ir.locals[instr]);
-        let start = self.make_locals(ty);
-        let prev = self.variables.insert(instr, Local { ctx, start });
-        assert!(prev.is_none());
-        self.set_locals(ty, start);
-    }
-
-    fn get_tmp(&mut self, tmp: Tmp) {
-        self.get_locals(tmp.ty, tmp.start);
-    }
-
-    fn set_tmp(&mut self, ty: TyId) -> Tmp {
+    fn set(&mut self, ty: ObjectId) -> ObjectId {
         let start = self.make_locals(ty);
         self.set_locals(ty, start);
-        Tmp { ty, start }
+        self.mkobj(Object::ValDyn(ty, start))
     }
 
-    fn string(&mut self, id: StrId) {
-        let string = &self.ir.strings[id];
-        let len = string.len() as i32;
-        let &mut offset = self.strings.entry(id).or_insert_with(|| {
-            let offset = self.data_offset;
-            self.section_data
-                .active(0, &ConstExpr::i32_const(offset), string.bytes());
-            self.data_offset += len;
-            offset
-        });
-        self.body.insn().i32_const(offset).i32_const(len);
-    }
-
-    fn get_val(&mut self, valdef: ValdefId) {
-        let val = self.cache.valdef(self.ctx, valdef);
-        match self.cache[val] {
-            Val::Bool(b) => {
-                self.body.insn().i32_const(if b { 1 } else { 0 });
+    fn wasm_instruction(&mut self, instruction: Instruction) {
+        /// A memarg at offset zero in the WASI memory, with the given alignment exponent.
+        fn memarg(align: u32) -> MemArg {
+            MemArg {
+                offset: 0,
+                align,
+                memory_index: MEMIDX_WASI,
             }
-            Val::Int32(n) => {
+        }
+
+        match instruction {
+            Instruction::Unreachable => {
+                self.body.insn().unreachable();
+            }
+
+            // The memarg immediates are not customizable for now: `memidx` and `offset` are
+            // always zero, and each instruction uses its natural alignment.
+            Instruction::I32Load => {
+                self.body.insn().i32_load(memarg(2));
+            }
+            Instruction::I64Load => {
+                self.body.insn().i64_load(memarg(3));
+            }
+            Instruction::I32Load8S => {
+                self.body.insn().i32_load8_s(memarg(0));
+            }
+            Instruction::I32Load8U => {
+                self.body.insn().i32_load8_u(memarg(0));
+            }
+            Instruction::I32Load16S => {
+                self.body.insn().i32_load16_s(memarg(1));
+            }
+            Instruction::I32Load16U => {
+                self.body.insn().i32_load16_u(memarg(1));
+            }
+            Instruction::I64Load8S => {
+                self.body.insn().i64_load8_s(memarg(0));
+            }
+            Instruction::I64Load8U => {
+                self.body.insn().i64_load8_u(memarg(0));
+            }
+            Instruction::I64Load16S => {
+                self.body.insn().i64_load16_s(memarg(1));
+            }
+            Instruction::I64Load16U => {
+                self.body.insn().i64_load16_u(memarg(1));
+            }
+            Instruction::I64Load32S => {
+                self.body.insn().i64_load32_s(memarg(2));
+            }
+            Instruction::I64Load32U => {
+                self.body.insn().i64_load32_u(memarg(2));
+            }
+            Instruction::I32Store => {
+                self.body.insn().i32_store(memarg(2));
+            }
+            Instruction::I64Store => {
+                self.body.insn().i64_store(memarg(3));
+            }
+            Instruction::I32Store8 => {
+                self.body.insn().i32_store8(memarg(0));
+            }
+            Instruction::I32Store16 => {
+                self.body.insn().i32_store16(memarg(1));
+            }
+            Instruction::I64Store8 => {
+                self.body.insn().i64_store8(memarg(0));
+            }
+            Instruction::I64Store16 => {
+                self.body.insn().i64_store16(memarg(1));
+            }
+            Instruction::I64Store32 => {
+                self.body.insn().i64_store32(memarg(2));
+            }
+            Instruction::MemorySize => {
+                self.body.insn().memory_size(MEMIDX_WASI);
+            }
+            Instruction::MemoryGrow => {
+                self.body.insn().memory_grow(MEMIDX_WASI);
+            }
+            Instruction::MemoryCopy => {
+                self.body.insn().memory_copy(MEMIDX_WASI, MEMIDX_WASI);
+            }
+            Instruction::MemoryFill => {
+                self.body.insn().memory_fill(MEMIDX_WASI);
+            }
+
+            Instruction::I32Eqz => {
+                self.body.insn().i32_eqz();
+            }
+            Instruction::I32Eq => {
+                self.body.insn().i32_eq();
+            }
+            Instruction::I32Ne => {
+                self.body.insn().i32_ne();
+            }
+            Instruction::I32LtS => {
+                self.body.insn().i32_lt_s();
+            }
+            Instruction::I32LtU => {
+                self.body.insn().i32_lt_u();
+            }
+            Instruction::I32GtS => {
+                self.body.insn().i32_gt_s();
+            }
+            Instruction::I32GtU => {
+                self.body.insn().i32_gt_u();
+            }
+            Instruction::I32LeS => {
+                self.body.insn().i32_le_s();
+            }
+            Instruction::I32LeU => {
+                self.body.insn().i32_le_u();
+            }
+            Instruction::I32GeS => {
+                self.body.insn().i32_ge_s();
+            }
+            Instruction::I32GeU => {
+                self.body.insn().i32_ge_u();
+            }
+            Instruction::I64Eqz => {
+                self.body.insn().i64_eqz();
+            }
+            Instruction::I64Eq => {
+                self.body.insn().i64_eq();
+            }
+            Instruction::I64Ne => {
+                self.body.insn().i64_ne();
+            }
+            Instruction::I64LtS => {
+                self.body.insn().i64_lt_s();
+            }
+            Instruction::I64LtU => {
+                self.body.insn().i64_lt_u();
+            }
+            Instruction::I64GtS => {
+                self.body.insn().i64_gt_s();
+            }
+            Instruction::I64GtU => {
+                self.body.insn().i64_gt_u();
+            }
+            Instruction::I64LeS => {
+                self.body.insn().i64_le_s();
+            }
+            Instruction::I64LeU => {
+                self.body.insn().i64_le_u();
+            }
+            Instruction::I64GeS => {
+                self.body.insn().i64_ge_s();
+            }
+            Instruction::I64GeU => {
+                self.body.insn().i64_ge_u();
+            }
+            Instruction::I32Clz => {
+                self.body.insn().i32_clz();
+            }
+            Instruction::I32Ctz => {
+                self.body.insn().i32_ctz();
+            }
+            Instruction::I32Popcnt => {
+                self.body.insn().i32_popcnt();
+            }
+            Instruction::I32Add => {
+                self.body.insn().i32_add();
+            }
+            Instruction::I32Sub => {
+                self.body.insn().i32_sub();
+            }
+            Instruction::I32Mul => {
+                self.body.insn().i32_mul();
+            }
+            Instruction::I32DivS => {
+                self.body.insn().i32_div_s();
+            }
+            Instruction::I32DivU => {
+                self.body.insn().i32_div_u();
+            }
+            Instruction::I32RemS => {
+                self.body.insn().i32_rem_s();
+            }
+            Instruction::I32RemU => {
+                self.body.insn().i32_rem_u();
+            }
+            Instruction::I32And => {
+                self.body.insn().i32_and();
+            }
+            Instruction::I32Or => {
+                self.body.insn().i32_or();
+            }
+            Instruction::I32Xor => {
+                self.body.insn().i32_xor();
+            }
+            Instruction::I32Shl => {
+                self.body.insn().i32_shl();
+            }
+            Instruction::I32ShrS => {
+                self.body.insn().i32_shr_s();
+            }
+            Instruction::I32ShrU => {
+                self.body.insn().i32_shr_u();
+            }
+            Instruction::I32Rotl => {
+                self.body.insn().i32_rotl();
+            }
+            Instruction::I32Rotr => {
+                self.body.insn().i32_rotr();
+            }
+            Instruction::I64Clz => {
+                self.body.insn().i64_clz();
+            }
+            Instruction::I64Ctz => {
+                self.body.insn().i64_ctz();
+            }
+            Instruction::I64Popcnt => {
+                self.body.insn().i64_popcnt();
+            }
+            Instruction::I64Add => {
+                self.body.insn().i64_add();
+            }
+            Instruction::I64Sub => {
+                self.body.insn().i64_sub();
+            }
+            Instruction::I64Mul => {
+                self.body.insn().i64_mul();
+            }
+            Instruction::I64DivS => {
+                self.body.insn().i64_div_s();
+            }
+            Instruction::I64DivU => {
+                self.body.insn().i64_div_u();
+            }
+            Instruction::I64RemS => {
+                self.body.insn().i64_rem_s();
+            }
+            Instruction::I64RemU => {
+                self.body.insn().i64_rem_u();
+            }
+            Instruction::I64And => {
+                self.body.insn().i64_and();
+            }
+            Instruction::I64Or => {
+                self.body.insn().i64_or();
+            }
+            Instruction::I64Xor => {
+                self.body.insn().i64_xor();
+            }
+            Instruction::I64Shl => {
+                self.body.insn().i64_shl();
+            }
+            Instruction::I64ShrS => {
+                self.body.insn().i64_shr_s();
+            }
+            Instruction::I64ShrU => {
+                self.body.insn().i64_shr_u();
+            }
+            Instruction::I64Rotl => {
+                self.body.insn().i64_rotl();
+            }
+            Instruction::I64Rotr => {
+                self.body.insn().i64_rotr();
+            }
+            Instruction::I32WrapI64 => {
+                self.body.insn().i32_wrap_i64();
+            }
+            Instruction::I64ExtendI32S => {
+                self.body.insn().i64_extend_i32_s();
+            }
+            Instruction::I64ExtendI32U => {
+                self.body.insn().i64_extend_i32_u();
+            }
+            Instruction::I32Extend8S => {
+                self.body.insn().i32_extend8_s();
+            }
+            Instruction::I32Extend16S => {
+                self.body.insn().i32_extend16_s();
+            }
+            Instruction::I64Extend8S => {
+                self.body.insn().i64_extend8_s();
+            }
+            Instruction::I64Extend16S => {
+                self.body.insn().i64_extend16_s();
+            }
+            Instruction::I64Extend32S => {
+                self.body.insn().i64_extend32_s();
+            }
+        };
+    }
+
+    /// Push a value [`Object`]'s runtime representation onto the operand stack.
+    fn materialize(&mut self, obj: ObjectId) {
+        match self.obj(obj) {
+            Object::ValU32(n) => {
                 self.body.insn().i32_const(n as i32);
             }
-            Val::String(id) => {
-                self.string(id);
-            }
-            Val::Dynamic(_, ty) => {
-                let start = self.valdefs[val];
-                let len = self.layout_len(ty);
-                let end = GlobalId::from_usize(start.index() + len);
-                for globalidx in (IdRange { start, end }) {
-                    self.body.insn().global_get(globalidx.raw());
+            Object::ValDyn(ty, start) => self.get_locals(ty, start),
+            Object::ValGlobal(ty, base) => {
+                for i in 0..self.layout_len(ty) {
+                    self.body.insn().global_get(base + i as u32);
                 }
             }
+            other => todo!("materialize: {other:?}"),
         }
     }
 
-    fn set_val(&mut self, valdef: ValdefId) {
-        let val = self.cache.valdef(self.ctx, valdef);
-        match self.cache[val] {
-            // We don't need to restore anything for static bindings.
-            Val::Bool(_) | Val::Int32(_) | Val::String(_) => {}
-            Val::Dynamic(_, ty) => {
-                let start = self.valdefs[val];
-                let len = self.layout_len(ty);
-                let end = GlobalId::from_usize(start.index() + len);
-                for globalidx in (IdRange { start, end }).into_iter().rev() {
-                    self.body.insn().global_set(globalidx.raw());
-                }
+    /// Append a fresh i32 local and return its index (scratch for intrinsics).
+    fn tmp(&mut self) -> u32 {
+        let id = self.locals.len_idx();
+        self.locals.push(ValType::I32);
+        id.raw()
+    }
+
+    /// Emit a call given the already-evaluated callee head, with its runtime argument(s) already on
+    /// the operand stack.
+    fn emit_call(&mut self, head: ObjectId) {
+        match self.obj(head) {
+            Object::FnDef(def, fenv) => {
+                // Convey any current-frame dynamic bindings the callee can consume before
+                // transferring control to it.
+                self.spill_dyns(fenv);
+                let funcidx = self.insert_func(Object::FnDef(def, fenv));
+                self.body.insn().call(funcidx);
             }
+            Object::FnInstr(instr) => {
+                self.wasm_instruction(instr);
+            }
+            Object::FnWasi(funcidx) => {
+                self.body.insn().call(funcidx);
+            }
+            Object::FnIntrinsic(intr) => self.emit_intrinsic(intr),
+            other => todo!("emit_call: {other:?}"),
         }
     }
 
-    fn val_i32_as_u32(&mut self, valdef: ValdefId) -> u32 {
-        let val = self.cache.valdef(self.ctx, valdef);
-        let Val::Int32(n) = self.cache[val] else {
-            panic!();
+    /// Emit a backend intrinsic, consuming its runtime argument(s) from the operand stack and
+    /// leaving its result there.
+    fn emit_intrinsic(&mut self, intr: Intrinsic) {
+        let store = MemArg {
+            offset: 0,
+            align: 2,
+            memory_index: MEMIDX_WASI,
         };
-        n
-    }
-
-    fn val_i32_as_u64(&mut self, valdef: ValdefId) -> u64 {
-        let val = self.cache.valdef(self.ctx, valdef);
-        let Val::Int32(n) = self.cache[val] else {
-            panic!();
+        let store8 = MemArg {
+            offset: 0,
+            align: 0,
+            memory_index: MEMIDX_WASI,
         };
-        n as u64
-    }
-
-    fn memarg(&mut self) -> MemArg {
-        MemArg {
-            offset: self.val_i32_as_u64(self.val_offset),
-            align: self.val_i32_as_u32(self.val_align),
-            memory_index: self.val_i32_as_u32(self.val_memidx),
+        match intr {
+            // `build(b)` / `char_from_codepoint(cp)` are identities on the layout already on the
+            // stack (`(ptr,size)` / the codepoint).
+            Intrinsic::Build | Intrinsic::CharFromCp => {}
+            // `string_builder(size)`: ptr = heap; heap += size; result `(ptr, size)`.
+            Intrinsic::BuilderNew => {
+                let size = self.tmp();
+                let ptr = self.tmp();
+                self.body.insn().local_set(size);
+                self.body.insn().global_get(self.heap_global).local_set(ptr);
+                self.body
+                    .insn()
+                    .global_get(self.heap_global)
+                    .local_get(size)
+                    .i32_add()
+                    .global_set(self.heap_global);
+                self.body.insn().local_get(ptr).local_get(size);
+            }
+            // `set_char(b=(ptr,size), index, char)`: `store8(ptr+index, char)`; result `(ptr,size)`.
+            Intrinsic::SetChar => {
+                let c = self.tmp();
+                let i = self.tmp();
+                let sz = self.tmp();
+                let p = self.tmp();
+                self.body
+                    .insn()
+                    .local_set(c)
+                    .local_set(i)
+                    .local_set(sz)
+                    .local_set(p);
+                self.body
+                    .insn()
+                    .local_get(p)
+                    .local_get(i)
+                    .i32_add()
+                    .local_get(c)
+                    .i32_store8(store8);
+                self.body.insn().local_get(p).local_get(sz);
+            }
+            // `print(s=(ptr,len))`: write iovec `{ptr,len}` at `[0,8)`, `fd_write(1,0,1,8)`, drop.
+            Intrinsic::Print => {
+                let fd_write = self.wasi_funcidx[&self.ir.strings.get_id("fd_write").unwrap()];
+                let len = self.tmp();
+                let ptr = self.tmp();
+                self.body.insn().local_set(len).local_set(ptr);
+                self.body
+                    .insn()
+                    .i32_const(0)
+                    .local_get(ptr)
+                    .i32_store(store); // iovec.buf
+                self.body
+                    .insn()
+                    .i32_const(4)
+                    .local_get(len)
+                    .i32_store(store); // iovec.buf_len
+                self.body
+                    .insn()
+                    .i32_const(1) // fd = stdout
+                    .i32_const(0) // iovs ptr
+                    .i32_const(1) // iovs_len
+                    .i32_const(8) // retptr0
+                    .call(fd_write)
+                    .drop();
+            }
         }
     }
 
-    fn instrs(&mut self, param: TyId, mut instr: lower::LocalId) -> lower::LocalId {
-        loop {
-            match self.ir.instrs[instr] {
-                Instr::Static => {
-                    instr += 1;
-                    loop {
-                        match self.ir.instrs[instr] {
-                            Instr::EndStatic => break,
-                            Instr::Val(valdef) => {
-                                let val = self.cache.valdef(self.ctx, valdef);
-                                self.statics.insert(instr, val);
-                            }
-                            Instr::Int32(n) => {
-                                let val = self.cache.val_int32(n);
-                                self.statics.insert(instr, val);
-                            }
-                            Instr::String(s) => {
-                                let val = self.cache.val_string(s);
-                                self.statics.insert(instr, val);
-                            }
-                            _ => panic!(),
-                        }
-                        instr += 1;
+    fn expr(&mut self, env: EnvId, expr: Expr) {
+        match expr {
+            Expr::Param { ty } => {
+                // The function parameter occupies the first locals, `[0, layout_len(param))`.
+                let ty = self.eval(ty, env);
+                self.get_locals(ty, LocalId::from_usize(0));
+            }
+            Expr::Copy { value } => {
+                self.get(value);
+            }
+            Expr::Nominal { .. } => todo!("expr: Nominal (milestone B)"),
+            Expr::Tuple { elems } => {
+                for &id in elems.get(&self.ir.items) {
+                    self.get(id);
+                }
+            }
+            Expr::Record { fields } => {
+                for &(_, id) in fields.get(&self.ir.records) {
+                    self.get(id);
+                }
+            }
+            Expr::Elem { tuple, index } => {
+                let (ty, mut start) = self.local(tuple);
+                let Object::TyTuple(range) = self.obj(ty) else {
+                    panic!()
+                };
+                // TODO: Make this not be linear time.
+                for i in (IdRange {
+                    start: ElemId::new(0),
+                    end: index,
+                }) {
+                    start += self
+                        .layout_len(self.tuples[TupleLoc::from_raw(range.start.raw() + i.raw())]);
+                }
+                let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
+                self.get_locals(self.tuples[elem], start);
+            }
+            Expr::Field { record, index } => {
+                let (ty, mut start) = self.local(record);
+                let Object::TyTuple(range) = self.obj(ty) else {
+                    panic!()
+                };
+                // TODO: Make this not be linear time.
+                for i in (IdRange {
+                    start: FieldId::new(0),
+                    end: index,
+                }) {
+                    start += self
+                        .layout_len(self.tuples[TupleLoc::from_raw(range.start.raw() + i.raw())]);
+                }
+                let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
+                self.get_locals(self.tuples[elem], start);
+            }
+            Expr::Val { val } => {
+                let mut obj = self.eval(val, env);
+                // A contextual value can surface as a closure over its binding's lambda (e.g. a
+                // `BindDef` member like `true=1` reached through a context projection). With no
+                // needs left to supply, applying it to nothing projects out the bound value.
+                while let Object::Closure(lnode, _) = self.obj(obj) {
+                    let lower::Node::Lambda { needs, .. } = self.ir.nodes[lnode.index()] else {
+                        break;
+                    };
+                    if !needs.is_empty() {
+                        break;
                     }
+                    obj = self.apply(obj, &[]);
                 }
-                Instr::EndStatic => panic!(),
-                Instr::BindVal(valdef, local) => {
-                    if let Some(&val) = self.statics.get(&local) {
-                        let ctx = self.ctx;
-                        let mut context = self.cache[self.ctx].clone();
-                        context.set_val(valdef, val);
-                        self.ctx = self.cache.make_ctx(context);
-                        instr = self.instrs(param, instr + 1);
-                        self.ctx = ctx;
-                    } else {
-                        self.get_val(valdef);
-                        let ty = {
-                            let val = self.cache.valdef(self.ctx, valdef);
-                            match self.cache[val] {
-                                // We don't need any temporary locals to restore static bindings.
-                                Val::Bool(_) | Val::Int32(_) | Val::String(_) => {
-                                    self.cache.ty_unit()
-                                }
-                                Val::Dynamic(_, ty) => ty,
-                            }
-                        };
-                        let tmp = self.set_tmp(ty);
-                        self.get(local);
-                        let ctx = self.ctx;
-                        let context = {
-                            let mut context = self.cache[self.ctx].clone();
-                            let Local { ctx, start: _ } = self.variables[&local];
-                            let ty = self.cache.ty(ctx, self.ir.locals[local]);
-                            let val = self.cache.val_dynamic(valdef, ty);
-                            context.set_val(valdef, val);
-                            context
-                        };
-                        self.ctx = self.cache.make_ctx(context);
-                        self.set_val(valdef);
-                        instr = self.instrs(param, instr + 1);
-                        self.ctx = ctx;
-                        self.get_tmp(tmp);
-                        self.set_val(valdef);
-                    }
-                }
-                Instr::EndBind => break,
-                Instr::Val(valdef) => self.get_val(valdef),
-                Instr::Param => {
-                    self.get_locals(param, LocalId::from_raw(0));
-                }
-                Instr::Copy(local) => {
-                    self.get(local);
-                }
-                Instr::Set(lhs, rhs) => {
+                self.materialize(obj);
+            }
+            Expr::Call { func, arg } => {
+                let head = self.eval(func, env);
+                // Push the runtime argument, then emit the call/instruction/intrinsic.
+                self.get(arg);
+                self.emit_call(head);
+            }
+            Expr::Bind { .. } => todo!("expr: Bind (milestone C)"),
+        }
+    }
+
+    fn interp(&mut self, env: EnvId, body: Body) -> ObjectId {
+        for instr in body.body {
+            let result = match self.ir.instrs[instr] {
+                Instr::Set { lhs, rhs } => {
+                    let (ty, start) = self.local(lhs);
                     self.get(rhs);
-                    let Local { ctx, start } = self.variables[&lhs];
-                    let ty = self.cache.ty(ctx, self.ir.locals[lhs]);
                     self.set_locals(ty, start);
+                    self.mkobj(Object::ValStmt)
                 }
-                Instr::Int32(n) => {
-                    self.body.insn().i32_const(n as i32);
-                }
-                Instr::String(id) => {
-                    self.string(id);
-                }
-                Instr::Tuple(locals) => {
-                    for &id in locals.get(&self.ir.refs) {
-                        self.get(id);
-                    }
-                }
-                Instr::Struct(_, locals) => {
-                    for &id in locals.get(&self.ir.refs) {
-                        self.get(id);
-                    }
-                }
-                Instr::Elem(tuple, index) => {
-                    let Local { ctx, mut start } = self.variables[&tuple];
-                    let ty = self.cache.ty(ctx, self.ir.locals[tuple]);
-                    let range = self.cache[ty].tuple();
-                    // TODO: Make this not be linear time.
-                    for i in (IdRange {
-                        start: ElemId::new(0),
-                        end: index,
-                    }) {
-                        start += self.layout_len(
-                            self.cache[TupleLoc::from_raw(range.start.raw() + i.raw())],
-                        );
-                    }
-                    let elem = TupleLoc::from_raw(range.start.raw() + index.raw());
-                    self.get_locals(self.cache[elem], start);
-                }
-                Instr::Field(record, index) => {
-                    let Local { ctx, mut start } = self.variables[&record];
-                    let ty = self.cache.ty(ctx, self.ir.locals[record]);
-                    let range = self.cache[ty].structdef();
-                    // TODO: Make this not be linear time.
-                    for i in (IdRange {
-                        start: FieldId::new(0),
-                        end: index,
-                    }) {
-                        start += self.layout_len(
-                            self.cache[TupleLoc::from_raw(range.start.raw() + i.raw())],
-                        );
-                    }
-                    let field = TupleLoc::from_raw(range.start.raw() + index.raw());
-                    self.get_locals(self.cache[field], start);
-                }
-                Instr::Int32Arith(a, op, b) => {
-                    self.get(a);
-                    self.get(b);
-                    match op {
-                        Int32Arith::Add => self.body.insn().i32_add(),
-                        Int32Arith::Sub => self.body.insn().i32_sub(),
-                        Int32Arith::Mul => self.body.insn().i32_mul(),
-                        Int32Arith::Div => self.body.insn().i32_div_s(),
-                        Int32Arith::Rem => self.body.insn().i32_rem_s(),
-                    };
-                }
-                Instr::Int32Comp(a, op, b) => {
-                    self.get(a);
-                    self.get(b);
-                    match op {
-                        Int32Comp::Eq => self.body.insn().i32_eq(),
-                        Int32Comp::Neq => self.body.insn().i32_ne(),
-                        Int32Comp::Lt => self.body.insn().i32_lt_s(),
-                        Int32Comp::Gt => self.body.insn().i32_gt_s(),
-                        Int32Comp::Leq => self.body.insn().i32_le_s(),
-                        Int32Comp::Geq => self.body.insn().i32_ge_s(),
-                    };
-                }
-                Instr::Call(fndef, local) => {
-                    self.get(local);
-                    let f = self.cache.fndef(self.ctx, fndef);
-                    match self.cache[f] {
-                        Fn::Builtin(builtin) => match self.builtins[builtin] {
-                            Builtin::Instruction(instruction) => {
-                                match instruction {
-                                    Instruction::Unreachable => {
-                                        self.body.insn().unreachable();
-                                    }
-
-                                    Instruction::I32Load => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_load(memarg);
-                                    }
-                                    Instruction::I64Load => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load(memarg);
-                                    }
-                                    Instruction::I32Load8S => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_load8_s(memarg);
-                                    }
-                                    Instruction::I32Load8U => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_load8_u(memarg);
-                                    }
-                                    Instruction::I32Load16S => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_load16_s(memarg);
-                                    }
-                                    Instruction::I32Load16U => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_load16_u(memarg);
-                                    }
-                                    Instruction::I64Load8S => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load8_s(memarg);
-                                    }
-                                    Instruction::I64Load8U => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load8_u(memarg);
-                                    }
-                                    Instruction::I64Load16S => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load16_s(memarg);
-                                    }
-                                    Instruction::I64Load16U => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load16_u(memarg);
-                                    }
-                                    Instruction::I64Load32S => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load32_s(memarg);
-                                    }
-                                    Instruction::I64Load32U => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_load32_u(memarg);
-                                    }
-                                    Instruction::I32Store => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_store(memarg);
-                                    }
-                                    Instruction::I64Store => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_store(memarg);
-                                    }
-                                    Instruction::I32Store8 => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_store8(memarg);
-                                    }
-                                    Instruction::I32Store16 => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i32_store16(memarg);
-                                    }
-                                    Instruction::I64Store8 => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_store8(memarg);
-                                    }
-                                    Instruction::I64Store16 => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_store16(memarg);
-                                    }
-                                    Instruction::I64Store32 => {
-                                        let memarg = self.memarg();
-                                        self.body.insn().i64_store32(memarg);
-                                    }
-                                    Instruction::MemorySize => {
-                                        let memidx = self.val_i32_as_u32(self.val_memidx);
-                                        self.body.insn().memory_size(memidx);
-                                    }
-                                    Instruction::MemoryGrow => {
-                                        let memidx = self.val_i32_as_u32(self.val_memidx);
-                                        self.body.insn().memory_grow(memidx);
-                                    }
-                                    Instruction::MemoryCopy => {
-                                        let dst = self.val_i32_as_u32(self.val_dst);
-                                        let src = self.val_i32_as_u32(self.val_src);
-                                        self.body.insn().memory_copy(dst, src);
-                                    }
-                                    Instruction::MemoryFill => {
-                                        let memidx = self.val_i32_as_u32(self.val_memidx);
-                                        self.body.insn().memory_fill(memidx);
-                                    }
-
-                                    Instruction::I32Eqz => {
-                                        self.body.insn().i32_eqz();
-                                    }
-                                    Instruction::I32Eq => {
-                                        self.body.insn().i32_eq();
-                                    }
-                                    Instruction::I32Ne => {
-                                        self.body.insn().i32_ne();
-                                    }
-                                    Instruction::I32LtS => {
-                                        self.body.insn().i32_lt_s();
-                                    }
-                                    Instruction::I32LtU => {
-                                        self.body.insn().i32_lt_u();
-                                    }
-                                    Instruction::I32GtS => {
-                                        self.body.insn().i32_gt_s();
-                                    }
-                                    Instruction::I32GtU => {
-                                        self.body.insn().i32_gt_u();
-                                    }
-                                    Instruction::I32LeS => {
-                                        self.body.insn().i32_le_s();
-                                    }
-                                    Instruction::I32LeU => {
-                                        self.body.insn().i32_le_u();
-                                    }
-                                    Instruction::I32GeS => {
-                                        self.body.insn().i32_ge_s();
-                                    }
-                                    Instruction::I32GeU => {
-                                        self.body.insn().i32_ge_u();
-                                    }
-                                    Instruction::I64Eqz => {
-                                        self.body.insn().i64_eqz();
-                                    }
-                                    Instruction::I64Eq => {
-                                        self.body.insn().i64_eq();
-                                    }
-                                    Instruction::I64Ne => {
-                                        self.body.insn().i64_ne();
-                                    }
-                                    Instruction::I64LtS => {
-                                        self.body.insn().i64_lt_s();
-                                    }
-                                    Instruction::I64LtU => {
-                                        self.body.insn().i64_lt_u();
-                                    }
-                                    Instruction::I64GtS => {
-                                        self.body.insn().i64_gt_s();
-                                    }
-                                    Instruction::I64GtU => {
-                                        self.body.insn().i64_gt_u();
-                                    }
-                                    Instruction::I64LeS => {
-                                        self.body.insn().i64_le_s();
-                                    }
-                                    Instruction::I64LeU => {
-                                        self.body.insn().i64_le_u();
-                                    }
-                                    Instruction::I64GeS => {
-                                        self.body.insn().i64_ge_s();
-                                    }
-                                    Instruction::I64GeU => {
-                                        self.body.insn().i64_ge_u();
-                                    }
-                                    Instruction::I32Clz => {
-                                        self.body.insn().i32_clz();
-                                    }
-                                    Instruction::I32Ctz => {
-                                        self.body.insn().i32_ctz();
-                                    }
-                                    Instruction::I32Popcnt => {
-                                        self.body.insn().i32_popcnt();
-                                    }
-                                    Instruction::I32Add => {
-                                        self.body.insn().i32_add();
-                                    }
-                                    Instruction::I32Sub => {
-                                        self.body.insn().i32_sub();
-                                    }
-                                    Instruction::I32Mul => {
-                                        self.body.insn().i32_mul();
-                                    }
-                                    Instruction::I32DivS => {
-                                        self.body.insn().i32_div_s();
-                                    }
-                                    Instruction::I32DivU => {
-                                        self.body.insn().i32_div_u();
-                                    }
-                                    Instruction::I32RemS => {
-                                        self.body.insn().i32_rem_s();
-                                    }
-                                    Instruction::I32RemU => {
-                                        self.body.insn().i32_rem_u();
-                                    }
-                                    Instruction::I32And => {
-                                        self.body.insn().i32_and();
-                                    }
-                                    Instruction::I32Or => {
-                                        self.body.insn().i32_or();
-                                    }
-                                    Instruction::I32Xor => {
-                                        self.body.insn().i32_xor();
-                                    }
-                                    Instruction::I32Shl => {
-                                        self.body.insn().i32_shl();
-                                    }
-                                    Instruction::I32ShrS => {
-                                        self.body.insn().i32_shr_s();
-                                    }
-                                    Instruction::I32ShrU => {
-                                        self.body.insn().i32_shr_u();
-                                    }
-                                    Instruction::I32Rotl => {
-                                        self.body.insn().i32_rotl();
-                                    }
-                                    Instruction::I32Rotr => {
-                                        self.body.insn().i32_rotr();
-                                    }
-                                    Instruction::I64Clz => {
-                                        self.body.insn().i64_clz();
-                                    }
-                                    Instruction::I64Ctz => {
-                                        self.body.insn().i64_ctz();
-                                    }
-                                    Instruction::I64Popcnt => {
-                                        self.body.insn().i64_popcnt();
-                                    }
-                                    Instruction::I64Add => {
-                                        self.body.insn().i64_add();
-                                    }
-                                    Instruction::I64Sub => {
-                                        self.body.insn().i64_sub();
-                                    }
-                                    Instruction::I64Mul => {
-                                        self.body.insn().i64_mul();
-                                    }
-                                    Instruction::I64DivS => {
-                                        self.body.insn().i64_div_s();
-                                    }
-                                    Instruction::I64DivU => {
-                                        self.body.insn().i64_div_u();
-                                    }
-                                    Instruction::I64RemS => {
-                                        self.body.insn().i64_rem_s();
-                                    }
-                                    Instruction::I64RemU => {
-                                        self.body.insn().i64_rem_u();
-                                    }
-                                    Instruction::I64And => {
-                                        self.body.insn().i64_and();
-                                    }
-                                    Instruction::I64Or => {
-                                        self.body.insn().i64_or();
-                                    }
-                                    Instruction::I64Xor => {
-                                        self.body.insn().i64_xor();
-                                    }
-                                    Instruction::I64Shl => {
-                                        self.body.insn().i64_shl();
-                                    }
-                                    Instruction::I64ShrS => {
-                                        self.body.insn().i64_shr_s();
-                                    }
-                                    Instruction::I64ShrU => {
-                                        self.body.insn().i64_shr_u();
-                                    }
-                                    Instruction::I64Rotl => {
-                                        self.body.insn().i64_rotl();
-                                    }
-                                    Instruction::I64Rotr => {
-                                        self.body.insn().i64_rotr();
-                                    }
-                                    Instruction::I32WrapI64 => {
-                                        self.body.insn().i32_wrap_i64();
-                                    }
-                                    Instruction::I64ExtendI32S => {
-                                        self.body.insn().i64_extend_i32_s();
-                                    }
-                                    Instruction::I64ExtendI32U => {
-                                        self.body.insn().i64_extend_i32_u();
-                                    }
-                                    Instruction::I32Extend8S => {
-                                        self.body.insn().i32_extend8_s();
-                                    }
-                                    Instruction::I32Extend16S => {
-                                        self.body.insn().i32_extend16_s();
-                                    }
-                                    Instruction::I64Extend8S => {
-                                        self.body.insn().i64_extend8_s();
-                                    }
-                                    Instruction::I64Extend16S => {
-                                        self.body.insn().i64_extend16_s();
-                                    }
-                                    Instruction::I64Extend32S => {
-                                        self.body.insn().i64_extend32_s();
-                                    }
-                                };
-                            }
-                            Builtin::Function(funcidx) => {
-                                self.body.insn().call(funcidx);
-                            }
-                        },
-                        Fn::Fndef(_, _) => {
-                            let funcidx = self.funcs.get(f).copied().unwrap_or_else(|| {
-                                assert_eq!(f, self.funcs.len_idx());
-                                let funcidx = Some(self.next_funcidx);
-                                self.funcs.push(funcidx);
-                                self.next_funcidx += 1;
-                                funcidx
-                            });
-                            self.body.insn().call(funcidx.unwrap());
-                        }
-                    }
-                }
-                Instr::If(cond, ty) => {
-                    let Local { ctx, start: _ } = self.variables[&cond];
-                    let ty = self.cache.ty(ctx, ty);
+                Instr::If { ty, cond } => {
+                    let ty = self.eval(ty, env);
                     let layout = self.layout_vec(ty);
                     let typeidx = self.section_type.len();
                     self.section_type.ty().function([], layout);
                     self.get(cond);
                     self.body.insn().if_(BlockType::FunctionType(typeidx));
+                    self.mkobj(Object::ValStmt)
                 }
-                Instr::Else(local) => {
-                    self.get(local);
+                Instr::Else { result } => {
+                    self.get(result);
                     self.body.insn().else_();
-                    instr += 1;
-                    continue;
+                    self.mkobj(Object::ValStmt)
                 }
-                Instr::EndIf(local) => {
-                    self.get(local);
+                Instr::EndIf { result } => {
+                    self.get(result);
                     self.body.insn().end();
+                    // TODO: Properly handle the value returned from `if`/`else`.
+                    self.mkobj(Object::ValStmt)
                 }
                 Instr::Loop => {
                     self.body.insn().loop_(BlockType::Empty);
+                    self.mkobj(Object::ValStmt)
                 }
                 Instr::EndLoop => {
                     self.body.insn().end();
+                    self.mkobj(Object::ValStmt)
                 }
-                Instr::Br(depth) => {
+                Instr::Br { depth } => {
                     self.body.insn().br(depth.0);
+                    self.mkobj(Object::ValStmt)
                 }
-                Instr::Return(local) => {
-                    self.get(local);
-                    self.body.insn().end();
-                    break;
+                Instr::Expr { ty, expr } => {
+                    let ty = self.eval(ty, env);
+                    self.expr(env, expr);
+                    self.set(ty)
                 }
-            }
-            self.set(instr);
-            instr += 1;
+            };
+            self.variables.insert(instr, result);
         }
-        instr
+        self.variables[&body.result()]
     }
 
     fn funcidx(&self) -> u32 {
@@ -896,235 +1416,249 @@ impl<'a> Wasm<'a> {
         self.section_import.len() + self.section_function.len()
     }
 
-    fn func(&mut self, f: FnId) {
-        match self.cache[f] {
-            Fn::Builtin(_) => panic!(),
-            Fn::Fndef(ctx, fndef) => {
-                self.ctx = ctx;
-                let Fndef {
-                    needs: _,
-                    param,
-                    result,
-                } = self.ir.fndefs[fndef];
-                let param = self.cache.ty(self.ctx, param);
-                let result = self.cache.ty(self.ctx, result);
+    fn func(&mut self, funcidx: u32) {
+        match self.get_func(funcidx) {
+            Object::FnDef(fndef, env) => {
+                let Sigdef(sig) = self.ir.fndefs[fndef];
+                // Monomorphize the signature against the environment (which binds the fndef's
+                // needs) to lay out params and results. `env` already binds the sig lambda's needs,
+                // so evaluate its *result* directly rather than re-applying the lambda.
+                let lower::Node::Lambda {
+                    result: sig_result, ..
+                } = self.ir.nodes[sig.index()]
+                else {
+                    panic!("fndef sig is not a lambda")
+                };
+                let signature = self.eval(sig_result, env);
+                let Object::Sig(param, result) = self.obj(signature) else {
+                    panic!()
+                };
                 let params = self.layout_vec(param);
                 let results = self.layout_vec(result);
-                self.instrs(param, self.ir.bodies[fndef].unwrap());
+                // The parameter occupies the first locals; body instructions add more after it.
+                self.make_locals(param);
+                let body = self.ir.bodies[fndef];
+                self.interp(env, body);
+                // Leave the body's result value on the operand stack, then close the function.
+                self.get(body.result());
+                self.body.insn().end();
                 let mut f =
                     Function::new_with_locals_types(self.locals.iter().skip(params.len()).copied());
                 f.raw(take(&mut self.body));
                 self.locals = Default::default();
                 self.variables = Default::default();
-                self.statics = Default::default();
                 self.section_code.function(&f);
                 self.section_function.function(self.section_type.len());
                 self.section_type.ty().function(params, results);
             }
+            _ => panic!(),
+        }
+    }
+
+    /// The root environment for `main`: its needs bound to the concrete root context. `main`'s
+    /// sole need (if any) is its `Std`, built from the root `Wasi` via the `std` bridge.
+    fn root_env(&mut self, wasi_ctx: ObjectId) -> EnvId {
+        let Sigdef(sig) = self.ir.fndefs[self.main];
+        let lower::Node::Lambda { needs, .. } = self.ir.nodes[sig.index()] else {
+            panic!("main sig is not a lambda")
+        };
+        let need_nodes: Vec<lower::NodeId> = self.ir.lists[needs].to_vec();
+        if need_nodes.is_empty() {
+            return self.env_empty();
+        }
+        let std_ctx = self.build_std(wasi_ctx);
+        let pairs: Vec<(lower::NodeId, ObjectId)> =
+            need_nodes.into_iter().map(|n| (n, std_ctx)).collect();
+        self.mkenv(&pairs)
+    }
+
+    /// Does `def`'s signature return a context (`bind ...`) rather than a value? Such a function is
+    /// a context *constructor*; applying it statically yields the context its body builds.
+    fn returns_ctx(&self, def: FndefId) -> bool {
+        // The fndef body is `Lambda { result: Sig { param, result: <return type> } }`. A `bind`
+        // return type was lowered to a `Lambda` (returning the context's slot list); a value return
+        // type is an ordinary type node.
+        let Sigdef(sig) = self.ir.fndefs[def];
+        let lower::Node::Lambda {
+            result: sigresult, ..
+        } = self.ir.nodes[sig.index()]
+        else {
+            return false;
+        };
+        let lower::Node::Sig { result, .. } = self.ir.nodes[sigresult.index()] else {
+            return false;
+        };
+        matches!(self.ir.nodes[result.index()], lower::Node::Lambda { .. })
+    }
+
+    /// Evaluate the context built by a context-constructor `def`'s body, under `env` (which binds
+    /// the def's needs). The body's result is a `Bind { ctx }`, possibly reached through a `Copy`.
+    fn eval_ctx_body(&mut self, def: FndefId, env: EnvId) -> ObjectId {
+        let body = self.ir.bodies[def];
+        let mut instr = body.result();
+        let ctx = loop {
+            match self.ir.instrs[instr] {
+                Instr::Expr {
+                    expr: Expr::Bind { ctx },
+                    ..
+                } => break ctx,
+                Instr::Expr {
+                    expr: Expr::Copy { value },
+                    ..
+                } => instr = value,
+                other => panic!("ctx-ctor body result is not a `bind`: {other:?}"),
+            }
+        };
+        self.eval(ctx, env)
+    }
+
+    /// Construct the `Std` context Object via the `std` bridge (`fn std[Wasi](): bind Std`) against
+    /// the root `Wasi` context. `std`'s body is `bind bootstrap(...)`, a single-frame context that
+    /// *forwards* `bootstrap`'s `Std`; unwrap that frame to expose `Std`'s members directly.
+    fn build_std(&mut self, wasi_ctx: ObjectId) -> ObjectId {
+        let std_def = self.named(self.lib.wasi, "std").fndef();
+        let Sigdef(sig) = self.ir.fndefs[std_def];
+        let lower::Node::Lambda { needs, .. } = self.ir.nodes[sig.index()] else {
+            panic!("std sig is not a lambda")
+        };
+        let wasi_need = self.ir.lists[needs].to_vec()[0];
+        let std_env = self.mkenv(&[(wasi_need, wasi_ctx)]);
+        let wrapped = self.eval_ctx_body(std_def, std_env);
+        let Object::Ctx(range) = self.obj(wrapped) else {
+            panic!("std bridge did not produce a context")
+        };
+        if range.end.raw() - range.start.raw() == 1 {
+            let slot0 = self.tuples[range.start];
+            self.force(slot0)
+        } else {
+            wrapped
+        }
+    }
+
+    /// B1 validation: evaluate each `Val`/`Call` projection in `main`'s body against `root_env` and
+    /// log the resulting [`Object`], confirming context resolution works without emitting code.
+    fn validate(&mut self, root_env: EnvId) {
+        eprintln!("=== B1 validation: main's projections ===");
+        let body = self.ir.bodies[self.main];
+        let instrs: Vec<InstrId> = body.body.into_iter().collect();
+        for instr in instrs {
+            // Evaluate each instruction's *type* node — these are the `Get{Std, slot}` projections,
+            // which test ctxdef-order resolution without forcing the B2 value desugar.
+            if let Instr::Expr { ty, .. } = self.ir.instrs[instr] {
+                let o = self.eval(ty, root_env);
+                eprintln!(
+                    "  i{} ty %{} -> {:?}",
+                    instr.index(),
+                    ty.index(),
+                    self.obj(o)
+                );
+            }
+        }
+    }
+
+    fn dbg_node(&self, tag: &str, node: lower::NodeId, depth: usize) {
+        if depth > 6 {
+            return;
+        }
+        let n = self.ir.nodes[node.index()];
+        eprintln!("{}{tag} %{} = {n:?}", "  ".repeat(depth), node.index());
+        use lower::Node::*;
+        let kids: Vec<lower::NodeId> = match n {
+            Lambda { needs, result, .. } => self.ir.lists[needs]
+                .iter()
+                .copied()
+                .chain([result])
+                .collect(),
+            Apply { lambda, args } => [lambda]
+                .into_iter()
+                .chain(self.ir.lists[args].iter().copied())
+                .collect(),
+            List { items } | Tuple { elems: items } => self.ir.lists[items].to_vec(),
+            Need { param, .. } => vec![param],
+            Get { ctx, .. } => vec![ctx],
+            Bind { args, bind } => self.ir.lists[args].iter().copied().chain([bind]).collect(),
+            BindDef { bind, .. } => vec![bind],
+            Sig { param, result } => vec![param, result],
+            _ => vec![],
+        };
+        for k in kids {
+            self.dbg_node("", k, depth + 1);
         }
     }
 
     fn program(mut self) -> Vec<u8> {
-        let mut context = self.cache[self.ctx].clone();
-        let val_false =
-            self.names.valdefs[&(self.lib.bool, self.ir.strings.get_id("false").unwrap())];
-        let val_true =
-            self.names.valdefs[&(self.lib.bool, self.ir.strings.get_id("true").unwrap())];
-        context.set_val(val_false, self.cache.val_bool(false));
-        context.set_val(val_true, self.cache.val_bool(true));
-
-        let ty_memidx =
-            self.names.tydefs[&(self.lib.wasm, self.ir.strings.get_id("MemIdx").unwrap())];
-        context.set_ty(ty_memidx, self.cache.ty_int32());
-        let memidx_wasi = 0;
-        context.set_val(self.val_memidx, self.cache.val_int32(memidx_wasi));
-        let memidx_valdefs: Vec<ValdefId> = self
-            .cache
-            .fndef_valdefs(self.main)
-            .filter(|&valdef| {
-                // Skip the special WASI memory here, because we always want it to be index zero.
-                valdef != self.val_memidx
-                    && self.ir.types[self.ir.valdefs[valdef].ty.index()]
-                        == lower::Type::Tydef(ty_memidx)
-            })
-            .collect();
-        for (i, &valdef) in memidx_valdefs.iter().enumerate() {
-            context.set_val(valdef, self.cache.val_int32((i + 1) as u32));
-        }
-
-        for instruction in Instruction::iter() {
-            let builtin = self.builtins.push(Builtin::Instruction(instruction));
-            let f = self.cache.fn_builtin(builtin);
-            assert_eq!(self.funcs.push(None), f);
-            let name = self.ir.strings.get_id(<&str>::from(instruction)).unwrap();
-            let fndef = self.names.fndefs[&(self.lib.wasm, name)];
-            context.set_fn(fndef, f);
-        }
-
-        // We use the ordering from the `context` definition instead of, for instance, just using
-        // the iteration order of `self.names`, since that would be nondeterministic.
-        let wasip1_fndefs: IndexSet<FndefId> = self.ir.ctxdefs
-            [self.names.ctxdefs[&(self.lib.wasip1, self.ir.strings.get_id("wasip1").unwrap())]]
-            .def
-            .fns
-            .get(&self.ir.need_fns)
-            .iter()
-            .map(|need| need.id)
-            .collect();
-        // It isn't ideal to iterate through every name binding from every module just to filter out
-        // all the ones except from the one module we care about, but it's fine for now.
-        let wasip1_names: HashMap<FndefId, StrId> = self
-            .names
-            .fndefs
-            .iter()
-            .filter(|&(&(module, _), &fndef)| {
-                module == self.lib.wasip1 && wasip1_fndefs.contains(&fndef)
-            })
-            .map(|(&(_, name), &fndef)| (fndef, name))
-            .collect();
-        for &fndef in &wasip1_fndefs {
-            let builtin = self.builtins.push(Builtin::Function(self.funcidx()));
-            let f = self.cache.fn_builtin(builtin);
-            assert_eq!(self.funcs.push(None), f);
-            context.set_fn(fndef, f);
-            let Fndef {
-                needs: _,
-                param,
-                result,
-            } = self.ir.fndefs[fndef];
-            let param = self.cache.ty(self.ctx, param);
-            let result = self.cache.ty(self.ctx, result);
-            let params =
-                self.cache[self.cache[param].tuple()]
-                    .iter()
-                    .map(|&ty| match self.cache[ty] {
-                        Ty::Int32 => ValType::I32,
-                        Ty::Int64 => ValType::I64,
-                        _ => panic!(),
-                    });
-            let results: &[ValType] = match self.cache[result] {
-                Ty::Int32 => &[ValType::I32],
-                Ty::Tuple(elems) => {
-                    assert!(elems.is_empty());
-                    &[]
+        if std::env::var("MOSS_DBG").is_ok() {
+            let Sigdef(sig) = self.ir.fndefs[self.main];
+            eprintln!("=== main sig node ===");
+            self.dbg_node("sig", sig, 0);
+            eprintln!("=== main body ===");
+            let body = self.ir.bodies[self.main];
+            for instr in body.body {
+                eprintln!("i{} = {:?}", instr.index(), self.ir.instrs[instr]);
+                if let Instr::Expr { ty, expr } = self.ir.instrs[instr] {
+                    self.dbg_node("  ty", ty, 1);
+                    match expr {
+                        Expr::Call { func, .. } => self.dbg_node("  func", func, 1),
+                        Expr::Val { val } => self.dbg_node("  val", val, 1),
+                        Expr::Bind { ctx } => self.dbg_node("  ctx", ctx, 1),
+                        _ => {}
+                    }
                 }
-                _ => panic!(),
-            };
-            self.section_import.import(
-                WASIP1,
-                &self.ir.strings[wasip1_names[&fndef]],
-                EntityType::Function(self.section_type.len()),
-            );
-            self.section_type
-                .ty()
-                .function(params, results.iter().copied());
+            }
+        }
+        let wasip1_sigdefs = self.wasip1_sigdefs();
+        let wasi_ctx = self.wasi_ctx(&wasip1_sigdefs);
+
+        // The runtime hands `main` its `Std`; the backend constructs that `Std` from the root
+        // `Wasi` via the `std` bridge, and binds it as `main`'s sole need.
+        let root_env = self.root_env(wasi_ctx);
+
+        // B1 validation: check that `main`'s context projections resolve to sane Objects, without
+        // emitting any code. (`MOSS_B1=1` stops here; the emission path is milestone B2.)
+        if std::env::var("MOSS_B1").is_ok() {
+            self.validate(root_env);
+            return Vec::new();
         }
 
-        let global_stack = self.section_global.len();
+        // Register `main` itself as the first defined function, monomorphized against the root
+        // context. The worklist loop below then emits it (and anything it transitively calls).
+        self.insert_func(Object::FnDef(self.main, root_env));
 
-        let builtin_stack = self.builtins.push(Builtin::Function(self.funcidx()));
-        let f_stack = self.cache.fn_builtin(builtin_stack);
-        assert_eq!(self.funcs.push(None), f_stack);
-        let fndef_stack =
-            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("stack").unwrap())];
-        context.set_fn(fndef_stack, f_stack);
-        self.section_function.function(self.section_type.len());
-        self.section_type.ty().function([], [ValType::I32]);
-        self.section_code.function(&{
-            let mut f = Function::new([]);
-            f.instructions().global_get(global_stack).end();
-            f
-        });
+        let main_funcidx = self.funcidx();
+        let mut next_fn = main_funcidx;
+        while next_fn < self.next_funcidx() {
+            self.func(next_fn);
+            next_fn += 1;
+        }
 
-        let builtin_reserve = self.builtins.push(Builtin::Function(self.funcidx()));
-        let f_reserve = self.cache.fn_builtin(builtin_reserve);
-        assert_eq!(self.funcs.push(None), f_reserve);
-        let fndef_reserve =
-            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("reserve").unwrap())];
-        context.set_fn(fndef_reserve, f_reserve);
-        self.section_function.function(self.section_type.len());
-        self.section_type.ty().function([ValType::I32], []);
-        self.section_code.function(&{
-            let mut f = Function::new([]);
-            f.instructions()
-                .global_get(global_stack)
-                .i64_extend_i32_u()
-                .local_get(0)
-                .i64_extend_i32_u()
-                .i64_add()
-                .i64_const(u16::MAX as i64)
-                .i64_add()
-                .i64_const(16)
-                .i64_shr_u()
-                .i32_wrap_i64()
-                .memory_size(memidx_wasi)
-                .i32_sub()
-                .memory_grow(memidx_wasi)
-                .drop()
-                .end();
-            f
-        });
-
-        let builtin_claim = self.builtins.push(Builtin::Function(self.funcidx()));
-        let f_claim = self.cache.fn_builtin(builtin_claim);
-        assert_eq!(self.funcs.push(None), f_claim);
-        let fndef_claim =
-            self.names.fndefs[&(self.lib.wasi, self.ir.strings.get_id("claim").unwrap())];
-        context.set_fn(fndef_claim, f_claim);
-        self.section_function.function(self.section_type.len());
-        self.section_type.ty().function([ValType::I32], []);
-        self.section_code.function(&{
-            let mut f = Function::new([(1, ValType::I64)]);
-            f.instructions()
-                .global_get(global_stack)
-                .i64_extend_i32_u()
-                .local_get(0)
-                .i64_extend_i32_u()
-                .i64_add()
-                .i64_const(15)
-                .i64_add()
-                .i64_const(4)
-                .i64_shr_u()
-                .i64_const(4)
-                .i64_shl()
-                .local_tee(1)
-                .i64_const(u32::MAX as i64)
-                .i64_gt_u()
-                .if_(BlockType::Empty)
-                .unreachable()
-                .end()
-                .local_get(1)
-                .i32_wrap_i64()
-                .global_set(global_stack)
-                .end();
-            f
-        });
-
+        // Global 0 is the mutable bump-allocation heap pointer (`heap_global`), starting past the
+        // static data (which itself starts past the reserved `[0,16)` print scratch). The globals
+        // after it back dynamic context slots, zero-initialized (their `SetDyn`s run before any
+        // consumer can read them).
         self.section_global.global(
             GlobalType {
                 val_type: ValType::I32,
                 mutable: true,
                 shared: false,
             },
-            // We'll set this dynamically when we codegen the `_start` function, since at that point
-            // we'll know the total length of all the active data segments.
-            &ConstExpr::i32_const(0),
+            &ConstExpr::i32_const(self.data_offset),
         );
-
-        let ctx = self.cache.make_ctx(context);
-        let main = self.cache.fndef(ctx, self.main);
-        let main_funcidx = self.funcidx();
-        assert_eq!(self.funcs.push(Some(main_funcidx)), main);
-        self.next_funcidx = main_funcidx + 1;
-        let mut next_fn = main;
-        while next_fn < self.cache.next_fn() {
-            self.ctx = ctx;
-            self.func(next_fn);
-            next_fn += 1;
+        for &val_type in &self.global_types[1..] {
+            let init = match val_type {
+                ValType::I64 => ConstExpr::i64_const(0),
+                _ => ConstExpr::i32_const(0),
+            };
+            self.section_global.global(
+                GlobalType {
+                    val_type,
+                    mutable: true,
+                    shared: false,
+                },
+                &init,
+            );
         }
 
-        self.section_export
-            .export("memory", ExportKind::Memory, memidx_wasi);
+        assert_eq!(self.section_memory.len(), MEMIDX_WASI);
         self.section_memory.memory(MemoryType {
             minimum: ((self.data_offset + 65535) / 65536) as u64,
             maximum: None,
@@ -1132,32 +1666,20 @@ impl<'a> Wasm<'a> {
             shared: false,
             page_size_log2: None,
         });
-        for _ in memidx_valdefs {
-            self.section_memory.memory(MemoryType {
-                minimum: 0,
-                maximum: None,
-                memory64: false,
-                shared: false,
-                page_size_log2: None,
-            });
-        }
+        self.section_export
+            .export("memory", ExportKind::Memory, MEMIDX_WASI);
 
         let start = self.funcidx();
+        let main_funcidx = self.get_funcidx(self.main, root_env).unwrap();
+        let proc_exit = self.wasi_funcidx[&self.ir.strings.get_id("proc_exit").unwrap()];
         self.section_function.function(self.section_type.len());
         self.section_type.ty().function([], []);
         self.section_code.function(&{
             let mut f = Function::new([]);
             f.instructions()
-                .i32_const((self.data_offset + 15) / 16 * 16)
-                .global_set(global_stack)
-                .call(self.funcs[main].unwrap())
+                .call(main_funcidx)
                 .i32_const(0)
-                .call(
-                    wasip1_fndefs
-                        .iter()
-                        .position(|fndef| &self.ir.strings[wasip1_names[fndef]] == "proc_exit")
-                        .unwrap() as u32,
-                )
+                .call(proc_exit)
                 .end();
             f
         });
@@ -1178,32 +1700,59 @@ impl<'a> Wasm<'a> {
     }
 }
 
-pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
-    let cache = Cache::new(ir);
-    let ctx = cache.empty();
-    let val_memidx = names.valdefs[&(lib.wasm, ir.strings.get_id("memidx").unwrap())];
-    let val_dst = names.valdefs[&(lib.wasm, ir.strings.get_id("dst").unwrap())];
-    let val_src = names.valdefs[&(lib.wasm, ir.strings.get_id("src").unwrap())];
-    let val_align = names.valdefs[&(lib.wasm, ir.strings.get_id("align").unwrap())];
-    let val_offset = names.valdefs[&(lib.wasm, ir.strings.get_id("offset").unwrap())];
+pub fn wasm(ir: &mut IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
     Wasm {
         ir,
         names,
         lib,
         main,
-        val_memidx,
-        val_dst,
-        val_src,
-        val_align,
-        val_offset,
-        cache,
-        builtins: IndexVec::new(),
-        funcs: IndexVec::new(),
-        next_funcidx: 0,
+        // Reserve `[0,16)` of linear memory as print scratch (iovec + retptr); static data and the
+        // heap start at 16.
+        data_offset: 16,
+        objects: Default::default(),
+        tuples: Default::default(),
+        envs: Default::default(),
 
-        data_offset: Default::default(),
-        strings: Default::default(),
-        valdefs: Default::default(),
+        funcidxs: Default::default(),
+        wasi_funcidx: Default::default(),
+        intrinsics: {
+            let mut m = HashMap::new();
+            for (&(_, s), &named) in &names.names {
+                if let Named::Sigdef(d) = named {
+                    let intr = match &ir.strings[s] {
+                        "string_builder" => Some(Intrinsic::BuilderNew),
+                        "set_char" => Some(Intrinsic::SetChar),
+                        "build" => Some(Intrinsic::Build),
+                        "char_from_codepoint" => Some(Intrinsic::CharFromCp),
+                        "print" => Some(Intrinsic::Print),
+                        _ => None,
+                    };
+                    if let Some(intr) = intr {
+                        m.insert(d, intr);
+                    }
+                }
+            }
+            m
+        },
+        intrinsic_tys: {
+            let mut m = HashMap::new();
+            for (&(_, s), &named) in &names.names {
+                if let Named::Tydef(d) = named {
+                    let ty = match &ir.strings[s] {
+                        "Char" => Some(IntrinsicTy::Char),
+                        "StringBuilder" => Some(IntrinsicTy::StringBuilder),
+                        _ => None,
+                    };
+                    if let Some(ty) = ty {
+                        m.insert(d, ty);
+                    }
+                }
+            }
+            m
+        },
+        heap_global: 0,
+        global_types: vec![ValType::I32],
+        dyn_globals: HashMap::new(),
 
         section_type: Default::default(),
         section_import: Default::default(),
@@ -1214,10 +1763,8 @@ pub fn wasm(ir: &IR, names: &Names, lib: Lib, main: FndefId) -> Vec<u8> {
         section_code: Default::default(),
         section_data: Default::default(),
 
-        ctx,
-        locals: Default::default(),
         variables: Default::default(),
-        statics: Default::default(),
+        locals: Default::default(),
         body: Default::default(),
     }
     .program()

@@ -35,15 +35,11 @@
       "patterns": [
         {
           "name": "keyword.control.moss",
-          "match": "\\b(as|else|if|import|use|while)\\b"
-        },
-        {
-          "name": "keyword.other.moss",
-          "match": "\\b(static|this)\\b"
+          "match": "\\b(as|assume|else|if|import|use|while)\\b"
         },
         {
           "name": "storage.type.moss",
-          "match": "\\b(context|fn|let|struct|type|val|var)\\b"
+          "match": "\\b(bind|context|fn|let|type|val|var)\\b"
         }
       ]
     },
@@ -54,8 +50,12 @@
           "match": "\"([^\"\\\\]|\\\\[\"\\\\nrt])*\""
         },
         {
+          "name": "constant.character.moss",
+          "match": "'.'"
+        },
+        {
           "name": "constant.numeric.moss",
-          "match": "\\b\\d+\\b"
+          "match": "-?\\b\\d+(u32|i32|u64|i64|u)?\\b"
         }
       ]
     },
@@ -91,7 +91,7 @@
       "patterns": [
         {
           "name": "keyword.operator.moss",
-          "match": "!=|::|<=|==|>=|!|%|\\*|\\+|-|/|:|<|=|>"
+          "match": "!=|::|<<|<=|==|>=|>>|!|%|&|\\*|\\+|-|/|:|<|=|>|\\^|\\|"
         }
       ]
     }

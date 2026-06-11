@@ -55,9 +55,9 @@ This is supported by many WebAssembly engines, such as [Wasmtime](https://wasmti
 moss build examples/hello.moss | wasmtime -
 ```
 
-## Language
+## Documentation
 
-Documentation pending.
+See the [`docs`](docs) folder.
 
 ## Contributing
 

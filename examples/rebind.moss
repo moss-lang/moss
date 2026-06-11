@@ -1,19 +1,21 @@
+assume Std;
+
 val string: String;
 
-fn print_it[scratch, string]() {
+fn print_it[string]() {
   println(string);
 }
 
-fn hi[scratch]() {
+fn hi() {
   print_it[string="hi"]();
 }
 
-fn hello_hi[scratch, string]() {
+fn hello_hi[string]() {
   print_it();
   hi();
   print_it();
 }
 
-fn main[scratch]() {
+fn main() {
   hello_hi[string="hello"]();
 }

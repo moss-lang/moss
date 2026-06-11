@@ -51,13 +51,14 @@ fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
     let tree = parse(&tokens).map_err(|err| match err {
         ParseError::Expected { id, tokens: _ } => compiler.error(starts[id], &err.message()),
     })?;
-    let (mut ir, mut names, lib) = prelude();
+    let (mut ir, mut names, base, lib) = prelude();
     let module = lower(
         &source,
         &starts,
         &tree,
         &mut ir,
         &mut names,
+        Some(base),
         lib.prelude,
         &[],
     )
@@ -69,8 +70,8 @@ fn compile(script: &str) -> anyhow::Result<Vec<u8>> {
         };
         compiler.error(start, &message)
     })?;
-    let start = names.fndefs[&(module, ir.strings.get_id("main").unwrap())];
-    let bytes = wasm(&ir, &names, lib, start);
+    let start = names.names[&(module, ir.strings.get_id("main").unwrap())].fndef();
+    let bytes = wasm(&mut ir, &names, lib, start);
     Ok(bytes)
 }
 
