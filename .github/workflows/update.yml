@@ -1,0 +1,181 @@
+name: Update
+on:
+  schedule:
+    - cron: "0 9 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: cachix/install-nix-action@v31
+      - uses: actions/checkout@v6
+      - run: nix flake update 2>&1 | tee nix-flake-update.txt
+      - run: nix develop -c bash -c 'cargo update --verbose 2>&1 | tee cargo-update.txt'
+      - run: nix develop -c bash -c 'rm bun.lock && bun install --lockfile-only'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lockfiles
+          path: |
+            flake.lock
+            Cargo.lock
+            bun.lock
+            nix-flake-update.txt
+            cargo-update.txt
+
+  x86_64-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: lockfiles
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs .#standalone
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-linux-x86
+          path: result/bin/moss
+
+      - run: nix build --print-build-logs .#windows
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-windows-x86
+          path: result/bin/moss.exe
+
+      - run: nix build --print-build-logs .#vsix-linux-x64 -o moss-linux-x64.vsix
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-vsix-linux-x64
+          path: moss-linux-x64.vsix
+
+      - run: nix build --print-build-logs .#vsix-win32-x64 -o moss-win32-x64.vsix
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-vsix-win32-x64
+          path: moss-win32-x64.vsix
+
+  aarch64-linux:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: lockfiles
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs .#standalone
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-linux-arm
+          path: result/bin/moss
+
+      - run: nix build --print-build-logs .#vsix-linux-arm64 -o moss-linux-arm64.vsix
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-vsix-linux-arm64
+          path: moss-linux-arm64.vsix
+
+  aarch64-darwin:
+    runs-on: macos-26
+    steps:
+      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: lockfiles
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs .#standalone
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-macos-arm
+          path: result/bin/moss
+
+      - run: nix build --print-build-logs .#vsix-darwin-arm64 -o moss-darwin-arm64.vsix
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-vsix-darwin-arm64
+          path: moss-darwin-arm64.vsix
+
+  linux-x86:
+    needs: x86_64-linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: moss-linux-x86
+      - run: chmod +x moss
+      - run: ./moss --help
+
+  windows-x86:
+    needs: x86_64-linux
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: moss-windows-x86
+      - run: .\moss.exe --help
+
+  linux-arm:
+    needs: aarch64-linux
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: moss-linux-arm
+      - run: chmod +x moss
+      - run: ./moss --help
+
+  macos-arm:
+    needs: aarch64-darwin
+    runs-on: macos-26
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: moss-macos-arm
+      - run: chmod +x moss
+      - run: ./moss --help
+
+  pr:
+    needs:
+      - linux-x86
+      - windows-x86
+      - linux-arm
+      - macos-arm
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: lockfiles
+      - name: Generate pull request body
+        id: body
+        run: |
+          {
+            echo 'body<<EOF'
+            echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo '```'
+            cat nix-flake-update.txt
+            echo '```'
+            echo '```'
+            cat cargo-lock.txt
+            echo '```'
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+      - uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: Update `flake.lock`, `Cargo.lock`, and `bun.lock`
+          branch: update
+          title: Update `flake.lock`, `Cargo.lock`, and `bun.lock`
+          body: ${{ steps.body.outputs.body }}

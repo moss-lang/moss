@@ -3,6 +3,8 @@
 /.claude/
 /.direnv/
 /.envrc
+/cargo-update.txt
+/nix-flake-update.txt
 /packages/moss-vscode/bin/
 /result*
 /target/
