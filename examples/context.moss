@@ -2,14 +2,17 @@ assume Std;
 
 val string: String;
 
-fn print_it[string]() {
-  println(string);
-}
+assume string {
+  fn print_it() {
+    println(string);
+  }
 
-fn wait_for_it[string]() {
-  print_it();
+  fn wait_for_it() {
+    print_it();
+  }
 }
 
 fn main() {
-  wait_for_it[string="hello"]();
+  bind string="hello";
+  wait_for_it();
 }

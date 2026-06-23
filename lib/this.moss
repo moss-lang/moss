@@ -1,3 +1,5 @@
 type This;
 
-val this[This]: This;
+assume This {
+  val this: This;
+}

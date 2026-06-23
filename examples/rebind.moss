@@ -2,20 +2,25 @@ assume Std;
 
 val string: String;
 
-fn print_it[string]() {
-  println(string);
-}
 
 fn hi() {
-  print_it[string="hi"]();
+  bind string="hi";
+  print_it();
 }
 
-fn hello_hi[string]() {
-  print_it();
-  hi();
-  print_it();
+assume string {
+  fn print_it() {
+    println(string);
+  }
+
+  fn hello_hi() {
+    print_it();
+    hi();
+    print_it();
+  }
 }
 
 fn main() {
-  hello_hi[string="hello"]();
+  bind string="hello";
+  hello_hi();
 }

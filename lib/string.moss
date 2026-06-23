@@ -3,16 +3,26 @@ import "./int.moss" use Uint;
 
 type String;
 
-fn .to_string[String](): String;
+assume String, This {
+  fn .to_string(): String;
+}
 
 type StringBuilder;
 
-fn string_builder[StringBuilder, Uint](size: Uint): StringBuilder;
+assume StringBuilder {
+  assume Uint {
+    fn string_builder(size: Uint): StringBuilder;
 
-fn set_char[StringBuilder, Char, Uint](
-  builder: StringBuilder,
-  index: Uint,
-  character: Char,
-): StringBuilder;
+    assume Char {
+      fn set_char(
+        builder: StringBuilder,
+        index: Uint,
+        character: Char,
+      ): StringBuilder;
+    }
+  }
 
-fn build[String, StringBuilder](builder: StringBuilder): String;
+  assume String {
+    fn build(builder: StringBuilder): String;
+  }
+}

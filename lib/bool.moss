@@ -1,5 +1,6 @@
 type Bool;
 
-val false[Bool]: Bool;
-
-val true[Bool]: Bool;
+assume Bool {
+  val false: Bool;
+  val true: Bool;
+}
