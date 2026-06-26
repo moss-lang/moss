@@ -25,6 +25,24 @@ assume TokenId, AstIds {
   };
 }
 
+assume T {
+  type List;
+
+  assume List {
+    fn List.push(item: T);
+    fn List.done(): Range;
+
+    context IsList = List.push;
+  }
+}
+
+type NameList;
+
+context AstLists = NameList;
+
+assume AstLists {
+  fn name_list(): NameList;
+}
 
 type TokenSet;
 
@@ -38,7 +56,8 @@ assume TokenSet {
 
 context Parsing =
   TokenId, next, now, peek,
-  AstIds,
+  AstIds, AstLists,
+  name_list, IsList[T=NameId, List=NameList],
   TokenSet, expected, TokenSet.add, err,
 ;
 
@@ -63,7 +82,7 @@ assume Parsing {
       }
       _ => None,
     };
-    var names = ();
+    var names = name_list();
     if peek() == Use {
       next();
       loop {
