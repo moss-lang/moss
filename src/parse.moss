@@ -1,28 +1,68 @@
-import "./lex.moss" as lex;
+import "./inner.moss" use T;
+import "./lex.moss" use Token;
+import "./option.moss" use None, Option, Some;
+import "./range.moss" use Range;
 import "./token.moss" use *;
 
 type TokenId;
 
 assume TokenId {
   fn next(): TokenId;
+  fn now(): TokenId;
 }
 
-fn peek(): lex::Token;
+fn peek(): Token;
 
-type Tree = {};
+type NameId;
 
-type ParseError = (|);
+context AstIds = NameId;
 
-assume TokenId, next, peek {
-  fn parse_import(): () | ParseError {
+assume TokenId, AstIds {
+  type Import = {
+    from: TokenId,
+    name: Option[T=TokenId],
+    names: Range[T=NameId],
+  };
+}
+
+
+type TokenSet;
+
+assume TokenSet {
+  val expected: TokenSet;
+
+  fn TokenSet.add(kind: Token): TokenSet;
+
+  fn err(set: TokenSet): (|);
+}
+
+context Parsing =
+  TokenId, next, now, peek,
+  AstIds,
+  TokenSet, expected, TokenSet.add, err,
+;
+
+assume Parsing {
+  fn expect(kind: Token): TokenId {
+    let id = now();
+    if peek() == kind {
+      next();
+      id
+    } else {
+      match err(expected.add(kind)) {}
+    }
+  }
+
+  fn parse_import() {
+    expect(Import ());
     # TODO
   }
 
-  fn parse_assume(): () | ParseError {
+  fn parse_assume() {
     # TODO
   }
 
-  fn tree(): () | ParseError {
+  fn tree() {
     loop {
       match peek() {
         Eof () => return (),
