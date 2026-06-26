@@ -1,0 +1,13 @@
+[package]
+name = "lexwat-test"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+moss-core = { workspace = true }
+logos = { workspace = true }
+wasmtime = { workspace = true }
+wat = "1"

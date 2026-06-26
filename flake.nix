@@ -186,6 +186,12 @@
                   pkgs.nodejs # Used by vsce.
                   pkgs.python3
                   pkgs.rust-bin.stable.latest.default
+                  # Used by the `lexwat-test` experiment: binaryen (wasm-merge,
+                  # wasm-opt) generates its `.wasm` artifacts in build.rs; wabt
+                  # (wasm2c) + clang reproduce its "compile wasm to native" bench.
+                  pkgs.binaryen
+                  pkgs.wabt
+                  pkgs.clang
                 ];
                 MOSS_LIB = "lib";
                 shellHook = ''
