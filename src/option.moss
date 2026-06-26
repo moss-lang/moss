@@ -1,6 +1,6 @@
 import "./inner.moss" use T;
 
-type None ();
+type None;
 
 assume T {
   type Some T;

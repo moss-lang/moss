@@ -62,52 +62,52 @@ assume Char {
   assume next_byte {
     fn lex(): Token {
       match next_byte() {
-        Eof () => Eof (),
+        Eof => Eof,
         c => {
           if c == '!' {
-            Exclam ()
+            Exclam
           } else if c == '%' {
-            Percent ()
+            Percent
           } else if c == '&' {
-            Ampersand ()
+            Ampersand
           } else if c == '(' {
-            LParen ()
+            LParen
           } else if c == ')' {
-            RParen ()
+            RParen
           } else if c == '*' {
-            Star ()
+            Star
           } else if c == '+' {
-            Plus ()
+            Plus
           } else if c == ',' {
-            Comma ()
+            Comma
           } else if c == '-' {
-            Hyphen ()
+            Hyphen
           } else if c == '.' {
-            Dot ()
+            Dot
           } else if c == '/' {
-            Slash ()
+            Slash
           } else if c == ':' {
-            Colon ()
+            Colon
           } else if c == ';' {
-            Semi ()
+            Semi
           } else if c == '<' {
-            Less ()
+            Less
           } else if c == '=' {
-            Equal ()
+            Equal
           } else if c == '>' {
-            Greater ()
+            Greater
           } else if c == '[' {
-            LBracket ()
+            LBracket
           } else if c == ']' {
-            RBracket ()
+            RBracket
           } else if c == '^' {
-            Caret ()
+            Caret
           } else if c == '{' {
-            LBrace ()
+            LBrace
           } else if c == '|' {
-            Pipe ()
+            Pipe
           } else if c == '}' {
-            RBrace ()
+            RBrace
           } else {
             match panic() {}
           }

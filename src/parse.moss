@@ -53,9 +53,31 @@ assume Parsing {
     }
   }
 
-  fn parse_import() {
-    expect(Import ());
-    # TODO
+  fn parse_import(): Import {
+    expect(Import);
+    let from = expect(Str);
+    let name = match peek() {
+      As => {
+        next();
+        Some (expect(Name))
+      }
+      _ => None,
+    };
+    var names = ();
+    if peek() == Use {
+      next();
+      loop {
+        match peek() {
+          Semi => break,
+          Name => names.push(next()),
+          _ => (),
+        }
+        if peek() == Comma {
+          next();
+        }
+      }
+    }
+    { from, name, names = names.done() }
   }
 
   fn parse_assume() {
@@ -65,11 +87,11 @@ assume Parsing {
   fn tree() {
     loop {
       match peek() {
-        Eof () => return (),
-        Import () => {
+        Eof => return,
+        Import => {
           parse_import();
         }
-        Assume () => {
+        Assume => {
           parse_assume();
         }
       }
