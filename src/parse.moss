@@ -1,0 +1,38 @@
+import "./lex.moss" as lex;
+import "./token.moss" use *;
+
+type TokenId;
+
+assume TokenId {
+  fn next(): TokenId;
+}
+
+fn peek(): lex::Token;
+
+type Tree = {};
+
+type ParseError = (|);
+
+assume TokenId, next, peek {
+  fn parse_import(): () | ParseError {
+    # TODO
+  }
+
+  fn parse_assume(): () | ParseError {
+    # TODO
+  }
+
+  fn tree(): () | ParseError {
+    loop {
+      match peek() {
+        Eof () => return (),
+        Import () => {
+          parse_import();
+        }
+        Assume () => {
+          parse_assume();
+        }
+      }
+    }
+  }
+}
