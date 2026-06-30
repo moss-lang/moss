@@ -1,6 +1,6 @@
 import "./inner.moss" use T;
 import "./lex.moss" use Token;
-import "./option.moss" use None, Option, Some;
+import "./prelude.moss" use *;
 import "./range.moss" use Range;
 import "./token.moss" use *;
 

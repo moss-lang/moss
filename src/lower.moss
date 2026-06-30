@@ -1,0 +1,44 @@
+import "./parse.moss" use TokenId;
+import "./prelude.moss" use *;
+
+type StrId;
+
+assume TokenId, StrId {
+  fn TokenId.name(): StrId;
+}
+
+type ModuleId;
+
+assume ModuleId {
+  type Named =
+    | ModuleId
+  ;
+}
+
+assume ImportId, ModuleId {
+  fn ImportId.module(): ModuleId;
+}
+
+assume StrId, ModuleId {
+  fn ModuleId.insert(name: StrId, named: Named);
+  fn ModuleId.get(name: StrId);
+}
+
+assume ModuleId {
+  val here: ModuleId;
+}
+
+assume ModuleId, here {
+  fn imports() {
+    for imp in imports {
+      match imp.name {
+        None => (),
+        Some token => here.insert(token.name(), imp.module()),
+      }
+      for using in imp.names {
+        let name = using.token().name();
+        here.insert(name, imp.module().get(name));
+      }
+    }
+  }
+}
