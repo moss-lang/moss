@@ -9,13 +9,21 @@ assume TokenId, StrId {
 
 type ModuleId;
 type TypeId;
+type SymbolId;
 type NominalId;
+type ValId;
+type SigId;
+type FnId;
 
 assume ModuleId {
   type Named =
     | ModuleId
     | TypeId
+    | SymbolId
     | NominalId
+    | ValId
+    | SigId
+    | FnId
   ;
 }
 
@@ -51,10 +59,18 @@ type Context;
 
 assume Context {
   val ctx: Context;
+
+  fn Context.extend(parsed: parse::ContextId): Context;
+  fn Context.depend(parsed: parse::ContextId): Context;
 }
 
 assume Context, ctx {
+  fn symbol(): SymbolId;
   fn nominal_unit(): NominalId;
+  fn nominal(ty: TypeId): NominalId;
+  fn value(ty: TypeId): ValId;
+  fn signature(sig: parse::FnSig): SigId;
+  fn defined(sig: SigId): FnId;
 
   fn alias(ty: parse::TypeId): TypeId {
     match ty.data() {}
@@ -69,11 +85,29 @@ fn scope_items(scope: ScopeId) {
         bind ctx=extended;
         scope_items(assump.scope);
       }
+      parse::Symbol { name = token } => {
+        here.insert(token.name(), symbol());
+      }
       parse::Unit { name = token } => {
         here.insert(token.name(), nominal_unit());
       }
       parse::Nominal { name = token, ty } => {
         here.insert(token.name(), nominal(alias(ty)));
+      }
+      parse::Alias { name = token, ty } => {
+        here.insert(token.name(), alias(ty));
+      }
+      parse::Val { name = token, ty } => {
+        here.insert(token.name(), value(alias(ty)));
+      }
+      parse::Sig sig {
+        here.insert(sig.name.name(), signature(sig));
+      }
+      parse::Fn { sig } {
+        here.insert(sig.name.name(), defined(signature(sig)));
+      }
+      parse::Context { name = token, def } => {
+        here.insert(token.name(), ctx.depend(def));
       }
     }
   }

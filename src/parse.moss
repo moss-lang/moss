@@ -35,6 +35,10 @@ assume TokenId, AstIds {
     scope: ScopeId,
   };
 
+  type Symbol {
+    name: TokenId,
+  };
+
   type Unit {
     name: TokenId,
   };
@@ -44,12 +48,47 @@ assume TokenId, AstIds {
     ty: TypeId,
   };
 
+  type Alias {
+    name: TokenId,
+    ty: TypeId,
+  };
+
+  type Val {
+    name: TokenId,
+    ty: TypeId,
+  };
+
+  type FnSig = {
+    name: TokenId,
+    # TODO: parameters
+    ret: TypeId,
+  };
+
+  type Sig FnSig;
+
+  type Fn {
+    sig: FnSig,
+    # TODO: body
+  };
+
+  type Context {
+    name: TokenId,
+    def: ContextId,
+  };
+
   type Type = |;
+
+  type Piece = |;
 
   type Item =
     | Assume
+    | Symbol
     | Unit
     | Nominal
+    | Alias
+    | Val
+    | Fn
+    | Context
   ;
 }
 
