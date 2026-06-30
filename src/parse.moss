@@ -14,15 +14,43 @@ assume TokenId {
 fn peek(): Token;
 
 type NameId;
+type TypeId;
+type ContextId;
 
-context AstIds = NameId;
+context AstIds =
+  NameId,
+  TypeId,
+  ContextId,
+;
 
 assume TokenId, AstIds {
-  type Import = {
+  type Import {
     from: TokenId,
     name: Option[T=TokenId],
     names: Range[T=NameId],
   };
+
+  type Assume {
+    ctx: ContextId,
+    scope: ScopeId,
+  };
+
+  type Unit {
+    name: TokenId,
+  };
+
+  type Nominal {
+    name: TokenId,
+    ty: TypeId,
+  };
+
+  type Type = |;
+
+  type Item =
+    | Assume
+    | Unit
+    | Nominal
+  ;
 }
 
 assume T {
@@ -51,7 +79,7 @@ assume TokenSet {
 
   fn TokenSet.add(kind: Token): TokenSet;
 
-  fn err(set: TokenSet): (|);
+  fn err(set: TokenSet): |;
 }
 
 context Parsing =
@@ -96,7 +124,7 @@ assume Parsing {
         }
       }
     }
-    { from, name, names = names.done() }
+    Import { from, name, names = names.done() }
   }
 
   fn parse_assume() {

@@ -1,4 +1,4 @@
-import "./parse.moss" use TokenId;
+import "./parse.moss" as parse use TokenId;
 import "./prelude.moss" use *;
 
 type StrId;
@@ -8,10 +8,14 @@ assume TokenId, StrId {
 }
 
 type ModuleId;
+type TypeId;
+type NominalId;
 
 assume ModuleId {
   type Named =
     | ModuleId
+    | TypeId
+    | NominalId
   ;
 }
 
@@ -30,7 +34,7 @@ assume ModuleId {
 
 assume ModuleId, here {
   fn imports() {
-    for imp in imports {
+    for Import imp in imports {
       match imp.name {
         None => (),
         Some token => here.insert(token.name(), imp.module()),
@@ -41,4 +45,48 @@ assume ModuleId, here {
       }
     }
   }
+}
+
+type Context;
+
+assume Context {
+  val ctx: Context;
+}
+
+assume Context, ctx {
+  fn nominal_unit(): NominalId;
+
+  fn alias(ty: parse::TypeId): TypeId {
+    match ty.data() {}
+  }
+}
+
+fn scope_items(scope: ScopeId) {
+  for item in scope.items() {
+    match item {
+      parse::Assume assump => {
+        let extended = ctx.extend(assump.ctx);
+        bind ctx=extended;
+        scope_items(assump.scope);
+      }
+      parse::Unit { name = token } => {
+        here.insert(token.name(), nominal_unit());
+      }
+      parse::Nominal { name = token, ty } => {
+        here.insert(token.name(), nominal(alias(ty)));
+      }
+    }
+  }
+}
+
+fn decls() {
+  scope_items(toplevel);
+}
+
+fn bodies() {}
+
+fn module() {
+  imports();
+  decls();
+  bodies();
 }
