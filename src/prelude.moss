@@ -1,1 +1,2 @@
+import "./inner.moss" use T;
 import "./option.moss" use None, Option, Some;

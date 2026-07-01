@@ -1,15 +1,10 @@
-import "./cli.moss" as cli use String;
+import "./cli.moss" as cli;
 import "./wasip1.moss" as wasi use Wasi;
 import "./wasm.moss" as wasm use Wasm;
 
 assume Wasm, Wasi {
-  fn first_arg(): (I32, I32) {
-    # TODO
-  }
-
   fn main() {
-    bind String=(I32, I32);
-    bind cli::first_arg=first_arg;
+    # TODO: Bind `cli::Std`.
     cli::cli();
   }
 }

@@ -1,3 +1,7 @@
+import "./lex.moss" as lex;
+import "./prelude.moss" use *;
+import "./token.moss" use Eof;
+
 type String;
 
 assume String {
@@ -30,8 +34,26 @@ context Std =
   pwd,
 ;
 
+val cell: Cell[T=Int];
+
+assume cell {
+  fn next_byte(): Char | Eof {
+    # TODO
+  }
+}
+
 assume Std {
+  fn parse_reachable(path: Path): Graph {
+    let text = path.read();
+  }
+
   fn cli() {
-    print(pwd.join(first_arg()).read());
+    let path = pwd.join(first_arg());
+    let graph = parse_reachable(path);
+    for node in graph.topological_sort() {
+      node.lower();
+    }
+    let bytes = graph.codegen();
+    print_bytes(bytes);
   }
 }

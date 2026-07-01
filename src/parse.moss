@@ -1,4 +1,3 @@
-import "./inner.moss" use T;
 import "./lex.moss" use Token;
 import "./prelude.moss" use *;
 import "./range.moss" use Range;
