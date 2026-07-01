@@ -7,4 +7,6 @@ assume T {
     fn Cell.read(): T;
     fn Cell.write(x: T);
   }
+
+  context IsCell = Cell.read, Cell.write;
 }

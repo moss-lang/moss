@@ -1,10 +1,12 @@
 import "./cli.moss" as cli;
+import "./prelude.moss" use *;
+import "./std.moss" use *;
 import "./wasip1.moss" as wasi use Wasi;
 import "./wasm.moss" as wasm use Wasm;
 
 assume Wasm, Wasi {
   fn main() {
-    # TODO: Bind `cli::Std`.
+    # TODO: Bind `Std`.
     cli::cli();
   }
 }

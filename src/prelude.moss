@@ -1,2 +1,3 @@
+import "./cell.moss" use Cell, IsCell;
 import "./inner.moss" use T;
 import "./option.moss" use None, Option, Some;

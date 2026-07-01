@@ -1,50 +1,46 @@
-import "./lex.moss" as lex;
+import "./lex.moss" as lexer;
+import "./parse.moss" as parser;
 import "./prelude.moss" use *;
+import "./std.moss" use *;
 import "./token.moss" use Eof;
 
-type String;
-
-assume String {
-  fn first_arg(): String;
-  fn print(s: String);
-}
-
-type Path;
-
-assume Path {
-  val pwd: Path;
-}
-
-assume String, Path {
-  fn Path.join(s: String): Path;
-  fn Path.read(): String;
-}
-
-context Std =
-  File,
-  Path,
-  String,
-
-  Path.join,
-  Path.read,
-
-  first_arg,
-  println,
-
-  pwd,
-;
-
-val cell: Cell[T=Int];
-
-assume cell {
-  fn next_byte(): Char | Eof {
-    # TODO
-  }
-}
-
 assume Std {
+  val string: String;
+  val cell: CellInt;
+
+  assume cell, string {
+    fn next_byte(): Char | Eof {
+      let pos = cell.read();
+      if pos >= string.length() {
+        Eof
+      } else {
+        cell.write(pos + 1);
+        string.get(pos)
+      }
+    }
+
+    fn next(): Int {
+      let index = cell.read();
+      bind lexer::next_byte=next_byte;
+      lexer::lex();
+      index
+    }
+  }
+
+  fn parse(text: String) {
+    let pos = zero();
+    bind string=text;
+    bind cell=pos;
+
+    bind parser::TokenId=Int;
+    bind parser::next=next;
+
+    parser::tree();
+  }
+
   fn parse_reachable(path: Path): Graph {
     let text = path.read();
+    parse(text);
   }
 
   fn cli() {
