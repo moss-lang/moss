@@ -1,0 +1,12 @@
+import "./inner.moss" use T;
+
+assume T {
+  type Cell;
+
+  assume Cell {
+    fn Cell.read(): T;
+    fn Cell.write(x: T);
+  }
+
+  context IsCell = Cell.read, Cell.write;
+}

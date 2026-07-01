@@ -9,19 +9,23 @@ import "./wasm.moss" as wasm;
 
 context Base = I32, I64, MemIdx;
 
-type I32Pair[Base] = (I32, I32);
+assume Base {
+  type I32Pair = (I32, I32);
+}
 
 context Wasi =
-  I32,
-  I64,
-  MemIdx,
+  Base,
 
-  Numerals[Number=I32],
-  Numerals[Number=I64],
+  for Number=I32 {
+    Numberals,
+  },
+  for Number=I64 {
+    Numerals,
+  },
 
-  wasm::Wasm[Base],
-  wasm::memidx[Base],
-  wasip1::WasiP1[Base],
+  wasm::Wasm,
+  wasm::memidx,
+  wasip1::WasiP1,
 ;
 
 context Bootstrap =
@@ -35,239 +39,263 @@ context Bootstrap =
   Int=I32,
 ;
 
-fn overflow[Bootstrap]() {
-  wasm::unreachable(); # TODO: Give error messages.
-}
-
-fn uint32_check[Bootstrap](z: I64): I32 {
-  let w = wasm::i32_wrap_i64(z);
-  # TODO: How does `if` get typechecked and compiled?
-  if wasm::i64_ne(wasm::i64_extend_i32_u(w), z) {
-    overflow();
+assume Bootstrap {
+  fn overflow() {
+    wasm::unreachable(); # TODO: Give error messages.
   }
-  w
-}
 
-fn int32_check[Bootstrap](z: I64): I32 {
-  let w = wasm::i32_wrap_i64(z);
-  # TODO: How does `if` get typechecked and compiled?
-  if wasm::i64_ne(wasm::i64_extend_i32_s(w), z) {
-    overflow();
+  fn uint32_check(z: I64): I32 {
+    let w = wasm::i32_wrap_i64(z);
+    # TODO: How does `if` get typechecked and compiled?
+    if wasm::i64_ne(wasm::i64_extend_i32_u(w), z) {
+      overflow();
+    }
+    w
   }
-  w
-}
 
-fn uint32_add[Bootstrap](x: I32, y: I32): I32 {
-  uint32_check(wasm::i64_add(
-    wasm::i64_extend_i32_u(x),
-    wasm::i64_extend_i32_u(y),
-  ))
-}
+  fn int32_check(z: I64): I32 {
+    let w = wasm::i32_wrap_i64(z);
+    # TODO: How does `if` get typechecked and compiled?
+    if wasm::i64_ne(wasm::i64_extend_i32_s(w), z) {
+      overflow();
+    }
+    w
+  }
 
-fn uint32_sub[Bootstrap](x: I32, y: I32): I32 {
-  uint32_check(wasm::i64_sub(
-    wasm::i64_extend_i32_u(x),
-    wasm::i64_extend_i32_u(y),
-  ))
-}
+  fn uint32_add(x: I32, y: I32): I32 {
+    uint32_check(wasm::i64_add(
+      wasm::i64_extend_i32_u(x),
+      wasm::i64_extend_i32_u(y),
+    ))
+  }
 
-fn uint32_mul[Bootstrap](x: I32, y: I32): I32 {
-  uint32_check(wasm::i64_mul(
-    wasm::i64_extend_i32_u(x),
-    wasm::i64_extend_i32_u(y),
-  ))
-}
+  fn uint32_sub(x: I32, y: I32): I32 {
+    uint32_check(wasm::i64_sub(
+      wasm::i64_extend_i32_u(x),
+      wasm::i64_extend_i32_u(y),
+    ))
+  }
 
-fn uint32_div[Bootstrap](x: I32, y: I32): I32 {
-  uint32_check(wasm::i64_div_u(
-    wasm::i64_extend_i32_u(x),
-    wasm::i64_extend_i32_u(y),
-  ))
-}
+  fn uint32_mul(x: I32, y: I32): I32 {
+    uint32_check(wasm::i64_mul(
+      wasm::i64_extend_i32_u(x),
+      wasm::i64_extend_i32_u(y),
+    ))
+  }
 
-fn uint32_rem[Bootstrap](x: I32, y: I32): I32 {
-  uint32_check(wasm::i64_rem_u(
-    wasm::i64_extend_i32_u(x),
-    wasm::i64_extend_i32_u(y),
-  ))
-}
+  fn uint32_div(x: I32, y: I32): I32 {
+    uint32_check(wasm::i64_div_u(
+      wasm::i64_extend_i32_u(x),
+      wasm::i64_extend_i32_u(y),
+    ))
+  }
 
-fn int32_add[Bootstrap](x: I32, y: I32): I32 {
-  int32_check(wasm::i64_add(
-    wasm::i64_extend_i32_s(x),
-    wasm::i64_extend_i32_s(y),
-  ))
-}
+  fn uint32_rem(x: I32, y: I32): I32 {
+    uint32_check(wasm::i64_rem_u(
+      wasm::i64_extend_i32_u(x),
+      wasm::i64_extend_i32_u(y),
+    ))
+  }
 
-fn int32_sub[Bootstrap](x: I32, y: I32): I32 {
-  int32_check(wasm::i64_sub(
-    wasm::i64_extend_i32_s(x),
-    wasm::i64_extend_i32_s(y),
-  ))
-}
+  fn int32_add(x: I32, y: I32): I32 {
+    int32_check(wasm::i64_add(
+      wasm::i64_extend_i32_s(x),
+      wasm::i64_extend_i32_s(y),
+    ))
+  }
 
-fn int32_mul[Bootstrap](x: I32, y: I32): I32 {
-  int32_check(wasm::i64_mul(
-    wasm::i64_extend_i32_s(x),
-    wasm::i64_extend_i32_s(y),
-  ))
-}
+  fn int32_sub(x: I32, y: I32): I32 {
+    int32_check(wasm::i64_sub(
+      wasm::i64_extend_i32_s(x),
+      wasm::i64_extend_i32_s(y),
+    ))
+  }
 
-fn int32_div[Bootstrap](x: I32, y: I32): I32 {
-  int32_check(wasm::i64_div_s(
-    wasm::i64_extend_i32_s(x),
-    wasm::i64_extend_i32_s(y),
-  ))
-}
+  fn int32_mul(x: I32, y: I32): I32 {
+    int32_check(wasm::i64_mul(
+      wasm::i64_extend_i32_s(x),
+      wasm::i64_extend_i32_s(y),
+    ))
+  }
 
-fn int32_rem[Bootstrap](x: I32, y: I32): I32 {
-  int32_check(wasm::i64_rem_s(
-    wasm::i64_extend_i32_s(x),
-    wasm::i64_extend_i32_s(y),
-  ))
-}
+  fn int32_div(x: I32, y: I32): I32 {
+    int32_check(wasm::i64_div_s(
+      wasm::i64_extend_i32_s(x),
+      wasm::i64_extend_i32_s(y),
+    ))
+  }
 
-fn int32_neg[Bootstrap](x: I32): I32 {
-  int32_sub(0i32, x)
-}
+  fn int32_rem(x: I32, y: I32): I32 {
+    int32_check(wasm::i64_rem_s(
+      wasm::i64_extend_i32_s(x),
+      wasm::i64_extend_i32_s(y),
+    ))
+  }
 
-fn uint64_add[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_add(x, y) # TODO: Check for overflow.
-}
+  fn int32_neg(x: I32): I32 {
+    int32_sub(0i32, x)
+  }
 
-fn uint64_sub[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_sub(x, y) # TODO: Check for overflow.
-}
+  fn uint64_add(x: I64, y: I64): I64 {
+    wasm::i64_add(x, y) # TODO: Check for overflow.
+  }
 
-fn uint64_mul[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_mul(x, y) # TODO: Check for overflow.
-}
+  fn uint64_sub(x: I64, y: I64): I64 {
+    wasm::i64_sub(x, y) # TODO: Check for overflow.
+  }
 
-fn uint64_div[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_div_u(x, y) # TODO: Check for overflow.
-}
+  fn uint64_mul(x: I64, y: I64): I64 {
+    wasm::i64_mul(x, y) # TODO: Check for overflow.
+  }
 
-fn uint64_rem[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_rem_u(x, y) # TODO: Check for overflow.
-}
+  fn uint64_div(x: I64, y: I64): I64 {
+    wasm::i64_div_u(x, y) # TODO: Check for overflow.
+  }
 
-fn int64_add[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_add(x, y) # TODO: Check for overflow.
-}
+  fn uint64_rem(x: I64, y: I64): I64 {
+    wasm::i64_rem_u(x, y) # TODO: Check for overflow.
+  }
 
-fn int64_sub[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_sub(x, y) # TODO: Check for overflow.
-}
+  fn int64_add(x: I64, y: I64): I64 {
+    wasm::i64_add(x, y) # TODO: Check for overflow.
+  }
 
-fn int64_mul[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_mul(x, y) # TODO: Check for overflow.
-}
+  fn int64_sub(x: I64, y: I64): I64 {
+    wasm::i64_sub(x, y) # TODO: Check for overflow.
+  }
 
-fn int64_div[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_div_s(x, y) # TODO: Check for overflow.
-}
+  fn int64_mul(x: I64, y: I64): I64 {
+    wasm::i64_mul(x, y) # TODO: Check for overflow.
+  }
 
-fn int64_rem[Bootstrap](x: I64, y: I64): I64 {
-  wasm::i64_rem_s(x, y) # TODO: Check for overflow.
-}
+  fn int64_div(x: I64, y: I64): I64 {
+    wasm::i64_div_s(x, y) # TODO: Check for overflow.
+  }
 
-fn int64_neg[Bootstrap](x: I64): I64 {
-  int64_sub(0i64, x)
-}
+  fn int64_rem(x: I64, y: I64): I64 {
+    wasm::i64_rem_s(x, y) # TODO: Check for overflow.
+  }
 
-fn bootstrap[Bootstrap](): bind Std {
-  bind
+  fn int64_neg(x: I64): I64 {
+    int64_sub(0i64, x)
+  }
+
+  binding bootstrap: Std =
     Bool=I32,
     false=0,
     true=1,
 
-    String=I32Pair[Base],
+    String=I32Pair,
 
     Uint32=I32,
-    ops::add[Lhs=Uint32, Rhs=Uint32]=uint32_add,
-    ops::sub[Lhs=Uint32, Rhs=Uint32]=uint32_sub,
-    ops::mul[Lhs=Uint32, Rhs=Uint32]=uint32_mul,
-    ops::div[Lhs=Uint32, Rhs=Uint32]=uint32_div,
-    ops::rem[Lhs=Uint32, Rhs=Uint32]=uint32_rem,
-    ops::eq[Bool, Lhs=Uint32, Rhs=Uint32]=wasm::i32_eq,
-    ops::ne[Bool, Lhs=Uint32, Rhs=Uint32]=wasm::i32_ne,
-    ops::lt[Bool, Lhs=Uint32, Rhs=Uint32]=wasm::i32_lt_u,
-    ops::gt[Bool, Lhs=Uint32, Rhs=Uint32]=wasm::i32_gt_u,
-    ops::le[Bool, Lhs=Uint32, Rhs=Uint32]=wasm::i32_le_u,
-    ops::ge[Bool, Lhs=Uint32, Rhs=Uint32]=wasm::i32_ge_u,
+    for Lhs=Uint32, Rhs=Uint32 {
+      ops::add=uint32_add,
+      ops::sub=uint32_sub,
+      ops::mul=uint32_mul,
+      ops::div=uint32_div,
+      ops::rem=uint32_rem,
+      ops::eq=wasm::i32_eq,
+      ops::ne=wasm::i32_ne,
+      ops::lt=wasm::i32_lt_u,
+      ops::gt=wasm::i32_gt_u,
+      ops::le=wasm::i32_le_u,
+      ops::ge=wasm::i32_ge_u,
+    },
     # TODO: .to_string
 
     Int32=I32,
-    ops::add[Lhs=Int32, Rhs=Int32]=int32_add,
-    ops::sub[Lhs=Int32, Rhs=Int32]=int32_sub,
-    ops::mul[Lhs=Int32, Rhs=Int32]=int32_mul,
-    ops::div[Lhs=Int32, Rhs=Int32]=int32_div,
-    ops::rem[Lhs=Int32, Rhs=Int32]=int32_rem,
-    ops::neg[Arg=Int32]=int32_neg,
-    ops::eq[Bool, Lhs=Int32, Rhs=Int32]=wasm::i32_eq,
-    ops::ne[Bool, Lhs=Int32, Rhs=Int32]=wasm::i32_ne,
-    ops::lt[Bool, Lhs=Int32, Rhs=Int32]=wasm::i32_lt_s,
-    ops::gt[Bool, Lhs=Int32, Rhs=Int32]=wasm::i32_gt_s,
-    ops::le[Bool, Lhs=Int32, Rhs=Int32]=wasm::i32_le_s,
-    ops::ge[Bool, Lhs=Int32, Rhs=Int32]=wasm::i32_ge_s,
+    for Lhs=Int32, Rhs=Int32 {
+      ops::add=int32_add,
+      ops::sub=int32_sub,
+      ops::mul=int32_mul,
+      ops::div=int32_div,
+      ops::rem=int32_rem,
+    },
+    for Arg=Int32 {
+      ops::neg=int32_neg,
+    },
+    for Lhs=Int32, Rhs=Int32 {
+      ops::eq=wasm::i32_eq,
+      ops::ne=wasm::i32_ne,
+      ops::lt=wasm::i32_lt_s,
+      ops::gt=wasm::i32_gt_s,
+      ops::le=wasm::i32_le_s,
+      ops::ge=wasm::i32_ge_s,
+    },
     # TODO: .to_string
 
     Uint64=I64,
-    ops::add[Lhs=Uint64, Rhs=Uint64]=uint64_add,
-    ops::sub[Lhs=Uint64, Rhs=Uint64]=uint64_sub,
-    ops::mul[Lhs=Uint64, Rhs=Uint64]=uint64_mul,
-    ops::div[Lhs=Uint64, Rhs=Uint64]=uint64_div,
-    ops::rem[Lhs=Uint64, Rhs=Uint64]=uint64_rem,
-    ops::eq[Bool, Lhs=Uint64, Rhs=Uint64]=wasm::i64_eq,
-    ops::ne[Bool, Lhs=Uint64, Rhs=Uint64]=wasm::i64_ne,
-    ops::lt[Bool, Lhs=Uint64, Rhs=Uint64]=wasm::i64_lt_u,
-    ops::gt[Bool, Lhs=Uint64, Rhs=Uint64]=wasm::i64_gt_u,
-    ops::le[Bool, Lhs=Uint64, Rhs=Uint64]=wasm::i64_le_u,
-    ops::ge[Bool, Lhs=Uint64, Rhs=Uint64]=wasm::i64_ge_u,
+    for Lhs=Uint64, Rhs=Uint64 {
+      ops::add=uint64_add,
+      ops::sub=uint64_sub,
+      ops::mul=uint64_mul,
+      ops::div=uint64_div,
+      ops::rem=uint64_rem,
+      ops::eq=wasm::i64_eq,
+      ops::ne=wasm::i64_ne,
+      ops::lt=wasm::i64_lt_u,
+      ops::gt=wasm::i64_gt_u,
+      ops::le=wasm::i64_le_u,
+      ops::ge=wasm::i64_ge_u,
+    },
     # TODO: .to_string
 
     Int64=I64,
-    ops::add[Lhs=Int64, Rhs=Int64]=int64_add,
-    ops::sub[Lhs=Int64, Rhs=Int64]=int64_sub,
-    ops::mul[Lhs=Int64, Rhs=Int64]=int64_mul,
-    ops::div[Lhs=Int64, Rhs=Int64]=int64_div,
-    ops::rem[Lhs=Int64, Rhs=Int64]=int64_rem,
-    ops::neg[Arg=Int64]=int64_neg,
-    ops::eq[Bool, Lhs=Int64, Rhs=Int64]=wasm::i64_eq,
-    ops::ne[Bool, Lhs=Int64, Rhs=Int64]=wasm::i64_ne,
-    ops::lt[Bool, Lhs=Int64, Rhs=Int64]=wasm::i64_lt_s,
-    ops::gt[Bool, Lhs=Int64, Rhs=Int64]=wasm::i64_gt_s,
-    ops::le[Bool, Lhs=Int64, Rhs=Int64]=wasm::i64_le_s,
-    ops::ge[Bool, Lhs=Int64, Rhs=Int64]=wasm::i64_ge_s,
+    for Lhs=Int64, Rhs=Int64 {
+      ops::add=int64_add,
+      ops::sub=int64_sub,
+      ops::mul=int64_mul,
+      ops::div=int64_div,
+      ops::rem=int64_rem,
+    },
+    for Arg=Int64 {
+      ops::neg=int64_neg,
+    },
+    for Lhs=Int64, Rhs=Int64 {
+      ops::eq=wasm::i64_eq,
+      ops::ne=wasm::i64_ne,
+      ops::lt=wasm::i64_lt_s,
+      ops::gt=wasm::i64_gt_s,
+      ops::le=wasm::i64_le_s,
+      ops::ge=wasm::i64_ge_s,
+    },
     # TODO: .to_string
 
     Uint=I32,
-    ops::add[Lhs=Uint, Rhs=Uint]=uint32_add,
-    ops::sub[Lhs=Uint, Rhs=Uint]=uint32_sub,
-    ops::mul[Lhs=Uint, Rhs=Uint]=uint32_mul,
-    ops::div[Lhs=Uint, Rhs=Uint]=uint32_div,
-    ops::rem[Lhs=Uint, Rhs=Uint]=uint32_rem,
-    ops::eq[Bool, Lhs=Uint, Rhs=Uint]=wasm::i32_eq,
-    ops::ne[Bool, Lhs=Uint, Rhs=Uint]=wasm::i32_ne,
-    ops::lt[Bool, Lhs=Uint, Rhs=Uint]=wasm::i32_lt_u,
-    ops::gt[Bool, Lhs=Uint, Rhs=Uint]=wasm::i32_gt_u,
-    ops::le[Bool, Lhs=Uint, Rhs=Uint]=wasm::i32_le_u,
-    ops::ge[Bool, Lhs=Uint, Rhs=Uint]=wasm::i32_ge_u,
+    for Lhs=Uint, Rhs=Uint {
+      ops::add=uint32_add,
+      ops::sub=uint32_sub,
+      ops::mul=uint32_mul,
+      ops::div=uint32_div,
+      ops::rem=uint32_rem,
+      ops::eq=wasm::i32_eq,
+      ops::ne=wasm::i32_ne,
+      ops::lt=wasm::i32_lt_u,
+      ops::gt=wasm::i32_gt_u,
+      ops::le=wasm::i32_le_u,
+      ops::ge=wasm::i32_ge_u,
+    },
     # TODO: .to_string
 
     Int=I32,
-    ops::add[Lhs=Int, Rhs=Int]=int32_add,
-    ops::sub[Lhs=Int, Rhs=Int]=int32_sub,
-    ops::mul[Lhs=Int, Rhs=Int]=int32_mul,
-    ops::div[Lhs=Int, Rhs=Int]=int32_div,
-    ops::rem[Lhs=Int, Rhs=Int]=int32_rem,
-    ops::neg[Arg=Int]=int32_neg,
-    ops::eq[Bool, Lhs=Int, Rhs=Int]=wasm::i32_eq,
-    ops::ne[Bool, Lhs=Int, Rhs=Int]=wasm::i32_ne,
-    ops::lt[Bool, Lhs=Int, Rhs=Int]=wasm::i32_lt_s,
-    ops::gt[Bool, Lhs=Int, Rhs=Int]=wasm::i32_gt_s,
-    ops::le[Bool, Lhs=Int, Rhs=Int]=wasm::i32_le_s,
-    ops::ge[Bool, Lhs=Int, Rhs=Int]=wasm::i32_ge_s,
+    for Lhs=Int, Rhs=Int {
+      ops::add=int32_add,
+      ops::sub=int32_sub,
+      ops::mul=int32_mul,
+      ops::div=int32_div,
+      ops::rem=int32_rem,
+    },
+    for Arg=Int {
+      ops::neg=int32_neg,
+    },
+    for Lhs=Int, Rhs=Int {
+      ops::eq=wasm::i32_eq,
+      ops::ne=wasm::i32_ne,
+      ops::lt=wasm::i32_lt_s,
+      ops::gt=wasm::i32_gt_s,
+      ops::le=wasm::i32_le_s,
+      ops::ge=wasm::i32_ge_s,
+    },
     # TODO: .to_string
 
     # Bridge each numeric type's digit context to the underlying Wasm type's, so
@@ -280,16 +308,21 @@ fn bootstrap[Bootstrap](): bind Std {
     Numerals[Number=Int]=Numerals[Number=I32],
 
     # TODO: print
+  ;
 }
 
-fn std[Wasi](): bind Std {
-  bind bootstrap[
-    Bool=I32,
-    Uint32=I32,
-    Int32=I32,
-    Uint64=I64,
-    Int64=I64,
-    Uint=I32,
-    Int=I32,
-  ]()
+assume Wasi {
+  binding std: Std =
+    for
+      Bool=I32,
+      Uint32=I32,
+      Int32=I32,
+      Uint64=I64,
+      Int64=I64,
+      Uint=I32,
+      Int=I32,
+    {
+      bootstrap,
+    },
+  ;
 }

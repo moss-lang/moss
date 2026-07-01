@@ -1,0 +1,185 @@
+import "./lex.moss" use Token;
+import "./prelude.moss" use *;
+import "./range.moss" use Range;
+import "./token.moss" use *;
+
+type TokenId;
+
+assume TokenId {
+  fn next(): TokenId;
+  fn now(): TokenId;
+}
+
+fn peek(): Token;
+
+type NameId;
+type TypeId;
+type ContextId;
+
+context AstIds =
+  NameId,
+  TypeId,
+  ContextId,
+;
+
+assume TokenId, AstIds {
+  type Import {
+    from: TokenId,
+    name: Option[T=TokenId],
+    names: Range[T=NameId],
+  };
+
+  type Assume {
+    ctx: ContextId,
+    scope: ScopeId,
+  };
+
+  type Symbol {
+    name: TokenId,
+  };
+
+  type Unit {
+    name: TokenId,
+  };
+
+  type Nominal {
+    name: TokenId,
+    ty: TypeId,
+  };
+
+  type Alias {
+    name: TokenId,
+    ty: TypeId,
+  };
+
+  type Val {
+    name: TokenId,
+    ty: TypeId,
+  };
+
+  type FnSig = {
+    name: TokenId,
+    # TODO: parameters
+    ret: TypeId,
+  };
+
+  type Sig FnSig;
+
+  type Fn {
+    sig: FnSig,
+    # TODO: body
+  };
+
+  type Context {
+    name: TokenId,
+    def: ContextId,
+  };
+
+  type Type = |;
+
+  type Piece = |;
+
+  type Item =
+    | Assume
+    | Symbol
+    | Unit
+    | Nominal
+    | Alias
+    | Val
+    | Fn
+    | Context
+  ;
+}
+
+assume T {
+  type List;
+
+  assume List {
+    fn List.push(item: T);
+    fn List.done(): Range;
+
+    context IsList = List.push;
+  }
+}
+
+type NameList;
+
+context AstLists = NameList;
+
+assume AstLists {
+  fn name_list(): NameList;
+}
+
+type TokenSet;
+
+assume TokenSet {
+  val expected: TokenSet;
+
+  fn TokenSet.add(kind: Token): TokenSet;
+
+  fn err(set: TokenSet): |;
+}
+
+context Parsing =
+  TokenId, next, now, peek,
+  AstIds, AstLists,
+  name_list, IsList[T=NameId, List=NameList],
+  TokenSet, expected, TokenSet.add, err,
+;
+
+assume Parsing {
+  fn expect(kind: Token): TokenId {
+    let id = now();
+    if peek() == kind {
+      next();
+      id
+    } else {
+      match err(expected.add(kind)) {}
+    }
+  }
+
+  fn parse_import(): Import {
+    expect(Import);
+    let from = expect(Str);
+    let name = match peek() {
+      As => {
+        next();
+        Some (expect(Name))
+      }
+      _ => None,
+    };
+    var names = name_list();
+    if peek() == Use {
+      next();
+      loop {
+        match peek() {
+          Semi => break,
+          Name => names.push(next()),
+          _ => (),
+        }
+        if peek() == Comma {
+          next();
+        }
+      }
+    }
+    Import { from, name, names = names.done() }
+  }
+
+  fn parse_assume() {
+    # TODO
+  }
+
+  fn tree() {
+    loop {
+      match peek() {
+        Eof => return,
+        Import => {
+          parse_import();
+        }
+        Assume => {
+          parse_assume();
+        }
+      }
+    }
+  }
+}

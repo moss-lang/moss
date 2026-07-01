@@ -1,0 +1,126 @@
+import "./parse.moss" as parse use TokenId;
+import "./prelude.moss" use *;
+
+type StrId;
+
+assume TokenId, StrId {
+  fn TokenId.name(): StrId;
+}
+
+type ModuleId;
+type TypeId;
+type SymbolId;
+type NominalId;
+type ValId;
+type SigId;
+type FnId;
+
+assume ModuleId {
+  type Named =
+    | ModuleId
+    | TypeId
+    | SymbolId
+    | NominalId
+    | ValId
+    | SigId
+    | FnId
+  ;
+}
+
+assume ImportId, ModuleId {
+  fn ImportId.module(): ModuleId;
+}
+
+assume StrId, ModuleId {
+  fn ModuleId.insert(name: StrId, named: Named);
+  fn ModuleId.get(name: StrId);
+}
+
+assume ModuleId {
+  val here: ModuleId;
+}
+
+assume ModuleId, here {
+  fn imports() {
+    for Import imp in imports {
+      match imp.name {
+        None => (),
+        Some token => here.insert(token.name(), imp.module()),
+      }
+      for using in imp.names {
+        let name = using.token().name();
+        here.insert(name, imp.module().get(name));
+      }
+    }
+  }
+}
+
+type Context;
+
+assume Context {
+  val ctx: Context;
+
+  fn Context.extend(parsed: parse::ContextId): Context;
+  fn Context.depend(parsed: parse::ContextId): Context;
+}
+
+assume Context, ctx {
+  fn symbol(): SymbolId;
+  fn nominal_unit(): NominalId;
+  fn nominal(ty: TypeId): NominalId;
+  fn value(ty: TypeId): ValId;
+  fn signature(sig: parse::FnSig): SigId;
+  fn defined(sig: SigId): FnId;
+
+  fn alias(ty: parse::TypeId): TypeId {
+    match ty.data() {}
+  }
+}
+
+fn scope_items(scope: ScopeId) {
+  for item in scope.items() {
+    match item {
+      parse::Assume assump => {
+        let extended = ctx.extend(assump.ctx);
+        bind ctx=extended;
+        scope_items(assump.scope);
+      }
+      parse::Symbol { name = token } => {
+        here.insert(token.name(), symbol());
+      }
+      parse::Unit { name = token } => {
+        here.insert(token.name(), nominal_unit());
+      }
+      parse::Nominal { name = token, ty } => {
+        here.insert(token.name(), nominal(alias(ty)));
+      }
+      parse::Alias { name = token, ty } => {
+        here.insert(token.name(), alias(ty));
+      }
+      parse::Val { name = token, ty } => {
+        here.insert(token.name(), value(alias(ty)));
+      }
+      parse::Sig sig {
+        here.insert(sig.name.name(), signature(sig));
+      }
+      parse::Fn { sig } {
+        here.insert(sig.name.name(), defined(signature(sig)));
+      }
+      parse::Context { name = token, def } => {
+        here.insert(token.name(), ctx.depend(def));
+      }
+    }
+  }
+}
+
+fn decls() {
+  scope_items(toplevel);
+}
+
+fn bodies() {}
+
+fn module() {
+  imports();
+  decls();
+  bodies();
+}

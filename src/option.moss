@@ -1,0 +1,12 @@
+import "./inner.moss" use T;
+
+unit None;
+
+assume T {
+  type Some T;
+
+  type Option
+    | None
+    | Some
+  ;
+}

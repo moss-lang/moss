@@ -2,4 +2,6 @@ import "./int.moss" use Uint;
 
 type Char;
 
-fn char_from_codepoint[Char, Uint](codepoint: Uint): Char;
+assume Char, Uint {
+  fn char_from_codepoint(codepoint: Uint): Char;
+}

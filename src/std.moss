@@ -1,0 +1,59 @@
+import "./prelude.moss" use *;
+
+type Int;
+
+type Char;
+
+type String;
+
+assume String {
+  fn first_arg(): String;
+  fn print(s: String);
+}
+
+assume Int, String {
+  fn String.length(): Int;
+}
+
+assume Int, Char, String {
+  fn String.get(index: Int): Char;
+}
+
+type Path;
+
+assume Path {
+  val pwd: Path;
+}
+
+assume String, Path {
+  fn Path.join(s: String): Path;
+  fn Path.read(): String;
+}
+
+type CellInt;
+
+assume CellInt {
+  fn zero(): CellInt;
+}
+
+context Std =
+  CellInt,
+  Char,
+  File,
+  Int,
+  Path,
+  String,
+
+  IsCell[T=Int, Cell=CellInt],
+
+  Path.join,
+  Path.read,
+  String.get,
+  String.length,
+
+  first_arg,
+  println,
+  zero,
+
+  pwd,
+;

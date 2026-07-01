@@ -1,0 +1,5 @@
+import "./inner.moss" use T;
+
+assume T {
+  type Range { first: T, last: T };
+}

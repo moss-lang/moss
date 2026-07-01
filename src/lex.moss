@@ -1,0 +1,118 @@
+import "./token.moss" use *;
+
+type Token =
+  | Eof
+  | Exclam
+  | Percent
+  | Ampersand
+  | LParen
+  | RParen
+  | Star
+  | Plus
+  | Comma
+  | Hyphen
+  | Dot
+  | Slash
+  | Colon
+  | Semi
+  | Less
+  | Equal
+  | Greater
+  | LBracket
+  | RBracket
+  | Caret
+  | LBrace
+  | Pipe
+  | RBrace
+  | ExclamEqual
+  | ColonColon
+  | LessLess
+  | LessEqual
+  | EqualEqual
+  | GreaterEqual
+  | GreaterGreater
+  | As
+  | Assume
+  | Bind
+  | Context
+  | Else
+  | Fn
+  | If
+  | Import
+  | Let
+  | Type
+  | Use
+  | Val
+  | Var
+  | While
+  | Name
+  | Uint32
+  | Int32
+  | Uint64
+  | Int64
+  | Uint
+  | Int
+  | Char
+  | Str
+;
+
+assume Char {
+  fn next_byte(): Char | Eof;
+
+  assume next_byte {
+    fn lex(): Token {
+      match next_byte() {
+        Eof => Eof,
+        c => {
+          if c == '!' {
+            Exclam
+          } else if c == '%' {
+            Percent
+          } else if c == '&' {
+            Ampersand
+          } else if c == '(' {
+            LParen
+          } else if c == ')' {
+            RParen
+          } else if c == '*' {
+            Star
+          } else if c == '+' {
+            Plus
+          } else if c == ',' {
+            Comma
+          } else if c == '-' {
+            Hyphen
+          } else if c == '.' {
+            Dot
+          } else if c == '/' {
+            Slash
+          } else if c == ':' {
+            Colon
+          } else if c == ';' {
+            Semi
+          } else if c == '<' {
+            Less
+          } else if c == '=' {
+            Equal
+          } else if c == '>' {
+            Greater
+          } else if c == '[' {
+            LBracket
+          } else if c == ']' {
+            RBracket
+          } else if c == '^' {
+            Caret
+          } else if c == '{' {
+            LBrace
+          } else if c == '|' {
+            Pipe
+          } else if c == '}' {
+            RBrace
+          } else {
+            match panic() {}
+          }
+        }
+      }
+    }
+  }
+}
