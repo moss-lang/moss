@@ -1,0 +1,37 @@
+type String;
+
+assume String {
+  fn first_arg(): String;
+  fn print(s: String);
+}
+
+type Path;
+
+assume Path {
+  val pwd: Path;
+}
+
+assume String, Path {
+  fn Path.join(s: String): Path;
+  fn Path.read(): String;
+}
+
+context Std =
+  File,
+  Path,
+  String,
+
+  Path.join,
+  Path.read,
+
+  first_arg,
+  println,
+
+  pwd,
+;
+
+assume Std {
+  fn cli() {
+    print(pwd.join(first_arg()).read());
+  }
+}

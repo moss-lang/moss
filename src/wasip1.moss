@@ -143,7 +143,7 @@ assume I32 {
   }
 }
 
-context WasiP1 =
+context Wasi =
   I32,
   I64,
 
