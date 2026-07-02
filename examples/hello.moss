@@ -1,7 +1,20 @@
 #!/usr/bin/env moss
 
-assume Std;
-
-fn main() {
-  println("Hello, world!");
+assume Std {
+  fn main() {
+    putchar(char::H);
+    putchar(char::e);
+    putchar(char::l);
+    putchar(char::l);
+    putchar(char::o);
+    putchar(char::comma);
+    putchar(char::space);
+    putchar(char::w);
+    putchar(char::o);
+    putchar(char::r);
+    putchar(char::l);
+    putchar(char::d);
+    putchar(char::exclam);
+    putchar(char::newline);
+  }
 }
