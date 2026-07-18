@@ -23,27 +23,27 @@
 
     "@azu/style-format": ["@azu/style-format@1.0.1", "", { "dependencies": { "@azu/format-text": "^1.0.1" } }, "sha512-AHcTojlNBdD/3/KxIKlg8sxIWHfOtQszLvOpagLTO+bjC3u7SAszu1lf//u7JJC50aUSH+BVWDD/KvaA6Gfn5g=="],
 
-    "@azure/abort-controller": ["@azure/abort-controller@2.1.2", "", { "dependencies": { "tslib": "^2.6.2" } }, "sha512-nBrLsEWm4J2u5LpAPjxADTlq3trDgVZZXHNKabeXZtpq3d3AbN/KGO82R87rdDz5/lYB024rtEf10/q0urNgsA=="],
+    "@azure/abort-controller": ["@azure/abort-controller@2.2.0", "", { "dependencies": { "tslib": "^2.6.2" } }, "sha512-fNAjWnA/nZ2jz31kxR/AqRaUT8ewHBw/WuBIosK0moMy1C9e5ValbDfFdIxJzVOOYaYkV/b2F1S4H/aHiqfVQg=="],
 
-    "@azure/core-auth": ["@azure/core-auth@1.10.1", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@azure/core-util": "^1.13.0", "tslib": "^2.6.2" } }, "sha512-ykRMW8PjVAn+RS6ww5cmK9U2CyH9p4Q88YJwvUslfuMmN98w/2rdGRLPqJYObapBCdzBVeDgYWdJnFPFb7qzpg=="],
+    "@azure/core-auth": ["@azure/core-auth@1.11.0", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@azure/core-util": "^1.13.0", "tslib": "^2.6.2" } }, "sha512-IUZydyTUkDnYdstOW9pFOOUQlBjAepK5teihDE3x6yxsPJs/hsAaaYpeGxdxrgtOiJbBKSjKW7MDk7AEhb4LRg=="],
 
-    "@azure/core-client": ["@azure/core-client@1.10.2", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@azure/core-auth": "^1.10.0", "@azure/core-rest-pipeline": "^1.22.0", "@azure/core-tracing": "^1.3.0", "@azure/core-util": "^1.13.0", "@azure/logger": "^1.3.0", "tslib": "^2.6.2" } }, "sha512-1D2LpsU7y9xrqKjdIbsB7PlrRePw0xsVV8p+AKTlzITrWmscajryfJCdDJB/oGwvDI5HmRo04eMMADB67uwAwQ=="],
+    "@azure/core-client": ["@azure/core-client@1.11.0", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@azure/core-auth": "^1.10.0", "@azure/core-rest-pipeline": "^1.22.0", "@azure/core-tracing": "^1.3.0", "@azure/core-util": "^1.13.0", "@azure/logger": "^1.3.0", "tslib": "^2.6.2" } }, "sha512-JjQWO6akOck45PH/XBrxzsQGAiKrfFl4m5iggJ0ItMIz5omRufOXWpqCPpdjKN3vKDzlSUvFjaMb7Zwf0gvAdA=="],
 
-    "@azure/core-rest-pipeline": ["@azure/core-rest-pipeline@1.24.0", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@azure/core-auth": "^1.10.0", "@azure/core-tracing": "^1.3.0", "@azure/core-util": "^1.13.0", "@azure/logger": "^1.3.0", "@typespec/ts-http-runtime": "^0.3.4", "tslib": "^2.6.2" } }, "sha512-PpLsoDQ3AMmKZ0VU+0GrmqMxgp/sExjlVm4R+nLWngeoEGAzOIPVifaxKGU5gMv+nWELUoHfvrolWD+ZS/nFJg=="],
+    "@azure/core-rest-pipeline": ["@azure/core-rest-pipeline@1.25.0", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@azure/core-auth": "^1.10.0", "@azure/core-tracing": "^1.3.0", "@azure/core-util": "^1.13.0", "@azure/logger": "^1.3.0", "@typespec/ts-http-runtime": "^0.3.4", "tslib": "^2.6.2" } }, "sha512-bMs8ekJLjX8wPV+9IPBges1SLPyuDtE9g5gLDWOpxzKcoOFQnpLGkbcT1tdw3FaAmDS1gnPmMmJ6y/T5B96kIA=="],
 
-    "@azure/core-tracing": ["@azure/core-tracing@1.3.1", "", { "dependencies": { "tslib": "^2.6.2" } }, "sha512-9MWKevR7Hz8kNzzPLfX4EAtGM2b8mr50HPDBvio96bURP/9C+HjdH3sBlLSNNrvRAr5/k/svoH457gB5IKpmwQ=="],
+    "@azure/core-tracing": ["@azure/core-tracing@1.4.0", "", { "dependencies": { "tslib": "^2.6.2" } }, "sha512-eGwxD0AtncrxeBM4tG8R55Pc3rdX1hNW2WibJAgYpCVA6E93mvvVH+LcssoVjOBrSKWS55yEIHsk0X8ctHmfOQ=="],
 
-    "@azure/core-util": ["@azure/core-util@1.13.1", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@typespec/ts-http-runtime": "^0.3.0", "tslib": "^2.6.2" } }, "sha512-XPArKLzsvl0Hf0CaGyKHUyVgF7oDnhKoP85Xv6M4StF/1AhfORhZudHtOyf2s+FcbuQ9dPRAjB8J2KvRRMUK2A=="],
+    "@azure/core-util": ["@azure/core-util@1.14.0", "", { "dependencies": { "@azure/abort-controller": "^2.1.2", "@typespec/ts-http-runtime": "^0.3.0", "tslib": "^2.6.2" } }, "sha512-9n2pWK61veAuN0V20t9lOuoV4CFMdyAZ1ygZzvBGk/pBBJRib/PjL9PLXa/aI2CcPpyHfqVsxxqLCYl6uZlfDw=="],
 
     "@azure/identity": ["@azure/identity@4.13.1", "", { "dependencies": { "@azure/abort-controller": "^2.0.0", "@azure/core-auth": "^1.9.0", "@azure/core-client": "^1.9.2", "@azure/core-rest-pipeline": "^1.17.0", "@azure/core-tracing": "^1.0.0", "@azure/core-util": "^1.11.0", "@azure/logger": "^1.0.0", "@azure/msal-browser": "^5.5.0", "@azure/msal-node": "^5.1.0", "open": "^10.1.0", "tslib": "^2.2.0" } }, "sha512-5C/2WD5Vb1lHnZS16dNQRPMjN6oV/Upba+C9nBIs15PmOi6A3ZGs4Lr2u60zw4S04gi+u3cEXiqTVP7M4Pz3kw=="],
 
-    "@azure/logger": ["@azure/logger@1.3.0", "", { "dependencies": { "@typespec/ts-http-runtime": "^0.3.0", "tslib": "^2.6.2" } }, "sha512-fCqPIfOcLE+CGqGPd66c8bZpwAji98tZ4JI9i/mlTNTlsIWslCfpg48s/ypyLxZTump5sypjrKn2/kY7q8oAbA=="],
+    "@azure/logger": ["@azure/logger@1.4.0", "", { "dependencies": { "@typespec/ts-http-runtime": "^0.3.0", "tslib": "^2.6.2" } }, "sha512-rbAE25KUfjU/s3XHUdJgceoCP5dEOpMx85J04kF+QMdta73XkuG9JGHHinch+XIoKpBdqljin+KqURpJriSzLA=="],
 
-    "@azure/msal-browser": ["@azure/msal-browser@5.17.0", "", { "dependencies": { "@azure/msal-common": "16.11.1" } }, "sha512-/yTnW2TCk9Mh+2b/NOaHAN+MryUNxzRTaJD/YtrqOA9bpBWfTXn/iyReRbaLrK/btBo3stEzLyEvuWp2NZ5DuA=="],
+    "@azure/msal-browser": ["@azure/msal-browser@5.17.1", "", { "dependencies": { "@azure/msal-common": "16.11.2" } }, "sha512-zBhRGzABKSI7hfWh5EaZmril5ybZ7imBN1qEZl5sDTaelr+l8SnPjZO50Q4dnKnm347YPIlBMSnXKZyh3Yu5DQ=="],
 
-    "@azure/msal-common": ["@azure/msal-common@16.11.1", "", {}, "sha512-yPohvMwWLv1XnaWnIUyKUh8CvcVChCGqG/VluGwfGmaAfrZTNt5yQ+sIs462Sgw6+e2K83KGmMJ860p73ZSCrw=="],
+    "@azure/msal-common": ["@azure/msal-common@16.11.2", "", {}, "sha512-yDhtBOGDCdK9ipQ9g3+wmlMEPnZx2pXaDicDd9jYyR1L+7lEbvEohTDmF5qejZDutZY3m9pWPxeYxzNC701A2w=="],
 
-    "@azure/msal-node": ["@azure/msal-node@5.4.0", "", { "dependencies": { "@azure/msal-common": "16.11.1", "jsonwebtoken": "^9.0.0" } }, "sha512-6EZEParwHRlnSSIikw8FNAnAzwmh71uhveUXdPNFeZFviJ9SH+rwFiurhjzXqICYTrpm3E+dj693QOwfPbJXAQ=="],
+    "@azure/msal-node": ["@azure/msal-node@5.4.1", "", { "dependencies": { "@azure/msal-common": "16.11.2", "jsonwebtoken": "^9.0.0" } }, "sha512-yqgoyOIMCH7TNaSLMBTP+4LUlbMMf1zgC8nzOFG95lmW82CmsAEtUT0J93e4BdqDcnX5qle/9X+yb7A8Mw9M0g=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
 
@@ -191,7 +191,7 @@
 
     "@typescript/typescript-win32-x64": ["@typescript/typescript-win32-x64@7.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g=="],
 
-    "@typespec/ts-http-runtime": ["@typespec/ts-http-runtime@0.3.6", "", { "dependencies": { "http-proxy-agent": "^7.0.0", "https-proxy-agent": "^7.0.0", "tslib": "^2.6.2" } }, "sha512-jIXhD0eWQ1JA6ln/5Dltyx22UxWNrw0hZmhy2rlv6m6KgF7kplHx3g0fzi09lNmTJQRR91OlemYp3xFnvDK9og=="],
+    "@typespec/ts-http-runtime": ["@typespec/ts-http-runtime@0.3.7", "", { "dependencies": { "http-proxy-agent": "^7.0.0", "https-proxy-agent": "^7.0.0", "tslib": "^2.6.2" } }, "sha512-JVUD8X2tfDMWjcjLs4yVxxVrS8yR5vnh386GAXT9Qj79nBxxXSaHFQZg5FweLmT8HlPQ3kii6noUB+Z9RN7DvQ=="],
 
     "@vscode/vsce": ["@vscode/vsce@3.9.2", "", { "dependencies": { "@azure/identity": "^4.1.0", "@secretlint/node": "^10.1.2", "@secretlint/secretlint-formatter-sarif": "^10.1.2", "@secretlint/secretlint-rule-no-dotenv": "^10.1.2", "@secretlint/secretlint-rule-preset-recommend": "^10.1.2", "@vscode/vsce-sign": "^2.0.0", "azure-devops-node-api": "^12.5.0", "chalk": "^4.1.2", "cheerio": "^1.0.0-rc.9", "cockatiel": "^3.1.2", "commander": "^12.1.0", "form-data": "^4.0.0", "glob": "^13.0.6", "hosted-git-info": "^4.0.2", "jsonc-parser": "^3.2.0", "leven": "^3.1.0", "markdown-it": "^14.1.0", "mime": "^1.3.4", "minimatch": "^10.2.2", "parse-semver": "^1.1.1", "read": "^1.0.7", "secretlint": "^10.1.2", "semver": "^7.5.2", "tmp": "^0.2.3", "typed-rest-client": "^1.8.4", "url-join": "^4.0.1", "xml2js": "^0.5.0", "yauzl": "^3.2.1", "yazl": "^2.2.2" }, "optionalDependencies": { "keytar": "^7.7.0" }, "bin": { "vsce": "vsce" } }, "sha512-XSxMosEEDO6vLxELAHVkwmhC0qe0ijZni2jB9Rcs8kQsW4lhTDQ/wMzmwFs/buotAWSnpmUp/dRWD2ufG3UYKA=="],
 
