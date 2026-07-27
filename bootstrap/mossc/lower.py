@@ -609,9 +609,15 @@ class FnChecker:
             sig = self.lower.fn_sig(method, self.env.tymap, self.env, this=this_ty)
             fn_symbol = self.expect_provider(expr, this_ty)
             self.match_fn_sig(fn_symbol, sig, kind="method")
-            key = (head(this_ty), method)
-            self.lower.merge(self.env.methods, module, key, sig)
-            return ir.BindFn(key, fn_symbol)
+            # Provide under the resolved head *and*, when the receiver was
+            # written as a bound abstract symbol, under that symbol too —
+            # consumers elaborated under the abstract symbol read that key.
+            keys = [(head(this_ty), method)]
+            if receiver is not head(this_ty):
+                keys.append((receiver, method))
+            for key in keys:
+                self.lower.merge(self.env.methods, module, key, sig)
+            return ir.BindFn(tuple(keys), fn_symbol)
         target = resolve_path(module, spec.path)
         if target is None:
             self.error(f"`{'::'.join(spec.path)}` is not in scope")
@@ -642,7 +648,7 @@ class FnChecker:
             fn_symbol = self.expect_defined_fn(expr)
             self.match_fn_sig(fn_symbol, sig, kind="fn")
             self.lower.merge(self.env.fns, module, target, sig)
-            return ir.BindFn(target, fn_symbol)
+            return ir.BindFn((target,), fn_symbol)
         self.error(f"cannot bind `{target.name}` (a {target.kind.name.lower()})")
 
     def expect_defined_fn(self, expr) -> Symbol:

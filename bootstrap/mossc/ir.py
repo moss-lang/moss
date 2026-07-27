@@ -155,9 +155,14 @@ class BindVal:
 
 @dataclass(frozen=True)
 class BindFn:
-    """Provide a contextual fn/method: a closure over the current env."""
+    """Provide a contextual fn/method: a closure over the current env.
 
-    key: Key
+    A method bind may write several keys: binding `A.gimme` where `A` is an
+    abstract symbol currently bound to `Char` provides the same atom under
+    both `(A, gimme)` (how consumers elaborated under abstract `A` read it)
+    and `(Char, gimme)` (how concrete-receiver consumers read it)."""
+
+    keys: tuple  # one or more Keys
     fn: Symbol  # a defined FnIR symbol
     # Needs of `fn` are captured from the env at bind time.
 

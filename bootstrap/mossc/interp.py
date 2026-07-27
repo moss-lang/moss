@@ -150,7 +150,9 @@ class Interp:
         elif isinstance(stmt, ir.BindFn):
             fn = self.fns[id(stmt.fn)]
             captured = {k: frame.ctx[k] for k in fn.needs}
-            frame.ctx[stmt.key] = Closure(fn, captured)
+            closure = Closure(fn, captured)
+            for key in stmt.keys:
+                frame.ctx[key] = closure
         elif isinstance(stmt, ir.While):
             while self.truthy(self.eval(stmt.cond, frame)):
                 try:
