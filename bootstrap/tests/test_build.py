@@ -190,6 +190,9 @@ class TestWasmBackend(unittest.TestCase):
             "    bind tree::name_starts=int_list();\n"
             "    bind tree::name_lens=int_list();\n"
             "    bind tree::name_ids=int_list();\n"
+            "    bind tree::ref_ids=int_list();\n"
+            "    bind tree::ref_starts=int_list();\n"
+            "    bind tree::ref_lens=int_list();\n"
             "    bind intern::istarts=int_list();\n"
             "    bind intern::ilens=int_list();\n"
             "    parser::run();\n"
@@ -203,11 +206,11 @@ class TestWasmBackend(unittest.TestCase):
         cases = [
             (
                 "unit A; type A; assume B { fn f(); fn f() {} val g: B; }",
-                "uA;tA;a(ff;ff;vg;)\nA!f!\n",
+                "uA;tA;a(ff;ff;vg;)\nA!f!\nB?\n",
             ),
             (
                 (REPO / "lib/bool.moss").read_text(encoding="utf-8"),
-                "uFalse;uTrue;tBool;vfalse;vtrue;\n\n",
+                "uFalse;uTrue;tBool;vfalse;vtrue;\n\n\n",
             ),
         ]
         for source, expected in cases:

@@ -17,6 +17,9 @@ assume Std {
     bind tree::name_starts=int_list();
     bind tree::name_lens=int_list();
     bind tree::name_ids=int_list();
+    bind tree::ref_ids=int_list();
+    bind tree::ref_starts=int_list();
+    bind tree::ref_lens=int_list();
     bind intern::istarts=int_list();
     bind intern::ilens=int_list();
     parser::run();

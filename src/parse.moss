@@ -30,6 +30,52 @@ assume Std {
       cur
     }
 
+    # Scan a declaration payload up to (and past) its semicolon, recording
+    # name references. Approximate pending full payload parsing: a name
+    # counts when it follows one of `: = | , ( [` and is not itself a
+    # `label:` binder; a name after `::` or `.` is a qualified tail and is
+    # skipped along with everything it names.
+    fn refscan_to_semi(t: Token): Token {
+      var cur = t;
+      var open = true;
+      loop {
+        match cur {
+          Eof => break,
+          Semi => break,
+          Name => {
+            let ns = lexer::mark.read();
+            let nl = lexer::at.read().sub(ns);
+            let after = lexer::lex();
+            if open {
+              match after {
+                Colon => (),
+                _ => {
+                  tree::ref_ids.push(intern::intern(ns, nl));
+                  tree::ref_starts.push(ns);
+                  tree::ref_lens.push(nl);
+                }
+              }
+            }
+            open = false;
+            cur = after;
+          }
+          Colon => { open = true; cur = lexer::lex(); }
+          Equal => { open = true; cur = lexer::lex(); }
+          Pipe => { open = true; cur = lexer::lex(); }
+          Comma => { open = true; cur = lexer::lex(); }
+          LParen => { open = true; cur = lexer::lex(); }
+          LBracket => { open = true; cur = lexer::lex(); }
+          ColonColon => { open = false; cur = lexer::lex(); }
+          Dot => { open = false; cur = lexer::lex(); }
+          _ => { open = false; cur = lexer::lex(); }
+        }
+      }
+      match cur {
+        Semi => lexer::lex(),
+        _ => cur,
+      }
+    }
+
     # Skip to just past the next semicolon. Declaration payloads contain no
     # semicolons (record types have commas), so this ends the declaration.
     fn skip_to_semi(t: Token): Token {
@@ -47,15 +93,41 @@ assume Std {
       }
     }
 
-    # A fn declaration ends at a semicolon (abstract) or a balanced body.
-    fn skip_fn(t: Token): Token {
+    # A fn declaration ends at a semicolon (abstract) or a balanced body;
+    # its header (parameter types and return type) is scanned for
+    # references, and the body is skipped for now.
+    fn refscan_fn(t: Token): Token {
       var cur = t;
+      var open = false;
       loop {
         match cur {
           Eof => break,
           Semi => break,
           LBrace => break,
-          _ => { cur = lexer::lex(); }
+          Name => {
+            let ns = lexer::mark.read();
+            let nl = lexer::at.read().sub(ns);
+            let after = lexer::lex();
+            if open {
+              match after {
+                Colon => (),
+                _ => {
+                  tree::ref_ids.push(intern::intern(ns, nl));
+                  tree::ref_starts.push(ns);
+                  tree::ref_lens.push(nl);
+                }
+              }
+            }
+            open = false;
+            cur = after;
+          }
+          Colon => { open = true; cur = lexer::lex(); }
+          Equal => { open = true; cur = lexer::lex(); }
+          Pipe => { open = true; cur = lexer::lex(); }
+          Comma => { open = false; cur = lexer::lex(); }
+          ColonColon => { open = false; cur = lexer::lex(); }
+          Dot => { open = false; cur = lexer::lex(); }
+          _ => { open = false; cur = lexer::lex(); }
         }
       }
       match cur {
@@ -74,11 +146,11 @@ assume Std {
           let ns = lexer::mark.read();
           let nl = lexer::at.read().sub(ns);
           out.push(tree::leaf(k, ns, nl, intern::intern(ns, nl)));
-          skip_to_semi(lexer::lex())
+          refscan_to_semi(lexer::lex())
         }
         _ => {
           out.push(tree::leaf(k, zero, zero, intern::intern(zero, zero)));
-          skip_to_semi(h)
+          refscan_to_semi(h)
         }
       }
     }
@@ -163,7 +235,7 @@ assume Std {
               _ => (),
             }
             out.push(tree::leaf(tree::k_fn(), ns, nl, intern::intern(ns, nl)));
-            cur = skip_fn(h);
+            cur = refscan_fn(h);
           }
           _ => {
             out.push(tree::leaf(tree::k_bad(), zero, zero, intern::intern(zero, zero)));
@@ -174,14 +246,16 @@ assume Std {
       cur
     }
 
-    fn put_name(id: Int) {
-      let ns = tree::name_start_of(id);
-      let nl = tree::name_len_of(id);
+    fn put_span(ns: Int, nl: Int) {
       var j = zero;
       while j.lt(nl) {
         putchar(lexer::src.get(ns.add(j)));
         j = j.add(one);
       }
+    }
+
+    fn put_name(id: Int) {
+      put_span(tree::name_start_of(id), tree::name_len_of(id));
     }
 
     # Walk the finished arena: one letter per node, then the node's name
@@ -248,6 +322,54 @@ assume Std {
       }
     }
 
+    # Whether some declaration in the file introduces this name id.
+    # Scoping note: declarations inside assume blocks are module-level
+    # names, so the module scope is flat.
+    fn declared(id: Int): Bool {
+      var i = zero;
+      while i.lt(tree::kinds.length()) {
+        if tree::name_len_of(i).gt(zero) {
+          if tree::name_id_of(i).eq(id) {
+            return true;
+          }
+        }
+        i = i.add(one);
+      }
+      false
+    }
+
+    fn contains(xs: IntList, id: Int): Bool {
+      var i = zero;
+      while i.lt(xs.length()) {
+        if xs.get(i).eq(id) {
+          return true;
+        }
+        i = i.add(one);
+      }
+      false
+    }
+
+    # Collect's second check, self-hosted: every reference must name some
+    # declaration — the "not in scope" error. Only meaningful when the file
+    # imports nothing (imported names would be false positives until the
+    # self-hosted compiler loads modules). Reports each unresolved name
+    # once, as name+`?`.
+    fn resolve() {
+      let reported = int_list();
+      var r = zero;
+      while r.lt(tree::ref_ids.length()) {
+        let id = tree::ref_ids.get(r);
+        if declared(id).not() {
+          if contains(reported, id).not() {
+            reported.push(id);
+            put_span(tree::ref_starts.get(r), tree::ref_lens.get(r));
+            putchar(char::question);
+          }
+        }
+        r = r.add(one);
+      }
+    }
+
     fn run() {
       let roots = int_list();
       decls(lexer::lex(), roots);
@@ -264,6 +386,18 @@ assume Std {
       }
       putchar(char::newline);
       dups(rs, roots.length());
+      putchar(char::newline);
+      var has_import = false;
+      i = zero;
+      while i.lt(tree::kinds.length()) {
+        if tree::kind_of(i).eq(tree::k_import()) {
+          has_import = true;
+        }
+        i = i.add(one);
+      }
+      if has_import.not() {
+        resolve();
+      }
       putchar(char::newline);
     }
   }

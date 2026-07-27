@@ -21,7 +21,15 @@ assume Std {
   val name_lens: IntList;
   val name_ids: IntList;
 
-  context Tree = kinds, starts, lens, kids, name_starts, name_lens, name_ids;
+  # References collected from declaration payloads, as interned name ids
+  # with the source span for reporting.
+  val ref_ids: IntList;
+  val ref_starts: IntList;
+  val ref_lens: IntList;
+
+  context Tree =
+    kinds, starts, lens, kids, name_starts, name_lens, name_ids,
+    ref_ids, ref_starts, ref_lens;
 
   assume Tree {
     fn node(kind: Int, start: Int, len: Int, ns: Int, nl: Int, nid: Int): Int {
