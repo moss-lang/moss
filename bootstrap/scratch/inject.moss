@@ -1,0 +1,20 @@
+assume Std {
+  type A Char;
+  unit Other;
+  type C = | Other | A;      # A is a member of a union *here*
+
+  # ...but a value of type A is still just a Char: no tag, no box.
+  fn bare(a: A): Char { match a { A c => c } }
+
+  fn tagged(c: C): Char {
+    match c { A ch => ch, Other => char::n, }
+  }
+
+  fn main() {
+    let a = A (char::y);
+    putchar(bare(a));        # untagged use of A
+    putchar(tagged(a));      # the tag is attached *here*, at the injection
+    putchar(tagged(Other));
+    putchar(char::newline);
+  }
+}

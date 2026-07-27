@@ -193,6 +193,10 @@ class Interp:
             return frame.ctx[expr.key]
         if isinstance(expr, ir.MakeUnit):
             return UnitVal(expr.symbol)
+        if isinstance(expr, ir.Inject):
+            # The interpreter tags nominal values all the time (TagVal), so
+            # entering a union changes nothing here.
+            return self.eval(expr.value, frame)
         if isinstance(expr, ir.MakeTag):
             return TagVal(expr.symbol, self.eval(expr.payload, frame))
         if isinstance(expr, ir.MakeRecord):

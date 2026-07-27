@@ -404,6 +404,33 @@ class TestWasmBackend(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "hihi")
 
+    def test_representation_follows_the_static_type(self):
+        """D58: a value of a nominal type is its payload, even when that
+        type is a member of a union elsewhere in the program. The tag is
+        attached at the injection, not at the construction."""
+        source = (
+            "assume Std {\n"
+            "  type A Char;\n"
+            "  unit Other;\n"
+            "  type C = | Other | A;\n"
+            "  fn bare(a: A): Char { match a { A c => c } }\n"
+            "  fn tagged(c: C): Char { match c { A ch => ch, Other => char::n, } }\n"
+            "  fn main() {\n"
+            "    let a = A (char::y);\n"
+            "    putchar(bare(a));\n"
+            "    putchar(tagged(a));\n"
+            "    putchar(tagged(Other));\n"
+            "  }\n"
+            "}\n"
+        )
+        self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), "yyn")
+
+    def test_nominal_wrapper_does_not_allocate(self):
+        """The same, watched from underneath: constructing a wrapper leaves
+        the heap pointer where it was."""
+        wasm = compile_wasm({}, entry="tests/wasi/noalloc.moss")
+        self.assertEqual(run_wasm(wasm), "ky\n")
+
     def test_numerics_over_wasi(self):
         """`Int`, `zero`, `one` and the arithmetic methods provided over
         Wasi rather than natively, driving a loop written in ordinary Std

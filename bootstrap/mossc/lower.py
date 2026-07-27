@@ -995,6 +995,25 @@ class FnChecker:
     # Expressions
 
     def synth(self, expr, expected=None):
+        node, ty = self.synth_inner(expr, expected)
+        return self.inject(node, ty, expected), ty
+
+    def inject(self, node, t, expected):
+        """D58: attach a tag exactly where a value enters a union. Every
+        path that widens a type runs through `synth` with an `expected`, so
+        this is the only place representation changes."""
+        if expected is None:
+            return node
+        t = self.lower.canon(self.env, t)
+        want = self.lower.canon(self.env, expected)
+        if not isinstance(want, TUnion):
+            return node
+        if isinstance(t, (TUnion, TNever)) or t == want:
+            return node  # already discriminated, or not a value at all
+        symbol = head(t)
+        return node if symbol is None else ir.Inject(symbol, node)
+
+    def synth_inner(self, expr, expected=None):
         if getattr(expr, "offset", -1) >= 0:
             self.at_node = expr
         if isinstance(expr, ast.UnitExpr):
@@ -1107,7 +1126,7 @@ class FnChecker:
         if isinstance(sty, TNever):
             if expr.arms:
                 self.error("a match on `|` takes no arms")
-            return ir.Match(scrutinee, ()), expected if expected is not None else TNever()
+            return ir.Match(scrutinee, (), False), expected if expected is not None else TNever()
         if not catch_all:
             missing = [h.name for h in heads if h not in covered]
             if missing or not heads:
@@ -1115,7 +1134,7 @@ class FnChecker:
                 self.error(f"match is not exhaustive; missing {missing or show(sty)}")
         if result_ty is None:
             result_ty = TNever()
-        return ir.Match(scrutinee, tuple(arms)), result_ty
+        return ir.Match(scrutinee, tuple(arms), len(members(sty)) > 1), result_ty
 
     def compile_pattern(self, pattern, sty, heads):
         """Returns (ir.Pat, binders, covered heads, is_catch_all)."""

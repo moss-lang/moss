@@ -118,6 +118,19 @@ class MatchArm:
 class Match:
     scrutinee: object
     arms: tuple
+    # Whether the scrutinee's static type has more than one possible head.
+    # If not, nothing needs discriminating and the first arm always wins.
+    tagged: bool = True
+
+
+@dataclass(frozen=True)
+class Inject:
+    """D58: a value entering a union. Representation follows the static
+    type — a nominal value is just its payload — so this is the one place
+    a tag is attached, at the injection D17 allows."""
+
+    symbol: object
+    value: object
 
 
 @dataclass(frozen=True)

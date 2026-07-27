@@ -35,6 +35,7 @@ declared but not covered here, since every value in this slice is an i32.
 import sys
 
 from . import ir
+from .ast import TyRecord as ast_TyRecord
 from .collect import Program, SymKind, Symbol
 
 # Wasm opcodes
@@ -957,20 +958,10 @@ class FnCompiler:
         elif isinstance(node, ir.MakeUnit):
             self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
         elif isinstance(node, ir.MakeTag):
-            symbol = node.symbol
-            if "bool" in self.b.lib and symbol is self.b.lib["bool"].names.get("Bool"):
-                self.expr(node.payload)  # the Bool tag is erased
-            else:
-                tmp = self.local()
-                self.code += I32_CONST + sleb(8) + CALL + uleb(self.b.shim(S_ALLOC))
-                self.code += LOCAL_SET + uleb(tmp)
-                self.code += LOCAL_GET + uleb(tmp)
-                self.code += I32_CONST + sleb(self.b.unit_code(symbol))
-                self.code += I32_STORE + uleb(2) + uleb(0)
-                self.code += LOCAL_GET + uleb(tmp)
-                self.expr(node.payload)
-                self.code += I32_STORE + uleb(2) + uleb(4)
-                self.code += LOCAL_GET + uleb(tmp)
+            # D58: a nominal value *is* its payload. Nothing to attach.
+            self.expr(node.payload)
+        elif isinstance(node, ir.Inject):
+            self.inject(node)
         elif isinstance(node, ir.MakeRecord):
             count = len(node.fields)
             tmp = self.local()
@@ -1028,9 +1019,14 @@ class FnCompiler:
         bool_sym = self.b.lib["bool"].names.get("Bool") if "bool" in self.b.lib else None
         arms = list(node.arms)
 
-        def bind_and_body(arm):
+        def bind_and_body(arm, bare=False):
             pat = arm.pat
             if pat.head is None:
+                if pat.binder is not None:
+                    slot = self.slots.setdefault(pat.binder, self.local())
+                    self.code += LOCAL_GET + uleb(scrut) + LOCAL_SET + uleb(slot)
+            elif bare and pat.fields is None:
+                # Untagged: the scrutinee is the payload.
                 if pat.binder is not None:
                     slot = self.slots.setdefault(pat.binder, self.local())
                     self.code += LOCAL_GET + uleb(scrut) + LOCAL_SET + uleb(slot)
@@ -1057,6 +1053,10 @@ class FnCompiler:
                 return
             arm = arms[i]
             pat = arm.pat
+            if not node.tagged:
+                # One possible head, so the first arm always matches.
+                bind_and_body(arm, bare=True)
+                return
             if pat.head is None:
                 bind_and_body(arm)
                 return
@@ -1083,6 +1083,25 @@ class FnCompiler:
             self.depth -= 1
 
         chain(0)
+
+    def inject(self, node: ir.Inject):
+        """A value entering a union needs discriminating. A unit already is
+        its own code, and a record's box already carries one, so only a
+        payload-carrying tag grows a word here."""
+        symbol = node.symbol
+        if symbol.kind != SymKind.TAG or isinstance(symbol.decl.ty, ast_TyRecord):
+            self.expr(node.value)
+            return
+        tmp = self.local()
+        self.code += I32_CONST + sleb(8) + CALL + uleb(self.b.shim(S_ALLOC))
+        self.code += LOCAL_SET + uleb(tmp)
+        self.code += LOCAL_GET + uleb(tmp)
+        self.code += I32_CONST + sleb(self.b.unit_code(symbol))
+        self.code += I32_STORE + uleb(2) + uleb(0)
+        self.code += LOCAL_GET + uleb(tmp)
+        self.expr(node.value)
+        self.code += I32_STORE + uleb(2) + uleb(4)
+        self.code += LOCAL_GET + uleb(tmp)
 
     def call(self, node: ir.Call):
         kind, target = node.callee

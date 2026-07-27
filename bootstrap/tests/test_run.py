@@ -351,6 +351,29 @@ class TestStd(unittest.TestCase):
             run(files)
 
 
+class TestRepresentation(unittest.TestCase):
+    def test_injection_is_where_the_tag_appears(self):
+        """D58, on the interpreter: same program, same answer. Its own
+        representation tags everything, which is exactly why this has to
+        agree with the compiled one."""
+        source = (
+            "assume Std {\n"
+            "  type A Char;\n"
+            "  unit Other;\n"
+            "  type C = | Other | A;\n"
+            "  fn bare(a: A): Char { match a { A c => c } }\n"
+            "  fn tagged(c: C): Char { match c { A ch => ch, Other => char::n, } }\n"
+            "  fn main() {\n"
+            "    let a = A (char::y);\n"
+            "    putchar(bare(a));\n"
+            "    putchar(tagged(a));\n"
+            "    putchar(tagged(Other));\n"
+            "  }\n"
+            "}\n"
+        )
+        self.assertEqual(run({"main.moss": source}), "yyn")
+
+
 class TestFunctors(unittest.TestCase):
     """D55: a functor maps one structure to another. `bind F;` installs its
     binds here; its totality against the declared result signature is

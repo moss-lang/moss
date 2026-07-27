@@ -366,6 +366,34 @@ It also settles [D29]'s open half against the static-only reframing —
 functor carrying only types and fns would leave most of the signature to
 a hand-written prologue regardless.
 
+**[D58] DECIDED by the designer (tagging belongs to the sum, not to the
+nominal type).** The backend boxed every nominal tag: `type A Foo;` became
+a heap cell `[code | payload]` wherever it appeared, which is what made
+[D54]'s wrappers expensive. That is wrong. Tagging exists to discriminate
+a sum, so a value of type `A` is represented exactly as a `Foo` — no tag
+word, no box — and the tag is attached at the *injection* [D17] allows,
+where a value of `A` enters an `A | B`. Crucially this follows the static
+type at each point, not a property of the declaration: `A` stays bare in
+its own uses even when `A` is a member of a union somewhere else in the
+program. (Rev 7 first proposed the weaker whole-program rule, "untagged
+if the type appears in no union at all", and the designer rejected it.)
+
+Implemented: lowering emits an explicit `ir.Inject` wherever a value
+widens into a union — every such path runs through `synth` with an
+expected type, so there is one place to do it — and `ir.Match` records
+whether its scrutinee has more than one possible head, since a match that
+cannot discriminate anything is irrefutable. Construction of a tag is now
+the identity. A unit needs no injection (its code already discriminates)
+and a record's box already carries one, so only a payload-carrying tag
+grows a word, and only where it enters a union.
+
+The consequence for [D54]: its wrappers are free. `Num`, and the `String`
+and `Path` wrappers a bridge needs, are in no union, so they are bare
+i32s — an in-language `Std` no longer boxes what it hands out. Not yet
+done: a union of payload-carrying members is still a heap cell, where two
+Wasm locals would do; the value model is one i32 per value throughout, so
+that is a separate change.
+
 **[D57] FINDING (an in-language `Path.read` needs i64).** `path_open`
 takes its two rights masks as u64, as lib/wasip1.moss correctly declares.
 The Wasm backend's value model is uniformly i32, so a Moss implementation
