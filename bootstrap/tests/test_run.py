@@ -1068,13 +1068,23 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/prim.moss")
         self.assertEqual(self.wasmtime_run(module), "ABKDKJGG\n")
 
+    def test_calls_across_modules(self):
+        """A function is compiled in the module that declared it: its
+        names resolve there, not where it was called from."""
+        module = self.compile_with_moss("tests/wasi/across.moss")
+        self.assertEqual(self.wasmtime_run(module), "AC\n")
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
         do is the same."""
         from .test_build import compile_wasm, run_wasm
 
-        for entry, expected in (("tests/wasi/prim.moss", "ABKDKJGG\n"),):
+        cases = (
+            ("tests/wasi/prim.moss", "ABKDKJGG\n"),
+            ("tests/wasi/across.moss", "AC\n"),
+        )
+        for entry, expected in cases:
             with self.subTest(entry=entry):
                 mine = self.wasmtime_run(self.compile_with_moss(entry))
                 self.assertEqual(mine, expected)

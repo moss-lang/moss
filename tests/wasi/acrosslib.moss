@@ -1,0 +1,26 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+
+# The other half of tests/wasi/across.moss: the functions the entry
+# module calls through a module alias and through a `use` list.
+
+assume Wasm, Wasi {
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn six(): I32 { w::i32_add(four(), two()) }
+  fn newline(): I32 { w::i32_add(eight(), two()) }
+
+  # 'A' is 65, which is (1 << 6) + 1.
+  fn upper_a(): I32 {
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
+  }
+
+  # iovec at 0 is [ptr=8, len=1]; the byte goes at 8, nwritten at 12.
+  fn emit(c: I32) {
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
+    w::i32_store8(eight(), c);
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
+  }
+}
