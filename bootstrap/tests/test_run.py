@@ -1056,3 +1056,91 @@ class TestSelfHostedEmitter(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "Hello, world!\n")
+
+
+PARSE_DRIVER = (
+    'import "./src/ast.moss" as ast;\n'
+    'import "./src/dump.moss" as dump;\n'
+    'import "./src/intern.moss" as intern;\n'
+    'import "./src/lex.moss" as lexer;\n'
+    'import "./src/syntax.moss" as syntax;\n'
+    "assume Std {\n"
+    "  fn main() {\n"
+    "    bind ast::nkind=int_list();\n"
+    "    bind ast::na=int_list();\n"
+    "    bind ast::nb=int_list();\n"
+    "    bind ast::nc=int_list();\n"
+    "    bind ast::nd=int_list();\n"
+    "    bind ast::kids=int_list();\n"
+    "    bind ast::pnames=int_list();\n"
+    "    bind ast::pstart=int_list();\n"
+    "    bind ast::plen=int_list();\n"
+    "    bind ast::itexts=str_list();\n"
+    "    bind intern::ichars=int_list();\n"
+    "    bind intern::istarts=int_list();\n"
+    "    bind intern::ilens=int_list();\n"
+    "    bind lexer::src=pwd.join(first_arg()).read();\n"
+    "    bind lexer::at=cell_int();\n"
+    "    bind lexer::mark=cell_int();\n"
+    "    bind syntax::tok=cell_int();\n"
+    "    bind syntax::tstart=cell_int();\n"
+    "    bind syntax::tend=cell_int();\n"
+    "    bind syntax::tok2=cell_int();\n"
+    "    bind syntax::t2start=cell_int();\n"
+    "    bind syntax::t2end=cell_int();\n"
+    "    bind syntax::errs=cell_int();\n"
+    "    bind syntax::errpos=cell_int();\n"
+    "    go();\n"
+    "  }\n"
+    "  assume ast::Ast, syntax::Cursor, intern::Interner,\n"
+    "    lexer::src, lexer::at, lexer::mark {\n"
+    "    fn go() {\n"
+    "      let roots = int_list();\n"
+    "      syntax::parse_file(roots);\n"
+    "      if syntax::errs.read().gt(zero) { putchar(char::question); }\n"
+    "      dump::dump_file(roots);\n"
+    "    }\n"
+    "  }\n"
+    "}\n"
+)
+
+# Everything that is written in the MVP language. `src/lower.moss` is
+# previous-iteration code (§12 errata) and `examples/escape.moss` needs
+# string literals, so neither parses under either parser.
+def corpus():
+    for folder, pattern in (
+        ("src", "*.moss"),
+        ("lib", "*.moss"),
+        ("examples", "*.moss"),
+        ("tests/wasi", "*.moss"),
+    ):
+        for path in sorted((REPO / folder).glob(pattern)):
+            rel = str(path.relative_to(REPO))
+            if rel in ("src/lower.moss", "examples/escape.moss"):
+                continue
+            yield rel
+
+
+class TestSelfHostedSyntax(unittest.TestCase):
+    """src/syntax.moss against bootstrap/mossc/parse.py, over the whole
+    corpus: both write the tree in the compact form of mossc/sexpr.py, and
+    the two must agree character for character. This is the front end's
+    real check — an approximate parser can produce a plausible letter
+    dump, but it cannot produce the bootstrap's tree."""
+
+    def test_agrees_with_the_bootstrap_parser(self):
+        import os
+
+        from mossc.parse import parse
+        from mossc.sexpr import dump
+
+        cwd = os.getcwd()
+        os.chdir(REPO)
+        try:
+            for rel in corpus():
+                with self.subTest(file=rel):
+                    expected = dump(parse((REPO / rel).read_text(encoding="utf-8")))
+                    actual = run({"main.moss": PARSE_DRIVER}, args=[rel])
+                    self.assertEqual(actual, expected + "\n")
+        finally:
+            os.chdir(cwd)

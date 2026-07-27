@@ -1,0 +1,384 @@
+import "./ast.moss" as ast;
+import "./bytes.moss" use *;
+import "./intern.moss" as intern;
+
+# The syntax tree, written out in the compact form of
+# bootstrap/mossc/sexpr.py — the same format from the other side, so the
+# two parsers can be compared over the whole corpus.
+#
+# A node prints as `(TAG children...)`, a run as `[a b c]`, an absent
+# operand as `_`. The tag is one character: the node kinds of ast.moss in
+# order, 'a' through 'z' then 'A' onward. One character rather than a
+# word because a word would be a spelled string (D48) and a letter is
+# arithmetic on a char constant.
+
+assume Std {
+  assume ast::Ast, intern::Interner {
+    fn n26(): Int { hex(one, n10()) }
+
+    fn tag(k: Int) {
+      if k.lt(n26()) {
+        putchar(char::a.code().add(k).char());
+      } else {
+        putchar(char::A.code().add(k.sub(n26())).char());
+      }
+    }
+
+    fn sp() { putchar(char::space); }
+    fn under() { putchar(char::underscore); }
+    fn open_tag(k: Int) { putchar(char::lparen); tag(k); }
+    fn close_tag() { putchar(char::rparen); }
+
+    fn put_path(p: Int) {
+      var i = zero;
+      while i.lt(ast::path_len(p)) {
+        if i.gt(zero) {
+          putchar(char::colon);
+          putchar(char::colon);
+        }
+        intern::put(ast::path_at(p, i));
+        i = i.add(one);
+      }
+    }
+
+    fn opt_path(p: Int) {
+      if ast::is_some(p) {
+        put_path(p);
+      } else {
+        under();
+      }
+    }
+
+    fn opt_name(x: Int) {
+      if ast::is_some(x) {
+        intern::put(x);
+      } else {
+        under();
+      }
+    }
+
+    fn dump_run(run: Int, n: Int) {
+      putchar(char::lbracket);
+      var i = zero;
+      while i.lt(n) {
+        if i.gt(zero) {
+          sp();
+        }
+        dump(ast::kid_at(run, i));
+        i = i.add(one);
+      }
+      putchar(char::rbracket);
+    }
+
+    # An application is absent (`_`) or a possibly-empty list.
+    fn dump_app(run: Int, n: Int) {
+      if ast::is_some(run) {
+        dump_run(run, n);
+      } else {
+        under();
+      }
+    }
+
+    fn opt_node(id: Int) {
+      if ast::is_some(id) {
+        dump(id);
+      } else {
+        under();
+      }
+    }
+
+    fn dump_recv(r: Int) {
+      if r.eq(ast::recv_detached()) {
+        putchar(char::dot);
+      } else if r.eq(ast::recv_plain()) {
+        under();
+      } else {
+        intern::put(r);
+      }
+    }
+
+    # A use item is a bare token: `Bool`, `.m`, or `.m>.m1`.
+    fn dump_uses(uses: Int, n: Int) {
+      putchar(char::lbracket);
+      var i = zero;
+      while i.lt(n) {
+        if i.gt(zero) {
+          sp();
+        }
+        if ast::use_dot(uses, i).eq(one) {
+          putchar(char::dot);
+        }
+        intern::put(ast::use_name(uses, i));
+        if ast::is_some(ast::use_as(uses, i)) {
+          putchar(char::greater);
+          if ast::use_dot(uses, i).eq(one) {
+            putchar(char::dot);
+          }
+          intern::put(ast::use_as(uses, i));
+        }
+        i = i.add(one);
+      }
+      putchar(char::rbracket);
+    }
+
+    fn dump(id: Int) {
+      let k = ast::kind_of(id);
+      open_tag(k);
+      if k.eq(ast::k_ty_ref()) {
+        sp();
+        put_path(ast::a_of(id));
+        sp();
+        dump_app(ast::b_of(id), ast::c_of(id));
+      } else if k.eq(ast::k_ty_tuple()) {
+        sp();
+        dump_run(ast::a_of(id), ast::b_of(id));
+      } else if k.eq(ast::k_ty_record()) {
+        sp();
+        dump_run(ast::a_of(id), ast::b_of(id));
+      } else if k.eq(ast::k_ty_union()) {
+        sp();
+        dump_run(ast::a_of(id), ast::b_of(id));
+      } else if k.eq(ast::k_ty_field()) {
+        sp();
+        intern::put(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+      } else if k.eq(ast::k_ex_path()) {
+        sp();
+        put_path(ast::a_of(id));
+        sp();
+        dump_app(ast::b_of(id), ast::c_of(id));
+      } else if k.eq(ast::k_ex_call()) {
+        sp();
+        dump(ast::a_of(id));
+        sp();
+        dump_run(ast::b_of(id), ast::c_of(id));
+      } else if k.eq(ast::k_ex_field()) {
+        sp();
+        dump(ast::a_of(id));
+        sp();
+        intern::put(ast::b_of(id));
+      } else if k.eq(ast::k_ex_method()) {
+        sp();
+        dump(ast::a_of(id));
+        sp();
+        put_path(ast::b_of(id));
+        sp();
+        dump_run(ast::c_of(id), ast::d_of(id));
+      } else if k.eq(ast::k_ex_record()) {
+        sp();
+        dump(ast::a_of(id));
+        sp();
+        dump_run(ast::b_of(id), ast::c_of(id));
+      } else if k.eq(ast::k_ex_rfield()) {
+        sp();
+        intern::put(ast::a_of(id));
+        sp();
+        opt_node(ast::b_of(id));
+      } else if k.eq(ast::k_ex_if()) {
+        sp();
+        dump(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+        sp();
+        opt_node(ast::c_of(id));
+      } else if k.eq(ast::k_ex_match()) {
+        sp();
+        dump(ast::a_of(id));
+        sp();
+        dump_run(ast::b_of(id), ast::c_of(id));
+      } else if k.eq(ast::k_ex_return()) {
+        sp();
+        opt_node(ast::a_of(id));
+      } else if k.eq(ast::k_ex_block()) {
+        sp();
+        dump_run(ast::a_of(id), ast::b_of(id));
+        sp();
+        opt_node(ast::c_of(id));
+      } else if k.eq(ast::k_st_let()) {
+        dump_binding(id);
+      } else if k.eq(ast::k_st_var()) {
+        dump_binding(id);
+      } else if k.eq(ast::k_st_assign()) {
+        sp();
+        intern::put(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+      } else if k.eq(ast::k_st_bind()) {
+        sp();
+        dump_run(ast::a_of(id), ast::b_of(id));
+      } else if k.eq(ast::k_st_item()) {
+        sp();
+        dump(ast::a_of(id));
+        sp();
+        opt_node(ast::b_of(id));
+      } else if k.eq(ast::k_st_while()) {
+        sp();
+        dump(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+      } else if k.eq(ast::k_st_loop()) {
+        sp();
+        dump(ast::a_of(id));
+      } else if k.eq(ast::k_st_expr()) {
+        sp();
+        dump(ast::a_of(id));
+      } else if k.eq(ast::k_pt_path()) {
+        sp();
+        put_path(ast::a_of(id));
+        sp();
+        opt_node(ast::b_of(id));
+      } else if k.eq(ast::k_pt_record()) {
+        sp();
+        opt_path(ast::a_of(id));
+        sp();
+        dump_run(ast::b_of(id), ast::c_of(id));
+      } else if k.eq(ast::k_pt_field()) {
+        sp();
+        intern::put(ast::a_of(id));
+        sp();
+        opt_node(ast::b_of(id));
+      } else if k.eq(ast::k_arm()) {
+        sp();
+        dump(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+      } else if k.eq(ast::k_spec()) {
+        sp();
+        opt_path(ast::a_of(id));
+        sp();
+        opt_name(ast::b_of(id));
+        sp();
+        dump_app(ast::c_of(id), ast::d_of(id));
+      } else if k.eq(ast::k_binding()) {
+        sp();
+        put_path(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+      } else if k.eq(ast::k_param()) {
+        sp();
+        intern::put(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+      } else if k.eq(ast::k_d_import()) {
+        sp();
+        print(ast::imp_text(id));
+        sp();
+        opt_name(ast::imp_alias(id));
+        sp();
+        if ast::imp_star(id).eq(one) {
+          putchar(char::star);
+        } else {
+          under();
+        }
+        sp();
+        dump_uses(ast::imp_uses(id), ast::imp_nuses(id));
+      } else if k.eq(ast::k_d_assume()) {
+        sp();
+        dump_run(ast::a_of(id), ast::b_of(id));
+        sp();
+        dump_run(ast::c_of(id), ast::d_of(id));
+      } else if k.eq(ast::k_d_type()) {
+        sp();
+        intern::put(ast::a_of(id));
+      } else if k.eq(ast::k_d_unit()) {
+        sp();
+        intern::put(ast::a_of(id));
+      } else if k.eq(ast::k_d_alias()) {
+        sp();
+        intern::put(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+      } else if k.eq(ast::k_d_tag()) {
+        sp();
+        intern::put(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+      } else if k.eq(ast::k_d_val()) {
+        sp();
+        intern::put(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+        sp();
+        opt_node(ast::c_of(id));
+      } else if k.eq(ast::k_d_fn()) {
+        sp();
+        dump_recv(ast::fn_recv(id));
+        sp();
+        intern::put(ast::fn_name(id));
+        sp();
+        dump_run(ast::fn_params(id), ast::fn_nparams(id));
+        sp();
+        opt_node(ast::fn_ret(id));
+        sp();
+        opt_node(ast::fn_body(id));
+      } else if k.eq(ast::k_d_context()) {
+        sp();
+        intern::put(ast::a_of(id));
+        sp();
+        dump_run(ast::b_of(id), ast::c_of(id));
+      } else if k.eq(ast::k_d_functor()) {
+        sp();
+        intern::put(ast::fu_name(id));
+        sp();
+        dump_run(ast::fu_args(id), ast::fu_nargs(id));
+        sp();
+        dump_run(ast::fu_res(id), ast::fu_nres(id));
+        sp();
+        dump_run(ast::fu_binds(id), ast::fu_nbinds(id));
+      } else {
+        # The leaves: unit, never, This, `this`, `()`, break, `_`, bad.
+        ();
+      }
+      close_tag();
+    }
+
+    fn dump_binding(id: Int) {
+      sp();
+      intern::put(ast::a_of(id));
+      sp();
+      opt_node(ast::b_of(id));
+      sp();
+      dump(ast::c_of(id));
+    }
+
+    # A whole file: its imports, then everything else, matching the
+    # `File(imports, decls)` split the bootstrap's AST makes.
+    fn dump_file(roots: IntList) {
+      putchar(char::lparen);
+      putchar(char::dollar);
+      sp();
+      putchar(char::lbracket);
+      var i = zero;
+      var n = zero;
+      while i.lt(roots.length()) {
+        if ast::kind_of(roots.get(i)).eq(ast::k_d_import()) {
+          if n.gt(zero) {
+            sp();
+          }
+          dump(roots.get(i));
+          n = n.add(one);
+        }
+        i = i.add(one);
+      }
+      putchar(char::rbracket);
+      sp();
+      putchar(char::lbracket);
+      i = zero;
+      n = zero;
+      while i.lt(roots.length()) {
+        if ast::kind_of(roots.get(i)).eq(ast::k_d_import()).not() {
+          if n.gt(zero) {
+            sp();
+          }
+          dump(roots.get(i));
+          n = n.add(one);
+        }
+        i = i.add(one);
+      }
+      putchar(char::rbracket);
+      putchar(char::rparen);
+      putchar(char::newline);
+    }
+  }
+}

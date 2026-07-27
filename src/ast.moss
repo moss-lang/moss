@@ -1,0 +1,288 @@
+import "./bytes.moss" use *;
+
+# The syntax tree, complete: types, expressions, statements, patterns and
+# declarations, in the arena idiom of D51 — one row per node across
+# parallel `IntList`s, with variable-length runs (a call's arguments, a
+# block's statements, a declaration's children) living contiguously in
+# `kids`.
+#
+# Every node has four operand slots. What they mean depends on its kind,
+# and the comment beside each kind constant below is the record of that:
+# a node's shape is documented there and nowhere else. A node needing
+# more than four operands (a `fn`, a `functor`, an `import`) keeps its
+# operands as one run in `kids` instead, addressed by a single start.
+#
+# `none()` is the absent operand: no else-branch, no return type, no
+# initializer.
+
+assume Std {
+  fn none(): Int { one.neg() }
+
+  fn is_some(x: Int): Bool { x.ge(zero) }
+
+  # Types.
+  fn k_ty_unit(): Int { zero }              # ()
+  fn k_ty_never(): Int { one }              # |
+  fn k_ty_this(): Int { n2() }              # This
+  fn k_ty_ref(): Int { n3() }               # a=path b=app run c=app len d=applied
+  fn k_ty_tuple(): Int { n4() }             # a=run b=len
+  fn k_ty_record(): Int { n5() }            # a=run of ty_field b=len
+  fn k_ty_union(): Int { n6() }             # a=run b=len
+  fn k_ty_field(): Int { n7() }             # a=name b=type
+
+  # Expressions.
+  fn k_ex_unit(): Int { n8() }              # ()
+  fn k_ex_this(): Int { n9() }              # this
+  fn k_ex_path(): Int { n10() }             # a=path b=app run c=app len d=applied
+  fn k_ex_call(): Int { n11() }             # a=callee b=args run c=len
+  fn k_ex_field(): Int { n12() }            # a=object b=name
+  fn k_ex_method(): Int { n13() }           # a=receiver b=path c=args run d=len
+  fn k_ex_record(): Int { n14() }           # a=path b=run of ex_rfield c=len
+  fn k_ex_rfield(): Int { n15() }           # a=name b=expr (none = shorthand)
+  fn k_ex_if(): Int { hex(one, zero) }      # a=cond b=then c=else
+  fn k_ex_match(): Int { hex(one, one) }    # a=scrutinee b=run of arm c=len
+  fn k_ex_return(): Int { hex(one, n2()) }  # a=expr
+  fn k_ex_break(): Int { hex(one, n3()) }
+  fn k_ex_block(): Int { hex(one, n4()) }   # a=stmt run b=len c=tail expr
+
+  # Statements.
+  fn k_st_let(): Int { hex(one, n5()) }     # a=name b=type c=expr
+  fn k_st_var(): Int { hex(one, n6()) }     # a=name b=type c=expr
+  fn k_st_assign(): Int { hex(one, n7()) }  # a=name b=expr
+  fn k_st_bind(): Int { hex(one, n8()) }    # a=run of st_item b=len
+  fn k_st_item(): Int { hex(one, n9()) }    # a=spec b=expr (none = functor)
+  fn k_st_while(): Int { hex(one, n10()) }  # a=cond b=block
+  fn k_st_loop(): Int { hex(one, n11()) }   # a=block
+  fn k_st_expr(): Int { hex(one, n12()) }   # a=expr
+
+  # Patterns.
+  fn k_pt_wild(): Int { hex(one, n13()) }   # _
+  fn k_pt_path(): Int { hex(one, n14()) }   # a=path b=sub-pattern
+  fn k_pt_record(): Int { hex(one, n15()) } # a=run of pt_field b=len
+  fn k_pt_field(): Int { hex(n2(), zero) }  # a=name b=pattern
+  fn k_arm(): Int { hex(n2(), one) }        # a=pattern b=body
+
+  # A Spec names a symbol: a path, an attached or detached method name,
+  # and an optional total application. A Binding is one `Path = Spec`
+  # inside such an application.
+  fn k_spec(): Int { hex(n2(), n2()) }      # a=path b=dot name c=app run d=len
+  fn k_binding(): Int { hex(n2(), n3()) }   # a=path b=spec
+  fn k_param(): Int { hex(n2(), n4()) }     # a=name b=type
+
+  # Declarations.
+  fn k_d_import(): Int { hex(n2(), n5()) }  # a=run: text, alias, star, uses, len
+  fn k_d_assume(): Int { hex(n2(), n6()) }  # a=item run b=len c=decl run d=len
+  fn k_d_type(): Int { hex(n2(), n7()) }    # a=name
+  fn k_d_alias(): Int { hex(n2(), n8()) }   # a=name b=type
+  fn k_d_tag(): Int { hex(n2(), n9()) }     # a=name b=type
+  fn k_d_unit(): Int { hex(n2(), n10()) }   # a=name
+  fn k_d_val(): Int { hex(n2(), n11()) }    # a=name b=type c=init
+  fn k_d_fn(): Int { hex(n2(), n12()) }     # a=run: recv, name, params, len, ret, body
+  fn k_d_context(): Int { hex(n2(), n13()) }# a=name b=item run c=len
+  fn k_d_functor(): Int { hex(n2(), n14()) }# a=run: name, args, len, res, len, binds, len
+  fn k_d_bad(): Int { hex(n2(), n15()) }
+
+  # `fn f` has no receiver; `fn .m` has the detached one.
+  fn recv_plain(): Int { one.neg() }
+  fn recv_detached(): Int { n2().neg() }
+
+  val nkind: IntList;
+  val na: IntList;
+  val nb: IntList;
+  val nc: IntList;
+  val nd: IntList;
+
+  # Every variable-length run: argument lists, statement lists, and the
+  # spilled operands of the wide declarations.
+  val kids: IntList;
+
+  # Qualified paths, as runs of interned name ids: `a::b::c` is three.
+  val pnames: IntList;
+  val pstart: IntList;
+  val plen: IntList;
+
+  # Import paths as written. The one place a real String is kept, since
+  # that is what the loader hands to `Path.join`.
+  val itexts: StrList;
+
+  context Ast = nkind, na, nb, nc, nd, kids, pnames, pstart, plen, itexts;
+
+  assume Ast {
+    fn node4(kind: Int, a: Int, b: Int, c: Int, d: Int): Int {
+      let id = nkind.length();
+      nkind.push(kind);
+      na.push(a);
+      nb.push(b);
+      nc.push(c);
+      nd.push(d);
+      id
+    }
+
+    fn node3(kind: Int, a: Int, b: Int, c: Int): Int {
+      node4(kind, a, b, c, none())
+    }
+
+    fn node2(kind: Int, a: Int, b: Int): Int {
+      node4(kind, a, b, none(), none())
+    }
+
+    fn node1(kind: Int, a: Int): Int {
+      node4(kind, a, none(), none(), none())
+    }
+
+    fn node0(kind: Int): Int {
+      node4(kind, none(), none(), none(), none())
+    }
+
+    fn kind_of(id: Int): Int { nkind.get(id) }
+    fn a_of(id: Int): Int { na.get(id) }
+    fn b_of(id: Int): Int { nb.get(id) }
+    fn c_of(id: Int): Int { nc.get(id) }
+    fn d_of(id: Int): Int { nd.get(id) }
+
+    fn is_kind(id: Int, k: Int): Bool {
+      if is_some(id) {
+        nkind.get(id).eq(k)
+      } else {
+        false
+      }
+    }
+
+    # A run in `kids`: mark where it starts, push its members, and the
+    # length is how far the arena moved. Runs nest, so a caller collects
+    # its members elsewhere first — `int_list()` for a scratch list —
+    # and commits them in one go.
+    fn kid_mark(): Int { kids.length() }
+
+    fn commit(xs: IntList): Int {
+      let start = kids.length();
+      var i = zero;
+      while i.lt(xs.length()) {
+        kids.push(xs.get(i));
+        i = i.add(one);
+      }
+      start
+    }
+
+    fn kid_at(run: Int, i: Int): Int { kids.get(run.add(i)) }
+
+    # A path: one id for a run of interned names.
+    fn path_of(xs: IntList): Int {
+      let id = pstart.length();
+      pstart.push(pnames.length());
+      plen.push(xs.length());
+      var i = zero;
+      while i.lt(xs.length()) {
+        pnames.push(xs.get(i));
+        i = i.add(one);
+      }
+      id
+    }
+
+    fn path_len(p: Int): Int { plen.get(p) }
+
+    fn path_at(p: Int, i: Int): Int { pnames.get(pstart.get(p).add(i)) }
+
+    # The name a path resolves against: its last segment.
+    fn path_last(p: Int): Int { path_at(p, plen.get(p).sub(one)) }
+
+    fn path_head(p: Int): Int { path_at(p, zero) }
+
+    # Declarations with more operands than a node has slots keep them in
+    # `kids`; these name the offsets so the layout is written once.
+    fn fn_recv(id: Int): Int { kid_at(a_of(id), zero) }
+    fn fn_name(id: Int): Int { kid_at(a_of(id), one) }
+    fn fn_params(id: Int): Int { kid_at(a_of(id), n2()) }
+    fn fn_nparams(id: Int): Int { kid_at(a_of(id), n3()) }
+    fn fn_ret(id: Int): Int { kid_at(a_of(id), n4()) }
+    fn fn_body(id: Int): Int { kid_at(a_of(id), n5()) }
+
+    fn make_fn(recv: Int, name: Int, params: Int, n: Int, ret: Int, body: Int): Int {
+      let xs = int_list();
+      xs.push(recv);
+      xs.push(name);
+      xs.push(params);
+      xs.push(n);
+      xs.push(ret);
+      xs.push(body);
+      node1(k_d_fn(), commit(xs))
+    }
+
+    fn imp_text_index(id: Int): Int { kid_at(a_of(id), zero) }
+    fn imp_alias(id: Int): Int { kid_at(a_of(id), one) }
+    fn imp_star(id: Int): Int { kid_at(a_of(id), n2()) }
+    fn imp_uses(id: Int): Int { kid_at(a_of(id), n3()) }
+    fn imp_nuses(id: Int): Int { kid_at(a_of(id), n4()) }
+
+    fn imp_text(id: Int): String { itexts.get(imp_text_index(id)) }
+
+    # A use item is three cells of `kids`: the name, whether it was
+    # dotted (a detached method), and the local name it was renamed to.
+    fn use_name(uses: Int, i: Int): Int { kid_at(uses, i.mul(n3())) }
+    fn use_dot(uses: Int, i: Int): Int { kid_at(uses, i.mul(n3()).add(one)) }
+    fn use_as(uses: Int, i: Int): Int { kid_at(uses, i.mul(n3()).add(n2())) }
+
+    fn make_import(text: String, alias: Int, star: Int, uses: Int, n: Int): Int {
+      let xs = int_list();
+      xs.push(itexts.length());
+      itexts.push(text);
+      xs.push(alias);
+      xs.push(star);
+      xs.push(uses);
+      xs.push(n);
+      node1(k_d_import(), commit(xs))
+    }
+
+    fn fu_name(id: Int): Int { kid_at(a_of(id), zero) }
+    fn fu_args(id: Int): Int { kid_at(a_of(id), one) }
+    fn fu_nargs(id: Int): Int { kid_at(a_of(id), n2()) }
+    fn fu_res(id: Int): Int { kid_at(a_of(id), n3()) }
+    fn fu_nres(id: Int): Int { kid_at(a_of(id), n4()) }
+    fn fu_binds(id: Int): Int { kid_at(a_of(id), n5()) }
+    fn fu_nbinds(id: Int): Int { kid_at(a_of(id), n6()) }
+
+    fn make_functor(
+      name: Int, args: Int, na_: Int, res: Int, nr: Int, binds: Int, nb_: Int
+    ): Int {
+      let xs = int_list();
+      xs.push(name);
+      xs.push(args);
+      xs.push(na_);
+      xs.push(res);
+      xs.push(nr);
+      xs.push(binds);
+      xs.push(nb_);
+      node1(k_d_functor(), commit(xs))
+    }
+
+    # The name a declaration introduces, or `none()` for the ones that
+    # introduce none (imports, assume blocks, an attached method — which
+    # is keyed by its receiver *and* its name, not by a name alone).
+    fn decl_name(id: Int): Int {
+      let k = kind_of(id);
+      if k.eq(k_d_type()) {
+        a_of(id)
+      } else if k.eq(k_d_alias()) {
+        a_of(id)
+      } else if k.eq(k_d_tag()) {
+        a_of(id)
+      } else if k.eq(k_d_unit()) {
+        a_of(id)
+      } else if k.eq(k_d_val()) {
+        a_of(id)
+      } else if k.eq(k_d_context()) {
+        a_of(id)
+      } else if k.eq(k_d_functor()) {
+        fu_name(id)
+      } else if k.eq(k_d_fn()) {
+        if fn_recv(id).eq(recv_plain()) {
+          fn_name(id)
+        } else {
+          none()
+        }
+      } else {
+        none()
+      }
+    }
+  }
+}

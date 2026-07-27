@@ -756,6 +756,11 @@ class LinkError(Exception):
 
 def run_main(program: Program, lower, args: list | None = None) -> None:
     """D39: find main, check its needs against the native Std, run it."""
+    # A Moss frame costs several Python ones, and the self-hosted compiler
+    # dispatches on a node kind with a chain of forty `else if`s — which
+    # nests forty deep in the AST and so in any recursive walk of it.
+    # Nothing here is meant to be a limit on Moss programs; raise it.
+    sys.setrecursionlimit(max(sys.getrecursionlimit(), 100000))
     entry = program.entry
     main = entry.names.get("main")
     if main is None or main.kind != SymKind.FN or main.decl.body is None:

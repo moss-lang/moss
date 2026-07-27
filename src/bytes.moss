@@ -104,6 +104,19 @@ assume Std {
     push_bytes(dst, src);
   }
 
+  # Decimal, for the dumps the stages are checked against.
+  fn put_int(n: Int) {
+    if n.lt(zero) {
+      putchar(char::hyphen);
+      put_int(zero.sub(n));
+    } else if n.lt(n10()) {
+      putchar(char::digit0.code().add(n).char());
+    } else {
+      put_int(n.div(n10()));
+      putchar(char::digit0.code().add(n.rem(n10())).char());
+    }
+  }
+
   # Write a buffer to standard output. `putchar` is one byte in both
   # backends, so a module written this way is byte-identical whether the
   # compiler ran under the interpreter or as Wasm itself.
