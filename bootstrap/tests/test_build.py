@@ -191,15 +191,42 @@ class TestWasmBackend(unittest.TestCase):
             for field in (b"fd_write", b"args_sizes_get", b"args_get"):
                 self.assertIn(field, module)
 
-    def test_i64_reports_itself_as_out_of_slice(self):
-        source = (
-            'import "./lib/wasm.moss" as w use Wasm, I64;\n'
-            "assume Wasm {\n"
-            "  fn main() { let n = w::i64_extend_i32_u(w::i32_one); }\n"
-            "}\n"
+    def test_i64_is_a_scalar_type(self):
+        """D59: a value is a sequence of Wasm scalars, and not every scalar
+        is an i32. `1 << 32` has an empty low half, which is only true if
+        the shift really happened in 64 bits — and the intermediate lives
+        in an i64 local."""
+        wasm = compile_wasm({}, entry="tests/wasi/int64.moss")
+        self.assertEqual(run_wasm(wasm), "yy\n")
+
+    def test_raw_wasi_program(self):
+        """D52: a program can assume the primitive context directly, with no
+        `Std` and no prelude bridge — just Wasm instructions and WASI
+        imports. Writes "A\\n" through fd_write, then exits 3."""
+        wasm = compile_wasm({}, entry="tests/wasi/raw.moss")
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            path = f.name
+        result = subprocess.run(
+            [wasmtime(), path], capture_output=True, text=True, timeout=120
         )
-        with self.assertRaises(build_mod.NotCompilable):
-            compile_wasm({"main.moss": source})
+        self.assertEqual(result.stdout, "A\n")
+        self.assertEqual(result.returncode, 3)
+
+    def test_wasi_imports_are_only_what_is_called(self):
+        """The import section is no longer a fixed three: `proc_exit` shows
+        up only in the module that calls it, and every function index moves
+        to accommodate it."""
+        raw = compile_wasm({}, entry="tests/wasi/raw.moss")
+        std = compile_wasm(
+            {"main.moss": "assume Std {\n  fn main() { putchar(char::a); }\n}\n"}
+        )
+        self.assertIn(b"proc_exit", raw)
+        self.assertNotIn(b"proc_exit", std)
+        for module in (raw, std):
+            # The shims' imports are always there, whatever else is.
+            for field in (b"fd_write", b"args_sizes_get", b"args_get"):
+                self.assertIn(field, module)
 
     def test_fn_binds_compile_to_specialisations(self):
         """A bound fn is a direct call to a specialisation of the callee,
@@ -430,6 +457,14 @@ class TestWasmBackend(unittest.TestCase):
         the heap pointer where it was."""
         wasm = compile_wasm({}, entry="tests/wasi/noalloc.moss")
         self.assertEqual(run_wasm(wasm), "ky\n")
+
+    def test_path_over_wasi(self):
+        """D57 cleared by D59: `Path.read` is Moss now — path_open with
+        genuine i64 rights masks, then fd_read onto the top of the heap
+        the library itself manages."""
+        wasm = compile_wasm({}, entry="tests/wasi/files.moss")
+        expected = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
+        self.assertEqual(run_in_repo(wasm, ["lib/bool.moss"]), expected)
 
     def test_strings_and_chars_over_wasi(self):
         """String's methods and the char constants, in Moss over Wasi. The

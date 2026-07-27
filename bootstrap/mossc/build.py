@@ -199,6 +199,34 @@ for _i, _name in enumerate(
 WASM_OPS["i32_extend8_s"] = b"\xc0"
 WASM_OPS["i32_extend16_s"] = b"\xc1"
 
+# The i64 half. Comparisons yield an i32; the rest yield an i64.
+for _i, _name in enumerate(
+    "eqz eq ne lt_s lt_u gt_s gt_u le_s le_u ge_s ge_u".split()
+):
+    WASM_OPS[f"i64_{_name}"] = bytes([0x50 + _i])
+for _i, _name in enumerate(
+    "clz ctz popcnt add sub mul div_s div_u rem_s rem_u and or xor shl"
+    " shr_s shr_u rotl rotr".split()
+):
+    WASM_OPS[f"i64_{_name}"] = bytes([0x79 + _i])
+WASM_OPS["i32_wrap_i64"] = b"\xa7"
+WASM_OPS["i64_extend_i32_s"] = b"\xac"
+WASM_OPS["i64_extend_i32_u"] = b"\xad"
+WASM_OPS["i64_extend8_s"] = b"\xc2"
+WASM_OPS["i64_extend16_s"] = b"\xc3"
+WASM_OPS["i64_extend32_s"] = b"\xc4"
+WASM_OPS["i64_load"] = b"\x29" + _memarg(3)
+WASM_OPS["i64_store"] = b"\x37" + _memarg(3)
+
+# Which of them leave an i64 on the stack.
+I64_RESULTS = {
+    name
+    for name in WASM_OPS
+    if name.startswith("i64_")
+    and not name.startswith(("i64_eq", "i64_ne", "i64_lt", "i64_gt", "i64_le", "i64_ge"))
+    and name != "i64_store"
+}
+
 
 def freeze_env(env: dict) -> tuple:
     """A hashable form of a binding environment, for keying specializations."""
@@ -831,19 +859,27 @@ class FnCompiler:
             self.provisions[key] = ("local", index)
             index += 1
         self.param_count = index
-        self.extra_locals = 0
+        self.local_types: list = []
         self.break_depths: list[int] = []
         self.depth = 0
 
-    def local(self) -> int:
-        idx = self.param_count + self.extra_locals
-        self.extra_locals += 1
+    def local(self, valtype: bytes = I32) -> int:
+        idx = self.param_count + len(self.local_types)
+        self.local_types.append(valtype)
         return idx
 
     def run(self) -> bytes:
         self.block(self.fn.body)
         self.code += END
-        decls = vec([uleb(self.extra_locals) + I32] if self.extra_locals else [])
+        # Locals are declared in runs of one type (D59: a value is a
+        # sequence of scalars, and not every scalar is an i32).
+        runs = []
+        for valtype in self.local_types:
+            if runs and runs[-1][1] == valtype:
+                runs[-1][0] += 1
+            else:
+                runs.append([1, valtype])
+        decls = vec([uleb(n) + valtype for n, valtype in runs])
         return bytes(decls) + bytes(self.code)
 
     # Provisions: how a need key is satisfied *here*.
@@ -892,13 +928,13 @@ class FnCompiler:
 
     def stmt(self, node):
         if isinstance(node, (ir.Let, ir.Assign)):
-            self.expr(node.expr)
+            valtype = self.expr(node.expr)
             if node.name not in self.slots:
-                self.slots[node.name] = self.local()
+                self.slots[node.name] = self.local(valtype)
             self.code += LOCAL_SET + uleb(self.slots[node.name])
         elif isinstance(node, ir.BindVal):
-            self.expr(node.expr)
-            idx = self.local()
+            valtype = self.expr(node.expr)
+            idx = self.local(valtype)
             self.code += LOCAL_SET + uleb(idx)
             self.provisions[node.key] = ("local", idx)
         elif isinstance(node, ir.BindFn):
@@ -946,7 +982,12 @@ class FnCompiler:
 
     # Expressions: every expression leaves exactly one i32.
 
-    def expr(self, node):
+    def expr(self, node) -> bytes:
+        """Compiles `node` and reports the valtype it left on the stack.
+        Everything is an i32 but the i64 half of `Wasm` (D59)."""
+        return self.expr_inner(node) or I32
+
+    def expr_inner(self, node):
         if isinstance(node, ir.Unit):
             self.code += I32_CONST + sleb(0)
         elif isinstance(node, ir.Local):
@@ -981,7 +1022,7 @@ class FnCompiler:
             self.expr(node.obj)
             self.code += I32_LOAD + uleb(2) + uleb(4 + 4 * node.index)
         elif isinstance(node, ir.Call):
-            self.call(node)
+            return self.call(node)
         elif isinstance(node, ir.If):
             self.expr(node.cond)
             self.code += IF + I32
@@ -1305,8 +1346,7 @@ class FnCompiler:
                 self.code += I32_CONST + sleb(0) + BINOPS_NE
                 return
         if "wasm" in self.b.lib and module is self.b.lib["wasm"]:
-            self.wasm_instruction(key, node)
-            return
+            return self.wasm_instruction(key, node)
         if "wasip1" in self.b.lib and module is self.b.lib["wasip1"]:
             # D52: a WASI function is exactly an import of this module.
             for arg in node.args:
@@ -1324,12 +1364,14 @@ class FnCompiler:
         """A `Wasm` intrinsic is the instruction of the same name."""
         op = WASM_OPS.get(key.name)
         if op is None:
-            raise NotCompilable(f"`{key.name}` (i64 is not in this slice)")
+            raise NotCompilable(f"`{key.name}` is not an instruction")
         for arg in node.args:
             self.expr(arg)
         self.code += op
         if key.decl.ret is None:
             self.code += I32_CONST + sleb(0)  # stores and fills yield ()
+            return I32
+        return I64 if key.name in I64_RESULTS else I32
 
 
 def build(program: Program, lower, main: Symbol) -> bytes:

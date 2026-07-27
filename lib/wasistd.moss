@@ -1,5 +1,7 @@
 import "./wasm.moss" as w use Wasm, I32;
-import "./wasip1.moss" use Wasi, fd_write, args_sizes_get, args_get;
+import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
+  args_sizes_get, args_get, path_open;
+import "./path.moss" as path use Path, pwd, .join, .read;
 import "./bool.moss" use Bool;
 import "./char.moss" as char use Char, .char;
 import "./int.moss" as int use Int, zero, one;
@@ -28,6 +30,10 @@ context Branch = i32_bool;
 
 context Console = Char, String, putchar, print, first_arg;
 
+# Paths, which need i64 for path_open's rights masks (D57, now that D59
+# has made i64 a scalar like any other).
+context Files = Path, pwd, Path.join, Path.read;
+
 # The numeric slice. `Int` binds to a nominal wrapper rather than to I32
 # directly, because only an attached method can see its receiver and only
 # a nominal type can carry one (D54) — so every Int is a boxed tag until
@@ -48,6 +54,17 @@ assume Wasm, Branch {
   fn twelve(): I32 { w::i32_add(eight(), four()) }
   fn sixteen(): I32 { w::i32_add(eight(), eight()) }
   fn twenty_four(): I32 { w::i32_add(sixteen(), eight()) }
+  fn thirty_two(): I32 { w::i32_add(sixteen(), sixteen()) }
+  fn chunk_size(): I32 { w::i32_shl(w::i32_one, twelve()) }
+  fn slash(): Str { string_of(slash_byte(), w::i32_one) }
+  # '/' written into scratch that nothing else is using at the time.
+  fn slash_byte(): I32 {
+    let at = twenty_four();
+    w::i32_store8(at, w::i32_or(w::i32_shl(w::i32_one, five_()), fifteen()));
+    at
+  }
+  fn five_(): I32 { w::i32_add(four(), w::i32_one) }
+  fn fifteen(): I32 { w::i32_sub(sixteen(), w::i32_one) }
   fn twenty_eight(): I32 { w::i32_add(twenty_four(), four()) }
 
   # The bump allocator, in Moss. The heap pointer lives at address 16,
@@ -96,6 +113,12 @@ assume Wasm, Branch {
     string_of(w::i32_add(w::i32_add(addr(this), four()), raw(start)), raw(len))
   }
 
+  # A Path is a name relative to the WASI preopen, so it is a String and
+  # `pwd` is the empty one.
+  type Loc Str;
+
+  fn loc_str(l: Loc): Str { match l { Loc s => s } }
+
   fn Str.concat(other: Str): Str {
     let la = w::i32_load(addr(this));
     let lb = w::i32_load(addr(other));
@@ -134,6 +157,48 @@ assume Wasm, Branch {
 
     fn wasi_print(s: Str) {
       write_all(w::i32_add(addr(s), four()), w::i32_load(addr(s)));
+    }
+
+    fn wasi_pwd(): Loc { Loc (string_of(w::i32_zero, w::i32_zero)) }
+
+    fn Loc.join(name: Str): Loc {
+      let dir = loc_str(this);
+      if i32_bool(w::i32_eqz(w::i32_load(addr(dir)))) {
+        Loc (name)
+      } else {
+        Loc (dir.concat(slash()).concat(name))
+      }
+    }
+
+    # path_open against the preopen, then fd_read in chunks straight onto
+    # the top of the heap, which the bump allocator leaves contiguous.
+    fn Loc.read(): Str {
+      let p = addr(loc_str(this));
+      let rights = w::i64_or(
+        w::i64_extend_i32_u(w::i32_one), w::i64_extend_i32_u(two())
+      );
+      let err = path_open(
+        w::i32_add(two(), w::i32_one), w::i32_zero,
+        w::i32_add(p, four()), w::i32_load(p), w::i32_zero,
+        rights, w::i64_extend_i32_u(w::i32_zero), w::i32_zero, thirty_two()
+      );
+      if i32_bool(err) { w::unreachable() } else { () }
+      let fd = w::i32_load(thirty_two());
+      let s = alloc(four());
+      var total = w::i32_zero;
+      loop {
+        let chunk = alloc(chunk_size());
+        w::i32_store(w::i32_zero, w::i32_add(w::i32_add(s, four()), total));
+        w::i32_store(four(), chunk_size());
+        fd_read(fd, w::i32_zero, w::i32_one, twelve());
+        let got = w::i32_load(twelve());
+        if i32_bool(w::i32_eqz(got)) { break; }
+        total = w::i32_add(total, got);
+      }
+      w::i32_store(s, total);
+      w::i32_store(sixteen(), w::i32_add(w::i32_add(s, four()), total));
+      fd_close(fd);
+      Str (s)
     }
 
     fn wasi_first_arg(): Str {
@@ -228,6 +293,13 @@ functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind String.get = Str.get;
   bind String.slice = Str.slice;
   bind String.concat = Str.concat;
+}
+
+functor WasiFiles: Wasm, Wasi, Branch -> Files {
+  bind path::Path = Loc;
+  bind path::pwd = wasi_pwd();
+  bind Path.join = Loc.join;
+  bind Path.read = Loc.read;
 }
 
 functor WasiConsole: Wasm, Wasi, Branch -> Console {

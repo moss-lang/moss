@@ -413,7 +413,11 @@ discriminant followed by enough slots for its widest member. The IR must
 carry the layout of every expression, since the backend can no longer
 assume "one i32" — and that is the same mechanism [D57] needs, because a
 value being i64 is just a different layout. So i64 support and the
-heapless value model are one change, not two.
+heapless value model are one change, not two — and its first half is
+done: a slot carries a valtype, `Wasm`'s i64 instructions compile, and
+`lib/wasistd.moss` implements `Path.read` with real u64 rights masks.
+What remains is the multi-slot half: a value occupying more than one
+scalar, which is what lets `MakeRecord` and `Inject` stop allocating.
 
 What that implies, in order: a `layout` function in lowering, layouts on
 IR expressions and on `FnIR`'s parameters and result; locals allocated in
@@ -425,8 +429,7 @@ and injected unions then allocate nothing, `Path.read` becomes writable
 in Moss, and the backend's allocator survives only inside the shims that
 still implement native `Std`, disappearing with them.
 
-**[D57] FINDING, subsumed by [D59] (an in-language `Path.read` needs
-i64).** `path_open`
+**[D57] RESOLVED by [D59] (an in-language `Path.read` needs i64).** `path_open`
 takes its two rights masks as u64, as lib/wasip1.moss correctly declares.
 The Wasm backend's value model is uniformly i32, so a Moss implementation
 of `Path.read` cannot construct those arguments — it is the one part of
