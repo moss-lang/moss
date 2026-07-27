@@ -358,6 +358,24 @@ class TestWasmBackend(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "abcdyd\n")
 
+    def test_allocation_grows_memory(self):
+        """The module starts at two pages and nothing else grows it, so a
+        program that allocates past 128K used to write off the end."""
+        source = (
+            "assume Std {\n"
+            "  fn main() {\n"
+            "    let xs = int_list();\n"
+            "    var i = zero;\n"
+            "    let n = one.shl(one.shl(one.add(one).add(one).add(one)));\n"
+            "    while i.lt(n) { xs.push(i); i = i.add(one); }\n"
+            "    if xs.length().eq(n) { putchar(char::y) } else { putchar(char::n) }\n"
+            "    if xs.get(n.sub(one)).eq(n.sub(one)) { putchar(char::z) }\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n"
+        )
+        self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), "yz\n")
+
     def test_self_hosted_parser_compiles_to_wasm(self):
         """The whole self-hosted front end — lexer, arena parser, interner,
         duplicate detection — as one Wasm module, byte-identical to the

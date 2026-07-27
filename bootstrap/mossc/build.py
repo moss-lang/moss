@@ -426,6 +426,21 @@ class Backend:
         body += I32_CONST + sleb(3) + BINOPS["add"]
         body += I32_CONST + sleb(-4) + BINOPS["and"]
         body += I32_STORE + uleb(2) + uleb(0)
+        # Grow if the new top is past the end of memory. Two pages is the
+        # starting size, and nothing else grows it, so without this a
+        # program that allocates enough simply writes off the end.
+        body += BLOCK + EMPTY
+        body += I32_CONST + sleb(16) + I32_LOAD + uleb(2) + uleb(0)
+        body += b"\x3f\x00"  # memory.size, in pages
+        body += I32_CONST + sleb(16) + BINOPS["shl"]
+        body += BINOPS["lt"] + BR_IF + uleb(0)
+        # grow by (needed - size) pages, rounded up, plus one for slack
+        body += I32_CONST + sleb(16) + I32_LOAD + uleb(2) + uleb(0)
+        body += I32_CONST + sleb(16) + BINOPS["shr"]
+        body += b"\x3f\x00"
+        body += BINOPS["sub"] + I32_CONST + sleb(1) + BINOPS["add"]
+        body += b"\x40\x00" + DROP  # memory.grow
+        body += END
         body += LOCAL_GET + uleb(1)
         body += END
         return bytes(body)
