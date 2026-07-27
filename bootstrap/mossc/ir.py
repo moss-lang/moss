@@ -30,6 +30,10 @@ class FnIR:
     needs: tuple  # runtime-relevant Keys, in stable order
     body: "Block"
     has_this: bool = False
+    # D59: how many scalars each value occupies. `param_slots` covers
+    # `this` first when there is one, then the parameters in order.
+    param_slots: tuple = ()
+    ret_slots: int = 1
 
 
 # Expressions
@@ -131,6 +135,9 @@ class Inject:
 
     symbol: object
     value: object
+    # How wide the union is: one scalar when every member is a unit (the
+    # code discriminates by itself), otherwise a discriminant plus payload.
+    width: int = 2
 
 
 @dataclass(frozen=True)

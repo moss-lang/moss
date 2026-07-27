@@ -391,7 +391,7 @@ class Backend:
         fn = self.lower.fns[id(symbol)]
         compiler = FnCompiler(self, fn, self.val_slots(symbol, env), env)
         body = compiler.run()  # may recursively compile callees
-        self.compiled[index] = (compiler.param_count, body)
+        self.compiled[index] = (compiler.param_count, fn.ret_slots, body)
         return index
 
     def build(self, main: Symbol) -> bytes:
@@ -436,7 +436,7 @@ class Backend:
             ty(2, 1),  # join: (path, name) -> path
             ty(1, 1),  # read: (path) -> string
         ]
-        func_types = [ty(count, 1) for count, _ in ordered]
+        func_types = [ty(count, results) for count, results, _ in ordered]
         start_type = ty(0, 0)
 
         type_section = section(
@@ -500,7 +500,7 @@ class Backend:
                 self.join_shim(),
                 self.read_shim(),
             ]
-            + [b for _, b in ordered]
+            + [b for _, _, b in ordered]
             + [start_body]
         )
         code_section = section(10, vec([uleb(len(b)) + b for b in bodies]))
@@ -846,17 +846,20 @@ class FnCompiler:
         self.fn = fn
         self.env = dict(env)  # fn need key -> (provider symbol, its own env)
         self.code = bytearray()
-        self.slots: dict = {}  # name or ('need', key) -> local index
+        # D59: a value is a run of scalars, so a name owns a *list* of
+        # local indices rather than one.
+        self.slots: dict = {}  # name -> [local index, ...]
         self.provisions: dict = {}  # key -> ('local', idx) | ('const', n)
         index = 0
-        if fn.has_this:
-            self.slots["this"] = index
-            index += 1
-        for p in fn.params:
-            self.slots[p] = index
-            index += 1
+        widths = list(fn.param_slots) or [1] * (len(fn.params) + (1 if fn.has_this else 0))
+        names = (["this"] if fn.has_this else []) + list(fn.params)
+        for name, width in zip(names, widths):
+            self.slots[name] = list(range(index, index + width))
+            index += width
+        self.param_types = [I32] * index
         for key in needs:
             self.provisions[key] = ("local", index)
+            self.param_types.append(I32)
             index += 1
         self.param_count = index
         self.local_types: list = []
@@ -867,6 +870,23 @@ class FnCompiler:
         idx = self.param_count + len(self.local_types)
         self.local_types.append(valtype)
         return idx
+
+    def local_type_of(self, index: int) -> bytes:
+        if index < self.param_count:
+            return self.param_types[index]
+        return self.local_types[index - self.param_count]
+
+    def group(self, layout) -> list:
+        return [self.local(valtype) for valtype in layout]
+
+    def store(self, indices: list):
+        """Pop a value off the stack into its slots, last slot first."""
+        for idx in reversed(indices):
+            self.code += LOCAL_SET + uleb(idx)
+
+    def load(self, indices: list):
+        for idx in indices:
+            self.code += LOCAL_GET + uleb(idx)
 
     def run(self) -> bytes:
         self.block(self.fn.body)
@@ -921,20 +941,24 @@ class FnCompiler:
             self.stmt(stmt)
         if node.tail is None:
             self.code += I32_CONST + sleb(0)
+            layout = (I32,)
         else:
-            self.expr(node.tail)
+            layout = self.expr(node.tail)
         self.provisions = saved
         self.env = saved_env
+        return layout
 
     def stmt(self, node):
         if isinstance(node, (ir.Let, ir.Assign)):
-            valtype = self.expr(node.expr)
+            layout = self.expr(node.expr)
             if node.name not in self.slots:
-                self.slots[node.name] = self.local(valtype)
-            self.code += LOCAL_SET + uleb(self.slots[node.name])
+                self.slots[node.name] = self.group(layout)
+            self.store(self.slots[node.name])
         elif isinstance(node, ir.BindVal):
-            valtype = self.expr(node.expr)
-            idx = self.local(valtype)
+            layout = self.expr(node.expr)
+            if len(layout) != 1:
+                raise NotCompilable("binding a val of more than one scalar")
+            idx = self.local(layout[0])
             self.code += LOCAL_SET + uleb(idx)
             self.provisions[node.key] = ("local", idx)
         elif isinstance(node, ir.BindFn):
@@ -950,8 +974,8 @@ class FnCompiler:
                     self.provisions[callee_key] = self.provide(caller_key)
             self.env[node.key] = (node.fn, sub)
         elif isinstance(node, ir.ExprStmt):
-            self.expr(node.expr)
-            self.code += DROP
+            layout = self.expr(node.expr)
+            self.code += DROP * len(layout)
         elif isinstance(node, ir.While):
             self.code += BLOCK + EMPTY
             self.depth += 1
@@ -960,8 +984,8 @@ class FnCompiler:
             self.depth += 1
             self.expr(node.cond)
             self.code += I32_EQZ + BR_IF + uleb(1)
-            self.block(node.body)
-            self.code += DROP + BR + uleb(0) + END + END
+            self.code += DROP * len(self.block(node.body))
+            self.code += BR + uleb(0) + END + END
             self.depth -= 2
             self.break_depths.pop()
         elif isinstance(node, ir.Loop):
@@ -970,8 +994,8 @@ class FnCompiler:
             self.break_depths.append(self.depth)
             self.code += LOOP + EMPTY
             self.depth += 1
-            self.block(node.body)
-            self.code += DROP + BR + uleb(0) + END + END
+            self.code += DROP * len(self.block(node.body))
+            self.code += BR + uleb(0) + END + END
             self.depth -= 2
             self.break_depths.pop()
         elif isinstance(node, ir.Block):
@@ -982,18 +1006,25 @@ class FnCompiler:
 
     # Expressions: every expression leaves exactly one i32.
 
-    def expr(self, node) -> bytes:
-        """Compiles `node` and reports the valtype it left on the stack.
-        Everything is an i32 but the i64 half of `Wasm` (D59)."""
-        return self.expr_inner(node) or I32
+    def expr(self, node) -> tuple:
+        """Compiles `node` and reports its *layout*: the valtypes it left
+        on the stack, one per scalar the value occupies (D59)."""
+        got = self.expr_inner(node)
+        if got is None:
+            return (I32,)
+        return got if isinstance(got, tuple) else (got,)
 
     def expr_inner(self, node):
         if isinstance(node, ir.Unit):
             self.code += I32_CONST + sleb(0)
         elif isinstance(node, ir.Local):
-            self.code += LOCAL_GET + uleb(self.slots[node.name])
+            indices = self.slots[node.name]
+            self.load(indices)
+            return tuple(self.local_type_of(i) for i in indices)
         elif isinstance(node, ir.This):
-            self.code += LOCAL_GET + uleb(self.slots["this"])
+            indices = self.slots["this"]
+            self.load(indices)
+            return tuple(self.local_type_of(i) for i in indices)
         elif isinstance(node, ir.NeedVal):
             self.push_provision(node.key)
         elif isinstance(node, ir.MakeUnit):
@@ -1002,41 +1033,28 @@ class FnCompiler:
             # D58: a nominal value *is* its payload. Nothing to attach.
             self.expr(node.payload)
         elif isinstance(node, ir.Inject):
-            self.inject(node)
+            return self.inject(node)
         elif isinstance(node, ir.MakeRecord):
-            count = len(node.fields)
-            tmp = self.local()
-            self.code += I32_CONST + sleb(4 + 4 * count) + CALL + uleb(self.b.shim(S_ALLOC))
-            self.code += LOCAL_SET + uleb(tmp)
-            self.code += LOCAL_GET + uleb(tmp)
-            self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
-            self.code += I32_STORE + uleb(2) + uleb(0)
-            for i, (_, expr) in enumerate(node.fields):
-                self.code += LOCAL_GET + uleb(tmp)
-                self.expr(expr)
-                self.code += I32_STORE + uleb(2) + uleb(4 + 4 * i)
-            self.code += LOCAL_GET + uleb(tmp)
+            # D59: the fields *are* the value, one scalar each.
+            layout = []
+            for _, expr in node.fields:
+                field = self.expr(expr)
+                if len(field) != 1:
+                    raise NotCompilable("a record field of more than one scalar")
+                layout.extend(field)
+            return tuple(layout)
         elif isinstance(node, ir.Field):
             if node.index < 0:
                 raise NotCompilable("field access without layout")
-            self.expr(node.obj)
-            self.code += I32_LOAD + uleb(2) + uleb(4 + 4 * node.index)
+            layout = self.expr(node.obj)
+            staged = self.group(layout)
+            self.store(staged)
+            self.code += LOCAL_GET + uleb(staged[node.index])
+            return (layout[node.index],)
         elif isinstance(node, ir.Call):
             return self.call(node)
         elif isinstance(node, ir.If):
-            self.expr(node.cond)
-            self.code += IF + I32
-            self.depth += 1
-            self.block(node.then)
-            self.code += ELSE
-            if node.els is None:
-                self.code += I32_CONST + sleb(0)
-            elif isinstance(node.els, ir.Block):
-                self.block(node.els)
-            else:
-                self.expr(node.els)
-            self.code += END
-            self.depth -= 1
+            return self.if_expr(node)
         elif isinstance(node, ir.Return):
             if node.expr is None:
                 self.code += I32_CONST + sleb(0)
@@ -1049,44 +1067,41 @@ class FnCompiler:
         elif isinstance(node, ir.Block):
             self.block(node)
         elif isinstance(node, ir.Match):
-            self.match(node)
+            return self.match(node)
         else:
             raise NotCompilable(type(node).__name__)
 
     def match(self, node: ir.Match):
-        scrut = self.local()
+        layout = self.probe_expr(node.scrutinee)
+        scrut = self.group(layout)
         self.expr(node.scrutinee)
-        self.code += LOCAL_SET + uleb(scrut)
+        self.store(scrut)
         bool_sym = self.b.lib["bool"].names.get("Bool") if "bool" in self.b.lib else None
         arms = list(node.arms)
+        result = [None]
 
         def bind_and_body(arm, bare=False):
             pat = arm.pat
             if pat.head is None:
                 if pat.binder is not None:
-                    slot = self.slots.setdefault(pat.binder, self.local())
-                    self.code += LOCAL_GET + uleb(scrut) + LOCAL_SET + uleb(slot)
+                    self.slots.setdefault(pat.binder, list(scrut))
             elif bare and pat.fields is None:
                 # Untagged: the scrutinee is the payload.
                 if pat.binder is not None:
-                    slot = self.slots.setdefault(pat.binder, self.local())
-                    self.code += LOCAL_GET + uleb(scrut) + LOCAL_SET + uleb(slot)
+                    self.slots.setdefault(pat.binder, list(scrut))
             else:
                 if pat.binder is not None:
-                    slot = self.slots.setdefault(pat.binder, self.local())
-                    self.code += LOCAL_GET + uleb(scrut)
-                    self.code += I32_LOAD + uleb(2) + uleb(4)
-                    self.code += LOCAL_SET + uleb(slot)
+                    # Injected: the payload sits beside the discriminant.
+                    self.slots.setdefault(pat.binder, list(scrut[1:]))
                 if pat.fields is not None:
                     for _, binder, index in pat.fields:
-                        slot = self.slots.setdefault(binder, self.local())
-                        self.code += LOCAL_GET + uleb(scrut)
-                        self.code += I32_LOAD + uleb(2) + uleb(4 + 4 * index)
-                        self.code += LOCAL_SET + uleb(slot)
+                        self.slots.setdefault(binder, [scrut[index]])
             if isinstance(arm.body, ir.Block):
-                self.block(arm.body)
+                got = self.block(arm.body)
             else:
-                self.expr(arm.body)
+                got = self.expr(arm.body)
+            result[0] = got
+            return got
 
         def chain(i: int):
             if i >= len(arms):
@@ -1097,52 +1112,114 @@ class FnCompiler:
             if not node.tagged:
                 # One possible head, so the first arm always matches.
                 bind_and_body(arm, bare=True)
+                if staged:
+                    self.store(staged)
                 return
             if pat.head is None:
                 bind_and_body(arm)
+                if staged:
+                    self.store(staged)
                 return
             if pat.head is bool_sym:
                 raise NotCompilable("matching through Bool (use if)")
             code = self.b.unit_code(pat.head)
-            boxed = pat.binder is not None or pat.fields is not None
-            if boxed or pat.head.kind == SymKind.TAG:
-                # (s >= heap) & (mem[s] == code); the load is safe either way.
-                self.code += LOCAL_GET + uleb(scrut) + I32_CONST + sleb(HEAP_BASE)
-                self.code += BINOPS["ge"]
-                self.code += LOCAL_GET + uleb(scrut) + I32_LOAD + uleb(2) + uleb(0)
-                self.code += I32_CONST + sleb(code) + BINOPS["eq"]
-                self.code += BINOPS["and"]
-            else:
-                self.code += LOCAL_GET + uleb(scrut)
-                self.code += I32_CONST + sleb(code) + BINOPS["eq"]
-            self.code += IF + I32
+            # Slot zero is the discriminant, whatever the member is.
+            self.code += LOCAL_GET + uleb(scrut[0])
+            self.code += I32_CONST + sleb(code) + BINOPS["eq"]
+            self.code += IF + arm_type
             self.depth += 1
             bind_and_body(arm)
+            if staged:
+                self.store(staged)
             self.code += ELSE
             chain(i + 1)
             self.code += END
             self.depth -= 1
 
+        arm_layout = (
+            self.probe_arm(bind_and_body, arms[0], not node.tagged) if arms else (I32,)
+        )
+        staged = self.group(arm_layout) if len(arm_layout) != 1 else None
+        arm_type = EMPTY if staged else arm_layout[0]
         chain(0)
+        if staged:
+            self.load(staged)
+        return arm_layout
 
     def inject(self, node: ir.Inject):
-        """A value entering a union needs discriminating. A unit already is
-        its own code, and a record's box already carries one, so only a
-        payload-carrying tag grows a word here."""
-        symbol = node.symbol
-        if symbol.kind != SymKind.TAG or isinstance(symbol.decl.ty, ast_TyRecord):
-            self.expr(node.value)
-            return
-        tmp = self.local()
-        self.code += I32_CONST + sleb(8) + CALL + uleb(self.b.shim(S_ALLOC))
-        self.code += LOCAL_SET + uleb(tmp)
-        self.code += LOCAL_GET + uleb(tmp)
-        self.code += I32_CONST + sleb(self.b.unit_code(symbol))
-        self.code += I32_STORE + uleb(2) + uleb(0)
-        self.code += LOCAL_GET + uleb(tmp)
-        self.expr(node.value)
-        self.code += I32_STORE + uleb(2) + uleb(4)
-        self.code += LOCAL_GET + uleb(tmp)
+        """A value entering a union: a discriminant scalar beside the
+        payload, with no allocation at all (D59). A union whose members are
+        all units needs no discriminant — the code is the value."""
+        if node.width == 1:
+            return self.expr(node.value)
+        self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
+        payload = self.expr(node.value)
+        if len(payload) + 1 > node.width:
+            raise NotCompilable("a union member wider than its union")
+        for _ in range(node.width - 1 - len(payload)):
+            self.code += I32_CONST + sleb(0)  # pad to the union's width
+        return (I32,) + payload + (I32,) * (node.width - 1 - len(payload))
+
+    def if_expr(self, node: ir.If):
+        """A block type names at most one result, so a branch yielding
+        several scalars is staged through locals instead (D59)."""
+        def els():
+            if node.els is None:
+                self.code += I32_CONST + sleb(0)
+                return (I32,)
+            if isinstance(node.els, ir.Block):
+                return self.block(node.els)
+            return self.expr(node.els)
+
+        probe = self.probe(node.then)
+        if len(probe) == 1:
+            self.expr(node.cond)
+            self.code += IF + probe[0]
+            self.depth += 1
+            self.block(node.then)
+            self.code += ELSE
+            els()
+            self.code += END
+            self.depth -= 1
+            return probe
+        staged = self.group(probe)
+        self.expr(node.cond)
+        self.code += IF + EMPTY
+        self.depth += 1
+        self.block(node.then)
+        self.store(staged)
+        self.code += ELSE
+        els()
+        self.store(staged)
+        self.code += END
+        self.depth -= 1
+        self.load(staged)
+        return probe
+
+    def probe_expr(self, node):
+        return self.probing(lambda: self.expr(node))
+
+    def probe_arm(self, bind_and_body, arm, bare):
+        return self.probing(lambda: bind_and_body(arm, bare))
+
+    def probe(self, block: ir.Block):
+        return self.probing(lambda: self.block(block))
+
+    def probing(self, emit):
+        """The layout a block yields, found by compiling it to a scratch
+        buffer and throwing the code away. Cheap, and it keeps layout out
+        of the IR for constructs whose type the lowering does not record."""
+        saved_code, saved_locals = self.code, list(self.local_types)
+        saved_slots, saved_prov = dict(self.slots), dict(self.provisions)
+        saved_env, saved_depth = dict(self.env), self.depth
+        self.code = bytearray()
+        try:
+            return emit()
+        finally:
+            self.code = saved_code
+            self.local_types = saved_locals
+            self.slots, self.provisions = saved_slots, saved_prov
+            self.env, self.depth = saved_env, saved_depth
 
     def call(self, node: ir.Call):
         kind, target = node.callee
@@ -1163,7 +1240,7 @@ class FnCompiler:
             for slot in self.b.val_slots(target, callee_env):
                 self.push_provision(translate.get(slot, slot))
             self.code += CALL + uleb(self.b.compile_fn(target, callee_env))
-            return
+            return (I32,) * self.b.lower.fns[id(target)].ret_slots
         if target in self.env:
             provider, sub = self.env[target]
             if node.this is not None:
@@ -1173,7 +1250,7 @@ class FnCompiler:
             for slot in self.b.val_slots(provider, sub):
                 self.push_provision(slot)
             self.code += CALL + uleb(self.b.compile_fn(provider, sub))
-            return
+            return (I32,) * self.b.lower.fns[id(provider)].ret_slots
         # Contextual call: a native method, putchar, or out of slice.
         key = target
         op = self.b.method_op(key)

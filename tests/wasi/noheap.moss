@@ -1,0 +1,31 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# Do records and unions allocate? Watch the heap pointer across a run of
+# both, the way the D58 test watched nominal wrappers.
+assume Std, Wasm, Branch {
+  type Point { x: Char, y: Char };
+  type Wrapped Char;
+  unit Missing;
+  type Maybe = | Missing | Wrapped;
+
+  fn flip(p: Point): Point { match p { Point { x, y } => Point { x = y, y = x }, } }
+  fn show(m: Maybe): Char { match m { Wrapped c => c, Missing => char::n, } }
+
+  fn main() {
+    let sixteen = w::i32_shl(w::i32_one, w::i32_add(w::i32_add(w::i32_one, w::i32_one), w::i32_add(w::i32_one, w::i32_one)));
+    let before = w::i32_load(sixteen);
+    var i = zero;
+    var last = char::q;
+    while i.lt(one.add(one).add(one)) {
+      let p = flip(Point { x = char::a, y = char::b });
+      last = p.x;
+      putchar(show(Wrapped (last)));
+      putchar(show(Missing));
+      i = i.add(one);
+    }
+    let after = w::i32_load(sixteen);
+    if i32_bool(w::i32_eq(before, after)) { putchar(char::y) } else { putchar(char::n) }
+    putchar(char::newline);
+  }
+}

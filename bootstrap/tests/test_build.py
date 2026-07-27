@@ -452,6 +452,13 @@ class TestWasmBackend(unittest.TestCase):
         )
         self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), "yyn")
 
+    def test_records_and_unions_do_not_allocate(self):
+        """D59: the compiler has no heap. Records are one scalar per field
+        and an injected union is a discriminant beside its payload, so a
+        loop building both leaves the heap pointer where it was."""
+        wasm = compile_wasm({}, entry="tests/wasi/noheap.moss")
+        self.assertEqual(run_wasm(wasm), "bnbnbny\n")
+
     def test_nominal_wrapper_does_not_allocate(self):
         """The same, watched from underneath: constructing a wrapper leaves
         the heap pointer where it was."""

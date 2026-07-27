@@ -282,6 +282,28 @@ class Lower:
             return None
         return (id(target), spec.dot)
 
+    def slots_of(self, env, ty) -> int:
+        """D59: how many Wasm scalars a value of this type occupies. A
+        record is one per field; everything else is one. (An injected
+        union will be two — a discriminant beside the payload — once the
+        backend reads slot zero instead of testing a pointer.)"""
+        ty = self.canon(env, ty)
+        if isinstance(ty, TRecord):
+            return len(ty.fields)
+        if isinstance(ty, TUnion):
+            # A union of units is just its code; anything carrying a
+            # payload needs a discriminant beside it.
+            units = all(
+                head(m) is not None and head(m).kind == SymKind.UNIT
+                for m in members(ty)
+            )
+            return 1 if units else 2
+        if isinstance(ty, TNominal) and ty.symbol.kind == SymKind.TAG:
+            decl_ty = getattr(ty.symbol.decl, "ty", None)
+            if isinstance(decl_ty, ast.TyRecord):
+                return len(decl_ty.fields)
+        return 1
+
     def find_method_decl(self, module: Module, receiver: Symbol, name: str) -> Symbol | None:
         """An abstract attached method on the receiver, or a detached method
         in scope — falling back to the receiver's home module, so that
@@ -647,7 +669,18 @@ class Lower:
         sig = self.fn_sig(symbol, env.tymap, env, this=this_ty)
         checker = FnChecker(self, module, env, sig, needs, this_ty)
         body = checker.check_block(decl.body, expected=sig.ret)
-        fn = ir.FnIR(symbol, tuple(n for n, _ in sig.params), tuple(needs), body, has_this)
+        param_slots = tuple(
+            [self.slots_of(env, this_ty)] if has_this else []
+        ) + tuple(self.slots_of(env, t) for _, t in sig.params)
+        fn = ir.FnIR(
+            symbol,
+            tuple(n for n, _ in sig.params),
+            tuple(needs),
+            body,
+            has_this,
+            param_slots,
+            self.slots_of(env, sig.ret),
+        )
         self.fns[id(symbol)] = fn
         self.in_progress.discard(id(symbol))
 
@@ -1011,7 +1044,9 @@ class FnChecker:
         if isinstance(t, (TUnion, TNever)) or t == want:
             return node  # already discriminated, or not a value at all
         symbol = head(t)
-        return node if symbol is None else ir.Inject(symbol, node)
+        if symbol is None:
+            return node
+        return ir.Inject(symbol, node, self.lower.slots_of(self.env, want))
 
     def synth_inner(self, expr, expected=None):
         if getattr(expr, "offset", -1) >= 0:
