@@ -64,11 +64,14 @@ assume Std {
   # the character is wrapped in a nominal tag.
   type Read Char;
 
-  # The lexer owns its input and position; the driver binds these.
+  # The lexer owns its input and position; the driver binds these. After
+  # lex() returns a token, `mark` holds the token's start offset (its end
+  # is wherever `at` stands).
   val src: String;
   val at: CellInt;
+  val mark: CellInt;
 
-  assume src, at {
+  assume src, at, mark {
     fn peek(): Read | Eof {
       let i = at.read();
       if i.ge(src.length()) {
@@ -138,6 +141,7 @@ assume Std {
             } else if c.eq(char::octothorpe) {
               skip_comment();
             } else {
+              mark.write(at.read().sub(one));
               return token_at(c);
             }
           }

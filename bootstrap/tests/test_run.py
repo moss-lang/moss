@@ -351,6 +351,7 @@ DOTS_DRIVER = (
     "  fn main() {\n"
     "    bind lexer::src=first_arg();\n"
     "    bind lexer::at=cell_int();\n"
+    "    bind lexer::mark=cell_int();\n"
     "    loop { match lexer::lex() { Eof => break, _ => putchar(char::dot), } }\n"
     "    putchar(char::newline);\n"
     "  }\n"
@@ -397,6 +398,8 @@ class TestSelfHostedLexer(unittest.TestCase):
                 "  fn main() {\n"
                 "    bind lexer::src=first_arg();\n"
                 "    bind lexer::at=cell_int();\n"
+                "    bind lexer::mark=cell_int();\n"
+    "    bind lexer::mark=cell_int();\n"
                 "    loop {\n"
                 "      match lexer::lex() {\n"
                 "        Eof => break,\n"
@@ -590,10 +593,12 @@ class TestSelfHostedParser(unittest.TestCase):
             "}\n"
             "context C = A;\n"
         )
-        self.assertEqual(self.parse_letters(source), "iuta(vffa(f))c\n")
+        self.assertEqual(
+            self.parse_letters(source), "i;uU;tT;a(vv;ff;fg;a(fh;))cC;\n"
+        )
 
     def test_junk_marked(self):
-        self.assertEqual(self.parse_letters("; unit U;"), "xu\n")
+        self.assertEqual(self.parse_letters("; unit U;"), "?;uU;\n")
 
     def test_real_files_have_no_junk(self):
         for rel in [
@@ -606,16 +611,23 @@ class TestSelfHostedParser(unittest.TestCase):
             with self.subTest(file=rel):
                 text = (REPO / rel).read_text(encoding="utf-8")
                 out = self.parse_letters(text)
-                self.assertNotIn("x", out)
+                self.assertNotIn("?", out)
                 self.assertGreater(len(out.strip()), 0)
 
     def test_parses_itself(self):
         text = (REPO / "src/parse.moss").read_text(encoding="utf-8")
-        self.assertEqual(self.parse_letters(text), "iiia(a(ffffff))\n")
-
-    def test_nesting_read_back_from_the_arena(self):
-        text = (REPO / "src/lex.moss").read_text(encoding="utf-8")
         self.assertEqual(
             self.parse_letters(text),
-            "ita(tvva(" + "f" * 23 + "))\n",
+            "i;i;i;a(a(fskip_braces;fskip_to_semi;fskip_fn;fnamed;fdecls;"
+            "fdump;frun;))\n",
         )
+
+    def test_names_read_back_from_the_arena(self):
+        text = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
+        self.assertEqual(
+            self.parse_letters(text), "uFalse;uTrue;tBool;vfalse;vtrue;\n"
+        )
+
+    def test_method_names(self):
+        source = "assume A { fn T.m(); fn .d(); fn plain(); }"
+        self.assertEqual(self.parse_letters(source), "a(fm;fd;fplain;)\n")

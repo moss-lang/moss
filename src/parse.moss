@@ -2,14 +2,14 @@ import "./lex.moss" as lexer use Token;
 import "./token.moss" use *;
 import "./tree.moss" as tree;
 
-# Parser v2: recursive descent over the declaration grammar, building the
-# arena tree of tree.moss (assume blocks own their children; other
-# declarations are leaves; payloads are skipped for now). Lookahead is
-# threaded functionally: each function takes the current token and returns
-# the lookahead after what it consumed.
+# Parser v3: recursive descent over the declaration grammar, building the
+# arena tree of tree.moss with each declaration's *name* captured as a span
+# into the source (payloads are still skipped). Lookahead is threaded
+# functionally: each function takes the current token and returns the
+# lookahead after what it consumed.
 
 assume Std {
-  assume lexer::src, lexer::at, tree::Tree {
+  assume lexer::src, lexer::at, lexer::mark, tree::Tree {
     # Skip a balanced { ... }; `t` is the lookahead after the opening brace.
     fn skip_braces(t: Token): Token {
       var depth = one;
@@ -64,6 +64,23 @@ assume Std {
       }
     }
 
+    # A declaration introduced by a keyword whose next token is its name:
+    # record the leaf with the name's span and skip the rest.
+    fn named(k: Int, out: IntList): Token {
+      let h = lexer::lex();
+      match h {
+        Name => {
+          let ns = lexer::mark.read();
+          out.push(tree::leaf(k, ns, lexer::at.read().sub(ns)));
+          skip_to_semi(lexer::lex())
+        }
+        _ => {
+          out.push(tree::leaf(k, zero, zero));
+          skip_to_semi(h)
+        }
+      }
+    }
+
     # Parse declarations until end of file or an unmatched closing brace,
     # pushing each declaration's node id into `out`.
     fn decls(t: Token, out: IntList): Token {
@@ -73,7 +90,7 @@ assume Std {
           Eof => break,
           RBrace => break,
           Import => {
-            out.push(tree::leaf(tree::k_import()));
+            out.push(tree::leaf(tree::k_import(), zero, zero));
             cur = skip_to_semi(lexer::lex());
           }
           Assume => {
@@ -95,7 +112,7 @@ assume Std {
                   tree::kid_push(mine.get(i));
                   i = i.add(one);
                 }
-                out.push(tree::node(tree::k_assume(), start, mine.length()));
+                out.push(tree::node(tree::k_assume(), start, mine.length(), zero, zero));
                 match inner {
                   RBrace => { cur = lexer::lex(); }
                   _ => { cur = inner; }
@@ -104,28 +121,47 @@ assume Std {
               _ => { cur = h; }
             }
           }
-          Type => {
-            out.push(tree::leaf(tree::k_type()));
-            cur = skip_to_semi(lexer::lex());
-          }
-          Unit => {
-            out.push(tree::leaf(tree::k_unit()));
-            cur = skip_to_semi(lexer::lex());
-          }
-          Val => {
-            out.push(tree::leaf(tree::k_val()));
-            cur = skip_to_semi(lexer::lex());
-          }
-          Context => {
-            out.push(tree::leaf(tree::k_context()));
-            cur = skip_to_semi(lexer::lex());
-          }
+          Type => { cur = named(tree::k_type(), out); }
+          Unit => { cur = named(tree::k_unit(), out); }
+          Val => { cur = named(tree::k_val(), out); }
+          Context => { cur = named(tree::k_context(), out); }
           Fn => {
-            out.push(tree::leaf(tree::k_fn()));
-            cur = skip_fn(lexer::lex());
+            # Plain `f`, attached `T.m`, or detached `.m`: the name is the
+            # last name before the parameter list.
+            var h = lexer::lex();
+            match h {
+              Dot => { h = lexer::lex(); }
+              _ => (),
+            }
+            var ns = zero;
+            var nl = zero;
+            match h {
+              Name => {
+                ns = lexer::mark.read();
+                nl = lexer::at.read().sub(ns);
+                h = lexer::lex();
+                match h {
+                  Dot => {
+                    h = lexer::lex();
+                    match h {
+                      Name => {
+                        ns = lexer::mark.read();
+                        nl = lexer::at.read().sub(ns);
+                        h = lexer::lex();
+                      }
+                      _ => (),
+                    }
+                  }
+                  _ => (),
+                }
+              }
+              _ => (),
+            }
+            out.push(tree::leaf(tree::k_fn(), ns, nl));
+            cur = skip_fn(h);
           }
           _ => {
-            out.push(tree::leaf(tree::k_bad()));
+            out.push(tree::leaf(tree::k_bad(), zero, zero));
             cur = lexer::lex();
           }
         }
@@ -133,9 +169,8 @@ assume Std {
       cur
     }
 
-    # Walk the finished arena: one letter per node, assume children in
-    # parentheses. This reads the tree back out of the data, which is the
-    # point — the arena is the parser's real output.
+    # Walk the finished arena: one letter per node, then the node's name
+    # sliced out of the source, then `;` — assume children in parentheses.
     fn dump(id: Int) {
       let k = tree::kind_of(id);
       if k.eq(tree::k_import()) {
@@ -153,7 +188,7 @@ assume Std {
       } else if k.eq(tree::k_fn()) {
         putchar(char::f)
       } else {
-        putchar(char::x)
+        putchar(char::question)
       }
       if k.eq(tree::k_assume()) {
         putchar(char::lparen);
@@ -165,6 +200,15 @@ assume Std {
           i = i.add(one);
         }
         putchar(char::rparen);
+      } else {
+        let ns = tree::name_start_of(id);
+        let nl = tree::name_len_of(id);
+        var j = zero;
+        while j.lt(nl) {
+          putchar(lexer::src.get(ns.add(j)));
+          j = j.add(one);
+        }
+        putchar(char::semi);
       }
     }
 

@@ -8,10 +8,13 @@ assume Std {
   fn cli() {
     bind lexer::src=pwd.join(first_arg()).read();
     bind lexer::at=cell_int();
+    bind lexer::mark=cell_int();
     bind tree::kinds=int_list();
     bind tree::starts=int_list();
     bind tree::lens=int_list();
     bind tree::kids=int_list();
+    bind tree::name_starts=int_list();
+    bind tree::name_lens=int_list();
     parser::run();
   }
 }
