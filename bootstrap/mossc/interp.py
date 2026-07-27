@@ -273,7 +273,7 @@ def native_env(program: Program, args: list | None = None) -> dict:
     lib = {}
     for module in program.modules.values():
         for name in ("std", "char", "bool", "num", "int", "string", "strlist",
-                     "cell", "path", "list", "wasm", "wasip1"):
+                     "cell", "path", "list", "wasm", "wasip1", "wasistd"):
             if module.path.endswith(f"lib/{name}.moss"):
                 lib[name] = module
     if "bool" in lib:
@@ -502,7 +502,232 @@ def native_env(program: Program, args: list | None = None) -> dict:
 
         env[(path_ty, path.detached["join"])] = native(join)
         env[(path_ty, path.detached["read"])] = native(read_file)
+    wasm_env(program, lib, env, args or [])
     return env
+
+
+PAGE = 65536
+HEAP_BASE = 1024
+PREOPEN_FD = 3
+
+
+def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
+    """The primitive context (D52), emulated: a linear memory, the i32/i64
+    instructions over it, and the WASI calls the standard library uses.
+
+    This is what lets the interpreter run a program whose `Std` is written
+    in Moss — the same program the backend compiles. It is deliberately the
+    *only* thing the interpreter provides natively, everything above it
+    being ordinary Moss."""
+    if "wasm" not in lib:
+        return
+    memory = bytearray(2 * PAGE)
+    memory[16:20] = HEAP_BASE.to_bytes(4, "little")  # what `_start` does
+    files: dict = {}
+    argv = [sys.argv[0], *args]
+
+    def wrap(n: int, bits: int = 32) -> int:
+        n &= (1 << bits) - 1
+        return n - (1 << bits) if n >> (bits - 1) else n
+
+    def grow(end: int) -> None:
+        if end > len(memory):
+            memory.extend(bytes(-(-(end - len(memory)) // PAGE) * PAGE))
+
+    def load(addr: int, width: int, signed: bool) -> int:
+        grow(addr + width)
+        return int.from_bytes(memory[addr : addr + width], "little", signed=signed)
+
+    def store(addr: int, width: int, value: int) -> None:
+        grow(addr + width)
+        memory[addr : addr + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(
+            width, "little"
+        )
+
+    def text(addr: int, length: int) -> str:
+        grow(addr + length)
+        return memory[addr : addr + length].decode("utf-8", "replace")
+
+    def fn(name: str, impl):
+        symbol = lib["wasm"].names.get(name) or lib["wasip1"].names.get(name)
+        if symbol is not None:
+            env[symbol] = NativeFn(name, lambda a, this, impl=impl: impl(a))
+
+    # Memory instructions.
+    loads = {"i32_load": (4, True), "i32_load8_s": (1, True), "i32_load8_u": (1, False),
+             "i32_load16_s": (2, True), "i32_load16_u": (2, False),
+             "i64_load": (8, True)}
+    for name, (width, signed) in loads.items():
+        fn(name, lambda a, w=width, sg=signed: IntVal(load(a[0].value, w, sg)))
+    for name, width in {"i32_store": 4, "i32_store8": 1, "i32_store16": 2,
+                        "i64_store": 8}.items():
+        fn(name, lambda a, w=width: (store(a[0].value, w, a[1].value), UNIT)[1])
+    fn("memory_size", lambda a: IntVal(len(memory) // PAGE))
+
+    def memory_grow(a):
+        before = len(memory) // PAGE
+        memory.extend(bytes(a[0].value * PAGE))
+        return IntVal(before)
+
+    fn("memory_grow", memory_grow)
+    fn("memory_copy", lambda a: (memory.__setitem__(
+        slice(a[0].value, a[0].value + a[2].value),
+        memory[a[1].value : a[1].value + a[2].value]), UNIT)[1])
+    fn("memory_fill", lambda a: (memory.__setitem__(
+        slice(a[0].value, a[0].value + a[2].value),
+        bytes([a[1].value & 0xFF]) * a[2].value), UNIT)[1])
+
+    def unreachable(a):
+        raise MossPanic("unreachable")
+
+    fn("unreachable", unreachable)
+
+    # Numeric instructions. Comparisons yield an i32, as in Wasm.
+    def unsigned(n, bits=32):
+        return n & ((1 << bits) - 1)
+
+    for bits, prefix in ((32, "i32"), (64, "i64")):
+        ops = {
+            "add": lambda x, y: x + y, "sub": lambda x, y: x - y,
+            "mul": lambda x, y: x * y,
+            "and": lambda x, y: x & y, "or": lambda x, y: x | y,
+            "xor": lambda x, y: x ^ y,
+        }
+        for op, f in ops.items():
+            fn(f"{prefix}_{op}", lambda a, f=f, b=bits: IntVal(wrap(f(a[0].value, a[1].value), b)))
+        fn(f"{prefix}_div_s", lambda a, b=bits: IntVal(wrap(int(a[0].value / a[1].value), b)))
+        fn(f"{prefix}_div_u", lambda a, b=bits: IntVal(wrap(unsigned(a[0].value, b) // unsigned(a[1].value, b), b)))
+        fn(f"{prefix}_rem_s", lambda a, b=bits: IntVal(wrap(abs(a[0].value) % abs(a[1].value) * (1 if a[0].value >= 0 else -1), b)))
+        fn(f"{prefix}_rem_u", lambda a, b=bits: IntVal(wrap(unsigned(a[0].value, b) % unsigned(a[1].value, b), b)))
+        fn(f"{prefix}_shl", lambda a, b=bits: IntVal(wrap(a[0].value << (a[1].value % b), b)))
+        fn(f"{prefix}_shr_s", lambda a, b=bits: IntVal(wrap(a[0].value >> (a[1].value % b), b)))
+        fn(f"{prefix}_shr_u", lambda a, b=bits: IntVal(wrap(unsigned(a[0].value, b) >> (a[1].value % b), b)))
+        fn(f"{prefix}_eqz", lambda a: IntVal(1 if a[0].value == 0 else 0))
+        cmps = {"eq": lambda x, y: x == y, "ne": lambda x, y: x != y,
+                "lt_s": lambda x, y: x < y, "gt_s": lambda x, y: x > y,
+                "le_s": lambda x, y: x <= y, "ge_s": lambda x, y: x >= y}
+        for op, f in cmps.items():
+            fn(f"{prefix}_{op}", lambda a, f=f: IntVal(1 if f(a[0].value, a[1].value) else 0))
+        ucmps = {"lt_u": lambda x, y: x < y, "gt_u": lambda x, y: x > y,
+                 "le_u": lambda x, y: x <= y, "ge_u": lambda x, y: x >= y}
+        for op, f in ucmps.items():
+            fn(f"{prefix}_{op}", lambda a, f=f, b=bits: IntVal(
+                1 if f(unsigned(a[0].value, b), unsigned(a[1].value, b)) else 0))
+        for op, bit in (("clz", None), ("ctz", None), ("popcnt", None)):
+            fn(f"{prefix}_{op}", lambda a, o=op, b=bits: IntVal(
+                (unsigned(a[0].value, b).bit_length() and b - unsigned(a[0].value, b).bit_length()) or (b if a[0].value == 0 else 0)
+                if o == "clz"
+                else (b if a[0].value == 0 else (unsigned(a[0].value, b) & -unsigned(a[0].value, b)).bit_length() - 1)
+                if o == "ctz"
+                else bin(unsigned(a[0].value, b)).count("1")))
+        for op, left in (("rotl", True), ("rotr", False)):
+            fn(f"{prefix}_{op}", lambda a, lf=left, b=bits: IntVal(wrap(
+                (unsigned(a[0].value, b) << (a[1].value % b) | unsigned(a[0].value, b) >> (b - a[1].value % b))
+                if lf else
+                (unsigned(a[0].value, b) >> (a[1].value % b) | unsigned(a[0].value, b) << (b - a[1].value % b)),
+                b)))
+    for name, width in {"i64_load8_s": 1, "i64_load8_u": 1, "i64_load16_s": 2,
+                        "i64_load16_u": 2, "i64_load32_s": 4, "i64_load32_u": 4}.items():
+        fn(name, lambda a, w=width, sg=name.endswith("_s"): IntVal(load(a[0].value, w, sg)))
+    for name, width in {"i64_store8": 1, "i64_store16": 2, "i64_store32": 4}.items():
+        fn(name, lambda a, w=width: (store(a[0].value, w, a[1].value), UNIT)[1])
+    for name, bits in {"i32_extend8_s": 8, "i32_extend16_s": 16, "i64_extend8_s": 8,
+                       "i64_extend16_s": 16, "i64_extend32_s": 32}.items():
+        fn(name, lambda a, b=bits: IntVal(wrap(a[0].value, b)))
+    fn("i32_wrap_i64", lambda a: IntVal(wrap(a[0].value, 32)))
+    fn("i64_extend_i32_s", lambda a: IntVal(a[0].value))
+    fn("i64_extend_i32_u", lambda a: IntVal(unsigned(a[0].value, 32)))
+
+    # WASI.
+    def iovecs(ptr: int, count: int):
+        out = []
+        for i in range(count):
+            base = load(ptr + i * 8, 4, False)
+            length = load(ptr + i * 8 + 4, 4, False)
+            out.append((base, length))
+        return out
+
+    def fd_write(a):
+        total = 0
+        for base, length in iovecs(a[1].value, a[2].value):
+            sys.stdout.write(text(base, length))
+            total += length
+        store(a[3].value, 4, total)
+        return IntVal(0)
+
+    def args_sizes_get(a):
+        store(a[0].value, 4, len(argv))
+        store(a[1].value, 4, sum(len(x) + 1 for x in argv))
+        return IntVal(0)
+
+    def args_get(a):
+        cursor = a[1].value
+        for i, item in enumerate(argv):
+            store(a[0].value + i * 4, 4, cursor)
+            raw = item.encode() + b"\0"
+            grow(cursor + len(raw))
+            memory[cursor : cursor + len(raw)] = raw
+            cursor += len(raw)
+        return IntVal(0)
+
+    def path_open(a):
+        name = text(a[2].value, a[3].value)
+        try:
+            handle = open(name, "rb")
+        except OSError:
+            return IntVal(44)  # ENOENT
+        descriptor = PREOPEN_FD + 1 + len(files)
+        files[descriptor] = handle
+        store(a[8].value, 4, descriptor)
+        return IntVal(0)
+
+    def fd_read(a):
+        handle = files.get(a[0].value)
+        total = 0
+        for base, length in iovecs(a[1].value, a[2].value):
+            chunk = handle.read(length) if handle else b""
+            grow(base + len(chunk))
+            memory[base : base + len(chunk)] = chunk
+            total += len(chunk)
+        store(a[3].value, 4, total)
+        return IntVal(0)
+
+    def fd_close(a):
+        handle = files.pop(a[0].value, None)
+        if handle:
+            handle.close()
+        return IntVal(0)
+
+    def proc_exit(a):
+        raise SystemExit(a[0].value)
+
+    for name, impl in (
+        ("fd_write", fd_write), ("args_sizes_get", args_sizes_get),
+        ("args_get", args_get), ("path_open", path_open), ("fd_read", fd_read),
+        ("fd_close", fd_close), ("proc_exit", proc_exit),
+    ):
+        fn(name, impl)
+
+    # The rest of preview 1 is declared, so `Wasi` can be assumed whole;
+    # anything not implemented here reports ENOSYS rather than pretending.
+    def unsupported(name):
+        def call(a, this, name=name):
+            raise MossPanic(f"{name} is not implemented by the interpreter")
+
+        return NativeFn(name, call)
+
+    for name, symbol in lib["wasip1"].names.items():
+        if symbol.kind == SymKind.FN and symbol not in env:
+            env[symbol] = unsupported(name)
+
+    # The one coercion that is neither instruction nor syscall.
+    if "wasistd" in lib and "bool" in lib:
+        bool_ty = lib["bool"].names["Bool"]
+        true = TagVal(bool_ty, UnitVal(lib["bool"].names["True"]))
+        false = TagVal(bool_ty, UnitVal(lib["bool"].names["False"]))
+        env[lib["wasistd"].names["i32_bool"]] = NativeFn(
+            "i32_bool", lambda a, this: true if a[0].value != 0 else false
+        )
 
 
 class LinkError(Exception):

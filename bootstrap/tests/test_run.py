@@ -351,6 +351,24 @@ class TestStd(unittest.TestCase):
             run(files)
 
 
+class TestStdOverWasi(unittest.TestCase):
+    def test_the_interpreter_runs_the_moss_std(self):
+        """The retirement, from the other side: the interpreter provides
+        only the primitive context — a linear memory, the instructions over
+        it, and the WASI calls — and the whole of `Std` above that is the
+        same Moss the backend compiles."""
+        import os
+
+        cwd = os.getcwd()
+        os.chdir(REPO)
+        try:
+            out = run({}, entry="tests/wasi/full.moss", args=["lib/bool.moss"])
+        finally:
+            os.chdir(cwd)
+        source = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
+        self.assertEqual(out, source[:-1] + " yy\n")
+
+
 class TestRepresentation(unittest.TestCase):
     def test_injection_is_where_the_tag_appears(self):
         """D58, on the interpreter: same program, same answer. Its own
