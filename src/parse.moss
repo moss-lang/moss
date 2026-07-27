@@ -4,8 +4,8 @@ import "./intern.moss" as intern;
 import "./tree.moss" as tree;
 
 # Parser v3: recursive descent over the declaration grammar, building the
-# arena tree of tree.moss with each declaration's *name* captured as a span
-# into the source (payloads are still skipped). Lookahead is threaded
+# arena tree of tree.moss with each declaration's *name* interned
+# (payloads are still skipped except for their references). Lookahead is threaded
 # functionally: each function takes the current token and returns the
 # lookahead after what it consumed.
 
@@ -51,8 +51,6 @@ assume Std {
                 Colon => (),
                 _ => {
                   tree::ref_ids.push(intern::intern(ns, nl));
-                  tree::ref_starts.push(ns);
-                  tree::ref_lens.push(nl);
                 }
               }
             }
@@ -113,8 +111,6 @@ assume Std {
                 Colon => (),
                 _ => {
                   tree::ref_ids.push(intern::intern(ns, nl));
-                  tree::ref_starts.push(ns);
-                  tree::ref_lens.push(nl);
                 }
               }
             }
@@ -138,18 +134,18 @@ assume Std {
     }
 
     # A declaration introduced by a keyword whose next token is its name:
-    # record the leaf with the name's span and skip the rest.
+    # record the leaf with the interned name and skip the rest.
     fn named(k: Int, out: IntList): Token {
       let h = lexer::lex();
       match h {
         Name => {
           let ns = lexer::mark.read();
           let nl = lexer::at.read().sub(ns);
-          out.push(tree::leaf(k, ns, nl, intern::intern(ns, nl)));
+          out.push(tree::leaf(k, intern::intern(ns, nl)));
           refscan_to_semi(lexer::lex())
         }
         _ => {
-          out.push(tree::leaf(k, zero, zero, intern::intern(zero, zero)));
+          out.push(tree::leaf(k, intern::intern(zero, zero)));
           refscan_to_semi(h)
         }
       }
@@ -164,7 +160,7 @@ assume Std {
           Eof => break,
           RBrace => break,
           Import => {
-            out.push(tree::leaf(tree::k_import(), zero, zero, intern::intern(zero, zero)));
+            out.push(tree::leaf(tree::k_import(), intern::intern(zero, zero)));
             cur = skip_to_semi(lexer::lex());
           }
           Assume => {
@@ -187,8 +183,7 @@ assume Std {
                   i = i.add(one);
                 }
                 out.push(tree::node(
-                  tree::k_assume(), start, mine.length(), zero, zero,
-                  intern::intern(zero, zero)
+                  tree::k_assume(), start, mine.length(), intern::intern(zero, zero)
                 ));
                 match inner {
                   RBrace => { cur = lexer::lex(); }
@@ -234,11 +229,11 @@ assume Std {
               }
               _ => (),
             }
-            out.push(tree::leaf(tree::k_fn(), ns, nl, intern::intern(ns, nl)));
+            out.push(tree::leaf(tree::k_fn(), intern::intern(ns, nl)));
             cur = refscan_fn(h);
           }
           _ => {
-            out.push(tree::leaf(tree::k_bad(), zero, zero, intern::intern(zero, zero)));
+            out.push(tree::leaf(tree::k_bad(), intern::intern(zero, zero)));
             cur = lexer::lex();
           }
         }
@@ -246,20 +241,19 @@ assume Std {
       cur
     }
 
-    fn put_span(ns: Int, nl: Int) {
-      var j = zero;
-      while j.lt(nl) {
-        putchar(lexer::src.get(ns.add(j)));
-        j = j.add(one);
-      }
+    # A node's name, written out of the interner's arena.
+    fn put_name(id: Int) {
+      intern::put(tree::name_id_of(id));
     }
 
-    fn put_name(id: Int) {
-      put_span(tree::name_start_of(id), tree::name_len_of(id));
+    # Nodes with no name of their own (imports, assume blocks) carry the
+    # empty name, whose length is zero.
+    fn has_name(id: Int): Bool {
+      intern::name_len(tree::name_id_of(id)).gt(zero)
     }
 
     # Walk the finished arena: one letter per node, then the node's name
-    # sliced out of the source, then `;` — assume children in parentheses.
+    # from the interner, then `;` — assume children in parentheses.
     fn dump(id: Int) {
       let k = tree::kind_of(id);
       if k.eq(tree::k_import()) {
@@ -302,7 +296,7 @@ assume Std {
       var i = zero;
       while i.lt(n) {
         let a = tree::kid_at(s.add(i));
-        if tree::name_len_of(a).gt(zero) {
+        if has_name(a) {
           var j = i.add(one);
           while j.lt(n) {
             let b = tree::kid_at(s.add(j));
@@ -328,7 +322,7 @@ assume Std {
     fn declared(id: Int): Bool {
       var i = zero;
       while i.lt(tree::kinds.length()) {
-        if tree::name_len_of(i).gt(zero) {
+        if has_name(i) {
           if tree::name_id_of(i).eq(id) {
             return true;
           }
@@ -362,7 +356,7 @@ assume Std {
         if declared(id).not() {
           if contains(reported, id).not() {
             reported.push(id);
-            put_span(tree::ref_starts.get(r), tree::ref_lens.get(r));
+            intern::put(id);
             putchar(char::question);
           }
         }

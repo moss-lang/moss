@@ -17,34 +17,27 @@ assume Std {
   val starts: IntList;
   val lens: IntList;
   val kids: IntList;
-  val name_starts: IntList;
-  val name_lens: IntList;
   val name_ids: IntList;
 
-  # References collected from declaration payloads, as interned name ids
-  # with the source span for reporting.
+  # References collected from declaration payloads, as interned name ids.
   val ref_ids: IntList;
-  val ref_starts: IntList;
-  val ref_lens: IntList;
 
-  context Tree =
-    kinds, starts, lens, kids, name_starts, name_lens, name_ids,
-    ref_ids, ref_starts, ref_lens;
+  # Names are interned ids, never spans: a node outlives the source it was
+  # parsed from, so it cannot point into it.
+  context Tree = kinds, starts, lens, kids, name_ids, ref_ids;
 
   assume Tree {
-    fn node(kind: Int, start: Int, len: Int, ns: Int, nl: Int, nid: Int): Int {
+    fn node(kind: Int, start: Int, len: Int, nid: Int): Int {
       let id = kinds.length();
       kinds.push(kind);
       starts.push(start);
       lens.push(len);
-      name_starts.push(ns);
-      name_lens.push(nl);
       name_ids.push(nid);
       id
     }
 
-    fn leaf(kind: Int, ns: Int, nl: Int, nid: Int): Int {
-      node(kind, zero, zero, ns, nl, nid)
+    fn leaf(kind: Int, nid: Int): Int {
+      node(kind, zero, zero, nid)
     }
 
     fn kind_of(id: Int): Int {
@@ -69,14 +62,6 @@ assume Std {
 
     fn kid_at(index: Int): Int {
       kids.get(index)
-    }
-
-    fn name_start_of(id: Int): Int {
-      name_starts.get(id)
-    }
-
-    fn name_len_of(id: Int): Int {
-      name_lens.get(id)
     }
 
     fn name_id_of(id: Int): Int {

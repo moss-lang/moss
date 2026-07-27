@@ -1,48 +1,78 @@
 import "./lex.moss" as lexer;
 
-# Name interning in pure Moss: the table is two parallel IntLists of spans
-# into the source; interning is a linear scan with char-by-char comparison.
+# Name interning in pure Moss. Each distinct name is copied out of the
+# source into `ichars` as codepoints, and `istarts`/`ilens` index into
+# that arena; interning is a linear scan with a char-by-char compare.
+#
+# Copying matters: an id has to stay meaningful after `lexer::src` is
+# rebound to the next file, so a name cannot be a span into the source
+# it happened to come from.
 
 assume Std {
+  val ichars: IntList;
   val istarts: IntList;
   val ilens: IntList;
 
-  context Interner = istarts, ilens;
+  context Interner = ichars, istarts, ilens;
 
-  assume lexer::src, Interner {
-    fn span_eq(s1: Int, l1: Int, s2: Int, l2: Int): Bool {
-      if l1.ne(l2) {
-        false
-      } else {
-        var i = zero;
-        var same = true;
-        while i.lt(l1) {
-          if lexer::src.get(s1.add(i)).ne(lexer::src.get(s2.add(i))) {
-            same = false;
-            i = l1;
-          } else {
-            i = i.add(one);
-          }
-        }
-        same
+  assume Interner {
+    fn name_len(id: Int): Int {
+      ilens.get(id)
+    }
+
+    # Write an interned name back out.
+    fn put(id: Int) {
+      let base = istarts.get(id);
+      let n = ilens.get(id);
+      var i = zero;
+      while i.lt(n) {
+        putchar(ichars.get(base.add(i)).char());
+        i = i.add(one);
       }
     }
 
-    # The id of this span's name, interning it if new.
-    fn intern(ns: Int, nl: Int): Int {
-      var id = zero;
-      loop {
-        if id.ge(istarts.length()) {
-          istarts.push(ns);
-          ilens.push(nl);
-          break;
+    assume lexer::src {
+      # Is interned name `id` the same text as src[ns..ns+nl]?
+      fn name_eq(id: Int, ns: Int, nl: Int): Bool {
+        if ilens.get(id).ne(nl) {
+          false
+        } else {
+          let base = istarts.get(id);
+          var i = zero;
+          var same = true;
+          while i.lt(nl) {
+            if ichars.get(base.add(i)).ne(lexer::src.get(ns.add(i)).code()) {
+              same = false;
+              i = nl;
+            } else {
+              i = i.add(one);
+            }
+          }
+          same
         }
-        if span_eq(istarts.get(id), ilens.get(id), ns, nl) {
-          break;
-        }
-        id = id.add(one);
       }
-      id
+
+      # The id of this span's name, interning it if new.
+      fn intern(ns: Int, nl: Int): Int {
+        var id = zero;
+        loop {
+          if id.ge(ilens.length()) {
+            istarts.push(ichars.length());
+            ilens.push(nl);
+            var i = zero;
+            while i.lt(nl) {
+              ichars.push(lexer::src.get(ns.add(i)).code());
+              i = i.add(one);
+            }
+            break;
+          }
+          if name_eq(id, ns, nl) {
+            break;
+          }
+          id = id.add(one);
+        }
+        id
+      }
     }
   }
 }

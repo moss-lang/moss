@@ -107,9 +107,12 @@ assume Char {
   val tilde: Char;
 
   assume Int {
-    # The Unicode scalar value, so names can be stored as
-    # codepoints rather than spans into one source buffer.
+    # Char <-> Int, so text can be stored as codepoints
+    # rather than as spans into one source buffer. Both are
+    # detached, so the receiver is whichever this module's
+    # importer provides them at: `Char.code` and `Int.char`.
     fn .code(): Int;
+    fn .char(): Char;
   }
 
   context Chars =

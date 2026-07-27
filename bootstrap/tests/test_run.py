@@ -579,6 +579,46 @@ class TestMultiInstantiation(unittest.TestCase):
         self.assertEqual(run(files), "z")
 
 
+ARENA_DRIVER = (
+    'import "./src/intern.moss" as intern;\n'
+    'import "./src/lex.moss" as lexer;\n'
+    "assume Std {\n"
+    "  assume intern::Interner {\n"
+    "    fn take(text: String, ns: Int, nl: Int): Int {\n"
+    "      bind lexer::src=text;\n"
+    "      intern::intern(ns, nl)\n"
+    "    }\n"
+    "  }\n"
+    "  fn main() {\n"
+    "    bind intern::ichars=int_list();\n"
+    "    bind intern::istarts=int_list();\n"
+    "    bind intern::ilens=int_list();\n"
+    "    let s = first_arg();\n"
+    "    let two = one.add(one);\n"
+    "    let a = take(s, zero, two);\n"
+    "    let b = take(s, two, two);\n"
+    "    let c = take(s, zero, two);\n"
+    "    intern::put(a);\n"
+    "    intern::put(b);\n"
+    "    if a.eq(c) { putchar(char::y) } else { putchar(char::n) }\n"
+    "    if a.eq(b) { putchar(char::n) } else { putchar(char::d) }\n"
+    "    putchar(char::newline);\n"
+    "  }\n"
+    "}\n"
+)
+
+
+class TestInterner(unittest.TestCase):
+    def test_names_outlive_their_source(self):
+        """The point of the codepoint arena: `take` is the only thing that
+        binds `lexer::src`, so by the time `main` prints the names back the
+        source they were read from is out of scope entirely. Ids are stable
+        (same text, same id) and distinct texts differ."""
+        self.assertEqual(
+            run({"main.moss": ARENA_DRIVER}, args=["abcd"]), "abcdyd\n"
+        )
+
+
 class TestSelfHostedParser(unittest.TestCase):
     """src/main.moss drives src/parse.moss: one letter per declaration
     (i=import, a=assume, t=type, u=unit, v=val, c=context, f=fn, x=junk)."""
@@ -633,7 +673,7 @@ class TestSelfHostedParser(unittest.TestCase):
         self.assertEqual(
             self.parse_letters(text),
             "i;i;i;i;a(a(fskip_braces;frefscan_to_semi;fskip_to_semi;"
-            "frefscan_fn;fnamed;fdecls;fput_span;fput_name;fdump;fdups;"
+            "frefscan_fn;fnamed;fdecls;fput_name;fhas_name;fdump;fdups;"
             "fdeclared;fcontains;fresolve;frun;))\n\n\n",
         )
 

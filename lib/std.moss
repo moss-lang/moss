@@ -1,6 +1,9 @@
 import "./bool.moss" use Bool, False, True;
 import "./cell.moss" use CellInt, cell_int;
-import "./char.moss" use Char, Chars;
+# `.char` is imported by name because it is provided at `Int`, not at
+# `Char`: method lookup falls back to the *receiver's* home module, and
+# int.moss cannot declare it without importing char.moss back.
+import "./char.moss" use Char, Chars, .char;
 import "./int.moss" use Int, IntOps, zero, one;
 import "./list.moss" use IntList, int_list;
 import "./num.moss" use .not;
@@ -29,6 +32,7 @@ context Std =
   # Items whose signatures mention `Int` follow it: flattening walks this
   # list in order, so a type must be in scope before anything using it.
   Char.code,
+  Int.char,
 
   String,
   first_arg,

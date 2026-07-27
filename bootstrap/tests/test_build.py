@@ -188,6 +188,20 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({"main.moss": source})
         self.assertEqual(run_wasm(wasm), "nzse\n")
 
+    def test_interner_arena_in_wasm(self):
+        """Same driver as the interpreter's interner test, same output."""
+        from tests.test_run import ARENA_DRIVER
+
+        wasm = compile_wasm({"main.moss": ARENA_DRIVER})
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            path = f.name
+        result = subprocess.run(
+            [wasmtime(), path, "abcd"], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "abcdyd\n")
+
     def test_self_hosted_parser_compiles_to_wasm(self):
         """The whole self-hosted front end — lexer, arena parser, interner,
         duplicate detection — as one Wasm module, byte-identical to the
@@ -206,12 +220,9 @@ class TestWasmBackend(unittest.TestCase):
             "    bind tree::starts=int_list();\n"
             "    bind tree::lens=int_list();\n"
             "    bind tree::kids=int_list();\n"
-            "    bind tree::name_starts=int_list();\n"
-            "    bind tree::name_lens=int_list();\n"
             "    bind tree::name_ids=int_list();\n"
             "    bind tree::ref_ids=int_list();\n"
-            "    bind tree::ref_starts=int_list();\n"
-            "    bind tree::ref_lens=int_list();\n"
+            "    bind intern::ichars=int_list();\n"
             "    bind intern::istarts=int_list();\n"
             "    bind intern::ilens=int_list();\n"
             "    parser::run();\n"
