@@ -1,12 +1,17 @@
 import "./lex.moss" as lexer;
 import "./parse.moss" as parser;
+import "./tree.moss" as tree;
 
 assume Std {
-  # Parse the file named by the first argument, printing one letter per
-  # declaration (see parse.moss).
+  # Parse the file named by the first argument into the arena tree, then
+  # dump the tree back out (see parse.moss).
   fn cli() {
     bind lexer::src=pwd.join(first_arg()).read();
     bind lexer::at=cell_int();
-    parser::tree();
+    bind tree::kinds=int_list();
+    bind tree::starts=int_list();
+    bind tree::lens=int_list();
+    bind tree::kids=int_list();
+    parser::run();
   }
 }

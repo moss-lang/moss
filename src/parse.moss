@@ -1,17 +1,16 @@
 import "./lex.moss" as lexer use Token;
 import "./token.moss" use *;
+import "./tree.moss" as tree;
 
-# Structural parser, v1: recursive descent over the declaration grammar,
-# printing one letter per declaration (i/a/t/u/v/c/f, x for junk) and
-# skipping declaration payloads. Lookahead is threaded functionally: each
-# function takes the current token and returns the lookahead that follows
-# what it consumed. The full AST needs arenas (typed wrappers over
-# IntList) and lands next.
+# Parser v2: recursive descent over the declaration grammar, building the
+# arena tree of tree.moss (assume blocks own their children; other
+# declarations are leaves; payloads are skipped for now). Lookahead is
+# threaded functionally: each function takes the current token and returns
+# the lookahead after what it consumed.
 
 assume Std {
-  assume lexer::src, lexer::at {
+  assume lexer::src, lexer::at, tree::Tree {
     # Skip a balanced { ... }; `t` is the lookahead after the opening brace.
-    # Returns the lookahead after the matching closing brace.
     fn skip_braces(t: Token): Token {
       var depth = one;
       var cur = t;
@@ -65,20 +64,19 @@ assume Std {
       }
     }
 
-    # Parse declarations until end of file or an unmatched closing brace
-    # (the end of the enclosing assume block). Returns that lookahead.
-    fn decls(t: Token): Token {
+    # Parse declarations until end of file or an unmatched closing brace,
+    # pushing each declaration's node id into `out`.
+    fn decls(t: Token, out: IntList): Token {
       var cur = t;
       loop {
         match cur {
           Eof => break,
           RBrace => break,
           Import => {
-            putchar(char::i);
+            out.push(tree::leaf(tree::k_import()));
             cur = skip_to_semi(lexer::lex());
           }
           Assume => {
-            putchar(char::a);
             var h = lexer::lex();
             loop {
               match h {
@@ -89,7 +87,15 @@ assume Std {
             }
             match h {
               LBrace => {
-                let inner = decls(lexer::lex());
+                let mine = int_list();
+                let inner = decls(lexer::lex(), mine);
+                let start = tree::kid_mark();
+                var i = zero;
+                while i.lt(mine.length()) {
+                  tree::kid_push(mine.get(i));
+                  i = i.add(one);
+                }
+                out.push(tree::node(tree::k_assume(), start, mine.length()));
                 match inner {
                   RBrace => { cur = lexer::lex(); }
                   _ => { cur = inner; }
@@ -99,27 +105,27 @@ assume Std {
             }
           }
           Type => {
-            putchar(char::t);
+            out.push(tree::leaf(tree::k_type()));
             cur = skip_to_semi(lexer::lex());
           }
           Unit => {
-            putchar(char::u);
+            out.push(tree::leaf(tree::k_unit()));
             cur = skip_to_semi(lexer::lex());
           }
           Val => {
-            putchar(char::v);
+            out.push(tree::leaf(tree::k_val()));
             cur = skip_to_semi(lexer::lex());
           }
           Context => {
-            putchar(char::c);
+            out.push(tree::leaf(tree::k_context()));
             cur = skip_to_semi(lexer::lex());
           }
           Fn => {
-            putchar(char::f);
+            out.push(tree::leaf(tree::k_fn()));
             cur = skip_fn(lexer::lex());
           }
           _ => {
-            putchar(char::x);
+            out.push(tree::leaf(tree::k_bad()));
             cur = lexer::lex();
           }
         }
@@ -127,8 +133,49 @@ assume Std {
       cur
     }
 
-    fn tree() {
-      decls(lexer::lex());
+    # Walk the finished arena: one letter per node, assume children in
+    # parentheses. This reads the tree back out of the data, which is the
+    # point — the arena is the parser's real output.
+    fn dump(id: Int) {
+      let k = tree::kind_of(id);
+      if k.eq(tree::k_import()) {
+        putchar(char::i)
+      } else if k.eq(tree::k_assume()) {
+        putchar(char::a)
+      } else if k.eq(tree::k_type()) {
+        putchar(char::t)
+      } else if k.eq(tree::k_unit()) {
+        putchar(char::u)
+      } else if k.eq(tree::k_val()) {
+        putchar(char::v)
+      } else if k.eq(tree::k_context()) {
+        putchar(char::c)
+      } else if k.eq(tree::k_fn()) {
+        putchar(char::f)
+      } else {
+        putchar(char::x)
+      }
+      if k.eq(tree::k_assume()) {
+        putchar(char::lparen);
+        let s = tree::start_of(id);
+        let n = tree::len_of(id);
+        var i = zero;
+        while i.lt(n) {
+          dump(tree::kid_at(s.add(i)));
+          i = i.add(one);
+        }
+        putchar(char::rparen);
+      }
+    }
+
+    fn run() {
+      let roots = int_list();
+      decls(lexer::lex(), roots);
+      var i = zero;
+      while i.lt(roots.length()) {
+        dump(roots.get(i));
+        i = i.add(one);
+      }
       putchar(char::newline);
     }
   }

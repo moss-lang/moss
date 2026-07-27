@@ -1,0 +1,60 @@
+# The declaration-level AST, stored data-oriented: one row per node across
+# parallel IntList arenas, child node ids contiguous per parent in `kids`.
+# Node ids and kind codes are Ints (no integer literals — D4 — so kinds are
+# named constructor functions).
+
+assume Std {
+  fn k_import(): Int { zero }
+  fn k_assume(): Int { one }
+  fn k_type(): Int { one.add(one) }
+  fn k_unit(): Int { k_type().add(one) }
+  fn k_val(): Int { k_unit().add(one) }
+  fn k_context(): Int { k_val().add(one) }
+  fn k_fn(): Int { k_context().add(one) }
+  fn k_bad(): Int { k_fn().add(one) }
+
+  val kinds: IntList;
+  val starts: IntList;
+  val lens: IntList;
+  val kids: IntList;
+
+  context Tree = kinds, starts, lens, kids;
+
+  assume Tree {
+    fn node(kind: Int, start: Int, len: Int): Int {
+      let id = kinds.length();
+      kinds.push(kind);
+      starts.push(start);
+      lens.push(len);
+      id
+    }
+
+    fn leaf(kind: Int): Int {
+      node(kind, zero, zero)
+    }
+
+    fn kind_of(id: Int): Int {
+      kinds.get(id)
+    }
+
+    fn start_of(id: Int): Int {
+      starts.get(id)
+    }
+
+    fn len_of(id: Int): Int {
+      lens.get(id)
+    }
+
+    fn kid_mark(): Int {
+      kids.length()
+    }
+
+    fn kid_push(id: Int) {
+      kids.push(id);
+    }
+
+    fn kid_at(index: Int): Int {
+      kids.get(index)
+    }
+  }
+}
