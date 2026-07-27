@@ -8,3 +8,7 @@ design record for the current iteration is the
 [semantics decision log](../design/semantics.md).
 
 - [**Testing**](testing.md): philosophy and structure of the testing infrastructure.
+- [**Standard library**](stdlib.md): how `Std` is provided, and its move
+  into Moss over the primitive `Wasm`/`Wasi` context.
+- [**Self-hosting**](selfhosting.md): what `src/` has, what it still
+  needs, and the plan for the rest.
