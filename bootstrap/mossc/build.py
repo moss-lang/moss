@@ -67,10 +67,14 @@ WASI = "wasi_snapshot_preview1"
 BASE_IMPORTS = (("fd_write", 4, 1), ("args_sizes_get", 2, 1), ("args_get", 2, 1))
 FD_WRITE, ARGS_SIZES_GET, ARGS_GET = 0, 1, 2
 
-SHIMS = ("putchar", "alloc", "first_arg", "list_push", "print", "slice", "concat")
-S_PUTCHAR, S_ALLOC, S_FIRST_ARG, S_LIST_PUSH, S_PRINT, S_SLICE, S_CONCAT = range(
-    len(SHIMS)
+SHIMS = (
+    "putchar", "alloc", "arg_at", "arg_count", "list_push", "print",
+    "slice", "concat",
 )
+(
+    S_PUTCHAR, S_ALLOC, S_ARG_AT, S_ARG_COUNT, S_LIST_PUSH, S_PRINT,
+    S_SLICE, S_CONCAT,
+) = range(len(SHIMS))
 
 BINOPS = {
     "add": b"\x6a",
@@ -290,7 +294,8 @@ class Backend:
         shim_types = [
             ty(1, 0),  # putchar: (char) -> ()
             ty(1, 1),  # alloc: (nbytes) -> addr
-            ty(0, 1),  # first_arg: () -> string
+            ty(1, 1),  # arg_at: (index) -> string
+            ty(0, 1),  # arg_count: () -> count
             ty(2, 1),  # list_push: (handle, value) -> dummy
             ty(1, 0),  # print: (string) -> ()
             ty(3, 1),  # slice: (string, start, len) -> string
@@ -351,7 +356,8 @@ class Backend:
             [
                 putchar_body,
                 alloc_body,
-                self.first_arg_shim(),
+                self.arg_at_shim(),
+                self.arg_count_shim(),
                 self.list_push_shim(),
                 self.print_shim(),
                 self.slice_shim(),
@@ -372,61 +378,82 @@ class Backend:
         )
 
     def alloc_fn(self) -> bytes:
-        # (nbytes) -> addr: bump the heap pointer stored at address 16.
+        # (nbytes) -> addr: bump the heap pointer stored at address 16. The
+        # bump is rounded up to a multiple of 4, so that every block starts
+        # word-aligned however many odd-sized strings precede it — i32
+        # accesses declare alignment 2 and trap otherwise.
         body = bytearray()
         body += vec([uleb(1) + I32])  # one scratch local
         body += I32_CONST + sleb(16) + I32_LOAD + uleb(2) + uleb(0)
         body += LOCAL_SET + uleb(1)
         body += I32_CONST + sleb(16)
         body += LOCAL_GET + uleb(1) + LOCAL_GET + uleb(0) + BINOPS["add"]
+        body += I32_CONST + sleb(3) + BINOPS["add"]
+        body += I32_CONST + sleb(-4) + BINOPS["and"]
         body += I32_STORE + uleb(2) + uleb(0)
         body += LOCAL_GET + uleb(1)
         body += END
         return bytes(body)
 
-    def first_arg_shim(self) -> bytes:
-        # () -> string ptr: read argv[1] via WASI and box it as [len|bytes].
-        # Locals: 0 argv, 1 buf, 2 p, 3 n, 4 s, 5 i.
+    def arg_count_shim(self) -> bytes:
+        # () -> argc.
+        b = bytearray()
+        b += vec([])
+        b += I32_CONST + sleb(24) + I32_CONST + sleb(28)
+        b += CALL + uleb(ARGS_SIZES_GET) + DROP
+        b += I32_CONST + sleb(24) + I32_LOAD + uleb(2) + uleb(0)
+        b += END
+        return bytes(b)
+
+    def arg_at_shim(self) -> bytes:
+        # (i) -> string ptr: argv[i] via WASI, boxed as [len|bytes]. Out of
+        # range gives the empty string, matching the interpreter.
+        # Param 0 i; locals: 1 argv, 2 buf, 3 p, 4 n, 5 s, 6 j.
         b = bytearray()
         b += vec([uleb(6) + I32])
-        # args_sizes_get(24, 28)
-        b += I32_CONST + sleb(24) + I32_CONST + sleb(28) + CALL + uleb(ARGS_SIZES_GET) + DROP
-        # argv = alloc(argc * 4); buf = alloc(bufsize)
+        b += I32_CONST + sleb(24) + I32_CONST + sleb(28)
+        b += CALL + uleb(ARGS_SIZES_GET) + DROP
+        # argv = alloc(argc * 4); buf = alloc(bufsize); args_get(argv, buf)
         b += I32_CONST + sleb(24) + I32_LOAD + uleb(2) + uleb(0)
-        b += I32_CONST + sleb(4) + BINOPS["mul"] + CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(0)
-        b += I32_CONST + sleb(28) + I32_LOAD + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(4) + BINOPS["mul"]
         b += CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(1)
-        b += LOCAL_GET + uleb(0) + LOCAL_GET + uleb(1) + CALL + uleb(ARGS_GET) + DROP
-        # if argc < 2: return an empty string
+        b += I32_CONST + sleb(28) + I32_LOAD + uleb(2) + uleb(0)
+        b += CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(2)
+        b += LOCAL_GET + uleb(1) + LOCAL_GET + uleb(2) + CALL + uleb(ARGS_GET) + DROP
+        # if i >= argc (unsigned, so a negative i is out of range too):
+        # return the empty string
+        b += LOCAL_GET + uleb(0)
         b += I32_CONST + sleb(24) + I32_LOAD + uleb(2) + uleb(0)
-        b += I32_CONST + sleb(2) + BINOPS["lt"]
+        b += b"\x4f"  # i32.ge_u
         b += IF + EMPTY
-        b += I32_CONST + sleb(4) + CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(4)
-        b += LOCAL_GET + uleb(4) + I32_CONST + sleb(0) + I32_STORE + uleb(2) + uleb(0)
-        b += LOCAL_GET + uleb(4) + RETURN
+        b += I32_CONST + sleb(4) + CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(5)
+        b += LOCAL_GET + uleb(5) + I32_CONST + sleb(0) + I32_STORE + uleb(2) + uleb(0)
+        b += LOCAL_GET + uleb(5) + RETURN
         b += END
-        # p = argv[1] (NUL-terminated); n = strlen(p)
-        b += LOCAL_GET + uleb(0) + I32_LOAD + uleb(2) + uleb(4) + LOCAL_SET + uleb(2)
-        b += I32_CONST + sleb(0) + LOCAL_SET + uleb(3)
+        # p = argv[i] (NUL-terminated); n = strlen(p)
+        b += LOCAL_GET + uleb(1)
+        b += LOCAL_GET + uleb(0) + I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
+        b += I32_LOAD + uleb(2) + uleb(0) + LOCAL_SET + uleb(3)
+        b += I32_CONST + sleb(0) + LOCAL_SET + uleb(4)
         b += BLOCK + EMPTY + LOOP + EMPTY
-        b += LOCAL_GET + uleb(2) + LOCAL_GET + uleb(3) + BINOPS["add"]
+        b += LOCAL_GET + uleb(3) + LOCAL_GET + uleb(4) + BINOPS["add"]
         b += I32_LOAD8 + uleb(0) + uleb(0) + I32_EQZ + BR_IF + uleb(1)
-        b += LOCAL_GET + uleb(3) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(3)
+        b += LOCAL_GET + uleb(4) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(4)
         b += BR + uleb(0) + END + END
         # s = alloc(4 + n); *s = n; copy bytes
-        b += I32_CONST + sleb(4) + LOCAL_GET + uleb(3) + BINOPS["add"]
-        b += CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(4)
-        b += LOCAL_GET + uleb(4) + LOCAL_GET + uleb(3) + I32_STORE + uleb(2) + uleb(0)
-        b += I32_CONST + sleb(0) + LOCAL_SET + uleb(5)
+        b += I32_CONST + sleb(4) + LOCAL_GET + uleb(4) + BINOPS["add"]
+        b += CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(5)
+        b += LOCAL_GET + uleb(5) + LOCAL_GET + uleb(4) + I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(0) + LOCAL_SET + uleb(6)
         b += BLOCK + EMPTY + LOOP + EMPTY
-        b += LOCAL_GET + uleb(5) + LOCAL_GET + uleb(3) + BINOPS["ge"] + BR_IF + uleb(1)
-        b += LOCAL_GET + uleb(4) + LOCAL_GET + uleb(5) + BINOPS["add"]
-        b += LOCAL_GET + uleb(2) + LOCAL_GET + uleb(5) + BINOPS["add"]
+        b += LOCAL_GET + uleb(6) + LOCAL_GET + uleb(4) + BINOPS["ge"] + BR_IF + uleb(1)
+        b += LOCAL_GET + uleb(5) + LOCAL_GET + uleb(6) + BINOPS["add"]
+        b += LOCAL_GET + uleb(3) + LOCAL_GET + uleb(6) + BINOPS["add"]
         b += I32_LOAD8 + uleb(0) + uleb(0)
         b += I32_STORE8 + uleb(0) + uleb(4)
-        b += LOCAL_GET + uleb(5) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(5)
+        b += LOCAL_GET + uleb(6) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(6)
         b += BR + uleb(0) + END + END
-        b += LOCAL_GET + uleb(4)
+        b += LOCAL_GET + uleb(5)
         b += END
         return bytes(b)
 
@@ -940,9 +967,19 @@ class FnCompiler:
                 self.expr(arg)
             self.code += CALL + uleb(self.b.shim(S_PUTCHAR)) + I32_CONST + sleb(0)
             return
-        if "string" in self.b.lib and key is self.b.lib["string"].names.get("first_arg"):
-            self.code += CALL + uleb(self.b.shim(S_FIRST_ARG))
-            return
+        if "string" in self.b.lib:
+            string = self.b.lib["string"]
+            if key is string.names.get("first_arg"):
+                self.code += I32_CONST + sleb(1)  # first_arg is arg_at(1)
+                self.code += CALL + uleb(self.b.shim(S_ARG_AT))
+                return
+            if key is string.names.get("arg_at"):
+                self.expr(node.args[0])
+                self.code += CALL + uleb(self.b.shim(S_ARG_AT))
+                return
+            if key is string.names.get("arg_count"):
+                self.code += CALL + uleb(self.b.shim(S_ARG_COUNT))
+                return
         if "string" in self.b.lib and key is self.b.lib["string"].names.get("print"):
             for arg in node.args:
                 self.expr(arg)

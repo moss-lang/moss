@@ -692,7 +692,12 @@ COLLECT_DRIVER = (
     "    bind mods::mkids=int_list();\n"
     "    bind mods::mkidlens=int_list();\n"
     "    bind mods::itargets=int_list();\n"
-    "    collect::run(first_arg());\n"
+    "    bind mods::pbound=cell_int();\n"
+    "    if arg_count().gt(one.add(one)) {\n"
+    "      collect::run_with_prelude(first_arg(), arg_at(one.add(one)));\n"
+    "    } else {\n"
+    "      collect::run(first_arg());\n"
+    "    }\n"
     "  }\n"
     "}\n"
 )
@@ -703,7 +708,7 @@ class TestSelfHostedCollect(unittest.TestCase):
     and reports per module: `name!` for a duplicate declaration, `name?`
     for a reference nothing in scope explains."""
 
-    def collect(self, files, entry):
+    def collect(self, files, entry, prelude=None):
         import os
         import tempfile
 
@@ -715,7 +720,8 @@ class TestSelfHostedCollect(unittest.TestCase):
             cwd = os.getcwd()
             os.chdir(tmp)  # the loader reads paths relative to `pwd`
             try:
-                return run({"main.moss": COLLECT_DRIVER}, args=[entry])
+                argv = [entry] if prelude is None else [prelude, entry]
+                return run({"main.moss": COLLECT_DRIVER}, args=argv)
             finally:
                 os.chdir(cwd)
 
@@ -756,6 +762,45 @@ class TestSelfHostedCollect(unittest.TestCase):
             "i.moss": "type I;\nunit I;\n",
         }
         self.assertEqual(self.collect(files, "h.moss"), "h.moss:U!\ni.moss:I!\n")
+
+    def test_prelude_names_need_no_import(self):
+        """The one non-lexical lookup: whatever the prelude has in scope is
+        in scope below it. The prelude's *own* imports do not get that
+        fallback, so other.moss cannot see base.moss's names — the standard
+        library must not depend on what it defines."""
+        files = {
+            "pre.moss": 'import "./base.moss" use Base, helper;\n'
+            'import "./other.moss" use Other;\n',
+            "base.moss": "type Base;\nfn helper();\n",
+            "other.moss": "type Other;\nval leaks: Base;\n",
+            "user.moss": "val v: Base;\nval w: Ghost;\nfn f(): helper;\n",
+        }
+        self.assertEqual(
+            self.collect(files, "user.moss", prelude="pre.moss"),
+            "pre.moss:\nbase.moss:\nother.moss:Base?\nuser.moss:Ghost?\n",
+        )
+
+    def test_resolves_the_real_compiler_sources(self):
+        """The whole thing, on itself: the self-hosted collect walks
+        lib/prelude.moss and src/main.moss to every module either reaches
+        and explains every name in all of them."""
+        import os
+
+        cwd = os.getcwd()
+        os.chdir(REPO)
+        try:
+            out = run(
+                {"main.moss": COLLECT_DRIVER},
+                args=["lib/prelude.moss", "src/main.moss"],
+            )
+        finally:
+            os.chdir(cwd)
+        lines = out.strip().split("\n")
+        self.assertGreater(len(lines), 15)
+        for line in lines:
+            self.assertTrue(line.endswith(":"), f"unresolved names in {line}")
+        self.assertIn("src/parse.moss:", lines)
+        self.assertIn("lib/std.moss:", lines)
 
     def test_duplicates_inside_assume_blocks(self):
         """A module's root ids land in `kids` *after* the children of every

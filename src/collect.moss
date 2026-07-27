@@ -90,7 +90,7 @@ assume Std {
     # A name is in module `m`'s scope if `m` declares it, if one of `m`'s
     # imports names it, or if a `use *` import names a module that
     # declares it.
-    fn visible(m: Int, id: Int): Bool {
+    fn brings_in(m: Int, id: Int): Bool {
       if declared_in(m, id) {
         return true;
       }
@@ -110,6 +110,19 @@ assume Std {
           j = j.add(one);
         }
         ix = ix.add(one);
+      }
+      false
+    }
+
+    # Anything the prelude module itself has in scope is in scope
+    # everywhere below it, without an import — the one name lookup that
+    # is not lexical. Module zero is the prelude when there is one.
+    fn visible(m: Int, id: Int): Bool {
+      if brings_in(m, id) {
+        return true;
+      }
+      if mods::under_prelude(m) {
+        return brings_in(zero, id);
       }
       false
     }
@@ -141,13 +154,32 @@ assume Std {
       }
     }
 
-    fn run(entry: String) {
-      mods::add(entry);
-      var m = zero;
-      while m.lt(mods::count()) {
-        load_one(m);
-        m = m.add(one);
+    # Load everything reachable from the paths already in the table,
+    # continuing from module `m`.
+    fn drain(m: Int): Int {
+      var i = m;
+      while i.lt(mods::count()) {
+        load_one(i);
+        i = i.add(one);
       }
+      i
+    }
+
+    fn run(entry: String) {
+      mods::set_bound(zero);
+      mods::add(entry);
+      drain(zero);
+      report();
+    }
+
+    # The same, but with a prelude: it and its own imports load first, and
+    # everything after them may use its names without importing anything.
+    fn run_with_prelude(prelude: String, entry: String) {
+      mods::add(prelude);
+      let after = drain(zero);
+      mods::set_bound(after);
+      mods::add(entry);
+      drain(after);
       report();
     }
   }

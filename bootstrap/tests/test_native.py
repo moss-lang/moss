@@ -34,6 +34,8 @@ class TestNativeTables(unittest.TestCase):
                 "StrList",
                 "String",
                 "True",
+                "arg_at",
+                "arg_count",
                 "cell_int",
                 "false",
                 "first_arg",

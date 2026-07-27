@@ -395,7 +395,16 @@ def native_env(program: Program, args: list | None = None) -> dict:
                 raise MossPanic(f"String.get: index {index} out of range")
             return CharVal(this.value[index])
 
+        def arg_at(a, this):
+            index = a[0].value
+            argv = [sys.argv[0], *args]
+            return StrVal(argv[index] if 0 <= index < len(argv) else "")
+
         env[string.names["first_arg"]] = native(first_arg)
+        env[string.names["arg_count"]] = native(
+            lambda a, this: IntVal(len(args) + 1)
+        )
+        env[string.names["arg_at"]] = native(arg_at)
         env[string.names["print"]] = NativeFn("print", print_)
         def slice_(a, this):
             start, count = a[0].value, a[1].value

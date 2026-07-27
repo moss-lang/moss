@@ -39,12 +39,20 @@ tests).
 
 On top of that, `src/collect.moss` loads a whole module graph: it reads
 the entry file and everything it imports, transitively, and reports
-duplicates and out-of-scope references per module, with imports
-contributing the names they bring in. Two limits, both real: it runs
-only on the interpreter, because `Path` is not in the Wasm slice yet
-(along with fn binds); and it cannot see the prelude, because nobody
-imports the prelude and naming it needs a string the compiler holds
-itself — see the D48 entry in the decision log.
+duplicates and out-of-scope references per module. Imports contribute
+the names they bring in, and a prelude — passed as an argument, since
+`arg_at` lets a program find paths without holding any — puts its scope
+under every module below it. Pointed at `lib/prelude.moss` and
+`src/main.moss` it reaches all eighteen modules of the compiler's own
+sources and explains every name in them. It runs on the interpreter
+only: `Path` is not in the Wasm slice (nor are fn binds).
+
+Under all of that sits the primitive context of D52. A program may
+assume `Wasm` and `Wasi` ([`lib/wasm.moss`](/lib/wasm.moss),
+[`lib/wasip1.moss`](/lib/wasip1.moss)) instead of `Std`, in which case
+intrinsics compile to instructions and WASI functions to imports, with
+no shims involved at all — see `tests/wasi/raw.moss`. Implementing `Std`
+itself in Moss on top of that is what retires the native table.
 
 ## Usage
 

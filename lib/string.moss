@@ -4,6 +4,15 @@ import "./int.moss" use Int;
 type String;
 
 assume String {
+  assume Int {
+    # The program's arguments, as the host gave them: `arg_at(zero)` is
+    # the program itself, so a compiler can find its own library beside
+    # it without holding any path of its own. Out of range is empty.
+    fn arg_count(): Int;
+    fn arg_at(index: Int): String;
+  }
+
+  # The conventional first argument: `arg_at(one)`.
   fn first_arg(): String;
   fn print(s: String);
 

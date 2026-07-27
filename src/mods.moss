@@ -18,7 +18,13 @@ assume Std {
   # For each import row, the module it names.
   val itargets: IntList;
 
-  context Mods = mpaths, mnodes, mrefs, mimps, mkids, mkidlens, itargets;
+  # How many leading modules are the prelude and its own imports. Those
+  # modules do not themselves get the prelude — the standard library
+  # cannot depend on what it defines. Zero means no prelude was loaded.
+  val pbound: CellInt;
+
+  context Mods =
+    mpaths, mnodes, mrefs, mimps, mkids, mkidlens, itargets, pbound;
 
   assume Mods {
     fn count(): Int {
@@ -136,6 +142,20 @@ assume Std {
 
     fn target(ix: Int): Int {
       itargets.get(ix)
+    }
+
+    fn set_bound(n: Int) {
+      pbound.write(n);
+    }
+
+    # Whether module `m` should fall back to the prelude for names it
+    # cannot otherwise explain.
+    fn under_prelude(m: Int): Bool {
+      if pbound.read().eq(zero) {
+        false
+      } else {
+        m.ge(pbound.read())
+      }
     }
   }
 }

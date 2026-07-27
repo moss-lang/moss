@@ -8,7 +8,7 @@ import "./int.moss" use Int, IntOps, zero, one;
 import "./list.moss" use IntList, int_list;
 import "./num.moss" use .not;
 import "./path.moss" use Path, pwd;
-import "./string.moss" use String, first_arg, print;
+import "./string.moss" use String, first_arg, print, arg_count, arg_at;
 import "./strlist.moss" use StrList, str_list;
 
 assume Char {
@@ -37,6 +37,8 @@ context Std =
 
   String,
   first_arg,
+  arg_count,
+  arg_at,
   print,
   String.length,
   String.get,
