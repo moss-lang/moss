@@ -19,11 +19,16 @@ Every decision point is tagged:
 
 Section 13 indexes all PROPOSED/OPEN points for easy discussion.
 
-**Revision 2** incorporates the designer's feedback in [`notes.md`](notes.md):
-points confirmed there are re-tagged DECIDED; D22, D24, D29, D31, D33, and
-D35 are revised or replaced; §9 is rewritten around the attached/detached
-method model; and the things revision 2 most needs answered are the numbered
-questions **Q1**–**Q7** in §9 plus [D41]/[D42].
+**Revision 2** incorporated the designer's feedback in [`notes.md`](notes.md):
+points confirmed there were re-tagged DECIDED; D22, D24, D29, D31, D33, and
+D35 were revised or replaced; §9 was rewritten around the attached/detached
+method model with questions **Q1**–**Q7**.
+
+**Revision 3** incorporates the answers to Q1–Q7 (notes.md §9): methods are
+now settled ([D36]), `This`/`this` are keywords, attached methods are
+restricted to nominal receivers, context formation gains *consistent
+merging* (new [D43]), `unit` stays ([D41] closed), and [D29] records that
+functors will start static-only with the `val` question still live.
 
 ## 1. Design thesis
 
@@ -77,16 +82,16 @@ the only context that exists at runtime.
 
 ```
 as assume bind break context else fn for if import let loop match return
-this type unit use val var while
+This this type unit use val var while
 ```
 
 Changes from `docs/reference/syntax.md`: `static` is dropped; `break`, `for`,
 `loop`, `match`, `return`, `unit` are added (all six are used in `src/`), as
-is `this` (§9 — the receiver in method bodies is now a keyword, replacing the
-old `lib/this.moss` symbol). `for` is reserved but has no MVP grammar
-production ([D31]), and `unit` may yet be dropped in favor of a `type` form
-([D41]). `src/token.moss` and `src/lex.moss` must gain tokens for the added
-keywords.
+are `this` and `This` (§9 — the receiver value in method bodies and the
+receiver *type* in method signatures are keywords, replacing the old
+`lib/this.moss` symbols). `for` is reserved but has no MVP grammar
+production ([D31]). `src/token.moss` and `src/lex.moss` must gain tokens for
+the added keywords.
 
 **[D4] DECIDED (no literals).** There are no literal expressions of any kind:
 no integer, char, or string literals. hello.md's `putchar(char::H)` style is
@@ -197,16 +202,10 @@ the fix is the alias form, `type Option = | None | Some;`. Nominal-over-union
 explicitly wrapped and unwrapped through the nominal head — there is no
 auto-injection ([D17]).
 
-**[D41] OPEN (the `unit` keyword).** The designer dislikes that `unit X;`
-breaks the pattern `type` and `fn` otherwise follow, and asked for
-alternatives. The least invasive one: the tag form with a unit payload,
-`type X ();`, plus one special rule — a tag whose payload is `()` is
-constructed and matched by its bare name (`X`, not `X ()`), which is exactly
-the behavior `unit` provides. That trades the extra keyword for a special
-rule; the grammar shrinks and `unit` stops being reserved, at the cost of
-`type X ();` reading a little oddly. (`type X {};` — empty record payload —
-is worse: `{}` already means the empty record type, and the bare-name rule
-would be a lie for it.) No urgency; decide before the grammar freezes.
+**[D41] DECIDED (keep `unit`).** The designer dislikes that `unit X;` breaks
+the pattern `type` and `fn` otherwise follow, but the alternative floated in
+rev 2 — `type X ();` plus a bare-name construction/matching rule — was
+considered and not loved. `unit` stays.
 
 **[D14] DECIDED (drop declaration-site `Needs`).** syntax.md attaches an
 optional `[Need, ...]` clause to every declaration form (**Needs**) and a
@@ -280,9 +279,37 @@ context Parsing =
 An item is a reference to a symbol of any kind — type, val, fn, method, or
 another context — optionally with square-bracket bindings applied. Context
 references flatten: assuming `Parsing` is exactly assuming its members,
-recursively. A context is a compile-time artifact only; there are no
-first-class context values at runtime (what exists at runtime is the val data
-of [D2]).
+recursively, with duplicate keys merged consistently ([D43]). A context is a
+compile-time artifact only; there are no first-class context values at
+runtime (what exists at runtime is the val data of [D2]).
+
+**[D43] DECIDED (consistent merging).** From notes.md's answer to Q6. A
+context carries at most one binding per key (one `A.gimme`, one `T`, ...),
+but forming a context that mentions the same key with two different bindings
+is not automatically an error — the bindings *merge*:
+
+```moss
+context Ctx1 = A, B, A.gimme[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C];
+context Ctx3 = Ctx1, Ctx2;
+```
+
+`Ctx3` is satisfiable; it just additionally requires `B` and `C` to be the
+same type, because merging the two `A.gimme` bindings unifies their `Foo`
+targets. The representation is symmetric — neither `B` nor `C` becomes
+"primary". A context is (1) a set of *atoms* and (2) a binding structure (a
+DAG) over those atoms, with symbols mapping to atoms, possibly many-to-one:
+`Ctx1`, `Ctx2`, and `Ctx3` each have three atoms and differ only in which
+symbols name which atoms. Merging is deterministic congruence — union the
+atom graphs, unify per key — not search, so it stays inside [D1]. A merge
+that would identify two *distinct concrete* nominal types (say
+`A.gimme[Foo=Eof]` with `A.gimme[Foo=Comma]`) is an error at context
+formation, which also answers Q6's "where do collisions error" — at
+formation, and only when genuinely unsatisfiable. Assuming a merged context
+makes the merged symbols interchangeable in that region: binding one binds
+them all. Related literature on the merging idea: ["Making a Type
+Difference: Subtraction on Intersection Types as Generalized Record
+Operations"](https://doi.org/10.1145/3571224) and the work it cites.
 
 **[D20] DECIDED (assume).** `assume xs { decls }` adds the items `xs` to the
 requirement set of every declaration inside. Requirement sets nest by union:
@@ -414,7 +441,11 @@ being a construct and becomes a code pattern. Whether that pattern is
 ergonomic enough without sugar is the open half of the question.
 
 For the MVP: no functors, no fn-returning-`bind`; both grammar forms are
-cut, and the manual-prologue pattern covers the current corpus.
+cut, and the manual-prologue pattern covers the current corpus. The designer
+has accepted the static-only split as a starting point but remains concerned
+that `val` support will be needed eventually — so the val half of the
+question stays open rather than dissolved, to be revisited with evidence
+from rewriting `src/`.
 
 **[D30] DECIDED (monomorphization depth backstop).** Because type/fn binds
 drive specialization, a recursive function that re-binds a *type* on the
@@ -505,11 +536,12 @@ punted deliberately. The four `for` loops in `src/` (§12) get rewritten with
 (`for Import imp in imports`, `src/lower.moss:45`) is cut along with the
 rest.
 
-## 9. Methods: attached and detached — OPEN
+## 9. Methods: attached and detached
 
-Rewritten per notes.md. There are two kinds of methods, and their coexistence
-is the reason symbol resolution needs types (§1). The designer's example,
-reproduced because nothing in the codebase demonstrates the new model yet:
+Settled across notes.md's two rounds. There are two kinds of methods, and
+their coexistence is the reason symbol resolution needs types (§1). The
+designer's example, reproduced because nothing in the codebase demonstrates
+the new model yet:
 
 ```moss
 type Foo;
@@ -568,60 +600,53 @@ method `X.m`, or a detached `.m` provided at `X` by the requirement
 set/binds in force. Exactly one must be available; absence and ambiguity are
 both errors at the call site. Nothing is ranked or adapted.
 
-Questions for the designer — the bootstrap needs these before implementing
-§9, and [D36] below records the working assumptions it will use in the
-meantime:
+The questions from revision 2, answered in notes.md:
 
-- **Q1**: Can a detached method's signature refer to its receiver's type?
-  The example's `.gimme` doesn't need to (its return is the separately
-  assumed `Foo`), but something like `.clone` can't be expressed without a
-  name for "the receiver's type". The old design had the `This` symbol
-  (`for This=Uint32 { .to_string }`); notes.md says the new story is
-  "significantly different". Is there an implicit receiver-type symbol per
-  detached method, or is the answer simply "no — use an assumed symbol like
-  `Foo` when you need to talk about related types"?
-- **Q2**: Is `this` now a keyword, legal exactly in method bodies (with the
-  receiver's declared type in an attached body)? The example suggests yes;
-  `lib/this.moss` dies. Confirm.
-- **Q3**: Can detached methods be *defined* (`fn .m() { ... }`), or only
-  declared abstract? If defined, what is `this`'s type in the body, and what
-  may the body do with it (presumably nothing beyond passing it around,
-  absent Q1)?
-- **Q4**: What provides a detached method at bind time? `Ctx` *asserts*
-  `A.gimme[Foo=B]` as a requirement; eventually someone must satisfy it.
-  Guess: `bind A.gimme=f;` where `f` is any in-scope function of matching
-  signature (an attached `fn A.gimme` included) after substitutions, per
-  the ordinary [D26]/[D27] rules. Confirm the syntax and whether an attached
-  method can serve as the provider.
-- **Q5**: Attached-on-abstract vs detached. `src/lower.moss` declares
-  `fn TokenId.name(): StrId;` — attached, but to an *abstract* type. When
-  `TokenId` is applied or bound (`bind parser::TokenId=Int;`), does
-  `TokenId.name` become a method available at receiver `Int`, i.e. does the
-  (receiver, name) key get rewritten by substitution? The same question
-  makes `src/parse.moss` work: `names.push(...)` with `names: NameList`
-  resolves because `IsList[T=NameId, List=NameList]` re-keys `List.push` to
-  receiver `NameList`. If yes, is an attached-on-abstract method
-  semantically just a detached method that happens to be declared at one
-  symbol, or is there a real difference (e.g. in what may collide)?
-- **Q6**: Where are collisions rejected? Two provisions of the same
-  (receiver, name) key — say `A.gimme[Foo=B]` and a second `A.gimme[Foo=C]`
-  — could be an error when the context is formed, when it is assumed, or
-  only at a call site that actually looks up the key. Call-site-only is most
-  permissive and cheapest; context-formation is the earliest diagnostic.
-- **Q7**: Fields vs methods: rev 1 proposed that record fields and method
-  names at the same receiver type must not collide (`x.f` vs `x.f()` being
-  the only distinguisher otherwise). Confirm.
+- **Q1 — answered.** A detached method's signature refers to the receiver's
+  type as `This`, now a keyword in type position ([D3]) rather than the old
+  `lib/this.moss` symbol. So `fn .clone(): This;` is expressible.
+- **Q2 — answered.** Likewise `this` is a keyword: the receiver value,
+  legal in method bodies.
+- **Q3 — answered (defined detached methods disallowed).** Detached methods
+  are declaration-only; there is no evident point to defining one. The
+  designer asked whether a definition would ever be useful — one real
+  candidate: *default implementations*, e.g. a defined `.ne` in terms of an
+  assumed `.eq`, or `.le`/`.gt`/`.ge` derived from `.lt`, which is exactly
+  the shape `lib/ops.moss` will want post-MVP so that providing `lt` yields
+  the rest for free. But the same thing is expressible today as a free
+  defined function that a `bind X.ne=that_fn;` points at, so nothing is
+  lost by disallowing it; revisit alongside operators ([D33]).
+- **Q4 — answered (call-site signature interpretation).** Once the
+  receiver's type and the method are resolved, the bracket bindings of the
+  providing context item are used to interpret the method's *signature* at
+  that call site. In the example, `Foo` is not in the ambient context at
+  all; the item `A.gimme[Foo=B]` supplies `Foo=B` for reading `.gimme`'s
+  signature once `a.gimme()` resolves to it. This is how the design threads
+  ergonomics without search-y synthesis from the context: the bindings ride
+  along with the provision instead of being discovered.
+- **Q5 — answered (attached methods on nominal receivers only).** The
+  attached-on-abstract declarations throughout `src/` are simply errors:
+  `fn T.m(...)` requires `T` nominal. They all become *detached*
+  declarations (`fn String.length(): Int;` → `fn .length(): Int;`), and the
+  *context items* keep their current `String.length` spellings, since a
+  provision may key a detached method on any type symbol, abstract included
+  — the designer's own example keys `.gimme` on the abstract `A` and `B`.
+  See §12 for the full sweep.
+- **Q6 — answered (consistent merging).** See [D43]: a context has at most
+  one binding per key; forming a context that would bind the same key twice
+  merges the bindings' targets, and only a genuinely unsatisfiable merge
+  (two distinct concrete nominal types) errors, at formation time.
+- **Q7 — answered (collisions allowed).** Record fields and method names
+  may collide; disambiguation is Rust-style — `x.f` is the field, `x.f()`
+  is the method.
 
-**[D36] PROPOSED (interim method semantics for the bootstrap).** Until the
-Q's are answered, the bootstrap implements the resolution rule above with
-these working assumptions: detached signatures cannot name the receiver's
-type (Q1: no); `this` is a keyword valid only in method bodies (Q2: yes);
-detached methods are abstract-only (Q3: sig-only); provision is
-`bind X.m=f;` with ordinary signature matching (Q4); attached-on-abstract
-methods re-key under substitution exactly like detached provisions (Q5:
-yes, no semantic difference observable to callers); collisions error at the
-call site only (Q6); fields and methods at the same receiver must not
-collide (Q7).
+**[D36] DECIDED (method semantics).** The resolution rule above plus the
+Q1–Q7 answers. Two small leftovers, PROPOSED: (a) `This`/`this` are also
+legal in *attached* declarations, where `This` simply equals the named
+receiver type — harmless and symmetric; (b) when two detached methods named
+`.m` from different modules are both in scope, the item spelling `X.m` picks
+whichever `.m` ordinary scope resolution finds, and there is no qualified
+spelling yet — invent one (or lean on import renaming) when it first bites.
 
 ## 10. Execution model and entry point
 
@@ -731,6 +756,14 @@ decisions above are confirmed.
 - `src/lower.moss`: missing `=>` on the `Sig`/`Fn` arms (lines 103, 106);
   `ImportId`, `toplevel`, the `imports` iterable, and `ScopeId` undeclared;
   three `for` loops (lines 45, 50, 81) to rewrite ([D35]).
+- Attached-on-abstract methods everywhere (Q5/[D36]): `src/std.moss`
+  (`String.length`, `String.get`, `Path.join`, `Path.read`),
+  `src/cell.moss` (`Cell.read`, `Cell.write`), `src/parse.moss`
+  (`List.push`, `List.done`, `TokenSet.add`), `src/lower.moss`
+  (`TokenId.name`, `ImportId.module`, `ModuleId.insert`, `ModuleId.get`,
+  `Context.extend`, `Context.depend`) — every one becomes a detached
+  `fn .m(...)` declaration; the context items and call sites keep their
+  current spellings.
 - `lib/` (almost all of it): previous-iteration design (`for X=Y {}`
   grouping, `This`/`this`, old-style detached `.to_string`,
   `Numerals`/`Arithmetic` context machinery) — to be rewritten from scratch
@@ -740,25 +773,26 @@ decisions above are confirmed.
 
 ## 13. Decision index
 
-Needs sign-off (**PROPOSED**): D15 type forms (union rule now decided via
-[D16]; tuples/records still unconfirmed) · D36 interim method semantics
-(the Q1–Q7 working assumptions) · D38 native-Std bootstrap sequencing ·
-D42 explicit application at tag construction
+Needs sign-off (**PROPOSED**): D15 type forms (union rule decided via
+[D16]; tuples/records still unconfirmed) · D36's two leftovers (`This` in
+attached declarations; qualified spelling for shadowed detached methods) ·
+D38 native-Std bootstrap sequencing · D42 explicit application at tag
+construction
 
-Genuinely undecided (**OPEN**): §9 Q1–Q7 the real method story ·
-D29 functors (does the static-only split dissolve the val wrinkle?) ·
-D41 `unit` keyword vs `type X ();` · braceless `assume` statement form
-(§12, unaddressed in notes.md)
+Genuinely undecided (**OPEN**): D29 the `val` half of functors (static-only
+accepted as the starting point) · braceless `assume` statement form (§12,
+unaddressed in notes.md)
 
-Resolved by notes.md (now **DECIDED**): D5 · D7 · D9 · D10 (+ import cycles
-forbidden) · D12 · D13 (option.moss → alias) · D14 · D16 (no
+**DECIDED** (rounds one and two of notes.md): D5 · D7 · D9 · D10 (+ import
+cycles forbidden) · D12 · D13 (option.moss → alias) · D14 · D16 (no
 post-monomorphization checks — global principle) · D17 · D18 · D20 · D22
 (no partial application: total or absent) · D23 · D24 (dropped) · D25 · D26
 · D27 · D28 · D30 (depth backstop = sole D16 exception) · D31 (no `for`) ·
 D32 · D33 (no operators in MVP; ops.moss is the future desugaring target) ·
-D34 · D35 (iteration deferred) · D39 · D40
+D34 · D35 (iteration deferred) · D36 (methods: Q1–Q7) · D39 · D40 · D41
+(keep `unit`) · D43 (consistent merging)
 
-The highest-leverage remaining discussions, in order: §9 Q1–Q7 (methods
-block any honest rewrite of `src/` and the [D33] operator follow-up), D29
-functors, then the small syntax calls D41/D42. Everything else is settled
-enough to start building against.
+Nothing structural remains open — what's left is two small PROPOSED syntax
+calls and the post-MVP functor/val question. The language is now pinned
+down enough to update `docs/reference/syntax.md` and start the Python lexer
+and parser against the [D40] corpus.
