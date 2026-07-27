@@ -1,13 +1,17 @@
 import "./wasm.moss" as w use Wasm, I32;
 import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
   args_sizes_get, args_get, path_open;
-import "./path.moss" as path use Path, pwd, .join, .read;
+# Detached names are deliberately *not* imported here: `.read` and
+# `.length` each exist in two of these modules, and method lookup
+# falls back to the receiver's home module, which is always right.
+import "./path.moss" as path use Path, pwd;
 import "./bool.moss" use Bool;
 import "./char.moss" as char use Char, .char;
+import "./cell.moss" as cell use CellInt, cell_int;
 import "./int.moss" as int use Int, zero, one;
+import "./list.moss" as list use IntList, int_list;
 import "./std.moss" use putchar;
-import "./string.moss" as string use String, print, first_arg,
-  .length, .get, .slice, .concat;
+import "./string.moss" as string use String, print, first_arg;
 
 # `Std`, implemented in Moss over the primitive context (D52). This is the
 # slice done so far; growing it is volume, not design — each further item
@@ -33,6 +37,12 @@ context Console = Char, String, putchar, print, first_arg;
 # Paths, which need i64 for path_open's rights masks (D57, now that D59
 # has made i64 a scalar like any other).
 context Files = Path, pwd, Path.join, Path.read;
+
+# The containers, over the library's own allocator rather than the
+# compiler's — which no longer has one (D59).
+context Containers =
+  CellInt, cell_int, CellInt.read, CellInt.write,
+  IntList, int_list, IntList.push, IntList.get, IntList.set, IntList.length;
 
 # The numeric slice. `Int` binds to a nominal wrapper rather than to I32
 # directly, because only an attached method can see its receiver and only
@@ -241,6 +251,72 @@ assume Wasm, Branch {
   # unwrap. Declared as I32 here because `Char` is not bound in this file.
   fn Num.to_char(): I32 { raw(this) }
 
+  # One mutable word.
+  type Cell I32;
+
+  fn cell_addr(c: Cell): I32 { match c { Cell a => a } }
+
+  fn wasi_cell(): Cell {
+    let a = alloc(four());
+    w::i32_store(a, w::i32_zero);
+    Cell (a)
+  }
+
+  fn Cell.read(): Num { Num (w::i32_load(cell_addr(this))) }
+
+  fn Cell.write(value: Num) { w::i32_store(cell_addr(this), raw(value)); }
+
+  # A handle holding the address of [len | cap | elements...], so that
+  # growing can move the elements without invalidating the handle.
+  type Ints I32;
+
+  fn ints_addr(l: Ints): I32 { match l { Ints a => a } }
+
+  fn elem(data: I32, index: I32): I32 {
+    w::i32_add(w::i32_add(data, eight()), w::i32_mul(index, four()))
+  }
+
+  fn wasi_int_list(): Ints {
+    let handle = alloc(four());
+    let data = alloc(w::i32_add(eight(), w::i32_mul(eight(), four())));
+    w::i32_store(data, w::i32_zero);
+    w::i32_store(w::i32_add(data, four()), eight());
+    w::i32_store(handle, data);
+    Ints (handle)
+  }
+
+  fn Ints.length(): Num { Num (w::i32_load(w::i32_load(ints_addr(this)))) }
+
+  fn Ints.get(index: Num): Num {
+    Num (w::i32_load(elem(w::i32_load(ints_addr(this)), raw(index))))
+  }
+
+  fn Ints.set(index: Num, value: Num) {
+    w::i32_store(elem(w::i32_load(ints_addr(this)), raw(index)), raw(value));
+  }
+
+  fn Ints.push(value: Num) {
+    let handle = ints_addr(this);
+    var data = w::i32_load(handle);
+    let len = w::i32_load(data);
+    let cap = w::i32_load(w::i32_add(data, four()));
+    if i32_bool(w::i32_eq(len, cap)) {
+      # Grow by copying, since the bump allocator never frees.
+      let bigger = alloc(w::i32_add(eight(), w::i32_mul(cap, eight())));
+      w::i32_store(bigger, len);
+      w::i32_store(w::i32_add(bigger, four()), w::i32_mul(cap, two()));
+      var i = w::i32_zero;
+      while i32_bool(w::i32_lt_u(i, len)) {
+        w::i32_store(elem(bigger, i), w::i32_load(elem(data, i)));
+        i = w::i32_add(i, w::i32_one);
+      }
+      w::i32_store(handle, bigger);
+      data = bigger;
+    }
+    w::i32_store(elem(data, len), raw(value));
+    w::i32_store(data, w::i32_add(len, w::i32_one));
+  }
+
   fn Num.lt(rhs: Num): Bool { i32_bool(w::i32_lt_s(raw(this), raw(rhs))) }
   fn Num.eq(rhs: Num): Bool { i32_bool(w::i32_eq(raw(this), raw(rhs))) }
   fn Num.ne(rhs: Num): Bool { i32_bool(w::i32_ne(raw(this), raw(rhs))) }
@@ -293,6 +369,19 @@ functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind String.get = Str.get;
   bind String.slice = Str.slice;
   bind String.concat = Str.concat;
+}
+
+functor WasiContainers: Wasm, Branch -> Containers {
+  bind cell::CellInt = Cell;
+  bind cell::cell_int = wasi_cell;
+  bind CellInt.read = Cell.read;
+  bind CellInt.write = Cell.write;
+  bind list::IntList = Ints;
+  bind list::int_list = wasi_int_list;
+  bind IntList.push = Ints.push;
+  bind IntList.get = Ints.get;
+  bind IntList.set = Ints.set;
+  bind IntList.length = Ints.length;
 }
 
 functor WasiFiles: Wasm, Wasi, Branch -> Files {

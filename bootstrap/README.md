@@ -56,11 +56,12 @@ intrinsics compile to instructions and WASI functions to imports, with
 no shims involved at all — see `tests/wasi/raw.moss`. A signature can be
 implemented over that primitive context and installed with a functor
 (D55), which is how `Std` is being moved into Moss:
-[`lib/wasistd.moss`](/lib/wasistd.moss) already provides `putchar`,
-`print`, `first_arg`, a bump allocator, all of `Int`'s arithmetic, and
-`String` with its methods, and [`lib/wasichar.moss`](/lib/wasichar.moss)
-provides the char constants. What is left is `Path` — whose `read` needs
-i64 for path_open's rights masks (D57) — and the container types.
+[`lib/wasistd.moss`](/lib/wasistd.moss) provides `putchar`, `print`,
+`first_arg`, a bump allocator, all of `Int`'s arithmetic, `String` with
+its methods, `Path` including a `read` built from path_open and fd_read,
+and `CellInt`/`IntList`; [`lib/wasichar.moss`](/lib/wasichar.moss)
+provides the char constants. `Char`'s comparisons and `StrList` are what
+remain.
 
 ## Usage
 

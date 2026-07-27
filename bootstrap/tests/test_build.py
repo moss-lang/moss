@@ -465,6 +465,14 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({}, entry="tests/wasi/noalloc.moss")
         self.assertEqual(run_wasm(wasm), "ky\n")
 
+    def test_containers_over_wasi(self):
+        """CellInt and IntList in Moss, over the library's allocator. The
+        list is pushed past its initial capacity, so the grow-by-copy runs
+        — the first real data structure rather than a wrapper over
+        instructions."""
+        wasm = compile_wasm({}, entry="tests/wasi/containers.moss")
+        self.assertEqual(run_wasm(wasm), "yyyy\n")
+
     def test_path_over_wasi(self):
         """D57 cleared by D59: `Path.read` is Moss now — path_open with
         genuine i64 rights masks, then fd_read onto the top of the heap
