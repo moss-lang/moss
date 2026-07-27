@@ -354,6 +354,19 @@ them all. Related literature on the merging idea: ["Making a Type
 Difference: Subtraction on Intersection Types as Generalized Record
 Operations"](https://doi.org/10.1145/3571224) and the work it cites.
 
+*Implementation note (rev 6):* the bootstrap now implements this. The
+union-find lives in the environment's type map (an entry pointing anywhere
+but the symbol itself is a substitution edge); `merge` unifies duplicate
+keys instead of requiring equality; abstract type symbols are bare
+unification variables; method keys canonicalize through the union-find;
+and every call site records a (callee key → caller key) translation, which
+subsumed the earlier "provide under both keys" workaround — the two
+"same atom" findings that motivated all this are now just what
+canonicalization does. Not yet the full symmetric atoms/DAG
+representation: symbols still chase pointers to a representative rather
+than mapping into an atom set, which is invisible semantically but worth
+revisiting when contexts get reified for tooling.
+
 **[D20] DECIDED (assume).** `assume xs { decls }` adds the items `xs` to the
 requirement set of every declaration inside. Requirement sets nest by union:
 `src/lex.moss`'s `lex` sits inside `assume Char { ... assume next_byte { }}`

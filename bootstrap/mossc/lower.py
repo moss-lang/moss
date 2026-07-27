@@ -9,8 +9,6 @@ elaborated once, under its own assumptions (the interpreter carries context
 at runtime; monomorphization is a later backend's job).
 
 Deliberate v0 simplifications, each marked TODO in place:
-- D43 consistent merging is equality-only (conflicting duplicate keys are
-  errors instead of unifying atoms).
 - Square-bracket applications bind type symbols only.
 - Attached-method lookup searches the receiver's home module and the
   calling module (no orphan-style global search).
@@ -167,12 +165,12 @@ class Lower:
             if sym.decl.init is not None:
                 return  # a defined val is concrete; nothing to provide (D50)
             ty = self.elab_type(sym.decl.ty, sym.module, env.tymap | subst, env)
-            self.merge(env.vals, module, sym, ty)
+            self.merge(env, env.vals, module, sym, ty)
             if sym not in needs:
                 needs.append(sym)
         elif sym.kind == SymKind.FN:
             sig = self.fn_sig(sym, env.tymap | subst, env)
-            self.merge(env.fns, module, sym, sig)
+            self.merge(env, env.fns, module, sym, sig)
             if sym not in needs:
                 needs.append(sym)
         elif sym.kind == SymKind.CONTEXT:
@@ -214,14 +212,15 @@ class Lower:
             this_ty = self.symbol_type(module, receiver, tymap, env)
         sig = self.fn_sig(method, tymap, env, this=this_ty)
         # D36: the key is the receiver *type* — so `IsCell[Cell=MyCell]`
-        # provides its methods at MyCell, where calls will look them up.
-        receiver_head = head(this_ty)
+        # provides its methods at MyCell, where calls will look them up —
+        # canonicalized through the union-find (D43).
+        receiver_head = head(self.canon(env, this_ty))
         if receiver_head is None:
             self.error(
                 module, f"`{show(this_ty)}` cannot receive methods (no nominal head)"
             )
         key = (receiver_head, method)
-        self.merge(env.methods, module, key, sig)
+        self.merge(env, env.methods, module, key, sig)
         if key not in needs:
             needs.append(key)
 
@@ -240,12 +239,102 @@ class Lower:
             found = receiver.module.detached.get(name)
         return found
 
-    def merge(self, table: dict, module: Module, key, value):
-        # TODO(D43): unify atoms instead of requiring equality.
+    # Consistent merging (D43). The union-find lives in env.tymap: an entry
+    # whose value is not the symbol's own TAbstract is a substitution edge,
+    # written either by an explicit type bind or by unification during a
+    # merge. `canon` chases those edges; `unify` adds them, erroring only
+    # when two genuinely distinct concrete types would have to be equal.
+
+    def canon(self, env: Env, t):
+        if isinstance(t, TAbstract):
+            target = env.tymap.get(t.symbol)
+            if target is not None and not (
+                isinstance(target, TAbstract) and target.symbol is t.symbol
+            ):
+                return self.canon(env, target)
+            if t.args:
+                return TAbstract(
+                    t.symbol, tuple((s, self.canon(env, a)) for s, a in t.args)
+                )
+            return t
+        if isinstance(t, TNominal):
+            if t.args:
+                return TNominal(
+                    t.symbol, tuple((s, self.canon(env, a)) for s, a in t.args)
+                )
+            return t
+        if isinstance(t, TUnion):
+            return TUnion(tuple(self.canon(env, m) for m in t.members))
+        if isinstance(t, TTuple):
+            return TTuple(tuple(self.canon(env, i) for i in t.items))
+        if isinstance(t, TRecord):
+            return TRecord(tuple((n, self.canon(env, ty)) for n, ty in t.fields))
+        return t
+
+    def canon_head(self, env: Env, module: Module, sym: Symbol) -> Symbol:
+        """The representative receiver symbol for method keys."""
+        if sym.kind == SymKind.TYPE:
+            t = self.canon(env, TAbstract(sym, ()))
+            h = head(t)
+            if h is None:
+                self.error(
+                    module,
+                    f"`{sym.name}` resolves to `{show(t)}`, which cannot receive methods",
+                )
+            return h
+        return sym
+
+    def unify(self, env: Env, module: Module, a, b, why: str = ""):
+        a = self.canon(env, a)
+        b = self.canon(env, b)
+        if a == b:
+            return
+        if isinstance(a, TAbstract) and not a.args:
+            env.tymap[a.symbol] = b
+            return
+        if isinstance(b, TAbstract) and not b.args:
+            env.tymap[b.symbol] = a
+            return
+        pairs = None
+        if isinstance(a, (TNominal, TAbstract)) and type(a) is type(b) and a.symbol is b.symbol:
+            pairs = zip((x for _, x in a.args), (y for _, y in b.args))
+        elif isinstance(a, TUnion) and isinstance(b, TUnion) and len(a.members) == len(b.members):
+            pairs = zip(a.members, b.members)
+        elif isinstance(a, TTuple) and isinstance(b, TTuple) and len(a.items) == len(b.items):
+            pairs = zip(a.items, b.items)
+        elif (
+            isinstance(a, TRecord)
+            and isinstance(b, TRecord)
+            and [n for n, _ in a.fields] == [n for n, _ in b.fields]
+        ):
+            pairs = zip((x for _, x in a.fields), (y for _, y in b.fields))
+        if pairs is not None:
+            for x, y in pairs:
+                self.unify(env, module, x, y, why)
+            return
+        self.error(module, f"cannot merge `{show(a)}` with `{show(b)}`{why} (D43)")
+
+    def unify_sig(self, env: Env, module: Module, a: FnSig, b: FnSig, key):
+        name = key[1].name if isinstance(key, tuple) else getattr(key, "name", key)
+        why = f" for `{name}`"
+        if len(a.params) != len(b.params):
+            self.error(module, f"conflicting provisions{why} (arity)")
+        for (_, x), (_, y) in zip(a.params, b.params):
+            self.unify(env, module, x, y, why)
+        self.unify(env, module, a.ret, b.ret, why)
+        if a.this is not None and b.this is not None:
+            self.unify(env, module, a.this, b.this, why)
+
+    def merge(self, env: Env, table: dict, module: Module, key, value):
         existing = table.get(key)
-        if existing is not None and existing != value:
-            self.error(module, f"conflicting provisions for `{key}` (D43 merge unimplemented)")
-        table[key] = value
+        if existing is None:
+            table[key] = value
+            return
+        if isinstance(value, FnSig):
+            self.unify_sig(env, module, existing, value, key)
+        else:
+            name = getattr(key, "name", key)
+            self.unify(env, module, existing, value, f" for `{name}`")
 
     def check_totality(self, module: Module, sym: Symbol, subst: dict, env: Env):
         reqs = self.type_requirements(sym)
@@ -274,7 +363,11 @@ class Lower:
         out: list = []
         # Register before scanning so recursive types terminate.
         self._reqs_cache[id(sym)] = out
-        if sym.kind == SymKind.UNIT:
+        if sym.kind in (SymKind.UNIT, SymKind.TYPE):
+            # An abstract type symbol is a bare unification variable (D43);
+            # giving it identity args for everything its assumes provide
+            # would block merging (and made `unit Stop;` under Std spuriously
+            # distinct per ambient binding).
             pass
         elif sym.kind in (SymKind.TAG, SymKind.ALIAS):
             self.free_type_syms(sym.decl.ty, sym.module, out, {id(sym)})
@@ -553,6 +646,13 @@ class FnChecker:
     def error(self, message: str):
         raise LowerError(self.module.path, message, locate(self.module, self.at_node))
 
+    def fits(self, t, expected) -> bool:
+        """D17 fitting, through the union-find (D43): merged symbols are
+        interchangeable."""
+        return fits(
+            self.lower.canon(self.env, t), self.lower.canon(self.env, expected)
+        )
+
     def push(self) -> Env:
         outer = self.env
         self.env = Env(self.module, parent=outer)
@@ -580,7 +680,7 @@ class FnChecker:
                 tail_ty = TNever() if self.diverged else TUnit()
             else:
                 tail, tail_ty = self.synth(block.tail, expected=expected)
-            if expected is not None and not fits(tail_ty, expected):
+            if expected is not None and not self.fits(tail_ty, expected):
                 self.error(f"block yields `{show(tail_ty)}`, expected `{show(expected)}`")
             return ir.Block(tuple(stmts), tail)
         finally:
@@ -609,7 +709,7 @@ class FnChecker:
                 )
             expr, ty = self.synth(stmt.expr, expected=declared)
             if declared is not None:
-                if not fits(ty, declared):
+                if not self.fits(ty, declared):
                     self.error(
                         f"`{stmt.name}` is declared `{show(declared)}` but initialized "
                         f"with `{show(ty)}`"
@@ -625,7 +725,7 @@ class FnChecker:
             if not mutable:
                 self.error(f"`{stmt.name}` is not a `var`")
             expr, ety = self.synth(stmt.expr, expected=ty)
-            if not fits(ety, ty):
+            if not self.fits(ety, ty):
                 self.error(f"cannot assign `{show(ety)}` to `{stmt.name}: {show(ty)}`")
             return ir.Assign(stmt.name, expr)
         if isinstance(stmt, ast.Bind):
@@ -654,7 +754,7 @@ class FnChecker:
             self.error("`if`/`while` need lib/bool.moss to be loaded (D45)")
         expected = TNominal(bool_sym, ())
         cond, ty = self.synth(expr, expected=expected)
-        if not fits(ty, expected):
+        if not self.fits(ty, expected):
             self.error(f"condition is `{show(ty)}`, expected `Bool`")
         return cond
 
@@ -670,16 +770,10 @@ class FnChecker:
             this_ty = self.lower.symbol_type(module, receiver, self.env.tymap, self.env)
             sig = self.lower.fn_sig(method, self.env.tymap, self.env, this=this_ty)
             fn_symbol = self.expect_provider(expr, this_ty)
-            self.match_fn_sig(fn_symbol, sig, kind="method")
-            # Provide under the resolved head *and*, when the receiver was
-            # written as a bound abstract symbol, under that symbol too —
-            # consumers elaborated under the abstract symbol read that key.
-            keys = [(head(this_ty), method)]
-            if receiver is not head(this_ty):
-                keys.append((receiver, method))
-            for key in keys:
-                self.lower.merge(self.env.methods, module, key, sig)
-            return ir.BindFn(tuple(keys), fn_symbol)
+            needs_map = self.match_fn_sig(fn_symbol, sig, kind="method")
+            key = (self.lower.canon_head(self.env, module, receiver), method)
+            self.lower.merge(self.env, self.env.methods, module, key, sig)
+            return ir.BindFn(key, fn_symbol, needs_map)
         target = resolve_path(module, spec.path)
         if target is None:
             self.error(f"`{'::'.join(spec.path)}` is not in scope")
@@ -698,19 +792,19 @@ class FnChecker:
                 target.decl.ty, target.module, self.env.tymap, self.env
             )
             value, ty = self.synth(expr, expected=declared)
-            if not fits(ty, declared):
+            if not self.fits(ty, declared):
                 self.error(
                     f"bind of `{target.name}`: got `{show(ty)}`, its declared type is "
                     f"`{show(declared)}`"
                 )
-            self.lower.merge(self.env.vals, module, target, declared)
+            self.lower.merge(self.env, self.env.vals, module, target, declared)
             return ir.BindVal(target, value)
         if target.kind == SymKind.FN:
             sig = self.lower.fn_sig(target, self.env.tymap, self.env)
             fn_symbol = self.expect_defined_fn(expr)
-            self.match_fn_sig(fn_symbol, sig, kind="fn")
-            self.lower.merge(self.env.fns, module, target, sig)
-            return ir.BindFn((target,), fn_symbol)
+            needs_map = self.match_fn_sig(fn_symbol, sig, kind="fn")
+            self.lower.merge(self.env, self.env.fns, module, target, sig)
+            return ir.BindFn(target, fn_symbol, needs_map)
         self.error(f"cannot bind `{target.name}` (a {target.kind.name.lower()})")
 
     def expect_defined_fn(self, expr) -> Symbol:
@@ -756,38 +850,50 @@ class FnChecker:
         # D27: the provider's signature must match after current substitutions,
         # with no inference; and its own needs must be satisfiable here.
         self.lower.lower_fn(provider.module, provider)
-        self.require_needs(provider, self.lower.needs_of[id(provider)])
+        needs_map = self.require_needs(provider, self.lower.needs_of[id(provider)])
         got = self.lower.fn_sig(provider, self.env.tymap, self.env)
-        if tuple(t for _, t in got.params) != tuple(t for _, t in wanted.params) or (
-            got.ret != wanted.ret
-        ):
+        canon = lambda t: self.lower.canon(self.env, t)
+        if tuple(canon(t) for _, t in got.params) != tuple(
+            canon(t) for _, t in wanted.params
+        ) or canon(got.ret) != canon(wanted.ret):
             self.error(
                 f"{kind} bind signature mismatch: provider `{provider.name}` has "
                 f"({', '.join(show(t) for _, t in got.params)}) -> {show(got.ret)}, "
                 f"need ({', '.join(show(t) for _, t in wanted.params)}) -> {show(wanted.ret)}"
             )
+        return needs_map
 
-    def require_needs(self, callee: Symbol, needs):
+    def require_needs(self, callee: Symbol, needs) -> tuple:
+        """Check each of the callee's needs against this environment and
+        return the (callee key -> caller key) translation: the callee may
+        know a receiver by an abstract symbol this environment has since
+        bound or merged (D43)."""
+        mapping = []
         for need in needs:
             if isinstance(need, tuple):
-                if need not in self.env.methods:
-                    receiver, method = need
+                receiver, method = need
+                key = (self.lower.canon_head(self.env, self.module, receiver), method)
+                if key not in self.env.methods:
                     self.error(
                         f"calling `{callee.name}` needs `{receiver.name}{method.name}`, "
                         "which is not available in the context here"
                     )
+                mapping.append((need, key))
             elif need.kind == SymKind.VAL:
                 if need not in self.env.vals:
                     self.error(
                         f"calling `{callee.name}` needs `{need.name}`, which is not "
                         "available in the context here"
                     )
+                mapping.append((need, need))
             elif need.kind == SymKind.FN:
                 if need not in self.env.fns:
                     self.error(
                         f"calling `{callee.name}` needs `{need.name}`, which is not "
                         "available in the context here"
                     )
+                mapping.append((need, need))
+        return tuple(mapping)
 
     # Expressions
 
@@ -806,7 +912,7 @@ class FnChecker:
                     self.error(f"`return` with no value, but the function returns `{show(self.sig.ret)}`")
                 return ir.Return(None), TNever()
             value, ty = self.synth(expr.expr, expected=self.sig.ret)
-            if not fits(ty, self.sig.ret):
+            if not self.fits(ty, self.sig.ret):
                 self.error(f"return of `{show(ty)}`, expected `{show(self.sig.ret)}`")
             return ir.Return(value), TNever()
         if isinstance(expr, ast.Break):
@@ -834,7 +940,7 @@ class FnChecker:
         then = self.check_block(expr.then, expected=expected)
         then_ty = self.block_type(expr.then, expected)
         if expr.els is None:
-            if expected is not None and not fits(TUnit(), expected):
+            if expected is not None and not self.fits(TUnit(), expected):
                 self.error("an `if` without `else` yields `()`")
             return ir.If(cond, then, None), TUnit()
         if isinstance(expr.els, ast.If):
@@ -893,7 +999,7 @@ class FnChecker:
                     body_ty = expected if expected is not None else self.block_type(arm.body, expected)
                 else:
                     body, body_ty = self.synth(arm.body, expected=expected)
-                    if expected is not None and not fits(body_ty, expected):
+                    if expected is not None and not self.fits(body_ty, expected):
                         self.error(
                             f"match arm yields `{show(body_ty)}`, expected `{show(expected)}`"
                         )
@@ -1024,7 +1130,7 @@ class FnChecker:
             if len(expr.args) != 1:
                 self.error(f"tag `{target.name}` takes exactly one payload")
             value, vty = self.synth(expr.args[0], expected=payload_ty)
-            if not fits(vty, payload_ty):
+            if not self.fits(vty, payload_ty):
                 self.error(
                     f"payload of `{target.name}` is `{show(vty)}`, expected "
                     f"`{show(payload_ty)}`"
@@ -1035,9 +1141,10 @@ class FnChecker:
         if app is not None:
             self.error("v0 does not support bracket applications at call sites")
         defined = isinstance(target.decl, ast.Fndef) and target.decl.body is not None
+        needs_map = None
         if defined:
             self.lower.lower_fn(target.module, target)
-            self.require_needs(target, self.lower.needs_of[id(target)])
+            needs_map = self.require_needs(target, self.lower.needs_of[id(target)])
             sig = self.lower.fn_sig(target, self.env.tymap, self.env)
             callee = ("direct", target)
         else:
@@ -1049,7 +1156,7 @@ class FnChecker:
                 )
             callee = ("env", target)
         args = self.check_args(target.name, sig, expr.args)
-        return ir.Call(callee, tuple(args)), sig.ret
+        return ir.Call(callee, tuple(args), needs_map=needs_map), sig.ret
 
     def check_args(self, name, sig: FnSig, arg_exprs):
         if len(arg_exprs) != len(sig.params):
@@ -1059,7 +1166,7 @@ class FnChecker:
         out = []
         for (pname, pty), arg in zip(sig.params, arg_exprs):
             value, ty = self.synth(arg, expected=pty)
-            if not fits(ty, pty):
+            if not self.fits(ty, pty):
                 self.error(
                     f"argument `{pname}` of `{name}` is `{show(ty)}`, expected `{show(pty)}`"
                 )
@@ -1093,7 +1200,7 @@ class FnChecker:
                 value_ir, vty = self.synth(ast.PathExpr([name], None), expected=field_types[name])
             else:
                 value_ir, vty = self.synth(value, expected=field_types[name])
-            if not fits(vty, field_types[name]):
+            if not self.fits(vty, field_types[name]):
                 self.error(
                     f"field `{name}` is `{show(vty)}`, expected `{show(field_types[name])}`"
                 )
@@ -1118,7 +1225,7 @@ class FnChecker:
 
     def synth_method(self, expr: ast.MethodCall):
         obj, oty = self.synth(expr.obj)
-        h = head(oty)
+        h = head(self.lower.canon(self.env, oty))
         if h is None:
             self.error(f"`{show(oty)}` has no methods (it has no nominal head)")
         name = expr.path[-1]
@@ -1134,10 +1241,15 @@ class FnChecker:
                 attached = home.attached.get((id(h), name))
                 if attached is not None and attached.decl.body is not None:
                     self.lower.lower_fn(attached.module, attached)
-                    self.require_needs(attached, self.lower.needs_of[id(attached)])
+                    needs_map = self.require_needs(
+                        attached, self.lower.needs_of[id(attached)]
+                    )
                     sig = self.lower.fn_sig(attached, self.env.tymap, self.env, this=oty)
                     args = self.check_args(attached.name, sig, expr.args)
-                    return ir.Call(("direct", attached), tuple(args), this=obj), sig.ret
+                    return (
+                        ir.Call(("direct", attached), tuple(args), this=obj, needs_map=needs_map),
+                        sig.ret,
+                    )
         # Provided: detached or abstract-attached, from the context. A local
         # (possibly renamed) detached import resolves exactly by symbol;
         # otherwise match by declared name, erroring on ambiguity (D36).

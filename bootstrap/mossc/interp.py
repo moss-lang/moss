@@ -149,10 +149,8 @@ class Interp:
             frame.ctx[stmt.key] = self.eval(stmt.expr, frame)
         elif isinstance(stmt, ir.BindFn):
             fn = self.fns[id(stmt.fn)]
-            captured = {k: frame.ctx[k] for k in fn.needs}
-            closure = Closure(fn, captured)
-            for key in stmt.keys:
-                frame.ctx[key] = closure
+            captured = {ck: frame.ctx[sk] for ck, sk in stmt.needs_map}
+            frame.ctx[stmt.key] = Closure(fn, captured)
         elif isinstance(stmt, ir.While):
             while self.truthy(self.eval(stmt.cond, frame)):
                 try:
@@ -207,7 +205,7 @@ class Interp:
             kind, target = expr.callee
             if kind == "direct":
                 fn = self.fns[id(target)]
-                ctx = {k: frame.ctx[k] for k in fn.needs}
+                ctx = {ck: frame.ctx[sk] for ck, sk in expr.needs_map}
                 if tail:
                     return _Tail(fn, args, ctx, this)
                 return self.call_fn(fn, args, ctx, this)

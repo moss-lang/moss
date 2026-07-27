@@ -53,11 +53,15 @@ class NeedVal:
 @dataclass(frozen=True)
 class Call:
     """callee is ('direct', FnIR-symbol) for defined functions or
-    ('env', Key) for contextual functions and methods."""
+    ('env', Key) for contextual functions and methods. For direct calls,
+    needs_map is the (callee key, caller key) translation computed at the
+    call site — the callee may know a receiver by an abstract symbol the
+    caller has since bound or merged (D43)."""
 
     callee: tuple
     args: tuple
     this: "object | None" = None  # receiver expression for method calls
+    needs_map: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -155,16 +159,13 @@ class BindVal:
 
 @dataclass(frozen=True)
 class BindFn:
-    """Provide a contextual fn/method: a closure over the current env.
+    """Provide a contextual fn/method under its canonical key (D43): a
+    closure over the pieces of the current env the provider needs, gathered
+    through needs_map exactly like a direct call."""
 
-    A method bind may write several keys: binding `A.gimme` where `A` is an
-    abstract symbol currently bound to `Char` provides the same atom under
-    both `(A, gimme)` (how consumers elaborated under abstract `A` read it)
-    and `(Char, gimme)` (how concrete-receiver consumers read it)."""
-
-    keys: tuple  # one or more Keys
+    key: Key
     fn: Symbol  # a defined FnIR symbol
-    # Needs of `fn` are captured from the env at bind time.
+    needs_map: tuple
 
 
 @dataclass(frozen=True)

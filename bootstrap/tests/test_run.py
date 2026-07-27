@@ -420,3 +420,73 @@ class TestSelfHostedLexer(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMerging(unittest.TestCase):
+    """D43 consistent merging: duplicate keys unify their bindings instead
+    of erroring, and only a genuinely unsatisfiable merge is rejected."""
+
+    DECLS = (
+        "  type Foo;\n"
+        "  type A;\n"
+        "  type B;\n"
+        "  type C;\n"
+        "  fn .gimme(): Foo;\n"
+        "  context Ctx1 = A, B, A.gimme[Foo=B];\n"
+        "  context Ctx2 = A, C, A.gimme[Foo=C];\n"
+        "  context Ctx3 = Ctx1, Ctx2;\n"
+    )
+
+    def test_designer_example_merges(self):
+        # Inside `assume Ctx3`, B and C are one atom: a.gimme() (declared to
+        # yield B by Ctx1's item) is accepted where C is required.
+        files = main_body(
+            "bind Foo=Char; bind A=Char; bind B=Char; bind C=Char;\n"
+            "    bind A.gimme=giveq;\n"
+            "    putchar(go(char::m));",
+            decls=self.DECLS
+            + "  assume Ctx3 {\n"
+            "    fn go(a: A): C { a.gimme() }\n"
+            "  }\n"
+            "  fn giveq(): Char { char::q }",
+        )
+        self.assertEqual(run(files), "q")
+
+    def test_unsatisfiable_merge_is_error(self):
+        files = main_body(
+            "()",
+            decls="  type A;\n"
+            "  fn .gimme(): Foo;\n"
+            "  type Foo;\n"
+            "  unit U1;\n"
+            "  unit U2;\n"
+            "  context Ctx1 = A, A.gimme[Foo=U1];\n"
+            "  context Ctx2 = A, A.gimme[Foo=U2];\n"
+            "  context Ctx3 = Ctx1, Ctx2;\n"
+            "  assume Ctx3 { fn go() { } }",
+        )
+        with self.assertRaises(LowerError) as ctx:
+            run(files)
+        self.assertIn("cannot merge", ctx.exception.message)
+
+    def test_binding_one_merged_symbol_binds_both(self):
+        # After Ctx3 merges B with C, code under it can pass a B where a C
+        # is expected and vice versa.
+        files = main_body(
+            "bind Foo=Char; bind A=Char; bind B=Char; bind C=Char;\n"
+            "    bind A.gimme=giveq;\n"
+            "    roundtrip();",
+            decls=self.DECLS
+            + "  assume Ctx3 {\n"
+            "    val b: B;\n"
+            "    assume b {\n"
+            "      fn takes_c(x: C) { }\n"
+            "      fn roundtrip() { takes_c(b); }\n"
+            "    }\n"
+            "  }\n"
+            "  fn giveq(): Char { char::q }",
+        )
+        files["main.moss"] = files["main.moss"].replace(
+            "    roundtrip();", "    bind b=char::b;\n    roundtrip();"
+        )
+        self.assertEqual(run(files), "")
