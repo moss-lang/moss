@@ -144,11 +144,14 @@ still out of reach, which is why an error here is a letter and a name.
 
 ## Sharp edges
 
-- The interpreter runs the compiler about 150× slower than the compiled
-  compiler does (27s against 180ms for the same input), because
-  `src/main.moss` goes through the Moss `Std` of `lib/wasistd.moss`
-  rather than the bootstrap's native one. Drivers that assume `Std`
-  directly are much faster, and that is what most tests use.
+- Interpreting the compiler is about three orders of magnitude slower
+  than running it as Wasm — `tests/wasi/prim.moss` takes 2m24s one way
+  and 180ms the other — because `src/main.moss` goes through the Moss
+  `Std` of `lib/wasistd.moss` (D52), so every `Int` is a boxed tag over
+  an interpreted instruction. A driver that assumes `Std` directly gets
+  the bootstrap's native one and is far quicker; that is what the tests
+  use, and it is also why `moss build src/main.moss` is the way to
+  actually run this compiler.
 - `prog.moss` reports a syntax error as a per-module flag; the position
   the parser recorded is not surfaced.
 - The back end recognizes `Wasm`, `Wasi`, `Bool` and `i32_bool` by the
