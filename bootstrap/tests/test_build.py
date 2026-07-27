@@ -157,6 +157,37 @@ class TestWasmBackend(unittest.TestCase):
                 self.assertEqual(run_wasm(wasm), expected)
 
     def test_out_of_slice_reports_itself(self):
-        source = "assume Std {\n  fn main() { let s = first_arg(); }\n}\n"
+        source = "assume Std {\n  fn main() { let xs = int_list(); }\n}\n"
         with self.assertRaises(build_mod.NotCompilable):
             compile_wasm({"main.moss": source})
+
+    def test_self_hosted_lexer_compiles_to_wasm(self):
+        """The capstone: src/lex.moss, driven by a first_arg driver, compiled
+        to a WASI module — tokenizing its own source with exactly the
+        bootstrap lexer's count."""
+        driver = (
+            'import "./src/lex.moss" as lexer;\n'
+            'import "./src/token.moss" use Eof;\n'
+            "assume Std {\n"
+            "  fn main() {\n"
+            "    bind lexer::src=first_arg();\n"
+            "    bind lexer::at=cell_int();\n"
+            "    bind lexer::mark=cell_int();\n"
+            "    loop { match lexer::lex() { Eof => break, _ => putchar(char::dot), } }\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n"
+        )
+        wasm = compile_wasm({"dots.moss": driver}, entry="dots.moss")
+        from mossc.lex import lex as bootstrap_lex
+
+        source = (REPO / "src/lex.moss").read_text(encoding="utf-8")
+        expected = len(bootstrap_lex(source)) - 1
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            path = f.name
+        result = subprocess.run(
+            [WASMTIME, path, source], capture_output=True, text=True, timeout=300
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "." * expected + "\n")

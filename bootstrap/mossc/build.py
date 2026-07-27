@@ -41,6 +41,9 @@ I32_EQZ = b"\x45"
 EMPTY = b"\x40"
 I32 = b"\x7f"
 UNREACHABLE = b"\x00"
+I32_LOAD8 = b"\x2d"
+I32_STORE8 = b"\x3a"
+HEAP_BASE = 1024
 I32_LOAD = b"\x28"
 I32_STORE = b"\x36"
 
@@ -114,7 +117,7 @@ class Backend:
         self.unit_codes: dict[int, int] = {}
         self.lib = {}
         for module in program.modules.values():
-            for short in ("bool", "num", "char", "int", "std"):
+            for short in ("bool", "num", "char", "int", "std", "string", "cell"):
                 if module.path.endswith(f"lib/{short}.moss"):
                     self.lib[short] = module
 
@@ -125,8 +128,8 @@ class Backend:
             if symbol is self.lib["bool"].names.get("False"):
                 return 0
         code = self.unit_codes.setdefault(id(symbol), len(self.unit_codes) + 2)
-        if code >= 32:
-            raise NotCompilable("more than 30 unit kinds in one module (this slice)")
+        if code >= HEAP_BASE:
+            raise NotCompilable("too many unit kinds for this slice")
         return code
 
     def native_const(self, provision) -> int | None:
@@ -171,7 +174,7 @@ class Backend:
     def compile_fn(self, symbol: Symbol) -> int:
         if id(symbol) in self.fn_index:
             return self.fn_index[id(symbol)]
-        index = 3 + len(self.fn_index)  # after fd_write, putchar, alloc
+        index = 6 + len(self.fn_index)  # after 3 imports and 3 shims
         self.fn_index[id(symbol)] = index
         fn = self.lower.fns[id(symbol)]
         needs = self.val_needs(symbol)
@@ -205,6 +208,14 @@ class Backend:
             type_of[(0, 0)] = len(types)
             types.append((0, 0))
         start_type = type_of[(0, 0)]
+        if (2, 1) not in type_of:
+            type_of[(2, 1)] = len(types)
+            types.append((2, 1))
+        wasi2_type = type_of[(2, 1)]
+        if (0, 1) not in type_of:
+            type_of[(0, 1)] = len(types)
+            types.append((0, 1))
+        first_arg_type = type_of[(0, 1)]
 
         type_section = section(
             1,
@@ -219,21 +230,29 @@ class Backend:
             2,
             vec(
                 [
-                    name("wasi_snapshot_preview1") + name("fd_write") + b"\x00" + uleb(0)
+                    name("wasi_snapshot_preview1") + name("fd_write") + b"\x00" + uleb(0),
+                    name("wasi_snapshot_preview1")
+                    + name("args_sizes_get")
+                    + b"\x00"
+                    + uleb(wasi2_type),
+                    name("wasi_snapshot_preview1")
+                    + name("args_get")
+                    + b"\x00"
+                    + uleb(wasi2_type),
                 ]
             ),
         )
-        # Functions: putchar shim, alloc, compiled fns, _start.
+        # Functions: putchar, alloc, first_arg shims, compiled fns, _start.
         function_section = section(
             3,
             vec(
-                [uleb(putchar_type), uleb(alloc_type)]
+                [uleb(putchar_type), uleb(alloc_type), uleb(first_arg_type)]
                 + [uleb(t) for t in func_types]
                 + [uleb(start_type)]
             ),
         )
-        memory_section = section(5, vec([b"\x00" + uleb(1)]))
-        start_index = 3 + len(ordered)
+        memory_section = section(5, vec([b"\x00" + uleb(2)]))
+        start_index = 6 + len(ordered)
         export_section = section(
             7,
             vec(
@@ -245,13 +264,13 @@ class Backend:
         )
         putchar_body = self.putchar_shim()
         alloc_body = self.alloc_fn()
-        # _start initializes the heap pointer (addr 16 -> 32), then runs main.
+        # _start initializes the heap pointer, then runs main.
         start_body = (
             vec([])
             + I32_CONST
             + sleb(16)
             + I32_CONST
-            + sleb(32)
+            + sleb(HEAP_BASE)
             + I32_STORE
             + uleb(2)
             + uleb(0)
@@ -260,7 +279,11 @@ class Backend:
             + DROP
             + END
         )
-        bodies = [putchar_body, alloc_body] + [b for _, b in ordered] + [start_body]
+        bodies = (
+            [putchar_body, alloc_body, self.first_arg_shim()]
+            + [b for _, b in ordered]
+            + [start_body]
+        )
         code_section = section(10, vec([uleb(len(b)) + b for b in bodies]))
         return (
             b"\x00asm\x01\x00\x00\x00"
@@ -284,6 +307,52 @@ class Backend:
         body += LOCAL_GET + uleb(1)
         body += END
         return bytes(body)
+
+    def first_arg_shim(self) -> bytes:
+        # () -> string ptr: read argv[1] via WASI and box it as [len|bytes].
+        # Locals: 0 argv, 1 buf, 2 p, 3 n, 4 s, 5 i.
+        b = bytearray()
+        b += vec([uleb(6) + I32])
+        # args_sizes_get(24, 28)
+        b += I32_CONST + sleb(24) + I32_CONST + sleb(28) + CALL + uleb(1) + DROP
+        # argv = alloc(argc * 4); buf = alloc(bufsize)
+        b += I32_CONST + sleb(24) + I32_LOAD + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(4) + BINOPS["mul"] + CALL + uleb(4) + LOCAL_SET + uleb(0)
+        b += I32_CONST + sleb(28) + I32_LOAD + uleb(2) + uleb(0)
+        b += CALL + uleb(4) + LOCAL_SET + uleb(1)
+        b += LOCAL_GET + uleb(0) + LOCAL_GET + uleb(1) + CALL + uleb(2) + DROP
+        # if argc < 2: return an empty string
+        b += I32_CONST + sleb(24) + I32_LOAD + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(2) + BINOPS["lt"]
+        b += IF + EMPTY
+        b += I32_CONST + sleb(4) + CALL + uleb(4) + LOCAL_SET + uleb(4)
+        b += LOCAL_GET + uleb(4) + I32_CONST + sleb(0) + I32_STORE + uleb(2) + uleb(0)
+        b += LOCAL_GET + uleb(4) + RETURN
+        b += END
+        # p = argv[1] (NUL-terminated); n = strlen(p)
+        b += LOCAL_GET + uleb(0) + I32_LOAD + uleb(2) + uleb(4) + LOCAL_SET + uleb(2)
+        b += I32_CONST + sleb(0) + LOCAL_SET + uleb(3)
+        b += BLOCK + EMPTY + LOOP + EMPTY
+        b += LOCAL_GET + uleb(2) + LOCAL_GET + uleb(3) + BINOPS["add"]
+        b += I32_LOAD8 + uleb(0) + uleb(0) + I32_EQZ + BR_IF + uleb(1)
+        b += LOCAL_GET + uleb(3) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(3)
+        b += BR + uleb(0) + END + END
+        # s = alloc(4 + n); *s = n; copy bytes
+        b += I32_CONST + sleb(4) + LOCAL_GET + uleb(3) + BINOPS["add"]
+        b += CALL + uleb(4) + LOCAL_SET + uleb(4)
+        b += LOCAL_GET + uleb(4) + LOCAL_GET + uleb(3) + I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(0) + LOCAL_SET + uleb(5)
+        b += BLOCK + EMPTY + LOOP + EMPTY
+        b += LOCAL_GET + uleb(5) + LOCAL_GET + uleb(3) + BINOPS["ge"] + BR_IF + uleb(1)
+        b += LOCAL_GET + uleb(4) + LOCAL_GET + uleb(5) + BINOPS["add"]
+        b += LOCAL_GET + uleb(2) + LOCAL_GET + uleb(5) + BINOPS["add"]
+        b += I32_LOAD8 + uleb(0) + uleb(0)
+        b += I32_STORE8 + uleb(0) + uleb(4)
+        b += LOCAL_GET + uleb(5) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(5)
+        b += BR + uleb(0) + END + END
+        b += LOCAL_GET + uleb(4)
+        b += END
+        return bytes(b)
 
     def putchar_shim(self) -> bytes:
         # iovec at 0: ptr=8, len=1; byte at 8; retptr at 12.
@@ -429,7 +498,7 @@ class FnCompiler:
                 self.expr(node.payload)  # the Bool tag is erased
             else:
                 tmp = self.local()
-                self.code += I32_CONST + sleb(8) + CALL + uleb(2)
+                self.code += I32_CONST + sleb(8) + CALL + uleb(4)
                 self.code += LOCAL_SET + uleb(tmp)
                 self.code += LOCAL_GET + uleb(tmp)
                 self.code += I32_CONST + sleb(self.b.unit_code(symbol))
@@ -441,7 +510,7 @@ class FnCompiler:
         elif isinstance(node, ir.MakeRecord):
             count = len(node.fields)
             tmp = self.local()
-            self.code += I32_CONST + sleb(4 + 4 * count) + CALL + uleb(2)
+            self.code += I32_CONST + sleb(4 + 4 * count) + CALL + uleb(4)
             self.code += LOCAL_SET + uleb(tmp)
             self.code += LOCAL_GET + uleb(tmp)
             self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
@@ -532,8 +601,8 @@ class FnCompiler:
             code = self.b.unit_code(pat.head)
             boxed = pat.binder is not None or pat.fields is not None
             if boxed or pat.head.kind == SymKind.TAG:
-                # (s >= 32) & (mem[s] == code); the load is safe either way.
-                self.code += LOCAL_GET + uleb(scrut) + I32_CONST + sleb(32)
+                # (s >= heap) & (mem[s] == code); the load is safe either way.
+                self.code += LOCAL_GET + uleb(scrut) + I32_CONST + sleb(HEAP_BASE)
                 self.code += BINOPS["ge"]
                 self.code += LOCAL_GET + uleb(scrut) + I32_LOAD + uleb(2) + uleb(0)
                 self.code += I32_CONST + sleb(code) + BINOPS["eq"]
@@ -586,11 +655,41 @@ class FnCompiler:
                     self.expr(node.this)
                     self.code += I32_CONST + sleb(1) + BINOPS["xor"]
                     return
+            if "string" in self.b.lib and method.module is self.b.lib["string"]:
+                if short == "length":
+                    self.expr(node.this)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    return
+                if short == "get":
+                    self.expr(node.this)
+                    self.expr(node.args[0])
+                    self.code += BINOPS["add"] + I32_LOAD8 + uleb(0) + uleb(4)
+                    return
+            if "cell" in self.b.lib and method.module is self.b.lib["cell"]:
+                if short == "read":
+                    self.expr(node.this)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    return
+                if short == "write":
+                    self.expr(node.this)
+                    self.expr(node.args[0])
+                    self.code += I32_STORE + uleb(2) + uleb(0) + I32_CONST + sleb(0)
+                    return
             raise NotCompilable(f"method `{method.name}`")
         if self.b.is_putchar(key):
             for arg in node.args:
                 self.expr(arg)
-            self.code += CALL + uleb(1) + I32_CONST + sleb(0)
+            self.code += CALL + uleb(3) + I32_CONST + sleb(0)
+            return
+        if "string" in self.b.lib and key is self.b.lib["string"].names.get("first_arg"):
+            self.code += CALL + uleb(5)
+            return
+        if "cell" in self.b.lib and key is self.b.lib["cell"].names.get("cell_int"):
+            tmp = self.local()
+            self.code += I32_CONST + sleb(4) + CALL + uleb(4) + LOCAL_SET + uleb(tmp)
+            self.code += LOCAL_GET + uleb(tmp) + I32_CONST + sleb(0)
+            self.code += I32_STORE + uleb(2) + uleb(0)
+            self.code += LOCAL_GET + uleb(tmp)
             return
         raise NotCompilable(f"contextual fn `{getattr(key, 'name', key)}`")
 
