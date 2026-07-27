@@ -1,0 +1,6 @@
+import "./b.moss" use B;
+import "./c.moss" as c;
+type A;
+val v: B;
+val w: Missing;
+val x: A;

@@ -277,7 +277,7 @@ class TestWasmBackend(unittest.TestCase):
             "    bind tree::kids=int_list();\n"
             "    bind tree::name_ids=int_list();\n"
             "    bind tree::ref_ids=int_list();\n"
-            "    bind tree::imp_paths=int_list();\n"
+            "    bind tree::imp_texts=str_list();\n"
             "    bind tree::imp_starts=int_list();\n"
             "    bind tree::imp_lens=int_list();\n"
             "    bind tree::imp_names=int_list();\n"

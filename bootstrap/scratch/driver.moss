@@ -1,13 +1,11 @@
-import "./intern.moss" as intern;
-import "./lex.moss" as lexer;
-import "./parse.moss" as parser;
-import "./tree.moss" as tree;
+import "../src/collect.moss" as collect;
+import "../src/intern.moss" as intern;
+import "../src/lex.moss" as lexer;
+import "../src/mods.moss" as mods;
+import "../src/tree.moss" as tree;
 
 assume Std {
-  # Parse the file named by the first argument into the arena tree, then
-  # dump the tree back out (see parse.moss).
-  fn cli() {
-    bind lexer::src=pwd.join(first_arg()).read();
+  fn main() {
     bind lexer::at=cell_int();
     bind lexer::mark=cell_int();
     bind tree::kinds=int_list();
@@ -24,6 +22,13 @@ assume Std {
     bind intern::ichars=int_list();
     bind intern::istarts=int_list();
     bind intern::ilens=int_list();
-    parser::run();
+    bind mods::mpaths=str_list();
+    bind mods::mnodes=int_list();
+    bind mods::mrefs=int_list();
+    bind mods::mimps=int_list();
+    bind mods::mkids=int_list();
+    bind mods::mkidlens=int_list();
+    bind mods::itargets=int_list();
+    collect::run(first_arg());
   }
 }

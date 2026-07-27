@@ -661,6 +661,103 @@ class TestInterner(unittest.TestCase):
         )
 
 
+COLLECT_DRIVER = (
+    'import "./src/collect.moss" as collect;\n'
+    'import "./src/intern.moss" as intern;\n'
+    'import "./src/lex.moss" as lexer;\n'
+    'import "./src/mods.moss" as mods;\n'
+    'import "./src/tree.moss" as tree;\n'
+    "assume Std {\n"
+    "  fn main() {\n"
+    "    bind lexer::at=cell_int();\n"
+    "    bind lexer::mark=cell_int();\n"
+    "    bind tree::kinds=int_list();\n"
+    "    bind tree::starts=int_list();\n"
+    "    bind tree::lens=int_list();\n"
+    "    bind tree::kids=int_list();\n"
+    "    bind tree::name_ids=int_list();\n"
+    "    bind tree::ref_ids=int_list();\n"
+    "    bind tree::imp_texts=str_list();\n"
+    "    bind tree::imp_starts=int_list();\n"
+    "    bind tree::imp_lens=int_list();\n"
+    "    bind tree::imp_names=int_list();\n"
+    "    bind tree::imp_stars=int_list();\n"
+    "    bind intern::ichars=int_list();\n"
+    "    bind intern::istarts=int_list();\n"
+    "    bind intern::ilens=int_list();\n"
+    "    bind mods::mpaths=str_list();\n"
+    "    bind mods::mnodes=int_list();\n"
+    "    bind mods::mrefs=int_list();\n"
+    "    bind mods::mimps=int_list();\n"
+    "    bind mods::mkids=int_list();\n"
+    "    bind mods::mkidlens=int_list();\n"
+    "    bind mods::itargets=int_list();\n"
+    "    collect::run(first_arg());\n"
+    "  }\n"
+    "}\n"
+)
+
+
+class TestSelfHostedCollect(unittest.TestCase):
+    """src/collect.moss loads the entry file and its imports, transitively,
+    and reports per module: `name!` for a duplicate declaration, `name?`
+    for a reference nothing in scope explains."""
+
+    def collect(self, files, entry):
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for rel, text in files.items():
+                path = Path(tmp) / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+            cwd = os.getcwd()
+            os.chdir(tmp)  # the loader reads paths relative to `pwd`
+            try:
+                return run({"main.moss": COLLECT_DRIVER}, args=[entry])
+            finally:
+                os.chdir(cwd)
+
+    def test_imports_bring_names_into_scope(self):
+        files = {
+            "a.moss": 'import "./b.moss" use B;\n'
+            'import "./c.moss" as c;\n'
+            "type A;\nval v: B;\nval w: Missing;\nval x: A;\n",
+            "b.moss": "type B;\nval q: Nope;\n",
+            "c.moss": "type C;\n",
+        }
+        # B comes from the use list, c from the alias, A from a.moss
+        # itself; Missing and Nope are explained by nothing.
+        self.assertEqual(
+            self.collect(files, "a.moss"),
+            "a.moss:Missing?\nb.moss:Nope?\nc.moss:\n",
+        )
+
+    def test_use_star_and_import_cycle(self):
+        files = {
+            "d.moss": 'import "./e.moss" use *;\nval v: Shared;\nval w: Hidden;\n',
+            "e.moss": 'import "./d.moss" use v;\ntype Shared;\nval u: v;\n',
+        }
+        # `use *` takes whatever e.moss declares, and the cycle ends
+        # because a path already in the table is not queued again.
+        self.assertEqual(self.collect(files, "d.moss"), "d.moss:Hidden?\ne.moss:\n")
+
+    def test_import_paths_are_relative_to_the_importer(self):
+        files = {
+            "f.moss": 'import "./sub/g.moss" use G;\nval v: G;\n',
+            "sub/g.moss": "type G;\nval h: Absent;\n",
+        }
+        self.assertEqual(self.collect(files, "f.moss"), "f.moss:\nsub/g.moss:Absent?\n")
+
+    def test_duplicates_reported_per_module(self):
+        files = {
+            "h.moss": 'import "./i.moss" use I;\nunit U;\ntype U;\nval v: I;\n',
+            "i.moss": "type I;\nunit I;\n",
+        }
+        self.assertEqual(self.collect(files, "h.moss"), "h.moss:U!\ni.moss:I!\n")
+
+
 class TestSelfHostedParser(unittest.TestCase):
     """src/main.moss drives src/parse.moss: one letter per declaration
     (i=import, a=assume, t=type, u=unit, v=val, c=context, f=fn, x=junk)."""
@@ -734,9 +831,10 @@ class TestSelfHostedParser(unittest.TestCase):
             self.parse_letters(text),
             "i./lex.moss,lexer,Token;i./token.moss*;"
             "i./intern.moss,intern;i./tree.moss,tree;"
-            "a(a(fskip_braces;frefscan_to_semi;fimport_tail;fskip_to_semi;"
-            "frefscan_fn;fnamed;fdecls;fput_name;fhas_name;fdump;fdups;"
-            "fdeclared;fcontains;fresolve;frun;))\n\n\n",
+            "a(a(fput_name;fhas_name;"
+            "a(fskip_braces;frefscan_to_semi;fimport_tail;fskip_to_semi;"
+            "frefscan_fn;fnamed;fdecls;ffile;frun;)"
+            "fdump;fdups;fdeclared;fcontains;fresolve;))\n\n\n",
         )
 
     def test_names_read_back_from_the_arena(self):

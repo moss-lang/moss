@@ -626,6 +626,21 @@ Identifier handling doesn't need literals either (slices plus a native
 while yet; the pressure to revisit it will come from diagnostics and
 codegen, not from the lexer or parser. Decision deferred until it bites.
 
+Rev 7 adds one concrete bite, the first that is not cosmetic. The
+self-hosted collect (`src/collect.moss`) loads a module graph by reading
+the paths written in `import` declarations, which it gets as slices of the
+importing file's source — no literal needed. But the *prelude* is imported
+by no one: it is the compiler's own knowledge of where its standard
+library lives, and naming it requires a string the compiler holds itself.
+Today the self-hosted collect therefore reports prelude names (`Int`,
+`Bool`, `IntList`, ...) as unresolved in every module that relies on the
+implicit import. The workarounds are (a) string literals, (b) a native
+that hands the compiler its own library path, or (c) passing the path in
+as a second command-line argument, which needs an argv accessor beyond
+`first_arg`. This is a designer decision — it is really "how does a Moss
+program name a thing outside itself?" — and it is now the blocking
+question for the self-hosted front end, not a hypothetical one.
+
 **[D49] DECIDED (no automatic tail-call elimination).** Rev 5 proposed
 guaranteeing proper tail calls after deep tail recursion in `src/lex.moss`
 overflowed the interpreter's stack. The designer rejected it: `loop` and

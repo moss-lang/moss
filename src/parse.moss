@@ -10,8 +10,24 @@ import "./tree.moss" as tree;
 # lookahead after what it consumed.
 
 assume Std {
-  assume lexer::src, lexer::at, lexer::mark, intern::Interner, tree::Tree {
-    # Skip a balanced { ... }; `t` is the lookahead after the opening brace.
+  assume intern::Interner, tree::Tree {
+    # Everything down to `resolve` reads only the finished arenas, never
+    # the source they were parsed from — which is what lets a caller
+    # report on a module whose source is long out of scope.
+
+    # A node's name, written out of the interner's arena.
+    fn put_name(id: Int) {
+      intern::put(tree::name_id_of(id));
+    }
+
+    # Nodes with no name of their own (imports, assume blocks) carry the
+    # empty name, whose length is zero.
+    fn has_name(id: Int): Bool {
+      intern::name_len(tree::name_id_of(id)).gt(zero)
+    }
+
+    assume lexer::src, lexer::at, lexer::mark {
+      # Skip a balanced { ... }; `t` is the lookahead after the opening brace.
     fn skip_braces(t: Token): Token {
       var depth = one;
       var cur = t;
@@ -209,13 +225,13 @@ assume Std {
           RBrace => break,
           Import => {
             let h = lexer::lex();
-            var path = intern::intern(zero, zero);
+            var path = lexer::src.slice(zero, zero);
             match h {
               # The token's span covers the quotes; the path is inside them.
               Str => {
                 let ns = lexer::mark.read().add(one);
                 let nl = lexer::at.read().sub(ns).sub(one);
-                path = intern::intern(ns, nl);
+                path = lexer::src.slice(ns, nl);
               }
               _ => (),
             }
@@ -304,15 +320,42 @@ assume Std {
       cur
     }
 
-    # A node's name, written out of the interner's arena.
-    fn put_name(id: Int) {
-      intern::put(tree::name_id_of(id));
-    }
+      # Parse the bound source's top-level declarations, collecting their
+      # node ids into `out`. One call per file.
+      fn file(out: IntList) {
+        decls(lexer::lex(), out);
+      }
 
-    # Nodes with no name of their own (imports, assume blocks) carry the
-    # empty name, whose length is zero.
-    fn has_name(id: Int): Bool {
-      intern::name_len(tree::name_id_of(id)).gt(zero)
+      fn run() {
+      let roots = int_list();
+      decls(lexer::lex(), roots);
+      let rs = tree::kid_mark();
+      var i = zero;
+      while i.lt(roots.length()) {
+        tree::kid_push(roots.get(i));
+        i = i.add(one);
+      }
+      i = zero;
+      while i.lt(roots.length()) {
+        dump(roots.get(i));
+        i = i.add(one);
+      }
+      putchar(char::newline);
+      dups(rs, roots.length());
+      putchar(char::newline);
+      var has_import = false;
+      i = zero;
+      while i.lt(tree::kinds.length()) {
+        if tree::kind_of(i).eq(tree::k_import()) {
+          has_import = true;
+        }
+        i = i.add(one);
+      }
+      if has_import.not() {
+        resolve();
+      }
+      putchar(char::newline);
+    }
     }
 
     # Walk the finished arena: one letter per node, then the node's name
@@ -348,7 +391,7 @@ assume Std {
         putchar(char::rparen);
       } else if k.eq(tree::k_import()) {
         let ix = tree::import_index_of(id);
-        intern::put(tree::import_path(ix));
+        print(tree::import_text(ix));
         if tree::import_star(ix) {
           putchar(char::star);
         }
@@ -440,35 +483,5 @@ assume Std {
       }
     }
 
-    fn run() {
-      let roots = int_list();
-      decls(lexer::lex(), roots);
-      let rs = tree::kid_mark();
-      var i = zero;
-      while i.lt(roots.length()) {
-        tree::kid_push(roots.get(i));
-        i = i.add(one);
-      }
-      i = zero;
-      while i.lt(roots.length()) {
-        dump(roots.get(i));
-        i = i.add(one);
-      }
-      putchar(char::newline);
-      dups(rs, roots.length());
-      putchar(char::newline);
-      var has_import = false;
-      i = zero;
-      while i.lt(tree::kinds.length()) {
-        if tree::kind_of(i).eq(tree::k_import()) {
-          has_import = true;
-        }
-        i = i.add(one);
-      }
-      if has_import.not() {
-        resolve();
-      }
-      putchar(char::newline);
-    }
   }
 }

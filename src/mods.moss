@@ -1,0 +1,138 @@
+# The module table for a self-hosted collect: every file the loader has
+# reached, in discovery order.
+#
+# A module's nodes, references, root ids and import rows are each
+# allocated as one contiguous run, because the loader finishes one file
+# before starting the next. So a module records only where each of its
+# runs *begins*: a run ends where the next module's begins, or at the end
+# of the arena for the last one.
+
+assume Std {
+  val mpaths: StrList;
+  val mnodes: IntList;
+  val mrefs: IntList;
+  val mimps: IntList;
+  val mkids: IntList;
+  val mkidlens: IntList;
+
+  # For each import row, the module it names.
+  val itargets: IntList;
+
+  context Mods = mpaths, mnodes, mrefs, mimps, mkids, mkidlens, itargets;
+
+  assume Mods {
+    fn count(): Int {
+      mpaths.length()
+    }
+
+    fn path(m: Int): String {
+      mpaths.get(m)
+    }
+
+    fn same(a: String, b: String): Bool {
+      if a.length().ne(b.length()) {
+        false
+      } else {
+        var i = zero;
+        var eq = true;
+        while i.lt(a.length()) {
+          if a.get(i).ne(b.get(i)) {
+            eq = false;
+            i = a.length();
+          } else {
+            i = i.add(one);
+          }
+        }
+        eq
+      }
+    }
+
+    # The module with this path, or `count()` if there is none yet.
+    fn find(p: String): Int {
+      var m = zero;
+      while m.lt(count()) {
+        if same(mpaths.get(m), p) {
+          return m;
+        }
+        m = m.add(one);
+      }
+      count()
+    }
+
+    # The index of this module, adding it to the table if it is new.
+    fn add(p: String): Int {
+      let m = find(p);
+      if m.lt(count()) {
+        m
+      } else {
+        mpaths.push(p);
+        m
+      }
+    }
+
+    # Record where the module being loaded starts in each arena. Called
+    # once per module, in table order.
+    fn begin(nodes: Int, refs: Int, imps: Int, kids: Int) {
+      mnodes.push(nodes);
+      mrefs.push(refs);
+      mimps.push(imps);
+      mkids.push(kids);
+      mkidlens.push(zero);
+    }
+
+    fn set_kid_len(m: Int, n: Int) {
+      mkidlens.set(m, n);
+    }
+
+    fn kid_start(m: Int): Int {
+      mkids.get(m)
+    }
+
+    fn kid_len(m: Int): Int {
+      mkidlens.get(m)
+    }
+
+    fn node_start(m: Int): Int {
+      mnodes.get(m)
+    }
+
+    fn ref_start(m: Int): Int {
+      mrefs.get(m)
+    }
+
+    fn imp_start(m: Int): Int {
+      mimps.get(m)
+    }
+
+    # Each run ends where the next module's begins; `total` is the arena's
+    # current length, which is where the last module's run ends.
+    fn node_end(m: Int, total: Int): Int {
+      end_of(mnodes, m, total)
+    }
+
+    fn ref_end(m: Int, total: Int): Int {
+      end_of(mrefs, m, total)
+    }
+
+    fn imp_end(m: Int, total: Int): Int {
+      end_of(mimps, m, total)
+    }
+
+    fn end_of(starts: IntList, m: Int, total: Int): Int {
+      let next = m.add(one);
+      if next.lt(starts.length()) {
+        starts.get(next)
+      } else {
+        total
+      }
+    }
+
+    fn target_push(m: Int) {
+      itargets.push(m);
+    }
+
+    fn target(ix: Int): Int {
+      itargets.get(ix)
+    }
+  }
+}

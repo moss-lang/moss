@@ -22,9 +22,10 @@ assume Std {
   # References collected from declaration payloads, as interned name ids.
   val ref_ids: IntList;
 
-  # One row per import: the interned path, the names it brings into scope
-  # (a span into `imp_names`), and whether it was `use *`.
-  val imp_paths: IntList;
+  # One row per import: the path as written (kept as a String, since that
+  # is what the loader hands to `Path.join`), the names it brings into
+  # scope (a span into `imp_names`), and whether it was `use *`.
+  val imp_texts: StrList;
   val imp_starts: IntList;
   val imp_lens: IntList;
   val imp_names: IntList;
@@ -34,7 +35,7 @@ assume Std {
   # parsed from, so it cannot point into it.
   context Tree =
     kinds, starts, lens, kids, name_ids, ref_ids,
-    imp_paths, imp_starts, imp_lens, imp_names, imp_stars;
+    imp_texts, imp_starts, imp_lens, imp_names, imp_stars;
 
   assume Tree {
     fn node(kind: Int, start: Int, len: Int, nid: Int): Int {
@@ -64,9 +65,9 @@ assume Std {
     # Start an import row. Its names accumulate at the end of `imp_names`,
     # so a row has to be finished before the next one starts — which the
     # parser does, since imports are parsed one at a time.
-    fn begin_import(path: Int): Int {
-      let ix = imp_paths.length();
-      imp_paths.push(path);
+    fn begin_import(text: String): Int {
+      let ix = imp_texts.length();
+      imp_texts.push(text);
       imp_starts.push(imp_names.length());
       imp_lens.push(zero);
       imp_stars.push(zero);
@@ -92,11 +93,11 @@ assume Std {
     }
 
     fn import_count(): Int {
-      imp_paths.length()
+      imp_texts.length()
     }
 
-    fn import_path(ix: Int): Int {
-      imp_paths.get(ix)
+    fn import_text(ix: Int): String {
+      imp_texts.get(ix)
     }
 
     fn import_star(ix: Int): Bool {
