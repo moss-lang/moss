@@ -188,6 +188,31 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({"main.moss": source})
         self.assertEqual(run_wasm(wasm), "nzse\n")
 
+    def test_string_slice_in_wasm(self):
+        source = (
+            "assume Std {\n"
+            "  fn main() {\n"
+            "    let s = first_arg();\n"
+            "    let two = one.add(one);\n"
+            "    print(s.slice(one, two));\n"
+            "    print(s.slice(zero, s.length()));\n"
+            "    let t = s.slice(two, two);\n"
+            "    if t.length().eq(two) { putchar(char::y) } else { putchar(char::n) }\n"
+            "    putchar(t.get(zero));\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n"
+        )
+        wasm = compile_wasm({"main.moss": source})
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            path = f.name
+        result = subprocess.run(
+            [wasmtime(), path, "abcdef"], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "bcabcdefyc\n")
+
     def test_interner_arena_in_wasm(self):
         """Same driver as the interpreter's interner test, same output."""
         from tests.test_run import ARENA_DRIVER

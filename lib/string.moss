@@ -10,6 +10,10 @@ assume String {
   assume Int {
     fn .length(): Int;
 
+    # A fresh String holding `len` characters from `start`. Indices are
+    # the same ones `.get` and `.length` use.
+    fn .slice(start: Int, len: Int): String;
+
     assume Char {
       fn .get(index: Int): Char;
     }

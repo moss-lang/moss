@@ -49,6 +49,12 @@ HEAP_BASE = 1024
 I32_LOAD = b"\x28"
 I32_STORE = b"\x36"
 
+# Function indices: the three WASI imports, then the shims, then the
+# compiled Moss functions, then `_start`.
+FD_WRITE, ARGS_SIZES_GET, ARGS_GET = 0, 1, 2
+PUTCHAR, ALLOC, FIRST_ARG, LIST_PUSH, PRINT, SLICE = 3, 4, 5, 6, 7, 8
+FIRST_FN = SLICE + 1
+
 BINOPS = {
     "add": b"\x6a",
     "sub": b"\x6b",
@@ -176,7 +182,7 @@ class Backend:
     def compile_fn(self, symbol: Symbol) -> int:
         if id(symbol) in self.fn_index:
             return self.fn_index[id(symbol)]
-        index = 8 + len(self.fn_index)  # after 3 imports and 5 shims
+        index = FIRST_FN + len(self.fn_index)
         self.fn_index[id(symbol)] = index
         fn = self.lower.fns[id(symbol)]
         needs = self.val_needs(symbol)
@@ -218,6 +224,10 @@ class Backend:
             type_of[(0, 1)] = len(types)
             types.append((0, 1))
         first_arg_type = type_of[(0, 1)]
+        if (3, 1) not in type_of:
+            type_of[(3, 1)] = len(types)
+            types.append((3, 1))
+        slice_type = type_of[(3, 1)]
 
         type_section = section(
             1,
@@ -244,8 +254,8 @@ class Backend:
                 ]
             ),
         )
-        # Functions: putchar, alloc, first_arg, list_push, print shims,
-        # then compiled fns, then _start.
+        # Functions: the shims in FIRST_FN order, then compiled fns, then
+        # _start.
         function_section = section(
             3,
             vec(
@@ -255,13 +265,14 @@ class Backend:
                     uleb(first_arg_type),
                     uleb(wasi2_type),  # list_push: (handle, value) -> dummy
                     uleb(putchar_type),  # print: (string) -> ()
+                    uleb(slice_type),  # slice: (string, start, len) -> string
                 ]
                 + [uleb(t) for t in func_types]
                 + [uleb(start_type)]
             ),
         )
         memory_section = section(5, vec([b"\x00" + uleb(2)]))
-        start_index = 8 + len(ordered)
+        start_index = FIRST_FN + len(ordered)
         export_section = section(
             7,
             vec(
@@ -295,6 +306,7 @@ class Backend:
                 self.first_arg_shim(),
                 self.list_push_shim(),
                 self.print_shim(),
+                self.slice_shim(),
             ]
             + [b for _, b in ordered]
             + [start_body]
@@ -329,18 +341,18 @@ class Backend:
         b = bytearray()
         b += vec([uleb(6) + I32])
         # args_sizes_get(24, 28)
-        b += I32_CONST + sleb(24) + I32_CONST + sleb(28) + CALL + uleb(1) + DROP
+        b += I32_CONST + sleb(24) + I32_CONST + sleb(28) + CALL + uleb(ARGS_SIZES_GET) + DROP
         # argv = alloc(argc * 4); buf = alloc(bufsize)
         b += I32_CONST + sleb(24) + I32_LOAD + uleb(2) + uleb(0)
-        b += I32_CONST + sleb(4) + BINOPS["mul"] + CALL + uleb(4) + LOCAL_SET + uleb(0)
+        b += I32_CONST + sleb(4) + BINOPS["mul"] + CALL + uleb(ALLOC) + LOCAL_SET + uleb(0)
         b += I32_CONST + sleb(28) + I32_LOAD + uleb(2) + uleb(0)
-        b += CALL + uleb(4) + LOCAL_SET + uleb(1)
-        b += LOCAL_GET + uleb(0) + LOCAL_GET + uleb(1) + CALL + uleb(2) + DROP
+        b += CALL + uleb(ALLOC) + LOCAL_SET + uleb(1)
+        b += LOCAL_GET + uleb(0) + LOCAL_GET + uleb(1) + CALL + uleb(ARGS_GET) + DROP
         # if argc < 2: return an empty string
         b += I32_CONST + sleb(24) + I32_LOAD + uleb(2) + uleb(0)
         b += I32_CONST + sleb(2) + BINOPS["lt"]
         b += IF + EMPTY
-        b += I32_CONST + sleb(4) + CALL + uleb(4) + LOCAL_SET + uleb(4)
+        b += I32_CONST + sleb(4) + CALL + uleb(ALLOC) + LOCAL_SET + uleb(4)
         b += LOCAL_GET + uleb(4) + I32_CONST + sleb(0) + I32_STORE + uleb(2) + uleb(0)
         b += LOCAL_GET + uleb(4) + RETURN
         b += END
@@ -354,7 +366,7 @@ class Backend:
         b += BR + uleb(0) + END + END
         # s = alloc(4 + n); *s = n; copy bytes
         b += I32_CONST + sleb(4) + LOCAL_GET + uleb(3) + BINOPS["add"]
-        b += CALL + uleb(4) + LOCAL_SET + uleb(4)
+        b += CALL + uleb(ALLOC) + LOCAL_SET + uleb(4)
         b += LOCAL_GET + uleb(4) + LOCAL_GET + uleb(3) + I32_STORE + uleb(2) + uleb(0)
         b += I32_CONST + sleb(0) + LOCAL_SET + uleb(5)
         b += BLOCK + EMPTY + LOOP + EMPTY
@@ -384,7 +396,7 @@ class Backend:
         # nd = alloc(8 + 8*cap); nd.len = len; nd.cap = cap*2
         b += I32_CONST + sleb(8)
         b += LOCAL_GET + uleb(4) + I32_CONST + sleb(8) + BINOPS["mul"]
-        b += BINOPS["add"] + CALL + uleb(4) + LOCAL_SET + uleb(5)
+        b += BINOPS["add"] + CALL + uleb(ALLOC) + LOCAL_SET + uleb(5)
         b += LOCAL_GET + uleb(5) + LOCAL_GET + uleb(3) + I32_STORE + uleb(2) + uleb(0)
         b += LOCAL_GET + uleb(5)
         b += LOCAL_GET + uleb(4) + I32_CONST + sleb(2) + BINOPS["mul"]
@@ -416,6 +428,29 @@ class Backend:
         b += END
         return bytes(b)
 
+    def slice_shim(self) -> bytes:
+        # (string, start, len) -> string: a fresh [len|bytes] block holding
+        # the requested run of bytes. Locals: 3 s, 4 i.
+        b = bytearray()
+        b += vec([uleb(2) + I32])
+        # s = alloc(4 + len); *s = len
+        b += I32_CONST + sleb(4) + LOCAL_GET + uleb(2) + BINOPS["add"]
+        b += CALL + uleb(ALLOC) + LOCAL_SET + uleb(3)
+        b += LOCAL_GET + uleb(3) + LOCAL_GET + uleb(2) + I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(0) + LOCAL_SET + uleb(4)
+        b += BLOCK + EMPTY + LOOP + EMPTY
+        b += LOCAL_GET + uleb(4) + LOCAL_GET + uleb(2) + BINOPS["ge"] + BR_IF + uleb(1)
+        b += LOCAL_GET + uleb(3) + LOCAL_GET + uleb(4) + BINOPS["add"]
+        b += LOCAL_GET + uleb(0) + LOCAL_GET + uleb(1) + BINOPS["add"]
+        b += LOCAL_GET + uleb(4) + BINOPS["add"]
+        b += I32_LOAD8 + uleb(0) + uleb(4)
+        b += I32_STORE8 + uleb(0) + uleb(4)
+        b += LOCAL_GET + uleb(4) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(4)
+        b += BR + uleb(0) + END + END
+        b += LOCAL_GET + uleb(3)
+        b += END
+        return bytes(b)
+
     def print_shim(self) -> bytes:
         # (string) -> (): fd_write the whole [len|bytes] buffer.
         b = bytearray()
@@ -430,7 +465,7 @@ class Backend:
         b += I32_CONST + sleb(0)
         b += I32_CONST + sleb(1)
         b += I32_CONST + sleb(12)
-        b += CALL + uleb(0) + DROP
+        b += CALL + uleb(FD_WRITE) + DROP
         b += END
         return bytes(b)
 
@@ -445,7 +480,7 @@ class Backend:
         body += I32_CONST + sleb(0)
         body += I32_CONST + sleb(1)
         body += I32_CONST + sleb(12)
-        body += CALL + uleb(0) + DROP
+        body += CALL + uleb(FD_WRITE) + DROP
         body += END
         return bytes(body)
 
@@ -578,7 +613,7 @@ class FnCompiler:
                 self.expr(node.payload)  # the Bool tag is erased
             else:
                 tmp = self.local()
-                self.code += I32_CONST + sleb(8) + CALL + uleb(4)
+                self.code += I32_CONST + sleb(8) + CALL + uleb(ALLOC)
                 self.code += LOCAL_SET + uleb(tmp)
                 self.code += LOCAL_GET + uleb(tmp)
                 self.code += I32_CONST + sleb(self.b.unit_code(symbol))
@@ -590,7 +625,7 @@ class FnCompiler:
         elif isinstance(node, ir.MakeRecord):
             count = len(node.fields)
             tmp = self.local()
-            self.code += I32_CONST + sleb(4 + 4 * count) + CALL + uleb(4)
+            self.code += I32_CONST + sleb(4 + 4 * count) + CALL + uleb(ALLOC)
             self.code += LOCAL_SET + uleb(tmp)
             self.code += LOCAL_GET + uleb(tmp)
             self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
@@ -749,11 +784,17 @@ class FnCompiler:
                     self.expr(node.args[0])
                     self.code += BINOPS["add"] + I32_LOAD8 + uleb(0) + uleb(4)
                     return
+                if short == "slice":
+                    self.expr(node.this)
+                    self.expr(node.args[0])
+                    self.expr(node.args[1])
+                    self.code += CALL + uleb(SLICE)
+                    return
             if "list" in self.b.lib and method.module is self.b.lib["list"]:
                 if short == "push":
                     self.expr(node.this)
                     self.expr(node.args[0])
-                    self.code += CALL + uleb(6)
+                    self.code += CALL + uleb(LIST_PUSH)
                     return
                 if short == "length":
                     self.expr(node.this)
@@ -790,21 +831,21 @@ class FnCompiler:
         if self.b.is_putchar(key):
             for arg in node.args:
                 self.expr(arg)
-            self.code += CALL + uleb(3) + I32_CONST + sleb(0)
+            self.code += CALL + uleb(PUTCHAR) + I32_CONST + sleb(0)
             return
         if "string" in self.b.lib and key is self.b.lib["string"].names.get("first_arg"):
-            self.code += CALL + uleb(5)
+            self.code += CALL + uleb(FIRST_ARG)
             return
         if "string" in self.b.lib and key is self.b.lib["string"].names.get("print"):
             for arg in node.args:
                 self.expr(arg)
-            self.code += CALL + uleb(7) + I32_CONST + sleb(0)
+            self.code += CALL + uleb(PRINT) + I32_CONST + sleb(0)
             return
         if "list" in self.b.lib and key is self.b.lib["list"].names.get("int_list"):
             tmp = self.local()
-            self.code += I32_CONST + sleb(4) + CALL + uleb(4) + LOCAL_SET + uleb(tmp)
+            self.code += I32_CONST + sleb(4) + CALL + uleb(ALLOC) + LOCAL_SET + uleb(tmp)
             data = self.local()
-            self.code += I32_CONST + sleb(40) + CALL + uleb(4) + LOCAL_SET + uleb(data)
+            self.code += I32_CONST + sleb(40) + CALL + uleb(ALLOC) + LOCAL_SET + uleb(data)
             self.code += LOCAL_GET + uleb(data) + I32_CONST + sleb(0)
             self.code += I32_STORE + uleb(2) + uleb(0)
             self.code += LOCAL_GET + uleb(data) + I32_CONST + sleb(8)
@@ -815,7 +856,7 @@ class FnCompiler:
             return
         if "cell" in self.b.lib and key is self.b.lib["cell"].names.get("cell_int"):
             tmp = self.local()
-            self.code += I32_CONST + sleb(4) + CALL + uleb(4) + LOCAL_SET + uleb(tmp)
+            self.code += I32_CONST + sleb(4) + CALL + uleb(ALLOC) + LOCAL_SET + uleb(tmp)
             self.code += LOCAL_GET + uleb(tmp) + I32_CONST + sleb(0)
             self.code += I32_STORE + uleb(2) + uleb(0)
             self.code += LOCAL_GET + uleb(tmp)

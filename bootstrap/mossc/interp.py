@@ -389,7 +389,17 @@ def native_env(program: Program, args: list | None = None) -> dict:
 
         env[string.names["first_arg"]] = native(first_arg)
         env[string.names["print"]] = NativeFn("print", print_)
+        def slice_(a, this):
+            start, count = a[0].value, a[1].value
+            if start < 0 or count < 0 or start + count > len(this.value):
+                raise MossPanic(
+                    f"String.slice: {start}+{count} out of range for a string "
+                    f"of length {len(this.value)}"
+                )
+            return StrVal(this.value[start : start + count])
+
         env[(string_ty, string.detached["length"])] = native(length)
+        env[(string_ty, string.detached["slice"])] = native(slice_)
         env[(string_ty, string.detached["get"])] = native(get)
     if "cell" in lib:
         cell = lib["cell"]

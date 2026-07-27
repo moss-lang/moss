@@ -303,6 +303,23 @@ class TestStd(unittest.TestCase):
         )
         self.assertEqual(run(files, args=["ok"]), "oko!")
 
+    def test_string_slice(self):
+        files = main_body(
+            "let s = first_arg();\n"
+            "    let two = one.add(one);\n"
+            "    print(s.slice(one, two));\n"
+            "    print(s.slice(zero, s.length()));\n"
+            "    let t = s.slice(two, two);\n"
+            "    if t.length().eq(two) { putchar(char::y) } else { putchar(char::n) }\n"
+            "    putchar(t.get(zero));"
+        )
+        self.assertEqual(run(files, args=["abcdef"]), "bcabcdefyc")
+
+    def test_string_slice_out_of_range_panics(self):
+        files = main_body("let s = first_arg().slice(zero, one.add(one));")
+        with self.assertRaises(interp.MossPanic):
+            run(files, args=["x"])
+
     def test_division_by_zero_panics(self):
         files = main_body("let x = one.div(zero);")
         with self.assertRaises(interp.MossPanic):

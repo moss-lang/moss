@@ -39,6 +39,7 @@ context Std =
   print,
   String.length,
   String.get,
+  String.slice,
 
   CellInt,
   cell_int,
