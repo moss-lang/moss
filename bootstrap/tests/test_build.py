@@ -634,3 +634,31 @@ class TestWasmBackend(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "." * expected + "\n")
+
+
+class TestSelfHostedEmitter(unittest.TestCase):
+    """The self-hosted encoder, compiled: the emitter runs as Wasm and the
+    module it writes is byte-for-byte the one the interpreter wrote."""
+
+    def test_emitted_module_matches_the_interpreters_and_runs(self):
+        from .test_run import run_bytes
+
+        wasm = compile_wasm({}, entry="tests/wasi/emit.moss")
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            path = f.name
+        result = subprocess.run(
+            [wasmtime(), path], capture_output=True, timeout=300
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        emitted = result.stdout
+        self.assertEqual(emitted, run_bytes({}, entry="tests/wasi/emit.moss"))
+
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(emitted)
+            inner = f.name
+        result = subprocess.run(
+            [wasmtime(), inner], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "Hello, world!\n")

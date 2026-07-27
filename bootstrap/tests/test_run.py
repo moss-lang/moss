@@ -1,6 +1,4 @@
-import io
 import unittest
-from contextlib import redirect_stdout
 from pathlib import Path
 
 from mossc import collect, interp
@@ -10,8 +8,13 @@ REPO = Path(__file__).resolve().parents[2]
 PRELUDE = str(REPO / "lib/prelude.moss")
 
 
-def run(files, entry="main.moss", args=None):
-    """Run a program given as {path: source}; lib/ comes from disk."""
+def run_bytes(files, entry="main.moss", args=None):
+    """Run a program given as {path: source}; lib/ comes from disk.
+
+    Program output is captured as bytes — `interp.emit` is the sink, not
+    `sys.stdout`, because a program may write binary (the self-hosted
+    emitter writes a Wasm module) and a text capture would not survive it.
+    """
 
     def read(path):
         # The loader hands back canonical absolute paths; the in-memory
@@ -24,10 +27,18 @@ def run(files, entry="main.moss", args=None):
     program = collect.load(entry, read=read, prelude=PRELUDE, root=REPO)
     lower = Lower(program)
     lower.run()
-    out = io.StringIO()
-    with redirect_stdout(out):
+    out = bytearray()
+    original = interp.emit
+    interp.emit = out.extend
+    try:
         interp.run_main(program, lower, args)
-    return out.getvalue()
+    finally:
+        interp.emit = original
+    return bytes(out)
+
+
+def run(files, entry="main.moss", args=None):
+    return run_bytes(files, entry=entry, args=args).decode("utf-8")
 
 
 def main_body(body, decls=""):
@@ -1022,3 +1033,26 @@ class TestSelfHostedParser(unittest.TestCase):
     def test_method_names(self):
         source = "assume A { fn T.m(); fn .d(); fn plain(); }"
         self.assertEqual(self.parse_letters(source), "a(f;fd;fplain;)\n\n\n")
+
+
+class TestSelfHostedEmitter(unittest.TestCase):
+    """The back end's encoder, in Moss: tests/wasi/emit.moss writes a WASI
+    module to standard output, and that module says hello."""
+
+    def test_emits_a_module_that_runs(self):
+        import shutil
+        import subprocess
+        import tempfile
+
+        module = run_bytes({}, entry="tests/wasi/emit.moss")
+        self.assertEqual(module[:8], b"\0asm\x01\0\0\0")
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(module)
+            path = f.name
+        wasmtime = shutil.which("wasmtime")
+        self.assertIsNotNone(wasmtime, "wasmtime is not on PATH")
+        result = subprocess.run(
+            [wasmtime, path], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "Hello, world!\n")

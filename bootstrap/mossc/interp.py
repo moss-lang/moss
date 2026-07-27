@@ -16,6 +16,24 @@ from .collect import Program, SymKind, Symbol
 from .native import CHARS
 
 
+def emit(data: bytes) -> None:
+    """Write program output as *bytes*.
+
+    The Wasm backend's `putchar` is an `i32.store8` and its `fd_write`
+    hands WASI the raw memory, so a Moss program that writes byte 0x80
+    writes one byte there. Going through `sys.stdout` would have written
+    two (UTF-8), which is a difference the goldens cannot see until a
+    program emits binary — and the self-hosted emitter does. Tests may
+    replace this sink; `redirect_stdout` alone cannot, since a StringIO
+    has no `.buffer`.
+    """
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:  # a text-only sink (io.StringIO under a test)
+        sys.stdout.write(data.decode("utf-8", "surrogateescape"))
+    else:
+        buffer.write(data)
+
+
 @dataclass(frozen=True)
 class UnitVal:
     symbol: Symbol | None  # None is ()
@@ -295,7 +313,8 @@ def native_env(program: Program, args: list | None = None) -> dict:
     if "std" in lib:
 
         def putchar(a, this):
-            sys.stdout.write(a[0].value)
+            # One byte, as `i32.store8` gives in the Wasm backend.
+            emit(bytes([ord(a[0].value) & 0xFF]))
             return UNIT
 
         env[lib["std"].names["putchar"]] = native(putchar)
@@ -387,7 +406,7 @@ def native_env(program: Program, args: list | None = None) -> dict:
             return StrVal(args[0])
 
         def print_(a, this):
-            sys.stdout.write(a[0].value)
+            emit(a[0].value.encode("utf-8", "surrogateescape"))
             return UNIT
 
         def length(a, this):
@@ -650,7 +669,8 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
     def fd_write(a):
         total = 0
         for base, length in iovecs(a[1].value, a[2].value):
-            sys.stdout.write(text(base, length))
+            grow(base + length)
+            emit(bytes(memory[base : base + length]))
             total += length
         store(a[3].value, 4, total)
         return IntVal(0)
