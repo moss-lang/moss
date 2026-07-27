@@ -346,19 +346,25 @@ are different things and conflating them causes real errors, so:
   components, as ML's `where type` does. It yields another signature; it
   instantiates nothing and produces no provisions, so it is *not* functor
   application.
-- A **functor** maps a structure to a structure. In Moss it is a module
-  with abstract symbols, and `bind` applies it. `src/cli.moss` is a functor
-  application written out one component at a time: it supplies `lexer::src`,
-  the tree and interner arenas, and gets back a structure it can call
-  `parser::run()` in.
+- A **module** is neither. It is only a unit of code organization and
+  symbol scoping — a namespace. It is not a structure, does not carry
+  provisions, and is not itself a functor. (Rev 7 first claimed otherwise
+  and the designer corrected it.)
+- A **functor** maps a structure to a structure. **Moss has no functor
+  construct today.** What resembles one — `src/cli.moss` binding
+  `lexer::src` and then calling `lexer::lex()` — is not functor
+  application but ordinary context propagation: each symbol's needs are
+  satisfied by whatever happens to be in scope where it is used, with no
+  module-level parameterization anywhere. Adding the construct is [D55].
 
-The consequence for [D29]: the `Wasi`-to-`Std` bridge is a functor in the
-strict sense, not a new kind of construct, and what it wants is the ability
-to apply a whole signature at once rather than one component per line. It
-also settles [D29]'s open half against the static-only reframing — `Std` is
-mostly vals (`zero`, `one`, `pwd`, ~90 char constants), so a functor that
-carried only types and fns would leave most of the signature to a
-hand-written prologue regardless.
+The consequence for [D29]: since a functor would be a genuinely new
+construct, the designer's note there ("functors deserve to be their own
+construct, distinct from functions even syntactically") is the live
+reading, and the `Wasi`-to-`Std` bridge is the use case that forces it.
+It also settles [D29]'s open half against the static-only reframing —
+`Std` is mostly vals (`zero`, `one`, `pwd`, ~90 char constants), so a
+functor carrying only types and fns would leave most of the signature to
+a hand-written prologue regardless.
 
 **[D43] DECIDED (consistent merging).** From notes.md's answer to Q6. A
 context carries at most one binding per key (one `A.gimme`, one `T`, ...),
@@ -1031,80 +1037,127 @@ decisions above are confirmed.
   `lib/ops.moss`: it already matches the intended operator semantics and is
   the designated desugaring target for post-MVP operators ([D33]).
 
-**[D54] PROPOSED (how a method provider names its receiver).** Verified
-behaviour today: `bind Int.add = p` checks `p` against the method's
-*declared* signature, which excludes the receiver. So a plain function may
-provide a method but cannot see what it was called on — `this` in it is
-"only legal inside method bodies" — and widening it to take the receiver
-is a signature mismatch. The only provider that can use its receiver is an
-attached method, which needs a nominal type, which an abstract type is not.
-A `Wasi` bridge providing `Int.add` therefore has to invent a nominal
-wrapper purely to have somewhere to put `this`.
+**[D54] DECIDED by the designer (keep the wrapper).** Verified behaviour:
+`bind Int.add = p` checks `p` against the method's *declared* signature,
+which excludes the receiver. So a plain function may provide a method but
+cannot see what it was called on — `this` in it is "only legal inside
+method bodies" — and widening it to take the receiver is a signature
+mismatch. The only provider that can use its receiver is an attached
+method, which requires a nominal type. A `Wasi` bridge providing `Int.add`
+therefore writes:
 
-- **A1, status quo.** Wrap: `type Num I32;` plus `fn Num.add(rhs: Num)`,
-  then `bind int::Int = Num; bind Int.add = Num.add;`. Works today. Costs a
-  type per provider, and boxing until the backend unboxes single-payload
-  tags over scalars.
-- **A2, receiver-first (recommended).** A *method* provider matches
-  receiver-to-receiver as now; a *plain function* provider takes the
-  receiver as its first parameter. `bind Int.add = add;` with
-  `fn add(lhs: I32, rhs: I32): I32`. No wrapper, no boxing, and it is the
-  convention both backends already use internally — the native providers
-  are literally `lambda a, this: ...`, and a compiled method call pushes
-  the receiver first. Replaces today's receiver-discarding rule, which
-  costs one test and removes a way to silently drop the receiver.
-- **A3, accept both.** Never ambiguous, since the two forms always differ
-  by exactly one parameter. Two ways to do it, and A2's silent-drop hazard
-  stays.
-- **A4, allow `this` in any provider.** Rejected: a function's meaning
-  would depend on how it is later bound, uncheckable at its definition.
-- **A5, attached methods on abstract receivers.** Rejected: Q5 exists
-  because the receiver's representation is unknown at the definition site.
+```moss
+type Num I32;
+assume Wasm {
+  fn Num.add(rhs: Num): Num {
+    match this { Num a => match rhs { Num b => Num (w::i32_add(a, b)) } }
+  }
+}
+# bind int::Int = Num;  bind Int.add = Num.add;
+```
 
-**[D55] PROPOSED (applying a functor).** Per [D53] a module with abstract
-symbols is a functor and `bind` applies it, one component per line. That is
-fine for `src/cli.moss`'s handful and impossible for `Std`'s ~40 items
-(~95 counting chars). The missing construct is applying a whole signature
-at once. Options, roughly in order of how much language they add:
+Rev 7 proposed letting a plain-function provider take the receiver as its
+first parameter instead, which needs no wrapper and matches the convention
+both backends already use internally. The designer declined for now: it is
+one more syntactic burden either way, and the whole pile of them is worth
+revisiting deliberately after the MVP rather than one at a time. The cost
+until then is a nominal type per provider, plus boxing until the backend
+unboxes single-payload tags over scalars — an optimization, not on the
+critical path.
 
-- **B1, bulk bind by name.** `bind Std = wasistd;` binds each item of the
-  signature to the same-named component of the module. No new declaration
-  form. The catch is that it matches *spellings*, which is a weaker
-  discipline than [D1]'s exact-symbol rule, and a missing component shows
-  up at the application rather than at the module.
-- **B2, module-level provisions plus application (recommended).** Let a
-  module say what it provides, at the top level rather than in a statement:
-  `provide string::print = put;`, `provide int::Int = I32;`. Then
-  `apply wasistd;` installs exactly those, with no name matching anywhere —
-  [D1]'s discipline is kept, the functor's obligations are checkable where
-  it is written instead of at each use, and the error for a half-built
-  bridge points at the bridge.
-- **B3, a `functor` declaration with a declared result signature.**
-  `functor WasiStd: Wasi -> Std { ... }`. Most explicit, and it allows
-  several functors with different argument signatures. But modules are
-  already functors, so this adds a second way to be one.
-- **B4, extend bracket application to fns and vals.** Reuses existing
-  syntax, but brackets *refine a signature* ([D53]) — overloading them for
-  application would re-merge the two things [D53] just separated. Not
-  recommended without respecifying brackets outright.
-- **B5, no construct at all.** Do not make `Std` a signature: implement it
-  as ordinary definitions whose own context is `Wasm`/`Wasi`, and let need
-  propagation deliver it. Zero new language, and it compiles today
-  (`tests/wasi/bridged.moss`'s non-bind sibling). The cost is that `Std`'s
-  types are then nailed to one representation and the interpreter needs a
-  linear memory to run anything. **This is the right answer for the
-  compiler itself**, which per [D52] should define its own abstractions
-  over `Wasi`; it is the wrong answer for `Std`, which wants to stay
-  portable across backends.
+**[D55] PROPOSED (a functor construct).** [D53] leaves Moss with no way to
+map a structure to a structure. `bind` provides one component per line,
+which suits `src/cli.moss`'s handful and does not suit `Std`'s ~40 items
+(~95 counting chars). The `Wasi`-to-`Std` bridge needs the construct.
 
-Whatever the spelling, application should be **total**, by analogy with
-[D22]: every item of the signature gets a component or it is an error.
+**B1 — bulk bind by name.** `bind Std = wasistd;` where the right side is
+a module: for each item of the signature, bind it to the same-named
+top-level name in that module.
+
+```moss
+# lib/wasistd.moss — names chosen to match Std's item names
+assume Wasm, Wasi {
+  type Int = I32;
+  val zero: Int = w::i32_zero;
+  fn putchar(c: Char) { ... }
+}
+# main: bind Std = wasistd;   ==>   bind Int = wasistd::Int, bind zero = ...
+```
+
+Cheap, but the correspondence is *spelling*, which is weaker than [D1]'s
+exact-symbol rule, nothing states the intent, and renaming an item in `Std`
+silently stops matching. It also has no clean answer for the items that are
+not plain names: `Int.add` is a (receiver, method) pair, and there is no
+obvious top-level name in a module for it to match against.
+
+**B2 — module-level provisions.** Let `provide std::putchar = wasi_putchar;`
+appear at a module's top level, and `apply wasistd;` install them.
+**Rejected by the designer**: a Moss module is only code organization and
+symbol scoping ([D53]), so letting one carry provisions would make it a
+structure, which is exactly the conflation [D53] exists to prevent.
+
+**B3 — a functor declaration (recommended).** Its own construct, as [D29]
+already anticipated: a name, an argument signature, a result signature, and
+a body of binds.
+
+```moss
+functor WasiStd: Wasm, Wasi -> Std {
+  bind int::Int = Num;
+  bind char::Char = Num;
+  bind int::zero = Num (w::i32_zero);
+  bind Int.add = Num.add;              # per [D54], through the wrapper
+  bind string::print = wasi_print;
+  ...
+}
+
+assume Wasm, Wasi {
+  fn main() {
+    apply WasiStd;
+    my_program();                      # assumes Std
+  }
+}
+```
+
+Checked once, where it is written, against its declared result signature —
+so a half-built bridge reports at the bridge rather than at every use — and
+totality follows [D22]: every item of the result signature gets a bind or it
+is an error. At an application site the argument signature must be in
+context, and the binds land in the current block, lexically scoped like any
+other bind. Nothing about modules changes: a functor is a declaration that
+lives in one, like a `type` or a `context`.
+
+Implementation is close to free given the backend as it stands: a functor
+body is a list of binds, application inlines them at the site, and both
+kinds of bind already compile (val binds as locals, fn binds by
+specialization). It needs a grammar production, the totality check, and
+inlining — no new backend machinery.
+
+Sub-questions to settle with it:
+
+1. Spelling of application — `apply WasiStd;`, `bind Std = WasiStd;`, or
+   something else.
+2. Whether a functor may take value parameters —
+   `functor WasiStd(out: I32): Std` — evaluated at application. This is
+   exactly [D29]'s unresolved val half, and answering it here answers it
+   there.
+3. Whether the result must be a declared `context` or may be an inline
+   item list.
+4. Composition: `apply A; apply B;` where B's argument signature is A's
+   result. Falls out of lexical scoping if application is just binds, but
+   worth stating.
+
+Two options from rev 7 are withdrawn. Extending bracket application to fns
+and vals was a category error — brackets *refine a signature* ([D53]) and
+application *produces provisions*. Dropping signatures for `Std` and
+letting need propagation deliver ordinary definitions would remove the one
+thing this design exists to test. (That `Std` stays a signature is
+independent of [D52]'s point that the *compiler* skips it and assumes
+`Wasi` directly; `Wasi` is a signature too.)
 
 ## 13. Decision index
 
-Awaiting the designer and now on the critical path: [D54] how a method
-provider names its receiver · [D55] how a functor is applied (the
-`Wasi`-to-`Std` bridge needs it).
+Awaiting the designer and now on the critical path: [D55], a functor
+construct — the `Wasi`-to-`Std` bridge needs one, and B3 is the shape.
 
 Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
@@ -1120,7 +1173,7 @@ methods via Q1–Q7, D41 keep `unit`, D43 consistent merging, D44 import
 collisions + `::` tighter than `.`, D45 concrete `Bool`, D46 aliases
 export, D47 operators are methods, D49 no automatic TCE — loops are the
 idiom, D52 `Wasi` primitive with `Std` a library over it, D53 signature
-vs structure)
+vs structure, D54 method providers keep the nominal wrapper)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
