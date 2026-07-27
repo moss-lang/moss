@@ -404,6 +404,14 @@ class TestWasmBackend(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "hihi")
 
+    def test_numerics_over_wasi(self):
+        """`Int`, `zero`, `one` and the arithmetic methods provided over
+        Wasi rather than natively, driving a loop written in ordinary Std
+        terms. Int goes through a nominal wrapper because only an attached
+        method can see its receiver (D54), so every Int here is boxed."""
+        wasm = compile_wasm({}, entry="tests/wasi/numbers.moss")
+        self.assertEqual(run_wasm(wasm), "AAA")
+
     def test_path_read_in_wasm(self):
         """`Path` was the last thing outside the slice: `pwd` is the empty
         path, `join` concatenates, and `read` is path_open plus fd_read

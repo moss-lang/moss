@@ -1,0 +1,27 @@
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasistd.moss" use WasiBasics, Basics, Branch;
+import "../../lib/char.moss" use Char, .char;
+import "../../lib/std.moss" use putchar;
+import "../../lib/int.moss" use Int, zero, one;
+
+# Ordinary Moss over Std's own names: `Int`, `zero`, `one`, `.add`, `.lt`
+# are all provided by a functor over Wasi, not natively.
+assume Basics {
+  fn count(stop: Int, c: Char) {
+    var i = zero;
+    while i.lt(stop) {
+      putchar(c);
+      i = i.add(one);
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiBasics;
+    let three = one.add(one).add(one);
+    let six = three.add(three);
+    count(three, one.shl(six).add(one).char());   # 'A', three times
+  }
+}

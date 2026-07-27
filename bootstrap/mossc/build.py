@@ -225,6 +225,7 @@ class Backend:
         self.import_index: dict[str, int] = {}
         for field, nparams, nresults in BASE_IMPORTS:
             self.wasi_import(field, nparams, nresults)
+        self.rebound = self.rebound_keys()
 
     def wasi_import(self, field: str, params, results) -> int:
         """The index of a WASI import, adding it to the module if new.
@@ -287,17 +288,40 @@ class Backend:
     def is_putchar(self, key) -> bool:
         return "std" in self.lib and key is self.lib["std"].names.get("putchar")
 
+    def rebound_keys(self) -> set:
+        """Val keys the program binds somewhere. A val with a native
+        provision is normally inlined as its constant, but a `bind` may
+        replace it — a functor providing `Std` over `Wasi` does exactly
+        that to `zero` and `one` — and then it has to travel as data like
+        any other val."""
+        found: set = set()
+
+        def walk(node):
+            if isinstance(node, ir.BindVal):
+                found.add(id(node.key))
+            if isinstance(node, (list, tuple)):
+                for item in node:
+                    walk(item)
+            elif hasattr(node, "__dataclass_fields__") and type(node).__module__ == ir.__name__:
+                # IR nodes only: a need key is a Symbol, and following one
+                # of those leads into the whole module graph.
+                for name in node.__dataclass_fields__:
+                    walk(getattr(node, name))
+
+        for fn in self.lower.fns.values():
+            walk(fn.body)
+        return found
+
     def passed_need(self, key) -> bool:
-        """Whether a need key is passed as a parameter: vals without a
-        native constant provision. Everything else compiles at its use site
-        (constants inline, native methods as instructions, putchar as the
-        shim) — or fails there if this slice doesn't cover it. Unused needs
-        cost nothing, which matters because `main` assumes all of Std."""
-        return (
-            not isinstance(key, tuple)
-            and key.kind == SymKind.VAL
-            and key not in self.natives
-        )
+        """Whether a need key is passed as a parameter: vals, unless they
+        have a native provision that nothing rebinds. Everything else
+        compiles at its use site (constants inline, native methods as
+        instructions, putchar as the shim) — or fails there if this slice
+        doesn't cover it. Leaving unrebound natives out matters because
+        `main` assumes all of Std, and most of Std is char constants."""
+        if isinstance(key, tuple) or key.kind != SymKind.VAL:
+            return False
+        return key not in self.natives or id(key) in self.rebound
 
     def val_slots(self, symbol: Symbol, env: dict) -> list:
         """The val keys this specialization takes as parameters: its own

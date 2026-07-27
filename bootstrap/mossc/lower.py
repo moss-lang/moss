@@ -237,7 +237,18 @@ class Lower:
         for spec in functor.decl.result:
             self.expand_spec(module, spec, wanted, 0)
         for bind in functor.decl.binds:
-            for spec, _ in bind.items:
+            for spec, expr in bind.items:
+                if expr is None:
+                    # An application: it provides its own result signature.
+                    inner = resolve_path(module, spec.path)
+                    if isinstance(inner, Symbol) and inner.kind == SymKind.FUNCTOR:
+                        self.check_functor_total(inner)
+                        for item in inner.decl.result:
+                            got = {}
+                            self.expand_spec(inner.module, item, got, 0)
+                            for key in got:
+                                wanted.pop(key, None)
+                    continue
                 key = self.spec_key(module, spec)
                 wanted.pop(key, None)
         if wanted:

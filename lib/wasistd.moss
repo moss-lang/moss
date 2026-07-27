@@ -1,7 +1,8 @@
 import "./wasm.moss" as w use Wasm, I32;
 import "./wasip1.moss" use Wasi, fd_write, args_sizes_get, args_get;
 import "./bool.moss" use Bool;
-import "./char.moss" as char use Char;
+import "./char.moss" as char use Char, .char;
+import "./int.moss" as int use Int, zero, one;
 import "./std.moss" use putchar;
 import "./string.moss" as string use String, print, first_arg;
 
@@ -25,6 +26,13 @@ assume I32 {
 context Branch = i32_bool;
 
 context Console = Char, String, putchar, print, first_arg;
+
+# The numeric slice. `Int` binds to a nominal wrapper rather than to I32
+# directly, because only an attached method can see its receiver and only
+# a nominal type can carry one (D54) — so every Int is a boxed tag until
+# the backend unboxes single-payload tags over scalars.
+context Numerics =
+  Int, zero, one, Int.add, Int.sub, Int.shl, Int.lt, Int.eq;
 
 assume Wasm, Branch {
   # There are no literals (D4), so the addresses and sizes below are built
@@ -101,6 +109,51 @@ assume Wasm, Branch {
       string_of(p, n)
     }
   }
+}
+
+assume Wasm, Branch {
+  type Num I32;
+
+  fn raw(n: Num): I32 { match n { Num v => v } }
+
+  fn Num.add(rhs: Num): Num { Num (w::i32_add(raw(this), raw(rhs))) }
+  fn Num.sub(rhs: Num): Num { Num (w::i32_sub(raw(this), raw(rhs))) }
+  fn Num.shl(rhs: Num): Num { Num (w::i32_shl(raw(this), raw(rhs))) }
+
+  # `Int.char`: a Char is an I32 once Console is applied, so this is the
+  # unwrap. Declared as I32 here because `Char` is not bound in this file.
+  fn Num.to_char(): I32 { raw(this) }
+
+  fn Num.lt(rhs: Num): Bool { i32_bool(w::i32_lt_s(raw(this), raw(rhs))) }
+  fn Num.eq(rhs: Num): Bool { i32_bool(w::i32_eq(raw(this), raw(rhs))) }
+
+  # Functions rather than defined vals: a defined val may not take
+  # assumptions yet (D50), and these need `Wasm`. A bind's right-hand side
+  # is an expression, so calling them costs nothing.
+  fn wasi_zero(): Num { Num (w::i32_zero) }
+  fn wasi_one(): Num { Num (w::i32_one) }
+}
+
+functor WasiNumerics: Wasm, Branch -> Numerics {
+  bind int::Int = Num;
+  bind int::zero = wasi_zero();
+  bind int::one = wasi_one();
+  bind Int.add = Num.add;
+  bind Int.sub = Num.sub;
+  bind Int.shl = Num.shl;
+  bind Int.lt = Num.lt;
+  bind Int.eq = Num.eq;
+}
+
+# The two together, plus the items whose signatures need both — the whole
+# slice of Std that runs over Wasi so far. Applying a functor from inside
+# a functor is just another bind (D55).
+context Basics = Console, Numerics, Int.char;
+
+functor WasiBasics: Wasm, Wasi, Branch -> Basics {
+  bind WasiConsole;
+  bind WasiNumerics;
+  bind Int.char = Num.to_char;
 }
 
 functor WasiConsole: Wasm, Wasi, Branch -> Console {
