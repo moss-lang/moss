@@ -263,11 +263,12 @@ class Parser:
             if self.at(Kind.LET) or self.at(Kind.VAR):
                 keyword = self.next()
                 name = self.expect(Kind.NAME).text
+                ty = self.parse_type() if self.eat(Kind.COLON) else None
                 self.expect(Kind.EQUAL)
                 expr = self.parse_expr()
                 self.expect(Kind.SEMI)
                 node = ast.Let if keyword.kind == Kind.LET else ast.Var
-                stmts.append(node(name, expr))
+                stmts.append(node(name, ty, expr))
             elif self.at(Kind.BIND):
                 self.next()
 

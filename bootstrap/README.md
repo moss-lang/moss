@@ -7,9 +7,17 @@ the pipeline in [`docs/design/semantics.md`](../docs/design/semantics.md)
 1. **lex** ([`mossc/lex.py`](mossc/lex.py)) — done
 2. **parse** ([`mossc/parse.py`](mossc/parse.py), AST in
    [`mossc/ast.py`](mossc/ast.py)) — done
-3. **collect** (scope resolution) — not started
-4. **lower** (elaboration to explicit-context core IR) — not started
-5. **interpret** (over the core IR, not the AST) — not started
+3. **collect** ([`mossc/collect.py`](mossc/collect.py)): module graph,
+   scopes, exports, D44 collisions — done
+4. **lower** ([`mossc/lower.py`](mossc/lower.py)): requirement
+   environments, context flattening, bind checking, forward type
+   inference, method resolution, elaboration to the explicit-context IR
+   ([`mossc/ir.py`](mossc/ir.py)) — working; v0 simplifications are marked
+   TODO in place
+5. **interpret** ([`mossc/interp.py`](mossc/interp.py)): runs the core IR —
+   the runtime environment is literally the explicit context structure
+   lowering produced — with the native Std of
+   [`mossc/native.py`](mossc/native.py) (D38) — working
 
 Later, a monomorphizing Wasm backend replaces stage 5.
 
@@ -18,6 +26,7 @@ Later, a monomorphizing Wasm backend replaces stage 5.
 ```sh
 python3 -m mossc lex ../src/token.moss     # token dump
 python3 -m mossc parse ../src/wasm.moss    # AST dump
+python3 -m mossc run ../examples/hello.moss
 ```
 
 (Run from this directory, or set `PYTHONPATH` to it.)

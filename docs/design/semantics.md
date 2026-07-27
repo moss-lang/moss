@@ -517,6 +517,12 @@ break;          # loops only; carries no value
 deferred with it ([D35]). Both `while` and `loop` stay; each is trivial once
 the other exists.
 
+*Amendment (rev 5, PROPOSED):* `let`/`var` take an optional type annotation
+(`var again: Bool = True;`). Forced by forward inference: without it,
+`var again = True;` infers the narrow unit type `True` and the later
+`again = False;` cannot typecheck. Annotations are the standard fix and were
+going to be wanted anyway.
+
 `let`/`var` bind names, not patterns, for now. `var` permits reassignment of
 the local slot only; it creates no aliasable storage — shared or captured
 mutable state goes through `Cell` (which is why `src/cli.moss` threads a

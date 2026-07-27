@@ -149,8 +149,8 @@ function; detached methods admit only that form ([D36]).
 
 - **Block** = `{` **Stmt**\* **Expr**? `}`
 - **Stmt** = **Let** | **Var** | **Assign** | **Bind** | **While** | **Loop** | (**Expr** `;`?)
-- **Let** = `let` _name_ `=` **Expr** `;`
-- **Var** = `var` _name_ `=` **Expr** `;`
+- **Let** = `let` _name_ (`:` **Type**)? `=` **Expr** `;`
+- **Var** = `var` _name_ (`:` **Type**)? `=` **Expr** `;`
 - **Assign** = _name_ `=` **Expr** `;`
 - **Bind** = `bind` **List**\[**Spec** `=` **Expr**\] `;`
 - **While** = `while` **Expr** **Block**

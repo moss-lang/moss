@@ -168,12 +168,14 @@ class File:
 @dataclass(frozen=True)
 class Let:
     name: str
+    ty: Type | None
     expr: "Expr"
 
 
 @dataclass(frozen=True)
 class Var:
     name: str
+    ty: Type | None
     expr: "Expr"
 
 
