@@ -594,11 +594,11 @@ class TestSelfHostedParser(unittest.TestCase):
             "context C = A;\n"
         )
         self.assertEqual(
-            self.parse_letters(source), "i;uU;tT;a(vv;ff;fg;a(fh;))cC;\n"
+            self.parse_letters(source), "i;uU;tT;a(vv;ff;fg;a(fh;))cC;\n\n"
         )
 
     def test_junk_marked(self):
-        self.assertEqual(self.parse_letters("; unit U;"), "?;uU;\n")
+        self.assertEqual(self.parse_letters("; unit U;"), "?;uU;\n\n")
 
     def test_real_files_have_no_junk(self):
         for rel in [
@@ -618,16 +618,32 @@ class TestSelfHostedParser(unittest.TestCase):
         text = (REPO / "src/parse.moss").read_text(encoding="utf-8")
         self.assertEqual(
             self.parse_letters(text),
-            "i;i;i;a(a(fskip_braces;fskip_to_semi;fskip_fn;fnamed;fdecls;"
-            "fdump;frun;))\n",
+            "i;i;i;i;a(a(fskip_braces;fskip_to_semi;fskip_fn;fnamed;fdecls;"
+            "fput_name;fdump;fdups;frun;))\n\n",
         )
 
     def test_names_read_back_from_the_arena(self):
         text = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
         self.assertEqual(
-            self.parse_letters(text), "uFalse;uTrue;tBool;vfalse;vtrue;\n"
+            self.parse_letters(text), "uFalse;uTrue;tBool;vfalse;vtrue;\n\n"
+        )
+
+    def test_duplicate_declarations_reported(self):
+        """Collect's first check, self-hosted: two declarations sharing a
+        name in one scope, found via interned name ids in the arena."""
+        source = (
+            "unit A;\n"
+            "type A;\n"
+            "assume B {\n"
+            "  fn f();\n"
+            "  fn f() {}\n"
+            "  val g: B;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.parse_letters(source), "uA;tA;a(ff;ff;vg;)\nA!f!\n"
         )
 
     def test_method_names(self):
         source = "assume A { fn T.m(); fn .d(); fn plain(); }"
-        self.assertEqual(self.parse_letters(source), "a(fm;fd;fplain;)\n")
+        self.assertEqual(self.parse_letters(source), "a(fm;fd;fplain;)\n\n")

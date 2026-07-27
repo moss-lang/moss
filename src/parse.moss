@@ -1,5 +1,6 @@
 import "./lex.moss" as lexer use Token;
 import "./token.moss" use *;
+import "./intern.moss" as intern;
 import "./tree.moss" as tree;
 
 # Parser v3: recursive descent over the declaration grammar, building the
@@ -9,7 +10,7 @@ import "./tree.moss" as tree;
 # lookahead after what it consumed.
 
 assume Std {
-  assume lexer::src, lexer::at, lexer::mark, tree::Tree {
+  assume lexer::src, lexer::at, lexer::mark, intern::Interner, tree::Tree {
     # Skip a balanced { ... }; `t` is the lookahead after the opening brace.
     fn skip_braces(t: Token): Token {
       var depth = one;
@@ -71,11 +72,12 @@ assume Std {
       match h {
         Name => {
           let ns = lexer::mark.read();
-          out.push(tree::leaf(k, ns, lexer::at.read().sub(ns)));
+          let nl = lexer::at.read().sub(ns);
+          out.push(tree::leaf(k, ns, nl, intern::intern(ns, nl)));
           skip_to_semi(lexer::lex())
         }
         _ => {
-          out.push(tree::leaf(k, zero, zero));
+          out.push(tree::leaf(k, zero, zero, intern::intern(zero, zero)));
           skip_to_semi(h)
         }
       }
@@ -90,7 +92,7 @@ assume Std {
           Eof => break,
           RBrace => break,
           Import => {
-            out.push(tree::leaf(tree::k_import(), zero, zero));
+            out.push(tree::leaf(tree::k_import(), zero, zero, intern::intern(zero, zero)));
             cur = skip_to_semi(lexer::lex());
           }
           Assume => {
@@ -112,7 +114,10 @@ assume Std {
                   tree::kid_push(mine.get(i));
                   i = i.add(one);
                 }
-                out.push(tree::node(tree::k_assume(), start, mine.length(), zero, zero));
+                out.push(tree::node(
+                  tree::k_assume(), start, mine.length(), zero, zero,
+                  intern::intern(zero, zero)
+                ));
                 match inner {
                   RBrace => { cur = lexer::lex(); }
                   _ => { cur = inner; }
@@ -157,16 +162,26 @@ assume Std {
               }
               _ => (),
             }
-            out.push(tree::leaf(tree::k_fn(), ns, nl));
+            out.push(tree::leaf(tree::k_fn(), ns, nl, intern::intern(ns, nl)));
             cur = skip_fn(h);
           }
           _ => {
-            out.push(tree::leaf(tree::k_bad(), zero, zero));
+            out.push(tree::leaf(tree::k_bad(), zero, zero, intern::intern(zero, zero)));
             cur = lexer::lex();
           }
         }
       }
       cur
+    }
+
+    fn put_name(id: Int) {
+      let ns = tree::name_start_of(id);
+      let nl = tree::name_len_of(id);
+      var j = zero;
+      while j.lt(nl) {
+        putchar(lexer::src.get(ns.add(j)));
+        j = j.add(one);
+      }
     }
 
     # Walk the finished arena: one letter per node, then the node's name
@@ -201,25 +216,54 @@ assume Std {
         }
         putchar(char::rparen);
       } else {
-        let ns = tree::name_start_of(id);
-        let nl = tree::name_len_of(id);
-        var j = zero;
-        while j.lt(nl) {
-          putchar(lexer::src.get(ns.add(j)));
-          j = j.add(one);
-        }
+        put_name(id);
         putchar(char::semi);
+      }
+    }
+
+    # Collect, first step: within one scope, two declarations may not share
+    # a name (the bootstrap's "duplicate definition" error). Reports each
+    # duplicate as name+`!`, recursing into assume blocks.
+    fn dups(s: Int, n: Int) {
+      var i = zero;
+      while i.lt(n) {
+        let a = tree::kid_at(s.add(i));
+        if tree::name_len_of(a).gt(zero) {
+          var j = i.add(one);
+          while j.lt(n) {
+            let b = tree::kid_at(s.add(j));
+            if tree::name_id_of(a).eq(tree::name_id_of(b)) {
+              put_name(b);
+              putchar(char::exclam);
+              j = n;
+            } else {
+              j = j.add(one);
+            }
+          }
+        }
+        if tree::kind_of(a).eq(tree::k_assume()) {
+          dups(tree::start_of(a), tree::len_of(a));
+        }
+        i = i.add(one);
       }
     }
 
     fn run() {
       let roots = int_list();
       decls(lexer::lex(), roots);
+      let rs = tree::kid_mark();
       var i = zero;
+      while i.lt(roots.length()) {
+        tree::kid_push(roots.get(i));
+        i = i.add(one);
+      }
+      i = zero;
       while i.lt(roots.length()) {
         dump(roots.get(i));
         i = i.add(one);
       }
+      putchar(char::newline);
+      dups(rs, roots.length());
       putchar(char::newline);
     }
   }

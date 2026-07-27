@@ -19,22 +19,24 @@ assume Std {
   val kids: IntList;
   val name_starts: IntList;
   val name_lens: IntList;
+  val name_ids: IntList;
 
-  context Tree = kinds, starts, lens, kids, name_starts, name_lens;
+  context Tree = kinds, starts, lens, kids, name_starts, name_lens, name_ids;
 
   assume Tree {
-    fn node(kind: Int, start: Int, len: Int, ns: Int, nl: Int): Int {
+    fn node(kind: Int, start: Int, len: Int, ns: Int, nl: Int, nid: Int): Int {
       let id = kinds.length();
       kinds.push(kind);
       starts.push(start);
       lens.push(len);
       name_starts.push(ns);
       name_lens.push(nl);
+      name_ids.push(nid);
       id
     }
 
-    fn leaf(kind: Int, ns: Int, nl: Int): Int {
-      node(kind, zero, zero, ns, nl)
+    fn leaf(kind: Int, ns: Int, nl: Int, nid: Int): Int {
+      node(kind, zero, zero, ns, nl, nid)
     }
 
     fn kind_of(id: Int): Int {
@@ -67,6 +69,10 @@ assume Std {
 
     fn name_len_of(id: Int): Int {
       name_lens.get(id)
+    }
+
+    fn name_id_of(id: Int): Int {
+      name_ids.get(id)
     }
   }
 }

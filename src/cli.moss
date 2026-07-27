@@ -1,3 +1,4 @@
+import "./intern.moss" as intern;
 import "./lex.moss" as lexer;
 import "./parse.moss" as parser;
 import "./tree.moss" as tree;
@@ -15,6 +16,9 @@ assume Std {
     bind tree::kids=int_list();
     bind tree::name_starts=int_list();
     bind tree::name_lens=int_list();
+    bind tree::name_ids=int_list();
+    bind intern::istarts=int_list();
+    bind intern::ilens=int_list();
     parser::run();
   }
 }

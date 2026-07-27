@@ -13,6 +13,7 @@ REPO = Path(__file__).resolve().parents[2]
 CORPUS = [
     "src/cli.moss",
     "src/inner.moss",
+    "src/intern.moss",
     "src/main.moss",
     "src/option.moss",
     "src/lex.moss",

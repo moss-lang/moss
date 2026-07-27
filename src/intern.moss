@@ -1,0 +1,48 @@
+import "./lex.moss" as lexer;
+
+# Name interning in pure Moss: the table is two parallel IntLists of spans
+# into the source; interning is a linear scan with char-by-char comparison.
+
+assume Std {
+  val istarts: IntList;
+  val ilens: IntList;
+
+  context Interner = istarts, ilens;
+
+  assume lexer::src, Interner {
+    fn span_eq(s1: Int, l1: Int, s2: Int, l2: Int): Bool {
+      if l1.ne(l2) {
+        false
+      } else {
+        var i = zero;
+        var same = true;
+        while i.lt(l1) {
+          if lexer::src.get(s1.add(i)).ne(lexer::src.get(s2.add(i))) {
+            same = false;
+            i = l1;
+          } else {
+            i = i.add(one);
+          }
+        }
+        same
+      }
+    }
+
+    # The id of this span's name, interning it if new.
+    fn intern(ns: Int, nl: Int): Int {
+      var id = zero;
+      loop {
+        if id.ge(istarts.length()) {
+          istarts.push(ns);
+          ilens.push(nl);
+          break;
+        }
+        if span_eq(istarts.get(id), ilens.get(id), ns, nl) {
+          break;
+        }
+        id = id.add(one);
+      }
+      id
+    }
+  }
+}
