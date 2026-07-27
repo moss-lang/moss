@@ -344,18 +344,26 @@ class TestGenerics(unittest.TestCase):
         self.assertEqual(run(files), "y")
 
 
+DOTS_DRIVER = (
+    'import "./src/lex.moss" as lexer;\n'
+    'import "./src/token.moss" use Eof;\n'
+    "assume Std {\n"
+    "  fn main() {\n"
+    "    bind lexer::src=first_arg();\n"
+    "    bind lexer::at=cell_int();\n"
+    "    loop { match lexer::lex() { Eof => break, _ => putchar(char::dot), } }\n"
+    "    putchar(char::newline);\n"
+    "  }\n"
+    "}\n"
+)
+
+
 class TestSelfHostedLexer(unittest.TestCase):
-    """src/main.moss drives src/lex.moss: one dot per token. The reference
-    for token counts is the bootstrap lexer itself (keywords lex as Name in
-    the self-hosted lexer, but the counts must agree)."""
+    """A driver over src/lex.moss prints one dot per token. The reference
+    for token counts is the bootstrap lexer itself."""
 
     def lex_dots(self, source):
-        import tempfile
-
-        with tempfile.NamedTemporaryFile("w", suffix=".moss", delete=False) as f:
-            f.write(source)
-            target = f.name
-        return run({}, entry=str(REPO / "src/main.moss"), args=[target])
+        return run({"dots.moss": DOTS_DRIVER}, entry="dots.moss", args=[source])
 
     def bootstrap_count(self, source):
         from mossc.lex import lex
@@ -555,3 +563,46 @@ class TestMultiInstantiation(unittest.TestCase):
             )
         }
         self.assertEqual(run(files), "z")
+
+
+class TestSelfHostedParser(unittest.TestCase):
+    """src/main.moss drives src/parse.moss: one letter per declaration
+    (i=import, a=assume, t=type, u=unit, v=val, c=context, f=fn, x=junk)."""
+
+    def parse_letters(self, source):
+        import tempfile
+
+        with tempfile.NamedTemporaryFile("w", suffix=".moss", delete=False) as f:
+            f.write(source)
+            target = f.name
+        return run({}, entry=str(REPO / "src/main.moss"), args=[target])
+
+    def test_shapes(self):
+        source = (
+            'import "./x.moss" use A;\n'
+            "unit U;\n"
+            "type T { a: A };\n"
+            "assume A {\n"
+            "  val v: A;\n"
+            "  fn f(): A;\n"
+            "  fn g() { if b { c(); } loop { break; } }\n"
+            "  assume v { fn h(); }\n"
+            "}\n"
+            "context C = A;\n"
+        )
+        self.assertEqual(self.parse_letters(source), "iutavffafc\n")
+
+    def test_junk_marked(self):
+        self.assertEqual(self.parse_letters("; unit U;"), "xu\n")
+
+    def test_real_files_have_no_junk(self):
+        for rel in ["lib/bool.moss", "lib/std.moss", "src/lex.moss", "src/parse.moss"]:
+            with self.subTest(file=rel):
+                text = (REPO / rel).read_text(encoding="utf-8")
+                out = self.parse_letters(text)
+                self.assertNotIn("x", out)
+                self.assertGreater(len(out.strip()), 0)
+
+    def test_parses_itself(self):
+        text = (REPO / "src/parse.moss").read_text(encoding="utf-8")
+        self.assertEqual(self.parse_letters(text), "iiaafffff\n")

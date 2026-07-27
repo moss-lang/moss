@@ -1,17 +1,12 @@
 import "./lex.moss" as lexer;
-import "./token.moss" use Eof;
+import "./parse.moss" as parser;
 
 assume Std {
-  # Lex the file named by the first argument and print one dot per token.
+  # Parse the file named by the first argument, printing one letter per
+  # declaration (see parse.moss).
   fn cli() {
     bind lexer::src=pwd.join(first_arg()).read();
     bind lexer::at=cell_int();
-    loop {
-      match lexer::lex() {
-        Eof => break,
-        _ => putchar(char::dot),
-      }
-    }
-    putchar(char::newline);
+    parser::tree();
   }
 }

@@ -1,185 +1,135 @@
-import "./lex.moss" use Token;
-import "./prelude.moss" use *;
-import "./range.moss" use Range;
+import "./lex.moss" as lexer use Token;
 import "./token.moss" use *;
 
-type TokenId;
+# Structural parser, v1: recursive descent over the declaration grammar,
+# printing one letter per declaration (i/a/t/u/v/c/f, x for junk) and
+# skipping declaration payloads. Lookahead is threaded functionally: each
+# function takes the current token and returns the lookahead that follows
+# what it consumed. The full AST needs arenas (typed wrappers over
+# IntList) and lands next.
 
-assume TokenId {
-  fn next(): TokenId;
-  fn now(): TokenId;
-}
-
-fn peek(): Token;
-
-type NameId;
-type TypeId;
-type ContextId;
-
-context AstIds =
-  NameId,
-  TypeId,
-  ContextId,
-;
-
-assume TokenId, AstIds {
-  type Import {
-    from: TokenId,
-    name: Option[T=TokenId],
-    names: Range[T=NameId],
-  };
-
-  type Assume {
-    ctx: ContextId,
-    scope: ScopeId,
-  };
-
-  type Symbol {
-    name: TokenId,
-  };
-
-  type Unit {
-    name: TokenId,
-  };
-
-  type Nominal {
-    name: TokenId,
-    ty: TypeId,
-  };
-
-  type Alias {
-    name: TokenId,
-    ty: TypeId,
-  };
-
-  type Val {
-    name: TokenId,
-    ty: TypeId,
-  };
-
-  type FnSig = {
-    name: TokenId,
-    # TODO: parameters
-    ret: TypeId,
-  };
-
-  type Sig FnSig;
-
-  type Fn {
-    sig: FnSig,
-    # TODO: body
-  };
-
-  type Context {
-    name: TokenId,
-    def: ContextId,
-  };
-
-  type Type = |;
-
-  type Piece = |;
-
-  type Item =
-    | Assume
-    | Symbol
-    | Unit
-    | Nominal
-    | Alias
-    | Val
-    | Fn
-    | Context
-  ;
-}
-
-assume T {
-  type List;
-
-  assume List {
-    fn List.push(item: T);
-    fn List.done(): Range;
-
-    context IsList = List.push;
-  }
-}
-
-type NameList;
-
-context AstLists = NameList;
-
-assume AstLists {
-  fn name_list(): NameList;
-}
-
-type TokenSet;
-
-assume TokenSet {
-  val expected: TokenSet;
-
-  fn TokenSet.add(kind: Token): TokenSet;
-
-  fn err(set: TokenSet): |;
-}
-
-context Parsing =
-  TokenId, next, now, peek,
-  AstIds, AstLists,
-  name_list, IsList[T=NameId, List=NameList],
-  TokenSet, expected, TokenSet.add, err,
-;
-
-assume Parsing {
-  fn expect(kind: Token): TokenId {
-    let id = now();
-    if peek() == kind {
-      next();
-      id
-    } else {
-      match err(expected.add(kind)) {}
-    }
-  }
-
-  fn parse_import(): Import {
-    expect(Import);
-    let from = expect(Str);
-    let name = match peek() {
-      As => {
-        next();
-        Some (expect(Name))
-      }
-      _ => None,
-    };
-    var names = name_list();
-    if peek() == Use {
-      next();
+assume Std {
+  assume lexer::src, lexer::at {
+    # Skip a balanced { ... }; `t` is the lookahead after the opening brace.
+    # Returns the lookahead after the matching closing brace.
+    fn skip_braces(t: Token): Token {
+      var depth = one;
+      var cur = t;
       loop {
-        match peek() {
-          Semi => break,
-          Name => names.push(next()),
+        match cur {
+          Eof => break,
+          LBrace => { depth = depth.add(one); }
+          RBrace => { depth = depth.sub(one); }
           _ => (),
         }
-        if peek() == Comma {
-          next();
+        cur = lexer::lex();
+        if depth.eq(zero) {
+          break;
         }
+      }
+      cur
+    }
+
+    # Skip to just past the next semicolon. Declaration payloads contain no
+    # semicolons (record types have commas), so this ends the declaration.
+    fn skip_to_semi(t: Token): Token {
+      var cur = t;
+      loop {
+        match cur {
+          Eof => break,
+          Semi => break,
+          _ => { cur = lexer::lex(); }
+        }
+      }
+      match cur {
+        Semi => lexer::lex(),
+        _ => cur,
       }
     }
-    Import { from, name, names = names.done() }
-  }
 
-  fn parse_assume() {
-    # TODO
-  }
-
-  fn tree() {
-    loop {
-      match peek() {
-        Eof => return,
-        Import => {
-          parse_import();
-        }
-        Assume => {
-          parse_assume();
+    # A fn declaration ends at a semicolon (abstract) or a balanced body.
+    fn skip_fn(t: Token): Token {
+      var cur = t;
+      loop {
+        match cur {
+          Eof => break,
+          Semi => break,
+          LBrace => break,
+          _ => { cur = lexer::lex(); }
         }
       }
+      match cur {
+        Semi => lexer::lex(),
+        LBrace => skip_braces(lexer::lex()),
+        _ => cur,
+      }
+    }
+
+    # Parse declarations until end of file or an unmatched closing brace
+    # (the end of the enclosing assume block). Returns that lookahead.
+    fn decls(t: Token): Token {
+      var cur = t;
+      loop {
+        match cur {
+          Eof => break,
+          RBrace => break,
+          Import => {
+            putchar(char::i);
+            cur = skip_to_semi(lexer::lex());
+          }
+          Assume => {
+            putchar(char::a);
+            var h = lexer::lex();
+            loop {
+              match h {
+                Eof => break,
+                LBrace => break,
+                _ => { h = lexer::lex(); }
+              }
+            }
+            match h {
+              LBrace => {
+                let inner = decls(lexer::lex());
+                match inner {
+                  RBrace => { cur = lexer::lex(); }
+                  _ => { cur = inner; }
+                }
+              }
+              _ => { cur = h; }
+            }
+          }
+          Type => {
+            putchar(char::t);
+            cur = skip_to_semi(lexer::lex());
+          }
+          Unit => {
+            putchar(char::u);
+            cur = skip_to_semi(lexer::lex());
+          }
+          Val => {
+            putchar(char::v);
+            cur = skip_to_semi(lexer::lex());
+          }
+          Context => {
+            putchar(char::c);
+            cur = skip_to_semi(lexer::lex());
+          }
+          Fn => {
+            putchar(char::f);
+            cur = skip_fn(lexer::lex());
+          }
+          _ => {
+            putchar(char::x);
+            cur = lexer::lex();
+          }
+        }
+      }
+      cur
+    }
+
+    fn tree() {
+      decls(lexer::lex());
+      putchar(char::newline);
     }
   }
 }

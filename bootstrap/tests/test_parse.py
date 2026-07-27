@@ -11,9 +11,12 @@ REPO = Path(__file__).resolve().parents[2]
 # for loops, char literals, attached-on-abstract methods) and joins this list
 # as those land.
 CORPUS = [
+    "src/cli.moss",
     "src/inner.moss",
     "src/main.moss",
     "src/option.moss",
+    "src/lex.moss",
+    "src/parse.moss",
     "src/prelude.moss",
     "src/range.moss",
     "src/token.moss",
