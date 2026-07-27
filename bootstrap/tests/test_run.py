@@ -662,7 +662,7 @@ class TestSelfHostedParser(unittest.TestCase):
             "context C = A;\n"
         )
         self.assertEqual(
-            self.parse_letters(source), "i;uU;tT;a(vv;ff;fg;a(fh;))cC;\n\n\n"
+            self.parse_letters(source), "i./x.moss;uU;tT;a(vv;ff;fg;a(fh;))cC;\n\n\n"
         )
 
     def test_junk_marked(self):
@@ -689,7 +689,8 @@ class TestSelfHostedParser(unittest.TestCase):
         text = (REPO / "src/parse.moss").read_text(encoding="utf-8")
         self.assertEqual(
             self.parse_letters(text),
-            "i;i;i;i;a(a(fskip_braces;frefscan_to_semi;fskip_to_semi;"
+            "i./lex.moss;i./token.moss;i./intern.moss;i./tree.moss;"
+            "a(a(fskip_braces;frefscan_to_semi;fskip_to_semi;"
             "frefscan_fn;fnamed;fdecls;fput_name;fhas_name;fdump;fdups;"
             "fdeclared;fcontains;fresolve;frun;))\n\n\n",
         )

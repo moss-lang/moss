@@ -40,6 +40,17 @@ assume Std {
       node(kind, zero, zero, nid)
     }
 
+    # An import declares no name of its own (`nid` is the empty name, so
+    # it stays out of duplicate and resolution checks), and parks its
+    # interned path in the `start` slot that only assume nodes use.
+    fn import_node(path: Int, nid: Int): Int {
+      node(k_import(), path, zero, nid)
+    }
+
+    fn import_path_of(id: Int): Int {
+      starts.get(id)
+    }
+
     fn kind_of(id: Int): Int {
       kinds.get(id)
     }

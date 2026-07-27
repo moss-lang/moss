@@ -160,8 +160,19 @@ assume Std {
           Eof => break,
           RBrace => break,
           Import => {
-            out.push(tree::leaf(tree::k_import(), intern::intern(zero, zero)));
-            cur = skip_to_semi(lexer::lex());
+            let h = lexer::lex();
+            var path = intern::intern(zero, zero);
+            match h {
+              # The token's span covers the quotes; the path is inside them.
+              Str => {
+                let ns = lexer::mark.read().add(one);
+                let nl = lexer::at.read().sub(ns).sub(one);
+                path = intern::intern(ns, nl);
+              }
+              _ => (),
+            }
+            out.push(tree::import_node(path, intern::intern(zero, zero)));
+            cur = skip_to_semi(h);
           }
           Assume => {
             var h = lexer::lex();
@@ -283,6 +294,9 @@ assume Std {
           i = i.add(one);
         }
         putchar(char::rparen);
+      } else if k.eq(tree::k_import()) {
+        intern::put(tree::import_path_of(id));
+        putchar(char::semi);
       } else {
         put_name(id);
         putchar(char::semi);
