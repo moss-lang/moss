@@ -213,6 +213,36 @@ class TestWasmBackend(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "bcabcdefyc\n")
 
+    def test_strings_and_strlist_in_wasm(self):
+        """concat and StrList, which the self-hosted module loader needs to
+        hold and build file paths."""
+        source = (
+            "assume Std {\n"
+            "  fn main() {\n"
+            "    let s = first_arg();\n"
+            "    let xs = str_list();\n"
+            "    xs.push(s.concat(s));\n"
+            "    xs.push(s.slice(zero, one).concat(s.slice(one, one)));\n"
+            "    var i = zero;\n"
+            "    while i.lt(xs.length()) {\n"
+            "      print(xs.get(i));\n"
+            "      putchar(char::comma);\n"
+            "      i = i.add(one);\n"
+            "    }\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n"
+        )
+        wasm = compile_wasm({"main.moss": source})
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            path = f.name
+        result = subprocess.run(
+            [wasmtime(), path, "abc"], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "abcabc,ab,\n")
+
     def test_interner_arena_in_wasm(self):
         """Same driver as the interpreter's interner test, same output."""
         from tests.test_run import ARENA_DRIVER

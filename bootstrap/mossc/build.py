@@ -53,7 +53,8 @@ I32_STORE = b"\x36"
 # compiled Moss functions, then `_start`.
 FD_WRITE, ARGS_SIZES_GET, ARGS_GET = 0, 1, 2
 PUTCHAR, ALLOC, FIRST_ARG, LIST_PUSH, PRINT, SLICE = 3, 4, 5, 6, 7, 8
-FIRST_FN = SLICE + 1
+CONCAT = 9
+FIRST_FN = CONCAT + 1
 
 BINOPS = {
     "add": b"\x6a",
@@ -125,7 +126,8 @@ class Backend:
         self.unit_codes: dict[int, int] = {}
         self.lib = {}
         for module in program.modules.values():
-            for short in ("bool", "num", "char", "int", "std", "string", "cell", "list"):
+            for short in ("bool", "num", "char", "int", "std", "string",
+                          "strlist", "cell", "list"):
                 if module.path.endswith(f"lib/{short}.moss"):
                     self.lib[short] = module
 
@@ -266,6 +268,7 @@ class Backend:
                     uleb(wasi2_type),  # list_push: (handle, value) -> dummy
                     uleb(putchar_type),  # print: (string) -> ()
                     uleb(slice_type),  # slice: (string, start, len) -> string
+                    uleb(wasi2_type),  # concat: (string, string) -> string
                 ]
                 + [uleb(t) for t in func_types]
                 + [uleb(start_type)]
@@ -307,6 +310,7 @@ class Backend:
                 self.list_push_shim(),
                 self.print_shim(),
                 self.slice_shim(),
+                self.concat_shim(),
             ]
             + [b for _, b in ordered]
             + [start_body]
@@ -448,6 +452,40 @@ class Backend:
         b += LOCAL_GET + uleb(4) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(4)
         b += BR + uleb(0) + END + END
         b += LOCAL_GET + uleb(3)
+        b += END
+        return bytes(b)
+
+    def concat_shim(self) -> bytes:
+        # (a, b) -> string: one fresh block holding a's bytes then b's.
+        # Locals: 2 s, 3 i, 4 la.
+        b = bytearray()
+        b += vec([uleb(3) + I32])
+        b += LOCAL_GET + uleb(0) + I32_LOAD + uleb(2) + uleb(0) + LOCAL_SET + uleb(4)
+        # s = alloc(4 + la + lb); *s = la + lb
+        b += I32_CONST + sleb(4) + LOCAL_GET + uleb(4) + BINOPS["add"]
+        b += LOCAL_GET + uleb(1) + I32_LOAD + uleb(2) + uleb(0) + BINOPS["add"]
+        b += CALL + uleb(ALLOC) + LOCAL_SET + uleb(2)
+        b += LOCAL_GET + uleb(2)
+        b += LOCAL_GET + uleb(4)
+        b += LOCAL_GET + uleb(1) + I32_LOAD + uleb(2) + uleb(0) + BINOPS["add"]
+        b += I32_STORE + uleb(2) + uleb(0)
+        for source, offset in ((0, None), (1, 4)):
+            # Copy this operand's bytes; the second lands after the first.
+            b += I32_CONST + sleb(0) + LOCAL_SET + uleb(3)
+            b += BLOCK + EMPTY + LOOP + EMPTY
+            b += LOCAL_GET + uleb(3)
+            b += LOCAL_GET + uleb(source) + I32_LOAD + uleb(2) + uleb(0)
+            b += BINOPS["ge"] + BR_IF + uleb(1)
+            b += LOCAL_GET + uleb(2) + LOCAL_GET + uleb(3) + BINOPS["add"]
+            if offset is not None:
+                b += LOCAL_GET + uleb(4) + BINOPS["add"]
+            b += LOCAL_GET + uleb(source) + LOCAL_GET + uleb(3) + BINOPS["add"]
+            b += I32_LOAD8 + uleb(0) + uleb(4)
+            b += I32_STORE8 + uleb(0) + uleb(4)
+            b += LOCAL_GET + uleb(3) + I32_CONST + sleb(1) + BINOPS["add"]
+            b += LOCAL_SET + uleb(3)
+            b += BR + uleb(0) + END + END
+        b += LOCAL_GET + uleb(2)
         b += END
         return bytes(b)
 
@@ -790,6 +828,11 @@ class FnCompiler:
                     self.expr(node.args[1])
                     self.code += CALL + uleb(SLICE)
                     return
+                if short == "concat":
+                    self.expr(node.this)
+                    self.expr(node.args[0])
+                    self.code += CALL + uleb(CONCAT)
+                    return
             if "list" in self.b.lib and method.module is self.b.lib["list"]:
                 if short == "push":
                     self.expr(node.this)
@@ -817,6 +860,25 @@ class FnCompiler:
                     self.code += I32_STORE + uleb(2) + uleb(8)
                     self.code += I32_CONST + sleb(0)
                     return
+            if "strlist" in self.b.lib and method.module is self.b.lib["strlist"]:
+                # A String is a pointer, so a StrList is an IntList.
+                if short == "push":
+                    self.expr(node.this)
+                    self.expr(node.args[0])
+                    self.code += CALL + uleb(LIST_PUSH)
+                    return
+                if short == "length":
+                    self.expr(node.this)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    return
+                if short == "get":
+                    self.expr(node.this)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    self.expr(node.args[0])
+                    self.code += I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
+                    self.code += I32_LOAD + uleb(2) + uleb(8)
+                    return
             if "cell" in self.b.lib and method.module is self.b.lib["cell"]:
                 if short == "read":
                     self.expr(node.this)
@@ -841,7 +903,14 @@ class FnCompiler:
                 self.expr(arg)
             self.code += CALL + uleb(PRINT) + I32_CONST + sleb(0)
             return
-        if "list" in self.b.lib and key is self.b.lib["list"].names.get("int_list"):
+        empty_list = "list" in self.b.lib and key is self.b.lib["list"].names.get(
+            "int_list"
+        )
+        empty_list = empty_list or (
+            "strlist" in self.b.lib
+            and key is self.b.lib["strlist"].names.get("str_list")
+        )
+        if empty_list:
             tmp = self.local()
             self.code += I32_CONST + sleb(4) + CALL + uleb(ALLOC) + LOCAL_SET + uleb(tmp)
             data = self.local()

@@ -7,6 +7,9 @@ assume String {
   fn first_arg(): String;
   fn print(s: String);
 
+  # This String followed by the other one.
+  fn .concat(other: String): String;
+
   assume Int {
     fn .length(): Int;
 

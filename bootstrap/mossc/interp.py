@@ -268,7 +268,8 @@ def native_env(program: Program, args: list | None = None) -> dict:
     args = args or []
     lib = {}
     for module in program.modules.values():
-        for name in ("std", "char", "bool", "num", "int", "string", "cell", "path", "list"):
+        for name in ("std", "char", "bool", "num", "int", "string", "strlist",
+                     "cell", "path", "list"):
             if module.path.endswith(f"lib/{name}.moss"):
                 lib[name] = module
     if "bool" in lib:
@@ -400,6 +401,9 @@ def native_env(program: Program, args: list | None = None) -> dict:
 
         env[(string_ty, string.detached["length"])] = native(length)
         env[(string_ty, string.detached["slice"])] = native(slice_)
+        env[(string_ty, string.detached["concat"])] = native(
+            lambda a, this: StrVal(this.value + a[0].value)
+        )
         env[(string_ty, string.detached["get"])] = native(get)
     if "cell" in lib:
         cell = lib["cell"]
@@ -441,6 +445,22 @@ def native_env(program: Program, args: list | None = None) -> dict:
 
         env[(list_ty, lst.detached["set"])] = native(list_set)
         env[(list_ty, lst.detached["length"])] = native(
+            lambda a, this: IntVal(len(this.items))
+        )
+    if "strlist" in lib:
+        sl = lib["strlist"]
+        strlist_ty = sl.names["StrList"]
+        env[sl.names["str_list"]] = native(lambda a, this: ListVal([]))
+        env[(strlist_ty, sl.detached["push"])] = native(list_push)
+
+        def strlist_get(a, this):
+            index = a[0].value
+            if not 0 <= index < len(this.items):
+                raise MossPanic(f"StrList index {index} out of range")
+            return this.items[index]
+
+        env[(strlist_ty, sl.detached["get"])] = native(strlist_get)
+        env[(strlist_ty, sl.detached["length"])] = native(
             lambda a, this: IntVal(len(this.items))
         )
     if "path" in lib:

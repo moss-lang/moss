@@ -9,6 +9,7 @@ import "./list.moss" use IntList, int_list;
 import "./num.moss" use .not;
 import "./path.moss" use Path, pwd;
 import "./string.moss" use String, first_arg, print;
+import "./strlist.moss" use StrList, str_list;
 
 assume Char {
   fn putchar(c: Char);
@@ -40,6 +41,13 @@ context Std =
   String.length,
   String.get,
   String.slice,
+  String.concat,
+
+  StrList,
+  str_list,
+  StrList.push,
+  StrList.get,
+  StrList.length,
 
   CellInt,
   cell_int,

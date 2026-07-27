@@ -315,6 +315,31 @@ class TestStd(unittest.TestCase):
         )
         self.assertEqual(run(files, args=["abcdef"]), "bcabcdefyc")
 
+    def test_string_concat(self):
+        files = main_body(
+            "let s = first_arg();\n"
+            "    print(s.concat(s));\n"
+            "    putchar(char::comma);\n"
+            "    print(s.slice(zero, one).concat(s.slice(one, one)));\n"
+            "    putchar(char::comma);\n"
+            "    print(s.concat(s.slice(zero, zero)));"
+        )
+        self.assertEqual(run(files, args=["abc"]), "abcabc,ab,abc")
+
+    def test_str_list(self):
+        """StrList is IntList's shape at String elements — a distinct
+        nominal type, since a native list cannot be generic (D51)."""
+        files = main_body(
+            "let xs = str_list();\n"
+            "    let s = first_arg();\n"
+            "    xs.push(s.slice(zero, one));\n"
+            "    xs.push(s);\n"
+            "    var i = zero;\n"
+            "    while i.lt(xs.length()) { print(xs.get(i)); putchar(char::comma); "
+            "i = i.add(one); }"
+        )
+        self.assertEqual(run(files, args=["abc"]), "a,abc,")
+
     def test_string_slice_out_of_range_panics(self):
         files = main_body("let s = first_arg().slice(zero, one.add(one));")
         with self.assertRaises(interp.MossPanic):
