@@ -26,6 +26,7 @@ type Token =
   | RBrace
   | ExclamEqual
   | ColonColon
+  | EqualGreater
   | LessLess
   | LessEqual
   | EqualEqual
@@ -34,82 +35,114 @@ type Token =
   | As
   | Assume
   | Bind
+  | Break
   | Context
   | Else
   | Fn
+  | For
   | If
   | Import
   | Let
+  | Loop
+  | Match
+  | Return
+  | ThisType
+  | ThisValue
   | Type
+  | Unit
   | Use
   | Val
   | Var
   | While
   | Name
-  | Uint32
-  | Int32
-  | Uint64
-  | Int64
-  | Uint
-  | Int
-  | Char
   | Str
 ;
 
-assume Char {
-  fn next_byte(): Char | Eof;
+assume Std {
+  # `Char | Eof` directly would put an abstract type in a union (D15), so
+  # the character is wrapped in a nominal tag.
+  type Read Char;
+
+  fn next_byte(): Read | Eof;
 
   assume next_byte {
     fn lex(): Token {
       match next_byte() {
         Eof => Eof,
-        c => {
-          if c == '!' {
+        Read c => {
+          if c.eq(char::space) {
+            lex()
+          } else if c.eq(char::newline) {
+            lex()
+          } else if c.eq(char::tab) {
+            lex()
+          } else if c.eq(char::cr) {
+            lex()
+          } else if c.eq(char::octothorpe) {
+            comment()
+          } else if c.eq(char::exclam) {
             Exclam
-          } else if c == '%' {
+          } else if c.eq(char::percent) {
             Percent
-          } else if c == '&' {
+          } else if c.eq(char::ampersand) {
             Ampersand
-          } else if c == '(' {
+          } else if c.eq(char::lparen) {
             LParen
-          } else if c == ')' {
+          } else if c.eq(char::rparen) {
             RParen
-          } else if c == '*' {
+          } else if c.eq(char::star) {
             Star
-          } else if c == '+' {
+          } else if c.eq(char::plus) {
             Plus
-          } else if c == ',' {
+          } else if c.eq(char::comma) {
             Comma
-          } else if c == '-' {
+          } else if c.eq(char::hyphen) {
             Hyphen
-          } else if c == '.' {
+          } else if c.eq(char::dot) {
             Dot
-          } else if c == '/' {
+          } else if c.eq(char::slash) {
             Slash
-          } else if c == ':' {
+          } else if c.eq(char::colon) {
             Colon
-          } else if c == ';' {
+          } else if c.eq(char::semi) {
             Semi
-          } else if c == '<' {
+          } else if c.eq(char::less) {
             Less
-          } else if c == '=' {
+          } else if c.eq(char::equal) {
             Equal
-          } else if c == '>' {
+          } else if c.eq(char::greater) {
             Greater
-          } else if c == '[' {
+          } else if c.eq(char::lbracket) {
             LBracket
-          } else if c == ']' {
+          } else if c.eq(char::rbracket) {
             RBracket
-          } else if c == '^' {
+          } else if c.eq(char::caret) {
             Caret
-          } else if c == '{' {
+          } else if c.eq(char::lbrace) {
             LBrace
-          } else if c == '|' {
+          } else if c.eq(char::pipe) {
             Pipe
-          } else if c == '}' {
+          } else if c.eq(char::rbrace) {
             RBrace
           } else {
-            match panic() {}
+            # TODO: names, keywords, strings, and two-character symbols all
+            # need one byte of lookahead; that wants a peek/pushback story
+            # in the next_byte context before it can be written honestly.
+            Name
+          }
+        }
+      }
+    }
+
+    # A `#` comment runs to the end of the line.
+    fn comment(): Token {
+      match next_byte() {
+        Eof => Eof,
+        Read c => {
+          if c.eq(char::newline) {
+            lex()
+          } else {
+            comment()
           }
         }
       }

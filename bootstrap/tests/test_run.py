@@ -282,5 +282,28 @@ class TestStd(unittest.TestCase):
             run(files)
 
 
+class TestSelfHostedLexer(unittest.TestCase):
+    """src/main.moss drives src/lex.moss: one dot per token."""
+
+    def lex_dots(self, source):
+        import tempfile
+
+        with tempfile.NamedTemporaryFile("w", suffix=".moss", delete=False) as f:
+            f.write(source)
+            target = f.name
+        return run({}, entry=str(REPO / "src/main.moss"), args=[target])
+
+    def test_symbols(self):
+        self.assertEqual(self.lex_dots("{ } ( ) ; |"), "." * 6 + "\n")
+
+    def test_comments_and_whitespace(self):
+        self.assertEqual(self.lex_dots("# a comment\n;\t;\n  ; # eof"), "." * 3 + "\n")
+
+    def test_lexes_real_file(self):
+        text = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
+        expected = sum(1 for c in text if not c.isspace())
+        self.assertEqual(self.lex_dots(text), "." * expected + "\n")
+
+
 if __name__ == "__main__":
     unittest.main()

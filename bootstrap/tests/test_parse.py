@@ -37,12 +37,10 @@ class TestCorpus(unittest.TestCase):
 
     def test_main_moss_shape(self):
         file = parse((REPO / "src/main.moss").read_text(encoding="utf-8"))
-        self.assertEqual(len(file.imports), 5)
-        self.assertEqual(file.imports[0].path, "./cli.moss")
-        self.assertEqual(file.imports[0].alias, "cli")
-        self.assertTrue(file.imports[1].glob)
+        (imp,) = file.imports
+        self.assertEqual((imp.path, imp.alias), ("./cli.moss", "cli"))
         (assume,) = file.decls
-        self.assertEqual(assume.items, [ast.AssumeItem(["Wasm"], None), ast.AssumeItem(["Wasi"], None)])
+        self.assertEqual(assume.items, [ast.AssumeItem(["Std"], None)])
         (fn,) = assume.decls
         self.assertEqual(fn.name, ast.FnName(None, False, "main"))
         self.assertEqual(fn.body.stmts, [ast.ExprStmt(ast.Call(ast.PathExpr(["cli", "cli"], None), []))])

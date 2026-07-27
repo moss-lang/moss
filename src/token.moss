@@ -1,4 +1,8 @@
+# The token set of docs/reference/syntax.md.
+
 unit Eof;
+
+# One-character symbols.
 unit Exclam;
 unit Percent;
 unit Ampersand;
@@ -21,33 +25,40 @@ unit Caret;
 unit LBrace;
 unit Pipe;
 unit RBrace;
+
+# Two-character symbols.
 unit ExclamEqual;
 unit ColonColon;
+unit EqualGreater;
 unit LessLess;
 unit LessEqual;
 unit EqualEqual;
 unit GreaterEqual;
 unit GreaterGreater;
+
+# Keywords.
 unit As;
 unit Assume;
 unit Bind;
+unit Break;
 unit Context;
 unit Else;
 unit Fn;
+unit For;
 unit If;
 unit Import;
 unit Let;
+unit Loop;
+unit Match;
+unit Return;
+unit ThisType;
+unit ThisValue;
 unit Type;
+unit Unit;
 unit Use;
 unit Val;
 unit Var;
 unit While;
+
 unit Name;
-unit Uint32;
-unit Int32;
-unit Uint64;
-unit Int64;
-unit Uint;
-unit Int;
-unit Char;
 unit Str;
