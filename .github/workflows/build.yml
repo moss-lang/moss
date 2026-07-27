@@ -6,6 +6,13 @@ on:
       - main
 
 jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 -m unittest
+        working-directory: bootstrap
+
   x86_64-linux:
     runs-on: ubuntu-24.04
     steps:

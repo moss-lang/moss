@@ -23,6 +23,23 @@ If you don't use Nix, the only thing you need for the compiler itself is [Rust](
 - `cargo run --release` for a release build
 - `cargo run --profile=release-with-debug` for a release build with debug info
 
+## Bootstrap compiler
+
+The language is currently in its third design iteration, and the working
+implementation for it is a dependency-free Python program under
+[`bootstrap`](bootstrap):
+
+```sh
+cd bootstrap
+python3 -m mossc run ../examples/hello.moss
+python3 -m unittest   # the test suite
+```
+
+The Rust compiler described below implements the *previous* iteration of the
+language and does not understand current syntax; see
+[`docs/design/semantics.md`](docs/design/semantics.md) for where the design
+stands and [`bootstrap/README.md`](bootstrap/README.md) for the pipeline.
+
 ## Usage
 
 Moss source files use the `.moss` file extension, and can be made into executable scripts on Unix OSes via the `#!/usr/bin/env moss` shebang. For instance:
