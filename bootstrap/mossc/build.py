@@ -17,8 +17,12 @@ must stay below the heap base); match compiles to code/pointer tests;
 strings are [len|bytes] entering via a WASI args shim; CellInt is a boxed
 word; IntList is a handle to a [len, cap, elems] block that grows by
 copying. A fn bind compiles by specialising the callee per binding, so a
-contextual call is a direct call and no function table is needed; `Path`
-is what remains outside the slice, and reports itself as such.
+contextual call is a direct call and no function table is needed. `Path`
+is a string relative to the WASI preopen, so `pwd` is empty and `read` is
+path_open plus fd_read — which means the self-hosted compiler, which
+reads its inputs off disk, compiles. What is left outside the slice is
+the i64 half of `Wasm` and matching through `Bool`, both of which report
+themselves.
 
 Alongside that, and under it, the primitive context of D52: a program may
 assume `Wasm` and `Wasi` (lib/wasm.moss, lib/wasip1.moss) instead of
@@ -50,6 +54,7 @@ RETURN = b"\x0f"
 I32_EQZ = b"\x45"
 EMPTY = b"\x40"
 I32 = b"\x7f"
+I64 = b"\x7e"
 UNREACHABLE = b"\x00"
 I32_LOAD8 = b"\x2d"
 I32_STORE8 = b"\x3a"
@@ -65,17 +70,36 @@ I32_STORE = b"\x36"
 WASI = "wasi_snapshot_preview1"
 
 # The shims call these, so they are always imported, always first.
-BASE_IMPORTS = (("fd_write", 4, 1), ("args_sizes_get", 2, 1), ("args_get", 2, 1))
-FD_WRITE, ARGS_SIZES_GET, ARGS_GET = 0, 1, 2
+# Most WASI parameters are i32; the rights masks of path_open are not, so
+# an import's type comes from its declaration rather than from its arity.
+# These are the ones the shims call, so they are always present and always
+# first — and registered up front, since the import section is built
+# before the shim bodies that use them.
+BASE_IMPORTS = (
+    ("fd_write", 4, 1),
+    ("args_sizes_get", 2, 1),
+    ("args_get", 2, 1),
+    ("path_open", (I32, I32, I32, I32, I32, I64, I64, I32, I32), 1),
+    ("fd_read", 4, 1),
+    ("fd_close", 1, 1),
+)
+FD_WRITE, ARGS_SIZES_GET, ARGS_GET, PATH_OPEN, FD_READ, FD_CLOSE = range(6)
 
 SHIMS = (
     "putchar", "alloc", "arg_at", "arg_count", "list_push", "print",
-    "slice", "concat",
+    "slice", "concat", "join", "read",
 )
 (
     S_PUTCHAR, S_ALLOC, S_ARG_AT, S_ARG_COUNT, S_LIST_PUSH, S_PRINT,
-    S_SLICE, S_CONCAT,
+    S_SLICE, S_CONCAT, S_JOIN, S_READ,
 ) = range(len(SHIMS))
+
+# WASI: the first preopened directory. Paths are resolved against it, so
+# `pwd` is the empty path and everything else is relative to wherever the
+# host opened — which is what `wasmtime --dir` decides.
+PREOPEN_FD = 3
+RIGHT_FD_READ = 2
+RIGHT_FD_SEEK = 1
 
 BINOPS = {
     "add": b"\x6a",
@@ -190,7 +214,7 @@ class Backend:
         self.lib = {}
         for module in program.modules.values():
             for short in ("bool", "num", "char", "int", "std", "string",
-                          "strlist", "cell", "list", "wasm", "wasip1"):
+                          "strlist", "cell", "list", "wasm", "wasip1", "path"):
                 if module.path.endswith(f"lib/{short}.moss"):
                     self.lib[short] = module
         self.imports: list[tuple[str, int, int]] = []  # (field, params, results)
@@ -198,12 +222,25 @@ class Backend:
         for field, nparams, nresults in BASE_IMPORTS:
             self.wasi_import(field, nparams, nresults)
 
-    def wasi_import(self, field: str, nparams: int, nresults: int) -> int:
-        """The index of a WASI import, adding it to the module if new."""
+    def wasi_import(self, field: str, params, results) -> int:
+        """The index of a WASI import, adding it to the module if new.
+        `params` and `results` are counts of i32s, or explicit type lists."""
+        if isinstance(params, int):
+            params = (I32,) * params
+        if isinstance(results, int):
+            results = (I32,) * results
         if field not in self.import_index:
             self.import_index[field] = len(self.imports)
-            self.imports.append((field, nparams, nresults))
+            self.imports.append((field, tuple(params), tuple(results)))
         return self.import_index[field]
+
+    def valtype(self, ty_ast) -> bytes:
+        """The Wasm value type a `Wasm` type annotation names."""
+        if "wasm" in self.lib and getattr(ty_ast, "path", None):
+            target = self.lib["wasm"].names.get(ty_ast.path[-1])
+            if target is not None and target is self.lib["wasm"].names.get("I64"):
+                return I64
+        return I32
 
     def shim(self, which: int) -> int:
         return len(self.imports) + which
@@ -318,14 +355,18 @@ class Backend:
         types: list[tuple[int, int]] = []
         type_of: dict[tuple[int, int], int] = {}
 
-        def ty(nparams: int, nresults: int) -> int:
-            key = (nparams, nresults)
+        def ty(params, results) -> int:
+            if isinstance(params, int):
+                params = (I32,) * params
+            if isinstance(results, int):
+                results = (I32,) * results
+            key = (tuple(params), tuple(results))
             if key not in type_of:
                 type_of[key] = len(types)
                 types.append(key)
             return type_of[key]
 
-        import_types = [ty(nparams, nresults) for _, nparams, nresults in self.imports]
+        import_types = [ty(params, results) for _, params, results in self.imports]
         shim_types = [
             ty(1, 0),  # putchar: (char) -> ()
             ty(1, 1),  # alloc: (nbytes) -> addr
@@ -335,12 +376,14 @@ class Backend:
             ty(1, 0),  # print: (string) -> ()
             ty(3, 1),  # slice: (string, start, len) -> string
             ty(2, 1),  # concat: (string, string) -> string
+            ty(2, 1),  # join: (path, name) -> path
+            ty(1, 1),  # read: (path) -> string
         ]
         func_types = [ty(count, 1) for count, _ in ordered]
         start_type = ty(0, 0)
 
         type_section = section(
-            1, vec([b"\x60" + vec([I32] * p) + vec([I32] * r) for p, r in types])
+            1, vec([b"\x60" + vec(list(p)) + vec(list(r)) for p, r in types])
         )
         import_section = section(
             2,
@@ -397,6 +440,8 @@ class Backend:
                 self.print_shim(),
                 self.slice_shim(),
                 self.concat_shim(),
+                self.join_shim(),
+                self.read_shim(),
             ]
             + [b for _, b in ordered]
             + [start_body]
@@ -611,6 +656,99 @@ class Backend:
         b += END
         return bytes(b)
 
+    def join_shim(self) -> bytes:
+        # (path, name) -> path. A path is a [len|bytes] block like a String,
+        # relative to the preopen, so `pwd` is empty and joining onto it is
+        # just the name. Locals: 2 s, 3 i, 4 la.
+        b = bytearray()
+        b += vec([uleb(3) + I32])
+        b += LOCAL_GET + uleb(0) + I32_LOAD + uleb(2) + uleb(0) + LOCAL_SET + uleb(4)
+        b += LOCAL_GET + uleb(4) + I32_EQZ
+        b += IF + EMPTY
+        b += LOCAL_GET + uleb(1) + RETURN
+        b += END
+        # s = alloc(4 + la + 1 + lb); *s = la + 1 + lb
+        b += I32_CONST + sleb(5) + LOCAL_GET + uleb(4) + BINOPS["add"]
+        b += LOCAL_GET + uleb(1) + I32_LOAD + uleb(2) + uleb(0) + BINOPS["add"]
+        b += CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(2)
+        b += LOCAL_GET + uleb(2)
+        b += LOCAL_GET + uleb(4) + I32_CONST + sleb(1) + BINOPS["add"]
+        b += LOCAL_GET + uleb(1) + I32_LOAD + uleb(2) + uleb(0) + BINOPS["add"]
+        b += I32_STORE + uleb(2) + uleb(0)
+        # copy the directory, then '/', then the name
+        for source, offset in ((0, 0), (1, 1)):
+            b += I32_CONST + sleb(0) + LOCAL_SET + uleb(3)
+            b += BLOCK + EMPTY + LOOP + EMPTY
+            b += LOCAL_GET + uleb(3)
+            b += LOCAL_GET + uleb(source) + I32_LOAD + uleb(2) + uleb(0)
+            b += BINOPS["ge"] + BR_IF + uleb(1)
+            b += LOCAL_GET + uleb(2) + LOCAL_GET + uleb(3) + BINOPS["add"]
+            if offset:
+                b += LOCAL_GET + uleb(4) + I32_CONST + sleb(1) + BINOPS["add"]
+                b += BINOPS["add"]
+            b += LOCAL_GET + uleb(source) + LOCAL_GET + uleb(3) + BINOPS["add"]
+            b += I32_LOAD8 + uleb(0) + uleb(4)
+            b += I32_STORE8 + uleb(0) + uleb(4)
+            b += LOCAL_GET + uleb(3) + I32_CONST + sleb(1) + BINOPS["add"]
+            b += LOCAL_SET + uleb(3)
+            b += BR + uleb(0) + END + END
+        b += LOCAL_GET + uleb(2) + LOCAL_GET + uleb(4) + BINOPS["add"]
+        b += I32_CONST + sleb(0x2F) + I32_STORE8 + uleb(0) + uleb(4)  # '/'
+        b += LOCAL_GET + uleb(2)
+        b += END
+        return bytes(b)
+
+    def read_shim(self) -> bytes:
+        # (path) -> string: path_open against the preopen, then fd_read in
+        # chunks straight onto the top of the heap, which the bump
+        # allocator leaves contiguous — so the string is built in place
+        # with no copying. Traps on a path that will not open.
+        # Locals: 1 fd, 2 s, 3 total, 4 n.
+        opened, read, close = PATH_OPEN, FD_READ, FD_CLOSE
+        b = bytearray()
+        b += vec([uleb(4) + I32])
+        # path_open(preopen, 0, path+4, len, 0, RIGHT_FD_READ|SEEK, 0, 0, 32)
+        b += I32_CONST + sleb(PREOPEN_FD) + I32_CONST + sleb(0)
+        b += LOCAL_GET + uleb(0) + I32_CONST + sleb(4) + BINOPS["add"]
+        b += LOCAL_GET + uleb(0) + I32_LOAD + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(0)
+        b += b"\x42" + sleb(RIGHT_FD_READ | RIGHT_FD_SEEK)  # i64.const rights
+        b += b"\x42" + sleb(0)  # i64.const inheriting
+        b += I32_CONST + sleb(0) + I32_CONST + sleb(32)
+        b += CALL + uleb(opened)
+        b += IF + EMPTY + UNREACHABLE + END  # a path that will not open traps
+        b += I32_CONST + sleb(32) + I32_LOAD + uleb(2) + uleb(0) + LOCAL_SET + uleb(1)
+        # s = heap top; the bytes go straight after its length word
+        b += I32_CONST + sleb(4) + CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(2)
+        b += I32_CONST + sleb(0) + LOCAL_SET + uleb(3)
+        b += BLOCK + EMPTY + LOOP + EMPTY
+        # reserve a chunk, then read into it
+        b += I32_CONST + sleb(4096) + CALL + uleb(self.shim(S_ALLOC))
+        b += I32_CONST + sleb(0) + I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(0)
+        b += LOCAL_GET + uleb(2) + I32_CONST + sleb(4) + BINOPS["add"]
+        b += LOCAL_GET + uleb(3) + BINOPS["add"]
+        b += I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(4) + I32_CONST + sleb(4096) + I32_STORE + uleb(2) + uleb(0)
+        b += LOCAL_GET + uleb(1) + I32_CONST + sleb(0) + I32_CONST + sleb(1)
+        b += I32_CONST + sleb(12) + CALL + uleb(read) + DROP
+        b += I32_CONST + sleb(12) + I32_LOAD + uleb(2) + uleb(0) + LOCAL_SET + uleb(4)
+        b += LOCAL_GET + uleb(4) + I32_EQZ + BR_IF + uleb(1)
+        b += LOCAL_GET + uleb(3) + LOCAL_GET + uleb(4) + BINOPS["add"]
+        b += LOCAL_SET + uleb(3)
+        b += BR + uleb(0) + END + END
+        # length word, and hand back the bytes actually read
+        b += LOCAL_GET + uleb(2) + LOCAL_GET + uleb(3) + I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(16)
+        b += LOCAL_GET + uleb(2) + I32_CONST + sleb(4) + BINOPS["add"]
+        b += LOCAL_GET + uleb(3) + BINOPS["add"]
+        b += I32_CONST + sleb(3) + BINOPS["add"] + I32_CONST + sleb(-4) + BINOPS["and"]
+        b += I32_STORE + uleb(2) + uleb(0)
+        b += LOCAL_GET + uleb(1) + CALL + uleb(close) + DROP
+        b += LOCAL_GET + uleb(2)
+        b += END
+        return bytes(b)
+
     def print_shim(self) -> bytes:
         # (string) -> (): fd_write the whole [len|bytes] buffer.
         b = bytearray()
@@ -688,6 +826,8 @@ class FnCompiler:
         const = self.b.native_const(provision)
         if const is not None:
             return ("const", const)
+        if "path" in self.b.lib and key is self.b.lib["path"].names.get("pwd"):
+            return ("empty_string", 0)
         raise NotCompilable(
             f"need `{getattr(key, 'name', key)}` has no compilable provision"
         )
@@ -696,6 +836,14 @@ class FnCompiler:
         kind, value = self.provide(key)
         if kind == "const":
             self.code += I32_CONST + sleb(value)
+        elif kind == "empty_string":
+            # `pwd`: paths are relative to the preopen, so it is empty.
+            tmp = self.local()
+            self.code += I32_CONST + sleb(4)
+            self.code += CALL + uleb(self.b.shim(S_ALLOC)) + LOCAL_SET + uleb(tmp)
+            self.code += LOCAL_GET + uleb(tmp) + I32_CONST + sleb(0)
+            self.code += I32_STORE + uleb(2) + uleb(0)
+            self.code += LOCAL_GET + uleb(tmp)
         else:
             self.code += LOCAL_GET + uleb(value)
 
@@ -1031,6 +1179,16 @@ class FnCompiler:
                     self.code += I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
                     self.code += I32_LOAD + uleb(2) + uleb(8)
                     return
+            if "path" in self.b.lib and method.module is self.b.lib["path"]:
+                if short == "join":
+                    self.expr(node.this)
+                    self.expr(node.args[0])
+                    self.code += CALL + uleb(self.b.shim(S_JOIN))
+                    return
+                if short == "read":
+                    self.expr(node.this)
+                    self.code += CALL + uleb(self.b.shim(S_READ))
+                    return
             if "cell" in self.b.lib and method.module is self.b.lib["cell"]:
                 if short == "read":
                     self.expr(node.this)
@@ -1100,10 +1258,11 @@ class FnCompiler:
             # D52: a WASI function is exactly an import of this module.
             for arg in node.args:
                 self.expr(arg)
-            results = 0 if key.decl.ret is None else 1
-            index = self.b.wasi_import(key.name, len(node.args), results)
+            results = () if key.decl.ret is None else (self.b.valtype(key.decl.ret),)
+            params = tuple(self.b.valtype(p.ty) for p in key.decl.params)
+            index = self.b.wasi_import(key.name, params, results)
             self.code += CALL + uleb(index)
-            if results == 0:
+            if not results:
                 self.code += I32_CONST + sleb(0)  # the Moss call yields ()
             return
         raise NotCompilable(f"contextual fn `{getattr(key, 'name', key)}`")

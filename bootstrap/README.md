@@ -44,8 +44,10 @@ the names they bring in, and a prelude — passed as an argument, since
 `arg_at` lets a program find paths without holding any — puts its scope
 under every module below it. Pointed at `lib/prelude.moss` and
 `src/main.moss` it reaches all eighteen modules of the compiler's own
-sources and explains every name in them. It runs on the interpreter
-only, since `Path` is the one thing left outside the Wasm slice.
+sources and explains every name in them. It compiles too: pointed at
+`lib/prelude.moss` and `src/main.moss`, the whole front end runs as a
+single WASI module that reads all eighteen files off disk and agrees
+with the interpreter exactly.
 
 Under all of that sits the primitive context of D52. A program may
 assume `Wasm` and `Wasi` ([`lib/wasm.moss`](/lib/wasm.moss),

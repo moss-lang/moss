@@ -43,6 +43,24 @@ def compile_wasm(files, entry="main.moss"):
     return build_mod.build(program, lower, main_sym)
 
 
+def run_in_repo(wasm: bytes, args: list[str]) -> str:
+    """Run with the repo preopened, which is what makes `Path` resolve:
+    WASI paths are relative to a preopened directory, so `pwd` is empty."""
+    with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+        f.write(wasm)
+        path = f.name
+    result = subprocess.run(
+        [wasmtime(), "--dir", ".", path, *args],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        cwd=REPO,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"wasmtime failed: {result.stderr}")
+    return result.stdout
+
+
 def run_wasm(wasm: bytes) -> str:
     with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
         f.write(wasm)
@@ -245,11 +263,6 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({}, entry="tests/wasi/bridged.moss")
         self.assertEqual(run_wasm(wasm), "!!")
 
-    def test_out_of_slice_reports_itself(self):
-        source = "assume Std {\n  fn main() { let p = pwd.join(first_arg()); }\n}\n"
-        with self.assertRaises(build_mod.NotCompilable):
-            compile_wasm({"main.moss": source})
-
     def test_char_code_in_wasm(self):
         """Chars are already i32 codepoints here, so `.code()` is an identity —
         but it must still agree with the interpreter."""
@@ -375,6 +388,44 @@ class TestWasmBackend(unittest.TestCase):
             "}\n"
         )
         self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), "yz\n")
+
+    def test_path_read_in_wasm(self):
+        """`Path` was the last thing outside the slice: `pwd` is the empty
+        path, `join` concatenates, and `read` is path_open plus fd_read
+        against the preopen."""
+        source = (
+            "assume Std {\n"
+            "  fn main() {\n"
+            "    let text = pwd.join(first_arg()).read();\n"
+            "    print(text);\n"
+            "  }\n"
+            "}\n"
+        )
+        wasm = compile_wasm({"main.moss": source})
+        expected = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
+        self.assertEqual(run_in_repo(wasm, ["lib/bool.moss"]), expected)
+
+    def test_self_hosted_cli_compiles_to_wasm(self):
+        """src/main.moss, which reads its input file from disk, as a WASI
+        module — matching the interpreter exactly."""
+        wasm = compile_wasm({}, entry="src/main.moss")
+        self.assertEqual(
+            run_in_repo(wasm, ["lib/bool.moss"]),
+            "uFalse;uTrue;tBool;vfalse;vtrue;\n\n\n",
+        )
+
+    def test_self_hosted_collect_compiles_to_wasm(self):
+        """The whole multi-file front end as one module: it loads the
+        prelude and the compiler's own sources off disk — eighteen modules
+        — and explains every name in them."""
+        from tests.test_run import COLLECT_DRIVER
+
+        wasm = compile_wasm({"main.moss": COLLECT_DRIVER})
+        out = run_in_repo(wasm, ["lib/prelude.moss", "src/main.moss"])
+        lines = out.strip().split("\n")
+        self.assertGreater(len(lines), 15)
+        for line in lines:
+            self.assertTrue(line.endswith(":"), f"unresolved names in {line}")
 
     def test_self_hosted_parser_compiles_to_wasm(self):
         """The whole self-hosted front end — lexer, arena parser, interner,
