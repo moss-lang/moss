@@ -42,10 +42,10 @@ implementation forces them, PROPOSED until the designer reacts. So far:
 [D45] (concrete `Bool`), [D46] (module aliases export), [D47] (a finding:
 one-binding-per-key means a multi-type `Std` must use receiver-keyed
 methods, with a consequence for how [D33] operators should desugar), the
-[D31] amendment (optional `let`/`var` type annotations), [D48] (a finding:
-keyword recognition in the self-hosted lexer is unwritable without string
-literals — recommend revisiting [D4]), and [D49] (proper tail calls are a
-language guarantee).
+[D31] amendment (optional `let`/`var` type annotations), [D48] and [D49]
+(both since revised in place after designer review: keywords need no
+string literals — a character trie suffices — and there is no automatic
+tail-call elimination; loops are the idiom).
 
 ## 1. Design thesis
 
@@ -171,7 +171,7 @@ a file consisting only of imports, whose own importers then `use *` it.
 re-export; so the rule is: explicit `use` names become part of the module's
 exports, glob imports do not.)
 
-**[D46] PROPOSED (module aliases are exports).** hello.md's story requires
+**[D46] DECIDED (module aliases are exports).** hello.md's story requires
 the prelude to provide `char` as a *module* (`char::H`); the prelude spells
 that `import "./char.moss" as char;`. So an `as` alias is an export of the
 declaring module, like an explicit `use` name and unlike a glob ([D9]) —
@@ -613,7 +613,8 @@ welcome, but elimination is never implicit semantics. The bootstrap
 interpreter happens to contain a tail-call trampoline — that is a
 non-semantic implementation detail that code must not rely on.
 
-**[D45] PROPOSED (concrete `Bool` as a lang item).** The old
+**[D45] DECIDED (concrete `Bool` as a lang item).** Confirmed by the
+designer as the easiest way for `if` to work. The old
 `lib/bool.moss` made even booleans contextual (`type Bool;` with abstract
 `val true`/`val false`). The bootstrap diverges: `lib/bool.moss` now
 declares concrete units and a transparent alias —
@@ -900,16 +901,21 @@ decisions above are confirmed.
 
 ## 13. Decision index
 
-Still **OPEN** (both post-MVP): D29 the `val` half of functors (static-only
-accepted as the starting point) · braceless `assume` statement form (§12,
-never addressed — default is that it doesn't exist)
+Still awaiting the designer: the [D31] amendment (optional `let`/`var`
+type annotations — forced by forward inference, unreviewed) · [D48] string
+literals, deferred until diagnostics/codegen make embedded strings
+unavoidable · methods on union-headed types (the no-`.not`-on-`Bool`
+wrinkle under [D47]) · **OPEN** post-MVP: D29 the `val` half of functors ·
+braceless `assume` statement form (§12)
 
-Everything else is **DECIDED**: D1–D28 · D30–D44 (D3/D4 by designer fiat,
+Everything else is **DECIDED**: D1–D28 · D30–D49 (D3/D4 by designer fiat,
 D13 option.moss → alias, D16 no post-monomorphization checks, D22 total or
 absent, D24 dropped, D30 depth backstop as sole D16 exception, D31/D35 no
 `for`, D33 no operators with ops.moss as the future desugaring target, D36
 methods via Q1–Q7, D41 keep `unit`, D43 consistent merging, D44 import
-collisions + `::` tighter than `.`)
+collisions + `::` tighter than `.`, D45 concrete `Bool`, D46 aliases
+export, D47 operators are methods, D49 no automatic TCE — loops are the
+idiom)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
