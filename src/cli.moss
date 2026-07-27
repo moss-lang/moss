@@ -1,29 +1,74 @@
+import "./ast.moss" as ast;
+import "./boot.moss" use Boot, Compiler;
+import "./bytes.moss" use *;
+import "./codegen.moss" as codegen;
 import "./intern.moss" as intern;
-import "./lex.moss" as lexer;
-import "./parse.moss" as parser;
-import "./tree.moss" as tree;
+import "./prog.moss" as prog;
+
+# The self-hosted compiler's command line.
+#
+#   moss run src/main.moss PRELUDE ENTRY > out.wasm
+#
+# PRELUDE may be empty, which is what a program written against the
+# primitive context wants: `Wasm` and `Wasi` are imported by name, and
+# there is no standard library underneath (D52).
+#
+# Output is the module's bytes on standard output, or diagnostics — one
+# line each, a letter for the rule and the name that broke it. There are
+# no string literals (D48), so a message is a code and a name rather
+# than a sentence; the codes are the `e_` and `c_` constants of
+# prog.moss and codegen.moss.
 
 assume Std {
-  # Parse the file named by the first argument into the arena tree, then
-  # dump the tree back out (see parse.moss).
   fn cli() {
-    bind lexer::src=pwd.join(first_arg()).read();
-    bind lexer::at=cell_int();
-    bind lexer::mark=cell_int();
-    bind tree::kinds=int_list();
-    bind tree::starts=int_list();
-    bind tree::lens=int_list();
-    bind tree::kids=int_list();
-    bind tree::name_ids=int_list();
-    bind tree::ref_ids=int_list();
-    bind tree::imp_texts=str_list();
-    bind tree::imp_starts=int_list();
-    bind tree::imp_lens=int_list();
-    bind tree::imp_names=int_list();
-    bind tree::imp_stars=int_list();
-    bind intern::ichars=int_list();
-    bind intern::istarts=int_list();
-    bind intern::ilens=int_list();
-    parser::run();
+    bind Boot;
+    compile_entry();
+  }
+
+  assume Compiler {
+    fn compile_entry() {
+      let entry = prog::load_program(arg_at(one), arg_at(one.add(one)));
+      if prog::error_count().gt(zero) {
+        report_collect();
+        return ();
+      }
+      let out = int_list();
+      codegen::compile(entry, out);
+      if codegen::cg_error_count().gt(zero) {
+        report_codegen();
+        return ();
+      }
+      write_bytes(out);
+    }
+
+    fn report_collect() {
+      var e = zero;
+      while e.lt(prog::error_count()) {
+        putchar(char::exclam);
+        putchar(char::A.code().add(prog::err_code.get(e)).char());
+        putchar(char::space);
+        print(prog::module_path(prog::err_mod.get(e)));
+        if ast::is_some(prog::err_name.get(e)) {
+          putchar(char::space);
+          intern::put(prog::err_name.get(e));
+        }
+        putchar(char::newline);
+        e = e.add(one);
+      }
+    }
+
+    fn report_codegen() {
+      var e = zero;
+      while e.lt(codegen::cg_error_count()) {
+        putchar(char::question);
+        putchar(char::A.code().add(codegen::cg_errs.get(e)).char());
+        if ast::is_some(codegen::cg_err_name.get(e)) {
+          putchar(char::space);
+          intern::put(codegen::cg_err_name.get(e));
+        }
+        putchar(char::newline);
+        e = e.add(one);
+      }
+    }
   }
 }

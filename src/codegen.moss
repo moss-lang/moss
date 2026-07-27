@@ -1,0 +1,905 @@
+import "./ast.moss" as ast;
+import "./bytes.moss" use *;
+import "./emit.moss" as emit;
+import "./insn.moss" use *;
+import "./intern.moss" as intern;
+import "./prog.moss" as prog;
+import "./spell.moss" use *;
+import "./wasmops.moss" as wops;
+
+# The back end: the primitive context, straight to Wasm.
+#
+# D52 says a program may assume `Wasm` and `Wasi` rather than `Std`, and
+# that the compiler itself is written that way. This compiles exactly
+# that language: a call to a `Wasm` item becomes the instruction it
+# names, a call to a `Wasi` item becomes a call to an import the module
+# declares, and everything else is an ordinary function.
+#
+# Three passes, because a Wasm function index counts the imports first
+# and so cannot be handed out until every import is known:
+#
+#   1. discover  — walk from `main` to every function it can reach, and
+#                  note every WASI function any of them calls;
+#   2. declare   — create the imports, then the functions;
+#   3. emit      — one body at a time.
+
+assume Std {
+  # What a value occupies: nothing, one i32, or one i64.
+  fn vt_none(): Int { zero }
+  fn vt_32(): Int { one }
+  fn vt_64(): Int { n2() }
+
+  # Back-end diagnostics, one code each.
+  fn c_no_main(): Int { zero }
+  fn c_unsupported(): Int { one }     # a construct outside this slice
+  fn c_unbound(): Int { n2() }        # abstract, and nothing provides it
+  fn c_unknown_op(): Int { n3() }     # a `Wasm` name with no instruction
+  fn c_bad_type(): Int { n4() }
+
+  # Reachable functions, and the Wasm index each gets.
+  val fq_sym: IntList;
+  val fq_index: IntList;
+
+  # WASI functions called anywhere, and the import index each gets.
+  val wi_sym: IntList;
+  val wi_index: IntList;
+
+  # The locals of the function being compiled: interned name, valtype,
+  # and the Wasm index, which is only known once the whole function has
+  # been scanned (locals are grouped by type after the parameters).
+  val lc_name: IntList;
+  val lc_type: IntList;
+  val lc_slot: IntList;
+  val lc_base: CellInt;
+  val lc_visible: CellInt;
+
+  # Open label scopes, and the depth at which each enclosing loop's exit
+  # block sits, so that `break` knows how far out to branch.
+  val cg_depth: CellInt;
+  val cg_loops: IntList;
+  val cg_ntop: CellInt;
+
+  # The modules whose declarations are primitive rather than ordinary:
+  # `Wasm` is instructions, `Wasi` is imports, `Bool` is a lang item
+  # (D45) whose two units are 0 and 1, and `i32_bool` is the coercion
+  # from a comparison to something `if` can take. The bootstrap back end
+  # recognizes exactly the same four by the file that declares them.
+  val cg_wasm: CellInt;
+  val cg_wasi: CellInt;
+  val cg_bool: CellInt;
+  val cg_std: CellInt;
+
+  val cg_errs: IntList;
+  val cg_err_name: IntList;
+
+  context Codegen =
+    fq_sym, fq_index, wi_sym, wi_index,
+    lc_name, lc_type, lc_slot, lc_base, lc_visible,
+    cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
+    cg_errs, cg_err_name;
+
+  assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
+    emit::Emit {
+    fn cg_error(code: Int, name: Int) {
+      cg_errs.push(code);
+      cg_err_name.push(name);
+    }
+
+    fn cg_error_count(): Int { cg_errs.length() }
+
+    fn spelled(): IntList { int_list() }
+
+    # Which module is which. `Wasm` and `Wasi` are recognized by the file
+    # that declares them, so an ordinary function that happens to be
+    # called `i32_add` is still an ordinary function.
+    fn basename(p: String): String {
+      var cut = zero;
+      var i = zero;
+      while i.lt(p.length()) {
+        if p.get(i).eq(char::slash) {
+          cut = i.add(one);
+        }
+        i = i.add(one);
+      }
+      p.slice(cut, p.length().sub(cut))
+    }
+
+    fn name_is(s: String, cs: IntList): Bool {
+      if s.length().ne(cs.length()) {
+        return false;
+      }
+      var i = zero;
+      while i.lt(s.length()) {
+        if s.get(i).code().ne(cs.get(i)) {
+          return false;
+        }
+        i = i.add(one);
+      }
+      true
+    }
+
+    fn find_primitive_modules() {
+      let w = spelled();
+      sp_wasm_moss(w);
+      let a = spelled();
+      sp_wasip1_moss(a);
+      let b = spelled();
+      sp_bool_moss(b);
+      let s = spelled();
+      sp_wasistd_moss(s);
+      cg_wasm.write(ast::none());
+      cg_wasi.write(ast::none());
+      cg_bool.write(ast::none());
+      cg_std.write(ast::none());
+      var m = zero;
+      while m.lt(prog::module_count()) {
+        let base = basename(prog::module_path(m));
+        if name_is(base, w) {
+          cg_wasm.write(m);
+        }
+        if name_is(base, a) {
+          cg_wasi.write(m);
+        }
+        if name_is(base, b) {
+          cg_bool.write(m);
+        }
+        if name_is(base, s) {
+          cg_std.write(m);
+        }
+        m = m.add(one);
+      }
+    }
+
+    fn in_bool(sym: Int): Bool {
+      prog::sym_mod.get(sym).eq(cg_bool.read())
+    }
+
+    # `i32_bool`, the one item of lib/wasistd.moss the back end provides
+    # itself: `Bool` is 0 or 1 with its tag erased, so it is `n != 0`.
+    fn is_i32_bool(sym: Int): Bool {
+      if prog::sym_mod.get(sym).ne(cg_std.read()) {
+        return false;
+      }
+      let cs = spelled();
+      sp_i32_bool(cs);
+      intern::chars_eq(prog::sym_name.get(sym), cs)
+    }
+
+    fn sym_named(sym: Int, cs: IntList): Bool {
+      intern::chars_eq(prog::sym_name.get(sym), cs)
+    }
+
+    fn in_wasm(sym: Int): Bool {
+      prog::sym_mod.get(sym).eq(cg_wasm.read())
+    }
+
+    fn in_wasi(sym: Int): Bool {
+      prog::sym_mod.get(sym).eq(cg_wasi.read())
+    }
+
+    fn is_defined_fn(sym: Int): Bool {
+      if prog::sym_kind.get(sym).ne(prog::sk_fn()) {
+        false
+      } else {
+        ast::is_some(ast::fn_body(prog::sym_decl.get(sym)))
+      }
+    }
+
+    # Types. In this slice a type is `()`, `I32` or `I64`, so a valtype
+    # is the whole of the type system the back end needs.
+
+    fn valtype_of(t: Int, m: Int): Int {
+      if ast::is_some(t).not() {
+        return vt_none();
+      }
+      let k = ast::kind_of(t);
+      if k.eq(ast::k_ty_unit()) {
+        return vt_none();
+      }
+      if k.ne(ast::k_ty_ref()) {
+        cg_error(c_bad_type(), ast::none());
+        return vt_none();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(t));
+      if ast::is_some(sym).not() {
+        cg_error(c_bad_type(), ast::path_last(ast::a_of(t)));
+        return vt_none();
+      }
+      if in_bool(sym) {
+        let bn = spelled();
+        sp_Bool(bn);
+        if sym_named(sym, bn) {
+          return vt_32();
+        }
+      }
+      if in_wasm(sym).not() {
+        cg_error(c_bad_type(), prog::sym_name.get(sym));
+        return vt_none();
+      }
+      let i32n = spelled();
+      sp_I32(i32n);
+      if intern::chars_eq(prog::sym_name.get(sym), i32n) {
+        return vt_32();
+      }
+      let i64n = spelled();
+      sp_I64(i64n);
+      if intern::chars_eq(prog::sym_name.get(sym), i64n) {
+        return vt_64();
+      }
+      cg_error(c_bad_type(), prog::sym_name.get(sym));
+      vt_none()
+    }
+
+    fn wasm_valtype(v: Int): Int {
+      if v.eq(vt_64()) {
+        emit::vt_i64()
+      } else {
+        emit::vt_i32()
+      }
+    }
+
+    # Locals.
+
+    fn add_local(name: Int, ty: Int): Int {
+      lc_name.push(name);
+      lc_type.push(ty);
+      lc_slot.push(ast::none());
+      lc_name.length().sub(one)
+    }
+
+    # The innermost local of this name that is still in scope.
+    fn find_local(name: Int): Int {
+      var i = lc_visible.read();
+      while i.gt(lc_base.read()) {
+        i = i.sub(one);
+        if lc_name.get(i).eq(name) {
+          return i;
+        }
+      }
+      ast::none()
+    }
+
+    # Expression types.
+
+    fn type_of(e: Int, m: Int): Int {
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_unit()) {
+        return vt_none();
+      }
+      if k.eq(ast::k_ex_break()) {
+        return vt_none();
+      }
+      if k.eq(ast::k_ex_return()) {
+        return vt_none();
+      }
+      if k.eq(ast::k_ex_block()) {
+        if ast::is_some(ast::c_of(e)) {
+          return type_of(ast::c_of(e), m);
+        }
+        return vt_none();
+      }
+      if k.eq(ast::k_ex_if()) {
+        return type_of(ast::b_of(e), m);
+      }
+      if k.eq(ast::k_ex_path()) {
+        let local = find_local(ast::path_last(ast::a_of(e)));
+        if ast::is_some(local) {
+          if ast::path_len(ast::a_of(e)).eq(one) {
+            return lc_type.get(local);
+          }
+        }
+        let sym = prog::resolve_path(m, ast::a_of(e));
+        if ast::is_some(sym).not() {
+          return vt_none();
+        }
+        if in_wasm(sym) {
+          let op = wops::find_op(prog::sym_name.get(sym));
+          if ast::is_some(op) {
+            return op_valtype(op);
+          }
+        }
+        if in_bool(sym) {
+          return vt_32();
+        }
+        return vt_none();
+      }
+      if k.eq(ast::k_ex_call()) {
+        let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
+        if ast::is_some(sym).not() {
+          return vt_none();
+        }
+        if in_wasm(sym) {
+          let op = wops::find_op(prog::sym_name.get(sym));
+          if ast::is_some(op) {
+            return op_valtype(op);
+          }
+          return vt_none();
+        }
+        if is_i32_bool(sym) {
+          return vt_32();
+        }
+        return valtype_of(ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
+      }
+      vt_none()
+    }
+
+    fn op_valtype(op: Int): Int {
+      let r = wops::op_res.get(op);
+      if r.eq(wops::wr_i64()) {
+        vt_64()
+      } else if r.eq(wops::wr_i32()) {
+        vt_32()
+      } else {
+        vt_none()
+      }
+    }
+
+    # Pass one: everything reachable from `main`.
+
+    fn queued(sym: Int): Bool {
+      var i = zero;
+      while i.lt(fq_sym.length()) {
+        if fq_sym.get(i).eq(sym) {
+          return true;
+        }
+        i = i.add(one);
+      }
+      false
+    }
+
+    fn imported(sym: Int): Int {
+      var i = zero;
+      while i.lt(wi_sym.length()) {
+        if wi_sym.get(i).eq(sym) {
+          return i;
+        }
+        i = i.add(one);
+      }
+      ast::none()
+    }
+
+    fn discover_expr(e: Int, m: Int) {
+      if ast::is_some(e).not() {
+        return ();
+      }
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_call()) {
+        let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
+        if ast::is_some(sym) {
+          if is_defined_fn(sym) {
+            if queued(sym).not() {
+              fq_sym.push(sym);
+              fq_index.push(ast::none());
+              discover_fn(sym);
+            }
+          } else if in_wasi(sym) {
+            if ast::is_some(imported(sym)).not() {
+              wi_sym.push(sym);
+              wi_index.push(ast::none());
+            }
+          }
+        }
+        var i = zero;
+        while i.lt(ast::c_of(e)) {
+          discover_expr(ast::kid_at(ast::b_of(e), i), m);
+          i = i.add(one);
+        }
+        return ();
+      }
+      if k.eq(ast::k_ex_block()) {
+        var i = zero;
+        while i.lt(ast::b_of(e)) {
+          discover_stmt(ast::kid_at(ast::a_of(e), i), m);
+          i = i.add(one);
+        }
+        discover_expr(ast::c_of(e), m);
+        return ();
+      }
+      if k.eq(ast::k_ex_if()) {
+        discover_expr(ast::a_of(e), m);
+        discover_expr(ast::b_of(e), m);
+        discover_expr(ast::c_of(e), m);
+        return ();
+      }
+      if k.eq(ast::k_ex_return()) {
+        discover_expr(ast::a_of(e), m);
+        return ();
+      }
+    }
+
+    fn discover_stmt(s: Int, m: Int) {
+      let k = ast::kind_of(s);
+      if k.eq(ast::k_st_let()) {
+        discover_expr(ast::c_of(s), m);
+      } else if k.eq(ast::k_st_var()) {
+        discover_expr(ast::c_of(s), m);
+      } else if k.eq(ast::k_st_assign()) {
+        discover_expr(ast::b_of(s), m);
+      } else if k.eq(ast::k_st_while()) {
+        discover_expr(ast::a_of(s), m);
+        discover_expr(ast::b_of(s), m);
+      } else if k.eq(ast::k_st_loop()) {
+        discover_expr(ast::a_of(s), m);
+      } else if k.eq(ast::k_st_expr()) {
+        discover_expr(ast::a_of(s), m);
+      }
+    }
+
+    fn discover_fn(sym: Int) {
+      discover_expr(ast::fn_body(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
+    }
+
+    # Pass two: the index spaces.
+
+    fn signature_of(d: Int, m: Int): Int {
+      let ps = int_list();
+      var i = zero;
+      while i.lt(ast::fn_nparams(d)) {
+        let p = ast::kid_at(ast::fn_params(d), i);
+        ps.push(wasm_valtype(valtype_of(ast::b_of(p), m)));
+        i = i.add(one);
+      }
+      let ret = valtype_of(ast::fn_ret(d), m);
+      if ret.eq(vt_none()) {
+        emit::type_index(ps, zero)
+      } else {
+        emit::type_index(ps, wasm_valtype(ret))
+      }
+    }
+
+    fn declare_all() {
+      var i = zero;
+      while i.lt(wi_sym.length()) {
+        let sym = wi_sym.get(i);
+        let field = int_list();
+        intern::put_chars(field, prog::sym_name.get(sym));
+        let m0 = int_list();
+        sp_wasi_snapshot_preview1(m0);
+        wi_index.set(
+          i,
+          emit::add_import(
+            m0, field,
+            signature_of(prog::sym_decl.get(sym), prog::sym_mod.get(sym))
+          )
+        );
+        i = i.add(one);
+      }
+      i = zero;
+      while i.lt(fq_sym.length()) {
+        let sym = fq_sym.get(i);
+        fq_index.set(
+          i,
+          emit::add_func(
+            signature_of(prog::sym_decl.get(sym), prog::sym_mod.get(sym))
+          )
+        );
+        i = i.add(one);
+      }
+    }
+
+    fn index_of_fn(sym: Int): Int {
+      var i = zero;
+      while i.lt(fq_sym.length()) {
+        if fq_sym.get(i).eq(sym) {
+          return fq_index.get(i);
+        }
+        i = i.add(one);
+      }
+      ast::none()
+    }
+
+    fn index_of_import(sym: Int): Int {
+      let i = imported(sym);
+      if ast::is_some(i) {
+        wi_index.get(i)
+      } else {
+        ast::none()
+      }
+    }
+
+    # Pass three: bodies.
+
+    fn scan_locals_expr(e: Int, m: Int) {
+      if ast::is_some(e).not() {
+        return ();
+      }
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_block()) {
+        let mark = lc_visible.read();
+        var i = zero;
+        while i.lt(ast::b_of(e)) {
+          scan_locals_stmt(ast::kid_at(ast::a_of(e), i), m);
+          i = i.add(one);
+        }
+        scan_locals_expr(ast::c_of(e), m);
+        lc_visible.write(mark);
+      } else if k.eq(ast::k_ex_if()) {
+        scan_locals_expr(ast::b_of(e), m);
+        scan_locals_expr(ast::c_of(e), m);
+      }
+    }
+
+    fn scan_locals_stmt(s: Int, m: Int) {
+      let k = ast::kind_of(s);
+      if k.eq(ast::k_st_let()) {
+        scan_binding(s, m);
+      } else if k.eq(ast::k_st_var()) {
+        scan_binding(s, m);
+      } else if k.eq(ast::k_st_while()) {
+        scan_locals_expr(ast::b_of(s), m);
+      } else if k.eq(ast::k_st_loop()) {
+        scan_locals_expr(ast::a_of(s), m);
+      } else if k.eq(ast::k_st_expr()) {
+        scan_locals_expr(ast::a_of(s), m);
+      }
+    }
+
+    fn scan_binding(s: Int, m: Int) {
+      var ty = valtype_of(ast::b_of(s), m);
+      if ast::is_some(ast::b_of(s)).not() {
+        ty = type_of(ast::c_of(s), m);
+      }
+      add_local(ast::a_of(s), ty);
+      lc_visible.write(lc_visible.read().add(one));
+    }
+
+    # Parameters take the low indices; the rest are grouped by type after
+    # them, which is the shape of the code section's locals vector.
+    fn assign_slots(nparams: Int): Int {
+      var next32 = nparams;
+      var i = lc_base.read().add(nparams);
+      while i.lt(lc_name.length()) {
+        if lc_type.get(i).ne(vt_64()) {
+          lc_slot.set(i, next32);
+          next32 = next32.add(one);
+        }
+        i = i.add(one);
+      }
+      var next64 = next32;
+      i = lc_base.read().add(nparams);
+      while i.lt(lc_name.length()) {
+        if lc_type.get(i).eq(vt_64()) {
+          lc_slot.set(i, next64);
+          next64 = next64.add(one);
+        }
+        i = i.add(one);
+      }
+      next32.sub(nparams)
+    }
+
+    # Emitting returns what the expression leaves on the stack, which is
+    # the only reliable way to know it: a `let`'s local is not visible
+    # until the statement that introduces it has been emitted, so asking
+    # for the type of a block's tail before emitting the block gives the
+    # wrong answer.
+    fn emit_expr(body: IntList, e: Int, m: Int): Int {
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_unit()) {
+        return vt_none();
+      }
+      if k.eq(ast::k_ex_block()) {
+        return emit_block(body, e, m);
+      }
+      if k.eq(ast::k_ex_if()) {
+        return emit_if(body, e, m);
+      }
+      if k.eq(ast::k_ex_break()) {
+        if cg_ntop.read().eq(zero) {
+          cg_error(c_unsupported(), ast::none());
+          return vt_none();
+        }
+        op_br(body, cg_depth.read().sub(cg_loops.get(cg_ntop.read().sub(one))));
+        return vt_none();
+      }
+      if k.eq(ast::k_ex_return()) {
+        if ast::is_some(ast::a_of(e)) {
+          emit_expr(body, ast::a_of(e), m);
+        }
+        op_return(body);
+        return vt_none();
+      }
+      if k.eq(ast::k_ex_path()) {
+        return emit_path(body, e, m);
+      }
+      if k.eq(ast::k_ex_call()) {
+        return emit_call(body, e, m);
+      }
+      cg_error(c_unsupported(), ast::none());
+      vt_none()
+    }
+
+    fn emit_path(body: IntList, e: Int, m: Int): Int {
+      let p = ast::a_of(e);
+      if ast::path_len(p).eq(one) {
+        let local = find_local(ast::path_at(p, zero));
+        if ast::is_some(local) {
+          op_local_get(body, lc_slot.get(local));
+          return lc_type.get(local);
+        }
+      }
+      let sym = prog::resolve_path(m, p);
+      if ast::is_some(sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(p));
+        return vt_none();
+      }
+      if in_wasm(sym) {
+        let op = wops::find_op(prog::sym_name.get(sym));
+        if ast::is_some(op) {
+          emit_op(body, op);
+          return op_valtype(op);
+        }
+        cg_error(c_unknown_op(), prog::sym_name.get(sym));
+        return vt_none();
+      }
+      if in_bool(sym) {
+        let t = spelled();
+        sp_true(t);
+        if sym_named(sym, t) {
+          op_i32_const(body, one);
+          return vt_32();
+        }
+        let f = spelled();
+        sp_false(f);
+        if sym_named(sym, f) {
+          op_i32_const(body, zero);
+          return vt_32();
+        }
+      }
+      cg_error(c_unbound(), prog::sym_name.get(sym));
+      vt_none()
+    }
+
+    fn emit_call(body: IntList, e: Int, m: Int): Int {
+      let callee = ast::a_of(e);
+      let sym = prog::resolve_path(m, ast::a_of(callee));
+      if ast::is_some(sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(callee)));
+        return vt_none();
+      }
+      var i = zero;
+      while i.lt(ast::c_of(e)) {
+        emit_expr(body, ast::kid_at(ast::b_of(e), i), m);
+        i = i.add(one);
+      }
+      if in_wasm(sym) {
+        let op = wops::find_op(prog::sym_name.get(sym));
+        if ast::is_some(op) {
+          emit_op(body, op);
+          return op_valtype(op);
+        }
+        cg_error(c_unknown_op(), prog::sym_name.get(sym));
+        return vt_none();
+      }
+      if is_i32_bool(sym) {
+        op_i32_const(body, zero);
+        body.push(hex(n4(), n7()));
+        return vt_32();
+      }
+      if is_defined_fn(sym) {
+        op_call(body, index_of_fn(sym));
+        return valtype_of(
+          ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
+        );
+      }
+      if in_wasi(sym) {
+        op_call(body, index_of_import(sym));
+        return valtype_of(
+          ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
+        );
+      }
+      cg_error(c_unbound(), prog::sym_name.get(sym));
+      vt_none()
+    }
+
+    fn emit_op(body: IntList, op: Int) {
+      let kind = wops::op_kinds.get(op);
+      let code = wops::op_codes.get(op);
+      if kind.eq(wops::wk_simple()) {
+        body.push(code);
+      } else if kind.eq(wops::wk_memarg()) {
+        op_mem(body, code, wops::op_aligns.get(op));
+      } else if kind.eq(wops::wk_const0()) {
+        op_i32_const(body, zero);
+      } else if kind.eq(wops::wk_const1()) {
+        op_i32_const(body, one);
+      } else if kind.eq(wops::wk_memzero()) {
+        body.push(code);
+        body.push(zero);
+      } else if kind.eq(wops::wk_memcopy()) {
+        op_memory_copy(body);
+      } else {
+        op_memory_fill(body);
+      }
+    }
+
+    fn emit_block(body: IntList, e: Int, m: Int): Int {
+      let mark = lc_visible.read();
+      var i = zero;
+      while i.lt(ast::b_of(e)) {
+        emit_stmt(body, ast::kid_at(ast::a_of(e), i), m);
+        i = i.add(one);
+      }
+      var ty = vt_none();
+      if ast::is_some(ast::c_of(e)) {
+        ty = emit_expr(body, ast::c_of(e), m);
+      }
+      lc_visible.write(mark);
+      ty
+    }
+
+    # The block type is an immediate of the `if` opcode, so it has to be
+    # written before the branch it describes — and it is only known once
+    # that branch has been emitted. So the branch goes into a buffer of
+    # its own first. The depth is raised around that, since a `break`
+    # inside it counts this `if` as one level.
+    fn emit_if(body: IntList, e: Int, m: Int): Int {
+      emit_expr(body, ast::a_of(e), m);
+      cg_depth.write(cg_depth.read().add(one));
+      let then = int_list();
+      let ty = emit_expr(then, ast::b_of(e), m);
+      if ty.eq(vt_none()) {
+        op_if(body, bt_empty());
+      } else {
+        op_if(body, wasm_valtype(ty));
+      }
+      push_bytes(body, then);
+      if ast::is_some(ast::c_of(e)) {
+        op_else(body);
+        emit_expr(body, ast::c_of(e), m);
+      } else if ty.ne(vt_none()) {
+        cg_error(c_unsupported(), ast::none());
+      }
+      op_end(body);
+      cg_depth.write(cg_depth.read().sub(one));
+      ty
+    }
+
+    fn push_loop(level: Int) {
+      if cg_ntop.read().lt(cg_loops.length()) {
+        cg_loops.set(cg_ntop.read(), level);
+      } else {
+        cg_loops.push(level);
+      }
+      cg_ntop.write(cg_ntop.read().add(one));
+    }
+
+    fn emit_stmt(body: IntList, s: Int, m: Int) {
+      let k = ast::kind_of(s);
+      if k.eq(ast::k_st_let()) {
+        emit_binding(body, s, m);
+      } else if k.eq(ast::k_st_var()) {
+        emit_binding(body, s, m);
+      } else if k.eq(ast::k_st_assign()) {
+        emit_expr(body, ast::b_of(s), m);
+        let local = find_local(ast::a_of(s));
+        if ast::is_some(local) {
+          op_local_set(body, lc_slot.get(local));
+        } else {
+          cg_error(prog::e_scope(), ast::a_of(s));
+        }
+      } else if k.eq(ast::k_st_while()) {
+        op_block(body, bt_empty());
+        cg_depth.write(cg_depth.read().add(one));
+        let exit = cg_depth.read();
+        push_loop(exit);
+        op_loop(body, bt_empty());
+        cg_depth.write(cg_depth.read().add(one));
+        emit_expr(body, ast::a_of(s), m);
+        body.push(hex(n4(), n5()));
+        op_br_if(body, cg_depth.read().sub(exit));
+        emit_expr(body, ast::b_of(s), m);
+        op_br(body, zero);
+        op_end(body);
+        cg_depth.write(cg_depth.read().sub(one));
+        op_end(body);
+        cg_depth.write(cg_depth.read().sub(one));
+        cg_ntop.write(cg_ntop.read().sub(one));
+      } else if k.eq(ast::k_st_loop()) {
+        op_block(body, bt_empty());
+        cg_depth.write(cg_depth.read().add(one));
+        push_loop(cg_depth.read());
+        op_loop(body, bt_empty());
+        cg_depth.write(cg_depth.read().add(one));
+        emit_expr(body, ast::a_of(s), m);
+        op_br(body, zero);
+        op_end(body);
+        cg_depth.write(cg_depth.read().sub(one));
+        op_end(body);
+        cg_depth.write(cg_depth.read().sub(one));
+        cg_ntop.write(cg_ntop.read().sub(one));
+      } else if k.eq(ast::k_st_expr()) {
+        if emit_expr(body, ast::a_of(s), m).ne(vt_none()) {
+          op_drop(body);
+        }
+      } else {
+        cg_error(c_unsupported(), ast::none());
+      }
+    }
+
+    fn emit_binding(body: IntList, s: Int, m: Int) {
+      emit_expr(body, ast::c_of(s), m);
+      lc_visible.write(lc_visible.read().add(one));
+      let local = find_local(ast::a_of(s));
+      op_local_set(body, lc_slot.get(local));
+    }
+
+    fn compile_body(qi: Int) {
+      let sym = fq_sym.get(qi);
+      let d = prog::sym_decl.get(sym);
+      let m = prog::sym_mod.get(sym);
+      lc_base.write(lc_name.length());
+      lc_visible.write(lc_name.length());
+      cg_depth.write(zero);
+      cg_ntop.write(zero);
+      var i = zero;
+      while i.lt(ast::fn_nparams(d)) {
+        let p = ast::kid_at(ast::fn_params(d), i);
+        # A parameter is a local, and takes the index of its position.
+        lc_slot.set(add_local(ast::a_of(p), valtype_of(ast::b_of(p), m)), i);
+        i = i.add(one);
+      }
+      lc_visible.write(lc_name.length());
+      scan_locals_expr(ast::fn_body(d), m);
+      lc_visible.write(lc_base.read().add(ast::fn_nparams(d)));
+      let n32 = assign_slots(ast::fn_nparams(d));
+      let n64 = lc_name.length().sub(lc_base.read()).sub(ast::fn_nparams(d)).sub(n32);
+      let body = int_list();
+      let want = valtype_of(ast::fn_ret(d), m);
+      let got = emit_expr(body, ast::fn_body(d), m);
+      if want.eq(vt_none()) {
+        if got.ne(vt_none()) {
+          op_drop(body);
+        }
+      } else if got.eq(vt_none()) {
+        # The body always jumped out; the validator still wants a value.
+        op_unreachable(body);
+      }
+      op_end(body);
+      emit::set_body(fq_index.get(qi), n32, n64, body);
+    }
+
+    # The whole module. `_start` is a wrapper rather than `main` itself,
+    # so that the heap pointer the library's allocator reads is set
+    # before anything runs — the same layout the bootstrap backend uses.
+    fn heap_base(): Int { one.shl(n10()) }
+
+    fn heap_pointer(): Int { n16() }
+
+    fn compile(entry: Int, out: IntList) {
+      find_primitive_modules();
+      wops::install_wasm_ops();
+      let mn = spelled();
+      sp_main(mn);
+      let main = prog::lookup(entry, prog::ns_name(), intern::intern_chars(mn));
+      if ast::is_some(main).not() {
+        cg_error(c_no_main(), ast::none());
+        return ();
+      }
+      if is_defined_fn(main).not() {
+        cg_error(c_no_main(), ast::none());
+        return ();
+      }
+      fq_sym.push(main);
+      fq_index.push(ast::none());
+      discover_fn(main);
+      declare_all();
+      let starter = emit::add_func(emit::type_i32(zero, zero));
+      var i = zero;
+      while i.lt(fq_sym.length()) {
+        compile_body(i);
+        i = i.add(one);
+      }
+      let boot = int_list();
+      op_i32_const(boot, heap_pointer());
+      op_i32_const(boot, heap_base());
+      op_i32_store(boot);
+      op_call(boot, fq_index.get(zero));
+      op_end(boot);
+      emit::set_body(starter, zero, zero, boot);
+      emit::mem_pages.write(one);
+      emit::export_start(starter);
+      emit::export_memory();
+      emit::module(out);
+    }
+  }
+}

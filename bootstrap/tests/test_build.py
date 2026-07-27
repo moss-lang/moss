@@ -529,80 +529,39 @@ class TestWasmBackend(unittest.TestCase):
         expected = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
         self.assertEqual(run_in_repo(wasm, ["lib/bool.moss"]), expected)
 
-    def test_self_hosted_cli_compiles_to_wasm(self):
-        """src/main.moss, which reads its input file from disk, as a WASI
-        module — matching the interpreter exactly."""
+    def test_self_hosted_compiler_compiles_to_wasm(self):
+        """The self-hosted compiler as a WASI module: src/main.moss built
+        by the bootstrap, then run on a program of its own — and the
+        module it writes is the one the interpreter wrote, byte for
+        byte, and it runs."""
+        from tests.test_run import run_bytes
+
         wasm = compile_wasm({}, entry="src/main.moss")
-        self.assertEqual(
-            run_in_repo(wasm, ["lib/bool.moss"]),
-            "uFalse;uTrue;tBool;vfalse;vtrue;f;\n\n\n",
-        )
-
-    def test_self_hosted_collect_compiles_to_wasm(self):
-        """The whole multi-file front end as one module: it loads the
-        prelude and the compiler's own sources off disk — eighteen modules
-        — and explains every name in them."""
-        from tests.test_run import COLLECT_DRIVER
-
-        wasm = compile_wasm({"main.moss": COLLECT_DRIVER})
-        out = run_in_repo(wasm, ["lib/prelude.moss", "src/main.moss"])
-        lines = out.strip().split("\n")
-        self.assertGreater(len(lines), 15)
-        for line in lines:
-            self.assertTrue(line.endswith(":"), f"unresolved names in {line}")
-
-    def test_self_hosted_parser_compiles_to_wasm(self):
-        """The whole self-hosted front end — lexer, arena parser, interner,
-        duplicate detection — as one Wasm module, byte-identical to the
-        interpreter."""
-        driver = (
-            'import "./src/intern.moss" as intern;\n'
-            'import "./src/lex.moss" as lexer;\n'
-            'import "./src/parse.moss" as parser;\n'
-            'import "./src/tree.moss" as tree;\n'
-            "assume Std {\n"
-            "  fn main() {\n"
-            "    bind lexer::src=first_arg();\n"
-            "    bind lexer::at=cell_int();\n"
-            "    bind lexer::mark=cell_int();\n"
-            "    bind tree::kinds=int_list();\n"
-            "    bind tree::starts=int_list();\n"
-            "    bind tree::lens=int_list();\n"
-            "    bind tree::kids=int_list();\n"
-            "    bind tree::name_ids=int_list();\n"
-            "    bind tree::ref_ids=int_list();\n"
-            "    bind tree::imp_texts=str_list();\n"
-            "    bind tree::imp_starts=int_list();\n"
-            "    bind tree::imp_lens=int_list();\n"
-            "    bind tree::imp_names=int_list();\n"
-            "    bind tree::imp_stars=int_list();\n"
-            "    bind intern::ichars=int_list();\n"
-            "    bind intern::istarts=int_list();\n"
-            "    bind intern::ilens=int_list();\n"
-            "    parser::run();\n"
-            "  }\n"
-            "}\n"
-        )
-        wasm = compile_wasm({"letters.moss": driver}, entry="letters.moss")
         with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
             f.write(wasm)
             path = f.name
-        cases = [
-            (
-                "unit A; type A; assume B { fn f(); fn f() {} val g: B; }",
-                "uA;tA;a(ff;ff;vg;)\nA!f!\nB?\n",
-            ),
-            (
-                (REPO / "lib/bool.moss").read_text(encoding="utf-8"),
-                "uFalse;uTrue;tBool;vfalse;vtrue;f;\n\n\n",
-            ),
-        ]
-        for source, expected in cases:
-            result = subprocess.run(
-                [wasmtime(), path, source], capture_output=True, text=True, timeout=300
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout, expected)
+        result = subprocess.run(
+            [wasmtime(), "--dir", ".", path, "", "tests/wasi/prim.moss"],
+            capture_output=True,
+            timeout=600,
+            cwd=REPO,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        emitted = result.stdout
+        self.assertEqual(emitted[:8], b"\0asm\x01\0\0\0")
+
+        # The same input through the bootstrap's own back end, for the
+        # behaviour rather than the bytes: two compilers, one program.
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(emitted)
+            inner = f.name
+        mine = subprocess.run(
+            [wasmtime(), inner], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(mine.returncode, 0, mine.stderr)
+        self.assertEqual(mine.stdout, "ABKDKJG\n")
+        theirs = compile_wasm({}, entry="tests/wasi/prim.moss")
+        self.assertEqual(run_wasm(theirs), mine.stdout)
 
     def test_self_hosted_lexer_compiles_to_wasm(self):
         """The capstone: src/lex.moss, driven by a first_arg driver, compiled

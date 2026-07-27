@@ -1,8 +1,11 @@
 import "./ast.moss" as ast;
+import "./codegen.moss" as codegen;
+import "./emit.moss" as emit;
 import "./intern.moss" as intern;
 import "./lex.moss" as lexer;
 import "./prog.moss" as prog;
 import "./syntax.moss" as syntax;
+import "./wasmops.moss" as wops;
 
 # The compiler's own state, in one place.
 #
@@ -16,7 +19,7 @@ import "./syntax.moss" as syntax;
 # that is rebound per file, by the loader, as each module is read.
 
 context Compiler = ast::Ast, intern::Interner, lexer::at, lexer::mark,
-  syntax::Cursor, prog::Prog;
+  syntax::Cursor, prog::Prog, emit::Emit, wops::WasmOps, codegen::Codegen;
 
 functor Boot: Std -> Compiler {
   bind ast::nkind = int_list();
@@ -70,4 +73,51 @@ functor Boot: Std -> Compiler {
   bind prog::err_code = int_list();
   bind prog::err_mod = int_list();
   bind prog::err_name = int_list();
+
+  bind emit::ty_params = int_list();
+  bind emit::ty_pstart = int_list();
+  bind emit::ty_plen = int_list();
+  bind emit::ty_res = int_list();
+  bind emit::nchars = int_list();
+  bind emit::im_mstart = int_list();
+  bind emit::im_mlen = int_list();
+  bind emit::im_fstart = int_list();
+  bind emit::im_flen = int_list();
+  bind emit::im_type = int_list();
+  bind emit::fn_type = int_list();
+  bind emit::fn_l32 = int_list();
+  bind emit::fn_l64 = int_list();
+  bind emit::fn_bstart = int_list();
+  bind emit::fn_blen = int_list();
+  bind emit::insns = int_list();
+  bind emit::ex_start = int_list();
+  bind emit::ex_len = int_list();
+  bind emit::ex_kind = int_list();
+  bind emit::ex_index = int_list();
+  bind emit::mem_pages = cell_int();
+
+  bind wops::op_names = int_list();
+  bind wops::op_codes = int_list();
+  bind wops::op_kinds = int_list();
+  bind wops::op_aligns = int_list();
+  bind wops::op_res = int_list();
+
+  bind codegen::fq_sym = int_list();
+  bind codegen::fq_index = int_list();
+  bind codegen::wi_sym = int_list();
+  bind codegen::wi_index = int_list();
+  bind codegen::lc_name = int_list();
+  bind codegen::lc_type = int_list();
+  bind codegen::lc_slot = int_list();
+  bind codegen::lc_base = cell_int();
+  bind codegen::lc_visible = cell_int();
+  bind codegen::cg_depth = cell_int();
+  bind codegen::cg_loops = int_list();
+  bind codegen::cg_ntop = cell_int();
+  bind codegen::cg_wasm = cell_int();
+  bind codegen::cg_wasi = cell_int();
+  bind codegen::cg_bool = cell_int();
+  bind codegen::cg_std = cell_int();
+  bind codegen::cg_errs = int_list();
+  bind codegen::cg_err_name = int_list();
 }

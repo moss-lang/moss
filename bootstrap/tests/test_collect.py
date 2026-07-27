@@ -26,7 +26,7 @@ def fake(files):
 
 class TestLoading(unittest.TestCase):
     def test_real_prelude_graph(self):
-        program = load(str(REPO / "src/prelude.moss"))
+        program = load(str(REPO / "tests/fixtures/prelude.moss"))
         self.assertEqual(len(program.modules), 4)  # prelude, cell, inner, option
         self.assertEqual(program.order[-1], program.entry)
         exports = program.entry.export_names
@@ -34,9 +34,9 @@ class TestLoading(unittest.TestCase):
             self.assertIn(name, exports)
 
     def test_diamond_is_shared(self):
-        program = load(str(REPO / "src/prelude.moss"))
-        cell = program.modules[str(REPO / "src/cell.moss")]
-        option = program.modules[str(REPO / "src/option.moss")]
+        program = load(str(REPO / "tests/fixtures/prelude.moss"))
+        cell = program.modules[str(REPO / "tests/fixtures/cell.moss")]
+        option = program.modules[str(REPO / "tests/fixtures/option.moss")]
         t_via_cell = resolve_path(cell, ["T"])
         t_via_option = resolve_path(option, ["T"])
         self.assertIs(t_via_cell, t_via_option)

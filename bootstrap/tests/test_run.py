@@ -463,8 +463,8 @@ class TestGenerics(unittest.TestCase):
         with a D44 rename keeping src's .read distinct from Std's."""
         files = {
             "main.moss": (
-                'import "./src/inner.moss" use T;\n'
-                'import "./src/cell.moss" use Cell, IsCell, .read as .cread, .write as .cwrite;\n'
+                'import "./tests/fixtures/inner.moss" use T;\n'
+                'import "./tests/fixtures/cell.moss" use Cell, IsCell, .read as .cread, .write as .cwrite;\n'
                 "\n"
                 "assume Std {\n"
                 "  type MyCell CellInt;\n"
@@ -686,8 +686,8 @@ class TestMultiInstantiation(unittest.TestCase):
         (CB, read), distinct atoms, so D51's collision never happens."""
         files = {
             "main.moss": (
-                'import "./src/inner.moss" use T;\n'
-                'import "./src/cell.moss" use Cell, IsCell, .read as .cread, .write as .cwrite;\n'
+                'import "./tests/fixtures/inner.moss" use T;\n'
+                'import "./tests/fixtures/cell.moss" use Cell, IsCell, .read as .cread, .write as .cwrite;\n'
                 "\n"
                 "assume Std {\n"
                 "  type CA CellInt;\n"
@@ -762,277 +762,6 @@ class TestInterner(unittest.TestCase):
         self.assertEqual(
             run({"main.moss": ARENA_DRIVER}, args=["abcd"]), "abcdyd\n"
         )
-
-
-COLLECT_DRIVER = (
-    'import "./src/collect.moss" as collect;\n'
-    'import "./src/intern.moss" as intern;\n'
-    'import "./src/lex.moss" as lexer;\n'
-    'import "./src/mods.moss" as mods;\n'
-    'import "./src/tree.moss" as tree;\n'
-    "assume Std {\n"
-    "  fn main() {\n"
-    "    bind lexer::at=cell_int();\n"
-    "    bind lexer::mark=cell_int();\n"
-    "    bind tree::kinds=int_list();\n"
-    "    bind tree::starts=int_list();\n"
-    "    bind tree::lens=int_list();\n"
-    "    bind tree::kids=int_list();\n"
-    "    bind tree::name_ids=int_list();\n"
-    "    bind tree::ref_ids=int_list();\n"
-    "    bind tree::imp_texts=str_list();\n"
-    "    bind tree::imp_starts=int_list();\n"
-    "    bind tree::imp_lens=int_list();\n"
-    "    bind tree::imp_names=int_list();\n"
-    "    bind tree::imp_stars=int_list();\n"
-    "    bind intern::ichars=int_list();\n"
-    "    bind intern::istarts=int_list();\n"
-    "    bind intern::ilens=int_list();\n"
-    "    bind mods::mpaths=str_list();\n"
-    "    bind mods::mnodes=int_list();\n"
-    "    bind mods::mrefs=int_list();\n"
-    "    bind mods::mimps=int_list();\n"
-    "    bind mods::mkids=int_list();\n"
-    "    bind mods::mkidlens=int_list();\n"
-    "    bind mods::itargets=int_list();\n"
-    "    bind mods::pbound=cell_int();\n"
-    "    if arg_count().gt(one.add(one)) {\n"
-    "      collect::run_with_prelude(first_arg(), arg_at(one.add(one)));\n"
-    "    } else {\n"
-    "      collect::run(first_arg());\n"
-    "    }\n"
-    "  }\n"
-    "}\n"
-)
-
-
-class TestSelfHostedCollect(unittest.TestCase):
-    """src/collect.moss loads the entry file and its imports, transitively,
-    and reports per module: `name!` for a duplicate declaration, `name?`
-    for a reference nothing in scope explains."""
-
-    def collect(self, files, entry, prelude=None):
-        import os
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as tmp:
-            for rel, text in files.items():
-                path = Path(tmp) / rel
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(text, encoding="utf-8")
-            cwd = os.getcwd()
-            os.chdir(tmp)  # the loader reads paths relative to `pwd`
-            try:
-                argv = [entry] if prelude is None else [prelude, entry]
-                return run({"main.moss": COLLECT_DRIVER}, args=argv)
-            finally:
-                os.chdir(cwd)
-
-    def test_imports_bring_names_into_scope(self):
-        files = {
-            "a.moss": 'import "./b.moss" use B;\n'
-            'import "./c.moss" as c;\n'
-            "type A;\nval v: B;\nval w: Missing;\nval x: A;\n",
-            "b.moss": "type B;\nval q: Nope;\n",
-            "c.moss": "type C;\n",
-        }
-        # B comes from the use list, c from the alias, A from a.moss
-        # itself; Missing and Nope are explained by nothing.
-        self.assertEqual(
-            self.collect(files, "a.moss"),
-            "a.moss:Missing?\nb.moss:Nope?\nc.moss:\n",
-        )
-
-    def test_use_star_and_import_cycle(self):
-        files = {
-            "d.moss": 'import "./e.moss" use *;\nval v: Shared;\nval w: Hidden;\n',
-            "e.moss": 'import "./d.moss" use v;\ntype Shared;\nval u: v;\n',
-        }
-        # `use *` takes whatever e.moss declares, and the cycle ends
-        # because a path already in the table is not queued again.
-        self.assertEqual(self.collect(files, "d.moss"), "d.moss:Hidden?\ne.moss:\n")
-
-    def test_import_paths_are_relative_to_the_importer(self):
-        files = {
-            "f.moss": 'import "./sub/g.moss" use G;\nval v: G;\n',
-            "sub/g.moss": "type G;\nval h: Absent;\n",
-        }
-        self.assertEqual(self.collect(files, "f.moss"), "f.moss:\nsub/g.moss:Absent?\n")
-
-    def test_duplicates_reported_per_module(self):
-        files = {
-            "h.moss": 'import "./i.moss" use I;\nunit U;\ntype U;\nval v: I;\n',
-            "i.moss": "type I;\nunit I;\n",
-        }
-        self.assertEqual(self.collect(files, "h.moss"), "h.moss:U!\ni.moss:I!\n")
-
-    def test_prelude_names_need_no_import(self):
-        """The one non-lexical lookup: whatever the prelude has in scope is
-        in scope below it. The prelude's *own* imports do not get that
-        fallback, so other.moss cannot see base.moss's names — the standard
-        library must not depend on what it defines."""
-        files = {
-            "pre.moss": 'import "./base.moss" use Base, helper;\n'
-            'import "./other.moss" use Other;\n',
-            "base.moss": "type Base;\nfn helper();\n",
-            "other.moss": "type Other;\nval leaks: Base;\n",
-            "user.moss": "val v: Base;\nval w: Ghost;\nfn f(): helper;\n",
-        }
-        self.assertEqual(
-            self.collect(files, "user.moss", prelude="pre.moss"),
-            "pre.moss:\nbase.moss:\nother.moss:Base?\nuser.moss:Ghost?\n",
-        )
-
-    def test_resolves_the_real_compiler_sources(self):
-        """The whole thing, on itself: the self-hosted collect walks
-        lib/prelude.moss and src/main.moss to every module either reaches
-        and explains every name in all of them."""
-        import os
-
-        cwd = os.getcwd()
-        os.chdir(REPO)
-        try:
-            out = run(
-                {"main.moss": COLLECT_DRIVER},
-                args=["lib/prelude.moss", "src/main.moss"],
-            )
-        finally:
-            os.chdir(cwd)
-        lines = out.strip().split("\n")
-        self.assertGreater(len(lines), 15)
-        for line in lines:
-            self.assertTrue(line.endswith(":"), f"unresolved names in {line}")
-        self.assertIn("src/parse.moss:", lines)
-        self.assertIn("lib/std.moss:", lines)
-
-    def test_duplicates_inside_assume_blocks(self):
-        """A module's root ids land in `kids` *after* the children of every
-        assume block it contains, so the module's root span is only known
-        once parsing finishes."""
-        files = {"j.moss": "assume A { unit P; type P; }\nunit Q;\ntype Q;\n"}
-        self.assertEqual(self.collect(files, "j.moss"), "j.moss:P!Q!\n")
-
-
-class TestSelfHostedParser(unittest.TestCase):
-    """src/main.moss drives src/parse.moss: one letter per declaration
-    (i=import, a=assume, t=type, u=unit, v=val, c=context, f=fn, x=junk)."""
-
-    def parse_letters(self, source):
-        import tempfile
-
-        with tempfile.NamedTemporaryFile("w", suffix=".moss", delete=False) as f:
-            f.write(source)
-            target = f.name
-        return run({}, entry=str(REPO / "src/main.moss"), args=[target])
-
-    def test_shapes(self):
-        source = (
-            'import "./x.moss" use A;\n'
-            "unit U;\n"
-            "type T { a: A };\n"
-            "assume A {\n"
-            "  val v: A;\n"
-            "  fn f(): A;\n"
-            "  fn g() { if b { c(); } loop { break; } }\n"
-            "  assume v { fn h(); }\n"
-            "}\n"
-            "context C = A;\n"
-        )
-        self.assertEqual(
-            self.parse_letters(source), "i./x.moss,A;uU;tT;a(vv;ff;fg;a(fh;))cC;\n\n\n"
-        )
-
-    def test_import_names(self):
-        """An import's row records the names it makes visible: the module
-        alias, each use item under its local name, and `*` on its own.
-        `.m` items are detached methods, not names, so they contribute
-        nothing."""
-        cases = {
-            'import "./a.moss";\n': "i./a.moss;\n\n\n",
-            'import "./a.moss" as m;\n': "i./a.moss,m;\n\n\n",
-            'import "./a.moss" use *;\n': "i./a.moss*;\n\n\n",
-            'import "./a.moss" use A, B;\n': "i./a.moss,A,B;\n\n\n",
-            'import "./a.moss" as m use A;\n': "i./a.moss,m,A;\n\n\n",
-            'import "./a.moss" use A as B;\n': "i./a.moss,B;\n\n\n",
-            'import "./a.moss" use .m, .n as .n1;\n': "i./a.moss;\n\n\n",
-        }
-        for source, expected in cases.items():
-            with self.subTest(source=source):
-                self.assertEqual(self.parse_letters(source), expected)
-
-    def test_junk_marked(self):
-        self.assertEqual(self.parse_letters("; unit U;"), "?;uU;\n\n\n")
-
-    def test_real_files_have_no_junk(self):
-        for rel in [
-            "lib/bool.moss",
-            "lib/std.moss",
-            "src/lex.moss",
-            "src/parse.moss",
-            "src/tree.moss",
-        ]:
-            with self.subTest(file=rel):
-                text = (REPO / rel).read_text(encoding="utf-8")
-                out = self.parse_letters(text)
-                # Only the tree line: `?` also marks unresolved references,
-                # and real files reference prelude names the self-hosted
-                # resolver cannot see until it loads modules.
-                self.assertNotIn("?", out.split("\n")[0])
-                self.assertGreater(len(out.strip()), 0)
-
-    def test_parses_itself(self):
-        text = (REPO / "src/parse.moss").read_text(encoding="utf-8")
-        self.assertEqual(
-            self.parse_letters(text),
-            "i./lex.moss,lexer,Token;i./token.moss*;"
-            "i./intern.moss,intern;i./tree.moss,tree;"
-            "a(a(fput_name;fhas_name;"
-            "a(fskip_braces;frefscan_to_semi;fimport_tail;fskip_to_semi;"
-            "frefscan_fn;fnamed;fdecls;ffile;frun;)"
-            "fdump;fdups;fdeclared;fcontains;fresolve;))\n\n\n",
-        )
-
-    def test_names_read_back_from_the_arena(self):
-        text = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
-        self.assertEqual(
-            self.parse_letters(text), "uFalse;uTrue;tBool;vfalse;vtrue;f;\n\n\n"
-        )
-
-    def test_duplicate_declarations_reported(self):
-        """Collect's first check, self-hosted: two declarations sharing a
-        name in one scope, found via interned name ids in the arena."""
-        source = (
-            "unit A;\n"
-            "type A;\n"
-            "assume B {\n"
-            "  fn f();\n"
-            "  fn f() {}\n"
-            "  val g: B;\n"
-            "}\n"
-        )
-        # The third line is resolution: B is referenced but never declared.
-        self.assertEqual(
-            self.parse_letters(source), "uA;tA;a(ff;ff;vg;)\nA!f!\nB?\n"
-        )
-
-    def test_unresolved_references_reported(self):
-        """Collect's second check, self-hosted: references that name no
-        declaration print as name+? — the "not in scope" error."""
-        source = (
-            "type A;\n"
-            "val v: A;\n"
-            "val w: B;\n"
-            "assume A {\n"
-            "  fn f(x: A): Missing;\n"
-            "}\n"
-        )
-        self.assertEqual(
-            self.parse_letters(source), "tA;vv;vw;a(ff;)\n\nB?Missing?\n"
-        )
-
-    def test_method_names(self):
-        source = "assume A { fn T.m(); fn .d(); fn plain(); }"
-        self.assertEqual(self.parse_letters(source), "a(f;fd;fplain;)\n\n\n")
 
 
 class TestSelfHostedEmitter(unittest.TestCase):
@@ -1280,3 +1009,81 @@ class TestSelfHostedCollectScopes(unittest.TestCase):
                 self.assertEqual(
                     self.rows_from_moss(entry), self.rows_from_bootstrap(entry)
                 )
+
+
+COMPILER_DRIVER = (
+    'import "./src/cli.moss" as cli;\n'
+    "assume Std {\n"
+    "  fn main() { cli::cli(); }\n"
+    "}\n"
+)
+
+
+class TestSelfHostedBackEnd(unittest.TestCase):
+    """The self-hosted compiler, end to end: src/ reads a Moss program off
+    disk, resolves it, and writes a WASI module that runs.
+
+    The language it covers is the primitive context of D52 — `Wasm`
+    instructions, `Wasi` imports, `Bool` for `if` to eliminate, plain
+    functions, `let`/`var`, `if`/`else`, `while`, `loop`/`break` and
+    `return`. That is what tests/wasi/raw.moss and tests/wasi/prim.moss
+    are written in, and the bootstrap compiles them too, so both
+    compilers can be held to the same program's behaviour.
+    """
+
+    def compile_with_moss(self, entry, prelude=""):
+        import os
+
+        cwd = os.getcwd()
+        os.chdir(REPO)
+        try:
+            return run_bytes({"main.moss": COMPILER_DRIVER}, args=[prelude, entry])
+        finally:
+            os.chdir(cwd)
+
+    def wasmtime_run(self, module, expect_code=0):
+        import shutil
+        import subprocess
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(module)
+            path = f.name
+        result = subprocess.run(
+            [shutil.which("wasmtime"), path],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(result.returncode, expect_code, result.stderr)
+        return result.stdout
+
+    def test_raw_wasi_program(self):
+        module = self.compile_with_moss("tests/wasi/raw.moss")
+        self.assertEqual(module[:8], b"\0asm\x01\0\0\0")
+        # proc_exit(3), exactly as under the bootstrap's back end.
+        self.assertEqual(self.wasmtime_run(module, expect_code=3), "A\n")
+
+    def test_control_flow_and_i64(self):
+        module = self.compile_with_moss("tests/wasi/prim.moss")
+        self.assertEqual(self.wasmtime_run(module), "ABKDKJG\n")
+
+    def test_matches_the_bootstrap_on_behaviour(self):
+        """Two compilers, one program: the bytes differ — the bootstrap
+        emits shims this back end has no need for — but what the modules
+        do is the same."""
+        from .test_build import compile_wasm, run_wasm
+
+        for entry, expected in (("tests/wasi/prim.moss", "ABKDKJG\n"),):
+            with self.subTest(entry=entry):
+                mine = self.wasmtime_run(self.compile_with_moss(entry))
+                self.assertEqual(mine, expected)
+                self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), expected)
+
+    def test_a_program_beyond_the_slice_is_reported(self):
+        """`Std` is a library over the primitive context, and providing it
+        means functors, methods and tags — none of which this back end
+        compiles yet. It says so rather than emitting something wrong."""
+        out = self.compile_with_moss("examples/hello.moss", prelude="lib/prelude.moss")
+        self.assertNotEqual(out[:4], b"\0asm")
+        self.assertTrue(out.decode("utf-8").startswith("?"))

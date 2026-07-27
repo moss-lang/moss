@@ -140,4 +140,109 @@ assume Std {
     push_char(out, char::y);
   }
 
+  fn sp_main(out: IntList) {
+    push_char(out, char::m);
+    push_char(out, char::a);
+    push_char(out, char::i);
+    push_char(out, char::n);
+  }
+
+  fn sp_wasm_moss(out: IntList) {
+    push_char(out, char::w);
+    push_char(out, char::a);
+    push_char(out, char::s);
+    push_char(out, char::m);
+    push_char(out, char::dot);
+    push_char(out, char::m);
+    push_char(out, char::o);
+    push_char(out, char::s);
+    push_char(out, char::s);
+  }
+
+  fn sp_wasip1_moss(out: IntList) {
+    push_char(out, char::w);
+    push_char(out, char::a);
+    push_char(out, char::s);
+    push_char(out, char::i);
+    push_char(out, char::p);
+    push_char(out, char::digit1);
+    push_char(out, char::dot);
+    push_char(out, char::m);
+    push_char(out, char::o);
+    push_char(out, char::s);
+    push_char(out, char::s);
+  }
+
+  fn sp_I32(out: IntList) {
+    push_char(out, char::I);
+    push_char(out, char::digit3);
+    push_char(out, char::digit2);
+  }
+
+  fn sp_I64(out: IntList) {
+    push_char(out, char::I);
+    push_char(out, char::digit6);
+    push_char(out, char::digit4);
+  }
+
+  fn sp_bool_moss(out: IntList) {
+    push_char(out, char::b);
+    push_char(out, char::o);
+    push_char(out, char::o);
+    push_char(out, char::l);
+    push_char(out, char::dot);
+    push_char(out, char::m);
+    push_char(out, char::o);
+    push_char(out, char::s);
+    push_char(out, char::s);
+  }
+
+  fn sp_wasistd_moss(out: IntList) {
+    push_char(out, char::w);
+    push_char(out, char::a);
+    push_char(out, char::s);
+    push_char(out, char::i);
+    push_char(out, char::s);
+    push_char(out, char::t);
+    push_char(out, char::d);
+    push_char(out, char::dot);
+    push_char(out, char::m);
+    push_char(out, char::o);
+    push_char(out, char::s);
+    push_char(out, char::s);
+  }
+
+  fn sp_i32_bool(out: IntList) {
+    push_char(out, char::i);
+    push_char(out, char::digit3);
+    push_char(out, char::digit2);
+    push_char(out, char::underscore);
+    push_char(out, char::b);
+    push_char(out, char::o);
+    push_char(out, char::o);
+    push_char(out, char::l);
+  }
+
+  fn sp_Bool(out: IntList) {
+    push_char(out, char::B);
+    push_char(out, char::o);
+    push_char(out, char::o);
+    push_char(out, char::l);
+  }
+
+  fn sp_true(out: IntList) {
+    push_char(out, char::t);
+    push_char(out, char::r);
+    push_char(out, char::u);
+    push_char(out, char::e);
+  }
+
+  fn sp_false(out: IntList) {
+    push_char(out, char::f);
+    push_char(out, char::a);
+    push_char(out, char::l);
+    push_char(out, char::s);
+    push_char(out, char::e);
+  }
+
 }
