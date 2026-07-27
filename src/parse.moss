@@ -292,14 +292,17 @@ assume Std {
                 nl = lexer::at.read().sub(ns);
                 h = lexer::lex();
                 match h {
+                  # `fn Recv.m()` is an attached method: keyed by receiver
+                  # *and* name, so two of them may share a name. Recorded
+                  # with the empty name, which keeps it out of the
+                  # duplicate and resolution checks — approximate, pending
+                  # a real (receiver, name) key.
                   Dot => {
+                    ns = zero;
+                    nl = zero;
                     h = lexer::lex();
                     match h {
-                      Name => {
-                        ns = lexer::mark.read();
-                        nl = lexer::at.read().sub(ns);
-                        h = lexer::lex();
-                      }
+                      Name => { h = lexer::lex(); }
                       _ => (),
                     }
                   }

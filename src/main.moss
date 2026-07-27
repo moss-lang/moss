@@ -1,7 +1,17 @@
-import "./cli.moss" as cli;
+#!/usr/bin/env moss
 
-assume Std {
+import "./cli.moss" as cli;
+import "../lib/wasi.moss" use WasiStd;
+import "../lib/wasistd.moss" use Branch;
+import "../lib/wasm.moss" use Wasm;
+import "../lib/wasip1.moss" use Wasi;
+
+# The self-hosted compiler's entry point (D52): `main` receives the
+# primitive context and installs `Std` — itself written in Moss — before
+# calling into the front end, which is written against `Std` as usual.
+assume Wasm, Wasi, Branch {
   fn main() {
+    bind WasiStd;
     cli::cli();
   }
 }

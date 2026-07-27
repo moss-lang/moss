@@ -82,11 +82,10 @@ class TestWasmBackend(unittest.TestCase):
     def test_examples_match_goldens(self):
         for name in self.EXAMPLES:
             with self.subTest(example=name):
-                source = (REPO / f"examples/{name}.moss").read_text(encoding="utf-8")
                 golden = (REPO / f"tests/examples/stdout/{name}.txt").read_text(
                     encoding="utf-8"
                 )
-                wasm = compile_wasm({"main.moss": source})
+                wasm = compile_wasm({}, entry=f"examples/{name}.moss")
                 self.assertEqual(run_wasm(wasm), golden)
 
     def test_arithmetic_and_loops(self):
@@ -536,7 +535,7 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({}, entry="src/main.moss")
         self.assertEqual(
             run_in_repo(wasm, ["lib/bool.moss"]),
-            "uFalse;uTrue;tBool;vfalse;vtrue;fflip;\n\n\n",
+            "uFalse;uTrue;tBool;vfalse;vtrue;f;\n\n\n",
         )
 
     def test_self_hosted_collect_compiles_to_wasm(self):
@@ -595,7 +594,7 @@ class TestWasmBackend(unittest.TestCase):
             ),
             (
                 (REPO / "lib/bool.moss").read_text(encoding="utf-8"),
-                "uFalse;uTrue;tBool;vfalse;vtrue;fflip;\n\n\n",
+                "uFalse;uTrue;tBool;vfalse;vtrue;f;\n\n\n",
             ),
         ]
         for source, expected in cases:

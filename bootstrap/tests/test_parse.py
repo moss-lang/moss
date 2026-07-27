@@ -47,13 +47,23 @@ class TestCorpus(unittest.TestCase):
 
     def test_main_moss_shape(self):
         file = parse((REPO / "src/main.moss").read_text(encoding="utf-8"))
-        (imp,) = file.imports
-        self.assertEqual((imp.path, imp.alias), ("./cli.moss", "cli"))
+        self.assertEqual(file.imports[0].path, "./cli.moss")
         (assume,) = file.decls
-        self.assertEqual(assume.items, [ast.AssumeItem(["Std"], None)])
+        # D52: `main` receives the primitive context and installs `Std`.
+        self.assertEqual(
+            assume.items,
+            [
+                ast.AssumeItem(["Wasm"], None),
+                ast.AssumeItem(["Wasi"], None),
+                ast.AssumeItem(["Branch"], None),
+            ],
+        )
         (fn,) = assume.decls
         self.assertEqual(fn.name, ast.FnName(None, False, "main"))
-        self.assertEqual(fn.body.stmts, [ast.ExprStmt(ast.Call(ast.PathExpr(["cli", "cli"], None), []))])
+        self.assertEqual(
+            fn.body.stmts[-1],
+            ast.ExprStmt(ast.Call(ast.PathExpr(["cli", "cli"], None), [])),
+        )
 
 
 class TestDeclarations(unittest.TestCase):

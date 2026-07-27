@@ -1,14 +1,23 @@
 #!/usr/bin/env moss
 
+import "../lib/wasi.moss" use WasiStd;
+import "../lib/wasistd.moss" use Branch;
+import "../lib/wasm.moss" use Wasm;
+import "../lib/wasip1.moss" use Wasi;
+
 assume Std {
+
   fn foo(second: Char, first: Char) {
     putchar(first);
     putchar(char::newline);
     putchar(second);
     putchar(char::newline);
   }
+}
 
+assume Wasm, Wasi, Branch {
   fn main() {
+    bind WasiStd;
     foo(char::g, char::h);
   }
 }

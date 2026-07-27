@@ -1,6 +1,12 @@
 #!/usr/bin/env moss
 
+import "../lib/wasi.moss" use WasiStd;
+import "../lib/wasistd.moss" use Branch;
+import "../lib/wasm.moss" use Wasm;
+import "../lib/wasip1.moss" use Wasi;
+
 assume Std {
+
   val c: Char;
 
   fn hi() {
@@ -20,8 +26,11 @@ assume Std {
       print_it();
     }
   }
+}
 
+assume Wasm, Wasi, Branch {
   fn main() {
+    bind WasiStd;
     bind c=char::h;
     hello_hi();
   }

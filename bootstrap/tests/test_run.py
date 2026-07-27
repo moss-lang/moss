@@ -36,8 +36,9 @@ def main_body(body, decls=""):
 
 class TestHello(unittest.TestCase):
     def test_hello_world(self):
-        source = (REPO / "examples/hello.moss").read_text(encoding="utf-8")
-        self.assertEqual(run({"main.moss": source}), "Hello, world!\n")
+        self.assertEqual(
+            run({}, entry="examples/hello.moss"), "Hello, world!\n"
+        )
 
 
 class TestExamples(unittest.TestCase):
@@ -50,11 +51,11 @@ class TestExamples(unittest.TestCase):
     def test_goldens(self):
         for name in self.EXAMPLES:
             with self.subTest(example=name):
-                source = (REPO / f"examples/{name}.moss").read_text(encoding="utf-8")
                 golden = (REPO / f"tests/examples/stdout/{name}.txt").read_text(
                     encoding="utf-8"
                 )
-                self.assertEqual(run({"main.moss": source}), golden)
+                # Loaded in place: an example's imports are relative to it.
+                self.assertEqual(run({}, entry=f"examples/{name}.moss"), golden)
 
 
 class TestErrors(unittest.TestCase):
@@ -983,7 +984,7 @@ class TestSelfHostedParser(unittest.TestCase):
     def test_names_read_back_from_the_arena(self):
         text = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
         self.assertEqual(
-            self.parse_letters(text), "uFalse;uTrue;tBool;vfalse;vtrue;fflip;\n\n\n"
+            self.parse_letters(text), "uFalse;uTrue;tBool;vfalse;vtrue;f;\n\n\n"
         )
 
     def test_duplicate_declarations_reported(self):
@@ -1020,4 +1021,4 @@ class TestSelfHostedParser(unittest.TestCase):
 
     def test_method_names(self):
         source = "assume A { fn T.m(); fn .d(); fn plain(); }"
-        self.assertEqual(self.parse_letters(source), "a(fm;fd;fplain;)\n\n\n")
+        self.assertEqual(self.parse_letters(source), "a(f;fd;fplain;)\n\n\n")
