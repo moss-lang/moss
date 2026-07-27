@@ -255,7 +255,7 @@ class Interp:
         if pat.binder is not None:
             frame.locals[pat.binder] = value.payload
         if pat.fields is not None:
-            for field_name, binder in pat.fields:
+            for field_name, binder, _ in pat.fields:
                 frame.locals[binder] = value.fields[field_name]
         return True
 

@@ -1065,6 +1065,7 @@ class FnChecker:
             if not isinstance(payload_ty, TRecord):
                 self.error(f"`{target.name}` does not have a record payload")
             field_types = dict(payload_ty.fields)
+            indices = {n: i for i, (n, _) in enumerate(payload_ty.fields)}
             binders = []
             fields = []
             for name, sub in pattern.fields:
@@ -1072,14 +1073,14 @@ class FnChecker:
                     self.error(f"`{target.name}` has no field `{name}`")
                 if sub is None:
                     binders.append((name, field_types[name]))
-                    fields.append((name, name))
+                    fields.append((name, name, indices[name]))
                 elif (
                     isinstance(sub, ast.PatPath)
                     and len(sub.path) == 1
                     and resolve_path(self.module, sub.path) is None
                 ):
                     binders.append((sub.path[0], field_types[name]))
-                    fields.append((name, sub.path[0]))
+                    fields.append((name, sub.path[0], indices[name]))
                 else:
                     self.error("v0 record patterns support binders only")
             return ir.Pat(target, None, tuple(fields)), binders, {target}, False
@@ -1209,7 +1210,10 @@ class FnChecker:
         missing = [n for n, _ in payload_ty.fields if n not in given]
         if missing:
             self.error(f"missing field(s) {missing} of `{target.name}`")
-        return ir.MakeRecord(target, tuple(fields)), tag_ty
+        # Emit fields in declaration order so the backend can lay them out.
+        by_name = dict(fields)
+        ordered = tuple((n, by_name[n]) for n, _ in payload_ty.fields)
+        return ir.MakeRecord(target, ordered), tag_ty
 
     def synth_field(self, expr: ast.Field):
         obj, oty = self.synth(expr.obj)
@@ -1218,9 +1222,9 @@ class FnChecker:
             record = self.lower.payload_type(oty, self.env)
         if not isinstance(record, TRecord):
             self.error(f"`{show(oty)}` has no fields")
-        for name, ty in record.fields:
+        for index, (name, ty) in enumerate(record.fields):
             if name == expr.name:
-                return ir.Field(obj, expr.name), ty
+                return ir.Field(obj, expr.name, index), ty
         self.error(f"`{show(oty)}` has no field `{expr.name}`")
 
     def synth_method(self, expr: ast.MethodCall):

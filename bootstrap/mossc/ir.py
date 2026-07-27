@@ -90,6 +90,7 @@ class MakeTuple:
 class Field:
     obj: object
     name: str
+    index: int = -1  # position in the payload record, set by lowering
 
 
 @dataclass(frozen=True)
@@ -104,7 +105,7 @@ class This:
 class Pat:
     head: Symbol | None  # None matches anything (binder/wildcard)
     binder: str | None  # bind whole value (or payload for tag heads)
-    fields: tuple | None  # (name, Pat|None-binder-name) for record payloads
+    fields: tuple | None  # (name, binder, index) for record payloads
 
 
 @dataclass(frozen=True)

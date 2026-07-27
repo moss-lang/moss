@@ -11,9 +11,11 @@ alive at runtime).
 Scalar subset: every value is an i32. Chars are codepoints, Ints are i32,
 `()` is 0, Bool is 0/1 (the nominal tag is erased), other unit values get
 small codes. Std's methods on Int/Char compile to Wasm instructions;
-`putchar` is an fd_write shim. Records, non-Bool tags, match, strings,
-cells, lists, and fn binds are not in this slice and report themselves as
-such.
+`putchar` is an fd_write shim. Tags and records are boxed in linear
+memory behind a bump allocator (units stay scalar, so their codes must
+stay below the heap base), and match compiles to code/pointer tests.
+Strings, cells, lists, and fn binds are not yet in the slice and report
+themselves as such.
 """
 
 import sys
@@ -38,6 +40,9 @@ RETURN = b"\x0f"
 I32_EQZ = b"\x45"
 EMPTY = b"\x40"
 I32 = b"\x7f"
+UNREACHABLE = b"\x00"
+I32_LOAD = b"\x28"
+I32_STORE = b"\x36"
 
 BINOPS = {
     "add": b"\x6a",
@@ -119,7 +124,10 @@ class Backend:
                 return 1
             if symbol is self.lib["bool"].names.get("False"):
                 return 0
-        return self.unit_codes.setdefault(id(symbol), len(self.unit_codes) + 2)
+        code = self.unit_codes.setdefault(id(symbol), len(self.unit_codes) + 2)
+        if code >= 32:
+            raise NotCompilable("more than 30 unit kinds in one module (this slice)")
+        return code
 
     def native_const(self, provision) -> int | None:
         from .interp import CharVal, IntVal
@@ -163,7 +171,7 @@ class Backend:
     def compile_fn(self, symbol: Symbol) -> int:
         if id(symbol) in self.fn_index:
             return self.fn_index[id(symbol)]
-        index = 2 + len(self.fn_index)  # after fd_write import and putchar shim
+        index = 3 + len(self.fn_index)  # after fd_write, putchar, alloc
         self.fn_index[id(symbol)] = index
         fn = self.lower.fns[id(symbol)]
         needs = self.val_needs(symbol)
@@ -189,6 +197,10 @@ class Backend:
             type_of[(1, 0)] = len(types)
             types.append((1, 0))
         putchar_type = type_of[(1, 0)]
+        if (1, 1) not in type_of:
+            type_of[(1, 1)] = len(types)
+            types.append((1, 1))
+        alloc_type = type_of[(1, 1)]
         if (0, 0) not in type_of:
             type_of[(0, 0)] = len(types)
             types.append((0, 0))
@@ -211,12 +223,17 @@ class Backend:
                 ]
             ),
         )
-        # Functions: putchar shim, compiled fns, _start.
+        # Functions: putchar shim, alloc, compiled fns, _start.
         function_section = section(
-            3, vec([uleb(putchar_type)] + [uleb(t) for t in func_types] + [uleb(start_type)])
+            3,
+            vec(
+                [uleb(putchar_type), uleb(alloc_type)]
+                + [uleb(t) for t in func_types]
+                + [uleb(start_type)]
+            ),
         )
         memory_section = section(5, vec([b"\x00" + uleb(1)]))
-        start_index = 2 + len(ordered)
+        start_index = 3 + len(ordered)
         export_section = section(
             7,
             vec(
@@ -227,8 +244,23 @@ class Backend:
             ),
         )
         putchar_body = self.putchar_shim()
-        start_body = vec([]) + CALL + uleb(main_index) + DROP + END
-        bodies = [putchar_body] + [b for _, b in ordered] + [start_body]
+        alloc_body = self.alloc_fn()
+        # _start initializes the heap pointer (addr 16 -> 32), then runs main.
+        start_body = (
+            vec([])
+            + I32_CONST
+            + sleb(16)
+            + I32_CONST
+            + sleb(32)
+            + I32_STORE
+            + uleb(2)
+            + uleb(0)
+            + CALL
+            + uleb(main_index)
+            + DROP
+            + END
+        )
+        bodies = [putchar_body, alloc_body] + [b for _, b in ordered] + [start_body]
         code_section = section(10, vec([uleb(len(b)) + b for b in bodies]))
         return (
             b"\x00asm\x01\x00\x00\x00"
@@ -239,6 +271,19 @@ class Backend:
             + export_section
             + code_section
         )
+
+    def alloc_fn(self) -> bytes:
+        # (nbytes) -> addr: bump the heap pointer stored at address 16.
+        body = bytearray()
+        body += vec([uleb(1) + I32])  # one scratch local
+        body += I32_CONST + sleb(16) + I32_LOAD + uleb(2) + uleb(0)
+        body += LOCAL_SET + uleb(1)
+        body += I32_CONST + sleb(16)
+        body += LOCAL_GET + uleb(1) + LOCAL_GET + uleb(0) + BINOPS["add"]
+        body += I32_STORE + uleb(2) + uleb(0)
+        body += LOCAL_GET + uleb(1)
+        body += END
+        return bytes(body)
 
     def putchar_shim(self) -> bytes:
         # iovec at 0: ptr=8, len=1; byte at 8; retptr at 12.
@@ -383,7 +428,34 @@ class FnCompiler:
             if "bool" in self.b.lib and symbol is self.b.lib["bool"].names.get("Bool"):
                 self.expr(node.payload)  # the Bool tag is erased
             else:
-                raise NotCompilable(f"tag `{symbol.name}`")
+                tmp = self.local()
+                self.code += I32_CONST + sleb(8) + CALL + uleb(2)
+                self.code += LOCAL_SET + uleb(tmp)
+                self.code += LOCAL_GET + uleb(tmp)
+                self.code += I32_CONST + sleb(self.b.unit_code(symbol))
+                self.code += I32_STORE + uleb(2) + uleb(0)
+                self.code += LOCAL_GET + uleb(tmp)
+                self.expr(node.payload)
+                self.code += I32_STORE + uleb(2) + uleb(4)
+                self.code += LOCAL_GET + uleb(tmp)
+        elif isinstance(node, ir.MakeRecord):
+            count = len(node.fields)
+            tmp = self.local()
+            self.code += I32_CONST + sleb(4 + 4 * count) + CALL + uleb(2)
+            self.code += LOCAL_SET + uleb(tmp)
+            self.code += LOCAL_GET + uleb(tmp)
+            self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
+            self.code += I32_STORE + uleb(2) + uleb(0)
+            for i, (_, expr) in enumerate(node.fields):
+                self.code += LOCAL_GET + uleb(tmp)
+                self.expr(expr)
+                self.code += I32_STORE + uleb(2) + uleb(4 + 4 * i)
+            self.code += LOCAL_GET + uleb(tmp)
+        elif isinstance(node, ir.Field):
+            if node.index < 0:
+                raise NotCompilable("field access without layout")
+            self.expr(node.obj)
+            self.code += I32_LOAD + uleb(2) + uleb(4 + 4 * node.index)
         elif isinstance(node, ir.Call):
             self.call(node)
         elif isinstance(node, ir.If):
@@ -412,9 +484,72 @@ class FnCompiler:
         elif isinstance(node, ir.Block):
             self.block(node)
         elif isinstance(node, ir.Match):
-            raise NotCompilable("match")
+            self.match(node)
         else:
             raise NotCompilable(type(node).__name__)
+
+    def match(self, node: ir.Match):
+        scrut = self.local()
+        self.expr(node.scrutinee)
+        self.code += LOCAL_SET + uleb(scrut)
+        bool_sym = self.b.lib["bool"].names.get("Bool") if "bool" in self.b.lib else None
+        arms = list(node.arms)
+
+        def bind_and_body(arm):
+            pat = arm.pat
+            if pat.head is None:
+                if pat.binder is not None:
+                    slot = self.slots.setdefault(pat.binder, self.local())
+                    self.code += LOCAL_GET + uleb(scrut) + LOCAL_SET + uleb(slot)
+            else:
+                if pat.binder is not None:
+                    slot = self.slots.setdefault(pat.binder, self.local())
+                    self.code += LOCAL_GET + uleb(scrut)
+                    self.code += I32_LOAD + uleb(2) + uleb(4)
+                    self.code += LOCAL_SET + uleb(slot)
+                if pat.fields is not None:
+                    for _, binder, index in pat.fields:
+                        slot = self.slots.setdefault(binder, self.local())
+                        self.code += LOCAL_GET + uleb(scrut)
+                        self.code += I32_LOAD + uleb(2) + uleb(4 + 4 * index)
+                        self.code += LOCAL_SET + uleb(slot)
+            if isinstance(arm.body, ir.Block):
+                self.block(arm.body)
+            else:
+                self.expr(arm.body)
+
+        def chain(i: int):
+            if i >= len(arms):
+                self.code += UNREACHABLE
+                return
+            arm = arms[i]
+            pat = arm.pat
+            if pat.head is None:
+                bind_and_body(arm)
+                return
+            if pat.head is bool_sym:
+                raise NotCompilable("matching through Bool (use if)")
+            code = self.b.unit_code(pat.head)
+            boxed = pat.binder is not None or pat.fields is not None
+            if boxed or pat.head.kind == SymKind.TAG:
+                # (s >= 32) & (mem[s] == code); the load is safe either way.
+                self.code += LOCAL_GET + uleb(scrut) + I32_CONST + sleb(32)
+                self.code += BINOPS["ge"]
+                self.code += LOCAL_GET + uleb(scrut) + I32_LOAD + uleb(2) + uleb(0)
+                self.code += I32_CONST + sleb(code) + BINOPS["eq"]
+                self.code += BINOPS["and"]
+            else:
+                self.code += LOCAL_GET + uleb(scrut)
+                self.code += I32_CONST + sleb(code) + BINOPS["eq"]
+            self.code += IF + I32
+            self.depth += 1
+            bind_and_body(arm)
+            self.code += ELSE
+            chain(i + 1)
+            self.code += END
+            self.depth -= 1
+
+        chain(0)
 
     def call(self, node: ir.Call):
         kind, target = node.callee

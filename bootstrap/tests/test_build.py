@@ -101,6 +101,61 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({"main.moss": source})
         self.assertEqual(run_wasm(wasm), "wwwy\n")
 
+    def test_boxed_values_and_match(self):
+        """Slice 2: units/unions with match, tags with payload binders, and
+        records with field access and destructuring — all boxed in linear
+        memory, all matching the interpreter's behavior exactly."""
+        cases = {
+            "colors": (
+                "assume Std {\n"
+                "  unit Red;\n"
+                "  unit Green;\n"
+                "  unit Blue;\n"
+                "  type Color = | Red | Green | Blue;\n"
+                "  fn code(c: Color): Char {\n"
+                "    match c { Red => char::r, Green => char::g, Blue => char::b, }\n"
+                "  }\n"
+                "  fn main() { putchar(code(Green)); putchar(code(Red)); putchar(char::newline); }\n"
+                "}\n",
+                "gr\n",
+            ),
+            "wrap": (
+                "assume Std {\n"
+                "  type Wrapped Char;\n"
+                "  unit Missing;\n"
+                "  type Maybe = | Missing | Wrapped;\n"
+                "  fn show(m: Maybe) {\n"
+                "    match m { Wrapped c => putchar(c), Missing => putchar(char::question), }\n"
+                "    putchar(char::newline);\n"
+                "  }\n"
+                "  fn main() { show(Wrapped (char::w)); show(Missing); }\n"
+                "}\n",
+                "w\n?\n",
+            ),
+            "point": (
+                "assume Std {\n"
+                "  type Point { x: Char, y: Char };\n"
+                "  fn Point.show() {\n"
+                "    putchar(char::lparen); putchar(this.x); putchar(char::comma);\n"
+                "    putchar(this.y); putchar(char::rparen); putchar(char::newline);\n"
+                "  }\n"
+                "  fn flip(p: Point): Point {\n"
+                "    match p { Point { x, y } => Point { x = y, y = x }, }\n"
+                "  }\n"
+                "  fn main() {\n"
+                "    let p = Point { x = char::a, y = char::b };\n"
+                "    p.show();\n"
+                "    flip(p).show();\n"
+                "  }\n"
+                "}\n",
+                "(a,b)\n(b,a)\n",
+            ),
+        }
+        for name_, (source, expected) in cases.items():
+            with self.subTest(case=name_):
+                wasm = compile_wasm({"main.moss": source})
+                self.assertEqual(run_wasm(wasm), expected)
+
     def test_out_of_slice_reports_itself(self):
         source = "assume Std {\n  fn main() { let s = first_arg(); }\n}\n"
         with self.assertRaises(build_mod.NotCompilable):
