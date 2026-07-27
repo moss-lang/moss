@@ -13,6 +13,7 @@ fn .div(rhs: This): This;
 fn .rem(rhs: This): This;
 
 fn .neg(): This;
+fn .not(): This;
 
 fn .and(rhs: This): This;
 fn .or(rhs: This): This;

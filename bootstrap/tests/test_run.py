@@ -103,7 +103,7 @@ class TestContext(unittest.TestCase):
     def test_bind_scoped_to_block(self):
         # A bind inside an if-block must not leak out of it.
         files = main_body(
-            "bind c=char::x; if True { bind c=char::y; emit(); } emit();",
+            "bind c=char::x; if true { bind c=char::y; emit(); } emit();",
             decls="  val c: Char;\n  assume c { fn emit() { putchar(c); } }",
         )
         self.assertEqual(run(files), "yx")
@@ -203,21 +203,22 @@ class TestMatch(unittest.TestCase):
     def test_bool_and_if(self):
         files = main_body(
             "if yes() { putchar(char::y) } else { putchar(char::n) }",
-            decls="  fn yes(): Bool { True }",
+            decls="  fn yes(): Bool { true }",
         )
         self.assertEqual(run(files), "y")
 
-    def test_match_units(self):
+    def test_bool_branch_and_not(self):
         files = main_body(
-            "putchar(pick(False)); putchar(pick(True));",
-            decls="  fn pick(b: Bool): Char { match b { True => char::t, False => char::f, } }",
+            "putchar(pick(false)); putchar(pick(true)); putchar(pick(true.not()));",
+            decls="  fn pick(b: Bool): Char { if b { char::t } else { char::f } }",
         )
-        self.assertEqual(run(files), "ft")
+        self.assertEqual(run(files), "ftf")
 
     def test_non_exhaustive(self):
         files = main_body(
             "()",
-            decls="  fn pick(b: Bool): Char { match b { True => char::t, } }",
+            decls="  unit A;\n  unit B;\n  type AB = | A | B;\n"
+            "  fn pick(x: AB): Char { match x { A => char::t, } }",
         )
         with self.assertRaises(LowerError) as ctx:
             run(files)
@@ -233,27 +234,27 @@ class TestMatch(unittest.TestCase):
 
     def test_union_injection(self):
         files = main_body(
-            "putchar(show(go(True))); putchar(show(go(False)));",
+            "putchar(show(go(true))); putchar(show(go(false)));",
             decls="  unit Stop;\n"
             "  type Step Char;\n"
             "  type Out = | Stop | Step;\n"
-            "  fn go(b: Bool): Out { match b { True => Step (char::s), False => Stop, } }\n"
+            "  fn go(b: Bool): Out { if b { Step (char::s) } else { Stop } }\n"
             "  fn show(o: Out): Char { match o { Step c => c, Stop => char::dot, } }",
         )
         self.assertEqual(run(files), "s.")
 
     def test_while_loop_break(self):
         files = main_body(
-            "var again: Bool = True;\n"
-            "    while again { putchar(char::w); again = False; }\n"
+            "var again = true;\n"
+            "    while again { putchar(char::w); again = false; }\n"
             "    loop { putchar(char::l); break; }",
         )
         self.assertEqual(run(files), "wl")
 
     def test_recursion(self):
         files = main_body(
-            "putchar(rec(True));",
-            decls="  fn rec(b: Bool): Char { match b { True => rec(False), False => char::r, } }",
+            "putchar(rec(true));",
+            decls="  fn rec(b: Bool): Char { if b { rec(false) } else { char::r } }",
         )
         self.assertEqual(run(files), "r")
 

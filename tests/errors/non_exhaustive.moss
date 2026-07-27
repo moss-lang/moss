@@ -1,11 +1,15 @@
 assume Std {
-  fn pick(b: Bool): Char {
-    match b {
-      True => char::t,
+  unit A;
+  unit B;
+  type AB = | A | B;
+
+  fn pick(x: AB): Char {
+    match x {
+      A => char::a,
     }
   }
 
   fn main() {
-    putchar(pick(True));
+    putchar(pick(A));
   }
 }

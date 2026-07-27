@@ -197,8 +197,9 @@ class Parser:
             name = self.expect(Kind.NAME).text
             self.expect(Kind.COLON)
             ty = self.parse_type()
+            init = self.parse_expr() if self.eat(Kind.EQUAL) else None
             self.expect(Kind.SEMI)
-            return ast.Valdef(name, ty, offset=start)
+            return ast.Valdef(name, ty, init, offset=start)
         if self.at(Kind.FN):
             return self.parse_fndef()
         if self.at(Kind.CONTEXT):

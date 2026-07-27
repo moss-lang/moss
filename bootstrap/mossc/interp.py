@@ -173,6 +173,8 @@ class Interp:
             raise MossPanic(f"unsupported statement {stmt!r}")
 
     def truthy(self, value) -> bool:
+        if isinstance(value, TagVal):
+            value = value.payload  # Bool is nominal over the units (D45)
         if isinstance(value, UnitVal) and value.symbol is not None:
             return value.symbol.name == "True"
         raise MossPanic(f"not a Bool: {value!r}")
@@ -267,14 +269,20 @@ def native_env(program: Program, args: list | None = None) -> dict:
             if module.path.endswith(f"lib/{name}.moss"):
                 lib[name] = module
     if "bool" in lib:
-        true = UnitVal(lib["bool"].names["True"])
-        false = UnitVal(lib["bool"].names["False"])
+        bool_ty = lib["bool"].names["Bool"]
+        true = TagVal(bool_ty, UnitVal(lib["bool"].names["True"]))
+        false = TagVal(bool_ty, UnitVal(lib["bool"].names["False"]))
 
         def boolean(b):
             return true if b else false
 
     def native(fn):
         return NativeFn(fn.__name__, fn)
+
+    if "bool" in lib and "num" in lib:
+        env[(bool_ty, lib["num"].detached["not"])] = native(
+            lambda a, this: boolean(this.payload.symbol.name != "True")
+        )
 
     if "std" in lib:
 

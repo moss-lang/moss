@@ -137,6 +137,7 @@ class Unitdef:
 class Valdef:
     name: str
     ty: Type
+    init: "Expr | None" = None  # a defined val (D50) when present
     offset: int = field(default=-1, compare=False)
 
 

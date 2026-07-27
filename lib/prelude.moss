@@ -1,4 +1,4 @@
-import "./bool.moss" use Bool, False, True;
+import "./bool.moss" use Bool, False, True, false, true;
 import "./cell.moss" use CellInt, cell_int;
 import "./char.moss" as char use Char;
 import "./int.moss" use Int, zero, one;

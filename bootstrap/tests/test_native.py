@@ -33,11 +33,13 @@ class TestNativeTables(unittest.TestCase):
                 "String",
                 "True",
                 "cell_int",
+                "false",
                 "first_arg",
                 "one",
                 "print",
                 "putchar",
                 "pwd",
+                "true",
                 "zero",
             ],
         )

@@ -522,11 +522,23 @@ break;          # loops only; carries no value
 deferred with it ([D35]). Both `while` and `loop` stay; each is trivial once
 the other exists.
 
-*Amendment (rev 5, PROPOSED):* `let`/`var` take an optional type annotation
-(`var again: Bool = True;`). Forced by forward inference: without it,
-`var again = True;` infers the narrow unit type `True` and the later
-`again = False;` cannot typecheck. Annotations are the standard fix and were
-going to be wanted anyway.
+*Amendment (rev 5, DECIDED):* `let`/`var` take an optional type annotation
+(`var x: Foo = ...;`). Forced by forward inference: without it, initializing
+from a union member infers the narrow member type. (For booleans
+specifically, [D45]'s prelude `true`/`false` already have type `Bool`, so
+`var b = true;` needs no annotation.)
+
+**[D50] DECIDED (defined vals), v0 restrictions PROPOSED.** From the
+designer's [D45] refinement: `val name: Type = expr;` declares a *defined*
+val — concrete like a defined function, e.g. the prelude's
+`val true: Bool = Bool (True);`. A defined val is not a context item:
+nothing provides it, listing it in a context is a no-op, and reading it
+needs only scope. Bootstrap restrictions pending a real
+global-initialization story: a defined val may not sit inside `assume`
+blocks, its initializer elaborates in an empty environment (so it can need
+nothing from any context), and it is inlined at each use — fine while
+initializers are pure constructions, revisit before anybody writes an
+effectful one.
 
 `let`/`var` bind names, not patterns, for now. `var` permits reassignment of
 the local slot only; it creates no aliasable storage — shared or captured
@@ -613,8 +625,17 @@ welcome, but elimination is never implicit semantics. The bootstrap
 interpreter happens to contain a tail-call trampoline — that is a
 non-semantic implementation detail that code must not rely on.
 
-**[D45] DECIDED (concrete `Bool` as a lang item).** Confirmed by the
-designer as the easiest way for `if` to work. The old
+**[D45] DECIDED (nominal `Bool` as a lang item; revised).** Confirmed by
+the designer as the easiest way for `if` to work, then refined by them to
+kill the [D47] wrinkle: `Bool` is *nominal over* the sum
+(`type Bool | False | True;` — the tag-with-union-payload form), so methods
+can attach to it (`Std` provides `Bool.not`). Construction is
+`Bool (True)`, but nobody writes that: the prelude defines
+`val true: Bool = Bool (True);` and `false` likewise ([D50]), which also
+makes `var b = true;` infer `Bool` with no annotation. `if c { a } else
+{ b }` requires `c : Bool` and eliminates it; matching *through* `Bool` to
+`True`/`False` needs nested patterns, which the bootstrap doesn't support
+yet — use `if`. The old
 `lib/bool.moss` made even booleans contextual (`type Bool;` with abstract
 `val true`/`val false`). The bootstrap diverges: `lib/bool.moss` now
 declares concrete units and a transparent alias —
@@ -856,9 +877,10 @@ decisions above are confirmed.
   bind-returning forms ([D29]), all operator expression productions ([D33]),
   `for` ([D31]), and bracket bindings in `assume` items ([D24] — assume
   takes bare paths); grammar's `assume List[Binding];` statement form is
-  unused — still **OPEN** (unaddressed in notes.md) whether to keep a
-  braceless rest-of-file `assume Std;` form as sugar (hello.md's "typical
-  pattern" would benefit).
+  unused — **DECIDED** (delegated to the implementer): no braceless form
+  in the MVP; there is exactly one way to write requirements, and the
+  question can be reopened when enough real code exists to feel the
+  rightward drift.
 - `docs/learn/hello.md`: the `println("Hello, world!")` example at line 73
   contradicts [D4]; `putchar`/`char::*` need to actually exist in the new
   `lib/`.
@@ -901,12 +923,11 @@ decisions above are confirmed.
 
 ## 13. Decision index
 
-Still awaiting the designer: the [D31] amendment (optional `let`/`var`
-type annotations — forced by forward inference, unreviewed) · [D48] string
-literals, deferred until diagnostics/codegen make embedded strings
-unavoidable · methods on union-headed types (the no-`.not`-on-`Bool`
-wrinkle under [D47]) · **OPEN** post-MVP: D29 the `val` half of functors ·
-braceless `assume` statement form (§12)
+Still awaiting the designer, all deferred rather than blocking: [D48]
+string literals (when diagnostics/codegen make embedded strings
+unavoidable) · methods on union-headed *aliases* in general ([D47] — solved
+for `Bool` by [D45]'s nominal wrapper) · D29 the `val` half of functors ·
+[D50]'s v0 restrictions on defined vals
 
 Everything else is **DECIDED**: D1–D28 · D30–D49 (D3/D4 by designer fiat,
 D13 option.moss → alias, D16 no post-monomorphization checks, D22 total or

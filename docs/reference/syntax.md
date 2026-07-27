@@ -133,7 +133,7 @@ type; `(A, B)` is a tuple. `This` is legal only inside method declarations.
 - **Aliasdef** = `type` _name_ `=` **Type** `;`
 - **Tagdef** = `type` _name_ **Type** `;`
 - **Unitdef** = `unit` _name_ `;`
-- **Valdef** = `val` _name_ `:` **Type** `;`
+- **Valdef** = `val` _name_ `:` **Type** (`=` **Expr**)? `;`
 - **Fndef** = `fn` **FnName** `(` **List**\[**Param**\] `)` (`:` **Type**)? (`;` | **Block**)
 - **FnName** = _name_ | _name_ `.` _name_ | **DotName**
 - **Param** = _name_ `:` **Type**
@@ -143,7 +143,9 @@ In a **UseItem** rename, both sides must agree on dottedness (`use .m as
 .m1`, never `use .m as m1`). The three **FnName** forms are a plain
 function, an attached method (the receiver must elaborate to a nominal
 type), and a detached method. A **Fndef** ending in `;` declares an abstract
-function; detached methods admit only that form ([D36]).
+function; detached methods admit only that form ([D36]). A **Valdef** with
+an initializer is a *defined* val — concrete like a defined function, e.g.
+the prelude's `val true: Bool = Bool True;` ([D50]).
 
 ### Statements and blocks
 

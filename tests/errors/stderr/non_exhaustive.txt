@@ -1,1 +1,1 @@
-tests/errors/non_exhaustive.moss:3:5: match is not exhaustive; missing ['False']
+tests/errors/non_exhaustive.moss:7:5: match is not exhaustive; missing ['B']

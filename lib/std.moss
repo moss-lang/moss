@@ -2,6 +2,7 @@ import "./bool.moss" use Bool, False, True;
 import "./cell.moss" use CellInt, cell_int;
 import "./char.moss" use Char, Chars;
 import "./int.moss" use Int, IntOps, zero, one;
+import "./num.moss" use .not;
 import "./path.moss" use Path, pwd;
 import "./string.moss" use String, first_arg, print;
 
@@ -13,6 +14,7 @@ context Std =
   Bool,
   False,
   True,
+  Bool.not,
 
   Char,
   Chars,

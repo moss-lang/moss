@@ -2,7 +2,7 @@
 
 assume Std {
   fn main() {
-    if True {
+    if true {
       putchar(char::t);
       putchar(char::newline);
     }

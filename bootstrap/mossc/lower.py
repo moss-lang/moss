@@ -103,6 +103,7 @@ class Lower:
         self.fn_symbols: dict[int, Symbol] = {}  # id(decl) -> Symbol
         self.needs_of: dict[int, tuple] = {}  # id(Symbol) -> runtime need keys
         self._reqs_cache: dict[int, list] = {}
+        self._const_cache: dict[int, tuple] = {}
         for module in program.order:
             for table in (module.names, module.detached, module.attached):
                 for symbol in table.values():
@@ -115,7 +116,7 @@ class Lower:
     def find_bool(self):
         for module in self.program.order:
             if module.path.endswith("lib/bool.moss"):
-                return module.names.get("True"), module.names.get("False")
+                return module.names.get("Bool"), None
         return None, None
 
     def run(self) -> None:
@@ -163,6 +164,8 @@ class Lower:
             if sym not in env.tymap:
                 env.tymap[sym] = TAbstract(sym, self.nominal_args(module, sym, env.tymap | subst))
         elif sym.kind == SymKind.VAL:
+            if sym.decl.init is not None:
+                return  # a defined val is concrete; nothing to provide (D50)
             ty = self.elab_type(sym.decl.ty, sym.module, env.tymap | subst, env)
             self.merge(env.vals, module, sym, ty)
             if sym not in needs:
@@ -497,6 +500,33 @@ class Lower:
         self.fns[id(symbol)] = fn
         self.in_progress.discard(id(symbol))
 
+    def const_val(self, symbol: Symbol):
+        """Elaborate a defined val (D50). v0 restrictions: no assumptions,
+        and the initializer is inlined at each use (it must therefore need
+        nothing from any context — a fresh empty environment enforces that)."""
+        cached = self._const_cache.get(id(symbol))
+        if cached is not None:
+            return cached
+        if symbol.assumes:
+            self.error(
+                symbol.module,
+                f"defined val `{symbol.name}` cannot take assumptions yet (D50)",
+                symbol.decl,
+            )
+        env = Env(symbol.module)
+        declared = self.elab_type(symbol.decl.ty, symbol.module, {}, env)
+        checker = FnChecker(self, symbol.module, env, FnSig((), declared), [], None)
+        value, ty = checker.synth(symbol.decl.init, expected=declared)
+        if not fits(ty, declared):
+            self.error(
+                symbol.module,
+                f"`{symbol.name}` is declared `{show(declared)}` but its "
+                f"initializer is `{show(ty)}`",
+                symbol.decl,
+            )
+        self._const_cache[id(symbol)] = (value, declared)
+        return value, declared
+
     def flatten_context(self, symbol: Symbol) -> tuple[Env, list]:
         """Public: the environment/needs a context provides (for linking)."""
         env = Env(symbol.module)
@@ -619,10 +649,10 @@ class FnChecker:
         self.error(f"unsupported statement {stmt!r}")
 
     def check_bool(self, expr):
-        true, false = self.lower.bool_true, self.lower.bool_false
-        if true is None:
+        bool_sym = self.lower.bool_true
+        if bool_sym is None:
             self.error("`if`/`while` need lib/bool.moss to be loaded (D45)")
-        expected = TUnion((TNominal(false, ()), TNominal(true, ())))
+        expected = TNominal(bool_sym, ())
         cond, ty = self.synth(expr, expected=expected)
         if not fits(ty, expected):
             self.error(f"condition is `{show(ty)}`, expected `Bool`")
@@ -962,6 +992,8 @@ class FnChecker:
         if target.kind == SymKind.UNIT:
             return ir.MakeUnit(target), TNominal(target, ())
         if target.kind == SymKind.VAL:
+            if target.decl.init is not None:
+                return self.lower.const_val(target)
             if target not in self.env.vals:
                 self.error(
                     f"`{target.name}` is not available in the context here "

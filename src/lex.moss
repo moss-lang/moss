@@ -85,13 +85,13 @@ assume Std {
     # Consume the next character only if it is `want`.
     fn take(want: Char): Bool {
       match peek() {
-        Eof => False,
+        Eof => false,
         Read c => {
           if c.eq(want) {
             advance();
-            True
+            true
           } else {
-            False
+            false
           }
         }
       }
@@ -99,11 +99,11 @@ assume Std {
 
     fn is_space(c: Char): Bool {
       if c.eq(char::space) {
-        True
+        true
       } else if c.eq(char::newline) {
-        True
+        true
       } else if c.eq(char::tab) {
-        True
+        true
       } else {
         c.eq(char::cr)
       }
@@ -116,14 +116,14 @@ assume Std {
         c.le(char::z)
       } else if c.ge(char::A) {
         if c.le(char::Z) {
-          True
+          true
         } else {
           c.eq(char::underscore)
         }
       } else if c.ge(char::digit0) {
         c.le(char::digit9)
       } else {
-        False
+        false
       }
     }
 
@@ -294,12 +294,12 @@ assume Std {
     # True when the name run ends here (so a keyword spelling counts).
     fn boundary(): Bool {
       match peek() {
-        Eof => True,
+        Eof => true,
         Read c => {
           if is_name_char(c) {
-            False
+            false
           } else {
-            True
+            true
           }
         }
       }
