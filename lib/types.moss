@@ -1,6 +1,0 @@
-# https://webassembly.github.io/spec/core/syntax/types.html#number-types
-type I32;
-type I64;
-
-# https://webassembly.github.io/spec/core/syntax/modules.html#indices
-type MemIdx;

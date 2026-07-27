@@ -1,156 +1,16 @@
-import "./bool.moss" use Bool, false, true;
-import "./char.moss" use Char, char_from_codepoint;
-import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
-import "./ops.moss" as ops use Arg, Lhs, Rhs;
-import "./string.moss" use .to_string, String, StringBuilder, string_builder, set_char, build;
-import "./this.moss" use This;
+import "./bool.moss" use Bool, False, True;
+import "./char.moss" use Char, Chars;
 
-type Number;
-
-assume Number {
-  val digit0: Number;
-  val digit1: Number;
-  val digit2: Number;
-  val digit3: Number;
-  val digit4: Number;
-  val digit5: Number;
-  val digit6: Number;
-  val digit7: Number;
-  val digit8: Number;
-  val digit9: Number;
-  val radix: Number;
-
-  context Numerals =
-    digit0,
-    digit1,
-    digit2,
-    digit3,
-    digit4,
-    digit5,
-    digit6,
-    digit7,
-    digit8,
-    digit9,
-    radix,
-  ;
-
-  context Arithmetic = for Lhs=Number, Rhs=Number {
-    ops::AddOut=Number,
-    ops::SubOut=Number,
-    ops::MulOut=Number,
-    ops::DivOut=Number,
-    ops::RemOut=Number,
-    ops::Add,
-    ops::Sub,
-    ops::Mul,
-    ops::Div,
-    ops::Rem,
-  };
-
-  context Negation = for Arg=Number {
-    ops::NegOut=Number,
-    ops::Neg,
-  };
-
-  assume Bool {
-    context Comparison = for Lhs=Number, Rhs=Number {
-      ops::eq,
-      ops::ne,
-      ops::lt,
-      ops::gt,
-      ops::le,
-      ops::ge,
-    };
-  }
-}
-
-assume String {
-  fn print(string: String);
+assume Char {
+  fn putchar(c: Char);
 }
 
 context Std =
   Bool,
-  false,
-  true,
-
-  String,
-
-  Uint32,
-  for Number=Uint32 {
-    Numerals,
-    Arithmetic,
-    Comparison,
-  },
-  for This=Uint32 {
-    .to_string,
-  },
-
-  Int32,
-  for Number=Int32 {
-    Numerals,
-    Arithmetic,
-    Negation,
-    Comparison,
-  },
-  for This=Int32 {
-    .to_string,
-  },
-
-  Uint64,
-  for Number=Uint64 {
-    Numerals,
-    Arithmetic,
-    Comparison,
-  },
-  for This=Uint64 {
-    .to_string,
-  },
-
-  Int64,
-  for Number=Int64 {
-    Numerals,
-    Arithmetic,
-    Negation,
-    Comparison,
-  },
-  for This=Int64 {
-    .to_string,
-  },
-
-  Uint,
-  for Number=Uint {
-    Numerals,
-    Arithmetic,
-    Comparison,
-  },
-  for This=Uint {
-    .to_string,
-  },
-
-  Int,
-  for Number=Int {
-    Numerals,
-    Arithmetic,
-    Negation,
-    Comparison,
-  }
-  for This=Int {
-    .to_string,
-  }
+  False,
+  True,
 
   Char,
-  char_from_codepoint,
-  StringBuilder,
-  string_builder,
-  set_char,
-  build,
-
-  print,
+  Chars,
+  putchar,
 ;
-
-assume Std {
-  fn println(string: String) {
-    print(string);
-    print("\n");
-  }
-}

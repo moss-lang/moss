@@ -1,8 +1,3 @@
-import "./bool.moss" use Bool, false, true;
-import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
-import "./std.moss" use Std, print, println;
-import "./string.moss" use .to_string, String;
-import "./this.moss" use This, this;
-import "./wasi.moss" use Wasi;
-import "./wasip1.moss" as wasip1;
-import "./wasm.moss" as wasm;
+import "./bool.moss" use Bool, False, True;
+import "./char.moss" as char use Char;
+import "./std.moss" use Std, putchar;

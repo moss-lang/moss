@@ -1,6 +1,4 @@
-type Bool;
+unit False;
+unit True;
 
-assume Bool {
-  val false: Bool;
-  val true: Bool;
-}
+type Bool = | False | True;

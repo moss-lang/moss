@@ -1,5 +1,0 @@
-type This;
-
-assume This {
-  val this: This;
-}

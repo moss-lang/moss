@@ -37,6 +37,11 @@ detached method because `::` binds more tightly than `.`. The log is now
 settled enough to build against; subsequent work happens in
 `docs/reference/` and the bootstrap compiler.
 
+**Revision 5 onward** is incremental: decision points appended as
+implementation forces them, PROPOSED until the designer reacts. So far:
+[D45] (concrete `Bool`), [D46] (module aliases export), [D47] (interpreter
+value model).
+
 ## 1. Design thesis
 
 Moss separates **scope** from **context**:
@@ -160,6 +165,13 @@ a file consisting only of imports, whose own importers then `use *` it.
 (That pattern only works if plain `use` — as opposed to `use *` — *does*
 re-export; so the rule is: explicit `use` names become part of the module's
 exports, glob imports do not.)
+
+**[D46] PROPOSED (module aliases are exports).** hello.md's story requires
+the prelude to provide `char` as a *module* (`char::H`); the prelude spells
+that `import "./char.moss" as char;`. So an `as` alias is an export of the
+declaring module, like an explicit `use` name and unlike a glob ([D9]) —
+aliases are deliberate, named acts. Consequence: `use x` where the exporter's
+`x` is an alias imports the alias.
 
 **[D44] DECIDED (import collisions and qualified method calls).** From the
 designer, closing [D36]'s leftover (b). Imports may not place two
@@ -533,6 +545,28 @@ Rust-lang-item style, not name-driven lookup of any method that happens to
 be called `add`; availability rides the ordinary context rails for exactly
 those `ops` symbols, and the desugaring is therefore not strictly syntactic
 sugar. It may prove cheap enough to pull into the MVP once §9 settles.
+
+**[D45] PROPOSED (concrete `Bool` as a lang item).** The old
+`lib/bool.moss` made even booleans contextual (`type Bool;` with abstract
+`val true`/`val false`). The bootstrap diverges: `lib/bool.moss` now
+declares concrete units and a transparent alias —
+
+```moss
+unit False;
+unit True;
+
+type Bool = | False | True;
+```
+
+— because the elaborator must *eliminate* a boolean at every `if`, and with
+an abstract `Bool` the meaning of `if` itself would depend on context. With
+units, `if c { a } else { b }` is exactly
+`match c { True => { a } False => { b } }` and needs no new machinery.
+`False`/`True` are lang items the compiler knows by (module, name), like
+the future `ops` symbols ([D33]). Interaction to resolve when operators
+land: `lib/ops.moss` says `assume Bool { ... }`, which is vacuous once
+`Bool` is a concrete alias — those assumes would just drop. If the designer
+wants contextual booleans back, `if` needs a story first.
 
 **[D34] DECIDED (match).**
 

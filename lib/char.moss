@@ -1,7 +1,206 @@
-import "./int.moss" use Uint;
+# Generated from bootstrap/mossc/native.py; edit CHARS there and
+# regenerate with: python3 -c 'from mossc.native import gen_char_moss; print(gen_char_moss(), end="")'
 
 type Char;
 
-assume Char, Uint {
-  fn char_from_codepoint(codepoint: Uint): Char;
+assume Char {
+  val a: Char;
+  val b: Char;
+  val c: Char;
+  val d: Char;
+  val e: Char;
+  val f: Char;
+  val g: Char;
+  val h: Char;
+  val i: Char;
+  val j: Char;
+  val k: Char;
+  val l: Char;
+  val m: Char;
+  val n: Char;
+  val o: Char;
+  val p: Char;
+  val q: Char;
+  val r: Char;
+  val s: Char;
+  val t: Char;
+  val u: Char;
+  val v: Char;
+  val w: Char;
+  val x: Char;
+  val y: Char;
+  val z: Char;
+  val A: Char;
+  val B: Char;
+  val C: Char;
+  val D: Char;
+  val E: Char;
+  val F: Char;
+  val G: Char;
+  val H: Char;
+  val I: Char;
+  val J: Char;
+  val K: Char;
+  val L: Char;
+  val M: Char;
+  val N: Char;
+  val O: Char;
+  val P: Char;
+  val Q: Char;
+  val R: Char;
+  val S: Char;
+  val T: Char;
+  val U: Char;
+  val V: Char;
+  val W: Char;
+  val X: Char;
+  val Y: Char;
+  val Z: Char;
+  val digit0: Char;
+  val digit1: Char;
+  val digit2: Char;
+  val digit3: Char;
+  val digit4: Char;
+  val digit5: Char;
+  val digit6: Char;
+  val digit7: Char;
+  val digit8: Char;
+  val digit9: Char;
+  val exclam: Char;
+  val percent: Char;
+  val ampersand: Char;
+  val lparen: Char;
+  val rparen: Char;
+  val star: Char;
+  val plus: Char;
+  val comma: Char;
+  val hyphen: Char;
+  val dot: Char;
+  val slash: Char;
+  val colon: Char;
+  val semi: Char;
+  val less: Char;
+  val equal: Char;
+  val greater: Char;
+  val lbracket: Char;
+  val rbracket: Char;
+  val caret: Char;
+  val lbrace: Char;
+  val pipe: Char;
+  val rbrace: Char;
+  val space: Char;
+  val newline: Char;
+  val tab: Char;
+  val cr: Char;
+  val underscore: Char;
+  val quote: Char;
+  val apostrophe: Char;
+  val octothorpe: Char;
+  val backslash: Char;
+  val question: Char;
+  val at: Char;
+  val dollar: Char;
+  val backtick: Char;
+  val tilde: Char;
+
+  context Chars =
+    a,
+    b,
+    c,
+    d,
+    e,
+    f,
+    g,
+    h,
+    i,
+    j,
+    k,
+    l,
+    m,
+    n,
+    o,
+    p,
+    q,
+    r,
+    s,
+    t,
+    u,
+    v,
+    w,
+    x,
+    y,
+    z,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    digit0,
+    digit1,
+    digit2,
+    digit3,
+    digit4,
+    digit5,
+    digit6,
+    digit7,
+    digit8,
+    digit9,
+    exclam,
+    percent,
+    ampersand,
+    lparen,
+    rparen,
+    star,
+    plus,
+    comma,
+    hyphen,
+    dot,
+    slash,
+    colon,
+    semi,
+    less,
+    equal,
+    greater,
+    lbracket,
+    rbracket,
+    caret,
+    lbrace,
+    pipe,
+    rbrace,
+    space,
+    newline,
+    tab,
+    cr,
+    underscore,
+    quote,
+    apostrophe,
+    octothorpe,
+    backslash,
+    question,
+    at,
+    dollar,
+    backtick,
+    tilde,
+  ;
 }
