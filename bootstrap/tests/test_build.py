@@ -145,9 +145,77 @@ class TestWasmBackend(unittest.TestCase):
                 self.assertEqual(run_wasm(wasm), expected)
 
     def test_out_of_slice_reports_itself(self):
-        source = "assume Std {\n  fn main() { let xs = int_list(); }\n}\n"
+        source = "assume Std {\n  fn main() { let p = pwd.join(first_arg()); }\n}\n"
         with self.assertRaises(build_mod.NotCompilable):
             compile_wasm({"main.moss": source})
+
+    def test_intlist_in_wasm(self):
+        source = (
+            "assume Std {\n"
+            "  fn main() {\n"
+            "    let xs = int_list();\n"
+            "    var i = zero;\n"
+            "    let n = one.shl(one.add(one).add(one).add(one));\n"  # 16 > cap 8
+            "    while i.lt(n) { xs.push(i); i = i.add(one); }\n"
+            "    if xs.length().eq(n) { putchar(char::n) }\n"
+            "    if xs.get(zero).eq(zero) { putchar(char::z) }\n"
+            "    xs.set(zero, one);\n"
+            "    if xs.get(zero).eq(one) { putchar(char::s) }\n"
+            "    if xs.get(n.sub(one)).eq(n.sub(one)) { putchar(char::e) }\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n"
+        )
+        wasm = compile_wasm({"main.moss": source})
+        self.assertEqual(run_wasm(wasm), "nzse\n")
+
+    def test_self_hosted_parser_compiles_to_wasm(self):
+        """The whole self-hosted front end — lexer, arena parser, interner,
+        duplicate detection — as one Wasm module, byte-identical to the
+        interpreter."""
+        driver = (
+            'import "./src/intern.moss" as intern;\n'
+            'import "./src/lex.moss" as lexer;\n'
+            'import "./src/parse.moss" as parser;\n'
+            'import "./src/tree.moss" as tree;\n'
+            "assume Std {\n"
+            "  fn main() {\n"
+            "    bind lexer::src=first_arg();\n"
+            "    bind lexer::at=cell_int();\n"
+            "    bind lexer::mark=cell_int();\n"
+            "    bind tree::kinds=int_list();\n"
+            "    bind tree::starts=int_list();\n"
+            "    bind tree::lens=int_list();\n"
+            "    bind tree::kids=int_list();\n"
+            "    bind tree::name_starts=int_list();\n"
+            "    bind tree::name_lens=int_list();\n"
+            "    bind tree::name_ids=int_list();\n"
+            "    bind intern::istarts=int_list();\n"
+            "    bind intern::ilens=int_list();\n"
+            "    parser::run();\n"
+            "  }\n"
+            "}\n"
+        )
+        wasm = compile_wasm({"letters.moss": driver}, entry="letters.moss")
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            path = f.name
+        cases = [
+            (
+                "unit A; type A; assume B { fn f(); fn f() {} val g: B; }",
+                "uA;tA;a(ff;ff;vg;)\nA!f!\n",
+            ),
+            (
+                (REPO / "lib/bool.moss").read_text(encoding="utf-8"),
+                "uFalse;uTrue;tBool;vfalse;vtrue;\n\n",
+            ),
+        ]
+        for source, expected in cases:
+            result = subprocess.run(
+                [wasmtime(), path, source], capture_output=True, text=True, timeout=300
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, expected)
 
     def test_self_hosted_lexer_compiles_to_wasm(self):
         """The capstone: src/lex.moss, driven by a first_arg driver, compiled

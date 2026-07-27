@@ -11,10 +11,12 @@ alive at runtime).
 Scalar subset: every value is an i32. Chars are codepoints, Ints are i32,
 `()` is 0, Bool is 0/1 (the nominal tag is erased), other unit values get
 small codes. Std's methods on Int/Char compile to Wasm instructions;
-`putchar` is an fd_write shim. Tags and records are boxed in linear
-memory behind a bump allocator (units stay scalar, so their codes must
-stay below the heap base), and match compiles to code/pointer tests.
-Strings, cells, lists, and fn binds are not yet in the slice and report
+`putchar` and `print` are fd_write shims. Tags and records are boxed in
+linear memory behind a bump allocator (units stay scalar, so their codes
+must stay below the heap base); match compiles to code/pointer tests;
+strings are [len|bytes] entering via a WASI args shim; CellInt is a boxed
+word; IntList is a handle to a [len, cap, elems] block that grows by
+copying. Path, fn binds, and closures are not yet in the slice and report
 themselves as such.
 """
 
@@ -117,7 +119,7 @@ class Backend:
         self.unit_codes: dict[int, int] = {}
         self.lib = {}
         for module in program.modules.values():
-            for short in ("bool", "num", "char", "int", "std", "string", "cell"):
+            for short in ("bool", "num", "char", "int", "std", "string", "cell", "list"):
                 if module.path.endswith(f"lib/{short}.moss"):
                     self.lib[short] = module
 
@@ -174,7 +176,7 @@ class Backend:
     def compile_fn(self, symbol: Symbol) -> int:
         if id(symbol) in self.fn_index:
             return self.fn_index[id(symbol)]
-        index = 6 + len(self.fn_index)  # after 3 imports and 3 shims
+        index = 8 + len(self.fn_index)  # after 3 imports and 5 shims
         self.fn_index[id(symbol)] = index
         fn = self.lower.fns[id(symbol)]
         needs = self.val_needs(symbol)
@@ -242,17 +244,24 @@ class Backend:
                 ]
             ),
         )
-        # Functions: putchar, alloc, first_arg shims, compiled fns, _start.
+        # Functions: putchar, alloc, first_arg, list_push, print shims,
+        # then compiled fns, then _start.
         function_section = section(
             3,
             vec(
-                [uleb(putchar_type), uleb(alloc_type), uleb(first_arg_type)]
+                [
+                    uleb(putchar_type),
+                    uleb(alloc_type),
+                    uleb(first_arg_type),
+                    uleb(wasi2_type),  # list_push: (handle, value) -> dummy
+                    uleb(putchar_type),  # print: (string) -> ()
+                ]
                 + [uleb(t) for t in func_types]
                 + [uleb(start_type)]
             ),
         )
         memory_section = section(5, vec([b"\x00" + uleb(2)]))
-        start_index = 6 + len(ordered)
+        start_index = 8 + len(ordered)
         export_section = section(
             7,
             vec(
@@ -280,7 +289,13 @@ class Backend:
             + END
         )
         bodies = (
-            [putchar_body, alloc_body, self.first_arg_shim()]
+            [
+                putchar_body,
+                alloc_body,
+                self.first_arg_shim(),
+                self.list_push_shim(),
+                self.print_shim(),
+            ]
             + [b for _, b in ordered]
             + [start_body]
         )
@@ -351,6 +366,71 @@ class Backend:
         b += LOCAL_GET + uleb(5) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(5)
         b += BR + uleb(0) + END + END
         b += LOCAL_GET + uleb(4)
+        b += END
+        return bytes(b)
+
+    def list_push_shim(self) -> bytes:
+        # (handle, value) -> 0. A list is a one-word handle pointing at
+        # [len, cap, elems...]; growing copies to a fresh block (the bump
+        # allocator never frees). Locals: 2 data, 3 len, 4 cap, 5 nd, 6 i.
+        b = bytearray()
+        b += vec([uleb(5) + I32])
+        b += LOCAL_GET + uleb(0) + I32_LOAD + uleb(2) + uleb(0) + LOCAL_SET + uleb(2)
+        b += LOCAL_GET + uleb(2) + I32_LOAD + uleb(2) + uleb(0) + LOCAL_SET + uleb(3)
+        b += LOCAL_GET + uleb(2) + I32_LOAD + uleb(2) + uleb(4) + LOCAL_SET + uleb(4)
+        # if len == cap: grow
+        b += LOCAL_GET + uleb(3) + LOCAL_GET + uleb(4) + BINOPS["eq"]
+        b += IF + EMPTY
+        # nd = alloc(8 + 8*cap); nd.len = len; nd.cap = cap*2
+        b += I32_CONST + sleb(8)
+        b += LOCAL_GET + uleb(4) + I32_CONST + sleb(8) + BINOPS["mul"]
+        b += BINOPS["add"] + CALL + uleb(4) + LOCAL_SET + uleb(5)
+        b += LOCAL_GET + uleb(5) + LOCAL_GET + uleb(3) + I32_STORE + uleb(2) + uleb(0)
+        b += LOCAL_GET + uleb(5)
+        b += LOCAL_GET + uleb(4) + I32_CONST + sleb(2) + BINOPS["mul"]
+        b += I32_STORE + uleb(2) + uleb(4)
+        # copy elements
+        b += I32_CONST + sleb(0) + LOCAL_SET + uleb(6)
+        b += BLOCK + EMPTY + LOOP + EMPTY
+        b += LOCAL_GET + uleb(6) + LOCAL_GET + uleb(3) + BINOPS["ge"] + BR_IF + uleb(1)
+        b += LOCAL_GET + uleb(5)
+        b += LOCAL_GET + uleb(6) + I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
+        b += LOCAL_GET + uleb(2)
+        b += LOCAL_GET + uleb(6) + I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
+        b += I32_LOAD + uleb(2) + uleb(8)
+        b += I32_STORE + uleb(2) + uleb(8)
+        b += LOCAL_GET + uleb(6) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(6)
+        b += BR + uleb(0) + END + END
+        # handle -> nd; data = nd
+        b += LOCAL_GET + uleb(0) + LOCAL_GET + uleb(5) + I32_STORE + uleb(2) + uleb(0)
+        b += LOCAL_GET + uleb(5) + LOCAL_SET + uleb(2)
+        b += END
+        # data[8 + 4*len] = value; data.len = len + 1
+        b += LOCAL_GET + uleb(2)
+        b += LOCAL_GET + uleb(3) + I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
+        b += LOCAL_GET + uleb(1) + I32_STORE + uleb(2) + uleb(8)
+        b += LOCAL_GET + uleb(2)
+        b += LOCAL_GET + uleb(3) + I32_CONST + sleb(1) + BINOPS["add"]
+        b += I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(0)
+        b += END
+        return bytes(b)
+
+    def print_shim(self) -> bytes:
+        # (string) -> (): fd_write the whole [len|bytes] buffer.
+        b = bytearray()
+        b += vec([])
+        b += I32_CONST + sleb(0)
+        b += LOCAL_GET + uleb(0) + I32_CONST + sleb(4) + BINOPS["add"]
+        b += I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(4)
+        b += LOCAL_GET + uleb(0) + I32_LOAD + uleb(2) + uleb(0)
+        b += I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(1)
+        b += I32_CONST + sleb(0)
+        b += I32_CONST + sleb(1)
+        b += I32_CONST + sleb(12)
+        b += CALL + uleb(0) + DROP
         b += END
         return bytes(b)
 
@@ -665,6 +745,33 @@ class FnCompiler:
                     self.expr(node.args[0])
                     self.code += BINOPS["add"] + I32_LOAD8 + uleb(0) + uleb(4)
                     return
+            if "list" in self.b.lib and method.module is self.b.lib["list"]:
+                if short == "push":
+                    self.expr(node.this)
+                    self.expr(node.args[0])
+                    self.code += CALL + uleb(6)
+                    return
+                if short == "length":
+                    self.expr(node.this)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    return
+                if short == "get":
+                    self.expr(node.this)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    self.expr(node.args[0])
+                    self.code += I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
+                    self.code += I32_LOAD + uleb(2) + uleb(8)
+                    return
+                if short == "set":
+                    self.expr(node.this)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    self.expr(node.args[0])
+                    self.code += I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
+                    self.expr(node.args[1])
+                    self.code += I32_STORE + uleb(2) + uleb(8)
+                    self.code += I32_CONST + sleb(0)
+                    return
             if "cell" in self.b.lib and method.module is self.b.lib["cell"]:
                 if short == "read":
                     self.expr(node.this)
@@ -683,6 +790,24 @@ class FnCompiler:
             return
         if "string" in self.b.lib and key is self.b.lib["string"].names.get("first_arg"):
             self.code += CALL + uleb(5)
+            return
+        if "string" in self.b.lib and key is self.b.lib["string"].names.get("print"):
+            for arg in node.args:
+                self.expr(arg)
+            self.code += CALL + uleb(7) + I32_CONST + sleb(0)
+            return
+        if "list" in self.b.lib and key is self.b.lib["list"].names.get("int_list"):
+            tmp = self.local()
+            self.code += I32_CONST + sleb(4) + CALL + uleb(4) + LOCAL_SET + uleb(tmp)
+            data = self.local()
+            self.code += I32_CONST + sleb(40) + CALL + uleb(4) + LOCAL_SET + uleb(data)
+            self.code += LOCAL_GET + uleb(data) + I32_CONST + sleb(0)
+            self.code += I32_STORE + uleb(2) + uleb(0)
+            self.code += LOCAL_GET + uleb(data) + I32_CONST + sleb(8)
+            self.code += I32_STORE + uleb(2) + uleb(4)
+            self.code += LOCAL_GET + uleb(tmp) + LOCAL_GET + uleb(data)
+            self.code += I32_STORE + uleb(2) + uleb(0)
+            self.code += LOCAL_GET + uleb(tmp)
             return
         if "cell" in self.b.lib and key is self.b.lib["cell"].names.get("cell_int"):
             tmp = self.local()
