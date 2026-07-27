@@ -418,6 +418,37 @@ done: a slot carries a valtype, `Wasm`'s i64 instructions compile, and
 `lib/wasistd.moss` implements `Path.read` with real u64 rights masks.
 What remains is the multi-slot half: a value occupying more than one
 scalar, which is what lets `MakeRecord` and `Inject` stop allocating.
+That is a change of invariant rather than a set of edits — "one stack
+slot per value" is assumed throughout the emitter — so the order to do
+it in:
+
+1. `slots(ty)` in lowering: a record is one slot per field, an injected
+   union is one discriminant slot plus its widest member's, everything
+   else is one. Require a record's fields and a tag's payload to be
+   single-slot at first, so a slot index is just a field index and there
+   are no cumulative offsets to get wrong.
+2. `FnIR` carries the slot count of each parameter (including `this`)
+   and of its result; the type section already emits parameter and
+   result *lists*, so multi-value results need no new encoding.
+3. `expr` returns a layout instead of a valtype, and `self.slots[name]`
+   becomes a list of local indices. `Let`, `Assign`, `BindVal` store in
+   reverse slot order; `Local` and `This` push in order.
+4. `MakeRecord` pushes its fields and allocates nothing; `Field` stages
+   the object into temporaries and pushes the one slot it wants; a
+   pattern's field binders take slot *k* rather than a load at
+   `4 + 4k`.
+5. `Inject` writes a discriminant slot beside the payload, so a match
+   tests slot zero and the `>= HEAP_BASE` pointer test disappears —
+   units and tags finally discriminate the same way.
+6. `if`/`else` and `match` whose result is not one slot: stage through
+   temporaries rather than introduce multi-value block types, which
+   keeps the blocktype encoding as it is.
+
+The blast radius is small in the corpus — `src/` uses arenas rather
+than records, so records appear in one backend test — but every one of
+that test's paths (argument, return, method receiver, destructuring)
+exercises a different part of the list above, which is why the change
+does not decompose into smaller landable pieces.
 
 What that implies, in order: a `layout` function in lowering, layouts on
 IR expressions and on `FnIR`'s parameters and result; locals allocated in
