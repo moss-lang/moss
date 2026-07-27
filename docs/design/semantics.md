@@ -30,6 +30,13 @@ restricted to nominal receivers, context formation gains *consistent
 merging* (new [D43]), `unit` stays ([D41] closed), and [D29] records that
 functors will start static-only with the `val` question still live.
 
+**Revision 4** closes the remaining sign-offs (D15, D38, D42, and D36's
+leftovers) and adds [D44]: import collisions are errors, `use ... as`
+renames (detached names included), and `x.b::m()` calls a module-qualified
+detached method because `::` binds more tightly than `.`. The log is now
+settled enough to build against; subsequent work happens in
+`docs/reference/` and the bootstrap compiler.
+
 ## 1. Design thesis
 
 Moss separates **scope** from **context**:
@@ -136,6 +143,7 @@ import "./lex.moss" as lexer;          # qualified access: lexer::lex
 import "./token.moss" use Eof, Name;   # unqualified names into file scope
 import "./prelude.moss" use *;         # glob (used by src/main.moss)
 import "./wasip1.moss" as wasi use Wasi;  # both at once
+import "./ops.moss" use .m as .m1;     # rename, detached names included ([D44])
 ```
 
 `as` binds a module alias usable with `::`; `use` copies specific names (or
@@ -152,6 +160,24 @@ a file consisting only of imports, whose own importers then `use *` it.
 (That pattern only works if plain `use` — as opposed to `use *` — *does*
 re-export; so the rule is: explicit `use` names become part of the module's
 exports, glob imports do not.)
+
+**[D44] DECIDED (import collisions and qualified method calls).** From the
+designer, closing [D36]'s leftover (b). Imports may not place two
+*different* symbols under one local name:
+
+```moss
+import "./a.moss" use .m;
+import "./b.moss" use .m;   # error: two symbols, one local name
+```
+
+This applies to detached method names and ordinary names alike. The escape
+hatches are module aliases (`import "./b.moss" as b;`) and renaming in the
+use list (`use .m as .m1` — the dot is part of a detached name's spelling
+and the rename keeps it). A detached method reached through a module alias
+is called with a qualified name: `x.b::m()`, which parses as
+`x . (b::m) ()` because `::` binds more tightly than `.`. So the shadowing
+case [D36] worried about cannot arise, and no disambiguation rule is
+needed.
 
 **[D10] DECIDED (module identity & instantiation).** A module is not a unit
 of instantiation and has no state; it is a bag of declarations, elaborated
@@ -216,7 +242,7 @@ at use sites, like `Range[T=NameId]`, absolutely stays — see §6.)
 
 ## 5. Types
 
-**[D15] PROPOSED.** Type expressions:
+**[D15] DECIDED.** Type expressions:
 
 - A path to a type symbol, alias, or nominal type: `Token`, `parse::TypeId`,
   possibly applied: `Option[T=TokenId]`, `Range[T=NameId]`.
@@ -346,7 +372,7 @@ total, and a bare reference substitutes nothing. There is nothing in
 between, and elaboration never has to adapt a partially-instantiated
 provider to a differently-shaped need — the spring-2026 tarpit.
 
-**[D42] PROPOSED (tag construction sites must apply explicitly).** The one
+**[D42] DECIDED (tag construction sites must apply explicitly).** The one
 borderline case in the corpus: `Some (expect(Name))` (parse.moss:147)
 constructs `Some` with no brackets in a region where `Some`'s requirement
 `T` is neither assumed nor bound — it could only come from *inferring*
@@ -641,12 +667,12 @@ The questions from revision 2, answered in notes.md:
   is the method.
 
 **[D36] DECIDED (method semantics).** The resolution rule above plus the
-Q1–Q7 answers. Two small leftovers, PROPOSED: (a) `This`/`this` are also
-legal in *attached* declarations, where `This` simply equals the named
-receiver type — harmless and symmetric; (b) when two detached methods named
-`.m` from different modules are both in scope, the item spelling `X.m` picks
-whichever `.m` ordinary scope resolution finds, and there is no qualified
-spelling yet — invent one (or lean on import renaming) when it first bites.
+Q1–Q7 answers. The two former leftovers are closed: (a) `This`/`this` are
+also legal in *attached* declarations, where `This` simply equals the named
+receiver type; (b) two detached methods with the same local name cannot
+coexist in scope at all — the colliding import is an error, and module
+aliases or `use`-renames plus the qualified call form `x.b::m()` cover
+every case ([D44]).
 
 ## 10. Execution model and entry point
 
@@ -656,7 +682,7 @@ any subset of `Std` (hello.md). The only primitively provided contexts are
 `src/wasip1.moss`); `Std` is meant to be *implemented in Moss* on top of them
 and bound by a driver, which is the `# TODO: Bind Std` in `src/main.moss`.
 
-**[D38] PROPOSED (bootstrap shortcut).** The bootstrap compiler provides
+**[D38] DECIDED (bootstrap shortcut).** The bootstrap compiler provides
 `Std` natively at first (Python implementations of `String`, `Path`, `Cell`,
 `print`, chars, ints), *and* provides `Wasm`/`Wasi` natively (Python ints and
 a bytearray memory), so that `moss run` works before the in-Moss `Std`
@@ -773,26 +799,18 @@ decisions above are confirmed.
 
 ## 13. Decision index
 
-Needs sign-off (**PROPOSED**): D15 type forms (union rule decided via
-[D16]; tuples/records still unconfirmed) · D36's two leftovers (`This` in
-attached declarations; qualified spelling for shadowed detached methods) ·
-D38 native-Std bootstrap sequencing · D42 explicit application at tag
-construction
-
-Genuinely undecided (**OPEN**): D29 the `val` half of functors (static-only
+Still **OPEN** (both post-MVP): D29 the `val` half of functors (static-only
 accepted as the starting point) · braceless `assume` statement form (§12,
-unaddressed in notes.md)
+never addressed — default is that it doesn't exist)
 
-**DECIDED** (rounds one and two of notes.md): D5 · D7 · D9 · D10 (+ import
-cycles forbidden) · D12 · D13 (option.moss → alias) · D14 · D16 (no
-post-monomorphization checks — global principle) · D17 · D18 · D20 · D22
-(no partial application: total or absent) · D23 · D24 (dropped) · D25 · D26
-· D27 · D28 · D30 (depth backstop = sole D16 exception) · D31 (no `for`) ·
-D32 · D33 (no operators in MVP; ops.moss is the future desugaring target) ·
-D34 · D35 (iteration deferred) · D36 (methods: Q1–Q7) · D39 · D40 · D41
-(keep `unit`) · D43 (consistent merging)
+Everything else is **DECIDED**: D1–D28 · D30–D44 (D3/D4 by designer fiat,
+D13 option.moss → alias, D16 no post-monomorphization checks, D22 total or
+absent, D24 dropped, D30 depth backstop as sole D16 exception, D31/D35 no
+`for`, D33 no operators with ops.moss as the future desugaring target, D36
+methods via Q1–Q7, D41 keep `unit`, D43 consistent merging, D44 import
+collisions + `::` tighter than `.`)
 
-Nothing structural remains open — what's left is two small PROPOSED syntax
-calls and the post-MVP functor/val question. The language is now pinned
-down enough to update `docs/reference/syntax.md` and start the Python lexer
-and parser against the [D40] corpus.
+The MVP language is fully pinned down. Next: rewrite
+`docs/reference/syntax.md` against this log, then build the bootstrap
+pipeline of §11 with the [D40] corpus tests, applying the §12 errata to
+`src/` as the corpus comes online.
