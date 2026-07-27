@@ -143,7 +143,54 @@ In any case, if I remember correctly, `lib/ops.moss` is actually already up to d
 
 ## 9. Methods
 
-See what I've written earlier in this document: I think we actually _do_ want to have both attached methods and detached methods, but the semantics is a bit subtle. Please feel free to ask specific followup questions so we can flesh this out more.
+### Q1
+
+Yes, let's just use `This`.
+
+### Q2
+
+Similarly we now have `this`.
+
+### Q3
+
+Hmm, good point, I hadn't thought about this. I guess there's not really any point to allowing a detached method to be defined? So I guess let's not allow it. Unless you can think of a situation where it _would_ be useful?
+
+### Q4
+
+Yes, this is one of the things that make detached methods so useful for writing programs: once you've resolved the type of the object the method is being called on, and you've resolved the method itself, then everything from the square brackets where that method appeared in the context get shoved into the context for interpreting the rest of the method signature. So in this case, we don't have `Foo` in the context, but `Ctx` says that once we know we're calling `.gimme` on an `A`, we can use `Foo=B` to interpret the `Foo` that appears in the signature of `.gimme`. This is how we thread the needle to support ergonomics while not having crazy search-y synthesis stuff from the context.
+
+### Q5
+
+I'm pretty sure this is just an error/inconsistency in the existing code under `src/`: I think we need to only allow attached methods to be on nominal types, not abstract ones.
+
+### Q6
+
+The answer to this one is a bit subtle. In short, unlike in previous prototypes, definitions of contexts in the new semantics operate via _consistent merging_.
+
+```
+context Ctx1 = A, B, A.gimme[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C];
+context Ctx3 = Ctx1, Ctx2;
+```
+
+A give context can only have _one_ binding for `A.gimme`. So is `Ctx3` just inconsistent? Well, no; it is quite possible for it to be satisfied consistently. All that needs to happen is for `B` and `C` to be bound to the same type. So the compiler sees it something like this:
+
+```
+context Ctx3 = A, B, C=B
+```
+
+I think there's a representational question here about symmetry: should we really have one of `B`/`C` be "primary" and then represent the other as being bound to it? I actually think probably not. Perhaps a better way would just be to have a context be two parts:
+
+1. A set of atoms.
+2. A definition of a DAG from those atoms.
+
+So in this case, both `Ctx1` and `Ctx2` would have three atoms (one for `A`, one for `B` or `C`, and one for the `A.gimme`). And `Ctx3` would _also_ have three atoms. The only differences between `Ctx1`/`Ctx2`/`Ctx3` would be what they say about which _symbols_ relate to which atoms, if that makes sense.
+
+For some academic literature on the specific idea of consistent merging (probably not super relevant to the broader ideas here about symbols and contexts), you can take a look at the paper ["Making a Type Difference: Subtraction on Intersection Types as Generalized Record Operations"](https://doi.org/10.1145/3571224) which my advisor sent me earlier this year, as well as some of the papers that one cites.
+
+### Q7
+
+I think we can let record fields and method names collide, disambiguating using the same approach Rust does.
 
 ## 10. Execution model and entry point
 
