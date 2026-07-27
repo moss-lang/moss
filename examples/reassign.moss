@@ -1,12 +1,17 @@
-assume Std;
+#!/usr/bin/env moss
 
-fn main() {
-  let foo = "a";
-  var bar = foo;
-  bar = "c";
-  let baz = bar;
-  bar = "b";
-  println(foo);
-  println(bar);
-  println(baz);
+assume Std {
+  fn main() {
+    let foo = char::a;
+    var bar = foo;
+    bar = char::c;
+    let baz = bar;
+    bar = char::b;
+    putchar(foo);
+    putchar(char::newline);
+    putchar(bar);
+    putchar(char::newline);
+    putchar(baz);
+    putchar(char::newline);
+  }
 }

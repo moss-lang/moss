@@ -1,10 +1,14 @@
-assume Std;
+#!/usr/bin/env moss
 
-fn foo(second: String, first: String) {
-  println(first);
-  println(second);
-}
+assume Std {
+  fn foo(second: Char, first: Char) {
+    putchar(first);
+    putchar(char::newline);
+    putchar(second);
+    putchar(char::newline);
+  }
 
-fn main() {
-  foo("goodbye", "hello");
+  fn main() {
+    foo(char::g, char::h);
+  }
 }

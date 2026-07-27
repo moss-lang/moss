@@ -1,7 +1,10 @@
-assume Std;
+#!/usr/bin/env moss
 
-fn main() {
-  if true {
-    println("so true");
+assume Std {
+  fn main() {
+    if True {
+      putchar(char::t);
+      putchar(char::newline);
+    }
   }
 }

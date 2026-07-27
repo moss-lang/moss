@@ -36,10 +36,22 @@ class TestHello(unittest.TestCase):
         source = (REPO / "examples/hello.moss").read_text(encoding="utf-8")
         self.assertEqual(run({"main.moss": source}), "Hello, world!\n")
 
-    def test_golden_stdout(self):
-        golden = (REPO / "tests/examples/stdout/hello.txt").read_text(encoding="utf-8")
-        source = (REPO / "examples/hello.moss").read_text(encoding="utf-8")
-        self.assertEqual(run({"main.moss": source}), golden)
+
+class TestExamples(unittest.TestCase):
+    """Every rewritten example matches its golden stdout. `escape` is still
+    written in the old language (it needs string literals) and is excluded
+    until D48 is decided."""
+
+    EXAMPLES = ["hello", "true", "reassign", "params", "context", "rebind", "exit"]
+
+    def test_goldens(self):
+        for name in self.EXAMPLES:
+            with self.subTest(example=name):
+                source = (REPO / f"examples/{name}.moss").read_text(encoding="utf-8")
+                golden = (REPO / f"tests/examples/stdout/{name}.txt").read_text(
+                    encoding="utf-8"
+                )
+                self.assertEqual(run({"main.moss": source}), golden)
 
 
 class TestErrors(unittest.TestCase):

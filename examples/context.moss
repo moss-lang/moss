@@ -1,18 +1,21 @@
-assume Std;
+#!/usr/bin/env moss
 
-val string: String;
+assume Std {
+  val c: Char;
 
-assume string {
-  fn print_it() {
-    println(string);
+  assume c {
+    fn print_it() {
+      putchar(c);
+      putchar(char::newline);
+    }
+
+    fn wait_for_it() {
+      print_it();
+    }
   }
 
-  fn wait_for_it() {
-    print_it();
+  fn main() {
+    bind c=char::h;
+    wait_for_it();
   }
-}
-
-fn main() {
-  bind string="hello";
-  wait_for_it();
 }

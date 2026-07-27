@@ -1,26 +1,28 @@
-assume Std;
+#!/usr/bin/env moss
 
-val string: String;
+assume Std {
+  val c: Char;
 
-
-fn hi() {
-  bind string="hi";
-  print_it();
-}
-
-assume string {
-  fn print_it() {
-    println(string);
-  }
-
-  fn hello_hi() {
-    print_it();
-    hi();
+  fn hi() {
+    bind c=char::i;
     print_it();
   }
-}
 
-fn main() {
-  bind string="hello";
-  hello_hi();
+  assume c {
+    fn print_it() {
+      putchar(c);
+      putchar(char::newline);
+    }
+
+    fn hello_hi() {
+      print_it();
+      hi();
+      print_it();
+    }
+  }
+
+  fn main() {
+    bind c=char::h;
+    hello_hi();
+  }
 }
