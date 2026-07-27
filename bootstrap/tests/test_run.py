@@ -16,7 +16,10 @@ def run(files, entry="main.moss", args=None):
     def read(path):
         if path in files:
             return files[path]
-        return collect.default_read(path)
+        p = Path(path)
+        if not p.is_absolute():
+            p = REPO / path
+        return p.read_text(encoding="utf-8")
 
     program = collect.load(entry, read=read, prelude=PRELUDE)
     lower = Lower(program)
@@ -292,6 +295,52 @@ class TestStd(unittest.TestCase):
         files = main_body("let x = one.div(zero);")
         with self.assertRaises(interp.MossPanic):
             run(files)
+
+
+class TestGenerics(unittest.TestCase):
+    def test_iscell_idiom(self):
+        """The shared-T functor idiom from src/cell.moss, end to end: a
+        totally-applied context (IsCell[T=Int, Cell=MyCell]) provides
+        detached methods keyed at the *resolved* receiver type, satisfied by
+        binds whose providers are attached methods (which can see `this`),
+        with a D44 rename keeping src's .read distinct from Std's."""
+        files = {
+            "main.moss": (
+                'import "./src/inner.moss" use T;\n'
+                'import "./src/cell.moss" use Cell, IsCell, .read as .cread, .write as .cwrite;\n'
+                "\n"
+                "assume Std {\n"
+                "  type MyCell CellInt;\n"
+                "\n"
+                "  fn MyCell.get(): Int {\n"
+                "    match this { MyCell c => c.read() }\n"
+                "  }\n"
+                "\n"
+                "  fn MyCell.put(x: Int) {\n"
+                "    match this { MyCell c => c.write(x), }\n"
+                "  }\n"
+                "\n"
+                "  context CellOps = IsCell[T=Int, Cell=MyCell];\n"
+                "\n"
+                "  assume CellOps {\n"
+                "    fn bump(c: MyCell) {\n"
+                "      c.cwrite(c.cread().add(one));\n"
+                "    }\n"
+                "  }\n"
+                "\n"
+                "  fn main() {\n"
+                "    bind T=Int;\n"
+                "    bind MyCell.cread=MyCell.get;\n"
+                "    bind MyCell.cwrite=MyCell.put;\n"
+                "    let c = MyCell (cell_int());\n"
+                "    c.put(one);\n"
+                "    bump(c);\n"
+                "    if c.get().eq(one.add(one)) { putchar(char::y) }\n"
+                "  }\n"
+                "}\n"
+            )
+        }
+        self.assertEqual(run(files), "y")
 
 
 class TestSelfHostedLexer(unittest.TestCase):

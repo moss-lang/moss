@@ -194,7 +194,14 @@ class Lower:
         if this_ty is None:
             this_ty = self.symbol_type(module, receiver, tymap, env)
         sig = self.fn_sig(method, tymap, env, this=this_ty)
-        key = (receiver, method)
+        # D36: the key is the receiver *type* — so `IsCell[Cell=MyCell]`
+        # provides its methods at MyCell, where calls will look them up.
+        receiver_head = head(this_ty)
+        if receiver_head is None:
+            self.error(
+                module, f"`{show(this_ty)}` cannot receive methods (no nominal head)"
+            )
+        key = (receiver_head, method)
         self.merge(env.methods, module, key, sig)
         if key not in needs:
             needs.append(key)
@@ -600,10 +607,11 @@ class FnChecker:
                 self.error(f"no method `.{spec.dot}` for `{receiver.name}` is in scope")
             this_ty = self.lower.symbol_type(module, receiver, self.env.tymap, self.env)
             sig = self.lower.fn_sig(method, self.env.tymap, self.env, this=this_ty)
-            fn_symbol = self.expect_defined_fn(expr)
+            fn_symbol = self.expect_provider(expr, this_ty)
             self.match_fn_sig(fn_symbol, sig, kind="method")
-            self.lower.merge(self.env.methods, module, (receiver, method), sig)
-            return ir.BindFn((receiver, method), fn_symbol)
+            key = (head(this_ty), method)
+            self.lower.merge(self.env.methods, module, key, sig)
+            return ir.BindFn(key, fn_symbol)
         target = resolve_path(module, spec.path)
         if target is None:
             self.error(f"`{'::'.join(spec.path)}` is not in scope")
@@ -651,6 +659,30 @@ class FnChecker:
                 f"`{'::'.join(expr.path)}` must be a defined function to provide a bind"
             )
         return target
+
+    def expect_provider(self, expr, this_ty) -> Symbol:
+        """The right side of a *method* bind: a defined function, or an
+        attached method (`bind MyCell.read=MyCell.get;`) — the latter is the
+        only provider that can see the receiver as `this` (Q4)."""
+        if isinstance(expr, ast.Field) and isinstance(expr.obj, ast.PathExpr):
+            receiver = resolve_path(self.module, expr.obj.path)
+            if isinstance(receiver, Symbol) and receiver.kind in (
+                SymKind.UNIT,
+                SymKind.TAG,
+            ):
+                for home in (receiver.module, self.module):
+                    attached = home.attached.get((id(receiver), expr.name))
+                    if attached is not None and attached.decl.body is not None:
+                        if head(this_ty) is not receiver:
+                            self.error(
+                                f"provider `{attached.name}` is attached to "
+                                f"`{receiver.name}`, not `{show(this_ty)}`"
+                            )
+                        return attached
+                self.error(
+                    f"`{receiver.name}` has no defined attached method `.{expr.name}`"
+                )
+        return self.expect_defined_fn(expr)
 
     def match_fn_sig(self, provider: Symbol, wanted: FnSig, kind: str):
         # D27: the provider's signature must match after current substitutions,
@@ -1036,14 +1068,31 @@ class FnChecker:
                     sig = self.lower.fn_sig(attached, self.env.tymap, self.env, this=oty)
                     args = self.check_args(attached.name, sig, expr.args)
                     return ir.Call(("direct", attached), tuple(args), this=obj), sig.ret
-        # Provided: detached or abstract-attached, from the context.
+        # Provided: detached or abstract-attached, from the context. A local
+        # (possibly renamed) detached import resolves exactly by symbol;
+        # otherwise match by declared name, erroring on ambiguity (D36).
+        if method is None and len(expr.path) == 1:
+            method = self.module.detached.get(name)
+        candidates = []
         for key, sig in self.env.methods.items():
             receiver, msym = key
-            if receiver is h and msym.name.lstrip(".") == name:
-                if method is not None and msym is not method:
-                    continue
-                args = self.check_args(msym.name, sig, expr.args)
-                return ir.Call(("env", key), tuple(args), this=obj), sig.ret
+            if receiver is not h:
+                continue
+            if method is not None and msym is method:
+                candidates = [(key, sig)]
+                break
+            if method is None and msym.name.lstrip(".") == name:
+                candidates.append((key, sig))
+        if len(candidates) > 1:
+            self.error(
+                f"`.{name}` is ambiguous for `{show(oty)}`: "
+                f"{[k[1].name for k, _ in candidates]} are all available; "
+                "import one under a distinct name (D44)"
+            )
+        if candidates:
+            key, sig = candidates[0]
+            args = self.check_args(key[1].name, sig, expr.args)
+            return ir.Call(("env", key), tuple(args), this=obj), sig.ret
         self.error(
             f"no method `.{name}` is available for `{show(oty)}` in the context here"
         )
