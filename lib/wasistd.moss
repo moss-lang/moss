@@ -5,13 +5,14 @@ import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
 # `.length` each exist in two of these modules, and method lookup
 # falls back to the receiver's home module, which is always right.
 import "./path.moss" as path use Path, pwd;
-import "./bool.moss" use Bool;
-import "./char.moss" as char use Char, .char;
+import "./bool.moss" use Bool, true, false;
+import "./char.moss" as char use Char, Chars, .char;
 import "./cell.moss" as cell use CellInt, cell_int;
 import "./int.moss" as int use Int, zero, one;
 import "./list.moss" as list use IntList, int_list;
-import "./std.moss" use putchar;
-import "./string.moss" as string use String, print, first_arg;
+import "./std.moss" use putchar, Std;
+import "./string.moss" as string use String, print, first_arg, arg_count, arg_at;
+import "./strlist.moss" as strlist use StrList, str_list;
 
 # `Std`, implemented in Moss over the primitive context (D52). This is the
 # slice done so far; growing it is volume, not design — each further item
@@ -32,7 +33,9 @@ assume I32 {
 
 context Branch = i32_bool;
 
-context Console = Char, String, putchar, print, first_arg;
+context Console =
+  Char, putchar, String, print, first_arg,
+  Char.eq, Char.ne, Char.lt, Char.gt, Char.le, Char.ge;
 
 # Paths, which need i64 for path_open's rights masks (D57, now that D59
 # has made i64 a scalar like any other).
@@ -42,7 +45,8 @@ context Files = Path, pwd, Path.join, Path.read;
 # compiler's — which no longer has one (D59).
 context Containers =
   CellInt, cell_int, CellInt.read, CellInt.write,
-  IntList, int_list, IntList.push, IntList.get, IntList.set, IntList.length;
+  IntList, int_list, IntList.push, IntList.get, IntList.set, IntList.length,
+  StrList, str_list, StrList.push, StrList.get, StrList.length;
 
 # The numeric slice. `Int` binds to a nominal wrapper rather than to I32
 # directly, because only an attached method can see its receiver and only
@@ -115,8 +119,8 @@ assume Wasm, Branch {
 
   fn Str.length(): Num { Num (w::i32_load(addr(this))) }
 
-  fn Str.get(index: Num): I32 {
-    w::i32_load8_u(w::i32_add(w::i32_add(addr(this), four()), raw(index)))
+  fn Str.get(index: Num): Chr {
+    Chr (w::i32_load8_u(w::i32_add(w::i32_add(addr(this), four()), raw(index))))
   }
 
   fn Str.slice(start: Num, len: Num): Str {
@@ -160,8 +164,8 @@ assume Wasm, Branch {
       fd_write(w::i32_one, w::i32_zero, w::i32_one, twelve());
     }
 
-    fn wasi_putchar(c: I32) {
-      w::i32_store8(eight(), c);
+    fn wasi_putchar(c: Chr) {
+      w::i32_store8(eight(), code_of(c));
       write_all(eight(), w::i32_one);
     }
 
@@ -211,16 +215,25 @@ assume Wasm, Branch {
       Str (s)
     }
 
-    fn wasi_first_arg(): Str {
+    fn wasi_arg_count(): Num {
+      args_sizes_get(twenty_four(), twenty_eight());
+      Num (w::i32_load(twenty_four()))
+    }
+
+    fn wasi_arg_at(index: Num): Str { arg_slot(raw(index)) }
+
+    fn wasi_first_arg(): Str { arg_slot(w::i32_one) }
+
+    fn arg_slot(want: I32): Str {
       args_sizes_get(twenty_four(), twenty_eight());
       let argc = w::i32_load(twenty_four());
       let argv = alloc(w::i32_mul(argc, four()));
       let buf = alloc(w::i32_load(twenty_eight()));
       args_get(argv, buf);
-      if i32_bool(w::i32_lt_u(argc, two())) {
+      if i32_bool(w::i32_ge_u(want, argc)) {
         return string_of(w::i32_zero, w::i32_zero);
       }
-      let p = w::i32_load(w::i32_add(argv, four()));
+      let p = w::i32_load(w::i32_add(argv, w::i32_mul(want, four())));
       var n = w::i32_zero;
       while i32_bool(w::i32_load8_u(w::i32_add(p, n))) {
         n = w::i32_add(n, w::i32_one);
@@ -249,7 +262,21 @@ assume Wasm, Branch {
 
   # `Int.char`: a Char is an I32 once Console is applied, so this is the
   # unwrap. Declared as I32 here because `Char` is not bound in this file.
-  fn Num.to_char(): I32 { raw(this) }
+  # Char, wrapped so it can carry the comparison methods.
+  type Chr I32;
+
+  fn code_of(c: Chr): I32 { match c { Chr v => v } }
+
+  fn Chr.eq(rhs: Chr): Bool { i32_bool(w::i32_eq(code_of(this), code_of(rhs))) }
+  fn Chr.ne(rhs: Chr): Bool { i32_bool(w::i32_ne(code_of(this), code_of(rhs))) }
+  fn Chr.lt(rhs: Chr): Bool { i32_bool(w::i32_lt_u(code_of(this), code_of(rhs))) }
+  fn Chr.gt(rhs: Chr): Bool { i32_bool(w::i32_gt_u(code_of(this), code_of(rhs))) }
+  fn Chr.le(rhs: Chr): Bool { i32_bool(w::i32_le_u(code_of(this), code_of(rhs))) }
+  fn Chr.ge(rhs: Chr): Bool { i32_bool(w::i32_ge_u(code_of(this), code_of(rhs))) }
+
+  fn Chr.code(): Num { Num (code_of(this)) }
+
+  fn Num.to_char(): Chr { Chr (raw(this)) }
 
   # One mutable word.
   type Cell I32;
@@ -294,6 +321,20 @@ assume Wasm, Branch {
   fn Ints.set(index: Num, value: Num) {
     w::i32_store(elem(w::i32_load(ints_addr(this)), raw(index)), raw(value));
   }
+
+  type Strs I32;
+
+  fn strs_addr(l: Strs): I32 { match l { Strs a => a } }
+
+  fn wasi_str_list(): Strs { Strs (ints_addr(wasi_int_list())) }
+
+  fn Strs.length(): Num { Num (w::i32_load(w::i32_load(strs_addr(this)))) }
+
+  fn Strs.get(index: Num): Str {
+    Str (w::i32_load(elem(w::i32_load(strs_addr(this)), raw(index))))
+  }
+
+  fn Strs.push(value: Str) { Ints (strs_addr(this)).push(Num (addr(value))); }
 
   fn Ints.push(value: Num) {
     let handle = ints_addr(this);
@@ -358,13 +399,16 @@ functor WasiNumerics: Wasm, Branch -> Numerics {
 # slice of Std that runs over Wasi so far. Applying a functor from inside
 # a functor is just another bind (D55).
 context Basics =
-  Console, Numerics, Int.char,
+  Console, Numerics, Int.char, Char.code, arg_count, arg_at,
   String.length, String.get, String.slice, String.concat;
 
 functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind WasiConsole;
   bind WasiNumerics;
   bind Int.char = Num.to_char;
+  bind Char.code = Chr.code;
+  bind string::arg_count = wasi_arg_count;
+  bind string::arg_at = wasi_arg_at;
   bind String.length = Str.length;
   bind String.get = Str.get;
   bind String.slice = Str.slice;
@@ -382,6 +426,11 @@ functor WasiContainers: Wasm, Branch -> Containers {
   bind IntList.get = Ints.get;
   bind IntList.set = Ints.set;
   bind IntList.length = Ints.length;
+  bind strlist::StrList = Strs;
+  bind strlist::str_list = wasi_str_list;
+  bind StrList.push = Strs.push;
+  bind StrList.get = Strs.get;
+  bind StrList.length = Strs.length;
 }
 
 functor WasiFiles: Wasm, Wasi, Branch -> Files {
@@ -392,9 +441,18 @@ functor WasiFiles: Wasm, Wasi, Branch -> Files {
 }
 
 functor WasiConsole: Wasm, Wasi, Branch -> Console {
-  bind char::Char = I32;
+  # The type binds come first: flattening walks the body in order, and a
+  # signature mentioning Char cannot be elaborated before Char is bound.
+  bind char::Char = Chr;
   bind string::String = Str;
   bind putchar = wasi_putchar;
   bind string::print = wasi_print;
   bind string::first_arg = wasi_first_arg;
+  bind Char.eq = Chr.eq;
+  bind Char.ne = Chr.ne;
+  bind Char.lt = Chr.lt;
+  bind Char.gt = Chr.gt;
+  bind Char.le = Chr.le;
+  bind Char.ge = Chr.ge;
+
 }

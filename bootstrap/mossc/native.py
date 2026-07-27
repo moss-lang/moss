@@ -105,6 +105,7 @@ def gen_wasichar_moss() -> str:
         "",
         'import "./wasm.moss" as w use Wasm, I32;',
         'import "./char.moss" as char use Char;',
+        'import "./wasistd.moss" use Chr;',
         "",
         "assume Wasm {",
         "  # Shift amounts, built from `i32_one` like everything else.",
@@ -128,7 +129,7 @@ def gen_wasichar_moss() -> str:
         return out
 
     for name, value in CHARS.items():
-        lines.append(f"  fn char_{name}(): I32 {{ {expr(ord(value))} }}")
+        lines.append(f"  fn char_{name}(): Chr {{ Chr ({expr(ord(value))}) }}")
     lines.append("}")
     lines.append("")
     lines.append("context WasiChars =")

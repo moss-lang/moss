@@ -394,6 +394,16 @@ done: a union of payload-carrying members is still a heap cell, where two
 Wasm locals would do; the value model is one i32 per value throughout, so
 that is a separate change.
 
+**[D60] FINDING (an attached method needs its receiver declared beside
+it).** Collect links a module's imports *after* declaring its own names,
+so `fn Bool.flip()` in a module that merely imports `Bool` is rejected —
+"attached method receiver `Bool` is not in scope". The `Wasi` bridge hit
+this providing `Bool.not`, whose provider must be a method on `Bool`
+([D54]); the fix was to define `Bool.flip` in bool.moss, which is
+arguably where it belonged. Worth revisiting if a bridge ever needs to
+attach to a type it does not own: the ordering is an implementation
+detail, not a decision.
+
 **[D59] DECIDED by the designer (the compiler has no heap).** Every value
 of a Moss program compiles to a *finite sequence of Wasm scalars* — i32
 and i64 now, f32/f64 if they ever arrive — and the compiler allocates

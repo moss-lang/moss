@@ -3,6 +3,7 @@
 
 import "./wasm.moss" as w use Wasm, I32;
 import "./char.moss" as char use Char;
+import "./wasistd.moss" use Chr;
 
 assume Wasm {
   # Shift amounts, built from `i32_one` like everything else.
@@ -15,104 +16,104 @@ assume Wasm {
 
   fn bit(k: I32): I32 { w::i32_shl(w::i32_one, k) }
 
-  fn char_a(): I32 { w::i32_or(w::i32_or(w::i32_one, bit(n5())), bit(n6())) }
-  fn char_b(): I32 { w::i32_or(w::i32_or(bit(n1()), bit(n5())), bit(n6())) }
-  fn char_c(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n5())), bit(n6())) }
-  fn char_d(): I32 { w::i32_or(w::i32_or(bit(n2()), bit(n5())), bit(n6())) }
-  fn char_e(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n5())), bit(n6())) }
-  fn char_f(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n5())), bit(n6())) }
-  fn char_g(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n5())), bit(n6())) }
-  fn char_h(): I32 { w::i32_or(w::i32_or(bit(n3()), bit(n5())), bit(n6())) }
-  fn char_i(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n5())), bit(n6())) }
-  fn char_j(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n5())), bit(n6())) }
-  fn char_k(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n5())), bit(n6())) }
-  fn char_l(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n5())), bit(n6())) }
-  fn char_m(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n5())), bit(n6())) }
-  fn char_n(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n5())), bit(n6())) }
-  fn char_o(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n5())), bit(n6())) }
-  fn char_p(): I32 { w::i32_or(w::i32_or(bit(n4()), bit(n5())), bit(n6())) }
-  fn char_q(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n4())), bit(n5())), bit(n6())) }
-  fn char_r(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_s(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_t(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_u(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_v(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_w(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_x(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n3()), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_y(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_z(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_A(): I32 { w::i32_or(w::i32_one, bit(n6())) }
-  fn char_B(): I32 { w::i32_or(bit(n1()), bit(n6())) }
-  fn char_C(): I32 { w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n6())) }
-  fn char_D(): I32 { w::i32_or(bit(n2()), bit(n6())) }
-  fn char_E(): I32 { w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n6())) }
-  fn char_F(): I32 { w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n6())) }
-  fn char_G(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n6())) }
-  fn char_H(): I32 { w::i32_or(bit(n3()), bit(n6())) }
-  fn char_I(): I32 { w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n6())) }
-  fn char_J(): I32 { w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n6())) }
-  fn char_K(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n6())) }
-  fn char_L(): I32 { w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n6())) }
-  fn char_M(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n6())) }
-  fn char_N(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n6())) }
-  fn char_O(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n6())) }
-  fn char_P(): I32 { w::i32_or(bit(n4()), bit(n6())) }
-  fn char_Q(): I32 { w::i32_or(w::i32_or(w::i32_one, bit(n4())), bit(n6())) }
-  fn char_R(): I32 { w::i32_or(w::i32_or(bit(n1()), bit(n4())), bit(n6())) }
-  fn char_S(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n4())), bit(n6())) }
-  fn char_T(): I32 { w::i32_or(w::i32_or(bit(n2()), bit(n4())), bit(n6())) }
-  fn char_U(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n4())), bit(n6())) }
-  fn char_V(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n4())), bit(n6())) }
-  fn char_W(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n4())), bit(n6())) }
-  fn char_X(): I32 { w::i32_or(w::i32_or(bit(n3()), bit(n4())), bit(n6())) }
-  fn char_Y(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n4())), bit(n6())) }
-  fn char_Z(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n4())), bit(n6())) }
-  fn char_digit0(): I32 { w::i32_or(bit(n4()), bit(n5())) }
-  fn char_digit1(): I32 { w::i32_or(w::i32_or(w::i32_one, bit(n4())), bit(n5())) }
-  fn char_digit2(): I32 { w::i32_or(w::i32_or(bit(n1()), bit(n4())), bit(n5())) }
-  fn char_digit3(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n4())), bit(n5())) }
-  fn char_digit4(): I32 { w::i32_or(w::i32_or(bit(n2()), bit(n4())), bit(n5())) }
-  fn char_digit5(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n4())), bit(n5())) }
-  fn char_digit6(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n4())), bit(n5())) }
-  fn char_digit7(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n4())), bit(n5())) }
-  fn char_digit8(): I32 { w::i32_or(w::i32_or(bit(n3()), bit(n4())), bit(n5())) }
-  fn char_digit9(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n4())), bit(n5())) }
-  fn char_exclam(): I32 { w::i32_or(w::i32_one, bit(n5())) }
-  fn char_percent(): I32 { w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n5())) }
-  fn char_ampersand(): I32 { w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n5())) }
-  fn char_lparen(): I32 { w::i32_or(bit(n3()), bit(n5())) }
-  fn char_rparen(): I32 { w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n5())) }
-  fn char_star(): I32 { w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n5())) }
-  fn char_plus(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n5())) }
-  fn char_comma(): I32 { w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n5())) }
-  fn char_hyphen(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n5())) }
-  fn char_dot(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n5())) }
-  fn char_slash(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n5())) }
-  fn char_colon(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n4())), bit(n5())) }
-  fn char_semi(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n4())), bit(n5())) }
-  fn char_less(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n4())), bit(n5())) }
-  fn char_equal(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n4())), bit(n5())) }
-  fn char_greater(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n4())), bit(n5())) }
-  fn char_lbracket(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n4())), bit(n6())) }
-  fn char_rbracket(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n4())), bit(n6())) }
-  fn char_caret(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n4())), bit(n6())) }
-  fn char_lbrace(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_pipe(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_rbrace(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n4())), bit(n5())), bit(n6())) }
-  fn char_space(): I32 { bit(n5()) }
-  fn char_newline(): I32 { w::i32_or(bit(n1()), bit(n3())) }
-  fn char_tab(): I32 { w::i32_or(w::i32_one, bit(n3())) }
-  fn char_cr(): I32 { w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())) }
-  fn char_underscore(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n4())), bit(n6())) }
-  fn char_quote(): I32 { w::i32_or(bit(n1()), bit(n5())) }
-  fn char_apostrophe(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n5())) }
-  fn char_octothorpe(): I32 { w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n5())) }
-  fn char_backslash(): I32 { w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n4())), bit(n6())) }
-  fn char_question(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n4())), bit(n5())) }
-  fn char_at(): I32 { bit(n6()) }
-  fn char_dollar(): I32 { w::i32_or(bit(n2()), bit(n5())) }
-  fn char_backtick(): I32 { w::i32_or(bit(n5()), bit(n6())) }
-  fn char_tilde(): I32 { w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n4())), bit(n5())), bit(n6())) }
+  fn char_a(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n5())), bit(n6()))) }
+  fn char_b(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n5())), bit(n6()))) }
+  fn char_c(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n5())), bit(n6()))) }
+  fn char_d(): Chr { Chr (w::i32_or(w::i32_or(bit(n2()), bit(n5())), bit(n6()))) }
+  fn char_e(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n5())), bit(n6()))) }
+  fn char_f(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n5())), bit(n6()))) }
+  fn char_g(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n5())), bit(n6()))) }
+  fn char_h(): Chr { Chr (w::i32_or(w::i32_or(bit(n3()), bit(n5())), bit(n6()))) }
+  fn char_i(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_j(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_k(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_l(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_m(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_n(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_o(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_p(): Chr { Chr (w::i32_or(w::i32_or(bit(n4()), bit(n5())), bit(n6()))) }
+  fn char_q(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_r(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_s(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_t(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_u(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_v(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_w(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_x(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n3()), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_y(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_z(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_A(): Chr { Chr (w::i32_or(w::i32_one, bit(n6()))) }
+  fn char_B(): Chr { Chr (w::i32_or(bit(n1()), bit(n6()))) }
+  fn char_C(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n6()))) }
+  fn char_D(): Chr { Chr (w::i32_or(bit(n2()), bit(n6()))) }
+  fn char_E(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n6()))) }
+  fn char_F(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n6()))) }
+  fn char_G(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n6()))) }
+  fn char_H(): Chr { Chr (w::i32_or(bit(n3()), bit(n6()))) }
+  fn char_I(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n6()))) }
+  fn char_J(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n6()))) }
+  fn char_K(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n6()))) }
+  fn char_L(): Chr { Chr (w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n6()))) }
+  fn char_M(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n6()))) }
+  fn char_N(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n6()))) }
+  fn char_O(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n6()))) }
+  fn char_P(): Chr { Chr (w::i32_or(bit(n4()), bit(n6()))) }
+  fn char_Q(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n4())), bit(n6()))) }
+  fn char_R(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n4())), bit(n6()))) }
+  fn char_S(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n4())), bit(n6()))) }
+  fn char_T(): Chr { Chr (w::i32_or(w::i32_or(bit(n2()), bit(n4())), bit(n6()))) }
+  fn char_U(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n4())), bit(n6()))) }
+  fn char_V(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n4())), bit(n6()))) }
+  fn char_W(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n4())), bit(n6()))) }
+  fn char_X(): Chr { Chr (w::i32_or(w::i32_or(bit(n3()), bit(n4())), bit(n6()))) }
+  fn char_Y(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_Z(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_digit0(): Chr { Chr (w::i32_or(bit(n4()), bit(n5()))) }
+  fn char_digit1(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n4())), bit(n5()))) }
+  fn char_digit2(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n4())), bit(n5()))) }
+  fn char_digit3(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n4())), bit(n5()))) }
+  fn char_digit4(): Chr { Chr (w::i32_or(w::i32_or(bit(n2()), bit(n4())), bit(n5()))) }
+  fn char_digit5(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n4())), bit(n5()))) }
+  fn char_digit6(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n4())), bit(n5()))) }
+  fn char_digit7(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n4())), bit(n5()))) }
+  fn char_digit8(): Chr { Chr (w::i32_or(w::i32_or(bit(n3()), bit(n4())), bit(n5()))) }
+  fn char_digit9(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_exclam(): Chr { Chr (w::i32_or(w::i32_one, bit(n5()))) }
+  fn char_percent(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n5()))) }
+  fn char_ampersand(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n5()))) }
+  fn char_lparen(): Chr { Chr (w::i32_or(bit(n3()), bit(n5()))) }
+  fn char_rparen(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n5()))) }
+  fn char_star(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n5()))) }
+  fn char_plus(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n5()))) }
+  fn char_comma(): Chr { Chr (w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n5()))) }
+  fn char_hyphen(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n5()))) }
+  fn char_dot(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n5()))) }
+  fn char_slash(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n5()))) }
+  fn char_colon(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_semi(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_less(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_equal(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_greater(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_lbracket(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_rbracket(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_caret(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_lbrace(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_pipe(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_rbrace(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_space(): Chr { Chr (bit(n5())) }
+  fn char_newline(): Chr { Chr (w::i32_or(bit(n1()), bit(n3()))) }
+  fn char_tab(): Chr { Chr (w::i32_or(w::i32_one, bit(n3()))) }
+  fn char_cr(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3()))) }
+  fn char_underscore(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_quote(): Chr { Chr (w::i32_or(bit(n1()), bit(n5()))) }
+  fn char_apostrophe(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n5()))) }
+  fn char_octothorpe(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n5()))) }
+  fn char_backslash(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_question(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_at(): Chr { Chr (bit(n6())) }
+  fn char_dollar(): Chr { Chr (w::i32_or(bit(n2()), bit(n5()))) }
+  fn char_backtick(): Chr { Chr (w::i32_or(bit(n5()), bit(n6()))) }
+  fn char_tilde(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
 }
 
 context WasiChars =

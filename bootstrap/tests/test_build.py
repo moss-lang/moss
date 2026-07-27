@@ -465,6 +465,17 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({}, entry="tests/wasi/noalloc.moss")
         self.assertEqual(run_wasm(wasm), "ky\n")
 
+    def test_the_whole_std_over_wasi(self):
+        """The milestone: code written against the ordinary `Std`
+        signature, with every one of its names provided in Moss over the
+        primitive context. `main` assumes `Wasm, Wasi, Branch` and applies
+        one functor (D52, D55); nothing native is underneath."""
+        wasm = compile_wasm({}, entry="tests/wasi/full.moss")
+        source = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
+        self.assertEqual(
+            run_in_repo(wasm, ["lib/bool.moss"]), source[:-1] + " yy\n"
+        )
+
     def test_containers_over_wasi(self):
         """CellInt and IntList in Moss, over the library's allocator. The
         list is pushed past its initial capacity, so the grow-by-copy runs
@@ -525,7 +536,7 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({}, entry="src/main.moss")
         self.assertEqual(
             run_in_repo(wasm, ["lib/bool.moss"]),
-            "uFalse;uTrue;tBool;vfalse;vtrue;\n\n\n",
+            "uFalse;uTrue;tBool;vfalse;vtrue;fflip;\n\n\n",
         )
 
     def test_self_hosted_collect_compiles_to_wasm(self):
@@ -584,7 +595,7 @@ class TestWasmBackend(unittest.TestCase):
             ),
             (
                 (REPO / "lib/bool.moss").read_text(encoding="utf-8"),
-                "uFalse;uTrue;tBool;vfalse;vtrue;\n\n\n",
+                "uFalse;uTrue;tBool;vfalse;vtrue;fflip;\n\n\n",
             ),
         ]
         for source, expected in cases:

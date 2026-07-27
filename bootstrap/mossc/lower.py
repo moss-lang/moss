@@ -271,10 +271,24 @@ class Lower:
             for item in target.decl.items:
                 self.expand_spec(target.module, item, out, depth + 1)
             return
+        if spec.dot is None and self.already_provided(target):
+            return  # a definition, not something anyone can bind
         key = self.spec_key(module, spec)
         if key is not None:
-            name = target.name if spec.dot is None else f"`{target.name}.{spec.dot}`"
-            out[key] = name if spec.dot is not None else f"`{target.name}`"
+            name = f"`{target.name}.{spec.dot}`" if spec.dot else f"`{target.name}`"
+            out[key] = name
+
+    def already_provided(self, symbol: Symbol) -> bool:
+        """Whether the symbol carries its own definition, so a functor has
+        nothing to bind: units, tags, aliases, defined fns and defined
+        vals. `Bool` and `true` are in `Std` but nobody provides them."""
+        if symbol.kind in (SymKind.UNIT, SymKind.TAG, SymKind.ALIAS):
+            return True
+        if symbol.kind == SymKind.FN:
+            return getattr(symbol.decl, "body", None) is not None
+        if symbol.kind == SymKind.VAL:
+            return getattr(symbol.decl, "init", None) is not None
+        return False
 
     def spec_key(self, module: Module, spec: ast.Spec):
         target = resolve_path(module, spec.path)

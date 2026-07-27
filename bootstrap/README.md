@@ -60,8 +60,11 @@ implemented over that primitive context and installed with a functor
 `first_arg`, a bump allocator, all of `Int`'s arithmetic, `String` with
 its methods, `Path` including a `read` built from path_open and fd_read,
 and `CellInt`/`IntList`; [`lib/wasichar.moss`](/lib/wasichar.moss)
-provides the char constants. `Char`'s comparisons and `StrList` are what
-remain.
+provides the char constants. All of it is there now, and
+[`lib/wasi.moss`](/lib/wasi.moss) composes the pieces into a single
+functor providing the whole `Std` signature: `tests/wasi/full.moss` is
+ordinary Moss written against `Std`, whose `main` assumes only
+`Wasm, Wasi, Branch` and opens with `bind WasiStd;`.
 
 ## Usage
 

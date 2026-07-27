@@ -1,0 +1,23 @@
+import "./bool.moss" use Bool;
+import "./num.moss" use .not;
+import "./std.moss" use Std;
+import "./wasichar.moss" use WasiCharConsts;
+import "./wasistd.moss" use WasiBasics, WasiContainers, WasiFiles, Branch;
+import "./wasm.moss" use Wasm;
+import "./wasip1.moss" use Wasi;
+
+# All of it: the `Std` signature, provided in Moss over the primitive
+# context. A program applies this once at the top of `main` (D52) and is
+# otherwise written against `Std` exactly as it always was, with nothing
+# native underneath.
+#
+# This lives above wasistd.moss and wasichar.moss because it composes
+# both, and the generated char constants import the wrappers from the
+# former.
+functor WasiStd: Wasm, Wasi, Branch -> Std {
+  bind WasiBasics;
+  bind WasiContainers;
+  bind WasiFiles;
+  bind WasiCharConsts;
+  bind Bool.not = Bool.flip;
+}

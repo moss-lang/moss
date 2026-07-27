@@ -965,7 +965,7 @@ class TestSelfHostedParser(unittest.TestCase):
     def test_names_read_back_from_the_arena(self):
         text = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
         self.assertEqual(
-            self.parse_letters(text), "uFalse;uTrue;tBool;vfalse;vtrue;\n\n\n"
+            self.parse_letters(text), "uFalse;uTrue;tBool;vfalse;vtrue;fflip;\n\n\n"
         )
 
     def test_duplicate_declarations_reported(self):

@@ -1,0 +1,27 @@
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+
+# Ordinary Moss against the ordinary `Std` signature — the same code that
+# would run on the native standard library. Nothing under it is native:
+# every name here is provided by the functor `main` applies.
+assume Std {
+  fn greet() {
+    let s = pwd.join(first_arg()).read();
+    print(s.slice(zero, s.length().sub(one)));
+    putchar(char::space);
+    let xs = int_list();
+    xs.push(s.length());
+    if xs.get(zero).gt(zero) { putchar(char::y) } else { putchar(char::n) }
+    if char::a.lt(char::b).not() { putchar(char::n) } else { putchar(char::y) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    greet();
+  }
+}
