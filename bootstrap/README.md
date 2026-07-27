@@ -28,12 +28,14 @@ module — `python3 -m mossc build FILE | wasmtime -` runs every example
 with output identical to the interpreter's. Records, tags, match,
 strings, and fn binds are the next slices.
 
-Status highlights: all seven runnable `examples/` match their goldens;
-`tests/errors/` are golden-checked diagnostics; and the self-hosted lexer
-in `src/lex.moss` runs on this interpreter and tokenizes real Moss files,
-including its own source (`python3 -m mossc run ../src/main.moss FILE`, or
-`bin/moss-boot run src/main.moss FILE` from the repo root), with keywords
-recognized by a character trie (no string literals needed — D48).
+Status highlights: all seven runnable `examples/` match their goldens
+under both the interpreter and the Wasm backend; `tests/errors/` are
+golden-checked diagnostics; and the self-hosted front end under `src/` —
+lexer with a keyword trie, arena parser with name spans, interner,
+duplicate-declaration and unresolved-reference checks — runs on the
+interpreter *and* compiles to a single WASI module with byte-identical
+output (`moss run src/main.moss FILE`, or the drivers in the Wasm backend
+tests). The remaining out-of-slice constructs are `Path` and fn binds.
 
 ## Usage
 
