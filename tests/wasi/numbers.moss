@@ -23,5 +23,12 @@ assume Wasm, Wasi, Branch {
     let three = one.add(one).add(one);
     let six = three.add(three);
     count(three, one.shl(six).add(one).char());   # 'A', three times
+    # The rest of the operator surface, over Wasi: (7*9 - 2) % 32 + 32 = 61
+    let seven = three.add(three).add(one);
+    let nine = three.mul(three);
+    let big = seven.mul(nine).sub(one.add(one));
+    if big.rem(one.shl(six).shr(one)).add(one.shl(six).shr(one)).ge(zero) {
+      putchar(big.rem(one.shl(six).shr(one)).add(one.shl(six).shr(one)).char());
+    }
   }
 }

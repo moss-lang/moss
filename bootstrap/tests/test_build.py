@@ -410,7 +410,7 @@ class TestWasmBackend(unittest.TestCase):
         terms. Int goes through a nominal wrapper because only an attached
         method can see its receiver (D54), so every Int here is boxed."""
         wasm = compile_wasm({}, entry="tests/wasi/numbers.moss")
-        self.assertEqual(run_wasm(wasm), "AAA")
+        self.assertEqual(run_wasm(wasm), "AAA=")
 
     def test_path_read_in_wasm(self):
         """`Path` was the last thing outside the slice: `pwd` is the empty

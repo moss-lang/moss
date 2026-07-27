@@ -32,7 +32,10 @@ context Console = Char, String, putchar, print, first_arg;
 # a nominal type can carry one (D54) — so every Int is a boxed tag until
 # the backend unboxes single-payload tags over scalars.
 context Numerics =
-  Int, zero, one, Int.add, Int.sub, Int.shl, Int.lt, Int.eq;
+  Int, zero, one,
+  Int.add, Int.sub, Int.mul, Int.div, Int.rem, Int.neg,
+  Int.and, Int.or, Int.xor, Int.shl, Int.shr,
+  Int.eq, Int.ne, Int.lt, Int.gt, Int.le, Int.ge;
 
 assume Wasm, Branch {
   # There are no literals (D4), so the addresses and sizes below are built
@@ -118,7 +121,15 @@ assume Wasm, Branch {
 
   fn Num.add(rhs: Num): Num { Num (w::i32_add(raw(this), raw(rhs))) }
   fn Num.sub(rhs: Num): Num { Num (w::i32_sub(raw(this), raw(rhs))) }
+  fn Num.mul(rhs: Num): Num { Num (w::i32_mul(raw(this), raw(rhs))) }
+  fn Num.div(rhs: Num): Num { Num (w::i32_div_s(raw(this), raw(rhs))) }
+  fn Num.rem(rhs: Num): Num { Num (w::i32_rem_s(raw(this), raw(rhs))) }
+  fn Num.and(rhs: Num): Num { Num (w::i32_and(raw(this), raw(rhs))) }
+  fn Num.or(rhs: Num): Num { Num (w::i32_or(raw(this), raw(rhs))) }
+  fn Num.xor(rhs: Num): Num { Num (w::i32_xor(raw(this), raw(rhs))) }
   fn Num.shl(rhs: Num): Num { Num (w::i32_shl(raw(this), raw(rhs))) }
+  fn Num.shr(rhs: Num): Num { Num (w::i32_shr_s(raw(this), raw(rhs))) }
+  fn Num.neg(): Num { Num (w::i32_sub(w::i32_zero, raw(this))) }
 
   # `Int.char`: a Char is an I32 once Console is applied, so this is the
   # unwrap. Declared as I32 here because `Char` is not bound in this file.
@@ -126,6 +137,10 @@ assume Wasm, Branch {
 
   fn Num.lt(rhs: Num): Bool { i32_bool(w::i32_lt_s(raw(this), raw(rhs))) }
   fn Num.eq(rhs: Num): Bool { i32_bool(w::i32_eq(raw(this), raw(rhs))) }
+  fn Num.ne(rhs: Num): Bool { i32_bool(w::i32_ne(raw(this), raw(rhs))) }
+  fn Num.gt(rhs: Num): Bool { i32_bool(w::i32_gt_s(raw(this), raw(rhs))) }
+  fn Num.le(rhs: Num): Bool { i32_bool(w::i32_le_s(raw(this), raw(rhs))) }
+  fn Num.ge(rhs: Num): Bool { i32_bool(w::i32_ge_s(raw(this), raw(rhs))) }
 
   # Functions rather than defined vals: a defined val may not take
   # assumptions yet (D50), and these need `Wasm`. A bind's right-hand side
@@ -140,7 +155,19 @@ functor WasiNumerics: Wasm, Branch -> Numerics {
   bind int::one = wasi_one();
   bind Int.add = Num.add;
   bind Int.sub = Num.sub;
+  bind Int.mul = Num.mul;
+  bind Int.div = Num.div;
+  bind Int.rem = Num.rem;
+  bind Int.neg = Num.neg;
+  bind Int.and = Num.and;
+  bind Int.or = Num.or;
+  bind Int.xor = Num.xor;
   bind Int.shl = Num.shl;
+  bind Int.shr = Num.shr;
+  bind Int.ne = Num.ne;
+  bind Int.gt = Num.gt;
+  bind Int.le = Num.le;
+  bind Int.ge = Num.ge;
   bind Int.lt = Num.lt;
   bind Int.eq = Num.eq;
 }

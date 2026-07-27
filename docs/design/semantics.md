@@ -366,6 +366,16 @@ It also settles [D29]'s open half against the static-only reframing —
 functor carrying only types and fns would leave most of the signature to
 a hand-written prologue regardless.
 
+**[D57] FINDING (an in-language `Path.read` needs i64).** `path_open`
+takes its two rights masks as u64, as lib/wasip1.moss correctly declares.
+The Wasm backend's value model is uniformly i32, so a Moss implementation
+of `Path.read` cannot construct those arguments — it is the one part of
+`Std` that cannot be written in Moss today, and the backend keeps
+providing it as a shim. Supporting i64 means typed locals and parameters
+rather than "everything is an i32", so it is a real slice of work; a
+narrower option is to allow i64 expressions only in argument position,
+where the Wasm validator can check them without the value model changing.
+
 **[D56] DECIDED (module identity is a canonical path).** A module was keyed
 by the *spelling* of the path that reached it, so the same file arrived at
 two ways — an absolute prelude and a relative import — became two modules
@@ -1065,6 +1075,16 @@ assume Wasm {
 }
 # bind int::Int = Num;  bind Int.add = Num.add;
 ```
+
+Rev 7's first slice of `Std`-over-`Wasi` shows the cost is larger than
+"a wrapper per provider". It is a wrapper per *type*: any Std type with
+methods must bind to a nominal one, because the provider has to be an
+attached method and an abstract type cannot carry one. So `Int` is boxed,
+and `String` and `Path` will be too as soon as `.length` or `.join` are
+provided — `String` is still bare `I32` in `Console` only because `print`
+and `first_arg` are plain functions. An in-language `Std` therefore boxes
+every value it hands out, and unboxing single-payload tags over scalars
+stops being a nice-to-have.
 
 Rev 7 proposed letting a plain-function provider take the receiver as its
 first parameter instead, which needs no wrapper and matches the convention
