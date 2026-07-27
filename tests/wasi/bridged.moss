@@ -1,0 +1,15 @@
+import "../../lib/wasm.moss" use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi;
+import "./signature.moss" as mini;
+import "./bridge.moss" as bridge;
+import "./app.moss" use app;
+
+assume Wasm, Wasi {
+  fn main() {
+    # Apply the functor: three lines today, one line if D29 lands.
+    bind mini::Text = I32;
+    bind mini::emit = bridge::put;
+    bind mini::greeting = bridge::bang();
+    app();
+  }
+}

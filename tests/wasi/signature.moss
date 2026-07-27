@@ -1,0 +1,5 @@
+# A signature: what a program wants, independent of how it is provided.
+type Text;
+fn emit(t: Text);
+val greeting: Text;
+context MiniStd = Text, emit, greeting;

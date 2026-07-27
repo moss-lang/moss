@@ -45,14 +45,16 @@ the names they bring in, and a prelude — passed as an argument, since
 under every module below it. Pointed at `lib/prelude.moss` and
 `src/main.moss` it reaches all eighteen modules of the compiler's own
 sources and explains every name in them. It runs on the interpreter
-only: `Path` is not in the Wasm slice (nor are fn binds).
+only, since `Path` is the one thing left outside the Wasm slice.
 
 Under all of that sits the primitive context of D52. A program may
 assume `Wasm` and `Wasi` ([`lib/wasm.moss`](/lib/wasm.moss),
 [`lib/wasip1.moss`](/lib/wasip1.moss)) instead of `Std`, in which case
 intrinsics compile to instructions and WASI functions to imports, with
-no shims involved at all — see `tests/wasi/raw.moss`. Implementing `Std`
-itself in Moss on top of that is what retires the native table.
+no shims involved at all — see `tests/wasi/raw.moss`. A signature can be
+implemented over that primitive context and installed with binds
+(`tests/wasi/bridged.moss`), which is the shape `Std`-over-`Wasi` will
+take; doing it for `Std` itself retires the native table.
 
 ## Usage
 

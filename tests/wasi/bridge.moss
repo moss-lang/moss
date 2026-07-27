@@ -1,0 +1,25 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+
+# A functor from the primitive context to that signature: a module whose
+# components implement MiniStd's items over Wasm and Wasi.
+assume Wasm, Wasi {
+  fn put(c: I32) {
+    let one = w::i32_one;
+    let four = w::i32_shl(one, w::i32_add(one, one));
+    let eight = w::i32_add(four, four);
+    w::i32_store(w::i32_zero, eight);
+    w::i32_store(four, one);
+    w::i32_store8(eight, c);
+    fd_write(one, w::i32_zero, one, w::i32_add(eight, four));
+  }
+}
+
+assume Wasm {
+  fn bang(): I32 {
+    let one = w::i32_one;
+    let two = w::i32_add(one, one);
+    let five = w::i32_add(w::i32_add(two, two), one);
+    w::i32_add(w::i32_shl(one, five), one)
+  }
+}

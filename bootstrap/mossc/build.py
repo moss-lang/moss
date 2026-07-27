@@ -16,8 +16,9 @@ linear memory behind a bump allocator (units stay scalar, so their codes
 must stay below the heap base); match compiles to code/pointer tests;
 strings are [len|bytes] entering via a WASI args shim; CellInt is a boxed
 word; IntList is a handle to a [len, cap, elems] block that grows by
-copying. Path, fn binds, and closures are not yet in the slice and report
-themselves as such.
+copying. A fn bind compiles by specialising the callee per binding, so a
+contextual call is a direct call and no function table is needed; `Path`
+is what remains outside the slice, and reports itself as such.
 
 Alongside that, and under it, the primitive context of D52: a program may
 assume `Wasm` and `Wasi` (lib/wasm.moss, lib/wasip1.moss) instead of
@@ -171,6 +172,13 @@ WASM_OPS["i32_extend8_s"] = b"\xc0"
 WASM_OPS["i32_extend16_s"] = b"\xc1"
 
 
+def freeze_env(env: dict) -> tuple:
+    """A hashable form of a binding environment, for keying specializations."""
+    return tuple(
+        sorted((id(k), id(g), freeze_env(sub)) for k, (g, sub) in env.items())
+    )
+
+
 class Backend:
     def __init__(self, program: Program, lower, natives: dict):
         self.program = program
@@ -250,17 +258,44 @@ class Backend:
             and key not in self.natives
         )
 
-    def val_needs(self, symbol: Symbol) -> list:
-        return [k for k in self.lower.needs_of[id(symbol)] if self.passed_need(k)]
+    def val_slots(self, symbol: Symbol, env: dict) -> list:
+        """The val keys this specialization takes as parameters: its own
+        (D2 — vals are the only runtime context), plus, for every fn need
+        bound to a provider, whatever that provider needs in turn. A bound
+        provider is called from wherever the need is used, which may be
+        several frames below the bind, so its values are threaded down."""
+        out: list = []
+        seen: set = set()
 
-    def compile_fn(self, symbol: Symbol) -> int:
-        if id(symbol) in self.fn_index:
-            return self.fn_index[id(symbol)]
+        def visit(sym: Symbol, e: dict, depth: int):
+            if depth > 32:
+                raise NotCompilable("fn binds nested too deeply")
+            for key in self.lower.needs_of[id(sym)]:
+                if self.passed_need(key):
+                    if id(key) not in seen:
+                        seen.add(id(key))
+                        out.append(key)
+                elif key in e:
+                    provider, sub = e[key]
+                    visit(provider, sub, depth + 1)
+
+        visit(symbol, env, 0)
+        return out
+
+    def compile_fn(self, symbol: Symbol, env: dict | None = None) -> int:
+        """Compile a *specialization*: the function under a specific set of
+        fn bindings. Two call sites that bind different providers get two
+        function bodies, each with its calls resolved to direct ones — D2's
+        "statically a direct call, with the captured context passed as
+        data", which is what makes fn binds compilable without a table."""
+        env = env or {}
+        cache = (id(symbol), freeze_env(env))
+        if cache in self.fn_index:
+            return self.fn_index[cache]
         index = self.first_fn() + len(self.fn_index)
-        self.fn_index[id(symbol)] = index
+        self.fn_index[cache] = index
         fn = self.lower.fns[id(symbol)]
-        needs = self.val_needs(symbol)
-        compiler = FnCompiler(self, fn, needs)
+        compiler = FnCompiler(self, fn, self.val_slots(symbol, env), env)
         body = compiler.run()  # may recursively compile callees
         self.compiled[index] = (compiler.param_count, body)
         return index
@@ -596,9 +631,10 @@ class Backend:
 
 
 class FnCompiler:
-    def __init__(self, backend: Backend, fn: ir.FnIR, needs: list):
+    def __init__(self, backend: Backend, fn: ir.FnIR, needs: list, env: dict):
         self.b = backend
         self.fn = fn
+        self.env = dict(env)  # fn need key -> (provider symbol, its own env)
         self.code = bytearray()
         self.slots: dict = {}  # name or ('need', key) -> local index
         self.provisions: dict = {}  # key -> ('local', idx) | ('const', n)
@@ -652,6 +688,7 @@ class FnCompiler:
 
     def block(self, node: ir.Block):
         saved = dict(self.provisions)
+        saved_env = dict(self.env)
         for stmt in node.stmts:
             self.stmt(stmt)
         if node.tail is None:
@@ -659,6 +696,7 @@ class FnCompiler:
         else:
             self.expr(node.tail)
         self.provisions = saved
+        self.env = saved_env
 
     def stmt(self, node):
         if isinstance(node, (ir.Let, ir.Assign)):
@@ -672,7 +710,17 @@ class FnCompiler:
             self.code += LOCAL_SET + uleb(idx)
             self.provisions[node.key] = ("local", idx)
         elif isinstance(node, ir.BindFn):
-            raise NotCompilable("fn binds")
+            # Record which function this key now names, and alias the
+            # provider's own needs to what they were bound to *here* — the
+            # capture happens at the bind site, so the values are the ones
+            # in scope now, whatever frame ends up making the call.
+            sub: dict = {}
+            for callee_key, caller_key in node.needs_map:
+                if caller_key in self.env:
+                    sub[callee_key] = self.env[caller_key]
+                elif self.b.passed_need(callee_key):
+                    self.provisions[callee_key] = self.provide(caller_key)
+            self.env[node.key] = (node.fn, sub)
         elif isinstance(node, ir.ExprStmt):
             self.expr(node.expr)
             self.code += DROP
@@ -852,11 +900,28 @@ class FnCompiler:
                 self.expr(node.this)
             for arg in node.args:
                 self.expr(arg)
+            callee_env = {}
+            translate = {}
             for callee_key, caller_key in node.needs_map:
-                if self.b.passed_need(callee_key):
-                    self.push_provision(caller_key)
-            index = self.b.compile_fn(target)
-            self.code += CALL + uleb(index)
+                translate[callee_key] = caller_key
+                if caller_key in self.env:
+                    callee_env[callee_key] = self.env[caller_key]
+            # The callee's parameters are its own val needs (named on its
+            # side, so translated) followed by whatever its bound providers
+            # capture (already named on ours).
+            for slot in self.b.val_slots(target, callee_env):
+                self.push_provision(translate.get(slot, slot))
+            self.code += CALL + uleb(self.b.compile_fn(target, callee_env))
+            return
+        if target in self.env:
+            provider, sub = self.env[target]
+            if node.this is not None:
+                self.expr(node.this)
+            for arg in node.args:
+                self.expr(arg)
+            for slot in self.b.val_slots(provider, sub):
+                self.push_provision(slot)
+            self.code += CALL + uleb(self.b.compile_fn(provider, sub))
             return
         # Contextual call: a native method, putchar, or out of slice.
         key = target

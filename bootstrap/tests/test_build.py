@@ -183,6 +183,68 @@ class TestWasmBackend(unittest.TestCase):
         with self.assertRaises(build_mod.NotCompilable):
             compile_wasm({"main.moss": source})
 
+    def test_fn_binds_compile_to_specialisations(self):
+        """A bound fn is a direct call to a specialisation of the callee,
+        not an indirect one (D2). Two providers of the same key produce two
+        specialisations of everything below them, and a provider's captured
+        vals are threaded down to wherever the call actually happens — here
+        two frames below the bind."""
+        files = {
+            "runner.moss": "fn task();\n"
+            "assume task {\n"
+            "  fn go() { twice(); }\n"
+            "  fn twice() { task(); task(); }\n"
+            "}\n",
+            "main.moss": 'import "./runner.moss" as runner;\n'
+            "assume Std {\n"
+            "  val c: Char;\n"
+            "  assume c { fn emit() { putchar(c); } }\n"
+            "  fn shout() { putchar(char::exclam); }\n"
+            "  fn main() {\n"
+            "    bind c=char::k;\n"
+            "    bind runner::task=emit;\n"
+            "    runner::go();\n"
+            "    bind runner::task=shout;\n"
+            "    runner::go();\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n",
+        }
+        self.assertEqual(run_wasm(compile_wasm(files)), "kk!!\n")
+
+    def test_method_provision_compiles(self):
+        """`bind N.plus = Box.plus` is a fn bind too, and the call through
+        it resolves to Box.plus directly."""
+        source = (
+            "type N;\n"
+            "fn .plus(rhs: This): This;\n"
+            "val n0: N;\n"
+            "context NOps = N, n0, N.plus;\n"
+            "assume Std {\n"
+            "  type Box Char;\n"
+            "  fn Box.plus(rhs: Box): Box {\n"
+            "    match this { Box a => match rhs { Box b => Box (b) } }\n"
+            "  }\n"
+            "  fn putbox(b: Box) { match b { Box c => putchar(c) } }\n"
+            "  assume NOps { fn use_it(): N { n0.plus(n0) } }\n"
+            "  fn main() {\n"
+            "    bind N = Box;\n"
+            "    bind n0 = Box (char::k);\n"
+            "    bind N.plus = Box.plus;\n"
+            "    putbox(use_it());\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n"
+        )
+        self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), "k\n")
+
+    def test_bridge_from_wasi_to_a_signature(self):
+        """The shape D52 is aiming at, in miniature: user code written
+        against a signature alone, a module implementing that signature
+        over the primitive context, and `main` applying it with binds."""
+        wasm = compile_wasm({}, entry="tests/wasi/bridged.moss")
+        self.assertEqual(run_wasm(wasm), "!!")
+
     def test_out_of_slice_reports_itself(self):
         source = "assume Std {\n  fn main() { let p = pwd.join(first_arg()); }\n}\n"
         with self.assertRaises(build_mod.NotCompilable):
