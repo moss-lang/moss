@@ -1,0 +1,73 @@
+import "./ast.moss" as ast;
+import "./intern.moss" as intern;
+import "./lex.moss" as lexer;
+import "./prog.moss" as prog;
+import "./syntax.moss" as syntax;
+
+# The compiler's own state, in one place.
+#
+# Every stage keeps its arenas as abstract vals, so that a driver can run
+# a stage twice over different inputs — which is what `bind` is for. The
+# cost is that starting the compiler means binding forty of them, and
+# that is exactly what a functor is (D55): one declaration that maps the
+# `Std` it needs to build the arenas into the whole compiler context.
+#
+# `lexer::src` is deliberately not here. It is the one piece of state
+# that is rebound per file, by the loader, as each module is read.
+
+context Compiler = ast::Ast, intern::Interner, lexer::at, lexer::mark,
+  syntax::Cursor, prog::Prog;
+
+functor Boot: Std -> Compiler {
+  bind ast::nkind = int_list();
+  bind ast::na = int_list();
+  bind ast::nb = int_list();
+  bind ast::nc = int_list();
+  bind ast::nd = int_list();
+  bind ast::kids = int_list();
+  bind ast::pnames = int_list();
+  bind ast::pstart = int_list();
+  bind ast::plen = int_list();
+  bind ast::itexts = str_list();
+
+  bind intern::ichars = int_list();
+  bind intern::istarts = int_list();
+  bind intern::ilens = int_list();
+
+  bind lexer::at = cell_int();
+  bind lexer::mark = cell_int();
+
+  bind syntax::tok = cell_int();
+  bind syntax::tstart = cell_int();
+  bind syntax::tend = cell_int();
+  bind syntax::tok2 = cell_int();
+  bind syntax::t2start = cell_int();
+  bind syntax::t2end = cell_int();
+  bind syntax::errs = cell_int();
+  bind syntax::errpos = cell_int();
+
+  bind prog::mpaths = str_list();
+  bind prog::mroots = int_list();
+  bind prog::mnroots = int_list();
+  bind prog::mstate = int_list();
+  bind prog::pinfo = str_list();
+  bind prog::sym_mod = int_list();
+  bind prog::sym_name = int_list();
+  bind prog::sym_kind = int_list();
+  bind prog::sym_decl = int_list();
+  bind prog::sym_recv = int_list();
+  bind prog::sym_asm = int_list();
+  bind prog::sym_nasm = int_list();
+  bind prog::ent_mod = int_list();
+  bind prog::ent_ns = int_list();
+  bind prog::ent_name = int_list();
+  bind prog::ent_to = int_list();
+  bind prog::ent_pub = int_list();
+  bind prog::att_mod = int_list();
+  bind prog::att_recv = int_list();
+  bind prog::att_name = int_list();
+  bind prog::att_sym = int_list();
+  bind prog::err_code = int_list();
+  bind prog::err_mod = int_list();
+  bind prog::err_name = int_list();
+}

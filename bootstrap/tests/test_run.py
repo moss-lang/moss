@@ -1144,3 +1144,139 @@ class TestSelfHostedSyntax(unittest.TestCase):
                     self.assertEqual(actual, expected + "\n")
         finally:
             os.chdir(cwd)
+
+
+SCOPE_DRIVER = (
+    "import \"./src/ast.moss\" as ast;\n"
+    "import \"./src/boot.moss\" use Boot, Compiler;\n"
+    "import \"./src/bytes.moss\" use *;\n"
+    "import \"./src/intern.moss\" as intern;\n"
+    "import \"./src/prog.moss\" as prog;\n"
+    "\n"
+    "assume Std {\n"
+    "  fn main() {\n"
+    "    bind Boot;\n"
+    "    go();\n"
+    "  }\n"
+    "\n"
+    "  assume Compiler {\n"
+    "    fn tab() { putchar(char::tab); }\n"
+    "\n"
+    "    fn go() {\n"
+    "      let entry = prog::load_program(arg_at(one), arg_at(one.add(one)));\n"
+    "      var e = zero;\n"
+    "      while e.lt(prog::error_count()) {\n"
+    "        putchar(char::exclam);\n"
+    "        put_int(prog::err_code.get(e));\n"
+    "        putchar(char::space);\n"
+    "        print(prog::module_path(prog::err_mod.get(e)));\n"
+    "        if ast::is_some(prog::err_name.get(e)) {\n"
+    "          putchar(char::space);\n"
+    "          intern::put(prog::err_name.get(e));\n"
+    "        }\n"
+    "        putchar(char::newline);\n"
+    "        e = e.add(one);\n"
+    "      }\n"
+    "      var i = zero;\n"
+    "      while i.lt(prog::ent_mod.length()) {\n"
+    "        print(prog::module_path(prog::ent_mod.get(i)));\n"
+    "        tab();\n"
+    "        put_int(prog::ent_ns.get(i));\n"
+    "        tab();\n"
+    "        intern::put(prog::ent_name.get(i));\n"
+    "        tab();\n"
+    "        let to = prog::ent_to.get(i);\n"
+    "        if prog::ent_ns.get(i).eq(prog::ns_alias()) {\n"
+    "          print(prog::module_path(to));\n"
+    "          tab();\n"
+    "          putchar(char::star);\n"
+    "        } else {\n"
+    "          print(prog::module_path(prog::sym_mod.get(to)));\n"
+    "          tab();\n"
+    "          intern::put(prog::sym_name.get(to));\n"
+    "        }\n"
+    "        putchar(char::newline);\n"
+    "        i = i.add(one);\n"
+    "      }\n"
+    "      var a = zero;\n"
+    "      while a.lt(prog::att_mod.length()) {\n"
+    "        print(prog::module_path(prog::att_mod.get(a)));\n"
+    "        tab();\n"
+    "        putchar(char::at);\n"
+    "        tab();\n"
+    "        intern::put(prog::sym_name.get(prog::att_recv.get(a)));\n"
+    "        putchar(char::dot);\n"
+    "        intern::put(prog::att_name.get(a));\n"
+    "        tab();\n"
+    "        print(prog::module_path(prog::sym_mod.get(prog::att_sym.get(a))));\n"
+    "        tab();\n"
+    "        intern::put(prog::att_name.get(a));\n"
+    "        putchar(char::newline);\n"
+    "        a = a.add(one);\n"
+    "      }\n"
+    "    }\n"
+    "  }\n"
+    "}\n"
+)
+
+
+class TestSelfHostedCollectScopes(unittest.TestCase):
+    """src/prog.moss against bootstrap/mossc/collect.py: the module graph,
+    the symbols every declaration gets, and the scope each module ends up
+    with — names, detached methods, aliases, and attached methods keyed by
+    receiver. Compared as a set of (module, namespace, name, target)
+    rows, over the compiler's own sources: 23 modules, 1101 rows."""
+
+    def rows_from_bootstrap(self, entry):
+        import os
+
+        from mossc import ast, collect
+
+        program = collect.load(entry, prelude=PRELUDE, root=REPO)
+
+        def rel(path):
+            return os.path.relpath(path, REPO)
+
+        def sname(sym):
+            if isinstance(sym.decl, ast.Fndef):
+                return sym.decl.name.name
+            return sym.name
+
+        rows = []
+        for m in program.modules.values():
+            for name, sym in m.names.items():
+                rows.append((rel(m.path), "0", name, rel(sym.module.path), sname(sym)))
+            for name, sym in m.detached.items():
+                rows.append((rel(m.path), "1", name, rel(sym.module.path), sname(sym)))
+            for name, sub in m.aliases.items():
+                rows.append((rel(m.path), "2", name, rel(sub.path), "*"))
+            for (_, mn), sym in m.attached.items():
+                rows.append(
+                    (rel(m.path), "@", f"{sym.receiver.name}.{mn}",
+                     rel(sym.module.path), mn)
+                )
+        return sorted(rows)
+
+    def rows_from_moss(self, entry):
+        import os
+
+        cwd = os.getcwd()
+        os.chdir(REPO)
+        try:
+            out = run(
+                {"main.moss": SCOPE_DRIVER}, args=["lib/prelude.moss", entry]
+            )
+        finally:
+            os.chdir(cwd)
+        rows = []
+        for line in out.strip().split("\n"):
+            self.assertFalse(line.startswith("!"), f"collect error: {line}")
+            rows.append(tuple(line.split("\t")))
+        return sorted(rows)
+
+    def test_scopes_match_the_bootstrap(self):
+        for entry in ("src/main.moss", "tests/wasi/full.moss"):
+            with self.subTest(entry=entry):
+                self.assertEqual(
+                    self.rows_from_moss(entry), self.rows_from_bootstrap(entry)
+                )
