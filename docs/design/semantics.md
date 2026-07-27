@@ -43,6 +43,12 @@ had been naming, and corrects [D48]: the self-hosted compiler
 does not need a string literal to find its prelude, it needs a way to
 reach `argv`.
 
+**Revision 8** rewrites the self-hosted compiler against this log rather
+than patching it, which discharges the `src/` half of §12's errata and
+prices the codegen half of [D48] exactly: a Wasm emitter needs no string
+literals, only a generated function per name. What remains of [D48] is
+diagnostics.
+
 **Revision 5 onward** is incremental: decision points appended as
 implementation forces them, PROPOSED until the designer reacts. So far:
 [D45] (concrete `Bool`), [D46] (module aliases export), [D47] (a finding:
@@ -779,6 +785,22 @@ argues for literals is codegen — a Wasm emitter must write
 `"wasi_snapshot_preview1"`, `"fd_write"` and `"_start"` into its output —
 and diagnostics. Both are further off. Still deferred.
 
+Rev 8 wrote the emitter and can price the codegen half exactly: it cost
+one generated function per name. `src/spell.moss` holds twenty-one of
+them — the WASI module and field names, `_start`, `memory`, and the
+handful of names the compiler must *recognize* rather than write — each
+pushing characters against the `char` constants, exactly as the keyword
+trie does. `src/wasmops.moss` does the same in bulk for the hundred-odd
+`Wasm` intrinsic names, interned once at startup so that recognizing
+`i32_add` is an id comparison. Both are generated and neither is
+pleasant, but nothing was blocked, and a name the compiler already read
+out of a file needs no spelling at all: a WASI import's field name is
+copied straight out of the interner. So the codegen argument for
+literals is weaker than rev 7 expected. The diagnostics argument is
+unchanged and is now the whole of it — the self-hosted compiler reports
+an error as a code letter and a name, because a sentence is a string it
+would have to hold. Still deferred.
+
 **[D52] DECIDED by the designer (`Wasi` is the primitive context; `Std` is
 a library over it).** [D38] made `Std` primitive: the bootstrap provides it
 natively, and [D39] says `main` may assume a subset of it. The designer's
@@ -1099,36 +1121,23 @@ decisions above are confirmed.
 - `docs/learn/hello.md`: the `println("Hello, world!")` example at line 73
   contradicts [D4]; `putchar`/`char::*` need to actually exist in the new
   `lib/`.
-- `src/token.moss`, `src/lex.moss`: token set per [D3]/[D4]; keyword and
-  name lexing missing entirely; the `c == '!'` ladder is doubly stale —
-  char literals ([D4]) *and* the `==` operator ([D33]) — and becomes calls
-  against named char constants; `next_byte(): Char | Eof` has an abstract
-  union member ([D15]) and needs a nominal wrapper, e.g. `type Read Char;`
-  and `Read | Eof`; `lex()` must gain the two-character-symbol,
-  whitespace/comment, keyword, and name paths.
-- `src/cli.moss`: `pos + 1` and `pos >= string.length()` use literals and
-  operators ([D4], [D33]); missing `bind lexer::Char=Char;` ([D27]); the
-  `for` loop at line 49 ([D35]); `Graph`, `print_bytes`, `node.lower()`,
-  `graph.codegen()` are undeclared sketch holes; `Std`'s member list in
-  `src/std.moss` names undeclared `File` and `println`.
-- `src/parse.moss`: `ScopeId` undeclared; `tree()`'s match is
-  non-exhaustive ([D34]); the `peek() == ...` comparisons ([D33]);
-  `Some (expect(Name))` needs explicit application ([D42]);
-  `names.push(next())` pushes a `TokenId` where `T=NameId` (needs a
-  conversion or a rethink of `NameId`).
-- `src/option.moss`: `type Option | None | Some;` becomes
-  `type Option = | None | Some;` ([D13]).
-- `src/lower.moss`: missing `=>` on the `Sig`/`Fn` arms (lines 103, 106);
-  `ImportId`, `toplevel`, the `imports` iterable, and `ScopeId` undeclared;
-  three `for` loops (lines 45, 50, 81) to rewrite ([D35]).
-- Attached-on-abstract methods everywhere (Q5/[D36]): `src/std.moss`
-  (`String.length`, `String.get`, `Path.join`, `Path.read`),
-  `src/cell.moss` (`Cell.read`, `Cell.write`), `src/parse.moss`
-  (`List.push`, `List.done`, `TokenSet.add`), `src/lower.moss`
-  (`TokenId.name`, `ImportId.module`, `ModuleId.insert`, `ModuleId.get`,
-  `Context.extend`, `Context.depend`) — every one becomes a detached
-  `fn .m(...)` declaration; the context items and call sites keep their
-  current spellings.
+- **All the `src/` entries below are discharged.** Rev 8 rewrote the
+  self-hosted compiler against this log: `src/lex.moss` and
+  `src/token.moss` carry the [D3]/[D4] token set with a keyword trie;
+  `src/syntax.moss` parses the whole grammar; `src/prog.moss` loads the
+  module graph; `src/codegen.moss` writes Wasm. The files the entries
+  named — `src/parse.moss`, `src/tree.moss`, `src/mods.moss`,
+  `src/collect.moss`, `src/lower.moss`, `src/std.moss` — are gone,
+  replaced rather than patched, and `src/cell.moss`/`src/option.moss`
+  moved to `tests/fixtures/` where the tests that use them live. The
+  attached-on-abstract methods of Q5/[D36] went with them. Kept here for
+  the record of what the rewrite had to fix:
+  the `c == '!'` ladder (char literals [D4] *and* the `==` operator
+  [D33]); `next_byte(): Char | Eof`, an abstract union member ([D15])
+  that needed the nominal `type Read Char;` wrapper; `pos + 1` and
+  `pos >= string.length()` in the old CLI; the `for` loops of [D35];
+  `Some (expect(Name))` needing explicit application ([D42]); and
+  `type Option | None | Some;` becoming an alias ([D13]).
 - `lib/` (almost all of it): previous-iteration design (`for X=Y {}`
   grouping, `This`/`this`, old-style detached `.to_string`,
   `Numerals`/`Arithmetic` context machinery) — to be rewritten from scratch

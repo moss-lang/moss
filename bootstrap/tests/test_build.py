@@ -559,7 +559,7 @@ class TestWasmBackend(unittest.TestCase):
             [wasmtime(), inner], capture_output=True, text=True, timeout=120
         )
         self.assertEqual(mine.returncode, 0, mine.stderr)
-        self.assertEqual(mine.stdout, "ABKDKJG\n")
+        self.assertEqual(mine.stdout, "ABKDKJGG\n")
         theirs = compile_wasm({}, entry="tests/wasi/prim.moss")
         self.assertEqual(run_wasm(theirs), mine.stdout)
 

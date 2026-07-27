@@ -1,93 +1,156 @@
-# Self-hosting: what is left
+# Self-hosting
 
-The third goal of this branch is a Moss compiler written in Moss, under
-[`src`](/src). Its front end is done; its middle and back ends are not.
-This page is the plan for the rest, written while the front end was
-fresh so the next session starts from a shape rather than a blank page.
+A Moss compiler written in Moss lives under [`src`](/src). It reads a
+source file, loads everything that file imports, resolves every name in
+all of it, and writes a WebAssembly module.
 
-## Where `src/` stands
+```sh
+moss run src/main.moss "" tests/wasi/prim.moss > prim.wasm && wasmtime prim.wasm
+```
 
-Done, and running on both backends:
+The two arguments are a prelude path and an entry path; an empty prelude
+is what a program written against the primitive context wants, since
+`Wasm` and `Wasi` are imported by name and there is no standard library
+underneath ([D52](../design/semantics.md)).
 
-- [`lex.moss`](/src/lex.moss) — a loop-based lexer with a keyword trie.
-- [`tree.moss`](/src/tree.moss) — the declaration AST as parallel arenas.
-- [`intern.moss`](/src/intern.moss) — names as codepoint runs, so an id
-  outlives the file it came from.
-- [`parse.moss`](/src/parse.moss) — recursive descent over the
-  declaration grammar, recording names and payload references.
-- [`mods.moss`](/src/mods.moss), [`collect.moss`](/src/collect.moss) —
-  the module graph: load a file and its imports transitively, then
-  report duplicate declarations and out-of-scope references per module.
-  Pointed at `lib/prelude.moss` and `src/main.moss` it explains every
-  name in the compiler's own sources.
+It compiles under the bootstrap too, into a single WASI module — the
+whole compiler, `Std` and all, as one 800KB `.wasm` — and that module
+writes byte-for-byte the same output:
 
-Missing: **lowering** and **codegen**. `src/lower.moss` is
-previous-iteration code that does not parse under the MVP grammar (see
-the errata in the decision log's §12), and there is no emitter at all.
+```sh
+moss build src/main.moss > mossc.wasm
+wasmtime --dir . mossc.wasm "" tests/wasi/prim.moss > prim.wasm
+```
+
+## The stages
+
+| file | what it is |
+|---|---|
+| [`lex.moss`](/src/lex.moss) | a loop-based lexer with a keyword trie |
+| [`tcode.moss`](/src/tcode.moss) | token kinds as Ints, generated from the `Token` union |
+| [`intern.moss`](/src/intern.moss) | names as codepoint runs, so an id outlives the file it came from |
+| [`ast.moss`](/src/ast.moss) | the whole tree, as parallel arenas |
+| [`syntax.moss`](/src/syntax.moss) | recursive descent over the whole grammar |
+| [`prog.moss`](/src/prog.moss) | the module graph, symbols, and scopes |
+| [`bytes.moss`](/src/bytes.moss) | byte buffers, LEB128, small integers |
+| [`insn.moss`](/src/insn.moss) | instruction encoding |
+| [`emit.moss`](/src/emit.moss) | the module builder and section layout |
+| [`wasmops.moss`](/src/wasmops.moss) | the `Wasm` context as a lookup table |
+| [`codegen.moss`](/src/codegen.moss) | instruction selection |
+| [`spell.moss`](/src/spell.moss) | the strings the compiler must hold itself |
+| [`boot.moss`](/src/boot.moss) | a functor from `Std` to the whole compiler context |
+| [`dump.moss`](/src/dump.moss) | the tree, in the format the bootstrap also writes |
+| [`cli.moss`](/src/cli.moss), [`main.moss`](/src/main.moss) | the command line, over `Wasi` |
+
+## How it is checked
+
+Not by looking at its output, but by holding it to the bootstrap's.
+
+- **Parsing.** Both parsers write a tree in one compact S-expression
+  format — [`bootstrap/mossc/sexpr.py`](/bootstrap/mossc/sexpr.py) and
+  [`dump.moss`](/src/dump.moss) — and over the whole live corpus, every
+  file in `src/`, `lib/`, `examples/` and `tests/wasi/`, the two agree
+  character for character.
+- **Collect.** The module graph, the symbol every declaration gets, and
+  the scope each module ends up with are compared as a set of
+  (module, namespace, name, target) rows. For the compiler's own
+  sources — 23 modules — the two agree on all 1101 rows.
+- **Codegen.** [`tests/wasi/prim.moss`](/tests/wasi/prim.moss) and
+  [`tests/wasi/raw.moss`](/tests/wasi/raw.moss) are compiled by both
+  compilers, and the modules behave identically. The self-hosted one is
+  also run twice — once interpreted, once as Wasm — and the bytes match.
+
+## What it does not do yet
+
+The back end covers the *primitive* context and nothing above it:
+`Wasm` instructions, `Wasi` imports, `Bool` for `if` to eliminate,
+plain functions, `let`/`var`, assignment, `if`/`else`, `while`,
+`loop`/`break`, `return`, and `I32`/`I64`. That is the language
+`tests/wasi/raw.moss` and `tests/wasi/prim.moss` are written in.
+
+Everything that makes `Std` work is missing, and a program that assumes
+`Std` is reported rather than mis-compiled:
+
+- **Contexts at runtime.** A defined function's requirement list, the
+  call-site map from callee key to caller key, and val binds as hidden
+  parameters — the explicit-context IR of
+  [§11](../design/semantics.md) stage 3. Without it there are no
+  contextual vals and no fn binds.
+- **Functors** ([D55](../design/semantics.md)), which is how `Std` is
+  installed, and which need the above.
+- **Methods** ([D36](../design/semantics.md),
+  [D54](../design/semantics.md)): attached lookup by (receiver, name)
+  and detached by name with the receiver's home module as fallback. The
+  symbol tables in `prog.moss` already hold both keys; nothing consumes
+  them.
+- **Types beyond scalars.** Tags, records, unions and `match` — one
+  scalar per field and a discriminant beside the payload, per
+  [D59](../design/semantics.md). `codegen.moss` has a three-valued
+  notion of type (nothing, i32, i64) where a real one belongs.
+- **Monomorphization.** Type binds are static and drive specialization
+  ([D2](../design/semantics.md)); the back end never sees a type bind
+  because nothing binds types yet.
+- **Diagnostics** are a code letter and a name, with no position. The
+  machinery for a real message is a string the compiler holds, which is
+  [D48](../design/semantics.md).
+
+The order to take them in is the bootstrap's own: contexts and needs
+first, since methods, functors and binds all reduce to them, then the
+value model, then monomorphization. The Python originals are
+[`lower.py`](/bootstrap/mossc/lower.py) and
+[`build.py`](/bootstrap/mossc/build.py), and much of `build.py` is shims
+for a native `Std` that the self-hosted back end will never need — `Std`
+is Moss now ([`lib/wasistd.moss`](/lib/wasistd.moss)).
 
 ## The idiom
 
-There are no generic containers ([D51](../design/semantics.md)), so every data structure is a
-*typed arena*: parallel `IntList`s indexed by an id, with a `context`
-bundling them and accessor functions keyed on the id. `tree.moss` is
-the worked example — copy its shape rather than inventing another.
+There are no generic containers ([D51](../design/semantics.md)), so
+every data structure is a *typed arena*: parallel `IntList`s indexed by
+an id, with a `context` bundling them and accessor functions keyed on
+the id. [`ast.moss`](/src/ast.moss) is the worked example — copy its
+shape rather than inventing another. A node has four operand slots and
+spills to a run in `kids` when it needs more; the meaning of each slot
+is recorded beside the node kind and nowhere else.
 
 `StrList` exists for the few places a real String must be kept (module
-paths). Everything else should be an interned id or an arena index.
+paths). Everything else is an interned id or an arena index.
 
-## Lowering
+Because every arena is an abstract val, starting the compiler means
+binding about sixty of them. That is one `bind` per line in
+[`boot.moss`](/src/boot.moss) — a functor from `Std` to the whole
+compiler context, which is exactly what [D55](../design/semantics.md)
+exists for.
 
-The Python original is [`bootstrap/mossc/lower.py`](/bootstrap/mossc/lower.py).
-Its parts, roughly in dependency order:
+## What [D48] actually cost
 
-1. **Types** — an arena of type nodes: unit, never, tuple, record,
-   union, nominal, abstract. `bootstrap/mossc/types.py` is small and
-   translates directly; the union-find lives in the env, not here.
-2. **Env** — the requirement environment: the type map as a union-find
-   ([D43](../design/semantics.md)), the val and method tables, and a parent link. Arenas again,
-   with a stack of scopes rather than the Python object graph.
-3. **Context flattening** — walking a `context` declaration's items into
-   an env, merging consistently. Note the ordering constraint the
-   bootstrap also has: an item whose signature mentions a type must come
-   after that type.
-4. **Needs** — each function's requirement list, and the call-site
-   `needs_map` translating callee keys to caller keys.
-5. **Method resolution** — attached lookup by (receiver, name), detached
-   by name with the receiver's home module as fallback ([D36](../design/semantics.md), [D54](../design/semantics.md)).
-6. **The core IR** — another arena, mirroring
-   [`bootstrap/mossc/ir.py`](/bootstrap/mossc/ir.py), including the
-   layout width each expression occupies ([D59](../design/semantics.md)).
+The previous plan flagged string literals as the thing to settle before
+writing an emitter: a Wasm module names `wasi_snapshot_preview1` and
+`fd_write` in its own bytes, and the compiler has to hold those strings
+somehow.
 
-A checkpoint that is testable at each stage, the way the front end was
-built: a driver that prints what the stage computed, compared against
-the bootstrap's own output for the same input.
+It cost one generated function per name.
+[`spell.moss`](/src/spell.moss) has twenty-one of them, each pushing a
+name character by character against the `char` constants, exactly as the
+lexer's keyword trie recognizes keywords without literals.
+[`wasmops.moss`](/src/wasmops.moss) does the same in bulk for the
+hundred-odd `Wasm` intrinsic names, which the back end must recognize to
+select an instruction — interned once at startup, after which a lookup
+is a comparison of ids. Both files are
+generated by [`bootstrap/mossc/gensrc.py`](/bootstrap/mossc/gensrc.py)
+and checked against it, and neither is pleasant to read, but nothing
+about the emitter was blocked. The
+pressure that remains is diagnostics: a message with words in it is
+still out of reach, which is why an error here is a letter and a name.
 
-## Codegen
+## Sharp edges
 
-[`bootstrap/mossc/build.py`](/bootstrap/mossc/build.py) is the original,
-but a self-hosted emitter is smaller than its line count suggests: much
-of that file is shims implementing the native `Std`, and `Std` is Moss
-now ([`lib/wasistd.moss`](/lib/wasistd.moss)). What is genuinely needed
-is LEB128 encoding, the section layout, and the instruction selection —
-all of it appending bytes to an `IntList`.
-
-**This is where [D48](../design/semantics.md) stops being deferrable.** A Wasm module names its
-imports in its own bytes: `wasi_snapshot_preview1`, `fd_write`,
-`_start`, `memory`. Those are strings the compiler must hold itself.
-With the char constants now available in Moss they *can* be built
-character by character, exactly as the keyword trie recognises keywords
-without literals — possible, and unpleasant enough that it is worth
-settling the decision before writing the emitter rather than after.
-
-## Sharp edges already known
-
-- The self-hosted parser records an attached method with the empty name,
-  because it keys a fn by its last name while an attached method is
-  keyed by receiver *and* name. Real resolution needs the pair.
-- `collect.moss` resolves an import path by dropping a leading `./` and
-  concatenating; `..` is not handled.
-- A record field or tag payload wider than one scalar is rejected by the
-  backend ([D59](../design/semantics.md)), so records do not nest yet.
-- `src/std.moss`, `src/option.moss`, `src/range.moss`, `src/cell.moss`
-  and `src/inner.moss` are sketches from earlier iterations, kept in the
-  parse corpus but not used; `src/lower.moss` does not parse at all.
+- The interpreter runs the compiler about 150× slower than the compiled
+  compiler does (27s against 180ms for the same input), because
+  `src/main.moss` goes through the Moss `Std` of `lib/wasistd.moss`
+  rather than the bootstrap's native one. Drivers that assume `Std`
+  directly are much faster, and that is what most tests use.
+- `prog.moss` reports a syntax error as a per-module flag; the position
+  the parser recorded is not surfaced.
+- The back end recognizes `Wasm`, `Wasi`, `Bool` and `i32_bool` by the
+  file that declares them. So does the bootstrap's back end, which is
+  the precedent; it is still a spelling dependency.

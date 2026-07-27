@@ -217,6 +217,19 @@ WASM_OPS["i64_extend16_s"] = b"\xc3"
 WASM_OPS["i64_extend32_s"] = b"\xc4"
 WASM_OPS["i64_load"] = b"\x29" + _memarg(3)
 WASM_OPS["i64_store"] = b"\x37" + _memarg(3)
+# The narrow i64 accesses. lib/wasm.moss declares them, so leaving them
+# out here made a declared `Wasm` item uncompilable; the self-hosted
+# table in mossc/gensrc.py has them and the two are checked against
+# each other.
+WASM_OPS["i64_load8_s"] = b"\x30" + _memarg(0)
+WASM_OPS["i64_load8_u"] = b"\x31" + _memarg(0)
+WASM_OPS["i64_load16_s"] = b"\x32" + _memarg(1)
+WASM_OPS["i64_load16_u"] = b"\x33" + _memarg(1)
+WASM_OPS["i64_load32_s"] = b"\x34" + _memarg(2)
+WASM_OPS["i64_load32_u"] = b"\x35" + _memarg(2)
+WASM_OPS["i64_store8"] = b"\x3c" + _memarg(0)
+WASM_OPS["i64_store16"] = b"\x3d" + _memarg(1)
+WASM_OPS["i64_store32"] = b"\x3e" + _memarg(2)
 
 # Which of them leave an i64 on the stack.
 I64_RESULTS = {
@@ -224,7 +237,7 @@ I64_RESULTS = {
     for name in WASM_OPS
     if name.startswith("i64_")
     and not name.startswith(("i64_eq", "i64_ne", "i64_lt", "i64_gt", "i64_le", "i64_ge"))
-    and name != "i64_store"
+    and not name.startswith("i64_store")
 }
 
 

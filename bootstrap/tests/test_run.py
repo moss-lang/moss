@@ -1066,7 +1066,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
 
     def test_control_flow_and_i64(self):
         module = self.compile_with_moss("tests/wasi/prim.moss")
-        self.assertEqual(self.wasmtime_run(module), "ABKDKJG\n")
+        self.assertEqual(self.wasmtime_run(module), "ABKDKJGG\n")
 
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
@@ -1074,7 +1074,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         do is the same."""
         from .test_build import compile_wasm, run_wasm
 
-        for entry, expected in (("tests/wasi/prim.moss", "ABKDKJG\n"),):
+        for entry, expected in (("tests/wasi/prim.moss", "ABKDKJGG\n"),):
             with self.subTest(entry=entry):
                 mine = self.wasmtime_run(self.compile_with_moss(entry))
                 self.assertEqual(mine, expected)

@@ -29,25 +29,22 @@ with output identical to the interpreter's. Records, tags, match,
 strings, and fn binds are the next slices.
 
 Status highlights: all seven runnable `examples/` match their goldens
-under both the interpreter and the Wasm backend; `tests/errors/` are
-golden-checked diagnostics; and the self-hosted front end under `src/` —
-lexer with a keyword trie, arena parser, codepoint-arena interner,
-duplicate-declaration and unresolved-reference checks — runs on the
-interpreter *and* compiles to a single WASI module with byte-identical
-output (`moss run src/main.moss FILE`, or the drivers in the Wasm backend
-tests).
+under both the interpreter and the Wasm backend, and `tests/errors/` are
+golden-checked diagnostics.
 
-On top of that, `src/collect.moss` loads a whole module graph: it reads
-the entry file and everything it imports, transitively, and reports
-duplicates and out-of-scope references per module. Imports contribute
-the names they bring in, and a prelude — passed as an argument, since
-`arg_at` lets a program find paths without holding any — puts its scope
-under every module below it. Pointed at `lib/prelude.moss` and
-`src/main.moss` it reaches all eighteen modules of the compiler's own
-sources and explains every name in them. It compiles too: pointed at
-`lib/prelude.moss` and `src/main.moss`, the whole front end runs as a
-single WASI module that reads all eighteen files off disk and agrees
-with the interpreter exactly.
+The self-hosted compiler under `src/` is now a compiler rather than a
+front end: it lexes, parses the whole grammar into arenas, loads the
+module graph, resolves every name in it, and writes a WASI module. See
+[`docs/implementation/selfhosting.md`](../docs/implementation/selfhosting.md)
+for what it covers — the primitive context of D52 — and what it does
+not. It is held to this compiler at each stage rather than to goldens of
+its own: both parsers write the tree in the one compact format of
+[`mossc/sexpr.py`](mossc/sexpr.py) and agree character for character
+over the whole corpus; both collects agree on all 1101 scope rows of the
+compiler's own 23 modules; and both back ends produce modules that
+behave the same on `tests/wasi/prim.moss`. It compiles too — the whole
+thing, `Std` and all, as one WASI module that does the same job in a
+fraction of the time and writes the same bytes.
 
 Under all of that sits the primitive context of D52. A program may
 assume `Wasm` and `Wasi` ([`lib/wasm.moss`](/lib/wasm.moss),

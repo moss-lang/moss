@@ -186,7 +186,7 @@ left-hand symbol's kind.
 Notes:
 
 - A **Jump** is an expression of the uninhabited type, so `Eof => return,`
-  and `Semi => break,` are valid match arms (as in `src/parse.moss`).
+  and `Semi => break,` are valid match arms (as in `src/lex.moss`).
 - A **Suffix** with parentheses is a method call; its **Path** is usually a
   single name (`x.m(a)`) but may be module-qualified (`x.b::m(a)`) because
   `::` binds more tightly than `.` ([D44]). A **Suffix** without parentheses

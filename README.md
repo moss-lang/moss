@@ -9,7 +9,7 @@ An experimental programming language, exploring new ways to manage context.
 
 First you must [clone](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) this Git repository; any commands listed below should be run in that clone.
 
-The compiler is a dependency-free Python program under [`bootstrap`](bootstrap); see [`bootstrap/README.md`](bootstrap/README.md) for its pipeline and [`docs/design/semantics.md`](docs/design/semantics.md) for the working design record.
+The compiler is a dependency-free Python program under [`bootstrap`](bootstrap); see [`bootstrap/README.md`](bootstrap/README.md) for its pipeline and [`docs/design/semantics.md`](docs/design/semantics.md) for the working design record. A second compiler, written in Moss, is growing under [`src`](src) — see [`docs/implementation/selfhosting.md`](docs/implementation/selfhosting.md).
 
 If you use [direnv](https://direnv.net/) and have [Nix](https://nixos.org/) with [flakes](https://wiki.nixos.org/wiki/Flakes) enabled, the easiest way to get all necessary dependencies is via the dev shell provided in this repo:
 

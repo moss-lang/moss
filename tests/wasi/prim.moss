@@ -73,6 +73,21 @@ assume Wasm, Wasi, Branch {
     emit(w::i32_add(upper_a(), total(four())));      # 1+2+3+4 = 10, 'K'
     emit(w::i32_add(upper_a(), next_third(eight()))); # 9, 'J'
     emit(w::i32_add(upper_a(), next_third(six())));   # 6, 'G'
+
+    # A `while` and a `loop` whose bodies end in a value rather than a
+    # statement: the back end has to drop it, or the loop leaves the
+    # stack unbalanced and the module does not validate.
+    var k = w::i32_zero;
+    while i32_bool(w::i32_lt_u(k, two())) {
+      k = w::i32_add(k, w::i32_one);
+      two()
+    }
+    loop {
+      k = w::i32_add(k, w::i32_one);
+      if i32_bool(w::i32_ge_u(k, six())) { break; }
+      four()
+    }
+    emit(w::i32_add(upper_a(), k));                   # 6, 'G' again
     emit(newline());
   }
 }

@@ -787,7 +787,9 @@ assume Std {
         emit_expr(body, ast::a_of(s), m);
         body.push(hex(n4(), n5()));
         op_br_if(body, cg_depth.read().sub(exit));
-        emit_expr(body, ast::b_of(s), m);
+        if emit_expr(body, ast::b_of(s), m).ne(vt_none()) {
+          op_drop(body);
+        }
         op_br(body, zero);
         op_end(body);
         cg_depth.write(cg_depth.read().sub(one));
@@ -800,7 +802,9 @@ assume Std {
         push_loop(cg_depth.read());
         op_loop(body, bt_empty());
         cg_depth.write(cg_depth.read().add(one));
-        emit_expr(body, ast::a_of(s), m);
+        if emit_expr(body, ast::a_of(s), m).ne(vt_none()) {
+          op_drop(body);
+        }
         op_br(body, zero);
         op_end(body);
         cg_depth.write(cg_depth.read().sub(one));
@@ -878,6 +882,19 @@ assume Std {
       if is_defined_fn(main).not() {
         cg_error(c_no_main(), ast::none());
         return ();
+      }
+      # D39: `main` takes no parameters and returns the unit type, which
+      # is what lets `_start` call it directly.
+      let md = prog::sym_decl.get(main);
+      if ast::fn_nparams(md).gt(zero) {
+        cg_error(c_no_main(), ast::none());
+        return ();
+      }
+      if ast::is_some(ast::fn_ret(md)) {
+        if valtype_of(ast::fn_ret(md), prog::sym_mod.get(main)).ne(vt_none()) {
+          cg_error(c_no_main(), ast::none());
+          return ();
+        }
       }
       fq_sym.push(main);
       fq_index.push(ast::none());
