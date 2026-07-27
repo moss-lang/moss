@@ -149,6 +149,25 @@ class TestWasmBackend(unittest.TestCase):
         with self.assertRaises(build_mod.NotCompilable):
             compile_wasm({"main.moss": source})
 
+    def test_char_code_in_wasm(self):
+        """Chars are already i32 codepoints here, so `.code()` is an identity —
+        but it must still agree with the interpreter."""
+        source = (
+            "assume Std {\n"
+            "  fn main() {\n"
+            "    var i = zero;\n"
+            "    while i.lt(char::c.code().sub(char::a.code())) {\n"
+            "      putchar(char::dot);\n"
+            "      i = i.add(one);\n"
+            "    }\n"
+            "    if char::A.code().lt(char::a.code()) { putchar(char::u) }\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n"
+        )
+        wasm = compile_wasm({"main.moss": source})
+        self.assertEqual(run_wasm(wasm), "..u\n")
+
     def test_intlist_in_wasm(self):
         source = (
             "assume Std {\n"

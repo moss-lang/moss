@@ -61,6 +61,7 @@ def gen_char_moss() -> str:
         "# regenerate with: python3 -c 'from mossc.native import gen_char_moss;"
         " print(gen_char_moss(), end=\"\")'",
         "",
+        'import "./int.moss" use Int;',
         'import "./num.moss" use .eq, .ne, .lt, .gt, .le, .ge;',
         "",
         "type Char;",
@@ -69,6 +70,12 @@ def gen_char_moss() -> str:
     ]
     for name in CHARS:
         lines.append(f"  val {name}: Char;")
+    lines.append("")
+    lines.append("  assume Int {")
+    lines.append("    # The Unicode scalar value, so names can be stored as")
+    lines.append("    # codepoints rather than spans into one source buffer.")
+    lines.append("    fn .code(): Int;")
+    lines.append("  }")
     lines.append("")
     lines.append("  context Chars =")
     for method in ("eq", "ne", "lt", "gt", "le", "ge"):

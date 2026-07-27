@@ -298,6 +298,9 @@ def native_env(program: Program, args: list | None = None) -> dict:
         char_ty = lib["char"].names["Char"]
         for name, char in CHARS.items():
             env[lib["char"].names[name]] = CharVal(char)
+        env[(char_ty, lib["char"].detached["code"])] = native(
+            lambda a, this: IntVal(ord(this.value))
+        )
         if "num" in lib:
             det = lib["num"].detached
             char_compare = {

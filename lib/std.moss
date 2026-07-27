@@ -26,6 +26,10 @@ context Std =
   one,
   IntOps,
 
+  # Items whose signatures mention `Int` follow it: flattening walks this
+  # list in order, so a type must be in scope before anything using it.
+  Char.code,
+
   String,
   first_arg,
   print,

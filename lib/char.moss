@@ -1,6 +1,7 @@
 # Generated from bootstrap/mossc/native.py; edit CHARS there and
 # regenerate with: python3 -c 'from mossc.native import gen_char_moss; print(gen_char_moss(), end="")'
 
+import "./int.moss" use Int;
 import "./num.moss" use .eq, .ne, .lt, .gt, .le, .ge;
 
 type Char;
@@ -104,6 +105,12 @@ assume Char {
   val dollar: Char;
   val backtick: Char;
   val tilde: Char;
+
+  assume Int {
+    # The Unicode scalar value, so names can be stored as
+    # codepoints rather than spans into one source buffer.
+    fn .code(): Int;
+  }
 
   context Chars =
     Char.eq,

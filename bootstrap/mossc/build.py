@@ -735,6 +735,10 @@ class FnCompiler:
                     self.expr(node.this)
                     self.code += I32_CONST + sleb(1) + BINOPS["xor"]
                     return
+            if "char" in self.b.lib and method.module is self.b.lib["char"]:
+                if short == "code":
+                    self.expr(node.this)  # chars are already their codepoints
+                    return
             if "string" in self.b.lib and method.module is self.b.lib["string"]:
                 if short == "length":
                     self.expr(node.this)

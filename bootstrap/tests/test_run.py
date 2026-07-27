@@ -275,6 +275,17 @@ class TestStd(unittest.TestCase):
         )
         self.assertEqual(run(files), "y")
 
+    def test_char_code(self):
+        """`Char.code` is what lets the self-hosted interner store names as
+        codepoints instead of spans into a single source buffer."""
+        files = main_body(
+            "let n = char::c.code().sub(char::a.code());\n"
+            "    var i = zero;\n"
+            "    while i.lt(n) { putchar(char::dot); i = i.add(one); }\n"
+            "    if char::A.code().lt(char::a.code()) { putchar(char::u) }"
+        )
+        self.assertEqual(run(files), "..u")
+
     def test_cell(self):
         files = main_body(
             "let c = cell_int();\n"
