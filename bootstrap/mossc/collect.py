@@ -72,6 +72,7 @@ class Symbol:
 class Module:
     path: str  # normalized, repo-relative or absolute; unique key
     tree: ast.File = None
+    source: str = None
     names: dict = field(default_factory=dict)  # str -> Symbol
     detached: dict = field(default_factory=dict)  # str -> Symbol (no dot in key)
     attached: dict = field(default_factory=dict)  # (id(Symbol), str) -> Symbol
@@ -135,7 +136,8 @@ class Loader:
             raise CollectError(path, f"import cycle: {cycle}")
         self.loading.append(path)
         module = Module(path)
-        module.tree = parse(self.read(path))
+        module.source = self.read(path)
+        module.tree = parse(module.source)
         deps = []
         if self.wants_prelude(path):
             deps.append((self.load(self.prelude), ast.Import(self.prelude, None, True, [])))

@@ -1,0 +1,7 @@
+type A;
+
+fn A.m(): A {
+  this
+}
+
+fn main() {}

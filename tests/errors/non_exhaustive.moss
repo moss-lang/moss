@@ -1,0 +1,11 @@
+assume Std {
+  fn pick(b: Bool): Char {
+    match b {
+      True => char::t,
+    }
+  }
+
+  fn main() {
+    putchar(pick(True));
+  }
+}

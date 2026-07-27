@@ -1,4 +1,5 @@
-fn main() {
-  println();
-# ^^^^^^^^^ wrong number of arguments
+assume Std {
+  fn main() {
+    putchar();
+  }
 }

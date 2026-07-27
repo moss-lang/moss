@@ -62,6 +62,7 @@ class Parser:
         return path
 
     def parse_spec(self) -> ast.Spec:
+        start = self.peek().offset
         path = None
         dot = None
         if self.at(Kind.DOT):
@@ -72,7 +73,7 @@ class Parser:
             if self.eat(Kind.DOT):
                 dot = self.expect(Kind.NAME).text
         app = self.parse_app() if self.at(Kind.LBRACKET) else None
-        return ast.Spec(path, dot, app)
+        return ast.Spec(path, dot, app, offset=start)
 
     def parse_app(self) -> list[ast.Binding]:
         self.expect(Kind.LBRACKET)
@@ -86,47 +87,51 @@ class Parser:
         return ast.Binding(path, self.parse_spec())
 
     def parse_assume_item(self) -> ast.AssumeItem:
+        start = self.peek().offset
         path = self.parse_path()
         dot = None
         if self.eat(Kind.DOT):
             dot = self.expect(Kind.NAME).text
-        return ast.AssumeItem(path, dot)
+        return ast.AssumeItem(path, dot, offset=start)
 
     # Types
 
     def parse_type(self) -> ast.Type:
+        start = self.peek().offset
         members = []
         if self.eat(Kind.PIPE):
             if not self.at_type_atom():
-                return ast.TyNever()
+                return ast.TyNever(offset=start)
         members.append(self.parse_type_atom())
         while self.eat(Kind.PIPE):
             members.append(self.parse_type_atom())
         if len(members) == 1:
             return members[0]
-        return ast.TyUnion(members)
+        return ast.TyUnion(members, offset=start)
 
     def at_type_atom(self) -> bool:
         return self.at_any(Kind.NAME, Kind.THIS_TYPE, Kind.LPAREN, Kind.LBRACE)
 
     def parse_type_atom(self) -> ast.Type:
+        start = self.peek().offset
         if self.at(Kind.NAME):
             path = self.parse_path()
             app = self.parse_app() if self.at(Kind.LBRACKET) else None
-            return ast.TyRef(path, app)
+            return ast.TyRef(path, app, offset=start)
         if self.eat(Kind.THIS_TYPE):
-            return ast.TyThis()
+            return ast.TyThis(offset=start)
         if self.eat(Kind.LPAREN):
             items = self.comma_list(self.parse_type, Kind.RPAREN)
             self.expect(Kind.RPAREN)
             if len(items) == 1:
                 return items[0]  # grouping, not a 1-tuple
-            return ast.TyTuple(items)
+            return ast.TyTuple(items, offset=start)
         if self.at(Kind.LBRACE):
             return self.parse_record_type()
         raise ParseError(f"expected a type, found {self.peek().kind.name}", self.peek())
 
     def parse_record_type(self) -> ast.TyRecord:
+        start = self.peek().offset
         self.expect(Kind.LBRACE)
 
         def field() -> tuple[str, ast.Type]:
@@ -136,7 +141,7 @@ class Parser:
 
         fields = self.comma_list(field, Kind.RBRACE)
         self.expect(Kind.RBRACE)
-        return ast.TyRecord(fields)
+        return ast.TyRecord(fields, offset=start)
 
     # Files and declarations
 
@@ -150,6 +155,7 @@ class Parser:
         return ast.File(imports, decls)
 
     def parse_import(self) -> ast.Import:
+        start = self.peek().offset
         self.expect(Kind.IMPORT)
         path = self.expect(Kind.STRING).string_value()
         alias = self.expect(Kind.NAME).text if self.eat(Kind.AS) else None
@@ -161,20 +167,22 @@ class Parser:
             else:
                 uses = self.comma_list(self.parse_use_item, Kind.SEMI)
         self.expect(Kind.SEMI)
-        return ast.Import(path, alias, glob, uses)
+        return ast.Import(path, alias, glob, uses, offset=start)
 
     def parse_use_name(self) -> ast.UseName:
         dotted = bool(self.eat(Kind.DOT))
         return ast.UseName(dotted, self.expect(Kind.NAME).text)
 
     def parse_use_item(self) -> ast.UseItem:
+        start = self.peek().offset
         name = self.parse_use_name()
         alias = self.parse_use_name() if self.eat(Kind.AS) else None
         if alias is not None and alias.dotted != name.dotted:
             raise ParseError("a use rename must keep the name's dottedness", self.peek())
-        return ast.UseItem(name, alias)
+        return ast.UseItem(name, alias, offset=start)
 
     def parse_decl(self) -> ast.Decl:
+        start = self.peek().offset
         if self.at(Kind.ASSUME):
             return self.parse_assume()
         if self.at(Kind.TYPE):
@@ -183,14 +191,14 @@ class Parser:
             self.next()
             name = self.expect(Kind.NAME).text
             self.expect(Kind.SEMI)
-            return ast.Unitdef(name)
+            return ast.Unitdef(name, offset=start)
         if self.at(Kind.VAL):
             self.next()
             name = self.expect(Kind.NAME).text
             self.expect(Kind.COLON)
             ty = self.parse_type()
             self.expect(Kind.SEMI)
-            return ast.Valdef(name, ty)
+            return ast.Valdef(name, ty, offset=start)
         if self.at(Kind.FN):
             return self.parse_fndef()
         if self.at(Kind.CONTEXT):
@@ -199,10 +207,11 @@ class Parser:
             self.expect(Kind.EQUAL)
             items = self.comma_list(self.parse_spec, Kind.SEMI)
             self.expect(Kind.SEMI)
-            return ast.Ctxdef(name, items)
+            return ast.Ctxdef(name, items, offset=start)
         raise ParseError(f"expected a declaration, found {self.peek().kind.name}", self.peek())
 
     def parse_assume(self) -> ast.Assume:
+        start = self.peek().offset
         self.expect(Kind.ASSUME)
         items = self.comma_list(self.parse_assume_item, Kind.LBRACE)
         self.expect(Kind.LBRACE)
@@ -210,22 +219,24 @@ class Parser:
         while not self.at(Kind.RBRACE):
             decls.append(self.parse_decl())
         self.expect(Kind.RBRACE)
-        return ast.Assume(items, decls)
+        return ast.Assume(items, decls, offset=start)
 
     def parse_typedecl(self) -> ast.Decl:
+        start = self.peek().offset
         self.expect(Kind.TYPE)
         name = self.expect(Kind.NAME).text
         if self.eat(Kind.SEMI):
-            return ast.Tydef(name)
+            return ast.Tydef(name, offset=start)
         if self.eat(Kind.EQUAL):
             ty = self.parse_type()
             self.expect(Kind.SEMI)
-            return ast.Aliasdef(name, ty)
+            return ast.Aliasdef(name, ty, offset=start)
         ty = self.parse_type()
         self.expect(Kind.SEMI)
-        return ast.Tagdef(name, ty)
+        return ast.Tagdef(name, ty, offset=start)
 
     def parse_fndef(self) -> ast.Fndef:
+        start = self.peek().offset
         self.expect(Kind.FN)
         receiver = None
         dotted = False
@@ -251,7 +262,7 @@ class Parser:
             body = None
         else:
             body = self.parse_block()
-        return ast.Fndef(ast.FnName(receiver, dotted, name), params, ret, body)
+        return ast.Fndef(ast.FnName(receiver, dotted, name), params, ret, body, offset=start)
 
     # Statements and blocks
 
@@ -260,6 +271,7 @@ class Parser:
         stmts = []
         tail = None
         while not self.at(Kind.RBRACE):
+            start = self.peek().offset
             if self.at(Kind.LET) or self.at(Kind.VAR):
                 keyword = self.next()
                 name = self.expect(Kind.NAME).text
@@ -268,7 +280,7 @@ class Parser:
                 expr = self.parse_expr()
                 self.expect(Kind.SEMI)
                 node = ast.Let if keyword.kind == Kind.LET else ast.Var
-                stmts.append(node(name, ty, expr))
+                stmts.append(node(name, ty, expr, offset=start))
             elif self.at(Kind.BIND):
                 self.next()
 
@@ -279,29 +291,29 @@ class Parser:
 
                 items = self.comma_list(bind_item, Kind.SEMI)
                 self.expect(Kind.SEMI)
-                stmts.append(ast.Bind(items))
+                stmts.append(ast.Bind(items, offset=start))
             elif self.at(Kind.WHILE):
                 self.next()
                 cond = self.parse_expr(no_record=True)
-                stmts.append(ast.While(cond, self.parse_block()))
+                stmts.append(ast.While(cond, self.parse_block(), offset=start))
             elif self.at(Kind.LOOP):
                 self.next()
-                stmts.append(ast.Loop(self.parse_block()))
+                stmts.append(ast.Loop(self.parse_block(), offset=start))
             elif self.at(Kind.NAME) and self.at(Kind.EQUAL, 1):
                 name = self.next().text
                 self.next()
                 expr = self.parse_expr()
                 self.expect(Kind.SEMI)
-                stmts.append(ast.Assign(name, expr))
+                stmts.append(ast.Assign(name, expr, offset=start))
             else:
                 braced = self.at_any(Kind.IF, Kind.MATCH)
                 expr = self.parse_expr()
                 if self.eat(Kind.SEMI):
-                    stmts.append(ast.ExprStmt(expr))
+                    stmts.append(ast.ExprStmt(expr, offset=start))
                 elif self.at(Kind.RBRACE):
                     tail = expr
                 elif braced:
-                    stmts.append(ast.ExprStmt(expr))
+                    stmts.append(ast.ExprStmt(expr, offset=start))
                 else:
                     raise ParseError(
                         f"expected SEMI or RBRACE, found {self.peek().kind.name}", self.peek()
@@ -312,6 +324,7 @@ class Parser:
     # Expressions
 
     def parse_expr(self, no_record: bool = False) -> ast.Expr:
+        start = self.peek().offset
         if self.at(Kind.IF):
             return self.parse_if()
         if self.at(Kind.MATCH):
@@ -322,38 +335,41 @@ class Parser:
             while not self.at(Kind.RBRACE):
                 arms.append(self.parse_arm())
             self.expect(Kind.RBRACE)
-            return ast.Match(scrutinee, arms)
+            return ast.Match(scrutinee, arms, offset=start)
         if self.eat(Kind.RETURN):
             expr = None
             if not self.at_any(Kind.SEMI, Kind.COMMA, Kind.RBRACE, Kind.RPAREN):
                 expr = self.parse_expr(no_record)
-            return ast.Return(expr)
+            return ast.Return(expr, offset=start)
         if self.eat(Kind.BREAK):
-            return ast.Break()
+            return ast.Break(offset=start)
         return self.parse_postfix(no_record)
 
     def parse_if(self) -> ast.If:
+        start = self.peek().offset
         self.expect(Kind.IF)
         cond = self.parse_expr(no_record=True)
         then = self.parse_block()
         els = None
         if self.eat(Kind.ELSE):
             els = self.parse_if() if self.at(Kind.IF) else self.parse_block()
-        return ast.If(cond, then, els)
+        return ast.If(cond, then, els, offset=start)
 
     def parse_arm(self) -> ast.Arm:
+        start = self.peek().offset
         pattern = self.parse_pattern()
         self.expect(Kind.EQUAL_GREATER)
         if self.at(Kind.LBRACE):
             body = self.parse_block()
             self.eat(Kind.COMMA)
-            return ast.Arm(pattern, body)
+            return ast.Arm(pattern, body, offset=start)
         body = self.parse_expr()
         if not self.at(Kind.RBRACE):
             self.expect(Kind.COMMA)
-        return ast.Arm(pattern, body)
+        return ast.Arm(pattern, body, offset=start)
 
     def parse_postfix(self, no_record: bool) -> ast.Expr:
+        start = self.peek().offset
         expr = self.parse_primary(no_record)
         while self.at(Kind.DOT):
             self.next()
@@ -362,31 +378,32 @@ class Parser:
                 self.next()
                 args = self.comma_list(self.parse_expr, Kind.RPAREN)
                 self.expect(Kind.RPAREN)
-                expr = ast.MethodCall(expr, path, args)
+                expr = ast.MethodCall(expr, path, args, offset=start)
             else:
                 if len(path) != 1:
                     raise ParseError("field access takes a single name", self.peek())
-                expr = ast.Field(expr, path[0])
+                expr = ast.Field(expr, path[0], offset=start)
         return expr
 
     def parse_primary(self, no_record: bool) -> ast.Expr:
+        start = self.peek().offset
         if self.eat(Kind.LPAREN):
             if self.eat(Kind.RPAREN):
-                return ast.UnitExpr()
+                return ast.UnitExpr(offset=start)
             expr = self.parse_expr()
             self.expect(Kind.RPAREN)
             return expr
         if self.eat(Kind.THIS):
-            return ast.ThisExpr()
+            return ast.ThisExpr(offset=start)
         if self.at(Kind.NAME):
             path = self.parse_path()
             app = self.parse_app() if self.at(Kind.LBRACKET) else None
-            callee = ast.PathExpr(path, app)
+            callee = ast.PathExpr(path, app, offset=start)
             if self.at(Kind.LPAREN):
                 self.next()
                 args = self.comma_list(self.parse_expr, Kind.RPAREN)
                 self.expect(Kind.RPAREN)
-                return ast.Call(callee, args)
+                return ast.Call(callee, args, offset=start)
             if self.at(Kind.LBRACE) and not no_record:
                 self.next()
 
@@ -397,28 +414,30 @@ class Parser:
 
                 fields = self.comma_list(field, Kind.RBRACE)
                 self.expect(Kind.RBRACE)
-                return ast.RecordExpr(callee, fields)
+                return ast.RecordExpr(callee, fields, offset=start)
             return callee
         raise ParseError(f"expected an expression, found {self.peek().kind.name}", self.peek())
 
     # Patterns
 
     def parse_pattern(self) -> ast.Pattern:
+        start = self.peek().offset
         if self.at(Kind.LBRACE):
             return self.parse_record_pattern(None)
         if self.at(Kind.NAME):
             if self.peek().text == "_" and not self.at(Kind.COLON_COLON, 1):
                 self.next()
-                return ast.PatWild()
+                return ast.PatWild(offset=start)
             path = self.parse_path()
             if self.at(Kind.LBRACE):
                 return self.parse_record_pattern(path)
             if self.at(Kind.NAME):
-                return ast.PatTag(path, self.parse_pattern())
-            return ast.PatPath(path)
+                return ast.PatTag(path, self.parse_pattern(), offset=start)
+            return ast.PatPath(path, offset=start)
         raise ParseError(f"expected a pattern, found {self.peek().kind.name}", self.peek())
 
     def parse_record_pattern(self, path: ast.Path | None) -> ast.PatRecord:
+        start = self.peek().offset
         self.expect(Kind.LBRACE)
 
         def field() -> tuple[str, ast.Pattern | None]:
@@ -428,7 +447,7 @@ class Parser:
 
         fields = self.comma_list(field, Kind.RBRACE)
         self.expect(Kind.RBRACE)
-        return ast.PatRecord(path, fields)
+        return ast.PatRecord(path, fields, offset=start)
 
 
 def parse(source: str) -> ast.File:

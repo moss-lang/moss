@@ -36,10 +36,21 @@ from .types import (
 
 
 class LowerError(Exception):
-    def __init__(self, module: str, message: str):
-        super().__init__(f"{module}: {message}")
+    def __init__(self, module: str, message: str, where: str = ""):
+        super().__init__(f"{module}{where}: {message}")
         self.module = module
         self.message = message
+
+
+def locate(module: Module, node) -> str:
+    """`:line:col` for a node with a source offset, if we can compute it."""
+    offset = getattr(node, "offset", -1)
+    if node is None or offset < 0 or module.source is None:
+        return ""
+    from .lex import position
+
+    line, col = position(module.source, offset)
+    return f":{line}:{col}"
 
 
 @dataclass(frozen=True)
@@ -82,8 +93,8 @@ class Lower:
                     self.fn_symbols[id(symbol.decl)] = symbol
         self.bool_true, self.bool_false = self.find_bool()
 
-    def error(self, module: Module, message: str):
-        raise LowerError(module.path, message)
+    def error(self, module: Module, message: str, node=None):
+        raise LowerError(module.path, message, locate(module, node))
 
     def find_bool(self):
         for module in self.program.order:
@@ -125,9 +136,9 @@ class Lower:
             return
         target = resolve_path(module, item.path)
         if target is None:
-            self.error(module, f"`{'::'.join(item.path)}` is not in scope")
+            self.error(module, f"`{'::'.join(item.path)}` is not in scope", item)
         if isinstance(target, Module):
-            self.error(module, f"cannot assume a module (`{'::'.join(item.path)}`)")
+            self.error(module, f"cannot assume a module (`{'::'.join(item.path)}`)", item)
         self.add_symbol_item(env, module, target, {}, needs)
 
     def add_symbol_item(self, env: Env, module: Module, sym: Symbol, subst: dict, needs: list):
@@ -165,9 +176,9 @@ class Lower:
             return
         target = resolve_path(module, spec.path)
         if target is None:
-            self.error(module, f"`{'::'.join(spec.path)}` is not in scope")
+            self.error(module, f"`{'::'.join(spec.path)}` is not in scope", spec)
         if isinstance(target, Module):
-            self.error(module, f"cannot put a module in a context")
+            self.error(module, "cannot put a module in a context", spec)
         self.add_symbol_item(env, module, target, subst, needs)
 
     def add_method_item(
@@ -451,6 +462,7 @@ class Lower:
                     module,
                     f"attached method `{symbol.name}` requires a nominal receiver (Q5); "
                     f"`{symbol.receiver.name}` is abstract",
+                    symbol.decl,
                 )
             this_ty = TNominal(
                 symbol.receiver, self.nominal_args(module, symbol.receiver, env.tymap)
@@ -481,11 +493,12 @@ class FnChecker:
         self.needs = needs
         self.this_ty = this_ty
         self.loop_depth = 0
+        self.at_node = None  # the statement/expression currently checked
         for name, ty in sig.params:
             env.locals[name] = (ty, False)
 
     def error(self, message: str):
-        raise LowerError(self.module.path, message)
+        raise LowerError(self.module.path, message, locate(self.module, self.at_node))
 
     def push(self) -> Env:
         outer = self.env
@@ -518,6 +531,8 @@ class FnChecker:
             self.env = outer
 
     def check_stmt(self, stmt: ast.Stmt):
+        if getattr(stmt, "offset", -1) >= 0:
+            self.at_node = stmt
         if isinstance(stmt, (ast.Let, ast.Var)):
             declared = None
             if stmt.ty is not None:
@@ -677,6 +692,8 @@ class FnChecker:
     # Expressions
 
     def synth(self, expr, expected=None):
+        if getattr(expr, "offset", -1) >= 0:
+            self.at_node = expr
         if isinstance(expr, ast.UnitExpr):
             return ir.Unit(), TUnit()
         if isinstance(expr, ast.ThisExpr):
@@ -791,6 +808,7 @@ class FnChecker:
         if not catch_all:
             missing = [h.name for h in heads if h not in covered]
             if missing or not heads:
+                self.at_node = expr
                 self.error(f"match is not exhaustive; missing {missing or show(sty)}")
         if result_ty is None:
             result_ty = TNever()

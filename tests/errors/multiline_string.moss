@@ -1,7 +1,2 @@
-fn main() {
-  println(
-    "Hello,
-#   ^^^^^^^ invalid token
-    world!"
-  );
-}
+import "./nope
+.moss";

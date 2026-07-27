@@ -1,0 +1,1 @@
+tests/errors/undefined.moss:3:5: `foo` is not in scope
