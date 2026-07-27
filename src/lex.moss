@@ -2,6 +2,7 @@ import "./token.moss" use *;
 
 type Token =
   | Eof
+  | Bad
   | Exclam
   | Percent
   | Ampersand
@@ -63,25 +64,73 @@ assume Std {
   # the character is wrapped in a nominal tag.
   type Read Char;
 
-  fn next_byte(): Read | Eof;
+  # The lexer owns its input and position; the driver binds these.
+  val src: String;
+  val at: CellInt;
 
-  assume next_byte {
+  assume src, at {
+    fn peek(): Read | Eof {
+      let i = at.read();
+      if i.ge(src.length()) {
+        Eof
+      } else {
+        Read (src.get(i))
+      }
+    }
+
+    fn advance() {
+      at.write(at.read().add(one));
+    }
+
+    fn is_space(c: Char): Bool {
+      if c.eq(char::space) {
+        True
+      } else if c.eq(char::newline) {
+        True
+      } else if c.eq(char::tab) {
+        True
+      } else {
+        c.eq(char::cr)
+      }
+    }
+
+    # Letters, digits, and underscore, leaning on ASCII order:
+    # digits < uppercase < underscore < lowercase.
+    fn is_name_char(c: Char): Bool {
+      if c.ge(char::a) {
+        c.le(char::z)
+      } else if c.ge(char::A) {
+        if c.le(char::Z) {
+          True
+        } else {
+          c.eq(char::underscore)
+        }
+      } else if c.ge(char::digit0) {
+        c.le(char::digit9)
+      } else {
+        False
+      }
+    }
+
     fn lex(): Token {
-      match next_byte() {
+      match peek() {
         Eof => Eof,
         Read c => {
-          if c.eq(char::space) {
-            lex()
-          } else if c.eq(char::newline) {
-            lex()
-          } else if c.eq(char::tab) {
-            lex()
-          } else if c.eq(char::cr) {
+          advance();
+          if is_space(c) {
             lex()
           } else if c.eq(char::octothorpe) {
             comment()
           } else if c.eq(char::exclam) {
-            Exclam
+            two(char::equal, ExclamEqual, Exclam)
+          } else if c.eq(char::colon) {
+            two(char::colon, ColonColon, Colon)
+          } else if c.eq(char::equal) {
+            equal_token()
+          } else if c.eq(char::less) {
+            less_token()
+          } else if c.eq(char::greater) {
+            greater_token()
           } else if c.eq(char::percent) {
             Percent
           } else if c.eq(char::ampersand) {
@@ -102,16 +151,8 @@ assume Std {
             Dot
           } else if c.eq(char::slash) {
             Slash
-          } else if c.eq(char::colon) {
-            Colon
           } else if c.eq(char::semi) {
             Semi
-          } else if c.eq(char::less) {
-            Less
-          } else if c.eq(char::equal) {
-            Equal
-          } else if c.eq(char::greater) {
-            Greater
           } else if c.eq(char::lbracket) {
             LBracket
           } else if c.eq(char::rbracket) {
@@ -124,21 +165,138 @@ assume Std {
             Pipe
           } else if c.eq(char::rbrace) {
             RBrace
+          } else if c.eq(char::quote) {
+            string_token()
+          } else if is_name_char(c) {
+            # TODO: keyword recognition needs the token's text, which needs
+            # either string literals or a builder in Std — see D48 in
+            # docs/design/semantics.md. Keywords lex as Name for now.
+            name_token()
           } else {
-            # TODO: names, keywords, strings, and two-character symbols all
-            # need one byte of lookahead; that wants a peek/pushback story
-            # in the next_byte context before it can be written honestly.
+            Bad
+          }
+        }
+      }
+    }
+
+    # After a one-character prefix: if the next character is `want`, consume
+    # it and yield `yes`, otherwise yield `no`.
+    fn two(want: Char, yes: Token, no: Token): Token {
+      match peek() {
+        Eof => no,
+        Read c => {
+          if c.eq(want) {
+            advance();
+            yes
+          } else {
+            no
+          }
+        }
+      }
+    }
+
+    fn equal_token(): Token {
+      match peek() {
+        Eof => Equal,
+        Read c => {
+          if c.eq(char::equal) {
+            advance();
+            EqualEqual
+          } else if c.eq(char::greater) {
+            advance();
+            EqualGreater
+          } else {
+            Equal
+          }
+        }
+      }
+    }
+
+    fn less_token(): Token {
+      match peek() {
+        Eof => Less,
+        Read c => {
+          if c.eq(char::less) {
+            advance();
+            LessLess
+          } else if c.eq(char::equal) {
+            advance();
+            LessEqual
+          } else {
+            Less
+          }
+        }
+      }
+    }
+
+    fn greater_token(): Token {
+      match peek() {
+        Eof => Greater,
+        Read c => {
+          if c.eq(char::greater) {
+            advance();
+            GreaterGreater
+          } else if c.eq(char::equal) {
+            advance();
+            GreaterEqual
+          } else {
+            Greater
+          }
+        }
+      }
+    }
+
+    fn name_token(): Token {
+      match peek() {
+        Eof => Name,
+        Read c => {
+          if is_name_char(c) {
+            advance();
+            name_token()
+          } else {
             Name
           }
         }
       }
     }
 
+    fn string_token(): Token {
+      match peek() {
+        Eof => Bad,
+        Read c => {
+          if c.eq(char::quote) {
+            advance();
+            Str
+          } else if c.eq(char::newline) {
+            Bad
+          } else if c.eq(char::backslash) {
+            advance();
+            skip_escape()
+          } else {
+            advance();
+            string_token()
+          }
+        }
+      }
+    }
+
+    # TODO: validate the escape character instead of skipping it blindly.
+    fn skip_escape(): Token {
+      match peek() {
+        Eof => Bad,
+        Read c => {
+          advance();
+          string_token()
+        }
+      }
+    }
+
     # A `#` comment runs to the end of the line.
     fn comment(): Token {
-      match next_byte() {
+      match peek() {
         Eof => Eof,
         Read c => {
+          advance();
           if c.eq(char::newline) {
             lex()
           } else {

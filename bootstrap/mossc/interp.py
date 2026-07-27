@@ -86,6 +86,18 @@ class _Break(Exception):
     pass
 
 
+@dataclass(frozen=True)
+class _Tail:
+    """A tail call, unwound by the trampoline in call_fn. Recursion is the
+    language's main loop idiom (no `for`), so proper tail calls are load-
+    bearing, not an optimization."""
+
+    fn: ir.FnIR
+    args: list
+    ctx: dict
+    this: object
+
+
 class Frame:
     def __init__(self, locals_: dict, ctx: dict, this):
         self.locals = locals_
@@ -98,11 +110,16 @@ class Interp:
         self.fns = fns  # id(Symbol) -> FnIR
 
     def call_fn(self, fn: ir.FnIR, args: list, ctx: dict, this=None):
-        frame = Frame(dict(zip(fn.params, args)), ctx, this)
-        try:
-            return self.eval_block(fn.body, frame)
-        except _Return as r:
-            return r.value
+        while True:
+            frame = Frame(dict(zip(fn.params, args)), ctx, this)
+            try:
+                result = self.eval_block(fn.body, frame, tail=True)
+            except _Return as r:
+                result = r.value
+            if isinstance(result, _Tail):
+                fn, args, ctx, this = result.fn, result.args, result.ctx, result.this
+                continue
+            return result
 
     def invoke(self, impl, args: list, this=None):
         if isinstance(impl, NativeFn):
@@ -111,8 +128,9 @@ class Interp:
             return self.call_fn(impl.fn, args, impl.ctx, this)
         raise MossPanic(f"not callable: {impl!r}")
 
-    def eval_block(self, block: ir.Block, frame: Frame):
-        # Binds are lexically scoped to the block: restore ctx on exit.
+    def eval_block(self, block: ir.Block, frame: Frame, tail=False):
+        # Binds are lexically scoped to the block: restore ctx on exit. A
+        # _Tail escaping the block is safe: it carries its own ctx snapshot.
         saved = frame.ctx
         frame.ctx = dict(saved)
         try:
@@ -120,7 +138,7 @@ class Interp:
                 self.exec_stmt(stmt, frame)
             if block.tail is None:
                 return UNIT
-            return self.eval(block.tail, frame)
+            return self.eval(block.tail, frame, tail=tail)
         finally:
             frame.ctx = saved
 
@@ -157,7 +175,7 @@ class Interp:
             return value.symbol.name == "True"
         raise MossPanic(f"not a Bool: {value!r}")
 
-    def eval(self, expr, frame: Frame):
+    def eval(self, expr, frame: Frame, tail=False):
         if isinstance(expr, ir.Unit):
             return UNIT
         if isinstance(expr, ir.Local):
@@ -186,30 +204,37 @@ class Interp:
             if kind == "direct":
                 fn = self.fns[id(target)]
                 ctx = {k: frame.ctx[k] for k in fn.needs}
+                if tail:
+                    return _Tail(fn, args, ctx, this)
                 return self.call_fn(fn, args, ctx, this)
-            return self.invoke(frame.ctx[target], args, this)
+            impl = frame.ctx[target]
+            if tail and isinstance(impl, Closure):
+                return _Tail(impl.fn, args, impl.ctx, this)
+            return self.invoke(impl, args, this)
         if isinstance(expr, ir.If):
             if self.truthy(self.eval(expr.cond, frame)):
-                return self.eval_block(expr.then, frame)
+                return self.eval_block(expr.then, frame, tail=tail)
             if expr.els is None:
                 return UNIT
             if isinstance(expr.els, ir.Block):
-                return self.eval_block(expr.els, frame)
-            return self.eval(expr.els, frame)
+                return self.eval_block(expr.els, frame, tail=tail)
+            return self.eval(expr.els, frame, tail=tail)
         if isinstance(expr, ir.Match):
             value = self.eval(expr.scrutinee, frame)
             for arm in expr.arms:
                 if self.match_pat(arm.pat, value, frame):
                     if isinstance(arm.body, ir.Block):
-                        return self.eval_block(arm.body, frame)
-                    return self.eval(arm.body, frame)
+                        return self.eval_block(arm.body, frame, tail=tail)
+                    return self.eval(arm.body, frame, tail=tail)
             raise MossPanic(f"no match arm for {value!r}")
         if isinstance(expr, ir.Return):
-            raise _Return(UNIT if expr.expr is None else self.eval(expr.expr, frame))
+            raise _Return(
+                UNIT if expr.expr is None else self.eval(expr.expr, frame, tail=True)
+            )
         if isinstance(expr, ir.Break):
             raise _Break()
         if isinstance(expr, ir.Block):
-            return self.eval_block(expr, frame)
+            return self.eval_block(expr, frame, tail=tail)
         raise MossPanic(f"unsupported expression {expr!r}")
 
     def match_pat(self, pat: ir.Pat, value, frame: Frame) -> bool:
@@ -262,12 +287,18 @@ def native_env(program: Program, args: list | None = None) -> dict:
             env[lib["char"].names[name]] = CharVal(char)
         if "num" in lib:
             det = lib["num"].detached
-            env[(char_ty, det["eq"])] = native(
-                lambda a, this: boolean(this.value == a[0].value)
-            )
-            env[(char_ty, det["ne"])] = native(
-                lambda a, this: boolean(this.value != a[0].value)
-            )
+            char_compare = {
+                "eq": lambda x, y: x == y,
+                "ne": lambda x, y: x != y,
+                "lt": lambda x, y: x < y,
+                "gt": lambda x, y: x > y,
+                "le": lambda x, y: x <= y,
+                "ge": lambda x, y: x >= y,
+            }
+            for name, op in char_compare.items():
+                env[(char_ty, det[name])] = NativeFn(
+                    name, lambda a, this, op=op: boolean(op(this.value, a[0].value))
+                )
     if "int" in lib:
         int_ty = lib["int"].names["Int"]
         env[lib["int"].names["zero"]] = IntVal(0)

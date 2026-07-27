@@ -1,7 +1,7 @@
 # Generated from bootstrap/mossc/native.py; edit CHARS there and
 # regenerate with: python3 -c 'from mossc.native import gen_char_moss; print(gen_char_moss(), end="")'
 
-import "./num.moss" use .eq, .ne;
+import "./num.moss" use .eq, .ne, .lt, .gt, .le, .ge;
 
 type Char;
 
@@ -108,6 +108,10 @@ assume Char {
   context Chars =
     Char.eq,
     Char.ne,
+    Char.lt,
+    Char.gt,
+    Char.le,
+    Char.ge,
     a,
     b,
     c,

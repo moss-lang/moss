@@ -2,26 +2,10 @@ import "./lex.moss" as lexer;
 import "./token.moss" use Eof;
 
 assume Std {
-  val text: String;
-  val pos: CellInt;
-
-  assume text, pos {
-    fn next_byte(): lexer::Read | Eof {
-      let i = pos.read();
-      if i.ge(text.length()) {
-        Eof
-      } else {
-        pos.write(i.add(one));
-        lexer::Read (text.get(i))
-      }
-    }
-  }
-
   # Lex the file named by the first argument and print one dot per token.
   fn cli() {
-    bind text=pwd.join(first_arg()).read();
-    bind pos=cell_int();
-    bind lexer::next_byte=next_byte;
+    bind lexer::src=pwd.join(first_arg()).read();
+    bind lexer::at=cell_int();
     loop {
       match lexer::lex() {
         Eof => break,

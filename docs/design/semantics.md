@@ -41,8 +41,11 @@ settled enough to build against; subsequent work happens in
 implementation forces them, PROPOSED until the designer reacts. So far:
 [D45] (concrete `Bool`), [D46] (module aliases export), [D47] (a finding:
 one-binding-per-key means a multi-type `Std` must use receiver-keyed
-methods, with a consequence for how [D33] operators should desugar), and
-the [D31] amendment (optional `let`/`var` type annotations).
+methods, with a consequence for how [D33] operators should desugar), the
+[D31] amendment (optional `let`/`var` type annotations), [D48] (a finding:
+keyword recognition in the self-hosted lexer is unwritable without string
+literals — recommend revisiting [D4]), and [D49] (proper tail calls are a
+language guarantee).
 
 ## 1. Design thesis
 
@@ -571,6 +574,26 @@ time, which makes `a == b` next to `c == d` at different types impossible
 in one scope. Desugaring to the *methods* (`a.eq(b)` → key
 `(type of a).eq`) has no such limit. `lib/ops.moss` is untouched pending
 that call.
+
+**[D48] FINDING (self-hosting needs a way to spell strings), needs the
+designer.** The self-hosted lexer (`src/lex.moss`) lexes name runs but
+cannot *recognize keywords*: that means comparing lexed text against
+`"assume"`, `"fn"`, ..., and with no string literals ([D4]) those strings
+cannot be written down at all. The parser will hit the same wall for every
+named thing. Options: (a) revisit [D4] and bring back string literals (
+hello.md already hedges with "currently"); (b) grow `Std` with a string
+builder so `"assume"` is spelled `push(char::a)`-by-`push(char::e)` — 
+writable but brutal at 22 keywords; (c) invent a compile-time string-table
+mechanism. Recommendation: (a). Until decided, keywords lex as `Name`.
+
+**[D49] PROPOSED (proper tail calls are guaranteed).** With `for` cut
+([D31]) and `while` limited to conditions, recursion is the language's
+primary loop idiom — `src/lex.moss` is one big tail-recursive loop nest,
+and it overflowed the bootstrap interpreter's stack on real files until the
+interpreter gained a trampoline. So this is a *semantic* commitment, not an
+optimization: calls in tail position (block tails, `if`/`match` result
+positions, `return` arguments) do not grow the stack. The Wasm backend can
+honor it with `return_call` (the tail-call proposal is widely supported).
 
 **[D45] PROPOSED (concrete `Bool` as a lang item).** The old
 `lib/bool.moss` made even booleans contextual (`type Bool;` with abstract

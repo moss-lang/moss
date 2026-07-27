@@ -283,7 +283,9 @@ class TestStd(unittest.TestCase):
 
 
 class TestSelfHostedLexer(unittest.TestCase):
-    """src/main.moss drives src/lex.moss: one dot per token."""
+    """src/main.moss drives src/lex.moss: one dot per token. The reference
+    for token counts is the bootstrap lexer itself (keywords lex as Name in
+    the self-hosted lexer, but the counts must agree)."""
 
     def lex_dots(self, source):
         import tempfile
@@ -293,16 +295,31 @@ class TestSelfHostedLexer(unittest.TestCase):
             target = f.name
         return run({}, entry=str(REPO / "src/main.moss"), args=[target])
 
+    def bootstrap_count(self, source):
+        from mossc.lex import lex
+
+        return len(lex(source)) - 1  # minus EOF
+
     def test_symbols(self):
         self.assertEqual(self.lex_dots("{ } ( ) ; |"), "." * 6 + "\n")
+
+    def test_two_char_symbols(self):
+        source = "== = => :: : <= << < >= >> > !="
+        self.assertEqual(self.lex_dots(source), "." * 12 + "\n")
+
+    def test_names_and_strings(self):
+        source = 'import "a\\"b" as foo_2;'
+        self.assertEqual(self.lex_dots(source), "." * 5 + "\n")
 
     def test_comments_and_whitespace(self):
         self.assertEqual(self.lex_dots("# a comment\n;\t;\n  ; # eof"), "." * 3 + "\n")
 
-    def test_lexes_real_file(self):
-        text = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
-        expected = sum(1 for c in text if not c.isspace())
-        self.assertEqual(self.lex_dots(text), "." * expected + "\n")
+    def test_agrees_with_bootstrap_on_real_files(self):
+        for rel in ["lib/bool.moss", "lib/num.moss", "src/lex.moss", "src/cli.moss"]:
+            with self.subTest(file=rel):
+                text = (REPO / rel).read_text(encoding="utf-8")
+                expected = self.bootstrap_count(text)
+                self.assertEqual(self.lex_dots(text), "." * expected + "\n")
 
 
 if __name__ == "__main__":
