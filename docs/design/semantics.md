@@ -126,12 +126,12 @@ e.g. `one` or an `Int.succ`-style function).
 **[D6] DECIDED (comments).** `#` to end of line; comments and whitespace are
 not tokens. `#!` shebang lines fall out for free.
 
-**[D7] DECIDED (symbol tokens).** Exactly the one- and two-character symbol
-tokens currently listed in syntax.md and `src/token.moss`:
-`! % & ( ) * + , - . / : ; < = > [ ] ^ { | }` and
-`!= :: << <= == >= >>`. With operators out of the MVP ([D33]), all the
-operator tokens are lexed but reserved — no grammar production uses them
-yet.
+**[D7] DECIDED (symbol tokens).** The one- and two-character symbol tokens
+listed in syntax.md: `! % & ( ) * + , - . / : ; < = > [ ] ^ { | }` and
+`!= :: => << <= == >= >>` (`=>` is new relative to `src/token.moss` — the
+old grammar had no `match`, so arms never needed an arrow). With operators
+out of the MVP ([D33]), the operator tokens are lexed but reserved — no
+grammar production uses them yet.
 
 ## 3. Modules, imports, and scope
 

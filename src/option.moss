@@ -5,7 +5,7 @@ unit None;
 assume T {
   type Some T;
 
-  type Option
+  type Option =
     | None
     | Some
   ;

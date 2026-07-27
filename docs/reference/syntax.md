@@ -46,6 +46,7 @@ token or class of tokens.
 - two-character symbols
   - `!=`
   - `::`
+  - `=>`
   - `<<`
   - `<=`
   - `==`
@@ -147,15 +148,16 @@ function; detached methods admit only that form ([D36]).
 ### Statements and blocks
 
 - **Block** = `{` **Stmt**\* **Expr**? `}`
-- **Stmt** = **Let** | **Var** | **Assign** | **Bind** | **While** | **Loop** | **Return** | **Break** | (**Expr** `;`)
+- **Stmt** = **Let** | **Var** | **Assign** | **Bind** | **While** | **Loop** | (**Expr** `;`?)
 - **Let** = `let` _name_ `=` **Expr** `;`
 - **Var** = `var` _name_ `=` **Expr** `;`
 - **Assign** = _name_ `=` **Expr** `;`
 - **Bind** = `bind` **List**\[**Spec** `=` **Expr**\] `;`
 - **While** = `while` **Expr** **Block**
 - **Loop** = `loop` **Block**
-- **Return** = `return` **Expr**? `;`
-- **Break** = `break` `;`
+
+The `;` after an **Expr** statement may be omitted only when the expression
+is an **If** or **Match** (which end in `}`).
 
 A **Block** is an expression context: its value is the trailing **Expr**, or
 `()` if there is none. In a **Bind**, a right-hand side that names a type is
@@ -164,8 +166,9 @@ left-hand symbol's kind.
 
 ### Expressions
 
-- **Expr** = **If** | **Match** | **Postfix**
+- **Expr** = **If** | **Match** | **Jump** | **Postfix**
 - **If** = `if` **Expr** **Block** (`else` (**If** | **Block**))?
+- **Jump** = `return` **Expr**? | `break`
 - **Match** = `match` **Expr** `{` **Arm**\* `}`
 - **Arm** = **Pattern** `=>` (**Expr** `,` | **Block** `,`?)
 - **Postfix** = **Primary** **Suffix**\*
@@ -176,6 +179,8 @@ left-hand symbol's kind.
 
 Notes:
 
+- A **Jump** is an expression of the uninhabited type, so `Eof => return,`
+  and `Semi => break,` are valid match arms (as in `src/parse.moss`).
 - A **Suffix** with parentheses is a method call; its **Path** is usually a
   single name (`x.m(a)`) but may be module-qualified (`x.b::m(a)`) because
   `::` binds more tightly than `.` ([D44]). A **Suffix** without parentheses
