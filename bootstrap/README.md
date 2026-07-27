@@ -31,11 +31,20 @@ strings, and fn binds are the next slices.
 Status highlights: all seven runnable `examples/` match their goldens
 under both the interpreter and the Wasm backend; `tests/errors/` are
 golden-checked diagnostics; and the self-hosted front end under `src/` —
-lexer with a keyword trie, arena parser with name spans, interner,
+lexer with a keyword trie, arena parser, codepoint-arena interner,
 duplicate-declaration and unresolved-reference checks — runs on the
 interpreter *and* compiles to a single WASI module with byte-identical
 output (`moss run src/main.moss FILE`, or the drivers in the Wasm backend
-tests). The remaining out-of-slice constructs are `Path` and fn binds.
+tests).
+
+On top of that, `src/collect.moss` loads a whole module graph: it reads
+the entry file and everything it imports, transitively, and reports
+duplicates and out-of-scope references per module, with imports
+contributing the names they bring in. Two limits, both real: it runs
+only on the interpreter, because `Path` is not in the Wasm slice yet
+(along with fn binds); and it cannot see the prelude, because nobody
+imports the prelude and naming it needs a string the compiler holds
+itself — see the D48 entry in the decision log.
 
 ## Usage
 
