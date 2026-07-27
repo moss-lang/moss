@@ -19,13 +19,22 @@ Every decision point is tagged:
 
 Section 13 indexes all PROPOSED/OPEN points for easy discussion.
 
+**Revision 2** incorporates the designer's feedback in [`notes.md`](notes.md):
+points confirmed there are re-tagged DECIDED; D22, D24, D29, D31, D33, and
+D35 are revised or replaced; §9 is rewritten around the attached/detached
+method model; and the things revision 2 most needs answered are the numbered
+questions **Q1**–**Q7** in §9 plus [D41]/[D42].
+
 ## 1. Design thesis
 
 Moss separates **scope** from **context**:
 
-- *Scope* is knowing what a name refers to. It is resolved purely lexically,
-  from imports and enclosing declarations. Scope resolution never depends on
-  types or on what has been bound.
+- *Scope* is knowing what a name refers to. It is resolved lexically, from
+  imports and enclosing declarations — with one deliberate exception: at a
+  method call `x.m(...)`, the *type* of `x` is part of the lookup key, so
+  symbol resolution interleaves with type inference (§9). Inference is
+  strictly forward — receiver types are always already known when a method
+  call is resolved; there is no global constraint solving.
 - *Context* is having the thing a name refers to. Top-level declarations
   without a definition (`type T;`, `val v: T;`, `fn f(): T;`) introduce
   *abstract symbols*: names that are in scope but that nobody has yet provided.
@@ -36,9 +45,12 @@ Moss separates **scope** from **context**:
 requirement is satisfied only by naming that exact symbol — either by an
 enclosing `assume` of the same symbol, or by an explicit `bind` of the same
 symbol. There is no structural matching, no search by type shape, and no
-specificity ranking. This is the deliberate retreat from the second iteration
-(PR #14), whose lowering phase (`Lower::resolve_need` / `synthesize` /
-`unique_option`) had to *search* in-scope providers by shape and rank them.
+specificity ranking. Method dispatch obeys the same discipline: its lookup
+key is the pair (receiver type, method name), and it demands exactly one hit
+— type-*directed*, never type-*searched* (§9). This is the deliberate
+retreat from the second iteration (PR #14), whose lowering phase
+(`Lower::resolve_need` / `synthesize` / `unique_option`) had to *search*
+in-scope providers by shape and rank them.
 Everything else in this document is downstream of this rule; any future
 feature that would reintroduce provider search should be treated as suspect.
 
@@ -65,12 +77,15 @@ the only context that exists at runtime.
 
 ```
 as assume bind break context else fn for if import let loop match return
-type unit use val var while
+this type unit use val var while
 ```
 
 Changes from `docs/reference/syntax.md`: `static` is dropped; `break`, `for`,
-`loop`, `match`, `return`, `unit` are added (all six are used in `src/`).
-`src/token.moss` and `src/lex.moss` must gain tokens for the six added
+`loop`, `match`, `return`, `unit` are added (all six are used in `src/`), as
+is `this` (§9 — the receiver in method bodies is now a keyword, replacing the
+old `lib/this.moss` symbol). `for` is reserved but has no MVP grammar
+production ([D31]), and `unit` may yet be dropped in favor of a `type` form
+([D41]). `src/token.moss` and `src/lex.moss` must gain tokens for the added
 keywords.
 
 **[D4] DECIDED (no literals).** There are no literal expressions of any kind:
@@ -86,7 +101,7 @@ the current reality. Consequences:
   (hello.md:73) is stale within its own document and needs a literal-free
   replacement.
 
-**[D5] PROPOSED (strings only in import position).** The _string_ token
+**[D5] DECIDED (strings only in import position).** The _string_ token
 survives in the lexer solely because `import` paths need it
 (`import "./lex.moss" as lexer;`). Strings are not expressions; an import path
 is the only place the parser accepts the token. Runtime `String` values enter
@@ -99,11 +114,12 @@ e.g. `one` or an `Int.succ`-style function).
 **[D6] DECIDED (comments).** `#` to end of line; comments and whitespace are
 not tokens. `#!` shebang lines fall out for free.
 
-**[D7] PROPOSED (symbol tokens).** Exactly the one- and two-character symbol
+**[D7] DECIDED (symbol tokens).** Exactly the one- and two-character symbol
 tokens currently listed in syntax.md and `src/token.moss`:
 `! % & ( ) * + , - . / : ; < = > [ ] ^ { | }` and
-`!= :: << <= == >= >>`. (Several currently have no grammar production that
-uses them — e.g. `&`, `^`, `<<` — which is fine; they're reserved.)
+`!= :: << <= == >= >>`. With operators out of the MVP ([D33]), all the
+operator tokens are lexed but reserved — no grammar production uses them
+yet.
 
 ## 3. Modules, imports, and scope
 
@@ -123,7 +139,7 @@ pure scoping construct with no context effect: importing an abstract symbol
 does not provide it. The glob form must be added to the grammar (syntax.md's
 **Import** lacks `*`).
 
-**[D9] PROPOSED (exports).** Every top-level declaration of a module is
+**[D9] DECIDED (exports).** Every top-level declaration of a module is
 exported; there is no visibility control yet. `use *` imports all of them.
 Names a module itself imported are *not* re-exported by `use *` (no transitive
 glob), but can be re-exported deliberately the way `src/prelude.moss` does —
@@ -132,14 +148,13 @@ a file consisting only of imports, whose own importers then `use *` it.
 re-export; so the rule is: explicit `use` names become part of the module's
 exports, glob imports do not.)
 
-**[D10] PROPOSED (module identity & instantiation).** A module is not a unit
+**[D10] DECIDED (module identity & instantiation).** A module is not a unit
 of instantiation and has no state; it is a bag of declarations, elaborated
 once. All parameterization happens per-symbol via assume/bind, not per-module.
 Two importers of `cell.moss` see the same symbols `Cell`, `Cell.read`, etc.;
 the shared abstract `T` in `inner.moss` is what lets `IsCell[T=Int, ...]` from
-one file and `bind cell=...` from another agree. Import cycles: **OPEN**, but
-propose forbidding them for the bootstrap (the compiler pipeline in
-`src/cli.moss` already assumes a topological order of some graph).
+one file and `bind cell=...` from another agree. Import cycles are forbidden,
+at least for now.
 
 ## 4. Declarations
 
@@ -156,7 +171,8 @@ The declaration forms, as actually used in `src/`:
 | `val v: Ty;` | abstract value symbol |
 | `fn f(x: Ty): Ty;` | abstract function symbol (signature only) |
 | `fn f(x: Ty): Ty { ... }` | defined function |
-| `fn T.m(x: Ty): Ty;` / `{...}` | method on receiver type `T` (§9) |
+| `fn T.m(x: Ty): Ty;` / `{...}` | attached method on receiver type `T` (§9) |
+| `fn .m(x: Ty): Ty;` / `{...}` | detached method, receiver type supplied at use (§9) |
 | `context C = item, ...;` | named context (§6) |
 | `assume items { decls }` | requirement block wrapping declarations |
 
@@ -165,24 +181,34 @@ The declaration forms, as actually used in `src/`:
 a function that *requires* them; there is nothing wrong with a defined
 function deep inside `assume` blocks.
 
-**[D12] PROPOSED (which declarations may appear where).** All of the above
+**[D12] DECIDED (which declarations may appear where).** All of the above
 are declarations and may appear at top level or inside `assume` blocks,
 arbitrarily nested. Function *bodies* contain only statements/expressions —
 no nested declarations except through `bind` (no local `fn`/`type`). This
 matches all of `src/`.
 
-**[D13] OPEN (nominal-union shorthand).** `src/option.moss` declares
-`type Option | None | Some;` — no `=`, so by the table above this is a
-*nominal* type whose payload is the union `None | Some`, whereas
-`src/lex.moss`'s `type Token = | Eof | ...;` is a transparent alias. But
-`src/parse.moss` then uses `Some (...)` / `None` directly where an
-`Option[T=TokenId]` is expected, which only typechecks if `Option` is
-transparent (or if nominal-over-union types auto-inject, which smells like
-search). Proposal: this is a typo in `option.moss`; it should be
-`type Option = | None | Some;`. If nominal unions are instead intentional,
-their injection/projection rules need defining.
+**[D13] DECIDED (`option.moss` becomes an alias).** `src/option.moss`
+declares `type Option | None | Some;` — no `=`, so by the table above this is
+a *nominal* type whose payload is the union `None | Some`, whereas
+`src/parse.moss` uses `Some (...)` / `None` directly where an
+`Option[T=TokenId]` is expected. The designer confirmed the inconsistency;
+the fix is the alias form, `type Option = | None | Some;`. Nominal-over-union
+(the tag form with a union payload) remains expressible, but values must be
+explicitly wrapped and unwrapped through the nominal head — there is no
+auto-injection ([D17]).
 
-**[D14] PROPOSED (drop declaration-site `Needs`).** syntax.md attaches an
+**[D41] OPEN (the `unit` keyword).** The designer dislikes that `unit X;`
+breaks the pattern `type` and `fn` otherwise follow, and asked for
+alternatives. The least invasive one: the tag form with a unit payload,
+`type X ();`, plus one special rule — a tag whose payload is `()` is
+constructed and matched by its bare name (`X`, not `X ()`), which is exactly
+the behavior `unit` provides. That trades the extra keyword for a special
+rule; the grammar shrinks and `unit` stops being reserved, at the cost of
+`type X ();` reading a little oddly. (`type X {};` — empty record payload —
+is worse: `{}` already means the empty record type, and the bare-name rule
+would be a lie for it.) No urgency; decide before the grammar freezes.
+
+**[D14] DECIDED (drop declaration-site `Needs`).** syntax.md attaches an
 optional `[Need, ...]` clause to every declaration form (**Needs**) and a
 `static` marker on needs. Nothing in `src/` uses either; requirements are
 expressed exclusively by `assume` blocks, and staticness is determined by
@@ -201,26 +227,26 @@ at use sites, like `Range[T=NameId]`, absolutely stays — see §6.)
   are structural; nominality comes only from tag declarations wrapping them.
 - Unions `A | B | C`, including the leading-pipe multiline form. Members
   must be *nominal* types (units, tags) with distinct heads — the union is
-  discriminated by nominal identity, and matching tests that identity.
-  `Char | Eof` (with `Char` an abstract type symbol!) is allowed and means
-  the union is discriminable only once `Char`'s representation is known;
-  see [D16].
+  discriminated by nominal identity, and matching tests that identity. An
+  abstract type symbol may appear as a member *only if* the context the
+  union is written in already constrains that symbol to a specific nominal
+  type; a bare abstract member like `src/lex.moss`'s `Char | Eof` is illegal
+  and gets a nominal wrapper instead (§12). This keeps head-distinctness
+  checkable where the union is written, per [D16].
 - The empty union `|`: the uninhabited/divergence type. `fn err(...): |;`
   declares a function that cannot return; `match e {}` on an expression of
   type `|` is the eliminator and has any type. `type Type = |;` in
   `src/parse.moss` is a placeholder alias.
 
-**[D16] OPEN (unions containing abstract types).** `Char | Eof` requires
-that, after all type binds are resolved, union members remain disjoint (a
-binding `Char=Eof` would make `Char | Eof` ambiguous). Proposal: a
-post-monomorphization check that every union's members have pairwise distinct
-heads, with an error naming the offending bind. Also **OPEN**: whether a
-non-nominal type (e.g. bare `Int`, a record) may be a union member when it's
-behind an abstract symbol like `Char`. Proposal: yes, any type may be a
-member as long as heads stay distinct — units and tags are cheap enough to
-wrap things in when they don't.
+**[D16] DECIDED (no post-monomorphization checks).** All semantic checking
+happens before monomorphization; a program that elaborates successfully must
+never fail later during specialization. This is a global principle, not just
+a union rule — rev 1's proposal of a post-monomorphization distinctness
+check for unions is off the table, which is exactly why union members must
+already be nominal where the union is written ([D15]). The sole sanctioned
+exception is the instantiation-depth backstop of [D30].
 
-**[D17] PROPOSED (subtyping is injection-only).** A value of a union member
+**[D17] DECIDED (subtyping is injection-only).** A value of a union member
 type implicitly injects into any union containing that member (this is how
 `lex()` returns `Eof` where `Token` is expected). There is no other implicit
 conversion, no width/depth record subtyping, and no union-to-union coercion
@@ -228,7 +254,7 @@ beyond re-injection of each member (defer even that). Nominal tags do not
 inject into anything implicitly; `Some x` constructs a `Some`, which then
 injects into `Option`'s union because it is a member.
 
-**[D18] PROPOSED (type identity / applicativity).** Type identity is
+**[D18] DECIDED (type identity / applicativity).** Type identity is
 structural over (declaration, static bindings): `Import` elaborated with
 `TokenId=Int` is the *same* type everywhere it arises with those same
 bindings, and different from `Import` with `TokenId=Int32`. Runtime val
@@ -264,48 +290,69 @@ requirement set of every declaration inside. Requirement sets nest by union:
 and so requires `{Char, next_byte}`. Assuming a symbol also makes everything
 it *mentions* usable: assuming `next_byte` (whose signature returns
 `Char | Eof`) is only well-formed in a region that also assumes `Char`, which
-is why the blocks nest in that order. **PROPOSED:** that well-formedness rule
-stated precisely — an `assume x` is legal only where every abstract symbol
-appearing in `x`'s declared signature/definition is already assumed or bound.
+is why the blocks nest in that order. **DECIDED** (confirmed): an `assume x`
+is legal only where every abstract symbol appearing in `x`'s declared
+signature/definition is already assumed or bound.
 
 **[D21] DECIDED (implicit parameterization = generics).** A declaration's
 requirement set is its parameter list. `Range` is declared inside `assume T`,
 so `Range` is implicitly parameterized by `T`; `Range[T=NameId]` applies it.
 This is the entire generics mechanism — there are no separate type
-parameters. Square-bracket application may bind any subset of the
-requirements ([D22]); whatever is left unbound flows into the requirement set
-of the referencing declaration. An *unapplied* reference to `Range` inside
-another `assume T` region refers to the same `T` symbol and thus stays
-coherent (the `inner.moss` shared-`T` idiom).
+parameters. A reference is either fully applied or not applied at all
+([D22]); an *unapplied* reference to `Range` inside another `assume T`
+region refers to the same `T` symbol and thus stays coherent (the
+`inner.moss` shared-`T` idiom).
 
-**[D22] PROPOSED (partial application).** `C[X=A]` with the remaining
-requirements unbound is legal both in context items and in type expressions;
-elaboration just records the partial substitution. (Used implicitly all over
-`src/`; stating it explicitly.)
+**[D22] DECIDED (no partial application: total or absent).** Rev 1 proposed
+partial application and claimed `src/` used it "all over"; the designer
+challenged that claim, and re-inventory proves the challenge right. There
+are exactly four bracket applications in all of `src/` —
+`Option[T=TokenId]` (parse.moss:28), `Range[T=NameId]` (parse.moss:29),
+`IsList[T=NameId, List=NameList]` (parse.moss:126), and
+`IsCell[T=Int, Cell=CellInt]` (std.moss:47) — and every one binds *all* of
+its target's requirements. What rev 1 mislabeled as partial application was
+*unapplied* references (`next`, `now`, `peek` listed in `context Parsing`;
+`Range` in `fn List.done(): Range;`), which perform no substitution at all:
+their requirements flow outward as the *same symbols*, already assumed in
+the surrounding region. So the rule is: a bracket application must be
+total, and a bare reference substitutes nothing. There is nothing in
+between, and elaboration never has to adapt a partially-instantiated
+provider to a differently-shaped need — the spring-2026 tarpit.
 
-**[D23] PROPOSED (subsumption).** A function may be called wherever its
+**[D42] PROPOSED (tag construction sites must apply explicitly).** The one
+borderline case in the corpus: `Some (expect(Name))` (parse.moss:147)
+constructs `Some` with no brackets in a region where `Some`'s requirement
+`T` is neither assumed nor bound — it could only come from *inferring*
+`T=TokenId` from the argument's type. That is deriving a binding rather
+than using a known one, so for the MVP it is illegal: write
+`Some[T=TokenId] (expect(Name))`. Forward construction-site inference can
+be revisited if the boilerplate hurts; if it ever lands it stays confined
+to tag construction, where the argument's type is already known ([D1]).
+
+**[D23] DECIDED (subsumption).** A function may be called wherever its
 requirement set is a subset of what the caller has (assumed or bound) — the
 "main may assume any subset of Std" rule from hello.md, generalized: extra
 available context is simply dropped. Two contexts are compatible by flattened
 set inclusion; there is no nominal identity to contexts themselves.
 
-**[D24] PROPOSED (assume-with-binding).** The grammar allows `assume` items
-to be **Binding**s, i.e. `assume Foo[T=Int] { ... }`. Meaning: the region
-requires `Foo` with `T` already fixed to `Int` — the requirement propagated
-outward is the applied one. Unused in `src/` so far; keep in grammar, low
-implementation priority.
+**[D24] DECIDED (assume-with-binding dropped).** The grammar allowed
+`assume` items to be **Binding**s, i.e. `assume Foo[T=Int] { ... }`. Ruled
+out by the designer: it demands too much cleverness in inference. `assume`
+items are bare symbol references only. Applied items live in `context`
+declarations ([D19]), where applications are total ([D22]); a region that
+wants an applied requirement names it in a context and assumes that.
 
 ## 7. `bind`
 
-The novel construct; every rule here should be treated as needing sign-off.
+The novel construct. D25–D28 were confirmed in notes.md.
 
-**[D25] PROPOSED (form and scope).** `bind x=e;` is a *statement* (drop
+**[D25] DECIDED (form and scope).** `bind x=e;` is a *statement* (drop
 **Bind** from the **Expr** production in syntax.md). Its effect is lexical
 and extends from the statement to the end of the enclosing block. A later
 `bind` of the same symbol in the same or an inner block shadows. Binds do not
 escape the block upward or survive into the next iteration of a loop.
 
-**[D26] PROPOSED (what may be bound, and to what).**
+**[D26] DECIDED (what may be bound, and to what).**
 
 - `bind v=e;` where `v` is an abstract val: `e` is evaluated (once, at the
   bind) and its value provides `v`. Requires `e`'s type to equal `v`'s
@@ -322,7 +369,7 @@ escape the block upward or survive into the next iteration of a loop.
   Binding another module's symbol is the normal way to instantiate its
   machinery; there is nothing special about it ([D10]).
 
-**[D27] PROPOSED (no inference at binds).** A bind never infers other binds.
+**[D27] DECIDED (no inference at binds).** A bind never infers other binds.
 Signature matching in [D26] is checked *after* substitutions already in
 force, and it is an error — not a unification opportunity — if abstract
 symbols remain unmatched. Concretely: `src/cli.moss`'s
@@ -334,7 +381,7 @@ Allowing that bind to be inferred from the function's type would be
 `bind parser::next=next;` needing `parser::TokenId` bound first — which
 cli.moss in fact does, in the right order.)
 
-**[D28] PROPOSED (satisfaction rule, restated).** An expression may use an
+**[D28] DECIDED (satisfaction rule, restated).** An expression may use an
 abstract symbol `s` (call it, read it, mention the type) iff `s` is in the
 enclosing declaration's requirement set or `s` is bound in an enclosing
 block. A call to a defined function `g` requires each element of `g`'s
@@ -342,30 +389,48 @@ requirement set to be available the same way — matched by symbol identity,
 with square-bracket applications composed. This check is the core of the
 lowering phase, and per [D1] it is a set-membership test, not a search.
 
-**[D29] OPEN (bind-returning functions).** syntax.md contains two unused
-related productions: a **Fndef** return position of `bind Needs`
-(`fn f(): bind cell, string`) and a **Call** alternative inside **Bind**
-(`bind f();`). The natural reading: `f` returns a bundle of bindings, and
-`bind f();` applies them to the caller's remaining block — a way to package
-setup like `src/cli.moss`'s `parse` prologue (`let pos = zero(); bind
-cell=pos; bind string=text;`) behind one call. Nothing in `src/` uses it.
-Proposal: keep the idea on the shelf, cut it from the grammar and from the
-bootstrap until the plain form is proven; it's the first feature whose
-absence hurts when writing `src/` for real, so it will earn its way in
-quickly if needed.
+**[D29] OPEN (functors).** syntax.md's unused `fn f(): bind Needs` return
+form and `bind f();` call form were the spring design's answer to a real
+need: mapping an instance of one context shape to an instance of another.
+The designer's new framing: under the ML-modules reading that operation is a
+*functor*, and functors deserve to be their own construct, distinct from
+functions even syntactically — the fn-returning-`bind` conflation was one of
+the least elegant parts of the spring design. The unresolved wrinkle is
+vals: "take some stuff in my current context plus a couple of runtime
+values, and give back a context that uses them" is genuinely useful, and a
+val-taking functor is what made fn-returning-`bind` attractive in the first
+place.
 
-**[D30] OPEN (recursion × static binds).** Because type/fn binds drive
-specialization, a recursive function that re-binds a *type* on the recursive
-path could demand infinitely many specializations. `src/lower.moss`'s
-`scope_items` recursion is fine (it rebinds only the val `ctx`). Proposal:
-the bootstrap interpreter doesn't care (it just carries an environment);
-detection of unbounded static specialization is deferred to the
-monomorphizing backend, which can put a depth limit on the (declaration,
-static-bindings) instantiation graph and report the cycle.
+One reframing worth discussing, riding the [D2] static/dynamic split:
+restrict functors to *static* items — they may consume and produce only type
+and fn bindings, applied entirely at elaboration time. Since the only
+runtime content of a context is val data, the val-threading half of the use
+case is then served by ordinary code: a defined function that evaluates its
+arguments and `bind`s them before calling onward, i.e. exactly the manual
+prologue `src/cli.moss`'s `parse` already writes
+(`let pos = zero(); bind cell=pos; bind string=text; ...`). If that split
+holds, functors never touch runtime data, and "functor over vals" stops
+being a construct and becomes a code pattern. Whether that pattern is
+ergonomic enough without sugar is the open half of the question.
+
+For the MVP: no functors, no fn-returning-`bind`; both grammar forms are
+cut, and the manual-prologue pattern covers the current corpus.
+
+**[D30] DECIDED (monomorphization depth backstop).** Because type/fn binds
+drive specialization, a recursive function that re-binds a *type* on the
+recursive path could demand infinitely many specializations.
+(`src/lower.moss`'s `scope_items` recursion is fine — it rebinds only the
+val `ctx`.) The bootstrap interpreter doesn't care (it just carries an
+environment); the monomorphizing backend puts a depth limit on the
+(declaration, static-bindings) instantiation graph and reports the cycle.
+This is the sole exception to [D16]'s no-post-monomorphization-checks
+principle, with precedent: Rust likewise accepts polymorphic-recursion-
+shaped programs at check time and only fails with a recursion-limit error
+when monomorphization actually runs.
 
 ## 8. Expressions, statements, and patterns
 
-**[D31] PROPOSED (statements).**
+**[D31] DECIDED (statements).**
 
 ```
 let x = e;      # immutable local
@@ -375,10 +440,13 @@ e;              # expression statement
 bind ...;       # see §7
 while e { ... }
 loop { ... }    # with break
-for p in e { ... }
 return e?;      # early return; `return` alone returns ()
 break;          # loops only; carries no value
 ```
+
+`for` is out of the MVP entirely — designing an iteration protocol is
+deferred with it ([D35]). Both `while` and `loop` stay; each is trivial once
+the other exists.
 
 `let`/`var` bind names, not patterns, for now. `var` permits reassignment of
 the local slot only; it creates no aliasable storage — shared or captured
@@ -387,26 +455,29 @@ mutable state goes through `Cell` (which is why `src/cli.moss` threads a
 expressions; the final expression without `;` is the block's value, `()`
 otherwise.
 
-**[D32] PROPOSED (expressions).** Parenthesization, `()` unit, paths
+**[D32] DECIDED (expressions).** Parenthesization, `()` unit, paths
 (`lexer::lex`, `char::H`), calls `f(a, b)`, method calls `x.m(a)`, field
 access `x.f` (which projects through a nominal-record tag: `imp.name` where
 `imp: Import`), record construction `Import { from, name, names = ns }`
 (shorthand when the local variable name equals the field name), tag
-construction by juxtaposition `Some (expect(Name))`, unit values by name
-(`Eof`), unary `!`, the binary operators of syntax.md, `if`/`else if`/`else`
-as an expression, and `match`.
+construction by juxtaposition `Some[T=TokenId] (expect(Name))` ([D42]), unit
+values by name (`Eof`), `if`/`else if`/`else` as an expression, and `match`.
+Unary and binary operator expressions are out of the MVP ([D33]).
 
-**[D33] OPEN (operators without literals or traits).** `src/cli.moss` uses
-`pos >= string.length()` and `pos + 1`; the old `lib/ops.moss`
-Lhs/Rhs/AddOut machinery is dead. What do operators mean now? Proposal:
-binary operators are *syntax* for method calls on the left operand
-(`a + b` ≡ `a.add(b)`, `a >= b` ≡ `a.ge(b)`, `a == b` ≡ `a.eq(b)`), so
-operator availability rides the same rails as any method (§9): usable when a
-matching method for the receiver's type is in context. Std provides them for
-`Int` etc. No user-facing precedence surprises: precedence per syntax.md's
-eventual table (to be written; currently the grammar note admits ambiguity).
+**[D33] DECIDED (no operators in the MVP).** No unary or binary operator
+expressions at all for now; the operator tokens stay lexed but reserved
+([D7]). `src/` uses operators freely (`pos + 1`, `pos >= string.length()`,
+`peek() == kind`, the whole `c == '!'` ladder), so those sites get rewritten
+as ordinary calls (§12). The post-MVP direction is settled: operators
+desugar to the *specific symbols of `lib/ops.moss`* — which, unlike the rest
+of `lib/`, is already current with the intended semantics and survives —
+with `Lhs`/`Rhs`/output symbols applied at the operand types. That is
+Rust-lang-item style, not name-driven lookup of any method that happens to
+be called `add`; availability rides the ordinary context rails for exactly
+those `ops` symbols, and the desugaring is therefore not strictly syntactic
+sugar. It may prove cheap enough to pull into the MVP once §9 settles.
 
-**[D34] PROPOSED (match).**
+**[D34] DECIDED (match).**
 
 ```moss
 match scrutinee {
@@ -427,46 +498,130 @@ requires `e : |`. Note `src/parse.moss`'s `tree()` matches a `Token` against
 only three heads with no wildcard — stale code under this rule (§12), and
 `src/lower.moss:103,106` omit `=>` — recorded as typos.
 
-**[D35] OPEN (iteration protocol).** `for` is used three ways in `src/`:
-`for using in imp.names` (a `Range[T=NameId]`), `for node in
-graph.topological_sort()`, and `for Import imp in imports` — the last with a
-*type-ascribed binder* and iterating something (`imports`) that is never
-declared. A protocol is needed: what must `e` provide for `for p in e`?
-Options: (a) desugar to a context-supplied pair `e.iter()`/`Cell`-driven
-`next(): T | Done`, riding §6 machinery; (b) compiler-magic iteration over a
-few blessed types (`Range`, lists) for the bootstrap. Proposal: (b) now, (a)
-when the method story (§9) settles. The typed-binder form
-(`for Import imp in ...`) suggests heterogeneous iteration with a filter or
-refinement — needs a real design; suggest cutting it and using `match` in the
-loop body instead.
+**[D35] DECIDED (iteration deferred with `for`).** No `for` and no
+iteration protocol in the MVP ([D31]); designing iterator semantics is
+punted deliberately. The four `for` loops in `src/` (§12) get rewritten with
+`loop`/`while` over explicit state, and the typed-binder form
+(`for Import imp in imports`, `src/lower.moss:45`) is cut along with the
+rest.
 
-## 9. Methods — OPEN
+## 9. Methods: attached and detached — OPEN
 
-Attached declarations `fn Cell.read(): T;`, `fn TokenId.name(): StrId;`,
-`fn String.length(): Int;` exist throughout `src/`, are referenced in
-contexts by their full names (`Path.join`, `TokenSet.add`, `IsCell =
-Cell.read, Cell.write`), and are called as `x.m(...)`. The old detached
-`.name`/`This` design from `lib/` is dead, and the designer has said the new
-story "still needs a bit of fleshing out." Until then, the bootstrap assumes
-the minimal reading:
+Rewritten per notes.md. There are two kinds of methods, and their coexistence
+is the reason symbol resolution needs types (§1). The designer's example,
+reproduced because nothing in the codebase demonstrates the new model yet:
 
-**[D36] PROPOSED (minimal method semantics).** `fn T.m(args): R` declares an
-item whose name is the pair `T.m`; `T` must be a type symbol in scope, and
-the declaration implicitly takes a receiver parameter of type `T`. A call
-`x.m(a)` resolves as follows: determine the (already elaborated) type of `x`;
-among the requirement set / binds in force, there must be exactly *one*
-available method named `m` whose receiver type is that type — ambiguity or
-absence is an error at the call site. This is name-plus-receiver-identity
-lookup, not search: nothing is inferred, coerced, or ranked. Field access and
-method call are syntactically distinguishable only by the argument list
-(`x.f` vs `x.f()`); record fields and method names on the same type must not
-collide.
+```moss
+type Foo;
 
-Known open sub-questions for the real design: can methods attach to aliases,
-unions, or only to type symbols and tags? Are `T.m` items assumable
-independently of `T` (currently yes — `IsCell` includes `Cell.read` while
-`T`/`Cell` are assumed separately)? Is there any receiver-position
-auto-injection into unions ([D17] says no)?
+assume Foo {
+  fn .gimme(): Foo;
+}
+
+type A;
+type B;
+type C;
+
+assume C {
+  fn C.gimme(): C {
+    this
+  }
+}
+
+context Ctx =
+  A,
+  B,
+  C,
+
+  A.gimme[Foo=B],
+  B.gimme[Foo=C],
+;
+
+assume Ctx {
+  fn example(a: A): C {
+    let b = a.gimme();
+    let c = b.gimme();
+    c.gimme()
+  }
+}
+```
+
+- **Attached** methods, `fn T.m(args): R;` / `{...}`, name their receiver
+  type at the declaration. A *defined* attached method is an ordinary
+  defined function: `c.gimme()` above calls `fn C.gimme(): C { this }`
+  directly, needing only that the method is in scope and its requirement
+  set (`{C}`) is satisfied — `C.gimme` is not (and need not be) listed in
+  `Ctx`.
+- **Detached** methods, `fn .m(args): R;` / `{...}`, name no receiver type.
+  The receiver is supplied where the method is *referenced*: the context
+  item `A.gimme[Foo=B]` reads "the detached `.gimme`, at receiver `A`, with
+  its requirement `Foo` bound to `B`". The same detached symbol may be
+  provided at many receivers in one context (`A.gimme[Foo=B]` and
+  `B.gimme[Foo=C]` coexist), so the receiver type is part of the item's
+  identity — the [D1] "symbol" for a detached method is really the pair
+  (receiver type, method symbol). Note the reference is total in the [D22]
+  sense: the `A.` prefix plus the brackets bind everything.
+
+Resolution of `x.m(a)`: forward-infer the type `X` of `x` (always already
+known, §1), then look up the key (`X`, `m`) — a scope-visible attached
+method `X.m`, or a detached `.m` provided at `X` by the requirement
+set/binds in force. Exactly one must be available; absence and ambiguity are
+both errors at the call site. Nothing is ranked or adapted.
+
+Questions for the designer — the bootstrap needs these before implementing
+§9, and [D36] below records the working assumptions it will use in the
+meantime:
+
+- **Q1**: Can a detached method's signature refer to its receiver's type?
+  The example's `.gimme` doesn't need to (its return is the separately
+  assumed `Foo`), but something like `.clone` can't be expressed without a
+  name for "the receiver's type". The old design had the `This` symbol
+  (`for This=Uint32 { .to_string }`); notes.md says the new story is
+  "significantly different". Is there an implicit receiver-type symbol per
+  detached method, or is the answer simply "no — use an assumed symbol like
+  `Foo` when you need to talk about related types"?
+- **Q2**: Is `this` now a keyword, legal exactly in method bodies (with the
+  receiver's declared type in an attached body)? The example suggests yes;
+  `lib/this.moss` dies. Confirm.
+- **Q3**: Can detached methods be *defined* (`fn .m() { ... }`), or only
+  declared abstract? If defined, what is `this`'s type in the body, and what
+  may the body do with it (presumably nothing beyond passing it around,
+  absent Q1)?
+- **Q4**: What provides a detached method at bind time? `Ctx` *asserts*
+  `A.gimme[Foo=B]` as a requirement; eventually someone must satisfy it.
+  Guess: `bind A.gimme=f;` where `f` is any in-scope function of matching
+  signature (an attached `fn A.gimme` included) after substitutions, per
+  the ordinary [D26]/[D27] rules. Confirm the syntax and whether an attached
+  method can serve as the provider.
+- **Q5**: Attached-on-abstract vs detached. `src/lower.moss` declares
+  `fn TokenId.name(): StrId;` — attached, but to an *abstract* type. When
+  `TokenId` is applied or bound (`bind parser::TokenId=Int;`), does
+  `TokenId.name` become a method available at receiver `Int`, i.e. does the
+  (receiver, name) key get rewritten by substitution? The same question
+  makes `src/parse.moss` work: `names.push(...)` with `names: NameList`
+  resolves because `IsList[T=NameId, List=NameList]` re-keys `List.push` to
+  receiver `NameList`. If yes, is an attached-on-abstract method
+  semantically just a detached method that happens to be declared at one
+  symbol, or is there a real difference (e.g. in what may collide)?
+- **Q6**: Where are collisions rejected? Two provisions of the same
+  (receiver, name) key — say `A.gimme[Foo=B]` and a second `A.gimme[Foo=C]`
+  — could be an error when the context is formed, when it is assumed, or
+  only at a call site that actually looks up the key. Call-site-only is most
+  permissive and cheapest; context-formation is the earliest diagnostic.
+- **Q7**: Fields vs methods: rev 1 proposed that record fields and method
+  names at the same receiver type must not collide (`x.f` vs `x.f()` being
+  the only distinguisher otherwise). Confirm.
+
+**[D36] PROPOSED (interim method semantics for the bootstrap).** Until the
+Q's are answered, the bootstrap implements the resolution rule above with
+these working assumptions: detached signatures cannot name the receiver's
+type (Q1: no); `this` is a keyword valid only in method bodies (Q2: yes);
+detached methods are abstract-only (Q3: sig-only); provision is
+`bind X.m=f;` with ordinary signature matching (Q4); attached-on-abstract
+methods re-key under substitution exactly like detached provisions (Q5:
+yes, no semantic difference observable to callers); collisions error at the
+call site only (Q6); fields and methods at the same receiver must not
+collide (Q7).
 
 ## 10. Execution model and entry point
 
@@ -483,8 +638,11 @@ a bytearray memory), so that `moss run` works before the in-Moss `Std`
 implementation exists. Switching `Std` from native to in-language is then a
 milestone that exercises §7 hard, on purpose. The set of native symbols is
 kept in one Python table so the two layers can't drift apart silently.
+(notes.md: the designer would sequence this differently but has OK'd it;
+the in-language `Std` remains the bar for the MVP proper, so the native
+table is scaffolding with a planned demolition date.)
 
-**[D39] PROPOSED (linking model for `moss run file.moss`).** The CLI
+**[D39] DECIDED (linking model for `moss run file.moss`).** The CLI
 elaborates the file, checks `main`'s requirement set ⊆ `Std`'s flattened
 items, then runs `main` with the native (later: in-language) `Std` bindings
 in force. Extra assumed-but-unprovided symbols produce hello.md's two
@@ -527,7 +685,7 @@ interpreter consumes lowering's *output* rather than combining side-table
 data with the AST — that keeps stage 3 honest and makes stage 5 a swap-out of
 stage 4 rather than a second reckoning with the static semantics.
 
-**[D40] PROPOSED (test strategy).** Corpus-driven: every file in `src/` and
+**[D40] DECIDED (test strategy).** Corpus-driven: every file in `src/` and
 every doc example must lex and parse from day one (golden AST dumps);
 elaboration and execution tests grow file-by-file starting from a rewritten
 literal-free hello. `tests/errors/` continues as golden-diagnostics tests.
@@ -539,55 +697,68 @@ Stale things this document supersedes; each needs a mechanical fix once the
 decisions above are confirmed.
 
 - `docs/reference/syntax.md`: keyword list ([D3]); no literals ([D4]); add
-  `match`/`loop`/`break`/`return`/`for`/`unit` productions and union/never
-  types ([D15], [D34]); add `use *` ([D8]); drop declaration-site Needs and
-  `static` ([D14]); drop **Bind** from **Expr** ([D25]) and the
-  bind-returning forms pending [D29]; grammar's `assume List[Binding];`
-  statement form is unused — **OPEN** whether to keep a braceless
-  rest-of-file `assume Std;` form as sugar (hello.md's "typical pattern"
-  would benefit).
+  `match`/`loop`/`break`/`return`/`unit` productions and union/never types
+  ([D15], [D34]); add `use *` ([D8]); drop declaration-site Needs and
+  `static` ([D14]); drop **Bind** from **Expr** ([D25]); cut the
+  bind-returning forms ([D29]), all operator expression productions ([D33]),
+  `for` ([D31]), and bracket bindings in `assume` items ([D24] — assume
+  takes bare paths); grammar's `assume List[Binding];` statement form is
+  unused — still **OPEN** (unaddressed in notes.md) whether to keep a
+  braceless rest-of-file `assume Std;` form as sugar (hello.md's "typical
+  pattern" would benefit).
 - `docs/learn/hello.md`: the `println("Hello, world!")` example at line 73
   contradicts [D4]; `putchar`/`char::*` need to actually exist in the new
   `lib/`.
 - `src/token.moss`, `src/lex.moss`: token set per [D3]/[D4]; keyword and
-  name lexing missing entirely; char-literal comparisons (`c == '!'`) need
-  named char constants; `lex()` must gain the two-character-symbol,
+  name lexing missing entirely; the `c == '!'` ladder is doubly stale —
+  char literals ([D4]) *and* the `==` operator ([D33]) — and becomes calls
+  against named char constants; `next_byte(): Char | Eof` has an abstract
+  union member ([D15]) and needs a nominal wrapper, e.g. `type Read Char;`
+  and `Read | Eof`; `lex()` must gain the two-character-symbol,
   whitespace/comment, keyword, and name paths.
-- `src/cli.moss`: `pos + 1` needs a literal-free spelling ([D4]);
-  missing `bind lexer::Char=Char;` ([D27]); `Graph`, `print_bytes`,
-  `node.lower()`, `graph.codegen()` are undeclared sketch holes; `Std`'s
-  member list in `src/std.moss` names undeclared `File` and `println`.
+- `src/cli.moss`: `pos + 1` and `pos >= string.length()` use literals and
+  operators ([D4], [D33]); missing `bind lexer::Char=Char;` ([D27]); the
+  `for` loop at line 49 ([D35]); `Graph`, `print_bytes`, `node.lower()`,
+  `graph.codegen()` are undeclared sketch holes; `Std`'s member list in
+  `src/std.moss` names undeclared `File` and `println`.
 - `src/parse.moss`: `ScopeId` undeclared; `tree()`'s match is
-  non-exhaustive ([D34]); `names.push(next())` pushes a `TokenId` where
-  `T=NameId` (needs a conversion or a rethink of `NameId`).
-- `src/option.moss`: `type Option | None | Some;` — [D13].
+  non-exhaustive ([D34]); the `peek() == ...` comparisons ([D33]);
+  `Some (expect(Name))` needs explicit application ([D42]);
+  `names.push(next())` pushes a `TokenId` where `T=NameId` (needs a
+  conversion or a rethink of `NameId`).
+- `src/option.moss`: `type Option | None | Some;` becomes
+  `type Option = | None | Some;` ([D13]).
 - `src/lower.moss`: missing `=>` on the `Sig`/`Fn` arms (lines 103, 106);
   `ImportId`, `toplevel`, the `imports` iterable, and `ScopeId` undeclared;
-  `for Import imp in imports` uses the typed-binder form ([D35]).
-- `lib/` (all of it): previous-iteration design (`for X=Y {}` grouping,
-  `This`/`this`, detached `.to_string`, `Numerals`/`Arithmetic` operator
-  machinery) — to be rewritten from scratch against §§4–9 once decisions
-  land; nothing in it should be consulted as precedent.
+  three `for` loops (lines 45, 50, 81) to rewrite ([D35]).
+- `lib/` (almost all of it): previous-iteration design (`for X=Y {}`
+  grouping, `This`/`this`, old-style detached `.to_string`,
+  `Numerals`/`Arithmetic` context machinery) — to be rewritten from scratch
+  against §§4–9 once decisions land. The one exception, per notes.md, is
+  `lib/ops.moss`: it already matches the intended operator semantics and is
+  the designated desugaring target for post-MVP operators ([D33]).
 
 ## 13. Decision index
 
-Needs sign-off (**PROPOSED**): D5 strings-only-for-imports · D7 symbol
-tokens · D9 export rules · D10 module identity · D12 declaration placement ·
-D14 drop declaration-site Needs · D15 type forms · D17 injection-only
-subtyping · D18 applicative type identity · D20(second half)
-assume well-formedness · D22 partial application · D23 subsumption ·
-D24 assume-with-binding · D25 bind scope · D26 bind forms · D27 no inference
-at binds · D28 satisfaction rule · D31 statements · D32 expressions ·
-D34 match · D36 minimal methods · D38 native-Std bootstrap · D39 linking ·
-D40 test strategy
+Needs sign-off (**PROPOSED**): D15 type forms (union rule now decided via
+[D16]; tuples/records still unconfirmed) · D36 interim method semantics
+(the Q1–Q7 working assumptions) · D38 native-Std bootstrap sequencing ·
+D42 explicit application at tag construction
 
-Genuinely undecided (**OPEN**): D13 `type Option | ...` nominal-union
-shorthand · D16 unions over abstract types · D29 bind-returning functions ·
-D30 recursion × static binds · D33 operator semantics · D35 iteration
-protocol · D36/§9 the real method story · import cycles (D10) · braceless
-`assume` statement form (§12)
+Genuinely undecided (**OPEN**): §9 Q1–Q7 the real method story ·
+D29 functors (does the static-only split dissolve the val wrinkle?) ·
+D41 `unit` keyword vs `type X ();` · braceless `assume` statement form
+(§12, unaddressed in notes.md)
 
-The highest-leverage discussions, in order: §7 as a whole (D25–D28 decide
-whether lowering is trivial or not), §9 methods, D33 operators, D35
-iteration — the last three because `src/` cannot be rewritten honestly until
-they're settled.
+Resolved by notes.md (now **DECIDED**): D5 · D7 · D9 · D10 (+ import cycles
+forbidden) · D12 · D13 (option.moss → alias) · D14 · D16 (no
+post-monomorphization checks — global principle) · D17 · D18 · D20 · D22
+(no partial application: total or absent) · D23 · D24 (dropped) · D25 · D26
+· D27 · D28 · D30 (depth backstop = sole D16 exception) · D31 (no `for`) ·
+D32 · D33 (no operators in MVP; ops.moss is the future desugaring target) ·
+D34 · D35 (iteration deferred) · D39 · D40
+
+The highest-leverage remaining discussions, in order: §9 Q1–Q7 (methods
+block any honest rewrite of `src/` and the [D33] operator follow-up), D29
+functors, then the small syntax calls D41/D42. Everything else is settled
+enough to start building against.
