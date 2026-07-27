@@ -638,16 +638,23 @@ welcome, but elimination is never implicit semantics. The bootstrap
 interpreter happens to contain a tail-call trampoline — that is a
 non-semantic implementation detail that code must not rely on.
 
-**[D51] FINDING (generic containers vs method keys), for the designer's
-queue.** A method key is (receiver symbol, method), so a *generic*
-container hits the [D47] wall from the other side: `IsList[T=Int]` and
-`IsList[T=Char]` in one scope would merge their `List.push` keys and
-collapse `Int` with `Char`. Truly generic containers need keys carrying
-the full type identity (symbol *plus* static args) — a real design
-extension, deferred. The bootstrap's answer, which also matches the
-data-oriented arena architecture the self-hosted compiler wants anyway:
-concrete typed containers (`Std` ships `IntList`; ids into typed arenas
-are the idiom, and ids are `Int`s).
+**[D51] FINDING, corrected by the designer (generic containers work via
+unique receivers).** Rev 6 claimed generic containers hit the [D47] wall —
+that `IsList[T=Int]` and `IsList[T=Char]` in one scope would merge their
+`List.push` keys. The designer pointed out the intended idiom already
+avoids this: with *detached* methods and a **unique receiver type per
+instantiation** (`src/parse.moss` always meant `NameList` to be its own
+type), the keys are `(NameList, push)` vs `(TokenList, push)` — distinct
+atoms, no merge. Verified by test: one scope holds
+`IsCell[T=Int, Cell=CA]` and `IsCell[T=Char, Cell=CB]` simultaneously,
+with the shared `T` rebound between the two groups of provision binds
+(binds are lexical, and each provision's signature is captured at its
+bind statement). What remains true from the original finding: an
+instantiation costs one named type declaration (no anonymous
+instantiations — arguably a feature); a context that lists a shared type
+*symbol* as an item still single-instantiates per scope; and `Std` ships
+concrete `IntList` as the native backing store that per-receiver list
+wrappers delegate to.
 
 **[D45] DECIDED (nominal `Bool` as a lang item; revised).** Confirmed by
 the designer as the easiest way for `if` to work, then refined by them to

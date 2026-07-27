@@ -509,3 +509,49 @@ class TestIntList(unittest.TestCase):
         files = main_body("let xs = int_list(); xs.get(zero);")
         with self.assertRaises(interp.MossPanic):
             run(files)
+
+
+class TestMultiInstantiation(unittest.TestCase):
+    def test_two_iscell_instantiations_coexist(self):
+        """The designer's point about IsList: with detached methods and a
+        unique receiver type per instantiation (NameList-style), one scope
+        holds IsCell at T=Int *and* T=Char — the keys are (CA, read) and
+        (CB, read), distinct atoms, so D51's collision never happens."""
+        files = {
+            "main.moss": (
+                'import "./src/inner.moss" use T;\n'
+                'import "./src/cell.moss" use Cell, IsCell, .read as .cread, .write as .cwrite;\n'
+                "\n"
+                "assume Std {\n"
+                "  type CA CellInt;\n"
+                "  type CB Char;\n"
+                "\n"
+                "  fn CA.rd(): Int { match this { CA c => c.read() } }\n"
+                "  fn CA.wr(x: Int) { match this { CA c => c.write(x), } }\n"
+                "  fn CB.rd(): Char { match this { CB c => c } }\n"
+                "  fn CB.wr(x: Char) { }\n"
+                "\n"
+                "  context Both = IsCell[T=Int, Cell=CA], IsCell[T=Char, Cell=CB];\n"
+                "\n"
+                "  assume Both {\n"
+                "    fn go(a: CA, b: CB): Char {\n"
+                "      a.cwrite(a.cread().add(one));\n"
+                "      b.cread()\n"
+                "    }\n"
+                "  }\n"
+                "\n"
+                "  fn main() {\n"
+                "    bind T=Int;\n"
+                "    bind CA.cread=CA.rd;\n"
+                "    bind CA.cwrite=CA.wr;\n"
+                "    bind T=Char;\n"
+                "    bind CB.cread=CB.rd;\n"
+                "    bind CB.cwrite=CB.wr;\n"
+                "    let a = CA (cell_int());\n"
+                "    let b = CB (char::z);\n"
+                "    putchar(go(a, b));\n"
+                "  }\n"
+                "}\n"
+            )
+        }
+        self.assertEqual(run(files), "z")
