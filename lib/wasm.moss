@@ -5,6 +5,14 @@ type I64;
 # https://webassembly.github.io/spec/core/syntax/instructions.html#parametric-instructions
 fn unreachable(): |;
 
+assume I32 {
+  # There are no literals (D4), so every I32 is built from these two, the
+  # way `Int`'s `zero` and `one` work. They are the only `Wasm` items that
+  # are values rather than instructions.
+  val i32_zero: I32;
+  val i32_one: I32;
+}
+
 # https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
 assume I32 {
   fn i32_load(address: I32): I32;
@@ -111,6 +119,9 @@ assume I32 {
 context Wasm =
   I32,
   I64,
+
+  i32_zero,
+  i32_one,
 
   unreachable,
 

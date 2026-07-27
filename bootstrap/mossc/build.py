@@ -18,6 +18,13 @@ strings are [len|bytes] entering via a WASI args shim; CellInt is a boxed
 word; IntList is a handle to a [len, cap, elems] block that grows by
 copying. Path, fn binds, and closures are not yet in the slice and report
 themselves as such.
+
+Alongside that, and under it, the primitive context of D52: a program may
+assume `Wasm` and `Wasi` (lib/wasm.moss, lib/wasip1.moss) instead of
+`Std`. There the compilation is direct — a `Wasm` intrinsic is the
+instruction of the same name, a `Wasi` function is an import of the same
+name — so such a program needs no shims at all. The i64 half of `Wasm` is
+declared but not covered here, since every value in this slice is an i32.
 """
 
 import sys
@@ -49,12 +56,21 @@ HEAP_BASE = 1024
 I32_LOAD = b"\x28"
 I32_STORE = b"\x36"
 
-# Function indices: the three WASI imports, then the shims, then the
-# compiled Moss functions, then `_start`.
+# Function index space: the WASI imports the module actually uses, then a
+# fixed run of shims, then the compiled Moss functions, then `_start`.
+# Only the shims' *offsets* are constant — how many imports come before
+# them depends on what the program calls (D52: `Wasi` is reachable from
+# Moss), so indices are computed from the backend's import table.
+WASI = "wasi_snapshot_preview1"
+
+# The shims call these, so they are always imported, always first.
+BASE_IMPORTS = (("fd_write", 4, 1), ("args_sizes_get", 2, 1), ("args_get", 2, 1))
 FD_WRITE, ARGS_SIZES_GET, ARGS_GET = 0, 1, 2
-PUTCHAR, ALLOC, FIRST_ARG, LIST_PUSH, PRINT, SLICE = 3, 4, 5, 6, 7, 8
-CONCAT = 9
-FIRST_FN = CONCAT + 1
+
+SHIMS = ("putchar", "alloc", "first_arg", "list_push", "print", "slice", "concat")
+S_PUTCHAR, S_ALLOC, S_FIRST_ARG, S_LIST_PUSH, S_PRINT, S_SLICE, S_CONCAT = range(
+    len(SHIMS)
+)
 
 BINOPS = {
     "add": b"\x6a",
@@ -116,6 +132,41 @@ def name(text: str) -> bytes:
     return uleb(len(raw)) + raw
 
 
+# `Wasm` intrinsics (lib/wasm.moss), each the instruction of the same name.
+# Loads and stores carry their natural alignment and a zero offset; the i64
+# half of the module is declared but not in this slice.
+def _memarg(align: int) -> bytes:
+    return uleb(align) + uleb(0)
+
+
+WASM_OPS = {
+    "unreachable": UNREACHABLE,
+    "i32_load": b"\x28" + _memarg(2),
+    "i32_load8_s": b"\x2c" + _memarg(0),
+    "i32_load8_u": b"\x2d" + _memarg(0),
+    "i32_load16_s": b"\x2e" + _memarg(1),
+    "i32_load16_u": b"\x2f" + _memarg(1),
+    "i32_store": b"\x36" + _memarg(2),
+    "i32_store8": b"\x3a" + _memarg(0),
+    "i32_store16": b"\x3b" + _memarg(1),
+    "memory_size": b"\x3f\x00",
+    "memory_grow": b"\x40\x00",
+    "memory_copy": b"\xfc\x0a\x00\x00",
+    "memory_fill": b"\xfc\x0b\x00",
+}
+for _i, _name in enumerate(
+    "eqz eq ne lt_s lt_u gt_s gt_u le_s le_u ge_s ge_u".split()
+):
+    WASM_OPS[f"i32_{_name}"] = bytes([0x45 + _i])
+for _i, _name in enumerate(
+    "clz ctz popcnt add sub mul div_s div_u rem_s rem_u and or xor shl"
+    " shr_s shr_u rotl rotr".split()
+):
+    WASM_OPS[f"i32_{_name}"] = bytes([0x67 + _i])
+WASM_OPS["i32_extend8_s"] = b"\xc0"
+WASM_OPS["i32_extend16_s"] = b"\xc1"
+
+
 class Backend:
     def __init__(self, program: Program, lower, natives: dict):
         self.program = program
@@ -127,9 +178,26 @@ class Backend:
         self.lib = {}
         for module in program.modules.values():
             for short in ("bool", "num", "char", "int", "std", "string",
-                          "strlist", "cell", "list"):
+                          "strlist", "cell", "list", "wasm", "wasip1"):
                 if module.path.endswith(f"lib/{short}.moss"):
                     self.lib[short] = module
+        self.imports: list[tuple[str, int, int]] = []  # (field, params, results)
+        self.import_index: dict[str, int] = {}
+        for field, nparams, nresults in BASE_IMPORTS:
+            self.wasi_import(field, nparams, nresults)
+
+    def wasi_import(self, field: str, nparams: int, nresults: int) -> int:
+        """The index of a WASI import, adding it to the module if new."""
+        if field not in self.import_index:
+            self.import_index[field] = len(self.imports)
+            self.imports.append((field, nparams, nresults))
+        return self.import_index[field]
+
+    def shim(self, which: int) -> int:
+        return len(self.imports) + which
+
+    def first_fn(self) -> int:
+        return len(self.imports) + len(SHIMS)
 
     def unit_code(self, symbol: Symbol) -> int:
         if "bool" in self.lib:
@@ -184,7 +252,7 @@ class Backend:
     def compile_fn(self, symbol: Symbol) -> int:
         if id(symbol) in self.fn_index:
             return self.fn_index[id(symbol)]
-        index = FIRST_FN + len(self.fn_index)
+        index = self.first_fn() + len(self.fn_index)
         self.fn_index[id(symbol)] = index
         fn = self.lower.fns[id(symbol)]
         needs = self.val_needs(symbol)
@@ -194,88 +262,65 @@ class Backend:
         return index
 
     def build(self, main: Symbol) -> bytes:
+        # Two passes. The first discovers which WASI functions the program
+        # calls, and that count is what fixes every function index; the
+        # second compiles against the final numbering. Compilation is
+        # deterministic, so the second pass discovers nothing new — which
+        # the assertion below states rather than assumes.
+        self.compile_fn(main)
+        discovered = len(self.imports)
+        self.fn_index.clear()
+        self.compiled.clear()
+        self.unit_codes.clear()
         main_index = self.compile_fn(main)
+        assert len(self.imports) == discovered, "the import set must be stable"
         ordered = [self.compiled[i] for i in sorted(self.compiled)]
-        # Types: 0 = fd_write, then one per distinct param count, then _start.
-        types = [(4, 1)]  # fd_write: 4 params, 1 result
-        type_of = {(4, 1): 0}
-        func_types = []
-        for count, _ in ordered:
-            key = (count, 1)
+
+        types: list[tuple[int, int]] = []
+        type_of: dict[tuple[int, int], int] = {}
+
+        def ty(nparams: int, nresults: int) -> int:
+            key = (nparams, nresults)
             if key not in type_of:
                 type_of[key] = len(types)
                 types.append(key)
-            func_types.append(type_of[key])
-        if (1, 0) not in type_of:
-            type_of[(1, 0)] = len(types)
-            types.append((1, 0))
-        putchar_type = type_of[(1, 0)]
-        if (1, 1) not in type_of:
-            type_of[(1, 1)] = len(types)
-            types.append((1, 1))
-        alloc_type = type_of[(1, 1)]
-        if (0, 0) not in type_of:
-            type_of[(0, 0)] = len(types)
-            types.append((0, 0))
-        start_type = type_of[(0, 0)]
-        if (2, 1) not in type_of:
-            type_of[(2, 1)] = len(types)
-            types.append((2, 1))
-        wasi2_type = type_of[(2, 1)]
-        if (0, 1) not in type_of:
-            type_of[(0, 1)] = len(types)
-            types.append((0, 1))
-        first_arg_type = type_of[(0, 1)]
-        if (3, 1) not in type_of:
-            type_of[(3, 1)] = len(types)
-            types.append((3, 1))
-        slice_type = type_of[(3, 1)]
+            return type_of[key]
+
+        import_types = [ty(nparams, nresults) for _, nparams, nresults in self.imports]
+        shim_types = [
+            ty(1, 0),  # putchar: (char) -> ()
+            ty(1, 1),  # alloc: (nbytes) -> addr
+            ty(0, 1),  # first_arg: () -> string
+            ty(2, 1),  # list_push: (handle, value) -> dummy
+            ty(1, 0),  # print: (string) -> ()
+            ty(3, 1),  # slice: (string, start, len) -> string
+            ty(2, 1),  # concat: (string, string) -> string
+        ]
+        func_types = [ty(count, 1) for count, _ in ordered]
+        start_type = ty(0, 0)
 
         type_section = section(
-            1,
-            vec(
-                [
-                    b"\x60" + vec([I32] * p) + vec([I32] * r)
-                    for p, r in types
-                ]
-            ),
+            1, vec([b"\x60" + vec([I32] * p) + vec([I32] * r) for p, r in types])
         )
         import_section = section(
             2,
             vec(
                 [
-                    name("wasi_snapshot_preview1") + name("fd_write") + b"\x00" + uleb(0),
-                    name("wasi_snapshot_preview1")
-                    + name("args_sizes_get")
-                    + b"\x00"
-                    + uleb(wasi2_type),
-                    name("wasi_snapshot_preview1")
-                    + name("args_get")
-                    + b"\x00"
-                    + uleb(wasi2_type),
+                    name(WASI) + name(field) + b"\x00" + uleb(t)
+                    for (field, _, _), t in zip(self.imports, import_types)
                 ]
             ),
         )
-        # Functions: the shims in FIRST_FN order, then compiled fns, then
-        # _start.
         function_section = section(
             3,
             vec(
-                [
-                    uleb(putchar_type),
-                    uleb(alloc_type),
-                    uleb(first_arg_type),
-                    uleb(wasi2_type),  # list_push: (handle, value) -> dummy
-                    uleb(putchar_type),  # print: (string) -> ()
-                    uleb(slice_type),  # slice: (string, start, len) -> string
-                    uleb(wasi2_type),  # concat: (string, string) -> string
-                ]
+                [uleb(t) for t in shim_types]
                 + [uleb(t) for t in func_types]
                 + [uleb(start_type)]
             ),
         )
         memory_section = section(5, vec([b"\x00" + uleb(2)]))
-        start_index = FIRST_FN + len(ordered)
+        start_index = self.first_fn() + len(ordered)
         export_section = section(
             7,
             vec(
@@ -348,15 +393,15 @@ class Backend:
         b += I32_CONST + sleb(24) + I32_CONST + sleb(28) + CALL + uleb(ARGS_SIZES_GET) + DROP
         # argv = alloc(argc * 4); buf = alloc(bufsize)
         b += I32_CONST + sleb(24) + I32_LOAD + uleb(2) + uleb(0)
-        b += I32_CONST + sleb(4) + BINOPS["mul"] + CALL + uleb(ALLOC) + LOCAL_SET + uleb(0)
+        b += I32_CONST + sleb(4) + BINOPS["mul"] + CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(0)
         b += I32_CONST + sleb(28) + I32_LOAD + uleb(2) + uleb(0)
-        b += CALL + uleb(ALLOC) + LOCAL_SET + uleb(1)
+        b += CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(1)
         b += LOCAL_GET + uleb(0) + LOCAL_GET + uleb(1) + CALL + uleb(ARGS_GET) + DROP
         # if argc < 2: return an empty string
         b += I32_CONST + sleb(24) + I32_LOAD + uleb(2) + uleb(0)
         b += I32_CONST + sleb(2) + BINOPS["lt"]
         b += IF + EMPTY
-        b += I32_CONST + sleb(4) + CALL + uleb(ALLOC) + LOCAL_SET + uleb(4)
+        b += I32_CONST + sleb(4) + CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(4)
         b += LOCAL_GET + uleb(4) + I32_CONST + sleb(0) + I32_STORE + uleb(2) + uleb(0)
         b += LOCAL_GET + uleb(4) + RETURN
         b += END
@@ -370,7 +415,7 @@ class Backend:
         b += BR + uleb(0) + END + END
         # s = alloc(4 + n); *s = n; copy bytes
         b += I32_CONST + sleb(4) + LOCAL_GET + uleb(3) + BINOPS["add"]
-        b += CALL + uleb(ALLOC) + LOCAL_SET + uleb(4)
+        b += CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(4)
         b += LOCAL_GET + uleb(4) + LOCAL_GET + uleb(3) + I32_STORE + uleb(2) + uleb(0)
         b += I32_CONST + sleb(0) + LOCAL_SET + uleb(5)
         b += BLOCK + EMPTY + LOOP + EMPTY
@@ -400,7 +445,7 @@ class Backend:
         # nd = alloc(8 + 8*cap); nd.len = len; nd.cap = cap*2
         b += I32_CONST + sleb(8)
         b += LOCAL_GET + uleb(4) + I32_CONST + sleb(8) + BINOPS["mul"]
-        b += BINOPS["add"] + CALL + uleb(ALLOC) + LOCAL_SET + uleb(5)
+        b += BINOPS["add"] + CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(5)
         b += LOCAL_GET + uleb(5) + LOCAL_GET + uleb(3) + I32_STORE + uleb(2) + uleb(0)
         b += LOCAL_GET + uleb(5)
         b += LOCAL_GET + uleb(4) + I32_CONST + sleb(2) + BINOPS["mul"]
@@ -439,7 +484,7 @@ class Backend:
         b += vec([uleb(2) + I32])
         # s = alloc(4 + len); *s = len
         b += I32_CONST + sleb(4) + LOCAL_GET + uleb(2) + BINOPS["add"]
-        b += CALL + uleb(ALLOC) + LOCAL_SET + uleb(3)
+        b += CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(3)
         b += LOCAL_GET + uleb(3) + LOCAL_GET + uleb(2) + I32_STORE + uleb(2) + uleb(0)
         b += I32_CONST + sleb(0) + LOCAL_SET + uleb(4)
         b += BLOCK + EMPTY + LOOP + EMPTY
@@ -464,7 +509,7 @@ class Backend:
         # s = alloc(4 + la + lb); *s = la + lb
         b += I32_CONST + sleb(4) + LOCAL_GET + uleb(4) + BINOPS["add"]
         b += LOCAL_GET + uleb(1) + I32_LOAD + uleb(2) + uleb(0) + BINOPS["add"]
-        b += CALL + uleb(ALLOC) + LOCAL_SET + uleb(2)
+        b += CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(2)
         b += LOCAL_GET + uleb(2)
         b += LOCAL_GET + uleb(4)
         b += LOCAL_GET + uleb(1) + I32_LOAD + uleb(2) + uleb(0) + BINOPS["add"]
@@ -651,7 +696,7 @@ class FnCompiler:
                 self.expr(node.payload)  # the Bool tag is erased
             else:
                 tmp = self.local()
-                self.code += I32_CONST + sleb(8) + CALL + uleb(ALLOC)
+                self.code += I32_CONST + sleb(8) + CALL + uleb(self.b.shim(S_ALLOC))
                 self.code += LOCAL_SET + uleb(tmp)
                 self.code += LOCAL_GET + uleb(tmp)
                 self.code += I32_CONST + sleb(self.b.unit_code(symbol))
@@ -663,7 +708,7 @@ class FnCompiler:
         elif isinstance(node, ir.MakeRecord):
             count = len(node.fields)
             tmp = self.local()
-            self.code += I32_CONST + sleb(4 + 4 * count) + CALL + uleb(ALLOC)
+            self.code += I32_CONST + sleb(4 + 4 * count) + CALL + uleb(self.b.shim(S_ALLOC))
             self.code += LOCAL_SET + uleb(tmp)
             self.code += LOCAL_GET + uleb(tmp)
             self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
@@ -826,18 +871,18 @@ class FnCompiler:
                     self.expr(node.this)
                     self.expr(node.args[0])
                     self.expr(node.args[1])
-                    self.code += CALL + uleb(SLICE)
+                    self.code += CALL + uleb(self.b.shim(S_SLICE))
                     return
                 if short == "concat":
                     self.expr(node.this)
                     self.expr(node.args[0])
-                    self.code += CALL + uleb(CONCAT)
+                    self.code += CALL + uleb(self.b.shim(S_CONCAT))
                     return
             if "list" in self.b.lib and method.module is self.b.lib["list"]:
                 if short == "push":
                     self.expr(node.this)
                     self.expr(node.args[0])
-                    self.code += CALL + uleb(LIST_PUSH)
+                    self.code += CALL + uleb(self.b.shim(S_LIST_PUSH))
                     return
                 if short == "length":
                     self.expr(node.this)
@@ -865,7 +910,7 @@ class FnCompiler:
                 if short == "push":
                     self.expr(node.this)
                     self.expr(node.args[0])
-                    self.code += CALL + uleb(LIST_PUSH)
+                    self.code += CALL + uleb(self.b.shim(S_LIST_PUSH))
                     return
                 if short == "length":
                     self.expr(node.this)
@@ -893,15 +938,15 @@ class FnCompiler:
         if self.b.is_putchar(key):
             for arg in node.args:
                 self.expr(arg)
-            self.code += CALL + uleb(PUTCHAR) + I32_CONST + sleb(0)
+            self.code += CALL + uleb(self.b.shim(S_PUTCHAR)) + I32_CONST + sleb(0)
             return
         if "string" in self.b.lib and key is self.b.lib["string"].names.get("first_arg"):
-            self.code += CALL + uleb(FIRST_ARG)
+            self.code += CALL + uleb(self.b.shim(S_FIRST_ARG))
             return
         if "string" in self.b.lib and key is self.b.lib["string"].names.get("print"):
             for arg in node.args:
                 self.expr(arg)
-            self.code += CALL + uleb(PRINT) + I32_CONST + sleb(0)
+            self.code += CALL + uleb(self.b.shim(S_PRINT)) + I32_CONST + sleb(0)
             return
         empty_list = "list" in self.b.lib and key is self.b.lib["list"].names.get(
             "int_list"
@@ -912,9 +957,9 @@ class FnCompiler:
         )
         if empty_list:
             tmp = self.local()
-            self.code += I32_CONST + sleb(4) + CALL + uleb(ALLOC) + LOCAL_SET + uleb(tmp)
+            self.code += I32_CONST + sleb(4) + CALL + uleb(self.b.shim(S_ALLOC)) + LOCAL_SET + uleb(tmp)
             data = self.local()
-            self.code += I32_CONST + sleb(40) + CALL + uleb(ALLOC) + LOCAL_SET + uleb(data)
+            self.code += I32_CONST + sleb(40) + CALL + uleb(self.b.shim(S_ALLOC)) + LOCAL_SET + uleb(data)
             self.code += LOCAL_GET + uleb(data) + I32_CONST + sleb(0)
             self.code += I32_STORE + uleb(2) + uleb(0)
             self.code += LOCAL_GET + uleb(data) + I32_CONST + sleb(8)
@@ -925,12 +970,37 @@ class FnCompiler:
             return
         if "cell" in self.b.lib and key is self.b.lib["cell"].names.get("cell_int"):
             tmp = self.local()
-            self.code += I32_CONST + sleb(4) + CALL + uleb(ALLOC) + LOCAL_SET + uleb(tmp)
+            self.code += I32_CONST + sleb(4) + CALL + uleb(self.b.shim(S_ALLOC)) + LOCAL_SET + uleb(tmp)
             self.code += LOCAL_GET + uleb(tmp) + I32_CONST + sleb(0)
             self.code += I32_STORE + uleb(2) + uleb(0)
             self.code += LOCAL_GET + uleb(tmp)
             return
+        module = getattr(key, "module", None)
+        if "wasm" in self.b.lib and module is self.b.lib["wasm"]:
+            self.wasm_instruction(key, node)
+            return
+        if "wasip1" in self.b.lib and module is self.b.lib["wasip1"]:
+            # D52: a WASI function is exactly an import of this module.
+            for arg in node.args:
+                self.expr(arg)
+            results = 0 if key.decl.ret is None else 1
+            index = self.b.wasi_import(key.name, len(node.args), results)
+            self.code += CALL + uleb(index)
+            if results == 0:
+                self.code += I32_CONST + sleb(0)  # the Moss call yields ()
+            return
         raise NotCompilable(f"contextual fn `{getattr(key, 'name', key)}`")
+
+    def wasm_instruction(self, key: Symbol, node: ir.Call):
+        """A `Wasm` intrinsic is the instruction of the same name."""
+        op = WASM_OPS.get(key.name)
+        if op is None:
+            raise NotCompilable(f"`{key.name}` (i64 is not in this slice)")
+        for arg in node.args:
+            self.expr(arg)
+        self.code += op
+        if key.decl.ret is None:
+            self.code += I32_CONST + sleb(0)  # stores and fills yield ()
 
 
 def build(program: Program, lower, main: Symbol) -> bytes:

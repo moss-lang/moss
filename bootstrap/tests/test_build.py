@@ -144,6 +144,45 @@ class TestWasmBackend(unittest.TestCase):
                 wasm = compile_wasm({"main.moss": source})
                 self.assertEqual(run_wasm(wasm), expected)
 
+    def test_raw_wasi_program(self):
+        """D52: a program can assume the primitive context directly, with no
+        `Std` and no prelude bridge — just Wasm instructions and WASI
+        imports. Writes "A\\n" through fd_write, then exits 3."""
+        wasm = compile_wasm({}, entry="tests/wasi/raw.moss")
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            path = f.name
+        result = subprocess.run(
+            [wasmtime(), path], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(result.stdout, "A\n")
+        self.assertEqual(result.returncode, 3)
+
+    def test_wasi_imports_are_only_what_is_called(self):
+        """The import section is no longer a fixed three: `proc_exit` shows
+        up only in the module that calls it, and every function index moves
+        to accommodate it."""
+        raw = compile_wasm({}, entry="tests/wasi/raw.moss")
+        std = compile_wasm(
+            {"main.moss": "assume Std {\n  fn main() { putchar(char::a); }\n}\n"}
+        )
+        self.assertIn(b"proc_exit", raw)
+        self.assertNotIn(b"proc_exit", std)
+        for module in (raw, std):
+            # The shims' imports are always there, whatever else is.
+            for field in (b"fd_write", b"args_sizes_get", b"args_get"):
+                self.assertIn(field, module)
+
+    def test_i64_reports_itself_as_out_of_slice(self):
+        source = (
+            'import "./lib/wasm.moss" as w use Wasm, I64;\n'
+            "assume Wasm {\n"
+            "  fn main() { let n = w::i64_extend_i32_u(w::i32_one); }\n"
+            "}\n"
+        )
+        with self.assertRaises(build_mod.NotCompilable):
+            compile_wasm({"main.moss": source})
+
     def test_out_of_slice_reports_itself(self):
         source = "assume Std {\n  fn main() { let p = pwd.join(first_arg()); }\n}\n"
         with self.assertRaises(build_mod.NotCompilable):

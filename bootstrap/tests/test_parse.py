@@ -24,8 +24,8 @@ CORPUS = [
     "src/range.moss",
     "src/token.moss",
     "src/tree.moss",
-    "src/wasip1.moss",
-    "src/wasm.moss",
+    "lib/wasip1.moss",
+    "lib/wasm.moss",
 ]
 
 

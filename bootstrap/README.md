@@ -50,7 +50,7 @@ itself — see the D48 entry in the decision log.
 
 ```sh
 python3 -m mossc lex ../src/token.moss     # token dump
-python3 -m mossc parse ../src/wasm.moss    # AST dump
+python3 -m mossc parse ../lib/wasm.moss    # AST dump
 python3 -m mossc run ../examples/hello.moss
 python3 -m mossc build ../examples/hello.moss > hello.wasm  # then: wasmtime hello.wasm
 ```

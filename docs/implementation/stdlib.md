@@ -32,5 +32,5 @@ Layout:
   [Context lesson](../learn/context.md) explains).
 
 The milestone that retires the native table is implementing `Std` in Moss
-on top of the `Wasm`/`Wasi` declarations (`src/wasm.moss`,
-`src/wasip1.moss`), at which point only those two contexts are primitive.
+on top of the `Wasm`/`Wasi` declarations (`lib/wasm.moss`,
+`lib/wasip1.moss`), at which point only those two contexts are primitive.

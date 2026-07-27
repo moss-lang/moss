@@ -656,9 +656,9 @@ and defines its own abstractions, so it is free to do whatever it needs —
 read `argv[0]`, open files, manage its own memory — without asking `Std`
 to grow a feature per need.
 
-The declarations already exist and predate this branch: `src/wasip1.moss`
+The declarations already exist and predate this branch: `lib/wasip1.moss`
 covers the preview-1 surface and bundles it as `context Wasi`,
-`src/wasm.moss` declares `I32`/`I64` with the memory instructions. Nothing
+`lib/wasm.moss` declares `I32`/`I64` with the memory instructions. Nothing
 *provides* either, which is the whole of the current gap: the interpreter's
 native table answers only `Std` keys and `run_main` rejects anything else,
 so `assume Wasi { fn main() ... }` fails at link.
@@ -882,8 +882,8 @@ every case ([D44]).
 
 **[D37] DECIDED.** `main` takes no parameters, returns `()`, and may assume
 any subset of `Std` (hello.md). The only primitively provided contexts are
-`Wasm` (instruction intrinsics, `src/wasm.moss`) and `Wasi` (host imports,
-`src/wasip1.moss`); `Std` is meant to be *implemented in Moss* on top of them
+`Wasm` (instruction intrinsics, `lib/wasm.moss`) and `Wasi` (host imports,
+`lib/wasip1.moss`); `Std` is meant to be *implemented in Moss* on top of them
 and bound by a driver, which is the `# TODO: Bind Std` in `src/main.moss`.
 
 **[D38] DECIDED (bootstrap shortcut).** The bootstrap compiler provides

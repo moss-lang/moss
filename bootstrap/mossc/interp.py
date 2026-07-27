@@ -269,7 +269,7 @@ def native_env(program: Program, args: list | None = None) -> dict:
     lib = {}
     for module in program.modules.values():
         for name in ("std", "char", "bool", "num", "int", "string", "strlist",
-                     "cell", "path", "list"):
+                     "cell", "path", "list", "wasm", "wasip1"):
             if module.path.endswith(f"lib/{name}.moss"):
                 lib[name] = module
     if "bool" in lib:
@@ -366,6 +366,13 @@ def native_env(program: Program, args: list | None = None) -> dict:
                 env[(int_ty, det[name])] = NativeFn(
                     name, lambda a, this, op=op: boolean(op(this.value, a[0].value))
                 )
+    if "wasm" in lib:
+        # D52's primitive layer. Only the two I32 constants are values, and
+        # only they are meaningful here: the instructions themselves need a
+        # linear memory the interpreter does not have yet, so a program
+        # assuming `Wasm` compiles but does not interpret.
+        env[lib["wasm"].names["i32_zero"]] = IntVal(0)
+        env[lib["wasm"].names["i32_one"]] = IntVal(1)
     if "string" in lib:
         string = lib["string"]
         string_ty = string.names["String"]
