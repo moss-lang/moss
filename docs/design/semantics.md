@@ -557,8 +557,19 @@ be called `add`; availability rides the ordinary context rails for exactly
 those `ops` symbols, and the desugaring is therefore not strictly syntactic
 sugar. It may prove cheap enough to pull into the MVP once §9 settles.
 
-**[D47] FINDING (one-binding-per-key vs a multi-type `Std`), needs the
-designer.** Implementation hit a real tension between [D33] and [D43]: a
+**[D47] DECIDED (operators are methods; `lib/ops.moss` is superseded).**
+The designer confirmed the finding below and withdrew the earlier
+assertion that `lib/ops.moss` matched the intended semantics: arithmetic
+and comparison are *detached methods* (`lib/num.moss`), provided per
+receiver type, and [D33]'s operators will desugar to those method symbols
+(`a + b` ≡ `a.add(b)` against `num.moss`'s `.add`, not a free function).
+`lib/ops.moss` is deleted; its remaining operations (negation, bitwise,
+shifts) moved into `lib/num.moss`. One wrinkle discovered while folding
+them in: a method cannot attach to `Bool` because `Bool` is a transparent
+alias of a union, and unions have no single nominal head to key on — so
+there is no `.not` method; write the `if` out (or match). Methods-on-union
+types are a real design question if that ever hurts. Original finding for
+the record: Implementation hit a real tension between [D33] and [D43]: a
 single context cannot provide `ops::eq` at both `Int` and `Char`, because
 the two applications share the key `eq` and consistent merging would unify
 `Int = Char` — exactly the collapse D43 is *supposed* to perform. The old
@@ -575,25 +586,32 @@ in one scope. Desugaring to the *methods* (`a.eq(b)` → key
 `(type of a).eq`) has no such limit. `lib/ops.moss` is untouched pending
 that call.
 
-**[D48] FINDING (self-hosting needs a way to spell strings), needs the
-designer.** The self-hosted lexer (`src/lex.moss`) lexes name runs but
-cannot *recognize keywords*: that means comparing lexed text against
-`"assume"`, `"fn"`, ..., and with no string literals ([D4]) those strings
-cannot be written down at all. The parser will hit the same wall for every
-named thing. Options: (a) revisit [D4] and bring back string literals (
-hello.md already hedges with "currently"); (b) grow `Std` with a string
-builder so `"assume"` is spelled `push(char::a)`-by-`push(char::e)` — 
-writable but brutal at 22 keywords; (c) invent a compile-time string-table
-mechanism. Recommendation: (a). Until decided, keywords lex as `Name`.
+**[D48] FINDING, revised (what "no literals" actually costs).** Rev 5
+claimed keyword recognition in the self-hosted lexer was "unwritable"
+without string literals; the designer questioned that, and the claim was
+wrong. Keywords need no strings at all: a hand-written character trie
+(`take(char::a)` then `take(char::s)` then boundary-check → `As`, ...)
+recognizes them, exactly like old-school lexers — `src/lex.moss` now does
+this, at a cost of roughly two hundred lines for the 22 keywords. The real
+finding is about *scale*, not possibility: every string the compiler must
+know at compile time — error message text, Wasm section names, the
+spelling of anything — must be encoded as character-by-character code.
+Identifier handling doesn't need literals either (slices plus a native
+`String.eq` suffice for interning and lookup). So [D4] can stand for a
+while yet; the pressure to revisit it will come from diagnostics and
+codegen, not from the lexer or parser. Decision deferred until it bites.
 
-**[D49] PROPOSED (proper tail calls are guaranteed).** With `for` cut
-([D31]) and `while` limited to conditions, recursion is the language's
-primary loop idiom — `src/lex.moss` is one big tail-recursive loop nest,
-and it overflowed the bootstrap interpreter's stack on real files until the
-interpreter gained a trampoline. So this is a *semantic* commitment, not an
-optimization: calls in tail position (block tails, `if`/`match` result
-positions, `return` arguments) do not grow the stack. The Wasm backend can
-honor it with `return_call` (the tail-call proposal is widely supported).
+**[D49] DECIDED (no automatic tail-call elimination).** Rev 5 proposed
+guaranteeing proper tail calls after deep tail recursion in `src/lex.moss`
+overflowed the interpreter's stack. The designer rejected it: `loop` and
+`while` exist precisely so tail recursion need not be load-bearing, and
+languages that require TCE for basic iteration are disliked on purpose.
+Ruling: iteration is written with loops (`src/lex.moss` rewritten
+accordingly); unbounded tail recursion is not a supported pattern; a
+future *explicit* tail-call construct that maps to Wasm `return_call` is
+welcome, but elimination is never implicit semantics. The bootstrap
+interpreter happens to contain a tail-call trampoline — that is a
+non-semantic implementation detail that code must not rely on.
 
 **[D45] PROPOSED (concrete `Bool` as a lang item).** The old
 `lib/bool.moss` made even booleans contextual (`type Bool;` with abstract

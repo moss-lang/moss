@@ -17,9 +17,9 @@ the pipeline in [`docs/design/semantics.md`](../docs/design/semantics.md)
 5. **interpret** ([`mossc/interp.py`](mossc/interp.py)): runs the core IR —
    the runtime environment is literally the explicit context structure
    lowering produced — with the native Std of
-   [`mossc/native.py`](mossc/native.py) (D38), guaranteed proper tail
-   calls (D49), and `path:line:col` diagnostics that keep hello.md's
-   scope/context error distinction — working
+   [`mossc/native.py`](mossc/native.py) (D38) and `path:line:col`
+   diagnostics that keep hello.md's scope/context error distinction —
+   working
 
 Later, a monomorphizing Wasm backend replaces stage 5.
 
@@ -27,8 +27,8 @@ Status highlights: all seven runnable `examples/` match their goldens;
 `tests/errors/` are golden-checked diagnostics; and the self-hosted lexer
 in `src/lex.moss` runs on this interpreter and tokenizes real Moss files,
 including its own source (`python3 -m mossc run ../src/main.moss FILE`, or
-`bin/moss-boot run src/main.moss FILE` from the repo root). Keyword
-recognition awaits D48 (string literals).
+`bin/moss-boot run src/main.moss FILE` from the repo root), with keywords
+recognized by a character trie (no string literals needed — D48).
 
 ## Usage
 

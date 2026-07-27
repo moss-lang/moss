@@ -1,7 +1,8 @@
 # Detached numeric/comparison methods. A context provides these per
 # receiver type (`Int.add`, `Char.eq`, ...), which is how one context can
-# offer comparisons at several types without the D43 merge collapsing them
-# into one — see the note under D33/D43 in docs/design/semantics.md.
+# offer the same operation at several types without the D43 merge
+# collapsing them into one — see D47 in docs/design/semantics.md. When
+# operators land (D33), they desugar to exactly these symbols.
 
 import "./bool.moss" use Bool;
 
@@ -10,6 +11,14 @@ fn .sub(rhs: This): This;
 fn .mul(rhs: This): This;
 fn .div(rhs: This): This;
 fn .rem(rhs: This): This;
+
+fn .neg(): This;
+
+fn .and(rhs: This): This;
+fn .or(rhs: This): This;
+fn .xor(rhs: This): This;
+fn .shl(rhs: This): This;
+fn .shr(rhs: This): This;
 
 fn .eq(rhs: This): Bool;
 fn .ne(rhs: This): Bool;

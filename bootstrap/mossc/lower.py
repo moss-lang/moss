@@ -42,6 +42,22 @@ class LowerError(Exception):
         self.message = message
 
 
+def has_break(node) -> bool:
+    """Whether a loop body can break out of *this* loop (breaks belonging to
+    nested loops don't count)."""
+    from dataclasses import fields, is_dataclass
+
+    if isinstance(node, ast.Break):
+        return True
+    if isinstance(node, (ast.Loop, ast.While, ast.Fndef)):
+        return False
+    if is_dataclass(node):
+        return any(has_break(getattr(node, f.name)) for f in fields(node))
+    if isinstance(node, (list, tuple)):
+        return any(has_break(item) for item in node)
+    return False
+
+
 def locate(module: Module, node) -> str:
     """`:line:col` for a node with a source offset, if we can compute it."""
     offset = getattr(node, "offset", -1)
@@ -518,6 +534,7 @@ class FnChecker:
         outer = self.push()
         try:
             stmts = []
+            self.diverged = False
             for stmt in block.stmts:
                 checked = self.check_stmt(stmt)
                 # Binds flatten into the enclosing block: wrapping them in a
@@ -528,7 +545,9 @@ class FnChecker:
                     stmts.append(checked)
             if block.tail is None:
                 tail = None
-                tail_ty = TUnit()
+                # A block whose last statement cannot fall through (a loop
+                # with no break, or an expression of type `|`) diverges.
+                tail_ty = TNever() if self.diverged else TUnit()
             else:
                 tail, tail_ty = self.synth(block.tail, expected=expected)
             if expected is not None and not fits(tail_ty, expected):
@@ -538,6 +557,18 @@ class FnChecker:
             self.env = outer
 
     def check_stmt(self, stmt: ast.Stmt):
+        result = self._check_stmt(stmt)
+        # Decide divergence only now: nested block checking (inside loops,
+        # ifs, matches) clobbers the flag along the way.
+        if isinstance(stmt, ast.Loop):
+            self.diverged = not has_break(stmt.body)
+        elif isinstance(stmt, ast.ExprStmt):
+            self.diverged = self._expr_diverged
+        else:
+            self.diverged = False
+        return result
+
+    def _check_stmt(self, stmt: ast.Stmt):
         if getattr(stmt, "offset", -1) >= 0:
             self.at_node = stmt
         if isinstance(stmt, (ast.Let, ast.Var)):
@@ -582,7 +613,8 @@ class FnChecker:
             self.loop_depth -= 1
             return ir.Loop(body)
         if isinstance(stmt, ast.ExprStmt):
-            expr, _ = self.synth(stmt.expr)
+            expr, ty = self.synth(stmt.expr)
+            self._expr_diverged = isinstance(ty, TNever)
             return ir.ExprStmt(expr)
         self.error(f"unsupported statement {stmt!r}")
 

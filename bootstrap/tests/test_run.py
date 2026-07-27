@@ -375,6 +375,40 @@ class TestSelfHostedLexer(unittest.TestCase):
     def test_comments_and_whitespace(self):
         self.assertEqual(self.lex_dots("# a comment\n;\t;\n  ; # eof"), "." * 3 + "\n")
 
+    def test_keyword_kinds(self):
+        """The keyword trie distinguishes keywords from names sharing their
+        prefixes/case — no string literals involved (D48)."""
+        files = {
+            "kinds.moss": (
+                'import "./src/lex.moss" as lexer;\n'
+                'import "./src/token.moss" use Eof, Name, Assume, As, ThisType,'
+                " ThisValue, Loop, Str;\n"
+                "\n"
+                "assume Std {\n"
+                "  fn main() {\n"
+                "    bind lexer::src=first_arg();\n"
+                "    bind lexer::at=cell_int();\n"
+                "    loop {\n"
+                "      match lexer::lex() {\n"
+                "        Eof => break,\n"
+                "        Assume => putchar(char::A),\n"
+                "        As => putchar(char::a),\n"
+                "        ThisType => putchar(char::T),\n"
+                "        ThisValue => putchar(char::t),\n"
+                "        Loop => putchar(char::l),\n"
+                "        Name => putchar(char::n),\n"
+                "        Str => putchar(char::s),\n"
+                "        _ => putchar(char::dot),\n"
+                "      }\n"
+                "    }\n"
+                "    putchar(char::newline);\n"
+                "  }\n"
+                "}\n"
+            )
+        }
+        source = 'assume assumes as As this This loops loop "x" ;'
+        self.assertEqual(run(files, entry="kinds.moss", args=[source]), "AnantTnls.\n")
+
     def test_agrees_with_bootstrap_on_real_files(self):
         for rel in ["lib/bool.moss", "lib/num.moss", "src/lex.moss", "src/cli.moss"]:
             with self.subTest(file=rel):

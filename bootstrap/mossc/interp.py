@@ -88,9 +88,9 @@ class _Break(Exception):
 
 @dataclass(frozen=True)
 class _Tail:
-    """A tail call, unwound by the trampoline in call_fn. Recursion is the
-    language's main loop idiom (no `for`), so proper tail calls are load-
-    bearing, not an optimization."""
+    """A tail call, unwound by the trampoline in call_fn. Per D49 this is a
+    non-semantic implementation detail: the language does not guarantee
+    tail-call elimination, and Moss code must iterate with loops."""
 
     fn: ir.FnIR
     args: list
@@ -307,10 +307,16 @@ def native_env(program: Program, args: list | None = None) -> dict:
         env[lib["int"].names["one"]] = IntVal(1)
         if "num" in lib:
             det = lib["num"].detached
+            env[(int_ty, det["neg"])] = native(lambda a, this: IntVal(-this.value))
             arith = {
                 "add": lambda x, y: x + y,
                 "sub": lambda x, y: x - y,
                 "mul": lambda x, y: x * y,
+                "and": lambda x, y: x & y,
+                "or": lambda x, y: x | y,
+                "xor": lambda x, y: x ^ y,
+                "shl": lambda x, y: x << y,
+                "shr": lambda x, y: x >> y,
             }
             for name, op in arith.items():
                 env[(int_ty, det[name])] = NativeFn(

@@ -1,4 +1,4 @@
-import "./num.moss" use .add, .sub, .mul, .div, .rem, .eq, .ne, .lt, .gt, .le, .ge;
+import "./num.moss" use .add, .sub, .mul, .div, .rem, .neg, .and, .or, .xor, .shl, .shr, .eq, .ne, .lt, .gt, .le, .ge;
 
 type Int;
 
@@ -12,6 +12,12 @@ assume Int {
     Int.mul,
     Int.div,
     Int.rem,
+    Int.neg,
+    Int.and,
+    Int.or,
+    Int.xor,
+    Int.shl,
+    Int.shr,
     Int.eq,
     Int.ne,
     Int.lt,
