@@ -394,7 +394,39 @@ done: a union of payload-carrying members is still a heap cell, where two
 Wasm locals would do; the value model is one i32 per value throughout, so
 that is a separate change.
 
-**[D57] FINDING (an in-language `Path.read` needs i64).** `path_open`
+**[D59] DECIDED by the designer (the compiler has no heap).** Every value
+of a Moss program compiles to a *finite sequence of Wasm scalars* — i32
+and i64 now, f32/f64 if they ever arrive — and the compiler allocates
+nothing. A heap is a library's business: lib/wasistd.moss already has a
+bump allocator written in Moss, and that is where dynamic memory belongs.
+
+Where the backend stands against that rule: it allocates in exactly two
+places of its own, `MakeRecord` and `Inject`. Everything else that calls
+its allocator is the native `Std` — strings, lists, cells, `pwd` — which
+is being retired into Moss anyway and takes its allocations with it. So
+the rule costs two constructs, but it needs one new thing under them:
+
+**Layouts.** Each Moss type maps to a tuple of Wasm valtypes: `()` to
+none, `Int`/`Char` to one i32, a record to the concatenation of its
+fields', a tag to its payload's ([D58]), a union to one i32 of
+discriminant followed by enough slots for its widest member. The IR must
+carry the layout of every expression, since the backend can no longer
+assume "one i32" — and that is the same mechanism [D57] needs, because a
+value being i64 is just a different layout. So i64 support and the
+heapless value model are one change, not two.
+
+What that implies, in order: a `layout` function in lowering, layouts on
+IR expressions and on `FnIR`'s parameters and result; locals allocated in
+groups; calls passing concatenated slots and returning several (Wasm
+multi-value, which the type section already encodes); field access
+selecting a slot instead of loading an offset; `Inject` writing a
+discriminant slot instead of a box; and match reading slot zero. Records
+and injected unions then allocate nothing, `Path.read` becomes writable
+in Moss, and the backend's allocator survives only inside the shims that
+still implement native `Std`, disappearing with them.
+
+**[D57] FINDING, subsumed by [D59] (an in-language `Path.read` needs
+i64).** `path_open`
 takes its two rights masks as u64, as lib/wasip1.moss correctly declares.
 The Wasm backend's value model is uniformly i32, so a Moss implementation
 of `Path.read` cannot construct those arguments — it is the one part of
