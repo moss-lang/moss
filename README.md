@@ -9,36 +9,15 @@ An experimental programming language, exploring new ways to manage context.
 
 First you must [clone](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) this Git repository; any commands listed below should be run in that clone.
 
+The compiler is a dependency-free Python program under [`bootstrap`](bootstrap); see [`bootstrap/README.md`](bootstrap/README.md) for its pipeline and [`docs/design/semantics.md`](docs/design/semantics.md) for the working design record.
+
 If you use [direnv](https://direnv.net/) and have [Nix](https://nixos.org/) with [flakes](https://wiki.nixos.org/wiki/Flakes) enabled, the easiest way to get all necessary dependencies is via the dev shell provided in this repo:
 
 ```sh
 echo use flake > .envrc && direnv allow
 ```
 
-The dev shell also puts a [`moss`](bin/moss) script on your `PATH` which wraps the compiler, rebuilding it if it is ever out of date.
-
-If you don't use Nix, the only thing you need for the compiler itself is [Rust](https://rust-lang.org/tools/install/). You won't be able to use shebangs unless you also have [Python](https://www.python.org/) installed and manually put the [`bin`](bin) directory of this repo on your `PATH`. Instead, in any example below you can just replace the `moss` command with any of these three:
-
-- `cargo run` for a debug build
-- `cargo run --release` for a release build
-- `cargo run --profile=release-with-debug` for a release build with debug info
-
-## Bootstrap compiler
-
-The language is currently in its third design iteration, and the working
-implementation for it is a dependency-free Python program under
-[`bootstrap`](bootstrap):
-
-```sh
-cd bootstrap
-python3 -m mossc run ../examples/hello.moss
-python3 -m unittest   # the test suite
-```
-
-The Rust compiler described below implements the *previous* iteration of the
-language and does not understand current syntax; see
-[`docs/design/semantics.md`](docs/design/semantics.md) for where the design
-stands and [`bootstrap/README.md`](bootstrap/README.md) for the pipeline.
+The dev shell puts the [`moss`](bin/moss) script on your `PATH` and provides [Wasmtime](https://wasmtime.dev/) for running compiled output. If you don't use Nix, all you need is [Python](https://www.python.org/) 3.12+ on your `PATH` (plus Wasmtime if you want to run the Wasm the compiler emits), and the [`bin`](bin) directory of this repo on your `PATH` for the `moss` command and shebangs.
 
 ## Usage
 
@@ -54,22 +33,17 @@ Or, equivalently:
 moss examples/hello.moss
 ```
 
-Specifically, this implicitly invokes the `run` subcommand of the compiler:
+Specifically, this implicitly invokes the `run` subcommand of the compiler,
+which interprets the program:
 
 ```sh
 moss run examples/hello.moss
 ```
 
-You can alternatively use the `build` command to output [WebAssembly](https://webassembly.org/) code for [WASI P1](https://wasi.dev/interfaces#wasi-01):
+You can alternatively use the `build` command to output [WebAssembly](https://webassembly.org/) code for [WASI P1](https://wasi.dev/interfaces#wasi-01), supported by many WebAssembly engines such as [Wasmtime](https://wasmtime.dev/):
 
 ```sh
-moss build examples/hello.moss | wasm-tools print
-```
-
-This is supported by many WebAssembly engines, such as [Wasmtime](https://wasmtime.dev/) which is what `moss run` uses internally:
-
-```sh
-moss build examples/hello.moss | wasmtime -
+moss build examples/hello.moss > hello.wasm && wasmtime hello.wasm
 ```
 
 ## Documentation
