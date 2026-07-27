@@ -1,5 +1,6 @@
 import "./wasm.moss" as w use Wasm, I32;
 import "./wasip1.moss" use Wasi, fd_write, args_sizes_get, args_get;
+import "./bool.moss" use Bool;
 import "./char.moss" as char use Char;
 import "./std.moss" use putchar;
 import "./string.moss" as string use String, print, first_arg;
@@ -12,9 +13,20 @@ import "./string.moss" as string use String, print, first_arg;
 # that applies `WasiConsole`: the compiler emits the shims regardless, but
 # nothing here calls them.
 
+# Not a Wasm instruction and not a WASI call, so it belongs to neither
+# spec mirror: the coercion from a comparison result to something Moss can
+# branch on. Every test instruction yields an I32 and `if` takes a `Bool`
+# (D45), so without this there is no control flow here at all — no loops,
+# so no strlen, so no strings.
+assume I32 {
+  fn i32_bool(n: I32): Bool;
+}
+
+context Branch = i32_bool;
+
 context Console = Char, String, putchar, print, first_arg;
 
-assume Wasm {
+assume Wasm, Branch {
   # There are no literals (D4), so the addresses and sizes below are built
   # from `i32_one`. The scratch layout matches the backend's: an iovec at
   # 0, a byte at 8, a result word at 12, argv sizes at 24 and 28.
@@ -36,7 +48,7 @@ assume Wasm {
       w::i32_sub(w::i32_zero, four())
     );
     w::i32_store(sixteen(), top);
-    if w::i32_bool(w::i32_gt_u(top, w::i32_shl(w::memory_size(), sixteen()))) {
+    if i32_bool(w::i32_gt_u(top, w::i32_shl(w::memory_size(), sixteen()))) {
       let grown = w::memory_grow(
         w::i32_add(w::i32_sub(w::i32_shr_u(top, sixteen()), w::memory_size()), w::i32_one)
       );
@@ -49,7 +61,7 @@ assume Wasm {
     let s = alloc(w::i32_add(four(), n));
     w::i32_store(s, n);
     var i = w::i32_zero;
-    while w::i32_bool(w::i32_lt_u(i, n)) {
+    while i32_bool(w::i32_lt_u(i, n)) {
       w::i32_store8(w::i32_add(w::i32_add(s, four()), i), w::i32_load8_u(w::i32_add(p, i)));
       i = w::i32_add(i, w::i32_one);
     }
@@ -78,12 +90,12 @@ assume Wasm {
       let argv = alloc(w::i32_mul(argc, four()));
       let buf = alloc(w::i32_load(twenty_eight()));
       args_get(argv, buf);
-      if w::i32_bool(w::i32_lt_u(argc, two())) {
+      if i32_bool(w::i32_lt_u(argc, two())) {
         return string_of(w::i32_zero, w::i32_zero);
       }
       let p = w::i32_load(w::i32_add(argv, four()));
       var n = w::i32_zero;
-      while w::i32_bool(w::i32_load8_u(w::i32_add(p, n))) {
+      while i32_bool(w::i32_load8_u(w::i32_add(p, n))) {
         n = w::i32_add(n, w::i32_one);
       }
       string_of(p, n)
@@ -91,7 +103,7 @@ assume Wasm {
   }
 }
 
-functor WasiConsole: Wasm, Wasi -> Console {
+functor WasiConsole: Wasm, Wasi, Branch -> Console {
   bind char::Char = I32;
   bind string::String = I32;
   bind putchar = wasi_putchar;

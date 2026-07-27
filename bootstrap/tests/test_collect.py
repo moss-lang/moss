@@ -6,12 +6,18 @@ from mossc.collect import CollectError, SymKind, load, resolve_detached, resolve
 REPO = Path(__file__).resolve().parents[2]
 
 
+ROOT = "/moss"  # the in-memory tree's root; paths arrive canonicalized
+
+
 def fake(files):
     """A read function over an in-memory file tree."""
 
     def read(path):
+        import os
+
+        key = os.path.relpath(path, ROOT)
         try:
-            return files[path]
+            return files[key]
         except KeyError:
             raise FileNotFoundError(path)
 
@@ -41,7 +47,7 @@ class TestLoading(unittest.TestCase):
             "b.moss": 'import "./a.moss";',
         }
         with self.assertRaises(CollectError) as ctx:
-            load("a.moss", read=fake(files))
+            load("a.moss", read=fake(files), root=ROOT)
         self.assertIn("cycle", ctx.exception.message)
 
     def test_relative_paths(self):
@@ -49,8 +55,8 @@ class TestLoading(unittest.TestCase):
             "x/a.moss": 'import "../y/b.moss" use B;',
             "y/b.moss": "type B;",
         }
-        program = load("x/a.moss", read=fake(files))
-        self.assertIn("y/b.moss", program.modules)
+        program = load("x/a.moss", read=fake(files), root=ROOT)
+        self.assertIn(ROOT + "/y/b.moss", program.modules)
 
 
 class TestScopes(unittest.TestCase):
@@ -60,7 +66,7 @@ class TestScopes(unittest.TestCase):
             "fn f(); context C = A;"
             "assume A { fn A.m(): A; fn .d(): This; }"
         }
-        m = load("m.moss", read=fake(files)).entry
+        m = load("m.moss", read=fake(files), root=ROOT).entry
         kinds = {name: s.kind for name, s in m.names.items()}
         self.assertEqual(
             kinds,
@@ -81,24 +87,28 @@ class TestScopes(unittest.TestCase):
 
     def test_assume_nesting_recorded(self):
         files = {"m.moss": "type A; type B; assume A { assume B { fn f(); } }"}
-        m = load("m.moss", read=fake(files)).entry
+        m = load("m.moss", read=fake(files), root=ROOT).entry
         assumes = m.names["f"].assumes
         self.assertEqual([item.path for item in assumes], [["A"], ["B"]])
 
     def test_duplicate_definition(self):
         with self.assertRaises(CollectError):
-            load("m.moss", read=fake({"m.moss": "type A; unit A;"}))
+            load("m.moss", read=fake({"m.moss": "type A; unit A;"}), root=ROOT)
 
     def test_detached_body_rejected(self):
         with self.assertRaises(CollectError):
-            load("m.moss", read=fake({"m.moss": "fn .d() { () }"}))
+            load("m.moss", read=fake({"m.moss": "fn .d() { () }"}), root=ROOT)
 
     def test_unknown_receiver(self):
         with self.assertRaises(CollectError):
-            load("m.moss", read=fake({"m.moss": "fn A.m();"}))
+            load("m.moss", read=fake({"m.moss": "fn A.m();"}), root=ROOT)
 
     def test_receiver_forward_reference(self):
-        m = load("m.moss", read=fake({"m.moss": "assume A { fn A.m(); } type A;"})).entry
+        m = load(
+            "m.moss",
+            read=fake({"m.moss": "assume A { fn A.m(); } type A;"}),
+            root=ROOT,
+        ).entry
         self.assertIn((id(m.names["A"]), "m"), m.attached)
 
 
@@ -109,12 +119,12 @@ class TestImports(unittest.TestCase):
             "b.moss": 'import "./a.moss" as a use A, .m as .m1;',
             "c.moss": 'import "./b.moss" use *;',
         }
-        program = load("c.moss", read=fake(files))
-        b = program.modules["b.moss"]
+        program = load("c.moss", read=fake(files), root=ROOT)
+        b = program.modules[ROOT + "/b.moss"]
         c = program.entry
         self.assertIn("A", b.names)
         self.assertIn("m1", b.detached)
-        self.assertIs(b.detached["m1"], program.modules["a.moss"].detached["m"])
+        self.assertIs(b.detached["m1"], program.modules[ROOT + "/a.moss"].detached["m"])
         # Explicit uses and aliases re-export; c gets them via glob.
         self.assertIn("A", c.names)
         self.assertIn("m1", c.detached)
@@ -126,7 +136,7 @@ class TestImports(unittest.TestCase):
             "b.moss": 'import "./a.moss" use *;',
             "c.moss": 'import "./b.moss" use *;',
         }
-        c = load("c.moss", read=fake(files)).entry
+        c = load("c.moss", read=fake(files), root=ROOT).entry
         self.assertNotIn("A", c.names)
 
     def test_collision_is_error(self):
@@ -136,7 +146,7 @@ class TestImports(unittest.TestCase):
             "c.moss": 'import "./a.moss" use .m;\nimport "./b.moss" use .m;',
         }
         with self.assertRaises(CollectError) as ctx:
-            load("c.moss", read=fake(files))
+            load("c.moss", read=fake(files), root=ROOT)
         self.assertIn("two different symbols", ctx.exception.message)
 
     def test_same_symbol_twice_is_fine(self):
@@ -145,7 +155,7 @@ class TestImports(unittest.TestCase):
             "b.moss": 'import "./a.moss" use A;',
             "c.moss": 'import "./a.moss" use A;\nimport "./b.moss" use A;',
         }
-        c = load("c.moss", read=fake(files)).entry
+        c = load("c.moss", read=fake(files), root=ROOT).entry
         self.assertIn("A", c.names)
 
     def test_rename_avoids_collision(self):
@@ -154,21 +164,21 @@ class TestImports(unittest.TestCase):
             "b.moss": "fn .m();",
             "e.moss": 'import "./a.moss" use .m as .m1;\nimport "./b.moss" use .m as .m2;',
         }
-        e = load("e.moss", read=fake(files)).entry
+        e = load("e.moss", read=fake(files), root=ROOT).entry
         self.assertIn("m1", e.detached)
         self.assertIn("m2", e.detached)
 
     def test_missing_export(self):
         files = {"a.moss": "type A;", "b.moss": 'import "./a.moss" use B;'}
         with self.assertRaises(CollectError):
-            load("b.moss", read=fake(files))
+            load("b.moss", read=fake(files), root=ROOT)
 
     def test_qualified_detached(self):
         files = {
             "a.moss": "fn .m();",
             "d.moss": 'import "./a.moss" as a;',
         }
-        d = load("d.moss", read=fake(files)).entry
+        d = load("d.moss", read=fake(files), root=ROOT).entry
         symbol = resolve_detached(d, ["a", "m"])
         self.assertIsNotNone(symbol)
         self.assertEqual(symbol.name, ".m")
@@ -182,13 +192,13 @@ class TestPrelude(unittest.TestCase):
     }
 
     def test_auto_import(self):
-        program = load("hello.moss", read=fake(self.FILES), prelude="lib/prelude.moss")
+        program = load("hello.moss", read=fake(self.FILES), prelude="lib/prelude.moss", root=ROOT)
         self.assertIn("Std", program.entry.names)
         self.assertIn("putchar", program.entry.names)
 
     def test_lib_files_skip_auto_import(self):
-        program = load("hello.moss", read=fake(self.FILES), prelude="lib/prelude.moss")
-        std = program.modules["lib/std.moss"]
+        program = load("hello.moss", read=fake(self.FILES), prelude="lib/prelude.moss", root=ROOT)
+        std = program.modules[ROOT + "/lib/std.moss"]
         self.assertNotIn("Std", std.aliases)
         self.assertEqual(len(std.tree.imports), 0)
 

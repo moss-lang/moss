@@ -20,6 +20,7 @@ imports do not (D9). Import cycles are errors (D10).
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
+import os
 from pathlib import PurePosixPath
 
 from . import ast
@@ -100,9 +101,16 @@ def default_read(path: str) -> str:
 
 
 class Loader:
-    def __init__(self, read=default_read, prelude: str | None = None):
+    def __init__(self, read=default_read, prelude: str | None = None, root=None):
         self.read = read
-        self.prelude = prelude
+        # Modules are identified by their canonical path, so that the same
+        # file reached by two spellings — a relative import and an absolute
+        # prelude, say — is one module and not two sets of colliding names.
+        # Relative paths are canonicalized against this root.
+        self.root = PurePosixPath(root if root is not None else os.getcwd())
+        # Canonical too, or the prelude would not recognise itself and
+        # would import itself.
+        self.prelude = None if prelude is None else self.normalize(None, prelude)
         self.modules: dict[str, Module] = {}
         self.order: list[Module] = []
         self.loading: list[str] = []
@@ -112,6 +120,8 @@ class Loader:
             joined = PurePosixPath(path)
         else:
             joined = PurePosixPath(base).parent / path
+        if not joined.is_absolute():
+            joined = self.root / joined
         parts = []
         for part in joined.parts:
             if part == ".":
@@ -154,8 +164,8 @@ class Loader:
         return module
 
 
-def load(path: str, read=default_read, prelude: str | None = None) -> Program:
-    loader = Loader(read=read, prelude=prelude)
+def load(path: str, read=default_read, prelude: str | None = None, root=None) -> Program:
+    loader = Loader(read=read, prelude=prelude, root=root)
     entry = loader.load(path)
     return Program(loader.modules, loader.order, entry)
 

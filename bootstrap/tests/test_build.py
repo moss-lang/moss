@@ -11,7 +11,7 @@ from mossc import collect
 from mossc.lower import Lower
 
 REPO = Path(__file__).resolve().parents[2]
-PRELUDE = "lib/prelude.moss"  # resolved by `read` below, like every import
+PRELUDE = str(REPO / "lib/prelude.moss")
 
 
 def wasmtime() -> str:
@@ -29,14 +29,14 @@ def wasmtime() -> str:
 
 def compile_wasm(files, entry="main.moss"):
     def read(path):
-        if path in files:
-            return files[path]
-        p = Path(path)
-        if not p.is_absolute():
-            p = REPO / path
-        return p.read_text(encoding="utf-8")
+        # The loader hands back canonical absolute paths; the in-memory
+        # files are named relative to the repo.
+        rel = str(Path(path).relative_to(REPO)) if Path(path).is_relative_to(REPO) else path
+        if rel in files:
+            return files[rel]
+        return Path(path).read_text(encoding="utf-8")
 
-    program = collect.load(entry, read=read, prelude=PRELUDE)
+    program = collect.load(entry, read=read, prelude=PRELUDE, root=REPO)
     lower = Lower(program)
     lower.run()
     main_sym = program.entry.names["main"]

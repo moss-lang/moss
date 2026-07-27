@@ -173,7 +173,6 @@ def _memarg(align: int) -> bytes:
 WASM_OPS = {
     "unreachable": UNREACHABLE,
     # Bool is 0/1 with the tag erased, so this is `n != 0`.
-    "i32_bool": I32_CONST + sleb(0) + BINOPS_NE,
     "i32_load": b"\x28" + _memarg(2),
     "i32_load8_s": b"\x2c" + _memarg(0),
     "i32_load8_u": b"\x2d" + _memarg(0),
@@ -218,7 +217,8 @@ class Backend:
         self.lib = {}
         for module in program.modules.values():
             for short in ("bool", "num", "char", "int", "std", "string",
-                          "strlist", "cell", "list", "wasm", "wasip1", "path"):
+                          "strlist", "cell", "list", "wasm", "wasip1", "path",
+                          "wasistd"):
                 if module.path.endswith(f"lib/{short}.moss"):
                     self.lib[short] = module
         self.imports: list[tuple[str, int, int]] = []  # (field, params, results)
@@ -1255,6 +1255,12 @@ class FnCompiler:
             self.code += LOCAL_GET + uleb(tmp)
             return
         module = getattr(key, "module", None)
+        if "wasistd" in self.b.lib and module is self.b.lib["wasistd"]:
+            if key.name == "i32_bool":
+                # Bool is 0/1 with its tag erased, so this is `n != 0`.
+                self.expr(node.args[0])
+                self.code += I32_CONST + sleb(0) + BINOPS_NE
+                return
         if "wasm" in self.b.lib and module is self.b.lib["wasm"]:
             self.wasm_instruction(key, node)
             return

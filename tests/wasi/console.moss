@@ -1,6 +1,6 @@
 import "../../lib/wasm.moss" use Wasm, I32;
 import "../../lib/wasip1.moss" use Wasi;
-import "../../lib/wasistd.moss" use WasiConsole, Console;
+import "../../lib/wasistd.moss" use WasiConsole, Console, Branch;
 import "../../lib/string.moss" use print, first_arg;
 
 # Written against `Console` alone: no Wasm, no Wasi, no native Std.
@@ -8,7 +8,7 @@ assume Console {
   fn echo() { print(first_arg()); print(first_arg()); }
 }
 
-assume Wasm, Wasi {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiConsole;
     echo();

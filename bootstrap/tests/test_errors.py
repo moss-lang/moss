@@ -15,21 +15,26 @@ def diagnose(rel: str) -> str:
     with repo-relative paths so the goldens are stable."""
 
     def read(path):
-        return (REPO / path).read_text(encoding="utf-8")
+        return Path(path).read_text(encoding="utf-8")
+
+    def strip(text: str) -> str:
+        # Module identity is now a canonical absolute path; the goldens
+        # stay repo-relative so they do not depend on where the repo is.
+        return text.replace(str(REPO) + "/", "")
 
     try:
-        program = collect.load(rel, read=read, prelude="lib/prelude.moss")
+        program = collect.load(rel, read=read, prelude="lib/prelude.moss", root=REPO)
         lower = Lower(program)
         lower.run()
         interp.run_main(program, lower, [])
     except LexError as e:
-        line, col = position(read(rel), e.offset)
+        line, col = position(read(str(REPO / rel)), e.offset)
         return f"{rel}:{line}:{col}: {e.message}"
     except ParseError as e:
-        line, col = position(read(rel), e.token.offset)
+        line, col = position(read(str(REPO / rel)), e.token.offset)
         return f"{rel}:{line}:{col}: {e.message}"
     except (collect.CollectError, LowerError, interp.LinkError) as e:
-        return str(e)
+        return strip(str(e))
     raise AssertionError(f"{rel} unexpectedly succeeded")
 
 

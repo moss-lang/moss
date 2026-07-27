@@ -366,6 +366,16 @@ It also settles [D29]'s open half against the static-only reframing —
 functor carrying only types and fns would leave most of the signature to
 a hand-written prologue regardless.
 
+**[D56] DECIDED (module identity is a canonical path).** A module was keyed
+by the *spelling* of the path that reached it, so the same file arrived at
+two ways — an absolute prelude and a relative import — became two modules
+whose every name then collided with itself ("`Bool` would refer to two
+different symbols"). Nothing hit it until lib/wasm.moss gained an import.
+The loader now canonicalizes: relative paths resolve against a root (the
+working directory, or one the caller supplies), `.` and `..` collapse, and
+the result is the module's identity. The prelude is canonicalized the same
+way, or it fails to recognize itself and imports itself.
+
 **[D43] DECIDED (consistent merging).** From notes.md's answer to Q6. A
 context carries at most one binding per key (one `A.gimme`, one `T`, ...),
 but forming a context that mentions the same key with two different bindings

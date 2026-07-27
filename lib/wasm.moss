@@ -1,5 +1,3 @@
-import "./bool.moss" use Bool;
-
 # https://webassembly.github.io/spec/core/syntax/types.html#number-types
 type I32;
 type I64;
@@ -43,14 +41,6 @@ assume I32 {
     fn i64_store16(address: I32, value: I64);
     fn i64_store32(address: I32, value: I64);
   }
-}
-
-# Not an instruction: the coercion from a comparison result to something
-# Moss can branch on. Every test instruction above yields an I32, and `if`
-# takes a `Bool` (D45), so without this the primitive context cannot
-# express control flow at all — a bridge could not write a loop.
-assume I32 {
-  fn i32_bool(n: I32): Bool;
 }
 
 # https://webassembly.github.io/spec/core/syntax/instructions.html#numeric-instructions
@@ -134,7 +124,6 @@ context Wasm =
   i32_one,
 
   unreachable,
-  i32_bool,
 
   i32_load,
   i64_load,
