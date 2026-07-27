@@ -757,6 +757,13 @@ class TestSelfHostedCollect(unittest.TestCase):
         }
         self.assertEqual(self.collect(files, "h.moss"), "h.moss:U!\ni.moss:I!\n")
 
+    def test_duplicates_inside_assume_blocks(self):
+        """A module's root ids land in `kids` *after* the children of every
+        assume block it contains, so the module's root span is only known
+        once parsing finishes."""
+        files = {"j.moss": "assume A { unit P; type P; }\nunit Q;\ntype Q;\n"}
+        self.assertEqual(self.collect(files, "j.moss"), "j.moss:P!Q!\n")
+
 
 class TestSelfHostedParser(unittest.TestCase):
     """src/main.moss drives src/parse.moss: one letter per declaration

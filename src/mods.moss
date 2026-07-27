@@ -72,15 +72,18 @@ assume Std {
 
     # Record where the module being loaded starts in each arena. Called
     # once per module, in table order.
-    fn begin(nodes: Int, refs: Int, imps: Int, kids: Int) {
+    fn begin(nodes: Int, refs: Int, imps: Int) {
       mnodes.push(nodes);
       mrefs.push(refs);
       mimps.push(imps);
-      mkids.push(kids);
+      mkids.push(zero);
       mkidlens.push(zero);
     }
 
-    fn set_kid_len(m: Int, n: Int) {
+    # Where this module's root ids ended up in `kids`. Not known until
+    # after parsing: nested assume blocks push their own children first.
+    fn set_kids(m: Int, start: Int, n: Int) {
+      mkids.set(m, start);
       mkidlens.set(m, n);
     }
 

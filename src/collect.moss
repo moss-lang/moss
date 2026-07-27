@@ -50,19 +50,19 @@ assume Std {
       lexer::at.write(zero);
       lexer::mark.write(zero);
       mods::begin(
-        tree::kinds.length(),
-        tree::ref_ids.length(),
-        tree::import_count(),
-        tree::kid_mark()
+        tree::kinds.length(), tree::ref_ids.length(), tree::import_count()
       );
       let roots = int_list();
       parser::file(roots);
+      # Only now: parsing pushed the children of every assume block, and
+      # the roots go after them.
+      let ks = tree::kid_mark();
       var i = zero;
       while i.lt(roots.length()) {
         tree::kid_push(roots.get(i));
         i = i.add(one);
       }
-      mods::set_kid_len(m, roots.length());
+      mods::set_kids(m, ks, roots.length());
       let dir = dir_of(mods::path(m));
       var ix = mods::imp_start(m);
       while ix.lt(tree::import_count()) {
