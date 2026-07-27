@@ -26,6 +26,7 @@ CORPUS = [
     "src/tree.moss",
     "lib/wasip1.moss",
     "lib/wasm.moss",
+    "lib/wasichar.moss",
     "lib/wasistd.moss",
 ]
 

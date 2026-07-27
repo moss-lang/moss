@@ -431,6 +431,20 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({}, entry="tests/wasi/noalloc.moss")
         self.assertEqual(run_wasm(wasm), "ky\n")
 
+    def test_strings_and_chars_over_wasi(self):
+        """String's methods and the char constants, in Moss over Wasi. The
+        wrapper that carries the methods costs nothing now (D58), and the
+        constants are ors of powers of two, since there are no literals."""
+        wasm = compile_wasm({}, entry="tests/wasi/strings.moss")
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            path = f.name
+        result = subprocess.run(
+            [wasmtime(), path, "ab"], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "ababby\n")
+
     def test_numerics_over_wasi(self):
         """`Int`, `zero`, `one` and the arithmetic methods provided over
         Wasi rather than natively, driving a loop written in ordinary Std

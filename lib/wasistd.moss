@@ -4,7 +4,8 @@ import "./bool.moss" use Bool;
 import "./char.moss" as char use Char, .char;
 import "./int.moss" as int use Int, zero, one;
 import "./std.moss" use putchar;
-import "./string.moss" as string use String, print, first_arg;
+import "./string.moss" as string use String, print, first_arg,
+  .length, .get, .slice, .concat;
 
 # `Std`, implemented in Moss over the primitive context (D52). This is the
 # slice done so far; growing it is volume, not design — each further item
@@ -67,8 +68,14 @@ assume Wasm, Branch {
     base
   }
 
-  # A String is [len | bytes], the same shape the backend uses.
-  fn string_of(p: I32, n: I32): I32 {
+  # A String is [len | bytes], the same shape the backend uses. It is a
+  # nominal wrapper rather than a bare I32 so that it can carry methods
+  # (D54) — which costs nothing, since `Str` is in no union (D58).
+  type Str I32;
+
+  fn addr(s: Str): I32 { match s { Str a => a } }
+
+  fn string_of(p: I32, n: I32): Str {
     let s = alloc(w::i32_add(four(), n));
     w::i32_store(s, n);
     var i = w::i32_zero;
@@ -76,7 +83,41 @@ assume Wasm, Branch {
       w::i32_store8(w::i32_add(w::i32_add(s, four()), i), w::i32_load8_u(w::i32_add(p, i)));
       i = w::i32_add(i, w::i32_one);
     }
-    s
+    Str (s)
+  }
+
+  fn Str.length(): Num { Num (w::i32_load(addr(this))) }
+
+  fn Str.get(index: Num): I32 {
+    w::i32_load8_u(w::i32_add(w::i32_add(addr(this), four()), raw(index)))
+  }
+
+  fn Str.slice(start: Num, len: Num): Str {
+    string_of(w::i32_add(w::i32_add(addr(this), four()), raw(start)), raw(len))
+  }
+
+  fn Str.concat(other: Str): Str {
+    let la = w::i32_load(addr(this));
+    let lb = w::i32_load(addr(other));
+    let s = alloc(w::i32_add(four(), w::i32_add(la, lb)));
+    w::i32_store(s, w::i32_add(la, lb));
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, la)) {
+      w::i32_store8(
+        w::i32_add(w::i32_add(s, four()), i),
+        w::i32_load8_u(w::i32_add(w::i32_add(addr(this), four()), i))
+      );
+      i = w::i32_add(i, w::i32_one);
+    }
+    var j = w::i32_zero;
+    while i32_bool(w::i32_lt_u(j, lb)) {
+      w::i32_store8(
+        w::i32_add(w::i32_add(w::i32_add(s, four()), la), j),
+        w::i32_load8_u(w::i32_add(w::i32_add(addr(other), four()), j))
+      );
+      j = w::i32_add(j, w::i32_one);
+    }
+    Str (s)
   }
 
   assume Wasi {
@@ -91,11 +132,11 @@ assume Wasm, Branch {
       write_all(eight(), w::i32_one);
     }
 
-    fn wasi_print(s: I32) {
-      write_all(w::i32_add(s, four()), w::i32_load(s));
+    fn wasi_print(s: Str) {
+      write_all(w::i32_add(addr(s), four()), w::i32_load(addr(s)));
     }
 
-    fn wasi_first_arg(): I32 {
+    fn wasi_first_arg(): Str {
       args_sizes_get(twenty_four(), twenty_eight());
       let argc = w::i32_load(twenty_four());
       let argv = alloc(w::i32_mul(argc, four()));
@@ -175,17 +216,23 @@ functor WasiNumerics: Wasm, Branch -> Numerics {
 # The two together, plus the items whose signatures need both — the whole
 # slice of Std that runs over Wasi so far. Applying a functor from inside
 # a functor is just another bind (D55).
-context Basics = Console, Numerics, Int.char;
+context Basics =
+  Console, Numerics, Int.char,
+  String.length, String.get, String.slice, String.concat;
 
 functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind WasiConsole;
   bind WasiNumerics;
   bind Int.char = Num.to_char;
+  bind String.length = Str.length;
+  bind String.get = Str.get;
+  bind String.slice = Str.slice;
+  bind String.concat = Str.concat;
 }
 
 functor WasiConsole: Wasm, Wasi, Branch -> Console {
   bind char::Char = I32;
-  bind string::String = I32;
+  bind string::String = Str;
   bind putchar = wasi_putchar;
   bind string::print = wasi_print;
   bind string::first_arg = wasi_first_arg;
