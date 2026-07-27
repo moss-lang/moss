@@ -14,28 +14,17 @@ REPO = Path(__file__).resolve().parents[2]
 PRELUDE = str(REPO / "lib/prelude.moss")
 
 
-def find_wasmtime():
-    direct = shutil.which("wasmtime")
-    if direct:
-        return direct
-    if shutil.which("nix"):
-        try:
-            out = subprocess.run(
-                ["nix", "build", "nixpkgs#wasmtime", "--no-link", "--print-out-paths"],
-                capture_output=True,
-                text=True,
-                timeout=600,
-                check=True,
-            ).stdout.strip()
-            candidate = Path(out) / "bin" / "wasmtime"
-            if candidate.exists():
-                return str(candidate)
-        except (subprocess.SubprocessError, OSError):
-            return None
-    return None
-
-
-WASMTIME = find_wasmtime()
+def wasmtime() -> str:
+    """wasmtime is a hard requirement for these tests — the Nix dev shell
+    and the flake's `bootstrap` check both provide it. No graceful skip:
+    a missing runtime is an environment bug, not a reason to pass."""
+    path = shutil.which("wasmtime")
+    if path is None:
+        raise AssertionError(
+            "wasmtime not found on PATH; enter the Nix dev shell "
+            "(or run `nix flake check`), which provides it"
+        )
+    return path
 
 
 def compile_wasm(files, entry="main.moss"):
@@ -59,14 +48,13 @@ def run_wasm(wasm: bytes) -> str:
         f.write(wasm)
         path = f.name
     result = subprocess.run(
-        [WASMTIME, path], capture_output=True, text=True, timeout=120
+        [wasmtime(), path], capture_output=True, text=True, timeout=120
     )
     if result.returncode != 0:
         raise AssertionError(f"wasmtime failed: {result.stderr}")
     return result.stdout
 
 
-@unittest.skipUnless(WASMTIME, "wasmtime not available")
 class TestWasmBackend(unittest.TestCase):
     """The compiled module must behave exactly like the interpreter: every
     runnable example's Wasm output matches its golden stdout."""
@@ -187,7 +175,7 @@ class TestWasmBackend(unittest.TestCase):
             f.write(wasm)
             path = f.name
         result = subprocess.run(
-            [WASMTIME, path, source], capture_output=True, text=True, timeout=300
+            [wasmtime(), path, source], capture_output=True, text=True, timeout=300
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "." * expected + "\n")

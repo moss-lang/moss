@@ -166,6 +166,19 @@
                   '';
                 });
               checks = {
+                bootstrap =
+                  pkgs.runCommand "moss-bootstrap-test"
+                    {
+                      nativeBuildInputs = [
+                        pkgs.python3
+                        pkgs.wasmtime
+                      ];
+                    }
+                    ''
+                      cd ${./.}/bootstrap
+                      python3 -m unittest
+                      touch $out
+                    '';
                 cargo = craneLib.cargoTest (commonArgs // cacheArgs);
                 fmt = craneLib.cargoFmt commonArgs;
                 e2e =
@@ -186,6 +199,7 @@
                   pkgs.nodejs # Used by vsce.
                   pkgs.python3
                   pkgs.rust-bin.stable.latest.default
+                  pkgs.wasmtime # The bootstrap's Wasm backend tests run it.
                 ];
                 MOSS_LIB = "lib";
                 shellHook = ''
