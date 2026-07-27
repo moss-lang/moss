@@ -38,7 +38,8 @@ settled enough to build against; subsequent work happens in
 `docs/reference/` and the bootstrap compiler.
 
 **Revision 7** adds [D52], the designer's ruling that `Wasi` — not `Std` —
-is the primitive context, and corrects [D48]: the self-hosted compiler
+is the primitive context, [D53], which separates the two things "context"
+had been naming, and corrects [D48]: the self-hosted compiler
 does not need a string literal to find its prelude, it needs a way to
 reach `argv`.
 
@@ -330,6 +331,34 @@ references flatten: assuming `Parsing` is exactly assuming its members,
 recursively, with duplicate keys merged consistently ([D43]). A context is a
 compile-time artifact only; there are no first-class context values at
 runtime (what exists at runtime is the val data of [D2]).
+
+**[D53] DECIDED by the designer (module vocabulary).** This branch took its
+framing from ML modules, and "context" has been doing two jobs since. They
+are different things and conflating them causes real errors, so:
+
+- A `context` **declaration is a signature** — a module type, the finite
+  list of items some code requires. `assume Ctx` demands a structure of
+  that signature. [D19]'s "compile-time artifact only" is this sense.
+- **The context at a program point is a structure** — the provisions
+  actually in force there, from enclosing `assume`s and `bind`s. Its only
+  runtime residue is [D2]'s val data.
+- `IsCell[T=Int, Cell=CellInt]` **refines a signature** by fixing its type
+  components, as ML's `where type` does. It yields another signature; it
+  instantiates nothing and produces no provisions, so it is *not* functor
+  application.
+- A **functor** maps a structure to a structure. In Moss it is a module
+  with abstract symbols, and `bind` applies it. `src/cli.moss` is a functor
+  application written out one component at a time: it supplies `lexer::src`,
+  the tree and interner arenas, and gets back a structure it can call
+  `parser::run()` in.
+
+The consequence for [D29]: the `Wasi`-to-`Std` bridge is a functor in the
+strict sense, not a new kind of construct, and what it wants is the ability
+to apply a whole signature at once rather than one component per line. It
+also settles [D29]'s open half against the static-only reframing — `Std` is
+mostly vals (`zero`, `one`, `pwd`, ~90 char constants), so a functor that
+carried only types and fns would leave most of the signature to a
+hand-written prologue regardless.
 
 **[D43] DECIDED (consistent merging).** From notes.md's answer to Q6. A
 context carries at most one binding per key (one `A.gimme`, one `T`, ...),
@@ -1017,7 +1046,8 @@ absent, D24 dropped, D30 depth backstop as sole D16 exception, D31/D35 no
 methods via Q1–Q7, D41 keep `unit`, D43 consistent merging, D44 import
 collisions + `::` tighter than `.`, D45 concrete `Bool`, D46 aliases
 export, D47 operators are methods, D49 no automatic TCE — loops are the
-idiom, D52 `Wasi` primitive with `Std` a library over it)
+idiom, D52 `Wasi` primitive with `Std` a library over it, D53 signature
+vs structure)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
