@@ -11,7 +11,7 @@ from mossc import collect
 from mossc.lower import Lower
 
 REPO = Path(__file__).resolve().parents[2]
-PRELUDE = str(REPO / "lib/prelude.moss")
+PRELUDE = "lib/prelude.moss"  # resolved by `read` below, like every import
 
 
 def wasmtime() -> str:
@@ -388,6 +388,21 @@ class TestWasmBackend(unittest.TestCase):
             "}\n"
         )
         self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), "yz\n")
+
+    def test_std_implemented_in_moss_over_wasi(self):
+        """The retirement path, first bricks: `print` and `first_arg` are
+        Moss functions over Wasi, with a bump allocator also written in
+        Moss, installed by a functor. The code that calls them assumes
+        `Console` and knows nothing of either."""
+        wasm = compile_wasm({}, entry="tests/wasi/console.moss")
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            path = f.name
+        result = subprocess.run(
+            [wasmtime(), path, "hi"], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "hihi")
 
     def test_path_read_in_wasm(self):
         """`Path` was the last thing outside the slice: `pwd` is the empty

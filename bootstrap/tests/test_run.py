@@ -7,7 +7,7 @@ from mossc import collect, interp
 from mossc.lower import Lower, LowerError
 
 REPO = Path(__file__).resolve().parents[2]
-PRELUDE = str(REPO / "lib/prelude.moss")
+PRELUDE = "lib/prelude.moss"  # resolved by `read` below, like every import
 
 
 def run(files, entry="main.moss", args=None):

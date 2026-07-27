@@ -101,6 +101,8 @@ PREOPEN_FD = 3
 RIGHT_FD_READ = 2
 RIGHT_FD_SEEK = 1
 
+BINOPS_NE = b"\x47"
+
 BINOPS = {
     "add": b"\x6a",
     "sub": b"\x6b",
@@ -170,6 +172,8 @@ def _memarg(align: int) -> bytes:
 
 WASM_OPS = {
     "unreachable": UNREACHABLE,
+    # Bool is 0/1 with the tag erased, so this is `n != 0`.
+    "i32_bool": I32_CONST + sleb(0) + BINOPS_NE,
     "i32_load": b"\x28" + _memarg(2),
     "i32_load8_s": b"\x2c" + _memarg(0),
     "i32_load8_u": b"\x2d" + _memarg(0),

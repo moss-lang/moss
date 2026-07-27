@@ -8,7 +8,14 @@ from .lex import LexError, lex, position
 from .lower import Lower, LowerError
 from .parse import ParseError, error_message, parse
 
-PRELUDE = str(Path(__file__).resolve().parents[2] / "lib/prelude.moss")
+_PRELUDE_ABS = Path(__file__).resolve().parents[2] / "lib/prelude.moss"
+try:
+    # Relative to the working directory when possible, so that the prelude
+    # and a user file's own `../lib/...` import name the same module: the
+    # loader keys modules by path, and two spellings would load twice.
+    PRELUDE = str(_PRELUDE_ABS.relative_to(Path.cwd()))
+except ValueError:
+    PRELUDE = str(_PRELUDE_ABS)
 
 
 def run(path: str, args: list) -> int:
