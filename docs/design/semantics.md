@@ -104,8 +104,8 @@ the only context that exists at runtime.
 **[D3] DECIDED (keywords).** The keyword set is:
 
 ```
-as assume bind break context else fn for if import let loop match return
-This this type unit use val var while
+as assume bind break context else fn for functor if import let loop match
+return This this type unit use val var while
 ```
 
 Changes from `docs/reference/syntax.md`: `static` is dropped; `break`, `for`,
@@ -1065,7 +1065,7 @@ until then is a nominal type per provider, plus boxing until the backend
 unboxes single-payload tags over scalars — an optimization, not on the
 critical path.
 
-**[D55] PROPOSED (a functor construct).** [D53] leaves Moss with no way to
+**[D55] DECIDED and implemented (a functor construct).** [D53] leaves Moss with no way to
 map a structure to a structure. `bind` provides one component per line,
 which suits `src/cli.moss`'s handful and does not suit `Std`'s ~40 items
 (~95 counting chars). The `Wasi`-to-`Std` bridge needs the construct.
@@ -1132,19 +1132,34 @@ kinds of bind already compile (val binds as locals, fn binds by
 specialization). It needs a grammar production, the totality check, and
 inlining — no new backend machinery.
 
-Sub-questions to settle with it:
+Sub-questions, as the designer settled them:
 
-1. Spelling of application — `apply WasiStd;`, `bind Std = WasiStd;`, or
-   something else.
-2. Whether a functor may take value parameters —
-   `functor WasiStd(out: I32): Std` — evaluated at application. This is
-   exactly [D29]'s unresolved val half, and answering it here answers it
-   there.
-3. Whether the result must be a declared `context` or may be an inline
-   item list.
-4. Composition: `apply A; apply B;` where B's argument signature is A's
-   result. Falls out of lexical scoping if application is just binds, but
-   worth stating.
+1. **Application is spelled `bind WasiStd;`** — the `bind` keyword rather
+   than a new one, for consistency with the statement it abbreviates. A
+   `bind` with no `=` applies a functor; the functor's declaration already
+   names its result, so the application site need not restate it.
+2. **No value parameters yet.** Nothing needs them: everything in `Std` is
+   derivable from `Wasi` plus constants, and anything that *would* want one
+   can put the val in the functor's argument signature and bind it before
+   applying — which costs encapsulation (the caller must name the
+   functor's own val) but no expressiveness. Supporting them later
+   surfaces less than [D29] feared: [D18] already says val bindings never
+   participate in type identity, so two applications with different values
+   still yield the same types; and application already evaluates
+   expressions, so a value argument adds no runtime notion. The one real
+   cost is that `bind F(x);` reads like a call, blurring the
+   function/functor line [D29] wants kept — which the `bind` keyword at the
+   application site is enough to hold. Revisit when the argument-signature
+   workaround actually bites. Note this answers only [D29]'s *taking* half;
+   functors must **produce** val bindings, since `Std` is mostly vals.
+3. **The result may be composite**, exactly as the argument is:
+   `functor F: A, B -> C, D { ... }`. A declared `context` is the common
+   case, not a requirement.
+4. **Composition needs no rule.** An application is a run of binds, so
+   `bind A; bind B;` is their concatenation; if both bind a key, the later
+   shadows for the rest of the block, exactly as two hand-written binds do
+   today. The only check worth adding is that a functor may not apply
+   itself, which would not terminate at elaboration.
 
 Two options from rev 7 are withdrawn. Extending bracket application to fns
 and vals was a category error — brackets *refine a signature* ([D53]) and
@@ -1155,9 +1170,6 @@ independent of [D52]'s point that the *compiler* skips it and assumes
 `Wasi` directly; `Wasi` is a signature too.)
 
 ## 13. Decision index
-
-Awaiting the designer and now on the critical path: [D55], a functor
-construct — the `Wasi`-to-`Std` bridge needs one, and B3 is the shape.
 
 Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
@@ -1173,7 +1185,8 @@ methods via Q1–Q7, D41 keep `unit`, D43 consistent merging, D44 import
 collisions + `::` tighter than `.`, D45 concrete `Bool`, D46 aliases
 export, D47 operators are methods, D49 no automatic TCE — loops are the
 idiom, D52 `Wasi` primitive with `Std` a library over it, D53 signature
-vs structure, D54 method providers keep the nominal wrapper)
+vs structure, D54 method providers keep the nominal wrapper, D55 functors
+as their own declaration applied with `bind`)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

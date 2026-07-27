@@ -351,6 +351,56 @@ class TestStd(unittest.TestCase):
             run(files)
 
 
+class TestFunctors(unittest.TestCase):
+    """D55: a functor maps one structure to another. `bind F;` installs its
+    binds here; its totality against the declared result signature is
+    checked once, at the functor."""
+
+    SOURCE = (
+        "type Text;\n"
+        "fn emit(t: Text);\n"
+        "val greeting: Text;\n"
+        "context MiniStd = Text, emit, greeting;\n"
+        "assume Std {\n"
+        "  fn shout(c: Char) { putchar(c); putchar(char::exclam); }\n"
+        "  functor CharStd: Std -> MiniStd {\n"
+        "    bind Text = Char;\n"
+        "    bind emit = shout;\n"
+        "%s"
+        "  }\n"
+        "  assume MiniStd { fn app() { emit(greeting); emit(greeting); } }\n"
+        "  fn main() { bind CharStd; app(); }\n"
+        "}\n"
+    )
+
+    def test_application_installs_the_binds(self):
+        source = self.SOURCE % "    bind greeting = char::h;\n"
+        self.assertEqual(run({"main.moss": source}), "h!h!")
+
+    def test_incomplete_functor_reports_at_the_functor(self):
+        with self.assertRaises(LowerError) as ctx:
+            run({"main.moss": self.SOURCE % ""})
+        self.assertIn("does not bind `greeting`", ctx.exception.message)
+
+    def test_self_application_is_rejected(self):
+        source = (
+            "context Empty = ;\n"
+            "assume Std {\n"
+            "  functor Loopy: Std -> Empty { bind Loopy; }\n"
+            "  fn main() { bind Loopy; }\n"
+            "}\n"
+        )
+        with self.assertRaises(LowerError) as ctx:
+            run({"main.moss": source})
+        self.assertIn("applies itself", ctx.exception.message)
+
+    def test_bind_of_a_non_functor_is_an_error(self):
+        source = "assume Std {\n  val c: Char;\n  fn main() { bind c; }\n}\n"
+        with self.assertRaises(LowerError) as ctx:
+            run({"main.moss": source})
+        self.assertIn("is not a functor", ctx.exception.message)
+
+
 class TestGenerics(unittest.TestCase):
     def test_iscell_idiom(self):
         """The shared-T functor idiom from src/cell.moss, end to end: a

@@ -97,6 +97,7 @@ class Lower:
     def __init__(self, program: Program):
         self.program = program
         self.fns: dict[int, ir.FnIR] = {}  # id(Symbol) -> FnIR
+        self.checked_functors: set = set()
         self.in_progress: set[int] = set()
         self.fn_symbols: dict[int, Symbol] = {}  # id(decl) -> Symbol
         self.needs_of: dict[int, tuple] = {}  # id(Symbol) -> runtime need keys
@@ -223,6 +224,52 @@ class Lower:
         self.merge(env, env.methods, module, key, sig)
         if key not in needs:
             needs.append(key)
+
+    def check_functor_total(self, functor: Symbol):
+        """D55/D22: a functor must bind every item of its result signature.
+        Checked once, where the functor is written, so a half-built bridge
+        reports at the bridge rather than at each application."""
+        if id(functor) in self.checked_functors:
+            return
+        self.checked_functors.add(id(functor))
+        module = functor.module
+        wanted = {}
+        for spec in functor.decl.result:
+            self.expand_spec(module, spec, wanted, 0)
+        for bind in functor.decl.binds:
+            for spec, _ in bind.items:
+                key = self.spec_key(module, spec)
+                wanted.pop(key, None)
+        if wanted:
+            missing = ", ".join(sorted(wanted.values()))
+            self.error(
+                module,
+                f"functor `{functor.name}` does not bind {missing}",
+                functor.decl,
+            )
+
+    def expand_spec(self, module: Module, spec: ast.Spec, out: dict, depth: int):
+        """The leaf items a result-signature entry stands for, keyed the
+        same way `spec_key` keys a bind's left-hand side."""
+        if depth > 16:
+            self.error(module, "context nests too deeply", spec)
+        target = resolve_path(module, spec.path)
+        if target is None or isinstance(target, Module):
+            return  # a real error, reported where the signature is used
+        if spec.dot is None and target.kind == SymKind.CONTEXT:
+            for item in target.decl.items:
+                self.expand_spec(target.module, item, out, depth + 1)
+            return
+        key = self.spec_key(module, spec)
+        if key is not None:
+            name = target.name if spec.dot is None else f"`{target.name}.{spec.dot}`"
+            out[key] = name if spec.dot is not None else f"`{target.name}`"
+
+    def spec_key(self, module: Module, spec: ast.Spec):
+        target = resolve_path(module, spec.path)
+        if target is None or isinstance(target, Module):
+            return None
+        return (id(target), spec.dot)
 
     def find_method_decl(self, module: Module, receiver: Symbol, name: str) -> Symbol | None:
         """An abstract attached method on the receiver, or a detached method
@@ -639,6 +686,7 @@ class FnChecker:
         self.needs = needs
         self.this_ty = this_ty
         self.loop_depth = 0
+        self.applying: set = set()  # functors being applied, to catch cycles
         self.at_node = None  # the statement/expression currently checked
         for name, ty in sig.params:
             env.locals[name] = (ty, False)
@@ -729,7 +777,12 @@ class FnChecker:
                 self.error(f"cannot assign `{show(ety)}` to `{stmt.name}: {show(ty)}`")
             return ir.Assign(stmt.name, expr)
         if isinstance(stmt, ast.Bind):
-            binds = [self.check_bind(spec, expr) for spec, expr in stmt.items]
+            binds = []
+            for spec, expr in stmt.items:
+                if expr is None:
+                    binds.extend(self.apply_functor(spec))
+                else:
+                    binds.append(self.check_bind(spec, expr))
             return [b for b in binds if b is not None]
         if isinstance(stmt, ast.While):
             cond = self.check_bool(stmt.cond)
@@ -757,6 +810,39 @@ class FnChecker:
         if not self.fits(ty, expected):
             self.error(f"condition is `{show(ty)}`, expected `Bool`")
         return cond
+
+    def apply_functor(self, spec: ast.Spec) -> list:
+        """D55: `bind F;` installs F's binds here. They are *written* in F's
+        module, so names resolve there, but they take effect in this
+        function's environment and their needs become this function's —
+        which is what makes the argument signature a requirement of the
+        application site rather than of the functor."""
+        if spec.dot is not None or spec.app is not None:
+            self.error("a functor application takes no method or bracket part")
+        target = resolve_path(self.module, spec.path)
+        if target is None:
+            self.error(f"`{'::'.join(spec.path)}` is not in scope")
+        if isinstance(target, Module) or target.kind != SymKind.FUNCTOR:
+            name = getattr(target, "name", spec.path[-1])
+            self.error(f"`{name}` is not a functor; a bind needs `= value`")
+        if id(target) in self.applying:
+            self.error(f"functor `{target.name}` applies itself")
+        self.lower.check_functor_total(target)
+        self.applying.add(id(target))
+        outer = self.module
+        self.module = target.module
+        try:
+            out = []
+            for bind in target.decl.binds:
+                for item_spec, item_expr in bind.items:
+                    if item_expr is None:
+                        out.extend(self.apply_functor(item_spec))
+                    else:
+                        out.append(self.check_bind(item_spec, item_expr))
+        finally:
+            self.module = outer
+            self.applying.discard(id(target))
+        return [b for b in out if b is not None]
 
     def check_bind(self, spec: ast.Spec, expr: ast.Expr):
         module = self.module

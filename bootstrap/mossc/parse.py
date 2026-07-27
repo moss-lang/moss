@@ -209,7 +209,38 @@ class Parser:
             items = self.comma_list(self.parse_spec, Kind.SEMI)
             self.expect(Kind.SEMI)
             return ast.Ctxdef(name, items, offset=start)
+        if self.at(Kind.FUNCTOR):
+            return self.parse_functordef()
         raise ParseError(f"expected a declaration, found {self.peek().kind.name}", self.peek())
+
+    def parse_functordef(self) -> ast.Functordef:
+        start = self.peek().offset
+        self.expect(Kind.FUNCTOR)
+        name = self.expect(Kind.NAME).text
+        self.expect(Kind.COLON)
+        args = self.comma_list(self.parse_spec, Kind.HYPHEN_GREATER)
+        self.expect(Kind.HYPHEN_GREATER)
+        result = self.comma_list(self.parse_spec, Kind.LBRACE)
+        self.expect(Kind.LBRACE)
+        binds = []
+        while not self.at(Kind.RBRACE):
+            binds.append(self.parse_bind())
+        self.expect(Kind.RBRACE)
+        return ast.Functordef(name, args, result, binds, offset=start)
+
+    def parse_bind(self) -> ast.Bind:
+        start = self.peek().offset
+        self.expect(Kind.BIND)
+
+        def bind_item() -> tuple[ast.Spec, "ast.Expr | None"]:
+            spec = self.parse_spec()
+            if not self.eat(Kind.EQUAL):
+                return spec, None  # a functor application (D55)
+            return spec, self.parse_expr()
+
+        items = self.comma_list(bind_item, Kind.SEMI)
+        self.expect(Kind.SEMI)
+        return ast.Bind(items, offset=start)
 
     def parse_assume(self) -> ast.Assume:
         start = self.peek().offset
@@ -283,16 +314,7 @@ class Parser:
                 node = ast.Let if keyword.kind == Kind.LET else ast.Var
                 stmts.append(node(name, ty, expr, offset=start))
             elif self.at(Kind.BIND):
-                self.next()
-
-                def bind_item() -> tuple[ast.Spec, ast.Expr]:
-                    spec = self.parse_spec()
-                    self.expect(Kind.EQUAL)
-                    return spec, self.parse_expr()
-
-                items = self.comma_list(bind_item, Kind.SEMI)
-                self.expect(Kind.SEMI)
-                stmts.append(ast.Bind(items, offset=start))
+                stmts.append(self.parse_bind())
             elif self.at(Kind.WHILE):
                 self.next()
                 cond = self.parse_expr(no_record=True)

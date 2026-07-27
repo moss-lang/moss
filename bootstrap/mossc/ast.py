@@ -170,7 +170,22 @@ class Ctxdef:
     offset: int = field(default=-1, compare=False)
 
 
-Decl = Assume | Tydef | Aliasdef | Tagdef | Unitdef | Valdef | Fndef | Ctxdef
+@dataclass(frozen=True)
+class Functordef:
+    """D55: a map from one structure to another. `args` is the signature it
+    needs in context where it is applied, `result` the signature its body
+    provides, and the body is the binds that provide it."""
+
+    name: str
+    args: list[Spec]
+    result: list[Spec]
+    binds: "list[Bind]"
+    offset: int = field(default=-1, compare=False)
+
+
+Decl = (
+    Assume | Tydef | Aliasdef | Tagdef | Unitdef | Valdef | Fndef | Ctxdef | Functordef
+)
 
 
 @dataclass(frozen=True)
@@ -207,7 +222,8 @@ class Assign:
 
 @dataclass(frozen=True)
 class Bind:
-    items: "list[tuple[Spec, Expr]]"
+    # A `None` expression is a functor application: `bind WasiStd;` (D55).
+    items: "list[tuple[Spec, Expr | None]]"
     offset: int = field(default=-1, compare=False)
 
 

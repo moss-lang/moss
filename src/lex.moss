@@ -33,6 +33,7 @@ type Token =
   | EqualEqual
   | GreaterEqual
   | GreaterGreater
+  | HyphenGreater
   | As
   | Assume
   | Bind
@@ -41,6 +42,7 @@ type Token =
   | Else
   | Fn
   | For
+  | Functor
   | If
   | Import
   | Let
@@ -191,7 +193,7 @@ assume Std {
       } else if c.eq(char::comma) {
         Comma
       } else if c.eq(char::hyphen) {
-        Hyphen
+        two(char::greater, HyphenGreater, Hyphen)
       } else if c.eq(char::dot) {
         Dot
       } else if c.eq(char::slash) {
@@ -398,6 +400,8 @@ assume Std {
           kw(Fn)
         } else if take(char::o) {
           kw1(char::r, For)
+        } else if take(char::u) {
+          kw5(char::n, char::c, char::t, char::o, char::r, Functor)
         } else {
           rest_of_name()
         }

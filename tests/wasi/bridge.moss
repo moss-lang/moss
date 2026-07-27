@@ -1,5 +1,6 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
 import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "./signature.moss" as mini use MiniStd;
 
 # A functor from the primitive context to that signature: a module whose
 # components implement MiniStd's items over Wasm and Wasi.
@@ -22,4 +23,13 @@ assume Wasm {
     let five = w::i32_add(w::i32_add(two, two), one);
     w::i32_add(w::i32_shl(one, five), one)
   }
+}
+
+# D55: the functor itself. Applying it turns a `Wasm, Wasi` structure into
+# a `MiniStd` one, and its totality is checked here rather than at each
+# application.
+functor WasiMini: Wasm, Wasi -> MiniStd {
+  bind mini::Text = I32;
+  bind mini::emit = put;
+  bind mini::greeting = bang();
 }

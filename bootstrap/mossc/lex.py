@@ -15,6 +15,7 @@ class Kind(Enum):
     PLUS = auto()
     COMMA = auto()
     HYPHEN = auto()
+    HYPHEN_GREATER = auto()
     DOT = auto()
     SLASH = auto()
     COLON = auto()
@@ -46,6 +47,7 @@ class Kind(Enum):
     ELSE = auto()
     FN = auto()
     FOR = auto()
+    FUNCTOR = auto()
     IF = auto()
     IMPORT = auto()
     LET = auto()
@@ -69,6 +71,7 @@ class Kind(Enum):
 KEYWORDS = {
     "as": Kind.AS,
     "assume": Kind.ASSUME,
+    "functor": Kind.FUNCTOR,
     "bind": Kind.BIND,
     "break": Kind.BREAK,
     "context": Kind.CONTEXT,
@@ -125,6 +128,7 @@ TWO_CHAR = {
     "==": Kind.EQUAL_EQUAL,
     ">=": Kind.GREATER_EQUAL,
     ">>": Kind.GREATER_GREATER,
+    "->": Kind.HYPHEN_GREATER,
 }
 
 ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "r": "\r", "t": "\t"}

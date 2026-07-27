@@ -35,6 +35,7 @@ unit LessEqual;
 unit EqualEqual;
 unit GreaterEqual;
 unit GreaterGreater;
+unit HyphenGreater;
 
 # Keywords.
 unit As;
@@ -45,6 +46,7 @@ unit Context;
 unit Else;
 unit Fn;
 unit For;
+unit Functor;
 unit If;
 unit Import;
 unit Let;

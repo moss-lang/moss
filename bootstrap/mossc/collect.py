@@ -42,6 +42,7 @@ class SymKind(Enum):
     FN = auto()  # abstract or defined; see Symbol.decl.body
     CONTEXT = auto()
     METHOD = auto()  # attached (receiver is not None) or detached
+    FUNCTOR = auto()  # D55: a map from one structure to another
 
 
 DECL_KINDS = {
@@ -51,6 +52,7 @@ DECL_KINDS = {
     ast.Tagdef: SymKind.TAG,
     ast.Valdef: SymKind.VAL,
     ast.Ctxdef: SymKind.CONTEXT,
+    ast.Functordef: SymKind.FUNCTOR,
 }
 
 

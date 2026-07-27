@@ -52,6 +52,7 @@ token or class of tokens.
   - `==`
   - `>=`
   - `>>`
+  - `->`
 - keywords
   - `as`
   - `assume`
@@ -61,6 +62,7 @@ token or class of tokens.
   - `else`
   - `fn`
   - `for`
+  - `functor`
   - `if`
   - `import`
   - `let`
@@ -127,7 +129,7 @@ type; `(A, B)` is a tuple. `This` is legal only inside method declarations.
 - **Import** = `import` _string_ (`as` _name_)? (`use` (`*` | **List**\[**UseItem**\]))? `;`
 - **UseItem** = **UseName** (`as` **UseName**)?
 - **UseName** = _name_ | **DotName**
-- **Decl** = **Assume** | **Tydef** | **Aliasdef** | **Tagdef** | **Unitdef** | **Valdef** | **Fndef** | **Ctxdef**
+- **Decl** = **Assume** | **Tydef** | **Aliasdef** | **Tagdef** | **Unitdef** | **Valdef** | **Fndef** | **Ctxdef** | **Functordef**
 - **Assume** = `assume` **List**\[**AssumeItem**\] `{` **Decl**\* `}`
 - **Tydef** = `type` _name_ `;`
 - **Aliasdef** = `type` _name_ `=` **Type** `;`
@@ -138,6 +140,7 @@ type; `(A, B)` is a tuple. `This` is legal only inside method declarations.
 - **FnName** = _name_ | _name_ `.` _name_ | **DotName**
 - **Param** = _name_ `:` **Type**
 - **Ctxdef** = `context` _name_ `=` **List**\[**Spec**\] `;`
+- **Functordef** = `functor` _name_ `:` **List**\[**Spec**\] `->` **List**\[**Spec**\] `{` **Bind**\* `}`
 
 In a **UseItem** rename, both sides must agree on dottedness (`use .m as
 .m1`, never `use .m as m1`). The three **FnName** forms are a plain
@@ -154,7 +157,8 @@ the prelude's `val true: Bool = Bool True;` ([D50]).
 - **Let** = `let` _name_ (`:` **Type**)? `=` **Expr** `;`
 - **Var** = `var` _name_ (`:` **Type**)? `=` **Expr** `;`
 - **Assign** = _name_ `=` **Expr** `;`
-- **Bind** = `bind` **List**\[**Spec** `=` **Expr**\] `;`
+- **Bind** = `bind` **List**\[**Spec** (`=` **Expr**)?\] `;`
+  - an item with no `=` applies a functor of that name (D55)
 - **While** = `while` **Expr** **Block**
 - **Loop** = `loop` **Block**
 
