@@ -1031,7 +1031,80 @@ decisions above are confirmed.
   `lib/ops.moss`: it already matches the intended operator semantics and is
   the designated desugaring target for post-MVP operators ([D33]).
 
+**[D54] PROPOSED (how a method provider names its receiver).** Verified
+behaviour today: `bind Int.add = p` checks `p` against the method's
+*declared* signature, which excludes the receiver. So a plain function may
+provide a method but cannot see what it was called on — `this` in it is
+"only legal inside method bodies" — and widening it to take the receiver
+is a signature mismatch. The only provider that can use its receiver is an
+attached method, which needs a nominal type, which an abstract type is not.
+A `Wasi` bridge providing `Int.add` therefore has to invent a nominal
+wrapper purely to have somewhere to put `this`.
+
+- **A1, status quo.** Wrap: `type Num I32;` plus `fn Num.add(rhs: Num)`,
+  then `bind int::Int = Num; bind Int.add = Num.add;`. Works today. Costs a
+  type per provider, and boxing until the backend unboxes single-payload
+  tags over scalars.
+- **A2, receiver-first (recommended).** A *method* provider matches
+  receiver-to-receiver as now; a *plain function* provider takes the
+  receiver as its first parameter. `bind Int.add = add;` with
+  `fn add(lhs: I32, rhs: I32): I32`. No wrapper, no boxing, and it is the
+  convention both backends already use internally — the native providers
+  are literally `lambda a, this: ...`, and a compiled method call pushes
+  the receiver first. Replaces today's receiver-discarding rule, which
+  costs one test and removes a way to silently drop the receiver.
+- **A3, accept both.** Never ambiguous, since the two forms always differ
+  by exactly one parameter. Two ways to do it, and A2's silent-drop hazard
+  stays.
+- **A4, allow `this` in any provider.** Rejected: a function's meaning
+  would depend on how it is later bound, uncheckable at its definition.
+- **A5, attached methods on abstract receivers.** Rejected: Q5 exists
+  because the receiver's representation is unknown at the definition site.
+
+**[D55] PROPOSED (applying a functor).** Per [D53] a module with abstract
+symbols is a functor and `bind` applies it, one component per line. That is
+fine for `src/cli.moss`'s handful and impossible for `Std`'s ~40 items
+(~95 counting chars). The missing construct is applying a whole signature
+at once. Options, roughly in order of how much language they add:
+
+- **B1, bulk bind by name.** `bind Std = wasistd;` binds each item of the
+  signature to the same-named component of the module. No new declaration
+  form. The catch is that it matches *spellings*, which is a weaker
+  discipline than [D1]'s exact-symbol rule, and a missing component shows
+  up at the application rather than at the module.
+- **B2, module-level provisions plus application (recommended).** Let a
+  module say what it provides, at the top level rather than in a statement:
+  `provide string::print = put;`, `provide int::Int = I32;`. Then
+  `apply wasistd;` installs exactly those, with no name matching anywhere —
+  [D1]'s discipline is kept, the functor's obligations are checkable where
+  it is written instead of at each use, and the error for a half-built
+  bridge points at the bridge.
+- **B3, a `functor` declaration with a declared result signature.**
+  `functor WasiStd: Wasi -> Std { ... }`. Most explicit, and it allows
+  several functors with different argument signatures. But modules are
+  already functors, so this adds a second way to be one.
+- **B4, extend bracket application to fns and vals.** Reuses existing
+  syntax, but brackets *refine a signature* ([D53]) — overloading them for
+  application would re-merge the two things [D53] just separated. Not
+  recommended without respecifying brackets outright.
+- **B5, no construct at all.** Do not make `Std` a signature: implement it
+  as ordinary definitions whose own context is `Wasm`/`Wasi`, and let need
+  propagation deliver it. Zero new language, and it compiles today
+  (`tests/wasi/bridged.moss`'s non-bind sibling). The cost is that `Std`'s
+  types are then nailed to one representation and the interpreter needs a
+  linear memory to run anything. **This is the right answer for the
+  compiler itself**, which per [D52] should define its own abstractions
+  over `Wasi`; it is the wrong answer for `Std`, which wants to stay
+  portable across backends.
+
+Whatever the spelling, application should be **total**, by analogy with
+[D22]: every item of the signature gets a component or it is an error.
+
 ## 13. Decision index
+
+Awaiting the designer and now on the critical path: [D54] how a method
+provider names its receiver · [D55] how a functor is applied (the
+`Wasi`-to-`Std` bridge needs it).
 
 Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
