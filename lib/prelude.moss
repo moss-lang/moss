@@ -1,3 +1,7 @@
 import "./bool.moss" use Bool, False, True;
+import "./cell.moss" use CellInt, cell_int;
 import "./char.moss" as char use Char;
+import "./int.moss" use Int, zero, one;
+import "./path.moss" use Path, pwd;
 import "./std.moss" use Std, putchar;
+import "./string.moss" use String, first_arg, print;

@@ -1,0 +1,10 @@
+import "./int.moss" use Int;
+
+type CellInt;
+
+assume Int, CellInt {
+  fn cell_int(): CellInt;
+
+  fn .read(): Int;
+  fn .write(value: Int);
+}

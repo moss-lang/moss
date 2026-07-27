@@ -39,6 +39,26 @@ class CharVal:
 
 
 @dataclass(frozen=True)
+class IntVal:
+    value: int
+
+
+@dataclass(frozen=True)
+class StrVal:
+    value: str
+
+
+@dataclass(frozen=True)
+class PathVal:
+    value: str
+
+
+@dataclass(eq=False)
+class CellVal:
+    value: object
+
+
+@dataclass(frozen=True)
 class Closure:
     fn: ir.FnIR
     ctx: dict
@@ -208,21 +228,145 @@ class Interp:
         return True
 
 
-def native_env(program: Program) -> dict:
+def native_env(program: Program, args: list | None = None) -> dict:
     """Runtime provisions for the native Std (D38): keys are the abstract
-    symbols declared in lib/, values their Python implementations."""
+    symbols (or (receiver, method) pairs) declared in lib/, values their
+    Python implementations."""
     env = {}
-
-    def putchar(args, this):
-        sys.stdout.write(args[0].value)
-        return UNIT
-
+    args = args or []
+    lib = {}
     for module in program.modules.values():
-        if module.path.endswith("lib/std.moss"):
-            env[module.names["putchar"]] = NativeFn("putchar", putchar)
-        elif module.path.endswith("lib/char.moss"):
-            for name, char in CHARS.items():
-                env[module.names[name]] = CharVal(char)
+        for name in ("std", "char", "bool", "num", "int", "string", "cell", "path"):
+            if module.path.endswith(f"lib/{name}.moss"):
+                lib[name] = module
+    if "bool" in lib:
+        true = UnitVal(lib["bool"].names["True"])
+        false = UnitVal(lib["bool"].names["False"])
+
+        def boolean(b):
+            return true if b else false
+
+    def native(fn):
+        return NativeFn(fn.__name__, fn)
+
+    if "std" in lib:
+
+        def putchar(a, this):
+            sys.stdout.write(a[0].value)
+            return UNIT
+
+        env[lib["std"].names["putchar"]] = native(putchar)
+    if "char" in lib:
+        char_ty = lib["char"].names["Char"]
+        for name, char in CHARS.items():
+            env[lib["char"].names[name]] = CharVal(char)
+        if "num" in lib:
+            det = lib["num"].detached
+            env[(char_ty, det["eq"])] = native(
+                lambda a, this: boolean(this.value == a[0].value)
+            )
+            env[(char_ty, det["ne"])] = native(
+                lambda a, this: boolean(this.value != a[0].value)
+            )
+    if "int" in lib:
+        int_ty = lib["int"].names["Int"]
+        env[lib["int"].names["zero"]] = IntVal(0)
+        env[lib["int"].names["one"]] = IntVal(1)
+        if "num" in lib:
+            det = lib["num"].detached
+            arith = {
+                "add": lambda x, y: x + y,
+                "sub": lambda x, y: x - y,
+                "mul": lambda x, y: x * y,
+            }
+            for name, op in arith.items():
+                env[(int_ty, det[name])] = NativeFn(
+                    name, lambda a, this, op=op: IntVal(op(this.value, a[0].value))
+                )
+
+            def div(a, this):
+                if a[0].value == 0:
+                    raise MossPanic("division by zero")
+                return IntVal(this.value // a[0].value)
+
+            def rem(a, this):
+                if a[0].value == 0:
+                    raise MossPanic("remainder by zero")
+                return IntVal(this.value % a[0].value)
+
+            env[(int_ty, det["div"])] = native(div)
+            env[(int_ty, det["rem"])] = native(rem)
+            compare = {
+                "eq": lambda x, y: x == y,
+                "ne": lambda x, y: x != y,
+                "lt": lambda x, y: x < y,
+                "gt": lambda x, y: x > y,
+                "le": lambda x, y: x <= y,
+                "ge": lambda x, y: x >= y,
+            }
+            for name, op in compare.items():
+                env[(int_ty, det[name])] = NativeFn(
+                    name, lambda a, this, op=op: boolean(op(this.value, a[0].value))
+                )
+    if "string" in lib:
+        string = lib["string"]
+        string_ty = string.names["String"]
+
+        def first_arg(a, this):
+            if not args:
+                raise MossPanic("first_arg: the program was given no arguments")
+            return StrVal(args[0])
+
+        def print_(a, this):
+            sys.stdout.write(a[0].value)
+            return UNIT
+
+        def length(a, this):
+            return IntVal(len(this.value))
+
+        def get(a, this):
+            index = a[0].value
+            if not 0 <= index < len(this.value):
+                raise MossPanic(f"String.get: index {index} out of range")
+            return CharVal(this.value[index])
+
+        env[string.names["first_arg"]] = native(first_arg)
+        env[string.names["print"]] = NativeFn("print", print_)
+        env[(string_ty, string.detached["length"])] = native(length)
+        env[(string_ty, string.detached["get"])] = native(get)
+    if "cell" in lib:
+        cell = lib["cell"]
+        cell_ty = cell.names["CellInt"]
+        env[cell.names["cell_int"]] = native(lambda a, this: CellVal(IntVal(0)))
+
+        def read(a, this):
+            return this.value
+
+        def write(a, this):
+            this.value = a[0]
+            return UNIT
+
+        env[(cell_ty, cell.detached["read"])] = native(read)
+        env[(cell_ty, cell.detached["write"])] = native(write)
+    if "path" in lib:
+        import os
+
+        path = lib["path"]
+        path_ty = path.names["Path"]
+        env[path.names["pwd"]] = PathVal(os.getcwd())
+
+        def join(a, this):
+            return PathVal(os.path.normpath(os.path.join(this.value, a[0].value)))
+
+        def read_file(a, this):
+            try:
+                with open(this.value, encoding="utf-8") as f:
+                    return StrVal(f.read())
+            except OSError as e:
+                raise MossPanic(f"Path.read: {e}")
+
+        env[(path_ty, path.detached["join"])] = native(join)
+        env[(path_ty, path.detached["read"])] = native(read_file)
     return env
 
 
@@ -230,7 +374,7 @@ class LinkError(Exception):
     pass
 
 
-def run_main(program: Program, lower) -> None:
+def run_main(program: Program, lower, args: list | None = None) -> None:
     """D39: find main, check its needs against the native Std, run it."""
     entry = program.entry
     main = entry.names.get("main")
@@ -239,7 +383,7 @@ def run_main(program: Program, lower) -> None:
     if main.decl.params or main.decl.ret is not None:
         raise LinkError("`main` must take no parameters and return the unit type")
     fn = lower.fns[id(main)]
-    natives = native_env(program)
+    natives = native_env(program, args)
     ctx = {}
     for need in fn.needs:
         provision = natives.get(need)

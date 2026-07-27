@@ -1,0 +1,17 @@
+import "./char.moss" use Char;
+import "./int.moss" use Int;
+
+type String;
+
+assume String {
+  fn first_arg(): String;
+  fn print(s: String);
+
+  assume Int {
+    fn .length(): Int;
+
+    assume Char {
+      fn .get(index: Int): Char;
+    }
+  }
+}

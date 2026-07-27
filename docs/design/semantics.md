@@ -39,8 +39,10 @@ settled enough to build against; subsequent work happens in
 
 **Revision 5 onward** is incremental: decision points appended as
 implementation forces them, PROPOSED until the designer reacts. So far:
-[D45] (concrete `Bool`), [D46] (module aliases export), [D47] (interpreter
-value model).
+[D45] (concrete `Bool`), [D46] (module aliases export), [D47] (a finding:
+one-binding-per-key means a multi-type `Std` must use receiver-keyed
+methods, with a consequence for how [D33] operators should desugar), and
+the [D31] amendment (optional `let`/`var` type annotations).
 
 ## 1. Design thesis
 
@@ -551,6 +553,24 @@ Rust-lang-item style, not name-driven lookup of any method that happens to
 be called `add`; availability rides the ordinary context rails for exactly
 those `ops` symbols, and the desugaring is therefore not strictly syntactic
 sugar. It may prove cheap enough to pull into the MVP once §9 settles.
+
+**[D47] FINDING (one-binding-per-key vs a multi-type `Std`), needs the
+designer.** Implementation hit a real tension between [D33] and [D43]: a
+single context cannot provide `ops::eq` at both `Int` and `Char`, because
+the two applications share the key `eq` and consistent merging would unify
+`Int = Char` — exactly the collapse D43 is *supposed* to perform. The old
+design escaped this with `for Number=Uint32 { ... }` grouping, which is
+dead. The new design's own answer is already in §9: *receiver-keyed
+methods*. `Int.eq` and `Char.eq` are distinct keys, so the bootstrap `Std`
+provides arithmetic and comparison as detached methods (`lib/num.moss`:
+`fn .add(rhs: This): This;`, `fn .eq(rhs: This): Bool;`, ...) referenced as
+`Int.add`, `Char.eq`, etc. Consequence to weigh for [D33]: if operators
+desugar to the *free functions* of `lib/ops.moss` (`eq(x, y)` with
+`Lhs`/`Rhs`), a context can hold at most one operand-type instance at a
+time, which makes `a == b` next to `c == d` at different types impossible
+in one scope. Desugaring to the *methods* (`a.eq(b)` → key
+`(type of a).eq`) has no such limit. `lib/ops.moss` is untouched pending
+that call.
 
 **[D45] PROPOSED (concrete `Bool` as a lang item).** The old
 `lib/bool.moss` made even booleans contextual (`type Bool;` with abstract

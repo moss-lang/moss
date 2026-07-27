@@ -1,0 +1,19 @@
+# Detached numeric/comparison methods. A context provides these per
+# receiver type (`Int.add`, `Char.eq`, ...), which is how one context can
+# offer comparisons at several types without the D43 merge collapsing them
+# into one — see the note under D33/D43 in docs/design/semantics.md.
+
+import "./bool.moss" use Bool;
+
+fn .add(rhs: This): This;
+fn .sub(rhs: This): This;
+fn .mul(rhs: This): This;
+fn .div(rhs: This): This;
+fn .rem(rhs: This): This;
+
+fn .eq(rhs: This): Bool;
+fn .ne(rhs: This): Bool;
+fn .lt(rhs: This): Bool;
+fn .gt(rhs: This): Bool;
+fn .le(rhs: This): Bool;
+fn .ge(rhs: This): Bool;

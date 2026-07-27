@@ -11,22 +11,22 @@ from .parse import ParseError, error_message, parse
 PRELUDE = str(Path(__file__).resolve().parents[2] / "lib/prelude.moss")
 
 
-def run(path: str) -> int:
+def run(path: str, args: list) -> int:
     program = collect.load(path, prelude=PRELUDE)
     lower = Lower(program)
     lower.run()
-    interp.run_main(program, lower)
+    interp.run_main(program, lower, args)
     return 0
 
 
 def main() -> int:
-    if len(sys.argv) != 3 or sys.argv[1] not in ("lex", "parse", "run"):
+    if len(sys.argv) < 3 or sys.argv[1] not in ("lex", "parse", "run"):
         print("usage: python -m mossc {lex|parse|run} FILE", file=sys.stderr)
         return 2
     command, path = sys.argv[1], sys.argv[2]
     try:
         if command == "run":
-            return run(path)
+            return run(path, sys.argv[3:])
         with open(path, encoding="utf-8") as f:
             source = f.read()
         if command == "lex":

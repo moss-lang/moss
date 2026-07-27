@@ -10,7 +10,7 @@ REPO = Path(__file__).resolve().parents[2]
 PRELUDE = str(REPO / "lib/prelude.moss")
 
 
-def run(files, entry="main.moss"):
+def run(files, entry="main.moss", args=None):
     """Run a program given as {path: source}; lib/ comes from disk."""
 
     def read(path):
@@ -23,7 +23,7 @@ def run(files, entry="main.moss"):
     lower.run()
     out = io.StringIO()
     with redirect_stdout(out):
-        interp.run_main(program, lower)
+        interp.run_main(program, lower, args)
     return out.getvalue()
 
 
@@ -241,6 +241,45 @@ class TestMatch(unittest.TestCase):
             decls="  fn rec(b: Bool): Char { match b { True => rec(False), False => char::r, } }",
         )
         self.assertEqual(run(files), "r")
+
+
+class TestStd(unittest.TestCase):
+    def test_int_methods_and_while(self):
+        files = main_body(
+            "var i: Int = zero;\n"
+            "    let stop = one.add(one).add(one);\n"
+            "    while i.lt(stop) { putchar(char::i); i = i.add(one); }"
+        )
+        self.assertEqual(run(files), "iii")
+
+    def test_char_eq(self):
+        files = main_body(
+            "if char::a.eq(char::a) { putchar(char::y) }\n"
+            "    if char::a.eq(char::b) { putchar(char::n) }"
+        )
+        self.assertEqual(run(files), "y")
+
+    def test_cell(self):
+        files = main_body(
+            "let c = cell_int();\n"
+            "    c.write(one);\n"
+            "    if c.read().eq(one) { putchar(char::c) }"
+        )
+        self.assertEqual(run(files), "c")
+
+    def test_string_arg(self):
+        files = main_body(
+            "let s = first_arg();\n"
+            "    print(s);\n"
+            "    putchar(s.get(zero));\n"
+            "    if s.length().eq(one.add(one)) { putchar(char::exclam) }"
+        )
+        self.assertEqual(run(files, args=["ok"]), "oko!")
+
+    def test_division_by_zero_panics(self):
+        files = main_body("let x = one.div(zero);")
+        with self.assertRaises(interp.MossPanic):
+            run(files)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,10 @@
+import "./string.moss" use String;
+
+type Path;
+
+assume String, Path {
+  val pwd: Path;
+
+  fn .join(name: String): Path;
+  fn .read(): String;
+}

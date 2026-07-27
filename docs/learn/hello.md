@@ -71,7 +71,7 @@ The `fn` keyword declares a function! This is pretty standard. The parentheses `
 
 ```moss
 fn main(): () {
-  println("Hello, world!");
+  putchar(char::m);
 }
 ```
 

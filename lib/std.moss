@@ -1,5 +1,9 @@
 import "./bool.moss" use Bool, False, True;
+import "./cell.moss" use CellInt, cell_int;
 import "./char.moss" use Char, Chars;
+import "./int.moss" use Int, IntOps, zero, one;
+import "./path.moss" use Path, pwd;
+import "./string.moss" use String, first_arg, print;
 
 assume Char {
   fn putchar(c: Char);
@@ -13,4 +17,25 @@ context Std =
   Char,
   Chars,
   putchar,
+
+  Int,
+  zero,
+  one,
+  IntOps,
+
+  String,
+  first_arg,
+  print,
+  String.length,
+  String.get,
+
+  CellInt,
+  cell_int,
+  CellInt.read,
+  CellInt.write,
+
+  Path,
+  pwd,
+  Path.join,
+  Path.read,
 ;

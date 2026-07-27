@@ -21,7 +21,25 @@ class TestNativeTables(unittest.TestCase):
         program = load(str(REPO / "lib/prelude.moss"))
         exports = program.entry.export_names
         self.assertEqual(
-            sorted(exports), ["Bool", "Char", "False", "Std", "True", "putchar"]
+            sorted(exports),
+            [
+                "Bool",
+                "CellInt",
+                "Char",
+                "False",
+                "Int",
+                "Path",
+                "Std",
+                "String",
+                "True",
+                "cell_int",
+                "first_arg",
+                "one",
+                "print",
+                "putchar",
+                "pwd",
+                "zero",
+            ],
         )
         self.assertIn("char", program.entry.export_aliases)
         char = program.entry.export_aliases["char"]

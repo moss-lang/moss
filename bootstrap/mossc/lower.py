@@ -190,12 +190,18 @@ class Lower:
 
     def find_method_decl(self, module: Module, receiver: Symbol, name: str) -> Symbol | None:
         """An abstract attached method on the receiver, or a detached method
-        in scope. TODO: global attached search is deliberately not done."""
+        in scope — falling back to the receiver's home module, so that
+        `CellInt.read` in a context resolves to the `.read` declared next to
+        `CellInt` without the context's module importing it. TODO: global
+        attached search is deliberately not done."""
         for home in (receiver.module, module):
             attached = home.attached.get((id(receiver), name))
             if attached is not None:
                 return attached
-        return module.detached.get(name)
+        found = module.detached.get(name)
+        if found is None:
+            found = receiver.module.detached.get(name)
+        return found
 
     def merge(self, table: dict, module: Module, key, value):
         # TODO(D43): unify atoms instead of requiring equality.

@@ -1,6 +1,8 @@
 # Generated from bootstrap/mossc/native.py; edit CHARS there and
 # regenerate with: python3 -c 'from mossc.native import gen_char_moss; print(gen_char_moss(), end="")'
 
+import "./num.moss" use .eq, .ne;
+
 type Char;
 
 assume Char {
@@ -104,6 +106,8 @@ assume Char {
   val tilde: Char;
 
   context Chars =
+    Char.eq,
+    Char.ne,
     a,
     b,
     c,

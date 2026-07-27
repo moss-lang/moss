@@ -61,6 +61,8 @@ def gen_char_moss() -> str:
         "# regenerate with: python3 -c 'from mossc.native import gen_char_moss;"
         " print(gen_char_moss(), end=\"\")'",
         "",
+        'import "./num.moss" use .eq, .ne;',
+        "",
         "type Char;",
         "",
         "assume Char {",
@@ -69,6 +71,8 @@ def gen_char_moss() -> str:
         lines.append(f"  val {name}: Char;")
     lines.append("")
     lines.append("  context Chars =")
+    lines.append("    Char.eq,")
+    lines.append("    Char.ne,")
     for name in CHARS:
         lines.append(f"    {name},")
     lines.append("  ;")

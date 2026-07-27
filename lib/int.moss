@@ -1,0 +1,22 @@
+import "./num.moss" use .add, .sub, .mul, .div, .rem, .eq, .ne, .lt, .gt, .le, .ge;
+
+type Int;
+
+assume Int {
+  val zero: Int;
+  val one: Int;
+
+  context IntOps =
+    Int.add,
+    Int.sub,
+    Int.mul,
+    Int.div,
+    Int.rem,
+    Int.eq,
+    Int.ne,
+    Int.lt,
+    Int.gt,
+    Int.le,
+    Int.ge,
+  ;
+}
