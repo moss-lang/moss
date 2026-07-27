@@ -16,6 +16,11 @@ assume Std {
     bind tree::kids=int_list();
     bind tree::name_ids=int_list();
     bind tree::ref_ids=int_list();
+    bind tree::imp_paths=int_list();
+    bind tree::imp_starts=int_list();
+    bind tree::imp_lens=int_list();
+    bind tree::imp_names=int_list();
+    bind tree::imp_stars=int_list();
     bind intern::ichars=int_list();
     bind intern::istarts=int_list();
     bind intern::ilens=int_list();

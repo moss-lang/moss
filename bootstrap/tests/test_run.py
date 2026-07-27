@@ -662,8 +662,26 @@ class TestSelfHostedParser(unittest.TestCase):
             "context C = A;\n"
         )
         self.assertEqual(
-            self.parse_letters(source), "i./x.moss;uU;tT;a(vv;ff;fg;a(fh;))cC;\n\n\n"
+            self.parse_letters(source), "i./x.moss,A;uU;tT;a(vv;ff;fg;a(fh;))cC;\n\n\n"
         )
+
+    def test_import_names(self):
+        """An import's row records the names it makes visible: the module
+        alias, each use item under its local name, and `*` on its own.
+        `.m` items are detached methods, not names, so they contribute
+        nothing."""
+        cases = {
+            'import "./a.moss";\n': "i./a.moss;\n\n\n",
+            'import "./a.moss" as m;\n': "i./a.moss,m;\n\n\n",
+            'import "./a.moss" use *;\n': "i./a.moss*;\n\n\n",
+            'import "./a.moss" use A, B;\n': "i./a.moss,A,B;\n\n\n",
+            'import "./a.moss" as m use A;\n': "i./a.moss,m,A;\n\n\n",
+            'import "./a.moss" use A as B;\n': "i./a.moss,B;\n\n\n",
+            'import "./a.moss" use .m, .n as .n1;\n': "i./a.moss;\n\n\n",
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(self.parse_letters(source), expected)
 
     def test_junk_marked(self):
         self.assertEqual(self.parse_letters("; unit U;"), "?;uU;\n\n\n")
@@ -689,8 +707,9 @@ class TestSelfHostedParser(unittest.TestCase):
         text = (REPO / "src/parse.moss").read_text(encoding="utf-8")
         self.assertEqual(
             self.parse_letters(text),
-            "i./lex.moss;i./token.moss;i./intern.moss;i./tree.moss;"
-            "a(a(fskip_braces;frefscan_to_semi;fskip_to_semi;"
+            "i./lex.moss,lexer,Token;i./token.moss*;"
+            "i./intern.moss,intern;i./tree.moss,tree;"
+            "a(a(fskip_braces;frefscan_to_semi;fimport_tail;fskip_to_semi;"
             "frefscan_fn;fnamed;fdecls;fput_name;fhas_name;fdump;fdups;"
             "fdeclared;fcontains;fresolve;frun;))\n\n\n",
         )

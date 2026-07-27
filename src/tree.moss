@@ -22,9 +22,19 @@ assume Std {
   # References collected from declaration payloads, as interned name ids.
   val ref_ids: IntList;
 
+  # One row per import: the interned path, the names it brings into scope
+  # (a span into `imp_names`), and whether it was `use *`.
+  val imp_paths: IntList;
+  val imp_starts: IntList;
+  val imp_lens: IntList;
+  val imp_names: IntList;
+  val imp_stars: IntList;
+
   # Names are interned ids, never spans: a node outlives the source it was
   # parsed from, so it cannot point into it.
-  context Tree = kinds, starts, lens, kids, name_ids, ref_ids;
+  context Tree =
+    kinds, starts, lens, kids, name_ids, ref_ids,
+    imp_paths, imp_starts, imp_lens, imp_names, imp_stars;
 
   assume Tree {
     fn node(kind: Int, start: Int, len: Int, nid: Int): Int {
@@ -41,14 +51,64 @@ assume Std {
     }
 
     # An import declares no name of its own (`nid` is the empty name, so
-    # it stays out of duplicate and resolution checks), and parks its
-    # interned path in the `start` slot that only assume nodes use.
-    fn import_node(path: Int, nid: Int): Int {
-      node(k_import(), path, zero, nid)
+    # it stays out of duplicate and resolution checks), and parks its row
+    # index in the `start` slot that only assume nodes use.
+    fn import_node(ix: Int, nid: Int): Int {
+      node(k_import(), ix, zero, nid)
     }
 
-    fn import_path_of(id: Int): Int {
+    fn import_index_of(id: Int): Int {
       starts.get(id)
+    }
+
+    # Start an import row. Its names accumulate at the end of `imp_names`,
+    # so a row has to be finished before the next one starts — which the
+    # parser does, since imports are parsed one at a time.
+    fn begin_import(path: Int): Int {
+      let ix = imp_paths.length();
+      imp_paths.push(path);
+      imp_starts.push(imp_names.length());
+      imp_lens.push(zero);
+      imp_stars.push(zero);
+      ix
+    }
+
+    fn import_add(ix: Int, nid: Int) {
+      imp_names.push(nid);
+      imp_lens.set(ix, imp_lens.get(ix).add(one));
+    }
+
+    # `A as B` names B locally, so B replaces the A just recorded.
+    fn import_rename(ix: Int, nid: Int) {
+      if imp_lens.get(ix).gt(zero) {
+        imp_names.set(imp_names.length().sub(one), nid);
+      } else {
+        import_add(ix, nid);
+      }
+    }
+
+    fn import_star_set(ix: Int) {
+      imp_stars.set(ix, one);
+    }
+
+    fn import_count(): Int {
+      imp_paths.length()
+    }
+
+    fn import_path(ix: Int): Int {
+      imp_paths.get(ix)
+    }
+
+    fn import_star(ix: Int): Bool {
+      imp_stars.get(ix).eq(one)
+    }
+
+    fn import_name_count(ix: Int): Int {
+      imp_lens.get(ix)
+    }
+
+    fn import_name_at(ix: Int, i: Int): Int {
+      imp_names.get(imp_starts.get(ix).add(i))
     }
 
     fn kind_of(id: Int): Int {
