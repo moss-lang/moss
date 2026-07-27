@@ -2,6 +2,7 @@ import "./bool.moss" use Bool, False, True;
 import "./cell.moss" use CellInt, cell_int;
 import "./char.moss" use Char, Chars;
 import "./int.moss" use Int, IntOps, zero, one;
+import "./list.moss" use IntList, int_list;
 import "./num.moss" use .not;
 import "./path.moss" use Path, pwd;
 import "./string.moss" use String, first_arg, print;
@@ -35,6 +36,13 @@ context Std =
   cell_int,
   CellInt.read,
   CellInt.write,
+
+  IntList,
+  int_list,
+  IntList.push,
+  IntList.get,
+  IntList.set,
+  IntList.length,
 
   Path,
   pwd,

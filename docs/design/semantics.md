@@ -638,6 +638,17 @@ welcome, but elimination is never implicit semantics. The bootstrap
 interpreter happens to contain a tail-call trampoline — that is a
 non-semantic implementation detail that code must not rely on.
 
+**[D51] FINDING (generic containers vs method keys), for the designer's
+queue.** A method key is (receiver symbol, method), so a *generic*
+container hits the [D47] wall from the other side: `IsList[T=Int]` and
+`IsList[T=Char]` in one scope would merge their `List.push` keys and
+collapse `Int` with `Char`. Truly generic containers need keys carrying
+the full type identity (symbol *plus* static args) — a real design
+extension, deferred. The bootstrap's answer, which also matches the
+data-oriented arena architecture the self-hosted compiler wants anyway:
+concrete typed containers (`Std` ships `IntList`; ids into typed arenas
+are the idiom, and ids are `Int`s).
+
 **[D45] DECIDED (nominal `Bool` as a lang item; revised).** Confirmed by
 the designer as the easiest way for `if` to work, then refined by them to
 kill the [D47] wrinkle: `Bool` is *nominal over* the sum

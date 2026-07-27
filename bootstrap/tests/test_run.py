@@ -490,3 +490,22 @@ class TestMerging(unittest.TestCase):
             "    roundtrip();", "    bind b=char::b;\n    roundtrip();"
         )
         self.assertEqual(run(files), "")
+
+
+class TestIntList(unittest.TestCase):
+    def test_push_get_set_length(self):
+        files = main_body(
+            "let xs = int_list();\n"
+            "    xs.push(one);\n"
+            "    xs.push(one.add(one));\n"
+            "    if xs.length().eq(one.add(one)) { putchar(char::n) }\n"
+            "    if xs.get(one).eq(one.add(one)) { putchar(char::g) }\n"
+            "    xs.set(zero, zero);\n"
+            "    if xs.get(zero).eq(zero) { putchar(char::s) }"
+        )
+        self.assertEqual(run(files), "ngs")
+
+    def test_out_of_range_panics(self):
+        files = main_body("let xs = int_list(); xs.get(zero);")
+        with self.assertRaises(interp.MossPanic):
+            run(files)

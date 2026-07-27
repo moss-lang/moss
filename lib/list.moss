@@ -1,0 +1,17 @@
+import "./int.moss" use Int;
+
+# A growable list of Int. Concrete on purpose: method keys are
+# (receiver symbol, method), so a generic List could be provided at only
+# one element type per scope — see D51 in docs/design/semantics.md. Ids
+# into typed arenas are the intended idiom, and those are Ints.
+
+type IntList;
+
+assume Int, IntList {
+  fn int_list(): IntList;
+
+  fn .push(value: Int);
+  fn .get(index: Int): Int;
+  fn .set(index: Int, value: Int);
+  fn .length(): Int;
+}

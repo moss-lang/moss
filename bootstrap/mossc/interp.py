@@ -58,6 +58,11 @@ class CellVal:
     value: object
 
 
+@dataclass(eq=False)
+class ListVal:
+    items: list
+
+
 @dataclass(frozen=True)
 class Closure:
     fn: ir.FnIR
@@ -263,7 +268,7 @@ def native_env(program: Program, args: list | None = None) -> dict:
     args = args or []
     lib = {}
     for module in program.modules.values():
-        for name in ("std", "char", "bool", "num", "int", "string", "cell", "path"):
+        for name in ("std", "char", "bool", "num", "int", "string", "cell", "path", "list"):
             if module.path.endswith(f"lib/{name}.moss"):
                 lib[name] = module
     if "bool" in lib:
@@ -393,6 +398,34 @@ def native_env(program: Program, args: list | None = None) -> dict:
 
         env[(cell_ty, cell.detached["read"])] = native(read)
         env[(cell_ty, cell.detached["write"])] = native(write)
+    if "list" in lib:
+        lst = lib["list"]
+        list_ty = lst.names["IntList"]
+        env[lst.names["int_list"]] = native(lambda a, this: ListVal([]))
+
+        def list_push(a, this):
+            this.items.append(a[0])
+            return UNIT
+
+        def list_index(a, this):
+            index = a[0].value
+            if not 0 <= index < len(this.items):
+                raise MossPanic(f"IntList index {index} out of range")
+            return index
+
+        env[(list_ty, lst.detached["push"])] = native(list_push)
+        env[(list_ty, lst.detached["get"])] = native(
+            lambda a, this: this.items[list_index(a, this)]
+        )
+
+        def list_set(a, this):
+            this.items[list_index(a, this)] = a[1]
+            return UNIT
+
+        env[(list_ty, lst.detached["set"])] = native(list_set)
+        env[(list_ty, lst.detached["length"])] = native(
+            lambda a, this: IntVal(len(this.items))
+        )
     if "path" in lib:
         import os
 
