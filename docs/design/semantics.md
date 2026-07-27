@@ -37,6 +37,11 @@ detached method because `::` binds more tightly than `.`. The log is now
 settled enough to build against; subsequent work happens in
 `docs/reference/` and the bootstrap compiler.
 
+**Revision 7** adds [D52], the designer's ruling that `Wasi` — not `Std` —
+is the primitive context, and corrects [D48]: the self-hosted compiler
+does not need a string literal to find its prelude, it needs a way to
+reach `argv`.
+
 **Revision 5 onward** is incremental: decision points appended as
 implementation forces them, PROPOSED until the designer reacts. So far:
 [D45] (concrete `Bool`), [D46] (module aliases export), [D47] (a finding:
@@ -626,20 +631,50 @@ Identifier handling doesn't need literals either (slices plus a native
 while yet; the pressure to revisit it will come from diagnostics and
 codegen, not from the lexer or parser. Decision deferred until it bites.
 
-Rev 7 adds one concrete bite, the first that is not cosmetic. The
-self-hosted collect (`src/collect.moss`) loads a module graph by reading
-the paths written in `import` declarations, which it gets as slices of the
-importing file's source — no literal needed. But the *prelude* is imported
-by no one: it is the compiler's own knowledge of where its standard
-library lives, and naming it requires a string the compiler holds itself.
-Today the self-hosted collect therefore reports prelude names (`Int`,
-`Bool`, `IntList`, ...) as unresolved in every module that relies on the
-implicit import. The workarounds are (a) string literals, (b) a native
-that hands the compiler its own library path, or (c) passing the path in
-as a second command-line argument, which needs an argv accessor beyond
-`first_arg`. This is a designer decision — it is really "how does a Moss
-program name a thing outside itself?" — and it is now the blocking
-question for the self-hosted front end, not a hypothetical one.
+Rev 7 first claimed a concrete bite here and was wrong about it. The
+self-hosted collect (`src/collect.moss`) loads a module graph from the
+paths written in `import` declarations, which it slices out of the
+importing file's source — no literal needed. It cannot yet see the
+*prelude*, which nobody imports; rev 7 concluded that naming the prelude
+needs a string the compiler holds itself. It does not. A path is data the
+environment hands the program: `argv[0]` (the old Rust compiler's
+`get_lib_dir` derived `../lib` from it) or an explicit path argument both
+arrive as runtime Strings. The real obstacle is that Moss has no way to
+*reach* argv beyond `first_arg`, which is [D52], not this. What still
+argues for literals is codegen — a Wasm emitter must write
+`"wasi_snapshot_preview1"`, `"fd_write"` and `"_start"` into its output —
+and diagnostics. Both are further off. Still deferred.
+
+**[D52] DECIDED by the designer (`Wasi` is the primitive context; `Std` is
+a library over it).** [D38] made `Std` primitive: the bootstrap provides it
+natively, and [D39] says `main` may assume a subset of it. The designer's
+ruling generalizes that. What `main` actually receives is the whole `Wasi`
+context; `Std` is an ordinary Moss library built on top of it, reached
+through a language-provided convenience bridge. Typical programs go
+through the bridge. **The compiler does not**: it starts from raw `Wasi`
+and defines its own abstractions, so it is free to do whatever it needs —
+read `argv[0]`, open files, manage its own memory — without asking `Std`
+to grow a feature per need.
+
+The declarations already exist and predate this branch: `src/wasip1.moss`
+covers the preview-1 surface and bundles it as `context Wasi`,
+`src/wasm.moss` declares `I32`/`I64` with the memory instructions. Nothing
+*provides* either, which is the whole of the current gap: the interpreter's
+native table answers only `Std` keys and `run_main` rejects anything else,
+so `assume Wasi { fn main() ... }` fails at link.
+
+Consequences to work through when it lands. In the Wasm backend providing
+`Wasi` is nearly free — these *are* the imports and instructions, reached
+by the same use-site machinery that already turns `Int.add` into `i32.add`
+— but the import section has to stop being three hardcoded entries. In the
+interpreter it is a real lift: emulated linear memory and a descriptor
+table, which is the abstract-interpreter direction anyway. The backend's
+existing shims *are* the bridge already, written in Python — `first_arg` is
+`args_sizes_get`+`args_get`, `print` is `fd_write`, `String` is
+`[len|bytes]` over a bump allocator — so writing them in Moss is what
+retires them, and with them the `Std`-side natives rev 7 added
+(`StrList`, `String.concat`, `String.slice`). [D39] restates as: `main`
+may assume a subset of the *primitive* context.
 
 **[D49] DECIDED (no automatic tail-call elimination).** Rev 5 proposed
 guaranteeing proper tail calls after deep tail recursion in `src/lex.moss`
@@ -971,7 +1006,7 @@ decisions above are confirmed.
 
 Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
-unavoidable) · methods on union-headed *aliases* in general ([D47] — solved
+unavoidable — *not* the prelude path, see [D52]) · methods on union-headed *aliases* in general ([D47] — solved
 for `Bool` by [D45]'s nominal wrapper) · D29 the `val` half of functors ·
 [D50]'s v0 restrictions on defined vals
 
@@ -982,7 +1017,7 @@ absent, D24 dropped, D30 depth backstop as sole D16 exception, D31/D35 no
 methods via Q1–Q7, D41 keep `unit`, D43 consistent merging, D44 import
 collisions + `::` tighter than `.`, D45 concrete `Bool`, D46 aliases
 export, D47 operators are methods, D49 no automatic TCE — loops are the
-idiom)
+idiom, D52 `Wasi` primitive with `Std` a library over it)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
