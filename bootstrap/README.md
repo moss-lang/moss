@@ -21,7 +21,12 @@ the pipeline in [`docs/design/semantics.md`](../docs/design/semantics.md)
    diagnostics that keep hello.md's scope/context error distinction —
    working
 
-Later, a monomorphizing Wasm backend replaces stage 5.
+Stage 5's swap-out has begun: [`mossc/build.py`](mossc/build.py)
+compiles the scalar subset (chars/ints/bools as i32, vals as hidden
+parameters, `putchar` as an fd_write shim) of the same IR to a WASI
+module — `python3 -m mossc build FILE | wasmtime -` runs every example
+with output identical to the interpreter's. Records, tags, match,
+strings, and fn binds are the next slices.
 
 Status highlights: all seven runnable `examples/` match their goldens;
 `tests/errors/` are golden-checked diagnostics; and the self-hosted lexer
@@ -36,6 +41,7 @@ recognized by a character trie (no string literals needed — D48).
 python3 -m mossc lex ../src/token.moss     # token dump
 python3 -m mossc parse ../src/wasm.moss    # AST dump
 python3 -m mossc run ../examples/hello.moss
+python3 -m mossc build ../examples/hello.moss > hello.wasm  # then: wasmtime hello.wasm
 ```
 
 (Run from this directory, or set `PYTHONPATH` to it.)
