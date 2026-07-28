@@ -32,11 +32,6 @@ assume Std {
   fn n127(): Int { hex(n7(), n15()) }
   fn n128(): Int { n127().add(one) }
   fn n64(): Int { hex(n4(), zero) }
-  fn n255(): Int { hex(n15(), n15()) }
-
-  fn push_byte(buf: IntList, b: Int) {
-    buf.push(b.and(n255()));
-  }
 
   fn push_char(buf: IntList, c: Char) {
     buf.push(c.code());
@@ -96,12 +91,6 @@ assume Std {
         buf.push(low.add(n128()));
       }
     }
-  }
-
-  # A Wasm `vec` of raw bytes: the count, then the bytes.
-  fn push_vec(dst: IntList, count: Int, src: IntList) {
-    uleb(dst, count);
-    push_bytes(dst, src);
   }
 
   # Decimal, for the dumps the stages are checked against.

@@ -384,7 +384,7 @@ assume Std {
     # its values, which may be several below the bind, so they are
     # threaded down.
     fn val_slots(out: IntList, sym: Int, env: Int, depth: Int) {
-      if depth.gt(hex(two_(), zero)) {
+      if depth.gt(hex(n2(), zero)) {
         cg_error(c_unsupported(), ast::none());
         return ();
       }
@@ -409,8 +409,6 @@ assume Std {
         i = i.add(one);
       }
     }
-
-    fn two_(): Int { n2() }
 
     # The environment a callee is compiled in: its own bindings, taken
     # from this frame. Built by walking the callee's base environment
@@ -1792,31 +1790,6 @@ assume Std {
         return ty_none();
       }
       types::member_payload(member)
-    }
-
-    # The val a `bind` item provides, or none for the kinds this back end
-    # does not compile yet — a functor application (no `=`), a method
-    # bind, or a type or fn bind. Both passes ask this, so both agree on
-    # which items own a local.
-    fn bind_val_sym(item: Int, m: Int): Int {
-      if ast::is_some(ast::b_of(item)).not() {
-        return ast::none();
-      }
-      let spec = ast::a_of(item);
-      if ast::is_some(ast::b_of(spec)) {
-        return ast::none();
-      }
-      if ast::is_some(ast::a_of(spec)).not() {
-        return ast::none();
-      }
-      let sym = prog::resolve_path(m, ast::a_of(spec));
-      if ast::is_some(sym).not() {
-        return ast::none();
-      }
-      if prog::sym_kind.get(sym).ne(prog::sk_val()) {
-        return ast::none();
-      }
-      sym
     }
 
     # A bind statement is walked three times — once to discover what it

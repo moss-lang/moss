@@ -77,10 +77,10 @@ assume Wasm, Branch {
   # '/' written into scratch that nothing else is using at the time.
   fn slash_byte(): I32 {
     let at = twenty_four();
-    w::i32_store8(at, w::i32_or(w::i32_shl(w::i32_one, five_()), fifteen()));
+    w::i32_store8(at, w::i32_or(w::i32_shl(w::i32_one, five()), fifteen()));
     at
   }
-  fn five_(): I32 { w::i32_add(four(), w::i32_one) }
+  fn five(): I32 { w::i32_add(four(), w::i32_one) }
   fn fifteen(): I32 { w::i32_sub(sixteen(), w::i32_one) }
   fn twenty_eight(): I32 { w::i32_add(twenty_four(), four()) }
 

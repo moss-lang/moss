@@ -148,12 +148,9 @@ assume Std {
       }
     }
 
-    # A run in `kids`: mark where it starts, push its members, and the
-    # length is how far the arena moved. Runs nest, so a caller collects
-    # its members elsewhere first — `int_list()` for a scratch list —
-    # and commits them in one go.
-    fn kid_mark(): Int { kids.length() }
-
+    # A run in `kids`. Runs nest, so a caller collects its members
+    # elsewhere first — `int_list()` for a scratch list — and commits
+    # them in one go.
     fn commit(xs: IntList): Int {
       let start = kids.length();
       var i = zero;
@@ -185,8 +182,6 @@ assume Std {
 
     # The name a path resolves against: its last segment.
     fn path_last(p: Int): Int { path_at(p, plen.get(p).sub(one)) }
-
-    fn path_head(p: Int): Int { path_at(p, zero) }
 
     # Declarations with more operands than a node has slots keep them in
     # `kids`; these name the offsets so the layout is written once.

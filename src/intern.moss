@@ -96,10 +96,6 @@ assume Std {
       ibuckets.set(b, id);
     }
 
-    fn name_len(id: Int): Int {
-      ilens.get(id)
-    }
-
     # Write an interned name back out.
     fn put(id: Int) {
       let base = istarts.get(id);

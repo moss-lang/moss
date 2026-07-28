@@ -37,13 +37,6 @@ def _number(value: int) -> str:
 # its imports and exports, and the handful it must recognize by spelling.
 SPELLED = [
     "wasi_snapshot_preview1",
-    "fd_write",
-    "fd_read",
-    "fd_close",
-    "args_get",
-    "args_sizes_get",
-    "path_open",
-    "proc_exit",
     "_start",
     "memory",
     "main",

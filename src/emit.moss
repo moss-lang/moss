@@ -4,7 +4,7 @@ import "./spell.moss" use *;
 # The Wasm module emitter, self-hosted.
 #
 # A module under construction is a set of parallel arenas, one run per
-# kind of index space, exactly as `tree.moss` holds the AST: function
+# kind of index space, exactly as `ast.moss` holds the AST: function
 # types, imported functions, defined functions with their bodies in one
 # flat instruction arena, and exports. `module` walks them once and lays
 # out the binary.

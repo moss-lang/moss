@@ -7,7 +7,6 @@ import "../../lib/wasip1.moss" use Wasi;
 import "../../src/bytes.moss" use *;
 import "../../src/emit.moss" as emit;
 import "../../src/insn.moss" use *;
-import "../../src/spell.moss" use *;
 
 # The self-hosted back end's encoder, exercised end to end: this program
 # writes a WASI module to standard output, and that module prints
@@ -86,8 +85,17 @@ assume Std {
 
     fn build() {
       emit::mem_pages.write(one);
+      # "fd_write", spelled here: the compiler interns its import names
+      # out of the source it reads, so spell.moss no longer holds this.
       let field = int_list();
-      sp_fd_write(field);
+      push_char(field, char::f);
+      push_char(field, char::d);
+      push_char(field, char::underscore);
+      push_char(field, char::w);
+      push_char(field, char::r);
+      push_char(field, char::i);
+      push_char(field, char::t);
+      push_char(field, char::e);
       let fd_write = emit::wasi_import(field, n4());
       let start = emit::add_func(emit::type_i32(zero));
       emit::export_start(start);

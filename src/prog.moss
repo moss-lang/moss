@@ -371,13 +371,6 @@ assume Std {
       push_entry(m, ns, name, to, pub);
     }
 
-    fn publish(m: Int, ns: Int, name: Int) {
-      let e = find_entry(m, ns, name, false);
-      if ast::is_some(e) {
-        ent_pub.set(e, one);
-      }
-    }
-
     # Symbols.
 
     fn add_symbol(m: Int, name: Int, kind: Int, decl: Int, recv: Int, asm: Int, nasm: Int): Int {

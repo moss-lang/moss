@@ -3,13 +3,14 @@ import "./bytes.moss" use *;
 # Wasm instruction encoding: opcodes as named functions, and the handful
 # of instructions that carry an immediate.
 #
-# Only the instructions the back end selects are named here. The full
-# opcode space is in the specification; adding one is a line.
+# Only the instructions the back end selects by name are here — the
+# `Wasm` intrinsics encode through `op_mem` and the wasmops table, so
+# their opcodes never need names. The full opcode space is in the
+# specification; adding one is a line.
 
 assume Std {
   # Control.
   fn op_unreachable(buf: IntList) { buf.push(zero); }
-  fn op_nop(buf: IntList) { buf.push(one); }
   fn op_end(buf: IntList) { buf.push(hex(zero, n11())); }
   fn op_else(buf: IntList) { buf.push(n5()); }
   fn op_return(buf: IntList) { buf.push(hex(zero, n15())); }
@@ -20,7 +21,6 @@ assume Std {
 
   fn op_block(buf: IntList, bt: Int) { buf.push(n2()); buf.push(bt); }
   fn op_loop(buf: IntList, bt: Int) { buf.push(n3()); buf.push(bt); }
-  fn op_if(buf: IntList, bt: Int) { buf.push(n4()); buf.push(bt); }
 
   fn op_br(buf: IntList, depth: Int) {
     buf.push(hex(zero, n12()));
@@ -48,21 +48,9 @@ assume Std {
     uleb(buf, i);
   }
 
-  fn op_local_tee(buf: IntList, i: Int) {
-    buf.push(hex(n2(), n2()));
-    uleb(buf, i);
-  }
-
   # Constants.
   fn op_i32_const(buf: IntList, v: Int) {
     buf.push(hex(n4(), one));
-    sleb(buf, v);
-  }
-
-  # Only the small i64 constants the back end needs; a wider one would
-  # need arithmetic this compiler's Int cannot do.
-  fn op_i64_const(buf: IntList, v: Int) {
-    buf.push(hex(n4(), n2()));
     sleb(buf, v);
   }
 
@@ -74,35 +62,10 @@ assume Std {
     uleb(buf, zero);
   }
 
-  fn op_i32_load(buf: IntList) { op_mem(buf, hex(n2(), n8()), n2()); }
-  fn op_i64_load(buf: IntList) { op_mem(buf, hex(n2(), n9()), n3()); }
-  fn op_i32_load8_s(buf: IntList) { op_mem(buf, hex(n2(), n12()), zero); }
-  fn op_i32_load8_u(buf: IntList) { op_mem(buf, hex(n2(), n13()), zero); }
-  fn op_i32_load16_s(buf: IntList) { op_mem(buf, hex(n2(), n14()), one); }
-  fn op_i32_load16_u(buf: IntList) { op_mem(buf, hex(n2(), n15()), one); }
-  fn op_i64_load8_s(buf: IntList) { op_mem(buf, hex(n3(), zero), zero); }
-  fn op_i64_load8_u(buf: IntList) { op_mem(buf, hex(n3(), one), zero); }
-  fn op_i64_load16_s(buf: IntList) { op_mem(buf, hex(n3(), n2()), one); }
-  fn op_i64_load16_u(buf: IntList) { op_mem(buf, hex(n3(), n3()), one); }
-  fn op_i64_load32_s(buf: IntList) { op_mem(buf, hex(n3(), n4()), n2()); }
-  fn op_i64_load32_u(buf: IntList) { op_mem(buf, hex(n3(), n5()), n2()); }
   fn op_i32_store(buf: IntList) { op_mem(buf, hex(n3(), n6()), n2()); }
-  fn op_i64_store(buf: IntList) { op_mem(buf, hex(n3(), n7()), n3()); }
+  # Selected by no code path of the compiler's own; tests/wasi/emit.moss
+  # builds a module with it.
   fn op_i32_store8(buf: IntList) { op_mem(buf, hex(n3(), n10()), zero); }
-  fn op_i32_store16(buf: IntList) { op_mem(buf, hex(n3(), n11()), one); }
-  fn op_i64_store8(buf: IntList) { op_mem(buf, hex(n3(), n12()), zero); }
-  fn op_i64_store16(buf: IntList) { op_mem(buf, hex(n3(), n13()), one); }
-  fn op_i64_store32(buf: IntList) { op_mem(buf, hex(n3(), n14()), n2()); }
-
-  fn op_memory_size(buf: IntList) {
-    buf.push(hex(n3(), n15()));
-    buf.push(zero);
-  }
-
-  fn op_memory_grow(buf: IntList) {
-    buf.push(hex(n4(), zero));
-    buf.push(zero);
-  }
 
   fn op_memory_copy(buf: IntList) {
     buf.push(hex(n15(), n12()));
