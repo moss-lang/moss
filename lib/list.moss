@@ -1,17 +1,19 @@
+import "./access.moss" use .get, .length, .push;
 import "./int.moss" use Int;
 
 # A growable list of Int: the native backing store. Generic list
 # interfaces (IsList-style) instantiate at a unique receiver type per use
 # and delegate to this — see D51 in docs/design/semantics.md. Ids into
 # typed arenas are the intended idiom, and those are Ints.
+#
+# `.get`, `.length` and `.push` are the shared accessors of access.moss,
+# provided here at `IntList` with `Elem=Int` (D61); `.set` is this
+# module's own, since nothing else has one.
 
 type IntList;
 
 assume Int, IntList {
   fn int_list(): IntList;
 
-  fn .push(value: Int);
-  fn .get(index: Int): Int;
   fn .set(index: Int, value: Int);
-  fn .length(): Int;
 }

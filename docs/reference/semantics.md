@@ -102,7 +102,11 @@ the substitutions in force — nothing is inferred from a bind, ever — and
 whose own requirements are satisfied and captured at the bind site. Method
 binds (`bind Horn.loud=Horn.blast;`) provide a detached method at a
 receiver type; an attached method is the provider that can see the receiver
-as `this`.
+as `this`. A method bind may carry a bracket application
+(`bind IntList.get[Elem=Int]=Ints.get;`), which is how a method declared
+once for several receivers is provided at one of them: the bindings
+interpret the abstract signature the provider is matched against, and they
+apply to that bind alone. No other kind of bind takes one.
 
 Calling a defined function requires each of its needs to be available at
 the call site by key. Since a bound symbol may be known to the callee under

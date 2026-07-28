@@ -1,7 +1,12 @@
+import "./access.moss" use .get, .length;
 import "./char.moss" use Char;
 import "./int.moss" use Int;
 
 type String;
+
+# `.get` and `.length` are the shared accessors of access.moss, provided
+# here at `String` with `Elem=Char` (D61). `.concat` and `.slice` are this
+# module's own.
 
 assume String {
   assume Int {
@@ -20,14 +25,8 @@ assume String {
   fn .concat(other: String): String;
 
   assume Int {
-    fn .length(): Int;
-
     # A fresh String holding `len` characters from `start`. Indices are
     # the same ones `.get` and `.length` use.
     fn .slice(start: Int, len: Int): String;
-
-    assume Char {
-      fn .get(index: Int): Char;
-    }
   }
 }

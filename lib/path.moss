@@ -1,10 +1,14 @@
+import "./access.moss" use .read;
 import "./string.moss" use String;
 
 type Path;
+
+# `.read` is the shared accessor of access.moss, provided here at `Path`
+# with `Elem=String` — the same symbol `CellInt.read` provides at its own
+# receiver (D61); `.join` is this module's own.
 
 assume String, Path {
   val pwd: Path;
 
   fn .join(name: String): Path;
-  fn .read(): String;
 }

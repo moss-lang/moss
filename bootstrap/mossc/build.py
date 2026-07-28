@@ -258,7 +258,7 @@ class Backend:
         self.unit_codes: dict[int, int] = {}
         self.lib = {}
         for module in program.modules.values():
-            for short in ("bool", "num", "char", "int", "std", "string",
+            for short in ("access", "bool", "num", "char", "int", "std", "string",
                           "strlist", "cell", "list", "wasm", "wasip1", "path",
                           "wasistd"):
                 if module.path.endswith(f"lib/{short}.moss"):
@@ -1276,7 +1276,14 @@ class FnCompiler:
         if isinstance(key, tuple):
             receiver, method = key
             short = method.name.lstrip(".")
-            if "num" in self.b.lib and method.module is self.b.lib["num"]:
+            # Which native container a shim is for: normally the module
+            # that declares the method, but `.get`/`.length`/`.push`/`.read`
+            # are declared once in access.moss and provided at several
+            # receivers (D61), so there the receiver's home module says.
+            home = method.module
+            if "access" in self.b.lib and home is self.b.lib["access"]:
+                home = receiver.module
+            if "num" in self.b.lib and home is self.b.lib["num"]:
                 if short == "neg":
                     self.code += I32_CONST + sleb(0)
                     self.expr(node.this)
@@ -1286,11 +1293,11 @@ class FnCompiler:
                     self.expr(node.this)
                     self.code += I32_CONST + sleb(1) + BINOPS["xor"]
                     return
-            if "char" in self.b.lib and method.module is self.b.lib["char"]:
+            if "char" in self.b.lib and home is self.b.lib["char"]:
                 if short in ("code", "char"):
                     self.expr(node.this)  # chars are already their codepoints
                     return
-            if "string" in self.b.lib and method.module is self.b.lib["string"]:
+            if "string" in self.b.lib and home is self.b.lib["string"]:
                 if short == "length":
                     self.expr(node.this)
                     self.code += I32_LOAD + uleb(2) + uleb(0)
@@ -1311,7 +1318,7 @@ class FnCompiler:
                     self.expr(node.args[0])
                     self.code += CALL + uleb(self.b.shim(S_CONCAT))
                     return
-            if "list" in self.b.lib and method.module is self.b.lib["list"]:
+            if "list" in self.b.lib and home is self.b.lib["list"]:
                 if short == "push":
                     self.expr(node.this)
                     self.expr(node.args[0])
@@ -1338,7 +1345,7 @@ class FnCompiler:
                     self.code += I32_STORE + uleb(2) + uleb(8)
                     self.code += I32_CONST + sleb(0)
                     return
-            if "strlist" in self.b.lib and method.module is self.b.lib["strlist"]:
+            if "strlist" in self.b.lib and home is self.b.lib["strlist"]:
                 # A String is a pointer, so a StrList is an IntList.
                 if short == "push":
                     self.expr(node.this)
@@ -1357,7 +1364,7 @@ class FnCompiler:
                     self.code += I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
                     self.code += I32_LOAD + uleb(2) + uleb(8)
                     return
-            if "path" in self.b.lib and method.module is self.b.lib["path"]:
+            if "path" in self.b.lib and home is self.b.lib["path"]:
                 if short == "join":
                     self.expr(node.this)
                     self.expr(node.args[0])
@@ -1367,7 +1374,7 @@ class FnCompiler:
                     self.expr(node.this)
                     self.code += CALL + uleb(self.b.shim(S_READ))
                     return
-            if "cell" in self.b.lib and method.module is self.b.lib["cell"]:
+            if "cell" in self.b.lib and home is self.b.lib["cell"]:
                 if short == "read":
                     self.expr(node.this)
                     self.code += I32_LOAD + uleb(2) + uleb(0)

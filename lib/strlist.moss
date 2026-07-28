@@ -1,19 +1,17 @@
+import "./access.moss" use .get, .length, .push;
 import "./int.moss" use Int;
 import "./string.moss" use String;
 
 # A growable list of String, with the same shape as IntList — in the Wasm
 # backend a String is a pointer, so it is literally the same code — but a
 # distinct nominal type, since a native list cannot be generic (D51). Its
-# `.push`/`.get`/`.length` are its own detached symbols, resolved through
-# this module as the receiver's home, exactly as IntList's and String's
-# same-named methods are.
+# accessors are the shared ones of access.moss, provided here at
+# `StrList` with `Elem=String`: one symbol per accessor, keyed by the
+# receiver, which is what lets one scope name IntList's, String's and
+# this module's at once (D61).
 
 type StrList;
 
 assume Int, String, StrList {
   fn str_list(): StrList;
-
-  fn .push(value: String);
-  fn .get(index: Int): String;
-  fn .length(): Int;
 }

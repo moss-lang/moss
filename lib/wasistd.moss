@@ -1,9 +1,10 @@
 import "./wasm.moss" as w use Wasm, I32;
 import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
   args_sizes_get, args_get, path_open;
-# Detached names are deliberately *not* imported here: `.read` and
-# `.length` each exist in two of these modules, and method lookup
-# falls back to the receiver's home module, which is always right.
+# One declaration per accessor, so importing them here is unambiguous —
+# and `Elem` comes with them, because every provision below names the
+# element type it is providing at (D61).
+import "./access.moss" use Elem, .get, .length, .push, .read;
 import "./path.moss" as path use Path, pwd;
 import "./bool.moss" use Bool, true, false;
 import "./char.moss" as char use Char, Chars, .char;
@@ -39,14 +40,16 @@ context Console =
 
 # Paths, which need i64 for path_open's rights masks (D57, now that D59
 # has made i64 a scalar like any other).
-context Files = Path, pwd, Path.join, Path.read;
+context Files = Path, pwd, Path.join, Path.read[Elem=String];
 
 # The containers, over the library's own allocator rather than the
 # compiler's — which no longer has one (D59).
 context Containers =
-  CellInt, cell_int, CellInt.read, CellInt.write,
-  IntList, int_list, IntList.push, IntList.get, IntList.set, IntList.length,
-  StrList, str_list, StrList.push, StrList.get, StrList.length;
+  CellInt, cell_int, CellInt.read[Elem=Int], CellInt.write,
+  IntList, int_list,
+  IntList.push[Elem=Int], IntList.get[Elem=Int], IntList.set, IntList.length,
+  StrList, str_list,
+  StrList.push[Elem=String], StrList.get[Elem=String], StrList.length;
 
 # The numeric slice. `Int` binds to a nominal wrapper rather than to I32
 # directly, because only an attached method can see its receiver and only
@@ -400,7 +403,7 @@ functor WasiNumerics: Wasm, Branch -> Numerics {
 # a functor is just another bind (D55).
 context Basics =
   Console, Numerics, Int.char, Char.code, arg_count, arg_at,
-  String.length, String.get, String.slice, String.concat;
+  String.length, String.get[Elem=Char], String.slice, String.concat;
 
 functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind WasiConsole;
@@ -409,8 +412,11 @@ functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind Char.code = Chr.code;
   bind string::arg_count = wasi_arg_count;
   bind string::arg_at = wasi_arg_at;
+  # A shared accessor is provided at one receiver at a time, and the
+  # element type comes with the provision (D61). `Char` is already bound
+  # to `Chr` by the application above, so `Elem=Char` means `Chr` here.
   bind String.length = Str.length;
-  bind String.get = Str.get;
+  bind String.get[Elem=Char] = Str.get;
   bind String.slice = Str.slice;
   bind String.concat = Str.concat;
 }
@@ -418,18 +424,18 @@ functor WasiBasics: Wasm, Wasi, Branch -> Basics {
 functor WasiContainers: Wasm, Branch -> Containers {
   bind cell::CellInt = Cell;
   bind cell::cell_int = wasi_cell;
-  bind CellInt.read = Cell.read;
+  bind CellInt.read[Elem=Int] = Cell.read;
   bind CellInt.write = Cell.write;
   bind list::IntList = Ints;
   bind list::int_list = wasi_int_list;
-  bind IntList.push = Ints.push;
-  bind IntList.get = Ints.get;
+  bind IntList.push[Elem=Int] = Ints.push;
+  bind IntList.get[Elem=Int] = Ints.get;
   bind IntList.set = Ints.set;
   bind IntList.length = Ints.length;
   bind strlist::StrList = Strs;
   bind strlist::str_list = wasi_str_list;
-  bind StrList.push = Strs.push;
-  bind StrList.get = Strs.get;
+  bind StrList.push[Elem=String] = Strs.push;
+  bind StrList.get[Elem=String] = Strs.get;
   bind StrList.length = Strs.length;
 }
 
@@ -437,7 +443,7 @@ functor WasiFiles: Wasm, Wasi, Branch -> Files {
   bind path::Path = Loc;
   bind path::pwd = wasi_pwd();
   bind Path.join = Loc.join;
-  bind Path.read = Loc.read;
+  bind Path.read[Elem=String] = Loc.read;
 }
 
 functor WasiConsole: Wasm, Wasi, Branch -> Console {

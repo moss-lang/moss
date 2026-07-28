@@ -1,3 +1,4 @@
+import "./access.moss" use Elem, .get, .length, .push, .read;
 import "./bool.moss" use Bool, False, True;
 import "./cell.moss" use CellInt, cell_int;
 # `.char` is imported by name because it is provided at `Int`, not at
@@ -15,6 +16,9 @@ assume Char {
   fn putchar(c: Char);
 }
 
+# The shared accessors of access.moss carry the element type per receiver
+# (D61): `Elem` is one symbol, applied here once per provision, so the
+# substitutions never meet.
 context Std =
   Bool,
   False,
@@ -41,30 +45,30 @@ context Std =
   arg_at,
   print,
   String.length,
-  String.get,
+  String.get[Elem=Char],
   String.slice,
   String.concat,
 
   StrList,
   str_list,
-  StrList.push,
-  StrList.get,
+  StrList.push[Elem=String],
+  StrList.get[Elem=String],
   StrList.length,
 
   CellInt,
   cell_int,
-  CellInt.read,
+  CellInt.read[Elem=Int],
   CellInt.write,
 
   IntList,
   int_list,
-  IntList.push,
-  IntList.get,
+  IntList.push[Elem=Int],
+  IntList.get[Elem=Int],
   IntList.set,
   IntList.length,
 
   Path,
   pwd,
   Path.join,
-  Path.read,
+  Path.read[Elem=String],
 ;

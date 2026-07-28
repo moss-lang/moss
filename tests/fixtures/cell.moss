@@ -1,12 +1,20 @@
 import "./inner.moss" use T;
 
+# The shared-`T` interface of D51: one pair of detached methods, provided
+# at whatever receiver an application names — the same shape access.moss
+# now takes for the library's own accessors (D61). Spelled `.fetch`
+# and `.stash` rather than `.read`/`.write` because the prelude names
+# every accessor the library has, and a module may not declare a detached
+# name already in its scope (D44); the tests that use these rename them
+# again on the way in, which is the half of D44 they are about.
+
 assume T {
   type Cell;
 
   assume Cell {
-    fn .read(): T;
-    fn .write(x: T);
+    fn .fetch(): T;
+    fn .stash(x: T);
 
-    context IsCell = Cell.read, Cell.write;
+    context IsCell = Cell.fetch, Cell.stash;
   }
 }

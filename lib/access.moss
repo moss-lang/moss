@@ -1,0 +1,35 @@
+import "./int.moss" use Int;
+
+# The four detached accessors every container has in common, declared
+# once. Declaring them per container made each spelling several distinct
+# symbols, and by D44 one scope cannot name two of them — which no import
+# list can rescue, since a compiler calls `.length` on a String and on an
+# IntList in the same breath. See D61 in docs/design/semantics.md.
+#
+# The element type is a requirement, so one declaration serves every
+# receiver; a provision supplies it with a bracket application, which is
+# what an application on a context item is for (D22):
+#
+#     String.get[Elem=Char], IntList.get[Elem=Int], StrList.get[Elem=String]
+#
+# One `Elem` shared across all the receivers, not one per container: the
+# key is (receiver, method), so `String.get` and `IntList.get` are
+# distinct provisions of the same symbol and their substitutions never
+# meet — D51's corrected finding, exactly.
+
+type Elem;
+
+assume Int {
+  fn .length(): Int;
+
+  assume Elem {
+    fn .get(index: Int): Elem;
+  }
+}
+
+assume Elem {
+  fn .push(value: Elem);
+
+  # One value out of a container that holds exactly one: a cell, a file.
+  fn .read(): Elem;
+}

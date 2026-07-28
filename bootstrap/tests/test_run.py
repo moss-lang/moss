@@ -495,11 +495,14 @@ class TestGenerics(unittest.TestCase):
         totally-applied context (IsCell[T=Int, Cell=MyCell]) provides
         detached methods keyed at the *resolved* receiver type, satisfied by
         binds whose providers are attached methods (which can see `this`),
-        with a D44 rename keeping src's .read distinct from Std's."""
+        with a D44 rename: the fixture's `.fetch`/`.stash` are called here
+        under names of this module's choosing, which is the rule a detached
+        method obeys — it does not match on the name it was declared under
+        (D61)."""
         files = {
             "main.moss": (
                 'import "./tests/fixtures/inner.moss" use T;\n'
-                'import "./tests/fixtures/cell.moss" use Cell, IsCell, .read as .cread, .write as .cwrite;\n'
+                'import "./tests/fixtures/cell.moss" use Cell, IsCell, .fetch as .cread, .stash as .cwrite;\n'
                 "\n"
                 "assume Std {\n"
                 "  type MyCell CellInt;\n"
@@ -722,7 +725,7 @@ class TestMultiInstantiation(unittest.TestCase):
         files = {
             "main.moss": (
                 'import "./tests/fixtures/inner.moss" use T;\n'
-                'import "./tests/fixtures/cell.moss" use Cell, IsCell, .read as .cread, .write as .cwrite;\n'
+                'import "./tests/fixtures/cell.moss" use Cell, IsCell, .fetch as .cread, .stash as .cwrite;\n'
                 "\n"
                 "assume Std {\n"
                 "  type CA CellInt;\n"
@@ -988,7 +991,7 @@ class TestSelfHostedCollectScopes(unittest.TestCase):
     the symbols every declaration gets, and the scope each module ends up
     with — names, detached methods, aliases, and attached methods keyed by
     receiver. Compared as a set of (module, namespace, name, target)
-    rows, over the compiler's own sources: 23 modules, 1101 rows."""
+    rows, over the compiler's own sources: 35 modules, 3146 rows."""
 
     def rows_from_bootstrap(self, entry):
         import os

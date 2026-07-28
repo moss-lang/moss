@@ -537,20 +537,26 @@ class Lower:
                     out.append(req)
 
     def app_subst(self, env: Env, module: Module, app: list, outer: dict) -> dict:
+        """Both sides of `[Elem=Char]` are read in `module` — the module the
+        application is *written* in, which for a context's own item list is
+        the module declaring the context, not the one assuming it. The
+        result is a substitution the caller applies locally: it is
+        deliberately not written into `env.tymap`, so one `Elem` can be
+        `Char` at one receiver and `Int` at another (D51/D61)."""
         subst = {}
         for binding in app:
-            target = resolve_path(env.module, binding.path)
+            target = resolve_path(module, binding.path)
             if not isinstance(target, Symbol) or target.kind != SymKind.TYPE:
                 self.error(
-                    env.module,
+                    module,
                     f"`{'::'.join(binding.path)}` in a bracket binding must be an "
                     "abstract type symbol",
                 )
             if binding.spec.dot is not None or binding.spec.path is None:
-                self.error(env.module, "bracket bindings bind types in v0")
+                self.error(module, "bracket bindings bind types in v0")
             ty = self.elab_type(
                 ast.TyRef(binding.spec.path, binding.spec.app),
-                env.module,
+                module,
                 env.tymap | outer,
                 env,
             )
@@ -904,15 +910,23 @@ class FnChecker:
 
     def check_bind(self, spec: ast.Spec, expr: ast.Expr):
         module = self.module
-        if spec.app is not None:
+        if spec.app is not None and spec.dot is None:
             self.error("a bind left-hand side takes no bracket application")
         if spec.dot is not None:
+            # `bind IntList.get[Elem=Int] = Ints.get;` — a shared accessor
+            # is provided at one receiver at a time, and the element type
+            # comes with the provision (D61). The substitution is local to
+            # this bind, so the same symbol can be something else at the
+            # next receiver.
+            tymap = self.env.tymap
+            if spec.app is not None:
+                tymap = tymap | self.lower.app_subst(self.env, module, spec.app, {})
             receiver = self.lower.resolve_type_symbol(self.env, module, spec.path)
             method = self.lower.find_method_decl(module, receiver, spec.dot)
             if method is None:
                 self.error(f"no method `.{spec.dot}` for `{receiver.name}` is in scope")
-            this_ty = self.lower.symbol_type(module, receiver, self.env.tymap, self.env)
-            sig = self.lower.fn_sig(method, self.env.tymap, self.env, this=this_ty)
+            this_ty = self.lower.symbol_type(module, receiver, tymap, self.env)
+            sig = self.lower.fn_sig(method, tymap, self.env, this=this_ty)
             fn_symbol = self.expect_provider(expr, this_ty)
             needs_map = self.match_fn_sig(fn_symbol, sig, kind="method")
             key = (self.lower.canon_head(self.env, module, receiver), method)
