@@ -27,17 +27,17 @@ assume Std {
   fn kind_func(): Int { zero }
   fn kind_mem(): Int { n2() }
 
-  # Function types: `ty_params` and `ty_res` are flat runs of valtype
+  # Function types: `ft_params` and `ft_res` are flat runs of valtype
   # bytes, with a start and a length each. A result list of more than one
   # is the multi-value proposal, which every engine that runs WASI has —
   # and a value of D59 is a run of scalars, so a function returning one
   # returns several results.
-  val ty_params: IntList;
-  val ty_pstart: IntList;
-  val ty_plen: IntList;
-  val ty_res: IntList;
-  val ty_rstart: IntList;
-  val ty_rlen: IntList;
+  val ft_params: IntList;
+  val ft_pstart: IntList;
+  val ft_plen: IntList;
+  val ft_res: IntList;
+  val ft_rstart: IntList;
+  val ft_rlen: IntList;
 
   # Import and export names, one flat byte arena.
   val nchars: IntList;
@@ -66,7 +66,7 @@ assume Std {
   val mem_pages: CellInt;
 
   context Emit =
-    ty_params, ty_pstart, ty_plen, ty_res, ty_rstart, ty_rlen,
+    ft_params, ft_pstart, ft_plen, ft_res, ft_rstart, ft_rlen,
     nchars,
     im_mstart, im_mlen, im_fstart, im_flen, im_type,
     fn_type, fn_l32, fn_l64, fn_bstart, fn_blen, insns,
@@ -78,11 +78,11 @@ assume Std {
     # bytes.
     fn type_index(params: IntList, results: IntList): Int {
       var i = zero;
-      while i.lt(ty_plen.length()) {
-        if ty_plen.get(i).eq(params.length()) {
-          if ty_rlen.get(i).eq(results.length()) {
-            if run_eq(ty_params, ty_pstart.get(i), params) {
-              if run_eq(ty_res, ty_rstart.get(i), results) {
+      while i.lt(ft_plen.length()) {
+        if ft_plen.get(i).eq(params.length()) {
+          if ft_rlen.get(i).eq(results.length()) {
+            if run_eq(ft_params, ft_pstart.get(i), params) {
+              if run_eq(ft_res, ft_rstart.get(i), results) {
                 return i;
               }
             }
@@ -90,13 +90,13 @@ assume Std {
         }
         i = i.add(one);
       }
-      ty_pstart.push(ty_params.length());
-      ty_plen.push(params.length());
-      ty_rstart.push(ty_res.length());
-      ty_rlen.push(results.length());
-      push_bytes(ty_params, params);
-      push_bytes(ty_res, results);
-      ty_plen.length().sub(one)
+      ft_pstart.push(ft_params.length());
+      ft_plen.push(params.length());
+      ft_rstart.push(ft_res.length());
+      ft_rlen.push(results.length());
+      push_bytes(ft_params, params);
+      push_bytes(ft_res, results);
+      ft_plen.length().sub(one)
     }
 
     fn run_eq(arena: IntList, start: Int, want: IntList): Bool {
@@ -208,24 +208,24 @@ assume Std {
     }
 
     fn type_section(out: IntList) {
-      if ty_plen.length().eq(zero) {
+      if ft_plen.length().eq(zero) {
         return ();
       }
       let b = int_list();
-      uleb(b, ty_plen.length());
+      uleb(b, ft_plen.length());
       var i = zero;
-      while i.lt(ty_plen.length()) {
+      while i.lt(ft_plen.length()) {
         b.push(hex(n6(), zero));
-        uleb(b, ty_plen.get(i));
+        uleb(b, ft_plen.get(i));
         var j = zero;
-        while j.lt(ty_plen.get(i)) {
-          b.push(ty_params.get(ty_pstart.get(i).add(j)));
+        while j.lt(ft_plen.get(i)) {
+          b.push(ft_params.get(ft_pstart.get(i).add(j)));
           j = j.add(one);
         }
-        uleb(b, ty_rlen.get(i));
+        uleb(b, ft_rlen.get(i));
         j = zero;
-        while j.lt(ty_rlen.get(i)) {
-          b.push(ty_res.get(ty_rstart.get(i).add(j)));
+        while j.lt(ft_rlen.get(i)) {
+          b.push(ft_res.get(ft_rstart.get(i).add(j)));
           j = j.add(one);
         }
         i = i.add(one);

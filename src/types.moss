@@ -19,11 +19,11 @@ import "./prog.moss" as prog;
 # room for its widest member.
 
 assume Std {
-  fn tk_unit(): Int { zero }
-  fn tk_never(): Int { one }
-  fn tk_nominal(): Int { n2() }
-  fn tk_abstract(): Int { n3() }
-  fn tk_union(): Int { n4() }
+  fn kd_unit(): Int { zero }
+  fn kd_never(): Int { one }
+  fn kd_nominal(): Int { n2() }
+  fn kd_abstract(): Int { n3() }
+  fn kd_union(): Int { n4() }
 
   val ty_kind: IntList;
   val ty_sym: IntList;
@@ -111,14 +111,14 @@ assume Std {
 
     fn ty_unit(): Int {
       if ty_unit_row.read().eq(zero) {
-        ty_unit_row.write(ty_simple(tk_unit()).add(one));
+        ty_unit_row.write(ty_simple(kd_unit()).add(one));
       }
       ty_unit_row.read().sub(one)
     }
 
     fn ty_never(): Int {
       if ty_never_row.read().eq(zero) {
-        ty_never_row.write(ty_simple(tk_never()).add(one));
+        ty_never_row.write(ty_simple(kd_never()).add(one));
       }
       ty_never_row.read().sub(one)
     }
@@ -195,7 +195,7 @@ assume Std {
         if members.length().eq(one) {
           return members.get(zero);
         }
-        return intern_ty(tk_union(), ast::none(), members);
+        return intern_ty(kd_union(), ast::none(), members);
       }
       if k.ne(ast::k_ty_ref()) {
         # A record or a tuple, which this compiler does not lay out.
@@ -224,13 +224,13 @@ assume Std {
         return elab(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
       }
       if kind.eq(prog::sk_unit()) {
-        return ty_of_symbol(tk_nominal(), sym);
+        return ty_of_symbol(kd_nominal(), sym);
       }
       if kind.eq(prog::sk_tag()) {
-        return ty_of_symbol(tk_nominal(), sym);
+        return ty_of_symbol(kd_nominal(), sym);
       }
       if kind.eq(prog::sk_type()) {
-        return ty_of_symbol(tk_abstract(), sym);
+        return ty_of_symbol(kd_abstract(), sym);
       }
       prog::error(prog::e_type(), prog::sym_mod.get(sym), prog::sym_name.get(sym));
       ty_never()
@@ -239,10 +239,10 @@ assume Std {
     # A union's members are deduplicated and flattened, so that
     # `Read | Eof` and an alias naming the same two are one type.
     fn add_member(members: IntList, t: Int) {
-      if is_kind(t, tk_never()) {
+      if is_kind(t, kd_never()) {
         return ();
       }
-      if is_kind(t, tk_union()) {
+      if is_kind(t, kd_union()) {
         var i = zero;
         while i.lt(member_count(t)) {
           add_member(members, member_at(t, i));
@@ -271,7 +271,7 @@ assume Std {
     }
 
     fn is_unit_decl(t: Int): Bool {
-      if is_kind(t, tk_nominal()).not() {
+      if is_kind(t, kd_nominal()).not() {
         false
       } else {
         prog::sym_kind.get(sym_of(t)).eq(prog::sk_unit())
@@ -281,18 +281,18 @@ assume Std {
     # Layout, D59. How many Wasm scalars a value of this type occupies.
     fn width(t: Int): Int {
       let k = kind_of(t);
-      if k.eq(tk_unit()) {
+      if k.eq(kd_unit()) {
         return zero;
       }
-      if k.eq(tk_never()) {
+      if k.eq(kd_never()) {
         return zero;
       }
-      if k.eq(tk_abstract()) {
+      if k.eq(kd_abstract()) {
         # An unbound abstract type has no layout; the environment must
         # substitute before anyone asks.
         return one;
       }
-      if k.eq(tk_nominal()) {
+      if k.eq(kd_nominal()) {
         if is_unit_decl(t) {
           return one;
         }
@@ -332,13 +332,13 @@ assume Std {
       if t.eq(expected) {
         return true;
       }
-      if is_kind(t, tk_never()) {
+      if is_kind(t, kd_never()) {
         return true;
       }
-      if is_kind(expected, tk_union()).not() {
+      if is_kind(expected, kd_union()).not() {
         return false;
       }
-      if is_kind(t, tk_union()) {
+      if is_kind(t, kd_union()) {
         var i = zero;
         while i.lt(member_count(t)) {
           if is_member(member_at(t, i), expected).not() {
@@ -365,9 +365,9 @@ assume Std {
     # Match compilation asks two things of a scrutinee's type: how many
     # heads it could have, and which member carries a given one.
     fn head_count(t: Int): Int {
-      if is_kind(t, tk_union()) {
+      if is_kind(t, kd_union()) {
         member_count(t)
-      } else if is_kind(t, tk_never()) {
+      } else if is_kind(t, kd_never()) {
         zero
       } else {
         one
@@ -375,7 +375,7 @@ assume Std {
     }
 
     fn member_with_head(t: Int, head: Int): Int {
-      if is_kind(t, tk_union()).not() {
+      if is_kind(t, kd_union()).not() {
         if head_of(t).eq(head) {
           return t;
         }
@@ -396,7 +396,7 @@ assume Std {
     fn member_payload(t: Int): Int {
       if is_unit_decl(t) {
         ty_unit()
-      } else if is_kind(t, tk_nominal()) {
+      } else if is_kind(t, kd_nominal()) {
         payload_of(t)
       } else {
         t
@@ -405,9 +405,9 @@ assume Std {
 
     # The head a value discriminates on: a nominal type's own symbol.
     fn head_of(t: Int): Int {
-      if is_kind(t, tk_nominal()) {
+      if is_kind(t, kd_nominal()) {
         sym_of(t)
-      } else if is_kind(t, tk_abstract()) {
+      } else if is_kind(t, kd_abstract()) {
         sym_of(t)
       } else {
         ast::none()

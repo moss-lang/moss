@@ -128,7 +128,7 @@ assume Std {
       var cur = t;
       var fuel = hex(n2(), zero);
       while fuel.gt(zero) {
-        if types::is_kind(cur, types::tk_abstract()).not() {
+        if types::is_kind(cur, types::kd_abstract()).not() {
           return cur;
         }
         let e = env_find(env, ek_type(), ast::none(), types::sym_of(cur));
@@ -302,7 +302,7 @@ assume Std {
           return env;
         }
         return env_push(
-          env, ek_type(), ast::none(), s, types::ty_of_symbol(types::tk_abstract(), s), ast::none()
+          env, ek_type(), ast::none(), s, types::ty_of_symbol(types::kd_abstract(), s), ast::none()
         );
       }
       if kind.eq(prog::sk_val()) {

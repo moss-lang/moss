@@ -186,8 +186,8 @@ assume Std {
       p.slice(cut, p.length().sub(cut))
     }
 
-    fn seg_is(p: String, start: Int, len: Int, want: Int): Bool {
-      if len.ne(want) {
+    fn seg_dots(p: String, start: Int, len: Int, n: Int): Bool {
+      if len.ne(n) {
         return false;
       }
       var i = zero;
@@ -224,12 +224,12 @@ assume Std {
           let len = i.sub(from);
           if len.eq(zero) {
             ()
-          } else if seg_is(joined, from, len, one) {
+          } else if seg_dots(joined, from, len, one) {
             ()
-          } else if seg_is(joined, from, len, n2()) {
+          } else if seg_dots(joined, from, len, n2()) {
             var pop = top.gt(zero);
             if pop {
-              pop = seg_is(joined, starts.get(top.sub(one)), lens.get(top.sub(one)), n2()).not();
+              pop = seg_dots(joined, starts.get(top.sub(one)), lens.get(top.sub(one)), n2()).not();
             }
             if pop {
               top = top.sub(one);

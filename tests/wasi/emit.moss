@@ -17,12 +17,12 @@ import "../../src/insn.moss" use *;
 
 assume Std {
   fn demo() {
-    bind emit::ty_params=int_list();
-    bind emit::ty_pstart=int_list();
-    bind emit::ty_plen=int_list();
-    bind emit::ty_res=int_list();
-    bind emit::ty_rstart=int_list();
-    bind emit::ty_rlen=int_list();
+    bind emit::ft_params=int_list();
+    bind emit::ft_pstart=int_list();
+    bind emit::ft_plen=int_list();
+    bind emit::ft_res=int_list();
+    bind emit::ft_rstart=int_list();
+    bind emit::ft_rlen=int_list();
     bind emit::nchars=int_list();
     bind emit::im_mstart=int_list();
     bind emit::im_mlen=int_list();

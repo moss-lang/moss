@@ -196,19 +196,19 @@ assume Std {
         }
         m = m.add(one);
       }
-      cg_i32.write(wasm_type(sp_which_i32()));
-      cg_i64.write(wasm_type(sp_which_i64()));
+      cg_i32.write(wasm_type(which_i32()));
+      cg_i64.write(wasm_type(which_i64()));
       cg_boolty.write(bool_type());
     }
 
     # `I32` and `I64` are declarations of lib/wasm.moss like any other,
     # so they are found by name in its scope rather than invented.
-    fn sp_which_i32(): Int { zero }
-    fn sp_which_i64(): Int { one }
+    fn which_i32(): Int { zero }
+    fn which_i64(): Int { one }
 
     fn wasm_type(which: Int): Int {
       let cs = spelled();
-      if which.eq(sp_which_i32()) {
+      if which.eq(which_i32()) {
         sp_I32(cs);
       } else {
         sp_I64(cs);
@@ -486,7 +486,7 @@ assume Std {
     # end has to know a type by name, because a valtype is not something
     # the type system models.
     fn is_i64(ty: Int): Bool {
-      if types::is_kind(ty, types::tk_abstract()).not() {
+      if types::is_kind(ty, types::kd_abstract()).not() {
         return false;
       }
       let sym = types::sym_of(ty);
@@ -505,13 +505,13 @@ assume Std {
       if is_i64(ty) {
         return emit::vt_i64();
       }
-      if types::is_kind(ty, types::tk_nominal()) {
+      if types::is_kind(ty, types::kd_nominal()) {
         if types::is_unit_decl(ty) {
           return emit::vt_i32();
         }
         return valtype_at(types::payload_of(ty), i);
       }
-      if types::is_kind(ty, types::tk_union()) {
+      if types::is_kind(ty, types::kd_union()) {
         if i.eq(zero) {
           return emit::vt_i32();
         }
@@ -760,7 +760,7 @@ assume Std {
 
     # Note that this specialization is reached. The queue is drained by a
     # loop rather than by recursion, so it grows while it is walked.
-    fn want(sym: Int, env: Int) {
+    fn reach(sym: Int, env: Int) {
       if ast::is_some(queued(sym, env)) {
         return ();
       }
@@ -773,7 +773,7 @@ assume Std {
     }
 
     # A WASI function is exactly an import of this module (D52).
-    fn want_import(sym: Int) {
+    fn reach_import(sym: Int) {
       if ast::is_some(imported(sym)) {
         return ();
       }
@@ -940,7 +940,7 @@ assume Std {
     # One local if the pattern names something, none otherwise. Mirrors
     # what `bind_pattern` and `emit_match_arm_body` will reveal.
     fn pattern_payload(pat: Int, sty: Int, m: Int): Int {
-      if types::is_kind(sty, types::tk_union()) {
+      if types::is_kind(sty, types::kd_union()) {
         return arm_payload(pat, m, sty);
       }
       types::member_payload(sty)
@@ -1120,7 +1120,7 @@ assume Std {
       }
       emit_expr(body, ast::a_of(e), m);
       emit_args(body, ast::c_of(e), ast::d_of(e), m, param_types(provider));
-      want(provider, penv);
+      reach(provider, penv);
       push_needs(body, provider, penv);
       op_call(body, index_of_fn(provider, penv));
       elab_ty(
@@ -1339,7 +1339,7 @@ assume Std {
       }
       if is_defined_fn(sym) {
         let env = callee_env(sym);
-        want(sym, env);
+        reach(sym, env);
         push_needs(body, sym, env);
         op_call(body, index_of_fn(sym, env));
         return elab_ty(
@@ -1359,7 +1359,7 @@ assume Std {
         }
       }
       if in_wasi(sym) {
-        want_import(sym);
+        reach_import(sym);
         op_call(body, index_of_import(sym));
         return elab_ty(
           ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
@@ -1372,7 +1372,7 @@ assume Std {
     # A call to whatever a bind put here: the arguments are already on
     # the stack, so this is the provider's needs and the call.
     fn emit_provided(body: IntList, provider: Int, penv: Int): Int {
-      want(provider, penv);
+      reach(provider, penv);
       push_needs(body, provider, penv);
       op_call(body, index_of_fn(provider, penv));
       elab_ty(
@@ -2109,7 +2109,7 @@ assume Std {
       # `main` assumes only the primitive context, so it starts empty.
       cg_env.write(lower::env_empty());
       cg_real.write(zero);
-      want(main, lower::env_empty());
+      reach(main, lower::env_empty());
       compile_all();
       # Only now is the function index space fixed: it counts the imports
       # first, and which ones the program calls is what the pass above
