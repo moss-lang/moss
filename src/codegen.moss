@@ -152,18 +152,6 @@ assume Std {
     # Which module is which. `Wasm` and `Wasi` are recognized by the file
     # that declares them, so an ordinary function that happens to be
     # called `i32_add` is still an ordinary function.
-    fn basename(p: String): String {
-      var cut = zero;
-      var i = zero;
-      while i.lt(p.length()) {
-        if p.get(i).eq(char::slash) {
-          cut = i.add(one);
-        }
-        i = i.add(one);
-      }
-      p.slice(cut, p.length().sub(cut))
-    }
-
     fn name_is(s: String, cs: IntList): Bool {
       if s.length().ne(cs.length()) {
         return false;
@@ -193,7 +181,7 @@ assume Std {
       cg_std.write(ast::none());
       var m = zero;
       while m.lt(prog::module_count()) {
-        let base = basename(prog::module_path(m));
+        let base = prog::basename(prog::module_path(m));
         if name_is(base, w) {
           cg_wasm.write(m);
         }
@@ -759,17 +747,24 @@ assume Std {
       ast::none()
     }
 
+    # The first pass is supposed to have reached everything. If this one
+    # finds something new, the two passes disagree, which is a bug here
+    # rather than in the program.
+    fn late(sym: Int): Bool {
+      if cg_real.read().eq(one) {
+        cg_error(c_missing(), prog::sym_name.get(sym));
+        return true;
+      }
+      false
+    }
+
     # Note that this specialization is reached. The queue is drained by a
     # loop rather than by recursion, so it grows while it is walked.
     fn want(sym: Int, env: Int) {
       if ast::is_some(queued(sym, env)) {
         return ();
       }
-      if cg_real.read().eq(one) {
-        # The first pass is supposed to have reached everything. If it
-        # did not, the two passes disagree, which is a bug here rather
-        # than in the program.
-        cg_error(c_missing(), prog::sym_name.get(sym));
+      if late(sym) {
         return ();
       }
       fq_sym.push(sym);
@@ -782,8 +777,7 @@ assume Std {
       if ast::is_some(imported(sym)) {
         return ();
       }
-      if cg_real.read().eq(one) {
-        cg_error(c_missing(), prog::sym_name.get(sym));
+      if late(sym) {
         return ();
       }
       wi_sym.push(sym);
@@ -944,7 +938,7 @@ assume Std {
     }
 
     # One local if the pattern names something, none otherwise. Mirrors
-    # what `bind_pattern` and `emit_arm_body` will reveal.
+    # what `bind_pattern` and `emit_match_arm_body` will reveal.
     fn pattern_payload(pat: Int, sty: Int, m: Int): Int {
       if types::is_kind(sty, types::tk_union()) {
         return arm_payload(pat, m, sty);
@@ -1556,12 +1550,7 @@ assume Std {
       if types::head_count(sty).eq(one) {
         return emit_single_arm(body, e, m, sty, want);
       }
-      if types::all_units(sty) {
-        return emit_unit_match(body, e, m, sty, want);
-      }
-      # A union wider than one scalar: slot zero is the discriminant and
-      # the rest is room for the widest member's payload (D59).
-      emit_wide_match(body, e, m, sty, want)
+      emit_union_match(body, e, m, sty, want)
     }
 
     # One possible head: bind and run the first arm.
@@ -1630,95 +1619,22 @@ assume Std {
       }
     }
 
-    # Every member a unit: the scrutinee is its own discriminant, so the
-    # arms are `if code == k { ... } else ...`, innermost last.
-    fn emit_unit_match(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
+    # A discriminated union: slot zero is the discriminant — for a union
+    # of units it is also the whole value — and any further slots are
+    # room for the widest member's payload (D59). Testing an arm reads
+    # slot zero; taking a payload reads the ones beyond it. One emitter
+    # for both shapes, because the scan pass has one binder walk and the
+    # two must reveal the same locals.
+    fn emit_union_match(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
       let scrutinee = int_list();
       emit_expr(scrutinee, ast::a_of(e), m);
       let tmp = reveal(ast::none());
       push_bytes(body, scrutinee);
       store_local(body, tmp);
-      emit_unit_arms(body, e, m, sty, tmp, zero, want)
+      emit_match_arms(body, e, m, sty, tmp, zero, want)
     }
 
-    fn emit_unit_arms(
-      body: IntList, e: Int, m: Int, sty: Int, tmp: Int, i: Int, want: Int
-    ): Int {
-      let arm = ast::kid_at(ast::b_of(e), i);
-      let pat = ast::a_of(arm);
-      let last = i.add(one).ge(ast::c_of(e));
-      if last {
-        return emit_arm_body(body, arm, m, sty, tmp, want);
-      }
-      if ast::kind_of(pat).eq(ast::k_pt_wild()) {
-        return emit_arm_body(body, arm, m, sty, tmp, want);
-      }
-      let head = arm_head(pat, m);
-      if ast::is_some(head).not() {
-        return emit_arm_body(body, arm, m, sty, tmp, want);
-      }
-      load_local(body, tmp);
-      op_i32_const(body, types::unit_code(head));
-      body.push(hex(n4(), n6()));
-      cg_depth.write(cg_depth.read().add(one));
-      let then = int_list();
-      let ty = emit_arm_body(then, arm, m, sty, tmp, want);
-      op_if_ty(body, ty);
-      push_bytes(body, then);
-      op_else(body);
-      emit_unit_arms(body, e, m, sty, tmp, i.add(one), want);
-      op_end(body);
-      cg_depth.write(cg_depth.read().sub(one));
-      ty
-    }
-
-    # The symbol a unit pattern names, or none if it is a binder.
-    fn arm_head(pat: Int, m: Int): Int {
-      if ast::kind_of(pat).ne(ast::k_pt_path()) {
-        return ast::none();
-      }
-      let sym = prog::resolve_path(m, ast::a_of(pat));
-      if ast::is_some(sym).not() {
-        return ast::none();
-      }
-      if prog::sym_kind.get(sym).eq(prog::sk_unit()) {
-        return sym;
-      }
-      ast::none()
-    }
-
-    fn emit_arm_body(
-      body: IntList, arm: Int, m: Int, sty: Int, tmp: Int, want: Int
-    ): Int {
-      let mark = lc_visible.read();
-      let pat = ast::a_of(arm);
-      if ast::kind_of(pat).eq(ast::k_pt_path()) {
-        if ast::is_some(arm_head(pat, m)).not() {
-          if ast::is_some(ast::b_of(pat)).not() {
-            # A binder for the whole scrutinee.
-            load_local(body, tmp);
-            bind_here(body, ast::path_last(ast::a_of(pat)));
-          }
-        }
-      }
-      let ty = emit_as(body, ast::b_of(arm), m, want);
-      close_scope(mark);
-      ty
-    }
-
-    # A union wider than one scalar: slot zero is the discriminant and
-    # the rest is room for the widest member's payload (D59). Testing an
-    # arm reads that slot; taking a payload reads the ones beyond it.
-    fn emit_wide_match(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
-      let scrutinee = int_list();
-      emit_expr(scrutinee, ast::a_of(e), m);
-      let tmp = reveal(ast::none());
-      push_bytes(body, scrutinee);
-      store_local(body, tmp);
-      emit_wide_arms(body, e, m, sty, tmp, zero, want)
-    }
-
-    fn emit_wide_arms(
+    fn emit_match_arms(
       body: IntList, e: Int, m: Int, sty: Int, tmp: Int, i: Int, want: Int
     ): Int {
       let arm = ast::kid_at(ast::b_of(e), i);
@@ -1728,24 +1644,24 @@ assume Std {
         last = true;
       }
       if last {
-        return emit_wide_arm_body(body, arm, m, sty, tmp, want);
+        return emit_match_arm_body(body, arm, m, sty, tmp, want);
       }
       op_local_get(body, local_slot(tmp, zero));
       op_i32_const(body, types::unit_code(head));
       body.push(hex(n4(), n6()));
       cg_depth.write(cg_depth.read().add(one));
       let then = int_list();
-      let ty = emit_wide_arm_body(then, arm, m, sty, tmp, want);
+      let ty = emit_match_arm_body(then, arm, m, sty, tmp, want);
       op_if_ty(body, ty);
       push_bytes(body, then);
       op_else(body);
-      emit_wide_arms(body, e, m, sty, tmp, i.add(one), want);
+      emit_match_arms(body, e, m, sty, tmp, i.add(one), want);
       op_end(body);
       cg_depth.write(cg_depth.read().sub(one));
       ty
     }
 
-    fn emit_wide_arm_body(
+    fn emit_match_arm_body(
       body: IntList, arm: Int, m: Int, sty: Int, tmp: Int, want: Int
     ): Int {
       let mark = lc_visible.read();

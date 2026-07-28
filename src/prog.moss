@@ -165,7 +165,9 @@ assume Std {
       true
     }
 
-    fn dir_of(p: String): String {
+    # Where the last '/' ends: `dir_of` keeps everything before it and
+    # `basename` everything after.
+    fn path_cut(p: String): Int {
       var cut = zero;
       var i = zero;
       while i.lt(p.length()) {
@@ -174,7 +176,14 @@ assume Std {
         }
         i = i.add(one);
       }
-      p.slice(zero, cut)
+      cut
+    }
+
+    fn dir_of(p: String): String { p.slice(zero, path_cut(p)) }
+
+    fn basename(p: String): String {
+      let cut = path_cut(p);
+      p.slice(cut, p.length().sub(cut))
     }
 
     fn seg_is(p: String, start: Int, len: Int, want: Int): Bool {
