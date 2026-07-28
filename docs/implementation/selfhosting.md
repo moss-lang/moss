@@ -141,6 +141,44 @@ cannot name. Declaring each accessor once and bracket-applying the
 element type per provision fixes that, and then the fixpoint is the next
 thing to try.
 
+### Where to start
+
+In this order, because each step's failures are only legible once the one
+before it is right.
+
+1. **The library.** A new `lib/access.moss` declaring `.get`, `.length`,
+   `.push` and `.read` once, with the element type as a requirement;
+   `list`/`string`/`strlist`/`cell`/`path` import them instead of
+   declaring their own; `Std`'s item list and every method bind in
+   `lib/wasistd.moss` and `lib/wasi.moss` carry the bracket application;
+   `lib/prelude.moss` imports all twenty-nine detached names. The fast
+   arbiter is `moss build tests/wasi/full.moss` — about four seconds, and
+   it reaches every one of them.
+2. **Remove the bootstrap's fallback**, in `mossc/lower.py`'s
+   `synth_method`: the branch matching a provision by
+   `msym.name.lstrip(".")`. If step 1 is right this breaks nothing. The
+   self-hosted side already implements [D61]; this is the bootstrap
+   catching up, and until it does the two disagree (inertly — see D61).
+3. **Bracket applications in the back end.** `src/codegen.moss` ignores
+   an application where one appears, which was fine while nothing used
+   one. Step 1 introduces them.
+4. **Point it at itself**:
+   `wasmtime --dir . mossc.wasm lib/prelude.moss src/main.moss`, and work
+   through what it reports. A diagnostic is a letter and a name; the
+   letters are the `e_` constants of `prog.moss` and the `c_` constants of
+   `codegen.moss`, in declaration order from `A`.
+5. **The fixpoint.** `S0 = B(S)`, `S1 = S0(S)`, `S2 = S1(S)`; assert
+   `S1 == S2` byte for byte. `S0 != S1` is expected — different compilers
+   emit different code for one source. Both compilers are deterministic
+   today, which that check depends on.
+
+Two invariants worth not breaking. The scan pass and the emit pass in
+`codegen.moss` must create locals in lockstep; that is why only the scan
+creates them and emitting *reveals* them in order, rather than the two
+agreeing by name. And a bind statement is walked by all three of
+discovery, scanning and emission, which is why there is one traversal
+with a mode rather than three to keep in step.
+
 The Python originals are [`lower.py`](/bootstrap/mossc/lower.py) and
 [`build.py`](/bootstrap/mossc/build.py) — but the self-hosted back end
 is much less work than their line count suggests, because most of
