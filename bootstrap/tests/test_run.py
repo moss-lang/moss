@@ -1088,6 +1088,15 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/tags.moss")
         self.assertEqual(self.wasmtime_run(module), "BACEAB\n")
 
+    def test_contextual_vals(self):
+        """D2: a val is the only context that exists at runtime, so a
+        function that assumes one is implicitly parameterized by it and
+        that parameterization is a real Wasm parameter. Covers a need
+        threaded through a frame that does not use it, a `bind` shadowed
+        inside a block, and one rebound at the same level."""
+        module = self.compile_with_moss("tests/wasi/ctx.moss")
+        self.assertEqual(self.wasmtime_run(module), "CEECI\n")
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
@@ -1098,6 +1107,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/prim.moss", "ABKDKJGG\n"),
             ("tests/wasi/across.moss", "AC\n"),
             ("tests/wasi/tags.moss", "BACEAB\n"),
+            ("tests/wasi/ctx.moss", "CEECI\n"),
         )
         for entry, expected in cases:
             with self.subTest(entry=entry):

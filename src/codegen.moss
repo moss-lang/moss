@@ -3,6 +3,7 @@ import "./bytes.moss" use *;
 import "./emit.moss" as emit;
 import "./insn.moss" use *;
 import "./intern.moss" as intern;
+import "./lower.moss" as lower;
 import "./prog.moss" as prog;
 import "./spell.moss" use *;
 import "./types.moss" as types;
@@ -54,6 +55,16 @@ assume Std {
   val lc_base: CellInt;
   val lc_visible: CellInt;
 
+  # Where each need key's value lives in the frame being compiled: the
+  # local holding it. A val is the only context that exists at runtime
+  # (D2), so this is the whole of the runtime environment — and it is
+  # block-scoped exactly like the locals, which is what makes an inner
+  # `bind` shadow an outer one to the end of its block and no further.
+  val pv_recv: IntList;
+  val pv_sym: IntList;
+  val pv_local: IntList;
+  val pv_top: CellInt;
+
   # Open label scopes, and the depth at which each enclosing loop's exit
   # block sits, so that `break` knows how far out to branch.
   val cg_depth: CellInt;
@@ -83,11 +94,12 @@ assume Std {
   context Codegen =
     fq_sym, fq_index, wi_sym, wi_index,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
+    pv_recv, pv_sym, pv_local, pv_top,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
     cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
-    emit::Emit, types::Types {
+    emit::Emit, types::Types, lower::Lower {
     fn cg_error(code: Int, name: Int) {
       cg_errs.push(code);
       cg_err_name.push(name);
@@ -238,6 +250,53 @@ assume Std {
       } else {
         ast::is_some(ast::fn_body(prog::sym_decl.get(sym)))
       }
+    }
+
+    # Provisions.
+
+    fn provide(recv: Int, sym: Int, l: Int) {
+      if pv_top.read().lt(pv_recv.length()) {
+        pv_recv.set(pv_top.read(), recv);
+        pv_sym.set(pv_top.read(), sym);
+        pv_local.set(pv_top.read(), l);
+      } else {
+        pv_recv.push(recv);
+        pv_sym.push(sym);
+        pv_local.push(l);
+      }
+      pv_top.write(pv_top.read().add(one));
+    }
+
+    # The innermost provision for this key, so a rebind wins.
+    fn provision_of(recv: Int, sym: Int): Int {
+      var i = pv_top.read();
+      while i.gt(zero) {
+        i = i.sub(one);
+        if pv_sym.get(i).eq(sym) {
+          if pv_recv.get(i).eq(recv) {
+            return pv_local.get(i);
+          }
+        }
+      }
+      ast::none()
+    }
+
+    # Which of a function's needs travel as parameters. A val does,
+    # because it is a runtime value; a fn or a method compiles at its use
+    # site, and `Wasm`'s two vals — `i32_zero` and `i32_one` — are
+    # instructions rather than data.
+    fn passed_need(recv: Int, sym: Int): Bool {
+      if ast::is_some(recv) {
+        return false;
+      }
+      if prog::sym_kind.get(sym).ne(prog::sk_val()) {
+        return false;
+      }
+      in_wasm(sym).not()
+    }
+
+    fn need_type(sym: Int): Int {
+      elab_ty(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
     }
 
     # Types.
@@ -523,6 +582,12 @@ assume Std {
         discover_expr(ast::b_of(s), m);
       } else if k.eq(ast::k_st_loop()) {
         discover_expr(ast::a_of(s), m);
+      } else if k.eq(ast::k_st_bind()) {
+        var i = zero;
+        while i.lt(ast::b_of(s)) {
+          discover_expr(ast::b_of(ast::kid_at(ast::a_of(s), i)), m);
+          i = i.add(one);
+        }
       } else if k.eq(ast::k_st_expr()) {
         discover_expr(ast::a_of(s), m);
       }
@@ -533,6 +598,50 @@ assume Std {
     }
 
     # Pass two: the index spaces.
+
+    # A defined function's signature: its declared parameters, then one
+    # per need it takes as data, in the order `lower.moss` fixed. Both
+    # sides read that order from the same place, which is what makes it
+    # a calling convention rather than a coincidence.
+    fn signature_of_fn(sym: Int): Int {
+      let d = prog::sym_decl.get(sym);
+      let m = prog::sym_mod.get(sym);
+      let ps = int_list();
+      var i = zero;
+      while i.lt(ast::fn_nparams(d)) {
+        let p = ast::kid_at(ast::fn_params(d), i);
+        push_valtypes(ps, elab_ty(ast::b_of(p), m));
+        i = i.add(one);
+      }
+      i = zero;
+      while i.lt(lower::needs_count(sym)) {
+        if passed_need(lower::need_recv_at(sym, i), lower::need_sym_at(sym, i)) {
+          push_valtypes(ps, need_type(lower::need_sym_at(sym, i)));
+        }
+        i = i.add(one);
+      }
+      finish_signature(ps, elab_ty(ast::fn_ret(d), m))
+    }
+
+    fn push_valtypes(ps: IntList, ty: Int) {
+      var j = zero;
+      while j.lt(width(ty)) {
+        ps.push(valtype_at(ty, j));
+        j = j.add(one);
+      }
+    }
+
+    fn finish_signature(ps: IntList, ret: Int): Int {
+      if width(ret).eq(zero) {
+        return emit::type_index(ps, zero);
+      }
+      if width(ret).gt(one) {
+        # A Wasm result list of more than one needs the multi-value
+        # proposal, or the value staged through locals (D59). Neither yet.
+        cg_error(c_unsupported(), ast::none());
+      }
+      emit::type_index(ps, valtype_at(ret, zero))
+    }
 
     fn signature_of(d: Int, m: Int): Int {
       let ps = int_list();
@@ -547,16 +656,7 @@ assume Std {
         }
         i = i.add(one);
       }
-      let ret = elab_ty(ast::fn_ret(d), m);
-      if width(ret).eq(zero) {
-        return emit::type_index(ps, zero);
-      }
-      if width(ret).gt(one) {
-        # A Wasm result list of more than one needs the multi-value
-        # proposal, or the value staged through locals (D59). Neither yet.
-        cg_error(c_unsupported(), ast::none());
-      }
-      emit::type_index(ps, valtype_at(ret, zero))
+      finish_signature(ps, elab_ty(ast::fn_ret(d), m))
     }
 
     fn declare_all() {
@@ -579,12 +679,7 @@ assume Std {
       i = zero;
       while i.lt(fq_sym.length()) {
         let sym = fq_sym.get(i);
-        fq_index.set(
-          i,
-          emit::add_func(
-            signature_of(prog::sym_decl.get(sym), prog::sym_mod.get(sym))
-          )
-        );
+        fq_index.set(i, emit::add_func(signature_of_fn(sym)));
         i = i.add(one);
       }
     }
@@ -691,6 +786,17 @@ assume Std {
         scan_locals_expr(ast::b_of(s), m);
       } else if k.eq(ast::k_st_loop()) {
         scan_locals_expr(ast::a_of(s), m);
+      } else if k.eq(ast::k_st_bind()) {
+        var i = zero;
+        while i.lt(ast::b_of(s)) {
+          let item = ast::kid_at(ast::a_of(s), i);
+          let sym = bind_val_sym(item, m);
+          if ast::is_some(sym) {
+            add_local(prog::sym_name.get(sym), need_type(sym));
+            lc_visible.write(lc_visible.read().add(one));
+          }
+          i = i.add(one);
+        }
       } else if k.eq(ast::k_st_expr()) {
         scan_locals_expr(ast::a_of(s), m);
       }
@@ -822,6 +928,19 @@ assume Std {
         cg_error(c_unknown_op(), prog::sym_name.get(sym));
         return ty_none();
       }
+      # A val nobody defined is context: its value arrived as a
+      # parameter, or a `bind` in an enclosing block put it in a local.
+      if prog::sym_kind.get(sym).eq(prog::sk_val()) {
+        if ast::is_some(ast::c_of(prog::sym_decl.get(sym))).not() {
+          let l = provision_of(ast::none(), sym);
+          if ast::is_some(l) {
+            load_local(body, l);
+            return lc_type.get(l);
+          }
+          cg_error(c_unbound(), prog::sym_name.get(sym));
+          return ty_none();
+        }
+      }
       if in_bool(sym) {
         let t = spelled();
         sp_true(t);
@@ -872,6 +991,7 @@ assume Std {
         return cg_boolty.read();
       }
       if is_defined_fn(sym) {
+        push_needs(body, sym);
         op_call(body, index_of_fn(sym));
         return elab_ty(
           ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
@@ -885,6 +1005,26 @@ assume Std {
       }
       cg_error(c_unbound(), prog::sym_name.get(sym));
       ty_none()
+    }
+
+    # The callee's needs, in its order, taken from this frame. A need the
+    # frame cannot supply is the context error of D20 rather than a
+    # scope error: the name is fine, nobody provided it here.
+    fn push_needs(body: IntList, callee: Int) {
+      var i = zero;
+      while i.lt(lower::needs_count(callee)) {
+        let r = lower::need_recv_at(callee, i);
+        let ns = lower::need_sym_at(callee, i);
+        if passed_need(r, ns) {
+          let l = provision_of(r, ns);
+          if ast::is_some(l) {
+            load_local(body, l);
+          } else {
+            cg_error(c_unbound(), prog::sym_name.get(ns));
+          }
+        }
+        i = i.add(one);
+      }
     }
 
     fn emit_op(body: IntList, op: Int) {
@@ -910,6 +1050,7 @@ assume Std {
 
     fn emit_block(body: IntList, e: Int, m: Int): Int {
       let mark = lc_visible.read();
+      let pmark = pv_top.read();
       var i = zero;
       while i.lt(ast::b_of(e)) {
         emit_stmt(body, ast::kid_at(ast::a_of(e), i), m);
@@ -920,6 +1061,7 @@ assume Std {
         ty = emit_expr(body, ast::c_of(e), m);
       }
       lc_visible.write(mark);
+      pv_top.write(pmark);
       ty
     }
 
@@ -1117,6 +1259,48 @@ assume Std {
       ty
     }
 
+    # The val a `bind` item provides, or none for the kinds this back end
+    # does not compile yet — a functor application (no `=`), a method
+    # bind, or a type or fn bind. Both passes ask this, so both agree on
+    # which items own a local.
+    fn bind_val_sym(item: Int, m: Int): Int {
+      if ast::is_some(ast::b_of(item)).not() {
+        return ast::none();
+      }
+      let spec = ast::a_of(item);
+      if ast::is_some(ast::b_of(spec)) {
+        return ast::none();
+      }
+      if ast::is_some(ast::a_of(spec)).not() {
+        return ast::none();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(spec));
+      if ast::is_some(sym).not() {
+        return ast::none();
+      }
+      if prog::sym_kind.get(sym).ne(prog::sk_val()) {
+        return ast::none();
+      }
+      sym
+    }
+
+    fn emit_bind(body: IntList, s: Int, m: Int) {
+      var i = zero;
+      while i.lt(ast::b_of(s)) {
+        let item = ast::kid_at(ast::a_of(s), i);
+        let sym = bind_val_sym(item, m);
+        if ast::is_some(sym) {
+          emit_expr(body, ast::b_of(item), m);
+          let l = reveal();
+          store_local(body, l);
+          provide(ast::none(), sym, l);
+        } else {
+          cg_error(c_unsupported(), ast::none());
+        }
+        i = i.add(one);
+      }
+    }
+
     fn push_loop(level: Int) {
       if cg_ntop.read().lt(cg_loops.length()) {
         cg_loops.set(cg_ntop.read(), level);
@@ -1170,6 +1354,8 @@ assume Std {
         op_end(body);
         cg_depth.write(cg_depth.read().sub(one));
         cg_ntop.write(cg_ntop.read().sub(one));
+      } else if k.eq(ast::k_st_bind()) {
+        emit_bind(body, s, m);
       } else if k.eq(ast::k_st_expr()) {
         drop_value(body, emit_expr(body, ast::a_of(s), m));
       } else {
@@ -1190,17 +1376,32 @@ assume Std {
       lc_visible.write(lc_name.length());
       cg_depth.write(zero);
       cg_ntop.write(zero);
+      # One frame at a time, so the provisions start empty.
+      pv_top.write(zero);
       var i = zero;
       while i.lt(ast::fn_nparams(d)) {
         let p = ast::kid_at(ast::fn_params(d), i);
         add_local(ast::a_of(p), elab_ty(ast::b_of(p), m));
         i = i.add(one);
       }
+      # Then the needs that travel as data, in the same order the
+      # signature declared them, each provided from its own parameter.
+      var nparams = ast::fn_nparams(d);
+      i = zero;
+      while i.lt(lower::needs_count(sym)) {
+        let r = lower::need_recv_at(sym, i);
+        let ns = lower::need_sym_at(sym, i);
+        if passed_need(r, ns) {
+          provide(r, ns, add_local(prog::sym_name.get(ns), need_type(ns)));
+          nparams = nparams.add(one);
+        }
+        i = i.add(one);
+      }
       lc_visible.write(lc_name.length());
       scan_locals_expr(ast::fn_body(d), m);
-      lc_visible.write(lc_base.read().add(ast::fn_nparams(d)));
-      let n32 = assign_slots(ast::fn_nparams(d));
-      let n64 = total_slots().sub(param_slots(ast::fn_nparams(d))).sub(n32);
+      lc_visible.write(lc_base.read().add(nparams));
+      let n32 = assign_slots(nparams);
+      let n64 = total_slots().sub(param_slots(nparams)).sub(n32);
       let body = int_list();
       let want = elab_ty(ast::fn_ret(d), m);
       let got = emit_expr(body, ast::fn_body(d), m);
@@ -1244,6 +1445,9 @@ assume Std {
     fn compile(entry: Int, out: IntList) {
       find_primitive_modules();
       wops::install_wasm_ops();
+      # Every defined function's requirement list, which is what the
+      # calling convention below is built from.
+      lower::lower_all();
       let mn = spelled();
       sp_main(mn);
       let main = prog::lookup(entry, prog::ns_name(), intern::intern_chars(mn));

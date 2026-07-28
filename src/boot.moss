@@ -120,6 +120,10 @@ functor Boot: Std -> Compiler {
   bind codegen::lc_slots = int_list();
   bind codegen::lc_base = cell_int();
   bind codegen::lc_visible = cell_int();
+  bind codegen::pv_recv = int_list();
+  bind codegen::pv_sym = int_list();
+  bind codegen::pv_local = int_list();
+  bind codegen::pv_top = cell_int();
   bind codegen::cg_depth = cell_int();
   bind codegen::cg_loops = int_list();
   bind codegen::cg_ntop = cell_int();

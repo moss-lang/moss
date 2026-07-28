@@ -71,10 +71,10 @@ Not by looking at its output, but by holding it to the bootstrap's.
 The back end covers the *primitive* context and nothing above it:
 `Wasm` instructions, `Wasi` imports, `Bool` for `if` to eliminate,
 plain functions, `let`/`var`, assignment, `if`/`else`, `while`,
-`loop`/`break`, `return`, `I32`/`I64`, and the scalar half of the value
-model — nominal tags, units, unions of units, and `match` over them.
-That is the language `tests/wasi/{raw,prim,across,tags}.moss` are
-written in.
+`loop`/`break`, `return`, `I32`/`I64`, the scalar half of the value
+model — nominal tags, units, unions of units, and `match` over them —
+and contextual vals with `bind`. That is the language
+`tests/wasi/{raw,prim,across,tags,ctx}.moss` are written in.
 
 Not `Std` itself: `Std` is Moss already, and
 [`lib/wasi.moss`](/lib/wasi.moss)'s `WasiStd` maps
@@ -90,11 +90,13 @@ lines — `type Str I32;`, `match s { Str a => a }`, `fn Str.length()`,
 `bind putchar = wasi_putchar;`. A program that needs any of them is
 reported rather than mis-compiled:
 
-- **Contexts at runtime.** Half done. `lower.moss` computes each
-  function's requirement list and the environment it sits in, checked
-  against the bootstrap; what consumes them does not exist yet — val
-  needs as hidden parameters, the call-site map from callee key to
-  caller key, and one compiled specialization per environment.
+- **Contexts at runtime.** The val half is done: a function's val needs
+  travel as trailing parameters in the order `lower.moss` fixed, a
+  `bind` puts a value in a local for the rest of its block, and a call
+  site supplies the callee's needs from its own frame. What is left is
+  the *static* half — a fn or type bind changes the code rather than the
+  data, so the callee has to be compiled once per environment that
+  reaches it, cached on the environment chain.
 - **Functors** ([D55](../design/semantics.md)) — the construct, not the
   library: `bind WasiStd;` has to inline the functor's binds at the
   application site, which needs the above.
@@ -119,13 +121,12 @@ reported rather than mis-compiled:
   machinery for a real message is a string the compiler holds, which is
   [D48](../design/semantics.md).
 
-The order to take them in is the bootstrap's own, and two steps are
-taken: contexts and needs, since methods, functors and binds all reduce
-to them, and real types in the back end, since everything else needs to
-know what a value is. What is left is the calling convention — compile a
-(function, environment) pair rather than a function, take the val needs
-as trailing parameters, translate the caller's keys to the callee's at
-each call — and then methods and functors on top of it.
+Three steps of the bootstrap's own order are taken: the requirement
+lists, real types in the back end, and the runtime half of the calling
+convention. What is left is the static half — compile a (function,
+environment) pair rather than a function, so that a fn bind or a type
+bind specialises the callee — and then methods and functors, which are
+both that mechanism with a different key.
 
 The Python originals are [`lower.py`](/bootstrap/mossc/lower.py) and
 [`build.py`](/bootstrap/mossc/build.py) — but the self-hosted back end
