@@ -60,6 +60,7 @@
             pkgs.bun # For the VS Code extension.
             pkgs.nodejs
             pkgs.python3
+            pkgs.wasm-tools
             pkgs.wasmtime # The bootstrap's Wasm backend tests run it.
           ];
           shellHook = ''
