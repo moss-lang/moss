@@ -1,0 +1,23 @@
+# D61: a detached method does not match on the name it was declared
+# under. `IsCell[T=Int, Cell=MyCell]` provides `.fetch` at `MyCell`, but
+# this module never imported the symbol, so the call has nothing to name
+# — `use .fetch`, or write `cell::fetch`.
+import "../fixtures/cell.moss" as cell use T, Cell, IsCell;
+
+assume Std {
+  type MyCell CellInt;
+
+  fn MyCell.g(): Int { match this { MyCell c => c.read() } }
+  fn MyCell.p(x: Int) { match this { MyCell c => c.write(x), } }
+
+  context CellOps = IsCell[T=Int, Cell=MyCell];
+
+  assume CellOps {
+    fn peek(c: MyCell): Int { c.fetch() }
+  }
+
+  fn main() {
+    let c = MyCell (cell_int());
+    if peek(c).eq(zero) { putchar(char::y) }
+  }
+}

@@ -1121,11 +1121,29 @@ assume Std {
       if ast::is_some(head).not() {
         return ast::none();
       }
-      let detached = prog::resolve_detached(m, ast::b_of(e));
-      if ast::is_some(detached).not() {
+      let sym = provided_method(head, e, m);
+      if ast::is_some(sym).not() {
         return ast::none();
       }
-      lower::env_find(cg_env.read(), lower::ek_fn(), head, detached)
+      lower::env_find(cg_env.read(), lower::ek_fn(), head, sym)
+    }
+
+    # The symbol half of the key. An attached method matches *by name* in
+    # the receiver's own module and needs no import; a detached one has to
+    # be in scope, or be reached as `mod::m` (D61).
+    fn provided_method(head: Int, e: Int, m: Int): Int {
+      let path = ast::b_of(e);
+      if ast::path_len(path).eq(one) {
+        let name = ast::path_last(path);
+        var found = prog::find_attached(prog::sym_mod.get(head), head, name);
+        if ast::is_some(found).not() {
+          found = prog::find_attached(m, head, name);
+        }
+        if ast::is_some(found) {
+          return found;
+        }
+      }
+      prog::resolve_detached(m, path)
     }
 
     # The attached method a call selects, or none.

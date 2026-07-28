@@ -1418,11 +1418,16 @@ class FnChecker:
                 self.error(f"`{'::'.join(expr.path)}` is not a detached method in scope")
         else:
             method = None
-        # Attached, defined: an ordinary function with a receiver.
+        # Attached: a call matches it *by name* in the receiver's own module,
+        # with no import (D61). A defined one is an ordinary function with a
+        # receiver; an abstract one is a key the context provides, so it
+        # goes on to the provision lookup below carrying its symbol.
         if method is None:
             for home in (h.module, self.module):
                 attached = home.attached.get((id(h), name))
-                if attached is not None and attached.decl.body is not None:
+                if attached is None:
+                    continue
+                if attached.decl.body is not None:
                     self.lower.lower_fn(attached.module, attached)
                     needs_map = self.require_needs(
                         attached, self.lower.needs_of[id(attached)]
@@ -1433,31 +1438,25 @@ class FnChecker:
                         ir.Call(("direct", attached), tuple(args), this=obj, needs_map=needs_map),
                         sig.ret,
                     )
-        # Provided: detached or abstract-attached, from the context. A local
-        # (possibly renamed) detached import resolves exactly by symbol;
-        # otherwise match by declared name, erroring on ambiguity (D36).
+                if method is None:
+                    method = attached
+        # Provided: detached or abstract-attached, from the context. The
+        # symbol half of the key is an ordinary lexical lookup — a detached
+        # method must be in scope, and a renamed import is called by its new
+        # name; it does *not* match on the name it was declared under (D61).
+        # Matching a provision by spelling instead is the structural
+        # matching D1 exists to rule out.
         if method is None and len(expr.path) == 1:
             method = self.module.detached.get(name)
-        candidates = []
-        for key, sig in self.env.methods.items():
-            receiver, msym = key
-            if receiver is not h:
-                continue
-            if method is not None and msym is method:
-                candidates = [(key, sig)]
-                break
-            if method is None and msym.name.lstrip(".") == name:
-                candidates.append((key, sig))
-        if len(candidates) > 1:
-            self.error(
-                f"`.{name}` is ambiguous for `{show(oty)}`: "
-                f"{[k[1].name for k, _ in candidates]} are all available; "
-                "import one under a distinct name (D44)"
-            )
-        if candidates:
-            key, sig = candidates[0]
-            args = self.check_args(key[1].name, sig, expr.args)
-            return ir.Call(("env", key), tuple(args), this=obj), sig.ret
+            if method is None:
+                self.error(
+                    f"`.{name}` is not a detached method in scope; import it, or "
+                    "call it as `mod::m` (D61)"
+                )
+        sig = self.env.methods.get((h, method))
+        if sig is not None:
+            args = self.check_args(method.name, sig, expr.args)
+            return ir.Call(("env", (h, method)), tuple(args), this=obj), sig.ret
         self.error(
             f"no method `.{name}` is available for `{show(oty)}` in the context here"
         )

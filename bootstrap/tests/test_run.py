@@ -235,6 +235,22 @@ class TestMethods(unittest.TestCase):
         )
         self.assertEqual(run(files), "q")
 
+    def test_attached_declared_beside_its_receiver_needs_no_import(self):
+        """The other half of D61: an attached method matches *by name* in
+        the receiver's own module and is never imported — including one that
+        is only declared there and provided from the context, which the
+        detached rule (import it, or `mod::m`) does not cover."""
+        files = main_body(
+            "bind Wrap.spell=giveq;\n"
+            "    let w = Wrap (char::z);\n"
+            "    putchar(w.spell());",
+            decls="  type Wrap Char;\n"
+            "  fn Wrap.spell(): Char;\n"
+            "  fn giveq(): Char { char::q }\n"
+            "  context Spelling = Wrap.spell;\n",
+        )
+        self.assertEqual(run(files), "q")
+
     def test_attached_on_abstract_rejected(self):
         # Q5: attached methods require nominal receivers.
         files = main_body(
