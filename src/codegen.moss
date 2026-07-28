@@ -40,6 +40,7 @@ assume Std {
   # A call whose specialization the first pass never reached, so the two
   # passes disagree. A bug in this back end rather than in the program.
   fn c_missing(): Int { n16().add(n3()) }
+  fn c_break(): Int { n16().add(n4()) }  # `break` outside any loop
 
   # Reachable *specializations*: a function under a specific set of
   # bindings, and the Wasm index each gets. A type or fn bind changes the
@@ -385,7 +386,7 @@ assume Std {
     # threaded down.
     fn val_slots(out: IntList, sym: Int, env: Int, depth: Int) {
       if depth.gt(hex(n2(), zero)) {
-        cg_error(c_unsupported(), ast::none());
+        cg_error(prog::e_deep(), prog::sym_name.get(sym));
         return ();
       }
       var i = zero;
@@ -1067,7 +1068,7 @@ assume Std {
       }
       if k.eq(ast::k_ex_break()) {
         if cg_ntop.read().eq(zero) {
-          cg_error(c_unsupported(), ast::none());
+          cg_error(c_break(), ast::none());
           return ty_none();
         }
         op_br(body, cg_depth.read().sub(cg_loops.get(cg_ntop.read().sub(one))));
@@ -1516,7 +1517,8 @@ assume Std {
         op_else(body);
         emit_as(body, ast::c_of(e), m, want);
       } else if width(ty).gt(zero) {
-        cg_error(c_unsupported(), ast::none());
+        # An `if` that yields a value has to have an `else` to yield it.
+        cg_error(c_bad_type(), ast::none());
       }
       op_end(body);
       cg_depth.write(cg_depth.read().sub(one));
@@ -1595,6 +1597,9 @@ assume Std {
           bind_here(body, ast::path_last(ast::a_of(sub)));
           return ();
         }
+        # A nested tag pattern; at least name the tag it opens.
+        cg_error(c_unsupported(), ast::path_last(ast::a_of(sub)));
+        return ();
       }
       if ast::kind_of(sub).eq(ast::k_pt_wild()) {
         drop_value(body, payload);
@@ -1810,7 +1815,7 @@ assume Std {
 
     fn walk_bind_item(body: IntList, item: Int, m: Int, depth: Int, mode: Int) {
       if depth.gt(n8()) {
-        cg_error(c_unsupported(), ast::none());
+        cg_error(prog::e_deep(), ast::none());
         return ();
       }
       let spec = ast::a_of(item);
