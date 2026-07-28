@@ -1,0 +1,342 @@
+import "./ast.moss" as ast;
+import "./bytes.moss" use *;
+import "./intern.moss" as intern;
+import "./prog.moss" as prog;
+import "./types.moss" as types;
+
+# Requirement environments: what a region *has*.
+#
+# A declaration nested in `assume` blocks is implicitly parameterized by
+# everything they name ([D26]), so a function's requirements are
+# derivable from its nesting alone — which is what lets a recursive call
+# terminate, since the needs are known before any body is looked at.
+#
+# An environment is a persistent chain: one row per provision, each
+# pointing at the rest. Extending is a push, so an inner `bind` shadows
+# an outer one for the rest of its block and nothing has to be copied.
+# The chain is also the key a specialization is cached under, which is
+# how [D2]'s "a fn binding is statically a direct call" becomes true.
+#
+# A key is a symbol, or a (receiver head, method) pair — the same two
+# shapes the bootstrap's IR uses. Types are static and are not needs;
+# vals, fns and methods are.
+#
+# Nothing in `src/` or the `lib/` it needs applies a type
+# (`Pair[T=Int]`), so the substitution half of [D18] never arises here:
+# a type bind maps an abstract symbol straight to a type, and `canon`
+# chases those edges. That is the whole of monomorphization for this
+# program.
+
+assume Std {
+  fn ek_type(): Int { zero }
+  fn ek_val(): Int { one }
+  fn ek_fn(): Int { n2() }
+
+  val en_kind: IntList;
+  val en_recv: IntList;
+  val en_sym: IntList;
+  val en_a: IntList;
+  val en_b: IntList;
+  val en_next: IntList;
+
+  # Each defined function's needs, as a run of (receiver, symbol) pairs.
+  # Indexed by symbol, so `nd_start` has one row per symbol.
+  val nd_recv: IntList;
+  val nd_sym: IntList;
+  val nd_start: IntList;
+  val nd_len: IntList;
+  # The environment each defined function's own declaration sits in.
+  val nd_env: IntList;
+
+  context Lower =
+    en_kind, en_recv, en_sym, en_a, en_b, en_next,
+    nd_recv, nd_sym, nd_start, nd_len, nd_env;
+
+  assume Lower, ast::Ast, prog::Prog, types::Types, intern::Interner {
+    # Environments.
+
+    fn env_empty(): Int { ast::none() }
+
+    fn env_push(env: Int, kind: Int, recv: Int, sym: Int, a: Int, b: Int): Int {
+      en_kind.push(kind);
+      en_recv.push(recv);
+      en_sym.push(sym);
+      en_a.push(a);
+      en_b.push(b);
+      en_next.push(env);
+      en_kind.length().sub(one)
+    }
+
+    # The entry providing this key, or none. The chain is walked from the
+    # head, so the innermost binding wins.
+    fn env_find(env: Int, kind: Int, recv: Int, sym: Int): Int {
+      var e = env;
+      while ast::is_some(e) {
+        if en_kind.get(e).eq(kind) {
+          if en_sym.get(e).eq(sym) {
+            if en_recv.get(e).eq(recv) {
+              return e;
+            }
+          }
+        }
+        e = en_next.get(e);
+      }
+      ast::none()
+    }
+
+    fn env_has(env: Int, kind: Int, recv: Int, sym: Int): Bool {
+      ast::is_some(env_find(env, kind, recv, sym))
+    }
+
+    # The type an abstract symbol stands for here, chasing substitution
+    # edges (D43's union-find, minus the union: with no applications
+    # nothing ever merges two keys).
+    fn canon(env: Int, t: Int): Int {
+      var cur = t;
+      var fuel = hex(n2(), zero);
+      while fuel.gt(zero) {
+        if types::is_kind(cur, types::tk_abstract()).not() {
+          return cur;
+        }
+        let e = env_find(env, ek_type(), ast::none(), types::sym_of(cur));
+        if ast::is_some(e).not() {
+          return cur;
+        }
+        if en_a.get(e).eq(cur) {
+          return cur;
+        }
+        cur = en_a.get(e);
+        fuel = fuel.sub(one);
+      }
+      cur
+    }
+
+    # A type elaborated in module `m` and then resolved through `env`.
+    fn elab(env: Int, t: Int, m: Int): Int {
+      canon(env, types::elab(t, m))
+    }
+
+    # The head a method call keys on: the nominal symbol of the
+    # receiver's type, after substitution.
+    fn head_of(env: Int, t: Int): Int {
+      types::head_of(canon(env, t))
+    }
+
+    # Needs.
+
+    fn needs_init() {
+      var i = nd_start.length();
+      while i.lt(prog::sym_count()) {
+        nd_start.push(ast::none());
+        nd_len.push(zero);
+        nd_env.push(ast::none());
+        i = i.add(one);
+      }
+    }
+
+    fn need_add(recv: IntList, sym: IntList, r: Int, s: Int) {
+      var i = zero;
+      while i.lt(sym.length()) {
+        if sym.get(i).eq(s) {
+          if recv.get(i).eq(r) {
+            return ();
+          }
+        }
+        i = i.add(one);
+      }
+      recv.push(r);
+      sym.push(s);
+    }
+
+    fn needs_count(f: Int): Int { nd_len.get(f) }
+    fn need_recv_at(f: Int, i: Int): Int { nd_recv.get(nd_start.get(f).add(i)) }
+    fn need_sym_at(f: Int, i: Int): Int { nd_sym.get(nd_start.get(f).add(i)) }
+    fn env_of(f: Int): Int { nd_env.get(f) }
+    fn is_lowered(f: Int): Bool { ast::is_some(nd_start.get(f)) }
+
+    # A declaration's ambient environment: everything its enclosing
+    # assume blocks provide, outermost first.
+    fn base_env(f: Int, recv: IntList, sym: IntList): Int {
+      let m = prog::sym_mod.get(f);
+      var env = env_empty();
+      var i = zero;
+      while i.lt(prog::sym_nasm.get(f)) {
+        env = add_assume_item(
+          env, m, ast::kid_at(prog::sym_asm.get(f), i), recv, sym
+        );
+        i = i.add(one);
+      }
+      env
+    }
+
+    # Compute and record one function's requirement list. Registered
+    # before any body is looked at, so recursion terminates.
+    fn lower_needs(f: Int) {
+      if is_lowered(f) {
+        return ();
+      }
+      nd_start.set(f, nd_sym.length());
+      let recv = int_list();
+      let sym = int_list();
+      let env = base_env(f, recv, sym);
+      nd_start.set(f, nd_sym.length());
+      var i = zero;
+      while i.lt(sym.length()) {
+        nd_recv.push(recv.get(i));
+        nd_sym.push(sym.get(i));
+        i = i.add(one);
+      }
+      nd_len.set(f, sym.length());
+      nd_env.set(f, env);
+    }
+
+    # `assume` takes bare paths, optionally with a receiver dot (D24).
+    fn add_assume_item(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
+      add_spec(env, m, spec, recv, sym, zero)
+    }
+
+    fn add_spec(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, depth: Int): Int {
+      if depth.gt(n16()) {
+        prog::error(prog::e_deep(), m, ast::none());
+        return env;
+      }
+      let dot = ast::b_of(spec);
+      let path = ast::a_of(spec);
+      if ast::is_some(dot) {
+        if ast::is_some(path).not() {
+          prog::error(prog::e_recv(), m, dot);
+          return env;
+        }
+        let receiver = prog::resolve_path(m, path);
+        if ast::is_some(receiver).not() {
+          prog::error(prog::e_scope(), m, ast::path_last(path));
+          return env;
+        }
+        return add_method_item(env, m, receiver, dot, recv, sym);
+      }
+      let target = prog::resolve_path(m, path);
+      if ast::is_some(target).not() {
+        prog::error(prog::e_scope(), m, ast::path_last(path));
+        return env;
+      }
+      add_symbol_item(env, m, target, recv, sym, depth)
+    }
+
+    fn add_symbol_item(
+      env: Int, m: Int, s: Int, recv: IntList, sym: IntList, depth: Int
+    ): Int {
+      let kind = prog::sym_kind.get(s);
+      if kind.eq(prog::sk_type()) {
+        if env_has(env, ek_type(), ast::none(), s) {
+          return env;
+        }
+        return env_push(
+          env, ek_type(), ast::none(), s, types::ty_of_symbol(types::tk_abstract(), s), ast::none()
+        );
+      }
+      if kind.eq(prog::sk_val()) {
+        # A defined val is concrete: nothing to provide (D50).
+        if ast::is_some(ast::c_of(prog::sym_decl.get(s))) {
+          return env;
+        }
+        need_add(recv, sym, ast::none(), s);
+        if env_has(env, ek_val(), ast::none(), s) {
+          return env;
+        }
+        let ty = elab(env, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
+        return env_push(env, ek_val(), ast::none(), s, ty, ast::none());
+      }
+      if kind.eq(prog::sk_fn()) {
+        # A defined fn carries its own body; assuming it is a no-op.
+        if ast::is_some(ast::fn_body(prog::sym_decl.get(s))) {
+          return env;
+        }
+        need_add(recv, sym, ast::none(), s);
+        if env_has(env, ek_fn(), ast::none(), s) {
+          return env;
+        }
+        return env_push(env, ek_fn(), ast::none(), s, ast::none(), ast::none());
+      }
+      if kind.eq(prog::sk_context()) {
+        var e = env;
+        let d = prog::sym_decl.get(s);
+        var i = zero;
+        while i.lt(ast::c_of(d)) {
+          e = add_spec(
+            e, prog::sym_mod.get(s), ast::kid_at(ast::b_of(d), i),
+            recv, sym, depth.add(one)
+          );
+          i = i.add(one);
+        }
+        return e;
+      }
+      # A unit, tag or alias is concrete and always available; a functor
+      # is a declaration, not a provision.
+      env
+    }
+
+    # A method item: `Int.add` in a context, or `.m` at a receiver. The
+    # key is the receiver *type*'s head after substitution (D36), so a
+    # provision lands where calls will look it up.
+    fn add_method_item(
+      env: Int, m: Int, receiver: Int, name: Int, recv: IntList, sym: IntList
+    ): Int {
+      let method = find_method_decl(m, receiver, name);
+      if ast::is_some(method).not() {
+        prog::error(prog::e_method(), m, name);
+        return env;
+      }
+      let this_ty = canon(env, types::ty_of_decl(receiver));
+      let head = types::head_of(this_ty);
+      if ast::is_some(head).not() {
+        prog::error(prog::e_method(), m, name);
+        return env;
+      }
+      need_add(recv, sym, head, method);
+      if env_has(env, ek_fn(), head, method) {
+        return env;
+      }
+      env_push(env, ek_fn(), head, method, ast::none(), ast::none())
+    }
+
+    # An attached method on the receiver, or a detached one in scope —
+    # falling back to the receiver's home module, so that `CellInt.read`
+    # in a context finds the `.read` declared beside `CellInt` without
+    # the context's module importing it (D54).
+    fn find_method_decl(m: Int, receiver: Int, name: Int): Int {
+      let home = prog::sym_mod.get(receiver);
+      var found = prog::find_attached(home, receiver, name);
+      if ast::is_some(found) {
+        return found;
+      }
+      found = prog::find_attached(m, receiver, name);
+      if ast::is_some(found) {
+        return found;
+      }
+      found = prog::lookup(m, prog::ns_detached(), name);
+      if ast::is_some(found) {
+        return found;
+      }
+      prog::lookup(home, prog::ns_detached(), name)
+    }
+
+    # Every defined function of the program, in module order.
+    fn lower_all() {
+      needs_init();
+      var f = zero;
+      while f.lt(prog::sym_count()) {
+        let kind = prog::sym_kind.get(f);
+        var is_fn = kind.eq(prog::sk_fn());
+        if is_fn.not() {
+          is_fn = kind.eq(prog::sk_method());
+        }
+        if is_fn {
+          if ast::is_some(ast::fn_body(prog::sym_decl.get(f))) {
+            lower_needs(f);
+          }
+        }
+        f = f.add(one);
+      }
+    }
+  }
+}

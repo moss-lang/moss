@@ -3,8 +3,10 @@ import "./codegen.moss" as codegen;
 import "./emit.moss" as emit;
 import "./intern.moss" as intern;
 import "./lex.moss" as lexer;
+import "./lower.moss" as lower;
 import "./prog.moss" as prog;
 import "./syntax.moss" as syntax;
+import "./types.moss" as types;
 import "./wasmops.moss" as wops;
 
 # The compiler's own state, in one place.
@@ -19,7 +21,8 @@ import "./wasmops.moss" as wops;
 # that is rebound per file, by the loader, as each module is read.
 
 context Compiler = ast::Ast, intern::Interner, lexer::at, lexer::mark,
-  syntax::Cursor, prog::Prog, emit::Emit, wops::WasmOps, codegen::Codegen;
+  syntax::Cursor, prog::Prog, emit::Emit, wops::WasmOps, codegen::Codegen,
+  types::Types, lower::Lower;
 
 functor Boot: Std -> Compiler {
   bind ast::nkind = int_list();
@@ -120,4 +123,24 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_std = cell_int();
   bind codegen::cg_errs = int_list();
   bind codegen::cg_err_name = int_list();
+
+  bind types::ty_kind = int_list();
+  bind types::ty_sym = int_list();
+  bind types::ty_mstart = int_list();
+  bind types::ty_mlen = int_list();
+  bind types::ty_mem = int_list();
+  bind types::unit_syms = int_list();
+  bind types::unit_codes = int_list();
+
+  bind lower::en_kind = int_list();
+  bind lower::en_recv = int_list();
+  bind lower::en_sym = int_list();
+  bind lower::en_a = int_list();
+  bind lower::en_b = int_list();
+  bind lower::en_next = int_list();
+  bind lower::nd_recv = int_list();
+  bind lower::nd_sym = int_list();
+  bind lower::nd_start = int_list();
+  bind lower::nd_len = int_list();
+  bind lower::nd_env = int_list();
 }

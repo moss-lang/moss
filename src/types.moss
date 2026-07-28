@@ -1,0 +1,327 @@
+import "./ast.moss" as ast;
+import "./bytes.moss" use *;
+import "./intern.moss" as intern;
+import "./prog.moss" as prog;
+
+# Elaborated types, and the layout each one has in Wasm.
+#
+# Type identity is structural over (declaration, static type bindings)
+# [D18], so the arena is hash-consed: elaborating the same type twice
+# gives the same id, and two ids are equal exactly when the types are.
+# Nothing in `src/` or the `lib/` it needs applies a type
+# (`Pair[T=Int]`), so the bindings half of that identity is always empty
+# and a nominal type is its declaration.
+#
+# Layout is [D59]: every value is a finite run of Wasm scalars and the
+# compiler allocates nothing. `()` is no slots; a unit is one, holding
+# its code; a nominal tag is exactly its payload ([D58]); a union of
+# units is one scalar, and any wider union is a discriminant followed by
+# room for its widest member.
+
+assume Std {
+  fn tk_unit(): Int { zero }
+  fn tk_never(): Int { one }
+  fn tk_nominal(): Int { n2() }
+  fn tk_abstract(): Int { n3() }
+  fn tk_union(): Int { n4() }
+
+  val ty_kind: IntList;
+  val ty_sym: IntList;
+  val ty_mstart: IntList;
+  val ty_mlen: IntList;
+  val ty_mem: IntList;
+
+  # Each `unit` declaration's discriminant. `Bool`'s two are 0 and 1 so
+  # that a comparison result can be used directly ([D45]); every other
+  # unit takes the next code after those.
+  val unit_syms: IntList;
+  val unit_codes: IntList;
+
+  context Types = ty_kind, ty_sym, ty_mstart, ty_mlen, ty_mem,
+    unit_syms, unit_codes;
+
+  assume Types, ast::Ast, prog::Prog, intern::Interner {
+    fn ty_count(): Int { ty_kind.length() }
+
+    fn kind_of(t: Int): Int { ty_kind.get(t) }
+    fn sym_of(t: Int): Int { ty_sym.get(t) }
+    fn member_count(t: Int): Int { ty_mlen.get(t) }
+    fn member_at(t: Int, i: Int): Int { ty_mem.get(ty_mstart.get(t).add(i)) }
+
+    fn is_kind(t: Int, k: Int): Bool {
+      if ast::is_some(t) {
+        ty_kind.get(t).eq(k)
+      } else {
+        false
+      }
+    }
+
+    # Hash-consed: scan for an identical row before adding one.
+    fn intern_ty(kind: Int, sym: Int, members: IntList): Int {
+      var t = zero;
+      while t.lt(ty_count()) {
+        if ty_kind.get(t).eq(kind) {
+          if ty_sym.get(t).eq(sym) {
+            if ty_mlen.get(t).eq(members.length()) {
+              var i = zero;
+              var same = true;
+              while i.lt(members.length()) {
+                if member_at(t, i).ne(members.get(i)) {
+                  same = false;
+                  i = members.length();
+                } else {
+                  i = i.add(one);
+                }
+              }
+              if same {
+                return t;
+              }
+            }
+          }
+        }
+        t = t.add(one);
+      }
+      ty_kind.push(kind);
+      ty_sym.push(sym);
+      ty_mstart.push(ty_mem.length());
+      ty_mlen.push(members.length());
+      var i = zero;
+      while i.lt(members.length()) {
+        ty_mem.push(members.get(i));
+        i = i.add(one);
+      }
+      ty_count().sub(one)
+    }
+
+    fn ty_simple(kind: Int): Int {
+      intern_ty(kind, ast::none(), int_list())
+    }
+
+    fn ty_unit(): Int { ty_simple(tk_unit()) }
+    fn ty_never(): Int { ty_simple(tk_never()) }
+
+    fn ty_of_symbol(kind: Int, sym: Int): Int {
+      intern_ty(kind, sym, int_list())
+    }
+
+    # A unit's discriminant, assigned on first sight and stable after.
+    fn unit_code(sym: Int): Int {
+      var i = zero;
+      while i.lt(unit_syms.length()) {
+        if unit_syms.get(i).eq(sym) {
+          return unit_codes.get(i);
+        }
+        i = i.add(one);
+      }
+      unit_syms.push(sym);
+      unit_codes.push(unit_codes.length());
+      unit_codes.get(unit_codes.length().sub(one))
+    }
+
+    # `False` is 0 and `True` is 1, so that `if` can branch on a
+    # comparison result with no conversion. Called once, before anything
+    # else asks for a code.
+    fn seed_bool(false_sym: Int, true_sym: Int) {
+      unit_code(false_sym);
+      unit_code(true_sym);
+    }
+
+    # Elaboration. `m` is the module the type was written in.
+
+    fn elab(t: Int, m: Int): Int {
+      if ast::is_some(t).not() {
+        return ty_unit();
+      }
+      let k = ast::kind_of(t);
+      if k.eq(ast::k_ty_unit()) {
+        return ty_unit();
+      }
+      if k.eq(ast::k_ty_never()) {
+        return ty_never();
+      }
+      if k.eq(ast::k_ty_union()) {
+        let members = int_list();
+        var i = zero;
+        while i.lt(ast::b_of(t)) {
+          add_member(members, elab(ast::kid_at(ast::a_of(t), i), m));
+          i = i.add(one);
+        }
+        if members.length().eq(zero) {
+          return ty_never();
+        }
+        if members.length().eq(one) {
+          return members.get(zero);
+        }
+        return intern_ty(tk_union(), ast::none(), members);
+      }
+      if k.ne(ast::k_ty_ref()) {
+        prog::error(prog::e_type(), m, ast::none());
+        return ty_never();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(t));
+      if ast::is_some(sym).not() {
+        prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(t)));
+        return ty_never();
+      }
+      ty_of_decl(sym)
+    }
+
+    # The type a type symbol names. An alias is transparent; a `unit` or
+    # a tag is nominal; an abstract `type T;` stays abstract until an
+    # environment binds it.
+    fn ty_of_decl(sym: Int): Int {
+      let kind = prog::sym_kind.get(sym);
+      if kind.eq(prog::sk_alias()) {
+        return elab(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
+      }
+      if kind.eq(prog::sk_unit()) {
+        return ty_of_symbol(tk_nominal(), sym);
+      }
+      if kind.eq(prog::sk_tag()) {
+        return ty_of_symbol(tk_nominal(), sym);
+      }
+      if kind.eq(prog::sk_type()) {
+        return ty_of_symbol(tk_abstract(), sym);
+      }
+      prog::error(prog::e_type(), prog::sym_mod.get(sym), prog::sym_name.get(sym));
+      ty_never()
+    }
+
+    # A union's members are deduplicated and flattened, so that
+    # `Read | Eof` and an alias naming the same two are one type.
+    fn add_member(members: IntList, t: Int) {
+      if is_kind(t, tk_never()) {
+        return ();
+      }
+      if is_kind(t, tk_union()) {
+        var i = zero;
+        while i.lt(member_count(t)) {
+          add_member(members, member_at(t, i));
+          i = i.add(one);
+        }
+        return ();
+      }
+      var i = zero;
+      while i.lt(members.length()) {
+        if members.get(i).eq(t) {
+          return ();
+        }
+        i = i.add(one);
+      }
+      members.push(t);
+    }
+
+    # A tag's payload, or the unit type for a `unit` declaration.
+    fn payload_of(t: Int): Int {
+      let sym = sym_of(t);
+      if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
+        elab(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
+      } else {
+        ty_unit()
+      }
+    }
+
+    fn is_unit_decl(t: Int): Bool {
+      if is_kind(t, tk_nominal()).not() {
+        false
+      } else {
+        prog::sym_kind.get(sym_of(t)).eq(prog::sk_unit())
+      }
+    }
+
+    # Layout, D59. How many Wasm scalars a value of this type occupies.
+    fn width(t: Int): Int {
+      let k = kind_of(t);
+      if k.eq(tk_unit()) {
+        return zero;
+      }
+      if k.eq(tk_never()) {
+        return zero;
+      }
+      if k.eq(tk_abstract()) {
+        # An unbound abstract type has no layout; the environment must
+        # substitute before anyone asks.
+        return one;
+      }
+      if k.eq(tk_nominal()) {
+        if is_unit_decl(t) {
+          return one;
+        }
+        return width(payload_of(t));
+      }
+      # A union: one scalar if the members discriminate by themselves,
+      # otherwise a discriminant beside room for the widest.
+      if all_units(t) {
+        return one;
+      }
+      var widest = zero;
+      var i = zero;
+      while i.lt(member_count(t)) {
+        let w = width(member_at(t, i));
+        if w.gt(widest) {
+          widest = w;
+        }
+        i = i.add(one);
+      }
+      widest.add(one)
+    }
+
+    fn all_units(t: Int): Bool {
+      var i = zero;
+      while i.lt(member_count(t)) {
+        if is_unit_decl(member_at(t, i)).not() {
+          return false;
+        }
+        i = i.add(one);
+      }
+      true
+    }
+
+    # Whether a value of type `t` is acceptable where `expected` is
+    # wanted: equality, divergence, or injection into a union (D17).
+    fn fits(t: Int, expected: Int): Bool {
+      if t.eq(expected) {
+        return true;
+      }
+      if is_kind(t, tk_never()) {
+        return true;
+      }
+      if is_kind(expected, tk_union()).not() {
+        return false;
+      }
+      if is_kind(t, tk_union()) {
+        var i = zero;
+        while i.lt(member_count(t)) {
+          if is_member(member_at(t, i), expected).not() {
+            return false;
+          }
+          i = i.add(one);
+        }
+        return true;
+      }
+      is_member(t, expected)
+    }
+
+    fn is_member(t: Int, union: Int): Bool {
+      var i = zero;
+      while i.lt(member_count(union)) {
+        if member_at(union, i).eq(t) {
+          return true;
+        }
+        i = i.add(one);
+      }
+      false
+    }
+
+    # The head a value discriminates on: a nominal type's own symbol.
+    fn head_of(t: Int): Int {
+      if is_kind(t, tk_nominal()) {
+        sym_of(t)
+      } else if is_kind(t, tk_abstract()) {
+        sym_of(t)
+      } else {
+        ast::none()
+      }
+    }
+  }
+}

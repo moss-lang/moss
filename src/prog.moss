@@ -88,6 +88,15 @@ assume Std {
   # An import cycle (D10).
   fn e_cycle(): Int { n8() }
 
+  # A path where a type belongs, or a symbol that is not a type.
+  fn e_type(): Int { n9() }
+
+  # No such method for that receiver.
+  fn e_method(): Int { n10() }
+
+  # A context that nests too deeply to be real.
+  fn e_deep(): Int { n11() }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     sym_mod, sym_name, sym_kind, sym_decl, sym_recv, sym_asm, sym_nasm,
