@@ -118,28 +118,28 @@ reported rather than mis-compiled:
   Num.add;` provides a detached symbol at a receiver, and finding it
   means asking the environment, which is the same specialization
   machinery a fn bind needs.
-- **Values wider than one scalar.** Done for the scalar cases: a tag is
-  its payload ([D58]) and a union of units is one discriminant ([D59]),
-  and `codegen.moss` carries real types and layouts now. What is left is
-  the wider union — `Read | Eof` in `src/lex.moss` is a discriminant
-  beside a payload, so it needs injection at the point a member enters
-  the union, a `match` that reads the discriminant and then the payload,
-  and a way for a function to return two scalars, which a Wasm result
-  list cannot do without staging through locals. No file in `src/` or
-  `lib/` uses a record or a tuple, so those can wait.
-- **Monomorphization.** Type binds are static and drive specialization
-  ([D2](../design/semantics.md)); `lower.moss` records them and
-  `canon` chases them, but the back end never asks.
+- **Records and tuples.** Nothing in `src/` or `lib/` uses either, so
+  they are the only part of the value model still missing; everything
+  else of [D58] and [D59] compiles, including a union wider than one
+  scalar. `tests/wasi/noheap.moss` is the standing test for them.
+- **Bracket application.** Nothing in `src/` or `lib/` applies a type
+  (`Pair[T=Int]`) today, so the back end ignores one where it appears.
+  [D61]'s library change will introduce them — an accessor declared once
+  and provided as `String.get[Elem=Char]` — and the back end will have to
+  interpret the bindings rather than skip them.
 - **Diagnostics** are a code letter and a name, with no position. The
   machinery for a real message is a string the compiler holds, which is
   [D48](../design/semantics.md).
 
-Three steps of the bootstrap's own order are taken: the requirement
-lists, real types in the back end, and the runtime half of the calling
-convention. What is left is the static half — compile a (function,
-environment) pair rather than a function, so that a fn bind or a type
-bind specialises the callee — and then methods and functors, which are
-both that mechanism with a different key.
+All of the bootstrap's own order is taken: requirement lists, real types
+and layouts, the calling convention both halves, methods, functors, and
+one specialization per environment. What stops the compiler compiling
+itself is no longer a stage — it is [D61]'s library change. Its own
+source calls `.length` on a `String` and on an `IntList`, and those are
+two different symbols with one spelling today, which by [D44] one scope
+cannot name. Declaring each accessor once and bracket-applying the
+element type per provision fixes that, and then the fixpoint is the next
+thing to try.
 
 The Python originals are [`lower.py`](/bootstrap/mossc/lower.py) and
 [`build.py`](/bootstrap/mossc/build.py) — but the self-hosted back end

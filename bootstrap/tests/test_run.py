@@ -1118,7 +1118,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         own back end already emits. This is the shape src/lex.moss's
         `peek()` returns."""
         module = self.compile_with_moss("tests/wasi/wide.moss")
-        self.assertEqual(self.wasmtime_run(module), "ABCD")
+        self.assertEqual(self.wasmtime_run(module), "ABCD\n")
 
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
@@ -1132,7 +1132,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/tags.moss", "EBACEAB\n"),
             ("tests/wasi/ctx.moss", "CEECI\n"),
             ("tests/wasi/functor.moss", "ABD\n"),
-            ("tests/wasi/wide.moss", "ABCD"),
+            ("tests/wasi/wide.moss", "ABCD\n"),
         )
         for entry, expected in cases:
             with self.subTest(entry=entry):

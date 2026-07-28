@@ -406,9 +406,13 @@ so `fn Bool.flip()` in a module that merely imports `Bool` is rejected —
 "attached method receiver `Bool` is not in scope". The `Wasi` bridge hit
 this providing `Bool.not`, whose provider must be a method on `Bool`
 ([D54]); the fix was to define `Bool.flip` in bool.moss, which is
-arguably where it belonged. Worth revisiting if a bridge ever needs to
-attach to a type it does not own: the ordering is an implementation
-detail, not a decision.
+arguably where it belonged. Settled the other way by [D61]: an attached
+method *must* be declared in the same file as the nominal type it
+attaches to, which is what lets a call find it without importing
+anything. So the ordering is a rule rather than an implementation
+detail, and a bridge that wants to attach to a type it does not own
+cannot — it provides a *detached* method at that receiver instead, which
+is exactly what `Bool.not` does.
 
 **[D59] DECIDED by the designer (the compiler has no heap).** Every value
 of a Moss program compiles to a *finite sequence of Wasm scalars* — i32
