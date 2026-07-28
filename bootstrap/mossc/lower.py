@@ -731,13 +731,6 @@ class Lower:
         self._const_cache[id(symbol)] = (value, declared)
         return value, declared
 
-    def flatten_context(self, symbol: Symbol) -> tuple[Env, list]:
-        """Public: the environment/needs a context provides (for linking)."""
-        env = Env(symbol.module)
-        needs: list = []
-        self.add_symbol_item(env, symbol.module, symbol, {}, needs)
-        return env, needs
-
 
 class FnChecker:
     """Type-checks one function body and produces its IR."""
