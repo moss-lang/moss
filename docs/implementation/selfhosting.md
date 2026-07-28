@@ -32,6 +32,8 @@ wasmtime --dir . mossc.wasm "" tests/wasi/prim.moss > prim.wasm
 | [`ast.moss`](/src/ast.moss) | the whole tree, as parallel arenas |
 | [`syntax.moss`](/src/syntax.moss) | recursive descent over the whole grammar |
 | [`prog.moss`](/src/prog.moss) | the module graph, symbols, and scopes |
+| [`types.moss`](/src/types.moss) | elaborated types, hash-consed, and their layouts |
+| [`lower.moss`](/src/lower.moss) | requirement environments and each function's needs |
 | [`bytes.moss`](/src/bytes.moss) | byte buffers, LEB128, small integers |
 | [`insn.moss`](/src/insn.moss) | instruction encoding |
 | [`emit.moss`](/src/emit.moss) | the module builder and section layout |
@@ -55,6 +57,10 @@ Not by looking at its output, but by holding it to the bootstrap's.
   the scope each module ends up with are compared as a set of
   (module, namespace, name, target) rows. For the compiler's own
   sources — 23 modules — the two agree on all 1101 rows.
+- **Needs.** Every defined function's requirement list, in order — its
+  calling convention. For `tests/wasi/full.moss`, which reaches all of
+  `Std` provided in Moss over the primitive context, the two agree on
+  all 184 of them.
 - **Codegen.** [`tests/wasi/prim.moss`](/tests/wasi/prim.moss) and
   [`tests/wasi/raw.moss`](/tests/wasi/raw.moss) are compiled by both
   compilers, and the modules behave identically. The self-hosted one is
@@ -82,11 +88,11 @@ lines — `type Str I32;`, `match s { Str a => a }`, `fn Str.length()`,
 `bind putchar = wasi_putchar;`. A program that needs any of them is
 reported rather than mis-compiled:
 
-- **Contexts at runtime.** A defined function's requirement list, the
-  call-site map from callee key to caller key, and val binds as hidden
-  parameters — the explicit-context IR of
-  [§11](../design/semantics.md) stage 3. Without it there are no
-  contextual vals and no fn binds.
+- **Contexts at runtime.** Half done. `lower.moss` computes each
+  function's requirement list and the environment it sits in, checked
+  against the bootstrap; what consumes them does not exist yet — val
+  needs as hidden parameters, the call-site map from callee key to
+  caller key, and one compiled specialization per environment.
 - **Functors** ([D55](../design/semantics.md)) — the construct, not the
   library: `bind WasiStd;` has to inline the functor's binds at the
   application site, which needs the above.
@@ -95,21 +101,28 @@ reported rather than mis-compiled:
   and detached by name with the receiver's home module as fallback. The
   symbol tables in `prog.moss` already hold both keys; nothing consumes
   them.
-- **Types beyond scalars.** Tags, records, unions and `match` — one
-  scalar per field and a discriminant beside the payload, per
-  [D59](../design/semantics.md). `codegen.moss` has a three-valued
-  notion of type (nothing, i32, i64) where a real one belongs.
+- **Tags, unions and `match`.** `types.moss` knows the layouts —
+  a tag is its payload ([D58]), a union of units is one scalar and any
+  wider union is a discriminant beside it ([D59]) — but `codegen.moss`
+  still has a three-valued notion of type (nothing, i32, i64) where
+  those belong, and emits neither injection nor discrimination. No file
+  in `src/` or `lib/` uses a record or a tuple, so those can wait.
 - **Monomorphization.** Type binds are static and drive specialization
-  ([D2](../design/semantics.md)); the back end never sees a type bind
-  because nothing binds types yet.
+  ([D2](../design/semantics.md)); `lower.moss` records them and
+  `canon` chases them, but the back end never asks.
 - **Diagnostics** are a code letter and a name, with no position. The
   machinery for a real message is a string the compiler holds, which is
   [D48](../design/semantics.md).
 
-The order to take them in is the bootstrap's own: contexts and needs
-first, since methods, functors and binds all reduce to them, then the
-value model, then monomorphization. The Python originals are
-[`lower.py`](/bootstrap/mossc/lower.py) and
+The order to take them in is the bootstrap's own, and the first step is
+taken: contexts and needs, since methods, functors and binds all reduce
+to them. What is left is one rewrite of `codegen.moss` — compile a
+(function, environment) pair rather than a function, take the val needs
+as trailing parameters, translate the caller's keys to the callee's at
+each call, dispatch a method on its receiver's head, inline a functor's
+binds where it is applied, and give a value more than one scalar.
+
+The Python originals are [`lower.py`](/bootstrap/mossc/lower.py) and
 [`build.py`](/bootstrap/mossc/build.py) — but the self-hosted back end
 is much less work than their line count suggests, because most of
 `build.py` is shims implementing a native `Std`, and there is nothing
