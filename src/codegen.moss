@@ -33,10 +33,22 @@ assume Std {
   fn c_unbound(): Int { n2() }        # abstract, and nothing provides it
   fn c_unknown_op(): Int { n3() }     # a `Wasm` name with no instruction
   fn c_bad_type(): Int { n4() }
+  # A call whose specialization was never queued: discovery and emission
+  # disagreed about which environment the callee is compiled in.
+  fn c_missing(): Int { n5() }
 
-  # Reachable functions, and the Wasm index each gets.
+  # Reachable *specializations*: a function under a specific set of
+  # bindings, and the Wasm index each gets. A type or fn bind changes the
+  # code rather than the data (D2), so two call sites that bind
+  # differently get two bodies, each with its calls resolved to direct
+  # ones — which is what makes a fn bind compilable without a table.
   val fq_sym: IntList;
+  val fq_env: IntList;
   val fq_index: IntList;
+
+  # The environment the frame being compiled is in, extended by every
+  # `bind` it executes and restored at the end of each block.
+  val cg_env: CellInt;
 
   # WASI functions called anywhere, and the import index each gets.
   val wi_sym: IntList;
@@ -92,7 +104,7 @@ assume Std {
   val cg_err_name: IntList;
 
   context Codegen =
-    fq_sym, fq_index, wi_sym, wi_index,
+    fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
     pv_recv, pv_sym, pv_local, pv_top,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
@@ -275,7 +287,7 @@ assume Std {
 
     # `this`'s type, for a method: its receiver declaration.
     fn this_type(sym: Int): Int {
-      types::ty_of_decl(prog::sym_recv.get(sym))
+      canon_ty(types::ty_of_decl(prog::sym_recv.get(sym)))
     }
 
     # `this` is the first local of a method's frame, so it needs no name.
@@ -328,13 +340,133 @@ assume Std {
       elab_ty(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
     }
 
+    fn contains(xs: IntList, v: Int): Bool {
+      var i = zero;
+      while i.lt(xs.length()) {
+        if xs.get(i).eq(v) {
+          return true;
+        }
+        i = i.add(one);
+      }
+      false
+    }
+
+    # The val keys a specialization takes as parameters: its own, plus —
+    # for every fn need bound to a provider — whatever that provider
+    # needs in turn. A bound provider runs in a frame that never mentions
+    # its values, which may be several below the bind, so they are
+    # threaded down.
+    fn val_slots(out: IntList, sym: Int, env: Int, depth: Int) {
+      if depth.gt(hex(two_(), zero)) {
+        cg_error(c_unsupported(), ast::none());
+        return ();
+      }
+      var i = zero;
+      while i.lt(lower::needs_count(sym)) {
+        let r = lower::need_recv_at(sym, i);
+        let ns = lower::need_sym_at(sym, i);
+        if passed_need(r, ns) {
+          if contains(out, ns).not() {
+            out.push(ns);
+          }
+        } else {
+          let e = lower::env_find(
+            env, lower::ek_fn(), need_key_recv(env, r), ns
+          );
+          if ast::is_some(e) {
+            if ast::is_some(lower::env_a_of(e)) {
+              val_slots(out, lower::env_a_of(e), lower::env_b_of(e), depth.add(one));
+            }
+          }
+        }
+        i = i.add(one);
+      }
+    }
+
+    fn two_(): Int { n2() }
+
+    # The environment a callee is compiled in: its own bindings, taken
+    # from this frame. Built by walking the callee's base environment
+    # outermost first, so that the same bindings always give the same
+    # chain — which is what lets it key the specialization cache.
+    fn callee_env(callee: Int): Int {
+      let chain = int_list();
+      var e = lower::env_of(callee);
+      while ast::is_some(e) {
+        chain.push(e);
+        e = lower::env_next_of(e);
+      }
+      var out = lower::env_empty();
+      var i = chain.length();
+      while i.gt(zero) {
+        i = i.sub(one);
+        let entry = chain.get(i);
+        let kind = lower::env_kind_of(entry);
+        let recv = lower::env_recv_of(entry);
+        let sym = lower::env_sym_of(entry);
+        if kind.eq(lower::ek_type()) {
+          let here = lower::env_find(cg_env.read(), lower::ek_type(), recv, sym);
+          if ast::is_some(here) {
+            out = lower::env_push(
+              out, lower::ek_type(), recv, sym, lower::env_a_of(here), ast::none()
+            );
+          }
+        } else if kind.eq(lower::ek_fn()) {
+          # Found under the caller's canonical key, stored under the one
+          # the callee will compute from its own bindings — which the
+          # loop has already pushed, since a type comes before anything
+          # whose signature mentions it.
+          let here = lower::env_find(
+            cg_env.read(), lower::ek_fn(),
+            need_key_recv(cg_env.read(), recv), sym
+          );
+          if ast::is_some(here) {
+            if ast::is_some(lower::env_a_of(here)) {
+              out = lower::env_push(
+                out, lower::ek_fn(), need_key_recv(out, recv), sym,
+                lower::env_a_of(here), lower::env_b_of(here)
+              );
+            }
+          }
+        }
+      }
+      out
+    }
+
     # Types.
 
     fn ty_none(): Int { types::ty_unit() }
 
     fn width(ty: Int): Int { types::width(ty) }
 
-    fn elab_ty(t: Int, m: Int): Int { types::elab(t, m) }
+    # Elaborated *and* resolved through the environment: a type bind is
+    # what makes an abstract symbol mean something here.
+    fn elab_ty(t: Int, m: Int): Int {
+      lower::elab(cg_env.read(), t, m)
+    }
+
+    fn canon_ty(ty: Int): Int { lower::canon(cg_env.read(), ty) }
+
+    # A method key names its receiver by whatever symbol was in scope
+    # where the requirement was written, and the environment may have
+    # bound that symbol since — so keys are compared after
+    # canonicalization through the bindings in force (D43).
+    fn canon_head_in(env: Int, sym: Int): Int {
+      let h = types::head_of(lower::canon(env, types::ty_of_decl(sym)));
+      if ast::is_some(h) {
+        h
+      } else {
+        sym
+      }
+    }
+
+    fn need_key_recv(env: Int, r: Int): Int {
+      if ast::is_some(r) {
+        canon_head_in(env, r)
+      } else {
+        r
+      }
+    }
 
     # Whether an abstract type is `Wasm`'s `I64` — the one place the back
     # end has to know a type by name, because a valtype is not something
@@ -459,12 +591,19 @@ assume Std {
         return lc_type.get(this_local());
       }
       if k.eq(ast::k_ex_method()) {
-        let meth = method_of(e, m);
-        if ast::is_some(meth).not() {
-          return ty_none();
+        var target = method_of(e, m);
+        if ast::is_some(target).not() {
+          let bound = method_provision(type_of(ast::a_of(e), m), e, m);
+          if ast::is_some(bound).not() {
+            return ty_none();
+          }
+          target = lower::env_a_of(bound);
+          if ast::is_some(target).not() {
+            return ty_none();
+          }
         }
         return elab_ty(
-          ast::fn_ret(prog::sym_decl.get(meth)), prog::sym_mod.get(meth)
+          ast::fn_ret(prog::sym_decl.get(target)), prog::sym_mod.get(target)
         );
       }
       if k.eq(ast::k_ex_path()) {
@@ -495,8 +634,19 @@ assume Std {
         if is_i32_bool(sym) {
           return cg_boolty.read();
         }
+        var target = sym;
+        if is_defined_fn(sym).not() {
+          let bound = lower::env_find(
+            cg_env.read(), lower::ek_fn(), ast::none(), sym
+          );
+          if ast::is_some(bound) {
+            if ast::is_some(lower::env_a_of(bound)) {
+              target = lower::env_a_of(bound);
+            }
+          }
+        }
         return elab_ty(
-          ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
+          ast::fn_ret(prog::sym_decl.get(target)), prog::sym_mod.get(target)
         );
       }
       # `()`, `break`, `return` and everything this slice does not cover
@@ -539,15 +689,33 @@ assume Std {
 
     # Pass one: everything reachable from `main`.
 
-    fn queued(sym: Int): Bool {
+    fn queued(sym: Int, env: Int): Int {
       var i = zero;
       while i.lt(fq_sym.length()) {
         if fq_sym.get(i).eq(sym) {
-          return true;
+          if fq_env.get(i).eq(env) {
+            return i;
+          }
         }
         i = i.add(one);
       }
-      false
+      ast::none()
+    }
+
+    # Queue one specialization and walk it, unless it is already there.
+    fn want(sym: Int, env: Int) {
+      if ast::is_some(queued(sym, env)) {
+        return ();
+      }
+      fq_sym.push(sym);
+      fq_env.push(env);
+      fq_index.push(ast::none());
+      let saved = cg_env.read();
+      cg_env.write(env);
+      discover_expr(
+        ast::fn_body(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
+      );
+      cg_env.write(saved);
     }
 
     fn imported(sym: Int): Int {
@@ -570,10 +738,15 @@ assume Std {
         let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
         if ast::is_some(sym) {
           if is_defined_fn(sym) {
-            if queued(sym).not() {
-              fq_sym.push(sym);
-              fq_index.push(ast::none());
-              discover_fn(sym);
+            want(sym, callee_env(sym));
+          } else if ast::is_some(
+            lower::env_find(cg_env.read(), lower::ek_fn(), ast::none(), sym)
+          ) {
+            let bound = lower::env_find(
+              cg_env.read(), lower::ek_fn(), ast::none(), sym
+            );
+            if ast::is_some(lower::env_a_of(bound)) {
+              want(lower::env_a_of(bound), lower::env_b_of(bound));
             }
           } else if in_wasi(sym) {
             if ast::is_some(imported(sym)).not() {
@@ -592,10 +765,13 @@ assume Std {
       if k.eq(ast::k_ex_method()) {
         let meth = method_of(e, m);
         if ast::is_some(meth) {
-          if queued(meth).not() {
-            fq_sym.push(meth);
-            fq_index.push(ast::none());
-            discover_fn(meth);
+          want(meth, callee_env(meth));
+        } else {
+          let bound = method_provision(type_of(ast::a_of(e), m), e, m);
+          if ast::is_some(bound) {
+            if ast::is_some(lower::env_a_of(bound)) {
+              want(lower::env_a_of(bound), lower::env_b_of(bound));
+            }
           }
         }
         discover_expr(ast::a_of(e), m);
@@ -616,12 +792,14 @@ assume Std {
         return ();
       }
       if k.eq(ast::k_ex_block()) {
+        let emark = cg_env.read();
         var i = zero;
         while i.lt(ast::b_of(e)) {
           discover_stmt(ast::kid_at(ast::a_of(e), i), m);
           i = i.add(one);
         }
         discover_expr(ast::c_of(e), m);
+        cg_env.write(emark);
         return ();
       }
       if k.eq(ast::k_ex_if()) {
@@ -650,21 +828,16 @@ assume Std {
       } else if k.eq(ast::k_st_loop()) {
         discover_expr(ast::a_of(s), m);
       } else if k.eq(ast::k_st_bind()) {
-        var i = zero;
-        while i.lt(ast::b_of(s)) {
-          discover_expr(ast::b_of(ast::kid_at(ast::a_of(s), i)), m);
-          i = i.add(one);
-        }
+        # One traversal: it discovers each bound value in the module the
+        # bind was written in, and applies the static half so that the
+        # rest of the block is discovered with it in force.
+        walk_binds(int_list(), s, m, bw_discover());
       } else if k.eq(ast::k_st_expr()) {
         discover_expr(ast::a_of(s), m);
       }
     }
 
-    fn discover_fn(sym: Int) {
-      discover_expr(ast::fn_body(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
-    }
 
-    fn index_of_method(sym: Int): Int { index_of_fn(sym) }
 
     # Pass two: the index spaces.
 
@@ -672,7 +845,7 @@ assume Std {
     # per need it takes as data, in the order `lower.moss` fixed. Both
     # sides read that order from the same place, which is what makes it
     # a calling convention rather than a coincidence.
-    fn signature_of_fn(sym: Int): Int {
+    fn signature_of_fn(sym: Int, env: Int): Int {
       let d = prog::sym_decl.get(sym);
       let m = prog::sym_mod.get(sym);
       let ps = int_list();
@@ -685,11 +858,11 @@ assume Std {
         push_valtypes(ps, elab_ty(ast::b_of(p), m));
         i = i.add(one);
       }
+      let vals = int_list();
+      val_slots(vals, sym, env, zero);
       i = zero;
-      while i.lt(lower::needs_count(sym)) {
-        if passed_need(lower::need_recv_at(sym, i), lower::need_sym_at(sym, i)) {
-          push_valtypes(ps, need_type(lower::need_sym_at(sym, i)));
-        }
+      while i.lt(vals.length()) {
+        push_valtypes(ps, need_type(vals.get(i)));
         i = i.add(one);
       }
       finish_signature(ps, elab_ty(ast::fn_ret(d), m))
@@ -751,20 +924,20 @@ assume Std {
       i = zero;
       while i.lt(fq_sym.length()) {
         let sym = fq_sym.get(i);
-        fq_index.set(i, emit::add_func(signature_of_fn(sym)));
+        cg_env.write(fq_env.get(i));
+        fq_index.set(i, emit::add_func(signature_of_fn(sym, fq_env.get(i))));
         i = i.add(one);
       }
+      cg_env.write(lower::env_empty());
     }
 
-    fn index_of_fn(sym: Int): Int {
-      var i = zero;
-      while i.lt(fq_sym.length()) {
-        if fq_sym.get(i).eq(sym) {
-          return fq_index.get(i);
-        }
-        i = i.add(one);
+    fn index_of_fn(sym: Int, env: Int): Int {
+      let i = queued(sym, env);
+      if ast::is_some(i) {
+        fq_index.get(i)
+      } else {
+        ast::none()
       }
-      ast::none()
     }
 
     fn index_of_import(sym: Int): Int {
@@ -785,12 +958,14 @@ assume Std {
       let k = ast::kind_of(e);
       if k.eq(ast::k_ex_block()) {
         let mark = lc_visible.read();
+        let emark = cg_env.read();
         var i = zero;
         while i.lt(ast::b_of(e)) {
           scan_locals_stmt(ast::kid_at(ast::a_of(e), i), m);
           i = i.add(one);
         }
         scan_locals_expr(ast::c_of(e), m);
+        cg_env.write(emark);
         lc_visible.write(mark);
       } else if k.eq(ast::k_ex_if()) {
         scan_locals_expr(ast::b_of(e), m);
@@ -859,16 +1034,7 @@ assume Std {
       } else if k.eq(ast::k_st_loop()) {
         scan_locals_expr(ast::a_of(s), m);
       } else if k.eq(ast::k_st_bind()) {
-        var i = zero;
-        while i.lt(ast::b_of(s)) {
-          let item = ast::kid_at(ast::a_of(s), i);
-          let sym = bind_val_sym(item, m);
-          if ast::is_some(sym) {
-            add_local(prog::sym_name.get(sym), need_type(sym));
-            lc_visible.write(lc_visible.read().add(one));
-          }
-          i = i.add(one);
-        }
+        walk_binds(int_list(), s, m, bw_scan());
       } else if k.eq(ast::k_st_expr()) {
         scan_locals_expr(ast::a_of(s), m);
       }
@@ -984,10 +1150,26 @@ assume Std {
     # resolves to an attached method — the receiver goes in ahead of the
     # arguments, which is exactly the shape its frame expects.
     fn emit_method(body: IntList, e: Int, m: Int): Int {
+      let recv_ty = type_of(ast::a_of(e), m);
       let meth = method_of(e, m);
-      if ast::is_some(meth).not() {
-        cg_error(prog::e_method(), ast::path_last(ast::b_of(e)));
-        return ty_none();
+      var provider = meth;
+      var penv = ast::none();
+      if ast::is_some(meth) {
+        penv = callee_env(meth);
+      } else {
+        # Not in scope as an attached method: the context must provide it
+        # at this receiver, keyed by the receiver's head (D36).
+        let bound = method_provision(recv_ty, e, m);
+        if ast::is_some(bound).not() {
+          cg_error(prog::e_method(), ast::path_last(ast::b_of(e)));
+          return ty_none();
+        }
+        provider = lower::env_a_of(bound);
+        penv = lower::env_b_of(bound);
+        if ast::is_some(provider).not() {
+          cg_error(c_unbound(), ast::path_last(ast::b_of(e)));
+          return ty_none();
+        }
       }
       emit_expr(body, ast::a_of(e), m);
       var i = zero;
@@ -995,14 +1177,32 @@ assume Std {
         emit_expr(body, ast::kid_at(ast::c_of(e), i), m);
         i = i.add(one);
       }
-      push_needs(body, meth);
-      op_call(body, index_of_fn(meth));
-      elab_ty(ast::fn_ret(prog::sym_decl.get(meth)), prog::sym_mod.get(meth))
+      push_needs(body, provider, penv);
+      if ast::is_some(index_of_fn(provider, penv)).not() {
+        cg_error(c_missing(), prog::sym_name.get(provider));
+      }
+      op_call(body, index_of_fn(provider, penv));
+      elab_ty(
+        ast::fn_ret(prog::sym_decl.get(provider)), prog::sym_mod.get(provider)
+      )
+    }
+
+    # The environment entry providing this method at this receiver.
+    fn method_provision(recv_ty: Int, e: Int, m: Int): Int {
+      let head = types::head_of(canon_ty(recv_ty));
+      if ast::is_some(head).not() {
+        return ast::none();
+      }
+      let detached = prog::resolve_detached(m, ast::b_of(e));
+      if ast::is_some(detached).not() {
+        return ast::none();
+      }
+      lower::env_find(cg_env.read(), lower::ek_fn(), head, detached)
     }
 
     # The attached method a call selects, or none.
     fn method_of(e: Int, m: Int): Int {
-      let head = types::head_of(type_of(ast::a_of(e), m));
+      let head = types::head_of(canon_ty(type_of(ast::a_of(e), m)));
       if ast::is_some(head).not() {
         return ast::none();
       }
@@ -1107,11 +1307,27 @@ assume Std {
         return cg_boolty.read();
       }
       if is_defined_fn(sym) {
-        push_needs(body, sym);
-        op_call(body, index_of_fn(sym));
+        let env = callee_env(sym);
+        push_needs(body, sym, env);
+        if ast::is_some(index_of_fn(sym, env)).not() {
+          cg_error(c_missing(), prog::sym_name.get(sym));
+        }
+        op_call(body, index_of_fn(sym, env));
         return elab_ty(
           ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
         );
+      }
+      # An abstract fn the context provides. D2: statically a direct
+      # call, with the captured context passed as data.
+      let bound = lower::env_find(
+        cg_env.read(), lower::ek_fn(), ast::none(), sym
+      );
+      if ast::is_some(bound) {
+        if ast::is_some(lower::env_a_of(bound)) {
+          return emit_provided(
+            body, lower::env_a_of(bound), lower::env_b_of(bound)
+          );
+        }
       }
       if in_wasi(sym) {
         op_call(body, index_of_import(sym));
@@ -1123,21 +1339,32 @@ assume Std {
       ty_none()
     }
 
+    # A call to whatever a bind put here: the arguments are already on
+    # the stack, so this is the provider's needs and the call.
+    fn emit_provided(body: IntList, provider: Int, penv: Int): Int {
+      push_needs(body, provider, penv);
+      if ast::is_some(index_of_fn(provider, penv)).not() {
+        cg_error(c_missing(), prog::sym_name.get(provider));
+      }
+      op_call(body, index_of_fn(provider, penv));
+      elab_ty(
+        ast::fn_ret(prog::sym_decl.get(provider)), prog::sym_mod.get(provider)
+      )
+    }
+
     # The callee's needs, in its order, taken from this frame. A need the
     # frame cannot supply is the context error of D20 rather than a
     # scope error: the name is fine, nobody provided it here.
-    fn push_needs(body: IntList, callee: Int) {
+    fn push_needs(body: IntList, callee: Int, env: Int) {
+      let vals = int_list();
+      val_slots(vals, callee, env, zero);
       var i = zero;
-      while i.lt(lower::needs_count(callee)) {
-        let r = lower::need_recv_at(callee, i);
-        let ns = lower::need_sym_at(callee, i);
-        if passed_need(r, ns) {
-          let l = provision_of(r, ns);
-          if ast::is_some(l) {
-            load_local(body, l);
-          } else {
-            cg_error(c_unbound(), prog::sym_name.get(ns));
-          }
+      while i.lt(vals.length()) {
+        let l = provision_of(ast::none(), vals.get(i));
+        if ast::is_some(l) {
+          load_local(body, l);
+        } else {
+          cg_error(c_unbound(), prog::sym_name.get(vals.get(i)));
         }
         i = i.add(one);
       }
@@ -1167,6 +1394,7 @@ assume Std {
     fn emit_block(body: IntList, e: Int, m: Int): Int {
       let mark = lc_visible.read();
       let pmark = pv_top.read();
+      let emark = cg_env.read();
       var i = zero;
       while i.lt(ast::b_of(e)) {
         emit_stmt(body, ast::kid_at(ast::a_of(e), i), m);
@@ -1178,6 +1406,7 @@ assume Std {
       }
       lc_visible.write(mark);
       pv_top.write(pmark);
+      cg_env.write(emark);
       ty
     }
 
@@ -1400,21 +1629,192 @@ assume Std {
       sym
     }
 
-    fn emit_bind(body: IntList, s: Int, m: Int) {
+    # A bind statement is walked three times — once to discover what it
+    # reaches, once to count the locals it needs, once to emit it — and
+    # all three have to agree on what it does, including inside a functor
+    # it applies. So there is one traversal with a mode rather than three
+    # that must be kept in step.
+    fn bw_emit(): Int { zero }
+    fn bw_scan(): Int { one }
+    fn bw_discover(): Int { n2() }
+
+    fn walk_binds(body: IntList, s: Int, m: Int, mode: Int) {
       var i = zero;
       while i.lt(ast::b_of(s)) {
-        let item = ast::kid_at(ast::a_of(s), i);
-        let sym = bind_val_sym(item, m);
-        if ast::is_some(sym) {
-          emit_expr(body, ast::b_of(item), m);
+        walk_bind_item(body, ast::kid_at(ast::a_of(s), i), m, zero, mode);
+        i = i.add(one);
+      }
+    }
+
+    fn walk_bind_item(body: IntList, item: Int, m: Int, depth: Int, mode: Int) {
+      if depth.gt(n8()) {
+        cg_error(c_unsupported(), ast::none());
+        return ();
+      }
+      let spec = ast::a_of(item);
+      let value = ast::b_of(item);
+      # No `=`: applying a functor of that name (D55).
+      if ast::is_some(value).not() {
+        apply_functor(body, spec, m, depth, mode);
+        return ();
+      }
+      # A receiver dot: providing a detached method at that receiver.
+      if ast::is_some(ast::b_of(spec)) {
+        bind_method(spec, value, m);
+        return ();
+      }
+      if ast::is_some(ast::a_of(spec)).not() {
+        cg_error(c_unsupported(), ast::none());
+        return ();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(spec));
+      if ast::is_some(sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        return ();
+      }
+      let kind = prog::sym_kind.get(sym);
+      if kind.eq(prog::sk_val()) {
+        # A val is data: evaluate it once into a local (D2).
+        if mode.eq(bw_scan()) {
+          add_local(prog::sym_name.get(sym), need_type(sym));
+          lc_visible.write(lc_visible.read().add(one));
+        } else if mode.eq(bw_discover()) {
+          # In the functor's own module, not the application site's.
+          discover_expr(value, m);
+        } else if mode.eq(bw_emit()) {
+          emit_expr(body, value, m);
           let l = reveal();
           store_local(body, l);
           provide(ast::none(), sym, l);
-        } else {
-          cg_error(c_unsupported(), ast::none());
+        }
+        return ();
+      }
+      if kind.eq(prog::sk_type()) {
+        let ty = named_type(value, m);
+        if ast::is_some(ty).not() {
+          cg_error(c_bad_type(), prog::sym_name.get(sym));
+          return ();
+        }
+        cg_env.write(lower::env_push(
+          cg_env.read(), lower::ek_type(), ast::none(), sym, ty, ast::none()
+        ));
+        return ();
+      }
+      if kind.eq(prog::sk_fn()) {
+        let provider = named_fn(value, m);
+        if ast::is_some(provider).not() {
+          cg_error(c_unsupported(), prog::sym_name.get(sym));
+          return ();
+        }
+        # The provider's own context is captured here, at the bind site.
+        cg_env.write(lower::env_push(
+          cg_env.read(), lower::ek_fn(), ast::none(), sym,
+          provider, cg_env.read()
+        ));
+        return ();
+      }
+      cg_error(c_unsupported(), prog::sym_name.get(sym));
+    }
+
+    # `bind Horn.loud = Horn.blast;` — a detached method provided at a
+    # receiver. The key is the receiver's head, so calls find it there.
+    fn bind_method(spec: Int, value: Int, m: Int) {
+      let recv_sym = prog::resolve_path(m, ast::a_of(spec));
+      if ast::is_some(recv_sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        return ();
+      }
+      let head = types::head_of(canon_ty(types::ty_of_decl(recv_sym)));
+      let detached = lower::find_method_decl(m, recv_sym, ast::b_of(spec));
+      let provider = named_fn(value, m);
+      if ast::is_some(head).not() {
+        cg_error(prog::e_method(), ast::b_of(spec));
+        return ();
+      }
+      if ast::is_some(detached).not() {
+        cg_error(prog::e_method(), ast::b_of(spec));
+        return ();
+      }
+      if ast::is_some(provider).not() {
+        cg_error(c_unsupported(), ast::b_of(spec));
+        return ();
+      }
+      cg_env.write(lower::env_push(
+        cg_env.read(), lower::ek_fn(), head, detached, provider, cg_env.read()
+      ));
+    }
+
+    # A functor application is a run of binds, inlined where it is
+    # written, with the paths inside resolved in the functor's module.
+    fn apply_functor(body: IntList, spec: Int, m: Int, depth: Int, mode: Int) {
+      if ast::is_some(ast::a_of(spec)).not() {
+        cg_error(c_unsupported(), ast::none());
+        return ();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(spec));
+      if ast::is_some(sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        return ();
+      }
+      if prog::sym_kind.get(sym).ne(prog::sk_functor()) {
+        cg_error(c_unsupported(), prog::sym_name.get(sym));
+        return ();
+      }
+      let d = prog::sym_decl.get(sym);
+      let home = prog::sym_mod.get(sym);
+      var i = zero;
+      while i.lt(ast::fu_nbinds(d)) {
+        let stmt = ast::kid_at(ast::fu_binds(d), i);
+        var j = zero;
+        while j.lt(ast::b_of(stmt)) {
+          walk_bind_item(
+            body, ast::kid_at(ast::a_of(stmt), j), home, depth.add(one), mode
+          );
+          j = j.add(one);
         }
         i = i.add(one);
       }
+    }
+
+    # The type or the function a bind's right-hand side names.
+    fn named_type(value: Int, m: Int): Int {
+      if ast::kind_of(value).ne(ast::k_ex_path()) {
+        return ast::none();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(value));
+      if ast::is_some(sym).not() {
+        return ast::none();
+      }
+      canon_ty(types::ty_of_decl(sym))
+    }
+
+    fn named_fn(value: Int, m: Int): Int {
+      if ast::kind_of(value).eq(ast::k_ex_path()) {
+        let sym = prog::resolve_path(m, ast::a_of(value));
+        if ast::is_some(sym) {
+          if is_compilable(sym) {
+            return sym;
+          }
+        }
+        return ast::none();
+      }
+      # `bind Int.add = Num.add;` parses as a field access, since the
+      # receiver is a type rather than a value.
+      if ast::kind_of(value).eq(ast::k_ex_field()) {
+        let obj = ast::a_of(value);
+        if ast::kind_of(obj).eq(ast::k_ex_path()) {
+          let recv = prog::resolve_path(m, ast::a_of(obj));
+          if ast::is_some(recv) {
+            let found = prog::find_attached(
+              prog::sym_mod.get(recv), recv, ast::b_of(value)
+            );
+            if ast::is_some(found) {
+              return found;
+            }
+          }
+        }
+      }
+      ast::none()
     }
 
     fn push_loop(level: Int) {
@@ -1471,7 +1871,7 @@ assume Std {
         cg_depth.write(cg_depth.read().sub(one));
         cg_ntop.write(cg_ntop.read().sub(one));
       } else if k.eq(ast::k_st_bind()) {
-        emit_bind(body, s, m);
+        walk_binds(body, s, m, bw_emit());
       } else if k.eq(ast::k_st_expr()) {
         drop_value(body, emit_expr(body, ast::a_of(s), m));
       } else {
@@ -1494,6 +1894,7 @@ assume Std {
       cg_ntop.write(zero);
       # One frame at a time, so the provisions start empty.
       pv_top.write(zero);
+      cg_env.write(fq_env.get(qi));
       if is_defined_method(sym) {
         add_local(ast::none(), this_type(sym));
       }
@@ -1506,18 +1907,18 @@ assume Std {
       # Then the needs that travel as data, in the same order the
       # signature declared them, each provided from its own parameter.
       var nparams = lc_name.length().sub(lc_base.read());
+      let vals = int_list();
+      val_slots(vals, sym, fq_env.get(qi), zero);
       i = zero;
-      while i.lt(lower::needs_count(sym)) {
-        let r = lower::need_recv_at(sym, i);
-        let ns = lower::need_sym_at(sym, i);
-        if passed_need(r, ns) {
-          provide(r, ns, add_local(prog::sym_name.get(ns), need_type(ns)));
-          nparams = nparams.add(one);
-        }
+      while i.lt(vals.length()) {
+        let ns = vals.get(i);
+        provide(ast::none(), ns, add_local(prog::sym_name.get(ns), need_type(ns)));
+        nparams = nparams.add(one);
         i = i.add(one);
       }
       lc_visible.write(lc_name.length());
       scan_locals_expr(ast::fn_body(d), m);
+      cg_env.write(fq_env.get(qi));
       lc_visible.write(lc_base.read().add(nparams));
       let n32 = assign_slots(nparams);
       let n64 = total_slots().sub(param_slots(nparams)).sub(n32);
@@ -1591,9 +1992,9 @@ assume Std {
           return ();
         }
       }
-      fq_sym.push(main);
-      fq_index.push(ast::none());
-      discover_fn(main);
+      # `main` assumes only the primitive context, so it starts empty.
+      cg_env.write(lower::env_empty());
+      want(main, lower::env_empty());
       declare_all();
       let starter = emit::add_func(emit::type_i32(zero, zero));
       var i = zero;

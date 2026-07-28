@@ -1,0 +1,78 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# A signature, an implementation of it over the primitive context, and a
+# functor mapping one to the other — the shape lib/wasi.moss's `WasiStd`
+# has, in miniature. Everything a functor can bind appears once: a type,
+# a val, a plain function, and a detached method at a receiver.
+
+type Glyph;
+
+fn .bump(): This;
+
+assume Glyph {
+  val blank: Glyph;
+  fn stamp(g: Glyph);
+
+  # A type must come before anything whose signature mentions it, since
+  # flattening walks the list in order.
+  context Ink = Glyph, blank, stamp, Glyph.bump;
+}
+
+assume Wasm, Wasi, Branch {
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn six(): I32 { w::i32_add(four(), two()) }
+
+  fn emit(c: I32) {
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
+    w::i32_store8(eight(), c);
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
+  }
+
+  fn upper_a(): I32 {
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
+  }
+
+  fn newline(): I32 { w::i32_add(eight(), two()) }
+
+  # The implementation. A nominal wrapper, because only an attached
+  # method can see its receiver and only a nominal type can carry one
+  # (D54) — and by D58 the wrapper costs nothing.
+  type Mark I32;
+
+  fn raw(mk: Mark): I32 { match mk { Mark v => v } }
+
+  fn Mark.bump(): Mark { Mark (w::i32_add(raw(this), w::i32_one)) }
+
+  fn mark_stamp(mk: Mark) { emit(w::i32_add(upper_a(), raw(mk))); }
+
+  fn first_mark(): Mark { Mark (w::i32_zero) }
+}
+
+functor Ready: Wasm, Wasi, Branch -> Ink {
+  bind Glyph = Mark;
+  bind blank = first_mark();
+  bind stamp = mark_stamp;
+  bind Glyph.bump = Mark.bump;
+}
+
+# Written against the signature alone: nothing here knows what a `Glyph`
+# turns out to be, and it compiles to a direct call all the same (D2).
+assume Ink {
+  fn once() { stamp(blank.bump()); }
+  fn thrice() { stamp(blank.bump().bump().bump()); }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind Ready;
+    stamp(blank);   # 0, 'A'
+    once();         # 1, 'B'
+    thrice();       # 3, 'D'
+    emit(newline());
+  }
+}

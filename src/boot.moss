@@ -111,6 +111,8 @@ functor Boot: Std -> Compiler {
   bind wops::op_res = int_list();
 
   bind codegen::fq_sym = int_list();
+  bind codegen::fq_env = int_list();
+  bind codegen::cg_env = cell_int();
   bind codegen::fq_index = int_list();
   bind codegen::wi_sym = int_list();
   bind codegen::wi_index = int_list();

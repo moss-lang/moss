@@ -1097,6 +1097,18 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/ctx.moss")
         self.assertEqual(self.wasmtime_run(module), "CEECI\n")
 
+    def test_functor_and_the_static_context(self):
+        """The whole of what a `bind` can do: a type, a val, a plain
+        function and a detached method at a receiver, all provided at once
+        by applying a functor (D55). Code written against the signature
+        alone still compiles to a direct call (D2), which means the callee
+        is compiled once per environment that reaches it, and the keys are
+        compared after canonicalization through the bindings in force
+        (D43) — the callee knows its receiver by a symbol the caller has
+        since bound."""
+        module = self.compile_with_moss("tests/wasi/functor.moss")
+        self.assertEqual(self.wasmtime_run(module), "ABD\n")
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
@@ -1108,6 +1120,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/across.moss", "AC\n"),
             ("tests/wasi/tags.moss", "EBACEAB\n"),
             ("tests/wasi/ctx.moss", "CEECI\n"),
+            ("tests/wasi/functor.moss", "ABD\n"),
         )
         for entry, expected in cases:
             with self.subTest(entry=entry):

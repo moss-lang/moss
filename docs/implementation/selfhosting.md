@@ -73,8 +73,10 @@ The back end covers the *primitive* context and nothing above it:
 plain functions, `let`/`var`, assignment, `if`/`else`, `while`,
 `loop`/`break`, `return`, `I32`/`I64`, the scalar half of the value
 model — nominal tags, units, unions of units, and `match` over them —
-contextual vals with `bind`, and attached method calls. That is the
-language `tests/wasi/{raw,prim,across,tags,ctx}.moss` are written in.
+contextual vals with `bind`, methods, and the static context — type
+binds, fn binds, method binds and functor application, with one compiled
+specialization per environment. That is the language
+`tests/wasi/{raw,prim,across,tags,ctx,functor}.moss` are written in.
 
 Not `Std` itself: `Std` is Moss already, and
 [`lib/wasi.moss`](/lib/wasi.moss)'s `WasiStd` maps

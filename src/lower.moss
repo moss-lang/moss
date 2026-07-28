@@ -69,7 +69,28 @@ assume Std {
 
     fn env_empty(): Int { ast::none() }
 
+    # Hash-consed, so that two chains built from the same bindings in the
+    # same order are the same id. The back end caches a specialization on
+    # its environment, and that only works if identical environments
+    # compare equal — this is what makes them do so.
     fn env_push(env: Int, kind: Int, recv: Int, sym: Int, a: Int, b: Int): Int {
+      var e = zero;
+      while e.lt(en_kind.length()) {
+        if en_next.get(e).eq(env) {
+          if en_kind.get(e).eq(kind) {
+            if en_sym.get(e).eq(sym) {
+              if en_recv.get(e).eq(recv) {
+                if en_a.get(e).eq(a) {
+                  if en_b.get(e).eq(b) {
+                    return e;
+                  }
+                }
+              }
+            }
+          }
+        }
+        e = e.add(one);
+      }
       en_kind.push(kind);
       en_recv.push(recv);
       en_sym.push(sym);
@@ -122,6 +143,13 @@ assume Std {
       }
       cur
     }
+
+    fn env_kind_of(e: Int): Int { en_kind.get(e) }
+    fn env_recv_of(e: Int): Int { en_recv.get(e) }
+    fn env_sym_of(e: Int): Int { en_sym.get(e) }
+    fn env_a_of(e: Int): Int { en_a.get(e) }
+    fn env_b_of(e: Int): Int { en_b.get(e) }
+    fn env_next_of(e: Int): Int { en_next.get(e) }
 
     # A type elaborated in module `m` and then resolved through `env`.
     fn elab(env: Int, t: Int, m: Int): Int {
