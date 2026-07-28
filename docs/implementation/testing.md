@@ -19,7 +19,7 @@ by what they print.
 This is worth the trouble because a plausible answer is the failure mode.
 An approximate front end produces a believable letter-per-declaration
 dump; it does not produce the bootstrap's tree. Both compilers agreeing
-on all 810 requirement lists of the compiler's own source is a claim
+on all 772 requirement lists of the compiler's own source is a claim
 neither could fake alone.
 
 There is one check with no first implementation to appeal to, and it is
@@ -69,13 +69,14 @@ same input with the optimized and the unoptimized compiler and requires
 the same bytes, so "the optimizer preserves behaviour" is checked here
 rather than assumed.
 
-The suite is now about five and a half minutes again, and five of those
-are one test: the fixpoint, which is two generations of the compiler
-compiling its own 35 modules. That is not the interpreter — it runs as
-Wasm — it is the constant factor of `Std` written in Moss, which is
-fifteen times the bootstrap's native shims for the same work. The cost is
-worth stating rather than hiding, because it is a standing invitation to
-fix `lib/wasistd.moss`: doing so gives the whole suite back.
+The suite is about a minute, and half of that is one test: the fixpoint,
+which is two generations of the compiler compiling its own 35 modules.
+Without `wasm-opt` it is five and a half minutes — not the interpreter,
+since it runs as Wasm, but the constant factor of `Std` written in Moss,
+which is fifteen times the bootstrap's native shims for the same work.
+The cost is worth stating rather than hiding, because it is a standing
+invitation to fix `lib/wasistd.moss`: doing so gives the minute back
+without the optimizer's help.
 
 ## A suite that speeds up is a claim to check
 

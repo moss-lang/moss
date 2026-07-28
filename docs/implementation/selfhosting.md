@@ -79,11 +79,11 @@ Not by looking at its output, but by holding it to the bootstrap's.
 - **Collect.** The module graph, the symbol every declaration gets, and
   the scope each module ends up with are compared as a set of
   (module, namespace, name, target) rows. For the compiler's own
-  sources — now 35 modules — the two agree on all 3146 rows.
+  sources — now 35 modules — the two agree on all 3035 rows.
 - **Needs.** Every defined function's requirement list, in order — its
   calling convention. Checked on `tests/wasi/full.moss`, which reaches
   all of `Std` provided in Moss over the primitive context (184
-  functions), and on the compiler's own 35 modules (810).
+  functions), and on the compiler's own 35 modules (772).
 - **Codegen.** The `tests/wasi/` programs are compiled by both
   compilers and the modules behave identically; the self-hosted one is
   also run twice — once interpreted, once as Wasm — and the bytes match.

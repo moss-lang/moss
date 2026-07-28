@@ -21,12 +21,10 @@ the pipeline in [`docs/design/semantics.md`](../docs/design/semantics.md)
    diagnostics that keep hello.md's scope/context error distinction —
    working
 
-Stage 5's swap-out has begun: [`mossc/build.py`](mossc/build.py)
-compiles the scalar subset (chars/ints/bools as i32, vals as hidden
-parameters, `putchar` as an fd_write shim) of the same IR to a WASI
-module — `python3 -m mossc build FILE | wasmtime -` runs every example
-with output identical to the interpreter's. Records, tags, match,
-strings, and fn binds are the next slices.
+Stage 5's swap-out is done: [`mossc/build.py`](mossc/build.py) compiles
+the same IR — records, tags, match, strings, fn binds and all — to a
+WASI module, and `python3 -m mossc build FILE | wasmtime -` runs every
+example with output identical to the interpreter's.
 
 Status highlights: all seven runnable `examples/` match their goldens
 under both the interpreter and the Wasm backend, and `tests/errors/` are
@@ -80,6 +78,6 @@ python3 -m mossc build ../examples/hello.moss > hello.wasm  # then: wasmtime hel
 cd bootstrap && python3 -m unittest
 ```
 
-The parser tests include a corpus check over the `src/` files that are
-already written in the MVP language; the remaining `src/` files join the
-corpus as the rewrites listed in the decision log's §12 errata land.
+The parser tests include a corpus check over every live `.moss` file in
+the repository (`corpus()` in `tests/test_run.py`); the one exclusion is
+`examples/escape.moss`, which needs string literals (D48).
