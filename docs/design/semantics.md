@@ -1342,7 +1342,10 @@ assume Int {
 
 which is what an application on a context item is for ([D22], and
 [D43]'s own `A.gimme[Foo=B]`), and what makes "the key is (receiver,
-method)" earn its keep — one symbol, provided at many receivers, exactly
+method)" earn its keep. Treat the sketch above as a direction rather
+than a specification: it has not been through a type checker, and
+whether `Elem` can be one shared symbol across all the receivers or
+wants one per container is the first thing to find out — one symbol, provided at many receivers, exactly
 [D51]'s corrected finding. It touches a new `lib/access.moss`, the five
 container modules, `Std`'s item list, every method bind in
 `lib/wasistd.moss` and `lib/wasi.moss`, and the prelude, which then

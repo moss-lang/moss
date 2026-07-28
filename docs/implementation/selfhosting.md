@@ -66,7 +66,7 @@ Not by looking at its output, but by holding it to the bootstrap's.
 - **Needs.** Every defined function's requirement list, in order — its
   calling convention. Checked on `tests/wasi/full.moss`, which reaches
   all of `Std` provided in Moss over the primitive context (184
-  functions), and on the compiler's own 34 modules (721).
+  functions), and on the compiler's own 34 modules (808).
 - **Codegen.** The `tests/wasi/` programs are compiled by both
   compilers and the modules behave identically; the self-hosted one is
   also run twice — once interpreted, once as Wasm — and the bytes match.
