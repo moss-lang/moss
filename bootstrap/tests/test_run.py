@@ -738,6 +738,9 @@ ARENA_DRIVER = (
     "    bind intern::ichars=int_list();\n"
     "    bind intern::istarts=int_list();\n"
     "    bind intern::ilens=int_list();\n"
+    "    bind intern::ibuckets=int_list();\n"
+    "    bind intern::ilink=int_list();\n"
+    "    bind intern::imask=cell_int();\n"
     "    let s = first_arg();\n"
     "    let two = one.add(one);\n"
     "    let a = take(s, zero, two);\n"
@@ -808,6 +811,9 @@ PARSE_DRIVER = (
     "    bind intern::ichars=int_list();\n"
     "    bind intern::istarts=int_list();\n"
     "    bind intern::ilens=int_list();\n"
+    "    bind intern::ibuckets=int_list();\n"
+    "    bind intern::ilink=int_list();\n"
+    "    bind intern::imask=cell_int();\n"
     "    bind lexer::src=pwd.join(first_arg()).read();\n"
     "    bind lexer::at=cell_int();\n"
     "    bind lexer::mark=cell_int();\n"
@@ -1192,12 +1198,16 @@ class TestSelfHostedNeeds(unittest.TestCase):
                 return k.decl.name.name
             return k.name
 
-        rows = []
+        # Deduplicated by symbol identity, not by table: a defined
+        # function that other modules `use *` appears in each of their
+        # name tables, and it is still one function.
+        rows, seen = [], set()
         for module in program.modules.values():
             for table in (module.names, module.attached):
                 for sym in table.values():
-                    if id(sym) not in lower.fns:
+                    if id(sym) not in lower.fns or id(sym) in seen:
                         continue
+                    seen.add(id(sym))
                     name = sym.decl.name.name
                     if sym.receiver is not None:
                         name = f"{sym.receiver.name}.{name}"
@@ -1223,7 +1233,8 @@ class TestSelfHostedNeeds(unittest.TestCase):
         return sorted(rows)
 
     def test_needs_match_the_bootstrap(self):
-        entry = "tests/wasi/full.moss"
-        mine, theirs = self.moss_rows(entry), self.bootstrap_rows(entry)
-        self.assertEqual(len(mine), len(theirs))
-        self.assertEqual(mine, theirs)
+        for entry in ("tests/wasi/full.moss", "src/main.moss"):
+            with self.subTest(entry=entry):
+                mine, theirs = self.moss_rows(entry), self.bootstrap_rows(entry)
+                self.assertEqual(len(mine), len(theirs))
+                self.assertEqual(mine, theirs)

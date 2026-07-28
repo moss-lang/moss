@@ -39,6 +39,9 @@ functor Boot: Std -> Compiler {
   bind intern::ichars = int_list();
   bind intern::istarts = int_list();
   bind intern::ilens = int_list();
+  bind intern::ibuckets = int_list();
+  bind intern::ilink = int_list();
+  bind intern::imask = cell_int();
 
   bind lexer::at = cell_int();
   bind lexer::mark = cell_int();
@@ -69,6 +72,8 @@ functor Boot: Std -> Compiler {
   bind prog::ent_name = int_list();
   bind prog::ent_to = int_list();
   bind prog::ent_pub = int_list();
+  bind prog::ent_head = int_list();
+  bind prog::ent_link = int_list();
   bind prog::att_mod = int_list();
   bind prog::att_recv = int_list();
   bind prog::att_name = int_list();
@@ -129,6 +134,10 @@ functor Boot: Std -> Compiler {
   bind types::ty_mstart = int_list();
   bind types::ty_mlen = int_list();
   bind types::ty_mem = int_list();
+  bind types::ty_unit_row = cell_int();
+  bind types::ty_never_row = cell_int();
+  bind types::ty_by_sym = int_list();
+  bind types::elab_memo = int_list();
   bind types::unit_syms = int_list();
   bind types::unit_codes = int_list();
 
@@ -143,4 +152,9 @@ functor Boot: Std -> Compiler {
   bind lower::nd_start = int_list();
   bind lower::nd_len = int_list();
   bind lower::nd_env = int_list();
+  bind lower::asm_run = int_list();
+  bind lower::asm_len = int_list();
+  bind lower::asm_env = int_list();
+  bind lower::asm_nstart = int_list();
+  bind lower::asm_nlen = int_list();
 }

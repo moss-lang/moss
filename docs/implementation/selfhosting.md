@@ -56,11 +56,11 @@ Not by looking at its output, but by holding it to the bootstrap's.
 - **Collect.** The module graph, the symbol every declaration gets, and
   the scope each module ends up with are compared as a set of
   (module, namespace, name, target) rows. For the compiler's own
-  sources — 23 modules — the two agree on all 1101 rows.
+  sources — now 34 modules — the two agree on all 2425 rows.
 - **Needs.** Every defined function's requirement list, in order — its
-  calling convention. For `tests/wasi/full.moss`, which reaches all of
-  `Std` provided in Moss over the primitive context, the two agree on
-  all 184 of them.
+  calling convention. Checked on `tests/wasi/full.moss`, which reaches
+  all of `Std` provided in Moss over the primitive context (184
+  functions), and on the compiler's own 34 modules (721).
 - **Codegen.** [`tests/wasi/prim.moss`](/tests/wasi/prim.moss) and
   [`tests/wasi/raw.moss`](/tests/wasi/raw.moss) are compiled by both
   compilers, and the modules behave identically. The self-hosted one is
@@ -135,6 +135,45 @@ is one milestone, not several: `src/main.moss` assumes
 back end can compile that line and the library behind it, it can compile
 every other file in `src/` too — they are ordinary Moss over `Std`.
 
+## Keeping it out of quadratic time
+
+Every table here is a parallel-array arena, which invites reading it
+front to back, and reading it front to back is what the compiler spent
+almost all of its time on. Two measurements, on the compiler's own 34
+modules: resolving one name per context item against all 2,374 scope
+entries came to roughly 250 million row comparisons, and working out
+each function's environment 710 times when only 31 `assume` blocks
+exist between them multiplied everything by 23.
+
+Both fixes lean on the same fact. **A name is already a dense small
+integer** by the time any table sees it — the interner hands out 0, 1,
+2, … in first-seen order — so an index over anything keyed by a name,
+a symbol or a module needs no hash at all: an array indexed by the id
+holding the newest row, and a `link` array parallel to the rows
+chaining the rest. `prog.moss`'s scope index measures a mean bucket of
+two. `lower.moss` memoizes each `assume` run's environment, since
+`declare_decl` hands every declaration in one block the same run and
+identical items give an identical answer. `types.moss` remembers `()`
+and `|`, indexes nominal types by their symbol, and memoizes
+elaboration on the syntax node.
+
+The interner is the one table whose own key is text rather than a
+number, so it is the one place that hashes: a base-31 polynomial over
+the codepoints into a power-of-two bucket table, doubling when it
+passes half full.
+
+What that came to, all under the interpreter, on `tests/wasi/full.moss`:
+
+| phase | before | after |
+|---|---|---|
+| load and resolve the graph | 26.5s | 14.7s |
+| requirement lists | 47.0s | 2.7s |
+
+And the case that mattered: the compiler's own sources went from not
+finishing inside ten minutes to 88 seconds — which is also what made it
+checkable against the bootstrap at all, and the first thing that check
+found was a bug in the comparison rather than in the compiler.
+
 ## The idiom
 
 There are no generic containers ([D51](../design/semantics.md)), so
@@ -177,14 +216,14 @@ still out of reach, which is why an error here is a letter and a name.
 
 ## Sharp edges
 
-- Interpreting the compiler is about three orders of magnitude slower
-  than running it as Wasm — `tests/wasi/prim.moss` takes 2m24s one way
-  and 180ms the other — because `src/main.moss` goes through the Moss
-  `Std` of `lib/wasistd.moss` (D52), so every `Int` is a boxed tag over
-  an interpreted instruction. A driver that assumes `Std` directly gets
-  the bootstrap's native one and is far quicker; that is what the tests
-  use, and it is also why `moss build src/main.moss` is the way to
-  actually run this compiler.
+- Interpreting the compiler is orders of magnitude slower than running
+  it as Wasm, because `src/main.moss` reaches `Std` through
+  `lib/wasistd.moss` (D52) and the bootstrap interpreter builds a Python
+  object per value it handles. Nothing is boxed in the compiled module —
+  D58 made a nominal value its payload — but the interpreter does not
+  know that. `moss build src/main.moss` is the way to actually run this
+  compiler; a driver that assumes `Std` directly gets the bootstrap's
+  native one and is what the tests use.
 - `prog.moss` reports a syntax error as a per-module flag; the position
   the parser recorded is not surfaced.
 - The back end recognizes `Wasm`, `Wasi`, `Bool` and `i32_bool` by the

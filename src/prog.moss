@@ -11,9 +11,10 @@ import "./syntax.moss" as syntax;
 # resolves through its receiver's type (D36), so expression-level
 # resolution belongs to lowering.
 #
-# Everything is arenas again. A symbol is an index; a scope is a run of
-# entries scanned linearly, which is the right data structure at this
-# size and the only one available without generic containers (D51).
+# Everything is arenas again (D51): a symbol is an index, and a scope is
+# a run of entries with a by-name index over it. The index matters —
+# resolving one name per context item, against every entry in the
+# program, was most of what the compiler spent its time on.
 
 assume Std {
   # Symbol kinds.
@@ -74,6 +75,17 @@ assume Std {
   val ent_to: IntList;
   val ent_pub: IntList;
 
+  # An index over those entries, keyed by name. Every lookup is by name,
+  # and a name is already a dense small integer by the time it gets here
+  # — the interner hands out 0, 1, 2, ... in first-seen order — so the
+  # index needs no hash: `ent_head` is indexed by the name id directly
+  # and holds the newest entry for it, and `ent_link` runs parallel to
+  # the entries, chaining the rest. A bucket holds one entry per module
+  # and namespace that binds that name, which measures at a mean of two
+  # against the two thousand entries a scan used to read.
+  val ent_head: IntList;
+  val ent_link: IntList;
+
   # Attached methods, keyed by (module, receiver symbol, name).
   val att_mod: IntList;
   val att_recv: IntList;
@@ -99,6 +111,7 @@ assume Std {
 
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
+    ent_head, ent_link,
     sym_mod, sym_name, sym_kind, sym_decl, sym_recv, sym_asm, sym_nasm,
     ent_mod, ent_ns, ent_name, ent_to, ent_pub,
     att_mod, att_recv, att_name, att_sym,
@@ -272,35 +285,61 @@ assume Std {
     # Scope entries.
 
     fn lookup(m: Int, ns: Int, name: Int): Int {
-      var i = zero;
-      while i.lt(ent_mod.length()) {
+      let e = find_entry(m, ns, name, false);
+      if ast::is_some(e) {
+        ent_to.get(e)
+      } else {
+        ast::none()
+      }
+    }
+
+    fn export_of(m: Int, ns: Int, name: Int): Int {
+      let e = find_entry(m, ns, name, true);
+      if ast::is_some(e) {
+        ent_to.get(e)
+      } else {
+        ast::none()
+      }
+    }
+
+    # The entry for this key, walking only the entries that share the
+    # name. There is at most one per (module, namespace, name): both
+    # `define` and `bind_entry` refuse to add a second.
+    fn find_entry(m: Int, ns: Int, name: Int, only_public: Bool): Int {
+      if name.ge(ent_head.length()) {
+        return ast::none();
+      }
+      var i = ent_head.get(name);
+      while ast::is_some(i) {
         if ent_mod.get(i).eq(m) {
           if ent_ns.get(i).eq(ns) {
-            if ent_name.get(i).eq(name) {
-              return ent_to.get(i);
+            if only_public.not() {
+              return i;
+            }
+            if ent_pub.get(i).eq(one) {
+              return i;
             }
           }
         }
-        i = i.add(one);
+        i = ent_link.get(i);
       }
       ast::none()
     }
 
-    fn export_of(m: Int, ns: Int, name: Int): Int {
-      var i = zero;
-      while i.lt(ent_mod.length()) {
-        if ent_mod.get(i).eq(m) {
-          if ent_ns.get(i).eq(ns) {
-            if ent_name.get(i).eq(name) {
-              if ent_pub.get(i).eq(one) {
-                return ent_to.get(i);
-              }
-            }
-          }
-        }
-        i = i.add(one);
+    # One row, and its place in the by-name chain. Every insert goes
+    # through here, so the index cannot drift from the entries.
+    fn push_entry(m: Int, ns: Int, name: Int, to: Int, pub: Int) {
+      while ent_head.length().le(name) {
+        ent_head.push(ast::none());
       }
-      ast::none()
+      let row = ent_mod.length();
+      ent_mod.push(m);
+      ent_ns.push(ns);
+      ent_name.push(name);
+      ent_to.push(to);
+      ent_pub.push(pub);
+      ent_link.push(ent_head.get(name));
+      ent_head.set(name, row);
     }
 
     # D44: one local name may not refer to two different symbols.
@@ -312,25 +351,13 @@ assume Std {
         }
         return ();
       }
-      ent_mod.push(m);
-      ent_ns.push(ns);
-      ent_name.push(name);
-      ent_to.push(to);
-      ent_pub.push(pub);
+      push_entry(m, ns, name, to, pub);
     }
 
     fn publish(m: Int, ns: Int, name: Int) {
-      var i = zero;
-      while i.lt(ent_mod.length()) {
-        if ent_mod.get(i).eq(m) {
-          if ent_ns.get(i).eq(ns) {
-            if ent_name.get(i).eq(name) {
-              ent_pub.set(i, one);
-              return ();
-            }
-          }
-        }
-        i = i.add(one);
+      let e = find_entry(m, ns, name, false);
+      if ast::is_some(e) {
+        ent_pub.set(e, one);
       }
     }
 
@@ -440,11 +467,7 @@ assume Std {
         error(e_dup(), m, name);
         return ();
       }
-      ent_mod.push(m);
-      ent_ns.push(ns);
-      ent_name.push(name);
-      ent_to.push(sym);
-      ent_pub.push(one);
+      push_entry(m, ns, name, sym, one);
     }
 
     fn declare(m: Int) {

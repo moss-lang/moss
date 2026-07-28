@@ -48,9 +48,21 @@ assume Std {
   # The environment each defined function's own declaration sits in.
   val nd_env: IntList;
 
+  # `base_env` is memoized on the run of assume items it walks, because
+  # every declaration inside one `assume` block is handed the same run
+  # (see `declare_decl`) and identical items give an identical answer.
+  # For the compiler's own sources that is thirty-one environments
+  # rather than seven hundred and ten.
+  val asm_run: IntList;
+  val asm_len: IntList;
+  val asm_env: IntList;
+  val asm_nstart: IntList;
+  val asm_nlen: IntList;
+
   context Lower =
     en_kind, en_recv, en_sym, en_a, en_b, en_next,
-    nd_recv, nd_sym, nd_start, nd_len, nd_env;
+    nd_recv, nd_sym, nd_start, nd_len, nd_env,
+    asm_run, asm_len, asm_env, asm_nstart, asm_nlen;
 
   assume Lower, ast::Ast, prog::Prog, types::Types, intern::Interner {
     # Environments.
@@ -169,25 +181,56 @@ assume Std {
       env
     }
 
+    # The memo entry for this run of assume items, or none. A run of
+    # length zero is the top level: no items, so the answer is the empty
+    # environment whatever module it was reached from, and every such
+    # declaration shares one entry.
+    fn asm_find(run: Int, len: Int): Int {
+      var i = zero;
+      while i.lt(asm_run.length()) {
+        if asm_len.get(i).eq(len) {
+          if len.eq(zero) {
+            return i;
+          }
+          if asm_run.get(i).eq(run) {
+            return i;
+          }
+        }
+        i = i.add(one);
+      }
+      ast::none()
+    }
+
     # Compute and record one function's requirement list. Registered
     # before any body is looked at, so recursion terminates.
     fn lower_needs(f: Int) {
       if is_lowered(f) {
         return ();
       }
-      nd_start.set(f, nd_sym.length());
-      let recv = int_list();
-      let sym = int_list();
-      let env = base_env(f, recv, sym);
-      nd_start.set(f, nd_sym.length());
-      var i = zero;
-      while i.lt(sym.length()) {
-        nd_recv.push(recv.get(i));
-        nd_sym.push(sym.get(i));
-        i = i.add(one);
+      let run = prog::sym_asm.get(f);
+      let len = prog::sym_nasm.get(f);
+      var memo = asm_find(run, len);
+      if ast::is_some(memo).not() {
+        let recv = int_list();
+        let sym = int_list();
+        let env = base_env(f, recv, sym);
+        let start = nd_sym.length();
+        var i = zero;
+        while i.lt(sym.length()) {
+          nd_recv.push(recv.get(i));
+          nd_sym.push(sym.get(i));
+          i = i.add(one);
+        }
+        memo = asm_run.length();
+        asm_run.push(run);
+        asm_len.push(len);
+        asm_env.push(env);
+        asm_nstart.push(start);
+        asm_nlen.push(sym.length());
       }
-      nd_len.set(f, sym.length());
-      nd_env.set(f, env);
+      nd_start.set(f, asm_nstart.get(memo));
+      nd_len.set(f, asm_nlen.get(memo));
+      nd_env.set(f, asm_env.get(memo));
     }
 
     # `assume` takes bare paths, optionally with a receiver dot (D24).

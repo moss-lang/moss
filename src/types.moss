@@ -31,6 +31,17 @@ assume Std {
   val ty_mlen: IntList;
   val ty_mem: IntList;
 
+  # `()` and `|` are asked for constantly — every missing return type is
+  # one — and each is a single row, so they are remembered rather than
+  # looked up. `ty_by_sym` is the same idea for the nominal and abstract
+  # types, indexed by the symbol that names them; and `elab_memo` is
+  # indexed by the syntax node, which is sound because a node belongs to
+  # exactly one module and so elaborates one way.
+  val ty_unit_row: CellInt;
+  val ty_never_row: CellInt;
+  val ty_by_sym: IntList;
+  val elab_memo: IntList;
+
   # Each `unit` declaration's discriminant. `Bool`'s two are 0 and 1 so
   # that a comparison result can be used directly ([D45]); every other
   # unit takes the next code after those.
@@ -38,6 +49,7 @@ assume Std {
   val unit_codes: IntList;
 
   context Types = ty_kind, ty_sym, ty_mstart, ty_mlen, ty_mem,
+    ty_unit_row, ty_never_row, ty_by_sym, elab_memo,
     unit_syms, unit_codes;
 
   assume Types, ast::Ast, prog::Prog, intern::Interner {
@@ -97,11 +109,30 @@ assume Std {
       intern_ty(kind, ast::none(), int_list())
     }
 
-    fn ty_unit(): Int { ty_simple(tk_unit()) }
-    fn ty_never(): Int { ty_simple(tk_never()) }
+    fn ty_unit(): Int {
+      if ty_unit_row.read().eq(zero) {
+        ty_unit_row.write(ty_simple(tk_unit()).add(one));
+      }
+      ty_unit_row.read().sub(one)
+    }
+
+    fn ty_never(): Int {
+      if ty_never_row.read().eq(zero) {
+        ty_never_row.write(ty_simple(tk_never()).add(one));
+      }
+      ty_never_row.read().sub(one)
+    }
 
     fn ty_of_symbol(kind: Int, sym: Int): Int {
-      intern_ty(kind, sym, int_list())
+      while ty_by_sym.length().le(sym) {
+        ty_by_sym.push(ast::none());
+      }
+      if ast::is_some(ty_by_sym.get(sym)) {
+        return ty_by_sym.get(sym);
+      }
+      let t = intern_ty(kind, sym, int_list());
+      ty_by_sym.set(sym, t);
+      t
     }
 
     # A unit's discriminant, assigned on first sight and stable after.
@@ -132,6 +163,18 @@ assume Std {
       if ast::is_some(t).not() {
         return ty_unit();
       }
+      while elab_memo.length().le(t) {
+        elab_memo.push(ast::none());
+      }
+      if ast::is_some(elab_memo.get(t)) {
+        return elab_memo.get(t);
+      }
+      let result = elab_node(t, m);
+      elab_memo.set(t, result);
+      result
+    }
+
+    fn elab_node(t: Int, m: Int): Int {
       let k = ast::kind_of(t);
       if k.eq(ast::k_ty_unit()) {
         return ty_unit();
