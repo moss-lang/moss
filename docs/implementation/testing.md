@@ -52,6 +52,23 @@ identical either way. `run_driver` in
 [`tests/test_run.py`](/bootstrap/tests/test_run.py) is the helper. Use
 `moss build` rather than `moss run` for the same reason.
 
+The same trick has a second stage, for the one program big enough to need
+it: run it through `wasm-opt -O3` first. The self-hosted back end emits
+straight-line code and leaves every call a call, so the *compiler* as a
+module is about fifteen times slower than it has to be; one second of
+optimizer takes a generation of self-compilation from two and a half
+minutes to seven seconds. `wasm_opt` in
+[`tests/test_build.py`](/bootstrap/tests/test_build.py) is the helper.
+
+Two rules come with it. Optimize the thing that *runs*, never the thing
+under test: what the fixpoint compares is the raw output of each
+generation, because raw equality implies optimized equality and not the
+other way round — comparing optimized modules could hide a difference the
+optimizer happens to erase. And assert the premise: one test compiles the
+same input with the optimized and the unoptimized compiler and requires
+the same bytes, so "the optimizer preserves behaviour" is checked here
+rather than assumed.
+
 The suite is now about five and a half minutes again, and five of those
 are one test: the fixpoint, which is two generations of the compiler
 compiling its own 35 modules. That is not the interpreter — it runs as

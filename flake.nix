@@ -41,6 +41,7 @@
           pkgs.runCommand "moss-bootstrap-test"
             {
               nativeBuildInputs = [
+                pkgs.binaryen # `wasm-opt`, which the self-hosting tests run.
                 pkgs.python3
                 pkgs.wasmtime
               ];

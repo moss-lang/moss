@@ -143,8 +143,19 @@ What is left, none of it on the path to self-hosting:
   `Ints.get` reaches an element through `ints_addr`, `elem`, `raw` and
   two of those constants — half a dozen Wasm calls for one array read, on
   the hottest path a compiler of parallel arenas has. Inlining those by
-  hand inside the accessors is the obvious next thing, and it is what
-  makes the fixpoint test five minutes instead of thirty seconds.
+  hand inside the accessors is the obvious next thing.
+
+  `wasm-opt -O3` does it mechanically in the meantime: one second of
+  optimizer takes a generation from two and a half minutes to seven
+  seconds, and shrinks the module from 1.2MB to 200KB. Nothing this back
+  end emits is *wrong*, just unoptimized — it emits straight-line code and
+  leaves every call a call. The tests run each generation through it,
+  which is the difference between a five-minute suite and a one-minute
+  one, but they always compare the **raw** output of a generation: raw
+  equality implies optimized equality and not the other way round, so
+  comparing optimized modules could hide a difference the optimizer
+  happens to erase. That the optimizer preserves what a compiler *does*
+  is itself asserted, by compiling one example with both.
 
 Two invariants worth not breaking, both of them things that have gone
 wrong. The scan pass and the emit pass in `codegen.moss` must hand out
@@ -309,11 +320,10 @@ source meant reading 243 of those.
   four self-hosted stage tests took 534 seconds interpreted and take 8.5
   compiled. `moss build src/main.moss` is likewise the way to actually run
   this compiler rather than `moss run`.
-- The suite is about five and a half minutes, and five of those are the
-  fixpoint: two generations of the compiler compiling its own 35 modules,
-  each two and a half minutes for ten seconds of actual work. See
-  **Speed** above — the constant factor is in `lib/wasistd.moss`, and
-  fixing it there would give the whole suite back.
+- The suite is about a minute, half of it the two self-compiling
+  generations of the fixpoint test — each ten seconds of actual work,
+  seven seconds of Wasm, and one of `wasm-opt`. Without the optimizer the
+  same two generations are five minutes. See **Speed** above.
 - `prog.moss` reports a syntax error as a per-module flag; the position
   the parser recorded is not surfaced.
 - The two diagnostic code spaces are `prog.moss`'s `e_` constants (A–N)

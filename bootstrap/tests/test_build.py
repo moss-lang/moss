@@ -27,6 +27,35 @@ def wasmtime() -> str:
     return path
 
 
+def wasm_opt(module: bytes) -> bytes:
+    """The same program, twenty times faster to run.
+
+    A module this back end emits is straight-line and unoptimized, and
+    running the *compiler* as one costs about two and a half minutes per
+    generation; `wasm-opt -O3` costs a second and takes that to seven. It
+    is a semantics-preserving rewrite, so a module it produces answers
+    exactly as the original does — asserted by
+    `TestSelfHostedFixpoint.test_optimizing_the_compiler_does_not_change_it`,
+    which is what lets the fixpoint be checked on optimized generations.
+
+    A hard requirement, like wasmtime: binaryen is in the dev shell and in
+    the flake's `bootstrap` check."""
+    path = shutil.which("wasm-opt")
+    if path is None:
+        raise AssertionError(
+            "wasm-opt not found on PATH; enter the Nix dev shell "
+            "(or run `nix flake check`), which provides binaryen"
+        )
+    with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+        f.write(module)
+        src = f.name
+    dst = src + ".opt.wasm"
+    subprocess.run(
+        [path, "-all", "-O3", "-o", dst, src], check=True, timeout=600
+    )
+    return Path(dst).read_bytes()
+
+
 def compile_wasm(files, entry="main.moss"):
     def read(path):
         # The loader hands back canonical absolute paths; the in-memory
@@ -612,7 +641,7 @@ class TestSelfHostedCompilesTheExamples(unittest.TestCase):
     EXAMPLES = ["hello", "true", "reassign", "params", "context", "rebind", "exit"]
 
     def compiler(self):
-        wasm = compile_wasm({}, entry="src/main.moss")
+        wasm = wasm_opt(compile_wasm({}, entry="src/main.moss"))
         with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
             f.write(wasm)
             return f.name
@@ -654,15 +683,23 @@ class TestSelfHostedFixpoint(unittest.TestCase):
     Both compilers are deterministic, which is what the byte comparison
     depends on.
 
-    This is the slowest test in the suite by a wide margin: each generation
-    is the whole compiler compiling its own 34 modules, about two and a half
-    minutes. Nearly all of that is the constant factor of `Std` written in
-    Moss — the same compilation over the bootstrap's native shims takes ten
-    seconds — so the thing to speed up is lib/wasistd.moss, not this."""
+    Each generation *runs* through `wasm-opt -O3`, which takes a round from
+    two and a half minutes to seven seconds: this back end emits
+    straight-line unoptimized code, and almost all of the cost is the
+    constant factor of `Std` written in Moss. What is compared is still the
+    raw output of each generation, never the optimized one — raw equality
+    implies optimized equality and not the other way round, so comparing
+    optimized modules could hide a difference the optimizer happens to
+    erase. The optimizer is only ever the thing that runs a compiler, never
+    the thing that produces a module under test."""
 
-    def compile_self(self, compiler_path: str) -> bytes:
+    def compile_self(self, compiler: bytes) -> bytes:
+        """One generation: run this compiler on the compiler's own source."""
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm_opt(compiler))
+            path = f.name
         result = subprocess.run(
-            [wasmtime(), "--dir", ".", compiler_path,
+            [wasmtime(), "--dir", ".", path,
              "lib/prelude.moss", "src/main.moss"],
             capture_output=True,
             timeout=1800,
@@ -677,20 +714,39 @@ class TestSelfHostedFixpoint(unittest.TestCase):
         )
         return result.stdout
 
-    def wasm_file(self, module: bytes) -> str:
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(module)
-            return f.name
-
     def test_the_compiler_is_a_fixpoint_of_itself(self):
-        s0 = self.wasm_file(compile_wasm({}, entry="src/main.moss"))
+        s0 = compile_wasm({}, entry="src/main.moss")
         s1 = self.compile_self(s0)
-        s2 = self.compile_self(self.wasm_file(s1))
+        s2 = self.compile_self(s1)
         self.assertEqual(s1, s2, "S1 != S2: the compiler is not a fixpoint")
         self.assertNotEqual(
-            Path(s0).read_bytes(), s1,
-            "S0 == S1, so this test compared a module with itself",
+            s0, s1, "S0 == S1, so this test compared a module with itself"
         )
+
+    def test_optimizing_the_compiler_does_not_change_it(self):
+        """What the speedup above rests on: the optimized compiler and the
+        compiler as emitted produce the same module for the same input. Run
+        on an example rather than on `src/`, so it costs one slow generation
+        instead of two."""
+        s0 = compile_wasm({}, entry="src/main.moss")
+        args = ["lib/prelude.moss", "examples/context.moss"]
+
+        def compile_with(module: bytes) -> bytes:
+            with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+                f.write(module)
+                path = f.name
+            result = subprocess.run(
+                [wasmtime(), "--dir", ".", path, *args],
+                capture_output=True,
+                timeout=1800,
+                cwd=REPO,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout
+
+        emitted = compile_with(s0)
+        self.assertEqual(emitted[:8], b"\0asm\x01\0\0\0", emitted[:400])
+        self.assertEqual(compile_with(wasm_opt(s0)), emitted)
 
 
 class TestSelfHostedEmitter(unittest.TestCase):
