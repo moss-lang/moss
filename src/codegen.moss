@@ -17,13 +17,15 @@ import "./wasmops.moss" as wops;
 # names, a call to a `Wasi` item becomes a call to an import the module
 # declares, and everything else is an ordinary function.
 #
-# Three passes, because a Wasm function index counts the imports first
-# and so cannot be handed out until every import is known:
-#
-#   1. discover  — walk from `main` to every function it can reach, and
-#                  note every WASI function any of them calls;
-#   2. declare   — create the imports, then the functions;
-#   3. emit      — one body at a time.
+# Bodies are emitted twice, because a Wasm function index counts the
+# imports first and so cannot be handed out until every import is known.
+# The first pass throws its output away and exists to find every
+# specialization the program reaches; then the index spaces are fixed;
+# then the second pass emits against the final numbering. Emitting is
+# the only walk of a body there is, which is what stops the two passes
+# from disagreeing about what one contains — an earlier design walked
+# bodies separately to discover them, and the walks resolved method
+# calls differently because one of them had no locals in scope.
 
 assume Std {
 
@@ -33,8 +35,8 @@ assume Std {
   fn c_unbound(): Int { n2() }        # abstract, and nothing provides it
   fn c_unknown_op(): Int { n3() }     # a `Wasm` name with no instruction
   fn c_bad_type(): Int { n4() }
-  # A call whose specialization was never queued: discovery and emission
-  # disagreed about which environment the callee is compiled in.
+  # A call whose specialization the first pass never reached, so the two
+  # passes disagree. A bug in this back end rather than in the program.
   fn c_missing(): Int { n5() }
 
   # Reachable *specializations*: a function under a specific set of
@@ -49,6 +51,13 @@ assume Std {
   # The environment the frame being compiled is in, extended by every
   # `bind` it executes and restored at the end of each block.
   val cg_env: CellInt;
+
+  # Whether this is the pass whose output is kept. Bodies are emitted
+  # twice: once to find every specialization the program reaches, which
+  # is what fixes the function indices, and once against the final
+  # numbering. Emitting is the only walk of a body there is, so the two
+  # passes cannot disagree about what it contains.
+  val cg_real: CellInt;
 
   # WASI functions called anywhere, and the import index each gets.
   val wi_sym: IntList;
@@ -104,7 +113,7 @@ assume Std {
   val cg_err_name: IntList;
 
   context Codegen =
-    fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env,
+    fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
     pv_recv, pv_sym, pv_local, pv_top,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
@@ -112,7 +121,12 @@ assume Std {
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
+    # Only the kept pass reports: the first one runs against indices that
+    # do not exist yet, so anything it says would be said twice.
     fn cg_error(code: Int, name: Int) {
+      if cg_real.read().eq(zero) {
+        return ();
+      }
       cg_errs.push(code);
       cg_err_name.push(name);
     }
@@ -687,7 +701,7 @@ assume Std {
       }
     }
 
-    # Pass one: everything reachable from `main`.
+    # Reachability.
 
     fn queued(sym: Int, env: Int): Int {
       var i = zero;
@@ -702,22 +716,6 @@ assume Std {
       ast::none()
     }
 
-    # Queue one specialization and walk it, unless it is already there.
-    fn want(sym: Int, env: Int) {
-      if ast::is_some(queued(sym, env)) {
-        return ();
-      }
-      fq_sym.push(sym);
-      fq_env.push(env);
-      fq_index.push(ast::none());
-      let saved = cg_env.read();
-      cg_env.write(env);
-      discover_expr(
-        ast::fn_body(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
-      );
-      cg_env.write(saved);
-    }
-
     fn imported(sym: Int): Int {
       var i = zero;
       while i.lt(wi_sym.length()) {
@@ -729,117 +727,36 @@ assume Std {
       ast::none()
     }
 
-    fn discover_expr(e: Int, m: Int) {
-      if ast::is_some(e).not() {
+    # Note that this specialization is reached. The queue is drained by a
+    # loop rather than by recursion, so it grows while it is walked.
+    fn want(sym: Int, env: Int) {
+      if ast::is_some(queued(sym, env)) {
         return ();
       }
-      let k = ast::kind_of(e);
-      if k.eq(ast::k_ex_call()) {
-        let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
-        if ast::is_some(sym) {
-          if is_defined_fn(sym) {
-            want(sym, callee_env(sym));
-          } else if ast::is_some(
-            lower::env_find(cg_env.read(), lower::ek_fn(), ast::none(), sym)
-          ) {
-            let bound = lower::env_find(
-              cg_env.read(), lower::ek_fn(), ast::none(), sym
-            );
-            if ast::is_some(lower::env_a_of(bound)) {
-              want(lower::env_a_of(bound), lower::env_b_of(bound));
-            }
-          } else if in_wasi(sym) {
-            if ast::is_some(imported(sym)).not() {
-              wi_sym.push(sym);
-              wi_index.push(ast::none());
-            }
-          }
-        }
-        var i = zero;
-        while i.lt(ast::c_of(e)) {
-          discover_expr(ast::kid_at(ast::b_of(e), i), m);
-          i = i.add(one);
-        }
+      if cg_real.read().eq(one) {
+        # The first pass is supposed to have reached everything. If it
+        # did not, the two passes disagree, which is a bug here rather
+        # than in the program.
+        cg_error(c_missing(), prog::sym_name.get(sym));
         return ();
       }
-      if k.eq(ast::k_ex_method()) {
-        let meth = method_of(e, m);
-        if ast::is_some(meth) {
-          want(meth, callee_env(meth));
-        } else {
-          let bound = method_provision(type_of(ast::a_of(e), m), e, m);
-          if ast::is_some(bound) {
-            if ast::is_some(lower::env_a_of(bound)) {
-              want(lower::env_a_of(bound), lower::env_b_of(bound));
-            }
-          }
-        }
-        discover_expr(ast::a_of(e), m);
-        var i = zero;
-        while i.lt(ast::d_of(e)) {
-          discover_expr(ast::kid_at(ast::c_of(e), i), m);
-          i = i.add(one);
-        }
-        return ();
-      }
-      if k.eq(ast::k_ex_match()) {
-        discover_expr(ast::a_of(e), m);
-        var i = zero;
-        while i.lt(ast::c_of(e)) {
-          discover_expr(ast::b_of(ast::kid_at(ast::b_of(e), i)), m);
-          i = i.add(one);
-        }
-        return ();
-      }
-      if k.eq(ast::k_ex_block()) {
-        let emark = cg_env.read();
-        var i = zero;
-        while i.lt(ast::b_of(e)) {
-          discover_stmt(ast::kid_at(ast::a_of(e), i), m);
-          i = i.add(one);
-        }
-        discover_expr(ast::c_of(e), m);
-        cg_env.write(emark);
-        return ();
-      }
-      if k.eq(ast::k_ex_if()) {
-        discover_expr(ast::a_of(e), m);
-        discover_expr(ast::b_of(e), m);
-        discover_expr(ast::c_of(e), m);
-        return ();
-      }
-      if k.eq(ast::k_ex_return()) {
-        discover_expr(ast::a_of(e), m);
-        return ();
-      }
+      fq_sym.push(sym);
+      fq_env.push(env);
+      fq_index.push(ast::none());
     }
 
-    fn discover_stmt(s: Int, m: Int) {
-      let k = ast::kind_of(s);
-      if k.eq(ast::k_st_let()) {
-        discover_expr(ast::c_of(s), m);
-      } else if k.eq(ast::k_st_var()) {
-        discover_expr(ast::c_of(s), m);
-      } else if k.eq(ast::k_st_assign()) {
-        discover_expr(ast::b_of(s), m);
-      } else if k.eq(ast::k_st_while()) {
-        discover_expr(ast::a_of(s), m);
-        discover_expr(ast::b_of(s), m);
-      } else if k.eq(ast::k_st_loop()) {
-        discover_expr(ast::a_of(s), m);
-      } else if k.eq(ast::k_st_bind()) {
-        # One traversal: it discovers each bound value in the module the
-        # bind was written in, and applies the static half so that the
-        # rest of the block is discovered with it in force.
-        walk_binds(int_list(), s, m, bw_discover());
-      } else if k.eq(ast::k_st_expr()) {
-        discover_expr(ast::a_of(s), m);
+    # A WASI function is exactly an import of this module (D52).
+    fn want_import(sym: Int) {
+      if ast::is_some(imported(sym)) {
+        return ();
       }
+      if cg_real.read().eq(one) {
+        cg_error(c_missing(), prog::sym_name.get(sym));
+        return ();
+      }
+      wi_sym.push(sym);
+      wi_index.push(ast::none());
     }
-
-
-
-    # Pass two: the index spaces.
 
     # A defined function's signature: its declared parameters, then one
     # per need it takes as data, in the order `lower.moss` fixed. Both
@@ -1177,10 +1094,8 @@ assume Std {
         emit_expr(body, ast::kid_at(ast::c_of(e), i), m);
         i = i.add(one);
       }
+      want(provider, penv);
       push_needs(body, provider, penv);
-      if ast::is_some(index_of_fn(provider, penv)).not() {
-        cg_error(c_missing(), prog::sym_name.get(provider));
-      }
       op_call(body, index_of_fn(provider, penv));
       elab_ty(
         ast::fn_ret(prog::sym_decl.get(provider)), prog::sym_mod.get(provider)
@@ -1308,10 +1223,8 @@ assume Std {
       }
       if is_defined_fn(sym) {
         let env = callee_env(sym);
+        want(sym, env);
         push_needs(body, sym, env);
-        if ast::is_some(index_of_fn(sym, env)).not() {
-          cg_error(c_missing(), prog::sym_name.get(sym));
-        }
         op_call(body, index_of_fn(sym, env));
         return elab_ty(
           ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
@@ -1330,6 +1243,7 @@ assume Std {
         }
       }
       if in_wasi(sym) {
+        want_import(sym);
         op_call(body, index_of_import(sym));
         return elab_ty(
           ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
@@ -1342,10 +1256,8 @@ assume Std {
     # A call to whatever a bind put here: the arguments are already on
     # the stack, so this is the provider's needs and the call.
     fn emit_provided(body: IntList, provider: Int, penv: Int): Int {
+      want(provider, penv);
       push_needs(body, provider, penv);
-      if ast::is_some(index_of_fn(provider, penv)).not() {
-        cg_error(c_missing(), prog::sym_name.get(provider));
-      }
       op_call(body, index_of_fn(provider, penv));
       elab_ty(
         ast::fn_ret(prog::sym_decl.get(provider)), prog::sym_mod.get(provider)
@@ -1636,7 +1548,6 @@ assume Std {
     # that must be kept in step.
     fn bw_emit(): Int { zero }
     fn bw_scan(): Int { one }
-    fn bw_discover(): Int { n2() }
 
     fn walk_binds(body: IntList, s: Int, m: Int, mode: Int) {
       var i = zero;
@@ -1678,9 +1589,6 @@ assume Std {
         if mode.eq(bw_scan()) {
           add_local(prog::sym_name.get(sym), need_type(sym));
           lc_visible.write(lc_visible.read().add(one));
-        } else if mode.eq(bw_discover()) {
-          # In the functor's own module, not the application site's.
-          discover_expr(value, m);
         } else if mode.eq(bw_emit()) {
           emit_expr(body, value, m);
           let l = reveal();
@@ -1884,7 +1792,7 @@ assume Std {
       store_local(body, reveal());
     }
 
-    fn compile_body(qi: Int) {
+    fn compile_one(qi: Int) {
       let sym = fq_sym.get(qi);
       let d = prog::sym_decl.get(sym);
       let m = prog::sym_mod.get(sym);
@@ -1932,7 +1840,19 @@ assume Std {
         op_unreachable(body);
       }
       op_end(body);
-      emit::set_body(fq_index.get(qi), n32, n64, body);
+      if cg_real.read().eq(one) {
+        emit::set_body(fq_index.get(qi), n32, n64, body);
+      }
+    }
+
+    # Drain the queue. It grows while it is walked, since emitting a call
+    # is what notices the callee.
+    fn compile_all() {
+      var i = zero;
+      while i.lt(fq_sym.length()) {
+        compile_one(i);
+        i = i.add(one);
+      }
     }
 
     fn total_slots(): Int {
@@ -1994,14 +1914,16 @@ assume Std {
       }
       # `main` assumes only the primitive context, so it starts empty.
       cg_env.write(lower::env_empty());
+      cg_real.write(zero);
       want(main, lower::env_empty());
+      compile_all();
+      # Only now is the function index space fixed: it counts the imports
+      # first, and which ones the program calls is what the pass above
+      # found out.
       declare_all();
+      cg_real.write(one);
       let starter = emit::add_func(emit::type_i32(zero, zero));
-      var i = zero;
-      while i.lt(fq_sym.length()) {
-        compile_body(i);
-        i = i.add(one);
-      }
+      compile_all();
       let boot = int_list();
       op_i32_const(boot, heap_pointer());
       op_i32_const(boot, heap_base());

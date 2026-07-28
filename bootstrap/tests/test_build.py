@@ -595,6 +595,50 @@ class TestWasmBackend(unittest.TestCase):
         self.assertEqual(result.stdout, "." * expected + "\n")
 
 
+class TestSelfHostedCompilesTheExamples(unittest.TestCase):
+    """The milestone: every runnable example, compiled by the compiler
+    written in Moss, produces its golden output.
+
+    These are ordinary Moss over `Std` — and `Std` is Moss too, provided
+    over the primitive context by one functor (D52, D55). So this
+    exercises the whole of it: contextual vals as parameters, fn and
+    method binds, a functor's worth of them applied at once, nominal
+    wrappers that cost nothing, and one specialization per environment.
+
+    Run as Wasm rather than interpreted, because interpreting the
+    compiler takes about a hundred seconds per example and running it
+    takes fifty milliseconds."""
+
+    EXAMPLES = ["hello", "true", "reassign", "params", "context", "rebind", "exit"]
+
+    def compiler(self):
+        wasm = compile_wasm({}, entry="src/main.moss")
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(wasm)
+            return f.name
+
+    def test_examples_match_their_goldens(self):
+        compiler = self.compiler()
+        for name in self.EXAMPLES:
+            with self.subTest(example=name):
+                built = subprocess.run(
+                    [wasmtime(), "--dir", ".", compiler,
+                     "lib/prelude.moss", f"examples/{name}.moss"],
+                    capture_output=True,
+                    timeout=600,
+                    cwd=REPO,
+                )
+                self.assertEqual(built.returncode, 0, built.stderr)
+                self.assertEqual(
+                    built.stdout[:8], b"\0asm\x01\0\0\0",
+                    f"not a module: {built.stdout[:200]!r}",
+                )
+                golden = (REPO / f"tests/examples/stdout/{name}.txt").read_text(
+                    encoding="utf-8"
+                )
+                self.assertEqual(run_wasm(built.stdout), golden)
+
+
 class TestSelfHostedEmitter(unittest.TestCase):
     """The self-hosted encoder, compiled: the emitter runs as Wasm and the
     module it writes is byte-for-byte the one the interpreter wrote."""

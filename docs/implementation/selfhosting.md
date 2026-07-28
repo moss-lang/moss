@@ -14,13 +14,19 @@ is what a program written against the primitive context wants, since
 underneath ([D52](../design/semantics.md)).
 
 It compiles under the bootstrap too, into a single WASI module — the
-whole compiler, `Std` and all, as one 800KB `.wasm` — and that module
-writes byte-for-byte the same output:
+whole compiler, `Std` and all, as one 1.1MB `.wasm` — and that module
+writes byte-for-byte the same output, about a thousand times faster:
 
 ```sh
 moss build src/main.moss > mossc.wasm
-wasmtime --dir . mossc.wasm "" tests/wasi/prim.moss > prim.wasm
+wasmtime --dir . mossc.wasm lib/prelude.moss examples/hello.moss > hello.wasm
+wasmtime hello.wasm            # Hello, world!
 ```
+
+Every runnable example compiles that way and matches its golden output.
+Those are ordinary Moss over `Std`, and `Std` is Moss too — provided
+over the primitive context by one functor ([D52], [D55]) — so the whole
+of the context machinery is exercised by getting them right.
 
 ## The stages
 
@@ -61,10 +67,11 @@ Not by looking at its output, but by holding it to the bootstrap's.
   calling convention. Checked on `tests/wasi/full.moss`, which reaches
   all of `Std` provided in Moss over the primitive context (184
   functions), and on the compiler's own 34 modules (721).
-- **Codegen.** [`tests/wasi/prim.moss`](/tests/wasi/prim.moss) and
-  [`tests/wasi/raw.moss`](/tests/wasi/raw.moss) are compiled by both
-  compilers, and the modules behave identically. The self-hosted one is
+- **Codegen.** The `tests/wasi/` programs are compiled by both
+  compilers and the modules behave identically; the self-hosted one is
   also run twice — once interpreted, once as Wasm — and the bytes match.
+  And every runnable example, compiled by the self-hosted compiler,
+  matches the golden output the bootstrap produces for it.
 
 ## What it does not do yet
 
