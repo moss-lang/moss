@@ -1188,6 +1188,20 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertNotEqual(out[:4], b"\0asm")
         self.assertTrue(out.decode("utf-8").startswith("!N "), out[:200])
 
+    def test_a_misfitting_type_is_reported(self):
+        """The D17 check, wired into the back end: a value of one nominal
+        type where another is declared, both one scalar wide, so nothing
+        but `types::fits` would notice. The bootstrap rejects it in
+        lowering; the self-hosted compiler reports `c_bad_type` (`?S`)
+        and writes nothing."""
+        from .test_build import compile_wasm
+
+        with self.assertRaises(LowerError):
+            compile_wasm({}, entry="tests/wasi/misfit.moss")
+        out = self.compile_with_moss("tests/wasi/misfit.moss")
+        self.assertNotEqual(out[:4], b"\0asm")
+        self.assertTrue(out.decode("utf-8").startswith("?S "), out[:200])
+
     def test_applying_a_type_is_reported(self):
         """The one bracket application this compiler does not do. D61's
         applications are on context items and method binds, where nothing

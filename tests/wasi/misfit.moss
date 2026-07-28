@@ -1,0 +1,17 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+
+# A value of one nominal type where another is declared: `f` wants an
+# `A` and gets a `B`. Both are one scalar wide, so only the D17 check
+# stands between this and a silently mis-typed module. The bootstrap
+# rejects it in lowering; the self-hosted compiler reports `c_bad_type`
+# (`?S`) and writes nothing.
+
+type A I32;
+type B I32;
+
+assume Wasm {
+  fn f(a: A): I32 { w::i32_one }
+  fn main() {
+    f(B (w::i32_one));
+  }
+}

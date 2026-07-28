@@ -1125,11 +1125,7 @@ assume Std {
         }
       }
       emit_expr(body, ast::a_of(e), m);
-      var i = zero;
-      while i.lt(ast::d_of(e)) {
-        emit_expr(body, ast::kid_at(ast::c_of(e), i), m);
-        i = i.add(one);
-      }
+      emit_args(body, ast::c_of(e), ast::d_of(e), m, param_types(provider));
       want(provider, penv);
       push_needs(body, provider, penv);
       op_call(body, index_of_fn(provider, penv));
@@ -1244,6 +1240,15 @@ assume Std {
       }
       let tmp = int_list();
       let got = emit_expr(tmp, e, m);
+      # D17 through the bindings in force (D43), as the bootstrap checks
+      # it: what a position yields must fit what it declared. A got with
+      # no width is either real unit or a body that jumped out — this
+      # back end types both as unit — so only a valued got is held to it.
+      if width(got).gt(zero) {
+        if types::fits(canon_ty(got), canon_ty(want)).not() {
+          cg_error(c_bad_type(), ast::none());
+        }
+      }
       if width(got).eq(width(want)) {
         push_bytes(body, tmp);
         return got;
@@ -1404,6 +1409,11 @@ assume Std {
     fn param_types(sym: Int): IntList {
       let out = int_list();
       let kind = prog::sym_kind.get(sym);
+      # Constructing a nominal takes its payload (D58).
+      if kind.eq(prog::sk_tag()) {
+        out.push(types::member_payload(types::ty_of_decl(sym)));
+        return out;
+      }
       var ok = kind.eq(prog::sk_fn());
       if ok.not() {
         ok = kind.eq(prog::sk_method());
@@ -2000,11 +2010,12 @@ assume Std {
       } else if k.eq(ast::k_st_var()) {
         emit_binding(body, s, m);
       } else if k.eq(ast::k_st_assign()) {
-        emit_expr(body, ast::b_of(s), m);
         let local = find_local(ast::a_of(s));
         if ast::is_some(local) {
+          emit_as(body, ast::b_of(s), m, lc_type.get(local));
           store_local(body, local);
         } else {
+          emit_expr(body, ast::b_of(s), m);
           cg_error(prog::e_scope(), ast::a_of(s));
         }
       } else if k.eq(ast::k_st_while()) {
