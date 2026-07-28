@@ -6,39 +6,14 @@ from mossc.parse import ParseError, parse
 
 REPO = Path(__file__).resolve().parents[2]
 
-# src/ files already written in the MVP language. The rest of src/ still
-# needs the rewrites listed in docs/design/semantics.md section 12 (operators,
-# for loops, char literals, attached-on-abstract methods) and joins this list
-# as those land.
-CORPUS = [
-    "src/ast.moss",
-    "src/boot.moss",
-    "src/bytes.moss",
-    "src/cli.moss",
-    "src/codegen.moss",
-    "src/dump.moss",
-    "src/emit.moss",
-    "src/insn.moss",
-    "src/intern.moss",
-    "src/lex.moss",
-    "src/main.moss",
-    "src/prog.moss",
-    "src/spell.moss",
-    "src/syntax.moss",
-    "src/tcode.moss",
-    "src/token.moss",
-    "src/wasmops.moss",
-    "lib/wasip1.moss",
-    "lib/wasm.moss",
-    "lib/wasi.moss",
-    "lib/wasichar.moss",
-    "lib/wasistd.moss",
-]
-
 
 class TestCorpus(unittest.TestCase):
     def test_corpus_parses(self):
-        for rel in CORPUS:
+        # The shared glob, not a hand-kept list: a list of "files already
+        # in the language" fell two files behind the language.
+        from .test_run import corpus
+
+        for rel in corpus():
             with self.subTest(file=rel):
                 source = (REPO / rel).read_text(encoding="utf-8")
                 parse(source)

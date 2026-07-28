@@ -1,4 +1,5 @@
 import io
+import itertools
 import shutil
 import subprocess
 import tempfile
@@ -10,8 +11,23 @@ from mossc import build as build_mod
 from mossc import collect
 from mossc.lower import Lower
 
+from .test_run import runnable_examples
+
 REPO = Path(__file__).resolve().parents[2]
 PRELUDE = str(REPO / "lib/prelude.moss")
+
+# One per-run directory holds every module these tests write, and dies with
+# the process — `delete=False` temporaries were left behind, a
+# compiler-sized file per test.
+_WASM_DIR = tempfile.TemporaryDirectory(prefix="moss-test-")
+_wasm_names = itertools.count()
+
+
+def wasm_file(module: bytes) -> str:
+    """A module as a path wasmtime can run."""
+    path = Path(_WASM_DIR.name) / f"{next(_wasm_names)}.wasm"
+    path.write_bytes(module)
+    return str(path)
 
 
 def wasmtime() -> str:
@@ -46,9 +62,7 @@ def wasm_opt(module: bytes) -> bytes:
             "wasm-opt not found on PATH; enter the Nix dev shell "
             "(or run `nix flake check`), which provides binaryen"
         )
-    with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-        f.write(module)
-        src = f.name
+    src = wasm_file(module)
     dst = src + ".opt.wasm"
     subprocess.run(
         [path, "-all", "-O3", "-o", dst, src], check=True, timeout=600
@@ -75,9 +89,7 @@ def compile_wasm(files, entry="main.moss"):
 def run_in_repo(wasm: bytes, args: list[str]) -> str:
     """Run with the repo preopened, which is what makes `Path` resolve:
     WASI paths are relative to a preopened directory, so `pwd` is empty."""
-    with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-        f.write(wasm)
-        path = f.name
+    path = wasm_file(wasm)
     result = subprocess.run(
         [wasmtime(), "--dir", ".", path, *args],
         capture_output=True,
@@ -91,9 +103,7 @@ def run_in_repo(wasm: bytes, args: list[str]) -> str:
 
 
 def run_wasm(wasm: bytes) -> str:
-    with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-        f.write(wasm)
-        path = f.name
+    path = wasm_file(wasm)
     result = subprocess.run(
         [wasmtime(), path], capture_output=True, text=True, timeout=120
     )
@@ -106,10 +116,8 @@ class TestWasmBackend(unittest.TestCase):
     """The compiled module must behave exactly like the interpreter: every
     runnable example's Wasm output matches its golden stdout."""
 
-    EXAMPLES = ["hello", "true", "reassign", "params", "context", "rebind", "exit"]
-
     def test_examples_match_goldens(self):
-        for name in self.EXAMPLES:
+        for name in runnable_examples():
             with self.subTest(example=name):
                 golden = (REPO / f"tests/examples/stdout/{name}.txt").read_text(
                     encoding="utf-8"
@@ -195,9 +203,7 @@ class TestWasmBackend(unittest.TestCase):
         `Std` and no prelude bridge — just Wasm instructions and WASI
         imports. Writes "A\\n" through fd_write, then exits 3."""
         wasm = compile_wasm({}, entry="tests/wasi/raw.moss")
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            path = f.name
+        path = wasm_file(wasm)
         result = subprocess.run(
             [wasmtime(), path], capture_output=True, text=True, timeout=120
         )
@@ -232,9 +238,7 @@ class TestWasmBackend(unittest.TestCase):
         `Std` and no prelude bridge — just Wasm instructions and WASI
         imports. Writes "A\\n" through fd_write, then exits 3."""
         wasm = compile_wasm({}, entry="tests/wasi/raw.moss")
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            path = f.name
+        path = wasm_file(wasm)
         result = subprocess.run(
             [wasmtime(), path], capture_output=True, text=True, timeout=120
         )
@@ -373,9 +377,7 @@ class TestWasmBackend(unittest.TestCase):
             "}\n"
         )
         wasm = compile_wasm({"main.moss": source})
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            path = f.name
+        path = wasm_file(wasm)
         result = subprocess.run(
             [wasmtime(), path, "abcdef"], capture_output=True, text=True, timeout=120
         )
@@ -403,9 +405,7 @@ class TestWasmBackend(unittest.TestCase):
             "}\n"
         )
         wasm = compile_wasm({"main.moss": source})
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            path = f.name
+        path = wasm_file(wasm)
         result = subprocess.run(
             [wasmtime(), path, "abc"], capture_output=True, text=True, timeout=120
         )
@@ -417,9 +417,7 @@ class TestWasmBackend(unittest.TestCase):
         from tests.test_run import ARENA_DRIVER
 
         wasm = compile_wasm({"main.moss": ARENA_DRIVER})
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            path = f.name
+        path = wasm_file(wasm)
         result = subprocess.run(
             [wasmtime(), path, "abcd"], capture_output=True, text=True, timeout=120
         )
@@ -450,9 +448,7 @@ class TestWasmBackend(unittest.TestCase):
         Moss, installed by a functor. The code that calls them assumes
         `Console` and knows nothing of either."""
         wasm = compile_wasm({}, entry="tests/wasi/console.moss")
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            path = f.name
+        path = wasm_file(wasm)
         result = subprocess.run(
             [wasmtime(), path, "hi"], capture_output=True, text=True, timeout=120
         )
@@ -525,9 +521,7 @@ class TestWasmBackend(unittest.TestCase):
         wrapper that carries the methods costs nothing now (D58), and the
         constants are ors of powers of two, since there are no literals."""
         wasm = compile_wasm({}, entry="tests/wasi/strings.moss")
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            path = f.name
+        path = wasm_file(wasm)
         result = subprocess.run(
             [wasmtime(), path, "ab"], capture_output=True, text=True, timeout=120
         )
@@ -566,9 +560,7 @@ class TestWasmBackend(unittest.TestCase):
         from tests.test_run import run_bytes
 
         wasm = compile_wasm({}, entry="src/main.moss")
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            path = f.name
+        path = wasm_file(wasm)
         result = subprocess.run(
             [wasmtime(), "--dir", ".", path, "", "tests/wasi/prim.moss"],
             capture_output=True,
@@ -581,9 +573,7 @@ class TestWasmBackend(unittest.TestCase):
 
         # The same input through the bootstrap's own back end, for the
         # behaviour rather than the bytes: two compilers, one program.
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(emitted)
-            inner = f.name
+        inner = wasm_file(emitted)
         mine = subprocess.run(
             [wasmtime(), inner], capture_output=True, text=True, timeout=120
         )
@@ -614,9 +604,7 @@ class TestWasmBackend(unittest.TestCase):
 
         source = (REPO / "src/lex.moss").read_text(encoding="utf-8")
         expected = len(bootstrap_lex(source)) - 1
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            path = f.name
+        path = wasm_file(wasm)
         result = subprocess.run(
             [wasmtime(), path, source], capture_output=True, text=True, timeout=300
         )
@@ -638,17 +626,13 @@ class TestSelfHostedCompilesTheExamples(unittest.TestCase):
     compiler takes about a hundred seconds per example and running it
     takes fifty milliseconds."""
 
-    EXAMPLES = ["hello", "true", "reassign", "params", "context", "rebind", "exit"]
-
     def compiler(self):
         wasm = wasm_opt(compile_wasm({}, entry="src/main.moss"))
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            return f.name
+        return wasm_file(wasm)
 
     def test_examples_match_their_goldens(self):
         compiler = self.compiler()
-        for name in self.EXAMPLES:
+        for name in runnable_examples():
             with self.subTest(example=name):
                 built = subprocess.run(
                     [wasmtime(), "--dir", ".", compiler,
@@ -695,9 +679,7 @@ class TestSelfHostedFixpoint(unittest.TestCase):
 
     def compile_self(self, compiler: bytes) -> bytes:
         """One generation: run this compiler on the compiler's own source."""
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm_opt(compiler))
-            path = f.name
+        path = wasm_file(wasm_opt(compiler))
         result = subprocess.run(
             [wasmtime(), "--dir", ".", path,
              "lib/prelude.moss", "src/main.moss"],
@@ -732,9 +714,7 @@ class TestSelfHostedFixpoint(unittest.TestCase):
         args = ["lib/prelude.moss", "examples/context.moss"]
 
         def compile_with(module: bytes) -> bytes:
-            with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-                f.write(module)
-                path = f.name
+            path = wasm_file(module)
             result = subprocess.run(
                 [wasmtime(), "--dir", ".", path, *args],
                 capture_output=True,
@@ -757,9 +737,7 @@ class TestSelfHostedEmitter(unittest.TestCase):
         from .test_run import run_bytes
 
         wasm = compile_wasm({}, entry="tests/wasi/emit.moss")
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(wasm)
-            path = f.name
+        path = wasm_file(wasm)
         result = subprocess.run(
             [wasmtime(), path], capture_output=True, timeout=300
         )
@@ -767,9 +745,7 @@ class TestSelfHostedEmitter(unittest.TestCase):
         emitted = result.stdout
         self.assertEqual(emitted, run_bytes({}, entry="tests/wasi/emit.moss"))
 
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(emitted)
-            inner = f.name
+        inner = wasm_file(emitted)
         result = subprocess.run(
             [wasmtime(), inner], capture_output=True, text=True, timeout=120
         )

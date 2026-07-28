@@ -55,15 +55,12 @@ def run_driver(driver, args, expect_code=0):
     the same code as Wasm. The program under test is identical either way.
     """
     import subprocess
-    import tempfile
 
-    from .test_build import compile_wasm, wasmtime
+    from .test_build import compile_wasm, wasm_file, wasmtime
 
     path = _DRIVERS.get(driver)
     if path is None:
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(compile_wasm({"main.moss": driver}))
-            path = f.name
+        path = wasm_file(compile_wasm({"main.moss": driver}))
         _DRIVERS[driver] = path
     result = subprocess.run(
         [wasmtime(), "--dir", ".", path, *args],
@@ -87,21 +84,34 @@ class TestHello(unittest.TestCase):
         )
 
 
-class TestExamples(unittest.TestCase):
-    """Every rewritten example matches its golden stdout. `escape` is still
-    written in the old language (it needs string literals) and is excluded
-    until D48 is decided."""
+def runnable_examples():
+    """Every example except `escape`, which is still written in the old
+    language (it needs string literals) and is excluded until D48 is
+    decided. Globbed rather than listed, so a new example cannot be
+    forgotten and a deleted one cannot leave its golden behind."""
+    return sorted(
+        p.stem for p in (REPO / "examples").glob("*.moss") if p.stem != "escape"
+    )
 
-    EXAMPLES = ["hello", "true", "reassign", "params", "context", "rebind", "exit"]
+
+class TestExamples(unittest.TestCase):
+    """Every rewritten example matches its golden stdout."""
 
     def test_goldens(self):
-        for name in self.EXAMPLES:
+        for name in runnable_examples():
             with self.subTest(example=name):
                 golden = (REPO / f"tests/examples/stdout/{name}.txt").read_text(
                     encoding="utf-8"
                 )
                 # Loaded in place: an example's imports are relative to it.
                 self.assertEqual(run({}, entry=f"examples/{name}.moss"), golden)
+
+    def test_every_golden_belongs_to_an_example(self):
+        # The other direction of the glob above: `instances.txt` once
+        # outlived its example by a month because nothing looked.
+        goldens = {p.stem for p in (REPO / "tests/examples/stdout").glob("*.txt")}
+        examples = {p.stem for p in (REPO / "examples").glob("*.moss")}
+        self.assertEqual(goldens, examples)
 
 
 class TestErrors(unittest.TestCase):
@@ -828,13 +838,12 @@ class TestSelfHostedEmitter(unittest.TestCase):
     def test_emits_a_module_that_runs(self):
         import shutil
         import subprocess
-        import tempfile
+
+        from .test_build import wasm_file
 
         module = run_bytes({}, entry="tests/wasi/emit.moss")
         self.assertEqual(module[:8], b"\0asm\x01\0\0\0")
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(module)
-            path = f.name
+        path = wasm_file(module)
         wasmtime = shutil.which("wasmtime")
         self.assertIsNotNone(wasmtime, "wasmtime is not on PATH")
         result = subprocess.run(
@@ -893,9 +902,9 @@ PARSE_DRIVER = (
     "}\n"
 )
 
-# Everything that is written in the MVP language. `src/lower.moss` is
-# previous-iteration code (§12 errata) and `examples/escape.moss` needs
-# string literals, so neither parses under either parser.
+# Everything that is written in the language — every live .moss file except
+# `examples/escape.moss`, which needs string literals (D48) and parses under
+# neither parser.
 def corpus():
     for folder, pattern in (
         ("src", "*.moss"),
@@ -905,7 +914,7 @@ def corpus():
     ):
         for path in sorted((REPO / folder).glob(pattern)):
             rel = str(path.relative_to(REPO))
-            if rel in ("src/lower.moss", "examples/escape.moss"):
+            if rel == "examples/escape.moss":
                 continue
             yield rel
 
@@ -1081,11 +1090,10 @@ class TestSelfHostedBackEnd(unittest.TestCase):
     def wasmtime_run(self, module, expect_code=0):
         import shutil
         import subprocess
-        import tempfile
 
-        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
-            f.write(module)
-            path = f.name
+        from .test_build import wasm_file
+
+        path = wasm_file(module)
         result = subprocess.run(
             [shutil.which("wasmtime"), path],
             capture_output=True,
