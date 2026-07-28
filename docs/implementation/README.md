@@ -11,5 +11,6 @@ design record for the current iteration is the
 - [**Standard library**](stdlib.md): how `Std` is provided, and its move
   into Moss over the primitive `Wasm`/`Wasi` context.
 - [**Self-hosting**](selfhosting.md): the Moss compiler written in Moss
-  under [`src`](/src) — what it compiles, how it is held to the
-  bootstrap, and what is still missing.
+  under [`src`](/src), which compiles itself to a fixpoint — how it is
+  held to the bootstrap, what the last mile actually was, and what is
+  still missing.

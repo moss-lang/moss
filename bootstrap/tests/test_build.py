@@ -639,6 +639,60 @@ class TestSelfHostedCompilesTheExamples(unittest.TestCase):
                 self.assertEqual(run_wasm(built.stdout), golden)
 
 
+class TestSelfHostedFixpoint(unittest.TestCase):
+    """The milestone that ends the list in docs/implementation/selfhosting.md:
+    the compiler compiles itself, and the result is a fixpoint.
+
+    `S0 = B(S)` is the compiler as the bootstrap builds it; `S1 = S0(S)` is
+    the compiler as *it* builds itself; `S2 = S1(S)` is one more turn of the
+    crank. `S1 == S2` byte for byte says the compiler is a fixpoint of
+    itself: whatever S0 did differently is gone, and S1 reproduces its own
+    input exactly. `S0 != S1` is expected and asserted, because two
+    different compilers emit different code for one source — if those two
+    were ever equal, this test would be comparing something to itself.
+
+    Both compilers are deterministic, which is what the byte comparison
+    depends on.
+
+    This is the slowest test in the suite by a wide margin: each generation
+    is the whole compiler compiling its own 34 modules, about two and a half
+    minutes. Nearly all of that is the constant factor of `Std` written in
+    Moss — the same compilation over the bootstrap's native shims takes ten
+    seconds — so the thing to speed up is lib/wasistd.moss, not this."""
+
+    def compile_self(self, compiler_path: str) -> bytes:
+        result = subprocess.run(
+            [wasmtime(), "--dir", ".", compiler_path,
+             "lib/prelude.moss", "src/main.moss"],
+            capture_output=True,
+            timeout=1800,
+            cwd=REPO,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout[:8], b"\0asm\x01\0\0\0",
+            # A diagnostic is a letter and a name (D48), so the first lines
+            # of a failure are the report, not a module.
+            f"not a module: {result.stdout[:400]!r}",
+        )
+        return result.stdout
+
+    def wasm_file(self, module: bytes) -> str:
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(module)
+            return f.name
+
+    def test_the_compiler_is_a_fixpoint_of_itself(self):
+        s0 = self.wasm_file(compile_wasm({}, entry="src/main.moss"))
+        s1 = self.compile_self(s0)
+        s2 = self.compile_self(self.wasm_file(s1))
+        self.assertEqual(s1, s2, "S1 != S2: the compiler is not a fixpoint")
+        self.assertNotEqual(
+            Path(s0).read_bytes(), s1,
+            "S0 == S1, so this test compared a module with itself",
+        )
+
+
 class TestSelfHostedEmitter(unittest.TestCase):
     """The self-hosted encoder, compiled: the emitter runs as Wasm and the
     module it writes is byte-for-byte the one the interpreter wrote."""

@@ -15,6 +15,14 @@ Wasmtime, which the Wasm backend tests require):
 cd bootstrap && python3 -m unittest
 ```
 
+That takes about five and a half minutes, five of which are
+`TestSelfHostedFixpoint`: two generations of the self-hosted compiler
+compiling its own source, which is the check that it is self-hosting. To
+iterate on anything else, name what you are working on —
+`python3 -m unittest tests.test_run` — and run the whole suite before you
+commit. Why that one test costs what it does, and how to make it cheap,
+is in [`docs/implementation/selfhosting.md`](docs/implementation/selfhosting.md).
+
 Everything CI enforces is a flake check:
 
 ```sh

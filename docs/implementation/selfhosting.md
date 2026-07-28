@@ -2,7 +2,24 @@
 
 A Moss compiler written in Moss lives under [`src`](/src). It reads a
 source file, loads everything that file imports, resolves every name in
-all of it, and writes a WebAssembly module.
+all of it, and writes a WebAssembly module — **including its own source**:
+
+```sh
+moss build src/main.moss > S0.wasm                                  # B(S)
+wasmtime --dir . S0.wasm lib/prelude.moss src/main.moss > S1.wasm    # S0(S)
+wasmtime --dir . S1.wasm lib/prelude.moss src/main.moss > S2.wasm    # S1(S)
+cmp S1.wasm S2.wasm                                                 # equal
+```
+
+`S1 == S2` byte for byte is the fixpoint: whatever the bootstrap did
+differently is gone by the second generation, and the compiler reproduces
+its own input exactly. `S0 != S1` is expected — two different compilers
+emit different code for one source — and is asserted too, so that the
+comparison cannot degenerate into comparing something with itself.
+`TestSelfHostedFixpoint` in [`tests/test_build.py`](/bootstrap/tests/test_build.py)
+is the standing check.
+
+It runs under the bootstrap's interpreter too:
 
 ```sh
 moss run src/main.moss "" tests/wasi/prim.moss > prim.wasm && wasmtime prim.wasm
@@ -13,9 +30,9 @@ is what a program written against the primitive context wants, since
 `Wasm` and `Wasi` are imported by name and there is no standard library
 underneath ([D52](../design/semantics.md)).
 
-It compiles under the bootstrap too, into a single WASI module — the
-whole compiler, `Std` and all, as one 1.1MB `.wasm` — and that module
-writes byte-for-byte the same output, about a thousand times faster:
+Compiled by the bootstrap it is a single WASI module — the whole
+compiler, `Std` and all, as one 1.2MB `.wasm` — which writes
+byte-for-byte the same output, about a thousand times faster:
 
 ```sh
 moss build src/main.moss > mossc.wasm
@@ -62,141 +79,144 @@ Not by looking at its output, but by holding it to the bootstrap's.
 - **Collect.** The module graph, the symbol every declaration gets, and
   the scope each module ends up with are compared as a set of
   (module, namespace, name, target) rows. For the compiler's own
-  sources — now 34 modules — the two agree on all 2425 rows.
+  sources — now 35 modules — the two agree on all 3146 rows.
 - **Needs.** Every defined function's requirement list, in order — its
   calling convention. Checked on `tests/wasi/full.moss`, which reaches
   all of `Std` provided in Moss over the primitive context (184
-  functions), and on the compiler's own 34 modules (808).
+  functions), and on the compiler's own 35 modules (810).
 - **Codegen.** The `tests/wasi/` programs are compiled by both
   compilers and the modules behave identically; the self-hosted one is
   also run twice — once interpreted, once as Wasm — and the bytes match.
   And every runnable example, compiled by the self-hosted compiler,
   matches the golden output the bootstrap produces for it.
+- **Itself.** Two generations of self-compilation agree byte for byte,
+  which is the only check with nothing outside it to appeal to: the
+  compiler is held to its own output on its own source.
 
 ## What it does not do yet
 
-The back end covers the *primitive* context and nothing above it:
-`Wasm` instructions, `Wasi` imports, `Bool` for `if` to eliminate,
+The back end covers everything the compiler and the library are written
+in: `Wasm` instructions, `Wasi` imports, `Bool` for `if` to eliminate,
 plain functions, `let`/`var`, assignment, `if`/`else`, `while`,
 `loop`/`break`, `return`, `I32`/`I64`, the scalar half of the value
 model — nominal tags, units, unions of units, and `match` over them —
-contextual vals with `bind`, methods, and the static context — type
-binds, fn binds, method binds and functor application, with one compiled
-specialization per environment. That is the language
-`tests/wasi/{raw,prim,across,tags,ctx,functor}.moss` are written in.
+contextual vals with `bind`, methods, and the static context: type binds,
+fn binds, method binds and functor application, with one compiled
+specialization per environment.
 
-Not `Std` itself: `Std` is Moss already, and
+That includes `Std` itself. `Std` is Moss already, and
 [`lib/wasi.moss`](/lib/wasi.moss)'s `WasiStd` maps
 `Wasm, Wasi, Branch -> Std` in one functor with nothing native
-underneath. What is missing is compiler support for the constructs that
-functor is *written in* — and the self-hosted compiler is in the odd
-position of running on `WasiStd` (the bootstrap compiles `bind WasiStd;`
-into `src/main.moss`'s module, so the Moss `Std` is what does its
-allocation and its I/O) while being unable to compile it.
+underneath; the compiler both *runs on* it and *compiles* it, which is
+what makes `src/main.moss` — `assume Wasm, Wasi, Branch` and one
+`bind WasiStd;` — a program it can read.
 
-Four things, and `lib/wasistd.moss` uses all four in its first twenty
-lines — `type Str I32;`, `match s { Str a => a }`, `fn Str.length()`,
-`bind putchar = wasi_putchar;`. A program that needs any of them is
-reported rather than mis-compiled:
+What is left, none of it on the path to self-hosting:
 
-- **Contexts at runtime.** The val half is done: a function's val needs
-  travel as trailing parameters in the order `lower.moss` fixed, a
-  `bind` puts a value in a local for the rest of its block, and a call
-  site supplies the callee's needs from its own frame. What is left is
-  the *static* half — a fn or type bind changes the code rather than the
-  data, so the callee has to be compiled once per environment that
-  reaches it, cached on the environment chain.
-- **Functors** ([D55](../design/semantics.md)) — the construct, not the
-  library: `bind WasiStd;` has to inline the functor's binds at the
-  application site, which needs the above.
-- **Methods** ([D36](../design/semantics.md),
-  [D54](../design/semantics.md)). The attached half works: the
-  receiver's type is the other half of the lookup key, forward
-  inference means it is known first, and `this` is a parameter of the
-  method's frame like any other. What is left is a method reached
-  through the *context* rather than by scope — `bind Int.add =
-  Num.add;` provides a detached symbol at a receiver, and finding it
-  means asking the environment, which is the same specialization
-  machinery a fn bind needs.
 - **Records and tuples.** Nothing in `src/` or `lib/` uses either, so
   they are the only part of the value model still missing; everything
   else of [D58] and [D59] compiles, including a union wider than one
-  scalar. `tests/wasi/noheap.moss` is the standing test for them.
-- **Bracket application.** Nothing in `src/` or `lib/` applies a type
-  (`Pair[T=Int]`) today, so the back end ignores one where it appears.
-  [D61]'s library change will introduce them — an accessor declared once
-  and provided as `String.get[Elem=Char]` — and the back end will have to
-  interpret the bindings rather than skip them.
-- **Diagnostics** are a code letter and a name, with no position. The
-  machinery for a real message is a string the compiler holds, which is
-  [D48](../design/semantics.md).
+  scalar. `tests/wasi/noheap.moss` is the standing test for them, and a
+  program that needs them is reported rather than mis-compiled.
+- **Bracket application in the back end.** [D61] made the library apply
+  a type (`String.get[Elem=Char]`), and the back end still skips the
+  bindings — correctly, as it turns out: a provision is keyed by
+  (receiver, method) and every signature it needs comes from the
+  *provider*, which is concrete, so the substitution changes no code
+  here. The bootstrap needs it (it checks the provider's signature
+  against the abstract one) and the environment chain does not. A back
+  end that ever reads an abstract signature will have to.
+- **Diagnostics** are a code letter, the frame they came from, and a
+  name — no line or column. The machinery for a real message is a string
+  the compiler holds, which is [D48](../design/semantics.md).
+- **Speed.** Compiling its own 35 modules takes about ten seconds when
+  the compiler runs over the bootstrap's native `Std` shims and about two
+  and a half *minutes* over the Moss `Std` — a factor of fifteen, all
+  constant. It is not algorithmic: the front end alone is 0.04s against
+  0.39s. `lib/wasistd.moss` is where it goes. There are no literals
+  ([D4]), so `four()` is a function call, `eight()` is three of them, and
+  `Ints.get` reaches an element through `ints_addr`, `elem`, `raw` and
+  two of those constants — half a dozen Wasm calls for one array read, on
+  the hottest path a compiler of parallel arenas has. Inlining those by
+  hand inside the accessors is the obvious next thing, and it is what
+  makes the fixpoint test five minutes instead of thirty seconds.
 
-All of the bootstrap's own order is taken: requirement lists, real types
-and layouts, the calling convention both halves, methods, functors, and
-one specialization per environment. What stops the compiler compiling
-itself is no longer a stage — it is [D61]'s library change. Its own
-source calls `.length` on a `String` and on an `IntList`, and those are
-two different symbols with one spelling today, which by [D44] one scope
-cannot name. Declaring each accessor once and bracket-applying the
-element type per provision fixes that, and then the fixpoint is the next
-thing to try.
+Two invariants worth not breaking, both of them things that have gone
+wrong. The scan pass and the emit pass in `codegen.moss` must hand out
+local *indices* in the same order, so the reveal cursor only ever moves
+forward and leaving a scope retires the names it introduced rather than
+rewinding the cursor — rewinding hands one index out twice in the pass
+that rewinds and once in the pass that appends, and every local after the
+first nested block belongs to the wrong name. Any place that scans a
+binder must also mirror exactly what emitting binds: `scan_arm_binder`
+and `bind_pattern` are one decision written twice. And a bind statement
+is walked by all three of discovery, scanning and emission, which is why
+there is one traversal with a mode rather than three to keep in step.
 
-### Where to start
-
-In this order, because each step's failures are only legible once the one
-before it is right.
-
-1. **The library.** A new `lib/access.moss` declaring `.get`, `.length`,
-   `.push` and `.read` once, with the element type as a requirement;
-   `list`/`string`/`strlist`/`cell`/`path` import them instead of
-   declaring their own; `Std`'s item list and every method bind in
-   `lib/wasistd.moss` and `lib/wasi.moss` carry the bracket application;
-   `lib/prelude.moss` imports all twenty-nine detached names. The fast
-   arbiter is `moss build tests/wasi/full.moss` — about four seconds, and
-   it reaches every one of them.
-2. **Remove the bootstrap's fallback**, in `mossc/lower.py`'s
-   `synth_method`: the branch matching a provision by
-   `msym.name.lstrip(".")`. If step 1 is right this breaks nothing. The
-   self-hosted side already implements [D61]; this is the bootstrap
-   catching up, and until it does the two disagree (inertly — see D61).
-3. **Bracket applications in the back end.** `src/codegen.moss` ignores
-   an application where one appears, which was fine while nothing used
-   one. Step 1 introduces them.
-4. **Point it at itself**:
-   `wasmtime --dir . mossc.wasm lib/prelude.moss src/main.moss`, and work
-   through what it reports. A diagnostic is a letter and a name; the
-   letters are the `e_` constants of `prog.moss` and the `c_` constants of
-   `codegen.moss`, in declaration order from `A`.
-5. **The fixpoint.** `S0 = B(S)`, `S1 = S0(S)`, `S2 = S1(S)`; assert
-   `S1 == S2` byte for byte. `S0 != S1` is expected — different compilers
-   emit different code for one source. Both compilers are deterministic
-   today, which that check depends on.
-
-Two invariants worth not breaking. The scan pass and the emit pass in
-`codegen.moss` must create locals in lockstep; that is why only the scan
-creates them and emitting *reveals* them in order, rather than the two
-agreeing by name. And a bind statement is walked by all three of
-discovery, scanning and emission, which is why there is one traversal
-with a mode rather than three to keep in step.
+A third, cheaper to state: a provision's local carries **no** name. A
+contextual val arrives as a trailing parameter and is found by its
+symbol, so naming that parameter would let `val n: Char;` shadow a
+parameter called `n` — which it did.
 
 The Python originals are [`lower.py`](/bootstrap/mossc/lower.py) and
-[`build.py`](/bootstrap/mossc/build.py) — but the self-hosted back end
-is much less work than their line count suggests, because most of
-`build.py` is shims implementing a native `Std`, and there is nothing
-there to reimplement: the day the four constructs above compile,
-`WasiStd` compiles, and `Std` comes for free.
+[`build.py`](/bootstrap/mossc/build.py) — and the self-hosted back end
+turned out to be much less work than their line count suggests, because
+most of `build.py` is shims implementing a native `Std` and there was
+nothing there to reimplement: the day the constructs `WasiStd` is written
+in compiled, `Std` came for free.
 
-The milestone that ends this list is the compiler compiling itself. It
-is one milestone, not several: `src/main.moss` assumes
-`Wasm, Wasi, Branch` and opens with `bind WasiStd;`, so the moment the
-back end can compile that line and the library behind it, it can compile
-every other file in `src/` too — they are ordinary Moss over `Std`.
+Self-hosting was one milestone, not several, for the same reason.
+`src/main.moss` assumes `Wasm, Wasi, Branch` and opens with
+`bind WasiStd;`, so the moment the back end could compile that line and
+the library behind it, it could compile every other file in `src/` too —
+they are ordinary Moss over `Std`.
+
+## What the last mile actually was
+
+Worth recording, because none of it was a missing stage.
+
+[D61]'s library change came first: `.get`, `.length`, `.push` and `.read`
+declared once in [`lib/access.moss`](/lib/access.moss) with the element
+type as a requirement, supplied per provision with a bracket application
+(`String.get[Elem=Char]`, `IntList.get[Elem=Int]`). Before that, each
+spelling was several distinct symbols and [D44] would not let one scope
+name two of them — and `src/` calls `.length` on a `String` and on an
+`IntList` in the same file. With one symbol each, `lib/prelude.moss` can
+import all twenty-nine detached names the library has, which is what a
+call site needs under D61's strict rule. Two bootstrap changes fell out:
+a bracket application on a *bind*'s left-hand side (a shared accessor is
+provided at one receiver at a time, and the wanted signature has to be
+read under that substitution), and reading both sides of `[Elem=Char]` in
+the module the item is *written* in rather than the one assuming it.
+
+Then removing the bootstrap's `synth_method` fallback, which had been
+matching a provision by the spelling of its method's declaration name.
+That is what had been hiding the library problem. It broke nothing.
+
+What the compiler then reported about its own source was 243 diagnostics
+with two causes between them, both in `codegen.moss` and neither about
+[D61]:
+
+- The reveal cursor rewound when a block ended, so `let sep` after a
+  `while` that declared locals got an index the scan had given to
+  something else. Every name after the first nested block in a function
+  resolved to the wrong local or to nothing — which is most functions in
+  this compiler.
+- A contextual val's parameter carried the val's name, and `Chars`
+  provides `val n: Char;`, so a parameter called `n` (or `p`, or `j`)
+  was shadowed by a `Char` and every method call on it looked for
+  `Char.add`.
+
+The lesson is the one the diagnostics almost hid: a wrong *type* for a
+receiver is reported as a missing *method*, several frames from the
+mistake. Recording which function a diagnostic came from is what made
+243 letters into two bugs; before that they were unreadable.
 
 ## Keeping it out of quadratic time
 
 Every table here is a parallel-array arena, which invites reading it
 front to back, and reading it front to back is what the compiler spent
-almost all of its time on. Two measurements, on the compiler's own 34
+almost all of its time on. Two measurements, on the compiler's own
 modules: resolving one name per context item against all 2,374 scope
 entries came to roughly 250 million row comparisons, and working out
 each function's environment 710 times when only 31 `assume` blocks
@@ -269,7 +289,9 @@ generated by [`bootstrap/mossc/gensrc.py`](/bootstrap/mossc/gensrc.py)
 and checked against it, and neither is pleasant to read, but nothing
 about the emitter was blocked. The
 pressure that remains is diagnostics: a message with words in it is
-still out of reach, which is why an error here is a letter and a name.
+still out of reach, which is why an error here is a letter, a frame and a
+name — and why finding the two bugs that stood between it and its own
+source meant reading 243 of those.
 
 ## Sharp edges
 
@@ -280,11 +302,20 @@ still out of reach, which is why an error here is a letter and a name.
   payload — but the interpreter does not know that. So the tests compile
   each driver to a WASI module with the bootstrap and run *that*: the
   four self-hosted stage tests took 534 seconds interpreted and take 8.5
-  compiled, and the whole suite went from nine minutes to under thirty
-  seconds. `moss build src/main.moss` is likewise the way to actually run
+  compiled. `moss build src/main.moss` is likewise the way to actually run
   this compiler rather than `moss run`.
+- The suite is about five and a half minutes, and five of those are the
+  fixpoint: two generations of the compiler compiling its own 35 modules,
+  each two and a half minutes for ten seconds of actual work. See
+  **Speed** above — the constant factor is in `lib/wasistd.moss`, and
+  fixing it there would give the whole suite back.
 - `prog.moss` reports a syntax error as a per-module flag; the position
   the parser recorded is not surfaced.
+- The two diagnostic code spaces are `prog.moss`'s `e_` constants (A–L)
+  and `codegen.moss`'s `c_` constants (M–R), which continue where the
+  first stop *because they share one list* — the back end reports both
+  kinds, and two codes that print as the same letter cannot be told
+  apart. They could once.
 - The back end recognizes `Wasm`, `Wasi`, `Bool` and `i32_bool` by the
   file that declares them. So does the bootstrap's back end, which is
   the precedent; it is still a spelling dependency.

@@ -49,6 +49,11 @@ prices the codegen half of [D48] exactly: a Wasm emitter needs no string
 literals, only a generated function per name. What remains of [D48] is
 diagnostics.
 
+**Revision 9** implements [D61] in both compilers — one declaration per
+detached accessor with the element type bracket-applied per provision —
+and the compiler under `src/` compiles itself to a fixpoint. That closes
+the last item this log had marked as outstanding work.
+
 **Revision 5 onward** is incremental: decision points appended as
 implementation forces them, PROPOSED until the designer reacts. So far:
 [D45] (concrete `Bool`), [D46] (module aliases export), [D47] (a finding:
@@ -1303,17 +1308,17 @@ different routes, and the difference is not a detail:
   it was declared under. A renamed import is called by its new name.
 
 Implementation found the bootstrap violating the second half. Its
-`synth_method` falls back, when the name is in scope nowhere, to
+`synth_method` fell back, when the name was in scope nowhere, to
 searching the environment's provisions for one whose method's
-*declaration* name matches the call — with an ambiguity error when two
-do. That is matching by spelling, which is the weakness [D55] rejected
-option B1 for and which [D1] exists to rule out. The self-hosted back
-end implements the rule as stated above; the bootstrap has not been
-changed yet, because it cannot be until the following is settled.
+*declaration* name matched the call — with an ambiguity error when two
+did. That is matching by spelling, which is the weakness [D55] rejected
+option B1 for and which [D1] exists to rule out. **Both compilers now
+implement the rule as stated above**; the library change below is what
+made the bootstrap able to follow.
 
-**What the strict rule costs, and the fix.** Removing the fallback breaks
+**What the strict rule cost, and the fix.** Removing the fallback broke
 103 of the bootstrap's tests, all for one reason. Four detached
-accessors are declared *separately in each container module* —
+accessors were declared *separately in each container module* —
 
 | name | declared in |
 |---|---|
@@ -1322,47 +1327,82 @@ accessors are declared *separately in each container module* —
 | `.push` | list.moss, strlist.moss |
 | `.read` | cell.moss, path.moss |
 
-— so each spelling is several distinct symbols, and by [D44] one scope
+— so each spelling was several distinct symbols, and by [D44] one scope
 cannot name two of them. Every file in `src/` calls `.length` on both a
-`String` and an `IntList`, so no import list can rescue this: it is not a
-prelude problem, it is a library one. Note the fallback is exactly what
-has been hiding it.
+`String` and an `IntList`, so no import list could rescue this: it was
+not a prelude problem, it was a library one. Note the fallback is exactly
+what had been hiding it.
 
-The designed answer is to declare each accessor **once**, with the
-element type as a requirement, and to supply that per provision with a
-bracket application:
+The designed answer, now **implemented**, is to declare each accessor
+**once**, with the element type as a requirement, and to supply that per
+provision with a bracket application — which is what an application on a
+context item is for ([D22], and [D43]'s own `A.gimme[Foo=B]`), and what
+makes "the key is (receiver, method)" earn its keep.
+[`lib/access.moss`](/lib/access.moss) is the whole of it:
 
 ```moss
 type Elem;
 assume Int {
+  fn .length(): Int;
   assume Elem { fn .get(index: Int): Elem; }
 }
+assume Elem { fn .push(value: Elem); fn .read(): Elem; }
 # and in Std:  String.get[Elem=Char], IntList.get[Elem=Int], StrList.get[Elem=String]
 ```
 
-which is what an application on a context item is for ([D22], and
-[D43]'s own `A.gimme[Foo=B]`), and what makes "the key is (receiver,
-method)" earn its keep. Treat the sketch above as a direction rather
-than a specification: it has not been through a type checker, and
-whether `Elem` can be one shared symbol across all the receivers or
-wants one per container is the first thing to find out — one symbol, provided at many receivers, exactly
-[D51]'s corrected finding. It touches a new `lib/access.moss`, the five
-container modules, `Std`'s item list, every method bind in
-`lib/wasistd.moss` and `lib/wasi.moss`, and the prelude, which then
-imports all twenty-nine detached names once.
+The question the sketch left open — whether `Elem` can be one shared
+symbol across all the receivers or wants one per container — answers
+itself as **one**, exactly [D51]'s corrected finding: a provision is
+keyed by (receiver, method), so `String.get` and `IntList.get` are
+distinct provisions of one symbol and their substitutions never meet. The
+substitution is local to the item that writes it and is deliberately not
+recorded in the environment's type map, which is what keeps `Elem = Char`
+at one receiver from unifying with `Elem = Int` at the next.
 
-Two things done in advance of it. `lib/prelude.moss` now imports `.not`,
-which was the one detached name `src/` called with nothing in scope at
-all, so the strict and the permissive rule now agree on the whole corpus
-— the divergence above is real but inert. And `docs/reference/semantics.md`
-states the two rules, which it previously blurred into one sentence that
-sanctioned the fallback.
+It touched a new `lib/access.moss`, the five container modules, `Std`'s
+item list, the containers' and files' provisions in `lib/wasistd.moss`,
+and the prelude, which now imports all twenty-nine detached names once.
+Two things fell out of implementing it:
+
+- A **bind**'s left-hand side may carry a bracket application
+  (`bind IntList.get[Elem=Int] = Ints.get;`). A shared accessor is
+  provided at one receiver at a time, and the signature the provider is
+  matched against has to be read under that substitution or the bind is
+  a type error. Only a *method* bind takes one.
+- Both sides of `[Elem=Char]` are read in the module the item is
+  **written** in, not the one assuming it. That distinction never arose
+  while every application sat in the same module as its `assume`; a
+  context declared in `lib/std.moss` and assumed in `src/prog.moss` makes
+  it load-bearing.
+
+One consequence for user code, which is [D44] rather than new but is felt
+for the first time now that the prelude names every accessor: a module
+outside `lib/` may not *declare* a detached method the prelude already
+provides, because the declaration and the glob import would be two
+symbols under one name. `tests/fixtures/cell.moss`'s `IsCell` had to
+rename its `.read`/`.write` to `.fetch`/`.stash`. Whether a local
+declaration should instead shadow a glob import is a question this log has
+not asked; nothing in `lib/` or `src/` needs it.
+
+`lib/prelude.moss` had already been made to import `.not`, the one
+detached name `src/` called with nothing at all in scope; and
+`docs/reference/semantics.md` states the two rules, which it previously
+blurred into one sentence that sanctioned the fallback.
+
+**What it bought.** The compiler compiles itself, and `S1 == S2` byte for
+byte — see [selfhosting.md](../implementation/selfhosting.md). Nothing
+else stood in the way: what the compiler reported about its own source
+once the library was right was two bugs in `codegen.moss`'s local
+numbering, not a missing construct.
 
 ## 13. Decision index
 
-Outstanding work rather than an open question: [D61]'s library change —
-one declaration per detached accessor, provided with bracket
-applications — after which the bootstrap's name-matching fallback goes.
+No outstanding implementation work is blocked on a decision. [D61]'s
+library change has landed — one declaration per detached accessor,
+provided with bracket applications — the bootstrap's name-matching
+fallback is gone, and the compiler under `src/` compiles itself to a
+fixpoint. What remains is engineering: records and tuples in the back
+end, and the constant factor of `Std` written in Moss.
 
 Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings

@@ -19,8 +19,17 @@ by what they print.
 This is worth the trouble because a plausible answer is the failure mode.
 An approximate front end produces a believable letter-per-declaration
 dump; it does not produce the bootstrap's tree. Both compilers agreeing
-on all 808 requirement lists of the compiler's own source is a claim
+on all 810 requirement lists of the compiler's own source is a claim
 neither could fake alone.
+
+There is one check with no first implementation to appeal to, and it is
+the strongest: the compiler compiles its own source twice and the two
+generations agree byte for byte. Nothing outside the compiler holds it to
+that — it is held to its own output on its own input, which is the one
+golden it cannot get wrong by agreeing with itself, because a compiler
+that mis-compiles anything it *uses* stops reproducing. That test also
+asserts the first generation differs from the bootstrap's, so it cannot
+quietly become a comparison of something with itself.
 
 It has a second-order benefit worth knowing about: twice, the first thing
 an equivalence check found was a bug in the *comparison* rather than in
@@ -42,6 +51,14 @@ from nine minutes to under thirty seconds — the program under test is
 identical either way. `run_driver` in
 [`tests/test_run.py`](/bootstrap/tests/test_run.py) is the helper. Use
 `moss build` rather than `moss run` for the same reason.
+
+The suite is now about five and a half minutes again, and five of those
+are one test: the fixpoint, which is two generations of the compiler
+compiling its own 35 modules. That is not the interpreter — it runs as
+Wasm — it is the constant factor of `Std` written in Moss, which is
+fifteen times the bootstrap's native shims for the same work. The cost is
+worth stating rather than hiding, because it is a standing invitation to
+fix `lib/wasistd.moss`: doing so gives the whole suite back.
 
 ## A suite that speeds up is a claim to check
 
