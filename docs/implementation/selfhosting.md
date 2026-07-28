@@ -235,14 +235,16 @@ still out of reach, which is why an error here is a letter and a name.
 
 ## Sharp edges
 
-- Interpreting the compiler is orders of magnitude slower than running
-  it as Wasm, because `src/main.moss` reaches `Std` through
-  `lib/wasistd.moss` (D52) and the bootstrap interpreter builds a Python
-  object per value it handles. Nothing is boxed in the compiled module —
-  D58 made a nominal value its payload — but the interpreter does not
-  know that. `moss build src/main.moss` is the way to actually run this
-  compiler; a driver that assumes `Std` directly gets the bootstrap's
-  native one and is what the tests use.
+- Interpreting the compiler is about three orders of magnitude slower
+  than running it as Wasm, because the bootstrap interpreter is a Python
+  tree-walker over the core IR and builds an object per value it handles.
+  Nothing is boxed in the compiled module — D58 made a nominal value its
+  payload — but the interpreter does not know that. So the tests compile
+  each driver to a WASI module with the bootstrap and run *that*: the
+  four self-hosted stage tests took 534 seconds interpreted and take 8.5
+  compiled, and the whole suite went from nine minutes to under thirty
+  seconds. `moss build src/main.moss` is likewise the way to actually run
+  this compiler rather than `moss run`.
 - `prog.moss` reports a syntax error as a per-module flag; the position
   the parser recorded is not surfaced.
 - The back end recognizes `Wasm`, `Wasi`, `Bool` and `i32_bool` by the

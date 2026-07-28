@@ -41,6 +41,41 @@ def run(files, entry="main.moss", args=None):
     return run_bytes(files, entry=entry, args=args).decode("utf-8")
 
 
+_DRIVERS: dict = {}
+
+
+def run_driver(driver, args, expect_code=0):
+    """Run a self-hosted driver as Wasm rather than interpreting it.
+
+    A driver is ordinary Moss over `Std`, so the bootstrap can compile it
+    to a WASI module — once, and cached here, since these drivers pull in
+    all of `src/`. Interpreting them instead is what made this suite take
+    minutes: `interp` is a Python tree-walker over the core IR, so it runs
+    the self-hosted compiler some three orders of magnitude slower than
+    the same code as Wasm. The program under test is identical either way.
+    """
+    import subprocess
+    import tempfile
+
+    from .test_build import compile_wasm, wasmtime
+
+    path = _DRIVERS.get(driver)
+    if path is None:
+        with tempfile.NamedTemporaryFile(suffix=".wasm", delete=False) as f:
+            f.write(compile_wasm({"main.moss": driver}))
+            path = f.name
+        _DRIVERS[driver] = path
+    result = subprocess.run(
+        [wasmtime(), "--dir", ".", path, *args],
+        capture_output=True,
+        timeout=900,
+        cwd=REPO,
+    )
+    if result.returncode != expect_code:
+        raise AssertionError(f"wasmtime failed: {result.stderr.decode()}")
+    return result.stdout
+
+
 def main_body(body, decls=""):
     return {"main.moss": f"assume Std {{\n{decls}\n  fn main() {{ {body} }}\n}}"}
 
@@ -864,21 +899,14 @@ class TestSelfHostedSyntax(unittest.TestCase):
     dump, but it cannot produce the bootstrap's tree."""
 
     def test_agrees_with_the_bootstrap_parser(self):
-        import os
-
         from mossc.parse import parse
         from mossc.sexpr import dump
 
-        cwd = os.getcwd()
-        os.chdir(REPO)
-        try:
-            for rel in corpus():
-                with self.subTest(file=rel):
-                    expected = dump(parse((REPO / rel).read_text(encoding="utf-8")))
-                    actual = run({"main.moss": PARSE_DRIVER}, args=[rel])
-                    self.assertEqual(actual, expected + "\n")
-        finally:
-            os.chdir(cwd)
+        for rel in corpus():
+            with self.subTest(file=rel):
+                expected = dump(parse((REPO / rel).read_text(encoding="utf-8")))
+                actual = run_driver(PARSE_DRIVER, [rel]).decode("utf-8")
+                self.assertEqual(actual, expected + "\n")
 
 
 SCOPE_DRIVER = (
@@ -993,16 +1021,7 @@ class TestSelfHostedCollectScopes(unittest.TestCase):
         return sorted(rows)
 
     def rows_from_moss(self, entry):
-        import os
-
-        cwd = os.getcwd()
-        os.chdir(REPO)
-        try:
-            out = run(
-                {"main.moss": SCOPE_DRIVER}, args=["lib/prelude.moss", entry]
-            )
-        finally:
-            os.chdir(cwd)
+        out = run_driver(SCOPE_DRIVER, ["lib/prelude.moss", entry]).decode("utf-8")
         rows = []
         for line in out.strip().split("\n"):
             self.assertFalse(line.startswith("!"), f"collect error: {line}")
@@ -1038,14 +1057,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
     """
 
     def compile_with_moss(self, entry, prelude=""):
-        import os
-
-        cwd = os.getcwd()
-        os.chdir(REPO)
-        try:
-            return run_bytes({"main.moss": COMPILER_DRIVER}, args=[prelude, entry])
-        finally:
-            os.chdir(cwd)
+        return run_driver(COMPILER_DRIVER, [prelude, entry])
 
     def wasmtime_run(self, module, expect_code=0):
         import shutil
@@ -1262,14 +1274,7 @@ class TestSelfHostedNeeds(unittest.TestCase):
         return sorted(rows)
 
     def moss_rows(self, entry):
-        import os
-
-        cwd = os.getcwd()
-        os.chdir(REPO)
-        try:
-            out = run({"main.moss": NEEDS_DRIVER}, args=["lib/prelude.moss", entry])
-        finally:
-            os.chdir(cwd)
+        out = run_driver(NEEDS_DRIVER, ["lib/prelude.moss", entry]).decode("utf-8")
         rows = []
         for line in out.strip().split("\n"):
             self.assertFalse(line.startswith("!"), f"lowering error: {line}")
