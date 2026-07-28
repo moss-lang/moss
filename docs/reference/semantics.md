@@ -116,10 +116,16 @@ finds it by scope. `fn .m(...);` declares a detached method; a context item
 or bind provides it at a receiver, and the bracket bindings attached to the
 providing item are used to interpret the method's signature at the call
 site. In method declarations, `This` is the receiver's type and `this` the
-receiver value. At a call `x.m(a)`, the receiver's (forward-inferred) type
-selects among scope-visible attached methods and in-context provisions;
-absence and ambiguity are both errors, and a locally imported (possibly
-renamed) detached name selects its exact symbol.
+receiver value. At a call `x.m(a)` the
+receiver's (forward-inferred) type is one half of the key and the method
+symbol is the other, and the two kinds of method reach that key
+differently. An **attached** method is declared in the same module as the
+nominal type it attaches to and never needs importing, so the receiver's
+own module is the only place it is looked for, and it matches by name. A
+**detached** method must be imported, or reached as `mod::m`, which
+resolves it to one exact symbol; the name it was *declared* under is not
+what a call matches on, so a renamed import (`use .m as .m1`) is called
+as `.m1`. Absence is an error.
 
 ## Expressions
 

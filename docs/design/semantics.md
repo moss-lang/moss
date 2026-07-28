@@ -1287,7 +1287,75 @@ thing this design exists to test. (That `Std` stays a signature is
 independent of [D52]'s point that the *compiler* skips it and assumes
 `Wasi` directly; `Wasi` is a signature too.)
 
+**[D61] DECIDED by the designer (how a method call finds its method).**
+The two kinds of method reach the (receiver type, method symbol) key by
+different routes, and the difference is not a detail:
+
+- An **attached** method must attach to a nominal type and must be
+  declared in the same file as that type. It never needs importing, and
+  a call matches it **by name** in the receiver's own module.
+- A **detached** method may be declared anywhere, must be **explicitly
+  imported** (or reached as `mod::m`), and does **not** match on the name
+  it was declared under. A renamed import is called by its new name.
+
+Implementation found the bootstrap violating the second half. Its
+`synth_method` falls back, when the name is in scope nowhere, to
+searching the environment's provisions for one whose method's
+*declaration* name matches the call — with an ambiguity error when two
+do. That is matching by spelling, which is the weakness [D55] rejected
+option B1 for and which [D1] exists to rule out. The self-hosted back
+end implements the rule as stated above; the bootstrap has not been
+changed yet, because it cannot be until the following is settled.
+
+**What the strict rule costs, and the fix.** Removing the fallback breaks
+103 of the bootstrap's tests, all for one reason. Four detached
+accessors are declared *separately in each container module* —
+
+| name | declared in |
+|---|---|
+| `.get` | list.moss, string.moss, strlist.moss |
+| `.length` | list.moss, string.moss, strlist.moss |
+| `.push` | list.moss, strlist.moss |
+| `.read` | cell.moss, path.moss |
+
+— so each spelling is several distinct symbols, and by [D44] one scope
+cannot name two of them. Every file in `src/` calls `.length` on both a
+`String` and an `IntList`, so no import list can rescue this: it is not a
+prelude problem, it is a library one. Note the fallback is exactly what
+has been hiding it.
+
+The designed answer is to declare each accessor **once**, with the
+element type as a requirement, and to supply that per provision with a
+bracket application:
+
+```moss
+type Elem;
+assume Int {
+  assume Elem { fn .get(index: Int): Elem; }
+}
+# and in Std:  String.get[Elem=Char], IntList.get[Elem=Int], StrList.get[Elem=String]
+```
+
+which is what an application on a context item is for ([D22], and
+[D43]'s own `A.gimme[Foo=B]`), and what makes "the key is (receiver,
+method)" earn its keep — one symbol, provided at many receivers, exactly
+[D51]'s corrected finding. It touches a new `lib/access.moss`, the five
+container modules, `Std`'s item list, every method bind in
+`lib/wasistd.moss` and `lib/wasi.moss`, and the prelude, which then
+imports all twenty-nine detached names once.
+
+Two things done in advance of it. `lib/prelude.moss` now imports `.not`,
+which was the one detached name `src/` called with nothing in scope at
+all, so the strict and the permissive rule now agree on the whole corpus
+— the divergence above is real but inert. And `docs/reference/semantics.md`
+states the two rules, which it previously blurred into one sentence that
+sanctioned the fallback.
+
 ## 13. Decision index
+
+Outstanding work rather than an open question: [D61]'s library change —
+one declaration per detached accessor, provided with bracket
+applications — after which the bootstrap's name-matching fallback goes.
 
 Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
@@ -1304,7 +1372,8 @@ collisions + `::` tighter than `.`, D45 concrete `Bool`, D46 aliases
 export, D47 operators are methods, D49 no automatic TCE — loops are the
 idiom, D52 `Wasi` primitive with `Std` a library over it, D53 signature
 vs structure, D54 method providers keep the nominal wrapper, D55 functors
-as their own declaration applied with `bind`)
+as their own declaration applied with `bind`, D61 how a method call
+finds its method)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

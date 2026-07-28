@@ -86,8 +86,8 @@ assume Std {
       emit::mem_pages.write(one);
       let field = int_list();
       sp_fd_write(field);
-      let fd_write = emit::wasi_import(field, n4(), emit::vt_i32());
-      let start = emit::add_func(emit::type_i32(zero, zero));
+      let fd_write = emit::wasi_import(field, n4());
+      let start = emit::add_func(emit::type_i32(zero));
       emit::export_start(start);
       emit::export_memory();
 

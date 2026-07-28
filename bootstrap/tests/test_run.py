@@ -1109,6 +1109,17 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/functor.moss")
         self.assertEqual(self.wasmtime_run(module), "ABD\n")
 
+    def test_a_union_wider_than_one_scalar(self):
+        """The rest of D59's value model. `Read | Eof` is a discriminant
+        beside room for the payload, which needs three things at once: a
+        member injecting where it enters the union, a `match` that reads
+        the discriminant and then the payload, and a function returning
+        two scalars — a multi-result type, which is what the bootstrap's
+        own back end already emits. This is the shape src/lex.moss's
+        `peek()` returns."""
+        module = self.compile_with_moss("tests/wasi/wide.moss")
+        self.assertEqual(self.wasmtime_run(module), "ABCD")
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
@@ -1121,6 +1132,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/tags.moss", "EBACEAB\n"),
             ("tests/wasi/ctx.moss", "CEECI\n"),
             ("tests/wasi/functor.moss", "ABD\n"),
+            ("tests/wasi/wide.moss", "ABCD"),
         )
         for entry, expected in cases:
             with self.subTest(entry=entry):

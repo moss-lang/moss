@@ -86,6 +86,8 @@ functor Boot: Std -> Compiler {
   bind emit::ty_pstart = int_list();
   bind emit::ty_plen = int_list();
   bind emit::ty_res = int_list();
+  bind emit::ty_rstart = int_list();
+  bind emit::ty_rlen = int_list();
   bind emit::nchars = int_list();
   bind emit::im_mstart = int_list();
   bind emit::im_mlen = int_list();
@@ -114,6 +116,7 @@ functor Boot: Std -> Compiler {
   bind codegen::fq_env = int_list();
   bind codegen::cg_env = cell_int();
   bind codegen::cg_real = cell_int();
+  bind codegen::cg_ret = cell_int();
   bind codegen::fq_index = int_list();
   bind codegen::wi_sym = int_list();
   bind codegen::wi_index = int_list();

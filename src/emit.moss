@@ -27,14 +27,17 @@ assume Std {
   fn kind_func(): Int { zero }
   fn kind_mem(): Int { n2() }
 
-  # Function types: `ty_params` is one flat run of valtype bytes, and
-  # `ty_res` is a result valtype or zero for none (a Wasm result vector
-  # of length zero — no Moss function returns more than one scalar
-  # through Wasm's result list, since a wider value stages in locals).
+  # Function types: `ty_params` and `ty_res` are flat runs of valtype
+  # bytes, with a start and a length each. A result list of more than one
+  # is the multi-value proposal, which every engine that runs WASI has —
+  # and a value of D59 is a run of scalars, so a function returning one
+  # returns several results.
   val ty_params: IntList;
   val ty_pstart: IntList;
   val ty_plen: IntList;
   val ty_res: IntList;
+  val ty_rstart: IntList;
+  val ty_rlen: IntList;
 
   # Import and export names, one flat byte arena.
   val nchars: IntList;
@@ -63,7 +66,7 @@ assume Std {
   val mem_pages: CellInt;
 
   context Emit =
-    ty_params, ty_pstart, ty_plen, ty_res,
+    ty_params, ty_pstart, ty_plen, ty_res, ty_rstart, ty_rlen,
     nchars,
     im_mstart, im_mlen, im_fstart, im_flen, im_type,
     fn_type, fn_l32, fn_l64, fn_bstart, fn_blen, insns,
@@ -71,25 +74,17 @@ assume Std {
     mem_pages;
 
   assume Emit {
-    # A function type, deduplicated: `params` is a buffer of valtype
-    # bytes and `res` a valtype byte, or zero for no result.
-    fn type_index(params: IntList, res: Int): Int {
+    # A function type, deduplicated: both sides are buffers of valtype
+    # bytes.
+    fn type_index(params: IntList, results: IntList): Int {
       var i = zero;
-      while i.lt(ty_res.length()) {
-        if ty_res.get(i).eq(res) {
-          if ty_plen.get(i).eq(params.length()) {
-            var j = zero;
-            var same = true;
-            while j.lt(params.length()) {
-              if ty_params.get(ty_pstart.get(i).add(j)).ne(params.get(j)) {
-                same = false;
-                j = params.length();
-              } else {
-                j = j.add(one);
+      while i.lt(ty_plen.length()) {
+        if ty_plen.get(i).eq(params.length()) {
+          if ty_rlen.get(i).eq(results.length()) {
+            if run_eq(ty_params, ty_pstart.get(i), params) {
+              if run_eq(ty_res, ty_rstart.get(i), results) {
+                return i;
               }
-            }
-            if same {
-              return i;
             }
           }
         }
@@ -97,20 +92,51 @@ assume Std {
       }
       ty_pstart.push(ty_params.length());
       ty_plen.push(params.length());
-      ty_res.push(res);
+      ty_rstart.push(ty_res.length());
+      ty_rlen.push(results.length());
       push_bytes(ty_params, params);
-      ty_res.length().sub(one)
+      push_bytes(ty_res, results);
+      ty_plen.length().sub(one)
     }
 
-    # A type of `n` i32 parameters and the given result.
-    fn type_i32(n: Int, res: Int): Int {
+    fn run_eq(arena: IntList, start: Int, want: IntList): Bool {
+      var j = zero;
+      while j.lt(want.length()) {
+        if arena.get(start.add(j)).ne(want.get(j)) {
+          return false;
+        }
+        j = j.add(one);
+      }
+      true
+    }
+
+    # The type of a block that leaves these results and takes nothing,
+    # which is what a multi-result `if` names.
+    fn results_type(results: IntList): Int {
+      type_index(int_list(), results)
+    }
+
+    # A type of `n` i32 parameters and no result.
+    fn type_i32(n: Int): Int {
       let ps = int_list();
       var i = zero;
       while i.lt(n) {
         ps.push(vt_i32());
         i = i.add(one);
       }
-      type_index(ps, res)
+      type_index(ps, int_list())
+    }
+
+    fn type_i32_to_i32(n: Int): Int {
+      let ps = int_list();
+      var i = zero;
+      while i.lt(n) {
+        ps.push(vt_i32());
+        i = i.add(one);
+      }
+      let rs = int_list();
+      rs.push(vt_i32());
+      type_index(ps, rs)
     }
 
     fn intern_name(src: IntList): Int {
@@ -182,13 +208,13 @@ assume Std {
     }
 
     fn type_section(out: IntList) {
-      if ty_res.length().eq(zero) {
+      if ty_plen.length().eq(zero) {
         return ();
       }
       let b = int_list();
-      uleb(b, ty_res.length());
+      uleb(b, ty_plen.length());
       var i = zero;
-      while i.lt(ty_res.length()) {
+      while i.lt(ty_plen.length()) {
         b.push(hex(n6(), zero));
         uleb(b, ty_plen.get(i));
         var j = zero;
@@ -196,11 +222,11 @@ assume Std {
           b.push(ty_params.get(ty_pstart.get(i).add(j)));
           j = j.add(one);
         }
-        if ty_res.get(i).eq(zero) {
-          uleb(b, zero);
-        } else {
-          uleb(b, one);
-          b.push(ty_res.get(i));
+        uleb(b, ty_rlen.get(i));
+        j = zero;
+        while j.lt(ty_rlen.get(i)) {
+          b.push(ty_res.get(ty_rstart.get(i).add(j)));
+          j = j.add(one);
         }
         i = i.add(one);
       }
@@ -334,10 +360,10 @@ assume Std {
     }
 
     # `wasi_snapshot_preview1.fd_write`, and the others the back end needs.
-    fn wasi_import(field: IntList, params: Int, res: Int): Int {
+    fn wasi_import(field: IntList, params: Int): Int {
       let m = int_list();
       sp_wasi_snapshot_preview1(m);
-      add_import(m, field, type_i32(params, res))
+      add_import(m, field, type_i32_to_i32(params))
     }
   }
 }
