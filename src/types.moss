@@ -198,13 +198,19 @@ assume Std {
         return intern_ty(tk_union(), ast::none(), members);
       }
       if k.ne(ast::k_ty_ref()) {
-        prog::error(prog::e_type(), m, ast::none());
+        # A record or a tuple, which this compiler does not lay out.
+        prog::error(prog::e_shape(), m, ast::none());
         return ty_never();
       }
       let sym = prog::resolve_path(m, ast::a_of(t));
       if ast::is_some(sym).not() {
         prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(t)));
         return ty_never();
+      }
+      # An application on a type substitutes into its payload, which this
+      # compiler does not do; reported rather than dropped.
+      if ast::d_of(t).eq(one) {
+        prog::error(prog::e_apply(), m, ast::path_last(ast::a_of(t)));
       }
       ty_of_decl(sym)
     }

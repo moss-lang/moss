@@ -34,6 +34,14 @@ assume Std {
       }
       let out = int_list();
       codegen::compile(entry, out);
+      # A resolution error can also surface *here*: the back end is what
+      # elaborates a type and flattens a context, so `prog`'s table grows
+      # during codegen too, and a module must not be written while either
+      # table has anything in it.
+      if prog::error_count().gt(zero) {
+        report_collect();
+        return ();
+      }
       if codegen::cg_error_count().gt(zero) {
         report_codegen();
         return ();

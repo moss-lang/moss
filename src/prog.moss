@@ -109,6 +109,23 @@ assume Std {
   # A context that nests too deeply to be real.
   fn e_deep(): Int { n11() }
 
+  # A bracket application on a *type* (`Pair[T=Int]`). Nothing in `src/`
+  # or the `lib/` it needs writes one, so this compiler does not
+  # substitute — and says so rather than elaborating `Pair` and dropping
+  # the bindings, which would be a silent wrong answer. The applications
+  # D61 introduced are on context items and method binds, where a
+  # provision is keyed by (receiver, method) and every signature comes
+  # from the provider, so there is nothing for this back end to do.
+  fn e_apply(): Int { n12() }
+
+  # A type form this compiler does not elaborate: a record, a tuple, or a
+  # bare `This`. The rest of D58 and D59 compiles, including a union wider
+  # than one scalar; `tests/wasi/noheap.moss` is the standing test for the
+  # first two. `This` never reaches here in practice, because a signature
+  # always comes from the concrete provider rather than from the abstract
+  # declaration that writes it.
+  fn e_shape(): Int { n13() }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,

@@ -117,15 +117,20 @@ What is left, none of it on the path to self-hosting:
   they are the only part of the value model still missing; everything
   else of [D58] and [D59] compiles, including a union wider than one
   scalar. `tests/wasi/noheap.moss` is the standing test for them, and a
-  program that needs them is reported rather than mis-compiled.
-- **Bracket application in the back end.** [D61] made the library apply
-  a type (`String.get[Elem=Char]`), and the back end still skips the
-  bindings — correctly, as it turns out: a provision is keyed by
-  (receiver, method) and every signature it needs comes from the
-  *provider*, which is concrete, so the substitution changes no code
-  here. The bootstrap needs it (it checks the provider's signature
-  against the abstract one) and the environment chain does not. A back
-  end that ever reads an abstract signature will have to.
+  program that needs them is reported — `e_shape`, raised where the type
+  is elaborated — rather than mis-compiled.
+- **Applying a type.** [D61] made the library apply one *per provision*
+  (`String.get[Elem=Char]`), and for those the back end correctly does
+  nothing: a provision is keyed by (receiver, method) and every signature
+  it needs comes from the *provider*, which is concrete, so the
+  substitution changes no code here. The bootstrap needs it — it checks
+  the provider's signature against the abstract one — and the environment
+  chain does not. What is not done is an application on a **type**
+  (`Pair[T=Int]`), which substitutes into a payload; that is reported as
+  `e_apply` rather than elaborating `Pair` and dropping the bindings,
+  which is what it used to do silently. `tests/wasi/applied.moss` is the
+  standing test: the bootstrap compiles and runs it, this compiler says
+  no.
 - **Diagnostics** are a code letter, the frame they came from, and a
   name — no line or column. The machinery for a real message is a string
   the compiler holds, which is [D48](../design/semantics.md).
@@ -311,11 +316,16 @@ source meant reading 243 of those.
   fixing it there would give the whole suite back.
 - `prog.moss` reports a syntax error as a per-module flag; the position
   the parser recorded is not surfaced.
-- The two diagnostic code spaces are `prog.moss`'s `e_` constants (A–L)
-  and `codegen.moss`'s `c_` constants (M–R), which continue where the
+- The two diagnostic code spaces are `prog.moss`'s `e_` constants (A–N)
+  and `codegen.moss`'s `c_` constants (O–T), which continue where the
   first stop *because they share one list* — the back end reports both
   kinds, and two codes that print as the same letter cannot be told
-  apart. They could once.
+  apart. They could once. Adding an `e_` means shifting every `c_`.
+- A resolution error can be raised *during* codegen — elaborating a type
+  and flattening a context are the back end's work — so `cli.moss` checks
+  both tables after compiling and not just before. It once checked
+  `prog`'s only before, and a module could be written while that table
+  held errors nobody printed.
 - The back end recognizes `Wasm`, `Wasi`, `Bool` and `i32_bool` by the
   file that declares them. So does the bootstrap's back end, which is
   the precedent; it is still a spelling dependency.

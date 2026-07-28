@@ -32,14 +32,14 @@ assume Std {
   # Back-end diagnostics, one code each. They continue where prog.moss's
   # `e_` codes stop, because the back end reports both kinds through one
   # list and two codes that print as the same letter cannot be told apart.
-  fn c_no_main(): Int { n12() }
-  fn c_unsupported(): Int { n13() }   # a construct outside this slice
-  fn c_unbound(): Int { n14() }       # abstract, and nothing provides it
-  fn c_unknown_op(): Int { n15() }    # a `Wasm` name with no instruction
-  fn c_bad_type(): Int { n16() }
+  fn c_no_main(): Int { n14() }
+  fn c_unsupported(): Int { n15() }   # a construct outside this slice
+  fn c_unbound(): Int { n16() }       # abstract, and nothing provides it
+  fn c_unknown_op(): Int { n16().add(one) }  # a `Wasm` name with no instruction
+  fn c_bad_type(): Int { n16().add(n2()) }
   # A call whose specialization the first pass never reached, so the two
   # passes disagree. A bug in this back end rather than in the program.
-  fn c_missing(): Int { n16().add(one) }
+  fn c_missing(): Int { n16().add(n3()) }
 
   # Reachable *specializations*: a function under a specific set of
   # bindings, and the Wasm index each gets. A type or fn bind changes the

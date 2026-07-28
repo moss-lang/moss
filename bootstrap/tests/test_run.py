@@ -1173,11 +1173,30 @@ class TestSelfHostedBackEnd(unittest.TestCase):
 
     def test_a_program_beyond_the_slice_is_reported(self):
         """What is left of the value model: a record, and a union two
-        scalars wide. tests/wasi/noheap.moss uses both, and the back end
-        says so rather than emitting something wrong."""
+        scalars wide. tests/wasi/noheap.moss uses both, and the compiler
+        says so — `e_shape` (`N`), raised where the type is elaborated —
+        rather than emitting something wrong."""
         out = self.compile_with_moss("tests/wasi/noheap.moss", prelude="lib/prelude.moss")
         self.assertNotEqual(out[:4], b"\0asm")
-        self.assertTrue(out.decode("utf-8").startswith("?"))
+        self.assertTrue(out.decode("utf-8").startswith("!N "), out[:200])
+
+    def test_applying_a_type_is_reported(self):
+        """The one bracket application this compiler does not do. D61's
+        applications are on context items and method binds, where nothing
+        needs substituting — a provision is keyed by (receiver, method) and
+        every signature comes from the provider — but applying a *type*
+        substitutes into a payload. The bootstrap compiles and runs
+        tests/wasi/applied.moss; the self-hosted compiler reports `e_apply`
+        (`M`) and writes nothing, rather than silently dropping the
+        bindings."""
+        from .test_build import compile_wasm, run_wasm
+
+        self.assertEqual(run_wasm(compile_wasm({}, entry="tests/wasi/applied.moss")), "A\n")
+        out = self.compile_with_moss("tests/wasi/applied.moss")
+        self.assertNotEqual(out[:4], b"\0asm")
+        report = out.decode("utf-8")
+        self.assertTrue(report.startswith("!M "), report[:200])
+        self.assertIn("Box", report)
 
 
 NEEDS_DRIVER = (
