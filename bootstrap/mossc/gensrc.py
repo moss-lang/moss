@@ -57,6 +57,8 @@ SPELLED = [
     "Bool",
     "true",
     "false",
+    "True",
+    "False",
 ]
 
 

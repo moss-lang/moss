@@ -1080,6 +1080,14 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/across.moss")
         self.assertEqual(self.wasmtime_run(module), "AC\n")
 
+    def test_tags_units_and_match(self):
+        """D58 and D59's value model: a nominal tag over a scalar is that
+        scalar, a union of units is one scalar of discriminant, and
+        `match` is the only thing that has to tell them apart. Nothing
+        here allocates."""
+        module = self.compile_with_moss("tests/wasi/tags.moss")
+        self.assertEqual(self.wasmtime_run(module), "BACEAB\n")
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
@@ -1089,6 +1097,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         cases = (
             ("tests/wasi/prim.moss", "ABKDKJGG\n"),
             ("tests/wasi/across.moss", "AC\n"),
+            ("tests/wasi/tags.moss", "BACEAB\n"),
         )
         for entry, expected in cases:
             with self.subTest(entry=entry):

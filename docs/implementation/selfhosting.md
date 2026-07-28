@@ -71,8 +71,10 @@ Not by looking at its output, but by holding it to the bootstrap's.
 The back end covers the *primitive* context and nothing above it:
 `Wasm` instructions, `Wasi` imports, `Bool` for `if` to eliminate,
 plain functions, `let`/`var`, assignment, `if`/`else`, `while`,
-`loop`/`break`, `return`, and `I32`/`I64`. That is the language
-`tests/wasi/raw.moss` and `tests/wasi/prim.moss` are written in.
+`loop`/`break`, `return`, `I32`/`I64`, and the scalar half of the value
+model — nominal tags, units, unions of units, and `match` over them.
+That is the language `tests/wasi/{raw,prim,across,tags}.moss` are
+written in.
 
 Not `Std` itself: `Std` is Moss already, and
 [`lib/wasi.moss`](/lib/wasi.moss)'s `WasiStd` maps
@@ -101,12 +103,15 @@ reported rather than mis-compiled:
   and detached by name with the receiver's home module as fallback. The
   symbol tables in `prog.moss` already hold both keys; nothing consumes
   them.
-- **Tags, unions and `match`.** `types.moss` knows the layouts —
-  a tag is its payload ([D58]), a union of units is one scalar and any
-  wider union is a discriminant beside it ([D59]) — but `codegen.moss`
-  still has a three-valued notion of type (nothing, i32, i64) where
-  those belong, and emits neither injection nor discrimination. No file
-  in `src/` or `lib/` uses a record or a tuple, so those can wait.
+- **Values wider than one scalar.** Done for the scalar cases: a tag is
+  its payload ([D58]) and a union of units is one discriminant ([D59]),
+  and `codegen.moss` carries real types and layouts now. What is left is
+  the wider union — `Read | Eof` in `src/lex.moss` is a discriminant
+  beside a payload, so it needs injection at the point a member enters
+  the union, a `match` that reads the discriminant and then the payload,
+  and a way for a function to return two scalars, which a Wasm result
+  list cannot do without staging through locals. No file in `src/` or
+  `lib/` uses a record or a tuple, so those can wait.
 - **Monomorphization.** Type binds are static and drive specialization
   ([D2](../design/semantics.md)); `lower.moss` records them and
   `canon` chases them, but the back end never asks.
@@ -114,13 +119,13 @@ reported rather than mis-compiled:
   machinery for a real message is a string the compiler holds, which is
   [D48](../design/semantics.md).
 
-The order to take them in is the bootstrap's own, and the first step is
+The order to take them in is the bootstrap's own, and two steps are
 taken: contexts and needs, since methods, functors and binds all reduce
-to them. What is left is one rewrite of `codegen.moss` — compile a
+to them, and real types in the back end, since everything else needs to
+know what a value is. What is left is the calling convention — compile a
 (function, environment) pair rather than a function, take the val needs
 as trailing parameters, translate the caller's keys to the callee's at
-each call, dispatch a method on its receiver's head, inline a functor's
-binds where it is applied, and give a value more than one scalar.
+each call — and then methods and functors on top of it.
 
 The Python originals are [`lower.py`](/bootstrap/mossc/lower.py) and
 [`build.py`](/bootstrap/mossc/build.py) — but the self-hosted back end

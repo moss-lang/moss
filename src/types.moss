@@ -356,6 +356,47 @@ assume Std {
       false
     }
 
+    # Match compilation asks two things of a scrutinee's type: how many
+    # heads it could have, and which member carries a given one.
+    fn head_count(t: Int): Int {
+      if is_kind(t, tk_union()) {
+        member_count(t)
+      } else if is_kind(t, tk_never()) {
+        zero
+      } else {
+        one
+      }
+    }
+
+    fn member_with_head(t: Int, head: Int): Int {
+      if is_kind(t, tk_union()).not() {
+        if head_of(t).eq(head) {
+          return t;
+        }
+        return ast::none();
+      }
+      var i = zero;
+      while i.lt(member_count(t)) {
+        if head_of(member_at(t, i)).eq(head) {
+          return member_at(t, i);
+        }
+        i = i.add(one);
+      }
+      ast::none()
+    }
+
+    # What a member of a union contributes beyond the discriminant: the
+    # payload of a tag, and nothing for a unit.
+    fn member_payload(t: Int): Int {
+      if is_unit_decl(t) {
+        ty_unit()
+      } else if is_kind(t, tk_nominal()) {
+        payload_of(t)
+      } else {
+        t
+      }
+    }
+
     # The head a value discriminates on: a nominal type's own symbol.
     fn head_of(t: Int): Int {
       if is_kind(t, tk_nominal()) {

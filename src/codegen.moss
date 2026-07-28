@@ -5,6 +5,7 @@ import "./insn.moss" use *;
 import "./intern.moss" as intern;
 import "./prog.moss" as prog;
 import "./spell.moss" use *;
+import "./types.moss" as types;
 import "./wasmops.moss" as wops;
 
 # The back end: the primitive context, straight to Wasm.
@@ -24,10 +25,6 @@ import "./wasmops.moss" as wops;
 #   3. emit      — one body at a time.
 
 assume Std {
-  # What a value occupies: nothing, one i32, or one i64.
-  fn vt_none(): Int { zero }
-  fn vt_32(): Int { one }
-  fn vt_64(): Int { n2() }
 
   # Back-end diagnostics, one code each.
   fn c_no_main(): Int { zero }
@@ -44,12 +41,16 @@ assume Std {
   val wi_sym: IntList;
   val wi_index: IntList;
 
-  # The locals of the function being compiled: interned name, valtype,
-  # and the Wasm index, which is only known once the whole function has
-  # been scanned (locals are grouped by type after the parameters).
+  # The locals of the function being compiled: interned name, elaborated
+  # type, and the Wasm indices its value occupies. A value is a run of
+  # scalars (D59), so a local owns a run of `lc_slots` rather than one
+  # index — and which indices those are is only known once the whole
+  # function has been scanned, because the locals past the parameters are
+  # grouped by valtype.
   val lc_name: IntList;
   val lc_type: IntList;
-  val lc_slot: IntList;
+  val lc_start: IntList;
+  val lc_slots: IntList;
   val lc_base: CellInt;
   val lc_visible: CellInt;
 
@@ -69,17 +70,24 @@ assume Std {
   val cg_bool: CellInt;
   val cg_std: CellInt;
 
+  # The elaborated `I32`, `I64` and `Bool` types, found once: an
+  # instruction's result type has to come from somewhere, and the `Wasm`
+  # table records only which of the two it is.
+  val cg_i32: CellInt;
+  val cg_i64: CellInt;
+  val cg_boolty: CellInt;
+
   val cg_errs: IntList;
   val cg_err_name: IntList;
 
   context Codegen =
     fq_sym, fq_index, wi_sym, wi_index,
-    lc_name, lc_type, lc_slot, lc_base, lc_visible,
+    lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
-    cg_errs, cg_err_name;
+    cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
-    emit::Emit {
+    emit::Emit, types::Types {
     fn cg_error(code: Int, name: Int) {
       cg_errs.push(code);
       cg_err_name.push(name);
@@ -148,6 +156,53 @@ assume Std {
         }
         m = m.add(one);
       }
+      cg_i32.write(wasm_type(sp_which_i32()));
+      cg_i64.write(wasm_type(sp_which_i64()));
+      cg_boolty.write(bool_type());
+    }
+
+    # `I32` and `I64` are declarations of lib/wasm.moss like any other,
+    # so they are found by name in its scope rather than invented.
+    fn sp_which_i32(): Int { zero }
+    fn sp_which_i64(): Int { one }
+
+    fn wasm_type(which: Int): Int {
+      let cs = spelled();
+      if which.eq(sp_which_i32()) {
+        sp_I32(cs);
+      } else {
+        sp_I64(cs);
+      }
+      let sym = prog::lookup(
+        cg_wasm.read(), prog::ns_name(), intern::intern_chars(cs)
+      );
+      if ast::is_some(sym).not() {
+        return types::ty_never();
+      }
+      types::ty_of_decl(sym)
+    }
+
+    # `Bool` likewise, and its two units get discriminants 0 and 1 before
+    # anything else asks for a code (D45).
+    fn bool_type(): Int {
+      let b = spelled();
+      sp_Bool(b);
+      let f = spelled();
+      sp_False(f);
+      let t = spelled();
+      sp_True(t);
+      let fsym = prog::lookup(cg_bool.read(), prog::ns_name(), intern::intern_chars(f));
+      let tsym = prog::lookup(cg_bool.read(), prog::ns_name(), intern::intern_chars(t));
+      if ast::is_some(fsym) {
+        if ast::is_some(tsym) {
+          types::seed_bool(fsym, tsym);
+        }
+      }
+      let sym = prog::lookup(cg_bool.read(), prog::ns_name(), intern::intern_chars(b));
+      if ast::is_some(sym).not() {
+        return types::ty_never();
+      }
+      types::ty_of_decl(sym)
     }
 
     fn in_bool(sym: Int): Bool {
@@ -185,57 +240,57 @@ assume Std {
       }
     }
 
-    # Types. In this slice a type is `()`, `I32` or `I64`, so a valtype
-    # is the whole of the type system the back end needs.
+    # Types.
 
-    fn valtype_of(t: Int, m: Int): Int {
-      if ast::is_some(t).not() {
-        return vt_none();
+    fn ty_none(): Int { types::ty_unit() }
+
+    fn width(ty: Int): Int { types::width(ty) }
+
+    fn elab_ty(t: Int, m: Int): Int { types::elab(t, m) }
+
+    # Whether an abstract type is `Wasm`'s `I64` — the one place the back
+    # end has to know a type by name, because a valtype is not something
+    # the type system models.
+    fn is_i64(ty: Int): Bool {
+      if types::is_kind(ty, types::tk_abstract()).not() {
+        return false;
       }
-      let k = ast::kind_of(t);
-      if k.eq(ast::k_ty_unit()) {
-        return vt_none();
-      }
-      if k.ne(ast::k_ty_ref()) {
-        cg_error(c_bad_type(), ast::none());
-        return vt_none();
-      }
-      let sym = prog::resolve_path(m, ast::a_of(t));
-      if ast::is_some(sym).not() {
-        cg_error(c_bad_type(), ast::path_last(ast::a_of(t)));
-        return vt_none();
-      }
-      if in_bool(sym) {
-        let bn = spelled();
-        sp_Bool(bn);
-        if sym_named(sym, bn) {
-          return vt_32();
-        }
-      }
+      let sym = types::sym_of(ty);
       if in_wasm(sym).not() {
-        cg_error(c_bad_type(), prog::sym_name.get(sym));
-        return vt_none();
+        return false;
       }
-      let i32n = spelled();
-      sp_I32(i32n);
-      if intern::chars_eq(prog::sym_name.get(sym), i32n) {
-        return vt_32();
-      }
-      let i64n = spelled();
-      sp_I64(i64n);
-      if intern::chars_eq(prog::sym_name.get(sym), i64n) {
-        return vt_64();
-      }
-      cg_error(c_bad_type(), prog::sym_name.get(sym));
-      vt_none()
+      let cs = spelled();
+      sp_I64(cs);
+      sym_named(sym, cs)
     }
 
-    fn wasm_valtype(v: Int): Int {
-      if v.eq(vt_64()) {
-        emit::vt_i64()
-      } else {
-        emit::vt_i32()
+    # The Wasm valtype of one slot of a value of this type. A tag is its
+    # payload (D58); a union's slot zero is its discriminant and the rest
+    # come from its members.
+    fn valtype_at(ty: Int, i: Int): Int {
+      if is_i64(ty) {
+        return emit::vt_i64();
       }
+      if types::is_kind(ty, types::tk_nominal()) {
+        if types::is_unit_decl(ty) {
+          return emit::vt_i32();
+        }
+        return valtype_at(types::payload_of(ty), i);
+      }
+      if types::is_kind(ty, types::tk_union()) {
+        if i.eq(zero) {
+          return emit::vt_i32();
+        }
+        var j = zero;
+        while j.lt(types::member_count(ty)) {
+          let p = types::member_payload(types::member_at(ty, j));
+          if width(p).gt(i.sub(one)) {
+            return valtype_at(p, i.sub(one));
+          }
+          j = j.add(one);
+        }
+      }
+      emit::vt_i32()
     }
 
     # Locals.
@@ -243,8 +298,48 @@ assume Std {
     fn add_local(name: Int, ty: Int): Int {
       lc_name.push(name);
       lc_type.push(ty);
-      lc_slot.push(ast::none());
+      lc_start.push(lc_slots.length());
+      var i = zero;
+      while i.lt(width(ty)) {
+        lc_slots.push(ast::none());
+        i = i.add(one);
+      }
       lc_name.length().sub(one)
+    }
+
+    fn local_slot(l: Int, i: Int): Int { lc_slots.get(lc_start.get(l).add(i)) }
+
+    fn set_local_slot(l: Int, i: Int, slot: Int) {
+      lc_slots.set(lc_start.get(l).add(i), slot);
+    }
+
+    fn local_width(l: Int): Int { width(lc_type.get(l)) }
+
+    # The scan pass creates every local; emitting only reveals them, in
+    # the same order, and takes the one it just revealed. Going through
+    # here rather than looking a name up is what keeps the two passes
+    # from drifting apart — a `match` temporary has no name to look up.
+    fn reveal(): Int {
+      lc_visible.write(lc_visible.read().add(one));
+      lc_visible.read().sub(one)
+    }
+
+    # A value on the stack, into a local: the top of the stack is the
+    # last slot, so they are written back to front.
+    fn store_local(body: IntList, l: Int) {
+      var i = local_width(l);
+      while i.gt(zero) {
+        i = i.sub(one);
+        op_local_set(body, local_slot(l, i));
+      }
+    }
+
+    fn load_local(body: IntList, l: Int) {
+      var i = zero;
+      while i.lt(local_width(l)) {
+        op_local_get(body, local_slot(l, i));
+        i = i.add(one);
+      }
     }
 
     # The innermost local of this name that is still in scope.
@@ -263,74 +358,82 @@ assume Std {
 
     fn type_of(e: Int, m: Int): Int {
       let k = ast::kind_of(e);
-      if k.eq(ast::k_ex_unit()) {
-        return vt_none();
-      }
-      if k.eq(ast::k_ex_break()) {
-        return vt_none();
-      }
-      if k.eq(ast::k_ex_return()) {
-        return vt_none();
-      }
       if k.eq(ast::k_ex_block()) {
         if ast::is_some(ast::c_of(e)) {
           return type_of(ast::c_of(e), m);
         }
-        return vt_none();
+        return ty_none();
       }
       if k.eq(ast::k_ex_if()) {
         return type_of(ast::b_of(e), m);
       }
       if k.eq(ast::k_ex_path()) {
-        let local = find_local(ast::path_last(ast::a_of(e)));
-        if ast::is_some(local) {
-          if ast::path_len(ast::a_of(e)).eq(one) {
+        if ast::path_len(ast::a_of(e)).eq(one) {
+          let local = find_local(ast::path_at(ast::a_of(e), zero));
+          if ast::is_some(local) {
             return lc_type.get(local);
           }
         }
         let sym = prog::resolve_path(m, ast::a_of(e));
         if ast::is_some(sym).not() {
-          return vt_none();
+          return ty_none();
         }
-        if in_wasm(sym) {
-          let op = wops::find_op(prog::sym_name.get(sym));
-          if ast::is_some(op) {
-            return op_valtype(op);
-          }
-        }
-        if in_bool(sym) {
-          return vt_32();
-        }
-        return vt_none();
+        return symbol_type(sym);
       }
       if k.eq(ast::k_ex_call()) {
         let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
         if ast::is_some(sym).not() {
-          return vt_none();
+          return ty_none();
+        }
+        # A tag construction is a value of the tag's own type (D58).
+        if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
+          return types::ty_of_decl(sym);
         }
         if in_wasm(sym) {
-          let op = wops::find_op(prog::sym_name.get(sym));
-          if ast::is_some(op) {
-            return op_valtype(op);
-          }
-          return vt_none();
+          return op_result(wops::find_op(prog::sym_name.get(sym)));
         }
         if is_i32_bool(sym) {
-          return vt_32();
+          return cg_boolty.read();
         }
-        return valtype_of(ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
+        return elab_ty(
+          ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
+        );
       }
-      vt_none()
+      # `()`, `break`, `return` and everything this slice does not cover
+      # leave nothing behind.
+      ty_none()
     }
 
-    fn op_valtype(op: Int): Int {
+    # What a path standing alone denotes: a unit value, a `Bool`
+    # constant, a `Wasm` value like `i32_zero`, or nothing this back end
+    # can produce.
+    fn symbol_type(sym: Int): Int {
+      if prog::sym_kind.get(sym).eq(prog::sk_unit()) {
+        return types::ty_of_decl(sym);
+      }
+      if in_wasm(sym) {
+        return op_result(wops::find_op(prog::sym_name.get(sym)));
+      }
+      if in_bool(sym) {
+        return cg_boolty.read();
+      }
+      if prog::sym_kind.get(sym).eq(prog::sk_val()) {
+        return elab_ty(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
+      }
+      ty_none()
+    }
+
+    fn op_result(op: Int): Int {
+      if ast::is_some(op).not() {
+        return ty_none();
+      }
       let r = wops::op_res.get(op);
       if r.eq(wops::wr_i64()) {
-        vt_64()
+        cg_i64.read()
       } else if r.eq(wops::wr_i32()) {
-        vt_32()
+        cg_i32.read()
       } else {
-        vt_none()
+        ty_none()
       }
     }
 
@@ -436,15 +539,24 @@ assume Std {
       var i = zero;
       while i.lt(ast::fn_nparams(d)) {
         let p = ast::kid_at(ast::fn_params(d), i);
-        ps.push(wasm_valtype(valtype_of(ast::b_of(p), m)));
+        let ty = elab_ty(ast::b_of(p), m);
+        var j = zero;
+        while j.lt(width(ty)) {
+          ps.push(valtype_at(ty, j));
+          j = j.add(one);
+        }
         i = i.add(one);
       }
-      let ret = valtype_of(ast::fn_ret(d), m);
-      if ret.eq(vt_none()) {
-        emit::type_index(ps, zero)
-      } else {
-        emit::type_index(ps, wasm_valtype(ret))
+      let ret = elab_ty(ast::fn_ret(d), m);
+      if width(ret).eq(zero) {
+        return emit::type_index(ps, zero);
       }
+      if width(ret).gt(one) {
+        # A Wasm result list of more than one needs the multi-value
+        # proposal, or the value staged through locals (D59). Neither yet.
+        cg_error(c_unsupported(), ast::none());
+      }
+      emit::type_index(ps, valtype_at(ret, zero))
     }
 
     fn declare_all() {
@@ -516,7 +628,57 @@ assume Std {
       } else if k.eq(ast::k_ex_if()) {
         scan_locals_expr(ast::b_of(e), m);
         scan_locals_expr(ast::c_of(e), m);
+      } else if k.eq(ast::k_ex_match()) {
+        scan_locals_match(e, m);
       }
+    }
+
+    fn scan_locals_match(e: Int, m: Int) {
+      let sty = type_of(ast::a_of(e), m);
+      if ast::c_of(e).eq(zero) {
+        return ();
+      }
+      let outer = lc_visible.read();
+      if types::head_count(sty).gt(one) {
+        # The scrutinee is held in a temporary while the arms test it.
+        add_local(ast::none(), sty);
+        lc_visible.write(lc_visible.read().add(one));
+      }
+      var i = zero;
+      while i.lt(ast::c_of(e)) {
+        let arm = ast::kid_at(ast::b_of(e), i);
+        let mark = lc_visible.read();
+        scan_arm_binder(ast::a_of(arm), sty, m);
+        scan_locals_expr(ast::b_of(arm), m);
+        lc_visible.write(mark);
+        i = i.add(one);
+      }
+      lc_visible.write(outer);
+    }
+
+    # One local if the pattern names something, none otherwise. Mirrors
+    # what `bind_pattern` and `emit_arm_body` will reveal.
+    fn scan_arm_binder(pat: Int, sty: Int, m: Int) {
+      if ast::kind_of(pat).ne(ast::k_pt_path()) {
+        return ();
+      }
+      let sub = ast::b_of(pat);
+      if ast::is_some(sub) {
+        if ast::kind_of(sub).eq(ast::k_pt_path()) {
+          if ast::is_some(ast::b_of(sub)).not() {
+            # `Box v`: `v` names the payload.
+            add_local(ast::path_last(ast::a_of(sub)), types::member_payload(sty));
+            lc_visible.write(lc_visible.read().add(one));
+          }
+        }
+        return ();
+      }
+      if ast::is_some(arm_head(pat, m)) {
+        return ();
+      }
+      # A bare name that is not a unit is a binder for the whole value.
+      add_local(ast::path_last(ast::a_of(pat)), sty);
+      lc_visible.write(lc_visible.read().add(one));
     }
 
     fn scan_locals_stmt(s: Int, m: Int) {
@@ -535,7 +697,7 @@ assume Std {
     }
 
     fn scan_binding(s: Int, m: Int) {
-      var ty = valtype_of(ast::b_of(s), m);
+      var ty = elab_ty(ast::b_of(s), m);
       if ast::is_some(ast::b_of(s)).not() {
         ty = type_of(ast::c_of(s), m);
       }
@@ -543,39 +705,60 @@ assume Std {
       lc_visible.write(lc_visible.read().add(one));
     }
 
-    # Parameters take the low indices; the rest are grouped by type after
-    # them, which is the shape of the code section's locals vector.
+    # Parameters take the low indices, in order and slot by slot; the
+    # locals past them are grouped by valtype, which is the shape of the
+    # code section's locals vector. The result is how many i32 locals
+    # were needed.
     fn assign_slots(nparams: Int): Int {
-      var next32 = nparams;
-      var i = lc_base.read().add(nparams);
-      while i.lt(lc_name.length()) {
-        if lc_type.get(i).ne(vt_64()) {
-          lc_slot.set(i, next32);
-          next32 = next32.add(one);
+      var next = zero;
+      var l = lc_base.read();
+      while l.lt(lc_base.read().add(nparams)) {
+        var i = zero;
+        while i.lt(local_width(l)) {
+          set_local_slot(l, i, next);
+          next = next.add(one);
+          i = i.add(one);
         }
-        i = i.add(one);
+        l = l.add(one);
+      }
+      var next32 = next;
+      l = lc_base.read().add(nparams);
+      while l.lt(lc_name.length()) {
+        var i = zero;
+        while i.lt(local_width(l)) {
+          if valtype_at(lc_type.get(l), i).eq(emit::vt_i32()) {
+            set_local_slot(l, i, next32);
+            next32 = next32.add(one);
+          }
+          i = i.add(one);
+        }
+        l = l.add(one);
       }
       var next64 = next32;
-      i = lc_base.read().add(nparams);
-      while i.lt(lc_name.length()) {
-        if lc_type.get(i).eq(vt_64()) {
-          lc_slot.set(i, next64);
-          next64 = next64.add(one);
+      l = lc_base.read().add(nparams);
+      while l.lt(lc_name.length()) {
+        var i = zero;
+        while i.lt(local_width(l)) {
+          if valtype_at(lc_type.get(l), i).eq(emit::vt_i64()) {
+            set_local_slot(l, i, next64);
+            next64 = next64.add(one);
+          }
+          i = i.add(one);
         }
-        i = i.add(one);
+        l = l.add(one);
       }
-      next32.sub(nparams)
+      next32.sub(next)
     }
 
-    # Emitting returns what the expression leaves on the stack, which is
-    # the only reliable way to know it: a `let`'s local is not visible
+    # Emitting returns the *type* the expression left on the stack, which
+    # is the only reliable way to know it: a `let`'s local is not visible
     # until the statement that introduces it has been emitted, so asking
-    # for the type of a block's tail before emitting the block gives the
-    # wrong answer.
+    # for a block's tail type before emitting the block gives the wrong
+    # answer.
     fn emit_expr(body: IntList, e: Int, m: Int): Int {
       let k = ast::kind_of(e);
       if k.eq(ast::k_ex_unit()) {
-        return vt_none();
+        return ty_none();
       }
       if k.eq(ast::k_ex_block()) {
         return emit_block(body, e, m);
@@ -583,20 +766,23 @@ assume Std {
       if k.eq(ast::k_ex_if()) {
         return emit_if(body, e, m);
       }
+      if k.eq(ast::k_ex_match()) {
+        return emit_match(body, e, m);
+      }
       if k.eq(ast::k_ex_break()) {
         if cg_ntop.read().eq(zero) {
           cg_error(c_unsupported(), ast::none());
-          return vt_none();
+          return ty_none();
         }
         op_br(body, cg_depth.read().sub(cg_loops.get(cg_ntop.read().sub(one))));
-        return vt_none();
+        return ty_none();
       }
       if k.eq(ast::k_ex_return()) {
         if ast::is_some(ast::a_of(e)) {
           emit_expr(body, ast::a_of(e), m);
         }
         op_return(body);
-        return vt_none();
+        return ty_none();
       }
       if k.eq(ast::k_ex_path()) {
         return emit_path(body, e, m);
@@ -605,7 +791,7 @@ assume Std {
         return emit_call(body, e, m);
       }
       cg_error(c_unsupported(), ast::none());
-      vt_none()
+      ty_none()
     }
 
     fn emit_path(body: IntList, e: Int, m: Int): Int {
@@ -613,40 +799,45 @@ assume Std {
       if ast::path_len(p).eq(one) {
         let local = find_local(ast::path_at(p, zero));
         if ast::is_some(local) {
-          op_local_get(body, lc_slot.get(local));
+          load_local(body, local);
           return lc_type.get(local);
         }
       }
       let sym = prog::resolve_path(m, p);
       if ast::is_some(sym).not() {
         cg_error(prog::e_scope(), ast::path_last(p));
-        return vt_none();
+        return ty_none();
+      }
+      # A `unit` value is its discriminant and nothing else (D59).
+      if prog::sym_kind.get(sym).eq(prog::sk_unit()) {
+        op_i32_const(body, types::unit_code(sym));
+        return types::ty_of_decl(sym);
       }
       if in_wasm(sym) {
         let op = wops::find_op(prog::sym_name.get(sym));
         if ast::is_some(op) {
           emit_op(body, op);
-          return op_valtype(op);
+          return op_result(op);
         }
         cg_error(c_unknown_op(), prog::sym_name.get(sym));
-        return vt_none();
+        return ty_none();
       }
       if in_bool(sym) {
         let t = spelled();
         sp_true(t);
         if sym_named(sym, t) {
           op_i32_const(body, one);
-          return vt_32();
+          return cg_boolty.read();
         }
         let f = spelled();
         sp_false(f);
         if sym_named(sym, f) {
           op_i32_const(body, zero);
-          return vt_32();
+          return cg_boolty.read();
         }
       }
       cg_error(c_unbound(), prog::sym_name.get(sym));
-      vt_none()
+      ty_none()
     }
 
     fn emit_call(body: IntList, e: Int, m: Int): Int {
@@ -654,41 +845,46 @@ assume Std {
       let sym = prog::resolve_path(m, ast::a_of(callee));
       if ast::is_some(sym).not() {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(callee)));
-        return vt_none();
+        return ty_none();
       }
       var i = zero;
       while i.lt(ast::c_of(e)) {
         emit_expr(body, ast::kid_at(ast::b_of(e), i), m);
         i = i.add(one);
       }
+      # A nominal value *is* its payload (D58), so constructing one emits
+      # the payload and nothing more.
+      if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
+        return types::ty_of_decl(sym);
+      }
       if in_wasm(sym) {
         let op = wops::find_op(prog::sym_name.get(sym));
         if ast::is_some(op) {
           emit_op(body, op);
-          return op_valtype(op);
+          return op_result(op);
         }
         cg_error(c_unknown_op(), prog::sym_name.get(sym));
-        return vt_none();
+        return ty_none();
       }
       if is_i32_bool(sym) {
         op_i32_const(body, zero);
         body.push(hex(n4(), n7()));
-        return vt_32();
+        return cg_boolty.read();
       }
       if is_defined_fn(sym) {
         op_call(body, index_of_fn(sym));
-        return valtype_of(
+        return elab_ty(
           ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
         );
       }
       if in_wasi(sym) {
         op_call(body, index_of_import(sym));
-        return valtype_of(
+        return elab_ty(
           ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
         );
       }
       cg_error(c_unbound(), prog::sym_name.get(sym));
-      vt_none()
+      ty_none()
     }
 
     fn emit_op(body: IntList, op: Int) {
@@ -719,12 +915,26 @@ assume Std {
         emit_stmt(body, ast::kid_at(ast::a_of(e), i), m);
         i = i.add(one);
       }
-      var ty = vt_none();
+      var ty = ty_none();
       if ast::is_some(ast::c_of(e)) {
         ty = emit_expr(body, ast::c_of(e), m);
       }
       lc_visible.write(mark);
       ty
+    }
+
+    # A Wasm block type names at most one result, so an expression wider
+    # than one scalar cannot be the value of an `if` or a `match` arm
+    # without staging through locals (D59). Not yet.
+    fn block_type_of(ty: Int): Int {
+      if width(ty).eq(zero) {
+        return bt_empty();
+      }
+      if width(ty).gt(one) {
+        cg_error(c_unsupported(), ast::none());
+        return bt_empty();
+      }
+      valtype_at(ty, zero)
     }
 
     # The block type is an immediate of the `if` opcode, so it has to be
@@ -737,20 +947,173 @@ assume Std {
       cg_depth.write(cg_depth.read().add(one));
       let then = int_list();
       let ty = emit_expr(then, ast::b_of(e), m);
-      if ty.eq(vt_none()) {
-        op_if(body, bt_empty());
-      } else {
-        op_if(body, wasm_valtype(ty));
-      }
+      op_if(body, block_type_of(ty));
       push_bytes(body, then);
       if ast::is_some(ast::c_of(e)) {
         op_else(body);
         emit_expr(body, ast::c_of(e), m);
-      } else if ty.ne(vt_none()) {
+      } else if width(ty).gt(zero) {
         cg_error(c_unsupported(), ast::none());
       }
       op_end(body);
       cg_depth.write(cg_depth.read().sub(one));
+      ty
+    }
+
+    # `match`, for the two shapes this back end covers. When the
+    # scrutinee's type has one possible head nothing needs
+    # discriminating: the first arm always matches, and a tag pattern
+    # just names the payload that is already on the stack. When every
+    # member is a unit the value *is* the discriminant, so the arms
+    # become a chain of comparisons against unit codes.
+    fn emit_match(body: IntList, e: Int, m: Int): Int {
+      let sty = type_of(ast::a_of(e), m);
+      if ast::c_of(e).eq(zero) {
+        # `match e {}` requires `e : |` (D34): evaluate and diverge.
+        emit_expr(body, ast::a_of(e), m);
+        op_unreachable(body);
+        return ty_none();
+      }
+      if types::head_count(sty).eq(one) {
+        return emit_single_arm(body, e, m, sty);
+      }
+      if types::all_units(sty) {
+        return emit_unit_match(body, e, m, sty);
+      }
+      cg_error(c_unsupported(), ast::none());
+      ty_none()
+    }
+
+    # One possible head: bind and run the first arm.
+    fn emit_single_arm(body: IntList, e: Int, m: Int, sty: Int): Int {
+      let arm = ast::kid_at(ast::b_of(e), zero);
+      let mark = lc_visible.read();
+      emit_expr(body, ast::a_of(e), m);
+      bind_pattern(body, ast::a_of(arm), sty);
+      let ty = emit_expr(body, ast::b_of(arm), m);
+      lc_visible.write(mark);
+      ty
+    }
+
+    # A pattern against a value already on the stack. A binder takes the
+    # whole value; a tag pattern takes its payload, which is the same
+    # scalars (D58); a wildcard drops it.
+    fn bind_pattern(body: IntList, pat: Int, sty: Int) {
+      let k = ast::kind_of(pat);
+      if k.eq(ast::k_pt_wild()) {
+        drop_value(body, sty);
+        return ();
+      }
+      if k.ne(ast::k_pt_path()) {
+        cg_error(c_unsupported(), ast::none());
+        return ();
+      }
+      let sub = ast::b_of(pat);
+      if ast::is_some(sub).not() {
+        # A single name is a binder unless it resolves to a unit or tag,
+        # and a resolved one carries no payload to name.
+        bind_here(body);
+        return ();
+      }
+      let payload = types::member_payload(sty);
+      if ast::kind_of(sub).eq(ast::k_pt_path()) {
+        if ast::is_some(ast::b_of(sub)).not() {
+          bind_here(body);
+          return ();
+        }
+      }
+      if ast::kind_of(sub).eq(ast::k_pt_wild()) {
+        drop_value(body, payload);
+        return ();
+      }
+      cg_error(c_unsupported(), ast::none());
+    }
+
+    fn bind_here(body: IntList) {
+      store_local(body, reveal());
+    }
+
+    fn drop_value(body: IntList, ty: Int) {
+      var i = zero;
+      while i.lt(width(ty)) {
+        op_drop(body);
+        i = i.add(one);
+      }
+    }
+
+    # Every member a unit: the scrutinee is its own discriminant, so the
+    # arms are `if code == k { ... } else ...`, innermost last.
+    fn emit_unit_match(body: IntList, e: Int, m: Int, sty: Int): Int {
+      let scrutinee = int_list();
+      emit_expr(scrutinee, ast::a_of(e), m);
+      let tmp = reveal();
+      push_bytes(body, scrutinee);
+      store_local(body, tmp);
+      emit_unit_arms(body, e, m, sty, tmp, zero)
+    }
+
+    fn emit_unit_arms(
+      body: IntList, e: Int, m: Int, sty: Int, tmp: Int, i: Int
+    ): Int {
+      let arm = ast::kid_at(ast::b_of(e), i);
+      let pat = ast::a_of(arm);
+      let last = i.add(one).ge(ast::c_of(e));
+      if last {
+        return emit_arm_body(body, arm, m, sty, tmp);
+      }
+      if ast::kind_of(pat).eq(ast::k_pt_wild()) {
+        return emit_arm_body(body, arm, m, sty, tmp);
+      }
+      let head = arm_head(pat, m);
+      if ast::is_some(head).not() {
+        return emit_arm_body(body, arm, m, sty, tmp);
+      }
+      load_local(body, tmp);
+      op_i32_const(body, types::unit_code(head));
+      body.push(hex(n4(), n6()));
+      cg_depth.write(cg_depth.read().add(one));
+      let then = int_list();
+      let ty = emit_arm_body(then, arm, m, sty, tmp);
+      op_if(body, block_type_of(ty));
+      push_bytes(body, then);
+      op_else(body);
+      emit_unit_arms(body, e, m, sty, tmp, i.add(one));
+      op_end(body);
+      cg_depth.write(cg_depth.read().sub(one));
+      ty
+    }
+
+    # The symbol a unit pattern names, or none if it is a binder.
+    fn arm_head(pat: Int, m: Int): Int {
+      if ast::kind_of(pat).ne(ast::k_pt_path()) {
+        return ast::none();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(pat));
+      if ast::is_some(sym).not() {
+        return ast::none();
+      }
+      if prog::sym_kind.get(sym).eq(prog::sk_unit()) {
+        return sym;
+      }
+      ast::none()
+    }
+
+    fn emit_arm_body(
+      body: IntList, arm: Int, m: Int, sty: Int, tmp: Int
+    ): Int {
+      let mark = lc_visible.read();
+      let pat = ast::a_of(arm);
+      if ast::kind_of(pat).eq(ast::k_pt_path()) {
+        if ast::is_some(arm_head(pat, m)).not() {
+          if ast::is_some(ast::b_of(pat)).not() {
+            # A binder for the whole scrutinee.
+            load_local(body, tmp);
+            bind_here(body);
+          }
+        }
+      }
+      let ty = emit_expr(body, ast::b_of(arm), m);
+      lc_visible.write(mark);
       ty
     }
 
@@ -773,7 +1136,7 @@ assume Std {
         emit_expr(body, ast::b_of(s), m);
         let local = find_local(ast::a_of(s));
         if ast::is_some(local) {
-          op_local_set(body, lc_slot.get(local));
+          store_local(body, local);
         } else {
           cg_error(prog::e_scope(), ast::a_of(s));
         }
@@ -787,9 +1150,7 @@ assume Std {
         emit_expr(body, ast::a_of(s), m);
         body.push(hex(n4(), n5()));
         op_br_if(body, cg_depth.read().sub(exit));
-        if emit_expr(body, ast::b_of(s), m).ne(vt_none()) {
-          op_drop(body);
-        }
+        drop_value(body, emit_expr(body, ast::b_of(s), m));
         op_br(body, zero);
         op_end(body);
         cg_depth.write(cg_depth.read().sub(one));
@@ -802,9 +1163,7 @@ assume Std {
         push_loop(cg_depth.read());
         op_loop(body, bt_empty());
         cg_depth.write(cg_depth.read().add(one));
-        if emit_expr(body, ast::a_of(s), m).ne(vt_none()) {
-          op_drop(body);
-        }
+        drop_value(body, emit_expr(body, ast::a_of(s), m));
         op_br(body, zero);
         op_end(body);
         cg_depth.write(cg_depth.read().sub(one));
@@ -812,9 +1171,7 @@ assume Std {
         cg_depth.write(cg_depth.read().sub(one));
         cg_ntop.write(cg_ntop.read().sub(one));
       } else if k.eq(ast::k_st_expr()) {
-        if emit_expr(body, ast::a_of(s), m).ne(vt_none()) {
-          op_drop(body);
-        }
+        drop_value(body, emit_expr(body, ast::a_of(s), m));
       } else {
         cg_error(c_unsupported(), ast::none());
       }
@@ -822,9 +1179,7 @@ assume Std {
 
     fn emit_binding(body: IntList, s: Int, m: Int) {
       emit_expr(body, ast::c_of(s), m);
-      lc_visible.write(lc_visible.read().add(one));
-      let local = find_local(ast::a_of(s));
-      op_local_set(body, lc_slot.get(local));
+      store_local(body, reveal());
     }
 
     fn compile_body(qi: Int) {
@@ -838,28 +1193,45 @@ assume Std {
       var i = zero;
       while i.lt(ast::fn_nparams(d)) {
         let p = ast::kid_at(ast::fn_params(d), i);
-        # A parameter is a local, and takes the index of its position.
-        lc_slot.set(add_local(ast::a_of(p), valtype_of(ast::b_of(p), m)), i);
+        add_local(ast::a_of(p), elab_ty(ast::b_of(p), m));
         i = i.add(one);
       }
       lc_visible.write(lc_name.length());
       scan_locals_expr(ast::fn_body(d), m);
       lc_visible.write(lc_base.read().add(ast::fn_nparams(d)));
       let n32 = assign_slots(ast::fn_nparams(d));
-      let n64 = lc_name.length().sub(lc_base.read()).sub(ast::fn_nparams(d)).sub(n32);
+      let n64 = total_slots().sub(param_slots(ast::fn_nparams(d))).sub(n32);
       let body = int_list();
-      let want = valtype_of(ast::fn_ret(d), m);
+      let want = elab_ty(ast::fn_ret(d), m);
       let got = emit_expr(body, ast::fn_body(d), m);
-      if want.eq(vt_none()) {
-        if got.ne(vt_none()) {
-          op_drop(body);
-        }
-      } else if got.eq(vt_none()) {
+      if width(want).eq(zero) {
+        drop_value(body, got);
+      } else if width(got).eq(zero) {
         # The body always jumped out; the validator still wants a value.
         op_unreachable(body);
       }
       op_end(body);
       emit::set_body(fq_index.get(qi), n32, n64, body);
+    }
+
+    fn total_slots(): Int {
+      var n = zero;
+      var l = lc_base.read();
+      while l.lt(lc_name.length()) {
+        n = n.add(local_width(l));
+        l = l.add(one);
+      }
+      n
+    }
+
+    fn param_slots(nparams: Int): Int {
+      var n = zero;
+      var l = lc_base.read();
+      while l.lt(lc_base.read().add(nparams)) {
+        n = n.add(local_width(l));
+        l = l.add(one);
+      }
+      n
     }
 
     # The whole module. `_start` is a wrapper rather than `main` itself,
@@ -891,7 +1263,7 @@ assume Std {
         return ();
       }
       if ast::is_some(ast::fn_ret(md)) {
-        if valtype_of(ast::fn_ret(md), prog::sym_mod.get(main)).ne(vt_none()) {
+        if width(elab_ty(ast::fn_ret(md), prog::sym_mod.get(main))).gt(zero) {
           cg_error(c_no_main(), ast::none());
           return ();
         }

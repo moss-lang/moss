@@ -116,7 +116,8 @@ functor Boot: Std -> Compiler {
   bind codegen::wi_index = int_list();
   bind codegen::lc_name = int_list();
   bind codegen::lc_type = int_list();
-  bind codegen::lc_slot = int_list();
+  bind codegen::lc_start = int_list();
+  bind codegen::lc_slots = int_list();
   bind codegen::lc_base = cell_int();
   bind codegen::lc_visible = cell_int();
   bind codegen::cg_depth = cell_int();
@@ -126,6 +127,9 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_wasi = cell_int();
   bind codegen::cg_bool = cell_int();
   bind codegen::cg_std = cell_int();
+  bind codegen::cg_i32 = cell_int();
+  bind codegen::cg_i64 = cell_int();
+  bind codegen::cg_boolty = cell_int();
   bind codegen::cg_errs = int_list();
   bind codegen::cg_err_name = int_list();
 

@@ -247,4 +247,19 @@ assume Std {
     push_char(out, char::e);
   }
 
+  fn sp_True(out: IntList) {
+    push_char(out, char::T);
+    push_char(out, char::r);
+    push_char(out, char::u);
+    push_char(out, char::e);
+  }
+
+  fn sp_False(out: IntList) {
+    push_char(out, char::F);
+    push_char(out, char::a);
+    push_char(out, char::l);
+    push_char(out, char::s);
+    push_char(out, char::e);
+  }
+
 }
