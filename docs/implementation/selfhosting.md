@@ -68,16 +68,28 @@ plain functions, `let`/`var`, assignment, `if`/`else`, `while`,
 `loop`/`break`, `return`, and `I32`/`I64`. That is the language
 `tests/wasi/raw.moss` and `tests/wasi/prim.moss` are written in.
 
-Everything that makes `Std` work is missing, and a program that assumes
-`Std` is reported rather than mis-compiled:
+Not `Std` itself: `Std` is Moss already, and
+[`lib/wasi.moss`](/lib/wasi.moss)'s `WasiStd` maps
+`Wasm, Wasi, Branch -> Std` in one functor with nothing native
+underneath. What is missing is compiler support for the constructs that
+functor is *written in* — and the self-hosted compiler is in the odd
+position of running on `WasiStd` (the bootstrap compiles `bind WasiStd;`
+into `src/main.moss`'s module, so the Moss `Std` is what does its
+allocation and its I/O) while being unable to compile it.
+
+Four things, and `lib/wasistd.moss` uses all four in its first twenty
+lines — `type Str I32;`, `match s { Str a => a }`, `fn Str.length()`,
+`bind putchar = wasi_putchar;`. A program that needs any of them is
+reported rather than mis-compiled:
 
 - **Contexts at runtime.** A defined function's requirement list, the
   call-site map from callee key to caller key, and val binds as hidden
   parameters — the explicit-context IR of
   [§11](../design/semantics.md) stage 3. Without it there are no
   contextual vals and no fn binds.
-- **Functors** ([D55](../design/semantics.md)), which is how `Std` is
-  installed, and which need the above.
+- **Functors** ([D55](../design/semantics.md)) — the construct, not the
+  library: `bind WasiStd;` has to inline the functor's binds at the
+  application site, which needs the above.
 - **Methods** ([D36](../design/semantics.md),
   [D54](../design/semantics.md)): attached lookup by (receiver, name)
   and detached by name with the receiver's home module as fallback. The
@@ -98,9 +110,17 @@ The order to take them in is the bootstrap's own: contexts and needs
 first, since methods, functors and binds all reduce to them, then the
 value model, then monomorphization. The Python originals are
 [`lower.py`](/bootstrap/mossc/lower.py) and
-[`build.py`](/bootstrap/mossc/build.py), and much of `build.py` is shims
-for a native `Std` that the self-hosted back end will never need — `Std`
-is Moss now ([`lib/wasistd.moss`](/lib/wasistd.moss)).
+[`build.py`](/bootstrap/mossc/build.py) — but the self-hosted back end
+is much less work than their line count suggests, because most of
+`build.py` is shims implementing a native `Std`, and there is nothing
+there to reimplement: the day the four constructs above compile,
+`WasiStd` compiles, and `Std` comes for free.
+
+The milestone that ends this list is the compiler compiling itself. It
+is one milestone, not several: `src/main.moss` assumes
+`Wasm, Wasi, Branch` and opens with `bind WasiStd;`, so the moment the
+back end can compile that line and the library behind it, it can compile
+every other file in `src/` too — they are ordinary Moss over `Std`.
 
 ## The idiom
 
