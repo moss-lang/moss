@@ -29,15 +29,17 @@ import "./wasmops.moss" as wops;
 
 assume Std {
 
-  # Back-end diagnostics, one code each.
-  fn c_no_main(): Int { zero }
-  fn c_unsupported(): Int { one }     # a construct outside this slice
-  fn c_unbound(): Int { n2() }        # abstract, and nothing provides it
-  fn c_unknown_op(): Int { n3() }     # a `Wasm` name with no instruction
-  fn c_bad_type(): Int { n4() }
+  # Back-end diagnostics, one code each. They continue where prog.moss's
+  # `e_` codes stop, because the back end reports both kinds through one
+  # list and two codes that print as the same letter cannot be told apart.
+  fn c_no_main(): Int { n12() }
+  fn c_unsupported(): Int { n13() }   # a construct outside this slice
+  fn c_unbound(): Int { n14() }       # abstract, and nothing provides it
+  fn c_unknown_op(): Int { n15() }    # a `Wasm` name with no instruction
+  fn c_bad_type(): Int { n16() }
   # A call whose specialization the first pass never reached, so the two
   # passes disagree. A bug in this back end rather than in the program.
-  fn c_missing(): Int { n5() }
+  fn c_missing(): Int { n16().add(one) }
 
   # Reachable *specializations*: a function under a specific set of
   # bindings, and the Wasm index each gets. A type or fn bind changes the
@@ -115,13 +117,19 @@ assume Std {
 
   val cg_errs: IntList;
   val cg_err_name: IntList;
+  # The function whose body was being emitted, recorded with each
+  # diagnostic. A message with words in it is still out of reach (D48),
+  # but the frame a complaint came from costs one symbol id and is the
+  # difference between a legible report and a list of letters.
+  val cg_err_at: IntList;
+  val cg_where: CellInt;
 
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
     pv_recv, pv_sym, pv_local, pv_top,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
-    cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name;
+    cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name, cg_err_at, cg_where;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -133,6 +141,7 @@ assume Std {
       }
       cg_errs.push(code);
       cg_err_name.push(name);
+      cg_err_at.push(cg_where.read());
     }
 
     fn cg_error_count(): Int { cg_errs.length() }
@@ -557,9 +566,29 @@ assume Std {
     # the same order, and takes the one it just revealed. Going through
     # here rather than looking a name up is what keeps the two passes
     # from drifting apart — a `match` temporary has no name to look up.
-    fn reveal(): Int {
-      lc_visible.write(lc_visible.read().add(one));
-      lc_visible.read().sub(one)
+    #
+    # The cursor only ever goes forward, in both passes, because that is
+    # what makes "the nth local created is the nth revealed" true: a block
+    # that declares locals and is followed by another declaration in the
+    # scope around it would otherwise hand out the same index twice while
+    # the scan handed out two. Leaving a scope therefore *retires* its
+    # names rather than rewinding the cursor, and revealing a local
+    # restores the name the scan gave it.
+    fn reveal(name: Int): Int {
+      let l = lc_visible.read();
+      lc_visible.write(l.add(one));
+      lc_name.set(l, name);
+      l
+    }
+
+    # Leaving a scope: everything it introduced stops answering to its
+    # name, so an inner `let x` cannot be found from outside.
+    fn close_scope(mark: Int) {
+      var l = mark;
+      while l.lt(lc_visible.read()) {
+        lc_name.set(l, ast::none());
+        l = l.add(one);
+      }
     }
 
     # A value on the stack, into a local: the top of the stack is the
@@ -883,7 +912,7 @@ assume Std {
         }
         scan_locals_expr(ast::c_of(e), m);
         cg_env.write(emark);
-        lc_visible.write(mark);
+        close_scope(mark);
       } else if k.eq(ast::k_ex_if()) {
         scan_locals_expr(ast::b_of(e), m);
         scan_locals_expr(ast::c_of(e), m);
@@ -909,10 +938,10 @@ assume Std {
         let mark = lc_visible.read();
         scan_arm_binder(ast::a_of(arm), sty, m);
         scan_locals_expr(ast::b_of(arm), m);
-        lc_visible.write(mark);
+        close_scope(mark);
         i = i.add(one);
       }
-      lc_visible.write(outer);
+      close_scope(outer);
     }
 
     # One local if the pattern names something, none otherwise. Mirrors
@@ -1443,7 +1472,7 @@ assume Std {
       if ast::is_some(ast::c_of(e)) {
         ty = emit_as(body, ast::c_of(e), m, want);
       }
-      lc_visible.write(mark);
+      close_scope(mark);
       pv_top.write(pmark);
       cg_env.write(emark);
       ty
@@ -1530,16 +1559,16 @@ assume Std {
       let arm = ast::kid_at(ast::b_of(e), zero);
       let mark = lc_visible.read();
       emit_expr(body, ast::a_of(e), m);
-      bind_pattern(body, ast::a_of(arm), sty);
+      bind_pattern(body, ast::a_of(arm), sty, m);
       let ty = emit_as(body, ast::b_of(arm), m, want);
-      lc_visible.write(mark);
+      close_scope(mark);
       ty
     }
 
     # A pattern against a value already on the stack. A binder takes the
     # whole value; a tag pattern takes its payload, which is the same
     # scalars (D58); a wildcard drops it.
-    fn bind_pattern(body: IntList, pat: Int, sty: Int) {
+    fn bind_pattern(body: IntList, pat: Int, sty: Int, m: Int) {
       let k = ast::kind_of(pat);
       if k.eq(ast::k_pt_wild()) {
         drop_value(body, sty);
@@ -1552,14 +1581,20 @@ assume Std {
       let sub = ast::b_of(pat);
       if ast::is_some(sub).not() {
         # A single name is a binder unless it resolves to a unit or tag,
-        # and a resolved one carries no payload to name.
-        bind_here(body);
+        # and a resolved one carries no payload to name. Which of the two
+        # it is has to be decided the same way `scan_arm_binder` decided
+        # it, or the local it owns is not the one the scan created.
+        if ast::is_some(arm_head_any(pat, m)) {
+          drop_value(body, sty);
+          return ();
+        }
+        bind_here(body, ast::path_last(ast::a_of(pat)));
         return ();
       }
       let payload = types::member_payload(sty);
       if ast::kind_of(sub).eq(ast::k_pt_path()) {
         if ast::is_some(ast::b_of(sub)).not() {
-          bind_here(body);
+          bind_here(body, ast::path_last(ast::a_of(sub)));
           return ();
         }
       }
@@ -1570,8 +1605,8 @@ assume Std {
       cg_error(c_unsupported(), ast::none());
     }
 
-    fn bind_here(body: IntList) {
-      store_local(body, reveal());
+    fn bind_here(body: IntList, name: Int) {
+      store_local(body, reveal(name));
     }
 
     fn drop_value(body: IntList, ty: Int) {
@@ -1587,7 +1622,7 @@ assume Std {
     fn emit_unit_match(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
       let scrutinee = int_list();
       emit_expr(scrutinee, ast::a_of(e), m);
-      let tmp = reveal();
+      let tmp = reveal(ast::none());
       push_bytes(body, scrutinee);
       store_local(body, tmp);
       emit_unit_arms(body, e, m, sty, tmp, zero, want)
@@ -1649,12 +1684,12 @@ assume Std {
           if ast::is_some(ast::b_of(pat)).not() {
             # A binder for the whole scrutinee.
             load_local(body, tmp);
-            bind_here(body);
+            bind_here(body, ast::path_last(ast::a_of(pat)));
           }
         }
       }
       let ty = emit_as(body, ast::b_of(arm), m, want);
-      lc_visible.write(mark);
+      close_scope(mark);
       ty
     }
 
@@ -1664,7 +1699,7 @@ assume Std {
     fn emit_wide_match(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
       let scrutinee = int_list();
       emit_expr(scrutinee, ast::a_of(e), m);
-      let tmp = reveal();
+      let tmp = reveal(ast::none());
       push_bytes(body, scrutinee);
       store_local(body, tmp);
       emit_wide_arms(body, e, m, sty, tmp, zero, want)
@@ -1705,20 +1740,26 @@ assume Std {
       if ast::kind_of(pat).eq(ast::k_pt_path()) {
         let sub = ast::b_of(pat);
         if ast::is_some(sub) {
-          let payload = arm_payload(pat, m, sty);
-          var j = zero;
-          while j.lt(width(payload)) {
-            op_local_get(body, local_slot(tmp, j.add(one)));
-            j = j.add(one);
+          # Only a bare name takes the payload; `Tag _` names nothing, and
+          # the scan created no local for it.
+          if ast::kind_of(sub).eq(ast::k_pt_path()) {
+            if ast::is_some(ast::b_of(sub)).not() {
+              let payload = arm_payload(pat, m, sty);
+              var j = zero;
+              while j.lt(width(payload)) {
+                op_local_get(body, local_slot(tmp, j.add(one)));
+                j = j.add(one);
+              }
+              bind_here(body, ast::path_last(ast::a_of(sub)));
+            }
           }
-          bind_here(body);
         } else if ast::is_some(arm_head_any(pat, m)).not() {
           load_local(body, tmp);
-          bind_here(body);
+          bind_here(body, ast::path_last(ast::a_of(pat)));
         }
       }
       let ty = emit_as(body, ast::b_of(arm), m, want);
-      lc_visible.write(mark);
+      close_scope(mark);
       ty
     }
 
@@ -1824,11 +1865,14 @@ assume Std {
       if kind.eq(prog::sk_val()) {
         # A val is data: evaluate it once into a local (D2).
         if mode.eq(bw_scan()) {
-          add_local(prog::sym_name.get(sym), need_type(sym));
+          # Nameless: a provision is found by its *symbol*, through
+          # `provide`, and a name here would shadow a program local that
+          # happened to share it — `val n: Char;` against a parameter `n`.
+          add_local(ast::none(), need_type(sym));
           lc_visible.write(lc_visible.read().add(one));
         } else if mode.eq(bw_emit()) {
           emit_as(body, value, m, need_type(sym));
-          let l = reveal();
+          let l = reveal(ast::none());
           store_local(body, l);
           provide(ast::none(), sym, l);
         }
@@ -2030,13 +2074,14 @@ assume Std {
         want = elab_ty(ast::b_of(s), m);
       }
       emit_as(body, ast::c_of(s), m, want);
-      store_local(body, reveal());
+      store_local(body, reveal(ast::a_of(s)));
     }
 
     fn compile_one(qi: Int) {
       let sym = fq_sym.get(qi);
       let d = prog::sym_decl.get(sym);
       let m = prog::sym_mod.get(sym);
+      cg_where.write(sym);
       lc_base.write(lc_name.length());
       lc_visible.write(lc_name.length());
       cg_depth.write(zero);
@@ -2061,7 +2106,8 @@ assume Std {
       i = zero;
       while i.lt(vals.length()) {
         let ns = vals.get(i);
-        provide(ast::none(), ns, add_local(prog::sym_name.get(ns), need_type(ns)));
+        # Nameless, like a `bind`'s local: these are reached by symbol.
+        provide(ast::none(), ns, add_local(ast::none(), need_type(ns)));
         nparams = nparams.add(one);
         i = i.add(one);
       }
@@ -2125,6 +2171,7 @@ assume Std {
     fn heap_pointer(): Int { n16() }
 
     fn compile(entry: Int, out: IntList) {
+      cg_where.write(ast::none());
       find_primitive_modules();
       wops::install_wasm_ops();
       # Every defined function's requirement list, which is what the

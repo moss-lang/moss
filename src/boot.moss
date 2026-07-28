@@ -142,6 +142,8 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_boolty = cell_int();
   bind codegen::cg_errs = int_list();
   bind codegen::cg_err_name = int_list();
+  bind codegen::cg_err_at = int_list();
+  bind codegen::cg_where = cell_int();
 
   bind types::ty_kind = int_list();
   bind types::ty_sym = int_list();

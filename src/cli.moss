@@ -62,6 +62,19 @@ assume Std {
       while e.lt(codegen::cg_error_count()) {
         putchar(char::question);
         putchar(char::A.code().add(codegen::cg_errs.get(e)).char());
+        # Which frame was being emitted, as `module fn` — the nearest
+        # thing to a position this compiler can say (D48).
+        let at = codegen::cg_err_at.get(e);
+        if ast::is_some(at) {
+          putchar(char::space);
+          print(prog::module_path(prog::sym_mod.get(at)));
+          putchar(char::space);
+          if ast::is_some(prog::sym_recv.get(at)) {
+            intern::put(prog::sym_name.get(prog::sym_recv.get(at)));
+            putchar(char::dot);
+          }
+          intern::put(prog::sym_name.get(at));
+        }
         if ast::is_some(codegen::cg_err_name.get(e)) {
           putchar(char::space);
           intern::put(codegen::cg_err_name.get(e));
