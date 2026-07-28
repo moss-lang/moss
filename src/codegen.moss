@@ -252,6 +252,35 @@ assume Std {
       }
     }
 
+    # An attached method with a body. Its receiver is nominal (Q5), and
+    # it is the only kind of provider that can see what it was called on
+    # (D54) — which is why `this` is a parameter like any other.
+    fn is_defined_method(sym: Int): Bool {
+      if prog::sym_kind.get(sym).ne(prog::sk_method()) {
+        return false;
+      }
+      if ast::is_some(prog::sym_recv.get(sym)).not() {
+        return false;
+      }
+      ast::is_some(ast::fn_body(prog::sym_decl.get(sym)))
+    }
+
+    fn is_compilable(sym: Int): Bool {
+      if is_defined_fn(sym) {
+        true
+      } else {
+        is_defined_method(sym)
+      }
+    }
+
+    # `this`'s type, for a method: its receiver declaration.
+    fn this_type(sym: Int): Int {
+      types::ty_of_decl(prog::sym_recv.get(sym))
+    }
+
+    # `this` is the first local of a method's frame, so it needs no name.
+    fn this_local(): Int { lc_base.read() }
+
     # Provisions.
 
     fn provide(recv: Int, sym: Int, l: Int) {
@@ -426,6 +455,18 @@ assume Std {
       if k.eq(ast::k_ex_if()) {
         return type_of(ast::b_of(e), m);
       }
+      if k.eq(ast::k_ex_this()) {
+        return lc_type.get(this_local());
+      }
+      if k.eq(ast::k_ex_method()) {
+        let meth = method_of(e, m);
+        if ast::is_some(meth).not() {
+          return ty_none();
+        }
+        return elab_ty(
+          ast::fn_ret(prog::sym_decl.get(meth)), prog::sym_mod.get(meth)
+        );
+      }
       if k.eq(ast::k_ex_path()) {
         if ast::path_len(ast::a_of(e)).eq(one) {
           let local = find_local(ast::path_at(ast::a_of(e), zero));
@@ -548,6 +589,32 @@ assume Std {
         }
         return ();
       }
+      if k.eq(ast::k_ex_method()) {
+        let meth = method_of(e, m);
+        if ast::is_some(meth) {
+          if queued(meth).not() {
+            fq_sym.push(meth);
+            fq_index.push(ast::none());
+            discover_fn(meth);
+          }
+        }
+        discover_expr(ast::a_of(e), m);
+        var i = zero;
+        while i.lt(ast::d_of(e)) {
+          discover_expr(ast::kid_at(ast::c_of(e), i), m);
+          i = i.add(one);
+        }
+        return ();
+      }
+      if k.eq(ast::k_ex_match()) {
+        discover_expr(ast::a_of(e), m);
+        var i = zero;
+        while i.lt(ast::c_of(e)) {
+          discover_expr(ast::b_of(ast::kid_at(ast::b_of(e), i)), m);
+          i = i.add(one);
+        }
+        return ();
+      }
       if k.eq(ast::k_ex_block()) {
         var i = zero;
         while i.lt(ast::b_of(e)) {
@@ -597,6 +664,8 @@ assume Std {
       discover_expr(ast::fn_body(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
     }
 
+    fn index_of_method(sym: Int): Int { index_of_fn(sym) }
+
     # Pass two: the index spaces.
 
     # A defined function's signature: its declared parameters, then one
@@ -607,6 +676,9 @@ assume Std {
       let d = prog::sym_decl.get(sym);
       let m = prog::sym_mod.get(sym);
       let ps = int_list();
+      if is_defined_method(sym) {
+        push_valtypes(ps, this_type(sym));
+      }
       var i = zero;
       while i.lt(ast::fn_nparams(d)) {
         let p = ast::kid_at(ast::fn_params(d), i);
@@ -890,14 +962,58 @@ assume Std {
         op_return(body);
         return ty_none();
       }
+      if k.eq(ast::k_ex_this()) {
+        load_local(body, this_local());
+        return lc_type.get(this_local());
+      }
       if k.eq(ast::k_ex_path()) {
         return emit_path(body, e, m);
       }
       if k.eq(ast::k_ex_call()) {
         return emit_call(body, e, m);
       }
+      if k.eq(ast::k_ex_method()) {
+        return emit_method(body, e, m);
+      }
       cg_error(c_unsupported(), ast::none());
       ty_none()
+    }
+
+    # `x.m(a)`. The receiver's type is the other half of the lookup key
+    # (D36), and forward inference means it is known first. This slice
+    # resolves to an attached method — the receiver goes in ahead of the
+    # arguments, which is exactly the shape its frame expects.
+    fn emit_method(body: IntList, e: Int, m: Int): Int {
+      let meth = method_of(e, m);
+      if ast::is_some(meth).not() {
+        cg_error(prog::e_method(), ast::path_last(ast::b_of(e)));
+        return ty_none();
+      }
+      emit_expr(body, ast::a_of(e), m);
+      var i = zero;
+      while i.lt(ast::d_of(e)) {
+        emit_expr(body, ast::kid_at(ast::c_of(e), i), m);
+        i = i.add(one);
+      }
+      push_needs(body, meth);
+      op_call(body, index_of_fn(meth));
+      elab_ty(ast::fn_ret(prog::sym_decl.get(meth)), prog::sym_mod.get(meth))
+    }
+
+    # The attached method a call selects, or none.
+    fn method_of(e: Int, m: Int): Int {
+      let head = types::head_of(type_of(ast::a_of(e), m));
+      if ast::is_some(head).not() {
+        return ast::none();
+      }
+      let found = lower::find_method_decl(m, head, ast::path_last(ast::b_of(e)));
+      if ast::is_some(found).not() {
+        return ast::none();
+      }
+      if is_defined_method(found).not() {
+        return ast::none();
+      }
+      found
     }
 
     fn emit_path(body: IntList, e: Int, m: Int): Int {
@@ -1378,6 +1494,9 @@ assume Std {
       cg_ntop.write(zero);
       # One frame at a time, so the provisions start empty.
       pv_top.write(zero);
+      if is_defined_method(sym) {
+        add_local(ast::none(), this_type(sym));
+      }
       var i = zero;
       while i.lt(ast::fn_nparams(d)) {
         let p = ast::kid_at(ast::fn_params(d), i);
@@ -1386,7 +1505,7 @@ assume Std {
       }
       # Then the needs that travel as data, in the same order the
       # signature declared them, each provided from its own parameter.
-      var nparams = ast::fn_nparams(d);
+      var nparams = lc_name.length().sub(lc_base.read());
       i = zero;
       while i.lt(lower::needs_count(sym)) {
         let r = lower::need_recv_at(sym, i);

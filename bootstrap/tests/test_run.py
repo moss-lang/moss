@@ -1086,7 +1086,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         `match` is the only thing that has to tell them apart. Nothing
         here allocates."""
         module = self.compile_with_moss("tests/wasi/tags.moss")
-        self.assertEqual(self.wasmtime_run(module), "BACEAB\n")
+        self.assertEqual(self.wasmtime_run(module), "EBACEAB\n")
 
     def test_contextual_vals(self):
         """D2: a val is the only context that exists at runtime, so a
@@ -1106,7 +1106,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         cases = (
             ("tests/wasi/prim.moss", "ABKDKJGG\n"),
             ("tests/wasi/across.moss", "AC\n"),
-            ("tests/wasi/tags.moss", "BACEAB\n"),
+            ("tests/wasi/tags.moss", "EBACEAB\n"),
             ("tests/wasi/ctx.moss", "CEECI\n"),
         )
         for entry, expected in cases:

@@ -73,8 +73,8 @@ The back end covers the *primitive* context and nothing above it:
 plain functions, `let`/`var`, assignment, `if`/`else`, `while`,
 `loop`/`break`, `return`, `I32`/`I64`, the scalar half of the value
 model — nominal tags, units, unions of units, and `match` over them —
-and contextual vals with `bind`. That is the language
-`tests/wasi/{raw,prim,across,tags,ctx}.moss` are written in.
+contextual vals with `bind`, and attached method calls. That is the
+language `tests/wasi/{raw,prim,across,tags,ctx}.moss` are written in.
 
 Not `Std` itself: `Std` is Moss already, and
 [`lib/wasi.moss`](/lib/wasi.moss)'s `WasiStd` maps
@@ -101,10 +101,14 @@ reported rather than mis-compiled:
   library: `bind WasiStd;` has to inline the functor's binds at the
   application site, which needs the above.
 - **Methods** ([D36](../design/semantics.md),
-  [D54](../design/semantics.md)): attached lookup by (receiver, name)
-  and detached by name with the receiver's home module as fallback. The
-  symbol tables in `prog.moss` already hold both keys; nothing consumes
-  them.
+  [D54](../design/semantics.md)). The attached half works: the
+  receiver's type is the other half of the lookup key, forward
+  inference means it is known first, and `this` is a parameter of the
+  method's frame like any other. What is left is a method reached
+  through the *context* rather than by scope — `bind Int.add =
+  Num.add;` provides a detached symbol at a receiver, and finding it
+  means asking the environment, which is the same specialization
+  machinery a fn bind needs.
 - **Values wider than one scalar.** Done for the scalar cases: a tag is
   its payload ([D58]) and a union of units is one discriminant ([D59]),
   and `codegen.moss` carries real types and layouts now. What is left is

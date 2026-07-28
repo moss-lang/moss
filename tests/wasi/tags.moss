@@ -52,6 +52,11 @@ assume Wasm, Wasi, Branch {
     }
   }
 
+  # An attached method: the only provider that can see its receiver
+  # (D54), so `this` is a parameter of its frame like any other, and the
+  # receiver goes in ahead of the arguments at the call.
+  fn Box.twice(): I32 { w::i32_add(unbox(this), unbox(this)) }
+
   # A binder rather than a unit, and a wildcard: both have to leave the
   # stack balanced whether or not they use the value.
   fn is_red(c: Colour): I32 {
@@ -62,6 +67,7 @@ assume Wasm, Wasi, Branch {
   }
 
   fn main() {
+    emit(w::i32_add(upper_a(), Box (two()).twice()));       # 4, 'E'
     emit(w::i32_add(upper_a(), unbox(Box (w::i32_one))));   # 1, 'B'
     emit(w::i32_add(upper_a(), shade(Red)));                # 0, 'A'
     emit(w::i32_add(upper_a(), shade(Green)));              # 2, 'C'
