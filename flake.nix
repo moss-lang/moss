@@ -55,6 +55,7 @@
       devShells = forAll (pkgs: {
         default = pkgs.mkShellNoCC {
           buildInputs = [
+            pkgs.binaryen
             pkgs.bun # For the VS Code extension.
             pkgs.nodejs
             pkgs.python3
