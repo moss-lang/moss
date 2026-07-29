@@ -505,6 +505,11 @@ Inductive has_ty (Sg : gsig) : ctx -> tenv -> expr -> ty -> Prop :=
     ~ In (ITy t) (cA Phi) ->
     wf_ty Sg Phi tau' ->
     has_ty Sg (bind_ty t tau' Phi) G e tau ->
+    (* the result type may not escape the bind's scope: it must already be
+       well-formed outside (a batch-2 agent refuted preservation without
+       this — subsumption under the extended σ retypes the body at TAbs t,
+       which then leaks) *)
+    wf_ty Sg Phi tau ->
     has_ty Sg Phi G (EBindTy t tau' e) tau
 | TBindValR : forall Phi G v Dv tauv e1 e tau,
     g_val Sg v = Some (Dv, tauv) ->
@@ -2428,12 +2433,42 @@ Qed.
    items directly (its second conjunct); avail_ty_in turns that into
    membership in the prefix, hence in D0 ++ D. *)
 (* BEGIN:tele_deps_closed *)
+(* BEGIN:tele_deps_closed *)
 Lemma tele_deps_closed : forall Sg D0 D,
   wf_tele Sg D0 D ->
   forall i, In i D -> is_ty_item i = false ->
   incl (dep_tys Sg i) (tyreqs (D0 ++ D)).
 Proof.
-Admitted. (* FILL:tele_deps_closed *)
+  intros Sg D0 D H.
+  induction H as [D0 | D0 i0 D' Hok Hwf IH].
+  - intros i Hin _. simpl in Hin. destruct Hin.
+  - intros i Hin Hty. simpl in Hin. destruct Hin as [Heq | Hin'].
+    + subst i.
+      inversion Hok as [t Hg | v Dv tauv Hg Hsat | f Df S b Hg Hsat
+                        | rt m Dm S th Hg Hrt Hs Hth]; subst.
+      * (* OkTy: contradicts is_ty_item i0 = false *)
+        unfold is_ty_item in Hty. discriminate.
+      * (* OkVal *)
+        unfold dep_tys. rewrite Hg.
+        destruct Hsat as [_ Hsat2].
+        rewrite Forall_forall in Hsat2.
+        intros t Ht. specialize (Hsat2 t Ht).
+        apply avail_ty_in in Hsat2. simpl in Hsat2.
+        apply wf_ty_frees_aux3. apply in_or_app. left. exact Hsat2.
+      * (* OkFn *)
+        unfold dep_tys. rewrite Hg.
+        destruct Hsat as [_ Hsat2].
+        rewrite Forall_forall in Hsat2.
+        intros t Ht. specialize (Hsat2 t Ht).
+        apply avail_ty_in in Hsat2. simpl in Hsat2.
+        apply wf_ty_frees_aux3. apply in_or_app. left. exact Hsat2.
+      * (* OkMth: dep_tys is [] for method items *)
+        unfold dep_tys. intros t Ht. simpl in Ht. destruct Ht.
+    + specialize (IH i Hin' Hty).
+      rewrite <- app_assoc in IH.
+      exact IH.
+Qed.
+(* END:tele_deps_closed *)
 (* END:tele_deps_closed *)
 
 (* --- compose_smap: success and lookups. ------------------------------------ *)
@@ -2790,6 +2825,7 @@ Section HasTyIndSub.
       ~ In (ITy t) (cA Phi) ->
       wf_ty Sg Phi tau' ->
       has_ty Sg (bind_ty t tau' Phi) G e tau ->
+      wf_ty Sg Phi tau ->
       P Phi G (EBindTy t tau' e) tau.
   Hypothesis HBindVal : forall Phi G v Dv tauv e1 e tau,
       g_val Sg v = Some (Dv, tauv) ->
@@ -3005,6 +3041,7 @@ Section SafetyCases.
      (wf_ty_frees at mk_ctx D, whose tyreqs equal sat's domain equation) —
      plus absorbs_all for the σσ collapse. *)
   (* BEGIN:safety_case_tag *)
+  (* BEGIN:safety_case_tag *)
   Lemma safety_case_tag : forall Phi G n D tau0 th e d ge g,
       g_tag Sg n = Some (D, tau0) ->
       sat Sg Phi th D ->
@@ -3017,8 +3054,33 @@ Section SafetyCases.
                                   (app_subst (cS Phi) (TNom n th))))
                (interp (S k) Sg d ge (ETag n th e)).
   Proof.
-  Admitted. (* FILL:safety_case_tag *)
+    intros Phi G n D tau0 th e d ge g Hgt Hsat Hwfth Hty Hg Hd Hve.
+    assert (Hab : absorbs g (cS Phi)) by (destruct Hg as [_ [Hab _]]; exact Hab).
+    assert (Hincl : incl (ty_frees tau0) (map fst th)).
+    { destruct Hsat as [Hdom _]. rewrite Hdom.
+      assert (WF' := WF). destruct WF' as [Wtag Wval Wfn Wmth].
+      destruct (Wtag n D tau0 Hgt) as [_ Hwf].
+      apply wf_ty_frees in Hwf.
+      simpl in Hwf. exact Hwf. }
+    assert (IH := IHfuel (Nat.le_refl k) Hty Hg Hd Hve).
+    rewrite !(absorbs_all Hab) in IH.
+    rewrite !(absorbs_all Hab).
+    rewrite app_subst_nom.
+    replace (interp (S k) Sg d ge (ETag n th e))
+      with (match interp k Sg d ge e with
+            | Ok w => Ok (VTag n w)
+            | rr => rr
+            end) by reflexivity.
+    remember (interp k Sg d ge e) as r eqn:Hr.
+    destruct r as [w | | ].
+    - simpl in IH. simpl.
+      eapply VtyTag; [ exact Hgt | ].
+      rewrite <- (app_subst_chain g th tau0 Hincl). exact IH.
+    - simpl in IH. contradiction.
+    - simpl. exact I.
+  Qed.
   (* END:safety_case_tag *)
+(* END:safety_case_tag *)
 
   (* Hint: avail_fn_in + coverage + dentry_agree give the closure and its
      signature equations at the closure's own grounding g'; safety_args
@@ -3029,6 +3091,56 @@ Section SafetyCases.
      its telescope, so IHfuel at fuel k finishes; the result comes back at
      g' (fs_ret S') = g (fs_ret S), and absorbs_all collapses the σs. *)
   (* BEGIN:safety_case_need *)
+  Lemma safety_case_need_aux1 : forall (Sg0 : gsig) (g0 : subst) (dd : denv),
+      (fix all (dd : denv) : Prop :=
+         match dd with
+         | [] => True
+         | p :: r => dentry_agree Sg0 g0 (fst p) (snd p) /\ all r
+         end) dd ->
+      Forall (fun p => dentry_agree Sg0 g0 (fst p) (snd p)) dd.
+  Proof.
+    intros Sg0 g0 dd. induction dd as [| p r IH]; simpl; intros H.
+    - constructor.
+    - destruct H as [H1 H2]. constructor; [ exact H1 | apply IH; exact H2 ].
+  Qed.
+
+  Lemma safety_case_need_aux2 : forall Phi G args taus,
+      Forall2 (fun e tau => has_ty Sg Phi G e (app_subst (cS Phi) tau)) args taus ->
+      Forall2 (fun e tau => has_ty Sg Phi G e tau) args
+              (map (app_subst (cS Phi)) taus).
+  Proof.
+    intros Phi G args taus H.
+    induction H as [| e tau args' taus' Hh Ht IH]; simpl.
+    - constructor.
+    - constructor; [ exact Hh | exact IH ].
+  Qed.
+
+  Lemma safety_case_need_aux3 : forall gg s ws taus,
+      (forall tau, app_subst gg (app_subst s tau) = app_subst gg tau) ->
+      Forall2 (fun w tau => vty Sg w (app_subst gg (app_subst s tau))) ws
+              (map (app_subst s) taus) ->
+      Forall2 (vty Sg) ws (map (app_subst gg) taus).
+  Proof.
+    intros gg s ws taus Hcol H. revert ws H.
+    induction taus as [| t r IH]; intros ws H; simpl in *.
+    - inversion H; subst. constructor.
+    - inversion H as [| w0 ws0 t0 r0 Hh Ht]; subst. constructor.
+      + rewrite Hcol in Hh. rewrite Hcol in Hh. exact Hh.
+      + apply IH. exact Ht.
+  Qed.
+
+  Lemma safety_case_need_aux4 : forall gg ws taus,
+      Forall2 (vty Sg) ws (map (app_subst gg) taus) ->
+      Forall2 (fun w tau => vty Sg w (app_subst gg tau)) ws taus.
+  Proof.
+    intros gg ws taus. revert ws.
+    induction taus as [| t r IH]; intros ws H; simpl in H.
+    - inversion H; subst. constructor.
+    - inversion H as [| w0 ws0 t0 r0 Hh Ht]; subst. constructor.
+      + exact Hh.
+      + apply IH. exact Ht.
+  Qed.
+
   Lemma safety_case_need : forall Phi G f Df Sf args d ge g,
       g_fn Sg f = Some (Df, Sf, None) ->
       avail Phi (IFn f) ->
@@ -3041,8 +3153,60 @@ Section SafetyCases.
                                   (app_subst (cS Phi) (fs_ret Sf))))
                (interp (S k) Sg d ge (ECallA f args)).
   Proof.
-  Admitted. (* FILL:safety_case_need *)
-  (* END:safety_case_need *)
+    intros Phi G f Df Sf args d ge g Hf Hav Hargs Hcg Hd Hv.
+    assert (Hcg2 := Hcg). destruct Hcg2 as [Hgr [Hab Hcov]].
+    assert (Hcol : forall tau, app_subst g (app_subst (cS Phi) tau)
+                               = app_subst g tau)
+      by (exact (@absorbs_all g (cS Phi) Hab)).
+    (* locate the closure bound at f *)
+    assert (Hin := @avail_fn_in Phi f Hav).
+    assert (Hd2 := Hd). destruct Hd2 as [Hcov1 Hall1].
+    rewrite Forall_forall in Hcov1. specialize (Hcov1 _ Hin).
+    destruct Hcov1 as [Hbad | [en Hlook]]; [ simpl in Hbad; discriminate | ].
+    assert (Hda : dentry_agree Sg g (IFn f) en).
+    { rewrite Forall_forall in Hall1.
+      apply (Hall1 (IFn f, en)). apply lookup_denv_in. exact Hlook. }
+    simpl. rewrite Hlook.
+    destruct en as [w0 | f' df]; [ simpl in Hda; contradiction | ].
+    simpl in Hda. rewrite Hf in Hda.
+    destruct (g_fn Sg f') as [[[D' S'] b'] | ] eqn:Hf'; [ | contradiction ].
+    destruct b' as [body | ]; [ | contradiction ].
+    destruct Hda as [g' [Hgr' [Hcov' [Hpar [Hret [Htc Hdd]]]]]].
+    (* the arguments *)
+    assert (Hsa := @safety_args k (Nat.le_refl k) Phi G d ge g args
+                     (map (app_subst (cS Phi)) (fs_params Sf))
+                     (@safety_case_need_aux2 Phi G args (fs_params Sf) Hargs) Hcg Hd Hv).
+    destruct (interp_list k Sg d ge args) as [ws | rr] eqn:Elist.
+    - (* the arguments produced values; run the body *)
+      assert (Hws : Forall2 (fun w tau => vty Sg w (app_subst g' tau)) ws
+                            (fs_params S')).
+      { apply (@safety_case_need_aux4 g' ws (fs_params S')).
+        rewrite Hpar. exact (@safety_case_need_aux3 g (cS Phi) ws (fs_params Sf) Hcol Hsa). }
+      assert (Hcgb : ctx_grounded g' (mk_ctx D')).
+      { split; [ exact Hgr' | split ].
+        - unfold absorbs. intros t tau Ht. simpl in Ht. discriminate.
+        - exact Hcov'. }
+      assert (Hdb : denv_agree Sg g' (cA (mk_ctx D')) df).
+      { split; [ exact Htc | exact (@safety_case_need_aux1 Sg g' df Hdd) ]. }
+      assert (Hvb : venv_agree Sg g' (body_env S') (mk_venv ws))
+        by (unfold body_env; exact (@venv_agree_body Sg g' ws (fs_params S') Hws)).
+      assert (WF2 := WF). destruct WF2 as [Wtag Wval Wfn Wmth].
+      specialize (Wfn f' D' S' (Some body) Hf').
+      destruct Wfn as [Wt [Wp [Wr Wb]]].
+      assert (Hbody := Wb body eq_refl).
+      assert (Hres := @IHfuel k (Nat.le_refl k) (mk_ctx D') (body_env S')
+                        body (fs_ret S') df (mk_venv ws) g'
+                        Hbody Hcgb Hdb Hvb).
+      simpl in Hres. rewrite app_subst_nil in Hres.
+      rewrite Hret in Hres.
+      rewrite Hcol. rewrite Hcol. exact Hres.
+    - (* the arguments did not produce values *)
+      destruct rr as [w1 | |].
+      + exfalso. eapply interp_list_never_ok. exact Elist.
+      + contradiction.
+      + exact I.
+  Qed.
+(* END:safety_case_need *)
 
   (* Hint: callee_env_agree (wf_gsig provides wf_tele for Df) builds the
      callee world and makes compose_smap succeed; safety_args evaluates
@@ -3176,13 +3340,21 @@ Section SafetyCases.
      dom g = A's type items so that t is genuinely fresh for g;
      app_subst_frees_agree then transfers every reading).  denv/venv
      agreement transports by the same frees argument.  IHfuel at k on the
-     continuation under the extended context. *)
+     continuation under the extended context.
+     DEFERRED (batch-2 refutation, now repaired at the rule level): the
+     new wf_ty Sg Phi tau premise plus wf_ty_frees closes the result-type
+     transfer, but the g-to-g2 transfers still need ctx_grounded to be
+     strengthened with σ-range regularity
+     (Forall (fun p => incl (ty_frees (snd p)) (tyreqs (cA Phi))) (cS Phi))
+     and a matching boundedness story for the Γ- and δ-stored types; that
+     invariant redesign is the remaining work of this block. *)
   (* BEGIN:safety_case_bindty *)
   Lemma safety_case_bindty : forall Phi G t tau' e tau d ge g,
       g_ty Sg t = true ->
       ~ In (ITy t) (cA Phi) ->
       wf_ty Sg Phi tau' ->
       has_ty Sg (bind_ty t tau' Phi) G e tau ->
+      wf_ty Sg Phi tau ->
       ctx_grounded g Phi ->
       denv_agree Sg g (cA Phi) d ->
       venv_agree Sg g G ge ->
@@ -3257,6 +3429,72 @@ Section SafetyCases.
      signatures' frees) yields exactly dentry_agree's equations; extend A
      and d, IHfuel at k on the continuation. *)
   (* BEGIN:safety_case_bindfn *)
+  (* Private helper: an identity application's lookups are identity
+     entries — nothing but the symbol itself can come back. *)
+  Lemma safety_case_bindfn_aux1 : forall (l : list tsym) (t : tsym) (tau : ty),
+      lookup_subst t (map (fun t0 => (t0, TAbs t0)) l) = Some tau ->
+      tau = TAbs t.
+  Proof.
+    intros l. induction l as [| a l IH]; intros t tau H; simpl in H.
+    - discriminate.
+    - destruct (Nat.eqb t a) eqn:E.
+      + apply Nat.eqb_eq in E. subst a. injection H as H. subst tau. reflexivity.
+      + apply IH. exact H.
+  Qed.
+
+  (* Private helper: reading any type through an identity application is a
+     no-op (on covered symbols by aux1, elsewhere because the lookup fails). *)
+  Lemma safety_case_bindfn_aux2 : forall (l : list tsym) (tau : ty),
+      app_subst (map (fun t0 => (t0, TAbs t0)) l) tau = tau.
+  Proof.
+    intros l tau. induction tau using ty_ind'; simpl; try reflexivity.
+    - destruct (lookup_subst t (map (fun t0 => (t0, TAbs t0)) l)) as [tau'|] eqn:E.
+      + apply safety_case_bindfn_aux1 in E. exact E.
+      + reflexivity.
+    - f_equal. induction H; simpl; [reflexivity|].
+      rewrite H, IHForall. destruct x; reflexivity.
+    - f_equal. induction H; simpl; [reflexivity|].
+      rewrite H, IHForall. reflexivity.
+  Qed.
+
+  Lemma safety_case_bindfn_aux3 : forall (D : tele) (tau : ty),
+      app_subst (id_app D) tau = tau.
+  Proof.
+    intros D tau. unfold id_app. apply safety_case_bindfn_aux2.
+  Qed.
+
+  (* Private helper: the fn entry's agreement, assembled from the closure's
+     own grounding, the two signature equations, and the callee world's
+     agreement (whose two conjuncts are exactly tele_covered and the inner
+     entry-wise recursion). *)
+  Lemma safety_case_bindfn_aux4 :
+    forall (g0 : subst) (f0 : fsym) (Df0 : tele) (Sf0 : fnsig) (f'0 : fsym)
+           (D0 : tele) (S0 : fnsig) (body0 : expr) (gc0 : subst) (dc0 : denv),
+      g_fn Sg f0 = Some (Df0, Sf0, None) ->
+      g_fn Sg f'0 = Some (D0, S0, Some body0) ->
+      grounding gc0 ->
+      covers gc0 (tyreqs D0) ->
+      map (app_subst gc0) (fs_params S0) = map (app_subst g0) (fs_params Sf0) ->
+      app_subst gc0 (fs_ret S0) = app_subst g0 (fs_ret Sf0) ->
+      denv_agree Sg gc0 D0 dc0 ->
+      dentry_agree Sg g0 (IFn f0) (DClo f'0 dc0).
+  Proof.
+    intros g0 f0 Df0 Sf0 f'0 D0 S0 body0 gc0 dc0 Hf0 Hf'0 Hgr Hcov Hp Hr Hda.
+    simpl. rewrite Hf0, Hf'0. simpl.
+    exists gc0.
+    split; [exact Hgr |].
+    split; [exact Hcov |].
+    split; [exact Hp |].
+    split; [exact Hr |].
+    destruct Hda as [Hc1 Hc2].
+    split; [exact Hc1 |].
+    revert Hc2. generalize dc0. intros dd.
+    induction dd as [| p r IH]; intros Hall.
+    - exact I.
+    - simpl. inversion Hall as [| q qs Hq Hqs Heq]; subst.
+      split; [exact Hq | apply IH; exact Hqs].
+  Qed.
+
   Lemma safety_case_bindfn : forall Phi G f Df Sf f' D' S' body sm e tau d ge g,
       g_fn Sg f = Some (Df, Sf, None) ->
       g_fn Sg f' = Some (D', S', Some body) ->
@@ -3271,8 +3509,80 @@ Section SafetyCases.
       safe_res Sg (app_subst g (app_subst (cS Phi) tau))
                (interp (S k) Sg d ge (EBindFn f f' sm e)).
   Proof.
-  Admitted. (* FILL:safety_case_bindfn *)
-  (* END:safety_case_bindfn *)
+    intros Phi G f Df Sf f' D' S' body sm e tau d ge g
+           Hf Hf' Hsf Hs' Hsm Hsig H2 Hg Hd Hv.
+    pose proof WF as WF0. destruct WF0 as [Wtag Wval Wfn Wmth].
+    destruct (Wfn f' D' S' (Some body) Hf') as [Wt' [Wps' [Wrt' _]]].
+    destruct Hs' as [Hsat' Hav'].
+    assert (Habs : forall t0, app_subst g (app_subst (cS Phi) t0)
+                              = app_subst g t0).
+    { destruct Hg as [_ [Hab _]]. apply (absorbs_all Hab). }
+    (* the identity application's entries are wf: its range is the available
+       type symbols of the provider's telescope (sat0's second conjunct) *)
+    assert (Hwfth : Forall (fun p => wf_ty Sg Phi (snd p)) (id_app D')).
+    { apply Forall_forall. intros p Hp. unfold id_app in Hp.
+      apply in_map_iff in Hp. destruct Hp as [t0 [Heq Hin]]. subst p. simpl.
+      apply WfNeed. rewrite Forall_forall in Hav'. apply Hav'. exact Hin. }
+    (* the captured world *)
+    assert (Hcall : exists dc, compose_smap d sm = Some dc
+              /\ ctx_grounded (callee_grounding g Phi (id_app D') D') (mk_ctx D')
+              /\ denv_agree Sg (callee_grounding g Phi (id_app D') D') D' dc).
+    { eapply callee_env_agree;
+        [ exact WF | exact Wt' | exact Hsat' | exact Hwfth | exact Hsm
+        | exact Hg | exact Hd ]. }
+    destruct Hcall as [dc [Hcomp [Hcgc Hdc]]].
+    (* reading a D'-covered type through the closure's grounding is reading
+       it through σ and then g: the application is the identity *)
+    assert (Hgcr : forall t0, incl (ty_frees t0) (tyreqs D') ->
+              app_subst (callee_grounding g Phi (id_app D') D') t0
+              = app_subst g (app_subst (cS Phi) t0)).
+    { intros t0 Hincl. rewrite callee_grounding_reads by exact Hincl.
+      rewrite safety_case_bindfn_aux3. reflexivity. }
+    assert (Hpar : map (app_subst (callee_grounding g Phi (id_app D') D'))
+                       (fs_params S')
+                   = map (app_subst g) (fs_params Sf)).
+    { transitivity (map (app_subst g) (map (app_subst (cS Phi)) (fs_params S'))).
+      - rewrite map_map. apply map_ext_in. intros tau0 Hin.
+        apply Hgcr. rewrite Forall_forall in Wps'.
+        pose proof (Wps' tau0 Hin) as Hw0. apply wf_ty_frees in Hw0. exact Hw0.
+      - destruct Hsig as [Hsp _]. rewrite Hsp, map_map.
+        apply map_ext_in. intros tau0 _. apply Habs. }
+    assert (Hrt : app_subst (callee_grounding g Phi (id_app D') D') (fs_ret S')
+                  = app_subst g (fs_ret Sf)).
+    { assert (Hfr : incl (ty_frees (fs_ret S')) (tyreqs D')).
+      { pose proof Wrt' as Hw. apply wf_ty_frees in Hw. exact Hw. }
+      rewrite Hgcr by exact Hfr.
+      destruct Hsig as [_ Hsr]. rewrite Hsr. apply Habs. }
+    assert (Hnew : dentry_agree Sg g (IFn f) (DClo f' dc)).
+    { destruct Hcgc as [Hgr0 [_ Hcov0]].
+      eapply safety_case_bindfn_aux4;
+        [ exact Hf | exact Hf' | exact Hgr0 | exact Hcov0 | exact Hpar
+        | exact Hrt | exact Hdc ]. }
+    assert (Hg' : ctx_grounded g (add_item (IFn f) Phi)).
+    { destruct Hg as [Hgr [Hab Hcv]].
+      split; [exact Hgr |]. split; simpl; assumption. }
+    assert (Hd' : denv_agree Sg g (cA (add_item (IFn f) Phi))
+                             ((IFn f, DClo f' dc) :: d)).
+    { split.
+      - simpl. constructor.
+        + right. exists (DClo f' dc). simpl. rewrite Nat.eqb_refl. reflexivity.
+        + destruct Hd as [Hcv _].
+          eapply Forall_impl; [| exact Hcv].
+          intros i [Hty | [en Hen]].
+          * left; exact Hty.
+          * right. simpl.
+            destruct (item_eqb i (IFn f)) eqn:Hi.
+            -- exists (DClo f' dc). reflexivity.
+            -- exists en. exact Hen.
+      - constructor.
+        + exact Hnew.
+        + destruct Hd as [_ Hd2]. exact Hd2. }
+    simpl interp. rewrite Hcomp.
+    pose proof (IHfuel (le_n k)) as SK.
+    apply (SK (add_item (IFn f) Phi) G e tau ((IFn f, DClo f' dc) :: d) ge g
+              H2 Hg' Hd' Hv).
+  Qed.
+(* END:safety_case_bindfn *)
 
   (* Hint: as bindfn, but the new entry is a method provision: its
      dentry_agree equations are the rule's receiver/argument/result

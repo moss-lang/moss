@@ -411,7 +411,8 @@ union, arms are in bijection with the heads $N_1, \ldots, N_k$, and $k =
 \begin{mathpar}
 \inferrule[T-BindTy]{\Sigma(t) = \ksf{type} \\ t \notin \Phi \\
   \Sigma;\Phi \vdash \tau' \wf \\
-  \Sigma;\langle A \cup \{t\};\, \sigma[t \mapsto \sigma\tau'] \rangle;\Gamma \vdash e : \tau}
+  \Sigma;\langle A \cup \{t\};\, \sigma[t \mapsto \sigma\tau'] \rangle;\Gamma \vdash e : \tau \\
+  \Sigma;\Phi \vdash \tau \wf}
   {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash \kw{bind}\;t = \tau';\;e : \tau}
 
 \inferrule[T-BindVal]{\Sigma(v) = \ksf{val}[\Delta_v]\,\tau_v \\
@@ -725,6 +726,11 @@ conflates its two generations; surface Moss's lexical shadowing [D25]
 is instead the province of environment-passing semantics, and real
 binds provide symbols not yet in force, so the restriction does not
 bite the corpus.
+(iv)~The bind's result type may not escape its scope
+(\textsc{T-BindTy}'s final premise): without it, subsumption under the
+extended $\sigma$ retypes the body at $t$ itself, and the bound symbol
+leaks into a type the outside cannot read --- refuted mechanically by a
+proof agent before it was a premise.
 
 Proposition~\ref{prop:phase} is the hypothesis behind the compilation
 pipeline: the monomorphizing WebAssembly backend is partial evaluation
