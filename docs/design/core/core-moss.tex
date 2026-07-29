@@ -35,9 +35,12 @@
 \author{The Moss project --- working note\thanks{This note distills the
 \texttt{ml-modules} design iteration of Moss, recorded in
 \href{https://github.com/moss-lang/moss/blob/ml-modules/docs/design/semantics.md}{\texttt{docs/design/semantics.md}}
-(revision 9, repository commit \texttt{61a5c68}), into a core calculus.
-Decision tags such as [D1] refer to entries in that log. The metatheory of
-\S\ref{sec:meta} is stated and believed, but has not been mechanized.}}
+(revision 9), into a core calculus.
+Decision tags such as [D1] refer to entries in that log. The definitions
+and the metatheoretical statements of \S\ref{sec:meta} are mechanized in
+Rocq in \texttt{CoreMoss.v} alongside this document; the proofs of
+Theorem~\ref{thm:sound} and Proposition~\ref{prop:phase} remain admitted
+there.}}
 \date{July 28, 2026}
 
 \begin{document}
@@ -666,10 +669,16 @@ well-formed program yields $\unitv$.
 
 The proof is a routine induction on the evaluation derivation with
 inversion on typing, with a substitution lemma for $\sigma\thh$ and a
-weakening lemma for $\delta \circ \varsigma$; it has not been
-machine-checked. Its empirical counterpart is blunter: the self-hosted
-compiler elaborates and runs its own 19-module source under exactly
-these rules, to a byte-identical fixpoint.
+weakening lemma for $\delta \circ \varsigma$. The definitions of
+\S\ref{sec:calculus} and the statement above are mechanized in Rocq
+(\texttt{CoreMoss.v}, checked in CI), where the calculus additionally
+carries an executable fueled interpreter: the program of
+Figure~\ref{fig:example}, encoded in the core, computes to $\unitv$ by
+\texttt{vm\_compute}, and Proposition~\ref{prop:nosearch} is proved.
+The proof of the theorem itself remains admitted there. Its empirical
+counterpart is blunter: the self-hosted compiler elaborates and runs
+its own 19-module source under exactly these rules, to a byte-identical
+fixpoint.
 
 \begin{proposition}[Phase separation]\label{prop:phase}
 Evaluation never inspects a type: the relation $\Eval$ is invariant

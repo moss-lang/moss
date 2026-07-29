@@ -53,6 +53,14 @@
               mkdir $out
               cp core-moss.pdf $out/
             '';
+        # The mechanization of the paper's definitions and metatheory.
+        core-calculus-rocq =
+          pkgs.runCommand "core-moss-rocq" { nativeBuildInputs = [ pkgs.coq ]; } ''
+            export ROCQPATH=${pkgs.coqPackages.stdlib}/lib/coq/${pkgs.coq.coq-version}/user-contrib
+            cp ${./docs/design/core/CoreMoss.v} CoreMoss.v
+            coqc -q CoreMoss.v
+            touch $out
+          '';
         bootstrap =
           pkgs.runCommand "moss-bootstrap-test"
             {
