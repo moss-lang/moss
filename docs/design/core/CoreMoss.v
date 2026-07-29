@@ -1842,7 +1842,10 @@ Definition denv_agree (Sg : gsig) (g : subst) (A : list item) (d : denv) : Prop 
                    exists en, lookup_denv i d = Some en) A
   /\ Forall (fun p => dentry_agree Sg g (fst p) (snd p)) d
   (* item regularity: what the in-force items mention is in force *)
-  /\ Forall (fun i => incl (dep_tys Sg i ++ item_ty_frees i) (tyreqs A)) A.
+  /\ Forall (fun i => incl (dep_tys Sg i ++ item_ty_frees i) (tyreqs A)) A
+  (* and the same for the environment's own keys *)
+  /\ Forall (fun p => incl (dep_tys Sg (fst p) ++ item_ty_frees (fst p))
+                           (tyreqs A)) d.
 
 Definition venv_agree (Sg : gsig) (g : subst) (A : list item)
     (G : tenv) (ge : venv) : Prop :=
@@ -2236,7 +2239,55 @@ Lemma frees_app_subst_bound : forall sg tau u,
   (exists p, In p sg /\ In u (ty_frees (snd p))) \/
   (In u (ty_frees tau) /\ ~ In u (map fst sg)).
 Proof.
-Admitted. (* FILL:frees_app_subst_bound *)
+  assert (Hlookup : forall sg t tau,
+      lookup_subst t sg = Some tau ->
+      exists p, In p sg /\ snd p = tau).
+  { intros sg0 t tau0. induction sg0 as [|p r IH]; intro Hl.
+    - discriminate.
+    - destruct p as [t' tau']. simpl in Hl.
+      destruct (Nat.eqb t t') eqn:E.
+      + inversion Hl; subst tau'. exists (t', tau0). simpl.
+        split; [left; reflexivity | reflexivity].
+      + destruct (IH Hl) as [p [Hp Heq]].
+        exists p. split; [right; exact Hp | exact Heq]. }
+  intros sg tau. induction tau using ty_ind'; intros u Hu.
+  - simpl in Hu. contradiction.
+  - simpl in Hu. destruct (lookup_subst t sg) as [tau0|] eqn:Hl.
+    + left. destruct (Hlookup sg t tau0 Hl) as [p [Hp Heq]].
+      exists p. split; [exact Hp |]. rewrite Heq. exact Hu.
+    + right. simpl in Hu. destruct Hu as [Hu | Hu]; [subst u | contradiction].
+      split; [simpl; left; reflexivity |].
+      intro Hin. destruct (subst_chain_aux1 t sg Hin) as [tau0 Hsome].
+      rewrite Hl in Hsome. discriminate.
+  - rewrite app_subst_nom in Hu.
+    revert Hu. induction H as [|p r Hp Hr IH]; intros Hu.
+    + simpl in Hu. contradiction.
+    + simpl in Hu. apply in_app_or in Hu. destruct Hu as [Hu | Hu].
+      * destruct (Hp u Hu) as [Hrange | [Hfree Hnot]].
+        -- left. exact Hrange.
+        -- right. split.
+           ++ simpl. apply in_or_app. left. exact Hfree.
+           ++ exact Hnot.
+      * destruct (IH Hu) as [Hrange | [Hfree Hnot]].
+        -- left. exact Hrange.
+        -- right. split.
+           ++ simpl. apply in_or_app. right. exact Hfree.
+           ++ exact Hnot.
+  - rewrite app_subst_union in Hu.
+    revert Hu. induction H as [|tau0 r Htau Hr IH]; intros Hu.
+    + simpl in Hu. contradiction.
+    + simpl in Hu. apply in_app_or in Hu. destruct Hu as [Hu | Hu].
+      * destruct (Htau u Hu) as [Hrange | [Hfree Hnot]].
+        -- left. exact Hrange.
+        -- right. split.
+           ++ simpl. apply in_or_app. left. exact Hfree.
+           ++ exact Hnot.
+      * destruct (IH Hu) as [Hrange | [Hfree Hnot]].
+        -- left. exact Hrange.
+        -- right. split.
+           ++ simpl. apply in_or_app. right. exact Hfree.
+           ++ exact Hnot.
+Qed.
 (* END:frees_app_subst_bound *)
 
 (* --- Value-typing inversions and subtyping. -------------------------------- *)
@@ -2539,7 +2590,42 @@ Lemma tele_items_regular : forall Sg D0 D,
   forall i, In i D ->
   incl (dep_tys Sg i ++ item_ty_frees i) (tyreqs (D0 ++ D)).
 Proof.
-Admitted. (* FILL:tele_items_regular *)
+  intros Sg D0 D Hwf.
+  assert (Hfrees : forall i, In i D ->
+      incl (item_ty_frees i) (tyreqs (D0 ++ D))).
+  { induction Hwf as [D0 | D0 i0 D' Hok Hwf IH].
+    - intros i Hin. simpl in Hin. destruct Hin.
+    - intros i Hin. simpl in Hin. destruct Hin as [Heq | Hin'].
+      + subst i. inversion Hok as
+          [t Hg | v Dv tauv Hg Hsat | f Df S b Hg Hsat
+           | rt m Dm S th Hg Hrt Hsat Hth]; subst; simpl.
+        * intros t0 Ht. destruct Ht.
+        * intros t0 Ht. destruct Ht.
+        * intros t0 Ht. destruct Ht.
+        * intros t0 Ht.
+          apply in_app_or in Ht. destruct Ht as [Hrt' | Hth'].
+          -- assert (Hr := wf_ty_frees Hrt t0 Hrt').
+             unfold tyreqs in *. rewrite flat_map_app.
+             apply in_or_app. left. exact Hr.
+          -- apply in_flat_map in Hth'.
+             destruct Hth' as [p [Hp Htp]].
+             rewrite Forall_forall in Hth.
+             assert (Hp' := wf_ty_frees (Hth p Hp) t0 Htp).
+             unfold tyreqs in *. rewrite flat_map_app.
+             apply in_or_app. left. exact Hp'.
+      + specialize (IH i Hin').
+        rewrite <- app_assoc in IH. exact IH. }
+  intros i Hin t Ht.
+  apply in_app_or in Ht. destruct Ht as [Hdep | Hfree].
+  - destruct i as [u | v | f | rt m th]; simpl in Hdep.
+    + destruct Hdep.
+    + exact (@tele_deps_closed Sg D0 D Hwf (IVal v) Hin
+               (eq_refl false) t Hdep).
+    + exact (@tele_deps_closed Sg D0 D Hwf (IFn f) Hin
+               (eq_refl false) t Hdep).
+    + destruct Hdep.
+  - exact (Hfrees i Hin t Hfree).
+Qed.
 (* END:tele_items_regular *)
 
 (* --- compose_smap: success and lookups. ------------------------------------ *)
@@ -2973,6 +3059,7 @@ Lemma has_ty_frees : forall Sg Phi G e tau,
   wf_gsig Sg ->
   has_ty Sg Phi G e tau ->
   sigma_regular (cS Phi) (cA Phi) ->
+  (forall i, In i (cA Phi) -> incl (dep_tys Sg i) (tyreqs (cA Phi))) ->
   (forall x tx, lookup_tenv x G = Some tx ->
      incl (ty_frees tx) (tyreqs (cA Phi))) ->
   incl (ty_frees tau) (tyreqs (cA Phi)).
