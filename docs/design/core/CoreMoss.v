@@ -3362,6 +3362,108 @@ Section SafetyCases.
      safety_args, venv_agree_body with the receiver value consed on, and
      IHfuel at k on the provider's body. *)
   (* BEGIN:safety_case_meth *)
+  (* BEGIN:safety_case_meth *)
+  (* Private helper: the This-substitution consults the receiver only at the
+     This position, so two receivers with the same reading through th and
+     then g give the same reading of every method type.  No coverage
+     hypothesis is needed: away from This the two readings are literally the
+     same term. *)
+  Lemma safety_case_meth_aux1 :
+    forall (g0 th1 : subst) (r1 r2 tau : ty),
+      app_subst g0 (app_subst th1 r1) = app_subst g0 (app_subst th1 r2) ->
+      app_subst g0 (app_subst th1 (app_subst (this_subst r1) tau))
+      = app_subst g0 (app_subst th1 (app_subst (this_subst r2) tau)).
+  Proof.
+    intros g0 th1 r1 r2 tau HE. unfold this_subst.
+    induction tau using ty_ind'.
+    - reflexivity.
+    - simpl. destruct (Nat.eqb t this_sym); [ exact HE | reflexivity ].
+    - simpl. f_equal. induction H; simpl; [reflexivity|].
+      rewrite IHForall. destruct x as [t0 tau1]; simpl in *.
+      rewrite H. reflexivity.
+    - simpl. f_equal. induction H; simpl; [reflexivity|].
+      rewrite H, IHForall. reflexivity.
+  Qed.
+
+  (* Private helper: the inner conjunction of dentry_agree is a Forall. *)
+  Lemma safety_case_meth_aux2 : forall (gc0 : subst) (dd : denv),
+      (fix all (ddd : denv) : Prop :=
+         match ddd with
+         | [] => True
+         | p :: r => dentry_agree Sg gc0 (fst p) (snd p) /\ all r
+         end) dd ->
+      Forall (fun p => dentry_agree Sg gc0 (fst p) (snd p)) dd.
+  Proof.
+    intros gc0 dd. induction dd as [| p r IH]; intros H.
+    - constructor.
+    - simpl in H. destruct H as [Hh Ht].
+      constructor; [ exact Hh | apply IH; exact Ht ].
+  Qed.
+
+  (* Private helper: open up a method entry's agreement. *)
+  Lemma safety_case_meth_aux3 :
+    forall (g0 : subst) (rt : ty) (m0 : msym) (th1 : subst)
+           (Dm0 : tele) (Sm0 : fnsig) (f'0 : fsym) (dc0 : denv),
+      g_mth Sg m0 = Some (Dm0, Sm0) ->
+      dentry_agree Sg g0 (IMth rt m0 th1) (DClo f'0 dc0) ->
+      exists D0 S0 body0 gc0,
+        g_fn Sg f'0 = Some (D0, S0, Some body0)
+        /\ grounding gc0
+        /\ covers gc0 (tyreqs D0)
+        /\ map (app_subst gc0) (fs_params S0)
+           = app_subst g0 rt
+             :: map (fun tau => app_subst g0
+                       (app_subst th1 (app_subst (this_subst rt) tau)))
+                    (fs_params Sm0)
+        /\ app_subst gc0 (fs_ret S0)
+           = app_subst g0
+               (app_subst th1 (app_subst (this_subst rt) (fs_ret Sm0)))
+        /\ denv_agree Sg gc0 D0 dc0.
+  Proof.
+    intros g0 rt m0 th1 Dm0 Sm0 f'0 dc0 Hm0 Hag.
+    simpl in Hag. rewrite Hm0 in Hag.
+    remember (g_fn Sg f'0) as gf eqn:Egf.
+    destruct gf as [[[D0 S0] b0]|]; [| destruct Hag].
+    destruct b0 as [body0|]; [| destruct Hag].
+    destruct Hag as [gc0 [Hgrc [Hcovc [Hpar [Hret [Htc Hall]]]]]].
+    exists D0, S0, body0, gc0.
+    split; [ solve [ reflexivity | symmetry; exact Egf ] |].
+    split; [ exact Hgrc |].
+    split; [ exact Hcovc |].
+    split; [ exact Hpar |].
+    split; [ exact Hret |].
+    split; [ exact Htc | apply safety_case_meth_aux2; exact Hall ].
+  Qed.
+
+  (* Private helper: push the predicate's reading into the type list, fusing
+     it with the reading the list was already built from. *)
+  Lemma safety_case_meth_aux4 :
+    forall (H1 F0 : ty -> ty) (ws : list value) (taus : list ty),
+      Forall2 (fun w tau => vty Sg w (H1 tau)) ws (map F0 taus) ->
+      Forall2 (fun w tau => vty Sg w tau) ws (map (fun tau => H1 (F0 tau)) taus).
+  Proof.
+    intros H1 F0 ws taus. revert ws.
+    induction taus as [| t ts IH]; intros ws H; simpl in H; simpl.
+    - inversion H; subst. constructor.
+    - inversion H as [| w0 t0 ws0 ts0 Hhd Htl]; subst.
+      constructor; [ exact Hhd | apply IH; exact Htl ].
+  Qed.
+
+  (* Private helper: retype a value list along an equality of readings. *)
+  Lemma safety_case_meth_aux5 :
+    forall (gc0 : subst) (F : ty -> ty) (ws : list value)
+           (rest taus : list ty),
+      map (app_subst gc0) rest = map F taus ->
+      Forall2 (fun w tau => vty Sg w tau) ws (map F taus) ->
+      Forall2 (fun w tau => vty Sg w (app_subst gc0 tau)) ws rest.
+  Proof.
+    intros gc0 F ws rest taus Hmap. rewrite <- Hmap. clear Hmap.
+    revert ws. induction rest as [| r rs IH]; intros ws H; simpl in H.
+    - inversion H; subst. constructor.
+    - inversion H as [| w0 t0 ws0 ts0 Hhd Htl]; subst.
+      constructor; [ exact Hhd | apply IH; exact Htl ].
+  Qed.
+
   Lemma safety_case_meth : forall Phi G e0 tau0 m Dm Sf rt0 th0 args d ge g,
       g_mth Sg m = Some (Dm, Sf) ->
       has_ty Sg Phi G e0 tau0 ->
@@ -3383,8 +3485,124 @@ Section SafetyCases.
                                (fs_ret Sf))))
                (interp (S k) Sg d ge (EMeth e0 m (IMth rt0 m th0) args)).
   Proof.
-  Admitted. (* FILL:safety_case_meth *)
+    intros Phi G e0 tau0 m Dm Sf rt0 th0 args d ge g
+           Hm Hty0 Hin Hrec Hcoh Huniq Hargs Hcg Hd Hv.
+    assert (Hcg2 := Hcg). destruct Hcg2 as [Hgr [Hab Hcov]].
+    assert (Hcol : forall tau, app_subst g (app_subst (cS Phi) tau)
+                               = app_subst g tau)
+      by (exact (@absorbs_all g (cS Phi) Hab)).
+    assert (WF2 := WF). destruct WF2 as [Wtag Wval Wfn Wmth].
+    (* the receiver's own reading, and its reading through the application *)
+    assert (HR0 : app_subst g rt0 = app_subst g (app_subst (cS Phi) tau0)).
+    { rewrite <- (Hcol rt0). rewrite Hrec. reflexivity. }
+    assert (HR : app_subst g (app_subst th0 (app_subst (cS Phi) tau0))
+                 = app_subst g (app_subst th0 rt0)).
+    { unfold ty_eq in Hcoh. rewrite <- Hrec.
+      rewrite <- (Hcol (app_subst th0 (app_subst (cS Phi) rt0))).
+      rewrite Hcoh. apply Hcol. }
+    (* the caller's reading of a method type equals the entry's reading *)
+    assert (Hcv : forall tau,
+               app_subst g (app_subst (cS Phi)
+                 (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0) tau))
+               = app_subst g (app_subst th0 (app_subst (this_subst rt0) tau))).
+    { intros tau. unfold interp_m. rewrite Hcol, Hcol.
+      apply safety_case_meth_aux1. exact HR. }
+    (* the provision is in force, so the runtime world has an entry for it *)
+    assert (Hen0 : exists en, lookup_denv (IMth rt0 m th0) d = Some en).
+    { destruct Hd as [Hcvd _]. rewrite Forall_forall in Hcvd.
+      destruct (Hcvd _ Hin) as [Hbad | Hok];
+        [ simpl in Hbad; discriminate | exact Hok ]. }
+    destruct Hen0 as [en Hen].
+    assert (Hag : dentry_agree Sg g (IMth rt0 m th0) en).
+    { destruct Hd as [_ Hd2]. rewrite Forall_forall in Hd2.
+      exact (Hd2 (IMth rt0 m th0, en)
+               (@lookup_denv_in (IMth rt0 m th0) d en Hen)). }
+    destruct en as [wv | f' dc]; [ simpl in Hag; destruct Hag |].
+    destruct (@safety_case_meth_aux3 g rt0 m th0 Dm Sf f' dc Hm Hag)
+      as [D' [S' [body [gc [Ef' [Hgrc [Hcovc [Hpar [Hret Hdc]]]]]]]]].
+    destruct (Wfn f' D' S' (Some body) Ef') as [Wt' [Wps' [Wrt' Wb]]].
+    (* the callee's context and world *)
+    assert (Hcgb : ctx_grounded gc (mk_ctx D')).
+    { split; [ exact Hgrc |]. split.
+      - unfold absorbs. intros t tau Hlu. simpl in Hlu. discriminate.
+      - exact Hcovc. }
+    assert (Hdb : denv_agree Sg gc (cA (mk_ctx D')) dc) by exact Hdc.
+    (* the provider's parameter list splits into receiver and arguments *)
+    remember (fs_params S') as psl eqn:Eps.
+    destruct psl as [| p0 rest]; [ simpl in Hpar; discriminate |].
+    simpl in Hpar. injection Hpar as Hp0 Hprest.
+    (* the receiver and the arguments *)
+    assert (Hrcv := @IHfuel k (Nat.le_refl k) Phi G e0 tau0 d ge g
+                      Hty0 Hcg Hd Hv).
+    assert (Hsa := @safety_args k (Nat.le_refl k) Phi G d ge g args
+                     (map (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0))
+                          (fs_params Sf))
+                     (@safety_case_call_aux1 Phi G
+                        (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0))
+                        args (fs_params Sf) Hargs) Hcg Hd Hv).
+    (* the interpreter's step at this provision *)
+    assert (Hstep : interp (S k) Sg d ge (EMeth e0 m (IMth rt0 m th0) args)
+                    = match interp k Sg d ge e0 with
+                      | Ok w0 =>
+                          match interp_list k Sg d ge args with
+                          | inl ws => interp k Sg dc (mk_venv (w0 :: ws)) body
+                          | inr rr => rr
+                          end
+                      | rr => rr
+                      end).
+    { simpl interp. rewrite Hen. simpl. rewrite Ef'. reflexivity. }
+    rewrite Hstep.
+    destruct (interp k Sg d ge e0) as [w0 | |] eqn:E0.
+    - try rewrite E0 in Hrcv. simpl in Hrcv.
+      destruct (interp_list k Sg d ge args) as [ws | rr] eqn:Elist;
+        try rewrite Elist in Hsa.
+      + (* both the receiver and the arguments produced values *)
+        assert (Hw0 : vty Sg w0 (app_subst gc p0)).
+        { rewrite Hp0, HR0. exact Hrcv. }
+        assert (Hws : Forall2 (fun w tau => vty Sg w (app_subst gc tau))
+                              ws rest).
+        { apply (@safety_case_meth_aux5 gc
+                   (fun tau => app_subst g
+                      (app_subst th0 (app_subst (this_subst rt0) tau)))
+                   ws rest (fs_params Sf)).
+          - exact Hprest.
+          - assert (Hmap : map (fun tau => app_subst g (app_subst (cS Phi)
+                              (interp_m (cS Phi) th0
+                                 (app_subst (cS Phi) tau0) tau)))
+                             (fs_params Sf)
+                           = map (fun tau => app_subst g
+                              (app_subst th0
+                                 (app_subst (this_subst rt0) tau)))
+                             (fs_params Sf))
+              by (apply map_ext; exact Hcv).
+            rewrite <- Hmap.
+            exact (@safety_case_meth_aux4
+                     (fun t1 => app_subst g (app_subst (cS Phi) t1))
+                     (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0))
+                     ws (fs_params Sf) Hsa). }
+        assert (Hvb : venv_agree Sg gc (body_env S') (mk_venv (w0 :: ws))).
+        { unfold body_env. rewrite <- Eps.
+          apply (@venv_agree_body Sg gc (w0 :: ws) (p0 :: rest)).
+          constructor; [ exact Hw0 | exact Hws ]. }
+        assert (Hres := @IHfuel k (Nat.le_refl k) (mk_ctx D') (body_env S')
+                          body (fs_ret S') dc (mk_venv (w0 :: ws)) gc
+                          (Wb body eq_refl) Hcgb Hdb Hvb).
+        change (cS (mk_ctx D')) with (@nil (tsym * ty)) in Hres.
+        rewrite app_subst_nil in Hres.
+        rewrite Hret in Hres.
+        rewrite (Hcv (fs_ret Sf)). exact Hres.
+      + (* the arguments did not produce values *)
+        destruct rr as [w1 | |].
+        * exfalso. eapply interp_list_never_ok. exact Elist.
+        * contradiction.
+        * exact I.
+    - (* the receiver failed *)
+      try rewrite E0 in Hrcv. simpl in Hrcv. contradiction.
+    - (* the receiver ran dry *)
+      exact I.
+  Qed.
   (* END:safety_case_meth *)
+(* END:safety_case_meth *)
 
   (* Hint: IHfuel on the scrutinee's typing (it runs at fuel k) yields a
      value at g (σ tau0); members of that grounded type are the g-images
