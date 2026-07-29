@@ -16,6 +16,13 @@ its definitions and metatheoretical statements.
   comment lists the handful of mechanization-level deviations from the
   paper.
 
+`coqc` accepts `Admitted`, so compiling is not on its own evidence that
+the metatheory is unconditional. §13 of the file audits the assumptions
+of every theorem, and the flake check enforces both halves: each audited
+name must report *closed under the global context*, and the audited names
+must be exactly the file's top-level `Theorem`s, so a theorem cannot be
+added without being audited.
+
 Both are built by flake checks, so CI keeps them compiling, and the
 paper is an ordinary package:
 

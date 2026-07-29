@@ -7170,3 +7170,21 @@ Module MergeExample.
   Proof. vm_compute. reflexivity. Qed.
 
 End MergeExample.
+
+(* ===================== 13. Assumptions audit ============================= *)
+
+(* The gate that `coqc` alone does not provide: coqc accepts `Admitted`, so a
+   clean compile is not evidence that the metatheory is unconditional.  Each
+   directive below must print "Closed under the global context".  The flake
+   check enforces this mechanically, and additionally that the set of names
+   audited here is exactly the set of top-level Theorems in this file, so a
+   theorem cannot be added without being audited. *)
+
+Print Assumptions availability_decidable.
+Print Assumptions method_resolution_functional.
+Print Assumptions eval_deterministic.
+Print Assumptions interp_sound.
+Print Assumptions interp_complete.
+Print Assumptions safety.
+Print Assumptions soundness_main.
+Print Assumptions phase_separation.

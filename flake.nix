@@ -263,11 +263,40 @@
           # exposed as `nix build .#pdf`.
           core-calculus-pdf = self.packages.${pkgs.stdenv.hostPlatform.system}.pdf;
           # The mechanization of the paper's definitions and metatheory.
+          # Compiling is not enough on its own: coqc accepts `Admitted`, so
+          # this also audits the assumptions of every theorem (§13 of the
+          # file), and checks that every top-level Theorem is audited.
           core-calculus-rocq =
             pkgs.runCommand "core-moss-rocq" { nativeBuildInputs = [ pkgs.coq ]; } ''
               export ROCQPATH=${pkgs.coqPackages.stdlib}/lib/coq/${pkgs.coq.coq-version}/user-contrib
               cp ${./docs/design/core/CoreMoss.v} CoreMoss.v
-              coqc -q CoreMoss.v
+
+              coqc -q CoreMoss.v > audit.log 2>&1 || { cat audit.log; exit 1; }
+              cat audit.log
+
+              # Every top-level Theorem must have a Print Assumptions line.
+              grep -oE '^Theorem [A-Za-z0-9_'"'"']+' CoreMoss.v \
+                | cut -d' ' -f2 | sort > theorems.txt
+              grep -oE '^Print Assumptions [A-Za-z0-9_'"'"']+' CoreMoss.v \
+                | cut -d' ' -f3 | sort > audited.txt
+              if ! diff -u theorems.txt audited.txt; then
+                echo "FAIL: the audited names (§13) are not exactly the" \
+                     "top-level Theorems." >&2
+                exit 1
+              fi
+
+              # ... and each must report closed under the global context.
+              expected=$(wc -l < audited.txt)
+              actual=$(grep -c '^Closed under the global context$' audit.log \
+                       || true)
+              if [ "$expected" -ne "$actual" ]; then
+                echo "FAIL: $actual of $expected theorems are closed under" \
+                     "the global context; the rest depend on axioms or" \
+                     "Admitted lemmas (see the log above)." >&2
+                exit 1
+              fi
+              echo "audit: all $expected theorems closed under the global context"
+
               touch $out
             '';
           cli = pkgs.runCommand "moss-cli-check" { } ''
