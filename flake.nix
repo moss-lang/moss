@@ -39,12 +39,12 @@
           pname = "moss-vscode";
           version = "0.0.0";
           src = pkgs.lib.fileset.toSource {
-            root = ./packages/moss-vscode;
+            root = ./vscode;
             fileset = pkgs.lib.fileset.unions [
-              ./packages/moss-vscode/language-configuration.json
-              ./packages/moss-vscode/LICENSE
-              ./packages/moss-vscode/package.json
-              ./packages/moss-vscode/syntaxes
+              ./vscode/language-configuration.json
+              ./vscode/LICENSE
+              ./vscode/package.json
+              ./vscode/syntaxes
             ];
           };
           sourceRoot = "source";
