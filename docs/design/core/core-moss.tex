@@ -37,11 +37,9 @@
 \href{https://github.com/moss-lang/moss/blob/ml-modules/docs/design/semantics.md}{\texttt{docs/design/semantics.md}}
 (revision 9), into a core calculus.
 Decision tags such as [D1] refer to entries in that log. The definitions
-and the metatheoretical statements of \S\ref{sec:meta} are mechanized in
-Rocq in \texttt{CoreMoss.v} alongside this document; everything in
-\S\ref{sec:meta} except Theorem~\ref{thm:sound} is machine-checked, and
-Theorem~\ref{thm:sound} is itself derived there from a stated safety
-invariant whose per-rule case lemmas remain admitted.}}
+and the entire metatheory of \S\ref{sec:meta} are mechanized and
+machine-checked in Rocq in \texttt{CoreMoss.v} alongside this document;
+every theorem reports closed under the global context.}}
 \date{July 28, 2026}
 
 \begin{document}
@@ -62,7 +60,8 @@ interpreter's environment. The calculus makes the language's central
 phase distinction precise---type and function provisions specialize away
 at compile time, and values are the only context that exists at run
 time---and records the semantics under which a Moss compiler written in
-Moss compiles itself to a byte-identical fixpoint.
+Moss compiles itself to a byte-identical fixpoint. The metatheory,
+including type soundness, is machine-checked in Rocq.
 \end{abstract}
 
 \section{Introduction}\label{sec:intro}
@@ -378,8 +377,7 @@ preservation; method items carry their types and need no such premise.)}
 \inferrule[T-Meth]{\Sigma(m) = \ksf{mth}[\Delta](\ov{x{:}\tau} \to \tau_r) \\
   \Sigma;\Phi;\Gamma \vdash e_0 : \tau_0 \\
   \tau'.m[\theta] \in \Phi \\ \sigma\tau' = \sigma\tau_0 \\
-  \sigma(\thh(\sigma\tau')) = \sigma(\thh\,\tau') \\
-  \rho = \sigma \circ \thh \circ \subst{\This \mapsto \sigma\tau_0} \\
+  \rho = \sigma \circ \subst{\This \mapsto \sigma\tau_0} \circ \thh \\
   \Sigma;\Phi;\Gamma \vdash e_i : \rho\tau_i \quad (\forall i)}
   {\Sigma;\Phi;\Gamma \vdash e_0.m(\ov{e}) : \rho\tau_r}
 
@@ -410,7 +408,7 @@ union, arms are in bijection with the heads $N_1, \ldots, N_k$, and $k =
 \centering
 \fbox{$\Sigma;\Phi;\Gamma \vdash e : \tau$ (continued: $\kw{bind}$)}
 \begin{mathpar}
-\inferrule[T-BindTy]{\Sigma(t) = \ksf{type} \\ t \notin \Phi \\
+\inferrule[T-BindTy]{\Sigma(t) = \ksf{type} \\ t \neq \This \\ t \notin \Phi \\
   \Sigma;\Phi \vdash \tau' \wf \\
   \Sigma;\langle A \cup \{t\};\, \sigma[t \mapsto \sigma\tau'] \rangle;\Gamma \vdash e : \tau \\
   \Sigma;\Phi \vdash \tau \wf}
@@ -433,8 +431,7 @@ union, arms are in bijection with the heads $N_1, \ldots, N_k$, and $k =
 \inferrule[T-BindMeth]{\Sigma(m) = \ksf{mth}[\Delta_m](\ov{x{:}\tau} \to \tau_r) \\
   \Sigma;\Phi \vdash \tau_\kappa \wf \\
   \Sigma;\Phi \vdash \theta \entails \Delta_m \\
-  \sigma(\thh(\sigma\tau_\kappa)) = \sigma(\thh\,\tau_\kappa) \\
-  \rho = \sigma \circ \thh \circ \subst{\This \mapsto \sigma\tau_\kappa} \\
+  \rho = \sigma \circ \subst{\This \mapsto \sigma\tau_\kappa} \circ \thh \\
   \Sigma(f') = \ksf{fn}[\Delta']\,
     ((y_0{:}\tau_0', \ov{y{:}\tau'}) \to \tau')\,\{e_b\} \\
   \Sigma;\Phi \vdash \emptyset \entails \Delta' \\
@@ -461,7 +458,8 @@ not a unification opportunity, if abstract symbols remain unmatched
 \begin{mathpar}
 \inferrule[W-Nil]{ }{\Sigma;\Delta_0 \vdash \emptytel \wf}
 
-\inferrule[W-Type]{\Sigma;\Delta_0 \vdash \Delta \wf \\ \Sigma(t) = \ksf{type}}
+\inferrule[W-Type]{\Sigma;\Delta_0 \vdash \Delta \wf \\ \Sigma(t) = \ksf{type} \\
+  t \neq \This}
   {\Sigma;\Delta_0 \vdash \Delta, t \wf}
 
 \inferrule[W-Sym]{\Sigma;\Delta_0 \vdash \Delta \wf \\
@@ -681,19 +679,15 @@ well-formed program yields $\unitv$.
 
 The proof is a routine induction on the evaluation derivation with
 inversion on typing, with a substitution lemma for $\sigma\thh$ and a
-weakening lemma for $\delta \circ \varsigma$. The definitions of
-\S\ref{sec:calculus} and all of the statements here are mechanized in
-Rocq (\texttt{CoreMoss.v}, checked in CI), which additionally carries an
-executable fueled interpreter: the program of Figure~\ref{fig:example},
-encoded in the core, computes to $\unitv$ by \texttt{vm\_compute}.
-Proposition~\ref{prop:nosearch}, determinism of evaluation, adequacy of
-the interpreter for the big-step relation in both directions, and
-Proposition~\ref{prop:phase} are machine-checked outright.  The theorem
-above is derived in the mechanization from a single stated safety
-invariant --- fuel-indexed, with a ground instantiation of the abstract
-type symbols carried per closure --- whose per-typing-rule case lemmas
-remain admitted; designing that invariant is what surfaced the three
-repairs below. Its empirical
+weakening lemma for $\delta \circ \varsigma$. The metatheory is fully
+machine-checked in Rocq (\texttt{CoreMoss.v}, checked in CI): this
+theorem and every proposition here report \emph{closed under the global
+context}, via a fuel-indexed safety invariant that carries a ground
+instantiation of the abstract type symbols per closure.  The
+mechanization additionally carries an executable fueled interpreter:
+the program of Figure~\ref{fig:example}, encoded in the core, computes
+to $\unitv$ by \texttt{vm\_compute}.  Designing and proving the
+invariant is what surfaced the repairs below. The theorem's empirical
 counterpart is blunter: the self-hosted compiler elaborates and runs
 its own 19-module source under exactly these rules, to a byte-identical
 fixpoint.
@@ -733,13 +727,27 @@ bite the corpus.
 extended $\sigma$ retypes the body at $t$ itself, and the bound symbol
 leaks into a type the outside cannot read --- refuted mechanically by a
 proof agent before it was a premise.
-(v)~Method provisions need receiver coherence
-(\textsc{T-BindMeth}/\textsc{T-Meth}): the application $\theta$ must
-read the receiver the same over and under $\sigma$, or $\theta$ captures
-a symbol $\sigma$ introduced and the provider's signature is
-interpreted at a different receiver than the call's --- the method-item
-twin of \textsc{S-Item}'s coherence premise, likewise mechanically
-refuted before it was a premise.
+(v)~$\rho$ must compose with the $\This$-substitution \emph{outermost}
+(\textsc{T-Meth}/\textsc{T-BindMeth}): an earlier draft applied
+$[\This \mapsto \sigma\tau_0]$ innermost, where $\thh$ can rewrite
+inside the receiver --- refuted through a method item that mentions a
+symbol of its own application's domain; the corrected order subsumes
+two stopgap coherence premises this document briefly carried.
+(vi)~Subsumption must target well-formed types and \textsc{T-Match}
+must know its scrutinee's $\sigma$-image is well-formed: regularity the
+declarative rules otherwise lose, and which the soundness invariant
+leans on.
+(vii)~$\This$ is \emph{reserved}: nothing else stopped a program from
+binding the receiver symbol itself and pre-capturing every receiver
+substitution in scope --- the only repair that refuted
+Theorem~\ref{thm:sound} outright (a well-formed program whose
+$\ksf{main}$ evaluates to $\ksf{err}$, checked by \texttt{vm\_compute}).
+In surface Moss this is unutterable, since \texttt{This} is a keyword
+[D3]; the core forgot to encode the lexer's opinion as a side
+condition.  Two of the findings above, (i) and (ii), name
+configurations that surface Moss can plausibly express; whether the
+bootstrap rejects them is an open question the design record should
+answer.
 
 Proposition~\ref{prop:phase} is the hypothesis behind the compilation
 pipeline: the monomorphizing WebAssembly backend is partial evaluation

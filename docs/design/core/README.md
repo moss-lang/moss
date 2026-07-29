@@ -8,10 +8,11 @@ its definitions and metatheoretical statements.
 - [`core-moss.tex`](core-moss.tex) — the paper: syntax, typing rules, and
   dynamic semantics of the core, with the full language reconstructed in
   its final section.
-- [`CoreMoss.v`](CoreMoss.v) — the Rocq mechanization: all definitions,
-  the metatheory of the paper's §4 stated precisely (Proposition 4.1
-  proved; the rest `Admitted`), and the paper's Figure 1 example encoded
-  and executed by computation. The header comment lists the handful of
+- [`CoreMoss.v`](CoreMoss.v) — the Rocq mechanization: all definitions
+  and the full metatheory of the paper's §4, machine-checked end to end
+  (every theorem, type soundness included, reports closed under the
+  global context), plus the paper's Figure 1 example encoded and
+  executed by computation. The header comment lists the handful of
   mechanization-level deviations from the paper.
 
 Both are built by flake checks, so CI keeps them compiling:
