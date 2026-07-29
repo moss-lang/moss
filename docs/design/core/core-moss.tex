@@ -378,6 +378,7 @@ preservation; method items carry their types and need no such premise.)}
 \inferrule[T-Meth]{\Sigma(m) = \ksf{mth}[\Delta](\ov{x{:}\tau} \to \tau_r) \\
   \Sigma;\Phi;\Gamma \vdash e_0 : \tau_0 \\
   \tau'.m[\theta] \in \Phi \\ \sigma\tau' = \sigma\tau_0 \\
+  \sigma(\thh(\sigma\tau')) = \sigma(\thh\,\tau') \\
   \rho = \sigma \circ \thh \circ \subst{\This \mapsto \sigma\tau_0} \\
   \Sigma;\Phi;\Gamma \vdash e_i : \rho\tau_i \quad (\forall i)}
   {\Sigma;\Phi;\Gamma \vdash e_0.m(\ov{e}) : \rho\tau_r}
@@ -432,6 +433,7 @@ union, arms are in bijection with the heads $N_1, \ldots, N_k$, and $k =
 \inferrule[T-BindMeth]{\Sigma(m) = \ksf{mth}[\Delta_m](\ov{x{:}\tau} \to \tau_r) \\
   \Sigma;\Phi \vdash \tau_\kappa \wf \\
   \Sigma;\Phi \vdash \theta \entails \Delta_m \\
+  \sigma(\thh(\sigma\tau_\kappa)) = \sigma(\thh\,\tau_\kappa) \\
   \rho = \sigma \circ \thh \circ \subst{\This \mapsto \sigma\tau_\kappa} \\
   \Sigma(f') = \ksf{fn}[\Delta']\,
     ((y_0{:}\tau_0', \ov{y{:}\tau'}) \to \tau')\,\{e_b\} \\
@@ -731,6 +733,13 @@ bite the corpus.
 extended $\sigma$ retypes the body at $t$ itself, and the bound symbol
 leaks into a type the outside cannot read --- refuted mechanically by a
 proof agent before it was a premise.
+(v)~Method provisions need receiver coherence
+(\textsc{T-BindMeth}/\textsc{T-Meth}): the application $\theta$ must
+read the receiver the same over and under $\sigma$, or $\theta$ captures
+a symbol $\sigma$ introduced and the provider's signature is
+interpreted at a different receiver than the call's --- the method-item
+twin of \textsc{S-Item}'s coherence premise, likewise mechanically
+refuted before it was a premise.
 
 Proposition~\ref{prop:phase} is the hypothesis behind the compilation
 pipeline: the monomorphizing WebAssembly backend is partial evaluation
