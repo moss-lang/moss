@@ -88,11 +88,11 @@ FD_WRITE, ARGS_SIZES_GET, ARGS_GET, PATH_OPEN, FD_READ, FD_CLOSE = range(6)
 
 SHIMS = (
     "putchar", "alloc", "arg_at", "arg_count", "list_push", "print",
-    "slice", "concat", "join", "read", "put_bytes",
+    "slice", "concat", "join", "readable", "read", "put_bytes",
 )
 (
     S_PUTCHAR, S_ALLOC, S_ARG_AT, S_ARG_COUNT, S_LIST_PUSH, S_PRINT,
-    S_SLICE, S_CONCAT, S_JOIN, S_READ, S_PUT_BYTES,
+    S_SLICE, S_CONCAT, S_JOIN, S_READABLE, S_READ, S_PUT_BYTES,
 ) = range(len(SHIMS))
 
 # WASI: the first preopened directory. Paths are resolved against it, so
@@ -447,6 +447,7 @@ class Backend:
             ty(3, 1),  # slice: (string, start, len) -> string
             ty(2, 1),  # concat: (string, string) -> string
             ty(2, 1),  # join: (path, name) -> path
+            ty(1, 1),  # readable: (path) -> bool
             ty(1, 1),  # read: (path) -> string
             ty(1, 0),  # put_bytes: (list) -> ()
         ]
@@ -512,6 +513,7 @@ class Backend:
                 self.slice_shim(),
                 self.concat_shim(),
                 self.join_shim(),
+                self.readable_shim(),
                 self.read_shim(),
                 self.put_bytes_shim(),
             ]
@@ -767,6 +769,31 @@ class Backend:
         b += LOCAL_GET + uleb(2) + LOCAL_GET + uleb(4) + BINOPS["add"]
         b += I32_CONST + sleb(0x2F) + I32_STORE8 + uleb(0) + uleb(4)  # '/'
         b += LOCAL_GET + uleb(2)
+        b += END
+        return bytes(b)
+
+    def readable_shim(self) -> bytes:
+        # (path) -> bool: whether `read` would work. Opening is the only
+        # way to ask — WASI has no access(2), and a path outside the
+        # preopen is refused rather than absent. `True` is 1 and `False`
+        # is 0 (`unit_code`), so the answer is the errno test itself.
+        # Locals: 1 fd.
+        b = bytearray()
+        b += vec([uleb(1) + I32])
+        b += I32_CONST + sleb(PREOPEN_FD) + I32_CONST + sleb(0)
+        b += LOCAL_GET + uleb(0) + I32_CONST + sleb(4) + BINOPS["add"]
+        b += LOCAL_GET + uleb(0) + I32_LOAD + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(0)
+        b += b"\x42" + sleb(RIGHT_FD_READ | RIGHT_FD_SEEK)  # i64.const rights
+        b += b"\x42" + sleb(0)  # i64.const inheriting
+        b += I32_CONST + sleb(0) + I32_CONST + sleb(32)
+        b += CALL + uleb(PATH_OPEN)
+        b += IF + EMPTY
+        b += I32_CONST + sleb(0) + RETURN
+        b += END
+        b += I32_CONST + sleb(32) + I32_LOAD + uleb(2) + uleb(0) + LOCAL_SET + uleb(1)
+        b += LOCAL_GET + uleb(1) + CALL + uleb(FD_CLOSE) + DROP
+        b += I32_CONST + sleb(1)
         b += END
         return bytes(b)
 
@@ -1407,6 +1434,10 @@ class FnCompiler:
                     self.expr(node.this)
                     self.expr(node.args[0])
                     self.code += CALL + uleb(self.b.shim(S_JOIN))
+                    return
+                if short == "readable":
+                    self.expr(node.this)
+                    self.code += CALL + uleb(self.b.shim(S_READABLE))
                     return
                 if short == "read":
                     self.expr(node.this)

@@ -40,7 +40,8 @@ context Console =
 
 # Paths, which need i64 for path_open's rights masks (D57, now that D59
 # has made i64 a scalar like any other).
-context Files = Path, pwd, Path.join, Path.read[Elem=String];
+context Files =
+  Path, pwd, Path.join, Path.readable, Path.read[Elem=String];
 
 # The containers, over the library's own allocator rather than the
 # compiler's — which no longer has one (D59). `put_bytes` is here rather
@@ -191,18 +192,39 @@ assume Wasm, Branch {
       }
     }
 
-    # path_open against the preopen, then fd_read in chunks straight onto
-    # the top of the heap, which the bump allocator leaves contiguous.
-    fn Loc.read(): Str {
-      let p = addr(loc_str(this));
+    # path_open against the preopen, for reading, leaving the descriptor
+    # in the retptr slot. What comes back is the errno rather than the
+    # descriptor, because the two callers below disagree about what a
+    # failure means.
+    fn open_read(p: I32): I32 {
       let rights = w::i64_or(
         w::i64_extend_i32_u(w::i32_one), w::i64_extend_i32_u(two())
       );
-      let err = path_open(
+      path_open(
         w::i32_add(two(), w::i32_one), w::i32_zero,
         w::i32_add(p, four()), w::i32_load(p), w::i32_zero,
         rights, w::i64_extend_i32_u(w::i32_zero), w::i32_zero, thirty_two()
-      );
+      )
+    }
+
+    # Opening is the only way to ask: WASI has no access(2), and a stat
+    # would answer a different question anyway — a file outside the
+    # preopen is refused, not absent.
+    fn Loc.readable(): Bool {
+      if i32_bool(open_read(addr(loc_str(this)))) {
+        false
+      } else {
+        fd_close(w::i32_load(thirty_two()));
+        true
+      }
+    }
+
+    # Then fd_read in chunks straight onto the top of the heap, which the
+    # bump allocator leaves contiguous. A path the host refuses has no
+    # `Str` to return: callers that can say something about it ask
+    # `.readable` first.
+    fn Loc.read(): Str {
+      let err = open_read(addr(loc_str(this)));
       if i32_bool(err) { w::unreachable() } else { () }
       let fd = w::i32_load(thirty_two());
       let s = alloc(four());
@@ -467,6 +489,7 @@ functor WasiFiles: Wasm, Wasi, Branch -> Files {
   bind path::Path = Loc;
   bind path::pwd = wasi_pwd();
   bind Path.join = Loc.join;
+  bind Path.readable = Loc.readable;
   bind Path.read[Elem=String] = Loc.read;
 }
 

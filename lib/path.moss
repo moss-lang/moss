@@ -1,14 +1,22 @@
 import "./access.moss" use .read;
+import "./bool.moss" use Bool;
 import "./string.moss" use String;
 
 type Path;
 
 # `.read` is the shared accessor of access.moss, provided here at `Path`
 # with `Elem=String` — the same symbol `CellInt.read` provides at its own
-# receiver (D61); `.join` is this module's own.
+# receiver (D61); `.join` and `.readable` are this module's own.
 
-assume String, Path {
+assume Bool, String, Path {
   val pwd: Path;
 
   fn .join(name: String): Path;
+
+  # Whether `.read` would succeed. A caller that has something to say
+  # about a file it cannot read asks first: `.read` on a path the host
+  # refuses — one that does not exist, or that lies outside the
+  # directory the host opened for this program — has no value to return
+  # and traps.
+  fn .readable(): Bool;
 }

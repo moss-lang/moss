@@ -79,5 +79,6 @@ context Std =
   Path,
   pwd,
   Path.join,
+  Path.readable,
   Path.read[Elem=String],
 ;

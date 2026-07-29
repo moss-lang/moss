@@ -527,7 +527,18 @@ def native_env(program: Program, args: list | None = None) -> dict:
             except OSError as e:
                 raise MossPanic(f"Path.read: {e}")
 
+        def readable(a, this):
+            # What `Path.read` would do, without the bytes: the WASI
+            # implementation opens the file, since a path outside the
+            # preopen is refused rather than absent.
+            try:
+                with open(this.value, encoding="utf-8"):
+                    return boolean(True)
+            except OSError:
+                return boolean(False)
+
         env[(path_ty, path.detached["join"])] = native(join)
+        env[(path_ty, path.detached["readable"])] = native(readable)
         env[(path_ty, path.detached["read"])] = native(read_file)
     wasm_env(program, lib, env, args or [])
     return env

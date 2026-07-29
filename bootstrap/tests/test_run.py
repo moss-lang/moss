@@ -1221,6 +1221,19 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertNotEqual(out[:4], b"\0asm")
         self.assertTrue(out.decode("utf-8").startswith("!N "), out[:200])
 
+    def test_a_module_that_will_not_open_is_reported(self):
+        """A path the host refuses -- absent here, but equally one that
+        lies outside the directory it opened -- is `e_read` (`O`). The
+        read itself cannot report it: `Path.read` has no `String` to
+        return and traps, which is why `parse_module` asks
+        `Path.readable` first. Before that, a mistyped import came out of
+        the driver as a Wasm backtrace."""
+        out = self.compile_with_moss("tests/wasi/absent.moss")
+        self.assertNotEqual(out[:4], b"\0asm")
+        report = out.decode("utf-8")
+        self.assertTrue(report.startswith("!O "), report[:200])
+        self.assertIn("tests/wasi/nosuch.moss", report)
+
     def test_a_misfitting_type_is_reported(self):
         """The D17 check, wired into the back end: a value of one nominal
         type where another is declared, both one scalar wide, so nothing

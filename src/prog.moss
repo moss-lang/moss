@@ -126,6 +126,11 @@ assume Std {
   # declaration that writes it.
   fn e_shape(): Int { n13() }
 
+  # A module the host will not open: no such file, or one outside the
+  # directory it opened for this program. Without this the read traps,
+  # and a mistyped import comes out as a Wasm backtrace.
+  fn e_read(): Int { n14() }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,
@@ -652,7 +657,12 @@ assume Std {
     # import's exports are only complete once it has linked its own.
     assume lexer::at, lexer::mark, syntax::Cursor {
       fn parse_module(m: Int) {
-        bind lexer::src=pwd.join(module_path(m)).read();
+        let path = pwd.join(module_path(m));
+        if path.readable().not() {
+          error(e_read(), m, ast::none());
+          return ();
+        }
+        bind lexer::src=path.read();
         lexer::at.write(zero);
         lexer::mark.write(zero);
         let before = syntax::errs.read();

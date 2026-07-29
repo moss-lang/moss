@@ -1,0 +1,6 @@
+# The import names a module that is not there. Reading it is what used
+# to trap, so this file is here to be compiled, not to be run.
+
+import "./nosuch.moss" as absent;
+
+fn main() {}
