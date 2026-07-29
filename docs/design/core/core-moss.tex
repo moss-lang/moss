@@ -1,0 +1,885 @@
+\documentclass[10pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathpartir}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+% ---------------------------------------------------------------- macros
+\newcommand{\ov}[1]{\overline{#1}}
+\newcommand{\kw}[1]{\mathbf{#1}}          % keywords
+\newcommand{\ksf}[1]{\mathsf{#1}}         % kinds / entries
+\newcommand{\This}{\ksf{This}}
+\newcommand{\thh}{\hat\theta}
+\newcommand{\subst}[1]{[#1]}
+\newcommand{\emptytel}{\cdot}
+\newcommand{\wf}{\;\ksf{ok}}
+\newcommand{\entails}{\Vdash}
+\newcommand{\Eval}{\Downarrow}
+\newcommand{\head}{\ksf{head}}
+\newcommand{\dom}{\ksf{dom}}
+\newcommand{\clo}[2]{\langle #1,\, #2\rangle}
+\newcommand{\unitv}{()}
+\newcommand{\smallcode}[1]{\texttt{\small #1}}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\title{\textbf{Core Moss: A Calculus of Scope and Context}}
+\author{The Moss project --- working note\thanks{This note distills the
+\texttt{ml-modules} design iteration of Moss, recorded in
+\href{https://github.com/moss-lang/moss/blob/ml-modules/docs/design/semantics.md}{\texttt{docs/design/semantics.md}}
+(revision 9), into a core calculus.
+Decision tags such as [D1] refer to entries in that log. The definitions
+and the entire metatheory of \S\ref{sec:meta} are mechanized and
+machine-checked in Rocq in \texttt{CoreMoss.v} alongside this document;
+every theorem reports closed under the global context.}}
+\date{July 28, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Moss separates \emph{scope}---what a name refers to---from
+\emph{context}---whether the thing it refers to is available.
+Declarations without definitions introduce \emph{abstract symbols}: types,
+values, and functions that are in scope but that nobody has yet provided.
+The construct $\kw{assume}$ makes a region of code require such symbols,
+and $\kw{bind}$ provides them; a requirement is satisfied only by naming
+the exact symbol, never by searching for a provider of the right shape.
+We present \textsc{Core Moss}, a small calculus distilling this design:
+its syntax, static semantics, and a big-step dynamic semantics in which
+the \emph{satisfaction maps} computed during elaboration are exactly the
+interpreter's environment. The calculus makes the language's central
+phase distinction precise---type and function provisions specialize away
+at compile time, and values are the only context that exists at run
+time---and records the semantics under which a Moss compiler written in
+Moss compiles itself to a byte-identical fixpoint. The metatheory,
+including type soundness, is machine-checked in Rocq.
+\end{abstract}
+
+\section{Introduction}\label{sec:intro}
+
+Most languages resolve two questions with one mechanism: what a name
+means, and whether the thing it means is at hand. Moss keeps them apart.
+\emph{Scope} is resolved lexically, from imports and enclosing
+declarations. \emph{Context} is a separate discipline: a top-level
+declaration without a definition---$\kw{type}\;t;$, $\kw{val}\;v:\tau;$,
+$\kw{fn}\;f(\ldots):\tau;$---introduces an \emph{abstract symbol}, a need
+that is perfectly nameable but not yet provided. A region of code
+declares which needs it has with $\kw{assume}$, and code that has the
+goods supplies them with $\kw{bind}$.
+
+Two principles govern everything else.
+
+\begin{enumerate}
+\item \textbf{Satisfaction is by symbol identity [D1].} A requirement is
+met only by an enclosing $\kw{assume}$ of \emph{that} symbol or a
+$\kw{bind}$ of \emph{that} symbol. There is no structural matching, no
+search of the scope for a provider of the right type, and no specificity
+ranking. Method dispatch obeys the same discipline: its lookup key is the
+pair (receiver type, method symbol), and it demands exactly one hit
+---type-\emph{directed}, never type-\emph{searched}.
+\item \textbf{Providing is kind-directed [D2].} Providing a \emph{type}
+chooses a representation, statically, and drives monomorphization.
+Providing a \emph{function} supplies code together with the context it
+captured at the bind site. Providing a \emph{value} supplies runtime
+data. After elaboration, types and functions disappear into
+specialization; values are the only context that exists at run time.
+\end{enumerate}
+
+There is deliberately no more than this. Requirement sets double as the
+generics mechanism: a declaration nested in $\kw{assume}$ blocks is
+implicitly parameterized by everything they name, and a bracket
+application such as $\smallcode{Range[T=NameId]}$ instantiates those
+parameters---totally or not at all [D21, D22]. The design is validated
+empirically: a compiler for Moss, written in Moss, compiles its own
+source to a fixpoint---the second and third generations of the compiler
+are byte-for-byte identical WebAssembly modules
+(\href{https://github.com/moss-lang/moss/blob/ml-modules/docs/implementation/selfhosting.md}{\texttt{docs/implementation/selfhosting.md}}).
+
+This note boils the language down to a core calculus, \textsc{Core
+Moss}. Section~\ref{sec:example} shows the surface language on one
+example; \S\ref{sec:calculus} gives the core's syntax, statics, and
+dynamics; \S\ref{sec:meta} states its metatheory;
+\S\ref{sec:full} accounts for everything the boiling removed.
+
+\section{Moss in one example}\label{sec:example}
+
+\begin{figure}[t]
+\begin{verbatim}
+type Elem;                          # a need: an abstract type symbol
+
+unit Empty;
+
+assume Elem {
+  val zero: Elem;                   # a val need; its type mentions Elem
+  fn .or_zero(): Elem;              # a detached-method need; receiver chosen
+                                    #   where the method is provided
+  type Full Elem;                   # a tag, implicitly parameterized by Elem
+  type Slot Empty | Full;           # a nominal type over a union
+
+  assume zero {
+    fn Slot.coalesce(): Elem {      # attached: defined code, needs {Elem, zero}
+      match this { Slot u => match u { Empty => zero, Full e => e } }
+    }
+  }
+
+  assume zero, Slot.or_zero {
+    fn demo(s: Slot): Elem { s.or_zero() }
+  }
+}
+
+unit O;
+
+fn main() {
+  bind Elem = O;                    # a type: static, chooses a representation
+  bind zero = O;                    # a val: dynamic, evaluated once, here
+  bind Slot.or_zero = Slot.coalesce;# a method: code plus its captured context
+  demo(Slot (Full (O)));            # Full injects into the union Empty | Full
+}
+\end{verbatim}
+\caption{A complete Moss program exercising the core: needs of all three
+kinds, telescoped \texttt{assume}s, implicit parameterization, nominal
+data with injection, and the three flavors of \texttt{bind}.}
+\label{fig:example}
+\end{figure}
+
+Figure~\ref{fig:example} is a complete program. \smallcode{Elem} is an
+abstract type; \smallcode{zero} is an abstract val whose declared type
+mentions it, so its declaration must sit inside
+$\kw{assume}\;\smallcode{Elem}$---requirements are \emph{telescoped}:
+an item may be assumed only where the symbols its own signature mentions
+are already available [D20]. The tag \smallcode{Full} is declared under
+the same assumption, so \smallcode{Full} is implicitly parameterized by
+\smallcode{Elem}; that is the whole of generics [D21]. Type identity is
+structural over (declaration, static bindings), so once
+$\kw{bind}\;\smallcode{Elem=O}$ is in force, \smallcode{Full} means the
+same instantiated type everywhere downstream [D18].
+
+\smallcode{.or\_zero} is a \emph{detached method}: a need whose receiver
+type is supplied where the method is provided, so one symbol can be
+provided at many receivers, each provision keyed by the pair (receiver,
+method) [D36]. \smallcode{demo} requires that key
+(\smallcode{Slot.or\_zero}); the call \smallcode{s.or\_zero()} resolves by
+forward-inferring the receiver's type and demanding exactly one provision
+at that key. The provider bound in \smallcode{main} is the \emph{attached}
+method \smallcode{Slot.coalesce}---ordinary defined code that can see its
+receiver---and the bind captures the provider's own requirements
+(\smallcode{zero}, a runtime value) at the bind site. The three binds in
+\smallcode{main} illustrate the kind-directed split [D2]: the type bind is
+purely static, the val bind evaluates a value, and the method bind pairs
+static code with captured dynamic context.
+
+\section{The core calculus}\label{sec:calculus}
+
+\textsc{Core Moss} strips Moss to the constructs that carry the design.
+Modules, named contexts, functors, attached methods, records, tuples,
+booleans, loops, and mutation are all omitted here and reconstructed in
+\S\ref{sec:full}; none of them adds semantic content to the core.
+
+\subsection{Syntax}
+
+\begin{figure}[t]
+\[
+\begin{array}{llcl}
+\text{nominal refs} & \nu & ::= & N[\theta] \\
+\text{types} & \tau & ::= & \unitv \mid t \mid \This \mid
+  \nu_1 \vee \cdots \vee \nu_k \quad (k \ge 0) \\
+\text{applications} & \theta & ::= & [\,\ov{t = \tau}\,] \\[4pt]
+\text{items} & \iota & ::= & t \mid v \mid f \mid \tau.m[\theta] \\
+\text{telescopes} & \Delta & ::= & \emptytel \mid \Delta, \iota \\[4pt]
+\text{declarations} & d & ::= &
+    \kw{type}\;t
+  \mid \kw{type}\;N\;\tau
+  \mid \kw{val}\;v : \tau
+  \mid \kw{fn}\;f(\ov{x : \tau}) : \tau \\
+& & \mid & \kw{fn}\;f(\ov{x : \tau}) : \tau \;\{\,e\,\}
+  \mid \kw{fn}\;.m(\ov{x : \tau}) : \tau
+  \mid \kw{assume}\;\Delta\;\{\,\ov{d}\,\} \\[4pt]
+\text{expressions} & e & ::= &
+    x \mid \unitv \mid v
+  \mid N[\theta]\;e
+  \mid f[\theta](\ov{e})
+  \mid e.m(\ov{e}) \\
+& & \mid & \kw{match}\;e\;\{\,\ov{N\;x \Rightarrow e}\,\}
+  \mid \kw{let}\;x = e;\; e
+  \mid \kw{bind}\;\beta;\; e \\[2pt]
+\text{binds} & \beta & ::= &
+    t = \tau \mid v = e \mid f = f' \mid \tau.m[\theta] = f' \\[4pt]
+\text{programs} & P & ::= & \ov{d}
+  \qquad\text{with } \kw{fn}\;\ksf{main}() : \unitv\;\{\,e\,\} \text{ at the top level} \\[4pt]
+\text{values} & w & ::= & \unitv \mid N\,w \\
+\text{contexts in force} & \Phi & ::= & \langle A ;\, \sigma \rangle
+  \qquad A \subseteq_{\mathrm{fin}} \{\iota\},\;
+  \sigma : t \rightharpoonup \tau \\
+\text{runtime contexts} & \delta & ::= &
+  \ov{\iota \mapsto w} \cup \ov{\iota \mapsto \clo{f}{\delta}}
+\end{array}
+\]
+\caption{Syntax of \textsc{Core Moss}. Metavariables: $t$ ranges over
+abstract type symbols, $N$ over nominal tag names, $v$ over val symbols,
+$f$ over fn symbols, $m$ over method symbols, $x$ over variables. We
+write $N$ for $N[\,]$, $\bot$ for the empty union ($k=0$; Moss spells it
+\texttt{|}), and $e_1; e_2$ for $\kw{let}\;x = e_1;\,e_2$ with $x$ fresh.
+$\kw{unit}\;N$ abbreviates $\kw{type}\;N\;\unitv$, with the value $N$
+short for $N\,\unitv$ and the pattern $N$ for $N\,x$ with $x$ unused.}
+\label{fig:syntax}
+\end{figure}
+
+Figure~\ref{fig:syntax} gives the syntax. Symbols of the four kinds are
+drawn from disjoint countable sets; there are no literal expressions and,
+importantly, \emph{no first-class functions}: an $f$ position names a
+symbol, so a function value never flows as data---code travels only
+through $\kw{bind}$, paired with its captured context. Union members are
+syntactically nominal references with distinct heads [D15], and a tag's
+payload may itself be a union (that is how the example's \smallcode{Slot}
+and the library's \smallcode{Bool} are built).
+
+A \emph{telescope} $\Delta$ is an ordered requirement list; the
+declarations under $\kw{assume}\;\Delta$ have $\Delta$ appended to their
+requirements. Elaborating a program yields a global signature $\Sigma$
+assigning every symbol its kind, its declared signature, and the
+concatenation of its enclosing telescopes:
+\[
+\begin{array}{c}
+\Sigma(t) = \ksf{type} \qquad
+\Sigma(N) = \ksf{tag}[\Delta]\,\tau \qquad
+\Sigma(v) = \ksf{val}[\Delta]\,\tau \\[2pt]
+\Sigma(f) = \ksf{fn}[\Delta](\ov{x{:}\tau} \to \tau)\;\{e\}^? \qquad
+\Sigma(m) = \ksf{mth}[\Delta](\ov{x{:}\tau} \to \tau)
+\end{array}
+\]
+A method signature may mention the distinguished abstract type $\This$,
+the receiver's type; in the core a method's arguments are understood as
+$(\This, \ov{\tau})$, i.e.\ every provider receives the receiver as its
+first argument (\S\ref{sec:full} explains how surface Moss spells this).
+
+\paragraph{Contexts in force.}
+At each program point the statics tracks $\Phi = \langle A; \sigma
+\rangle$: the set $A$ of items available (assumed or bound) and the
+static substitution $\sigma$ accumulated by type binds. Assumed abstract
+types are in $A$ but not in $\dom(\sigma)$; bound ones are in both.
+$\sigma$ acts on types and items homomorphically, and we write $\tau
+\equiv \tau'$ for equality of $\sigma$-images (unions up to reordering);
+this is the applicative identity rule---the same declaration under the
+same static bindings is the same type everywhere [D18]. Item
+availability, written $\iota \in \Phi$, means $\sigma\iota' = \sigma\iota$
+for some $\iota' \in A$; comparing after $\sigma$ is the core's residue of
+Moss's key canonicalization [D43].
+
+\paragraph{Total-or-absent application.}
+A reference either binds all of its target's outstanding requirements or
+none of them [D22]. Given $\theta$ with $\dom(\theta)$ contained in the
+type items of $\Delta$, its \emph{completion} $\thh$ extends $\theta$
+with the identity on the remaining type items of $\Delta$---the
+pass-through reading, under which an unapplied reference re-exports its
+requirements as the very same symbols. The judgment
+$\Sigma;\Phi \vdash \theta \entails \Delta$
+(Figure~\ref{fig:statics-aux}) checks that this leaves nothing dangling:
+every type requirement is either instantiated by $\theta$ or already in
+force, and every other requirement is available after substitution. All
+four reference forms---type references, tag construction, defined-fn
+calls, and method provisions---reuse this one judgment.
+
+\subsection{Static semantics}
+
+\begin{figure}[t]
+\centering
+\textbf{Satisfaction}\quad \fbox{$\Sigma;\Phi \vdash \theta \entails \Delta$}
+\begin{mathpar}
+\inferrule[S-Nil]{ }{\Sigma;\Phi \vdash \theta \entails \emptytel}
+
+\inferrule[S-Inst]{\Sigma;\Phi \vdash \theta \entails \Delta \\
+  t \in \dom(\theta) \\ \Sigma;\Phi \vdash \theta(t) \wf}
+  {\Sigma;\Phi \vdash \theta \entails \Delta, t}
+
+\inferrule[S-Pass]{\Sigma;\Phi \vdash \theta \entails \Delta \\
+  t \notin \dom(\theta) \\ t \in \Phi}
+  {\Sigma;\Phi \vdash \theta \entails \Delta, t}
+
+\inferrule[S-Item]{\Sigma;\Phi \vdash \theta \entails \Delta \\
+  \iota \text{ not a type symbol} \\ \thh\,\iota \in \Phi \\
+  \sigma(\thh\,t) = \sigma(t) \;\;(\forall t \in \ksf{deps}(\iota))}
+  {\Sigma;\Phi \vdash \theta \entails \Delta, \iota}
+\end{mathpar}
+
+\textbf{Type formation}\quad \fbox{$\Sigma;\Phi \vdash \tau \wf$}
+\begin{mathpar}
+\inferrule[K-Unit]{ }{\Sigma;\Phi \vdash \unitv \wf}
+
+\inferrule[K-Need]{t \in \Phi}{\Sigma;\Phi \vdash t \wf}
+
+\inferrule[K-Tag]{\Sigma(N) = \ksf{tag}[\Delta]\,\tau_0 \\
+  \Sigma;\Phi \vdash \theta \entails \Delta}
+  {\Sigma;\Phi \vdash N[\theta] \wf}
+
+\inferrule[K-Union]{\Sigma;\Phi \vdash \nu_i \wf \quad (\forall i) \\
+  \sigma\nu_1, \ldots, \sigma\nu_k \text{ have distinct heads}}
+  {\Sigma;\Phi \vdash \nu_1 \vee \cdots \vee \nu_k \wf}
+\end{mathpar}
+
+\textbf{Subtyping (injection only)}\quad \fbox{$\Sigma;\Phi \vdash \tau \le \tau'$}
+\begin{mathpar}
+\inferrule[Sub-Eq]{\tau \equiv \tau'}{\Sigma;\Phi \vdash \tau \le \tau'}
+
+\inferrule[Sub-Inj]{\sigma\nu = \sigma\nu_j \text{ for some } j}
+  {\Sigma;\Phi \vdash \nu \le \nu_1 \vee \cdots \vee \nu_k}
+\end{mathpar}
+\caption{Satisfaction, type formation, and subtyping. In
+\textsc{S-Inst}/\textsc{S-Pass}/\textsc{S-Item}, $\dom(\theta)$ must be
+contained in the type items of the full telescope; $\sigma$ is the
+substitution component of $\Phi$; $\ksf{deps}(\iota)$ is the set of type
+symbols in $\iota$'s own telescope. \textsc{S-Item}'s last premise is
+\emph{coherence}: a val or fn item names no types, so without it nothing
+stops $f[T{=}\ksf{Bool}]$ from being satisfied by an ambient $v : T$ that
+was provided under $\kw{bind}\;T{=}\ksf{Int}$. (Found while mechanizing
+preservation; method items carry their types and need no such premise.)}
+\label{fig:statics-aux}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\fbox{$\Sigma;\Phi;\Gamma \vdash e : \tau$}
+\begin{mathpar}
+\inferrule[T-Var]{\Gamma(x) = \tau}{\Sigma;\Phi;\Gamma \vdash x : \tau}
+
+\inferrule[T-Unit]{ }{\Sigma;\Phi;\Gamma \vdash \unitv : \unitv}
+
+\inferrule[T-Sub]{\Sigma;\Phi;\Gamma \vdash e : \tau' \\
+  \Sigma;\Phi \vdash \tau' \le \tau}
+  {\Sigma;\Phi;\Gamma \vdash e : \tau}
+
+\inferrule[T-Val]{\Sigma(v) = \ksf{val}[\Delta]\,\tau \\ v \in \Phi}
+  {\Sigma;\Phi;\Gamma \vdash v : \sigma\tau}
+
+\inferrule[T-Tag]{\Sigma(N) = \ksf{tag}[\Delta]\,\tau_0 \\
+  \Sigma;\Phi \vdash \theta \entails \Delta \\
+  \Sigma;\Phi;\Gamma \vdash e : \sigma\thh\tau_0}
+  {\Sigma;\Phi;\Gamma \vdash N[\theta]\;e : \sigma(N[\thh])}
+
+\inferrule[T-Need]{\Sigma(f) = \ksf{fn}[\Delta](\ov{x{:}\tau} \to \tau_r) \\
+  f \in \Phi \\
+  \Sigma;\Phi;\Gamma \vdash e_i : \sigma\tau_i \quad (\forall i)}
+  {\Sigma;\Phi;\Gamma \vdash f(\ov{e}) : \sigma\tau_r}
+
+\inferrule[T-Call]{\Sigma(f) = \ksf{fn}[\Delta](\ov{x{:}\tau} \to \tau_r)\,\{e_b\} \\
+  \Sigma;\Phi \vdash \theta \entails \Delta \\
+  \Sigma;\Phi;\Gamma \vdash e_i : \sigma\thh\tau_i \quad (\forall i)}
+  {\Sigma;\Phi;\Gamma \vdash f[\theta](\ov{e}) : \sigma\thh\tau_r}
+
+\inferrule[T-Meth]{\Sigma(m) = \ksf{mth}[\Delta](\ov{x{:}\tau} \to \tau_r) \\
+  \Sigma;\Phi;\Gamma \vdash e_0 : \tau_0 \\
+  \tau'.m[\theta] \in \Phi \\ \sigma\tau' = \sigma\tau_0 \\
+  \rho = \sigma \circ \subst{\This \mapsto \sigma\tau_0} \circ \thh \\
+  \Sigma;\Phi;\Gamma \vdash e_i : \rho\tau_i \quad (\forall i)}
+  {\Sigma;\Phi;\Gamma \vdash e_0.m(\ov{e}) : \rho\tau_r}
+
+\inferrule[T-Match]{\Sigma;\Phi;\Gamma \vdash e_0 : \tau_0 \\
+  \sigma\tau_0 = N_1[\theta_1] \vee \cdots \vee N_k[\theta_k] \\
+  \Sigma(N_i) = \ksf{tag}[\Delta_i]\,\tau_i^{p} \\
+  \Sigma;\Phi;\Gamma, x_i : \theta_i\tau_i^{p} \vdash e_i : \tau \quad (\forall i)}
+  {\Sigma;\Phi;\Gamma \vdash
+    \kw{match}\;e_0\;\{\,\ov{N\;x \Rightarrow e}\,\} : \tau}
+
+\inferrule[T-Let]{\Sigma;\Phi;\Gamma \vdash e_1 : \tau_1 \\
+  \Sigma;\Phi;\Gamma, x : \tau_1 \vdash e_2 : \tau}
+  {\Sigma;\Phi;\Gamma \vdash \kw{let}\;x = e_1;\;e_2 : \tau}
+\end{mathpar}
+\caption{Expression typing. \textsc{T-Meth} carries the side condition
+that the provision at the key $(\sigma\tau_0, m)$ --- the receiver's
+\emph{type}, exactly as \S\ref{sec:intro} says, not merely its head ---
+is unique in $\Phi$; keying on the head alone is adequate under Moss's
+unique-nominal-per-instantiation idiom [D51] but unsound in the raw
+calculus, a repair owed to the mechanization. In
+\textsc{T-Match}, a nominal reference is identified with its singleton
+union, arms are in bijection with the heads $N_1, \ldots, N_k$, and $k =
+0$ types $\kw{match}\;e_0\;\{\}$ at any $\tau$.}
+\label{fig:typing}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\fbox{$\Sigma;\Phi;\Gamma \vdash e : \tau$ (continued: $\kw{bind}$)}
+\begin{mathpar}
+\inferrule[T-BindTy]{\Sigma(t) = \ksf{type} \\ t \neq \This \\ t \notin \Phi \\
+  \Sigma;\Phi \vdash \tau' \wf \\
+  \Sigma;\langle A \cup \{t\};\, \sigma[t \mapsto \sigma\tau'] \rangle;\Gamma \vdash e : \tau \\
+  \Sigma;\Phi \vdash \tau \wf}
+  {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash \kw{bind}\;t = \tau';\;e : \tau}
+
+\inferrule[T-BindVal]{\Sigma(v) = \ksf{val}[\Delta_v]\,\tau_v \\
+  \Sigma;\Phi \vdash \emptyset \entails \Delta_v \\
+  \Sigma;\Phi;\Gamma \vdash e_1 : \sigma\tau_v \\
+  \Sigma;\langle A \cup \{v\}; \sigma \rangle;\Gamma \vdash e : \tau}
+  {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash \kw{bind}\;v = e_1;\;e : \tau}
+
+\inferrule[T-BindFn]{\Sigma(f) = \ksf{fn}[\Delta_f]\,S \\
+  \Sigma(f') = \ksf{fn}[\Delta']\,S'\,\{e_b\} \\
+  \Sigma;\Phi \vdash \emptyset \entails \Delta_f \\
+  \Sigma;\Phi \vdash \emptyset \entails \Delta' \\
+  \sigma S' = \sigma S \\
+  \Sigma;\langle A \cup \{f\}; \sigma \rangle;\Gamma \vdash e : \tau}
+  {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash \kw{bind}\;f = f';\;e : \tau}
+
+\inferrule[T-BindMeth]{\Sigma(m) = \ksf{mth}[\Delta_m](\ov{x{:}\tau} \to \tau_r) \\
+  \Sigma;\Phi \vdash \tau_\kappa \wf \\
+  \Sigma;\Phi \vdash \theta \entails \Delta_m \\
+  \rho = \sigma \circ \subst{\This \mapsto \sigma\tau_\kappa} \circ \thh \\
+  \Sigma(f') = \ksf{fn}[\Delta']\,
+    ((y_0{:}\tau_0', \ov{y{:}\tau'}) \to \tau')\,\{e_b\} \\
+  \Sigma;\Phi \vdash \emptyset \entails \Delta' \\
+  \sigma\tau_0' = \sigma\tau_\kappa \\
+  \sigma\ov{\tau'} = \rho\ov{\tau} \\ \sigma\tau' = \rho\tau_r \\
+  \Sigma;\langle A \cup \{\tau_\kappa.m[\theta]\}; \sigma \rangle;\Gamma \vdash e : \tau}
+  {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash
+    \kw{bind}\;\tau_\kappa.m[\theta] = f';\;e : \tau}
+\end{mathpar}
+\caption{Typing the three kinds of provision (method binds shown
+separately from plain fn binds). $S$ ranges over signatures
+$\ov{x{:}\tau} \to \tau$, compared pointwise; in \textsc{T-BindFn} the
+provided $f$ must be abstract (no body in $\Sigma$). Signature equality
+is checked \emph{after} the substitutions in force, and it is an error,
+not a unification opportunity, if abstract symbols remain unmatched
+[D27].}
+\label{fig:binds}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\textbf{Telescopes}\quad \fbox{$\Sigma;\Delta_0 \vdash \Delta \wf$}
+\quad (write $\Phi_{\Delta} = \langle \Delta_0 \cup \Delta;\, \emptyset \rangle$)
+\begin{mathpar}
+\inferrule[W-Nil]{ }{\Sigma;\Delta_0 \vdash \emptytel \wf}
+
+\inferrule[W-Type]{\Sigma;\Delta_0 \vdash \Delta \wf \\ \Sigma(t) = \ksf{type} \\
+  t \neq \This}
+  {\Sigma;\Delta_0 \vdash \Delta, t \wf}
+
+\inferrule[W-Sym]{\Sigma;\Delta_0 \vdash \Delta \wf \\
+  \Sigma(s) = \ksf{val}[\Delta_s]\,\tau \text{ or } \ksf{fn}[\Delta_s]\,S \\
+  \Sigma;\Phi_{\Delta} \vdash \emptyset \entails \Delta_s}
+  {\Sigma;\Delta_0 \vdash \Delta, s \wf}
+
+\inferrule[W-Meth]{\Sigma;\Delta_0 \vdash \Delta \wf \\
+  \Sigma(m) = \ksf{mth}[\Delta_m]\,S \\
+  \Sigma;\Phi_{\Delta} \vdash \tau_\kappa \wf \\
+  \Sigma;\Phi_{\Delta} \vdash \theta \entails \Delta_m}
+  {\Sigma;\Delta_0 \vdash \Delta, \tau_\kappa.m[\theta] \wf}
+\end{mathpar}
+
+\textbf{Declarations}\quad \fbox{$\Sigma;\Delta_0 \vdash d \wf$}
+\quad (write $\Phi_0 = \langle \Delta_0; \emptyset \rangle$)
+\begin{mathpar}
+\inferrule[D-Need]{ }{\Sigma;\Delta_0 \vdash \kw{type}\;t \wf}
+
+\inferrule[D-Tag]{\Sigma;\Phi_0 \vdash \tau \wf}
+  {\Sigma;\Delta_0 \vdash \kw{type}\;N\;\tau \wf}
+
+\inferrule[D-Val]{\Sigma;\Phi_0 \vdash \tau \wf}
+  {\Sigma;\Delta_0 \vdash \kw{val}\;v : \tau \wf}
+
+\inferrule[D-Fn]{\Sigma;\Phi_0 \vdash \tau_i \wf \quad (\forall i) \\
+  \Sigma;\Phi_0 \vdash \tau_r \wf}
+  {\Sigma;\Delta_0 \vdash \kw{fn}\;f(\ov{x{:}\tau}) : \tau_r \wf}
+
+\inferrule[D-FnDef]{\Sigma;\Phi_0 \vdash \tau_i \wf \quad (\forall i) \\
+  \Sigma;\Phi_0 \vdash \tau_r \wf \\
+  \Sigma;\Phi_0;\ov{x : \tau} \vdash e : \tau_r}
+  {\Sigma;\Delta_0 \vdash \kw{fn}\;f(\ov{x{:}\tau}) : \tau_r\;\{e\} \wf}
+
+\inferrule[D-Meth]{\Sigma;\langle \Delta_0 \cup \{\This\}; \emptyset \rangle
+    \vdash \tau_i \wf \quad (\forall i) \\
+  \Sigma;\langle \Delta_0 \cup \{\This\}; \emptyset \rangle \vdash \tau_r \wf}
+  {\Sigma;\Delta_0 \vdash \kw{fn}\;.m(\ov{x{:}\tau}) : \tau_r \wf}
+
+\inferrule[D-Assume]{\Sigma;\Delta_0 \vdash \Delta \wf \\
+  \Sigma;\Delta_0, \Delta \vdash d_i \wf \quad (\forall i)}
+  {\Sigma;\Delta_0 \vdash \kw{assume}\;\Delta\;\{\ov{d}\} \wf}
+\end{mathpar}
+\caption{Telescope and declaration formation. A program $P$ is
+well-formed, $\vdash P \wf$, when its declarations induce a
+function $\Sigma$ (each symbol declared once, with the concatenation of
+its enclosing telescopes recorded), $\Sigma;\emptytel \vdash d \wf$ for
+each top-level $d$, and $\Sigma(\ksf{main}) =
+\ksf{fn}[\emptytel](\to \unitv)\{e\}$. \textsc{W-Sym} is the telescoping
+rule [D20]: an item may be assumed only after the items its own
+declaration needs.}
+\label{fig:decls}
+\end{figure}
+
+Figures~\ref{fig:statics-aux}--\ref{fig:decls} give the statics.
+Everything specific to Moss is visible in a handful of premises:
+
+\begin{itemize}
+\item \emph{Availability, not search.} \textsc{T-Val}, \textsc{T-Need},
+\textsc{T-Meth}, and \textsc{S-Item} test $\iota \in \Phi$---finite-set
+membership modulo $\sigma$. No rule quantifies over $\Sigma$ looking for
+a provider whose type fits [D1].
+\item \emph{Two ways to call.} An \emph{abstract} fn is called because it
+is available (\textsc{T-Need}); its own telescope was checked where it
+entered $\Phi$. A \emph{defined} fn is called by satisfying its telescope
+on the spot (\textsc{T-Call}); the premise $\theta \entails \Delta$ is
+where implicit parameterization is discharged, and $\sigma\thh$ is the
+monomorphizing substitution.
+\item \emph{Dispatch is directed.} \textsc{T-Meth} forward-infers the
+receiver's type and demands the unique provision at $(\sigma\tau_0, m)$
+--- the receiver's type itself, compared after the substitutions in
+force. The provision's own bracket bindings $\theta$
+are what interpret the method's signature at the call site---ergonomics
+ride along with the provision instead of being discovered [D36].
+\item \emph{Injection is the only subtyping.} \textsc{Sub-Inj} lets a
+member into a union that lists it; there is no width or depth subtyping
+and no union-to-union coercion [D17].
+\item \emph{Binds never infer.} In Figure~\ref{fig:binds} every signature
+comparison happens after $\sigma$; a bind whose signatures still mention
+distinct abstract symbols simply fails, which forces the surface
+program's characteristic ``bind the types first, then the functions''
+order [D27]. A method bind may carry $\theta$ on its \emph{left-hand}
+side---that is how a method declared once (say \smallcode{.get} with
+element type \smallcode{Elem}) is provided at one receiver at a time,
+with the substitution local to that provision [D61].
+\end{itemize}
+
+\subsection{Dynamic semantics}
+
+The dynamics is defined on \emph{elaborated} programs. The typing
+derivation resolves, at each site, exactly which in-force item satisfied
+each requirement; elaboration records these choices:
+
+\begin{itemize}
+\item each defined-fn call $f[\theta]^{\varsigma}(\ov{e})$ and each bind
+of a defined fn carries a \emph{satisfaction map} $\varsigma$ sending
+every non-type item of the callee's (resp.\ provider's) telescope to the
+item of $A$ that satisfied it;
+\item each method call $e_0.m^{\iota_0}(\ov{e})$ carries the provision
+$\iota_0 \in A$ that \textsc{T-Meth} selected.
+\end{itemize}
+
+\noindent
+This is precisely the compilation model: after elaboration nothing ever
+looks at an $\kw{assume}$ or resolves a name again, and the interpreter's
+environment \emph{is} the explicit context structure elaboration
+produced. A runtime context $\delta$ maps val items to values and
+fn/method items to closures $\clo{f'}{\delta'}$---a (code,
+captured-context) pair, the dynamic residue of [D2]. Given $\varsigma$,
+we write $\delta \circ \varsigma$ for the context $\{\iota \mapsto
+\delta(\varsigma\,\iota)\}$, defined on the non-type items of the
+relevant telescope: the callee's requirements, re-keyed under the
+callee's own names. Type items have no runtime content and are dropped.
+Figure~\ref{fig:dynamics} gives the rules.
+
+\begin{figure}[t]
+\centering
+\fbox{$\delta;\gamma \vdash e \Eval w$}
+\begin{mathpar}
+\inferrule[E-Unit]{ }{\delta;\gamma \vdash \unitv \Eval \unitv}
+
+\inferrule[E-Var]{\gamma(x) = w}{\delta;\gamma \vdash x \Eval w}
+
+\inferrule[E-Val]{\delta(v) = w}{\delta;\gamma \vdash v \Eval w}
+
+\inferrule[E-Tag]{\delta;\gamma \vdash e \Eval w}
+  {\delta;\gamma \vdash N[\theta]\,e \Eval N\,w}
+
+\inferrule[E-Let]{\delta;\gamma \vdash e_1 \Eval w_1 \\
+  \delta;\gamma[x \mapsto w_1] \vdash e_2 \Eval w}
+  {\delta;\gamma \vdash \kw{let}\;x = e_1;\;e_2 \Eval w}
+
+\inferrule[E-Match]{\delta;\gamma \vdash e_0 \Eval N_j\,w' \\
+  \delta;\gamma[x_j \mapsto w'] \vdash e_j \Eval w}
+  {\delta;\gamma \vdash \kw{match}\;e_0\;\{\,\ov{N\;x \Rightarrow e}\,\} \Eval w}
+
+\inferrule[E-Call]{\Sigma(f) = \ksf{fn}[\Delta](\ov{x{:}\tau} \to \tau_r)\,\{e_b\} \\
+  \delta;\gamma \vdash e_i \Eval w_i \quad (\forall i) \\
+  (\delta \circ \varsigma);\, [\ov{x \mapsto w}] \vdash e_b \Eval w}
+  {\delta;\gamma \vdash f[\theta]^{\varsigma}(\ov{e}) \Eval w}
+
+\inferrule[E-Need]{\delta(f) = \clo{f'}{\delta'} \\
+  \Sigma(f') = \ksf{fn}[\Delta'](\ov{y{:}\tau} \to \tau_r)\,\{e_b\} \\
+  \delta;\gamma \vdash e_i \Eval w_i \quad (\forall i) \\
+  \delta';\, [\ov{y \mapsto w}] \vdash e_b \Eval w}
+  {\delta;\gamma \vdash f(\ov{e}) \Eval w}
+
+\inferrule[E-Meth]{\delta(\iota_0) = \clo{f'}{\delta'} \\
+  \Sigma(f') = \ksf{fn}[\Delta']((y_0{:}\tau_0', \ov{y{:}\tau'}) \to \tau')\,\{e_b\} \\
+  \delta;\gamma \vdash e_0 \Eval w_0 \\
+  \delta;\gamma \vdash e_i \Eval w_i \quad (\forall i) \\
+  \delta';\, [y_0 \mapsto w_0,\, \ov{y \mapsto w}] \vdash e_b \Eval w}
+  {\delta;\gamma \vdash e_0.m^{\iota_0}(\ov{e}) \Eval w}
+
+\inferrule[E-BindTy]{\delta;\gamma \vdash e \Eval w}
+  {\delta;\gamma \vdash \kw{bind}\;t = \tau';\;e \Eval w}
+
+\inferrule[E-BindVal]{\delta;\gamma \vdash e_1 \Eval w_1 \\
+  \delta[v \mapsto w_1];\gamma \vdash e \Eval w}
+  {\delta;\gamma \vdash \kw{bind}\;v = e_1;\;e \Eval w}
+
+\inferrule[E-BindFn]{\delta[f \mapsto \clo{f'}{\delta \circ \varsigma}];\gamma
+    \vdash e \Eval w}
+  {\delta;\gamma \vdash \kw{bind}\;f =^{\varsigma} f';\;e \Eval w}
+
+\inferrule[E-BindMeth]{\delta[\tau_\kappa.m[\theta] \mapsto
+    \clo{f'}{\delta \circ \varsigma}];\gamma \vdash e \Eval w}
+  {\delta;\gamma \vdash \kw{bind}\;\tau_\kappa.m[\theta] =^{\varsigma} f';\;e \Eval w}
+\end{mathpar}
+\caption{Big-step dynamics of elaborated \textsc{Core Moss}. A program
+runs as $\emptyset;\emptyset \vdash e_{\ksf{main}} \Eval \unitv$. Note
+what is absent: \textsc{E-BindTy} is erasure, applications $\theta$ never
+reach a value, and no rule consults a type.}
+\label{fig:dynamics}
+\end{figure}
+
+Three points deserve emphasis. First, \textsc{E-Call} runs a defined
+body under $\delta \circ \varsigma$---the caller's provisions,
+restricted and renamed to the callee's requirement list. This is
+context \emph{propagation}: nothing dynamic is looked up by name; the
+plumbing was fixed by elaboration. Second, \textsc{E-BindFn} and
+\textsc{E-BindMeth} capture $\delta \circ \varsigma$ at the bind
+site---a provided function is a pair of static code and dynamic context,
+so the same abstract symbol bound in two places may carry different
+captured data. Third, \textsc{E-BindVal} evaluates its right-hand side
+exactly once, at the bind [D26]; val provisions are call-by-value data,
+not thunks.
+
+\section{Metatheory}\label{sec:meta}
+
+\begin{proposition}[Resolution is search-free]\label{prop:nosearch}
+Every context premise in Figures~\ref{fig:statics-aux}--\ref{fig:decls}
+is a membership test $\iota \in \Phi$ in a finite set modulo the
+idempotent substitution $\sigma$; no rule quantifies over the program
+signature $\Sigma$. Consequently type checking is syntax-directed (up to
+the placement of \textsc{T-Sub}) and elaboration---the assignment of
+satisfaction maps $\varsigma$ and provisions $\iota_0$---is a partial
+function of the program: at every use site there is at most one way to
+satisfy each requirement, and typing fails rather than choosing.
+\end{proposition}
+
+\begin{theorem}[Soundness]\label{thm:sound}
+Say $\delta \models \Phi$ when $\delta$ is defined on every non-type item
+of $\Phi$ and each entry agrees with the item's declared signature under
+the substitutions in force (values at declared types, closures at matched
+signatures with $\delta' \models$ their own telescopes), and $\gamma
+\models \Gamma$ pointwise. If\, $\vdash P \wf$,\;
+$\Sigma;\Phi;\Gamma \vdash e : \tau$,\; $\delta \models \Phi$,\;
+$\gamma \models \Gamma$, and $\delta;\gamma \vdash e \Eval w$, then
+$w$ has type $\sigma\tau$; and in the instrumented semantics that signals
+$\ksf{err}$ whenever a lookup $\gamma(x)$, $\delta(\iota)$, or a match
+arm is missing, no evaluation of $e$ signals $\ksf{err}$
+(\emph{context safety}: a well-typed program never reaches for a
+provision that is not there). In particular a terminating run of a
+well-formed program yields $\unitv$.
+\end{theorem}
+
+The proof is a routine induction on the evaluation derivation with
+inversion on typing, with a substitution lemma for $\sigma\thh$ and a
+weakening lemma for $\delta \circ \varsigma$. The metatheory is fully
+machine-checked in Rocq (\texttt{CoreMoss.v}, checked in CI): this
+theorem and every proposition here report \emph{closed under the global
+context}, via a fuel-indexed safety invariant that carries a ground
+instantiation of the abstract type symbols per closure.  The
+mechanization additionally carries an executable fueled interpreter:
+the program of Figure~\ref{fig:example}, encoded in the core, computes
+to $\unitv$ by \texttt{vm\_compute}.  Designing and proving the
+invariant is what surfaced the repairs below. The theorem's empirical
+counterpart is blunter: the self-hosted compiler elaborates and runs
+its own 19-module source under exactly these rules, to a byte-identical
+fixpoint.
+
+\begin{proposition}[Phase separation]\label{prop:phase}
+Evaluation never inspects a type: the relation $\Eval$ is invariant
+under erasing every $\theta$, every $\kw{bind}\;t = \tau$, and the type
+items of every telescope. Moreover, in every $\delta$ reachable from a
+well-formed program, the code component of every closure is determined
+by the elaboration annotations alone---only the captured val data varies
+at run time. Hence a whole-program specializer may resolve every
+\textsc{E-Need} and \textsc{E-Meth} to a direct call and inline every
+type binding, leaving val provisions as the only context crossing
+runtime edges [D2].
+\end{proposition}
+
+\paragraph{What mechanizing the proofs caught.}
+Three repairs, all surfaced while designing the preservation invariant,
+are already folded into the figures above. (i)~Dispatch must key on the
+receiver's \emph{type}: an earlier draft of \textsc{T-Meth} keyed
+provisions by the receiver's head, which is adequate under Moss's
+unique-nominal-per-instantiation idiom [D51] but lets a provision bound
+at $\smallcode{Slot[Int]}$ serve a $\smallcode{Slot[Char]}$ receiver,
+the $\This$-substitution lying about the result.
+(ii)~Satisfaction needs \emph{coherence} (\textsc{S-Item}'s last
+premise): a val or fn requirement names no types, so nothing else
+prevents $f[T{=}\ksf{Bool}]$ from being satisfied by an ambient
+$v : T$ that was provided under $\kw{bind}\;T{=}\ksf{Int}$.
+(iii)~Type binds must be fresh (\textsc{T-BindTy}'s $t \notin \Phi$):
+under substitution-based statics, shadowing an in-force type symbol
+conflates its two generations; surface Moss's lexical shadowing [D25]
+is instead the province of environment-passing semantics, and real
+binds provide symbols not yet in force, so the restriction does not
+bite the corpus.
+(iv)~The bind's result type may not escape its scope
+(\textsc{T-BindTy}'s final premise): without it, subsumption under the
+extended $\sigma$ retypes the body at $t$ itself, and the bound symbol
+leaks into a type the outside cannot read --- refuted mechanically by a
+proof agent before it was a premise.
+(v)~$\rho$ must compose with the $\This$-substitution \emph{outermost}
+(\textsc{T-Meth}/\textsc{T-BindMeth}): an earlier draft applied
+$[\This \mapsto \sigma\tau_0]$ innermost, where $\thh$ can rewrite
+inside the receiver --- refuted through a method item that mentions a
+symbol of its own application's domain; the corrected order subsumes
+two stopgap coherence premises this document briefly carried.
+(vi)~Subsumption must target well-formed types and \textsc{T-Match}
+must know its scrutinee's $\sigma$-image is well-formed: regularity the
+declarative rules otherwise lose, and which the soundness invariant
+leans on.
+(vii)~$\This$ is \emph{reserved}: nothing else stopped a program from
+binding the receiver symbol itself and pre-capturing every receiver
+substitution in scope --- the only repair that refuted
+Theorem~\ref{thm:sound} outright (a well-formed program whose
+$\ksf{main}$ evaluates to $\ksf{err}$, checked by \texttt{vm\_compute}).
+In surface Moss this is unutterable, since \texttt{This} is a keyword
+[D3]; the core forgot to encode the lexer's opinion as a side
+condition.  Two of the findings above, (i) and (ii), name
+configurations that surface Moss can plausibly express; whether the
+bootstrap rejects them is an open question the design record should
+answer.
+
+Proposition~\ref{prop:phase} is the hypothesis behind the compilation
+pipeline: the monomorphizing WebAssembly backend is partial evaluation
+of Figure~\ref{fig:dynamics} with respect to its static parts, and
+contains no resolution logic of its own. One caveat survives from the
+full language: because type binds drive specialization, a recursive
+function that rebinds a type on its recursive path demands infinitely
+many specializations; Moss accepts such programs at elaboration time and
+bounds the instantiation graph with a depth backstop, the sole check
+permitted after elaboration [D30, D16].
+
+\section{From the core to Moss}\label{sec:full}
+
+Everything the surface language adds is scoping convenience, sugar over
+the core, or an orthogonal extension. Table~\ref{tab:full} is the
+accounting.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{@{}p{0.30\linewidth}p{0.64\linewidth}@{}}
+\toprule
+\textbf{Moss} & \textbf{In the core} \\
+\midrule
+Modules, \texttt{import}/\texttt{use}/\texttt{as} &
+Pure name management with no context effect; a module is a namespace,
+not a structure. $\alpha$-resolution folds the module graph into the
+core's flat symbol space [D8--D10, D44, D56]. \\[3pt]
+\texttt{context} declarations &
+Names for telescopes; assuming one assumes its members, flattened
+recursively. Duplicate keys \emph{merge} by unification, erring only
+when two distinct concrete types would be identified [D19, D43]. The
+core requires keys distinct and keeps only the $\sigma$-canonicalized
+membership test. \\[3pt]
+Functors &
+A named, signature-checked block of binds, applied with
+$\kw{bind}\;F;$ --- application inlines the block, so it elaborates to a
+run of core binds [D55]. \\[3pt]
+Attached methods, \texttt{this}/\texttt{This} &
+$\kw{fn}\;T.m$ is a defined fn found by name in the receiver's own
+module; a detached provision is found by key [D61]. Only an attached
+method can see its receiver, so providers wrap nominal types [D54]; the
+core flattens this by giving every method provider the receiver as its
+first argument---the convention both compilers already use internally. \\[3pt]
+Records and tuples &
+Structural products, orthogonal to the context mechanism; nominality
+comes only from tags wrapping them [D15]. \\[3pt]
+\texttt{Bool}, \texttt{if}, \texttt{while}/\texttt{loop}, \texttt{var} &
+\texttt{Bool} is a library tag over two units and \texttt{if} is its
+match [D45]. Loops are primitive in Moss because tail-call elimination
+is deliberately \emph{not} semantics [D49]; the core, having no loops,
+uses recursion. Local \texttt{var} is a reassignable slot; shared
+mutable state goes through the \texttt{Cell} library [D31]. \\[3pt]
+Literals &
+None, in Moss or the core: values enter programs through the
+environment (\texttt{char::a}, \texttt{zero}, \texttt{first\_arg()})
+[D4, D5]. \\[3pt]
+Operators &
+Reserved; they will desugar to detached methods provided per receiver
+type (\texttt{a + b} $\equiv$ \texttt{a.add(b)}) [D33, D47]. \\[3pt]
+Entry and the primitive context &
+The primitive context is \texttt{Wasi}; \texttt{Std} is a Moss library
+over it, installed by a functor, and \texttt{main} may assume any subset
+of it [D37, D52]. The core's \texttt{main} assumes nothing and binds its
+own provisions. \\
+\bottomrule
+\end{tabular}
+\caption{What was boiled away, and where it went.}
+\label{tab:full}
+\end{table}
+
+\section{Related work}\label{sec:related}
+
+Core Moss sits between two traditions and refuses the defining move of
+each. From type classes~\cite{wadler-blott} and their descendants---the
+implicit calculus~\cite{implicit-calculus}, Scala implicits, OCaml's
+modular implicits~\cite{modular-implicits}---it takes implicit
+program-wide plumbing of capabilities, but rejects resolution by
+type-directed \emph{search}: a Moss requirement names one symbol, and
+coherence is by construction rather than by global instance discipline.
+From ML modules it takes the vocabulary---a \texttt{context} is a
+signature, the provisions in force are a structure, functors map
+structures to structures---together with applicative type
+identity~\cite{leroy-applicative}, but it dissolves the structure as a
+runtime value: provisions are delivered along lexically-checked edges,
+and only val data survives to run time. The nearest ancestor of
+$\kw{bind}$ for vals is implicit parameters~\cite{implicit-params},
+dynamic scoping with static types; Core Moss extends the idea uniformly
+to types and code, where ``dynamic'' scoping becomes static
+specialization. The consistent-merging rule for contexts [D43], omitted
+from the core, is a deterministic congruence over requirement sets;
+its nearest published relative is the record-like treatment of
+intersection types of Xu, Huang, and Oliveira~\cite{type-difference}.
+
+\begin{thebibliography}{9}\small
+
+\bibitem{wadler-blott}
+P.~Wadler and S.~Blott.
+\newblock How to make \emph{ad-hoc} polymorphism less \emph{ad hoc}.
+\newblock In \emph{POPL}, 1989.
+\newblock \url{https://doi.org/10.1145/75277.75283}
+
+\bibitem{implicit-params}
+J.~R. Lewis, J.~Launchbury, E.~Meijer, and M.~B. Shields.
+\newblock Implicit parameters: Dynamic scoping with static types.
+\newblock In \emph{POPL}, 2000.
+\newblock \url{https://doi.org/10.1145/325694.325708}
+
+\bibitem{implicit-calculus}
+B.~C. d.~S. Oliveira, T.~Schrijvers, W.~Choi, W.~Lee, and K.~Yi.
+\newblock The implicit calculus: A new foundation for generic programming.
+\newblock In \emph{PLDI}, 2012.
+\newblock \url{https://doi.org/10.1145/2254064.2254070}
+
+\bibitem{modular-implicits}
+L.~White, F.~Bour, and J.~Yallop.
+\newblock Modular implicits.
+\newblock In \emph{ML Family Workshop}, 2014.
+\newblock \url{https://doi.org/10.4204/EPTCS.198.2}
+
+\bibitem{leroy-applicative}
+X.~Leroy.
+\newblock Applicative functors and fully transparent higher-order modules.
+\newblock In \emph{POPL}, 1995.
+\newblock \url{https://doi.org/10.1145/199448.199476}
+
+\bibitem{type-difference}
+H.~Xu, X.~Huang, and B.~C. d.~S. Oliveira.
+\newblock Making a type difference: Subtraction on intersection types as
+  generalized record operations.
+\newblock \emph{Proc.\ ACM Program.\ Lang.}, 7(POPL), 2023.
+\newblock \url{https://doi.org/10.1145/3571224}
+
+\end{thebibliography}
+
+\end{document}

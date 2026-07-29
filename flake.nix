@@ -243,6 +243,30 @@
       checks = forAll (
         pkgs:
         {
+          # The Core Moss calculus paper (docs/design/core/core-moss.tex).
+          core-calculus-pdf =
+            pkgs.runCommand "core-moss-pdf"
+              {
+                nativeBuildInputs = [
+                  (pkgs.texliveMedium.withPackages (ps: [ ps.mathpartir ]))
+                ];
+              }
+              ''
+                export HOME=$TMPDIR
+                cp ${./docs/design/core/core-moss.tex} core-moss.tex
+                pdflatex -interaction=nonstopmode core-moss.tex
+                pdflatex -interaction=nonstopmode core-moss.tex # cross-references
+                mkdir $out
+                cp core-moss.pdf $out/
+              '';
+          # The mechanization of the paper's definitions and metatheory.
+          core-calculus-rocq =
+            pkgs.runCommand "core-moss-rocq" { nativeBuildInputs = [ pkgs.coq ]; } ''
+              export ROCQPATH=${pkgs.coqPackages.stdlib}/lib/coq/${pkgs.coq.coq-version}/user-contrib
+              cp ${./docs/design/core/CoreMoss.v} CoreMoss.v
+              coqc -q CoreMoss.v
+              touch $out
+            '';
           cli = pkgs.runCommand "moss-cli-check" { } ''
             moss=${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/moss
             source=${./.}/examples/hello.moss

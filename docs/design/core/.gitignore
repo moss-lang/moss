@@ -1,0 +1,9 @@
+core-moss.pdf
+*.aux
+*.log
+*.out
+*.vo
+*.vok
+*.vos
+*.glob
+.*.aux
