@@ -50,12 +50,11 @@
               ./src
             ];
           };
-          installData = compiler: ''
+          installData = ''
             mkdir -p $out/share/moss
-            cp ${compiler} $out/share/moss/mossc.wasm
             cp -r ${./lib} $out/share/moss/lib
           '';
-          staticBinaryen = pkgs.pkgsStatic.binaryen.overrideAttrs (old: {
+          staticBinaryenFor = binaryen: binaryen.overrideAttrs (old: {
             doCheck = false;
             nativeBuildInputs = [
               pkgs.cmake
@@ -69,11 +68,10 @@
               "-DBUILD_SHARED_LIBS=OFF"
             ];
           });
-        in
-        rec {
+          staticBinaryen = staticBinaryenFor pkgs.pkgsStatic.binaryen;
           # B(S), followed by S0(S): the compiler believed to be at the
           # self-hosting fixpoint. The test suite turns the crank once more.
-          compiler =
+          portableCompiler =
             pkgs.runCommand "mossc.wasm"
               {
                 nativeBuildInputs = [
@@ -92,35 +90,105 @@
                   s0-opt.wasm src/main.moss > s1.wasm
                 wasm-opt -all -O3 s1.wasm -o $out
               '';
-          default = pkgs.rustPlatform.buildRustPackage {
-            pname = "moss";
+          precompiler = pkgs.rustPlatform.buildRustPackage {
+            pname = "moss-precompiler";
             version = "0.0.0";
             src = source;
             cargoLock.lockFile = ./Cargo.lock;
-            buildInputs = [ pkgs.binaryen ];
-            BINARYEN_LIB_DIR = "${pkgs.binaryen}/lib";
-            postInstall = installData compiler;
+            cargoBuildFlags = [
+              "--package"
+              "moss-precompiler"
+            ];
+            cargoTestFlags = [
+              "--package"
+              "moss-precompiler"
+            ];
           };
-          standalone =
-            if pkgs.stdenv.hostPlatform.isLinux then
-              pkgs.pkgsStatic.rustPlatform.buildRustPackage {
-                pname = "moss-standalone";
+          compilerFor =
+            target:
+            pkgs.runCommand "moss-${target}.cwasm"
+              {
+                nativeBuildInputs = [ precompiler ];
+              }
+              ''
+                moss-precompiler ${target} ${portableCompiler} $out
+              '';
+          packageFor =
+            {
+              rustPlatform,
+              binaryen,
+              target,
+              pname ? "moss",
+              extra ? { },
+            }:
+            rustPlatform.buildRustPackage (
+              {
+                inherit pname;
                 version = "0.0.0";
                 src = source;
                 cargoLock.lockFile = ./Cargo.lock;
-                buildInputs = [ staticBinaryen ];
-                BINARYEN_LIB_DIR = "${staticBinaryen}/lib";
-                BINARYEN_STATIC = "1";
-                BINARYEN_STATIC_STDCPP = "1";
-                postInstall = installData compiler;
-                postFixup = ''
-                  ${pkgs.removeReferencesTo}/bin/remove-references-to \
-                    -t ${staticBinaryen} $out/bin/moss
-                  rm -f $out/nix-support/propagated-build-inputs
-                '';
+                cargoBuildFlags = [
+                  "--package"
+                  "moss-cli"
+                  "--bin"
+                  "moss"
+                ];
+                buildInputs = [ binaryen ];
+                BINARYEN_LIB_DIR = "${binaryen}/lib";
+                MOSS_COMPILER_CWASM = compilerFor target;
+                postInstall = installData;
+              }
+              // extra
+            );
+        in
+        (rec {
+          compiler = portableCompiler;
+          default = packageFor {
+            inherit (pkgs) rustPlatform;
+            binaryen = pkgs.binaryen;
+            target = pkgs.stdenv.hostPlatform.rust.rustcTarget;
+          };
+          standalone =
+            if pkgs.stdenv.hostPlatform.isLinux then
+              packageFor {
+                rustPlatform = pkgs.pkgsStatic.rustPlatform;
+                binaryen = staticBinaryen;
+                target = pkgs.pkgsStatic.stdenv.hostPlatform.rust.rustcTarget;
+                pname = "moss-standalone";
+                extra = {
+                  BINARYEN_STATIC = "1";
+                  BINARYEN_STATIC_STDCPP = "1";
+                  RUSTFLAGS = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isx86_64 (
+                    "-C relocation-model=static -C link-arg=-no-pie"
+                  );
+                  postFixup = ''
+                    ${pkgs.removeReferencesTo}/bin/remove-references-to \
+                      -t ${staticBinaryen} $out/bin/moss
+                    rm -rf $out/nix-support
+                  '';
+                };
               }
             else
-              default;
+              let
+                binaryen = staticBinaryenFor pkgs.binaryen;
+              in
+              packageFor {
+                inherit (pkgs) rustPlatform;
+                inherit binaryen;
+                target = pkgs.stdenv.hostPlatform.rust.rustcTarget;
+                pname = "moss-standalone";
+                extra = {
+                  BINARYEN_STATIC = "1";
+                  postFixup = ''
+                    ${pkgs.darwin.cctools}/bin/install_name_tool \
+                      -change ${pkgs.libiconv}/lib/libiconv.2.dylib \
+                      /usr/lib/libiconv.2.dylib $out/bin/moss
+                    ${pkgs.removeReferencesTo}/bin/remove-references-to \
+                      -t ${binaryen} $out/bin/moss
+                    rm -rf $out/nix-support
+                  '';
+                };
+              };
           vscode = pkgs.vscode-utils.buildVscodeExtension {
             pname = "moss-vscode";
             version = "0.0.0";
@@ -138,6 +206,38 @@
             vscodeExtName = "moss-vscode";
             vscodeExtUniqueId = "moss-lang.moss-vscode";
           };
+        })
+        // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
+          windows =
+            let
+              crossPkgs = import nixpkgs {
+                localSystem = pkgs.stdenv.hostPlatform.system;
+                crossSystem.config = "x86_64-w64-mingw32";
+                overlays = [ (import rust-overlay) ];
+              };
+              binaryen = staticBinaryenFor crossPkgs.binaryen;
+              mcfgthreads =
+                crossPkgs.callPackage "${nixpkgs}/pkgs/os-specific/windows/mcfgthreads" { };
+            in
+            packageFor {
+              rustPlatform = crossPkgs.rustPlatform;
+              inherit binaryen;
+              target = crossPkgs.stdenv.hostPlatform.rust.rustcTarget;
+              pname = "moss-windows";
+              extra = {
+                buildInputs = [
+                  binaryen
+                  mcfgthreads
+                ];
+                BINARYEN_STATIC = "1";
+                BINARYEN_STATIC_STDCPP = "0";
+                MCFGTHREAD_LIB_DIR = "${mcfgthreads}/lib";
+                doCheck = false;
+                postFixup = ''
+                  rm -rf $out/nix-support
+                '';
+              };
+            };
         }
       );
       checks = forAll (
@@ -182,6 +282,22 @@
                 ! grep -R -a -q /nix/store/ \
                   ${self.packages.${pkgs.stdenv.hostPlatform.system}.standalone}
                 "$executable" --help >/dev/null
+                test ! -e ${self.packages.${pkgs.stdenv.hostPlatform.system}.standalone}/nix-support
+                touch $out
+              '';
+        }
+        // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+          standalone =
+            pkgs.runCommand "moss-standalone-check"
+              {
+                nativeBuildInputs = [ pkgs.darwin.cctools ];
+              }
+              ''
+                package=${self.packages.${pkgs.stdenv.hostPlatform.system}.standalone}
+                ! otool -L "$package/bin/moss" | sed 1d | grep -q /nix/store/
+                ! grep -R -a -q /nix/store/ "$package"
+                test ! -e "$package/nix-support"
+                "$package/bin/moss" --help >/dev/null
                 touch $out
               '';
         }

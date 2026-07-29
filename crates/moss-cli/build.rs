@@ -1,12 +1,24 @@
 use std::{env, path::Path};
 
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(moss_embedded_compiler)");
+    println!("cargo:rerun-if-env-changed=MOSS_COMPILER_CWASM");
+    if env::var_os("MOSS_COMPILER_CWASM").is_some() {
+        println!("cargo:rustc-cfg=moss_embedded_compiler");
+    }
     println!("cargo:rerun-if-env-changed=BINARYEN_LIB_DIR");
     println!("cargo:rerun-if-env-changed=BINARYEN_STATIC");
     println!("cargo:rerun-if-env-changed=BINARYEN_STATIC_STDCPP");
+    println!("cargo:rerun-if-env-changed=MCFGTHREAD_LIB_DIR");
 
     let binaryen_lib_dir = env::var_os("BINARYEN_LIB_DIR");
     if let Some(dir) = &binaryen_lib_dir {
+        println!(
+            "cargo:rustc-link-search=native={}",
+            Path::new(&dir).display()
+        );
+    }
+    if let Some(dir) = env::var_os("MCFGTHREAD_LIB_DIR") {
         println!(
             "cargo:rustc-link-search=native={}",
             Path::new(&dir).display()
@@ -39,5 +51,12 @@ fn main() {
             if static_cpp { "static=" } else { "" },
             cpp
         );
+        if target_os == "windows" {
+            println!("cargo:rustc-link-lib=static=mcfgthread");
+            // GCC's unwinder also refers to mcfgthread. Native libraries named
+            // with rustc-link-lib precede Rust's rlibs, so repeat it at the end
+            // of the linker command to satisfy those later references.
+            println!("cargo:rustc-link-arg=-lmcfgthread");
+        }
     }
 }

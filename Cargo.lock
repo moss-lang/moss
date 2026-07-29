@@ -1136,6 +1136,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "moss-precompiler"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "wasmtime",
+]
+
+[[package]]
 name = "object"
 version = "0.39.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

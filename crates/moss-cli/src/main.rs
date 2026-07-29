@@ -10,13 +10,24 @@ use std::{
 use anyhow::{anyhow, bail, Context, Result};
 use binaryen::{optimize_wasm, parse_opt, Opt};
 use clap::{Parser, Subcommand, ValueEnum};
+#[cfg(not(moss_embedded_compiler))]
 use sha2::{Digest, Sha256};
 use wasmtime::{Engine, Linker, Module, Store};
 use wasmtime_wasi::{
     p1::WasiP1Ctx, p2::pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtxBuilder,
 };
 
+#[cfg(not(moss_embedded_compiler))]
 const COMPILER_OPT: Opt = Opt::new(3, 0);
+
+#[cfg(moss_embedded_compiler)]
+static EMBEDDED_COMPILER: &[u8] = include_bytes!(env!("MOSS_COMPILER_CWASM"));
+
+enum CompilerModule {
+    Wasm(Vec<u8>),
+    #[cfg(moss_embedded_compiler)]
+    Precompiled(&'static [u8]),
+}
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum Compiler {
@@ -196,27 +207,41 @@ fn bootstrap_compile(root: &Path, entry: &Path) -> Result<Vec<u8>> {
     valid_wasm(output.stdout)
 }
 
-fn self_hosted_compiler(engine: &Engine, root: &Path) -> Result<Vec<u8>> {
+#[cfg(moss_embedded_compiler)]
+fn self_hosted_compiler(_engine: &Engine, _root: &Path) -> Result<CompilerModule> {
     if let Some(path) = env::var_os("MOSS_COMPILER") {
-        return Ok(fs::read(path)?);
+        return Ok(CompilerModule::Wasm(fs::read(path)?));
+    }
+    Ok(CompilerModule::Precompiled(EMBEDDED_COMPILER))
+}
+
+#[cfg(not(moss_embedded_compiler))]
+fn self_hosted_compiler(engine: &Engine, root: &Path) -> Result<CompilerModule> {
+    if let Some(path) = env::var_os("MOSS_COMPILER") {
+        return Ok(CompilerModule::Wasm(fs::read(path)?));
     }
     let installed = root.join("mossc.wasm");
     if installed.is_file() {
-        return Ok(fs::read(installed)?);
+        return Ok(CompilerModule::Wasm(fs::read(installed)?));
     }
     let target = root.join("target");
     let compiler = target.join("moss.wasm");
     let manifest = target.join("moss.inputs");
     let current = compiler_hash(root)?;
     if compiler.is_file() && fs::read_to_string(&manifest).ok().as_deref() == Some(&current) {
-        return Ok(fs::read(compiler)?);
+        return Ok(CompilerModule::Wasm(fs::read(compiler)?));
     }
 
     fs::create_dir_all(&target)?;
     eprintln!("Building the self-hosted Moss compiler...");
     let s0 = bootstrap_compile(root, &root.join("src/main.moss"))?;
     let s0 = optimize_wasm(s0, COMPILER_OPT)?;
-    let s1 = run_compiler(engine, root, &s0, &root.join("src/main.moss"))?;
+    let s1 = run_compiler(
+        engine,
+        root,
+        &CompilerModule::Wasm(s0),
+        &root.join("src/main.moss"),
+    )?;
     let ready = optimize_wasm(s1, COMPILER_OPT)?;
 
     let compiler_tmp = target.join(format!("moss.wasm.{}", std::process::id()));
@@ -225,9 +250,10 @@ fn self_hosted_compiler(engine: &Engine, root: &Path) -> Result<Vec<u8>> {
     fs::write(&manifest_tmp, &current)?;
     fs::rename(compiler_tmp, &compiler)?;
     fs::rename(manifest_tmp, manifest)?;
-    Ok(ready)
+    Ok(CompilerModule::Wasm(ready))
 }
 
+#[cfg(not(moss_embedded_compiler))]
 fn compiler_hash(root: &Path) -> Result<String> {
     let mut files = Vec::new();
     collect_files(&root.join("bootstrap/mossc"), "py", &mut files)?;
@@ -245,6 +271,7 @@ fn compiler_hash(root: &Path) -> Result<String> {
     Ok(format!("{:x}\n", digest.finalize()))
 }
 
+#[cfg(not(moss_embedded_compiler))]
 fn collect_files(directory: &Path, extension: &str, files: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(directory)? {
         let path = entry?.path();
@@ -257,7 +284,12 @@ fn collect_files(directory: &Path, extension: &str, files: &mut Vec<PathBuf>) ->
     Ok(())
 }
 
-fn run_compiler(engine: &Engine, root: &Path, compiler: &[u8], entry: &Path) -> Result<Vec<u8>> {
+fn run_compiler(
+    engine: &Engine,
+    root: &Path,
+    compiler: &CompilerModule,
+    entry: &Path,
+) -> Result<Vec<u8>> {
     let cwd = env::current_dir()?;
     let library_root = entry
         .ancestors()
@@ -267,8 +299,8 @@ fn run_compiler(engine: &Engine, root: &Path, compiler: &[u8], entry: &Path) -> 
         .ok_or_else(|| anyhow!("compiler inputs do not share a filesystem root"))?;
     let prelude = library_root.join("lib/prelude.moss");
     let argv = vec![
-        path_string(prelude.strip_prefix(filesystem_root)?)?,
-        path_string(entry.strip_prefix(filesystem_root)?)?,
+        wasi_path(prelude.strip_prefix(filesystem_root)?)?,
+        wasi_path(entry.strip_prefix(filesystem_root)?)?,
     ];
     let output = run_wasi_capture(engine, filesystem_root, compiler, &argv)?;
     valid_wasm(output)
@@ -298,7 +330,7 @@ fn valid_wasm(bytes: Vec<u8>) -> Result<Vec<u8>> {
 fn run_wasi_capture(
     engine: &Engine,
     filesystem_root: &Path,
-    bytes: &[u8],
+    compiler: &CompilerModule,
     argv: &[String],
 ) -> Result<Vec<u8>> {
     let pipe = MemoryOutputPipe::new(64 * 1024 * 1024);
@@ -308,7 +340,16 @@ fn run_wasi_capture(
         .stdout(pipe.clone())
         .inherit_stderr()
         .build_p1();
-    let code = invoke(engine, bytes, wasi)?;
+    let module = match compiler {
+        CompilerModule::Wasm(bytes) => Module::from_binary(engine, bytes)?,
+        #[cfg(moss_embedded_compiler)]
+        CompilerModule::Precompiled(bytes) => {
+            // The package build generated these bytes with this exact Wasmtime
+            // version, configuration, and target.
+            unsafe { Module::deserialize(engine, bytes)? }
+        }
+    };
+    let code = invoke_module(engine, &module, wasi)?;
     if code != 0 {
         bail!("compiler exited with status {code}");
     }
@@ -337,10 +378,14 @@ fn run_program(
 
 fn invoke(engine: &Engine, bytes: &[u8], wasi: WasiP1Ctx) -> Result<i32> {
     let module = Module::from_binary(engine, bytes)?;
+    invoke_module(engine, &module, wasi)
+}
+
+fn invoke_module(engine: &Engine, module: &Module, wasi: WasiP1Ctx) -> Result<i32> {
     let mut linker = Linker::new(engine);
     wasmtime_wasi::p1::add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
     let mut store = Store::new(engine, wasi);
-    let instance = linker.instantiate(&mut store, &module)?;
+    let instance = linker.instantiate(&mut store, module)?;
     let start = instance.get_typed_func::<(), ()>(&mut store, "_start")?;
     match start.call(&mut store, ()) {
         Ok(()) => Ok(0),
@@ -355,6 +400,10 @@ fn path_string(path: &Path) -> Result<String> {
     path.to_str()
         .map(str::to_owned)
         .ok_or_else(|| anyhow!("path is not valid UTF-8: {}", path.display()))
+}
+
+fn wasi_path(path: &Path) -> Result<String> {
+    Ok(path_string(path)?.replace('\\', "/"))
 }
 
 #[cfg(test)]
@@ -379,5 +428,13 @@ mod tests {
         assert_eq!(args[1], "run");
         let cli = Cli::try_parse_from(args).unwrap();
         assert!(matches!(cli.command, Commands::Run { .. }));
+    }
+
+    #[test]
+    fn wasi_paths_use_forward_slashes() {
+        assert_eq!(
+            wasi_path(Path::new(r"lib\prelude.moss")).unwrap(),
+            "lib/prelude.moss"
+        );
     }
 }

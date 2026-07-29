@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/moss-cli"]
+members = ["crates/moss-cli", "crates/moss-precompiler"]
 resolver = "2"
 
 [workspace.package]

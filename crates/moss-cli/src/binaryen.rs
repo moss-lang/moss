@@ -13,6 +13,7 @@ pub struct Opt {
 }
 
 impl Opt {
+    #[cfg(not(moss_embedded_compiler))]
     pub const fn new(optimize_level: c_int, shrink_level: c_int) -> Self {
         Self {
             optimize_level,
