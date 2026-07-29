@@ -59,10 +59,17 @@ assume Std {
   val asm_nstart: IntList;
   val asm_nlen: IntList;
 
+  # The index over the environment table: `en_head` is indexed by the key
+  # symbol plus one (so that `none` has a bucket too) and holds the newest
+  # row plus one; `en_link` chains the rest.
+  val en_head: IntList;
+  val en_link: IntList;
+
   context Lower =
     en_kind, en_recv, en_sym, en_a, en_b, en_next,
     nd_recv, nd_sym, nd_start, nd_len, nd_env,
-    asm_run, asm_len, asm_env, asm_nstart, asm_nlen;
+    asm_run, asm_len, asm_env, asm_nstart, asm_nlen,
+    en_head, en_link;
 
   assume Lower, ast::Ast, prog::Prog, types::Types, intern::Interner {
     # Environments.
@@ -73,23 +80,33 @@ assume Std {
     # same order are the same id. The back end caches a specialization on
     # its environment, and that only works if identical environments
     # compare equal — this is what makes them do so.
+    #
+    # Consing is a lookup like any other, so it goes through an index
+    # rather than over the rows: `en_head` buckets on the key symbol, and
+    # a row in a bucket needs no `sym` comparison at all. Scanning the
+    # whole table here cost a flat half-second on this compiler's own
+    # sources, which is the shape D51-era arenas invite and the reason
+    # selfhosting.md's "The idiom" now names indexing outright.
     fn env_push(env: Int, kind: Int, recv: Int, sym: Int, a: Int, b: Int): Int {
-      var e = zero;
-      while e.lt(en_kind.length()) {
+      let key = sym.add(one);
+      while en_head.length().le(key) {
+        en_head.push(zero);
+      }
+      var r = en_head.get(key);
+      while r.gt(zero) {
+        let e = r.sub(one);
         if en_next.get(e).eq(env) {
           if en_kind.get(e).eq(kind) {
-            if en_sym.get(e).eq(sym) {
-              if en_recv.get(e).eq(recv) {
-                if en_a.get(e).eq(a) {
-                  if en_b.get(e).eq(b) {
-                    return e;
-                  }
+            if en_recv.get(e).eq(recv) {
+              if en_a.get(e).eq(a) {
+                if en_b.get(e).eq(b) {
+                  return e;
                 }
               }
             }
           }
         }
-        e = e.add(one);
+        r = en_link.get(e);
       }
       en_kind.push(kind);
       en_recv.push(recv);
@@ -97,6 +114,8 @@ assume Std {
       en_a.push(a);
       en_b.push(b);
       en_next.push(env);
+      en_link.push(en_head.get(key));
+      en_head.set(key, en_kind.length());
       en_kind.length().sub(one)
     }
 

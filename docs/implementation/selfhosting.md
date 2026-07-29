@@ -143,28 +143,50 @@ What is left, none of it on the path to self-hosting:
 - **Diagnostics** are a code letter, the frame they came from, and a
   name — no line or column. The machinery for a real message is a string
   the compiler holds, which is [D48](../design/semantics.md).
-- **Speed.** Compiling its own 35 modules takes about ten seconds when
-  the compiler runs over the bootstrap's native `Std` shims and about two
-  and a half *minutes* over the Moss `Std` — a factor of fifteen, all
-  constant. It is not algorithmic: the front end alone is 0.04s against
-  0.39s. `lib/wasistd.moss` is where it goes. There are no literals
-  ([D4]), so `four()` is a function call, `eight()` is three of them, and
-  `Ints.get` reaches an element through `ints_addr`, `elem`, `raw` and
-  two of those constants — half a dozen Wasm calls for one array read, on
-  the hottest path a compiler of parallel arenas has. Inlining those by
-  hand inside the accessors is the obvious next thing.
+- **Speed.** One generation is 1.4s optimized, 12s raw. Where it goes,
+  measured by truncating the compiler after each phase and timing what is
+  left:
 
-  `wasm-opt -O3` does it mechanically in the meantime: one second of
-  optimizer takes a generation from two and a half minutes to seven
-  seconds, and shrinks the module from 1.2MB to 200KB. Nothing this back
-  end emits is *wrong*, just unoptimized — it emits straight-line code and
-  leaves every call a call. The tests run each generation through it,
-  which is the difference between a five-minute suite and a one-minute
-  one, but they always compare the **raw** output of a generation: raw
-  equality implies optimized equality and not the other way round, so
-  comparing optimized modules could hide a difference the optimizer
-  happens to erase. That the optimizer preserves what a compiler *does*
-  is itself asserted, by compiling one example with both.
+  | phase | |
+  |---|---|
+  | lex, parse, declare, link, and every requirement list | 0.03s |
+  | the scan pass | 0.39s |
+  | `declare_all` and the emit pass | 0.44s |
+  | writing 1.2MB to stdout | 0.46s |
+
+  The front end is not the problem and never was. **Writing the module
+  is now the largest single phase**, because `putchar` is the only output
+  `Std` has and it is one `fd_write` per byte — 1,189,270 syscalls for
+  one module. A bulk item (`write_all(IntList)`, or a buffered `putchar`
+  plus a flush) is a library change, not a compiler one, and takes a
+  generation to about 0.9s.
+
+  The two body passes are the next thing, and they are ~50/50 by
+  construction: a Wasm function index counts the imports first, so
+  indices cannot be handed out until every import is known, and the scan
+  pass exists to find that out. Emitting once into a buffer with
+  placeholders for call indices and patching them afterwards would
+  recover the 0.39s — at the cost of the invariant below, which has
+  already gone wrong twice.
+
+  What is left after that is the constant factor of `Std` written in
+  Moss, and it is real: there are no literals ([D4]), so `four()` is a
+  function call, `eight()` is three of them, and `Ints.get` reaches an
+  element through `ints_addr`, `elem`, `raw` and two of those constants —
+  half a dozen Wasm calls for one array read, on the hottest path a
+  compiler of parallel arenas has. Inlining those by hand inside the
+  accessors is what would close it.
+
+  `wasm-opt -O3` does that mechanically in the meantime: 0.7s of
+  optimizer takes a generation from 12s to 1.4s and shrinks the module
+  from 1.2MB to 200KB. Nothing this back end emits is *wrong*, just
+  unoptimized — it emits straight-line code and leaves every call a call.
+  The tests run each generation through it, but they always compare the
+  **raw** output of a generation: raw equality implies optimized equality
+  and not the other way round, so comparing optimized modules could hide
+  a difference the optimizer happens to erase. That the optimizer
+  preserves what a compiler *does* is itself asserted, by compiling one
+  example with both.
 
 Two invariants worth not breaking, both of them things that have gone
 wrong. The scan pass and the emit pass in `codegen.moss` must hand out
@@ -276,6 +298,42 @@ finishing inside ten minutes to 88 seconds — which is also what made it
 checkable against the bootstrap at all, and the first thing that check
 found was a bug in the comparison rather than in the compiler.
 
+That round fixed the front end and left the back end, whose cost was
+then written off as the constant factor of `Std` in Moss. It was not: as
+Wasm, three more tables had the same problem, and between them they were
+79% of a generation. The profile said so plainly — `val_slots` 27%,
+`env_find` 24%, `need_key_recv` 17%, `env_push` 7%.
+
+- `codegen.moss` **memoizes `val_slots`** on (symbol, environment).
+  Every call site asks what its callee takes as parameters, and the
+  answer is a pure function of that key: 21,684 walks over 68 million
+  requirements, for 755 distinct keys. It also drove almost every
+  `env_find` and `need_key_recv` call in the compiler, which is why three
+  profile entries fall to one fix.
+- `lower.moss` **indexes `env_push`**, which was consing environment
+  entries by scanning every row ever created — the one table the earlier
+  round missed, three functions above the memo it added.
+- `types.moss` **memoizes `width`**, asked of a local's type on every
+  load and every store, recomputed from the members each time.
+
+| | optimized | raw |
+|---|---|---|
+| before | 6.5s | 143s |
+| after | 1.4s | 12s |
+
+None of it needed a generic container or a hash: every key is a dense
+small integer, so all three are an array and a `link`. The output is
+byte-identical — the same module for `src/`, and the same module for all
+32 programs in `examples/` and `tests/wasi/` — which is the only check
+worth having for a change that is supposed to compute the same answer
+faster.
+
+The lesson the first round half-learned and this one finished: **a
+lookup is not a scan.** `asm_find` is still a linear scan over the
+`assume` memo, harmless at 31 rows and the fourth copy of an index
+nobody has factored out; if it ever holds a row per declaration it will
+be the next entry in this section.
+
 ## The idiom
 
 Every data structure here is a *typed arena*: parallel `IntList`s
@@ -346,10 +404,10 @@ source meant reading 243 of those.
   four self-hosted stage tests took 534 seconds interpreted and take 8.5
   compiled. `moss build src/main.moss` is likewise the way to actually run
   this compiler rather than `moss run`.
-- The suite is about a minute, half of it the two self-compiling
-  generations of the fixpoint test — each ten seconds of actual work,
-  seven seconds of Wasm, and one of `wasm-opt`. Without the optimizer the
-  same two generations are five minutes. See **Speed** above.
+- The suite is about forty-five seconds. The fixpoint test's two
+  generations are two seconds each — 1.4 of Wasm and 0.7 of `wasm-opt` —
+  and no longer the bulk of it. Without the optimizer the same two
+  generations are twenty-four seconds. See **Speed** above.
 - `prog.moss` reports a syntax error as a per-module flag; the position
   the parser recorded is not surfaced.
 - The two diagnostic code spaces are `prog.moss`'s `e_` constants (A–N)

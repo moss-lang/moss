@@ -144,6 +144,12 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_err_name = int_list();
   bind codegen::cg_err_at = int_list();
   bind codegen::cg_where = cell_int();
+  bind codegen::vs_env = int_list();
+  bind codegen::vs_start = int_list();
+  bind codegen::vs_len = int_list();
+  bind codegen::vs_link = int_list();
+  bind codegen::vs_head = int_list();
+  bind codegen::vs_pool = int_list();
 
   bind types::ty_kind = int_list();
   bind types::ty_sym = int_list();
@@ -156,6 +162,7 @@ functor Boot: Std -> Compiler {
   bind types::elab_memo = int_list();
   bind types::unit_syms = int_list();
   bind types::unit_codes = int_list();
+  bind types::ty_width = int_list();
 
   bind lower::en_kind = int_list();
   bind lower::en_recv = int_list();
@@ -173,4 +180,6 @@ functor Boot: Std -> Compiler {
   bind lower::asm_env = int_list();
   bind lower::asm_nstart = int_list();
   bind lower::asm_nlen = int_list();
+  bind lower::en_head = int_list();
+  bind lower::en_link = int_list();
 }

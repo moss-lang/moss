@@ -48,9 +48,14 @@ assume Std {
   val unit_syms: IntList;
   val unit_codes: IntList;
 
+  # `width` is asked for on every load and store of every local, and a
+  # type's layout cannot change once it is elaborated: one slot per type
+  # id, holding the width plus one so that zero means "not computed".
+  val ty_width: IntList;
+
   context Types = ty_kind, ty_sym, ty_mstart, ty_mlen, ty_mem,
     ty_unit_row, ty_never_row, ty_by_sym, elab_memo,
-    unit_syms, unit_codes;
+    unit_syms, unit_codes, ty_width;
 
   assume Types, ast::Ast, prog::Prog, intern::Interner {
     fn ty_count(): Int { ty_kind.length() }
@@ -278,8 +283,26 @@ assume Std {
       }
     }
 
-    # Layout, D59. How many Wasm scalars a value of this type occupies.
+    # Layout, D59. How many Wasm scalars a value of this type occupies —
+    # memoized, because the back end asks it of a local's type on every
+    # load and every store, and a type cannot change shape once it is
+    # elaborated.
     fn width(t: Int): Int {
+      while ty_width.length().le(t) {
+        ty_width.push(zero);
+      }
+      let seen = ty_width.get(t);
+      if seen.gt(zero) {
+        return seen.sub(one);
+      }
+      let w = width_of(t);
+      ty_width.set(t, w.add(one));
+      w
+    }
+
+    # The layout rule itself. Only `width` calls it, and only once per
+    # type.
+    fn width_of(t: Int): Int {
       let k = kind_of(t);
       if k.eq(kd_unit()) {
         return zero;

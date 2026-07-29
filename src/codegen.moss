@@ -125,12 +125,24 @@ assume Std {
   val cg_err_at: IntList;
   val cg_where: CellInt;
 
+  # Memoized `val_slots`: the val keys a (sym, env) specialization takes,
+  # as a run in `vs_pool`. `vs_head` is indexed by the symbol id and holds
+  # the newest row plus one (zero meaning none), `vs_link` chains the rest
+  # — the same index shape prog.moss uses for scopes.
+  val vs_env: IntList;
+  val vs_start: IntList;
+  val vs_len: IntList;
+  val vs_link: IntList;
+  val vs_head: IntList;
+  val vs_pool: IntList;
+
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
     pv_recv, pv_sym, pv_local, pv_top,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
-    cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name, cg_err_at, cg_where;
+    cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name, cg_err_at, cg_where,
+    vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -367,12 +379,77 @@ assume Std {
       false
     }
 
-    # The val keys a specialization takes as parameters: its own, plus —
-    # for every fn need bound to a provider — whatever that provider
-    # needs in turn. A bound provider runs in a frame that never mentions
-    # its values, which may be several below the bind, so they are
-    # threaded down.
-    fn val_slots(out: IntList, sym: Int, env: Int, depth: Int) {
+    # The memo row for this key, or none. Bucketed on the symbol, which
+    # is a dense id, so a hit is a chain of the environments that one
+    # symbol has been asked about — two of them, on this compiler.
+    fn vs_lookup(sym: Int, env: Int): Int {
+      if sym.ge(vs_head.length()) {
+        return ast::none();
+      }
+      var r = vs_head.get(sym);
+      while r.gt(zero) {
+        let row = r.sub(one);
+        if vs_env.get(row).eq(env) {
+          return row;
+        }
+        r = vs_link.get(row);
+      }
+      ast::none()
+    }
+
+    # One row, and its place in the by-symbol chain. Every insert goes
+    # through here, so the index cannot drift from the rows.
+    fn vs_store(sym: Int, env: Int, start: Int, len: Int): Int {
+      while vs_head.length().le(sym) {
+        vs_head.push(zero);
+      }
+      vs_env.push(env);
+      vs_start.push(start);
+      vs_len.push(len);
+      vs_link.push(vs_head.get(sym));
+      vs_head.set(sym, vs_env.length());
+      vs_env.length().sub(one)
+    }
+
+    # Append unless it is already there. What the walk produces is a list
+    # of first occurrences, and appending a child's whole run this way
+    # gives the same list the one shared `out` used to: both are
+    # first-occurrence order over the same depth-first sequence, which is
+    # what makes memoizing every frame — not just the outermost — sound.
+    fn vs_append(out: IntList, v: Int) {
+      if contains(out, v).not() {
+        out.push(v);
+      }
+    }
+
+    # The memo row for this key, computing it if it is not there yet. The
+    # answer is a pure function of (sym, env): a requirement list is fixed
+    # before the back end runs and an environment is hash-consed to an id,
+    # so two calls with one key cannot disagree. Recomputing it per call
+    # site was this compiler's running time — 21,684 walks over 68 million
+    # requirements for 755 distinct keys.
+    fn vs_row(sym: Int, env: Int, depth: Int): Int {
+      let hit = vs_lookup(sym, env);
+      if ast::is_some(hit) {
+        return hit;
+      }
+      let tmp = int_list();
+      val_slots_walk(tmp, sym, env, depth);
+      let start = vs_pool.length();
+      var i = zero;
+      while i.lt(tmp.length()) {
+        vs_pool.push(tmp.get(i));
+        i = i.add(one);
+      }
+      vs_store(sym, env, start, tmp.length())
+    }
+
+    # The walk itself: what one (sym, env) contributes. Its own passed
+    # needs, plus — for every fn need bound to a provider — whatever that
+    # provider needs in turn. A bound provider runs in a frame that never
+    # mentions its values, which may be several below the bind, so they
+    # are threaded down.
+    fn val_slots_walk(out: IntList, sym: Int, env: Int, depth: Int) {
       if depth.gt(hex(n2(), zero)) {
         cg_error(prog::e_deep(), prog::sym_name.get(sym));
         return ();
@@ -382,19 +459,36 @@ assume Std {
         let r = lower::need_recv_at(sym, i);
         let ns = lower::need_sym_at(sym, i);
         if passed_need(r, ns) {
-          if contains(out, ns).not() {
-            out.push(ns);
-          }
+          vs_append(out, ns);
         } else {
           let e = lower::env_find(
             env, lower::ek_fn(), need_key_recv(env, r), ns
           );
           if ast::is_some(e) {
             if ast::is_some(lower::env_a_of(e)) {
-              val_slots(out, lower::env_a_of(e), lower::env_b_of(e), depth.add(one));
+              let row = vs_row(
+                lower::env_a_of(e), lower::env_b_of(e), depth.add(one)
+              );
+              var j = zero;
+              while j.lt(vs_len.get(row)) {
+                vs_append(out, vs_pool.get(vs_start.get(row).add(j)));
+                j = j.add(one);
+              }
             }
           }
         }
+        i = i.add(one);
+      }
+    }
+
+    # The val keys a specialization takes as parameters, in the order the
+    # signature declares them — which is the calling convention, so the
+    # order is not free to change.
+    fn val_slots(out: IntList, sym: Int, env: Int, depth: Int) {
+      let row = vs_row(sym, env, depth);
+      var i = zero;
+      while i.lt(vs_len.get(row)) {
+        out.push(vs_pool.get(vs_start.get(row).add(i)));
         i = i.add(one);
       }
     }

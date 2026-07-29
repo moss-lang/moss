@@ -44,11 +44,11 @@ def wasmtime() -> str:
 
 
 def wasm_opt(module: bytes) -> bytes:
-    """The same program, twenty times faster to run.
+    """The same program, some eight times faster to run.
 
     A module this back end emits is straight-line and unoptimized, and
-    running the *compiler* as one costs about two and a half minutes per
-    generation; `wasm-opt -O3` costs a second and takes that to seven. It
+    running the *compiler* as one costs about twelve seconds per
+    generation; `wasm-opt -O3` costs 0.7s and takes that to 1.4. It
     is a semantics-preserving rewrite, so a module it produces answers
     exactly as the original does — asserted by
     `TestSelfHostedFixpoint.test_optimizing_the_compiler_does_not_change_it`,
@@ -668,9 +668,10 @@ class TestSelfHostedFixpoint(unittest.TestCase):
     depends on.
 
     Each generation *runs* through `wasm-opt -O3`, which takes a round from
-    two and a half minutes to seven seconds: this back end emits
-    straight-line unoptimized code, and almost all of the cost is the
-    constant factor of `Std` written in Moss. What is compared is still the
+    twelve seconds to 1.4: this back end emits straight-line unoptimized
+    code, and what is left after the memos of `docs/implementation/
+    selfhosting.md` is the constant factor of `Std` written in Moss —
+    every `Int` operation a call. What is compared is still the
     raw output of each generation, never the optimized one — raw equality
     implies optimized equality and not the other way round, so comparing
     optimized modules could hide a difference the optimizer happens to
