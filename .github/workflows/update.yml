@@ -15,13 +15,11 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - uses: actions/checkout@v6
       - run: nix flake update 2>&1 | tee nix-flake-update.txt
-      - run: nix develop -c bash -c 'rm bun.lock && bun install --lockfile-only'
       - uses: actions/upload-artifact@v7
         with:
           name: lockfiles
           path: |
             flake.lock
-            bun.lock
             nix-flake-update.txt
 
   check:
@@ -57,7 +55,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       - uses: peter-evans/create-pull-request@v8
         with:
-          commit-message: Update `flake.lock` and `bun.lock`
+          commit-message: Update `flake.lock`
           branch: update
-          title: Update `flake.lock` and `bun.lock`
+          title: Update `flake.lock`
           body: ${{ steps.body.outputs.body }}

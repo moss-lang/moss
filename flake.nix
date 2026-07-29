@@ -35,6 +35,23 @@
             PYTHONPATH=${source}/bootstrap exec python3 -m mossc "$cmd" "$@"
           '';
         };
+        vscode = pkgs.vscode-utils.buildVscodeExtension {
+          pname = "moss-vscode";
+          version = "0.0.0";
+          src = pkgs.lib.fileset.toSource {
+            root = ./packages/moss-vscode;
+            fileset = pkgs.lib.fileset.unions [
+              ./packages/moss-vscode/language-configuration.json
+              ./packages/moss-vscode/LICENSE
+              ./packages/moss-vscode/package.json
+              ./packages/moss-vscode/syntaxes
+            ];
+          };
+          sourceRoot = "source";
+          vscodeExtPublisher = "moss-lang";
+          vscodeExtName = "moss-vscode";
+          vscodeExtUniqueId = "moss-lang.moss-vscode";
+        };
       });
       checks = forAll (pkgs: {
         bootstrap =
@@ -52,14 +69,14 @@
               python3 -m unittest
               touch $out
             '';
+        vscode = self.packages.${pkgs.stdenv.hostPlatform.system}.vscode;
       });
       devShells = forAll (pkgs: {
         default = pkgs.mkShellNoCC {
           buildInputs = [
             pkgs.binaryen
-            pkgs.bun # For the VS Code extension.
-            pkgs.nodejs
             pkgs.python3
+            pkgs.vsce # For manually packaging the VS Code extension.
             pkgs.wasm-tools
             pkgs.wasmtime # The bootstrap's Wasm backend tests run it.
           ];
@@ -70,6 +87,11 @@
       });
       overlays.default = final: prev: {
         moss = self.packages.${prev.stdenv.hostPlatform.system}.default;
+        vscode-extensions = prev.vscode-extensions // {
+          moss-lang = (prev.vscode-extensions.moss-lang or { }) // {
+            moss-vscode = self.packages.${prev.stdenv.hostPlatform.system}.vscode;
+          };
+        };
       };
     };
 }
