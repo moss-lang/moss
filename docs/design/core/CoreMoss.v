@@ -5,8 +5,11 @@
 (* Core Moss, and states the metatheory of the paper's §4.  Everything is    *)
 (* definitional except where marked: Proposition 4.1 is proved, the paper's  *)
 (* Figure 1 example is encoded and *computed* to a value by the executable   *)
-(* interpreter (twice — once erased — as evidence for Proposition 4.3), and  *)
-(* the remaining theorems are stated precisely and Admitted.                 *)
+(* interpreter (twice — once erased — as evidence for Proposition 4.3).     *)
+(* Determinism, interpreter adequacy (both directions), phase separation,   *)
+(* and resolution decidability are machine-checked outright; soundness is   *)
+(* derived from a stated fuel-indexed safety invariant whose per-rule case  *)
+(* lemmas are the remaining admitted obligations (grep "FILL:").            *)
 (*                                                                           *)
 (* Deviations from the paper, all mechanization-level:                       *)
 (*                                                                           *)
@@ -34,8 +37,8 @@
 (*    as a shortcut, adequate under Moss's unique-nominal-per-instantiation  *)
 (*    idiom [D51] but unsound in the raw calculus — a provision bound at     *)
 (*    Slot[Int] would be found for a Slot[Char] receiver, and the This-      *)
-(*    substitution would lie.  Discovered while stating preservation; the    *)
-(*    correction belongs in the paper's figure too.                          *)
+(*    substitution would lie.  Discovered while stating preservation, and   *)
+(*    now corrected in the paper's figures as well.                          *)
 (* 7. Type binds are fresh: bind t = τ requires t not already in force.      *)
 (*    Surface Moss allows lexical shadowing [D25]; under substitution-based  *)
 (*    statics, shadowing an in-use abstract type symbol would conflate its   *)
@@ -49,7 +52,8 @@
 (*    application must agree with the context on the type symbols that       *)
 (*    requirement's own telescope mentions.  (Method items already carry     *)
 (*    their receiver and application, so they were immune — see (6).)  Also  *)
-(*    found while designing the preservation invariant.                      *)
+(*    found while designing the preservation invariant; now in the paper's   *)
+(*    S-Item rule as well.                                                    *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith.
@@ -2887,7 +2891,34 @@ Section SafetyCases.
   (* BEGIN:safety_step *)
   Lemma safety_step : SAFE Sg (S k).
   Proof.
-  Admitted. (* FILL:safety_step *)
+    assert (MAIN : forall Phi G e tau, has_ty Sg Phi G e tau ->
+      forall d ge g, ctx_grounded g Phi -> denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+               (interp (S k) Sg d ge e)).
+    { apply (@has_ty_ind_sub Sg
+        (fun Phi G e tau => forall d ge g,
+          ctx_grounded g Phi -> denv_agree Sg g (cA Phi) d ->
+          venv_agree Sg g G ge ->
+          safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+                   (interp (S k) Sg d ge e))).
+      - intros; eapply safety_case_var; eauto.
+      - intros; eapply safety_case_unit; eauto.
+      - intros; eapply safety_case_sub; eauto.
+      - intros; eapply safety_case_val; eauto.
+      - intros; eapply safety_case_tag; eauto.
+      - intros; eapply safety_case_need; eauto.
+      - intros; eapply safety_case_call; eauto.
+      - intros; eapply safety_case_meth; eauto.
+      - intros; eapply safety_case_match; eauto.
+      - intros; eapply safety_case_let; eauto.
+      - intros; eapply safety_case_bindty; eauto.
+      - intros; eapply safety_case_bindval; eauto.
+      - intros; eapply safety_case_bindfn; eauto.
+      - intros; eapply safety_case_bindmth; eauto. }
+    intros Phi G e tau d ge g Hty Hg Hd Hv.
+    exact (MAIN _ _ _ _ Hty _ _ _ Hg Hd Hv).
+  Qed.
   (* END:safety_step *)
 
 End SafetyCases.
@@ -2900,7 +2931,13 @@ End SafetyCases.
 (* BEGIN:safety *)
 Theorem safety : forall Sg, wf_gsig Sg -> forall fuel, SAFE Sg fuel.
 Proof.
-Admitted. (* FILL:safety *)
+  intros Sg WF fuel.
+  induction fuel using lt_wf_ind.
+  destruct fuel as [| k].
+  - intros Phi G e tau d ge g _ _ _ _. exact I.
+  - apply safety_step; [exact WF |].
+    intros j Hj. apply H. apply Nat.lt_succ_r. exact Hj.
+Qed.
 (* END:safety *)
 
 (* ---- Theorem 4.2 (soundness), at the program level. ---------------------

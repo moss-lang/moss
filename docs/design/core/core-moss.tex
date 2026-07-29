@@ -38,9 +38,10 @@
 (revision 9), into a core calculus.
 Decision tags such as [D1] refer to entries in that log. The definitions
 and the metatheoretical statements of \S\ref{sec:meta} are mechanized in
-Rocq in \texttt{CoreMoss.v} alongside this document; the proofs of
-Theorem~\ref{thm:sound} and Proposition~\ref{prop:phase} remain admitted
-there.}}
+Rocq in \texttt{CoreMoss.v} alongside this document; everything in
+\S\ref{sec:meta} except Theorem~\ref{thm:sound} is machine-checked, and
+Theorem~\ref{thm:sound} is itself derived there from a stated safety
+invariant whose per-rule case lemmas remain admitted.}}
 \date{July 28, 2026}
 
 \begin{document}
@@ -678,12 +679,18 @@ well-formed program yields $\unitv$.
 The proof is a routine induction on the evaluation derivation with
 inversion on typing, with a substitution lemma for $\sigma\thh$ and a
 weakening lemma for $\delta \circ \varsigma$. The definitions of
-\S\ref{sec:calculus} and the statement above are mechanized in Rocq
-(\texttt{CoreMoss.v}, checked in CI), where the calculus additionally
-carries an executable fueled interpreter: the program of
-Figure~\ref{fig:example}, encoded in the core, computes to $\unitv$ by
-\texttt{vm\_compute}, and Proposition~\ref{prop:nosearch} is proved.
-The proof of the theorem itself remains admitted there. Its empirical
+\S\ref{sec:calculus} and all of the statements here are mechanized in
+Rocq (\texttt{CoreMoss.v}, checked in CI), which additionally carries an
+executable fueled interpreter: the program of Figure~\ref{fig:example},
+encoded in the core, computes to $\unitv$ by \texttt{vm\_compute}.
+Proposition~\ref{prop:nosearch}, determinism of evaluation, adequacy of
+the interpreter for the big-step relation in both directions, and
+Proposition~\ref{prop:phase} are machine-checked outright.  The theorem
+above is derived in the mechanization from a single stated safety
+invariant --- fuel-indexed, with a ground instantiation of the abstract
+type symbols carried per closure --- whose per-typing-rule case lemmas
+remain admitted; designing that invariant is what surfaced the three
+repairs below. Its empirical
 counterpart is blunter: the self-hosted compiler elaborates and runs
 its own 19-module source under exactly these rules, to a byte-identical
 fixpoint.
