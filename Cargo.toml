@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/moss-cli", "crates/moss-precompiler"]
+members = ["crates/moss-cli"]
 resolver = "2"
 
 [workspace.package]
@@ -11,8 +11,6 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 libc = "0.2"
 sha2 = "0.10"
-wasmtime = "45"
-wasmtime-wasi = "45"
 
 [profile.release-with-debug]
 inherits = "release"

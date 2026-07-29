@@ -1,4 +1,5 @@
 mod binaryen;
+mod wasmtime;
 
 use std::{
     env, fs,
@@ -12,10 +13,7 @@ use binaryen::{optimize_wasm, parse_opt, Opt};
 use clap::{Parser, Subcommand, ValueEnum};
 #[cfg(not(moss_embedded_compiler))]
 use sha2::{Digest, Sha256};
-use wasmtime::{Engine, Linker, Module, Store};
-use wasmtime_wasi::{
-    p1::WasiP1Ctx, p2::pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtxBuilder,
-};
+use wasmtime::{Access, Engine, Module, Wasi};
 
 #[cfg(not(moss_embedded_compiler))]
 const COMPILER_OPT: Opt = Opt::new(3, 0);
@@ -86,7 +84,7 @@ fn main() -> ExitCode {
 fn real_main() -> Result<i32> {
     let cli = Cli::parse_from(normalized_args());
     let root = repository_root()?;
-    let engine = Engine::default();
+    let engine = Engine::new()?;
 
     match cli.command {
         Commands::Run { file, args } => {
@@ -333,15 +331,12 @@ fn run_wasi_capture(
     compiler: &CompilerModule,
     argv: &[String],
 ) -> Result<Vec<u8>> {
-    let pipe = MemoryOutputPipe::new(64 * 1024 * 1024);
-    let wasi = WasiCtxBuilder::new()
-        .args(argv)
-        .preopened_dir(filesystem_root, ".", DirPerms::READ, FilePerms::READ)?
-        .stdout(pipe.clone())
-        .inherit_stderr()
-        .build_p1();
+    let mut wasi = Wasi::new(argv)?;
+    wasi.preopen(filesystem_root, ".", Access::Read)?;
+    wasi.inherit_stderr();
+    let output = wasi.capture_stdout();
     let module = match compiler {
-        CompilerModule::Wasm(bytes) => Module::from_binary(engine, bytes)?,
+        CompilerModule::Wasm(bytes) => Module::new(engine, bytes)?,
         #[cfg(moss_embedded_compiler)]
         CompilerModule::Precompiled(bytes) => {
             // The package build generated these bytes with this exact Wasmtime
@@ -349,11 +344,11 @@ fn run_wasi_capture(
             unsafe { Module::deserialize(engine, bytes)? }
         }
     };
-    let code = invoke_module(engine, &module, wasi)?;
+    let code = wasmtime::run(engine, &module, wasi)?;
     if code != 0 {
         bail!("compiler exited with status {code}");
     }
-    Ok(pipe.contents().to_vec())
+    Ok(output.into_bytes())
 }
 
 fn run_program(
@@ -366,34 +361,13 @@ fn run_program(
     let mut argv = vec![path_string(file)?];
     argv.extend_from_slice(args);
     let cwd = env::current_dir()?;
-    let wasi = WasiCtxBuilder::new()
-        .args(&argv)
-        .preopened_dir(&cwd, ".", DirPerms::all(), FilePerms::all())?
-        .inherit_stdin()
-        .inherit_stdout()
-        .inherit_stderr()
-        .build_p1();
-    invoke(engine, bytes, wasi)
-}
-
-fn invoke(engine: &Engine, bytes: &[u8], wasi: WasiP1Ctx) -> Result<i32> {
-    let module = Module::from_binary(engine, bytes)?;
-    invoke_module(engine, &module, wasi)
-}
-
-fn invoke_module(engine: &Engine, module: &Module, wasi: WasiP1Ctx) -> Result<i32> {
-    let mut linker = Linker::new(engine);
-    wasmtime_wasi::p1::add_to_linker_sync(&mut linker, |ctx: &mut WasiP1Ctx| ctx)?;
-    let mut store = Store::new(engine, wasi);
-    let instance = linker.instantiate(&mut store, module)?;
-    let start = instance.get_typed_func::<(), ()>(&mut store, "_start")?;
-    match start.call(&mut store, ()) {
-        Ok(()) => Ok(0),
-        Err(error) => match error.downcast_ref::<wasmtime_wasi::I32Exit>() {
-            Some(exit) => Ok(exit.0),
-            None => Err(error.into()),
-        },
-    }
+    let mut wasi = Wasi::new(&argv)?;
+    wasi.preopen(&cwd, ".", Access::ReadWrite)?;
+    wasi.inherit_stdin();
+    wasi.inherit_stdout();
+    wasi.inherit_stderr();
+    let module = Module::new(engine, bytes)?;
+    wasmtime::run(engine, &module, wasi)
 }
 
 fn path_string(path: &Path) -> Result<String> {

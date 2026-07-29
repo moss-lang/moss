@@ -18,9 +18,10 @@ echo use flake > .envrc && direnv allow
 ```
 
 The dev shell puts the [`moss`](bin/moss) development launcher on your `PATH`.
-It builds a native driver that embeds
-[Wasmtime](https://wasmtime.dev/) and links
-[Binaryen](https://github.com/WebAssembly/binaryen). Python 3.12+ is needed
+It builds a native driver that links
+[Wasmtime](https://wasmtime.dev/) and
+[Binaryen](https://github.com/WebAssembly/binaryen), both from Nix. Python
+3.12+ is needed
 only to bootstrap a changed self-hosted compiler in a source checkout; the
 packaged compiler already contains that result.
 
