@@ -189,12 +189,11 @@ booleans, loops, and mutation are all omitted here and reconstructed in
 \begin{figure}[t]
 \[
 \begin{array}{llcl}
-\text{receiver keys} & \kappa & ::= & N \mid t \\[2pt]
 \text{nominal refs} & \nu & ::= & N[\theta] \\
 \text{types} & \tau & ::= & \unitv \mid t \mid \This \mid
   \nu_1 \vee \cdots \vee \nu_k \quad (k \ge 0) \\
 \text{applications} & \theta & ::= & [\,\ov{t = \tau}\,] \\[4pt]
-\text{items} & \iota & ::= & t \mid v \mid f \mid \kappa.m[\theta] \\
+\text{items} & \iota & ::= & t \mid v \mid f \mid \tau.m[\theta] \\
 \text{telescopes} & \Delta & ::= & \emptytel \mid \Delta, \iota \\[4pt]
 \text{declarations} & d & ::= &
     \kw{type}\;t
@@ -213,7 +212,7 @@ booleans, loops, and mutation are all omitted here and reconstructed in
   \mid \kw{let}\;x = e;\; e
   \mid \kw{bind}\;\beta;\; e \\[2pt]
 \text{binds} & \beta & ::= &
-    t = \tau \mid v = e \mid f = f' \mid \kappa.m[\theta] = f' \\[4pt]
+    t = \tau \mid v = e \mid f = f' \mid \tau.m[\theta] = f' \\[4pt]
 \text{programs} & P & ::= & \ov{d}
   \qquad\text{with } \kw{fn}\;\ksf{main}() : \unitv\;\{\,e\,\} \text{ at the top level} \\[4pt]
 \text{values} & w & ::= & \unitv \mid N\,w \\
@@ -306,7 +305,8 @@ calls, and method provisions---reuse this one judgment.
   {\Sigma;\Phi \vdash \theta \entails \Delta, t}
 
 \inferrule[S-Item]{\Sigma;\Phi \vdash \theta \entails \Delta \\
-  \iota \text{ not a type symbol} \\ \thh\,\iota \in \Phi}
+  \iota \text{ not a type symbol} \\ \thh\,\iota \in \Phi \\
+  \sigma(\thh\,t) = \sigma(t) \;\;(\forall t \in \ksf{deps}(\iota))}
   {\Sigma;\Phi \vdash \theta \entails \Delta, \iota}
 \end{mathpar}
 
@@ -334,8 +334,13 @@ calls, and method provisions---reuse this one judgment.
 \end{mathpar}
 \caption{Satisfaction, type formation, and subtyping. In
 \textsc{S-Inst}/\textsc{S-Pass}/\textsc{S-Item}, $\dom(\theta)$ must be
-contained in the type items of the full telescope. $\sigma$ is the
-substitution component of $\Phi$.}
+contained in the type items of the full telescope; $\sigma$ is the
+substitution component of $\Phi$; $\ksf{deps}(\iota)$ is the set of type
+symbols in $\iota$'s own telescope. \textsc{S-Item}'s last premise is
+\emph{coherence}: a val or fn item names no types, so without it nothing
+stops $f[T{=}\ksf{Bool}]$ from being satisfied by an ambient $v : T$ that
+was provided under $\kw{bind}\;T{=}\ksf{Int}$. (Found while mechanizing
+preservation; method items carry their types and need no such premise.)}
 \label{fig:statics-aux}
 \end{figure}
 
@@ -371,8 +376,7 @@ substitution component of $\Phi$.}
 
 \inferrule[T-Meth]{\Sigma(m) = \ksf{mth}[\Delta](\ov{x{:}\tau} \to \tau_r) \\
   \Sigma;\Phi;\Gamma \vdash e_0 : \tau_0 \\
-  \head(\sigma\tau_0) = \kappa \\
-  \kappa.m[\theta] \in \Phi \\
+  \tau'.m[\theta] \in \Phi \\ \sigma\tau' = \sigma\tau_0 \\
   \rho = \sigma \circ \thh \circ \subst{\This \mapsto \sigma\tau_0} \\
   \Sigma;\Phi;\Gamma \vdash e_i : \rho\tau_i \quad (\forall i)}
   {\Sigma;\Phi;\Gamma \vdash e_0.m(\ov{e}) : \rho\tau_r}
@@ -388,9 +392,12 @@ substitution component of $\Phi$.}
   \Sigma;\Phi;\Gamma, x : \tau_1 \vdash e_2 : \tau}
   {\Sigma;\Phi;\Gamma \vdash \kw{let}\;x = e_1;\;e_2 : \tau}
 \end{mathpar}
-\caption{Expression typing. In \textsc{T-Meth}, $\head(N[\theta]) = N$
-and $\head(t) = t$; the rule carries the side condition that the
-provision at the key $(\kappa, m)$ is unique in $\Phi$. In
+\caption{Expression typing. \textsc{T-Meth} carries the side condition
+that the provision at the key $(\sigma\tau_0, m)$ --- the receiver's
+\emph{type}, exactly as \S\ref{sec:intro} says, not merely its head ---
+is unique in $\Phi$; keying on the head alone is adequate under Moss's
+unique-nominal-per-instantiation idiom [D51] but unsound in the raw
+calculus, a repair owed to the mechanization. In
 \textsc{T-Match}, a nominal reference is identified with its singleton
 union, arms are in bijection with the heads $N_1, \ldots, N_k$, and $k =
 0$ types $\kw{match}\;e_0\;\{\}$ at any $\tau$.}
@@ -401,7 +408,7 @@ union, arms are in bijection with the heads $N_1, \ldots, N_k$, and $k =
 \centering
 \fbox{$\Sigma;\Phi;\Gamma \vdash e : \tau$ (continued: $\kw{bind}$)}
 \begin{mathpar}
-\inferrule[T-BindTy]{\Sigma(t) = \ksf{type} \\
+\inferrule[T-BindTy]{\Sigma(t) = \ksf{type} \\ t \notin \Phi \\
   \Sigma;\Phi \vdash \tau' \wf \\
   \Sigma;\langle A \cup \{t\};\, \sigma[t \mapsto \sigma\tau'] \rangle;\Gamma \vdash e : \tau}
   {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash \kw{bind}\;t = \tau';\;e : \tau}
@@ -421,17 +428,17 @@ union, arms are in bijection with the heads $N_1, \ldots, N_k$, and $k =
   {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash \kw{bind}\;f = f';\;e : \tau}
 
 \inferrule[T-BindMeth]{\Sigma(m) = \ksf{mth}[\Delta_m](\ov{x{:}\tau} \to \tau_r) \\
-  \Sigma;\Phi \vdash \kappa \wf \\
+  \Sigma;\Phi \vdash \tau_\kappa \wf \\
   \Sigma;\Phi \vdash \theta \entails \Delta_m \\
-  \rho = \sigma \circ \thh \circ \subst{\This \mapsto \sigma\kappa} \\
+  \rho = \sigma \circ \thh \circ \subst{\This \mapsto \sigma\tau_\kappa} \\
   \Sigma(f') = \ksf{fn}[\Delta']\,
     ((y_0{:}\tau_0', \ov{y{:}\tau'}) \to \tau')\,\{e_b\} \\
   \Sigma;\Phi \vdash \emptyset \entails \Delta' \\
-  \sigma\tau_0' = \sigma\kappa \\
+  \sigma\tau_0' = \sigma\tau_\kappa \\
   \sigma\ov{\tau'} = \rho\ov{\tau} \\ \sigma\tau' = \rho\tau_r \\
-  \Sigma;\langle A \cup \{\kappa.m[\theta]\}; \sigma \rangle;\Gamma \vdash e : \tau}
+  \Sigma;\langle A \cup \{\tau_\kappa.m[\theta]\}; \sigma \rangle;\Gamma \vdash e : \tau}
   {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash
-    \kw{bind}\;\kappa.m[\theta] = f';\;e : \tau}
+    \kw{bind}\;\tau_\kappa.m[\theta] = f';\;e : \tau}
 \end{mathpar}
 \caption{Typing the three kinds of provision (method binds shown
 separately from plain fn binds). $S$ ranges over signatures
@@ -460,9 +467,9 @@ not a unification opportunity, if abstract symbols remain unmatched
 
 \inferrule[W-Meth]{\Sigma;\Delta_0 \vdash \Delta \wf \\
   \Sigma(m) = \ksf{mth}[\Delta_m]\,S \\
-  \Sigma;\Phi_{\Delta} \vdash \kappa \wf \\
+  \Sigma;\Phi_{\Delta} \vdash \tau_\kappa \wf \\
   \Sigma;\Phi_{\Delta} \vdash \theta \entails \Delta_m}
-  {\Sigma;\Delta_0 \vdash \Delta, \kappa.m[\theta] \wf}
+  {\Sigma;\Delta_0 \vdash \Delta, \tau_\kappa.m[\theta] \wf}
 \end{mathpar}
 
 \textbf{Declarations}\quad \fbox{$\Sigma;\Delta_0 \vdash d \wf$}
@@ -520,8 +527,9 @@ on the spot (\textsc{T-Call}); the premise $\theta \entails \Delta$ is
 where implicit parameterization is discharged, and $\sigma\thh$ is the
 monomorphizing substitution.
 \item \emph{Dispatch is directed.} \textsc{T-Meth} forward-infers the
-receiver's type, takes its head as the key, and demands the unique
-provision at $(\kappa, m)$. The provision's own bracket bindings $\theta$
+receiver's type and demands the unique provision at $(\sigma\tau_0, m)$
+--- the receiver's type itself, compared after the substitutions in
+force. The provision's own bracket bindings $\theta$
 are what interpret the method's signature at the call site---ergonomics
 ride along with the provision instead of being discovered [D36].
 \item \emph{Injection is the only subtyping.} \textsc{Sub-Inj} lets a
@@ -615,9 +623,9 @@ Figure~\ref{fig:dynamics} gives the rules.
     \vdash e \Eval w}
   {\delta;\gamma \vdash \kw{bind}\;f =^{\varsigma} f';\;e \Eval w}
 
-\inferrule[E-BindMeth]{\delta[\kappa.m[\theta] \mapsto
+\inferrule[E-BindMeth]{\delta[\tau_\kappa.m[\theta] \mapsto
     \clo{f'}{\delta \circ \varsigma}];\gamma \vdash e \Eval w}
-  {\delta;\gamma \vdash \kw{bind}\;\kappa.m[\theta] =^{\varsigma} f';\;e \Eval w}
+  {\delta;\gamma \vdash \kw{bind}\;\tau_\kappa.m[\theta] =^{\varsigma} f';\;e \Eval w}
 \end{mathpar}
 \caption{Big-step dynamics of elaborated \textsc{Core Moss}. A program
 runs as $\emptyset;\emptyset \vdash e_{\ksf{main}} \Eval \unitv$. Note
@@ -691,6 +699,25 @@ at run time. Hence a whole-program specializer may resolve every
 type binding, leaving val provisions as the only context crossing
 runtime edges [D2].
 \end{proposition}
+
+\paragraph{What mechanizing the proofs caught.}
+Three repairs, all surfaced while designing the preservation invariant,
+are already folded into the figures above. (i)~Dispatch must key on the
+receiver's \emph{type}: an earlier draft of \textsc{T-Meth} keyed
+provisions by the receiver's head, which is adequate under Moss's
+unique-nominal-per-instantiation idiom [D51] but lets a provision bound
+at $\smallcode{Slot[Int]}$ serve a $\smallcode{Slot[Char]}$ receiver,
+the $\This$-substitution lying about the result.
+(ii)~Satisfaction needs \emph{coherence} (\textsc{S-Item}'s last
+premise): a val or fn requirement names no types, so nothing else
+prevents $f[T{=}\ksf{Bool}]$ from being satisfied by an ambient
+$v : T$ that was provided under $\kw{bind}\;T{=}\ksf{Int}$.
+(iii)~Type binds must be fresh (\textsc{T-BindTy}'s $t \notin \Phi$):
+under substitution-based statics, shadowing an in-force type symbol
+conflates its two generations; surface Moss's lexical shadowing [D25]
+is instead the province of environment-passing semantics, and real
+binds provide symbols not yet in force, so the restriction does not
+bite the corpus.
 
 Proposition~\ref{prop:phase} is the hypothesis behind the compilation
 pipeline: the monomorphizing WebAssembly backend is partial evaluation

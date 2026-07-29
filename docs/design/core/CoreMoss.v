@@ -1845,10 +1845,20 @@ Admitted. (* FILL:eqb_eq *)
 (* A successful denv lookup returns one of the pairs, with the key equal to
    the query.  Hint: induction on d; item_eqb_eq. *)
 (* BEGIN:lookup_denv_in *)
+(* A successful denv lookup returns one of the pairs, with the key equal to
+   the query.  Hint: induction on d; item_eqb_eq. *)
+(* BEGIN:lookup_denv_in *)
 Lemma lookup_denv_in : forall i d en,
   lookup_denv i d = Some en -> In (i, en) d.
 Proof.
-Admitted. (* FILL:lookup_denv_in *)
+  induction d as [| [i' en'] r IH]; intros en H.
+  - simpl in H. discriminate.
+  - simpl in H. destruct (item_eqb i i') eqn:Heq.
+    + apply item_eqb_eq in Heq. subst. injection H as ->.
+      left. reflexivity.
+    + right. apply IH. exact H.
+Qed.
+(* END:lookup_denv_in *)
 (* END:lookup_denv_in *)
 
 (* Looking a symbol up under a mapped substitution.
@@ -1881,7 +1891,16 @@ Lemma absorbs_all : forall g s,
   absorbs g s ->
   forall tau, app_subst g (app_subst s tau) = app_subst g tau.
 Proof.
-Admitted. (* FILL:absorbs_all *)
+  intros g s Hab tau.
+  induction tau using ty_ind'; simpl; try reflexivity.
+  - destruct (lookup_subst t s) as [tau'|] eqn:E; [|reflexivity].
+    rewrite (Hab t tau' E). reflexivity.
+  - f_equal. induction H; simpl; [reflexivity|].
+    rewrite IHForall. destruct x as [t0 tau0]; simpl in *.
+    rewrite H. reflexivity.
+  - f_equal. induction H; simpl; [reflexivity|].
+    rewrite H, IHForall. reflexivity.
+Qed.
 (* END:absorbs_all *)
 
 (* Closed types are fixed by substitution; grounding a covered type closes
@@ -1909,7 +1928,27 @@ Lemma app_subst_frees_agree : forall g1 g2 tau,
              lookup_subst t g1 = lookup_subst t g2) ->
   app_subst g1 tau = app_subst g2 tau.
 Proof.
-Admitted. (* FILL:frees_agree *)
+  intros g1 g2 tau. revert g1 g2.
+  induction tau using ty_ind'; intros g1 g2 Hag.
+  - reflexivity.
+  - simpl. rewrite (Hag t); [reflexivity | simpl; left; reflexivity].
+  - rewrite !app_subst_nom. f_equal.
+    revert Hag. induction H as [|p r Hp Hr IH]; intros Hag.
+    + reflexivity.
+    + simpl. f_equal.
+      * f_equal. apply Hp. intros t Ht. apply Hag. simpl.
+        apply in_or_app. left. exact Ht.
+      * apply IH. intros t Ht. apply Hag. simpl.
+        apply in_or_app. right. exact Ht.
+  - rewrite !app_subst_union. f_equal.
+    revert Hag. induction H as [|m r Hm Hr IH]; intros Hag.
+    + reflexivity.
+    + simpl. f_equal.
+      * apply Hm. intros t Ht. apply Hag. simpl.
+        apply in_or_app. left. exact Ht.
+      * apply IH. intros t Ht. apply Hag. simpl.
+        apply in_or_app. right. exact Ht.
+Qed.
 (* END:frees_agree *)
 
 (* --- Value-typing inversions and subtyping. -------------------------------- *)
@@ -1919,19 +1958,24 @@ Admitted. (* FILL:frees_agree *)
 (* BEGIN:vty_inv *)
 Lemma vty_unit_inv : forall Sg w, vty Sg w TUnit -> w = VUnit.
 Proof.
-Admitted. (* FILL:vty_inv *)
+  intros Sg w H. inversion H; subst; reflexivity.
+Qed.
 
 Lemma vty_union_inv : forall Sg w ms,
   vty Sg w (TUnion ms) -> exists tau', In tau' ms /\ vty Sg w tau'.
 Proof.
-Admitted. (* FILL:vty_inv *)
+  intros Sg w ms H. inversion H; subst.
+  exists tau'. split; assumption.
+Qed.
 
 Lemma vty_nom_inv : forall Sg w n th,
   vty Sg w (TNom n th) ->
   exists D taup w', w = VTag n w' /\ g_tag Sg n = Some (D, taup)
                     /\ vty Sg w' (app_subst th taup).
 Proof.
-Admitted. (* FILL:vty_inv *)
+  intros Sg w n th H. inversion H; subst.
+  exists D, taup, w0. split; [reflexivity | split; assumption].
+Qed.
 (* END:vty_inv *)
 
 (* Subtyping preserves value typing under any grounding of the context.
@@ -1944,24 +1988,68 @@ Lemma vty_subty : forall Sg Phi g tau' tau w,
   vty Sg w (app_subst g (app_subst (cS Phi) tau')) ->
   vty Sg w (app_subst g (app_subst (cS Phi) tau)).
 Proof.
-Admitted. (* FILL:vty_subty *)
+  intros Sg Phi g tau' tau w Hsub Hv.
+  destruct Hsub as [t1 t2 Heq | n th ms tauw Hin Heq].
+  - unfold ty_eq in Heq. rewrite <- Heq. exact Hv.
+  - unfold ty_eq in Heq.
+    rewrite app_subst_union, app_subst_union.
+    apply VtyInj with (tau' := app_subst g (app_subst (cS Phi) tauw)).
+    + rewrite <- Heq. exact Hv.
+    + apply in_map. apply in_map. exact Hin.
+Qed.
 (* END:vty_subty *)
 
 (* --- Availability gives syntactic membership for symbol-only items. -------
    Hint: avail is an existsb; app_subst_item preserves the constructor, so
    the witness must be the same symbol-only item; item_eqb_eq. *)
 (* BEGIN:avail_in *)
+(* BEGIN:avail_in *)
+Lemma avail_in_aux1 : forall Phi i, avail Phi i ->
+  exists i0, In i0 (cA Phi) /\ item_subst_eqb (cS Phi) i0 i = true.
+Proof.
+  intros Phi i H.
+  unfold avail, avail_b in H.
+  apply existsb_exists in H.
+  destruct H as [i0 [Hin Heq]].
+  exists i0. split; assumption.
+Qed.
+
 Lemma avail_ty_in : forall Phi t, avail Phi (ITy t) -> In (ITy t) (cA Phi).
 Proof.
-Admitted. (* FILL:avail_in *)
+  intros Phi t H.
+  apply avail_in_aux1 in H.
+  destruct H as [i0 [Hin Heq]].
+  unfold item_subst_eqb in Heq.
+  apply item_eqb_eq in Heq.
+  destruct i0; simpl in Heq; try discriminate.
+  simpl in Heq. inversion Heq; subst.
+  exact Hin.
+Qed.
 
 Lemma avail_val_in : forall Phi v, avail Phi (IVal v) -> In (IVal v) (cA Phi).
 Proof.
-Admitted. (* FILL:avail_in *)
+  intros Phi v H.
+  apply avail_in_aux1 in H.
+  destruct H as [i0 [Hin Heq]].
+  unfold item_subst_eqb in Heq.
+  apply item_eqb_eq in Heq.
+  destruct i0; simpl in Heq; try discriminate.
+  simpl in Heq. inversion Heq; subst.
+  exact Hin.
+Qed.
 
 Lemma avail_fn_in : forall Phi f, avail Phi (IFn f) -> In (IFn f) (cA Phi).
 Proof.
-Admitted. (* FILL:avail_in *)
+  intros Phi f H.
+  apply avail_in_aux1 in H.
+  destruct H as [i0 [Hin Heq]].
+  unfold item_subst_eqb in Heq.
+  apply item_eqb_eq in Heq.
+  destruct i0; simpl in Heq; try discriminate.
+  simpl in Heq. inversion Heq; subst.
+  exact Hin.
+Qed.
+(* END:avail_in *)
 (* END:avail_in *)
 
 (* --- Variable environments. ------------------------------------------------ *)
@@ -1974,13 +2062,39 @@ Lemma venv_agree_cons : forall Sg g G ge x tau w,
   vty Sg w (app_subst g tau) ->
   venv_agree Sg g ((x, tau) :: G) ((x, w) :: ge).
 Proof.
-Admitted. (* FILL:venv_agree_lemmas *)
+  intros Sg g G ge x tau w HG Hw.
+  unfold venv_agree in *. intros y tauy Hy.
+  simpl in Hy. simpl.
+  destruct (Nat.eqb y x) eqn:E.
+  - inversion Hy; subst. exists w. split; [reflexivity | exact Hw].
+  - apply HG. exact Hy.
+Qed.
+
+(* Shifted form of venv_agree_body: the two combines share the start index. *)
+Lemma venv_agree_lemmas_aux1 : forall Sg g ws taus,
+  Forall2 (fun w tau => vty Sg w (app_subst g tau)) ws taus ->
+  forall s x tau,
+    lookup_tenv x (combine (seq s (length taus)) taus) = Some tau ->
+    exists w, lookup_venv x (combine (seq s (length ws)) ws) = Some w
+              /\ vty Sg w (app_subst g tau).
+Proof.
+  intros Sg g ws taus H.
+  induction H as [| w0 tau0 ws' taus' Hhd Htl IH]; intros s x tau Hx.
+  - simpl in Hx. discriminate.
+  - simpl in Hx. simpl.
+    destruct (Nat.eqb x s) eqn:E.
+    + inversion Hx; subst. exists w0. split; [reflexivity | exact Hhd].
+    + apply IH. exact Hx.
+Qed.
 
 Lemma venv_agree_body : forall Sg g ws taus,
   Forall2 (fun w tau => vty Sg w (app_subst g tau)) ws taus ->
   venv_agree Sg g (combine (seq 0 (length taus)) taus) (mk_venv ws).
 Proof.
-Admitted. (* FILL:venv_agree_lemmas *)
+  intros Sg g ws taus H.
+  unfold venv_agree, mk_venv. intros x tau Hx.
+  eapply venv_agree_lemmas_aux1; eauto.
+Qed.
 (* END:venv_agree_lemmas *)
 
 (* --- Regularity: well-formed types only mention in-force symbols. ---------- *)
@@ -2004,16 +2118,68 @@ Lemma wf_ty_ind' : forall (Sg : gsig) (Phi : ctx) (P : ty -> Prop),
       P (TUnion ms)) ->
   forall tau, wf_ty Sg Phi tau -> P tau.
 Proof.
-Admitted. (* FILL:wf_ty_ind *)
+  intros Sg Phi P HU HA HN HUn.
+  fix IH 2.
+  intros tau W.
+  destruct W as [ | t Hav | n D tau0 th Hg Hsat Hall | ms Hall Hnom Hnd ].
+  - exact HU.
+  - apply HA; exact Hav.
+  - apply (HN n D tau0 th Hg Hsat Hall).
+    clear - IH Hall.
+    induction Hall; constructor; [apply IH; assumption | assumption].
+  - apply (HUn ms Hall); [ | exact Hnom | exact Hnd ].
+    clear - IH Hall.
+    induction Hall; constructor; [apply IH; assumption | assumption].
+Qed.
 (* END:wf_ty_ind *)
 
 (* Hint: wf_ty_ind'; the TAbs case is avail_ty_in; tyreqs of a tele is a
    flat_map, so In facts transfer by in_flat_map. *)
 (* BEGIN:wf_ty_frees *)
+(* The nested fixes inside ty_frees, read as membership splitters. *)
+Lemma wf_ty_frees_aux1 : forall (t : tsym) (n : nsym) (th : subst),
+  In t (ty_frees (TNom n th)) ->
+  exists p, In p th /\ In t (ty_frees (snd p)).
+Proof.
+  intros t n th. induction th as [|a th IH]; simpl.
+  - intros [].
+  - intros H. apply in_app_or in H. destruct H as [H|H].
+    + exists a. split; [left; reflexivity | exact H].
+    + destruct (IH H) as [p [Hp Ht]]. exists p. split; [right; exact Hp | exact Ht].
+Qed.
+
+Lemma wf_ty_frees_aux2 : forall (t : tsym) (ms : list ty),
+  In t (ty_frees (TUnion ms)) ->
+  exists tau, In tau ms /\ In t (ty_frees tau).
+Proof.
+  intros t ms. induction ms as [|a ms IH]; simpl.
+  - intros [].
+  - intros H. apply in_app_or in H. destruct H as [H|H].
+    + exists a. split; [left; reflexivity | exact H].
+    + destruct (IH H) as [tau [Hm Ht]]. exists tau. split; [right; exact Hm | exact Ht].
+Qed.
+
+Lemma wf_ty_frees_aux3 : forall t A, In (ITy t) A -> In t (tyreqs A).
+Proof.
+  intros t A HIn. unfold tyreqs. apply in_flat_map.
+  exists (ITy t). split; [exact HIn | left; reflexivity].
+Qed.
+
 Lemma wf_ty_frees : forall Sg Phi tau,
   wf_ty Sg Phi tau -> incl (ty_frees tau) (tyreqs (cA Phi)).
 Proof.
-Admitted. (* FILL:wf_ty_frees *)
+  intros Sg Phi tau H. revert H.
+  apply (@wf_ty_ind' Sg Phi (fun t0 => incl (ty_frees t0) (tyreqs (cA Phi)))).
+  - (* TUnit *) intros x Hx. simpl in Hx. destruct Hx.
+  - (* TAbs *) intros t Hav x Hx. simpl in Hx. destruct Hx as [Heq|[]].
+    subst x. apply wf_ty_frees_aux3. apply avail_ty_in. exact Hav.
+  - (* TNom *) intros n D tau0 th Hg Hsat Hwf IH x Hx.
+    apply wf_ty_frees_aux1 in Hx. destruct Hx as [p [Hp Ht]].
+    rewrite Forall_forall in IH. apply (IH p Hp). exact Ht.
+  - (* TUnion *) intros ms Hwf IH Hnom Hnd x Hx.
+    apply wf_ty_frees_aux2 in Hx. destruct Hx as [tau' [Hm Ht]].
+    rewrite Forall_forall in IH. apply (IH tau' Hm). exact Ht.
+Qed.
 (* END:wf_ty_frees *)
 
 (* Telescopes are dependency-closed: a non-type item's own type requirements
@@ -2040,25 +2206,55 @@ Lemma compose_smap_defined : forall d sm,
   Forall (fun p => exists en, lookup_denv (snd p) d = Some en) sm ->
   exists d', compose_smap d sm = Some d'.
 Proof.
-Admitted. (* FILL:compose_smap_lemmas *)
+  intros d sm H. induction sm as [|[req s] r IH]; simpl.
+  - exists []. reflexivity.
+  - inversion H as [|p0 r0 Hhd Htl]; subst.
+    destruct Hhd as [en He]. simpl in He.
+    destruct (IH Htl) as [d' Hd'].
+    rewrite He, Hd'. exists ((req, en) :: d'). reflexivity.
+Qed.
 
 Lemma compose_smap_keys : forall d sm d',
   compose_smap d sm = Some d' -> map fst d' = map fst sm.
 Proof.
-Admitted. (* FILL:compose_smap_lemmas *)
+  intros d sm. induction sm as [|[req s] r IH]; simpl; intros d' H.
+  - injection H as H; subst. reflexivity.
+  - destruct (lookup_denv s d) as [en|] eqn:He; try discriminate.
+    destruct (compose_smap d r) as [dr|] eqn:Hr; try discriminate.
+    injection H as H; subst. simpl. f_equal. apply IH. reflexivity.
+Qed.
 
 Lemma compose_smap_entry : forall d sm d' p,
   compose_smap d sm = Some d' -> In p d' ->
   exists sat', In (fst p, sat') sm /\ lookup_denv sat' d = Some (snd p).
 Proof.
-Admitted. (* FILL:compose_smap_lemmas *)
+  intros d sm. induction sm as [|[req s] r IH]; simpl; intros d' p H Hin.
+  - injection H as H; subst. destruct Hin.
+  - destruct (lookup_denv s d) as [en|] eqn:He; try discriminate.
+    destruct (compose_smap d r) as [dr|] eqn:Hr; try discriminate.
+    injection H as H; subst. simpl in Hin.
+    destruct Hin as [Heq | Hin].
+    + subst p. simpl. exists s. split; [left; reflexivity | exact He].
+    + destruct (IH dr p (eq_refl) Hin) as [sat' [Hin' Hlk]].
+      exists sat'. split; [right; exact Hin' | exact Hlk].
+Qed.
 
 Lemma compose_smap_first : forall d sm d' req sat',
   compose_smap d sm = Some d' ->
   lookup_smap req sm = Some sat' ->
   exists en, lookup_denv sat' d = Some en /\ lookup_denv req d' = Some en.
 Proof.
-Admitted. (* FILL:compose_smap_lemmas *)
+  intros d sm. induction sm as [|[a b] r IH]; simpl; intros d' req sat' H Hl.
+  - discriminate.
+  - destruct (lookup_denv b d) as [en|] eqn:He; try discriminate.
+    destruct (compose_smap d r) as [dr|] eqn:Hr; try discriminate.
+    injection H as H; subst d'.
+    destruct (item_eqb req a) eqn:Ha.
+    + injection Hl as Hl; subst sat'.
+      exists en. split; [exact He|]. simpl. rewrite Ha. reflexivity.
+    + destruct (IH dr req sat' (eq_refl) Hl) as [en' [H1 H2]].
+      exists en'. split; [exact H1|]. simpl. rewrite Ha. exact H2.
+Qed.
 (* END:compose_smap_lemmas *)
 
 (* --- Transferring an entry to the callee's point of view. ------------------ *)
@@ -2321,8 +2517,16 @@ Section SafetyCases.
       safe_res Sg (app_subst g (app_subst (cS Phi) tau))
                (interp (S k) Sg d ge (EVar x)).
   Proof.
-  Admitted. (* FILL:safety_case_var *)
-  (* END:safety_case_var *)
+    intros Phi G x tau d ge g Hx Hg Hd Hv.
+    destruct Hg as [Hgr [Habs Hcov]].
+    destruct (Hv x tau Hx) as [w [Hlk Hw]].
+    simpl.
+    rewrite Hlk.
+    simpl.
+    rewrite (absorbs_all Habs tau).
+    exact Hw.
+  Qed.
+(* END:safety_case_var *)
 
   (* BEGIN:safety_case_unit *)
   Lemma safety_case_unit : forall Phi G d ge g,
@@ -2332,8 +2536,12 @@ Section SafetyCases.
       safe_res Sg (app_subst g (app_subst (cS Phi) TUnit))
                (interp (S k) Sg d ge EUnit).
   Proof.
-  Admitted. (* FILL:safety_case_unit *)
-  (* END:safety_case_unit *)
+    intros Phi G d ge g Hg Hd Hv.
+    simpl.
+    simpl app_subst.
+    constructor.
+  Qed.
+(* END:safety_case_unit *)
 
   (* Hint: the second hypothesis is the structural induction hypothesis —
      the safety of the same term at the smaller type; vty_subty converts
@@ -2354,8 +2562,15 @@ Section SafetyCases.
       safe_res Sg (app_subst g (app_subst (cS Phi) tau))
                (interp (S k) Sg d ge e).
   Proof.
-  Admitted. (* FILL:safety_case_sub *)
-  (* END:safety_case_sub *)
+    intros Phi G e tau' tau d ge g Hty IH Hsub Hg Hd Hv.
+    specialize (IH d ge g Hg Hd Hv).
+    unfold safe_res in *.
+    destruct (interp (S k) Sg d ge e) as [w | | ] eqn:Heq.
+    - eapply vty_subty; eauto.
+    - exact IH.
+    - exact IH.
+  Qed.
+(* END:safety_case_sub *)
 
   (* Hint: avail_val_in + denv coverage finds the entry; Forall over the
      environment (via lookup_denv_in) gives its dentry_agree, which forces
@@ -2372,8 +2587,24 @@ Section SafetyCases.
                                   (app_subst (cS Phi) tauv)))
                (interp (S k) Sg d ge (EVl v)).
   Proof.
-  Admitted. (* FILL:safety_case_val *)
-  (* END:safety_case_val *)
+    intros Phi G v Dv tauv d ge g Hgv Hav Hg Hd Hve.
+    destruct Hg as [Hgr [Habs Hcov]].
+    destruct Hd as [Hcover Hall].
+    assert (Hin : In (IVal v) (cA Phi)) by (apply avail_val_in; exact Hav).
+    rewrite Forall_forall in Hcover.
+    specialize (Hcover _ Hin).
+    destruct Hcover as [Hbad | [en Hlook]]; [simpl in Hbad; discriminate|].
+    assert (Hpin : In (IVal v, en) d) by (apply lookup_denv_in; exact Hlook).
+    rewrite Forall_forall in Hall.
+    specialize (Hall _ Hpin).
+    destruct en as [w | f' d0].
+    - simpl in Hall. rewrite Hgv in Hall.
+      simpl. rewrite Hlook. simpl.
+      rewrite (absorbs_all Habs). rewrite (absorbs_all Habs).
+      exact Hall.
+    - simpl in Hall. contradiction.
+  Qed.
+(* END:safety_case_val *)
 
   (* Hint: IHfuel on the payload typing; the conclusion's tag type unfolds
      by app_subst_nom; VtyTag wants the payload at
@@ -2523,8 +2754,21 @@ Section SafetyCases.
       safe_res Sg (app_subst g (app_subst (cS Phi) tau))
                (interp (S k) Sg d ge (ELet x e1 e2)).
   Proof.
-  Admitted. (* FILL:safety_case_let *)
-  (* END:safety_case_let *)
+    intros Phi G x e1 e2 tau1 tau d ge g H1 H2 Hg Hd Hv.
+    assert (Habs : forall t0, app_subst g (app_subst (cS Phi) t0)
+                              = app_subst g t0).
+    { destruct Hg as [_ [Hab _]]. apply (absorbs_all Hab). }
+    pose proof (IHfuel (le_n k)) as SK.
+    pose proof (SK Phi G e1 tau1 d ge g H1 Hg Hd Hv) as S1.
+    simpl interp.
+    destruct (interp k Sg d ge e1) as [w1 | | ] eqn:E; simpl in S1.
+    - apply (SK Phi ((x, tau1) :: G) e2 tau d ((x, w1) :: ge) g H2 Hg Hd).
+      apply venv_agree_cons; [exact Hv |].
+      rewrite <- Habs. exact S1.
+    - contradiction.
+    - exact I.
+  Qed.
+(* END:safety_case_let *)
 
   (* Hint: ground the extended context by g2 := (t, g (σ τ')) :: g.
      Closedness of the new range: wf_ty_frees bounds τ''s frees within
