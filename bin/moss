@@ -11,6 +11,11 @@ ROOT = Path(__file__).resolve().parent.parent
 PROFILE = "release-with-debug"
 
 
+def eprint(line: bytes) -> None:
+    sys.stderr.buffer.write(line)
+    sys.stderr.flush()
+
+
 def build() -> None:
     command = [
         "cargo",
@@ -29,9 +34,9 @@ def build() -> None:
             if b"    Finished" not in line and b"    Blocking" not in line:
                 cached = False
                 for pending in buffered:
-                    sys.stderr.buffer.write(pending)
+                    eprint(pending)
         else:
-            sys.stderr.buffer.write(line)
+            eprint(line)
     if process.wait() != 0:
         raise SystemExit(process.returncode)
 
