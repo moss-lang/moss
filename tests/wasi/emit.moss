@@ -121,7 +121,7 @@ assume Std {
 
       let out = int_list();
       emit::module(out);
-      write_bytes(out);
+      put_bytes(out);
     }
   }
 }

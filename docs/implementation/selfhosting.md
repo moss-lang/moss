@@ -79,10 +79,10 @@ Not by looking at its output, but by holding it to the bootstrap's.
 - **Collect.** The module graph, the symbol every declaration gets, and
   the scope each module ends up with are compared as a set of
   (module, namespace, name, target) rows. For the compiler's own
-  sources — now 35 modules — the two agree on all 3052 rows.
+  sources — now 35 modules — the two agree on all 3061 rows.
 - **Needs.** Every defined function's requirement list, in order — its
   calling convention. Checked on `tests/wasi/full.moss`, which reaches
-  all of `Std` provided in Moss over the primitive context (184
+  all of `Std` provided in Moss over the primitive context (185
   functions), and on the compiler's own 35 modules (780).
 - **Codegen.** The `tests/wasi/` programs are compiled by both
   compilers and the modules behave identically; the self-hosted one is
@@ -145,30 +145,31 @@ What is left, none of it on the path to self-hosting:
 - **Diagnostics** are a code letter, the frame they came from, and a
   name — no line or column. The machinery for a real message is a string
   the compiler holds, which is [D48](../design/semantics.md).
-- **Speed.** One generation is 1.4s optimized, 12s raw. Where it goes,
+- **Speed.** One generation is 0.9s optimized, 11.5s raw. Where it goes,
   measured by truncating the compiler after each phase and timing what is
   left:
 
   | phase | |
   |---|---|
-  | lex, parse, declare, link, and every requirement list | 0.03s |
-  | the scan pass | 0.39s |
-  | `declare_all` and the emit pass | 0.44s |
-  | writing 1.2MB to stdout | 0.46s |
+  | lex, parse, declare, link, and every requirement list | 0.02s |
+  | the scan pass | 0.41s |
+  | `declare_all` and the emit pass | 0.46s |
+  | writing 1.2MB to stdout | 0.00s |
 
-  The front end is not the problem and never was. **Writing the module
-  is now the largest single phase**, because `putchar` is the only output
-  `Std` has and it is one `fd_write` per byte — 1,189,270 syscalls for
-  one module. A bulk item (`write_all(IntList)`, or a buffered `putchar`
-  plus a flush) is a library change, not a compiler one, and takes a
-  generation to about 0.9s.
+  The front end is not the problem and never was. Writing the module used
+  to be 0.46s of this — a third of a generation — because `putchar` was
+  the only output `Std` had and it is one `fd_write` per byte, 1,216,466
+  syscalls for one module. [`put_bytes`](/lib/std.moss) is the bulk
+  primitive that replaced it: 593 `write`s for the same module, and those
+  593 are the host's own 4096-byte stdout chunking rather than anything
+  Moss asks for. Written where it was measured, the phase is now free.
 
-  The two body passes are the next thing, and they are ~50/50 by
+  The two body passes are what is left, and they are ~50/50 by
   construction: a Wasm function index counts the imports first, so
   indices cannot be handed out until every import is known, and the scan
   pass exists to find that out. Emitting once into a buffer with
   placeholders for call indices and patching them afterwards would
-  recover the 0.39s — at the cost of the invariant below, which has
+  recover the 0.41s — at the cost of the invariant below, which has
   already gone wrong twice.
 
   What is left after that is the constant factor of `Std` written in
@@ -179,8 +180,8 @@ What is left, none of it on the path to self-hosting:
   compiler of parallel arenas has. Inlining those by hand inside the
   accessors is what would close it.
 
-  `wasm-opt -O3` does that mechanically in the meantime: 0.7s of
-  optimizer takes a generation from 12s to 1.4s and shrinks the module
+  `wasm-opt -O3` does that mechanically in the meantime: 0.8s of
+  optimizer takes a generation from 11.5s to 0.9s and shrinks the module
   from 1.2MB to 200KB. Nothing this back end emits is *wrong*, just
   unoptimized — it emits straight-line code and leaves every call a call.
   The tests run each generation through it, but they always compare the
@@ -323,6 +324,9 @@ Wasm, three more tables had the same problem, and between them they were
 | before | 6.5s | 143s |
 | after | 1.4s | 12s |
 
+(0.9s optimized once `put_bytes` took the output phase out too — that one
+is in **Speed**, since a syscall per byte is not a scan.)
+
 None of it needed a generic container or a hash: every key is a dense
 small integer, so all three are an array and a `link`. The output is
 byte-identical — the same module for `src/`, and the same module for all
@@ -407,9 +411,9 @@ source meant reading 243 of those.
   compiled. `moss build src/main.moss` is likewise the way to actually run
   this compiler rather than `moss run`.
 - The suite is about forty-five seconds. The fixpoint test's two
-  generations are two seconds each — 1.4 of Wasm and 0.7 of `wasm-opt` —
-  and no longer the bulk of it. Without the optimizer the same two
-  generations are twenty-four seconds. See **Speed** above.
+  generations are under two seconds each — 0.9 of Wasm and 0.8 of
+  `wasm-opt` — and no longer the bulk of it. Without the optimizer the
+  same two generations are twenty-three seconds. See **Speed** above.
 - `prog.moss` reports a syntax error as a per-module flag; the position
   the parser recorded is not surfaced.
 - The two diagnostic code spaces are `prog.moss`'s `e_` constants (A–N)

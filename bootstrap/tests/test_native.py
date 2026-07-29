@@ -49,6 +49,7 @@ class TestNativeTables(unittest.TestCase):
                 "int_list",
                 "one",
                 "print",
+                "put_bytes",
                 "putchar",
                 "pwd",
                 "str_list",

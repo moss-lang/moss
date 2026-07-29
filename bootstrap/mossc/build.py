@@ -88,11 +88,11 @@ FD_WRITE, ARGS_SIZES_GET, ARGS_GET, PATH_OPEN, FD_READ, FD_CLOSE = range(6)
 
 SHIMS = (
     "putchar", "alloc", "arg_at", "arg_count", "list_push", "print",
-    "slice", "concat", "join", "read",
+    "slice", "concat", "join", "read", "put_bytes",
 )
 (
     S_PUTCHAR, S_ALLOC, S_ARG_AT, S_ARG_COUNT, S_LIST_PUSH, S_PRINT,
-    S_SLICE, S_CONCAT, S_JOIN, S_READ,
+    S_SLICE, S_CONCAT, S_JOIN, S_READ, S_PUT_BYTES,
 ) = range(len(SHIMS))
 
 # WASI: the first preopened directory. Paths are resolved against it, so
@@ -448,6 +448,7 @@ class Backend:
             ty(2, 1),  # concat: (string, string) -> string
             ty(2, 1),  # join: (path, name) -> path
             ty(1, 1),  # read: (path) -> string
+            ty(1, 0),  # put_bytes: (list) -> ()
         ]
         func_types = [ty(count, results) for count, results, _ in ordered]
         start_type = ty(0, 0)
@@ -512,6 +513,7 @@ class Backend:
                 self.concat_shim(),
                 self.join_shim(),
                 self.read_shim(),
+                self.put_bytes_shim(),
             ]
             + [b for _, _, b in ordered]
             + [start_body]
@@ -829,6 +831,42 @@ class Backend:
         b += I32_CONST + sleb(4)
         b += LOCAL_GET + uleb(0) + I32_LOAD + uleb(2) + uleb(0)
         b += I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(1)
+        b += I32_CONST + sleb(0)
+        b += I32_CONST + sleb(1)
+        b += I32_CONST + sleb(12)
+        b += CALL + uleb(FD_WRITE) + DROP
+        b += END
+        return bytes(b)
+
+    def put_bytes_shim(self) -> bytes:
+        """(handle) -> (): every element's low byte, in one fd_write.
+
+        The counterpart of `lib/wasistd.moss`'s `wasi_put_bytes`, and it
+        has to agree with it byte for byte: a program compiled against
+        native `Std` and the same program over `WasiStd` must write the
+        same file. Packing into a fresh block costs a store per element
+        instead of a syscall per element.
+
+        Locals: 1 data, 2 n, 3 buf, 4 i."""
+        b = bytearray()
+        b += vec([uleb(4) + I32])
+        b += LOCAL_GET + uleb(0) + I32_LOAD + uleb(2) + uleb(0) + LOCAL_SET + uleb(1)
+        b += LOCAL_GET + uleb(1) + I32_LOAD + uleb(2) + uleb(0) + LOCAL_SET + uleb(2)
+        b += LOCAL_GET + uleb(2) + CALL + uleb(self.shim(S_ALLOC)) + LOCAL_SET + uleb(3)
+        b += I32_CONST + sleb(0) + LOCAL_SET + uleb(4)
+        b += BLOCK + EMPTY + LOOP + EMPTY
+        b += LOCAL_GET + uleb(4) + LOCAL_GET + uleb(2) + BINOPS["ge"] + BR_IF + uleb(1)
+        b += LOCAL_GET + uleb(3) + LOCAL_GET + uleb(4) + BINOPS["add"]
+        b += LOCAL_GET + uleb(1)
+        b += LOCAL_GET + uleb(4) + I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
+        b += I32_LOAD + uleb(2) + uleb(8)
+        b += I32_STORE8 + uleb(0) + uleb(0)
+        b += LOCAL_GET + uleb(4) + I32_CONST + sleb(1) + BINOPS["add"] + LOCAL_SET + uleb(4)
+        b += BR + uleb(0) + END + END
+        # iovec at 0: ptr = buf, len = n.
+        b += I32_CONST + sleb(0) + LOCAL_GET + uleb(3) + I32_STORE + uleb(2) + uleb(0)
+        b += I32_CONST + sleb(4) + LOCAL_GET + uleb(2) + I32_STORE + uleb(2) + uleb(0)
         b += I32_CONST + sleb(1)
         b += I32_CONST + sleb(0)
         b += I32_CONST + sleb(1)
@@ -1389,6 +1427,11 @@ class FnCompiler:
             for arg in node.args:
                 self.expr(arg)
             self.code += CALL + uleb(self.b.shim(S_PUTCHAR)) + I32_CONST + sleb(0)
+            return
+        if "std" in self.b.lib and key is self.b.lib["std"].names.get("put_bytes"):
+            for arg in node.args:
+                self.expr(arg)
+            self.code += CALL + uleb(self.b.shim(S_PUT_BYTES)) + I32_CONST + sleb(0)
             return
         if "string" in self.b.lib:
             string = self.b.lib["string"]

@@ -47,8 +47,8 @@ def wasm_opt(module: bytes) -> bytes:
     """The same program, some eight times faster to run.
 
     A module this back end emits is straight-line and unoptimized, and
-    running the *compiler* as one costs about twelve seconds per
-    generation; `wasm-opt -O3` costs 0.7s and takes that to 1.4. It
+    running the *compiler* as one costs about eleven seconds per
+    generation; `wasm-opt -O3` costs 0.8s and takes that to 0.9. It
     is a semantics-preserving rewrite, so a module it produces answers
     exactly as the original does — asserted by
     `TestSelfHostedFixpoint.test_optimizing_the_compiler_does_not_change_it`,
@@ -508,6 +508,47 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({}, entry="tests/wasi/containers.moss")
         self.assertEqual(run_wasm(wasm), "yyyy\n")
 
+    def test_a_bulk_write_over_wasi(self):
+        """`put_bytes` in Moss: one `fd_write` for a whole buffer, where
+        `putchar` is a syscall per byte. tests/wasi/bulk.moss binds WasiStd,
+        so both of these run `wasi_put_bytes` — interpreted and compiled,
+        which is the pair that has to agree for the compiler to write the
+        same module either way."""
+        from .test_run import run_bytes
+
+        wasm = compile_wasm({}, entry="tests/wasi/bulk.moss")
+        self.assertEqual(run_wasm(wasm), "hi!\n")
+        self.assertEqual(run_bytes({}, entry="tests/wasi/bulk.moss"), b"hi!\n")
+
+    def test_put_bytes_agrees_with_the_native_shims(self):
+        """The same primitive's other two implementations, which
+        tests/wasi/bulk.moss does not reach because it binds WasiStd: the
+        interpreter's native `Std` and this back end's native shim. Every
+        element contributes its low byte, so the third one — wider than a
+        byte — holds `i32.store8` and Python's `& 0xFF` to each other."""
+        from .test_run import run
+
+        source = (
+            "assume Std {\n"
+            "  fn eight(): Int {\n"
+            "    one.add(one).add(one).add(one).add(one).add(one).add(one)"
+            ".add(one)\n"
+            "  }\n"
+            "  fn main() {\n"
+            "    let xs = int_list();\n"
+            "    xs.push(char::h.code());\n"
+            "    xs.push(char::i.code());\n"
+            "    xs.push(one.shl(eight()).add(char::exclam.code()));\n"
+            "    xs.push(char::newline.code());\n"
+            "    put_bytes(xs);\n"
+            "    put_bytes(int_list());\n"
+            "  }\n"
+            "}\n"
+        )
+        files = {"main.moss": source}
+        self.assertEqual(run(files), "hi!\n")
+        self.assertEqual(run_wasm(compile_wasm(files)), "hi!\n")
+
     def test_a_generic_container_over_wasi(self):
         """D51's generic container, compiled: one interface whose accessors
         are keyed on an *abstract* receiver, instantiated at two element
@@ -678,7 +719,7 @@ class TestSelfHostedFixpoint(unittest.TestCase):
     depends on.
 
     Each generation *runs* through `wasm-opt -O3`, which takes a round from
-    twelve seconds to 1.4: this back end emits straight-line unoptimized
+    eleven seconds to 0.9: this back end emits straight-line unoptimized
     code, and what is left after the memos of `docs/implementation/
     selfhosting.md` is the constant factor of `Std` written in Moss —
     every `Int` operation a call. What is compared is still the

@@ -11,7 +11,7 @@ import "./char.moss" as char use Char, Chars, .char;
 import "./cell.moss" as cell use CellInt, cell_int;
 import "./int.moss" as int use Int, zero, one;
 import "./list.moss" as list use IntList, int_list;
-import "./std.moss" use putchar, Std;
+import "./std.moss" use putchar, put_bytes, Std;
 import "./string.moss" as string use String, print, first_arg, arg_count, arg_at;
 import "./strlist.moss" as strlist use StrList, str_list;
 
@@ -43,11 +43,15 @@ context Console =
 context Files = Path, pwd, Path.join, Path.read[Elem=String];
 
 # The containers, over the library's own allocator rather than the
-# compiler's — which no longer has one (D59).
+# compiler's — which no longer has one (D59). `put_bytes` is here rather
+# than beside `putchar` because its signature is a container and its body
+# is a WASI call, so it belongs to whichever of the two groups already has
+# the types: this one.
 context Containers =
   CellInt, cell_int, CellInt.read[Elem=Int], CellInt.write,
   IntList, int_list,
   IntList.push[Elem=Int], IntList.get[Elem=Int], IntList.set, IntList.length,
+  put_bytes,
   StrList, str_list,
   StrList.push[Elem=String], StrList.get[Elem=String], StrList.length;
 
@@ -339,6 +343,25 @@ assume Wasm, Branch {
 
   fn Strs.push(value: Str) { Ints (strs_addr(this)).push(Num (addr(value))); }
 
+  # The whole list as bytes, in one `fd_write`. `wasi_putchar` is a
+  # syscall each, which is what makes writing a module cost more than
+  # producing it; packing into a fresh block and writing once is a loop of
+  # stores instead. `i32_store8` keeps the low byte, exactly as `putchar`
+  # does, so the bytes are the same either way.
+  assume Wasi {
+    fn wasi_put_bytes(bytes: Ints) {
+      let data = w::i32_load(ints_addr(bytes));
+      let n = w::i32_load(data);
+      let buf = alloc(n);
+      var i = w::i32_zero;
+      while i32_bool(w::i32_lt_u(i, n)) {
+        w::i32_store8(w::i32_add(buf, i), w::i32_load(elem(data, i)));
+        i = w::i32_add(i, w::i32_one);
+      }
+      write_all(buf, n);
+    }
+  }
+
   fn Ints.push(value: Num) {
     let handle = ints_addr(this);
     var data = w::i32_load(handle);
@@ -421,7 +444,7 @@ functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind String.concat = Str.concat;
 }
 
-functor WasiContainers: Wasm, Branch -> Containers {
+functor WasiContainers: Wasm, Wasi, Branch -> Containers {
   bind cell::CellInt = Cell;
   bind cell::cell_int = wasi_cell;
   bind CellInt.read[Elem=Int] = Cell.read;
@@ -432,6 +455,7 @@ functor WasiContainers: Wasm, Branch -> Containers {
   bind IntList.get[Elem=Int] = Ints.get;
   bind IntList.set = Ints.set;
   bind IntList.length = Ints.length;
+  bind put_bytes = wasi_put_bytes;
   bind strlist::StrList = Strs;
   bind strlist::str_list = wasi_str_list;
   bind StrList.push[Elem=String] = Strs.push;

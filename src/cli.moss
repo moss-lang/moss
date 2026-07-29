@@ -46,7 +46,9 @@ assume Std {
         report_codegen();
         return ();
       }
-      write_bytes(out);
+      # One `fd_write`, not one per byte: a module is a megabyte and
+      # `putchar` is a syscall (`put_bytes` in lib/std.moss).
+      put_bytes(out);
     }
 
     fn report_collect() {

@@ -1022,7 +1022,7 @@ class TestSelfHostedCollectScopes(unittest.TestCase):
     the symbols every declaration gets, and the scope each module ends up
     with — names, detached methods, aliases, and attached methods keyed by
     receiver. Compared as a set of (module, namespace, name, target)
-    rows, over the compiler's own sources: 35 modules, 3052 rows."""
+    rows, over the compiler's own sources: 35 modules, 3061 rows."""
 
     def rows_from_bootstrap(self, entry):
         import os
@@ -1165,6 +1165,13 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/wide.moss")
         self.assertEqual(self.wasmtime_run(module), "ABCD\n")
 
+    def test_a_bulk_write(self):
+        """`put_bytes`, compiled by the compiler written in Moss — which is
+        also how it writes its own output, so this is the one primitive
+        whose cost the fixpoint test pays directly."""
+        module = self.compile_with_moss("tests/wasi/bulk.moss")
+        self.assertEqual(self.wasmtime_run(module), "hi!\n")
+
     def test_a_generic_container(self):
         """A receiver an application binds. A context item may key a
         detached method on an *abstract* type — `context IsList = L.get;` —
@@ -1194,6 +1201,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/functor.moss", "ABD\n"),
             ("tests/wasi/wide.moss", "ABCD\n"),
             ("tests/wasi/generic.moss", "hiDCC\n"),
+            ("tests/wasi/bulk.moss", "hi!\n"),
         )
         for entry, expected in cases:
             with self.subTest(entry=entry):

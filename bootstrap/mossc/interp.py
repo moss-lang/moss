@@ -318,6 +318,14 @@ def native_env(program: Program, args: list | None = None) -> dict:
             return UNIT
 
         env[lib["std"].names["putchar"]] = native(putchar)
+
+        def put_bytes(a, this):
+            # A whole buffer, each element's low byte — the same bytes the
+            # loop over `putchar` wrote, in one call rather than one each.
+            emit(bytes(v.value & 0xFF for v in a[0].items))
+            return UNIT
+
+        env[lib["std"].names["put_bytes"]] = native(put_bytes)
     if "char" in lib:
         char_ty = lib["char"].names["Char"]
         for name, char in CHARS.items():

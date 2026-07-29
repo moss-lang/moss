@@ -106,14 +106,4 @@ assume Std {
     }
   }
 
-  # Write a buffer to standard output. `putchar` is one byte in both
-  # backends, so a module written this way is byte-identical whether the
-  # compiler ran under the interpreter or as Wasm itself.
-  fn write_bytes(buf: IntList) {
-    var i = zero;
-    while i.lt(buf.length()) {
-      putchar(buf.get(i).char());
-      i = i.add(one);
-    }
-  }
 }

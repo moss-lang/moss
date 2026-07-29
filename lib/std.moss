@@ -16,6 +16,14 @@ assume Char {
   fn putchar(c: Char);
 }
 
+assume IntList {
+  # A whole buffer at once, each element as one byte. `putchar` is a
+  # syscall per character in any backend that has syscalls, which is fine
+  # for a diagnostic and ruinous for a file: a compiler writing a 1.2MB
+  # module through it spends more time in `fd_write` than in codegen.
+  fn put_bytes(buf: IntList);
+}
+
 # The shared accessors of access.moss carry the element type per receiver
 # (D61): `Elem` is one symbol, applied here once per provision, so the
 # substitutions never meet.
@@ -66,6 +74,7 @@ context Std =
   IntList.get[Elem=Int],
   IntList.set,
   IntList.length,
+  put_bytes,
 
   Path,
   pwd,
