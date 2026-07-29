@@ -44,7 +44,7 @@ def run(files, entry="main.moss", args=None):
 _DRIVERS: dict = {}
 
 
-def run_driver(driver, args, expect_code=0):
+def run_driver(driver, args, expect_code=0, argv0=None):
     """Run a self-hosted driver as Wasm rather than interpreting it.
 
     A driver is ordinary Moss over `Std`, so the bootstrap can compile it
@@ -62,8 +62,11 @@ def run_driver(driver, args, expect_code=0):
     if path is None:
         path = wasm_file(compile_wasm({"main.moss": driver}))
         _DRIVERS[driver] = path
+    command = [wasmtime()]
+    if argv0 is not None:
+        command += ["--argv0", argv0]
     result = subprocess.run(
-        [wasmtime(), "--dir", ".", path, *args],
+        [*command, "--dir", ".", path, *args],
         capture_output=True,
         timeout=900,
         cwd=REPO,
@@ -1091,7 +1094,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
     """
 
     def compile_with_moss(self, entry, prelude=""):
-        return run_driver(COMPILER_DRIVER, [prelude, entry])
+        return run_driver(COMPILER_DRIVER, [entry], argv0=prelude)
 
     def wasmtime_run(self, module, expect_code=0):
         import shutil

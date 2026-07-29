@@ -1,0 +1,18 @@
+[package]
+name = "moss-cli"
+version.workspace = true
+edition.workspace = true
+default-run = "moss"
+build = "build.rs"
+
+[[bin]]
+name = "moss"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+libc.workspace = true
+sha2.workspace = true
+wasmtime.workspace = true
+wasmtime-wasi.workspace = true

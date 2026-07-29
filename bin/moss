@@ -1,13 +1,51 @@
-#!/usr/bin/env bash
-# The Moss CLI, backed by the bootstrap compiler. With no subcommand, `run`
-# is implied, which is what makes `#!/usr/bin/env moss` shebangs work.
-set -euo pipefail
-root="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
-cmd=run
-case "${1-}" in
-  lex | parse | run | build)
-    cmd=$1
-    shift
-    ;;
-esac
-PYTHONPATH="$root/bootstrap" exec python3 -m mossc "$cmd" "$@"
+#!/usr/bin/env python3
+"""Development launcher for the native Moss driver."""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+PROFILE = "release-with-debug"
+
+
+def build() -> None:
+    command = [
+        "cargo",
+        "build",
+        "--package=moss-cli",
+        f"--profile={PROFILE}",
+        "--color=always",
+    ]
+    process = subprocess.Popen(command, cwd=ROOT, stderr=subprocess.PIPE)
+    assert process.stderr is not None
+    buffered = []
+    cached = True
+    for line in process.stderr:
+        if cached:
+            buffered.append(line)
+            if b"    Finished" not in line and b"    Blocking" not in line:
+                cached = False
+                for pending in buffered:
+                    sys.stderr.buffer.write(pending)
+        else:
+            sys.stderr.buffer.write(line)
+    if process.wait() != 0:
+        raise SystemExit(process.returncode)
+
+
+def main() -> None:
+    build()
+    executable = ROOT / f"target/{PROFILE}/moss"
+    env = os.environ.copy()
+    env["MOSS_ROOT"] = str(ROOT)
+    os.execve(executable, [str(executable), *sys.argv[1:]], env)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        raise SystemExit(130)

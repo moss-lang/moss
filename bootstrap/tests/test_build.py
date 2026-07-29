@@ -613,7 +613,8 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({}, entry="src/main.moss")
         path = wasm_file(wasm)
         result = subprocess.run(
-            [wasmtime(), "--dir", ".", path, "", "tests/wasi/prim.moss"],
+            [wasmtime(), "--argv0", "", "--dir", ".", path,
+             "tests/wasi/prim.moss"],
             capture_output=True,
             timeout=600,
             cwd=REPO,
@@ -686,8 +687,8 @@ class TestSelfHostedCompilesTheExamples(unittest.TestCase):
         for name in runnable_examples():
             with self.subTest(example=name):
                 built = subprocess.run(
-                    [wasmtime(), "--dir", ".", compiler,
-                     "lib/prelude.moss", f"examples/{name}.moss"],
+                    [wasmtime(), "--argv0", "lib/prelude.moss", "--dir", ".",
+                     compiler, f"examples/{name}.moss"],
                     capture_output=True,
                     timeout=600,
                     cwd=REPO,
@@ -733,8 +734,8 @@ class TestSelfHostedFixpoint(unittest.TestCase):
         """One generation: run this compiler on the compiler's own source."""
         path = wasm_file(wasm_opt(compiler))
         result = subprocess.run(
-            [wasmtime(), "--dir", ".", path,
-             "lib/prelude.moss", "src/main.moss"],
+            [wasmtime(), "--argv0", "lib/prelude.moss", "--dir", ".",
+             path, "src/main.moss"],
             capture_output=True,
             timeout=1800,
             cwd=REPO,
@@ -763,12 +764,13 @@ class TestSelfHostedFixpoint(unittest.TestCase):
         on an example rather than on `src/`, so it costs one slow generation
         instead of two."""
         s0 = compile_wasm({}, entry="src/main.moss")
-        args = ["lib/prelude.moss", "examples/context.moss"]
+        args = ["examples/context.moss"]
 
         def compile_with(module: bytes) -> bytes:
             path = wasm_file(module)
             result = subprocess.run(
-                [wasmtime(), "--dir", ".", path, *args],
+                [wasmtime(), "--argv0", "lib/prelude.moss", "--dir", ".",
+                 path, *args],
                 capture_output=True,
                 timeout=1800,
                 cwd=REPO,

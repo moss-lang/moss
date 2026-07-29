@@ -23,7 +23,7 @@ the pipeline in [`docs/design/semantics.md`](../docs/design/semantics.md)
 
 Stage 5's swap-out is done: [`mossc/build.py`](mossc/build.py) compiles
 the same IR — records, tags, match, strings, fn binds and all — to a
-WASI module, and `python3 -m mossc build FILE | wasmtime -` runs every
+WASI module, and `python3 -m mossc FILE | wasmtime -` runs every
 example with output identical to the interpreter's.
 
 Status highlights: all seven runnable `examples/` match their goldens
@@ -64,13 +64,15 @@ ordinary Moss written against `Std`, whose `main` assumes only
 ## Usage
 
 ```sh
-python3 -m mossc lex ../src/token.moss     # token dump
-python3 -m mossc parse ../lib/wasm.moss    # AST dump
-python3 -m mossc run ../examples/hello.moss
-python3 -m mossc build ../examples/hello.moss > hello.wasm  # then: wasmtime hello.wasm
+python3 -m mossc ../examples/hello.moss > hello.wasm  # then: wasmtime hello.wasm
 ```
 
 (Run from this directory, or set `PYTHONPATH` to it.)
+
+This is deliberately the bootstrap compiler's entire command-line interface:
+it loads the module graph rooted at `FILE` and writes Wasm to stdout. The
+Python interpreter remains a test oracle for the compiler pipeline; the native
+`moss` driver does not expose it as an execution mode.
 
 ## Tests
 

@@ -1,25 +1,21 @@
-"""CLI: `python -m mossc {lex|parse|run} FILE`."""
+"""Bootstrap compiler protocol: `python -m mossc FILE` writes Wasm."""
 
+import os
 import sys
 from pathlib import Path
 
-from . import ast, collect, interp
-from .lex import LexError, lex, position
+from . import collect
+from .lex import LexError
 from .lower import Lower, LowerError
-from .parse import ParseError, error_message, parse
+from .parse import ParseError
 
-PRELUDE = str(Path(__file__).resolve().parents[2] / "lib/prelude.moss")
-
-
-def run(path: str, args: list) -> int:
-    program = collect.load(path, prelude=PRELUDE)
-    lower = Lower(program)
-    lower.run()
-    interp.run_main(program, lower, args)
-    return 0
+PRELUDE = str(
+    Path(os.environ.get("MOSS_LIB", Path(__file__).resolve().parents[2] / "lib"))
+    / "prelude.moss"
+)
 
 
-def build_cmd(path: str) -> int:
+def compile_path(path: str) -> int:
     from . import build as build_mod
     from .collect import SymKind
 
@@ -35,33 +31,24 @@ def build_cmd(path: str) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 3 or sys.argv[1] not in ("lex", "parse", "run", "build"):
-        print("usage: python -m mossc {lex|parse|run|build} FILE", file=sys.stderr)
+    if len(sys.argv) != 2:
+        print("usage: python -m mossc FILE", file=sys.stderr)
         return 2
-    command, path = sys.argv[1], sys.argv[2]
+    path = sys.argv[1]
     try:
-        if command == "run":
-            return run(path, sys.argv[3:])
-        if command == "build":
-            return build_cmd(path)
-        with open(path, encoding="utf-8") as f:
-            source = f.read()
-        if command == "lex":
-            for token in lex(source):
-                line, col = position(source, token.offset)
-                print(f"{line}:{col}\t{token.kind.name}\t{token.text}")
-        else:
-            print(ast.dump(parse(source)))
+        return compile_path(path)
     except LexError as e:
         with open(path, encoding="utf-8") as f:
             source = f.read()
+        from .lex import position
+
         line, col = position(source, e.offset)
         print(f"{path}:{line}:{col}: {e.message}", file=sys.stderr)
         return 1
     except ParseError as e:
         print(f"{path}: {e.message}", file=sys.stderr)
         return 1
-    except (collect.CollectError, LowerError, interp.LinkError, interp.MossPanic) as e:
+    except (collect.CollectError, LowerError) as e:
         print(e, file=sys.stderr)
         return 1
     return 0

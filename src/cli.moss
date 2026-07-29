@@ -7,11 +7,11 @@ import "./prog.moss" as prog;
 
 # The self-hosted compiler's command line.
 #
-#   moss run src/main.moss PRELUDE ENTRY > out.wasm
+#   mossc.wasm ENTRY > out.wasm
 #
-# PRELUDE may be empty, which is what a program written against the
-# primitive context wants: `Wasm` and `Wasi` are imported by name, and
-# there is no standard library underneath (D52).
+# The host presents the prelude path as argument zero and ENTRY as the
+# sole argument. Keeping the prelude out of the compiler protocol lets
+# an installed driver choose its library location.
 #
 # Output is the module's bytes on standard output, or diagnostics — one
 # line each, a letter for the rule and the name that broke it. There are
@@ -27,7 +27,7 @@ assume Std {
 
   assume Compiler {
     fn compile_entry() {
-      let entry = prog::load_program(arg_at(one), arg_at(one.add(one)));
+      let entry = prog::load_program(arg_at(zero), first_arg());
       if prog::error_count().gt(zero) {
         report_collect();
         return ();

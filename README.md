@@ -17,7 +17,17 @@ If you use [direnv](https://direnv.net/) and have [Nix](https://nixos.org/) with
 echo use flake > .envrc && direnv allow
 ```
 
-The dev shell puts the [`moss`](bin/moss) script on your `PATH` and provides [Wasmtime](https://wasmtime.dev/) for running compiled output. If you don't use Nix, all you need is [Python](https://www.python.org/) 3.12+ on your `PATH` (plus Wasmtime if you want to run the Wasm the compiler emits), and the [`bin`](bin) directory of this repo on your `PATH` for the `moss` command and shebangs.
+The dev shell puts the [`moss`](bin/moss) development launcher on your `PATH`.
+It builds a native driver that embeds
+[Wasmtime](https://wasmtime.dev/) and links
+[Binaryen](https://github.com/WebAssembly/binaryen). Python 3.12+ is needed
+only to bootstrap a changed self-hosted compiler in a source checkout; the
+packaged compiler already contains that result.
+
+`nix build` produces the normal Nix package. On Linux,
+`nix build .#standalone` produces a statically linked driver in `result/bin`,
+with the optimized self-hosted compiler and standard library under
+`result/share/moss`. Those three pieces can be copied together without Nix.
 
 ## Usage
 
@@ -33,12 +43,15 @@ Or, equivalently:
 moss examples/hello.moss
 ```
 
-Specifically, this implicitly invokes the `run` subcommand of the compiler,
-which interprets the program:
+Specifically, this implicitly invokes `run`, which compiles the program and
+executes the resulting Wasm:
 
 ```sh
 moss run examples/hello.moss
 ```
+
+Pass an explicit Binaryen optimization level with `-O0` through `-O4`, `-Os`,
+or `-Oz`.
 
 You can alternatively use the `build` command to output [WebAssembly](https://webassembly.org/) code for [WASI P1](https://wasi.dev/interfaces#wasi-01), supported by many WebAssembly engines such as [Wasmtime](https://wasmtime.dev/):
 

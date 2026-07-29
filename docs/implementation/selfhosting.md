@@ -5,9 +5,9 @@ source file, loads everything that file imports, resolves every name in
 all of it, and writes a WebAssembly module — **including its own source**:
 
 ```sh
-moss build src/main.moss > S0.wasm                                  # B(S)
-wasmtime --dir . S0.wasm lib/prelude.moss src/main.moss > S1.wasm    # S0(S)
-wasmtime --dir . S1.wasm lib/prelude.moss src/main.moss > S2.wasm    # S1(S)
+python3 -m mossc src/main.moss > S0.wasm                            # B(S)
+wasmtime --argv0 lib/prelude.moss --dir . S0.wasm src/main.moss > S1.wasm
+wasmtime --argv0 lib/prelude.moss --dir . S1.wasm src/main.moss > S2.wasm
 cmp S1.wasm S2.wasm                                                 # equal
 ```
 
@@ -22,11 +22,12 @@ is the standing check.
 It runs under the bootstrap's interpreter too:
 
 ```sh
-moss run src/main.moss "" tests/wasi/prim.moss > prim.wasm && wasmtime prim.wasm
+wasmtime --argv0 "" --dir . S1.wasm tests/wasi/prim.moss > prim.wasm
+wasmtime prim.wasm
 ```
 
-The two arguments are a prelude path and an entry path; an empty prelude
-is what a program written against the primitive context wants, since
+The prelude path is `argv[0]` and the sole argument is the entry path; an empty
+prelude is what a program written against the primitive context wants, since
 `Wasm` and `Wasi` are imported by name and there is no standard library
 underneath ([D52](../design/semantics.md)).
 
@@ -35,8 +36,8 @@ compiler, `Std` and all, as one 1.2MB `.wasm` — which writes
 byte-for-byte the same output, about a thousand times faster:
 
 ```sh
-moss build src/main.moss > mossc.wasm
-wasmtime --dir . mossc.wasm lib/prelude.moss examples/hello.moss > hello.wasm
+python3 -m mossc src/main.moss > mossc.wasm
+wasmtime --argv0 lib/prelude.moss --dir . mossc.wasm examples/hello.moss > hello.wasm
 wasmtime hello.wasm            # Hello, world!
 ```
 
