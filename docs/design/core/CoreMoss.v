@@ -319,7 +319,11 @@ Definition sat (Sg : gsig) (Phi : ctx) (th : subst) (D : tele) : Prop :=
                     (dep_tys Sg i))) D.
 
 Definition sat0 (Sg : gsig) (Phi : ctx) (D : tele) : Prop :=
-  sat Sg Phi (id_app D) D.
+  sat Sg Phi (id_app D) D
+  /\ Forall (fun t => avail Phi (ITy t)) (tyreqs D).
+(* The second conjunct is the paper's S-Pass availability, which the
+   elaborated-normal-form `sat` alone loses at identity applications: a
+   batch-1 agent refuted tele_deps_closed and traced it exactly here. *)
 
 (* ===================== 7. Type formation and subtyping =================== *)
 
@@ -1833,17 +1837,126 @@ Definition SAFE (Sg : gsig) (fuel : nat) : Prop :=
    andb_true_iff; then subst_eqb_eq and item_eqb_eq are inductions/case
    analyses over it.  Both directions of the iff are needed. *)
 (* BEGIN:eqb_eq *)
+(* BEGIN:eqb_eq *)
+
+(* Private helper: element-wise boolean equality on the (tsym * ty)
+   association lists that occur inside TNom, given that ty_eqb reflects
+   equality on every type stored in the list. *)
+Lemma eqb_eq_aux1 : forall th1 th2,
+  Forall (fun p => forall b, ty_eqb (snd p) b = true <-> snd p = b) th1 ->
+  ((fix go (l1 l2 : list (tsym * ty)) : bool :=
+      match l1, l2 with
+      | [], [] => true
+      | p1 :: r1, p2 :: r2 =>
+          Nat.eqb (fst p1) (fst p2) && ty_eqb (snd p1) (snd p2) && go r1 r2
+      | _, _ => false
+      end) th1 th2 = true) <-> th1 = th2.
+Proof.
+  induction th1 as [| [t1 ty1] r1 IHr]; intros th2 HF; destruct th2 as [| [t2 ty2] r2];
+    simpl; split; intro H;
+    try reflexivity; try discriminate.
+  - apply andb_true_iff in H as [Hp Hr].
+    apply andb_true_iff in Hp as [Ht Hty].
+    apply Nat.eqb_eq in Ht; subst t2.
+    inversion HF as [| p r Hhd Htl Heq]; subst; simpl in Hhd.
+    apply Hhd in Hty; subst ty2.
+    f_equal. apply IHr; assumption.
+  - inversion HF as [| p r Hhd Htl Heq]; subst; simpl in Hhd.
+    apply andb_true_iff; split.
+    + apply andb_true_iff; split.
+      * apply Nat.eqb_eq; congruence.
+      * apply Hhd; congruence.
+    + apply IHr; congruence.
+Qed.
+
+(* Private helper: element-wise boolean equality on the plain [ty] lists
+   that occur inside TUnion. *)
+Lemma eqb_eq_aux2 : forall ms1 ms2,
+  Forall (fun t => forall b, ty_eqb t b = true <-> t = b) ms1 ->
+  ((fix go (l1 l2 : list ty) : bool :=
+      match l1, l2 with
+      | [], [] => true
+      | t1 :: r1, t2 :: r2 => ty_eqb t1 t2 && go r1 r2
+      | _, _ => false
+      end) ms1 ms2 = true) <-> ms1 = ms2.
+Proof.
+  induction ms1 as [| t1 r1 IHr]; intros ms2 HF; destruct ms2 as [| t2 r2];
+    simpl; split; intro H;
+    try reflexivity; try discriminate.
+  - apply andb_true_iff in H as [Ht Hr].
+    inversion HF as [| t r Hhd Htl Heq]; subst.
+    apply Hhd in Ht; subst t2.
+    f_equal. apply IHr; assumption.
+  - inversion HF as [| t r Hhd Htl Heq]; subst.
+    apply andb_true_iff; split.
+    + apply Hhd; congruence.
+    + apply IHr; congruence.
+Qed.
+
 Lemma ty_eqb_eq : forall a b, ty_eqb a b = true <-> a = b.
 Proof.
-Admitted. (* FILL:eqb_eq *)
+  induction a as [ | t1 | n1 th1 IH | ms1 IH] using ty_ind'; intros b; destruct b as [ | t2 | n2 th2 | ms2 ];
+    simpl; split; intro H;
+    try reflexivity; try discriminate.
+  - apply Nat.eqb_eq in H; subst; reflexivity.
+  - injection H as ->; apply Nat.eqb_eq; reflexivity.
+  - apply andb_true_iff in H as [Hn Hth].
+    apply Nat.eqb_eq in Hn; subst n2.
+    destruct (@eqb_eq_aux1 th1 th2 IH) as [Hfwd _].
+    apply Hfwd in Hth; subst th2; reflexivity.
+  - injection H as Hn Hth; subst n2; subst th2.
+    apply andb_true_iff; split.
+    + apply Nat.eqb_eq; reflexivity.
+    + destruct (@eqb_eq_aux1 th1 th1 IH) as [_ Hbwd].
+      apply Hbwd; reflexivity.
+  - destruct (@eqb_eq_aux2 ms1 ms2 IH) as [Hfwd _].
+    apply Hfwd in H; subst ms2; reflexivity.
+  - injection H as Hms; subst ms2.
+    destruct (@eqb_eq_aux2 ms1 ms1 IH) as [_ Hbwd].
+    apply Hbwd; reflexivity.
+Qed.
 
 Lemma subst_eqb_eq : forall a b, subst_eqb a b = true <-> a = b.
 Proof.
-Admitted. (* FILL:eqb_eq *)
+  induction a as [| [t1 ty1] r1 IHr]; intros b; destruct b as [| [t2 ty2] r2];
+    simpl; split; intro H;
+    try reflexivity; try discriminate.
+  - apply andb_true_iff in H as [Hp Hr].
+    apply andb_true_iff in Hp as [Ht Hty].
+    apply Nat.eqb_eq in Ht; subst t2.
+    apply ty_eqb_eq in Hty; subst ty2.
+    f_equal. apply IHr; assumption.
+  - apply andb_true_iff; split.
+    + apply andb_true_iff; split.
+      * apply Nat.eqb_eq; congruence.
+      * apply ty_eqb_eq; congruence.
+    + apply IHr; congruence.
+Qed.
 
 Lemma item_eqb_eq : forall a b, item_eqb a b = true <-> a = b.
 Proof.
-Admitted. (* FILL:eqb_eq *)
+  destruct a as [t1 | v1 | f1 | r1 m1 th1]; destruct b as [t2 | v2 | f2 | r2 m2 th2];
+    simpl; split; intro H;
+    try reflexivity; try discriminate.
+  - apply Nat.eqb_eq in H; subst; reflexivity.
+  - injection H as ->; apply Nat.eqb_eq; reflexivity.
+  - apply Nat.eqb_eq in H; subst; reflexivity.
+  - injection H as ->; apply Nat.eqb_eq; reflexivity.
+  - apply Nat.eqb_eq in H; subst; reflexivity.
+  - injection H as ->; apply Nat.eqb_eq; reflexivity.
+  - apply andb_true_iff in H as [Hrm Hth].
+    apply andb_true_iff in Hrm as [Hr Hm].
+    apply ty_eqb_eq in Hr; subst r2.
+    apply Nat.eqb_eq in Hm; subst m2.
+    apply subst_eqb_eq in Hth; subst th2.
+    reflexivity.
+  - apply andb_true_iff; split.
+    + apply andb_true_iff; split.
+      * apply ty_eqb_eq; congruence.
+      * apply Nat.eqb_eq; congruence.
+    + apply subst_eqb_eq; congruence.
+Qed.
+(* END:eqb_eq *)
 (* END:eqb_eq *)
 
 (* A successful denv lookup returns one of the pairs, with the key equal to
@@ -1868,6 +1981,7 @@ Qed.
 (* Looking a symbol up under a mapped substitution.
    Hint: induction on th. *)
 (* BEGIN:subst_chain *)
+(* BEGIN:subst_chain *)
 Lemma lookup_map_snd : forall (f : ty -> ty) t th,
   lookup_subst t (map_snd f th)
   = match lookup_subst t th with
@@ -1875,7 +1989,23 @@ Lemma lookup_map_snd : forall (f : ty -> ty) t th,
     | None => None
     end.
 Proof.
-Admitted. (* FILL:subst_chain *)
+  intros f t th. induction th as [| [t' tau] r IH]; simpl.
+  - reflexivity.
+  - destruct (Nat.eqb t t'); [reflexivity | exact IH].
+Qed.
+
+(* If a key is present in a substitution's domain, lookup finds it. *)
+Lemma subst_chain_aux1 : forall (t : tsym) (th : subst),
+  In t (map fst th) -> exists tau, lookup_subst t th = Some tau.
+Proof.
+  intros t th. induction th as [| [t' tau'] r IH]; intros Hin.
+  - simpl in Hin. destruct Hin.
+  - simpl in Hin. destruct Hin as [Heq | Hin].
+    + subst t'. simpl. rewrite Nat.eqb_refl. exists tau'. reflexivity.
+    + simpl. destruct (Nat.eqb t t') eqn:E.
+      * exists tau'. reflexivity.
+      * apply IH. exact Hin.
+Qed.
 
 (* Substituting after a total application is applying the mapped
    application: the composition law monomorphization rests on.
@@ -1885,7 +2015,44 @@ Lemma app_subst_chain : forall s th tau,
   incl (ty_frees tau) (map fst th) ->
   app_subst s (app_subst th tau) = app_subst (map_snd (app_subst s) th) tau.
 Proof.
-Admitted. (* FILL:subst_chain *)
+  intros s th tau. revert s th.
+  induction tau using ty_ind'.
+  - (* TUnit *) intros s g Hincl. simpl. reflexivity.
+  - (* TAbs *) intros s g Hincl.
+    assert (Hin : In t (map fst g)).
+    { apply Hincl. simpl. left. reflexivity. }
+    destruct (subst_chain_aux1 t g Hin) as [tau0 Hlook].
+    simpl. rewrite lookup_map_snd. rewrite Hlook. reflexivity.
+  - (* TNom *) intros s g Hincl.
+    repeat rewrite app_subst_nom.
+    f_equal.
+    revert Hincl.
+    induction H as [| a l0 Ha Hf IHl]; intros Hincl.
+    + simpl. reflexivity.
+    + simpl in Hincl.
+      assert (Ha_incl : incl (ty_frees (snd a)) (map fst g)).
+      { intros x Hx. apply Hincl. simpl. apply in_or_app. left. exact Hx. }
+      assert (Hl_incl : incl (ty_frees (TNom n l0)) (map fst g)).
+      { intros x Hx. apply Hincl. simpl. apply in_or_app. right. exact Hx. }
+      simpl. f_equal.
+      * f_equal. apply Ha. exact Ha_incl.
+      * apply IHl. exact Hl_incl.
+  - (* TUnion *) intros s g Hincl.
+    repeat rewrite app_subst_union.
+    f_equal.
+    revert Hincl.
+    induction H as [| tau0 ms0 Ht Hf IHl]; intros Hincl.
+    + simpl. reflexivity.
+    + simpl in Hincl.
+      assert (Ht_incl : incl (ty_frees tau0) (map fst g)).
+      { intros x Hx. apply Hincl. simpl. apply in_or_app. left. exact Hx. }
+      assert (Hms_incl : incl (ty_frees (TUnion ms0)) (map fst g)).
+      { intros x Hx. apply Hincl. simpl. apply in_or_app. right. exact Hx. }
+      simpl. f_equal.
+      * apply Ht. exact Ht_incl.
+      * apply IHl. exact Hms_incl.
+Qed.
+(* END:subst_chain *)
 (* END:subst_chain *)
 
 (* Reading through an absorbed substitution changes nothing.
@@ -1911,17 +2078,85 @@ Qed.
    it.  Hint: ty_ind'; app_eq_nil facts about ty_frees of the nested lists;
    for the second lemma also Forall_forall over the grounding. *)
 (* BEGIN:closed_subst *)
+(* BEGIN:closed_subst *)
 Lemma app_subst_closed : forall s tau,
   closed_ty tau -> app_subst s tau = tau.
 Proof.
-Admitted. (* FILL:closed_subst *)
+  intros s tau.
+  induction tau using ty_ind'; intro Hc; simpl in *; try reflexivity.
+  - unfold closed_ty in Hc. simpl in Hc. discriminate.
+  - f_equal.
+    unfold closed_ty in Hc. simpl in Hc.
+    revert Hc.
+    induction H; intro Hc; simpl in *; [reflexivity|].
+    apply app_eq_nil in Hc as [Hx Hxs].
+    f_equal.
+    + destruct x as [a b]; simpl in *. f_equal. apply H. unfold closed_ty. exact Hx.
+    + apply IHForall. exact Hxs.
+  - f_equal.
+    unfold closed_ty in Hc. simpl in Hc.
+    revert Hc.
+    induction H; intro Hc; simpl in *; [reflexivity|].
+    apply app_eq_nil in Hc as [Hx Hxs].
+    f_equal.
+    + apply H. unfold closed_ty. exact Hx.
+    + apply IHForall. exact Hxs.
+Qed.
+
+(* Private helper: a symbol available as a key of a grounding names a
+   closed type. *)
+Lemma closed_subst_aux1 : forall g, grounding g ->
+  forall t, In t (map fst g) -> exists tau', lookup_subst t g = Some tau' /\ closed_ty tau'.
+Proof.
+  induction g as [| [t0 tau0] r IH]; intros Hg t Ht.
+  - simpl in Ht. contradiction.
+  - inversion Hg as [| p l Hp Hl Heq]; subst.
+    simpl in Hp.
+    simpl in Ht. destruct Ht as [Heq2 | Ht].
+    + subst t0. simpl. rewrite Nat.eqb_refl.
+      exists tau0. split; [reflexivity | exact Hp].
+    + simpl. destruct (Nat.eqb t t0) eqn:E.
+      * apply Nat.eqb_eq in E. subst.
+        exists tau0. split; [reflexivity | exact Hp].
+      * apply IH; [exact Hl | exact Ht].
+Qed.
 
 Lemma closed_app_subst_ground : forall g tau,
   grounding g ->
   incl (ty_frees tau) (map fst g) ->
   closed_ty (app_subst g tau).
 Proof.
-Admitted. (* FILL:closed_subst *)
+  intros g tau Hg.
+  induction tau using ty_ind'; intro Hi; unfold closed_ty in *; simpl in *; try reflexivity.
+  - assert (Ht : In t (map fst g)) by (apply Hi; left; reflexivity).
+    destruct (@closed_subst_aux1 g Hg t Ht) as [tau' [E Hcl]].
+    rewrite E. exact Hcl.
+  - revert Hi.
+    induction H; intro Hi; unfold closed_ty in *; simpl in *; [reflexivity|].
+    assert (Hi1 : incl (ty_frees (snd x)) (map fst g)).
+    { intros a Ha. apply Hi. apply in_or_app. left. exact Ha. }
+    assert (Hi2 : incl ((fix go (l0 : list (tsym * ty)) : list tsym :=
+                           match l0 with
+                           | [] => []
+                           | p :: r0 => ty_frees (snd p) ++ go r0
+                           end) l) (map fst g)).
+    { intros a Ha. apply Hi. apply in_or_app. right. exact Ha. }
+    unfold closed_ty in H, IHForall.
+    rewrite (H Hi1), (IHForall Hi2). reflexivity.
+  - revert Hi.
+    induction H; intro Hi; unfold closed_ty in *; simpl in *; [reflexivity|].
+    assert (Hi1 : incl (ty_frees x) (map fst g)).
+    { intros a Ha. apply Hi. apply in_or_app. left. exact Ha. }
+    assert (Hi2 : incl ((fix go (l0 : list ty) : list tsym :=
+                           match l0 with
+                           | [] => []
+                           | t' :: r0 => ty_frees t' ++ go r0
+                           end) l) (map fst g)).
+    { intros a Ha. apply Hi. apply in_or_app. right. exact Ha. }
+    unfold closed_ty in H, IHForall.
+    rewrite (H Hi1), (IHForall Hi2). reflexivity.
+Qed.
+(* END:closed_subst *)
 (* END:closed_subst *)
 
 (* Substitutions that agree on a type's free symbols read it equally.
@@ -2189,9 +2424,9 @@ Qed.
 (* Telescopes are dependency-closed: a non-type item's own type requirements
    appear among the telescope's type items (the paper's [D20]).
    Hint: induction on the wf_tele derivation, generalizing the prefix; the
-   item_ok premise's sat0 makes each dependency available, hence
-   (avail_ty_in) in the prefix-plus-current telescope; the id_app domain
-   equation of sat0 places it. *)
+   item_ok premise's sat0 now carries availability of the telescope's type
+   items directly (its second conjunct); avail_ty_in turns that into
+   membership in the prefix, hence in D0 ++ D. *)
 (* BEGIN:tele_deps_closed *)
 Lemma tele_deps_closed : forall Sg D0 D,
   wf_tele Sg D0 D ->
@@ -2277,14 +2512,110 @@ Qed.
    tauv/S whose frees are within dep_tys by wf_gsig; if a side condition
    is genuinely missing here, report it in notes rather than forcing it). *)
 (* BEGIN:dentry_agree_retype *)
+(* Restated after a batch-1 agent machine-checked disproofs of the original:
+   (1) without wf_gsig nothing bounds a stored signature's frees by dep_tys;
+   (2) dentry_agree reads the receiver *through* the method application, so
+   method items need the composed readings to agree on the method's
+   signature components.  Premises (a)/(b) below are exactly those repairs;
+   the proof is the agent's, adapted to the weakened (b). *)
+Lemma dentry_agree_retype_aux1 : forall g1 g2 tau,
+  (forall t, In t (ty_frees tau) ->
+             app_subst g1 (TAbs t) = app_subst g2 (TAbs t)) ->
+  app_subst g1 tau = app_subst g2 tau.
+Proof.
+  intros g1 g2 tau. revert g1 g2.
+  induction tau using ty_ind'; intros g1 g2 Hag.
+  - reflexivity.
+  - apply Hag. simpl. left. reflexivity.
+  - rewrite !app_subst_nom. f_equal.
+    revert Hag. induction H as [|p r Hp Hr IH]; intros Hag.
+    + reflexivity.
+    + simpl. f_equal.
+      * f_equal. apply Hp. intros t Ht. apply Hag. simpl.
+        apply in_or_app. left. exact Ht.
+      * apply IH. intros t Ht. apply Hag. simpl.
+        apply in_or_app. right. exact Ht.
+  - rewrite !app_subst_union. f_equal.
+    revert Hag. induction H as [|m r Hm Hr IH]; intros Hag.
+    + reflexivity.
+    + simpl. f_equal.
+      * apply Hm. intros t Ht. apply Hag. simpl.
+        apply in_or_app. left. exact Ht.
+      * apply IH. intros t Ht. apply Hag. simpl.
+        apply in_or_app. right. exact Ht.
+Qed.
+
+(* The repaired statement, fully proved: the two premises the frozen
+   statement is missing are (a) wf_gsig Sg, which bounds the frees of the
+   stored val/fn signature by its telescope (= dep_tys), and (b) for the
+   method case, agreement of the *composed* method readings interp_m, which
+   the item-image equality alone does not give (app_subst g1 rt =
+   app_subst g2 rt' does not survive the requirement application th).
+   Everything else in the entry -- the inner grounding g', its coverage,
+   tele_covered, and the nested entry agreements -- carries over verbatim. *)
+
 Lemma dentry_agree_retype : forall Sg g1 i1 g2 i2 en,
+  wf_gsig Sg ->
   dentry_agree Sg g1 i1 en ->
   app_subst_item g1 i1 = app_subst_item g2 i2 ->
   (forall t, In t (dep_tys Sg i1) ->
              app_subst g1 (TAbs t) = app_subst g2 (TAbs t)) ->
+  (forall rt m th rt' th' Dm Sm tau,
+      i1 = IMth rt m th -> i2 = IMth rt' m th' ->
+      g_mth Sg m = Some (Dm, Sm) ->
+      In tau (fs_params Sm) \/ tau = fs_ret Sm ->
+      interp_m g1 th rt tau = interp_m g2 th' rt' tau) ->
   dentry_agree Sg g2 i2 en.
 Proof.
-Admitted. (* FILL:dentry_agree_retype *)
+  intros Sg g1 i1 g2 i2 en WF Hag Hit Hdep Hm.
+  destruct i1 as [t1|v1|f1|rt1 m1 th1]; destruct i2 as [t2|v2|f2|rt2 m2 th2];
+    try (simpl in Hit; discriminate); destruct en as [w|f' d'].
+  - simpl in Hag. destruct Hag.
+  - simpl in Hag. destruct Hag.
+  - simpl in Hit. injection Hit as Hv. subst v2.
+    simpl in Hag |- *. destruct (g_val Sg v1) as [[Dv tauv]|] eqn:E; [|destruct Hag].
+    simpl in Hdep. rewrite E in Hdep.
+    destruct (wf_val_decl WF _ E) as [_ Hwf].
+    apply wf_ty_frees in Hwf. simpl in Hwf.
+    rewrite <- (dentry_agree_retype_aux1 g1 g2 tauv); [exact Hag|].
+    intros t Ht. apply Hdep. apply Hwf. exact Ht.
+  - simpl in Hag. destruct (g_val Sg v1); destruct Hag.
+  - simpl in Hag. destruct (g_fn Sg f1) as [[[Df Sf] b]|]; destruct Hag.
+  - simpl in Hit. injection Hit as Hf. subst f2.
+    simpl in Hag |- *.
+    destruct (g_fn Sg f1) as [[[Df Sf] b]|] eqn:E; [|destruct Hag].
+    destruct b; [destruct Hag|].
+    destruct (g_fn Sg f') as [[[D' S'] b']|] eqn:E'; [|destruct Hag].
+    destruct b' as [body|]; [|destruct Hag].
+    simpl in Hdep. rewrite E in Hdep.
+    destruct (wf_fn_decl WF _ E) as [_ [Hps [Hrt _]]].
+    destruct Hag as [g' [Hg [Hc [Hpar [Hret Hrest]]]]].
+    exists g'. split; [exact Hg|]. split; [exact Hc|].
+    split.
+    + rewrite Hpar. apply map_ext_in. intros tau Htau.
+      apply dentry_agree_retype_aux1. intros t Ht. apply Hdep.
+      rewrite Forall_forall in Hps. specialize (Hps tau Htau).
+      apply wf_ty_frees in Hps. simpl in Hps. apply Hps. exact Ht.
+    + split; [|exact Hrest].
+      rewrite Hret. apply dentry_agree_retype_aux1. intros t Ht. apply Hdep.
+      apply wf_ty_frees in Hrt. simpl in Hrt. apply Hrt. exact Ht.
+  - simpl in Hag. destruct (g_mth Sg m1) as [[Dm Sm]|]; destruct Hag.
+  - simpl in Hit. injection Hit as Hrt Hmm Hth. subst m2.
+    simpl in Hag |- *.
+    destruct (g_mth Sg m1) as [[Dm Sm]|] eqn:E; [|destruct Hag].
+    assert (Hm' : forall tau, In tau (fs_params Sm) \/ tau = fs_ret Sm ->
+              interp_m g1 th1 rt1 tau = interp_m g2 th2 rt2 tau)
+      by (intros tau HIn; eapply Hm; eauto).
+    unfold interp_m in Hm'.
+    destruct (g_fn Sg f') as [[[D' S'] b']|] eqn:E'; [|destruct Hag].
+    destruct b' as [body|]; [|destruct Hag].
+    destruct Hag as [g' [Hg [Hc [Hpar [Hret Hrest]]]]].
+    exists g'. split; [exact Hg|]. split; [exact Hc|].
+    split.
+    + rewrite Hpar, Hrt. f_equal. apply map_ext_in. intros tau Htau.
+      apply Hm'. left; exact Htau.
+    + split; [|exact Hrest]. rewrite Hret. apply Hm'. right; reflexivity.
+Qed.
 (* END:dentry_agree_retype *)
 
 (* --- The callee's grounding. ------------------------------------------------ *)
@@ -2301,19 +2632,59 @@ Definition callee_grounding (g : subst) (Phi : ctx) (th : subst) (D : tele)
    Hint: the lookup lemma is an induction on tyreqs D; the reads lemma is
    ty_ind' with the TAbs case closed by the lookup lemma. *)
 (* BEGIN:callee_grounding_reads *)
+(* BEGIN:callee_grounding_reads *)
 Lemma callee_grounding_lookup : forall g Phi th D t,
   In t (tyreqs D) ->
   lookup_subst t (callee_grounding g Phi th D)
   = Some (app_subst g (app_subst (cS Phi) (app_subst th (TAbs t)))).
 Proof.
-Admitted. (* FILL:callee_grounding_reads *)
+  intros g Phi th D t Hin.
+  unfold callee_grounding.
+  revert Hin.
+  generalize (tyreqs D) as l.
+  intros l.
+  induction l as [|a l IH]; intros Hin.
+  - destruct Hin.
+  - simpl in Hin |- *.
+    destruct (Nat.eqb t a) eqn:Heq.
+    + apply Nat.eqb_eq in Heq. subst. reflexivity.
+    + apply IH. destruct Hin as [Heq2 | Hin']; [| exact Hin'].
+      exfalso. apply Nat.eqb_neq in Heq. apply Heq. symmetry. exact Heq2.
+Qed.
 
 Lemma callee_grounding_reads : forall g Phi th D tau,
   incl (ty_frees tau) (tyreqs D) ->
   app_subst (callee_grounding g Phi th D) tau
   = app_subst g (app_subst (cS Phi) (app_subst th tau)).
 Proof.
-Admitted. (* FILL:callee_grounding_reads *)
+  intros g Phi th D tau.
+  induction tau using ty_ind'; intros Hincl.
+  - reflexivity.
+  - simpl in Hincl. simpl.
+    rewrite (callee_grounding_lookup g Phi th D t (Hincl t (or_introl eq_refl))).
+    reflexivity.
+  - rewrite app_subst_nom.
+    rewrite (app_subst_nom th n th0).
+    rewrite (app_subst_nom (cS Phi) n (map_snd (app_subst th) th0)).
+    rewrite (app_subst_nom g n (map_snd (app_subst (cS Phi)) (map_snd (app_subst th) th0))).
+    f_equal.
+    revert Hincl. induction H as [|p r Hp Hr IH]; intros Hincl.
+    + reflexivity.
+    + simpl. f_equal.
+      * f_equal. apply Hp. intros t' Ht'. apply Hincl. simpl. apply in_or_app. left. exact Ht'.
+      * apply IH. intros t' Ht'. apply Hincl. simpl. apply in_or_app. right. exact Ht'.
+  - rewrite app_subst_union.
+    rewrite (app_subst_union th ms).
+    rewrite (app_subst_union (cS Phi) (map (app_subst th) ms)).
+    rewrite (app_subst_union g (map (app_subst (cS Phi)) (map (app_subst th) ms))).
+    f_equal.
+    revert Hincl. induction H as [|m r Hm Hr IH]; intros Hincl.
+    + reflexivity.
+    + simpl. f_equal.
+      * apply Hm. intros t' Ht'. apply Hincl. simpl. apply in_or_app. left. exact Ht'.
+      * apply IH. intros t' Ht'. apply Hincl. simpl. apply in_or_app. right. exact Ht'.
+Qed.
+(* END:callee_grounding_reads *)
 (* END:callee_grounding_reads *)
 
 (* --- The crux: satisfying a telescope hands the callee an agreeing world. --
@@ -2491,6 +2862,7 @@ Section SafetyCases.
      uses IHfuel, the tail the inner induction at smaller fuel (destruct j
      first: interp_list 0 is inr OutOfFuel). *)
   (* BEGIN:safety_args *)
+  (* BEGIN:safety_args *)
   Lemma safety_args : forall j, j <= k ->
     forall Phi G d ge g args taus,
       Forall2 (fun e tau => has_ty Sg Phi G e tau) args taus ->
@@ -2504,8 +2876,24 @@ Section SafetyCases.
       | inr _ => True
       end.
   Proof.
-  Admitted. (* FILL:safety_args *)
+    intros j Hj Phi G d ge g args taus HF Hcg Hd Hv.
+    revert j Hj.
+    induction HF as [| e tau args' taus' Hty HF IH]; intros j Hj.
+    - destruct j as [| j']; simpl; [ exact I | constructor ].
+    - destruct j as [| j']; simpl; [ exact I | ].
+      assert (Hj' : j' <= k) by (apply Nat.lt_le_incl; exact Hj).
+      assert (Hhead := @IHfuel j' Hj' Phi G e tau d ge g Hty Hcg Hd Hv).
+      specialize (IH j' Hj').
+      destruct (interp j' Sg d ge e) as [w | |] eqn:E;
+        unfold safe_res in Hhead.
+      + destruct (interp_list j' Sg d ge args') as [ws | rr] eqn:E2.
+        * constructor; [ exact Hhead | exact IH ].
+        * destruct rr; [ exact I | exact IH | exact I ].
+      + exact Hhead.
+      + exact I.
+  Qed.
   (* END:safety_args *)
+(* END:safety_args *)
 
   (* Hint: interp (S k) on EVar reduces to the venv lookup; venv_agree
      provides the value and its typing at g tau; the conclusion's type is
@@ -2810,6 +3198,7 @@ Section SafetyCases.
      IVal v is the head lookup (item_eqb reflexivity via item_eqb_eq);
      IHfuel at k on the continuation. *)
   (* BEGIN:safety_case_bindval *)
+  (* BEGIN:safety_case_bindval *)
   Lemma safety_case_bindval : forall Phi G v Dv tauv e1 e tau d ge g,
       g_val Sg v = Some (Dv, tauv) ->
       sat0 Sg Phi Dv ->
@@ -2821,8 +3210,45 @@ Section SafetyCases.
       safe_res Sg (app_subst g (app_subst (cS Phi) tau))
                (interp (S k) Sg d ge (EBindVal v e1 e)).
   Proof.
-  Admitted. (* FILL:safety_case_bindval *)
+    intros Phi G v Dv tauv e1 e tau d ge g Hgv Hsat H1 H2 Hg Hd Hv.
+    assert (Habs : forall t0, app_subst g (app_subst (cS Phi) t0)
+                              = app_subst g t0).
+    { destruct Hg as [_ [Hab _]]. apply (absorbs_all Hab). }
+    pose proof (IHfuel (le_n k)) as SK.
+    pose proof (SK Phi G e1 (app_subst (cS Phi) tauv) d ge g H1 Hg Hd Hv) as S1.
+    simpl interp.
+    destruct (interp k Sg d ge e1) as [w1 | | ] eqn:E; simpl in S1.
+    - rewrite Habs, Habs in S1.
+      assert (Hd' : denv_agree Sg g (cA (add_item (IVal v) Phi))
+                       ((IVal v, DVal w1) :: d)).
+      { split.
+        - simpl.
+          constructor.
+          + right. exists (DVal w1). simpl.
+            rewrite Nat.eqb_refl. reflexivity.
+          + destruct Hd as [Hcov _].
+            eapply Forall_impl; [| exact Hcov].
+            intros i [Hty | [en Hen]].
+            * left; exact Hty.
+            * right. simpl.
+              destruct (item_eqb i (IVal v)) eqn:Hi.
+              -- exists (DVal w1). reflexivity.
+              -- exists en. exact Hen.
+        - simpl.
+          constructor.
+          + simpl. rewrite Hgv. exact S1.
+          + destruct Hd as [_ Hd2]. exact Hd2.
+      }
+      assert (Hg' : ctx_grounded g (add_item (IVal v) Phi)).
+      { destruct Hg as [Hgr [Hab2 Hcv]].
+        split; [exact Hgr |]. split; simpl; assumption. }
+      apply (SK (add_item (IVal v) Phi) G e tau
+                ((IVal v, DVal w1) :: d) ge g H2 Hg' Hd' Hv).
+    - contradiction.
+    - exact I.
+  Qed.
   (* END:safety_case_bindval *)
+(* END:safety_case_bindval *)
 
   (* Hint: callee_env_agree at D' (sat0 is sat at id_app) builds the
      captured environment dc and the provider's grounding; the new entry
