@@ -1022,7 +1022,7 @@ class TestSelfHostedCollectScopes(unittest.TestCase):
     the symbols every declaration gets, and the scope each module ends up
     with — names, detached methods, aliases, and attached methods keyed by
     receiver. Compared as a set of (module, namespace, name, target)
-    rows, over the compiler's own sources: 35 modules, 3035 rows."""
+    rows, over the compiler's own sources: 35 modules, 3052 rows."""
 
     def rows_from_bootstrap(self, entry):
         import os
