@@ -15,14 +15,17 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - uses: actions/checkout@v6
       - run: nix flake update 2>&1 | tee nix-flake-update.txt
+      - run: nix develop -c bash -c 'cargo update --verbose 2>&1 | tee cargo-update.txt'
       - uses: actions/upload-artifact@v7
         with:
           name: lockfiles
           path: |
             flake.lock
+            Cargo.lock
             nix-flake-update.txt
+            cargo-update.txt
 
-  check:
+  x86_64-linux:
     needs: lock
     runs-on: ubuntu-24.04
     steps:
@@ -34,8 +37,115 @@ jobs:
           name: lockfiles
       - run: nix flake check --print-build-logs
 
+      - run: nix build --print-build-logs .#standalone
+      - run: cp -RL result moss-linux-x86
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-linux-x86
+          path: moss-linux-x86
+
+      - run: nix build --print-build-logs .#windows
+      - run: cp -RL result moss-windows-x86
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-windows-x86
+          path: moss-windows-x86
+
+  aarch64-linux:
+    needs: lock
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: lockfiles
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs .#standalone
+      - run: cp -RL result moss-linux-arm
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-linux-arm
+          path: moss-linux-arm
+
+  aarch64-darwin:
+    needs: lock
+    runs-on: macos-26
+    steps:
+      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: lockfiles
+      - run: nix flake check --print-build-logs
+
+      - run: nix build --print-build-logs .#standalone
+      - run: cp -RL result moss-macos-arm
+      - uses: actions/upload-artifact@v7
+        with:
+          name: moss-macos-arm
+          path: moss-macos-arm
+
+  linux-x86:
+    needs: x86_64-linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: moss-linux-x86
+          path: moss
+      - run: chmod +x moss/bin/moss
+      - run: cp examples/hello.moss moss
+      - run: ./moss/bin/moss moss/hello.moss
+
+  windows-x86:
+    needs: x86_64-linux
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: moss-windows-x86
+          path: moss
+      - run: Copy-Item examples\hello.moss moss
+      - run: .\moss\bin\moss.exe moss\hello.moss
+
+  linux-arm:
+    needs: aarch64-linux
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: moss-linux-arm
+          path: moss
+      - run: chmod +x moss/bin/moss
+      - run: cp examples/hello.moss moss
+      - run: ./moss/bin/moss moss/hello.moss
+
+  macos-arm:
+    needs: aarch64-darwin
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: moss-macos-arm
+          path: moss
+      - run: chmod +x moss/bin/moss
+      - run: cp examples/hello.moss moss
+      - run: ./moss/bin/moss moss/hello.moss
+
   pr:
-    needs: check
+    needs:
+      - linux-x86
+      - windows-x86
+      - linux-arm
+      - macos-arm
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -51,11 +161,14 @@ jobs:
             echo '```'
             cat nix-flake-update.txt
             echo '```'
+            echo '```'
+            cat cargo-update.txt
+            echo '```'
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
       - uses: peter-evans/create-pull-request@v8
         with:
-          commit-message: Update `flake.lock`
+          commit-message: Update `flake.lock` and `Cargo.lock`
           branch: update
-          title: Update `flake.lock`
+          title: Update `flake.lock` and `Cargo.lock`
           body: ${{ steps.body.outputs.body }}

@@ -24,10 +24,12 @@ It builds a native driver that embeds
 only to bootstrap a changed self-hosted compiler in a source checkout; the
 packaged compiler already contains that result.
 
-`nix build` produces the normal Nix package. On Linux,
-`nix build .#standalone` produces a statically linked driver in `result/bin`,
-with the optimized self-hosted compiler and standard library under
-`result/share/moss`. Those three pieces can be copied together without Nix.
+`nix build` produces the normal Nix package. `nix build .#standalone` produces
+a bundle for Linux or macOS that can be copied and used without Nix; an
+x86-64 Windows bundle can be cross-compiled from x86-64 Linux with
+`nix build .#windows`. Each bundle contains a driver with the optimized
+self-hosted compiler embedded in it, plus the standard library under
+`share/moss/lib`.
 
 ## Usage
 

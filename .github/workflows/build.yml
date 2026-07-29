@@ -13,18 +13,20 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: actions/checkout@v6
       - run: nix flake check --print-build-logs
+
       - run: nix build --print-build-logs .#standalone
-      - run: cp -RL result moss-linux-x86_64
+      - run: cp -RL result moss-linux-x86
       - uses: actions/upload-artifact@v7
         with:
-          name: moss-linux-x86_64
-          path: moss-linux-x86_64
+          name: moss-linux-x86
+          path: moss-linux-x86
+
       - run: nix build --print-build-logs .#windows
-      - run: cp -RL result moss-windows-x86_64
+      - run: cp -RL result moss-windows-x86
       - uses: actions/upload-artifact@v7
         with:
-          name: moss-windows-x86_64
-          path: moss-windows-x86_64
+          name: moss-windows-x86
+          path: moss-windows-x86
 
   aarch64-linux:
     runs-on: ubuntu-24.04-arm
@@ -33,12 +35,13 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: actions/checkout@v6
       - run: nix flake check --print-build-logs
+
       - run: nix build --print-build-logs .#standalone
-      - run: cp -RL result moss-linux-aarch64
+      - run: cp -RL result moss-linux-arm
       - uses: actions/upload-artifact@v7
         with:
-          name: moss-linux-aarch64
-          path: moss-linux-aarch64
+          name: moss-linux-arm
+          path: moss-linux-arm
 
   aarch64-darwin:
     runs-on: macos-26
@@ -47,56 +50,61 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: actions/checkout@v6
       - run: nix flake check --print-build-logs
+
       - run: nix build --print-build-logs .#standalone
-      - run: cp -RL result moss-macos-aarch64
+      - run: cp -RL result moss-macos-arm
       - uses: actions/upload-artifact@v7
         with:
-          name: moss-macos-aarch64
-          path: moss-macos-aarch64
+          name: moss-macos-arm
+          path: moss-macos-arm
 
-  standalone-linux-x86_64:
+  linux-x86:
     needs: x86_64-linux
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
-          name: moss-linux-x86_64
+          name: moss-linux-x86
           path: moss
       - run: chmod +x moss/bin/moss
-      - run: ./moss/bin/moss examples/hello.moss
+      - run: cp examples/hello.moss moss
+      - run: ./moss/bin/moss moss/hello.moss
 
-  standalone-linux-aarch64:
+  linux-arm:
     needs: aarch64-linux
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
-          name: moss-linux-aarch64
+          name: moss-linux-arm
           path: moss
       - run: chmod +x moss/bin/moss
-      - run: ./moss/bin/moss examples/hello.moss
+      - run: cp examples/hello.moss moss
+      - run: ./moss/bin/moss moss/hello.moss
 
-  standalone-macos-aarch64:
+  macos-arm:
     needs: aarch64-darwin
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
-          name: moss-macos-aarch64
+          name: moss-macos-arm
           path: moss
       - run: chmod +x moss/bin/moss
-      - run: ./moss/bin/moss examples/hello.moss
+      - run: cp examples/hello.moss moss
+      - run: ./moss/bin/moss moss/hello.moss
 
-  standalone-windows-x86_64:
+  windows-x86:
     needs: x86_64-linux
     runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
-          name: moss-windows-x86_64
+          name: moss-windows-x86
           path: moss
-      - run: .\moss\bin\moss.exe examples\hello.moss
+      - run: Copy-Item examples\hello.moss moss
+      - run: .\moss\bin\moss.exe moss\hello.moss
