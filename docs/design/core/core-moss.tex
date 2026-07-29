@@ -40,7 +40,7 @@ Decision tags such as [D1] refer to entries in that log. The definitions
 and the entire metatheory of \S\ref{sec:meta} are mechanized and
 machine-checked in Rocq in \texttt{CoreMoss.v} alongside this document;
 every theorem reports closed under the global context.}}
-\date{July 28, 2026}
+\date{July 29, 2026}
 
 \begin{document}
 \maketitle
@@ -244,7 +244,12 @@ and the library's \smallcode{Bool} are built).
 
 A \emph{telescope} $\Delta$ is an ordered requirement list; the
 declarations under $\kw{assume}\;\Delta$ have $\Delta$ appended to their
-requirements. Elaborating a program yields a global signature $\Sigma$
+requirements. A telescope may mention one \emph{key} twice---the key of a
+type, val, or fn item is the symbol itself, and of a method item the pair
+(receiver type, method symbol)---because flattening named contexts
+concatenates their members. Formation \emph{merges} such duplicates by
+unifying the colliding bindings [D43]; the merging judgment of
+Figure~\ref{fig:statics-aux} makes this precise. Elaborating a program yields a global signature $\Sigma$
 assigning every symbol its kind, its declared signature, and the
 concatenation of its enclosing telescopes:
 \[
@@ -271,8 +276,12 @@ $\sigma$ acts on types and items homomorphically, and we write $\tau
 this is the applicative identity rule---the same declaration under the
 same static bindings is the same type everywhere [D18]. Item
 availability, written $\iota \in \Phi$, means $\sigma\iota' = \sigma\iota$
-for some $\iota' \in A$; comparing after $\sigma$ is the core's residue of
-Moss's key canonicalization [D43].
+for some $\iota' \in A$; comparing after $\sigma$ is Moss's key
+canonicalization [D43], and $\sigma$ carries the entries produced by
+telescope merging (Figure~\ref{fig:statics-aux}) alongside those of type
+binds, so
+two spellings of one merged atom are one item everywhere the statics
+compares.
 
 \paragraph{Total-or-absent application.}
 A reference either binds all of its target's outstanding requirements or
@@ -292,22 +301,43 @@ calls, and method provisions---reuse this one judgment.
 
 \begin{figure}[t]
 \centering
+\textbf{Merging [D43]}\quad
+\fbox{$\Delta \Downarrow \langle \hat\Delta;\, \sigma_\Delta \rangle$}
+\begin{mathpar}
+\inferrule[M-Nil]{ }{\emptytel \Downarrow \langle \emptytel;\, \emptyset \rangle}
+
+\inferrule[M-Fresh]{\Delta \Downarrow \langle \hat\Delta;\, \sigma_\Delta \rangle \\
+  \ksf{key}(\sigma_\Delta\iota) \notin \ksf{keys}(\sigma_\Delta\hat\Delta)}
+  {\Delta, \iota \Downarrow \langle \hat\Delta, \iota;\, \sigma_\Delta \rangle}
+
+\inferrule[M-Merge]{\Delta \Downarrow \langle \hat\Delta;\, \sigma_\Delta \rangle \\
+  \iota' \in \hat\Delta \\
+  \ksf{key}(\sigma_\Delta\iota') = \ksf{key}(\sigma_\Delta\iota) \\
+  \ksf{unify}(\sigma_\Delta\iota',\, \sigma_\Delta\iota) = \sigma_u}
+  {\Delta, \iota \Downarrow \langle \hat\Delta;\, \sigma_u \circ \sigma_\Delta \rangle}
+\end{mathpar}
+
 \textbf{Satisfaction}\quad \fbox{$\Sigma;\Phi \vdash \theta \entails \Delta$}
 \begin{mathpar}
-\inferrule[S-Nil]{ }{\Sigma;\Phi \vdash \theta \entails \emptytel}
+\inferrule[S-Tel]{\Delta \Downarrow \langle \hat\Delta;\, \sigma_\Delta \rangle \\
+  \Sigma;\Phi \vdash \theta \entails_1 \hat\Delta \\
+  \sigma(\thh\,t) = \sigma(\thh\,\tau) \;\;(\forall\, t \mapsto \tau \in \sigma_\Delta)}
+  {\Sigma;\Phi \vdash \theta \entails \Delta}
 
-\inferrule[S-Inst]{\Sigma;\Phi \vdash \theta \entails \Delta \\
+\inferrule[S-Nil]{ }{\Sigma;\Phi \vdash \theta \entails_1 \emptytel}
+
+\inferrule[S-Inst]{\Sigma;\Phi \vdash \theta \entails_1 \hat\Delta \\
   t \in \dom(\theta) \\ \Sigma;\Phi \vdash \theta(t) \wf}
-  {\Sigma;\Phi \vdash \theta \entails \Delta, t}
+  {\Sigma;\Phi \vdash \theta \entails_1 \hat\Delta, t}
 
-\inferrule[S-Pass]{\Sigma;\Phi \vdash \theta \entails \Delta \\
+\inferrule[S-Pass]{\Sigma;\Phi \vdash \theta \entails_1 \hat\Delta \\
   t \notin \dom(\theta) \\ t \in \Phi}
-  {\Sigma;\Phi \vdash \theta \entails \Delta, t}
+  {\Sigma;\Phi \vdash \theta \entails_1 \hat\Delta, t}
 
-\inferrule[S-Item]{\Sigma;\Phi \vdash \theta \entails \Delta \\
+\inferrule[S-Item]{\Sigma;\Phi \vdash \theta \entails_1 \hat\Delta \\
   \iota \text{ not a type symbol} \\ \thh\,\iota \in \Phi \\
   \sigma(\thh\,t) = \sigma(t) \;\;(\forall t \in \ksf{deps}(\iota))}
-  {\Sigma;\Phi \vdash \theta \entails \Delta, \iota}
+  {\Sigma;\Phi \vdash \theta \entails_1 \hat\Delta, \iota}
 \end{mathpar}
 
 \textbf{Type formation}\quad \fbox{$\Sigma;\Phi \vdash \tau \wf$}
@@ -332,9 +362,29 @@ calls, and method provisions---reuse this one judgment.
 \inferrule[Sub-Inj]{\sigma\nu = \sigma\nu_j \text{ for some } j}
   {\Sigma;\Phi \vdash \nu \le \nu_1 \vee \cdots \vee \nu_k}
 \end{mathpar}
-\caption{Satisfaction, type formation, and subtyping. In
-\textsc{S-Inst}/\textsc{S-Pass}/\textsc{S-Item}, $\dom(\theta)$ must be
-contained in the type items of the full telescope; $\sigma$ is the
+\caption{Merging, satisfaction, type formation, and subtyping.
+\emph{Merging} [D43]: the key of a type, val, or fn item is its symbol; of
+a method item, the pair (receiver \emph{type}, method symbol), compared
+after $\sigma_\Delta$---the same [D18] identity dispatch is keyed by [D62],
+and for the same reason: keying on the receiver's head would give
+$\smallcode{Slot[Elem=Int].get}$ and $\smallcode{Slot[Elem=Char].get}$ one
+key, so a telescope needing the method at two instantiations would try to
+identify $\smallcode{Int}$ with $\smallcode{Char}$ and be rejected. D43's
+own example still merges: there the receiver is shared and it is the
+method's own application that differs.
+$\ksf{unify}$ is first-order unification of the colliding items---symmetric,
+neither occurrence primary---which fails, and telescope formation with it,
+exactly when it would identify two distinct concrete heads (say
+$\smallcode{A.gimme[Foo=Eof]}$ with $\smallcode{A.gimme[Foo=Comma]}$), or
+when its equations are cyclic (the occurs check; D43 is silent on cyclic
+merges, a finding of the mechanization). $\sigma_u \circ \sigma_\Delta$ is
+the idempotent extension: the new equations are applied to the old ranges.
+\emph{Satisfaction} is judged against the merged telescope
+(\textsc{S-Tel}): totality is per equivalence class---$\dom(\theta)$ covers
+the type items of $\hat\Delta$---and $\theta$ must respect the merge
+equations, so instantiating one spelling of a merged atom instantiates them
+all. In \textsc{S-Inst}/\textsc{S-Pass}/\textsc{S-Item}, $\dom(\theta)$
+must be contained in the type items of $\hat\Delta$; $\sigma$ is the
 substitution component of $\Phi$; $\ksf{deps}(\iota)$ is the set of type
 symbols in $\iota$'s own telescope. \textsc{S-Item}'s last premise is
 \emph{coherence}: a val or fn item names no types, so without it nothing
@@ -395,9 +445,12 @@ preservation; method items carry their types and need no such premise.)}
 \caption{Expression typing. \textsc{T-Meth} carries the side condition
 that the provision at the key $(\sigma\tau_0, m)$ --- the receiver's
 \emph{type}, exactly as \S\ref{sec:intro} says, not merely its head ---
-is unique in $\Phi$; keying on the head alone is adequate under Moss's
-unique-nominal-per-instantiation idiom [D51] but unsound in the raw
-calculus, a repair owed to the mechanization. In
+is unique in $\Phi$ \emph{modulo $\sigma$}: provisions are keyed by the
+receiver's (declaration, static bindings) identity [D18] compared through
+the merged substitution, so two spellings of one merged atom are one
+provision rather than an ambiguity [D62]. Keying on the head alone is
+adequate under Moss's unique-nominal-per-instantiation idiom [D51] but
+unsound in the raw calculus, a repair owed to the mechanization. In
 \textsc{T-Match}, a nominal reference is identified with its singleton
 union, arms are in bijection with the heads $N_1, \ldots, N_k$, and $k =
 0$ types $\kw{match}\;e_0\;\{\}$ at any $\tau$.}
@@ -454,7 +507,8 @@ not a unification opportunity, if abstract symbols remain unmatched
 \begin{figure}[t]
 \centering
 \textbf{Telescopes}\quad \fbox{$\Sigma;\Delta_0 \vdash \Delta \wf$}
-\quad (write $\Phi_{\Delta} = \langle \Delta_0 \cup \Delta;\, \emptyset \rangle$)
+\quad (write $\Phi_{\Delta} = \langle \widehat{\Delta_0, \Delta};\,
+\sigma_{\Delta_0, \Delta} \rangle$, the merged context)
 \begin{mathpar}
 \inferrule[W-Nil]{ }{\Sigma;\Delta_0 \vdash \emptytel \wf}
 
@@ -510,7 +564,11 @@ its enclosing telescopes recorded), $\Sigma;\emptytel \vdash d \wf$ for
 each top-level $d$, and $\Sigma(\ksf{main}) =
 \ksf{fn}[\emptytel](\to \unitv)\{e\}$. \textsc{W-Sym} is the telescoping
 rule [D20]: an item may be assumed only after the items its own
-declaration needs.}
+declaration needs. Formation additionally requires the merge of
+Figure~\ref{fig:statics-aux} to succeed---$\Delta_0, \Delta \Downarrow
+\langle \widehat{\Delta_0, \Delta}; \sigma_{\Delta_0, \Delta} \rangle$---and
+every context the rules consult is that merged context, so a declaration's
+body is checked with the merge equations in force.}
 \label{fig:decls}
 \end{figure}
 
@@ -534,6 +592,13 @@ receiver's type and demands the unique provision at $(\sigma\tau_0, m)$
 force. The provision's own bracket bindings $\theta$
 are what interpret the method's signature at the call site---ergonomics
 ride along with the provision instead of being discovered [D36].
+\item \emph{Duplicate keys merge, consistently.} Telescope formation
+unifies colliding bindings (\textsc{M-Merge}) instead of rejecting them,
+erring only when two distinct concrete heads would be identified [D43].
+The equations land in $\sigma$, so downstream nothing changes: availability
+and dispatch already compare modulo $\sigma$, and \textsc{S-Tel} makes a
+use site instantiate merged symbols consistently---``binding one binds
+them all''.
 \item \emph{Injection is the only subtyping.} \textsc{Sub-Inj} lets a
 member into a union that lists it; there is no width or depth subtyping
 and no union-to-union coercion [D17].
@@ -658,7 +723,9 @@ signature $\Sigma$. Consequently type checking is syntax-directed (up to
 the placement of \textsc{T-Sub}) and elaboration---the assignment of
 satisfaction maps $\varsigma$ and provisions $\iota_0$---is a partial
 function of the program: at every use site there is at most one way to
-satisfy each requirement, and typing fails rather than choosing.
+satisfy each requirement---up to the substitution in force, under which
+the spellings of a merged atom are interchangeable [D43, D62]---and typing
+fails rather than choosing.
 \end{proposition}
 
 \begin{theorem}[Soundness]\label{thm:sound}
@@ -687,7 +754,13 @@ instantiation of the abstract type symbols per closure.  The
 mechanization additionally carries an executable fueled interpreter:
 the program of Figure~\ref{fig:example}, encoded in the core, computes
 to $\unitv$ by \texttt{vm\_compute}.  Designing and proving the
-invariant is what surfaced the repairs below. The theorem's empirical
+invariant is what surfaced the repairs below. (One further
+mechanization-level deviation: the mechanized merge is \emph{oriented}---the
+earlier occurrence of a key is kept as the representative and the unifier
+emits entries mapping later symbols onto it---and the unifier's output is
+verified at formation rather than trusted, so no property of the unifier
+enters the metatheory; the symmetric presentation above is recovered up to
+choice of representative.) The theorem's empirical
 counterpart is blunter: the self-hosted compiler elaborates and runs
 its own 19-module source under exactly these rules, to a byte-identical
 fixpoint.
@@ -705,8 +778,9 @@ runtime edges [D2].
 \end{proposition}
 
 \paragraph{What mechanizing the proofs caught.}
-Three repairs, all surfaced while designing the preservation invariant,
-are already folded into the figures above. (i)~Dispatch must key on the
+The repairs below, most surfaced while designing the preservation
+invariant and one by the merging session, are already folded into the
+figures above. (i)~Dispatch must key on the
 receiver's \emph{type}: an earlier draft of \textsc{T-Meth} keyed
 provisions by the receiver's head, which is adequate under Moss's
 unique-nominal-per-instantiation idiom [D51] but lets a provision bound
@@ -737,7 +811,12 @@ two stopgap coherence premises this document briefly carried.
 must know its scrutinee's $\sigma$-image is well-formed: regularity the
 declarative rules otherwise lose, and which the soundness invariant
 leans on.
-(vii)~$\This$ is \emph{reserved}: nothing else stopped a program from
+(vii)~Cyclic merges must fail (the occurs check in
+$\ksf{unify}$): [D43] specifies merging as deterministic unification but is
+silent on the cyclic case, and without the check a context could require
+$t \equiv \smallcode{Full[Elem=}t\smallcode{]}$, a requirement no
+instantiation grounds.
+(viii)~$\This$ is \emph{reserved}: nothing else stopped a program from
 binding the receiver symbol itself and pre-capturing every receiver
 substitution in scope --- the only repair that refuted
 Theorem~\ref{thm:sound} outright (a well-formed program whose
@@ -749,7 +828,11 @@ the bootstrap compiler [D62]: (i) is a \emph{live} hole --- the
 bootstrap keys provisions by the receiver's head symbol and accepts a
 program that types a $\smallcode{Char}$ payload as
 $\smallcode{Int}$ --- and (ii) is latent, unreachable only because v0
-does not yet implement bracket applications at call sites.
+does not yet implement bracket applications at call sites. The repair
+[D62] is now part of the calculus: provisions are keyed by the receiver's
+(declaration, static bindings) identity, and---what merging makes
+practical---compared modulo the merged $\sigma$, so re-keying does not
+fracture provisions across the spellings of one atom.
 
 Proposition~\ref{prop:phase} is the hypothesis behind the compilation
 pipeline: the monomorphizing WebAssembly backend is partial evaluation
@@ -779,10 +862,10 @@ not a structure. $\alpha$-resolution folds the module graph into the
 core's flat symbol space [D8--D10, D44, D56]. \\[3pt]
 \texttt{context} declarations &
 Names for telescopes; assuming one assumes its members, flattened
-recursively. Duplicate keys \emph{merge} by unification, erring only
-when two distinct concrete types would be identified [D19, D43]. The
-core requires keys distinct and keeps only the $\sigma$-canonicalized
-membership test. \\[3pt]
+recursively [D19]. Duplicate keys \emph{merge} by unification, erring only
+when two distinct concrete types would be identified [D43]---and the core
+now carries exactly this rule at telescope formation
+(Figure~\ref{fig:statics-aux}), so flattening is pure concatenation. \\[3pt]
 Functors &
 A named, signature-checked block of binds, applied with
 $\kw{bind}\;F;$ --- application inlines the block, so it elaborates to a
@@ -838,8 +921,9 @@ and only val data survives to run time. The nearest ancestor of
 $\kw{bind}$ for vals is implicit parameters~\cite{implicit-params},
 dynamic scoping with static types; Core Moss extends the idea uniformly
 to types and code, where ``dynamic'' scoping becomes static
-specialization. The consistent-merging rule for contexts [D43], omitted
-from the core, is a deterministic congruence over requirement sets;
+specialization. The consistent-merging rule for contexts [D43]---in the core, the
+\textsc{M-Merge} rule of telescope formation---is a deterministic
+congruence over requirement sets;
 its nearest published relative is the record-like treatment of
 intersection types of Xu, Huang, and Oliveira~\cite{type-difference}.
 

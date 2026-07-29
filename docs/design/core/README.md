@@ -11,9 +11,10 @@ its definitions and metatheoretical statements.
 - [`CoreMoss.v`](CoreMoss.v) — the Rocq mechanization: all definitions
   and the full metatheory of the paper's §4, machine-checked end to end
   (every theorem, type soundness included, reports closed under the
-  global context), plus the paper's Figure 1 example encoded and
-  executed by computation. The header comment lists the handful of
-  mechanization-level deviations from the paper.
+  global context), plus the paper's Figure 1 example and the merging
+  examples of §12b encoded and executed by computation. The header
+  comment lists the handful of mechanization-level deviations from the
+  paper.
 
 Both are built by flake checks, so CI keeps them compiling, and the
 paper is an ordinary package:
@@ -27,35 +28,44 @@ The PDF itself is not checked in; build it with the command above, or
 run `pdflatex` twice in this directory with `mathpartir` on the TeX
 search path.
 
-## Next: consistent merging (D43), with the D62 repair
+## Consistent merging (D43), with the D62 repair: landed
 
-The one load-bearing mechanism still outside the calculus, planned as a
-single focused session. Agreed design (July 2026):
+The July 2026 plan for this section has been executed; the last
+load-bearing mechanism is now inside the calculus, in both artifacts:
 
-- **Paper**: named contexts stay meta-level sugar (flattening). The new
-  content lands on *telescope formation*: a flattened telescope may
+- **Paper**: named contexts stay meta-level sugar (flattening), and the
+  new content landed on *telescope formation*: a flattened telescope may
   mention one key twice, and formation **merges** by unifying the
   colliding bindings — symmetric, no target primary — failing exactly
-  when two distinct concrete heads would be identified [D43]. Add an
-  occurs check (D43 is silent on cyclic merges; likely a finding).
-- **Mechanization**: orient the unifier — the merge function returns
-  (deduplicated items, substitution entries `C ↦ B` for a chosen
-  representative) or a clash, and those entries ride the existing σ
-  machinery unchanged. Record orientation as a deviation in the header
-  (same style as deviations 1 and 5); upgrade to a congruence
-  formulation only if representative-invariance ever matters.
-- **Knock-ons** (localized, not a rewrite): `sat`'s totality and
-  coherence go per-equivalence-class (θ instantiates representatives
-  and must respect the equations — "binding one binds them all" falls
-  out here, so the freshness discipline is untouched); a handful of
-  leaf lemmas that the unifier preserves `sigma_regular`, idempotence,
-  and the frees discipline; dynamics and phase separation untouched.
-- **Do together with [D62]**: re-key method provisions by the
-  receiver's (declaration, static bindings) identity, compared modulo
-  the merged σ — merging is what makes identity keying practical, and
-  D62's live bootstrap hole is the payoff.
-- **Method**: the proof harness from the original effort — frozen-spec
-  contract, statement-freeze guard over `(* BEGIN/END *)` FILL blocks,
-  whole-file `coqc` as the gate, `Print Assumptions` audit on the six
-  theorems — with leaf proofs delegated to subagents (Claude or Codex)
-  and refutation reports treated as first-class deliverables.
+  when two distinct concrete heads would be identified [D43], or when
+  the equations are cyclic (the occurs check; D43 is silent on cyclic
+  merges — the anticipated finding, now recorded as repair (vii)).
+  Satisfaction is judged against the merged telescope (S-Tel): totality
+  per equivalence class, plus the merge equations, so "binding one binds
+  them all" holds at every use site.
+- **Mechanization**: the unifier is oriented (header deviation 9): the
+  merge keeps the earlier occurrence of a key as the representative and
+  returns substitution entries `C ↦ B` that ride the existing σ
+  machinery unchanged. The unifier is fuel-indexed and its candidate is
+  *verified* at formation (images identified, σ regular and idempotent),
+  so no property of the unifier itself enters the metatheory.
+- **Knock-ons** were as predicted — `sat`'s totality and coherence went
+  per-equivalence-class, plus a handful of leaf lemmas (`merge_item_*`,
+  `tele_sigma_regular`, `tele_ctx_tyreqs`); dynamics and phase
+  separation untouched.
+- **[D62]**: method dispatch uniqueness is judged modulo the merged σ
+  (header deviation 10, T-Meth in the paper) — provisions are keyed by
+  the receiver's (declaration, static bindings) identity, compared
+  through σ, so two spellings of one merged atom are one provision.
+- **Second finding, from doing both at once**: the *merge* key for a
+  method item must be the receiver's type too, not its head. Head
+  keying gives `Slot[Elem=Int].get` and `Slot[Elem=Char].get` one key,
+  so a telescope needing the method at two instantiations would try to
+  identify `Int` with `Char` and be rejected at formation — the same
+  error D62 repairs in dispatch, one judgment earlier. D43's own example
+  still merges: there the receiver is shared and it is the method's own
+  application that differs. Both behaviours are pinned by computation
+  in §12b.
+- **Executed evidence**: §12b of `CoreMoss.v` computes the D43 example's
+  merge (`C ↦ B`), the concrete-head clash, the occurs-check rejection,
+  and runs a merged program (plus its erasure) to `()` by `vm_compute`.

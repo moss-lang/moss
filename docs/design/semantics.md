@@ -521,6 +521,23 @@ representation: symbols still chase pointers to a representative rather
 than mapping into an atom set, which is invisible semantically but worth
 revisiting when contexts get reified for tooling.
 
+*Calculus note (July 2026):* merging is now part of the core calculus
+([docs/design/core](core/)): telescope formation merges duplicate keys by
+unifying the colliding bindings, failing exactly when two distinct
+concrete heads would be identified — and, a finding of the mechanization,
+when the equations are cyclic (D43 is silent on cyclic merges; the core
+adds the occurs check, so `t ≡ Full[Elem=t]` is a formation error). The
+mechanization orients the unifier (earlier occurrence is the
+representative) and verifies its output at formation; satisfaction goes
+per equivalence class, so "binding one binds them all" is a theorem-level
+property at every use site. One clarification the mechanization forces: a
+method requirement's key is the receiver's *type* — the [D18] identity
+[D62] repairs dispatch to use — not its head. Keying on the head would
+give `Slot[Elem=Int].get` and `Slot[Elem=Char].get` one key, so a
+telescope needing the method at two instantiations would try to identify
+`Int` with `Char`; D43's own example is unaffected, since there the
+receiver is shared and only the method's application differs.
+
 **[D20] DECIDED (assume).** `assume xs { decls }` adds the items `xs` to the
 requirement set of every declaration inside. Requirement sets nest by union:
 `src/lex.moss`'s `lex` sits inside `assume Char { ... assume next_byte { }}`
@@ -1426,7 +1443,13 @@ probing the bootstrap resolves both:
   layouts this is a miscompile. The proof's repair is to key provisions
   by the receiver's [D18] identity — (declaration, static bindings) —
   not its head; [D51]'s unique-nominal idiom is why the corpus never
-  trips it.
+  trips it. *Calculus note (July 2026):* the core now carries this
+  repair in full, together with [D43] merging, which is what makes
+  identity keying practical: T-Meth demands a unique provision at the
+  receiver's (declaration, static bindings) identity *compared modulo
+  the merged σ*, so re-keying does not fracture provisions across the
+  spellings of one merged atom. The bootstrap still needs the
+  corresponding change when [D59] layouts land.
 
 - **Cross-kind instantiation coherence is a latent hole.** Nothing
   compares the `T` of an application against the `T` an ambient val/fn

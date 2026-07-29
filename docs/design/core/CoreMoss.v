@@ -53,6 +53,28 @@
 (*    their receiver and application, so they were immune — see (6).)  Also  *)
 (*    found while designing the preservation invariant; now in the paper's   *)
 (*    S-Item rule as well.                                                    *)
+(* 9. Telescope merging [D43] is oriented and verified.  The paper merges    *)
+(*    duplicate keys at telescope formation by symmetric unification; here   *)
+(*    the merge function keeps the earlier occurrence as representative and  *)
+(*    returns substitution entries mapping later symbols onto it, riding     *)
+(*    the existing σ machinery unchanged.  The unifier is fuel-indexed (a    *)
+(*    generous quadratic budget) and its candidate is *verified* by          *)
+(*    formation — colliding items identified, σ regular and idempotent (the  *)
+(*    latter subsumes the occurs check, a finding: D43 is silent on cyclic   *)
+(*    merges) — so no property of the unifier enters the metatheory: a       *)
+(*    defective or fuel-starved candidate can only reject a telescope,       *)
+(*    never mis-merge one.  Upgrade to a congruence formulation only if      *)
+(*    representative-invariance ever matters.  Method items are keyed by     *)
+(*    the receiver's *type* (the [D18]/[D62] identity), not its head: head   *)
+(*    keying would falsely clash Slot[Elem=Int].get with                     *)
+(*    Slot[Elem=Char].get at formation.                                      *)
+(* 10. Method dispatch uniqueness is judged modulo σ [D62]: T-Meth demands   *)
+(*    that all provisions at the receiver's type have one *image* under the  *)
+(*    substitution in force — provisions are keyed by the receiver's         *)
+(*    (declaration, static bindings) identity compared through the merged    *)
+(*    σ, so two spellings of one merged atom are one provision rather than   *)
+(*    an ambiguity.  (The receiver-*type* keying itself is deviation 6,      *)
+(*    already shared with the paper.)                                        *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith.
@@ -169,6 +191,34 @@ Fixpoint ty_eqb (a b : ty) {struct a} : bool :=
   | _, _ => false
   end.
 
+(* The abstract type symbols a type mentions.  (Used by the soundness
+   development below, and by the merging unifier's occurs check.) *)
+Fixpoint ty_frees (tau : ty) : list tsym :=
+  match tau with
+  | TUnit => []
+  | TAbs t => [t]
+  | TNom _ th =>
+      (fix go (l : list (tsym * ty)) : list tsym :=
+         match l with [] => [] | p :: r => ty_frees (snd p) ++ go r end) th
+  | TUnion ms =>
+      (fix go (l : list ty) : list tsym :=
+         match l with [] => [] | t' :: r => ty_frees t' ++ go r end) ms
+  end.
+
+(* The size of a type, counting nodes: the merging unifier's fuel budget is
+   computed from it. *)
+Fixpoint ty_size (tau : ty) : nat :=
+  match tau with
+  | TUnit => 1
+  | TAbs _ => 1
+  | TNom _ th =>
+      S ((fix go (l : list (tsym * ty)) : nat :=
+            match l with [] => 0 | p :: r => S (ty_size (snd p) + go r) end) th)
+  | TUnion ms =>
+      S ((fix go (l : list ty) : nat :=
+            match l with [] => 0 | t' :: r => S (ty_size t' + go r) end) ms)
+  end.
+
 (* ===================== 3. Items and telescopes =========================== *)
 
 (* A method item carries the *receiver type* it is provided at: the paper's
@@ -251,6 +301,204 @@ Definition add_item (i : item) (Phi : ctx) : ctx :=
 Definition bind_ty (t : tsym) (tau : ty) (Phi : ctx) : ctx :=
   mkCtx (ITy t :: cA Phi) ((t, app_subst (cS Phi) tau) :: cS Phi).
 
+(* ===================== 4b. Consistent merging [D43] ====================== *)
+
+(* Telescope formation merges duplicate keys [D43]: a flattened telescope
+   may mention one key twice, and formation unifies the colliding bindings,
+   failing exactly when two distinct concrete heads would be identified.
+   The design is symmetric — neither occurrence is primary — but the
+   mechanization orients it (deviation 9): the earlier item is kept as the
+   representative, and the unifier emits substitution entries mapping later
+   symbols onto earlier material.  Those entries ride the existing σ
+   machinery of `ctx` unchanged. *)
+
+(* The key an item is stored under: the symbol itself; for a method
+   requirement, the method symbol paired with the receiver's *type*, read
+   through the substitution accumulated so far — the [D18] identity
+   (declaration, static bindings), which is exactly the key [D62] repairs
+   dispatch to use, and the core's residue of the bootstrap's "method keys
+   canonicalize through the union-find" [D43].
+   Keying on the receiver's *head* instead would be wrong in the same way
+   head-keyed dispatch is: it would give Slot[Elem=Int].get and
+   Slot[Elem=Char].get one key, so a telescope legitimately requiring the
+   method at two instantiations would try to identify Int with Char and be
+   rejected at formation.  With type keying those are distinct atoms, while
+   D43's own example still merges — there the receiver (A) is shared and it
+   is the method's own application that differs. *)
+Definition same_key (s : subst) (i j : item) : bool :=
+  match i, j with
+  | ITy t, ITy u => Nat.eqb t u
+  | IVal v, IVal w => Nat.eqb v w
+  | IFn f, IFn h => Nat.eqb f h
+  | IMth rt m _, IMth rt' m' _ =>
+      Nat.eqb m m' && ty_eqb (app_subst s rt) (app_subst s rt')
+  | _, _ => false
+  end.
+
+(* The occurs check.  D43 is silent on cyclic merges; without this, merging
+   t with Full[Elem=t] would accept a requirement no instantiation can
+   ground (a finding of this mechanization, recorded in the paper). *)
+Definition occurs_b (t : tsym) (tau : ty) : bool :=
+  existsb (Nat.eqb t) (ty_frees tau).
+
+(* Extending an idempotent substitution: apply the new entry to the
+   existing ranges, then append it.  With the occurs check this keeps every
+   range fixed under the whole substitution, so the one-pass app_subst
+   remains the fixpoint reading. *)
+Definition extend_subst (acc : subst) (t : tsym) (tau : ty) : subst :=
+  map_snd (app_subst [(t, tau)]) acc ++ [(t, tau)].
+
+(* The oriented unifier, fuel-indexed (deviation 9).  Both sides are read
+   through acc at every step; when two abstract symbols meet, the left
+   (earlier) one becomes the representative.  Fuel bounds the total number
+   of steps; merge_item computes a generous budget below, and formation
+   *verifies* the unifier's output rather than trusting it, so fuel
+   exhaustion (like any other defect of the candidate) can only reject a
+   telescope, never mis-merge one. *)
+Fixpoint unify_tys (fuel : nat) (acc : subst) (a b : ty) {struct fuel}
+    : option subst :=
+  match fuel with
+  | O => None
+  | S k =>
+      match app_subst acc a, app_subst acc b with
+      | TAbs t, TAbs u =>
+          if Nat.eqb t u then Some acc
+          else Some (extend_subst acc u (TAbs t))
+      | TAbs t, b' =>
+          if occurs_b t b' then None else Some (extend_subst acc t b')
+      | a', TAbs u =>
+          if occurs_b u a' then None else Some (extend_subst acc u a')
+      | TUnit, TUnit => Some acc
+      | TNom n th, TNom n' th' =>
+          if Nat.eqb n n' then unify_rows k acc th th' else None
+      | TUnion ms, TUnion ms' => unify_alls k acc ms ms'
+      | _, _ => None
+      end
+  end
+with unify_rows (fuel : nat) (acc : subst) (th th' : list (tsym * ty))
+    {struct fuel} : option subst :=
+  match fuel with
+  | O => None
+  | S k =>
+      match th, th' with
+      | [], [] => Some acc
+      | p :: r, p' :: r' =>
+          if Nat.eqb (fst p) (fst p')
+          then match unify_tys k acc (snd p) (snd p') with
+               | Some acc' => unify_rows k acc' r r'
+               | None => None
+               end
+          else None
+      | _, _ => None
+      end
+  end
+with unify_alls (fuel : nat) (acc : subst) (ms ms' : list ty)
+    {struct fuel} : option subst :=
+  match fuel with
+  | O => None
+  | S k =>
+      match ms, ms' with
+      | [], [] => Some acc
+      | a :: r, b :: r' =>
+          match unify_tys k acc a b with
+          | Some acc' => unify_alls k acc' r r'
+          | None => None
+          end
+      | _, _ => None
+      end
+  end.
+
+(* Unifying two same-key items: symbols must coincide; colliding method
+   bindings — the receiver and the application — unify pointwise. *)
+Definition item_size (i : item) : nat :=
+  match i with
+  | ITy _ | IVal _ | IFn _ => 1
+  | IMth rt _ th =>
+      S (ty_size rt +
+         fold_right (fun p n => S (ty_size (snd p) + n)) 0 th)
+  end.
+
+Definition subst_size (s : subst) : nat :=
+  fold_right (fun p n => S (ty_size (snd p) + n)) 0 s.
+
+Definition merge_fuel (s : subst) (i j : item) : nat :=
+  let n := item_size i + item_size j + subst_size s + 4 in n * n.
+
+Definition unify_items (fuel : nat) (acc : subst) (i j : item)
+    : option subst :=
+  match i, j with
+  | ITy t, ITy u => if Nat.eqb t u then Some acc else None
+  | IVal v, IVal w => if Nat.eqb v w then Some acc else None
+  | IFn f, IFn h => if Nat.eqb f h then Some acc else None
+  | IMth rt m th, IMth rt' m' th' =>
+      if Nat.eqb m m'
+      then match unify_tys fuel acc rt rt' with
+           | Some acc' => unify_rows fuel acc' th th'
+           | None => None
+           end
+      else None
+  | _, _ => None
+  end.
+
+(* Verification of a merge candidate.  Formation checks the unifier's
+   output — the colliding items really are identified, the substitution
+   only binds and only mentions the telescope's own type symbols, and its
+   ranges are fixed under it (idempotence, which also subsumes the occurs
+   check) — so no property of the unifier itself enters the metatheory: a
+   defective candidate fails formation instead of weakening it. *)
+Definition inclb (xs ys : list nat) : bool :=
+  forallb (fun x => existsb (Nat.eqb x) ys) xs.
+
+Definition sigma_regular_b (sg : subst) (A : list item) : bool :=
+  inclb (map fst sg) (tyreqs A)
+  && forallb (fun p => inclb (ty_frees (snd p)) (tyreqs A)) sg.
+
+Definition idempotent_b (s : subst) : bool :=
+  forallb (fun p => ty_eqb (app_subst s (snd p)) (snd p)) s.
+
+Fixpoint find_same_key (s : subst) (A : list item) (i : item)
+    : option item :=
+  match A with
+  | [] => None
+  | j :: r => if same_key s j i then Some j else find_same_key s r i
+  end.
+
+(* One item arriving at a context under formation: dedup against an
+   existing same-key item by unifying their images, or append.  On a merge
+   the item list is unchanged — the earlier occurrence is the
+   representative — and only σ grows. *)
+Definition merge_item (Phi : ctx) (i : item) : option ctx :=
+  match find_same_key (cS Phi) (cA Phi) i with
+  | None => Some (mkCtx (cA Phi ++ [i]) (cS Phi))
+  | Some j =>
+      match unify_items (merge_fuel (cS Phi) j i) (cS Phi) j i with
+      | Some s' =>
+          if item_subst_eqb s' j i
+             && sigma_regular_b s' (cA Phi)
+             && idempotent_b s'
+          then Some (mkCtx (cA Phi) s')
+          else None
+      | None => None
+      end
+  end.
+
+Fixpoint merge_tele (Phi : ctx) (D : tele) : option ctx :=
+  match D with
+  | [] => Some Phi
+  | i :: r =>
+      match merge_item Phi i with
+      | Some Phi' => merge_tele Phi' r
+      | None => None
+      end
+  end.
+
+(* The context a telescope denotes: its deduplicated items and its merge
+   substitution.  On a telescope with distinct keys this is ⟨D; ∅⟩, the
+   pre-merging reading. *)
+Definition empty_ctx : ctx := mkCtx [] [].
+
+Definition tele_ctx (D : tele) : option ctx := merge_tele empty_ctx D.
+
 (* ===================== 5. Expressions and values ========================= *)
 
 (* Satisfaction maps: for each requirement of a callee/provider, the in-force
@@ -301,26 +549,41 @@ Definition dep_tys (Sg : gsig) (i : item) : list tsym :=
   | _ => []
   end.
 
-(* Satisfaction Φ ⊢ θ ⊨ Δ, in elaborated normal form: θ is defined exactly
-   on Δ's type items (identity entries playing the paper's S-Pass); every
-   other requirement, read under θ, is available; and — coherence — where a
-   non-type requirement is answered from the ambient context, θ must agree
-   with the context on the type symbols that requirement depends on
-   (deviation 8). *)
-Definition sat (Sg : gsig) (Phi : ctx) (th : subst) (D : tele) : Prop :=
-  map fst th = tyreqs D /\
+(* θ respects a telescope's merge equations: symbols the telescope merged
+   must be instantiated consistently — "binding one binds them all" [D43],
+   read at a use site.  (For the identity application this collapses to:
+   the ambient σ itself validates the equations.) *)
+Definition merge_respects (Phi : ctx) (th : subst) (sD : subst) : Prop :=
+  Forall (fun p => app_subst (cS Phi) (app_subst th (TAbs (fst p)))
+                   = app_subst (cS Phi) (app_subst th (snd p))) sD.
+
+(* Satisfaction Φ ⊢ θ ⊨ Δ, in elaborated normal form, judged against the
+   telescope's merged context ⟨Δ̂; σ_Δ⟩ (§4b): θ is defined exactly on the
+   deduplicated type items (identity entries playing the paper's S-Pass;
+   totality is per equivalence class); every other deduplicated
+   requirement, read under θ, is available; θ respects the merge
+   equations; and — coherence — where a non-type requirement is answered
+   from the ambient context, θ must agree with the context on the type
+   symbols that requirement depends on (deviation 8). *)
+Definition sat_at (Sg : gsig) (Phi : ctx) (th : subst) (PhiD : ctx) : Prop :=
+  map fst th = tyreqs (cA PhiD) /\
   Forall (fun i =>
             is_ty_item i = true \/
             (avail Phi (app_subst_item th i) /\
              Forall (fun t =>
                        app_subst (cS Phi) (app_subst th (TAbs t))
                        = app_subst (cS Phi) (TAbs t))
-                    (dep_tys Sg i))) D.
+                    (dep_tys Sg i))) (cA PhiD) /\
+  merge_respects Phi th (cS PhiD).
+
+Definition sat (Sg : gsig) (Phi : ctx) (th : subst) (D : tele) : Prop :=
+  exists PhiD, tele_ctx D = Some PhiD /\ sat_at Sg Phi th PhiD.
 
 Definition sat0 (Sg : gsig) (Phi : ctx) (D : tele) : Prop :=
-  sat Sg Phi (id_app D) D
-  /\ Forall (fun t => avail Phi (ITy t)) (tyreqs D).
-(* The second conjunct is the paper's S-Pass availability, which the
+  exists PhiD, tele_ctx D = Some PhiD
+  /\ sat_at Sg Phi (id_app (cA PhiD)) PhiD
+  /\ Forall (fun t => avail Phi (ITy t)) (tyreqs (cA PhiD)).
+(* The last conjunct is the paper's S-Pass availability, which the
    elaborated-normal-form `sat` alone loses at identity applications: a
    batch-1 agent refuted tele_deps_closed and traced it exactly here. *)
 
@@ -387,8 +650,12 @@ Fixpoint lookup_smap (i : item) (sm : smap) : option item :=
 Definition item_matches (s th : subst) (i i' : item) : Prop :=
   app_subst_item s (app_subst_item th i) = app_subst_item s i'.
 
+(* ς's domain is the deduplicated telescope's non-type items: elaborated
+   bodies reference the representatives, so those are the keys the callee's
+   runtime context is built under. *)
 Definition smap_ok (Phi : ctx) (th : subst) (sm : smap) (D : tele) : Prop :=
-  map fst sm = filter (fun i => negb (is_ty_item i)) D /\
+  exists PhiD, tele_ctx D = Some PhiD /\
+  map fst sm = filter (fun i => negb (is_ty_item i)) (cA PhiD) /\
   Forall (fun p => In (snd p) (cA Phi)
                    /\ item_matches (cS Phi) th (fst p) (snd p)) sm.
 
@@ -483,9 +750,13 @@ Inductive has_ty (Sg : gsig) : ctx -> tenv -> expr -> ty -> Prop :=
     In (IMth rt0 m th0) (cA Phi) ->
     (* the provision's receiver type is the receiver's type, after σ *)
     app_subst (cS Phi) rt0 = app_subst (cS Phi) tau0 ->
-    (* dispatch demands exactly one hit [D1] *)
+    (* dispatch demands exactly one hit [D1], judged modulo σ: provisions
+       are keyed by the receiver's (declaration, static bindings) identity
+       compared through the merged substitution [D62] — two spellings of
+       one merged atom are one provision, not an ambiguity *)
     (forall i1, In i1 (cA Phi) -> is_prov_at (cS Phi) tau0 m i1 ->
-                i1 = IMth rt0 m th0) ->
+                app_subst_item (cS Phi) i1
+                = app_subst_item (cS Phi) (IMth rt0 m th0)) ->
     Forall2 (fun e tau =>
                has_ty Sg Phi G e
                       (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0) tau))
@@ -579,38 +850,58 @@ Inductive item_ok (Sg : gsig) (Phi : ctx) : item -> Prop :=
     Forall (fun p => wf_ty Sg Phi (snd p)) th ->
     item_ok Sg Phi (IMth rt m th).
 
-(* The telescoping rule [D20]: each item is checked with only the items to
-   its left (and the enclosing telescope) in force. *)
-Inductive wf_tele (Sg : gsig) : tele -> tele -> Prop :=
-| WNil : forall D0, wf_tele Sg D0 []
-| WCons : forall D0 i D,
-    item_ok Sg (mk_ctx D0) i ->
-    wf_tele Sg (D0 ++ [i]) D ->
-    wf_tele Sg D0 (i :: D).
+(* The telescoping rule [D20], now with merging [D43]: each item is checked
+   with only the items to its left in force (under the substitution merged
+   so far), and then folded in — appended if its key is fresh, unified with
+   the earlier occurrence otherwise.  The judgment relates a starting
+   context to the context the whole telescope leaves in force. *)
+Inductive wf_tele (Sg : gsig) : ctx -> tele -> ctx -> Prop :=
+| WNil : forall Phi, wf_tele Sg Phi [] Phi
+| WCons : forall Phi i D Phi' Phi'',
+    item_ok Sg Phi i ->
+    merge_item Phi i = Some Phi' ->
+    wf_tele Sg Phi' D Phi'' ->
+    wf_tele Sg Phi (i :: D) Phi''.
+
+(* Formation computes exactly the merged context of §4b. *)
+Lemma wf_tele_merge : forall Sg Phi D Phi',
+  wf_tele Sg Phi D Phi' -> merge_tele Phi D = Some Phi'.
+Proof.
+  intros Sg Phi D Phi' H.
+  induction H as [Phi | Phi i D Phi' Phi'' _ Hm _ IH]; simpl.
+  - reflexivity.
+  - rewrite Hm. exact IH.
+Qed.
+
+Lemma wf_tele_ctx : forall Sg D PhiD,
+  wf_tele Sg empty_ctx D PhiD -> tele_ctx D = Some PhiD.
+Proof. intros Sg D PhiD H. exact (wf_tele_merge H). Qed.
 
 (* A defined body's parameters become variables 0, 1, ... *)
 Definition body_env (S : fnsig) : tenv :=
   combine (seq 0 (length (fs_params S))) (fs_params S).
 
+(* Declarations are checked under their telescope's *merged* context: the
+   deduplicated items with the merge substitution in force. *)
 Record wf_gsig (Sg : gsig) : Prop := {
   wf_tag_decl : forall n D taup,
       g_tag Sg n = Some (D, taup) ->
-      wf_tele Sg [] D /\ wf_ty Sg (mk_ctx D) taup;
+      exists PhiD, wf_tele Sg empty_ctx D PhiD /\ wf_ty Sg PhiD taup;
   wf_val_decl : forall v D tauv,
       g_val Sg v = Some (D, tauv) ->
-      wf_tele Sg [] D /\ wf_ty Sg (mk_ctx D) tauv;
+      exists PhiD, wf_tele Sg empty_ctx D PhiD /\ wf_ty Sg PhiD tauv;
   wf_fn_decl : forall f D S b,
       g_fn Sg f = Some (D, S, b) ->
-      wf_tele Sg [] D
-      /\ Forall (wf_ty Sg (mk_ctx D)) (fs_params S)
-      /\ wf_ty Sg (mk_ctx D) (fs_ret S)
+      exists PhiD, wf_tele Sg empty_ctx D PhiD
+      /\ Forall (wf_ty Sg PhiD) (fs_params S)
+      /\ wf_ty Sg PhiD (fs_ret S)
       /\ (forall body, b = Some body ->
-             has_ty Sg (mk_ctx D) (body_env S) body (fs_ret S));
+             has_ty Sg PhiD (body_env S) body (fs_ret S));
   wf_mth_decl : forall m D S,
       g_mth Sg m = Some (D, S) ->
-      wf_tele Sg [] D
-      /\ Forall (wf_ty Sg (mk_ctx (ITy this_sym :: D))) (fs_params S)
-      /\ wf_ty Sg (mk_ctx (ITy this_sym :: D)) (fs_ret S)
+      exists PhiD, wf_tele Sg empty_ctx D PhiD
+      /\ Forall (wf_ty Sg (add_item (ITy this_sym) PhiD)) (fs_params S)
+      /\ wf_ty Sg (add_item (ITy this_sym) PhiD) (fs_ret S)
 }.
 
 (* ⊢ P ok: a well-formed signature whose main is defined, closed, unit-valued. *)
@@ -1055,8 +1346,10 @@ End EvalInd.
 (* ---- Proposition 4.1 (resolution is search-free). ----------------------
    The context premises of the statics are the single membership test
    `avail`, a boolean over the finite set A — decidable by construction, and
-   no judgment quantifies over Σ.  The uniqueness premise of T-Meth makes the
-   provision annotation a function of the derivation. *)
+   no judgment quantifies over Σ.  The uniqueness premise of T-Meth makes
+   the provision annotation a function of the derivation up to σ: provisions
+   are keyed by the receiver's (declaration, static bindings) identity,
+   compared through the merged substitution [D62]. *)
 
 Theorem availability_decidable :
   forall Phi i, {avail Phi i} + {~ avail Phi i}.
@@ -1071,8 +1364,9 @@ Theorem method_resolution_functional :
   forall (Phi : ctx) k m i1 i2,
     In i1 (cA Phi) -> is_prov_at (cS Phi) k m i1 ->
     In i2 (cA Phi) -> is_prov_at (cS Phi) k m i2 ->
-    (forall i, In i (cA Phi) -> is_prov_at (cS Phi) k m i -> i = i1) ->
-    i2 = i1.
+    (forall i, In i (cA Phi) -> is_prov_at (cS Phi) k m i ->
+       app_subst_item (cS Phi) i = app_subst_item (cS Phi) i1) ->
+    app_subst_item (cS Phi) i2 = app_subst_item (cS Phi) i1.
 Proof. intros Phi k m i1 i2 H1 P1 H2 P2 Uniq. apply Uniq; assumption. Qed.
 
 (* ---- Leaf lemmas for the proof effort -----------------------------------
@@ -1713,19 +2007,9 @@ Qed.
 
 (* ===================== 11b. The semantic soundness development =========== *)
 
-(* --- Free symbols and closed types. -------------------------------------- *)
-
-Fixpoint ty_frees (tau : ty) : list tsym :=
-  match tau with
-  | TUnit => []
-  | TAbs t => [t]
-  | TNom _ th =>
-      (fix go (l : list (tsym * ty)) : list tsym :=
-         match l with [] => [] | p :: r => ty_frees (snd p) ++ go r end) th
-  | TUnion ms =>
-      (fix go (l : list ty) : list tsym :=
-         match l with [] => [] | t' :: r => ty_frees t' ++ go r end) ms
-  end.
+(* --- Free symbols and closed types. --------------------------------------
+   (ty_frees itself lives in §2: the merging unifier's occurs check needs
+   it.) *)
 
 Definition closed_ty (tau : ty) : Prop := ty_frees tau = [].
 
@@ -1817,16 +2101,20 @@ Fixpoint dentry_agree (Sg : gsig) (g : subst) (i : item) (en : dentry)
   | IFn f, DClo f' d' =>
       match g_fn Sg f, g_fn Sg f' with
       | Some (_, Sf, None), Some (D', S', Some _) =>
-          exists g',
-            grounding g' /\ covers g' (tyreqs D') /\
+          exists PhiD' g',
+            tele_ctx D' = Some PhiD' /\
+            grounding g' /\ covers g' (tyreqs (cA PhiD')) /\
+            (* the closure's grounding respects the provider telescope's
+               merge equations *)
+            absorbs g' (cS PhiD') /\
             map (app_subst g') (fs_params S') = map (app_subst g) (fs_params Sf) /\
             app_subst g' (fs_ret S') = app_subst g (fs_ret Sf) /\
-            tele_covered d' D' /\
+            tele_covered d' (cA PhiD') /\
             (* the captured environment's keys are the telescope's items:
                their type material is bounded by the telescope *)
             Forall (fun p =>
               incl (dep_tys Sg (fst p) ++ item_ty_frees (fst p)
-                    ++ method_item_frees Sg (fst p)) (tyreqs D')) d' /\
+                    ++ method_item_frees Sg (fst p)) (tyreqs (cA PhiD'))) d' /\
             (fix all (dd : denv) : Prop :=
                match dd with
                | [] => True
@@ -1837,8 +2125,12 @@ Fixpoint dentry_agree (Sg : gsig) (g : subst) (i : item) (en : dentry)
   | IMth rt m th, DClo f' d' =>
       match g_mth Sg m, g_fn Sg f' with
       | Some (_, Sm), Some (D', S', Some _) =>
-          exists g',
-            grounding g' /\ covers g' (tyreqs D') /\
+          exists PhiD' g',
+            tele_ctx D' = Some PhiD' /\
+            grounding g' /\ covers g' (tyreqs (cA PhiD')) /\
+            (* the closure's grounding respects the provider telescope's
+               merge equations *)
+            absorbs g' (cS PhiD') /\
             map (app_subst g') (fs_params S')
               = app_subst g rt
                 :: map (fun tau =>
@@ -1846,12 +2138,12 @@ Fixpoint dentry_agree (Sg : gsig) (g : subst) (i : item) (en : dentry)
                        (fs_params Sm) /\
             app_subst g' (fs_ret S')
               = app_subst g (app_subst (this_subst rt) (app_subst th (fs_ret Sm))) /\
-            tele_covered d' D' /\
+            tele_covered d' (cA PhiD') /\
             (* the captured environment's keys are the telescope's items:
                their type material is bounded by the telescope *)
             Forall (fun p =>
               incl (dep_tys Sg (fst p) ++ item_ty_frees (fst p)
-                    ++ method_item_frees Sg (fst p)) (tyreqs D')) d' /\
+                    ++ method_item_frees Sg (fst p)) (tyreqs (cA PhiD'))) d' /\
             (fix all (dd : denv) : Prop :=
                match dd with
                | [] => True
@@ -2563,147 +2855,322 @@ Proof.
 Qed.
 (* END:wf_ty_frees *)
 
-(* Telescopes are dependency-closed: a non-type item's own type requirements
-   appear among the telescope's type items (the paper's [D20]).
-   Hint: induction on the wf_tele derivation, generalizing the prefix; the
-   item_ok premise's sat0 now carries availability of the telescope's type
-   items directly (its second conjunct); avail_ty_in turns that into
-   membership in the prefix, hence in D0 ++ D. *)
-(* BEGIN:tele_deps_closed *)
-(* BEGIN:tele_deps_closed *)
-Lemma tele_deps_closed : forall Sg D0 D,
-  wf_tele Sg D0 D ->
-  forall i, In i D -> is_ty_item i = false ->
-  incl (dep_tys Sg i) (tyreqs (D0 ++ D)).
+(* --- The merge's shape and its verified output (leaf lemmas). ------------
+   merge_item either appends a fresh-key item (σ unchanged) or unifies a
+   colliding one (items unchanged, σ verified).  The boolean checks it ran
+   are the source of the σ-regularity the soundness invariant carries.
+   Hint: unfold merge_item and case on find_same_key / unify_items / the
+   verification conjunction; the bridging lemmas are inductions on lists
+   with existsb/forallb via Nat.eqb_eq and ty_eqb_eq. *)
+(* BEGIN:merge_item_lemmas *)
+Lemma inclb_incl : forall xs ys, inclb xs ys = true -> incl xs ys.
 Proof.
-  intros Sg D0 D H.
-  induction H as [D0 | D0 i0 D' Hok Hwf IH].
-  - intros i Hin _. simpl in Hin. destruct Hin.
-  - intros i Hin Hty. simpl in Hin. destruct Hin as [Heq | Hin'].
-    + subst i.
-      inversion Hok as [t Hg | v Dv tauv Hg Hsat | f Df S b Hg Hsat
-                        | rt m Dm S th Hg Hrt Hs Hth]; subst.
-      * (* OkTy: contradicts is_ty_item i0 = false *)
-        unfold is_ty_item in Hty. discriminate.
-      * (* OkVal *)
-        unfold dep_tys. rewrite Hg.
-        destruct Hsat as [_ Hsat2].
-        rewrite Forall_forall in Hsat2.
-        intros t Ht. specialize (Hsat2 t Ht).
-        apply avail_ty_in in Hsat2. simpl in Hsat2.
-        apply wf_ty_frees_aux3. apply in_or_app. left. exact Hsat2.
-      * (* OkFn *)
-        unfold dep_tys. rewrite Hg.
-        destruct Hsat as [_ Hsat2].
-        rewrite Forall_forall in Hsat2.
-        intros t Ht. specialize (Hsat2 t Ht).
-        apply avail_ty_in in Hsat2. simpl in Hsat2.
-        apply wf_ty_frees_aux3. apply in_or_app. left. exact Hsat2.
-      * (* OkMth: dep_tys is [] for method items *)
-        unfold dep_tys. intros t Ht. simpl in Ht. destruct Ht.
-    + specialize (IH i Hin' Hty).
-      rewrite <- app_assoc in IH.
-      exact IH.
+  intros xs ys H. unfold inclb in H. rewrite forallb_forall in H.
+  intros x Hx. specialize (H x Hx).
+  apply existsb_exists in H. destruct H as [y [Hy He]].
+  apply Nat.eqb_eq in He. subst y. exact Hy.
 Qed.
-(* END:tele_deps_closed *)
+
+Lemma sigma_regular_b_sound : forall sg A,
+  sigma_regular_b sg A = true -> sigma_regular sg A.
+Proof.
+  intros sg A H. unfold sigma_regular_b in H.
+  apply andb_prop in H. destruct H as [H1 H2].
+  split.
+  - apply inclb_incl. exact H1.
+  - rewrite forallb_forall in H2. rewrite Forall_forall.
+    intros p Hp. apply inclb_incl. exact (H2 p Hp).
+Qed.
+
+Lemma merge_item_cA : forall Phi i Phi',
+  merge_item Phi i = Some Phi' ->
+  cA Phi' = cA Phi ++ [i] \/ cA Phi' = cA Phi.
+Proof.
+  intros Phi i Phi' H. unfold merge_item in H.
+  destruct (find_same_key (cS Phi) (cA Phi) i).
+  - destruct (unify_items (merge_fuel (cS Phi) i0 i) (cS Phi) i0 i);
+      [| discriminate].
+    destruct (item_subst_eqb s i0 i && sigma_regular_b s (cA Phi)
+              && idempotent_b s); [| discriminate].
+    injection H as <-. right. reflexivity.
+  - injection H as <-. left. reflexivity.
+Qed.
+
+Lemma merge_item_tyreqs : forall Phi i Phi',
+  merge_item Phi i = Some Phi' ->
+  incl (tyreqs (cA Phi)) (tyreqs (cA Phi')).
+Proof.
+  intros Phi i Phi' H.
+  destruct (merge_item_cA _ _ H) as [-> | ->].
+  - unfold tyreqs. rewrite flat_map_app.
+    intros t Ht. apply in_or_app. left. exact Ht.
+  - intros t Ht. exact Ht.
+Qed.
+
+Lemma merge_item_sigma : forall Phi i Phi',
+  merge_item Phi i = Some Phi' ->
+  sigma_regular (cS Phi) (cA Phi) ->
+  sigma_regular (cS Phi') (cA Phi').
+Proof.
+  intros Phi i Phi' H Hreg. unfold merge_item in H.
+  destruct (find_same_key (cS Phi) (cA Phi) i).
+  - destruct (unify_items (merge_fuel (cS Phi) i0 i) (cS Phi) i0 i)
+      as [s'|]; [| discriminate].
+    destruct (item_subst_eqb s' i0 i) eqn:E1; simpl in H; [| discriminate].
+    destruct (sigma_regular_b s' (cA Phi)) eqn:E2; simpl in H;
+      [| discriminate].
+    destruct (idempotent_b s') eqn:E3; [| discriminate].
+    injection H as <-. simpl.
+    apply sigma_regular_b_sound. exact E2.
+  - injection H as <-. simpl.
+    destruct Hreg as [Hdom Hrng].
+    split.
+    + intros t Ht. specialize (Hdom t Ht).
+      unfold tyreqs. rewrite flat_map_app.
+      apply in_or_app. left. exact Hdom.
+    + rewrite Forall_forall in Hrng |- *. intros p Hp.
+      intros t Ht. specialize (Hrng p Hp t Ht).
+      unfold tyreqs. rewrite flat_map_app.
+      apply in_or_app. left. exact Hrng.
+Qed.
+
+Lemma tele_sigma_regular : forall Sg Phi D PhiD,
+  wf_tele Sg Phi D PhiD ->
+  sigma_regular (cS Phi) (cA Phi) ->
+  sigma_regular (cS PhiD) (cA PhiD).
+Proof.
+  intros Sg Phi D PhiD H.
+  induction H as [Phi | Phi i D Phi' Phi'' _ Hm _ IH]; intros Hreg.
+  - exact Hreg.
+  - apply IH. exact (merge_item_sigma _ _ Hm Hreg).
+Qed.
+
+Lemma find_same_key_in : forall s A i j,
+  find_same_key s A i = Some j -> In j A /\ same_key s j i = true.
+Proof.
+  intros s A i. induction A as [|a r IH]; intros j H; simpl in H.
+  - discriminate.
+  - destruct (same_key s a i) eqn:E.
+    + injection H as <-. split; [left; reflexivity | exact E].
+    + destruct (IH j H) as [Hin Hk].
+      split; [right; exact Hin | exact Hk].
+Qed.
+
+(* Merging neither invents nor loses type requirements: a dropped duplicate
+   ITy shares its key — the symbol itself — with the occurrence kept. *)
+Lemma merge_item_tyreqs_iff : forall Phi i Phi',
+  merge_item Phi i = Some Phi' ->
+  forall t, In t (tyreqs (cA Phi')) <->
+            In t (tyreqs (cA Phi)) \/ In t (tyreqs [i]).
+Proof.
+  intros Phi i Phi' H t. unfold merge_item in H.
+  destruct (find_same_key (cS Phi) (cA Phi) i) as [j|] eqn:Efind.
+  - destruct (unify_items (merge_fuel (cS Phi) j i) (cS Phi) j i);
+      [| discriminate].
+    destruct (item_subst_eqb s j i && sigma_regular_b s (cA Phi)
+              && idempotent_b s); [| discriminate].
+    injection H as <-. simpl.
+    split; [intros Hin; left; exact Hin |].
+    intros [Hin | Hi]; [exact Hin |].
+    destruct i as [u|v|f|rt m th]; simpl in Hi; try contradiction.
+    destruct Hi as [<- | []].
+    destruct (find_same_key_in _ _ _ Efind) as [Hj Hk].
+    destruct j as [u'|v'|f'|rt' m' th']; simpl in Hk; try discriminate.
+    apply Nat.eqb_eq in Hk. subst u'.
+    unfold tyreqs. apply in_flat_map. exists (ITy u).
+    split; [exact Hj | left; reflexivity].
+  - injection H as <-. simpl.
+    unfold tyreqs. rewrite flat_map_app.
+    split.
+    + intros Hin. apply in_app_or in Hin. exact Hin.
+    + intros Hin. apply in_or_app. exact Hin.
+Qed.
+
+Lemma merge_tele_tyreqs : forall D Phi PhiD,
+  merge_tele Phi D = Some PhiD ->
+  forall t, In t (tyreqs (cA PhiD)) <->
+            In t (tyreqs (cA Phi)) \/ In t (tyreqs D).
+Proof.
+  induction D as [|i D IH]; intros Phi PhiD H t; simpl in H.
+  - injection H as <-. simpl. tauto.
+  - destruct (merge_item Phi i) as [Phi'|] eqn:Em; [| discriminate].
+    rewrite (IH _ _ H t).
+    rewrite (merge_item_tyreqs_iff _ _ Em t).
+    assert (Hsplit : In t (tyreqs (i :: D))
+                     <-> In t (tyreqs [i]) \/ In t (tyreqs D)).
+    { unfold tyreqs. simpl. rewrite app_nil_r. apply in_app_iff. }
+    rewrite Hsplit. tauto.
+Qed.
+
+(* A telescope and its merged context require the same type symbols: dedup
+   only drops literal repeats. *)
+Lemma tele_ctx_tyreqs : forall D PhiD,
+  tele_ctx D = Some PhiD ->
+  forall t, In t (tyreqs (cA PhiD)) <-> In t (tyreqs D).
+Proof.
+  intros D PhiD H t.
+  rewrite (merge_tele_tyreqs _ _ H t). simpl. tauto.
+Qed.
+
+Lemma wf_tele_tyreqs : forall Sg Phi D PhiD,
+  wf_tele Sg Phi D PhiD ->
+  forall t, In t (tyreqs (cA PhiD)) <->
+            In t (tyreqs (cA Phi)) \/ In t (tyreqs D).
+Proof.
+  intros Sg Phi D PhiD H t.
+  exact (merge_tele_tyreqs _ _ (wf_tele_merge H) t).
+Qed.
+(* END:merge_item_lemmas *)
+
+(* Telescopes are dependency-closed: a non-type item's own type requirements
+   appear among the merged telescope's type items (the paper's [D20]).
+   Hint: induction on the wf_tele derivation, carrying the invariant for
+   the accumulator; merge_item_cA splits the step, merge_item_tyreqs
+   transports the bound; the item_ok premise's sat0 carries availability of
+   the telescope's type items directly, and avail_ty_in turns that into
+   membership in the accumulator's items. *)
+Lemma tele_deps_closed_aux1 : forall Sg Phi i,
+  item_ok Sg Phi i ->
+  incl (dep_tys Sg i) (tyreqs (cA Phi)).
+Proof.
+  intros Sg Phi i Hok.
+  assert (Hs : forall D, sat0 Sg Phi D -> incl (tyreqs D) (tyreqs (cA Phi))).
+  { intros D Hsat t Ht.
+    destruct Hsat as [PhiD [Hctx [_ Hav]]].
+    rewrite Forall_forall in Hav.
+    apply (proj2 (tele_ctx_tyreqs _ Hctx t)) in Ht.
+    apply wf_ty_frees_aux3. apply avail_ty_in. exact (Hav t Ht). }
+  destruct Hok as [t Hg Hne | v Dv tauv Hg Hsat | f Df S b Hg Hsat
+                   | rt m Dm S th Hg Hrt Hsat Hth]; simpl.
+  - intros x Hx. destruct Hx.
+  - rewrite Hg. exact (Hs Dv Hsat).
+  - rewrite Hg. exact (Hs Df Hsat).
+  - intros x Hx. destruct Hx.
+Qed.
+
+Lemma tele_items_regular_aux1 : forall Sg Phi i,
+  item_ok Sg Phi i ->
+  incl (item_ty_frees i) (tyreqs (cA Phi)).
+Proof.
+  intros Sg Phi i Hok.
+  destruct Hok as [t Hg Hne | v Dv tauv Hg Hsat | f Df S b Hg Hsat
+                   | rt m Dm S th Hg Hrt Hsat Hth]; simpl.
+  - intros x Hx. destruct Hx.
+  - intros x Hx. destruct Hx.
+  - intros x Hx. destruct Hx.
+  - intros u Hu. apply in_app_or in Hu. destruct Hu as [Hrt' | Hth'].
+    + exact (wf_ty_frees Hrt u Hrt').
+    + apply in_flat_map in Hth'. destruct Hth' as [p [Hp Hup]].
+      rewrite Forall_forall in Hth.
+      exact (wf_ty_frees (Hth p Hp) u Hup).
+Qed.
+
+Lemma tele_items_regular_aux2 : forall Sg Phi i,
+  wf_gsig Sg ->
+  item_ok Sg Phi i ->
+  incl (method_item_frees Sg i) (tyreqs (cA Phi)).
+Proof.
+  intros Sg Phi i WF Hok.
+  destruct Hok as [t Hg Hne | v Dv tauv Hg Hsat | f Df S b Hg Hsat
+                   | rt m Dm Sm th Hg Hrt Hsat Hth]; simpl.
+  - intros x Hx. destruct Hx.
+  - intros x Hx. destruct Hx.
+  - intros x Hx. destruct Hx.
+  - intros u Hu. rewrite Hg in Hu.
+    apply in_flat_map in Hu. destruct Hu as [rho [Hrho Hu]].
+    apply in_map_iff in Hrho. destruct Hrho as [tau [Heq Htau]]. subst rho.
+    apply frees_app_subst_bound in Hu.
+    destruct Hu as [[p [Hp Hup]] | [Hu HnotThis]].
+    + simpl in Hp. destruct Hp as [Hp|[]]. inversion Hp; subst p.
+      simpl in Hup. exact (wf_ty_frees Hrt u Hup).
+    + apply frees_app_subst_bound in Hu.
+      destruct Hu as [[p [Hp Hup]] | [Hu HnotTh]].
+      * rewrite Forall_forall in Hth. exact (wf_ty_frees (Hth p Hp) u Hup).
+      * destruct (wf_mth_decl WF _ Hg) as [PhiDm [Wt [Hps Hret]]].
+        assert (Wtau : wf_ty Sg (add_item (ITy this_sym) PhiDm) tau).
+        { apply in_app_or in Htau. destruct Htau as [Htau|[Heq|[]]].
+          - rewrite Forall_forall in Hps. exact (Hps tau Htau).
+          - subst tau. exact Hret. }
+        pose proof (wf_ty_frees Wtau u Hu) as Hu0.
+        simpl in Hu0. destruct Hu0 as [Hu0|Hu0].
+        -- subst u. exfalso. apply HnotThis. simpl. left. reflexivity.
+        -- destruct Hsat as [PhiDm' [Htc [Hdom _]]].
+           pose proof (wf_tele_ctx Wt) as Htc'.
+           rewrite Htc' in Htc. injection Htc as <-.
+           exfalso. apply HnotTh. rewrite Hdom. exact Hu0.
+Qed.
+
+Lemma callee_env_agree_aux11_aux1 : forall Sg Phi rt m ap Dm Sm,
+  item_ok Sg Phi (IMth rt m ap) ->
+  g_mth Sg m = Some (Dm, Sm) ->
+  exists PhiDm, tele_ctx Dm = Some PhiDm /\ map fst ap = tyreqs (cA PhiDm).
+Proof.
+  intros Sg Phi rt m ap Dm Sm Hok Hg.
+  inversion Hok; subst.
+  match goal with
+  | H0 : g_mth Sg m = Some (?DX, ?SX), Hs : sat Sg Phi ap ?DX |- _ =>
+      rewrite Hg in H0; injection H0 as HD HS; subst;
+      destruct Hs as [PhiDm [Hctx Hsat]];
+      exists PhiDm; split; [exact Hctx | exact (proj1 Hsat)]
+  end.
+Qed.
+
+(* BEGIN:tele_deps_closed *)
+Lemma tele_deps_closed : forall Sg Phi D PhiD,
+  wf_tele Sg Phi D PhiD ->
+  (forall i, In i (cA Phi) -> is_ty_item i = false ->
+     incl (dep_tys Sg i) (tyreqs (cA Phi))) ->
+  forall i, In i (cA PhiD) -> is_ty_item i = false ->
+  incl (dep_tys Sg i) (tyreqs (cA PhiD)).
+Proof.
+  intros Sg Phi D PhiD H.
+  induction H as [Phi | Phi i D Phi' Phi'' Hok Hm Hwf IH]; intros Hacc.
+  - exact Hacc.
+  - apply IH. intros j Hj Hty.
+    pose proof (merge_item_tyreqs _ _ Hm) as Hincl.
+    destruct (merge_item_cA _ _ Hm) as [Heq | Heq]; rewrite Heq in Hj.
+    + apply in_app_or in Hj. destruct Hj as [Hj | Hj].
+      * intros t Ht. apply Hincl. exact (Hacc j Hj Hty t Ht).
+      * destruct Hj as [Hji | []]. subst j.
+        intros t Ht. apply Hincl.
+        exact (tele_deps_closed_aux1 Hok t Ht).
+    + intros t Ht. apply Hincl. exact (Hacc j Hj Hty t Ht).
+Qed.
 (* END:tele_deps_closed *)
 
 (* Well-formed telescopes only mention their own type material.
-   Hint: like tele_deps_closed — induction on wf_tele generalizing the
-   prefix; item_ok's wf_ty premises plus wf_ty_frees bound the method
-   items' receiver and application. *)
+   Hint: like tele_deps_closed — induction on wf_tele carrying the
+   accumulator invariant; item_ok's wf_ty premises plus wf_ty_frees bound
+   the method items' receiver and application, and wf_mth_decl plus the
+   item's sat premise bound the substituted signature (method_item_frees);
+   merge_item_cA / merge_item_tyreqs transport the bound across a step. *)
 (* BEGIN:tele_items_regular *)
-Lemma tele_items_regular : forall Sg D0 D,
+Lemma tele_items_regular : forall Sg Phi D PhiD,
   wf_gsig Sg ->
-  wf_tele Sg D0 D ->
-  forall i, In i D ->
+  wf_tele Sg Phi D PhiD ->
+  (forall i, In i (cA Phi) ->
+     incl (dep_tys Sg i ++ item_ty_frees i ++ method_item_frees Sg i)
+          (tyreqs (cA Phi))) ->
+  forall i, In i (cA PhiD) ->
   incl (dep_tys Sg i ++ item_ty_frees i ++ method_item_frees Sg i)
-       (tyreqs (D0 ++ D)).
+       (tyreqs (cA PhiD)).
 Proof.
-  intros Sg D0 D WF Hwf.
-  assert (Hfrees : forall i, In i D ->
-      incl (item_ty_frees i) (tyreqs (D0 ++ D))).
-  { induction Hwf as [D0 | D0 i0 D' Hok Hwf IH].
-    - intros i Hin. simpl in Hin. destruct Hin.
-    - intros i Hin. simpl in Hin. destruct Hin as [Heq | Hin'].
-      + subst i. inversion Hok as
-          [t Hg | v Dv tauv Hg Hsat | f Df S b Hg Hsat
-           | rt m Dm S th Hg Hrt Hsat Hth]; subst; simpl.
-        * intros t0 Ht. destruct Ht.
-        * intros t0 Ht. destruct Ht.
-        * intros t0 Ht. destruct Ht.
-        * intros t0 Ht.
-          apply in_app_or in Ht. destruct Ht as [Hrt' | Hth'].
-          -- assert (Hr := wf_ty_frees Hrt t0 Hrt').
-             unfold tyreqs in *. rewrite flat_map_app.
-             apply in_or_app. left. exact Hr.
-          -- apply in_flat_map in Hth'.
-             destruct Hth' as [p [Hp Htp]].
-             rewrite Forall_forall in Hth.
-             assert (Hp' := wf_ty_frees (Hth p Hp) t0 Htp).
-             unfold tyreqs in *. rewrite flat_map_app.
-             apply in_or_app. left. exact Hp'.
-      + specialize (IH i Hin').
-        rewrite <- app_assoc in IH. exact IH. }
-  assert (Hmethod : forall i, In i D ->
-      incl (method_item_frees Sg i) (tyreqs (D0 ++ D))).
-  { induction Hwf as [D0 | D0 i0 D' Hok Hwf IH].
-    - intros i Hin. contradiction.
-    - intros i Hin. simpl in Hin. destruct Hin as [Heq | Hin'].
-      + subst i. inversion Hok as
-          [t Hg | v Dv tauv Hg Hsat | f Df Sf b Hg Hsat
-           | rt m Dm Sm th Hg Hrt Hsat Hth]; subst; simpl.
-        * intros u Hu. contradiction.
-        * intros u Hu. contradiction.
-        * intros u Hu. contradiction.
-        * rewrite Hg. intros u Hu.
-          apply in_flat_map in Hu. destruct Hu as [rho [Hrho Hu]].
-          apply in_map_iff in Hrho.
-          destruct Hrho as [tau [Heq Htau]]. subst rho.
-          assert (Wtau : wf_ty Sg (mk_ctx (ITy this_sym :: Dm)) tau).
-          { destruct (wf_mth_decl WF m Hg) as [_ [Wps Wret]].
-            apply in_app_or in Htau. destruct Htau as [Htau | Htau].
-            - rewrite Forall_forall in Wps. exact (Wps tau Htau).
-            - simpl in Htau. destruct Htau as [Htau | []].
-              subst tau. exact Wret. }
-          apply frees_app_subst_bound in Hu.
-          destruct Hu as [[p [Hp Hup]] | [Hu HnotThis]].
-          -- simpl in Hp. destruct Hp as [Hp | []]. inversion Hp; subst p.
-             simpl in Hup.
-             pose proof (wf_ty_frees Hrt u Hup) as Hu0.
-             unfold tyreqs in *. rewrite flat_map_app.
-             apply in_or_app. left. exact Hu0.
-          -- apply frees_app_subst_bound in Hu.
-             destruct Hu as [[p [Hp Hup]] | [Hu HnotTh]].
-             ++ rewrite Forall_forall in Hth.
-                pose proof (wf_ty_frees (Hth p Hp) u Hup) as Hu0.
-                unfold tyreqs in *. rewrite flat_map_app.
-                apply in_or_app. left. exact Hu0.
-             ++ pose proof (wf_ty_frees Wtau u Hu) as Hu0.
-                simpl in Hu0. destruct Hu0 as [Hu0 | Hu0].
-                ** subst u. exfalso. apply HnotThis. simpl. left. reflexivity.
-                ** destruct Hsat as [Hdom _]. exfalso. apply HnotTh.
-                   rewrite Hdom. exact Hu0.
-      + assert (HF : forall j, In j D' ->
-            incl (item_ty_frees j) (tyreqs ((D0 ++ [i0]) ++ D'))).
-        { intros j Hj.
-          replace ((D0 ++ [i0]) ++ D') with (D0 ++ i0 :: D')
-            by (rewrite <- app_assoc; reflexivity).
-          exact (Hfrees j (or_intror Hj)). }
-        specialize (IH HF i Hin').
-        rewrite <- app_assoc in IH. exact IH. }
-  intros i Hin t Ht.
-  apply in_app_or in Ht. destruct Ht as [Hdep | Hrest].
-  - destruct i as [u | v | f | rt m th]; simpl in Hdep.
-    + destruct Hdep.
-    + exact (@tele_deps_closed Sg D0 D Hwf (IVal v) Hin
-               (eq_refl false) t Hdep).
-    + exact (@tele_deps_closed Sg D0 D Hwf (IFn f) Hin
-               (eq_refl false) t Hdep).
-    + destruct Hdep.
-  - apply in_app_or in Hrest. destruct Hrest as [Hfree | Hmethod'].
-    + exact (Hfrees i Hin t Hfree).
-    + exact (Hmethod i Hin t Hmethod').
+  intros Sg Phi D PhiD WF H.
+  induction H as [Phi | Phi i D Phi' Phi'' Hok Hm Hwf IH]; intros Hacc.
+  - exact Hacc.
+  - apply IH. intros j Hj.
+    pose proof (merge_item_tyreqs _ _ Hm) as Hincl.
+    destruct (merge_item_cA _ _ Hm) as [Heq | Heq]; rewrite Heq in Hj.
+    + apply in_app_or in Hj. destruct Hj as [Hj | Hj].
+      * intros t Ht. apply Hincl. exact (Hacc j Hj t Ht).
+      * destruct Hj as [Hji | []]. subst j.
+        intros t Ht. apply Hincl.
+        apply in_app_or in Ht. destruct Ht as [Ht | Ht].
+        -- exact (tele_deps_closed_aux1 Hok t Ht).
+        -- apply in_app_or in Ht. destruct Ht as [Ht | Ht].
+           ++ exact (tele_items_regular_aux1 Hok t Ht).
+           ++ exact (tele_items_regular_aux2 WF Hok t Ht).
+    + intros t Ht. apply Hincl. exact (Hacc j Hj t Ht).
 Qed.
 (* END:tele_items_regular *)
 
@@ -2846,10 +3313,12 @@ Proof.
   - simpl in Hit. injection Hit as Hv. subst v2.
     simpl in Hag |- *. destruct (g_val Sg v1) as [[Dv tauv]|] eqn:E; [|destruct Hag].
     simpl in Hdep. rewrite E in Hdep.
-    destruct (wf_val_decl WF _ E) as [_ Hwf].
+    destruct (wf_val_decl WF _ E) as [PhiDv [Wtv Hwf]].
     apply wf_ty_frees in Hwf. simpl in Hwf.
     rewrite <- (dentry_agree_retype_aux1 g1 g2 tauv); [exact Hag|].
-    intros t Ht. apply Hdep. apply Hwf. exact Ht.
+    intros t Ht. apply Hdep.
+    destruct (proj1 (@wf_tele_tyreqs _ _ _ _ Wtv t) (Hwf t Ht)) as [Hin0 | Hin];
+      [destruct Hin0 | exact Hin].
   - simpl in Hag. destruct (g_val Sg v1); destruct Hag.
   - simpl in Hag. destruct (g_fn Sg f1) as [[[Df Sf] b]|]; destruct Hag.
   - simpl in Hit. injection Hit as Hf. subst f2.
@@ -2859,17 +3328,22 @@ Proof.
     destruct (g_fn Sg f') as [[[D' S'] b']|] eqn:E'; [|destruct Hag].
     destruct b' as [body|]; [|destruct Hag].
     simpl in Hdep. rewrite E in Hdep.
-    destruct (wf_fn_decl WF _ E) as [_ [Hps [Hrt _]]].
-    destruct Hag as [g' [Hg [Hc [Hpar [Hret Hrest]]]]].
-    exists g'. split; [exact Hg|]. split; [exact Hc|].
+    destruct (wf_fn_decl WF _ E) as [PhiDf [Wtf [Hps [Hrt _]]]].
+    destruct Hag as [PhiD' [g' [Htc [Hg [Hc [Habs [Hpar [Hret Hrest]]]]]]]].
+    exists PhiD', g'. split; [exact Htc|]. split; [exact Hg|].
+    split; [exact Hc|]. split; [exact Habs|].
+    assert (Hcnv : forall t, In t (tyreqs (cA PhiDf)) -> In t (tyreqs Df)).
+    { intros t Ht.
+      destruct (proj1 (@wf_tele_tyreqs _ _ _ _ Wtf t) Ht) as [Hin0 | Hin];
+        [destruct Hin0 | exact Hin]. }
     split.
     + rewrite Hpar. apply map_ext_in. intros tau Htau.
       apply dentry_agree_retype_aux1. intros t Ht. apply Hdep.
       rewrite Forall_forall in Hps. specialize (Hps tau Htau).
-      apply wf_ty_frees in Hps. simpl in Hps. apply Hps. exact Ht.
+      apply wf_ty_frees in Hps. simpl in Hps. apply Hcnv. apply Hps. exact Ht.
     + split; [|exact Hrest].
       rewrite Hret. apply dentry_agree_retype_aux1. intros t Ht. apply Hdep.
-      apply wf_ty_frees in Hrt. simpl in Hrt. apply Hrt. exact Ht.
+      apply wf_ty_frees in Hrt. simpl in Hrt. apply Hcnv. apply Hrt. exact Ht.
   - simpl in Hag. destruct (g_mth Sg m1) as [[Dm Sm]|]; destruct Hag.
   - simpl in Hit. injection Hit as Hrt Hmm Hth. subst m2.
     simpl in Hag |- *.
@@ -2880,8 +3354,9 @@ Proof.
     unfold interp_m in Hm'.
     destruct (g_fn Sg f') as [[[D' S'] b']|] eqn:E'; [|destruct Hag].
     destruct b' as [body|]; [|destruct Hag].
-    destruct Hag as [g' [Hg [Hc [Hpar [Hret Hrest]]]]].
-    exists g'. split; [exact Hg|]. split; [exact Hc|].
+    destruct Hag as [PhiD' [g' [Htc [Hg [Hc [Habs [Hpar [Hret Hrest]]]]]]]].
+    exists PhiD', g'. split; [exact Htc|]. split; [exact Hg|].
+    split; [exact Hc|]. split; [exact Habs|].
     split.
     + rewrite Hpar, Hrt. f_equal. apply map_ext_in. intros tau Htau.
       apply Hm'. left; exact Htau.
@@ -3142,23 +3617,29 @@ Proof.
         apply in_or_app. right. exact Hu.
 Qed.
 
-Lemma callee_env_agree_aux11 : forall Sg D0 D rt m ap Dm Sm,
-  wf_tele Sg D0 D ->
-  In (IMth rt m ap) D ->
+Lemma callee_env_agree_aux11 : forall Sg Phi0 D PhiD rt m ap Dm Sm,
+  wf_tele Sg Phi0 D PhiD ->
+  (forall rt' m' ap' Dm' Sm',
+     In (IMth rt' m' ap') (cA Phi0) -> g_mth Sg m' = Some (Dm', Sm') ->
+     exists PhiDm', tele_ctx Dm' = Some PhiDm'
+                    /\ map fst ap' = tyreqs (cA PhiDm')) ->
+  In (IMth rt m ap) (cA PhiD) ->
   g_mth Sg m = Some (Dm, Sm) ->
-  map fst ap = tyreqs Dm.
+  exists PhiDm, tele_ctx Dm = Some PhiDm /\ map fst ap = tyreqs (cA PhiDm).
 Proof.
-  intros Sg D0 D rt m ap Dm Sm Hwf.
-  induction Hwf as [D0|D0 i r Hok Hwf IH]; intros Hin Hm.
-  - contradiction.
-  - simpl in Hin. destruct Hin as [Heq|Hin].
-    + subst i. inversion Hok; subst.
-      match goal with
-      | Hg : g_mth Sg m = Some (?DX, ?SX),
-        Hs : sat Sg _ ap ?DX |- _ =>
-          rewrite Hm in Hg; injection Hg as -> ->; exact (proj1 Hs)
-      end.
-    + apply IH; assumption.
+  intros Sg Phi0 D PhiD rt m ap Dm Sm Hwf. revert rt m ap Dm Sm.
+  induction Hwf as [Phi | Phi i D Phi' Phi'' Hok Hm Hwf IH];
+    intros rt m ap Dm Sm Hacc Hin Hg.
+  - exact (Hacc rt m ap Dm Sm Hin Hg).
+  - refine (IH rt m ap Dm Sm _ Hin Hg).
+    clear rt m ap Dm Sm Hin Hg.
+    intros rt' m' ap' Dm' Sm' Hin' Hg'.
+    destruct (merge_item_cA _ _ Hm) as [Heq | Heq]; rewrite Heq in Hin'.
+    + apply in_app_or in Hin'. destruct Hin' as [Hin' | Hin'].
+      * exact (Hacc rt' m' ap' Dm' Sm' Hin' Hg').
+      * destruct Hin' as [Hii | []]. subst i.
+        exact (callee_env_agree_aux11_aux1 Hok Hg').
+    + exact (Hacc rt' m' ap' Dm' Sm' Hin' Hg').
 Qed.
 
 Lemma callee_env_agree_aux12 : forall (f1 f2 : ty -> ty) (a b : subst)
@@ -3175,20 +3656,22 @@ Proof.
   injection Hmapped as Hy. exists y. split; [reflexivity|symmetry; exact Hy].
 Qed.
 
-Lemma callee_env_agree_aux13 : forall Sg D0 D,
-  wf_tele Sg D0 D -> ~ In this_sym (tyreqs D).
+Lemma callee_env_agree_aux13 : forall Sg Phi0 D PhiD,
+  wf_tele Sg Phi0 D PhiD ->
+  ~ In this_sym (tyreqs (cA Phi0)) ->
+  ~ In this_sym (tyreqs (cA PhiD)).
 Proof.
-  intros Sg D0 D Hwf Hthis.
-  unfold tyreqs in Hthis.
-  apply in_flat_map in Hthis.
-  destruct Hthis as [i [Hi Hthis]].
-  destruct i as [t|v|f|rt m th]; simpl in Hthis; try contradiction.
-  destruct Hthis as [Heq|[]]. subst t.
-  induction Hwf as [D0|D0 i D Hok Hwf IH].
-  - contradiction.
-  - simpl in Hi. destruct Hi as [Heq|Hi].
-    + subst i. inversion Hok; subst. contradiction.
-    + apply IH. exact Hi.
+  intros Sg Phi0 D PhiD H.
+  induction H as [Phi | Phi i D Phi' Phi'' Hok Hm Hwf IH]; intros Hno.
+  - exact Hno.
+  - apply IH.
+    destruct (merge_item_cA _ _ Hm) as [Heq | Heq]; rewrite Heq; [| exact Hno].
+    unfold tyreqs. rewrite flat_map_app. intro Hin.
+    apply in_app_or in Hin. destruct Hin as [Hin | Hin].
+    + exact (Hno Hin).
+    + destruct i as [t|v|f|rt m th]; simpl in Hin; try contradiction.
+      destruct Hin as [Heq' | []]. subst t.
+      inversion Hok; subst. congruence.
 Qed.
 
 Lemma callee_env_agree_aux14 : forall rt tau,
@@ -3203,23 +3686,40 @@ Proof.
   apply Nat.eqb_eq in E. subst t. contradiction.
 Qed.
 
-Lemma callee_env_agree : forall Sg g Phi th sm D d,
+Lemma callee_env_agree : forall Sg g Phi th sm D d PhiD,
   wf_gsig Sg ->
-  wf_tele Sg [] D ->
+  wf_tele Sg empty_ctx D PhiD ->
   sat Sg Phi th D ->
   Forall (fun p => wf_ty Sg Phi (snd p)) th ->
   smap_ok Phi th sm D ->
   ctx_grounded g Phi ->
   denv_agree Sg g (cA Phi) d ->
   exists d', compose_smap d sm = Some d'
-    /\ ctx_grounded (callee_grounding g Phi th D) (mk_ctx D)
-    /\ denv_agree Sg (callee_grounding g Phi th D) D d'.
+    /\ ctx_grounded (callee_grounding g Phi th (cA PhiD)) PhiD
+    /\ denv_agree Sg (callee_grounding g Phi th (cA PhiD)) (cA PhiD) d'.
 Proof.
-  intros Sg g Phi th sm D d WF Wtel Hsat Hth Hsm Hcg Hd.
-  destruct Hsat as [Hthdom Hsat].
-  destruct Hsm as [Hsmdom Hsm].
+  intros Sg g Phi th sm D d PhiD WF Wtel Hsat Hth Hsm Hcg Hd.
+  pose proof (wf_tele_ctx Wtel) as Htc.
+  destruct Hsat as [PhiD1 [Htc1 [Hthdom [Hsat Hmerge]]]].
+  assert (E1 : PhiD1 = PhiD) by congruence. subst PhiD1.
+  destruct Hsm as [PhiD2 [Htc2 [Hsmdom Hsm]]].
+  assert (E2 : PhiD2 = PhiD) by congruence. subst PhiD2.
   destruct Hcg as [Hground [Habs [Hcovers [Hsigma Hreserved]]]].
   destruct Hd as [Hdcover [Hdagree [HAreg Hdreg]]].
+  (* Accumulator premises of the wf_tele-indexed lemmas, trivially satisfied
+     at empty_ctx. *)
+  assert (Hacc0 : forall i, In i (cA empty_ctx) ->
+      incl (dep_tys Sg i ++ item_ty_frees i ++ method_item_frees Sg i)
+           (tyreqs (cA empty_ctx)))
+    by (intros i Hi; destruct Hi).
+  assert (Hdep0 : forall i, In i (cA empty_ctx) -> is_ty_item i = false ->
+      incl (dep_tys Sg i) (tyreqs (cA empty_ctx)))
+    by (intros i Hi; destruct Hi).
+  assert (Hmth0 : forall rt0 m0 ap0 Dm0 Sm0,
+      In (IMth rt0 m0 ap0) (cA empty_ctx) -> g_mth Sg m0 = Some (Dm0, Sm0) ->
+      exists PhiDm0, tele_ctx Dm0 = Some PhiDm0
+                     /\ map fst ap0 = tyreqs (cA PhiDm0))
+    by (intros rt0 m0 ap0 Dm0 Sm0 Hi; destruct Hi).
   assert (Hsmlook :
       Forall (fun p => exists en, lookup_denv (snd p) d = Some en) sm).
   { rewrite Forall_forall. intros [req sat'] Hin.
@@ -3227,7 +3727,7 @@ Proof.
     rewrite Forall_forall in Hdcover.
     specialize (Hdcover sat' Hina).
     destruct Hdcover as [Hty|[en Hen]].
-    - assert (Hreqin : In req (filter (fun i => negb (is_ty_item i)) D)).
+    - assert (Hreqin : In req (filter (fun i => negb (is_ty_item i)) (cA PhiD))).
       { rewrite <- Hsmdom. apply in_map_iff.
         exists (req, sat'). split; [reflexivity|exact Hin]. }
       apply filter_In in Hreqin. destruct Hreqin as [_ Hreqty].
@@ -3238,7 +3738,7 @@ Proof.
     - exists en. exact Hen. }
   destruct (@compose_smap_defined d sm Hsmlook) as [d' Hcompose].
   exists d'. split; [exact Hcompose|].
-  assert (Hcgground : grounding (callee_grounding g Phi th D)).
+  assert (Hcgground : grounding (callee_grounding g Phi th (cA PhiD))).
   { unfold grounding, callee_grounding.
     apply Forall_map. rewrite Forall_forall. intros t Htin.
     assert (Htth : In t (map fst th)) by (rewrite Hthdom; exact Htin).
@@ -3256,31 +3756,43 @@ Proof.
     pose proof (@callee_env_agree_aux1 u g b Hb) as Hpair.
     apply (in_map (@fst tsym ty)) in Hpair.
     simpl in Hpair. exact Hpair. }
-  assert (HDreserved : ~ In this_sym (tyreqs D)).
-  { exact (@callee_env_agree_aux13 Sg [] D Wtel). }
-  assert (Hctx : ctx_grounded (callee_grounding g Phi th D) (mk_ctx D)).
-  { unfold ctx_grounded, mk_ctx. simpl.
-    split; [exact Hcgground|].
+  assert (HDreserved : ~ In this_sym (tyreqs (cA PhiD))).
+  { apply (@callee_env_agree_aux13 Sg empty_ctx D PhiD Wtel).
+    intro Hbad. exact Hbad. }
+  assert (HsigmaD : sigma_regular (cS PhiD) (cA PhiD)).
+  { apply (@tele_sigma_regular Sg empty_ctx D PhiD Wtel).
+    split; [intros x Hx; destruct Hx | constructor]. }
+  assert (HabsD : absorbs (callee_grounding g Phi th (cA PhiD)) (cS PhiD)).
+  { intros t tau Hlk.
+    assert (Hpair : In (t, tau) (cS PhiD))
+      by (apply callee_env_agree_aux1; exact Hlk).
+    assert (Htin : In t (tyreqs (cA PhiD))).
+    { apply (proj1 HsigmaD). apply in_map_iff.
+      exists (t, tau). split; [reflexivity|exact Hpair]. }
+    assert (Htaufree : incl (ty_frees tau) (tyreqs (cA PhiD))).
+    { destruct HsigmaD as [_ Hrng]. rewrite Forall_forall in Hrng.
+      exact (Hrng (t, tau) Hpair). }
+    rewrite (@callee_grounding_lookup g Phi th (cA PhiD) t Htin).
+    rewrite (@callee_grounding_reads g Phi th (cA PhiD) tau Htaufree).
+    f_equal.
+    unfold merge_respects in Hmerge. rewrite Forall_forall in Hmerge.
+    exact (f_equal (app_subst g) (Hmerge (t, tau) Hpair)). }
+  assert (Hctx : ctx_grounded (callee_grounding g Phi th (cA PhiD)) PhiD).
+  { split; [exact Hcgground|].
+    split; [exact HabsD|].
     split.
-    - intros t a H. discriminate.
-    - split.
-      + intros t Hin. exists
-          (app_subst g (app_subst (cS Phi) (app_subst th (TAbs t)))).
-        apply callee_grounding_lookup. exact Hin.
-      + split.
-        * split.
-          -- intros t Hin. destruct Hin.
-          -- constructor.
-        * exact HDreserved. }
+    - intros t Hin. eexists.
+      apply callee_grounding_lookup. exact Hin.
+    - split; [exact HsigmaD|exact HDreserved]. }
   split; [exact Hctx|].
-  assert (Hkeys : map fst d' = filter (fun i => negb (is_ty_item i)) D).
+  assert (Hkeys : map fst d' = filter (fun i => negb (is_ty_item i)) (cA PhiD)).
   { rewrite (@compose_smap_keys d sm d' Hcompose). exact Hsmdom. }
   split.
   - rewrite Forall_forall. intros i Hin.
     destruct (is_ty_item i) eqn:Hty.
     + left. reflexivity.
     + right.
-      assert (Hif : In i (filter (fun j => negb (is_ty_item j)) D)).
+      assert (Hif : In i (filter (fun j => negb (is_ty_item j)) (cA PhiD))).
       { apply filter_In. split; [exact Hin|].
         apply Bool.negb_true_iff. exact Hty. }
       assert (Himap : In i (map fst sm)) by (rewrite Hsmdom; exact Hif).
@@ -3298,7 +3810,7 @@ Proof.
       rewrite Forall_forall in Hdagree.
       assert (Hae : dentry_agree Sg g sat' en).
       { apply (Hdagree (sat', en)). apply lookup_denv_in. exact Hden. }
-      assert (HreqD : In req D).
+      assert (HreqD : In req (cA PhiD)).
       { assert (Hinmap : In req (map fst d')).
         { apply in_map_iff. exists (req, en). split; [reflexivity|exact Hin]. }
         rewrite Hkeys in Hinmap. apply filter_In in Hinmap. exact (proj1 Hinmap). }
@@ -3310,7 +3822,7 @@ Proof.
       eapply dentry_agree_retype; [exact WF | exact Hae | | | ].
       * symmetry. eapply callee_env_agree_aux6; [exact Habs| |exact Hmatch].
         intros u Hu.
-        exact (@tele_items_regular Sg [] D WF Wtel req HreqD u
+        exact (@tele_items_regular Sg empty_ctx D PhiD WF Wtel Hacc0 req HreqD u
                  (in_or_app _ _ _ (or_intror (in_or_app _ _ _ (or_introl Hu))))).
       * intros t Hdep.
         assert (Hdep' : In t (dep_tys Sg req)).
@@ -3325,27 +3837,31 @@ Proof.
            ++ rewrite Forall_forall in Hcoh.
               rewrite (Hcoh t Hdep'). symmetry. apply absorbs_all. exact Habs.
         -- intros u Hu. simpl in Hu. destruct Hu as [Heq|Hu]; [subst u|contradiction].
-           exact (@tele_deps_closed Sg [] D Wtel req HreqD HreqNon t Hdep').
+           exact (@tele_deps_closed Sg empty_ctx D PhiD Wtel Hdep0 req
+                    HreqD HreqNon t Hdep').
       * intros rt m ap rt' ap' Dm Sm tau Hi Hj Hm Htau.
         simpl in Hi, Hj.
         subst sat'. subst req.
         simpl in Hmatch.
         injection Hmatch as Hrt Hap.
-        assert (Hapdom : map fst ap' = tyreqs Dm).
-        { eapply callee_env_agree_aux11; eauto. }
-        assert (Hapdom' : map fst ap = tyreqs Dm).
+        destruct (@callee_env_agree_aux11 Sg empty_ctx D PhiD rt' m ap' Dm Sm
+                    Wtel Hmth0 HreqD Hm) as [PhiDm [HtcDm Hapdom]].
+        assert (Hapdom' : map fst ap = tyreqs (cA PhiDm)).
         { pose proof (f_equal (map (@fst tsym ty)) Hap) as E.
           unfold map_snd in E. rewrite !map_map in E. simpl in E.
           rewrite <- Hapdom. symmetry. exact E. }
         assert (Hwf_tau :
-          wf_ty Sg (mk_ctx (ITy this_sym :: Dm)) tau).
-        { destruct (wf_mth_decl WF _ Hm) as [_ [Hps Hret]].
+          wf_ty Sg (add_item (ITy this_sym) PhiDm) tau).
+        { destruct (wf_mth_decl WF _ Hm) as [PhiDm0 [WtDm [Hps Hret]]].
+          assert (EDm : PhiDm0 = PhiDm).
+          { pose proof (wf_tele_ctx WtDm) as HtcDm0. congruence. }
+          subst PhiDm0.
           destruct Htau as [HtauIn|Heq].
           - rewrite Forall_forall in Hps. exact (Hps tau HtauIn).
           - subst tau. exact Hret. }
         assert (Hfree_tau :
-          incl (ty_frees tau) (this_sym :: tyreqs Dm)).
-        { apply wf_ty_frees in Hwf_tau. exact Hwf_tau. }
+          incl (ty_frees tau) (this_sym :: tyreqs (cA PhiDm))).
+        { apply wf_ty_frees in Hwf_tau. simpl in Hwf_tau. exact Hwf_tau. }
         apply callee_env_agree_aux5.
         intros t Ht.
         specialize (Hfree_tau t Ht).
@@ -3353,9 +3869,9 @@ Proof.
         destruct (lookup_subst t ap) as [b|] eqn:Hb;
         destruct (lookup_subst t ap') as [a|] eqn:Ha.
         -- assert (Hreqreg :=
-               @tele_items_regular Sg [] D WF Wtel
+               @tele_items_regular Sg empty_ctx D PhiD WF Wtel Hacc0
                  (IMth rt' m ap') HreqD).
-           assert (Hafree : incl (ty_frees a) (tyreqs D)).
+           assert (Hafree : incl (ty_frees a) (tyreqs (cA PhiD))).
            { intros u Hu. apply Hreqreg. simpl.
              apply in_or_app. left. apply in_or_app. right.
              apply in_flat_map. exists (t, a). split.
@@ -3407,9 +3923,9 @@ Proof.
              rewrite Hb in Hx. discriminate. }
            subst t. simpl.
            assert (Hreqreg :=
-             @tele_items_regular Sg [] D WF Wtel
+             @tele_items_regular Sg empty_ctx D PhiD WF Wtel Hacc0
                (IMth rt' m ap') HreqD).
-           assert (Hrtfree : incl (ty_frees rt') (tyreqs D)).
+           assert (Hrtfree : incl (ty_frees rt') (tyreqs (cA PhiD))).
            { intros u Hu. apply Hreqreg. simpl.
              apply in_or_app. left. apply in_or_app. left.
              exact Hu. }
@@ -3417,14 +3933,16 @@ Proof.
            rewrite Hrt. symmetry. apply absorbs_all. exact Habs.
     + split.
       * rewrite Forall_forall. intros i Hin.
-        pose proof (@tele_items_regular Sg [] D WF Wtel i Hin) as Hreg.
+        pose proof (@tele_items_regular Sg empty_ctx D PhiD WF Wtel Hacc0
+                      i Hin) as Hreg.
         simpl in Hreg. exact Hreg.
       * rewrite Forall_forall. intros [i en] Hin.
-        assert (HiD : In i D).
+        assert (HiD : In i (cA PhiD)).
         { assert (Hi : In i (map fst d')).
           { apply in_map_iff. exists (i, en). split; [reflexivity|exact Hin]. }
           rewrite Hkeys in Hi. apply filter_In in Hi. exact (proj1 Hi). }
-        pose proof (@tele_items_regular Sg [] D WF Wtel i HiD) as Hreg.
+        pose proof (@tele_items_regular Sg empty_ctx D PhiD WF Wtel Hacc0
+                      i HiD) as Hreg.
         simpl in Hreg. exact Hreg.
 Qed.
 (* END:callee_env_agree *)
@@ -3472,7 +3990,8 @@ Section HasTyIndSub.
       In (IMth rt0 m th0) (cA Phi) ->
       app_subst (cS Phi) rt0 = app_subst (cS Phi) tau0 ->
       (forall i1, In i1 (cA Phi) -> is_prov_at (cS Phi) tau0 m i1 ->
-                  i1 = IMth rt0 m th0) ->
+                  app_subst_item (cS Phi) i1
+                  = app_subst_item (cS Phi) (IMth rt0 m th0)) ->
       Forall2 (fun e tau =>
                  has_ty Sg Phi G e
                         (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0) tau))
@@ -3632,8 +4151,10 @@ Proof.
   { intros n th Hn.
     inversion Hn as [| |n' D payload th' Htag Hsat Hwfth|]; subst.
     cbn [member_payload]. rewrite Htag.
-    pose proof (wf_tag_decl WF n Htag) as [_ Hp].
-    destruct Hsat as [Hdom _].
+    destruct (wf_tag_decl WF n Htag) as [PhiD [Wt Hp]].
+    destruct Hsat as [PhiD' [Htc [Hdom _]]].
+    pose proof (wf_tele_ctx Wt) as Htc'.
+    rewrite Htc' in Htc. injection Htc as <-.
     apply has_ty_frees_success_aux2 with (s := th).
     - rewrite Hdom. exact (wf_ty_frees Hp).
     - eapply Forall_impl; [|exact Hwfth].
@@ -3757,6 +4278,8 @@ Proof.
   - exact Hranges.
 Qed.
 
+(* The method-item case of the frees discipline, with OkMth's premises
+   spelled out: an instance of tele_items_regular_aux2 above. *)
 Lemma has_ty_frees_success_aux7 : forall Sg Phi rt m Dm Sm th,
   wf_gsig Sg ->
   g_mth Sg m = Some (Dm, Sm) ->
@@ -3766,27 +4289,8 @@ Lemma has_ty_frees_success_aux7 : forall Sg Phi rt m Dm Sm th,
   incl (method_item_frees Sg (IMth rt m th))
        (tyreqs (cA Phi)).
 Proof.
-  intros Sg Phi rt m Dm Sm th WF Hm Hrt Hsat Hth u Hu.
-  unfold method_item_frees in Hu. rewrite Hm in Hu.
-  apply in_flat_map in Hu. destruct Hu as [rho [Hrho Hu]].
-  apply in_map_iff in Hrho. destruct Hrho as [tau [Heq Htau]]. subst rho.
-  apply frees_app_subst_bound in Hu.
-  destruct Hu as [[p [Hp Hup]] | [Hu HnotThis]].
-  - simpl in Hp. destruct Hp as [Hp|[]]. inversion Hp; subst p.
-    simpl in Hup. exact (wf_ty_frees Hrt u Hup).
-  - apply frees_app_subst_bound in Hu.
-    destruct Hu as [[p [Hp Hup]] | [Hu HnotTh]].
-    + rewrite Forall_forall in Hth. exact (wf_ty_frees (Hth p Hp) u Hup).
-    + assert (Wtau : wf_ty Sg (mk_ctx (ITy this_sym :: Dm)) tau).
-      { destruct (wf_mth_decl WF _ Hm) as [_ [Hps Hret]].
-        apply in_app_or in Htau. destruct Htau as [Htau|[Heq|[]]].
-        - rewrite Forall_forall in Hps. exact (Hps tau Htau).
-        - subst tau. exact Hret. }
-      pose proof (wf_ty_frees Wtau u Hu) as Hu0.
-      simpl in Hu0. destruct Hu0 as [Hu0|Hu0].
-      * subst u. exfalso. apply HnotThis. simpl. left. reflexivity.
-      * destruct Hsat as [Hdom _]. exfalso. apply HnotTh.
-        rewrite Hdom. exact Hu0.
+  intros Sg Phi rt m Dm Sm th WF Hm Hrt Hsat Hth.
+  exact (tele_items_regular_aux2 WF (@OkMth Sg Phi rt m Dm Sm th Hm Hrt Hsat Hth)).
 Qed.
 
 Lemma has_ty_frees_success : forall Sg Phi G e tau,
@@ -3825,12 +4329,17 @@ Proof.
         | Hwf : wf_ty Sg ?P ?T |- incl (ty_frees ?T) _ =>
             exact (wf_ty_frees Hwf)
         end.
-      destruct (wf_val_decl WF _ H0) as [_ Hwt].
+      match goal with H : g_val Sg v = Some _ |- _ => rename H into Hg end.
+      match goal with
+      | H : avail Phi (IVal v) |- _ => rename H into Hav
+      end.
+      destruct (wf_val_decl WF _ Hg) as [PhiDv [Wtv Hwt]].
       destruct Hsig as [_ Hr].
       apply has_ty_frees_success_aux1.
       * intros u Hu.
-        apply (Hitems (IVal v) (@avail_val_in Phi v H3)).
-        simpl. rewrite H0. simpl. apply in_or_app. left.
+        apply (Hitems (IVal v) (@avail_val_in Phi v Hav)).
+        simpl. rewrite Hg. simpl. apply in_or_app. left.
+        apply (proj1 (tele_ctx_tyreqs _ (wf_tele_ctx Wtv) u)).
         exact (wf_ty_frees Hwt u Hu).
       * exact Hr.
     + inversion HT; subst;
@@ -3860,8 +4369,10 @@ Proof.
       | Hg : g_fn Sg f = Some (?Df, ?Sf, Some ?body),
         Hsat : sat Sg Phi th ?Df,
         Hth : Forall (fun p => wf_ty Sg Phi (snd p)) th |- _ =>
-          destruct (wf_fn_decl WF _ Hg) as [_ [_ [Hret _]]];
-          destruct Hsat as [Hdom _];
+          destruct (wf_fn_decl WF _ Hg) as [PhiDf [Wtf [_ [Hret _]]]];
+          destruct Hsat as [PhiDf' [Htc [Hdom _]]];
+          pose proof (wf_tele_ctx Wtf) as Htc';
+          rewrite Htc' in Htc; injection Htc as <-;
           destruct Hsig as [_ Hr];
           apply has_ty_frees_success_aux1;
           [ apply has_ty_frees_success_aux2 with (s := th);
@@ -3877,12 +4388,13 @@ Proof.
         end.
       match goal with H : g_fn Sg f = Some _ |- _ => rename H into Hfn end.
       match goal with H : avail Phi (IFn f) |- _ => rename H into Hav end.
-      destruct (wf_fn_decl WF _ Hfn) as [_ [_ [Hret _]]].
+      destruct (wf_fn_decl WF _ Hfn) as [PhiDf [Wtf [_ [Hret _]]]].
       destruct Hsig as [_ Hr].
       apply has_ty_frees_success_aux1.
       * intros u Hu.
         apply (Hitems (IFn f) (@avail_fn_in Phi f Hav)).
         simpl. rewrite Hfn. simpl. apply in_or_app. left.
+        apply (proj1 (tele_ctx_tyreqs _ (wf_tele_ctx Wtf) u)).
         exact (wf_ty_frees Hret u Hu).
       * exact Hr.
     + simpl in E.
@@ -3991,8 +4503,10 @@ Proof.
           intros i Hi; simpl in Hi; destruct Hi as [Heq|Hi];
           [ subst i; simpl; rewrite Hg; simpl;
             intros u Hu; apply in_app_or in Hu; destruct Hu as [Hu|[]];
-            destruct Hsat as [_ Hav]; rewrite Forall_forall in Hav;
-            apply wf_ty_frees_aux3; apply avail_ty_in; exact (Hav u Hu)
+            destruct Hsat as [PhiDv [Htc [_ Hav]]];
+            rewrite Forall_forall in Hav;
+            apply wf_ty_frees_aux3; apply avail_ty_in;
+            apply Hav; apply (proj2 (tele_ctx_tyreqs _ Htc u)); exact Hu
           | exact (Hitems i Hi) ]
       end.
     + inversion HT; subst;
@@ -4012,8 +4526,10 @@ Proof.
           intros i Hi; simpl in Hi; destruct Hi as [Heq|Hi];
           [ subst i; simpl; rewrite Hg; simpl;
             intros u Hu; apply in_app_or in Hu; destruct Hu as [Hu|[]];
-            destruct Hsat as [_ Hav]; rewrite Forall_forall in Hav;
-            apply wf_ty_frees_aux3; apply avail_ty_in; exact (Hav u Hu)
+            destruct Hsat as [PhiDf [Htc [_ Hav]]];
+            rewrite Forall_forall in Hav;
+            apply wf_ty_frees_aux3; apply avail_ty_in;
+            apply Hav; apply (proj2 (tele_ctx_tyreqs _ Htc u)); exact Hu
           | exact (Hitems i Hi) ]
       end.
     + inversion HT; subst;
@@ -4223,11 +4739,12 @@ Section SafetyCases.
     intros Phi G n D tau0 th e d ge g Hgt Hsat Hwfth Hty Hg Hd Hve.
     assert (Hab : absorbs g (cS Phi)) by (destruct Hg as [_ [Hab _]]; exact Hab).
     assert (Hincl : incl (ty_frees tau0) (map fst th)).
-    { destruct Hsat as [Hdom _]. rewrite Hdom.
+    { destruct Hsat as [PhiD [Htc [Hdom _]]]. rewrite Hdom.
       assert (WF' := WF). destruct WF' as [Wtag Wval Wfn Wmth].
-      destruct (Wtag n D tau0 Hgt) as [_ Hwf].
-      apply wf_ty_frees in Hwf.
-      simpl in Hwf. exact Hwf. }
+      destruct (Wtag n D tau0 Hgt) as [PhiD' [Wt Hwf]].
+      apply wf_tele_ctx in Wt.
+      assert (HP : PhiD' = PhiD) by congruence. subst PhiD'.
+      exact (wf_ty_frees Hwf). }
     assert (IH := IHfuel (Nat.le_refl k) Hty Hg Hd Hve).
     rewrite !(absorbs_all Hab) in IH.
     rewrite !(absorbs_all Hab).
@@ -4320,7 +4837,7 @@ Section SafetyCases.
                (interp (S k) Sg d ge (ECallA f args)).
   Proof.
     intros Phi G f Df Sf args d ge g Hf Hav Hargs Hcg Hd Hv.
-    assert (Hcg2 := Hcg). destruct Hcg2 as [Hgr [Hab [Hcov Hsig]]].
+    assert (Hcg2 := Hcg). destruct Hcg2 as [Hgr [Hab [Hcov [Hsreg Hthis]]]].
     assert (Hcol : forall tau, app_subst g (app_subst (cS Phi) tau)
                                = app_subst g tau)
       by (exact (@absorbs_all g (cS Phi) Hab)).
@@ -4337,7 +4854,14 @@ Section SafetyCases.
     simpl in Hda. rewrite Hf in Hda.
     destruct (g_fn Sg f') as [[[D' S'] b'] | ] eqn:Hf'; [ | contradiction ].
     destruct b' as [body | ]; [ | contradiction ].
-    destruct Hda as [g' [Hgr' [Hcov' [Hpar [Hret [Htc [Hkeys' Hdd]]]]]]].
+    destruct Hda as
+      [PhiD' [g' [Htc' [Hgr' [Hcov' [Habs' [Hpar [Hret [Htcov [Hkreg Hdd]]]]]]]]]].
+    (* the provider's declaration is well-formed under its merged context *)
+    assert (WF2 := WF). destruct WF2 as [Wtag Wval Wfn Wmth].
+    destruct (Wfn f' D' S' (Some body) Hf') as [PhiD [Wt [Wp [Wr Wb]]]].
+    (* the two merged contexts for D' coincide *)
+    pose proof (wf_tele_ctx Wt) as Htc2.
+    rewrite Htc' in Htc2. injection Htc2 as Heq. subst PhiD'.
     (* the arguments *)
     assert (Hsa := @safety_args k (Nat.le_refl k) Phi G d ge g args
                      (map (app_subst (cS Phi)) (fs_params Sf))
@@ -4348,36 +4872,31 @@ Section SafetyCases.
                             (fs_params S')).
       { apply (@safety_case_need_aux4 g' ws (fs_params S')).
         rewrite Hpar. exact (@safety_case_need_aux3 g (cS Phi) ws (fs_params Sf) Hcol Hsa). }
-      assert (WF2 := WF). destruct WF2 as [Wtag Wval Wfn Wmth].
-      specialize (Wfn f' D' S' (Some body) Hf').
-      destruct Wfn as [Wt [Wp [Wr Wb]]].
-      assert (Hcgb : ctx_grounded g' (mk_ctx D')).
-      { split; [ exact Hgr' | split ].
-        - unfold absorbs. intros t tau Ht. simpl in Ht. discriminate.
-        - split; [exact Hcov' |].
-          split.
-          + unfold sigma_regular. simpl. split.
-            * intros x Hx. contradiction.
-            * constructor.
-          + exact (@callee_env_agree_aux13 Sg [] D' Wt). }
-      assert (Hdb : denv_agree Sg g' (cA (mk_ctx D')) df).
-      { split; [ exact Htc | split ].
+      assert (Hcgb : ctx_grounded g' PhiD).
+      { split; [ exact Hgr' | split; [ exact Habs' | split; [ exact Hcov' | split ] ] ].
+        - apply (@tele_sigma_regular Sg empty_ctx D' PhiD Wt).
+          split; [ intros x Hx; destruct Hx | constructor ].
+        - apply (@callee_env_agree_aux13 Sg empty_ctx D' PhiD Wt).
+          intros Hx. destruct Hx. }
+      assert (Hdb : denv_agree Sg g' (cA PhiD) df).
+      { split; [ exact Htcov | split ].
         - exact (@safety_case_need_aux1 Sg g' df Hdd).
         - split.
           + rewrite Forall_forall. intros i Hi.
-            exact (@tele_items_regular Sg [] D' WF Wt i Hi).
-          + exact Hkeys'. }
-      assert (Hvb : venv_agree Sg g' D' (body_env S') (mk_venv ws)).
+            apply (@tele_items_regular Sg empty_ctx D' PhiD WF Wt); [ | exact Hi ].
+            intros i0 Hi0. destruct Hi0.
+          + exact Hkreg. }
+      assert (Hvb : venv_agree Sg g' (cA PhiD) (body_env S') (mk_venv ws)).
       { unfold body_env.
-        apply (@venv_agree_body Sg g' D' ws (fs_params S') Hws).
+        apply (@venv_agree_body Sg g' (cA PhiD) ws (fs_params S') Hws).
         eapply Forall_impl; [|exact Wp].
         intros tau Hwf.
         exact (wf_ty_frees Hwf). }
       assert (Hbody := Wb body eq_refl).
-      assert (Hres := @IHfuel k (Nat.le_refl k) (mk_ctx D') (body_env S')
+      assert (Hres := @IHfuel k (Nat.le_refl k) PhiD (body_env S')
                         body (fs_ret S') df (mk_venv ws) g'
                         Hbody Hcgb Hdb Hvb).
-      simpl in Hres. rewrite app_subst_nil in Hres.
+      rewrite (@absorbs_all g' (cS PhiD) Habs' (fs_ret S')) in Hres.
       rewrite Hret in Hres.
       rewrite Hcol. rewrite Hcol. exact Hres.
     - (* the arguments did not produce values *)
@@ -4451,26 +4970,26 @@ Section SafetyCases.
   Proof.
     intros Phi G f Df Sf body th sm args d ge g
            Hf Hsat Hth Hsm Hargs Hcg Hd Hv.
-    assert (Hcg2 := Hcg). destruct Hcg2 as [Hgr [Hab [Hcov Hsig]]].
+    assert (Hcg2 := Hcg). destruct Hcg2 as [Hgr [Hab [Hcov [Hsreg Hthis]]]].
     assert (Hcol : forall tau, app_subst g (app_subst (cS Phi) tau)
                                = app_subst g tau)
       by (exact (@absorbs_all g (cS Phi) Hab)).
     assert (WF2 := WF). destruct WF2 as [Wtag Wval Wfn Wmth].
-    destruct (Wfn f Df Sf (Some body) Hf) as [Wt [Wp [Wr Wb]]].
-    (* the callee's world: its grounding, context and runtime environment *)
-    destruct (@callee_env_agree Sg g Phi th sm Df d WF Wt Hsat Hth Hsm Hcg Hd)
+    destruct (Wfn f Df Sf (Some body) Hf) as [PhiD [Wt [Wp [Wr Wb]]]].
+    (* the callee's world: its grounding, merged context, and environment *)
+    destruct (@callee_env_agree Sg g Phi th sm Df d PhiD WF Wt Hsat Hth Hsm Hcg Hd)
       as [d' [Hcomp [Hcgc Hdc]]].
-    (* reading a Df-covered type through the callee grounding *)
-    assert (Hread : forall tau, incl (ty_frees tau) (tyreqs Df) ->
-              app_subst (callee_grounding g Phi th Df) tau
+    (* reading a PhiD-covered type through the callee grounding *)
+    assert (Hread : forall tau, incl (ty_frees tau) (tyreqs (cA PhiD)) ->
+              app_subst (callee_grounding g Phi th (cA PhiD)) tau
               = app_subst g (app_subst (cS Phi) (app_subst th tau))).
     { intros tau0 Hi. apply callee_grounding_reads. exact Hi. }
-    (* the parameters and the result type only mention Df's requirements *)
+    (* the parameters and the result type only mention PhiD's requirements *)
     assert (Hfp : forall tau, In tau (fs_params Sf) ->
-              incl (ty_frees tau) (tyreqs Df)).
+              incl (ty_frees tau) (tyreqs (cA PhiD))).
     { intros tau0 Hin. rewrite Forall_forall in Wp.
       pose proof (Wp tau0 Hin) as Hw0. apply wf_ty_frees in Hw0. exact Hw0. }
-    assert (Hfr : incl (ty_frees (fs_ret Sf)) (tyreqs Df)).
+    assert (Hfr : incl (ty_frees (fs_ret Sf)) (tyreqs (cA PhiD))).
     { pose proof Wr as Hw1. apply wf_ty_frees in Hw1. exact Hw1. }
     (* the arguments *)
     assert (Hsa := @safety_args k (Nat.le_refl k) Phi G d ge g args
@@ -4484,31 +5003,28 @@ Section SafetyCases.
     - (* the arguments produced values; run the body in the callee's world *)
       rewrite Hcomp.
       assert (Hws : Forall2 (fun w tau =>
-                       vty Sg w (app_subst (callee_grounding g Phi th Df) tau))
+                       vty Sg w (app_subst (callee_grounding g Phi th (cA PhiD)) tau))
                      ws (fs_params Sf)).
       { apply (@safety_case_call_aux2 g (cS Phi) th
-                 (callee_grounding g Phi th Df) ws (fs_params Sf)).
+                 (callee_grounding g Phi th (cA PhiD)) ws (fs_params Sf)).
         - intros tau0 Hin.
           rewrite (Hcol (app_subst (cS Phi) (app_subst th tau0))).
           apply Hread. apply Hfp. exact Hin.
         - exact Hsa. }
-      assert (Hcgb : ctx_grounded (callee_grounding g Phi th Df) (mk_ctx Df))
-        by exact Hcgc.
-      assert (Hdb : denv_agree Sg (callee_grounding g Phi th Df)
-                               (cA (mk_ctx Df)) d')
-        by exact Hdc.
-      assert (Hvb : venv_agree Sg (callee_grounding g Phi th Df) Df
+      assert (Hcgb := Hcgc).
+      destruct Hcgb as [Hgr' [Hab' _]].
+      assert (Hvb : venv_agree Sg (callee_grounding g Phi th (cA PhiD)) (cA PhiD)
                                (body_env Sf) (mk_venv ws)).
       { unfold body_env.
-        apply (@venv_agree_body Sg (callee_grounding g Phi th Df) Df ws
-                 (fs_params Sf) Hws).
+        apply (@venv_agree_body Sg (callee_grounding g Phi th (cA PhiD))
+                 (cA PhiD) ws (fs_params Sf) Hws).
         rewrite Forall_forall. intros tau0 Hin. apply Hfp. exact Hin. }
-      assert (Hres := @IHfuel k (Nat.le_refl k) (mk_ctx Df) (body_env Sf)
+      assert (Hres := @IHfuel k (Nat.le_refl k) PhiD (body_env Sf)
                         body (fs_ret Sf) d' (mk_venv ws)
-                        (callee_grounding g Phi th Df)
-                        (Wb body eq_refl) Hcgb Hdb Hvb).
-      change (cS (mk_ctx Df)) with (@nil (tsym * ty)) in Hres.
-      rewrite app_subst_nil in Hres.
+                        (callee_grounding g Phi th (cA PhiD))
+                        (Wb body eq_refl) Hcgc Hdc Hvb).
+      rewrite (@absorbs_all (callee_grounding g Phi th (cA PhiD)) (cS PhiD)
+                 Hab' (fs_ret Sf)) in Hres.
       rewrite (Hread (fs_ret Sf) Hfr) in Hres.
       rewrite (Hcol (app_subst (cS Phi) (app_subst th (fs_ret Sf)))).
       exact Hres.
@@ -4570,16 +5086,21 @@ Section SafetyCases.
       constructor; [ exact Hh | apply IH; exact Ht ].
   Qed.
 
-  (* Private helper: open up a method entry's agreement. *)
+  (* Private helper: open up a method entry's agreement.  The closure's
+     grounding is now stated against the provider telescope's *merged*
+     context PhiD0: coverage of the merged requirements, absorption of the
+     merge substitution, and environment agreement at the merged items. *)
   Lemma safety_case_meth_aux3 :
     forall (g0 : subst) (rt : ty) (m0 : msym) (th1 : subst)
            (Dm0 : tele) (Sm0 : fnsig) (f'0 : fsym) (dc0 : denv),
       g_mth Sg m0 = Some (Dm0, Sm0) ->
       dentry_agree Sg g0 (IMth rt m0 th1) (DClo f'0 dc0) ->
-      exists D0 S0 body0 gc0,
+      exists D0 S0 body0 PhiD0 gc0,
         g_fn Sg f'0 = Some (D0, S0, Some body0)
+        /\ tele_ctx D0 = Some PhiD0
         /\ grounding gc0
-        /\ covers gc0 (tyreqs D0)
+        /\ covers gc0 (tyreqs (cA PhiD0))
+        /\ absorbs gc0 (cS PhiD0)
         /\ map (app_subst gc0) (fs_params S0)
            = app_subst g0 rt
              :: map (fun tau => app_subst g0
@@ -4588,28 +5109,36 @@ Section SafetyCases.
         /\ app_subst gc0 (fs_ret S0)
            = app_subst g0
                (app_subst (this_subst rt) (app_subst th1 (fs_ret Sm0)))
-        /\ denv_agree Sg gc0 D0 dc0.
+        /\ denv_agree Sg gc0 (cA PhiD0) dc0.
   Proof.
     intros g0 rt m0 th1 Dm0 Sm0 f'0 dc0 Hm0 Hag.
     simpl in Hag. rewrite Hm0 in Hag.
     remember (g_fn Sg f'0) as gf eqn:Egf.
     destruct gf as [[[D0 S0] b0]|]; [| destruct Hag].
     destruct b0 as [body0|]; [| destruct Hag].
-    destruct Hag as [gc0 [Hgrc [Hcovc [Hpar [Hret [Htc [Hkeys Hall]]]]]]].
-    exists D0, S0, body0, gc0.
+    destruct Hag as
+      [PhiD0 [gc0 [Htc [Hgrc [Hcovc [Habc [Hpar [Hret [Htcov [Hkeys Hall]]]]]]]]]].
+    exists D0, S0, body0, PhiD0, gc0.
     split; [ solve [ reflexivity | symmetry; exact Egf ] |].
+    split; [ exact Htc |].
     split; [ exact Hgrc |].
     split; [ exact Hcovc |].
+    split; [ exact Habc |].
     split; [ exact Hpar |].
     split; [ exact Hret |].
-    split; [ exact Htc | split ].
+    split; [ exact Htcov | split ].
     - apply safety_case_meth_aux2; exact Hall.
     - split.
       + rewrite Forall_forall. intros i Hi.
         assert (Hdecl : g_fn Sg f'0 = Some (D0, S0, Some body0))
           by (symmetry; exact Egf).
-        destruct (wf_fn_decl WF _ Hdecl) as [Wt _].
-        exact (@tele_items_regular Sg [] D0 WF Wt i Hi).
+        destruct (wf_fn_decl WF _ Hdecl) as [PhiDf [Wt _]].
+        assert (EPhi : PhiDf = PhiD0).
+        { apply wf_tele_ctx in Wt. rewrite Wt in Htc.
+          injection Htc as EPhi. exact EPhi. }
+        subst PhiDf.
+        refine (@tele_items_regular Sg empty_ctx D0 PhiD0 WF Wt _ i Hi).
+        intros j Hj. destruct Hj.
       + exact Hkeys.
   Qed.
 
@@ -4648,7 +5177,8 @@ Section SafetyCases.
       In (IMth rt0 m th0) (cA Phi) ->
       app_subst (cS Phi) rt0 = app_subst (cS Phi) tau0 ->
       (forall i1, In i1 (cA Phi) -> is_prov_at (cS Phi) tau0 m i1 ->
-                  i1 = IMth rt0 m th0) ->
+                  app_subst_item (cS Phi) i1
+                  = app_subst_item (cS Phi) (IMth rt0 m th0)) ->
       Forall2 (fun e tau =>
                  has_ty Sg Phi G e
                         (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0) tau))
@@ -4691,19 +5221,25 @@ Section SafetyCases.
                (@lookup_denv_in (IMth rt0 m th0) d en Hen)). }
     destruct en as [wv | f' dc]; [ simpl in Hag; destruct Hag |].
     destruct (@safety_case_meth_aux3 g rt0 m th0 Dm Sf f' dc Hm Hag)
-      as [D' [S' [body [gc [Ef' [Hgrc [Hcovc [Hpar [Hret Hdc]]]]]]]]].
-    destruct (Wfn f' D' S' (Some body) Ef') as [Wt' [Wps' [Wrt' Wb]]].
+      as [D' [S' [body [PhiD' [gc
+            [Ef' [Htc [Hgrc [Hcovc [Habc [Hpar [Hret Hdc]]]]]]]]]]]].
+    destruct (Wfn f' D' S' (Some body) Ef') as [PhiDf [Wt' [Wps' [Wrt' Wb]]]].
+    (* the two merged contexts of the provider telescope are one *)
+    assert (EPhi : PhiDf = PhiD').
+    { apply wf_tele_ctx in Wt'. rewrite Wt' in Htc.
+      injection Htc as EPhi. exact EPhi. }
+    subst PhiDf.
     (* the callee's context and world *)
-    assert (Hcgb : ctx_grounded gc (mk_ctx D')).
-    { split; [ exact Hgrc |]. split.
-      - unfold absorbs. intros t tau Hlu. simpl in Hlu. discriminate.
-      - split; [exact Hcovc |].
-        split.
-        + unfold sigma_regular. simpl. split.
-          * intros x Hx. contradiction.
-          * constructor.
-        + exact (@callee_env_agree_aux13 Sg [] D' Wt'). }
-    assert (Hdb : denv_agree Sg gc (cA (mk_ctx D')) dc) by exact Hdc.
+    assert (Hcgb : ctx_grounded gc PhiD').
+    { split; [ exact Hgrc |].
+      split; [ exact Habc |].
+      split; [ exact Hcovc |].
+      split.
+      - apply (@tele_sigma_regular Sg empty_ctx D' PhiD' Wt').
+        split; [ intros x Hx; destruct Hx | constructor ].
+      - apply (@callee_env_agree_aux13 Sg empty_ctx D' PhiD' Wt').
+        simpl. intros Hbad; exact Hbad. }
+    assert (Hdb : denv_agree Sg gc (cA PhiD') dc) by exact Hdc.
     (* the provider's parameter list splits into receiver and arguments *)
     remember (fs_params S') as psl eqn:Eps.
     destruct psl as [| p0 rest]; [ simpl in Hpar; discriminate |].
@@ -4757,17 +5293,17 @@ Section SafetyCases.
                      (fun t1 => app_subst g (app_subst (cS Phi) t1))
                      (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0))
                      ws (fs_params Sf) Hsa). }
-        assert (Hvb : venv_agree Sg gc D' (body_env S') (mk_venv (w0 :: ws))).
+        assert (Hvb : venv_agree Sg gc (cA PhiD') (body_env S')
+                        (mk_venv (w0 :: ws))).
         { unfold body_env. rewrite <- Eps.
-          apply (@venv_agree_body Sg gc D' (w0 :: ws) (p0 :: rest)).
+          apply (@venv_agree_body Sg gc (cA PhiD') (w0 :: ws) (p0 :: rest)).
           - constructor; [ exact Hw0 | exact Hws ].
           - eapply Forall_impl; [|exact Wps'].
             intros tau Hwf. exact (wf_ty_frees Hwf). }
-        assert (Hres := @IHfuel k (Nat.le_refl k) (mk_ctx D') (body_env S')
+        assert (Hres := @IHfuel k (Nat.le_refl k) PhiD' (body_env S')
                           body (fs_ret S') dc (mk_venv (w0 :: ws)) gc
                           (Wb body eq_refl) Hcgb Hdb Hvb).
-        change (cS (mk_ctx D')) with (@nil (tsym * ty)) in Hres.
-        rewrite app_subst_nil in Hres.
+        rewrite (@absorbs_all gc (cS PhiD') Habc (fs_ret S')) in Hres.
         rewrite Hret in Hres.
         rewrite (Hcv (fs_ret Sf)). exact Hres.
       + (* the arguments did not produce values *)
@@ -5035,8 +5571,10 @@ Section SafetyCases.
     { intros n th Hn.
       inversion Hn as [| | n' D payload th' Htag Hsat Hwfth |]; subst.
       cbn [member_payload]. rewrite Htag.
-      pose proof (wf_tag_decl WF n Htag) as [_ Hp].
-      destruct Hsat as [Hdom _].
+      pose proof (wf_tag_decl WF n Htag) as [PhiD' [Wt Hp]].
+      destruct Hsat as [PhiD [Htc [Hdom _]]].
+      apply wf_tele_ctx in Wt.
+      assert (HP : PhiD' = PhiD) by congruence. subst PhiD'.
       assert (Hcover : incl (ty_frees payload) (map fst th)).
       { rewrite Hdom. exact (wf_ty_frees Hp). }
       intros u Hu.
@@ -5441,6 +5979,10 @@ Section SafetyCases.
                (interp (S k) Sg d ge (EBindVal v e1 e)).
   Proof.
     intros Phi G v Dv tauv e1 e tau d ge g Hgv Hsat H1 H2 Hg Hd Hv.
+    destruct Hsat as [PhiDv [Htc [_ Hreq]]].
+    rewrite Forall_forall in Hreq.
+    assert (Hreq' : forall u, In u (tyreqs Dv) -> avail Phi (ITy u)).
+    { intros u Hu. apply Hreq. apply (tele_ctx_tyreqs _ Htc). exact Hu. }
     assert (Habs : forall t0, app_subst g (app_subst (cS Phi) t0)
                               = app_subst g t0).
     { destruct Hg as [_ [Hab _]]. apply (absorbs_all Hab). }
@@ -5477,19 +6019,15 @@ Section SafetyCases.
               -- intros u Hu.
                  simpl in Hu. rewrite Hgv in Hu. simpl in Hu.
                  apply in_app_or in Hu. destruct Hu as [Hu | []].
-                 destruct Hsat as [_ Hreq].
-                 rewrite Forall_forall in Hreq.
                  apply wf_ty_frees_aux3.
-                 apply avail_ty_in. exact (Hreq u Hu).
+                 apply avail_ty_in. exact (Hreq' u Hu).
               -- exact Hreg.
             * simpl. constructor.
               -- intros u Hu.
                  simpl in Hu. rewrite Hgv in Hu. simpl in Hu.
                  apply in_app_or in Hu. destruct Hu as [Hu | []].
-                 destruct Hsat as [_ Hreq].
-                 rewrite Forall_forall in Hreq.
                  apply wf_ty_frees_aux3.
-                 apply avail_ty_in. exact (Hreq u Hu).
+                 apply avail_ty_in. exact (Hreq' u Hu).
               -- exact Hkeys.
       }
       assert (Hg' : ctx_grounded g (add_item (IVal v) Phi)).
@@ -5550,21 +6088,27 @@ Section SafetyCases.
      entry-wise recursion). *)
   Lemma safety_case_bindfn_aux4 :
     forall (g0 : subst) (f0 : fsym) (Df0 : tele) (Sf0 : fnsig) (f'0 : fsym)
-           (D0 : tele) (S0 : fnsig) (body0 : expr) (gc0 : subst) (dc0 : denv),
+           (D0 : tele) (S0 : fnsig) (body0 : expr) (PhiD0 : ctx)
+           (gc0 : subst) (dc0 : denv),
       g_fn Sg f0 = Some (Df0, Sf0, None) ->
       g_fn Sg f'0 = Some (D0, S0, Some body0) ->
+      tele_ctx D0 = Some PhiD0 ->
       grounding gc0 ->
-      covers gc0 (tyreqs D0) ->
+      covers gc0 (tyreqs (cA PhiD0)) ->
+      absorbs gc0 (cS PhiD0) ->
       map (app_subst gc0) (fs_params S0) = map (app_subst g0) (fs_params Sf0) ->
       app_subst gc0 (fs_ret S0) = app_subst g0 (fs_ret Sf0) ->
-      denv_agree Sg gc0 D0 dc0 ->
+      denv_agree Sg gc0 (cA PhiD0) dc0 ->
       dentry_agree Sg g0 (IFn f0) (DClo f'0 dc0).
   Proof.
-    intros g0 f0 Df0 Sf0 f'0 D0 S0 body0 gc0 dc0 Hf0 Hf'0 Hgr Hcov Hp Hr Hda.
+    intros g0 f0 Df0 Sf0 f'0 D0 S0 body0 PhiD0 gc0 dc0
+           Hf0 Hf'0 Htc Hgr Hcov Habs Hp Hr Hda.
     simpl. rewrite Hf0, Hf'0. simpl.
-    exists gc0.
+    exists PhiD0, gc0.
+    split; [exact Htc |].
     split; [exact Hgr |].
     split; [exact Hcov |].
+    split; [exact Habs |].
     split; [exact Hp |].
     split; [exact Hr |].
     destruct Hda as [Hc1 [Hc2 [Hreg Hkeys]]].
@@ -5575,6 +6119,16 @@ Section SafetyCases.
     - exact I.
     - simpl. inversion Hall as [| q qs Hq Hqs Heq]; subst.
       split; [exact Hq | apply IH; exact Hqs].
+  Qed.
+
+  Lemma safety_case_bindfn_aux5 : forall (D : tele) (i : item),
+      app_subst_item (id_app D) i = i.
+  Proof.
+    intros D i. destruct i as [t | v | f | rt m th]; simpl; try reflexivity.
+    f_equal.
+    - apply safety_case_bindfn_aux3.
+    - unfold map_snd. induction th as [| [a b] r IH]; simpl; [reflexivity |].
+      rewrite safety_case_bindfn_aux3, IH. reflexivity.
   Qed.
 
   Lemma safety_case_bindfn : forall Phi G f Df Sf f' D' S' body sm e tau d ge g,
@@ -5594,33 +6148,54 @@ Section SafetyCases.
     intros Phi G f Df Sf f' D' S' body sm e tau d ge g
            Hf Hf' Hsf Hs' Hsm Hsig H2 Hg Hd Hv.
     pose proof WF as WF0. destruct WF0 as [Wtag Wval Wfn Wmth].
-    destruct (Wfn f' D' S' (Some body) Hf') as [Wt' [Wps' [Wrt' _]]].
-    destruct Hs' as [Hsat' Hav'].
+    destruct (Wfn f' D' S' (Some body) Hf') as [PhiD [Wt' [Wps' [Wrt' _]]]].
+    pose proof (wf_tele_ctx Wt') as Htc.
+    destruct Hs' as [PhiD1 [Htc1 [Hsat' Hav']]].
+    rewrite Htc in Htc1. injection Htc1 as Htc1. subst PhiD1.
+    destruct Hsm as [PhiD2 [Htc2 [Hdom Hmm]]].
+    rewrite Htc in Htc2. injection Htc2 as Htc2. subst PhiD2.
     assert (Habs : forall t0, app_subst g (app_subst (cS Phi) t0)
                               = app_subst g t0).
     { destruct Hg as [_ [Hab _]]. apply (absorbs_all Hab). }
     (* the identity application's entries are wf: its range is the available
-       type symbols of the provider's telescope (sat0's second conjunct) *)
-    assert (Hwfth : Forall (fun p => wf_ty Sg Phi (snd p)) (id_app D')).
+       type symbols of the provider's merged telescope (sat0's third
+       conjunct) *)
+    assert (Hwfth : Forall (fun p => wf_ty Sg Phi (snd p)) (id_app (cA PhiD))).
     { apply Forall_forall. intros p Hp. unfold id_app in Hp.
       apply in_map_iff in Hp. destruct Hp as [t0 [Heq Hin]]. subst p. simpl.
       apply WfNeed. rewrite Forall_forall in Hav'. apply Hav'. exact Hin. }
+    (* satisfaction and the map's correctness, restated at the identity
+       application of the *merged* items — extensionally the same
+       substitution as id_app D' *)
+    assert (Hsat : sat Sg Phi (id_app (cA PhiD)) D').
+    { exists PhiD. split; [exact Htc | exact Hsat']. }
+    assert (Hsm' : smap_ok Phi (id_app (cA PhiD)) sm D').
+    { exists PhiD. split; [exact Htc |]. split; [exact Hdom |].
+      eapply Forall_impl; [| exact Hmm].
+      intros p [Hin Hmt]. split; [exact Hin |].
+      unfold item_matches in Hmt |- *.
+      rewrite safety_case_bindfn_aux5 in Hmt.
+      rewrite safety_case_bindfn_aux5. exact Hmt. }
     (* the captured world *)
     assert (Hcall : exists dc, compose_smap d sm = Some dc
-              /\ ctx_grounded (callee_grounding g Phi (id_app D') D') (mk_ctx D')
-              /\ denv_agree Sg (callee_grounding g Phi (id_app D') D') D' dc).
+              /\ ctx_grounded
+                   (callee_grounding g Phi (id_app (cA PhiD)) (cA PhiD)) PhiD
+              /\ denv_agree Sg
+                   (callee_grounding g Phi (id_app (cA PhiD)) (cA PhiD))
+                   (cA PhiD) dc).
     { eapply callee_env_agree;
-        [ exact WF | exact Wt' | exact Hsat' | exact Hwfth | exact Hsm
+        [ exact WF | exact Wt' | exact Hsat | exact Hwfth | exact Hsm'
         | exact Hg | exact Hd ]. }
     destruct Hcall as [dc [Hcomp [Hcgc Hdc]]].
-    (* reading a D'-covered type through the closure's grounding is reading
+    (* reading a PhiD-covered type through the closure's grounding is reading
        it through σ and then g: the application is the identity *)
-    assert (Hgcr : forall t0, incl (ty_frees t0) (tyreqs D') ->
-              app_subst (callee_grounding g Phi (id_app D') D') t0
+    assert (Hgcr : forall t0, incl (ty_frees t0) (tyreqs (cA PhiD)) ->
+              app_subst (callee_grounding g Phi (id_app (cA PhiD)) (cA PhiD)) t0
               = app_subst g (app_subst (cS Phi) t0)).
     { intros t0 Hincl. rewrite callee_grounding_reads by exact Hincl.
       rewrite safety_case_bindfn_aux3. reflexivity. }
-    assert (Hpar : map (app_subst (callee_grounding g Phi (id_app D') D'))
+    assert (Hpar : map (app_subst
+                          (callee_grounding g Phi (id_app (cA PhiD)) (cA PhiD)))
                        (fs_params S')
                    = map (app_subst g) (fs_params Sf)).
     { transitivity (map (app_subst g) (map (app_subst (cS Phi)) (fs_params S'))).
@@ -5629,26 +6204,40 @@ Section SafetyCases.
         pose proof (Wps' tau0 Hin) as Hw0. apply wf_ty_frees in Hw0. exact Hw0.
       - destruct Hsig as [Hsp _]. rewrite Hsp, map_map.
         apply map_ext_in. intros tau0 _. apply Habs. }
-    assert (Hrt : app_subst (callee_grounding g Phi (id_app D') D') (fs_ret S')
+    assert (Hrt : app_subst
+                    (callee_grounding g Phi (id_app (cA PhiD)) (cA PhiD))
+                    (fs_ret S')
                   = app_subst g (fs_ret Sf)).
-    { assert (Hfr : incl (ty_frees (fs_ret S')) (tyreqs D')).
+    { assert (Hfr : incl (ty_frees (fs_ret S')) (tyreqs (cA PhiD))).
       { pose proof Wrt' as Hw. apply wf_ty_frees in Hw. exact Hw. }
       rewrite Hgcr by exact Hfr.
       destruct Hsig as [_ Hsr]. rewrite Hsr. apply Habs. }
     assert (Hnew : dentry_agree Sg g (IFn f) (DClo f' dc)).
-    { destruct Hcgc as [Hgr0 [_ [Hcov0 Hreg0]]].
+    { destruct Hcgc as [Hgr0 [Hab0 [Hcov0 _]]].
       eapply safety_case_bindfn_aux4;
-        [ exact Hf | exact Hf' | exact Hgr0 | exact Hcov0 | exact Hpar
-        | exact Hrt | exact Hdc ]. }
+        [ exact Hf | exact Hf' | exact Htc | exact Hgr0 | exact Hcov0
+        | exact Hab0 | exact Hpar | exact Hrt | exact Hdc ]. }
     assert (Hg' : ctx_grounded g (add_item (IFn f) Phi)).
-    { destruct Hg as [Hgr [Hab Hcv]].
-      split; [exact Hgr |]. split; simpl; assumption. }
+    { destruct Hg as [Hgr [Hab [Hcv [Hsr Hth]]]].
+      split; [exact Hgr |]. split; [exact Hab |].
+      split; [exact Hcv |]. split; [exact Hsr | exact Hth]. }
+    destruct Hsf as [PhiDf [Htcf [_ Havf]]].
+    assert (Hdepf : incl (dep_tys Sg (IFn f) ++ item_ty_frees (IFn f)
+                          ++ method_item_frees Sg (IFn f))
+                         (tyreqs (cA Phi))).
+    { intros u Hu. simpl in Hu. rewrite Hf in Hu. simpl in Hu.
+      apply in_app_or in Hu. destruct Hu as [Hu | Hu];
+        [| simpl in Hu; contradiction].
+      apply wf_ty_frees_aux3. apply avail_ty_in.
+      rewrite Forall_forall in Havf. apply Havf.
+      apply (proj2 (tele_ctx_tyreqs Df Htcf u)). exact Hu. }
     assert (Hd' : denv_agree Sg g (cA (add_item (IFn f) Phi))
                              ((IFn f, DClo f' dc) :: d)).
     { destruct Hd as [Hdcov [Hdentries [Hdreg Hdkeys]]].
       split.
       - simpl. constructor.
-        + right. exists (DClo f' dc). simpl. rewrite Nat.eqb_refl. reflexivity.
+        + right. exists (DClo f' dc). simpl.
+          rewrite Nat.eqb_refl. reflexivity.
         + eapply Forall_impl; [| exact Hdcov].
           intros i [Hty | [en Hen]].
           * left; exact Hty.
@@ -5659,22 +6248,8 @@ Section SafetyCases.
       - split.
         + constructor; [exact Hnew | exact Hdentries].
         + split.
-          * simpl. constructor.
-            -- intros u Hu. simpl in Hu. rewrite Hf in Hu. simpl in Hu.
-               apply in_app_or in Hu. destruct Hu as [Hu | []].
-               destruct Hsf as [_ Hreq].
-               rewrite Forall_forall in Hreq.
-               apply wf_ty_frees_aux3.
-               apply avail_ty_in. exact (Hreq u Hu).
-            -- exact Hdreg.
-          * simpl. constructor.
-            -- intros u Hu. simpl in Hu. rewrite Hf in Hu. simpl in Hu.
-               apply in_app_or in Hu. destruct Hu as [Hu | []].
-               destruct Hsf as [_ Hreq].
-               rewrite Forall_forall in Hreq.
-               apply wf_ty_frees_aux3.
-               apply avail_ty_in. exact (Hreq u Hu).
-            -- exact Hdkeys. }
+          * simpl. constructor; [exact Hdepf | exact Hdreg].
+          * simpl. constructor; [exact Hdepf | exact Hdkeys] . }
     simpl interp. rewrite Hcomp.
     pose proof (IHfuel (le_n k)) as SK.
     apply (SK (add_item (IFn f) Phi) G e tau ((IFn f, DClo f' dc) :: d) ge g
@@ -5754,8 +6329,11 @@ Section SafetyCases.
     apply in_flat_map in Hu. destruct Hu as [rho [Hrho Hu]].
     apply in_map_iff in Hrho. destruct Hrho as [tau [Heq Htau]].
     subst rho.
-    assert (Wtau : wf_ty Sg (mk_ctx (ITy this_sym :: Dm)) tau).
-    { destruct (wf_mth_decl WF m Hm) as [_ [Wps Wret]].
+    destruct Hsat as [PhiDm [Htcm [Hdom _]]].
+    assert (Wtau : wf_ty Sg (add_item (ITy this_sym) PhiDm) tau).
+    { destruct (wf_mth_decl WF _ Hm) as [PhiDm2 [Wtm [Wps Wret]]].
+      pose proof (wf_tele_ctx Wtm) as Htcm2.
+      rewrite Htcm in Htcm2. injection Htcm2 as Heq2. subst PhiDm2.
       apply in_app_or in Htau. destruct Htau as [Htau | Htau].
       - rewrite Forall_forall in Wps. exact (Wps tau Htau).
       - simpl in Htau. destruct Htau as [Htau | []].
@@ -5771,8 +6349,7 @@ Section SafetyCases.
       + pose proof (wf_ty_frees Wtau u Hu) as Hu0.
         simpl in Hu0. destruct Hu0 as [Hu0 | Hu0].
         * subst u. exfalso. apply HnotThis. simpl. left. reflexivity.
-        * destruct Hsat as [Hdom _]. exfalso. apply HnotTh.
-          rewrite Hdom. exact Hu0.
+        * exfalso. apply HnotTh. rewrite Hdom. exact Hu0.
   Qed.
 
   (* Private helper: the method entry's agreement, assembled from the
@@ -5781,11 +6358,13 @@ Section SafetyCases.
   Lemma safety_case_bindmth_aux3 :
     forall (g0 : subst) (rt : ty) (m0 : msym) (th0 : subst) (Dm0 : tele)
            (Sm0 : fnsig) (f'0 : fsym) (D0 : tele) (S0 : fnsig) (body0 : expr)
-           (gc0 : subst) (dc0 : denv),
+           (PhiD0 : ctx) (gc0 : subst) (dc0 : denv),
       g_mth Sg m0 = Some (Dm0, Sm0) ->
       g_fn Sg f'0 = Some (D0, S0, Some body0) ->
+      tele_ctx D0 = Some PhiD0 ->
       grounding gc0 ->
-      covers gc0 (tyreqs D0) ->
+      covers gc0 (tyreqs (cA PhiD0)) ->
+      absorbs gc0 (cS PhiD0) ->
       map (app_subst gc0) (fs_params S0)
         = app_subst g0 rt
           :: map (fun tau => app_subst g0
@@ -5794,15 +6373,17 @@ Section SafetyCases.
       app_subst gc0 (fs_ret S0)
         = app_subst g0
             (app_subst (this_subst rt) (app_subst th0 (fs_ret Sm0))) ->
-      denv_agree Sg gc0 D0 dc0 ->
+      denv_agree Sg gc0 (cA PhiD0) dc0 ->
       dentry_agree Sg g0 (IMth rt m0 th0) (DClo f'0 dc0).
   Proof.
-    intros g0 rt m0 th0 Dm0 Sm0 f'0 D0 S0 body0 gc0 dc0
-           Hm0 Hf'0 Hgr Hcov Hp Hr Hda.
+    intros g0 rt m0 th0 Dm0 Sm0 f'0 D0 S0 body0 PhiD0 gc0 dc0
+           Hm0 Hf'0 Htc0 Hgr Hcov Hab Hp Hr Hda.
     simpl. rewrite Hm0, Hf'0. simpl.
-    exists gc0.
+    exists PhiD0, gc0.
+    split; [exact Htc0 |].
     split; [exact Hgr |].
     split; [exact Hcov |].
+    split; [exact Hab |].
     split; [exact Hp |].
     split; [exact Hr |].
     destruct Hda as [Hc1 [Hc2 [Hreg Hkeys]]].
@@ -5835,6 +6416,28 @@ Section SafetyCases.
     - exists en. exact H.
   Qed.
 
+  Lemma safety_case_bindmth_aux6 : forall (D : tele) (s : subst),
+      map_snd (app_subst (id_app D)) s = s.
+  Proof.
+    intros D s. unfold map_snd. induction s as [| [t a] r IH]; simpl.
+    - reflexivity.
+    - rewrite safety_case_bindfn_aux3. unfold map_snd in IH. rewrite IH.
+      reflexivity.
+  Qed.
+
+  Lemma safety_case_bindmth_aux8 : forall (Phi : ctx) (D1 D2 : tele)
+                                          (sm : smap) (D : tele),
+      smap_ok Phi (id_app D1) sm D -> smap_ok Phi (id_app D2) sm D.
+  Proof.
+    intros Phi D1 D2 sm D [PhiD [Htc [Hdom Hall]]].
+    exists PhiD. split; [exact Htc |]. split; [exact Hdom |].
+    eapply Forall_impl; [| exact Hall].
+    intros p [Hin Hmatch]. split; [exact Hin |].
+    unfold item_matches in Hmatch |- *.
+    rewrite safety_case_bindfn_aux5 in Hmatch.
+    rewrite safety_case_bindfn_aux5. exact Hmatch.
+  Qed.
+
   Lemma safety_case_bindmth_gap : forall Phi G tauk m Dm Sf th f' D' S' body sm
                                      tau0' rest e tau d ge g,
       g_mth Sg m = Some (Dm, Sf) ->
@@ -5860,39 +6463,39 @@ Section SafetyCases.
     intros Phi G tauk m Dm Sf th f' D' S' body sm tau0' rest e tau d ge g
            Hm Hwk Hsat Hthwf Hf' Hs' Hsm Hpar0 Hteq Hprest Hpret H2 Hg Hd Hv.
     pose proof WF as WF0. destruct WF0 as [Wtag Wval Wfn Wmth].
-    destruct (Wfn f' D' S' (Some body) Hf') as [Wt' [Wps' [Wrt' _]]].
-    destruct (Wmth m Dm Sf Hm) as [Wtm [Wpsm Wrtm]].
-    destruct Hs' as [Hsat' Hav'].
+    destruct (Wfn f' D' S' (Some body) Hf') as [PhiD' [Wt' [Wps' [Wrt' _]]]].
+    pose proof (wf_tele_ctx Wt') as Htc'.
+    (* the provider telescope's own satisfaction, at its merged identity *)
+    destruct Hs' as [PhiD'2 [Htc'2 [Hsat' Hav']]].
+    assert (EP : PhiD'2 = PhiD') by congruence. subst PhiD'2.
+    assert (Hsatfull : sat Sg Phi (id_app (cA PhiD')) D')
+      by (exists PhiD'; split; [exact Htc' | exact Hsat']).
+    pose proof (@safety_case_bindmth_aux8 Phi D' (cA PhiD') sm D' Hsm) as Hsm2.
     assert (Habs : forall t0, app_subst g (app_subst (cS Phi) t0)
                               = app_subst g t0).
     { destruct Hg as [_ [Hab _]]. apply (absorbs_all Hab). }
-    assert (Hwfth : Forall (fun p => wf_ty Sg Phi (snd p)) (id_app D')).
+    (* the identity application's range is well-formed: S-Pass availability *)
+    assert (Hwfth : Forall (fun p => wf_ty Sg Phi (snd p))
+                           (id_app (cA PhiD'))).
     { apply Forall_forall. intros p Hp. unfold id_app in Hp.
       apply in_map_iff in Hp. destruct Hp as [t0 [Heq Hin]]. subst p. simpl.
       apply WfNeed. rewrite Forall_forall in Hav'. apply Hav'. exact Hin. }
-    assert (Hcall : exists dc, compose_smap d sm = Some dc
-              /\ ctx_grounded (callee_grounding g Phi (id_app D') D') (mk_ctx D')
-              /\ denv_agree Sg (callee_grounding g Phi (id_app D') D') D' dc).
-    { eapply callee_env_agree;
-        [ exact WF | exact Wt' | exact Hsat' | exact Hwfth | exact Hsm
-        | exact Hg | exact Hd ]. }
-    destruct Hcall as [dc [Hcomp [Hcgc Hdc]]].
-    assert (Hgcr : forall t0, incl (ty_frees t0) (tyreqs D') ->
-              app_subst (callee_grounding g Phi (id_app D') D') t0
+    (* the captured world, and the provider's own grounding *)
+    destruct (@callee_env_agree Sg g Phi (id_app (cA PhiD')) sm D' d PhiD'
+                WF Wt' Hsatfull Hwfth Hsm2 Hg Hd)
+      as [dc [Hcomp [Hcgc Hdc]]].
+    assert (Hgcr : forall t0, incl (ty_frees t0) (tyreqs (cA PhiD')) ->
+              app_subst (callee_grounding g Phi (id_app (cA PhiD')) (cA PhiD'))
+                        t0
               = app_subst g (app_subst (cS Phi) t0)).
     { intros t0 Hincl. rewrite callee_grounding_reads by exact Hincl.
       rewrite safety_case_bindfn_aux3. reflexivity. }
-    (* the method's own types are covered by This and the application's keys *)
-    destruct Hsat as [Hdom Hcoh].
-    assert (Hfr : forall tau1, wf_ty Sg (mk_ctx (ITy this_sym :: Dm)) tau1 ->
-              incl (ty_frees tau1) (this_sym :: map fst th)).
-    { intros tau1 Hw. pose proof Hw as Hi. apply wf_ty_frees in Hi.
-      simpl in Hi. rewrite <- Hdom in Hi. exact Hi. }
-    (* the provider's parameter types are covered by its telescope *)
+    (* the provider's parameter list splits into receiver and arguments *)
     rewrite Hpar0 in Wps'.
     inversion Wps' as [| tt rr Wp0 Wpr Heqw]; subst.
     (* the two signature equations of the new entry *)
-    assert (Hpar : map (app_subst (callee_grounding g Phi (id_app D') D'))
+    assert (Hpar : map (app_subst (callee_grounding g Phi
+                          (id_app (cA PhiD')) (cA PhiD')))
                        (fs_params S')
                    = app_subst g tauk
                      :: map (fun tau1 => app_subst g
@@ -5908,7 +6511,8 @@ Section SafetyCases.
         + rewrite Hprest, map_map. apply map_ext_in. intros t1 Hin.
           unfold interp_m. rewrite Habs.
           apply safety_case_bindmth_auxN. apply Habs. }
-    assert (Hrt : app_subst (callee_grounding g Phi (id_app D') D') (fs_ret S')
+    assert (Hrt : app_subst (callee_grounding g Phi
+                     (id_app (cA PhiD')) (cA PhiD')) (fs_ret S')
                   = app_subst g
                       (app_subst (this_subst tauk)
                                  (app_subst th (fs_ret Sf)))).
@@ -5916,20 +6520,20 @@ Section SafetyCases.
       rewrite Hpret. unfold interp_m. rewrite Habs.
       apply safety_case_bindmth_auxN. apply Habs. }
     assert (Hnew : dentry_agree Sg g (IMth tauk m th) (DClo f' dc)).
-    { destruct Hcgc as [Hgr0 [_ [Hcov0 Hreg0]]].
+    { destruct Hcgc as [Hgr0 [Hab0 [Hcov0 _]]].
       eapply safety_case_bindmth_aux3;
-        [ exact Hm | exact Hf' | exact Hgr0 | exact Hcov0 | exact Hpar
-        | exact Hrt | exact Hdc ]. }
+        [ exact Hm | exact Hf' | exact Htc' | exact Hgr0 | exact Hcov0
+        | exact Hab0 | exact Hpar | exact Hrt | exact Hdc ]. }
     assert (Hg' : ctx_grounded g (add_item (IMth tauk m th) Phi)).
     { destruct Hg as [Hgr [Hab Hcv]].
-      split; [exact Hgr |]. split; simpl; assumption. }
+      split; [exact Hgr |]. split; [exact Hab | exact Hcv]. }
     assert (Hmethodreg :
         incl (method_item_frees Sg (IMth tauk m th))
              (tyreqs (cA Phi))).
     { eapply safety_case_bindmth_aux_regular.
       - exact Hm.
       - exact Hwk.
-      - split; [exact Hdom | exact Hcoh].
+      - exact Hsat.
       - exact Hthwf. }
     assert (Hd' : denv_agree Sg g (cA (add_item (IMth tauk m th) Phi))
                              ((IMth tauk m th, DClo f' dc) :: d)).
@@ -6088,12 +6692,14 @@ Theorem soundness_main :
 Proof.
   intros Sg main body fuel [WF _] Hmain.
   pose proof WF as WF0. destruct WF0 as [Wtag Wval Wfn Wmth].
-  destruct (Wfn _ _ _ _ Hmain) as (_ & _ & _ & Hb).
+  destruct (Wfn _ _ _ _ Hmain) as [PhiD [Wt (_ & _ & Hb)]].
+  (* The empty telescope merges to the empty context. *)
+  inversion Wt; subst PhiD.
   specialize (Hb body eq_refl). simpl in Hb.
   pose proof (safety WF fuel) as HS. unfold SAFE in HS.
-  specialize (HS (mk_ctx []) [] body TUnit [] [] [] Hb).
+  specialize (HS empty_ctx [] body TUnit [] [] [] Hb).
   simpl in HS.
-  assert (Hg : ctx_grounded [] (mk_ctx [])).
+  assert (Hg : ctx_grounded [] empty_ctx).
   { split; [constructor|]. split.
     - intros t tau Hl; discriminate Hl.
     - split.
@@ -6388,3 +6994,179 @@ Module Example.
   Proof. vm_compute. reflexivity. Qed.
 
 End Example.
+
+(* ===================== 12b. Consistent merging, executed ================= *)
+
+(* The decision log's [D43] example, elaborated into the core by hand and
+   *computed*: the flattened concatenation of
+       context Ctx1 = A, B, A.gimme[Foo=B];
+       context Ctx2 = A, C, A.gimme[Foo=C];
+   merges — the duplicate `A` dedups, and unifying the two `A.gimme`
+   bindings makes B and C the same type — plus the two failure modes
+   (concrete clash; cyclic merge) and a merged program run end to end. *)
+
+Module MergeExample.
+
+  (* Symbols.  (this_sym = 0 is reserved.) *)
+  Definition sA : tsym := 1.
+  Definition sB : tsym := 2.
+  Definition sC : tsym := 3.
+  Definition sFoo : tsym := 4.     (* gimme's own requirement *)
+  Definition sWElem : tsym := 5.   (* Wrap's payload requirement *)
+  Definition nInt : nsym := 1.
+  Definition nChar : nsym := 2.
+  Definition nWrap : nsym := 3.
+  Definition nO : nsym := 4.
+  Definition fGive : fsym := 1.
+  Definition fDemo : fsym := 2.
+  Definition fMain : fsym := 3.
+  Definition mGimme : msym := 1.
+
+  (* The two spellings of the colliding requirement: A.gimme[Foo=B] from
+     Ctx1 and A.gimme[Foo=C] from Ctx2. *)
+  Definition prov_B : item := IMth (TAbs sA) mGimme [(sFoo, TAbs sB)].
+  Definition prov_C : item := IMth (TAbs sA) mGimme [(sFoo, TAbs sC)].
+
+  (* Ctx3 = Ctx1, Ctx2, flattened. *)
+  Definition d43_tele : tele :=
+    [ITy sA; ITy sB; prov_B; ITy sA; ITy sC; prov_C].
+
+  (* ---- 1. The [D43] merge, computed. ------------------------------------ *)
+
+  (* Formation succeeds; the duplicate ITy sA dedups silently; the two
+     gimme bindings share the key (mGimme at head A, judged through σ) and
+     unify, keeping the earlier occurrence prov_B as the representative
+     (deviation 9's orientation) and emitting exactly the merge equation
+     C ↦ B — [D43]'s "it just additionally requires B and C to be the
+     same type". *)
+  Definition d43_merged : ctx :=
+    mkCtx [ITy sA; ITy sB; prov_B; ITy sC] [(sC, TAbs sB)].
+
+  Example d43_merges : tele_ctx d43_tele = Some d43_merged.
+  Proof. vm_compute. reflexivity. Qed.
+
+  (* Under the merged context the OTHER spelling is available too: prov_C's
+     σ-image coincides with the kept prov_B, so the two spellings are one
+     atom — [D43]'s "binding one binds them all", and the identity-keying
+     payoff of [D62] (two spellings of one merged atom are one provision,
+     not an ambiguity). *)
+  Example other_spelling_avail : avail_b d43_merged prov_C = true.
+  Proof. vm_compute. reflexivity. Qed.
+
+  (* ---- 2. The clash, computed. ------------------------------------------ *)
+
+  (* A merge that would identify two *distinct concrete* heads —
+     A.gimme[Foo=Int] with A.gimme[Foo=Char] — is an error at formation,
+     and only there ([D43]'s answer to "where do collisions error"). *)
+  Definition clash_tele : tele :=
+    [ITy sA;
+     IMth (TAbs sA) mGimme [(sFoo, TNom nInt [])];
+     IMth (TAbs sA) mGimme [(sFoo, TNom nChar [])]].
+
+  Example clash_rejected : tele_ctx clash_tele = None.
+  Proof. vm_compute. reflexivity. Qed.
+
+  (* ---- 3. The occurs check, computed. ------------------------------------ *)
+
+  (* A cyclic merge: unifying A.gimme[Foo=B] with A.gimme[Foo=Wrap[Elem=B]]
+     would require B ≡ Wrap[Elem=B], a requirement no instantiation can
+     ground.  [D43] is silent on this case — the occurs check is a finding
+     of this mechanization (deviation 9) — and formation rejects it. *)
+  Definition cyclic_tele : tele :=
+    [ITy sA; ITy sB;
+     IMth (TAbs sA) mGimme [(sFoo, TAbs sB)];
+     IMth (TAbs sA) mGimme [(sFoo, TNom nWrap [(sWElem, TAbs sB)])]].
+
+  Example cyclic_rejected : tele_ctx cyclic_tele = None.
+  Proof. vm_compute. reflexivity. Qed.
+
+  (* ---- 4. A merged program, run. ----------------------------------------- *)
+
+  (* fn demo(a: A): B { a.gimme() } — declared under the flattened Ctx3, so
+     its telescope carries the duplicate key; the elaborated body calls the
+     method through the KEPT spelling prov_B, the representative the merged
+     context stores. *)
+  Definition give_body : expr := ETag nO [] EUnit.  (* fn give(this: O): O *)
+  Definition demo_body : expr := EMeth (EVar 0) mGimme prov_B [].
+  Definition demo_tele : tele := d43_tele.
+
+  (* ς's domain is the *deduplicated* non-type items (smap_ok reads it off
+     filter non-ty (cA PhiD)): here the single representative prov_B — not
+     one entry per spelling. *)
+  Example smap_domain :
+    filter (fun i => negb (is_ty_item i)) (cA d43_merged) = [prov_B].
+  Proof. reflexivity. Qed.
+
+  (* The application main passes to demo: defined on the deduplicated type
+     requirements [A; B; C] (= tyreqs (cA d43_merged)), sending C to B so
+     that merge_respects holds for the equation C ↦ B — binding B bound C
+     with it.  (The merge σ story lives in demo's own telescope; main's
+     context never mentions C.) *)
+  Definition th_demo : subst :=
+    [(sA, TAbs sA); (sB, TAbs sB); (sC, TAbs sB)].
+
+  (* fn main() { bind A = O; bind B = O;         -- one bind covers B and C
+       bind A.gimme[Foo=B] = give;               -- ONE provision, kept key
+       let _ = demo(O()); () } *)
+  Definition main_body : expr :=
+    EBindTy sA (TNom nO [])
+    (EBindTy sB (TNom nO [])
+    (EBindMth (TAbs sA) mGimme [(sFoo, TAbs sB)] fGive []
+    (ELet 1
+       (ECallD fDemo th_demo [(prov_B, prov_B)]
+          [ETag nO [] EUnit])
+       EUnit))).
+
+  Definition Sg : gsig := mkGsig
+    (fun t => Nat.eqb t sA || Nat.eqb t sB || Nat.eqb t sC
+              || Nat.eqb t sFoo || Nat.eqb t sWElem || Nat.eqb t this_sym)
+    (fun n =>
+       if Nat.eqb n nInt then Some ([], TUnit)
+       else if Nat.eqb n nChar then Some ([], TUnit)
+       else if Nat.eqb n nWrap then Some ([ITy sWElem], TAbs sWElem)
+       else if Nat.eqb n nO then Some ([], TUnit)
+       else None)
+    (fun v => None)
+    (fun f =>
+       if Nat.eqb f fGive then
+         Some ([], mkSig [TNom nO []] (TNom nO []), Some give_body)
+       else if Nat.eqb f fDemo then
+         Some (demo_tele, mkSig [TAbs sA] (TAbs sB), Some demo_body)
+       else if Nat.eqb f fMain then
+         Some ([], mkSig [] TUnit, Some main_body)
+       else None)
+    (fun m =>
+       if Nat.eqb m mGimme then Some ([ITy sFoo], mkSig [] (TAbs sFoo))
+       else None).
+
+  (* The merged program runs, and yields (): one provision under the kept
+     key answers a requirement stated twice, through ς keyed on the
+     deduplicated representative. *)
+  Example merged_runs : interp 1000 Sg [] [] main_body = Ok VUnit.
+  Proof. vm_compute. reflexivity. Qed.
+
+  (* Its type-erasure runs to the same value (Proposition 4.3 on this
+     instance): merging is resolved entirely by the statics — at runtime
+     only the recorded representative keys remain. *)
+  Example merged_erased_runs : interp 1000 Sg [] [] (erase main_body) = Ok VUnit.
+  Proof. vm_compute. reflexivity. Qed.
+
+  (* Merge keys are the receiver's *type*, not its head [D18, D62].  Two
+     instantiations of one nominal receiver are therefore distinct atoms: a
+     telescope may require a method at both, and formation keeps them apart
+     instead of trying to identify the payloads.  (Under head keying this
+     telescope was rejected — the merge would have unified Int with Char.) *)
+  Definition nSlot : nsym := 5.
+  Definition slot_at (payload : ty) : ty := TNom nSlot [(sWElem, payload)].
+  Definition get_int : item := IMth (slot_at (TNom nInt [])) mGimme [].
+  Definition get_char : item := IMth (slot_at (TNom nChar [])) mGimme [].
+
+  Example distinct_instantiations_are_distinct_atoms :
+    same_key [] get_int get_char = false.
+  Proof. vm_compute. reflexivity. Qed.
+
+  Example distinct_instantiations_coexist :
+    tele_ctx [get_int; get_char] = Some (mkCtx [get_int; get_char] []).
+  Proof. vm_compute. reflexivity. Qed.
+
+End MergeExample.
