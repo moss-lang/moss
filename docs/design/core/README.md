@@ -15,13 +15,14 @@ its definitions and metatheoretical statements.
   executed by computation. The header comment lists the handful of
   mechanization-level deviations from the paper.
 
-Both are built by flake checks, so CI keeps them compiling:
+Both are built by flake checks, so CI keeps them compiling, and the
+paper is an ordinary package:
 
 ```sh
-nix build .#checks.x86_64-linux.core-calculus-pdf   # writes result/core-moss.pdf
-nix build .#checks.x86_64-linux.core-calculus-rocq
+nix build .#pdf                                     # writes result/core-moss.pdf
+nix build .#checks.x86_64-linux.core-calculus-rocq  # (your system for x86_64-linux)
 ```
 
-(Substitute your system for `x86_64-linux`.) The PDF itself is not
-checked in; build it with the command above, or run `pdflatex` twice in
-this directory with `mathpartir` on the TeX search path.
+The PDF itself is not checked in; build it with the command above, or
+run `pdflatex` twice in this directory with `mathpartir` on the TeX
+search path.

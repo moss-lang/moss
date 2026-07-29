@@ -143,6 +143,22 @@
         in
         (rec {
           compiler = portableCompiler;
+          # The Core Moss calculus paper (docs/design/core/core-moss.tex).
+          pdf =
+            pkgs.runCommand "core-moss-pdf"
+              {
+                nativeBuildInputs = [
+                  (pkgs.texliveMedium.withPackages (ps: [ ps.mathpartir ]))
+                ];
+              }
+              ''
+                export HOME=$TMPDIR
+                cp ${./docs/design/core/core-moss.tex} core-moss.tex
+                pdflatex -interaction=nonstopmode core-moss.tex
+                pdflatex -interaction=nonstopmode core-moss.tex # cross-references
+                mkdir $out
+                cp core-moss.pdf $out/
+              '';
           default = packageFor {
             inherit (pkgs) rustPlatform;
             binaryen = pkgs.binaryen;
@@ -243,22 +259,9 @@
       checks = forAll (
         pkgs:
         {
-          # The Core Moss calculus paper (docs/design/core/core-moss.tex).
-          core-calculus-pdf =
-            pkgs.runCommand "core-moss-pdf"
-              {
-                nativeBuildInputs = [
-                  (pkgs.texliveMedium.withPackages (ps: [ ps.mathpartir ]))
-                ];
-              }
-              ''
-                export HOME=$TMPDIR
-                cp ${./docs/design/core/core-moss.tex} core-moss.tex
-                pdflatex -interaction=nonstopmode core-moss.tex
-                pdflatex -interaction=nonstopmode core-moss.tex # cross-references
-                mkdir $out
-                cp core-moss.pdf $out/
-              '';
+          # The Core Moss calculus paper: CI builds the same derivation
+          # exposed as `nix build .#pdf`.
+          core-calculus-pdf = self.packages.${pkgs.stdenv.hostPlatform.system}.pdf;
           # The mechanization of the paper's definitions and metatheory.
           core-calculus-rocq =
             pkgs.runCommand "core-moss-rocq" { nativeBuildInputs = [ pkgs.coq ]; } ''
