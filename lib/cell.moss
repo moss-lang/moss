@@ -1,0 +1,13 @@
+import "./access.moss" use .read;
+import "./int.moss" use Int;
+
+type CellInt;
+
+# `.read` is the shared accessor of access.moss, provided here at
+# `CellInt` with `Elem=Int` (D61); `.write` is this module's own.
+
+assume Int, CellInt {
+  fn cell_int(): CellInt;
+
+  fn .write(value: Int);
+}

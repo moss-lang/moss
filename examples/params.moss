@@ -1,10 +1,23 @@
-assume Std;
+#!/usr/bin/env moss
 
-fn foo(second: String, first: String) {
-  println(first);
-  println(second);
+import "../lib/wasi.moss" use WasiStd;
+import "../lib/wasistd.moss" use Branch;
+import "../lib/wasm.moss" use Wasm;
+import "../lib/wasip1.moss" use Wasi;
+
+assume Std {
+
+  fn foo(second: Char, first: Char) {
+    putchar(first);
+    putchar(char::newline);
+    putchar(second);
+    putchar(char::newline);
+  }
 }
 
-fn main() {
-  foo("goodbye", "hello");
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    foo(char::g, char::h);
+  }
 }

@@ -1,8 +1,18 @@
-import "./bool.moss" use Bool, false, true;
-import "./int.moss" use Int, Int32, Int64, Uint, Uint32, Uint64;
-import "./std.moss" use Std, print, println;
-import "./string.moss" use .to_string, String;
-import "./this.moss" use This, this;
-import "./wasi.moss" use Wasi;
-import "./wasip1.moss" as wasip1;
-import "./wasm.moss" as wasm;
+# Every detached name the library has, imported once. A detached method
+# does not match on the name it was declared under — it has to be in
+# scope, or reached as `mod::m` (D61) — so a program that calls `.add` or
+# `.length` needs the symbol here, and after access.moss there is exactly
+# one of each spelling to import.
+import "./access.moss" use .get, .length, .push, .read;
+import "./bool.moss" use Bool, False, True, false, true;
+import "./cell.moss" use CellInt, cell_int, .write;
+import "./char.moss" as char use Char, .code, .char;
+import "./int.moss" use Int, zero, one;
+import "./list.moss" use IntList, int_list, .set;
+import "./num.moss" use .add, .sub, .mul, .div, .rem, .neg, .not,
+  .and, .or, .xor, .shl, .shr, .eq, .ne, .lt, .gt, .le, .ge;
+import "./path.moss" use Path, pwd, .join;
+import "./std.moss" use Std, putchar, put_bytes;
+import "./string.moss" use String, first_arg, print, arg_count, arg_at,
+  .concat, .slice;
+import "./strlist.moss" use StrList, str_list;

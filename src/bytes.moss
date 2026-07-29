@@ -1,0 +1,109 @@
+# Byte buffers for the self-hosted back end.
+#
+# A buffer is an `IntList` whose elements are byte values; a section, a
+# function body and the module itself are all one of these, and building
+# a length-prefixed thing means filling a fresh buffer and appending it
+# under its own length.
+#
+# There are no integer literals (D4), so every constant is built from
+# `zero` and `one`: nibbles first, then a byte as its two nibbles — which
+# is how a Wasm opcode is spelled in the specification anyway.
+
+assume Std {
+  fn n2(): Int { one.add(one) }
+  fn n3(): Int { n2().add(one) }
+  fn n4(): Int { n2().add(n2()) }
+  fn n5(): Int { n4().add(one) }
+  fn n6(): Int { n4().add(n2()) }
+  fn n7(): Int { n4().add(n3()) }
+  fn n8(): Int { n4().add(n4()) }
+  fn n9(): Int { n8().add(one) }
+  fn n10(): Int { n8().add(n2()) }
+  fn n11(): Int { n8().add(n3()) }
+  fn n12(): Int { n8().add(n4()) }
+  fn n13(): Int { n8().add(n5()) }
+  fn n14(): Int { n8().add(n6()) }
+  fn n15(): Int { n8().add(n7()) }
+  fn n16(): Int { n8().add(n8()) }
+
+  # 0xHL, from its high and low nibbles.
+  fn hex(hi: Int, lo: Int): Int { hi.shl(n4()).add(lo) }
+
+  fn n127(): Int { hex(n7(), n15()) }
+  fn n128(): Int { n127().add(one) }
+  fn n64(): Int { hex(n4(), zero) }
+
+  fn push_char(buf: IntList, c: Char) {
+    buf.push(c.code());
+  }
+
+  fn push_bytes(dst: IntList, src: IntList) {
+    var i = zero;
+    while i.lt(src.length()) {
+      dst.push(src.get(i));
+      i = i.add(one);
+    }
+  }
+
+  # LEB128, unsigned. `Int.shr` is arithmetic (there is no logical shift
+  # on `Int`), so the shifted-in sign bits are masked off — which is what
+  # lets a value with its top bit set, such as a large address, terminate.
+  fn uleb(buf: IntList, value: Int) {
+    let low25 = one.shl(hex(one, n9())).sub(one);
+    var n = value;
+    var going = true;
+    while going {
+      let low = n.and(n127());
+      n = n.shr(n7()).and(low25);
+      if n.eq(zero) {
+        buf.push(low);
+        going = false;
+      } else {
+        buf.push(low.add(n128()));
+      }
+    }
+  }
+
+  # LEB128, signed: stop once the remaining bits are all copies of the
+  # sign bit already emitted.
+  fn sleb(buf: IntList, value: Int) {
+    var n = value;
+    var going = true;
+    while going {
+      let low = n.and(n127());
+      n = n.shr(n7());
+      let negative = low.and(n64()).ne(zero);
+      if n.eq(zero) {
+        if negative {
+          buf.push(low.add(n128()));
+        } else {
+          buf.push(low);
+          going = false;
+        }
+      } else if n.eq(one.neg()) {
+        if negative {
+          buf.push(low);
+          going = false;
+        } else {
+          buf.push(low.add(n128()));
+        }
+      } else {
+        buf.push(low.add(n128()));
+      }
+    }
+  }
+
+  # Decimal, for the dumps the stages are checked against.
+  fn put_int(n: Int) {
+    if n.lt(zero) {
+      putchar(char::hyphen);
+      put_int(zero.sub(n));
+    } else if n.lt(n10()) {
+      putchar(char::digit0.code().add(n).char());
+    } else {
+      put_int(n.div(n10()));
+      putchar(char::digit0.code().add(n.rem(n10())).char());
+    }
+  }
+
+}

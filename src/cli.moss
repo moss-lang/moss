@@ -1,0 +1,97 @@
+import "./ast.moss" as ast;
+import "./boot.moss" use Boot, Compiler;
+import "./bytes.moss" use *;
+import "./codegen.moss" as codegen;
+import "./intern.moss" as intern;
+import "./prog.moss" as prog;
+
+# The self-hosted compiler's command line.
+#
+#   mossc.wasm ENTRY > out.wasm
+#
+# The host presents the prelude path as argument zero and ENTRY as the
+# sole argument. Keeping the prelude out of the compiler protocol lets
+# an installed driver choose its library location.
+#
+# Output is the module's bytes on standard output, or diagnostics — one
+# line each, a letter for the rule and the name that broke it. There are
+# no string literals (D48), so a message is a code and a name rather
+# than a sentence; the codes are the `e_` and `c_` constants of
+# prog.moss and codegen.moss.
+
+assume Std {
+  fn cli() {
+    bind Boot;
+    compile_entry();
+  }
+
+  assume Compiler {
+    fn compile_entry() {
+      let entry = prog::load_program(arg_at(zero), first_arg());
+      if prog::error_count().gt(zero) {
+        report_collect();
+        return ();
+      }
+      let out = int_list();
+      codegen::compile(entry, out);
+      # A resolution error can also surface *here*: the back end is what
+      # elaborates a type and flattens a context, so `prog`'s table grows
+      # during codegen too, and a module must not be written while either
+      # table has anything in it.
+      if prog::error_count().gt(zero) {
+        report_collect();
+        return ();
+      }
+      if codegen::cg_error_count().gt(zero) {
+        report_codegen();
+        return ();
+      }
+      # One `fd_write`, not one per byte: a module is a megabyte and
+      # `putchar` is a syscall (`put_bytes` in lib/std.moss).
+      put_bytes(out);
+    }
+
+    fn report_collect() {
+      var e = zero;
+      while e.lt(prog::error_count()) {
+        putchar(char::exclam);
+        putchar(char::A.code().add(prog::err_code.get(e)).char());
+        putchar(char::space);
+        print(prog::module_path(prog::err_mod.get(e)));
+        if ast::is_some(prog::err_name.get(e)) {
+          putchar(char::space);
+          intern::put(prog::err_name.get(e));
+        }
+        putchar(char::newline);
+        e = e.add(one);
+      }
+    }
+
+    fn report_codegen() {
+      var e = zero;
+      while e.lt(codegen::cg_error_count()) {
+        putchar(char::question);
+        putchar(char::A.code().add(codegen::cg_errs.get(e)).char());
+        # Which frame was being emitted, as `module fn` — the nearest
+        # thing to a position this compiler can say (D48).
+        let at = codegen::cg_err_at.get(e);
+        if ast::is_some(at) {
+          putchar(char::space);
+          print(prog::module_path(prog::sym_mod.get(at)));
+          putchar(char::space);
+          if ast::is_some(prog::sym_recv.get(at)) {
+            intern::put(prog::sym_name.get(prog::sym_recv.get(at)));
+            putchar(char::dot);
+          }
+          intern::put(prog::sym_name.get(at));
+        }
+        if ast::is_some(codegen::cg_err_name.get(e)) {
+          putchar(char::space);
+          intern::put(codegen::cg_err_name.get(e));
+        }
+        putchar(char::newline);
+        e = e.add(one);
+      }
+    }
+  }
+}

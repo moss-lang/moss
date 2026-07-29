@@ -1,0 +1,15 @@
+assume Std {
+  unit A;
+  unit B;
+  type AB = | A | B;
+
+  fn pick(x: AB): Char {
+    match x {
+      A => char::a,
+    }
+  }
+
+  fn main() {
+    putchar(pick(A));
+  }
+}

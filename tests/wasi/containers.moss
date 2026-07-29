@@ -1,0 +1,38 @@
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasistd.moss" use WasiBasics, WasiContainers, Basics, Containers, Branch;
+import "../../lib/wasichar.moss" use WasiCharConsts, WasiChars;
+import "../../lib/char.moss" as char use Char;
+import "../../lib/cell.moss" use CellInt, cell_int, .read, .write;
+import "../../lib/list.moss" use IntList, int_list, .push, .set;
+import "../../lib/int.moss" use Int, zero, one;
+import "../../lib/std.moss" use putchar;
+
+# A cell and a growable list, both implemented in Moss over the library's
+# own allocator. The list is pushed past its initial capacity so the
+# grow-by-copy runs.
+assume Basics, Containers, WasiChars {
+  fn exercise() {
+    let c = cell_int();
+    c.write(one.add(one));
+    if c.read().eq(one.add(one)) { putchar(char::y) } else { putchar(char::n) }
+    let xs = int_list();
+    var i = zero;
+    let n = one.shl(one.add(one).add(one).add(one));
+    while i.lt(n) { xs.push(i); i = i.add(one); }
+    if xs.length().eq(n) { putchar(char::y) } else { putchar(char::n) }
+    if xs.get(n.sub(one)).eq(n.sub(one)) { putchar(char::y) } else { putchar(char::n) }
+    xs.set(zero, n);
+    if xs.get(zero).eq(n) { putchar(char::y) } else { putchar(char::n) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiBasics;
+    bind WasiContainers;
+    bind WasiCharConsts;
+    exercise();
+  }
+}

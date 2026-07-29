@@ -1,6 +1,28 @@
-type Uint32;
-type Int32;
-type Uint64;
-type Int64;
-type Uint;
+import "./num.moss" use .add, .sub, .mul, .div, .rem, .neg, .and, .or, .xor, .shl, .shr, .eq, .ne, .lt, .gt, .le, .ge;
+
 type Int;
+
+assume Int {
+  val zero: Int;
+  val one: Int;
+
+  context IntOps =
+    Int.add,
+    Int.sub,
+    Int.mul,
+    Int.div,
+    Int.rem,
+    Int.neg,
+    Int.and,
+    Int.or,
+    Int.xor,
+    Int.shl,
+    Int.shr,
+    Int.eq,
+    Int.ne,
+    Int.lt,
+    Int.gt,
+    Int.le,
+    Int.ge,
+  ;
+}

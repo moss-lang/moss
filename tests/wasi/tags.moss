@@ -1,0 +1,79 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# The value model of D58 and D59, in the primitive context: a nominal tag
+# over a scalar *is* that scalar, and a union whose members are all units
+# is one scalar holding the discriminant. Neither allocates, and `match`
+# is the only thing that has to know which it is looking at.
+
+# A wrapper. Constructing one emits its payload and nothing else, and
+# matching it names that payload back.
+type Box I32;
+
+unit Red;
+unit Green;
+unit Blue;
+type Colour = | Red | Green | Blue;
+
+assume Wasm, Wasi, Branch {
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn six(): I32 { w::i32_add(four(), two()) }
+
+  # iovec at 0 is [ptr=8, len=1]; the byte goes at 8, nwritten at 12.
+  fn emit(c: I32) {
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
+    w::i32_store8(eight(), c);
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
+  }
+
+  fn upper_a(): I32 {
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
+  }
+
+  fn newline(): I32 { w::i32_add(eight(), two()) }
+
+  fn unbox(b: Box): I32 {
+    match b {
+      Box v => v,
+    }
+  }
+
+  # One arm per unit: the scrutinee is its own discriminant, so this is a
+  # chain of comparisons and no memory is touched.
+  fn shade(c: Colour): I32 {
+    match c {
+      Red => w::i32_zero,
+      Green => two(),
+      Blue => four(),
+    }
+  }
+
+  # An attached method: the only provider that can see its receiver
+  # (D54), so `this` is a parameter of its frame like any other, and the
+  # receiver goes in ahead of the arguments at the call.
+  fn Box.twice(): I32 { w::i32_add(unbox(this), unbox(this)) }
+
+  # A binder rather than a unit, and a wildcard: both have to leave the
+  # stack balanced whether or not they use the value.
+  fn is_red(c: Colour): I32 {
+    match c {
+      Red => w::i32_one,
+      _ => w::i32_zero,
+    }
+  }
+
+  fn main() {
+    emit(w::i32_add(upper_a(), Box (two()).twice()));       # 4, 'E'
+    emit(w::i32_add(upper_a(), unbox(Box (w::i32_one))));   # 1, 'B'
+    emit(w::i32_add(upper_a(), shade(Red)));                # 0, 'A'
+    emit(w::i32_add(upper_a(), shade(Green)));              # 2, 'C'
+    emit(w::i32_add(upper_a(), shade(Blue)));               # 4, 'E'
+    emit(w::i32_add(upper_a(), is_red(Blue)));              # 0, 'A'
+    emit(w::i32_add(upper_a(), is_red(Red)));               # 1, 'B'
+    emit(newline());
+  }
+}

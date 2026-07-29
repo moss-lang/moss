@@ -1,0 +1,11 @@
+import "../../lib/wasm.moss" use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi;
+import "./bridge.moss" use WasiMini;
+import "./app.moss" use app;
+
+assume Wasm, Wasi {
+  fn main() {
+    bind WasiMini;
+    app();
+  }
+}

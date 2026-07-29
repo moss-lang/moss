@@ -1,0 +1,93 @@
+import "../../lib/wasm.moss" as w use Wasm, I32, I64;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# The primitive context with control flow — what the self-hosted back end
+# compiles. No `Std` and no prelude bridge: `Wasm` instructions, one WASI
+# import, and `Bool` for `if` to eliminate (D45), reached through the
+# `i32_bool` coercion the back end provides. Beyond tests/wasi/raw.moss
+# this exercises `while`, `loop`/`break`, `if`/`else`, `return`, a call
+# with a result, and an i64 round trip.
+
+assume Wasm, Wasi, Branch {
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn twelve(): I32 { w::i32_add(eight(), four()) }
+  fn six(): I32 { w::i32_add(four(), two()) }
+
+  # iovec at 0 is [ptr=8, len=1]; the byte goes at 8, nwritten at 12.
+  fn emit(c: I32) {
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
+    w::i32_store8(eight(), c);
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, twelve());
+  }
+
+  # 'A' is 65, which is (1 << 6) + 1.
+  fn upper_a(): I32 {
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
+  }
+
+  fn newline(): I32 { w::i32_add(eight(), two()) }
+
+  # 1 + 2 + ... + n, the long way round: through i64 and back, so that
+  # both valtypes appear as locals in one function.
+  fn total(n: I32): I32 {
+    var acc = w::i64_extend_i32_u(w::i32_zero);
+    var i = w::i32_one;
+    while i32_bool(w::i32_le_u(i, n)) {
+      acc = w::i64_add(acc, w::i64_extend_i32_u(i));
+      i = w::i32_add(i, w::i32_one);
+    }
+    w::i32_wrap_i64(acc)
+  }
+
+  # The first multiple of three at or above `from`, found with `loop`
+  # and `break`, and returned early when there is nothing to do.
+  fn next_third(from: I32): I32 {
+    if i32_bool(w::i32_eqz(w::i32_rem_u(from, w::i32_add(two(), w::i32_one)))) {
+      return from;
+    }
+    var n = from;
+    loop {
+      n = w::i32_add(n, w::i32_one);
+      if i32_bool(w::i32_eqz(w::i32_rem_u(n, w::i32_add(two(), w::i32_one)))) {
+        break;
+      }
+    }
+    n
+  }
+
+  fn main() {
+    # ABCD, but with the third letter shifted eight along: ABKD.
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, four())) {
+      if i32_bool(w::i32_eq(i, two())) {
+        emit(w::i32_add(upper_a(), w::i32_add(i, eight())));
+      } else {
+        emit(w::i32_add(upper_a(), i));
+      }
+      i = w::i32_add(i, w::i32_one);
+    }
+    emit(w::i32_add(upper_a(), total(four())));      # 1+2+3+4 = 10, 'K'
+    emit(w::i32_add(upper_a(), next_third(eight()))); # 9, 'J'
+    emit(w::i32_add(upper_a(), next_third(six())));   # 6, 'G'
+
+    # A `while` and a `loop` whose bodies end in a value rather than a
+    # statement: the back end has to drop it, or the loop leaves the
+    # stack unbalanced and the module does not validate.
+    var k = w::i32_zero;
+    while i32_bool(w::i32_lt_u(k, two())) {
+      k = w::i32_add(k, w::i32_one);
+      two()
+    }
+    loop {
+      k = w::i32_add(k, w::i32_one);
+      if i32_bool(w::i32_ge_u(k, six())) { break; }
+      four()
+    }
+    emit(w::i32_add(upper_a(), k));                   # 6, 'G' again
+    emit(newline());
+  }
+}

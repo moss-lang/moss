@@ -1,0 +1,17 @@
+import "../../lib/wasm.moss" as w use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "./acrosslib.moss" as out use emit, upper_a;
+
+# A call across a module boundary, both ways of naming one: `emit` and
+# `upper_a` come in through the `use` list, `out::two` and `out::newline`
+# through the alias. Everything a function needs to be compiled — its
+# body, its signature, the module its own names resolve in — comes from
+# the module that declared it, not the one that called it.
+
+assume Wasm, Wasi {
+  fn main() {
+    emit(upper_a());
+    emit(w::i32_add(upper_a(), out::two()));
+    emit(out::newline());
+  }
+}

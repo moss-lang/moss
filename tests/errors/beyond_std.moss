@@ -1,0 +1,7 @@
+fn example();
+
+assume example {
+  fn main() {
+    example();
+  }
+}

@@ -1,0 +1,319 @@
+# Generated from bootstrap/mossc/native.py; regenerate with:
+#   python3 -c 'from mossc.native import gen_wasichar_moss; print(gen_wasichar_moss(), end="")'
+
+import "./wasm.moss" as w use Wasm, I32;
+import "./char.moss" as char use Char;
+import "./wasistd.moss" use Chr;
+
+assume Wasm {
+  # Shift amounts, built from `i32_one` like everything else.
+  fn n1(): I32 { w::i32_one }
+  fn n2(): I32 { w::i32_add(n1(), n1()) }
+  fn n3(): I32 { w::i32_add(n2(), n1()) }
+  fn n4(): I32 { w::i32_add(n2(), n2()) }
+  fn n5(): I32 { w::i32_add(n4(), n1()) }
+  fn n6(): I32 { w::i32_add(n4(), n2()) }
+
+  fn bit(k: I32): I32 { w::i32_shl(w::i32_one, k) }
+
+  fn char_a(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n5())), bit(n6()))) }
+  fn char_b(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n5())), bit(n6()))) }
+  fn char_c(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n5())), bit(n6()))) }
+  fn char_d(): Chr { Chr (w::i32_or(w::i32_or(bit(n2()), bit(n5())), bit(n6()))) }
+  fn char_e(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n5())), bit(n6()))) }
+  fn char_f(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n5())), bit(n6()))) }
+  fn char_g(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n5())), bit(n6()))) }
+  fn char_h(): Chr { Chr (w::i32_or(w::i32_or(bit(n3()), bit(n5())), bit(n6()))) }
+  fn char_i(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_j(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_k(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_l(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_m(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_n(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_o(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n5())), bit(n6()))) }
+  fn char_p(): Chr { Chr (w::i32_or(w::i32_or(bit(n4()), bit(n5())), bit(n6()))) }
+  fn char_q(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_r(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_s(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_t(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_u(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_v(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_w(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_x(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n3()), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_y(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_z(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_A(): Chr { Chr (w::i32_or(w::i32_one, bit(n6()))) }
+  fn char_B(): Chr { Chr (w::i32_or(bit(n1()), bit(n6()))) }
+  fn char_C(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n6()))) }
+  fn char_D(): Chr { Chr (w::i32_or(bit(n2()), bit(n6()))) }
+  fn char_E(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n6()))) }
+  fn char_F(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n6()))) }
+  fn char_G(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n6()))) }
+  fn char_H(): Chr { Chr (w::i32_or(bit(n3()), bit(n6()))) }
+  fn char_I(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n6()))) }
+  fn char_J(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n6()))) }
+  fn char_K(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n6()))) }
+  fn char_L(): Chr { Chr (w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n6()))) }
+  fn char_M(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n6()))) }
+  fn char_N(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n6()))) }
+  fn char_O(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n6()))) }
+  fn char_P(): Chr { Chr (w::i32_or(bit(n4()), bit(n6()))) }
+  fn char_Q(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n4())), bit(n6()))) }
+  fn char_R(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n4())), bit(n6()))) }
+  fn char_S(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n4())), bit(n6()))) }
+  fn char_T(): Chr { Chr (w::i32_or(w::i32_or(bit(n2()), bit(n4())), bit(n6()))) }
+  fn char_U(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n4())), bit(n6()))) }
+  fn char_V(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n4())), bit(n6()))) }
+  fn char_W(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n4())), bit(n6()))) }
+  fn char_X(): Chr { Chr (w::i32_or(w::i32_or(bit(n3()), bit(n4())), bit(n6()))) }
+  fn char_Y(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_Z(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_digit0(): Chr { Chr (w::i32_or(bit(n4()), bit(n5()))) }
+  fn char_digit1(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n4())), bit(n5()))) }
+  fn char_digit2(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n4())), bit(n5()))) }
+  fn char_digit3(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n4())), bit(n5()))) }
+  fn char_digit4(): Chr { Chr (w::i32_or(w::i32_or(bit(n2()), bit(n4())), bit(n5()))) }
+  fn char_digit5(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n4())), bit(n5()))) }
+  fn char_digit6(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n4())), bit(n5()))) }
+  fn char_digit7(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n4())), bit(n5()))) }
+  fn char_digit8(): Chr { Chr (w::i32_or(w::i32_or(bit(n3()), bit(n4())), bit(n5()))) }
+  fn char_digit9(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_exclam(): Chr { Chr (w::i32_or(w::i32_one, bit(n5()))) }
+  fn char_percent(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n5()))) }
+  fn char_ampersand(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n5()))) }
+  fn char_lparen(): Chr { Chr (w::i32_or(bit(n3()), bit(n5()))) }
+  fn char_rparen(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n3())), bit(n5()))) }
+  fn char_star(): Chr { Chr (w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n5()))) }
+  fn char_plus(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n5()))) }
+  fn char_comma(): Chr { Chr (w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n5()))) }
+  fn char_hyphen(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n5()))) }
+  fn char_dot(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n5()))) }
+  fn char_slash(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n5()))) }
+  fn char_colon(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_semi(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_less(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_equal(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_greater(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_lbracket(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_rbracket(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_caret(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_lbrace(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_pipe(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_rbrace(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+  fn char_space(): Chr { Chr (bit(n5())) }
+  fn char_newline(): Chr { Chr (w::i32_or(bit(n1()), bit(n3()))) }
+  fn char_tab(): Chr { Chr (w::i32_or(w::i32_one, bit(n3()))) }
+  fn char_cr(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n2())), bit(n3()))) }
+  fn char_underscore(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_quote(): Chr { Chr (w::i32_or(bit(n1()), bit(n5()))) }
+  fn char_apostrophe(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n5()))) }
+  fn char_octothorpe(): Chr { Chr (w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n5()))) }
+  fn char_backslash(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(bit(n2()), bit(n3())), bit(n4())), bit(n6()))) }
+  fn char_question(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_one, bit(n1())), bit(n2())), bit(n3())), bit(n4())), bit(n5()))) }
+  fn char_at(): Chr { Chr (bit(n6())) }
+  fn char_dollar(): Chr { Chr (w::i32_or(bit(n2()), bit(n5()))) }
+  fn char_backtick(): Chr { Chr (w::i32_or(bit(n5()), bit(n6()))) }
+  fn char_tilde(): Chr { Chr (w::i32_or(w::i32_or(w::i32_or(w::i32_or(w::i32_or(bit(n1()), bit(n2())), bit(n3())), bit(n4())), bit(n5())), bit(n6()))) }
+}
+
+context WasiChars =
+  char::a,
+  char::b,
+  char::c,
+  char::d,
+  char::e,
+  char::f,
+  char::g,
+  char::h,
+  char::i,
+  char::j,
+  char::k,
+  char::l,
+  char::m,
+  char::n,
+  char::o,
+  char::p,
+  char::q,
+  char::r,
+  char::s,
+  char::t,
+  char::u,
+  char::v,
+  char::w,
+  char::x,
+  char::y,
+  char::z,
+  char::A,
+  char::B,
+  char::C,
+  char::D,
+  char::E,
+  char::F,
+  char::G,
+  char::H,
+  char::I,
+  char::J,
+  char::K,
+  char::L,
+  char::M,
+  char::N,
+  char::O,
+  char::P,
+  char::Q,
+  char::R,
+  char::S,
+  char::T,
+  char::U,
+  char::V,
+  char::W,
+  char::X,
+  char::Y,
+  char::Z,
+  char::digit0,
+  char::digit1,
+  char::digit2,
+  char::digit3,
+  char::digit4,
+  char::digit5,
+  char::digit6,
+  char::digit7,
+  char::digit8,
+  char::digit9,
+  char::exclam,
+  char::percent,
+  char::ampersand,
+  char::lparen,
+  char::rparen,
+  char::star,
+  char::plus,
+  char::comma,
+  char::hyphen,
+  char::dot,
+  char::slash,
+  char::colon,
+  char::semi,
+  char::less,
+  char::equal,
+  char::greater,
+  char::lbracket,
+  char::rbracket,
+  char::caret,
+  char::lbrace,
+  char::pipe,
+  char::rbrace,
+  char::space,
+  char::newline,
+  char::tab,
+  char::cr,
+  char::underscore,
+  char::quote,
+  char::apostrophe,
+  char::octothorpe,
+  char::backslash,
+  char::question,
+  char::at,
+  char::dollar,
+  char::backtick,
+  char::tilde,
+;
+
+functor WasiCharConsts: Wasm -> WasiChars {
+  bind char::a = char_a();
+  bind char::b = char_b();
+  bind char::c = char_c();
+  bind char::d = char_d();
+  bind char::e = char_e();
+  bind char::f = char_f();
+  bind char::g = char_g();
+  bind char::h = char_h();
+  bind char::i = char_i();
+  bind char::j = char_j();
+  bind char::k = char_k();
+  bind char::l = char_l();
+  bind char::m = char_m();
+  bind char::n = char_n();
+  bind char::o = char_o();
+  bind char::p = char_p();
+  bind char::q = char_q();
+  bind char::r = char_r();
+  bind char::s = char_s();
+  bind char::t = char_t();
+  bind char::u = char_u();
+  bind char::v = char_v();
+  bind char::w = char_w();
+  bind char::x = char_x();
+  bind char::y = char_y();
+  bind char::z = char_z();
+  bind char::A = char_A();
+  bind char::B = char_B();
+  bind char::C = char_C();
+  bind char::D = char_D();
+  bind char::E = char_E();
+  bind char::F = char_F();
+  bind char::G = char_G();
+  bind char::H = char_H();
+  bind char::I = char_I();
+  bind char::J = char_J();
+  bind char::K = char_K();
+  bind char::L = char_L();
+  bind char::M = char_M();
+  bind char::N = char_N();
+  bind char::O = char_O();
+  bind char::P = char_P();
+  bind char::Q = char_Q();
+  bind char::R = char_R();
+  bind char::S = char_S();
+  bind char::T = char_T();
+  bind char::U = char_U();
+  bind char::V = char_V();
+  bind char::W = char_W();
+  bind char::X = char_X();
+  bind char::Y = char_Y();
+  bind char::Z = char_Z();
+  bind char::digit0 = char_digit0();
+  bind char::digit1 = char_digit1();
+  bind char::digit2 = char_digit2();
+  bind char::digit3 = char_digit3();
+  bind char::digit4 = char_digit4();
+  bind char::digit5 = char_digit5();
+  bind char::digit6 = char_digit6();
+  bind char::digit7 = char_digit7();
+  bind char::digit8 = char_digit8();
+  bind char::digit9 = char_digit9();
+  bind char::exclam = char_exclam();
+  bind char::percent = char_percent();
+  bind char::ampersand = char_ampersand();
+  bind char::lparen = char_lparen();
+  bind char::rparen = char_rparen();
+  bind char::star = char_star();
+  bind char::plus = char_plus();
+  bind char::comma = char_comma();
+  bind char::hyphen = char_hyphen();
+  bind char::dot = char_dot();
+  bind char::slash = char_slash();
+  bind char::colon = char_colon();
+  bind char::semi = char_semi();
+  bind char::less = char_less();
+  bind char::equal = char_equal();
+  bind char::greater = char_greater();
+  bind char::lbracket = char_lbracket();
+  bind char::rbracket = char_rbracket();
+  bind char::caret = char_caret();
+  bind char::lbrace = char_lbrace();
+  bind char::pipe = char_pipe();
+  bind char::rbrace = char_rbrace();
+  bind char::space = char_space();
+  bind char::newline = char_newline();
+  bind char::tab = char_tab();
+  bind char::cr = char_cr();
+  bind char::underscore = char_underscore();
+  bind char::quote = char_quote();
+  bind char::apostrophe = char_apostrophe();
+  bind char::octothorpe = char_octothorpe();
+  bind char::backslash = char_backslash();
+  bind char::question = char_question();
+  bind char::at = char_at();
+  bind char::dollar = char_dollar();
+  bind char::backtick = char_backtick();
+  bind char::tilde = char_tilde();
+}

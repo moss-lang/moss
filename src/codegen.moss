@@ -1,0 +1,2228 @@
+import "./ast.moss" as ast;
+import "./bytes.moss" use *;
+import "./emit.moss" as emit;
+import "./insn.moss" use *;
+import "./intern.moss" as intern;
+import "./lower.moss" as lower;
+import "./prog.moss" as prog;
+import "./spell.moss" use *;
+import "./types.moss" as types;
+import "./wasmops.moss" as wops;
+
+# The back end: the primitive context, straight to Wasm.
+#
+# D52 says a program may assume `Wasm` and `Wasi` rather than `Std`, and
+# that the compiler itself is written that way. This compiles exactly
+# that language: a call to a `Wasm` item becomes the instruction it
+# names, a call to a `Wasi` item becomes a call to an import the module
+# declares, and everything else is an ordinary function.
+#
+# Bodies are emitted twice, because a Wasm function index counts the
+# imports first and so cannot be handed out until every import is known.
+# The first pass throws its output away and exists to find every
+# specialization the program reaches; then the index spaces are fixed;
+# then the second pass emits against the final numbering. Emitting is
+# the only walk of a body there is, which is what stops the two passes
+# from disagreeing about what one contains — an earlier design walked
+# bodies separately to discover them, and the walks resolved method
+# calls differently because one of them had no locals in scope.
+
+assume Std {
+
+  # Back-end diagnostics, one code each. They continue where prog.moss's
+  # `e_` codes stop, because the back end reports both kinds through one
+  # list and two codes that print as the same letter cannot be told apart.
+  fn c_no_main(): Int { n14() }
+  fn c_unsupported(): Int { n15() }   # a construct outside this slice
+  fn c_unbound(): Int { n16() }       # abstract, and nothing provides it
+  fn c_unknown_op(): Int { n16().add(one) }  # a `Wasm` name with no instruction
+  fn c_bad_type(): Int { n16().add(n2()) }
+  # A call whose specialization the first pass never reached, so the two
+  # passes disagree. A bug in this back end rather than in the program.
+  fn c_missing(): Int { n16().add(n3()) }
+  fn c_break(): Int { n16().add(n4()) }  # `break` outside any loop
+
+  # Reachable *specializations*: a function under a specific set of
+  # bindings, and the Wasm index each gets. A type or fn bind changes the
+  # code rather than the data (D2), so two call sites that bind
+  # differently get two bodies, each with its calls resolved to direct
+  # ones — which is what makes a fn bind compilable without a table.
+  val fq_sym: IntList;
+  val fq_env: IntList;
+  val fq_index: IntList;
+
+  # The environment the frame being compiled is in, extended by every
+  # `bind` it executes and restored at the end of each block.
+  val cg_env: CellInt;
+
+  # The return type of the function being compiled, so that `return e`
+  # knows what to inject into.
+  val cg_ret: CellInt;
+
+  # Whether this is the pass whose output is kept. Bodies are emitted
+  # twice: once to find every specialization the program reaches, which
+  # is what fixes the function indices, and once against the final
+  # numbering. Emitting is the only walk of a body there is, so the two
+  # passes cannot disagree about what it contains.
+  val cg_real: CellInt;
+
+  # WASI functions called anywhere, and the import index each gets.
+  val wi_sym: IntList;
+  val wi_index: IntList;
+
+  # The locals of the function being compiled: interned name, elaborated
+  # type, and the Wasm indices its value occupies. A value is a run of
+  # scalars (D59), so a local owns a run of `lc_slots` rather than one
+  # index — and which indices those are is only known once the whole
+  # function has been scanned, because the locals past the parameters are
+  # grouped by valtype.
+  val lc_name: IntList;
+  val lc_type: IntList;
+  val lc_start: IntList;
+  val lc_slots: IntList;
+  val lc_base: CellInt;
+  val lc_visible: CellInt;
+
+  # Where each need key's value lives in the frame being compiled: the
+  # local holding it. A val is the only context that exists at runtime
+  # (D2), so this is the whole of the runtime environment — and it is
+  # block-scoped exactly like the locals, which is what makes an inner
+  # `bind` shadow an outer one to the end of its block and no further.
+  val pv_recv: IntList;
+  val pv_sym: IntList;
+  val pv_local: IntList;
+  val pv_top: CellInt;
+
+  # Open label scopes, and the depth at which each enclosing loop's exit
+  # block sits, so that `break` knows how far out to branch.
+  val cg_depth: CellInt;
+  val cg_loops: IntList;
+  val cg_ntop: CellInt;
+
+  # The modules whose declarations are primitive rather than ordinary:
+  # `Wasm` is instructions, `Wasi` is imports, `Bool` is a lang item
+  # (D45) whose two units are 0 and 1, and `i32_bool` is the coercion
+  # from a comparison to something `if` can take. The bootstrap back end
+  # recognizes exactly the same four by the file that declares them.
+  val cg_wasm: CellInt;
+  val cg_wasi: CellInt;
+  val cg_bool: CellInt;
+  val cg_std: CellInt;
+
+  # The elaborated `I32`, `I64` and `Bool` types, found once: an
+  # instruction's result type has to come from somewhere, and the `Wasm`
+  # table records only which of the two it is.
+  val cg_i32: CellInt;
+  val cg_i64: CellInt;
+  val cg_boolty: CellInt;
+
+  val cg_errs: IntList;
+  val cg_err_name: IntList;
+  # The function whose body was being emitted, recorded with each
+  # diagnostic. A message with words in it is still out of reach (D48),
+  # but the frame a complaint came from costs one symbol id and is the
+  # difference between a legible report and a list of letters.
+  val cg_err_at: IntList;
+  val cg_where: CellInt;
+
+  # Memoized `val_slots`: the val keys a (sym, env) specialization takes,
+  # as a run in `vs_pool`. `vs_head` is indexed by the symbol id and holds
+  # the newest row plus one (zero meaning none), `vs_link` chains the rest
+  # — the same index shape prog.moss uses for scopes.
+  val vs_env: IntList;
+  val vs_start: IntList;
+  val vs_len: IntList;
+  val vs_link: IntList;
+  val vs_head: IntList;
+  val vs_pool: IntList;
+
+  context Codegen =
+    fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
+    lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
+    pv_recv, pv_sym, pv_local, pv_top,
+    cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
+    cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name, cg_err_at, cg_where,
+    vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool;
+
+  assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
+    emit::Emit, types::Types, lower::Lower {
+    # Only the kept pass reports: the first one runs against indices that
+    # do not exist yet, so anything it says would be said twice.
+    fn cg_error(code: Int, name: Int) {
+      if cg_real.read().eq(zero) {
+        return ();
+      }
+      cg_errs.push(code);
+      cg_err_name.push(name);
+      cg_err_at.push(cg_where.read());
+    }
+
+    fn cg_error_count(): Int { cg_errs.length() }
+
+    fn spelled(): IntList { int_list() }
+
+    # Which module is which. `Wasm` and `Wasi` are recognized by the file
+    # that declares them, so an ordinary function that happens to be
+    # called `i32_add` is still an ordinary function.
+    fn name_is(s: String, cs: IntList): Bool {
+      if s.length().ne(cs.length()) {
+        return false;
+      }
+      var i = zero;
+      while i.lt(s.length()) {
+        if s.get(i).code().ne(cs.get(i)) {
+          return false;
+        }
+        i = i.add(one);
+      }
+      true
+    }
+
+    fn find_primitive_modules() {
+      let w = spelled();
+      sp_wasm_moss(w);
+      let a = spelled();
+      sp_wasip1_moss(a);
+      let b = spelled();
+      sp_bool_moss(b);
+      let s = spelled();
+      sp_wasistd_moss(s);
+      cg_wasm.write(ast::none());
+      cg_wasi.write(ast::none());
+      cg_bool.write(ast::none());
+      cg_std.write(ast::none());
+      var m = zero;
+      while m.lt(prog::module_count()) {
+        let base = prog::basename(prog::module_path(m));
+        if name_is(base, w) {
+          cg_wasm.write(m);
+        }
+        if name_is(base, a) {
+          cg_wasi.write(m);
+        }
+        if name_is(base, b) {
+          cg_bool.write(m);
+        }
+        if name_is(base, s) {
+          cg_std.write(m);
+        }
+        m = m.add(one);
+      }
+      cg_i32.write(wasm_type(which_i32()));
+      cg_i64.write(wasm_type(which_i64()));
+      cg_boolty.write(bool_type());
+    }
+
+    # `I32` and `I64` are declarations of lib/wasm.moss like any other,
+    # so they are found by name in its scope rather than invented.
+    fn which_i32(): Int { zero }
+    fn which_i64(): Int { one }
+
+    fn wasm_type(which: Int): Int {
+      let cs = spelled();
+      if which.eq(which_i32()) {
+        sp_I32(cs);
+      } else {
+        sp_I64(cs);
+      }
+      let sym = prog::lookup(
+        cg_wasm.read(), prog::ns_name(), intern::intern_chars(cs)
+      );
+      if ast::is_some(sym).not() {
+        return types::ty_never();
+      }
+      types::ty_of_decl(sym)
+    }
+
+    # `Bool` likewise, and its two units get discriminants 0 and 1 before
+    # anything else asks for a code (D45).
+    fn bool_type(): Int {
+      let b = spelled();
+      sp_Bool(b);
+      let f = spelled();
+      sp_False(f);
+      let t = spelled();
+      sp_True(t);
+      let fsym = prog::lookup(cg_bool.read(), prog::ns_name(), intern::intern_chars(f));
+      let tsym = prog::lookup(cg_bool.read(), prog::ns_name(), intern::intern_chars(t));
+      if ast::is_some(fsym) {
+        if ast::is_some(tsym) {
+          types::seed_bool(fsym, tsym);
+        }
+      }
+      let sym = prog::lookup(cg_bool.read(), prog::ns_name(), intern::intern_chars(b));
+      if ast::is_some(sym).not() {
+        return types::ty_never();
+      }
+      types::ty_of_decl(sym)
+    }
+
+    fn in_bool(sym: Int): Bool {
+      prog::sym_mod.get(sym).eq(cg_bool.read())
+    }
+
+    # `i32_bool`, the one item of lib/wasistd.moss the back end provides
+    # itself: `Bool` is 0 or 1 with its tag erased, so it is `n != 0`.
+    fn is_i32_bool(sym: Int): Bool {
+      if prog::sym_mod.get(sym).ne(cg_std.read()) {
+        return false;
+      }
+      let cs = spelled();
+      sp_i32_bool(cs);
+      intern::chars_eq(prog::sym_name.get(sym), cs)
+    }
+
+    fn sym_named(sym: Int, cs: IntList): Bool {
+      intern::chars_eq(prog::sym_name.get(sym), cs)
+    }
+
+    fn in_wasm(sym: Int): Bool {
+      prog::sym_mod.get(sym).eq(cg_wasm.read())
+    }
+
+    fn in_wasi(sym: Int): Bool {
+      prog::sym_mod.get(sym).eq(cg_wasi.read())
+    }
+
+    fn is_defined_fn(sym: Int): Bool {
+      if prog::sym_kind.get(sym).ne(prog::sk_fn()) {
+        false
+      } else {
+        ast::is_some(ast::fn_body(prog::sym_decl.get(sym)))
+      }
+    }
+
+    # An attached method with a body. Its receiver is nominal (Q5), and
+    # it is the only kind of provider that can see what it was called on
+    # (D54) — which is why `this` is a parameter like any other.
+    fn is_defined_method(sym: Int): Bool {
+      if prog::sym_kind.get(sym).ne(prog::sk_method()) {
+        return false;
+      }
+      if ast::is_some(prog::sym_recv.get(sym)).not() {
+        return false;
+      }
+      ast::is_some(ast::fn_body(prog::sym_decl.get(sym)))
+    }
+
+    fn is_compilable(sym: Int): Bool {
+      if is_defined_fn(sym) {
+        true
+      } else {
+        is_defined_method(sym)
+      }
+    }
+
+    # `this`'s type, for a method: its receiver declaration.
+    fn this_type(sym: Int): Int {
+      canon_ty(types::ty_of_decl(prog::sym_recv.get(sym)))
+    }
+
+    # `this` is the first local of a method's frame, so it needs no name.
+    fn this_local(): Int { lc_base.read() }
+
+    # Provisions.
+
+    fn provide(recv: Int, sym: Int, l: Int) {
+      if pv_top.read().lt(pv_recv.length()) {
+        pv_recv.set(pv_top.read(), recv);
+        pv_sym.set(pv_top.read(), sym);
+        pv_local.set(pv_top.read(), l);
+      } else {
+        pv_recv.push(recv);
+        pv_sym.push(sym);
+        pv_local.push(l);
+      }
+      pv_top.write(pv_top.read().add(one));
+    }
+
+    # The innermost provision for this key, so a rebind wins.
+    fn provision_of(recv: Int, sym: Int): Int {
+      var i = pv_top.read();
+      while i.gt(zero) {
+        i = i.sub(one);
+        if pv_sym.get(i).eq(sym) {
+          if pv_recv.get(i).eq(recv) {
+            return pv_local.get(i);
+          }
+        }
+      }
+      ast::none()
+    }
+
+    # Which of a function's needs travel as parameters. A val does,
+    # because it is a runtime value; a fn or a method compiles at its use
+    # site, and `Wasm`'s two vals — `i32_zero` and `i32_one` — are
+    # instructions rather than data.
+    fn passed_need(recv: Int, sym: Int): Bool {
+      if ast::is_some(recv) {
+        return false;
+      }
+      if prog::sym_kind.get(sym).ne(prog::sk_val()) {
+        return false;
+      }
+      in_wasm(sym).not()
+    }
+
+    fn need_type(sym: Int): Int {
+      elab_ty(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
+    }
+
+    fn contains(xs: IntList, v: Int): Bool {
+      var i = zero;
+      while i.lt(xs.length()) {
+        if xs.get(i).eq(v) {
+          return true;
+        }
+        i = i.add(one);
+      }
+      false
+    }
+
+    # The memo row for this key, or none. Bucketed on the symbol, which
+    # is a dense id, so a hit is a chain of the environments that one
+    # symbol has been asked about — two of them, on this compiler.
+    fn vs_lookup(sym: Int, env: Int): Int {
+      if sym.ge(vs_head.length()) {
+        return ast::none();
+      }
+      var r = vs_head.get(sym);
+      while r.gt(zero) {
+        let row = r.sub(one);
+        if vs_env.get(row).eq(env) {
+          return row;
+        }
+        r = vs_link.get(row);
+      }
+      ast::none()
+    }
+
+    # One row, and its place in the by-symbol chain. Every insert goes
+    # through here, so the index cannot drift from the rows.
+    fn vs_store(sym: Int, env: Int, start: Int, len: Int): Int {
+      while vs_head.length().le(sym) {
+        vs_head.push(zero);
+      }
+      vs_env.push(env);
+      vs_start.push(start);
+      vs_len.push(len);
+      vs_link.push(vs_head.get(sym));
+      vs_head.set(sym, vs_env.length());
+      vs_env.length().sub(one)
+    }
+
+    # Append unless it is already there. What the walk produces is a list
+    # of first occurrences, and appending a child's whole run this way
+    # gives the same list the one shared `out` used to: both are
+    # first-occurrence order over the same depth-first sequence, which is
+    # what makes memoizing every frame — not just the outermost — sound.
+    fn vs_append(out: IntList, v: Int) {
+      if contains(out, v).not() {
+        out.push(v);
+      }
+    }
+
+    # The memo row for this key, computing it if it is not there yet. The
+    # answer is a pure function of (sym, env): a requirement list is fixed
+    # before the back end runs and an environment is hash-consed to an id,
+    # so two calls with one key cannot disagree. Recomputing it per call
+    # site was this compiler's running time — 21,684 walks over 68 million
+    # requirements for 755 distinct keys.
+    fn vs_row(sym: Int, env: Int, depth: Int): Int {
+      let hit = vs_lookup(sym, env);
+      if ast::is_some(hit) {
+        return hit;
+      }
+      let tmp = int_list();
+      val_slots_walk(tmp, sym, env, depth);
+      let start = vs_pool.length();
+      var i = zero;
+      while i.lt(tmp.length()) {
+        vs_pool.push(tmp.get(i));
+        i = i.add(one);
+      }
+      vs_store(sym, env, start, tmp.length())
+    }
+
+    # The walk itself: what one (sym, env) contributes. Its own passed
+    # needs, plus — for every fn need bound to a provider — whatever that
+    # provider needs in turn. A bound provider runs in a frame that never
+    # mentions its values, which may be several below the bind, so they
+    # are threaded down.
+    fn val_slots_walk(out: IntList, sym: Int, env: Int, depth: Int) {
+      if depth.gt(hex(n2(), zero)) {
+        cg_error(prog::e_deep(), prog::sym_name.get(sym));
+        return ();
+      }
+      var i = zero;
+      while i.lt(lower::needs_count(sym)) {
+        let r = lower::need_recv_at(sym, i);
+        let ns = lower::need_sym_at(sym, i);
+        if passed_need(r, ns) {
+          vs_append(out, ns);
+        } else {
+          let e = lower::env_find(
+            env, lower::ek_fn(), need_key_recv(env, r), ns
+          );
+          if ast::is_some(e) {
+            if ast::is_some(lower::env_a_of(e)) {
+              let row = vs_row(
+                lower::env_a_of(e), lower::env_b_of(e), depth.add(one)
+              );
+              var j = zero;
+              while j.lt(vs_len.get(row)) {
+                vs_append(out, vs_pool.get(vs_start.get(row).add(j)));
+                j = j.add(one);
+              }
+            }
+          }
+        }
+        i = i.add(one);
+      }
+    }
+
+    # The val keys a specialization takes as parameters, in the order the
+    # signature declares them — which is the calling convention, so the
+    # order is not free to change.
+    fn val_slots(out: IntList, sym: Int, env: Int, depth: Int) {
+      let row = vs_row(sym, env, depth);
+      var i = zero;
+      while i.lt(vs_len.get(row)) {
+        out.push(vs_pool.get(vs_start.get(row).add(i)));
+        i = i.add(one);
+      }
+    }
+
+    # The environment a callee is compiled in: its own bindings, taken
+    # from this frame. Built by walking the callee's base environment
+    # outermost first, so that the same bindings always give the same
+    # chain — which is what lets it key the specialization cache.
+    fn callee_env(callee: Int): Int {
+      let chain = int_list();
+      var e = lower::env_of(callee);
+      while ast::is_some(e) {
+        chain.push(e);
+        e = lower::env_next_of(e);
+      }
+      var out = lower::env_empty();
+      var i = chain.length();
+      while i.gt(zero) {
+        i = i.sub(one);
+        let entry = chain.get(i);
+        let kind = lower::env_kind_of(entry);
+        let recv = lower::env_recv_of(entry);
+        let sym = lower::env_sym_of(entry);
+        if kind.eq(lower::ek_type()) {
+          let here = lower::env_find(cg_env.read(), lower::ek_type(), recv, sym);
+          if ast::is_some(here) {
+            out = lower::env_push(
+              out, lower::ek_type(), recv, sym, lower::env_a_of(here), ast::none()
+            );
+          }
+        } else if kind.eq(lower::ek_fn()) {
+          # Found under the caller's canonical key, stored under the one
+          # the callee will compute from its own bindings — which the
+          # loop has already pushed, since a type comes before anything
+          # whose signature mentions it.
+          let here = lower::env_find(
+            cg_env.read(), lower::ek_fn(),
+            need_key_recv(cg_env.read(), recv), sym
+          );
+          if ast::is_some(here) {
+            if ast::is_some(lower::env_a_of(here)) {
+              out = lower::env_push(
+                out, lower::ek_fn(), need_key_recv(out, recv), sym,
+                lower::env_a_of(here), lower::env_b_of(here)
+              );
+            }
+          }
+        }
+      }
+      out
+    }
+
+    # Types.
+
+    fn ty_none(): Int { types::ty_unit() }
+
+    fn width(ty: Int): Int { types::width(ty) }
+
+    # Elaborated *and* resolved through the environment: a type bind is
+    # what makes an abstract symbol mean something here.
+    fn elab_ty(t: Int, m: Int): Int {
+      lower::elab(cg_env.read(), t, m)
+    }
+
+    fn canon_ty(ty: Int): Int { lower::canon(cg_env.read(), ty) }
+
+    # A method key names its receiver by whatever symbol was in scope
+    # where the requirement was written, and the environment may have
+    # bound that symbol since — so keys are compared after
+    # canonicalization through the bindings in force (D43).
+    fn canon_head_in(env: Int, sym: Int): Int {
+      let h = types::head_of(lower::canon(env, types::ty_of_decl(sym)));
+      if ast::is_some(h) {
+        h
+      } else {
+        sym
+      }
+    }
+
+    fn need_key_recv(env: Int, r: Int): Int {
+      if ast::is_some(r) {
+        canon_head_in(env, r)
+      } else {
+        r
+      }
+    }
+
+    # Whether an abstract type is `Wasm`'s `I64` — the one place the back
+    # end has to know a type by name, because a valtype is not something
+    # the type system models.
+    fn is_i64(ty: Int): Bool {
+      if types::is_kind(ty, types::kd_abstract()).not() {
+        return false;
+      }
+      let sym = types::sym_of(ty);
+      if in_wasm(sym).not() {
+        return false;
+      }
+      let cs = spelled();
+      sp_I64(cs);
+      sym_named(sym, cs)
+    }
+
+    # The Wasm valtype of one slot of a value of this type. A tag is its
+    # payload (D58); a union's slot zero is its discriminant and the rest
+    # come from its members.
+    fn valtype_at(ty: Int, i: Int): Int {
+      if is_i64(ty) {
+        return emit::vt_i64();
+      }
+      if types::is_kind(ty, types::kd_nominal()) {
+        if types::is_unit_decl(ty) {
+          return emit::vt_i32();
+        }
+        return valtype_at(types::payload_of(ty), i);
+      }
+      if types::is_kind(ty, types::kd_union()) {
+        if i.eq(zero) {
+          return emit::vt_i32();
+        }
+        var j = zero;
+        while j.lt(types::member_count(ty)) {
+          let p = types::member_payload(types::member_at(ty, j));
+          if width(p).gt(i.sub(one)) {
+            return valtype_at(p, i.sub(one));
+          }
+          j = j.add(one);
+        }
+      }
+      emit::vt_i32()
+    }
+
+    # Locals.
+
+    fn add_local(name: Int, ty: Int): Int {
+      lc_name.push(name);
+      lc_type.push(ty);
+      lc_start.push(lc_slots.length());
+      var i = zero;
+      while i.lt(width(ty)) {
+        lc_slots.push(ast::none());
+        i = i.add(one);
+      }
+      lc_name.length().sub(one)
+    }
+
+    fn local_slot(l: Int, i: Int): Int { lc_slots.get(lc_start.get(l).add(i)) }
+
+    fn set_local_slot(l: Int, i: Int, slot: Int) {
+      lc_slots.set(lc_start.get(l).add(i), slot);
+    }
+
+    fn local_width(l: Int): Int { width(lc_type.get(l)) }
+
+    # The scan pass creates every local; emitting only reveals them, in
+    # the same order, and takes the one it just revealed. Going through
+    # here rather than looking a name up is what keeps the two passes
+    # from drifting apart — a `match` temporary has no name to look up.
+    #
+    # The cursor only ever goes forward, in both passes, because that is
+    # what makes "the nth local created is the nth revealed" true: a block
+    # that declares locals and is followed by another declaration in the
+    # scope around it would otherwise hand out the same index twice while
+    # the scan handed out two. Leaving a scope therefore *retires* its
+    # names rather than rewinding the cursor, and revealing a local
+    # restores the name the scan gave it.
+    fn reveal(name: Int): Int {
+      let l = lc_visible.read();
+      lc_visible.write(l.add(one));
+      lc_name.set(l, name);
+      l
+    }
+
+    # Leaving a scope: everything it introduced stops answering to its
+    # name, so an inner `let x` cannot be found from outside.
+    fn close_scope(mark: Int) {
+      var l = mark;
+      while l.lt(lc_visible.read()) {
+        lc_name.set(l, ast::none());
+        l = l.add(one);
+      }
+    }
+
+    # A value on the stack, into a local: the top of the stack is the
+    # last slot, so they are written back to front.
+    fn store_local(body: IntList, l: Int) {
+      var i = local_width(l);
+      while i.gt(zero) {
+        i = i.sub(one);
+        op_local_set(body, local_slot(l, i));
+      }
+    }
+
+    fn load_local(body: IntList, l: Int) {
+      var i = zero;
+      while i.lt(local_width(l)) {
+        op_local_get(body, local_slot(l, i));
+        i = i.add(one);
+      }
+    }
+
+    # The innermost local of this name that is still in scope.
+    fn find_local(name: Int): Int {
+      var i = lc_visible.read();
+      while i.gt(lc_base.read()) {
+        i = i.sub(one);
+        if lc_name.get(i).eq(name) {
+          return i;
+        }
+      }
+      ast::none()
+    }
+
+    # Expression types.
+
+    fn type_of(e: Int, m: Int): Int {
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_block()) {
+        if ast::is_some(ast::c_of(e)) {
+          return type_of(ast::c_of(e), m);
+        }
+        return ty_none();
+      }
+      if k.eq(ast::k_ex_if()) {
+        return type_of(ast::b_of(e), m);
+      }
+      if k.eq(ast::k_ex_this()) {
+        return lc_type.get(this_local());
+      }
+      if k.eq(ast::k_ex_method()) {
+        var target = method_of(e, m);
+        if ast::is_some(target).not() {
+          let bound = method_provision(type_of(ast::a_of(e), m), e, m);
+          if ast::is_some(bound).not() {
+            return ty_none();
+          }
+          target = lower::env_a_of(bound);
+          if ast::is_some(target).not() {
+            return ty_none();
+          }
+        }
+        return elab_ty(
+          ast::fn_ret(prog::sym_decl.get(target)), prog::sym_mod.get(target)
+        );
+      }
+      if k.eq(ast::k_ex_path()) {
+        if ast::path_len(ast::a_of(e)).eq(one) {
+          let local = find_local(ast::path_at(ast::a_of(e), zero));
+          if ast::is_some(local) {
+            return lc_type.get(local);
+          }
+        }
+        let sym = prog::resolve_path(m, ast::a_of(e));
+        if ast::is_some(sym).not() {
+          return ty_none();
+        }
+        return symbol_type(sym);
+      }
+      if k.eq(ast::k_ex_call()) {
+        let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
+        if ast::is_some(sym).not() {
+          return ty_none();
+        }
+        # A tag construction is a value of the tag's own type (D58).
+        if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
+          return types::ty_of_decl(sym);
+        }
+        if in_wasm(sym) {
+          return op_result(wops::find_op(prog::sym_name.get(sym)));
+        }
+        if is_i32_bool(sym) {
+          return cg_boolty.read();
+        }
+        var target = sym;
+        if is_defined_fn(sym).not() {
+          let bound = lower::env_find(
+            cg_env.read(), lower::ek_fn(), ast::none(), sym
+          );
+          if ast::is_some(bound) {
+            if ast::is_some(lower::env_a_of(bound)) {
+              target = lower::env_a_of(bound);
+            }
+          }
+        }
+        return elab_ty(
+          ast::fn_ret(prog::sym_decl.get(target)), prog::sym_mod.get(target)
+        );
+      }
+      # `()`, `break`, `return` and everything this slice does not cover
+      # leave nothing behind.
+      ty_none()
+    }
+
+    # What a path standing alone denotes: a unit value, a `Bool`
+    # constant, a `Wasm` value like `i32_zero`, or nothing this back end
+    # can produce.
+    fn symbol_type(sym: Int): Int {
+      if prog::sym_kind.get(sym).eq(prog::sk_unit()) {
+        return types::ty_of_decl(sym);
+      }
+      if in_wasm(sym) {
+        return op_result(wops::find_op(prog::sym_name.get(sym)));
+      }
+      if in_bool(sym) {
+        return cg_boolty.read();
+      }
+      if prog::sym_kind.get(sym).eq(prog::sk_val()) {
+        return elab_ty(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
+      }
+      ty_none()
+    }
+
+    fn op_result(op: Int): Int {
+      if ast::is_some(op).not() {
+        return ty_none();
+      }
+      let r = wops::op_res.get(op);
+      if r.eq(wops::wr_i64()) {
+        cg_i64.read()
+      } else if r.eq(wops::wr_i32()) {
+        cg_i32.read()
+      } else {
+        ty_none()
+      }
+    }
+
+    # Reachability.
+
+    fn queued(sym: Int, env: Int): Int {
+      var i = zero;
+      while i.lt(fq_sym.length()) {
+        if fq_sym.get(i).eq(sym) {
+          if fq_env.get(i).eq(env) {
+            return i;
+          }
+        }
+        i = i.add(one);
+      }
+      ast::none()
+    }
+
+    fn imported(sym: Int): Int {
+      var i = zero;
+      while i.lt(wi_sym.length()) {
+        if wi_sym.get(i).eq(sym) {
+          return i;
+        }
+        i = i.add(one);
+      }
+      ast::none()
+    }
+
+    # The first pass is supposed to have reached everything. If this one
+    # finds something new, the two passes disagree, which is a bug here
+    # rather than in the program.
+    fn late(sym: Int): Bool {
+      if cg_real.read().eq(one) {
+        cg_error(c_missing(), prog::sym_name.get(sym));
+        return true;
+      }
+      false
+    }
+
+    # Note that this specialization is reached. The queue is drained by a
+    # loop rather than by recursion, so it grows while it is walked.
+    fn reach(sym: Int, env: Int) {
+      if ast::is_some(queued(sym, env)) {
+        return ();
+      }
+      if late(sym) {
+        return ();
+      }
+      fq_sym.push(sym);
+      fq_env.push(env);
+      fq_index.push(ast::none());
+    }
+
+    # A WASI function is exactly an import of this module (D52).
+    fn reach_import(sym: Int) {
+      if ast::is_some(imported(sym)) {
+        return ();
+      }
+      if late(sym) {
+        return ();
+      }
+      wi_sym.push(sym);
+      wi_index.push(ast::none());
+    }
+
+    # A defined function's signature: its declared parameters, then one
+    # per need it takes as data, in the order `lower.moss` fixed. Both
+    # sides read that order from the same place, which is what makes it
+    # a calling convention rather than a coincidence.
+    fn signature_of_fn(sym: Int, env: Int): Int {
+      let d = prog::sym_decl.get(sym);
+      let m = prog::sym_mod.get(sym);
+      let ps = int_list();
+      if is_defined_method(sym) {
+        push_valtypes(ps, this_type(sym));
+      }
+      var i = zero;
+      while i.lt(ast::fn_nparams(d)) {
+        let p = ast::kid_at(ast::fn_params(d), i);
+        push_valtypes(ps, elab_ty(ast::b_of(p), m));
+        i = i.add(one);
+      }
+      let vals = int_list();
+      val_slots(vals, sym, env, zero);
+      i = zero;
+      while i.lt(vals.length()) {
+        push_valtypes(ps, need_type(vals.get(i)));
+        i = i.add(one);
+      }
+      finish_signature(ps, elab_ty(ast::fn_ret(d), m))
+    }
+
+    fn push_valtypes(ps: IntList, ty: Int) {
+      var j = zero;
+      while j.lt(width(ty)) {
+        ps.push(valtype_at(ty, j));
+        j = j.add(one);
+      }
+    }
+
+    fn finish_signature(ps: IntList, ret: Int): Int {
+      let rs = int_list();
+      push_valtypes(rs, ret);
+      emit::type_index(ps, rs)
+    }
+
+    # A WASI import: everything it takes and returns is a scalar the
+    # declaration names.
+    fn signature_of(d: Int, m: Int): Int {
+      let ps = int_list();
+      var i = zero;
+      while i.lt(ast::fn_nparams(d)) {
+        let p = ast::kid_at(ast::fn_params(d), i);
+        let ty = elab_ty(ast::b_of(p), m);
+        var j = zero;
+        while j.lt(width(ty)) {
+          ps.push(valtype_at(ty, j));
+          j = j.add(one);
+        }
+        i = i.add(one);
+      }
+      finish_signature(ps, elab_ty(ast::fn_ret(d), m))
+    }
+
+    fn declare_all() {
+      var i = zero;
+      while i.lt(wi_sym.length()) {
+        let sym = wi_sym.get(i);
+        let field = int_list();
+        intern::put_chars(field, prog::sym_name.get(sym));
+        let m0 = int_list();
+        sp_wasi_snapshot_preview1(m0);
+        wi_index.set(
+          i,
+          emit::add_import(
+            m0, field,
+            signature_of(prog::sym_decl.get(sym), prog::sym_mod.get(sym))
+          )
+        );
+        i = i.add(one);
+      }
+      i = zero;
+      while i.lt(fq_sym.length()) {
+        let sym = fq_sym.get(i);
+        cg_env.write(fq_env.get(i));
+        fq_index.set(i, emit::add_func(signature_of_fn(sym, fq_env.get(i))));
+        i = i.add(one);
+      }
+      cg_env.write(lower::env_empty());
+    }
+
+    fn index_of_fn(sym: Int, env: Int): Int {
+      let i = queued(sym, env);
+      if ast::is_some(i) {
+        fq_index.get(i)
+      } else {
+        ast::none()
+      }
+    }
+
+    fn index_of_import(sym: Int): Int {
+      let i = imported(sym);
+      if ast::is_some(i) {
+        wi_index.get(i)
+      } else {
+        ast::none()
+      }
+    }
+
+    # Pass three: bodies.
+
+    fn scan_locals_expr(e: Int, m: Int) {
+      if ast::is_some(e).not() {
+        return ();
+      }
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_block()) {
+        let mark = lc_visible.read();
+        let emark = cg_env.read();
+        var i = zero;
+        while i.lt(ast::b_of(e)) {
+          scan_locals_stmt(ast::kid_at(ast::a_of(e), i), m);
+          i = i.add(one);
+        }
+        scan_locals_expr(ast::c_of(e), m);
+        cg_env.write(emark);
+        close_scope(mark);
+      } else if k.eq(ast::k_ex_if()) {
+        scan_locals_expr(ast::b_of(e), m);
+        scan_locals_expr(ast::c_of(e), m);
+      } else if k.eq(ast::k_ex_match()) {
+        scan_locals_match(e, m);
+      }
+    }
+
+    fn scan_locals_match(e: Int, m: Int) {
+      let sty = type_of(ast::a_of(e), m);
+      if ast::c_of(e).eq(zero) {
+        return ();
+      }
+      let outer = lc_visible.read();
+      if types::head_count(sty).gt(one) {
+        # The scrutinee is held in a temporary while the arms test it.
+        add_local(ast::none(), sty);
+        lc_visible.write(lc_visible.read().add(one));
+      }
+      var i = zero;
+      while i.lt(ast::c_of(e)) {
+        let arm = ast::kid_at(ast::b_of(e), i);
+        let mark = lc_visible.read();
+        scan_arm_binder(ast::a_of(arm), sty, m);
+        scan_locals_expr(ast::b_of(arm), m);
+        close_scope(mark);
+        i = i.add(one);
+      }
+      close_scope(outer);
+    }
+
+    # One local if the pattern names something, none otherwise. Mirrors
+    # what `bind_pattern` and `emit_match_arm_body` will reveal.
+    fn pattern_payload(pat: Int, sty: Int, m: Int): Int {
+      if types::is_kind(sty, types::kd_union()) {
+        return arm_payload(pat, m, sty);
+      }
+      types::member_payload(sty)
+    }
+
+    fn scan_arm_binder(pat: Int, sty: Int, m: Int) {
+      if ast::kind_of(pat).ne(ast::k_pt_path()) {
+        return ();
+      }
+      let sub = ast::b_of(pat);
+      if ast::is_some(sub) {
+        if ast::kind_of(sub).eq(ast::k_pt_path()) {
+          if ast::is_some(ast::b_of(sub)).not() {
+            # `Box v`: `v` names the payload — of the member the pattern
+            # selects, which for a union is not the union itself.
+            add_local(ast::path_last(ast::a_of(sub)), pattern_payload(pat, sty, m));
+            lc_visible.write(lc_visible.read().add(one));
+          }
+        }
+        return ();
+      }
+      if ast::is_some(arm_head_any(pat, m)) {
+        return ();
+      }
+      # A bare name that is not a unit or a tag binds the whole value.
+      add_local(ast::path_last(ast::a_of(pat)), sty);
+      lc_visible.write(lc_visible.read().add(one));
+    }
+
+    fn scan_locals_stmt(s: Int, m: Int) {
+      let k = ast::kind_of(s);
+      if k.eq(ast::k_st_let()) {
+        scan_binding(s, m);
+      } else if k.eq(ast::k_st_var()) {
+        scan_binding(s, m);
+      } else if k.eq(ast::k_st_while()) {
+        scan_locals_expr(ast::b_of(s), m);
+      } else if k.eq(ast::k_st_loop()) {
+        scan_locals_expr(ast::a_of(s), m);
+      } else if k.eq(ast::k_st_bind()) {
+        walk_binds(int_list(), s, m, bw_scan());
+      } else if k.eq(ast::k_st_expr()) {
+        scan_locals_expr(ast::a_of(s), m);
+      }
+    }
+
+    fn scan_binding(s: Int, m: Int) {
+      var ty = elab_ty(ast::b_of(s), m);
+      if ast::is_some(ast::b_of(s)).not() {
+        ty = type_of(ast::c_of(s), m);
+      }
+      add_local(ast::a_of(s), ty);
+      lc_visible.write(lc_visible.read().add(one));
+    }
+
+    # Parameters take the low indices, in order and slot by slot; the
+    # locals past them are grouped by valtype, which is the shape of the
+    # code section's locals vector. The result is how many i32 locals
+    # were needed.
+    fn assign_slots(nparams: Int): Int {
+      var next = zero;
+      var l = lc_base.read();
+      while l.lt(lc_base.read().add(nparams)) {
+        var i = zero;
+        while i.lt(local_width(l)) {
+          set_local_slot(l, i, next);
+          next = next.add(one);
+          i = i.add(one);
+        }
+        l = l.add(one);
+      }
+      var next32 = next;
+      l = lc_base.read().add(nparams);
+      while l.lt(lc_name.length()) {
+        var i = zero;
+        while i.lt(local_width(l)) {
+          if valtype_at(lc_type.get(l), i).eq(emit::vt_i32()) {
+            set_local_slot(l, i, next32);
+            next32 = next32.add(one);
+          }
+          i = i.add(one);
+        }
+        l = l.add(one);
+      }
+      var next64 = next32;
+      l = lc_base.read().add(nparams);
+      while l.lt(lc_name.length()) {
+        var i = zero;
+        while i.lt(local_width(l)) {
+          if valtype_at(lc_type.get(l), i).eq(emit::vt_i64()) {
+            set_local_slot(l, i, next64);
+            next64 = next64.add(one);
+          }
+          i = i.add(one);
+        }
+        l = l.add(one);
+      }
+      next32.sub(next)
+    }
+
+    # Emitting returns the *type* the expression left on the stack, which
+    # is the only reliable way to know it: a `let`'s local is not visible
+    # until the statement that introduces it has been emitted, so asking
+    # for a block's tail type before emitting the block gives the wrong
+    # answer.
+    fn emit_expr(body: IntList, e: Int, m: Int): Int {
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_unit()) {
+        return ty_none();
+      }
+      if k.eq(ast::k_ex_block()) {
+        return emit_block(body, e, m);
+      }
+      if k.eq(ast::k_ex_if()) {
+        return emit_if(body, e, m);
+      }
+      if k.eq(ast::k_ex_match()) {
+        return emit_match(body, e, m);
+      }
+      if k.eq(ast::k_ex_break()) {
+        if cg_ntop.read().eq(zero) {
+          cg_error(c_break(), ast::none());
+          return ty_none();
+        }
+        op_br(body, cg_depth.read().sub(cg_loops.get(cg_ntop.read().sub(one))));
+        return ty_none();
+      }
+      if k.eq(ast::k_ex_return()) {
+        if ast::is_some(ast::a_of(e)) {
+          emit_as(body, ast::a_of(e), m, cg_ret.read());
+        }
+        op_return(body);
+        return ty_none();
+      }
+      if k.eq(ast::k_ex_this()) {
+        load_local(body, this_local());
+        return lc_type.get(this_local());
+      }
+      if k.eq(ast::k_ex_path()) {
+        return emit_path(body, e, m);
+      }
+      if k.eq(ast::k_ex_call()) {
+        return emit_call(body, e, m);
+      }
+      if k.eq(ast::k_ex_method()) {
+        return emit_method(body, e, m);
+      }
+      cg_error(c_unsupported(), ast::none());
+      ty_none()
+    }
+
+    # `x.m(a)`. The receiver's type is the other half of the lookup key
+    # (D36), and forward inference means it is known first. This slice
+    # resolves to an attached method — the receiver goes in ahead of the
+    # arguments, which is exactly the shape its frame expects.
+    fn emit_method(body: IntList, e: Int, m: Int): Int {
+      let recv_ty = type_of(ast::a_of(e), m);
+      let meth = method_of(e, m);
+      var provider = meth;
+      var penv = ast::none();
+      if ast::is_some(meth) {
+        penv = callee_env(meth);
+      } else {
+        # Not in scope as an attached method: the context must provide it
+        # at this receiver, keyed by the receiver's head (D36).
+        let bound = method_provision(recv_ty, e, m);
+        if ast::is_some(bound).not() {
+          cg_error(prog::e_method(), ast::path_last(ast::b_of(e)));
+          return ty_none();
+        }
+        provider = lower::env_a_of(bound);
+        penv = lower::env_b_of(bound);
+        if ast::is_some(provider).not() {
+          cg_error(c_unbound(), ast::path_last(ast::b_of(e)));
+          return ty_none();
+        }
+      }
+      emit_expr(body, ast::a_of(e), m);
+      emit_args(body, ast::c_of(e), ast::d_of(e), m, param_types(provider));
+      reach(provider, penv);
+      push_needs(body, provider, penv);
+      op_call(body, index_of_fn(provider, penv));
+      elab_ty(
+        ast::fn_ret(prog::sym_decl.get(provider)), prog::sym_mod.get(provider)
+      )
+    }
+
+    # The environment entry providing this method at this receiver. The
+    # detached symbol has to be in scope: a method call resolves by
+    # (receiver type, symbol), and the symbol half is still an ordinary
+    # lexical lookup. Matching a provision by the spelling of its
+    # method's name instead would be the structural matching D1 exists
+    # to rule out.
+    fn method_provision(recv_ty: Int, e: Int, m: Int): Int {
+      let head = types::head_of(canon_ty(recv_ty));
+      if ast::is_some(head).not() {
+        return ast::none();
+      }
+      let sym = provided_method(head, e, m);
+      if ast::is_some(sym).not() {
+        return ast::none();
+      }
+      lower::env_find(cg_env.read(), lower::ek_fn(), head, sym)
+    }
+
+    # The symbol half of the key. An attached method matches *by name* in
+    # the receiver's own module and needs no import; a detached one has to
+    # be in scope, or be reached as `mod::m` (D61).
+    fn provided_method(head: Int, e: Int, m: Int): Int {
+      let path = ast::b_of(e);
+      if ast::path_len(path).eq(one) {
+        let name = ast::path_last(path);
+        var found = prog::find_attached(prog::sym_mod.get(head), head, name);
+        if ast::is_some(found).not() {
+          found = prog::find_attached(m, head, name);
+        }
+        if ast::is_some(found) {
+          return found;
+        }
+      }
+      prog::resolve_detached(m, path)
+    }
+
+    # The attached method a call selects, or none.
+    fn method_of(e: Int, m: Int): Int {
+      let head = types::head_of(canon_ty(type_of(ast::a_of(e), m)));
+      if ast::is_some(head).not() {
+        return ast::none();
+      }
+      let found = lower::find_method_decl(m, head, ast::path_last(ast::b_of(e)));
+      if ast::is_some(found).not() {
+        return ast::none();
+      }
+      if is_defined_method(found).not() {
+        return ast::none();
+      }
+      found
+    }
+
+    # A value entering a union (D17, D58): the one place a tag is
+    # attached. The union is a discriminant beside room for its widest
+    # member, so the value is emitted into a buffer first and the
+    # discriminant goes in ahead of it. A unit member needs none of that
+    # — the code *is* the value — so it only wants padding.
+    fn inject(body: IntList, valbuf: IntList, got: Int, want: Int) {
+      if width(want).le(width(got)) {
+        push_bytes(body, valbuf);
+        return ();
+      }
+      if types::is_unit_decl(got) {
+        push_bytes(body, valbuf);
+        pad(body, width(want).sub(one));
+        return ();
+      }
+      let head = types::head_of(got);
+      if ast::is_some(head).not() {
+        cg_error(c_unsupported(), ast::none());
+        push_bytes(body, valbuf);
+        return ();
+      }
+      op_i32_const(body, types::unit_code(head));
+      push_bytes(body, valbuf);
+      pad(body, width(want).sub(one).sub(width(got)));
+    }
+
+    fn pad(body: IntList, n: Int) {
+      var i = zero;
+      while i.lt(n) {
+        op_i32_const(body, zero);
+        i = i.add(one);
+      }
+    }
+
+    # Emit `e` where a value of type `want` is expected. An `if`, a
+    # `match` or a block passes the expectation on to whatever produces
+    # its value, so that each branch injects rather than the whole
+    # expression having to be widened after the fact.
+    fn emit_as(body: IntList, e: Int, m: Int, want: Int): Int {
+      if ast::is_some(want).not() {
+        return emit_expr(body, e, m);
+      }
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_if()) {
+        return emit_if_as(body, e, m, want);
+      }
+      if k.eq(ast::k_ex_block()) {
+        return emit_block_as(body, e, m, want);
+      }
+      if k.eq(ast::k_ex_match()) {
+        return emit_match_as(body, e, m, want);
+      }
+      let tmp = int_list();
+      let got = emit_expr(tmp, e, m);
+      # D17 through the bindings in force (D43), as the bootstrap checks
+      # it: what a position yields must fit what it declared. A got with
+      # no width is either real unit or a body that jumped out — this
+      # back end types both as unit — so only a valued got is held to it.
+      if width(got).gt(zero) {
+        if types::fits(canon_ty(got), canon_ty(want)).not() {
+          cg_error(c_bad_type(), ast::none());
+        }
+      }
+      if width(got).eq(width(want)) {
+        push_bytes(body, tmp);
+        return got;
+      }
+      inject(body, tmp, got, want);
+      want
+    }
+
+    fn emit_path(body: IntList, e: Int, m: Int): Int {
+      let p = ast::a_of(e);
+      if ast::path_len(p).eq(one) {
+        let local = find_local(ast::path_at(p, zero));
+        if ast::is_some(local) {
+          load_local(body, local);
+          return lc_type.get(local);
+        }
+      }
+      let sym = prog::resolve_path(m, p);
+      if ast::is_some(sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(p));
+        return ty_none();
+      }
+      # A `unit` value is its discriminant and nothing else (D59).
+      if prog::sym_kind.get(sym).eq(prog::sk_unit()) {
+        op_i32_const(body, types::unit_code(sym));
+        return types::ty_of_decl(sym);
+      }
+      if in_wasm(sym) {
+        let op = wops::find_op(prog::sym_name.get(sym));
+        if ast::is_some(op) {
+          emit_op(body, op);
+          return op_result(op);
+        }
+        cg_error(c_unknown_op(), prog::sym_name.get(sym));
+        return ty_none();
+      }
+      # A val nobody defined is context: its value arrived as a
+      # parameter, or a `bind` in an enclosing block put it in a local.
+      if prog::sym_kind.get(sym).eq(prog::sk_val()) {
+        if ast::is_some(ast::c_of(prog::sym_decl.get(sym))).not() {
+          let l = provision_of(ast::none(), sym);
+          if ast::is_some(l) {
+            load_local(body, l);
+            return lc_type.get(l);
+          }
+          cg_error(c_unbound(), prog::sym_name.get(sym));
+          return ty_none();
+        }
+      }
+      if in_bool(sym) {
+        let t = spelled();
+        sp_true(t);
+        if sym_named(sym, t) {
+          op_i32_const(body, one);
+          return cg_boolty.read();
+        }
+        let f = spelled();
+        sp_false(f);
+        if sym_named(sym, f) {
+          op_i32_const(body, zero);
+          return cg_boolty.read();
+        }
+      }
+      cg_error(c_unbound(), prog::sym_name.get(sym));
+      ty_none()
+    }
+
+    fn emit_call(body: IntList, e: Int, m: Int): Int {
+      let callee = ast::a_of(e);
+      let sym = prog::resolve_path(m, ast::a_of(callee));
+      if ast::is_some(sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(callee)));
+        return ty_none();
+      }
+      emit_args(body, ast::b_of(e), ast::c_of(e), m, param_types(sym));
+      # A nominal value *is* its payload (D58), so constructing one emits
+      # the payload and nothing more.
+      if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
+        return types::ty_of_decl(sym);
+      }
+      if in_wasm(sym) {
+        let op = wops::find_op(prog::sym_name.get(sym));
+        if ast::is_some(op) {
+          emit_op(body, op);
+          return op_result(op);
+        }
+        cg_error(c_unknown_op(), prog::sym_name.get(sym));
+        return ty_none();
+      }
+      if is_i32_bool(sym) {
+        op_i32_const(body, zero);
+        body.push(hex(n4(), n7()));
+        return cg_boolty.read();
+      }
+      if is_defined_fn(sym) {
+        let env = callee_env(sym);
+        reach(sym, env);
+        push_needs(body, sym, env);
+        op_call(body, index_of_fn(sym, env));
+        return elab_ty(
+          ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
+        );
+      }
+      # An abstract fn the context provides. D2: statically a direct
+      # call, with the captured context passed as data.
+      let bound = lower::env_find(
+        cg_env.read(), lower::ek_fn(), ast::none(), sym
+      );
+      if ast::is_some(bound) {
+        if ast::is_some(lower::env_a_of(bound)) {
+          return emit_provided(
+            body, lower::env_a_of(bound), lower::env_b_of(bound)
+          );
+        }
+      }
+      if in_wasi(sym) {
+        reach_import(sym);
+        op_call(body, index_of_import(sym));
+        return elab_ty(
+          ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
+        );
+      }
+      cg_error(c_unbound(), prog::sym_name.get(sym));
+      ty_none()
+    }
+
+    # A call to whatever a bind put here: the arguments are already on
+    # the stack, so this is the provider's needs and the call.
+    fn emit_provided(body: IntList, provider: Int, penv: Int): Int {
+      reach(provider, penv);
+      push_needs(body, provider, penv);
+      op_call(body, index_of_fn(provider, penv));
+      elab_ty(
+        ast::fn_ret(prog::sym_decl.get(provider)), prog::sym_mod.get(provider)
+      )
+    }
+
+    # The callee's needs, in its order, taken from this frame. A need the
+    # frame cannot supply is the context error of D20 rather than a
+    # scope error: the name is fine, nobody provided it here.
+    fn push_needs(body: IntList, callee: Int, env: Int) {
+      let vals = int_list();
+      val_slots(vals, callee, env, zero);
+      var i = zero;
+      while i.lt(vals.length()) {
+        let l = provision_of(ast::none(), vals.get(i));
+        if ast::is_some(l) {
+          load_local(body, l);
+        } else {
+          cg_error(c_unbound(), prog::sym_name.get(vals.get(i)));
+        }
+        i = i.add(one);
+      }
+    }
+
+    # The declared parameter types of a callee, or an empty list when it
+    # has none the back end can see (a tag construction, an instruction).
+    fn param_types(sym: Int): IntList {
+      let out = int_list();
+      let kind = prog::sym_kind.get(sym);
+      # Constructing a nominal takes its payload (D58).
+      if kind.eq(prog::sk_tag()) {
+        out.push(types::member_payload(types::ty_of_decl(sym)));
+        return out;
+      }
+      var ok = kind.eq(prog::sk_fn());
+      if ok.not() {
+        ok = kind.eq(prog::sk_method());
+      }
+      if ok.not() {
+        return out;
+      }
+      let d = prog::sym_decl.get(sym);
+      let home = prog::sym_mod.get(sym);
+      var i = zero;
+      while i.lt(ast::fn_nparams(d)) {
+        out.push(elab_ty(ast::b_of(ast::kid_at(ast::fn_params(d), i)), home));
+        i = i.add(one);
+      }
+      out
+    }
+
+    fn emit_args(body: IntList, run: Int, n: Int, m: Int, want: IntList) {
+      var i = zero;
+      while i.lt(n) {
+        var expect = ast::none();
+        if i.lt(want.length()) {
+          expect = want.get(i);
+        }
+        emit_as(body, ast::kid_at(run, i), m, expect);
+        i = i.add(one);
+      }
+    }
+
+    fn emit_op(body: IntList, op: Int) {
+      let kind = wops::op_kinds.get(op);
+      let code = wops::op_codes.get(op);
+      if kind.eq(wops::wk_simple()) {
+        body.push(code);
+      } else if kind.eq(wops::wk_memarg()) {
+        op_mem(body, code, wops::op_aligns.get(op));
+      } else if kind.eq(wops::wk_const0()) {
+        op_i32_const(body, zero);
+      } else if kind.eq(wops::wk_const1()) {
+        op_i32_const(body, one);
+      } else if kind.eq(wops::wk_memzero()) {
+        body.push(code);
+        body.push(zero);
+      } else if kind.eq(wops::wk_memcopy()) {
+        op_memory_copy(body);
+      } else {
+        op_memory_fill(body);
+      }
+    }
+
+    fn emit_block(body: IntList, e: Int, m: Int): Int {
+      emit_block_as(body, e, m, ast::none())
+    }
+
+    fn emit_block_as(body: IntList, e: Int, m: Int, want: Int): Int {
+      let mark = lc_visible.read();
+      let pmark = pv_top.read();
+      let emark = cg_env.read();
+      var i = zero;
+      while i.lt(ast::b_of(e)) {
+        emit_stmt(body, ast::kid_at(ast::a_of(e), i), m);
+        i = i.add(one);
+      }
+      var ty = ty_none();
+      if ast::is_some(ast::c_of(e)) {
+        ty = emit_as(body, ast::c_of(e), m, want);
+      }
+      close_scope(mark);
+      pv_top.write(pmark);
+      cg_env.write(emark);
+      ty
+    }
+
+    # A block's type. One result is its valtype; several is a function
+    # type index, which a block type may name — the same multi-value the
+    # result list of a function needs, so it costs no more of the engine.
+    # The index is written as a signed LEB, which is what distinguishes
+    # it from a valtype byte.
+    fn open_block(body: IntList, opcode: Int, ty: Int) {
+      body.push(opcode);
+      if width(ty).eq(zero) {
+        body.push(bt_empty());
+      } else if width(ty).eq(one) {
+        body.push(valtype_at(ty, zero));
+      } else {
+        let rs = int_list();
+        push_valtypes(rs, ty);
+        sleb(body, emit::results_type(rs));
+      }
+    }
+
+    fn op_if_ty(body: IntList, ty: Int) { open_block(body, n4(), ty); }
+
+    # The block type is an immediate of the `if` opcode, so it has to be
+    # written before the branch it describes — and it is only known once
+    # that branch has been emitted. So the branch goes into a buffer of
+    # its own first. The depth is raised around that, since a `break`
+    # inside it counts this `if` as one level.
+    fn emit_if(body: IntList, e: Int, m: Int): Int {
+      emit_if_as(body, e, m, ast::none())
+    }
+
+    fn emit_if_as(body: IntList, e: Int, m: Int, want: Int): Int {
+      emit_expr(body, ast::a_of(e), m);
+      cg_depth.write(cg_depth.read().add(one));
+      let then = int_list();
+      let ty = emit_as(then, ast::b_of(e), m, want);
+      op_if_ty(body, ty);
+      push_bytes(body, then);
+      if ast::is_some(ast::c_of(e)) {
+        op_else(body);
+        emit_as(body, ast::c_of(e), m, want);
+      } else if width(ty).gt(zero) {
+        # An `if` that yields a value has to have an `else` to yield it.
+        cg_error(c_bad_type(), ast::none());
+      }
+      op_end(body);
+      cg_depth.write(cg_depth.read().sub(one));
+      ty
+    }
+
+    # `match`, for the two shapes this back end covers. When the
+    # scrutinee's type has one possible head nothing needs
+    # discriminating: the first arm always matches, and a tag pattern
+    # just names the payload that is already on the stack. When every
+    # member is a unit the value *is* the discriminant, so the arms
+    # become a chain of comparisons against unit codes.
+    fn emit_match(body: IntList, e: Int, m: Int): Int {
+      emit_match_as(body, e, m, ast::none())
+    }
+
+    fn emit_match_as(body: IntList, e: Int, m: Int, want: Int): Int {
+      let sty = type_of(ast::a_of(e), m);
+      if ast::c_of(e).eq(zero) {
+        # `match e {}` requires `e : |` (D34): evaluate and diverge.
+        emit_expr(body, ast::a_of(e), m);
+        op_unreachable(body);
+        return ty_none();
+      }
+      if types::head_count(sty).eq(one) {
+        return emit_single_arm(body, e, m, sty, want);
+      }
+      emit_union_match(body, e, m, sty, want)
+    }
+
+    # One possible head: bind and run the first arm.
+    fn emit_single_arm(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
+      let arm = ast::kid_at(ast::b_of(e), zero);
+      let mark = lc_visible.read();
+      emit_expr(body, ast::a_of(e), m);
+      bind_pattern(body, ast::a_of(arm), sty, m);
+      let ty = emit_as(body, ast::b_of(arm), m, want);
+      close_scope(mark);
+      ty
+    }
+
+    # A pattern against a value already on the stack. A binder takes the
+    # whole value; a tag pattern takes its payload, which is the same
+    # scalars (D58); a wildcard drops it.
+    fn bind_pattern(body: IntList, pat: Int, sty: Int, m: Int) {
+      let k = ast::kind_of(pat);
+      if k.eq(ast::k_pt_wild()) {
+        drop_value(body, sty);
+        return ();
+      }
+      if k.ne(ast::k_pt_path()) {
+        cg_error(c_unsupported(), ast::none());
+        return ();
+      }
+      let sub = ast::b_of(pat);
+      if ast::is_some(sub).not() {
+        # A single name is a binder unless it resolves to a unit or tag,
+        # and a resolved one carries no payload to name. Which of the two
+        # it is has to be decided the same way `scan_arm_binder` decided
+        # it, or the local it owns is not the one the scan created.
+        if ast::is_some(arm_head_any(pat, m)) {
+          drop_value(body, sty);
+          return ();
+        }
+        bind_here(body, ast::path_last(ast::a_of(pat)));
+        return ();
+      }
+      let payload = types::member_payload(sty);
+      if ast::kind_of(sub).eq(ast::k_pt_path()) {
+        if ast::is_some(ast::b_of(sub)).not() {
+          bind_here(body, ast::path_last(ast::a_of(sub)));
+          return ();
+        }
+        # A nested tag pattern; at least name the tag it opens.
+        cg_error(c_unsupported(), ast::path_last(ast::a_of(sub)));
+        return ();
+      }
+      if ast::kind_of(sub).eq(ast::k_pt_wild()) {
+        drop_value(body, payload);
+        return ();
+      }
+      cg_error(c_unsupported(), ast::none());
+    }
+
+    fn bind_here(body: IntList, name: Int) {
+      store_local(body, reveal(name));
+    }
+
+    fn drop_value(body: IntList, ty: Int) {
+      var i = zero;
+      while i.lt(width(ty)) {
+        op_drop(body);
+        i = i.add(one);
+      }
+    }
+
+    # A discriminated union: slot zero is the discriminant — for a union
+    # of units it is also the whole value — and any further slots are
+    # room for the widest member's payload (D59). Testing an arm reads
+    # slot zero; taking a payload reads the ones beyond it. One emitter
+    # for both shapes, because the scan pass has one binder walk and the
+    # two must reveal the same locals.
+    fn emit_union_match(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
+      let scrutinee = int_list();
+      emit_expr(scrutinee, ast::a_of(e), m);
+      let tmp = reveal(ast::none());
+      push_bytes(body, scrutinee);
+      store_local(body, tmp);
+      emit_match_arms(body, e, m, sty, tmp, zero, want)
+    }
+
+    fn emit_match_arms(
+      body: IntList, e: Int, m: Int, sty: Int, tmp: Int, i: Int, want: Int
+    ): Int {
+      let arm = ast::kid_at(ast::b_of(e), i);
+      let head = arm_head_any(ast::a_of(arm), m);
+      var last = i.add(one).ge(ast::c_of(e));
+      if ast::is_some(head).not() {
+        last = true;
+      }
+      if last {
+        return emit_match_arm_body(body, arm, m, sty, tmp, want);
+      }
+      op_local_get(body, local_slot(tmp, zero));
+      op_i32_const(body, types::unit_code(head));
+      body.push(hex(n4(), n6()));
+      cg_depth.write(cg_depth.read().add(one));
+      let then = int_list();
+      let ty = emit_match_arm_body(then, arm, m, sty, tmp, want);
+      op_if_ty(body, ty);
+      push_bytes(body, then);
+      op_else(body);
+      emit_match_arms(body, e, m, sty, tmp, i.add(one), want);
+      op_end(body);
+      cg_depth.write(cg_depth.read().sub(one));
+      ty
+    }
+
+    fn emit_match_arm_body(
+      body: IntList, arm: Int, m: Int, sty: Int, tmp: Int, want: Int
+    ): Int {
+      let mark = lc_visible.read();
+      let pat = ast::a_of(arm);
+      if ast::kind_of(pat).eq(ast::k_pt_path()) {
+        let sub = ast::b_of(pat);
+        if ast::is_some(sub) {
+          # Only a bare name takes the payload; `Tag _` names nothing, and
+          # the scan created no local for it.
+          if ast::kind_of(sub).eq(ast::k_pt_path()) {
+            if ast::is_some(ast::b_of(sub)).not() {
+              let payload = arm_payload(pat, m, sty);
+              var j = zero;
+              while j.lt(width(payload)) {
+                op_local_get(body, local_slot(tmp, j.add(one)));
+                j = j.add(one);
+              }
+              bind_here(body, ast::path_last(ast::a_of(sub)));
+            }
+          }
+        } else if ast::is_some(arm_head_any(pat, m)).not() {
+          load_local(body, tmp);
+          bind_here(body, ast::path_last(ast::a_of(pat)));
+        }
+      }
+      let ty = emit_as(body, ast::b_of(arm), m, want);
+      close_scope(mark);
+      ty
+    }
+
+    # A unit *or* a tag: both discriminate, and a tag also carries.
+    fn arm_head_any(pat: Int, m: Int): Int {
+      if ast::kind_of(pat).ne(ast::k_pt_path()) {
+        return ast::none();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(pat));
+      if ast::is_some(sym).not() {
+        return ast::none();
+      }
+      if prog::sym_kind.get(sym).eq(prog::sk_unit()) {
+        return sym;
+      }
+      if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
+        return sym;
+      }
+      ast::none()
+    }
+
+    # What the member this pattern selects carries.
+    fn arm_payload(pat: Int, m: Int, sty: Int): Int {
+      let head = arm_head_any(pat, m);
+      if ast::is_some(head).not() {
+        return ty_none();
+      }
+      let member = types::member_with_head(sty, head);
+      if ast::is_some(member).not() {
+        return ty_none();
+      }
+      types::member_payload(member)
+    }
+
+    # A bind statement is walked three times — once to discover what it
+    # reaches, once to count the locals it needs, once to emit it — and
+    # all three have to agree on what it does, including inside a functor
+    # it applies. So there is one traversal with a mode rather than three
+    # that must be kept in step.
+    fn bw_emit(): Int { zero }
+    fn bw_scan(): Int { one }
+
+    fn walk_binds(body: IntList, s: Int, m: Int, mode: Int) {
+      var i = zero;
+      while i.lt(ast::b_of(s)) {
+        walk_bind_item(body, ast::kid_at(ast::a_of(s), i), m, zero, mode);
+        i = i.add(one);
+      }
+    }
+
+    fn walk_bind_item(body: IntList, item: Int, m: Int, depth: Int, mode: Int) {
+      if depth.gt(n8()) {
+        cg_error(prog::e_deep(), ast::none());
+        return ();
+      }
+      let spec = ast::a_of(item);
+      let value = ast::b_of(item);
+      # No `=`: applying a functor of that name (D55).
+      if ast::is_some(value).not() {
+        apply_functor(body, spec, m, depth, mode);
+        return ();
+      }
+      # A receiver dot: providing a detached method at that receiver.
+      if ast::is_some(ast::b_of(spec)) {
+        bind_method(spec, value, m);
+        return ();
+      }
+      if ast::is_some(ast::a_of(spec)).not() {
+        cg_error(c_unsupported(), ast::none());
+        return ();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(spec));
+      if ast::is_some(sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        return ();
+      }
+      let kind = prog::sym_kind.get(sym);
+      if kind.eq(prog::sk_val()) {
+        # A val is data: evaluate it once into a local (D2).
+        if mode.eq(bw_scan()) {
+          # Nameless: a provision is found by its *symbol*, through
+          # `provide`, and a name here would shadow a program local that
+          # happened to share it — `val n: Char;` against a parameter `n`.
+          add_local(ast::none(), need_type(sym));
+          lc_visible.write(lc_visible.read().add(one));
+        } else if mode.eq(bw_emit()) {
+          emit_as(body, value, m, need_type(sym));
+          let l = reveal(ast::none());
+          store_local(body, l);
+          provide(ast::none(), sym, l);
+        }
+        return ();
+      }
+      if kind.eq(prog::sk_type()) {
+        let ty = named_type(value, m);
+        if ast::is_some(ty).not() {
+          cg_error(c_bad_type(), prog::sym_name.get(sym));
+          return ();
+        }
+        cg_env.write(lower::env_push(
+          cg_env.read(), lower::ek_type(), ast::none(), sym, ty, ast::none()
+        ));
+        return ();
+      }
+      if kind.eq(prog::sk_fn()) {
+        let provider = named_fn(value, m);
+        if ast::is_some(provider).not() {
+          cg_error(c_unsupported(), prog::sym_name.get(sym));
+          return ();
+        }
+        # The provider's own context is captured here, at the bind site.
+        cg_env.write(lower::env_push(
+          cg_env.read(), lower::ek_fn(), ast::none(), sym,
+          provider, cg_env.read()
+        ));
+        return ();
+      }
+      cg_error(c_unsupported(), prog::sym_name.get(sym));
+    }
+
+    # `bind Horn.loud = Horn.blast;` — a detached method provided at a
+    # receiver. The key is the receiver's head, so calls find it there.
+    fn bind_method(spec: Int, value: Int, m: Int) {
+      let recv_sym = prog::resolve_path(m, ast::a_of(spec));
+      if ast::is_some(recv_sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        return ();
+      }
+      let head = types::head_of(canon_ty(types::ty_of_decl(recv_sym)));
+      let detached = lower::find_method_decl(m, recv_sym, ast::b_of(spec));
+      let provider = named_fn(value, m);
+      if ast::is_some(head).not() {
+        cg_error(prog::e_method(), ast::b_of(spec));
+        return ();
+      }
+      if ast::is_some(detached).not() {
+        cg_error(prog::e_method(), ast::b_of(spec));
+        return ();
+      }
+      if ast::is_some(provider).not() {
+        cg_error(c_unsupported(), ast::b_of(spec));
+        return ();
+      }
+      cg_env.write(lower::env_push(
+        cg_env.read(), lower::ek_fn(), head, detached, provider, cg_env.read()
+      ));
+    }
+
+    # A functor application is a run of binds, inlined where it is
+    # written, with the paths inside resolved in the functor's module.
+    fn apply_functor(body: IntList, spec: Int, m: Int, depth: Int, mode: Int) {
+      if ast::is_some(ast::a_of(spec)).not() {
+        cg_error(c_unsupported(), ast::none());
+        return ();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(spec));
+      if ast::is_some(sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        return ();
+      }
+      if prog::sym_kind.get(sym).ne(prog::sk_functor()) {
+        cg_error(c_unsupported(), prog::sym_name.get(sym));
+        return ();
+      }
+      let d = prog::sym_decl.get(sym);
+      let home = prog::sym_mod.get(sym);
+      var i = zero;
+      while i.lt(ast::fu_nbinds(d)) {
+        let stmt = ast::kid_at(ast::fu_binds(d), i);
+        var j = zero;
+        while j.lt(ast::b_of(stmt)) {
+          walk_bind_item(
+            body, ast::kid_at(ast::a_of(stmt), j), home, depth.add(one), mode
+          );
+          j = j.add(one);
+        }
+        i = i.add(one);
+      }
+    }
+
+    # The type or the function a bind's right-hand side names.
+    fn named_type(value: Int, m: Int): Int {
+      if ast::kind_of(value).ne(ast::k_ex_path()) {
+        return ast::none();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(value));
+      if ast::is_some(sym).not() {
+        return ast::none();
+      }
+      canon_ty(types::ty_of_decl(sym))
+    }
+
+    fn named_fn(value: Int, m: Int): Int {
+      if ast::kind_of(value).eq(ast::k_ex_path()) {
+        let sym = prog::resolve_path(m, ast::a_of(value));
+        if ast::is_some(sym) {
+          if is_compilable(sym) {
+            return sym;
+          }
+        }
+        return ast::none();
+      }
+      # `bind Int.add = Num.add;` parses as a field access, since the
+      # receiver is a type rather than a value.
+      if ast::kind_of(value).eq(ast::k_ex_field()) {
+        let obj = ast::a_of(value);
+        if ast::kind_of(obj).eq(ast::k_ex_path()) {
+          let recv = prog::resolve_path(m, ast::a_of(obj));
+          if ast::is_some(recv) {
+            let found = prog::find_attached(
+              prog::sym_mod.get(recv), recv, ast::b_of(value)
+            );
+            if ast::is_some(found) {
+              return found;
+            }
+          }
+        }
+      }
+      ast::none()
+    }
+
+    fn push_loop(level: Int) {
+      if cg_ntop.read().lt(cg_loops.length()) {
+        cg_loops.set(cg_ntop.read(), level);
+      } else {
+        cg_loops.push(level);
+      }
+      cg_ntop.write(cg_ntop.read().add(one));
+    }
+
+    fn emit_stmt(body: IntList, s: Int, m: Int) {
+      let k = ast::kind_of(s);
+      if k.eq(ast::k_st_let()) {
+        emit_binding(body, s, m);
+      } else if k.eq(ast::k_st_var()) {
+        emit_binding(body, s, m);
+      } else if k.eq(ast::k_st_assign()) {
+        let local = find_local(ast::a_of(s));
+        if ast::is_some(local) {
+          emit_as(body, ast::b_of(s), m, lc_type.get(local));
+          store_local(body, local);
+        } else {
+          emit_expr(body, ast::b_of(s), m);
+          cg_error(prog::e_scope(), ast::a_of(s));
+        }
+      } else if k.eq(ast::k_st_while()) {
+        op_block(body, bt_empty());
+        cg_depth.write(cg_depth.read().add(one));
+        let exit = cg_depth.read();
+        push_loop(exit);
+        op_loop(body, bt_empty());
+        cg_depth.write(cg_depth.read().add(one));
+        emit_expr(body, ast::a_of(s), m);
+        body.push(hex(n4(), n5()));
+        op_br_if(body, cg_depth.read().sub(exit));
+        drop_value(body, emit_expr(body, ast::b_of(s), m));
+        op_br(body, zero);
+        op_end(body);
+        cg_depth.write(cg_depth.read().sub(one));
+        op_end(body);
+        cg_depth.write(cg_depth.read().sub(one));
+        cg_ntop.write(cg_ntop.read().sub(one));
+      } else if k.eq(ast::k_st_loop()) {
+        op_block(body, bt_empty());
+        cg_depth.write(cg_depth.read().add(one));
+        push_loop(cg_depth.read());
+        op_loop(body, bt_empty());
+        cg_depth.write(cg_depth.read().add(one));
+        drop_value(body, emit_expr(body, ast::a_of(s), m));
+        op_br(body, zero);
+        op_end(body);
+        cg_depth.write(cg_depth.read().sub(one));
+        op_end(body);
+        cg_depth.write(cg_depth.read().sub(one));
+        cg_ntop.write(cg_ntop.read().sub(one));
+      } else if k.eq(ast::k_st_bind()) {
+        walk_binds(body, s, m, bw_emit());
+      } else if k.eq(ast::k_st_expr()) {
+        drop_value(body, emit_expr(body, ast::a_of(s), m));
+      } else {
+        cg_error(c_unsupported(), ast::none());
+      }
+    }
+
+    fn emit_binding(body: IntList, s: Int, m: Int) {
+      var want = ast::none();
+      if ast::is_some(ast::b_of(s)) {
+        want = elab_ty(ast::b_of(s), m);
+      }
+      emit_as(body, ast::c_of(s), m, want);
+      store_local(body, reveal(ast::a_of(s)));
+    }
+
+    fn compile_one(qi: Int) {
+      let sym = fq_sym.get(qi);
+      let d = prog::sym_decl.get(sym);
+      let m = prog::sym_mod.get(sym);
+      cg_where.write(sym);
+      lc_base.write(lc_name.length());
+      lc_visible.write(lc_name.length());
+      cg_depth.write(zero);
+      cg_ntop.write(zero);
+      # One frame at a time, so the provisions start empty.
+      pv_top.write(zero);
+      cg_env.write(fq_env.get(qi));
+      if is_defined_method(sym) {
+        add_local(ast::none(), this_type(sym));
+      }
+      var i = zero;
+      while i.lt(ast::fn_nparams(d)) {
+        let p = ast::kid_at(ast::fn_params(d), i);
+        add_local(ast::a_of(p), elab_ty(ast::b_of(p), m));
+        i = i.add(one);
+      }
+      # Then the needs that travel as data, in the same order the
+      # signature declared them, each provided from its own parameter.
+      var nparams = lc_name.length().sub(lc_base.read());
+      let vals = int_list();
+      val_slots(vals, sym, fq_env.get(qi), zero);
+      i = zero;
+      while i.lt(vals.length()) {
+        let ns = vals.get(i);
+        # Nameless, like a `bind`'s local: these are reached by symbol.
+        provide(ast::none(), ns, add_local(ast::none(), need_type(ns)));
+        nparams = nparams.add(one);
+        i = i.add(one);
+      }
+      lc_visible.write(lc_name.length());
+      scan_locals_expr(ast::fn_body(d), m);
+      cg_env.write(fq_env.get(qi));
+      lc_visible.write(lc_base.read().add(nparams));
+      let n32 = assign_slots(nparams);
+      let n64 = total_slots().sub(param_slots(nparams)).sub(n32);
+      let body = int_list();
+      let want = elab_ty(ast::fn_ret(d), m);
+      cg_ret.write(want);
+      let got = emit_as(body, ast::fn_body(d), m, want);
+      if width(want).eq(zero) {
+        drop_value(body, got);
+      } else if width(got).eq(zero) {
+        # The body always jumped out; the validator still wants a value.
+        op_unreachable(body);
+      }
+      op_end(body);
+      if cg_real.read().eq(one) {
+        emit::set_body(fq_index.get(qi), n32, n64, body);
+      }
+    }
+
+    # Drain the queue. It grows while it is walked, since emitting a call
+    # is what notices the callee.
+    fn compile_all() {
+      var i = zero;
+      while i.lt(fq_sym.length()) {
+        compile_one(i);
+        i = i.add(one);
+      }
+    }
+
+    fn total_slots(): Int {
+      var n = zero;
+      var l = lc_base.read();
+      while l.lt(lc_name.length()) {
+        n = n.add(local_width(l));
+        l = l.add(one);
+      }
+      n
+    }
+
+    fn param_slots(nparams: Int): Int {
+      var n = zero;
+      var l = lc_base.read();
+      while l.lt(lc_base.read().add(nparams)) {
+        n = n.add(local_width(l));
+        l = l.add(one);
+      }
+      n
+    }
+
+    # The whole module. `_start` is a wrapper rather than `main` itself,
+    # so that the heap pointer the library's allocator reads is set
+    # before anything runs — the same layout the bootstrap backend uses.
+    fn heap_base(): Int { one.shl(n10()) }
+
+    fn heap_pointer(): Int { n16() }
+
+    fn compile(entry: Int, out: IntList) {
+      cg_where.write(ast::none());
+      find_primitive_modules();
+      wops::install_wasm_ops();
+      # Every defined function's requirement list, which is what the
+      # calling convention below is built from.
+      lower::lower_all();
+      let mn = spelled();
+      sp_main(mn);
+      let main = prog::lookup(entry, prog::ns_name(), intern::intern_chars(mn));
+      if ast::is_some(main).not() {
+        cg_error(c_no_main(), ast::none());
+        return ();
+      }
+      if is_defined_fn(main).not() {
+        cg_error(c_no_main(), ast::none());
+        return ();
+      }
+      # D39: `main` takes no parameters and returns the unit type, which
+      # is what lets `_start` call it directly.
+      let md = prog::sym_decl.get(main);
+      if ast::fn_nparams(md).gt(zero) {
+        cg_error(c_no_main(), ast::none());
+        return ();
+      }
+      if ast::is_some(ast::fn_ret(md)) {
+        if width(elab_ty(ast::fn_ret(md), prog::sym_mod.get(main))).gt(zero) {
+          cg_error(c_no_main(), ast::none());
+          return ();
+        }
+      }
+      # `main` assumes only the primitive context, so it starts empty.
+      cg_env.write(lower::env_empty());
+      cg_real.write(zero);
+      reach(main, lower::env_empty());
+      compile_all();
+      # Only now is the function index space fixed: it counts the imports
+      # first, and which ones the program calls is what the pass above
+      # found out.
+      declare_all();
+      cg_real.write(one);
+      let starter = emit::add_func(emit::type_i32(zero));
+      compile_all();
+      let boot = int_list();
+      op_i32_const(boot, heap_pointer());
+      op_i32_const(boot, heap_base());
+      op_i32_store(boot);
+      op_call(boot, fq_index.get(zero));
+      op_end(boot);
+      emit::set_body(starter, zero, zero, boot);
+      emit::mem_pages.write(one);
+      emit::export_start(starter);
+      emit::export_memory();
+      emit::module(out);
+    }
+  }
+}

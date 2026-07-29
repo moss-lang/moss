@@ -1,18 +1,32 @@
+import "./access.moss" use .get, .length;
 import "./char.moss" use Char;
-import "./int.moss" use Uint;
+import "./int.moss" use Int;
 
 type String;
 
-fn .to_string[String](): String;
+# `.get` and `.length` are the shared accessors of access.moss, provided
+# here at `String` with `Elem=Char` (D61). `.concat` and `.slice` are this
+# module's own.
 
-type StringBuilder;
+assume String {
+  assume Int {
+    # The program's arguments, as the host gave them: `arg_at(zero)` is
+    # the program itself, so a compiler can find its own library beside
+    # it without holding any path of its own. Out of range is empty.
+    fn arg_count(): Int;
+    fn arg_at(index: Int): String;
+  }
 
-fn string_builder[StringBuilder, Uint](size: Uint): StringBuilder;
+  # The conventional first argument: `arg_at(one)`.
+  fn first_arg(): String;
+  fn print(s: String);
 
-fn set_char[StringBuilder, Char, Uint](
-  builder: StringBuilder,
-  index: Uint,
-  character: Char,
-): StringBuilder;
+  # This String followed by the other one.
+  fn .concat(other: String): String;
 
-fn build[String, StringBuilder](builder: StringBuilder): String;
+  assume Int {
+    # A fresh String holding `len` characters from `start`. Indices are
+    # the same ones `.get` and `.length` use.
+    fn .slice(start: Int, len: Int): String;
+  }
+}

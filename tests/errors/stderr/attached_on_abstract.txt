@@ -1,0 +1,1 @@
+tests/errors/attached_on_abstract.moss:3:1: attached method `A.m` requires a nominal receiver (Q5); `A` is abstract

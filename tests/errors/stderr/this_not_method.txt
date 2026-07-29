@@ -1,0 +1,1 @@
+tests/errors/this_not_method.moss:3:13: `this` is only legal inside method bodies

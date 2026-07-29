@@ -1,12 +1,23 @@
 # Syntax
 
-A valid Moss source file can be parsed according to a grammar defined on an alphabet of tokens.
+A valid Moss source file can be parsed according to a grammar defined on an
+alphabet of tokens. This grammar describes the MVP language pinned down in
+the [semantics decision log](../design/semantics.md); constructs that were
+cut from the MVP (operator expressions, `for` loops, literal expressions,
+declaration-site needs, bind-returning functions) are absent here even where
+earlier revisions of this document had them.
 
 ## Tokens
 
-A Moss source file can be represented as a sequence of tokens ending with the "end of file" token. Whitespace between tokens is ignored and does not form a separate token. Comments are also not tokens. A comment is denoted by the octothorpe character `#` followed by any number of characters until the end of that line.
+A Moss source file can be represented as a sequence of tokens ending with the
+"end of file" token. Whitespace between tokens is ignored and does not form a
+separate token. Comments are also not tokens. A comment is denoted by the
+octothorpe character `#` followed by any number of characters until the end
+of that line (which makes `#!` shebang lines comments too).
 
-Here is a comprehensive list of all tokens. A token can be written as either a literal code value or as an italicized lowercase word representing that token or class of tokens.
+Here is a comprehensive list of all tokens. A token can be written as either
+a literal code value or as an italicized lowercase word representing that
+token or class of tokens.
 
 - _end_
 - one-character symbols
@@ -35,80 +46,168 @@ Here is a comprehensive list of all tokens. A token can be written as either a l
 - two-character symbols
   - `!=`
   - `::`
+  - `=>`
   - `<<`
   - `<=`
   - `==`
   - `>=`
   - `>>`
+  - `->`
 - keywords
   - `as`
   - `assume`
   - `bind`
+  - `break`
   - `context`
   - `else`
   - `fn`
+  - `for`
+  - `functor`
   - `if`
   - `import`
   - `let`
-  - `static`
+  - `loop`
+  - `match`
+  - `return`
+  - `This`
+  - `this`
   - `type`
+  - `unit`
   - `use`
   - `val`
   - `var`
   - `while`
-- _name_: must start with a letter or underscore that can be followed by zero or more letters, underscores, or numbers
-- integer literals
-  - _uint32_: must end with `u32`
-  - _int32_: may begin with `-`, must end with `i32`
-  - _uint64_: must end with `u64`
-  - _int64_: may begin with `-`, must end with `i64`
-  - _uint_: must end with `u`
-  - _int_: may begin with `-`, no suffix
-- _char_: delimited by single quotes
-- _string_: delimited by double quotes, may include escape sequences `\"`, `\\`, `\n`, `\r`, `\t`
+- _name_: must start with a letter or underscore that can be followed by zero
+  or more letters, underscores, or numbers
+- _string_: delimited by double quotes, may include escape sequences `\"`,
+  `\\`, `\n`, `\r`, `\t`
+
+Notes:
+
+- There are no literal tokens for integers or characters, and _string_ is
+  accepted by the grammar only as an `import` path. Longest-match applies to
+  symbols (`==` is one token, never two `=`).
+- Some tokens are lexed but reserved: the keyword `for` and the operator
+  symbols `!` `%` `&` `*` `+` `-` `/` `<` `>` `^` `!=` `<<` `<=` `==` `>=`
+  `>>` appear in no production below.
 
 ## Grammar
 
-A nonterminal in the grammar is written as a bold capitalized word. A local variable in a parametric declaration is written as a bold lowercase word. The top-level node is a **File**. A **List** is a possibly-empty sequence of items separated by the comma token `,` with an optional trailing comma.
+A nonterminal is written as a bold capitalized word. The top-level node is a
+**File**. A **List**\[**X**\] is a possibly-empty sequence of **X** separated
+by the comma token `,` with an optional trailing comma.
 
-Note that as currently written, this grammar is ambiguous.
+### Names and applications
 
-- **Literal** = _uint32_ | _int32_ | _uint64_ | _int64_ | _uint_ | _int_ | _char_ | _string_
 - **Path** = _name_ (`::` _name_)\*
-- **Type** = **Spec** | `(` **List**\[**Type**\] `)` | `{` **List**\[_name_ `:` **Type**\] `}`
-- **Spec** = `.`? **Path** (`[` **List**\[**Binding**\] `]`)?
-- **Entry** = **Spec** | **Literal**
-- **Binding** = **Spec** (`=` **Entry**)?
-- **Need** = `static`? **Binding**
-- **Needs** = (`[` **List**\[**Need**\] `]`)?
-- **Tag** = **Path** **Expr**
-- **Record** = `{` **List**\[_name_ (`=` **Expr**)?\] `}`
-- **Field** = **Expr** `.` _name_
-- **Method** = **Expr** `.` _name_ `(` **List**\[**Expr**\] `)`
-- **Call** = **Path** (`[` **List**\[**Binding**\] `]`)? `(` **List**\[**Expr**\] `)`
-- **Unop** = `!`
-- **Unary** = **Unop** **Expr**
-- **Binop** = `%` | `&` | `*` | `+` | `-` | `/` | `<` | `=` | `>` | `^` | `!=` | `<<` | `<=` | `==` | `>=` | `>>`
-- **Binary** = **Expr** **Binop** **Expr**
-- **If** = `if` **Expr** **Block** (`else` (**If** | **Block**))?
-- **Bind** = `bind` **List**\[**Binding** | **Call**\]
-- **Expr** = `(` **Expr** `)` | **Literal** | **Path** | **Tag** | **Record** | **Field** | **Method** | **Call** | **Unary** | **Binary** | **If** | **Bind**
-- **Let** = `let` _name_ `=` **Expr** `;`
-- **Var** = `var` _name_ `=` **Expr** `;`
-- **Assign** = **Expr** `=` **Expr** `;`
-- **While** = `while` **Expr** **Block**
-- **Stmt** = **Let** | **Var** | **Assign** | **If** | **While** | (**Expr** `;`)
+- **DotName** = `.` _name_
+- **Spec** = (**Path** **DotName**? | **DotName**) **App**?
+- **App** = `[` **List**\[**Binding**\] `]`
+- **Binding** = **Path** `=` **Spec**
+- **AssumeItem** = **Path** **DotName**?
+
+A **Spec** names a symbol: a plain path (`Token`, `parser::TokenId`), an
+attached or receiver-keyed detached method (`Path.join`, `A.gimme[Foo=B]`),
+or a bare detached method (`.m`). An **App** must bind *all* of its target's
+requirements (total application, [D22]); **AssumeItem** deliberately has no
+**App** ([D24]).
+
+### Types
+
+- **Type** = `|` | `|`? **TypeAtom** (`|` **TypeAtom**)\*
+- **TypeAtom** = **TypeRef** | `This` | `(` **List**\[**Type**\] `)` | **RecordType**
+- **TypeRef** = **Path** **App**?
+- **RecordType** = `{` **List**\[_name_ `:` **Type**\] `}`
+
+A bare `|` is the uninhabited (divergence) type. A union's members must
+elaborate to nominal types with distinct heads ([D15]). `()` is the unit
+type; `(A, B)` is a tuple. `This` is legal only inside method declarations.
+
+### Files and declarations
+
+- **File** = (**Import** | **Decl**)\* _end_
+- **Import** = `import` _string_ (`as` _name_)? (`use` (`*` | **List**\[**UseItem**\]))? `;`
+- **UseItem** = **UseName** (`as` **UseName**)?
+- **UseName** = _name_ | **DotName**
+- **Decl** = **Assume** | **Tydef** | **Aliasdef** | **Tagdef** | **Unitdef** | **Valdef** | **Fndef** | **Ctxdef** | **Functordef**
+- **Assume** = `assume` **List**\[**AssumeItem**\] `{` **Decl**\* `}`
+- **Tydef** = `type` _name_ `;`
+- **Aliasdef** = `type` _name_ `=` **Type** `;`
+- **Tagdef** = `type` _name_ **Type** `;`
+- **Unitdef** = `unit` _name_ `;`
+- **Valdef** = `val` _name_ `:` **Type** (`=` **Expr**)? `;`
+- **Fndef** = `fn` **FnName** `(` **List**\[**Param**\] `)` (`:` **Type**)? (`;` | **Block**)
+- **FnName** = _name_ | _name_ `.` _name_ | **DotName**
+- **Param** = _name_ `:` **Type**
+- **Ctxdef** = `context` _name_ `=` **List**\[**Spec**\] `;`
+- **Functordef** = `functor` _name_ `:` **List**\[**Spec**\] `->` **List**\[**Spec**\] `{` **Bind**\* `}`
+
+In a **UseItem** rename, both sides must agree on dottedness (`use .m as
+.m1`, never `use .m as m1`). The three **FnName** forms are a plain
+function, an attached method (the receiver must elaborate to a nominal
+type), and a detached method. A **Fndef** ending in `;` declares an abstract
+function; detached methods admit only that form ([D36]). A **Valdef** with
+an initializer is a *defined* val — concrete like a defined function, e.g.
+the prelude's `val true: Bool = Bool True;` ([D50]).
+
+### Statements and blocks
+
 - **Block** = `{` **Stmt**\* **Expr**? `}`
-- **Import** = `import` _string_ (`as` _name_)? (`use` **List**\[_name_ | `.` _name_\])? `;`
-- **Assume** = `assume` **List**\[**Binding**\] `;`
-- **Tydef** = `type` _name_ **Needs** `;`
-- **Aliasdef** = `type` _name_ **Needs** `=` **Type** `;`
-- **Tagdef** = `type` _name_ **Needs** **Type** `;`
-- **Fndef** = **Needs** `(` **List**\[_name_ `:` **Type**\] `)` (`:` (**Type** | `bind` **List**\[**Need**\]))? (`;` | **Block**)
-- **Funcdef** = `fn` _name_ **Fndef**
-- **Attachdef** = `fn` _name_ `.` _name_ **Fndef**
-- **Detachdef** = `fn` `.` _name_ **Fndef**
-- **Valdef** = `val` _name_ **Needs** `:` **Type** `;`
-- **Ctxdef** = `context` _name_ **Needs** `=` **List**\[**Need**\] `;`
-- **Decl** = **Tydef** | **Aliasdef** | **Tagdef** | **Funcdef** | **Attachdef** | **Detachdef** | **Valdef** | **Ctxdef**
-- **File** = (**Import** | **Assume** | **Decl**)\* _end_
+- **Stmt** = **Let** | **Var** | **Assign** | **Bind** | **While** | **Loop** | (**Expr** `;`?)
+- **Let** = `let` _name_ (`:` **Type**)? `=` **Expr** `;`
+- **Var** = `var` _name_ (`:` **Type**)? `=` **Expr** `;`
+- **Assign** = _name_ `=` **Expr** `;`
+- **Bind** = `bind` **List**\[**Spec** (`=` **Expr**)?\] `;`
+  - an item with no `=` applies a functor of that name (D55)
+- **While** = `while` **Expr** **Block**
+- **Loop** = `loop` **Block**
+
+The `;` after an **Expr** statement may be omitted only when the expression
+is an **If** or **Match** (which end in `}`).
+
+A **Block** is an expression context: its value is the trailing **Expr**, or
+`()` if there is none. In a **Bind**, a right-hand side that names a type is
+written as an ordinary path; which kind of binding it is falls out of the
+left-hand symbol's kind.
+
+### Expressions
+
+- **Expr** = **If** | **Match** | **Jump** | **Postfix**
+- **If** = `if` **Expr** **Block** (`else` (**If** | **Block**))?
+- **Jump** = `return` **Expr**? | `break`
+- **Match** = `match` **Expr** `{` **Arm**\* `}`
+- **Arm** = **Pattern** `=>` (**Expr** `,` | **Block** `,`?)
+- **Postfix** = **Primary** **Suffix**\*
+- **Suffix** = `.` **Path** (`(` **List**\[**Expr**\] `)`)?
+- **Primary** = `(` **Expr** `)` | `(` `)` | `this` | **Path** **App**? (**Args** | **RecordExpr**)?
+- **Args** = `(` **List**\[**Expr**\] `)`
+- **RecordExpr** = `{` **List**\[_name_ (`=` **Expr**)?\] `}`
+
+Notes:
+
+- A **Jump** is an expression of the uninhabited type, so `Eof => return,`
+  and `Semi => break,` are valid match arms (as in `src/lex.moss`).
+- A **Suffix** with parentheses is a method call; its **Path** is usually a
+  single name (`x.m(a)`) but may be module-qualified (`x.b::m(a)`) because
+  `::` binds more tightly than `.` ([D44]). A **Suffix** without parentheses
+  is field access and its **Path** must be a single name.
+- A **Primary** path followed by **Args** is a function call or a tag
+  construction; which one is determined during name resolution, not by the
+  grammar. A path followed by a **RecordExpr** constructs a record-payload
+  tag; a bare path is a unit value or a variable/val reference.
+- Like Rust, a **RecordExpr** may not attach to a path at the top level of
+  the condition of an **If** or **While** or the scrutinee of a **Match**
+  (otherwise `match x { ... }` would parse the braces as a record).
+  Parenthesize to construct a record there.
+
+### Patterns
+
+- **Pattern** = `_` | **RecordPat** | **Path** (**Pattern** | **RecordPat**)?
+- **RecordPat** = `{` **List**\[_name_ (`=` **Pattern**)?\] `}`
+
+A bare single-name **Path** is a binder unless it resolves to a unit or tag;
+a **Path** followed by a **Pattern** matches a tag and destructures its
+payload (`Some token`, `parse::Assume assump`); a **RecordPat** after a path
+destructures a record payload, with `{ sig }` shorthand for `{ sig = sig }`.
+Match arms must be exhaustive over the scrutinee's union; `match e {}`
+requires `e` to have the uninhabited type ([D34]).

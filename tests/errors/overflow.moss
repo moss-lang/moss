@@ -1,4 +1,0 @@
-fn main() {
-  let x = 4294967296u32;
-#         ^^^^^^^^^^^^^ too high to fit in 32-bit unsigned integer
-}

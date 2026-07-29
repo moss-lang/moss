@@ -1,0 +1,67 @@
+# The token set of docs/reference/syntax.md.
+
+unit Eof;
+
+# One-character symbols.
+unit Exclam;
+unit Percent;
+unit Ampersand;
+unit LParen;
+unit RParen;
+unit Star;
+unit Plus;
+unit Comma;
+unit Hyphen;
+unit Dot;
+unit Slash;
+unit Colon;
+unit Semi;
+unit Less;
+unit Equal;
+unit Greater;
+unit LBracket;
+unit RBracket;
+unit Caret;
+unit LBrace;
+unit Pipe;
+unit RBrace;
+
+# Two-character symbols.
+unit ExclamEqual;
+unit ColonColon;
+unit EqualGreater;
+unit LessLess;
+unit LessEqual;
+unit EqualEqual;
+unit GreaterEqual;
+unit GreaterGreater;
+unit HyphenGreater;
+
+# Keywords.
+unit As;
+unit Assume;
+unit Bind;
+unit Break;
+unit Context;
+unit Else;
+unit Fn;
+unit For;
+unit Functor;
+unit If;
+unit Import;
+unit Let;
+unit Loop;
+unit Match;
+unit Return;
+unit ThisType;
+unit ThisValue;
+unit Type;
+unit Unit;
+unit Use;
+unit Val;
+unit Var;
+unit While;
+
+unit Name;
+unit Str;
+unit Bad;

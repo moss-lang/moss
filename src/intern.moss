@@ -1,0 +1,224 @@
+import "./bytes.moss" use *;
+import "./lex.moss" as lexer;
+
+# Name interning in pure Moss. Each distinct name is copied out of the
+# source into `ichars` as codepoints, and `istarts`/`ilens` index into
+# that arena.
+#
+# Copying matters: an id has to stay meaningful after `lexer::src` is
+# rebound to the next file, so a name cannot be a span into the source
+# it happened to come from.
+#
+# A name id is the row index, handed out in first-seen order, and every
+# other stage keys on it — which is what lets their tables be plain
+# arrays indexed by the id. This is the one table whose own key is text
+# rather than a number, so it is the one place that needs a hash: a
+# base-31 polynomial over the codepoints into a power-of-two table of
+# buckets, chained through `ilink`, doubling when it passes half full.
+# Interning was a scan of every name interned so far, once per name
+# token in every file, which for the compiler on its own sources is
+# twenty-two thousand scans over fourteen hundred names.
+
+assume Std {
+  val ichars: IntList;
+  val istarts: IntList;
+  val ilens: IntList;
+
+  # The hash index: a bucket holds the newest name id in it, or none,
+  # and `ilink` runs parallel to the names.
+  val ibuckets: IntList;
+  val ilink: IntList;
+  val imask: CellInt;
+
+  context Interner = ichars, istarts, ilens, ibuckets, ilink, imask;
+
+  assume Interner {
+    fn no_name(): Int { one.neg() }
+
+    fn hash_step(h: Int, c: Int): Int {
+      h.mul(hex(one, n15())).add(c)
+    }
+
+    # 1024 buckets to start with; the mask is what turns a hash into one.
+    fn ensure_table() {
+      if ibuckets.length().gt(zero) {
+        return ();
+      }
+      let size = one.shl(hex(zero, n10()));
+      var i = zero;
+      while i.lt(size) {
+        ibuckets.push(no_name());
+        i = i.add(one);
+      }
+      imask.write(size.sub(one));
+    }
+
+    fn name_hash(id: Int): Int {
+      let base = istarts.get(id);
+      var h = zero;
+      var i = zero;
+      while i.lt(ilens.get(id)) {
+        h = hash_step(h, ichars.get(base.add(i)));
+        i = i.add(one);
+      }
+      h
+    }
+
+    # Double the table and re-file every name, including the one just
+    # added — which is why the caller pushes its row first.
+    fn rehash() {
+      let size = ibuckets.length().mul(n2());
+      while ibuckets.length().lt(size) {
+        ibuckets.push(no_name());
+      }
+      var i = zero;
+      while i.lt(size) {
+        ibuckets.set(i, no_name());
+        i = i.add(one);
+      }
+      imask.write(size.sub(one));
+      var id = zero;
+      while id.lt(ilens.length()) {
+        let b = name_hash(id).and(imask.read());
+        ilink.set(id, ibuckets.get(b));
+        ibuckets.set(b, id);
+        id = id.add(one);
+      }
+    }
+
+    fn file_name(id: Int, h: Int) {
+      if ilens.length().mul(n2()).gt(ibuckets.length()) {
+        rehash();
+        return ();
+      }
+      let b = h.and(imask.read());
+      ilink.set(id, ibuckets.get(b));
+      ibuckets.set(b, id);
+    }
+
+    # Write an interned name back out.
+    fn put(id: Int) {
+      let base = istarts.get(id);
+      let n = ilens.get(id);
+      var i = zero;
+      while i.lt(n) {
+        putchar(ichars.get(base.add(i)).char());
+        i = i.add(one);
+      }
+    }
+
+    # Append an interned name's codepoints to a buffer: the back end
+    # writes a WASI function's name into the module's import section, and
+    # the characters it needs are the ones interning already copied.
+    fn put_chars(out: IntList, id: Int) {
+      let base = istarts.get(id);
+      var i = zero;
+      while i.lt(ilens.get(id)) {
+        out.push(ichars.get(base.add(i)));
+        i = i.add(one);
+      }
+    }
+
+    # The same, for a name the compiler spells itself rather than reads
+    # out of a file: the back end has to know how `i32_add` is written to
+    # recognize it, and there are no string literals (D48).
+    fn chars_eq(id: Int, cs: IntList): Bool {
+      if ilens.get(id).ne(cs.length()) {
+        return false;
+      }
+      let base = istarts.get(id);
+      var i = zero;
+      while i.lt(cs.length()) {
+        if ichars.get(base.add(i)).ne(cs.get(i)) {
+          return false;
+        }
+        i = i.add(one);
+      }
+      true
+    }
+
+    fn intern_chars(cs: IntList): Int {
+      ensure_table();
+      var h = zero;
+      var i = zero;
+      while i.lt(cs.length()) {
+        h = hash_step(h, cs.get(i));
+        i = i.add(one);
+      }
+      var id = ibuckets.get(h.and(imask.read()));
+      while id.ge(zero) {
+        if chars_eq(id, cs) {
+          return id;
+        }
+        id = ilink.get(id);
+      }
+      let fresh = ilens.length();
+      istarts.push(ichars.length());
+      ilens.push(cs.length());
+      i = zero;
+      while i.lt(cs.length()) {
+        ichars.push(cs.get(i));
+        i = i.add(one);
+      }
+      ilink.push(no_name());
+      file_name(fresh, h);
+      fresh
+    }
+
+    assume lexer::src {
+      # Is interned name `id` the same text as src[ns..ns+nl]?
+      fn name_eq(id: Int, ns: Int, nl: Int): Bool {
+        if ilens.get(id).ne(nl) {
+          false
+        } else {
+          let base = istarts.get(id);
+          var i = zero;
+          var same = true;
+          while i.lt(nl) {
+            if ichars.get(base.add(i)).ne(lexer::src.get(ns.add(i)).code()) {
+              same = false;
+              i = nl;
+            } else {
+              i = i.add(one);
+            }
+          }
+          same
+        }
+      }
+
+      fn span_hash(ns: Int, nl: Int): Int {
+        var h = zero;
+        var i = zero;
+        while i.lt(nl) {
+          h = hash_step(h, lexer::src.get(ns.add(i)).code());
+          i = i.add(one);
+        }
+        h
+      }
+
+      # The id of this span's name, interning it if new.
+      fn intern(ns: Int, nl: Int): Int {
+        ensure_table();
+        let h = span_hash(ns, nl);
+        var id = ibuckets.get(h.and(imask.read()));
+        while id.ge(zero) {
+          if name_eq(id, ns, nl) {
+            return id;
+          }
+          id = ilink.get(id);
+        }
+        let fresh = ilens.length();
+        istarts.push(ichars.length());
+        ilens.push(nl);
+        var i = zero;
+        while i.lt(nl) {
+          ichars.push(lexer::src.get(ns.add(i)).code());
+          i = i.add(one);
+        }
+        ilink.push(no_name());
+        file_name(fresh, h);
+        fresh
+      }
+    }
+  }
+}

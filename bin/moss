@@ -1,61 +1,56 @@
 #!/usr/bin/env python3
+"""Development launcher for the native Moss driver."""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 
-def eprint(s):
-    sys.stderr.buffer.write(s)
+ROOT = Path(__file__).resolve().parent.parent
+PROFILE = "release-with-debug"
+
+
+def eprint(line: bytes) -> None:
+    sys.stderr.buffer.write(line)
     sys.stderr.flush()
 
 
-def check(returncode):
-    if returncode != 0:
-        sys.exit(returncode)
-
-
-profile = "release-with-debug"
-
-
-def build():
-    cmd = [
+def build() -> None:
+    command = [
         "cargo",
         "build",
         "--package=moss-cli",
-        f"--profile={profile}",
+        f"--profile={PROFILE}",
         "--color=always",
     ]
-    process = subprocess.Popen(cmd, stderr=subprocess.PIPE)
+    process = subprocess.Popen(command, cwd=ROOT, stderr=subprocess.PIPE)
+    assert process.stderr is not None
+    buffered = []
     cached = True
-    lines = []
-    while True:
-        line = process.stderr.readline()
-        if not line:
-            break
+    for line in process.stderr:
         if cached:
-            lines.append(line)
-            if not (b"    Finished" in line or b"    Blocking" in line):
+            buffered.append(line)
+            if b"    Finished" not in line and b"    Blocking" not in line:
                 cached = False
-                for line in lines:
-                    eprint(line)
+                for pending in buffered:
+                    eprint(pending)
         else:
             eprint(line)
-    check(process.wait())
+    if process.wait() != 0:
+        raise SystemExit(process.returncode)
 
 
-def run():
-    cmd = [Path(__file__).parent.parent / f"target/{profile}/moss", *sys.argv[1:]]
-    check(subprocess.run(cmd).returncode)
-
-
-def main():
-    try:
-        build()
-        run()
-    except KeyboardInterrupt:
-        pass
+def main() -> None:
+    build()
+    executable = ROOT / f"target/{PROFILE}/moss"
+    env = os.environ.copy()
+    env["MOSS_ROOT"] = str(ROOT)
+    os.execve(executable, [str(executable), *sys.argv[1:]], env)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        raise SystemExit(130)

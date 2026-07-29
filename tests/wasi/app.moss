@@ -1,0 +1,6 @@
+import "./signature.moss" use MiniStd, Text, emit, greeting;
+
+# User code, written against the signature alone: no Wasm, no Wasi.
+assume MiniStd {
+  fn app() { emit(greeting); emit(greeting); }
+}

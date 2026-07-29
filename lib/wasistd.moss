@@ -1,0 +1,488 @@
+import "./wasm.moss" as w use Wasm, I32;
+import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
+  args_sizes_get, args_get, path_open;
+# One declaration per accessor, so importing them here is unambiguous —
+# and `Elem` comes with them, because every provision below names the
+# element type it is providing at (D61).
+import "./access.moss" use Elem, .get, .length, .push, .read;
+import "./path.moss" as path use Path, pwd;
+import "./bool.moss" use Bool, true, false;
+import "./char.moss" as char use Char, Chars, .char;
+import "./cell.moss" as cell use CellInt, cell_int;
+import "./int.moss" as int use Int, zero, one;
+import "./list.moss" as list use IntList, int_list;
+import "./std.moss" use putchar, put_bytes, Std;
+import "./string.moss" as string use String, print, first_arg, arg_count, arg_at;
+import "./strlist.moss" as strlist use StrList, str_list;
+
+# `Std`, implemented in Moss over the primitive context (D52). This is the
+# slice done so far; growing it is volume, not design — each further item
+# is one implementation and one more bind in the functor below.
+#
+# Every Python shim this replaces stops being load-bearing for a program
+# that applies `WasiConsole`: the compiler emits the shims regardless, but
+# nothing here calls them.
+
+# Not a Wasm instruction and not a WASI call, so it belongs to neither
+# spec mirror: the coercion from a comparison result to something Moss can
+# branch on. Every test instruction yields an I32 and `if` takes a `Bool`
+# (D45), so without this there is no control flow here at all — no loops,
+# so no strlen, so no strings.
+assume I32 {
+  fn i32_bool(n: I32): Bool;
+}
+
+context Branch = i32_bool;
+
+context Console =
+  Char, putchar, String, print, first_arg,
+  Char.eq, Char.ne, Char.lt, Char.gt, Char.le, Char.ge;
+
+# Paths, which need i64 for path_open's rights masks (D57, now that D59
+# has made i64 a scalar like any other).
+context Files = Path, pwd, Path.join, Path.read[Elem=String];
+
+# The containers, over the library's own allocator rather than the
+# compiler's — which no longer has one (D59). `put_bytes` is here rather
+# than beside `putchar` because its signature is a container and its body
+# is a WASI call, so it belongs to whichever of the two groups already has
+# the types: this one.
+context Containers =
+  CellInt, cell_int, CellInt.read[Elem=Int], CellInt.write,
+  IntList, int_list,
+  IntList.push[Elem=Int], IntList.get[Elem=Int], IntList.set, IntList.length,
+  put_bytes,
+  StrList, str_list,
+  StrList.push[Elem=String], StrList.get[Elem=String], StrList.length;
+
+# The numeric slice. `Int` binds to a nominal wrapper rather than to I32
+# directly, because only an attached method can see its receiver and only
+# a nominal type can carry one (D54) — so every Int is a boxed tag until
+# the backend unboxes single-payload tags over scalars.
+context Numerics =
+  Int, zero, one,
+  Int.add, Int.sub, Int.mul, Int.div, Int.rem, Int.neg,
+  Int.and, Int.or, Int.xor, Int.shl, Int.shr,
+  Int.eq, Int.ne, Int.lt, Int.gt, Int.le, Int.ge;
+
+assume Wasm, Branch {
+  # There are no literals (D4), so the addresses and sizes below are built
+  # from `i32_one`. The scratch layout matches the backend's: an iovec at
+  # 0, a byte at 8, a result word at 12, argv sizes at 24 and 28.
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn twelve(): I32 { w::i32_add(eight(), four()) }
+  fn sixteen(): I32 { w::i32_add(eight(), eight()) }
+  fn twenty_four(): I32 { w::i32_add(sixteen(), eight()) }
+  fn thirty_two(): I32 { w::i32_add(sixteen(), sixteen()) }
+  fn chunk_size(): I32 { w::i32_shl(w::i32_one, twelve()) }
+  fn slash(): Str { string_of(slash_byte(), w::i32_one) }
+  # '/' written into scratch that nothing else is using at the time.
+  fn slash_byte(): I32 {
+    let at = twenty_four();
+    w::i32_store8(at, w::i32_or(w::i32_shl(w::i32_one, five()), fifteen()));
+    at
+  }
+  fn five(): I32 { w::i32_add(four(), w::i32_one) }
+  fn fifteen(): I32 { w::i32_sub(sixteen(), w::i32_one) }
+  fn twenty_eight(): I32 { w::i32_add(twenty_four(), four()) }
+
+  # The bump allocator, in Moss. The heap pointer lives at address 16,
+  # where `_start` leaves it, so this shares one heap with the backend's
+  # own allocator rather than competing with it.
+  fn alloc(n: I32): I32 {
+    let base = w::i32_load(sixteen());
+    let top = w::i32_and(
+      w::i32_add(w::i32_add(base, n), w::i32_sub(four(), w::i32_one)),
+      w::i32_sub(w::i32_zero, four())
+    );
+    w::i32_store(sixteen(), top);
+    if i32_bool(w::i32_gt_u(top, w::i32_shl(w::memory_size(), sixteen()))) {
+      let grown = w::memory_grow(
+        w::i32_add(w::i32_sub(w::i32_shr_u(top, sixteen()), w::memory_size()), w::i32_one)
+      );
+    }
+    base
+  }
+
+  # A String is [len | bytes], the same shape the backend uses. It is a
+  # nominal wrapper rather than a bare I32 so that it can carry methods
+  # (D54) — which costs nothing, since `Str` is in no union (D58).
+  type Str I32;
+
+  fn addr(s: Str): I32 { match s { Str a => a } }
+
+  fn string_of(p: I32, n: I32): Str {
+    let s = alloc(w::i32_add(four(), n));
+    w::i32_store(s, n);
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, n)) {
+      w::i32_store8(w::i32_add(w::i32_add(s, four()), i), w::i32_load8_u(w::i32_add(p, i)));
+      i = w::i32_add(i, w::i32_one);
+    }
+    Str (s)
+  }
+
+  fn Str.length(): Num { Num (w::i32_load(addr(this))) }
+
+  fn Str.get(index: Num): Chr {
+    Chr (w::i32_load8_u(w::i32_add(w::i32_add(addr(this), four()), raw(index))))
+  }
+
+  fn Str.slice(start: Num, len: Num): Str {
+    string_of(w::i32_add(w::i32_add(addr(this), four()), raw(start)), raw(len))
+  }
+
+  # A Path is a name relative to the WASI preopen, so it is a String and
+  # `pwd` is the empty one.
+  type Loc Str;
+
+  fn loc_str(l: Loc): Str { match l { Loc s => s } }
+
+  fn Str.concat(other: Str): Str {
+    let la = w::i32_load(addr(this));
+    let lb = w::i32_load(addr(other));
+    let s = alloc(w::i32_add(four(), w::i32_add(la, lb)));
+    w::i32_store(s, w::i32_add(la, lb));
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, la)) {
+      w::i32_store8(
+        w::i32_add(w::i32_add(s, four()), i),
+        w::i32_load8_u(w::i32_add(w::i32_add(addr(this), four()), i))
+      );
+      i = w::i32_add(i, w::i32_one);
+    }
+    var j = w::i32_zero;
+    while i32_bool(w::i32_lt_u(j, lb)) {
+      w::i32_store8(
+        w::i32_add(w::i32_add(w::i32_add(s, four()), la), j),
+        w::i32_load8_u(w::i32_add(w::i32_add(addr(other), four()), j))
+      );
+      j = w::i32_add(j, w::i32_one);
+    }
+    Str (s)
+  }
+
+  assume Wasi {
+    fn write_all(ptr: I32, len: I32) {
+      w::i32_store(w::i32_zero, ptr);
+      w::i32_store(four(), len);
+      fd_write(w::i32_one, w::i32_zero, w::i32_one, twelve());
+    }
+
+    fn wasi_putchar(c: Chr) {
+      w::i32_store8(eight(), code_of(c));
+      write_all(eight(), w::i32_one);
+    }
+
+    fn wasi_print(s: Str) {
+      write_all(w::i32_add(addr(s), four()), w::i32_load(addr(s)));
+    }
+
+    fn wasi_pwd(): Loc { Loc (string_of(w::i32_zero, w::i32_zero)) }
+
+    fn Loc.join(name: Str): Loc {
+      let dir = loc_str(this);
+      if i32_bool(w::i32_eqz(w::i32_load(addr(dir)))) {
+        Loc (name)
+      } else {
+        Loc (dir.concat(slash()).concat(name))
+      }
+    }
+
+    # path_open against the preopen, then fd_read in chunks straight onto
+    # the top of the heap, which the bump allocator leaves contiguous.
+    fn Loc.read(): Str {
+      let p = addr(loc_str(this));
+      let rights = w::i64_or(
+        w::i64_extend_i32_u(w::i32_one), w::i64_extend_i32_u(two())
+      );
+      let err = path_open(
+        w::i32_add(two(), w::i32_one), w::i32_zero,
+        w::i32_add(p, four()), w::i32_load(p), w::i32_zero,
+        rights, w::i64_extend_i32_u(w::i32_zero), w::i32_zero, thirty_two()
+      );
+      if i32_bool(err) { w::unreachable() } else { () }
+      let fd = w::i32_load(thirty_two());
+      let s = alloc(four());
+      var total = w::i32_zero;
+      loop {
+        let chunk = alloc(chunk_size());
+        w::i32_store(w::i32_zero, w::i32_add(w::i32_add(s, four()), total));
+        w::i32_store(four(), chunk_size());
+        fd_read(fd, w::i32_zero, w::i32_one, twelve());
+        let got = w::i32_load(twelve());
+        if i32_bool(w::i32_eqz(got)) { break; }
+        total = w::i32_add(total, got);
+      }
+      w::i32_store(s, total);
+      w::i32_store(sixteen(), w::i32_add(w::i32_add(s, four()), total));
+      fd_close(fd);
+      Str (s)
+    }
+
+    fn wasi_arg_count(): Num {
+      args_sizes_get(twenty_four(), twenty_eight());
+      Num (w::i32_load(twenty_four()))
+    }
+
+    fn wasi_arg_at(index: Num): Str { arg_slot(raw(index)) }
+
+    fn wasi_first_arg(): Str { arg_slot(w::i32_one) }
+
+    fn arg_slot(want: I32): Str {
+      args_sizes_get(twenty_four(), twenty_eight());
+      let argc = w::i32_load(twenty_four());
+      let argv = alloc(w::i32_mul(argc, four()));
+      let buf = alloc(w::i32_load(twenty_eight()));
+      args_get(argv, buf);
+      if i32_bool(w::i32_ge_u(want, argc)) {
+        return string_of(w::i32_zero, w::i32_zero);
+      }
+      let p = w::i32_load(w::i32_add(argv, w::i32_mul(want, four())));
+      var n = w::i32_zero;
+      while i32_bool(w::i32_load8_u(w::i32_add(p, n))) {
+        n = w::i32_add(n, w::i32_one);
+      }
+      string_of(p, n)
+    }
+  }
+}
+
+assume Wasm, Branch {
+  type Num I32;
+
+  fn raw(n: Num): I32 { match n { Num v => v } }
+
+  fn Num.add(rhs: Num): Num { Num (w::i32_add(raw(this), raw(rhs))) }
+  fn Num.sub(rhs: Num): Num { Num (w::i32_sub(raw(this), raw(rhs))) }
+  fn Num.mul(rhs: Num): Num { Num (w::i32_mul(raw(this), raw(rhs))) }
+  fn Num.div(rhs: Num): Num { Num (w::i32_div_s(raw(this), raw(rhs))) }
+  fn Num.rem(rhs: Num): Num { Num (w::i32_rem_s(raw(this), raw(rhs))) }
+  fn Num.and(rhs: Num): Num { Num (w::i32_and(raw(this), raw(rhs))) }
+  fn Num.or(rhs: Num): Num { Num (w::i32_or(raw(this), raw(rhs))) }
+  fn Num.xor(rhs: Num): Num { Num (w::i32_xor(raw(this), raw(rhs))) }
+  fn Num.shl(rhs: Num): Num { Num (w::i32_shl(raw(this), raw(rhs))) }
+  fn Num.shr(rhs: Num): Num { Num (w::i32_shr_s(raw(this), raw(rhs))) }
+  fn Num.neg(): Num { Num (w::i32_sub(w::i32_zero, raw(this))) }
+
+  # `Int.char`: a Char is an I32 once Console is applied, so this is the
+  # unwrap. Declared as I32 here because `Char` is not bound in this file.
+  # Char, wrapped so it can carry the comparison methods.
+  type Chr I32;
+
+  fn code_of(c: Chr): I32 { match c { Chr v => v } }
+
+  fn Chr.eq(rhs: Chr): Bool { i32_bool(w::i32_eq(code_of(this), code_of(rhs))) }
+  fn Chr.ne(rhs: Chr): Bool { i32_bool(w::i32_ne(code_of(this), code_of(rhs))) }
+  fn Chr.lt(rhs: Chr): Bool { i32_bool(w::i32_lt_u(code_of(this), code_of(rhs))) }
+  fn Chr.gt(rhs: Chr): Bool { i32_bool(w::i32_gt_u(code_of(this), code_of(rhs))) }
+  fn Chr.le(rhs: Chr): Bool { i32_bool(w::i32_le_u(code_of(this), code_of(rhs))) }
+  fn Chr.ge(rhs: Chr): Bool { i32_bool(w::i32_ge_u(code_of(this), code_of(rhs))) }
+
+  fn Chr.code(): Num { Num (code_of(this)) }
+
+  fn Num.to_char(): Chr { Chr (raw(this)) }
+
+  # One mutable word.
+  type Cell I32;
+
+  fn cell_addr(c: Cell): I32 { match c { Cell a => a } }
+
+  fn wasi_cell(): Cell {
+    let a = alloc(four());
+    w::i32_store(a, w::i32_zero);
+    Cell (a)
+  }
+
+  fn Cell.read(): Num { Num (w::i32_load(cell_addr(this))) }
+
+  fn Cell.write(value: Num) { w::i32_store(cell_addr(this), raw(value)); }
+
+  # A handle holding the address of [len | cap | elements...], so that
+  # growing can move the elements without invalidating the handle.
+  type Ints I32;
+
+  fn ints_addr(l: Ints): I32 { match l { Ints a => a } }
+
+  fn elem(data: I32, index: I32): I32 {
+    w::i32_add(w::i32_add(data, eight()), w::i32_mul(index, four()))
+  }
+
+  fn wasi_int_list(): Ints {
+    let handle = alloc(four());
+    let data = alloc(w::i32_add(eight(), w::i32_mul(eight(), four())));
+    w::i32_store(data, w::i32_zero);
+    w::i32_store(w::i32_add(data, four()), eight());
+    w::i32_store(handle, data);
+    Ints (handle)
+  }
+
+  fn Ints.length(): Num { Num (w::i32_load(w::i32_load(ints_addr(this)))) }
+
+  fn Ints.get(index: Num): Num {
+    Num (w::i32_load(elem(w::i32_load(ints_addr(this)), raw(index))))
+  }
+
+  fn Ints.set(index: Num, value: Num) {
+    w::i32_store(elem(w::i32_load(ints_addr(this)), raw(index)), raw(value));
+  }
+
+  type Strs I32;
+
+  fn strs_addr(l: Strs): I32 { match l { Strs a => a } }
+
+  fn wasi_str_list(): Strs { Strs (ints_addr(wasi_int_list())) }
+
+  fn Strs.length(): Num { Num (w::i32_load(w::i32_load(strs_addr(this)))) }
+
+  fn Strs.get(index: Num): Str {
+    Str (w::i32_load(elem(w::i32_load(strs_addr(this)), raw(index))))
+  }
+
+  fn Strs.push(value: Str) { Ints (strs_addr(this)).push(Num (addr(value))); }
+
+  # The whole list as bytes, in one `fd_write`. `wasi_putchar` is a
+  # syscall each, which is what makes writing a module cost more than
+  # producing it; packing into a fresh block and writing once is a loop of
+  # stores instead. `i32_store8` keeps the low byte, exactly as `putchar`
+  # does, so the bytes are the same either way.
+  assume Wasi {
+    fn wasi_put_bytes(bytes: Ints) {
+      let data = w::i32_load(ints_addr(bytes));
+      let n = w::i32_load(data);
+      let buf = alloc(n);
+      var i = w::i32_zero;
+      while i32_bool(w::i32_lt_u(i, n)) {
+        w::i32_store8(w::i32_add(buf, i), w::i32_load(elem(data, i)));
+        i = w::i32_add(i, w::i32_one);
+      }
+      write_all(buf, n);
+    }
+  }
+
+  fn Ints.push(value: Num) {
+    let handle = ints_addr(this);
+    var data = w::i32_load(handle);
+    let len = w::i32_load(data);
+    let cap = w::i32_load(w::i32_add(data, four()));
+    if i32_bool(w::i32_eq(len, cap)) {
+      # Grow by copying, since the bump allocator never frees.
+      let bigger = alloc(w::i32_add(eight(), w::i32_mul(cap, eight())));
+      w::i32_store(bigger, len);
+      w::i32_store(w::i32_add(bigger, four()), w::i32_mul(cap, two()));
+      var i = w::i32_zero;
+      while i32_bool(w::i32_lt_u(i, len)) {
+        w::i32_store(elem(bigger, i), w::i32_load(elem(data, i)));
+        i = w::i32_add(i, w::i32_one);
+      }
+      w::i32_store(handle, bigger);
+      data = bigger;
+    }
+    w::i32_store(elem(data, len), raw(value));
+    w::i32_store(data, w::i32_add(len, w::i32_one));
+  }
+
+  fn Num.lt(rhs: Num): Bool { i32_bool(w::i32_lt_s(raw(this), raw(rhs))) }
+  fn Num.eq(rhs: Num): Bool { i32_bool(w::i32_eq(raw(this), raw(rhs))) }
+  fn Num.ne(rhs: Num): Bool { i32_bool(w::i32_ne(raw(this), raw(rhs))) }
+  fn Num.gt(rhs: Num): Bool { i32_bool(w::i32_gt_s(raw(this), raw(rhs))) }
+  fn Num.le(rhs: Num): Bool { i32_bool(w::i32_le_s(raw(this), raw(rhs))) }
+  fn Num.ge(rhs: Num): Bool { i32_bool(w::i32_ge_s(raw(this), raw(rhs))) }
+
+  # Functions rather than defined vals: a defined val may not take
+  # assumptions yet (D50), and these need `Wasm`. A bind's right-hand side
+  # is an expression, so calling them costs nothing.
+  fn wasi_zero(): Num { Num (w::i32_zero) }
+  fn wasi_one(): Num { Num (w::i32_one) }
+}
+
+functor WasiNumerics: Wasm, Branch -> Numerics {
+  bind int::Int = Num;
+  bind int::zero = wasi_zero();
+  bind int::one = wasi_one();
+  bind Int.add = Num.add;
+  bind Int.sub = Num.sub;
+  bind Int.mul = Num.mul;
+  bind Int.div = Num.div;
+  bind Int.rem = Num.rem;
+  bind Int.neg = Num.neg;
+  bind Int.and = Num.and;
+  bind Int.or = Num.or;
+  bind Int.xor = Num.xor;
+  bind Int.shl = Num.shl;
+  bind Int.shr = Num.shr;
+  bind Int.ne = Num.ne;
+  bind Int.gt = Num.gt;
+  bind Int.le = Num.le;
+  bind Int.ge = Num.ge;
+  bind Int.lt = Num.lt;
+  bind Int.eq = Num.eq;
+}
+
+# The two together, plus the items whose signatures need both — the whole
+# slice of Std that runs over Wasi so far. Applying a functor from inside
+# a functor is just another bind (D55).
+context Basics =
+  Console, Numerics, Int.char, Char.code, arg_count, arg_at,
+  String.length, String.get[Elem=Char], String.slice, String.concat;
+
+functor WasiBasics: Wasm, Wasi, Branch -> Basics {
+  bind WasiConsole;
+  bind WasiNumerics;
+  bind Int.char = Num.to_char;
+  bind Char.code = Chr.code;
+  bind string::arg_count = wasi_arg_count;
+  bind string::arg_at = wasi_arg_at;
+  # A shared accessor is provided at one receiver at a time, and the
+  # element type comes with the provision (D61). `Char` is already bound
+  # to `Chr` by the application above, so `Elem=Char` means `Chr` here.
+  bind String.length = Str.length;
+  bind String.get[Elem=Char] = Str.get;
+  bind String.slice = Str.slice;
+  bind String.concat = Str.concat;
+}
+
+functor WasiContainers: Wasm, Wasi, Branch -> Containers {
+  bind cell::CellInt = Cell;
+  bind cell::cell_int = wasi_cell;
+  bind CellInt.read[Elem=Int] = Cell.read;
+  bind CellInt.write = Cell.write;
+  bind list::IntList = Ints;
+  bind list::int_list = wasi_int_list;
+  bind IntList.push[Elem=Int] = Ints.push;
+  bind IntList.get[Elem=Int] = Ints.get;
+  bind IntList.set = Ints.set;
+  bind IntList.length = Ints.length;
+  bind put_bytes = wasi_put_bytes;
+  bind strlist::StrList = Strs;
+  bind strlist::str_list = wasi_str_list;
+  bind StrList.push[Elem=String] = Strs.push;
+  bind StrList.get[Elem=String] = Strs.get;
+  bind StrList.length = Strs.length;
+}
+
+functor WasiFiles: Wasm, Wasi, Branch -> Files {
+  bind path::Path = Loc;
+  bind path::pwd = wasi_pwd();
+  bind Path.join = Loc.join;
+  bind Path.read[Elem=String] = Loc.read;
+}
+
+functor WasiConsole: Wasm, Wasi, Branch -> Console {
+  # The type binds come first: flattening walks the body in order, and a
+  # signature mentioning Char cannot be elaborated before Char is bound.
+  bind char::Char = Chr;
+  bind string::String = Str;
+  bind putchar = wasi_putchar;
+  bind string::print = wasi_print;
+  bind string::first_arg = wasi_first_arg;
+  bind Char.eq = Chr.eq;
+  bind Char.ne = Chr.ne;
+  bind Char.lt = Chr.lt;
+  bind Char.gt = Chr.gt;
+  bind Char.le = Chr.le;
+  bind Char.ge = Chr.ge;
+
+}

@@ -1,12 +1,23 @@
-assume Std;
+#!/usr/bin/env moss
 
-fn main() {
-  let foo = "a";
-  var bar = foo;
-  bar = "c";
-  let baz = bar;
-  bar = "b";
-  println(foo);
-  println(bar);
-  println(baz);
+import "../lib/wasi.moss" use WasiStd;
+import "../lib/wasistd.moss" use Branch;
+import "../lib/wasm.moss" use Wasm;
+import "../lib/wasip1.moss" use Wasi;
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let foo = char::a;
+    var bar = foo;
+    bar = char::c;
+    let baz = bar;
+    bar = char::b;
+    putchar(foo);
+    putchar(char::newline);
+    putchar(bar);
+    putchar(char::newline);
+    putchar(baz);
+    putchar(char::newline);
+  }
 }

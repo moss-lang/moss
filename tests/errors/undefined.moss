@@ -1,4 +1,5 @@
-fn main() {
-  println(hello);
-#         ^^^^^ undefined
+assume Std {
+  fn main() {
+    foo();
+  }
 }

@@ -1,5 +1,14 @@
-type Bool;
+unit False;
+unit True;
 
-val false[Bool]: Bool;
+# Nominal over the sum (not a transparent alias), so that methods can
+# attach to Bool — an alias of a union has no nominal head to key on.
+type Bool | False | True;
 
-val true[Bool]: Bool;
+val false: Bool = Bool (False);
+val true: Bool = Bool (True);
+
+# Negation, defined rather than provided: an attached method needs its
+# receiver declared in the same module, and this is the only Bool
+# operation there is. `Bool.not` binds to it.
+fn Bool.flip(): Bool { if this { false } else { true } }

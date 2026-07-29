@@ -1,0 +1,46 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, fd_write, proc_exit;
+
+# The one bracket application the self-hosted compiler does not do:
+# applying a *type*. D61's library change put applications on context
+# items and on method binds, and those need no substitution here — a
+# provision is keyed by (receiver, method) and every signature comes from
+# the provider — but `Box[Elem=I32]` substitutes into a payload, and this
+# back end says so rather than elaborating `Box` and dropping the
+# bindings. The bootstrap compiles this file; the self-hosted compiler
+# reports `e_apply` and writes nothing.
+
+assume Wasm, Wasi {
+  type Elem;
+
+  assume Elem {
+    type Box I32;
+  }
+
+  fn unbox(b: Box[Elem=I32]): I32 {
+    match b { Box a => a }
+  }
+
+  # iovec at 0 is [ptr=8, len=1]; the byte goes at 8, nwritten at 12.
+  fn emit(c: I32) {
+    let one = w::i32_one;
+    let two = w::i32_add(one, one);
+    let four = w::i32_add(two, two);
+    let eight = w::i32_add(four, four);
+    let twelve = w::i32_add(eight, four);
+    w::i32_store(w::i32_zero, eight);
+    w::i32_store(four, one);
+    w::i32_store8(eight, c);
+    fd_write(one, w::i32_zero, one, twelve);
+  }
+
+  fn main() {
+    let one = unbox(Box (w::i32_one));
+    let two = w::i32_add(one, one);
+    let three = w::i32_add(two, one);
+    let six = w::i32_add(three, three);
+    emit(w::i32_add(w::i32_shl(one, six), one));      # 'A' = 64 + 1
+    emit(w::i32_add(w::i32_shl(one, three), two));    # newline = 8 + 2
+    proc_exit(w::i32_zero);
+  }
+}

@@ -1,0 +1,26 @@
+import "../../lib/wasm.moss" as w use Wasm, I32, I64;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# i64 is a scalar type like any other (D59), including in a local: `wide`
+# below holds one, and would not fit in the i32 the backend used to
+# assume every value was.
+assume Std, Wasm, Branch {
+  fn main() {
+    let one32 = w::i32_one;
+    let two = w::i32_add(one32, one32);
+    let five = w::i32_add(w::i32_add(two, two), one32);
+    let thirty_two = w::i32_shl(one32, five);
+    let wide = w::i64_shl(w::i64_extend_i32_u(one32), w::i64_extend_i32_u(thirty_two));
+    # 1 << 32 has nothing in its low half — in i32 the shift would have
+    # wrapped to 1 instead.
+    if i32_bool(w::i32_eqz(w::i32_wrap_i64(wide))) {
+      putchar(char::y)
+    } else {
+      putchar(char::n)
+    }
+    # ...and shifting it back down recovers the one.
+    let back = w::i32_wrap_i64(w::i64_shr_u(wide, w::i64_extend_i32_u(thirty_two)));
+    if i32_bool(w::i32_eq(back, one32)) { putchar(char::y) } else { putchar(char::n) }
+    putchar(char::newline);
+  }
+}

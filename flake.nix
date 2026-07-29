@@ -1,13 +1,8 @@
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
-    crane.url = "github:ipetkov/crane";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    bun2nix = {
-      url = "github:nix-community/bun2nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -15,235 +10,349 @@
     {
       self,
       nixpkgs,
-      crane,
       rust-overlay,
-      bun2nix,
     }:
     let
-      basic = final: prev: rec {
-        version = "0.0.0";
-        # Without source filtering, things get rebuilt too often.
-        filterSource =
-          paths: root:
-          builtins.path {
-            path = root;
-            name = "source";
-            filter = (
-              path: _:
-              let
-                start = builtins.stringLength (toString root);
-                string = toString path;
-                relative = builtins.substring start (builtins.stringLength string - start) string;
-              in
-              builtins.any (allow: relative == allow || prev.lib.hasPrefix "${allow}/" relative) paths
-            );
-          };
-        commonArgs = {
-          pname = "moss";
-          src = filterSource [ "/Cargo.toml" "/Cargo.lock" "/crates" ] ./.;
-          strictDeps = true;
-        };
-        # Bundle the Moss standard library next to `bin/`, where `get_lib_dir` (in
-        # `crates/moss-core/src/prelude.rs`) expects it when `MOSS_LIB` is unset.
-        libFixup = ''
-          mkdir -p $out/lib
-          cp -a ${./lib}/. $out/lib/
-        '';
-        # `cargoExtraArgs` default is "--locked": https://crane.dev/API.html
-        cliArgs = {
-          cargoExtraArgs = "--locked --package=moss-cli";
-          postFixup = libFixup;
-        };
-        devArgs = {
-          cargoExtraArgs = "--locked --package=moss-dev";
-          # `dev test` lowers the error-suite sources in-process, so `dev` needs the standard
-          # library exactly like the `moss` CLI does.
-          postFixup = libFixup;
-        };
-        craneLib = crane.mkLib prev;
-        cacheArgs = {
-          # Reuse built deps across `moss-cli`/`moss-dev`/`cargo test`.
-          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-        };
-        b2n = (bun2nix.overlays.default final prev).bun2nix;
-        bunDeps = b2n.fetchBunDeps {
-          bunNix = "${
-            prev.runCommand "moss-bun-nix" { } ''
-              mkdir $out
-              ln -s ${./packages} $out/packages
-              ${b2n}/bin/bun2nix -l ${./bun.lock} -o $out/bun.nix
-            ''
-          }/bun.nix";
-        };
-        vsixRaw = b2n.mkDerivation rec {
-          pname = "moss-vsix";
-          inherit version bunDeps;
-          src = filterSource [ "/package.json" "/bun.lock" "/packages" ] ./.;
-          packageJson = ./package.json;
-          strictDeps = true;
-          nativeBuildInputs = [ final.nodejs ];
-          buildPhase = ''
-            runHook preBuild
-            bun run --filter=moss-vscode build
-            runHook postBuild
-          '';
-          installPhase = ''
-            runHook preInstall
-            mv packages/moss-vscode/moss-vscode-${version}.vsix $out
-            runHook postInstall
-          '';
-        };
-        packages = {
-          default = craneLib.buildPackage (commonArgs // cacheArgs // cliArgs);
-          vscode = prev.vscode-utils.buildVscodeExtension rec {
-            vscodeExtPublisher = "moss-lang";
-            vscodeExtName = "moss-vscode";
-            vscodeExtUniqueId = "${vscodeExtPublisher}.${vscodeExtName}";
-            pname = vscodeExtUniqueId;
-            inherit version;
-            src = vsixRaw;
-            nativeBuildInputs = [ final.unzip ];
-            unpackPhase = ''
-              runHook preUnpack
-              unzip $src
-              ln -s ${packages.default}/bin extension/bin
-              runHook postUnpack
-            '';
-          };
-        };
-      };
-      mkOutputs = system: f: {
-        inherit system;
-        outputs =
-          let
-            pkgs = import nixpkgs {
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
+      forAll =
+        f:
+        nixpkgs.lib.genAttrs systems (
+          system:
+          f (
+            import nixpkgs {
               inherit system;
               overlays = [ (import rust-overlay) ];
-            };
-            mk = basic pkgs pkgs;
-          in
-          with mk;
-          f (
-            mk
-            // rec {
-              musl =
-                target:
-                (craneLib.overrideToolchain (
-                  p: p.rust-bin.stable.latest.default.override { targets = [ target ]; }
-                )).buildPackage
-                  (commonArgs // cliArgs // { CARGO_BUILD_TARGET = target; });
-              windows =
-                crossSystem:
-                let
-                  pkgs = import nixpkgs {
-                    localSystem = system;
-                    crossSystem.config = crossSystem;
-                  };
-                in
-                (crane.mkLib pkgs).buildPackage (commonArgs // cliArgs);
-              macos =
-                package:
-                pkgs.runCommand "moss" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
-                  mkdir -p $out
-                  cp -a ${package}/. $out/
-                  chmod u+w $out/bin
-                  install_name_tool -change ${pkgs.libiconv}/lib/libiconv.2.dylib /usr/lib/libiconv.2.dylib $out/bin/moss
-                '';
-              standalone =
-                package:
-                pkgs.runCommand "moss-standalone" { nativeBuildInputs = [ pkgs.darwin.cctools ]; } ''
-                  if otool -L ${package}/bin/moss | sed 1d | grep /nix/store/; then
-                    false
-                  fi
-                  touch $out
-                '';
-              vsix =
-                exe:
-                vsixRaw.overrideAttrs (_: {
-                  preBuild = ''
-                    mkdir packages/moss-vscode/bin
-                    cp ${exe} packages/moss-vscode/bin/
-                  '';
-                });
-              checks = {
-                cargo = craneLib.cargoTest (commonArgs // cacheArgs);
-                fmt = craneLib.cargoFmt commonArgs;
-                e2e =
-                  let
-                    dev = craneLib.buildPackage (commonArgs // cacheArgs // devArgs);
-                  in
-                  pkgs.runCommand "moss-dev-test" { } ''
-                    cd ${./.}
-                    ${dev}/bin/dev test --skip-cargo-test --prebuilt ${packages.default}/bin/moss
-                    touch $out
-                  '';
-                inherit (packages) vscode;
-              };
-              devShells.default = pkgs.mkShellNoCC {
-                buildInputs = [
-                  # Necessary tools.
-                  pkgs.bun
-                  pkgs.nodejs # Used by vsce.
-                  pkgs.python3
-                  pkgs.rust-bin.stable.latest.default
-                ];
-                MOSS_LIB = "lib";
-                shellHook = ''
-                  PATH=$PWD/bin:$PATH
-                '';
-              };
             }
-          );
-      };
-      transpose =
-        list:
-        builtins.zipAttrsWith (_: entries: builtins.foldl' (acc: entry: acc // entry) { } entries) (
-          builtins.map (item: builtins.mapAttrs (_: value: { ${item.system} = value; }) item.outputs) list
+          )
         );
     in
     {
-      overlays.default =
-        final: prev:
+      packages = forAll (
+        pkgs:
         let
-          mk = basic final prev;
+          source = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              ./Cargo.toml
+              ./Cargo.lock
+              ./crates
+            ];
+          };
+          compilerSource = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              ./bootstrap/mossc
+              ./lib
+              ./src
+            ];
+          };
+          installData = ''
+            mkdir -p $out/share/moss
+            cp -r ${./lib} $out/share/moss/lib
+          '';
+          staticBinaryenFor = binaryen: binaryen.overrideAttrs (old: {
+            doCheck = false;
+            nativeBuildInputs = [
+              pkgs.cmake
+              pkgs.python3
+            ];
+            nativeCheckInputs = [ ];
+            checkInputs = [ ];
+            cmakeFlags = (old.cmakeFlags or [ ]) ++ [
+              "-DBUILD_STATIC_LIB=ON"
+              "-DBUILD_SHARED_LIB=OFF"
+              "-DBUILD_SHARED_LIBS=OFF"
+            ];
+          });
+          staticBinaryen = staticBinaryenFor pkgs.pkgsStatic.binaryen;
+          # B(S), followed by S0(S): the compiler believed to be at the
+          # self-hosting fixpoint. The test suite turns the crank once more.
+          portableCompiler =
+            pkgs.runCommand "mossc.wasm"
+              {
+                nativeBuildInputs = [
+                  pkgs.binaryen
+                  pkgs.python3
+                  pkgs.wasmtime
+                ];
+              }
+              ''
+                export HOME=$TMPDIR
+                export PYTHONPATH=${compilerSource}/bootstrap
+                export MOSS_LIB=${compilerSource}/lib
+                python3 -m mossc ${compilerSource}/src/main.moss > s0.wasm
+                wasm-opt -all -O3 s0.wasm -o s0-opt.wasm
+                wasmtime run --argv0 lib/prelude.moss --dir ${compilerSource}::. \
+                  s0-opt.wasm src/main.moss > s1.wasm
+                wasm-opt -all -O3 s1.wasm -o $out
+              '';
+          precompiler = pkgs.rustPlatform.buildRustPackage {
+            pname = "moss-precompiler";
+            version = "0.0.0";
+            src = source;
+            cargoLock.lockFile = ./Cargo.lock;
+            cargoBuildFlags = [
+              "--package"
+              "moss-precompiler"
+            ];
+            cargoTestFlags = [
+              "--package"
+              "moss-precompiler"
+            ];
+          };
+          compilerFor =
+            target:
+            pkgs.runCommand "moss-${target}.cwasm"
+              {
+                nativeBuildInputs = [ precompiler ];
+              }
+              ''
+                moss-precompiler ${target} ${portableCompiler} $out
+              '';
+          packageFor =
+            {
+              rustPlatform,
+              binaryen,
+              target,
+              pname ? "moss",
+              extra ? { },
+            }:
+            rustPlatform.buildRustPackage (
+              {
+                inherit pname;
+                version = "0.0.0";
+                src = source;
+                cargoLock.lockFile = ./Cargo.lock;
+                cargoBuildFlags = [
+                  "--package"
+                  "moss-cli"
+                  "--bin"
+                  "moss"
+                ];
+                buildInputs = [ binaryen ];
+                BINARYEN_LIB_DIR = "${binaryen}/lib";
+                MOSS_COMPILER_CWASM = compilerFor target;
+                postInstall = installData;
+              }
+              // extra
+            );
         in
-        {
-          moss = mk.packages.default;
-          vscode-extensions = prev.vscode-extensions // {
-            moss-lang = (prev.vscode-extensions.moss-lang or { }) // {
-              moss-vscode = mk.packages.vscode;
+        (rec {
+          compiler = portableCompiler;
+          # The Core Moss calculus paper (docs/design/core/core-moss.tex).
+          pdf =
+            pkgs.runCommand "core-moss-pdf"
+              {
+                nativeBuildInputs = [
+                  (pkgs.texliveMedium.withPackages (ps: [ ps.mathpartir ]))
+                ];
+              }
+              ''
+                export HOME=$TMPDIR
+                cp ${./docs/design/core/core-moss.tex} core-moss.tex
+                pdflatex -interaction=nonstopmode core-moss.tex
+                pdflatex -interaction=nonstopmode core-moss.tex # cross-references
+                mkdir $out
+                cp core-moss.pdf $out/
+              '';
+          default = packageFor {
+            inherit (pkgs) rustPlatform;
+            binaryen = pkgs.binaryen;
+            target = pkgs.stdenv.hostPlatform.rust.rustcTarget;
+          };
+          standalone =
+            if pkgs.stdenv.hostPlatform.isLinux then
+              packageFor {
+                rustPlatform = pkgs.pkgsStatic.rustPlatform;
+                binaryen = staticBinaryen;
+                target = pkgs.pkgsStatic.stdenv.hostPlatform.rust.rustcTarget;
+                pname = "moss-standalone";
+                extra = {
+                  BINARYEN_STATIC = "1";
+                  BINARYEN_STATIC_STDCPP = "1";
+                  RUSTFLAGS = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isx86_64 (
+                    "-C relocation-model=static -C link-arg=-no-pie"
+                  );
+                  postFixup = ''
+                    ${pkgs.removeReferencesTo}/bin/remove-references-to \
+                      -t ${staticBinaryen} $out/bin/moss
+                    rm -rf $out/nix-support
+                  '';
+                };
+              }
+            else
+              let
+                binaryen = staticBinaryenFor pkgs.binaryen;
+              in
+              packageFor {
+                inherit (pkgs) rustPlatform;
+                inherit binaryen;
+                target = pkgs.stdenv.hostPlatform.rust.rustcTarget;
+                pname = "moss-standalone";
+                extra = {
+                  BINARYEN_STATIC = "1";
+                  postFixup = ''
+                    ${pkgs.darwin.cctools}/bin/install_name_tool \
+                      -change ${pkgs.libiconv}/lib/libiconv.2.dylib \
+                      /usr/lib/libiconv.2.dylib $out/bin/moss
+                    ${pkgs.removeReferencesTo}/bin/remove-references-to \
+                      -t ${binaryen} $out/bin/moss
+                    rm -rf $out/nix-support
+                  '';
+                };
+              };
+          vscode = pkgs.vscode-utils.buildVscodeExtension {
+            pname = "moss-vscode";
+            version = "0.0.0";
+            src = pkgs.lib.fileset.toSource {
+              root = ./vscode;
+              fileset = pkgs.lib.fileset.unions [
+                ./vscode/language-configuration.json
+                ./vscode/LICENSE
+                ./vscode/package.json
+                ./vscode/syntaxes
+              ];
             };
+            sourceRoot = "source";
+            vscodeExtPublisher = "moss-lang";
+            vscodeExtName = "moss-vscode";
+            vscodeExtUniqueId = "moss-lang.moss-vscode";
+          };
+        })
+        // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
+          windows =
+            let
+              crossPkgs = import nixpkgs {
+                localSystem = pkgs.stdenv.hostPlatform.system;
+                crossSystem.config = "x86_64-w64-mingw32";
+                overlays = [ (import rust-overlay) ];
+              };
+              binaryen = staticBinaryenFor crossPkgs.binaryen;
+              mcfgthreads =
+                crossPkgs.callPackage "${nixpkgs}/pkgs/os-specific/windows/mcfgthreads" { };
+            in
+            packageFor {
+              rustPlatform = crossPkgs.rustPlatform;
+              inherit binaryen;
+              target = crossPkgs.stdenv.hostPlatform.rust.rustcTarget;
+              pname = "moss-windows";
+              extra = {
+                buildInputs = [
+                  binaryen
+                  mcfgthreads
+                ];
+                BINARYEN_STATIC = "1";
+                BINARYEN_STATIC_STDCPP = "0";
+                MCFGTHREAD_LIB_DIR = "${mcfgthreads}/lib";
+                doCheck = false;
+                postFixup = ''
+                  rm -rf $out/nix-support
+                '';
+              };
+            };
+        }
+      );
+      checks = forAll (
+        pkgs:
+        {
+          # The Core Moss calculus paper: CI builds the same derivation
+          # exposed as `nix build .#pdf`.
+          core-calculus-pdf = self.packages.${pkgs.stdenv.hostPlatform.system}.pdf;
+          # The mechanization of the paper's definitions and metatheory.
+          core-calculus-rocq =
+            pkgs.runCommand "core-moss-rocq" { nativeBuildInputs = [ pkgs.coq ]; } ''
+              export ROCQPATH=${pkgs.coqPackages.stdlib}/lib/coq/${pkgs.coq.coq-version}/user-contrib
+              cp ${./docs/design/core/CoreMoss.v} CoreMoss.v
+              coqc -q CoreMoss.v
+              touch $out
+            '';
+          cli = pkgs.runCommand "moss-cli-check" { } ''
+            moss=${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/moss
+            source=${./.}/examples/hello.moss
+            "$moss" --help >/dev/null
+            "$moss" -O3 "$source" | grep -qx 'Hello, world!'
+            if "$moss" -O "$source" 2>/dev/null; then
+              false
+            fi
+            touch $out
+          '';
+          bootstrap =
+            pkgs.runCommand "moss-bootstrap-test"
+              {
+                nativeBuildInputs = [
+                  pkgs.binaryen # `wasm-opt`, which the self-hosting tests run.
+                  pkgs.python3
+                  pkgs.wasmtime
+                ];
+              }
+              ''
+                export HOME=$TMPDIR # wasmtime wants a writable cache directory
+                cd ${./.}/bootstrap
+                python3 -m unittest
+                touch $out
+              '';
+          vscode = self.packages.${pkgs.stdenv.hostPlatform.system}.vscode;
+        }
+        // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          standalone =
+            pkgs.runCommand "moss-standalone-check"
+              {
+                nativeBuildInputs = [ pkgs.file ];
+              }
+              ''
+                executable=${self.packages.${pkgs.stdenv.hostPlatform.system}.standalone}/bin/moss
+                file "$executable" | grep -q 'statically linked'
+                ! grep -R -a -q /nix/store/ \
+                  ${self.packages.${pkgs.stdenv.hostPlatform.system}.standalone}
+                "$executable" --help >/dev/null
+                test ! -e ${self.packages.${pkgs.stdenv.hostPlatform.system}.standalone}/nix-support
+                touch $out
+              '';
+        }
+        // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+          standalone =
+            pkgs.runCommand "moss-standalone-check"
+              {
+                nativeBuildInputs = [ pkgs.darwin.cctools ];
+              }
+              ''
+                package=${self.packages.${pkgs.stdenv.hostPlatform.system}.standalone}
+                ! otool -L "$package/bin/moss" | sed 1d | grep -q /nix/store/
+                ! grep -R -a -q /nix/store/ "$package"
+                test ! -e "$package/nix-support"
+                "$package/bin/moss" --help >/dev/null
+                touch $out
+              '';
+        }
+      );
+      devShells = forAll (pkgs: {
+        default = pkgs.mkShellNoCC {
+          buildInputs = [
+            pkgs.binaryen
+            pkgs.python3
+            pkgs.rust-bin.stable.latest.default
+            pkgs.vsce # For manually packaging the VS Code extension.
+            pkgs.wasm-tools
+            pkgs.wasmtime # The bootstrap's Wasm backend tests run it.
+          ];
+          BINARYEN_LIB_DIR = "${pkgs.binaryen}/lib";
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.binaryen ];
+          shellHook = ''
+            PATH=$PWD/bin:$PATH
+          '';
+        };
+      });
+      overlays.default = final: prev: {
+        moss = self.packages.${prev.stdenv.hostPlatform.system}.default;
+        vscode-extensions = prev.vscode-extensions // {
+          moss-lang = (prev.vscode-extensions.moss-lang or { }) // {
+            moss-vscode = self.packages.${prev.stdenv.hostPlatform.system}.vscode;
           };
         };
-    }
-    // transpose [
-      (mkOutputs "x86_64-linux" (mk: {
-        packages = mk.packages // rec {
-          standalone = mk.musl "x86_64-unknown-linux-musl";
-          windows = mk.windows "x86_64-w64-mingw32";
-          vsix-linux-x64 = mk.vsix "${standalone}/bin/moss";
-          vsix-win32-x64 = mk.vsix "${windows}/bin/moss.exe";
-        };
-        checks = mk.checks;
-        devShells = mk.devShells;
-      }))
-      (mkOutputs "aarch64-linux" (mk: {
-        packages = mk.packages // rec {
-          standalone = mk.musl "aarch64-unknown-linux-musl";
-          vsix-linux-arm64 = mk.vsix "${standalone}/bin/moss";
-        };
-        checks = mk.checks;
-        devShells = mk.devShells;
-      }))
-      (mkOutputs "aarch64-darwin" (mk: rec {
-        packages = mk.packages // {
-          standalone = mk.macos packages.default;
-          vsix-darwin-arm64 = mk.vsix "${packages.standalone}/bin/moss";
-        };
-        checks = mk.checks // {
-          standalone = mk.standalone packages.standalone;
-        };
-        devShells = mk.devShells;
-      }))
-    ];
+      };
+    };
 }

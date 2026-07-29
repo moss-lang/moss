@@ -1,0 +1,61 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# Contextual vals: the only context that exists at runtime (D2).
+#
+# `shift` is declared and provided by nobody, so a function that assumes
+# it is implicitly parameterized by it (D26) — and since a val is a
+# runtime value, that parameterization is a real Wasm parameter. `bind`
+# supplies one from the statement to the end of the enclosing block, and
+# an inner bind shadows an outer one.
+
+assume Wasm, Wasi, Branch {
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn six(): I32 { w::i32_add(four(), two()) }
+
+  fn emit(c: I32) {
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
+    w::i32_store8(eight(), c);
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
+  }
+
+  fn upper_a(): I32 {
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
+  }
+
+  fn newline(): I32 { w::i32_add(eight(), two()) }
+
+  val shift: I32;
+
+  assume shift {
+    fn shifted(base: I32): I32 { w::i32_shl(base, shift) }
+
+    # Needs `shift` itself, and hands it to `shifted` — so the value has
+    # to be threaded down a frame it is not used in.
+    fn twice(base: I32): I32 { shifted(shifted(base)) }
+
+    fn letter(base: I32) { emit(w::i32_add(upper_a(), shifted(base))); }
+  }
+
+  fn main() {
+    bind shift = w::i32_one;
+    letter(w::i32_one);              # 1 << 1 = 2, 'C'
+    emit(w::i32_add(upper_a(), twice(w::i32_one)));   # 1 << 1 << 1 = 4, 'E'
+
+    # An inner bind shadows for the rest of its block and no longer.
+    if i32_bool(w::i32_one) {
+      bind shift = two();
+      letter(w::i32_one);            # 1 << 2 = 4, 'E'
+    }
+    letter(w::i32_one);              # back to 1 << 1 = 2, 'C'
+
+    # Rebound at the same level: lexical from here on.
+    bind shift = w::i32_add(two(), w::i32_one);
+    letter(w::i32_one);              # 1 << 3 = 8, 'I'
+    emit(newline());
+  }
+}

@@ -1,0 +1,867 @@
+import "./ast.moss" as ast;
+import "./bytes.moss" use *;
+import "./intern.moss" as intern;
+import "./lex.moss" as lexer;
+import "./tcode.moss" use *;
+
+# Recursive descent over the whole grammar of docs/reference/syntax.md —
+# types, expressions, statements, patterns and declarations — building
+# the arenas of ast.moss.
+#
+# The cursor holds one token with a second buffered on demand: two is
+# what the grammar needs, and only for one decision (a statement opening
+# with a name is an assignment if `=` follows it and an expression
+# otherwise).
+
+assume Std {
+  # The current token, as a code from tcode.moss, and its span in the
+  # source. `tok2` is the buffered lookahead, or `none()`.
+  val tok: CellInt;
+  val tstart: CellInt;
+  val tend: CellInt;
+  val tok2: CellInt;
+  val t2start: CellInt;
+  val t2end: CellInt;
+
+  # Syntax errors: how many, and where the first one was.
+  val errs: CellInt;
+  val errpos: CellInt;
+
+  context Cursor = tok, tstart, tend, tok2, t2start, t2end, errs, errpos;
+
+  assume Cursor, lexer::src, lexer::at, lexer::mark, intern::Interner, ast::Ast {
+    fn advance() {
+      if tok2.read().ge(zero) {
+        tok.write(tok2.read());
+        tstart.write(t2start.read());
+        tend.write(t2end.read());
+        tok2.write(ast::none());
+      } else {
+        tok.write(token_code(lexer::lex()));
+        tstart.write(lexer::mark.read());
+        tend.write(lexer::at.read());
+      }
+    }
+
+    # The token after the current one, lexed once and kept.
+    fn peek2(): Int {
+      if tok2.read().lt(zero) {
+        tok2.write(token_code(lexer::lex()));
+        t2start.write(lexer::mark.read());
+        t2end.write(lexer::at.read());
+      }
+      tok2.read()
+    }
+
+    fn here(k: Int): Bool {
+      tok.read().eq(k)
+    }
+
+    fn accept(k: Int): Bool {
+      if here(k) {
+        advance();
+        true
+      } else {
+        false
+      }
+    }
+
+    fn fail() {
+      if errs.read().eq(zero) {
+        errpos.write(tstart.read());
+      }
+      errs.write(errs.read().add(one));
+    }
+
+    fn expect(k: Int) {
+      if accept(k) {
+        ()
+      } else {
+        fail();
+      }
+    }
+
+    # Recovery: never spin. Anything that reports an error and cannot
+    # consume the offending token asks for this.
+    fn skip_one() {
+      if here(tk_eof()) {
+        ()
+      } else {
+        advance();
+      }
+    }
+
+    fn empty_name(): Int {
+      intern::intern(zero, zero)
+    }
+
+    fn name_here(): Int {
+      intern::intern(tstart.read(), tend.read().sub(tstart.read()))
+    }
+
+    fn take_name(): Int {
+      if here(tk_name()) {
+        let id = name_here();
+        advance();
+        id
+      } else {
+        fail();
+        empty_name()
+      }
+    }
+
+    # `_` is lexed as a name; only the pattern grammar cares.
+    fn at_wildcard(): Bool {
+      if here(tk_name()).not() {
+        false
+      } else if tend.read().sub(tstart.read()).eq(one) {
+        lexer::src.get(tstart.read()).eq(char::underscore)
+      } else {
+        false
+      }
+    }
+
+    # Names and applications.
+
+    fn parse_path(): Int {
+      let xs = int_list();
+      xs.push(take_name());
+      while accept(tk_colon_colon()) {
+        xs.push(take_name());
+      }
+      ast::path_of(xs)
+    }
+
+    # `[` List[Binding] `]`, the opening bracket already consumed.
+    fn parse_app(xs: IntList) {
+      loop {
+        if here(tk_rbracket()) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        let p = parse_path();
+        expect(tk_equal());
+        let s = parse_spec();
+        xs.push(ast::node2(ast::k_binding(), p, s));
+        if accept(tk_comma()).not() {
+          break;
+        }
+      }
+      expect(tk_rbracket());
+    }
+
+    fn parse_spec(): Int {
+      var p = ast::none();
+      var dot = ast::none();
+      if accept(tk_dot()) {
+        dot = take_name();
+      } else {
+        p = parse_path();
+        if accept(tk_dot()) {
+          dot = take_name();
+        }
+      }
+      var run = ast::none();
+      var n = zero;
+      if accept(tk_lbracket()) {
+        let xs = int_list();
+        parse_app(xs);
+        run = ast::commit(xs);
+        n = xs.length();
+      }
+      ast::node4(ast::k_spec(), p, dot, run, n)
+    }
+
+    # An assume item is a spec without an application (D24).
+    fn parse_assume_item(): Int {
+      let p = parse_path();
+      var dot = ast::none();
+      if accept(tk_dot()) {
+        dot = take_name();
+      }
+      ast::node4(ast::k_spec(), p, dot, ast::none(), zero)
+    }
+
+    # Types.
+
+    fn at_type_start(): Bool {
+      if here(tk_name()) {
+        true
+      } else if here(tk_this_type()) {
+        true
+      } else if here(tk_lparen()) {
+        true
+      } else {
+        here(tk_lbrace())
+      }
+    }
+
+    fn parse_type(): Int {
+      let leading = accept(tk_pipe());
+      if leading {
+        if at_type_start().not() {
+          return ast::node0(ast::k_ty_never());
+        }
+      }
+      let first = parse_type_atom();
+      if here(tk_pipe()).not() {
+        return first;
+      }
+      let xs = int_list();
+      xs.push(first);
+      while accept(tk_pipe()) {
+        xs.push(parse_type_atom());
+      }
+      ast::node2(ast::k_ty_union(), ast::commit(xs), xs.length())
+    }
+
+    fn parse_type_atom(): Int {
+      if accept(tk_this_type()) {
+        return ast::node0(ast::k_ty_this());
+      }
+      if accept(tk_lparen()) {
+        if accept(tk_rparen()) {
+          return ast::node0(ast::k_ty_unit());
+        }
+        let xs = int_list();
+        loop {
+          if here(tk_rparen()) {
+            break;
+          }
+          if here(tk_eof()) {
+            break;
+          }
+          xs.push(parse_type());
+          if accept(tk_comma()).not() {
+            break;
+          }
+        }
+        expect(tk_rparen());
+        if xs.length().eq(one) {
+          return xs.get(zero);
+        }
+        return ast::node2(ast::k_ty_tuple(), ast::commit(xs), xs.length());
+      }
+      if accept(tk_lbrace()) {
+        let xs = int_list();
+        loop {
+          if here(tk_rbrace()) {
+            break;
+          }
+          if here(tk_eof()) {
+            break;
+          }
+          let nm = take_name();
+          expect(tk_colon());
+          xs.push(ast::node2(ast::k_ty_field(), nm, parse_type()));
+          if accept(tk_comma()).not() {
+            break;
+          }
+        }
+        expect(tk_rbrace());
+        return ast::node2(ast::k_ty_record(), ast::commit(xs), xs.length());
+      }
+      if here(tk_name()).not() {
+        fail();
+        skip_one();
+        return ast::node0(ast::k_ty_unit());
+      }
+      let p = parse_path();
+      var run = ast::none();
+      var n = zero;
+      var applied = zero;
+      if accept(tk_lbracket()) {
+        let xs = int_list();
+        parse_app(xs);
+        run = ast::commit(xs);
+        n = xs.length();
+        applied = one;
+      }
+      ast::node4(ast::k_ty_ref(), p, run, n, applied)
+    }
+
+    # Expressions.
+
+    fn parse_expr(): Int {
+      parse_expr_at(false)
+    }
+
+    # `no_rec` forbids a record expression at the top level, which is
+    # what keeps `match x { ... }` from reading its arms as fields.
+    fn parse_expr_at(no_rec: Bool): Int {
+      if accept(tk_if()) {
+        return parse_if();
+      }
+      if accept(tk_match()) {
+        return parse_match();
+      }
+      if accept(tk_return()) {
+        if at_value_end() {
+          return ast::node1(ast::k_ex_return(), ast::none());
+        }
+        return ast::node1(ast::k_ex_return(), parse_expr_at(no_rec));
+      }
+      if accept(tk_break()) {
+        return ast::node0(ast::k_ex_break());
+      }
+      parse_postfix(no_rec)
+    }
+
+    # Where a value cannot follow, so `return` stands alone.
+    fn at_value_end(): Bool {
+      if here(tk_semi()) {
+        true
+      } else if here(tk_comma()) {
+        true
+      } else if here(tk_rbrace()) {
+        true
+      } else {
+        here(tk_rparen())
+      }
+    }
+
+    fn parse_if(): Int {
+      let cond = parse_expr_at(true);
+      expect(tk_lbrace());
+      let then = parse_block();
+      var els = ast::none();
+      if accept(tk_else()) {
+        if accept(tk_if()) {
+          els = parse_if();
+        } else {
+          expect(tk_lbrace());
+          els = parse_block();
+        }
+      }
+      ast::node3(ast::k_ex_if(), cond, then, els)
+    }
+
+    fn parse_match(): Int {
+      let subject = parse_expr_at(true);
+      expect(tk_lbrace());
+      let xs = int_list();
+      loop {
+        if here(tk_rbrace()) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        let pat = parse_pattern();
+        expect(tk_equal_greater());
+        if accept(tk_lbrace()) {
+          let body = parse_block();
+          xs.push(ast::node2(ast::k_arm(), pat, body));
+          accept(tk_comma());
+        } else {
+          let body = parse_expr();
+          xs.push(ast::node2(ast::k_arm(), pat, body));
+          # The last arm may drop its comma.
+          if here(tk_rbrace()).not() {
+            expect(tk_comma());
+          }
+        }
+      }
+      expect(tk_rbrace());
+      ast::node3(ast::k_ex_match(), subject, ast::commit(xs), xs.length())
+    }
+
+    fn parse_postfix(no_rec: Bool): Int {
+      var e = parse_primary(no_rec);
+      loop {
+        if accept(tk_dot()).not() {
+          break;
+        }
+        let p = parse_path();
+        if accept(tk_lparen()) {
+          let xs = int_list();
+          parse_exprs(xs, tk_rparen());
+          e = ast::node4(ast::k_ex_method(), e, p, ast::commit(xs), xs.length());
+        } else {
+          e = ast::node2(ast::k_ex_field(), e, ast::path_last(p));
+        }
+      }
+      e
+    }
+
+    fn parse_exprs(xs: IntList, close: Int) {
+      loop {
+        if here(close) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        xs.push(parse_expr());
+        if accept(tk_comma()).not() {
+          break;
+        }
+      }
+      expect(close);
+    }
+
+    fn parse_primary(no_rec: Bool): Int {
+      if accept(tk_this_value()) {
+        return ast::node0(ast::k_ex_this());
+      }
+      if accept(tk_lparen()) {
+        if accept(tk_rparen()) {
+          return ast::node0(ast::k_ex_unit());
+        }
+        let e = parse_expr();
+        expect(tk_rparen());
+        return e;
+      }
+      if here(tk_name()).not() {
+        fail();
+        skip_one();
+        return ast::node0(ast::k_ex_unit());
+      }
+      let p = parse_path();
+      var run = ast::none();
+      var n = zero;
+      var applied = zero;
+      if accept(tk_lbracket()) {
+        let xs = int_list();
+        parse_app(xs);
+        run = ast::commit(xs);
+        n = xs.length();
+        applied = one;
+      }
+      let callee = ast::node4(ast::k_ex_path(), p, run, n, applied);
+      if accept(tk_lparen()) {
+        let xs = int_list();
+        parse_exprs(xs, tk_rparen());
+        return ast::node3(ast::k_ex_call(), callee, ast::commit(xs), xs.length());
+      }
+      if no_rec.not() {
+        if accept(tk_lbrace()) {
+          let xs = int_list();
+          loop {
+            if here(tk_rbrace()) {
+              break;
+            }
+            if here(tk_eof()) {
+              break;
+            }
+            let nm = take_name();
+            var value = ast::none();
+            if accept(tk_equal()) {
+              value = parse_expr();
+            }
+            xs.push(ast::node2(ast::k_ex_rfield(), nm, value));
+            if accept(tk_comma()).not() {
+              break;
+            }
+          }
+          expect(tk_rbrace());
+          return ast::node3(
+            ast::k_ex_record(), callee, ast::commit(xs), xs.length()
+          );
+        }
+      }
+      callee
+    }
+
+    # Patterns.
+
+    fn parse_pattern(): Int {
+      if accept(tk_lbrace()) {
+        return parse_record_pattern(ast::none());
+      }
+      if here(tk_name()).not() {
+        fail();
+        skip_one();
+        return ast::node0(ast::k_pt_wild());
+      }
+      if at_wildcard() {
+        if peek2().ne(tk_colon_colon()) {
+          advance();
+          return ast::node0(ast::k_pt_wild());
+        }
+      }
+      let p = parse_path();
+      if accept(tk_lbrace()) {
+        return parse_record_pattern(p);
+      }
+      if here(tk_name()) {
+        return ast::node2(ast::k_pt_path(), p, parse_pattern());
+      }
+      ast::node2(ast::k_pt_path(), p, ast::none())
+    }
+
+    fn parse_record_pattern(p: Int): Int {
+      let xs = int_list();
+      loop {
+        if here(tk_rbrace()) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        let nm = take_name();
+        var sub = ast::none();
+        if accept(tk_equal()) {
+          sub = parse_pattern();
+        }
+        xs.push(ast::node2(ast::k_pt_field(), nm, sub));
+        if accept(tk_comma()).not() {
+          break;
+        }
+      }
+      expect(tk_rbrace());
+      ast::node3(ast::k_pt_record(), p, ast::commit(xs), xs.length())
+    }
+
+    # Statements and blocks. The opening brace is consumed by the caller,
+    # which is what lets `if`, `while` and `match` tell a block from a
+    # record expression.
+
+    fn parse_block(): Int {
+      let stmts = int_list();
+      var tail = ast::none();
+      loop {
+        if here(tk_rbrace()) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        if here(tk_let()) {
+          advance();
+          stmts.push(parse_binding_stmt(ast::k_st_let()));
+        } else if here(tk_var()) {
+          advance();
+          stmts.push(parse_binding_stmt(ast::k_st_var()));
+        } else if here(tk_bind()) {
+          advance();
+          stmts.push(parse_bind());
+        } else if here(tk_while()) {
+          advance();
+          let cond = parse_expr_at(true);
+          expect(tk_lbrace());
+          stmts.push(ast::node2(ast::k_st_while(), cond, parse_block()));
+        } else if here(tk_loop()) {
+          advance();
+          expect(tk_lbrace());
+          stmts.push(ast::node1(ast::k_st_loop(), parse_block()));
+        } else if at_assign() {
+          let nm = take_name();
+          expect(tk_equal());
+          let value = parse_expr();
+          expect(tk_semi());
+          stmts.push(ast::node2(ast::k_st_assign(), nm, value));
+        } else {
+          let braced = if here(tk_if()) { true } else { here(tk_match()) };
+          let e = parse_expr();
+          if accept(tk_semi()) {
+            stmts.push(ast::node1(ast::k_st_expr(), e));
+          } else if here(tk_rbrace()) {
+            tail = e;
+            break;
+          } else if braced {
+            # `if` and `match` may stand as statements without a `;`.
+            stmts.push(ast::node1(ast::k_st_expr(), e));
+          } else {
+            fail();
+            stmts.push(ast::node1(ast::k_st_expr(), e));
+          }
+        }
+      }
+      expect(tk_rbrace());
+      ast::node3(ast::k_ex_block(), ast::commit(stmts), stmts.length(), tail)
+    }
+
+    # The one place the grammar needs two tokens: `x = e;` is an
+    # assignment, `x.m();` and `x` are expressions.
+    fn at_assign(): Bool {
+      if here(tk_name()).not() {
+        false
+      } else {
+        peek2().eq(tk_equal())
+      }
+    }
+
+    fn parse_binding_stmt(kind: Int): Int {
+      let nm = take_name();
+      var ty = ast::none();
+      if accept(tk_colon()) {
+        ty = parse_type();
+      }
+      expect(tk_equal());
+      let value = parse_expr();
+      expect(tk_semi());
+      ast::node3(kind, nm, ty, value)
+    }
+
+    # `bind` List[Spec (`=` Expr)?] `;`. An item with no `=` applies a
+    # functor of that name (D55).
+    fn parse_bind(): Int {
+      let xs = int_list();
+      loop {
+        if here(tk_semi()) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        let spec = parse_spec();
+        var value = ast::none();
+        if accept(tk_equal()) {
+          value = parse_expr();
+        }
+        xs.push(ast::node2(ast::k_st_item(), spec, value));
+        if accept(tk_comma()).not() {
+          break;
+        }
+      }
+      expect(tk_semi());
+      ast::node2(ast::k_st_bind(), ast::commit(xs), xs.length())
+    }
+
+    # Declarations.
+
+    fn parse_import(): Int {
+      var text = lexer::src.slice(zero, zero);
+      if here(tk_str()) {
+        # The token's span covers the quotes; the path is inside them.
+        let s = tstart.read().add(one);
+        text = lexer::src.slice(s, tend.read().sub(s).sub(one));
+        advance();
+      } else {
+        fail();
+      }
+      var alias = ast::none();
+      if accept(tk_as()) {
+        alias = take_name();
+      }
+      var star = zero;
+      let xs = int_list();
+      if accept(tk_use()) {
+        if accept(tk_star()) {
+          star = one;
+        } else {
+          loop {
+            if here(tk_semi()) {
+              break;
+            }
+            if here(tk_eof()) {
+              break;
+            }
+            var dotted = zero;
+            if accept(tk_dot()) {
+              dotted = one;
+            }
+            let nm = take_name();
+            var renamed = ast::none();
+            if accept(tk_as()) {
+              accept(tk_dot());
+              renamed = take_name();
+            }
+            xs.push(nm);
+            xs.push(dotted);
+            xs.push(renamed);
+            if accept(tk_comma()).not() {
+              break;
+            }
+          }
+        }
+      }
+      expect(tk_semi());
+      let n = xs.length().div(n3());
+      ast::make_import(text, alias, star, ast::commit(xs), n)
+    }
+
+    fn parse_fn(): Int {
+      var recv = ast::recv_plain();
+      var nm = empty_name();
+      if accept(tk_dot()) {
+        recv = ast::recv_detached();
+        nm = take_name();
+      } else {
+        nm = take_name();
+        if accept(tk_dot()) {
+          recv = nm;
+          nm = take_name();
+        }
+      }
+      expect(tk_lparen());
+      let ps = int_list();
+      loop {
+        if here(tk_rparen()) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        let pn = take_name();
+        expect(tk_colon());
+        ps.push(ast::node2(ast::k_param(), pn, parse_type()));
+        if accept(tk_comma()).not() {
+          break;
+        }
+      }
+      expect(tk_rparen());
+      var ret = ast::none();
+      if accept(tk_colon()) {
+        ret = parse_type();
+      }
+      var body = ast::none();
+      if accept(tk_lbrace()) {
+        body = parse_block();
+      } else {
+        expect(tk_semi());
+      }
+      ast::make_fn(recv, nm, ast::commit(ps), ps.length(), ret, body)
+    }
+
+    fn parse_specs(xs: IntList, close: Int) {
+      loop {
+        if here(close) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        xs.push(parse_spec());
+        if accept(tk_comma()).not() {
+          break;
+        }
+      }
+    }
+
+    fn parse_functor(): Int {
+      let nm = take_name();
+      expect(tk_colon());
+      let args = int_list();
+      parse_specs(args, tk_hyphen_greater());
+      expect(tk_hyphen_greater());
+      let res = int_list();
+      parse_specs(res, tk_lbrace());
+      expect(tk_lbrace());
+      let binds = int_list();
+      loop {
+        if here(tk_rbrace()) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        if accept(tk_bind()) {
+          binds.push(parse_bind());
+        } else {
+          fail();
+          skip_one();
+        }
+      }
+      expect(tk_rbrace());
+      let ar = ast::commit(args);
+      let rr = ast::commit(res);
+      let br = ast::commit(binds);
+      ast::make_functor(
+        nm, ar, args.length(), rr, res.length(), br, binds.length()
+      )
+    }
+
+    fn parse_assume(): Int {
+      let items = int_list();
+      loop {
+        if here(tk_lbrace()) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        items.push(parse_assume_item());
+        if accept(tk_comma()).not() {
+          break;
+        }
+      }
+      expect(tk_lbrace());
+      let inner = int_list();
+      parse_decls(inner, tk_rbrace());
+      expect(tk_rbrace());
+      let ir = ast::commit(items);
+      let dr = ast::commit(inner);
+      ast::node4(ast::k_d_assume(), ir, items.length(), dr, inner.length())
+    }
+
+    fn parse_decl(): Int {
+      if accept(tk_import()) {
+        return parse_import();
+      }
+      if accept(tk_assume()) {
+        return parse_assume();
+      }
+      if accept(tk_unit()) {
+        let nm = take_name();
+        expect(tk_semi());
+        return ast::node1(ast::k_d_unit(), nm);
+      }
+      if accept(tk_type()) {
+        let nm = take_name();
+        if accept(tk_semi()) {
+          return ast::node1(ast::k_d_type(), nm);
+        }
+        if accept(tk_equal()) {
+          let ty = parse_type();
+          expect(tk_semi());
+          return ast::node2(ast::k_d_alias(), nm, ty);
+        }
+        let ty = parse_type();
+        expect(tk_semi());
+        return ast::node2(ast::k_d_tag(), nm, ty);
+      }
+      if accept(tk_val()) {
+        let nm = take_name();
+        expect(tk_colon());
+        let ty = parse_type();
+        var init = ast::none();
+        if accept(tk_equal()) {
+          init = parse_expr();
+        }
+        expect(tk_semi());
+        return ast::node3(ast::k_d_val(), nm, ty, init);
+      }
+      if accept(tk_fn()) {
+        return parse_fn();
+      }
+      if accept(tk_context()) {
+        let nm = take_name();
+        expect(tk_equal());
+        let xs = int_list();
+        parse_specs(xs, tk_semi());
+        expect(tk_semi());
+        return ast::node3(ast::k_d_context(), nm, ast::commit(xs), xs.length());
+      }
+      if accept(tk_functor()) {
+        return parse_functor();
+      }
+      fail();
+      skip_one();
+      ast::node0(ast::k_d_bad())
+    }
+
+    fn parse_decls(out: IntList, close: Int) {
+      loop {
+        if here(close) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        out.push(parse_decl());
+      }
+    }
+
+    # One file: the cursor is primed here, so a driver only has to bind
+    # the source and reset the lexer's position.
+    fn parse_file(out: IntList) {
+      tok2.write(ast::none());
+      advance();
+      parse_decls(out, tk_eof());
+    }
+  }
+}

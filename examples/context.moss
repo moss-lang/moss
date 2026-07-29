@@ -1,15 +1,30 @@
-assume Std;
+#!/usr/bin/env moss
 
-val string: String;
+import "../lib/wasi.moss" use WasiStd;
+import "../lib/wasistd.moss" use Branch;
+import "../lib/wasm.moss" use Wasm;
+import "../lib/wasip1.moss" use Wasi;
 
-fn print_it[string]() {
-  println(string);
+assume Std {
+
+  val c: Char;
+
+  assume c {
+    fn print_it() {
+      putchar(c);
+      putchar(char::newline);
+    }
+
+    fn wait_for_it() {
+      print_it();
+    }
+  }
 }
 
-fn wait_for_it[string]() {
-  print_it();
-}
-
-fn main() {
-  wait_for_it[string="hello"]();
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind c=char::h;
+    wait_for_it();
+  }
 }

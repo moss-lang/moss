@@ -1,0 +1,369 @@
+import "./bytes.moss" use *;
+import "./spell.moss" use *;
+
+# The Wasm module emitter, self-hosted.
+#
+# A module under construction is a set of parallel arenas, one run per
+# kind of index space, exactly as `ast.moss` holds the AST: function
+# types, imported functions, defined functions with their bodies in one
+# flat instruction arena, and exports. `module` walks them once and lays
+# out the binary.
+#
+# Nothing here knows anything about Moss. Instruction selection is the
+# back end's job (codegen.moss); this is the encoder underneath it.
+
+assume Std {
+  fn vt_i32(): Int { hex(n7(), n15()) }
+  fn vt_i64(): Int { hex(n7(), n14()) }
+
+  # Section ids, from the binary format.
+  fn sec_type(): Int { one }
+  fn sec_import(): Int { n2() }
+  fn sec_func(): Int { n3() }
+  fn sec_mem(): Int { n5() }
+  fn sec_export(): Int { n7() }
+  fn sec_code(): Int { n10() }
+
+  fn kind_func(): Int { zero }
+  fn kind_mem(): Int { n2() }
+
+  # Function types: `ft_params` and `ft_res` are flat runs of valtype
+  # bytes, with a start and a length each. A result list of more than one
+  # is the multi-value proposal, which every engine that runs WASI has —
+  # and a value of D59 is a run of scalars, so a function returning one
+  # returns several results.
+  val ft_params: IntList;
+  val ft_pstart: IntList;
+  val ft_plen: IntList;
+  val ft_res: IntList;
+  val ft_rstart: IntList;
+  val ft_rlen: IntList;
+
+  # Import and export names, one flat byte arena.
+  val nchars: IntList;
+
+  # Imported functions, in index order; they occupy the low function
+  # indices, so a defined function's index counts from `import_count`.
+  val im_mstart: IntList;
+  val im_mlen: IntList;
+  val im_fstart: IntList;
+  val im_flen: IntList;
+  val im_type: IntList;
+
+  # Defined functions, and their bodies in one instruction arena.
+  val fn_type: IntList;
+  val fn_l32: IntList;
+  val fn_l64: IntList;
+  val fn_bstart: IntList;
+  val fn_blen: IntList;
+  val insns: IntList;
+
+  val ex_start: IntList;
+  val ex_len: IntList;
+  val ex_kind: IntList;
+  val ex_index: IntList;
+
+  val mem_pages: CellInt;
+
+  context Emit =
+    ft_params, ft_pstart, ft_plen, ft_res, ft_rstart, ft_rlen,
+    nchars,
+    im_mstart, im_mlen, im_fstart, im_flen, im_type,
+    fn_type, fn_l32, fn_l64, fn_bstart, fn_blen, insns,
+    ex_start, ex_len, ex_kind, ex_index,
+    mem_pages;
+
+  assume Emit {
+    # A function type, deduplicated: both sides are buffers of valtype
+    # bytes.
+    fn type_index(params: IntList, results: IntList): Int {
+      var i = zero;
+      while i.lt(ft_plen.length()) {
+        if ft_plen.get(i).eq(params.length()) {
+          if ft_rlen.get(i).eq(results.length()) {
+            if run_eq(ft_params, ft_pstart.get(i), params) {
+              if run_eq(ft_res, ft_rstart.get(i), results) {
+                return i;
+              }
+            }
+          }
+        }
+        i = i.add(one);
+      }
+      ft_pstart.push(ft_params.length());
+      ft_plen.push(params.length());
+      ft_rstart.push(ft_res.length());
+      ft_rlen.push(results.length());
+      push_bytes(ft_params, params);
+      push_bytes(ft_res, results);
+      ft_plen.length().sub(one)
+    }
+
+    fn run_eq(arena: IntList, start: Int, want: IntList): Bool {
+      var j = zero;
+      while j.lt(want.length()) {
+        if arena.get(start.add(j)).ne(want.get(j)) {
+          return false;
+        }
+        j = j.add(one);
+      }
+      true
+    }
+
+    # The type of a block that leaves these results and takes nothing,
+    # which is what a multi-result `if` names.
+    fn results_type(results: IntList): Int {
+      type_index(int_list(), results)
+    }
+
+    # A type of `n` i32 parameters and no result.
+    fn type_i32(n: Int): Int {
+      let ps = int_list();
+      var i = zero;
+      while i.lt(n) {
+        ps.push(vt_i32());
+        i = i.add(one);
+      }
+      type_index(ps, int_list())
+    }
+
+    fn type_i32_to_i32(n: Int): Int {
+      let ps = int_list();
+      var i = zero;
+      while i.lt(n) {
+        ps.push(vt_i32());
+        i = i.add(one);
+      }
+      let rs = int_list();
+      rs.push(vt_i32());
+      type_index(ps, rs)
+    }
+
+    fn intern_name(src: IntList): Int {
+      let s = nchars.length();
+      push_bytes(nchars, src);
+      s
+    }
+
+    fn import_count(): Int {
+      im_type.length()
+    }
+
+    fn func_count(): Int {
+      fn_type.length()
+    }
+
+    # An imported function; the result is its index in the function index
+    # space, which is also its position among the imports.
+    fn add_import(mname: IntList, fname: IntList, ty: Int): Int {
+      im_mstart.push(intern_name(mname));
+      im_mlen.push(mname.length());
+      im_fstart.push(intern_name(fname));
+      im_flen.push(fname.length());
+      im_type.push(ty);
+      im_type.length().sub(one)
+    }
+
+    # Reserve a defined function. Its body arrives later, so that a
+    # function may call one declared after it.
+    fn add_func(ty: Int): Int {
+      fn_type.push(ty);
+      fn_l32.push(zero);
+      fn_l64.push(zero);
+      fn_bstart.push(zero);
+      fn_blen.push(zero);
+      import_count().add(fn_type.length()).sub(one)
+    }
+
+    # `body` must already end with the `end` opcode.
+    fn set_body(f: Int, locals32: Int, locals64: Int, body: IntList) {
+      let d = f.sub(import_count());
+      fn_l32.set(d, locals32);
+      fn_l64.set(d, locals64);
+      fn_bstart.set(d, insns.length());
+      fn_blen.set(d, body.length());
+      push_bytes(insns, body);
+    }
+
+    fn add_export(name: IntList, kind: Int, index: Int) {
+      ex_start.push(intern_name(name));
+      ex_len.push(name.length());
+      ex_kind.push(kind);
+      ex_index.push(index);
+    }
+
+    fn push_name(out: IntList, start: Int, len: Int) {
+      uleb(out, len);
+      var i = zero;
+      while i.lt(len) {
+        out.push(nchars.get(start.add(i)));
+        i = i.add(one);
+      }
+    }
+
+    fn section(out: IntList, id: Int, body: IntList) {
+      out.push(id);
+      uleb(out, body.length());
+      push_bytes(out, body);
+    }
+
+    fn type_section(out: IntList) {
+      if ft_plen.length().eq(zero) {
+        return ();
+      }
+      let b = int_list();
+      uleb(b, ft_plen.length());
+      var i = zero;
+      while i.lt(ft_plen.length()) {
+        b.push(hex(n6(), zero));
+        uleb(b, ft_plen.get(i));
+        var j = zero;
+        while j.lt(ft_plen.get(i)) {
+          b.push(ft_params.get(ft_pstart.get(i).add(j)));
+          j = j.add(one);
+        }
+        uleb(b, ft_rlen.get(i));
+        j = zero;
+        while j.lt(ft_rlen.get(i)) {
+          b.push(ft_res.get(ft_rstart.get(i).add(j)));
+          j = j.add(one);
+        }
+        i = i.add(one);
+      }
+      section(out, sec_type(), b);
+    }
+
+    fn import_section(out: IntList) {
+      if import_count().eq(zero) {
+        return ();
+      }
+      let b = int_list();
+      uleb(b, import_count());
+      var i = zero;
+      while i.lt(import_count()) {
+        push_name(b, im_mstart.get(i), im_mlen.get(i));
+        push_name(b, im_fstart.get(i), im_flen.get(i));
+        b.push(kind_func());
+        uleb(b, im_type.get(i));
+        i = i.add(one);
+      }
+      section(out, sec_import(), b);
+    }
+
+    fn func_section(out: IntList) {
+      if func_count().eq(zero) {
+        return ();
+      }
+      let b = int_list();
+      uleb(b, func_count());
+      var i = zero;
+      while i.lt(func_count()) {
+        uleb(b, fn_type.get(i));
+        i = i.add(one);
+      }
+      section(out, sec_func(), b);
+    }
+
+    fn memory_section(out: IntList) {
+      if mem_pages.read().eq(zero) {
+        return ();
+      }
+      let b = int_list();
+      uleb(b, one);
+      b.push(zero);
+      uleb(b, mem_pages.read());
+      section(out, sec_mem(), b);
+    }
+
+    fn export_section(out: IntList) {
+      if ex_kind.length().eq(zero) {
+        return ();
+      }
+      let b = int_list();
+      uleb(b, ex_kind.length());
+      var i = zero;
+      while i.lt(ex_kind.length()) {
+        push_name(b, ex_start.get(i), ex_len.get(i));
+        b.push(ex_kind.get(i));
+        uleb(b, ex_index.get(i));
+        i = i.add(one);
+      }
+      section(out, sec_export(), b);
+    }
+
+    fn code_section(out: IntList) {
+      if func_count().eq(zero) {
+        return ();
+      }
+      let b = int_list();
+      uleb(b, func_count());
+      var i = zero;
+      while i.lt(func_count()) {
+        let entry = int_list();
+        var groups = zero;
+        if fn_l32.get(i).gt(zero) {
+          groups = groups.add(one);
+        }
+        if fn_l64.get(i).gt(zero) {
+          groups = groups.add(one);
+        }
+        uleb(entry, groups);
+        if fn_l32.get(i).gt(zero) {
+          uleb(entry, fn_l32.get(i));
+          entry.push(vt_i32());
+        }
+        if fn_l64.get(i).gt(zero) {
+          uleb(entry, fn_l64.get(i));
+          entry.push(vt_i64());
+        }
+        var j = zero;
+        while j.lt(fn_blen.get(i)) {
+          entry.push(insns.get(fn_bstart.get(i).add(j)));
+          j = j.add(one);
+        }
+        uleb(b, entry.length());
+        push_bytes(b, entry);
+        i = i.add(one);
+      }
+      section(out, sec_code(), b);
+    }
+
+    # The whole module, in section order.
+    fn module(out: IntList) {
+      out.push(zero);
+      push_char(out, char::a);
+      push_char(out, char::s);
+      push_char(out, char::m);
+      out.push(one);
+      out.push(zero);
+      out.push(zero);
+      out.push(zero);
+      type_section(out);
+      import_section(out);
+      func_section(out);
+      memory_section(out);
+      export_section(out);
+      code_section(out);
+    }
+
+    # Convenience for the two exports every WASI command module has.
+    fn export_start(f: Int) {
+      let n = int_list();
+      sp_start(n);
+      add_export(n, kind_func(), f);
+    }
+
+    fn export_memory() {
+      let n = int_list();
+      sp_memory(n);
+      add_export(n, kind_mem(), zero);
+    }
+
+    # `wasi_snapshot_preview1.fd_write`, and the others the back end needs.
+    fn wasi_import(field: IntList, params: Int): Int {
+      let m = int_list();
+      sp_wasi_snapshot_preview1(m);
+      add_import(m, field, type_i32_to_i32(params))
+    }
+  }
+}

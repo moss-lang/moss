@@ -1,0 +1,45 @@
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasistd.moss" use WasiBasics, WasiContainers, Basics, Containers, Branch;
+import "../../lib/wasichar.moss" use WasiCharConsts, WasiChars;
+import "../../lib/char.moss" as char use Char;
+import "../../lib/list.moss" use IntList, int_list;
+import "../../lib/int.moss" use Int, one;
+import "../../lib/std.moss" use put_bytes;
+
+# `put_bytes`: a whole buffer in one write rather than a syscall per byte.
+#
+# One primitive with three implementations — the interpreter's native
+# shim, the bootstrap back end's native shim, and `wasi_put_bytes` in
+# lib/wasistd.moss — and a file written through it has to come out the
+# same from all three. Each element contributes its **low** byte, which is
+# where they could quietly disagree: the third element below is wider than
+# a byte, so `i32.store8` and a Python `& 0xFF` are being held to each
+# other and not just to the easy cases.
+
+assume Basics, Containers, WasiChars {
+  fn eight(): Int {
+    one.add(one).add(one).add(one).add(one).add(one).add(one).add(one)
+  }
+
+  fn exercise() {
+    let xs = int_list();
+    xs.push(char::h.code());
+    xs.push(char::i.code());
+    # 256 + '!' — the byte written must be '!'.
+    xs.push(one.shl(eight()).add(char::exclam.code()));
+    xs.push(char::newline.code());
+    put_bytes(xs);
+    # An empty buffer writes nothing, rather than a stray byte.
+    put_bytes(int_list());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiBasics;
+    bind WasiContainers;
+    bind WasiCharConsts;
+    exercise();
+  }
+}

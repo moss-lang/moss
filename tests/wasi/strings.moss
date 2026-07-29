@@ -1,0 +1,28 @@
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasistd.moss" use WasiBasics, Basics, Branch;
+import "../../lib/wasichar.moss" use WasiCharConsts, WasiChars;
+import "../../lib/char.moss" as char use Char;
+import "../../lib/string.moss" use String, print, first_arg, .length, .slice, .concat, .get;
+import "../../lib/int.moss" use Int, zero, one;
+import "../../lib/std.moss" use putchar;
+
+# Every name below — String and its methods, Int and its arithmetic — is
+# provided in Moss over Wasi. Nothing here is native.
+assume Basics, WasiChars {
+  fn show() {
+    let s = first_arg();
+    print(s.concat(s));
+    print(s.slice(one, s.length().sub(one)));
+    if s.length().eq(one.add(one)) { putchar(char::y) } else { putchar(char::n) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiBasics;
+    bind WasiCharConsts;
+    show();
+  }
+}

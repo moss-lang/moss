@@ -1,12 +1,15 @@
 .DS_Store
 *.vsix
+*.wasm
+scratch/
 /.claude/
 /.direnv/
 /.envrc
 /cargo-update.txt
 /nix-flake-update.txt
-/packages/moss-vscode/bin/
+/vscode/bin/
 /result*
 /target/
 dist/
 node_modules/
+__pycache__/

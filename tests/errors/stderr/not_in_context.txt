@@ -1,0 +1,1 @@
+tests/errors/not_in_context.moss:4:3: `example` is not available in the context here (assume or bind it)

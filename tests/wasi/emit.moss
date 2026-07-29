@@ -1,0 +1,134 @@
+#!/usr/bin/env moss
+
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../src/bytes.moss" use *;
+import "../../src/emit.moss" as emit;
+import "../../src/insn.moss" use *;
+
+# The self-hosted back end's encoder, exercised end to end: this program
+# writes a WASI module to standard output, and that module prints
+# "Hello, world!". Nothing about Moss is involved — instruction selection
+# is codegen's job — so what is under test is the binary format itself:
+# LEB128, the section layout, and the names of D48, spelled character by
+# character because there are no string literals.
+
+assume Std {
+  fn demo() {
+    bind emit::ft_params=int_list();
+    bind emit::ft_pstart=int_list();
+    bind emit::ft_plen=int_list();
+    bind emit::ft_res=int_list();
+    bind emit::ft_rstart=int_list();
+    bind emit::ft_rlen=int_list();
+    bind emit::nchars=int_list();
+    bind emit::im_mstart=int_list();
+    bind emit::im_mlen=int_list();
+    bind emit::im_fstart=int_list();
+    bind emit::im_flen=int_list();
+    bind emit::im_type=int_list();
+    bind emit::fn_type=int_list();
+    bind emit::fn_l32=int_list();
+    bind emit::fn_l64=int_list();
+    bind emit::fn_bstart=int_list();
+    bind emit::fn_blen=int_list();
+    bind emit::insns=int_list();
+    bind emit::ex_start=int_list();
+    bind emit::ex_len=int_list();
+    bind emit::ex_kind=int_list();
+    bind emit::ex_index=int_list();
+    bind emit::mem_pages=cell_int();
+    build();
+  }
+
+  assume emit::Emit {
+    fn store8(body: IntList, at: Int, value: Int) {
+      op_i32_const(body, at);
+      op_i32_const(body, value);
+      op_i32_store8(body);
+    }
+
+    fn text(body: IntList, at: Int): Int {
+      var p = at;
+      store8(body, p, char::H.code());
+      p = p.add(one);
+      store8(body, p, char::e.code());
+      p = p.add(one);
+      store8(body, p, char::l.code());
+      p = p.add(one);
+      store8(body, p, char::l.code());
+      p = p.add(one);
+      store8(body, p, char::o.code());
+      p = p.add(one);
+      store8(body, p, char::comma.code());
+      p = p.add(one);
+      store8(body, p, char::space.code());
+      p = p.add(one);
+      store8(body, p, char::w.code());
+      p = p.add(one);
+      store8(body, p, char::o.code());
+      p = p.add(one);
+      store8(body, p, char::r.code());
+      p = p.add(one);
+      store8(body, p, char::l.code());
+      p = p.add(one);
+      store8(body, p, char::d.code());
+      p = p.add(one);
+      store8(body, p, char::exclam.code());
+      p = p.add(one);
+      store8(body, p, char::newline.code());
+      p = p.add(one);
+      p.sub(at)
+    }
+
+    fn build() {
+      emit::mem_pages.write(one);
+      # "fd_write", spelled here: the compiler interns its import names
+      # out of the source it reads, so spell.moss no longer holds this.
+      let field = int_list();
+      push_char(field, char::f);
+      push_char(field, char::d);
+      push_char(field, char::underscore);
+      push_char(field, char::w);
+      push_char(field, char::r);
+      push_char(field, char::i);
+      push_char(field, char::t);
+      push_char(field, char::e);
+      let fd_write = emit::wasi_import(field, n4());
+      let start = emit::add_func(emit::type_i32(zero));
+      emit::export_start(start);
+      emit::export_memory();
+
+      let body = int_list();
+      let at = n64();
+      let len = text(body, at);
+      op_i32_const(body, zero);
+      op_i32_const(body, at);
+      op_i32_store(body);
+      op_i32_const(body, n4());
+      op_i32_const(body, len);
+      op_i32_store(body);
+      op_i32_const(body, one);
+      op_i32_const(body, zero);
+      op_i32_const(body, one);
+      op_i32_const(body, n8());
+      op_call(body, fd_write);
+      op_drop(body);
+      op_end(body);
+      emit::set_body(start, zero, zero, body);
+
+      let out = int_list();
+      emit::module(out);
+      put_bytes(out);
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

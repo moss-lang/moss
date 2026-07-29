@@ -1,0 +1,1 @@
+tests/errors/detached_not_imported.moss:16:31: `.fetch` is not a detached method in scope; import it, or call it as `mod::m` (D61)

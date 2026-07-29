@@ -1,0 +1,465 @@
+import "./token.moss" use *;
+
+type Token =
+  | Eof
+  | Bad
+  | Exclam
+  | Percent
+  | Ampersand
+  | LParen
+  | RParen
+  | Star
+  | Plus
+  | Comma
+  | Hyphen
+  | Dot
+  | Slash
+  | Colon
+  | Semi
+  | Less
+  | Equal
+  | Greater
+  | LBracket
+  | RBracket
+  | Caret
+  | LBrace
+  | Pipe
+  | RBrace
+  | ExclamEqual
+  | ColonColon
+  | EqualGreater
+  | LessLess
+  | LessEqual
+  | EqualEqual
+  | GreaterEqual
+  | GreaterGreater
+  | HyphenGreater
+  | As
+  | Assume
+  | Bind
+  | Break
+  | Context
+  | Else
+  | Fn
+  | For
+  | Functor
+  | If
+  | Import
+  | Let
+  | Loop
+  | Match
+  | Return
+  | ThisType
+  | ThisValue
+  | Type
+  | Unit
+  | Use
+  | Val
+  | Var
+  | While
+  | Name
+  | Str
+;
+
+assume Std {
+  # `Char | Eof` directly would put an abstract type in a union (D15), so
+  # the character is wrapped in a nominal tag.
+  type Read Char;
+
+  # The lexer owns its input and position; the driver binds these. After
+  # lex() returns a token, `mark` holds the token's start offset (its end
+  # is wherever `at` stands).
+  val src: String;
+  val at: CellInt;
+  val mark: CellInt;
+
+  assume src, at, mark {
+    fn peek(): Read | Eof {
+      let i = at.read();
+      if i.ge(src.length()) {
+        Eof
+      } else {
+        Read (src.get(i))
+      }
+    }
+
+    fn advance() {
+      at.write(at.read().add(one));
+    }
+
+    # Consume the next character only if it is `want`.
+    fn take(want: Char): Bool {
+      match peek() {
+        Eof => false,
+        Read c => {
+          if c.eq(want) {
+            advance();
+            true
+          } else {
+            false
+          }
+        }
+      }
+    }
+
+    fn is_space(c: Char): Bool {
+      if c.eq(char::space) {
+        true
+      } else if c.eq(char::newline) {
+        true
+      } else if c.eq(char::tab) {
+        true
+      } else {
+        c.eq(char::cr)
+      }
+    }
+
+    # Letters, digits, and underscore, leaning on ASCII order:
+    # digits < uppercase < underscore < lowercase.
+    fn is_name_char(c: Char): Bool {
+      if c.ge(char::a) {
+        c.le(char::z)
+      } else if c.ge(char::A) {
+        if c.le(char::Z) {
+          true
+        } else {
+          c.eq(char::underscore)
+        }
+      } else if c.ge(char::digit0) {
+        c.le(char::digit9)
+      } else {
+        false
+      }
+    }
+
+    fn lex(): Token {
+      loop {
+        match peek() {
+          Eof => return Eof,
+          Read c => {
+            advance();
+            if is_space(c) {
+              ()
+            } else if c.eq(char::octothorpe) {
+              skip_comment();
+            } else {
+              mark.write(at.read().sub(one));
+              return token_at(c);
+            }
+          }
+        }
+      }
+    }
+
+    # A `#` comment runs to the end of the line.
+    fn skip_comment() {
+      loop {
+        match peek() {
+          Eof => break,
+          Read c => {
+            advance();
+            if c.eq(char::newline) {
+              break
+            }
+          }
+        }
+      }
+    }
+
+    # Dispatch on a consumed non-space character.
+    fn token_at(c: Char): Token {
+      if c.eq(char::exclam) {
+        two(char::equal, ExclamEqual, Exclam)
+      } else if c.eq(char::colon) {
+        two(char::colon, ColonColon, Colon)
+      } else if c.eq(char::equal) {
+        equal_token()
+      } else if c.eq(char::less) {
+        less_token()
+      } else if c.eq(char::greater) {
+        greater_token()
+      } else if c.eq(char::percent) {
+        Percent
+      } else if c.eq(char::ampersand) {
+        Ampersand
+      } else if c.eq(char::lparen) {
+        LParen
+      } else if c.eq(char::rparen) {
+        RParen
+      } else if c.eq(char::star) {
+        Star
+      } else if c.eq(char::plus) {
+        Plus
+      } else if c.eq(char::comma) {
+        Comma
+      } else if c.eq(char::hyphen) {
+        two(char::greater, HyphenGreater, Hyphen)
+      } else if c.eq(char::dot) {
+        Dot
+      } else if c.eq(char::slash) {
+        Slash
+      } else if c.eq(char::semi) {
+        Semi
+      } else if c.eq(char::lbracket) {
+        LBracket
+      } else if c.eq(char::rbracket) {
+        RBracket
+      } else if c.eq(char::caret) {
+        Caret
+      } else if c.eq(char::lbrace) {
+        LBrace
+      } else if c.eq(char::pipe) {
+        Pipe
+      } else if c.eq(char::rbrace) {
+        RBrace
+      } else if c.eq(char::quote) {
+        string_token()
+      } else if is_name_char(c) {
+        name_or_keyword(c)
+      } else {
+        Bad
+      }
+    }
+
+    fn two(want: Char, yes: Token, no: Token): Token {
+      if take(want) {
+        yes
+      } else {
+        no
+      }
+    }
+
+    fn equal_token(): Token {
+      if take(char::equal) {
+        EqualEqual
+      } else if take(char::greater) {
+        EqualGreater
+      } else {
+        Equal
+      }
+    }
+
+    fn less_token(): Token {
+      if take(char::less) {
+        LessLess
+      } else if take(char::equal) {
+        LessEqual
+      } else {
+        Less
+      }
+    }
+
+    fn greater_token(): Token {
+      if take(char::greater) {
+        GreaterGreater
+      } else if take(char::equal) {
+        GreaterEqual
+      } else {
+        Greater
+      }
+    }
+
+    fn string_token(): Token {
+      loop {
+        match peek() {
+          Eof => return Bad,
+          Read c => {
+            advance();
+            if c.eq(char::quote) {
+              return Str;
+            } else if c.eq(char::newline) {
+              return Bad;
+            } else if c.eq(char::backslash) {
+              # TODO: validate the escape character instead of skipping it.
+              match peek() {
+                Eof => return Bad,
+                Read e => advance(),
+              }
+            }
+          }
+        }
+      }
+    }
+
+    # Consume the rest of a name run.
+    fn rest_of_name(): Token {
+      loop {
+        match peek() {
+          Eof => return Name,
+          Read c => {
+            if is_name_char(c) {
+              advance();
+            } else {
+              return Name;
+            }
+          }
+        }
+      }
+    }
+
+    # True when the name run ends here (so a keyword spelling counts).
+    fn boundary(): Bool {
+      match peek() {
+        Eof => true,
+        Read c => {
+          if is_name_char(c) {
+            false
+          } else {
+            true
+          }
+        }
+      }
+    }
+
+    fn kw(t: Token): Token {
+      if boundary() {
+        t
+      } else {
+        rest_of_name()
+      }
+    }
+
+    # Match the remaining characters of one keyword spelling. On any
+    # mismatch, everything consumed so far was name characters, so the run
+    # just continues as a name — no pushback needed.
+    fn kw1(a: Char, t: Token): Token {
+      if take(a) {
+        kw(t)
+      } else {
+        rest_of_name()
+      }
+    }
+
+    fn kw2(a: Char, b: Char, t: Token): Token {
+      if take(a) {
+        kw1(b, t)
+      } else {
+        rest_of_name()
+      }
+    }
+
+    fn kw3(a: Char, b: Char, c: Char, t: Token): Token {
+      if take(a) {
+        kw2(b, c, t)
+      } else {
+        rest_of_name()
+      }
+    }
+
+    fn kw4(a: Char, b: Char, c: Char, d: Char, t: Token): Token {
+      if take(a) {
+        kw3(b, c, d, t)
+      } else {
+        rest_of_name()
+      }
+    }
+
+    fn kw5(a: Char, b: Char, c: Char, d: Char, e: Char, t: Token): Token {
+      if take(a) {
+        kw4(b, c, d, e, t)
+      } else {
+        rest_of_name()
+      }
+    }
+
+    fn kw6(a: Char, b: Char, c: Char, d: Char, e: Char, f: Char, t: Token): Token {
+      if take(a) {
+        kw5(b, c, d, e, f, t)
+      } else {
+        rest_of_name()
+      }
+    }
+
+    # The keyword trie (D48: no string literals required). `c0` was already
+    # consumed by token_at.
+    fn name_or_keyword(c0: Char): Token {
+      if c0.eq(char::a) {
+        if take(char::s) {
+          if take(char::s) {
+            kw3(char::u, char::m, char::e, Assume)
+          } else {
+            kw(As)
+          }
+        } else {
+          rest_of_name()
+        }
+      } else if c0.eq(char::b) {
+        if take(char::i) {
+          kw2(char::n, char::d, Bind)
+        } else if take(char::r) {
+          kw3(char::e, char::a, char::k, Break)
+        } else {
+          rest_of_name()
+        }
+      } else if c0.eq(char::c) {
+        kw6(char::o, char::n, char::t, char::e, char::x, char::t, Context)
+      } else if c0.eq(char::e) {
+        kw3(char::l, char::s, char::e, Else)
+      } else if c0.eq(char::f) {
+        if take(char::n) {
+          kw(Fn)
+        } else if take(char::o) {
+          kw1(char::r, For)
+        } else if take(char::u) {
+          kw5(char::n, char::c, char::t, char::o, char::r, Functor)
+        } else {
+          rest_of_name()
+        }
+      } else if c0.eq(char::i) {
+        if take(char::f) {
+          kw(If)
+        } else if take(char::m) {
+          kw4(char::p, char::o, char::r, char::t, Import)
+        } else {
+          rest_of_name()
+        }
+      } else if c0.eq(char::l) {
+        if take(char::e) {
+          kw1(char::t, Let)
+        } else if take(char::o) {
+          kw2(char::o, char::p, Loop)
+        } else {
+          rest_of_name()
+        }
+      } else if c0.eq(char::m) {
+        kw4(char::a, char::t, char::c, char::h, Match)
+      } else if c0.eq(char::r) {
+        kw5(char::e, char::t, char::u, char::r, char::n, Return)
+      } else if c0.eq(char::T) {
+        kw3(char::h, char::i, char::s, ThisType)
+      } else if c0.eq(char::t) {
+        if take(char::h) {
+          kw2(char::i, char::s, ThisValue)
+        } else if take(char::y) {
+          kw2(char::p, char::e, Type)
+        } else {
+          rest_of_name()
+        }
+      } else if c0.eq(char::u) {
+        if take(char::n) {
+          kw2(char::i, char::t, Unit)
+        } else if take(char::s) {
+          kw1(char::e, Use)
+        } else {
+          rest_of_name()
+        }
+      } else if c0.eq(char::v) {
+        if take(char::a) {
+          if take(char::l) {
+            kw(Val)
+          } else if take(char::r) {
+            kw(Var)
+          } else {
+            rest_of_name()
+          }
+        } else {
+          rest_of_name()
+        }
+      } else if c0.eq(char::w) {
+        kw4(char::h, char::i, char::l, char::e, While)
+      } else {
+        rest_of_name()
+      }
+    }
+  }
+}

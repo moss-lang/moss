@@ -1,0 +1,1 @@
+tests/errors/arg_count_mismatch.moss:3:5: `putchar` takes 1 argument(s), got 0

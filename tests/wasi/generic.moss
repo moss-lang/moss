@@ -1,0 +1,87 @@
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasistd.moss" use WasiBasics, WasiContainers, Basics, Containers, Branch;
+import "../../lib/wasichar.moss" use WasiCharConsts, WasiChars;
+import "../../lib/access.moss" use Elem, .get, .length, .push;
+import "../../lib/char.moss" as char use Char, .code, .char;
+import "../../lib/list.moss" use IntList, int_list;
+import "../../lib/int.moss" use Int, zero, one;
+import "../../lib/std.moss" use putchar;
+
+# A generic container, D51's way: one interface, its accessors keyed on an
+# *abstract* receiver that an application fixes, instantiated at two
+# element types in one scope. The keys are (IntArr, get) and
+# (CharArr, get) — distinct atoms, so [D44] never sees one name standing
+# for two symbols, which is the wall the original finding claimed this hit.
+#
+# What each instantiation costs is a nominal receiver type and one attached
+# method per operation: only an attached method can see its receiver
+# ([D54]) and an attached method needs a nominal one (Q5/[D36]), so the
+# interface is shared and the body is not.
+
+type T;
+type L;
+
+assume Int, T, L {
+  context IsList = L.get[Elem=T], L.push[Elem=T], L.length;
+}
+
+assume Basics, Containers, WasiChars {
+  type IntArr IntList;
+  type CharArr IntList;
+
+  fn ints(l: IntArr): IntList { match l { IntArr s => s } }
+  fn chars(l: CharArr): IntList { match l { CharArr s => s } }
+
+  fn IntArr.iget(index: Int): Int { ints(this).get(index) }
+  fn IntArr.ipush(value: Int) { ints(this).push(value); }
+  fn IntArr.ilen(): Int { ints(this).length() }
+
+  fn CharArr.cget(index: Int): Char { chars(this).get(index).char() }
+  fn CharArr.cpush(value: Char) { chars(this).push(value.code()); }
+  fn CharArr.clen(): Int { chars(this).length() }
+
+  context Both = IsList[T=Int, L=IntArr], IsList[T=Char, L=CharArr];
+
+  # Written against the interface alone: every `.push`, `.get` and
+  # `.length` here is a requirement whose receiver the application above
+  # bound, and which of the two providers each one reaches is decided by
+  # the receiver's type and nothing else.
+  assume Both {
+    fn exercise(ns: IntArr, cs: CharArr) {
+      cs.push(char::h);
+      cs.push(char::i);
+      ns.push(one);
+      ns.push(one.add(one));
+      ns.push(one.add(one).add(one));
+      var i = zero;
+      while i.lt(cs.length()) {
+        putchar(cs.get(i));
+        i = i.add(one);
+      }
+      putchar(char::A.code().add(ns.length()).char());
+      putchar(char::A.code().add(ns.get(one)).char());
+      putchar(char::A.code().add(cs.length()).char());
+      putchar(char::newline);
+    }
+  }
+
+  fn run() {
+    bind IntArr.get[Elem=Int] = IntArr.iget;
+    bind IntArr.push[Elem=Int] = IntArr.ipush;
+    bind IntArr.length = IntArr.ilen;
+    bind CharArr.get[Elem=Char] = CharArr.cget;
+    bind CharArr.push[Elem=Char] = CharArr.cpush;
+    bind CharArr.length = CharArr.clen;
+    exercise(IntArr (int_list()), CharArr (int_list()));
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiBasics;
+    bind WasiContainers;
+    bind WasiCharConsts;
+    run();
+  }
+}
