@@ -21,11 +21,13 @@ import "./types.moss" as types;
 # shapes the bootstrap's IR uses. Types are static and are not needs;
 # vals, fns and methods are.
 #
-# Nothing in `src/` or the `lib/` it needs applies a type
+# Nothing in `src/` or the `lib/` it needs applies a *type*
 # (`Pair[T=Int]`), so the substitution half of [D18] never arises here:
 # a type bind maps an abstract symbol straight to a type, and `canon`
 # chases those edges. That is the whole of monomorphization for this
-# program.
+# program. A context *item*'s application is read, though — `app_view` —
+# because a provision keyed on an abstract receiver an application fixes
+# has to land at the concrete one or no call finds it ([D51]).
 
 assume Std {
   fn ek_type(): Int { zero }
@@ -282,14 +284,73 @@ assume Std {
 
     # `assume` takes bare paths, optionally with a receiver dot (D24).
     fn add_assume_item(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
-      add_spec(env, m, spec, recv, sym, zero)
+      add_spec(env, m, spec, recv, sym, zero, env)
     }
 
-    fn add_spec(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, depth: Int): Int {
+    # One type binding of a context item's application. The left-hand side
+    # names an abstract type of the item; the right-hand side is a type by
+    # name, resolved and canonicalized where the item is *written*.
+    fn app_bind(view: Int, m: Int, b: Int): Int {
+      let lhs = prog::resolve_path(m, ast::a_of(b));
+      if ast::is_some(lhs).not() {
+        prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(b)));
+        return view;
+      }
+      if prog::sym_kind.get(lhs).ne(prog::sk_type()) {
+        prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
+        return view;
+      }
+      let rhs = ast::b_of(b);
+      # A dotted or itself-applied right-hand side is the application this
+      # compiler does not do, rather than one it silently drops.
+      if ast::is_some(ast::b_of(rhs)) {
+        prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
+        return view;
+      }
+      if ast::d_of(rhs).gt(zero) {
+        prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
+        return view;
+      }
+      let target = prog::resolve_path(m, ast::a_of(rhs));
+      if ast::is_some(target).not() {
+        prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(rhs)));
+        return view;
+      }
+      env_push(
+        view, ek_type(), ast::none(), lhs,
+        canon(view, types::ty_of_decl(target)), ast::none()
+      )
+    }
+
+    # The environment a context item's own types are read through: the one
+    # in force, plus whatever its brackets bind (D22). `IsList[L=IntArr]`
+    # means the item's abstract `L` is `IntArr` for the length of that item
+    # and no further — which is what lets one scope hold the same
+    # interface at two element types, since each item gets its own view.
+    #
+    # A *snapshot* of the environment rather than the environment as it
+    # grows is enough: the only rows `canon` reads are `ek_type()` ones,
+    # and a type item in an assume list binds its symbol to itself, so no
+    # later item can change an earlier answer.
+    fn app_view(view: Int, m: Int, spec: Int): Int {
+      var out = view;
+      var i = zero;
+      while i.lt(ast::d_of(spec)) {
+        out = app_bind(out, m, ast::kid_at(ast::c_of(spec), i));
+        i = i.add(one);
+      }
+      out
+    }
+
+    fn add_spec(
+      env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, depth: Int,
+      view: Int
+    ): Int {
       if depth.gt(n16()) {
         prog::error(prog::e_deep(), m, ast::none());
         return env;
       }
+      let inner = app_view(view, m, spec);
       let dot = ast::b_of(spec);
       let path = ast::a_of(spec);
       if ast::is_some(dot) {
@@ -302,18 +363,19 @@ assume Std {
           prog::error(prog::e_scope(), m, ast::path_last(path));
           return env;
         }
-        return add_method_item(env, m, receiver, dot, recv, sym);
+        return add_method_item(env, m, receiver, dot, recv, sym, inner);
       }
       let target = prog::resolve_path(m, path);
       if ast::is_some(target).not() {
         prog::error(prog::e_scope(), m, ast::path_last(path));
         return env;
       }
-      add_symbol_item(env, m, target, recv, sym, depth)
+      add_symbol_item(env, m, target, recv, sym, depth, inner)
     }
 
     fn add_symbol_item(
-      env: Int, m: Int, s: Int, recv: IntList, sym: IntList, depth: Int
+      env: Int, m: Int, s: Int, recv: IntList, sym: IntList, depth: Int,
+      view: Int
     ): Int {
       let kind = prog::sym_kind.get(s);
       if kind.eq(prog::sk_type()) {
@@ -333,7 +395,7 @@ assume Std {
         if env_has(env, ek_val(), ast::none(), s) {
           return env;
         }
-        let ty = elab(env, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
+        let ty = elab(view, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
         return env_push(env, ek_val(), ast::none(), s, ty, ast::none());
       }
       if kind.eq(prog::sk_fn()) {
@@ -354,7 +416,7 @@ assume Std {
         while i.lt(ast::c_of(d)) {
           e = add_spec(
             e, prog::sym_mod.get(s), ast::kid_at(ast::b_of(d), i),
-            recv, sym, depth.add(one)
+            recv, sym, depth.add(one), view
           );
           i = i.add(one);
         }
@@ -369,14 +431,19 @@ assume Std {
     # key is the receiver *type*'s head after substitution (D36), so a
     # provision lands where calls will look it up.
     fn add_method_item(
-      env: Int, m: Int, receiver: Int, name: Int, recv: IntList, sym: IntList
+      env: Int, m: Int, receiver: Int, name: Int, recv: IntList, sym: IntList,
+      view: Int
     ): Int {
       let method = find_method_decl(m, receiver, name);
       if ast::is_some(method).not() {
         prog::error(prog::e_method(), m, name);
         return env;
       }
-      let this_ty = canon(env, types::ty_of_decl(receiver));
+      # The *declaration* is found by the receiver as written; the
+      # provision is keyed by what the receiver has been substituted to,
+      # which is why an abstract receiver an application fixes lands the
+      # provision where calls on the concrete type will look for it.
+      let this_ty = canon(view, types::ty_of_decl(receiver));
       let head = types::head_of(this_ty);
       if ast::is_some(head).not() {
         prog::error(prog::e_method(), m, name);

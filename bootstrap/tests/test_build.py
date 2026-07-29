@@ -508,6 +508,16 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({}, entry="tests/wasi/containers.moss")
         self.assertEqual(run_wasm(wasm), "yyyy\n")
 
+    def test_a_generic_container_over_wasi(self):
+        """D51's generic container, compiled: one interface whose accessors
+        are keyed on an *abstract* receiver, instantiated at two element
+        types in one scope. The keys are (IntArr, get) and (CharArr, get),
+        so D44 never sees one name standing for two symbols — and the two
+        `.push` calls in `exercise` reach different providers, decided by
+        the receiver's type alone."""
+        wasm = compile_wasm({}, entry="tests/wasi/generic.moss")
+        self.assertEqual(run_wasm(wasm), "hiDCC\n")
+
     def test_path_over_wasi(self):
         """D57 cleared by D59: `Path.read` is Moss now — path_open with
         genuine i64 rights masks, then fd_read onto the top of the heap

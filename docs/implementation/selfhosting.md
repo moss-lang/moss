@@ -131,15 +131,17 @@ What is left, none of it on the path to self-hosting:
   bindings, which is what it used to do silently.
   `tests/wasi/applied.moss` is the standing test: the bootstrap compiles
   and runs it, this compiler says no.
-- **A receiver an application binds.** The other half of the same
-  mechanism, and the one that makes generic containers writable: a
-  context item may key a detached method on an *abstract* receiver
-  (`context IsList = L.get[Elem=T];`) which an application then fixes
-  (`IsList[T=Int, L=IntArr]`). The bootstrap resolves that; this
-  compiler reports `e_method`, because a requirement's receiver is
-  canonicalized through the bindings in force and a context item's own
-  bracket bindings never reach the environment. So the idiom D51 names
-  is off limits in `src/` until this lands.
+  What *is* done, since it is the other half of the same mechanism, is a
+  receiver an application binds: a context item may key a detached method
+  on an **abstract** receiver (`context IsList = L.get[Elem=T];`) which
+  an application then fixes (`IsList[T=Int, L=IntArr]`). That is the
+  generic container of [D51], and unlike the concrete case it does need
+  the brackets read — a provision keyed at `L` is one no call finds.
+  `lower.moss`'s `app_view` extends the environment an item's types are
+  read through with whatever its own brackets bind, for the length of
+  that item and no further, which is what lets one scope hold the same
+  interface at two element types. `tests/wasi/generic.moss` is the
+  standing test, held to the same output under both compilers.
 - **Diagnostics** are a code letter, the frame they came from, and a
   name — no line or column. The machinery for a real message is a string
   the compiler holds, which is [D48](../design/semantics.md).

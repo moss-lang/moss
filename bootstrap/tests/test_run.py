@@ -747,7 +747,13 @@ class TestMultiInstantiation(unittest.TestCase):
         """The designer's point about IsList: with detached methods and a
         unique receiver type per instantiation (NameList-style), one scope
         holds IsCell at T=Int *and* T=Char — the keys are (CA, read) and
-        (CB, read), distinct atoms, so D51's collision never happens."""
+        (CB, read), distinct atoms, so D51's collision never happens.
+
+        Interpreted, so it holds the *front end* to the rule and no back
+        end to anything. tests/wasi/generic.moss is the compiled version,
+        run through both back ends — which is the coverage this test's
+        absence of hid: the self-hosted compiler reported `e_method` for
+        the whole idiom and nothing noticed."""
         files = {
             "main.moss": (
                 'import "./tests/fixtures/inner.moss" use T;\n'
@@ -1159,6 +1165,21 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/wide.moss")
         self.assertEqual(self.wasmtime_run(module), "ABCD\n")
 
+    def test_a_generic_container(self):
+        """A receiver an application binds. A context item may key a
+        detached method on an *abstract* type — `context IsList = L.get;` —
+        which `IsList[T=Int, L=IntArr]` then fixes, and the provision has
+        to land at `IntArr` rather than at `L` or no call finds it. That is
+        D51's generic container, and the same mechanism the library's own
+        `String.get[Elem=Char]` uses with the receiver written concretely,
+        so this is the case where the brackets actually have to be read.
+
+        Two instantiations coexist here, which is the point: the keys are
+        (IntArr, get) and (CharArr, get), distinct atoms, so nothing
+        merges."""
+        module = self.compile_with_moss("tests/wasi/generic.moss")
+        self.assertEqual(self.wasmtime_run(module), "hiDCC\n")
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
@@ -1172,6 +1193,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/ctx.moss", "CEECI\n"),
             ("tests/wasi/functor.moss", "ABD\n"),
             ("tests/wasi/wide.moss", "ABCD\n"),
+            ("tests/wasi/generic.moss", "hiDCC\n"),
         )
         for entry, expected in cases:
             with self.subTest(entry=entry):
