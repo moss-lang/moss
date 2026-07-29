@@ -120,17 +120,26 @@ What is left, none of it on the path to self-hosting:
   program that needs them is reported — `e_shape`, raised where the type
   is elaborated — rather than mis-compiled.
 - **Applying a type.** [D61] made the library apply one *per provision*
-  (`String.get[Elem=Char]`), and for those the back end correctly does
-  nothing: a provision is keyed by (receiver, method) and every signature
-  it needs comes from the *provider*, which is concrete, so the
-  substitution changes no code here. The bootstrap needs it — it checks
-  the provider's signature against the abstract one — and the environment
-  chain does not. What is not done is an application on a **type**
-  (`Pair[T=Int]`), which substitutes into a payload; that is reported as
-  `e_apply` rather than elaborating `Pair` and dropping the bindings,
-  which is what it used to do silently. `tests/wasi/applied.moss` is the
-  standing test: the bootstrap compiles and runs it, this compiler says
-  no.
+  (`String.get[Elem=Char]`), and for those the back end does nothing:
+  the receiver is written concretely, a provision is keyed by (receiver,
+  method), and every signature it needs comes from the *provider*, so
+  the substitution changes no code here. The bootstrap needs it — it
+  checks the provider's signature against the abstract one — and the
+  environment chain does not. What is not done is an application on a
+  **type** (`Pair[T=Int]`), which substitutes into a payload; that is
+  reported as `e_apply` rather than elaborating `Pair` and dropping the
+  bindings, which is what it used to do silently.
+  `tests/wasi/applied.moss` is the standing test: the bootstrap compiles
+  and runs it, this compiler says no.
+- **A receiver an application binds.** The other half of the same
+  mechanism, and the one that makes generic containers writable: a
+  context item may key a detached method on an *abstract* receiver
+  (`context IsList = L.get[Elem=T];`) which an application then fixes
+  (`IsList[T=Int, L=IntArr]`). The bootstrap resolves that; this
+  compiler reports `e_method`, because a requirement's receiver is
+  canonicalized through the bindings in force and a context item's own
+  bracket bindings never reach the environment. So the idiom D51 names
+  is off limits in `src/` until this lands.
 - **Diagnostics** are a code letter, the frame they came from, and a
   name — no line or column. The machinery for a real message is a string
   the compiler holds, which is [D48](../design/semantics.md).
@@ -269,13 +278,30 @@ found was a bug in the comparison rather than in the compiler.
 
 ## The idiom
 
-There are no generic containers ([D51](../design/semantics.md)), so
-every data structure is a *typed arena*: parallel `IntList`s indexed by
-an id, with a `context` bundling them and accessor functions keyed on
-the id. [`ast.moss`](/src/ast.moss) is the worked example — copy its
-shape rather than inventing another. A node has four operand slots and
-spills to a run in `kids` when it needs more; the meaning of each slot
-is recorded beside the node kind and nowhere else.
+Every data structure here is a *typed arena*: parallel `IntList`s
+indexed by an id, with a `context` bundling them and accessor functions
+keyed on the id. [`ast.moss`](/src/ast.moss) is the worked example —
+copy its shape rather than inventing another. A node has four operand
+slots and spills to a run in `kids` when it needs more; the meaning of
+each slot is recorded beside the node kind and nowhere else.
+
+Not because the language cannot express a generic container:
+[D51](../design/semantics.md) is a *corrected* finding, and generic
+containers work — a detached accessor keyed on an abstract receiver,
+instantiated at a unique receiver type per element type, which is what
+[`access.moss`](/lib/access.moss) already is. What one costs is a
+nominal receiver type and one attached method per operation, because
+only an attached method can see its receiver ([D54]) and an attached
+method needs a nominal one (Q5/[D36]) — so the *body* is per
+instantiation even when the interface is not. An arena keyed by a dense
+id needs neither, since everything it holds is an `Int` already.
+
+The one thing an arena must not skip is its **index**. A lookup keyed by
+a name, a symbol, a module, a type or an environment is keyed by a dense
+small integer, so it costs an array indexed by that id and a `link`
+array chaining collisions — and a table without one is a linear scan
+that grows with the program. That is not a style preference: three of
+them were the whole of this compiler's running time. See **Speed**.
 
 `StrList` exists for the few places a real String must be kept (module
 paths). Everything else is an interned id or an arena index.
