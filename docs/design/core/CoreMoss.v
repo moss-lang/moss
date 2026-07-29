@@ -1685,6 +1685,980 @@ Proof.
 Qed.
 (* END:interp_complete *)
 
+(* ===================== 11b. The semantic soundness development =========== *)
+
+(* --- Free symbols and closed types. -------------------------------------- *)
+
+Fixpoint ty_frees (tau : ty) : list tsym :=
+  match tau with
+  | TUnit => []
+  | TAbs t => [t]
+  | TNom _ th =>
+      (fix go (l : list (tsym * ty)) : list tsym :=
+         match l with [] => [] | p :: r => ty_frees (snd p) ++ go r end) th
+  | TUnion ms =>
+      (fix go (l : list ty) : list tsym :=
+         match l with [] => [] | t' :: r => ty_frees t' ++ go r end) ms
+  end.
+
+Definition closed_ty (tau : ty) : Prop := ty_frees tau = [].
+
+(* app_subst unfolds to map on the nested lists (definitionally). *)
+Lemma app_subst_nom : forall s n th,
+  app_subst s (TNom n th) = TNom n (map_snd (app_subst s) th).
+Proof. reflexivity. Qed.
+
+Lemma app_subst_union : forall s ms,
+  app_subst s (TUnion ms) = TUnion (map (app_subst s) ms).
+Proof. reflexivity. Qed.
+
+(* --- Value typing. --------------------------------------------------------- *)
+
+Inductive vty (Sg : gsig) : value -> ty -> Prop :=
+| VtyUnit : vty Sg VUnit TUnit
+| VtyTag : forall n D taup th w,
+    g_tag Sg n = Some (D, taup) ->
+    vty Sg w (app_subst th taup) ->
+    vty Sg (VTag n w) (TNom n th)
+| VtyInj : forall w tau' ms,
+    vty Sg w tau' -> In tau' ms -> vty Sg w (TUnion ms).
+
+(* --- Groundings. ---------------------------------------------------------- *)
+
+(* A grounding maps abstract type symbols to closed types; it is the runtime
+   instantiation of the abstract symbols a region was checked under. *)
+Definition grounding (g : subst) : Prop :=
+  Forall (fun p => closed_ty (snd p)) g.
+
+(* g absorbs s: reading through s and then g is just reading through g. *)
+Definition absorbs (g s : subst) : Prop :=
+  forall t tau, lookup_subst t s = Some tau ->
+                lookup_subst t g = Some (app_subst g tau).
+
+Definition covers (g : subst) (ts : list tsym) : Prop :=
+  forall t, In t ts -> exists tau, lookup_subst t g = Some tau.
+
+Definition ctx_grounded (g : subst) (Phi : ctx) : Prop :=
+  grounding g /\ absorbs g (cS Phi) /\ covers g (tyreqs (cA Phi)).
+
+(* --- Environment agreement. ----------------------------------------------- *)
+
+Definition tele_covered (d : denv) (D : tele) : Prop :=
+  Forall (fun i => is_ty_item i = true \/
+                   exists en, lookup_denv i d = Some en) D.
+
+(* Entry-level agreement, by structural recursion on the entry.  The
+   existential g' is the closure's own grounding: the ground instantiation
+   of the provider's telescope, captured at its bind site. *)
+Fixpoint dentry_agree (Sg : gsig) (g : subst) (i : item) (en : dentry)
+    {struct en} : Prop :=
+  match i, en with
+  | IVal v, DVal w =>
+      match g_val Sg v with
+      | Some (_, tauv) => vty Sg w (app_subst g tauv)
+      | None => False
+      end
+  | IFn f, DClo f' d' =>
+      match g_fn Sg f, g_fn Sg f' with
+      | Some (_, Sf, None), Some (D', S', Some _) =>
+          exists g',
+            grounding g' /\ covers g' (tyreqs D') /\
+            map (app_subst g') (fs_params S') = map (app_subst g) (fs_params Sf) /\
+            app_subst g' (fs_ret S') = app_subst g (fs_ret Sf) /\
+            tele_covered d' D' /\
+            (fix all (dd : denv) : Prop :=
+               match dd with
+               | [] => True
+               | p :: r => dentry_agree Sg g' (fst p) (snd p) /\ all r
+               end) d'
+      | _, _ => False
+      end
+  | IMth rt m th, DClo f' d' =>
+      match g_mth Sg m, g_fn Sg f' with
+      | Some (_, Sm), Some (D', S', Some _) =>
+          exists g',
+            grounding g' /\ covers g' (tyreqs D') /\
+            map (app_subst g') (fs_params S')
+              = app_subst g rt
+                :: map (fun tau =>
+                          app_subst g (app_subst th (app_subst (this_subst rt) tau)))
+                       (fs_params Sm) /\
+            app_subst g' (fs_ret S')
+              = app_subst g (app_subst th (app_subst (this_subst rt) (fs_ret Sm))) /\
+            tele_covered d' D' /\
+            (fix all (dd : denv) : Prop :=
+               match dd with
+               | [] => True
+               | p :: r => dentry_agree Sg g' (fst p) (snd p) /\ all r
+               end) d'
+      | _, _ => False
+      end
+  | _, _ => False
+  end.
+
+Definition denv_agree (Sg : gsig) (g : subst) (A : list item) (d : denv) : Prop :=
+  Forall (fun i => is_ty_item i = true \/
+                   exists en, lookup_denv i d = Some en) A
+  /\ Forall (fun p => dentry_agree Sg g (fst p) (snd p)) d.
+
+Definition venv_agree (Sg : gsig) (g : subst) (G : tenv) (ge : venv) : Prop :=
+  forall x tau, lookup_tenv x G = Some tau ->
+    exists w, lookup_venv x ge = Some w /\ vty Sg w (app_subst g tau).
+
+(* --- The statement. -------------------------------------------------------- *)
+
+Definition safe_res (Sg : gsig) (gt : ty) (r : res) : Prop :=
+  match r with
+  | Ok w => vty Sg w gt
+  | Err => False
+  | OutOfFuel => True
+  end.
+
+Definition SAFE (Sg : gsig) (fuel : nat) : Prop :=
+  forall Phi G e tau d ge g,
+    has_ty Sg Phi G e tau ->
+    ctx_grounded g Phi ->
+    denv_agree Sg g (cA Phi) d ->
+    venv_agree Sg g G ge ->
+    safe_res Sg (app_subst g (app_subst (cS Phi) tau)) (interp fuel Sg d ge e).
+
+(* --- Substitution algebra (leaves). ---------------------------------------- *)
+
+(* Boolean equalities reflect equality.
+   Hint: ty_eqb_eq by ty_ind' with inner list inductions and Nat.eqb_eq /
+   andb_true_iff; then subst_eqb_eq and item_eqb_eq are inductions/case
+   analyses over it.  Both directions of the iff are needed. *)
+(* BEGIN:eqb_eq *)
+Lemma ty_eqb_eq : forall a b, ty_eqb a b = true <-> a = b.
+Proof.
+Admitted. (* FILL:eqb_eq *)
+
+Lemma subst_eqb_eq : forall a b, subst_eqb a b = true <-> a = b.
+Proof.
+Admitted. (* FILL:eqb_eq *)
+
+Lemma item_eqb_eq : forall a b, item_eqb a b = true <-> a = b.
+Proof.
+Admitted. (* FILL:eqb_eq *)
+(* END:eqb_eq *)
+
+(* A successful denv lookup returns one of the pairs, with the key equal to
+   the query.  Hint: induction on d; item_eqb_eq. *)
+(* BEGIN:lookup_denv_in *)
+Lemma lookup_denv_in : forall i d en,
+  lookup_denv i d = Some en -> In (i, en) d.
+Proof.
+Admitted. (* FILL:lookup_denv_in *)
+(* END:lookup_denv_in *)
+
+(* Looking a symbol up under a mapped substitution.
+   Hint: induction on th. *)
+(* BEGIN:subst_chain *)
+Lemma lookup_map_snd : forall (f : ty -> ty) t th,
+  lookup_subst t (map_snd f th)
+  = match lookup_subst t th with
+    | Some tau => Some (f tau)
+    | None => None
+    end.
+Proof.
+Admitted. (* FILL:subst_chain *)
+
+(* Substituting after a total application is applying the mapped
+   application: the composition law monomorphization rests on.
+   Hint: ty_ind'; the TAbs case is lookup_map_snd plus the coverage
+   hypothesis; In/incl over ty_frees with in_or_app for the nested cases. *)
+Lemma app_subst_chain : forall s th tau,
+  incl (ty_frees tau) (map fst th) ->
+  app_subst s (app_subst th tau) = app_subst (map_snd (app_subst s) th) tau.
+Proof.
+Admitted. (* FILL:subst_chain *)
+(* END:subst_chain *)
+
+(* Reading through an absorbed substitution changes nothing.
+   Hint: ty_ind'; the TAbs case splits on lookup_subst t s. *)
+(* BEGIN:absorbs_all *)
+Lemma absorbs_all : forall g s,
+  absorbs g s ->
+  forall tau, app_subst g (app_subst s tau) = app_subst g tau.
+Proof.
+Admitted. (* FILL:absorbs_all *)
+(* END:absorbs_all *)
+
+(* Closed types are fixed by substitution; grounding a covered type closes
+   it.  Hint: ty_ind'; app_eq_nil facts about ty_frees of the nested lists;
+   for the second lemma also Forall_forall over the grounding. *)
+(* BEGIN:closed_subst *)
+Lemma app_subst_closed : forall s tau,
+  closed_ty tau -> app_subst s tau = tau.
+Proof.
+Admitted. (* FILL:closed_subst *)
+
+Lemma closed_app_subst_ground : forall g tau,
+  grounding g ->
+  incl (ty_frees tau) (map fst g) ->
+  closed_ty (app_subst g tau).
+Proof.
+Admitted. (* FILL:closed_subst *)
+(* END:closed_subst *)
+
+(* Substitutions that agree on a type's free symbols read it equally.
+   Hint: ty_ind'; in_or_app in the nested cases. *)
+(* BEGIN:frees_agree *)
+Lemma app_subst_frees_agree : forall g1 g2 tau,
+  (forall t, In t (ty_frees tau) ->
+             lookup_subst t g1 = lookup_subst t g2) ->
+  app_subst g1 tau = app_subst g2 tau.
+Proof.
+Admitted. (* FILL:frees_agree *)
+(* END:frees_agree *)
+
+(* --- Value-typing inversions and subtyping. -------------------------------- *)
+
+(* Hint: inversion; VtyInj cannot produce TUnit or TNom, and a union member
+   reached by VtyInj is in the list. *)
+(* BEGIN:vty_inv *)
+Lemma vty_unit_inv : forall Sg w, vty Sg w TUnit -> w = VUnit.
+Proof.
+Admitted. (* FILL:vty_inv *)
+
+Lemma vty_union_inv : forall Sg w ms,
+  vty Sg w (TUnion ms) -> exists tau', In tau' ms /\ vty Sg w tau'.
+Proof.
+Admitted. (* FILL:vty_inv *)
+
+Lemma vty_nom_inv : forall Sg w n th,
+  vty Sg w (TNom n th) ->
+  exists D taup w', w = VTag n w' /\ g_tag Sg n = Some (D, taup)
+                    /\ vty Sg w' (app_subst th taup).
+Proof.
+Admitted. (* FILL:vty_inv *)
+(* END:vty_inv *)
+
+(* Subtyping preserves value typing under any grounding of the context.
+   Hint: case on the subtyping derivation; SubEq rewrites (ty_eq is an
+   equation between σ images, apply f_equal with app_subst g); SubInj maps
+   the member equality through app_subst_union/in_map and re-injects. *)
+(* BEGIN:vty_subty *)
+Lemma vty_subty : forall Sg Phi g tau' tau w,
+  subty Phi tau' tau ->
+  vty Sg w (app_subst g (app_subst (cS Phi) tau')) ->
+  vty Sg w (app_subst g (app_subst (cS Phi) tau)).
+Proof.
+Admitted. (* FILL:vty_subty *)
+(* END:vty_subty *)
+
+(* --- Availability gives syntactic membership for symbol-only items. -------
+   Hint: avail is an existsb; app_subst_item preserves the constructor, so
+   the witness must be the same symbol-only item; item_eqb_eq. *)
+(* BEGIN:avail_in *)
+Lemma avail_ty_in : forall Phi t, avail Phi (ITy t) -> In (ITy t) (cA Phi).
+Proof.
+Admitted. (* FILL:avail_in *)
+
+Lemma avail_val_in : forall Phi v, avail Phi (IVal v) -> In (IVal v) (cA Phi).
+Proof.
+Admitted. (* FILL:avail_in *)
+
+Lemma avail_fn_in : forall Phi f, avail Phi (IFn f) -> In (IFn f) (cA Phi).
+Proof.
+Admitted. (* FILL:avail_in *)
+(* END:avail_in *)
+
+(* --- Variable environments. ------------------------------------------------ *)
+
+(* Hint: venv_agree_cons is a case split on Nat.eqb; venv_agree_body goes by
+   induction on the Forall2 after generalizing the seq start index. *)
+(* BEGIN:venv_agree_lemmas *)
+Lemma venv_agree_cons : forall Sg g G ge x tau w,
+  venv_agree Sg g G ge ->
+  vty Sg w (app_subst g tau) ->
+  venv_agree Sg g ((x, tau) :: G) ((x, w) :: ge).
+Proof.
+Admitted. (* FILL:venv_agree_lemmas *)
+
+Lemma venv_agree_body : forall Sg g ws taus,
+  Forall2 (fun w tau => vty Sg w (app_subst g tau)) ws taus ->
+  venv_agree Sg g (combine (seq 0 (length taus)) taus) (mk_venv ws).
+Proof.
+Admitted. (* FILL:venv_agree_lemmas *)
+(* END:venv_agree_lemmas *)
+
+(* --- Regularity: well-formed types only mention in-force symbols. ---------- *)
+
+(* Hint: mirror eval_ind': a fix on the wf_ty derivation whose K-Tag/K-Union
+   cases traverse the Forall premises with an inner induction. *)
+(* BEGIN:wf_ty_ind *)
+Lemma wf_ty_ind' : forall (Sg : gsig) (Phi : ctx) (P : ty -> Prop),
+  P TUnit ->
+  (forall t, avail Phi (ITy t) -> P (TAbs t)) ->
+  (forall n D tau0 th,
+      g_tag Sg n = Some (D, tau0) ->
+      sat Sg Phi th D ->
+      Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+      Forall (fun p => P (snd p)) th ->
+      P (TNom n th)) ->
+  (forall ms,
+      Forall (wf_ty Sg Phi) ms -> Forall P ms ->
+      Forall is_nom ms ->
+      NoDup (heads_of (cS Phi) ms) ->
+      P (TUnion ms)) ->
+  forall tau, wf_ty Sg Phi tau -> P tau.
+Proof.
+Admitted. (* FILL:wf_ty_ind *)
+(* END:wf_ty_ind *)
+
+(* Hint: wf_ty_ind'; the TAbs case is avail_ty_in; tyreqs of a tele is a
+   flat_map, so In facts transfer by in_flat_map. *)
+(* BEGIN:wf_ty_frees *)
+Lemma wf_ty_frees : forall Sg Phi tau,
+  wf_ty Sg Phi tau -> incl (ty_frees tau) (tyreqs (cA Phi)).
+Proof.
+Admitted. (* FILL:wf_ty_frees *)
+(* END:wf_ty_frees *)
+
+(* Telescopes are dependency-closed: a non-type item's own type requirements
+   appear among the telescope's type items (the paper's [D20]).
+   Hint: induction on the wf_tele derivation, generalizing the prefix; the
+   item_ok premise's sat0 makes each dependency available, hence
+   (avail_ty_in) in the prefix-plus-current telescope; the id_app domain
+   equation of sat0 places it. *)
+(* BEGIN:tele_deps_closed *)
+Lemma tele_deps_closed : forall Sg D0 D,
+  wf_tele Sg D0 D ->
+  forall i, In i D -> is_ty_item i = false ->
+  incl (dep_tys Sg i) (tyreqs (D0 ++ D)).
+Proof.
+Admitted. (* FILL:tele_deps_closed *)
+(* END:tele_deps_closed *)
+
+(* --- compose_smap: success and lookups. ------------------------------------ *)
+
+(* Hint: inductions on sm; for compose_smap_first also item_eqb_eq to align
+   lookup_smap's first match with the constructed environment's. *)
+(* BEGIN:compose_smap_lemmas *)
+Lemma compose_smap_defined : forall d sm,
+  Forall (fun p => exists en, lookup_denv (snd p) d = Some en) sm ->
+  exists d', compose_smap d sm = Some d'.
+Proof.
+Admitted. (* FILL:compose_smap_lemmas *)
+
+Lemma compose_smap_keys : forall d sm d',
+  compose_smap d sm = Some d' -> map fst d' = map fst sm.
+Proof.
+Admitted. (* FILL:compose_smap_lemmas *)
+
+Lemma compose_smap_entry : forall d sm d' p,
+  compose_smap d sm = Some d' -> In p d' ->
+  exists sat', In (fst p, sat') sm /\ lookup_denv sat' d = Some (snd p).
+Proof.
+Admitted. (* FILL:compose_smap_lemmas *)
+
+Lemma compose_smap_first : forall d sm d' req sat',
+  compose_smap d sm = Some d' ->
+  lookup_smap req sm = Some sat' ->
+  exists en, lookup_denv sat' d = Some en /\ lookup_denv req d' = Some en.
+Proof.
+Admitted. (* FILL:compose_smap_lemmas *)
+(* END:compose_smap_lemmas *)
+
+(* --- Transferring an entry to the callee's point of view. ------------------ *)
+
+(* An entry that agrees at item i1 under g1 also agrees at item i2 under g2,
+   provided the two groundings read the two items identically: same
+   symbol-only skeleton, equal method receiver/application images, and equal
+   readings of the type symbols a val/fn item depends on.
+   Hint: case analysis on i1 and en (dentry_agree unfolds one level only;
+   the nested closure conjuncts mention the inner grounding g' and carry
+   over untouched); the item-image equality forces i2's shape (injectivity
+   of the constructors); for IVal/IFn rewrite the signature readings with
+   app_subst_frees_agree via the dep_tys premise (dep_tys bounds exactly
+   the frees of the stored signature — take that bound as a given from the
+   telescoped well-formedness, or note the readings only ever apply g to
+   tauv/S whose frees are within dep_tys by wf_gsig; if a side condition
+   is genuinely missing here, report it in notes rather than forcing it). *)
+(* BEGIN:dentry_agree_retype *)
+Lemma dentry_agree_retype : forall Sg g1 i1 g2 i2 en,
+  dentry_agree Sg g1 i1 en ->
+  app_subst_item g1 i1 = app_subst_item g2 i2 ->
+  (forall t, In t (dep_tys Sg i1) ->
+             app_subst g1 (TAbs t) = app_subst g2 (TAbs t)) ->
+  dentry_agree Sg g2 i2 en.
+Proof.
+Admitted. (* FILL:dentry_agree_retype *)
+(* END:dentry_agree_retype *)
+
+(* --- The callee's grounding. ------------------------------------------------ *)
+
+(* Each callee type requirement, read through the application, the context,
+   and the caller's grounding. *)
+Definition callee_grounding (g : subst) (Phi : ctx) (th : subst) (D : tele)
+    : subst :=
+  map (fun t => (t, app_subst g (app_subst (cS Phi) (app_subst th (TAbs t)))))
+      (tyreqs D).
+
+(* Reading a D-covered type through the callee grounding is reading its
+   applied image through the caller's.
+   Hint: the lookup lemma is an induction on tyreqs D; the reads lemma is
+   ty_ind' with the TAbs case closed by the lookup lemma. *)
+(* BEGIN:callee_grounding_reads *)
+Lemma callee_grounding_lookup : forall g Phi th D t,
+  In t (tyreqs D) ->
+  lookup_subst t (callee_grounding g Phi th D)
+  = Some (app_subst g (app_subst (cS Phi) (app_subst th (TAbs t)))).
+Proof.
+Admitted. (* FILL:callee_grounding_reads *)
+
+Lemma callee_grounding_reads : forall g Phi th D tau,
+  incl (ty_frees tau) (tyreqs D) ->
+  app_subst (callee_grounding g Phi th D) tau
+  = app_subst g (app_subst (cS Phi) (app_subst th tau)).
+Proof.
+Admitted. (* FILL:callee_grounding_reads *)
+(* END:callee_grounding_reads *)
+
+(* --- The crux: satisfying a telescope hands the callee an agreeing world. --
+   Hint: this is where everything above meets.  compose_smap_defined fires
+   because smap_ok's satisfiers are available items whose entries the
+   caller's coverage provides (satisfiers of non-type requirements are
+   non-type items: app_subst_item preserves constructors and item_matches
+   equates images).  Coverage of D under d' comes from smap_ok's domain
+   equation plus compose_smap_keys/first.  Entry agreement at the callee's
+   items: compose_smap_entry fetches the caller entry; the caller's
+   denv_agree gives dentry_agree at the satisfier via lookup_denv_in;
+   dentry_agree_retype moves it to the requirement item under the callee
+   grounding — its item-image premise is item_matches pushed under g
+   (absorbs_all + callee_grounding_reads with frees bounded by wf
+   regularity), and its dep premise is sat's coherence conjunct pushed
+   under g the same way (tele_deps_closed bounds the dependencies within
+   tyreqs D).  ctx_grounded of the callee: grounding by
+   closed_app_subst_ground (θ's ranges are wf, so their σ-then-g readings
+   are closed via absorbs_all + wf_ty_frees + the caller's coverage);
+   absorbs is vacuous (mk_ctx has empty σ); covers is
+   callee_grounding_lookup.  If a premise is genuinely missing, report it
+   precisely in notes instead of forcing the proof. *)
+(* BEGIN:callee_env_agree *)
+Lemma callee_env_agree : forall Sg g Phi th sm D d,
+  wf_gsig Sg ->
+  wf_tele Sg [] D ->
+  sat Sg Phi th D ->
+  Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+  smap_ok Phi th sm D ->
+  ctx_grounded g Phi ->
+  denv_agree Sg g (cA Phi) d ->
+  exists d', compose_smap d sm = Some d'
+    /\ ctx_grounded (callee_grounding g Phi th D) (mk_ctx D)
+    /\ denv_agree Sg (callee_grounding g Phi th D) D d'.
+Proof.
+Admitted. (* FILL:callee_env_agree *)
+(* END:callee_env_agree *)
+
+(* --- A lean induction principle for typing: only T-Sub re-types the same
+   term, so only it needs an induction hypothesis. ------------------------- *)
+
+Section HasTyIndSub.
+  Variable Sg : gsig.
+  Variable P : ctx -> tenv -> expr -> ty -> Prop.
+
+  Hypothesis HVar : forall Phi G x tau,
+      lookup_tenv x G = Some tau -> P Phi G (EVar x) tau.
+  Hypothesis HUnit : forall Phi G, P Phi G EUnit TUnit.
+  Hypothesis HSub : forall Phi G e tau' tau,
+      has_ty Sg Phi G e tau' -> P Phi G e tau' -> subty Phi tau' tau ->
+      P Phi G e tau.
+  Hypothesis HVal : forall Phi G v Dv tauv,
+      g_val Sg v = Some (Dv, tauv) -> avail Phi (IVal v) ->
+      P Phi G (EVl v) (app_subst (cS Phi) tauv).
+  Hypothesis HTag : forall Phi G n D tau0 th e,
+      g_tag Sg n = Some (D, tau0) -> sat Sg Phi th D ->
+      Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+      has_ty Sg Phi G e (app_subst (cS Phi) (app_subst th tau0)) ->
+      P Phi G (ETag n th e) (app_subst (cS Phi) (TNom n th)).
+  Hypothesis HNeed : forall Phi G f Df S args,
+      g_fn Sg f = Some (Df, S, None) -> avail Phi (IFn f) ->
+      Forall2 (fun e tau => has_ty Sg Phi G e (app_subst (cS Phi) tau))
+              args (fs_params S) ->
+      P Phi G (ECallA f args) (app_subst (cS Phi) (fs_ret S)).
+  Hypothesis HCall : forall Phi G f Df S body th sm args,
+      g_fn Sg f = Some (Df, S, Some body) ->
+      sat Sg Phi th Df ->
+      Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+      smap_ok Phi th sm Df ->
+      Forall2 (fun e tau =>
+                 has_ty Sg Phi G e (app_subst (cS Phi) (app_subst th tau)))
+              args (fs_params S) ->
+      P Phi G (ECallD f th sm args)
+        (app_subst (cS Phi) (app_subst th (fs_ret S))).
+  Hypothesis HMeth : forall Phi G e0 tau0 m Dm S rt0 th0 args,
+      g_mth Sg m = Some (Dm, S) ->
+      has_ty Sg Phi G e0 tau0 ->
+      In (IMth rt0 m th0) (cA Phi) ->
+      app_subst (cS Phi) rt0 = app_subst (cS Phi) tau0 ->
+      (forall i1, In i1 (cA Phi) -> is_prov_at (cS Phi) tau0 m i1 ->
+                  i1 = IMth rt0 m th0) ->
+      Forall2 (fun e tau =>
+                 has_ty Sg Phi G e
+                        (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0) tau))
+              args (fs_params S) ->
+      P Phi G (EMeth e0 m (IMth rt0 m th0) args)
+        (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0) (fs_ret S)).
+  Hypothesis HMatch : forall Phi G e0 tau0 ms arms tau,
+      has_ty Sg Phi G e0 tau0 ->
+      members (app_subst (cS Phi) tau0) = Some ms ->
+      NoDup (map member_head ms) ->
+      Forall2 (arm_matches Sg) ms arms ->
+      Forall2 (fun mem arm =>
+                 has_ty Sg Phi ((arm_var arm, member_payload Sg mem) :: G)
+                        (arm_body arm) tau) ms arms ->
+      P Phi G (EMatch e0 arms) tau.
+  Hypothesis HLet : forall Phi G x e1 e2 tau1 tau,
+      has_ty Sg Phi G e1 tau1 ->
+      has_ty Sg Phi ((x, tau1) :: G) e2 tau ->
+      P Phi G (ELet x e1 e2) tau.
+  Hypothesis HBindTy : forall Phi G t tau' e tau,
+      g_ty Sg t = true ->
+      ~ In (ITy t) (cA Phi) ->
+      wf_ty Sg Phi tau' ->
+      has_ty Sg (bind_ty t tau' Phi) G e tau ->
+      P Phi G (EBindTy t tau' e) tau.
+  Hypothesis HBindVal : forall Phi G v Dv tauv e1 e tau,
+      g_val Sg v = Some (Dv, tauv) ->
+      sat0 Sg Phi Dv ->
+      has_ty Sg Phi G e1 (app_subst (cS Phi) tauv) ->
+      has_ty Sg (add_item (IVal v) Phi) G e tau ->
+      P Phi G (EBindVal v e1 e) tau.
+  Hypothesis HBindFn : forall Phi G f Df S f' D' S' body sm e tau,
+      g_fn Sg f = Some (Df, S, None) ->
+      g_fn Sg f' = Some (D', S', Some body) ->
+      sat0 Sg Phi Df ->
+      sat0 Sg Phi D' ->
+      smap_ok Phi (id_app D') sm D' ->
+      sig_eq (cS Phi) S' S ->
+      has_ty Sg (add_item (IFn f) Phi) G e tau ->
+      P Phi G (EBindFn f f' sm e) tau.
+  Hypothesis HBindMth : forall Phi G tauk m Dm S th f' D' S' body sm
+                               tau0' rest e tau,
+      g_mth Sg m = Some (Dm, S) ->
+      wf_ty Sg Phi tauk ->
+      sat Sg Phi th Dm ->
+      Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+      g_fn Sg f' = Some (D', S', Some body) ->
+      sat0 Sg Phi D' ->
+      smap_ok Phi (id_app D') sm D' ->
+      fs_params S' = tau0' :: rest ->
+      ty_eq (cS Phi) tau0' tauk ->
+      map (app_subst (cS Phi)) rest
+        = map (interp_m (cS Phi) th (app_subst (cS Phi) tauk)) (fs_params S) ->
+      app_subst (cS Phi) (fs_ret S')
+        = interp_m (cS Phi) th (app_subst (cS Phi) tauk) (fs_ret S) ->
+      has_ty Sg (add_item (IMth tauk m th) Phi) G e tau ->
+      P Phi G (EBindMth tauk m th f' sm e) tau.
+
+  Lemma has_ty_ind_sub : forall Phi G e tau,
+      has_ty Sg Phi G e tau -> P Phi G e tau.
+  Proof.
+    fix IH 5.
+    intros Phi G e tau D.
+    destruct D.
+    - apply HVar; assumption.
+    - apply HUnit.
+    - eapply HSub; [eassumption | apply IH; assumption | assumption].
+    - eapply HVal; eassumption.
+    - eapply HTag; eassumption.
+    - eapply HNeed; eassumption.
+    - eapply HCall; eassumption.
+    - eapply HMeth; eassumption.
+    - eapply HMatch; eassumption.
+    - eapply HLet; eassumption.
+    - eapply HBindTy; eassumption.
+    - eapply HBindVal; eassumption.
+    - eapply HBindFn; eassumption.
+    - eapply HBindMth; eassumption.
+  Qed.
+End HasTyIndSub.
+
+(* --- The case lemmas: one per typing rule, at fuel S k, under the strong
+   fuel induction hypothesis. ----------------------------------------------- *)
+
+Section SafetyCases.
+  Variable Sg : gsig.
+  Hypothesis WF : wf_gsig Sg.
+  Variable k : nat.
+  Hypothesis IHfuel : forall j, j <= k -> SAFE Sg j.
+
+  (* Argument lists evaluate safely: interp_list at any fuel ≤ k either
+     runs dry, or yields values at the grounded types — never Err.
+     Hint: induction on the Forall2 with the fuel generalized; the head
+     uses IHfuel, the tail the inner induction at smaller fuel (destruct j
+     first: interp_list 0 is inr OutOfFuel). *)
+  (* BEGIN:safety_args *)
+  Lemma safety_args : forall j, j <= k ->
+    forall Phi G d ge g args taus,
+      Forall2 (fun e tau => has_ty Sg Phi G e tau) args taus ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      match interp_list j Sg d ge args with
+      | inl ws => Forall2 (fun w tau =>
+                    vty Sg w (app_subst g (app_subst (cS Phi) tau))) ws taus
+      | inr Err => False
+      | inr _ => True
+      end.
+  Proof.
+  Admitted. (* FILL:safety_args *)
+  (* END:safety_args *)
+
+  (* Hint: interp (S k) on EVar reduces to the venv lookup; venv_agree
+     provides the value and its typing at g tau; the conclusion's type is
+     g (σ tau), so rewrite with absorbs_all (ctx_grounded's second
+     component)... wait: venv_agree stores g tau where tau is the stored
+     type, and the goal reads g (σ tau) — absorbs_all equates them. *)
+  (* BEGIN:safety_case_var *)
+  Lemma safety_case_var : forall Phi G x tau d ge g,
+      lookup_tenv x G = Some tau ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+               (interp (S k) Sg d ge (EVar x)).
+  Proof.
+  Admitted. (* FILL:safety_case_var *)
+  (* END:safety_case_var *)
+
+  (* BEGIN:safety_case_unit *)
+  Lemma safety_case_unit : forall Phi G d ge g,
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi) TUnit))
+               (interp (S k) Sg d ge EUnit).
+  Proof.
+  Admitted. (* FILL:safety_case_unit *)
+  (* END:safety_case_unit *)
+
+  (* Hint: the second hypothesis is the structural induction hypothesis —
+     the safety of the same term at the smaller type; vty_subty converts
+     its verdict on the Ok branch (destruct the interp result). *)
+  (* BEGIN:safety_case_sub *)
+  Lemma safety_case_sub : forall Phi G e tau' tau d ge g,
+      has_ty Sg Phi G e tau' ->
+      (forall d0 ge0 g0,
+          ctx_grounded g0 Phi ->
+          denv_agree Sg g0 (cA Phi) d0 ->
+          venv_agree Sg g0 G ge0 ->
+          safe_res Sg (app_subst g0 (app_subst (cS Phi) tau'))
+                   (interp (S k) Sg d0 ge0 e)) ->
+      subty Phi tau' tau ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+               (interp (S k) Sg d ge e).
+  Proof.
+  Admitted. (* FILL:safety_case_sub *)
+  (* END:safety_case_sub *)
+
+  (* Hint: avail_val_in + denv coverage finds the entry; Forall over the
+     environment (via lookup_denv_in) gives its dentry_agree, which forces
+     the DVal shape and types the value at g tauv; absorbs_all collapses
+     the two σ applications in the conclusion. *)
+  (* BEGIN:safety_case_val *)
+  Lemma safety_case_val : forall Phi G v Dv tauv d ge g,
+      g_val Sg v = Some (Dv, tauv) ->
+      avail Phi (IVal v) ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi)
+                                  (app_subst (cS Phi) tauv)))
+               (interp (S k) Sg d ge (EVl v)).
+  Proof.
+  Admitted. (* FILL:safety_case_val *)
+  (* END:safety_case_val *)
+
+  (* Hint: IHfuel on the payload typing; the conclusion's tag type unfolds
+     by app_subst_nom; VtyTag wants the payload at
+     app_subst (map_snd (g∘σ) th) tau0, which app_subst_chain provides —
+     its coverage side condition is wf_gsig's payload regularity
+     (wf_ty_frees at mk_ctx D, whose tyreqs equal sat's domain equation) —
+     plus absorbs_all for the σσ collapse. *)
+  (* BEGIN:safety_case_tag *)
+  Lemma safety_case_tag : forall Phi G n D tau0 th e d ge g,
+      g_tag Sg n = Some (D, tau0) ->
+      sat Sg Phi th D ->
+      Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+      has_ty Sg Phi G e (app_subst (cS Phi) (app_subst th tau0)) ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi)
+                                  (app_subst (cS Phi) (TNom n th))))
+               (interp (S k) Sg d ge (ETag n th e)).
+  Proof.
+  Admitted. (* FILL:safety_case_tag *)
+  (* END:safety_case_tag *)
+
+  (* Hint: avail_fn_in + coverage + dentry_agree give the closure and its
+     signature equations at the closure's own grounding g'; safety_args
+     evaluates the arguments at the caller's g; the equations transport
+     the argument values to g' readings of fs_params S' (rewrite along the
+     map equation, Forall2 + map juggling), venv_agree_body builds the
+     body's variable environment, wf_gsig types the provider's body under
+     its telescope, so IHfuel at fuel k finishes; the result comes back at
+     g' (fs_ret S') = g (fs_ret S), and absorbs_all collapses the σs. *)
+  (* BEGIN:safety_case_need *)
+  Lemma safety_case_need : forall Phi G f Df Sf args d ge g,
+      g_fn Sg f = Some (Df, Sf, None) ->
+      avail Phi (IFn f) ->
+      Forall2 (fun e tau => has_ty Sg Phi G e (app_subst (cS Phi) tau))
+              args (fs_params Sf) ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi)
+                                  (app_subst (cS Phi) (fs_ret Sf))))
+               (interp (S k) Sg d ge (ECallA f args)).
+  Proof.
+  Admitted. (* FILL:safety_case_need *)
+  (* END:safety_case_need *)
+
+  (* Hint: callee_env_agree (wf_gsig provides wf_tele for Df) builds the
+     callee world and makes compose_smap succeed; safety_args evaluates
+     the arguments; callee_grounding_reads aligns argument and result
+     types (frees bounded via wf_ty_frees from wf_gsig's signature
+     regularity at mk_ctx Df, whose tyreqs match sat's domain equation);
+     wf_gsig types the body under mk_ctx Df; venv_agree_body; IHfuel at k
+     lands the result, and callee_grounding_reads plus absorbs_all
+     translate it back to the caller's reading. *)
+  (* BEGIN:safety_case_call *)
+  Lemma safety_case_call : forall Phi G f Df Sf body th sm args d ge g,
+      g_fn Sg f = Some (Df, Sf, Some body) ->
+      sat Sg Phi th Df ->
+      Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+      smap_ok Phi th sm Df ->
+      Forall2 (fun e tau =>
+                 has_ty Sg Phi G e (app_subst (cS Phi) (app_subst th tau)))
+              args (fs_params Sf) ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi)
+                                  (app_subst (cS Phi)
+                                     (app_subst th (fs_ret Sf)))))
+               (interp (S k) Sg d ge (ECallD f th sm args)).
+  Proof.
+  Admitted. (* FILL:safety_case_call *)
+  (* END:safety_case_call *)
+
+  (* Hint: the provision item is in A, so coverage yields its closure and
+     (via lookup_denv_in + the environment Forall) its dentry_agree, whose
+     signature equations mention g rt0 and g∘th0∘[This↦rt0] readings; the
+     receiver equality σ rt0 = σ tau0 with absorbs_all rewrites those into
+     the σ tau0 forms of the goal and argument typings (push g inside the
+     This-substitution with app_subst_chain over th0 extended at this_sym,
+     or pointwise via app_subst_frees_agree); the structural hypothesis
+     evaluates the receiver at fuel k? no — the receiver is evaluated at
+     fuel k by the interpreter, so use IHfuel on its typing; then
+     safety_args, venv_agree_body with the receiver value consed on, and
+     IHfuel at k on the provider's body. *)
+  (* BEGIN:safety_case_meth *)
+  Lemma safety_case_meth : forall Phi G e0 tau0 m Dm Sf rt0 th0 args d ge g,
+      g_mth Sg m = Some (Dm, Sf) ->
+      has_ty Sg Phi G e0 tau0 ->
+      In (IMth rt0 m th0) (cA Phi) ->
+      app_subst (cS Phi) rt0 = app_subst (cS Phi) tau0 ->
+      (forall i1, In i1 (cA Phi) -> is_prov_at (cS Phi) tau0 m i1 ->
+                  i1 = IMth rt0 m th0) ->
+      Forall2 (fun e tau =>
+                 has_ty Sg Phi G e
+                        (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0) tau))
+              args (fs_params Sf) ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi)
+                     (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0)
+                               (fs_ret Sf))))
+               (interp (S k) Sg d ge (EMeth e0 m (IMth rt0 m th0) args)).
+  Proof.
+  Admitted. (* FILL:safety_case_meth *)
+  (* END:safety_case_meth *)
+
+  (* Hint: IHfuel on the scrutinee's typing (it runs at fuel k) yields a
+     value at g (σ tau0); members of that grounded type are the g-images
+     of ms (destruct σ tau0 via the members equation, app_subst_union /
+     app_subst_nom); vty_union_inv / vty_nom_inv pick the member the value
+     was injected at; member_head is stable under app_subst, so NoDup of
+     the heads makes find_arm select the arm aligned (Forall2) with that
+     member; the binder's payload type transports by app_subst_chain (tag
+     payload regularity from wf_gsig + the member's sat domain equation —
+     note the member's application th_j is already a σ image, absorbed by
+     g); venv_agree_cons extends the environment; IHfuel at k on the arm
+     body finishes.  This is the most intricate case; report precisely in
+     notes if a fact is missing. *)
+  (* BEGIN:safety_case_match *)
+  Lemma safety_case_match : forall Phi G e0 tau0 ms arms tau d ge g,
+      has_ty Sg Phi G e0 tau0 ->
+      members (app_subst (cS Phi) tau0) = Some ms ->
+      NoDup (map member_head ms) ->
+      Forall2 (arm_matches Sg) ms arms ->
+      Forall2 (fun mem arm =>
+                 has_ty Sg Phi ((arm_var arm, member_payload Sg mem) :: G)
+                        (arm_body arm) tau) ms arms ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+               (interp (S k) Sg d ge (EMatch e0 arms)).
+  Proof.
+  Admitted. (* FILL:safety_case_match *)
+  (* END:safety_case_match *)
+
+  (* BEGIN:safety_case_let *)
+  Lemma safety_case_let : forall Phi G x e1 e2 tau1 tau d ge g,
+      has_ty Sg Phi G e1 tau1 ->
+      has_ty Sg Phi ((x, tau1) :: G) e2 tau ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+               (interp (S k) Sg d ge (ELet x e1 e2)).
+  Proof.
+  Admitted. (* FILL:safety_case_let *)
+  (* END:safety_case_let *)
+
+  (* Hint: ground the extended context by g2 := (t, g (σ τ')) :: g.
+     Closedness of the new range: wf_ty_frees bounds τ''s frees within
+     A's type items, the caller's coverage grounds them (absorbs_all
+     collapses the σ), closed_app_subst_ground closes.  absorbs for the
+     extended σ: the new entry is definitional; old entries avoid t —
+     freshness means no A-item mentions t... careful: absorbs is about
+     lookups, and the extension changes lookups of t only, so old
+     obligations transfer whenever their types do not mention t — their
+     frees sit in A's type items by regularity of what σ stores; if that
+     bound is not derivable from ctx_grounded alone, strengthen your
+     in-block helper to thread it (the caller can also just pick g with
+     dom g = A's type items so that t is genuinely fresh for g;
+     app_subst_frees_agree then transfers every reading).  denv/venv
+     agreement transports by the same frees argument.  IHfuel at k on the
+     continuation under the extended context. *)
+  (* BEGIN:safety_case_bindty *)
+  Lemma safety_case_bindty : forall Phi G t tau' e tau d ge g,
+      g_ty Sg t = true ->
+      ~ In (ITy t) (cA Phi) ->
+      wf_ty Sg Phi tau' ->
+      has_ty Sg (bind_ty t tau' Phi) G e tau ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+               (interp (S k) Sg d ge (EBindTy t tau' e)).
+  Proof.
+  Admitted. (* FILL:safety_case_bindty *)
+  (* END:safety_case_bindty *)
+
+  (* Hint: IHfuel evaluates e1 to a value at g (σ tauv); the extended denv
+     ((IVal v, DVal w) :: d) agrees with the extended A — the new entry's
+     dentry_agree is that vty with absorbs_all collapsing σ; coverage of
+     IVal v is the head lookup (item_eqb reflexivity via item_eqb_eq);
+     IHfuel at k on the continuation. *)
+  (* BEGIN:safety_case_bindval *)
+  Lemma safety_case_bindval : forall Phi G v Dv tauv e1 e tau d ge g,
+      g_val Sg v = Some (Dv, tauv) ->
+      sat0 Sg Phi Dv ->
+      has_ty Sg Phi G e1 (app_subst (cS Phi) tauv) ->
+      has_ty Sg (add_item (IVal v) Phi) G e tau ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+               (interp (S k) Sg d ge (EBindVal v e1 e)).
+  Proof.
+  Admitted. (* FILL:safety_case_bindval *)
+  (* END:safety_case_bindval *)
+
+  (* Hint: callee_env_agree at D' (sat0 is sat at id_app) builds the
+     captured environment dc and the provider's grounding; the new entry
+     (IFn f, DClo f' dc) agrees because sig_eq pushed under g via
+     absorbs_all and callee_grounding_reads (wf_gsig regularity bounds the
+     signatures' frees) yields exactly dentry_agree's equations; extend A
+     and d, IHfuel at k on the continuation. *)
+  (* BEGIN:safety_case_bindfn *)
+  Lemma safety_case_bindfn : forall Phi G f Df Sf f' D' S' body sm e tau d ge g,
+      g_fn Sg f = Some (Df, Sf, None) ->
+      g_fn Sg f' = Some (D', S', Some body) ->
+      sat0 Sg Phi Df ->
+      sat0 Sg Phi D' ->
+      smap_ok Phi (id_app D') sm D' ->
+      sig_eq (cS Phi) S' Sf ->
+      has_ty Sg (add_item (IFn f) Phi) G e tau ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+               (interp (S k) Sg d ge (EBindFn f f' sm e)).
+  Proof.
+  Admitted. (* FILL:safety_case_bindfn *)
+  (* END:safety_case_bindfn *)
+
+  (* Hint: as bindfn, but the new entry is a method provision: its
+     dentry_agree equations are the rule's receiver/argument/result
+     equations pushed under g (the first parameter via ty_eq and
+     absorbs_all, the rest via the map equation and app_subst_chain /
+     app_subst_frees_agree over the This-extended application). *)
+  (* BEGIN:safety_case_bindmth *)
+  Lemma safety_case_bindmth : forall Phi G tauk m Dm Sf th f' D' S' body sm
+                                     tau0' rest e tau d ge g,
+      g_mth Sg m = Some (Dm, Sf) ->
+      wf_ty Sg Phi tauk ->
+      sat Sg Phi th Dm ->
+      Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+      g_fn Sg f' = Some (D', S', Some body) ->
+      sat0 Sg Phi D' ->
+      smap_ok Phi (id_app D') sm D' ->
+      fs_params S' = tau0' :: rest ->
+      ty_eq (cS Phi) tau0' tauk ->
+      map (app_subst (cS Phi)) rest
+        = map (interp_m (cS Phi) th (app_subst (cS Phi) tauk)) (fs_params Sf) ->
+      app_subst (cS Phi) (fs_ret S')
+        = interp_m (cS Phi) th (app_subst (cS Phi) tauk) (fs_ret Sf) ->
+      has_ty Sg (add_item (IMth tauk m th) Phi) G e tau ->
+      ctx_grounded g Phi ->
+      denv_agree Sg g (cA Phi) d ->
+      venv_agree Sg g G ge ->
+      safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+               (interp (S k) Sg d ge (EBindMth tauk m th f' sm e)).
+  Proof.
+  Admitted. (* FILL:safety_case_bindmth *)
+  (* END:safety_case_bindmth *)
+
+  (* Assembly of one fuel step: the inner induction on the typing
+     derivation (has_ty_ind_sub) dispatches each constructor to its case
+     lemma.  Hint: unfold SAFE; intros; revert the environments; apply
+     has_ty_ind_sub with the motive
+       P Phi G e tau := forall d ge g, ctx_grounded g Phi ->
+         denv_agree Sg g (cA Phi) d -> venv_agree Sg g G ge ->
+         safe_res Sg (app_subst g (app_subst (cS Phi) tau))
+                  (interp (S k) Sg d ge e);
+     every case is exactly a safety_case_* lemma. *)
+  (* BEGIN:safety_step *)
+  Lemma safety_step : SAFE Sg (S k).
+  Proof.
+  Admitted. (* FILL:safety_step *)
+  (* END:safety_step *)
+
+End SafetyCases.
+
+(* Hint: strong induction on fuel — e.g. `induction fuel using lt_wf_ind`
+   or a helper `forall n, (forall m, m < n -> SAFE Sg m) -> SAFE Sg n`;
+   fuel 0 is OutOfFuel, hence trivially safe (interp 0 computes); the
+   successor case is safety_step with IHfuel j Hj := the strong hypothesis
+   at j (mind the off-by-one: j <= k is j < S k). *)
+(* BEGIN:safety *)
+Theorem safety : forall Sg, wf_gsig Sg -> forall fuel, SAFE Sg fuel.
+Proof.
+Admitted. (* FILL:safety *)
+(* END:safety *)
+
 (* ---- Theorem 4.2 (soundness), at the program level. ---------------------
    Stated for main, where the context in force and both environments are
    empty, so no grounding of abstract type symbols is needed.  The
@@ -1695,7 +2669,6 @@ Qed.
 
 Definition value_has_unit_ty (w : value) : Prop := w = VUnit.
 
-(* BEGIN:soundness_main *)
 Theorem soundness_main :
   forall Sg main body fuel,
     wf_prog Sg main ->
@@ -1703,8 +2676,26 @@ Theorem soundness_main :
     interp fuel Sg [] [] body <> Err
     /\ (forall w, interp fuel Sg [] [] body = Ok w -> value_has_unit_ty w).
 Proof.
-Admitted. (* FILL:soundness_main *)
-(* END:soundness_main *)
+  intros Sg main body fuel [WF _] Hmain.
+  pose proof WF as WF0. destruct WF0 as [Wtag Wval Wfn Wmth].
+  destruct (Wfn _ _ _ _ Hmain) as (_ & _ & _ & Hb).
+  specialize (Hb body eq_refl). simpl in Hb.
+  pose proof (safety WF fuel) as HS. unfold SAFE in HS.
+  specialize (HS (mk_ctx []) [] body TUnit [] [] [] Hb).
+  simpl in HS.
+  assert (Hg : ctx_grounded [] (mk_ctx [])).
+  { split; [constructor | split].
+    - intros t tau Hl; discriminate Hl.
+    - intros t Hin; simpl in Hin; contradiction. }
+  assert (Hd : denv_agree Sg [] [] []) by (split; constructor).
+  assert (Hv : venv_agree Sg [] [] []).
+  { intros x tau Hl; discriminate Hl. }
+  specialize (HS Hg Hd Hv).
+  split.
+  - intros HE. rewrite HE in HS. exact HS.
+  - intros w Hw. rewrite Hw in HS.
+    apply vty_unit_inv in HS. exact HS.
+Qed.
 
 (* ---- Proposition 4.3 (phase separation). --------------------------------
    Evaluation never inspects a type: it is invariant under erasing every
