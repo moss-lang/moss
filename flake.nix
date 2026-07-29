@@ -37,6 +37,22 @@
         };
       });
       checks = forAll (pkgs: {
+        # The Core Moss calculus paper (docs/design/core/core-moss.tex).
+        core-calculus-pdf =
+          pkgs.runCommand "core-moss-pdf"
+            {
+              nativeBuildInputs = [
+                (pkgs.texliveMedium.withPackages (ps: [ ps.mathpartir ]))
+              ];
+            }
+            ''
+              export HOME=$TMPDIR
+              cp ${./docs/design/core/core-moss.tex} core-moss.tex
+              pdflatex -interaction=nonstopmode core-moss.tex
+              pdflatex -interaction=nonstopmode core-moss.tex # cross-references
+              mkdir $out
+              cp core-moss.pdf $out/
+            '';
         bootstrap =
           pkgs.runCommand "moss-bootstrap-test"
             {
