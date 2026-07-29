@@ -744,10 +744,12 @@ Theorem~\ref{thm:sound} outright (a well-formed program whose
 $\ksf{main}$ evaluates to $\ksf{err}$, checked by \texttt{vm\_compute}).
 In surface Moss this is unutterable, since \texttt{This} is a keyword
 [D3]; the core forgot to encode the lexer's opinion as a side
-condition.  Two of the findings above, (i) and (ii), name
-configurations that surface Moss can plausibly express; whether the
-bootstrap rejects them is an open question the design record should
-answer.
+condition.  Two of the findings above were subsequently tested against
+the bootstrap compiler [D62]: (i) is a \emph{live} hole --- the
+bootstrap keys provisions by the receiver's head symbol and accepts a
+program that types a $\smallcode{Char}$ payload as
+$\smallcode{Int}$ --- and (ii) is latent, unreachable only because v0
+does not yet implement bracket applications at call sites.
 
 Proposition~\ref{prop:phase} is the hypothesis behind the compilation
 pipeline: the monomorphizing WebAssembly backend is partial evaluation

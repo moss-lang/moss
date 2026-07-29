@@ -1395,6 +1395,49 @@ else stood in the way: what the compiler reported about its own source
 once the library was right was two bugs in `codegen.moss`'s local
 numbering, not a missing construct.
 
+**[D62] FINDING (from the mechanization; awaiting the designer).** The
+core-calculus soundness proof
+([docs/design/core](core/)) refuted two rules the bootstrap shares, and
+probing the bootstrap resolves both:
+
+- **Method provisions are head-keyed, and that is a live hole.** A
+  provision is stored under (receiver *symbol*, method) —
+  `lower.py`'s `env.methods[(head(canon(oty)), method)]`, with `head`
+  discarding the bindings — so a provision made while `Elem=Int` was in
+  force serves a receiver at a *different* instantiation of the same
+  nominal. The bootstrap accepts and runs this, typing a `Char` payload
+  as `Int`:
+
+  ```moss
+  type Elem;
+
+  assume Elem {
+    type Box Elem;
+    fn .peek(): Elem;
+    fn Box.open(): Elem { match this { Box e => e } }
+  }
+
+  # in main: bind Elem = Int; bind Box.peek = Box.open;
+  let bc = Box[Elem=Char] (char::a);
+  let n: Int = bc.peek();   # accepted; n is char::a
+  ```
+
+  Today every value is one scalar, so nothing crashes; under [D59]
+  layouts this is a miscompile. The proof's repair is to key provisions
+  by the receiver's [D18] identity — (declaration, static bindings) —
+  not its head; [D51]'s unique-nominal idiom is why the corpus never
+  trips it.
+
+- **Cross-kind instantiation coherence is a latent hole.** Nothing
+  compares the `T` of an application against the `T` an ambient val/fn
+  provision was made under (`f[T=Char]` satisfied by a `seed : T` bound
+  under `T=Int`). It is unreachable today only because v0 rejects
+  bracket applications at call sites altogether; when that production
+  lands, satisfaction needs the coherence premise the calculus now
+  carries (S-Item in the paper): where a non-type requirement is
+  answered from the ambient context, the application must agree with
+  the context on the type symbols that requirement mentions.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
