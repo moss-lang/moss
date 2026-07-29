@@ -1,19 +1,22 @@
 {
   "name": "Moss",
   "scopeName": "source.moss",
-  "fileTypes": [".moss"],
+  "fileTypes": ["moss"],
   "patterns": [
     {
       "include": "#comments"
     },
     {
+      "include": "#declarations"
+    },
+    {
       "include": "#keywords"
     },
     {
-      "include": "#literals"
+      "include": "#strings"
     },
     {
-      "include": "#identifiers"
+      "include": "#names"
     },
     {
       "include": "#punctuation"
@@ -27,71 +30,235 @@
       "patterns": [
         {
           "name": "comment.line.number-sign.moss",
-          "match": "#.*$"
+          "begin": "#",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.moss"
+            }
+          },
+          "end": "$"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(type|unit)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.moss"
+            },
+            "2": {
+              "name": "entity.name.type.moss"
+            }
+          }
+        },
+        {
+          "match": "\\b(context|functor)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.moss"
+            },
+            "2": {
+              "name": "entity.name.type.moss"
+            }
+          }
+        },
+        {
+          "match": "\\b(fn)\\s+(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.function.moss"
+            },
+            "2": {
+              "name": "punctuation.accessor.moss"
+            },
+            "3": {
+              "name": "entity.name.function.moss"
+            }
+          }
+        },
+        {
+          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.function.moss"
+            },
+            "2": {
+              "name": "entity.name.type.moss"
+            },
+            "3": {
+              "name": "punctuation.accessor.moss"
+            },
+            "4": {
+              "name": "entity.name.function.moss"
+            }
+          }
+        },
+        {
+          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.function.moss"
+            },
+            "2": {
+              "name": "entity.name.function.moss"
+            }
+          }
+        },
+        {
+          "match": "\\b(import)\\s+(\"(?:[^\"\\\\]|\\\\[\"\\\\nrt])*\")\\s+(as)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.import.moss"
+            },
+            "2": {
+              "name": "string.quoted.double.moss"
+            },
+            "3": {
+              "name": "keyword.control.import.moss"
+            },
+            "4": {
+              "name": "entity.name.namespace.moss"
+            }
+          }
         }
       ]
     },
     "keywords": {
       "patterns": [
         {
-          "name": "keyword.control.moss",
-          "match": "\\b(as|assume|else|if|import|use|while)\\b"
+          "name": "keyword.control.conditional.moss",
+          "match": "\\b(if|else|match)\\b"
+        },
+        {
+          "name": "keyword.control.repeat.moss",
+          "match": "\\b(while|loop)\\b"
+        },
+        {
+          "name": "keyword.control.flow.moss",
+          "match": "\\b(return|break)\\b"
+        },
+        {
+          "name": "keyword.control.import.moss",
+          "match": "\\b(import|as|use)\\b"
         },
         {
           "name": "storage.type.moss",
-          "match": "\\b(bind|context|fn|let|type|val|var)\\b"
+          "match": "\\b(assume|bind|context|fn|functor|let|type|unit|val|var)\\b"
+        },
+        {
+          "name": "keyword.other.reserved.moss",
+          "match": "\\bfor\\b"
+        },
+        {
+          "name": "storage.type.builtin.moss",
+          "match": "\\bThis\\b"
+        },
+        {
+          "name": "variable.language.moss",
+          "match": "\\bthis\\b"
         }
       ]
     },
-    "literals": {
+    "strings": {
       "patterns": [
         {
           "name": "string.quoted.double.moss",
-          "match": "\"([^\"\\\\]|\\\\[\"\\\\nrt])*\""
-        },
-        {
-          "name": "constant.character.moss",
-          "match": "'.'"
-        },
-        {
-          "name": "constant.numeric.moss",
-          "match": "-?\\b\\d+(u32|i32|u64|i64|u)?\\b"
+          "begin": "\"",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.moss"
+            }
+          },
+          "end": "\"|$",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.moss"
+            }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.moss",
+              "match": "\\\\[\"\\\\nrt]"
+            },
+            {
+              "name": "invalid.illegal.escape.moss",
+              "match": "\\\\."
+            }
+          ]
         }
       ]
     },
-    "identifiers": {
+    "names": {
       "patterns": [
         {
-          "name": "entity.name.type.moss",
-          "match": "\\b[A-Z]\\w*\\b"
+          "name": "constant.language.wildcard.moss",
+          "match": "\\b_\\b"
         },
         {
           "name": "entity.name.namespace.moss",
-          "match": "\\b\\w+(?=::)"
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=::)"
         },
         {
           "name": "entity.name.function.moss",
-          "match": "\\b\\w+(?=\\(|\\[)"
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        },
+        {
+          "name": "entity.name.type.moss",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
         },
         {
           "name": "variable.other.moss",
-          "match": "\\b\\w+\\b"
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
         }
       ]
     },
     "punctuation": {
       "patterns": [
         {
-          "name": "punctuation.moss",
-          "match": "[\\(\\)\\[\\]\\{\\},\\.;]"
+          "name": "punctuation.accessor.moss",
+          "match": "::|\\."
+        },
+        {
+          "name": "punctuation.separator.moss",
+          "match": "[,;]"
+        },
+        {
+          "name": "punctuation.section.group.moss",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.section.brackets.moss",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.section.block.moss",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.type.moss",
+          "match": ":"
         }
       ]
     },
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.moss",
-          "match": "!=|::|<<|<=|==|>=|>>|!|%|&|\\*|\\+|-|/|:|<|=|>|\\^|\\|"
+          "name": "keyword.operator.arrow.moss",
+          "match": "=>|->"
+        },
+        {
+          "name": "keyword.operator.assignment.moss",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.type.union.moss",
+          "match": "\\|"
+        },
+        {
+          "name": "keyword.operator.reserved.moss",
+          "match": "!=|<<|<=|==|>=|>>|[!%&*+\\-/<>^]"
         }
       ]
     }
