@@ -12,6 +12,10 @@ clap = { version = "4", features = ["derive"] }
 libc = "0.2"
 sha2 = "0.10"
 
-[profile.release-with-debug]
-inherits = "release"
-debug = true
+[profile.release]
+# The driver is a thin shell around Binaryen and Wasmtime, so almost all of
+# what it links is Clap and the standard library. Giving the optimizer one
+# unit to work in lets the linker drop monomorphizations nothing reaches,
+# which is a sixth of the executable. The Nix `default` package widens this
+# to whole-program LTO, which the bundles cannot use.
+codegen-units = 1

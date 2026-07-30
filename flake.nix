@@ -187,11 +187,19 @@
               '';
           # Just the Rust driver: no compiler baked in, so editing `src` or
           # `lib` does not recompile it.
+          #
+          # This is the only build that links Wasmtime as a shared library, and
+          # so the only one that can afford whole-program LTO. The bundles link
+          # its static C API, a Rust staticlib carrying its own copy of the
+          # standard library, and fat LTO turns this crate's copy into strong
+          # definitions rather than mergeable ones: `rust_eh_personality` and
+          # `std::panicking::EMPTY_PANIC` end up multiply defined.
           driver = packageFor {
             inherit (pkgs) rustPlatform;
             binaryen = pkgs.binaryen;
             wasmtime = pkgs.wasmtime.lib;
             pname = "moss-bin";
+            extra.CARGO_PROFILE_RELEASE_LTO = "fat";
           };
           # The two halves side by side. Copy rather than symlink the
           # executable: the driver finds the compiler through `current_exe`,
