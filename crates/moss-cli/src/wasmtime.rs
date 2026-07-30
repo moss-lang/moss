@@ -76,6 +76,31 @@ impl Module {
         ))?;
         Ok(Self { raw })
     }
+
+    /// Loads code that was compiled ahead of time, mapping it from disk.
+    ///
+    /// Wasmtime reads the file itself, so it can map the code in rather than
+    /// copy it, which `deserialize` has to do for bytes it does not own.
+    ///
+    /// # Safety
+    ///
+    /// `path` must name a file that `wasmtime compile` wrote with the same
+    /// Wasmtime version, configuration, and target as the library this binary
+    /// links.
+    #[cfg(not(moss_embedded_compiler))]
+    pub unsafe fn deserialize_file(engine: &Engine, path: &Path) -> Result<Self> {
+        let mut raw = ptr::null_mut();
+        let c_path = CString::new(
+            path.to_str()
+                .ok_or_else(|| anyhow!("path is not valid UTF-8: {}", path.display()))?,
+        )?;
+        check(wasmtime_module_deserialize_file(
+            engine.raw,
+            c_path.as_ptr(),
+            &mut raw,
+        ))?;
+        Ok(Self { raw })
+    }
 }
 
 impl Drop for Module {
@@ -436,6 +461,12 @@ extern "C" {
         engine: *mut wasm_engine_t,
         bytes: *const u8,
         len: usize,
+        module: *mut *mut wasmtime_module_t,
+    ) -> *mut wasmtime_error_t;
+    #[cfg(not(moss_embedded_compiler))]
+    fn wasmtime_module_deserialize_file(
+        engine: *mut wasm_engine_t,
+        path: *const c_char,
         module: *mut *mut wasmtime_module_t,
     ) -> *mut wasmtime_error_t;
     fn wasmtime_module_delete(module: *mut wasmtime_module_t);

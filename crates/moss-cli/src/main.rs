@@ -25,6 +25,9 @@ enum CompilerModule {
     Wasm(Vec<u8>),
     #[cfg(moss_embedded_compiler)]
     Precompiled(&'static [u8]),
+    /// A `.cwasm` installed next to the driver, which Wasmtime maps from disk.
+    #[cfg(not(moss_embedded_compiler))]
+    Precompiled(PathBuf),
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -218,6 +221,9 @@ fn self_hosted_compiler(engine: &Engine, root: &Path) -> Result<CompilerModule> 
     if let Some(path) = env::var_os("MOSS_COMPILER") {
         return Ok(CompilerModule::Wasm(fs::read(path)?));
     }
+    if let Some(precompiled) = installed_compiler() {
+        return Ok(CompilerModule::Precompiled(precompiled));
+    }
     let installed = root.join("mossc.wasm");
     if installed.is_file() {
         return Ok(CompilerModule::Wasm(fs::read(installed)?));
@@ -249,6 +255,24 @@ fn self_hosted_compiler(engine: &Engine, root: &Path) -> Result<CompilerModule> 
     fs::rename(compiler_tmp, &compiler)?;
     fs::rename(manifest_tmp, manifest)?;
     Ok(CompilerModule::Wasm(ready))
+}
+
+/// The compiler's machine code, if a package build installed it beside this
+/// executable.
+///
+/// The bundles carry those bytes inside the executable instead. Keeping them
+/// in a file lets the Nix `default` package build the driver and the compiler
+/// as separate derivations, so neither is rebuilt when only the other changes,
+/// and lets Wasmtime map the code rather than copy it.
+///
+/// `libexec` rather than `share`, because this is machine code for one target:
+/// it is the compiler proper, in the sense that `cc1` is to `gcc`.
+#[cfg(not(moss_embedded_compiler))]
+fn installed_compiler() -> Option<PathBuf> {
+    let executable = env::current_exe().ok()?;
+    let prefix = executable.parent()?.parent()?;
+    let path = prefix.join("libexec/moss/compiler.cwasm");
+    path.is_file().then_some(path)
 }
 
 #[cfg(not(moss_embedded_compiler))]
@@ -342,6 +366,13 @@ fn run_wasi_capture(
             // The package build generated these bytes with this exact Wasmtime
             // version, configuration, and target.
             unsafe { Module::deserialize(engine, bytes)? }
+        }
+        #[cfg(not(moss_embedded_compiler))]
+        CompilerModule::Precompiled(path) => {
+            // The package build generated this file with this exact Wasmtime
+            // version, configuration, and target, and installed it in the same
+            // store path as the library data this driver just found.
+            unsafe { Module::deserialize_file(engine, path)? }
         }
     };
     let code = wasmtime::run(engine, &module, wasi)?;

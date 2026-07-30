@@ -128,12 +128,18 @@
                 export HOME=$TMPDIR # wasmtime wants a writable cache directory
                 wasmtime compile --target ${target} -o $out ${portableCompiler}
               '';
+          # `cwasm` is the compiler's machine code to build into the driver.
+          # A bundle that has to run without Nix passes one, so that the
+          # executable carries the compiler; `null` leaves the driver looking
+          # for `compiler.cwasm` next to its library data at run time, which is
+          # what `default` installs. Keeping the two apart there means neither
+          # rebuilds when only the other one changes.
           packageFor =
             {
               rustPlatform,
               binaryen,
               wasmtime,
-              target,
+              cwasm ? null,
               pname ? "moss",
               extra ? { },
             }:
@@ -155,9 +161,9 @@
                 ];
                 BINARYEN_LIB_DIR = "${binaryen}/lib";
                 WASMTIME_LIB_DIR = "${wasmtime}/lib";
-                MOSS_COMPILER_CWASM = compilerFor target;
                 postInstall = installData;
               }
+              // pkgs.lib.optionalAttrs (cwasm != null) { MOSS_COMPILER_CWASM = cwasm; }
               // extra
             );
         in
@@ -179,12 +185,36 @@
                 mkdir $out
                 cp core-moss.pdf $out/
               '';
-          default = packageFor {
+          # Just the Rust driver: no compiler baked in, so editing `src` or
+          # `lib` does not recompile it.
+          driver = packageFor {
             inherit (pkgs) rustPlatform;
             binaryen = pkgs.binaryen;
             wasmtime = pkgs.wasmtime.lib;
-            target = pkgs.stdenv.hostPlatform.rust.rustcTarget;
+            pname = "moss-bin";
           };
+          # The two halves side by side. Copy rather than symlink the
+          # executable: the driver finds the compiler through `current_exe`,
+          # which resolves symlinks, and would otherwise look inside
+          # `moss-bin`, where there is none. Nix deduplicates the two copies
+          # again when the store is optimised.
+          #
+          # Both halves arrive finished, so this only assembles them: leave
+          # `fixupPhase` from stripping the driver a second time or rewriting
+          # the `.cwasm`, whose sections Wasmtime reads by name.
+          default = pkgs.runCommand "moss-0.0.0"
+            {
+              dontStrip = true;
+              dontPatchELF = true;
+            }
+            ''
+              mkdir -p $out/bin $out/libexec/moss
+              cp ${driver}/bin/moss $out/bin/moss
+              cp -r ${driver}/share $out/share
+              cp ${compilerFor pkgs.stdenv.hostPlatform.rust.rustcTarget} \
+                $out/libexec/moss/compiler.cwasm
+              chmod -R u+w $out
+            '';
           standalone =
             if pkgs.stdenv.hostPlatform.isLinux then
               let
@@ -194,7 +224,7 @@
                 rustPlatform = pkgs.pkgsStatic.rustPlatform;
                 binaryen = staticBinaryen;
                 inherit wasmtime;
-                target = pkgs.pkgsStatic.stdenv.hostPlatform.rust.rustcTarget;
+                cwasm = compilerFor pkgs.pkgsStatic.stdenv.hostPlatform.rust.rustcTarget;
                 pname = "moss-standalone";
                 extra = {
                   BINARYEN_STATIC = "1";
@@ -218,7 +248,7 @@
               packageFor {
                 inherit (pkgs) rustPlatform;
                 inherit binaryen wasmtime;
-                target = pkgs.stdenv.hostPlatform.rust.rustcTarget;
+                cwasm = compilerFor pkgs.stdenv.hostPlatform.rust.rustcTarget;
                 pname = "moss-standalone";
                 extra = {
                   BINARYEN_STATIC = "1";
@@ -270,7 +300,7 @@
             packageFor {
               rustPlatform = crossPkgs.rustPlatform;
               inherit binaryen wasmtime;
-              target = crossPkgs.stdenv.hostPlatform.rust.rustcTarget;
+              cwasm = compilerFor crossPkgs.stdenv.hostPlatform.rust.rustcTarget;
               pname = "moss-windows";
               extra = {
                 buildInputs = [
