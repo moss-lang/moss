@@ -10,6 +10,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=BINARYEN_STATIC");
     println!("cargo:rerun-if-env-changed=BINARYEN_STATIC_STDCPP");
     println!("cargo:rerun-if-env-changed=MCFGTHREAD_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=WASMTIME_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=WASMTIME_STATIC");
 
     let binaryen_lib_dir = env::var_os("BINARYEN_LIB_DIR");
     if let Some(dir) = &binaryen_lib_dir {
@@ -24,10 +26,27 @@ fn main() {
             Path::new(&dir).display()
         );
     }
+    let wasmtime_lib_dir = env::var_os("WASMTIME_LIB_DIR");
+    if let Some(dir) = &wasmtime_lib_dir {
+        println!(
+            "cargo:rustc-link-search=native={}",
+            Path::new(&dir).display()
+        );
+    }
+
     let static_binaryen = env::var("BINARYEN_STATIC").is_ok_and(|value| value != "0");
+    let static_wasmtime = env::var("WASMTIME_STATIC").is_ok_and(|value| value != "0");
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "macos" && !static_binaryen {
         if let Some(dir) = &binaryen_lib_dir {
+            println!(
+                "cargo:rustc-link-arg=-Wl,-rpath,{}",
+                Path::new(dir).display()
+            );
+        }
+    }
+    if target_os == "macos" && !static_wasmtime {
+        if let Some(dir) = &wasmtime_lib_dir {
             println!(
                 "cargo:rustc-link-arg=-Wl,-rpath,{}",
                 Path::new(dir).display()
@@ -38,6 +57,17 @@ fn main() {
         "cargo:rustc-link-lib={}binaryen",
         if static_binaryen { "static=" } else { "" }
     );
+    println!(
+        "cargo:rustc-link-lib={}wasmtime",
+        if static_wasmtime { "static=" } else { "" }
+    );
+    if static_wasmtime && target_os == "windows" {
+        // Wasmtime's static library is a Rust staticlib, which does not record
+        // the system libraries its own dependencies need.
+        for library in ["advapi32", "bcrypt", "ole32", "shell32"] {
+            println!("cargo:rustc-link-lib={library}");
+        }
+    }
 
     if env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc") {
         let cpp = if target_os == "macos" {
