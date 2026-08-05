@@ -573,6 +573,20 @@ total, and a bare reference substitutes nothing. There is nothing in
 between, and elaboration never has to adapt a partially-instantiated
 provider to a differently-shaped need — the spring-2026 tarpit.
 
+*Clarification (July 2026, from mechanizing the core).* "Total or absent"
+was too strong as written, and the calculus is the looser rule the
+designer intended: a reference must leave nothing **dangling**, but it
+need not answer every requirement in brackets — what the enclosing
+`assume`s already supply, they supply. Inside `assume U`, a reference
+`f[T=Char]` to an `f` requiring `{T, U}` is fine; `U` passes through to
+the ambient symbol. The two extremes above are just the common cases, not
+the only legal ones. What stays banned is a partially instantiated
+reference *travelling*: after elaboration every requirement of every
+reference is pinned, either by the application or to an in-force symbol,
+which is what keeps the tarpit closed. The core enforces exactly this
+(rules S-Inst/S-Pass), and always did — the paper's prose claimed the
+stronger rule its own figures did not impose.
+
 **[D42] DECIDED (tag construction sites must apply explicitly).** The one
 borderline case in the corpus: `Some (expect(Name))` (parse.moss:147)
 constructs `Some` with no brackets in a region where `Some`'s requirement

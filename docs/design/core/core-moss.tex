@@ -97,7 +97,9 @@ There is deliberately no more than this. Requirement sets double as the
 generics mechanism: a declaration nested in $\kw{assume}$ blocks is
 implicitly parameterized by everything they name, and a bracket
 application such as $\smallcode{Range[T=NameId]}$ instantiates those
-parameters---totally or not at all [D21, D22]. The design is validated
+parameters, with anything left unbracketed inherited from the
+surrounding $\kw{assume}$s rather than left open [D21, D22]. The design
+is validated
 empirically: a compiler for Moss, written in Moss, compiles its own
 source to a fixpoint---the second and third generations of the compiler
 are byte-for-byte identical WebAssembly modules
@@ -282,20 +284,34 @@ binds, so
 two spellings of one merged atom are one item everywhere the statics
 compares.
 
-\paragraph{Total-or-absent application.}
-A reference either binds all of its target's outstanding requirements or
-none of them [D22]. Given $\theta$ with its domain $\dom(\theta)$ (the type symbols it
-binds) contained in the
-type items of $\Delta$, its \emph{completion} $\thh$ extends $\theta$
-with the identity on the remaining type items of $\Delta$---the
-pass-through reading, under which an unapplied reference re-exports its
-requirements as the very same symbols. The judgment
+\paragraph{Nothing dangling.}
+A reference must leave none of its target's requirements unresolved, but
+it need not answer them all in brackets: what the enclosing
+$\kw{assume}$s already supply, they supply. Given $\theta$ with its
+domain $\dom(\theta)$ (the type symbols it binds) contained in the type
+items of $\Delta$, its \emph{completion} $\thh$ extends $\theta$ with the
+identity on the remaining type items of $\Delta$---the pass-through
+reading, under which a requirement not mentioned in brackets is
+re-exported as the very same symbol. The judgment
 $\Sigma;\Phi \vdash \theta \entails \Delta$
 (Figure~\ref{fig:statics-aux}) checks that this leaves nothing dangling:
 every type requirement is either instantiated by $\theta$ or already in
 force, and every other requirement is available after substitution. All
 four reference forms---type references, tag construction, defined-fn
 calls, and method provisions---reuse this one judgment.
+
+The two extremes are the common ones: a fully applied
+$\smallcode{Range[T=NameId]}$, and a bare $\smallcode{Range}$ that
+substitutes nothing and thus refers to the very $\smallcode{T}$ its
+surroundings assume (the \texttt{inner.moss} shared-$\smallcode{T}$
+idiom). The mixed case is admitted on the same footing: inside
+$\kw{assume}\;\smallcode{U}$, a reference $f[\smallcode{T=Char}]$ to an
+$f$ requiring $\{\smallcode{T},\smallcode{U}\}$ lets $\smallcode{U}$ pass
+through. What [D22] rules out is not this but a partially instantiated
+reference \emph{travelling}: after elaboration every requirement of every
+reference is pinned, either by $\theta$ or to an in-force symbol, so
+nothing downstream ever has to adapt a half-applied provider to a
+differently-shaped need.
 
 \subsection{Static semantics}
 
