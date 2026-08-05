@@ -19,7 +19,6 @@
 \newcommand{\wf}{\;\ksf{ok}}
 \newcommand{\entails}{\Vdash}
 \newcommand{\Eval}{\Downarrow}
-\newcommand{\head}{\ksf{head}}
 \newcommand{\dom}{\ksf{dom}}
 \newcommand{\clo}[2]{\langle #1,\, #2\rangle}
 \newcommand{\unitv}{()}
@@ -285,7 +284,8 @@ compares.
 
 \paragraph{Total-or-absent application.}
 A reference either binds all of its target's outstanding requirements or
-none of them [D22]. Given $\theta$ with $\dom(\theta)$ contained in the
+none of them [D22]. Given $\theta$ with its domain $\dom(\theta)$ (the type symbols it
+binds) contained in the
 type items of $\Delta$, its \emph{completion} $\thh$ extends $\theta$
 with the identity on the remaining type items of $\Delta$---the
 pass-through reading, under which an unapplied reference re-exports its
@@ -301,6 +301,20 @@ calls, and method provisions---reuse this one judgment.
 
 \begin{figure}[t]
 \centering
+\textbf{Keys and unification}
+\[
+\begin{array}{r@{\;}c@{\;}l@{\qquad}r@{\;}c@{\;}l}
+\ksf{key}(t) &=& t &
+\ksf{key}(f) &=& f \\
+\ksf{key}(v) &=& v &
+\ksf{key}(\tau.m[\theta]) &=& (\tau, m) \\[3pt]
+\multicolumn{6}{l}{\ksf{keys}(\Delta) \;=\; \{\,\ksf{key}(\iota) \mid \iota \in \Delta\,\}}\\[3pt]
+\multicolumn{6}{l}{\ksf{unify}(\iota_1, \iota_2) \;=\;
+  \text{the most general }\sigma_u\text{ with }
+  \sigma_u\iota_1 = \sigma_u\iota_2,\ \text{if one exists}}
+\end{array}
+\]
+
 \textbf{Merging [D43]}\quad
 \fbox{$\Delta \Downarrow \langle \hat\Delta;\, \sigma_\Delta \rangle$}
 \begin{mathpar}
@@ -363,22 +377,25 @@ calls, and method provisions---reuse this one judgment.
   {\Sigma;\Phi \vdash \nu \le \nu_1 \vee \cdots \vee \nu_k}
 \end{mathpar}
 \caption{Merging, satisfaction, type formation, and subtyping.
-\emph{Merging} [D43]: the key of a type, val, or fn item is its symbol; of
-a method item, the pair (receiver \emph{type}, method symbol), compared
-after $\sigma_\Delta$---the same [D18] identity dispatch is keyed by [D62],
-and for the same reason: keying on the receiver's head would give
-$\smallcode{Slot[Elem=Int].get}$ and $\smallcode{Slot[Elem=Char].get}$ one
-key, so a telescope needing the method at two instantiations would try to
-identify $\smallcode{Int}$ with $\smallcode{Char}$ and be rejected. D43's
-own example still merges: there the receiver is shared and it is the
-method's own application that differs.
-$\ksf{unify}$ is first-order unification of the colliding items---symmetric,
-neither occurrence primary---which fails, and telescope formation with it,
-exactly when it would identify two distinct concrete heads (say
-$\smallcode{A.gimme[Foo=Eof]}$ with $\smallcode{A.gimme[Foo=Comma]}$), or
-when its equations are cyclic (the occurs check; D43 is silent on cyclic
-merges, a finding of the mechanization). $\sigma_u \circ \sigma_\Delta$ is
-the idempotent extension: the new equations are applied to the old ranges.
+\emph{Merging} [D43]: a method item's key is the pair (receiver
+\emph{type}, method symbol), dropping its application $\theta$; keys are
+compared after $\sigma_\Delta$, and $\sigma$ acts on a telescope
+itemwise. Keying a method on the receiver's \emph{type} is the same [D18]
+identity that dispatch is keyed by [D62], and for the same reason: keying on
+its head would give $\smallcode{Slot[Elem=Int].get}$ and
+$\smallcode{Slot[Elem=Char].get}$ one key, so a telescope needing the
+method at two instantiations would try to identify $\smallcode{Int}$ with
+$\smallcode{Char}$ and be rejected. D43's own example still merges: there
+the receiver is shared and it is the method's own application that
+differs. $\ksf{unify}$ is ordinary first-order syntactic
+unification---symmetric, neither occurrence primary---so the two ways
+formation can fail are the two ways an mgu can fail to exist: a
+\emph{clash} of distinct concrete heads (say
+$\smallcode{A.gimme[Foo=Eof]}$ with $\smallcode{A.gimme[Foo=Comma]}$), and
+a \emph{cyclic} equation $t \doteq \tau$ with $t$ free in $\tau$ (the
+occurs check; D43 is silent on cyclic merges, a finding of the
+mechanization). $\sigma_u \circ \sigma_\Delta$ is the idempotent
+extension: the new equations are applied to the old ranges.
 \emph{Satisfaction} is judged against the merged telescope
 (\textsc{S-Tel}): totality is per equivalence class---$\dom(\theta)$ covers
 the type items of $\hat\Delta$---and $\theta$ must respect the merge
