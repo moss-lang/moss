@@ -1,0 +1,18 @@
+# The WebAssembly features the Moss toolchain targets: what the compiler may
+# emit, what Binaryen may read and write while optimizing, and so what every
+# engine that runs the output has to support. This is the one list. The
+# flake, the bootstrap tests, and the driver (`crates/moss-cli`) all read it,
+# so a feature is enabled everywhere or nowhere.
+#
+# Names are Binaryen's, as in `wasm-opt --enable-<name>`. The set is Wasm 2.0
+# (https://www.w3.org/TR/wasm-core-2/), which Wasmtime enables by default.
+# Never hand Binaryen `-all` instead: that opts into every proposal it knows,
+# and Binaryen 132 began emitting the compact-imports encoding under it,
+# which Wasmtime rejects.
+mutable-globals
+nontrapping-float-to-int
+sign-ext
+multivalue
+bulk-memory
+reference-types
+simd

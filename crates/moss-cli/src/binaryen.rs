@@ -3,7 +3,7 @@ use std::{
     ptr, slice,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use libc::free;
 
 #[derive(Clone, Copy, Debug)]
@@ -58,13 +58,59 @@ pub fn parse_opt(value: &str) -> Result<Opt, String> {
     }
 }
 
+/// The Wasm features Binaryen may read and write, by their `wasm-opt
+/// --enable-` names: the one list the flake and the bootstrap tests read
+/// too, so no caller has to be kept in step by hand. The file says what it
+/// covers, and why `BinaryenFeatureAll` is not an option.
+const WASM_FEATURES: &str = include_str!("../../../wasm-features.txt");
+
+fn features() -> Result<BinaryenFeatures> {
+    let mut features = unsafe { BinaryenFeatureMVP() };
+    for line in WASM_FEATURES.lines() {
+        let name = line.trim();
+        if name.is_empty() || name.starts_with('#') {
+            continue;
+        }
+        features |= unsafe { feature(name) }.ok_or_else(|| {
+            anyhow!("wasm-features.txt names a Wasm feature this driver does not know: `{name}`")
+        })?;
+    }
+    Ok(features)
+}
+
+/// One feature by name, with whatever `wasm-opt --enable-<name>` implies.
+unsafe fn feature(name: &str) -> Option<BinaryenFeatures> {
+    Some(match name {
+        // Wasm 2.0.
+        "mutable-globals" => BinaryenFeatureMutableGlobals(),
+        "nontrapping-float-to-int" => BinaryenFeatureNontrappingFPToInt(),
+        "sign-ext" => BinaryenFeatureSignExt(),
+        "multivalue" => BinaryenFeatureMultivalue(),
+        // Binaryen keeps `memory.copy` and `memory.fill` as a feature of
+        // their own, which `--enable-bulk-memory` switches on as well.
+        "bulk-memory" => BinaryenFeatureBulkMemory() | BinaryenFeatureBulkMemoryOpt(),
+        "bulk-memory-opt" => BinaryenFeatureBulkMemoryOpt(),
+        "reference-types" => BinaryenFeatureReferenceTypes(),
+        "call-indirect-overlong" => BinaryenFeatureCallIndirectOverlong(),
+        "simd" => BinaryenFeatureSIMD128(),
+        // Wasm 3.0.
+        "tail-call" => BinaryenFeatureTailCall(),
+        "extended-const" => BinaryenFeatureExtendedConst(),
+        "multimemory" => BinaryenFeatureMultiMemory(),
+        "memory64" => BinaryenFeatureMemory64(),
+        "gc" => BinaryenFeatureGC(),
+        "exception-handling" => BinaryenFeatureExceptionHandling(),
+        "relaxed-simd" => BinaryenFeatureRelaxedSIMD(),
+        "threads" => BinaryenFeatureAtomics(),
+        _ => return None,
+    })
+}
+
 pub fn optimize_wasm(mut bytes: Vec<u8>, opt: Opt) -> Result<Vec<u8>> {
+    let features = features()?;
     unsafe {
-        let module = BinaryenModuleReadWithFeatures(
-            bytes.as_mut_ptr().cast(),
-            bytes.len(),
-            BinaryenFeatureAll(),
-        );
+        let module =
+            BinaryenModuleReadWithFeatures(bytes.as_mut_ptr().cast(), bytes.len(), features);
         if module.is_null() {
             bail!("Binaryen could not read the compiler output");
         }
@@ -98,7 +144,24 @@ type BinaryenFeatures = u32;
 type BinaryenModuleRef = *mut c_void;
 
 extern "C" {
-    fn BinaryenFeatureAll() -> BinaryenFeatures;
+    fn BinaryenFeatureMVP() -> BinaryenFeatures;
+    fn BinaryenFeatureMutableGlobals() -> BinaryenFeatures;
+    fn BinaryenFeatureNontrappingFPToInt() -> BinaryenFeatures;
+    fn BinaryenFeatureSignExt() -> BinaryenFeatures;
+    fn BinaryenFeatureMultivalue() -> BinaryenFeatures;
+    fn BinaryenFeatureBulkMemory() -> BinaryenFeatures;
+    fn BinaryenFeatureBulkMemoryOpt() -> BinaryenFeatures;
+    fn BinaryenFeatureReferenceTypes() -> BinaryenFeatures;
+    fn BinaryenFeatureCallIndirectOverlong() -> BinaryenFeatures;
+    fn BinaryenFeatureSIMD128() -> BinaryenFeatures;
+    fn BinaryenFeatureTailCall() -> BinaryenFeatures;
+    fn BinaryenFeatureExtendedConst() -> BinaryenFeatures;
+    fn BinaryenFeatureMultiMemory() -> BinaryenFeatures;
+    fn BinaryenFeatureMemory64() -> BinaryenFeatures;
+    fn BinaryenFeatureGC() -> BinaryenFeatures;
+    fn BinaryenFeatureExceptionHandling() -> BinaryenFeatures;
+    fn BinaryenFeatureRelaxedSIMD() -> BinaryenFeatures;
+    fn BinaryenFeatureAtomics() -> BinaryenFeatures;
     fn BinaryenSetOptimizeLevel(level: c_int);
     fn BinaryenSetShrinkLevel(level: c_int);
     fn BinaryenSetDebugInfo(on: bool);

@@ -15,6 +15,7 @@ from .test_run import runnable_examples
 
 REPO = Path(__file__).resolve().parents[2]
 PRELUDE = str(REPO / "lib/prelude.moss")
+WASM_FEATURES = REPO / "wasm-features.txt"
 
 # One per-run directory holds every module these tests write, and dies with
 # the process — `delete=False` temporaries were left behind, a
@@ -43,6 +44,14 @@ def wasmtime() -> str:
     return path
 
 
+def wasm_features() -> list[str]:
+    """The Wasm features Binaryen may use, by their `wasm-opt --enable-`
+    names. The one list the flake and the driver read too, so no caller
+    has to be kept in step by hand; the file says what it covers."""
+    lines = WASM_FEATURES.read_text(encoding="utf-8").splitlines()
+    return [line for line in map(str.strip, lines) if line and not line.startswith("#")]
+
+
 def wasm_opt(module: bytes) -> bytes:
     """The same program, some eight times faster to run.
 
@@ -64,8 +73,9 @@ def wasm_opt(module: bytes) -> bytes:
         )
     src = wasm_file(module)
     dst = src + ".opt.wasm"
+    features = [f"--enable-{feature}" for feature in wasm_features()]
     subprocess.run(
-        [path, "-all", "-O3", "-o", dst, src], check=True, timeout=600
+        [path, "-mvp", *features, "-O3", "-o", dst, src], check=True, timeout=600
     )
     return Path(dst).read_bytes()
 

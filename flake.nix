@@ -40,8 +40,18 @@
               ./Cargo.toml
               ./Cargo.lock
               ./crates
+              ./wasm-features.txt
             ];
           };
+          # The Wasm features Binaryen may use, from the one list the
+          # bootstrap tests and the driver read too: `wasm-features.txt`
+          # says what it covers, and why `-all` is not an option.
+          wasmFeatures = builtins.filter (line: line != "" && !pkgs.lib.hasPrefix "#" line) (
+            pkgs.lib.splitString "\n" (builtins.readFile ./wasm-features.txt)
+          );
+          wasmOptFlags = pkgs.lib.concatStringsSep " " (
+            [ "-mvp" ] ++ map (feature: "--enable-${feature}") wasmFeatures
+          );
           compilerSource = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
@@ -111,10 +121,10 @@
                 export PYTHONPATH=${compilerSource}/bootstrap
                 export MOSS_LIB=${compilerSource}/lib
                 python3 -m mossc ${compilerSource}/src/main.moss > s0.wasm
-                wasm-opt -all -O3 s0.wasm -o s0-opt.wasm
+                wasm-opt ${wasmOptFlags} -O3 s0.wasm -o s0-opt.wasm
                 wasmtime run --argv0 lib/prelude.moss --dir ${compilerSource}::. \
                   s0-opt.wasm src/main.moss > s1.wasm
-                wasm-opt -all -O3 s1.wasm -o $out
+                wasm-opt ${wasmOptFlags} -O3 s1.wasm -o $out
               '';
           # Machine code for the compiler, compiled ahead of time by the same
           # Wasmtime the driver links, so the driver can just map it in.
