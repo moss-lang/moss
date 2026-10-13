@@ -241,6 +241,12 @@ I64_RESULTS = {
 }
 
 
+def captured(need, slot) -> tuple:
+    """The key a val captured by a fn bind travels under: `slot` is named
+    as the provider bound to `need` knows it (D26)."""
+    return ("captured", need, slot)
+
+
 def freeze_env(env: dict) -> tuple:
     """A hashable form of a binding environment, for keying specializations."""
     return tuple(
@@ -370,23 +376,36 @@ class Backend:
         (D2 — vals are the only runtime context), plus, for every fn need
         bound to a provider, whatever that provider needs in turn. A bound
         provider is called from wherever the need is used, which may be
-        several frames below the bind, so its values are threaded down."""
+        several frames below the bind, so its values are threaded down.
+
+        A provider's values were captured at the bind site (D26), so they
+        travel under keys of their own — `captured(need, slot)`, named
+        relative to the fn need they were captured for — and never under
+        the provider's own key. Otherwise a frame between the bind and the
+        call that rebinds that key would hand the provider its own value
+        instead of the captured one."""
         out: list = []
         seen: set = set()
 
-        def visit(sym: Symbol, e: dict, depth: int):
+        def visit(sym: Symbol, e: dict, depth: int) -> list:
             if depth > 32:
                 raise NotCompilable("fn binds nested too deeply")
+            found: list = []
             for key in self.lower.needs_of[id(sym)]:
                 if self.passed_need(key):
-                    if id(key) not in seen:
-                        seen.add(id(key))
-                        out.append(key)
+                    found.append(key)
                 elif key in e:
                     provider, sub = e[key]
-                    visit(provider, sub, depth + 1)
+                    found.extend(
+                        captured(key, slot)
+                        for slot in visit(provider, sub, depth + 1)
+                    )
+            return found
 
-        visit(symbol, env, 0)
+        for key in visit(symbol, env, 0):
+            if key not in seen:
+                seen.add(key)
+                out.append(key)
         return out
 
     def compile_fn(self, symbol: Symbol, env: dict | None = None) -> int:
@@ -995,6 +1014,15 @@ class FnCompiler:
             f"need `{getattr(key, 'name', key)}` has no compilable provision"
         )
 
+    def translate_slot(self, translate: dict, slot):
+        """A callee's parameter slot, named as the caller knows it. Only
+        the outermost key is the callee's to rename: inside a captured
+        slot, the rest is named relative to the provider."""
+        if isinstance(slot, tuple) and slot and slot[0] == "captured":
+            _, need, inner = slot
+            return captured(translate.get(need, need), inner)
+        return translate.get(slot, slot)
+
     def push_provision(self, key):
         kind, value = self.provide(key)
         if kind == "const":
@@ -1040,16 +1068,21 @@ class FnCompiler:
             self.code += LOCAL_SET + uleb(idx)
             self.provisions[node.key] = ("local", idx)
         elif isinstance(node, ir.BindFn):
-            # Record which function this key now names, and alias the
-            # provider's own needs to what they were bound to *here* — the
-            # capture happens at the bind site, so the values are the ones
-            # in scope now, whatever frame ends up making the call.
+            # Record which function this key now names, and capture the
+            # provider's own needs as they are bound *here* (D26): under
+            # keys of their own, so they are the values in scope now,
+            # whatever frame ends up making the call and whatever it has
+            # rebound in between.
             sub: dict = {}
+            translate: dict = {}
             for callee_key, caller_key in node.needs_map:
+                translate[callee_key] = caller_key
                 if caller_key in self.env:
                     sub[callee_key] = self.env[caller_key]
-                elif self.b.passed_need(callee_key):
-                    self.provisions[callee_key] = self.provide(caller_key)
+            for slot in self.b.val_slots(node.fn, sub):
+                self.provisions[captured(node.key, slot)] = self.provide(
+                    self.translate_slot(translate, slot)
+                )
             self.env[node.key] = (node.fn, sub)
         elif isinstance(node, ir.ExprStmt):
             layout = self.expr(node.expr)
@@ -1312,11 +1345,10 @@ class FnCompiler:
                 translate[callee_key] = caller_key
                 if caller_key in self.env:
                     callee_env[callee_key] = self.env[caller_key]
-            # The callee's parameters are its own val needs (named on its
-            # side, so translated) followed by whatever its bound providers
-            # capture (already named on ours).
+            # The callee's parameters are its own val needs followed by
+            # whatever its bound providers captured, both named on its side.
             for slot in self.b.val_slots(target, callee_env):
-                self.push_provision(translate.get(slot, slot))
+                self.push_provision(self.translate_slot(translate, slot))
             self.code += CALL + uleb(self.b.compile_fn(target, callee_env))
             return (I32,) * self.b.lower.fns[id(target)].ret_slots
         if target in self.env:
@@ -1326,7 +1358,7 @@ class FnCompiler:
             for arg in node.args:
                 self.expr(arg)
             for slot in self.b.val_slots(provider, sub):
-                self.push_provision(slot)
+                self.push_provision(captured(target, slot))
             self.code += CALL + uleb(self.b.compile_fn(provider, sub))
             return (I32,) * self.b.lower.fns[id(provider)].ret_slots
         # Contextual call: a native method, putchar, or out of slice.

@@ -11,7 +11,7 @@ from mossc import build as build_mod
 from mossc import collect
 from mossc.lower import Lower
 
-from .test_run import runnable_examples
+from .test_run import CAPTURE_REBOUND, runnable_examples
 
 REPO = Path(__file__).resolve().parents[2]
 PRELUDE = str(REPO / "lib/prelude.moss")
@@ -298,6 +298,12 @@ class TestWasmBackend(unittest.TestCase):
             "}\n",
         }
         self.assertEqual(run_wasm(compile_wasm(files)), "kk!!\n")
+
+    def test_fn_bind_capture_survives_rebinds(self):
+        """D26: captured vals travel under keys of their own, so a rebind
+        between the bind and the call cannot reach the provider (see
+        `CAPTURE_REBOUND` in test_run for the cases)."""
+        self.assertEqual(run_wasm(compile_wasm(CAPTURE_REBOUND)), "hhhh\n")
 
     def test_method_provision_compiles(self):
         """`bind N.plus = Box.plus` is a fn bind too, and the call through

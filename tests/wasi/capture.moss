@@ -1,0 +1,101 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# A fn bind captures its provider's context at the bind site (D26): the
+# provider runs with the vals that were in force where it was bound, not
+# with whatever the frame that ends up calling it has bound since. Every
+# letter below is printed with the `shift` some bind captured; a different
+# letter names the rebind that leaked through.
+
+fn .say();
+
+assume Wasm, Wasi, Branch {
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn six(): I32 { w::i32_add(four(), two()) }
+
+  fn emit(c: I32) {
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
+    w::i32_store8(eight(), c);
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
+  }
+
+  fn upper_a(): I32 {
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
+  }
+
+  fn newline(): I32 { w::i32_add(eight(), two()) }
+
+  fn three(): I32 { w::i32_add(two(), w::i32_one) }
+
+  val shift: I32;
+
+  # 'A' plus 1 << shift: 'C' for 1, 'E' for 2, 'I' for 3.
+  assume shift {
+    fn letter() { emit(w::i32_add(upper_a(), w::i32_shl(w::i32_one, shift))); }
+  }
+
+  fn task();
+  fn outer();
+
+  fn dee() { emit(w::i32_add(upper_a(), three())); }
+
+  assume task {
+    # Rebinds between the bind and the call...
+    fn relay() {
+      bind shift = two();
+      task();
+    }
+
+    # ...or a frame above the call.
+    fn deep() {
+      bind shift = three();
+      below();
+    }
+
+    fn below() { task(); }
+
+    fn wrap() { task(); }
+  }
+
+  # A provider that captured a fn bind of its own: `outer` is `wrap`,
+  # whose `task` is whatever it was where `outer` was bound.
+  assume outer {
+    fn later() {
+      bind shift = three();
+      bind task = dee;
+      outer();
+    }
+  }
+
+  # The same through a detached method provided at a receiver.
+  type Tick I32;
+
+  assume shift {
+    fn Tick.loud() { letter(); }
+  }
+
+  assume Tick.say {
+    fn speak(t: Tick) {
+      bind shift = three();
+      t.say();
+    }
+  }
+
+  fn main() {
+    bind shift = w::i32_one;
+    bind task = letter;
+    relay();               # 'C', not 'E'
+    deep();                # 'C', not 'I'
+    bind outer = wrap;
+    bind shift = two();
+    later();               # 'C', not 'D' or 'I'
+    task();                # 'C': bound before this frame's own rebind
+    bind Tick.say = Tick.loud;
+    speak(Tick (w::i32_zero));   # 'E', captured with shift = 2
+    emit(newline());
+  }
+}

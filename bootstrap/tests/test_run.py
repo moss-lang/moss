@@ -223,6 +223,45 @@ class TestContext(unittest.TestCase):
         }
         self.assertEqual(run(files), "k")
 
+    def test_fn_bind_capture_survives_rebinds(self):
+        self.assertEqual(run(CAPTURE_REBOUND), "hhhh\n")
+
+
+# D26: a bound provider's needs are captured at the bind site, so a frame
+# between the bind and the call that rebinds them changes nothing —
+# directly (`relay`), a frame further down (`deep`), or through a provider
+# that itself captured a fn bind (`wrap`, whose `task` is still `emit` with
+# `c=h`). Even in the bind's own scope, a later rebind of `c` leaves the
+# earlier `bind task=emit` alone. Every line prints `h`; any other letter
+# names the rebind that leaked through.
+CAPTURE_REBOUND = {
+    "main.moss": "assume Std {\n"
+    "  val c: Char;\n"
+    "  fn task();\n"
+    "  fn outer();\n"
+    "  assume c { fn emit() { putchar(c); } }\n"
+    "  fn shout() { putchar(char::exclam); }\n"
+    "  assume task {\n"
+    "    fn relay() { bind c=char::i; task(); }\n"
+    "    fn deep() { bind c=char::j; below(); }\n"
+    "    fn below() { task(); }\n"
+    "    fn wrap() { task(); }\n"
+    "  }\n"
+    "  assume outer { fn later() { bind c=char::l; bind task=shout; outer(); } }\n"
+    "  fn main() {\n"
+    "    bind c=char::h;\n"
+    "    bind task=emit;\n"
+    "    relay();\n"
+    "    deep();\n"
+    "    bind outer=wrap;\n"
+    "    bind c=char::k;\n"
+    "    later();\n"
+    "    task();\n"
+    "    putchar(char::newline);\n"
+    "  }\n"
+    "}\n",
+}
+
 
 class TestMethods(unittest.TestCase):
     def test_attached_defined(self):
@@ -1190,6 +1229,15 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/generic.moss")
         self.assertEqual(self.wasmtime_run(module), "hiDCC\n")
 
+    def test_a_fn_bind_captures_at_the_bind_site(self):
+        """D26: a bound provider runs with the vals in force where it was
+        bound. Its captured values travel under keys of their own, so a
+        rebind between the bind and the call — in the calling frame, a
+        frame above it, or inside a provider that captured a bind of its
+        own — cannot reach it, through a plain fn or a detached method."""
+        module = self.compile_with_moss("tests/wasi/capture.moss")
+        self.assertEqual(self.wasmtime_run(module), "CCCCE\n")
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
@@ -1205,6 +1253,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/wide.moss", "ABCD\n"),
             ("tests/wasi/generic.moss", "hiDCC\n"),
             ("tests/wasi/bulk.moss", "hi!\n"),
+            ("tests/wasi/capture.moss", "CCCCE\n"),
         )
         for entry, expected in cases:
             with self.subTest(entry=entry):

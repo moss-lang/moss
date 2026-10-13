@@ -136,13 +136,26 @@ assume Std {
   val vs_head: IntList;
   val vs_pool: IntList;
 
+  # Captured slots (D26): a val a fn bind captured, keyed by the
+  # environment entry that bind made and by the slot as its provider
+  # names it — itself captured, one level per bind the provider sees. A
+  # slot is a symbol id when it is at least zero and one of these rows,
+  # encoded below `ast::none()`, when it is not; so a captured value can
+  # never be mistaken for the val of the same name in force where it is
+  # finally used. Bucketed on the entry, as `vs_head` is on the symbol.
+  val ck_entry: IntList;
+  val ck_inner: IntList;
+  val ck_link: IntList;
+  val ck_head: IntList;
+
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
     pv_recv, pv_sym, pv_local, pv_top,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
     cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name, cg_err_at, cg_where,
-    vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool;
+    vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
+    ck_entry, ck_inner, ck_link, ck_head;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -364,7 +377,9 @@ assume Std {
       in_wasm(sym).not()
     }
 
-    fn need_type(sym: Int): Int {
+    # A captured slot has the type of the val it finally names.
+    fn need_type(slot: Int): Int {
+      let sym = slot_sym(slot);
       elab_ty(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
     }
 
@@ -422,6 +437,41 @@ assume Std {
       }
     }
 
+    # The slot for a value captured by the bind that made `entry`.
+    fn ck_slot(entry: Int, inner: Int): Int {
+      if entry.lt(ck_head.length()) {
+        var r = ck_head.get(entry);
+        while r.gt(zero) {
+          let row = r.sub(one);
+          if ck_inner.get(row).eq(inner) {
+            return row.add(n2()).neg();
+          }
+          r = ck_link.get(row);
+        }
+      }
+      while ck_head.length().le(entry) {
+        ck_head.push(zero);
+      }
+      ck_entry.push(entry);
+      ck_inner.push(inner);
+      ck_link.push(ck_head.get(entry));
+      ck_head.set(entry, ck_entry.length());
+      ck_entry.length().add(one).neg()
+    }
+
+    fn is_captured(slot: Int): Bool { slot.lt(ast::none()) }
+
+    fn ck_row(slot: Int): Int { slot.neg().sub(n2()) }
+
+    # The val a slot finally names, under however many captures.
+    fn slot_sym(slot: Int): Int {
+      var s = slot;
+      while is_captured(s) {
+        s = ck_inner.get(ck_row(s));
+      }
+      s
+    }
+
     # The memo row for this key, computing it if it is not there yet. The
     # answer is a pure function of (sym, env): a requirement list is fixed
     # before the back end runs and an environment is hash-consed to an id,
@@ -448,7 +498,8 @@ assume Std {
     # needs, plus — for every fn need bound to a provider — whatever that
     # provider needs in turn. A bound provider runs in a frame that never
     # mentions its values, which may be several below the bind, so they
-    # are threaded down.
+    # are threaded down; as captured slots, because they are the values
+    # in force at the bind (D26), whatever has been rebound since.
     fn val_slots_walk(out: IntList, sym: Int, env: Int, depth: Int) {
       if depth.gt(hex(n2(), zero)) {
         cg_error(prog::e_deep(), prog::sym_name.get(sym));
@@ -471,7 +522,7 @@ assume Std {
               );
               var j = zero;
               while j.lt(vs_len.get(row)) {
-                vs_append(out, vs_pool.get(vs_start.get(row).add(j)));
+                vs_append(out, ck_slot(e, vs_pool.get(vs_start.get(row).add(j))));
                 j = j.add(one);
               }
             }
@@ -496,8 +547,10 @@ assume Std {
     # The environment a callee is compiled in: its own bindings, taken
     # from this frame. Built by walking the callee's base environment
     # outermost first, so that the same bindings always give the same
-    # chain — which is what lets it key the specialization cache.
-    fn callee_env(callee: Int): Int {
+    # chain — which is what lets it key the specialization cache. Each fn
+    # entry made for the callee goes into `map` beside the entry of this
+    # frame it came from, which is how its captured slots are found here.
+    fn callee_env(callee: Int, map: IntList): Int {
       let chain = int_list();
       var e = lower::env_of(callee);
       while ast::is_some(e) {
@@ -534,6 +587,8 @@ assume Std {
                 out, lower::ek_fn(), need_key_recv(out, recv), sym,
                 lower::env_a_of(here), lower::env_b_of(here)
               );
+              map.push(out);
+              map.push(here);
             }
           }
         }
@@ -1195,8 +1250,10 @@ assume Std {
       let meth = method_of(e, m);
       var provider = meth;
       var penv = ast::none();
+      var via = ast::none();
+      let map = int_list();
       if ast::is_some(meth) {
-        penv = callee_env(meth);
+        penv = callee_env(meth, map);
       } else {
         # Not in scope as an attached method: the context must provide it
         # at this receiver, keyed by the receiver's head (D36).
@@ -1207,6 +1264,7 @@ assume Std {
         }
         provider = lower::env_a_of(bound);
         penv = lower::env_b_of(bound);
+        via = bound;
         if ast::is_some(provider).not() {
           cg_error(c_unbound(), ast::path_last(ast::b_of(e)));
           return ty_none();
@@ -1215,7 +1273,7 @@ assume Std {
       emit_expr(body, ast::a_of(e), m);
       emit_args(body, ast::c_of(e), ast::d_of(e), m, param_types(provider));
       reach(provider, penv);
-      push_needs(body, provider, penv);
+      push_needs(body, provider, penv, via, map);
       op_call(body, index_of_fn(provider, penv));
       elab_ty(
         ast::fn_ret(prog::sym_decl.get(provider)), prog::sym_mod.get(provider)
@@ -1432,9 +1490,10 @@ assume Std {
         return cg_boolty.read();
       }
       if is_defined_fn(sym) {
-        let env = callee_env(sym);
+        let map = int_list();
+        let env = callee_env(sym, map);
         reach(sym, env);
-        push_needs(body, sym, env);
+        push_needs(body, sym, env, ast::none(), map);
         op_call(body, index_of_fn(sym, env));
         return elab_ty(
           ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
@@ -1447,9 +1506,7 @@ assume Std {
       );
       if ast::is_some(bound) {
         if ast::is_some(lower::env_a_of(bound)) {
-          return emit_provided(
-            body, lower::env_a_of(bound), lower::env_b_of(bound)
-          );
+          return emit_provided(body, bound);
         }
       }
       if in_wasi(sym) {
@@ -1465,9 +1522,11 @@ assume Std {
 
     # A call to whatever a bind put here: the arguments are already on
     # the stack, so this is the provider's needs and the call.
-    fn emit_provided(body: IntList, provider: Int, penv: Int): Int {
+    fn emit_provided(body: IntList, bound: Int): Int {
+      let provider = lower::env_a_of(bound);
+      let penv = lower::env_b_of(bound);
       reach(provider, penv);
-      push_needs(body, provider, penv);
+      push_needs(body, provider, penv, bound, int_list());
       op_call(body, index_of_fn(provider, penv));
       elab_ty(
         ast::fn_ret(prog::sym_decl.get(provider)), prog::sym_mod.get(provider)
@@ -1477,16 +1536,58 @@ assume Std {
     # The callee's needs, in its order, taken from this frame. A need the
     # frame cannot supply is the context error of D20 rather than a
     # scope error: the name is fine, nobody provided it here.
-    fn push_needs(body: IntList, callee: Int, env: Int) {
+    fn push_needs(body: IntList, callee: Int, env: Int, via: Int, map: IntList) {
       let vals = int_list();
       val_slots(vals, callee, env, zero);
       var i = zero;
       while i.lt(vals.length()) {
-        let l = provision_of(ast::none(), vals.get(i));
+        let l = provision_of(ast::none(), caller_slot(vals.get(i), via, map));
         if ast::is_some(l) {
           load_local(body, l);
         } else {
-          cg_error(c_unbound(), prog::sym_name.get(vals.get(i)));
+          cg_error(c_unbound(), prog::sym_name.get(slot_sym(vals.get(i))));
+        }
+        i = i.add(one);
+      }
+    }
+
+    # A callee's slot as this frame knows it. Everything a bound provider
+    # takes was captured by the bind that made `via`; a direct callee
+    # takes its own vals by symbol, and a captured one under whichever
+    # entry of this frame its binding came from (`map`, from
+    # `callee_env`).
+    fn caller_slot(slot: Int, via: Int, map: IntList): Int {
+      if ast::is_some(via) {
+        return ck_slot(via, slot);
+      }
+      if is_captured(slot) {
+        let row = ck_row(slot);
+        var i = zero;
+        while i.lt(map.length()) {
+          if map.get(i).eq(ck_entry.get(row)) {
+            return ck_slot(map.get(i.add(one)), ck_inner.get(row));
+          }
+          i = i.add(n2());
+        }
+      }
+      slot
+    }
+
+    # D26: a provider's context is captured at the bind site. Each slot
+    # it takes is provided again under the entry the bind just made, from
+    # the local that holds it here — a bound val's local is written once,
+    # by its own bind, so sharing it is the capture.
+    fn capture(entry: Int, mode: Int) {
+      if mode.ne(bw_emit()) {
+        return ();
+      }
+      let vals = int_list();
+      val_slots(vals, lower::env_a_of(entry), lower::env_b_of(entry), zero);
+      var i = zero;
+      while i.lt(vals.length()) {
+        let l = provision_of(ast::none(), vals.get(i));
+        if ast::is_some(l) {
+          provide(ast::none(), ck_slot(entry, vals.get(i)), l);
         }
         i = i.add(one);
       }
@@ -1847,7 +1948,7 @@ assume Std {
       }
       # A receiver dot: providing a detached method at that receiver.
       if ast::is_some(ast::b_of(spec)) {
-        bind_method(spec, value, m);
+        bind_method(spec, value, m, mode);
         return ();
       }
       if ast::is_some(ast::a_of(spec)).not() {
@@ -1898,6 +1999,7 @@ assume Std {
           cg_env.read(), lower::ek_fn(), ast::none(), sym,
           provider, cg_env.read()
         ));
+        capture(cg_env.read(), mode);
         return ();
       }
       cg_error(c_unsupported(), prog::sym_name.get(sym));
@@ -1905,7 +2007,7 @@ assume Std {
 
     # `bind Horn.loud = Horn.blast;` — a detached method provided at a
     # receiver. The key is the receiver's head, so calls find it there.
-    fn bind_method(spec: Int, value: Int, m: Int) {
+    fn bind_method(spec: Int, value: Int, m: Int, mode: Int) {
       let recv_sym = prog::resolve_path(m, ast::a_of(spec));
       if ast::is_some(recv_sym).not() {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
@@ -1929,6 +2031,7 @@ assume Std {
       cg_env.write(lower::env_push(
         cg_env.read(), lower::ek_fn(), head, detached, provider, cg_env.read()
       ));
+      capture(cg_env.read(), mode);
     }
 
     # A functor application is a run of binds, inlined where it is
