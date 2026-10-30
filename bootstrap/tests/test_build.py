@@ -11,7 +11,7 @@ from mossc import build as build_mod
 from mossc import collect
 from mossc.lower import Lower, LowerError
 
-from .test_run import CAPTURE_REBOUND, RECORDS_OUT, runnable_examples
+from .test_run import CAPTURE_REBOUND, NESTED_OUT, RECORDS_OUT, runnable_examples
 
 REPO = Path(__file__).resolve().parents[2]
 PRELUDE = str(REPO / "lib/prelude.moss")
@@ -505,6 +505,10 @@ class TestWasmBackend(unittest.TestCase):
         record."""
         wasm = compile_wasm({}, entry="tests/wasi/records.moss")
         self.assertEqual(run_wasm(wasm), RECORDS_OUT)
+
+    def test_temporaries_nested_anywhere(self):
+        wasm = compile_wasm({}, entry="tests/wasi/nested.moss")
+        self.assertEqual(run_wasm(wasm), NESTED_OUT)
 
     def test_a_type_that_contains_itself_is_rejected(self):
         with self.assertRaises(LowerError) as caught:

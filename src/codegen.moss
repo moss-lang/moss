@@ -25,7 +25,9 @@ import "./wasmops.moss" as wops;
 # the only walk of a body there is, which is what stops the two passes
 # from disagreeing about what one contains — an earlier design walked
 # bodies separately to discover them, and the walks resolved method
-# calls differently because one of them had no locals in scope.
+# calls differently because one of them had no locals in scope. The
+# same goes for a body's locals: the first pass records them as
+# emission creates them, and the second lays out exactly those.
 
 assume Std {
 
@@ -73,9 +75,10 @@ assume Std {
   # The locals of the function being compiled: interned name, elaborated
   # type, and the Wasm indices its value occupies. A value is a run of
   # scalars (D59), so a local owns a run of `lc_slots` rather than one
-  # index — and which indices those are is only known once the whole
-  # function has been scanned, because the locals past the parameters are
-  # grouped by valtype.
+  # index — and which indices those are is only known once every local
+  # of the function is, because the locals past the parameters are
+  # grouped by valtype. The first pass finds them out; the second lays
+  # them out before it emits.
   val lc_name: IntList;
   val lc_type: IntList;
   val lc_start: IntList;
@@ -148,6 +151,15 @@ assume Std {
   val ck_link: IntList;
   val ck_head: IntList;
 
+  # The locals each specialization's body needs, as the first pass met
+  # them: a run of types in `fl_types`, indexed by queue position. The
+  # first pass creates a local the moment emission reveals it; the second
+  # creates the same ones up front, so it can lay them out by valtype
+  # before emitting, and then reveals them in the same order.
+  val fl_start: IntList;
+  val fl_len: IntList;
+  val fl_types: IntList;
+
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
@@ -155,7 +167,8 @@ assume Std {
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
     cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name, cg_err_at, cg_where,
     vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
-    ck_entry, ck_inner, ck_link, ck_head;
+    ck_entry, ck_inner, ck_link, ck_head,
+    fl_start, fl_len, fl_types;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -761,15 +774,10 @@ assume Std {
     }
 
     fn emit_field(body: IntList, e: Int, m: Int): Int {
-      let i = field_at(e, m);
-      if ast::is_some(i).not() {
-        cg_error(c_bad_type(), ast::b_of(e));
-        return ty_none();
-      }
-      let rec = record_type_of(ast::a_of(e), m);
-      let ty = field_ty(rec, i);
       let l = place_local(e, m);
       if ast::is_some(l) {
+        let rec = record_type_of(ast::a_of(e), m);
+        let ty = field_ty(rec, field_at(e, m));
         let off = place_offset(e, m);
         var j = zero;
         while j.lt(width(ty)) {
@@ -778,19 +786,28 @@ assume Std {
         }
         return ty;
       }
-      # Not in a local: evaluate it. The field is the record's leading
-      # run of slots only if nothing comes before it; otherwise the value
-      # would have to be staged through a temporary the scan never made.
-      let off = types::field_offset(rec, i);
-      if off.gt(zero) {
-        cg_error(c_unsupported(), ast::b_of(e));
+      # Not in a local: evaluate it into a temporary, and take the
+      # field's run of slots from that. The record is whatever emitting
+      # it produced, which `type_of` cannot always say beforehand.
+      let got = emit_expr(body, ast::a_of(e), m);
+      let rec = types::record_of(canon_ty(got));
+      var i = ast::none();
+      if ast::is_some(rec) {
+        i = types::field_index(rec, ast::b_of(e));
+      }
+      if ast::is_some(i).not() {
+        drop_value(body, got);
+        cg_error(c_bad_type(), ast::b_of(e));
         return ty_none();
       }
-      emit_expr(body, ast::a_of(e), m);
-      var j = width(rec).sub(width(ty));
-      while j.gt(zero) {
-        op_drop(body);
-        j = j.sub(one);
+      let ty = field_ty(rec, i);
+      let tmp = reveal(ast::none(), got);
+      store_local(body, tmp);
+      let off = types::field_offset(rec, i);
+      var j = zero;
+      while j.lt(width(ty)) {
+        op_local_get(body, local_slot(tmp, off.add(j)));
+        j = j.add(one);
       }
       ty
     }
@@ -909,22 +926,8 @@ assume Std {
       true
     }
 
-    # The locals a record pattern binds, in the order it writes them.
-    fn scan_record_binders(pat: Int, rec: Int, m: Int) {
-      var i = zero;
-      while i.lt(ast::c_of(pat)) {
-        let pf = ast::kid_at(ast::b_of(pat), i);
-        let name = rfield_binder(pf, m);
-        if ast::is_some(name) {
-          let f = types::field_index(rec, ast::a_of(pf));
-          add_local(name, canon_ty(types::field_type_at(rec, f)));
-          lc_visible.write(lc_visible.read().add(one));
-        }
-        i = i.add(one);
-      }
-    }
-
-    # Binding them, from a local holding the record at slot `base`.
+    # Binding a record pattern's fields, from a local holding the record
+    # at slot `base`.
     fn bind_record_fields(body: IntList, pat: Int, rec: Int, m: Int, l: Int, base: Int) {
       var i = zero;
       while i.lt(ast::c_of(pat)) {
@@ -938,7 +941,7 @@ assume Std {
             op_local_get(body, local_slot(l, off.add(j)));
             j = j.add(one);
           }
-          bind_here(body, name);
+          bind_here(body, name, field_ty(rec, f));
         }
         i = i.add(one);
       }
@@ -966,20 +969,35 @@ assume Std {
 
     fn local_width(l: Int): Int { width(lc_type.get(l)) }
 
-    # The scan pass creates every local; emitting only reveals them, in
-    # the same order, and takes the one it just revealed. Going through
-    # here rather than looking a name up is what keeps the two passes
-    # from drifting apart — a `match` temporary has no name to look up.
+    # Emission takes every local by revealing the next one, in order, and
+    # uses the one it just revealed. Going through here rather than
+    # looking a name up is what keeps the two passes from drifting apart —
+    # a `match` temporary has no name to look up.
     #
     # The cursor only ever goes forward, in both passes, because that is
     # what makes "the nth local created is the nth revealed" true: a block
     # that declares locals and is followed by another declaration in the
-    # scope around it would otherwise hand out the same index twice while
-    # the scan handed out two. Leaving a scope therefore *retires* its
-    # names rather than rewinding the cursor, and revealing a local
-    # restores the name the scan gave it.
-    fn reveal(name: Int): Int {
+    # scope around it would otherwise hand out the same index twice. Leaving
+    # a scope therefore *retires* its names rather than rewinding the
+    # cursor, and revealing a local gives it its name back.
+    #
+    # In the first pass nothing is there yet, so revealing creates the
+    # local, with slots numbered just for that pass (its output is thrown
+    # away). In the second pass the cursor walks the locals the first one
+    # recorded; running off their end means the passes disagree.
+    fn reveal(name: Int, ty: Int): Int {
       let l = lc_visible.read();
+      if l.eq(lc_name.length()) {
+        if cg_real.read().eq(one) {
+          cg_error(c_missing(), name);
+        }
+        add_local(name, ty);
+        var i = zero;
+        while i.lt(local_width(l)) {
+          set_local_slot(l, i, lc_start.get(l).add(i));
+          i = i.add(one);
+        }
+      }
       lc_visible.write(l.add(one));
       lc_name.set(l, name);
       l
@@ -1321,125 +1339,13 @@ assume Std {
 
     # Pass three: bodies.
 
-    fn scan_locals_expr(e: Int, m: Int) {
-      if ast::is_some(e).not() {
-        return ();
-      }
-      let k = ast::kind_of(e);
-      if k.eq(ast::k_ex_block()) {
-        let mark = lc_visible.read();
-        let emark = cg_env.read();
-        var i = zero;
-        while i.lt(ast::b_of(e)) {
-          scan_locals_stmt(ast::kid_at(ast::a_of(e), i), m);
-          i = i.add(one);
-        }
-        scan_locals_expr(ast::c_of(e), m);
-        cg_env.write(emark);
-        close_scope(mark);
-      } else if k.eq(ast::k_ex_if()) {
-        scan_locals_expr(ast::b_of(e), m);
-        scan_locals_expr(ast::c_of(e), m);
-      } else if k.eq(ast::k_ex_match()) {
-        scan_locals_match(e, m);
-      }
-    }
-
-    fn scan_locals_match(e: Int, m: Int) {
-      let sty = type_of(ast::a_of(e), m);
-      if ast::c_of(e).eq(zero) {
-        return ();
-      }
-      let outer = lc_visible.read();
-      if types::head_count(sty).gt(one) {
-        # The scrutinee is held in a temporary while the arms test it.
-        add_local(ast::none(), sty);
-        lc_visible.write(lc_visible.read().add(one));
-      }
-      var i = zero;
-      while i.lt(ast::c_of(e)) {
-        let arm = ast::kid_at(ast::b_of(e), i);
-        let mark = lc_visible.read();
-        scan_arm_binder(ast::a_of(arm), sty, m);
-        scan_locals_expr(ast::b_of(arm), m);
-        close_scope(mark);
-        i = i.add(one);
-      }
-      close_scope(outer);
-    }
-
-    # One local if the pattern names something, none otherwise. Mirrors
-    # what `bind_pattern` and `emit_match_arm_body` will reveal.
+    # What a pattern's payload binder holds: of the member the pattern
+    # selects, which for a union is not the union itself.
     fn pattern_payload(pat: Int, sty: Int, m: Int): Int {
       if types::is_kind(sty, types::kd_union()) {
         return arm_payload(pat, m, sty);
       }
       types::member_payload(sty)
-    }
-
-    fn scan_arm_binder(pat: Int, sty: Int, m: Int) {
-      if ast::kind_of(pat).eq(ast::k_pt_record()) {
-        let payload = pattern_payload(pat, sty, m);
-        let rec = pattern_record(payload);
-        if record_pattern_ok(pat, rec, m) {
-          # With one possible head the record arrives on the stack, so it
-          # is held in a temporary to take fields from; a union's is
-          # already in the scrutinee's.
-          if types::head_count(sty).le(one) {
-            add_local(ast::none(), payload);
-            lc_visible.write(lc_visible.read().add(one));
-          }
-          scan_record_binders(pat, rec, m);
-        }
-        return ();
-      }
-      if ast::kind_of(pat).ne(ast::k_pt_path()) {
-        return ();
-      }
-      let sub = ast::b_of(pat);
-      if ast::is_some(sub) {
-        if ast::kind_of(sub).eq(ast::k_pt_path()) {
-          if ast::is_some(ast::b_of(sub)).not() {
-            # `Box v`: `v` names the payload — of the member the pattern
-            # selects, which for a union is not the union itself.
-            add_local(ast::path_last(ast::a_of(sub)), pattern_payload(pat, sty, m));
-            lc_visible.write(lc_visible.read().add(one));
-          }
-        }
-        return ();
-      }
-      if ast::is_some(arm_head_any(pat, m)) {
-        return ();
-      }
-      # A bare name that is not a unit or a tag binds the whole value.
-      add_local(ast::path_last(ast::a_of(pat)), sty);
-      lc_visible.write(lc_visible.read().add(one));
-    }
-
-    fn scan_locals_stmt(s: Int, m: Int) {
-      let k = ast::kind_of(s);
-      if k.eq(ast::k_st_let()) {
-        scan_binding(s, m);
-      } else if k.eq(ast::k_st_var()) {
-        scan_binding(s, m);
-      } else if k.eq(ast::k_st_while()) {
-        scan_locals_expr(ast::b_of(s), m);
-      } else if k.eq(ast::k_st_loop()) {
-        scan_locals_expr(ast::a_of(s), m);
-      } else if k.eq(ast::k_st_bind()) {
-        walk_binds(int_list(), s, m, bw_scan());
-      } else if k.eq(ast::k_st_expr()) {
-        scan_locals_expr(ast::a_of(s), m);
-      }
-    }
-
-    fn scan_binding(s: Int, m: Int) {
-      var ty = elab_ty(ast::b_of(s), m);
-      if ast::is_some(ast::b_of(s)).not() {
-        ty = type_of(ast::c_of(s), m);
-      }
-      add_local(ast::a_of(s), ty);
-      lc_visible.write(lc_visible.read().add(one));
     }
 
     # Parameters take the low indices, in order and slot by slot; the
@@ -1549,8 +1455,13 @@ assume Std {
     # resolves to an attached method — the receiver goes in ahead of the
     # arguments, which is exactly the shape its frame expects.
     fn emit_method(body: IntList, e: Int, m: Int): Int {
-      let recv_ty = type_of(ast::a_of(e), m);
-      let meth = method_of(e, m);
+      # The receiver is emitted first, aside, because its type is what
+      # selects the method, and emitting is the one reliable way to know
+      # it: `type_of` cannot see into a `match`, whose arms' binders are
+      # not in scope until they are emitted.
+      let recv = int_list();
+      let recv_ty = emit_expr(recv, ast::a_of(e), m);
+      let meth = method_of_ty(recv_ty, e, m);
       var provider = meth;
       var penv = ast::none();
       var via = ast::none();
@@ -1573,7 +1484,7 @@ assume Std {
           return ty_none();
         }
       }
-      emit_expr(body, ast::a_of(e), m);
+      push_bytes(body, recv);
       emit_args(body, ast::c_of(e), ast::d_of(e), m, param_types(provider));
       reach(provider, penv);
       push_needs(body, provider, penv, via, map);
@@ -1621,7 +1532,11 @@ assume Std {
 
     # The attached method a call selects, or none.
     fn method_of(e: Int, m: Int): Int {
-      let head = types::head_of(canon_ty(type_of(ast::a_of(e), m)));
+      method_of_ty(type_of(ast::a_of(e), m), e, m)
+    }
+
+    fn method_of_ty(recv_ty: Int, e: Int, m: Int): Int {
+      let head = types::head_of(canon_ty(recv_ty));
       if ast::is_some(head).not() {
         return ast::none();
       }
@@ -2078,7 +1993,7 @@ assume Std {
           cg_error(c_unsupported(), ast::none());
           return ();
         }
-        let tmp = reveal(ast::none());
+        let tmp = reveal(ast::none(), pattern_payload(pat, sty, m));
         store_local(body, tmp);
         bind_record_fields(body, pat, rec, m, tmp, zero);
         return ();
@@ -2090,20 +2005,18 @@ assume Std {
       let sub = ast::b_of(pat);
       if ast::is_some(sub).not() {
         # A single name is a binder unless it resolves to a unit or tag,
-        # and a resolved one carries no payload to name. Which of the two
-        # it is has to be decided the same way `scan_arm_binder` decided
-        # it, or the local it owns is not the one the scan created.
+        # and a resolved one carries no payload to name.
         if ast::is_some(arm_head_any(pat, m)) {
           drop_value(body, sty);
           return ();
         }
-        bind_here(body, ast::path_last(ast::a_of(pat)));
+        bind_here(body, ast::path_last(ast::a_of(pat)), sty);
         return ();
       }
       let payload = types::member_payload(sty);
       if ast::kind_of(sub).eq(ast::k_pt_path()) {
         if ast::is_some(ast::b_of(sub)).not() {
-          bind_here(body, ast::path_last(ast::a_of(sub)));
+          bind_here(body, ast::path_last(ast::a_of(sub)), payload);
           return ();
         }
         # A nested tag pattern; at least name the tag it opens.
@@ -2117,8 +2030,8 @@ assume Std {
       cg_error(c_unsupported(), ast::none());
     }
 
-    fn bind_here(body: IntList, name: Int) {
-      store_local(body, reveal(name));
+    fn bind_here(body: IntList, name: Int, ty: Int) {
+      store_local(body, reveal(name, ty));
     }
 
     fn drop_value(body: IntList, ty: Int) {
@@ -2133,12 +2046,11 @@ assume Std {
     # of units it is also the whole value — and any further slots are
     # room for the widest member's payload (D59). Testing an arm reads
     # slot zero; taking a payload reads the ones beyond it. One emitter
-    # for both shapes, because the scan pass has one binder walk and the
-    # two must reveal the same locals.
+    # for both shapes.
     fn emit_union_match(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
       let scrutinee = int_list();
       emit_expr(scrutinee, ast::a_of(e), m);
-      let tmp = reveal(ast::none());
+      let tmp = reveal(ast::none(), sty);
       push_bytes(body, scrutinee);
       store_local(body, tmp);
       emit_match_arms(body, e, m, sty, tmp, zero, want)
@@ -2189,8 +2101,8 @@ assume Std {
       if ast::kind_of(pat).eq(ast::k_pt_path()) {
         let sub = ast::b_of(pat);
         if ast::is_some(sub) {
-          # Only a bare name takes the payload; `Tag _` names nothing, and
-          # the scan created no local for it.
+          # Only a bare name takes the payload; `Tag _` names nothing, so
+          # it needs no local.
           if ast::kind_of(sub).eq(ast::k_pt_path()) {
             if ast::is_some(ast::b_of(sub)).not() {
               let payload = arm_payload(pat, m, sty);
@@ -2199,12 +2111,12 @@ assume Std {
                 op_local_get(body, local_slot(tmp, j.add(one)));
                 j = j.add(one);
               }
-              bind_here(body, ast::path_last(ast::a_of(sub)));
+              bind_here(body, ast::path_last(ast::a_of(sub)), payload);
             }
           }
         } else if ast::is_some(arm_head_any(pat, m)).not() {
           load_local(body, tmp);
-          bind_here(body, ast::path_last(ast::a_of(pat)));
+          bind_here(body, ast::path_last(ast::a_of(pat)), sty);
         }
       }
       let ty = emit_as(body, ast::b_of(arm), m, want);
@@ -2247,13 +2159,11 @@ assume Std {
       types::member_payload(member)
     }
 
-    # A bind statement is walked three times — once to discover what it
-    # reaches, once to count the locals it needs, once to emit it — and
-    # all three have to agree on what it does, including inside a functor
-    # it applies. So there is one traversal with a mode rather than three
-    # that must be kept in step.
+    # A bind statement is walked once per pass, and the passes have to
+    # agree on what it does, including inside a functor it applies. The
+    # mode is what is left of a third walk that counted its locals before
+    # emission created them; `bw_emit` is the only mode now.
     fn bw_emit(): Int { zero }
-    fn bw_scan(): Int { one }
 
     fn walk_binds(body: IntList, s: Int, m: Int, mode: Int) {
       var i = zero;
@@ -2291,16 +2201,13 @@ assume Std {
       }
       let kind = prog::sym_kind.get(sym);
       if kind.eq(prog::sk_val()) {
-        # A val is data: evaluate it once into a local (D2).
-        if mode.eq(bw_scan()) {
-          # Nameless: a provision is found by its *symbol*, through
-          # `provide`, and a name here would shadow a program local that
-          # happened to share it — `val n: Char;` against a parameter `n`.
-          add_local(ast::none(), need_type(sym));
-          lc_visible.write(lc_visible.read().add(one));
-        } else if mode.eq(bw_emit()) {
+        # A val is data: evaluate it once into a local (D2). Nameless: a
+        # provision is found by its *symbol*, through `provide`, and a
+        # name here would shadow a program local that happened to share
+        # it — `val n: Char;` against a parameter `n`.
+        if mode.eq(bw_emit()) {
           emit_as(body, value, m, need_type(sym));
-          let l = reveal(ast::none());
+          let l = reveal(ast::none(), need_type(sym));
           store_local(body, l);
           provide(ast::none(), sym, l);
         }
@@ -2504,8 +2411,12 @@ assume Std {
       if ast::is_some(ast::b_of(s)) {
         want = elab_ty(ast::b_of(s), m);
       }
-      emit_as(body, ast::c_of(s), m, want);
-      store_local(body, reveal(ast::a_of(s)));
+      let got = emit_as(body, ast::c_of(s), m, want);
+      var ty = want;
+      if ast::is_some(want).not() {
+        ty = got;
+      }
+      store_local(body, reveal(ast::a_of(s), ty));
     }
 
     fn compile_one(qi: Int) {
@@ -2542,9 +2453,15 @@ assume Std {
         nparams = nparams.add(one);
         i = i.add(one);
       }
-      lc_visible.write(lc_name.length());
-      scan_locals_expr(ast::fn_body(d), m);
-      cg_env.write(fq_env.get(qi));
+      # The body's own locals: none yet in the first pass, which creates
+      # them as it goes; in the second, exactly the ones the first made.
+      if cg_real.read().eq(one) {
+        var j = zero;
+        while j.lt(fl_len.get(qi)) {
+          add_local(ast::none(), fl_types.get(fl_start.get(qi).add(j)));
+          j = j.add(one);
+        }
+      }
       lc_visible.write(lc_base.read().add(nparams));
       let n32 = assign_slots(nparams);
       let n64 = total_slots().sub(param_slots(nparams)).sub(n32);
@@ -2560,7 +2477,23 @@ assume Std {
       }
       op_end(body);
       if cg_real.read().eq(one) {
+        if lc_visible.read().ne(lc_name.length()) {
+          # Fewer revealed than the first pass made: they disagree.
+          cg_error(c_missing(), prog::sym_name.get(sym));
+        }
         emit::set_body(fq_index.get(qi), n32, n64, body);
+      } else {
+        while fl_start.length().le(qi) {
+          fl_start.push(zero);
+          fl_len.push(zero);
+        }
+        fl_start.set(qi, fl_types.length());
+        var j = lc_base.read().add(nparams);
+        while j.lt(lc_name.length()) {
+          fl_types.push(lc_type.get(j));
+          j = j.add(one);
+        }
+        fl_len.set(qi, lc_name.length().sub(lc_base.read().add(nparams)));
       }
     }
 

@@ -1,0 +1,61 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Temporaries anywhere an expression can go. A `match` holds its
+# scrutinee in one, and a field of a record that is not already in a
+# local is read out of one; each local comes from emission itself, so it
+# does not matter how deeply the construct is nested. Every letter is the
+# one the comment beside it predicts.
+
+assume Std {
+  type Read Char;
+  unit Eof;
+  type Peek = | Read | Eof;
+
+  type Point { x: Char, y: Char };
+  type Span { from: Point, to: Point };
+
+  fn Point.first(): Char { this.x }
+
+  fn pick(r: Peek): Peek { r }
+  fn point(x: Char, y: Char): Point { Point { x, y } }
+  fn span(): Span { Span { from = point(char::a, char::b), to = point(char::c, char::d) } }
+
+  fn letter(r: Peek): Char {
+    return match r { Read c => c, Eof => char::z, };
+  }
+
+  fn demo() {
+    let a = char::a;
+    # In a call's arguments, twice over, beside a local declared before.
+    putchar(match pick(Read (char::b)) { Read c => c, Eof => char::z, });
+    putchar(letter(match pick(Eof) { Read c => Read (c), Eof => Read (char::c), }));
+    putchar(a);
+    putchar(char::newline);                                   # bca
+
+    # Fields of computed records, past the first field and chained.
+    putchar(point(char::e, char::f).y);
+    putchar(span().to.y);
+    putchar(span().from.x);
+    putchar(char::newline);                                   # fda
+
+    # As a method's receiver, a record field, and an unannotated `let`.
+    let p = match pick(Read (char::g)) {
+      Read c => Point { x = c, y = match pick(Eof) { Read d => d, Eof => char::h, } },
+      Eof => point(char::z, char::z),
+    };
+    putchar(p.first());
+    putchar(p.y);
+    putchar((match pick(Read (char::i)) { Read c => point(c, c), Eof => p, }).first());
+    putchar(char::newline);                                   # ghi
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

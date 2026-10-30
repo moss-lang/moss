@@ -154,6 +154,9 @@ functor Boot: Std -> Compiler {
   bind codegen::ck_inner = int_list();
   bind codegen::ck_link = int_list();
   bind codegen::ck_head = int_list();
+  bind codegen::fl_start = int_list();
+  bind codegen::fl_len = int_list();
+  bind codegen::fl_types = int_list();
 
   bind types::ty_kind = int_list();
   bind types::ty_sym = int_list();

@@ -114,16 +114,14 @@ what makes `src/main.moss` — `assume Wasm, Wasi, Branch` and one
 
 What is left, none of it on the path to self-hosting:
 
-- **Field access on a computed record, past its first field.** All of
+- **A record whose field types a binding in force would widen.** All of
   [D58] and [D59] compiles now, records included ([D63]):
   `tests/wasi/records.moss` is the standing test, held to the bootstrap.
-  One shape is reported rather than compiled. `x.f` reads straight from
-  a local when `x` is a local, `this`, a contextual val or a field of
-  one of those, but `f().g` would need the record staged through a
-  temporary the scan pass never made, unless `g` is the leading field.
-  Bind the record to a `let` first. A record whose field types a
-  binding in force would widen is also reported, since records are laid
-  out from their declared types.
+  Records are laid out from their declared types, though, so a field
+  typed by an abstract `T` that a binding gives a wider type is reported
+  rather than compiled. That is the record side of applying a type,
+  below: nominal types here are their declaration, without the static
+  bindings that [D18] makes part of their identity.
 - **Applying a type.** [D61] made the library apply one *per provision*
   (`String.get[Elem=Char]`), and for those the back end does nothing:
   the receiver is written concretely, a provision is keyed by (receiver,
@@ -197,16 +195,20 @@ What is left, none of it on the path to self-hosting:
   example with both.
 
 Two invariants worth not breaking, both of them things that have gone
-wrong. The scan pass and the emit pass in `codegen.moss` must hand out
-local *indices* in the same order, so the reveal cursor only ever moves
-forward and leaving a scope retires the names it introduced rather than
-rewinding the cursor — rewinding hands one index out twice in the pass
-that rewinds and once in the pass that appends, and every local after the
-first nested block belongs to the wrong name. Any place that scans a
-binder must also mirror exactly what emitting binds: `scan_arm_binder`
-and `bind_pattern` are one decision written twice. And a bind statement
-is walked by all three of discovery, scanning and emission, which is why
-there is one traversal with a mode rather than three to keep in step.
+wrong. The two passes in `codegen.moss` must hand out local *indices* in
+the same order, so the reveal cursor only ever moves forward and leaving
+a scope retires the names it introduced rather than rewinding the cursor
+— rewinding hands one index out twice in the pass that rewinds and once
+in the pass that appends, and every local after the first nested block
+belongs to the wrong name. Locals come from emission alone: the first
+pass creates each one as it is revealed and records them per
+specialization, and the second lays out exactly those before emitting.
+There used to be a separate walk that created them ahead of emission,
+and it had to mirror every binder emission made — `scan_arm_binder` and
+`bind_pattern` were one decision written twice — and it never looked
+inside a call's arguments, so a `match` there had no temporary. Running
+past the recorded locals, or stopping short of them, is reported as
+`c_missing`.
 
 A third, cheaper to state: a provision's local carries **no** name. A
 contextual val arrives as a trailing parameter and is found by its

@@ -252,6 +252,9 @@ class TestContext(unittest.TestCase):
 # What tests/wasi/records.moss prints, one property per line.
 RECORDS_OUT = "ab\nba\nbaq\ncdez\ncd\ngf\nho\n"
 
+# What tests/wasi/nested.moss prints.
+NESTED_OUT = "bca\nfda\nghi\n"
+
 
 # D26: a bound provider's needs are captured at the bind site, so a frame
 # between the bind and the call that rebinds them changes nothing —
@@ -1282,6 +1285,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/capture.moss", "CCCCE\n"),
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
+            ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),
         )
         for entry, expected, *prelude in cases:
             with self.subTest(entry=entry):
@@ -1296,6 +1300,16 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         destructure by name — renamed, wildcarded, or whole."""
         module = self.compile_with_moss("tests/wasi/records.moss", prelude="lib/prelude.moss")
         self.assertEqual(self.wasmtime_run(module), RECORDS_OUT)
+
+    def test_temporaries_nested_anywhere(self):
+        """A local comes from emission itself, so a construct that needs a
+        temporary works however deeply it is nested: a `match` in a call's
+        arguments, as a method's receiver, in a record field or an
+        unannotated `let`, and a field of a record that is not in a local.
+        A separate walk used to create locals ahead of emission and never
+        looked inside a call's arguments."""
+        module = self.compile_with_moss("tests/wasi/nested.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), NESTED_OUT)
 
     def test_a_type_that_contains_itself_is_reported(self):
         """No heap means no finite layout for a type that contains itself,
