@@ -5,14 +5,16 @@ use std::{
     env, fs,
     io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
-    process::{Command, ExitCode, Stdio},
+    process::ExitCode,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
 use binaryen::{optimize_wasm, parse_opt, Opt};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 #[cfg(not(moss_embedded_compiler))]
 use sha2::{Digest, Sha256};
+#[cfg(not(moss_embedded_compiler))]
+use std::process::{Command, Stdio};
 use wasmtime::{Access, Engine, Module, Wasi};
 
 #[cfg(not(moss_embedded_compiler))]
@@ -30,19 +32,9 @@ enum CompilerModule {
     Precompiled(PathBuf),
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum Compiler {
-    SelfHosted,
-    Bootstrap,
-}
-
 #[derive(Parser)]
 #[command(name = "moss", version, about = "The Moss compiler and program runner")]
 struct Cli {
-    /// Compiler implementation to use
-    #[arg(long, value_enum, default_value = "self-hosted", global = true)]
-    compiler: Compiler,
-
     /// Binaryen optimization level: 0, 1, 2, 3, 4, s, or z
     #[arg(short = 'O', value_name = "LEVEL", value_parser = parse_opt, global = true)]
     optimization: Option<Opt>,
@@ -91,11 +83,11 @@ fn real_main() -> Result<i32> {
 
     match cli.command {
         Commands::Run { file, args } => {
-            let wasm = compile(&engine, &root, cli.compiler, &file, cli.optimization)?;
+            let wasm = compile(&engine, &root, &file, cli.optimization)?;
             run_program(&engine, &root, &file, &args, &wasm)
         }
         Commands::Build { file, output } => {
-            let wasm = compile(&engine, &root, cli.compiler, &file, cli.optimization)?;
+            let wasm = compile(&engine, &root, &file, cli.optimization)?;
             match output {
                 Some(path) => fs::write(path, wasm)?,
                 None => {
@@ -119,13 +111,8 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
     while let Some(argument) = args.get(index) {
         match argument.as_str() {
             "-h" | "--help" | "-V" | "--version" => return args,
-            "--compiler" | "-O" => index += 2,
-            argument
-                if argument.starts_with("--compiler=")
-                    || (argument.starts_with("-O") && argument.len() > 2) =>
-            {
-                index += 1
-            }
+            "-O" => index += 2,
+            argument if argument.starts_with("-O") && argument.len() > 2 => index += 1,
             _ => break,
         }
     }
@@ -165,18 +152,12 @@ fn repository_root() -> Result<PathBuf> {
 fn compile(
     engine: &Engine,
     root: &Path,
-    compiler: Compiler,
     file: &Path,
     optimization: Option<Opt>,
 ) -> Result<Vec<u8>> {
     let entry = absolute(file)?;
-    let bytes = match compiler {
-        Compiler::Bootstrap => bootstrap_compile(root, &entry)?,
-        Compiler::SelfHosted => {
-            let compiler = self_hosted_compiler(engine, root)?;
-            run_compiler(engine, root, &compiler, &entry)?
-        }
-    };
+    let compiler = self_hosted_compiler(engine, root)?;
+    let bytes = run_compiler(engine, root, &compiler, &entry)?;
     match optimization {
         Some(opt) => optimize_wasm(bytes, opt),
         None => Ok(bytes),
@@ -191,6 +172,8 @@ fn absolute(path: &Path) -> Result<PathBuf> {
     }
 }
 
+/// Builds the self-hosted compiler from source, the first time round.
+#[cfg(not(moss_embedded_compiler))]
 fn bootstrap_compile(root: &Path, entry: &Path) -> Result<Vec<u8>> {
     let output = Command::new("python3")
         .args(["-m", "mossc"])
