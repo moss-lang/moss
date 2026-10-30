@@ -19,7 +19,10 @@ from dataclasses import dataclass
 
 from .collect import Symbol
 
-# Need keys: Symbol | tuple[Symbol receiver_head, Symbol method]
+# Need keys: Symbol | tuple[receiver type, Symbol method]. The receiver is
+# the canonical type the provision was made at — declaration *and* static
+# bindings (D18, D62) — so `Box[Elem=Char].peek` and `Box[Elem=Point].peek`
+# are two keys.
 Key = object
 
 
@@ -66,6 +69,10 @@ class Call:
     args: tuple
     this: "object | None" = None  # receiver expression for method calls
     needs_map: tuple | None = None
+    # How many scalars the caller expects back, from the callee's
+    # signature instantiated where it is called. The callee was lowered
+    # once, at its declaration, so the back end checks the two agree.
+    ret_slots: int | None = None
 
 
 @dataclass(frozen=True)

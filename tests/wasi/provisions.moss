@@ -1,0 +1,44 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D62: a method provision is keyed by the receiver's whole type,
+# declaration and static bindings (D18), not its head alone. Two provisions
+# of one method at two instantiations of `Box` coexist, each compiled for
+# its own `Elem` — `Box.open` once laying out a `Char`, once a `Point`.
+# The bootstrap lowers each function once and refuses this rather than
+# miscompile it; the self-hosted back end compiles per instantiation.
+
+type Elem;
+
+assume Std {
+  type Point { x: Char, y: Char };
+}
+
+assume Std, Elem {
+  type Box Elem;
+  fn .peek(): Elem;
+  fn Box.open(): Elem { match this { Box e => e } }
+}
+
+assume Std {
+  fn demo() {
+    bind Elem = Char;
+    bind Box.peek = Box.open;
+    bind Elem = Point;
+    bind Box.peek = Box.open;
+    let bc = Box[Elem=Char] (char::a);
+    let bp = Box[Elem=Point] (Point { x = char::b, y = char::c });
+    putchar(bc.peek());
+    putchar(bp.peek().y);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

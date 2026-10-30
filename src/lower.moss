@@ -17,17 +17,18 @@ import "./types.moss" as types;
 # The chain is also the key a specialization is cached under, which is
 # how [D2]'s "a fn binding is statically a direct call" becomes true.
 #
-# A key is a symbol, or a (receiver head, method) pair — the same two
-# shapes the bootstrap's IR uses. Types are static and are not needs;
-# vals, fns and methods are.
+# A key is a symbol, or a (receiver type, method) pair — the same two
+# shapes the bootstrap's IR uses. The receiver is the type the provision
+# is made at, declaration *and* static bindings ([D18], [D62]), so a
+# provision at `Box[Elem=Char]` serves no `Box[Elem=Point]`. Types are
+# static and are not needs; vals, fns and methods are.
 #
-# Nothing in `src/` or the `lib/` it needs applies a *type*
-# (`Pair[T=Int]`), so the substitution half of [D18] never arises here:
-# a type bind maps an abstract symbol straight to a type, and `canon`
-# chases those edges. That is the whole of monomorphization for this
-# program. A context *item*'s application is read, though — `app_view` —
-# because a provision keyed on an abstract receiver an application fixes
-# has to land at the concrete one or no call finds it ([D51]).
+# A type bind maps an abstract symbol to a type, and `canon` substitutes
+# those through a type, into a nominal's arguments as well as at its top.
+# That is the whole of monomorphization for this program. A context
+# *item*'s application is read too — `app_view` — because a provision
+# keyed on an abstract receiver an application fixes has to land at the
+# concrete one or no call finds it ([D51]).
 
 assume Std {
   fn ek_type(): Int { zero }
@@ -146,6 +147,81 @@ assume Std {
     # edges (D43's union-find, minus the union: with no applications
     # nothing ever merges two keys).
     fn canon(env: Int, t: Int): Int {
+      canon_at(env, t, zero)
+    }
+
+    # `depth` is a backstop against a binding whose type mentions the
+    # symbol it binds.
+    fn canon_at(env: Int, t: Int, depth: Int): Int {
+      if ast::is_some(t).not() {
+        return t;
+      }
+      if depth.gt(hex(n2(), zero)) {
+        return t;
+      }
+      let cur = canon_top(env, t);
+      let k = types::kind_of(cur);
+      if k.eq(types::kd_nominal()) {
+        if types::member_count(cur).eq(zero) {
+          return cur;
+        }
+        let args = int_list();
+        var same = true;
+        var i = zero;
+        while i.lt(types::member_count(cur)) {
+          let a = canon_at(env, types::member_at(cur, i), depth.add(one));
+          if a.ne(types::member_at(cur, i)) {
+            same = false;
+          }
+          args.push(a);
+          i = i.add(one);
+        }
+        if same {
+          return cur;
+        }
+        return types::nominal(types::sym_of(cur), args);
+      }
+      if k.eq(types::kd_union()) {
+        let members = int_list();
+        var same = true;
+        var i = zero;
+        while i.lt(types::member_count(cur)) {
+          let a = canon_at(env, types::member_at(cur, i), depth.add(one));
+          if a.ne(types::member_at(cur, i)) {
+            same = false;
+          }
+          members.push(a);
+          i = i.add(one);
+        }
+        if same {
+          return cur;
+        }
+        return types::union_of(members);
+      }
+      if k.eq(types::kd_record()) {
+        let members = int_list();
+        var same = true;
+        var i = zero;
+        while i.lt(types::field_count(cur)) {
+          let a = canon_at(env, types::field_type_at(cur, i), depth.add(one));
+          if a.ne(types::field_type_at(cur, i)) {
+            same = false;
+          }
+          members.push(types::field_name_at(cur, i));
+          members.push(a);
+          i = i.add(one);
+        }
+        if same {
+          return cur;
+        }
+        return types::intern_ty(types::kd_record(), ast::none(), members);
+      }
+      cur
+    }
+
+    # An abstract type resolved through the bindings in force, until it
+    # is not abstract or nothing binds it.
+    fn canon_top(env: Int, t: Int): Int {
       var cur = t;
       var fuel = hex(n2(), zero);
       while fuel.gt(zero) {
@@ -300,25 +376,11 @@ assume Std {
         prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
         return view;
       }
+      # The right-hand side is a type by name, maybe applied itself.
       let rhs = ast::b_of(b);
-      # A dotted or itself-applied right-hand side is the application this
-      # compiler does not do, rather than one it silently drops.
-      if ast::is_some(ast::b_of(rhs)) {
-        prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
-        return view;
-      }
-      if ast::d_of(rhs).gt(zero) {
-        prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
-        return view;
-      }
-      let target = prog::resolve_path(m, ast::a_of(rhs));
-      if ast::is_some(target).not() {
-        prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(rhs)));
-        return view;
-      }
       env_push(
         view, ek_type(), ast::none(), lhs,
-        canon(view, types::ty_of_decl(target)), ast::none()
+        canon(view, types::elab_spec(rhs, m)), ast::none()
       )
     }
 
@@ -428,8 +490,9 @@ assume Std {
     }
 
     # A method item: `Int.add` in a context, or `.m` at a receiver. The
-    # key is the receiver *type*'s head after substitution (D36), so a
-    # provision lands where calls will look it up.
+    # key is the receiver *type* after substitution (D36), so a provision
+    # lands where calls will look it up — the whole type, bindings and all
+    # (D62), not just its head.
     fn add_method_item(
       env: Int, m: Int, receiver: Int, name: Int, recv: IntList, sym: IntList,
       view: Int
@@ -444,16 +507,15 @@ assume Std {
       # which is why an abstract receiver an application fixes lands the
       # provision where calls on the concrete type will look for it.
       let this_ty = canon(view, types::ty_of_decl(receiver));
-      let head = types::head_of(this_ty);
-      if ast::is_some(head).not() {
+      if ast::is_some(types::head_of(this_ty)).not() {
         prog::error(prog::e_method(), m, name);
         return env;
       }
-      need_add(recv, sym, head, method);
-      if env_has(env, ek_fn(), head, method) {
+      need_add(recv, sym, this_ty, method);
+      if env_has(env, ek_fn(), this_ty, method) {
         return env;
       }
-      env_push(env, ek_fn(), head, method, ast::none(), ast::none())
+      env_push(env, ek_fn(), this_ty, method, ast::none(), ast::none())
     }
 
     # An attached method on the receiver, or a detached one in scope —

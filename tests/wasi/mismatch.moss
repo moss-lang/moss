@@ -1,0 +1,38 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D62's hole: a provision made while `Elem = Char` must not serve a
+# receiver at `Box[Elem=Point]`, which would type a `Point` as a `Char`.
+# Both compilers reject this; it once compiled to an invalid module.
+
+type Elem;
+
+assume Std {
+  type Point { x: Char, y: Char };
+}
+
+assume Std, Elem {
+  type Box Elem;
+  fn .peek(): Elem;
+  fn Box.open(): Elem { match this { Box e => e } }
+}
+
+assume Std {
+  fn demo() {
+    bind Elem = Char;
+    bind Box.peek = Box.open;
+    let bp = Box[Elem=Point] (Point { x = char::a, y = char::b });
+    let c: Char = bp.peek();
+    putchar(c);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

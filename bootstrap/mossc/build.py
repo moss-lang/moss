@@ -35,6 +35,7 @@ declared but not covered here, since every value in this slice is an i32.
 import sys
 
 from . import ir
+from .types import head
 from .ast import TyRecord as ast_TyRecord
 from .collect import Program, SymKind, Symbol
 
@@ -1351,13 +1352,30 @@ class FnCompiler:
             self.slots, self.provisions = saved_slots, saved_prov
             self.env, self.depth = saved_env, saved_depth
 
+    def check_widths(self, fn: ir.FnIR, layouts: list, node: ir.Call):
+        """The bootstrap lowers a function once, at its declaration, with
+        each abstract type one scalar wide; it does not compile a function
+        again per type instantiation (the self-hosted back end does). So a
+        call that instantiates one at a wider type is refused here rather
+        than compiled against the wrong layout."""
+        got = tuple(len(layout) for layout in layouts)
+        if got != tuple(fn.param_slots) or (
+            node.ret_slots is not None and node.ret_slots != fn.ret_slots
+        ):
+            raise NotCompilable(
+                f"`{fn.symbol.name}` instantiated at a type wider than it was "
+                "lowered for (the bootstrap compiles each function once)"
+            )
+
     def call(self, node: ir.Call):
         kind, target = node.callee
         if kind == "direct":
+            layouts = []
             if node.this is not None:
-                self.expr(node.this)
+                layouts.append(self.expr(node.this))
             for arg in node.args:
-                self.expr(arg)
+                layouts.append(self.expr(arg))
+            self.check_widths(self.b.lower.fns[id(target)], layouts, node)
             callee_env = {}
             translate = {}
             for callee_key, caller_key in node.needs_map:
@@ -1372,10 +1390,12 @@ class FnCompiler:
             return (I32,) * self.b.lower.fns[id(target)].ret_slots
         if target in self.env:
             provider, sub = self.env[target]
+            layouts = []
             if node.this is not None:
-                self.expr(node.this)
+                layouts.append(self.expr(node.this))
             for arg in node.args:
-                self.expr(arg)
+                layouts.append(self.expr(arg))
+            self.check_widths(self.b.lower.fns[id(provider)], layouts, node)
             for slot in self.b.val_slots(provider, sub):
                 self.push_provision(captured(target, slot))
             self.code += CALL + uleb(self.b.compile_fn(provider, sub))
@@ -1398,7 +1418,7 @@ class FnCompiler:
             # receivers (D61), so there the receiver's home module says.
             home = method.module
             if "access" in self.b.lib and home is self.b.lib["access"]:
-                home = receiver.module
+                home = head(receiver).module
             if "num" in self.b.lib and home is self.b.lib["num"]:
                 if short == "neg":
                     self.code += I32_CONST + sleb(0)

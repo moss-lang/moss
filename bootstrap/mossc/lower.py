@@ -214,15 +214,7 @@ class Lower:
         if this_ty is None:
             this_ty = self.symbol_type(module, receiver, tymap, env)
         sig = self.fn_sig(method, tymap, env, this=this_ty)
-        # D36: the key is the receiver *type* — so `IsCell[Cell=MyCell]`
-        # provides its methods at MyCell, where calls will look them up —
-        # canonicalized through the union-find (D43).
-        receiver_head = head(self.canon(env, this_ty))
-        if receiver_head is None:
-            self.error(
-                module, f"`{show(this_ty)}` cannot receive methods (no nominal head)"
-            )
-        key = (receiver_head, method)
+        key = self.method_key(env, module, this_ty, method)
         self.merge(env, env.methods, module, key, sig)
         if key not in needs:
             needs.append(key)
@@ -389,6 +381,21 @@ class Lower:
         if isinstance(t, TRecord):
             return TRecord(tuple((n, self.canon(env, ty)) for n, ty in t.fields))
         return t
+
+    def method_key(self, env: Env, module: Module, receiver_ty, method: Symbol) -> tuple:
+        """D36/D62: a method provision is keyed by the receiver's *type* —
+        so `IsCell[Cell=MyCell]` provides its methods at MyCell, where calls
+        will look them up — and by its whole [D18] identity, declaration and
+        static bindings, not just its head. A provision made at
+        `Box[Elem=Char]` then serves no `Box[Elem=Point]`. Canonicalized
+        through the union-find, so the spellings of one merged atom are one
+        key (D43)."""
+        receiver = self.canon(env, receiver_ty)
+        if head(receiver) is None:
+            self.error(
+                module, f"`{show(receiver_ty)}` cannot receive methods (no nominal head)"
+            )
+        return (receiver, method)
 
     def canon_head(self, env: Env, module: Module, sym: Symbol) -> Symbol:
         """The representative receiver symbol for method keys."""
@@ -944,7 +951,7 @@ class FnChecker:
             sig = self.lower.fn_sig(method, tymap, self.env, this=this_ty)
             fn_symbol = self.expect_provider(expr, this_ty)
             needs_map = self.match_fn_sig(fn_symbol, sig, kind="method")
-            key = (self.lower.canon_head(self.env, module, receiver), method)
+            key = self.lower.method_key(self.env, module, this_ty, method)
             self.lower.merge(self.env, self.env.methods, module, key, sig)
             return ir.BindFn(key, fn_symbol, needs_map)
         target = resolve_path(module, spec.path)
@@ -1045,10 +1052,10 @@ class FnChecker:
         for need in needs:
             if isinstance(need, tuple):
                 receiver, method = need
-                key = (self.lower.canon_head(self.env, self.module, receiver), method)
+                key = self.lower.method_key(self.env, self.module, receiver, method)
                 if key not in self.env.methods:
                     self.error(
-                        f"calling `{callee.name}` needs `{receiver.name}{method.name}`, "
+                        f"calling `{callee.name}` needs `{show(key[0])}{method.name}`, "
                         "which is not available in the context here"
                     )
                 mapping.append((need, key))
@@ -1361,7 +1368,8 @@ class FnChecker:
                 )
             callee = ("env", target)
         args = self.check_args(target.name, sig, expr.args)
-        return ir.Call(callee, tuple(args), needs_map=needs_map), sig.ret
+        ret = self.lower.slots_of(self.env, sig.ret)
+        return ir.Call(callee, tuple(args), needs_map=needs_map, ret_slots=ret), sig.ret
 
     def check_args(self, name, sig: FnSig, arg_exprs):
         if len(arg_exprs) != len(sig.params):
@@ -1460,8 +1468,12 @@ class FnChecker:
                     )
                     sig = self.lower.fn_sig(attached, self.env.tymap, self.env, this=oty)
                     args = self.check_args(attached.name, sig, expr.args)
+                    ret = self.lower.slots_of(self.env, sig.ret)
                     return (
-                        ir.Call(("direct", attached), tuple(args), this=obj, needs_map=needs_map),
+                        ir.Call(
+                            ("direct", attached), tuple(args), this=obj,
+                            needs_map=needs_map, ret_slots=ret,
+                        ),
                         sig.ret,
                     )
                 if method is None:
@@ -1479,10 +1491,24 @@ class FnChecker:
                     f"`.{name}` is not a detached method in scope; import it, or "
                     "call it as `mod::m` (D61)"
                 )
-        sig = self.env.methods.get((h, method))
+        key = self.lower.method_key(self.env, self.module, oty, method)
+        sig = self.env.methods.get(key)
         if sig is not None:
             args = self.check_args(method.name, sig, expr.args)
-            return ir.Call(("env", (h, method)), tuple(args), this=obj), sig.ret
+            ret = self.lower.slots_of(self.env, sig.ret)
+            return ir.Call(("env", key), tuple(args), this=obj, ret_slots=ret), sig.ret
+        # D62: the same method at another instantiation of the receiver is
+        # the likely mistake, so say where it *is* provided.
+        elsewhere = [
+            show(r) for r, m in self.env.methods
+            if m is method and head(r) is key[0].symbol and r != key[0]
+        ]
+        if elsewhere:
+            self.error(
+                f"`.{name}` is provided at `{'`, `'.join(elsewhere)}`, not at "
+                f"`{show(oty)}`: a method provision serves only the instantiation "
+                "it was made at (D62)"
+            )
         self.error(
             f"no method `.{name}` is available for `{show(oty)}` in the context here"
         )

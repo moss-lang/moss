@@ -1,14 +1,9 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
 import "../../lib/wasip1.moss" use Wasi, fd_write, proc_exit;
 
-# The one bracket application the self-hosted compiler does not do:
-# applying a *type*. D61's library change put applications on context
-# items and on method binds, and those need no substitution here — a
-# provision is keyed by (receiver, method) and every signature comes from
-# the provider — but `Box[Elem=I32]` substitutes into a payload, and this
-# back end says so rather than elaborating `Box` and dropping the
-# bindings. The bootstrap compiles this file; the self-hosted compiler
-# reports `e_apply` and writes nothing.
+# Applying a *type*: `Box[Elem=I32]` substitutes into a payload. Both
+# compilers compile this file. A binding for a symbol the type does not
+# mention — `Box`'s payload is `I32`, not `Elem` — changes nothing.
 
 assume Wasm, Wasi {
   type Elem;

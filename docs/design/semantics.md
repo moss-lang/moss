@@ -1428,7 +1428,7 @@ else stood in the way: what the compiler reported about its own source
 once the library was right was two bugs in `codegen.moss`'s local
 numbering, not a missing construct.
 
-**[D62] FINDING (from the mechanization; awaiting the designer).** The
+**[D62] DECIDED by the designer (provisions keyed by identity; first found by the mechanization).** The
 core-calculus soundness proof
 ([docs/design/core](core/)) refuted two rules the bootstrap shares, and
 probing the bootstrap resolves both:
@@ -1466,6 +1466,23 @@ probing the bootstrap resolves both:
   the merged σ*, so re-keying does not fracture provisions across the
   spellings of one merged atom. The bootstrap still needs the
   corresponding change when [D59] layouts land.
+
+  *Decided (October 2026): the repair, in both compilers.* Once records
+  made [D59] layouts real, the example above stopped being harmless: at
+  `Box[Elem=Point]` the bootstrap compiled it to an invalid module. Of
+  the options — key by identity; keep head keys but check the
+  instantiation at each use, which forbids two instantiations' provisions
+  in one scope; or one provision for every instantiation, re-specialized
+  per receiver, which [D26]'s capture makes unsound — the designer chose
+  the first, the calculus's own. A provision is keyed by the receiver's
+  canonical type, so one made at `Box[Elem=Char]` serves no
+  `Box[Elem=Point]`, and the bootstrap says where it *is* provided; to
+  provide at two instantiations, bind twice — rebinding `Elem` between,
+  or with the bind's own brackets, `bind Box.peek[Elem=Char] = ...`. The
+  self-hosted compiler compiles each such provision for its own type; the
+  bootstrap lowers a function once and refuses a wider instantiation
+  rather than miscompile it. Standing tests: `tests/wasi/mismatch.moss`
+  and `tests/wasi/provisions.moss`.
 
 - **Cross-kind instantiation coherence is a latent hole.** Nothing
   compares the `T` of an application against the `T` an ambient val/fn
@@ -1519,7 +1536,8 @@ export, D47 operators are methods, D49 no automatic TCE — loops are the
 idiom, D52 `Wasi` primitive with `Std` a library over it, D53 signature
 vs structure, D54 method providers keep the nominal wrapper, D55 functors
 as their own declaration applied with `bind`, D61 how a method call
-finds its method, D63 records are the only product type)
+finds its method, D62 provisions keyed by the receiver's identity, D63
+records are the only product type)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

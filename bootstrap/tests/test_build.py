@@ -510,6 +510,22 @@ class TestWasmBackend(unittest.TestCase):
         wasm = compile_wasm({}, entry="tests/wasi/nested.moss")
         self.assertEqual(run_wasm(wasm), NESTED_OUT)
 
+    def test_a_provision_serves_only_its_instantiation(self):
+        """D62: the hole that once compiled to an invalid module."""
+        with self.assertRaises(LowerError) as caught:
+            compile_wasm({}, entry="tests/wasi/mismatch.moss")
+        self.assertIn("is provided at `Box[Elem=Char]`", str(caught.exception))
+
+    def test_a_wider_instantiation_is_refused(self):
+        """The bootstrap lowers each function once, so one instantiated at
+        a wider type than it was lowered for is refused, not miscompiled.
+        The self-hosted back end compiles this (see test_run)."""
+        for entry in ("tests/wasi/provisions.moss", "tests/wasi/widened.moss"):
+            with self.subTest(entry=entry):
+                with self.assertRaises(build_mod.NotCompilable) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn("compiles each function once", str(caught.exception))
+
     def test_a_type_that_contains_itself_is_rejected(self):
         with self.assertRaises(LowerError) as caught:
             compile_wasm({}, entry="tests/wasi/cyclic.moss")

@@ -8,9 +8,11 @@ import "./prog.moss" as prog;
 # Type identity is structural over (declaration, static type bindings)
 # [D18], so the arena is hash-consed: elaborating the same type twice
 # gives the same id, and two ids are equal exactly when the types are.
-# Nothing in `src/` or the `lib/` it needs applies a type
-# (`Pair[T=Int]`), so the bindings half of that identity is always empty
-# and a nominal type is its declaration.
+# A nominal type's members are its arguments: one type per abstract type
+# symbol its payload mentions (`type_reqs`), in that order, so
+# `Box[Elem=Char]` and `Box[Elem=Point]` are two types. Written without
+# brackets, a nominal is applied to those symbols themselves, and an
+# environment that binds them substitutes (`lower::canon`).
 #
 # Layout is [D59]: every value is a finite run of Wasm scalars and the
 # compiler allocates nothing. `()` is no slots; a unit is one, holding
@@ -57,9 +59,17 @@ assume Std {
   # id, holding the width plus one so that zero means "not computed".
   val ty_width: IntList;
 
+  # Each tag's and alias's type requirements, as a run of abstract type
+  # symbols in `tr_pool`, indexed by the declaring symbol. `tr_len` is
+  # none until computed, and `in_progress()` while it is, so a type that
+  # mentions itself terminates.
+  val tr_start: IntList;
+  val tr_len: IntList;
+  val tr_pool: IntList;
+
   context Types = ty_kind, ty_sym, ty_mstart, ty_mlen, ty_mem,
     ty_unit_row, ty_never_row, ty_by_sym, elab_memo,
-    unit_syms, unit_codes, ty_width;
+    unit_syms, unit_codes, ty_width, tr_start, tr_len, tr_pool;
 
   assume Types, ast::Ast, prog::Prog, intern::Interner {
     fn ty_count(): Int { ty_kind.length() }
@@ -227,12 +237,274 @@ assume Std {
         prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(t)));
         return ty_never();
       }
-      # An application on a type substitutes into its payload, which this
-      # compiler does not do; reported rather than dropped.
       if ast::d_of(t).eq(one) {
-        prog::error(prog::e_apply(), m, ast::path_last(ast::a_of(t)));
+        return apply(sym, ast::b_of(t), ast::c_of(t), m);
       }
       ty_of_decl(sym)
+    }
+
+    # `S[T=U, ...]`, written in module `m`: the nominal or alias `S` with
+    # some of its type requirements bound. A requirement left unbound is
+    # applied to itself, as `S` alone would be; a binding for a symbol `S`
+    # does not mention changes nothing, as in the bootstrap.
+    fn apply(sym: Int, run: Int, len: Int, m: Int): Int {
+      let kind = prog::sym_kind.get(sym);
+      var ok = kind.eq(prog::sk_tag());
+      if ok.not() {
+        ok = kind.eq(prog::sk_alias());
+      }
+      if ok.not() {
+        prog::error(prog::e_apply(), m, prog::sym_name.get(sym));
+        return ty_of_decl(sym);
+      }
+      let reqs = int_list();
+      reqs_of(sym, reqs);
+      let args = int_list();
+      var i = zero;
+      while i.lt(reqs.length()) {
+        args.push(ty_of_symbol(kd_abstract(), reqs.get(i)));
+        i = i.add(one);
+      }
+      i = zero;
+      while i.lt(len) {
+        let b = ast::kid_at(run, i);
+        let lhs = prog::resolve_path(m, ast::a_of(b));
+        if ast::is_some(lhs).not() {
+          prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(b)));
+        } else if prog::sym_kind.get(lhs).ne(prog::sk_type()) {
+          prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
+        } else {
+          let rhs = elab_spec(ast::b_of(b), m);
+          var j = zero;
+          while j.lt(reqs.length()) {
+            if reqs.get(j).eq(lhs) {
+              args.set(j, rhs);
+            }
+            j = j.add(one);
+          }
+        }
+        i = i.add(one);
+      }
+      if kind.eq(prog::sk_alias()) {
+        return subst(ty_of_decl(sym), reqs, args);
+      }
+      nominal(sym, args)
+    }
+
+    # The right-hand side of a type binding: a type by name, maybe applied
+    # itself.
+    fn elab_spec(spec: Int, m: Int): Int {
+      if ast::is_some(ast::b_of(spec)) {
+        prog::error(prog::e_apply(), m, ast::b_of(spec));
+        return ty_never();
+      }
+      let sym = prog::resolve_path(m, ast::a_of(spec));
+      if ast::is_some(sym).not() {
+        prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(spec)));
+        return ty_never();
+      }
+      if ast::d_of(spec).gt(zero) {
+        return apply(sym, ast::c_of(spec), ast::d_of(spec), m);
+      }
+      ty_of_decl(sym)
+    }
+
+    # A nominal type at these arguments, one per type requirement.
+    fn nominal(sym: Int, args: IntList): Int {
+      if args.length().eq(zero) {
+        return ty_of_symbol(kd_nominal(), sym);
+      }
+      intern_ty(kd_nominal(), sym, args)
+    }
+
+    fn in_progress(): Int { n2().neg() }
+
+    # The abstract type symbols a tag or alias is parameterized by (D18,
+    # D21): those its payload mentions, directly or through the types it
+    # names, minus any those names' own brackets bind. Not everything the
+    # enclosing assumes provide, or `unit Stop;` under `assume Std` would
+    # be a different type per ambient binding. The bootstrap's
+    # `type_requirements` is the same rule.
+    fn reqs_of(sym: Int, out: IntList) {
+      while tr_len.length().le(sym) {
+        tr_start.push(zero);
+        tr_len.push(ast::none());
+      }
+      let seen = tr_len.get(sym);
+      if seen.eq(in_progress()) {
+        return ();
+      }
+      if seen.eq(ast::none()) {
+        tr_len.set(sym, in_progress());
+        let found = int_list();
+        let kind = prog::sym_kind.get(sym);
+        var scan = kind.eq(prog::sk_tag());
+        if scan.not() {
+          scan = kind.eq(prog::sk_alias());
+        }
+        if scan {
+          free_syms(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym), found);
+        }
+        tr_start.set(sym, tr_pool.length());
+        var i = zero;
+        while i.lt(found.length()) {
+          tr_pool.push(found.get(i));
+          i = i.add(one);
+        }
+        tr_len.set(sym, found.length());
+      }
+      var i = zero;
+      while i.lt(tr_len.get(sym)) {
+        out.push(tr_pool.get(tr_start.get(sym).add(i)));
+        i = i.add(one);
+      }
+    }
+
+    fn push_new(out: IntList, v: Int) {
+      var i = zero;
+      while i.lt(out.length()) {
+        if out.get(i).eq(v) {
+          return ();
+        }
+        i = i.add(one);
+      }
+      out.push(v);
+    }
+
+    # The abstract type symbols a type expression mentions.
+    fn free_syms(t: Int, m: Int, out: IntList) {
+      if ast::is_some(t).not() {
+        return ();
+      }
+      let k = ast::kind_of(t);
+      if k.eq(ast::k_ty_ref()) {
+        free_syms_ref(ast::a_of(t), ast::b_of(t), ast::c_of(t), m, out);
+      } else if k.eq(ast::k_ty_union()) {
+        var i = zero;
+        while i.lt(ast::b_of(t)) {
+          free_syms(ast::kid_at(ast::a_of(t), i), m, out);
+          i = i.add(one);
+        }
+      } else if k.eq(ast::k_ty_record()) {
+        var i = zero;
+        while i.lt(ast::b_of(t)) {
+          free_syms(ast::b_of(ast::kid_at(ast::a_of(t), i)), m, out);
+          i = i.add(one);
+        }
+      }
+    }
+
+    # `S[T=U, ...]`: `S`'s own requirements, less the ones the brackets
+    # bind, plus whatever the right-hand sides mention.
+    fn free_syms_ref(path: Int, run: Int, len: Int, m: Int, out: IntList) {
+      let sym = prog::resolve_path(m, path);
+      if ast::is_some(sym).not() {
+        return ();
+      }
+      let bound = int_list();
+      var i = zero;
+      while i.lt(len) {
+        let b = ast::kid_at(run, i);
+        let lhs = prog::resolve_path(m, ast::a_of(b));
+        if ast::is_some(lhs) {
+          bound.push(lhs);
+        }
+        let rhs = ast::b_of(b);
+        free_syms_ref(ast::a_of(rhs), ast::c_of(rhs), ast::d_of(rhs), m, out);
+        i = i.add(one);
+      }
+      let kind = prog::sym_kind.get(sym);
+      if kind.eq(prog::sk_type()) {
+        if contains_sym(bound, sym).not() {
+          push_new(out, sym);
+        }
+        return ();
+      }
+      let reqs = int_list();
+      reqs_of(sym, reqs);
+      i = zero;
+      while i.lt(reqs.length()) {
+        if contains_sym(bound, reqs.get(i)).not() {
+          push_new(out, reqs.get(i));
+        }
+        i = i.add(one);
+      }
+    }
+
+    fn contains_sym(xs: IntList, v: Int): Bool {
+      var i = zero;
+      while i.lt(xs.length()) {
+        if xs.get(i).eq(v) {
+          return true;
+        }
+        i = i.add(one);
+      }
+      false
+    }
+
+    # `t` with each abstract `from[i]` replaced by `to[i]`.
+    fn subst(t: Int, from: IntList, to: IntList): Int {
+      let k = kind_of(t);
+      if k.eq(kd_abstract()) {
+        var i = zero;
+        while i.lt(from.length()) {
+          if from.get(i).eq(sym_of(t)) {
+            return to.get(i);
+          }
+          i = i.add(one);
+        }
+        return t;
+      }
+      if k.eq(kd_nominal()) {
+        if member_count(t).eq(zero) {
+          return t;
+        }
+        let args = int_list();
+        var i = zero;
+        while i.lt(member_count(t)) {
+          args.push(subst(member_at(t, i), from, to));
+          i = i.add(one);
+        }
+        return nominal(sym_of(t), args);
+      }
+      if k.eq(kd_union()) {
+        let members = int_list();
+        var i = zero;
+        while i.lt(member_count(t)) {
+          members.push(subst(member_at(t, i), from, to));
+          i = i.add(one);
+        }
+        return union_of(members);
+      }
+      if k.eq(kd_record()) {
+        let members = int_list();
+        var i = zero;
+        while i.lt(field_count(t)) {
+          members.push(field_name_at(t, i));
+          members.push(subst(field_type_at(t, i), from, to));
+          i = i.add(one);
+        }
+        return intern_ty(kd_record(), ast::none(), members);
+      }
+      t
+    }
+
+    # A union of these types, flattened and deduplicated as written ones
+    # are; a single member is itself, and none is `|`.
+    fn union_of(types: IntList): Int {
+      let members = int_list();
+      var i = zero;
+      while i.lt(types.length()) {
+        add_member(members, types.get(i));
+        i = i.add(one);
+      }
+      if members.length().eq(zero) {
+        return ty_never();
+      }
+      if members.length().eq(one) {
+        return members.get(zero);
+      }
+      intern_ty(kd_union(), ast::none(), members)
     }
 
     # The type a type symbol names. An alias is transparent; a `unit` or
@@ -247,7 +519,25 @@ assume Std {
         return ty_of_symbol(kd_nominal(), sym);
       }
       if kind.eq(prog::sk_tag()) {
-        return ty_of_symbol(kd_nominal(), sym);
+        # Applied to its own requirements; remembered, since this is asked
+        # for at every mention of the tag.
+        while ty_by_sym.length().le(sym) {
+          ty_by_sym.push(ast::none());
+        }
+        if ast::is_some(ty_by_sym.get(sym)) {
+          return ty_by_sym.get(sym);
+        }
+        let reqs = int_list();
+        reqs_of(sym, reqs);
+        let args = int_list();
+        var i = zero;
+        while i.lt(reqs.length()) {
+          args.push(ty_of_symbol(kd_abstract(), reqs.get(i)));
+          i = i.add(one);
+        }
+        let t = nominal(sym, args);
+        ty_by_sym.set(sym, t);
+        return t;
       }
       if kind.eq(prog::sk_type()) {
         return ty_of_symbol(kd_abstract(), sym);
@@ -280,14 +570,26 @@ assume Std {
       members.push(t);
     }
 
-    # A tag's payload, or the unit type for a `unit` declaration.
+    # A tag's payload at the tag's arguments, or the unit type for a
+    # `unit` declaration.
     fn payload_of(t: Int): Int {
       let sym = sym_of(t);
-      if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
-        elab(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
-      } else {
-        ty_unit()
+      if prog::sym_kind.get(sym).ne(prog::sk_tag()) {
+        return ty_unit();
       }
+      let p = elab(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
+      if member_count(t).eq(zero) {
+        return p;
+      }
+      let reqs = int_list();
+      reqs_of(sym, reqs);
+      let args = int_list();
+      var i = zero;
+      while i.lt(member_count(t)) {
+        args.push(member_at(t, i));
+        i = i.add(one);
+      }
+      subst(p, reqs, args)
     }
 
     fn is_unit_decl(t: Int): Bool {

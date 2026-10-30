@@ -166,6 +166,9 @@ functor Boot: Std -> Compiler {
   bind types::ty_unit_row = cell_int();
   bind types::ty_never_row = cell_int();
   bind types::ty_by_sym = int_list();
+  bind types::tr_start = int_list();
+  bind types::tr_len = int_list();
+  bind types::tr_pool = int_list();
   bind types::elab_memo = int_list();
   bind types::unit_syms = int_list();
   bind types::unit_codes = int_list();

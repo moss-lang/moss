@@ -627,18 +627,11 @@ assume Std {
     # where the requirement was written, and the environment may have
     # bound that symbol since — so keys are compared after
     # canonicalization through the bindings in force (D43).
-    fn canon_head_in(env: Int, sym: Int): Int {
-      let h = types::head_of(lower::canon(env, types::ty_of_decl(sym)));
-      if ast::is_some(h) {
-        h
-      } else {
-        sym
-      }
-    }
-
+    # A method need's receiver as `env` knows it: the type it was required
+    # at, substituted through the bindings there (D62).
     fn need_key_recv(env: Int, r: Int): Int {
       if ast::is_some(r) {
-        canon_head_in(env, r)
+        lower::canon(env, r)
       } else {
         r
       }
@@ -714,6 +707,16 @@ assume Std {
         cg_error(c_unsupported(), types::field_name_at(rec, i));
       }
       here
+    }
+
+    # The type a tag construction builds: the tag at whatever its brackets
+    # bind (`Box[Elem=Point] (...)`), or applied to its own requirements,
+    # and either way substituted through the bindings in force.
+    fn tag_type(callee: Int, sym: Int, m: Int): Int {
+      if ast::d_of(callee).eq(one) {
+        return canon_ty(types::apply(sym, ast::b_of(callee), ast::c_of(callee), m));
+      }
+      canon_ty(types::ty_of_decl(sym))
     }
 
     # The record an expression's value carries, or none.
@@ -822,7 +825,7 @@ assume Std {
         cg_error(prog::e_scope(), ast::path_last(path));
         return ty_none();
       }
-      let tag = types::ty_of_decl(sym);
+      let tag = tag_type(ast::a_of(e), sym, m);
       let rec = types::record_of(tag);
       if ast::is_some(rec).not() {
         cg_error(c_bad_type(), prog::sym_name.get(sym));
@@ -1060,20 +1063,18 @@ assume Std {
         return lc_type.get(this_local());
       }
       if k.eq(ast::k_ex_method()) {
-        var target = method_of(e, m);
-        if ast::is_some(target).not() {
-          let bound = method_provision(type_of(ast::a_of(e), m), e, m);
-          if ast::is_some(bound).not() {
-            return ty_none();
-          }
-          target = lower::env_a_of(bound);
-          if ast::is_some(target).not() {
-            return ty_none();
-          }
+        let target = method_of(e, m);
+        if ast::is_some(target) {
+          return ret_in(callee_env(target, int_list()), target);
         }
-        return elab_ty(
-          ast::fn_ret(prog::sym_decl.get(target)), prog::sym_mod.get(target)
-        );
+        let bound = method_provision(type_of(ast::a_of(e), m), e, m);
+        if ast::is_some(bound).not() {
+          return ty_none();
+        }
+        if ast::is_some(lower::env_a_of(bound)).not() {
+          return ty_none();
+        }
+        return ret_in(lower::env_b_of(bound), lower::env_a_of(bound));
       }
       if k.eq(ast::k_ex_path()) {
         if ast::path_len(ast::a_of(e)).eq(one) {
@@ -1095,7 +1096,7 @@ assume Std {
         }
         # A tag construction is a value of the tag's own type (D58).
         if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
-          return types::ty_of_decl(sym);
+          return tag_type(ast::a_of(e), sym, m);
         }
         if in_wasm(sym) {
           return op_result(wops::find_op(prog::sym_name.get(sym)));
@@ -1103,19 +1104,19 @@ assume Std {
         if is_i32_bool(sym) {
           return cg_boolty.read();
         }
-        var target = sym;
-        if is_defined_fn(sym).not() {
-          let bound = lower::env_find(
-            cg_env.read(), lower::ek_fn(), ast::none(), sym
-          );
-          if ast::is_some(bound) {
-            if ast::is_some(lower::env_a_of(bound)) {
-              target = lower::env_a_of(bound);
-            }
+        if is_defined_fn(sym) {
+          return ret_in(callee_env(sym, int_list()), sym);
+        }
+        let bound = lower::env_find(
+          cg_env.read(), lower::ek_fn(), ast::none(), sym
+        );
+        if ast::is_some(bound) {
+          if ast::is_some(lower::env_a_of(bound)) {
+            return ret_in(lower::env_b_of(bound), lower::env_a_of(bound));
           }
         }
         return elab_ty(
-          ast::fn_ret(prog::sym_decl.get(target)), prog::sym_mod.get(target)
+          ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
         );
       }
       if k.eq(ast::k_ex_record()) {
@@ -1123,7 +1124,7 @@ assume Std {
         if ast::is_some(sym).not() {
           return ty_none();
         }
-        return types::ty_of_decl(sym);
+        return tag_type(ast::a_of(e), sym, m);
       }
       if k.eq(ast::k_ex_field()) {
         let i = field_at(e, m);
@@ -1485,13 +1486,11 @@ assume Std {
         }
       }
       push_bytes(body, recv);
-      emit_args(body, ast::c_of(e), ast::d_of(e), m, param_types(provider));
+      emit_args(body, ast::c_of(e), ast::d_of(e), m, param_types_in(penv, provider));
       reach(provider, penv);
       push_needs(body, provider, penv, via, map);
       op_call(body, index_of_fn(provider, penv));
-      elab_ty(
-        ast::fn_ret(prog::sym_decl.get(provider)), prog::sym_mod.get(provider)
-      )
+      ret_in(penv, provider)
     }
 
     # The environment entry providing this method at this receiver. The
@@ -1500,8 +1499,12 @@ assume Std {
     # lexical lookup. Matching a provision by the spelling of its
     # method's name instead would be the structural matching D1 exists
     # to rule out.
+    #
+    # The key is the receiver's whole type, not just its head (D62): a
+    # provision made at `Box[Elem=Char]` serves no `Box[Elem=Point]`.
     fn method_provision(recv_ty: Int, e: Int, m: Int): Int {
-      let head = types::head_of(canon_ty(recv_ty));
+      let recv = canon_ty(recv_ty);
+      let head = types::head_of(recv);
       if ast::is_some(head).not() {
         return ast::none();
       }
@@ -1509,7 +1512,7 @@ assume Std {
       if ast::is_some(sym).not() {
         return ast::none();
       }
-      lower::env_find(cg_env.read(), lower::ek_fn(), head, sym)
+      lower::env_find(cg_env.read(), lower::ek_fn(), recv, sym)
     }
 
     # The symbol half of the key. An attached method matches *by name* in
@@ -1687,12 +1690,41 @@ assume Std {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(callee)));
         return ty_none();
       }
-      emit_args(body, ast::b_of(e), ast::c_of(e), m, param_types(sym));
       # A nominal value *is* its payload (D58), so constructing one emits
-      # the payload and nothing more.
+      # the payload and nothing more — the payload at the tag's arguments.
       if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
-        return types::ty_of_decl(sym);
+        let tag = tag_type(callee, sym, m);
+        let want = int_list();
+        want.push(types::member_payload(tag));
+        emit_args(body, ast::b_of(e), ast::c_of(e), m, want);
+        return tag;
       }
+      if is_defined_fn(sym) {
+        let map = int_list();
+        let env = callee_env(sym, map);
+        emit_args(body, ast::b_of(e), ast::c_of(e), m, param_types_in(env, sym));
+        reach(sym, env);
+        push_needs(body, sym, env, ast::none(), map);
+        op_call(body, index_of_fn(sym, env));
+        return ret_in(env, sym);
+      }
+      # An abstract fn the context provides. D2: statically a direct
+      # call, with the captured context passed as data.
+      if in_wasm(sym).not() {
+        let bound = lower::env_find(
+          cg_env.read(), lower::ek_fn(), ast::none(), sym
+        );
+        if ast::is_some(bound) {
+          if ast::is_some(lower::env_a_of(bound)) {
+            emit_args(
+              body, ast::b_of(e), ast::c_of(e), m,
+              param_types_in(lower::env_b_of(bound), lower::env_a_of(bound))
+            );
+            return emit_provided(body, bound);
+          }
+        }
+      }
+      emit_args(body, ast::b_of(e), ast::c_of(e), m, param_types(sym));
       if in_wasm(sym) {
         let op = wops::find_op(prog::sym_name.get(sym));
         if ast::is_some(op) {
@@ -1706,26 +1738,6 @@ assume Std {
         op_i32_const(body, zero);
         body.push(hex(n4(), n7()));
         return cg_boolty.read();
-      }
-      if is_defined_fn(sym) {
-        let map = int_list();
-        let env = callee_env(sym, map);
-        reach(sym, env);
-        push_needs(body, sym, env, ast::none(), map);
-        op_call(body, index_of_fn(sym, env));
-        return elab_ty(
-          ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
-        );
-      }
-      # An abstract fn the context provides. D2: statically a direct
-      # call, with the captured context passed as data.
-      let bound = lower::env_find(
-        cg_env.read(), lower::ek_fn(), ast::none(), sym
-      );
-      if ast::is_some(bound) {
-        if ast::is_some(lower::env_a_of(bound)) {
-          return emit_provided(body, bound);
-        }
       }
       if in_wasi(sym) {
         reach_import(sym);
@@ -1746,9 +1758,7 @@ assume Std {
       reach(provider, penv);
       push_needs(body, provider, penv, bound, int_list());
       op_call(body, index_of_fn(provider, penv));
-      elab_ty(
-        ast::fn_ret(prog::sym_decl.get(provider)), prog::sym_mod.get(provider)
-      )
+      ret_in(penv, provider)
     }
 
     # The callee's needs, in its order, taken from this frame. A need the
@@ -1813,6 +1823,27 @@ assume Std {
 
     # The declared parameter types of a callee, or an empty list when it
     # has none the back end can see (a tag construction, an instruction).
+    # A callee's declared parameter and return types as the environment
+    # it runs in sees them: its own specialization's for a direct call,
+    # and for a provision the one captured where it was bound (D26). The
+    # caller's could differ — it may have rebound a type since — and the
+    # callee is compiled against its own.
+    fn param_types_in(env: Int, sym: Int): IntList {
+      let out = int_list();
+      let d = prog::sym_decl.get(sym);
+      let home = prog::sym_mod.get(sym);
+      var i = zero;
+      while i.lt(ast::fn_nparams(d)) {
+        out.push(lower::elab(env, ast::b_of(ast::kid_at(ast::fn_params(d), i)), home));
+        i = i.add(one);
+      }
+      out
+    }
+
+    fn ret_in(env: Int, sym: Int): Int {
+      lower::elab(env, ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
+    }
+
     fn param_types(sym: Int): IntList {
       let out = int_list();
       let kind = prog::sym_kind.get(sym);
@@ -2249,7 +2280,13 @@ assume Std {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
         return ();
       }
-      let head = types::head_of(canon_ty(types::ty_of_decl(recv_sym)));
+      # Keyed by the receiver's whole type as the bindings in force and the
+      # bind's own brackets make it (D61, D62): `bind Box.peek[Elem=Char]`
+      # provides at `Box[Elem=Char]`, as `bind Elem = Char;` before it would.
+      let recv = lower::canon(
+        lower::app_view(cg_env.read(), m, spec), types::ty_of_decl(recv_sym)
+      );
+      let head = types::head_of(recv);
       let detached = lower::find_method_decl(m, recv_sym, ast::b_of(spec));
       let provider = named_fn(value, m);
       if ast::is_some(head).not() {
@@ -2265,7 +2302,7 @@ assume Std {
         return ();
       }
       cg_env.write(lower::env_push(
-        cg_env.read(), lower::ek_fn(), head, detached, provider, cg_env.read()
+        cg_env.read(), lower::ek_fn(), recv, detached, provider, cg_env.read()
       ));
       capture(cg_env.read(), mode);
     }

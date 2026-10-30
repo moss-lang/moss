@@ -1348,23 +1348,34 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertNotEqual(out[:4], b"\0asm")
         self.assertTrue(out.decode("utf-8").startswith("?S "), out[:200])
 
-    def test_applying_a_type_is_reported(self):
-        """The one bracket application this compiler does not do. D61's
-        applications are on context items and method binds, where nothing
-        needs substituting — a provision is keyed by (receiver, method) and
-        every signature comes from the provider — but applying a *type*
-        substitutes into a payload. The bootstrap compiles and runs
-        tests/wasi/applied.moss; the self-hosted compiler reports `e_apply`
-        (`M`) and writes nothing, rather than silently dropping the
-        bindings."""
+    def test_applying_a_type(self):
+        """D18: a nominal type's identity is its declaration and its static
+        bindings, so `Box[Elem=I32]` substitutes into the payload. Both
+        compilers run tests/wasi/applied.moss."""
         from .test_build import compile_wasm, run_wasm
 
         self.assertEqual(run_wasm(compile_wasm({}, entry="tests/wasi/applied.moss")), "A\n")
-        out = self.compile_with_moss("tests/wasi/applied.moss")
+        module = self.compile_with_moss("tests/wasi/applied.moss")
+        self.assertEqual(self.wasmtime_run(module), "A\n")
+
+    def test_a_record_at_a_wider_instantiation(self):
+        """A record whose fields are typed by an abstract `T` is laid out
+        per instantiation, so a method on it compiles at `T = Char` and at
+        `T = Point` alike."""
+        module = self.compile_with_moss("tests/wasi/widened.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), "ba\nefd\n")
+
+    def test_provisions_are_keyed_by_instantiation(self):
+        """D62: a provision serves only the instantiation it was made at,
+        so two of one method at two instantiations coexist, each compiled
+        for its own type — and a receiver at a third finds none."""
+        module = self.compile_with_moss("tests/wasi/provisions.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), "ac\n")
+        out = self.compile_with_moss("tests/wasi/mismatch.moss", prelude="lib/prelude.moss")
         self.assertNotEqual(out[:4], b"\0asm")
         report = out.decode("utf-8")
-        self.assertTrue(report.startswith("!M "), report[:200])
-        self.assertIn("Box", report)
+        self.assertTrue(report.startswith("?K "), report[:200])
+        self.assertIn("peek", report)
 
 
 NEEDS_DRIVER = (
@@ -1374,6 +1385,7 @@ NEEDS_DRIVER = (
     "import \"./src/intern.moss\" as intern;\n"
     "import \"./src/lower.moss\" as lower;\n"
     "import \"./src/prog.moss\" as prog;\n"
+    "import \"./src/types.moss\" as types;\n"
     "\n"
     "assume Std {\n"
     "  fn main() {\n"
@@ -1415,7 +1427,7 @@ NEEDS_DRIVER = (
     "            tab();\n"
     "            let r = lower::need_recv_at(f, i);\n"
     "            if ast::is_some(r) {\n"
-    "              intern::put(prog::sym_name.get(r));\n"
+    "              intern::put(prog::sym_name.get(types::head_of(r)));\n"
     "              putchar(char::dot);\n"
     "            }\n"
     "            intern::put(prog::sym_name.get(lower::need_sym_at(f, i)));\n"
@@ -1453,9 +1465,12 @@ class TestSelfHostedNeeds(unittest.TestCase):
         lower = Lower(program)
         lower.run()
 
+        from mossc.types import head
+
         def key(k):
             if isinstance(k, tuple):
-                return f"{k[0].name}.{k[1].decl.name.name}"
+                # A key's receiver is a type (D62); the rows name its head.
+                return f"{head(k[0]).name}.{k[1].decl.name.name}"
             if isinstance(k.decl, ast.Fndef):
                 return k.decl.name.name
             return k.name

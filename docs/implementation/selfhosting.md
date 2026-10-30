@@ -114,37 +114,36 @@ what makes `src/main.moss` — `assume Wasm, Wasi, Branch` and one
 
 What is left, none of it on the path to self-hosting:
 
-- **A record whose field types a binding in force would widen.** All of
-  [D58] and [D59] compiles now, records included ([D63]):
-  `tests/wasi/records.moss` is the standing test, held to the bootstrap.
-  Records are laid out from their declared types, though, so a field
-  typed by an abstract `T` that a binding gives a wider type is reported
-  rather than compiled. That is the record side of applying a type,
-  below: nominal types here are their declaration, without the static
-  bindings that [D18] makes part of their identity.
-- **Applying a type.** [D61] made the library apply one *per provision*
-  (`String.get[Elem=Char]`), and for those the back end does nothing:
-  the receiver is written concretely, a provision is keyed by (receiver,
-  method), and every signature it needs comes from the *provider*, so
-  the substitution changes no code here. The bootstrap needs it — it
-  checks the provider's signature against the abstract one — and the
-  environment chain does not. What is not done is an application on a
-  **type** (`Pair[T=Int]`), which substitutes into a payload; that is
-  reported as `e_apply` rather than elaborating `Pair` and dropping the
-  bindings, which is what it used to do silently.
-  `tests/wasi/applied.moss` is the standing test: the bootstrap compiles
-  and runs it, this compiler says no.
-  What *is* done, since it is the other half of the same mechanism, is a
+- **Applying a type: done.** A nominal type's identity is its
+  declaration *and* its static bindings ([D18]): a tag is parameterized
+  by the abstract type symbols its payload mentions, `types.moss` interns
+  it together with its arguments, and `lower::canon` substitutes into
+  them. So `Pair[T=Int]` elaborates (`tests/wasi/applied.moss`), a record
+  typed by an abstract `T` is laid out per instantiation
+  (`tests/wasi/widened.moss`), and a method provision is keyed by the
+  receiver's whole type ([D62]): one made at `Box[Elem=Char]` serves no
+  `Box[Elem=Point]` (`tests/wasi/mismatch.moss`), and both can coexist,
+  each compiled for its own type (`tests/wasi/provisions.moss`). A
+  callee's parameter and return types are read in the environment it is
+  compiled in — a provision's, captured where it was bound — rather
+  than the caller's, which may have rebound a type since.
+  What was already done, as the other half of the same mechanism, is a
   receiver an application binds: a context item may key a detached method
   on an **abstract** receiver (`context IsList = L.get[Elem=T];`) which
   an application then fixes (`IsList[T=Int, L=IntArr]`). That is the
-  generic container of [D51], and unlike the concrete case it does need
-  the brackets read — a provision keyed at `L` is one no call finds.
-  `lower.moss`'s `app_view` extends the environment an item's types are
-  read through with whatever its own brackets bind, for the length of
-  that item and no further, which is what lets one scope hold the same
-  interface at two element types. `tests/wasi/generic.moss` is the
-  standing test, held to the same output under both compilers.
+  generic container of [D51]. `lower.moss`'s `app_view` extends the
+  environment an item's types are read through with whatever its own
+  brackets bind, for the length of that item and no further, which is
+  what lets one scope hold the same interface at two element types.
+  `tests/wasi/generic.moss` is the standing test.
+- **The bootstrap compiles each function once.** It lowers a function at
+  its declaration, with every abstract type one scalar wide, and
+  specializes per fn binding but not per type binding; this back end
+  specializes per both. So a program that instantiates a function at a
+  wider type — `widened.moss`, `provisions.moss` — runs here and is
+  refused by the bootstrap, which checks each call's widths against the
+  callee's rather than compile against the wrong layout. Nothing in
+  `src/` needs it, so the bootstrap still compiles this compiler.
 - **Diagnostics** are a code letter, the frame they came from, and a
   name — no line or column. The machinery for a real message is a string
   the compiler holds, which is [D48](../design/semantics.md).

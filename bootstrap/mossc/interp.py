@@ -551,7 +551,21 @@ def native_env(program: Program, args: list | None = None) -> dict:
         env[(path_ty, path.detached["readable"])] = native(readable)
         env[(path_ty, path.detached["read"])] = native(read_file)
     wasm_env(program, lib, env, args or [])
-    return env
+    # Method keys carry the receiver's whole type (D62); the natives above
+    # are written against bare receivers, which have no bindings.
+    return {
+        (receiver_type(k[0]), k[1]) if isinstance(k, tuple) else k: v
+        for k, v in env.items()
+    }
+
+
+def receiver_type(sym: Symbol):
+    """A bare receiver symbol as the type a method key holds."""
+    from .types import TAbstract, TNominal
+
+    if sym.kind == SymKind.TYPE:
+        return TAbstract(sym, ())
+    return TNominal(sym, ())
 
 
 PAGE = 65536

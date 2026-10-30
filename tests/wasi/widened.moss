@@ -1,0 +1,52 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A record whose fields are typed by an abstract `T`, at a binding that
+# makes `T` wider than one scalar. `Pair` is laid out per instantiation
+# (D18): two scalars at `T = Char`, four at `T = Point`. The bootstrap
+# lowers each function once and refuses this; the self-hosted back end
+# compiles each instantiation separately.
+
+type T;
+
+assume Std {
+  type Point { x: Char, y: Char };
+}
+
+assume Std, T {
+  type Pair { first: T, second: T };
+
+  fn Pair.swap(): Pair { Pair { first = this.second, second = this.first } }
+}
+
+assume Std {
+  fn chars() {
+    bind T = Char;
+    let p = Pair { first = char::a, second = char::b }.swap();
+    putchar(p.first);
+    putchar(p.second);
+    putchar(char::newline);                         # ba
+  }
+
+  fn points() {
+    bind T = Point;
+    let p = Pair {
+      first = Point { x = char::c, y = char::d },
+      second = Point { x = char::e, y = char::f },
+    }.swap();
+    putchar(p.first.x);
+    putchar(p.first.y);
+    putchar(p.second.y);
+    putchar(char::newline);                         # efd
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    chars();
+    points();
+  }
+}
