@@ -36,8 +36,10 @@ compilation model:
 
 ## Modules
 
-A module is a source file. `import` resolves paths relative to the
-importing file; cycles are errors. `as` binds a module alias for `::`
+A module is a source file. An `import` path whose first segment is `.`
+or `..` is relative to the importing file; any other names a file in the
+standard library, so `import "wasi.moss"` works from anywhere ([D64]).
+Cycles are errors. `as` binds a module alias for `::`
 access; `use` copies names into file scope (`*` copies all exports).
 Exports are the module's own top-level declarations, its explicit `use`d
 names, and its `as` aliases — glob imports do not re-export. One local name

@@ -1511,6 +1511,23 @@ later as pure sugar, provided `(a, b)` is not given another meaning
 first. The same change finished records in both back ends, which [D59]
 had laid out but neither compiled in full.
 
+**[D64] DECIDED by the designer (bare import paths name library files).**
+Every import path was relative to the importing file, so the only way to
+reach the standard library was to walk up to it — `"../lib/wasi.moss"` —
+which works only for programs that sit inside a copy of this repository.
+A program elsewhere had to keep its own copy of `lib/` beside it, and a
+symlink would not do, because the compiler sees one preopened directory
+under WASI. The driver already knows where the library is: it finds the
+prelude, beside the entry file or installed, to pass it as argument zero.
+So an import path whose first segment is `.` or `..` keeps its meaning,
+and any other path is relative to the prelude's directory: `import
+"wasi.moss"` is the library's `wasi.moss` from any file. Absolute paths
+are unchanged. Identity is still the canonical path ([D56]), so a library
+file reached both ways is one module. Every existing import already began
+with `./` or `../`, so nothing changed meaning. A run without a prelude
+(only test harnesses do that) has no library, and reads bare paths the
+old way.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -1537,7 +1554,8 @@ idiom, D52 `Wasi` primitive with `Std` a library over it, D53 signature
 vs structure, D54 method providers keep the nominal wrapper, D55 functors
 as their own declaration applied with `bind`, D61 how a method call
 finds its method, D62 provisions keyed by the receiver's identity, D63
-records are the only product type)
+records are the only product type, D64 bare import paths name library
+files)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

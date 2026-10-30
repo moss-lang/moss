@@ -652,6 +652,35 @@ assume Std {
       }
     }
 
+    # Where an import points (D64). A path whose first segment is `.` or
+    # `..` is relative to the importing file, as is an absolute one; any
+    # other names a file in the standard library, which is the prelude's
+    # directory. Without a prelude there is no library to look in.
+    fn resolve(base: String, rel: String): String {
+      if pinfo.length().eq(zero) {
+        return canon(base, rel);
+      }
+      if rel.length().gt(zero) {
+        if rel.get(zero).eq(char::slash) {
+          return canon(base, rel);
+        }
+      }
+      var len = zero;
+      while len.lt(rel.length()) {
+        if rel.get(len).eq(char::slash) {
+          if seg_dots(rel, zero, len, one) {
+            return canon(base, rel);
+          }
+          if seg_dots(rel, zero, len, n2()) {
+            return canon(base, rel);
+          }
+          return canon(pinfo.get(zero), rel);
+        }
+        len = len.add(one);
+      }
+      canon(pinfo.get(zero), rel)
+    }
+
     # Loading. Depth first, because a module links its imports and an
     # import's exports are only complete once it has linked its own.
     assume lexer::at, lexer::mark, syntax::Cursor {
@@ -694,7 +723,7 @@ assume Std {
         while i.lt(root_count(m)) {
           let d = root_at(m, i);
           if ast::kind_of(d).eq(ast::k_d_import()) {
-            load(add_module(canon(module_path(m), ast::imp_text(d))));
+            load(add_module(resolve(module_path(m), ast::imp_text(d))));
           }
           i = i.add(one);
         }
@@ -706,7 +735,7 @@ assume Std {
           let d = root_at(m, i);
           if ast::kind_of(d).eq(ast::k_d_import()) {
             link(
-              m, find_module(canon(module_path(m), ast::imp_text(d))),
+              m, find_module(resolve(module_path(m), ast::imp_text(d))),
               ast::imp_alias(d), ast::imp_star(d),
               ast::imp_uses(d), ast::imp_nuses(d)
             );

@@ -132,6 +132,17 @@ class Loader:
                 parts.append(part)
         return str(PurePosixPath(*parts)) if parts else "."
 
+    def resolve(self, importer: str, path: str) -> str:
+        """Where an import points (D64). A path whose first segment is `.`
+        or `..` is relative to the importing file, as is an absolute one;
+        any other names a file in the standard library, which is the
+        prelude's directory. Without a prelude there is no library to look
+        in."""
+        first = path.split("/", 1)[0]
+        if self.prelude is None or path.startswith("/") or first in (".", ".."):
+            return self.normalize(importer, path)
+        return self.normalize(self.prelude, path)
+
     def wants_prelude(self, path: str) -> bool:
         if self.prelude is None or path == self.prelude:
             return False
@@ -139,8 +150,8 @@ class Loader:
         prelude_dir = str(PurePosixPath(self.prelude).parent)
         return not path.startswith(prelude_dir + "/")
 
-    def load(self, path: str, base: str | None = None) -> Module:
-        path = self.normalize(base, path)
+    def load(self, path: str) -> Module:
+        path = self.normalize(None, path)
         if path in self.modules:
             return self.modules[path]
         if path in self.loading:
@@ -154,7 +165,7 @@ class Loader:
         if self.wants_prelude(path):
             deps.append((self.load(self.prelude), ast.Import(self.prelude, None, True, [])))
         for imp in module.tree.imports:
-            deps.append((self.load(imp.path, base=path), imp))
+            deps.append((self.load(self.resolve(path, imp.path)), imp))
         self.loading.pop()
         self.modules[path] = module
         declare(module)

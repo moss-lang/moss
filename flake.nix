@@ -389,6 +389,10 @@
             if "$moss" -O "$source" 2>/dev/null; then
               false
             fi
+            # Away from the source tree, the library is the installed one,
+            # and a bare import path still finds it (D64).
+            cp "$source" hello.moss
+            "$moss" hello.moss | grep -qx 'Hello, world!'
             touch $out
           '';
           bootstrap =

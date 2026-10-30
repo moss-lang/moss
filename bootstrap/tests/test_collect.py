@@ -202,6 +202,19 @@ class TestPrelude(unittest.TestCase):
         self.assertNotIn("Std", std.aliases)
         self.assertEqual(len(std.tree.imports), 0)
 
+    def test_bare_paths_name_library_files(self):
+        """D64: a path that does not start with `.` or `..` is in the
+        library, whatever directory the importing file is in."""
+        files = {
+            **self.FILES,
+            "lib/util.moss": "type Lib;",
+            "app/util.moss": "type Local;",
+            "app/main.moss": 'import "util.moss" as lib; import "./util.moss" as here;',
+        }
+        program = load("app/main.moss", read=fake(files), prelude="lib/prelude.moss", root=ROOT)
+        self.assertIn("Lib", program.modules[ROOT + "/lib/util.moss"].names)
+        self.assertIn("Local", program.modules[ROOT + "/app/util.moss"].names)
+
 
 if __name__ == "__main__":
     unittest.main()
