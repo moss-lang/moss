@@ -1,0 +1,16 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasistd.moss" use Branch;
+
+# A type that contains itself has no finite layout: a value is a run of
+# scalars (D59) and there is no heap to break the cycle (D58). An arena of
+# indices is the idiom instead (D51). Reported, not compiled.
+
+assume Wasm, Wasi, Branch {
+  unit Nil;
+  type Cell { head: I32, tail: Nil | Cell };
+
+  fn main() {
+    let c = Cell { head = w::i32_one, tail = Nil };
+  }
+}

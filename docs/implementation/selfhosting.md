@@ -114,12 +114,16 @@ what makes `src/main.moss` — `assume Wasm, Wasi, Branch` and one
 
 What is left, none of it on the path to self-hosting:
 
-- **Records and tuples.** Nothing in `src/` or `lib/` uses either, so
-  they are the only part of the value model still missing; everything
-  else of [D58] and [D59] compiles, including a union wider than one
-  scalar. `tests/wasi/noheap.moss` is the standing test for them, and a
-  program that needs them is reported — `e_shape`, raised where the type
-  is elaborated — rather than mis-compiled.
+- **Field access on a computed record, past its first field.** All of
+  [D58] and [D59] compiles now, records included ([D63]):
+  `tests/wasi/records.moss` is the standing test, held to the bootstrap.
+  One shape is reported rather than compiled. `x.f` reads straight from
+  a local when `x` is a local, `this`, a contextual val or a field of
+  one of those, but `f().g` would need the record staged through a
+  temporary the scan pass never made, unless `g` is the leading field.
+  Bind the record to a `let` first. A record whose field types a
+  binding in force would widen is also reported, since records are laid
+  out from their declared types.
 - **Applying a type.** [D61] made the library apply one *per provision*
   (`String.get[Elem=Char]`), and for those the back end does nothing:
   the receiver is written concretely, a provision is keyed by (receiver,

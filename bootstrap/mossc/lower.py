@@ -23,7 +23,6 @@ from .types import (
     TNever,
     TNominal,
     TRecord,
-    TTuple,
     TUnion,
     TUnit,
     fits,
@@ -101,6 +100,9 @@ class Lower:
         self.in_progress: set[int] = set()
         self.fn_symbols: dict[int, Symbol] = {}  # id(decl) -> Symbol
         self.needs_of: dict[int, tuple] = {}  # id(Symbol) -> runtime need keys
+        # id(val Symbol) -> how many scalars its value occupies (D59), for
+        # every val some defined function needs.
+        self.val_widths: dict[int, int] = {}
         self._reqs_cache: dict[int, list] = {}
         self._const_cache: dict[int, tuple] = {}
         for module in program.order:
@@ -296,27 +298,52 @@ class Lower:
             return None
         return (id(target), spec.dot)
 
-    def slots_of(self, env, ty) -> int:
+    def slots_of(self, env, ty, visiting: frozenset = frozenset()) -> int:
         """D59: how many Wasm scalars a value of this type occupies. A
-        record is one per field; everything else is one. (An injected
-        union will be two — a discriminant beside the payload — once the
-        backend reads slot zero instead of testing a pointer.)"""
+        record is its fields' runs, one after another; a tag is its payload
+        (D58); a union of units is its code, and any other union is a
+        discriminant followed by room for its widest member. Everything
+        else is one.
+
+        A tag that contains itself would need an endless run of scalars —
+        there is no heap to break the cycle — so it is an error. Every
+        such cycle passes through a tag, since only a nominal type refers
+        to a type by name, so `visiting` only needs to hold tags."""
         ty = self.canon(env, ty)
         if isinstance(ty, TRecord):
-            return len(ty.fields)
+            return sum(self.slots_of(env, t, visiting) for _, t in ty.fields)
         if isinstance(ty, TUnion):
-            # A union of units is just its code; anything carrying a
-            # payload needs a discriminant beside it.
             units = all(
                 head(m) is not None and head(m).kind == SymKind.UNIT
                 for m in members(ty)
             )
-            return 1 if units else 2
+            if units:
+                return 1
+            widest = 0
+            for m in members(ty):
+                if isinstance(m, TNominal) and m.symbol.kind == SymKind.TAG:
+                    widest = max(widest, self.slots_of(env, m, visiting))
+            return 1 + widest
         if isinstance(ty, TNominal) and ty.symbol.kind == SymKind.TAG:
-            decl_ty = getattr(ty.symbol.decl, "ty", None)
-            if isinstance(decl_ty, ast.TyRecord):
-                return len(decl_ty.fields)
+            if id(ty.symbol) in visiting:
+                self.error(
+                    ty.symbol.module,
+                    f"`{ty.symbol.name}` contains itself, so it has no finite layout (D58)",
+                )
+            return self.slots_of(
+                env, self.payload_type(ty, env), visiting | {id(ty.symbol)}
+            )
         return 1
+
+    def field_layout(self, env, record: TRecord) -> list:
+        """Each field's (offset, width) within the record's run."""
+        out = []
+        offset = 0
+        for _, t in record.fields:
+            width = self.slots_of(env, t)
+            out.append((offset, width))
+            offset += width
+        return out
 
     def find_method_decl(self, module: Module, receiver: Symbol, name: str) -> Symbol | None:
         """An abstract attached method on the receiver, or a detached method
@@ -359,8 +386,6 @@ class Lower:
             return t
         if isinstance(t, TUnion):
             return TUnion(tuple(self.canon(env, m) for m in t.members))
-        if isinstance(t, TTuple):
-            return TTuple(tuple(self.canon(env, i) for i in t.items))
         if isinstance(t, TRecord):
             return TRecord(tuple((n, self.canon(env, ty)) for n, ty in t.fields))
         return t
@@ -394,8 +419,6 @@ class Lower:
             pairs = zip((x for _, x in a.args), (y for _, y in b.args))
         elif isinstance(a, TUnion) and isinstance(b, TUnion) and len(a.members) == len(b.members):
             pairs = zip(a.members, b.members)
-        elif isinstance(a, TTuple) and isinstance(b, TTuple) and len(a.items) == len(b.items):
-            pairs = zip(a.items, b.items)
         elif (
             isinstance(a, TRecord)
             and isinstance(b, TRecord)
@@ -497,9 +520,7 @@ class Lower:
     def free_type_syms(self, ty, module: Module, out: list, visiting: set):
         if isinstance(ty, (ast.TyNever, ast.TyThis)):
             return
-        if isinstance(ty, ast.TyTuple):
-            for item in ty.items:
-                self.free_type_syms(item, module, out, visiting)
+        if isinstance(ty, ast.TyUnit):
             return
         if isinstance(ty, ast.TyRecord):
             for _, field_ty in ty.fields:
@@ -612,10 +633,8 @@ class Lower:
             if this is None:
                 self.error(module, "`This` is only legal inside method declarations")
             return this
-        if isinstance(ty, ast.TyTuple):
-            if not ty.items:
-                return TUnit()
-            return TTuple(tuple(self.elab_type(i, module, tymap, env, this) for i in ty.items))
+        if isinstance(ty, ast.TyUnit):
+            return TUnit()
         if isinstance(ty, ast.TyRecord):
             return TRecord(
                 tuple((n, self.elab_type(t, module, tymap, env, this)) for n, t in ty.fields)
@@ -692,6 +711,9 @@ class Lower:
         param_slots = tuple(
             [self.slots_of(env, this_ty)] if has_this else []
         ) + tuple(self.slots_of(env, t) for _, t in sig.params)
+        for key in needs:
+            if isinstance(key, Symbol) and key.kind == SymKind.VAL and key in env.vals:
+                self.val_widths[id(key)] = self.slots_of(env, env.vals[key])
         fn = ir.FnIR(
             symbol,
             tuple(n for n, _ in sig.params),
@@ -1222,7 +1244,13 @@ class FnChecker:
                 self.module, sub.path
             ) is None:
                 name = sub.path[0]
-                return ir.Pat(target, name, None), [(name, payload_ty)], {target}, False
+                width = self.lower.slots_of(self.env, payload_ty)
+                return (
+                    ir.Pat(target, name, None, width),
+                    [(name, payload_ty)],
+                    {target},
+                    False,
+                )
             self.error("v0 supports only a binder as a tag pattern payload")
         if isinstance(pattern, ast.PatRecord):
             if pattern.path is None:
@@ -1237,7 +1265,9 @@ class FnChecker:
             if not isinstance(payload_ty, TRecord):
                 self.error(f"`{target.name}` does not have a record payload")
             field_types = dict(payload_ty.fields)
-            indices = {n: i for i, (n, _) in enumerate(payload_ty.fields)}
+            layout = dict(
+                zip((n for n, _ in payload_ty.fields), self.lower.field_layout(self.env, payload_ty))
+            )
             binders = []
             fields = []
             for name, sub in pattern.fields:
@@ -1245,14 +1275,16 @@ class FnChecker:
                     self.error(f"`{target.name}` has no field `{name}`")
                 if sub is None:
                     binders.append((name, field_types[name]))
-                    fields.append((name, name, indices[name]))
+                    fields.append((name, name, *layout[name]))
                 elif (
                     isinstance(sub, ast.PatPath)
                     and len(sub.path) == 1
                     and resolve_path(self.module, sub.path) is None
                 ):
                     binders.append((sub.path[0], field_types[name]))
-                    fields.append((name, sub.path[0], indices[name]))
+                    fields.append((name, sub.path[0], *layout[name]))
+                elif isinstance(sub, ast.PatWild):
+                    pass
                 else:
                     self.error("v0 record patterns support binders only")
             return ir.Pat(target, None, tuple(fields)), binders, {target}, False
@@ -1394,9 +1426,10 @@ class FnChecker:
             record = self.lower.payload_type(oty, self.env)
         if not isinstance(record, TRecord):
             self.error(f"`{show(oty)}` has no fields")
-        for index, (name, ty) in enumerate(record.fields):
+        layout = self.lower.field_layout(self.env, record)
+        for (name, ty), (offset, width) in zip(record.fields, layout):
             if name == expr.name:
-                return ir.Field(obj, expr.name, index), ty
+                return ir.Field(obj, expr.name, offset, width), ty
         self.error(f"`{show(oty)}` has no field `{expr.name}`")
 
     def synth_method(self, expr: ast.MethodCall):

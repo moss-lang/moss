@@ -22,11 +22,6 @@ class TNever:
 
 
 @dataclass(frozen=True)
-class TTuple:
-    items: tuple
-
-
-@dataclass(frozen=True)
 class TRecord:
     fields: tuple  # ordered (name, Type)
 
@@ -84,8 +79,6 @@ def show(t) -> str:
         return "()"
     if isinstance(t, TNever):
         return "|"
-    if isinstance(t, TTuple):
-        return "(" + ", ".join(show(i) for i in t.items) + ")"
     if isinstance(t, TRecord):
         inner = ", ".join(f"{n}: {show(ty)}" for n, ty in t.fields)
         return "{" + inner + "}"

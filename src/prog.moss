@@ -118,12 +118,11 @@ assume Std {
   # from the provider, so there is nothing for this back end to do.
   fn e_apply(): Int { n12() }
 
-  # A type form this compiler does not elaborate: a record, a tuple, or a
-  # bare `This`. The rest of D58 and D59 compiles, including a union wider
-  # than one scalar; `tests/wasi/noheap.moss` is the standing test for the
-  # first two. `This` never reaches here in practice, because a signature
-  # always comes from the concrete provider rather than from the abstract
-  # declaration that writes it.
+  # A type with no layout: one that contains itself, so that its run of
+  # scalars would never end (there is no heap to break the cycle, D58), or
+  # a bare `This`. `This` never reaches here in practice, because a
+  # signature always comes from the concrete provider rather than from the
+  # abstract declaration that writes it.
   fn e_shape(): Int { n13() }
 
   # A module the host will not open: no such file, or one outside the

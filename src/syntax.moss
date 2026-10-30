@@ -225,24 +225,11 @@ assume Std {
         if accept(tk_rparen()) {
           return ast::node0(ast::k_ty_unit());
         }
-        let xs = int_list();
-        loop {
-          if here(tk_rparen()) {
-            break;
-          }
-          if here(tk_eof()) {
-            break;
-          }
-          xs.push(parse_type());
-          if accept(tk_comma()).not() {
-            break;
-          }
-        }
+        # Grouping only: there are no tuple types (D63), so a comma here
+        # is the error `expect` reports.
+        let inner = parse_type();
         expect(tk_rparen());
-        if xs.length().eq(one) {
-          return xs.get(zero);
-        }
-        return ast::node2(ast::k_ty_tuple(), ast::commit(xs), xs.length());
+        return inner;
       }
       if accept(tk_lbrace()) {
         let xs = int_list();

@@ -129,9 +129,6 @@ assume Std {
         put_path(ast::a_of(id));
         sp();
         dump_app(ast::b_of(id), ast::c_of(id));
-      } else if k.eq(ast::k_ty_tuple()) {
-        sp();
-        dump_run(ast::a_of(id), ast::b_of(id));
       } else if k.eq(ast::k_ty_record()) {
         sp();
         dump_run(ast::a_of(id), ast::b_of(id));

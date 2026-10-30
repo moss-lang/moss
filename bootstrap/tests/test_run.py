@@ -223,8 +223,34 @@ class TestContext(unittest.TestCase):
         }
         self.assertEqual(run(files), "k")
 
+    def test_record_payloads_and_binder_scope(self):
+        """The interpreter agrees with both back ends on a union of records
+        of different widths, and on a pattern binder being scoped to its
+        arm: the outer `x` is back after the match."""
+        files = {
+            "main.moss": "assume Std {\n"
+            "  type Lit Char;\n"
+            "  type Both { l: Char, r: Char };\n"
+            "  type Node = | Lit | Both;\n"
+            "  fn first(n: Node): Char { match n { Lit c => c, Both { l, r = _ } => l, } }\n"
+            "  fn main() {\n"
+            "    putchar(first(Both { r = char::b, l = char::a }));\n"
+            "    putchar(first(Lit (char::c)));\n"
+            "    let x = char::d;\n"
+            "    match Lit (char::e) { Lit x => putchar(x), _ => (), }\n"
+            "    putchar(x);\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n",
+        }
+        self.assertEqual(run(files), "aced\n")
+
     def test_fn_bind_capture_survives_rebinds(self):
         self.assertEqual(run(CAPTURE_REBOUND), "hhhh\n")
+
+
+# What tests/wasi/records.moss prints, one property per line.
+RECORDS_OUT = "ab\nba\nbaq\ncdez\ncd\ngf\nho\n"
 
 
 # D26: a bound provider's needs are captured at the bind site, so a frame
@@ -1254,21 +1280,32 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/generic.moss", "hiDCC\n"),
             ("tests/wasi/bulk.moss", "hi!\n"),
             ("tests/wasi/capture.moss", "CCCCE\n"),
+            # Written against `Std`, so it needs the prelude in scope.
+            ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
         )
-        for entry, expected in cases:
+        for entry, expected, *prelude in cases:
             with self.subTest(entry=entry):
-                mine = self.wasmtime_run(self.compile_with_moss(entry))
+                mine = self.wasmtime_run(self.compile_with_moss(entry, *prelude))
                 self.assertEqual(mine, expected)
                 self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), expected)
 
-    def test_a_program_beyond_the_slice_is_reported(self):
-        """What is left of the value model: a record, and a union two
-        scalars wide. tests/wasi/noheap.moss uses both, and the compiler
-        says so — `e_shape` (`N`), raised where the type is elaborated —
-        rather than emitting something wrong."""
-        out = self.compile_with_moss("tests/wasi/noheap.moss", prelude="lib/prelude.moss")
+    def test_records(self):
+        """The rest of D59's value model: a record is its fields' runs,
+        one after another, so records nest, sit inside unions of different
+        widths, travel as parameters, returns and contextual vals, and
+        destructure by name — renamed, wildcarded, or whole."""
+        module = self.compile_with_moss("tests/wasi/records.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), RECORDS_OUT)
+
+    def test_a_type_that_contains_itself_is_reported(self):
+        """No heap means no finite layout for a type that contains itself,
+        so it is `e_shape` (`N`), naming the type, rather than a compiler
+        that never stops laying it out."""
+        out = self.compile_with_moss("tests/wasi/cyclic.moss")
         self.assertNotEqual(out[:4], b"\0asm")
-        self.assertTrue(out.decode("utf-8").startswith("!N "), out[:200])
+        report = out.decode("utf-8")
+        self.assertTrue(report.startswith("!N "), report[:200])
+        self.assertIn("Cell", report)
 
     def test_a_module_that_will_not_open_is_reported(self):
         """A path the host refuses -- absent here, but equally one that

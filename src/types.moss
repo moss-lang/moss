@@ -14,7 +14,8 @@ import "./prog.moss" as prog;
 #
 # Layout is [D59]: every value is a finite run of Wasm scalars and the
 # compiler allocates nothing. `()` is no slots; a unit is one, holding
-# its code; a nominal tag is exactly its payload ([D58]); a union of
+# its code; a nominal tag is exactly its payload ([D58]); a record is its
+# fields' runs, one after another, in declaration order; a union of
 # units is one scalar, and any wider union is a discriminant followed by
 # room for its widest member.
 
@@ -24,6 +25,9 @@ assume Std {
   fn kd_nominal(): Int { n2() }
   fn kd_abstract(): Int { n3() }
   fn kd_union(): Int { n4() }
+  # A record's members alternate: field name, field type, in declaration
+  # order. Field order is part of the type, as it is in the bootstrap.
+  fn kd_record(): Int { n5() }
 
   val ty_kind: IntList;
   val ty_sym: IntList;
@@ -202,8 +206,19 @@ assume Std {
         }
         return intern_ty(kd_union(), ast::none(), members);
       }
+      if k.eq(ast::k_ty_record()) {
+        let members = int_list();
+        var i = zero;
+        while i.lt(ast::b_of(t)) {
+          let f = ast::kid_at(ast::a_of(t), i);
+          members.push(ast::a_of(f));
+          members.push(elab(ast::b_of(f), m));
+          i = i.add(one);
+        }
+        return intern_ty(kd_record(), ast::none(), members);
+      }
       if k.ne(ast::k_ty_ref()) {
-        # A record or a tuple, which this compiler does not lay out.
+        # `This` standing alone; see `e_shape`.
         prog::error(prog::e_shape(), m, ast::none());
         return ty_never();
       }
@@ -287,6 +302,13 @@ assume Std {
     # memoized, because the back end asks it of a local's type on every
     # load and every store, and a type cannot change shape once it is
     # elaborated.
+    #
+    # A nominal type asked about while its own width is being computed
+    # contains itself, and has no finite layout. Every such cycle passes
+    # through a nominal type, because only a nominal type refers to a type
+    # by name — so marking those alone is enough to catch it, and the one
+    # caught is in the cycle. Reported as `e_shape` and given width zero,
+    # so the compiler can carry on to its other diagnostics.
     fn width(t: Int): Int {
       while ty_width.length().le(t) {
         ty_width.push(zero);
@@ -295,9 +317,65 @@ assume Std {
       if seen.gt(zero) {
         return seen.sub(one);
       }
+      if seen.lt(zero) {
+        let sym = sym_of(t);
+        prog::error(prog::e_shape(), prog::sym_mod.get(sym), prog::sym_name.get(sym));
+        ty_width.set(t, one);
+        return zero;
+      }
+      if is_kind(t, kd_nominal()) {
+        ty_width.set(t, ast::none());
+      }
       let w = width_of(t);
-      ty_width.set(t, w.add(one));
+      if ty_width.get(t).le(zero) {
+        ty_width.set(t, w.add(one));
+      }
       w
+    }
+
+    # A record's fields.
+    fn field_count(t: Int): Int { member_count(t).div(n2()) }
+    fn field_name_at(t: Int, i: Int): Int { member_at(t, i.add(i)) }
+    fn field_type_at(t: Int, i: Int): Int { member_at(t, i.add(i).add(one)) }
+
+    # The field with this interned name, or none.
+    fn field_index(t: Int, name: Int): Int {
+      var i = zero;
+      while i.lt(field_count(t)) {
+        if field_name_at(t, i).eq(name) {
+          return i;
+        }
+        i = i.add(one);
+      }
+      ast::none()
+    }
+
+    # Where a field's run starts within the record's.
+    fn field_offset(t: Int, i: Int): Int {
+      var off = zero;
+      var j = zero;
+      while j.lt(i) {
+        off = off.add(width(field_type_at(t, j)));
+        j = j.add(one);
+      }
+      off
+    }
+
+    # The record a value of this type carries: itself, or a tag's
+    # payload. None for anything without fields.
+    fn record_of(t: Int): Int {
+      if is_kind(t, kd_record()) {
+        return t;
+      }
+      if is_kind(t, kd_nominal()) {
+        if is_unit_decl(t).not() {
+          let p = payload_of(t);
+          if is_kind(p, kd_record()) {
+            return p;
+          }
+        }
+      }
+      ast::none()
     }
 
     # The layout rule itself. Only `width` calls it, and only once per
@@ -320,6 +398,9 @@ assume Std {
           return one;
         }
         return width(payload_of(t));
+      }
+      if k.eq(kd_record()) {
+        return field_offset(t, field_count(t));
       }
       # A union: one scalar if the members discriminate by themselves,
       # otherwise a discriminant beside room for the widest.

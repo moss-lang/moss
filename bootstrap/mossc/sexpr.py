@@ -14,6 +14,8 @@ The letters are the node kinds of src/ast.moss in order: index 0-25 are
 from . import ast
 
 KINDS = [
+    # "ty_tuple" is retired (D63) but keeps its letter, so no other kind's
+    # letter moves.
     "ty_unit", "ty_never", "ty_this", "ty_ref", "ty_tuple", "ty_record",
     "ty_union", "ty_field", "ex_unit", "ex_this", "ex_path", "ex_call",
     "ex_field", "ex_method", "ex_record", "ex_rfield", "ex_if", "ex_match",
@@ -62,10 +64,8 @@ def _type(t):
         return _node("ty_never")
     if isinstance(t, ast.TyThis):
         return _node("ty_this")
-    if isinstance(t, ast.TyTuple):
-        if not t.items:
-            return _node("ty_unit")
-        return _node("ty_tuple", _list([_type(i) for i in t.items]))
+    if isinstance(t, ast.TyUnit):
+        return _node("ty_unit")
     if isinstance(t, ast.TyRecord):
         return _node(
             "ty_record",

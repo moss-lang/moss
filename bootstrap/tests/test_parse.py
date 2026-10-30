@@ -60,18 +60,24 @@ class TestDeclarations(unittest.TestCase):
         )
 
     def test_record_tag_and_val(self):
-        file = parse("type P { x: A, y: (B, C) };\nval v: P;")
+        file = parse("type P { x: A, y: (B), z: () };\nval v: P;")
         tag, val = file.decls
         self.assertEqual(
             tag,
             ast.Tagdef(
                 "P",
                 ast.TyRecord(
-                    [("x", ast.TyRef(["A"], None)), ("y", ast.TyTuple([ast.TyRef(["B"], None), ast.TyRef(["C"], None)]))]
+                    [("x", ast.TyRef(["A"], None)), ("y", ast.TyRef(["B"], None)), ("z", ast.TyUnit())]
                 ),
             ),
         )
         self.assertEqual(val, ast.Valdef("v", ast.TyRef(["P"], None)))
+
+    def test_no_tuple_types(self):
+        # D63: records are the only product type; `(T)` is grouping.
+        with self.assertRaises(ParseError) as caught:
+            parse("type P (A, B);")
+        self.assertIn("no tuple types", str(caught.exception))
 
     def test_fn_names(self):
         file = parse("fn f(); fn T.m(x: A): B; fn .d(): This;")

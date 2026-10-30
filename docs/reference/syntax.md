@@ -115,13 +115,14 @@ requirements (total application, [D22]); **AssumeItem** deliberately has no
 ### Types
 
 - **Type** = `|` | `|`? **TypeAtom** (`|` **TypeAtom**)\*
-- **TypeAtom** = **TypeRef** | `This` | `(` **List**\[**Type**\] `)` | **RecordType**
+- **TypeAtom** = **TypeRef** | `This` | `(` `)` | `(` **Type** `)` | **RecordType**
 - **TypeRef** = **Path** **App**?
 - **RecordType** = `{` **List**\[_name_ `:` **Type**\] `}`
 
 A bare `|` is the uninhabited (divergence) type. A union's members must
 elaborate to nominal types with distinct heads ([D15]). `()` is the unit
-type; `(A, B)` is a tuple. `This` is legal only inside method declarations.
+type and `(T)` is just `T`: there are no tuple types, because records are
+the product type ([D63]). `This` is legal only inside method declarations.
 
 ### Files and declarations
 

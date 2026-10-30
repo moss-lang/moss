@@ -181,7 +181,7 @@ static code with captured dynamic context.
 \section{The core calculus}\label{sec:calculus}
 
 \textsc{Core Moss} strips Moss to the constructs that carry the design.
-Modules, named contexts, functors, attached methods, records, tuples,
+Modules, named contexts, functors, attached methods, records,
 booleans, loops, and mutation are all omitted here and reconstructed in
 \S\ref{sec:full}; none of them adds semantic content to the core.
 
@@ -909,9 +909,10 @@ module; a detached provision is found by key [D61]. Only an attached
 method can see its receiver, so providers wrap nominal types [D54]; the
 core flattens this by giving every method provider the receiver as its
 first argument---the convention both compilers already use internally. \\[3pt]
-Records and tuples &
+Records &
 Structural products, orthogonal to the context mechanism; nominality
-comes only from tags wrapping them [D15]. \\[3pt]
+comes only from tags wrapping them [D15]. They are the only product
+type: there are no tuples [D63]. \\[3pt]
 \texttt{Bool}, \texttt{if}, \texttt{while}/\texttt{loop}, \texttt{var} &
 \texttt{Bool} is a library tag over two units and \texttt{if} is its
 match [D45]. Loops are primitive in Moss because tail-call elimination

@@ -62,7 +62,7 @@ except the standard library itself.
 | `context C = items;` | named requirement bundle |
 | `assume items { decls }` | requirement block |
 
-Types are unit `()`, tuples, structural records, unions, the uninhabited
+Types are unit `()`, structural records, unions, the uninhabited
 `|`, and references to declared types. Union members must be nominal with
 distinct heads; a member type injects implicitly into any union listing it,
 and that is the only subtyping. Type identity is structural over

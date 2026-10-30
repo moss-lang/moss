@@ -408,6 +408,13 @@ class Backend:
                 out.append(key)
         return out
 
+    def val_width(self, slot) -> int:
+        """How many scalars a val parameter slot occupies: a captured slot
+        is the val it finally names."""
+        while isinstance(slot, tuple) and slot and slot[0] == "captured":
+            slot = slot[2]
+        return self.lower.val_widths.get(id(slot), 1)
+
     def compile_fn(self, symbol: Symbol, env: dict | None = None) -> int:
         """Compile a *specialization*: the function under a specific set of
         fn bindings. Two call sites that bind different providers get two
@@ -955,9 +962,10 @@ class FnCompiler:
             index += width
         self.param_types = [I32] * index
         for key in needs:
-            self.provisions[key] = ("local", index)
-            self.param_types.append(I32)
-            index += 1
+            width = backend.val_width(key)
+            self.provisions[key] = ("local", list(range(index, index + width)))
+            self.param_types.extend([I32] * width)
+            index += width
         self.param_count = index
         self.local_types: list = []
         self.break_depths: list[int] = []
@@ -1036,7 +1044,7 @@ class FnCompiler:
             self.code += I32_STORE + uleb(2) + uleb(0)
             self.code += LOCAL_GET + uleb(tmp)
         else:
-            self.code += LOCAL_GET + uleb(value)
+            self.load(value)
 
     # Statements
 
@@ -1062,11 +1070,9 @@ class FnCompiler:
             self.store(self.slots[node.name])
         elif isinstance(node, ir.BindVal):
             layout = self.expr(node.expr)
-            if len(layout) != 1:
-                raise NotCompilable("binding a val of more than one scalar")
-            idx = self.local(layout[0])
-            self.code += LOCAL_SET + uleb(idx)
-            self.provisions[node.key] = ("local", idx)
+            indices = self.group(layout)
+            self.store(indices)
+            self.provisions[node.key] = ("local", indices)
         elif isinstance(node, ir.BindFn):
             # Record which function this key now names, and capture the
             # provider's own needs as they are bound *here* (D26): under
@@ -1138,6 +1144,9 @@ class FnCompiler:
             return tuple(self.local_type_of(i) for i in indices)
         elif isinstance(node, ir.NeedVal):
             self.push_provision(node.key)
+            kind, value = self.provide(node.key)
+            if kind == "local":
+                return tuple(self.local_type_of(i) for i in value)
         elif isinstance(node, ir.MakeUnit):
             self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
         elif isinstance(node, ir.MakeTag):
@@ -1146,22 +1155,20 @@ class FnCompiler:
         elif isinstance(node, ir.Inject):
             return self.inject(node)
         elif isinstance(node, ir.MakeRecord):
-            # D59: the fields *are* the value, one scalar each.
+            # D59: the fields *are* the value, their runs one after another.
             layout = []
             for _, expr in node.fields:
-                field = self.expr(expr)
-                if len(field) != 1:
-                    raise NotCompilable("a record field of more than one scalar")
-                layout.extend(field)
+                layout.extend(self.expr(expr))
             return tuple(layout)
         elif isinstance(node, ir.Field):
-            if node.index < 0:
+            if node.offset < 0:
                 raise NotCompilable("field access without layout")
             layout = self.expr(node.obj)
             staged = self.group(layout)
             self.store(staged)
-            self.code += LOCAL_GET + uleb(staged[node.index])
-            return (layout[node.index],)
+            run = staged[node.offset : node.offset + node.width]
+            self.load(run)
+            return tuple(layout[node.offset : node.offset + node.width])
         elif isinstance(node, ir.Call):
             return self.call(node)
         elif isinstance(node, ir.If):
@@ -1193,24 +1200,36 @@ class FnCompiler:
 
         def bind_and_body(arm, bare=False):
             pat = arm.pat
+            # A binder names slots of the scrutinee for the length of its
+            # arm, shadowing any local of the same name until the arm ends.
+            names = ir.pat_binders(pat)
+            saved = {n: self.slots[n] for n in names if n in self.slots}
             if pat.head is None:
                 if pat.binder is not None:
-                    self.slots.setdefault(pat.binder, list(scrut))
+                    self.slots[pat.binder] = list(scrut)
             elif bare and pat.fields is None:
                 # Untagged: the scrutinee is the payload.
                 if pat.binder is not None:
-                    self.slots.setdefault(pat.binder, list(scrut))
+                    self.slots[pat.binder] = list(scrut)
             else:
+                # The payload: the whole value when nothing discriminates,
+                # otherwise the scalars beside the discriminant — only as
+                # many as this member's payload, which may be narrower than
+                # the union.
+                base = 0 if bare else 1
                 if pat.binder is not None:
-                    # Injected: the payload sits beside the discriminant.
-                    self.slots.setdefault(pat.binder, list(scrut[1:]))
+                    self.slots[pat.binder] = list(scrut[base : base + pat.width])
                 if pat.fields is not None:
-                    for _, binder, index in pat.fields:
-                        self.slots.setdefault(binder, [scrut[index]])
+                    for _, binder, offset, width in pat.fields:
+                        start = base + offset
+                        self.slots[binder] = list(scrut[start : start + width])
             if isinstance(arm.body, ir.Block):
                 got = self.block(arm.body)
             else:
                 got = self.expr(arm.body)
+            for n in names:
+                self.slots.pop(n, None)
+            self.slots.update(saved)
             result[0] = got
             return got
 

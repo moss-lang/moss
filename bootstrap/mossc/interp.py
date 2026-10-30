@@ -251,10 +251,19 @@ class Interp:
         if isinstance(expr, ir.Match):
             value = self.eval(expr.scrutinee, frame)
             for arm in expr.arms:
+                # A pattern's binders are scoped to its arm: whatever they
+                # shadowed is back afterwards.
+                names = ir.pat_binders(arm.pat)
+                saved = {n: frame.locals[n] for n in names if n in frame.locals}
                 if self.match_pat(arm.pat, value, frame):
-                    if isinstance(arm.body, ir.Block):
-                        return self.eval_block(arm.body, frame, tail=tail)
-                    return self.eval(arm.body, frame, tail=tail)
+                    try:
+                        if isinstance(arm.body, ir.Block):
+                            return self.eval_block(arm.body, frame, tail=tail)
+                        return self.eval(arm.body, frame, tail=tail)
+                    finally:
+                        for n in names:
+                            frame.locals.pop(n, None)
+                        frame.locals.update(saved)
             raise MossPanic(f"no match arm for {value!r}")
         if isinstance(expr, ir.Return):
             raise _Return(
@@ -277,9 +286,10 @@ class Interp:
         if pat.binder is not None:
             frame.locals[pat.binder] = value.payload
         if pat.fields is not None:
-            for field_name, binder, _ in pat.fields:
+            for field_name, binder, *_ in pat.fields:
                 frame.locals[binder] = value.fields[field_name]
         return True
+
 
 
 def native_env(program: Program, args: list | None = None) -> dict:

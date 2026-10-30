@@ -1,0 +1,109 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Records (D15, D63): a record is its fields' runs of scalars, one after
+# another (D59), so none of this allocates. Each line of output is one
+# property; every letter is the one the comment beside it predicts.
+
+assume Std {
+  type Point { x: Char, y: Char };
+
+  # A field wider than one scalar: a record inside a record, and a union
+  # beside a discriminant.
+  type Read Char;
+  unit Eof;
+  type Span { from: Point, peek: Read | Eof, to: Point };
+
+  # A union of records of different widths, as an expression tree would
+  # use one.
+  type Lit Char;
+  type Both { l: Char, r: Char };
+  type Node = | Lit | Both | Eof;
+
+  fn Point.swap(): Point { Point { x = this.y, y = this.x } }
+
+  fn show(p: Point) {
+    putchar(p.x);
+    putchar(p.y);
+    putchar(char::newline);
+  }
+
+  fn first(n: Node): Char {
+    match n {
+      Lit c => c,
+      Both { l, r = _ } => l,
+      Eof => char::z,
+    }
+  }
+
+  fn second(n: Node): Char {
+    match n {
+      Both p => p.r,
+      _ => char::z,
+    }
+  }
+
+  fn peeked(s: Span): Char {
+    match s.peek {
+      Read c => c,
+      Eof => char::z,
+    }
+  }
+
+  val origin: Point;
+
+  assume origin {
+    fn from_origin(): Point { Point { x = origin.x, y = char::o } }
+  }
+
+  fn demo() {
+    # Fields in any order, and shorthand.
+    let y = char::b;
+    let p = Point { y, x = char::a };
+    show(p);                                        # ab
+    show(p.swap());                                 # ba
+
+    # Nested records and a wide field, through a chain of fields.
+    let s = Span { to = p.swap(), peek = Read (char::q), from = p };
+    putchar(s.from.y);
+    putchar(s.to.y);
+    putchar(peeked(s));
+    putchar(char::newline);                         # baq
+
+    # A record payload in a union, destructured with a renamed field, a
+    # wildcard, and whole.
+    let n = Both { l = char::c, r = char::d };
+    putchar(first(n));
+    putchar(second(n));
+    putchar(first(Lit (char::e)));
+    putchar(first(Eof));
+    putchar(char::newline);                         # cdez
+    match n {
+      Both { l = left, r } => { putchar(left); putchar(r); },
+      _ => (),
+    }
+    putchar(char::newline);                         # cd
+
+    # A binder shadows a local for its arm only.
+    let x = char::f;
+    match Lit (char::g) {
+      Lit x => putchar(x),
+      _ => (),
+    }
+    putchar(x);
+    putchar(char::newline);                         # gf
+
+    # A contextual val that is a record.
+    bind origin = Point { x = char::h, y = char::i };
+    show(from_origin());                            # ho
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

@@ -121,11 +121,13 @@ class Parser:
         if self.eat(Kind.THIS_TYPE):
             return ast.TyThis(offset=start)
         if self.eat(Kind.LPAREN):
-            items = self.comma_list(self.parse_type, Kind.RPAREN)
+            if self.eat(Kind.RPAREN):
+                return ast.TyUnit(offset=start)
+            inner = self.parse_type()
+            if self.at(Kind.COMMA):
+                raise ParseError("there are no tuple types (D63); use a record", self.peek())
             self.expect(Kind.RPAREN)
-            if len(items) == 1:
-                return items[0]  # grouping, not a 1-tuple
-            return ast.TyTuple(items, offset=start)
+            return inner  # grouping
         if self.at(Kind.LBRACE):
             return self.parse_record_type()
         raise ParseError(f"expected a type, found {self.peek().kind.name}", self.peek())

@@ -94,7 +94,10 @@ class MakeTuple:
 class Field:
     obj: object
     name: str
-    index: int = -1  # position in the payload record, set by lowering
+    # Which scalars of the record the field occupies (D59), set by
+    # lowering: `width` of them, starting at `offset`.
+    offset: int = -1
+    width: int = 1
 
 
 @dataclass(frozen=True)
@@ -109,7 +112,19 @@ class This:
 class Pat:
     head: Symbol | None  # None matches anything (binder/wildcard)
     binder: str | None  # bind whole value (or payload for tag heads)
-    fields: tuple | None  # (name, binder, index) for record payloads
+    # (name, binder, offset, width) for record payloads: which scalars of
+    # the payload each binder takes.
+    fields: tuple | None
+    # How many scalars a tag pattern's payload occupies, for its binder.
+    width: int = 1
+
+
+def pat_binders(pat: Pat) -> list:
+    """The names a pattern binds."""
+    names = [pat.binder] if pat.binder is not None else []
+    if pat.fields is not None:
+        names.extend(binder for _, binder, *_ in pat.fields)
+    return names
 
 
 @dataclass(frozen=True)

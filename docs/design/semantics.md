@@ -280,8 +280,8 @@ at use sites, like `Range[T=NameId]`, absolutely stays — see §6.)
 
 - A path to a type symbol, alias, or nominal type: `Token`, `parse::TypeId`,
   possibly applied: `Option[T=TokenId]`, `Range[T=NameId]`.
-- Unit `()` and tuples `(A, B)` (grammar only; unused in `src/` so far —
-  keep tuples in the grammar, defer implementing them).
+- Unit `()`. There are no tuples: `(T)` is grouping, and records are the
+  product type ([D63], which retired the deferred `(A, B)`).
 - Structural records `{ from: TokenId, name: Option[T=TokenId] }`. Records
   are structural; nominality comes only from tag declarations wrapping them.
 - Unions `A | B | C`, including the leading-pipe multiline form. Members
@@ -456,9 +456,11 @@ discriminant in slot zero, the old `>= HEAP_BASE` pointer test
 disappears: units and tags discriminate the same way, by comparing one
 scalar.
 
-Not yet covered, and reported rather than mis-compiled: a record field
-or tag payload of more than one scalar (so records do not nest), and
-binding a val to a multi-slot value.
+Since covered, in both compilers: a record field or tag payload of more
+than one scalar, so records nest and sit inside unions of any width, and
+binding a val to a multi-slot value. A type that contains itself would be
+an endless run of scalars, so it is an error rather than a layout; an
+arena of indices is the idiom for recursive data ([D51]).
 
 **[D57] RESOLVED by [D59] (an in-language `Path.read` needs i64).** `path_open`
 takes its two rights masks as u64, as lib/wasip1.moss correctly declares.
@@ -1475,14 +1477,31 @@ probing the bootstrap resolves both:
   answered from the ambient context, the application must agree with
   the context on the type symbols that requirement mentions.
 
+**[D63] DECIDED by the designer (records are the only product type).**
+[D15] kept tuples `(A, B)` in the type grammar and deferred implementing
+them; they had no expressions or patterns, and nothing used them. The
+options were full tuples, with `Tag (a, b)` constructing a tag over the
+tuple `(a, b)`; tuples as sugar for records with numbered fields, which
+buys nothing because there are no numeric tokens to write `t.0` with;
+positional multi-field tags only, `type Add (Expr, Expr)`, with no
+standalone tuple values; or none at all. Decided: none. Records already
+serve every product — `type Add { l: Expr, r: Expr }`, matched as
+`Add { l, r }`, which is as short as a positional pattern — and naming
+fields rather than positions is the same preference Moss shows for
+context. `(A, B)` is now a syntax error and `(T)` is grouping. Nothing
+is ruled out: positional tags, and tuples after them, can still be added
+later as pure sugar, provided `(a, b)` is not given another meaning
+first. The same change finished records in both back ends, which [D59]
+had laid out but neither compiled in full.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
 library change has landed — one declaration per detached accessor,
 provided with bracket applications — the bootstrap's name-matching
 fallback is gone, and the compiler under `src/` compiles itself to a
-fixpoint. What remains is engineering: records and tuples in the back
-end, and the constant factor of `Std` written in Moss.
+fixpoint. What remains is engineering: the constant factor of `Std`
+written in Moss. (Records are done, and there are no tuples [D63].)
 
 Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
@@ -1500,7 +1519,7 @@ export, D47 operators are methods, D49 no automatic TCE — loops are the
 idiom, D52 `Wasi` primitive with `Std` a library over it, D53 signature
 vs structure, D54 method providers keep the nominal wrapper, D55 functors
 as their own declaration applied with `bind`, D61 how a method call
-finds its method)
+finds its method, D63 records are the only product type)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

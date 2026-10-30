@@ -673,7 +673,275 @@ assume Std {
           j = j.add(one);
         }
       }
+      if types::is_kind(ty, types::kd_record()) {
+        var j = zero;
+        while j.lt(types::field_count(ty)) {
+          let off = types::field_offset(ty, j);
+          let f = types::field_type_at(ty, j);
+          if i.lt(off.add(width(f))) {
+            return valtype_at(f, i.sub(off));
+          }
+          j = j.add(one);
+        }
+      }
       emit::vt_i32()
+    }
+
+    # Records.
+
+    # A field's type as this frame sees it. The record was laid out from
+    # the type as declared; if a binding in force gives the field a
+    # different width, the two layouts disagree, and that is reported
+    # rather than compiled (the record would have to be laid out per
+    # environment, which this back end does not do).
+    fn field_ty(rec: Int, i: Int): Int {
+      let declared = types::field_type_at(rec, i);
+      let here = canon_ty(declared);
+      if width(here).ne(width(declared)) {
+        cg_error(c_unsupported(), types::field_name_at(rec, i));
+      }
+      here
+    }
+
+    # The record an expression's value carries, or none.
+    fn record_type_of(e: Int, m: Int): Int {
+      types::record_of(canon_ty(type_of(e, m)))
+    }
+
+    # `x.f` where the value is already in a local: which local, and where
+    # in it the field starts. Locals, `this`, contextual vals and fields
+    # of those are places; anything else has to be evaluated first.
+    fn place_local(e: Int, m: Int): Int {
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_this()) {
+        return this_local();
+      }
+      if k.eq(ast::k_ex_path()) {
+        let p = ast::a_of(e);
+        if ast::path_len(p).eq(one) {
+          let local = find_local(ast::path_at(p, zero));
+          if ast::is_some(local) {
+            return local;
+          }
+        }
+        let sym = prog::resolve_path(m, p);
+        if ast::is_some(sym).not() {
+          return ast::none();
+        }
+        if prog::sym_kind.get(sym).ne(prog::sk_val()) {
+          return ast::none();
+        }
+        return provision_of(ast::none(), sym);
+      }
+      if k.eq(ast::k_ex_field()) {
+        if ast::is_some(field_at(e, m)) {
+          return place_local(ast::a_of(e), m);
+        }
+      }
+      ast::none()
+    }
+
+    fn place_offset(e: Int, m: Int): Int {
+      if ast::kind_of(e).eq(ast::k_ex_field()) {
+        let rec = record_type_of(ast::a_of(e), m);
+        return place_offset(ast::a_of(e), m).add(
+          types::field_offset(rec, field_at(e, m))
+        );
+      }
+      zero
+    }
+
+    # Which field `x.f` names, or none.
+    fn field_at(e: Int, m: Int): Int {
+      let rec = record_type_of(ast::a_of(e), m);
+      if ast::is_some(rec).not() {
+        return ast::none();
+      }
+      types::field_index(rec, ast::b_of(e))
+    }
+
+    fn emit_field(body: IntList, e: Int, m: Int): Int {
+      let i = field_at(e, m);
+      if ast::is_some(i).not() {
+        cg_error(c_bad_type(), ast::b_of(e));
+        return ty_none();
+      }
+      let rec = record_type_of(ast::a_of(e), m);
+      let ty = field_ty(rec, i);
+      let l = place_local(e, m);
+      if ast::is_some(l) {
+        let off = place_offset(e, m);
+        var j = zero;
+        while j.lt(width(ty)) {
+          op_local_get(body, local_slot(l, off.add(j)));
+          j = j.add(one);
+        }
+        return ty;
+      }
+      # Not in a local: evaluate it. The field is the record's leading
+      # run of slots only if nothing comes before it; otherwise the value
+      # would have to be staged through a temporary the scan never made.
+      let off = types::field_offset(rec, i);
+      if off.gt(zero) {
+        cg_error(c_unsupported(), ast::b_of(e));
+        return ty_none();
+      }
+      emit_expr(body, ast::a_of(e), m);
+      var j = width(rec).sub(width(ty));
+      while j.gt(zero) {
+        op_drop(body);
+        j = j.sub(one);
+      }
+      ty
+    }
+
+    # `Tag { f = e, ... }`: the payload's fields, in the record's own
+    # order whatever order they are written in. Every field once, and
+    # only fields the record has.
+    fn emit_record(body: IntList, e: Int, m: Int): Int {
+      let path = ast::a_of(ast::a_of(e));
+      let sym = prog::resolve_path(m, path);
+      if ast::is_some(sym).not() {
+        cg_error(prog::e_scope(), ast::path_last(path));
+        return ty_none();
+      }
+      let tag = types::ty_of_decl(sym);
+      let rec = types::record_of(tag);
+      if ast::is_some(rec).not() {
+        cg_error(c_bad_type(), prog::sym_name.get(sym));
+        return ty_none();
+      }
+      var i = zero;
+      while i.lt(ast::c_of(e)) {
+        let rf = ast::kid_at(ast::b_of(e), i);
+        if ast::is_some(types::field_index(rec, ast::a_of(rf))).not() {
+          cg_error(c_bad_type(), ast::a_of(rf));
+        }
+        var j = i.add(one);
+        while j.lt(ast::c_of(e)) {
+          if ast::a_of(ast::kid_at(ast::b_of(e), j)).eq(ast::a_of(rf)) {
+            cg_error(c_bad_type(), ast::a_of(rf));
+          }
+          j = j.add(one);
+        }
+        i = i.add(one);
+      }
+      var f = zero;
+      while f.lt(types::field_count(rec)) {
+        let name = types::field_name_at(rec, f);
+        let ty = field_ty(rec, f);
+        var given = ast::none();
+        var k = zero;
+        while k.lt(ast::c_of(e)) {
+          let rf = ast::kid_at(ast::b_of(e), k);
+          if ast::a_of(rf).eq(name) {
+            given = rf;
+          }
+          k = k.add(one);
+        }
+        if ast::is_some(given).not() {
+          cg_error(c_bad_type(), name);
+        } else if ast::is_some(ast::b_of(given)) {
+          emit_as(body, ast::b_of(given), m, ty);
+        } else {
+          # `{ f }` is `{ f = f }`.
+          let local = find_local(name);
+          if ast::is_some(local) {
+            load_local(body, local);
+          } else {
+            cg_error(prog::e_scope(), name);
+          }
+        }
+        f = f.add(one);
+      }
+      tag
+    }
+
+    # What `Tag { ... }` destructures: the tag's payload, when that is a
+    # record itself (D34). A payload that is another nominal type has to
+    # be matched through that type's own head.
+    fn pattern_record(payload: Int): Int {
+      if types::is_kind(payload, types::kd_record()) {
+        payload
+      } else {
+        ast::none()
+      }
+    }
+
+    # The name a record pattern's field binds, or none: `{ f }` binds
+    # `f`, `{ f = x }` binds `x`, `{ f = _ }` binds nothing. Anything
+    # deeper is not a binder; `record_pattern_ok` reports it.
+    fn rfield_binder(pf: Int, m: Int): Int {
+      let sub = ast::b_of(pf);
+      if ast::is_some(sub).not() {
+        return ast::a_of(pf);
+      }
+      if ast::kind_of(sub).eq(ast::k_pt_path()) {
+        if ast::is_some(ast::b_of(sub)).not() {
+          if ast::is_some(arm_head_any(sub, m)).not() {
+            return ast::path_last(ast::a_of(sub));
+          }
+        }
+      }
+      ast::none()
+    }
+
+    # Whether this back end can destructure the pattern: a record
+    # payload, fields it has, and only binders or wildcards inside.
+    fn record_pattern_ok(pat: Int, rec: Int, m: Int): Bool {
+      if ast::is_some(rec).not() {
+        return false;
+      }
+      var i = zero;
+      while i.lt(ast::c_of(pat)) {
+        let pf = ast::kid_at(ast::b_of(pat), i);
+        if ast::is_some(types::field_index(rec, ast::a_of(pf))).not() {
+          return false;
+        }
+        if ast::is_some(rfield_binder(pf, m)).not() {
+          let sub = ast::b_of(pf);
+          if ast::kind_of(sub).ne(ast::k_pt_wild()) {
+            return false;
+          }
+        }
+        i = i.add(one);
+      }
+      true
+    }
+
+    # The locals a record pattern binds, in the order it writes them.
+    fn scan_record_binders(pat: Int, rec: Int, m: Int) {
+      var i = zero;
+      while i.lt(ast::c_of(pat)) {
+        let pf = ast::kid_at(ast::b_of(pat), i);
+        let name = rfield_binder(pf, m);
+        if ast::is_some(name) {
+          let f = types::field_index(rec, ast::a_of(pf));
+          add_local(name, canon_ty(types::field_type_at(rec, f)));
+          lc_visible.write(lc_visible.read().add(one));
+        }
+        i = i.add(one);
+      }
+    }
+
+    # Binding them, from a local holding the record at slot `base`.
+    fn bind_record_fields(body: IntList, pat: Int, rec: Int, m: Int, l: Int, base: Int) {
+      var i = zero;
+      while i.lt(ast::c_of(pat)) {
+        let pf = ast::kid_at(ast::b_of(pat), i);
+        let name = rfield_binder(pf, m);
+        if ast::is_some(name) {
+          let f = types::field_index(rec, ast::a_of(pf));
+          let off = base.add(types::field_offset(rec, f));
+          var j = zero;
+          while j.lt(width(field_ty(rec, f))) {
+            op_local_get(body, local_slot(l, off.add(j)));
+            j = j.add(one);
+          }
+          bind_here(body, name);
+        }
+        i = i.add(one);
+      }
     }
 
     # Locals.
@@ -831,6 +1099,20 @@ assume Std {
         return elab_ty(
           ast::fn_ret(prog::sym_decl.get(target)), prog::sym_mod.get(target)
         );
+      }
+      if k.eq(ast::k_ex_record()) {
+        let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
+        if ast::is_some(sym).not() {
+          return ty_none();
+        }
+        return types::ty_of_decl(sym);
+      }
+      if k.eq(ast::k_ex_field()) {
+        let i = field_at(e, m);
+        if ast::is_some(i).not() {
+          return ty_none();
+        }
+        return canon_ty(types::field_type_at(record_type_of(ast::a_of(e), m), i));
       }
       # `()`, `break`, `return` and everything this slice does not cover
       # leave nothing behind.
@@ -1096,6 +1378,21 @@ assume Std {
     }
 
     fn scan_arm_binder(pat: Int, sty: Int, m: Int) {
+      if ast::kind_of(pat).eq(ast::k_pt_record()) {
+        let payload = pattern_payload(pat, sty, m);
+        let rec = pattern_record(payload);
+        if record_pattern_ok(pat, rec, m) {
+          # With one possible head the record arrives on the stack, so it
+          # is held in a temporary to take fields from; a union's is
+          # already in the scrutinee's.
+          if types::head_count(sty).le(one) {
+            add_local(ast::none(), payload);
+            lc_visible.write(lc_visible.read().add(one));
+          }
+          scan_record_binders(pat, rec, m);
+        }
+        return ();
+      }
       if ast::kind_of(pat).ne(ast::k_pt_path()) {
         return ();
       }
@@ -1236,6 +1533,12 @@ assume Std {
       }
       if k.eq(ast::k_ex_method()) {
         return emit_method(body, e, m);
+      }
+      if k.eq(ast::k_ex_record()) {
+        return emit_record(body, e, m);
+      }
+      if k.eq(ast::k_ex_field()) {
+        return emit_field(body, e, m);
       }
       cg_error(c_unsupported(), ast::none());
       ty_none()
@@ -1768,6 +2071,18 @@ assume Std {
         drop_value(body, sty);
         return ();
       }
+      if k.eq(ast::k_pt_record()) {
+        let rec = pattern_record(pattern_payload(pat, sty, m));
+        if record_pattern_ok(pat, rec, m).not() {
+          drop_value(body, sty);
+          cg_error(c_unsupported(), ast::none());
+          return ();
+        }
+        let tmp = reveal(ast::none());
+        store_local(body, tmp);
+        bind_record_fields(body, pat, rec, m, tmp, zero);
+        return ();
+      }
       if k.ne(ast::k_pt_path()) {
         cg_error(c_unsupported(), ast::none());
         return ();
@@ -1861,6 +2176,16 @@ assume Std {
     ): Int {
       let mark = lc_visible.read();
       let pat = ast::a_of(arm);
+      if ast::kind_of(pat).eq(ast::k_pt_record()) {
+        # The payload sits beside the discriminant, in the scrutinee's
+        # temporary.
+        let rec = pattern_record(arm_payload(pat, m, sty));
+        if record_pattern_ok(pat, rec, m) {
+          bind_record_fields(body, pat, rec, m, tmp, one);
+        } else {
+          cg_error(c_unsupported(), ast::none());
+        }
+      }
       if ast::kind_of(pat).eq(ast::k_pt_path()) {
         let sub = ast::b_of(pat);
         if ast::is_some(sub) {
@@ -1889,7 +2214,11 @@ assume Std {
 
     # A unit *or* a tag: both discriminate, and a tag also carries.
     fn arm_head_any(pat: Int, m: Int): Int {
-      if ast::kind_of(pat).ne(ast::k_pt_path()) {
+      if ast::kind_of(pat).eq(ast::k_pt_record()) {
+        if ast::is_some(ast::a_of(pat)).not() {
+          return ast::none();
+        }
+      } else if ast::kind_of(pat).ne(ast::k_pt_path()) {
         return ast::none();
       }
       let sym = prog::resolve_path(m, ast::a_of(pat));

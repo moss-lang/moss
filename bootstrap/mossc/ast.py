@@ -55,8 +55,9 @@ class TyThis:
 
 
 @dataclass(frozen=True)
-class TyTuple:
-    items: "list[Type]"  # [] is the unit type
+class TyUnit:
+    """`()`. There are no tuple types (D63): `(T)` is grouping."""
+
     offset: int = field(default=-1, compare=False)
 
 
@@ -72,7 +73,7 @@ class TyUnion:
     offset: int = field(default=-1, compare=False)
 
 
-Type = TyNever | TyRef | TyThis | TyTuple | TyRecord | TyUnion
+Type = TyNever | TyRef | TyThis | TyUnit | TyRecord | TyUnion
 
 
 # Files and declarations

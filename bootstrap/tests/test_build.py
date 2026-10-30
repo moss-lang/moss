@@ -9,9 +9,9 @@ from pathlib import Path
 
 from mossc import build as build_mod
 from mossc import collect
-from mossc.lower import Lower
+from mossc.lower import Lower, LowerError
 
-from .test_run import CAPTURE_REBOUND, runnable_examples
+from .test_run import CAPTURE_REBOUND, RECORDS_OUT, runnable_examples
 
 REPO = Path(__file__).resolve().parents[2]
 PRELUDE = str(REPO / "lib/prelude.moss")
@@ -498,6 +498,18 @@ class TestWasmBackend(unittest.TestCase):
         loop building both leaves the heap pointer where it was."""
         wasm = compile_wasm({}, entry="tests/wasi/noheap.moss")
         self.assertEqual(run_wasm(wasm), "bnbnbny\n")
+
+    def test_records_of_any_width(self):
+        """D59 in full: fields wider than one scalar, record payloads in
+        unions of different widths, and a contextual val that is a
+        record."""
+        wasm = compile_wasm({}, entry="tests/wasi/records.moss")
+        self.assertEqual(run_wasm(wasm), RECORDS_OUT)
+
+    def test_a_type_that_contains_itself_is_rejected(self):
+        with self.assertRaises(LowerError) as caught:
+            compile_wasm({}, entry="tests/wasi/cyclic.moss")
+        self.assertIn("`Cell` contains itself", str(caught.exception))
 
     def test_nominal_wrapper_does_not_allocate(self):
         """The same, watched from underneath: constructing a wrapper leaves

@@ -25,7 +25,7 @@ assume Std {
   fn k_ty_never(): Int { one }              # |
   fn k_ty_this(): Int { n2() }              # This
   fn k_ty_ref(): Int { n3() }               # a=path b=app run c=app len d=applied
-  fn k_ty_tuple(): Int { n4() }             # a=run b=len
+  fn k_ty_tuple(): Int { n4() }             # retired (D63); kept so no later kind moves
   fn k_ty_record(): Int { n5() }            # a=run of ty_field b=len
   fn k_ty_union(): Int { n6() }             # a=run b=len
   fn k_ty_field(): Int { n7() }             # a=name b=type
@@ -58,7 +58,7 @@ assume Std {
   # Patterns.
   fn k_pt_wild(): Int { hex(one, n13()) }   # _
   fn k_pt_path(): Int { hex(one, n14()) }   # a=path b=sub-pattern
-  fn k_pt_record(): Int { hex(one, n15()) } # a=run of pt_field b=len
+  fn k_pt_record(): Int { hex(one, n15()) } # a=path (none if bare) b=run of pt_field c=len
   fn k_pt_field(): Int { hex(n2(), zero) }  # a=name b=pattern
   fn k_arm(): Int { hex(n2(), one) }        # a=pattern b=body
 
