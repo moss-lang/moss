@@ -25,8 +25,8 @@ assume Int {
   assume Elem {
     fn .get(index: Int): Elem;
 
-    # Lists have it, and a list of anything but `Int` will want one too,
-    # so it is shared like the rest rather than `IntList`'s own.
+    # Lists have it — IntList, FloatList and the packed lists under them
+    # (D69) — so it is shared like the rest rather than any one's own.
     fn .set(index: Int, value: Elem);
   }
 }

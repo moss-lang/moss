@@ -1,0 +1,76 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiFloats32;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Packed lists (D69). `float_list()` makes a list of whatever `Float` is
+# bound to, so `report` is written once and runs at f64 under `WasiStd`
+# and at f32 in the block that binds `WasiFloats32`, beside an `IntList`
+# in both. Pushing far past the first capacity grows the list, and an f64
+# element is two words to an f32's one, so the growth copies differ too.
+
+assume Std {
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn num(n: Int) {
+    print_int(n);
+    putchar(char::space);
+  }
+
+  fn report() {
+    let ints = int_list();
+    let xs = float_list();
+    var i = 0;
+    while i < 1000 {
+      ints.push(i * i);
+      xs.push(0.1);
+      i = i + 1;
+    }
+    # The sums of a thousand 0.1s and of the squares below 1000, read
+    # back with `.get`.
+    var sum = 0.0;
+    var total = 0;
+    i = 0;
+    while i < xs.length() {
+      sum = sum + xs.get(i);
+      total = total + ints.get(i);
+      i = i + 1;
+    }
+    num(xs.length());
+    num(ints.length());
+    num((sum * 1000000.0).round());
+    num(total);
+    putchar(char::newline);
+    # `.set`, then the neighbours, to see an element overwrote nothing
+    # but itself: a third, scaled by 10^9.
+    xs.set(500, 1.0 / 3.0);
+    ints.set(500, -7);
+    num((xs.get(500) * 1000000000.0).round());
+    num((xs.get(499) * 10.0).round());
+    num((xs.get(501) * 10.0).round());
+    num(ints.get(500));
+    num(ints.get(501));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    report();
+    {
+      bind WasiFloats32;
+      report();
+    }
+  }
+}

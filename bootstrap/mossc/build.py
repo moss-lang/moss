@@ -1668,6 +1668,52 @@ class FnCompiler:
                     self.code += I32_STORE + uleb(2) + uleb(8)
                     self.code += I32_CONST + sleb(0)
                     return
+            if (
+                "float" in self.b.lib
+                and head(receiver) is self.b.lib["float"].names.get("FloatList")
+            ):
+                # D69: the native `FloatList` is an IntList of words, two to
+                # an f64, so `.length` halves and an element is one f64
+                # load or store at 8 + 8*index.
+                if short == "length":
+                    self.expr(node.this)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    self.code += I32_CONST + sleb(1) + BINOPS["shr"]
+                    return
+                if short in ("get", "set"):
+                    self.expr(node.this)
+                    self.code += I32_LOAD + uleb(2) + uleb(0)
+                    self.expr(node.args[0])
+                    self.code += I32_CONST + sleb(8) + BINOPS["mul"] + BINOPS["add"]
+                    if short == "get":
+                        self.code += b"\x2b" + uleb(3) + uleb(8)  # f64.load
+                        return F64
+                    self.expr(node.args[1])
+                    self.code += b"\x39" + uleb(3) + uleb(8)  # f64.store
+                    self.code += I32_CONST + sleb(0)
+                    return
+                if short == "push":
+                    # Two words of room, then the f64 into them.
+                    handle = self.local()
+                    value = self.local(F64)
+                    data = self.local()
+                    self.expr(node.this)
+                    self.code += LOCAL_SET + uleb(handle)
+                    self.expr(node.args[0])
+                    self.code += LOCAL_SET + uleb(value)
+                    for _ in range(2):
+                        self.code += LOCAL_GET + uleb(handle) + I32_CONST + sleb(0)
+                        self.code += CALL + uleb(self.b.shim(S_LIST_PUSH)) + DROP
+                    self.code += LOCAL_GET + uleb(handle) + I32_LOAD + uleb(2) + uleb(0)
+                    self.code += LOCAL_SET + uleb(data)
+                    self.code += LOCAL_GET + uleb(data)
+                    self.code += LOCAL_GET + uleb(data) + I32_LOAD + uleb(2) + uleb(0)
+                    self.code += I32_CONST + sleb(4) + BINOPS["mul"] + BINOPS["add"]
+                    self.code += LOCAL_GET + uleb(value)
+                    self.code += b"\x39" + uleb(3) + uleb(0)  # f64.store at 8 + 4*(len-2)
+                    self.code += I32_CONST + sleb(0)
+                    return
             if "strlist" in self.b.lib and home is self.b.lib["strlist"]:
                 # A String is a pointer, so a StrList is an IntList.
                 if short == "push":
@@ -1746,6 +1792,11 @@ class FnCompiler:
         empty_list = empty_list or (
             "strlist" in self.b.lib
             and key is self.b.lib["strlist"].names.get("str_list")
+        )
+        # A native FloatList is an IntList of words (D69).
+        empty_list = empty_list or (
+            "float" in self.b.lib
+            and key is self.b.lib["float"].names.get("float_list")
         )
         if empty_list:
             tmp = self.local()

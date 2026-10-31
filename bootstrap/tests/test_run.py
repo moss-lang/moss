@@ -343,6 +343,16 @@ LITERALS_OUT = (
     "314159264 333333248 \n"
 )
 
+# What tests/wasi/lists.moss prints: an IntList beside a FloatList at f64,
+# then the same at f32. A thousand 0.1s sum to 100 at f64 and to
+# 99.999048 at f32; a third differs in the eighth digit.
+LISTS_OUT = (
+    "1000 1000 100000000 332833500 \n"
+    "333333333 1 1 -7 251001 \n"
+    "1000 1000 99999048 332833500 \n"
+    "333333344 1 1 -7 251001 \n"
+)
+
 # What tests/wasi/overflow.moss prints before it traps: an oversized
 # literal under wrapping i32 arithmetic, then one that fits, under it and
 # under arithmetic that traps on overflow.
@@ -745,6 +755,15 @@ class TestLiterals(unittest.TestCase):
         }
         # Inside the block `one` is 2, so `7` is 14: 65 + 14 - 14 - 14.
         self.assertEqual(run(files), "3")
+
+
+class TestLists(unittest.TestCase):
+    """D69: `float_list()` makes a packed list of whatever `Float` is
+    bound to — under `WasiStd` an f64, in a block binding `WasiFloats32`
+    an f32 — through one implementation over a per-type layout."""
+
+    def test_over_the_moss_std(self):
+        self.assertEqual(run({}, entry="tests/wasi/lists.moss"), LISTS_OUT)
 
 
 class TestRepresentation(unittest.TestCase):
@@ -1628,6 +1647,13 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/literals.moss", prelude="lib/prelude.moss")
         self.assertEqual(self.wasmtime_run(module), LITERALS_OUT)
 
+    def test_float_lists(self):
+        """D69's packed lists: an `IntList` and a `FloatList` side by side,
+        at f64 and — in a block binding `WasiFloats32` — at f32, from one
+        `report` function and one list implementation."""
+        module = self.compile_with_moss("tests/wasi/lists.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), LISTS_OUT)
+
     def test_an_oversized_literal_does_what_the_arithmetic_does(self):
         """tests/wasi/overflow.moss in both compilers: the wrapped literal,
         the checked one that fits, and then a trap (wasmtime's exit status
@@ -1693,6 +1719,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/shadow.moss", SHADOW_OUT, "lib/prelude.moss"),
             ("tests/wasi/ops.moss", OPS_OUT, "lib/prelude.moss"),
             ("tests/wasi/literals.moss", LITERALS_OUT, "lib/prelude.moss"),
+            ("tests/wasi/lists.moss", LISTS_OUT, "lib/prelude.moss"),
         )
         for entry, expected, *prelude in cases:
             with self.subTest(entry=entry):

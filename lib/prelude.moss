@@ -7,7 +7,7 @@ import "./access.moss" use .get, .set, .length, .push, .read;
 import "./bool.moss" use Bool, False, True, false, true;
 import "./cell.moss" use CellInt, cell_int, .write;
 import "./char.moss" as char use Char, .code, .char;
-import "./float.moss" use Float, float, .trunc, .round;
+import "./float.moss" use Float, FloatList, float, float_list, .trunc, .round;
 import "./int.moss" use Int, zero, one;
 import "./list.moss" use IntList, int_list;
 import "./num.moss" use .add, .sub, .mul, .div, .rem, .neg, .not, .abs, .sqrt,

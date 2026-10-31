@@ -181,6 +181,39 @@ class TestWasmBackend(unittest.TestCase):
         self.assertEqual(run({"main.moss": source}), "A02ynb\n")
         self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), "A02ynb\n")
 
+    def test_native_float_list(self):
+        """D69: the bootstrap's own `Std` has a `FloatList` of its f64s,
+        interpreted as a Python list and compiled as an IntList of words,
+        two to an element. Pushing past the first capacity grows it; a
+        `.set` touches one element; arguments are evaluated before the
+        push makes room, so one that reads the list sees it unchanged."""
+        source = (
+            "assume Std {\n"
+            "  fn main() {\n"
+            "    let xs = float_list();\n"
+            "    var i = 0;\n"
+            "    while i < 100 { xs.push(float(i) / 4.0); i = i + 1; }\n"
+            "    xs.set(1, 64.5);\n"
+            "    xs.push(float(xs.length()));\n"
+            "    putchar(xs.length().char());\n"
+            "    putchar(xs.get(1).round().char());\n"
+            "    putchar((xs.get(2) * 130.0).round().char());\n"
+            "    putchar(xs.get(xs.length() - 1).round().char());\n"
+            "    var sum = 0.0;\n"
+            "    i = 0;\n"
+            "    while i < 100 { sum = sum + xs.get(i); i = i + 1; }\n"
+            "    putchar((sum / 20.0).round().char());\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n"
+        )
+        # 101 'e'; 64.5 rounds to the even 64 '@'; 0.5 * 130 'A'; the
+        # length before that push, 100 'd'; (4950 / 4 - 0.25 + 64.5) / 20
+        # is 65.0125, 'A'.
+        expected = "e@Ad" + chr(round((4950 / 4 - 0.25 + 64.5) / 20)) + "\n"
+        self.assertEqual(run({"main.moss": source}), expected)
+        self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), expected)
+
     def test_native_int_is_i32(self):
         """The bootstrap's own `Std` compiles `Int` to i32 instructions, and
         the interpreter's native `Int` computes exactly what they do, so a

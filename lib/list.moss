@@ -6,7 +6,8 @@ import "./access.moss" use .get, .length, .push, .set;
 # typed arenas are the intended idiom, and those are Ints.
 #
 # `.get`, `.set`, `.length` and `.push` are the shared accessors of
-# access.moss, provided here at `IntList` with `Elem=Int` (D61).
+# access.moss, provided here at `IntList` with `Elem=Int` (D61). Its
+# counterpart at `Float` is float.moss's `FloatList` (D69).
 
 type IntList;
 

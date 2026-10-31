@@ -9,7 +9,7 @@ import "./path.moss" as path use Path, pwd;
 import "./bool.moss" use Bool, true, false;
 import "./char.moss" as char use Char, Chars, .char;
 import "./cell.moss" as cell use CellInt, cell_int;
-import "./float.moss" as float use Float, Floats, .trunc, .round;
+import "./float.moss" as float use Float, FloatList, Floats, .trunc, .round;
 import "./int.moss" as int use Int, zero, one;
 import "./list.moss" as list use IntList, int_list;
 import "./std.moss" use putchar, put_bytes, Std;
@@ -497,6 +497,157 @@ assume Wasm, Branch {
   fn Single.round(): Num { Num (w::i32_trunc_sat_f32_s(w::f32_nearest(sgl(this)))) }
 }
 
+# Packed lists (D69): one implementation, for any element type that says
+# how it is laid out in memory. A `Layout` is the element type, how many
+# 4-byte words one takes, and how to store one at an address and load it
+# back; the list is a handle holding the address of
+# [len | cap | elements...], as `Ints` is, with `len` and `cap` counted in
+# elements and each element `width` words. So an f32 takes four bytes and
+# an f64 eight, and nothing about the list knows which it holds.
+# `Singles` and `Doubles` are this code.
+type Item;
+
+assume Wasm {
+  val width: I32;
+
+  assume Item {
+    fn put(at: I32, value: Item);
+    fn take(at: I32): Item;
+
+    context Layout = Item, width, put, take;
+  }
+}
+
+assume Wasm, Branch {
+  fn packed_length(handle: I32): Num { Num (w::i32_load(w::i32_load(handle))) }
+
+  assume Layout {
+    # The address of element `index` in the block at `data`.
+    fn slot(data: I32, index: I32): I32 {
+      w::i32_add(w::i32_add(data, eight()), w::i32_mul(w::i32_mul(index, width), four()))
+    }
+
+    # Room for eight elements to start, as `Ints` has.
+    fn packed_list(): I32 {
+      let handle = alloc(four());
+      let data = alloc(slot(w::i32_zero, eight()));
+      w::i32_store(data, w::i32_zero);
+      w::i32_store(w::i32_add(data, four()), eight());
+      w::i32_store(handle, data);
+      handle
+    }
+
+    fn packed_get(handle: I32, index: Num): Item {
+      take(slot(w::i32_load(handle), raw(index)))
+    }
+
+    fn packed_set(handle: I32, index: Num, value: Item) {
+      put(slot(w::i32_load(handle), raw(index)), value);
+    }
+
+    fn packed_push(handle: I32, value: Item) {
+      var data = w::i32_load(handle);
+      let len = w::i32_load(data);
+      let cap = w::i32_load(w::i32_add(data, four()));
+      if i32_bool(w::i32_eq(len, cap)) {
+        # Grow by copying, word by word, since the bump allocator never
+        # frees and the words are all the same to it.
+        let bigger = alloc(slot(w::i32_zero, w::i32_mul(cap, two())));
+        w::i32_store(bigger, len);
+        w::i32_store(w::i32_add(bigger, four()), w::i32_mul(cap, two()));
+        let words = w::i32_mul(len, width);
+        var i = w::i32_zero;
+        while i32_bool(w::i32_lt_u(i, words)) {
+          let at = w::i32_add(eight(), w::i32_mul(i, four()));
+          w::i32_store(w::i32_add(bigger, at), w::i32_load(w::i32_add(data, at)));
+          i = w::i32_add(i, w::i32_one);
+        }
+        w::i32_store(handle, bigger);
+        data = bigger;
+      }
+      put(slot(data, len), value);
+      w::i32_store(data, w::i32_add(len, w::i32_one));
+    }
+  }
+}
+
+# The layouts of the scalars this file wraps: an `Int` is one word, a
+# `Single` one, a `Double` two. Stored as the scalars themselves, so
+# nothing is reinterpreted on the way in or out.
+assume Wasm, Branch {
+  fn put_num(at: I32, value: Num) { w::i32_store(at, raw(value)); }
+  fn take_num(at: I32): Num { Num (w::i32_load(at)) }
+  fn put_single(at: I32, value: Single) { w::f32_store(at, sgl(value)); }
+  fn take_single(at: I32): Single { Single (w::f32_load(at)) }
+  fn put_double(at: I32, value: Double) { w::f64_store(at, dbl(value)); }
+  fn take_double(at: I32): Double { Double (w::f64_load(at)) }
+}
+
+functor NumLayout: Wasm, Branch -> Layout {
+  bind Item = Num;
+  bind width = w::i32_one;
+  bind put = put_num;
+  bind take = take_num;
+}
+
+functor SingleLayout: Wasm, Branch -> Layout {
+  bind Item = Single;
+  bind width = w::i32_one;
+  bind put = put_single;
+  bind take = take_single;
+}
+
+functor DoubleLayout: Wasm, Branch -> Layout {
+  bind Item = Double;
+  bind width = w::i32_add(w::i32_one, w::i32_one);
+  bind put = put_double;
+  bind take = take_double;
+}
+
+# A receiver per element type, since a provision is keyed by its receiver
+# (D51) and only an attached method can reach the handle inside one
+# (D54). Each method is the shared implementation under its layout, so
+# this is all an element type costs: a wrapper and five one-line methods.
+assume Wasm, Branch {
+  type Singles I32;
+
+  fn singles_addr(l: Singles): I32 { match l { Singles a => a } }
+
+  fn wasi_singles(): Singles { bind SingleLayout; Singles (packed_list()) }
+  fn Singles.length(): Num { packed_length(singles_addr(this)) }
+  fn Singles.get(index: Num): Single {
+    bind SingleLayout;
+    packed_get(singles_addr(this), index)
+  }
+  fn Singles.set(index: Num, value: Single) {
+    bind SingleLayout;
+    packed_set(singles_addr(this), index, value);
+  }
+  fn Singles.push(value: Single) {
+    bind SingleLayout;
+    packed_push(singles_addr(this), value);
+  }
+
+  type Doubles I32;
+
+  fn doubles_addr(l: Doubles): I32 { match l { Doubles a => a } }
+
+  fn wasi_doubles(): Doubles { bind DoubleLayout; Doubles (packed_list()) }
+  fn Doubles.length(): Num { packed_length(doubles_addr(this)) }
+  fn Doubles.get(index: Num): Double {
+    bind DoubleLayout;
+    packed_get(doubles_addr(this), index)
+  }
+  fn Doubles.set(index: Num, value: Double) {
+    bind DoubleLayout;
+    packed_set(doubles_addr(this), index, value);
+  }
+  fn Doubles.push(value: Double) {
+    bind DoubleLayout;
+    packed_push(doubles_addr(this), value);
+  }
+}
+
 # The standard one: `Float` at f64.
 functor WasiFloats: Wasm, Branch -> Floats {
   # `Int` is the one `WasiNumerics` binds; the conversions are written
@@ -519,6 +670,12 @@ functor WasiFloats: Wasm, Branch -> Floats {
   bind float::float = num_to_dbl;
   bind Float.trunc = Double.trunc;
   bind Float.round = Double.round;
+  bind float::FloatList = Doubles;
+  bind float::float_list = wasi_doubles;
+  bind FloatList.push[Elem=Float] = Doubles.push;
+  bind FloatList.get[Elem=Float] = Doubles.get;
+  bind FloatList.set[Elem=Float] = Doubles.set;
+  bind FloatList.length = Doubles.length;
 }
 
 # The same at f32, for a scope that wants single precision: `bind
@@ -543,6 +700,12 @@ functor WasiFloats32: Wasm, Branch -> Floats {
   bind float::float = num_to_sgl;
   bind Float.trunc = Single.trunc;
   bind Float.round = Single.round;
+  bind float::FloatList = Singles;
+  bind float::float_list = wasi_singles;
+  bind FloatList.push[Elem=Float] = Singles.push;
+  bind FloatList.get[Elem=Float] = Singles.get;
+  bind FloatList.set[Elem=Float] = Singles.set;
+  bind FloatList.length = Singles.length;
 }
 
 # The two together, plus the items whose signatures need both — the whole

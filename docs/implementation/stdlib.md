@@ -30,9 +30,11 @@ Layout:
   `String` and on an `IntList` needs it to (D61).
 - [`float.moss`](/lib/float.moss): abstract `Float` (D67), its
   operations as the `FloatOps` context, and the conversions to and from
-  `Int` — `float(n)`, `.trunc()`, `.round()` — with all of it as
-  `Floats`. `WasiStd` provides it at f64; `WasiFloats32` is the same at
-  f32.
+  `Int` — `float(n)`, `.trunc()`, `.round()` — and `FloatList`, a
+  growable packed list of `Float` made by `float_list()` (D69), with all
+  of it as `Floats`. `WasiStd` provides it at f64; `WasiFloats32` is the
+  same at f32, list included, so binding it in a block makes that block's
+  `float_list()` a list of f32s.
 - [`int.moss`](/lib/int.moss), [`string.moss`](/lib/string.moss),
   [`cell.moss`](/lib/cell.moss), [`list.moss`](/lib/list.moss),
   [`strlist.moss`](/lib/strlist.moss), [`path.moss`](/lib/path.moss):
@@ -46,6 +48,15 @@ Layout:
   has, because a detached method must be in scope to be called (D61).
   Having the things still takes `assume`, as the
   [Context lesson](../learn/context.md) explains.
+
+Lists over `Wasi` are one implementation (D69): `lib/wasistd.moss`'s
+`packed_*` functions over a `Layout` — the element type, its width in
+4-byte words, and how to store and load one — with a layout functor per
+element type (`NumLayout`, `SingleLayout`, `DoubleLayout`) and a nominal
+receiver per element type (`Singles`, `Doubles`) whose five
+one-line methods apply the layout and call the shared code. A list of
+another type costs a layout and a receiver; see D69 for why the receiver
+cannot yet be shared.
 
 The milestone that retires the native table has been reached:
 [`wasi.moss`](/lib/wasi.moss)'s `WasiStd` implements the whole of `Std` in

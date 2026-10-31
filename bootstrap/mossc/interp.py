@@ -592,6 +592,32 @@ def native_env(program: Program, args: list | None = None) -> dict:
         env[(float_ty, fdet["round"])] = native(
             lambda a, this: IntVal(trunc_to_int(fround(this.value, round), 32, True, True))
         )
+        # D69: `FloatList` is a Python list of them, as `IntList` is of Ints.
+        flist_ty = lib["float"].names["FloatList"]
+        env[lib["float"].names["float_list"]] = native(lambda a, this: ListVal([]))
+
+        def flist_index(a, this):
+            index = a[0].value
+            if not 0 <= index < len(this.items):
+                raise MossPanic(f"FloatList index {index} out of range")
+            return index
+
+        def flist_push(a, this):
+            this.items.append(a[0])
+            return UNIT
+
+        def flist_set(a, this):
+            this.items[flist_index(a, this)] = a[1]
+            return UNIT
+
+        env[(flist_ty, fdet["push"])] = native(flist_push)
+        env[(flist_ty, fdet["get"])] = native(
+            lambda a, this: this.items[flist_index(a, this)]
+        )
+        env[(flist_ty, fdet["set"])] = native(flist_set)
+        env[(flist_ty, fdet["length"])] = native(
+            lambda a, this: IntVal(len(this.items))
+        )
     if "wasm" in lib:
         # D52's primitive layer. Only the two I32 constants are values, and
         # only they are meaningful here: the instructions themselves need a

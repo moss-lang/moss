@@ -1823,6 +1823,140 @@ held to the self-hosted parser snippet by snippet; and
 `bootstrap/tests/test_grammar.py` keeps the VS Code grammar in step with
 the lexer.
 
+**[D69] DECIDED by the designer (direction) and implemented (a packed list
+for any element type, generic over its layout).** [D59] made containers
+the library's business, and the library had lists of `Int` and of
+`String` only. A program that stored floats wrote its own format over
+`IntList` — reinterpret an f32 to one i32 word, split an f64 into two —
+which is twenty lines of storage code in the thesis's mixed-precision
+example, all of it beside the point. The designer approved the direction:
+an element type says how it is laid out in words, and *one* list
+implementation serves every layout.
+
+*`Std`.* `lib/float.moss` gains `type FloatList` and `fn float_list():
+FloatList`, with access.moss's accessors provided at it with
+`Elem=Float`, as the context `FloatLists` inside `Floats`. It goes with
+`Float` and not in `list.moss` for the reason `float` is a plain function
+([D67]): a scope that binds `Float` at another precision has to bind its
+list with it, and `bind WasiFloats32;` now does — `float_list()` in that
+block makes a list of f32s, and everything else in the program is
+untouched. `.set` joins the shared accessors of `lib/access.moss` ([D61]),
+since two containers now have one: `IntList.set` is
+`IntList.set[Elem=Int]`. So, under any `Std`:
+
+```moss
+let xs = float_list();
+xs.push(0.1);
+xs.set(0, xs.get(0) * 2.0);
+num(xs.length());
+```
+
+*One implementation, over a layout.* In `lib/wasistd.moss`:
+
+```moss
+type Item;
+assume Wasm {
+  val width: I32;                     # 4-byte words per element
+  assume Item {
+    fn put(at: I32, value: Item);
+    fn take(at: I32): Item;
+    context Layout = Item, width, put, take;
+  }
+}
+# packed_list, packed_get, packed_set, packed_push, packed_length:
+# assume Wasm, Branch, Layout, over [len | cap | elements...]
+```
+
+A layout is a functor binding those four — `NumLayout` (one word,
+`i32.store`), `SingleLayout` (one word, `f32.store`), `DoubleLayout` (two
+words, `f64.store`) — so storage is packed, four bytes to an f32 and
+eight to an f64, and since each element is stored as its own scalar
+nothing is reinterpreted on the way in or out. The list is the block
+`Ints` always was, with `len` and `cap` counted in elements of `width`
+words; growth copies words and does not know what they hold. So a list
+of f32, f64 or any type that can say how it sits in words is the same
+implementation.
+
+*Receivers.* Each element type still has a nominal wrapper over the
+handle — `Singles`, `Doubles` — with five one-line attached
+methods, each of which applies its layout and calls the shared code:
+
+```moss
+fn Singles.get(index: Num): Single {
+  bind SingleLayout;
+  packed_get(singles_addr(this), index)
+}
+```
+
+That is [D51]'s cost and [D54]'s together: a provision is keyed by its
+receiver, so two lists of different element types in one scope need two
+receiver types; and only an attached method can reach the handle inside
+one, which needs a nominal type declared in the same module. Binding the
+layout *inside* the method, rather than leaving it a need, keeps the
+methods self-contained: a call on a `Singles` finds them by name with
+nothing in scope ([D61]), and as providers they ask nothing of the
+caller's context. `WasiFloats` binds `FloatList` to `Doubles`,
+`WasiFloats32` to `Singles`.
+
+Under the bootstrap's native `Std`, `FloatList` is native like `IntList`:
+a Python list in the interpreter, and in its back end an `IntList` of
+words, two to an element, read and written with one `f64.load` or
+`f64.store`. The self-hosted compiler has no native `Std` and needs
+nothing.
+
+*A list of something other than `Float`.* `Singles`, `Doubles` and their
+constructors `wasi_singles`, `wasi_doubles` are exported, so a program
+that computes in f64 but stores in f32 names `Singles`; a function
+written against an abstract list type takes it as any receiver is taken
+([D51]):
+
+```moss
+bind Store = Singles;
+bind store = wasi_singles;
+bind Store.push[Elem=Stored] = Singles.push;
+bind Store.get[Elem=Stored] = Singles.get;
+```
+
+With `Store = FloatList` the last two are unnecessary — the provisions
+at its canonical receiver are already in force. A new element type costs
+a layout (two one-line functions and a four-line functor) and a wrapper
+with its five methods. Rewritten this way, the precision example loses
+its whole storage format — `bits32`, `put_double`, `take_double`, the
+shift by 32 and the `width` bookkeeping in `report` — and goes from 93
+lines of code to 76, with the same output in both compilers.
+
+*Alternatives not taken.*
+
+- **A generic nominal, `type Packed I32;` inside `assume Item`.** Under
+  [D62], `Packed[Item=Single]` and `Packed[Item=Double]` would be distinct
+  receivers with one set of attached methods, and a new element type
+  would cost only its layout. Both compilers parameterize a nominal only
+  by the type symbols its payload *mentions*, and a handle mentions no
+  `Item`. [D21] as written says a declaration's requirements are its
+  assume nesting, which would allow it; the implementations narrowed it
+  so that `unit Stop;` under `assume Std` is not a different type per
+  binding of `Int`. A way to declare such a phantom parameter is the one
+  language change that would shrink this design. Left to the designer.
+- **The layout as a need of generic attached methods.** Needs are met
+  from the caller's context, so a scope holding a list of `Single` and a
+  list of `Num` would need two `put`s under one name at once — [D51]'s
+  single instantiation per scope. Capturing the layout at a provision
+  bind would work, but then a call by name would not.
+- **Layouts over `IntList` in portable Moss**, words read and written
+  with `.get` and `.set`. A program over `Std` alone could then define
+  layouts, but an f64 would be two calls and an i64 assembly each way,
+  and a `Wasm`-level wrapper calling it would have to bind all of `Int`
+  and `IntList` first. Not needed yet.
+
+Cost: the self-hosted compiler's generations run in the same time under
+`wasm-opt -O3`, and `S1 == S2` still holds. Standing tests:
+`tests/wasi/lists.moss` — an `IntList` beside a `FloatList`, pushed past
+their first capacity, summed, `.set` and read back, at f64 and in a
+`{ bind WasiFloats32; … }` block at f32 — run by the interpreter and both
+compilers to the same output, which differs by precision (a thousand
+0.1s sum to 100 and to 99.999048); and `test_native_float_list`, the
+native `FloatList` interpreted and compiled.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -1836,7 +1970,8 @@ Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
 unavoidable — *not* the prelude path, see [D52]) · methods on union-headed *aliases* in general ([D47] — solved
 for `Bool` by [D45]'s nominal wrapper) · D29 the `val` half of functors ·
-[D50]'s v0 restrictions on defined vals
+[D50]'s v0 restrictions on defined vals · a phantom type parameter, which
+would let [D69]'s lists share one receiver declaration
 
 Everything else is **DECIDED**: D1–D28 · D30–D49 (D3/D4 by designer fiat,
 D13 option.moss → alias, D16 no post-monomorphization checks, D22 total or
@@ -1856,7 +1991,9 @@ captures it at the bind, D67 f32/f64 are scalars, with the float half of
 formatting, D68 operators as calls of `num.moss`'s methods under a
 partial-order precedence, with no `&&`/`||`, and numeric literals as
 nothing but arithmetic over `zero`, `one`, `.add`, `.mul`, `float` and
-`.div`, meaning whatever that bound arithmetic computes)
+`.div`, meaning whatever that bound arithmetic computes, D69 a packed
+list for any element type — one implementation over a layout, a nominal
+receiver per element type, and `FloatList` in `Std` bound with `Float`)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

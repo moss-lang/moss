@@ -1,3 +1,4 @@
+import "./access.moss" use Elem, .get, .set, .length, .push;
 import "./int.moss" use Int;
 import "./num.moss" use .add, .sub, .mul, .div, .neg, .sqrt, .abs, .eq, .ne, .lt, .gt, .le, .ge;
 
@@ -6,6 +7,14 @@ import "./num.moss" use .add, .sub, .mul, .div, .neg, .sqrt, .abs, .eq, .ne, .lt
 # provides it at f64; nothing here says so, which is what lets a scope
 # bind it to something else.
 type Float;
+
+# A growable list of `Float`, packed: an element takes the bytes its
+# `Float` does and no more. It is here rather than in list.moss because it
+# goes with `Float`: a scope that binds `Float` at another precision binds
+# this with it, so `float_list()` there makes a list of *that* `Float`.
+# Its accessors are access.moss's, provided at `FloatList` with
+# `Elem=Float` (D61, D69).
+type FloatList;
 
 assume Int, Float {
   # Int -> Float. A plain function rather than a method at `Int` (as
@@ -40,8 +49,21 @@ assume Int, Float {
     Float.ge,
   ;
 
-  # Everything above, the conversions included — the unit a provider of
-  # `Float` has to bind together, since the conversions' signatures
-  # mention it.
-  context Floats = Float, FloatOps, float, Float.trunc, Float.round;
+  assume FloatList {
+    fn float_list(): FloatList;
+
+    context FloatLists =
+      FloatList,
+      float_list,
+      FloatList.push[Elem=Float],
+      FloatList.get[Elem=Float],
+      FloatList.set[Elem=Float],
+      FloatList.length,
+    ;
+
+    # Everything above, the conversions and the list included — the unit
+    # a provider of `Float` has to bind together, since their signatures
+    # mention it.
+    context Floats = Float, FloatOps, float, Float.trunc, Float.round, FloatLists;
+  }
 }
