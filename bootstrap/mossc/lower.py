@@ -582,6 +582,24 @@ class Lower:
                     f"missing {missing}",
                 )
 
+    def check_relevant(self, module: Module, sym: Symbol, app: list):
+        """D71: a bracket application binds only relevant parameters — the
+        type symbols the applied nominal's (or alias's) payload mentions,
+        none for a unit or an abstract type. Binding any other symbol
+        changes nothing about the type, and is an error rather than
+        silently ignored."""
+        reqs = self.type_requirements(sym)
+        for binding in app:
+            lhs = resolve_path(module, binding.path)
+            if isinstance(lhs, Symbol) and lhs.kind == SymKind.TYPE and lhs not in reqs:
+                params = ", ".join(f"`{r.name}`" for r in reqs) or "none"
+                self.error(
+                    module,
+                    f"application of `{sym.name}` binds `{lhs.name}`, which is not "
+                    f"one of its parameters (the type symbols its payload mentions: "
+                    f"{params}; D71)",
+                )
+
     def provision_app(self, sym: Symbol, tymap: dict, method: bool = False) -> dict:
         """The instantiation a val, fn, or method item is in force at: for
         each type symbol it depends on, what that symbol denoted where the
@@ -883,6 +901,8 @@ class Lower:
             return TUnion(tuple(out))
         if isinstance(ty, ast.TyRef):
             target = self.resolve_type_symbol(env, module, ty.path)
+            if ty.app is not None:
+                self.check_relevant(module, target, ty.app)
             tymap = tymap if ty.app is None else tymap | self.app_subst(env, module, ty.app, tymap)
             if ty.app is not None:
                 self.check_totality(module, target, dict(tymap), env)
@@ -1644,6 +1664,7 @@ class FnChecker:
         if target.kind == SymKind.TAG:
             tymap = self.env.tymap
             if app is not None:
+                self.lower.check_relevant(self.module, target, app)
                 tymap = tymap | self.lower.app_subst(self.env, self.module, app, self.env.tymap)
             args = self.lower.nominal_args(self.module, target, tymap)
             tag_ty = TNominal(target, args)
@@ -1702,6 +1723,7 @@ class FnChecker:
             self.error(f"`{'::'.join(path)}` is not a tag with a record payload")
         tymap = self.env.tymap
         if expr.callee.app is not None:
+            self.lower.check_relevant(self.module, target, expr.callee.app)
             tymap = tymap | self.lower.app_subst(
                 self.env, self.module, expr.callee.app, self.env.tymap
             )

@@ -35,7 +35,7 @@ assume Std {
     bind T = Char;
     bind W.m = W.get;
     bind T = Int;
-    let n: Int = use_it(W[T=Int] (char::a));
+    let n: Int = use_it(W (char::a));
     print_int(n);
     putchar(char::newline);
   }

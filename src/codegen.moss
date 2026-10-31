@@ -3150,6 +3150,11 @@ assume Std {
       if ast::is_some(sym).not() {
         return ast::none();
       }
+      # `bind U = Box[Elem=Char];` — the right side's brackets apply, as
+      # they do in a type position; dropping them was a silent wrong type.
+      if ast::d_of(value).eq(one) {
+        return canon_ty(types::apply(sym, ast::b_of(value), ast::c_of(value), m));
+      }
       canon_ty(types::ty_of_decl(sym))
     }
 

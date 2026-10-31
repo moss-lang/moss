@@ -1,0 +1,36 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D71: `B` mentions only `A`, and `A` mentions `T`, so `T` is a relevant
+# parameter of both and `B[T=Int]` is a legal application — even when
+# `A` is the one computed first, as here, which is the order an
+# in-progress shortcut got wrong (it gave `B` no parameters, so binding
+# `T` on it would be an irrelevant application). Neither type has a
+# layout (each contains the other), so they are only named, never built.
+
+type T;
+type U;
+type V;
+
+assume T {
+  type A { b: B, t: T };
+  type B { a: A };
+}
+
+assume Std {
+  fn demo() {
+    bind U = A[T=Int];
+    bind V = B[T=Int];
+    putchar(char::y);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

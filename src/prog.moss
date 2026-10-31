@@ -109,13 +109,8 @@ assume Std {
   # A context that nests too deeply to be real.
   fn e_deep(): Int { n11() }
 
-  # A bracket application on a *type* (`Pair[T=Int]`). Nothing in `src/`
-  # or the `lib/` it needs writes one, so this compiler does not
-  # substitute — and says so rather than elaborating `Pair` and dropping
-  # the bindings, which would be a silent wrong answer. The applications
-  # D61 introduced are on context items and method binds, where a
-  # provision is keyed by (receiver, method) and every signature comes
-  # from the provider, so there is nothing for this back end to do.
+  # A bracket application on something that takes none — a val, a fn, a
+  # module — or a binding whose left-hand side is not an abstract type.
   fn e_apply(): Int { n12() }
 
   # A type with no layout: one that contains itself, so that its run of
@@ -136,6 +131,12 @@ assume Std {
   # "type `T` is not available in the context here" is.
   fn e_absent(): Int { n15() }
 
+  # D71: a bracket binding for a symbol that is not one of the applied
+  # type's relevant parameters (`Stop[Int=Num]` for a unit, `W[T=Char]`
+  # for a tag whose payload does not mention `T`). Named by the symbol, as
+  # the bootstrap's "binds `T`, which is not one of its parameters" is.
+  fn e_irrelevant(): Int { n16() }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,
@@ -145,7 +146,22 @@ assume Std {
     err_code, err_mod, err_name;
 
   assume Prog, ast::Ast, intern::Interner {
+    # A report says a code, a module and a name and nothing else (D48),
+    # so the same three twice say nothing more. They do come twice: the
+    # back end emits each body in two passes, and a type it elaborates
+    # there — a tag's brackets at a construction — is elaborated in both.
     fn error(code: Int, m: Int, name: Int) {
+      var i = zero;
+      while i.lt(err_code.length()) {
+        if err_code.get(i).eq(code) {
+          if err_mod.get(i).eq(m) {
+            if err_name.get(i).eq(name) {
+              return ();
+            }
+          }
+        }
+        i = i.add(one);
+      }
       err_code.push(code);
       err_mod.push(m);
       err_name.push(name);

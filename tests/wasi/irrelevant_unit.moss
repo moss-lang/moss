@@ -1,0 +1,24 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D71: a unit has no parameters — `Stop` is one type, not one per binding
+# of `Int` — so applying one to it is an error in both compilers.
+
+assume Std {
+  unit Stop;
+
+  fn demo() {
+    let s: Stop[Int=Char] = Stop;
+    match s { Stop => putchar(char::y) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

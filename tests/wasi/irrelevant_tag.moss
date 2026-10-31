@@ -1,0 +1,27 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D71: a tag is parameterized by the type symbols its payload mentions.
+# `W`'s payload mentions `Char`, not `T`, so `W[T=Char]` binds nothing
+# `W` depends on, and both compilers reject it.
+
+type T;
+
+assume Std {
+  type W Char;
+
+  fn demo() {
+    let w = W[T=Char] (char::a);
+    match w { W c => putchar(c) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

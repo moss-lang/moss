@@ -1895,6 +1895,45 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 report = out.decode("utf-8")
                 self.assertTrue(report.startswith(f"!P {entry} T\n"), report[:200])
 
+    def test_applying_an_irrelevant_parameter(self):
+        """D71: brackets bind only a nominal's relevant parameters. A unit
+        has none (`Stop[Int=Char]`), and `W[T=Char]` binds a symbol `W`'s
+        payload does not mention. The bootstrap names the application;
+        the self-hosted compiler reports `e_irrelevant` (`Q`), named by the
+        symbol bound. The bootstrap used to accept both, ignoring the
+        binding, and the self-hosted compiler the second."""
+        from .test_build import compile_wasm
+
+        cases = {
+            "irrelevant_unit": ("Stop", "Int", "none"),
+            "irrelevant_tag": ("W", "T", "`Char`"),
+        }
+        for name, (nominal, bound, params) in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(
+                    f"application of `{nominal}` binds `{bound}`, which is not one of "
+                    f"its parameters (the type symbols its payload mentions: {params}; D71)",
+                    str(caught.exception),
+                )
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                self.assertEqual(out.decode("utf-8"), f"!Q {entry} {bound}\n")
+
+    def test_applying_a_relevant_parameter_found_by_fixpoint(self):
+        """`B[T=Int]` is legal: `T` reaches `B` through `A`, and is
+        relevant to `B` even when `A` is computed first. Both compilers
+        accept it (and the self-hosted compiler now reads the brackets on
+        a type bind's right-hand side rather than dropping them)."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/relevance_applied.moss"
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "y\n")
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(out), "y\n")
+
     def test_relevance_does_not_depend_on_order(self):
         """The bootstrap's `type_requirements` on the same declarations,
         asked in both orders."""

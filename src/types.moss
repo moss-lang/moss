@@ -246,20 +246,30 @@ assume Std {
 
     # `S[T=U, ...]`, written in module `m`: the nominal or alias `S` with
     # some of its type requirements bound. A requirement left unbound is
-    # applied to itself, as `S` alone would be; a binding for a symbol `S`
-    # does not mention changes nothing, as in the bootstrap.
+    # applied to itself, as `S` alone would be. A binding for a symbol
+    # that is not one of `S`'s relevant parameters — one its payload does
+    # not mention, any symbol at all for a unit or an abstract type — is
+    # `e_irrelevant` (D71), named by that symbol, as in the bootstrap.
     fn apply(sym: Int, run: Int, len: Int, m: Int): Int {
       let kind = prog::sym_kind.get(sym);
       var ok = kind.eq(prog::sk_tag());
       if ok.not() {
         ok = kind.eq(prog::sk_alias());
       }
+      var bare = kind.eq(prog::sk_unit());
+      if bare.not() {
+        bare = kind.eq(prog::sk_type());
+      }
       if ok.not() {
-        prog::error(prog::e_apply(), m, prog::sym_name.get(sym));
-        return ty_of_decl(sym);
+        if bare.not() {
+          prog::error(prog::e_apply(), m, prog::sym_name.get(sym));
+          return ty_of_decl(sym);
+        }
       }
       let reqs = int_list();
-      reqs_of(sym, reqs);
+      if ok {
+        reqs_of(sym, reqs);
+      }
       let args = int_list();
       var i = zero;
       while i.lt(reqs.length()) {
@@ -274,6 +284,8 @@ assume Std {
           prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(b)));
         } else if prog::sym_kind.get(lhs).ne(prog::sk_type()) {
           prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
+        } else if contains_sym(reqs, lhs).not() {
+          prog::error(prog::e_irrelevant(), m, prog::sym_name.get(lhs));
         } else {
           let rhs = elab_spec(ast::b_of(b), m);
           var j = zero;
@@ -285,6 +297,9 @@ assume Std {
           }
         }
         i = i.add(one);
+      }
+      if ok.not() {
+        return ty_of_decl(sym);
       }
       if kind.eq(prog::sk_alias()) {
         return subst(ty_of_decl(sym), reqs, args);

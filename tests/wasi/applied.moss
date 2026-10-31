@@ -2,14 +2,16 @@ import "../../lib/wasm.moss" as w use Wasm, I32;
 import "../../lib/wasip1.moss" use Wasi, fd_write, proc_exit;
 
 # Applying a *type*: `Box[Elem=I32]` substitutes into a payload. Both
-# compilers compile this file. A binding for a symbol the type does not
-# mention — `Box`'s payload is `I32`, not `Elem` — changes nothing.
+# compilers compile this file. `Box`'s payload mentions `Elem`, which is
+# what makes `Elem` a parameter it can be applied to (D71); a binding for
+# a symbol the payload does not mention is an error
+# (`tests/wasi/irrelevant_tag.moss`).
 
 assume Wasm, Wasi {
   type Elem;
 
   assume Elem {
-    type Box I32;
+    type Box Elem;
   }
 
   fn unbox(b: Box[Elem=I32]): I32 {
@@ -30,7 +32,7 @@ assume Wasm, Wasi {
   }
 
   fn main() {
-    let one = unbox(Box (w::i32_one));
+    let one = unbox(Box[Elem=I32] (w::i32_one));
     let two = w::i32_add(one, one);
     let three = w::i32_add(two, one);
     let six = w::i32_add(three, three);
