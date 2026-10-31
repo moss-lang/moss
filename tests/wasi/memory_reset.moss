@@ -1,0 +1,81 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiContainers, Numerics, Containers,
+  heap_mark, heap_reset, ints_addr, Num, i32_bool;
+import "../../lib/wasm.moss" as w use Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D79: an arena. `Scratch` is a memory of its own, so resetting its
+# allocator drops everything made there at once and leaves the main
+# memory's data alone. The first list made in `Scratch` is at the start
+# of its heap, address 1024, though the main memory has already allocated
+# there; after the reset the next list reuses the same address and
+# overwrites the dropped one, and the main list still sums as before.
+
+unit Scratch;
+
+type Report { first: Int, second: Int, at: Int, reused: Bool };
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Char, Numerics, Containers {
+  fn fill(xs: IntList, from: Int, count: Int) {
+    var i = 0;
+    while i < count {
+      xs.push(from + i);
+      i = i + 1;
+    }
+  }
+
+  fn sum(xs: IntList): Int {
+    var total = 0;
+    var i = 0;
+    while i < xs.length() {
+      total = total + xs.get(i);
+      i = i + 1;
+    }
+    total
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let xs = int_list();
+    fill(xs, 1, 100);
+    let report = {
+      bind Memory = Scratch;
+      bind WasiContainers;
+      let start = heap_mark();
+      let ys = int_list();
+      fill(ys, 1000, 50);
+      let first = sum(ys);
+      let at = ints_addr(ys);
+      heap_reset(start);
+      let zs = int_list();
+      fill(zs, 1, 10);
+      Report {
+        first = first,
+        second = sum(zs),
+        at = Num (at),
+        reused = i32_bool(w::i32_eq(at, ints_addr(zs))),
+      }
+    };
+    line(report.first);
+    line(report.second);
+    line(report.at);
+    if report.reused { line(1); } else { line(0); }
+    line(sum(xs));
+  }
+}

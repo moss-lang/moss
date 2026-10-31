@@ -2,6 +2,7 @@ import "./ast.moss" as ast;
 import "./bytes.moss" use *;
 import "./intern.moss" as intern;
 import "./prog.moss" as prog;
+import "./spell.moss" use sp_Memory;
 import "./types.moss" as types;
 
 # Requirement environments: what a region *has*.
@@ -648,9 +649,20 @@ assume Std {
             i = i + 1;
           }
         } else {
+          # D79: the platform provides a memory instruction at every
+          # memory — which one is the `Memory` in force where it is
+          # called — so its provision is not tied to one.
+          var memory = ast::none();
+          if prog::is_platform(prog::sym_mod.get(s)) {
+            let cs = int_list();
+            sp_Memory(cs);
+            memory = prog::lookup(prog::sym_mod.get(s), prog::ns_name(), intern::intern_chars(cs));
+          }
           var i = 0;
           while i < all.length() {
-            found.push(all.get(i));
+            if all.get(i) != memory {
+              found.push(all.get(i));
+            }
             i = i + 1;
           }
         }

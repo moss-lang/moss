@@ -47,6 +47,9 @@ SPELLED = [
     "Boxed",
     "boxed",
     "deref",
+    # D79: the type every memory instruction is under, whose binding
+    # says which memory an instruction is at.
+    "Memory",
     "bool.moss",
     "wasistd.moss",
     "i32_bool",

@@ -2122,6 +2122,85 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     out.decode("utf-8").startswith(report.format(entry)), out[:200]
                 )
 
+    def test_multiple_memories(self):
+        """D79: a program names a second memory as a unit and binds
+        `Memory` to it in a block, where the library's lists live in it.
+        A list in each memory, summed; one memory's allocator reset,
+        which reuses its own space and leaves the other's data alone; and
+        text made in `Scratch` copied into the main memory to be printed,
+        and back. Interpreted and in both compilers, each module has two
+        memories, exports the first, and puts the second's index on the
+        instructions specialized at it."""
+        from .test_build import compile_wasm, run_wasm
+
+        for entry, expected in (
+            ("tests/wasi/memories.moss", "5050\n51225\n56275\n"),
+            ("tests/wasi/memory_reset.moss", "51225\n55\n1024\n1\n5050\n"),
+            ("tests/wasi/memory_copy.moss", "hi\nih\n"),
+        ):
+            with self.subTest(entry=entry):
+                self.assertEqual(run({}, entry=entry), expected)
+                for module in (
+                    self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+                    compile_wasm({}, entry=entry),
+                ):
+                    text = wasm_text(module)
+                    self.assertIn("(memory $0 ", text)
+                    self.assertIn("(memory $1 ", text)
+                    self.assertNotIn("(memory $2 ", text)
+                    self.assertIn('(export "memory" (memory $0))', text)
+                    self.assertIn("i32.load $1", text)
+                    self.assertIn("i32.store $1", text)
+                    self.assertEqual(run_wasm(module), expected)
+
+    def test_one_memory_is_one_memory(self):
+        """D79 changes nothing for a program that binds no `Memory`: the
+        module has one memory, as before."""
+        from .test_build import compile_wasm
+
+        entry = "tests/wasi/lists.moss"
+        for module in (
+            self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+            compile_wasm({}, entry=entry),
+        ):
+            text = wasm_text(module)
+            self.assertIn("(memory $0 ", text)
+            self.assertNotIn("(memory $1 ", text)
+            self.assertNotIn("i32.load $1", text)
+
+    def test_a_handle_is_typed_by_its_memory(self):
+        """D79: a list or a string lists the memory it is in, so one made
+        in `Scratch` is not the main memory's, though both are an address:
+        passing a `Scratch` list where `main`'s `IntList` is expected, and
+        printing a `Scratch` string as it is (WASI reads only the main
+        memory), are type errors in both compilers."""
+        from .test_build import compile_wasm
+
+        cases = {
+            "memory_mismatch": (
+                "argument `xs` of `sum` is `Packed[Item=Num[I32=I32], "
+                "Memory=Scratch, I32=I32]`, expected `Packed[Item=Num[I32=I32], "
+                "Memory=Memory, I32=I32]`",
+                "?S {} main\n",
+            ),
+            "memory_print": (
+                "argument `s` of `print` is `Str[Memory=Scratch, I32=I32]`, "
+                "expected `Str[Memory=Memory, I32=I32]`",
+                "?S {} main\n",
+            ),
+        }
+        for name, (message, report) in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                self.assertTrue(
+                    out.decode("utf-8").startswith(report.format(entry)), out[:200]
+                )
+
     def test_a_type_bind_starts_a_generation(self):
         """D72: what was typed before a bind of `Int` keeps the `Int` it
         had, in a function generic over it, while a value made after the

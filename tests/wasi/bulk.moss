@@ -1,6 +1,7 @@
 import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
-import "../../lib/wasistd.moss" use WasiBasics, WasiContainers, Basics, Containers, Branch;
+import "../../lib/wasistd.moss" use WasiBasics, WasiContainers, WasiOutput, Basics, Containers,
+  Output, Branch;
 import "../../lib/wasichar.moss" use WasiCharConsts, WasiChars;
 import "../../lib/char.moss" as char use Char;
 import "../../lib/list.moss" use IntList, int_list;
@@ -17,7 +18,7 @@ import "../../lib/std.moss" use put_bytes;
 # a byte, so `i32.store8` and a Python `& 0xFF` are being held to each
 # other and not just to the easy cases.
 
-assume Basics, Containers, WasiChars {
+assume Basics, Containers, Output, WasiChars {
   fn eight(): Int {
     one.add(one).add(one).add(one).add(one).add(one).add(one).add(one)
   }
@@ -39,6 +40,7 @@ assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiBasics;
     bind WasiContainers;
+    bind WasiOutput;
     bind WasiCharConsts;
     exercise();
   }

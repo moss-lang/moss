@@ -1,0 +1,25 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiContainers, string_of;
+import "../../lib/wasm.moss" as w use Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D79: `print` takes a string in the main memory, which is the only one
+# WASI preview 1 reads. A string made in `Scratch` is a
+# `Str[Memory=Scratch]`, so printing it as it is is a type error in both
+# compilers; it has to be copied first (tests/wasi/memory_copy.moss).
+
+unit Scratch;
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let s = {
+      bind Memory = Scratch;
+      bind WasiContainers;
+      # A string made here is in `Scratch`: the empty one.
+      let empty = string_of(w::i32_zero, w::i32_zero);
+      empty.concat(empty)
+    };
+    print(s);
+  }
+}

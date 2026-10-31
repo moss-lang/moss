@@ -289,6 +289,26 @@ for _i, _name in enumerate(
     WASM_OPS[_name] = b"\xfc" + uleb(_i)
 
 
+def memarg_at(align: int, index: int) -> bytes:
+    """A memarg naming memory `index` (multi-memory: bit 6 of the
+    alignment flags says an index follows), at offset zero. Memory 0 keeps
+    the short form, so a one-memory module is byte for byte as before."""
+    if index == 0:
+        return uleb(align) + uleb(0)
+    return uleb(align | 0x40) + uleb(index) + uleb(0)
+
+
+def at_memory(name: str, op: bytes, index: int) -> bytes:
+    """A memory instruction's encoding at memory `index` (D79)."""
+    if name in ("memory_size", "memory_grow"):
+        return op[:1] + uleb(index)
+    if name == "memory_copy":
+        return op[:2] + uleb(index) + uleb(index)
+    if name == "memory_fill":
+        return op[:2] + uleb(index)
+    return op[:1] + memarg_at(op[1], index)
+
+
 def _result(name: str) -> bytes:
     """The valtype an instruction leaves: its prefix's, unless it is a
     comparison (always an i32). Stores leave nothing, which the caller
@@ -403,6 +423,13 @@ class Backend:
         self.struct_of_ty: dict = {}
         self.struct_fields: list[tuple] = []
         self.valtype_memo: dict = {}
+        # D79: the memories past the main one, each a unit `Memory` is
+        # bound to somewhere, by its symbol, in the order they are met;
+        # the main memory (an unbound `Memory`) is index 0. Kept across
+        # the passes of `build`, like the struct types.
+        self.memories = lower.uses_memories
+        self.memory_of: dict[int, int] = {}
+        self.memory_syms: list = []
 
     def wasi_import(self, field: str, params, results) -> int:
         """The index of a WASI import, adding it to the module if new.
@@ -515,9 +542,31 @@ class Backend:
         held, so `Expr` read where `Int` is abstract and `Expr` read where
         `Int` is `I32` must reach the back end as one type — which they
         are once the callee's `Int` is the caller's."""
-        if not self.gc or not tyargs:
+        if not tyargs or not (self.gc or self.memories):
             return {}
+        # D79: so does one that binds `Memory`, which is what every memory
+        # instruction below it is at — and all of them, since `Memory` may
+        # be bound to another abstract type a caller supplies.
         return {p: subst(theta, t) for p, t in tyargs}
+
+    def memory_index(self, t) -> int:
+        """Which memory a `Memory` type is (D79): the main memory, 0, is
+        `Memory` as the platform provides it, bound to nothing; any other
+        is a unit, given the next index the first time it is met."""
+        if t is None:
+            return 0
+        if isinstance(t, TAbstract) and declared(t) is self.lower.memory_sym:
+            return 0
+        if isinstance(t, TNominal) and t.symbol.kind == SymKind.UNIT:
+            index = self.memory_of.get(id(t.symbol))
+            if index is None:
+                index = len(self.memory_syms) + 1
+                self.memory_of[id(t.symbol)] = index
+                self.memory_syms.append(t.symbol)
+            return index
+        raise NotCompilable(
+            "a memory instruction where `Memory` is not a memory: bind it to a unit"
+        )
 
     def zero(self, valtype: bytes) -> bytes:
         """A zero of this valtype: what pads a union's narrower member."""
@@ -856,7 +905,10 @@ class Backend:
                 + [uleb(structs + start_type)]
             ),
         )
-        memory_section = section(5, vec([b"\x00" + uleb(2)]))
+        # D79: the main memory, then one per unit `Memory` was bound to.
+        memory_section = section(
+            5, vec([b"\x00" + uleb(2)] * (1 + len(self.memory_syms)))
+        )
         start_index = self.first_fn() + len(ordered)
         export_section = section(
             7,
@@ -869,17 +921,15 @@ class Backend:
         )
         putchar_body = self.putchar_shim()
         alloc_body = self.alloc_fn()
-        # _start initializes the heap pointer, then runs main.
-        start_body = (
-            vec([])
-            + I32_CONST
-            + sleb(16)
-            + I32_CONST
-            + sleb(HEAP_BASE)
-            + I32_STORE
-            + uleb(2)
-            + uleb(0)
-            + CALL
+        # _start initializes the heap pointer, in every memory (D79: each
+        # memory's allocator keeps its state in that memory), then runs
+        # main.
+        start_body = vec([])
+        for index in range(1 + len(self.memory_syms)):
+            start_body += I32_CONST + sleb(16) + I32_CONST + sleb(HEAP_BASE)
+            start_body += I32_STORE + memarg_at(2, index)
+        start_body += (
+            CALL
             + uleb(main_index)
             + DROP
             + END
@@ -2153,12 +2203,17 @@ class FnCompiler:
         return tuple(fields)
 
     def wasm_instruction(self, key: Symbol, node: ir.Call):
-        """A `Wasm` intrinsic is the instruction of the same name."""
+        """A `Wasm` intrinsic is the instruction of the same name; a memory
+        instruction names the memory `Memory` is here (D79)."""
         op = WASM_OPS.get(key.name)
         if op is None:
             raise NotCompilable(f"`{key.name}` is not an instruction")
         for arg in node.args:
             self.expr(arg)
+        if node.memory is not None:
+            index = self.b.memory_index(subst(self.theta, node.memory))
+            if index:
+                op = at_memory(key.name, op, index)
         self.code += op
         if key.decl.ret is None:
             self.code += I32_CONST + sleb(0)  # stores and fills yield ()

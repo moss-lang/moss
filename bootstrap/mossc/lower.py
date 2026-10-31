@@ -223,6 +223,11 @@ class Lower:
         # their provider, the platform functor `Heap`, whose application
         # makes primitive provisions (`platform_functor`).
         self.ref_sym = self.boxed_sym = self.structref_sym = None
+        # D79: lib/wasm.moss's `Memory`, under which every memory
+        # instruction is declared. A call of one records the `Memory` in
+        # force (`Call.memory`), which the back end and the interpreter
+        # read at their own type arguments.
+        self.memory_sym = None
         # id(method Symbol) -> the primitive the platform provides it with.
         self.platform_prims: dict[int, str] = {}
         for module in program.order:
@@ -230,6 +235,7 @@ class Lower:
                 self.ref_sym = module.names.get("Ref")
                 self.boxed_sym = module.names.get("Boxed")
                 self.structref_sym = module.names.get("StructRef")
+                self.memory_sym = module.names.get("Memory")
                 boxed = module.detached.get("boxed")
                 if boxed is not None:
                     self.platform_prims[id(boxed)] = "box"
@@ -240,6 +246,10 @@ class Lower:
         # Whether the program mentions a `Ref` at all; the back end only
         # tracks type arguments (`Call.tyargs`) when it does.
         self.uses_gc = False
+        # Whether the program binds `Memory` anywhere (D79); only then do
+        # the back end and the interpreter track its type argument, so a
+        # program with one memory specializes exactly as before.
+        self.uses_memories = False
         # id(Symbol) -> the type symbols a defined function assumes, whose
         # parameters its body's types mention (D72): what a call's
         # `tyargs` supplies.
@@ -351,7 +361,13 @@ class Lower:
         elif sym.kind == SymKind.FN:
             sig = self.fn_sig(sym, env.tymap | subst, env)
             self.merge(env, env.fns, module, sym, sig)
-            env.apps.setdefault(sym, self.provision_app(sym, env.tymap | subst))
+            app = self.provision_app(sym, env.tymap | subst)
+            if self.is_memory_instruction(sym):
+                # D79: the platform provides a memory instruction at every
+                # memory — which one is the `Memory` in force where it is
+                # called — so assuming one does not tie it to a memory.
+                app.pop(self.memory_sym, None)
+            env.apps.setdefault(sym, app)
             if sym not in needs:
                 needs.append(sym)
         elif sym.kind == SymKind.CONTEXT:
@@ -736,6 +752,14 @@ class Lower:
         if method:
             reqs = self.signature_type_syms(sym, reqs)
         return {t: tymap.get(t) for t in reqs}
+
+    def is_memory_instruction(self, sym: Symbol) -> bool:
+        """Whether `sym` is one of lib/wasm.moss's memory instructions,
+        declared under `assume Memory` (D79)."""
+        mem = self.memory_sym
+        if mem is None or sym.module is not mem.module or sym.kind != SymKind.FN:
+            return False
+        return mem in self.type_requirements(sym)
 
     def signature_type_syms(self, sym: Symbol, reqs: list) -> list:
         cached = self._sig_syms_cache.get(id(sym))
@@ -1468,6 +1492,8 @@ class FnChecker:
             # What the right side means here (D26): a later bind of a
             # symbol it mentions must not reach back through this one.
             self.env.tymap[target] = self.lower.canon(self.env, ty)
+            if target is self.lower.memory_sym:
+                self.lower.uses_memories = True
             return []  # static only
         if target.kind == SymKind.VAL:
             declared = self.lower.elab_type(
@@ -2079,10 +2105,17 @@ class FnChecker:
                     "(assume or bind it)"
                 )
             callee = ("env", target)
+        memory = None
+        if self.lower.is_memory_instruction(target):
+            # D79: a memory instruction is at the `Memory` in force.
+            memory = self.env.tymap.get(self.lower.memory_sym)
         args = self.check_args(target.name, sig, expr.args)
         ret = self.lower.slots_of(self.env, sig.ret)
         return (
-            ir.Call(callee, tuple(args), needs_map=needs_map, ret_slots=ret, tyargs=tyargs),
+            ir.Call(
+                callee, tuple(args), needs_map=needs_map, ret_slots=ret, tyargs=tyargs,
+                memory=memory,
+            ),
             sig.ret,
         )
 

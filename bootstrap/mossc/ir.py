@@ -79,6 +79,10 @@ class Call:
     # specialization knows what its abstract types are where that decides
     # a valtype (D75: a reference's type is the struct of what it holds).
     tyargs: tuple | None = None
+    # D79: for a memory instruction, the `Memory` in force at the call, in
+    # the caller's terms; which memory it is, is that type at the
+    # specialization's (or the interpreter frame's) type arguments.
+    memory: object = None
 
 
 @dataclass(frozen=True)

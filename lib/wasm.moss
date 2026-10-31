@@ -19,8 +19,18 @@ assume I32 {
   val i32_one: I32;
 }
 
+# A linear memory (D79). Every memory instruction is under `assume
+# Memory`, so code that loads or stores runs in whichever memory is in
+# force where it is called, and is specialized at it: the platform
+# provides `Memory` at the root as the module's first memory, index 0,
+# exported as `memory` (which WASI preview 1 requires), and a program
+# names more as units (`unit Scratch;`) and binds `Memory` to one in a
+# scope. Each distinct memory reached gets its own index, which the back
+# end puts on every instruction specialized at it.
+type Memory;
+
 # https://webassembly.github.io/spec/core/syntax/instructions.html#memory-instructions
-assume I32 {
+assume I32, Memory {
   fn i32_load(address: I32): I32;
   fn i32_load8_s(address: I32): I32;
   fn i32_load8_u(address: I32): I32;
@@ -125,12 +135,14 @@ assume I32 {
 # The float half (D67). Comparisons yield an i32, as the integer ones do;
 # there are no float constants, so a float starts life as a conversion
 # from an integer built out of `i32_zero` and `i32_one`.
-assume I32, I64, F32, F64 {
+assume I32, F32, F64, Memory {
   fn f32_load(address: I32): F32;
   fn f64_load(address: I32): F64;
   fn f32_store(address: I32, value: F32);
   fn f64_store(address: I32, value: F64);
+}
 
+assume I32, I64, F32, F64 {
   fn f32_eq(a: F32, b: F32): I32;
   fn f32_ne(a: F32, b: F32): I32;
   fn f32_lt(a: F32, b: F32): I32;
@@ -240,6 +252,7 @@ context Wasm =
   F32,
   F64,
   StructRef,
+  Memory,
 
   i32_zero,
   i32_one,

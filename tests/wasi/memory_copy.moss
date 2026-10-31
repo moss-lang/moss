@@ -1,0 +1,82 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiContainers, Str, Num, Packed, Item,
+  alloc, four, raw, code_of, ints_addr, elem, i32_bool;
+import "../../lib/wasm.moss" as w use Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D79: printing text made in another memory. WASI preview 1 reads only
+# the main memory, so `print` takes a string there — `String` as
+# `WasiStd` bound it, in the main memory — and a string made in
+# `Scratch` is another type, `Str[Memory=Scratch]`, which `print` does
+# not take (tests/wasi/memory_print.moss). It is copied first: `copied`
+# makes a string in the memory in force out of one in `Source`, reading
+# the original through its own methods, which run in its own memory
+# (D74). Output: `hi`, copied into the main memory from `Scratch`; then
+# `ih`, copied from there back into `Scratch` reversed, and out again —
+# inside that block `Source` is the main memory, the `Memory` in force
+# before the block rebinds it (D72).
+
+unit Scratch;
+
+type Source;
+
+assume Wasm, Branch {
+  # A string of these codes, in the memory in force.
+  fn spelled(codes: Packed[Item=Num]): Str {
+    let data = w::i32_load(ints_addr(codes));
+    let n = w::i32_load(data);
+    let p = alloc(w::i32_add(four(), n));
+    w::i32_store(p, n);
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, n)) {
+      w::i32_store8(w::i32_add(w::i32_add(p, four()), i), w::i32_load(elem(data, i)));
+      i = w::i32_add(i, w::i32_one);
+    }
+    Str (p)
+  }
+
+  assume Source {
+    # A copy, in the memory in force, of a string in `Source`, reversed
+    # if asked.
+    fn copied(s: Str[Memory=Source], reverse: Bool): Str {
+      let n = raw(s.length());
+      let p = alloc(w::i32_add(four(), n));
+      w::i32_store(p, n);
+      var i = w::i32_zero;
+      while i32_bool(w::i32_lt_u(i, n)) {
+        var from = i;
+        if reverse {
+          from = w::i32_sub(w::i32_sub(n, w::i32_one), i);
+        }
+        w::i32_store8(w::i32_add(w::i32_add(p, four()), i), code_of(s.get(Num (from))));
+        i = w::i32_add(i, w::i32_one);
+      }
+      Str (p)
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let s = {
+      bind Memory = Scratch;
+      bind WasiContainers;
+      let codes = int_list();
+      codes.push(char::h.code());
+      codes.push(char::i.code());
+      spelled(codes)
+    };
+    bind Source = Scratch;
+    let hi = copied(s, false);
+    print(hi);
+    putchar(char::newline);
+    let back = {
+      bind Source = Memory;
+      bind Memory = Scratch;
+      copied(hi, true)
+    };
+    print(copied(back, false));
+    putchar(char::newline);
+  }
+}

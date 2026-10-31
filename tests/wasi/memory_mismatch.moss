@@ -1,0 +1,38 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiContainers;
+import "../../lib/wasm.moss" use Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D79: a list's type says which memory it is in. `ys` is made in
+# `Scratch`, a `Packed[Item=Num, Memory=Scratch]`, and leaves its block
+# as that (`Scratch` can be written outside); `main`'s `IntList` is the
+# main memory's. Passing one where the other is expected is a type error
+# in both compilers, though both are an address.
+
+unit Scratch;
+
+assume Std {
+  fn sum(xs: IntList): Int {
+    var total = 0;
+    var i = 0;
+    while i < xs.length() {
+      total = total + xs.get(i);
+      i = i + 1;
+    }
+    total
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let ys = {
+      bind Memory = Scratch;
+      bind WasiContainers;
+      let ys = int_list();
+      ys.push(7);
+      ys
+    };
+    let total = sum(ys);
+  }
+}

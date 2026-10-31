@@ -1,4 +1,4 @@
-import "./wasm.moss" as w use Wasm, I32, F32, F64;
+import "./wasm.moss" as w use Wasm, I32, F32, F64, Memory;
 import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
   args_sizes_get, args_get, path_open;
 # One declaration per accessor, so importing them here is unambiguous —
@@ -44,18 +44,31 @@ context Console =
 context Files =
   Path, pwd, Path.join, Path.readable, Path.read[Elem=String];
 
+# Strings, which live in memory like any container: `String` and the
+# methods that read and make one, with nothing that calls WASI.
+context Strings =
+  String, String.length, String.get[Elem=Char], String.slice, String.concat;
+
 # The containers, over the library's own allocator rather than the
-# compiler's — which no longer has one (D59). `put_bytes` is here rather
-# than beside `putchar` because its signature is a container and its body
-# is a WASI call, so it belongs to whichever of the two groups already has
-# the types: this one.
+# compiler's — which no longer has one (D59). Everything here lives in
+# the memory in force where it is applied (D79), and nothing here calls
+# WASI, so a scope that binds `Memory` to another memory applies this to
+# make its lists, strings and cells there:
+#
+#     bind Memory = Scratch;
+#     bind WasiContainers;
 context Containers =
+  Strings,
   CellInt, cell_int, CellInt.read[Elem=Int], CellInt.write,
   IntList, int_list,
   IntList.push[Elem=Int], IntList.get[Elem=Int], IntList.set[Elem=Int], IntList.length,
-  put_bytes,
   StrList, str_list,
   StrList.push[Elem=String], StrList.get[Elem=String], StrList.length;
+
+# `put_bytes` is a container's bytes and a WASI call, and WASI preview 1
+# reads only the main memory (D79), so it stays out of `Containers`: it
+# is bound where the main memory is in force, after the lists it takes.
+context Output = put_bytes;
 
 # The numeric slice. `Int` binds to a nominal wrapper rather than to I32
 # directly, because only an attached method can see its receiver and only
@@ -90,9 +103,10 @@ assume Wasm, Branch {
   fn fifteen(): I32 { w::i32_sub(sixteen(), w::i32_one) }
   fn twenty_eight(): I32 { w::i32_add(twenty_four(), four()) }
 
-  # The bump allocator, in Moss. The heap pointer lives at address 16,
-  # where `_start` leaves it, so this shares one heap with the backend's
-  # own allocator rather than competing with it.
+  # The bump allocator, in Moss. The heap pointer lives at address 16 of
+  # the memory it allocates from (D79), where `_start` leaves it in every
+  # memory the module has, so in the main memory this shares one heap
+  # with the backend's own allocator rather than competing with it.
   fn alloc(n: I32): I32 {
     let base = w::i32_load(sixteen());
     let top = w::i32_and(
@@ -108,10 +122,18 @@ assume Wasm, Branch {
     base
   }
 
+  # The allocator's state, so that everything allocated since a mark can
+  # be dropped at once: an arena is a memory whose allocator is reset
+  # (D79), and resetting one memory's leaves every other's data alone.
+  fn heap_mark(): I32 { w::i32_load(sixteen()) }
+  fn heap_reset(mark: I32) { w::i32_store(sixteen(), mark); }
+
   # A String is [len | bytes], the same shape the backend uses. It is a
   # nominal wrapper rather than a bare I32 so that it can carry methods
-  # (D54) — which costs nothing, since `Str` is in no union (D58).
-  type Str I32;
+  # (D54) — which costs nothing, since `Str` is in no union (D58). It
+  # lists the memory it is in (D73, D79), so a string in another memory
+  # is another type, and its methods read it there (D74).
+  type Str[Memory] I32;
 
   fn addr(s: Str): I32 { match s { Str a => a } }
 
@@ -308,8 +330,8 @@ assume Wasm, Branch {
 
   fn Num.to_char(): Chr { Chr (raw(this)) }
 
-  # One mutable word.
-  type Cell I32;
+  # One mutable word, in the memory it was made in (D79).
+  type Cell[Memory] I32;
 
   fn cell_addr(c: Cell): I32 { match c { Cell a => a } }
 
@@ -337,7 +359,7 @@ assume Wasm, Branch {
   # code as `FloatList`'s, below, and as a program's list of anything.
   fn wasi_int_list(): Packed[Item=Num] { bind NumLayout; packed() }
 
-  type Strs I32;
+  type Strs[Memory] I32;
 
   fn strs_addr(l: Strs): I32 { match l { Strs a => a } }
 
@@ -572,12 +594,14 @@ functor DoubleLayout: Wasm, Branch -> Layout {
 
 # One handle for every element type (D73): a `Packed[Item=X]` is the
 # address of a packed list at whatever `Layout` was in force for `X`, and
-# lists of two element types are two types, though both are an `I32`. A
-# program's list of anything is its `Layout` and nothing more; its
-# methods take that layout from where they are called or bound, which
-# must have provided it at the receiver's `Item` (D74).
+# lists of two element types are two types, though both are an `I32`; and
+# so are lists in two memories (D79), whose methods run in the list's own
+# memory wherever they are called (D74). A program's list of anything is
+# its `Layout` and nothing more; its methods take that layout from where
+# they are called or bound, which must have provided it at the receiver's
+# `Item` (D74).
 assume Wasm, Branch, Layout {
-  type Packed[Item] I32;
+  type Packed[Item, Memory] I32;
 
   fn packed_addr(l: Packed): I32 { match l { Packed a => a } }
 
@@ -659,8 +683,7 @@ functor WasiFloats32: Wasm, Branch -> Floats {
 # slice of Std that runs over Wasi so far. Applying a functor from inside
 # a functor is just another bind (D55).
 context Basics =
-  Console, Numerics, Int.char, Char.code, arg_count, arg_at,
-  String.length, String.get[Elem=Char], String.slice, String.concat;
+  Console, Numerics, Int.char, Char.code, arg_count, arg_at, Strings;
 
 functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind WasiConsole;
@@ -669,16 +692,22 @@ functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind Char.code = Chr.code;
   bind string::arg_count = wasi_arg_count;
   bind string::arg_at = wasi_arg_at;
+  bind WasiStrings;
+}
+
+functor WasiStrings: Wasm, Branch -> Strings {
+  bind string::String = Str;
   # A shared accessor is provided at one receiver at a time, and the
-  # element type comes with the provision (D61). `Char` is already bound
-  # to `Chr` by the application above, so `Elem=Char` means `Chr` here.
+  # element type comes with the provision (D61). `Char` is bound to `Chr`
+  # where this is applied, so `Elem=Char` means `Chr` here.
   bind String.length = Str.length;
   bind String.get[Elem=Char] = Str.get;
   bind String.slice = Str.slice;
   bind String.concat = Str.concat;
 }
 
-functor WasiContainers: Wasm, Wasi, Branch -> Containers {
+functor WasiContainers: Wasm, Branch -> Containers {
+  bind WasiStrings;
   bind cell::CellInt = Cell;
   bind cell::cell_int = wasi_cell;
   bind CellInt.read[Elem=Int] = Cell.read;
@@ -693,12 +722,15 @@ functor WasiContainers: Wasm, Wasi, Branch -> Containers {
   bind IntList.get[Elem=Int] = (index) => { bind NumLayout; packed_get(ints_addr(this), index) };
   bind IntList.set[Elem=Int] = (index, value) => { bind NumLayout; packed_set(ints_addr(this), index, value); };
   bind IntList.length = () => packed_length(ints_addr(this));
-  bind put_bytes = wasi_put_bytes;
   bind strlist::StrList = Strs;
   bind strlist::str_list = wasi_str_list;
   bind StrList.push[Elem=String] = Strs.push;
   bind StrList.get[Elem=String] = Strs.get;
   bind StrList.length = Strs.length;
+}
+
+functor WasiOutput: Wasm, Wasi, Branch -> Output {
+  bind put_bytes = wasi_put_bytes;
 }
 
 functor WasiFiles: Wasm, Wasi, Branch -> Files {

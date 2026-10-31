@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasichar.moss" use WasiCharConsts;
-import "../../lib/wasistd.moss" use Branch, WasiBasics, WasiContainers, WasiFiles,
-  WasiFloats32;
+import "../../lib/wasistd.moss" use Branch, WasiBasics, WasiContainers, WasiOutput,
+  WasiFiles, WasiFloats32;
 import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
@@ -105,6 +105,7 @@ assume Std {
 functor WasiStd32: Wasm, Wasi, Branch -> Std {
   bind WasiBasics;
   bind WasiContainers;
+  bind WasiOutput;
   bind WasiFiles;
   bind WasiFloats32;
   bind WasiCharConsts;

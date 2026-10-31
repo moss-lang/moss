@@ -41,6 +41,7 @@ assume Std {
     bind emit::ex_kind=int_list();
     bind emit::ex_index=int_list();
     bind emit::mem_pages=cell_int();
+    bind emit::mem_key=int_list();
     bind emit::st_key=int_list();
     bind emit::st_fstart=int_list();
     bind emit::st_flen=int_list();

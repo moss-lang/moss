@@ -105,12 +105,23 @@ class GcRef:
 class Closure:
     fn: ir.FnIR
     ctx: dict
+    # The provider's type arguments, kept when the program binds `Memory`
+    # (D79).
+    theta: object = None
 
 
 @dataclass(frozen=True)
 class NativeFn:
     name: str
     call: object  # (args: list, this) -> value
+
+
+@dataclass(frozen=True)
+class MemoryFn(NativeFn):
+    """A memory instruction (D79): `select` points the emulated
+    instructions at the memory a `Memory` type is, for one call."""
+
+    select: object = None  # (Memory type | None) -> None
 
 
 UNIT = UnitVal(None)
@@ -246,28 +257,46 @@ class _Tail:
     args: list
     ctx: dict
     this: object
+    theta: object = None
 
 
 class Frame:
-    def __init__(self, locals_: dict, ctx: dict, this):
+    def __init__(self, locals_: dict, ctx: dict, this, theta=None):
         self.locals = locals_
         self.ctx = ctx
         self.this = this
+        # The frame's type arguments, as the back end's `theta`, kept only
+        # when the program binds `Memory` (D79), so that a generic
+        # function's memory instructions know which memory.
+        self.theta = theta or {}
 
 
 class Interp:
-    def __init__(self, fns: dict):
+    def __init__(self, fns: dict, memory_sym=None):
         self.fns = fns  # id(Symbol) -> FnIR
+        # lib/wasm.moss's `Memory`, when the program binds it (D79).
+        self.memory_sym = memory_sym
 
-    def call_fn(self, fn: ir.FnIR, args: list, ctx: dict, this=None):
+    def theta_for(self, tyargs, theta: dict) -> dict:
+        """A callee's type arguments, at the caller's (D79): all of them,
+        since `Memory` may be bound to another abstract type a caller
+        supplies."""
+        if self.memory_sym is None or not tyargs:
+            return {}
+        from .build import subst
+
+        return {p: subst(theta, t) for p, t in tyargs}
+
+    def call_fn(self, fn: ir.FnIR, args: list, ctx: dict, this=None, theta=None):
         while True:
-            frame = Frame(dict(zip(fn.params, args)), ctx, this)
+            frame = Frame(dict(zip(fn.params, args)), ctx, this, theta)
             try:
                 result = self.eval_block(fn.body, frame, tail=True)
             except _Return as r:
                 result = r.value
             if isinstance(result, _Tail):
                 fn, args, ctx, this = result.fn, result.args, result.ctx, result.this
+                theta = result.theta
                 continue
             return result
 
@@ -275,7 +304,7 @@ class Interp:
         if isinstance(impl, NativeFn):
             return impl.call(args, this)
         if isinstance(impl, Closure):
-            return self.call_fn(impl.fn, args, impl.ctx, this)
+            return self.call_fn(impl.fn, args, impl.ctx, this, impl.theta)
         raise MossPanic(f"not callable: {impl!r}")
 
     def eval_block(self, block: ir.Block, frame: Frame, tail=False):
@@ -310,7 +339,12 @@ class Interp:
         elif isinstance(stmt, ir.BindFn):
             fn = self.fns[id(stmt.fn)]
             captured = {ck: frame.ctx[sk] for ck, sk in stmt.needs_map}
-            frame.ctx[stmt.key] = Closure(fn, captured)
+            # An anonymous function is in this frame's terms (D70).
+            theta = (
+                frame.theta if stmt.tyargs is None
+                else self.theta_for(stmt.tyargs, frame.theta)
+            )
+            frame.ctx[stmt.key] = Closure(fn, captured, theta)
         elif isinstance(stmt, ir.BindPrim):
             frame.ctx[stmt.key] = gc_prim(stmt)
         elif isinstance(stmt, ir.While):
@@ -375,12 +409,21 @@ class Interp:
             if kind == "direct":
                 fn = self.fns[id(target)]
                 ctx = {ck: frame.ctx[sk] for ck, sk in expr.needs_map}
+                theta = self.theta_for(expr.tyargs, frame.theta)
                 if tail:
-                    return _Tail(fn, args, ctx, this)
-                return self.call_fn(fn, args, ctx, this)
+                    return _Tail(fn, args, ctx, this, theta)
+                return self.call_fn(fn, args, ctx, this, theta)
             impl = frame.ctx[target]
+            if expr.memory is not None and isinstance(impl, MemoryFn):
+                from .build import subst
+
+                impl.select(subst(frame.theta, expr.memory))
+                try:
+                    return impl.call(args, this)
+                finally:
+                    impl.select(None)
             if tail and isinstance(impl, Closure):
-                return _Tail(impl.fn, args, impl.ctx, this)
+                return _Tail(impl.fn, args, impl.ctx, this, impl.theta)
             return self.invoke(impl, args, this)
         if isinstance(expr, ir.If):
             if self.truthy(self.eval(expr.cond, frame)):
@@ -795,6 +838,15 @@ def receiver_type(sym: Symbol):
 
 
 PAGE = 65536
+# The instructions lib/wasm.moss declares under `assume Memory` (D79).
+MEMORY_OPS = frozenset(
+    [f"i32_load{s}" for s in ("", "8_s", "8_u", "16_s", "16_u")]
+    + [f"i64_load{s}" for s in ("", "8_s", "8_u", "16_s", "16_u", "32_s", "32_u")]
+    + [f"i32_store{s}" for s in ("", "8", "16")]
+    + [f"i64_store{s}" for s in ("", "8", "16", "32")]
+    + ["f32_load", "f64_load", "f32_store", "f64_store"]
+    + ["memory_size", "memory_grow", "memory_copy", "memory_fill"]
+)
 HEAP_BASE = 1024
 PREOPEN_FD = 3
 
@@ -813,22 +865,48 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
     memory[16:20] = HEAP_BASE.to_bytes(4, "little")  # what `_start` does
     files: dict = {}
     argv = [sys.argv[0], *args]
+    # D79: the memory the instructions below act on, which is the main
+    # one except during a memory instruction specialized at another — a
+    # unit `Memory` is bound to, each its own, made the first time it is
+    # used with its heap pointer set as `_start` sets every memory's.
+    memory_sym = lib["wasm"].names.get("Memory")
+    others: dict = {}
+    current = [memory]
+
+    def select(t) -> None:
+        from .types import TAbstract, TNominal
+
+        if t is None or (
+            isinstance(t, TAbstract) and getattr(t.symbol, "origin", t.symbol) is memory_sym
+        ):
+            current[0] = memory
+            return
+        if isinstance(t, TNominal) and t.symbol.kind == SymKind.UNIT:
+            got = others.get(id(t.symbol))
+            if got is None:
+                got = bytearray(2 * PAGE)
+                got[16:20] = HEAP_BASE.to_bytes(4, "little")
+                others[id(t.symbol)] = got
+            current[0] = got
+            return
+        raise MossPanic("a memory instruction where `Memory` is not a memory (D79)")
 
     def wrap(n: int, bits: int = 32) -> int:
         n &= (1 << bits) - 1
         return n - (1 << bits) if n >> (bits - 1) else n
 
     def grow(end: int) -> None:
-        if end > len(memory):
-            memory.extend(bytes(-(-(end - len(memory)) // PAGE) * PAGE))
+        mem = current[0]
+        if end > len(mem):
+            mem.extend(bytes(-(-(end - len(mem)) // PAGE) * PAGE))
 
     def load(addr: int, width: int, signed: bool) -> int:
         grow(addr + width)
-        return int.from_bytes(memory[addr : addr + width], "little", signed=signed)
+        return int.from_bytes(current[0][addr : addr + width], "little", signed=signed)
 
     def store(addr: int, width: int, value: int) -> None:
         grow(addr + width)
-        memory[addr : addr + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(
+        current[0][addr : addr + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(
             width, "little"
         )
 
@@ -839,7 +917,10 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
     def fn(name: str, impl):
         symbol = lib["wasm"].names.get(name) or lib["wasip1"].names.get(name)
         if symbol is not None:
-            env[symbol] = NativeFn(name, lambda a, this, impl=impl: impl(a))
+            if name in MEMORY_OPS:
+                env[symbol] = MemoryFn(name, lambda a, this, impl=impl: impl(a), select)
+            else:
+                env[symbol] = NativeFn(name, lambda a, this, impl=impl: impl(a))
 
     # Memory instructions.
     loads = {"i32_load": (4, True), "i32_load8_s": (1, True), "i32_load8_u": (1, False),
@@ -850,18 +931,18 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
     for name, width in {"i32_store": 4, "i32_store8": 1, "i32_store16": 2,
                         "i64_store": 8}.items():
         fn(name, lambda a, w=width: (store(a[0].value, w, a[1].value), UNIT)[1])
-    fn("memory_size", lambda a: IntVal(len(memory) // PAGE))
+    fn("memory_size", lambda a: IntVal(len(current[0]) // PAGE))
 
     def memory_grow(a):
-        before = len(memory) // PAGE
-        memory.extend(bytes(a[0].value * PAGE))
+        before = len(current[0]) // PAGE
+        current[0].extend(bytes(a[0].value * PAGE))
         return IntVal(before)
 
     fn("memory_grow", memory_grow)
-    fn("memory_copy", lambda a: (memory.__setitem__(
+    fn("memory_copy", lambda a: (current[0].__setitem__(
         slice(a[0].value, a[0].value + a[2].value),
-        memory[a[1].value : a[1].value + a[2].value]), UNIT)[1])
-    fn("memory_fill", lambda a: (memory.__setitem__(
+        current[0][a[1].value : a[1].value + a[2].value]), UNIT)[1])
+    fn("memory_fill", lambda a: (current[0].__setitem__(
         slice(a[0].value, a[0].value + a[2].value),
         bytes([a[1].value & 0xFF]) * a[2].value), UNIT)[1])
 
@@ -931,10 +1012,10 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
     for prefix, rnd in (("f32", f32), ("f64", lambda x: x)):
         width, code = (4, "<f") if prefix == "f32" else (8, "<d")
         fn(f"{prefix}_load", lambda a, w=width, c=code: FloatVal(
-            struct.unpack(c, (grow(a[0].value + w), memory[a[0].value : a[0].value + w])[1])[0]))
+            struct.unpack(c, (grow(a[0].value + w), current[0][a[0].value : a[0].value + w])[1])[0]))
         fn(f"{prefix}_store", lambda a, w=width, c=code: (
             grow(a[0].value + w),
-            memory.__setitem__(slice(a[0].value, a[0].value + w), struct.pack(c, a[1].value)),
+            current[0].__setitem__(slice(a[0].value, a[0].value + w), struct.pack(c, a[1].value)),
             UNIT)[2])
         binary = {"add": lambda x, y: x + y, "sub": lambda x, y: x - y,
                   "mul": lambda x, y: x * y, "div": fdiv, "min": fmin, "max": fmax,
@@ -1151,4 +1232,5 @@ def run_main(program: Program, lower, args: list | None = None) -> None:
                 f"`main` assumes `{name}`, which is not part of the `Std` context"
             )
         ctx[need] = provision
-    Interp(lower.fns).call_fn(fn, [], ctx)
+    memory_sym = lower.memory_sym if lower.uses_memories else None
+    Interp(lower.fns, memory_sym).call_fn(fn, [], ctx)

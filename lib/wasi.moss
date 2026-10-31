@@ -2,7 +2,8 @@ import "./bool.moss" use Bool;
 import "./num.moss" use .not, .and, .or, .xor;
 import "./std.moss" use Std;
 import "./wasichar.moss" use WasiCharConsts;
-import "./wasistd.moss" use WasiBasics, WasiContainers, WasiFiles, WasiFloats, Branch;
+import "./wasistd.moss" use WasiBasics, WasiContainers, WasiOutput, WasiFiles,
+  WasiFloats, Branch;
 import "./wasm.moss" use Wasm;
 import "./wasip1.moss" use Wasi;
 
@@ -17,6 +18,7 @@ import "./wasip1.moss" use Wasi;
 functor WasiStd: Wasm, Wasi, Branch -> Std {
   bind WasiBasics;
   bind WasiContainers;
+  bind WasiOutput;
   bind WasiFiles;
   bind WasiFloats;
   bind WasiCharConsts;

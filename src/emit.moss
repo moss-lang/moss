@@ -108,6 +108,11 @@ assume Std {
 
   val mem_pages: CellInt;
 
+  # D79: the memories past the main one, each by an opaque key its user
+  # looks it up by; the `i`th is memory `i + 1`, and every memory has
+  # `mem_pages` pages to start.
+  val mem_key: IntList;
+
   # D75's struct types: each with an opaque key its user looks it up by,
   # and a run of field valtypes in `st_fields`. They take the low type
   # indices, as one `rec` group, since they may refer to each other; so
@@ -123,7 +128,7 @@ assume Std {
     im_mstart, im_mlen, im_fstart, im_flen, im_type,
     fn_type, fn_locals, fn_lstart, fn_llen, fn_bstart, fn_blen, insns,
     ex_start, ex_len, ex_kind, ex_index,
-    mem_pages,
+    mem_pages, mem_key,
     st_key, st_fstart, st_flen, st_fields;
 
   assume Emit {
@@ -378,10 +383,31 @@ assume Std {
         return ();
       }
       let b = int_list();
-      uleb(b, 1);
-      b.push(0);
-      uleb(b, mem_pages.read());
+      uleb(b, memory_count());
+      var i = 0;
+      while i < memory_count() {
+        b.push(0);
+        uleb(b, mem_pages.read());
+        i = i + 1;
+      }
       section(out, sec_mem(), b);
+    }
+
+    # D79: how many memories the module has, and the index of the one a
+    # key names, registered the first time it is asked for. The main
+    # memory is 0 and has no key.
+    fn memory_count(): Int { mem_key.length() + 1 }
+
+    fn memory_index(key: Int): Int {
+      var i = 0;
+      while i < mem_key.length() {
+        if mem_key.get(i) == key {
+          return i + 1;
+        }
+        i = i + 1;
+      }
+      mem_key.push(key);
+      mem_key.length()
     }
 
     fn export_section(out: IntList) {

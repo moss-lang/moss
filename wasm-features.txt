@@ -6,8 +6,9 @@
 #
 # Names are Binaryen's, as in `wasm-opt --enable-<name>`. The set is Wasm 2.0
 # (https://www.w3.org/TR/wasm-core-2/) plus garbage collection, for D75's
-# references (https://github.com/WebAssembly/gc, part of Wasm 3.0), all of
-# which Wasmtime enables by default.
+# references (https://github.com/WebAssembly/gc, part of Wasm 3.0) and
+# multiple memories, for D79's (https://github.com/WebAssembly/multi-memory,
+# also part of Wasm 3.0), all of which Wasmtime enables by default.
 # Never hand Binaryen `-all` instead: that opts into every proposal it knows,
 # and Binaryen 132 began emitting the compact-imports encoding under it,
 # which Wasmtime rejects.
@@ -19,3 +20,4 @@ bulk-memory
 reference-types
 simd
 gc
+multimemory

@@ -157,6 +157,15 @@ assume Std {
     push_char(out, char::f);
   }
 
+  fn sp_Memory(out: IntList) {
+    push_char(out, char::M);
+    push_char(out, char::e);
+    push_char(out, char::m);
+    push_char(out, char::o);
+    push_char(out, char::r);
+    push_char(out, char::y);
+  }
+
   fn sp_bool_moss(out: IntList) {
     push_char(out, char::b);
     push_char(out, char::o);

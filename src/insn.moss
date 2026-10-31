@@ -63,22 +63,41 @@ assume Std {
     uleb(buf, 0);
   }
 
+  # The same at memory `mem` (D79): with multiple memories, bit 6 of the
+  # alignment flags says a memory index follows. Memory 0 keeps the short
+  # form, so a module with one memory is byte for byte as before.
+  fn op_mem_at(buf: IntList, code: Int, align: Int, mem: Int) {
+    if mem == 0 {
+      op_mem(buf, code, align);
+    } else {
+      buf.push(code);
+      uleb(buf, align + 64);
+      uleb(buf, mem);
+      uleb(buf, 0);
+    }
+  }
+
   fn op_i32_store(buf: IntList) { op_mem(buf, 54, 2); }
   # Selected by no code path of the compiler's own; tests/wasi/emit.moss
   # builds a module with it.
   fn op_i32_store8(buf: IntList) { op_mem(buf, 58, 0); }
 
-  fn op_memory_copy(buf: IntList) {
+  fn op_memory_copy(buf: IntList) { op_memory_copy_at(buf, 0); }
+
+  fn op_memory_fill(buf: IntList) { op_memory_fill_at(buf, 0); }
+
+  # Within memory `mem` (D79).
+  fn op_memory_copy_at(buf: IntList, mem: Int) {
     buf.push(252);
     uleb(buf, 10);
-    buf.push(0);
-    buf.push(0);
+    uleb(buf, mem);
+    uleb(buf, mem);
   }
 
-  fn op_memory_fill(buf: IntList) {
+  fn op_memory_fill_at(buf: IntList, mem: Int) {
     buf.push(252);
     uleb(buf, 11);
-    buf.push(0);
+    uleb(buf, mem);
   }
 
   # D75's garbage-collected structs, 0xFB-prefixed: a struct type is its

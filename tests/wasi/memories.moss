@@ -1,0 +1,76 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiContainers, Numerics, Containers;
+import "../../lib/wasm.moss" use Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D79: two memories, a list in each. `Scratch` is a second linear memory;
+# binding `Memory` to it and applying `WasiContainers` makes the block's
+# lists in it, through the same library code as the main memory's. `sum`
+# is written once, against the containers, and specialized at each.
+#
+# Not against `Std`: `Std` also has items that mention `IntList` and
+# `String` and call WASI (`put_bytes`, `print`, `first_arg`), which stay
+# in the main memory, so code that assumes all of `Std` cannot run where
+# the lists are rebound to another memory (D72: those items would be
+# needed at the new `IntList`, and nothing provides them there).
+
+unit Scratch;
+
+assume Std {
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Char, Numerics, Containers {
+  fn fill(xs: IntList, from: Int, count: Int) {
+    var i = 0;
+    while i < count {
+      xs.push(from + i);
+      i = i + 1;
+    }
+  }
+
+  fn sum(xs: IntList): Int {
+    var total = 0;
+    var i = 0;
+    while i < xs.length() {
+      total = total + xs.get(i);
+      i = i + 1;
+    }
+    total
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let xs = int_list();
+    fill(xs, 1, 100);
+    let inner = {
+      bind Memory = Scratch;
+      bind WasiContainers;
+      let ys = int_list();
+      fill(ys, 1000, 50);
+      sum(ys)
+    };
+    # Pushing past the first capacity grew both lists, each in its own
+    # memory, at the same addresses: neither overwrote the other.
+    line(sum(xs));
+    line(inner);
+    line(sum(xs) + inner);
+  }
+}

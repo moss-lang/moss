@@ -133,6 +133,11 @@ assume Std {
   val cg_box: CellInt;
   val cg_deref: CellInt;
 
+  # D79: lib/wasm.moss's `Memory`, under which every memory instruction
+  # is declared: what it is where an instruction is emitted says which
+  # memory the instruction names.
+  val cg_memory: CellInt;
+
   val cg_errs: IntList;
   val cg_err_name: IntList;
   # The function whose body was being emitted, recorded with each
@@ -234,7 +239,7 @@ assume Std {
     pv_recv, pv_sym, pv_local, pv_top,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
     cg_i32, cg_i64, cg_f32, cg_f64, cg_boolty,
-    cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_errs, cg_err_name, cg_err_at, cg_where,
+    cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_memory, cg_errs, cg_err_name, cg_err_at, cg_where,
     vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
     ck_entry, ck_inner, ck_link, ck_head,
     fl_start, fl_len, fl_types,
@@ -334,6 +339,9 @@ assume Std {
       cg_structref.write(wasm_symbol(s));
       cg_box.write(ast::none());
       cg_deref.write(ast::none());
+      let mm = spelled();
+      sp_Memory(mm);
+      cg_memory.write(wasm_symbol(mm));
       if !ast::is_some(cg_wasm.read()) {
         return ();
       }
@@ -3191,23 +3199,53 @@ assume Std {
       if kind == wops::wk_simple() {
         body.push(code);
       } else if kind == wops::wk_memarg() {
-        op_mem(body, code, wops::op_aligns.get(op));
+        op_mem_at(body, code, wops::op_aligns.get(op), memory_here());
       } else if kind == wops::wk_const0() {
         op_i32_const(body, 0);
       } else if kind == wops::wk_const1() {
         op_i32_const(body, 1);
       } else if kind == wops::wk_memzero() {
         body.push(code);
-        body.push(0);
+        uleb(body, memory_here());
       } else if kind == wops::wk_memcopy() {
-        op_memory_copy(body);
+        op_memory_copy_at(body, memory_here());
       } else if kind == wops::wk_prefixed() {
         # 0xFC, then the sub-opcode the table keeps as an alignment.
         body.push(code);
         uleb(body, wops::op_aligns.get(op));
       } else {
-        op_memory_fill(body);
+        op_memory_fill_at(body, memory_here());
       }
+    }
+
+    # D79: the memory a memory instruction emitted here names — what
+    # `Memory` is in this specialization. Unbound, it is the platform's,
+    # the main memory, 0; bound to a unit, that unit's memory, numbered
+    # the first time it is met. Anything else is not a memory.
+    fn memory_here(): Int {
+      let mem = cg_memory.read();
+      if !ast::is_some(mem) {
+        return 0;
+      }
+      let t = canon_ty(types::ty_of_symbol(types::kd_abstract(), mem));
+      if types::is_kind(t, types::kd_abstract()) {
+        if types::sym_of(t) == mem {
+          return 0;
+        }
+        if types::sym_of(t) == prog::param_of(mem) {
+          return 0;
+        }
+        if t == main_memory() {
+          return 0;
+        }
+      }
+      if types::is_kind(t, types::kd_nominal()) {
+        if types::is_unit_decl(t) {
+          return emit::memory_index(t);
+        }
+      }
+      cg_error(c_unsupported(), prog::sym_name.get(mem));
+      0
     }
 
     fn emit_block(body: IntList, e: Int, m: Int): Int {
@@ -4695,6 +4733,33 @@ assume Std {
 
     fn heap_pointer(): Int { 16 }
 
+    # What `main` is specialized in: nothing, but for the one platform
+    # type a program may rebind (D79). `Memory` there is the main memory,
+    # a symbol of its own that no environment binds — not `Memory`, which
+    # a later `bind Memory = Scratch;` would reach back into, nor its
+    # parameter, which a callee generic over `Memory` binds to its own
+    # (D72) — so that `bind Source = Memory;` in `main` names the main
+    # memory wherever it is read.
+    fn root_env(): Int {
+      let mem = cg_memory.read();
+      if !ast::is_some(mem) {
+        return lower::env_empty();
+      }
+      let given = main_memory();
+      let env = lower::env_push(
+        lower::env_empty(), lower::ek_type(), ast::none(), mem, given, ast::none()
+      );
+      lower::env_push(
+        env, lower::ek_type(), ast::none(), prog::param_of(mem), given, ast::none()
+      )
+    }
+
+    fn main_memory(): Int {
+      types::ty_of_symbol(
+        types::kd_abstract(), prog::param_of(prog::param_of(cg_memory.read()))
+      )
+    }
+
     fn compile(entry: Int, out: IntList) {
       cg_where.write(ast::none());
       find_primitive_modules();
@@ -4731,7 +4796,7 @@ assume Std {
       # `main` assumes only the primitive context, so it starts empty.
       cg_env.write(lower::env_empty());
       cg_real.write(0);
-      reach(main, lower::env_empty());
+      reach(main, root_env());
       compile_all();
       # Only now is the function index space fixed: it counts the imports
       # first, and which ones the program calls is what the pass above
@@ -4740,10 +4805,16 @@ assume Std {
       cg_real.write(1);
       let starter = emit::add_func(emit::type_i32(0));
       compile_all();
+      # The heap pointer in every memory (D79: each memory's allocator
+      # keeps its state in that memory).
       let boot = int_list();
-      op_i32_const(boot, heap_pointer());
-      op_i32_const(boot, heap_base());
-      op_i32_store(boot);
+      var k = 0;
+      while k < emit::memory_count() {
+        op_i32_const(boot, heap_pointer());
+        op_i32_const(boot, heap_base());
+        op_mem_at(boot, 54, 2, k);
+        k = k + 1;
+      }
       op_call(boot, fq_index.get(0));
       op_end(boot);
       emit::set_body(starter, emit::no_locals(), boot);
