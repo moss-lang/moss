@@ -3600,11 +3600,9 @@ The compiler compiling itself got faster, 1.38s to 0.55s: generic typing
 alone cost about 50%, and caching type reads per (environment, type) more
 than paid for it.
 
-*Left.* Checks still run while emitting, so only functions the program
-reaches are checked (the bootstrap also checks uncalled generic ones).
-Type errors are still `?S` with no detail, and [D74]'s `phantom_misread`
-is still a type error, not incoherence. A `match` on an abstract
-scrutinee takes its shape from the specialization.
+*Left.* Type errors are still `?S` with no detail, and [D74]'s
+`phantom_misread` is still a type error, not incoherence. A `match` on
+an abstract scrutinee takes its shape from the specialization.
 
 ## 13. Decision index
 
