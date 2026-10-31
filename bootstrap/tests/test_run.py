@@ -1904,6 +1904,19 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertEqual(self.wasmtime_run(module), "1\n3\n")
         self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "1\n3\n")
 
+    def test_rebinding_on_the_recursive_path_terminates(self):
+        """A recursive function that rebinds one of its own fn needs on its
+        own recursive path. Keyed by everything in scope, each
+        specialization captured the provision it shadowed and demanded
+        another, without end; keyed by what is reached, there are two.
+        Its `Float` result also has to be learned, not assumed an i32."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/rebind_recursive.moss"
+        module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), "2\n1\n0\n11\n")
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "2\n1\n0\n11\n")
+
     def test_temporaries_nested_anywhere(self):
         """A local comes from emission itself, so a construct that needs a
         temporary works however deeply it is nested: a `match` in a call's

@@ -832,12 +832,16 @@ assume Std {
       un_head.set(f, un_sym.length());
     }
 
-    # A symbol a body names: a val it reads, or a function it may run.
+    # A symbol a body names: a val it reads, or a function it may run —
+    # an abstract one included, so that whether a fn need is reached is
+    # known too (`fn_need_used`).
     fn uw_sym(f: Int, s: Int) {
       if ast::is_some(s).not() {
         return ();
       }
       if prog::sym_kind.get(s).eq(prog::sk_val()) {
+        uw_row(f, s);
+      } else if prog::sym_kind.get(s).eq(prog::sk_fn()) {
         uw_row(f, s);
       } else if is_compilable(s) {
         uw_row(f, s);
@@ -1060,12 +1064,34 @@ assume Std {
       }
     }
 
+    # Whether `f` can reach its plain fn need `sym`: call it, bind it
+    # onward, or call something that does. A symbol `f` does not list
+    # among its needs is kept, to be safe.
+    fn fn_need_used(f: Int, sym: Int): Bool {
+      var listed = false;
+      var j = zero;
+      while j.lt(lower::needs_count(f)) {
+        if lower::need_sym_at(f, j).eq(sym) {
+          if need_used(f, j) {
+            return true;
+          }
+          listed = true;
+        }
+        j = j.add(one);
+      }
+      listed.not()
+    }
+
     # The environment a callee is compiled in: its own bindings, taken
     # from this frame. Built by walking the callee's base environment
     # outermost first, so that the same bindings always give the same
-    # chain — which is what lets it key the specialization cache. Each fn
-    # entry made for the callee goes into `map` beside the entry of this
-    # frame it came from, which is how its captured slots are found here.
+    # chain — which is what lets it key the specialization cache. A plain
+    # fn the callee never reaches is left out, so that bindings it cannot
+    # observe do not make a specialization of their own: a function that
+    # rebinds such a fn on its own recursive path would otherwise demand
+    # one per depth. Each fn entry made for the callee goes into `map`
+    # beside the entry of this frame it came from, which is how its
+    # captured slots are found here.
     fn callee_env(callee: Int, map: IntList): Int {
       let chain = int_list();
       var e = lower::env_of(callee);
@@ -1097,15 +1123,22 @@ assume Std {
             cg_env.read(), lower::ek_fn(),
             need_key_recv(cg_env.read(), recv), sym
           );
-          if ast::is_some(here) {
-            if ast::is_some(lower::env_a_of(here)) {
-              out = lower::env_push(
-                out, lower::ek_fn(), need_key_recv(out, recv), sym,
-                lower::env_a_of(here), lower::env_b_of(here)
-              );
-              map.push(out);
-              map.push(here);
+          var keep = ast::is_some(here);
+          if keep {
+            keep = ast::is_some(lower::env_a_of(here));
+          }
+          if keep {
+            if ast::is_some(recv).not() {
+              keep = fn_need_used(callee, sym);
             }
+          }
+          if keep {
+            out = lower::env_push(
+              out, lower::ek_fn(), need_key_recv(out, recv), sym,
+              lower::env_a_of(here), lower::env_b_of(here)
+            );
+            map.push(out);
+            map.push(here);
           }
         }
       }
@@ -2645,8 +2678,11 @@ assume Std {
     # D26: a provider's context is captured at the bind site. Each slot
     # it takes is provided again under the entry the bind just made, from
     # the local that holds it here — a bound val's local is written once,
-    # by its own bind, so sharing it is the capture.
-    fn capture(entry: Int, mode: Int) {
+    # by its own bind, so sharing it is the capture. The provider's
+    # environment is the one a direct call would compile it in
+    # (`callee_env`), and `map` says which entry of this frame each of
+    # its captured slots comes from.
+    fn capture(entry: Int, map: IntList, mode: Int) {
       if mode.ne(bw_emit()) {
         return ();
       }
@@ -2654,7 +2690,7 @@ assume Std {
       val_slots(vals, lower::env_a_of(entry), lower::env_b_of(entry), zero);
       var i = zero;
       while i.lt(vals.length()) {
-        let l = provision_of(ast::none(), vals.get(i));
+        let l = provision_of(ast::none(), caller_slot(vals.get(i), ast::none(), map));
         if ast::is_some(l) {
           provide(ast::none(), ck_slot(entry, vals.get(i)), l);
         }
@@ -3299,10 +3335,12 @@ assume Std {
         if ast::is_kind(value, ast::k_ex_lambda()) {
           let lam = bind_lambda(spec, value, sym, ast::none(), m, depth, body);
           provided_at(lower::ek_fn(), ast::none(), sym, cg_genv.read());
+          let map = int_list();
+          let penv = callee_env(lam, map);
           cg_env.write(lower::env_push(
-            cg_env.read(), lower::ek_fn(), ast::none(), sym, lam, cg_env.read()
+            cg_env.read(), lower::ek_fn(), ast::none(), sym, lam, penv
           ));
-          capture(cg_env.read(), mode);
+          capture(cg_env.read(), map, mode);
           return ();
         }
         let provider = named_fn(value, m);
@@ -3312,11 +3350,12 @@ assume Std {
         }
         check_callee(provider);
         # The provider's own context is captured here, at the bind site.
+        let map = int_list();
+        let penv = callee_env(provider, map);
         cg_env.write(lower::env_push(
-          cg_env.read(), lower::ek_fn(), ast::none(), sym,
-          provider, cg_env.read()
+          cg_env.read(), lower::ek_fn(), ast::none(), sym, provider, penv
         ));
-        capture(cg_env.read(), mode);
+        capture(cg_env.read(), map, mode);
         provided_at(lower::ek_fn(), ast::none(), sym, cg_genv.read());
         return ();
       }
@@ -3422,10 +3461,12 @@ assume Std {
         check_method_sig(spec, recv_sym, detached, provider, m);
         check_callee(provider);
       }
+      let map = int_list();
+      let penv = callee_env(provider, map);
       cg_env.write(lower::env_push(
-        cg_env.read(), lower::ek_fn(), recv, detached, provider, cg_env.read()
+        cg_env.read(), lower::ek_fn(), recv, detached, provider, penv
       ));
-      capture(cg_env.read(), mode);
+      capture(cg_env.read(), map, mode);
       # In the generic environment: keyed by the receiver as written, and
       # made at the method's application there, brackets included.
       let gview = lower::app_view(cg_genv.read(), m, spec);
@@ -3545,12 +3586,18 @@ assume Std {
       if ok.not() {
         prog::error(prog::e_signature(), m, prog::sym_name.get(bound));
       }
+      # Keyed by the types in force rather than the whole environment: the
+      # function depends on this frame only through the types it reads
+      # its signature and captured locals at. Its fn needs are supplied
+      # per call, like any function's, so a frame that has rebound one
+      # gets the same function.
+      let tenv = types_of(env);
       var row = ast::none();
       i = zero;
       while i.lt(lm_node.length()) {
         if lm_node.get(i).eq(value) {
           if lm_genv.get(i).eq(genv) {
-            if lm_env.get(i).eq(env) {
+            if lm_env.get(i).eq(tenv) {
               row = i;
             }
           }
@@ -3558,7 +3605,7 @@ assume Std {
         i = i.add(one);
       }
       if ast::is_some(row).not() {
-        row = make_lambda(value, bound, recv, view, genv, env, m, depth);
+        row = make_lambda(value, bound, recv, view, genv, tenv, m, depth);
       }
       # The captured locals' vals, bound to their values now.
       var j = zero;
@@ -3578,9 +3625,10 @@ assume Std {
     }
 
     # The function an anonymous function is, made once per bind site and
-    # environment. `view` reads the bound declaration's types here.
+    # set of types in force (`tenv`). `view` reads the bound declaration's
+    # types here.
     fn make_lambda(
-      value: Int, bound: Int, recv: Int, view: Int, genv: Int, env: Int, m: Int,
+      value: Int, bound: Int, recv: Int, view: Int, genv: Int, tenv: Int, m: Int,
       depth: Int
     ): Int {
       let bd = prog::sym_decl.get(bound);
@@ -3690,7 +3738,7 @@ assume Std {
       }
       lm_node.push(value);
       lm_genv.push(genv);
-      lm_env.push(env);
+      lm_env.push(tenv);
       lm_sym.push(lam);
       if ast::is_some(recv) {
         lm_recv.push(one);
@@ -3705,6 +3753,30 @@ assume Std {
         k = k.add(one);
       }
       lm_sym.length().sub(one)
+    }
+
+    # Just the type bindings of an environment, in order, as one
+    # (hash-consed) environment of their own.
+    fn types_of(env: Int): Int {
+      let chain = int_list();
+      var e = env;
+      while ast::is_some(e) {
+        if lower::env_kind_of(e).eq(lower::ek_type()) {
+          chain.push(e);
+        }
+        e = lower::env_next_of(e);
+      }
+      var out = lower::env_empty();
+      var i = chain.length();
+      while i.gt(zero) {
+        i = i.sub(one);
+        let t = chain.get(i);
+        out = lower::env_push(
+          out, lower::ek_type(), lower::env_recv_of(t), lower::env_sym_of(t),
+          lower::env_a_of(t), lower::env_b_of(t)
+        );
+      }
+      out
     }
 
     # A type already elaborated, as a declaration's type node.

@@ -127,6 +127,11 @@ BINOPS = {
 }
 
 
+class Relearn(Exception):
+    """A recursive specialization's results were assumed wrongly; compile
+    again from the top, now that they are known."""
+
+
 class NotCompilable(Exception):
     """This slice of the backend doesn't cover the construct."""
 
@@ -307,6 +312,11 @@ class Backend:
         # compiled, and those a recursive call assumed before it was.
         self.results: dict[int, tuple] = {}
         self.assumed: dict[int, tuple] = {}
+        # Result valtypes learned from a specialization that called itself
+        # before they were known, keyed like `fn_index`; they survive the
+        # restart that learning one forces (see `build`).
+        self.learned: dict[tuple, tuple] = {}
+        self.cache_of: dict[int, tuple] = {}
         self.unit_codes: dict[int, int] = {}
         self.lib = {}
         for module in program.modules.values():
@@ -554,6 +564,7 @@ class Backend:
             return self.fn_index[cache]
         index = self.first_fn() + len(self.fn_index)
         self.fn_index[cache] = index
+        self.cache_of[index] = cache
         fn = self.lower.fns[id(symbol)]
         compiler = FnCompiler(self, fn, self.val_slots(symbol, env), env, params)
         body = compiler.run()  # may recursively compile callees
@@ -561,10 +572,13 @@ class Backend:
         self.results[index] = results
         assumed = self.assumed.get(index)
         if assumed is not None and assumed != results:
-            raise NotCompilable(
-                f"`{symbol.name}` returns {len(results)} scalar(s) that are not "
-                "all i32, and calls itself before the bootstrap knows that"
-            )
+            if self.learned.get(cache) == results:
+                raise NotCompilable(
+                    f"`{symbol.name}` returns {len(results)} scalar(s) whose "
+                    "valtypes depend on its own recursive calls"
+                )
+            self.learned[cache] = results
+            raise Relearn()
         self.compiled[index] = (tuple(compiler.param_types), results, body)
         return index
 
@@ -574,21 +588,33 @@ class Backend:
         it is being compiled — which `compile_fn` then checks."""
         if index in self.results:
             return self.results[index]
-        return self.assumed.setdefault(index, (I32,) * ret_slots)
+        default = self.learned.get(self.cache_of[index], (I32,) * ret_slots)
+        return self.assumed.setdefault(index, default)
+
+    def reset(self):
+        self.fn_index.clear()
+        self.cache_of.clear()
+        self.compiled.clear()
+        self.results.clear()
+        self.assumed.clear()
+        self.unit_codes.clear()
 
     def build(self, main: Symbol) -> bytes:
         # Two passes. The first discovers which WASI functions the program
         # calls, and that count is what fixes every function index; the
         # second compiles against the final numbering. Compilation is
         # deterministic, so the second pass discovers nothing new — which
-        # the assertion below states rather than assumes.
-        self.compile_fn(main)
+        # the assertion below states rather than assumes. A recursive
+        # specialization whose results were assumed wrongly restarts the
+        # first pass, which then assumes what it learned.
+        while True:
+            try:
+                self.compile_fn(main)
+                break
+            except Relearn:
+                self.reset()
         discovered = len(self.imports)
-        self.fn_index.clear()
-        self.compiled.clear()
-        self.results.clear()
-        self.assumed.clear()
-        self.unit_codes.clear()
+        self.reset()
         main_index = self.compile_fn(main)
         assert len(self.imports) == discovered, "the import set must be stable"
         ordered = [self.compiled[i] for i in sorted(self.compiled)]
@@ -1258,9 +1284,10 @@ class FnCompiler:
             # rebound in between.
             sub: dict = {}
             translate: dict = {}
+            used = self.b.used.get(id(node.fn), ())
             for callee_key, caller_key in node.needs_map:
                 translate[callee_key] = caller_key
-                if caller_key in self.env:
+                if caller_key in self.env and callee_key in used:
                     sub[callee_key] = self.env[caller_key]
             for slot in self.b.val_slots(node.fn, sub):
                 self.provisions[captured(node.key, slot)] = self.provide(
@@ -1552,9 +1579,10 @@ class FnCompiler:
             self.check_widths(self.b.lower.fns[id(target)], layouts, node)
             callee_env = {}
             translate = {}
+            used = self.b.used.get(id(target), ())
             for callee_key, caller_key in node.needs_map:
                 translate[callee_key] = caller_key
-                if caller_key in self.env:
+                if caller_key in self.env and callee_key in used:
                     callee_env[callee_key] = self.env[caller_key]
             # The callee's parameters are its own val needs followed by
             # whatever its bound providers captured, both named on its side.
