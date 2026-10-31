@@ -2997,6 +2997,279 @@ lambdas, as a separate change. Standing tests:
 a concrete and a generic call site, with the provision rebound in a nested
 scope: `91122` in both compilers).
 
+**[D78] DECIDED by the designer and implemented (abstract functors).** Everywhere else in Moss a declaration
+without a body is a requirement: `type T;` is an abstract type, `fn f(x:
+Int): Int;` an abstract fn, and a context provides them. Functors ([D29],
+[D55]) have always had bodies. [D75] needed the platform to provide
+`.boxed` and `.deref` at *every* instantiation of `Boxed`, and first did it
+with a bodiless functor allowed only in `lib/wasm.moss` — the one piece of
+syntax restricted to the standard library. This entry makes that form what
+the rest of the language says it should be: an **abstract functor**, a
+requirement like any other.
+
+*Decided.*
+
+- `functor F: Inputs -> Outputs;` declares an abstract functor: its
+  signature, no body.
+- It is a context item. Code may assume it (`assume F`, or list it in a
+  `context`), and a scope may provide it by binding a functor with a body
+  whose signature matches exactly, as a fn bind's must ([D27]): `bind F =
+  G;`.
+- `bind F;` applies whichever functor `F` is bound to at that point — its
+  binds, run there, as `bind G;` would run them ([D55]). Functors are
+  static, so this is a static choice like a fn bind: specialized, with no
+  run-time cost.
+- The platform provides the abstract functors `lib/wasm.moss` declares, as
+  it provides that file's abstract fns ([D52]). `Heap` ([D75]) is the first:
+  `functor Heap: Wasm, Boxed -> Boxed.boxed, Ref.deref;`, and nothing about
+  it is special syntax.
+
+*What it is for.* Separating **where** a mode applies, which the code that
+applies it decides, from **what** the mode is, which whoever binds the
+functor decides — today a library can only apply functors it knows by
+name.
+
+- The thesis's interpreter: a `Traced` node does `bind Loud;`, so how to
+  trace is fixed in the interpreter. With `assume Trace` and `bind Trace;`
+  there, the interpreter says "trace this subtree" and `main` says what
+  tracing is — print, count, collect, nothing.
+- A numeric kernel marks its inner loop `bind Fast;`; the caller decides
+  whether fast means f32, or duals for differentiating that loop ([D72]).
+- Allocation strategy for a whole program in one bind: libraries that box
+  values apply an abstract allocator functor per type they need, and `main`
+  binds it to the GC heap ([D75]) or to an arena.
+- Programs choosing which parts of the language they allow: a library that
+  needs `Heap` says so, and a program that does not provide it cannot run
+  that library.
+
+*The real cost: a polymorphic provider.* An applied functor's outputs are
+made at its inputs as they are at the application — `bind Heap;` after
+`bind Boxed = Expr` provides at `Expr`, after `bind Boxed = Stmt` at
+`Stmt`. So a functor bound to `F` serves *every* instantiation of `F`'s
+inputs, where a provision serves only the one it was made at ([D62]). For a
+functor with a body that is just elaboration: its binds are written in
+Moss, run per application. For an abstract functor it is not: generic code
+that assumes `F` applies it at instantiations its caller never sees, so the
+binding of `F` has to be a provider polymorphic over `F`'s inputs. The
+calculus has no such thing — and it is exactly what the stdlib-only `Heap`
+was quietly assuming. Its soundness argument should follow the existing
+one (a polymorphic provider is a family of ordinary provisions, indexed by
+the inputs, each checked as a provision is), but it is an extension of the
+calculus, to be mechanized, not sugar.
+
+*Swapping the GC heap.* `Ref[Boxed]`'s payload is the platform's abstract
+`StructRef`, so a scope can rebind it (`bind StructRef = I32;`) and provide
+`.boxed`/`.deref` over an arena: GC is not baked into `Ref`'s type. Two gaps
+remain, neither in the language: the self-hosted back end decides "is a
+reference" by the symbol `StructRef` rather than by its binding, and a
+generic arena needs to store any value's scalar run in linear memory, which
+today takes a hand-written `Layout` per type ([D69]) — a platform-provided
+abstract functor (`Packing: Wasm, Item -> Layout`) would close it.
+
+*Settled with the designer.*
+
+- `bind F = G;`: `G` may require *fewer* inputs than `F` declares — every
+  application of `F` has all of `F`'s inputs in context, so `G`'s are met —
+  and must provide *exactly* `F`'s outputs: fewer would leave a promised
+  provision missing, more would bind what the caller did not ask for.
+  Nothing is inferred, only checked ([D27]).
+- An abstract functor may produce vals, as any functor may ([D55]): a val
+  output is a bind evaluated at the application, which runs there anyway.
+- `bind F;` with nothing bound to `F` is the ordinary error for a
+  requirement that is not available ([D20]).
+
+*Implemented (October 2026), and what the implementation changed.*
+
+- *What landed.* `functor F: Inputs -> Outputs;` anywhere is an abstract
+  functor: a context item, assumed (`assume F`, or listed in a `context`)
+  and provided by `bind F = G;`, where `G` is a functor with a body or
+  another abstract functor in context. `bind F;` applies whatever `F` is
+  bound to there, with its result made at `F`'s inputs as they are at the
+  application. D75's restriction is gone from both compilers — the
+  bootstrap's "functor `F` has no body; only the platform provides a
+  functor" and the self-hosted `e_platform` (`!W`) — and `Heap` is an
+  ordinary abstract functor that the platform provides.
+- *`Heap` is listed in `Wasm`.* The platform provides lib/wasm.moss's
+  abstract functors as it provides its abstract fns, and those reach code
+  through `context Wasm`; so `Heap` is now an item of that context. Code
+  that assumes `Wasm` (every GC test, and `main`) has it with nothing
+  else changed, and `assume Heap` alone also works. The alternative —
+  `Heap` outside `Wasm`, assumed by name — would make a library that
+  boxes say so separately, which [D78]'s "a library that needs `Heap`
+  says so" might have meant; it is one line of lib/wasm.moss either way.
+- *A binding is static and captures nothing.* `bind F = G;` records
+  which functor `F` is: in the bootstrap an `ir.BindFunctor` (the
+  interpreter's context entry, and the back end's specialization
+  environment, hold `G`'s symbol); in the self-hosted compiler an
+  environment row for `F` whose provider is `G`, with no captured
+  environment. `bind F = H;` with `H` abstract copies what `H` is bound
+  to at the bind (the platform's own, for one lib/wasm.moss declares and
+  nothing has bound). Abstract functors are needs like fns — passed down
+  to callees, keyed in the specialization cache — but at no
+  instantiation: coherence ([D62], [D71]) has nothing to compare, since
+  a binding serves every instantiation of the inputs.
+- *The polymorphic provider is elaboration per application, in both.*
+  - The self-hosted compiler already elaborates per specialization: `bind
+    F;` looks up `F`'s row in the specialization's environment and runs
+    that functor's binds there (or the platform's primitive provisions),
+    at the inputs in force. A function generic over `F` gets one
+    specialization per binding it is reached with.
+  - The bootstrap lowers each function once, generically, so where `F`
+    is assumed it cannot know what `F` is. It finds, by a scan of the
+    program, every functor that can be bound to `F` (through `bind F =
+    G;`, transitively through other abstract functors, plus the platform
+    for its own), and lowers each one's binds at the application, in the
+    function's own terms, as one branch of an `ir.ApplyFunctor`. The
+    interpreter runs the branch for `F`'s binding in its frame's
+    context; the back end compiles only that branch, in the
+    specialization (whose type arguments it already tracks). Every
+    candidate is therefore type-checked at every application of `F`,
+    used there or not — harmless when, as below, each is checked against
+    its own inputs.
+  - Tests cover a binding made where the inputs mean nothing (`Boxed`
+    unbound in `main`) and applied inside a generic library at two
+    instantiations (`Expr`, `Stmt`), a binding copied from an assumed
+    abstract functor, and an abstract functor in another functor's
+    result.
+- *Only `F`'s result survives an application.* "Its binds, run there, as
+  `bind G;` would run them" and "more would bind what the caller did not
+  ask for" disagree when `G`'s body binds more than its result — a type,
+  or an inner `bind Heap;`, as the test's `Counted` does. The
+  implementation runs `G`'s binds in a scope of their own and keeps only
+  the items of `F`'s result (in the bootstrap, `ApplyFunctor.outs`; in
+  the self-hosted compiler the result's rows are pushed again over the
+  environment from before the application, with the values their
+  providers captured). So `bind F;` provides exactly `F`'s result,
+  whatever `G` is, which is what lets code after it be checked once.
+- *Signatures are compared as leaf items.* `G`'s inputs ⊆ `F`'s and
+  `G`'s result = `F`'s are checked on the items the signatures stand for
+  — contexts flattened, units, tags, aliases and defined fns and vals
+  left out (as [D55]'s totality check does), a method by its receiver
+  symbol and name. Brackets on a method item (`Expr.boxed[Boxed=Expr]`)
+  are not compared. The bootstrap names the first items out of place
+  ("`Half` cannot be bound to `Trace`: it does not provide `flush`,
+  which `Trace` promises (D78)"; "... it also provides ..."; "... it
+  needs `counter`, which `Trace` does not take ..."); the self-hosted
+  compiler reports a new code, `e_functor_sig` (`!X`), named by the item.
+- *A bound functor relies only on its own inputs, in both compilers.*
+  For "every application of `F` has all of `F`'s inputs, so `G`'s are
+  met" to hold, `G`'s binds must need nothing but `G`'s inputs. The
+  bootstrap checks each `G` bound to an abstract functor once, at the
+  bind, by type-checking its binds in an environment made of its own
+  argument signature (so `Doubled: Std, seed -> T.show` is refused: its
+  bind of `T.show` needs `T`). The self-hosted compiler has no generic
+  type checker — it checks code as it specializes it — so it cannot
+  check at the bind, where `G`'s inputs may mean nothing yet (`Boxed` is
+  unbound where `main` binds `Alloc`). Instead, at each application it
+  runs `G`'s binds in the environment a function assuming exactly `G`'s
+  argument signature would be specialized in: the application's rows for
+  `G`'s inputs only (taken as `callee_env` takes a callee's), and only
+  `G`'s input vals visible on the provision stack, provided again above
+  a floor (`pv_floor`) with what their providers captured. Anything else
+  `G` uses is missing there and reported as anywhere else (`?Q ... run
+  counter` for `functor_body`). The two compilers therefore reject the
+  same programs, with one difference of timing that is the self-hosted
+  compiler's everywhere: a bad `G` bound but never applied is reported
+  by the bootstrap and not by the self-hosted compiler, as an uncalled
+  generic function's errors are.
+- *`bind F;` with nothing bound* is "`F` is not available in the context
+  here: nothing binds it, and nothing here assumes it (D78)" in the
+  bootstrap and `?Q ... F` (`c_unbound`) in the self-hosted compiler, the
+  codes `bind Heap;` without `Boxed` already used. Applying `F` also
+  checks `F`'s argument signature in context, as D75's `Heap` did (now
+  including abstract functors among the inputs).
+- *Deviation: an abstract functor's result holds no type.* Both compilers
+  refuse one where it is declared (bootstrap: "abstract functor `F`
+  produces the type `T`; an abstract functor's result may hold vals,
+  fns, methods and abstract functors, but not types (D78)"; self-hosted:
+  `!W`, the code `e_platform` had, now `e_functor_type`, named by the
+  type). A binding serves every instantiation of the inputs and the code
+  after `bind F;` is checked once, so a type in the result would be a
+  different type behind each binding — an existential, which neither the
+  front ends nor the calculus have. Two of this entry's own motivating
+  cases need exactly that, so the designer has asked for type outputs, as
+  a follow-up: the code after `bind F;` checked against a fresh
+  generation of each type in the result ([D72]), as code under an
+  `assume` is, with no value of such a type escaping its block. `bind Fast;` choosing f32 or
+  duals is a type output (`Float`). And allocation strategy across
+  representations is one too: see the next point.
+- *The allocator test boxes through the GC heap in both blocks.* The
+  library applies an abstract `Alloc: Std, Wasm, Boxed, allocs ->
+  Boxed.boxed, Ref.deref` at `Expr` and at `Stmt`; `main` binds it to the
+  platform's `Heap` in one block and to `Counted`, a hand-written
+  allocator (it applies `Heap` and counts each box), in the other. A pool
+  of indices cannot be bound to the same abstract functor as `Heap`:
+  whatever is bound must provide the same items at every instantiation of
+  the inputs, so the handle type is fixed by `Alloc`'s signature — and a
+  pool cannot make a `Ref[Boxed=X]` (both back ends decide "is a
+  reference" by the `Ref` symbol, and a pool has no `StructRef` to put
+  in one), while the GC heap cannot make an index. A representation-
+  agnostic interface needs either a handle type in the result (the
+  deviation above) or one fixed by the binder together with the binding,
+  which would tie the binding to that instantiation and is not D78's
+  polymorphic provider. So "bound to GC in one block and to a pool in
+  another" is implemented with a hand-written allocator that shares the
+  GC representation, until type outputs (above) let a pool be bound
+  too.
+
+*Implementation.* lib/wasm.moss (`Heap` in `Wasm`, its comment); the
+bootstrap: collect.py (restriction removed), lower.py (abstract functors
+in environments and needs, `bind F = G;` and its signature and body
+checks, `bind F;` lowered as branches, the declaration check), ir.py
+(`BindFunctor`, `ApplyFunctor`), interp.py (the platform's bindings,
+both statements), build.py (both statements, the specialization key,
+reachability); the self-hosted compiler: prog.moss (restriction removed,
+`e_functor_type`, `e_functor_sig`), lower.moss (abstract functors as
+assumable rows with no coherence symbols, the declaration check),
+codegen.moss (`bind F = G;`, `bind F;` through the binding with its
+result kept and its binds restricted to its own inputs, reachability
+through functor bindings). Tests, in
+`tests/wasi/`: the interpreter with `Trace` bound to two tracers, applied
+inside a generic function (`functor_trace`); a library applying an
+abstract allocator for two types, bound to `Heap` and to a hand-written
+one, each with fewer inputs than the allocator takes (`functor_alloc`);
+an abstract functor producing a val, evaluated at each application, one
+binding with fewer inputs (`functor_val`); `gc_bodiless`, repurposed: a
+bodiless functor outside lib/wasm.moss, bound to `Heap` and applied in a
+generic function; and rejected in both compilers, a bound functor
+needing more inputs (`functor_inputs`), one whose binds use more than
+its inputs though every application has it (`functor_body`), missing an output
+(`functor_missing`), providing an extra one (`functor_extra`), `bind F;`
+with nothing bound (`functor_unbound`), and a type in an abstract
+functor's result (`functor_type`).
+
+*Not done: the calculus.* `docs/design/core/` has no functors at all —
+they are elaborated away as runs of binds ([D55]), and the calculus is
+over elaborated terms (deviation 5). Abstract functors cannot be
+elaborated away in a function generic over one, so the mechanization
+needs:
+
+- an item `IFun φ` (an abstract functor in a telescope), with its
+  argument and result telescopes in the global signature, and
+  well-formedness requiring the result to hold no `ITy`;
+- `EBindFun φ g e` (binding, `g` a functor or an `IFun` in Φ, checked:
+  args(g) ⊆ args(φ), res(g) = res(φ)) and `EApply φ e` (application:
+  `IFun φ ∈ Φ`, args(φ)θ available under the current substitution θ,
+  and `e` typed under Φ extended with res(φ)θ, keyed and with apps at θ —
+  `IMth (τθ) m θ` for a method item);
+- a runtime entry `DFun g` (a functor, no captured context), and for the
+  dynamics a functor body as a family of provisions indexed by θ: `EApply
+  φ e` looks up `DFun g` and evaluates g's binds instantiated at θ, then
+  `e` under the context restricted back to res(φ)θ;
+- the key lemma, the "polymorphic provider" of [D78]: if g's binds are
+  well-typed under args(g) as a telescope of fresh symbols and provide
+  res(g), then for every Φ and θ with args(φ)θ available in Φ, the binds
+  instantiated at θ are well-typed under Φ and provide exactly res(φ)θ,
+  each provision made at θ (so coherence holds of what they provide).
+  This is a substitution lemma for telescopes of binds, plus
+  weakening (args(g) ⊆ args(φ)); with it, soundness of `EApply` reduces
+  to that of the existing `EBind*` rules, as the draft predicted (a
+  family of ordinary provisions, each checked as a provision is);
+- the premise of that lemma — g's binds typed against args(g) alone — is
+  the check both compilers now make (the bootstrap at the bind, the
+  self-hosted compiler at each application), so the calculus should
+  state it as `EBindFun`'s premise.
+
 **[D79] DECIDED by the designer and implemented (multiple memories).** WebAssembly modules may have more than
 one linear memory (multi-memory, part of Wasm 3.0, shipped in Chrome,
 Firefox, Node and Wasmtime; not yet Safari), but source languages barely
@@ -3204,7 +3477,10 @@ type's own operations and as interfaces, D75 garbage-collected references
 as one allocator among others — `Ref[Boxed]` over the platform's
 `StructRef`, boxing provided by the platform's `Heap` functor, recursive
 types through a reference as in Rust, and detached methods at union and
-record receivers — D79 multiple memories, `Memory` a contextual type that
+record receivers —D78 abstract functors, `functor F: A -> B;` a
+context item bound to a functor with a body and applied with `bind F;`,
+a polymorphic provider whose binding serves every instantiation of its
+inputs — D79 multiple memories, `Memory` a contextual type that
 memory instructions run in and handles list, with WASI's functions
 provided at the main memory alone)
 
