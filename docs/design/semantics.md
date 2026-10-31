@@ -140,6 +140,9 @@ the current reality. Consequences:
   (hello.md:73) is stale within its own document and needs a literal-free
   replacement.
 
+Numeric literals have since arrived, as arithmetic over library symbols
+rather than constants ([D68]); character and string literals have not.
+
 **[D5] DECIDED (strings only in import position).** The _string_ token
 survives in the lexer solely because `import` paths need it
 (`import "./lex.moss" as lexer;`). Strings are not expressions; an import path
@@ -158,7 +161,7 @@ listed in syntax.md: `! % & ( ) * + , - . / : ; < = > [ ] ^ { | }` and
 `!= :: => << <= == >= >>` (`=>` is new relative to `src/token.moss` — the
 old grammar had no `match`, so arms never needed an arrow). With operators
 out of the MVP ([D33]), the operator tokens are lexed but reserved — no
-grammar production uses them yet.
+grammar production uses them yet. ([D68] gave them their productions.)
 
 ## 3. Modules, imports, and scope
 
@@ -768,6 +771,7 @@ Rust-lang-item style, not name-driven lookup of any method that happens to
 be called `add`; availability rides the ordinary context rails for exactly
 those `ops` symbols, and the desugaring is therefore not strictly syntactic
 sugar. It may prove cheap enough to pull into the MVP once §9 settles.
+(It was: [D68], against `num.moss`'s methods per [D47].)
 
 **[D47] DECIDED (operators are methods; `lib/ops.moss` is superseded).**
 The designer confirmed the finding below and withdrew the earlier
@@ -1669,7 +1673,155 @@ own `Std` provides `Float` natively as an f64, so a program over `Std`
 that never applies `WasiStd` has floats too, interpreted and compiled.
 No float literals and no float formatting: a program prints a float by
 scaling and rounding it to an `Int`. Standing test: `tests/wasi/newton.moss`, run
-by the interpreter and both compilers.
+by the interpreter and both compilers. (Literals arrived with [D68].)
+
+**[D68] DECIDED by the designer (operators and numeric literals).** [D33] reserved the operator
+tokens and settled their direction; [D47] fixed the target: an operator is a
+call of one specific detached method of `lib/num.moss`, keyed by the receiver
+type like any method, so `a + b` at `Int` and `c + d` at `Char` coexist in one
+scope. This entry pins down the rest.
+
+Operators and their symbols (all methods of `lib/num.moss` unless noted):
+
+| Syntax   | Means        | | Syntax   | Means       |
+| -------- | ------------ |-| -------- | ----------- |
+| `-a`     | `a.neg()`    | | `a == b` | `a.eq(b)`   |
+| `!a`     | `a.not()`    | | `a != b` | `a.ne(b)`   |
+| `a * b`  | `a.mul(b)`   | | `a < b`  | `a.lt(b)`   |
+| `a / b`  | `a.div(b)`   | | `a > b`  | `a.gt(b)`   |
+| `a % b`  | `a.rem(b)`   | | `a <= b` | `a.le(b)`   |
+| `a + b`  | `a.add(b)`   | | `a >= b` | `a.ge(b)`   |
+| `a - b`  | `a.sub(b)`   | | `a & b`  | `a.and(b)`  |
+| `a << b` | `a.shl(b)`   | | `a ^ b`  | `a.xor(b)`  |
+| `a >> b` | `a.shr(b)`   | | `a \| b` | `a.or(b)`   |
+
+`.not` joins `lib/num.moss`; `Bool` (nominal over its union, [D45]) is
+provided `.not`, `.and`, `.or`, `.xor` by `Std`, as `Int` is provided
+`.and` etc. There are no `&&`/`||`: `&` and `|` on `Bool` are ordinary
+methods, so both operands are always evaluated. Short-circuiting is an `if`.
+
+Precedence is a partial order, not a ladder: where people group operators
+differently by habit, the operators are simply not ordered, and mixing them
+without parentheses is a syntax error (as in Carbon). Precedence exists only
+where everyone agrees:
+
+- Unary `-` and `!` bind tightest (method calls and field access already
+  bind tighter still). One exception: `-` directly before a numeric literal
+  that has a method call is an error, since `-1.abs()` would mean
+  `-(1.abs())`; write `(-1).abs()` or `-(1.abs())`.
+- Multiplicative: `*` chains freely (`a * b * c`). `/` and `%` are like a
+  fraction bar: the left operand may be a product, the right must be a
+  single unary operand, and neither associates. So `a * b * c / d` and
+  `a * b % c` are fine; `a * b / c * d`, `a / b * c`, `a / b / c`,
+  `a / b % c` and `a % b * c` are errors.
+- Additive: `+` and `-` are ordinary and left-associative (`a - b + c`,
+  `a - b - c`), and bind looser than multiplicative.
+- Comparison: `==` `!=` `<` `>` `<=` `>=` bind looser than additive and do
+  not associate (`a < b < c` is an error).
+- Shifts `<<` `>>` take unary operands only: they are unordered with the
+  arithmetic operators (`1 << n + 1` is an error; C, Rust and Java all read
+  it as `1 << (n + 1)`, which surprises people who read a shift as a
+  multiplication) and do not associate (`a << b << c`, `a << b >> c` are
+  errors). A shift may be an operand of a comparison (`x << 1 == y`), where
+  every language agrees.
+- Bitwise/logical `&`, `^`, `|`: each chains with itself (`a & b & c`), but
+  they are unordered with one another (`a & b | c` is an error) and with
+  everything except unary operators, comparison included: `a < b & c < d`
+  and `x & mask == 0` are both errors; write `(a < b) & (c < d)` or
+  `(x & mask) == 0`. C and Rust disagree on exactly this pair, and without
+  `&&` the C reading would be the natural one for booleans and the Rust one
+  for masks, so neither is given.
+
+Numeric literals. A literal is not a primitive constant but nothing more
+than arithmetic over fixed symbols, resolved through the context like
+everything else, so it means whatever the arithmetic bound there means:
+
+- An integer literal `123` is `Int`, and means the fold of its digits over
+  `zero`, `one`, `.add` and `.mul` (`ten` built from `one`). Monomorphization
+  then sees only `I32`/`I64` instructions on constants, which the optimizer
+  folds. An oversized literal does what the bound arithmetic does with an
+  oversized result: under a wrapping `Int` it wraps; under a checked one it
+  traps at run time, when the literal is evaluated, exactly as `n * k`
+  would. Overflow semantics is a context choice — `bind int32_unchecked;`
+  or `bind int64_checked;` in the designer's notes — and literals are no
+  exception; moving a run-time error to compile time for literals alone
+  would be against the language's grain. `WasiStd`'s `Int` wraps: its
+  `.add` and `.mul` are `i32.add` and `i32.mul`.
+- A decimal literal `d.ddd` is `Float`, and means `float(m).div(float(10^k))`
+  for its digits `m` and `k` fractional digits, with `m` and `10^k` formed
+  in `Float` itself — `m` by Horner's rule over `float` of each digit with
+  `.mul` and `.add`, `10^k` as a product of `float(ten)`s — rather than as
+  `Int`s handed to `float`, since `Int` may be too narrow to hold them (an
+  i32 holds neither `10^10` nor most 16-digit `m`). While `m` and `10^k`
+  are exact in the bound format the division is the only rounding, and
+  because IEEE division rounds correctly the literal is the nearest float:
+  in practice up to about 15 significant digits with small exponents at
+  f64, about 7 at f32 (exactly: `m < 2^53` and `k <= 22` at f64, `m < 2^24`
+  and `k <= 10` at f32). A longer literal rounds on the way and may be an
+  ulp off the nearest float — at f32, `0.333333333333333333333` is not
+  `1.0 / 3.0` — and that is simply what the bound float arithmetic
+  computes. No literal is checked at compile time. Literals guaranteed to
+  be the nearest float could later be one more contextual symbol.
+- No suffixes, exponents, hex, or underscores yet.
+- Lexing: a digit run followed by `.` and a digit is a decimal literal; a
+  digit run followed by `.` and anything else is an integer literal followed
+  by `.` (so `1.add(2)` calls a method on `1`). A digit run running straight
+  into a letter or `_` is a syntax error.
+
+A literal is typed `Int` or `Float`, never inferred from the expected type:
+`zero`/`one` are vals, which cannot be keyed by a receiver type the way
+methods are. Other types convert explicitly.
+
+The VS Code grammar gains a `constant.numeric` rule and relabels the
+operator tokens from reserved to arithmetic/comparison/logical scopes.
+
+*Implementation.* Both compilers and the interpreter, and the whole of
+it: the lexers produce _integer_ and _decimal_ tokens; the parsers climb
+the partial order with an error for each unordered pair (the bootstrap
+names the two operators, `` `&` and `|` are not ordered; add parentheses
+``; the self-hosted parser counts it as a syntax error, as it does every
+other); and the desugaring is to the symbols themselves, never to a name.
+Which symbols those are is settled once, by the file that declares them
+— `lib/num.moss`'s detached `.add` … `.ge`, `.neg`, `.not`;
+`lib/int.moss`'s `zero` and `one`; `lib/float.moss`'s `float` — exactly
+as `Bool`'s units are found ([D45]; `Lower.lang` in the bootstrap,
+`cg_lang` in `src/codegen.moss`). Each is then provided through the
+context where the operator or literal is written, so a function that
+uses a literal needs `zero`, `one`, `Int.add` and `Int.mul` in its
+context (`assume Std` has them), a decimal one `float`, `Float.mul`,
+`Float.add` and `Float.div` as well, and an operator at a type nobody
+provides it at is the method call's error: `` no method `.add` is
+available for `Char` in the context here ``. A literal's `zero` and `one`
+are vals, so in a function over `Std` they arrive as parameters like any
+other val ([D59]).
+
+`Bool`'s four are attached methods of `lib/bool.moss` — `Bool.flip`,
+`Bool.both`, `Bool.either`, `Bool.differs` — which `Std` lists as
+`Bool.not`, `Bool.and`, `Bool.or`, `Bool.xor` and `WasiStd` binds; the
+bootstrap's native `Std` has them natively, and its back end compiles
+them to `i32.and`/`i32.or`/`i32.xor`, since a `Bool` is 0 or 1.
+
+Folding, measured on small programs over `WasiStd` with `wasm-opt -O3`:
+`n * 1000003` and `float(n) * 2.71828` compile, in both compilers, to
+`i32.const 1000003`, `f64.const 2.71828` and — in the `WasiFloats32`
+block — `f32.const 2.71828`; over the bootstrap's native `Std` too. A
+literal alone in a function called from two specializations, `fn
+answer(): Int { 1234567 }`, kept its `one` as a parameter and its
+additions under one `-O3`, and folded to `i32.const 1234567` under
+`-O3 --converge`: the constants are only constants once `wasi_one()` has
+been inlined into the caller.
+
+Standing tests: `tests/wasi/ops.moss` and `tests/wasi/literals.moss`
+(the latter at f64 and, in a nested `{ bind WasiFloats32; … }`, at f32,
+long literals included), run by the interpreter and both compilers to the
+same output; `tests/wasi/overflow.moss`, where `4294967297` is 1 under
+`WasiStd`'s wrapping `Int` and, in a bare block binding a test-local
+`Int` whose `.add` and `.mul` trap on overflow, traps — all three
+implementations; `tests/wasi/numbers.moss` and `tests/wasi/shadow.moss`
+now use both; the precedence table and every refusal are parser tests,
+held to the self-hosted parser snippet by snippet; and
+`bootstrap/tests/test_grammar.py` keeps the VS Code grammar in step with
+the lexer.
 
 ## 13. Decision index
 
@@ -1689,7 +1841,7 @@ for `Bool` by [D45]'s nominal wrapper) · D29 the `val` half of functors ·
 Everything else is **DECIDED**: D1–D28 · D30–D49 (D3/D4 by designer fiat,
 D13 option.moss → alias, D16 no post-monomorphization checks, D22 total or
 absent, D24 dropped, D30 depth backstop as sole D16 exception, D31/D35 no
-`for`, D33 no operators with ops.moss as the future desugaring target, D36
+`for`, D33 no operators in the MVP (since landed as D68), D36
 methods via Q1–Q7, D41 keep `unit`, D43 consistent merging, D44 import
 collisions + `::` tighter than `.`, D45 concrete `Bool`, D46 aliases
 export, D47 operators are methods, D49 no automatic TCE — loops are the
@@ -1701,7 +1853,10 @@ records are the only product type, D64 bare import paths name library
 files, D65 bare block expressions, D66 binding a fn to a contextual fn
 captures it at the bind, D67 f32/f64 are scalars, with the float half of
 `Wasm`, and an abstract `Float` in `Std` provided at f64, with no
-literals or formatting)
+formatting, D68 operators as calls of `num.moss`'s methods under a
+partial-order precedence, with no `&&`/`||`, and numeric literals as
+nothing but arithmetic over `zero`, `one`, `.add`, `.mul`, `float` and
+`.div`, meaning whatever that bound arithmetic computes)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

@@ -1,8 +1,9 @@
 # Detached numeric/comparison methods. A context provides these per
 # receiver type (`Int.add`, `Char.eq`, ...), which is how one context can
 # offer the same operation at several types without the D43 merge
-# collapsing them into one — see D47 in docs/design/semantics.md. When
-# operators land (D33), they desugar to exactly these symbols.
+# collapsing them into one — see D47 in docs/design/semantics.md.
+# Operators desugar to exactly these symbols (D68): `a + b` is this
+# `.add`, wherever it is written and whatever `.add` is in scope there.
 
 import "./bool.moss" use Bool;
 

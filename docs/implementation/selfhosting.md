@@ -179,8 +179,8 @@ What is left, none of it on the path to self-hosting:
   already gone wrong twice.
 
   What is left after that is the constant factor of `Std` written in
-  Moss, and it is real: there are no literals ([D4]), so `four()` is a
-  function call, `eight()` is three of them, and `Ints.get` reaches an
+  Moss, and it is real: there are no `I32` literals ([D4]; [D68]'s are
+  `Int`s, built from `one`), so `four()` is a function call, `eight()` is three of them, and `Ints.get` reaches an
   element through `ints_addr`, `elem`, `raw` and two of those constants —
   half a dozen Wasm calls for one array read, on the hottest path a
   compiler of parallel arenas has. Inlining those by hand inside the
@@ -445,7 +445,7 @@ source meant reading 243 of those.
 - `prog.moss` reports a syntax error as a per-module flag; the position
   the parser recorded is not surfaced.
 - The two diagnostic code spaces are `prog.moss`'s `e_` constants (A–N)
-  and `codegen.moss`'s `c_` constants (O–T), which continue where the
+  and `codegen.moss`'s `c_` constants (O–U), which continue where the
   first stop *because they share one list* — the back end reports both
   kinds, and two codes that print as the same letter cannot be told
   apart. They could once. Adding an `e_` means shifting every `c_`.
@@ -455,5 +455,7 @@ source meant reading 243 of those.
   `prog`'s only before, and a module could be written while that table
   held errors nobody printed.
 - The back end recognizes `Wasm`, `Wasi`, `Bool` and `i32_bool` by the
-  file that declares them. So does the bootstrap's back end, which is
-  the precedent; it is still a spelling dependency.
+  file that declares them, and so the symbols operators and literals mean
+  ([D68]): `num.moss`'s methods, `int.moss`'s `zero` and `one`,
+  `float.moss`'s `float`. So does the bootstrap, which is the precedent;
+  it is still a spelling dependency.

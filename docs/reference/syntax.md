@@ -3,9 +3,10 @@
 A valid Moss source file can be parsed according to a grammar defined on an
 alphabet of tokens. This grammar describes the MVP language pinned down in
 the [semantics decision log](../design/semantics.md); constructs that were
-cut from the MVP (operator expressions, `for` loops, literal expressions,
+cut from the MVP (`for` loops, character and string literal expressions,
 declaration-site needs, bind-returning functions) are absent here even where
-earlier revisions of this document had them.
+earlier revisions of this document had them. Operator expressions and
+numeric literals came back with [D68].
 
 ## Tokens
 
@@ -81,15 +82,22 @@ token or class of tokens.
   or more letters, underscores, or numbers
 - _string_: delimited by double quotes, may include escape sequences `\"`,
   `\\`, `\n`, `\r`, `\t`
+- _integer_: one or more decimal digits (`0`, `123`, `007`)
+- _decimal_: one or more digits, `.`, one or more digits (`3.14`, `0.5`)
 
 Notes:
 
-- There are no literal tokens for integers or characters, and _string_ is
-  accepted by the grammar only as an `import` path. Longest-match applies to
-  symbols (`==` is one token, never two `=`).
-- Some tokens are lexed but reserved: the keyword `for` and the operator
-  symbols `!` `%` `&` `*` `+` `-` `/` `<` `>` `^` `!=` `<<` `<=` `==` `>=`
-  `>>` appear in no production below.
+- There are no literal tokens for characters, and _string_ is accepted by
+  the grammar only as an `import` path. Longest-match applies to symbols
+  (`==` is one token, never two `=`).
+- A digit run followed by `.` and a digit is a _decimal_; followed by `.`
+  and anything else it is an _integer_ and then `.`, so `1.add(2)` calls a
+  method on `1` and `2.5.abs()` one on `2.5`. A digit run may not run
+  straight into a letter or `_` (no suffixes, exponents, hex or
+  underscores yet: `1e5` and `2x` are errors), but a digit may continue a
+  _name_ (`x2`).
+- One token is lexed but reserved: the keyword `for` appears in no
+  production below.
 
 ## Grammar
 
@@ -176,14 +184,14 @@ left-hand symbol's kind.
 
 ### Expressions
 
-- **Expr** = **If** | **Match** | **Jump** | **Postfix**
+- **Expr** = **If** | **Match** | **Jump** | **Operators**
 - **If** = `if` **Expr** **Block** (`else` (**If** | **Block**))?
 - **Jump** = `return` **Expr**? | `break`
 - **Match** = `match` **Expr** `{` **Arm**\* `}`
 - **Arm** = **Pattern** `=>` (**Expr** `,` | **Block** `,`?)
 - **Postfix** = **Primary** **Suffix**\*
 - **Suffix** = `.` **Path** (`(` **List**\[**Expr**\] `)`)?
-- **Primary** = `(` **Expr** `)` | `(` `)` | `this` | **Block** | **Path** **App**? (**Args** | **RecordExpr**)?
+- **Primary** = `(` **Expr** `)` | `(` `)` | `this` | _integer_ | _decimal_ | **Block** | **Path** **App**? (**Args** | **RecordExpr**)?
 - **Args** = `(` **List**\[**Expr**\] `)`
 - **RecordExpr** = `{` **List**\[_name_ (`=` **Expr**)?\] `}`
 
@@ -207,6 +215,52 @@ Notes:
   error and `if ({ c }) { ... }` is not.
 - A bare **Block** at the start of an **Arm** body is the arm's block
   form, so the comma after it stays optional.
+
+### Operators
+
+Precedence is a partial order rather than a ladder ([D68]): where people
+group operators differently by habit, the operators are not ordered, and
+writing them together without parentheses is a syntax error. The grammar
+says which may meet.
+
+- **Operators** = **Comparison** | **Bitwise**
+- **Comparison** = **Operand** (**CmpOp** **Operand**)?
+- **CmpOp** = `==` | `!=` | `<` | `>` | `<=` | `>=`
+- **Operand** = **Unary** (`<<` | `>>`) **Unary** | **Additive**
+- **Additive** = **Term** ((`+` | `-`) **Term**)\*
+- **Term** = **Unary** (`*` **Unary**)\* ((`/` | `%`) **Unary**)?
+- **Bitwise** = **Unary** (`&` **Unary**)+ | **Unary** (`^` **Unary**)+ | **Unary** (`|` **Unary**)+
+- **Unary** = (`-` | `!`) **Unary** | **Postfix**
+
+What that comes to:
+
+| | groups | refused |
+|---|---|---|
+| unary | `-a * b` is `(-a) * b`; `-a.f()` is `-(a.f())` | `-1.abs()` (write `(-1).abs()` or `-(1.abs())`) |
+| `*` `/` `%` | `a * b * c / d`, `a * b % c` | `a / b * c`, `a / b / c`, `a / b % c`, `a % b * c` |
+| `+` `-` | `a - b + c` is `(a - b) + c`; `a + b * c` | |
+| comparison | `a + b == c * d` | `a < b < c`, `a == b == c` |
+| `<<` `>>` | `a << b`, `x << 1 == y` | `1 << n + 1`, `a * b >> c`, `a << b << c` |
+| `&` `^` `\|` | `a & b & c`, `(a < b) & (c < d)` | `a & b \| c`, `a < b & c < d`, `x & mask == 0` |
+
+Each operator is a call of one method of `lib/num.moss` on its left (or
+only) operand, keyed by that operand's type and provided by the context
+like any method ([D47], [D68]):
+
+| Syntax | Means | | Syntax | Means |
+|---|---|---|---|---|
+| `-a` | `a.neg()` | | `a == b` | `a.eq(b)` |
+| `!a` | `a.not()` | | `a != b` | `a.ne(b)` |
+| `a * b` | `a.mul(b)` | | `a < b` | `a.lt(b)` |
+| `a / b` | `a.div(b)` | | `a > b` | `a.gt(b)` |
+| `a % b` | `a.rem(b)` | | `a <= b` | `a.le(b)` |
+| `a + b` | `a.add(b)` | | `a >= b` | `a.ge(b)` |
+| `a - b` | `a.sub(b)` | | `a & b` | `a.and(b)` |
+| `a << b` | `a.shl(b)` | | `a ^ b` | `a.xor(b)` |
+| `a >> b` | `a.shr(b)` | | `a \| b` | `a.or(b)` |
+
+There is no `&&` or `||`: `&` and `|` on `Bool` are methods like any
+other, so both operands are always evaluated.
 
 ### Patterns
 

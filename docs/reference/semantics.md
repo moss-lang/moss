@@ -147,9 +147,46 @@ by matching the tag). `match` is exhaustive over the scrutinee's union;
 `match e {}` requires `e : |`. `return` and `break` are expressions of type
 `|`. Iteration is `while` and `loop`: tail calls are *not* eliminated as a
 matter of semantics, and recursion is not the loop idiom. There are no
-literal expressions of any kind; strings appear only as import paths, and
-values enter programs through the environment (`char::a`, `zero`,
+character or string literals; strings appear only as import paths, and
+other values enter programs through the environment (`char::a`,
 `first_arg()`, `Path.read`).
+
+## Operators and numeric literals
+
+An operator is a call of one specific detached method of `lib/num.moss`
+— `a + b` is `a.add(b)`, `-a` is `a.neg()`, `!a` is `a.not()` (the table
+is in [Syntax](syntax.md#operators)). Those exact symbols are what it
+means, not whatever `.add` happens to be in scope where it is written, and
+they are keyed by the left operand's type and provided by the context like
+any method: an operator on a type whose context provides no such method is
+the same error as calling the method. `Std` provides them at `Int`, at
+`Float` (arithmetic and comparison) and at `Char` (comparison), and
+`.not`, `.and`, `.or` and `.xor` at `Bool`. There is no `&&` or `||`:
+both operands of `&` and `|` are always evaluated, and short-circuiting is
+an `if`.
+
+A numeric literal is likewise not a constant but nothing more than
+arithmetic over fixed library symbols, resolved through the context, so it
+means whatever the arithmetic bound there means. Nothing about a literal
+is checked at compile time.
+
+- An integer literal is an `Int`: its digits folded over `lib/int.moss`'s
+  `zero` and `one` and `num.moss`'s `.add` and `.mul` at `Int` (each digit,
+  and ten, a sum of `one`s). An oversized one does what that arithmetic
+  does: under a wrapping `Int` (the standard one: `.add` and `.mul` are
+  `i32.add` and `i32.mul`) it wraps, and under a checked one it traps at
+  run time, when it is evaluated, as `n * k` would.
+- A decimal literal `d.ddd` is a `Float`: `float(m).div(float(10^k))` for
+  its digits `m` and its `k` fractional digits, with `lib/float.moss`'s
+  `float`, where `m` and `10^k` are built in `Float`'s own arithmetic.
+  While both are exact in the format `Float` is bound to (`m < 2^53`,
+  `k <= 22` at f64; `m < 2^24`, `k <= 10` at f32 — roughly 15 and 7
+  significant digits) the result is the nearest float; a longer literal
+  rounds on the way and may be an ulp off it.
+
+A literal is typed `Int` or `Float`, never inferred from the expected
+type; other types convert explicitly. With `zero` and `one` provided as
+constants, the expansion is constant-foldable, and an optimizer folds it.
 
 ## Execution
 
