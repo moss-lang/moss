@@ -572,6 +572,8 @@ assume Std {
     }
 
     # The row of the anonymous function `sym` is, or none.
+    fn is_lambda(sym: Int): Bool { ast::is_some(lambda_row(sym)) }
+
     fn lambda_row(sym: Int): Int {
       var i = zero;
       while i.lt(lm_sym.length()) {
@@ -774,7 +776,7 @@ assume Std {
           }
         } else {
           let e = lower::env_find(
-            env, lower::ek_fn(), need_key_recv(env, r), ns
+            env, lower::ek_fn(), need_key_recv(sym, env, r), ns
           );
           if ast::is_some(e) {
             if ast::is_some(lower::env_a_of(e)) {
@@ -1113,6 +1115,20 @@ assume Std {
             out = lower::env_push(
               out, lower::ek_type(), recv, sym, lower::env_a_of(here), ast::none()
             );
+            # An assumed type's parameter is what the callee was given
+            # for it, which a bind inside the callee leaves alone (D72):
+            # this frame's `sym` for a declared callee, and for an
+            # anonymous function, made in this frame, this frame's own
+            # parameter.
+            if lower::env_a_of(entry).eq(lower::as_assumed(sym)) {
+              var given = lower::env_a_of(here);
+              if is_lambda(callee) {
+                given = frame_read(cg_env.read(), lower::as_assumed(sym));
+              }
+              out = lower::env_push(
+                out, lower::ek_type(), recv, prog::param_of(sym), given, ast::none()
+              );
+            }
           }
         } else if kind.eq(lower::ek_fn()) {
           # Found under the caller's canonical key, stored under the one
@@ -1121,7 +1137,7 @@ assume Std {
           # whose signature mentions it.
           let here = lower::env_find(
             cg_env.read(), lower::ek_fn(),
-            need_key_recv(cg_env.read(), recv), sym
+            need_key_recv(callee, cg_env.read(), recv), sym
           );
           var keep = ast::is_some(here);
           if keep {
@@ -1134,7 +1150,7 @@ assume Std {
           }
           if keep {
             out = lower::env_push(
-              out, lower::ek_fn(), need_key_recv(out, recv), sym,
+              out, lower::ek_fn(), need_key_recv(callee, out, recv), sym,
               lower::env_a_of(here), lower::env_b_of(here)
             );
             map.push(out);
@@ -1166,13 +1182,23 @@ assume Std {
     # A method need's receiver as `env` knows it: the type it was required
     # at, substituted through the bindings there (D62).
     # A need's receiver is its declaration's, so its parameters are read
-    # as the generations in force in `env` (D72).
-    fn need_key_recv(env: Int, r: Int): Int {
-      if ast::is_some(r) {
-        lower::instantiate(env, r)
-      } else {
+    # as the generations in force in `env` (D72) — except an anonymous
+    # function's, which was made in a frame and is in that frame's terms.
+    fn need_key_recv(f: Int, env: Int, r: Int): Int {
+      if ast::is_some(r).not() {
         r
+      } else if is_lambda(f) {
+        frame_read(env, r)
+      } else {
+        lower::instantiate(env, r)
       }
+    }
+
+    # A type in the terms of a frame that made it: its parameters are what
+    # that frame was given, where `env` records it (`callee_env`), and
+    # otherwise read as any declaration's are.
+    fn frame_read(env: Int, t: Int): Int {
+      lower::instantiate(env, lower::canon(env, t))
     }
 
     # Which of `Wasm`'s `I64`, `F32` and `F64` an abstract type is, as a
@@ -3160,7 +3186,7 @@ assume Std {
       while i.lt(lower::needs_count(f)) {
         let r = lower::need_recv_at(f, i);
         let s = lower::need_sym_at(f, i);
-        let key = need_key_recv(genv, r);
+        let key = need_key_recv(f, genv, r);
         let row = lower::env_find(genv, lower::need_kind(s), key, s);
         if ast::is_some(row) {
           let want = lower::need_app_at(f, i);
@@ -3691,11 +3717,45 @@ assume Std {
         }
       }
       # Its context: everything in force here, as written, and the vals.
-      var lenv = genv;
+      # What this frame's declaration assumed is written in the
+      # declaration's terms, where a receiver `T` means whatever the
+      # frame is given for `T`; to a function made in the frame, that is
+      # the frame's parameter, which a bind of `T` before this one has
+      # not changed (D72). So those receivers are read through the
+      # declaration's environment, which says so.
+      let base = lower::env_of(cg_where.read());
+      let chain = int_list();
+      let inbase = int_list();
+      var flag = zero;
+      var e = genv;
+      while ast::is_some(e) {
+        if e.eq(base) {
+          flag = one;
+        }
+        chain.push(e);
+        inbase.push(flag);
+        e = lower::env_next_of(e);
+      }
+      var lenv = lower::env_empty();
+      var c = chain.length();
+      while c.gt(zero) {
+        c = c.sub(one);
+        let x = chain.get(c);
+        var r = lower::env_recv_of(x);
+        if inbase.get(c).eq(one) {
+          if ast::is_some(r) {
+            r = lower::canon(base, r);
+          }
+        }
+        lenv = lower::env_push(
+          lenv, lower::env_kind_of(x), r, lower::env_sym_of(x),
+          lower::env_a_of(x), lower::env_b_of(x)
+        );
+      }
       let recvs = int_list();
       let syms = int_list();
       let apps = int_list();
-      var e = genv;
+      e = lenv;
       while ast::is_some(e) {
         let kind = lower::env_kind_of(e);
         if kind.ne(lower::ek_type()) {
