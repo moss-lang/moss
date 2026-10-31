@@ -99,7 +99,7 @@ Not by looking at its output, but by holding it to the bootstrap's.
 The back end covers everything the compiler and the library are written
 in: `Wasm` instructions, `Wasi` imports, `Bool` for `if` to eliminate,
 plain functions, `let`/`var`, assignment, `if`/`else`, `while`,
-`loop`/`break`, `return`, `I32`/`I64`, the scalar half of the value
+`loop`/`break`, `return`, `I32`/`I64`/`F32`/`F64`, the scalar half of the value
 model — nominal tags, units, unions of units, and `match` over them —
 contextual vals with `bind`, methods, and the static context: type binds,
 fn binds, method binds and functor application, with one compiled
@@ -143,7 +143,11 @@ What is left, none of it on the path to self-hosting:
   wider type — `widened.moss`, `provisions.moss` — runs here and is
   refused by the bootstrap, which checks each call's widths against the
   callee's rather than compile against the wrong layout. Nothing in
-  `src/` needs it, so the bootstrap still compiles this compiler.
+  `src/` needs it, so the bootstrap still compiles this compiler. What
+  it does take per call is the parameters' *valtypes*, from the
+  arguments' layouts, since an abstract type one scalar wide may be an
+  i32 or an f64 ([D67](../design/semantics.md)); widths still have to
+  match.
 - **Diagnostics** are a code letter, the frame they came from, and a
   name — no line or column. The machinery for a real message is a string
   the compiler holds, which is [D48](../design/semantics.md).

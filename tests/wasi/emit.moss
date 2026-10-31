@@ -30,8 +30,7 @@ assume Std {
     bind emit::im_flen=int_list();
     bind emit::im_type=int_list();
     bind emit::fn_type=int_list();
-    bind emit::fn_l32=int_list();
-    bind emit::fn_l64=int_list();
+    bind emit::fn_locals=int_list();
     bind emit::fn_bstart=int_list();
     bind emit::fn_blen=int_list();
     bind emit::insns=int_list();
@@ -117,7 +116,7 @@ assume Std {
       op_call(body, fd_write);
       op_drop(body);
       op_end(body);
-      emit::set_body(start, zero, zero, body);
+      emit::set_body(start, emit::no_locals(), body);
 
       let out = int_list();
       emit::module(out);

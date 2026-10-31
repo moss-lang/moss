@@ -57,6 +57,8 @@ I32_EQZ = b"\x45"
 EMPTY = b"\x40"
 I32 = b"\x7f"
 I64 = b"\x7e"
+F32 = b"\x7d"
+F64 = b"\x7c"
 UNREACHABLE = b"\x00"
 I32_LOAD8 = b"\x2d"
 I32_STORE8 = b"\x3a"
@@ -166,8 +168,7 @@ def name(text: str) -> bytes:
 
 
 # `Wasm` intrinsics (lib/wasm.moss), each the instruction of the same name.
-# Loads and stores carry their natural alignment and a zero offset; the i64
-# half of the module is declared but not in this slice.
+# Loads and stores carry their natural alignment and a zero offset.
 def _memarg(align: int) -> bytes:
     return uleb(align) + uleb(0)
 
@@ -232,14 +233,53 @@ WASM_OPS["i64_store8"] = b"\x3c" + _memarg(0)
 WASM_OPS["i64_store16"] = b"\x3d" + _memarg(1)
 WASM_OPS["i64_store32"] = b"\x3e" + _memarg(2)
 
-# Which of them leave an i64 on the stack.
-I64_RESULTS = {
-    name
-    for name in WASM_OPS
-    if name.startswith("i64_")
-    and not name.startswith(("i64_eq", "i64_ne", "i64_lt", "i64_gt", "i64_le", "i64_ge"))
-    and not name.startswith("i64_store")
-}
+# The float half (D67), with the opcodes of the specification's tables.
+WASM_OPS["f32_load"] = b"\x2a" + _memarg(2)
+WASM_OPS["f64_load"] = b"\x2b" + _memarg(3)
+WASM_OPS["f32_store"] = b"\x38" + _memarg(2)
+WASM_OPS["f64_store"] = b"\x39" + _memarg(3)
+for _i, _name in enumerate("eq ne lt gt le ge".split()):
+    WASM_OPS[f"f32_{_name}"] = bytes([0x5B + _i])
+    WASM_OPS[f"f64_{_name}"] = bytes([0x61 + _i])
+for _i, _name in enumerate(
+    "abs neg ceil floor trunc nearest sqrt add sub mul div min max copysign".split()
+):
+    WASM_OPS[f"f32_{_name}"] = bytes([0x8B + _i])
+    WASM_OPS[f"f64_{_name}"] = bytes([0x99 + _i])
+for _code, _name in enumerate(
+    "i32_trunc_f32_s i32_trunc_f32_u i32_trunc_f64_s i32_trunc_f64_u".split(), 0xA8
+):
+    WASM_OPS[_name] = bytes([_code])
+for _code, _name in enumerate(
+    "i64_trunc_f32_s i64_trunc_f32_u i64_trunc_f64_s i64_trunc_f64_u"
+    " f32_convert_i32_s f32_convert_i32_u f32_convert_i64_s f32_convert_i64_u"
+    " f32_demote_f64 f64_convert_i32_s f64_convert_i32_u f64_convert_i64_s"
+    " f64_convert_i64_u f64_promote_f32 i32_reinterpret_f32 i64_reinterpret_f64"
+    " f32_reinterpret_i32 f64_reinterpret_i64".split(),
+    0xAE,
+):
+    WASM_OPS[_name] = bytes([_code])
+# The saturating truncations are 0xFC-prefixed, the sub-opcode a LEB.
+for _i, _name in enumerate(
+    "i32_trunc_sat_f32_s i32_trunc_sat_f32_u i32_trunc_sat_f64_s"
+    " i32_trunc_sat_f64_u i64_trunc_sat_f32_s i64_trunc_sat_f32_u"
+    " i64_trunc_sat_f64_s i64_trunc_sat_f64_u".split()
+):
+    WASM_OPS[_name] = b"\xfc" + uleb(_i)
+
+
+def _result(name: str) -> bytes:
+    """The valtype an instruction leaves: its prefix's, unless it is a
+    comparison (always an i32). Stores leave nothing, which the caller
+    sees from the declaration."""
+    prefix, _, rest = name.partition("_")
+    if rest.split("_")[0] in ("eqz", "eq", "ne", "lt", "gt", "le", "ge"):
+        return I32
+    return {"i64": I64, "f32": F32, "f64": F64}.get(prefix, I32)
+
+
+# What each of them leaves on the stack.
+RESULTS = {name: _result(name) for name in WASM_OPS}
 
 
 def captured(need, slot) -> tuple:
@@ -261,7 +301,12 @@ class Backend:
         self.lower = lower
         self.natives = natives  # key -> interp provision (for classification)
         self.fn_index: dict[int, int] = {}  # id(Symbol) -> func index
-        self.compiled: dict[int, tuple] = {}  # func index -> (param count, body)
+        # func index -> (param valtypes, result valtypes, body)
+        self.compiled: dict[int, tuple] = {}
+        # The result valtypes of each specialization, once its body is
+        # compiled, and those a recursive call assumed before it was.
+        self.results: dict[int, tuple] = {}
+        self.assumed: dict[int, tuple] = {}
         self.unit_codes: dict[int, int] = {}
         self.lib = {}
         for module in program.modules.values():
@@ -292,9 +337,11 @@ class Backend:
     def valtype(self, ty_ast) -> bytes:
         """The Wasm value type a `Wasm` type annotation names."""
         if "wasm" in self.lib and getattr(ty_ast, "path", None):
-            target = self.lib["wasm"].names.get(ty_ast.path[-1])
-            if target is not None and target is self.lib["wasm"].names.get("I64"):
-                return I64
+            wasm = self.lib["wasm"].names
+            target = wasm.get(ty_ast.path[-1])
+            for name, valtype in (("I64", I64), ("F32", F32), ("F64", F64)):
+                if target is not None and target is wasm.get(name):
+                    return valtype
         return I32
 
     def shim(self, which: int) -> int:
@@ -468,23 +515,47 @@ class Backend:
             slot = slot[2]
         return self.lower.val_widths.get(id(slot), 1)
 
-    def compile_fn(self, symbol: Symbol, env: dict | None = None) -> int:
+    def compile_fn(
+        self, symbol: Symbol, env: dict | None = None, params: tuple | None = None
+    ) -> int:
         """Compile a *specialization*: the function under a specific set of
         fn bindings. Two call sites that bind different providers get two
         function bodies, each with its calls resolved to direct ones — D2's
         "statically a direct call, with the captured context passed as
-        data", which is what makes fn binds compilable without a table."""
+        data", which is what makes fn binds compilable without a table.
+
+        `params` is the valtype of each parameter scalar, as the call site
+        laid its arguments out. The bootstrap lowers a function once, with
+        widths but no valtypes, so a function over an abstract type learns
+        whether that is an i32 or an f64 here (D67) — and a call at each is
+        a specialization of its own."""
         env = env or {}
-        cache = (id(symbol), freeze_env(env))
+        cache = (id(symbol), freeze_env(env), params)
         if cache in self.fn_index:
             return self.fn_index[cache]
         index = self.first_fn() + len(self.fn_index)
         self.fn_index[cache] = index
         fn = self.lower.fns[id(symbol)]
-        compiler = FnCompiler(self, fn, self.val_slots(symbol, env), env)
+        compiler = FnCompiler(self, fn, self.val_slots(symbol, env), env, params)
         body = compiler.run()  # may recursively compile callees
-        self.compiled[index] = (compiler.param_count, fn.ret_slots, body)
+        results = compiler.result_layout
+        self.results[index] = results
+        assumed = self.assumed.get(index)
+        if assumed is not None and assumed != results:
+            raise NotCompilable(
+                f"`{symbol.name}` returns {len(results)} scalar(s) that are not "
+                "all i32, and calls itself before the bootstrap knows that"
+            )
+        self.compiled[index] = (tuple(compiler.param_types), results, body)
         return index
+
+    def result_of(self, index: int, ret_slots: int) -> tuple:
+        """What a call to this specialization leaves: known once its body
+        is compiled, and assumed to be i32s by a recursive call made while
+        it is being compiled — which `compile_fn` then checks."""
+        if index in self.results:
+            return self.results[index]
+        return self.assumed.setdefault(index, (I32,) * ret_slots)
 
     def build(self, main: Symbol) -> bytes:
         # Two passes. The first discovers which WASI functions the program
@@ -496,6 +567,8 @@ class Backend:
         discovered = len(self.imports)
         self.fn_index.clear()
         self.compiled.clear()
+        self.results.clear()
+        self.assumed.clear()
         self.unit_codes.clear()
         main_index = self.compile_fn(main)
         assert len(self.imports) == discovered, "the import set must be stable"
@@ -530,7 +603,7 @@ class Backend:
             ty(1, 1),  # read: (path) -> string
             ty(1, 0),  # put_bytes: (list) -> ()
         ]
-        func_types = [ty(count, results) for count, results, _ in ordered]
+        func_types = [ty(params, results) for params, results, _ in ordered]
         start_type = ty(0, 0)
 
         type_section = section(
@@ -998,7 +1071,10 @@ class Backend:
 
 
 class FnCompiler:
-    def __init__(self, backend: Backend, fn: ir.FnIR, needs: list, env: dict):
+    def __init__(
+        self, backend: Backend, fn: ir.FnIR, needs: list, env: dict,
+        params: tuple | None = None,
+    ):
         self.b = backend
         self.fn = fn
         self.env = dict(env)  # fn need key -> (provider symbol, its own env)
@@ -1020,7 +1096,16 @@ class FnCompiler:
             self.param_types.extend([I32] * width)
             index += width
         self.param_count = index
+        if params is not None:
+            if len(params) != index:
+                raise NotCompilable(
+                    f"`{fn.symbol.name}` called with {len(params)} parameter "
+                    f"scalars where it takes {index}"
+                )
+            self.param_types = list(params)
         self.local_types: list = []
+        self.returns: list = []  # the layout each `return` yields
+        self.result_layout: tuple = ()
         self.break_depths: list[int] = []
         self.depth = 0
 
@@ -1047,7 +1132,19 @@ class FnCompiler:
             self.code += LOCAL_GET + uleb(idx)
 
     def run(self) -> bytes:
-        self.block(self.fn.body)
+        tail = self.block(self.fn.body)
+        if self.fn.symbol.decl.ret is None:
+            # A function of unit type yields (), whatever its tail was.
+            result = (I32,)
+            if tail != result:
+                self.code += DROP * len(tail) + I32_CONST + sleb(0)
+        else:
+            result = self.returns[0] if self.returns else tail
+            if tail != result:
+                # The tail is the `()` after a `return` that always runs,
+                # so it is dead: `unreachable` makes the stack anything.
+                self.code += UNREACHABLE
+        self.result_layout = result
         self.code += END
         # Locals are declared in runs of one type (D59: a value is a
         # sequence of scalars, and not every scalar is an i32).
@@ -1084,8 +1181,12 @@ class FnCompiler:
             return captured(translate.get(need, need), inner)
         return translate.get(slot, slot)
 
-    def push_provision(self, key):
+    def push_provision(self, key) -> tuple:
+        """Push a need's value; returns its layout."""
         kind, value = self.provide(key)
+        if kind == "local":
+            self.load(value)
+            return tuple(self.local_type_of(i) for i in value)
         if kind == "const":
             self.code += I32_CONST + sleb(value)
         elif kind == "empty_string":
@@ -1096,8 +1197,7 @@ class FnCompiler:
             self.code += LOCAL_GET + uleb(tmp) + I32_CONST + sleb(0)
             self.code += I32_STORE + uleb(2) + uleb(0)
             self.code += LOCAL_GET + uleb(tmp)
-        else:
-            self.load(value)
+        return (I32,)
 
     # Statements
 
@@ -1201,15 +1301,12 @@ class FnCompiler:
             self.load(indices)
             return tuple(self.local_type_of(i) for i in indices)
         elif isinstance(node, ir.NeedVal):
-            self.push_provision(node.key)
-            kind, value = self.provide(node.key)
-            if kind == "local":
-                return tuple(self.local_type_of(i) for i in value)
+            return self.push_provision(node.key)
         elif isinstance(node, ir.MakeUnit):
             self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
         elif isinstance(node, ir.MakeTag):
             # D58: a nominal value *is* its payload. Nothing to attach.
-            self.expr(node.payload)
+            return self.expr(node.payload)
         elif isinstance(node, ir.Inject):
             return self.inject(node)
         elif isinstance(node, ir.MakeRecord):
@@ -1234,8 +1331,9 @@ class FnCompiler:
         elif isinstance(node, ir.Return):
             if node.expr is None:
                 self.code += I32_CONST + sleb(0)
+                self.returns.append((I32,))
             else:
-                self.expr(node.expr)
+                self.returns.append(self.expr(node.expr))
             self.code += RETURN
         elif isinstance(node, ir.Break):
             target = self.break_depths[-1]
@@ -1442,9 +1540,11 @@ class FnCompiler:
             # The callee's parameters are its own val needs followed by
             # whatever its bound providers captured, both named on its side.
             for slot in self.b.val_slots(target, callee_env):
-                self.push_provision(self.translate_slot(translate, slot))
-            self.code += CALL + uleb(self.b.compile_fn(target, callee_env))
-            return (I32,) * self.b.lower.fns[id(target)].ret_slots
+                layouts.append(self.push_provision(self.translate_slot(translate, slot)))
+            params = tuple(t for layout in layouts for t in layout)
+            index = self.b.compile_fn(target, callee_env, params)
+            self.code += CALL + uleb(index)
+            return self.b.result_of(index, self.b.lower.fns[id(target)].ret_slots)
         if target in self.env:
             provider, sub = self.env[target]
             layouts = []
@@ -1454,9 +1554,11 @@ class FnCompiler:
                 layouts.append(self.expr(arg))
             self.check_widths(self.b.lower.fns[id(provider)], layouts, node)
             for slot in self.b.val_slots(provider, sub):
-                self.push_provision(captured(target, slot))
-            self.code += CALL + uleb(self.b.compile_fn(provider, sub))
-            return (I32,) * self.b.lower.fns[id(provider)].ret_slots
+                layouts.append(self.push_provision(captured(target, slot)))
+            params = tuple(t for layout in layouts for t in layout)
+            index = self.b.compile_fn(provider, sub, params)
+            self.code += CALL + uleb(index)
+            return self.b.result_of(index, self.b.lower.fns[id(provider)].ret_slots)
         # Contextual call: a native method, putchar, or out of slice.
         key = target
         op = self.b.method_op(key)
@@ -1670,7 +1772,7 @@ class FnCompiler:
         if key.decl.ret is None:
             self.code += I32_CONST + sleb(0)  # stores and fills yield ()
             return I32
-        return I64 if key.name in I64_RESULTS else I32
+        return RESULTS[key.name]
 
 
 def build(program: Program, lower, main: Symbol) -> bytes:

@@ -11,7 +11,9 @@ from mossc import build as build_mod
 from mossc import collect
 from mossc.lower import Lower, LowerError
 
-from .test_run import CAPTURE_REBOUND, NESTED_OUT, RECORDS_OUT, runnable_examples
+from .test_run import (
+    CAPTURE_REBOUND, FLOAT_OUT, NESTED_OUT, RECORDS_OUT, runnable_examples,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 PRELUDE = str(REPO / "lib/prelude.moss")
@@ -207,6 +209,14 @@ class TestWasmBackend(unittest.TestCase):
             with self.subTest(case=name_):
                 wasm = compile_wasm({"main.moss": source})
                 self.assertEqual(run_wasm(wasm), expected)
+
+    def test_f32_and_f64_are_scalar_types(self):
+        """D67: the float half of `Wasm`, as parameters, results, locals,
+        record fields and memory. A function's parameters take the
+        valtypes its call site laid out, since the bootstrap lowers it
+        with widths alone."""
+        wasm = compile_wasm({}, entry="tests/wasi/float.moss")
+        self.assertEqual(run_wasm(wasm), FLOAT_OUT)
 
     def test_raw_wasi_program(self):
         """D52: a program can assume the primitive context directly, with no

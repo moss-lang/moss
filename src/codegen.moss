@@ -112,11 +112,13 @@ assume Std {
   val cg_bool: CellInt;
   val cg_std: CellInt;
 
-  # The elaborated `I32`, `I64` and `Bool` types, found once: an
-  # instruction's result type has to come from somewhere, and the `Wasm`
-  # table records only which of the two it is.
+  # The elaborated `I32`, `I64`, `F32`, `F64` and `Bool` types, found
+  # once: an instruction's result type has to come from somewhere, and
+  # the `Wasm` table records only which scalar it is.
   val cg_i32: CellInt;
   val cg_i64: CellInt;
+  val cg_f32: CellInt;
+  val cg_f64: CellInt;
   val cg_boolty: CellInt;
 
   val cg_errs: IntList;
@@ -182,7 +184,7 @@ assume Std {
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
     pv_recv, pv_sym, pv_local, pv_top,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
-    cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name, cg_err_at, cg_where,
+    cg_i32, cg_i64, cg_f32, cg_f64, cg_boolty, cg_errs, cg_err_name, cg_err_at, cg_where,
     vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
     ck_entry, ck_inner, ck_link, ck_head,
     fl_start, fl_len, fl_types,
@@ -252,23 +254,31 @@ assume Std {
         }
         m = m.add(one);
       }
-      cg_i32.write(wasm_type(which_i32()));
-      cg_i64.write(wasm_type(which_i64()));
+      cg_i32.write(wasm_type(zero));
+      cg_i64.write(wasm_type(one));
+      cg_f32.write(wasm_type(n2()));
+      cg_f64.write(wasm_type(n3()));
       cg_boolty.write(bool_type());
     }
 
-    # `I32` and `I64` are declarations of lib/wasm.moss like any other,
-    # so they are found by name in its scope rather than invented.
-    fn which_i32(): Int { zero }
-    fn which_i64(): Int { one }
+    # The scalar types are declarations of lib/wasm.moss like any other,
+    # so they are found by name in its scope rather than invented. `k`
+    # numbers them as `emit::vt_at` does: I32, I64, F32, F64.
+    fn spell_scalar(cs: IntList, k: Int) {
+      if k.eq(zero) {
+        sp_I32(cs);
+      } else if k.eq(one) {
+        sp_I64(cs);
+      } else if k.eq(n2()) {
+        sp_F32(cs);
+      } else {
+        sp_F64(cs);
+      }
+    }
 
     fn wasm_type(which: Int): Int {
       let cs = spelled();
-      if which.eq(which_i32()) {
-        sp_I32(cs);
-      } else {
-        sp_I64(cs);
-      }
+      spell_scalar(cs, which);
       let sym = prog::lookup(
         cg_wasm.read(), prog::ns_name(), intern::intern_chars(cs)
       );
@@ -880,28 +890,37 @@ assume Std {
       }
     }
 
-    # Whether an abstract type is `Wasm`'s `I64` — the one place the back
-    # end has to know a type by name, because a valtype is not something
-    # the type system models.
-    fn is_i64(ty: Int): Bool {
+    # Which of `Wasm`'s `I64`, `F32` and `F64` an abstract type is, as a
+    # valtype, or none — the one place the back end has to know a type by
+    # name, because a valtype is not something the type system models.
+    # (`I32` needs no test: it is what everything else is.)
+    fn wide_scalar(ty: Int): Int {
       if types::is_kind(ty, types::kd_abstract()).not() {
-        return false;
+        return ast::none();
       }
       let sym = types::sym_of(ty);
       if in_wasm(sym).not() {
-        return false;
+        return ast::none();
       }
-      let cs = spelled();
-      sp_I64(cs);
-      sym_named(sym, cs)
+      var k = one;
+      while k.lt(emit::vt_count()) {
+        let cs = spelled();
+        spell_scalar(cs, k);
+        if sym_named(sym, cs) {
+          return emit::vt_at(k);
+        }
+        k = k.add(one);
+      }
+      ast::none()
     }
 
     # The Wasm valtype of one slot of a value of this type. A tag is its
     # payload (D58); a union's slot zero is its discriminant and the rest
     # come from its members.
     fn valtype_at(ty: Int, i: Int): Int {
-      if is_i64(ty) {
-        return emit::vt_i64();
+      let scalar = wide_scalar(ty);
+      if ast::is_some(scalar) {
+        return scalar;
       }
       if types::is_kind(ty, types::kd_nominal()) {
         if types::is_unit_decl(ty) {
@@ -1424,6 +1443,10 @@ assume Std {
         cg_i64.read()
       } else if r.eq(wops::wr_i32()) {
         cg_i32.read()
+      } else if r.eq(wops::wr_f32()) {
+        cg_f32.read()
+      } else if r.eq(wops::wr_f64()) {
+        cg_f64.read()
       } else {
         ty_none()
       }
@@ -1609,9 +1632,9 @@ assume Std {
 
     # Parameters take the low indices, in order and slot by slot; the
     # locals past them are grouped by valtype, which is the shape of the
-    # code section's locals vector. The result is how many i32 locals
-    # were needed.
-    fn assign_slots(nparams: Int): Int {
+    # code section's locals vector. The result is how many locals of each
+    # valtype were needed, in the order of `emit::vt_at`.
+    fn assign_slots(nparams: Int): IntList {
       var next = zero;
       var l = lc_base.read();
       while l.lt(lc_base.read().add(nparams)) {
@@ -1623,33 +1646,27 @@ assume Std {
         }
         l = l.add(one);
       }
-      var next32 = next;
-      l = lc_base.read().add(nparams);
-      while l.lt(lc_name.length()) {
-        var i = zero;
-        while i.lt(local_width(l)) {
-          if valtype_at(lc_type.get(l), i).eq(emit::vt_i32()) {
-            set_local_slot(l, i, next32);
-            next32 = next32.add(one);
+      let counts = int_list();
+      var k = zero;
+      while k.lt(emit::vt_count()) {
+        let vt = emit::vt_at(k);
+        let first = next;
+        l = lc_base.read().add(nparams);
+        while l.lt(lc_name.length()) {
+          var i = zero;
+          while i.lt(local_width(l)) {
+            if valtype_at(lc_type.get(l), i).eq(vt) {
+              set_local_slot(l, i, next);
+              next = next.add(one);
+            }
+            i = i.add(one);
           }
-          i = i.add(one);
+          l = l.add(one);
         }
-        l = l.add(one);
+        counts.push(next.sub(first));
+        k = k.add(one);
       }
-      var next64 = next32;
-      l = lc_base.read().add(nparams);
-      while l.lt(lc_name.length()) {
-        var i = zero;
-        while i.lt(local_width(l)) {
-          if valtype_at(lc_type.get(l), i).eq(emit::vt_i64()) {
-            set_local_slot(l, i, next64);
-            next64 = next64.add(one);
-          }
-          i = i.add(one);
-        }
-        l = l.add(one);
-      }
-      next32.sub(next)
+      counts
     }
 
     # Emitting returns the *type* the expression left on the stack, which
@@ -2184,6 +2201,10 @@ assume Std {
         body.push(zero);
       } else if kind.eq(wops::wk_memcopy()) {
         op_memory_copy(body);
+      } else if kind.eq(wops::wk_prefixed()) {
+        # 0xFC, then the sub-opcode the table keeps as an alignment.
+        body.push(code);
+        uleb(body, wops::op_aligns.get(op));
       } else {
         op_memory_fill(body);
       }
@@ -2846,8 +2867,7 @@ assume Std {
         }
       }
       lc_visible.write(lc_base.read().add(nparams));
-      let n32 = assign_slots(nparams);
-      let n64 = total_slots().sub(param_slots(nparams)).sub(n32);
+      let counts = assign_slots(nparams);
       let body = int_list();
       let want = elab_ty(ast::fn_ret(d), m);
       cg_ret.write(want);
@@ -2864,7 +2884,7 @@ assume Std {
           # Fewer revealed than the first pass made: they disagree.
           cg_error(c_missing(), prog::sym_name.get(sym));
         }
-        emit::set_body(fq_index.get(qi), n32, n64, body);
+        emit::set_body(fq_index.get(qi), counts, body);
       } else {
         while fl_start.length().le(qi) {
           fl_start.push(zero);
@@ -2888,26 +2908,6 @@ assume Std {
         compile_one(i);
         i = i.add(one);
       }
-    }
-
-    fn total_slots(): Int {
-      var n = zero;
-      var l = lc_base.read();
-      while l.lt(lc_name.length()) {
-        n = n.add(local_width(l));
-        l = l.add(one);
-      }
-      n
-    }
-
-    fn param_slots(nparams: Int): Int {
-      var n = zero;
-      var l = lc_base.read();
-      while l.lt(lc_base.read().add(nparams)) {
-        n = n.add(local_width(l));
-        l = l.add(one);
-      }
-      n
     }
 
     # The whole module. `_start` is a wrapper rather than `main` itself,
@@ -2967,7 +2967,7 @@ assume Std {
       op_i32_store(boot);
       op_call(boot, fq_index.get(zero));
       op_end(boot);
-      emit::set_body(starter, zero, zero, boot);
+      emit::set_body(starter, emit::no_locals(), boot);
       emit::mem_pages.write(one);
       emit::export_start(starter);
       emit::export_memory();

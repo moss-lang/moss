@@ -15,6 +15,13 @@ import "./spell.moss" use *;
 assume Std {
   fn vt_i32(): Int { hex(n7(), n15()) }
   fn vt_i64(): Int { hex(n7(), n14()) }
+  fn vt_f32(): Int { hex(n7(), n13()) }
+  fn vt_f64(): Int { hex(n7(), n12()) }
+
+  # The four scalar valtypes, numbered: they are consecutive bytes, i32
+  # down to f64, so the `k`th is a subtraction.
+  fn vt_count(): Int { n4() }
+  fn vt_at(k: Int): Int { vt_i32().sub(k) }
 
   # Section ids, from the binary format.
   fn sec_type(): Int { one }
@@ -50,10 +57,12 @@ assume Std {
   val im_flen: IntList;
   val im_type: IntList;
 
-  # Defined functions, and their bodies in one instruction arena.
+  # Defined functions, and their bodies in one instruction arena. A
+  # function's locals are declared as one run per valtype, so it holds a
+  # count of each: `fn_locals` is four per function, in the order of
+  # `vt_at`.
   val fn_type: IntList;
-  val fn_l32: IntList;
-  val fn_l64: IntList;
+  val fn_locals: IntList;
   val fn_bstart: IntList;
   val fn_blen: IntList;
   val insns: IntList;
@@ -69,7 +78,7 @@ assume Std {
     ft_params, ft_pstart, ft_plen, ft_res, ft_rstart, ft_rlen,
     nchars,
     im_mstart, im_mlen, im_fstart, im_flen, im_type,
-    fn_type, fn_l32, fn_l64, fn_bstart, fn_blen, insns,
+    fn_type, fn_locals, fn_bstart, fn_blen, insns,
     ex_start, ex_len, ex_kind, ex_index,
     mem_pages;
 
@@ -168,18 +177,33 @@ assume Std {
     # function may call one declared after it.
     fn add_func(ty: Int): Int {
       fn_type.push(ty);
-      fn_l32.push(zero);
-      fn_l64.push(zero);
+      var k = zero;
+      while k.lt(vt_count()) {
+        fn_locals.push(zero);
+        k = k.add(one);
+      }
       fn_bstart.push(zero);
       fn_blen.push(zero);
       import_count().add(fn_type.length()).sub(one)
     }
 
-    # `body` must already end with the `end` opcode.
-    fn set_body(f: Int, locals32: Int, locals64: Int, body: IntList) {
+    fn no_locals(): IntList {
+      let counts = int_list();
+      while counts.length().lt(vt_count()) {
+        counts.push(zero);
+      }
+      counts
+    }
+
+    # `body` must already end with the `end` opcode, and `locals` holds
+    # how many locals of each valtype it declares, in the order of `vt_at`.
+    fn set_body(f: Int, locals: IntList, body: IntList) {
       let d = f.sub(import_count());
-      fn_l32.set(d, locals32);
-      fn_l64.set(d, locals64);
+      var k = zero;
+      while k.lt(vt_count()) {
+        fn_locals.set(d.mul(vt_count()).add(k), locals.get(k));
+        k = k.add(one);
+      }
       fn_bstart.set(d, insns.length());
       fn_blen.set(d, body.length());
       push_bytes(insns, body);
@@ -301,20 +325,22 @@ assume Std {
       while i.lt(func_count()) {
         let entry = int_list();
         var groups = zero;
-        if fn_l32.get(i).gt(zero) {
-          groups = groups.add(one);
-        }
-        if fn_l64.get(i).gt(zero) {
-          groups = groups.add(one);
+        var k = zero;
+        while k.lt(vt_count()) {
+          if fn_locals.get(i.mul(vt_count()).add(k)).gt(zero) {
+            groups = groups.add(one);
+          }
+          k = k.add(one);
         }
         uleb(entry, groups);
-        if fn_l32.get(i).gt(zero) {
-          uleb(entry, fn_l32.get(i));
-          entry.push(vt_i32());
-        }
-        if fn_l64.get(i).gt(zero) {
-          uleb(entry, fn_l64.get(i));
-          entry.push(vt_i64());
+        k = zero;
+        while k.lt(vt_count()) {
+          let n = fn_locals.get(i.mul(vt_count()).add(k));
+          if n.gt(zero) {
+            uleb(entry, n);
+            entry.push(vt_at(k));
+          }
+          k = k.add(one);
         }
         var j = zero;
         while j.lt(fn_blen.get(i)) {

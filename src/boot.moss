@@ -95,8 +95,7 @@ functor Boot: Std -> Compiler {
   bind emit::im_flen = int_list();
   bind emit::im_type = int_list();
   bind emit::fn_type = int_list();
-  bind emit::fn_l32 = int_list();
-  bind emit::fn_l64 = int_list();
+  bind emit::fn_locals = int_list();
   bind emit::fn_bstart = int_list();
   bind emit::fn_blen = int_list();
   bind emit::insns = int_list();
@@ -139,6 +138,8 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_std = cell_int();
   bind codegen::cg_i32 = cell_int();
   bind codegen::cg_i64 = cell_int();
+  bind codegen::cg_f32 = cell_int();
+  bind codegen::cg_f64 = cell_int();
   bind codegen::cg_boolty = cell_int();
   bind codegen::cg_errs = int_list();
   bind codegen::cg_err_name = int_list();

@@ -421,7 +421,7 @@ is exactly what `Bool.not` does.
 
 **[D59] DECIDED by the designer (the compiler has no heap).** Every value
 of a Moss program compiles to a *finite sequence of Wasm scalars* — i32
-and i64 now, f32/f64 if they ever arrive — and the compiler allocates
+and i64 now, f32/f64 if they ever arrive (they have: [D67]) — and the compiler allocates
 nothing. A heap is a library's business: lib/wasistd.moss already has a
 bump allocator written in Moss, and that is where dynamic memory belongs.
 
@@ -1593,6 +1593,47 @@ passed only if the function can reach it (selfhosting.md, "Keeping it out
 of quadratic time") — which is not a language change. Standing test:
 `tests/wasi/forward.moss`.
 
+**[D67] DECIDED by the designer (floating point).** [D59] said every
+value compiles to a finite sequence of Wasm scalars, "i32 and i64 now,
+f32/f64 if they ever arrive". They have arrived.
+
+*Scalars.* `lib/wasm.moss` declares `type F32; type F64;` beside `I32`
+and `I64`, and one function per instruction of Wasm 2.0's float half,
+named the way the integer ones are (`f64_add`, `f32_lt`,
+`i32_trunc_sat_f64_s`): the loads and stores; the comparisons `eq ne lt
+gt le ge`, which yield an `I32` exactly as the integer ones do; `abs neg
+ceil floor trunc nearest sqrt add sub mul div min max copysign`; and
+every conversion among the four types — `convert`, `demote`/`promote`,
+`reinterpret`, and both the trapping `trunc` and the saturating
+`trunc_sat`, which is the 0xFC-prefixed `nontrapping-float-to-int` that
+`wasm-features.txt` already enables. Seventy-four items: the whole float
+half but its two constants. There are no float literals, for the reason
+there are no others ([D4]): a float starts life as a conversion of an
+integer built from `i32_zero` and `i32_one`, so `f64_convert_i32_s(
+w::i32_one)` is 1.0. `f32.const` and `f64.const` stay out with them —
+the only constants a literal-free program could name are zero and one,
+and the conversions already give those. A slot's valtype may now be any
+of the four, and nothing else about [D59]'s layouts changed.
+
+In the back ends, the self-hosted compiler is type-directed, so this was
+its valtype table growing from two entries to four, and its locals from
+two runs to one per valtype. The bootstrap lowers a function once, with
+widths but no valtypes, which was harmless while every parameter was an
+i32 (an i64 only ever lived in a local); it now takes a
+specialization's parameter valtypes from the call site's arguments —
+one specialization per fn binding *and* parameter valtypes — and its
+result valtypes from its compiled body, a recursive call in the
+meantime assuming i32s and the assumption checked once the body is
+done. The interpreter's floats are Python floats, an f32 rounded to
+single precision after every operation; NaN, the infinities, signed
+zeros, `min`/`max`, ties-to-even `nearest`, trapping and saturating
+truncation, and integer-to-float conversion rounded once are all as
+Wasm specifies them. Not covered, in either back end, and already true
+of i64: a union whose members put different valtypes in one slot, and
+the padding of a member narrower than its union where the union's slot
+is not an i32. Standing test: `tests/wasi/float.moss`, which the
+interpreter and both compilers run to the same output.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -1621,7 +1662,8 @@ as their own declaration applied with `bind`, D61 how a method call
 finds its method, D62 provisions keyed by the receiver's identity, D63
 records are the only product type, D64 bare import paths name library
 files, D65 bare block expressions, D66 binding a fn to a contextual fn
-captures it at the bind)
+captures it at the bind, D67 f32/f64 are scalars, with the float half of
+`Wasm` and no literals)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

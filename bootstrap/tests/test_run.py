@@ -305,6 +305,19 @@ RECORDS_OUT = "ab\nba\nbaq\ncdez\ncd\ngf\nho\n"
 # What tests/wasi/nested.moss prints.
 NESTED_OUT = "bca\nfda\nghi\n"
 
+# What tests/wasi/float.moss prints, one property per line; the comments
+# there say why each is what it is.
+FLOAT_OUT = "".join(
+    f"{line}\n"
+    for line in (
+        1414213562, 1414213504, 1414213562, 333333343, 333333333, "0100",
+        0, 2147483647, -2147483648, 0, 2147483647, -3,
+        2, 4, -3, -2, -2, -1, 1, 2,
+        1065353216, 1, 1073741824, 1568669697, -1,
+        1, 333333344, 0, 2,
+    )
+)
+
 
 # D26: a bound provider's needs are captured at the bind site, so a frame
 # between the bind and the call that rebinds them changes nothing —
@@ -1334,6 +1347,13 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/forward.moss")
         self.assertEqual(self.wasmtime_run(module), "CCEDEC\n")
 
+    def test_float_scalars(self):
+        """D67: f32 and f64 are scalars like i32 and i64 — in locals,
+        parameters, results, record fields and memory, through the whole
+        of `Wasm`'s float half, f32 rounding to single precision."""
+        module = self.compile_with_moss("tests/wasi/float.moss")
+        self.assertEqual(self.wasmtime_run(module), FLOAT_OUT)
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
@@ -1352,6 +1372,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/capture.moss", "CCCCE\n"),
             ("tests/wasi/block.moss", "EDCBGAIEE\n"),
             ("tests/wasi/forward.moss", "CCEDEC\n"),
+            ("tests/wasi/float.moss", FLOAT_OUT),
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),

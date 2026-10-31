@@ -26,7 +26,7 @@ class TestGeneratedSources(unittest.TestCase):
         item. The self-hosted table carries an opcode, an encoding and an
         alignment where build.py carries the assembled bytes, so the
         comparison reassembles them."""
-        for name, (code, kind, align, _res) in gensrc.wasm_ops().items():
+        for name, (code, kind, align, res) in gensrc.wasm_ops().items():
             if kind in (gensrc.CONST0, gensrc.CONST1):
                 continue  # values, not instructions; build.py has no entry
             with self.subTest(op=name):
@@ -39,9 +39,19 @@ class TestGeneratedSources(unittest.TestCase):
                     actual = bytes([code, 0])
                 elif kind == gensrc.MEMCOPY:
                     actual = bytes([code, 10, 0, 0])
+                elif kind == gensrc.PREFIXED:
+                    actual = bytes([code]) + build.uleb(align)
                 else:
                     actual = bytes([code, 11, 0])
                 self.assertEqual(actual, expected)
+                # ...and agree on what it leaves (a store leaves nothing,
+                # which build.py reads off the declaration instead).
+                if res != gensrc.NONE:
+                    valtype = {
+                        gensrc.I32: build.I32, gensrc.I64: build.I64,
+                        gensrc.F32: build.F32, gensrc.F64: build.F64,
+                    }[res]
+                    self.assertEqual(build.RESULTS[name], valtype)
 
     def test_every_wasm_item_has_an_instruction(self):
         """Every function and val of the `Wasm` context is in the table,

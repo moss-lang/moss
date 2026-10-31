@@ -8,6 +8,8 @@ their provider needs (closures). Types are gone except as the nominal tags
 values carry for `match`.
 """
 
+import math
+import struct
 import sys
 from dataclasses import dataclass
 
@@ -62,6 +64,14 @@ class IntVal:
 
 
 @dataclass(frozen=True)
+class FloatVal:
+    """An f32 or an f64 (D67). Either is a Python float; an f32 is one
+    that `f32` has already rounded, so it is exactly representable."""
+
+    value: float
+
+
+@dataclass(frozen=True)
 class StrVal:
     value: str
 
@@ -99,6 +109,112 @@ _ABSENT = object()  # a local a block's `let` did not shadow
 
 class MossPanic(Exception):
     pass
+
+
+# Float semantics, as Wasm defines them (D67). Python's floats are IEEE
+# doubles and its arithmetic rounds to nearest, so f64 is Python's own,
+# except where Python raises rather than producing an infinity or a NaN.
+# An f32 operation is computed in double and rounded once to single,
+# which for + - * / and sqrt is exactly the single-precision result: a
+# double has more than twice a single's precision, so the second rounding
+# never sees a tie the first one made.
+
+
+def f32(x: float) -> float:
+    """The nearest single to `x`, ties to even, as a Python float."""
+    try:
+        return struct.unpack("<f", struct.pack("<f", x))[0]
+    except OverflowError:
+        # Past the largest single by at least half an ulp: an infinity.
+        return math.copysign(math.inf, x)
+
+
+def int_to_float(n: int, precision: int) -> float:
+    """`n` rounded to `precision` significant bits (24 for f32, 53 for
+    f64), ties to even — rounded once, from the integer itself, since
+    going through a double first would round an i64 twice on its way to
+    an f32."""
+    a = abs(n)
+    excess = a.bit_length() - precision
+    if excess > 0:
+        q, r = divmod(a, 1 << excess)
+        half = 1 << (excess - 1)
+        if r > half or (r == half and q & 1):
+            q += 1
+        a = q << excess
+    return math.copysign(float(a), -1.0 if n < 0 else 1.0)
+
+
+def fdiv(x: float, y: float) -> float:
+    if y == 0.0:
+        if x == 0.0 or math.isnan(x):
+            return math.nan
+        return math.copysign(math.inf, x) * math.copysign(1.0, y)
+    return x / y
+
+
+def fsqrt(x: float) -> float:
+    if math.isnan(x) or x < 0.0:
+        return math.nan
+    return math.sqrt(x)
+
+
+def fmin(x: float, y: float) -> float:
+    """Wasm's `min`: NaN if either is, and -0 below +0."""
+    if math.isnan(x) or math.isnan(y):
+        return math.nan
+    if x == y:
+        return x if math.copysign(1.0, x) < 0 else y
+    return min(x, y)
+
+
+def fmax(x: float, y: float) -> float:
+    if math.isnan(x) or math.isnan(y):
+        return math.nan
+    if x == y:
+        return x if math.copysign(1.0, x) > 0 else y
+    return max(x, y)
+
+
+def fround(x: float, how) -> float:
+    """`ceil`, `floor`, `trunc` or `nearest` (`round`, which in Python
+    rounds a float's ties to even): integral, keeping the sign of a zero,
+    with NaN and the infinities left alone."""
+    if not math.isfinite(x) or x == 0.0:
+        return x
+    return math.copysign(float(how(x)), x)
+
+
+def trunc_to_int(x: float, bits: int, signed: bool, saturate: bool) -> int:
+    """Float to integer, toward zero. The trapping form traps on NaN and
+    on anything outside the range; the saturating one clamps, with NaN
+    going to 0. The result is in the interpreter's representation of an
+    integer of that width: signed, whatever the instruction's signedness."""
+    lo, hi = (-(1 << (bits - 1)), (1 << (bits - 1)) - 1) if signed else (0, (1 << bits) - 1)
+    if math.isnan(x):
+        if saturate:
+            return 0
+        raise MossPanic("invalid conversion to integer")
+    if math.isinf(x):
+        t = hi if x > 0 else lo
+        if not saturate:
+            raise MossPanic("integer overflow")
+    else:
+        t = math.trunc(x)
+        if t < lo or t > hi:
+            if not saturate:
+                raise MossPanic("integer overflow")
+            t = max(lo, min(hi, t))
+    t &= (1 << bits) - 1
+    return t - (1 << bits) if t >> (bits - 1) else t
+
+
+def reinterpret(value, src: str, dst: str):
+    """The same bytes under another struct code (`i`/`f`, `q`/`d`)."""
+    if src in "iq":
+        value &= (1 << (32 if src == "i" else 64)) - 1
+        src = src.upper()
+    return struct.unpack("<" + dst, struct.pack("<" + src, value))[0]
 
 
 class _Return(Exception):
@@ -710,6 +826,53 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
     fn("i32_wrap_i64", lambda a: IntVal(wrap(a[0].value, 32)))
     fn("i64_extend_i32_s", lambda a: IntVal(a[0].value))
     fn("i64_extend_i32_u", lambda a: IntVal(unsigned(a[0].value, 32)))
+
+    # The float half (D67). An f32 is rounded after every operation that
+    # could leave it with more than single precision.
+    for prefix, rnd in (("f32", f32), ("f64", lambda x: x)):
+        width, code = (4, "<f") if prefix == "f32" else (8, "<d")
+        fn(f"{prefix}_load", lambda a, w=width, c=code: FloatVal(
+            struct.unpack(c, (grow(a[0].value + w), memory[a[0].value : a[0].value + w])[1])[0]))
+        fn(f"{prefix}_store", lambda a, w=width, c=code: (
+            grow(a[0].value + w),
+            memory.__setitem__(slice(a[0].value, a[0].value + w), struct.pack(c, a[1].value)),
+            UNIT)[2])
+        binary = {"add": lambda x, y: x + y, "sub": lambda x, y: x - y,
+                  "mul": lambda x, y: x * y, "div": fdiv, "min": fmin, "max": fmax,
+                  "copysign": math.copysign}
+        for op, f in binary.items():
+            fn(f"{prefix}_{op}", lambda a, f=f, r=rnd: FloatVal(r(f(a[0].value, a[1].value))))
+        unary = {"abs": math.fabs, "neg": lambda x: -x, "sqrt": fsqrt,
+                 "ceil": lambda x: fround(x, math.ceil),
+                 "floor": lambda x: fround(x, math.floor),
+                 "trunc": lambda x: fround(x, math.trunc),
+                 "nearest": lambda x: fround(x, round)}
+        for op, f in unary.items():
+            fn(f"{prefix}_{op}", lambda a, f=f, r=rnd: FloatVal(r(f(a[0].value))))
+        # Python's comparisons are IEEE's: a NaN is unordered, so it is
+        # unequal to everything, itself included, and less than nothing.
+        fcmps = {"eq": lambda x, y: x == y, "ne": lambda x, y: x != y,
+                 "lt": lambda x, y: x < y, "gt": lambda x, y: x > y,
+                 "le": lambda x, y: x <= y, "ge": lambda x, y: x >= y}
+        for op, f in fcmps.items():
+            fn(f"{prefix}_{op}", lambda a, f=f: IntVal(1 if f(a[0].value, a[1].value) else 0))
+    for ibits in (32, 64):
+        for fprefix in ("f32", "f64"):
+            for sign in "su":
+                for sat in ("", "sat_"):
+                    fn(f"i{ibits}_trunc_{sat}{fprefix}_{sign}",
+                       lambda a, b=ibits, sg=sign == "s", st=bool(sat): IntVal(
+                           trunc_to_int(a[0].value, b, sg, st)))
+                precision = 24 if fprefix == "f32" else 53
+                fn(f"{fprefix}_convert_i{ibits}_{sign}",
+                   lambda a, b=ibits, sg=sign == "s", p=precision: FloatVal(int_to_float(
+                       a[0].value if sg else unsigned(a[0].value, b), p)))
+    fn("f32_demote_f64", lambda a: FloatVal(f32(a[0].value)))
+    fn("f64_promote_f32", lambda a: FloatVal(a[0].value))
+    fn("i32_reinterpret_f32", lambda a: IntVal(reinterpret(a[0].value, "f", "i")))
+    fn("i64_reinterpret_f64", lambda a: IntVal(reinterpret(a[0].value, "d", "q")))
+    fn("f32_reinterpret_i32", lambda a: FloatVal(reinterpret(a[0].value, "i", "f")))
+    fn("f64_reinterpret_i64", lambda a: FloatVal(reinterpret(a[0].value, "q", "d")))
 
     # WASI.
     def iovecs(ptr: int, count: int):

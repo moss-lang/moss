@@ -1,6 +1,8 @@
 # https://webassembly.github.io/spec/core/syntax/types.html#number-types
 type I32;
 type I64;
+type F32;
+type F64;
 
 # https://webassembly.github.io/spec/core/syntax/instructions.html#parametric-instructions
 fn unreachable(): |;
@@ -116,9 +118,102 @@ assume I32 {
   }
 }
 
+# The float half (D67). Comparisons yield an i32, as the integer ones do;
+# there are no float constants, so a float starts life as a conversion
+# from an integer built out of `i32_zero` and `i32_one`.
+assume I32, I64, F32, F64 {
+  fn f32_load(address: I32): F32;
+  fn f64_load(address: I32): F64;
+  fn f32_store(address: I32, value: F32);
+  fn f64_store(address: I32, value: F64);
+
+  fn f32_eq(a: F32, b: F32): I32;
+  fn f32_ne(a: F32, b: F32): I32;
+  fn f32_lt(a: F32, b: F32): I32;
+  fn f32_gt(a: F32, b: F32): I32;
+  fn f32_le(a: F32, b: F32): I32;
+  fn f32_ge(a: F32, b: F32): I32;
+  fn f64_eq(a: F64, b: F64): I32;
+  fn f64_ne(a: F64, b: F64): I32;
+  fn f64_lt(a: F64, b: F64): I32;
+  fn f64_gt(a: F64, b: F64): I32;
+  fn f64_le(a: F64, b: F64): I32;
+  fn f64_ge(a: F64, b: F64): I32;
+
+  fn f32_abs(n: F32): F32;
+  fn f32_neg(n: F32): F32;
+  fn f32_ceil(n: F32): F32;
+  fn f32_floor(n: F32): F32;
+  fn f32_trunc(n: F32): F32;
+  fn f32_nearest(n: F32): F32;
+  fn f32_sqrt(n: F32): F32;
+  fn f32_add(a: F32, b: F32): F32;
+  fn f32_sub(a: F32, b: F32): F32;
+  fn f32_mul(a: F32, b: F32): F32;
+  fn f32_div(a: F32, b: F32): F32;
+  fn f32_min(a: F32, b: F32): F32;
+  fn f32_max(a: F32, b: F32): F32;
+  fn f32_copysign(a: F32, b: F32): F32;
+  fn f64_abs(n: F64): F64;
+  fn f64_neg(n: F64): F64;
+  fn f64_ceil(n: F64): F64;
+  fn f64_floor(n: F64): F64;
+  fn f64_trunc(n: F64): F64;
+  fn f64_nearest(n: F64): F64;
+  fn f64_sqrt(n: F64): F64;
+  fn f64_add(a: F64, b: F64): F64;
+  fn f64_sub(a: F64, b: F64): F64;
+  fn f64_mul(a: F64, b: F64): F64;
+  fn f64_div(a: F64, b: F64): F64;
+  fn f64_min(a: F64, b: F64): F64;
+  fn f64_max(a: F64, b: F64): F64;
+  fn f64_copysign(a: F64, b: F64): F64;
+
+  # Float to integer. The plain `trunc` forms trap on NaN and on a value
+  # out of the result's range; the `trunc_sat` forms saturate instead,
+  # NaN going to zero.
+  fn i32_trunc_f32_s(n: F32): I32;
+  fn i32_trunc_f32_u(n: F32): I32;
+  fn i32_trunc_f64_s(n: F64): I32;
+  fn i32_trunc_f64_u(n: F64): I32;
+  fn i64_trunc_f32_s(n: F32): I64;
+  fn i64_trunc_f32_u(n: F32): I64;
+  fn i64_trunc_f64_s(n: F64): I64;
+  fn i64_trunc_f64_u(n: F64): I64;
+  fn i32_trunc_sat_f32_s(n: F32): I32;
+  fn i32_trunc_sat_f32_u(n: F32): I32;
+  fn i32_trunc_sat_f64_s(n: F64): I32;
+  fn i32_trunc_sat_f64_u(n: F64): I32;
+  fn i64_trunc_sat_f32_s(n: F32): I64;
+  fn i64_trunc_sat_f32_u(n: F32): I64;
+  fn i64_trunc_sat_f64_s(n: F64): I64;
+  fn i64_trunc_sat_f64_u(n: F64): I64;
+
+  # Integer to float, rounding to nearest (ties to even).
+  fn f32_convert_i32_s(n: I32): F32;
+  fn f32_convert_i32_u(n: I32): F32;
+  fn f32_convert_i64_s(n: I64): F32;
+  fn f32_convert_i64_u(n: I64): F32;
+  fn f64_convert_i32_s(n: I32): F64;
+  fn f64_convert_i32_u(n: I32): F64;
+  fn f64_convert_i64_s(n: I64): F64;
+  fn f64_convert_i64_u(n: I64): F64;
+
+  fn f32_demote_f64(n: F64): F32;
+  fn f64_promote_f32(n: F32): F64;
+
+  # The same bits, read as the other type.
+  fn i32_reinterpret_f32(n: F32): I32;
+  fn i64_reinterpret_f64(n: F64): I64;
+  fn f32_reinterpret_i32(n: I32): F32;
+  fn f64_reinterpret_i64(n: I64): F64;
+}
+
 context Wasm =
   I32,
   I64,
+  F32,
+  F64,
 
   i32_zero,
   i32_one,
@@ -215,4 +310,79 @@ context Wasm =
   i64_extend8_s,
   i64_extend16_s,
   i64_extend32_s,
+
+  f32_load,
+  f64_load,
+  f32_store,
+  f64_store,
+  f32_eq,
+  f32_ne,
+  f32_lt,
+  f32_gt,
+  f32_le,
+  f32_ge,
+  f64_eq,
+  f64_ne,
+  f64_lt,
+  f64_gt,
+  f64_le,
+  f64_ge,
+  f32_abs,
+  f32_neg,
+  f32_ceil,
+  f32_floor,
+  f32_trunc,
+  f32_nearest,
+  f32_sqrt,
+  f32_add,
+  f32_sub,
+  f32_mul,
+  f32_div,
+  f32_min,
+  f32_max,
+  f32_copysign,
+  f64_abs,
+  f64_neg,
+  f64_ceil,
+  f64_floor,
+  f64_trunc,
+  f64_nearest,
+  f64_sqrt,
+  f64_add,
+  f64_sub,
+  f64_mul,
+  f64_div,
+  f64_min,
+  f64_max,
+  f64_copysign,
+  i32_trunc_f32_s,
+  i32_trunc_f32_u,
+  i32_trunc_f64_s,
+  i32_trunc_f64_u,
+  i64_trunc_f32_s,
+  i64_trunc_f32_u,
+  i64_trunc_f64_s,
+  i64_trunc_f64_u,
+  i32_trunc_sat_f32_s,
+  i32_trunc_sat_f32_u,
+  i32_trunc_sat_f64_s,
+  i32_trunc_sat_f64_u,
+  i64_trunc_sat_f32_s,
+  i64_trunc_sat_f32_u,
+  i64_trunc_sat_f64_s,
+  i64_trunc_sat_f64_u,
+  f32_convert_i32_s,
+  f32_convert_i32_u,
+  f32_convert_i64_s,
+  f32_convert_i64_u,
+  f64_convert_i32_s,
+  f64_convert_i32_u,
+  f64_convert_i64_s,
+  f64_convert_i64_u,
+  f32_demote_f64,
+  f64_promote_f32,
+  i32_reinterpret_f32,
+  i64_reinterpret_f64,
+  f32_reinterpret_i32,
+  f64_reinterpret_i64,
 ;

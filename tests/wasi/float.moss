@@ -1,0 +1,167 @@
+import "../../lib/wasm.moss" as w use Wasm, I32, I64, F32, F64;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# f32 and f64 as scalars like i32 and i64 (D59, D67): in locals,
+# parameters, results, a record's fields and linear memory, and through
+# every kind of instruction the `Wasm` context has for them. There are no
+# float literals, so every float starts as an integer conversion. Each
+# line of output is one property, printed as an integer.
+
+type Complex { re: F64, im: F64 };
+
+assume Wasm, Wasi, Branch {
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn ten(): I32 { w::i32_add(eight(), two()) }
+
+  fn emit(c: I32) {
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
+    w::i32_store8(eight(), c);
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
+  }
+
+  fn digit(n: I32) {
+    # '0' is 48, which is 0b110000.
+    emit(w::i32_add(n, w::i32_shl(w::i32_add(two(), w::i32_one), w::i32_add(two(), two()))));
+  }
+
+  fn print_unsigned(n: I32) {
+    if i32_bool(w::i32_ge_u(n, ten())) {
+      print_unsigned(w::i32_div_u(n, ten()));
+    }
+    digit(w::i32_rem_u(n, ten()));
+  }
+
+  fn line(n: I32) {
+    if i32_bool(w::i32_lt_s(n, w::i32_zero)) {
+      emit(w::i32_add(w::i32_shl(w::i32_one, w::i32_add(four(), w::i32_one)), w::i32_add(eight(), w::i32_add(four(), w::i32_one))));  # '-'
+      print_unsigned(w::i32_sub(w::i32_zero, n));
+    } else {
+      print_unsigned(n);
+    }
+    emit(ten());
+  }
+
+  fn f64_of(n: I32): F64 { w::f64_convert_i32_s(n) }
+  fn f32_of(n: I32): F32 { w::f32_convert_i32_s(n) }
+
+  fn billion(): I32 {
+    var n = w::i32_one;
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, w::i32_add(eight(), w::i32_one))) {
+      n = w::i32_mul(n, ten());
+      i = w::i32_add(i, w::i32_one);
+    }
+    n
+  }
+
+  # x * 10^9, to the nearest integer: how a float is printed.
+  fn scaled64(x: F64): I32 {
+    w::i32_trunc_sat_f64_s(w::f64_nearest(w::f64_mul(x, f64_of(billion()))))
+  }
+  fn scaled32(x: F32): I32 {
+    w::i32_trunc_sat_f32_s(w::f32_nearest(w::f32_mul(x, f32_of(billion()))))
+  }
+
+  # Newton's method for the square root of `a`, five steps from 1:
+  # x <- (x + a/x) / 2.
+  fn sqrt64(a: F64): F64 {
+    var x = f64_of(w::i32_one);
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, w::i32_add(four(), w::i32_one))) {
+      x = w::f64_div(w::f64_add(x, w::f64_div(a, x)), f64_of(two()));
+      i = w::i32_add(i, w::i32_one);
+    }
+    x
+  }
+  fn sqrt32(a: F32): F32 {
+    var x = f32_of(w::i32_one);
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, w::i32_add(four(), w::i32_one))) {
+      x = w::f32_div(w::f32_add(x, w::f32_div(a, x)), f32_of(two()));
+      i = w::i32_add(i, w::i32_one);
+    }
+    x
+  }
+
+  fn square(z: Complex): Complex {
+    Complex {
+      re = w::f64_sub(w::f64_mul(z.re, z.re), w::f64_mul(z.im, z.im)),
+      im = w::f64_mul(f64_of(two()), w::f64_mul(z.re, z.im)),
+    }
+  }
+
+  fn main() {
+    # sqrt(2) in each precision, and the instruction itself.
+    line(scaled64(sqrt64(f64_of(two()))));                   # 1414213562
+    line(scaled32(sqrt32(f32_of(two()))));                   # 1414213504
+    line(scaled64(w::f64_sqrt(f64_of(two()))));              # 1414213562
+    # A third, rounded to single and then widened exactly.
+    let third = w::f32_div(f32_of(w::i32_one), f32_of(w::i32_add(two(), w::i32_one)));
+    line(scaled64(w::f64_promote_f32(third)));               # 333333343
+    line(scaled64(w::f64_div(f64_of(w::i32_one), f64_of(w::i32_add(two(), w::i32_one)))));  # 333333333
+
+    # NaN is unordered: unequal to itself, and neither below nor above one.
+    let nan = w::f64_div(f64_of(w::i32_zero), f64_of(w::i32_zero));
+    digit(w::f64_eq(nan, nan));
+    digit(w::f64_ne(nan, nan));
+    digit(w::f64_lt(nan, f64_of(w::i32_one)));
+    digit(w::f64_ge(nan, f64_of(w::i32_one)));
+    emit(ten());                                             # 0100
+
+    # Saturating truncation: NaN is 0, and out of range clamps.
+    line(w::i32_trunc_sat_f64_s(nan));                       # 0
+    let big = w::f64_mul(f64_of(billion()), f64_of(ten()));
+    line(w::i32_trunc_sat_f64_s(big));                       # 2147483647
+    line(w::i32_trunc_sat_f64_s(w::f64_neg(big)));           # -2147483648
+    line(w::i32_trunc_sat_f64_u(w::f64_neg(big)));           # 0
+    # An f32 past its largest finite value is infinite.
+    line(w::i32_trunc_sat_f32_s(w::f32_demote_f64(w::f64_mul(big, w::f64_mul(big, big)))));  # 2147483647
+    # The trapping form, in range.
+    line(w::i32_trunc_f64_s(w::f64_neg(sqrt64(f64_of(ten())))));  # -3
+
+    # Rounding to an integral float: ties to even, toward -inf, toward +inf.
+    let five_halves = w::f64_div(f64_of(w::i32_add(four(), w::i32_one)), f64_of(two()));
+    line(w::i32_trunc_f64_s(w::f64_nearest(five_halves)));   # 2
+    line(w::i32_trunc_f64_s(w::f64_nearest(w::f64_add(five_halves, f64_of(w::i32_one)))));  # 4
+    line(w::i32_trunc_f64_s(w::f64_floor(w::f64_neg(five_halves))));  # -3
+    line(w::i32_trunc_f64_s(w::f64_ceil(w::f64_neg(five_halves))));   # -2
+    line(w::i32_trunc_f32_s(w::f32_trunc(w::f32_neg(w::f32_demote_f64(five_halves)))));  # -2
+    # min(+0, -0) is -0, which copysign shows.
+    let pz = f64_of(w::i32_zero);
+    let nz = w::f64_neg(pz);
+    line(w::i32_trunc_f64_s(w::f64_copysign(f64_of(w::i32_one), w::f64_min(pz, nz))));  # -1
+    line(w::i32_trunc_f64_s(w::f64_copysign(f64_of(w::i32_one), w::f64_max(pz, nz))));  # 1
+    line(w::i32_trunc_f64_s(w::f64_abs(w::f64_neg(five_halves))));  # 2
+
+    # The bits of 1.0f, and back.
+    let one_bits = w::i32_reinterpret_f32(f32_of(w::i32_one));
+    line(one_bits);                                          # 1065353216
+    line(w::i32_trunc_f32_s(w::f32_reinterpret_i32(one_bits)));  # 1
+    line(w::i32_wrap_i64(w::i64_shr_u(
+      w::i64_reinterpret_f64(f64_of(two())),
+      w::i64_extend_i32_u(w::i32_mul(eight(), four()))
+    )));                                                     # 1073741824
+    # 2^60 + 2^36 + 1 to f32 rounds once, up; through a double first it
+    # would round to 2^60 + 2^36 and then, a tie, down to 2^60.
+    let sixty = w::i64_extend_i32_u(w::i32_sub(w::i32_mul(eight(), eight()), four()));
+    let thirty_six = w::i64_extend_i32_u(w::i32_add(w::i32_mul(eight(), four()), four()));
+    let one64 = w::i64_extend_i32_u(w::i32_one);
+    let n = w::i64_add(w::i64_add(w::i64_shl(one64, sixty), w::i64_shl(one64, thirty_six)), one64);
+    line(w::i32_reinterpret_f32(w::f32_convert_i64_s(n)));   # 1568669697
+    line(w::i32_wrap_i64(w::i64_trunc_sat_f64_u(w::f64_convert_i32_u(w::i32_sub(w::i32_zero, w::i32_one)))));  # -1
+
+    # Through linear memory, and through a record of two f64s.
+    let at = w::i32_mul(eight(), eight());
+    w::f64_store(at, sqrt64(f64_of(two())));
+    w::f32_store(w::i32_add(at, eight()), third);
+    line(w::f64_eq(w::f64_load(at), sqrt64(f64_of(two()))));  # 1
+    line(scaled32(w::f32_load(w::i32_add(at, eight()))));    # 333333344
+    let z = square(Complex { re = f64_of(w::i32_one), im = f64_of(w::i32_one) });
+    line(w::i32_trunc_f64_s(z.re));                          # 0
+    line(w::i32_trunc_f64_s(z.im));                          # 2
+  }
+}

@@ -44,6 +44,8 @@ SPELLED = [
     "wasip1.moss",
     "I32",
     "I64",
+    "F32",
+    "F64",
     "bool.moss",
     "wasistd.moss",
     "i32_bool",
@@ -142,8 +144,8 @@ assume Std {''']
 
 # --- src/wasmops.moss -------------------------------------------------
 
-SIMPLE, MEMARG, CONST0, CONST1, MEMZERO, MEMCOPY, MEMFILL = range(7)
-NONE, I32, I64 = 0, 1, 2
+SIMPLE, MEMARG, CONST0, CONST1, MEMZERO, MEMCOPY, MEMFILL, PREFIXED = range(8)
+NONE, I32, I64, F32, F64 = range(5)
 
 KIND_FN = {
     SIMPLE: "wk_simple()",
@@ -153,14 +155,47 @@ KIND_FN = {
     MEMZERO: "wk_memzero()",
     MEMCOPY: "wk_memcopy()",
     MEMFILL: "wk_memfill()",
+    PREFIXED: "wk_prefixed()",
 }
-RES_FN = {NONE: "wr_none()", I32: "wr_i32()", I64: "wr_i64()"}
+RES_FN = {
+    NONE: "wr_none()",
+    I32: "wr_i32()",
+    I64: "wr_i64()",
+    F32: "wr_f32()",
+    F64: "wr_f64()",
+}
 
 COMPARISONS = "eqz eq ne lt_s lt_u gt_s gt_u le_s le_u ge_s ge_u".split()
 ARITHMETIC = (
     "clz ctz popcnt add sub mul div_s div_u rem_s rem_u and or xor shl"
     " shr_s shr_u rotl rotr"
 ).split()
+FLOAT_COMPARISONS = "eq ne lt gt le ge".split()
+FLOAT_ARITHMETIC = (
+    "abs neg ceil floor trunc nearest sqrt add sub mul div min max copysign"
+).split()
+# (name, opcode, result) for the conversions, in opcode order.
+CONVERSIONS = [
+    ("i32_trunc_f32_s", 0xA8, I32), ("i32_trunc_f32_u", 0xA9, I32),
+    ("i32_trunc_f64_s", 0xAA, I32), ("i32_trunc_f64_u", 0xAB, I32),
+    ("i64_trunc_f32_s", 0xAE, I64), ("i64_trunc_f32_u", 0xAF, I64),
+    ("i64_trunc_f64_s", 0xB0, I64), ("i64_trunc_f64_u", 0xB1, I64),
+    ("f32_convert_i32_s", 0xB2, F32), ("f32_convert_i32_u", 0xB3, F32),
+    ("f32_convert_i64_s", 0xB4, F32), ("f32_convert_i64_u", 0xB5, F32),
+    ("f32_demote_f64", 0xB6, F32),
+    ("f64_convert_i32_s", 0xB7, F64), ("f64_convert_i32_u", 0xB8, F64),
+    ("f64_convert_i64_s", 0xB9, F64), ("f64_convert_i64_u", 0xBA, F64),
+    ("f64_promote_f32", 0xBB, F64),
+    ("i32_reinterpret_f32", 0xBC, I32), ("i64_reinterpret_f64", 0xBD, I64),
+    ("f32_reinterpret_i32", 0xBE, F32), ("f64_reinterpret_i64", 0xBF, F64),
+]
+# The saturating truncations: 0xFC, then this sub-opcode as a LEB.
+SATURATING = [
+    ("i32_trunc_sat_f32_s", I32), ("i32_trunc_sat_f32_u", I32),
+    ("i32_trunc_sat_f64_s", I32), ("i32_trunc_sat_f64_u", I32),
+    ("i64_trunc_sat_f32_s", I64), ("i64_trunc_sat_f32_u", I64),
+    ("i64_trunc_sat_f64_s", I64), ("i64_trunc_sat_f64_u", I64),
+]
 
 
 def wasm_ops() -> dict:
@@ -205,6 +240,23 @@ def wasm_ops() -> dict:
     add("i32_wrap_i64", 0xA7)
     add("i64_extend_i32_s", 0xAC, SIMPLE, 0, I64)
     add("i64_extend_i32_u", 0xAD, SIMPLE, 0, I64)
+    # The float half (D67). A prefixed instruction keeps its sub-opcode
+    # where a memory access keeps its alignment.
+    for name, code, align, res in [
+        ("f32_load", 0x2A, 2, F32), ("f64_load", 0x2B, 3, F64),
+        ("f32_store", 0x38, 2, NONE), ("f64_store", 0x39, 3, NONE),
+    ]:
+        add(name, code, MEMARG, align, res)
+    for i, name in enumerate(FLOAT_COMPARISONS):
+        add(f"f32_{name}", 0x5B + i)
+        add(f"f64_{name}", 0x61 + i)
+    for i, name in enumerate(FLOAT_ARITHMETIC):
+        add(f"f32_{name}", 0x8B + i, SIMPLE, 0, F32)
+        add(f"f64_{name}", 0x99 + i, SIMPLE, 0, F64)
+    for name, code, res in CONVERSIONS:
+        add(name, code, SIMPLE, 0, res)
+    for i, (name, res) in enumerate(SATURATING):
+        add(name, 0xFC, PREFIXED, i, res)
     return ops
 
 
@@ -231,11 +283,14 @@ assume Std {
   fn wk_memzero(): Int { n4() }
   fn wk_memcopy(): Int { n5() }
   fn wk_memfill(): Int { n6() }
+  fn wk_prefixed(): Int { n7() }
 
   # What it leaves on the stack.
   fn wr_none(): Int { zero }
   fn wr_i32(): Int { one }
   fn wr_i64(): Int { n2() }
+  fn wr_f32(): Int { n3() }
+  fn wr_f64(): Int { n4() }
 
   val op_names: IntList;
   val op_codes: IntList;
