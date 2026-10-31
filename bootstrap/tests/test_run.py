@@ -2619,7 +2619,6 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         ),
     }
 
-    @unittest.expectedFailure
     def test_a_pattern_names_a_member_by_the_bootstrap(self):
         """D34: a unit or tag pattern, with or without a payload, names a
         member of the scrutinee's type as written — so on a scrutinee of
@@ -2636,7 +2635,6 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     compile_wasm({}, entry=entry)
                 self.assertIn(message, str(caught.exception))
 
-    @unittest.expectedFailure
     def test_a_pattern_names_a_member_by_the_self_hosted_compiler(self):
         """The same programs."""
         for entry, (_, report) in self.MATCH_PATTERNS.items():

@@ -977,6 +977,11 @@ requires `e : |`. Note `src/parse.moss`'s `tree()` matches a `Token` against
 only three heads with no wildcard — stale code under this rule (§12), and
 `src/lower.moss:103,106` omit `=>` — recorded as typos.
 
+A unit or tag pattern, with or without a payload, must name a member of
+the scrutinee's generic type, so on an abstract scrutinee only a binder or
+`_` is legal, and a match's meaning cannot depend on a specialization
+([D16], [D80]).
+
 **[D35] DECIDED (iteration deferred with `for`).** No `for` and no
 iteration protocol in the MVP ([D31]); designing iterator semantics is
 punted deliberately. The four `for` loops in `src/` (§12) get rewritten with
@@ -3601,8 +3606,7 @@ alone cost about 50%, and caching type reads per (environment, type) more
 than paid for it.
 
 *Left.* Type errors are still `?S` with no detail, and [D74]'s
-`phantom_misread` is still a type error, not incoherence. A `match` on
-an abstract scrutinee takes its shape from the specialization.
+`phantom_misread` is still a type error, not incoherence.
 
 ## 13. Decision index
 

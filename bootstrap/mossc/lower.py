@@ -2537,6 +2537,12 @@ class FnChecker:
                     True,
                 )
             if isinstance(target, Symbol) and target.kind in (SymKind.UNIT, SymKind.TAG):
+                # D34: a pattern names a member of the scrutinee's type as
+                # written, so on an abstract type only a binder or `_`
+                # matches — what a match means cannot depend on what the
+                # type is specialized to (D16).
+                if target not in heads:
+                    self.error(f"`{target.name}` is not a member of `{show(sty)}`")
                 return ir.Pat(target, None, None), [], {target}, False
             self.error(f"`{'::'.join(pattern.path)}` is not a matchable pattern")
         if isinstance(pattern, ast.PatTag):

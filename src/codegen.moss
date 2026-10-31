@@ -332,6 +332,19 @@ assume Std {
       if cg_real.read() == 3 {
         return ();
       }
+      # Checked as written, a function says the same thing in every
+      # specialization that reaches it; once is enough.
+      var i = 0;
+      while i < cg_errs.length() {
+        if cg_errs.get(i) == code {
+          if cg_err_name.get(i) == name {
+            if cg_err_at.get(i) == cg_where.read() {
+              return ();
+            }
+          }
+        }
+        i = i + 1;
+      }
       cg_errs.push(code);
       cg_err_name.push(name);
       cg_err_at.push(cg_where.read());
@@ -3663,17 +3676,12 @@ assume Std {
       }
     }
 
-    # D34: a tag pattern, plain or destructuring a record, names a member
-    # of the scrutinee's type as written. An abstract type's one head is
-    # itself, so no tag is a member of it, whatever it specializes to.
+    # D34: a unit or tag pattern — bare, binding a payload, or
+    # destructuring a record — names a member of the scrutinee's type as
+    # written. An abstract type's one head is itself, so no unit or tag is
+    # a member of it, whatever it specializes to: what a match means
+    # cannot depend on the specialization (D16).
     fn check_member(pat: Int, m: Int, sty: Int) {
-      var carries = ast::kind_of(pat) == ast::k_pt_record();
-      if ast::kind_of(pat) == ast::k_pt_path() {
-        carries = ast::is_some(ast::b_of(pat));
-      }
-      if !carries {
-        return ();
-      }
       let head = arm_head_any(pat, m);
       if !ast::is_some(head) {
         return ();
