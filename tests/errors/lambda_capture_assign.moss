@@ -1,0 +1,13 @@
+assume Std {
+  fn step(c: Char): Char;
+}
+
+assume Std {
+  fn main() {
+    var count = zero;
+    bind step = (c) => {
+      count = count.add(one);
+      c
+    };
+  }
+}

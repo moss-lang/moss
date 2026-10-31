@@ -145,6 +145,44 @@ class TestExpressions(unittest.TestCase):
         self.assertEqual(first, ast.Bind([(ast.Spec(["lexer", "next_byte"], None, None), ast.PathExpr(["next_byte"], None))]))
         self.assertEqual(second, ast.Bind([(ast.Spec(["parser", "TokenId"], None, None), ast.PathExpr(["Int"], None))]))
 
+    def test_anonymous_function(self):
+        """D70: `(params) => body`, each parameter's type and the result
+        type optional; told from `()` and a parenthesized expression by
+        what follows the parenthesis."""
+        block = self.body(
+            "bind f = (x) => x, g = (): Char => {}, T.m = (a: Int, b,) => this;"
+        )
+        (bind,) = block.stmts
+        (_, f), (_, g), (_, m) = bind.items
+        self.assertEqual(
+            f, ast.Lambda([ast.Param("x", None)], None, ast.PathExpr(["x"], None))
+        )
+        self.assertEqual(g, ast.Lambda([], ast.TyRef(["Char"], None), ast.Block([], None)))
+        self.assertEqual(
+            m,
+            ast.Lambda(
+                [ast.Param("a", ast.TyRef(["Int"], None)), ast.Param("b", None)],
+                None,
+                ast.ThisExpr(),
+            ),
+        )
+        block = self.body("(x).f(); (); (x + y)")
+        self.assertIsInstance(block.stmts[0].expr, ast.MethodCall)
+        self.assertEqual(block.stmts[1].expr, ast.UnitExpr())
+        self.assertIsInstance(block.tail, ast.Binary)
+
+    def test_anonymous_function_body_extends_to_the_end(self):
+        """The body is a whole expression: `(x) => x + 1` is one lambda,
+        and a block body is a bare block (D65)."""
+        (bind,) = self.body("bind f = (x) => x + 1;").stmts
+        self.assertIsInstance(bind.items[0][1].body, ast.Binary)
+
+    def test_anonymous_function_needs_its_arrow(self):
+        for source in ("(x, y)", "(x: Int)", "bind f = (x): => x;"):
+            with self.subTest(source=source):
+                with self.assertRaises(ParseError):
+                    self.body(source)
+
     def test_method_field_and_qualified_call(self):
         block = self.body("x.f; x.m(y); x.b::m(y);")
         field, method, qualified = [s.expr for s in block.stmts]

@@ -1,0 +1,5 @@
+assume Std {
+  fn main() {
+    let shout = (c) => c;
+  }
+}

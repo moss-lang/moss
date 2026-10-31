@@ -1,0 +1,32 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D70: an annotation on an anonymous function's parameter must be the
+# type the bound declaration gives it, read where the bind is made — here
+# `Char`, not `Int`; nothing is inferred from it (D27). The bootstrap
+# says so; the self-hosted compiler reports `e_signature`, named by
+# `step`.
+
+assume Std {
+  fn step(c: Char): Char;
+}
+
+assume Std, step {
+  fn run_step(c: Char): Char { step(c) }
+}
+
+assume Std {
+  fn demo() {
+    bind step = (c: Int) => char::b;
+    putchar(run_step(char::a));
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

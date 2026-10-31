@@ -1358,7 +1358,7 @@ class FnCompiler:
             target = self.break_depths[-1]
             self.code += BR + uleb(self.depth - target) + I32_CONST + sleb(0)
         elif isinstance(node, ir.Block):
-            self.block(node)
+            return self.block(node)
         elif isinstance(node, ir.Match):
             return self.match(node)
         else:

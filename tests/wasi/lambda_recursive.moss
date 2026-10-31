@@ -1,0 +1,31 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D70: an anonymous function has no name, so it cannot call itself: in
+# its body `step` means what it means at the bind — nothing, here, since
+# the bind is the first. The bootstrap says `step` is not available; the
+# self-hosted compiler reports it unbound (`c_unbound`).
+
+assume Std {
+  fn step(c: Char): Char;
+}
+
+assume Std, step {
+  fn run_step(c: Char): Char { step(c) }
+}
+
+assume Std {
+  fn demo() {
+    bind step = (c) => step(c);
+    putchar(run_step(char::a));
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

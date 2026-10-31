@@ -1,0 +1,1 @@
+tests/errors/lambda_outside_bind.moss:3:17: an anonymous function may only be the right side of a fn or method bind (D70)

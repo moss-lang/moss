@@ -196,6 +196,9 @@ assume Std {
 
     fn elab_node(t: Int, m: Int): Int {
       let k = ast::kind_of(t);
+      if k.eq(ast::k_ty_known()) {
+        return ast::a_of(t);
+      }
       if k.eq(ast::k_ty_unit()) {
         return ty_unit();
       }

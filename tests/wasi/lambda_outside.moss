@@ -1,0 +1,23 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D70: an anonymous function is legal only as the right side of a fn or
+# method bind — there is nothing else to give it a type. As a `let`
+# initializer it is an error: the bootstrap's message, the self-hosted
+# compiler's `e_lambda`.
+
+assume Std {
+  fn demo() {
+    let f = (c) => c;
+    putchar(char::a);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

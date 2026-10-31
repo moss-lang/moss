@@ -589,8 +589,55 @@ assume Std {
         return parse_literal();
       }
       if accept(tk_lparen()) {
+        # D70: an anonymous function, told from `()` and a parenthesized
+        # expression by what follows — `()` or `(x)` then `=>` or `:`, or
+        # a name then `:` or `,`, which no expression has. Two tokens of
+        # lookahead decide it, as they do bootstrap/mossc/parse.py's.
+        let xs = int_list();
         if accept(tk_rparen()) {
+          if at_lambda_tail() {
+            return parse_lambda_rest(xs);
+          }
           return ast::node0(ast::k_ex_unit());
+        }
+        if here(tk_name()) {
+          let after = peek2();
+          var lambda = after.eq(tk_colon());
+          if lambda.not() {
+            lambda = after.eq(tk_comma());
+          }
+          if lambda {
+            loop {
+              if here(tk_rparen()) {
+                break;
+              }
+              if here(tk_eof()) {
+                break;
+              }
+              let nm = take_name();
+              var ty = ast::none();
+              if accept(tk_colon()) {
+                ty = parse_type();
+              }
+              xs.push(ast::node2(ast::k_param(), nm, ty));
+              if accept(tk_comma()).not() {
+                break;
+              }
+            }
+            expect(tk_rparen());
+            return parse_lambda_rest(xs);
+          }
+          if after.eq(tk_rparen()) {
+            let nm = take_name();
+            advance();
+            if at_lambda_tail() {
+              xs.push(ast::node2(ast::k_param(), nm, ast::none()));
+              return parse_lambda_rest(xs);
+            }
+            let ps = int_list();
+            ps.push(nm);
+            return ast::node4(ast::k_ex_path(), ast::path_of(ps), ast::none(), zero, zero);
+          }
         }
         let e = parse_expr();
         expect(tk_rparen());
@@ -652,6 +699,26 @@ assume Std {
         }
       }
       callee
+    }
+
+    fn at_lambda_tail(): Bool {
+      if here(tk_equal_greater()) {
+        true
+      } else {
+        here(tk_colon())
+      }
+    }
+
+    # The rest of an anonymous function, its parameters `xs` already
+    # read: an optional result type, the arrow, and the body.
+    fn parse_lambda_rest(xs: IntList): Int {
+      var ret = ast::none();
+      if accept(tk_colon()) {
+        ret = parse_type();
+      }
+      expect(tk_equal_greater());
+      let body = parse_expr();
+      ast::node4(ast::k_ex_lambda(), ast::commit(xs), xs.length(), ret, body)
     }
 
     # Patterns.

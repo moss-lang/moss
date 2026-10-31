@@ -92,6 +92,40 @@ def has_break(node) -> bool:
     return False
 
 
+def free_names(node, out: set) -> None:
+    """Every single-segment name an expression reads or assigns as a
+    local might be — over-approximated: a name the body itself binds, or
+    one naming a context item, is collected too. The callee of a call and
+    of a record construction is not a local, nor is a pattern."""
+    from dataclasses import fields, is_dataclass
+
+    if isinstance(node, ast.PathExpr):
+        if len(node.path) == 1 and node.app is None:
+            out.add(node.path[0])
+        return
+    if isinstance(node, ast.Assign):
+        out.add(node.name)
+    if isinstance(node, ast.RecordExpr):
+        for name, value in node.fields:
+            if value is None:
+                out.add(name)
+            else:
+                free_names(value, out)
+        return
+    if isinstance(node, ast.Call):
+        free_names(node.args, out)
+        return
+    if isinstance(node, ast.Arm):
+        free_names(node.body, out)
+        return
+    if is_dataclass(node):
+        for f in fields(node):
+            free_names(getattr(node, f.name), out)
+    elif isinstance(node, (list, tuple)):
+        for item in node:
+            free_names(item, out)
+
+
 def locate(module: Module, node) -> str:
     """`:line:col` for a node with a source offset, if we can compute it."""
     offset = getattr(node, "offset", -1)
@@ -1025,6 +1059,7 @@ class FnChecker:
         self.loop_depth = 0
         self.applying: set = set()  # functors being applied, to catch cycles
         self.at_node = None  # the statement/expression currently checked
+        self.no_this = ""  # why there is no `this`, when there is more to say
         for name, ty in sig.params:
             env.locals[name] = (ty, False)
 
@@ -1113,6 +1148,11 @@ class FnChecker:
             if local is None:
                 self.error(f"`{stmt.name}` is not in scope")
             ty, mutable = local
+            if mutable is None:
+                self.error(
+                    f"`{stmt.name}` is a local captured by an anonymous function, "
+                    "which captures it by value and may not assign it (D70)"
+                )
             if not mutable:
                 self.error(f"`{stmt.name}` is not a `var`")
             expr, ety = self.synth(stmt.expr, expected=ty)
@@ -1125,7 +1165,7 @@ class FnChecker:
                 if expr is None:
                     binds.extend(self.apply_functor(spec))
                 else:
-                    binds.append(self.check_bind(spec, expr))
+                    binds.extend(self.check_bind(spec, expr))
             return [b for b in binds if b is not None]
         if isinstance(stmt, ast.While):
             cond = self.check_bool(stmt.cond)
@@ -1181,13 +1221,16 @@ class FnChecker:
                     if item_expr is None:
                         out.extend(self.apply_functor(item_spec))
                     else:
-                        out.append(self.check_bind(item_spec, item_expr))
+                        out.extend(self.check_bind(item_spec, item_expr))
         finally:
             self.module = outer
             self.applying.discard(id(target))
         return [b for b in out if b is not None]
 
-    def check_bind(self, spec: ast.Spec, expr: ast.Expr):
+    def check_bind(self, spec: ast.Spec, expr: ast.Expr) -> list:
+        """The IR of one `bind` item: nothing for a type, one bind, or —
+        for an anonymous function (D70) — the binds of its captured
+        locals' vals and then its own."""
         module = self.module
         if spec.app is not None and spec.dot is None:
             self.error("a bind left-hand side takes no bracket application")
@@ -1206,12 +1249,18 @@ class FnChecker:
                 self.error(f"no method `.{spec.dot}` for `{receiver.name}` is in scope")
             this_ty = self.lower.symbol_type(module, receiver, tymap, self.env)
             sig = self.lower.fn_sig(method, tymap, self.env, this=this_ty)
-            fn_symbol = self.expect_provider(expr, this_ty)
-            needs_map = self.match_fn_sig(fn_symbol, sig, kind="method")
+            pre = []
+            if isinstance(expr, ast.Lambda):
+                fn_symbol, pre, needs_map = self.lambda_provider(
+                    expr, method, sig, this_ty, f"`{show(this_ty)}{method.name}`"
+                )
+            else:
+                fn_symbol = self.expect_provider(expr, this_ty)
+                needs_map = self.match_fn_sig(fn_symbol, sig, kind="method")
             key = self.lower.method_key(self.env, module, this_ty, method)
             self.lower.shadow(self.env.methods, key, sig)
             self.provided_at(key, method, tymap, method=True)
-            return ir.BindFn(key, fn_symbol, needs_map)
+            return [*pre, ir.BindFn(key, fn_symbol, needs_map)]
         target = resolve_path(module, spec.path)
         if target is None:
             self.error(f"`{'::'.join(spec.path)}` is not in scope")
@@ -1224,7 +1273,7 @@ class FnChecker:
                 ast.TyRef(expr.path, expr.app), module, self.env.tymap, self.env
             )
             self.env.tymap[target] = ty
-            return None  # static only
+            return []  # static only
         if target.kind == SymKind.VAL:
             declared = self.lower.elab_type(
                 target.decl.ty, target.module, self.env.tymap, self.env
@@ -1237,15 +1286,121 @@ class FnChecker:
                 )
             self.lower.shadow(self.env.vals, target, declared)
             self.provided_at(target, target, self.env.tymap)
-            return ir.BindVal(target, value)
+            return [ir.BindVal(target, value)]
         if target.kind == SymKind.FN:
             sig = self.lower.fn_sig(target, self.env.tymap, self.env)
-            fn_symbol = self.expect_fn_provider(expr)
-            needs_map = self.match_fn_sig(fn_symbol, sig, kind="fn")
+            pre = []
+            if isinstance(expr, ast.Lambda):
+                fn_symbol, pre, needs_map = self.lambda_provider(
+                    expr, target, sig, None, f"`{target.name}`"
+                )
+            else:
+                fn_symbol = self.expect_fn_provider(expr)
+                needs_map = self.match_fn_sig(fn_symbol, sig, kind="fn")
             self.lower.shadow(self.env.fns, target, sig)
             self.provided_at(target, target, self.env.tymap)
-            return ir.BindFn(target, fn_symbol, needs_map)
+            return [*pre, ir.BindFn(target, fn_symbol, needs_map)]
         self.error(f"cannot bind `{target.name}` (a {target.kind.name.lower()})")
+
+    def lambda_provider(self, lam: ast.Lambda, bound: Symbol, sig: FnSig, this_ty, what: str):
+        """D70: an anonymous function at a bind is sugar over the core
+        calculus. Each captured local `k` becomes a fresh val bound to
+        `k`'s value right here (EBindVal), and the function becomes a
+        fresh defined one, assuming everything in context at the bind,
+        whose body reads each `k` from its val; it is then bound as any
+        provider is (EBindFn, or EBindMth with the receiver its first
+        parameter, which the interpreter and back end pass as `this`).
+        Returns the provider, those val binds, and the needs map.
+
+        Its signature is `sig`, the bound declaration's as read here
+        (D27): annotations are checked against it, never inferred from."""
+        self.at_node = lam
+        if len(lam.params) != len(sig.params):
+            self.error(
+                f"the anonymous function bound to {what} takes {len(lam.params)} "
+                f"parameter(s), but {what} takes {len(sig.params)} (D70)"
+            )
+        names = [p.name for p in lam.params]
+        for i, name in enumerate(names):
+            if name in names[:i]:
+                self.error(f"anonymous function parameter `{name}` is declared twice")
+        canon = lambda t: self.lower.canon(self.env, t)
+
+        def annotated(ty_ast):
+            return self.lower.elab_type(
+                ty_ast, self.module, self.env.tymap, self.env, this=this_ty
+            )
+
+        for p, (_, want) in zip(lam.params, sig.params):
+            if p.ty is not None and canon(annotated(p.ty)) != canon(want):
+                self.error(
+                    f"parameter `{p.name}` of the anonymous function bound to {what} "
+                    f"is annotated `{show(annotated(p.ty))}`, but {what} declares "
+                    f"`{show(want)}` there (D70)"
+                )
+        if lam.ret is not None and canon(annotated(lam.ret)) != canon(sig.ret):
+            self.error(
+                f"the anonymous function bound to {what} is annotated to return "
+                f"`{show(annotated(lam.ret))}`, but {what} returns `{show(sig.ret)}` (D70)"
+            )
+        # Locals of the enclosing function it names, captured by value. A
+        # functor's binds are a declaration's, which has no locals.
+        outer = {} if self.applying else self.env.locals
+        named: set = set()
+        free_names(lam.body, named)
+        captured = [n for n in outer if n in named and n not in names]
+        env = Env(self.module, parent=self.env)
+        env.locals = {}
+        pre, lets = [], []
+        for name in captured:
+            ty = outer[name][0]
+            val = Symbol(self.module, name, SymKind.VAL, ast.Valdef(name, None))
+            env.vals[val] = ty
+            env.apps[val] = {}
+            pre.append(ir.BindVal(val, ir.Local(name)))
+            lets.append(ir.Let(name, ir.NeedVal(val)))
+        needs = [*env.vals, *env.fns, *env.methods]
+        body_ast = ast.Block([], lam.body, offset=lam.offset)
+        decl = ast.Fndef(
+            ast.FnName(None, False, bound.name),
+            [ast.Param(n, None) for n in names],
+            bound.decl.ret,
+            body_ast,
+            offset=lam.offset,
+        )
+        provider = Symbol(self.module, bound.name, SymKind.FN, decl)
+        lsig = FnSig(tuple(zip(names, (t for _, t in sig.params))), sig.ret, this_ty)
+        checker = FnChecker(self.lower, self.module, env, lsig, needs, this_ty)
+        checker.applying = set(self.applying)
+        checker.no_this = (
+            "; an anonymous function bound to a fn has no receiver, and does "
+            "not capture an enclosing one (D70)"
+        )
+        for name in captured:
+            # Immutable, and marked so an assignment says why.
+            env.locals[name] = (outer[name][0], None)
+        body = checker.check_block(body_ast, expected=sig.ret)
+        slots = lambda t: self.lower.slots_of(self.env, t)
+        param_slots = ([slots(this_ty)] if this_ty is not None else []) + [
+            slots(t) for _, t in sig.params
+        ]
+        for key in needs:
+            if isinstance(key, Symbol) and key.kind == SymKind.VAL:
+                self.lower.val_widths[id(key)] = slots(env.vals[key])
+        lower = self.lower
+        lower.fn_symbols[id(decl)] = provider
+        lower.needs_of[id(provider)] = tuple(needs)
+        lower.need_apps[id(provider)] = {k: env.apps.get(k, {}) for k in needs}
+        lower.fns[id(provider)] = ir.FnIR(
+            provider,
+            tuple(names),
+            tuple(needs),
+            ir.Block(tuple(lets), body),
+            this_ty is not None,
+            tuple(param_slots),
+            slots(sig.ret),
+        )
+        return provider, pre, tuple((k, k) for k in needs)
 
     def provided_at(self, key, sym: Symbol, tymap: dict, method: bool = False):
         """Record the instantiation a bind's provision is made at."""
@@ -1438,7 +1593,7 @@ class FnChecker:
             return ir.Unit(), TUnit()
         if isinstance(expr, ast.ThisExpr):
             if self.this_ty is None:
-                self.error("`this` is only legal inside method bodies")
+                self.error("`this` is only legal inside method bodies" + self.no_this)
             return ir.This(), self.this_ty
         if isinstance(expr, ast.Return):
             if expr.expr is None:
@@ -1481,6 +1636,11 @@ class FnChecker:
             return self.synth_literal(expr)
         if isinstance(expr, Built):
             return expr.node, expr.ty
+        if isinstance(expr, ast.Lambda):
+            self.error(
+                "an anonymous function may only be the right side of a fn or "
+                "method bind (D70)"
+            )
         self.error(f"unsupported expression {expr!r}")
 
     def synth_if(self, expr: ast.If, expected):

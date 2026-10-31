@@ -201,6 +201,22 @@ assume Std {
   val ch_link: IntList;
   val ch_head: IntList;
 
+  # D70: the function synthesized for each anonymous function at a bind,
+  # one per (node, generic environment, environment) the bind runs in —
+  # its captured locals' types are the frame's, which are specialized.
+  # `lm_recv` says whether it takes a receiver; its captured locals are
+  # a run of (name, val symbol) pairs in `lm_cap`. `cg_capt` holds the
+  # locals that are captured ones, which a body may read but not assign.
+  val lm_node: IntList;
+  val lm_genv: IntList;
+  val lm_env: IntList;
+  val lm_sym: IntList;
+  val lm_recv: IntList;
+  val lm_cstart: IntList;
+  val lm_clen: IntList;
+  val lm_cap: IntList;
+  val cg_capt: IntList;
+
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
@@ -211,7 +227,8 @@ assume Std {
     ck_entry, ck_inner, ck_link, ck_head,
     fl_start, fl_len, fl_types,
     un_sym, un_link, un_head, un_mark, un_stamp, un_meths, un_fstart, un_flags,
-    cg_lang, cg_genv, ch_run, ch_link, ch_head;
+    cg_lang, cg_genv, ch_run, ch_link, ch_head,
+    lm_node, lm_genv, lm_env, lm_sym, lm_recv, lm_cstart, lm_clen, lm_cap, cg_capt;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -524,7 +541,46 @@ assume Std {
     # takes the method's declared parameters, which exclude the receiver,
     # and cannot see what the method was called on (D54).
     fn takes_receiver(provider: Int): Bool {
-      is_defined_method(provider)
+      if is_defined_method(provider) {
+        return true;
+      }
+      let i = lambda_row(provider);
+      if ast::is_some(i) {
+        return lm_recv.get(i).eq(one);
+      }
+      false
+    }
+
+    # A provider's parameter types after the receiver, as a call passes
+    # its arguments: an anonymous function that takes the receiver has
+    # it as its first declared parameter (D70).
+    fn provider_params(penv: Int, provider: Int): IntList {
+      let all = param_types_in(penv, provider);
+      if is_defined_method(provider) {
+        return all;
+      }
+      if takes_receiver(provider).not() {
+        return all;
+      }
+      let out = int_list();
+      var i = one;
+      while i.lt(all.length()) {
+        out.push(all.get(i));
+        i = i.add(one);
+      }
+      out
+    }
+
+    # The row of the anonymous function `sym` is, or none.
+    fn lambda_row(sym: Int): Int {
+      var i = zero;
+      while i.lt(lm_sym.length()) {
+        if lm_sym.get(i).eq(sym) {
+          return i;
+        }
+        i = i.add(one);
+      }
+      ast::none()
     }
 
     # Whether the frame being compiled has a receiver for `this` to name,
@@ -873,6 +929,10 @@ assume Std {
         uw_node(f, ast::a_of(e), m);
       } else if k.eq(ast::k_st_bind()) {
         uw_binds(f, ast::a_of(e), ast::b_of(e), m, zero);
+      } else if k.eq(ast::k_ex_lambda()) {
+        # D70: what it reaches, it reaches from the bind's frame, which
+        # captures it there.
+        uw_node(f, ast::d_of(e), m);
       }
     }
 
@@ -1967,6 +2027,11 @@ assume Std {
       if k.eq(ast::k_ex_lit()) {
         return emit_literal(body, e);
       }
+      if k.eq(ast::k_ex_lambda()) {
+        # D70: only a bind's right side, which never comes here.
+        prog::error(prog::e_lambda(), m, ast::none());
+        return ty_none();
+      }
       cg_error(c_unsupported(), ast::none());
       ty_none()
     }
@@ -2179,7 +2244,7 @@ assume Std {
         return ty_none();
       }
       push_receiver(body, recv, recv_ty, provider);
-      emit_args(body, run, n, m, param_types_in(penv, provider));
+      emit_args(body, run, n, m, provider_params(penv, provider));
       reach(provider, penv);
       push_needs(body, provider, penv, bound, int_list());
       op_call(body, index_of_fn(provider, penv));
@@ -2244,7 +2309,7 @@ assume Std {
         }
       }
       push_receiver(body, recv, recv_ty, provider);
-      emit_args(body, ast::c_of(e), ast::d_of(e), m, param_types_in(penv, provider));
+      emit_args(body, ast::c_of(e), ast::d_of(e), m, provider_params(penv, provider));
       reach(provider, penv);
       push_needs(body, provider, penv, via, map);
       op_call(body, index_of_fn(provider, penv));
@@ -3188,7 +3253,7 @@ assume Std {
       }
       # A receiver dot: providing a detached method at that receiver.
       if ast::is_some(ast::b_of(spec)) {
-        bind_method(spec, value, m, mode);
+        bind_method(body, spec, value, m, depth, mode);
         return ();
       }
       if ast::is_some(ast::a_of(spec)).not() {
@@ -3231,6 +3296,15 @@ assume Std {
         return ();
       }
       if kind.eq(prog::sk_fn()) {
+        if ast::is_kind(value, ast::k_ex_lambda()) {
+          let lam = bind_lambda(spec, value, sym, ast::none(), m, depth, body);
+          provided_at(lower::ek_fn(), ast::none(), sym, cg_genv.read());
+          cg_env.write(lower::env_push(
+            cg_env.read(), lower::ek_fn(), ast::none(), sym, lam, cg_env.read()
+          ));
+          capture(cg_env.read(), mode);
+          return ();
+        }
         let provider = named_fn(value, m);
         if ast::is_some(provider).not() {
           bind_contextual(sym, value, m, mode);
@@ -3314,7 +3388,7 @@ assume Std {
 
     # `bind Horn.loud = Horn.blast;` — a detached method provided at a
     # receiver. The key is the receiver's head, so calls find it there.
-    fn bind_method(spec: Int, value: Int, m: Int, mode: Int) {
+    fn bind_method(body: IntList, spec: Int, value: Int, m: Int, depth: Int, mode: Int) {
       let recv_sym = prog::resolve_path(m, ast::a_of(spec));
       if ast::is_some(recv_sym).not() {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
@@ -3328,7 +3402,6 @@ assume Std {
       );
       let head = types::head_of(recv);
       let detached = lower::find_method_decl(m, recv_sym, ast::b_of(spec));
-      let provider = named_fn(value, m);
       if ast::is_some(head).not() {
         cg_error(prog::e_method(), ast::b_of(spec));
         return ();
@@ -3337,12 +3410,18 @@ assume Std {
         cg_error(prog::e_method(), ast::b_of(spec));
         return ();
       }
-      if ast::is_some(provider).not() {
-        cg_error(c_unsupported(), ast::b_of(spec));
-        return ();
+      var provider = ast::none();
+      if ast::is_kind(value, ast::k_ex_lambda()) {
+        provider = bind_lambda(spec, value, detached, recv_sym, m, depth, body);
+      } else {
+        provider = named_fn(value, m);
+        if ast::is_some(provider).not() {
+          cg_error(c_unsupported(), ast::b_of(spec));
+          return ();
+        }
+        check_method_sig(spec, recv_sym, detached, provider, m);
+        check_callee(provider);
       }
-      check_method_sig(spec, recv_sym, detached, provider, m);
-      check_callee(provider);
       cg_env.write(lower::env_push(
         cg_env.read(), lower::ek_fn(), recv, detached, provider, cg_env.read()
       ));
@@ -3411,6 +3490,316 @@ assume Std {
       }
       if ok.not() {
         prog::error(prog::e_signature(), m, prog::sym_name.get(method));
+      }
+    }
+
+    # D70: an anonymous function at a bind of `bound` — a fn, or the
+    # method `bound` at receiver `recv_sym` with the bind's brackets in
+    # `spec`. Pure sugar over the calculus, as the bootstrap elaborates
+    # it: each local of the frame its body names is bound, here and by
+    # value, to a fresh val (EBindVal); the function is a fresh defined
+    # one assuming everything in context here, those vals included, with
+    # the bound declaration's signature as the bind reads it (D27) and,
+    # for a method, the receiver first (TBindMthR); and it is provided
+    # as any defined provider is. Returns it.
+    fn bind_lambda(
+      spec: Int, value: Int, bound: Int, recv_sym: Int, m: Int, depth: Int, body: IntList
+    ): Int {
+      let genv = cg_genv.read();
+      let env = cg_env.read();
+      let bd = prog::sym_decl.get(bound);
+      let home = prog::sym_mod.get(bound);
+      let n = ast::fn_nparams(bd);
+      # The receiver, as written and as specialized; none for a fn.
+      var grecv = ast::none();
+      var recv = ast::none();
+      var gview = genv;
+      var view = env;
+      if ast::is_some(recv_sym) {
+        gview = lower::app_view(genv, m, spec);
+        view = lower::app_view(env, m, spec);
+        grecv = lower::canon(gview, types::ty_of_decl(recv_sym));
+        recv = lower::canon(view, types::ty_of_decl(recv_sym));
+      }
+      # The signature: the declaration's, never inferred from (D27).
+      var ok = ast::b_of(value).eq(n);
+      var i = zero;
+      while i.lt(n) {
+        if ok {
+          let ann = ast::b_of(ast::kid_at(ast::a_of(value), i));
+          if ast::is_some(ann) {
+            ok = sig_ty(genv, ann, m, grecv).eq(
+              sig_ty(gview, ast::b_of(ast::kid_at(ast::fn_params(bd), i)), home, grecv)
+            );
+          }
+        }
+        i = i.add(one);
+      }
+      if ok {
+        if ast::is_some(ast::c_of(value)) {
+          ok = sig_ty(genv, ast::c_of(value), m, grecv).eq(
+            sig_ty(gview, ast::fn_ret(bd), home, grecv)
+          );
+        }
+      }
+      if ok.not() {
+        prog::error(prog::e_signature(), m, prog::sym_name.get(bound));
+      }
+      var row = ast::none();
+      i = zero;
+      while i.lt(lm_node.length()) {
+        if lm_node.get(i).eq(value) {
+          if lm_genv.get(i).eq(genv) {
+            if lm_env.get(i).eq(env) {
+              row = i;
+            }
+          }
+        }
+        i = i.add(one);
+      }
+      if ast::is_some(row).not() {
+        row = make_lambda(value, bound, recv, view, genv, env, m, depth);
+      }
+      # The captured locals' vals, bound to their values now.
+      var j = zero;
+      while j.lt(lm_clen.get(row)) {
+        let at = lm_cstart.get(row).add(j.mul(n2()));
+        let l = find_local(lm_cap.get(at));
+        let v = lm_cap.get(at.add(one));
+        if ast::is_some(l) {
+          load_local(body, l);
+          let held = reveal(ast::none(), lc_type.get(l));
+          store_local(body, held);
+          provide(ast::none(), v, held);
+        }
+        j = j.add(one);
+      }
+      lm_sym.get(row)
+    }
+
+    # The function an anonymous function is, made once per bind site and
+    # environment. `view` reads the bound declaration's types here.
+    fn make_lambda(
+      value: Int, bound: Int, recv: Int, view: Int, genv: Int, env: Int, m: Int,
+      depth: Int
+    ): Int {
+      let bd = prog::sym_decl.get(bound);
+      let home = prog::sym_mod.get(bound);
+      let lbody = ast::d_of(value);
+      # Its parameters: the receiver, unnamed so that only `this` reads
+      # it, then the bound declaration's, under the anonymous names.
+      let ps = int_list();
+      if ast::is_some(recv) {
+        ps.push(ast::node2(ast::k_param(), ast::none(), known(recv)));
+      }
+      var i = zero;
+      while i.lt(ast::fn_nparams(bd)) {
+        let t = sig_ty(view, ast::b_of(ast::kid_at(ast::fn_params(bd), i)), home, recv);
+        ps.push(ast::node2(
+          ast::k_param(), ast::a_of(ast::kid_at(ast::a_of(value), i)), known(t)
+        ));
+        i = i.add(one);
+      }
+      var ret = ast::none();
+      if ast::is_some(ast::fn_ret(bd)) {
+        ret = known(sig_ty(view, ast::fn_ret(bd), home, recv));
+      }
+      let decl = ast::make_fn(
+        ast::recv_plain(), prog::sym_name.get(bound), ast::commit(ps), ps.length(),
+        ret, lbody
+      );
+      let lam = prog::add_symbol(m, prog::sym_name.get(bound), prog::sk_fn(), decl, ast::none(), ast::none(), zero);
+      # The frame's locals the body names, but not its own parameters'
+      # names; a functor's binds are a declaration's, with no locals.
+      let caps = int_list();
+      if depth.eq(zero) {
+        let names = int_list();
+        lambda_names(lbody, names);
+        var k = zero;
+        while k.lt(names.length()) {
+          let nm = names.get(k);
+          var param = false;
+          var q = zero;
+          while q.lt(ast::b_of(value)) {
+            if ast::a_of(ast::kid_at(ast::a_of(value), q)).eq(nm) {
+              param = true;
+            }
+            q = q.add(one);
+          }
+          if param.not() {
+            let l = find_local(nm);
+            if ast::is_some(l) {
+              let vd = ast::node3(ast::k_d_val(), nm, known(lc_type.get(l)), ast::none());
+              caps.push(nm);
+              caps.push(prog::add_symbol(m, nm, prog::sk_val(), vd, ast::none(), ast::none(), zero));
+            }
+          }
+          k = k.add(one);
+        }
+      }
+      # Its context: everything in force here, as written, and the vals.
+      var lenv = genv;
+      let recvs = int_list();
+      let syms = int_list();
+      let apps = int_list();
+      var e = genv;
+      while ast::is_some(e) {
+        let kind = lower::env_kind_of(e);
+        if kind.ne(lower::ek_type()) {
+          var seen = false;
+          var q = zero;
+          while q.lt(syms.length()) {
+            if syms.get(q).eq(lower::env_sym_of(e)) {
+              if recvs.get(q).eq(lower::env_recv_of(e)) {
+                seen = true;
+              }
+            }
+            q = q.add(one);
+          }
+          if seen.not() {
+            recvs.push(lower::env_recv_of(e));
+            syms.push(lower::env_sym_of(e));
+            apps.push(lower::env_b_of(e));
+          }
+        }
+        e = lower::env_next_of(e);
+      }
+      var k = zero;
+      while k.lt(caps.length()) {
+        let v = caps.get(k.add(one));
+        lenv = lower::env_push(
+          lenv, lower::ek_val(), ast::none(), v, need_type_raw(v), lower::env_empty()
+        );
+        recvs.push(ast::none());
+        syms.push(v);
+        apps.push(lower::env_empty());
+        k = k.add(n2());
+      }
+      lower::set_needs(lam, lenv, recvs, syms, apps);
+      # What it reaches, for `need_used`.
+      while un_head.length().lt(prog::sym_count()) {
+        un_head.push(zero);
+        un_mark.push(zero);
+        un_fstart.push(zero);
+      }
+      uw_node(lam, lbody, m);
+      k = zero;
+      while k.lt(caps.length()) {
+        uw_row(lam, caps.get(k.add(one)));
+        k = k.add(n2());
+      }
+      lm_node.push(value);
+      lm_genv.push(genv);
+      lm_env.push(env);
+      lm_sym.push(lam);
+      if ast::is_some(recv) {
+        lm_recv.push(one);
+      } else {
+        lm_recv.push(zero);
+      }
+      lm_cstart.push(lm_cap.length());
+      lm_clen.push(caps.length().div(n2()));
+      k = zero;
+      while k.lt(caps.length()) {
+        lm_cap.push(caps.get(k));
+        k = k.add(one);
+      }
+      lm_sym.length().sub(one)
+    }
+
+    # A type already elaborated, as a declaration's type node.
+    fn known(t: Int): Int {
+      ast::node1(ast::k_ty_known(), t)
+    }
+
+    # A captured val's type, as its declaration holds it.
+    fn need_type_raw(v: Int): Int {
+      ast::a_of(ast::b_of(prog::sym_decl.get(v)))
+    }
+
+    # Every single-segment name an expression reads or assigns as a local
+    # might be — over-approximated, as the bootstrap's `free_names` is: a
+    # name the body binds itself, or a context item's, is collected too.
+    fn lambda_names(e: Int, out: IntList) {
+      if ast::is_some(e).not() {
+        return ();
+      }
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_path()) {
+        if ast::path_len(ast::a_of(e)).eq(one) {
+          if ast::d_of(e).ne(one) {
+            types::push_new(out, ast::path_at(ast::a_of(e), zero));
+          }
+        }
+      } else if k.eq(ast::k_ex_call()) {
+        lambda_names_run(ast::b_of(e), ast::c_of(e), out);
+      } else if k.eq(ast::k_ex_field()) {
+        lambda_names(ast::a_of(e), out);
+      } else if k.eq(ast::k_ex_method()) {
+        lambda_names(ast::a_of(e), out);
+        lambda_names_run(ast::c_of(e), ast::d_of(e), out);
+      } else if k.eq(ast::k_ex_record()) {
+        var i = zero;
+        while i.lt(ast::c_of(e)) {
+          let field = ast::kid_at(ast::b_of(e), i);
+          if ast::is_some(ast::b_of(field)) {
+            lambda_names(ast::b_of(field), out);
+          } else {
+            types::push_new(out, ast::a_of(field));
+          }
+          i = i.add(one);
+        }
+      } else if k.eq(ast::k_ex_if()) {
+        lambda_names(ast::a_of(e), out);
+        lambda_names(ast::b_of(e), out);
+        lambda_names(ast::c_of(e), out);
+      } else if k.eq(ast::k_ex_match()) {
+        lambda_names(ast::a_of(e), out);
+        var i = zero;
+        while i.lt(ast::c_of(e)) {
+          lambda_names(ast::b_of(ast::kid_at(ast::b_of(e), i)), out);
+          i = i.add(one);
+        }
+      } else if k.eq(ast::k_ex_return()) {
+        lambda_names(ast::a_of(e), out);
+      } else if k.eq(ast::k_ex_block()) {
+        lambda_names_run(ast::a_of(e), ast::b_of(e), out);
+        lambda_names(ast::c_of(e), out);
+      } else if k.eq(ast::k_ex_unary()) {
+        lambda_names(ast::b_of(e), out);
+      } else if k.eq(ast::k_ex_binary()) {
+        lambda_names(ast::b_of(e), out);
+        lambda_names_run(ast::c_of(e), one, out);
+      } else if k.eq(ast::k_ex_lambda()) {
+        lambda_names(ast::d_of(e), out);
+      } else if k.eq(ast::k_st_let()) {
+        lambda_names(ast::c_of(e), out);
+      } else if k.eq(ast::k_st_var()) {
+        lambda_names(ast::c_of(e), out);
+      } else if k.eq(ast::k_st_assign()) {
+        types::push_new(out, ast::a_of(e));
+        lambda_names(ast::b_of(e), out);
+      } else if k.eq(ast::k_st_expr()) {
+        lambda_names(ast::a_of(e), out);
+      } else if k.eq(ast::k_st_while()) {
+        lambda_names(ast::a_of(e), out);
+        lambda_names(ast::b_of(e), out);
+      } else if k.eq(ast::k_st_loop()) {
+        lambda_names(ast::a_of(e), out);
+      } else if k.eq(ast::k_st_bind()) {
+        var i = zero;
+        while i.lt(ast::b_of(e)) {
+          lambda_names(ast::b_of(ast::kid_at(ast::a_of(e), i)), out);
+          i = i.add(one);
+        }
+      }
+    }
+
+    fn lambda_names_run(run: Int, n: Int, out: IntList) {
+      var i = zero;
+      while i.lt(n) {
+        lambda_names(ast::kid_at(run, i), out);
+        i = i.add(one);
       }
     }
 
@@ -3518,6 +3907,11 @@ assume Std {
         emit_binding(body, s, m);
       } else if k.eq(ast::k_st_assign()) {
         let local = find_local(ast::a_of(s));
+        if contains(cg_capt, local) {
+          # D70: captured by value, so an assignment could only change
+          # the copy; it is refused rather than silently lost.
+          prog::error(prog::e_lambda(), m, ast::a_of(s));
+        }
         if ast::is_some(local) {
           emit_as(body, ast::b_of(s), m, lc_type.get(local));
           store_local(body, local);
@@ -3611,6 +4005,22 @@ assume Std {
         provide(ast::none(), ns, add_local(ast::none(), need_type(ns)));
         nparams = nparams.add(one);
         i = i.add(one);
+      }
+      # An anonymous function reads each local it captured (D70) by the
+      # local's name, from the val that carries it. Local ids are never
+      # reused (`lc_base` only grows), so `cg_capt` need not be emptied.
+      let row = lambda_row(sym);
+      if ast::is_some(row) {
+        var j = zero;
+        while j.lt(lm_clen.get(row)) {
+          let at = lm_cstart.get(row).add(j.mul(n2()));
+          let l = provision_of(ast::none(), lm_cap.get(at.add(one)));
+          if ast::is_some(l) {
+            lc_name.set(l, lm_cap.get(at));
+            cg_capt.push(l);
+          }
+          j = j.add(one);
+        }
       }
       # The body's own locals: none yet in the first pass, which creates
       # them as it goes; in the second, exactly the ones the first made.

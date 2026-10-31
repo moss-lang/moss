@@ -152,7 +152,7 @@ class FnName:
 @dataclass(frozen=True)
 class Param:
     name: str
-    ty: Type
+    ty: "Type | None"  # None only in an anonymous function (D70)
 
 
 @dataclass(frozen=True)
@@ -368,6 +368,18 @@ class Literal:
     offset: int = field(default=-1, compare=False)
 
 
+@dataclass(frozen=True)
+class Lambda:
+    """`(x, y: T): R => body` (D70): an anonymous function, legal only as
+    the right side of a fn or method bind. Its parameter and result types
+    may be left out; the bound declaration fixes them."""
+
+    params: list[Param]
+    ret: "Type | None"
+    body: "Expr"
+    offset: int = field(default=-1, compare=False)
+
+
 Expr = (
     UnitExpr
     | ThisExpr
@@ -383,6 +395,7 @@ Expr = (
     | Unary
     | Binary
     | Literal
+    | Lambda  # only as a bind's right side (D70)
     | Block  # a bare block (D65); also the body of `if`, arms and fns
 )
 

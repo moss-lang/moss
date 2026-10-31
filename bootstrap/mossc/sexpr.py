@@ -8,7 +8,7 @@ no string literals (D48) — a letter costs one `putchar`, a word costs a
 function.
 
 The letters are the node kinds of src/ast.moss in order: index 0-25 are
-'a'-'z' and 26-50 are 'A'-'Y'.
+'a'-'z' and 26-51 are 'A'-'Z'.
 """
 
 from . import ast
@@ -24,7 +24,7 @@ KINDS = [
     "pt_path", "pt_record", "pt_field", "arm", "spec", "binding", "param",
     "d_import", "d_assume", "d_type", "d_alias", "d_tag", "d_unit", "d_val",
     "d_fn", "d_context", "d_functor", "d_bad", "ex_unary", "ex_binary",
-    "ex_lit",
+    "ex_lit", "ex_lambda",
 ]
 TAG = {
     name: (chr(ord("a") + i) if i < 26 else chr(ord("A") + i - 26))
@@ -130,6 +130,13 @@ def _expr(e):
         return _node("ex_binary", e.op, _expr(e.lhs), _expr(e.rhs))
     if isinstance(e, ast.Literal):
         return _node("ex_lit", e.text)
+    if isinstance(e, ast.Lambda):
+        return _node(
+            "ex_lambda",
+            _list([_node("param", p.name, _opt(p.ty, _type)) for p in e.params]),
+            _opt(e.ret, _type),
+            _expr(e.body),
+        )
     raise AssertionError(f"unknown expression node {e!r}")
 
 

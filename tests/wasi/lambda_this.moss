@@ -1,0 +1,37 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D70: an anonymous function bound to a fn has no receiver, so `this` in
+# it is an error — the bootstrap's "only legal inside method bodies", the
+# self-hosted compiler's `e_this` — even inside a method, whose own
+# receiver it does not capture.
+
+assume Std {
+  fn step(c: Char): Char;
+}
+
+assume Std, step {
+  fn run_step(c: Char): Char { step(c) }
+}
+
+assume Std {
+  type Box Char;
+
+  fn Box.demo() {
+    bind step = (c) => match this { Box b => b };
+    putchar(run_step(char::a));
+  }
+
+  fn demo() {
+    Box (char::z).demo();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

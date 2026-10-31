@@ -1,0 +1,1 @@
+tests/errors/lambda_capture_assign.moss:9:7: `count` is a local captured by an anonymous function, which captures it by value and may not assign it (D70)

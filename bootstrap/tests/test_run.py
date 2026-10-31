@@ -1293,6 +1293,32 @@ LITERAL_SNIPPETS = [
     ("f(10, 0.25)", False),
 ]
 
+# What tests/wasi/lambda.moss prints: each letter is named beside the
+# line that prints it.
+LAMBDA_OUT = "ABxCypqmnBwgdD4\n"
+
+# Anonymous-function snippets (D70) for the same test: (source, refused).
+LAMBDA_SNIPPETS = [
+    ("bind f = (x) => x;", False),
+    ("bind f = () => g();", False),
+    ("bind f = (x: Int, y): Char => { h(x); y };", False),
+    ("bind f = (x,) => x, g = (y) => y;", False),
+    ("bind T.m = (n: This) => this.add(n);", False),
+    ("bind f = (): () => {};", False),
+    ("bind f = (x) => (x).g();", False),
+    ("let v = (x) => x;", False),
+    ("f((x) => x)", False),
+    ("(x).g()", False),
+    ("(x)", False),
+    ("()", False),
+    ("(x + y) * z", False),
+    ("(x, y)", True),
+    ("(x: Int)", True),
+    ("bind f = (x) =>;", True),
+    ("bind f = (x): => x;", True),
+    ("bind f = (1) => x;", True),
+]
+
 # Everything that is written in the language — every live .moss file except
 # `examples/escape.moss`, which needs string literals (D48) and parses under
 # neither parser.
@@ -1332,16 +1358,26 @@ class TestSelfHostedSyntax(unittest.TestCase):
         the bootstrap groups, and a syntax error where it refuses. The
         self-hosted parser reports an error as a count, so a refusal is
         the `?` its driver prints."""
-        import tempfile
-
-        from mossc.parse import ParseError, parse
-        from mossc.sexpr import dump
-
         from .test_parse import OPERATOR_ERRORS, OPERATOR_GROUPINGS
 
         cases = [(source, False) for source, _ in OPERATOR_GROUPINGS]
         cases += [(source, True) for source, _ in OPERATOR_ERRORS]
         cases += LITERAL_SNIPPETS
+        self.agree_on_snippets(cases)
+
+    def test_lambdas_agree_with_the_bootstrap_parser(self):
+        """D70: an anonymous function is told from `()` and from a
+        parenthesized expression by what follows its parenthesis. The
+        same trees, snippet by snippet — where it is legal and where it
+        is not, which is for lowering to say — and the same refusals."""
+        self.agree_on_snippets(LAMBDA_SNIPPETS)
+
+    def agree_on_snippets(self, cases):
+        import tempfile
+
+        from mossc.parse import ParseError, parse
+        from mossc.sexpr import dump
+
         with tempfile.TemporaryDirectory(prefix="moss-ops-") as folder:
             for i, (source, refused) in enumerate(cases):
                 with self.subTest(source=source):
@@ -1675,6 +1711,78 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
                 self.assertEqual(out.decode("utf-8"), report.format(entry))
 
+    def test_anonymous_functions_at_binds(self):
+        """D70: `(params) => body` as a fn or method bind's right side —
+        unannotated and annotated, capturing a `let` and a `var` by value
+        (an assignment after the bind is not seen), capturing context
+        items as they are at the bind (a later rebind of a fn or a val is
+        not seen), in a functor's body, as a method provider seeing the
+        receiver as `this` through a wrapper and with none at all, with
+        a block body, one inside another, and one yielding a float (whose
+        body is a block yielding an f64, which the bootstrap's Wasm back end
+        typed as an i32 for any bare block before). The interpreter, the
+        bootstrap's Wasm back end and the self-hosted compiler agree."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/lambda.moss"
+        self.assertEqual(run_bytes({}, entry=entry).decode("utf-8"), LAMBDA_OUT)
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), LAMBDA_OUT)
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(out), LAMBDA_OUT)
+
+    def test_anonymous_function_errors(self):
+        """D70's errors in both compilers: a parameter count or an
+        annotation that is not the bound declaration's (`e_signature`,
+        `S`, named by the bound fn), an assignment to a captured local
+        and a lambda anywhere but a bind (`e_lambda`, `U`), `this` in one
+        bound to a fn (`e_this`, `T`), and a lambda calling the fn it is
+        bound to, which means what it meant at the bind — here nothing
+        (`c_unbound`, `?Q`)."""
+        from .test_build import compile_wasm
+
+        cases = {
+            "lambda_arity": (
+                "the anonymous function bound to `step` takes 2 parameter(s), "
+                "but `step` takes 1 (D70)",
+                "!S {} step\n",
+            ),
+            "lambda_annotation": (
+                "parameter `c` of the anonymous function bound to `step` is "
+                "annotated `Int`, but `step` declares `Char` there (D70)",
+                "!S {} step\n",
+            ),
+            "lambda_assign": (
+                "`seen` is a local captured by an anonymous function, which "
+                "captures it by value and may not assign it (D70)",
+                "!U {} seen\n",
+            ),
+            "lambda_outside": (
+                "an anonymous function may only be the right side of a fn or "
+                "method bind (D70)",
+                "!U {}\n",
+            ),
+            "lambda_this": (
+                "`this` is only legal inside method bodies; an anonymous "
+                "function bound to a fn has no receiver",
+                "!T {}\n",
+            ),
+            "lambda_recursive": (
+                "`step` is not available in the context here",
+                "?Q {} step step\n",
+            ),
+        }
+        for name, (message, report) in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                self.assertTrue(
+                    out.decode("utf-8").startswith(report.format(entry)), out[:200]
+                )
+
     def test_float_scalars(self):
         """D67: f32 and f64 are scalars like i32 and i64 — in locals,
         parameters, results, record fields and memory, through the whole
@@ -1759,6 +1867,8 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/block.moss", "EDCBGAIEE\n"),
             ("tests/wasi/forward.moss", "CCEDEC\n"),
             ("tests/wasi/float.moss", FLOAT_OUT),
+            ("tests/wasi/plain_provider.moss", "abrcd\n", "lib/prelude.moss"),
+            ("tests/wasi/lambda.moss", LAMBDA_OUT, "lib/prelude.moss"),
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),

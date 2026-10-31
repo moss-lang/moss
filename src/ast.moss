@@ -91,6 +91,15 @@ assume Std {
   fn k_ex_binary(): Int { hex(n3(), one) }  # a=op b=lhs c=rhs run
   fn k_ex_lit(): Int { hex(n3(), n2()) }    # a=digit run b=len c=fraction digits
 
+  # D70: an anonymous function, legal only as a bind's right side. Its
+  # parameters are `k_param`s whose type may be none, as may its result.
+  fn k_ex_lambda(): Int { hex(n3(), n3()) } # a=param run b=len c=ret type d=body
+
+  # Never parsed: a type the back end has already elaborated, standing in
+  # a declaration it synthesizes (an anonymous function's, D70), so that
+  # every reader of declarations reads it as it reads any other.
+  fn k_ty_known(): Int { hex(n3(), n4()) }  # a=elaborated type
+
   # `fn f` has no receiver; `fn .m` has the detached one.
   fn recv_plain(): Int { one.neg() }
   fn recv_detached(): Int { n2().neg() }

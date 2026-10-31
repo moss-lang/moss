@@ -549,8 +549,40 @@ class Parser:
                 expr = ast.Field(expr, path[0], offset=start)
         return expr
 
+    def at_lambda(self) -> bool:
+        """At `(`, whether an anonymous function (D70) starts here rather
+        than a parenthesized expression or `()`. Decided by what follows,
+        two or three tokens on, exactly as the self-hosted parser's two
+        tokens of lookahead decide it: `()` or `(x)` followed by `=>` or
+        `:`, or a name followed by `:` or `,` — which no expression has."""
+        arrow = (Kind.EQUAL_GREATER, Kind.COLON)
+        if self.at(Kind.RPAREN, 1):
+            return self.peek(2).kind in arrow
+        if self.at(Kind.NAME, 1):
+            if self.peek(2).kind in (Kind.COLON, Kind.COMMA):
+                return True
+            return self.at(Kind.RPAREN, 2) and self.peek(3).kind in arrow
+        return False
+
+    def parse_lambda(self) -> ast.Lambda:
+        start = self.peek().offset
+        self.expect(Kind.LPAREN)
+
+        def param() -> ast.Param:
+            name = self.expect(Kind.NAME).text
+            ty = self.parse_type() if self.eat(Kind.COLON) else None
+            return ast.Param(name, ty)
+
+        params = self.comma_list(param, Kind.RPAREN)
+        self.expect(Kind.RPAREN)
+        ret = self.parse_type() if self.eat(Kind.COLON) else None
+        self.expect(Kind.EQUAL_GREATER)
+        return ast.Lambda(params, ret, self.parse_expr(), offset=start)
+
     def parse_primary(self, no_record: bool) -> ast.Expr:
         start = self.peek().offset
+        if self.at(Kind.LPAREN) and self.at_lambda():
+            return self.parse_lambda()
         if self.eat(Kind.LPAREN):
             if self.eat(Kind.RPAREN):
                 return ast.UnitExpr(offset=start)

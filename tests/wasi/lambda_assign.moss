@@ -1,0 +1,36 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D70: an anonymous function captures the enclosing function's locals by
+# value when the bind runs, so an assignment to one in its body could
+# only change its copy. It is refused: by the bootstrap with the reason,
+# by the self-hosted compiler as `e_lambda`, named by the local.
+
+assume Std {
+  fn step(c: Char): Char;
+}
+
+assume Std, step {
+  fn run_step(c: Char): Char { step(c) }
+}
+
+assume Std {
+  fn demo() {
+    var seen = char::a;
+    bind step = (c) => {
+      seen = c;
+      c
+    };
+    putchar(run_step(char::b));
+    putchar(seen);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

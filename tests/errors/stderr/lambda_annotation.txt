@@ -1,0 +1,1 @@
+tests/errors/lambda_annotation.moss:7:17: the anonymous function bound to `step` is annotated to return `Int`, but `step` returns `Char` (D70)

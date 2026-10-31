@@ -160,6 +160,11 @@ assume Std {
   # (D70). The bootstrap's "`this` is only legal inside method bodies".
   fn e_this(): Int { n16().add(n3()) }
 
+  # D70: an anonymous function anywhere but the right side of a fn or
+  # method bind (named by nothing), or an assignment in one to a local it
+  # captured, which it holds by value (named by the local).
+  fn e_lambda(): Int { n16().add(n4()) }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,

@@ -171,6 +171,15 @@ functor Boot: Std -> Compiler {
   bind codegen::un_fstart = int_list();
   bind codegen::un_flags = int_list();
   bind codegen::cg_lang = int_list();
+  bind codegen::lm_node = int_list();
+  bind codegen::lm_genv = int_list();
+  bind codegen::lm_env = int_list();
+  bind codegen::lm_sym = int_list();
+  bind codegen::lm_recv = int_list();
+  bind codegen::lm_cstart = int_list();
+  bind codegen::lm_clen = int_list();
+  bind codegen::lm_cap = int_list();
+  bind codegen::cg_capt = int_list();
 
   bind types::ty_kind = int_list();
   bind types::ty_sym = int_list();

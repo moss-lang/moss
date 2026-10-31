@@ -1,0 +1,9 @@
+assume Std {
+  fn step(c: Char): Char;
+}
+
+assume Std {
+  fn main() {
+    bind step = () => char::a;
+  }
+}

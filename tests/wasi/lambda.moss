@@ -1,0 +1,131 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D70: anonymous functions at binds. The right side of a fn or method bind
+# may be `(params) => body`, its signature the bound declaration's; it
+# captures context items as they are at the bind and the enclosing
+# function's locals by value. Each letter is the one the comment beside it
+# names; any other means a capture went wrong.
+
+assume Std {
+  fn step(c: Char): Char;
+  fn twice(c: Char, n: Int): Char;
+  fn say(): Char;
+  val mark: Char;
+  fn half(x: Float): Float;
+}
+
+assume Std, half {
+  fn run_half(x: Float): Int { half(x).round() }
+}
+
+assume Std, step {
+  fn run_step(c: Char): Char { step(c) }
+}
+
+assume Std, twice {
+  fn run_twice(c: Char): Char { twice(c, one) }
+}
+
+# A functor's binds may be anonymous too; names in it mean what they mean
+# in the functor's module.
+functor Bump: Std -> step {
+  bind step = (c) => (c.code() + one).char();
+}
+
+# A receiver with nothing attached to it: the provider is anonymous, and
+# sees the receiver as `this`.
+type S;
+
+assume Std, S {
+  fn .glyph(): Char;
+  fn .nth(n: Int): Char;
+}
+
+assume Std, S, S.glyph {
+  fn glyph_of(s: S): Char { s.glyph() }
+}
+
+assume Std, S, S.nth {
+  fn nth_of(s: S, n: Int): Char { s.nth(n) }
+}
+
+assume Std {
+  type Wrap Char;
+
+  fn say_p(): Char { char::p }
+  fn say_q(): Char { char::q }
+
+  fn demo() {
+    {
+      bind step = (c) => c;
+      putchar(run_step(char::A));                    # A: no annotations
+    }
+    {
+      bind step = (c: Char): Char => (c.code() + 1).char();
+      putchar(run_step(char::A));                    # B: annotated
+    }
+    {
+      let k = 2;
+      var v = char::x;
+      bind step = (c) => {
+        putchar(v);
+        (c.code() + k).char()
+      };
+      v = char::y;
+      putchar(run_step(char::A));                    # xC: `v` as it was
+      putchar(v);                                    # y: the local itself
+    }
+    {
+      bind say = say_p;
+      bind step = (c) => say();
+      bind say = say_q;
+      putchar(run_step(char::A));                    # p: `say` at the bind
+      putchar(say());                                # q
+      bind mark = char::m;
+      bind step = (c) => mark;
+      bind mark = char::n;
+      putchar(run_step(char::A));                    # m: `mark` at the bind
+      putchar(mark);                                 # n
+    }
+    {
+      bind Bump;
+      putchar(run_step(char::A));                    # B: from the functor
+    }
+    {
+      bind S = Wrap;
+      bind S.glyph = () => match this { Wrap c => c };
+      putchar(glyph_of(Wrap (char::w)));             # w: through a wrapper
+    }
+    {
+      bind S = Char;
+      bind S.glyph = (): Char => (this.code() + 1).char();
+      bind S.nth = (n: Int) => (this.code() + n).char();
+      putchar(glyph_of(char::f));                    # g: no wrapper needed
+      putchar(nth_of(char::a, 3));                   # d
+    }
+    {
+      let base = 1;
+      bind step = (c) => {
+        let off = base + 1;
+        bind twice = (d, n) => (d.code() + off + n).char();
+        run_twice(c)
+      };
+      putchar(run_step(char::A));                    # D: one inside another
+    }
+    {
+      bind half = (x) => x / 2.0;
+      putchar((run_half(9.0) + char::digit0.code()).char());  # 4: a float result
+    }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

@@ -272,7 +272,14 @@ assume Std {
         sp();
         intern::put(ast::a_of(id));
         sp();
-        dump(ast::b_of(id));
+        opt_node(ast::b_of(id));
+      } else if k.eq(ast::k_ex_lambda()) {
+        sp();
+        dump_run(ast::a_of(id), ast::b_of(id));
+        sp();
+        opt_node(ast::c_of(id));
+        sp();
+        dump(ast::d_of(id));
       } else if k.eq(ast::k_d_import()) {
         sp();
         print(ast::imp_text(id));

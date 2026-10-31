@@ -389,6 +389,23 @@ assume Std {
       nd_env.set(f, asm_env.get(memo));
     }
 
+    # A function the back end synthesizes rather than one declared — an
+    # anonymous function at a bind (D70): its environment and its needs,
+    # each with the app its provision carries there, are given.
+    fn set_needs(f: Int, env: Int, recv: IntList, sym: IntList, app: IntList) {
+      needs_init();
+      nd_start.set(f, nd_sym.length());
+      var i = zero;
+      while i.lt(sym.length()) {
+        nd_recv.push(recv.get(i));
+        nd_sym.push(sym.get(i));
+        nd_app.push(app.get(i));
+        i = i.add(one);
+      }
+      nd_len.set(f, sym.length());
+      nd_env.set(f, env);
+    }
+
     # `assume` takes bare paths, optionally with a receiver dot (D24).
     fn add_assume_item(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
       add_spec(env, m, spec, recv, sym, zero, env)

@@ -1,0 +1,1 @@
+tests/errors/lambda_arity.moss:7:17: the anonymous function bound to `step` takes 0 parameter(s), but `step` takes 1 (D70)
