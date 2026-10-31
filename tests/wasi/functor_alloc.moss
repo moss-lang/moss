@@ -18,11 +18,9 @@ import "../../lib/wasip1.moss" use Wasi;
 # `alloc` is a plain fn, so the library's second application replaces
 # the first one's (the library allocates each type in turn), while
 # `.load` is keyed by its receiver, so both stay. The pool's providers
-# are named functions rather than anonymous ones: in the self-hosted
-# compiler an anonymous function that reaches an `IntList` method does
-# not find the context's provision of it (it calls `Packed`'s own and
-# fails for want of a `Layout`), a bug older than D78. Both types are one
-# scalar wide, since the bootstrap's back end compiles `pool_alloc` once.
+# are named functions (functor_same_handle.moss has anonymous ones). Both
+# types are one scalar wide, since the bootstrap's back end compiles
+# `pool_alloc` once.
 
 type Handle;
 

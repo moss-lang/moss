@@ -1991,6 +1991,10 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/phantom.moss", "42\nz\n42 z\n", "lib/prelude.moss"),
             ("tests/wasi/packed.moss", "3000000000\n", "lib/prelude.moss"),
             ("tests/wasi/concrete_list.moss", "2\n", "lib/prelude.moss"),
+            # An anonymous function reaching an `IntList` method in a
+            # function generic over `Std`: the context's provision, not
+            # `Packed`'s attached method (D70, D77).
+            ("tests/wasi/lambda_list.moss", "2\n7\n", "lib/prelude.moss"),
             ("tests/wasi/resolution.moss", "91122\n", "lib/prelude.moss"),
             ("tests/wasi/gc_tree.moss", GC_TREE_OUT, "lib/prelude.moss"),
             ("tests/wasi/gc_ast.moss", GC_AST_OUT, "lib/prelude.moss"),
@@ -2088,6 +2092,10 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/functor_trace.moss", FUNCTOR_TRACE_OUT),
             ("tests/wasi/functor_fast.moss", FUNCTOR_FAST_OUT),
             ("tests/wasi/functor_alloc.moss", "21\n4\n14\n" * 2),
+            # Two applications whose bindings make one concrete handle
+            # type: two generations, so two `.load`s (the self-hosted
+            # compiler used to refuse it rather than conflate them).
+            ("tests/wasi/functor_same_handle.moss", "21\n4\n14\n"),
             ("tests/wasi/functor_val.moss", "10\n20\n30\n3\n5\n6\n0\n"),
             ("tests/wasi/gc_bodiless.moss", "42\n"),
         ):

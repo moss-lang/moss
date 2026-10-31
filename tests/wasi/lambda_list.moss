@@ -1,0 +1,46 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D70 with D77: an anonymous function whose body reaches an `IntList`
+# method. `demo` is generic over `Std`, so `slots` is an `IntList` as the
+# code is written, and `slots.push` is the context's `IntList.push` — which
+# carries the layout `WasiStd` captured where it bound it. In `main`'s
+# specialization an `IntList` is a `Packed[Item=Num]`, which has an
+# attached `.push` of its own, needing a `Layout` nothing here provides.
+# The self-hosted compiler used to resolve the call inside the anonymous
+# function at that specialized type and find the attached one. Output:
+# `2`, `7`.
+
+fn stash();
+
+assume Std {
+  val slots: IntList;
+}
+
+assume Std, stash {
+  fn twice() {
+    stash();
+    stash();
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind slots = int_list();
+    bind stash = () => { slots.push(7); };
+    twice();
+    putchar((slots.length() + char::digit0.code()).char());
+    putchar(char::newline);
+    putchar((slots.get(1) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

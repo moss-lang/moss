@@ -1,0 +1,102 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: two applications of one abstract functor in one function, whose
+# bindings make the same concrete type. `Pool`'s handle is a plain `Slot`,
+# an index that lists nothing it holds, so the library's two `bind Alloc;`
+# — one storing `Celsius`, one `Mile` — both make a `Slot`. To the code
+# after them they are two fresh generations of `Handle` (D72), and so two
+# keys for `.load`: `warm.load()` is the first application's, which reads
+# the first pool and unpacks a `Celsius`, and `trip.load()` the second's,
+# whatever the specialization makes both. A compiler that resolved calls
+# at the specialized type would have the second `.load` serve the first's
+# handles. The pool's providers are anonymous functions, each reaching
+# the pool's `IntList` (D70). Output: `21`, `4`, `14`.
+
+type Handle;
+
+assume Std, Boxed {
+  fn .pack(): Int;
+  fn unpack(n: Int): Boxed;
+}
+
+assume Boxed, Handle {
+  fn alloc(value: Boxed): Handle;
+  fn .load(): Boxed;
+}
+
+functor Alloc: Std, Boxed, Boxed.pack, unpack -> Handle, alloc, Handle.load;
+
+assume Std {
+  type Slot Int;
+  val slots: IntList;
+}
+
+functor Pool: Std, Boxed, Boxed.pack, unpack -> Handle, alloc, Handle.load {
+  bind Handle = Slot;
+  bind slots = int_list();
+  bind alloc = (value) => {
+    let i = slots.length();
+    slots.push(value.pack());
+    Slot (i)
+  };
+  bind Handle.load = () => match this { Slot i => unpack(slots.get(i)) };
+}
+
+assume Std {
+  type Celsius Int;
+  type Mile Int;
+
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Std, Alloc {
+  fn library() {
+    bind Boxed = Celsius;
+    bind Boxed.pack = () => match this { Celsius c => c };
+    bind unpack = (n) => Celsius (n);
+    bind Alloc;
+    let warm = alloc(Celsius (21));
+    let cold = alloc(Celsius (4));
+    bind Boxed = Mile;
+    bind Boxed.pack = () => match this { Mile m => m * 2 };
+    bind unpack = (n) => Mile (n / 2);
+    bind Alloc;
+    let trip = alloc(Mile (14));
+    match warm.load() {
+      Celsius c => line(c),
+    }
+    match cold.load() {
+      Celsius c => line(c),
+    }
+    match trip.load() {
+      Mile m => line(m),
+    }
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind Alloc = Pool;
+    library();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
