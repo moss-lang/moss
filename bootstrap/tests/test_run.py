@@ -1628,6 +1628,53 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/forward.moss")
         self.assertEqual(self.wasmtime_run(module), "CCEDEC\n")
 
+    def test_a_plain_fn_provides_a_method(self):
+        """D54: a plain function may provide a method, with the method's
+        declared parameters — the receiver excluded — so it cannot see
+        what the method was called on, though the call still evaluates
+        the receiver. An attached provider takes it as `this`. The
+        self-hosted compiler used to pass the receiver to a plain
+        provider anyway (invalid Wasm here; a plain fn written to take it
+        was accepted), and the bootstrap's Wasm back end refused the call;
+        all three now run it alike."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/plain_provider.moss"
+        self.assertEqual(run_bytes({}, entry=entry), b"abrcd\n")
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "abrcd\n")
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(out), "abrcd\n")
+
+    def test_a_plain_fn_provider_cannot_take_or_see_the_receiver(self):
+        """D54, the other half: a plain provider written to take the
+        receiver as a first parameter is a signature mismatch (the
+        bootstrap's message; `e_signature`, `S`, named by the method, in
+        the self-hosted compiler, which used to accept it), and `this` in
+        one is an error (`e_this`, `T`)."""
+        from .test_build import compile_wasm
+
+        cases = {
+            "plain_provider_receiver": (
+                "method bind signature mismatch: provider `second` has "
+                "(Box[Char=Char]) -> Char, need () -> Char; a plain function "
+                "providing a method takes the method's parameters, which "
+                "exclude the receiver (D54)",
+                "!S {} m\n",
+            ),
+            "plain_provider_this": (
+                "`this` is only legal inside method bodies",
+                "!T {}\n",
+            ),
+        }
+        for name, (message, report) in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertEqual(out.decode("utf-8"), report.format(entry))
+
     def test_float_scalars(self):
         """D67: f32 and f64 are scalars like i32 and i64 — in locals,
         parameters, results, record fields and memory, through the whole

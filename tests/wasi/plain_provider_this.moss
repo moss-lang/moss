@@ -1,0 +1,38 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D54: a plain function providing a method cannot see what the method was
+# called on — `this` is only legal where there is a receiver. The
+# bootstrap says so when it checks `peek`; the self-hosted compiler
+# reports `e_this`.
+
+type T;
+
+assume Std, T {
+  fn .m(): Char;
+}
+
+assume Std, T, T.m {
+  fn use_it(t: T): Char { t.m() }
+}
+
+assume Std {
+  type Box Char;
+  fn peek(): Char { match this { Box c => c } }
+
+  fn demo() {
+    bind T = Box;
+    bind T.m = peek;
+    putchar(use_it(Box (char::b)));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

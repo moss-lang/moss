@@ -145,6 +145,21 @@ assume Std {
   # [T=Char]" is.
   fn e_incoherent(): Int { n16().add(one) }
 
+  # D27, D54, D70: a method bind's provider, or an anonymous function at
+  # any bind, whose signature is not the bound declaration's read where
+  # the bind is made — a different parameter count, or a parameter or
+  # result of another type. A plain function providing a method takes
+  # the method's declared parameters, which exclude the receiver (D54).
+  # Named by the bound symbol, as the bootstrap's "method bind signature
+  # mismatch: provider `p` has ..." is.
+  fn e_signature(): Int { n16().add(n2()) }
+
+  # `this` where there is no receiver: in a plain function — a plain
+  # function providing a method included, since it cannot see what the
+  # method was called on (D54) — or an anonymous function bound to a fn
+  # (D70). The bootstrap's "`this` is only legal inside method bodies".
+  fn e_this(): Int { n16().add(n3()) }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,

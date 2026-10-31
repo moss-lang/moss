@@ -1566,12 +1566,18 @@ class FnCompiler:
             return self.b.result_of(index, self.b.lower.fns[id(target)].ret_slots)
         if target in self.env:
             provider, sub = self.env[target]
+            provider_fn = self.b.lower.fns[id(provider)]
             layouts = []
             if node.this is not None:
-                layouts.append(self.expr(node.this))
+                if provider_fn.has_this:
+                    layouts.append(self.expr(node.this))
+                else:
+                    # D54: a plain function providing a method does not
+                    # take the receiver. It is still evaluated, first.
+                    self.code += DROP * len(self.expr(node.this))
             for arg in node.args:
                 layouts.append(self.expr(arg))
-            self.check_widths(self.b.lower.fns[id(provider)], layouts, node)
+            self.check_widths(provider_fn, layouts, node)
             for slot in self.b.val_slots(provider, sub):
                 layouts.append(self.push_provision(captured(target, slot)))
             params = tuple(t for layout in layouts for t in layout)

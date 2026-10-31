@@ -1,0 +1,40 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D54: a plain function providing a method takes the method's declared
+# parameters, which exclude the receiver, so one written to take the
+# receiver as its first parameter does not match `.m(): Char`. (Only an
+# attached method, or an anonymous function (D70), sees the receiver.)
+# Both compilers reject the bind: the bootstrap as a signature mismatch,
+# the self-hosted compiler as `e_signature`, named by the method.
+
+type T;
+
+assume Std, T {
+  fn .m(): Char;
+}
+
+assume Std, T, T.m {
+  fn use_it(t: T): Char { t.m() }
+}
+
+assume Std {
+  type Box Char;
+  fn second(b: Box): Char { match b { Box c => c } }
+
+  fn demo() {
+    bind T = Box;
+    bind T.m = second;
+    putchar(use_it(Box (char::b)));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

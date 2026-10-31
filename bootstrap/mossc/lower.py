@@ -1321,10 +1321,17 @@ class FnChecker:
         if tuple(canon(t) for _, t in got.params) != tuple(
             canon(t) for _, t in wanted.params
         ) or canon(got.ret) != canon(wanted.ret):
+            hint = ""
+            if kind == "method" and provider.receiver is None:
+                hint = (
+                    "; a plain function providing a method takes the method's "
+                    "parameters, which exclude the receiver (D54)"
+                )
             self.error(
                 f"{kind} bind signature mismatch: provider `{provider.name}` has "
                 f"({', '.join(show(t) for _, t in got.params)}) -> {show(got.ret)}, "
                 f"need ({', '.join(show(t) for _, t in wanted.params)}) -> {show(wanted.ret)}"
+                f"{hint}"
             )
         return needs_map
 

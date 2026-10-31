@@ -519,6 +519,24 @@ assume Std {
     # `this` is the first local of a method's frame, so it needs no name.
     fn this_local(): Int { lc_base.read() }
 
+    # Whether a provider takes the receiver of the method it provides:
+    # an attached method does, as `this`. A plain function does not — it
+    # takes the method's declared parameters, which exclude the receiver,
+    # and cannot see what the method was called on (D54).
+    fn takes_receiver(provider: Int): Bool {
+      is_defined_method(provider)
+    }
+
+    # Whether the frame being compiled has a receiver for `this` to name,
+    # reporting `e_this` where it does not.
+    fn has_this(m: Int): Bool {
+      if takes_receiver(cg_where.read()) {
+        return true;
+      }
+      prog::error(prog::e_this(), m, ast::none());
+      false
+    }
+
     # Provisions.
 
     fn provide(recv: Int, sym: Int, l: Int) {
@@ -1164,6 +1182,9 @@ assume Std {
     fn place_local(e: Int, m: Int): Int {
       let k = ast::kind_of(e);
       if k.eq(ast::k_ex_this()) {
+        if has_this(m).not() {
+          return ast::none();
+        }
         return this_local();
       }
       if k.eq(ast::k_ex_path()) {
@@ -1916,6 +1937,9 @@ assume Std {
         return ty_none();
       }
       if k.eq(ast::k_ex_this()) {
+        if has_this(m).not() {
+          return ty_none();
+        }
         load_local(body, this_local());
         return lc_type.get(this_local());
       }
@@ -2154,12 +2178,21 @@ assume Std {
         cg_error(c_unbound(), prog::sym_name.get(sym));
         return ty_none();
       }
-      push_bytes(body, recv);
+      push_receiver(body, recv, recv_ty, provider);
       emit_args(body, run, n, m, param_types_in(penv, provider));
       reach(provider, penv);
       push_needs(body, provider, penv, bound, int_list());
       op_call(body, index_of_fn(provider, penv));
       ret_in(penv, provider)
+    }
+
+    # A method call's receiver, already emitted into `recv`: an argument
+    # if the provider takes it, and otherwise evaluated and dropped (D54).
+    fn push_receiver(body: IntList, recv: IntList, recv_ty: Int, provider: Int) {
+      push_bytes(body, recv);
+      if takes_receiver(provider).not() {
+        drop_value(body, recv_ty);
+      }
     }
 
     # The environment entry providing method `sym` at this receiver,
@@ -2210,7 +2243,7 @@ assume Std {
           return ty_none();
         }
       }
-      push_bytes(body, recv);
+      push_receiver(body, recv, recv_ty, provider);
       emit_args(body, ast::c_of(e), ast::d_of(e), m, param_types_in(penv, provider));
       reach(provider, penv);
       push_needs(body, provider, penv, via, map);
@@ -3308,6 +3341,7 @@ assume Std {
         cg_error(c_unsupported(), ast::b_of(spec));
         return ();
       }
+      check_method_sig(spec, recv_sym, detached, provider, m);
       check_callee(provider);
       cg_env.write(lower::env_push(
         cg_env.read(), lower::ek_fn(), recv, detached, provider, cg_env.read()
@@ -3319,6 +3353,65 @@ assume Std {
       provided_at(
         lower::ek_fn(), lower::canon(gview, types::ty_of_decl(recv_sym)), detached, gview
       );
+    }
+
+    # A type in a signature, read through `env` in module `home`, with a
+    # bare `This` standing for `this_ty`. (`This` inside another type is
+    # not read here; nothing in the library writes one.)
+    fn sig_ty(env: Int, t: Int, home: Int, this_ty: Int): Int {
+      if ast::is_kind(t, ast::k_ty_this()) {
+        return this_ty;
+      }
+      lower::elab(env, t, home)
+    }
+
+    # The method `method`'s declared parameter `i` (or its result, for
+    # `i` none) as a bind with brackets `spec` at `recv` reads it (D27,
+    # D61): through the generic environment and the bind's own
+    # application, with `This` the receiver.
+    fn method_sig_at(spec: Int, recv: Int, method: Int, i: Int, m: Int): Int {
+      let gview = lower::app_view(cg_genv.read(), m, spec);
+      let md = prog::sym_decl.get(method);
+      var t = ast::fn_ret(md);
+      if ast::is_some(i) {
+        t = ast::b_of(ast::kid_at(ast::fn_params(md), i));
+      }
+      sig_ty(gview, t, prog::sym_mod.get(method), recv)
+    }
+
+    # D27, D54: a method provider's parameters and result are the
+    # method's declared ones as the bind reads them — the receiver
+    # excluded. An attached provider takes the receiver as `this`; a plain
+    # function cannot see it, and widening one to take it is a mismatch,
+    # as in the bootstrap's `match_fn_sig`. Checked on the program as
+    # written, through the generic environment, like coherence.
+    fn check_method_sig(spec: Int, recv_sym: Int, method: Int, provider: Int, m: Int) {
+      let genv = cg_genv.read();
+      let recv = lower::canon(lower::app_view(genv, m, spec), types::ty_of_decl(recv_sym));
+      let pd = prog::sym_decl.get(provider);
+      let phome = prog::sym_mod.get(provider);
+      var pthis = ast::none();
+      if takes_receiver(provider) {
+        pthis = lower::canon(genv, types::ty_of_decl(prog::sym_recv.get(provider)));
+      }
+      let n = ast::fn_nparams(prog::sym_decl.get(method));
+      var ok = ast::fn_nparams(pd).eq(n);
+      var i = zero;
+      while i.lt(n) {
+        if ok {
+          let got = sig_ty(genv, ast::b_of(ast::kid_at(ast::fn_params(pd), i)), phome, pthis);
+          ok = got.eq(method_sig_at(spec, recv, method, i, m));
+        }
+        i = i.add(one);
+      }
+      if ok {
+        ok = sig_ty(genv, ast::fn_ret(pd), phome, pthis).eq(
+          method_sig_at(spec, recv, method, ast::none(), m)
+        );
+      }
+      if ok.not() {
+        prog::error(prog::e_signature(), m, prog::sym_name.get(method));
+      }
     }
 
     # A functor application is a run of binds, inlined where it is

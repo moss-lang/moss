@@ -1,0 +1,56 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D54: a plain function may provide a method. Its signature is the
+# method's declared one, which excludes the receiver, so it takes only
+# the method's own parameters and cannot see what the method was called
+# on; the call still evaluates the receiver, first. An attached method,
+# the other kind of provider, takes the receiver as `this`. Each letter
+# is the one the comment beside it names.
+
+type T;
+
+assume Std, T {
+  fn .tag(c: Char): Char;
+}
+
+assume Std, T, T.tag {
+  fn tag_with(t: T, c: Char): Char { t.tag(c) }
+}
+
+assume Std {
+  type Box Char;
+  fn Box.first(c: Char): Char { match this { Box b => b } }
+
+  fn same(c: Char): Char { c }
+  fn noisy(): Box {
+    putchar(char::r);
+    Box (char::z)
+  }
+
+  fn demo() {
+    {
+      bind T = Int;
+      bind T.tag = same;
+      putchar(tag_with(one, char::a));            # a: the argument
+      putchar(one.tag(char::b));                  # b: called directly
+    }
+    {
+      bind T = Box;
+      bind T.tag = same;
+      putchar(noisy().tag(char::c));              # rc: the receiver runs, unused
+      bind T.tag = Box.first;
+      putchar(tag_with(Box (char::d), char::x));  # d: an attached provider sees it
+    }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
