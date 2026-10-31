@@ -2136,7 +2136,7 @@ the text above did not fix, it is recorded here.
   `tests/wasi/misfit.moss` is an ordinary type error only it catches),
   and is no longer what catches an incoherent provision. A
   generation of the compiler compiling itself goes from 0.68 to 0.77
-  seconds.
+  seconds. (Since [D80] that check compares generic types.)
 - *An assumed item is at the function's whole instantiation.* The
   bootstrap recorded an assumed item's instantiation when the item was
   added, so in `assume seed, T` it read `T` as not in force for `seed`,
@@ -2539,7 +2539,9 @@ receiver, of a detached method of the name the call uses, when the scope
 has one — found by name, since the generic code may have reached the
 method through its receiver's home module ([D61]) — which is what the
 code meant; where the provision is the attached method itself
-(`bind IntList.push[Elem=Int] = Ints.push`), the two are one. Standing
+(`bind IntList.push[Elem=Int] = Ints.push`), the two are one. (Since
+[D80] this is gone: resolution is against the receiver's generic type, by
+[D77]'s rules, once per call site.) Standing
 tests: `tests/wasi/phantom.moss` (two element types in one function,
 each through its own codec), `tests/wasi/packed.moss` (generic code over
 a list of i64s that is `Packed[Item=Long]`), `tests/wasi/phantom_unlisted.moss`
@@ -2989,7 +2991,7 @@ operator's fixed symbol stand. The self-hosted compiler already chose the
 provision, in codegen (`method_of_ty`); under rule 4 resolving there gives
 the same answer as resolving early, so rule 5 — moving that decision to its
 front end — is a matter of the two compilers agreeing by construction, not
-of correctness, and is still to do. `Packed` keeps its attached methods.
+of correctness, and is still to do. (Done, [D80].) `Packed` keeps its attached methods.
 Providers in `lib/wasistd.moss` that exist only to be bound may become
 lambdas, as a separate change. Standing tests:
 `tests/wasi/concrete_list.moss` (an `IntList` method called in `main`) and
@@ -3321,8 +3323,14 @@ does not provide `Scalar` is refused like any missing item).
   `WasiNumerics` itself and is generic over `Fast` alone. The
   self-hosted compiler, checking each specialization, compares concrete
   types there and so catches the mismatch only where they differ.
+  (Since [D80] it is checked generically, in both: `functor_promise`.)
 
-*Deviations and what the self-hosted compiler cannot see.*
+*Deviations and what the self-hosted compiler cannot see.* All but the last
+two points below were closed by [D80], which gave the self-hosted compiler
+generic types: `functor_escape_same` and `generation_mix` are rejected by
+both compilers, the `?P ... Handle` refusal is gone
+(`functor_same_handle` runs in both), and the lambda bug is fixed
+(`lambda_list`). Kept as written, for the record.
 
 - *Its escape check sees only what a specialization tells apart.* It
   reports an escape where the type the application made differs from
@@ -3544,6 +3552,63 @@ list where the main memory's is expected (`memory_mismatch`), printing a
 `Scratch` string as it is (`memory_print`), and applying a WASI-calling
 functor where `Memory` is rebound (`memory_wasi`).
 
+**[D80] DECIDED by the designer and implemented (the self-hosted compiler types generically).**
+The bootstrap lowers each function once, against its generic types: an
+assumed `T` is a rigid `param(T)` ([D72]), each generation its own
+symbol. The self-hosted compiler checked each specialization against
+concrete types, while emitting it, so two types that are generically
+distinct but specialize alike were one type to it. That let through
+programs the bootstrap rejects (a [D72] generation mixed with the old
+one; a [D78] fresh type escaping its block; a [D78] bound functor
+providing an item at another type than promised), refused one it should
+compile (two `bind F;` making the same concrete handle), and left
+[D77]'s rule 5 undone, with a lambda that reached an `IntList` method
+calling `Packed`'s own.
+
+*What changed.* Not a separate pass: the emitter's one walk of a body
+types the frame *as written*, and treats the specialization as a
+substitution.
+
+- A frame's **generic** environment is its declaration's (an assumed `T`
+  is `param(T)`), extended by each bind in the body. Every local and
+  expression has a type in its terms, and every check — `fits`, [D78]'s
+  escape check and "made as promised", coherence — compares those, so it
+  comes out the same in every specialization. A provision row records
+  the environment its item is typed in, as the bootstrap's `env.fns` and
+  `env.methods` do.
+- The **specialized** environment says what each generic symbol is here,
+  and holds each provision's provider under its *generic* key (the
+  bootstrap's keys). It is used for layout only. A callee's is built by
+  finding each need under the key the caller's code means by it and
+  storing it under the callee's own, so needs the callee tells apart stay
+  apart however a specialization collapses them.
+- **Method resolution ([D77] rule 5)** follows the bootstrap's rules
+  against the receiver's generic type, once per call site (node, generic
+  environment, receiver type), and codegen only looks the target up.
+  `method_of_ty`, `provision_named` and `method_provision` are gone.
+- A front-end fix it needed: an assumed context's items are read in the
+  environment as it grows, as the bootstrap reads them, not against a
+  snapshot from before the context, so an item sees the types assumed
+  beside it as parameters. With that, the existing coherence check also
+  checks method needs from contexts, which it had been missing.
+- Fallout: `tests/wasi/generic.moss` and `bulk.moss`, compiled without the
+  prelude, called detached methods they never imported, which the old
+  back end found as attached methods at concrete types — what rule 5
+  forbids. They now import them ([D61]).
+
+The compiler compiling itself got faster, 1.38s to 0.55s: generic typing
+alone cost about 50%, and caching type reads per (environment, type) more
+than paid for it.
+
+*Left.* Checks still run while emitting, so only functions the program
+reaches are checked (the bootstrap also checks uncalled generic ones).
+Type errors are still `?S` with no detail, and [D74]'s `phantom_misread`
+is still a type error, not incoherence. The self-hosted front end keeps
+the first of two assumptions of one item instead of merging them ([D43]),
+which could now in principle reject a program the bootstrap accepts;
+none in the corpus does. A `match` on an abstract scrutinee takes its
+shape from the specialization.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -3608,7 +3673,9 @@ a polymorphic provider whose binding serves every instantiation of its
 inputs, and whose result may hold types, each a fresh generation at the
 application that no value may carry out of its block — D79 multiple memories, `Memory` a contextual type that
 memory instructions run in and handles list, with WASI's functions
-provided at the main memory alone)
+provided at the main memory alone, D80 the self-hosted compiler types each
+frame generically and resolves methods once per call site, as the
+bootstrap does)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
