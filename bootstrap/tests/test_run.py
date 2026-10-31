@@ -2607,15 +2607,19 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             str(caught.exception),
         )
 
-    @unittest.expectedFailure
     def test_an_uncalled_abstract_application_is_checked_by_the_self_hosted_compiler(self):
-        """The same program. The check pass runs the binds of each functor
-        `F` can be bound to at the application, as a reached application
-        runs the one it is bound to, and compares what they make with
-        what the application promises."""
+        """The same program. Each application, reached or not, runs the
+        binds of every functor `F` can be bound to, as dead code, as a
+        reached application runs the one it is bound to, and compares
+        what they make with what the application promises: `WasiFloats`
+        makes each of `Floats`' items over `Int` at its own."""
         entry = "tests/wasi/functor_promise_unreached.moss"
         out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
-        self.assertEqual(out.decode("utf-8", "replace"), f"?X {entry} kernel float\n")
+        items = ("float", "trunc", "round", "get", "set", "length")
+        self.assertEqual(
+            out.decode("utf-8", "replace"),
+            "".join(f"?X {entry} kernel {item}\n" for item in items),
+        )
 
     def test_a_callee_requires_what_it_assumes_and_does_not_use(self):
         """D20 and D16: a call needs everything the callee's declaration

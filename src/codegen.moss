@@ -4759,6 +4759,10 @@ assume Std {
           provider = fu;
         }
       }
+      # Whatever `F` is bound to here, the application is checked against
+      # every functor it is bound to anywhere, as the bootstrap lowers
+      # each as a branch: each must make the result as promised.
+      check_candidates(spec, fu, provider, depth, mode);
       if !ast::is_some(provider) {
         if checking() {
           apply_generic(body, spec, d, home);
@@ -4767,6 +4771,74 @@ assume Std {
         cg_error(c_unbound(), prog::sym_name.get(fu));
         return ();
       }
+      apply_bound(body, spec, fu, provider, depth, mode);
+    }
+
+    # D78: every functor the abstract `fu` can be bound to anywhere in the
+    # program — by a `bind F = G;`, reached or not, or through another
+    # abstract functor — and `fu` itself if the platform provides it, as
+    # the bootstrap's `functor_candidates`. Read off the rows
+    # `uw_functor_bind` hung on `fu`.
+    fn functor_candidates(fu: Int, out: IntList, seen: IntList) {
+      if contains(seen, fu) {
+        return ();
+      }
+      seen.push(fu);
+      if in_wasm(fu) {
+        if !contains(out, fu) {
+          out.push(fu);
+        }
+      }
+      if fu >= un_head.length() {
+        return ();
+      }
+      var r = un_head.get(fu);
+      while r > 0 {
+        let g = un_sym.get(r - 1);
+        if prog::sym_kind.get(g) == prog::sk_functor() {
+          if !ast::is_some(ast::fu_binds(prog::sym_decl.get(g))) {
+            functor_candidates(g, out, seen);
+          } else if !contains(out, g) {
+            out.push(g);
+          }
+        }
+        r = un_link.get(r - 1);
+      }
+    }
+
+    # `bind F;` with each functor `F` can be bound to but is not here,
+    # applied as dead code and thrown away, scope and all: where the
+    # application is reached that checks the others, and where nothing
+    # provides `F` (the check pass), all of them.
+    fn check_candidates(spec: Int, fu: Int, provider: Int, depth: Int, mode: Int) {
+      let cands = int_list();
+      functor_candidates(fu, cands, int_list());
+      var i = 0;
+      while i < cands.length() {
+        let g = cands.get(i);
+        if g != provider {
+          let emark = cg_env.read();
+          let gmark = cg_genv.read();
+          let pmark = pv_top.read();
+          let floor = pv_floor.read();
+          let smark = es_top.read();
+          let was = dead();
+          apply_bound(int_list(), spec, fu, g, depth, mode);
+          alive(was);
+          cg_env.write(emark);
+          cg_genv.write(gmark);
+          pv_top.write(pmark);
+          pv_floor.write(floor);
+          es_top.write(smark);
+        }
+        i = i + 1;
+      }
+    }
+
+    # `bind F;` where `F` is bound to `provider`.
+    fn apply_bound(body: IntList, spec: Int, fu: Int, provider: Int, depth: Int, mode: Int) {
+      let d = prog::sym_decl.get(fu);
+      let home = prog::sym_mod.get(fu);
       let emark = cg_env.read();
       let gmark = cg_genv.read();
       let pmark = pv_top.read();
