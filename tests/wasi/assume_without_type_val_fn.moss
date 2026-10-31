@@ -1,0 +1,53 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D20 for vals and fns: `mid` assumes `seed` and `make`, whose types
+# mention T, without T in force. Both compilers reject the assume.
+
+type T;
+
+assume Std, T {
+  val seed: T;
+  fn make(): T;
+}
+
+assume Std, T, seed {
+  fn get_seed(): T { seed }
+}
+assume Std, T, make {
+  fn get_made(): T { make() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn mk(): Char { char::b }
+  fn demo() {
+    bind T = Char;
+    bind seed = char::a;
+    bind make = mk;
+    mid();
+  }
+}
+assume Std, seed, make {
+  fn mid() {
+    bind T = Int;
+    let n: Int = get_seed();
+    print_int(n);
+    putchar(char::newline);
+    let k: Int = get_made();
+    print_int(k);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

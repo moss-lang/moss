@@ -1852,6 +1852,27 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "ab\n")
         self.assertEqual(self.wasmtime_run(self.compile_with_moss(entry, prelude="lib/prelude.moss")), "ab\n")
 
+    def test_an_assume_needs_the_types_its_item_mentions(self):
+        """D20: assuming `W.m`, or `seed` and `make`, whose signatures
+        mention `T`, is legal only where `T` is assumed or bound. The
+        bootstrap says the type is not available; the self-hosted compiler
+        reports `e_absent` (`P`), naming the type."""
+        from .test_build import compile_wasm
+
+        for name in ("assume_without_type", "assume_without_type_val_fn"):
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(
+                    "type `T` is not available in the context here",
+                    str(caught.exception),
+                )
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                report = out.decode("utf-8")
+                self.assertTrue(report.startswith(f"!P {entry} T\n"), report[:200])
+
     def test_applying_a_type(self):
         """D18: a nominal type's identity is its declaration and its static
         bindings, so `Box[Elem=I32]` substitutes into the payload. Both

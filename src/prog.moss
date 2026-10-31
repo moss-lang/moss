@@ -130,6 +130,12 @@ assume Std {
   # and a mistyped import comes out as a Wasm backtrace.
   fn e_read(): Int { n14() }
 
+  # D20: an assume item whose declared signature mentions an abstract type
+  # that is neither assumed nor bound where it is assumed (`assume W.m`
+  # with `.m(): T` and no `T`). Named by the type, as the bootstrap's
+  # "type `T` is not available in the context here" is.
+  fn e_absent(): Int { n15() }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,

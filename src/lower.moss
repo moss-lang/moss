@@ -453,6 +453,7 @@ assume Std {
         if ast::is_some(ast::c_of(prog::sym_decl.get(s))) {
           return env;
         }
+        check_mentions(env, view, m, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
         need_add(recv, sym, ast::none(), s);
         if env_has(env, ek_val(), ast::none(), s) {
           return env;
@@ -465,6 +466,7 @@ assume Std {
         if ast::is_some(ast::fn_body(prog::sym_decl.get(s))) {
           return env;
         }
+        check_signature(env, view, m, s);
         need_add(recv, sym, ast::none(), s);
         if env_has(env, ek_fn(), ast::none(), s) {
           return env;
@@ -511,11 +513,44 @@ assume Std {
         prog::error(prog::e_method(), m, name);
         return env;
       }
+      check_signature(env, view, m, method);
       need_add(recv, sym, this_ty, method);
       if env_has(env, ek_fn(), this_ty, method) {
         return env;
       }
       env_push(env, ek_fn(), this_ty, method, ast::none(), ast::none())
+    }
+
+    # D20: an item may be assumed only where every abstract type its
+    # declared signature mentions is already assumed or bound — in force in
+    # the environment being built, or fixed by the item's own brackets
+    # (`view`). Otherwise a provision of it could be read at a `T` it was
+    # never made at. `m` is the module the assume is written in, for the
+    # report; the types are read where the item is declared.
+    fn check_mentions(env: Int, view: Int, m: Int, t: Int, home: Int) {
+      let found = int_list();
+      types::free_syms(t, home, found);
+      var i = zero;
+      while i.lt(found.length()) {
+        let s = found.get(i);
+        if env_has(env, ek_type(), ast::none(), s).not() {
+          if env_has(view, ek_type(), ast::none(), s).not() {
+            prog::error(prog::e_absent(), m, prog::sym_name.get(s));
+          }
+        }
+        i = i.add(one);
+      }
+    }
+
+    fn check_signature(env: Int, view: Int, m: Int, f: Int) {
+      let d = prog::sym_decl.get(f);
+      let home = prog::sym_mod.get(f);
+      var i = zero;
+      while i.lt(ast::fn_nparams(d)) {
+        check_mentions(env, view, m, ast::b_of(ast::kid_at(ast::fn_params(d), i)), home);
+        i = i.add(one);
+      }
+      check_mentions(env, view, m, ast::fn_ret(d), home);
     }
 
     # An attached method on the receiver, or a detached one in scope —

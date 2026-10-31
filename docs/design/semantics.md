@@ -552,6 +552,12 @@ it *mentions* usable: assuming `next_byte` (whose signature returns
 is why the blocks nest in that order. **DECIDED** (confirmed): an `assume x`
 is legal only where every abstract symbol appearing in `x`'s declared
 signature/definition is already assumed or bound.
+*Note (October 2026):* the bootstrap enforced this from the start, as a
+side effect of elaborating the item ("type `T` is not available in the
+context here"). The self-hosted compiler did not: `assume W.m` with
+`.m(): T`, or `assume seed` with `seed: T`, and no `T` in force, compiled.
+It now reports `e_absent` (`!P`, naming the type) at the assume.
+Standing tests: `tests/wasi/assume_without_type*.moss`.
 
 **[D21] DECIDED (implicit parameterization = generics).** A declaration's
 requirement set is its parameter list. `Range` is declared inside `assume T`,
