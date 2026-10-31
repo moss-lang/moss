@@ -1,0 +1,21 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# `Std`'s list methods where the list's type is concrete: in `main`, an
+# `IntList` is a `Packed[Item=Num]` (D73), which has attached methods of
+# the same names. The call means the context's `IntList.push`, which
+# carries the layout captured where `WasiStd` bound it; the attached
+# `Packed.push` would need that layout here. Output: `2`.
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let xs = int_list();
+    xs.push(7);
+    xs.push(8);
+    putchar((xs.length() + xs.get(1) + char::digit0.code() - 8).char());
+    putchar(char::newline);
+  }
+}

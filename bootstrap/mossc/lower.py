@@ -2025,6 +2025,23 @@ class FnChecker:
                 self.error(f"`{'::'.join(expr.path)}` is not a detached method in scope")
         else:
             method = None
+        # D77: where the receiver has an attached method of this name and
+        # the context provides, at this receiver, the detached method the
+        # name means here (imported, D61), the provision wins. It is what
+        # the code means — the interface, not where an implementation
+        # happens to live — and it keeps a call meaning the same thing
+        # whether the receiver's type is abstract here or concrete (an
+        # `IntList` that is a `Packed[Item=Num]` in `main`).
+        if method is None and len(expr.path) == 1:
+            attached_here = any(
+                home.attached.get((id(h), name)) is not None
+                for home in (h.module, self.module)
+            )
+            detached = self.module.detached.get(name)
+            if attached_here and detached is not None:
+                key = (self.lower.canon(self.env, oty), detached)
+                if key in self.env.methods:
+                    method = detached
         # Attached: a call matches it *by name* in the receiver's own module,
         # with no import (D61). A defined one is an ordinary function with a
         # receiver; an abstract one is a key the context provides, so it

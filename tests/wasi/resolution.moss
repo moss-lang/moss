@@ -1,0 +1,49 @@
+import "../../lib/access.moss" use Elem, .get;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D77: where a receiver has an attached method and the context provides
+# the detached method of the same name at it, the provision wins — the
+# same at a call written against the concrete type and at one written
+# against an abstract type, and following a rebind. `Box` has its own
+# `.get`, which says 9; the context's `.get` at `Box` says 1, then 2.
+# Output: `91122`.
+
+assume Std {
+  type Box Int;
+  fn Box.get(index: Int): Int { 9 }
+
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+}
+
+type Bag;
+
+assume Std, Bag {
+  context Bags = Bag, Bag.get[Elem=Int];
+}
+
+assume Std, Bags {
+  fn generic(b: Bag): Int { b.get(0) }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let b = Box (5);
+    digit(b.get(0));
+    {
+      bind Bag = Box;
+      bind Bag.get[Elem=Int] = (index) => 1;
+      digit(b.get(0));
+      digit(generic(b));
+      {
+        bind Bag.get[Elem=Int] = (index) => 2;
+        digit(b.get(0));
+        digit(generic(b));
+      }
+    }
+    putchar(char::newline);
+  }
+}

@@ -1880,6 +1880,8 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/lambda.moss", LAMBDA_OUT, "lib/prelude.moss"),
             ("tests/wasi/phantom.moss", "42\nz\n42 z\n", "lib/prelude.moss"),
             ("tests/wasi/packed.moss", "3000000000\n", "lib/prelude.moss"),
+            ("tests/wasi/concrete_list.moss", "2\n", "lib/prelude.moss"),
+            ("tests/wasi/resolution.moss", "91122\n", "lib/prelude.moss"),
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),
