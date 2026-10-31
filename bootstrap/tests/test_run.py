@@ -1794,6 +1794,64 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertNotEqual(out[:4], b"\0asm")
         self.assertTrue(out.decode("utf-8").startswith("?S "), out[:200])
 
+    def test_a_provision_answers_only_its_instantiation(self):
+        """Coherence: a callee's val, fn or method requirement is met only
+        by a provision made at the instantiation the callee means — a
+        method item carries its application, and a val or fn its ambient
+        one (CoreMoss.v deviation 8). Each of these was accepted by the
+        bootstrap, which matched the requirement by its key alone, and
+        read a `Char` as an `Int` or a `Point`. The bootstrap now rejects
+        each at the call; the self-hosted compiler reports `c_bad_type`
+        (`?S`) from the back end."""
+        from .test_build import compile_wasm
+
+        cases = {
+            "incoherent_method": ("use_it", "`X[Char=Char].gimme` at [Foo=Int]", "[Foo=Char]"),
+            "incoherent_bind_application": ("use_it", "`W[Char=Char].m` at [T=Int]", "[T=Char]"),
+            "incoherent_rebound": ("use_it", "`W[Char=Char].m` at [T=Int]", "[T=Char]"),
+            "incoherent_core_shape": (
+                "use_it", "`W[Char=Char].m` at [T=Point[Char=Char]]", "[T=Char]",
+            ),
+            "incoherent_val_fn": ("get_seed", "`seed` at [T=Int]", "[T=Char]"),
+            "incoherent_fn": ("get_made", "`make` at [T=Int]", "[T=Char]"),
+        }
+        for name, (callee, needs, made) in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(
+                    f"calling `{callee}` needs {needs}, but the one in the "
+                    f"context here was provided at {made}",
+                    str(caught.exception),
+                )
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                self.assertTrue(out.decode("utf-8").startswith("?S "), out[:200])
+
+    def test_a_provision_from_before_a_rebind_is_refused(self):
+        """A val assumed at the ambient `T` does not serve a call made
+        after `bind T = Int` in the same body. The bootstrap rejects it;
+        the self-hosted compiler does not yet (see the file)."""
+        from .test_build import compile_wasm
+
+        with self.assertRaises(LowerError) as caught:
+            compile_wasm({}, entry="tests/wasi/incoherent_shadowed.moss")
+        self.assertIn(
+            "needs `seed` at [T=Int], but the one in the context here was "
+            "provided at [T as assumed, before a later `bind T`]",
+            str(caught.exception),
+        )
+
+    def test_reproviding_after_a_rebind_is_coherent(self):
+        """The control: provide again at the new `T`, and both compilers
+        accept and run it."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/coherent_rebound.moss"
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "ab\n")
+        self.assertEqual(self.wasmtime_run(self.compile_with_moss(entry, prelude="lib/prelude.moss")), "ab\n")
+
     def test_applying_a_type(self):
         """D18: a nominal type's identity is its declaration and its static
         bindings, so `Box[Elem=I32]` substitutes into the payload. Both

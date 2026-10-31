@@ -1,0 +1,41 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# incoherent_val_fn.moss with the fn alone: `make` is provided while
+# T = Char, then T is rebound [D25] and `get_made`, which requires it, is
+# called at T = Int. Both compilers reject it.
+
+type T;
+
+assume Std, T {
+  fn make(): T;
+}
+
+assume Std, T, make {
+  fn get_made(): T { make() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn mk(): Char { char::b }
+  fn demo() {
+    bind T = Char;
+    bind make = mk;
+    bind T = Int;
+    let k: Int = get_made();
+    print_int(k);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

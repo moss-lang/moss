@@ -121,12 +121,17 @@ class Env:
             self.fns = {}
             self.methods = {}
             self.locals = {}
+            # Provision key -> the instantiation it was made at: for each
+            # type symbol the item's own telescope mentions, the type that
+            # symbol denoted (see `Lower.provision_app`).
+            self.apps = {}
         else:
             self.tymap = dict(parent.tymap)
             self.vals = dict(parent.vals)
             self.fns = dict(parent.fns)
             self.methods = dict(parent.methods)
             self.locals = dict(parent.locals)
+            self.apps = dict(parent.apps)
 
 
 class Lower:
@@ -137,10 +142,14 @@ class Lower:
         self.in_progress: set[int] = set()
         self.fn_symbols: dict[int, Symbol] = {}  # id(decl) -> Symbol
         self.needs_of: dict[int, tuple] = {}  # id(Symbol) -> runtime need keys
+        # id(Symbol) -> {need key: the instantiation the function requires
+        # it at, in the function's own terms} (coherence; see require_needs).
+        self.need_apps: dict[int, dict] = {}
         # id(val Symbol) -> how many scalars its value occupies (D59), for
         # every val some defined function needs.
         self.val_widths: dict[int, int] = {}
         self._reqs_cache: dict[int, list] = {}
+        self._sig_syms_cache: dict[int, list] = {}
         self._const_cache: dict[int, tuple] = {}
         # D66: the forwarder synthesized for each abstract fn bound as a
         # provider, and the other way round.
@@ -257,11 +266,13 @@ class Lower:
                 return  # a defined val is concrete; nothing to provide (D50)
             ty = self.elab_type(sym.decl.ty, sym.module, env.tymap | subst, env)
             self.merge(env, env.vals, module, sym, ty)
+            env.apps.setdefault(sym, self.provision_app(sym, env.tymap | subst))
             if sym not in needs:
                 needs.append(sym)
         elif sym.kind == SymKind.FN:
             sig = self.fn_sig(sym, env.tymap | subst, env)
             self.merge(env, env.fns, module, sym, sig)
+            env.apps.setdefault(sym, self.provision_app(sym, env.tymap | subst))
             if sym not in needs:
                 needs.append(sym)
         elif sym.kind == SymKind.CONTEXT:
@@ -304,6 +315,7 @@ class Lower:
         sig = self.fn_sig(method, tymap, env, this=this_ty)
         key = self.method_key(env, module, this_ty, method)
         self.merge(env, env.methods, module, key, sig)
+        env.apps.setdefault(key, self.provision_app(method, tymap, method=True))
         if key not in needs:
             needs.append(key)
 
@@ -570,6 +582,59 @@ class Lower:
                     f"missing {missing}",
                 )
 
+    def provision_app(self, sym: Symbol, tymap: dict, method: bool = False) -> dict:
+        """The instantiation a val, fn, or method item is in force at: for
+        each type symbol it depends on, what that symbol denoted where the
+        item was assumed or bound — absent (`None`) where it was not in
+        force at all.
+
+        For a val or fn the symbols are its whole telescope
+        (`type_requirements`): the ambient instantiation its coherence
+        premise compares against (CoreMoss.v deviation 8, `dep_tys`). For a
+        method item they are the telescope's symbols its *signature*
+        mentions — the application `θ` that a method item carries in the
+        calculus (`IMth τ m θ`) beside its receiver, which is the key's
+        other half. A symbol the signature does not mention cannot change
+        what the provision is, and the receiver is `This`, not a
+        parameter.
+
+        Assumed items are frozen once their function's environment is
+        complete (`freeze_app`), since a later D43 merge may still identify
+        their symbols; bound items are frozen at the bind."""
+        reqs = self.type_requirements(sym)
+        if method:
+            reqs = self.signature_type_syms(sym, reqs)
+        return {t: tymap.get(t) for t in reqs}
+
+    def signature_type_syms(self, sym: Symbol, reqs: list) -> list:
+        cached = self._sig_syms_cache.get(id(sym))
+        if cached is None:
+            found: list = []
+            decl = sym.decl
+            for p in decl.params:
+                self.free_type_syms(p.ty, sym.module, found, set())
+            if decl.ret is not None:
+                self.free_type_syms(decl.ret, sym.module, found, set())
+            cached = [t for t in reqs if t in found]
+            self._sig_syms_cache[id(sym)] = cached
+        return cached
+
+    def freeze_app(self, env: Env, app: dict) -> dict:
+        """An instantiation read through the union-find as it stands now,
+        so a later `bind` of one of its symbols — a new generation of that
+        symbol [D25] — no longer reads into it."""
+        return {t: None if ty is None else self.canon(env, ty) for t, ty in app.items()}
+
+    def show_app(self, app: dict) -> str:
+        def one(t, ty):
+            if ty is None:
+                return f"{t.name} not in force"
+            if isinstance(ty, TAbstract) and ty.symbol is t and not ty.args:
+                return f"{t.name} as assumed, before a later `bind {t.name}`"
+            return f"{t.name}={show(ty)}"
+
+        return ", ".join(one(t, ty) for t, ty in app.items())
+
     def type_requirements(self, sym: Symbol) -> list:
         """The type symbols that parameterize a declaration (D18/D21).
 
@@ -796,7 +861,9 @@ class Lower:
             return
         self.in_progress.add(id(symbol))
         env, needs = self.base_env(symbol)
+        env.apps = {k: self.freeze_app(env, app) for k, app in env.apps.items()}
         self.needs_of[id(symbol)] = tuple(needs)
+        self.need_apps[id(symbol)] = {k: env.apps.get(k, {}) for k in needs}
         decl = symbol.decl
         has_this = symbol.receiver is not None
         this_ty = None
@@ -1058,6 +1125,7 @@ class FnChecker:
             needs_map = self.match_fn_sig(fn_symbol, sig, kind="method")
             key = self.lower.method_key(self.env, module, this_ty, method)
             self.lower.shadow(self.env.methods, key, sig)
+            self.provided_at(key, method, tymap, method=True)
             return ir.BindFn(key, fn_symbol, needs_map)
         target = resolve_path(module, spec.path)
         if target is None:
@@ -1083,14 +1151,22 @@ class FnChecker:
                     f"`{show(declared)}`"
                 )
             self.lower.shadow(self.env.vals, target, declared)
+            self.provided_at(target, target, self.env.tymap)
             return ir.BindVal(target, value)
         if target.kind == SymKind.FN:
             sig = self.lower.fn_sig(target, self.env.tymap, self.env)
             fn_symbol = self.expect_fn_provider(expr)
             needs_map = self.match_fn_sig(fn_symbol, sig, kind="fn")
             self.lower.shadow(self.env.fns, target, sig)
+            self.provided_at(target, target, self.env.tymap)
             return ir.BindFn(target, fn_symbol, needs_map)
         self.error(f"cannot bind `{target.name}` (a {target.kind.name.lower()})")
+
+    def provided_at(self, key, sym: Symbol, tymap: dict, method: bool = False):
+        """Record the instantiation a bind's provision is made at."""
+        self.env.apps[key] = self.lower.freeze_app(
+            self.env, self.lower.provision_app(sym, tymap, method)
+        )
 
     def expect_defined_fn(self, expr) -> Symbol:
         if not isinstance(expr, ast.PathExpr) or expr.app is not None:
@@ -1171,7 +1247,20 @@ class FnChecker:
         """Check each of the callee's needs against this environment and
         return the (callee key -> caller key) translation: the callee may
         know a receiver by an abstract symbol this environment has since
-        bound or merged (D43)."""
+        bound or merged (D43).
+
+        A need is met only by a provision *at the instantiation the callee
+        means*. Finding something under the key is not enough: a method
+        provision carries its own application (`bind X.m[T=Char] = ...`,
+        or whatever `T` was when it was bound), and a val or fn provision
+        was made while its telescope's type symbols meant something that a
+        later `bind` may have changed. So the instantiation the callee
+        requires — its own, read through this environment, which is the
+        whole of a call's application while calls take no brackets — must
+        equal the one the provision was made at, symbol for symbol: the
+        calculus's `avail` on `IMth τ m θ`, application included, and its
+        coherence premise on val/fn requirements (CoreMoss.v deviation 8,
+        `sat_at`)."""
         mapping = []
         for need in needs:
             if isinstance(need, tuple):
@@ -1182,6 +1271,7 @@ class FnChecker:
                         f"calling `{callee.name}` needs `{show(key[0])}{method.name}`, "
                         "which is not available in the context here"
                     )
+                what = f"`{show(key[0])}{method.name}`"
                 mapping.append((need, key))
             elif need.kind == SymKind.VAL:
                 if need not in self.env.vals:
@@ -1189,6 +1279,8 @@ class FnChecker:
                         f"calling `{callee.name}` needs `{need.name}`, which is not "
                         "available in the context here"
                     )
+                key = need
+                what = f"`{need.name}`"
                 mapping.append((need, need))
             elif need.kind == SymKind.FN:
                 if need not in self.env.fns:
@@ -1196,8 +1288,33 @@ class FnChecker:
                         f"calling `{callee.name}` needs `{need.name}`, which is not "
                         "available in the context here"
                     )
+                key = need
+                what = f"`{need.name}`"
                 mapping.append((need, need))
+            else:
+                continue
+            self.check_coherent(callee, need, key, what)
         return tuple(mapping)
+
+    def check_coherent(self, callee: Symbol, need, key, what: str):
+        wanted = self.lower.need_apps.get(id(callee), {}).get(need, {})
+        have = self.env.apps.get(key, {})
+        required = {}
+        for t, ty in wanted.items():
+            if ty is None:
+                # Not in force where the callee was declared: it means
+                # whatever this context means by it.
+                ty = self.env.tymap.get(t)
+            required[t] = None if ty is None else self.lower.canon(self.env, ty)
+        differ = [t for t in required if required[t] != have.get(t)]
+        if differ:
+            self.error(
+                f"calling `{callee.name}` needs {what} at "
+                f"[{self.lower.show_app({t: required[t] for t in differ})}], "
+                f"but the one in the context here was provided at "
+                f"[{self.lower.show_app({t: have.get(t) for t in differ})}] "
+                "(a provision serves only the instantiation it was made at; D62)"
+            )
 
     # Expressions
 

@@ -1,0 +1,47 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A method provision answers a requirement only at the instantiation it
+# was made at (CoreMoss.v: a method item is `IMth τ m θ`, compared with its
+# application). X does not mention Foo, so the key (X, .gimme) is the same
+# at every Foo; the provision is made at [Foo=Char] and `use_it`, called
+# while Foo = Int, would read its Char as an Int. Both compilers reject it:
+# the bootstrap at the call, the self-hosted compiler as `?S`.
+
+type Foo;
+
+assume Foo {
+  fn .gimme(): Foo;
+}
+
+assume Std {
+  type X Char;
+  fn X.get(): Char { match this { X c => c } }
+}
+
+assume Std, Foo, X.gimme {
+  fn use_it(x: X): Foo { x.gimme() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind Foo = Int;
+    bind X.gimme[Foo=Char] = X.get;
+    let n: Int = use_it(X (char::a));
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

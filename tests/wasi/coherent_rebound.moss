@@ -1,0 +1,46 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# The control for the incoherent_*.moss cases: rebinding T [D25] and
+# providing `seed` and `.m` again at the new T is fine, and each call
+# requires them at the T in force when it is made. Prints `ab`.
+
+type T;
+
+assume Std, T {
+  val seed: T;
+  type W Char;
+  fn .m(): T;
+}
+
+assume Std {
+  fn W.get(): Char { match this { W c => c } }
+  fn W.one(): Int { one }
+}
+
+assume Std, T, seed, W.m {
+  fn both(w: W): T { w.m(); seed }
+}
+
+assume Std {
+  fn demo() {
+    bind T = Char;
+    bind seed = char::a;
+    bind W.m = W.get;
+    putchar(both(W (char::z)));
+    bind T = Int;
+    bind seed = one;
+    bind W.m = W.one;
+    if both(W (char::z)).eq(one) { putchar(char::b) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

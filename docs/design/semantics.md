@@ -1488,15 +1488,55 @@ probing the bootstrap resolves both:
   rather than miscompile it. Standing tests: `tests/wasi/mismatch.moss`
   and `tests/wasi/provisions.moss`.
 
-- **Cross-kind instantiation coherence is a latent hole.** Nothing
-  compares the `T` of an application against the `T` an ambient val/fn
-  provision was made under (`f[T=Char]` satisfied by a `seed : T` bound
-  under `T=Int`). It is unreachable today only because v0 rejects
-  bracket applications at call sites altogether; when that production
-  lands, satisfaction needs the coherence premise the calculus now
-  carries (S-Item in the paper): where a non-type requirement is
-  answered from the ambient context, the application must agree with
-  the context on the type symbols that requirement mentions.
+- **Cross-kind instantiation coherence was a live hole, and is now
+  checked.** Nothing compared the `T` of an application against the `T`
+  an ambient val/fn provision was made under (`f[T=Char]` satisfied by a
+  `seed : T` bound under `T=Int`). This record once called it
+  unreachable, because v0 rejects bracket applications at call sites
+  altogether. It was not: rebinding a type [D25] does the same thing
+  with no brackets at all, and a method bind's own brackets do it for
+  methods. The bootstrap matched every requirement by its key alone —
+  presence of a provision at `(receiver, method)`, or of the val/fn
+  symbol — and so accepted, and ran, programs that read a `Char` as an
+  `Int` or a `Point`. Its Wasm printed `97`, and its interpreter
+  panicked. The shapes: `bind T = Char; bind seed = char::a; bind T =
+  Int;` and then a generic `get_seed()` (the same for an abstract fn);
+  `bind W.m = W.get;` at `T = Char`, then `bind T = Int`, then a generic
+  consumer of `W.m`; and, with no type ever rebound, `bind
+  X.gimme[Foo=Char] = X.get;` while `Foo = Int`, where `X` does not
+  mention `Foo` so the key is the same at every `Foo`. The calculus
+  rules each of these out: a method item carries its application
+  (`IMth τ m θ`) and availability compares it, and val/fn satisfaction
+  carries the coherence premise (S-Item; CoreMoss.v deviation 8). The
+  mechanization also shows that matching method requirements by
+  `(receiver, method)` alone — the implementations' rule — admits a
+  well-formed program that goes wrong.
+
+  *Repaired (October 2026), in the bootstrap's front end.* Every val,
+  fn and method provision records the instantiation it was made at:
+  for each type symbol it depends on, what that symbol denoted where it
+  was assumed or bound, read through the union-find there, so a later
+  rebinding does not read into it. For a val or fn the symbols are its
+  whole telescope (the calculus's `dep_tys`). For a method they are the
+  telescope's symbols its signature mentions — its application `θ`,
+  beside the receiver that is the key's other half. A callee's
+  requirement is met only when the instantiation the callee means,
+  read through the caller's bindings, equals the provision's, symbol
+  for symbol. Otherwise `lower.py` rejects the call ("calling `use_it`
+  needs `X[...].gimme` at [Foo=Int], but the one in the context here
+  was provided at [Foo=Char]"). Since calls take no brackets, a call's
+  application is the caller's own bindings. A direct call of a provided
+  method needs no check, since it is typed by the provision's own
+  signature, as T-Meth types it by the provision's `θ`. Nothing in
+  `src/` or `lib/` tripped the check. The self-hosted compiler already
+  rejected these programs from its back end (`types::fits` in
+  `emit_as`, `?S`); moving that check to its front end is deferred. One
+  shape it still accepts: a function that assumes `T` and `seed`, then
+  rebinds `T` and calls a generic consumer of `seed`
+  (`tests/wasi/incoherent_shadowed.moss`), because the old and new `T`
+  are one scalar wide. The bootstrap rejects it. Standing tests:
+  `tests/wasi/incoherent_*.moss`, with `tests/wasi/coherent_rebound.moss`
+  as the control.
 
 **[D63] DECIDED by the designer (records are the only product type).**
 [D15] kept tuples `(A, B)` in the type grammar and deferred implementing

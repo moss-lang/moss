@@ -1,0 +1,45 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A method bind's own brackets fix the provision's application: `.m` is
+# provided at [T=Char] while the ambient T is Int, and `use_it` requires
+# it at T = Int. W's payload does not mention T, so the receiver key alone
+# cannot tell the two apart. Both compilers reject it.
+
+type T;
+
+assume Std, T {
+  type W Char;
+  fn .m(): T;
+}
+
+assume Std {
+  fn W.get(): Char { match this { W c => c } }
+}
+
+assume Std, T, W.m {
+  fn use_it(w: W): T { w.m() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind T = Int;
+    bind W.m[T=Char] = W.get;
+    let n: Int = use_it(W (char::a));
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

@@ -1,0 +1,42 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# `mid` assumes T and `seed`, then rebinds T [D25]: the `seed` it was
+# handed was provided at the T it assumed (here Char), not at Int, so
+# `get_seed` must not be called with it. The bootstrap rejects the call.
+# The self-hosted compiler still accepts this and prints `n`, reading the
+# Char as an Int; its coherence check is the back end's `types::fits`,
+# which a same-width rebinding gets past.
+
+type T;
+
+assume Std, T {
+  val seed: T;
+}
+
+assume Std, T, seed {
+  fn get_seed(): T { seed }
+  fn mid() {
+    bind T = Int;
+    let n: Int = get_seed();
+    if n.eq(one) { putchar(char::y) } else { putchar(char::n) }
+    putchar(char::newline);
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind T = Char;
+    bind seed = char::a;
+    mid();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

@@ -1,0 +1,48 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# The calculus's own counterexample to matching a method requirement by
+# (receiver, method) alone: with that rule a well-formed program goes
+# wrong, and the calculus, whose method items carry their application,
+# rejects it. T is bound once and never rebound. The provision fixes `.m`
+# at T = Char; `use_it` requires it at T = Point. The bootstrap's type
+# checker rejects it, not only its back end's width check; the
+# self-hosted compiler reports `?S`.
+
+type T;
+
+assume Std {
+  type Point { x: Char, y: Char };
+}
+
+assume Std, T {
+  type W Char;
+  fn .m(): T;
+}
+
+assume Std {
+  fn W.get(): Char { match this { W c => c } }
+}
+
+assume Std, T, W.m {
+  fn use_it(w: W): T { w.m() }
+}
+
+assume Std {
+  fn demo() {
+    bind W.m[T=Char] = W.get;
+    bind T = Point;
+    let p: Point = use_it(W (char::a));
+    putchar(p.y);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

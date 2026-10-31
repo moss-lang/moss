@@ -1,0 +1,49 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A method provision made while T = Char, required after `bind T = Int`
+# [D25]: both are one scalar wide, so no layout check would notice. Both
+# compilers reject it.
+
+type T;
+
+assume Std {
+  type Point { x: Char, y: Char };
+}
+
+assume Std, T {
+  type W Char;
+  fn .m(): T;
+}
+
+assume Std {
+  fn W.get(): Char { match this { W c => c } }
+}
+
+assume Std, T, W.m {
+  fn use_it(w: W): T { w.m() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind T = Char;
+    bind W.m = W.get;
+    bind T = Int;
+    let n: Int = use_it(W[T=Int] (char::a));
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
