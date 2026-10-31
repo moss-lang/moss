@@ -189,6 +189,12 @@ assume Std {
   # cannot be bound to `F`: it does not provide `x`" is.
   fn e_functor_sig(): Int { 16 + 7 }
 
+  # D43: an assumed context mentions one val, fn or method twice, and
+  # merging the two bindings would identify two distinct concrete types
+  # (`A.gimme[Foo=U1]` with `A.gimme[Foo=U2]`). Named by the item, as the
+  # bootstrap's "cannot merge `U1` with `U2` for `.gimme`" is.
+  fn e_merge(): Int { 16 + 8 }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,

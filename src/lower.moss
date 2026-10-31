@@ -177,8 +177,8 @@ assume Std {
     }
 
     # The type an abstract symbol stands for here, chasing substitution
-    # edges (D43's union-find, minus the union: with no applications
-    # nothing ever merges two keys).
+    # edges: a type bind's, and the union-find edges a merge adds (D43,
+    # `unify`).
     fn canon(env: Int, t: Int): Int {
       canon_at(env, t, 0)
     }
@@ -335,17 +335,80 @@ assume Std {
 
     # A declaration's ambient environment: everything its enclosing
     # assume blocks provide, outermost first.
+    #
+    # Assuming one item twice merges the two (D43, `unify`), which may add
+    # union-find edges — and an item read before the edge was added has a
+    # view without it, though the edge holds for the whole region. So when
+    # a walk adds any, the items are walked again over the edges found
+    # (`edges_of`), so that every view has them from the start, until a
+    # walk finds no more. Only then is the environment, or anything read
+    # through it, handed out — a merge never happens after a read is
+    # cached (codegen's memos key on the environment), and a declaration
+    # with no duplicate items costs one walk, as before.
     fn base_env(f: Int, recv: IntList, sym: IntList): Int {
-      let m = prog::sym_mod.get(f);
-      var env = env_empty();
+      var floor = env_empty();
+      var r = int_list();
+      var s = int_list();
+      var env = assume_run(floor, f, r, s);
+      var fuel = 8;
+      while fuel > 0 {
+        let edges = edges_of(env);
+        if edges == floor {
+          fuel = 0;
+        } else {
+          floor = edges;
+          r = int_list();
+          s = int_list();
+          env = assume_run(floor, f, r, s);
+          fuel = fuel - 1;
+        }
+      }
       var i = 0;
-      while i < prog::sym_nasm.get(f) {
-        env = add_assume_item(
-          env, m, ast::kid_at(prog::sym_asm.get(f), i), recv, sym
-        );
+      while i < s.length() {
+        recv.push(r.get(i));
+        sym.push(s.get(i));
         i = i + 1;
       }
       env
+    }
+
+    # One walk of `f`'s assume items, on `env`.
+    fn assume_run(env: Int, f: Int, recv: IntList, sym: IntList): Int {
+      let m = prog::sym_mod.get(f);
+      var out = env;
+      var i = 0;
+      while i < prog::sym_nasm.get(f) {
+        out = add_assume_item(
+          out, m, ast::kid_at(prog::sym_asm.get(f), i), recv, sym
+        );
+        i = i + 1;
+      }
+      out
+    }
+
+    # The merge edges of an environment built from assume items, alone,
+    # in the order they were added. A type row an assume adds says the
+    # symbol is its parameter (`as_assumed`); any other is an edge.
+    # Hash-consed like any chain, so the same edges are the same id.
+    fn edges_of(env: Int): Int {
+      let rows = int_list();
+      var e = env;
+      while ast::is_some(e) {
+        if en_kind.get(e) == ek_type() {
+          if en_a.get(e) != as_assumed(en_sym.get(e)) {
+            rows.push(e);
+          }
+        }
+        e = en_next.get(e);
+      }
+      var out = env_empty();
+      var i = rows.length();
+      while i > 0 {
+        i = i - 1;
+        let row = rows.get(i);
+        out = env_push(out, ek_type(), ast::none(), en_sym.get(row), en_a.get(row), ast::none());
+      }
+      out
     }
 
     # The memo entry for this run of assume items, or none. A run of
@@ -557,10 +620,11 @@ assume Std {
         }
         check_mentions(env, view, m, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
         need_add(recv, sym, ast::none(), s);
-        if env_has(env, ek_val(), ast::none(), s) {
-          return env;
-        }
         let ty = elab(view, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
+        let had = env_find(env, ek_val(), ast::none(), s);
+        if ast::is_some(had) {
+          return unify(env, en_a.get(had), ty, m, s);
+        }
         return env_push(env, ek_val(), ast::none(), s, ty, assumed_app(s, view));
       }
       if kind == prog::sk_fn() {
@@ -570,8 +634,9 @@ assume Std {
         }
         check_signature(env, view, m, s);
         need_add(recv, sym, ast::none(), s);
-        if env_has(env, ek_fn(), ast::none(), s) {
-          return env;
+        let had = env_find(env, ek_fn(), ast::none(), s);
+        if ast::is_some(had) {
+          return merge_sig(env, en_a.get(had), view, m, s);
         }
         return env_push(env, ek_fn(), ast::none(), s, view, assumed_app(s, view));
       }
@@ -637,10 +702,114 @@ assume Std {
       }
       check_signature(env, view, m, method);
       need_add(recv, sym, this_ty, method);
-      if env_has(env, ek_fn(), this_ty, method) {
-        return env;
+      let had = env_find(env, ek_fn(), this_ty, method);
+      if ast::is_some(had) {
+        return merge_sig(env, en_a.get(had), view, m, method);
       }
       env_push(env, ek_fn(), this_ty, method, view, assumed_app(method, view))
+    }
+
+    # Consistent merging (D43). A region carries one binding per key, so
+    # an item assumed twice — two contexts that each mention it, perhaps
+    # under different brackets — is merged rather than kept twice: the
+    # two readings of its type are unified, which identifies their
+    # abstract types. Unifying adds a union-find edge, a type row from an
+    # abstract symbol to the type it is now the same as, which `canon`
+    # chases like a bind's; it fails, `e_merge`, only where two distinct
+    # concrete types would have to be one. As the bootstrap's `unify`.
+    #
+    # A fn's or a method's two readings are its declared signature read
+    # through each assumption's view; `This` is the receiver, the same in
+    # both, since it is the key.
+    fn merge_sig(env: Int, old: Int, view: Int, m: Int, s: Int): Int {
+      let d = prog::sym_decl.get(s);
+      let home = prog::sym_mod.get(s);
+      var out = env;
+      var i = 0;
+      while i < ast::fn_nparams(d) {
+        out = merge_decl_ty(out, old, view, ast::b_of(ast::kid_at(ast::fn_params(d), i)), home, m, s);
+        i = i + 1;
+      }
+      merge_decl_ty(out, old, view, ast::fn_ret(d), home, m, s)
+    }
+
+    fn merge_decl_ty(env: Int, old: Int, view: Int, t: Int, home: Int, m: Int, s: Int): Int {
+      if ast::is_some(t) {
+        if ast::is_kind(t, ast::k_ty_this()) {
+          return env;
+        }
+      }
+      unify(env, elab(old, t, home), elab(view, t, home), m, s)
+    }
+
+    # `env` with whatever edges make `a` and `b` one type, both read
+    # through it first. The edge goes from whichever side is a bare
+    # abstract symbol, the first if both; anything else unifies member
+    # by member where the two have one shape, and is an error otherwise.
+    fn unify(env: Int, a0: Int, b0: Int, m: Int, s: Int): Int {
+      let a = canon(env, a0);
+      let b = canon(env, b0);
+      if a == b {
+        return env;
+      }
+      if is_variable(a) {
+        return env_push(env, ek_type(), ast::none(), types::sym_of(a), b, ast::none());
+      }
+      if is_variable(b) {
+        return env_push(env, ek_type(), ast::none(), types::sym_of(b), a, ast::none());
+      }
+      let k = types::kind_of(a);
+      var same = k == types::kind_of(b);
+      if same {
+        same = types::member_count(a) == types::member_count(b);
+      }
+      if same {
+        if k == types::kd_nominal() {
+          same = types::sym_of(a) == types::sym_of(b);
+        } else if k == types::kd_abstract() {
+          same = types::sym_of(a) == types::sym_of(b);
+        } else if k == types::kd_record() {
+          var i = 0;
+          while i < types::field_count(a) {
+            if types::field_name_at(a, i) != types::field_name_at(b, i) {
+              same = false;
+            }
+            i = i + 1;
+          }
+        } else if k != types::kd_union() {
+          same = false;
+        }
+      }
+      if !same {
+        prog::error(prog::e_merge(), m, prog::sym_name.get(s));
+        return env;
+      }
+      var out = env;
+      if k == types::kd_record() {
+        var i = 0;
+        while i < types::field_count(a) {
+          out = unify(out, types::field_type_at(a, i), types::field_type_at(b, i), m, s);
+          i = i + 1;
+        }
+        return out;
+      }
+      var i = 0;
+      while i < types::member_count(a) {
+        out = unify(out, types::member_at(a, i), types::member_at(b, i), m, s);
+        i = i + 1;
+      }
+      out
+    }
+
+    # An abstract type with no arguments: a symbol a merge may bind.
+    fn is_variable(t: Int): Bool {
+      if !ast::is_some(t) {
+        return false;
+      }
+      if !types::is_kind(t, types::kd_abstract()) {
+        return false;
+      }
+      types::member_count(t) == 0
     }
 
     # D20: an item may be assumed only where every abstract type its

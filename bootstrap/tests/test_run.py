@@ -2659,16 +2659,12 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         """D43, the designer's example: a context with `A.gimme[Foo=B]` and
         `A.gimme[Foo=C]` (and a val at both) merges the two bindings, so
         `B` and `C` are one type inside it and may be used
-        interchangeably. The bootstrap's half of the test."""
+        interchangeably. The self-hosted compiler used to keep the first
+        of the two assumptions, and found `C` where `B` was expected."""
         from .test_build import compile_wasm, run_wasm
 
         entry = "tests/wasi/merge.moss"
         self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "qbq\n")
-
-    @unittest.expectedFailure
-    def test_a_merge_makes_two_types_one_self_hosted(self):
-        """The same, compiled by the self-hosted compiler."""
-        entry = "tests/wasi/merge.moss"
         out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
         self.assertEqual(self.wasmtime_run(out), "qbq\n")
 
@@ -2676,7 +2672,9 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         """D43: a merge that would identify two distinct concrete types —
         `A.gimme[Foo=U1]` with `A.gimme[Foo=U2]` — is an error where the
         context is assumed, though nothing calls the function assuming
-        it. The bootstrap's half of the test."""
+        it. The self-hosted compiler reports `e_merge` (`Y`), named by the
+        item whose bindings would not merge; it used to keep the first
+        and accept the program."""
         from .test_build import compile_wasm
 
         entry = "tests/wasi/merge_inconsistent.moss"
@@ -2685,12 +2683,6 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertIn(
             "cannot merge `U1` with `U2` for `.gimme` (D43)", str(caught.exception)
         )
-
-    @unittest.expectedFailure
-    def test_an_inconsistent_merge_self_hosted(self):
-        """The same, in the self-hosted compiler: `e_merge` (`Y`), named by
-        the item whose bindings would not merge."""
-        entry = "tests/wasi/merge_inconsistent.moss"
         out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
         self.assertNotEqual(out[:4], b"\0asm")
         self.assertEqual(out.decode("utf-8"), f"!Y {entry} gimme\n")

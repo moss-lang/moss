@@ -3603,11 +3603,8 @@ than paid for it.
 *Left.* Checks still run while emitting, so only functions the program
 reaches are checked (the bootstrap also checks uncalled generic ones).
 Type errors are still `?S` with no detail, and [D74]'s `phantom_misread`
-is still a type error, not incoherence. The self-hosted front end keeps
-the first of two assumptions of one item instead of merging them ([D43]),
-which could now in principle reject a program the bootstrap accepts;
-none in the corpus does. A `match` on an abstract scrutinee takes its
-shape from the specialization.
+is still a type error, not incoherence. A `match` on an abstract
+scrutinee takes its shape from the specialization.
 
 ## 13. Decision index
 
