@@ -21,7 +21,7 @@ assume Std {
   # The four scalar valtypes, numbered: they are consecutive bytes, i32
   # down to f64, so the `k`th is a subtraction.
   fn vt_count(): Int { n4() }
-  fn vt_at(k: Int): Int { vt_i32().sub(k) }
+  fn vt_at(k: Int): Int { vt_i32() - k }
 
   # Section ids, from the binary format.
   fn sec_type(): Int { one }
@@ -87,9 +87,9 @@ assume Std {
     # bytes.
     fn type_index(params: IntList, results: IntList): Int {
       var i = zero;
-      while i.lt(ft_plen.length()) {
-        if ft_plen.get(i).eq(params.length()) {
-          if ft_rlen.get(i).eq(results.length()) {
+      while i < ft_plen.length() {
+        if ft_plen.get(i) == params.length() {
+          if ft_rlen.get(i) == results.length() {
             if run_eq(ft_params, ft_pstart.get(i), params) {
               if run_eq(ft_res, ft_rstart.get(i), results) {
                 return i;
@@ -97,7 +97,7 @@ assume Std {
             }
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
       ft_pstart.push(ft_params.length());
       ft_plen.push(params.length());
@@ -105,16 +105,16 @@ assume Std {
       ft_rlen.push(results.length());
       push_bytes(ft_params, params);
       push_bytes(ft_res, results);
-      ft_plen.length().sub(one)
+      ft_plen.length() - one
     }
 
     fn run_eq(arena: IntList, start: Int, want: IntList): Bool {
       var j = zero;
-      while j.lt(want.length()) {
-        if arena.get(start.add(j)).ne(want.get(j)) {
+      while j < want.length() {
+        if arena.get(start + j) != want.get(j) {
           return false;
         }
-        j = j.add(one);
+        j = j + one;
       }
       true
     }
@@ -129,9 +129,9 @@ assume Std {
     fn type_i32(n: Int): Int {
       let ps = int_list();
       var i = zero;
-      while i.lt(n) {
+      while i < n {
         ps.push(vt_i32());
-        i = i.add(one);
+        i = i + one;
       }
       type_index(ps, int_list())
     }
@@ -139,9 +139,9 @@ assume Std {
     fn type_i32_to_i32(n: Int): Int {
       let ps = int_list();
       var i = zero;
-      while i.lt(n) {
+      while i < n {
         ps.push(vt_i32());
-        i = i.add(one);
+        i = i + one;
       }
       let rs = int_list();
       rs.push(vt_i32());
@@ -170,7 +170,7 @@ assume Std {
       im_fstart.push(intern_name(fname));
       im_flen.push(fname.length());
       im_type.push(ty);
-      im_type.length().sub(one)
+      im_type.length() - one
     }
 
     # Reserve a defined function. Its body arrives later, so that a
@@ -178,18 +178,18 @@ assume Std {
     fn add_func(ty: Int): Int {
       fn_type.push(ty);
       var k = zero;
-      while k.lt(vt_count()) {
+      while k < vt_count() {
         fn_locals.push(zero);
-        k = k.add(one);
+        k = k + one;
       }
       fn_bstart.push(zero);
       fn_blen.push(zero);
-      import_count().add(fn_type.length()).sub(one)
+      import_count() + fn_type.length() - one
     }
 
     fn no_locals(): IntList {
       let counts = int_list();
-      while counts.length().lt(vt_count()) {
+      while counts.length() < vt_count() {
         counts.push(zero);
       }
       counts
@@ -198,11 +198,11 @@ assume Std {
     # `body` must already end with the `end` opcode, and `locals` holds
     # how many locals of each valtype it declares, in the order of `vt_at`.
     fn set_body(f: Int, locals: IntList, body: IntList) {
-      let d = f.sub(import_count());
+      let d = f - import_count();
       var k = zero;
-      while k.lt(vt_count()) {
-        fn_locals.set(d.mul(vt_count()).add(k), locals.get(k));
-        k = k.add(one);
+      while k < vt_count() {
+        fn_locals.set(d * vt_count() + k, locals.get(k));
+        k = k + one;
       }
       fn_bstart.set(d, insns.length());
       fn_blen.set(d, body.length());
@@ -219,9 +219,9 @@ assume Std {
     fn push_name(out: IntList, start: Int, len: Int) {
       uleb(out, len);
       var i = zero;
-      while i.lt(len) {
-        out.push(nchars.get(start.add(i)));
-        i = i.add(one);
+      while i < len {
+        out.push(nchars.get(start + i));
+        i = i + one;
       }
     }
 
@@ -232,64 +232,64 @@ assume Std {
     }
 
     fn type_section(out: IntList) {
-      if ft_plen.length().eq(zero) {
+      if ft_plen.length() == zero {
         return ();
       }
       let b = int_list();
       uleb(b, ft_plen.length());
       var i = zero;
-      while i.lt(ft_plen.length()) {
+      while i < ft_plen.length() {
         b.push(hex(n6(), zero));
         uleb(b, ft_plen.get(i));
         var j = zero;
-        while j.lt(ft_plen.get(i)) {
-          b.push(ft_params.get(ft_pstart.get(i).add(j)));
-          j = j.add(one);
+        while j < ft_plen.get(i) {
+          b.push(ft_params.get(ft_pstart.get(i) + j));
+          j = j + one;
         }
         uleb(b, ft_rlen.get(i));
         j = zero;
-        while j.lt(ft_rlen.get(i)) {
-          b.push(ft_res.get(ft_rstart.get(i).add(j)));
-          j = j.add(one);
+        while j < ft_rlen.get(i) {
+          b.push(ft_res.get(ft_rstart.get(i) + j));
+          j = j + one;
         }
-        i = i.add(one);
+        i = i + one;
       }
       section(out, sec_type(), b);
     }
 
     fn import_section(out: IntList) {
-      if import_count().eq(zero) {
+      if import_count() == zero {
         return ();
       }
       let b = int_list();
       uleb(b, import_count());
       var i = zero;
-      while i.lt(import_count()) {
+      while i < import_count() {
         push_name(b, im_mstart.get(i), im_mlen.get(i));
         push_name(b, im_fstart.get(i), im_flen.get(i));
         b.push(kind_func());
         uleb(b, im_type.get(i));
-        i = i.add(one);
+        i = i + one;
       }
       section(out, sec_import(), b);
     }
 
     fn func_section(out: IntList) {
-      if func_count().eq(zero) {
+      if func_count() == zero {
         return ();
       }
       let b = int_list();
       uleb(b, func_count());
       var i = zero;
-      while i.lt(func_count()) {
+      while i < func_count() {
         uleb(b, fn_type.get(i));
-        i = i.add(one);
+        i = i + one;
       }
       section(out, sec_func(), b);
     }
 
     fn memory_section(out: IntList) {
-      if mem_pages.read().eq(zero) {
+      if mem_pages.read() == zero {
         return ();
       }
       let b = int_list();
@@ -300,56 +300,56 @@ assume Std {
     }
 
     fn export_section(out: IntList) {
-      if ex_kind.length().eq(zero) {
+      if ex_kind.length() == zero {
         return ();
       }
       let b = int_list();
       uleb(b, ex_kind.length());
       var i = zero;
-      while i.lt(ex_kind.length()) {
+      while i < ex_kind.length() {
         push_name(b, ex_start.get(i), ex_len.get(i));
         b.push(ex_kind.get(i));
         uleb(b, ex_index.get(i));
-        i = i.add(one);
+        i = i + one;
       }
       section(out, sec_export(), b);
     }
 
     fn code_section(out: IntList) {
-      if func_count().eq(zero) {
+      if func_count() == zero {
         return ();
       }
       let b = int_list();
       uleb(b, func_count());
       var i = zero;
-      while i.lt(func_count()) {
+      while i < func_count() {
         let entry = int_list();
         var groups = zero;
         var k = zero;
-        while k.lt(vt_count()) {
-          if fn_locals.get(i.mul(vt_count()).add(k)).gt(zero) {
-            groups = groups.add(one);
+        while k < vt_count() {
+          if fn_locals.get(i * vt_count() + k) > zero {
+            groups = groups + one;
           }
-          k = k.add(one);
+          k = k + one;
         }
         uleb(entry, groups);
         k = zero;
-        while k.lt(vt_count()) {
-          let n = fn_locals.get(i.mul(vt_count()).add(k));
-          if n.gt(zero) {
+        while k < vt_count() {
+          let n = fn_locals.get(i * vt_count() + k);
+          if n > zero {
             uleb(entry, n);
             entry.push(vt_at(k));
           }
-          k = k.add(one);
+          k = k + one;
         }
         var j = zero;
-        while j.lt(fn_blen.get(i)) {
-          entry.push(insns.get(fn_bstart.get(i).add(j)));
-          j = j.add(one);
+        while j < fn_blen.get(i) {
+          entry.push(insns.get(fn_bstart.get(i) + j));
+          j = j + one;
         }
         uleb(b, entry.length());
         push_bytes(b, entry);
-        i = i.add(one);
+        i = i + one;
       }
       section(out, sec_code(), b);
     }

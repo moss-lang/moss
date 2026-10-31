@@ -16,9 +16,9 @@ import "./bytes.moss" use *;
 # initializer.
 
 assume Std {
-  fn none(): Int { one.neg() }
+  fn none(): Int { -one }
 
-  fn is_some(x: Int): Bool { x.ge(zero) }
+  fn is_some(x: Int): Bool { x >= zero }
 
   # Types.
   fn k_ty_unit(): Int { zero }              # ()
@@ -101,8 +101,8 @@ assume Std {
   fn k_ty_known(): Int { hex(n3(), n4()) }  # a=elaborated type
 
   # `fn f` has no receiver; `fn .m` has the detached one.
-  fn recv_plain(): Int { one.neg() }
-  fn recv_detached(): Int { n2().neg() }
+  fn recv_plain(): Int { -one }
+  fn recv_detached(): Int { -n2() }
 
   val nkind: IntList;
   val na: IntList;
@@ -160,7 +160,7 @@ assume Std {
 
     fn is_kind(id: Int, k: Int): Bool {
       if is_some(id) {
-        nkind.get(id).eq(k)
+        nkind.get(id) == k
       } else {
         false
       }
@@ -172,14 +172,14 @@ assume Std {
     fn commit(xs: IntList): Int {
       let start = kids.length();
       var i = zero;
-      while i.lt(xs.length()) {
+      while i < xs.length() {
         kids.push(xs.get(i));
-        i = i.add(one);
+        i = i + one;
       }
       start
     }
 
-    fn kid_at(run: Int, i: Int): Int { kids.get(run.add(i)) }
+    fn kid_at(run: Int, i: Int): Int { kids.get(run + i) }
 
     # A path: one id for a run of interned names.
     fn path_of(xs: IntList): Int {
@@ -187,19 +187,19 @@ assume Std {
       pstart.push(pnames.length());
       plen.push(xs.length());
       var i = zero;
-      while i.lt(xs.length()) {
+      while i < xs.length() {
         pnames.push(xs.get(i));
-        i = i.add(one);
+        i = i + one;
       }
       id
     }
 
     fn path_len(p: Int): Int { plen.get(p) }
 
-    fn path_at(p: Int, i: Int): Int { pnames.get(pstart.get(p).add(i)) }
+    fn path_at(p: Int, i: Int): Int { pnames.get(pstart.get(p) + i) }
 
     # The name a path resolves against: its last segment.
-    fn path_last(p: Int): Int { path_at(p, plen.get(p).sub(one)) }
+    fn path_last(p: Int): Int { path_at(p, plen.get(p) - one) }
 
     # Declarations with more operands than a node has slots keep them in
     # `kids`; these name the offsets so the layout is written once.
@@ -231,9 +231,9 @@ assume Std {
 
     # A use item is three cells of `kids`: the name, whether it was
     # dotted (a detached method), and the local name it was renamed to.
-    fn use_name(uses: Int, i: Int): Int { kid_at(uses, i.mul(n3())) }
-    fn use_dot(uses: Int, i: Int): Int { kid_at(uses, i.mul(n3()).add(one)) }
-    fn use_as(uses: Int, i: Int): Int { kid_at(uses, i.mul(n3()).add(n2())) }
+    fn use_name(uses: Int, i: Int): Int { kid_at(uses, i * n3()) }
+    fn use_dot(uses: Int, i: Int): Int { kid_at(uses, i * n3() + one) }
+    fn use_as(uses: Int, i: Int): Int { kid_at(uses, i * n3() + n2()) }
 
     fn make_import(text: String, alias: Int, star: Int, uses: Int, n: Int): Int {
       let xs = int_list();
@@ -273,22 +273,22 @@ assume Std {
     # is keyed by its receiver *and* its name, not by a name alone).
     fn decl_name(id: Int): Int {
       let k = kind_of(id);
-      if k.eq(k_d_type()) {
+      if k == k_d_type() {
         a_of(id)
-      } else if k.eq(k_d_alias()) {
+      } else if k == k_d_alias() {
         a_of(id)
-      } else if k.eq(k_d_tag()) {
+      } else if k == k_d_tag() {
         a_of(id)
-      } else if k.eq(k_d_unit()) {
+      } else if k == k_d_unit() {
         a_of(id)
-      } else if k.eq(k_d_val()) {
+      } else if k == k_d_val() {
         a_of(id)
-      } else if k.eq(k_d_context()) {
+      } else if k == k_d_context() {
         a_of(id)
-      } else if k.eq(k_d_functor()) {
+      } else if k == k_d_functor() {
         fu_name(id)
-      } else if k.eq(k_d_fn()) {
-        if fn_recv(id).eq(recv_plain()) {
+      } else if k == k_d_fn() {
+        if fn_recv(id) == recv_plain() {
           fn_name(id)
         } else {
           none()

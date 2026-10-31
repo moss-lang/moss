@@ -31,7 +31,7 @@ assume Std {
 
   assume Cursor, lexer::src, lexer::at, lexer::mark, intern::Interner, ast::Ast {
     fn advance() {
-      if tok2.read().ge(zero) {
+      if tok2.read() >= zero {
         tok.write(tok2.read());
         tstart.write(t2start.read());
         tend.write(t2end.read());
@@ -45,7 +45,7 @@ assume Std {
 
     # The token after the current one, lexed once and kept.
     fn peek2(): Int {
-      if tok2.read().lt(zero) {
+      if tok2.read() < zero {
         tok2.write(token_code(lexer::lex()));
         t2start.write(lexer::mark.read());
         t2end.write(lexer::at.read());
@@ -54,7 +54,7 @@ assume Std {
     }
 
     fn here(k: Int): Bool {
-      tok.read().eq(k)
+      tok.read() == k
     }
 
     fn accept(k: Int): Bool {
@@ -67,10 +67,10 @@ assume Std {
     }
 
     fn fail() {
-      if errs.read().eq(zero) {
+      if errs.read() == zero {
         errpos.write(tstart.read());
       }
-      errs.write(errs.read().add(one));
+      errs.write(errs.read() + one);
     }
 
     fn expect(k: Int) {
@@ -96,7 +96,7 @@ assume Std {
     }
 
     fn name_here(): Int {
-      intern::intern(tstart.read(), tend.read().sub(tstart.read()))
+      intern::intern(tstart.read(), tend.read() - tstart.read())
     }
 
     fn take_name(): Int {
@@ -112,10 +112,10 @@ assume Std {
 
     # `_` is lexed as a name; only the pattern grammar cares.
     fn at_wildcard(): Bool {
-      if here(tk_name()).not() {
+      if !here(tk_name()) {
         false
-      } else if tend.read().sub(tstart.read()).eq(one) {
-        lexer::src.get(tstart.read()).eq(char::underscore)
+      } else if tend.read() - tstart.read() == one {
+        lexer::src.get(tstart.read()) == char::underscore
       } else {
         false
       }
@@ -145,7 +145,7 @@ assume Std {
         expect(tk_equal());
         let s = parse_spec();
         xs.push(ast::node2(ast::k_binding(), p, s));
-        if accept(tk_comma()).not() {
+        if !accept(tk_comma()) {
           break;
         }
       }
@@ -201,12 +201,12 @@ assume Std {
     fn parse_type(): Int {
       let leading = accept(tk_pipe());
       if leading {
-        if at_type_start().not() {
+        if !at_type_start() {
           return ast::node0(ast::k_ty_never());
         }
       }
       let first = parse_type_atom();
-      if here(tk_pipe()).not() {
+      if !here(tk_pipe()) {
         return first;
       }
       let xs = int_list();
@@ -243,14 +243,14 @@ assume Std {
           let nm = take_name();
           expect(tk_colon());
           xs.push(ast::node2(ast::k_ty_field(), nm, parse_type()));
-          if accept(tk_comma()).not() {
+          if !accept(tk_comma()) {
             break;
           }
         }
         expect(tk_rbrace());
         return ast::node2(ast::k_ty_record(), ast::commit(xs), xs.length());
       }
-      if here(tk_name()).not() {
+      if !here(tk_name()) {
         fail();
         skip_one();
         return ast::node0(ast::k_ty_unit());
@@ -317,37 +317,37 @@ assume Std {
 
     # A binary operator's family, or none for any other token.
     fn op_family(t: Int): Int {
-      if t.eq(tk_star()) {
+      if t == tk_star() {
         fam_mul()
-      } else if t.eq(tk_slash()) {
+      } else if t == tk_slash() {
         fam_frac()
-      } else if t.eq(tk_percent()) {
+      } else if t == tk_percent() {
         fam_frac()
-      } else if t.eq(tk_plus()) {
+      } else if t == tk_plus() {
         fam_add()
-      } else if t.eq(tk_hyphen()) {
+      } else if t == tk_hyphen() {
         fam_add()
-      } else if t.eq(tk_less_less()) {
+      } else if t == tk_less_less() {
         fam_shift()
-      } else if t.eq(tk_greater_greater()) {
+      } else if t == tk_greater_greater() {
         fam_shift()
-      } else if t.eq(tk_equal_equal()) {
+      } else if t == tk_equal_equal() {
         fam_cmp()
-      } else if t.eq(tk_exclam_equal()) {
+      } else if t == tk_exclam_equal() {
         fam_cmp()
-      } else if t.eq(tk_less()) {
+      } else if t == tk_less() {
         fam_cmp()
-      } else if t.eq(tk_greater()) {
+      } else if t == tk_greater() {
         fam_cmp()
-      } else if t.eq(tk_less_equal()) {
+      } else if t == tk_less_equal() {
         fam_cmp()
-      } else if t.eq(tk_greater_equal()) {
+      } else if t == tk_greater_equal() {
         fam_cmp()
-      } else if t.eq(tk_ampersand()) {
+      } else if t == tk_ampersand() {
         fam_bit()
-      } else if t.eq(tk_caret()) {
+      } else if t == tk_caret() {
         fam_bit()
-      } else if t.eq(tk_pipe()) {
+      } else if t == tk_pipe() {
         fam_bit()
       } else {
         ast::none()
@@ -356,7 +356,7 @@ assume Std {
 
     fn at_op(): Bool { ast::is_some(op_family(tok.read())) }
 
-    fn at_family(f: Int): Bool { op_family(tok.read()).eq(f) }
+    fn at_family(f: Int): Bool { op_family(tok.read()) == f }
 
     # The operator under the cursor, consumed.
     fn take_op(): Int {
@@ -386,7 +386,7 @@ assume Std {
         return e;
       }
       let lhs = parse_operand(first, no_rec);
-      if at_family(fam_cmp()).not() {
+      if !at_family(fam_cmp()) {
         if at_op() {
           fail();
         }
@@ -448,7 +448,7 @@ assume Std {
         advance();
         # `-1.abs()` would be `-(1.abs())`, which nobody means (D68).
         if at_literal() {
-          if peek2().eq(tk_dot()) {
+          if peek2() == tk_dot() {
             fail();
           }
         }
@@ -511,7 +511,7 @@ assume Std {
           let body = parse_expr();
           xs.push(ast::node2(ast::k_arm(), pat, body));
           # The last arm may drop its comma.
-          if here(tk_rbrace()).not() {
+          if !here(tk_rbrace()) {
             expect(tk_comma());
           }
         }
@@ -523,7 +523,7 @@ assume Std {
     fn parse_postfix(no_rec: Bool): Int {
       var e = parse_primary(no_rec);
       loop {
-        if accept(tk_dot()).not() {
+        if !accept(tk_dot()) {
           break;
         }
         let p = parse_path();
@@ -545,17 +545,17 @@ assume Std {
       var fraction = zero;
       var point = false;
       var i = tstart.read();
-      while i.lt(tend.read()) {
+      while i < tend.read() {
         let c = lexer::src.get(i);
-        if c.eq(char::dot) {
+        if c == char::dot {
           point = true;
         } else {
-          xs.push(c.code().sub(char::digit0.code()));
+          xs.push(c.code() - char::digit0.code());
           if point {
-            fraction = fraction.add(one);
+            fraction = fraction + one;
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
       advance();
       var frac = ast::none();
@@ -574,7 +574,7 @@ assume Std {
           break;
         }
         xs.push(parse_expr());
-        if accept(tk_comma()).not() {
+        if !accept(tk_comma()) {
           break;
         }
       }
@@ -602,9 +602,9 @@ assume Std {
         }
         if here(tk_name()) {
           let after = peek2();
-          var lambda = after.eq(tk_colon());
-          if lambda.not() {
-            lambda = after.eq(tk_comma());
+          var lambda = after == tk_colon();
+          if !lambda {
+            lambda = after == tk_comma();
           }
           if lambda {
             loop {
@@ -620,14 +620,14 @@ assume Std {
                 ty = parse_type();
               }
               xs.push(ast::node2(ast::k_param(), nm, ty));
-              if accept(tk_comma()).not() {
+              if !accept(tk_comma()) {
                 break;
               }
             }
             expect(tk_rparen());
             return parse_lambda_rest(xs);
           }
-          if after.eq(tk_rparen()) {
+          if after == tk_rparen() {
             let nm = take_name();
             advance();
             if at_lambda_tail() {
@@ -645,12 +645,12 @@ assume Std {
       }
       # A bare block (D65), except where a record expression is also
       # forbidden: there the brace opens the body of an `if` or `while`.
-      if no_rec.not() {
+      if !no_rec {
         if accept(tk_lbrace()) {
           return parse_block();
         }
       }
-      if here(tk_name()).not() {
+      if !here(tk_name()) {
         fail();
         skip_one();
         return ast::node0(ast::k_ex_unit());
@@ -672,7 +672,7 @@ assume Std {
         parse_exprs(xs, tk_rparen());
         return ast::node3(ast::k_ex_call(), callee, ast::commit(xs), xs.length());
       }
-      if no_rec.not() {
+      if !no_rec {
         if accept(tk_lbrace()) {
           let xs = int_list();
           loop {
@@ -688,7 +688,7 @@ assume Std {
               value = parse_expr();
             }
             xs.push(ast::node2(ast::k_ex_rfield(), nm, value));
-            if accept(tk_comma()).not() {
+            if !accept(tk_comma()) {
               break;
             }
           }
@@ -727,13 +727,13 @@ assume Std {
       if accept(tk_lbrace()) {
         return parse_record_pattern(ast::none());
       }
-      if here(tk_name()).not() {
+      if !here(tk_name()) {
         fail();
         skip_one();
         return ast::node0(ast::k_pt_wild());
       }
       if at_wildcard() {
-        if peek2().ne(tk_colon_colon()) {
+        if peek2() != tk_colon_colon() {
           advance();
           return ast::node0(ast::k_pt_wild());
         }
@@ -763,7 +763,7 @@ assume Std {
           sub = parse_pattern();
         }
         xs.push(ast::node2(ast::k_pt_field(), nm, sub));
-        if accept(tk_comma()).not() {
+        if !accept(tk_comma()) {
           break;
         }
       }
@@ -840,10 +840,10 @@ assume Std {
     # The one place the grammar needs two tokens: `x = e;` is an
     # assignment, `x.m();` and `x` are expressions.
     fn at_assign(): Bool {
-      if here(tk_name()).not() {
+      if !here(tk_name()) {
         false
       } else {
-        peek2().eq(tk_equal())
+        peek2() == tk_equal()
       }
     }
 
@@ -876,7 +876,7 @@ assume Std {
           value = parse_expr();
         }
         xs.push(ast::node2(ast::k_st_item(), spec, value));
-        if accept(tk_comma()).not() {
+        if !accept(tk_comma()) {
           break;
         }
       }
@@ -890,8 +890,8 @@ assume Std {
       var text = lexer::src.slice(zero, zero);
       if here(tk_str()) {
         # The token's span covers the quotes; the path is inside them.
-        let s = tstart.read().add(one);
-        text = lexer::src.slice(s, tend.read().sub(s).sub(one));
+        let s = tstart.read() + one;
+        text = lexer::src.slice(s, tend.read() - s - one);
         advance();
       } else {
         fail();
@@ -926,14 +926,14 @@ assume Std {
             xs.push(nm);
             xs.push(dotted);
             xs.push(renamed);
-            if accept(tk_comma()).not() {
+            if !accept(tk_comma()) {
               break;
             }
           }
         }
       }
       expect(tk_semi());
-      let n = xs.length().div(n3());
+      let n = xs.length() / n3();
       ast::make_import(text, alias, star, ast::commit(xs), n)
     }
 
@@ -962,7 +962,7 @@ assume Std {
         let pn = take_name();
         expect(tk_colon());
         ps.push(ast::node2(ast::k_param(), pn, parse_type()));
-        if accept(tk_comma()).not() {
+        if !accept(tk_comma()) {
           break;
         }
       }
@@ -989,7 +989,7 @@ assume Std {
           break;
         }
         xs.push(parse_spec());
-        if accept(tk_comma()).not() {
+        if !accept(tk_comma()) {
           break;
         }
       }
@@ -1038,7 +1038,7 @@ assume Std {
           break;
         }
         items.push(parse_assume_item());
-        if accept(tk_comma()).not() {
+        if !accept(tk_comma()) {
           break;
         }
       }
@@ -1077,7 +1077,7 @@ assume Std {
               break;
             }
             ps.push(take_name());
-            if accept(tk_comma()).not() {
+            if !accept(tk_comma()) {
               break;
             }
           }

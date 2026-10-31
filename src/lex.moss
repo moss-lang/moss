@@ -78,7 +78,7 @@ assume Std {
   assume src, at, mark {
     fn peek(): Read | Eof {
       let i = at.read();
-      if i.ge(src.length()) {
+      if i >= src.length() {
         Eof
       } else {
         Read (src.get(i))
@@ -86,7 +86,7 @@ assume Std {
     }
 
     fn advance() {
-      at.write(at.read().add(one));
+      at.write(at.read() + one);
     }
 
     # Consume the next character only if it is `want`.
@@ -94,7 +94,7 @@ assume Std {
       match peek() {
         Eof => false,
         Read c => {
-          if c.eq(want) {
+          if c == want {
             advance();
             true
           } else {
@@ -105,30 +105,30 @@ assume Std {
     }
 
     fn is_space(c: Char): Bool {
-      if c.eq(char::space) {
+      if c == char::space {
         true
-      } else if c.eq(char::newline) {
+      } else if c == char::newline {
         true
-      } else if c.eq(char::tab) {
+      } else if c == char::tab {
         true
       } else {
-        c.eq(char::cr)
+        c == char::cr
       }
     }
 
     # Letters, digits, and underscore, leaning on ASCII order:
     # digits < uppercase < underscore < lowercase.
     fn is_name_char(c: Char): Bool {
-      if c.ge(char::a) {
-        c.le(char::z)
-      } else if c.ge(char::A) {
-        if c.le(char::Z) {
+      if c >= char::a {
+        c <= char::z
+      } else if c >= char::A {
+        if c <= char::Z {
           true
         } else {
-          c.eq(char::underscore)
+          c == char::underscore
         }
-      } else if c.ge(char::digit0) {
-        c.le(char::digit9)
+      } else if c >= char::digit0 {
+        c <= char::digit9
       } else {
         false
       }
@@ -142,10 +142,10 @@ assume Std {
             advance();
             if is_space(c) {
               ()
-            } else if c.eq(char::octothorpe) {
+            } else if c == char::octothorpe {
               skip_comment();
             } else {
-              mark.write(at.read().sub(one));
+              mark.write(at.read() - one);
               return token_at(c);
             }
           }
@@ -160,7 +160,7 @@ assume Std {
           Eof => break,
           Read c => {
             advance();
-            if c.eq(char::newline) {
+            if c == char::newline {
               break
             }
           }
@@ -170,51 +170,51 @@ assume Std {
 
     # Dispatch on a consumed non-space character.
     fn token_at(c: Char): Token {
-      if c.eq(char::exclam) {
+      if c == char::exclam {
         two(char::equal, ExclamEqual, Exclam)
-      } else if c.eq(char::colon) {
+      } else if c == char::colon {
         two(char::colon, ColonColon, Colon)
-      } else if c.eq(char::equal) {
+      } else if c == char::equal {
         equal_token()
-      } else if c.eq(char::less) {
+      } else if c == char::less {
         less_token()
-      } else if c.eq(char::greater) {
+      } else if c == char::greater {
         greater_token()
-      } else if c.eq(char::percent) {
+      } else if c == char::percent {
         Percent
-      } else if c.eq(char::ampersand) {
+      } else if c == char::ampersand {
         Ampersand
-      } else if c.eq(char::lparen) {
+      } else if c == char::lparen {
         LParen
-      } else if c.eq(char::rparen) {
+      } else if c == char::rparen {
         RParen
-      } else if c.eq(char::star) {
+      } else if c == char::star {
         Star
-      } else if c.eq(char::plus) {
+      } else if c == char::plus {
         Plus
-      } else if c.eq(char::comma) {
+      } else if c == char::comma {
         Comma
-      } else if c.eq(char::hyphen) {
+      } else if c == char::hyphen {
         two(char::greater, HyphenGreater, Hyphen)
-      } else if c.eq(char::dot) {
+      } else if c == char::dot {
         Dot
-      } else if c.eq(char::slash) {
+      } else if c == char::slash {
         Slash
-      } else if c.eq(char::semi) {
+      } else if c == char::semi {
         Semi
-      } else if c.eq(char::lbracket) {
+      } else if c == char::lbracket {
         LBracket
-      } else if c.eq(char::rbracket) {
+      } else if c == char::rbracket {
         RBracket
-      } else if c.eq(char::caret) {
+      } else if c == char::caret {
         Caret
-      } else if c.eq(char::lbrace) {
+      } else if c == char::lbrace {
         LBrace
-      } else if c.eq(char::pipe) {
+      } else if c == char::pipe {
         Pipe
-      } else if c.eq(char::rbrace) {
+      } else if c == char::rbrace {
         RBrace
-      } else if c.eq(char::quote) {
+      } else if c == char::quote {
         string_token()
       } else if is_digit(c) {
         number_token()
@@ -269,11 +269,11 @@ assume Std {
           Eof => return Bad,
           Read c => {
             advance();
-            if c.eq(char::quote) {
+            if c == char::quote {
               return Str;
-            } else if c.eq(char::newline) {
+            } else if c == char::newline {
               return Bad;
-            } else if c.eq(char::backslash) {
+            } else if c == char::backslash {
               # TODO: validate the escape character instead of skipping it.
               match peek() {
                 Eof => return Bad,
@@ -286,8 +286,8 @@ assume Std {
     }
 
     fn is_digit(c: Char): Bool {
-      if c.ge(char::digit0) {
-        c.le(char::digit9)
+      if c >= char::digit0 {
+        c <= char::digit9
       } else {
         false
       }
@@ -295,8 +295,8 @@ assume Std {
 
     # The character `ahead` past the cursor, if it is a digit.
     fn digit_ahead(ahead: Int): Bool {
-      let i = at.read().add(ahead);
-      if i.ge(src.length()) {
+      let i = at.read() + ahead;
+      if i >= src.length() {
         false
       } else {
         is_digit(src.get(i))
@@ -337,11 +337,11 @@ assume Std {
 
     fn take_dot_digit(): Bool {
       let i = at.read();
-      if i.add(one).ge(src.length()) {
+      if i + one >= src.length() {
         return false;
       }
-      if src.get(i).eq(char::dot) {
-        if is_digit(src.get(i.add(one))) {
+      if src.get(i) == char::dot {
+        if is_digit(src.get(i + one)) {
           advance();
           return true;
         }
@@ -441,7 +441,7 @@ assume Std {
     # The keyword trie (D48: no string literals required). `c0` was already
     # consumed by token_at.
     fn name_or_keyword(c0: Char): Token {
-      if c0.eq(char::a) {
+      if c0 == char::a {
         if take(char::s) {
           if take(char::s) {
             kw3(char::u, char::m, char::e, Assume)
@@ -451,7 +451,7 @@ assume Std {
         } else {
           rest_of_name()
         }
-      } else if c0.eq(char::b) {
+      } else if c0 == char::b {
         if take(char::i) {
           kw2(char::n, char::d, Bind)
         } else if take(char::r) {
@@ -459,11 +459,11 @@ assume Std {
         } else {
           rest_of_name()
         }
-      } else if c0.eq(char::c) {
+      } else if c0 == char::c {
         kw6(char::o, char::n, char::t, char::e, char::x, char::t, Context)
-      } else if c0.eq(char::e) {
+      } else if c0 == char::e {
         kw3(char::l, char::s, char::e, Else)
-      } else if c0.eq(char::f) {
+      } else if c0 == char::f {
         if take(char::n) {
           kw(Fn)
         } else if take(char::o) {
@@ -473,7 +473,7 @@ assume Std {
         } else {
           rest_of_name()
         }
-      } else if c0.eq(char::i) {
+      } else if c0 == char::i {
         if take(char::f) {
           kw(If)
         } else if take(char::m) {
@@ -481,7 +481,7 @@ assume Std {
         } else {
           rest_of_name()
         }
-      } else if c0.eq(char::l) {
+      } else if c0 == char::l {
         if take(char::e) {
           kw1(char::t, Let)
         } else if take(char::o) {
@@ -489,13 +489,13 @@ assume Std {
         } else {
           rest_of_name()
         }
-      } else if c0.eq(char::m) {
+      } else if c0 == char::m {
         kw4(char::a, char::t, char::c, char::h, Match)
-      } else if c0.eq(char::r) {
+      } else if c0 == char::r {
         kw5(char::e, char::t, char::u, char::r, char::n, Return)
-      } else if c0.eq(char::T) {
+      } else if c0 == char::T {
         kw3(char::h, char::i, char::s, ThisType)
-      } else if c0.eq(char::t) {
+      } else if c0 == char::t {
         if take(char::h) {
           kw2(char::i, char::s, ThisValue)
         } else if take(char::y) {
@@ -503,7 +503,7 @@ assume Std {
         } else {
           rest_of_name()
         }
-      } else if c0.eq(char::u) {
+      } else if c0 == char::u {
         if take(char::n) {
           kw2(char::i, char::t, Unit)
         } else if take(char::s) {
@@ -511,7 +511,7 @@ assume Std {
         } else {
           rest_of_name()
         }
-      } else if c0.eq(char::v) {
+      } else if c0 == char::v {
         if take(char::a) {
           if take(char::l) {
             kw(Val)
@@ -523,7 +523,7 @@ assume Std {
         } else {
           rest_of_name()
         }
-      } else if c0.eq(char::w) {
+      } else if c0 == char::w {
         kw4(char::h, char::i, char::l, char::e, While)
       } else {
         rest_of_name()

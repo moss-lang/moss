@@ -38,12 +38,12 @@ assume Std {
   fn c_no_main(): Int { n14() }
   fn c_unsupported(): Int { n15() }   # a construct outside this slice
   fn c_unbound(): Int { n16() }       # abstract, and nothing provides it
-  fn c_unknown_op(): Int { n16().add(one) }  # a `Wasm` name with no instruction
-  fn c_bad_type(): Int { n16().add(n2()) }
+  fn c_unknown_op(): Int { n16() + one }  # a `Wasm` name with no instruction
+  fn c_bad_type(): Int { n16() + n2() }
   # A call whose specialization the first pass never reached, so the two
   # passes disagree. A bug in this back end rather than in the program.
-  fn c_missing(): Int { n16().add(n3()) }
-  fn c_break(): Int { n16().add(n4()) }  # `break` outside any loop
+  fn c_missing(): Int { n16() + n3() }
+  fn c_break(): Int { n16() + n4() }  # `break` outside any loop
 
   # Reachable *specializations*: a function under a specific set of
   # bindings, and the Wasm index each gets. A type or fn bind changes the
@@ -235,7 +235,7 @@ assume Std {
     # Only the kept pass reports: the first one runs against indices that
     # do not exist yet, so anything it says would be said twice.
     fn cg_error(code: Int, name: Int) {
-      if cg_real.read().eq(zero) {
+      if cg_real.read() == zero {
         return ();
       }
       cg_errs.push(code);
@@ -251,15 +251,15 @@ assume Std {
     # that declares them, so an ordinary function that happens to be
     # called `i32_add` is still an ordinary function.
     fn name_is(s: String, cs: IntList): Bool {
-      if s.length().ne(cs.length()) {
+      if s.length() != cs.length() {
         return false;
       }
       var i = zero;
-      while i.lt(s.length()) {
-        if s.get(i).code().ne(cs.get(i)) {
+      while i < s.length() {
+        if s.get(i).code() != cs.get(i) {
           return false;
         }
-        i = i.add(one);
+        i = i + one;
       }
       true
     }
@@ -278,7 +278,7 @@ assume Std {
       cg_bool.write(ast::none());
       cg_std.write(ast::none());
       var m = zero;
-      while m.lt(prog::module_count()) {
+      while m < prog::module_count() {
         let base = prog::basename(prog::module_path(m));
         if name_is(base, w) {
           cg_wasm.write(m);
@@ -292,7 +292,7 @@ assume Std {
         if name_is(base, s) {
           cg_std.write(m);
         }
-        m = m.add(one);
+        m = m + one;
       }
       find_lang_symbols();
       cg_i32.write(wasm_type(zero));
@@ -307,21 +307,21 @@ assume Std {
     # `one` and `float`.
     fn lg_base(): Int { hex(n4(), zero) }
     fn lg_neg(): Int { lg_base() }
-    fn lg_not(): Int { lg_base().add(one) }
-    fn lg_zero(): Int { lg_base().add(n2()) }
-    fn lg_one(): Int { lg_base().add(n3()) }
-    fn lg_float(): Int { lg_base().add(n4()) }
+    fn lg_not(): Int { lg_base() + one }
+    fn lg_zero(): Int { lg_base() + n2() }
+    fn lg_one(): Int { lg_base() + n3() }
+    fn lg_float(): Int { lg_base() + n4() }
 
     fn lang(slot: Int): Int { cg_lang.get(slot) }
 
     fn find_module_named(cs: IntList): Int {
       var found = ast::none();
       var m = zero;
-      while m.lt(prog::module_count()) {
+      while m < prog::module_count() {
         if name_is(prog::basename(prog::module_path(m)), cs) {
           found = m;
         }
-        m = m.add(one);
+        m = m + one;
       }
       found
     }
@@ -333,7 +333,7 @@ assume Std {
     }
 
     fn find_lang_symbols() {
-      while cg_lang.length().lt(lg_base().add(n5())) {
+      while cg_lang.length() < lg_base() + n5() {
         cg_lang.push(ast::none());
       }
       let a = spelled();
@@ -413,8 +413,8 @@ assume Std {
     # The method an operator node means.
     fn op_symbol(e: Int): Int {
       let op = ast::a_of(e);
-      if ast::kind_of(e).eq(ast::k_ex_unary()) {
-        if op.eq(tk_hyphen()) {
+      if ast::kind_of(e) == ast::k_ex_unary() {
+        if op == tk_hyphen() {
           return lang(lg_neg());
         }
         return lang(lg_not());
@@ -426,11 +426,11 @@ assume Std {
     # so they are found by name in its scope rather than invented. `k`
     # numbers them as `emit::vt_at` does: I32, I64, F32, F64.
     fn spell_scalar(cs: IntList, k: Int) {
-      if k.eq(zero) {
+      if k == zero {
         sp_I32(cs);
-      } else if k.eq(one) {
+      } else if k == one {
         sp_I64(cs);
-      } else if k.eq(n2()) {
+      } else if k == n2() {
         sp_F32(cs);
       } else {
         sp_F64(cs);
@@ -443,7 +443,7 @@ assume Std {
       let sym = prog::lookup(
         cg_wasm.read(), prog::ns_name(), intern::intern_chars(cs)
       );
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         return types::ty_never();
       }
       types::ty_of_decl(sym)
@@ -466,20 +466,20 @@ assume Std {
         }
       }
       let sym = prog::lookup(cg_bool.read(), prog::ns_name(), intern::intern_chars(b));
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         return types::ty_never();
       }
       types::ty_of_decl(sym)
     }
 
     fn in_bool(sym: Int): Bool {
-      prog::sym_mod.get(sym).eq(cg_bool.read())
+      prog::sym_mod.get(sym) == cg_bool.read()
     }
 
     # `i32_bool`, the one item of lib/wasistd.moss the back end provides
     # itself: `Bool` is 0 or 1 with its tag erased, so it is `n != 0`.
     fn is_i32_bool(sym: Int): Bool {
-      if prog::sym_mod.get(sym).ne(cg_std.read()) {
+      if prog::sym_mod.get(sym) != cg_std.read() {
         return false;
       }
       let cs = spelled();
@@ -492,15 +492,15 @@ assume Std {
     }
 
     fn in_wasm(sym: Int): Bool {
-      prog::sym_mod.get(sym).eq(cg_wasm.read())
+      prog::sym_mod.get(sym) == cg_wasm.read()
     }
 
     fn in_wasi(sym: Int): Bool {
-      prog::sym_mod.get(sym).eq(cg_wasi.read())
+      prog::sym_mod.get(sym) == cg_wasi.read()
     }
 
     fn is_defined_fn(sym: Int): Bool {
-      if prog::sym_kind.get(sym).ne(prog::sk_fn()) {
+      if prog::sym_kind.get(sym) != prog::sk_fn() {
         false
       } else {
         ast::is_some(ast::fn_body(prog::sym_decl.get(sym)))
@@ -511,10 +511,10 @@ assume Std {
     # it is the only kind of provider that can see what it was called on
     # (D54) — which is why `this` is a parameter like any other.
     fn is_defined_method(sym: Int): Bool {
-      if prog::sym_kind.get(sym).ne(prog::sk_method()) {
+      if prog::sym_kind.get(sym) != prog::sk_method() {
         return false;
       }
-      if ast::is_some(prog::sym_recv.get(sym)).not() {
+      if !ast::is_some(prog::sym_recv.get(sym)) {
         return false;
       }
       ast::is_some(ast::fn_body(prog::sym_decl.get(sym)))
@@ -546,7 +546,7 @@ assume Std {
       }
       let i = lambda_row(provider);
       if ast::is_some(i) {
-        return lm_recv.get(i).eq(one);
+        return lm_recv.get(i) == one;
       }
       false
     }
@@ -559,14 +559,14 @@ assume Std {
       if is_defined_method(provider) {
         return all;
       }
-      if takes_receiver(provider).not() {
+      if !takes_receiver(provider) {
         return all;
       }
       let out = int_list();
       var i = one;
-      while i.lt(all.length()) {
+      while i < all.length() {
         out.push(all.get(i));
-        i = i.add(one);
+        i = i + one;
       }
       out
     }
@@ -576,11 +576,11 @@ assume Std {
 
     fn lambda_row(sym: Int): Int {
       var i = zero;
-      while i.lt(lm_sym.length()) {
-        if lm_sym.get(i).eq(sym) {
+      while i < lm_sym.length() {
+        if lm_sym.get(i) == sym {
           return i;
         }
-        i = i.add(one);
+        i = i + one;
       }
       ast::none()
     }
@@ -598,7 +598,7 @@ assume Std {
     # Provisions.
 
     fn provide(recv: Int, sym: Int, l: Int) {
-      if pv_top.read().lt(pv_recv.length()) {
+      if pv_top.read() < pv_recv.length() {
         pv_recv.set(pv_top.read(), recv);
         pv_sym.set(pv_top.read(), sym);
         pv_local.set(pv_top.read(), l);
@@ -607,16 +607,16 @@ assume Std {
         pv_sym.push(sym);
         pv_local.push(l);
       }
-      pv_top.write(pv_top.read().add(one));
+      pv_top.write(pv_top.read() + one);
     }
 
     # The innermost provision for this key, so a rebind wins.
     fn provision_of(recv: Int, sym: Int): Int {
       var i = pv_top.read();
-      while i.gt(zero) {
-        i = i.sub(one);
-        if pv_sym.get(i).eq(sym) {
-          if pv_recv.get(i).eq(recv) {
+      while i > zero {
+        i = i - one;
+        if pv_sym.get(i) == sym {
+          if pv_recv.get(i) == recv {
             return pv_local.get(i);
           }
         }
@@ -632,10 +632,10 @@ assume Std {
       if ast::is_some(recv) {
         return false;
       }
-      if prog::sym_kind.get(sym).ne(prog::sk_val()) {
+      if prog::sym_kind.get(sym) != prog::sk_val() {
         return false;
       }
-      in_wasm(sym).not()
+      !in_wasm(sym)
     }
 
     # A captured slot has the type of the val it finally names.
@@ -646,11 +646,11 @@ assume Std {
 
     fn contains(xs: IntList, v: Int): Bool {
       var i = zero;
-      while i.lt(xs.length()) {
-        if xs.get(i).eq(v) {
+      while i < xs.length() {
+        if xs.get(i) == v {
           return true;
         }
-        i = i.add(one);
+        i = i + one;
       }
       false
     }
@@ -659,13 +659,13 @@ assume Std {
     # is a dense id, so a hit is a chain of the environments that one
     # symbol has been asked about — two of them, on this compiler.
     fn vs_lookup(sym: Int, env: Int): Int {
-      if sym.ge(vs_head.length()) {
+      if sym >= vs_head.length() {
         return ast::none();
       }
       var r = vs_head.get(sym);
-      while r.gt(zero) {
-        let row = r.sub(one);
-        if vs_env.get(row).eq(env) {
+      while r > zero {
+        let row = r - one;
+        if vs_env.get(row) == env {
           return row;
         }
         r = vs_link.get(row);
@@ -676,7 +676,7 @@ assume Std {
     # One row, and its place in the by-symbol chain. Every insert goes
     # through here, so the index cannot drift from the rows.
     fn vs_store(sym: Int, env: Int, start: Int, len: Int): Int {
-      while vs_head.length().le(sym) {
+      while vs_head.length() <= sym {
         vs_head.push(zero);
       }
       vs_env.push(env);
@@ -684,7 +684,7 @@ assume Std {
       vs_len.push(len);
       vs_link.push(vs_head.get(sym));
       vs_head.set(sym, vs_env.length());
-      vs_env.length().sub(one)
+      vs_env.length() - one
     }
 
     # Append unless it is already there. What the walk produces is a list
@@ -693,36 +693,36 @@ assume Std {
     # first-occurrence order over the same depth-first sequence, which is
     # what makes memoizing every frame — not just the outermost — sound.
     fn vs_append(out: IntList, v: Int) {
-      if contains(out, v).not() {
+      if !contains(out, v) {
         out.push(v);
       }
     }
 
     # The slot for a value captured by the bind that made `entry`.
     fn ck_slot(entry: Int, inner: Int): Int {
-      if entry.lt(ck_head.length()) {
+      if entry < ck_head.length() {
         var r = ck_head.get(entry);
-        while r.gt(zero) {
-          let row = r.sub(one);
-          if ck_inner.get(row).eq(inner) {
-            return row.add(n2()).neg();
+        while r > zero {
+          let row = r - one;
+          if ck_inner.get(row) == inner {
+            return -(row + n2());
           }
           r = ck_link.get(row);
         }
       }
-      while ck_head.length().le(entry) {
+      while ck_head.length() <= entry {
         ck_head.push(zero);
       }
       ck_entry.push(entry);
       ck_inner.push(inner);
       ck_link.push(ck_head.get(entry));
       ck_head.set(entry, ck_entry.length());
-      ck_entry.length().add(one).neg()
+      -(ck_entry.length() + one)
     }
 
-    fn is_captured(slot: Int): Bool { slot.lt(ast::none()) }
+    fn is_captured(slot: Int): Bool { slot < ast::none() }
 
-    fn ck_row(slot: Int): Int { slot.neg().sub(n2()) }
+    fn ck_row(slot: Int): Int { -slot - n2() }
 
     # The val a slot finally names, under however many captures.
     fn slot_sym(slot: Int): Int {
@@ -748,9 +748,9 @@ assume Std {
       val_slots_walk(tmp, sym, env, depth);
       let start = vs_pool.length();
       var i = zero;
-      while i.lt(tmp.length()) {
+      while i < tmp.length() {
         vs_pool.push(tmp.get(i));
-        i = i.add(one);
+        i = i + one;
       }
       vs_store(sym, env, start, tmp.length())
     }
@@ -762,12 +762,12 @@ assume Std {
     # are threaded down; as captured slots, because they are the values
     # in force at the bind (D26), whatever has been rebound since.
     fn val_slots_walk(out: IntList, sym: Int, env: Int, depth: Int) {
-      if depth.gt(hex(n2(), zero)) {
+      if depth > hex(n2(), zero) {
         cg_error(prog::e_deep(), prog::sym_name.get(sym));
         return ();
       }
       var i = zero;
-      while i.lt(lower::needs_count(sym)) {
+      while i < lower::needs_count(sym) {
         let r = lower::need_recv_at(sym, i);
         let ns = lower::need_sym_at(sym, i);
         if passed_need(r, ns) {
@@ -781,17 +781,17 @@ assume Std {
           if ast::is_some(e) {
             if ast::is_some(lower::env_a_of(e)) {
               let row = vs_row(
-                lower::env_a_of(e), lower::env_b_of(e), depth.add(one)
+                lower::env_a_of(e), lower::env_b_of(e), depth + one
               );
               var j = zero;
-              while j.lt(vs_len.get(row)) {
-                vs_append(out, ck_slot(e, vs_pool.get(vs_start.get(row).add(j))));
-                j = j.add(one);
+              while j < vs_len.get(row) {
+                vs_append(out, ck_slot(e, vs_pool.get(vs_start.get(row) + j)));
+                j = j + one;
               }
             }
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -807,24 +807,24 @@ assume Std {
     # which is safe, since both ends of a call ask `val_slots`.
 
     fn uses_init() {
-      while un_head.length().lt(prog::sym_count()) {
+      while un_head.length() < prog::sym_count() {
         un_head.push(zero);
         un_mark.push(zero);
         un_fstart.push(zero);
       }
       var f = zero;
-      while f.lt(prog::sym_count()) {
+      while f < prog::sym_count() {
         if is_defined_method(f) {
           un_meths.push(f);
         }
-        f = f.add(one);
+        f = f + one;
       }
       f = zero;
-      while f.lt(prog::sym_count()) {
+      while f < prog::sym_count() {
         if is_compilable(f) {
           uw_node(f, ast::fn_body(prog::sym_decl.get(f)), prog::sym_mod.get(f));
         }
-        f = f.add(one);
+        f = f + one;
       }
     }
 
@@ -838,12 +838,12 @@ assume Std {
     # an abstract one included, so that whether a fn need is reached is
     # known too (`fn_need_used`).
     fn uw_sym(f: Int, s: Int) {
-      if ast::is_some(s).not() {
+      if !ast::is_some(s) {
         return ();
       }
-      if prog::sym_kind.get(s).eq(prog::sk_val()) {
+      if prog::sym_kind.get(s) == prog::sk_val() {
         uw_row(f, s);
-      } else if prog::sym_kind.get(s).eq(prog::sk_fn()) {
+      } else if prog::sym_kind.get(s) == prog::sk_fn() {
         uw_row(f, s);
       } else if is_compilable(s) {
         uw_row(f, s);
@@ -852,36 +852,36 @@ assume Std {
 
     fn uw_run(f: Int, run: Int, n: Int, m: Int) {
       var i = zero;
-      while i.lt(n) {
+      while i < n {
         uw_node(f, ast::kid_at(run, i), m);
-        i = i.add(one);
+        i = i + one;
       }
     }
 
     fn uw_node(f: Int, e: Int, m: Int) {
-      if ast::is_some(e).not() {
+      if !ast::is_some(e) {
         return ();
       }
       let k = ast::kind_of(e);
-      if k.eq(ast::k_ex_path()) {
+      if k == ast::k_ex_path() {
         uw_sym(f, prog::resolve_path(m, ast::a_of(e)));
-      } else if k.eq(ast::k_ex_call()) {
+      } else if k == ast::k_ex_call() {
         uw_sym(f, prog::resolve_path(m, ast::a_of(ast::a_of(e))));
         uw_run(f, ast::b_of(e), ast::c_of(e), m);
-      } else if k.eq(ast::k_ex_field()) {
+      } else if k == ast::k_ex_field() {
         uw_node(f, ast::a_of(e), m);
-      } else if k.eq(ast::k_ex_method()) {
+      } else if k == ast::k_ex_method() {
         uw_node(f, ast::a_of(e), m);
         uw_run(f, ast::c_of(e), ast::d_of(e), m);
         uw_meths(f, ast::path_last(ast::b_of(e)));
-      } else if k.eq(ast::k_ex_unary()) {
+      } else if k == ast::k_ex_unary() {
         uw_node(f, ast::b_of(e), m);
         uw_lang_meths(f, op_symbol(e));
-      } else if k.eq(ast::k_ex_binary()) {
+      } else if k == ast::k_ex_binary() {
         uw_node(f, ast::b_of(e), m);
         uw_run(f, ast::c_of(e), one, m);
         uw_lang_meths(f, op_symbol(e));
-      } else if k.eq(ast::k_ex_lit()) {
+      } else if k == ast::k_ex_lit() {
         # D68: a literal reads `zero` and `one` and calls `.add`, `.mul`
         # and, for a decimal one, `float` and `.div`.
         uw_sym(f, lang(lg_zero()));
@@ -892,9 +892,9 @@ assume Std {
           uw_sym(f, lang(lg_float()));
           uw_lang_meths(f, lang(tk_slash()));
         }
-      } else if k.eq(ast::k_ex_record()) {
+      } else if k == ast::k_ex_record() {
         var i = zero;
-        while i.lt(ast::c_of(e)) {
+        while i < ast::c_of(e) {
           let field = ast::kid_at(ast::b_of(e), i);
           if ast::is_some(ast::b_of(field)) {
             uw_node(f, ast::b_of(field), m);
@@ -902,40 +902,40 @@ assume Std {
             # `{ x }` reads `x`.
             uw_sym(f, prog::lookup(m, prog::ns_name(), ast::a_of(field)));
           }
-          i = i.add(one);
+          i = i + one;
         }
-      } else if k.eq(ast::k_ex_if()) {
+      } else if k == ast::k_ex_if() {
         uw_node(f, ast::a_of(e), m);
         uw_node(f, ast::b_of(e), m);
         uw_node(f, ast::c_of(e), m);
-      } else if k.eq(ast::k_ex_match()) {
+      } else if k == ast::k_ex_match() {
         uw_node(f, ast::a_of(e), m);
         var i = zero;
-        while i.lt(ast::c_of(e)) {
+        while i < ast::c_of(e) {
           uw_node(f, ast::b_of(ast::kid_at(ast::b_of(e), i)), m);
-          i = i.add(one);
+          i = i + one;
         }
-      } else if k.eq(ast::k_ex_return()) {
+      } else if k == ast::k_ex_return() {
         uw_node(f, ast::a_of(e), m);
-      } else if k.eq(ast::k_ex_block()) {
+      } else if k == ast::k_ex_block() {
         uw_run(f, ast::a_of(e), ast::b_of(e), m);
         uw_node(f, ast::c_of(e), m);
-      } else if k.eq(ast::k_st_let()) {
+      } else if k == ast::k_st_let() {
         uw_node(f, ast::c_of(e), m);
-      } else if k.eq(ast::k_st_var()) {
+      } else if k == ast::k_st_var() {
         uw_node(f, ast::c_of(e), m);
-      } else if k.eq(ast::k_st_assign()) {
+      } else if k == ast::k_st_assign() {
         uw_node(f, ast::b_of(e), m);
-      } else if k.eq(ast::k_st_expr()) {
+      } else if k == ast::k_st_expr() {
         uw_node(f, ast::a_of(e), m);
-      } else if k.eq(ast::k_st_while()) {
+      } else if k == ast::k_st_while() {
         uw_node(f, ast::a_of(e), m);
         uw_node(f, ast::b_of(e), m);
-      } else if k.eq(ast::k_st_loop()) {
+      } else if k == ast::k_st_loop() {
         uw_node(f, ast::a_of(e), m);
-      } else if k.eq(ast::k_st_bind()) {
+      } else if k == ast::k_st_bind() {
         uw_binds(f, ast::a_of(e), ast::b_of(e), m, zero);
-      } else if k.eq(ast::k_ex_lambda()) {
+      } else if k == ast::k_ex_lambda() {
         # D70: what it reaches, it reaches from the bind's frame, which
         # captures it there.
         uw_node(f, ast::d_of(e), m);
@@ -945,11 +945,11 @@ assume Std {
     # Every defined method a call of this name may reach.
     fn uw_meths(f: Int, name: Int) {
       var i = zero;
-      while i.lt(un_meths.length()) {
-        if prog::sym_name.get(un_meths.get(i)).eq(name) {
+      while i < un_meths.length() {
+        if prog::sym_name.get(un_meths.get(i)) == name {
           uw_row(f, un_meths.get(i));
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -963,11 +963,11 @@ assume Std {
     # needs here (D26); applying a functor does both for its binds,
     # written in its own module.
     fn uw_binds(f: Int, run: Int, n: Int, m: Int, depth: Int) {
-      if depth.gt(n8()) {
+      if depth > n8() {
         return ();
       }
       var i = zero;
-      while i.lt(n) {
+      while i < n {
         let item = ast::kid_at(run, i);
         let value = ast::b_of(item);
         if ast::is_some(value) {
@@ -978,32 +978,32 @@ assume Std {
           if ast::is_some(ast::a_of(spec)) {
             let fu = prog::resolve_path(m, ast::a_of(spec));
             if ast::is_some(fu) {
-              if prog::sym_kind.get(fu).eq(prog::sk_functor()) {
+              if prog::sym_kind.get(fu) == prog::sk_functor() {
                 let d = prog::sym_decl.get(fu);
                 var j = zero;
-                while j.lt(ast::fu_nbinds(d)) {
+                while j < ast::fu_nbinds(d) {
                   let stmt = ast::kid_at(ast::fu_binds(d), j);
                   uw_binds(
                     f, ast::a_of(stmt), ast::b_of(stmt), prog::sym_mod.get(fu),
-                    depth.add(one)
+                    depth + one
                   );
-                  j = j.add(one);
+                  j = j + one;
                 }
               }
             }
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
     # `bind Int.add = Num.add;`: an attached provider, written as a field.
     fn uw_provider(f: Int, value: Int, m: Int) {
-      if ast::kind_of(value).ne(ast::k_ex_field()) {
+      if ast::kind_of(value) != ast::k_ex_field() {
         return ();
       }
       let obj = ast::a_of(value);
-      if ast::kind_of(obj).ne(ast::k_ex_path()) {
+      if ast::kind_of(obj) != ast::k_ex_path() {
         return ();
       }
       let recv = prog::resolve_path(m, ast::a_of(obj));
@@ -1016,42 +1016,42 @@ assume Std {
     # `f`'s needs at once, by one walk from `f`, and kept.
     fn need_used(f: Int, i: Int): Bool {
       # A symbol made after the walk, if any: assume it reaches all.
-      if f.ge(un_fstart.length()) {
+      if f >= un_fstart.length() {
         return true;
       }
-      if un_fstart.get(f).eq(zero) {
-        let stamp = un_stamp.read().add(one);
+      if un_fstart.get(f) == zero {
+        let stamp = un_stamp.read() + one;
         un_stamp.write(stamp);
         let todo = int_list();
         todo.push(f);
         un_mark.set(f, stamp);
         var t = zero;
-        while t.lt(todo.length()) {
+        while t < todo.length() {
           var r = un_head.get(todo.get(t));
-          while r.gt(zero) {
-            let s = un_sym.get(r.sub(one));
-            if un_mark.get(s).ne(stamp) {
+          while r > zero {
+            let s = un_sym.get(r - one);
+            if un_mark.get(s) != stamp {
               un_mark.set(s, stamp);
-              if prog::sym_kind.get(s).ne(prog::sk_val()) {
+              if prog::sym_kind.get(s) != prog::sk_val() {
                 todo.push(s);
               }
             }
-            r = un_link.get(r.sub(one));
+            r = un_link.get(r - one);
           }
-          t = t.add(one);
+          t = t + one;
         }
-        un_fstart.set(f, un_flags.length().add(one));
+        un_fstart.set(f, un_flags.length() + one);
         var j = zero;
-        while j.lt(lower::needs_count(f)) {
-          if un_mark.get(lower::need_sym_at(f, j)).eq(stamp) {
+        while j < lower::needs_count(f) {
+          if un_mark.get(lower::need_sym_at(f, j)) == stamp {
             un_flags.push(one);
           } else {
             un_flags.push(zero);
           }
-          j = j.add(one);
+          j = j + one;
         }
       }
-      un_flags.get(un_fstart.get(f).sub(one).add(i)).eq(one)
+      un_flags.get(un_fstart.get(f) - one + i) == one
     }
 
     # The val keys a specialization takes as parameters, in the order the
@@ -1060,9 +1060,9 @@ assume Std {
     fn val_slots(out: IntList, sym: Int, env: Int, depth: Int) {
       let row = vs_row(sym, env, depth);
       var i = zero;
-      while i.lt(vs_len.get(row)) {
-        out.push(vs_pool.get(vs_start.get(row).add(i)));
-        i = i.add(one);
+      while i < vs_len.get(row) {
+        out.push(vs_pool.get(vs_start.get(row) + i));
+        i = i + one;
       }
     }
 
@@ -1071,10 +1071,10 @@ assume Std {
     # its declaration — the callee reads as bound so, whatever this frame
     # has bound since; everything else it needs comes from this frame.
     fn receiver_callee_env(recv_ty: Int, callee: Int, map: IntList): Int {
-      if types::kind_of(recv_ty).ne(types::kd_nominal()) {
+      if types::kind_of(recv_ty) != types::kd_nominal() {
         return callee_env(callee, map);
       }
-      if types::member_count(recv_ty).eq(zero) {
+      if types::member_count(recv_ty) == zero {
         return callee_env(callee, map);
       }
       let reqs = int_list();
@@ -1082,12 +1082,12 @@ assume Std {
       let saved = cg_env.read();
       var view = saved;
       var i = zero;
-      while i.lt(reqs.length()) {
+      while i < reqs.length() {
         view = lower::env_push(
           view, lower::ek_type(), ast::none(), reqs.get(i),
           types::member_at(recv_ty, i), ast::none()
         );
-        i = i.add(one);
+        i = i + one;
       }
       cg_env.write(view);
       let out = callee_env(callee, map);
@@ -1101,16 +1101,16 @@ assume Std {
     fn fn_need_used(f: Int, sym: Int): Bool {
       var listed = false;
       var j = zero;
-      while j.lt(lower::needs_count(f)) {
-        if lower::need_sym_at(f, j).eq(sym) {
+      while j < lower::needs_count(f) {
+        if lower::need_sym_at(f, j) == sym {
           if need_used(f, j) {
             return true;
           }
           listed = true;
         }
-        j = j.add(one);
+        j = j + one;
       }
-      listed.not()
+      !listed
     }
 
     # The environment a callee is compiled in: its own bindings, taken
@@ -1132,13 +1132,13 @@ assume Std {
       }
       var out = lower::env_empty();
       var i = chain.length();
-      while i.gt(zero) {
-        i = i.sub(one);
+      while i > zero {
+        i = i - one;
         let entry = chain.get(i);
         let kind = lower::env_kind_of(entry);
         let recv = lower::env_recv_of(entry);
         let sym = lower::env_sym_of(entry);
-        if kind.eq(lower::ek_type()) {
+        if kind == lower::ek_type() {
           let here = lower::env_find(cg_env.read(), lower::ek_type(), recv, sym);
           if ast::is_some(here) {
             out = lower::env_push(
@@ -1149,7 +1149,7 @@ assume Std {
             # this frame's `sym` for a declared callee, and for an
             # anonymous function, made in this frame, this frame's own
             # parameter.
-            if lower::env_a_of(entry).eq(lower::as_assumed(sym)) {
+            if lower::env_a_of(entry) == lower::as_assumed(sym) {
               var given = lower::env_a_of(here);
               if is_lambda(callee) {
                 given = frame_read(cg_env.read(), lower::as_assumed(sym));
@@ -1159,7 +1159,7 @@ assume Std {
               );
             }
           }
-        } else if kind.eq(lower::ek_fn()) {
+        } else if kind == lower::ek_fn() {
           # Found under the caller's canonical key, stored under the one
           # the callee will compute from its own bindings — which the
           # loop has already pushed, since a type comes before anything
@@ -1173,7 +1173,7 @@ assume Std {
             keep = ast::is_some(lower::env_a_of(here));
           }
           if keep {
-            if ast::is_some(recv).not() {
+            if !ast::is_some(recv) {
               keep = fn_need_used(callee, sym);
             }
           }
@@ -1214,7 +1214,7 @@ assume Std {
     # as the generations in force in `env` (D72) — except an anonymous
     # function's, which was made in a frame and is in that frame's terms.
     fn need_key_recv(f: Int, env: Int, r: Int): Int {
-      if ast::is_some(r).not() {
+      if !ast::is_some(r) {
         r
       } else if is_lambda(f) {
         frame_read(env, r)
@@ -1235,21 +1235,21 @@ assume Std {
     # name, because a valtype is not something the type system models.
     # (`I32` needs no test: it is what everything else is.)
     fn wide_scalar(ty: Int): Int {
-      if types::is_kind(ty, types::kd_abstract()).not() {
+      if !types::is_kind(ty, types::kd_abstract()) {
         return ast::none();
       }
       let sym = types::sym_of(ty);
-      if in_wasm(sym).not() {
+      if !in_wasm(sym) {
         return ast::none();
       }
       var k = one;
-      while k.lt(emit::vt_count()) {
+      while k < emit::vt_count() {
         let cs = spelled();
         spell_scalar(cs, k);
         if sym_named(sym, cs) {
           return emit::vt_at(k);
         }
-        k = k.add(one);
+        k = k + one;
       }
       ast::none()
     }
@@ -1269,27 +1269,27 @@ assume Std {
         return valtype_at(types::payload_of(ty), i);
       }
       if types::is_kind(ty, types::kd_union()) {
-        if i.eq(zero) {
+        if i == zero {
           return emit::vt_i32();
         }
         var j = zero;
-        while j.lt(types::member_count(ty)) {
+        while j < types::member_count(ty) {
           let p = types::member_payload(types::member_at(ty, j));
-          if width(p).gt(i.sub(one)) {
-            return valtype_at(p, i.sub(one));
+          if width(p) > i - one {
+            return valtype_at(p, i - one);
           }
-          j = j.add(one);
+          j = j + one;
         }
       }
       if types::is_kind(ty, types::kd_record()) {
         var j = zero;
-        while j.lt(types::field_count(ty)) {
+        while j < types::field_count(ty) {
           let off = types::field_offset(ty, j);
           let f = types::field_type_at(ty, j);
-          if i.lt(off.add(width(f))) {
-            return valtype_at(f, i.sub(off));
+          if i < off + width(f) {
+            return valtype_at(f, i - off);
           }
-          j = j.add(one);
+          j = j + one;
         }
       }
       emit::vt_i32()
@@ -1305,7 +1305,7 @@ assume Std {
     fn field_ty(rec: Int, i: Int): Int {
       let declared = types::field_type_at(rec, i);
       let here = canon_ty(declared);
-      if width(here).ne(width(declared)) {
+      if width(here) != width(declared) {
         cg_error(c_unsupported(), types::field_name_at(rec, i));
       }
       here
@@ -1315,7 +1315,7 @@ assume Std {
     # bind (`Box[Elem=Point] (...)`), or applied to its own requirements,
     # and either way substituted through the bindings in force.
     fn tag_type(callee: Int, sym: Int, m: Int): Int {
-      if ast::d_of(callee).eq(one) {
+      if ast::d_of(callee) == one {
         return canon_ty(types::apply(sym, ast::b_of(callee), ast::c_of(callee), m));
       }
       canon_ty(types::ty_of_decl(sym))
@@ -1331,30 +1331,30 @@ assume Std {
     # of those are places; anything else has to be evaluated first.
     fn place_local(e: Int, m: Int): Int {
       let k = ast::kind_of(e);
-      if k.eq(ast::k_ex_this()) {
-        if has_this(m).not() {
+      if k == ast::k_ex_this() {
+        if !has_this(m) {
           return ast::none();
         }
         return this_local();
       }
-      if k.eq(ast::k_ex_path()) {
+      if k == ast::k_ex_path() {
         let p = ast::a_of(e);
-        if ast::path_len(p).eq(one) {
+        if ast::path_len(p) == one {
           let local = find_local(ast::path_at(p, zero));
           if ast::is_some(local) {
             return local;
           }
         }
         let sym = prog::resolve_path(m, p);
-        if ast::is_some(sym).not() {
+        if !ast::is_some(sym) {
           return ast::none();
         }
-        if prog::sym_kind.get(sym).ne(prog::sk_val()) {
+        if prog::sym_kind.get(sym) != prog::sk_val() {
           return ast::none();
         }
         return provision_of(ast::none(), sym);
       }
-      if k.eq(ast::k_ex_field()) {
+      if k == ast::k_ex_field() {
         if ast::is_some(field_at(e, m)) {
           return place_local(ast::a_of(e), m);
         }
@@ -1363,11 +1363,9 @@ assume Std {
     }
 
     fn place_offset(e: Int, m: Int): Int {
-      if ast::kind_of(e).eq(ast::k_ex_field()) {
+      if ast::kind_of(e) == ast::k_ex_field() {
         let rec = record_type_of(ast::a_of(e), m);
-        return place_offset(ast::a_of(e), m).add(
-          types::field_offset(rec, field_at(e, m))
-        );
+        return place_offset(ast::a_of(e), m) + types::field_offset(rec, field_at(e, m));
       }
       zero
     }
@@ -1375,7 +1373,7 @@ assume Std {
     # Which field `x.f` names, or none.
     fn field_at(e: Int, m: Int): Int {
       let rec = record_type_of(ast::a_of(e), m);
-      if ast::is_some(rec).not() {
+      if !ast::is_some(rec) {
         return ast::none();
       }
       types::field_index(rec, ast::b_of(e))
@@ -1388,9 +1386,9 @@ assume Std {
         let ty = field_ty(rec, field_at(e, m));
         let off = place_offset(e, m);
         var j = zero;
-        while j.lt(width(ty)) {
-          op_local_get(body, local_slot(l, off.add(j)));
-          j = j.add(one);
+        while j < width(ty) {
+          op_local_get(body, local_slot(l, off + j));
+          j = j + one;
         }
         return ty;
       }
@@ -1403,7 +1401,7 @@ assume Std {
       if ast::is_some(rec) {
         i = types::field_index(rec, ast::b_of(e));
       }
-      if ast::is_some(i).not() {
+      if !ast::is_some(i) {
         drop_value(body, got);
         cg_error(c_bad_type(), ast::b_of(e));
         return ty_none();
@@ -1413,9 +1411,9 @@ assume Std {
       store_local(body, tmp);
       let off = types::field_offset(rec, i);
       var j = zero;
-      while j.lt(width(ty)) {
-        op_local_get(body, local_slot(tmp, off.add(j)));
-        j = j.add(one);
+      while j < width(ty) {
+        op_local_get(body, local_slot(tmp, off + j));
+        j = j + one;
       }
       ty
     }
@@ -1426,45 +1424,45 @@ assume Std {
     fn emit_record(body: IntList, e: Int, m: Int): Int {
       let path = ast::a_of(ast::a_of(e));
       let sym = prog::resolve_path(m, path);
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         cg_error(prog::e_scope(), ast::path_last(path));
         return ty_none();
       }
       let tag = tag_type(ast::a_of(e), sym, m);
       let rec = types::record_of(tag);
-      if ast::is_some(rec).not() {
+      if !ast::is_some(rec) {
         cg_error(c_bad_type(), prog::sym_name.get(sym));
         return ty_none();
       }
       var i = zero;
-      while i.lt(ast::c_of(e)) {
+      while i < ast::c_of(e) {
         let rf = ast::kid_at(ast::b_of(e), i);
-        if ast::is_some(types::field_index(rec, ast::a_of(rf))).not() {
+        if !ast::is_some(types::field_index(rec, ast::a_of(rf))) {
           cg_error(c_bad_type(), ast::a_of(rf));
         }
-        var j = i.add(one);
-        while j.lt(ast::c_of(e)) {
-          if ast::a_of(ast::kid_at(ast::b_of(e), j)).eq(ast::a_of(rf)) {
+        var j = i + one;
+        while j < ast::c_of(e) {
+          if ast::a_of(ast::kid_at(ast::b_of(e), j)) == ast::a_of(rf) {
             cg_error(c_bad_type(), ast::a_of(rf));
           }
-          j = j.add(one);
+          j = j + one;
         }
-        i = i.add(one);
+        i = i + one;
       }
       var f = zero;
-      while f.lt(types::field_count(rec)) {
+      while f < types::field_count(rec) {
         let name = types::field_name_at(rec, f);
         let ty = field_ty(rec, f);
         var given = ast::none();
         var k = zero;
-        while k.lt(ast::c_of(e)) {
+        while k < ast::c_of(e) {
           let rf = ast::kid_at(ast::b_of(e), k);
-          if ast::a_of(rf).eq(name) {
+          if ast::a_of(rf) == name {
             given = rf;
           }
-          k = k.add(one);
+          k = k + one;
         }
-        if ast::is_some(given).not() {
+        if !ast::is_some(given) {
           cg_error(c_bad_type(), name);
         } else if ast::is_some(ast::b_of(given)) {
           emit_as(body, ast::b_of(given), m, ty);
@@ -1477,7 +1475,7 @@ assume Std {
             cg_error(prog::e_scope(), name);
           }
         }
-        f = f.add(one);
+        f = f + one;
       }
       tag
     }
@@ -1498,12 +1496,12 @@ assume Std {
     # deeper is not a binder; `record_pattern_ok` reports it.
     fn rfield_binder(pf: Int, m: Int): Int {
       let sub = ast::b_of(pf);
-      if ast::is_some(sub).not() {
+      if !ast::is_some(sub) {
         return ast::a_of(pf);
       }
-      if ast::kind_of(sub).eq(ast::k_pt_path()) {
-        if ast::is_some(ast::b_of(sub)).not() {
-          if ast::is_some(arm_head_any(sub, m)).not() {
+      if ast::kind_of(sub) == ast::k_pt_path() {
+        if !ast::is_some(ast::b_of(sub)) {
+          if !ast::is_some(arm_head_any(sub, m)) {
             return ast::path_last(ast::a_of(sub));
           }
         }
@@ -1514,22 +1512,22 @@ assume Std {
     # Whether this back end can destructure the pattern: a record
     # payload, fields it has, and only binders or wildcards inside.
     fn record_pattern_ok(pat: Int, rec: Int, m: Int): Bool {
-      if ast::is_some(rec).not() {
+      if !ast::is_some(rec) {
         return false;
       }
       var i = zero;
-      while i.lt(ast::c_of(pat)) {
+      while i < ast::c_of(pat) {
         let pf = ast::kid_at(ast::b_of(pat), i);
-        if ast::is_some(types::field_index(rec, ast::a_of(pf))).not() {
+        if !ast::is_some(types::field_index(rec, ast::a_of(pf))) {
           return false;
         }
-        if ast::is_some(rfield_binder(pf, m)).not() {
+        if !ast::is_some(rfield_binder(pf, m)) {
           let sub = ast::b_of(pf);
-          if ast::kind_of(sub).ne(ast::k_pt_wild()) {
+          if ast::kind_of(sub) != ast::k_pt_wild() {
             return false;
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
       true
     }
@@ -1538,20 +1536,20 @@ assume Std {
     # at slot `base`.
     fn bind_record_fields(body: IntList, pat: Int, rec: Int, m: Int, l: Int, base: Int) {
       var i = zero;
-      while i.lt(ast::c_of(pat)) {
+      while i < ast::c_of(pat) {
         let pf = ast::kid_at(ast::b_of(pat), i);
         let name = rfield_binder(pf, m);
         if ast::is_some(name) {
           let f = types::field_index(rec, ast::a_of(pf));
-          let off = base.add(types::field_offset(rec, f));
+          let off = base + types::field_offset(rec, f);
           var j = zero;
-          while j.lt(width(field_ty(rec, f))) {
-            op_local_get(body, local_slot(l, off.add(j)));
-            j = j.add(one);
+          while j < width(field_ty(rec, f)) {
+            op_local_get(body, local_slot(l, off + j));
+            j = j + one;
           }
           bind_here(body, name, field_ty(rec, f));
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -1562,17 +1560,17 @@ assume Std {
       lc_type.push(ty);
       lc_start.push(lc_slots.length());
       var i = zero;
-      while i.lt(width(ty)) {
+      while i < width(ty) {
         lc_slots.push(ast::none());
-        i = i.add(one);
+        i = i + one;
       }
-      lc_name.length().sub(one)
+      lc_name.length() - one
     }
 
-    fn local_slot(l: Int, i: Int): Int { lc_slots.get(lc_start.get(l).add(i)) }
+    fn local_slot(l: Int, i: Int): Int { lc_slots.get(lc_start.get(l) + i) }
 
     fn set_local_slot(l: Int, i: Int, slot: Int) {
-      lc_slots.set(lc_start.get(l).add(i), slot);
+      lc_slots.set(lc_start.get(l) + i, slot);
     }
 
     fn local_width(l: Int): Int { width(lc_type.get(l)) }
@@ -1595,18 +1593,18 @@ assume Std {
     # recorded; running off their end means the passes disagree.
     fn reveal(name: Int, ty: Int): Int {
       let l = lc_visible.read();
-      if l.eq(lc_name.length()) {
-        if cg_real.read().eq(one) {
+      if l == lc_name.length() {
+        if cg_real.read() == one {
           cg_error(c_missing(), name);
         }
         add_local(name, ty);
         var i = zero;
-        while i.lt(local_width(l)) {
-          set_local_slot(l, i, lc_start.get(l).add(i));
-          i = i.add(one);
+        while i < local_width(l) {
+          set_local_slot(l, i, lc_start.get(l) + i);
+          i = i + one;
         }
       }
-      lc_visible.write(l.add(one));
+      lc_visible.write(l + one);
       lc_name.set(l, name);
       l
     }
@@ -1615,9 +1613,9 @@ assume Std {
     # name, so an inner `let x` cannot be found from outside.
     fn close_scope(mark: Int) {
       var l = mark;
-      while l.lt(lc_visible.read()) {
+      while l < lc_visible.read() {
         lc_name.set(l, ast::none());
-        l = l.add(one);
+        l = l + one;
       }
     }
 
@@ -1625,26 +1623,26 @@ assume Std {
     # last slot, so they are written back to front.
     fn store_local(body: IntList, l: Int) {
       var i = local_width(l);
-      while i.gt(zero) {
-        i = i.sub(one);
+      while i > zero {
+        i = i - one;
         op_local_set(body, local_slot(l, i));
       }
     }
 
     fn load_local(body: IntList, l: Int) {
       var i = zero;
-      while i.lt(local_width(l)) {
+      while i < local_width(l) {
         op_local_get(body, local_slot(l, i));
-        i = i.add(one);
+        i = i + one;
       }
     }
 
     # The innermost local of this name that is still in scope.
     fn find_local(name: Int): Int {
       var i = lc_visible.read();
-      while i.gt(lc_base.read()) {
-        i = i.sub(one);
-        if lc_name.get(i).eq(name) {
+      while i > lc_base.read() {
+        i = i - one;
+        if lc_name.get(i) == name {
           return i;
         }
       }
@@ -1655,68 +1653,68 @@ assume Std {
 
     fn type_of(e: Int, m: Int): Int {
       let k = ast::kind_of(e);
-      if k.eq(ast::k_ex_block()) {
+      if k == ast::k_ex_block() {
         if ast::is_some(ast::c_of(e)) {
           return type_of(ast::c_of(e), m);
         }
         return ty_none();
       }
-      if k.eq(ast::k_ex_if()) {
+      if k == ast::k_ex_if() {
         return type_of(ast::b_of(e), m);
       }
-      if k.eq(ast::k_ex_this()) {
+      if k == ast::k_ex_this() {
         return lc_type.get(this_local());
       }
-      if k.eq(ast::k_ex_method()) {
+      if k == ast::k_ex_method() {
         let target = method_of(e, m);
         if ast::is_some(target) {
           return ret_in(receiver_callee_env(type_of(ast::a_of(e), m), target, int_list()), target);
         }
         let bound = method_provision(type_of(ast::a_of(e), m), e, m);
-        if ast::is_some(bound).not() {
+        if !ast::is_some(bound) {
           return ty_none();
         }
-        if ast::is_some(lower::env_a_of(bound)).not() {
+        if !ast::is_some(lower::env_a_of(bound)) {
           return ty_none();
         }
         return ret_in(lower::env_b_of(bound), lower::env_a_of(bound));
       }
-      if k.eq(ast::k_ex_unary()) {
+      if k == ast::k_ex_unary() {
         return operator_type(e, m);
       }
-      if k.eq(ast::k_ex_lit()) {
+      if k == ast::k_ex_lit() {
         return literal_type(e);
       }
-      if k.eq(ast::k_ex_binary()) {
+      if k == ast::k_ex_binary() {
         return operator_type(e, m);
       }
-      if k.eq(ast::k_ex_path()) {
-        if ast::path_len(ast::a_of(e)).eq(one) {
+      if k == ast::k_ex_path() {
+        if ast::path_len(ast::a_of(e)) == one {
           let local = find_local(ast::path_at(ast::a_of(e), zero));
           if ast::is_some(local) {
             return lc_type.get(local);
           }
         }
         let sym = prog::resolve_path(m, ast::a_of(e));
-        if ast::is_some(sym).not() {
+        if !ast::is_some(sym) {
           return ty_none();
         }
         return symbol_type(sym);
       }
-      if k.eq(ast::k_ex_call()) {
+      if k == ast::k_ex_call() {
         var sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
-        if ast::is_some(sym).not() {
+        if !ast::is_some(sym) {
           return ty_none();
         }
         # Provided by a primitive (D66): typed as a call to that.
-        if is_compilable(sym).not() {
-          if in_wasm(sym).not() {
+        if !is_compilable(sym) {
+          if !in_wasm(sym) {
             let alias = lower::env_find(
               cg_env.read(), lower::ek_fn(), ast::none(), sym
             );
             if ast::is_some(alias) {
               if ast::is_some(lower::env_a_of(alias)) {
-                if is_compilable(lower::env_a_of(alias)).not() {
+                if !is_compilable(lower::env_a_of(alias)) {
                   sym = lower::env_a_of(alias);
                 }
               }
@@ -1724,7 +1722,7 @@ assume Std {
           }
         }
         # A tag construction is a value of the tag's own type (D58).
-        if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
+        if prog::sym_kind.get(sym) == prog::sk_tag() {
           return tag_type(ast::a_of(e), sym, m);
         }
         if in_wasm(sym) {
@@ -1748,16 +1746,16 @@ assume Std {
           ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
         );
       }
-      if k.eq(ast::k_ex_record()) {
+      if k == ast::k_ex_record() {
         let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
-        if ast::is_some(sym).not() {
+        if !ast::is_some(sym) {
           return ty_none();
         }
         return tag_type(ast::a_of(e), sym, m);
       }
-      if k.eq(ast::k_ex_field()) {
+      if k == ast::k_ex_field() {
         let i = field_at(e, m);
-        if ast::is_some(i).not() {
+        if !ast::is_some(i) {
           return ty_none();
         }
         return canon_ty(types::field_type_at(record_type_of(ast::a_of(e), m), i));
@@ -1769,10 +1767,10 @@ assume Std {
 
     fn operator_type(e: Int, m: Int): Int {
       let bound = provision_at(type_of(ast::b_of(e), m), op_symbol(e));
-      if ast::is_some(bound).not() {
+      if !ast::is_some(bound) {
         return ty_none();
       }
-      if ast::is_some(lower::env_a_of(bound)).not() {
+      if !ast::is_some(lower::env_a_of(bound)) {
         return ty_none();
       }
       ret_in(lower::env_b_of(bound), lower::env_a_of(bound))
@@ -1781,18 +1779,18 @@ assume Std {
     # An integer literal is what `one` is here, a decimal one what
     # `float` returns.
     fn literal_type(e: Int): Int {
-      if ast::is_some(ast::c_of(e)).not() {
-        if ast::is_some(lang(lg_one())).not() {
+      if !ast::is_some(ast::c_of(e)) {
+        if !ast::is_some(lang(lg_one())) {
           return ty_none();
         }
         let l = provision_of(ast::none(), lang(lg_one()));
-        if ast::is_some(l).not() {
+        if !ast::is_some(l) {
           return ty_none();
         }
         return lc_type.get(l);
       }
       let bound = float_provision();
-      if ast::is_some(bound).not() {
+      if !ast::is_some(bound) {
         return ty_none();
       }
       ret_in(lower::env_b_of(bound), lower::env_a_of(bound))
@@ -1802,7 +1800,7 @@ assume Std {
     # constant, a `Wasm` value like `i32_zero`, or nothing this back end
     # can produce.
     fn symbol_type(sym: Int): Int {
-      if prog::sym_kind.get(sym).eq(prog::sk_unit()) {
+      if prog::sym_kind.get(sym) == prog::sk_unit() {
         return types::ty_of_decl(sym);
       }
       if in_wasm(sym) {
@@ -1811,24 +1809,24 @@ assume Std {
       if in_bool(sym) {
         return cg_boolty.read();
       }
-      if prog::sym_kind.get(sym).eq(prog::sk_val()) {
+      if prog::sym_kind.get(sym) == prog::sk_val() {
         return elab_ty(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
       }
       ty_none()
     }
 
     fn op_result(op: Int): Int {
-      if ast::is_some(op).not() {
+      if !ast::is_some(op) {
         return ty_none();
       }
       let r = wops::op_res.get(op);
-      if r.eq(wops::wr_i64()) {
+      if r == wops::wr_i64() {
         cg_i64.read()
-      } else if r.eq(wops::wr_i32()) {
+      } else if r == wops::wr_i32() {
         cg_i32.read()
-      } else if r.eq(wops::wr_f32()) {
+      } else if r == wops::wr_f32() {
         cg_f32.read()
-      } else if r.eq(wops::wr_f64()) {
+      } else if r == wops::wr_f64() {
         cg_f64.read()
       } else {
         ty_none()
@@ -1839,24 +1837,24 @@ assume Std {
 
     fn queued(sym: Int, env: Int): Int {
       var i = zero;
-      while i.lt(fq_sym.length()) {
-        if fq_sym.get(i).eq(sym) {
-          if fq_env.get(i).eq(env) {
+      while i < fq_sym.length() {
+        if fq_sym.get(i) == sym {
+          if fq_env.get(i) == env {
             return i;
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
       ast::none()
     }
 
     fn imported(sym: Int): Int {
       var i = zero;
-      while i.lt(wi_sym.length()) {
-        if wi_sym.get(i).eq(sym) {
+      while i < wi_sym.length() {
+        if wi_sym.get(i) == sym {
           return i;
         }
-        i = i.add(one);
+        i = i + one;
       }
       ast::none()
     }
@@ -1865,7 +1863,7 @@ assume Std {
     # finds something new, the two passes disagree, which is a bug here
     # rather than in the program.
     fn late(sym: Int): Bool {
-      if cg_real.read().eq(one) {
+      if cg_real.read() == one {
         cg_error(c_missing(), prog::sym_name.get(sym));
         return true;
       }
@@ -1910,26 +1908,26 @@ assume Std {
         push_valtypes(ps, this_type(sym));
       }
       var i = zero;
-      while i.lt(ast::fn_nparams(d)) {
+      while i < ast::fn_nparams(d) {
         let p = ast::kid_at(ast::fn_params(d), i);
         push_valtypes(ps, elab_ty(ast::b_of(p), m));
-        i = i.add(one);
+        i = i + one;
       }
       let vals = int_list();
       val_slots(vals, sym, env, zero);
       i = zero;
-      while i.lt(vals.length()) {
+      while i < vals.length() {
         push_valtypes(ps, need_type(vals.get(i)));
-        i = i.add(one);
+        i = i + one;
       }
       finish_signature(ps, elab_ty(ast::fn_ret(d), m))
     }
 
     fn push_valtypes(ps: IntList, ty: Int) {
       var j = zero;
-      while j.lt(width(ty)) {
+      while j < width(ty) {
         ps.push(valtype_at(ty, j));
-        j = j.add(one);
+        j = j + one;
       }
     }
 
@@ -1944,22 +1942,22 @@ assume Std {
     fn signature_of(d: Int, m: Int): Int {
       let ps = int_list();
       var i = zero;
-      while i.lt(ast::fn_nparams(d)) {
+      while i < ast::fn_nparams(d) {
         let p = ast::kid_at(ast::fn_params(d), i);
         let ty = elab_ty(ast::b_of(p), m);
         var j = zero;
-        while j.lt(width(ty)) {
+        while j < width(ty) {
           ps.push(valtype_at(ty, j));
-          j = j.add(one);
+          j = j + one;
         }
-        i = i.add(one);
+        i = i + one;
       }
       finish_signature(ps, elab_ty(ast::fn_ret(d), m))
     }
 
     fn declare_all() {
       var i = zero;
-      while i.lt(wi_sym.length()) {
+      while i < wi_sym.length() {
         let sym = wi_sym.get(i);
         let field = int_list();
         intern::put_chars(field, prog::sym_name.get(sym));
@@ -1972,14 +1970,14 @@ assume Std {
             signature_of(prog::sym_decl.get(sym), prog::sym_mod.get(sym))
           )
         );
-        i = i.add(one);
+        i = i + one;
       }
       i = zero;
-      while i.lt(fq_sym.length()) {
+      while i < fq_sym.length() {
         let sym = fq_sym.get(i);
         cg_env.write(fq_env.get(i));
         fq_index.set(i, emit::add_func(signature_of_fn(sym, fq_env.get(i))));
-        i = i.add(one);
+        i = i + one;
       }
       cg_env.write(lower::env_empty());
     }
@@ -2020,34 +2018,34 @@ assume Std {
     fn assign_slots(nparams: Int): IntList {
       var next = zero;
       var l = lc_base.read();
-      while l.lt(lc_base.read().add(nparams)) {
+      while l < lc_base.read() + nparams {
         var i = zero;
-        while i.lt(local_width(l)) {
+        while i < local_width(l) {
           set_local_slot(l, i, next);
-          next = next.add(one);
-          i = i.add(one);
+          next = next + one;
+          i = i + one;
         }
-        l = l.add(one);
+        l = l + one;
       }
       let counts = int_list();
       var k = zero;
-      while k.lt(emit::vt_count()) {
+      while k < emit::vt_count() {
         let vt = emit::vt_at(k);
         let first = next;
-        l = lc_base.read().add(nparams);
-        while l.lt(lc_name.length()) {
+        l = lc_base.read() + nparams;
+        while l < lc_name.length() {
           var i = zero;
-          while i.lt(local_width(l)) {
-            if valtype_at(lc_type.get(l), i).eq(vt) {
+          while i < local_width(l) {
+            if valtype_at(lc_type.get(l), i) == vt {
               set_local_slot(l, i, next);
-              next = next.add(one);
+              next = next + one;
             }
-            i = i.add(one);
+            i = i + one;
           }
-          l = l.add(one);
+          l = l + one;
         }
-        counts.push(next.sub(first));
-        k = k.add(one);
+        counts.push(next - first);
+        k = k + one;
       }
       counts
     }
@@ -2059,65 +2057,65 @@ assume Std {
     # answer.
     fn emit_expr(body: IntList, e: Int, m: Int): Int {
       let k = ast::kind_of(e);
-      if k.eq(ast::k_ex_unit()) {
+      if k == ast::k_ex_unit() {
         return ty_none();
       }
-      if k.eq(ast::k_ex_block()) {
+      if k == ast::k_ex_block() {
         return emit_block(body, e, m);
       }
-      if k.eq(ast::k_ex_if()) {
+      if k == ast::k_ex_if() {
         return emit_if(body, e, m);
       }
-      if k.eq(ast::k_ex_match()) {
+      if k == ast::k_ex_match() {
         return emit_match(body, e, m);
       }
-      if k.eq(ast::k_ex_break()) {
-        if cg_ntop.read().eq(zero) {
+      if k == ast::k_ex_break() {
+        if cg_ntop.read() == zero {
           cg_error(c_break(), ast::none());
           return ty_none();
         }
-        op_br(body, cg_depth.read().sub(cg_loops.get(cg_ntop.read().sub(one))));
+        op_br(body, cg_depth.read() - cg_loops.get(cg_ntop.read() - one));
         return ty_none();
       }
-      if k.eq(ast::k_ex_return()) {
+      if k == ast::k_ex_return() {
         if ast::is_some(ast::a_of(e)) {
           emit_as(body, ast::a_of(e), m, cg_ret.read());
         }
         op_return(body);
         return ty_none();
       }
-      if k.eq(ast::k_ex_this()) {
-        if has_this(m).not() {
+      if k == ast::k_ex_this() {
+        if !has_this(m) {
           return ty_none();
         }
         load_local(body, this_local());
         return lc_type.get(this_local());
       }
-      if k.eq(ast::k_ex_path()) {
+      if k == ast::k_ex_path() {
         return emit_path(body, e, m);
       }
-      if k.eq(ast::k_ex_call()) {
+      if k == ast::k_ex_call() {
         return emit_call(body, e, m);
       }
-      if k.eq(ast::k_ex_method()) {
+      if k == ast::k_ex_method() {
         return emit_method(body, e, m);
       }
-      if k.eq(ast::k_ex_record()) {
+      if k == ast::k_ex_record() {
         return emit_record(body, e, m);
       }
-      if k.eq(ast::k_ex_field()) {
+      if k == ast::k_ex_field() {
         return emit_field(body, e, m);
       }
-      if k.eq(ast::k_ex_unary()) {
+      if k == ast::k_ex_unary() {
         return emit_operator(body, e, m);
       }
-      if k.eq(ast::k_ex_binary()) {
+      if k == ast::k_ex_binary() {
         return emit_operator(body, e, m);
       }
-      if k.eq(ast::k_ex_lit()) {
+      if k == ast::k_ex_lit() {
         return emit_literal(body, e);
       }
-      if k.eq(ast::k_ex_lambda()) {
+      if k == ast::k_ex_lambda() {
         # D70: only a bind's right side, which never comes here.
         prog::error(prog::e_lambda(), m, ast::none());
         return ty_none();
@@ -2146,52 +2144,52 @@ assume Std {
     fn emit_literal(body: IntList, e: Int): Int {
       let run = ast::a_of(e);
       let n = ast::b_of(e);
-      if ast::is_some(ast::c_of(e)).not() {
+      if !ast::is_some(ast::c_of(e)) {
         return emit_digits(body, run, n);
       }
       let k = ast::c_of(e);
       var i = zero;
-      while i.lt(n) {
-        if ast::kid_at(run, i).ne(zero) {
+      while i < n {
+        if ast::kid_at(run, i) != zero {
           break;
         }
-        i = i.add(one);
+        i = i + one;
       }
       var t = ty_none();
-      if i.eq(n) {
+      if i == n {
         t = emit_float_digit(body, zero);
       } else {
         t = emit_float_digit(body, ast::kid_at(run, i));
-        i = i.add(one);
-        while i.lt(n) {
+        i = i + one;
+        while i < n {
           emit_float_digit(body, n10());
           t = emit_lang_method(body, t, tk_star());
           let d = ast::kid_at(run, i);
-          if d.gt(zero) {
+          if d > zero {
             emit_float_digit(body, d);
             t = emit_lang_method(body, t, tk_plus());
           }
-          i = i.add(one);
+          i = i + one;
         }
       }
       var scale = emit_float_digit(body, n10());
       var j = one;
-      while j.lt(k) {
+      while j < k {
         emit_float_digit(body, n10());
         scale = emit_lang_method(body, scale, tk_star());
-        j = j.add(one);
+        j = j + one;
       }
       emit_lang_method(body, t, tk_slash())
     }
 
     fn emit_lang_val(body: IntList, slot: Int): Int {
       let sym = lang(slot);
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         cg_error(c_unsupported(), ast::none());
         return ty_none();
       }
       let l = provision_of(ast::none(), sym);
-      if ast::is_some(l).not() {
+      if !ast::is_some(l) {
         cg_error(c_unbound(), prog::sym_name.get(sym));
         return ty_none();
       }
@@ -2203,16 +2201,16 @@ assume Std {
     # already on the stack.
     fn emit_lang_method(body: IntList, recv_ty: Int, slot: Int): Int {
       let sym = lang(slot);
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         cg_error(c_unsupported(), ast::none());
         return ty_none();
       }
       let bound = provision_at(recv_ty, sym);
-      if ast::is_some(bound).not() {
+      if !ast::is_some(bound) {
         cg_error(prog::e_method(), prog::sym_name.get(sym));
         return ty_none();
       }
-      if ast::is_some(lower::env_a_of(bound)).not() {
+      if !ast::is_some(lower::env_a_of(bound)) {
         cg_error(c_unbound(), prog::sym_name.get(sym));
         return ty_none();
       }
@@ -2223,16 +2221,16 @@ assume Std {
     fn emit_small(body: IntList, n: Int): Int {
       var t = emit_lang_val(body, lg_one());
       var i = one;
-      while i.lt(n) {
+      while i < n {
         emit_lang_val(body, lg_one());
         t = emit_lang_method(body, t, tk_plus());
-        i = i.add(one);
+        i = i + one;
       }
       t
     }
 
     fn emit_digit(body: IntList, d: Int): Int {
-      if d.eq(zero) {
+      if d == zero {
         return emit_lang_val(body, lg_zero());
       }
       emit_small(body, d)
@@ -2240,26 +2238,26 @@ assume Std {
 
     fn emit_digits(body: IntList, run: Int, n: Int): Int {
       var i = zero;
-      while i.lt(n) {
-        if ast::kid_at(run, i).ne(zero) {
+      while i < n {
+        if ast::kid_at(run, i) != zero {
           break;
         }
-        i = i.add(one);
+        i = i + one;
       }
-      if i.eq(n) {
+      if i == n {
         return emit_digit(body, zero);
       }
       var t = emit_digit(body, ast::kid_at(run, i));
-      i = i.add(one);
-      while i.lt(n) {
+      i = i + one;
+      while i < n {
         emit_small(body, n10());
         t = emit_lang_method(body, t, tk_star());
         let d = ast::kid_at(run, i);
-        if d.gt(zero) {
+        if d > zero {
           emit_small(body, d);
           t = emit_lang_method(body, t, tk_plus());
         }
-        i = i.add(one);
+        i = i + one;
       }
       t
     }
@@ -2267,17 +2265,17 @@ assume Std {
     # float.moss's `float` as this frame has it bound, if to a function.
     fn float_provision(): Int {
       let sym = lang(lg_float());
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         return ast::none();
       }
       let bound = lower::env_find(cg_env.read(), lower::ek_fn(), ast::none(), sym);
-      if ast::is_some(bound).not() {
+      if !ast::is_some(bound) {
         return ast::none();
       }
-      if ast::is_some(lower::env_a_of(bound)).not() {
+      if !ast::is_some(lower::env_a_of(bound)) {
         return ast::none();
       }
-      if is_compilable(lower::env_a_of(bound)).not() {
+      if !is_compilable(lower::env_a_of(bound)) {
         return ast::none();
       }
       bound
@@ -2287,7 +2285,7 @@ assume Std {
     fn emit_float_digit(body: IntList, d: Int): Int {
       emit_digit(body, d);
       let bound = float_provision();
-      if ast::is_some(bound).not() {
+      if !ast::is_some(bound) {
         if ast::is_some(lang(lg_float())) {
           cg_error(c_unbound(), prog::sym_name.get(lang(lg_float())));
         } else {
@@ -2304,14 +2302,14 @@ assume Std {
     # calling the method would be.
     fn emit_operator(body: IntList, e: Int, m: Int): Int {
       let sym = op_symbol(e);
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         cg_error(c_unsupported(), ast::none());
         return ty_none();
       }
       let recv = int_list();
       let recv_ty = emit_expr(recv, ast::b_of(e), m);
       var nargs = zero;
-      if ast::kind_of(e).eq(ast::k_ex_binary()) {
+      if ast::kind_of(e) == ast::k_ex_binary() {
         nargs = one;
       }
       emit_provided_method(body, recv, recv_ty, sym, ast::c_of(e), nargs, m)
@@ -2323,13 +2321,13 @@ assume Std {
       body: IntList, recv: IntList, recv_ty: Int, sym: Int, run: Int, n: Int, m: Int
     ): Int {
       let bound = provision_at(recv_ty, sym);
-      if ast::is_some(bound).not() {
+      if !ast::is_some(bound) {
         cg_error(prog::e_method(), prog::sym_name.get(sym));
         return ty_none();
       }
       let provider = lower::env_a_of(bound);
       let penv = lower::env_b_of(bound);
-      if ast::is_some(provider).not() {
+      if !ast::is_some(provider) {
         cg_error(c_unbound(), prog::sym_name.get(sym));
         return ty_none();
       }
@@ -2345,7 +2343,7 @@ assume Std {
     # if the provider takes it, and otherwise evaluated and dropped (D54).
     fn push_receiver(body: IntList, recv: IntList, recv_ty: Int, provider: Int) {
       push_bytes(body, recv);
-      if takes_receiver(provider).not() {
+      if !takes_receiver(provider) {
         drop_value(body, recv_ty);
       }
     }
@@ -2353,11 +2351,11 @@ assume Std {
     # The environment entry providing method `sym` at this receiver,
     # keyed by its whole type (D62).
     fn provision_at(recv_ty: Int, sym: Int): Int {
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         return ast::none();
       }
       let recv = canon_ty(recv_ty);
-      if ast::is_some(types::head_of(recv)).not() {
+      if !ast::is_some(types::head_of(recv)) {
         return ast::none();
       }
       lower::env_find(cg_env.read(), lower::ek_fn(), recv, sym)
@@ -2386,14 +2384,14 @@ assume Std {
         # Not in scope as an attached method: the context must provide it
         # at this receiver, keyed by the receiver's head (D36).
         let bound = method_provision(recv_ty, e, m);
-        if ast::is_some(bound).not() {
+        if !ast::is_some(bound) {
           cg_error(prog::e_method(), ast::path_last(ast::b_of(e)));
           return ty_none();
         }
         provider = lower::env_a_of(bound);
         penv = lower::env_b_of(bound);
         via = bound;
-        if ast::is_some(provider).not() {
+        if !ast::is_some(provider) {
           cg_error(c_unbound(), ast::path_last(ast::b_of(e)));
           return ty_none();
         }
@@ -2418,11 +2416,11 @@ assume Std {
     fn method_provision(recv_ty: Int, e: Int, m: Int): Int {
       let recv = canon_ty(recv_ty);
       let head = types::head_of(recv);
-      if ast::is_some(head).not() {
+      if !ast::is_some(head) {
         return ast::none();
       }
       let sym = provided_method(head, e, m);
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         return ast::none();
       }
       let found = lower::env_find(cg_env.read(), lower::ek_fn(), recv, sym);
@@ -2439,10 +2437,10 @@ assume Std {
     # be in scope, or be reached as `mod::m` (D61).
     fn provided_method(head: Int, e: Int, m: Int): Int {
       let path = ast::b_of(e);
-      if ast::path_len(path).eq(one) {
+      if ast::path_len(path) == one {
         let name = ast::path_last(path);
         var found = prog::find_attached(prog::sym_mod.get(head), head, name);
-        if ast::is_some(found).not() {
+        if !ast::is_some(found) {
           found = prog::find_attached(m, head, name);
         }
         if ast::is_some(found) {
@@ -2488,11 +2486,11 @@ assume Std {
       let recv = canon_ty(recv_ty);
       var e = cg_env.read();
       while ast::is_some(e) {
-        if lower::env_kind_of(e).eq(lower::ek_fn()) {
-          if lower::env_recv_of(e).eq(recv) {
+        if lower::env_kind_of(e) == lower::ek_fn() {
+          if lower::env_recv_of(e) == recv {
             let sym = lower::env_sym_of(e);
-            if prog::sym_name.get(sym).eq(name) {
-              if ast::is_some(prog::sym_recv.get(sym)).not() {
+            if prog::sym_name.get(sym) == name {
+              if !ast::is_some(prog::sym_recv.get(sym)) {
                 return e;
               }
             }
@@ -2505,14 +2503,14 @@ assume Std {
 
     fn attached_of_ty(recv_ty: Int, e: Int, m: Int): Int {
       let head = types::head_of(canon_ty(recv_ty));
-      if ast::is_some(head).not() {
+      if !ast::is_some(head) {
         return ast::none();
       }
       let found = lower::find_method_decl(m, head, ast::path_last(ast::b_of(e)));
-      if ast::is_some(found).not() {
+      if !ast::is_some(found) {
         return ast::none();
       }
-      if is_defined_method(found).not() {
+      if !is_defined_method(found) {
         return ast::none();
       }
       found
@@ -2524,31 +2522,31 @@ assume Std {
     # discriminant goes in ahead of it. A unit member needs none of that
     # — the code *is* the value — so it only wants padding.
     fn inject(body: IntList, valbuf: IntList, got: Int, want: Int) {
-      if width(want).le(width(got)) {
+      if width(want) <= width(got) {
         push_bytes(body, valbuf);
         return ();
       }
       if types::is_unit_decl(got) {
         push_bytes(body, valbuf);
-        pad(body, width(want).sub(one));
+        pad(body, width(want) - one);
         return ();
       }
       let head = types::head_of(got);
-      if ast::is_some(head).not() {
+      if !ast::is_some(head) {
         cg_error(c_unsupported(), ast::none());
         push_bytes(body, valbuf);
         return ();
       }
       op_i32_const(body, types::unit_code(head));
       push_bytes(body, valbuf);
-      pad(body, width(want).sub(one).sub(width(got)));
+      pad(body, width(want) - one - width(got));
     }
 
     fn pad(body: IntList, n: Int) {
       var i = zero;
-      while i.lt(n) {
+      while i < n {
         op_i32_const(body, zero);
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -2557,17 +2555,17 @@ assume Std {
     # its value, so that each branch injects rather than the whole
     # expression having to be widened after the fact.
     fn emit_as(body: IntList, e: Int, m: Int, want: Int): Int {
-      if ast::is_some(want).not() {
+      if !ast::is_some(want) {
         return emit_expr(body, e, m);
       }
       let k = ast::kind_of(e);
-      if k.eq(ast::k_ex_if()) {
+      if k == ast::k_ex_if() {
         return emit_if_as(body, e, m, want);
       }
-      if k.eq(ast::k_ex_block()) {
+      if k == ast::k_ex_block() {
         return emit_block_as(body, e, m, want);
       }
-      if k.eq(ast::k_ex_match()) {
+      if k == ast::k_ex_match() {
         return emit_match_as(body, e, m, want);
       }
       let tmp = int_list();
@@ -2583,12 +2581,12 @@ assume Std {
       # that is `check_callee`, on the program as written, before the
       # call is emitted — this check sees a specialization, and a
       # same-width confusion (`Char` read as `Int`) got past it.
-      if width(got).gt(zero) {
-        if types::fits(canon_ty(got), canon_ty(want)).not() {
+      if width(got) > zero {
+        if !types::fits(canon_ty(got), canon_ty(want)) {
           cg_error(c_bad_type(), ast::none());
         }
       }
-      if width(got).eq(width(want)) {
+      if width(got) == width(want) {
         push_bytes(body, tmp);
         return got;
       }
@@ -2598,7 +2596,7 @@ assume Std {
 
     fn emit_path(body: IntList, e: Int, m: Int): Int {
       let p = ast::a_of(e);
-      if ast::path_len(p).eq(one) {
+      if ast::path_len(p) == one {
         let local = find_local(ast::path_at(p, zero));
         if ast::is_some(local) {
           load_local(body, local);
@@ -2606,12 +2604,12 @@ assume Std {
         }
       }
       let sym = prog::resolve_path(m, p);
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         cg_error(prog::e_scope(), ast::path_last(p));
         return ty_none();
       }
       # A `unit` value is its discriminant and nothing else (D59).
-      if prog::sym_kind.get(sym).eq(prog::sk_unit()) {
+      if prog::sym_kind.get(sym) == prog::sk_unit() {
         op_i32_const(body, types::unit_code(sym));
         return types::ty_of_decl(sym);
       }
@@ -2626,8 +2624,8 @@ assume Std {
       }
       # A val nobody defined is context: its value arrived as a
       # parameter, or a `bind` in an enclosing block put it in a local.
-      if prog::sym_kind.get(sym).eq(prog::sk_val()) {
-        if ast::is_some(ast::c_of(prog::sym_decl.get(sym))).not() {
+      if prog::sym_kind.get(sym) == prog::sk_val() {
+        if !ast::is_some(ast::c_of(prog::sym_decl.get(sym))) {
           let l = provision_of(ast::none(), sym);
           if ast::is_some(l) {
             load_local(body, l);
@@ -2658,13 +2656,13 @@ assume Std {
     fn emit_call(body: IntList, e: Int, m: Int): Int {
       let callee = ast::a_of(e);
       let sym = prog::resolve_path(m, ast::a_of(callee));
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(callee)));
         return ty_none();
       }
       # A nominal value *is* its payload (D58), so constructing one emits
       # the payload and nothing more — the payload at the tag's arguments.
-      if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
+      if prog::sym_kind.get(sym) == prog::sk_tag() {
         let tag = tag_type(callee, sym, m);
         let want = int_list();
         want.push(types::member_payload(tag));
@@ -2683,14 +2681,14 @@ assume Std {
       }
       # An abstract fn the context provides. D2: statically a direct
       # call, with the captured context passed as data.
-      if in_wasm(sym).not() {
+      if !in_wasm(sym) {
         let bound = lower::env_find(
           cg_env.read(), lower::ek_fn(), ast::none(), sym
         );
         if ast::is_some(bound) {
           if ast::is_some(lower::env_a_of(bound)) {
             # Provided by a primitive (D66): a call to that.
-            if is_compilable(lower::env_a_of(bound)).not() {
+            if !is_compilable(lower::env_a_of(bound)) {
               return emit_primitive_call(body, e, m, lower::env_a_of(bound));
             }
             emit_args(
@@ -2751,14 +2749,14 @@ assume Std {
       let vals = int_list();
       val_slots(vals, callee, env, zero);
       var i = zero;
-      while i.lt(vals.length()) {
+      while i < vals.length() {
         let l = provision_of(ast::none(), caller_slot(vals.get(i), via, map));
         if ast::is_some(l) {
           load_local(body, l);
         } else {
           cg_error(c_unbound(), prog::sym_name.get(slot_sym(vals.get(i))));
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -2774,11 +2772,11 @@ assume Std {
       if is_captured(slot) {
         let row = ck_row(slot);
         var i = zero;
-        while i.lt(map.length()) {
-          if map.get(i).eq(ck_entry.get(row)) {
-            return ck_slot(map.get(i.add(one)), ck_inner.get(row));
+        while i < map.length() {
+          if map.get(i) == ck_entry.get(row) {
+            return ck_slot(map.get(i + one), ck_inner.get(row));
           }
-          i = i.add(n2());
+          i = i + n2();
         }
       }
       slot
@@ -2792,18 +2790,18 @@ assume Std {
     # (`callee_env`), and `map` says which entry of this frame each of
     # its captured slots comes from.
     fn capture(entry: Int, map: IntList, mode: Int) {
-      if mode.ne(bw_emit()) {
+      if mode != bw_emit() {
         return ();
       }
       let vals = int_list();
       val_slots(vals, lower::env_a_of(entry), lower::env_b_of(entry), zero);
       var i = zero;
-      while i.lt(vals.length()) {
+      while i < vals.length() {
         let l = provision_of(ast::none(), caller_slot(vals.get(i), ast::none(), map));
         if ast::is_some(l) {
           provide(ast::none(), ck_slot(entry, vals.get(i)), l);
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -2811,18 +2809,18 @@ assume Std {
     # values travel with that provision, so each is the one `bound`
     # carries here, not whatever its val is bound to by now.
     fn recapture(entry: Int, bound: Int, mode: Int) {
-      if mode.ne(bw_emit()) {
+      if mode != bw_emit() {
         return ();
       }
       let vals = int_list();
       val_slots(vals, lower::env_a_of(entry), lower::env_b_of(entry), zero);
       var i = zero;
-      while i.lt(vals.length()) {
+      while i < vals.length() {
         let l = provision_of(ast::none(), ck_slot(bound, vals.get(i)));
         if ast::is_some(l) {
           provide(ast::none(), ck_slot(entry, vals.get(i)), l);
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -2838,9 +2836,9 @@ assume Std {
       let d = prog::sym_decl.get(sym);
       let home = prog::sym_mod.get(sym);
       var i = zero;
-      while i.lt(ast::fn_nparams(d)) {
+      while i < ast::fn_nparams(d) {
         out.push(lower::elab(env, ast::b_of(ast::kid_at(ast::fn_params(d), i)), home));
-        i = i.add(one);
+        i = i + one;
       }
       out
     }
@@ -2853,56 +2851,56 @@ assume Std {
       let out = int_list();
       let kind = prog::sym_kind.get(sym);
       # Constructing a nominal takes its payload (D58).
-      if kind.eq(prog::sk_tag()) {
+      if kind == prog::sk_tag() {
         out.push(types::member_payload(types::ty_of_decl(sym)));
         return out;
       }
-      var ok = kind.eq(prog::sk_fn());
-      if ok.not() {
-        ok = kind.eq(prog::sk_method());
+      var ok = kind == prog::sk_fn();
+      if !ok {
+        ok = kind == prog::sk_method();
       }
-      if ok.not() {
+      if !ok {
         return out;
       }
       let d = prog::sym_decl.get(sym);
       let home = prog::sym_mod.get(sym);
       var i = zero;
-      while i.lt(ast::fn_nparams(d)) {
+      while i < ast::fn_nparams(d) {
         out.push(elab_ty(ast::b_of(ast::kid_at(ast::fn_params(d), i)), home));
-        i = i.add(one);
+        i = i + one;
       }
       out
     }
 
     fn emit_args(body: IntList, run: Int, n: Int, m: Int, want: IntList) {
       var i = zero;
-      while i.lt(n) {
+      while i < n {
         var expect = ast::none();
-        if i.lt(want.length()) {
+        if i < want.length() {
           expect = want.get(i);
         }
         emit_as(body, ast::kid_at(run, i), m, expect);
-        i = i.add(one);
+        i = i + one;
       }
     }
 
     fn emit_op(body: IntList, op: Int) {
       let kind = wops::op_kinds.get(op);
       let code = wops::op_codes.get(op);
-      if kind.eq(wops::wk_simple()) {
+      if kind == wops::wk_simple() {
         body.push(code);
-      } else if kind.eq(wops::wk_memarg()) {
+      } else if kind == wops::wk_memarg() {
         op_mem(body, code, wops::op_aligns.get(op));
-      } else if kind.eq(wops::wk_const0()) {
+      } else if kind == wops::wk_const0() {
         op_i32_const(body, zero);
-      } else if kind.eq(wops::wk_const1()) {
+      } else if kind == wops::wk_const1() {
         op_i32_const(body, one);
-      } else if kind.eq(wops::wk_memzero()) {
+      } else if kind == wops::wk_memzero() {
         body.push(code);
         body.push(zero);
-      } else if kind.eq(wops::wk_memcopy()) {
+      } else if kind == wops::wk_memcopy() {
         op_memory_copy(body);
-      } else if kind.eq(wops::wk_prefixed()) {
+      } else if kind == wops::wk_prefixed() {
         # 0xFC, then the sub-opcode the table keeps as an alignment.
         body.push(code);
         uleb(body, wops::op_aligns.get(op));
@@ -2921,9 +2919,9 @@ assume Std {
       let emark = cg_env.read();
       let gmark = cg_genv.read();
       var i = zero;
-      while i.lt(ast::b_of(e)) {
+      while i < ast::b_of(e) {
         emit_stmt(body, ast::kid_at(ast::a_of(e), i), m);
-        i = i.add(one);
+        i = i + one;
       }
       var ty = ty_none();
       if ast::is_some(ast::c_of(e)) {
@@ -2943,9 +2941,9 @@ assume Std {
     # it from a valtype byte.
     fn open_block(body: IntList, opcode: Int, ty: Int) {
       body.push(opcode);
-      if width(ty).eq(zero) {
+      if width(ty) == zero {
         body.push(bt_empty());
-      } else if width(ty).eq(one) {
+      } else if width(ty) == one {
         body.push(valtype_at(ty, zero));
       } else {
         let rs = int_list();
@@ -2967,7 +2965,7 @@ assume Std {
 
     fn emit_if_as(body: IntList, e: Int, m: Int, want: Int): Int {
       emit_expr(body, ast::a_of(e), m);
-      cg_depth.write(cg_depth.read().add(one));
+      cg_depth.write(cg_depth.read() + one);
       let then = int_list();
       let ty = emit_as(then, ast::b_of(e), m, want);
       op_if_ty(body, ty);
@@ -2975,12 +2973,12 @@ assume Std {
       if ast::is_some(ast::c_of(e)) {
         op_else(body);
         emit_as(body, ast::c_of(e), m, want);
-      } else if width(ty).gt(zero) {
+      } else if width(ty) > zero {
         # An `if` that yields a value has to have an `else` to yield it.
         cg_error(c_bad_type(), ast::none());
       }
       op_end(body);
-      cg_depth.write(cg_depth.read().sub(one));
+      cg_depth.write(cg_depth.read() - one);
       ty
     }
 
@@ -2996,13 +2994,13 @@ assume Std {
 
     fn emit_match_as(body: IntList, e: Int, m: Int, want: Int): Int {
       let sty = type_of(ast::a_of(e), m);
-      if ast::c_of(e).eq(zero) {
+      if ast::c_of(e) == zero {
         # `match e {}` requires `e : |` (D34): evaluate and diverge.
         emit_expr(body, ast::a_of(e), m);
         op_unreachable(body);
         return ty_none();
       }
-      if types::head_count(sty).eq(one) {
+      if types::head_count(sty) == one {
         return emit_single_arm(body, e, m, sty, want);
       }
       emit_union_match(body, e, m, sty, want)
@@ -3024,13 +3022,13 @@ assume Std {
     # scalars (D58); a wildcard drops it.
     fn bind_pattern(body: IntList, pat: Int, sty: Int, m: Int) {
       let k = ast::kind_of(pat);
-      if k.eq(ast::k_pt_wild()) {
+      if k == ast::k_pt_wild() {
         drop_value(body, sty);
         return ();
       }
-      if k.eq(ast::k_pt_record()) {
+      if k == ast::k_pt_record() {
         let rec = pattern_record(pattern_payload(pat, sty, m));
-        if record_pattern_ok(pat, rec, m).not() {
+        if !record_pattern_ok(pat, rec, m) {
           drop_value(body, sty);
           cg_error(c_unsupported(), ast::none());
           return ();
@@ -3040,12 +3038,12 @@ assume Std {
         bind_record_fields(body, pat, rec, m, tmp, zero);
         return ();
       }
-      if k.ne(ast::k_pt_path()) {
+      if k != ast::k_pt_path() {
         cg_error(c_unsupported(), ast::none());
         return ();
       }
       let sub = ast::b_of(pat);
-      if ast::is_some(sub).not() {
+      if !ast::is_some(sub) {
         # A single name is a binder unless it resolves to a unit or tag,
         # and a resolved one carries no payload to name.
         if ast::is_some(arm_head_any(pat, m)) {
@@ -3056,8 +3054,8 @@ assume Std {
         return ();
       }
       let payload = types::member_payload(sty);
-      if ast::kind_of(sub).eq(ast::k_pt_path()) {
-        if ast::is_some(ast::b_of(sub)).not() {
+      if ast::kind_of(sub) == ast::k_pt_path() {
+        if !ast::is_some(ast::b_of(sub)) {
           bind_here(body, ast::path_last(ast::a_of(sub)), payload);
           return ();
         }
@@ -3065,7 +3063,7 @@ assume Std {
         cg_error(c_unsupported(), ast::path_last(ast::a_of(sub)));
         return ();
       }
-      if ast::kind_of(sub).eq(ast::k_pt_wild()) {
+      if ast::kind_of(sub) == ast::k_pt_wild() {
         drop_value(body, payload);
         return ();
       }
@@ -3078,9 +3076,9 @@ assume Std {
 
     fn drop_value(body: IntList, ty: Int) {
       var i = zero;
-      while i.lt(width(ty)) {
+      while i < width(ty) {
         op_drop(body);
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -3103,8 +3101,8 @@ assume Std {
     ): Int {
       let arm = ast::kid_at(ast::b_of(e), i);
       let head = arm_head_any(ast::a_of(arm), m);
-      var last = i.add(one).ge(ast::c_of(e));
-      if ast::is_some(head).not() {
+      var last = i + one >= ast::c_of(e);
+      if !ast::is_some(head) {
         last = true;
       }
       if last {
@@ -3113,15 +3111,15 @@ assume Std {
       op_local_get(body, local_slot(tmp, zero));
       op_i32_const(body, types::unit_code(head));
       body.push(hex(n4(), n6()));
-      cg_depth.write(cg_depth.read().add(one));
+      cg_depth.write(cg_depth.read() + one);
       let then = int_list();
       let ty = emit_match_arm_body(then, arm, m, sty, tmp, want);
       op_if_ty(body, ty);
       push_bytes(body, then);
       op_else(body);
-      emit_match_arms(body, e, m, sty, tmp, i.add(one), want);
+      emit_match_arms(body, e, m, sty, tmp, i + one, want);
       op_end(body);
-      cg_depth.write(cg_depth.read().sub(one));
+      cg_depth.write(cg_depth.read() - one);
       ty
     }
 
@@ -3130,7 +3128,7 @@ assume Std {
     ): Int {
       let mark = lc_visible.read();
       let pat = ast::a_of(arm);
-      if ast::kind_of(pat).eq(ast::k_pt_record()) {
+      if ast::kind_of(pat) == ast::k_pt_record() {
         # The payload sits beside the discriminant, in the scrutinee's
         # temporary.
         let rec = pattern_record(arm_payload(pat, m, sty));
@@ -3140,23 +3138,23 @@ assume Std {
           cg_error(c_unsupported(), ast::none());
         }
       }
-      if ast::kind_of(pat).eq(ast::k_pt_path()) {
+      if ast::kind_of(pat) == ast::k_pt_path() {
         let sub = ast::b_of(pat);
         if ast::is_some(sub) {
           # Only a bare name takes the payload; `Tag _` names nothing, so
           # it needs no local.
-          if ast::kind_of(sub).eq(ast::k_pt_path()) {
-            if ast::is_some(ast::b_of(sub)).not() {
+          if ast::kind_of(sub) == ast::k_pt_path() {
+            if !ast::is_some(ast::b_of(sub)) {
               let payload = arm_payload(pat, m, sty);
               var j = zero;
-              while j.lt(width(payload)) {
-                op_local_get(body, local_slot(tmp, j.add(one)));
-                j = j.add(one);
+              while j < width(payload) {
+                op_local_get(body, local_slot(tmp, j + one));
+                j = j + one;
               }
               bind_here(body, ast::path_last(ast::a_of(sub)), payload);
             }
           }
-        } else if ast::is_some(arm_head_any(pat, m)).not() {
+        } else if !ast::is_some(arm_head_any(pat, m)) {
           load_local(body, tmp);
           bind_here(body, ast::path_last(ast::a_of(pat)), sty);
         }
@@ -3168,21 +3166,21 @@ assume Std {
 
     # A unit *or* a tag: both discriminate, and a tag also carries.
     fn arm_head_any(pat: Int, m: Int): Int {
-      if ast::kind_of(pat).eq(ast::k_pt_record()) {
-        if ast::is_some(ast::a_of(pat)).not() {
+      if ast::kind_of(pat) == ast::k_pt_record() {
+        if !ast::is_some(ast::a_of(pat)) {
           return ast::none();
         }
-      } else if ast::kind_of(pat).ne(ast::k_pt_path()) {
+      } else if ast::kind_of(pat) != ast::k_pt_path() {
         return ast::none();
       }
       let sym = prog::resolve_path(m, ast::a_of(pat));
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         return ast::none();
       }
-      if prog::sym_kind.get(sym).eq(prog::sk_unit()) {
+      if prog::sym_kind.get(sym) == prog::sk_unit() {
         return sym;
       }
-      if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
+      if prog::sym_kind.get(sym) == prog::sk_tag() {
         return sym;
       }
       ast::none()
@@ -3191,11 +3189,11 @@ assume Std {
     # What the member this pattern selects carries.
     fn arm_payload(pat: Int, m: Int, sty: Int): Int {
       let head = arm_head_any(pat, m);
-      if ast::is_some(head).not() {
+      if !ast::is_some(head) {
         return ty_none();
       }
       let member = types::member_with_head(sty, head);
-      if ast::is_some(member).not() {
+      if !ast::is_some(member) {
         return ty_none();
       }
       types::member_payload(member)
@@ -3216,11 +3214,11 @@ assume Std {
     # back end to report; a direct call of a provision needs no check, as
     # it is typed by the provision's own signature.
     fn check_callee(f: Int) {
-      if ast::is_some(f).not() {
+      if !ast::is_some(f) {
         return ();
       }
-      if is_defined_fn(f).not() {
-        if is_defined_method(f).not() {
+      if !is_defined_fn(f) {
+        if !is_defined_method(f) {
           return ();
         }
       }
@@ -3230,8 +3228,8 @@ assume Std {
       let fbase = lower::env_of(f);
       # A sibling called with nothing bound since: the same environment,
       # so the same provisions at the same apps.
-      if genv.eq(base) {
-        if fbase.eq(base) {
+      if genv == base {
+        if fbase == base {
           return ();
         }
       }
@@ -3244,27 +3242,27 @@ assume Std {
       let moved = int_list();
       var e = genv;
       while ast::is_some(e) {
-        if e.eq(base) {
+        if e == base {
           e = ast::none();
         } else {
-          if lower::env_kind_of(e).eq(lower::ek_type()) {
+          if lower::env_kind_of(e) == lower::ek_type() {
             types::push_new(moved, lower::env_sym_of(e));
           }
           e = lower::env_next_of(e);
         }
       }
-      let bound_here = moved.length().gt(zero);
+      let bound_here = moved.length() > zero;
       e = fbase;
       while ast::is_some(e) {
-        if lower::env_kind_of(e).eq(lower::ek_type()) {
-          if lower::env_has(base, lower::ek_type(), ast::none(), lower::env_sym_of(e)).not() {
+        if lower::env_kind_of(e) == lower::ek_type() {
+          if !lower::env_has(base, lower::ek_type(), ast::none(), lower::env_sym_of(e)) {
             types::push_new(moved, lower::env_sym_of(e));
           }
         }
         e = lower::env_next_of(e);
       }
       var i = zero;
-      while i.lt(lower::needs_count(f)) {
+      while i < lower::needs_count(f) {
         let r = lower::need_recv_at(f, i);
         let s = lower::need_sym_at(f, i);
         let key = need_key_recv(f, genv, r);
@@ -3272,25 +3270,25 @@ assume Std {
         if ast::is_some(row) {
           let want = lower::need_app_at(f, i);
           let have = lower::env_b_of(row);
-          if coherent(s, want, fbase, have, base, genv, moved, bound_here, true).not() {
+          if !coherent(s, want, fbase, have, base, genv, moved, bound_here, true) {
             prog::error(prog::e_incoherent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(s));
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
     fn checked(run: Int, genv: Int): Bool {
-      let key = genv.add(one);
-      while ch_head.length().le(key) {
+      let key = genv + one;
+      while ch_head.length() <= key {
         ch_head.push(zero);
       }
       var r = ch_head.get(key);
-      while r.gt(zero) {
-        if ch_run.get(r.sub(one)).eq(run) {
+      while r > zero {
+        if ch_run.get(r - one) == run {
           return true;
         }
-        r = ch_link.get(r.sub(one));
+        r = ch_link.get(r - one);
       }
       ch_run.push(run);
       ch_link.push(ch_head.get(key));
@@ -3311,26 +3309,26 @@ assume Std {
       let deps = int_list();
       lower::item_deps(s, deps);
       var quick = false;
-      if bound_here.not() {
-        quick = want.eq(have);
-      } else if ast::is_some(want).not() {
-        quick = ast::is_some(have).not();
+      if !bound_here {
+        quick = want == have;
+      } else if !ast::is_some(want) {
+        quick = !ast::is_some(have);
       }
       if quick {
         var clear = true;
         var i = zero;
-        while i.lt(deps.length()) {
+        while i < deps.length() {
           if types::contains_sym(moved, deps.get(i)) {
             clear = false;
           }
-          i = i.add(one);
+          i = i + one;
         }
         if clear {
           return true;
         }
       }
       var i = zero;
-      while i.lt(deps.length()) {
+      while i < deps.length() {
         let t = deps.get(i);
         let wv = lower::app_get(want, t, wbase);
         var need = ast::none();
@@ -3345,10 +3343,10 @@ assume Std {
           # this frame means by it.
           need = lower::canon(genv, types::ty_of_symbol(types::kd_abstract(), t));
         }
-        if need.ne(lower::app_get(have, t, hbase)) {
+        if need != lower::app_get(have, t, hbase) {
           return false;
         }
-        i = i.add(one);
+        i = i + one;
       }
       true
     }
@@ -3358,15 +3356,15 @@ assume Std {
     fn check_forwarded(g: Int) {
       let genv = cg_genv.read();
       let row = lower::env_find(genv, lower::ek_fn(), ast::none(), g);
-      if ast::is_some(row).not() {
+      if !ast::is_some(row) {
         return ();
       }
       let want = lower::full_app(g, genv);
       let empty = int_list();
-      if coherent(
+      if !coherent(
         g, want, genv, lower::env_b_of(row), lower::env_of(cg_where.read()), genv,
         empty, true, false
-      ).not() {
+      ) {
         prog::error(prog::e_incoherent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(g));
       }
     }
@@ -3381,21 +3379,21 @@ assume Std {
 
     fn walk_binds(body: IntList, s: Int, m: Int, mode: Int) {
       var i = zero;
-      while i.lt(ast::b_of(s)) {
+      while i < ast::b_of(s) {
         walk_bind_item(body, ast::kid_at(ast::a_of(s), i), m, zero, mode);
-        i = i.add(one);
+        i = i + one;
       }
     }
 
     fn walk_bind_item(body: IntList, item: Int, m: Int, depth: Int, mode: Int) {
-      if depth.gt(n8()) {
+      if depth > n8() {
         cg_error(prog::e_deep(), ast::none());
         return ();
       }
       let spec = ast::a_of(item);
       let value = ast::b_of(item);
       # No `=`: applying a functor of that name (D55).
-      if ast::is_some(value).not() {
+      if !ast::is_some(value) {
         apply_functor(body, spec, m, depth, mode);
         return ();
       }
@@ -3404,22 +3402,22 @@ assume Std {
         bind_method(body, spec, value, m, depth, mode);
         return ();
       }
-      if ast::is_some(ast::a_of(spec)).not() {
+      if !ast::is_some(ast::a_of(spec)) {
         cg_error(c_unsupported(), ast::none());
         return ();
       }
       let sym = prog::resolve_path(m, ast::a_of(spec));
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
         return ();
       }
       let kind = prog::sym_kind.get(sym);
-      if kind.eq(prog::sk_val()) {
+      if kind == prog::sk_val() {
         # A val is data: evaluate it once into a local (D2). Nameless: a
         # provision is found by its *symbol*, through `provide`, and a
         # name here would shadow a program local that happened to share
         # it — `val n: Char;` against a parameter `n`.
-        if mode.eq(bw_emit()) {
+        if mode == bw_emit() {
           emit_as(body, value, m, need_type(sym));
           let l = reveal(ast::none(), need_type(sym));
           store_local(body, l);
@@ -3428,9 +3426,9 @@ assume Std {
         provided_at(lower::ek_val(), ast::none(), sym, cg_genv.read());
         return ();
       }
-      if kind.eq(prog::sk_type()) {
+      if kind == prog::sk_type() {
         let ty = named_type(value, m);
-        if ast::is_some(ty).not() {
+        if !ast::is_some(ty) {
           cg_error(c_bad_type(), prog::sym_name.get(sym));
           return ();
         }
@@ -3443,7 +3441,7 @@ assume Std {
         ));
         return ();
       }
-      if kind.eq(prog::sk_fn()) {
+      if kind == prog::sk_fn() {
         if ast::is_kind(value, ast::k_ex_lambda()) {
           let lam = bind_lambda(spec, value, sym, ast::none(), m, depth, body);
           provided_at(lower::ek_fn(), ast::none(), sym, cg_genv.read());
@@ -3456,7 +3454,7 @@ assume Std {
           return ();
         }
         let provider = named_fn(value, m);
-        if ast::is_some(provider).not() {
+        if !ast::is_some(provider) {
           bind_contextual(sym, value, m, mode);
           return ();
         }
@@ -3487,16 +3485,16 @@ assume Std {
     # copy, and the entry names `g` itself; a call through it is then a
     # call to the primitive.
     fn bind_contextual(sym: Int, value: Int, m: Int, mode: Int) {
-      if ast::kind_of(value).ne(ast::k_ex_path()) {
+      if ast::kind_of(value) != ast::k_ex_path() {
         cg_error(c_unsupported(), prog::sym_name.get(sym));
         return ();
       }
       let g = prog::resolve_path(m, ast::a_of(value));
-      if ast::is_some(g).not() {
+      if !ast::is_some(g) {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(value)));
         return ();
       }
-      if prog::sym_kind.get(g).ne(prog::sk_fn()) {
+      if prog::sym_kind.get(g) != prog::sk_fn() {
         cg_error(c_unsupported(), prog::sym_name.get(sym));
         return ();
       }
@@ -3516,10 +3514,10 @@ assume Std {
         }
       }
       var primitive = in_wasm(g);
-      if primitive.not() {
+      if !primitive {
         primitive = in_wasi(g);
       }
-      if primitive.not() {
+      if !primitive {
         primitive = is_i32_bool(g);
       }
       # Only if this function has it: assumed, since nothing bound it.
@@ -3528,7 +3526,7 @@ assume Std {
           lower::env_of(cg_where.read()), lower::ek_fn(), ast::none(), g
         );
       }
-      if primitive.not() {
+      if !primitive {
         cg_error(c_unbound(), prog::sym_name.get(g));
         return ();
       }
@@ -3541,7 +3539,7 @@ assume Std {
     # receiver. The key is the receiver's head, so calls find it there.
     fn bind_method(body: IntList, spec: Int, value: Int, m: Int, depth: Int, mode: Int) {
       let recv_sym = prog::resolve_path(m, ast::a_of(spec));
-      if ast::is_some(recv_sym).not() {
+      if !ast::is_some(recv_sym) {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
         return ();
       }
@@ -3553,11 +3551,11 @@ assume Std {
       );
       let head = types::head_of(recv);
       let detached = lower::find_method_decl(m, recv_sym, ast::b_of(spec));
-      if ast::is_some(head).not() {
+      if !ast::is_some(head) {
         cg_error(prog::e_method(), ast::b_of(spec));
         return ();
       }
-      if ast::is_some(detached).not() {
+      if !ast::is_some(detached) {
         cg_error(prog::e_method(), ast::b_of(spec));
         return ();
       }
@@ -3566,7 +3564,7 @@ assume Std {
         provider = bind_lambda(spec, value, detached, recv_sym, m, depth, body);
       } else {
         provider = named_fn(value, m);
-        if ast::is_some(provider).not() {
+        if !ast::is_some(provider) {
           cg_error(c_unsupported(), ast::b_of(spec));
           return ();
         }
@@ -3627,21 +3625,20 @@ assume Std {
         pthis = lower::canon(genv, types::ty_of_decl(prog::sym_recv.get(provider)));
       }
       let n = ast::fn_nparams(prog::sym_decl.get(method));
-      var ok = ast::fn_nparams(pd).eq(n);
+      var ok = ast::fn_nparams(pd) == n;
       var i = zero;
-      while i.lt(n) {
+      while i < n {
         if ok {
           let got = sig_ty(genv, ast::b_of(ast::kid_at(ast::fn_params(pd), i)), phome, pthis);
-          ok = got.eq(method_sig_at(spec, recv, method, i, m));
+          ok = got == method_sig_at(spec, recv, method, i, m);
         }
-        i = i.add(one);
+        i = i + one;
       }
       if ok {
-        ok = sig_ty(genv, ast::fn_ret(pd), phome, pthis).eq(
-          method_sig_at(spec, recv, method, ast::none(), m)
-        );
+        ok = sig_ty(genv, ast::fn_ret(pd), phome, pthis)
+          == method_sig_at(spec, recv, method, ast::none(), m);
       }
-      if ok.not() {
+      if !ok {
         prog::error(prog::e_signature(), m, prog::sym_name.get(method));
       }
     }
@@ -3675,27 +3672,25 @@ assume Std {
         recv = lower::canon(view, types::ty_of_decl(recv_sym));
       }
       # The signature: the declaration's, never inferred from (D27).
-      var ok = ast::b_of(value).eq(n);
+      var ok = ast::b_of(value) == n;
       var i = zero;
-      while i.lt(n) {
+      while i < n {
         if ok {
           let ann = ast::b_of(ast::kid_at(ast::a_of(value), i));
           if ast::is_some(ann) {
-            ok = sig_ty(genv, ann, m, grecv).eq(
-              sig_ty(gview, ast::b_of(ast::kid_at(ast::fn_params(bd), i)), home, grecv)
-            );
+            ok = sig_ty(genv, ann, m, grecv)
+              == sig_ty(gview, ast::b_of(ast::kid_at(ast::fn_params(bd), i)), home, grecv);
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
       if ok {
         if ast::is_some(ast::c_of(value)) {
-          ok = sig_ty(genv, ast::c_of(value), m, grecv).eq(
-            sig_ty(gview, ast::fn_ret(bd), home, grecv)
-          );
+          ok = sig_ty(genv, ast::c_of(value), m, grecv)
+            == sig_ty(gview, ast::fn_ret(bd), home, grecv);
         }
       }
-      if ok.not() {
+      if !ok {
         prog::error(prog::e_signature(), m, prog::sym_name.get(bound));
       }
       # Keyed by the types in force rather than the whole environment: the
@@ -3706,32 +3701,32 @@ assume Std {
       let tenv = types_of(env);
       var row = ast::none();
       i = zero;
-      while i.lt(lm_node.length()) {
-        if lm_node.get(i).eq(value) {
-          if lm_genv.get(i).eq(genv) {
-            if lm_env.get(i).eq(tenv) {
+      while i < lm_node.length() {
+        if lm_node.get(i) == value {
+          if lm_genv.get(i) == genv {
+            if lm_env.get(i) == tenv {
               row = i;
             }
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
-      if ast::is_some(row).not() {
+      if !ast::is_some(row) {
         row = make_lambda(value, bound, recv, view, genv, tenv, m, depth);
       }
       # The captured locals' vals, bound to their values now.
       var j = zero;
-      while j.lt(lm_clen.get(row)) {
-        let at = lm_cstart.get(row).add(j.mul(n2()));
+      while j < lm_clen.get(row) {
+        let at = lm_cstart.get(row) + j * n2();
         let l = find_local(lm_cap.get(at));
-        let v = lm_cap.get(at.add(one));
+        let v = lm_cap.get(at + one);
         if ast::is_some(l) {
           load_local(body, l);
           let held = reveal(ast::none(), lc_type.get(l));
           store_local(body, held);
           provide(ast::none(), v, held);
         }
-        j = j.add(one);
+        j = j + one;
       }
       lm_sym.get(row)
     }
@@ -3753,12 +3748,12 @@ assume Std {
         ps.push(ast::node2(ast::k_param(), ast::none(), known(recv)));
       }
       var i = zero;
-      while i.lt(ast::fn_nparams(bd)) {
+      while i < ast::fn_nparams(bd) {
         let t = sig_ty(view, ast::b_of(ast::kid_at(ast::fn_params(bd), i)), home, recv);
         ps.push(ast::node2(
           ast::k_param(), ast::a_of(ast::kid_at(ast::a_of(value), i)), known(t)
         ));
-        i = i.add(one);
+        i = i + one;
       }
       var ret = ast::none();
       if ast::is_some(ast::fn_ret(bd)) {
@@ -3772,21 +3767,21 @@ assume Std {
       # The frame's locals the body names, but not its own parameters'
       # names; a functor's binds are a declaration's, with no locals.
       let caps = int_list();
-      if depth.eq(zero) {
+      if depth == zero {
         let names = int_list();
         lambda_names(lbody, names);
         var k = zero;
-        while k.lt(names.length()) {
+        while k < names.length() {
           let nm = names.get(k);
           var param = false;
           var q = zero;
-          while q.lt(ast::b_of(value)) {
-            if ast::a_of(ast::kid_at(ast::a_of(value), q)).eq(nm) {
+          while q < ast::b_of(value) {
+            if ast::a_of(ast::kid_at(ast::a_of(value), q)) == nm {
               param = true;
             }
-            q = q.add(one);
+            q = q + one;
           }
-          if param.not() {
+          if !param {
             let l = find_local(nm);
             if ast::is_some(l) {
               let vd = ast::node3(ast::k_d_val(), nm, known(lc_type.get(l)), ast::none());
@@ -3794,7 +3789,7 @@ assume Std {
               caps.push(prog::add_symbol(m, nm, prog::sk_val(), vd, ast::none(), ast::none(), zero));
             }
           }
-          k = k.add(one);
+          k = k + one;
         }
       }
       # Its context: everything in force here, as written, and the vals.
@@ -3810,7 +3805,7 @@ assume Std {
       var flag = zero;
       var e = genv;
       while ast::is_some(e) {
-        if e.eq(base) {
+        if e == base {
           flag = one;
         }
         chain.push(e);
@@ -3819,11 +3814,11 @@ assume Std {
       }
       var lenv = lower::env_empty();
       var c = chain.length();
-      while c.gt(zero) {
-        c = c.sub(one);
+      while c > zero {
+        c = c - one;
         let x = chain.get(c);
         var r = lower::env_recv_of(x);
-        if inbase.get(c).eq(one) {
+        if inbase.get(c) == one {
           if ast::is_some(r) {
             r = lower::canon(base, r);
           }
@@ -3839,18 +3834,18 @@ assume Std {
       e = lenv;
       while ast::is_some(e) {
         let kind = lower::env_kind_of(e);
-        if kind.ne(lower::ek_type()) {
+        if kind != lower::ek_type() {
           var seen = false;
           var q = zero;
-          while q.lt(syms.length()) {
-            if syms.get(q).eq(lower::env_sym_of(e)) {
-              if recvs.get(q).eq(lower::env_recv_of(e)) {
+          while q < syms.length() {
+            if syms.get(q) == lower::env_sym_of(e) {
+              if recvs.get(q) == lower::env_recv_of(e) {
                 seen = true;
               }
             }
-            q = q.add(one);
+            q = q + one;
           }
-          if seen.not() {
+          if !seen {
             recvs.push(lower::env_recv_of(e));
             syms.push(lower::env_sym_of(e));
             apps.push(lower::env_b_of(e));
@@ -3859,28 +3854,28 @@ assume Std {
         e = lower::env_next_of(e);
       }
       var k = zero;
-      while k.lt(caps.length()) {
-        let v = caps.get(k.add(one));
+      while k < caps.length() {
+        let v = caps.get(k + one);
         lenv = lower::env_push(
           lenv, lower::ek_val(), ast::none(), v, need_type_raw(v), lower::env_empty()
         );
         recvs.push(ast::none());
         syms.push(v);
         apps.push(lower::env_empty());
-        k = k.add(n2());
+        k = k + n2();
       }
       lower::set_needs(lam, lenv, recvs, syms, apps);
       # What it reaches, for `need_used`.
-      while un_head.length().lt(prog::sym_count()) {
+      while un_head.length() < prog::sym_count() {
         un_head.push(zero);
         un_mark.push(zero);
         un_fstart.push(zero);
       }
       uw_node(lam, lbody, m);
       k = zero;
-      while k.lt(caps.length()) {
-        uw_row(lam, caps.get(k.add(one)));
-        k = k.add(n2());
+      while k < caps.length() {
+        uw_row(lam, caps.get(k + one));
+        k = k + n2();
       }
       lm_node.push(value);
       lm_genv.push(genv);
@@ -3892,13 +3887,13 @@ assume Std {
         lm_recv.push(zero);
       }
       lm_cstart.push(lm_cap.length());
-      lm_clen.push(caps.length().div(n2()));
+      lm_clen.push(caps.length() / n2());
       k = zero;
-      while k.lt(caps.length()) {
+      while k < caps.length() {
         lm_cap.push(caps.get(k));
-        k = k.add(one);
+        k = k + one;
       }
-      lm_sym.length().sub(one)
+      lm_sym.length() - one
     }
 
     # Just the type bindings of an environment, in order, as one
@@ -3907,15 +3902,15 @@ assume Std {
       let chain = int_list();
       var e = env;
       while ast::is_some(e) {
-        if lower::env_kind_of(e).eq(lower::ek_type()) {
+        if lower::env_kind_of(e) == lower::ek_type() {
           chain.push(e);
         }
         e = lower::env_next_of(e);
       }
       var out = lower::env_empty();
       var i = chain.length();
-      while i.gt(zero) {
-        i = i.sub(one);
+      while i > zero {
+        i = i - one;
         let t = chain.get(i);
         out = lower::env_push(
           out, lower::ek_type(), lower::env_recv_of(t), lower::env_sym_of(t),
@@ -3939,124 +3934,124 @@ assume Std {
     # might be — over-approximated, as the bootstrap's `free_names` is: a
     # name the body binds itself, or a context item's, is collected too.
     fn lambda_names(e: Int, out: IntList) {
-      if ast::is_some(e).not() {
+      if !ast::is_some(e) {
         return ();
       }
       let k = ast::kind_of(e);
-      if k.eq(ast::k_ex_path()) {
-        if ast::path_len(ast::a_of(e)).eq(one) {
-          if ast::d_of(e).ne(one) {
+      if k == ast::k_ex_path() {
+        if ast::path_len(ast::a_of(e)) == one {
+          if ast::d_of(e) != one {
             types::push_new(out, ast::path_at(ast::a_of(e), zero));
           }
         }
-      } else if k.eq(ast::k_ex_call()) {
+      } else if k == ast::k_ex_call() {
         lambda_names_run(ast::b_of(e), ast::c_of(e), out);
-      } else if k.eq(ast::k_ex_field()) {
+      } else if k == ast::k_ex_field() {
         lambda_names(ast::a_of(e), out);
-      } else if k.eq(ast::k_ex_method()) {
+      } else if k == ast::k_ex_method() {
         lambda_names(ast::a_of(e), out);
         lambda_names_run(ast::c_of(e), ast::d_of(e), out);
-      } else if k.eq(ast::k_ex_record()) {
+      } else if k == ast::k_ex_record() {
         var i = zero;
-        while i.lt(ast::c_of(e)) {
+        while i < ast::c_of(e) {
           let field = ast::kid_at(ast::b_of(e), i);
           if ast::is_some(ast::b_of(field)) {
             lambda_names(ast::b_of(field), out);
           } else {
             types::push_new(out, ast::a_of(field));
           }
-          i = i.add(one);
+          i = i + one;
         }
-      } else if k.eq(ast::k_ex_if()) {
+      } else if k == ast::k_ex_if() {
         lambda_names(ast::a_of(e), out);
         lambda_names(ast::b_of(e), out);
         lambda_names(ast::c_of(e), out);
-      } else if k.eq(ast::k_ex_match()) {
+      } else if k == ast::k_ex_match() {
         lambda_names(ast::a_of(e), out);
         var i = zero;
-        while i.lt(ast::c_of(e)) {
+        while i < ast::c_of(e) {
           lambda_names(ast::b_of(ast::kid_at(ast::b_of(e), i)), out);
-          i = i.add(one);
+          i = i + one;
         }
-      } else if k.eq(ast::k_ex_return()) {
+      } else if k == ast::k_ex_return() {
         lambda_names(ast::a_of(e), out);
-      } else if k.eq(ast::k_ex_block()) {
+      } else if k == ast::k_ex_block() {
         lambda_names_run(ast::a_of(e), ast::b_of(e), out);
         lambda_names(ast::c_of(e), out);
-      } else if k.eq(ast::k_ex_unary()) {
+      } else if k == ast::k_ex_unary() {
         lambda_names(ast::b_of(e), out);
-      } else if k.eq(ast::k_ex_binary()) {
+      } else if k == ast::k_ex_binary() {
         lambda_names(ast::b_of(e), out);
         lambda_names_run(ast::c_of(e), one, out);
-      } else if k.eq(ast::k_ex_lambda()) {
+      } else if k == ast::k_ex_lambda() {
         lambda_names(ast::d_of(e), out);
-      } else if k.eq(ast::k_st_let()) {
+      } else if k == ast::k_st_let() {
         lambda_names(ast::c_of(e), out);
-      } else if k.eq(ast::k_st_var()) {
+      } else if k == ast::k_st_var() {
         lambda_names(ast::c_of(e), out);
-      } else if k.eq(ast::k_st_assign()) {
+      } else if k == ast::k_st_assign() {
         types::push_new(out, ast::a_of(e));
         lambda_names(ast::b_of(e), out);
-      } else if k.eq(ast::k_st_expr()) {
+      } else if k == ast::k_st_expr() {
         lambda_names(ast::a_of(e), out);
-      } else if k.eq(ast::k_st_while()) {
+      } else if k == ast::k_st_while() {
         lambda_names(ast::a_of(e), out);
         lambda_names(ast::b_of(e), out);
-      } else if k.eq(ast::k_st_loop()) {
+      } else if k == ast::k_st_loop() {
         lambda_names(ast::a_of(e), out);
-      } else if k.eq(ast::k_st_bind()) {
+      } else if k == ast::k_st_bind() {
         var i = zero;
-        while i.lt(ast::b_of(e)) {
+        while i < ast::b_of(e) {
           lambda_names(ast::b_of(ast::kid_at(ast::a_of(e), i)), out);
-          i = i.add(one);
+          i = i + one;
         }
       }
     }
 
     fn lambda_names_run(run: Int, n: Int, out: IntList) {
       var i = zero;
-      while i.lt(n) {
+      while i < n {
         lambda_names(ast::kid_at(run, i), out);
-        i = i.add(one);
+        i = i + one;
       }
     }
 
     # A functor application is a run of binds, inlined where it is
     # written, with the paths inside resolved in the functor's module.
     fn apply_functor(body: IntList, spec: Int, m: Int, depth: Int, mode: Int) {
-      if ast::is_some(ast::a_of(spec)).not() {
+      if !ast::is_some(ast::a_of(spec)) {
         cg_error(c_unsupported(), ast::none());
         return ();
       }
       let sym = prog::resolve_path(m, ast::a_of(spec));
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
         return ();
       }
-      if prog::sym_kind.get(sym).ne(prog::sk_functor()) {
+      if prog::sym_kind.get(sym) != prog::sk_functor() {
         cg_error(c_unsupported(), prog::sym_name.get(sym));
         return ();
       }
       let d = prog::sym_decl.get(sym);
       let home = prog::sym_mod.get(sym);
       var i = zero;
-      while i.lt(ast::fu_nbinds(d)) {
+      while i < ast::fu_nbinds(d) {
         let stmt = ast::kid_at(ast::fu_binds(d), i);
         var j = zero;
-        while j.lt(ast::b_of(stmt)) {
+        while j < ast::b_of(stmt) {
           walk_bind_item(
-            body, ast::kid_at(ast::a_of(stmt), j), home, depth.add(one), mode
+            body, ast::kid_at(ast::a_of(stmt), j), home, depth + one, mode
           );
-          j = j.add(one);
+          j = j + one;
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
     # The type or the function a bind's right-hand side names.
     fn named_type(value: Int, m: Int): Int {
       let raw = named_type_raw(value, m);
-      if ast::is_some(raw).not() {
+      if !ast::is_some(raw) {
         return raw;
       }
       canon_ty(raw)
@@ -4064,23 +4059,23 @@ assume Std {
 
     # The same, before any environment substitutes into it.
     fn named_type_raw(value: Int, m: Int): Int {
-      if ast::kind_of(value).ne(ast::k_ex_path()) {
+      if ast::kind_of(value) != ast::k_ex_path() {
         return ast::none();
       }
       let sym = prog::resolve_path(m, ast::a_of(value));
-      if ast::is_some(sym).not() {
+      if !ast::is_some(sym) {
         return ast::none();
       }
       # `bind U = Box[Elem=Char];` — the right side's brackets apply, as
       # they do in a type position; dropping them was a silent wrong type.
-      if ast::d_of(value).eq(one) {
+      if ast::d_of(value) == one {
         return types::apply(sym, ast::b_of(value), ast::c_of(value), m);
       }
       types::ty_of_decl(sym)
     }
 
     fn named_fn(value: Int, m: Int): Int {
-      if ast::kind_of(value).eq(ast::k_ex_path()) {
+      if ast::kind_of(value) == ast::k_ex_path() {
         let sym = prog::resolve_path(m, ast::a_of(value));
         if ast::is_some(sym) {
           if is_compilable(sym) {
@@ -4091,9 +4086,9 @@ assume Std {
       }
       # `bind Int.add = Num.add;` parses as a field access, since the
       # receiver is a type rather than a value.
-      if ast::kind_of(value).eq(ast::k_ex_field()) {
+      if ast::kind_of(value) == ast::k_ex_field() {
         let obj = ast::a_of(value);
-        if ast::kind_of(obj).eq(ast::k_ex_path()) {
+        if ast::kind_of(obj) == ast::k_ex_path() {
           let recv = prog::resolve_path(m, ast::a_of(obj));
           if ast::is_some(recv) {
             let found = prog::find_attached(
@@ -4109,21 +4104,21 @@ assume Std {
     }
 
     fn push_loop(level: Int) {
-      if cg_ntop.read().lt(cg_loops.length()) {
+      if cg_ntop.read() < cg_loops.length() {
         cg_loops.set(cg_ntop.read(), level);
       } else {
         cg_loops.push(level);
       }
-      cg_ntop.write(cg_ntop.read().add(one));
+      cg_ntop.write(cg_ntop.read() + one);
     }
 
     fn emit_stmt(body: IntList, s: Int, m: Int) {
       let k = ast::kind_of(s);
-      if k.eq(ast::k_st_let()) {
+      if k == ast::k_st_let() {
         emit_binding(body, s, m);
-      } else if k.eq(ast::k_st_var()) {
+      } else if k == ast::k_st_var() {
         emit_binding(body, s, m);
-      } else if k.eq(ast::k_st_assign()) {
+      } else if k == ast::k_st_assign() {
         let local = find_local(ast::a_of(s));
         if contains(cg_capt, local) {
           # D70: captured by value, so an assignment could only change
@@ -4137,39 +4132,39 @@ assume Std {
           emit_expr(body, ast::b_of(s), m);
           cg_error(prog::e_scope(), ast::a_of(s));
         }
-      } else if k.eq(ast::k_st_while()) {
+      } else if k == ast::k_st_while() {
         op_block(body, bt_empty());
-        cg_depth.write(cg_depth.read().add(one));
+        cg_depth.write(cg_depth.read() + one);
         let exit = cg_depth.read();
         push_loop(exit);
         op_loop(body, bt_empty());
-        cg_depth.write(cg_depth.read().add(one));
+        cg_depth.write(cg_depth.read() + one);
         emit_expr(body, ast::a_of(s), m);
         body.push(hex(n4(), n5()));
-        op_br_if(body, cg_depth.read().sub(exit));
+        op_br_if(body, cg_depth.read() - exit);
         drop_value(body, emit_expr(body, ast::b_of(s), m));
         op_br(body, zero);
         op_end(body);
-        cg_depth.write(cg_depth.read().sub(one));
+        cg_depth.write(cg_depth.read() - one);
         op_end(body);
-        cg_depth.write(cg_depth.read().sub(one));
-        cg_ntop.write(cg_ntop.read().sub(one));
-      } else if k.eq(ast::k_st_loop()) {
+        cg_depth.write(cg_depth.read() - one);
+        cg_ntop.write(cg_ntop.read() - one);
+      } else if k == ast::k_st_loop() {
         op_block(body, bt_empty());
-        cg_depth.write(cg_depth.read().add(one));
+        cg_depth.write(cg_depth.read() + one);
         push_loop(cg_depth.read());
         op_loop(body, bt_empty());
-        cg_depth.write(cg_depth.read().add(one));
+        cg_depth.write(cg_depth.read() + one);
         drop_value(body, emit_expr(body, ast::a_of(s), m));
         op_br(body, zero);
         op_end(body);
-        cg_depth.write(cg_depth.read().sub(one));
+        cg_depth.write(cg_depth.read() - one);
         op_end(body);
-        cg_depth.write(cg_depth.read().sub(one));
-        cg_ntop.write(cg_ntop.read().sub(one));
-      } else if k.eq(ast::k_st_bind()) {
+        cg_depth.write(cg_depth.read() - one);
+        cg_ntop.write(cg_ntop.read() - one);
+      } else if k == ast::k_st_bind() {
         walk_binds(body, s, m, bw_emit());
-      } else if k.eq(ast::k_st_expr()) {
+      } else if k == ast::k_st_expr() {
         drop_value(body, emit_expr(body, ast::a_of(s), m));
       } else {
         cg_error(c_unsupported(), ast::none());
@@ -4183,7 +4178,7 @@ assume Std {
       }
       let got = emit_as(body, ast::c_of(s), m, want);
       var ty = want;
-      if ast::is_some(want).not() {
+      if !ast::is_some(want) {
         ty = got;
       }
       store_local(body, reveal(ast::a_of(s), ty));
@@ -4206,23 +4201,23 @@ assume Std {
         add_local(ast::none(), this_type(sym));
       }
       var i = zero;
-      while i.lt(ast::fn_nparams(d)) {
+      while i < ast::fn_nparams(d) {
         let p = ast::kid_at(ast::fn_params(d), i);
         add_local(ast::a_of(p), elab_ty(ast::b_of(p), m));
-        i = i.add(one);
+        i = i + one;
       }
       # Then the needs that travel as data, in the same order the
       # signature declared them, each provided from its own parameter.
-      var nparams = lc_name.length().sub(lc_base.read());
+      var nparams = lc_name.length() - lc_base.read();
       let vals = int_list();
       val_slots(vals, sym, fq_env.get(qi), zero);
       i = zero;
-      while i.lt(vals.length()) {
+      while i < vals.length() {
         let ns = vals.get(i);
         # Nameless, like a `bind`'s local: these are reached by symbol.
         provide(ast::none(), ns, add_local(ast::none(), need_type(ns)));
-        nparams = nparams.add(one);
-        i = i.add(one);
+        nparams = nparams + one;
+        i = i + one;
       }
       # An anonymous function reads each local it captured (D70) by the
       # local's name, from the val that carries it. Local ids are never
@@ -4230,56 +4225,56 @@ assume Std {
       let row = lambda_row(sym);
       if ast::is_some(row) {
         var j = zero;
-        while j.lt(lm_clen.get(row)) {
-          let at = lm_cstart.get(row).add(j.mul(n2()));
-          let l = provision_of(ast::none(), lm_cap.get(at.add(one)));
+        while j < lm_clen.get(row) {
+          let at = lm_cstart.get(row) + j * n2();
+          let l = provision_of(ast::none(), lm_cap.get(at + one));
           if ast::is_some(l) {
             lc_name.set(l, lm_cap.get(at));
             cg_capt.push(l);
           }
-          j = j.add(one);
+          j = j + one;
         }
       }
       # The body's own locals: none yet in the first pass, which creates
       # them as it goes; in the second, exactly the ones the first made.
-      if cg_real.read().eq(one) {
+      if cg_real.read() == one {
         var j = zero;
-        while j.lt(fl_len.get(qi)) {
-          add_local(ast::none(), fl_types.get(fl_start.get(qi).add(j)));
-          j = j.add(one);
+        while j < fl_len.get(qi) {
+          add_local(ast::none(), fl_types.get(fl_start.get(qi) + j));
+          j = j + one;
         }
       }
-      lc_visible.write(lc_base.read().add(nparams));
+      lc_visible.write(lc_base.read() + nparams);
       let counts = assign_slots(nparams);
       let body = int_list();
       let want = elab_ty(ast::fn_ret(d), m);
       cg_ret.write(want);
       let got = emit_as(body, ast::fn_body(d), m, want);
-      if width(want).eq(zero) {
+      if width(want) == zero {
         drop_value(body, got);
-      } else if width(got).eq(zero) {
+      } else if width(got) == zero {
         # The body always jumped out; the validator still wants a value.
         op_unreachable(body);
       }
       op_end(body);
-      if cg_real.read().eq(one) {
-        if lc_visible.read().ne(lc_name.length()) {
+      if cg_real.read() == one {
+        if lc_visible.read() != lc_name.length() {
           # Fewer revealed than the first pass made: they disagree.
           cg_error(c_missing(), prog::sym_name.get(sym));
         }
         emit::set_body(fq_index.get(qi), counts, body);
       } else {
-        while fl_start.length().le(qi) {
+        while fl_start.length() <= qi {
           fl_start.push(zero);
           fl_len.push(zero);
         }
         fl_start.set(qi, fl_types.length());
-        var j = lc_base.read().add(nparams);
-        while j.lt(lc_name.length()) {
+        var j = lc_base.read() + nparams;
+        while j < lc_name.length() {
           fl_types.push(lc_type.get(j));
-          j = j.add(one);
+          j = j + one;
         }
-        fl_len.set(qi, lc_name.length().sub(lc_base.read().add(nparams)));
+        fl_len.set(qi, lc_name.length() - (lc_base.read() + nparams));
       }
     }
 
@@ -4287,16 +4282,16 @@ assume Std {
     # is what notices the callee.
     fn compile_all() {
       var i = zero;
-      while i.lt(fq_sym.length()) {
+      while i < fq_sym.length() {
         compile_one(i);
-        i = i.add(one);
+        i = i + one;
       }
     }
 
     # The whole module. `_start` is a wrapper rather than `main` itself,
     # so that the heap pointer the library's allocator reads is set
     # before anything runs — the same layout the bootstrap backend uses.
-    fn heap_base(): Int { one.shl(n10()) }
+    fn heap_base(): Int { one << n10() }
 
     fn heap_pointer(): Int { n16() }
 
@@ -4312,23 +4307,23 @@ assume Std {
       let mn = spelled();
       sp_main(mn);
       let main = prog::lookup(entry, prog::ns_name(), intern::intern_chars(mn));
-      if ast::is_some(main).not() {
+      if !ast::is_some(main) {
         cg_error(c_no_main(), ast::none());
         return ();
       }
-      if is_defined_fn(main).not() {
+      if !is_defined_fn(main) {
         cg_error(c_no_main(), ast::none());
         return ();
       }
       # D39: `main` takes no parameters and returns the unit type, which
       # is what lets `_start` call it directly.
       let md = prog::sym_decl.get(main);
-      if ast::fn_nparams(md).gt(zero) {
+      if ast::fn_nparams(md) > zero {
         cg_error(c_no_main(), ast::none());
         return ();
       }
       if ast::is_some(ast::fn_ret(md)) {
-        if width(elab_ty(ast::fn_ret(md), prog::sym_mod.get(main))).gt(zero) {
+        if width(elab_ty(ast::fn_ret(md), prog::sym_mod.get(main))) > zero {
           cg_error(c_no_main(), ast::none());
           return ();
         }

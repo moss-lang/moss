@@ -18,10 +18,10 @@ assume Std {
     fn n26(): Int { hex(one, n10()) }
 
     fn tag(k: Int) {
-      if k.lt(n26()) {
-        putchar(char::a.code().add(k).char());
+      if k < n26() {
+        putchar((char::a.code() + k).char());
       } else {
-        putchar(char::A.code().add(k.sub(n26())).char());
+        putchar((char::A.code() + (k - n26())).char());
       }
     }
 
@@ -32,13 +32,13 @@ assume Std {
 
     fn put_path(p: Int) {
       var i = zero;
-      while i.lt(ast::path_len(p)) {
-        if i.gt(zero) {
+      while i < ast::path_len(p) {
+        if i > zero {
           putchar(char::colon);
           putchar(char::colon);
         }
         intern::put(ast::path_at(p, i));
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -61,12 +61,12 @@ assume Std {
     fn dump_run(run: Int, n: Int) {
       putchar(char::lbracket);
       var i = zero;
-      while i.lt(n) {
-        if i.gt(zero) {
+      while i < n {
+        if i > zero {
           sp();
         }
         dump(ast::kid_at(run, i));
-        i = i.add(one);
+        i = i + one;
       }
       putchar(char::rbracket);
     }
@@ -89,9 +89,9 @@ assume Std {
     }
 
     fn dump_recv(r: Int) {
-      if r.eq(ast::recv_detached()) {
+      if r == ast::recv_detached() {
         putchar(char::dot);
-      } else if r.eq(ast::recv_plain()) {
+      } else if r == ast::recv_plain() {
         under();
       } else {
         intern::put(r);
@@ -102,22 +102,22 @@ assume Std {
     fn dump_uses(uses: Int, n: Int) {
       putchar(char::lbracket);
       var i = zero;
-      while i.lt(n) {
-        if i.gt(zero) {
+      while i < n {
+        if i > zero {
           sp();
         }
-        if ast::use_dot(uses, i).eq(one) {
+        if ast::use_dot(uses, i) == one {
           putchar(char::dot);
         }
         intern::put(ast::use_name(uses, i));
         if ast::is_some(ast::use_as(uses, i)) {
           putchar(char::greater);
-          if ast::use_dot(uses, i).eq(one) {
+          if ast::use_dot(uses, i) == one {
             putchar(char::dot);
           }
           intern::put(ast::use_as(uses, i));
         }
-        i = i.add(one);
+        i = i + one;
       }
       putchar(char::rbracket);
     }
@@ -125,214 +125,214 @@ assume Std {
     fn dump(id: Int) {
       let k = ast::kind_of(id);
       open_tag(k);
-      if k.eq(ast::k_ty_ref()) {
+      if k == ast::k_ty_ref() {
         sp();
         put_path(ast::a_of(id));
         sp();
         dump_app(ast::b_of(id), ast::c_of(id));
-      } else if k.eq(ast::k_ty_record()) {
+      } else if k == ast::k_ty_record() {
         sp();
         dump_run(ast::a_of(id), ast::b_of(id));
-      } else if k.eq(ast::k_ty_union()) {
+      } else if k == ast::k_ty_union() {
         sp();
         dump_run(ast::a_of(id), ast::b_of(id));
-      } else if k.eq(ast::k_ty_field()) {
+      } else if k == ast::k_ty_field() {
         sp();
         intern::put(ast::a_of(id));
         sp();
         dump(ast::b_of(id));
-      } else if k.eq(ast::k_ex_path()) {
+      } else if k == ast::k_ex_path() {
         sp();
         put_path(ast::a_of(id));
         sp();
         dump_app(ast::b_of(id), ast::c_of(id));
-      } else if k.eq(ast::k_ex_call()) {
+      } else if k == ast::k_ex_call() {
         sp();
         dump(ast::a_of(id));
         sp();
         dump_run(ast::b_of(id), ast::c_of(id));
-      } else if k.eq(ast::k_ex_field()) {
+      } else if k == ast::k_ex_field() {
         sp();
         dump(ast::a_of(id));
         sp();
         intern::put(ast::b_of(id));
-      } else if k.eq(ast::k_ex_method()) {
+      } else if k == ast::k_ex_method() {
         sp();
         dump(ast::a_of(id));
         sp();
         put_path(ast::b_of(id));
         sp();
         dump_run(ast::c_of(id), ast::d_of(id));
-      } else if k.eq(ast::k_ex_record()) {
+      } else if k == ast::k_ex_record() {
         sp();
         dump(ast::a_of(id));
         sp();
         dump_run(ast::b_of(id), ast::c_of(id));
-      } else if k.eq(ast::k_ex_rfield()) {
+      } else if k == ast::k_ex_rfield() {
         sp();
         intern::put(ast::a_of(id));
         sp();
         opt_node(ast::b_of(id));
-      } else if k.eq(ast::k_ex_if()) {
+      } else if k == ast::k_ex_if() {
         sp();
         dump(ast::a_of(id));
         sp();
         dump(ast::b_of(id));
         sp();
         opt_node(ast::c_of(id));
-      } else if k.eq(ast::k_ex_match()) {
+      } else if k == ast::k_ex_match() {
         sp();
         dump(ast::a_of(id));
         sp();
         dump_run(ast::b_of(id), ast::c_of(id));
-      } else if k.eq(ast::k_ex_return()) {
+      } else if k == ast::k_ex_return() {
         sp();
         opt_node(ast::a_of(id));
-      } else if k.eq(ast::k_ex_block()) {
+      } else if k == ast::k_ex_block() {
         sp();
         dump_run(ast::a_of(id), ast::b_of(id));
         sp();
         opt_node(ast::c_of(id));
-      } else if k.eq(ast::k_ex_unary()) {
+      } else if k == ast::k_ex_unary() {
         sp();
         put_op(ast::a_of(id));
         sp();
         dump(ast::b_of(id));
-      } else if k.eq(ast::k_ex_binary()) {
+      } else if k == ast::k_ex_binary() {
         sp();
         put_op(ast::a_of(id));
         sp();
         dump(ast::b_of(id));
         sp();
         dump(ast::kid_at(ast::c_of(id), zero));
-      } else if k.eq(ast::k_ex_lit()) {
+      } else if k == ast::k_ex_lit() {
         sp();
         put_digits(id);
-      } else if k.eq(ast::k_st_let()) {
+      } else if k == ast::k_st_let() {
         dump_binding(id);
-      } else if k.eq(ast::k_st_var()) {
+      } else if k == ast::k_st_var() {
         dump_binding(id);
-      } else if k.eq(ast::k_st_assign()) {
+      } else if k == ast::k_st_assign() {
         sp();
         intern::put(ast::a_of(id));
         sp();
         dump(ast::b_of(id));
-      } else if k.eq(ast::k_st_bind()) {
+      } else if k == ast::k_st_bind() {
         sp();
         dump_run(ast::a_of(id), ast::b_of(id));
-      } else if k.eq(ast::k_st_item()) {
+      } else if k == ast::k_st_item() {
         sp();
         dump(ast::a_of(id));
         sp();
         opt_node(ast::b_of(id));
-      } else if k.eq(ast::k_st_while()) {
+      } else if k == ast::k_st_while() {
         sp();
         dump(ast::a_of(id));
         sp();
         dump(ast::b_of(id));
-      } else if k.eq(ast::k_st_loop()) {
+      } else if k == ast::k_st_loop() {
         sp();
         dump(ast::a_of(id));
-      } else if k.eq(ast::k_st_expr()) {
+      } else if k == ast::k_st_expr() {
         sp();
         dump(ast::a_of(id));
-      } else if k.eq(ast::k_pt_path()) {
+      } else if k == ast::k_pt_path() {
         sp();
         put_path(ast::a_of(id));
         sp();
         opt_node(ast::b_of(id));
-      } else if k.eq(ast::k_pt_record()) {
+      } else if k == ast::k_pt_record() {
         sp();
         opt_path(ast::a_of(id));
         sp();
         dump_run(ast::b_of(id), ast::c_of(id));
-      } else if k.eq(ast::k_pt_field()) {
+      } else if k == ast::k_pt_field() {
         sp();
         intern::put(ast::a_of(id));
         sp();
         opt_node(ast::b_of(id));
-      } else if k.eq(ast::k_arm()) {
+      } else if k == ast::k_arm() {
         sp();
         dump(ast::a_of(id));
         sp();
         dump(ast::b_of(id));
-      } else if k.eq(ast::k_spec()) {
+      } else if k == ast::k_spec() {
         sp();
         opt_path(ast::a_of(id));
         sp();
         opt_name(ast::b_of(id));
         sp();
         dump_app(ast::c_of(id), ast::d_of(id));
-      } else if k.eq(ast::k_binding()) {
+      } else if k == ast::k_binding() {
         sp();
         put_path(ast::a_of(id));
         sp();
         dump(ast::b_of(id));
-      } else if k.eq(ast::k_param()) {
+      } else if k == ast::k_param() {
         sp();
         intern::put(ast::a_of(id));
         sp();
         opt_node(ast::b_of(id));
-      } else if k.eq(ast::k_ex_lambda()) {
+      } else if k == ast::k_ex_lambda() {
         sp();
         dump_run(ast::a_of(id), ast::b_of(id));
         sp();
         opt_node(ast::c_of(id));
         sp();
         dump(ast::d_of(id));
-      } else if k.eq(ast::k_d_import()) {
+      } else if k == ast::k_d_import() {
         sp();
         print(ast::imp_text(id));
         sp();
         opt_name(ast::imp_alias(id));
         sp();
-        if ast::imp_star(id).eq(one) {
+        if ast::imp_star(id) == one {
           putchar(char::star);
         } else {
           under();
         }
         sp();
         dump_uses(ast::imp_uses(id), ast::imp_nuses(id));
-      } else if k.eq(ast::k_d_assume()) {
+      } else if k == ast::k_d_assume() {
         sp();
         dump_run(ast::a_of(id), ast::b_of(id));
         sp();
         dump_run(ast::c_of(id), ast::d_of(id));
-      } else if k.eq(ast::k_d_type()) {
+      } else if k == ast::k_d_type() {
         sp();
         intern::put(ast::a_of(id));
-      } else if k.eq(ast::k_d_unit()) {
+      } else if k == ast::k_d_unit() {
         sp();
         intern::put(ast::a_of(id));
-      } else if k.eq(ast::k_d_alias()) {
+      } else if k == ast::k_d_alias() {
         sp();
         intern::put(ast::a_of(id));
         sp();
         dump(ast::b_of(id));
-      } else if k.eq(ast::k_d_tag()) {
+      } else if k == ast::k_d_tag() {
         sp();
         intern::put(ast::a_of(id));
         sp();
         putchar(char::lbracket);
         var i = zero;
-        while i.lt(ast::d_of(id)) {
-          if i.gt(zero) {
+        while i < ast::d_of(id) {
+          if i > zero {
             sp();
           }
           intern::put(ast::kid_at(ast::c_of(id), i));
-          i = i.add(one);
+          i = i + one;
         }
         putchar(char::rbracket);
         sp();
         dump(ast::b_of(id));
-      } else if k.eq(ast::k_d_val()) {
+      } else if k == ast::k_d_val() {
         sp();
         intern::put(ast::a_of(id));
         sp();
         dump(ast::b_of(id));
         sp();
         opt_node(ast::c_of(id));
-      } else if k.eq(ast::k_d_fn()) {
+      } else if k == ast::k_d_fn() {
         sp();
         dump_recv(ast::fn_recv(id));
         sp();
@@ -343,12 +343,12 @@ assume Std {
         opt_node(ast::fn_ret(id));
         sp();
         opt_node(ast::fn_body(id));
-      } else if k.eq(ast::k_d_context()) {
+      } else if k == ast::k_d_context() {
         sp();
         intern::put(ast::a_of(id));
         sp();
         dump_run(ast::b_of(id), ast::c_of(id));
-      } else if k.eq(ast::k_d_functor()) {
+      } else if k == ast::k_d_functor() {
         sp();
         intern::put(ast::fu_name(id));
         sp();
@@ -366,41 +366,41 @@ assume Std {
 
     # An operator as it is spelled: its token, one or two characters.
     fn put_op(t: Int) {
-      if t.eq(tk_star()) {
+      if t == tk_star() {
         putchar(char::star);
-      } else if t.eq(tk_slash()) {
+      } else if t == tk_slash() {
         putchar(char::slash);
-      } else if t.eq(tk_percent()) {
+      } else if t == tk_percent() {
         putchar(char::percent);
-      } else if t.eq(tk_plus()) {
+      } else if t == tk_plus() {
         putchar(char::plus);
-      } else if t.eq(tk_hyphen()) {
+      } else if t == tk_hyphen() {
         putchar(char::hyphen);
-      } else if t.eq(tk_exclam()) {
+      } else if t == tk_exclam() {
         putchar(char::exclam);
-      } else if t.eq(tk_ampersand()) {
+      } else if t == tk_ampersand() {
         putchar(char::ampersand);
-      } else if t.eq(tk_caret()) {
+      } else if t == tk_caret() {
         putchar(char::caret);
-      } else if t.eq(tk_pipe()) {
+      } else if t == tk_pipe() {
         putchar(char::pipe);
-      } else if t.eq(tk_less()) {
+      } else if t == tk_less() {
         putchar(char::less);
-      } else if t.eq(tk_greater()) {
+      } else if t == tk_greater() {
         putchar(char::greater);
-      } else if t.eq(tk_less_less()) {
+      } else if t == tk_less_less() {
         putchar(char::less);
         putchar(char::less);
-      } else if t.eq(tk_greater_greater()) {
+      } else if t == tk_greater_greater() {
         putchar(char::greater);
         putchar(char::greater);
-      } else if t.eq(tk_less_equal()) {
+      } else if t == tk_less_equal() {
         putchar(char::less);
         putchar(char::equal);
-      } else if t.eq(tk_greater_equal()) {
+      } else if t == tk_greater_equal() {
         putchar(char::greater);
         putchar(char::equal);
-      } else if t.eq(tk_equal_equal()) {
+      } else if t == tk_equal_equal() {
         putchar(char::equal);
         putchar(char::equal);
       } else {
@@ -413,14 +413,14 @@ assume Std {
     # fraction starts.
     fn put_digits(id: Int) {
       let n = ast::b_of(id);
-      let whole = if ast::is_some(ast::c_of(id)) { n.sub(ast::c_of(id)) } else { n };
+      let whole = if ast::is_some(ast::c_of(id)) { n - ast::c_of(id) } else { n };
       var i = zero;
-      while i.lt(n) {
-        if i.eq(whole) {
+      while i < n {
+        if i == whole {
           putchar(char::dot);
         }
-        putchar(ast::kid_at(ast::a_of(id), i).add(char::digit0.code()).char());
-        i = i.add(one);
+        putchar((ast::kid_at(ast::a_of(id), i) + char::digit0.code()).char());
+        i = i + one;
       }
     }
 
@@ -442,30 +442,30 @@ assume Std {
       putchar(char::lbracket);
       var i = zero;
       var n = zero;
-      while i.lt(roots.length()) {
-        if ast::kind_of(roots.get(i)).eq(ast::k_d_import()) {
-          if n.gt(zero) {
+      while i < roots.length() {
+        if ast::kind_of(roots.get(i)) == ast::k_d_import() {
+          if n > zero {
             sp();
           }
           dump(roots.get(i));
-          n = n.add(one);
+          n = n + one;
         }
-        i = i.add(one);
+        i = i + one;
       }
       putchar(char::rbracket);
       sp();
       putchar(char::lbracket);
       i = zero;
       n = zero;
-      while i.lt(roots.length()) {
-        if ast::kind_of(roots.get(i)).eq(ast::k_d_import()).not() {
-          if n.gt(zero) {
+      while i < roots.length() {
+        if !(ast::kind_of(roots.get(i)) == ast::k_d_import()) {
+          if n > zero {
             sp();
           }
           dump(roots.get(i));
-          n = n.add(one);
+          n = n + one;
         }
-        i = i.add(one);
+        i = i + one;
       }
       putchar(char::rbracket);
       putchar(char::rparen);

@@ -148,7 +148,7 @@ assume Std {
   # brackets. Named by the item, as the bootstrap's "calling `f` needs
   # `seed` at [T=Int], but the one in the context here was provided at
   # [T=Char]" is.
-  fn e_incoherent(): Int { n16().add(one) }
+  fn e_incoherent(): Int { n16() + one }
 
   # D27, D54, D70: a method bind's provider, or an anonymous function at
   # any bind, whose signature is not the bound declaration's read where
@@ -157,22 +157,22 @@ assume Std {
   # the method's declared parameters, which exclude the receiver (D54).
   # Named by the bound symbol, as the bootstrap's "method bind signature
   # mismatch: provider `p` has ..." is.
-  fn e_signature(): Int { n16().add(n2()) }
+  fn e_signature(): Int { n16() + n2() }
 
   # D73: a tag lists a parameter that is not a type its assume nesting
   # requires (named by the parameter).
-  fn e_listed(): Int { n16().add(n5()) }
+  fn e_listed(): Int { n16() + n5() }
 
   # `this` where there is no receiver: in a plain function — a plain
   # function providing a method included, since it cannot see what the
   # method was called on (D54) — or an anonymous function bound to a fn
   # (D70). The bootstrap's "`this` is only legal inside method bodies".
-  fn e_this(): Int { n16().add(n3()) }
+  fn e_this(): Int { n16() + n3() }
 
   # D70: an anonymous function anywhere but the right side of a fn or
   # method bind (named by nothing), or an assignment in one to a local it
   # captured, which it holds by value (named by the local).
-  fn e_lambda(): Int { n16().add(n4()) }
+  fn e_lambda(): Int { n16() + n4() }
 
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
@@ -190,15 +190,15 @@ assume Std {
     # there — a tag's brackets at a construction — is elaborated in both.
     fn error(code: Int, m: Int, name: Int) {
       var i = zero;
-      while i.lt(err_code.length()) {
-        if err_code.get(i).eq(code) {
-          if err_mod.get(i).eq(m) {
-            if err_name.get(i).eq(name) {
+      while i < err_code.length() {
+        if err_code.get(i) == code {
+          if err_mod.get(i) == m {
+            if err_name.get(i) == name {
               return ();
             }
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
       err_code.push(code);
       err_mod.push(m);
@@ -219,7 +219,7 @@ assume Std {
     # must keep reading the old one, so an assumed `s` is this parameter
     # rather than `s` itself. Same name, module and declaration as `s`.
     fn param_of(s: Int): Int {
-      while sym_param.length().le(s) {
+      while sym_param.length() <= s {
         sym_param.push(ast::none());
       }
       if ast::is_some(sym_param.get(s)) {
@@ -230,7 +230,7 @@ assume Std {
         ast::none(), sym_asm.get(s), sym_nasm.get(s)
       );
       sym_param.set(s, p);
-      while sym_origin.length().le(p) {
+      while sym_origin.length() <= p {
         sym_origin.push(ast::none());
       }
       sym_origin.set(p, s);
@@ -239,7 +239,7 @@ assume Std {
 
     # The type symbol a parameter stands for, or none if `s` is not one.
     fn origin_of(s: Int): Int {
-      if s.ge(sym_origin.length()) {
+      if s >= sym_origin.length() {
         return ast::none();
       }
       sym_origin.get(s)
@@ -248,15 +248,15 @@ assume Std {
     # Paths.
 
     fn str_eq(a: String, b: String): Bool {
-      if a.length().ne(b.length()) {
+      if a.length() != b.length() {
         return false;
       }
       var i = zero;
-      while i.lt(a.length()) {
-        if a.get(i).ne(b.get(i)) {
+      while i < a.length() {
+        if a.get(i) != b.get(i) {
           return false;
         }
-        i = i.add(one);
+        i = i + one;
       }
       true
     }
@@ -266,11 +266,11 @@ assume Std {
     fn path_cut(p: String): Int {
       var cut = zero;
       var i = zero;
-      while i.lt(p.length()) {
-        if p.get(i).eq(char::slash) {
-          cut = i.add(one);
+      while i < p.length() {
+        if p.get(i) == char::slash {
+          cut = i + one;
         }
-        i = i.add(one);
+        i = i + one;
       }
       cut
     }
@@ -279,19 +279,19 @@ assume Std {
 
     fn basename(p: String): String {
       let cut = path_cut(p);
-      p.slice(cut, p.length().sub(cut))
+      p.slice(cut, p.length() - cut)
     }
 
     fn seg_dots(p: String, start: Int, len: Int, n: Int): Bool {
-      if len.ne(n) {
+      if len != n {
         return false;
       }
       var i = zero;
-      while i.lt(len) {
-        if p.get(start.add(i)).ne(char::dot) {
+      while i < len {
+        if p.get(start + i) != char::dot {
           return false;
         }
-        i = i.add(one);
+        i = i + one;
       }
       true
     }
@@ -301,8 +301,8 @@ assume Std {
     # reached two ways is one module and not two (D56).
     fn canon(base: String, rel: String): String {
       var joined = rel;
-      if rel.length().gt(zero) {
-        if rel.get(zero).eq(char::slash).not() {
+      if rel.length() > zero {
+        if !(rel.get(zero) == char::slash) {
           joined = dir_of(base).concat(rel);
         }
       }
@@ -311,43 +311,43 @@ assume Std {
       var top = zero;
       var i = zero;
       var from = zero;
-      while i.le(joined.length()) {
-        var cut = i.eq(joined.length());
-        if cut.not() {
-          cut = joined.get(i).eq(char::slash);
+      while i <= joined.length() {
+        var cut = i == joined.length();
+        if !cut {
+          cut = joined.get(i) == char::slash;
         }
         if cut {
-          let len = i.sub(from);
-          if len.eq(zero) {
+          let len = i - from;
+          if len == zero {
             ()
           } else if seg_dots(joined, from, len, one) {
             ()
           } else if seg_dots(joined, from, len, n2()) {
-            var pop = top.gt(zero);
+            var pop = top > zero;
             if pop {
-              pop = seg_dots(joined, starts.get(top.sub(one)), lens.get(top.sub(one)), n2()).not();
+              pop = !seg_dots(joined, starts.get(top - one), lens.get(top - one), n2());
             }
             if pop {
-              top = top.sub(one);
+              top = top - one;
             } else {
               top = push_at(starts, lens, top, from, len);
             }
           } else {
             top = push_at(starts, lens, top, from, len);
           }
-          from = i.add(one);
+          from = i + one;
         }
-        i = i.add(one);
+        i = i + one;
       }
       let sep = slash_of(joined);
       var out = joined.slice(zero, zero);
       var j = zero;
-      while j.lt(top) {
-        if j.gt(zero) {
+      while j < top {
+        if j > zero {
           out = out.concat(sep);
         }
         out = out.concat(joined.slice(starts.get(j), lens.get(j)));
-        j = j.add(one);
+        j = j + one;
       }
       out
     }
@@ -355,11 +355,11 @@ assume Std {
     # A one-character String holding `/`, cut out of a path that has one.
     fn slash_of(p: String): String {
       var i = zero;
-      while i.lt(p.length()) {
-        if p.get(i).eq(char::slash) {
+      while i < p.length() {
+        if p.get(i) == char::slash {
           return p.slice(i, one);
         }
-        i = i.add(one);
+        i = i + one;
       }
       p.slice(zero, zero)
     }
@@ -367,30 +367,30 @@ assume Std {
     # The two lists are a stack: `set` past the end is not allowed, so a
     # push either overwrites a popped slot or extends.
     fn push_at(starts: IntList, lens: IntList, top: Int, s: Int, l: Int): Int {
-      if top.lt(starts.length()) {
+      if top < starts.length() {
         starts.set(top, s);
         lens.set(top, l);
       } else {
         starts.push(s);
         lens.push(l);
       }
-      top.add(one)
+      top + one
     }
 
     fn find_module(p: String): Int {
       var m = zero;
-      while m.lt(module_count()) {
+      while m < module_count() {
         if str_eq(mpaths.get(m), p) {
           return m;
         }
-        m = m.add(one);
+        m = m + one;
       }
       module_count()
     }
 
     fn add_module(p: String): Int {
       let m = find_module(p);
-      if m.lt(module_count()) {
+      if m < module_count() {
         return m;
       }
       mpaths.push(p);
@@ -428,17 +428,17 @@ assume Std {
     # name. There is at most one per (module, namespace, name): both
     # `define` and `bind_entry` refuse to add a second.
     fn find_entry(m: Int, ns: Int, name: Int, only_public: Bool): Int {
-      if name.ge(ent_head.length()) {
+      if name >= ent_head.length() {
         return ast::none();
       }
       var i = ent_head.get(name);
       while ast::is_some(i) {
-        if ent_mod.get(i).eq(m) {
-          if ent_ns.get(i).eq(ns) {
-            if only_public.not() {
+        if ent_mod.get(i) == m {
+          if ent_ns.get(i) == ns {
+            if !only_public {
               return i;
             }
-            if ent_pub.get(i).eq(one) {
+            if ent_pub.get(i) == one {
               return i;
             }
           }
@@ -451,7 +451,7 @@ assume Std {
     # One row, and its place in the by-name chain. Every insert goes
     # through here, so the index cannot drift from the entries.
     fn push_entry(m: Int, ns: Int, name: Int, to: Int, pub: Int) {
-      while ent_head.length().le(name) {
+      while ent_head.length() <= name {
         ent_head.push(ast::none());
       }
       let row = ent_mod.length();
@@ -468,7 +468,7 @@ assume Std {
     fn bind_entry(m: Int, ns: Int, name: Int, to: Int, pub: Int) {
       let existing = lookup(m, ns, name);
       if ast::is_some(existing) {
-        if existing.ne(to) {
+        if existing != to {
           error(e_collide(), m, name);
         }
         return ();
@@ -486,20 +486,20 @@ assume Std {
       sym_recv.push(recv);
       sym_asm.push(asm);
       sym_nasm.push(nasm);
-      sym_kind.length().sub(one)
+      sym_kind.length() - one
     }
 
     fn find_attached(m: Int, recv: Int, name: Int): Int {
       var i = zero;
-      while i.lt(att_mod.length()) {
-        if att_mod.get(i).eq(m) {
-          if att_recv.get(i).eq(recv) {
-            if att_name.get(i).eq(name) {
+      while i < att_mod.length() {
+        if att_mod.get(i) == m {
+          if att_recv.get(i) == recv {
+            if att_name.get(i) == name {
               return att_sym.get(i);
             }
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
       ast::none()
     }
@@ -508,42 +508,42 @@ assume Std {
     # attached method waits, because its receiver must be declared first.
     fn declare_decl(m: Int, d: Int, asm: Int, nasm: Int, pending: IntList) {
       let k = ast::kind_of(d);
-      if k.eq(ast::k_d_assume()) {
+      if k == ast::k_d_assume() {
         # The enclosing items grow by this block's, outermost first.
         let items = int_list();
         var i = zero;
-        while i.lt(nasm) {
+        while i < nasm {
           items.push(ast::kid_at(asm, i));
-          i = i.add(one);
+          i = i + one;
         }
         i = zero;
-        while i.lt(ast::b_of(d)) {
+        while i < ast::b_of(d) {
           items.push(ast::kid_at(ast::a_of(d), i));
-          i = i.add(one);
+          i = i + one;
         }
         let inner = ast::commit(items);
         i = zero;
-        while i.lt(ast::d_of(d)) {
+        while i < ast::d_of(d) {
           declare_decl(m, ast::kid_at(ast::c_of(d), i), inner, items.length(), pending);
-          i = i.add(one);
+          i = i + one;
         }
         return ();
       }
-      if k.eq(ast::k_d_import()) {
+      if k == ast::k_d_import() {
         return ();
       }
-      if k.eq(ast::k_d_bad()) {
+      if k == ast::k_d_bad() {
         return ();
       }
-      if k.eq(ast::k_d_fn()) {
+      if k == ast::k_d_fn() {
         let recv = ast::fn_recv(d);
-        if recv.eq(ast::recv_detached()) {
+        if recv == ast::recv_detached() {
           if ast::is_some(ast::fn_body(d)) {
             error(e_body(), m, ast::fn_name(d));
           }
           define(m, ns_detached(), ast::fn_name(d),
             add_symbol(m, ast::fn_name(d), sk_method(), d, ast::none(), asm, nasm));
-        } else if recv.eq(ast::recv_plain()) {
+        } else if recv == ast::recv_plain() {
           define(m, ns_name(), ast::fn_name(d),
             add_symbol(m, ast::fn_name(d), sk_fn(), d, ast::none(), asm, nasm));
         } else {
@@ -558,17 +558,17 @@ assume Std {
     }
 
     fn decl_kind(k: Int): Int {
-      if k.eq(ast::k_d_type()) {
+      if k == ast::k_d_type() {
         sk_type()
-      } else if k.eq(ast::k_d_unit()) {
+      } else if k == ast::k_d_unit() {
         sk_unit()
-      } else if k.eq(ast::k_d_alias()) {
+      } else if k == ast::k_d_alias() {
         sk_alias()
-      } else if k.eq(ast::k_d_tag()) {
+      } else if k == ast::k_d_tag() {
         sk_tag()
-      } else if k.eq(ast::k_d_val()) {
+      } else if k == ast::k_d_val() {
         sk_val()
-      } else if k.eq(ast::k_d_context()) {
+      } else if k == ast::k_d_context() {
         sk_context()
       } else {
         sk_functor()
@@ -588,16 +588,16 @@ assume Std {
     fn declare(m: Int) {
       let pending = int_list();
       var i = zero;
-      while i.lt(root_count(m)) {
+      while i < root_count(m) {
         declare_decl(m, root_at(m, i), zero, zero, pending);
-        i = i.add(one);
+        i = i + one;
       }
       i = zero;
-      while i.lt(pending.length()) {
+      while i < pending.length() {
         let d = pending.get(i);
         let recv_name = ast::fn_recv(d);
         let recv = lookup(m, ns_name(), recv_name);
-        if ast::is_some(recv).not() {
+        if !ast::is_some(recv) {
           error(e_recv(), m, recv_name);
         } else if ast::is_some(find_attached(m, recv, ast::fn_name(d))) {
           error(e_dup(), m, ast::fn_name(d));
@@ -607,10 +607,10 @@ assume Std {
           att_name.push(ast::fn_name(d));
           att_sym.push(add_symbol(
             m, ast::fn_name(d), sk_method(), d, recv,
-            pending.get(i.add(one)), pending.get(i.add(n2()))
+            pending.get(i + one), pending.get(i + n2())
           ));
         }
-        i = i.add(n3());
+        i = i + n3();
       }
     }
 
@@ -620,28 +620,28 @@ assume Std {
       if ast::is_some(alias) {
         bind_entry(m, ns_alias(), alias, target, one);
       }
-      if glob.eq(one) {
+      if glob == one {
         var i = zero;
-        while i.lt(ent_mod.length()) {
-          if ent_mod.get(i).eq(target) {
-            if ent_pub.get(i).eq(one) {
+        while i < ent_mod.length() {
+          if ent_mod.get(i) == target {
+            if ent_pub.get(i) == one {
               # A glob does not re-export what it brings in (D9).
               bind_entry(m, ent_ns.get(i), ent_name.get(i), ent_to.get(i), zero);
             }
           }
-          i = i.add(one);
+          i = i + one;
         }
         return ();
       }
       var i = zero;
-      while i.lt(nuses) {
+      while i < nuses {
         let name = ast::use_name(uses, i);
         let dotted = ast::use_dot(uses, i);
         var local = ast::use_as(uses, i);
-        if ast::is_some(local).not() {
+        if !ast::is_some(local) {
           local = name;
         }
-        if dotted.eq(one) {
+        if dotted == one {
           let sym = export_of(target, ns_detached(), name);
           if ast::is_some(sym) {
             bind_entry(m, ns_detached(), local, sym, one);
@@ -661,7 +661,7 @@ assume Std {
             }
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -671,17 +671,17 @@ assume Std {
     fn resolve_path(m: Int, p: Int): Int {
       var cur = lookup(m, ns_name(), ast::path_at(p, zero));
       var is_mod = false;
-      if ast::is_some(cur).not() {
+      if !ast::is_some(cur) {
         cur = lookup(m, ns_alias(), ast::path_at(p, zero));
         is_mod = true;
       }
-      if ast::is_some(cur).not() {
+      if !ast::is_some(cur) {
         return ast::none();
       }
       var i = one;
-      while i.lt(ast::path_len(p)) {
-        if is_mod.not() {
-          error(e_module(), m, ast::path_at(p, i.sub(one)));
+      while i < ast::path_len(p) {
+        if !is_mod {
+          error(e_module(), m, ast::path_at(p, i - one));
           return ast::none();
         }
         let name = ast::path_at(p, i);
@@ -691,14 +691,14 @@ assume Std {
           is_mod = false;
         } else {
           let sub = export_of(cur, ns_alias(), name);
-          if ast::is_some(sub).not() {
+          if !ast::is_some(sub) {
             error(e_export(), m, name);
             return ast::none();
           }
           cur = sub;
           is_mod = true;
         }
-        i = i.add(one);
+        i = i + one;
       }
       if is_mod {
         return ast::none();
@@ -708,26 +708,26 @@ assume Std {
 
     # `m` in scope, or `mod::m` through an alias.
     fn resolve_detached(m: Int, p: Int): Int {
-      if ast::path_len(p).eq(one) {
+      if ast::path_len(p) == one {
         return lookup(m, ns_detached(), ast::path_at(p, zero));
       }
       var here = lookup(m, ns_alias(), ast::path_at(p, zero));
       var i = one;
-      while i.lt(ast::path_len(p).sub(one)) {
-        if ast::is_some(here).not() {
+      while i < ast::path_len(p) - one {
+        if !ast::is_some(here) {
           return ast::none();
         }
         here = export_of(here, ns_alias(), ast::path_at(p, i));
-        i = i.add(one);
+        i = i + one;
       }
-      if ast::is_some(here).not() {
+      if !ast::is_some(here) {
         return ast::none();
       }
       export_of(here, ns_detached(), ast::path_last(p))
     }
 
     fn starts_with(p: String, prefix: String): Bool {
-      if p.length().lt(prefix.length()) {
+      if p.length() < prefix.length() {
         return false;
       }
       str_eq(p.slice(zero, prefix.length()), prefix)
@@ -735,12 +735,12 @@ assume Std {
 
     # The standard library does not auto-import itself.
     fn wants_prelude(path: String): Bool {
-      if pinfo.length().eq(zero) {
+      if pinfo.length() == zero {
         false
       } else if str_eq(path, pinfo.get(zero)) {
         false
       } else {
-        starts_with(path, dir_of(pinfo.get(zero))).not()
+        !starts_with(path, dir_of(pinfo.get(zero)))
       }
     }
 
@@ -749,17 +749,17 @@ assume Std {
     # other names a file in the standard library, which is the prelude's
     # directory. Without a prelude there is no library to look in.
     fn resolve(base: String, rel: String): String {
-      if pinfo.length().eq(zero) {
+      if pinfo.length() == zero {
         return canon(base, rel);
       }
-      if rel.length().gt(zero) {
-        if rel.get(zero).eq(char::slash) {
+      if rel.length() > zero {
+        if rel.get(zero) == char::slash {
           return canon(base, rel);
         }
       }
       var len = zero;
-      while len.lt(rel.length()) {
-        if rel.get(len).eq(char::slash) {
+      while len < rel.length() {
+        if rel.get(len) == char::slash {
           if seg_dots(rel, zero, len, one) {
             return canon(base, rel);
           }
@@ -768,7 +768,7 @@ assume Std {
           }
           return canon(pinfo.get(zero), rel);
         }
-        len = len.add(one);
+        len = len + one;
       }
       canon(pinfo.get(zero), rel)
     }
@@ -778,7 +778,7 @@ assume Std {
     assume lexer::at, lexer::mark, syntax::Cursor {
       fn parse_module(m: Int) {
         let path = pwd.join(module_path(m));
-        if path.readable().not() {
+        if !path.readable() {
           error(e_read(), m, ast::none());
           return ();
         }
@@ -788,7 +788,7 @@ assume Std {
         let before = syntax::errs.read();
         let roots = int_list();
         syntax::parse_file(roots);
-        if syntax::errs.read().gt(before) {
+        if syntax::errs.read() > before {
           error(e_syntax(), m, ast::none());
         }
         mroots.set(m, ast::commit(roots));
@@ -796,10 +796,10 @@ assume Std {
       }
 
       fn load(m: Int) {
-        if mstate.get(m).eq(n2()) {
+        if mstate.get(m) == n2() {
           return ();
         }
-        if mstate.get(m).eq(one) {
+        if mstate.get(m) == one {
           error(e_cycle(), m, ast::none());
           return ();
         }
@@ -812,27 +812,27 @@ assume Std {
           load(prelude);
         }
         var i = zero;
-        while i.lt(root_count(m)) {
+        while i < root_count(m) {
           let d = root_at(m, i);
-          if ast::kind_of(d).eq(ast::k_d_import()) {
+          if ast::kind_of(d) == ast::k_d_import() {
             load(add_module(resolve(module_path(m), ast::imp_text(d))));
           }
-          i = i.add(one);
+          i = i + one;
         }
         if ast::is_some(prelude) {
           link(m, prelude, ast::none(), one, zero, zero);
         }
         i = zero;
-        while i.lt(root_count(m)) {
+        while i < root_count(m) {
           let d = root_at(m, i);
-          if ast::kind_of(d).eq(ast::k_d_import()) {
+          if ast::kind_of(d) == ast::k_d_import() {
             link(
               m, find_module(resolve(module_path(m), ast::imp_text(d))),
               ast::imp_alias(d), ast::imp_star(d),
               ast::imp_uses(d), ast::imp_nuses(d)
             );
           }
-          i = i.add(one);
+          i = i + one;
         }
         mstate.set(m, n2());
       }
@@ -841,7 +841,7 @@ assume Std {
       # empty path, in which case there is none.
       fn load_program(prelude: String, entry: String): Int {
         let root = entry.slice(zero, zero);
-        if prelude.length().gt(zero) {
+        if prelude.length() > zero {
           pinfo.push(canon(root, prelude));
         }
         let m = add_module(canon(root, entry));

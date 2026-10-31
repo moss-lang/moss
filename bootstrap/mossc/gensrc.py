@@ -338,13 +338,13 @@ assume Std {
     # The table's index for this interned name, or none.
     fn find_op(name: Int): Int {
       var i = zero;
-      while i.lt(op_names.length()) {
-        if op_names.get(i).eq(name) {
+      while i < op_names.length() {
+        if op_names.get(i) == name {
           return i;
         }
-        i = i.add(one);
+        i = i + one;
       }
-      one.neg()
+      -one
     }
 
     fn install_wasm_ops() {''']

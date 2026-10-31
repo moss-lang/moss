@@ -28,7 +28,7 @@ assume Std {
   assume Compiler {
     fn compile_entry() {
       let entry = prog::load_program(arg_at(zero), first_arg());
-      if prog::error_count().gt(zero) {
+      if prog::error_count() > zero {
         report_collect();
         return ();
       }
@@ -38,11 +38,11 @@ assume Std {
       # elaborates a type and flattens a context, so `prog`'s table grows
       # during codegen too, and a module must not be written while either
       # table has anything in it.
-      if prog::error_count().gt(zero) {
+      if prog::error_count() > zero {
         report_collect();
         return ();
       }
-      if codegen::cg_error_count().gt(zero) {
+      if codegen::cg_error_count() > zero {
         report_codegen();
         return ();
       }
@@ -53,9 +53,9 @@ assume Std {
 
     fn report_collect() {
       var e = zero;
-      while e.lt(prog::error_count()) {
+      while e < prog::error_count() {
         putchar(char::exclam);
-        putchar(char::A.code().add(prog::err_code.get(e)).char());
+        putchar((char::A.code() + prog::err_code.get(e)).char());
         putchar(char::space);
         print(prog::module_path(prog::err_mod.get(e)));
         if ast::is_some(prog::err_name.get(e)) {
@@ -63,15 +63,15 @@ assume Std {
           intern::put(prog::err_name.get(e));
         }
         putchar(char::newline);
-        e = e.add(one);
+        e = e + one;
       }
     }
 
     fn report_codegen() {
       var e = zero;
-      while e.lt(codegen::cg_error_count()) {
+      while e < codegen::cg_error_count() {
         putchar(char::question);
-        putchar(char::A.code().add(codegen::cg_errs.get(e)).char());
+        putchar((char::A.code() + codegen::cg_errs.get(e)).char());
         # Which frame was being emitted, as `module fn` — the nearest
         # thing to a position this compiler can say (D48).
         let at = codegen::cg_err_at.get(e);
@@ -90,7 +90,7 @@ assume Std {
           intern::put(codegen::cg_err_name.get(e));
         }
         putchar(char::newline);
-        e = e.add(one);
+        e = e + one;
       }
     }
   }

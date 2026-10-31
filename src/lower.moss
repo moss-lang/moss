@@ -114,18 +114,18 @@ assume Std {
     # sources, which is the shape D51-era arenas invite and the reason
     # selfhosting.md's "The idiom" now names indexing outright.
     fn env_push(env: Int, kind: Int, recv: Int, sym: Int, a: Int, b: Int): Int {
-      let key = sym.add(one);
-      while en_head.length().le(key) {
+      let key = sym + one;
+      while en_head.length() <= key {
         en_head.push(zero);
       }
       var r = en_head.get(key);
-      while r.gt(zero) {
-        let e = r.sub(one);
-        if en_next.get(e).eq(env) {
-          if en_kind.get(e).eq(kind) {
-            if en_recv.get(e).eq(recv) {
-              if en_a.get(e).eq(a) {
-                if en_b.get(e).eq(b) {
+      while r > zero {
+        let e = r - one;
+        if en_next.get(e) == env {
+          if en_kind.get(e) == kind {
+            if en_recv.get(e) == recv {
+              if en_a.get(e) == a {
+                if en_b.get(e) == b {
                   return e;
                 }
               }
@@ -142,7 +142,7 @@ assume Std {
       en_next.push(env);
       en_link.push(en_head.get(key));
       en_head.set(key, en_kind.length());
-      en_kind.length().sub(one)
+      en_kind.length() - one
     }
 
     # The entry providing this key, or none. The chain is walked from the
@@ -150,9 +150,9 @@ assume Std {
     fn env_find(env: Int, kind: Int, recv: Int, sym: Int): Int {
       var e = env;
       while ast::is_some(e) {
-        if en_kind.get(e).eq(kind) {
-          if en_sym.get(e).eq(sym) {
-            if en_recv.get(e).eq(recv) {
+        if en_kind.get(e) == kind {
+          if en_sym.get(e) == sym {
+            if en_recv.get(e) == recv {
               return e;
             }
           }
@@ -176,63 +176,63 @@ assume Std {
     # `depth` is a backstop against a binding whose type mentions the
     # symbol it binds.
     fn canon_at(env: Int, t: Int, depth: Int): Int {
-      if ast::is_some(t).not() {
+      if !ast::is_some(t) {
         return t;
       }
-      if depth.gt(hex(n2(), zero)) {
+      if depth > hex(n2(), zero) {
         return t;
       }
       let cur = canon_top(env, t);
       let k = types::kind_of(cur);
-      if k.eq(types::kd_nominal()) {
-        if types::member_count(cur).eq(zero) {
+      if k == types::kd_nominal() {
+        if types::member_count(cur) == zero {
           return cur;
         }
         let args = int_list();
         var same = true;
         var i = zero;
-        while i.lt(types::member_count(cur)) {
-          let a = canon_at(env, types::member_at(cur, i), depth.add(one));
-          if a.ne(types::member_at(cur, i)) {
+        while i < types::member_count(cur) {
+          let a = canon_at(env, types::member_at(cur, i), depth + one);
+          if a != types::member_at(cur, i) {
             same = false;
           }
           args.push(a);
-          i = i.add(one);
+          i = i + one;
         }
         if same {
           return cur;
         }
         return types::nominal(types::sym_of(cur), args);
       }
-      if k.eq(types::kd_union()) {
+      if k == types::kd_union() {
         let members = int_list();
         var same = true;
         var i = zero;
-        while i.lt(types::member_count(cur)) {
-          let a = canon_at(env, types::member_at(cur, i), depth.add(one));
-          if a.ne(types::member_at(cur, i)) {
+        while i < types::member_count(cur) {
+          let a = canon_at(env, types::member_at(cur, i), depth + one);
+          if a != types::member_at(cur, i) {
             same = false;
           }
           members.push(a);
-          i = i.add(one);
+          i = i + one;
         }
         if same {
           return cur;
         }
         return types::union_of(members);
       }
-      if k.eq(types::kd_record()) {
+      if k == types::kd_record() {
         let members = int_list();
         var same = true;
         var i = zero;
-        while i.lt(types::field_count(cur)) {
-          let a = canon_at(env, types::field_type_at(cur, i), depth.add(one));
-          if a.ne(types::field_type_at(cur, i)) {
+        while i < types::field_count(cur) {
+          let a = canon_at(env, types::field_type_at(cur, i), depth + one);
+          if a != types::field_type_at(cur, i) {
             same = false;
           }
           members.push(types::field_name_at(cur, i));
           members.push(a);
-          i = i.add(one);
+          i = i + one;
         }
         if same {
           return cur;
@@ -247,19 +247,19 @@ assume Std {
     fn canon_top(env: Int, t: Int): Int {
       var cur = t;
       var fuel = hex(n2(), zero);
-      while fuel.gt(zero) {
-        if types::is_kind(cur, types::kd_abstract()).not() {
+      while fuel > zero {
+        if !types::is_kind(cur, types::kd_abstract()) {
           return cur;
         }
         let e = env_find(env, ek_type(), ast::none(), types::sym_of(cur));
-        if ast::is_some(e).not() {
+        if !ast::is_some(e) {
           return cur;
         }
-        if en_a.get(e).eq(cur) {
+        if en_a.get(e) == cur {
           return cur;
         }
         cur = en_a.get(e);
-        fuel = fuel.sub(one);
+        fuel = fuel - one;
       }
       cur
     }
@@ -286,38 +286,38 @@ assume Std {
 
     fn needs_init() {
       var i = nd_start.length();
-      while i.lt(prog::sym_count()) {
+      while i < prog::sym_count() {
         nd_start.push(ast::none());
         nd_len.push(zero);
         nd_env.push(ast::none());
-        i = i.add(one);
+        i = i + one;
       }
     }
 
     fn need_add(recv: IntList, sym: IntList, r: Int, s: Int) {
       var i = zero;
-      while i.lt(sym.length()) {
-        if sym.get(i).eq(s) {
-          if recv.get(i).eq(r) {
+      while i < sym.length() {
+        if sym.get(i) == s {
+          if recv.get(i) == r {
             return ();
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
       recv.push(r);
       sym.push(s);
     }
 
     fn needs_count(f: Int): Int { nd_len.get(f) }
-    fn need_recv_at(f: Int, i: Int): Int { nd_recv.get(nd_start.get(f).add(i)) }
-    fn need_sym_at(f: Int, i: Int): Int { nd_sym.get(nd_start.get(f).add(i)) }
-    fn need_app_at(f: Int, i: Int): Int { nd_app.get(nd_start.get(f).add(i)) }
+    fn need_recv_at(f: Int, i: Int): Int { nd_recv.get(nd_start.get(f) + i) }
+    fn need_sym_at(f: Int, i: Int): Int { nd_sym.get(nd_start.get(f) + i) }
+    fn need_app_at(f: Int, i: Int): Int { nd_app.get(nd_start.get(f) + i) }
     fn need_start(f: Int): Int { nd_start.get(f) }
     fn env_of(f: Int): Int { nd_env.get(f) }
     # A symbol made after the table was sized (a type's parameter, D72)
     # is not a function, so it was never lowered.
     fn is_lowered(f: Int): Bool {
-      if f.ge(nd_start.length()) {
+      if f >= nd_start.length() {
         return false;
       }
       ast::is_some(nd_start.get(f))
@@ -329,11 +329,11 @@ assume Std {
       let m = prog::sym_mod.get(f);
       var env = env_empty();
       var i = zero;
-      while i.lt(prog::sym_nasm.get(f)) {
+      while i < prog::sym_nasm.get(f) {
         env = add_assume_item(
           env, m, ast::kid_at(prog::sym_asm.get(f), i), recv, sym
         );
-        i = i.add(one);
+        i = i + one;
       }
       env
     }
@@ -344,16 +344,16 @@ assume Std {
     # declaration shares one entry.
     fn asm_find(run: Int, len: Int): Int {
       var i = zero;
-      while i.lt(asm_run.length()) {
-        if asm_len.get(i).eq(len) {
-          if len.eq(zero) {
+      while i < asm_run.length() {
+        if asm_len.get(i) == len {
+          if len == zero {
             return i;
           }
-          if asm_run.get(i).eq(run) {
+          if asm_run.get(i) == run {
             return i;
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
       ast::none()
     }
@@ -367,13 +367,13 @@ assume Std {
       let run = prog::sym_asm.get(f);
       let len = prog::sym_nasm.get(f);
       var memo = asm_find(run, len);
-      if ast::is_some(memo).not() {
+      if !ast::is_some(memo) {
         let recv = int_list();
         let sym = int_list();
         let env = base_env(f, recv, sym);
         let start = nd_sym.length();
         var i = zero;
-        while i.lt(sym.length()) {
+        while i < sym.length() {
           nd_recv.push(recv.get(i));
           nd_sym.push(sym.get(i));
           let row = env_find(env, need_kind(sym.get(i)), recv.get(i), sym.get(i));
@@ -382,7 +382,7 @@ assume Std {
           } else {
             nd_app.push(env_empty());
           }
-          i = i.add(one);
+          i = i + one;
         }
         memo = asm_run.length();
         asm_run.push(run);
@@ -403,11 +403,11 @@ assume Std {
       needs_init();
       nd_start.set(f, nd_sym.length());
       var i = zero;
-      while i.lt(sym.length()) {
+      while i < sym.length() {
         nd_recv.push(recv.get(i));
         nd_sym.push(sym.get(i));
         nd_app.push(app.get(i));
-        i = i.add(one);
+        i = i + one;
       }
       nd_len.set(f, sym.length());
       nd_env.set(f, env);
@@ -423,11 +423,11 @@ assume Std {
     # name, resolved and canonicalized where the item is *written*.
     fn app_bind(view: Int, m: Int, b: Int): Int {
       let lhs = prog::resolve_path(m, ast::a_of(b));
-      if ast::is_some(lhs).not() {
+      if !ast::is_some(lhs) {
         prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(b)));
         return view;
       }
-      if prog::sym_kind.get(lhs).ne(prog::sk_type()) {
+      if prog::sym_kind.get(lhs) != prog::sk_type() {
         prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
         return view;
       }
@@ -452,9 +452,9 @@ assume Std {
     fn app_view(view: Int, m: Int, spec: Int): Int {
       var out = view;
       var i = zero;
-      while i.lt(ast::d_of(spec)) {
+      while i < ast::d_of(spec) {
         out = app_bind(out, m, ast::kid_at(ast::c_of(spec), i));
-        i = i.add(one);
+        i = i + one;
       }
       out
     }
@@ -463,7 +463,7 @@ assume Std {
       env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, depth: Int,
       view: Int
     ): Int {
-      if depth.gt(n16()) {
+      if depth > n16() {
         prog::error(prog::e_deep(), m, ast::none());
         return env;
       }
@@ -471,19 +471,19 @@ assume Std {
       let dot = ast::b_of(spec);
       let path = ast::a_of(spec);
       if ast::is_some(dot) {
-        if ast::is_some(path).not() {
+        if !ast::is_some(path) {
           prog::error(prog::e_recv(), m, dot);
           return env;
         }
         let receiver = prog::resolve_path(m, path);
-        if ast::is_some(receiver).not() {
+        if !ast::is_some(receiver) {
           prog::error(prog::e_scope(), m, ast::path_last(path));
           return env;
         }
         return add_method_item(env, m, receiver, dot, recv, sym, inner);
       }
       let target = prog::resolve_path(m, path);
-      if ast::is_some(target).not() {
+      if !ast::is_some(target) {
         prog::error(prog::e_scope(), m, ast::path_last(path));
         return env;
       }
@@ -495,13 +495,13 @@ assume Std {
       view: Int
     ): Int {
       let kind = prog::sym_kind.get(s);
-      if kind.eq(prog::sk_type()) {
+      if kind == prog::sk_type() {
         if env_has(env, ek_type(), ast::none(), s) {
           return env;
         }
         return env_push(env, ek_type(), ast::none(), s, as_assumed(s), ast::none());
       }
-      if kind.eq(prog::sk_val()) {
+      if kind == prog::sk_val() {
         # A defined val is concrete: nothing to provide (D50).
         if ast::is_some(ast::c_of(prog::sym_decl.get(s))) {
           return env;
@@ -514,7 +514,7 @@ assume Std {
         let ty = elab(view, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
         return env_push(env, ek_val(), ast::none(), s, ty, assumed_app(s, view));
       }
-      if kind.eq(prog::sk_fn()) {
+      if kind == prog::sk_fn() {
         # A defined fn carries its own body; assuming it is a no-op.
         if ast::is_some(ast::fn_body(prog::sym_decl.get(s))) {
           return env;
@@ -526,16 +526,16 @@ assume Std {
         }
         return env_push(env, ek_fn(), ast::none(), s, ast::none(), assumed_app(s, view));
       }
-      if kind.eq(prog::sk_context()) {
+      if kind == prog::sk_context() {
         var e = env;
         let d = prog::sym_decl.get(s);
         var i = zero;
-        while i.lt(ast::c_of(d)) {
+        while i < ast::c_of(d) {
           e = add_spec(
             e, prog::sym_mod.get(s), ast::kid_at(ast::b_of(d), i),
-            recv, sym, depth.add(one), view
+            recv, sym, depth + one, view
           );
-          i = i.add(one);
+          i = i + one;
         }
         return e;
       }
@@ -553,7 +553,7 @@ assume Std {
       view: Int
     ): Int {
       let method = find_method_decl(m, receiver, name);
-      if ast::is_some(method).not() {
+      if !ast::is_some(method) {
         prog::error(prog::e_method(), m, name);
         return env;
       }
@@ -562,7 +562,7 @@ assume Std {
       # which is why an abstract receiver an application fixes lands the
       # provision where calls on the concrete type will look for it.
       let this_ty = canon(view, types::ty_of_decl(receiver));
-      if ast::is_some(types::head_of(this_ty)).not() {
+      if !ast::is_some(types::head_of(this_ty)) {
         prog::error(prog::e_method(), m, name);
         return env;
       }
@@ -584,14 +584,14 @@ assume Std {
       let found = int_list();
       types::free_syms(t, home, found);
       var i = zero;
-      while i.lt(found.length()) {
+      while i < found.length() {
         let s = found.get(i);
-        if env_has(env, ek_type(), ast::none(), s).not() {
-          if env_has(view, ek_type(), ast::none(), s).not() {
+        if !env_has(env, ek_type(), ast::none(), s) {
+          if !env_has(view, ek_type(), ast::none(), s) {
             prog::error(prog::e_absent(), m, prog::sym_name.get(s));
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -599,9 +599,9 @@ assume Std {
       let d = prog::sym_decl.get(f);
       let home = prog::sym_mod.get(f);
       var i = zero;
-      while i.lt(ast::fn_nparams(d)) {
+      while i < ast::fn_nparams(d) {
         check_mentions(env, view, m, ast::b_of(ast::kid_at(ast::fn_params(d), i)), home);
-        i = i.add(one);
+        i = i + one;
       }
       check_mentions(env, view, m, ast::fn_ret(d), home);
     }
@@ -611,7 +611,7 @@ assume Std {
     # The table a need's provision lives in: a val's, or a fn's (which a
     # method's is too).
     fn need_kind(s: Int): Int {
-      if prog::sym_kind.get(s).eq(prog::sk_val()) {
+      if prog::sym_kind.get(s) == prog::sk_val() {
         ek_val()
       } else {
         ek_fn()
@@ -624,43 +624,43 @@ assume Std {
     # θ, beside the receiver that is the other half of its key. The
     # bootstrap's `provision_app` reads the same symbols.
     fn item_deps(s: Int, out: IntList) {
-      while dp_len.length().le(s) {
+      while dp_len.length() <= s {
         dp_start.push(zero);
         dp_len.push(ast::none());
       }
-      if dp_len.get(s).eq(ast::none()) {
+      if dp_len.get(s) == ast::none() {
         let all = int_list();
         nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), all, zero);
         let found = int_list();
-        if prog::sym_kind.get(s).eq(prog::sk_method()) {
+        if prog::sym_kind.get(s) == prog::sk_method() {
           let said = int_list();
           signature_syms(s, said);
           var i = zero;
-          while i.lt(all.length()) {
+          while i < all.length() {
             if types::contains_sym(said, all.get(i)) {
               found.push(all.get(i));
             }
-            i = i.add(one);
+            i = i + one;
           }
         } else {
           var i = zero;
-          while i.lt(all.length()) {
+          while i < all.length() {
             found.push(all.get(i));
-            i = i.add(one);
+            i = i + one;
           }
         }
         dp_start.set(s, dp_pool.length());
         var i = zero;
-        while i.lt(found.length()) {
+        while i < found.length() {
           dp_pool.push(found.get(i));
-          i = i.add(one);
+          i = i + one;
         }
         dp_len.set(s, found.length());
       }
       var i = zero;
-      while i.lt(dp_len.get(s)) {
-        out.push(dp_pool.get(dp_start.get(s).add(i)));
-        i = i.add(one);
+      while i < dp_len.get(s) {
+        out.push(dp_pool.get(dp_start.get(s) + i));
+        i = i + one;
       }
     }
 
@@ -670,53 +670,53 @@ assume Std {
     # requires, as a bracket application's left side must be.
     fn check_listed() {
       var s = zero;
-      while s.lt(prog::sym_count()) {
+      while s < prog::sym_count() {
         let d = prog::sym_decl.get(s);
-        if prog::sym_kind.get(s).eq(prog::sk_tag()) {
-          if ast::d_of(d).gt(zero) {
+        if prog::sym_kind.get(s) == prog::sk_tag() {
+          if ast::d_of(d) > zero {
             let nesting = int_list();
             nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), nesting, zero);
             var i = zero;
-            while i.lt(ast::d_of(d)) {
+            while i < ast::d_of(d) {
               let name = ast::kid_at(ast::c_of(d), i);
               let t = prog::lookup(prog::sym_mod.get(s), prog::ns_name(), name);
               var ok = ast::is_some(t);
               if ok {
                 ok = types::contains_sym(nesting, t);
               }
-              if ok.not() {
+              if !ok {
                 prog::error(prog::e_listed(), prog::sym_mod.get(s), name);
               }
-              i = i.add(one);
+              i = i + one;
             }
           }
         }
-        s = s.add(one);
+        s = s + one;
       }
     }
 
     fn nest_types(m: Int, run: Int, len: Int, out: IntList, depth: Int) {
-      if depth.gt(n16()) {
+      if depth > n16() {
         return ();
       }
       var i = zero;
-      while i.lt(len) {
+      while i < len {
         let spec = ast::kid_at(run, i);
-        if ast::is_some(ast::b_of(spec)).not() {
+        if !ast::is_some(ast::b_of(spec)) {
           if ast::is_some(ast::a_of(spec)) {
             let target = prog::resolve_path(m, ast::a_of(spec));
             if ast::is_some(target) {
               let kind = prog::sym_kind.get(target);
-              if kind.eq(prog::sk_type()) {
+              if kind == prog::sk_type() {
                 types::push_new(out, target);
-              } else if kind.eq(prog::sk_context()) {
+              } else if kind == prog::sk_context() {
                 let d = prog::sym_decl.get(target);
-                nest_types(prog::sym_mod.get(target), ast::b_of(d), ast::c_of(d), out, depth.add(one));
+                nest_types(prog::sym_mod.get(target), ast::b_of(d), ast::c_of(d), out, depth + one);
               }
             }
           }
         }
-        i = i.add(one);
+        i = i + one;
       }
     }
 
@@ -724,9 +724,9 @@ assume Std {
       let d = prog::sym_decl.get(f);
       let home = prog::sym_mod.get(f);
       var i = zero;
-      while i.lt(ast::fn_nparams(d)) {
+      while i < ast::fn_nparams(d) {
         types::free_syms(ast::b_of(ast::kid_at(ast::fn_params(d), i)), home, out);
-        i = i.add(one);
+        i = i + one;
       }
       types::free_syms(ast::fn_ret(d), home, out);
     }
@@ -740,18 +740,18 @@ assume Std {
       item_deps(s, deps);
       var app = env_empty();
       var i = zero;
-      while i.lt(deps.length()) {
+      while i < deps.length() {
         let t = deps.get(i);
         let at = types::ty_of_symbol(types::kd_abstract(), t);
         let v = canon(view, at);
-        var differs = v.ne(at);
+        var differs = v != at;
         if differs {
-          differs = v.ne(as_assumed(t));
+          differs = v != as_assumed(t);
         }
         if differs {
           app = env_push(app, ek_type(), ast::none(), t, v, ast::none());
         }
-        i = i.add(one);
+        i = i + one;
       }
       app
     }
@@ -763,14 +763,14 @@ assume Std {
       item_deps(s, deps);
       var app = env_empty();
       var i = zero;
-      while i.lt(deps.length()) {
+      while i < deps.length() {
         let t = deps.get(i);
         var v = ast::none();
         if env_has(view, ek_type(), ast::none(), t) {
           v = canon(view, types::ty_of_symbol(types::kd_abstract(), t));
         }
         app = env_push(app, ek_type(), ast::none(), t, v, ast::none());
-        i = i.add(one);
+        i = i + one;
       }
       app
     }
@@ -781,7 +781,7 @@ assume Std {
     fn app_get(app: Int, t: Int, base: Int): Int {
       var e = app;
       while ast::is_some(e) {
-        if en_sym.get(e).eq(t) {
+        if en_sym.get(e) == t {
           return en_a.get(e);
         }
         e = en_next.get(e);
@@ -808,35 +808,35 @@ assume Std {
       let to = int_list();
       params_in(t, from);
       var i = zero;
-      while i.lt(from.length()) {
+      while i < from.length() {
         to.push(canon(
           env, types::ty_of_symbol(types::kd_abstract(), prog::origin_of(from.get(i)))
         ));
-        i = i.add(one);
+        i = i + one;
       }
       canon(env, types::subst(t, from, to))
     }
 
     fn params_in(t: Int, out: IntList) {
-      if ast::is_some(t).not() {
+      if !ast::is_some(t) {
         return ();
       }
       let k = types::kind_of(t);
-      if k.eq(types::kd_abstract()) {
+      if k == types::kd_abstract() {
         if ast::is_some(prog::origin_of(types::sym_of(t))) {
           types::push_new(out, types::sym_of(t));
         }
-      } else if k.eq(types::kd_record()) {
+      } else if k == types::kd_record() {
         var i = zero;
-        while i.lt(types::field_count(t)) {
+        while i < types::field_count(t) {
           params_in(types::field_type_at(t, i), out);
-          i = i.add(one);
+          i = i + one;
         }
       } else {
         var i = zero;
-        while i.lt(types::member_count(t)) {
+        while i < types::member_count(t) {
           params_in(types::member_at(t, i), out);
-          i = i.add(one);
+          i = i + one;
         }
       }
     }
@@ -866,18 +866,18 @@ assume Std {
     fn lower_all() {
       needs_init();
       var f = zero;
-      while f.lt(prog::sym_count()) {
+      while f < prog::sym_count() {
         let kind = prog::sym_kind.get(f);
-        var is_fn = kind.eq(prog::sk_fn());
-        if is_fn.not() {
-          is_fn = kind.eq(prog::sk_method());
+        var is_fn = kind == prog::sk_fn();
+        if !is_fn {
+          is_fn = kind == prog::sk_method();
         }
         if is_fn {
           if ast::is_some(ast::fn_body(prog::sym_decl.get(f))) {
             lower_needs(f);
           }
         }
-        f = f.add(one);
+        f = f + one;
       }
     }
   }

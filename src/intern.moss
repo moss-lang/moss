@@ -33,33 +33,33 @@ assume Std {
   context Interner = ichars, istarts, ilens, ibuckets, ilink, imask;
 
   assume Interner {
-    fn no_name(): Int { one.neg() }
+    fn no_name(): Int { -one }
 
     fn hash_step(h: Int, c: Int): Int {
-      h.mul(hex(one, n15())).add(c)
+      h * hex(one, n15()) + c
     }
 
     # 1024 buckets to start with; the mask is what turns a hash into one.
     fn ensure_table() {
-      if ibuckets.length().gt(zero) {
+      if ibuckets.length() > zero {
         return ();
       }
-      let size = one.shl(hex(zero, n10()));
+      let size = one << hex(zero, n10());
       var i = zero;
-      while i.lt(size) {
+      while i < size {
         ibuckets.push(no_name());
-        i = i.add(one);
+        i = i + one;
       }
-      imask.write(size.sub(one));
+      imask.write(size - one);
     }
 
     fn name_hash(id: Int): Int {
       let base = istarts.get(id);
       var h = zero;
       var i = zero;
-      while i.lt(ilens.get(id)) {
-        h = hash_step(h, ichars.get(base.add(i)));
-        i = i.add(one);
+      while i < ilens.get(id) {
+        h = hash_step(h, ichars.get(base + i));
+        i = i + one;
       }
       h
     }
@@ -67,31 +67,31 @@ assume Std {
     # Double the table and re-file every name, including the one just
     # added — which is why the caller pushes its row first.
     fn rehash() {
-      let size = ibuckets.length().mul(n2());
-      while ibuckets.length().lt(size) {
+      let size = ibuckets.length() * n2();
+      while ibuckets.length() < size {
         ibuckets.push(no_name());
       }
       var i = zero;
-      while i.lt(size) {
+      while i < size {
         ibuckets.set(i, no_name());
-        i = i.add(one);
+        i = i + one;
       }
-      imask.write(size.sub(one));
+      imask.write(size - one);
       var id = zero;
-      while id.lt(ilens.length()) {
-        let b = name_hash(id).and(imask.read());
+      while id < ilens.length() {
+        let b = name_hash(id) & imask.read();
         ilink.set(id, ibuckets.get(b));
         ibuckets.set(b, id);
-        id = id.add(one);
+        id = id + one;
       }
     }
 
     fn file_name(id: Int, h: Int) {
-      if ilens.length().mul(n2()).gt(ibuckets.length()) {
+      if ilens.length() * n2() > ibuckets.length() {
         rehash();
         return ();
       }
-      let b = h.and(imask.read());
+      let b = h & imask.read();
       ilink.set(id, ibuckets.get(b));
       ibuckets.set(b, id);
     }
@@ -101,9 +101,9 @@ assume Std {
       let base = istarts.get(id);
       let n = ilens.get(id);
       var i = zero;
-      while i.lt(n) {
-        putchar(ichars.get(base.add(i)).char());
-        i = i.add(one);
+      while i < n {
+        putchar(ichars.get(base + i).char());
+        i = i + one;
       }
     }
 
@@ -113,9 +113,9 @@ assume Std {
     fn put_chars(out: IntList, id: Int) {
       let base = istarts.get(id);
       var i = zero;
-      while i.lt(ilens.get(id)) {
-        out.push(ichars.get(base.add(i)));
-        i = i.add(one);
+      while i < ilens.get(id) {
+        out.push(ichars.get(base + i));
+        i = i + one;
       }
     }
 
@@ -123,16 +123,16 @@ assume Std {
     # out of a file: the back end has to know how `i32_add` is written to
     # recognize it, and there are no string literals (D48).
     fn chars_eq(id: Int, cs: IntList): Bool {
-      if ilens.get(id).ne(cs.length()) {
+      if ilens.get(id) != cs.length() {
         return false;
       }
       let base = istarts.get(id);
       var i = zero;
-      while i.lt(cs.length()) {
-        if ichars.get(base.add(i)).ne(cs.get(i)) {
+      while i < cs.length() {
+        if ichars.get(base + i) != cs.get(i) {
           return false;
         }
-        i = i.add(one);
+        i = i + one;
       }
       true
     }
@@ -141,12 +141,12 @@ assume Std {
       ensure_table();
       var h = zero;
       var i = zero;
-      while i.lt(cs.length()) {
+      while i < cs.length() {
         h = hash_step(h, cs.get(i));
-        i = i.add(one);
+        i = i + one;
       }
-      var id = ibuckets.get(h.and(imask.read()));
-      while id.ge(zero) {
+      var id = ibuckets.get(h & imask.read());
+      while id >= zero {
         if chars_eq(id, cs) {
           return id;
         }
@@ -156,9 +156,9 @@ assume Std {
       istarts.push(ichars.length());
       ilens.push(cs.length());
       i = zero;
-      while i.lt(cs.length()) {
+      while i < cs.length() {
         ichars.push(cs.get(i));
-        i = i.add(one);
+        i = i + one;
       }
       ilink.push(no_name());
       file_name(fresh, h);
@@ -168,18 +168,18 @@ assume Std {
     assume lexer::src {
       # Is interned name `id` the same text as src[ns..ns+nl]?
       fn name_eq(id: Int, ns: Int, nl: Int): Bool {
-        if ilens.get(id).ne(nl) {
+        if ilens.get(id) != nl {
           false
         } else {
           let base = istarts.get(id);
           var i = zero;
           var same = true;
-          while i.lt(nl) {
-            if ichars.get(base.add(i)).ne(lexer::src.get(ns.add(i)).code()) {
+          while i < nl {
+            if ichars.get(base + i) != lexer::src.get(ns + i).code() {
               same = false;
               i = nl;
             } else {
-              i = i.add(one);
+              i = i + one;
             }
           }
           same
@@ -189,9 +189,9 @@ assume Std {
       fn span_hash(ns: Int, nl: Int): Int {
         var h = zero;
         var i = zero;
-        while i.lt(nl) {
-          h = hash_step(h, lexer::src.get(ns.add(i)).code());
-          i = i.add(one);
+        while i < nl {
+          h = hash_step(h, lexer::src.get(ns + i).code());
+          i = i + one;
         }
         h
       }
@@ -200,8 +200,8 @@ assume Std {
       fn intern(ns: Int, nl: Int): Int {
         ensure_table();
         let h = span_hash(ns, nl);
-        var id = ibuckets.get(h.and(imask.read()));
-        while id.ge(zero) {
+        var id = ibuckets.get(h & imask.read());
+        while id >= zero {
           if name_eq(id, ns, nl) {
             return id;
           }
@@ -211,9 +211,9 @@ assume Std {
         istarts.push(ichars.length());
         ilens.push(nl);
         var i = zero;
-        while i.lt(nl) {
-          ichars.push(lexer::src.get(ns.add(i)).code());
-          i = i.add(one);
+        while i < nl {
+          ichars.push(lexer::src.get(ns + i).code());
+          i = i + one;
         }
         ilink.push(no_name());
         file_name(fresh, h);

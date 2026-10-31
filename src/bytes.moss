@@ -10,27 +10,27 @@
 # is how a Wasm opcode is spelled in the specification anyway.
 
 assume Std {
-  fn n2(): Int { one.add(one) }
-  fn n3(): Int { n2().add(one) }
-  fn n4(): Int { n2().add(n2()) }
-  fn n5(): Int { n4().add(one) }
-  fn n6(): Int { n4().add(n2()) }
-  fn n7(): Int { n4().add(n3()) }
-  fn n8(): Int { n4().add(n4()) }
-  fn n9(): Int { n8().add(one) }
-  fn n10(): Int { n8().add(n2()) }
-  fn n11(): Int { n8().add(n3()) }
-  fn n12(): Int { n8().add(n4()) }
-  fn n13(): Int { n8().add(n5()) }
-  fn n14(): Int { n8().add(n6()) }
-  fn n15(): Int { n8().add(n7()) }
-  fn n16(): Int { n8().add(n8()) }
+  fn n2(): Int { one + one }
+  fn n3(): Int { n2() + one }
+  fn n4(): Int { n2() + n2() }
+  fn n5(): Int { n4() + one }
+  fn n6(): Int { n4() + n2() }
+  fn n7(): Int { n4() + n3() }
+  fn n8(): Int { n4() + n4() }
+  fn n9(): Int { n8() + one }
+  fn n10(): Int { n8() + n2() }
+  fn n11(): Int { n8() + n3() }
+  fn n12(): Int { n8() + n4() }
+  fn n13(): Int { n8() + n5() }
+  fn n14(): Int { n8() + n6() }
+  fn n15(): Int { n8() + n7() }
+  fn n16(): Int { n8() + n8() }
 
   # 0xHL, from its high and low nibbles.
-  fn hex(hi: Int, lo: Int): Int { hi.shl(n4()).add(lo) }
+  fn hex(hi: Int, lo: Int): Int { (hi << n4()) + lo }
 
   fn n127(): Int { hex(n7(), n15()) }
-  fn n128(): Int { n127().add(one) }
+  fn n128(): Int { n127() + one }
   fn n64(): Int { hex(n4(), zero) }
 
   fn push_char(buf: IntList, c: Char) {
@@ -39,9 +39,9 @@ assume Std {
 
   fn push_bytes(dst: IntList, src: IntList) {
     var i = zero;
-    while i.lt(src.length()) {
+    while i < src.length() {
       dst.push(src.get(i));
-      i = i.add(one);
+      i = i + one;
     }
   }
 
@@ -49,17 +49,17 @@ assume Std {
   # on `Int`), so the shifted-in sign bits are masked off — which is what
   # lets a value with its top bit set, such as a large address, terminate.
   fn uleb(buf: IntList, value: Int) {
-    let low25 = one.shl(hex(one, n9())).sub(one);
+    let low25 = (one << hex(one, n9())) - one;
     var n = value;
     var going = true;
     while going {
-      let low = n.and(n127());
-      n = n.shr(n7()).and(low25);
-      if n.eq(zero) {
+      let low = n & n127();
+      n = (n >> n7()) & low25;
+      if n == zero {
         buf.push(low);
         going = false;
       } else {
-        buf.push(low.add(n128()));
+        buf.push(low + n128());
       }
     }
   }
@@ -70,39 +70,39 @@ assume Std {
     var n = value;
     var going = true;
     while going {
-      let low = n.and(n127());
-      n = n.shr(n7());
-      let negative = low.and(n64()).ne(zero);
-      if n.eq(zero) {
+      let low = n & n127();
+      n = n >> n7();
+      let negative = (low & n64()) != zero;
+      if n == zero {
         if negative {
-          buf.push(low.add(n128()));
+          buf.push(low + n128());
         } else {
           buf.push(low);
           going = false;
         }
-      } else if n.eq(one.neg()) {
+      } else if n == -one {
         if negative {
           buf.push(low);
           going = false;
         } else {
-          buf.push(low.add(n128()));
+          buf.push(low + n128());
         }
       } else {
-        buf.push(low.add(n128()));
+        buf.push(low + n128());
       }
     }
   }
 
   # Decimal, for the dumps the stages are checked against.
   fn put_int(n: Int) {
-    if n.lt(zero) {
+    if n < zero {
       putchar(char::hyphen);
-      put_int(zero.sub(n));
-    } else if n.lt(n10()) {
-      putchar(char::digit0.code().add(n).char());
+      put_int(zero - n);
+    } else if n < n10() {
+      putchar((char::digit0.code() + n).char());
     } else {
-      put_int(n.div(n10()));
-      putchar(char::digit0.code().add(n.rem(n10())).char());
+      put_int(n / n10());
+      putchar((char::digit0.code() + n % n10()).char());
     }
   }
 
