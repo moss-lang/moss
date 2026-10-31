@@ -612,9 +612,9 @@ class Lower:
             found: list = []
             decl = sym.decl
             for p in decl.params:
-                self.free_type_syms(p.ty, sym.module, found, set())
+                self.free_type_syms(p.ty, sym.module, found)
             if decl.ret is not None:
-                self.free_type_syms(decl.ret, sym.module, found, set())
+                self.free_type_syms(decl.ret, sym.module, found)
             cached = [t for t in reqs if t in found]
             self._sig_syms_cache[id(sym)] = cached
         return cached
@@ -636,32 +636,89 @@ class Lower:
         return ", ".join(one(t, ty) for t, ty in app.items())
 
     def type_requirements(self, sym: Symbol) -> list:
-        """The type symbols that parameterize a declaration (D18/D21).
+        """The type symbols that parameterize a declaration: its *relevant
+        parameters* (D71, narrowing D18/D21).
 
         For nominal types and aliases these are the abstract type symbols
-        their payload actually *mentions* — not everything the enclosing
-        assumes happen to provide, which would make `unit Stop;` under
-        `assume Std` spuriously distinct per ambient binding. For abstract
-        types, functions, vals, and contexts (which have no payload to
-        scan), the assume nesting is the answer.
+        their payload actually *mentions*, closed through the nominals it
+        mentions (less whatever those mentions' own brackets bind) — not
+        everything the enclosing assumes happen to provide, which would
+        make `unit Stop;` under `assume Std` spuriously distinct per
+        ambient binding. Over mutually recursive declarations this is the
+        *least fixpoint* (`_solve_requirements`), so `type A { b: B, t: T
+        }; type B { a: A };` gives both `[T]` whichever is asked first. A
+        unit and an abstract type symbol have none. Functions, vals, and
+        contexts keep their whole assume nesting (D21 unchanged for them).
+
+        Applying a symbol outside this list is an error (`check_relevant`).
         """
         cached = self._reqs_cache.get(id(sym))
         if cached is not None:
             return cached
-        out: list = []
-        # Register before scanning so recursive types terminate.
-        self._reqs_cache[id(sym)] = out
         if sym.kind in (SymKind.UNIT, SymKind.TYPE):
             # An abstract type symbol is a bare unification variable (D43);
             # giving it identity args for everything its assumes provide
             # would block merging (and made `unit Stop;` under Std spuriously
             # distinct per ambient binding).
-            pass
+            out: list = []
         elif sym.kind in (SymKind.TAG, SymKind.ALIAS):
-            self.free_type_syms(sym.decl.ty, sym.module, out, {id(sym)})
+            self._solve_requirements(sym)
+            return self._reqs_cache[id(sym)]
         else:
+            out = []
             self.assume_type_syms(sym, out)
+        self._reqs_cache[id(sym)] = out
         return out
+
+    def _solve_requirements(self, root: Symbol):
+        """Relevance for `root` and every tag or alias it reaches that is
+        not yet known, as one least fixpoint: start each at nothing and
+        rescan every payload against the current approximations until no
+        list changes. The scan is monotone in the approximations, so this
+        terminates, and the answer does not depend on which declaration
+        was asked about first — which is what reading an in-progress
+        entry as final, the old shortcut, got wrong for mutual recursion."""
+        group: list = []
+        seen: set = set()
+        stack = [root]
+        while stack:
+            sym = stack.pop()
+            if id(sym) in seen or id(sym) in self._reqs_cache:
+                continue
+            seen.add(id(sym))
+            group.append(sym)
+            mentioned: list = []
+            self.mentioned_nominals(sym.decl.ty, sym.module, mentioned)
+            stack.extend(reversed(mentioned))
+        for sym in group:
+            self._reqs_cache[id(sym)] = []
+        changed = True
+        while changed:
+            changed = False
+            for sym in group:
+                found: list = []
+                self.free_type_syms(sym.decl.ty, sym.module, found)
+                if found != self._reqs_cache[id(sym)]:
+                    self._reqs_cache[id(sym)] = found
+                    changed = True
+
+    def mentioned_nominals(self, ty, module: Module, out: list):
+        """The tags and aliases a type expression names, brackets included."""
+        if isinstance(ty, ast.TyRecord):
+            for _, field_ty in ty.fields:
+                self.mentioned_nominals(field_ty, module, out)
+        elif isinstance(ty, ast.TyUnion):
+            for member in ty.members:
+                self.mentioned_nominals(member, module, out)
+        elif isinstance(ty, ast.TyRef):
+            target = resolve_path(module, ty.path)
+            if isinstance(target, Symbol) and target.kind in (SymKind.TAG, SymKind.ALIAS):
+                out.append(target)
+            for binding in ty.app or ():
+                if binding.spec.path is not None:
+                    self.mentioned_nominals(
+                        ast.TyRef(binding.spec.path, binding.spec.app), module, out
+                    )
 
     def assume_type_syms(self, sym: Symbol, out: list):
         def walk_items(module, items):
@@ -688,18 +745,18 @@ class Lower:
 
         walk_items(sym.module, sym.assumes)
 
-    def free_type_syms(self, ty, module: Module, out: list, visiting: set):
+    def free_type_syms(self, ty, module: Module, out: list):
         if isinstance(ty, (ast.TyNever, ast.TyThis)):
             return
         if isinstance(ty, ast.TyUnit):
             return
         if isinstance(ty, ast.TyRecord):
             for _, field_ty in ty.fields:
-                self.free_type_syms(field_ty, module, out, visiting)
+                self.free_type_syms(field_ty, module, out)
             return
         if isinstance(ty, ast.TyUnion):
             for member in ty.members:
-                self.free_type_syms(member, module, out, visiting)
+                self.free_type_syms(member, module, out)
             return
         if isinstance(ty, ast.TyRef):
             target = resolve_path(module, ty.path)
@@ -716,13 +773,10 @@ class Lower:
                             ast.TyRef(binding.spec.path, binding.spec.app),
                             module,
                             out,
-                            visiting,
                         )
             if target.kind == SymKind.TYPE:
                 if target not in bound and target not in out:
                     out.append(target)
-                return
-            if id(target) in visiting:
                 return
             for req in self.type_requirements(target):
                 if req not in bound and req not in out:

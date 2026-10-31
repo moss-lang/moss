@@ -1,0 +1,41 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D71: a nominal's relevant parameters are the least fixpoint over
+# mutually recursive declarations. A mentions T and B; B mentions only A;
+# so both are parameterized by T. `get_b(): B` therefore mentions T, and
+# `mid` assumes it without T in force — rejected by both compilers (D20).
+#
+# Here A's relevance is computed first (`first` assumes `get_a`). An
+# implementation that read B's in-progress answer as final gave B no
+# parameters in this order, and accepted `mid`;
+# `relevance_b_first.moss` is the same program with the order reversed.
+
+type T;
+
+assume T {
+  type A { b: B, t: T };
+  type B { a: A };
+}
+
+assume T {
+  fn get_a(): A;
+}
+assume T {
+  fn get_b(): B;
+}
+
+assume Std, T, get_a {
+  fn first() {}
+}
+assume Std, get_b {
+  fn mid() {}
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+  }
+}

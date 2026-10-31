@@ -1873,6 +1873,43 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 report = out.decode("utf-8")
                 self.assertTrue(report.startswith(f"!P {entry} T\n"), report[:200])
 
+    def test_relevance_is_a_least_fixpoint(self):
+        """D71: `type A { b: B, t: T }; type B { a: A };` — both are
+        parameterized by `T`, whichever is computed first, so `get_b(): B`
+        mentions `T` and assuming it without `T` is D20's error. Each
+        compiler once answered by whichever declaration it reached first,
+        and accepted the A-first program."""
+        from .test_build import compile_wasm
+
+        for order in ("a_first", "b_first"):
+            entry = f"tests/wasi/relevance_{order}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(
+                    "type `T` (required by `B`) is not available in the context here",
+                    str(caught.exception),
+                )
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                report = out.decode("utf-8")
+                self.assertTrue(report.startswith(f"!P {entry} T\n"), report[:200])
+
+    def test_relevance_does_not_depend_on_order(self):
+        """The bootstrap's `type_requirements` on the same declarations,
+        asked in both orders."""
+        for order in ("AB", "BA"):
+            with self.subTest(order=order):
+                program = collect.load(
+                    "tests/wasi/relevance_a_first.moss", prelude=PRELUDE, root=REPO
+                )
+                lower = Lower(program)
+                got = {
+                    name: [t.name for t in lower.type_requirements(program.entry.names[name])]
+                    for name in order
+                }
+                self.assertEqual(got, {"A": ["T"], "B": ["T"]})
+
     def test_applying_a_type(self):
         """D18: a nominal type's identity is its declaration and its static
         bindings, so `Box[Elem=I32]` substitutes into the payload. Both

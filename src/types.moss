@@ -61,8 +61,9 @@ assume Std {
 
   # Each tag's and alias's type requirements, as a run of abstract type
   # symbols in `tr_pool`, indexed by the declaring symbol. `tr_len` is
-  # none until computed, and `in_progress()` while it is, so a type that
-  # mentions itself terminates.
+  # none until computed; while a group is being solved (`solve_reqs`) it
+  # holds the current approximation, so a type that mentions itself
+  # terminates.
   val tr_start: IntList;
   val tr_len: IntList;
   val tr_pool: IntList;
@@ -317,45 +318,147 @@ assume Std {
       intern_ty(kd_nominal(), sym, args)
     }
 
-    fn in_progress(): Int { n2().neg() }
-
-    # The abstract type symbols a tag or alias is parameterized by (D18,
-    # D21): those its payload mentions, directly or through the types it
-    # names, minus any those names' own brackets bind. Not everything the
-    # enclosing assumes provide, or `unit Stop;` under `assume Std` would
-    # be a different type per ambient binding. The bootstrap's
+    # The abstract type symbols a tag or alias is parameterized by — its
+    # relevant parameters (D71, narrowing D18/D21): those its payload
+    # mentions, directly or through the types it names, minus any those
+    # names' own brackets bind. Not everything the enclosing assumes
+    # provide, or `unit Stop;` under `assume Std` would be a different
+    # type per ambient binding. Over mutually recursive declarations it is
+    # the least fixpoint (`solve_reqs`), so the answer does not depend on
+    # which declaration was asked about first. The bootstrap's
     # `type_requirements` is the same rule.
     fn reqs_of(sym: Int, out: IntList) {
       while tr_len.length().le(sym) {
         tr_start.push(zero);
         tr_len.push(ast::none());
       }
-      let seen = tr_len.get(sym);
-      if seen.eq(in_progress()) {
-        return ();
-      }
-      if seen.eq(ast::none()) {
-        tr_len.set(sym, in_progress());
-        let found = int_list();
-        let kind = prog::sym_kind.get(sym);
-        var scan = kind.eq(prog::sk_tag());
-        if scan.not() {
-          scan = kind.eq(prog::sk_alias());
-        }
-        if scan {
-          free_syms(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym), found);
-        }
-        tr_start.set(sym, tr_pool.length());
-        var i = zero;
-        while i.lt(found.length()) {
-          tr_pool.push(found.get(i));
-          i = i.add(one);
-        }
-        tr_len.set(sym, found.length());
+      if tr_len.get(sym).eq(ast::none()) {
+        solve_reqs(sym);
       }
       var i = zero;
       while i.lt(tr_len.get(sym)) {
         out.push(tr_pool.get(tr_start.get(sym).add(i)));
+        i = i.add(one);
+      }
+    }
+
+    fn scans_payload(sym: Int): Bool {
+      let kind = prog::sym_kind.get(sym);
+      if kind.eq(prog::sk_tag()) {
+        true
+      } else {
+        kind.eq(prog::sk_alias())
+      }
+    }
+
+    # `root` and every tag or alias it reaches whose requirements are not
+    # yet known, solved together: each starts at nothing, and every
+    # payload is rescanned against the current answers until none
+    # changes. The scan only grows with the answers it reads, so this
+    # stops, and at the least fixpoint — where reading an in-progress
+    # entry as final, the old shortcut, gave `type A { b: B, t: T }; type
+    # B { a: A };` a `B` without `T` whenever `A` was asked first.
+    fn solve_reqs(root: Int) {
+      let group = int_list();
+      group.push(root);
+      tr_start.set(root, tr_pool.length());
+      tr_len.set(root, zero);
+      var g = zero;
+      while g.lt(group.length()) {
+        let s = group.get(g);
+        if scans_payload(s) {
+          let found = int_list();
+          mentioned(ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s), found);
+          var i = zero;
+          while i.lt(found.length()) {
+            let f = found.get(i);
+            while tr_len.length().le(f) {
+              tr_start.push(zero);
+              tr_len.push(ast::none());
+            }
+            if tr_len.get(f).eq(ast::none()) {
+              tr_start.set(f, tr_pool.length());
+              tr_len.set(f, zero);
+              group.push(f);
+            }
+            i = i.add(one);
+          }
+        }
+        g = g.add(one);
+      }
+      var changed = true;
+      while changed {
+        changed = false;
+        g = zero;
+        while g.lt(group.length()) {
+          let s = group.get(g);
+          if scans_payload(s) {
+            let found = int_list();
+            free_syms(ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s), found);
+            if same_run(found, tr_start.get(s), tr_len.get(s)).not() {
+              tr_start.set(s, tr_pool.length());
+              var i = zero;
+              while i.lt(found.length()) {
+                tr_pool.push(found.get(i));
+                i = i.add(one);
+              }
+              tr_len.set(s, found.length());
+              changed = true;
+            }
+          }
+          g = g.add(one);
+        }
+      }
+    }
+
+    fn same_run(xs: IntList, start: Int, len: Int): Bool {
+      if xs.length().ne(len) {
+        return false;
+      }
+      var i = zero;
+      while i.lt(len) {
+        if xs.get(i).ne(tr_pool.get(start.add(i))) {
+          return false;
+        }
+        i = i.add(one);
+      }
+      true
+    }
+
+    # The tags and aliases a type expression names, brackets included.
+    fn mentioned(t: Int, m: Int, out: IntList) {
+      if ast::is_some(t).not() {
+        return ();
+      }
+      let k = ast::kind_of(t);
+      if k.eq(ast::k_ty_ref()) {
+        mentioned_ref(ast::a_of(t), ast::b_of(t), ast::c_of(t), m, out);
+      } else if k.eq(ast::k_ty_union()) {
+        var i = zero;
+        while i.lt(ast::b_of(t)) {
+          mentioned(ast::kid_at(ast::a_of(t), i), m, out);
+          i = i.add(one);
+        }
+      } else if k.eq(ast::k_ty_record()) {
+        var i = zero;
+        while i.lt(ast::b_of(t)) {
+          mentioned(ast::b_of(ast::kid_at(ast::a_of(t), i)), m, out);
+          i = i.add(one);
+        }
+      }
+    }
+
+    fn mentioned_ref(path: Int, run: Int, len: Int, m: Int, out: IntList) {
+      let sym = prog::resolve_path(m, path);
+      if ast::is_some(sym) {
+        if scans_payload(sym) {
+          out.push(sym);
+        }
+      }
+      var i = zero;
+      while i.lt(len) {
+        let rhs = ast::b_of(ast::kid_at(run, i));
+        mentioned_ref(ast::a_of(rhs), ast::c_of(rhs), ast::d_of(rhs), m, out);
         i = i.add(one);
       }
     }
