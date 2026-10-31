@@ -122,8 +122,28 @@ to it, so it is captured as provided at the bind ([D66]): `bind
 error=force_error;` and a later rebind of `force_error` leave `error` as it
 was. Method
 binds (`bind Horn.loud=Horn.blast;`) provide a detached method at a
-receiver type; an attached method is the provider that can see the receiver
-as `this`. A method bind may carry a bracket application
+receiver type. A plain function may provide one; its signature is the
+method's declared one, which excludes the receiver, so it cannot see what
+the method was called on ([D54]). An attached method is a provider that
+sees the receiver as `this`.
+
+The right side of a fn or method bind may instead be an anonymous function
+([D70]), `(x, y: T): R => body`, and nowhere else may one appear. Its
+signature is the bound declaration's under the substitutions in force:
+the parameter count must match, and annotations, all optional, must match
+exactly. In a method bind the parameters exclude the receiver, `this` is
+the receiver at the bind's receiver type and `This` names that type; in a
+fn bind there is no `this`. Everything free in the body is captured at the
+bind: a context item means what it means there, and a later rebind does
+not reach the lambda; a local of the enclosing function is captured by
+value when the bind runs, so a later assignment to a `var` is not seen and
+the body may not assign it. A lambda has no name and cannot call itself.
+It is sugar over the calculus: each captured local becomes a fresh val
+bound just before, and the lambda a fresh defined function assuming the
+context of the bind, bound as any provider is — for a method, with the
+receiver its first parameter. `bind debug = (message) => {};` and
+`bind Stored.widen = () => Double (w::f64_promote_f32(sgl(this)));` need
+no named `noop` and no wrapper to attach to. A method bind may carry a bracket application
 (`bind IntList.get[Elem=Int]=Ints.get;`), which is how a method declared
 once for several receivers is provided at one of them: the bindings
 interpret the abstract signature the provider is matched against, and they

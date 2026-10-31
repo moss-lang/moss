@@ -166,8 +166,11 @@ the prelude's `val true: Bool = Bool True;` ([D50]).
 - **Let** = `let` _name_ (`:` **Type**)? `=` **Expr** `;`
 - **Var** = `var` _name_ (`:` **Type**)? `=` **Expr** `;`
 - **Assign** = _name_ `=` **Expr** `;`
-- **Bind** = `bind` **List**\[**Spec** (`=` **Expr**)?\] `;`
+- **Bind** = `bind` **List**\[**Spec** (`=` (**Lambda** | **Expr**))?\] `;`
   - an item with no `=` applies a functor of that name (D55)
+- **Lambda** = `(` **List**\[_name_ (`:` **Type**)?\] `)` (`:` **Type**)? `=>` **Expr**
+  - an anonymous function ([D70]), legal only as the right side of a fn or
+    method bind
 - **While** = `while` **Expr** **Block**
 - **Loop** = `loop` **Block**
 
@@ -181,6 +184,14 @@ as an expression ([D65]): `{ bind MaxLevelDebug; foo(); }` runs `foo` under
 that bind and undoes it afterwards. In a **Bind**, a right-hand side that names a type is
 written as an ordinary path; which kind of binding it is falls out of the
 left-hand symbol's kind.
+
+A **Lambda** is told from `()` and from a parenthesized expression by what
+follows the opening parenthesis: `()` or `(x)` followed by `=>` or `:`, or
+`(x` followed by `:` or `,` — which no expression has. Both parsers accept
+one wherever a **Primary** may stand and leave it to lowering to reject it
+anywhere but a bind's right side. Its body is a whole **Expr**, so
+`(x) => x + 1` is one lambda, and `=> { ... }` takes a bare **Block**
+([D65]) for anything longer.
 
 ### Expressions
 

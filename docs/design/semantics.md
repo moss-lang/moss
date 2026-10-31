@@ -1239,7 +1239,9 @@ one more syntactic burden either way, and the whole pile of them is worth
 revisiting deliberately after the MVP rather than one at a time. The cost
 until then is a nominal type per provider, plus boxing until the backend
 unboxes single-payload tags over scalars — an optimization, not on the
-critical path.
+critical path. [D70] lifts this for anonymous providers, whose
+receiver is `this`, and records that a plain function providing a method
+is now implemented as this entry says in both compilers.
 
 **[D55] DECIDED and implemented (a functor construct).** [D53] leaves Moss with no way to
 map a structure to a structure. `bind` provides one component per line,
@@ -2138,6 +2140,166 @@ the text above did not fix, it is recorded here.
   now read an assumed item's symbols against the finished environment
   (`tests/wasi/coherent_assume_order.moss`).
 
+**[D70] DECIDED by the designer and implemented (anonymous functions at binds).** Moss has no function types:
+by [D2], supplying behaviour means binding a `fn` symbol, which is
+"statically a direct call, with the captured context passed as data". The
+provider had to be a named, defined function — or, for a method that needs
+its receiver, an attached method on a nominal type in its own module
+([D54]), which is why the WASI library wraps every representation (`Num`,
+`Double`, `Single`) only to have somewhere to attach. This entry lets the
+right side of a fn or method bind be an anonymous function, written with a
+fat arrow, and nothing else: it is still code plus captured context, never a
+value.
+
+Syntax (an alternative of a **Bind** item's right side only):
+
+- **Lambda** = `(` **List**\[_name_ (`:` **Type**)?\] `)` (`:` **Type**)? `=>` **Expr**
+
+```moss
+bind narrow = (x: Double) => Single (w::f32_demote_f64(dbl(x)));
+bind narrow = (x) => Single (w::f32_demote_f64(dbl(x)));        # types from the declaration
+bind Stored.widen = () => Double (w::f64_promote_f32(sgl(this)));  # a method: `this` is the receiver
+bind debug = (message) => {};                                      # instead of a named `noop`
+bind scale = (x) => x * k;                                         # captures the local `k`
+```
+
+The body is an expression, so a block (`=> { ... }`, [D65]) for anything
+longer. A lambda anywhere else — a `let` initializer, an argument, a return
+value — is an error: there is still nothing to give it a type. The parser
+tells a lambda from a parenthesized expression or `()` by what follows the
+closing parenthesis (`=>`, or `:` then a type then `=>`).
+
+Typing. The bound declaration fixes the signature, read under the
+substitutions in force at the bind as for any provider ([D27]): parameters
+and result may be left unannotated, and an annotation that is given must
+match that signature exactly — no inference beyond reading it off. The
+parameter count must match. For a **method** bind (`bind T.m = ...`), the
+parameters are the method's own, excluding the receiver, and `this` in the
+body is the receiver, at the bind's receiver type; `This` names that type.
+For a plain fn bind there is no `this`.
+
+Capture. Everything free in the body is captured at the bind, as everything
+else in a bind is ([D26], [D66]):
+
+- a context item (fn, val, type, method) means what it means at the bind
+  site; a later rebind does not reach the lambda;
+- a local of the enclosing function (`let`, `var`, parameter) is captured by
+  value when the bind runs; a later assignment to a `var` is not seen, and
+  the body may not assign to a captured local.
+
+A lambda has no name, so it cannot call itself; recursion takes a named fn.
+
+Elaboration — pure sugar over the core calculus, so the soundness proof of
+`docs/design/core/CoreMoss.v` covers it unchanged (as for [D66]): each
+captured local `k` becomes a fresh val symbol bound to `k`'s value
+immediately before the bind (`EBindVal`), and the lambda becomes a fresh
+defined function, assuming the context items and vals it uses, whose body
+is the lambda's (with captured locals read through their vals), bound as an
+ordinary provider (`EBindFn`; for a method, `EBindMth`, whose rule
+`TBindMthR` already states that "the provider's first parameter is the
+receiver", and `EvMeth` evaluates it so: the synthesized provider takes
+`this` as that parameter). So the calculus never had [D54]'s restriction —
+that only an attached method sees its receiver is a limit of the surface
+language, which this entry lifts for anonymous providers. Nothing new
+exists at run time: the provider is a direct call, its captures travel as
+ordinary captured context.
+
+Consequences for the library: a provider that needs its receiver no longer
+needs a nominal wrapper to attach to, so the WASI bridge's wrappers stay only
+where a nominal type is wanted for its own sake ([D18] identity, [D15] union
+heads). Simplifying `lib/wasistd.moss` accordingly is a follow-up, not part
+of this entry. The VS Code grammar already highlights `=>`.
+
+*Implemented (October 2026).* Where the implementation forced a detail
+the text above did not fix, it is recorded here.
+
+- *Parsing.* A **Lambda** is parsed wherever a **Primary** may stand, so
+  that the parser's decision is local (two tokens of lookahead in the
+  self-hosted parser: `()` or `(x)` then `=>` or `:`, or `(x` then `:`
+  or `,`). "Anywhere else is an error" is therefore reported by
+  lowering, not by the parser: the bootstrap says "an anonymous function
+  may only be the right side of a fn or method bind (D70)", the
+  self-hosted compiler `e_lambda` (`!U`). A lambda as the right side of a
+  val or type bind is the same error (resp. the type bind's own). The
+  sexpr tag is `Z` (`ex_lambda`); a parameter's absent type prints `_`.
+- *What is captured.* The captured locals are the enclosing function's
+  locals in scope at the bind that the body names, found by a syntactic
+  scan of the body (nested lambdas included) that over-approximates —
+  a name the body binds again, or one naming a context item, may be
+  captured needlessly, which costs a val and changes nothing, since the
+  body's own binder shadows it. A lambda's own parameter names are never
+  captured. A functor's binds belong to a declaration, which has no
+  locals: a lambda there captures none. The elaborated provider assumes
+  *everything* in context at the bind (the draft says "the context items
+  and vals it uses"); both back ends already pass a function only the
+  vals it can reach, so the difference is not observable.
+- *`this`.* In a lambda bound to a fn, `this` is an error even inside a
+  method: the lambda does not capture an enclosing receiver. The
+  bootstrap's message gains that reason; the self-hosted compiler reports
+  `e_this` (`!T`), which it now also reports for `this` in any plain
+  function — it used to read the function's first parameter.
+- *Errors.* A parameter count or annotation that is not the bound
+  declaration's is reported against the lambda (bootstrap: "the
+  anonymous function bound to `step` takes 2 parameter(s), but `step`
+  takes 1 (D70)", "parameter `c` of the anonymous function bound to
+  `step` is annotated `Int`, but `step` declares `Char` there (D70)"),
+  and by the self-hosted compiler as `e_signature` (`!S`), named by the
+  bound symbol. An assignment to a captured local is "`k` is a local
+  captured by an anonymous function, which captures it by value and may
+  not assign it (D70)", or `e_lambda` named by the local. A lambda that
+  calls the fn it is bound to calls whatever that fn meant at the bind —
+  nothing, if the bind is the first (`tests/wasi/lambda_recursive.moss`).
+- *Bootstrap.* `check_bind` elaborates a lambda exactly as above: a
+  `BindVal` of a fresh val per captured local, then a `BindFn` of a fresh
+  `FnIR` whose body is `let k = <val k>; ...; body` and whose needs are
+  every key of the bind site's environment. A method lambda is an
+  `FnIR` with `has_this`, so the interpreter and the Wasm back end pass
+  the receiver as `this` — the calculus's first parameter. Making it run
+  in Wasm exposed a bug of [D65]'s: the back end typed every bare block
+  used as a value as an `i32`, so `{ 2.5 + 1.0 }` was invalid Wasm; a
+  block now yields its tail's layout.
+- *Self-hosted compiler.* `bind_lambda` (`src/codegen.moss`) synthesizes
+  one symbol per lambda node, generic environment and specialized
+  environment of the frame (a captured local's type is the frame's,
+  which is specialized): a declaration whose parameter and result types
+  are already-elaborated `k_ty_known` nodes — the receiver first and
+  unnamed for a method — a requirement list read off the generic
+  environment at the bind plus one fresh val per captured local
+  (`lower::set_needs`), and the uses `need_used` reads. At each bind the
+  captured locals are copied into fresh locals provided as those vals,
+  and the provider is bound as a defined one is, its captures taken by
+  `capture`. In its frame, each captured val's parameter is named by the
+  local it holds, which is how the body reads it and how an assignment
+  to it is found.
+- *[D54], as written, in both compilers.* A plain function may provide a
+  method; its signature is the method's declared one, which excludes the
+  receiver, and it cannot see the receiver. The bootstrap's front end and
+  interpreter already did so, but its Wasm back end passed the receiver
+  anyway and refused the call. The self-hosted compiler checked no
+  method bind's signature and passed every provider the receiver, so a
+  plain function written to take the receiver first was accepted (the
+  `narrow/p9c` probe printed `a`) and one written as D54 says produced
+  invalid Wasm. Both now evaluate the receiver and drop it for a plain
+  provider, and the self-hosted compiler checks a method provider's
+  signature against the method's, through the generic environment with
+  the bind's brackets and `This` the receiver (`e_signature`). Nothing
+  conflicts with the calculus: a plain provider is the lambda
+  `(xs) => p(xs)`, which ignores the receiver its elaboration takes
+  first. Standing tests: `tests/wasi/plain_provider{,_receiver,_this}.moss`.
+- *Standing tests.* `tests/wasi/lambda.moss` (interpreter, bootstrap
+  Wasm and self-hosted compiler: annotated and not, a `let` and a `var`
+  captured by value, a rebound fn and val not seen, a functor body, a
+  method seeing `this` through a wrapper and with none, a block body, one
+  lambda inside another, a float result), the errors
+  `tests/wasi/lambda_{arity,annotation,assign,outside,this,recursive}.moss`
+  in both compilers, the bootstrap goldens `tests/errors/lambda_*.moss`,
+  and the parser agreement snippets `LAMBDA_SNIPPETS`.
+- *The gain.* In the thesis's examples (rewritten in a scratch copy),
+  the logging example's `noop` becomes `(message) => {}` (91 to 89
+  lines) and the precision example's six one-line providers become
+  lambdas at their binds (115 to 104 lines); both print the same in
+  both compilers.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -2162,7 +2324,8 @@ methods via Q1–Q7, D41 keep `unit`, D43 consistent merging, D44 import
 collisions + `::` tighter than `.`, D45 concrete `Bool`, D46 aliases
 export, D47 operators are methods, D49 no automatic TCE — loops are the
 idiom, D52 `Wasi` primitive with `Std` a library over it, D53 signature
-vs structure, D54 method providers keep the nominal wrapper, D55 functors
+vs structure, D54 method providers keep the nominal wrapper (lifted
+for anonymous providers by D70), D55 functors
 as their own declaration applied with `bind`, D61 how a method call
 finds its method, D62 provisions keyed by the receiver's identity, D63
 records are the only product type, D64 bare import paths name library
@@ -2178,7 +2341,11 @@ receiver per element type, and `FloatList` in `Std` bound with `Float`,
 D71 a nominal's identity is its relevant parameters — the type symbols
 its payload mentions, by least fixpoint; applying any other is an error —
 with coherence checked on (receiver, method, θ) and on `dep_tys` in both
-compilers' front ends)
+compilers' front ends, D70 anonymous functions as a fn or method bind's
+right side only — `(params) => body`, typed by the bound declaration,
+capturing context at the bind and locals by value, `this` the receiver of
+a method bind — sugar over the calculus, with D54's plain-function
+method providers implemented as written in both compilers)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
