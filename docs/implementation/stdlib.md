@@ -53,7 +53,7 @@ Lists over `Wasi` are one implementation (D69): `lib/wasistd.moss`'s
 `packed_*` functions over a `Layout` — the element type, its width in
 4-byte words, and how to store and load one — with a layout functor per
 element type (`NumLayout`, `SingleLayout`, `DoubleLayout`) and a nominal
-receiver per element type (`Singles`, `Doubles`) whose five
+receiver per element type (`Ints`, `Singles`, `Doubles`) whose five
 one-line methods apply the layout and call the shared code. A list of
 another type costs a layout and a receiver; see D69 for why the receiver
 cannot yet be shared.

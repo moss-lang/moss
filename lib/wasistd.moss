@@ -329,27 +329,26 @@ assume Wasm, Branch {
 
   fn ints_addr(l: Ints): I32 { match l { Ints a => a } }
 
+  # Element `index` of an `Ints` block, for the two readers below that
+  # walk one directly: its layout is `NumLayout`'s, one word each.
   fn elem(data: I32, index: I32): I32 {
     w::i32_add(w::i32_add(data, eight()), w::i32_mul(index, four()))
   }
 
-  fn wasi_int_list(): Ints {
-    let handle = alloc(four());
-    let data = alloc(w::i32_add(eight(), w::i32_mul(eight(), four())));
-    w::i32_store(data, w::i32_zero);
-    w::i32_store(w::i32_add(data, four()), eight());
-    w::i32_store(handle, data);
-    Ints (handle)
-  }
+  # The packed list of D69 at the layout of `Num`, one word: the same
+  # code as `FloatList`'s, below.
+  fn wasi_int_list(): Ints { bind NumLayout; Ints (packed_list()) }
 
-  fn Ints.length(): Num { Num (w::i32_load(w::i32_load(ints_addr(this)))) }
+  fn Ints.length(): Num { packed_length(ints_addr(this)) }
 
   fn Ints.get(index: Num): Num {
-    Num (w::i32_load(elem(w::i32_load(ints_addr(this)), raw(index))))
+    bind NumLayout;
+    packed_get(ints_addr(this), index)
   }
 
   fn Ints.set(index: Num, value: Num) {
-    w::i32_store(elem(w::i32_load(ints_addr(this)), raw(index)), raw(value));
+    bind NumLayout;
+    packed_set(ints_addr(this), index, value);
   }
 
   type Strs I32;
@@ -386,25 +385,8 @@ assume Wasm, Branch {
   }
 
   fn Ints.push(value: Num) {
-    let handle = ints_addr(this);
-    var data = w::i32_load(handle);
-    let len = w::i32_load(data);
-    let cap = w::i32_load(w::i32_add(data, four()));
-    if i32_bool(w::i32_eq(len, cap)) {
-      # Grow by copying, since the bump allocator never frees.
-      let bigger = alloc(w::i32_add(eight(), w::i32_mul(cap, eight())));
-      w::i32_store(bigger, len);
-      w::i32_store(w::i32_add(bigger, four()), w::i32_mul(cap, two()));
-      var i = w::i32_zero;
-      while i32_bool(w::i32_lt_u(i, len)) {
-        w::i32_store(elem(bigger, i), w::i32_load(elem(data, i)));
-        i = w::i32_add(i, w::i32_one);
-      }
-      w::i32_store(handle, bigger);
-      data = bigger;
-    }
-    w::i32_store(elem(data, len), raw(value));
-    w::i32_store(data, w::i32_add(len, w::i32_one));
+    bind NumLayout;
+    packed_push(ints_addr(this), value);
   }
 
   fn Num.lt(rhs: Num): Bool { i32_bool(w::i32_lt_s(raw(this), raw(rhs))) }
@@ -501,10 +483,10 @@ assume Wasm, Branch {
 # how it is laid out in memory. A `Layout` is the element type, how many
 # 4-byte words one takes, and how to store one at an address and load it
 # back; the list is a handle holding the address of
-# [len | cap | elements...], as `Ints` is, with `len` and `cap` counted in
-# elements and each element `width` words. So an f32 takes four bytes and
-# an f64 eight, and nothing about the list knows which it holds.
-# `Singles` and `Doubles` are this code.
+# [len | cap | elements...], with `len` and `cap` counted in elements and
+# each element `width` words. So an f32 takes four bytes and an f64 eight,
+# and nothing about the list knows which it holds. `Ints`, `Singles` and
+# `Doubles` are all this code.
 type Item;
 
 assume Wasm {

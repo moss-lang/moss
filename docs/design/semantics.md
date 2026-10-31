@@ -1873,12 +1873,13 @@ words, `f64.store`) — so storage is packed, four bytes to an f32 and
 eight to an f64, and since each element is stored as its own scalar
 nothing is reinterpreted on the way in or out. The list is the block
 `Ints` always was, with `len` and `cap` counted in elements of `width`
-words; growth copies words and does not know what they hold. So a list
-of f32, f64 or any type that can say how it sits in words is the same
-implementation.
+words; growth copies words and does not know what they hold. `IntList`'s
+`Ints` is now this code at `NumLayout` (and `StrList` already delegated
+to `Ints`), so a list of `Int`, f32, f64 or any type that can say how it
+sits in words is the same implementation.
 
 *Receivers.* Each element type still has a nominal wrapper over the
-handle — `Singles`, `Doubles` — with five one-line attached
+handle — `Ints`, `Singles`, `Doubles` — with five one-line attached
 methods, each of which applies its layout and calls the shared code:
 
 ```moss
