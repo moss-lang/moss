@@ -70,14 +70,29 @@ distinct heads; a member type injects implicitly into any union listing it,
 and that is the only subtyping. Type identity is structural over
 (declaration, static type bindings): the same declaration applied the same
 way is the same type everywhere. A nominal type's identity arguments are
-the abstract type symbols its payload actually mentions.
+its *relevant parameters*: the abstract type symbols its payload mentions,
+directly or through the nominal types it names (less what their brackets
+bind), taken over mutually recursive declarations as the least set closed
+under that rule. A `unit` has none, so `unit Stop;` is one type whatever
+the enclosing `assume`s provide; an abstract `type T;` has none either.
 
-A declaration nested in `assume` blocks is implicitly parameterized by
-everything they name — this is the entire generics mechanism. A
+A function, val or context nested in `assume` blocks is implicitly
+parameterized by everything they name, and a nominal type by its relevant
+parameters among them — this is the entire generics mechanism. A
 square-bracket application like `Pair[T=Int]` must bind *all* of the
-target's requirements; an unapplied reference substitutes nothing and
+target's requirements, and on a type may bind only its relevant
+parameters: `Stop[Int=Char]`, or `W[T=Char]` where `W`'s payload does not
+mention `T`, is an error. An unapplied reference substitutes nothing and
 passes requirements through as the same symbols. There is nothing in
 between.
+
+A val, fn or method provision serves only the instantiation it was made
+at: for a val or fn, what each type symbol of its whole `assume` nesting
+denoted where it was assumed or bound; for a method, what the symbols its
+signature mentions denoted (its own application, beside the receiver).
+A call whose callee needs the item at a different instantiation — after
+`bind T = ...` rebinds a symbol, or through a method bind's own brackets —
+is rejected.
 
 ## Contexts and merging
 

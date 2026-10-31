@@ -568,6 +568,12 @@ parameters. A reference is either fully applied or not applied at all
 region refers to the same `T` symbol and thus stays coherent (the
 `inner.moss` shared-`T` idiom).
 
+*Narrowed for nominals by [D71].* For a tag, alias or unit the parameter
+list is its *relevant* parameters — the type symbols its payload
+mentions, closed through the nominals it mentions — not the whole
+nesting; binding any other symbol in brackets is an error. Functions,
+vals and contexts keep the whole nesting.
+
 **[D22] DECIDED (no partial application: total or absent).** Rev 1 proposed
 partial application and claimed `src/` used it "all over"; the designer
 challenged that claim, and re-inventory proves the challenge right. There
@@ -1540,7 +1546,9 @@ probing the bootstrap resolves both:
   shape it still accepts: a function that assumes `T` and `seed`, then
   rebinds `T` and calls a generic consumer of `seed`
   (`tests/wasi/incoherent_shadowed.moss`), because the old and new `T`
-  are one scalar wide. The bootstrap rejects it. Standing tests:
+  are one scalar wide. The bootstrap rejects it. (Both since done, by
+  [D71]: the self-hosted compiler checks coherence on the program as
+  written and rejects `incoherent_shadowed`.) Standing tests:
   `tests/wasi/incoherent_*.moss`, with `tests/wasi/coherent_rebound.moss`
   as the control.
 
@@ -2004,6 +2012,132 @@ compilers to the same output, which differs by precision (a thousand
 0.1s sum to 100 and to 99.999048); and `test_native_float_list`, the
 native `FloatList` interpreted and compiled.
 
+**[D71] DECIDED by the designer and implemented (a nominal's identity is its relevant parameters).** [D21]
+made a declaration's requirements its parameters, and the calculus took that
+literally: `TNom n θ` is total over every type requirement of `n`'s
+telescope. Both compilers had quietly narrowed it for nominals — a tag or
+alias is parameterized only by the abstract type symbols its payload
+mentions, a unit by none — so that `unit Stop;` under `assume Std` is one
+type and not one per binding of `Int`. That narrowing was never recorded,
+and the proof did not cover it. Two investigations settled what it costs
+(scratch reproducers `narrow/`, `narrow-rocq/`, `coh/`).
+
+*Decided.* A nominal's identity is its **relevant parameters**: the type
+symbols its payload mentions, closed through the nominals it mentions — the
+least fixpoint over mutually recursive declarations, not the first answer an
+in-progress traversal happens to give. A unit has none; an abstract type
+symbol has none (as in the calculus already, `TAbs t`). Functions, vals and
+contexts keep their whole assume nesting ([D21] unchanged for them).
+`Range[T=NameId]` is still how a relevant parameter is applied; applying an
+irrelevant one is an error.
+
+*Why it is sound.* The calculus is unchanged except that a tag's telescope
+is its relevant parameters. Mechanized (`Narrowing.v`, no `Admitted`, no
+axioms beyond the development's): value typing cannot tell apart two
+instantiations that agree on the relevant parameters
+(`vty_narrow_invariant`), every well-formed type at such a signature is
+already narrowed (`wf_ty_narrowed`), and soundness holds for it
+(`narrowed_soundness`, an instance of the existing theorem, which never
+needed a tag's telescope to be its whole assume nesting). These are now
+in the tracked development: `docs/design/core/Narrowing.v`, with the
+counterexample below as `KeyOnly.v`, both built and audited by the
+`core-calculus-rocq` flake check.
+
+*What it depends on: coherence keyed by θ.* The calculus is protected because
+a method item `IMth τ m θ` carries the method's own type arguments θ, and
+availability, satisfaction and T-Meth compare them; a provision serves only
+the instantiation it was made at ([D62]), and a val or fn requirement
+answered from the context must agree with it on the symbols the requirement
+mentions (`sat_at`). The implementations matched a method need by
+`(receiver, method)` alone, which is unsound with or without narrowing — a
+copy of the rules with that one change admits a program that goes wrong
+(`KeyOnly.v`), and the bootstrap compiled one that read a `Char` as an `Int`.
+Narrowing widens the hole, since it removes the receiver parameter that
+used to pin θ. So both compilers check coherence **in the front end**, on
+`(receiver, method, θ)` with θ restricted to the symbols the method's
+signature mentions, and on `dep_tys` for vals and fns. The bootstrap does
+since [a3f1797]; the self-hosted compiler no longer relies on its back
+end's type check of a specialization (`types::fits` in `emit_as`, where
+a same-width confusion — `Char` as `Int` — escaped it, and where [D16]
+says there are no checks).
+
+*What it changes, as specified behaviour.* Two provisions of a method whose
+signature mentions none of a narrowed receiver's dropped symbols, made under
+different bindings of those symbols, are one provision: the later bind
+shadows the earlier ([D25]). Under [D21]'s full identity they were two.
+(`narrow/p9b`, `p10`: every implementation prints `b`, which is now what
+the language says.) Requirements that differ only at such a receiver
+collide when a telescope is formed.
+
+*Phantom parameters: not now.* A handle whose payload mentions nothing but
+whose meaning depends on a symbol — [D69]'s `type Packed I32;` under
+`assume Elem` — has methods that do not all mention it (`.length(): Int`
+depends on the element width but not, in its signature, on `Elem`), so θ
+does not save it and it must keep a nominal wrapper per element type. An
+explicit phantom list on the declaration (`type Packed[Elem] I32;`,
+parameters = mentioned ∪ listed) would lift that; it stays an option for when
+the wrappers' cost matters.
+
+*Implementation.* Relevance by least fixpoint in both compilers; front-end
+coherence in the self-hosted compiler (closing `incoherent_shadowed`); the
+Rocq lemmas into `docs/design/core/`, with the paper's prose on nominal
+identity amended; [D21]'s text gains a pointer here.
+
+*Implemented (October 2026).* Where the implementation forced a detail
+the text above did not fix, it is recorded here.
+
+- *Relevance.* `type_requirements` (bootstrap) and `reqs_of`
+  (`src/types.moss`) solve a declaration and every tag or alias it
+  reaches as one least fixpoint, rescanning each payload against the
+  current answers until none changes. Both used to read an in-progress
+  entry as final, so `type A { b: B, t: T }; type B { a: A };` gave `B`
+  no parameters whenever `A` was asked first. Standing tests:
+  `tests/wasi/relevance_{a,b}_first.moss` (the same program in both
+  orders; `get_b(): B` mentions `T`, so assuming it without `T` is
+  [D20]'s error in both) and `relevance_applied.moss` (`B[T=Int]` is
+  legal).
+- *Irrelevant applications.* Brackets on a unit, an abstract type
+  symbol, or a tag or alias that bind a symbol outside its relevant
+  parameters are rejected: the bootstrap says "application of `W` binds
+  `T`, which is not one of its parameters (the type symbols its payload
+  mentions: `Char`; D71)", the self-hosted compiler reports
+  `e_irrelevant` (`!Q`), named by the symbol. Both used to ignore such a
+  binding (the self-hosted compiler rejected brackets on a unit as
+  `e_apply`). Two standing tests wrote one and are corrected:
+  `tests/wasi/applied.moss`, whose comment said such a binding "changes
+  nothing" — `Box`'s payload now mentions `Elem`, so the application
+  substitutes — and `incoherent_rebound.moss`, whose `W[T=Int]` bound
+  nothing `W` depends on. Nothing in `src/`, `lib/` or `examples/` wrote
+  one. The self-hosted compiler also read a type bind's right side
+  without its brackets (`bind U = Box[Elem=Char]` bound `Box`); it now
+  applies them. Standing tests: `tests/wasi/irrelevant_{unit,tag}.moss`.
+- *Self-hosted coherence.* The self-hosted compiler has no typing pass
+  separate from emission, so the check runs where the back end resolves
+  a call, but on the program *as written*: each frame keeps a generic
+  environment beside its specialized one — its declaration's own, where
+  an assumed type is itself, extended by the body's binds — and every
+  val, fn and method provision row records the app it was made at (an
+  assumed item only what its brackets bind; a bound one in full). A call
+  of a defined function or method, and a bind of a defined provider or
+  (D66) of a contextual fn, compares the callee's app for each need,
+  read through the generic environment, with the provision's, symbol for
+  symbol, as `require_needs` does. A mismatch is `e_incoherent` (`!R`),
+  named by the item (`!R tests/wasi/incoherent_shadowed.moss seed`). So
+  the answer does not depend on what the frame is specialized to; but,
+  as for every other check of this compiler, only functions the program
+  reaches are checked. `types::fits` in `emit_as` stays: it is this
+  compiler's whole check of expression types ([D17];
+  `tests/wasi/misfit.moss` is an ordinary type error only it catches),
+  and is no longer what catches an incoherent provision. A
+  generation of the compiler compiling itself goes from 0.68 to 0.77
+  seconds.
+- *An assumed item is at the function's whole instantiation.* The
+  bootstrap recorded an assumed item's instantiation when the item was
+  added, so in `assume seed, T` it read `T` as not in force for `seed`,
+  and refused a call between two functions of that block. Both compilers
+  now read an assumed item's symbols against the finished environment
+  (`tests/wasi/coherent_assume_order.moss`).
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -2018,7 +2152,7 @@ string literals (when diagnostics/codegen make embedded strings
 unavoidable — *not* the prelude path, see [D52]) · methods on union-headed *aliases* in general ([D47] — solved
 for `Bool` by [D45]'s nominal wrapper) · D29 the `val` half of functors ·
 [D50]'s v0 restrictions on defined vals · a phantom type parameter, which
-would let [D69]'s lists share one receiver declaration
+would let [D69]'s lists share one receiver declaration ([D71]: not now)
 
 Everything else is **DECIDED**: D1–D28 · D30–D49 (D3/D4 by designer fiat,
 D13 option.moss → alias, D16 no post-monomorphization checks, D22 total or
@@ -2040,7 +2174,11 @@ partial-order precedence, with no `&&`/`||`, and numeric literals as
 nothing but arithmetic over `zero`, `one`, `.add`, `.mul`, `float` and
 `.div`, meaning whatever that bound arithmetic computes, D69 a packed
 list for any element type — one implementation over a layout, a nominal
-receiver per element type, and `FloatList` in `Std` bound with `Float`)
+receiver per element type, and `FloatList` in `Std` bound with `Float`,
+D71 a nominal's identity is its relevant parameters — the type symbols
+its payload mentions, by least fixpoint; applying any other is an error —
+with coherence checked on (receiver, method, θ) and on `dep_tys` in both
+compilers' front ends)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
