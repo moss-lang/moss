@@ -1,3 +1,4 @@
+import os
 import unittest
 from pathlib import Path
 
@@ -43,6 +44,63 @@ def run(files, entry="main.moss", args=None):
 
 _DRIVERS: dict = {}
 
+# A directory that compiled drivers are shared through, between processes
+# and, if it outlives them, between runs. Unset — as under a plain
+# `python3 -m unittest` — each process compiles its own; tests/parallel.py
+# sets it so that its workers compile each driver once among them.
+DRIVER_CACHE_ENV = "MOSS_TEST_DRIVER_CACHE"
+
+
+def _driver_key(driver: str) -> str:
+    """What a compiled driver depends on: its text, the Moss it imports
+    (all of it lives in src/ and lib/), and the bootstrap compiling it."""
+    import hashlib
+
+    digest = hashlib.sha256(driver.encode("utf-8"))
+    roots = [REPO / "src", REPO / "lib", REPO / "bootstrap/mossc"]
+    for path in sorted(p for root in roots for p in root.rglob("*") if p.is_file()):
+        if "__pycache__" in path.parts:
+            continue
+        digest.update(b"\0" + str(path.relative_to(REPO)).encode("utf-8") + b"\0")
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def compile_driver(driver: str) -> str:
+    """The path of `driver` compiled to Wasm: once per process, and once
+    per cache directory when there is one."""
+    path = _DRIVERS.get(driver)
+    if path is not None:
+        return path
+    from .test_build import compile_wasm, wasm_file
+
+    cache = os.environ.get(DRIVER_CACHE_ENV)
+    if not cache:
+        path = wasm_file(compile_wasm({"main.moss": driver}))
+    else:
+        target = Path(cache).resolve() / f"{_driver_key(driver)}.wasm"
+        # Whoever takes the lock first compiles; the rest wait for it and
+        # find the module there. Written to a private name and renamed, so
+        # nobody ever sees half a module.
+        with open(target.with_suffix(".lock"), "w") as lock:
+            _lock(lock)
+            if not target.exists():
+                partial = target.with_suffix(f".{os.getpid()}.partial")
+                partial.write_bytes(compile_wasm({"main.moss": driver}))
+                os.replace(partial, target)
+        path = str(target)
+    _DRIVERS[driver] = path
+    return path
+
+
+def _lock(file):
+    """Hold an exclusive lock on `file` until it is closed."""
+    try:
+        import fcntl
+    except ImportError:  # Windows: no flock; at worst two compile one driver.
+        return
+    fcntl.flock(file, fcntl.LOCK_EX)
+
 
 def run_driver(driver, args, expect_code=0, argv0=None, preopen="."):
     """Run a self-hosted driver as Wasm rather than interpreting it.
@@ -56,12 +114,9 @@ def run_driver(driver, args, expect_code=0, argv0=None, preopen="."):
     """
     import subprocess
 
-    from .test_build import compile_wasm, wasm_file, wasmtime
+    from .test_build import wasmtime
 
-    path = _DRIVERS.get(driver)
-    if path is None:
-        path = wasm_file(compile_wasm({"main.moss": driver}))
-        _DRIVERS[driver] = path
+    path = compile_driver(driver)
     command = [wasmtime()]
     if argv0 is not None:
         command += ["--argv0", argv0]
@@ -2753,3 +2808,8 @@ class TestSelfHostedNeeds(unittest.TestCase):
                 mine, theirs = self.moss_rows(entry), self.bootstrap_rows(entry)
                 self.assertEqual(len(mine), len(theirs))
                 self.assertEqual(mine, theirs)
+
+
+# Every driver `run_driver` runs, so tests/parallel.py can start compiling
+# them all before any test asks. One missing here costs only that wait.
+DRIVERS = (PARSE_DRIVER, SCOPE_DRIVER, COMPILER_DRIVER, NEEDS_DRIVER)

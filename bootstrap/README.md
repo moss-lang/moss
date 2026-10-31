@@ -77,7 +77,7 @@ Python interpreter remains a test oracle for the compiler pipeline; the native
 ## Tests
 
 ```sh
-cd bootstrap && python3 -m unittest
+cd bootstrap && python3 -m tests.parallel  # or, one at a time: python3 -m unittest
 ```
 
 The parser tests include a corpus check over every live `.moss` file in

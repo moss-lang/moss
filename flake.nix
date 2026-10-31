@@ -424,7 +424,9 @@
               ''
                 export HOME=$TMPDIR # wasmtime wants a writable cache directory
                 cd ${./.}/bootstrap
-                python3 -m unittest
+                # NIX_BUILD_CORES is 0 when the build may use every core,
+                # which is also what the runner takes 0 to mean.
+                python3 -m tests.parallel --jobs "''${NIX_BUILD_CORES:-0}"
                 touch $out
               '';
           vscode = self.packages.${pkgs.stdenv.hostPlatform.system}.vscode;

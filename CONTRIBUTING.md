@@ -12,13 +12,14 @@ The compiler is a dependency-free Python program under
 Wasmtime, which the Wasm backend tests require):
 
 ```sh
-cd bootstrap && python3 -m unittest
+cd bootstrap && python3 -m tests.parallel
 ```
 
-That takes about forty-five seconds, and the single most expensive thing
-in it is `TestSelfHostedFixpoint`: two generations of the self-hosted
-compiler compiling its own source, which is the check that it is
-self-hosting. To iterate on anything else, name what you are working on —
+That spreads the tests over a worker process per core, and is
+what the flake's `bootstrap` check runs; `python3 -m unittest` runs the
+same tests one after another, some seven times slower. The floor is the
+slowest single test, which the runner lists at the end. To iterate on
+anything else, name what you are working on —
 `python3 -m unittest tests.test_run` — and run the whole suite before you
 commit. What a generation costs and where it goes is in
 [`docs/implementation/selfhosting.md`](docs/implementation/selfhosting.md).
