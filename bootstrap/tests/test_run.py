@@ -2642,6 +2642,39 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 out = self.compile_with_moss(entry)
                 self.assertEqual(out.decode("utf-8", "replace"), report)
 
+    MATCH_PATTERN_FORMS = {
+        # entry: (the bootstrap's message, the self-hosted report)
+        "tests/wasi/match_not_pattern.moss": (
+            "`red` is not a matchable pattern",
+            "?S tests/wasi/match_not_pattern.moss pick red\n",
+        ),
+        "tests/wasi/match_unit_payload.moss": (
+            "`Red` is not a tag",
+            "?S tests/wasi/match_unit_payload.moss pick Red\n",
+        ),
+    }
+
+    def test_a_pattern_is_well_formed_by_the_bootstrap(self):
+        """D34: a single name is a binder only when it names nothing in
+        scope, and otherwise must be a unit or a tag; a pattern with a
+        payload, or a record of fields, opens a tag."""
+        from .test_build import compile_wasm
+
+        for entry, (message, _) in self.MATCH_PATTERN_FORMS.items():
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+
+    @unittest.expectedFailure
+    def test_a_pattern_is_well_formed_by_the_self_hosted_compiler(self):
+        """The same programs. The self-hosted compiler bound a name that
+        resolves to a function, and a unit's payload, which is `()`."""
+        for entry, (_, report) in self.MATCH_PATTERN_FORMS.items():
+            with self.subTest(entry=entry):
+                out = self.compile_with_moss(entry)
+                self.assertEqual(out.decode("utf-8", "replace"), report)
+
     MATCH_EXHAUSTIVE = {
         # entry: (the bootstrap's message, the self-hosted report)
         "tests/wasi/match_not_exhaustive.moss": (
