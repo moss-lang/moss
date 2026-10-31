@@ -2702,7 +2702,6 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     compile_wasm({}, entry=entry)
                 self.assertIn(message, str(caught.exception))
 
-    @unittest.expectedFailure
     def test_branches_agree_by_the_self_hosted_compiler(self):
         """The same programs, compared as written (D80)."""
         for entry, (_, report) in self.BRANCHES_DISAGREE.items():
@@ -2720,7 +2719,6 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertEqual(run({}, entry=entry), "DEEIAB\n")
         self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "DEEIAB\n")
 
-    @unittest.expectedFailure
     def test_a_diverging_branch_agrees_by_the_self_hosted_compiler(self):
         """The same program. A diverging branch is typed `|`, and where
         the `if` or `match` yields a value, a branch that cannot fall

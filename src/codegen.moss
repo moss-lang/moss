@@ -2586,15 +2586,17 @@ assume Std {
           cg_error(c_break(), ast::none());
           return ty_none();
         }
-        op_br(body, cg_depth.read() - cg_loops.get(cg_ntop.read() - 1));
-        return ty_none();
+        let top = 2 * (cg_ntop.read() - 1);
+        cg_loops.set(top + 1, 1);
+        op_br(body, cg_depth.read() - cg_loops.get(top));
+        return types::ty_never();
       }
       if k == ast::k_ex_return() {
         if ast::is_some(ast::a_of(e)) {
           emit_as(body, ast::a_of(e), m, cg_ret.read());
         }
         op_return(body);
-        return ty_none();
+        return types::ty_never();
       }
       if k == ast::k_ex_this() {
         if !has_this(m) {
@@ -3028,6 +3030,12 @@ assume Std {
     # discriminant goes in ahead of it. A unit member needs none of that
     # — the code *is* the value — so it only wants padding.
     fn inject(body: IntList, valbuf: IntList, got: Int, want: Int) {
+      if is_never(got) {
+        # It never arrives, so it is any type at all (D15).
+        push_bytes(body, valbuf);
+        settle(body, got, want);
+        return ();
+      }
       if width(want) <= width(got) {
         push_bytes(body, valbuf);
         return ();
@@ -3540,14 +3548,30 @@ assume Std {
       let pmark = pv_top.read();
       let emark = cg_env.read();
       let gmark = cg_genv.read();
+      var diverged = false;
       var i = 0;
       while i < ast::b_of(e) {
-        emit_stmt(body, ast::kid_at(ast::a_of(e), i), m);
+        diverged = emit_stmt(body, ast::kid_at(ast::a_of(e), i), m);
         i = i + 1;
       }
       var ty = ty_none();
       if ast::is_some(ast::c_of(e)) {
         ty = emit_as(body, ast::c_of(e), m, want);
+      } else {
+        # Without a tail a block yields `()`, or `|` if its last statement
+        # cannot fall through; held to what is expected, as the
+        # bootstrap's `synth_block` holds it.
+        if diverged {
+          ty = types::ty_never();
+        }
+        if ast::is_some(want) {
+          if !types::fits(ty, want) {
+            cg_error(c_bad_type(), ast::none());
+          } else if diverged {
+            settle(body, ty, want);
+            ty = want;
+          }
+        }
       }
       check_escape(ty, smark);
       es_top.write(smark);
@@ -3596,18 +3620,113 @@ assume Std {
       cg_depth.write(cg_depth.read() + 1);
       let then = int_list();
       let ty = emit_as(then, ast::b_of(e), m, want);
-      op_if_ty(body, ty);
-      push_bytes(body, then);
-      if ast::is_some(ast::c_of(e)) {
-        op_else(body);
-        emit_as(body, ast::c_of(e), m, want);
-      } else if width(ty) > 0 {
-        # An `if` that yields a value has to have an `else` to yield it.
-        cg_error(c_bad_type(), ast::none());
+      if !ast::is_some(ast::c_of(e)) {
+        op_if_ty(body, ty);
+        push_bytes(body, then);
+        if width(ty) > 0 {
+          # An `if` that yields a value has to have an `else` to yield it.
+          cg_error(c_bad_type(), ast::none());
+        } else if ast::is_some(want) {
+          if !types::fits(ty_none(), want) {
+            cg_error(c_bad_type(), ast::none());
+          }
+        }
+        op_end(body);
+        cg_depth.write(cg_depth.read() - 1);
+        return ty_none();
       }
+      # The block type is written as soon as it is known, before the
+      # `else` is emitted, as it always was: emitting can add a function
+      # type, and the order they are added in is their numbering.
+      let head = int_list();
+      let tj = branch_ty(ast::b_of(e), ty, want);
+      if !is_never(tj) {
+        op_if_ty(head, tj);
+      }
+      let els = int_list();
+      let ety = emit_as(els, ast::c_of(e), m, want);
+      let out = result_ty(tj, branch_ty(ast::c_of(e), ety, want), want);
+      if is_never(tj) {
+        op_if_ty(head, out);
+      }
+      push_bytes(body, head);
+      push_bytes(body, then);
+      settle(body, ty, out);
+      op_else(body);
+      push_bytes(body, els);
+      settle(body, ety, out);
       op_end(body);
       cg_depth.write(cg_depth.read() - 1);
-      ty
+      finish_ty(out, want)
+    }
+
+    fn is_never(t: Int): Bool { types::is_kind(t, types::kd_never()) }
+
+    # The type a branch of an `if` or an arm of a `match` yields, for
+    # comparing with the others, as the bootstrap's `block_type` has it:
+    # a block's tail's, and `()` for a block without one, even when its
+    # last statement cannot fall through. With a type expected, each was
+    # checked against it instead.
+    fn branch_ty(node: Int, got: Int, want: Int): Int {
+      if ast::is_some(want) {
+        return got;
+      }
+      if ast::kind_of(node) == ast::k_ex_block() {
+        if !ast::is_some(ast::c_of(node)) {
+          return ty_none();
+        }
+      }
+      got
+    }
+
+    # The type of an `if` or a `match` so far, `acc`, with one more
+    # branch's, `t`. With nothing expected the branches agree, or one
+    # diverges, as the bootstrap's `join` has it — compared as written
+    # (D80), so the same in every specialization. With a type expected,
+    # the first branch that does not diverge gives the layout.
+    fn result_ty(acc: Int, t: Int, want: Int): Int {
+      if is_never(acc) {
+        return t;
+      }
+      if is_never(t) {
+        return acc;
+      }
+      if !ast::is_some(want) {
+        if acc != t {
+          cg_error(c_bad_type(), ast::none());
+        }
+      }
+      acc
+    }
+
+    # With a type expected, an `if` or a `match` whose every branch
+    # diverges still has that type, as in the bootstrap.
+    fn finish_ty(out: Int, want: Int): Int {
+      if ast::is_some(want) {
+        if is_never(out) {
+          return want;
+        }
+      }
+      out
+    }
+
+    # A branch that diverges, where the whole yields a value: a call of a
+    # function that returns `|` falls through as far as the validator can
+    # see, so it is told.
+    fn settle(body: IntList, got: Int, out: Int) {
+      if is_never(got) {
+        if width(out) > 0 {
+          op_unreachable(body);
+        }
+      }
+    }
+
+    fn push_slice(out: IntList, from: IntList, start: Int, end: Int) {
+      var i = start;
+      while i < end {
+        out.push(from.get(i));
+        i = i + 1;
+      }
     }
 
     # `match`, for the two shapes this back end covers. When the
@@ -3632,7 +3751,7 @@ assume Std {
         # `match e {}` requires `e : |` (D34): evaluate and diverge.
         emit_expr(body, ast::a_of(e), m);
         op_unreachable(body);
-        return ty_none();
+        return finish_ty(types::ty_never(), want);
       }
       # The shape is the specialization's; the arms are typed generically.
       if types::head_count(spec(sty)) == 1 {
@@ -3646,10 +3765,12 @@ assume Std {
     fn emit_single_arm(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
       let mark = lc_visible.read();
       emit_expr(body, ast::a_of(e), m);
-      let ty = emit_single_arm_body(body, ast::kid_at(ast::b_of(e), 0), m, sty, want);
+      let arm = ast::kid_at(ast::b_of(e), 0);
+      let ty = emit_single_arm_body(body, arm, m, sty, want);
       close_scope(mark);
-      check_arms(e, m, sty, ast::none(), 1, want);
-      ty
+      let out = check_arms(e, m, sty, ast::none(), 1, want, branch_ty(ast::b_of(arm), ty, want));
+      settle(body, ty, out);
+      finish_ty(out, want)
     }
 
     fn emit_single_arm_body(body: IntList, arm: Int, m: Int, sty: Int, want: Int): Int {
@@ -3665,21 +3786,28 @@ assume Std {
     # runs — after the first where it has one head, after a binder or `_`
     # in a union (`tmp` holds the scrutinee there; none for one head).
     # On a scrutinee of abstract type both happen, whatever it is
-    # specialized to. They are walked as dead code, into nothing.
-    fn check_arms(e: Int, m: Int, sty: Int, tmp: Int, from: Int, want: Int) {
+    # specialized to. They are walked as dead code, into nothing, and
+    # what they yield joins `acc`, the type of the arms before them.
+    fn check_arms(
+      e: Int, m: Int, sty: Int, tmp: Int, from: Int, want: Int, acc: Int
+    ): Int {
+      var out = acc;
       var i = from;
       while i < ast::c_of(e) {
         let was = dead();
         let junk = int_list();
         let arm = ast::kid_at(ast::b_of(e), i);
+        var ty = ty_none();
         if ast::is_some(tmp) {
-          emit_match_arm_body(junk, arm, m, sty, tmp, want);
+          ty = emit_match_arm_body(junk, arm, m, sty, tmp, want);
         } else {
-          emit_single_arm_body(junk, arm, m, sty, want);
+          ty = emit_single_arm_body(junk, arm, m, sty, want);
         }
         alive(was);
+        out = result_ty(out, branch_ty(ast::b_of(arm), ty, want), want);
         i = i + 1;
       }
+      out
     }
 
     # D34: a unit or tag pattern — bare, binding a payload, or
@@ -3851,36 +3979,87 @@ assume Std {
       let tmp = reveal(ast::none(), sty);
       push_bytes(body, scrutinee);
       store_local(body, tmp);
-      emit_match_arms(body, e, m, sty, tmp, 0, want)
+      emit_match_arms(body, e, m, sty, tmp, want)
     }
 
+    # The arms this shape runs, up to the first that matches anything,
+    # as a chain of `if`s: arm `i` is the `then` of the `i`th, and the
+    # last the `else` of the one before. Each is emitted, in order and at
+    # its own depth, before the chain is put together, since with nothing
+    # expected its block type is what all the arms agree on. What is
+    # known early is still written early — a test's unit code, a block
+    # type — since both number things in the order they are first met.
+    # Into `code`, per arm: its test, its body, its block type, at the
+    # offsets in `at`.
     fn emit_match_arms(
-      body: IntList, e: Int, m: Int, sty: Int, tmp: Int, i: Int, want: Int
+      body: IntList, e: Int, m: Int, sty: Int, tmp: Int, want: Int
     ): Int {
-      let arm = ast::kid_at(ast::b_of(e), i);
-      let head = arm_head_any(ast::a_of(arm), m);
-      var last = i + 1 >= ast::c_of(e);
-      if !ast::is_some(head) {
-        last = true;
+      var last = ast::c_of(e) - 1;
+      var i = 0;
+      while i < last {
+        if ast::is_some(arm_head_any(ast::a_of(ast::kid_at(ast::b_of(e), i)), m)) {
+          i = i + 1;
+        } else {
+          last = i;
+        }
       }
-      if last {
-        let ty = emit_match_arm_body(body, arm, m, sty, tmp, want);
-        check_arms(e, m, sty, tmp, i + 1, want);
-        return ty;
+      let base = cg_depth.read();
+      let code = int_list();
+      let at = int_list();
+      let tys = int_list();
+      var out = types::ty_never();
+      i = 0;
+      while i <= last {
+        let arm = ast::kid_at(ast::b_of(e), i);
+        at.push(code.length());
+        if i < last {
+          op_local_get(code, local_slot(tmp, 0));
+          op_i32_const(code, types::unit_code(arm_head_any(ast::a_of(arm), m)));
+          code.push(70);
+          cg_depth.write(base + i + 1);
+        } else {
+          cg_depth.write(base + i);
+        }
+        at.push(code.length());
+        let ty = emit_match_arm_body(code, arm, m, sty, tmp, want);
+        tys.push(ty);
+        at.push(code.length());
+        let tj = branch_ty(ast::b_of(arm), ty, want);
+        if i < last {
+          if !is_never(tj) {
+            op_if_ty(code, tj);
+          }
+        }
+        at.push(code.length());
+        out = result_ty(out, tj, want);
+        i = i + 1;
       }
-      op_local_get(body, local_slot(tmp, 0));
-      op_i32_const(body, types::unit_code(head));
-      body.push(70);
-      cg_depth.write(cg_depth.read() + 1);
-      let then = int_list();
-      let ty = emit_match_arm_body(then, arm, m, sty, tmp, want);
-      op_if_ty(body, ty);
-      push_bytes(body, then);
-      op_else(body);
-      emit_match_arms(body, e, m, sty, tmp, i + 1, want);
-      op_end(body);
-      cg_depth.write(cg_depth.read() - 1);
-      ty
+      out = check_arms(e, m, sty, tmp, last + 1, want, out);
+      cg_depth.write(base);
+      i = 0;
+      while i <= last {
+        let k = i * 4;
+        push_slice(body, code, at.get(k), at.get(k + 1));
+        if i < last {
+          if at.get(k + 2) == at.get(k + 3) {
+            op_if_ty(body, out);
+          } else {
+            push_slice(body, code, at.get(k + 2), at.get(k + 3));
+          }
+        }
+        push_slice(body, code, at.get(k + 1), at.get(k + 2));
+        settle(body, tys.get(i), out);
+        if i < last {
+          op_else(body);
+        }
+        i = i + 1;
+      }
+      i = 0;
+      while i < last {
+        op_end(body);
+        i = i + 1;
+      }
+      finish_ty(out, want)
     }
 
     fn emit_match_arm_body(
@@ -5921,16 +6100,28 @@ assume Std {
       ast::none()
     }
 
+    # Two entries a loop: the depth a `break` leaves it to, and whether
+    # one does — a `loop` that no `break` leaves does not fall through.
     fn push_loop(level: Int) {
-      if cg_ntop.read() < cg_loops.length() {
-        cg_loops.set(cg_ntop.read(), level);
+      let top = 2 * cg_ntop.read();
+      if top < cg_loops.length() {
+        cg_loops.set(top, level);
+        cg_loops.set(top + 1, 0);
       } else {
         cg_loops.push(level);
+        cg_loops.push(0);
       }
       cg_ntop.write(cg_ntop.read() + 1);
     }
 
-    fn emit_stmt(body: IntList, s: Int, m: Int) {
+    fn loop_broken(): Bool {
+      cg_loops.get(2 * cg_ntop.read() - 1) != 0
+    }
+
+    # Emits a statement, and says whether it cannot fall through, as the
+    # bootstrap's `check_stmt` decides it: a `loop` no `break` leaves, or
+    # an expression of type `|`.
+    fn emit_stmt(body: IntList, s: Int, m: Int): Bool {
       let k = ast::kind_of(s);
       if k == ast::k_st_let() {
         emit_binding(body, s, m);
@@ -5979,14 +6170,19 @@ assume Std {
         cg_depth.write(cg_depth.read() - 1);
         op_end(body);
         cg_depth.write(cg_depth.read() - 1);
+        let broken = loop_broken();
         cg_ntop.write(cg_ntop.read() - 1);
+        return !broken;
       } else if k == ast::k_st_bind() {
         walk_binds(body, s, m, bw_emit());
       } else if k == ast::k_st_expr() {
-        drop_value(body, emit_expr(body, ast::a_of(s), m));
+        let ty = emit_expr(body, ast::a_of(s), m);
+        drop_value(body, ty);
+        return is_never(ty);
       } else {
         cg_error(c_unsupported(), ast::none());
       }
+      false
     }
 
     fn emit_binding(body: IntList, s: Int, m: Int) {
