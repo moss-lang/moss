@@ -1,0 +1,36 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: `bind F;` applies whatever `F` is bound to, and here nothing is:
+# `demo` neither assumes `Trace` nor binds it. That is the ordinary error
+# for a requirement that is not available in the context (D20).
+
+assume Std {
+  fn note(value: Int);
+  fn ignore(value: Int) {}
+}
+
+functor Trace: Std -> note;
+
+functor Quiet: Std -> note {
+  bind note = ignore;
+}
+
+assume Std {
+  fn demo() {
+    bind Trace;
+    note(1);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    {
+      bind Trace = Quiet;
+    }
+    demo();
+  }
+}

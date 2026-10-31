@@ -424,12 +424,16 @@ context Wasm =
   i64_reinterpret_f64,
   f32_reinterpret_i32,
   f64_reinterpret_i64,
+
+  Heap,
 ;
 
-# A functor with no body is provided by the platform, and only this file
-# may declare one. `bind Heap;` needs `Wasm` and a `Boxed` in context, and
-# provides `.boxed` at receiver `Boxed` and `.deref` at `Ref[Boxed=...]`
-# for whatever `Boxed` is there (D75): to box two types, bind `Boxed` to
-# each and apply `Heap` after each. Code that has not applied it cannot
-# box anything.
+# An abstract functor (D78), which the platform provides, as it provides
+# this file's abstract fns. `bind Heap;` needs `Wasm` and a `Boxed` in
+# context, and provides `.boxed` at receiver `Boxed` and `.deref` at
+# `Ref[Boxed=...]` for whatever `Boxed` is there (D75): to box two types,
+# bind `Boxed` to each and apply `Heap` after each. Code that has not
+# applied it cannot box anything. Like any abstract functor it may be
+# assumed on its own, and bound to another with its signature
+# (`bind Alloc = Heap;`).
 functor Heap: Wasm, Boxed -> Boxed.boxed, Ref.deref;

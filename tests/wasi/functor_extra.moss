@@ -1,0 +1,37 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: a functor bound to an abstract one must provide exactly its
+# result. `Trace` promises `note`; `Chatty` provides `note` and also
+# `flush`, which an application of `Trace` did not ask for — and which
+# would shadow whatever `flush` the caller had. The bind is refused
+# where it is written.
+
+assume Std {
+  fn note(value: Int);
+  fn flush();
+  fn ignore(value: Int) {}
+  fn nothing() {}
+}
+
+functor Trace: Std -> note;
+
+functor Chatty: Std -> note, flush {
+  bind note = ignore;
+  bind flush = nothing;
+}
+
+assume Std {
+  fn demo() {
+    bind Trace = Chatty;
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

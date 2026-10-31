@@ -347,6 +347,30 @@ class Interp:
             frame.ctx[stmt.key] = Closure(fn, captured, theta)
         elif isinstance(stmt, ir.BindPrim):
             frame.ctx[stmt.key] = gc_prim(stmt)
+        elif isinstance(stmt, ir.BindFunctor):
+            # D78: which functor the abstract one now is — a functor with
+            # a body, or whatever another abstract functor is here.
+            if stmt.functor is not None:
+                frame.ctx[stmt.key] = stmt.functor
+            else:
+                frame.ctx[stmt.key] = frame.ctx[stmt.source]
+        elif isinstance(stmt, ir.ApplyFunctor):
+            bound = frame.ctx[stmt.key]
+            for functor, stmts in stmt.branches:
+                if functor is bound:
+                    break
+            else:
+                raise MossPanic(f"`{stmt.key.name}` is bound to no functor it can be")
+            saved = frame.ctx
+            frame.ctx = dict(saved)
+            try:
+                for inner in stmts:
+                    self.exec_stmt(inner, frame)
+                made = frame.ctx
+            finally:
+                frame.ctx = saved
+            for key in stmt.outs:
+                frame.ctx[key] = made[key]
         elif isinstance(stmt, ir.While):
             while self.truthy(self.eval(stmt.cond, frame)):
                 try:
@@ -683,6 +707,13 @@ def native_env(program: Program, args: list | None = None) -> dict:
         # assuming `Wasm` compiles but does not interpret.
         env[lib["wasm"].names["i32_zero"]] = IntVal(0)
         env[lib["wasm"].names["i32_one"]] = IntVal(1)
+        # D78: the platform provides the abstract functors lib/wasm.moss
+        # declares (D75's `Heap`). A functor's binding is which functor it
+        # is; the platform's is the functor itself, whose application
+        # makes primitive provisions.
+        for sym in lib["wasm"].names.values():
+            if sym.kind == SymKind.FUNCTOR and sym.decl.binds is None:
+                env[sym] = sym
     if "string" in lib:
         string = lib["string"]
         string_ty = string.names["String"]

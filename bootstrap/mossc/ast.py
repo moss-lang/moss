@@ -178,9 +178,10 @@ class Ctxdef:
 class Functordef:
     """D55: a map from one structure to another. `args` is the signature it
     needs in context where it is applied, `result` the signature its body
-    provides, and the body is the binds that provide it — or `None` for a
-    functor declared without one, `functor F: A -> B;`, which the platform
-    provides (D75)."""
+    provides, and the body is the binds that provide it — or `None` for an
+    *abstract* functor, `functor F: A -> B;` (D78): a requirement, which a
+    context provides by binding a functor to it (`bind F = G;`), and the
+    platform provides for the ones lib/wasm.moss declares (D75's `Heap`)."""
 
     name: str
     args: list[Spec]

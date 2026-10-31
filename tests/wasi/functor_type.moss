@@ -1,0 +1,20 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78, as implemented: an abstract functor's result may hold vals, fns,
+# methods and abstract functors, but not a type. A binding of one serves
+# every instantiation of its inputs and the code that applies it is
+# checked once, so a type it produced would be a different type behind
+# each binding, and nothing can name it. Refused where it is declared.
+
+type Scalar;
+
+functor Pick: Std -> Scalar;
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+  }
+}

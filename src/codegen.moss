@@ -1162,6 +1162,7 @@ assume Std {
         if ast::is_some(value) {
           uw_node(f, value, m);
           uw_provider(f, value, m);
+          uw_functor_bind(ast::a_of(item), value, m, depth);
         } else {
           let spec = ast::a_of(item);
           if ast::is_some(ast::a_of(spec)) {
@@ -1169,6 +1170,11 @@ assume Std {
             if ast::is_some(fu) {
               if prog::sym_kind.get(fu) == prog::sk_functor() {
                 let d = prog::sym_decl.get(fu);
+                if !ast::is_some(ast::fu_binds(d)) {
+                  # D78: applying an abstract functor reaches whatever
+                  # it can be bound to (`uw_functor_bind`).
+                  uw_row(f, fu);
+                }
                 var j = 0;
                 while j < ast::fu_nbinds(d) {
                   let stmt = ast::kid_at(ast::fu_binds(d), j);
@@ -1183,6 +1189,50 @@ assume Std {
           }
         }
         i = i + 1;
+      }
+    }
+
+    # D78: `bind F = G;` — an application of `F` reaches what `G`'s binds
+    # reach, whichever frame applies it, so the rows hang off the two
+    # functors rather than off the frame: `F` reaches `G`, and `G` (walked
+    # once) reaches what its binds name.
+    fn uw_functor_bind(spec: Int, value: Int, m: Int, depth: Int) {
+      if ast::is_some(ast::b_of(spec)) {
+        return ();
+      }
+      if !ast::is_some(ast::a_of(spec)) {
+        return ();
+      }
+      if ast::kind_of(value) != ast::k_ex_path() {
+        return ();
+      }
+      let fu = prog::resolve_path(m, ast::a_of(spec));
+      let g = prog::resolve_path(m, ast::a_of(value));
+      if !ast::is_some(fu) {
+        return ();
+      }
+      if !ast::is_some(g) {
+        return ();
+      }
+      if prog::sym_kind.get(fu) != prog::sk_functor() {
+        return ();
+      }
+      if prog::sym_kind.get(g) != prog::sk_functor() {
+        return ();
+      }
+      uw_row(fu, g);
+      let d = prog::sym_decl.get(g);
+      if ast::is_some(ast::fu_binds(d)) {
+        if un_head.get(g) == 0 {
+          # Marked first, so a functor whose binds bind it again stops.
+          uw_row(g, g);
+          var j = 0;
+          while j < ast::fu_nbinds(d) {
+            let stmt = ast::kid_at(ast::fu_binds(d), j);
+            uw_binds(g, ast::a_of(stmt), ast::b_of(stmt), prog::sym_mod.get(g), depth + 1);
+            j = j + 1;
+          }
+        }
       }
     }
 
@@ -3751,6 +3801,10 @@ assume Std {
         return ();
       }
       let kind = prog::sym_kind.get(sym);
+      if kind == prog::sk_functor() {
+        bind_functor(sym, value, m);
+        return ();
+      }
       if kind == prog::sk_val() {
         # A val is data: evaluate it once into a local (D2). Nameless: a
         # provision is found by its *symbol*, through `provide`, and a
@@ -4379,12 +4433,18 @@ assume Std {
         cg_error(c_unsupported(), prog::sym_name.get(sym));
         return ();
       }
-      let d = prog::sym_decl.get(sym);
-      let home = prog::sym_mod.get(sym);
-      if !ast::is_some(ast::fu_binds(d)) {
-        platform_functor(d, home);
+      if !ast::is_some(ast::fu_binds(prog::sym_decl.get(sym))) {
+        apply_abstract(body, sym, depth, mode);
         return ();
       }
+      run_functor(body, sym, depth, mode);
+    }
+
+    # A functor's binds, run here, with the paths inside resolved in the
+    # functor's module (D55).
+    fn run_functor(body: IntList, sym: Int, depth: Int, mode: Int) {
+      let d = prog::sym_decl.get(sym);
+      let home = prog::sym_mod.get(sym);
       var i = 0;
       while i < ast::fu_nbinds(d) {
         let stmt = ast::kid_at(ast::fu_binds(d), i);
@@ -4399,15 +4459,24 @@ assume Std {
       }
     }
 
-    # D75: a functor with no body is the platform's (prog.moss allows one
-    # only in lib/wasm.moss). Applying it needs its argument signature in
-    # context here, and provides each method of its result signature at
-    # the receiver that item names, read here — as a hand-written method
-    # bind would, in both environments, so coherence sees it like any
-    # provision — except that the provider is the method itself, which
-    # has no body: `platform_prim` says which instructions a call through
-    # it is.
-    fn platform_functor(d: Int, home: Int) {
+    # D78: `bind F;` for an abstract `F` applies whichever functor `F` is
+    # bound to in this specialization — a row of the environment, or, for
+    # one lib/wasm.moss declares and nothing has bound, the platform's own
+    # — and its binds are elaborated here, at this application's inputs,
+    # which is what makes a binding serve every instantiation of them.
+    # The application needs `F` in the generic environment (assumed or
+    # bound) and `F`'s argument signature there. The functor's binds run
+    # in a scope of their own, of which only `F`'s result survives: each
+    # item is pushed again on the environment as it was before, with the
+    # values its provider captured (`recapture`), and in the generic
+    # environment it is made where it is written, at the inputs here.
+    fn apply_abstract(body: IntList, fu: Int, depth: Int, mode: Int) {
+      let d = prog::sym_decl.get(fu);
+      let home = prog::sym_mod.get(fu);
+      if !lower::env_has(cg_genv.read(), lower::ek_fn(), ast::none(), fu) {
+        cg_error(c_unbound(), prog::sym_name.get(fu));
+        return ();
+      }
       var i = 0;
       while i < ast::fu_nargs(d) {
         if !platform_needs(ast::kid_at(ast::fu_args(d), i), home, 0) {
@@ -4415,7 +4484,412 @@ assume Std {
         }
         i = i + 1;
       }
-      i = 0;
+      var provider = ast::none();
+      let row = lower::env_find(cg_env.read(), lower::ek_fn(), ast::none(), fu);
+      if ast::is_some(row) {
+        provider = lower::env_a_of(row);
+      }
+      if !ast::is_some(provider) {
+        if in_wasm(fu) {
+          provider = fu;
+        }
+      }
+      if !ast::is_some(provider) {
+        cg_error(c_unbound(), prog::sym_name.get(fu));
+        return ();
+      }
+      let emark = cg_env.read();
+      let gmark = cg_genv.read();
+      let pmark = pv_top.read();
+      # The result's keys, in this environment, before anything runs.
+      let kinds = int_list();
+      let recvs = int_list();
+      let syms = int_list();
+      result_keys(home, ast::fu_res(d), ast::fu_nres(d), emark, kinds, recvs, syms, 0);
+      if ast::is_some(ast::fu_binds(prog::sym_decl.get(provider))) {
+        run_functor(body, provider, depth, mode);
+      } else {
+        platform_functor(prog::sym_decl.get(provider), prog::sym_mod.get(provider));
+      }
+      let made = cg_env.read();
+      # What the binds made for each item: an environment row, and for a
+      # val, the local holding it.
+      let rows = int_list();
+      let locals = int_list();
+      var k = 0;
+      while k < syms.length() {
+        var r = ast::none();
+        var l = ast::none();
+        var fresh = false;
+        if kinds.get(k) == lower::ek_val() {
+          # A val is a local, provided above the mark by its bind.
+          l = provision_above(syms.get(k), pmark);
+          fresh = ast::is_some(l);
+        } else {
+          r = lower::env_find(made, kinds.get(k), recvs.get(k), syms.get(k));
+          fresh = ast::is_some(r);
+          if fresh {
+            fresh = !in_chain(r, emark);
+          }
+        }
+        if !fresh {
+          cg_error(c_unbound(), prog::sym_name.get(syms.get(k)));
+          cg_env.write(emark);
+          cg_genv.write(gmark);
+          pv_top.write(pmark);
+          return ();
+        }
+        rows.push(r);
+        locals.push(l);
+        k = k + 1;
+      }
+      # The values the providers captured, read before the scope closes.
+      let cap_entry = int_list();
+      let cap_slot = int_list();
+      let cap_local = int_list();
+      if mode == bw_emit() {
+        k = 0;
+        while k < syms.length() {
+          if kinds.get(k) != lower::ek_val() {
+            let r = rows.get(k);
+            let vals = int_list();
+            val_slots(vals, lower::env_a_of(r), lower::env_b_of(r), 0);
+            var j = 0;
+            while j < vals.length() {
+              cap_entry.push(k);
+              cap_slot.push(vals.get(j));
+              cap_local.push(provision_of(ast::none(), ck_slot(r, vals.get(j))));
+              j = j + 1;
+            }
+          }
+          k = k + 1;
+        }
+      }
+      cg_env.write(emark);
+      cg_genv.write(gmark);
+      pv_top.write(pmark);
+      k = 0;
+      while k < syms.length() {
+        if kinds.get(k) == lower::ek_val() {
+          if mode == bw_emit() {
+            if ast::is_some(locals.get(k)) {
+              provide(ast::none(), syms.get(k), locals.get(k));
+            }
+          }
+        } else {
+          let r = rows.get(k);
+          cg_env.write(lower::env_push(
+            cg_env.read(), kinds.get(k), recvs.get(k), syms.get(k),
+            lower::env_a_of(r), lower::env_b_of(r)
+          ));
+          var j = 0;
+          while j < cap_entry.length() {
+            if cap_entry.get(j) == k {
+              if ast::is_some(cap_local.get(j)) {
+                provide(ast::none(), ck_slot(cg_env.read(), cap_slot.get(j)), cap_local.get(j));
+              }
+            }
+            j = j + 1;
+          }
+        }
+        k = k + 1;
+      }
+      result_generic(home, ast::fu_res(d), ast::fu_nres(d), 0);
+    }
+
+    # The local a val was provided in since the provision stack stood at
+    # `mark`, or none.
+    fn provision_above(sym: Int, mark: Int): Int {
+      var i = pv_top.read();
+      while i > mark {
+        i = i - 1;
+        if pv_sym.get(i) == sym {
+          if !ast::is_some(pv_recv.get(i)) {
+            return pv_local.get(i);
+          }
+        }
+      }
+      ast::none()
+    }
+
+    # Whether `row` is one of the rows of the chain `env`.
+    fn in_chain(row: Int, env: Int): Bool {
+      var e = env;
+      while ast::is_some(e) {
+        if e == row {
+          return true;
+        }
+        e = lower::env_next_of(e);
+      }
+      false
+    }
+
+    # The keys of an abstract functor's result in the environment `env`:
+    # a val's, a fn's, an abstract functor's (its symbol), and a method's
+    # (its receiver as the item and its brackets read here, and the
+    # method). Types are refused at the declaration (`check_functors`).
+    fn result_keys(
+      m: Int, run: Int, n: Int, env: Int, kinds: IntList, recvs: IntList,
+      syms: IntList, depth: Int
+    ) {
+      if depth > 16 {
+        cg_error(prog::e_deep(), ast::none());
+        return ();
+      }
+      var i = 0;
+      while i < n {
+        let spec = ast::kid_at(run, i);
+        let s = prog::resolve_path(m, ast::a_of(spec));
+        if !ast::is_some(s) {
+          cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+          return ();
+        }
+        if ast::is_some(ast::b_of(spec)) {
+          let method = lower::find_method_decl(m, s, ast::b_of(spec));
+          if !ast::is_some(method) {
+            cg_error(prog::e_method(), ast::b_of(spec));
+            return ();
+          }
+          kinds.push(lower::ek_fn());
+          recvs.push(lower::canon(lower::app_view(env, m, spec), types::ty_of_decl(s)));
+          syms.push(method);
+        } else {
+          let kind = prog::sym_kind.get(s);
+          let d = prog::sym_decl.get(s);
+          if kind == prog::sk_context() {
+            result_keys(prog::sym_mod.get(s), ast::b_of(d), ast::c_of(d), env, kinds, recvs, syms, depth + 1);
+          } else if kind == prog::sk_val() {
+            if !ast::is_some(ast::c_of(d)) {
+              kinds.push(lower::ek_val());
+              recvs.push(ast::none());
+              syms.push(s);
+            }
+          } else if kind == prog::sk_fn() {
+            if !ast::is_some(ast::fn_body(d)) {
+              kinds.push(lower::ek_fn());
+              recvs.push(ast::none());
+              syms.push(s);
+            }
+          } else if kind == prog::sk_functor() {
+            if !ast::is_some(ast::fu_binds(d)) {
+              kinds.push(lower::ek_fn());
+              recvs.push(ast::none());
+              syms.push(s);
+            }
+          }
+        }
+        i = i + 1;
+      }
+    }
+
+    # An abstract functor's result, provided in the generic environment
+    # where it is applied, each item at the inputs there.
+    fn result_generic(m: Int, run: Int, n: Int, depth: Int) {
+      if depth > 16 {
+        return ();
+      }
+      var i = 0;
+      while i < n {
+        let spec = ast::kid_at(run, i);
+        let s = prog::resolve_path(m, ast::a_of(spec));
+        if ast::is_some(s) {
+          let genv = cg_genv.read();
+          if ast::is_some(ast::b_of(spec)) {
+            let method = lower::find_method_decl(m, s, ast::b_of(spec));
+            if ast::is_some(method) {
+              let gview = lower::app_view(genv, m, spec);
+              provided_at(
+                lower::ek_fn(), lower::canon(gview, types::ty_of_decl(s)), method, gview
+              );
+            }
+          } else {
+            let kind = prog::sym_kind.get(s);
+            let d = prog::sym_decl.get(s);
+            if kind == prog::sk_context() {
+              result_generic(prog::sym_mod.get(s), ast::b_of(d), ast::c_of(d), depth + 1);
+            } else if kind == prog::sk_val() {
+              if !ast::is_some(ast::c_of(d)) {
+                provided_at(lower::ek_val(), ast::none(), s, genv);
+              }
+            } else if kind == prog::sk_fn() {
+              if !ast::is_some(ast::fn_body(d)) {
+                provided_at(lower::ek_fn(), ast::none(), s, genv);
+              }
+            } else if kind == prog::sk_functor() {
+              if !ast::is_some(ast::fu_binds(d)) {
+                provided_at(lower::ek_fn(), ast::none(), s, genv);
+              }
+            }
+          }
+        }
+        i = i + 1;
+      }
+    }
+
+    # D78: `bind F = G;` provides the abstract functor `F` with `G` — a
+    # functor with a body, or another abstract functor, which then
+    # provides `F` with whatever it is bound to here (the platform's own,
+    # for one lib/wasm.moss declares and nothing has bound). Static, like
+    # a fn bind, and capturing nothing: `G`'s binds run where `F` is
+    # applied. `G` may need fewer inputs than `F` takes, and must provide
+    # exactly `F`'s result (`check_binding`).
+    fn bind_functor(fu: Int, value: Int, m: Int) {
+      if ast::is_some(ast::fu_binds(prog::sym_decl.get(fu))) {
+        cg_error(c_unsupported(), prog::sym_name.get(fu));
+        return ();
+      }
+      if ast::kind_of(value) != ast::k_ex_path() {
+        cg_error(c_unsupported(), prog::sym_name.get(fu));
+        return ();
+      }
+      let g = prog::resolve_path(m, ast::a_of(value));
+      if !ast::is_some(g) {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(value)));
+        return ();
+      }
+      if prog::sym_kind.get(g) != prog::sk_functor() {
+        cg_error(c_unsupported(), prog::sym_name.get(g));
+        return ();
+      }
+      var provider = g;
+      if !ast::is_some(ast::fu_binds(prog::sym_decl.get(g))) {
+        if !lower::env_has(cg_genv.read(), lower::ek_fn(), ast::none(), g) {
+          cg_error(c_unbound(), prog::sym_name.get(g));
+          return ();
+        }
+        let row = lower::env_find(cg_env.read(), lower::ek_fn(), ast::none(), g);
+        provider = ast::none();
+        if ast::is_some(row) {
+          provider = lower::env_a_of(row);
+        }
+        if !ast::is_some(provider) {
+          if in_wasm(g) {
+            provider = g;
+          }
+        }
+        if !ast::is_some(provider) {
+          cg_error(c_unbound(), prog::sym_name.get(g));
+          return ();
+        }
+      }
+      if !check_binding(fu, g, m) {
+        return ();
+      }
+      cg_env.write(lower::env_push(
+        cg_env.read(), lower::ek_fn(), ast::none(), fu, provider, lower::env_empty()
+      ));
+      provided_at(lower::ek_fn(), ast::none(), fu, cg_genv.read());
+    }
+
+    # `G`'s inputs must be among `F`'s, and its result exactly `F`'s, as
+    # leaf items: contexts flattened, and what needs no provision (a
+    # unit, a tag, a defined fn or val) left out. Reports the first item
+    # out of place.
+    fn check_binding(fu: Int, g: Int, m: Int): Bool {
+      let fd = prog::sym_decl.get(fu);
+      let gd = prog::sym_decl.get(g);
+      let f_in_s = int_list();
+      let f_in_d = int_list();
+      let g_in_s = int_list();
+      let g_in_d = int_list();
+      sig_items(prog::sym_mod.get(fu), ast::fu_args(fd), ast::fu_nargs(fd), f_in_s, f_in_d, 0);
+      sig_items(prog::sym_mod.get(g), ast::fu_args(gd), ast::fu_nargs(gd), g_in_s, g_in_d, 0);
+      if !sig_within(g_in_s, g_in_d, f_in_s, f_in_d, m) {
+        return false;
+      }
+      let f_out_s = int_list();
+      let f_out_d = int_list();
+      let g_out_s = int_list();
+      let g_out_d = int_list();
+      sig_items(prog::sym_mod.get(fu), ast::fu_res(fd), ast::fu_nres(fd), f_out_s, f_out_d, 0);
+      sig_items(prog::sym_mod.get(g), ast::fu_res(gd), ast::fu_nres(gd), g_out_s, g_out_d, 0);
+      if !sig_within(f_out_s, f_out_d, g_out_s, g_out_d, m) {
+        return false;
+      }
+      sig_within(g_out_s, g_out_d, f_out_s, f_out_d, m)
+    }
+
+    # Whether every item of the first list is in the second; the first
+    # that is not is reported, by its name (a method's, without the dot).
+    fn sig_within(xs: IntList, xd: IntList, ys: IntList, yd: IntList, m: Int): Bool {
+      var i = 0;
+      while i < xs.length() {
+        var found = false;
+        var j = 0;
+        while j < ys.length() {
+          if ys.get(j) == xs.get(i) {
+            if yd.get(j) == xd.get(i) {
+              found = true;
+            }
+          }
+          j = j + 1;
+        }
+        if !found {
+          if ast::is_some(xd.get(i)) {
+            prog::error(prog::e_functor_sig(), m, xd.get(i));
+          } else {
+            prog::error(prog::e_functor_sig(), m, prog::sym_name.get(xs.get(i)));
+          }
+          return false;
+        }
+        i = i + 1;
+      }
+      true
+    }
+
+    # The leaf items of a signature: (symbol, none) for a plain item, and
+    # (receiver symbol, method name) for a method item.
+    fn sig_items(m: Int, run: Int, n: Int, syms: IntList, dots: IntList, depth: Int) {
+      if depth > 16 {
+        return ();
+      }
+      var i = 0;
+      while i < n {
+        let spec = ast::kid_at(run, i);
+        let s = prog::resolve_path(m, ast::a_of(spec));
+        if ast::is_some(s) {
+          if ast::is_some(ast::b_of(spec)) {
+            syms.push(s);
+            dots.push(ast::b_of(spec));
+          } else {
+            let kind = prog::sym_kind.get(s);
+            let d = prog::sym_decl.get(s);
+            var leaf = true;
+            if kind == prog::sk_context() {
+              sig_items(prog::sym_mod.get(s), ast::b_of(d), ast::c_of(d), syms, dots, depth + 1);
+              leaf = false;
+            } else if kind == prog::sk_unit() {
+              leaf = false;
+            } else if kind == prog::sk_tag() {
+              leaf = false;
+            } else if kind == prog::sk_alias() {
+              leaf = false;
+            } else if kind == prog::sk_val() {
+              leaf = !ast::is_some(ast::c_of(d));
+            } else if kind == prog::sk_fn() {
+              leaf = !ast::is_some(ast::fn_body(d));
+            }
+            if leaf {
+              syms.push(s);
+              dots.push(ast::none());
+            }
+          }
+        }
+        i = i + 1;
+      }
+    }
+
+    # D75: a functor with no body that lib/wasm.moss declares is provided
+    # by the platform (D78: as it provides that file's abstract fns).
+    # Applying it — through `apply_abstract`, which has checked its
+    # argument signature here — provides each method of its result
+    # signature at the receiver that item names, read here — as a
+    # hand-written method bind would, in both environments, so coherence
+    # sees it like any provision — except that the provider is the method
+    # itself, which has no body: `platform_prim` says which instructions
+    # a call through it is.
+    fn platform_functor(d: Int, home: Int) {
+      var i = 0;
       while i < ast::fu_nres(d) {
         let spec = ast::kid_at(ast::fu_res(d), i);
         let recv_sym = prog::resolve_path(home, ast::a_of(spec));
@@ -4441,8 +4915,9 @@ assume Std {
       }
     }
 
-    # Whether one item of a platform functor's argument signature is in
-    # force here: a type assumed or bound, an abstract val or fn assumed.
+    # Whether one item of an abstract functor's argument signature is in
+    # force here: a type assumed or bound, an abstract val, fn or functor
+    # assumed or bound.
     # The first that is not is reported, and it says whether all were.
     fn platform_needs(spec: Int, m: Int, depth: Int): Bool {
       if depth > 16 {
@@ -4477,6 +4952,10 @@ assume Std {
         }
       } else if kind == prog::sk_fn() {
         if !ast::is_some(ast::fn_body(prog::sym_decl.get(s))) {
+          have = lower::env_has(genv, lower::ek_fn(), ast::none(), s);
+        }
+      } else if kind == prog::sk_functor() {
+        if !ast::is_some(ast::fu_binds(prog::sym_decl.get(s))) {
           have = lower::env_has(genv, lower::ek_fn(), ast::none(), s);
         }
       }
@@ -4768,6 +5247,10 @@ assume Std {
       # calling convention below is built from.
       lower::lower_all();
       lower::check_listed();
+      lower::check_functors();
+      if prog::error_count() > 0 {
+        return ();
+      }
       uses_init();
       let mn = spelled();
       sp_main(mn);

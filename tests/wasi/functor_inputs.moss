@@ -1,0 +1,34 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: a functor bound to an abstract one may need fewer inputs than the
+# abstract one takes, never more. An application of `Trace` has `Std` in
+# context and nothing else, so `Counting`, which also needs `counter`,
+# could not count on having it. The bind is refused where it is written.
+
+assume Std {
+  fn note(value: Int);
+  val counter: CellInt;
+}
+
+functor Trace: Std -> note;
+
+functor Counting: Std, counter -> note {
+  bind note = (value) => counter.write(counter.read() + 1);
+}
+
+assume Std {
+  fn demo() {
+    bind counter = cell_int();
+    bind Trace = Counting;
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

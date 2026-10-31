@@ -80,7 +80,7 @@ assume Std {
   fn k_d_fn(): Int { 44 }     # a=run: recv, name, params, len, ret, body
   fn k_d_context(): Int { 45 }# a=name b=item run c=len
   fn k_d_functor(): Int { 46 }# a=run: name, args, len, res, len, binds, len
-                              # (binds none: no body, the platform's; D75)
+                              # (binds none: no body, an abstract functor; D78)
   fn k_d_bad(): Int { 47 }
 
   # Operators and literals (D68), after the rest so that no earlier kind

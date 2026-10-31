@@ -246,6 +246,34 @@ class BindPrim:
 
 
 @dataclass(frozen=True)
+class BindFunctor:
+    """D78: provide an abstract functor `key` — with a functor that has a
+    body (`functor`), or with whatever the abstract functor `source` is
+    bound to here (`bind F = H;`). Static: what is recorded is which
+    functor, and nothing is captured, since a functor's binds run where
+    it is applied."""
+
+    key: Key
+    functor: Symbol | None
+    source: Symbol | None = None
+
+
+@dataclass(frozen=True)
+class ApplyFunctor:
+    """D78: `bind F;` for an abstract functor `F`. Which functor `F` is
+    bound to is known only where the enclosing function is specialized
+    (or, in the interpreter, run), so the binds of every functor that
+    can be bound to `F` were lowered here, in this function's terms, one
+    branch each: `(functor, stmts)`, where a functor with no body is the
+    platform's own provision of it. The branch `F` is bound to runs in a
+    scope of its own, and only `outs` — `F`'s result items — survive it."""
+
+    key: Key
+    branches: tuple
+    outs: tuple
+
+
+@dataclass(frozen=True)
 class While:
     cond: object
     body: "Block"

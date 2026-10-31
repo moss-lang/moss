@@ -1,0 +1,207 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: where a mode applies, decided by the code that applies it, and what
+# the mode is, decided by whoever binds it. The interpreter is written
+# once, generic over its expression references, and a `Traced` node says
+# "trace this subtree" by applying the abstract functor `Trace`; `main`
+# says what tracing is, binding `Trace` to one functor and then another.
+# Each value the interpreter computes goes to `note`, which is silent
+# outside a traced subtree and whatever `Trace` makes it inside one (a
+# traced node itself is noted outside its own subtree). Output: the notes
+# of `1 + traced(2 * traced(7 - 4))` and its value, under each tracer.
+
+unit Add;
+unit Sub;
+unit Mul;
+
+type BinOp = Add | Sub | Mul;
+
+type ExprRef;
+
+assume Std, ExprRef {
+  type Binary { op: BinOp, lhs: ExprRef, rhs: ExprRef };
+  type Literal Int;
+  type Traced ExprRef;
+
+  type Expr = Binary | Literal | Traced;
+
+  fn .data(): Expr;
+  fn add(expr: Expr): ExprRef;
+
+  context Ast = ExprRef, ExprRef.data, add;
+}
+
+# What becomes of each value computed.
+assume Std {
+  fn note(value: Int);
+}
+
+# Tracing, as a mode: an abstract functor, with no body.
+functor Trace: Std -> note;
+
+# Written once, against the interface, the tracer, and the mode.
+assume Std, Ast, note, Trace {
+  fn interp(e: ExprRef): Int {
+    let value = match e.data() {
+      Binary { op, lhs, rhs } => {
+        let l = interp(lhs);
+        let r = interp(rhs);
+        match op {
+          Add => l + r,
+          Sub => l - r,
+          Mul => l * r,
+        }
+      },
+      Literal n => n,
+      Traced inner => {
+        bind Trace;
+        interp(inner)
+      },
+    };
+    note(value);
+    value
+  }
+}
+
+assume Std, Ast {
+  fn lit(n: Int): ExprRef { add(Literal (n)) }
+  fn bin(op: BinOp, lhs: ExprRef, rhs: ExprRef): ExprRef { add(Binary { op, lhs, rhs }) }
+  fn traced(e: ExprRef): ExprRef { add(Traced (e)) }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn quiet(value: Int) {}
+
+  fn loud(value: Int) {
+    print_int(value);
+    putchar(char::comma);
+  }
+}
+
+# Two tracers: one with a named provider, one with an anonymous one.
+functor Loud: Std -> note {
+  bind note = loud;
+}
+
+functor Brackets: Std -> note {
+  bind note = (value) => {
+    putchar(char::lbracket);
+    print_int(value);
+    putchar(char::rbracket);
+  };
+}
+
+assume Std, Ast, note, Trace {
+  fn report() {
+    let e = bin(Add, lit(1), traced(bin(Mul, lit(2), traced(bin(Sub, lit(7), lit(4))))));
+    let value = interp(e);
+    putchar(char::newline);
+    print_int(value);
+    putchar(char::newline);
+  }
+}
+
+# A node is an index into one list of triples: an operator code (0 for a
+# literal, 4 for a traced node) and two operands.
+assume Std {
+  type Slot Int;
+  val triples: IntList;
+
+  fn op_code(op: BinOp): Int {
+    match op {
+      Add => 1,
+      Sub => 2,
+      Mul => 3,
+    }
+  }
+
+  fn op_of(code: Int): BinOp {
+    if code == 1 {
+      Add
+    } else if code == 2 {
+      Sub
+    } else {
+      Mul
+    }
+  }
+
+  assume triples {
+    fn Slot.at(): Int { match this { Slot i => i } }
+
+    fn Slot.node(): Expr[ExprRef=Slot] {
+      let i = this.at() * 3;
+      let code = triples.get(i);
+      if code == 0 {
+        Literal (triples.get(i + 1))
+      } else if code == 4 {
+        Traced[ExprRef=Slot] (Slot (triples.get(i + 1)))
+      } else {
+        Binary[ExprRef=Slot] {
+          op = op_of(code),
+          lhs = Slot (triples.get(i + 1)),
+          rhs = Slot (triples.get(i + 2)),
+        }
+      }
+    }
+
+    fn triples_add(expr: Expr[ExprRef=Slot]): Slot {
+      let i = triples.length() / 3;
+      match expr {
+        Binary { op, lhs, rhs } => {
+          triples.push(op_code(op));
+          triples.push(lhs.at());
+          triples.push(rhs.at());
+        },
+        Literal n => {
+          triples.push(0);
+          triples.push(n);
+          triples.push(0);
+        },
+        Traced inner => {
+          triples.push(4);
+          triples.push(inner.at());
+          triples.push(0);
+        },
+      }
+      Slot (i)
+    }
+  }
+
+  fn demo() {
+    bind triples = int_list();
+    bind ExprRef = Slot;
+    bind ExprRef.data = Slot.node;
+    bind add = triples_add;
+    bind note = quiet;
+    {
+      bind Trace = Loud;
+      report();
+    }
+    {
+      bind Trace = Brackets;
+      report();
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

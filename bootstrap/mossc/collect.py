@@ -223,16 +223,6 @@ def declare(module: Module) -> None:
                     fn_name.name, Symbol(module, fn_name.name, SymKind.FN, decl, assumes=assumes)
                 )
         else:
-            if (
-                isinstance(decl, ast.Functordef)
-                and decl.binds is None
-                and not is_platform(module.path)
-            ):
-                raise CollectError(
-                    module.path,
-                    f"functor `{decl.name}` has no body; only the platform "
-                    "provides a functor, and only lib/wasm.moss declares one (D75)",
-                )
             kind = DECL_KINDS[type(decl)]
             define_name(decl.name, Symbol(module, decl.name, kind, decl, assumes=assumes))
 

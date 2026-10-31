@@ -1,0 +1,144 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: allocation strategy as one bind. The library below boxes the two
+# types it needs by applying an abstract allocator, `Alloc`, once per
+# type — it knows where it allocates and nothing about how — and `main`
+# binds `Alloc` in one block to the platform's GC `Heap` itself, and in
+# another to `Counted`, a hand-written allocator that boxes through
+# `Heap` and counts what it boxes. Both take fewer inputs than `Alloc`
+# does (`Heap` needs neither `Std` nor the counter), which is allowed:
+# every application of `Alloc` has all of `Alloc`'s. The binding is made
+# where `Boxed` means nothing, and applied in the library at `Expr` and
+# at `Stmt` — a binding serves every instantiation of the functor's
+# inputs. Output: 3, 9, 7 from each block, then the eight boxes the
+# second one counted.
+
+unit Add;
+unit Mul;
+
+type BinOp = Add | Mul;
+
+assume Std, Wasm {
+  type Literal Int;
+  type Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
+  type Expr = Binary | Literal;
+
+  type Print { value: Ref[Boxed=Expr] };
+  type Then { value: Ref[Boxed=Expr], rest: Ref[Boxed=Stmt] };
+  type Stmt = Then | Print;
+
+  context Boxes =
+    Expr.boxed[Boxed=Expr],
+    Ref.deref[Boxed=Expr],
+    Stmt.boxed[Boxed=Stmt],
+    Ref.deref[Boxed=Stmt];
+
+  val allocs: CellInt;
+
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+# The allocator, as a requirement: whatever is bound to it boxes a
+# `Boxed` and follows a reference to one.
+functor Alloc: Std, Wasm, Boxed, allocs -> Boxed.boxed, Ref.deref;
+
+# A hand-written allocator: the GC heap's, counting each box in `allocs`.
+# `.boxed` inside the anonymous function is `Heap`'s, in force at the bind.
+functor Counted: Std, Wasm, Boxed, allocs -> Boxed.boxed, Ref.deref {
+  bind Heap;
+  bind Boxed.boxed = () => {
+    allocs.write(allocs.read() + 1);
+    this.boxed()
+  };
+}
+
+assume Std, Wasm, Boxes {
+  fn eval(e: Expr): Int {
+    match e {
+      Binary { op, lhs, rhs } => {
+        let l = eval(lhs.deref());
+        let r = eval(rhs.deref());
+        match op {
+          Add => l + r,
+          Mul => l * r,
+        }
+      },
+      Literal n => n,
+    }
+  }
+
+  fn exec(s: Stmt) {
+    match s {
+      Then { value, rest } => {
+        line(eval(value.deref()));
+        exec(rest.deref());
+      },
+      Print { value } => line(eval(value.deref())),
+    }
+  }
+
+  fn lit(n: Int): Ref[Boxed=Expr] {
+    let e: Expr = Literal (n);
+    e.boxed()
+  }
+
+  fn bin(op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr]): Ref[Boxed=Expr] {
+    let e: Expr = Binary { op, lhs, rhs };
+    e.boxed()
+  }
+
+  fn program() {
+    let three = bin(Add, lit(1), lit(2));
+    let nine = bin(Mul, three, lit(3));
+    let last: Stmt = Print { value = lit(7) };
+    let middle: Stmt = Then { value = nine, rest = last.boxed() };
+    let first: Stmt = Then { value = three, rest = middle.boxed() };
+    exec(first);
+  }
+}
+
+# The library: it applies the allocator at each type it boxes.
+assume Std, Wasm, allocs, Alloc {
+  fn library() {
+    bind Boxed = Expr;
+    bind Alloc;
+    bind Boxed = Stmt;
+    bind Alloc;
+    program();
+  }
+}
+
+assume Std, Wasm {
+  fn demo() {
+    bind allocs = cell_int();
+    {
+      bind Alloc = Heap;
+      library();
+    }
+    {
+      bind Alloc = Counted;
+      library();
+    }
+    line(allocs.read());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

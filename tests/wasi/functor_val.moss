@@ -1,0 +1,89 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: an abstract functor may produce vals, as any functor may (D55). A
+# val in its result is a bind, evaluated where the functor is applied:
+# `Countdown`'s reads and moves a counter every time `Step` is applied,
+# so each application in `tick` gets the next value, while `Fixed`'s is
+# the same each time. Output: the running totals 10 20 30 under `Fixed`;
+# then 3 5 6 under `Countdown`, whose steps were 3, 2 and 1; then the
+# counter, 0, once `Step` has been applied three times under it.
+
+assume Std {
+  val step: Int;
+  val counter: CellInt;
+
+  fn digits(n: Int) {
+    if n >= 10 {
+      digits(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    digits(n);
+    putchar(char::newline);
+  }
+}
+
+# How big a step is: decided by whoever binds `Step`.
+functor Step: Std, counter -> step;
+
+# A step of ten, every time; it needs nothing but `Std`, which is fewer
+# inputs than `Step` takes.
+functor Fixed: Std -> step {
+  bind step = 10;
+}
+
+# The counter's value, counting down at each application.
+functor Countdown: Std, counter -> step {
+  bind step = {
+    let n = counter.read();
+    counter.write(n - 1);
+    n
+  };
+}
+
+assume Std, counter, Step {
+  # `step` is in force only after `Step` is applied, and each
+  # application is a new bind of it, made here.
+  fn tick(total: Int): Int {
+    bind Step;
+    total + step
+  }
+
+  fn run() {
+    var total = 0;
+    total = tick(total);
+    line(total);
+    total = tick(total);
+    line(total);
+    total = tick(total);
+    line(total);
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind counter = cell_int();
+    counter.write(3);
+    {
+      bind Step = Fixed;
+      run();
+    }
+    {
+      bind Step = Countdown;
+      run();
+    }
+    line(counter.read());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

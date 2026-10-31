@@ -1008,7 +1008,7 @@ assume Std {
       parse_specs(res, tk_lbrace());
       let ar = ast::commit(args);
       let rr = ast::commit(res);
-      # No body: the platform provides it (D75's `Heap`).
+      # No body: an abstract functor, a requirement (D78).
       if accept(tk_semi()) {
         return ast::make_functor(
           nm, ar, args.length(), rr, res.length(), ast::none(), 0

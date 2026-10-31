@@ -175,11 +175,19 @@ assume Std {
   # captured, which it holds by value (named by the local).
   fn e_lambda(): Int { 16 + 4 }
 
-  # D75: a functor declared with no body anywhere but lib/wasm.moss. The
-  # platform provides such a functor, and nothing provides one anywhere
-  # else. Named by the functor, as the bootstrap's "functor `F` has no
-  # body" is.
-  fn e_platform(): Int { 16 + 6 }
+  # D78: an abstract functor (one declared with no body) whose result
+  # holds a type. A binding of it serves every instantiation of its
+  # inputs, so a type it produced would be a different type behind each
+  # binding. Named by the type, as the bootstrap's "abstract functor `F`
+  # produces the type `T`" is. (Until D78 this code was D75's refusal of
+  # a bodiless functor outside lib/wasm.moss, which is now legal.)
+  fn e_functor_type(): Int { 16 + 6 }
+
+  # D78: `bind F = G;` where `G`'s signature does not fit the abstract
+  # `F`'s: `G` needs an input `F` does not take, or does not provide
+  # exactly `F`'s result. Named by the item, as the bootstrap's "`G`
+  # cannot be bound to `F`: it does not provide `x`" is.
+  fn e_functor_sig(): Int { 16 + 7 }
 
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
@@ -560,13 +568,6 @@ assume Std {
       }
       if k == ast::k_d_bad() {
         return ();
-      }
-      if k == ast::k_d_functor() {
-        if !ast::is_some(ast::fu_binds(d)) {
-          if !is_platform(m) {
-            error(e_platform(), m, ast::fu_name(d));
-          }
-        }
       }
       if k == ast::k_d_fn() {
         let recv = ast::fn_recv(d);

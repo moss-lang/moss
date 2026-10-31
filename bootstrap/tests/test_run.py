@@ -368,6 +368,10 @@ GC_AST_OUT = "-10\n0\n4096\n" * 2
 # types in one scope.
 GC_TWO_OUT = "3\n12\n7\n1\n"
 
+# D78: what tests/wasi/functor_trace.moss prints — the notes of a traced
+# subtree and the whole value, under each of two tracers.
+FUNCTOR_TRACE_OUT = "2,7,4,3,3,6,\n7\n[2][7][4][3][3][6]\n7\n"
+
 
 def wasm_text(module: bytes) -> str:
     """A module as Binaryen prints it, to look for instructions."""
@@ -2005,20 +2009,79 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout), (134, "3\n4\n"))
             self.assertIn("cast failure", result.stderr)
 
-    def test_only_the_platform_declares_a_bodiless_functor(self):
-        """D75: `functor F: A -> B;`, with no body, is provided by the
-        platform, so only lib/wasm.moss may declare one. Anywhere else
-        both compilers refuse it where it is written."""
-        from mossc.collect import CollectError
+    def test_abstract_functors(self):
+        """D78: a functor with no body is an abstract functor, anywhere —
+        a requirement that a scope provides by binding a functor to it,
+        and that `bind F;` applies through whatever it is bound to. The
+        interpreter with `Trace` bound to two tracers in one program and
+        applied inside a generic function; a library applying an abstract
+        allocator for two types, bound to the platform's `Heap` in one
+        block and to a hand-written allocator in another, each with fewer
+        inputs than the allocator takes; an abstract functor producing a
+        val, evaluated at each application; and D75's `gc_bodiless`,
+        whose bodiless functor outside lib/wasm.moss is now legal and
+        bound to `Heap`. Interpreted and in both compilers."""
+        from .test_build import compile_wasm, run_wasm
 
+        for entry, expected in (
+            ("tests/wasi/functor_trace.moss", FUNCTOR_TRACE_OUT),
+            ("tests/wasi/functor_alloc.moss", "3\n9\n7\n" * 2 + "8\n"),
+            ("tests/wasi/functor_val.moss", "10\n20\n30\n3\n5\n6\n0\n"),
+            ("tests/wasi/gc_bodiless.moss", "42\n"),
+        ):
+            with self.subTest(entry=entry):
+                self.assertEqual(run({}, entry=entry), expected)
+                for module in (
+                    self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+                    compile_wasm({}, entry=entry),
+                ):
+                    self.assertEqual(run_wasm(module), expected)
+
+    def test_abstract_functor_binds_are_checked(self):
+        """D78: `bind F = G;` needs `G`'s inputs among `F`'s and `G`'s
+        result exactly `F`'s, checked where the bind is written (more
+        inputs, a missing output, an extra output); `bind F;` with
+        nothing bound to `F` is the ordinary error for a requirement not
+        in context; and, as implemented, an abstract functor's result
+        holds no type. Rejected in both compilers."""
         from .test_build import compile_wasm
 
-        entry = "tests/wasi/gc_bodiless.moss"
-        with self.assertRaises(CollectError) as caught:
-            compile_wasm({}, entry=entry)
-        self.assertIn("functor `Forge` has no body", str(caught.exception))
-        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
-        self.assertEqual(out.decode("utf-8"), f"!W {entry} Forge\n")
+        cases = {
+            "functor_inputs": (
+                "`Counting` cannot be bound to `Trace`: it needs `counter`, "
+                "which `Trace` does not take",
+                "!X {} counter\n",
+            ),
+            "functor_missing": (
+                "`Half` cannot be bound to `Trace`: it does not provide "
+                "`flush`, which `Trace` promises",
+                "!X {} flush\n",
+            ),
+            "functor_extra": (
+                "`Chatty` cannot be bound to `Trace`: it also provides "
+                "`flush`, which `Trace` does not",
+                "!X {} flush\n",
+            ),
+            "functor_unbound": (
+                "`Trace` is not available in the context here",
+                "?Q {} demo Trace\n",
+            ),
+            "functor_type": (
+                "abstract functor `Pick` produces the type `Scalar`",
+                "!W {} Scalar\n",
+            ),
+        }
+        for name, (message, report) in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                self.assertTrue(
+                    out.decode("utf-8").startswith(report.format(entry)), out[:200]
+                )
 
     def test_a_union_slot_holds_one_valtype(self):
         """D75 meets D59: a union's slot has its first member's valtype,

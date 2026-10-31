@@ -352,6 +352,8 @@ def freeze_env(env: dict) -> tuple:
     def one(k, entry):
         if isinstance(entry, Primitive):
             return (id(k), 0, (entry.prim, entry.held), ())
+        if isinstance(entry, Symbol):
+            return (id(k), 1, id(entry), ())  # D78: which functor
         g, sub, theta = entry
         return (id(k), id(g), freeze_env(sub), freeze_theta(theta))
 
@@ -683,12 +685,16 @@ class Backend:
                     uses.add(target)
             elif isinstance(node, ir.BindFn):
                 out.append((node.fn, node.needs_map))
+            elif isinstance(node, ir.ApplyFunctor):
+                uses.add(node.key)
+            elif isinstance(node, ir.BindFunctor) and node.source is not None:
+                uses.add(node.source)
             if isinstance(node, (list, tuple)):
                 for item in node:
                     walk(item, uses, out)
             elif hasattr(node, "__dataclass_fields__") and type(node).__module__ == ir.__name__:
                 for name in node.__dataclass_fields__:
-                    if name not in ("callee", "needs_map", "key", "fn"):
+                    if name not in ("callee", "needs_map", "key", "fn", "outs", "source"):
                         walk(getattr(node, name), uses, out)
 
         for key, fn in self.lower.fns.items():
@@ -746,7 +752,7 @@ class Backend:
                     continue  # never reached, so never passed
                 if self.passed_need(key):
                     found.append(key)
-                elif key in e and not isinstance(e[key], Primitive):
+                elif key in e and not isinstance(e[key], (Primitive, Symbol)):
                     provider, sub, _ = e[key]
                     found.extend(
                         captured(key, slot)
@@ -1540,6 +1546,14 @@ class FnCompiler:
             self.env[node.key] = (node.fn, sub, theta)
         elif isinstance(node, ir.BindPrim):
             self.env[node.key] = Primitive(node.prim, self.held_of_here(node.held))
+        elif isinstance(node, ir.BindFunctor):
+            # D78: static, like a fn bind: which functor it now is.
+            if node.functor is not None:
+                self.env[node.key] = node.functor
+            else:
+                self.env[node.key] = self.bound_functor(node.source)
+        elif isinstance(node, ir.ApplyFunctor):
+            self.apply_functor(node)
         elif isinstance(node, ir.ExprStmt):
             layout = self.expr(node.expr)
             self.code += DROP * len(layout)
@@ -1570,6 +1584,46 @@ class FnCompiler:
             self.code += DROP
         else:
             raise NotCompilable(type(node).__name__)
+
+    def bound_functor(self, key: Symbol) -> Symbol:
+        """What an abstract functor is bound to in this specialization: an
+        entry of its environment, or — at the root, where nothing has
+        bound it — the platform's own, for one lib/wasm.moss declares."""
+        bound = self.env.get(key)
+        if bound is None:
+            if "wasm" in self.b.lib and key.module is self.b.lib["wasm"]:
+                return key
+            raise NotCompilable(f"nothing provides the functor `{key.name}` here")
+        return bound
+
+    def apply_functor(self, node: ir.ApplyFunctor):
+        """D78: `bind F;`, the branch for the functor `F` is bound to in
+        this specialization, compiled in place in a scope of its own, of
+        which only `F`'s result survives — as provisions (a val's locals),
+        environment entries (a provider, a primitive, a functor), and the
+        values a provider captured for its key."""
+        bound = self.bound_functor(node.key)
+        for functor, stmts in node.branches:
+            if functor is bound:
+                break
+        else:
+            raise NotCompilable(f"`{node.key.name}` is bound to `{bound.name}` here")
+        saved_provisions = dict(self.provisions)
+        saved_env = dict(self.env)
+        for stmt in stmts:
+            self.stmt(stmt)
+        made_provisions, made_env = self.provisions, self.env
+        self.provisions, self.env = saved_provisions, saved_env
+        outs = set(node.outs)
+        for key, value in made_provisions.items():
+            if key in outs or (
+                isinstance(key, tuple) and len(key) == 3 and key[0] == "captured"
+                and key[1] in outs
+            ):
+                self.provisions[key] = value
+        for key in node.outs:
+            if key in made_env:
+                self.env[key] = made_env[key]
 
     # Expressions: every expression leaves exactly one i32.
 

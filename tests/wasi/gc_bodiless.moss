@@ -1,16 +1,43 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm, Boxed, Ref;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
-# D75: a functor with no body is one the platform provides, so only
-# lib/wasm.moss may declare one. Anywhere else there would be nothing to
-# provide it, and the declaration is refused where it is written.
+# D75 allowed a functor with no body only in lib/wasm.moss, whose `Heap`
+# the platform provides. Under D78 a functor with no body anywhere is an
+# abstract functor: a requirement. `Boxing` has `Heap`'s signature;
+# `round_trip` assumes it and applies it, and `demo` binds it to the
+# platform's `Heap`, as it would bind any functor with that signature.
+# Output: 42.
 
-functor Forge: Wasm, Boxed -> Ref.deref;
+functor Boxing: Wasm, Boxed -> Boxed.boxed, Ref.deref;
+
+assume Std, Wasm, Boxing {
+  fn round_trip(n: Int): Int {
+    bind Boxed = Int;
+    bind Boxing;
+    n.boxed().deref()
+  }
+}
+
+assume Std, Wasm {
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn demo() {
+    bind Boxing = Heap;
+    print_int(round_trip(42));
+    putchar(char::newline);
+  }
+}
 
 assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
+    demo();
   }
 }
