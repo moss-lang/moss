@@ -43,6 +43,15 @@ import "./types.moss" as types;
 # written out in full where it is bound (`full_app`, used by the back
 # end). The back end compares a callee's app for each need against the
 # provision the caller has (`codegen::check_callee`).
+#
+# A row of a *generic* environment — a declaration's own, or a frame's as
+# written (codegen's `cg_genv`) — also says how its item is typed where it
+# is used, as the bootstrap's `env.vals`, `env.fns` and `env.methods` do:
+# a val's row holds, in its `a`, the type it was provided at; a fn's or a
+# method's, the environment its declared signature is read through — the
+# one in force where it was assumed or bound, with the item's own
+# brackets. So a call of a provision is typed by the provision, whatever
+# has been bound since (D72).
 
 assume Std {
   fn ek_type(): Int { 0 }
@@ -416,7 +425,7 @@ assume Std {
 
     # `assume` takes bare paths, optionally with a receiver dot (D24).
     fn add_assume_item(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
-      add_spec(env, m, spec, recv, sym, 0, env)
+      add_spec(env, m, spec, recv, sym, 0, int_list())
     }
 
     # One type binding of a context item's application. The left-hand side
@@ -445,11 +454,6 @@ assume Std {
     # means the item's abstract `L` is `IntArr` for the length of that item
     # and no further — which is what lets one scope hold the same
     # interface at two element types, since each item gets its own view.
-    #
-    # A *snapshot* of the environment rather than the environment as it
-    # grows is enough: the only rows `canon` reads are `ek_type()` ones,
-    # and a type item in an assume list binds its symbol to itself, so no
-    # later item can change an earlier answer.
     fn app_view(view: Int, m: Int, spec: Int): Int {
       var out = view;
       var i = 0;
@@ -460,15 +464,23 @@ assume Std {
       out
     }
 
+    # Each item is read in the environment as it has grown so far — so an
+    # item of a context sees the types assumed before it in that context,
+    # as their parameters (D72) — under the substitution the enclosing
+    # contexts' brackets make (`over`, a run of (symbol, type) pairs, each
+    # context's resolved once, where it is written), and then its own
+    # brackets. The bootstrap's `add_spec` reads items the same way
+    # (`env.tymap | subst`).
     fn add_spec(
       env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, depth: Int,
-      view: Int
+      over: IntList
     ): Int {
       if depth > 16 {
         prog::error(prog::e_deep(), m, ast::none());
         return env;
       }
-      let inner = app_view(view, m, spec);
+      let outer = overlay(env, over);
+      let inner = app_view(outer, m, spec);
       let dot = ast::b_of(spec);
       let path = ast::a_of(spec);
       if ast::is_some(dot) {
@@ -488,12 +500,48 @@ assume Std {
         prog::error(prog::e_scope(), m, ast::path_last(path));
         return env;
       }
-      add_symbol_item(env, m, target, recv, sym, depth, inner)
+      # A context's items are under its brackets too.
+      let inside = int_list();
+      var i = 0;
+      while i < over.length() {
+        inside.push(over.get(i));
+        i = i + 1;
+      }
+      bracket_pairs(inner, outer, inside);
+      add_symbol_item(env, m, target, recv, sym, depth, inner, inside)
+    }
+
+    # `env` with the pairs of `over` pushed on it, in order.
+    fn overlay(env: Int, over: IntList): Int {
+      var out = env;
+      var i = 0;
+      while i < over.length() {
+        out = env_push(out, ek_type(), ast::none(), over.get(i), over.get(i + 1), ast::none());
+        i = i + 2;
+      }
+      out
+    }
+
+    # The (symbol, type) pairs `app_view` pushed to make `inner` from
+    # `outer`, appended to `out` in the order they were pushed.
+    fn bracket_pairs(inner: Int, outer: Int, out: IntList) {
+      let rows = int_list();
+      var e = inner;
+      while e != outer {
+        rows.push(e);
+        e = en_next.get(e);
+      }
+      var i = rows.length();
+      while i > 0 {
+        i = i - 1;
+        out.push(en_sym.get(rows.get(i)));
+        out.push(en_a.get(rows.get(i)));
+      }
     }
 
     fn add_symbol_item(
       env: Int, m: Int, s: Int, recv: IntList, sym: IntList, depth: Int,
-      view: Int
+      view: Int, over: IntList
     ): Int {
       let kind = prog::sym_kind.get(s);
       if kind == prog::sk_type() {
@@ -525,7 +573,7 @@ assume Std {
         if env_has(env, ek_fn(), ast::none(), s) {
           return env;
         }
-        return env_push(env, ek_fn(), ast::none(), s, ast::none(), assumed_app(s, view));
+        return env_push(env, ek_fn(), ast::none(), s, view, assumed_app(s, view));
       }
       if kind == prog::sk_context() {
         var e = env;
@@ -534,7 +582,7 @@ assume Std {
         while i < ast::c_of(d) {
           e = add_spec(
             e, prog::sym_mod.get(s), ast::kid_at(ast::b_of(d), i),
-            recv, sym, depth + 1, view
+            recv, sym, depth + 1, over
           );
           i = i + 1;
         }
@@ -592,7 +640,7 @@ assume Std {
       if env_has(env, ek_fn(), this_ty, method) {
         return env;
       }
-      env_push(env, ek_fn(), this_ty, method, ast::none(), assumed_app(method, view))
+      env_push(env, ek_fn(), this_ty, method, view, assumed_app(method, view))
     }
 
     # D20: an item may be assumed only where every abstract type its
