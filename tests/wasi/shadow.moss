@@ -1,0 +1,51 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiFloats, WasiFloats32;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A bind shadows (D25), including one that rebinds a type and everything
+# that mentions it: inside a scope with `WasiStd`'s f64 `Float`, a bare
+# block (D65) that binds `WasiFloats32` runs at f32, a block inside that
+# one goes back to f64, and each binding returns when the block that
+# shadowed it ends. One function, `third`, compiled once per `Float`.
+
+assume Std {
+  fn ten(): Int { one.shl(one.add(one).add(one)).add(one.add(one)) }
+
+  fn print_int(n: Int) {
+    if n.ge(ten()) {
+      print_int(n.div(ten()));
+    }
+    putchar(n.rem(ten()).add(char::digit0.code()).char());
+  }
+
+  # 1/3, times 10^9 and rounded: 333333333 at f64, 333333344 at f32.
+  fn third() {
+    var scale = one;
+    var i = zero;
+    while i.lt(ten().sub(one)) {
+      scale = scale.mul(ten());
+      i = i.add(one);
+    }
+    let x = float(one).div(float(one.add(one).add(one)));
+    print_int(x.mul(float(scale)).round());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    third();                 # f64
+    {
+      bind WasiFloats32;
+      third();               # f32
+      {
+        bind WasiFloats;
+        third();             # f64 again
+      }
+      third();               # f32: the inner block's binds are gone
+    }
+    third();                 # f64: and so are these
+  }
+}

@@ -1657,19 +1657,18 @@ Nothing in `float.moss` or `Std` says f64, so another provision is
 another functor: `lib/wasistd.moss` also has `WasiFloats32`, the same
 over `F32`, and a `Std` assembled with it instead runs the same Moss at
 single precision — one specialization of each function per `Std`.
-`tests/wasi/newton.moss` does exactly that in two sibling blocks. What
-does not work yet is the shorter form, applying `WasiFloats32` *inside*
-a scope that already has `WasiStd`'s floats: the self-hosted compiler
-compiles it, but the bootstrap checks a fn or method rebind by merging
-its signature with the provision already in force, which was elaborated
-under the old `Float`, and reports a [D43] conflict. That is how the
-bootstrap checks a rebind, not something about `Float`, and settling
-whether a rebind under a rebound type replaces or merges is left for
-when something needs it. The bootstrap's own `Std` provides `Float`
-natively as an f64, so a program over `Std` that never applies
-`WasiStd` has floats too, interpreted and compiled. No float literals
-and no float formatting: a program prints a float by scaling and
-rounding it to an `Int`. Standing test: `tests/wasi/newton.moss`, run
+`tests/wasi/newton.moss` does exactly that in two sibling blocks. The
+shorter form, `bind WasiFloats32;` *inside* a scope that already has
+`WasiStd`'s floats, shadows them to the end of that block as [D25] says
+of any bind, and now works in all three implementations
+(`tests/wasi/shadow.moss`): the bootstrap used to merge a bind's
+signature with the provision already in force — elaborated under the
+old `Float` — and report a [D43] conflict, where [D43]'s merging is for
+the items of contexts being assumed, not for a bind. The bootstrap's
+own `Std` provides `Float` natively as an f64, so a program over `Std`
+that never applies `WasiStd` has floats too, interpreted and compiled.
+No float literals and no float formatting: a program prints a float by
+scaling and rounding it to an `Int`. Standing test: `tests/wasi/newton.moss`, run
 by the interpreter and both compilers.
 
 ## 13. Decision index

@@ -521,9 +521,9 @@ functor WasiFloats: Wasm, Branch -> Floats {
   bind Float.round = Double.round;
 }
 
-# The same at f32, for a scope that wants single precision: applied
-# where a `Std` is assembled in place of `WasiFloats`, it binds `Float`
-# and everything that mentions it, and no other scope's `Float` changes.
+# The same at f32, for a scope that wants single precision: `bind
+# WasiFloats32;` there shadows `Float` and everything that mentions it,
+# to the end of the block, and no other scope's `Float` changes.
 functor WasiFloats32: Wasm, Branch -> Floats {
   bind int::Int = Num;
   bind float::Float = Single;

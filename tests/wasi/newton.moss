@@ -113,9 +113,8 @@ functor WasiStd32: Wasm, Wasi, Branch -> Std {
 
 # Each block applies a whole `Std`, and its binds end with it (D65), so
 # the two never meet: `report` is compiled once per block. Applying
-# `WasiFloats32` inside a scope that already has `WasiStd`'s floats would
-# be shorter, and the self-hosted compiler accepts it; the bootstrap does
-# not yet (D67).
+# `WasiFloats32` inside a scope that already has `WasiStd`'s floats works
+# too, and is tests/wasi/shadow.moss.
 assume Wasm, Wasi, Branch {
   fn main() {
     {

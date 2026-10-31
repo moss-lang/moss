@@ -493,6 +493,17 @@ class Lower:
         if a.this is not None and b.this is not None:
             self.unify(env, module, a.this, b.this, why)
 
+    def shadow(self, table: dict, key, value):
+        """A `bind`'s entry: it replaces whatever the key had, to the end of
+        the block (D25). The bind was already checked against the
+        signature as it reads *here*; the entry it replaces may have been
+        elaborated before a type it mentions was rebound — inside a scope
+        with an f64 `Float`, `bind Float = Single;` and then its ops — so
+        it is not merged with (D43 merges the items of contexts being
+        assumed, where two mentions of one key are the same requirement;
+        a bind is a new provision, not another mention)."""
+        table[key] = value
+
     def merge(self, env: Env, table: dict, module: Module, key, value):
         existing = table.get(key)
         if existing is None:
@@ -1002,7 +1013,7 @@ class FnChecker:
             fn_symbol = self.expect_provider(expr, this_ty)
             needs_map = self.match_fn_sig(fn_symbol, sig, kind="method")
             key = self.lower.method_key(self.env, module, this_ty, method)
-            self.lower.merge(self.env, self.env.methods, module, key, sig)
+            self.lower.shadow(self.env.methods, key, sig)
             return ir.BindFn(key, fn_symbol, needs_map)
         target = resolve_path(module, spec.path)
         if target is None:
@@ -1027,13 +1038,13 @@ class FnChecker:
                     f"bind of `{target.name}`: got `{show(ty)}`, its declared type is "
                     f"`{show(declared)}`"
                 )
-            self.lower.merge(self.env, self.env.vals, module, target, declared)
+            self.lower.shadow(self.env.vals, target, declared)
             return ir.BindVal(target, value)
         if target.kind == SymKind.FN:
             sig = self.lower.fn_sig(target, self.env.tymap, self.env)
             fn_symbol = self.expect_fn_provider(expr)
             needs_map = self.match_fn_sig(fn_symbol, sig, kind="fn")
-            self.lower.merge(self.env, self.env.fns, module, target, sig)
+            self.lower.shadow(self.env.fns, target, sig)
             return ir.BindFn(target, fn_symbol, needs_map)
         self.error(f"cannot bind `{target.name}` (a {target.kind.name.lower()})")
 

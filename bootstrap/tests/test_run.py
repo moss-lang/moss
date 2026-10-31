@@ -295,6 +295,14 @@ class TestContext(unittest.TestCase):
         }
         self.assertEqual(run(files), "aced\n")
 
+    def test_a_bind_shadows_a_bind_whose_type_was_rebound(self):
+        """D25: a later bind of the same symbol in an inner block shadows.
+        `WasiFloats32` inside a scope with an f64 `Float` rebinds `Float`
+        and then its ops, whose entries in force were checked against the
+        old `Float`; they are replaced, not merged with (D43 is for the
+        items of contexts being assumed). Both back ends run this too."""
+        self.assertEqual(run({}, entry="tests/wasi/shadow.moss"), SHADOW_OUT)
+
     def test_fn_bind_capture_survives_rebinds(self):
         self.assertEqual(run(CAPTURE_REBOUND), "hhhh\n")
 
@@ -317,6 +325,9 @@ FLOAT_OUT = "".join(
         1, 333333344, 0, 2,
     )
 )
+
+# What tests/wasi/shadow.moss prints: f64, f32, f64, f32, f64.
+SHADOW_OUT = "333333333\n333333344\n333333333\n333333344\n333333333\n"
 
 # What tests/wasi/newton.moss prints: the same report at f64, then at f32.
 NEWTON_OUT = (
@@ -1393,6 +1404,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),
             ("tests/wasi/newton.moss", NEWTON_OUT, "lib/prelude.moss"),
+            ("tests/wasi/shadow.moss", SHADOW_OUT, "lib/prelude.moss"),
         )
         for entry, expected, *prelude in cases:
             with self.subTest(entry=entry):
