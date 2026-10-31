@@ -2997,6 +2997,155 @@ lambdas, as a separate change. Standing tests:
 a concrete and a generic call site, with the provision rebound in a nested
 scope: `91122` in both compilers).
 
+**[D79] DECIDED by the designer and implemented (multiple memories).** WebAssembly modules may have more than
+one linear memory (multi-memory, part of Wasm 3.0, shipped in Chrome,
+Firefox, Node and Wasmtime; not yet Safari), but source languages barely
+use it: LLVM's back end cannot put a memory index on a load or store, and
+Rust, Zig, Go, AssemblyScript and Virgil have one memory; Dart's
+experimental `Memory` API chooses a memory per access but, by its own
+account, allows no polymorphism over memories, and its addresses are plain
+`int`s. In 2023 Ben Titzer wrote that "no mainstream language has support
+for multiple memories" (AssemblyScript #2716). Moss had multi-memory once,
+as a `wasm::MemIdx` val passed in brackets to every instruction (2025),
+which is the threading Moss exists to remove.
+
+An instruction names its memory as a static immediate, so which memory is
+a compile-time choice — in Moss, a contextual type, like `Float`.
+
+*Decided.*
+
+- `lib/wasm.moss` declares `type Memory;` and puts the memory instructions
+  (loads, stores, `memory.size`/`grow`/`copy`/`fill`) under `assume Memory`.
+  The platform provides `Memory` at the root as the module's first memory,
+  index 0, exported as `memory` (which WASI preview 1 requires).
+- A program names more memories as units (`unit Scratch;`) and binds
+  `Memory` to one in a scope. The back end gives each distinct memory
+  reached its own index, emits the memory section, and puts the index on
+  every instruction specialized at it.
+- Library code is written once against `Memory`: the bump allocator keeps
+  its state in the memory it allocates from, and packed lists, strings and
+  cells live in the memory in force where they are made —
+
+  ```moss
+  {
+    bind Memory = Scratch;
+    bind WasiContainers;     # lists and strings here live in Scratch
+    ...
+  }
+  ```
+
+- **Handles are typed by their memory.** A handle into a memory lists it as
+  a parameter ([D73]): `type Packed[Item, Memory] I32;`, and so for strings
+  and cells. A list in `Scratch` and one in the main memory are different
+  types, both an address. Inside the block above, `Memory` is a new
+  generation ([D72]), so an outer list cannot be passed where an inner one
+  is expected; and an outer list's methods run in its own memory, wherever
+  they are called ([D74]). Pointers into different memories are told apart
+  statically, at no run-time cost — handles, that is: a bare `I32` address
+  handed to an instruction carries no memory, and turning a handle into
+  one and back at another memory is forging ([D73]).
+- WASI preview 1 reads I/O buffers only from memory 0, so `print` takes a
+  string in the main memory; text in another memory is copied there
+  first — which the types now require rather than leave to be forgotten.
+- **The WASI functions are memory-specific too** *(settled with the
+  designer after implementation)*. `lib/wasip1.moss` declares them under
+  `assume Memory`, and the platform provides them at the root's memory
+  only; the memory instructions, under `assume Memory` as well, are
+  provided at every memory. So code that reaches a WASI function where
+  `Memory` is rebound — a WASI-calling functor applied in a `Scratch`
+  block — is incoherent ([D71]), the error for any provision used at an
+  instantiation it was not made at. Before this the functor wrote its
+  buffer into `Scratch` and WASI read the same address in memory 0 (it
+  printed `AA` for `AB`). That was not a soundness failure — the program
+  did what its binds said — but an import typed too loosely: a bare `I32`
+  where the contract was an address in memory 0. The fix is the same as
+  for handles, putting the memory in the declaration, and needs no rule
+  at the boundary between the library and the compiler, and no name for
+  the main memory.
+- `wasm-features.txt` gains `multimemory`.
+
+*What it is for.* Arenas dropped all at once (reset one memory's allocator
+— a compiler's per-function scratch data); keeping untrusted input apart
+from everything else; and, with a later memory64 entry, a 64-bit memory for
+large data beside a 32-bit main one. And for the thesis: the central
+capability — a choice at a dynamic point in the call tree that statically
+specializes everything beneath it — applied to *where data lives*.
+
+*Prior work and claim.* To our knowledge, Moss is the first language where
+reusable library code (allocators, collections, strings) is written once
+and statically specialized to any linear memory chosen by an enclosing
+scope, with pointers into different memories given distinct types. The
+closest designs — Dart's experimental `Memory` API, and the 8f4e language's
+memory regions (May–October 2026, since removed), which tracked a pointer's
+memory — choose a memory per access or per declaration and have no
+memory-polymorphic code. Tools that use multi-memory today do so after
+compilation (Binaryen's `wasm-merge`, and binary rewriters such as Bento
+and WBSan); RichWasm's types distinguish two kinds of memory but compile to
+one. (Survey: the thesis repository's `scratch/mmres/`.)
+
+*Implemented (October 2026), and what the implementation changed.*
+
+- *Instructions are provided at every memory.* Under [D71] an assumed
+  instruction would be tied to the `Memory` its provision was made at, so
+  after `bind Memory = Scratch` every load and store would be
+  unavailable. The platform provides each at every memory, so none is
+  tied to one; which memory it uses is the `Memory` in force where it is
+  specialized. Binding `Memory` to anything but a unit or the platform's
+  own is refused where an instruction is compiled, not at the bind.
+- *The library regrouped.* `bind Memory = Scratch; bind WasiContainers;`
+  did not work as the library was grouped: the string list did not
+  type-check, and `put_bytes`, a WASI call, would have run in `Scratch`.
+  Strings are now a `Strings` context that `Containers` includes (and
+  `WasiBasics` applies), and `put_bytes` moved to an `Output` context,
+  applied by `WasiStd` through `WasiOutput`.
+- *`print` is in the main memory because `WasiStd` binds it at the root*,
+  there being no name for that memory; inside a block that rebinds
+  strings it cannot be called at all, even on a main-memory string.
+- *Code written against all of `Std` cannot run in a `Scratch` block*:
+  `Std` also holds WASI-backed items that mention strings and lists
+  (`print`, `first_arg`, `put_bytes`, paths), provided only at the main
+  memory. Code to run there is written against the narrower `Char,
+  Numerics, Containers`, as the tests do.
+- *Small additions.* `heap_mark` and `heap_reset`, for arenas; `_start`
+  sets the heap pointer at address 16 of every memory; memory 0 keeps the
+  short encodings, so a one-memory module is as before; only memory 0 is
+  exported.
+- *The bootstrap* records the `Memory` in force on each memory
+  instruction (`Call.memory`), and when a program binds `Memory` carries
+  type arguments in its back end and its interpreter, which keeps one
+  emulated memory per unit. *The self-hosted compiler* reads `Memory`
+  through each specialization's environment and specializes `main` with
+  `Memory` bound to a symbol of its own, the main memory, which no
+  environment rebinds (without that, binding a name to the main memory
+  and then rebinding `Memory` copied within the wrong memory or gave a
+  false type error).
+
+*Later.*
+
+- Splitting `Std` into a memory part and an I/O part, so code over `Std`
+  can run on another memory's containers.
+- Specializing a function only at the context items it reaches: today
+  every function under `assume Wasm` is compiled once per memory it is
+  reached in, whether or not it touches memory.
+- The incoherence error names the first item of `Wasi` (`args_get`), not
+  the function actually reached (`fd_write`).
+- A name for the main memory, should one be wanted for its own sake.
+- Custom page sizes, a per-memory static attribute; memory64, an address
+  type per memory; shared memories for threads.
+
+*Implementation.* `lib/wasm.moss`, `lib/wasip1.moss` and
+`lib/wasistd.moss` (memory instructions and WASI functions under `assume
+Memory`, allocator state, handles' listed `Memory`, the regrouping); both
+back ends: memory indices on instructions, the memory section, the main
+memory's export; the feature flag. Tests, in `tests/wasi/`: two memories
+with a list in each, summed (`memories`); resetting one memory's
+allocator leaving the other's data intact (`memory_reset`); text made in
+`Scratch` copied into the main memory to be printed, and back
+(`memory_copy`); and rejected in both compilers, passing a `Scratch`
+list where the main memory's is expected (`memory_mismatch`), printing a
+`Scratch` string as it is (`memory_print`), and applying a WASI-calling
+functor where `Memory` is rebound (`memory_wasi`).
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -3008,8 +3157,8 @@ written in Moss. (Records are done, and there are no tuples [D63].)
 
 Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
-unavoidable — *not* the prelude path, see [D52]) · methods on union-headed *aliases* in general ([D47] — solved
-for `Bool` by [D45]'s nominal wrapper) · D29 the `val` half of functors ·
+unavoidable — *not* the prelude path, see [D52]) · attached methods on union-headed *aliases* in general ([D47] — solved
+for `Bool` by [D45]'s nominal wrapper, and for detached methods by [D75]) · D29 the `val` half of functors ·
 [D50]'s v0 restrictions on defined vals
 
 Everything else is **DECIDED**: D1–D28 · D30–D49 (D3/D4 by designer fiat,
@@ -3051,7 +3200,13 @@ receiver's instantiation, not the calling scope's, D77 where a
 receiver has an attached method and the context provides the detached
 method of that name at it, the provision wins — what the code means, and
 the same in every specialization — and both kinds of method stay, as a
-type's own operations and as interfaces)
+type's own operations and as interfaces, D75 garbage-collected references
+as one allocator among others — `Ref[Boxed]` over the platform's
+`StructRef`, boxing provided by the platform's `Heap` functor, recursive
+types through a reference as in Rust, and detached methods at union and
+record receivers — D79 multiple memories, `Memory` a contextual type that
+memory instructions run in and handles list, with WASI's functions
+provided at the main memory alone)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
