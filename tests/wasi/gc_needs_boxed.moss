@@ -1,0 +1,21 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Heap;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D75: `Heap`'s argument signature is `Wasm, Boxed`, and applying it needs
+# both in context, as any functor's binds would. Here `Wasm` is assumed
+# but nothing has assumed or bound `Boxed`, so there is no type to box.
+
+assume Std, Wasm {
+  fn demo() {
+    bind Heap;
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

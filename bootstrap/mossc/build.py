@@ -33,9 +33,10 @@ declared but not covered here, since every value in this slice is an i32.
 """
 
 import sys
+from dataclasses import dataclass
 
 from . import ir
-from .types import head
+from .types import TAbstract, TNominal, TRecord, TUnion, TUnit, TNever, head
 from .ast import TyRecord as ast_TyRecord
 from .collect import Program, SymKind, Symbol
 
@@ -65,6 +66,21 @@ I32_STORE8 = b"\x3a"
 HEAP_BASE = 1024
 I32_LOAD = b"\x28"
 I32_STORE = b"\x36"
+
+# D75: garbage-collected references. A reference type is `(ref null ht)`,
+# 0x63 then the heap type as a signed LEB: a struct type's index, or the
+# abstract `struct` (0x6B). The GC instructions are 0xFB-prefixed
+# (https://webassembly.github.io/gc/core/binary/instructions.html).
+REF_NULL = b"\x63"
+HT_STRUCT = b"\x6b"
+STRUCTREF = REF_NULL + HT_STRUCT
+GC = b"\xfb"
+STRUCT_NEW = 0
+STRUCT_GET = 2
+REF_CAST_NULL = 23
+REF_NULL_OP = b"\xd0"
+REC = b"\x4e"
+STRUCT_TYPE = b"\x5f"
 
 # Function index space: the WASI imports the module actually uses, then a
 # fixed run of shims, then the compiled Moss functions, then `_start`.
@@ -300,11 +316,52 @@ def declared(t):
     return getattr(h, "origin", h)
 
 
+@dataclass(frozen=True)
+class Primitive:
+    """What a key is bound to by the platform (D75's `bind Heap;`): an
+    instruction sequence for the struct of `held`, compiled in place at
+    each call, with nothing captured."""
+
+    prim: str
+    held: object
+
+
 def freeze_env(env: dict) -> tuple:
     """A hashable form of a binding environment, for keying specializations."""
-    return tuple(
-        sorted((id(k), id(g), freeze_env(sub)) for k, (g, sub) in env.items())
-    )
+
+    def one(k, entry):
+        if isinstance(entry, Primitive):
+            return (id(k), 0, (entry.prim, entry.held), ())
+        g, sub, theta = entry
+        return (id(k), id(g), freeze_env(sub), freeze_theta(theta))
+
+    return tuple(sorted((one(k, e) for k, e in env.items()), key=lambda e: e[0]))
+
+
+def freeze_theta(theta: dict) -> tuple:
+    return tuple(sorted(((id(p), t) for p, t in theta.items()), key=lambda e: e[0]))
+
+
+def subst(theta: dict, t):
+    """A type in a function's terms, at the type arguments `theta` gives
+    its parameters."""
+    if not theta:
+        return t
+    if isinstance(t, TAbstract):
+        if t.symbol in theta:
+            return theta[t.symbol]
+        if t.args:
+            return TAbstract(t.symbol, tuple((s, subst(theta, a)) for s, a in t.args))
+        return t
+    if isinstance(t, TNominal):
+        if t.args:
+            return TNominal(t.symbol, tuple((s, subst(theta, a)) for s, a in t.args))
+        return t
+    if isinstance(t, TUnion):
+        return TUnion(tuple(subst(theta, m) for m in t.members))
+    if isinstance(t, TRecord):
+        return TRecord(tuple((n, subst(theta, f)) for n, f in t.fields))
+    return t
 
 
 class Backend:
@@ -338,6 +395,14 @@ class Backend:
             self.wasi_import(field, nparams, nresults)
         self.rebound = self.rebound_keys()
         self.used = self.used_needs()
+        # D75: one immutable struct type per type a `Ref` holds, in the
+        # order they are met; they take the low type indices, as one
+        # `rec` group, and every function type comes after them. Kept
+        # across the passes of `build`, so an index never changes.
+        self.gc = lower.uses_gc
+        self.struct_of_ty: dict = {}
+        self.struct_fields: list[tuple] = []
+        self.valtype_memo: dict = {}
 
     def wasi_import(self, field: str, params, results) -> int:
         """The index of a WASI import, adding it to the module if new.
@@ -363,6 +428,108 @@ class Backend:
 
     def shim(self, which: int) -> int:
         return len(self.imports) + which
+
+    # D75: the struct types, and the valtypes a type's run of scalars has.
+
+    def struct_index(self, held) -> int:
+        """The struct type of a reference to `held`, a type with no
+        abstract part this back end has to resolve. Registered before its
+        fields are computed, since they may be references to itself."""
+        index = self.struct_of_ty.get(held)
+        if index is None:
+            index = len(self.struct_fields)
+            self.struct_of_ty[held] = index
+            self.struct_fields.append(())
+            self.struct_fields[index] = self.valtypes(held)
+        return index
+
+    def ref_type(self, held) -> bytes:
+        return REF_NULL + sleb(self.struct_index(held))
+
+    def held_of(self, ref_ty) -> object:
+        """What a `Ref[Boxed=...]` holds."""
+        boxed = self.lower.boxed_sym
+        for s, a in ref_ty.args:
+            if s is boxed:
+                return a
+        raise NotCompilable("a `Ref` that does not say what it holds")
+
+    def valtypes(self, t) -> tuple:
+        """The valtype of each scalar of a value of type `t` (D59): the
+        type-directed counterpart of the layouts this back end otherwise
+        learns from values, for what a value cannot say — a union's
+        padding, and the fields of a struct. An abstract type no binding
+        reached is an i32, the scalar it is lowered as."""
+        got = self.valtype_memo.get(t)
+        if got is None:
+            got = self._valtypes(t)
+            self.valtype_memo[t] = got
+        return got
+
+    def _valtypes(self, t) -> tuple:
+        if isinstance(t, (TUnit, TNever)):
+            return (I32,)  # `()` is an i32 in this back end (`slots_of`)
+        if isinstance(t, TRecord):
+            return tuple(v for _, f in t.fields for v in self.valtypes(f))
+        if isinstance(t, TAbstract):
+            sym = declared(t)
+            if sym is self.lower.structref_sym:
+                return (STRUCTREF,)
+            if "wasm" in self.lib:
+                names = self.lib["wasm"].names
+                for name, vt in (("I64", I64), ("F32", F32), ("F64", F64)):
+                    if sym is names.get(name):
+                        return (vt,)
+            if "float" in self.lib and sym is self.lib["float"].names.get("Float"):
+                return (F64,)  # the native `Float` (D67)
+            return (I32,)
+        if isinstance(t, TNominal):
+            if t.symbol.kind == SymKind.UNIT:
+                return (I32,)
+            if t.symbol is self.lower.ref_sym:
+                return (self.ref_type(self.held_of(t)),)
+            if t.symbol.kind == SymKind.TAG:
+                from .lower import Env
+
+                return self.valtypes(self.lower.payload_type(t, Env(t.symbol.module)))
+            return (I32,)
+        if isinstance(t, TUnion):
+            payloads = []
+            for m in t.members:
+                if isinstance(m, TNominal) and m.symbol.kind == SymKind.TAG:
+                    payloads.append(self.valtypes(m))
+            if not payloads:
+                return (I32,)  # units: the code is the value
+            widest = max(len(p) for p in payloads)
+            slots = []
+            for i in range(widest):
+                slots.append(next(p[i] for p in payloads if len(p) > i))
+            return (I32, *slots)
+        return (I32,)
+
+    def theta_for(self, tyargs, theta: dict) -> dict:
+        """A callee's type arguments, at the caller's. Only a program that
+        uses references needs them, so one without specializes exactly as
+        it always did. One that does needs all of them, not only those
+        whose layout holds a reference: a struct type is one per type
+        held, so `Expr` read where `Int` is abstract and `Expr` read where
+        `Int` is `I32` must reach the back end as one type — which they
+        are once the callee's `Int` is the caller's."""
+        if not self.gc or not tyargs:
+            return {}
+        return {p: subst(theta, t) for p, t in tyargs}
+
+    def zero(self, valtype: bytes) -> bytes:
+        """A zero of this valtype: what pads a union's narrower member."""
+        if valtype == I64:
+            return b"\x42\x00"
+        if valtype == F32:
+            return b"\x43" + bytes(4)
+        if valtype == F64:
+            return b"\x44" + bytes(8)
+        if valtype.startswith(REF_NULL):
+            return REF_NULL_OP + valtype[1:]
+        return I32_CONST + sleb(0)
 
     def first_fn(self) -> int:
         return len(self.imports) + len(SHIMS)
@@ -463,7 +630,7 @@ class Backend:
                 kind, target = node.callee
                 if kind == "direct":
                     out.append((target, node.needs_map or ()))
-                else:
+                elif kind == "env":  # a primitive (D75) is no need
                     uses.add(target)
             elif isinstance(node, ir.BindFn):
                 out.append((node.fn, node.needs_map))
@@ -530,8 +697,8 @@ class Backend:
                     continue  # never reached, so never passed
                 if self.passed_need(key):
                     found.append(key)
-                elif key in e:
-                    provider, sub = e[key]
+                elif key in e and not isinstance(e[key], Primitive):
+                    provider, sub, _ = e[key]
                     found.extend(
                         captured(key, slot)
                         for slot in visit(provider, sub, depth + 1)
@@ -552,7 +719,8 @@ class Backend:
         return self.lower.val_widths.get(id(slot), 1)
 
     def compile_fn(
-        self, symbol: Symbol, env: dict | None = None, params: tuple | None = None
+        self, symbol: Symbol, env: dict | None = None, params: tuple | None = None,
+        theta: dict | None = None,
     ) -> int:
         """Compile a *specialization*: the function under a specific set of
         fn bindings. Two call sites that bind different providers get two
@@ -566,14 +734,15 @@ class Backend:
         whether that is an i32 or an f64 here (D67) — and a call at each is
         a specialization of its own."""
         env = env or {}
-        cache = (id(symbol), freeze_env(env), params)
+        theta = theta or {}
+        cache = (id(symbol), freeze_env(env), params, freeze_theta(theta))
         if cache in self.fn_index:
             return self.fn_index[cache]
         index = self.first_fn() + len(self.fn_index)
         self.fn_index[cache] = index
         self.cache_of[index] = cache
         fn = self.lower.fns[id(symbol)]
-        compiler = FnCompiler(self, fn, self.val_slots(symbol, env), env, params)
+        compiler = FnCompiler(self, fn, self.val_slots(symbol, env), env, params, theta)
         body = compiler.run()  # may recursively compile callees
         results = compiler.result_layout
         self.results[index] = results
@@ -658,14 +827,23 @@ class Backend:
         func_types = [ty(params, results) for params, results, _ in ordered]
         start_type = ty(0, 0)
 
-        type_section = section(
-            1, vec([b"\x60" + vec(list(p)) + vec(list(r)) for p, r in types])
-        )
+        # D75: the struct types first, as one `rec` group — they may refer
+        # to each other, and to themselves — so a function type's index is
+        # its position past them.
+        structs = len(self.struct_fields)
+        entries = [b"\x60" + vec(list(p)) + vec(list(r)) for p, r in types]
+        if structs:
+            group = [
+                STRUCT_TYPE + vec([v + b"\x00" for v in fields])
+                for fields in self.struct_fields
+            ]
+            entries.insert(0, REC + vec(group))
+        type_section = section(1, vec(entries))
         import_section = section(
             2,
             vec(
                 [
-                    name(WASI) + name(field) + b"\x00" + uleb(t)
+                    name(WASI) + name(field) + b"\x00" + uleb(structs + t)
                     for (field, _, _), t in zip(self.imports, import_types)
                 ]
             ),
@@ -673,9 +851,9 @@ class Backend:
         function_section = section(
             3,
             vec(
-                [uleb(t) for t in shim_types]
-                + [uleb(t) for t in func_types]
-                + [uleb(start_type)]
+                [uleb(structs + t) for t in shim_types]
+                + [uleb(structs + t) for t in func_types]
+                + [uleb(structs + start_type)]
             ),
         )
         memory_section = section(5, vec([b"\x00" + uleb(2)]))
@@ -1125,10 +1303,13 @@ class Backend:
 class FnCompiler:
     def __init__(
         self, backend: Backend, fn: ir.FnIR, needs: list, env: dict,
-        params: tuple | None = None,
+        params: tuple | None = None, theta: dict | None = None,
     ):
         self.b = backend
         self.fn = fn
+        # What this specialization's abstract types are, where a layout
+        # depends on it (D75; `Backend.theta_for`).
+        self.theta = theta or {}
         self.env = dict(env)  # fn need key -> (provider symbol, its own env)
         self.code = bytearray()
         # D59: a value is a run of scalars, so a name owns a *list* of
@@ -1300,7 +1481,15 @@ class FnCompiler:
                 self.provisions[captured(node.key, slot)] = self.provide(
                     self.translate_slot(translate, slot)
                 )
-            self.env[node.key] = (node.fn, sub)
+            # An anonymous function is in this frame's terms (D70); a
+            # named provider takes the bind's type arguments.
+            if node.tyargs is None:
+                theta = self.theta
+            else:
+                theta = self.b.theta_for(node.tyargs, self.theta)
+            self.env[node.key] = (node.fn, sub, theta)
+        elif isinstance(node, ir.BindPrim):
+            self.env[node.key] = Primitive(node.prim, self.held_of_here(node.held))
         elif isinstance(node, ir.ExprStmt):
             layout = self.expr(node.expr)
             self.code += DROP * len(layout)
@@ -1359,7 +1548,16 @@ class FnCompiler:
             self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
         elif isinstance(node, ir.MakeTag):
             # D58: a nominal value *is* its payload. Nothing to attach.
-            return self.expr(node.payload)
+            layout = self.expr(node.payload)
+            if node.ty is not None:
+                # D75: a `Ref` built from a bare `StructRef` is forged,
+                # and the one place a reference is cast — to the struct of
+                # what it claims to hold, trapping if it does not.
+                held = self.held_of_here(self.b.held_of(node.ty))
+                index = self.b.struct_index(held)
+                self.code += GC + uleb(REF_CAST_NULL) + sleb(index)
+                return (self.b.ref_type(held),)
+            return layout
         elif isinstance(node, ir.Inject):
             return self.inject(node)
         elif isinstance(node, ir.MakeRecord):
@@ -1428,6 +1626,13 @@ class FnCompiler:
                 base = 0 if bare else 1
                 if pat.binder is not None:
                     self.slots[pat.binder] = list(scrut[base : base + pat.width])
+                    if pat.head is not None and pat.head is self.b.lower.ref_sym:
+                        # D75: taking a `Ref` apart forgets what it
+                        # holds — a bare `StructRef`, upcast for free.
+                        bare_ref = self.local(STRUCTREF)
+                        self.code += LOCAL_GET + uleb(scrut[base])
+                        self.code += LOCAL_SET + uleb(bare_ref)
+                        self.slots[pat.binder] = [bare_ref]
                 if pat.fields is not None:
                     for _, binder, offset, width in pat.fields:
                         start = base + offset
@@ -1495,9 +1700,28 @@ class FnCompiler:
         payload = self.expr(node.value)
         if len(payload) + 1 > node.width:
             raise NotCompilable("a union member wider than its union")
-        for _ in range(node.width - 1 - len(payload)):
-            self.code += I32_CONST + sleb(0)  # pad to the union's width
-        return (I32,) + payload + (I32,) * (node.width - 1 - len(payload))
+        # Pad to the union's width with zeros of its own valtypes, which
+        # for a reference slot is `ref.null` (D75).
+        pads = (I32,) * (node.width - 1 - len(payload))
+        if node.union is not None:
+            want = self.b.valtypes(subst(self.theta, node.union))
+            if len(want) == node.width:
+                pads = want[1 + len(payload):]
+                # A union's slot has one valtype, its first member's that
+                # reaches it (D59); a member that puts a reference where
+                # another puts a scalar would need a slot of each.
+                for mine, slot in zip(payload, want[1:]):
+                    if mine != slot and REF_NULL in (mine[:1], slot[:1]):
+                        raise NotCompilable(
+                            f"`{node.symbol.name}` puts a "
+                            f"{'reference' if mine[:1] == REF_NULL else 'scalar'} "
+                            "where an earlier member of its union puts a "
+                            f"{'reference' if slot[:1] == REF_NULL else 'scalar'}, "
+                            "and a union has one valtype per slot (D59, D75)"
+                        )
+        for valtype in pads:
+            self.code += self.b.zero(valtype)
+        return (I32,) + payload + tuple(pads)
 
     def if_expr(self, node: ir.If):
         """A block type names at most one result, so a branch yielding
@@ -1596,11 +1820,14 @@ class FnCompiler:
             for slot in self.b.val_slots(target, callee_env):
                 layouts.append(self.push_provision(self.translate_slot(translate, slot)))
             params = tuple(t for layout in layouts for t in layout)
-            index = self.b.compile_fn(target, callee_env, params)
+            theta = self.b.theta_for(node.tyargs, self.theta)
+            index = self.b.compile_fn(target, callee_env, params, theta)
             self.code += CALL + uleb(index)
             return self.b.result_of(index, self.b.lower.fns[id(target)].ret_slots)
+        if target in self.env and isinstance(self.env[target], Primitive):
+            return self.gc_prim(self.env[target], node)
         if target in self.env:
-            provider, sub = self.env[target]
+            provider, sub, theta = self.env[target]
             provider_fn = self.b.lower.fns[id(provider)]
             layouts = []
             if node.this is not None:
@@ -1616,7 +1843,7 @@ class FnCompiler:
             for slot in self.b.val_slots(provider, sub):
                 layouts.append(self.push_provision(captured(target, slot)))
             params = tuple(t for layout in layouts for t in layout)
-            index = self.b.compile_fn(provider, sub, params)
+            index = self.b.compile_fn(provider, sub, params, theta)
             self.code += CALL + uleb(index)
             return self.b.result_of(index, self.b.lower.fns[id(provider)].ret_slots)
         # Contextual call: a native method, putchar, or out of slice.
@@ -1880,6 +2107,50 @@ class FnCompiler:
                 self.code += I32_CONST + sleb(0)  # the Moss call yields ()
             return
         raise NotCompilable(f"contextual fn `{getattr(key, 'name', key)}`")
+
+    def held_of_here(self, t):
+        """A type a reference holds, `t` in this function's terms, at this
+        specialization's type arguments."""
+        held = subst(self.theta, t)
+        if self._abstract_boxed(held):
+            raise NotCompilable(
+                "a reference to a type this specialization does not know "
+                "(`Boxed` is still abstract here)"
+            )
+        return held
+
+    def _abstract_boxed(self, t) -> bool:
+        return isinstance(t, TAbstract) and getattr(t.symbol, "origin", None) is self.b.lower.boxed_sym
+
+    def gc_prim(self, provision: Primitive, node: ir.Call):
+        """D75: `.boxed()` is `struct.new` of the struct for what it holds,
+        and `.deref()` a `struct.get` of each of its fields."""
+        held = provision.held
+        index = self.b.struct_index(held)
+        fields = self.b.struct_fields[index]
+        if provision.prim == "box":
+            got = self.expr(node.this)
+            if not all(
+                g == f or (f == STRUCTREF and g.startswith(REF_NULL))
+                for g, f in zip(got, fields)
+            ) or len(got) != len(fields):
+                raise NotCompilable(
+                    f"a value laid out as {len(got)} scalar(s) does not fit the "
+                    "struct of the type it is boxed as (a union whose members "
+                    "put different valtypes in one slot?)"
+                )
+            self.code += GC + uleb(STRUCT_NEW) + uleb(index)
+            return (self.b.ref_type(held),)
+        self.expr(node.this)
+        if not fields:
+            self.code += DROP
+            return ()
+        ref = self.local(self.b.ref_type(held))
+        self.code += LOCAL_SET + uleb(ref)
+        for i in range(len(fields)):
+            self.code += LOCAL_GET + uleb(ref)
+            self.code += GC + uleb(STRUCT_GET) + uleb(index) + uleb(i)
+        return tuple(fields)
 
     def wasm_instruction(self, key: Symbol, node: ir.Call):
         """A `Wasm` intrinsic is the instruction of the same name."""

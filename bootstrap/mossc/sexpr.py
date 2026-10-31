@@ -259,7 +259,7 @@ def _decl(d):
             d.name,
             _list([_spec(s) for s in d.args]),
             _list([_spec(s) for s in d.result]),
-            _list([_bind(b) for b in d.binds]),
+            _opt(d.binds, lambda binds: _list([_bind(b) for b in binds])),
         )
     raise AssertionError(f"unknown declaration node {d!r}")
 

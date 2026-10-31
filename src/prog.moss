@@ -2,6 +2,7 @@ import "./ast.moss" as ast;
 import "./bytes.moss" use *;
 import "./intern.moss" as intern;
 import "./lex.moss" as lexer;
+import "./spell.moss" use sp_wasm_moss;
 import "./syntax.moss" as syntax;
 
 # Collect, over the real tree: load the module graph, give every
@@ -174,6 +175,12 @@ assume Std {
   # captured, which it holds by value (named by the local).
   fn e_lambda(): Int { 16 + 4 }
 
+  # D75: a functor declared with no body anywhere but lib/wasm.moss. The
+  # platform provides such a functor, and nothing provides one anywhere
+  # else. Named by the functor, as the bootstrap's "functor `F` has no
+  # body" is.
+  fn e_platform(): Int { 16 + 6 }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,
@@ -276,6 +283,25 @@ assume Std {
     }
 
     fn dir_of(p: String): String { p.slice(0, path_cut(p)) }
+
+    # Whether a module is the primitive context's own declaration, known
+    # by its file as the back end knows `Wasm` (D52).
+    fn is_platform(m: Int): Bool {
+      let base = basename(module_path(m));
+      let cs = int_list();
+      sp_wasm_moss(cs);
+      if base.length() != cs.length() {
+        return false;
+      }
+      var i = 0;
+      while i < cs.length() {
+        if base.get(i).code() != cs.get(i) {
+          return false;
+        }
+        i = i + 1;
+      }
+      true
+    }
 
     fn basename(p: String): String {
       let cut = path_cut(p);
@@ -534,6 +560,13 @@ assume Std {
       }
       if k == ast::k_d_bad() {
         return ();
+      }
+      if k == ast::k_d_functor() {
+        if !ast::is_some(ast::fu_binds(d)) {
+          if !is_platform(m) {
+            error(e_platform(), m, ast::fu_name(d));
+          }
+        }
       }
       if k == ast::k_d_fn() {
         let recv = ast::fn_recv(d);

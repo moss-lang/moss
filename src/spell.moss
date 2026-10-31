@@ -115,6 +115,48 @@ assume Std {
     push_char(out, char::digit4);
   }
 
+  fn sp_StructRef(out: IntList) {
+    push_char(out, char::S);
+    push_char(out, char::t);
+    push_char(out, char::r);
+    push_char(out, char::u);
+    push_char(out, char::c);
+    push_char(out, char::t);
+    push_char(out, char::R);
+    push_char(out, char::e);
+    push_char(out, char::f);
+  }
+
+  fn sp_Ref(out: IntList) {
+    push_char(out, char::R);
+    push_char(out, char::e);
+    push_char(out, char::f);
+  }
+
+  fn sp_Boxed(out: IntList) {
+    push_char(out, char::B);
+    push_char(out, char::o);
+    push_char(out, char::x);
+    push_char(out, char::e);
+    push_char(out, char::d);
+  }
+
+  fn sp_boxed(out: IntList) {
+    push_char(out, char::b);
+    push_char(out, char::o);
+    push_char(out, char::x);
+    push_char(out, char::e);
+    push_char(out, char::d);
+  }
+
+  fn sp_deref(out: IntList) {
+    push_char(out, char::d);
+    push_char(out, char::e);
+    push_char(out, char::r);
+    push_char(out, char::e);
+    push_char(out, char::f);
+  }
+
   fn sp_bool_moss(out: IntList) {
     push_char(out, char::b);
     push_char(out, char::o);

@@ -4,6 +4,10 @@ type I64;
 type F32;
 type F64;
 
+# https://webassembly.github.io/gc/core/syntax/types.html#heap-types
+# Any reference to a garbage-collected struct, `(ref null struct)` (D75).
+type StructRef;
+
 # https://webassembly.github.io/spec/core/syntax/instructions.html#parametric-instructions
 fn unreachable(): |;
 
@@ -209,11 +213,33 @@ assume I32, I64, F32, F64 {
   fn f64_reinterpret_i64(n: I64): F64;
 }
 
+# Garbage-collected references (D75): a `Ref` is typed by what it holds,
+# a listed parameter (D73), and the back end gives each type `Boxed` is
+# instantiated at an immutable GC struct of its run of scalars (D59), so
+# `Ref[Boxed=X]` is `(ref null $X)`. Taking a `Ref` apart gives a bare
+# `StructRef`; building one from a `StructRef` is the one place the back
+# end casts (`ref.cast`), and traps if the struct is not an `X`.
+#
+# Boxing and following a reference are ordinary context items, keyed by
+# receiver (D47, D62) so that references to several types coexist in one
+# scope: `.boxed` is a detached method, provided at receiver `Boxed`, and
+# `.deref` is attached to `Ref`, so provided at `Ref[Boxed=X]`. Nothing
+# written in Moss can provide them; the platform does, through `Heap`
+# below — `struct.new` and a `struct.get` per field.
+type Boxed;
+
+assume Boxed {
+  type Ref[Boxed] StructRef;
+  fn .boxed(): Ref;
+  fn Ref.deref(): Boxed;
+}
+
 context Wasm =
   I32,
   I64,
   F32,
   F64,
+  StructRef,
 
   i32_zero,
   i32_one,
@@ -386,3 +412,11 @@ context Wasm =
   f32_reinterpret_i32,
   f64_reinterpret_i64,
 ;
+
+# A functor with no body is provided by the platform, and only this file
+# may declare one. `bind Heap;` needs `Wasm` and a `Boxed` in context, and
+# provides `.boxed` at receiver `Boxed` and `.deref` at `Ref[Boxed=...]`
+# for whatever `Boxed` is there (D75): to box two types, bind `Boxed` to
+# each and apply `Heap` after each. Code that has not applied it cannot
+# box anything.
+functor Heap: Wasm, Boxed -> Boxed.boxed, Ref.deref;

@@ -358,6 +358,53 @@ LISTS_OUT = (
 # under arithmetic that traps on overflow.
 OVERFLOW_OUT = "1\n2147483647\n2147483647\n"
 
+# D75: what tests/wasi/gc_tree.moss prints — the thesis's expression, a
+# full tree of 2^10 ones and its depth, and the expression read through a
+# contextual val, doubled — and what tests/wasi/gc_ast.moss prints, once
+# over a pool of indices and once over the GC heap.
+GC_TREE_OUT = "-10\n1024\n11\n-20\n"
+GC_AST_OUT = "-10\n0\n4096\n" * 2
+# ...and what tests/wasi/gc_two.moss prints, with `Heap` applied at two
+# types in one scope.
+GC_TWO_OUT = "3\n12\n7\n1\n"
+
+
+def wasm_text(module: bytes) -> str:
+    """A module as Binaryen prints it, to look for instructions."""
+    import shutil
+    import subprocess
+
+    from .test_build import wasm_features, wasm_file
+
+    features = [f"--enable-{feature}" for feature in wasm_features()]
+    return subprocess.run(
+        [shutil.which("wasm-dis"), *features, wasm_file(module)],
+        capture_output=True, text=True, check=True, timeout=120,
+    ).stdout
+
+
+def starts_with_rec_group(module: bytes) -> bool:
+    """Whether the type section's first entry is a `rec` group (0x4E)."""
+    def leb(at):
+        value = shift = 0
+        while True:
+            byte = module[at]
+            at += 1
+            value |= (byte & 0x7F) << shift
+            shift += 7
+            if not byte & 0x80:
+                return value, at
+
+    at = 8
+    while at < len(module):
+        sid = module[at]
+        size, body = leb(at + 1)
+        if sid == 1:
+            _, first = leb(body)
+            return module[first] == 0x4E
+        at = body + size
+    return False
+
 # What tests/wasi/ops.moss prints: D68's operators on `Int` and `Bool`.
 OPS_OUT = (
     "19 -7 3 1 -7 2 23 35 21 5 1 -1 \n"
@@ -1882,6 +1929,12 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/packed.moss", "3000000000\n", "lib/prelude.moss"),
             ("tests/wasi/concrete_list.moss", "2\n", "lib/prelude.moss"),
             ("tests/wasi/resolution.moss", "91122\n", "lib/prelude.moss"),
+            ("tests/wasi/gc_tree.moss", GC_TREE_OUT, "lib/prelude.moss"),
+            ("tests/wasi/gc_ast.moss", GC_AST_OUT, "lib/prelude.moss"),
+            ("tests/wasi/gc_two.moss", GC_TWO_OUT, "lib/prelude.moss"),
+            # D75 under D77: `Ref`'s attached `.deref` unless a detached
+            # `.deref` in scope is provided at the receiver.
+            ("tests/wasi/gc_resolution.moss", "42\n7\n42\n", "lib/prelude.moss"),
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),
@@ -1896,6 +1949,92 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 mine = self.wasmtime_run(self.compile_with_moss(entry, *prelude))
                 self.assertEqual(mine, expected)
                 self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), expected)
+
+    def test_gc_references(self):
+        """D75: a recursive tree through `Ref[Boxed=Expr]`, and the
+        thesis's interpreter written against an abstract `ExprRef`, run
+        over an index pool and then over the GC heap through the
+        knot-tied `Node`, and an `Expr` and a `Stmt` boxed side by side
+        in one scope, give the same output interpreted and in both
+        compilers. Each compiled module has its struct types as a `rec`
+        group, builds with `struct.new`, and — since no program forges a
+        reference — contains no `ref.cast`."""
+        from .test_build import compile_wasm, run_wasm
+
+        for entry, expected in (
+            ("tests/wasi/gc_tree.moss", GC_TREE_OUT),
+            ("tests/wasi/gc_ast.moss", GC_AST_OUT),
+            ("tests/wasi/gc_two.moss", GC_TWO_OUT),
+        ):
+            with self.subTest(entry=entry):
+                self.assertEqual(run({}, entry=entry), expected)
+                for module in (
+                    self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+                    compile_wasm({}, entry=entry),
+                ):
+                    self.assertTrue(starts_with_rec_group(module))
+                    text = wasm_text(module)
+                    self.assertIn("struct.new", text)
+                    self.assertIn("struct.get", text)
+                    self.assertNotIn("ref.cast", text)
+                    self.assertEqual(run_wasm(module), expected)
+
+    def test_a_forged_reference_traps_where_it_is_forged(self):
+        """D75: rebuilding a `Ref` from the bare `StructRef` it was taken
+        apart into is the one cast. At the type the struct was made at it
+        succeeds; at another it traps at the construction, in the
+        interpreter and both compilers, before anything is read."""
+        import subprocess
+
+        from mossc.interp import MossPanic
+
+        from .test_build import compile_wasm, wasm_file, wasmtime
+
+        entry = "tests/wasi/gc_forge.moss"
+        with self.assertRaises(MossPanic) as caught:
+            run({}, entry=entry)
+        self.assertIn("cast failure", str(caught.exception))
+        for module in (
+            self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+            compile_wasm({}, entry=entry),
+        ):
+            self.assertEqual(wasm_text(module).count("ref.cast"), 2)
+            result = subprocess.run(
+                [wasmtime(), wasm_file(module)], capture_output=True, text=True, timeout=120
+            )
+            self.assertEqual((result.returncode, result.stdout), (134, "3\n4\n"))
+            self.assertIn("cast failure", result.stderr)
+
+    def test_only_the_platform_declares_a_bodiless_functor(self):
+        """D75: `functor F: A -> B;`, with no body, is provided by the
+        platform, so only lib/wasm.moss may declare one. Anywhere else
+        both compilers refuse it where it is written."""
+        from mossc.collect import CollectError
+
+        from .test_build import compile_wasm
+
+        entry = "tests/wasi/gc_bodiless.moss"
+        with self.assertRaises(CollectError) as caught:
+            compile_wasm({}, entry=entry)
+        self.assertIn("functor `Forge` has no body", str(caught.exception))
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(out.decode("utf-8"), f"!W {entry} Forge\n")
+
+    def test_a_union_slot_holds_one_valtype(self):
+        """D75 meets D59: a union's slot has its first member's valtype,
+        so `Leaf Int | Node { l: Ref, r: Ref }` would put a reference
+        where an i32 goes. Both compilers refuse it, naming the member,
+        rather than emit a module that does not validate."""
+        from mossc.build import NotCompilable
+
+        from .test_build import compile_wasm
+
+        entry = "tests/wasi/gc_slots.moss"
+        with self.assertRaises(NotCompilable) as caught:
+            compile_wasm({}, entry=entry)
+        self.assertIn("`Node` puts a reference where", str(caught.exception))
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(out.decode("utf-8"), f"?P {entry} demo Node\n")
 
     def test_records(self):
         """The rest of D59's value model: a record is its fields' runs,
@@ -1952,6 +2091,23 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "calling `Cell.first` needs `encode` at [Item=Int], but the one "
                 "in the context here was provided at [Item=Char]",
                 "?S {} demo\n",
+            ),
+            # D75: a reference's `.deref()` is at what it holds.
+            "gc_misread": (
+                "argument `c` of `putchar` is `Int`, expected `Char`",
+                "?S {} demo\n",
+            ),
+            # D75: boxing is a context item, which only the platform's
+            # `Heap` provides; code that has not applied it cannot box.
+            "gc_unheaped": (
+                "no method `.boxed` is available for `Int` in the context here",
+                "?K {} demo boxed\n",
+            ),
+            # ...and applying `Heap` needs its argument signature here.
+            "gc_needs_boxed": (
+                "applying `Heap` needs `Boxed`, which is not available in "
+                "the context here",
+                "?Q {} demo Boxed\n",
             ),
         }
         for name, (message, report) in cases.items():

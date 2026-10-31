@@ -1,4 +1,5 @@
 import "./bytes.moss" use *;
+import "./emit.moss" as emit;
 
 # Wasm instruction encoding: opcodes as named functions, and the handful
 # of instructions that carry an immediate.
@@ -78,5 +79,32 @@ assume Std {
     buf.push(252);
     uleb(buf, 11);
     buf.push(0);
+  }
+
+  # D75's garbage-collected structs, 0xFB-prefixed: a struct type is its
+  # index `j`, and a reference type an `emit::vt_ref` or
+  # `emit::vt_structref`, whose heap type an instruction names.
+  fn op_struct_new(buf: IntList, j: Int) {
+    buf.push(251);
+    uleb(buf, 0);
+    uleb(buf, j);
+  }
+
+  fn op_struct_get(buf: IntList, j: Int, field: Int) {
+    buf.push(251);
+    uleb(buf, 2);
+    uleb(buf, j);
+    uleb(buf, field);
+  }
+
+  fn op_ref_cast_null(buf: IntList, vt: Int) {
+    buf.push(251);
+    uleb(buf, 23);
+    emit::push_heaptype(buf, vt);
+  }
+
+  fn op_ref_null(buf: IntList, vt: Int) {
+    buf.push(208);
+    emit::push_heaptype(buf, vt);
   }
 }

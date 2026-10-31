@@ -1,0 +1,24 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D75: boxing is a context item, and only the platform's `Heap` provides
+# it. `demo` has `Wasm` and has bound `Boxed`, which is everything `Heap`
+# needs, but has not applied it — so `.boxed` at `Int` is in no context
+# here, and the call is an error, not an allocation.
+
+assume Std, Wasm {
+  fn demo() {
+    bind Boxed = Int;
+    let n = 42;
+    let r = n.boxed();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

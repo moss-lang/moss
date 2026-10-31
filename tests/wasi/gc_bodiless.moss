@@ -1,0 +1,16 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D75: a functor with no body is one the platform provides, so only
+# lib/wasm.moss may declare one. Anywhere else there would be nothing to
+# provide it, and the declaration is refused where it is written.
+
+functor Forge: Wasm, Boxed -> Ref.deref;
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+  }
+}

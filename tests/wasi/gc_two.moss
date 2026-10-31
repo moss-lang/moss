@@ -1,0 +1,105 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D75: references to two types in one scope. `.boxed` is a detached
+# method, so a provision of it is keyed by its receiver, and `.deref` is
+# attached to `Ref`, so keyed by `Ref`'s instantiation (D62): applying
+# `Heap` at `Expr` and again at `Stmt` leaves both pairs in force, side by
+# side. A plain `fn box(value: Boxed): Ref` would be keyed by its symbol
+# alone, and the second application would shadow the first. `main`
+# applies it twice; `demo` assumes all four items and uses them in one
+# body. Output: 3, 12, 7, then 1 boxed after the second application.
+
+unit Add;
+unit Mul;
+
+type BinOp = Add | Mul;
+
+assume Std, Wasm {
+  type Literal Int;
+  type Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
+  type Expr = Binary | Literal;
+
+  type Print { value: Ref[Boxed=Expr] };
+  type Then { value: Ref[Boxed=Expr], rest: Ref[Boxed=Stmt] };
+  type Stmt = Then | Print;
+
+  context Heaps =
+    Expr.boxed[Boxed=Expr],
+    Ref.deref[Boxed=Expr],
+    Stmt.boxed[Boxed=Stmt],
+    Ref.deref[Boxed=Stmt];
+
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Std, Wasm, Heaps {
+  fn eval(e: Expr): Int {
+    match e {
+      Binary { op, lhs, rhs } => {
+        let l = eval(lhs.deref());
+        let r = eval(rhs.deref());
+        match op {
+          Add => l + r,
+          Mul => l * r,
+        }
+      },
+      Literal n => n,
+    }
+  }
+
+  fn exec(s: Stmt) {
+    match s {
+      Then { value, rest } => {
+        line(eval(value.deref()));
+        exec(rest.deref());
+      },
+      Print { value } => line(eval(value.deref())),
+    }
+  }
+
+  fn lit(n: Int): Ref[Boxed=Expr] {
+    let e: Expr = Literal (n);
+    e.boxed()
+  }
+
+  fn bin(op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr]): Ref[Boxed=Expr] {
+    let e: Expr = Binary { op, lhs, rhs };
+    e.boxed()
+  }
+
+  fn demo() {
+    let three = bin(Add, lit(1), lit(2));
+    let twelve = bin(Mul, three, lit(4));
+    let last: Stmt = Print { value = lit(7) };
+    let middle: Stmt = Then { value = twelve, rest = last.boxed() };
+    let first: Stmt = Then { value = three, rest = middle.boxed() };
+    exec(first);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Boxed = Expr;
+    bind Heap;
+    bind Boxed = Stmt;
+    bind Heap;
+    demo();
+    let one: Expr = Literal (1);
+    let r = one.boxed();
+    line(eval(r.deref()));
+  }
+}

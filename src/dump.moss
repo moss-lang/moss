@@ -354,7 +354,11 @@ assume Std {
         sp();
         dump_run(ast::fu_res(id), ast::fu_nres(id));
         sp();
-        dump_run(ast::fu_binds(id), ast::fu_nbinds(id));
+        if ast::is_some(ast::fu_binds(id)) {
+          dump_run(ast::fu_binds(id), ast::fu_nbinds(id));
+        } else {
+          under();
+        }
       } else {
         # The leaves: unit, never, This, `this`, `()`, break, `_`, bad.
         ();

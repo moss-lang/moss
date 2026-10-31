@@ -65,7 +65,11 @@ class TestGeneratedSources(unittest.TestCase):
             elif line.startswith("val ") and ":" in line:
                 declared.add(line[4:].split(":")[0].strip())
         self.assertTrue(declared)
-        self.assertEqual(declared - set(gensrc.wasm_ops()), set())
+        # D75's two methods are instructions too, but which ones depends
+        # on the layout of what a reference holds, so both back ends
+        # select them by hand, where `bind Heap;` provides them, rather
+        # than from the table.
+        self.assertEqual(declared - set(gensrc.wasm_ops()), {".boxed", "Ref.deref"})
 
 
 if __name__ == "__main__":

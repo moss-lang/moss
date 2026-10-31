@@ -149,7 +149,7 @@ the product type ([D63]). `This` is legal only inside method declarations.
 - **FnName** = _name_ | _name_ `.` _name_ | **DotName**
 - **Param** = _name_ `:` **Type**
 - **Ctxdef** = `context` _name_ `=` **List**\[**Spec**\] `;`
-- **Functordef** = `functor` _name_ `:` **List**\[**Spec**\] `->` **List**\[**Spec**\] `{` **Bind**\* `}`
+- **Functordef** = `functor` _name_ `:` **List**\[**Spec**\] `->` **List**\[**Spec**\] (`{` **Bind**\* `}` | `;`)
 
 In a **UseItem** rename, both sides must agree on dottedness (`use .m as
 .m1`, never `use .m as m1`). The three **FnName** forms are a plain
@@ -157,7 +157,10 @@ function, an attached method (the receiver must elaborate to a nominal
 type), and a detached method. A **Fndef** ending in `;` declares an abstract
 function; detached methods admit only that form ([D36]). A **Valdef** with
 an initializer is a *defined* val — concrete like a defined function, e.g.
-the prelude's `val true: Bool = Bool True;` ([D50]).
+the prelude's `val true: Bool = Bool True;` ([D50]). A **Functordef**
+ending in `;` has no body: the platform provides it, and only
+`lib/wasm.moss` may declare one — its `Heap`, whose application provides
+`.boxed` and `Ref.deref` with GC instructions ([D75]).
 
 ### Statements and blocks
 

@@ -31,6 +31,8 @@ assume Std {
     bind emit::im_type=int_list();
     bind emit::fn_type=int_list();
     bind emit::fn_locals=int_list();
+    bind emit::fn_lstart=int_list();
+    bind emit::fn_llen=int_list();
     bind emit::fn_bstart=int_list();
     bind emit::fn_blen=int_list();
     bind emit::insns=int_list();
@@ -39,6 +41,10 @@ assume Std {
     bind emit::ex_kind=int_list();
     bind emit::ex_index=int_list();
     bind emit::mem_pages=cell_int();
+    bind emit::st_key=int_list();
+    bind emit::st_fstart=int_list();
+    bind emit::st_flen=int_list();
+    bind emit::st_fields=int_list();
     build();
   }
 

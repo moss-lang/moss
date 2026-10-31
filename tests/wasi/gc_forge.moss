@@ -1,0 +1,46 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D75: forging. Moss cannot forbid rebuilding a tag at another listed
+# parameter (D73), so taking a `Ref` apart and building it again is
+# allowed; it is also the one place the back end casts. At the type the
+# struct was made at, the cast succeeds, and the reference reads as
+# before; at another, it traps at the construction, before anything can
+# read a `Point`'s struct as an `Int`'s. Output: `3`, `4`, then a trap.
+# Following either reference needs `.deref` at its type, so `Heap` is
+# applied at both.
+# (In `main`, where every type is concrete, so that the interpreter,
+# which knows a generic function's types only generically, can tell the
+# two apart too.)
+
+assume Std, Wasm {
+  type Point { x: Int, y: Int };
+
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Boxed = Point;
+    bind Heap;
+    bind Boxed = Int;
+    bind Heap;
+    let pt = Point { x = 3, y = 4 };
+    let p = pt.boxed();
+    let s = match p { Ref s => s };
+    let q = Ref[Boxed=Point] (s);
+    print_int(q.deref().x);
+    putchar(char::newline);
+    print_int(q.deref().y);
+    putchar(char::newline);
+    let n = Ref[Boxed=Int] (s);
+    print_int(n.deref());
+    putchar(char::newline);
+  }
+}

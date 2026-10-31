@@ -17,7 +17,16 @@ Deliberate v0 simplifications, each marked TODO in place:
 from dataclasses import dataclass
 
 from . import ast, ir
-from .collect import CollectError, Module, Program, SymKind, Symbol, resolve_detached, resolve_path
+from .collect import (
+    CollectError,
+    Module,
+    Program,
+    SymKind,
+    Symbol,
+    is_platform,
+    resolve_detached,
+    resolve_path,
+)
 from .types import (
     TAbstract,
     TNever,
@@ -127,6 +136,12 @@ def free_names(node, out: set) -> None:
             free_names(item, out)
 
 
+def show_spec(spec: ast.Spec) -> str:
+    """A context item as it is written: `Wasm`, `Boxed.boxed`."""
+    path = "::".join(spec.path or ())
+    return f"{path}.{spec.dot}" if spec.dot is not None else path
+
+
 def locate(module: Module, node) -> str:
     """`:line:col` for a node with a source offset, if we can compute it."""
     offset = getattr(node, "offset", -1)
@@ -202,6 +217,33 @@ class Lower:
             for short in ("num", "int", "float"):
                 if module.path.endswith(f"lib/{short}.moss"):
                     self.lang[short] = module
+        # D75: lib/wasm.moss's garbage-collected references, found by the
+        # file that declares them, as `Wasm` is (D52). `.boxed` and
+        # `Ref.deref` are ordinary context items; what is special is only
+        # their provider, the platform functor `Heap`, whose application
+        # makes primitive provisions (`platform_functor`).
+        self.ref_sym = self.boxed_sym = self.structref_sym = None
+        # id(method Symbol) -> the primitive the platform provides it with.
+        self.platform_prims: dict[int, str] = {}
+        for module in program.order:
+            if is_platform(module.path):
+                self.ref_sym = module.names.get("Ref")
+                self.boxed_sym = module.names.get("Boxed")
+                self.structref_sym = module.names.get("StructRef")
+                boxed = module.detached.get("boxed")
+                if boxed is not None:
+                    self.platform_prims[id(boxed)] = "box"
+                if self.ref_sym is not None:
+                    deref = module.attached.get((id(self.ref_sym), "deref"))
+                    if deref is not None:
+                        self.platform_prims[id(deref)] = "deref"
+        # Whether the program mentions a `Ref` at all; the back end only
+        # tracks type arguments (`Call.tyargs`) when it does.
+        self.uses_gc = False
+        # id(Symbol) -> the type symbols a defined function assumes, whose
+        # parameters its body's types mention (D72): what a call's
+        # `tyargs` supplies.
+        self.type_params: dict[int, tuple] = {}
 
     def error(self, module: Module, message: str, node=None):
         raise LowerError(module.path, message, locate(module, node))
@@ -363,6 +405,8 @@ class Lower:
         if id(functor) in self.checked_functors:
             return
         self.checked_functors.add(id(functor))
+        if functor.decl.binds is None:
+            return  # the platform's: it provides what it says (D75)
         module = functor.module
         wanted = {}
         for spec in functor.decl.result:
@@ -560,7 +604,7 @@ class Lower:
         through the union-find, so the spellings of one merged atom are one
         key (D43)."""
         receiver = self.canon(env, receiver_ty)
-        if head(receiver) is None:
+        if head(receiver) is None and method.receiver is not None:
             self.error(
                 module, f"`{show(receiver_ty)}` cannot receive methods (no nominal head)"
             )
@@ -958,6 +1002,8 @@ class Lower:
                 )
             return ty
         if sym.kind in (SymKind.UNIT, SymKind.TAG):
+            if sym is self.ref_sym:
+                self.uses_gc = True
             return TNominal(sym, self.nominal_args(module, sym, tymap))
         if sym.kind == SymKind.ALIAS:
             return self.elab_type(sym.decl.ty, sym.module, tymap, env)
@@ -1043,6 +1089,7 @@ class Lower:
         }
         self.needs_of[id(symbol)] = tuple(needs)
         self.need_apps[id(symbol)] = {k: env.apps.get(k, {}) for k in needs}
+        self.type_params[id(symbol)] = tuple(env.tymap)
         decl = symbol.decl
         has_this = symbol.receiver is not None
         this_ty = None
@@ -1125,6 +1172,16 @@ class FnChecker:
 
     def error(self, message: str):
         raise LowerError(self.module.path, message, locate(self.module, self.at_node))
+
+    def tyargs(self, callee: Symbol) -> tuple:
+        """What a call or bind supplies for each type the callee assumes,
+        in this function's terms (`Call.tyargs`)."""
+        out = []
+        for t in self.lower.type_params.get(id(callee), ()):
+            if t in self.env.tymap:
+                p = param(t)
+                out.append((p, self.lower.instantiate(self.env, TAbstract(p, ()))))
+        return tuple(out)
 
     def fits(self, t, expected) -> bool:
         """D17 fitting, through the union-find (D43): merged symbols are
@@ -1271,6 +1328,8 @@ class FnChecker:
         if id(target) in self.applying:
             self.error(f"functor `{target.name}` applies itself")
         self.lower.check_functor_total(target)
+        if target.decl.binds is None:
+            return self.platform_functor(target)
         self.applying.add(id(target))
         outer = self.module
         self.module = target.module
@@ -1286,6 +1345,79 @@ class FnChecker:
             self.module = outer
             self.applying.discard(id(target))
         return [b for b in out if b is not None]
+
+    def platform_functor(self, functor: Symbol) -> list:
+        """D75: a functor with no body is the platform's. Applying it needs
+        its argument signature in context here, as any functor's binds
+        would; it provides each method of its result signature at the
+        receiver that item names, read here, exactly as a hand-written
+        method bind would — the provision is shadowed in, and its
+        instantiation recorded for coherence (D62, D71) — except that the
+        provider is a primitive the back end compiles in place: for
+        `Heap`, `.boxed` at `Boxed` is `struct.new`, and `Ref.deref` at
+        `Ref[Boxed=X]` a `struct.get` per field."""
+        home = functor.module
+        for spec in functor.decl.args:
+            self.argument_in_context(functor, home, spec, 0)
+        out = []
+        for spec in functor.decl.result:
+            if spec.dot is None or spec.app is not None:
+                self.error(f"the platform cannot provide `{show_spec(spec)}`")
+            receiver = self.lower.resolve_type_symbol(self.env, home, spec.path)
+            method = self.lower.find_method_decl(home, receiver, spec.dot)
+            prim = None if method is None else self.lower.platform_prims.get(id(method))
+            if prim is None:
+                self.error(f"the platform cannot provide `{show_spec(spec)}`")
+            tymap = self.env.tymap
+            this_ty = tymap.get(receiver)
+            if this_ty is None:
+                this_ty = self.lower.symbol_type(home, receiver, tymap, self.env)
+            sig = self.lower.fn_sig(method, tymap, self.env, this=this_ty)
+            key = self.lower.method_key(self.env, home, this_ty, method)
+            self.lower.shadow(self.env.methods, key, sig)
+            self.provided_at(key, method, tymap, method=True)
+            held = self.lower.canon(self.env, tymap[self.lower.boxed_sym])
+            self.lower.uses_gc = True
+            out.append(ir.BindPrim(key, prim, held))
+        return out
+
+    def argument_in_context(self, functor: Symbol, module: Module, spec: ast.Spec, depth: int):
+        """Whether one item of a platform functor's argument signature is
+        available here: a type assumed or bound, a val, fn or method
+        provided."""
+        if depth > 16:
+            self.error("context nests too deeply")
+        target = resolve_path(module, spec.path)
+        missing = None
+        if spec.dot is not None:
+            receiver = self.lower.resolve_type_symbol(self.env, module, spec.path)
+            method = self.lower.find_method_decl(module, receiver, spec.dot)
+            this_ty = self.env.tymap.get(receiver) or self.lower.symbol_type(
+                module, receiver, self.env.tymap, self.env
+            )
+            if method is None or self.lower.method_key(
+                self.env, module, this_ty, method
+            ) not in self.env.methods:
+                missing = show_spec(spec)
+        elif not isinstance(target, Symbol):
+            missing = show_spec(spec)
+        elif target.kind == SymKind.CONTEXT:
+            for item in target.decl.items:
+                self.argument_in_context(functor, target.module, item, depth + 1)
+        elif target.kind == SymKind.TYPE:
+            if target not in self.env.tymap:
+                missing = target.name
+        elif target.kind == SymKind.VAL:
+            if target.decl.init is None and target not in self.env.vals:
+                missing = target.name
+        elif target.kind == SymKind.FN:
+            if target.decl.body is None and target not in self.env.fns:
+                missing = target.name
+        if missing is not None:
+            self.error(
+                f"applying `{functor.name}` needs `{missing}`, which is not "
+                "available in the context here"
+            )
 
     def check_bind(self, spec: ast.Spec, expr: ast.Expr) -> list:
         """The IR of one `bind` item: nothing for a type, one bind, or —
@@ -1317,10 +1449,11 @@ class FnChecker:
             else:
                 fn_symbol = self.expect_provider(expr, this_ty)
                 needs_map = self.match_fn_sig(fn_symbol, sig, kind="method")
+            tyargs = None if pre or isinstance(expr, ast.Lambda) else self.tyargs(fn_symbol)
             key = self.lower.method_key(self.env, module, this_ty, method)
             self.lower.shadow(self.env.methods, key, sig)
             self.provided_at(key, method, tymap, method=True)
-            return [*pre, ir.BindFn(key, fn_symbol, needs_map)]
+            return [*pre, ir.BindFn(key, fn_symbol, needs_map, tyargs)]
         target = resolve_path(module, spec.path)
         if target is None:
             self.error(f"`{'::'.join(spec.path)}` is not in scope")
@@ -1359,9 +1492,10 @@ class FnChecker:
             else:
                 fn_symbol = self.expect_fn_provider(expr)
                 needs_map = self.match_fn_sig(fn_symbol, sig, kind="fn")
+            tyargs = None if isinstance(expr, ast.Lambda) else self.tyargs(fn_symbol)
             self.lower.shadow(self.env.fns, target, sig)
             self.provided_at(target, target, self.env.tymap)
-            return [*pre, ir.BindFn(target, fn_symbol, needs_map)]
+            return [*pre, ir.BindFn(target, fn_symbol, needs_map, tyargs)]
         self.error(f"cannot bind `{target.name}` (a {target.kind.name.lower()})")
 
     def lambda_provider(self, lam: ast.Lambda, bound: Symbol, sig: FnSig, this_ty, what: str):
@@ -1648,7 +1782,7 @@ class FnChecker:
         symbol = head(t)
         if symbol is None:
             return node
-        return ir.Inject(symbol, node, self.lower.slots_of(self.env, want))
+        return ir.Inject(symbol, node, self.lower.slots_of(self.env, want), want)
 
     def synth_inner(self, expr, expected=None):
         if getattr(expr, "offset", -1) >= 0:
@@ -1919,6 +2053,10 @@ class FnChecker:
                     f"payload of `{target.name}` is `{show(vty)}`, expected "
                     f"`{show(payload_ty)}`"
                 )
+            if target is self.lower.ref_sym:
+                # D75: forging a reference from a bare `StructRef` is
+                # where the back end casts, so it needs the `Boxed`.
+                return ir.MakeTag(target, value, tag_ty), tag_ty
             return ir.MakeTag(target, value), tag_ty
         if target.kind != SymKind.FN:
             self.error(f"`{target.name}` is not callable")
@@ -1926,11 +2064,13 @@ class FnChecker:
             self.error("v0 does not support bracket applications at call sites")
         defined = isinstance(target.decl, ast.Fndef) and target.decl.body is not None
         needs_map = None
+        tyargs = None
         if defined:
             self.lower.lower_fn(target.module, target)
             needs_map = self.require_needs(target, self.lower.needs_of[id(target)])
             sig = self.lower.fn_sig(target, self.env.tymap, self.env)
             callee = ("direct", target)
+            tyargs = self.tyargs(target)
         else:
             sig = self.env.fns.get(target)
             if sig is None:
@@ -1941,7 +2081,10 @@ class FnChecker:
             callee = ("env", target)
         args = self.check_args(target.name, sig, expr.args)
         ret = self.lower.slots_of(self.env, sig.ret)
-        return ir.Call(callee, tuple(args), needs_map=needs_map, ret_slots=ret), sig.ret
+        return (
+            ir.Call(callee, tuple(args), needs_map=needs_map, ret_slots=ret, tyargs=tyargs),
+            sig.ret,
+        )
 
     def check_args(self, name, sig: FnSig, arg_exprs):
         if len(arg_exprs) != len(sig.params):
@@ -2016,8 +2159,6 @@ class FnChecker:
     def synth_method(self, expr: ast.MethodCall):
         obj, oty = self.synth(expr.obj)
         h = head(self.lower.canon(self.env, oty))
-        if h is None:
-            self.error(f"`{show(oty)}` has no methods (it has no nominal head)")
         name = expr.path[-1]
         if len(expr.path) > 1:
             method = resolve_detached(self.module, expr.path)
@@ -2032,7 +2173,8 @@ class FnChecker:
         # happens to live — and it keeps a call meaning the same thing
         # whether the receiver's type is abstract here or concrete (an
         # `IntList` that is a `Packed[Item=Num]` in `main`).
-        if method is None and len(expr.path) == 1:
+        # (A receiver with no nominal head has no attached methods.)
+        if method is None and len(expr.path) == 1 and h is not None:
             attached_here = any(
                 home.attached.get((id(h), name)) is not None
                 for home in (h.module, self.module)
@@ -2046,7 +2188,12 @@ class FnChecker:
         # with no import (D61). A defined one is an ordinary function with a
         # receiver; an abstract one is a key the context provides, so it
         # goes on to the provision lookup below carrying its symbol.
-        if method is None:
+        if method is None and h is None and self.module.detached.get(name) is None:
+            # A union or a record has no declaration to attach to, so only
+            # a detached method, provided at the type itself, applies to it
+            # (D75's `.boxed` at a union `Boxed`).
+            self.error(f"`{show(oty)}` has no methods (it has no nominal head)")
+        if method is None and h is not None:
             for home in (h.module, self.module):
                 attached = home.attached.get((id(h), name))
                 if attached is None:
@@ -2069,6 +2216,7 @@ class FnChecker:
                             attached, self.lower.needs_of[id(attached)]
                         )
                         sig = self.lower.fn_sig(attached, self.env.tymap, self.env, this=oty)
+                        tyargs = self.tyargs(attached)
                     finally:
                         self.env = outer
                     args = self.check_args(attached.name, sig, expr.args)
@@ -2076,7 +2224,7 @@ class FnChecker:
                     return (
                         ir.Call(
                             ("direct", attached), tuple(args), this=obj,
-                            needs_map=needs_map, ret_slots=ret,
+                            needs_map=needs_map, ret_slots=ret, tyargs=tyargs,
                         ),
                         sig.ret,
                     )
@@ -2224,7 +2372,7 @@ class FnChecker:
         # the likely mistake, so say where it *is* provided.
         elsewhere = [
             show(r) for r, m in self.env.methods
-            if m is method and head(r) is key[0].symbol and r != key[0]
+            if m is method and head(r) is not None and head(r) is head(key[0]) and r != key[0]
         ]
         if elsewhere:
             self.error(

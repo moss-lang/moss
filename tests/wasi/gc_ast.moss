@@ -1,0 +1,185 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D75: allocation strategy as a context. The interpreter is written once,
+# against an abstract `ExprRef` — how to follow one, how to make one —
+# and runs on a pool of indices and then on the GC heap, chosen by a
+# bind and specialized each way. `Expr[ExprRef=Ref[Boxed=Expr[...]]]`
+# would be infinite, so the GC side ties the knot with a nominal wrapper,
+# as Rust's `struct Node(Box<Expr<Node>>)` does, and applies the
+# platform's `Heap` at that `Expr`, whose `.boxed` and `.deref` the two
+# anonymous functions capture. Output: the same three results from each.
+
+unit Add;
+unit Sub;
+unit Mul;
+unit Div;
+
+type BinOp = Add | Sub | Mul | Div;
+
+type ExprRef;
+
+assume Std, ExprRef {
+  type Binary { op: BinOp, lhs: ExprRef, rhs: ExprRef };
+  type Literal Int;
+
+  type Expr = Binary | Literal;
+
+  fn .data(): Expr;
+  fn add(expr: Expr): ExprRef;
+
+  context Ast = ExprRef, ExprRef.data, add;
+}
+
+# Written once, against the interface alone.
+assume Std, Ast {
+  fn interp(e: ExprRef): Int {
+    match e.data() {
+      Binary { op, lhs, rhs } => {
+        let l = interp(lhs);
+        let r = interp(rhs);
+        match op {
+          Add => l + r,
+          Sub => l - r,
+          Mul => l * r,
+          Div => if r == 0 { 0 } else { l / r },
+        }
+      },
+      Literal num => num,
+    }
+  }
+
+  fn lit(n: Int): ExprRef { add(Literal (n)) }
+  fn bin(op: BinOp, lhs: ExprRef, rhs: ExprRef): ExprRef { add(Binary { op, lhs, rhs }) }
+
+  # A tree of 2^levels ones whose two halves are one node.
+  fn full(levels: Int): ExprRef {
+    var t = lit(1);
+    var i = 0;
+    while i < levels {
+      t = bin(Add, t, t);
+      i = i + 1;
+    }
+    t
+  }
+
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn report(e: ExprRef) {
+    print_int(interp(e));
+    putchar(char::newline);
+  }
+
+  fn run() {
+    report(bin(Div, bin(Mul, bin(Sub, lit(7), lit(10)), lit(7)), lit(2)));
+    report(bin(Div, bin(Add, lit(4), lit(4)), bin(Sub, lit(4), lit(4))));
+    report(full(12));
+  }
+}
+
+assume Std {
+  fn op_code(op: BinOp): Int {
+    match op {
+      Add => 1,
+      Sub => 2,
+      Mul => 3,
+      Div => 4,
+    }
+  }
+
+  fn op_of(code: Int): BinOp {
+    if code == 1 {
+      Add
+    } else if code == 2 {
+      Sub
+    } else if code == 3 {
+      Mul
+    } else {
+      Div
+    }
+  }
+
+  # Representation 1: a node is an index into one list of triples.
+  type Slot Int;
+  val triples: IntList;
+
+  assume triples {
+    fn Slot.at(): Int { match this { Slot i => i } }
+
+    fn Slot.node(): Expr[ExprRef=Slot] {
+      let i = this.at() * 3;
+      let code = triples.get(i);
+      if code == 0 {
+        Literal (triples.get(i + 1))
+      } else {
+        Binary[ExprRef=Slot] {
+          op = op_of(code),
+          lhs = Slot (triples.get(i + 1)),
+          rhs = Slot (triples.get(i + 2)),
+        }
+      }
+    }
+
+    fn triples_add(expr: Expr[ExprRef=Slot]): Slot {
+      let i = triples.length() / 3;
+      match expr {
+        Binary { op, lhs, rhs } => {
+          triples.push(op_code(op));
+          triples.push(lhs.at());
+          triples.push(rhs.at());
+        },
+        Literal num => {
+          triples.push(0);
+          triples.push(num);
+          triples.push(0);
+        },
+      }
+      Slot (i)
+    }
+  }
+}
+
+# Representation 2: a node is a reference to the GC heap. The reference
+# is typed by what it holds, which is an `Expr` of these references.
+assume Std, Wasm {
+  type Node Ref[Boxed=Expr[ExprRef=Node]];
+}
+
+assume Std, Wasm {
+  fn demo() {
+    {
+      bind triples = int_list();
+      bind ExprRef = Slot;
+      bind ExprRef.data = Slot.node;
+      bind add = triples_add;
+      run();
+    }
+    {
+      bind ExprRef = Node;
+      bind Boxed = Expr[ExprRef=Node];
+      bind Heap;
+      bind add = (e) => Node (e.boxed());
+      bind ExprRef.data = () => match this { Node r => r.deref() };
+      run();
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

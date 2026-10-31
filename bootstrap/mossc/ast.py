@@ -178,12 +178,14 @@ class Ctxdef:
 class Functordef:
     """D55: a map from one structure to another. `args` is the signature it
     needs in context where it is applied, `result` the signature its body
-    provides, and the body is the binds that provide it."""
+    provides, and the body is the binds that provide it — or `None` for a
+    functor declared without one, `functor F: A -> B;`, which the platform
+    provides (D75)."""
 
     name: str
     args: list[Spec]
     result: list[Spec]
-    binds: "list[Bind]"
+    binds: "list[Bind] | None"
     offset: int = field(default=-1, compare=False)
 
 

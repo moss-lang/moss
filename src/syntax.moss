@@ -985,6 +985,9 @@ assume Std {
         if here(close) {
           break;
         }
+        if here(tk_semi()) {
+          break;
+        }
         if here(tk_eof()) {
           break;
         }
@@ -1003,6 +1006,14 @@ assume Std {
       expect(tk_hyphen_greater());
       let res = int_list();
       parse_specs(res, tk_lbrace());
+      let ar = ast::commit(args);
+      let rr = ast::commit(res);
+      # No body: the platform provides it (D75's `Heap`).
+      if accept(tk_semi()) {
+        return ast::make_functor(
+          nm, ar, args.length(), rr, res.length(), ast::none(), 0
+        );
+      }
       expect(tk_lbrace());
       let binds = int_list();
       loop {
@@ -1020,8 +1031,6 @@ assume Std {
         }
       }
       expect(tk_rbrace());
-      let ar = ast::commit(args);
-      let rr = ast::commit(res);
       let br = ast::commit(binds);
       ast::make_functor(
         nm, ar, args.length(), rr, res.length(), br, binds.length()

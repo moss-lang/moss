@@ -91,6 +91,16 @@ class ListVal:
     items: list
 
 
+@dataclass(eq=False)
+class GcRef:
+    """A garbage-collected struct (D75): Python's heap is the GC heap. It
+    remembers the type it was made at, which is what a Wasm struct's type
+    is, so a reference forged at another type fails as `ref.cast` does."""
+
+    ty: object
+    value: object
+
+
 @dataclass(frozen=True)
 class Closure:
     fn: ir.FnIR
@@ -301,6 +311,8 @@ class Interp:
             fn = self.fns[id(stmt.fn)]
             captured = {ck: frame.ctx[sk] for ck, sk in stmt.needs_map}
             frame.ctx[stmt.key] = Closure(fn, captured)
+        elif isinstance(stmt, ir.BindPrim):
+            frame.ctx[stmt.key] = gc_prim(stmt)
         elif isinstance(stmt, ir.While):
             while self.truthy(self.eval(stmt.cond, frame)):
                 try:
@@ -343,7 +355,10 @@ class Interp:
             # entering a union changes nothing here.
             return self.eval(expr.value, frame)
         if isinstance(expr, ir.MakeTag):
-            return TagVal(expr.symbol, self.eval(expr.payload, frame))
+            payload = self.eval(expr.payload, frame)
+            if expr.ty is not None:
+                forged_check(expr.ty, payload)
+            return TagVal(expr.symbol, payload)
         if isinstance(expr, ir.MakeRecord):
             return RecordVal(
                 expr.symbol, {n: self.eval(e, frame) for n, e in expr.fields}
@@ -1049,6 +1064,61 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
         env[lib["wasistd"].names["i32_bool"]] = NativeFn(
             "i32_bool", lambda a, this: true if a[0].value != 0 else false
         )
+
+
+def _differ(a, b) -> bool:
+    """Whether two types are certainly different. An abstract type may be
+    anything here — the interpreter knows a function's types only as it
+    was lowered, generically — so it differs from nothing."""
+    from .types import TAbstract, TNominal, TRecord, TUnion
+
+    if isinstance(a, TAbstract) or isinstance(b, TAbstract):
+        return False
+    if type(a) is not type(b):
+        return True
+    if isinstance(a, TNominal):
+        if a.symbol is not b.symbol or len(a.args) != len(b.args):
+            return True
+        return any(_differ(x, y) for (_, x), (_, y) in zip(a.args, b.args))
+    if isinstance(a, TUnion):
+        if len(a.members) != len(b.members):
+            return True
+        return any(_differ(x, y) for x, y in zip(a.members, b.members))
+    if isinstance(a, TRecord):
+        if [n for n, _ in a.fields] != [n for n, _ in b.fields]:
+            return True
+        return any(_differ(x, y) for (_, x), (_, y) in zip(a.fields, b.fields))
+    return a != b
+
+
+def forged_check(tag_ty, payload) -> None:
+    """D75: building a `Ref[Boxed=X]` from a bare `StructRef` is a cast,
+    and traps unless the struct is an `X`, as the back ends' `ref.cast`
+    does."""
+    held = next((a for s, a in tag_ty.args if s.name == "Boxed"), None)
+    if not isinstance(payload, GcRef) or held is None:
+        return
+    if _differ(held, payload.ty):
+        raise MossPanic("cast failure: a reference forged at another type (D75)")
+
+
+def gc_prim(bind: "ir.BindPrim") -> NativeFn:
+    """D75: what `bind Heap;` provides — boxing a value in a struct that
+    remembers the type it was made at, and reading one back."""
+    if bind.prim == "box":
+        ref = bind.key[1].module.names["Ref"]
+
+        def box(a, this, held=bind.held):
+            return TagVal(ref, GcRef(held, this))
+
+        return NativeFn("boxed", box)
+
+    def deref(a, this):
+        if this.payload is None:
+            raise MossPanic("dereferencing a null reference")
+        return this.payload.value
+
+    return NativeFn("deref", deref)
 
 
 class LinkError(Exception):

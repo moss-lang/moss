@@ -23,6 +23,38 @@ assume Std {
   fn vt_count(): Int { 4 }
   fn vt_at(k: Int): Int { vt_i32() - k }
 
+  # D75's references, which are not one byte: `(ref null ht)` is 0x63 and
+  # then the heap type. A valtype here is an Int, so they are numbered
+  # past every byte: `vt_structref` is `(ref null struct)`, numbered by
+  # the abstract heap type's own byte (0x6B), and `vt_ref(j)` is a
+  # reference to the `j`th struct type.
+  fn vt_structref(): Int { 107 }
+  fn vt_ref(j: Int): Int { 256 + j }
+  fn is_ref(vt: Int): Bool {
+    if vt == vt_structref() {
+      true
+    } else {
+      vt >= 256
+    }
+  }
+
+  fn push_heaptype(out: IntList, vt: Int) {
+    if vt == vt_structref() {
+      out.push(vt);
+    } else {
+      sleb(out, vt - 256);
+    }
+  }
+
+  fn push_valtype(out: IntList, vt: Int) {
+    if is_ref(vt) {
+      out.push(99);
+      push_heaptype(out, vt);
+    } else {
+      out.push(vt);
+    }
+  }
+
   # Section ids, from the binary format.
   fn sec_type(): Int { 1 }
   fn sec_import(): Int { 2 }
@@ -58,11 +90,13 @@ assume Std {
   val im_type: IntList;
 
   # Defined functions, and their bodies in one instruction arena. A
-  # function's locals are declared as one run per valtype, so it holds a
-  # count of each: `fn_locals` is four per function, in the order of
-  # `vt_at`.
+  # function's locals are declared as one run per valtype: `fn_locals` is
+  # a pool of (count, valtype) pairs, a run of them per function from
+  # `fn_lstart`, `fn_llen` pairs long.
   val fn_type: IntList;
   val fn_locals: IntList;
+  val fn_lstart: IntList;
+  val fn_llen: IntList;
   val fn_bstart: IntList;
   val fn_blen: IntList;
   val insns: IntList;
@@ -74,13 +108,23 @@ assume Std {
 
   val mem_pages: CellInt;
 
+  # D75's struct types: each with an opaque key its user looks it up by,
+  # and a run of field valtypes in `st_fields`. They take the low type
+  # indices, as one `rec` group, since they may refer to each other; so
+  # a function type's index is its position past them (`ft_ref`).
+  val st_key: IntList;
+  val st_fstart: IntList;
+  val st_flen: IntList;
+  val st_fields: IntList;
+
   context Emit =
     ft_params, ft_pstart, ft_plen, ft_res, ft_rstart, ft_rlen,
     nchars,
     im_mstart, im_mlen, im_fstart, im_flen, im_type,
-    fn_type, fn_locals, fn_bstart, fn_blen, insns,
+    fn_type, fn_locals, fn_lstart, fn_llen, fn_bstart, fn_blen, insns,
     ex_start, ex_len, ex_kind, ex_index,
-    mem_pages;
+    mem_pages,
+    st_key, st_fstart, st_flen, st_fields;
 
   assume Emit {
     # A function type, deduplicated: both sides are buffers of valtype
@@ -107,6 +151,38 @@ assume Std {
       push_bytes(ft_res, results);
       ft_plen.length() - 1
     }
+
+    # The index a function type has in the module: past the structs.
+    fn ft_ref(i: Int): Int { st_key.length() + i }
+
+    # The struct type with this key, or -1.
+    fn find_struct(key: Int): Int {
+      var j = 0;
+      while j < st_key.length() {
+        if st_key.get(j) == key {
+          return j;
+        }
+        j = j + 1;
+      }
+      -1
+    }
+
+    # A new struct type, whose fields arrive later (`set_struct_fields`):
+    # they may be references to it.
+    fn add_struct(key: Int): Int {
+      st_key.push(key);
+      st_fstart.push(0);
+      st_flen.push(0);
+      st_key.length() - 1
+    }
+
+    fn set_struct_fields(j: Int, fields: IntList) {
+      st_fstart.set(j, st_fields.length());
+      st_flen.set(j, fields.length());
+      push_bytes(st_fields, fields);
+    }
+
+    fn struct_field(j: Int, i: Int): Int { st_fields.get(st_fstart.get(j) + i) }
 
     fn run_eq(arena: IntList, start: Int, want: IntList): Bool {
       var j = 0;
@@ -177,33 +253,22 @@ assume Std {
     # function may call one declared after it.
     fn add_func(ty: Int): Int {
       fn_type.push(ty);
-      var k = 0;
-      while k < vt_count() {
-        fn_locals.push(0);
-        k = k + 1;
-      }
+      fn_lstart.push(0);
+      fn_llen.push(0);
       fn_bstart.push(0);
       fn_blen.push(0);
       import_count() + fn_type.length() - 1
     }
 
-    fn no_locals(): IntList {
-      let counts = int_list();
-      while counts.length() < vt_count() {
-        counts.push(0);
-      }
-      counts
-    }
+    fn no_locals(): IntList { int_list() }
 
     # `body` must already end with the `end` opcode, and `locals` holds
-    # how many locals of each valtype it declares, in the order of `vt_at`.
+    # (count, valtype) pairs, one per run of locals it declares.
     fn set_body(f: Int, locals: IntList, body: IntList) {
       let d = f - import_count();
-      var k = 0;
-      while k < vt_count() {
-        fn_locals.set(d * vt_count() + k, locals.get(k));
-        k = k + 1;
-      }
+      fn_lstart.set(d, fn_locals.length());
+      fn_llen.set(d, locals.length() / 2);
+      push_bytes(fn_locals, locals);
       fn_bstart.set(d, insns.length());
       fn_blen.set(d, body.length());
       push_bytes(insns, body);
@@ -232,24 +297,44 @@ assume Std {
     }
 
     fn type_section(out: IntList) {
-      if ft_plen.length() == 0 {
+      if ft_plen.length() + st_key.length() == 0 {
         return ();
       }
       let b = int_list();
-      uleb(b, ft_plen.length());
+      if st_key.length() > 0 {
+        # One `rec` group of every struct, each a final struct type of
+        # immutable fields.
+        uleb(b, ft_plen.length() + 1);
+        b.push(78);
+        uleb(b, st_key.length());
+        var s = 0;
+        while s < st_key.length() {
+          b.push(95);
+          uleb(b, st_flen.get(s));
+          var f = 0;
+          while f < st_flen.get(s) {
+            push_valtype(b, struct_field(s, f));
+            b.push(0);
+            f = f + 1;
+          }
+          s = s + 1;
+        }
+      } else {
+        uleb(b, ft_plen.length());
+      }
       var i = 0;
       while i < ft_plen.length() {
         b.push(96);
         uleb(b, ft_plen.get(i));
         var j = 0;
         while j < ft_plen.get(i) {
-          b.push(ft_params.get(ft_pstart.get(i) + j));
+          push_valtype(b, ft_params.get(ft_pstart.get(i) + j));
           j = j + 1;
         }
         uleb(b, ft_rlen.get(i));
         j = 0;
         while j < ft_rlen.get(i) {
-          b.push(ft_res.get(ft_rstart.get(i) + j));
+          push_valtype(b, ft_res.get(ft_rstart.get(i) + j));
           j = j + 1;
         }
         i = i + 1;
@@ -268,7 +353,7 @@ assume Std {
         push_name(b, im_mstart.get(i), im_mlen.get(i));
         push_name(b, im_fstart.get(i), im_flen.get(i));
         b.push(kind_func());
-        uleb(b, im_type.get(i));
+        uleb(b, ft_ref(im_type.get(i)));
         i = i + 1;
       }
       section(out, sec_import(), b);
@@ -282,7 +367,7 @@ assume Std {
       uleb(b, func_count());
       var i = 0;
       while i < func_count() {
-        uleb(b, fn_type.get(i));
+        uleb(b, ft_ref(fn_type.get(i)));
         i = i + 1;
       }
       section(out, sec_func(), b);
@@ -324,21 +409,22 @@ assume Std {
       var i = 0;
       while i < func_count() {
         let entry = int_list();
+        let at = fn_lstart.get(i);
         var groups = 0;
         var k = 0;
-        while k < vt_count() {
-          if fn_locals.get(i * vt_count() + k) > 0 {
+        while k < fn_llen.get(i) {
+          if fn_locals.get(at + k * 2) > 0 {
             groups = groups + 1;
           }
           k = k + 1;
         }
         uleb(entry, groups);
         k = 0;
-        while k < vt_count() {
-          let n = fn_locals.get(i * vt_count() + k);
+        while k < fn_llen.get(i) {
+          let n = fn_locals.get(at + k * 2);
           if n > 0 {
             uleb(entry, n);
-            entry.push(vt_at(k));
+            push_valtype(entry, fn_locals.get(at + k * 2 + 1));
           }
           k = k + 1;
         }

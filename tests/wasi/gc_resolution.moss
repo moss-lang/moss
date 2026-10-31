@@ -1,0 +1,58 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D75 under D77. `Ref` has an attached, abstract `.deref`, which `Heap`
+# provides, and this module declares a detached method of the same name,
+# so both are candidates for `r.deref()`. While only `Heap` has provided
+# anything, the detached one has no provision at the receiver, and the
+# call is the attached one: it reads the struct. A spec `Ref.deref`
+# always names the attached method (it is found on `Ref` first), so the
+# detached one reaches a `Ref` through an abstract receiver bound to it,
+# `Wrapped`; once it is provided there, rule 4 makes the call that
+# provision, to the end of the block. `.boxed` is detached only, so it is
+# never in question. Output: 42, 7, 42.
+
+type Wrapped;
+
+assume Wrapped {
+  fn .deref(): Int;
+}
+
+assume Std, Wasm {
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+
+  fn seven(): Int { 7 }
+
+  fn demo() {
+    bind Boxed = Int;
+    bind Heap;
+    let n = 42;
+    let r = n.boxed();
+    line(r.deref());
+    {
+      bind Wrapped = Ref[Boxed=Int];
+      bind Wrapped.deref = seven;
+      line(r.deref());
+    }
+    line(r.deref());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

@@ -1,0 +1,33 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D75 meets D59's union layout: a union's slot has one valtype, its first
+# member's that reaches it, and here `Leaf` puts an `Int` in the slot
+# where `Node` puts a reference. Laying that out needs a slot of each,
+# which neither compiler does yet, so both refuse it rather than emit a
+# module that does not validate.
+
+assume Std, Wasm {
+  type Leaf Int;
+  type Node { l: Ref[Boxed=Tree], r: Ref[Boxed=Tree] };
+  type Tree = Leaf | Node;
+
+  fn demo() {
+    bind Boxed = Tree;
+    bind Heap;
+    let leaf: Tree = Leaf (1);
+    let l = leaf.boxed();
+    let node: Tree = Node { l, r = l };
+    let t = node.boxed();
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

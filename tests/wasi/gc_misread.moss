@@ -1,0 +1,35 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D75 with D74: a reference is typed by what it holds, and `.deref()` is
+# at its receiver's `Boxed`. `r` holds an `Int`, so `r.deref()` is the
+# provision made at `Ref[Boxed=Int]` and yields an `Int` wherever it is
+# called — here where `Boxed` has since been bound to `Char` and `Heap`
+# applied again, which provides `.deref` at `Ref[Boxed=Char]` beside it
+# rather than in its place. Passing it to `putchar` is a type error, as
+# it would be at any other type: the struct is an `Int`'s, and nothing
+# reads it as anything else.
+
+assume Std, Wasm {
+  fn demo() {
+    bind Boxed = Int;
+    bind Heap;
+    let n = 42;
+    let r = n.boxed();
+    {
+      bind Boxed = Char;
+      bind Heap;
+      putchar(r.deref());
+      putchar(char::newline);
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

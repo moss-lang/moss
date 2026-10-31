@@ -73,6 +73,12 @@ class Call:
     # signature instantiated where it is called. The callee was lowered
     # once, at its declaration, so the back end checks the two agree.
     ret_slots: int | None = None
+    # A direct call's type arguments: for each type symbol the callee
+    # assumes, its parameter and the type the caller supplies for it, in
+    # the caller's terms. The back end composes them with its own, so a
+    # specialization knows what its abstract types are where that decides
+    # a valtype (D75: a reference's type is the struct of what it holds).
+    tyargs: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,9 @@ class MakeUnit:
 class MakeTag:
     symbol: Symbol
     payload: object
+    # The tag's type, recorded only for D75's `Ref`, whose construction
+    # from a bare `StructRef` is a cast to the struct of its `Boxed`.
+    ty: object = None
 
 
 @dataclass(frozen=True)
@@ -160,6 +169,9 @@ class Inject:
     # How wide the union is: one scalar when every member is a unit (the
     # code discriminates by itself), otherwise a discriminant plus payload.
     width: int = 2
+    # The union itself, so the back end can pad a narrower member with
+    # zeros of the union's own valtypes (a reference's is `ref.null`).
+    union: object = None
 
 
 @dataclass(frozen=True)
@@ -209,6 +221,24 @@ class BindFn:
     key: Key
     fn: Symbol  # a defined FnIR symbol
     needs_map: tuple
+    # The provider's type arguments, as `Call.tyargs`; None for an
+    # anonymous function (D70), which is lowered in the bind site's own
+    # terms and so shares its type arguments.
+    tyargs: tuple | None = None
+
+
+@dataclass(frozen=True)
+class BindPrim:
+    """Provide a method under its key with a primitive the platform
+    supplies (D75's `bind Heap;`): `"box"` is `struct.new` and `"deref"`
+    a `struct.get` per field, of the struct for `held`, the type `Boxed`
+    was at the bind, in the binding function's terms. Nothing is
+    captured, so a call through the key compiles to the instructions in
+    place."""
+
+    key: Key
+    prim: str
+    held: object
 
 
 @dataclass(frozen=True)

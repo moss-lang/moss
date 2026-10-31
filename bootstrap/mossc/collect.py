@@ -181,6 +181,12 @@ def load(path: str, read=default_read, prelude: str | None = None, root=None) ->
     return Program(loader.modules, loader.order, entry)
 
 
+def is_platform(path: str) -> bool:
+    """Whether a module is the primitive context's own declaration, which
+    the compiler recognizes by its file, as it recognizes `Wasm` (D52)."""
+    return path.endswith("lib/wasm.moss")
+
+
 def declare(module: Module) -> None:
     """Two passes over the declarations: plain names, then attached methods
     (whose receiver names must already be defined)."""
@@ -217,6 +223,16 @@ def declare(module: Module) -> None:
                     fn_name.name, Symbol(module, fn_name.name, SymKind.FN, decl, assumes=assumes)
                 )
         else:
+            if (
+                isinstance(decl, ast.Functordef)
+                and decl.binds is None
+                and not is_platform(module.path)
+            ):
+                raise CollectError(
+                    module.path,
+                    f"functor `{decl.name}` has no body; only the platform "
+                    "provides a functor, and only lib/wasm.moss declares one (D75)",
+                )
             kind = DECL_KINDS[type(decl)]
             define_name(decl.name, Symbol(module, decl.name, kind, decl, assumes=assumes))
 

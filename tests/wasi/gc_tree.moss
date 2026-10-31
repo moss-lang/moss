@@ -1,0 +1,124 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D75: a recursive type through a garbage-collected reference, as Rust's
+# `Binary(Box<Expr>, Box<Expr>)`. A `Ref` is one scalar, so `Binary` has
+# a finite layout though `Expr` contains it; each `Ref[Boxed=Expr]` is a
+# `(ref null $Expr)`, whose struct holds `Expr`'s run of scalars — two of
+# them references to its own kind, so the struct is in a `rec` group.
+# References travel in locals, parameters, results, record fields, union
+# payloads and a contextual val, and nothing is ever cast. Making and
+# following a reference are context items like any other: the code below
+# assumes them at `Expr`, as `ExprHeap`, and only `main` applies the
+# platform's `Heap` to provide them. Output: the thesis's expression, a
+# full tree of 2^10 ones, its depth, and the expression again, read
+# through the val, doubled.
+
+unit Add;
+unit Sub;
+unit Mul;
+unit Div;
+
+type BinOp = Add | Sub | Mul | Div;
+
+assume Std, Wasm {
+  type Literal Int;
+  type Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
+  type Expr = Binary | Literal;
+
+  context ExprHeap = Expr.boxed[Boxed=Expr], Ref.deref[Boxed=Expr];
+}
+
+assume Std, Wasm, ExprHeap {
+  val shared: Ref[Boxed=Expr];
+
+  fn eval(e: Expr): Int {
+    match e {
+      Binary { op, lhs, rhs } => {
+        let l = eval(lhs.deref());
+        let r = eval(rhs.deref());
+        match op {
+          Add => l + r,
+          Sub => l - r,
+          Mul => l * r,
+          Div => if r == 0 { 0 } else { l / r },
+        }
+      },
+      Literal n => n,
+    }
+  }
+
+  fn depth(r: Ref[Boxed=Expr]): Int {
+    match r.deref() {
+      Binary { lhs, rhs } => {
+        let l = depth(lhs);
+        let r = depth(rhs);
+        if l > r { l + 1 } else { r + 1 }
+      },
+      Literal n => 1,
+    }
+  }
+
+  fn lit(n: Int): Ref[Boxed=Expr] {
+    let e: Expr = Literal (n);
+    e.boxed()
+  }
+
+  fn bin(op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr]): Ref[Boxed=Expr] {
+    let e: Expr = Binary { op, lhs, rhs };
+    e.boxed()
+  }
+
+  # A full tree, built bottom-up: both children are the same subtree.
+  fn full(levels: Int): Ref[Boxed=Expr] {
+    var t = lit(1);
+    var i = 0;
+    while i < levels {
+      t = bin(Add, t, t);
+      i = i + 1;
+    }
+    t
+  }
+
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+
+  assume shared {
+    fn twice(): Int { eval(shared.deref()) * 2 }
+  }
+
+  fn demo() {
+    let e = bin(Div, bin(Mul, bin(Sub, lit(7), lit(10)), lit(7)), lit(2));
+    line(eval(e.deref()));
+    let t = full(10);
+    line(eval(t.deref()));
+    line(depth(t));
+    bind shared = e;
+    line(twice());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Boxed = Expr;
+    bind Heap;
+    demo();
+  }
+}

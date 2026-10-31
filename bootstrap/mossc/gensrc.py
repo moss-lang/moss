@@ -39,6 +39,14 @@ SPELLED = [
     "I64",
     "F32",
     "F64",
+    # D75: garbage-collected references, whose primitives depend on a
+    # layout and so are not in the opcode table; the platform provides
+    # them, through the one functor with no body.
+    "StructRef",
+    "Ref",
+    "Boxed",
+    "boxed",
+    "deref",
     "bool.moss",
     "wasistd.moss",
     "i32_bool",

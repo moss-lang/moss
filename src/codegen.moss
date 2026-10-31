@@ -122,6 +122,17 @@ assume Std {
   val cg_f64: CellInt;
   val cg_boolty: CellInt;
 
+  # D75: lib/wasm.moss's `Ref`, `Boxed` and `StructRef`, and its methods
+  # `.boxed` and `Ref.deref` — a reference's valtype depends on what it
+  # holds, so the back end has to know these, as it knows the scalar
+  # types, by name; and the two methods are what the platform's `Heap`
+  # provides, with instructions rather than a function.
+  val cg_ref: CellInt;
+  val cg_boxed: CellInt;
+  val cg_structref: CellInt;
+  val cg_box: CellInt;
+  val cg_deref: CellInt;
+
   val cg_errs: IntList;
   val cg_err_name: IntList;
   # The function whose body was being emitted, recorded with each
@@ -222,7 +233,8 @@ assume Std {
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
     pv_recv, pv_sym, pv_local, pv_top,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
-    cg_i32, cg_i64, cg_f32, cg_f64, cg_boolty, cg_errs, cg_err_name, cg_err_at, cg_where,
+    cg_i32, cg_i64, cg_f32, cg_f64, cg_boolty,
+    cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_errs, cg_err_name, cg_err_at, cg_where,
     vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
     ck_entry, ck_inner, ck_link, ck_head,
     fl_start, fl_len, fl_types,
@@ -300,6 +312,175 @@ assume Std {
       cg_f32.write(wasm_type(2));
       cg_f64.write(wasm_type(3));
       cg_boolty.write(bool_type());
+      find_gc_symbols();
+    }
+
+    fn wasm_symbol(cs: IntList): Int {
+      if !ast::is_some(cg_wasm.read()) {
+        return ast::none();
+      }
+      prog::lookup(cg_wasm.read(), prog::ns_name(), intern::intern_chars(cs))
+    }
+
+    fn find_gc_symbols() {
+      let r = spelled();
+      sp_Ref(r);
+      cg_ref.write(wasm_symbol(r));
+      let b = spelled();
+      sp_Boxed(b);
+      cg_boxed.write(wasm_symbol(b));
+      let s = spelled();
+      sp_StructRef(s);
+      cg_structref.write(wasm_symbol(s));
+      cg_box.write(ast::none());
+      cg_deref.write(ast::none());
+      if !ast::is_some(cg_wasm.read()) {
+        return ();
+      }
+      let n = spelled();
+      sp_boxed(n);
+      cg_box.write(prog::lookup(
+        cg_wasm.read(), prog::ns_detached(), intern::intern_chars(n)
+      ));
+      if ast::is_some(cg_ref.read()) {
+        let d = spelled();
+        sp_deref(d);
+        cg_deref.write(prog::find_attached(
+          cg_wasm.read(), cg_ref.read(), intern::intern_chars(d)
+        ));
+      }
+    }
+
+    # Which of the platform's primitives a provision's provider is: 1 for
+    # `.boxed`, 2 for `Ref.deref`, 0 for anything else. `bind Heap;`
+    # makes a provision whose provider is the method itself, which has no
+    # body, and a call through it is the instructions (D75).
+    fn platform_prim(provider: Int): Int {
+      if !ast::is_some(provider) {
+        return 0;
+      }
+      if provider == cg_box.read() {
+        return 1;
+      }
+      if provider == cg_deref.read() {
+        return 2;
+      }
+      0
+    }
+
+    # `Ref[Boxed=held]`.
+    fn ref_of(held: Int): Int {
+      let reqs = int_list();
+      types::reqs_of(cg_ref.read(), reqs);
+      let args = int_list();
+      var i = 0;
+      while i < reqs.length() {
+        if reqs.get(i) == cg_boxed.read() {
+          args.push(held);
+        } else {
+          args.push(types::ty_of_symbol(types::kd_abstract(), reqs.get(i)));
+        }
+        i = i + 1;
+      }
+      types::nominal(cg_ref.read(), args)
+    }
+
+    # What a call through a platform provision yields, at this receiver.
+    fn platform_type(prim: Int, recv_ty: Int): Int {
+      let recv = canon_ty(recv_ty);
+      if prim == 1 {
+        return ref_of(recv);
+      }
+      held_of(recv)
+    }
+
+    # D75. Whether a type is a `Ref`, what one holds, and the struct type
+    # of what it holds: one per type, registered before its fields are
+    # computed, since they may be references to it. The first pass finds
+    # every one; the second only looks them up, since a function type's
+    # index counts them.
+    fn is_ref_type(ty: Int): Bool {
+      if !ast::is_some(cg_ref.read()) {
+        return false;
+      }
+      if !types::is_kind(ty, types::kd_nominal()) {
+        return false;
+      }
+      types::sym_of(ty) == cg_ref.read()
+    }
+
+    fn held_of(ref_ty: Int): Int {
+      let reqs = int_list();
+      types::reqs_of(cg_ref.read(), reqs);
+      var i = 0;
+      while i < reqs.length() {
+        if reqs.get(i) == cg_boxed.read() {
+          return types::member_at(ref_ty, i);
+        }
+        i = i + 1;
+      }
+      ty_none()
+    }
+
+    # Whether a type a reference would hold is one this specialization
+    # does not know: `Boxed` itself, unbound.
+    fn unknown_held(held: Int): Bool {
+      if !types::is_kind(held, types::kd_abstract()) {
+        return false;
+      }
+      let sym = types::sym_of(held);
+      if sym == cg_boxed.read() {
+        return true;
+      }
+      sym == prog::param_of(cg_boxed.read())
+    }
+
+    fn struct_of(held: Int): Int {
+      let found = emit::find_struct(held);
+      if found >= 0 {
+        return found;
+      }
+      if cg_real.read() == 1 {
+        cg_error(c_missing(), ast::none());
+      }
+      let j = emit::add_struct(held);
+      let fields = int_list();
+      var i = 0;
+      while i < width(held) {
+        fields.push(valtype_at(held, i));
+        i = i + 1;
+      }
+      emit::set_struct_fields(j, fields);
+      j
+    }
+
+    fn ref_valtype(held: Int): Int { emit::vt_ref(struct_of(held)) }
+
+    # A zero of a valtype: what pads a narrower member of a union, which
+    # for a reference slot is `ref.null`.
+    fn push_zero(body: IntList, vt: Int) {
+      if emit::is_ref(vt) {
+        op_ref_null(body, vt);
+      } else if vt == emit::vt_i64() {
+        body.push(66);
+        body.push(0);
+      } else if vt == emit::vt_f32() {
+        body.push(67);
+        var i = 0;
+        while i < 4 {
+          body.push(0);
+          i = i + 1;
+        }
+      } else if vt == emit::vt_f64() {
+        body.push(68);
+        var i = 0;
+        while i < 8 {
+          body.push(0);
+          i = i + 1;
+        }
+      } else {
+        op_i32_const(body, 0);
+      }
     }
 
     # D68's fixed symbols. Past every token code, the slots that are not
@@ -1242,6 +1423,9 @@ assume Std {
       if !in_wasm(sym) {
         return ast::none();
       }
+      if sym == cg_structref.read() {
+        return emit::vt_structref();
+      }
       var k = 1;
       while k < emit::vt_count() {
         let cs = spelled();
@@ -1261,6 +1445,9 @@ assume Std {
       let scalar = wide_scalar(ty);
       if ast::is_some(scalar) {
         return scalar;
+      }
+      if is_ref_type(ty) {
+        return ref_valtype(held_of(ty));
       }
       if types::is_kind(ty, types::kd_nominal()) {
         if types::is_unit_decl(ty) {
@@ -1677,6 +1864,10 @@ assume Std {
         if !ast::is_some(lower::env_a_of(bound)) {
           return ty_none();
         }
+        let prim = platform_prim(lower::env_a_of(bound));
+        if prim > 0 {
+          return platform_type(prim, type_of(ast::a_of(e), m));
+        }
         return ret_in(lower::env_b_of(bound), lower::env_a_of(bound));
       }
       if k == ast::k_ex_unary() {
@@ -2027,10 +2218,17 @@ assume Std {
         }
         l = l + 1;
       }
+      # The scalars in `emit::vt_at`'s order, then D75's references: the
+      # bare one, then one per struct type.
       let counts = int_list();
       var k = 0;
-      while k < emit::vt_count() {
-        let vt = emit::vt_at(k);
+      while k < emit::vt_count() + 1 + emit::st_key.length() {
+        var vt = emit::vt_structref();
+        if k < emit::vt_count() {
+          vt = emit::vt_at(k);
+        } else if k > emit::vt_count() {
+          vt = emit::vt_ref(k - emit::vt_count() - 1);
+        }
         let first = next;
         l = lc_base.read() + nparams;
         while l < lc_name.length() {
@@ -2044,7 +2242,10 @@ assume Std {
           }
           l = l + 1;
         }
-        counts.push(next - first);
+        if next > first {
+          counts.push(next - first);
+          counts.push(vt);
+        }
         k = k + 1;
       }
       counts
@@ -2331,6 +2532,11 @@ assume Std {
         cg_error(c_unbound(), prog::sym_name.get(sym));
         return ty_none();
       }
+      if platform_prim(provider) > 0 {
+        return emit_platform(
+          body, recv, recv_ty, platform_prim(provider), n, prog::sym_name.get(sym)
+        );
+      }
       push_receiver(body, recv, recv_ty, provider);
       emit_args(body, run, n, m, provider_params(penv, provider));
       reach(provider, penv);
@@ -2354,11 +2560,7 @@ assume Std {
       if !ast::is_some(sym) {
         return ast::none();
       }
-      let recv = canon_ty(recv_ty);
-      if !ast::is_some(types::head_of(recv)) {
-        return ast::none();
-      }
-      lower::env_find(cg_env.read(), lower::ek_fn(), recv, sym)
+      lower::env_find(cg_env.read(), lower::ek_fn(), canon_ty(recv_ty), sym)
     }
 
     # `x.m(a)`. The receiver's type is the other half of the lookup key
@@ -2395,6 +2597,12 @@ assume Std {
           cg_error(c_unbound(), ast::path_last(ast::b_of(e)));
           return ty_none();
         }
+        let prim = platform_prim(provider);
+        if prim > 0 {
+          return emit_platform(
+            body, recv, recv_ty, prim, ast::d_of(e), ast::path_last(ast::b_of(e))
+          );
+        }
       }
       push_receiver(body, recv, recv_ty, provider);
       emit_args(body, ast::c_of(e), ast::d_of(e), m, provider_params(penv, provider));
@@ -2416,10 +2624,26 @@ assume Std {
     fn method_provision(recv_ty: Int, e: Int, m: Int): Int {
       let recv = canon_ty(recv_ty);
       let head = types::head_of(recv);
-      if !ast::is_some(head) {
-        return ast::none();
+      var sym = ast::none();
+      # D77: the context's provision of the detached method the name means
+      # here wins over an attached method of the same name — an abstract
+      # one included, such as `Ref.deref` beside a detached `.deref`.
+      if ast::path_len(ast::b_of(e)) == 1 {
+        let detached = prog::resolve_detached(m, ast::b_of(e));
+        if ast::is_some(detached) {
+          let found = lower::env_find(cg_env.read(), lower::ek_fn(), recv, detached);
+          if ast::is_some(found) {
+            return found;
+          }
+        }
       }
-      let sym = provided_method(head, e, m);
+      if ast::is_some(head) {
+        sym = provided_method(head, e, m);
+      } else {
+        # A union or a record: only a detached method, provided at the
+        # type itself, applies (D75's `.boxed` at a union `Boxed`).
+        sym = prog::resolve_detached(m, ast::b_of(e));
+      }
       if !ast::is_some(sym) {
         return ast::none();
       }
@@ -2528,7 +2752,7 @@ assume Std {
       }
       if types::is_unit_decl(got) {
         push_bytes(body, valbuf);
-        pad(body, width(want) - 1);
+        pad(body, want, 1);
         return ();
       }
       let head = types::head_of(got);
@@ -2537,15 +2761,41 @@ assume Std {
         push_bytes(body, valbuf);
         return ();
       }
+      check_slots(got, want, head);
       op_i32_const(body, types::unit_code(head));
       push_bytes(body, valbuf);
-      pad(body, width(want) - 1 - width(got));
+      pad(body, want, 1 + width(got));
     }
 
-    fn pad(body: IntList, n: Int) {
+    # A union's slot has one valtype, its first member's that reaches it
+    # (D59); a member that puts a reference where another puts a scalar,
+    # or the other way round, would need a slot of each, which this
+    # layout does not have. Reported (`c_unsupported`, by the member)
+    # rather than compiled to a module that fails to validate.
+    fn check_slots(got: Int, want: Int, head: Int) {
       var i = 0;
-      while i < n {
-        op_i32_const(body, 0);
+      while i < width(got) {
+        let mine = valtype_at(got, i);
+        let slot = valtype_at(want, i + 1);
+        if mine != slot {
+          if emit::is_ref(mine) {
+            cg_error(c_unsupported(), prog::sym_name.get(head));
+            return ();
+          }
+          if emit::is_ref(slot) {
+            cg_error(c_unsupported(), prog::sym_name.get(head));
+            return ();
+          }
+        }
+        i = i + 1;
+      }
+    }
+
+    # The union's slots from `from` on, as zeros of their own valtypes.
+    fn pad(body: IntList, want: Int, from: Int) {
+      var i = from;
+      while i < width(want) {
+        push_zero(body, valtype_at(want, i));
         i = i + 1;
       }
     }
@@ -2667,6 +2917,16 @@ assume Std {
         let want = int_list();
         want.push(types::member_payload(tag));
         emit_args(body, ast::b_of(e), ast::c_of(e), m, want);
+        if is_ref_type(tag) {
+          # D75: a `Ref` built from a bare `StructRef` is forged, and the
+          # one place a reference is cast — to the struct of what it
+          # claims to hold, trapping if it does not.
+          if unknown_held(held_of(tag)) {
+            cg_error(c_unbound(), prog::sym_name.get(sym));
+            return tag;
+          }
+          op_ref_cast_null(body, ref_valtype(held_of(tag)));
+        }
         return tag;
       }
       if is_defined_fn(sym) {
@@ -2729,6 +2989,47 @@ assume Std {
       }
       cg_error(c_unbound(), prog::sym_name.get(sym));
       ty_none()
+    }
+
+    # D75: a call through what `bind Heap;` provided. `.boxed()` is
+    # `struct.new` of the struct for the receiver's type, and `.deref()`
+    # one `struct.get` per field of the struct for what the receiver
+    # holds — its own `Boxed` (D74), whatever this frame has bound since.
+    # The receiver is already emitted into `recv`.
+    fn emit_platform(
+      body: IntList, recv: IntList, recv_ty: Int, prim: Int, nargs: Int, name: Int
+    ): Int {
+      let ty = canon_ty(recv_ty);
+      var held = ty;
+      if prim == 2 {
+        held = held_of(ty);
+      }
+      if nargs != 0 {
+        cg_error(c_bad_type(), name);
+      }
+      if unknown_held(held) {
+        cg_error(c_unbound(), name);
+        return ty_none();
+      }
+      let j = struct_of(held);
+      push_bytes(body, recv);
+      if prim == 1 {
+        op_struct_new(body, j);
+        return ref_of(held);
+      }
+      if width(held) == 0 {
+        op_drop(body);
+        return held;
+      }
+      let tmp = reveal(ast::none(), ty);
+      store_local(body, tmp);
+      var i = 0;
+      while i < width(held) {
+        op_local_get(body, local_slot(tmp, 0));
+        op_struct_get(body, j, i);
+        i = i + 1;
+      }
+      held
     }
 
     # A call to whatever a bind put here: the arguments are already on
@@ -2944,11 +3245,11 @@ assume Std {
       if width(ty) == 0 {
         body.push(bt_empty());
       } else if width(ty) == 1 {
-        body.push(valtype_at(ty, 0));
+        emit::push_valtype(body, valtype_at(ty, 0));
       } else {
         let rs = int_list();
         push_valtypes(rs, ty);
-        sleb(body, emit::results_type(rs));
+        sleb(body, emit::ft_ref(emit::results_type(rs)));
       }
     }
 
@@ -3551,9 +3852,17 @@ assume Std {
       );
       let head = types::head_of(recv);
       let detached = lower::find_method_decl(m, recv_sym, ast::b_of(spec));
-      if !ast::is_some(head) {
+      if !ast::is_some(detached) {
         cg_error(prog::e_method(), ast::b_of(spec));
         return ();
+      }
+      # A union or a record takes a detached method only (as in
+      # lower.moss's `add_method_item`).
+      if !ast::is_some(head) {
+        if ast::is_some(prog::sym_recv.get(detached)) {
+          cg_error(prog::e_method(), ast::b_of(spec));
+          return ();
+        }
       }
       if !ast::is_some(detached) {
         cg_error(prog::e_method(), ast::b_of(spec));
@@ -4034,6 +4343,10 @@ assume Std {
       }
       let d = prog::sym_decl.get(sym);
       let home = prog::sym_mod.get(sym);
+      if !ast::is_some(ast::fu_binds(d)) {
+        platform_functor(d, home);
+        return ();
+      }
       var i = 0;
       while i < ast::fu_nbinds(d) {
         let stmt = ast::kid_at(ast::fu_binds(d), i);
@@ -4046,6 +4359,93 @@ assume Std {
         }
         i = i + 1;
       }
+    }
+
+    # D75: a functor with no body is the platform's (prog.moss allows one
+    # only in lib/wasm.moss). Applying it needs its argument signature in
+    # context here, and provides each method of its result signature at
+    # the receiver that item names, read here — as a hand-written method
+    # bind would, in both environments, so coherence sees it like any
+    # provision — except that the provider is the method itself, which
+    # has no body: `platform_prim` says which instructions a call through
+    # it is.
+    fn platform_functor(d: Int, home: Int) {
+      var i = 0;
+      while i < ast::fu_nargs(d) {
+        if !platform_needs(ast::kid_at(ast::fu_args(d), i), home, 0) {
+          return ();
+        }
+        i = i + 1;
+      }
+      i = 0;
+      while i < ast::fu_nres(d) {
+        let spec = ast::kid_at(ast::fu_res(d), i);
+        let recv_sym = prog::resolve_path(home, ast::a_of(spec));
+        var method = ast::none();
+        if ast::is_some(recv_sym) {
+          if ast::is_some(ast::b_of(spec)) {
+            method = lower::find_method_decl(home, recv_sym, ast::b_of(spec));
+          }
+        }
+        if platform_prim(method) == 0 {
+          cg_error(c_unsupported(), ast::b_of(spec));
+          return ();
+        }
+        let recv = canon_ty(types::ty_of_decl(recv_sym));
+        cg_env.write(lower::env_push(
+          cg_env.read(), lower::ek_fn(), recv, method, method, lower::env_empty()
+        ));
+        let genv = cg_genv.read();
+        provided_at(
+          lower::ek_fn(), lower::canon(genv, types::ty_of_decl(recv_sym)), method, genv
+        );
+        i = i + 1;
+      }
+    }
+
+    # Whether one item of a platform functor's argument signature is in
+    # force here: a type assumed or bound, an abstract val or fn assumed.
+    # The first that is not is reported, and it says whether all were.
+    fn platform_needs(spec: Int, m: Int, depth: Int): Bool {
+      if depth > 16 {
+        cg_error(prog::e_deep(), ast::none());
+        return false;
+      }
+      if ast::is_some(ast::b_of(spec)) {
+        return true;
+      }
+      let s = prog::resolve_path(m, ast::a_of(spec));
+      if !ast::is_some(s) {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        return false;
+      }
+      let kind = prog::sym_kind.get(s);
+      let genv = cg_genv.read();
+      var have = true;
+      if kind == prog::sk_context() {
+        let cd = prog::sym_decl.get(s);
+        var i = 0;
+        while i < ast::c_of(cd) {
+          if !platform_needs(ast::kid_at(ast::b_of(cd), i), prog::sym_mod.get(s), depth + 1) {
+            return false;
+          }
+          i = i + 1;
+        }
+      } else if kind == prog::sk_type() {
+        have = lower::env_has(genv, lower::ek_type(), ast::none(), s);
+      } else if kind == prog::sk_val() {
+        if !ast::is_some(ast::c_of(prog::sym_decl.get(s))) {
+          have = lower::env_has(genv, lower::ek_val(), ast::none(), s);
+        }
+      } else if kind == prog::sk_fn() {
+        if !ast::is_some(ast::fn_body(prog::sym_decl.get(s))) {
+          have = lower::env_has(genv, lower::ek_fn(), ast::none(), s);
+        }
+      }
+      if !have {
+        cg_error(c_unbound(), prog::sym_name.get(s));
+      }
+      have
     }
 
     # The type or the function a bind's right-hand side names.

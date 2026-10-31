@@ -251,7 +251,10 @@ class Parser:
         self.expect(Kind.COLON)
         args = self.comma_list(self.parse_spec, Kind.HYPHEN_GREATER)
         self.expect(Kind.HYPHEN_GREATER)
-        result = self.comma_list(self.parse_spec, Kind.LBRACE)
+        result = self.comma_list(self.parse_spec, Kind.LBRACE, Kind.SEMI)
+        if self.eat(Kind.SEMI):
+            # No body: the platform provides it (D75's `Heap`).
+            return ast.Functordef(name, args, result, None, offset=start)
         self.expect(Kind.LBRACE)
         binds = []
         while not self.at(Kind.RBRACE):

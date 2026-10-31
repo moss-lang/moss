@@ -562,9 +562,14 @@ assume Std {
       # which is why an abstract receiver an application fixes lands the
       # provision where calls on the concrete type will look for it.
       let this_ty = canon(view, types::ty_of_decl(receiver));
+      # A union or a record has no declaration for a method to attach
+      # to, but a detached method is keyed by the type itself, so it may
+      # be provided at one (D75's `.boxed` at a union `Boxed`).
       if !ast::is_some(types::head_of(this_ty)) {
-        prog::error(prog::e_method(), m, name);
-        return env;
+        if ast::is_some(prog::sym_recv.get(method)) {
+          prog::error(prog::e_method(), m, name);
+          return env;
+        }
       }
       check_signature(env, view, m, method);
       need_add(recv, sym, this_ty, method);
