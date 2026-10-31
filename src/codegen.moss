@@ -67,6 +67,13 @@ assume Std {
   # is what fixes the function indices, and once against the final
   # numbering. Emitting is the only walk of a body there is, so the two
   # passes cannot disagree about what it contains.
+  #
+  # A third value, 2, is the check pass (D16): every function the
+  # program does not reach is walked once more, in its generic
+  # environment with nothing specialized, so that it is checked as the
+  # bootstrap checks every function. It reports, like the kept pass, and
+  # otherwise behaves like the first: its output is thrown away, it
+  # creates locals as it goes, and it reaches nothing (`checking`).
   val cg_real: CellInt;
 
   # WASI functions called anywhere, and the import index each gets.
@@ -286,6 +293,11 @@ assume Std {
   val lm_cap: IntList;
   val cg_capt: IntList;
 
+  # D78: each functor with binds that some `bind F = G;` bound to an
+  # abstract one, in the order met, which the check pass checks against
+  # its own argument signature, as the bootstrap's `check_functor_body`.
+  val fb_sym: IntList;
+
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_spec, lc_start, lc_slots, lc_base, lc_visible,
@@ -301,7 +313,8 @@ assume Std {
     fl_start, fl_len, fl_types,
     un_sym, un_link, un_head, un_mark, un_stamp, un_meths, un_fstart, un_flags,
     cg_lang, cg_genv, ch_run, ch_link, ch_head,
-    lm_node, lm_genv, lm_sym, lm_recv, lm_cstart, lm_clen, lm_cap, cg_capt;
+    lm_node, lm_genv, lm_sym, lm_recv, lm_cstart, lm_clen, lm_cap, cg_capt,
+    fb_sym;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -317,6 +330,21 @@ assume Std {
     }
 
     fn cg_error_count(): Int { cg_errs.length() }
+
+    # Whether this is the check pass, which has no specialization: a
+    # generic type is laid out as itself (an abstract type one scalar
+    # wide, as the bootstrap's back end has it), and a provision the
+    # generic environment has but nothing provides here is called
+    # through nothing. Only emission needs what a provision is.
+    fn checking(): Bool { cg_real.read() == 2 }
+
+    # Whether a row of the specialized environment names a provider.
+    fn provides(row: Int): Bool {
+      if !ast::is_some(row) {
+        return false;
+      }
+      ast::is_some(lower::env_a_of(row))
+    }
 
     fn spelled(): IntList { int_list() }
 
@@ -477,6 +505,10 @@ assume Std {
       let found = emit::find_struct(held);
       if found >= 0 {
         return found;
+      }
+      # The check pass writes no module, so it adds nothing to this one.
+      if checking() {
+        return 0;
       }
       if cg_real.read() == 1 {
         cg_error(c_missing(), ast::none());
@@ -2302,6 +2334,9 @@ assume Std {
     # Note that this specialization is reached. The queue is drained by a
     # loop rather than by recursion, so it grows while it is walked.
     fn reach(sym: Int, env: Int) {
+      if checking() {
+        return ();
+      }
       if ast::is_some(queued(sym, env)) {
         return ();
       }
@@ -2315,6 +2350,9 @@ assume Std {
 
     # A WASI function is exactly an import of this module (D52).
     fn reach_import(sym: Int) {
+      if checking() {
+        return ();
+      }
       if ast::is_some(imported(sym)) {
         return ();
       }
@@ -2649,11 +2687,10 @@ assume Std {
         return ty_none();
       }
       let bound = provision_at(recv_ty, sym);
-      if !ast::is_some(bound) {
-        cg_error(c_unbound(), prog::sym_name.get(sym));
-        return ty_none();
-      }
-      if !ast::is_some(lower::env_a_of(bound)) {
+      if !provides(bound) {
+        if checking() {
+          return provision_ret(recv_ty, sym);
+        }
         cg_error(c_unbound(), prog::sym_name.get(sym));
         return ty_none();
       }
@@ -2729,6 +2766,14 @@ assume Std {
       emit_digit(body, d);
       let bound = float_provision();
       if !ast::is_some(bound) {
+        if checking() {
+          if ast::is_some(lang(lg_float())) {
+            let grow = lower::env_find(cg_genv.read(), lower::ek_fn(), ast::none(), lang(lg_float()));
+            if ast::is_some(grow) {
+              return sig_ret(row_view(grow), lang(lg_float()), ast::none());
+            }
+          }
+        }
         if ast::is_some(lang(lg_float())) {
           cg_error(c_unbound(), prog::sym_name.get(lang(lg_float())));
         } else {
@@ -2783,6 +2828,10 @@ assume Std {
         provider = lower::env_a_of(bound);
       }
       if !ast::is_some(provider) {
+        if checking() {
+          emit_args(body, run, n, m, sig_params(row_view(grow), sym, recv_ty));
+          return sig_ret(row_view(grow), sym, recv_ty);
+        }
         cg_error(c_unbound(), prog::sym_name.get(sym));
         return ty_none();
       }
@@ -2959,7 +3008,11 @@ assume Std {
         push_bytes(body, valbuf);
         return ();
       }
-      check_slots(got, want, head);
+      # A limit of this layout, not a type error: the check pass, laying
+      # out nothing real, has nothing to say about it.
+      if !checking() {
+        check_slots(got, want, head);
+      }
       op_i32_const(body, types::unit_code(head));
       push_bytes(body, valbuf);
       pad(body, want, 1 + width(got));
@@ -3117,6 +3170,9 @@ assume Std {
           # claims to hold, trapping if it does not.
           let held = held_of(spec(tag));
           if unknown_held(held) {
+            if checking() {
+              return tag;
+            }
             cg_error(c_unbound(), prog::sym_name.get(sym));
             return tag;
           }
@@ -3152,6 +3208,20 @@ assume Std {
               let view = row_view(grow);
               emit_args(body, ast::b_of(e), ast::c_of(e), m, sig_params(view, sym, ast::none()));
               return emit_provided(body, bound, sig_ret(view, sym, ast::none()));
+            }
+          }
+        }
+        # The check pass: provided generically, by nothing here.
+        if checking() {
+          if ast::is_some(grow) {
+            if !provides(bound) {
+              if !in_wasi(sym) {
+                if !is_i32_bool(sym) {
+                  let view = row_view(grow);
+                  emit_args(body, ast::b_of(e), ast::c_of(e), m, sig_params(view, sym, ast::none()));
+                  return sig_ret(view, sym, ast::none());
+                }
+              }
             }
           }
         }
@@ -3206,6 +3276,9 @@ assume Std {
         cg_error(c_bad_type(), name);
       }
       if unknown_held(held) {
+        if checking() {
+          return gret;
+        }
         cg_error(c_unbound(), name);
         return ty_none();
       }
@@ -3300,6 +3373,11 @@ assume Std {
         let l = provision_of(ast::none(), caller_slot(vals.get(i), ast::none(), map));
         if ast::is_some(l) {
           provide(ast::none(), ck_slot(entry, vals.get(i)), l);
+        } else if checking() {
+          # Elsewhere a call through the provision reports it; the check
+          # pass may meet no call, so it reports it at the bind, as the
+          # bootstrap does.
+          cg_error(c_unbound(), prog::sym_name.get(slot_sym(vals.get(i))));
         }
         i = i + 1;
       }
@@ -3412,6 +3490,9 @@ assume Std {
       }
       if types::is_kind(t, types::kd_nominal()) {
         if types::is_unit_decl(t) {
+          if checking() {
+            return 0;
+          }
           return emit::memory_index(t);
         }
       }
@@ -3459,6 +3540,10 @@ assume Std {
       } else if width(ty) == 1 {
         emit::push_valtype(body, valtype_at(ty, 0));
       } else {
+        if checking() {
+          sleb(body, 0);
+          return ();
+        }
         let rs = int_list();
         push_valtypes(rs, ty);
         sleb(body, emit::ft_ref(emit::results_type(rs)));
@@ -4061,6 +4146,12 @@ assume Std {
         );
       }
       if !primitive {
+        # The check pass: `g` is provided generically, by nothing here.
+        if checking() {
+          if lower::env_has(cg_genv.read(), lower::ek_fn(), ast::none(), g) {
+            return ();
+          }
+        }
         cg_error(c_unbound(), prog::sym_name.get(g));
         return ();
       }
@@ -4592,6 +4683,10 @@ assume Std {
         }
       }
       if !ast::is_some(provider) {
+        if checking() {
+          apply_generic(body, spec, d, home);
+          return ();
+        }
         cg_error(c_unbound(), prog::sym_name.get(fu));
         return ();
       }
@@ -4776,6 +4871,40 @@ assume Std {
         }
         k = k + 1;
       }
+    }
+
+    # The check pass's `bind F;`, where nothing provides `F`: what the
+    # code after it sees of any application, which is all it is checked
+    # against — a fresh generation of each type in the result, and each
+    # item provided generically at the inputs here, a val in a local of
+    # the type promised.
+    fn apply_generic(body: IntList, spec: Int, d: Int, home: Int) {
+      let tsyms = int_list();
+      result_types(home, ast::fu_res(d), ast::fu_nres(d), tsyms, 0);
+      var gsite = cg_genv.read();
+      var k = 0;
+      while k < tsyms.length() {
+        let t = tsyms.get(k);
+        let gen_ty = types::ty_of_symbol(types::kd_abstract(), fresh_gen(spec, t));
+        gsite = lower::env_push(gsite, lower::ek_type(), ast::none(), t, gen_ty, ast::none());
+        live_type(t, gen_ty);
+        k = k + 1;
+      }
+      let kinds = int_list();
+      let recvs = int_list();
+      let syms = int_list();
+      result_keys(home, ast::fu_res(d), ast::fu_nres(d), gsite, kinds, recvs, syms, 0);
+      cg_genv.write(gsite);
+      k = 0;
+      while k < syms.length() {
+        if kinds.get(k) == lower::ek_val() {
+          let vd = prog::sym_decl.get(syms.get(k));
+          let l = reveal(ast::none(), lower::elab(gsite, ast::b_of(vd), prog::sym_mod.get(syms.get(k))));
+          provide(ast::none(), syms.get(k), l);
+        }
+        k = k + 1;
+      }
+      result_generic(home, ast::fu_res(d), ast::fu_nres(d), 0);
     }
 
     # Whether a provision the binds made (row `got` of the generic
@@ -5192,8 +5321,10 @@ assume Std {
           }
         }
         if !ast::is_some(provider) {
-          cg_error(c_unbound(), prog::sym_name.get(g));
-          return ();
+          if !checking() {
+            cg_error(c_unbound(), prog::sym_name.get(g));
+            return ();
+          }
         }
       }
       if !check_binding(fu, g, m) {
@@ -5205,6 +5336,9 @@ assume Std {
         result_types(prog::sym_mod.get(g), ast::fu_args(gd), ast::fu_nargs(gd), allowed, 0);
         if !check_bound_types(g, allowed, m, 0) {
           return ();
+        }
+        if !contains(fb_sym, g) {
+          fb_sym.push(g);
         }
       }
       cg_env.write(lower::env_push(
@@ -5629,7 +5763,12 @@ assume Std {
     }
 
     fn compile_one(qi: Int) {
-      let sym = fq_sym.get(qi);
+      compile_frame(qi, fq_sym.get(qi), fq_env.get(qi));
+    }
+
+    # One frame: `sym` specialized in `env`, at queue position `qi` — or,
+    # in the check pass, at none.
+    fn compile_frame(qi: Int, sym: Int, env: Int) {
       let d = prog::sym_decl.get(sym);
       let m = prog::sym_mod.get(sym);
       cg_where.write(sym);
@@ -5641,7 +5780,7 @@ assume Std {
       pv_top.write(0);
       pv_floor.write(0);
       es_top.write(0);
-      cg_env.write(fq_env.get(qi));
+      cg_env.write(env);
       cg_genv.write(lower::env_of(sym));
       if is_defined_method(sym) {
         let t = this_type_in(cg_genv.read(), sym);
@@ -5658,7 +5797,7 @@ assume Std {
       # signature declared them, each provided from its own parameter.
       var nparams = lc_name.length() - lc_base.read();
       let vals = int_list();
-      val_slots(vals, sym, fq_env.get(qi), 0);
+      val_slots(vals, sym, env, 0);
       i = 0;
       while i < vals.length() {
         let ns = vals.get(i);
@@ -5715,7 +5854,7 @@ assume Std {
           cg_error(c_missing(), prog::sym_name.get(sym));
         }
         emit::set_body(fq_index.get(qi), counts, body);
-      } else {
+      } else if !checking() {
         while fl_start.length() <= qi {
           fl_start.push(0);
           fl_len.push(0);
@@ -5738,6 +5877,109 @@ assume Std {
         compile_one(i);
         i = i + 1;
       }
+    }
+
+    # D16: no post-monomorphization checks. Typing happens as a body is
+    # emitted, so a function the program never reaches would never be
+    # checked; the bootstrap checks every one. So each defined function
+    # and method that no specialization reached is walked once more, in
+    # its own generic environment, specialized as itself: the types its
+    # generic environment binds, each assumed one its own parameter, which
+    # is laid out as one scalar, as the bootstrap's back end has it, and
+    # no provision, since nothing provides one to the code as written. So is
+    # each anonymous function a bind made that nothing called, including
+    # the ones this pass makes, which come after it in symbol order. What
+    # is reached was checked already: typing is generic, so every
+    # specialization of a frame says the same thing.
+    fn check_unreached() {
+      let reached = int_list();
+      var i = 0;
+      while i < fq_sym.length() {
+        let f = fq_sym.get(i);
+        while reached.length() <= f {
+          reached.push(0);
+        }
+        reached.set(f, 1);
+        i = i + 1;
+      }
+      cg_real.write(2);
+      var f = 0;
+      var g = 0;
+      loop {
+        if f < prog::sym_count() {
+          var done = false;
+          if f < reached.length() {
+            done = reached.get(f) == 1;
+          }
+          if !done {
+            if is_compilable(f) {
+              compile_frame(ast::none(), f, types_of(lower::env_of(f)));
+            }
+          }
+          f = f + 1;
+        } else if g < fb_sym.length() {
+          check_functor_body(fb_sym.get(g));
+          g = g + 1;
+        } else {
+          break;
+        }
+      }
+      cg_real.write(1);
+      cg_where.write(ast::none());
+    }
+
+    # D78: a functor bound to an abstract one may rely only on its own
+    # argument signature, which is all an application promises it. Where
+    # an application is reached, its binds run restricted to that
+    # (`restrict_to_args`); here they run once more, as a frame of their
+    # own, as the bootstrap checks them: as though the functor were a
+    # function assuming exactly its arguments, whose body is its binds —
+    # so they are checked though no application is ever reached.
+    fn check_functor_body(g: Int) {
+      let d = prog::sym_decl.get(g);
+      let home = prog::sym_mod.get(g);
+      let nrecv = int_list();
+      let nsym = int_list();
+      var genv = lower::env_empty();
+      var i = 0;
+      while i < ast::fu_nargs(d) {
+        genv = lower::add_assume_item(genv, home, ast::kid_at(ast::fu_args(d), i), nrecv, nsym);
+        i = i + 1;
+      }
+      let apps = int_list();
+      i = 0;
+      while i < nsym.length() {
+        let row = lower::env_find(genv, lower::need_kind(nsym.get(i)), nrecv.get(i), nsym.get(i));
+        if ast::is_some(row) {
+          apps.push(lower::env_b_of(row));
+        } else {
+          apps.push(lower::env_empty());
+        }
+        i = i + 1;
+      }
+      lower::set_needs(g, genv, nrecv, nsym, apps);
+      cg_where.write(g);
+      lc_base.write(lc_name.length());
+      lc_visible.write(lc_name.length());
+      cg_depth.write(0);
+      cg_ntop.write(0);
+      pv_top.write(0);
+      pv_floor.write(0);
+      es_top.write(0);
+      cg_genv.write(genv);
+      cg_env.write(types_of(genv));
+      cg_ret.write(ty_none());
+      # Its input vals, each in a local of the type it is assumed at.
+      i = 0;
+      while i < nsym.length() {
+        let ns = nsym.get(i);
+        if passed_need(nrecv.get(i), ns) {
+          let sty = need_type_in(cg_env.read(), ns);
+          provide(ast::none(), ns, reveal(ast::none(), need_gtype(ns, sty)));
+        }
+        i = i + 1;
+      }
+      run_functor(int_list(), g, 0, bw_emit());
     }
 
     # The whole module. `_start` is a wrapper rather than `main` itself,
@@ -5819,6 +6061,7 @@ assume Std {
       cg_real.write(1);
       let starter = emit::add_func(emit::type_i32(0));
       compile_all();
+      check_unreached();
       # The heap pointer in every memory (D79: each memory's allocator
       # keeps its state in that memory).
       let boot = int_list();

@@ -2492,37 +2492,56 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertTrue(out.decode("utf-8").startswith("?S "), out[:200])
 
     UNCALLED = {
-        # entry: (the bootstrap's message, the self-hosted report)
+        # entry: (the bootstrap's message, the self-hosted report, prelude)
         "tests/wasi/uncalled.moss": (
             "argument `a` of `f` is `B[I32=I32]`, expected `A[I32=I32]`",
             "?S tests/wasi/uncalled.moss unused\n",
+            "",
         ),
         "tests/wasi/uncalled_generic.moss": (
             "block yields `T`, expected `I32`",
             "?S tests/wasi/uncalled_generic.moss unused\n",
+            "",
+        ),
+        # An anonymous function a reached bind makes, never called.
+        "tests/wasi/uncalled_lambda.moss": (
+            "block yields `Int`, expected `Char`",
+            "?S tests/wasi/uncalled_lambda.moss step\n",
+            "lib/prelude.moss",
+        ),
+        # A functor bound to an abstract one that nothing applies (D78).
+        "tests/wasi/functor_unapplied.moss": (
+            "functor `Tally`, bound to an abstract functor, may rely only "
+            "on its own argument signature (D78): calling `count` needs "
+            "`counter`",
+            "?Q tests/wasi/functor_unapplied.moss Tally counter\n",
+            "lib/prelude.moss",
         ),
     }
 
     def test_an_uncalled_function_is_checked_by_the_bootstrap(self):
         """D16: no post-monomorphization checks, so a function is checked
-        whether or not anything calls it — a concrete one, and a generic
-        one, of which no specialization exists. The bootstrap lowers every
-        function once, against its generic types."""
+        whether or not anything calls it — a concrete one, a generic one,
+        of which no specialization exists, an anonymous one, and the
+        binds of a functor bound to an abstract one that nothing applies.
+        The bootstrap lowers every function once, against its generic
+        types."""
         from .test_build import compile_wasm
 
-        for entry, (message, _) in self.UNCALLED.items():
+        for entry, (message, _, _) in self.UNCALLED.items():
             with self.subTest(entry=entry):
                 with self.assertRaises(LowerError) as caught:
                     compile_wasm({}, entry=entry)
                 self.assertIn(message, str(caught.exception))
 
-    @unittest.expectedFailure
     def test_an_uncalled_function_is_checked_by_the_self_hosted_compiler(self):
-        """The same programs, which the self-hosted compiler rejects with
-        `c_bad_type` (`?S`), naming the uncalled function."""
-        for entry, (_, report) in self.UNCALLED.items():
+        """The same programs. The self-hosted compiler types a body as it
+        emits it, so after the passes that emit what the program reaches,
+        a check pass walks everything they did not, generically, and
+        reports what it finds, naming the frame."""
+        for entry, (_, report, prelude) in self.UNCALLED.items():
             with self.subTest(entry=entry):
-                out = self.compile_with_moss(entry)
+                out = self.compile_with_moss(entry, prelude=prelude)
                 self.assertEqual(out.decode("utf-8", "replace"), report)
 
     def test_a_provision_answers_only_its_instantiation(self):

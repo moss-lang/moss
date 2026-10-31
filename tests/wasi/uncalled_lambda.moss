@@ -1,0 +1,26 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A type error in an anonymous function nothing calls (D16, D70): the
+# bind runs, but `step` is never called, so no specialization of the
+# function it makes exists. It is checked all the same.
+
+assume Std {
+  fn step(c: Char): Char;
+}
+
+assume Std {
+  fn demo() {
+    bind step = (c) => { one };
+    putchar(char::b);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
