@@ -3815,32 +3815,68 @@ assume Std {
     # written. An abstract type's one head is itself, so no unit or tag is
     # a member of it, whatever it specializes to: what a match means
     # cannot depend on the specialization (D16).
+    # And it is one: a single name is a binder only when it names
+    # nothing, and a unit or tag otherwise; a payload or a record of
+    # fields opens a tag. Reported by the name it was written with, as
+    # the bootstrap's `compile_pattern` reports it.
     fn check_member(pat: Int, m: Int, sty: Int) {
-      let head = arm_head_any(pat, m);
-      if !ast::is_some(head) {
-        return ();
+      if pattern_bad(pat, m, sty) {
+        var name = ast::none();
+        if ast::kind_of(pat) == ast::k_pt_path() {
+          name = ast::path_last(ast::a_of(pat));
+        } else if ast::is_some(ast::a_of(pat)) {
+          name = ast::path_last(ast::a_of(pat));
+        }
+        cg_error(c_bad_type(), name);
       }
-      if !ast::is_some(types::member_with_head(sty, head)) {
-        cg_error(c_bad_type(), prog::sym_name.get(head));
+    }
+
+    fn pattern_bad(pat: Int, m: Int, sty: Int): Bool {
+      let k = ast::kind_of(pat);
+      if k == ast::k_pt_path() {
+        let sym = prog::resolve_path(m, ast::a_of(pat));
+        if !ast::is_some(sym) {
+          return ast::is_some(ast::b_of(pat));
+        }
+        let kind = prog::sym_kind.get(sym);
+        if kind != prog::sk_tag() {
+          if kind != prog::sk_unit() {
+            return true;
+          }
+          if ast::is_some(ast::b_of(pat)) {
+            return true;
+          }
+        }
+      } else if k == ast::k_pt_record() {
+        if !ast::is_some(ast::a_of(pat)) {
+          return true;
+        }
+        let sym = prog::resolve_path(m, ast::a_of(pat));
+        if !ast::is_some(sym) {
+          return true;
+        }
+        if prog::sym_kind.get(sym) != prog::sk_tag() {
+          return true;
+        }
+      } else {
+        return false;
       }
+      !ast::is_some(types::member_with_head(sty, arm_head_any(pat, m)))
     }
 
     # D34: without a binder or `_`, the arms cover every head of the
     # scrutinee's type as written — whichever a specialization has, as
     # the bootstrap's `synth_match` checks it — and `match e {}` is for
     # an `e : |` alone, which takes no arms. Checked after the arms, as
-    # the bootstrap does, and not at all once a pattern has named no
-    # member (`check_member` said so). Reports the first head missing,
-    # or none for a scrutinee with no head to cover.
+    # the bootstrap does, and not at all once a pattern is ill-formed or
+    # names no member (`check_member` said so). Reports the first head
+    # missing, or none for a scrutinee with no head to cover.
     fn check_exhaustive(e: Int, m: Int, sty: Int) {
       let n = ast::c_of(e);
       var a = 0;
       while a < n {
-        let head = arm_head_any(ast::a_of(ast::kid_at(ast::b_of(e), a)), m);
-        if ast::is_some(head) {
-          if !ast::is_some(types::member_with_head(sty, head)) {
-            return ();
-          }
+        if pattern_bad(ast::a_of(ast::kid_at(ast::b_of(e), a)), m, sty) {
+          return ();
         }
         a = a + 1;
       }

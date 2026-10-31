@@ -2666,7 +2666,6 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     compile_wasm({}, entry=entry)
                 self.assertIn(message, str(caught.exception))
 
-    @unittest.expectedFailure
     def test_a_pattern_is_well_formed_by_the_self_hosted_compiler(self):
         """The same programs. The self-hosted compiler bound a name that
         resolves to a function, and a unit's payload, which is `()`."""
