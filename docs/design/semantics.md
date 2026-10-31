@@ -2073,7 +2073,7 @@ shadows the earlier ([D25]). Under [D21]'s full identity they were two.
 the language says.) Requirements that differ only at such a receiver
 collide when a telescope is formed.
 
-*Phantom parameters: not now.* A handle whose payload mentions nothing but
+*Phantom parameters: not now* (since done, as [D73]). A handle whose payload mentions nothing but
 whose meaning depends on a symbol — [D69]'s `type Packed I32;` under
 `assume Elem` — has methods that do not all mention it (`.length(): Int`
 depends on the element width but not, in its signature, on `Elem`), so θ
@@ -2420,6 +2420,166 @@ above). The bootstrap's front end handles the dual programs; its back
 end compiles each function once, at one scalar per abstract type, and so
 cannot run a `Float` two wide.
 
+**[D73] DECIDED by the designer and implemented (listed, or phantom, parameters).** [D71] made a nominal's identity its
+relevant parameters: the type symbols its payload mentions. That is right
+for almost every type — `unit Stop;` under `assume Std` should not be a
+different type for every binding of `Int` — and wrong for one important
+kind: a *handle*, whose value is an address but whose meaning depends on
+a type it never stores. [D69]'s packed list is the case. One
+implementation serves every element type, over a `Layout`; but its
+handle, `I32`, mentions no `Item`, so `type Packed I32;` under
+`assume Item` would be one type whatever `Item` is. Then a list of `Long`s
+and a list of `Num`s would be the same type, and their methods would
+collide: a provision is keyed by its receiver ([D62]), and [D71]'s
+θ-aware coherence tells two provisions apart only by the symbols the
+method's own signature mentions, which `.length(): Int` does not. So
+every element type gets a wrapper of its own — `Ints`, `Singles`,
+`Doubles` in `lib/wasistd.moss`, and in a program that wants a list of
+anything else, the same again: in an Advent of Code solution (Day 5,
+sorting 64-bit IDs), thirteen of the program's 122 lines are the wrapper
+`Longs` and its forwarding methods.
+
+*Decided.* A tag declaration may list, in brackets after its name,
+parameters its payload does not mention:
+
+```moss
+assume Layout {
+  type Packed[Item] I32;
+
+  fn Packed.length(): Int { packed_length(addr(this)) }
+  fn Packed.get(index: Int): Item { packed_get(addr(this), index) }
+  ...
+}
+```
+
+- **Tagdef** = `type` _name_ (`[` **List**[_name_] `]`)? **Type** `;`
+- A tag's parameters are the type symbols its payload mentions, closed
+  through the nominals it mentions as in [D71], **together with** those
+  it lists. So `Packed[Item=Long]` and `Packed[Item=Num]` are different
+  types, both an `I32` at run time.
+- A listed name must be a type requirement of the declaration's assume
+  nesting, as a bracket application's must ([D22]). Listing one the
+  payload already mentions is allowed and changes nothing: a declaration
+  may spell out its whole identity if its author likes, though nothing
+  checks that such a list is complete (a lint could).
+- Only tags. An alias is the type it stands for, so a parameter it does
+  not mention cannot affect it; a unit has no payload to stand beside,
+  and nothing yet wants a family of units.
+- Nothing else is new, because a listed parameter is a parameter like any
+  other:
+  - *construction* follows [D71]'s rule for applying one: inside the
+    declaration's assume nesting, `Packed (a)` is at the `Item` in force;
+    elsewhere it is written `Packed[Item=Long] (a)`;
+  - *relevance closes over it*: a tag whose payload mentions `Packed` is
+    parameterized by `Item` too;
+  - *an attached method sees the receiver's*: inside `Packed.get`, `Item`
+    is the receiver's `Item`, as `T` is the receiver's inside a method of
+    `Some` — which is the point, since a `Packed[Item=Long]` read at the
+    `Item` in force somewhere else would be read at the wrong layout. The
+    rest of the method's requirements (`width`, `put`, `take`) come from
+    the context at the call or bind, and [D71]'s coherence already
+    requires them to have been provided at that `Item`.
+
+*Why it is sound.* The calculus's `TNom n θ` is total over a tag's
+telescope; [D71]'s implementations narrow it to the relevant parameters,
+and `Narrowing.v` shows that narrowing is safe. Its theorems are already
+stated for any relevance map `R` that is *closed* — whatever a tag's
+payload mentions, read with nested references narrowed, is in `R` of that
+tag (`rel_closed`) — with each tag's telescope exactly its `R`, without
+duplicates (`narrowed_sig`). Nothing there asks `R` to be the *least*
+closed map; the file's comment calls the least one "the intended" choice,
+not a hypothesis. Mentioned-plus-listed is a closed map (listing only
+adds), so `vty_narrow_invariant`, `wf_ty_narrowed` and
+`narrowed_soundness` cover it as they stand. The one obligation is the
+closure itself, which is why relevance must seed the listed symbols
+before taking its fixpoint: a tag whose payload mentions `Packed` must
+get `Item` too.
+
+*Consequences.*
+
+- The library gains the one generic handle: `lib/wasistd.moss` declares
+  `type Packed[Item] I32;` under `assume Wasm, Branch, Layout`, with
+  `packed()` and `.length`, `.get`, `.set` and `.push`, so a program's list
+  of anything is a `Layout` (how one is laid out in words) and nothing
+  more: bind the layout, then `BigList = Packed`, `big_list = packed` and
+  the accessors `= Packed.push` and so on, each capturing the layout where
+  it is bound ([D26]). `Ints`, `Singles` and `Doubles` stay as they are for
+  now: their names are API that programs bind (the thesis's
+  mixed-precision example binds `Singles.push`), and moving them onto
+  `Packed` is a library change of its own.
+- A phantom parameter keeps apart what a program keeps apart; it does not
+  stop one that sets out to forge. Moss has no private constructors, so
+  `match l { Packed a => Packed[Item=Num] (a) }` turns a list of `Long`s
+  into a list of `Num`s, exactly as `Longs a` can be rewrapped as
+  `Singles (a)`. (Rust's `PhantomData` relies on field privacy for that.)
+  This entry claims distinct types, not unforgeable ones.
+- More distinct instantiations means more specializations, but no more
+  than the wrappers they replace.
+- It needed [D74]: a phantom is only as good as the rule that a method of
+  a `Packed[Item=Long]` is at `Item=Long`, which the compilers did not
+  follow.
+
+*Implementation.* Both front ends parse the list (`Tagdef` gains
+`params`; the parser-agreement dump prints it as `(d_tag Name [Item]
+type)`), seed relevance with the listed symbols before the least
+fixpoint, and check each is a type requirement of the declaration's
+assume nesting (the bootstrap's message; the self-hosted `e_listed`,
+`!V`). The VS Code grammar needed nothing. One thing in the self-hosted
+back end had to change: it resolves a method call at the receiver's
+*specialized* type, where code written against an abstract receiver
+(`xs.push` on a `BigList`) can find an attached method of the same name
+(`Packed.push`) and call it directly, skipping the provision that
+carries the captured layout. It now prefers a provision of the detached
+method the call names, at that receiver, when the scope has one — which
+is what the code meant; where the provision is the attached method itself
+(`bind IntList.push[Elem=Int] = Ints.push`), the two are one. Standing
+tests: `tests/wasi/phantom.moss` (two element types in one function,
+each through its own codec), `tests/wasi/packed.moss` (generic code over
+a list of i64s that is `Packed[Item=Long]`), `tests/wasi/phantom_unlisted.moss`
+(listing a type nothing requires) and `tests/wasi/phantom_misread.moss`
+(with [D74]).
+
+**[D74] DECIDED by the designer and implemented (an attached method is at its receiver's instantiation).**
+A call of an attached method took the method's type parameters from the
+context of the call, not from its receiver. So with
+
+```moss
+assume T { type Box T; fn Box.get(): T { match this { Box x => x } } }
+let b = { bind T = Int; Box (42) };     # b : Box[T=Int]
+{ bind T = Char; putchar(b.get()); }
+```
+
+`b.get()` was typed `Char` and printed the `Int` 42 as `*`, in both
+compilers — an `Int` read as a `Char`, and at types of different widths a
+miscompilation. The calculus rules it out: a method is either a provision,
+which `TMethR` uses only at a receiver type equal to the receiver's, or a
+direct call with an explicit θ (`ECallD`), whose first parameter would
+then have to be a `Box[T=Char]`.
+
+*Decided.* An attached method is at its receiver's instantiation: for
+every type its receiver's declaration is parameterized by, the call reads
+it as the receiver's type binds it, whatever the calling scope has bound
+since. `b.get()` above is an `Int`, and passing it to `putchar` is a type
+error. Everything else the method needs comes from the calling scope as
+before, and [D71]'s coherence requires it to have been provided at that
+instantiation, so a `Cell[Item=Int]` read where the `Char` codec is in
+force ([D73]) needs its codec at `Item=Int` and is an error. This is the
+calculus's `ECallD` with θ chosen by elaboration, and what generic types
+mean elsewhere (`List<Int>.get` is an `Int` wherever it is called); it is
+also [D72]'s rule seen from the value's side: what was typed before a
+bind keeps its generation, and so do its methods. The alternative — the
+method at the calling scope's θ, and a receiver at another one a type
+error — would forbid calling `b.get()` at all once `T` is rebound.
+
+*Implementation.* The bootstrap checks an attached call in a view of the
+environment where the receiver's type arguments are bound; the
+self-hosted compiler builds the callee's environment the same way
+(`receiver_callee_env`). The bootstrap reports the misread codec as
+incoherence; the self-hosted compiler, whose coherence check runs in the
+generic environment without the receiver's view, rejects it as a type
+error (`?S`) — still rejected, less precisely named. Standing tests:
+`tests/wasi/receiver_rebound.moss` and `tests/wasi/phantom_misread.moss`.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -2433,8 +2593,8 @@ Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
 unavoidable — *not* the prelude path, see [D52]) · methods on union-headed *aliases* in general ([D47] — solved
 for `Bool` by [D45]'s nominal wrapper) · D29 the `val` half of functors ·
-[D50]'s v0 restrictions on defined vals · a phantom type parameter, which
-would let [D69]'s lists share one receiver declaration ([D71]: not now)
+[D50]'s v0 restrictions on defined vals · moving `Ints`, `Singles` and
+`Doubles` onto [D73]'s `Packed`
 
 Everything else is **DECIDED**: D1–D28 · D30–D49 (D3/D4 by designer fiat,
 D13 option.moss → alias, D16 no post-monomorphization checks, D22 total or
@@ -2468,7 +2628,10 @@ a method bind — sugar over the calculus, with D54's plain-function
 method providers implemented as written in both compilers, D72 every
 type bind starts a new generation of its symbol — what was typed before
 it keeps the old one — which is what lets `Float` be rebound in terms of
-itself and rules out perturbation confusion)
+itself and rules out perturbation confusion, D73 a tag may list
+parameters its payload does not mention (`type Packed[Item] I32;`), so
+one handle serves every element type, D74 an attached method is at its
+receiver's instantiation, not the calling scope's)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
