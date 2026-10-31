@@ -1,0 +1,7 @@
+# D68: `-1.abs()` would mean `-(1.abs())`, since a method call binds
+# tighter than `-`; nobody means that, so it is refused.
+assume Std {
+  fn main() {
+    let n = -1.abs();
+  }
+}

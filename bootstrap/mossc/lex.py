@@ -65,6 +65,8 @@ class Kind(Enum):
     # Everything else.
     NAME = auto()
     STRING = auto()
+    INTEGER = auto()  # D68: `123`
+    DECIMAL = auto()  # D68: `3.14`
     EOF = auto()
 
 
@@ -173,6 +175,9 @@ class LexError(Exception):
         self.offset = offset
 
 
+DIGITS = "0123456789"
+
+
 def is_name_start(c: str) -> bool:
     return c.isalpha() or c == "_"
 
@@ -198,6 +203,26 @@ def lex(source: str) -> list[Token]:
         elif c in ONE_CHAR:
             tokens.append(Token(ONE_CHAR[c], c, i))
             i += 1
+        elif c in DIGITS:
+            # D68: a digit run, then `.` and a digit, is a decimal literal;
+            # a `.` followed by anything else is not part of it, so
+            # `1.add(2)` calls a method on `1`.
+            j = i + 1
+            while j < n and source[j] in DIGITS:
+                j += 1
+            kind = Kind.INTEGER
+            if j + 1 < n and source[j] == "." and source[j + 1] in DIGITS:
+                kind = Kind.DECIMAL
+                j += 2
+                while j < n and source[j] in DIGITS:
+                    j += 1
+            if j < n and is_name_continue(source[j]):
+                raise LexError(
+                    "a numeric literal has no suffix; separate it from the name (D68)", j
+                )
+            text = source[i:j]
+            tokens.append(Token(kind, text, i))
+            i = j
         elif is_name_start(c):
             j = i + 1
             while j < n and is_name_continue(source[j]):

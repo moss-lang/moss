@@ -787,6 +787,17 @@ assume Std {
         uw_node(f, ast::b_of(e), m);
         uw_run(f, ast::c_of(e), one, m);
         uw_lang_meths(f, op_symbol(e));
+      } else if k.eq(ast::k_ex_lit()) {
+        # D68: a literal reads `zero` and `one` and calls `.add`, `.mul`
+        # and, for a decimal one, `float` and `.div`.
+        uw_sym(f, lang(lg_zero()));
+        uw_sym(f, lang(lg_one()));
+        uw_lang_meths(f, lang(tk_plus()));
+        uw_lang_meths(f, lang(tk_star()));
+        if ast::is_some(ast::c_of(e)) {
+          uw_sym(f, lang(lg_float()));
+          uw_lang_meths(f, lang(tk_slash()));
+        }
       } else if k.eq(ast::k_ex_record()) {
         var i = zero;
         while i.lt(ast::c_of(e)) {
@@ -1488,6 +1499,9 @@ assume Std {
       if k.eq(ast::k_ex_unary()) {
         return operator_type(e, m);
       }
+      if k.eq(ast::k_ex_lit()) {
+        return literal_type(e);
+      }
       if k.eq(ast::k_ex_binary()) {
         return operator_type(e, m);
       }
@@ -1574,6 +1588,26 @@ assume Std {
         return ty_none();
       }
       if ast::is_some(lower::env_a_of(bound)).not() {
+        return ty_none();
+      }
+      ret_in(lower::env_b_of(bound), lower::env_a_of(bound))
+    }
+
+    # An integer literal is what `one` is here, a decimal one what
+    # `float` returns.
+    fn literal_type(e: Int): Int {
+      if ast::is_some(ast::c_of(e)).not() {
+        if ast::is_some(lang(lg_one())).not() {
+          return ty_none();
+        }
+        let l = provision_of(ast::none(), lang(lg_one()));
+        if ast::is_some(l).not() {
+          return ty_none();
+        }
+        return lc_type.get(l);
+      }
+      let bound = float_provision();
+      if ast::is_some(bound).not() {
         return ty_none();
       }
       ret_in(lower::env_b_of(bound), lower::env_a_of(bound))
@@ -1892,8 +1926,183 @@ assume Std {
       if k.eq(ast::k_ex_binary()) {
         return emit_operator(body, e, m);
       }
+      if k.eq(ast::k_ex_lit()) {
+        return emit_literal(body, e);
+      }
       cg_error(c_unsupported(), ast::none());
       ty_none()
+    }
+
+    # Literals (D68). A literal is not a constant but a use of fixed
+    # library symbols, provided here like any others, so its meaning
+    # follows what `Int` and `Float` are bound to — the same expansion
+    # bootstrap/mossc/lower.py builds:
+    #
+    #   integer: int.moss's `zero` and `one`, num.moss's `.add` and `.mul`
+    #            at `Int`, Horner over the digits with each digit and ten
+    #            a sum of `one`s;
+    #   decimal: float(m).div(float(10^k)), `m` and `10^k` built in
+    #            `Float` from `float(digit)`s and `float(ten)`s.
+    #
+    # Nothing is checked: a literal means what that arithmetic computes,
+    # wrapping, trapping or rounding as the bound `Int` and `Float` do.
+    #
+    # Each is emitted straight onto the stack: a receiver, its argument,
+    # then the call, which `emit_provided` finishes.
+
+    fn emit_literal(body: IntList, e: Int): Int {
+      let run = ast::a_of(e);
+      let n = ast::b_of(e);
+      if ast::is_some(ast::c_of(e)).not() {
+        return emit_digits(body, run, n);
+      }
+      let k = ast::c_of(e);
+      var i = zero;
+      while i.lt(n) {
+        if ast::kid_at(run, i).ne(zero) {
+          break;
+        }
+        i = i.add(one);
+      }
+      var t = ty_none();
+      if i.eq(n) {
+        t = emit_float_digit(body, zero);
+      } else {
+        t = emit_float_digit(body, ast::kid_at(run, i));
+        i = i.add(one);
+        while i.lt(n) {
+          emit_float_digit(body, n10());
+          t = emit_lang_method(body, t, tk_star());
+          let d = ast::kid_at(run, i);
+          if d.gt(zero) {
+            emit_float_digit(body, d);
+            t = emit_lang_method(body, t, tk_plus());
+          }
+          i = i.add(one);
+        }
+      }
+      var scale = emit_float_digit(body, n10());
+      var j = one;
+      while j.lt(k) {
+        emit_float_digit(body, n10());
+        scale = emit_lang_method(body, scale, tk_star());
+        j = j.add(one);
+      }
+      emit_lang_method(body, t, tk_slash())
+    }
+
+    fn emit_lang_val(body: IntList, slot: Int): Int {
+      let sym = lang(slot);
+      if ast::is_some(sym).not() {
+        cg_error(c_unsupported(), ast::none());
+        return ty_none();
+      }
+      let l = provision_of(ast::none(), sym);
+      if ast::is_some(l).not() {
+        cg_error(c_unbound(), prog::sym_name.get(sym));
+        return ty_none();
+      }
+      load_local(body, l);
+      lc_type.get(l)
+    }
+
+    # num.moss's method in `slot`, called on the receiver and argument
+    # already on the stack.
+    fn emit_lang_method(body: IntList, recv_ty: Int, slot: Int): Int {
+      let sym = lang(slot);
+      if ast::is_some(sym).not() {
+        cg_error(c_unsupported(), ast::none());
+        return ty_none();
+      }
+      let bound = provision_at(recv_ty, sym);
+      if ast::is_some(bound).not() {
+        cg_error(prog::e_method(), prog::sym_name.get(sym));
+        return ty_none();
+      }
+      if ast::is_some(lower::env_a_of(bound)).not() {
+        cg_error(c_unbound(), prog::sym_name.get(sym));
+        return ty_none();
+      }
+      emit_provided(body, bound)
+    }
+
+    # `one + one + ...`, `n` of them.
+    fn emit_small(body: IntList, n: Int): Int {
+      var t = emit_lang_val(body, lg_one());
+      var i = one;
+      while i.lt(n) {
+        emit_lang_val(body, lg_one());
+        t = emit_lang_method(body, t, tk_plus());
+        i = i.add(one);
+      }
+      t
+    }
+
+    fn emit_digit(body: IntList, d: Int): Int {
+      if d.eq(zero) {
+        return emit_lang_val(body, lg_zero());
+      }
+      emit_small(body, d)
+    }
+
+    fn emit_digits(body: IntList, run: Int, n: Int): Int {
+      var i = zero;
+      while i.lt(n) {
+        if ast::kid_at(run, i).ne(zero) {
+          break;
+        }
+        i = i.add(one);
+      }
+      if i.eq(n) {
+        return emit_digit(body, zero);
+      }
+      var t = emit_digit(body, ast::kid_at(run, i));
+      i = i.add(one);
+      while i.lt(n) {
+        emit_small(body, n10());
+        t = emit_lang_method(body, t, tk_star());
+        let d = ast::kid_at(run, i);
+        if d.gt(zero) {
+          emit_small(body, d);
+          t = emit_lang_method(body, t, tk_plus());
+        }
+        i = i.add(one);
+      }
+      t
+    }
+
+    # float.moss's `float` as this frame has it bound, if to a function.
+    fn float_provision(): Int {
+      let sym = lang(lg_float());
+      if ast::is_some(sym).not() {
+        return ast::none();
+      }
+      let bound = lower::env_find(cg_env.read(), lower::ek_fn(), ast::none(), sym);
+      if ast::is_some(bound).not() {
+        return ast::none();
+      }
+      if ast::is_some(lower::env_a_of(bound)).not() {
+        return ast::none();
+      }
+      if is_compilable(lower::env_a_of(bound)).not() {
+        return ast::none();
+      }
+      bound
+    }
+
+    # `float(d)`, for a digit or ten.
+    fn emit_float_digit(body: IntList, d: Int): Int {
+      emit_digit(body, d);
+      let bound = float_provision();
+      if ast::is_some(bound).not() {
+        if ast::is_some(lang(lg_float())) {
+          cg_error(c_unbound(), prog::sym_name.get(lang(lg_float())));
+        } else {
+          cg_error(c_unsupported(), ast::none());
+        }
+        return ty_none();
+      }
+      emit_provided(body, bound)
     }
 
     # D68: an operator is a call of one fixed method of lib/num.moss,

@@ -494,6 +494,19 @@ class Parser:
         if op is None:
             return self.parse_postfix(no_record)
         self.next()
+        if (
+            op == "-"
+            and self.at_any(Kind.INTEGER, Kind.DECIMAL)
+            and self.at(Kind.DOT, 1)
+        ):
+            # `-1.abs()` would be `-(1.abs())`, which nobody means.
+            text = self.peek().text
+            name = self.peek(2).text if self.at(Kind.NAME, 2) else "m"
+            raise ParseError(
+                f"`-` before a literal with a method call: write `(-{text}).{name}(...)` "
+                f"or `-({text}.{name}(...))` (D68)",
+                self.peek(),
+            )
         return ast.Unary(op, self.parse_unary(no_record), offset=start)
 
     def parse_if(self) -> ast.If:
@@ -546,6 +559,8 @@ class Parser:
             return expr
         if self.eat(Kind.THIS):
             return ast.ThisExpr(offset=start)
+        if self.at_any(Kind.INTEGER, Kind.DECIMAL):
+            return ast.Literal(self.next().text, offset=start)
         if self.at(Kind.LBRACE) and not no_record:
             # A bare block (D65). Where a record expression is forbidden
             # (an `if`/`while` condition, a `match` scrutinee), so is this:

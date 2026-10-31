@@ -10,25 +10,19 @@ import "../../lib/wasip1.moss" use Wasi;
 # shadowed it ends. One function, `third`, compiled once per `Float`.
 
 assume Std {
-  fn ten(): Int { one.shl(one.add(one).add(one)).add(one.add(one)) }
-
   fn print_int(n: Int) {
-    if n.ge(ten()) {
-      print_int(n.div(ten()));
+    if n >= 10 {
+      print_int(n / 10);
     }
-    putchar(n.rem(ten()).add(char::digit0.code()).char());
+    putchar((n % 10 + char::digit0.code()).char());
   }
 
-  # 1/3, times 10^9 and rounded: 333333333 at f64, 333333344 at f32.
+  # 1/3, times 10^9 and rounded: 333333333 at f64, 333333344 at f32. The
+  # literals are no constants (D68): `1.0 / 3.0` is `Float`'s `.div`, and
+  # so means whichever `Float` the block calling this has bound.
   fn third() {
-    var scale = one;
-    var i = zero;
-    while i.lt(ten().sub(one)) {
-      scale = scale.mul(ten());
-      i = i.add(one);
-    }
-    let x = float(one).div(float(one.add(one).add(one)));
-    print_int(x.mul(float(scale)).round());
+    let x = 1.0 / 3.0;
+    print_int((x * float(1000000000)).round());
     putchar(char::newline);
   }
 }

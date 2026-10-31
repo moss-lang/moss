@@ -1,0 +1,89 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, i32_bool;
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi;
+
+# An integer literal is nothing but `zero`, `one`, `.add` and `.mul` at
+# whatever `Int` is bound to (D68), so an oversized one does whatever
+# that arithmetic does with an oversized result: `WasiStd`'s `Int` is a
+# wrapping i32 — `.add` is `i32.add`, `.mul` is `i32.mul` — so
+# 4294967297 (2^32 + 1) is 1 there. Overflow is a context choice, and a
+# literal is no exception: under `CheckedInts`, whose `.add` and `.mul`
+# trap on overflow, a literal that fits is itself and one that does not
+# traps when it is evaluated, exactly as `n * k` would. Nothing is
+# checked at compile time. Output: `1`, `2147483647`, `2147483647`, then
+# a trap.
+
+assume Int, zero, one, Int.add, Int.mul {
+  fn big(): Int { 4294967297 }
+  fn fits(): Int { 2147483647 }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+# An i32 whose arithmetic traps on signed overflow.
+assume Wasm, Branch {
+  type Checked I32;
+
+  fn checked(c: Checked): I32 { match c { Checked v => v } }
+
+  fn Checked.plus(rhs: Checked): Checked {
+    let a = checked(this);
+    let b = checked(rhs);
+    let r = w::i32_add(a, b);
+    # Overflow iff both operands' signs differ from the result's.
+    let flips = w::i32_and(w::i32_xor(a, r), w::i32_xor(b, r));
+    if i32_bool(w::i32_lt_s(flips, w::i32_zero)) { w::unreachable() } else { () }
+    Checked (r)
+  }
+
+  fn Checked.times(rhs: Checked): Checked {
+    let p = w::i64_mul(
+      w::i64_extend_i32_s(checked(this)), w::i64_extend_i32_s(checked(rhs))
+    );
+    let r = w::i32_wrap_i64(p);
+    if i32_bool(w::i64_ne(w::i64_extend_i32_s(r), p)) { w::unreachable() } else { () }
+    Checked (r)
+  }
+
+  fn checked_zero(): Checked { Checked (w::i32_zero) }
+  fn checked_one(): Checked { Checked (w::i32_one) }
+
+  fn as_num(c: Checked): Num { Num (checked(c)) }
+}
+
+functor CheckedInts: Wasm, Branch -> Int, zero, one, Int.add, Int.mul {
+  bind Int = Checked;
+  bind zero = checked_zero();
+  bind one = checked_one();
+  bind Int.add = Checked.plus;
+  bind Int.mul = Checked.times;
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    print_int(big());
+    putchar(char::newline);
+    print_int(fits());
+    putchar(char::newline);
+    let n = { bind CheckedInts; as_num(fits()) };
+    print_int(n);
+    putchar(char::newline);
+    let m = { bind CheckedInts; as_num(big()) };
+    print_int(m);
+    putchar(char::newline);
+  }
+}

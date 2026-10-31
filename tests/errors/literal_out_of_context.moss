@@ -1,0 +1,5 @@
+# D68: `1` means int.moss's `one`, provided through the context like any
+# val, so a function that does not assume it cannot write it.
+fn main() {
+  let n = 1;
+}

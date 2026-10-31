@@ -59,6 +59,8 @@ type Token =
   | While
   | Name
   | Str
+  | Integer
+  | Decimal
 ;
 
 assume Std {
@@ -214,6 +216,8 @@ assume Std {
         RBrace
       } else if c.eq(char::quote) {
         string_token()
+      } else if is_digit(c) {
+        number_token()
       } else if is_name_char(c) {
         name_or_keyword(c)
       } else {
@@ -279,6 +283,70 @@ assume Std {
           }
         }
       }
+    }
+
+    fn is_digit(c: Char): Bool {
+      if c.ge(char::digit0) {
+        c.le(char::digit9)
+      } else {
+        false
+      }
+    }
+
+    # The character `ahead` past the cursor, if it is a digit.
+    fn digit_ahead(ahead: Int): Bool {
+      let i = at.read().add(ahead);
+      if i.ge(src.length()) {
+        false
+      } else {
+        is_digit(src.get(i))
+      }
+    }
+
+    fn skip_digits() {
+      while digit_ahead(zero) {
+        advance();
+      }
+    }
+
+    # D68: a digit run, then `.` and a digit, is a decimal literal; a `.`
+    # followed by anything else is not part of it, so `1.add(2)` calls a
+    # method on `1`. A name character straight after is no suffix but an
+    # error. Nothing else about a literal is checked: it means whatever
+    # the arithmetic it is made of computes.
+    fn number_token(): Token {
+      skip_digits();
+      let decimal = take_dot_digit();
+      if decimal {
+        skip_digits();
+      }
+      match peek() {
+        Eof => (),
+        Read c => {
+          if is_name_char(c) {
+            return Bad;
+          }
+        }
+      }
+      if decimal {
+        Decimal
+      } else {
+        Integer
+      }
+    }
+
+    fn take_dot_digit(): Bool {
+      let i = at.read();
+      if i.add(one).ge(src.length()) {
+        return false;
+      }
+      if src.get(i).eq(char::dot) {
+        if is_digit(src.get(i.add(one))) {
+          advance();
+          return true;
+        }
+      }
+      false
     }
 
     # Consume the rest of a name run.

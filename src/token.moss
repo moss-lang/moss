@@ -65,3 +65,7 @@ unit While;
 unit Name;
 unit Str;
 unit Bad;
+
+# Numeric literals (D68).
+unit Integer;
+unit Decimal;

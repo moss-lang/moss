@@ -329,6 +329,25 @@ FLOAT_OUT = "".join(
 # What tests/wasi/shadow.moss prints: f64, f32, f64, f32, f64.
 SHADOW_OUT = "333333333\n333333344\n333333333\n333333344\n333333333\n"
 
+# What tests/wasi/literals.moss prints: the same report at f64, then f32.
+LITERALS_OUT = (
+    "0 7 10 100 1000 1234567 2147483647 -42 3 0 \n"
+    "3 -2 1 0 250 1 16777215 \n"
+    "3141593 333333333 ny\n"
+    "314159265 333333333 \n"
+    "0 7 10 100 1000 1234567 2147483647 -42 3 0 \n"
+    "3 -2 1 0 250 1 16777215 \n"
+    "3141593 333333344 yn\n"
+    # A third to twenty-one places is not f32's nearest third: its digits
+    # were summed in f32 and rounded on the way (D68).
+    "314159264 333333248 \n"
+)
+
+# What tests/wasi/overflow.moss prints before it traps: an oversized
+# literal under wrapping i32 arithmetic, then one that fits, under it and
+# under arithmetic that traps on overflow.
+OVERFLOW_OUT = "1\n2147483647\n2147483647\n"
+
 # What tests/wasi/ops.moss prints: D68's operators on `Int` and `Bool`.
 OPS_OUT = (
     "19 -7 3 1 -7 2 23 35 21 5 1 -1 \n"
@@ -659,6 +678,75 @@ class TestOperators(unittest.TestCase):
         self.assertIn("`.add` is not a detached method in scope", caught.exception.message)
 
 
+class TestLiterals(unittest.TestCase):
+    """D68: a literal is a use of fixed library symbols — `zero`, `one`,
+    `.add`, `.mul` for an integer, and `float` and `.div` too for a
+    decimal — so it means whatever `Int` and `Float` are bound to."""
+
+    def test_over_the_moss_std(self):
+        self.assertEqual(run({}, entry="tests/wasi/literals.moss"), LITERALS_OUT)
+
+    def test_over_the_native_std(self):
+        from .test_build import compile_wasm, run_wasm
+
+        files = main_body(
+            "putchar((65 + 1.add(1) * 3 - 0).char());"
+            "putchar((2.5 * 4.0).round().add(char::A.code()).char());"
+            "if 0.1 + 0.2 != 0.3 { putchar(char::y); }"
+            "putchar((-(-66)).char());"
+        )
+        self.assertEqual(run(files), "GKyB")
+        self.assertEqual(run_wasm(compile_wasm(files)), "GKyB")
+
+    def test_a_literal_needs_its_symbols_in_context(self):
+        for body, name in (("let n = 0;", "zero"), ("let n = 12;", "one")):
+            with self.subTest(body=body):
+                with self.assertRaises(LowerError) as caught:
+                    run({"main.moss": f"fn main() {{ {body} }}"})
+                self.assertIn(f"means `{name}`, which is not available", caught.exception.message)
+        with self.assertRaises(LowerError) as caught:
+            run({"main.moss": "assume Int, zero, one, Int.add, Int.mul {\n"
+                 "  fn f() { let x = 1.5; }\n"
+                 "}\n"
+                 "assume Std { fn main() { } }"})
+        self.assertIn("means `float`, which is not available", caught.exception.message)
+
+    def test_an_oversized_literal_does_what_the_arithmetic_does(self):
+        """tests/wasi/overflow.moss: 2^32 + 1 wraps to 1 under `WasiStd`'s
+        i32 `Int`, and traps — at run time, when it is evaluated — under a
+        test-local `Int` whose `.add` and `.mul` trap on overflow."""
+        out = bytearray()
+        original = interp.emit
+        interp.emit = out.extend
+        try:
+            program = collect.load(
+                "tests/wasi/overflow.moss", prelude=PRELUDE, root=REPO
+            )
+            lower = Lower(program)
+            lower.run()
+            with self.assertRaises(interp.MossPanic):
+                interp.run_main(program, lower, None)
+        finally:
+            interp.emit = original
+        self.assertEqual(bytes(out).decode(), OVERFLOW_OUT)
+
+    def test_a_literal_follows_the_binding_of_int(self):
+        """`7` is seven `one`s added up, not a constant, so a scope that
+        binds `one` to 2 has `7` mean 14 (D25: to the end of the block)."""
+        files = {
+            "main.moss": (
+                "assume Std {\n"
+                "  fn main() {\n"
+                "    bind one = 2;\n"
+                "    putchar((char::A.code() + 7 - 7 - 7).char());\n"
+                "  }\n"
+                "}\n"
+            )
+        }
+        # Inside the block `one` is 2, so `7` is 14: 65 + 14 - 14 - 14.
+        self.assertEqual(run(files), "3")
+
+
 class TestRepresentation(unittest.TestCase):
     def test_injection_is_where_the_tag_appears(self):
         """D58, on the interpreter: same program, same answer. Its own
@@ -857,6 +945,50 @@ class TestSelfHostedLexer(unittest.TestCase):
         }
         source = 'assume assumes as As this This loops loop "x" ;'
         self.assertEqual(run(files, entry="kinds.moss", args=[source]), "AnantTnls.\n")
+
+    def test_literal_kinds(self):
+        """D68's literals: `I` an integer, `D` a decimal, `b` the bad token
+        the bootstrap lexer would raise an error for — a suffix. Length is
+        no error: a literal is only arithmetic."""
+        files = {
+            "kinds.moss": (
+                'import "./src/lex.moss" as lexer;\n'
+                'import "./src/token.moss" use Eof, Name, Dot, Integer, Decimal, Bad;\n'
+                "\n"
+                "assume Std {\n"
+                "  fn main() {\n"
+                "    bind lexer::src=first_arg();\n"
+                "    bind lexer::at=cell_int();\n"
+                "    bind lexer::mark=cell_int();\n"
+                "    loop {\n"
+                "      match lexer::lex() {\n"
+                "        Eof => break,\n"
+                "        Integer => putchar(char::I),\n"
+                "        Decimal => putchar(char::D),\n"
+                "        Bad => putchar(char::b),\n"
+                "        Name => putchar(char::n),\n"
+                "        Dot => putchar(char::dot),\n"
+                "        _ => putchar(char::underscore),\n"
+                "      }\n"
+                "    }\n"
+                "    putchar(char::newline);\n"
+                "  }\n"
+                "}\n"
+            )
+        }
+        cases = [
+            ("x2 123 0 007 3.14 0.5", "nIIIDD"),
+            ("1.add(2)", "I.n_I_"),
+            ("1.x 1. 2.5.abs", "I.nI.D.n"),
+            ("2x", "bn"),
+            ("1.5f", "bn"),
+            ("000000000000000000001.5 0.00000000000000000000001", "DD"),
+            ("3.14159265358979323846264338327950288", "D"),
+            ("123456789012345678901234567890", "I"),
+        ]
+        for source, expected in cases:
+            with self.subTest(source=source):
+                self.assertEqual(run(files, entry="kinds.moss", args=[source]), expected + "\n")
 
     def test_agrees_with_bootstrap_on_real_files(self):
         for rel in ["lib/bool.moss", "lib/num.moss", "src/lex.moss", "src/cli.moss"]:
@@ -1127,7 +1259,20 @@ PARSE_DRIVER = (
 
 # Literal snippets (D68) for the parser agreement test, beside the
 # operator tables in tests/test_parse.py: (source, refused).
-LITERAL_SNIPPETS: list = []
+LITERAL_SNIPPETS = [
+    ("1.add(2)", False),
+    ("3.14 * r * r", False),
+    ("-1 * 2", False),
+    ("(-1).abs()", False),
+    ("-(1.abs())", False),
+    ("-1.abs()", True),
+    ("-2.5.sqrt()", True),
+    ("- 1.x", True),
+    ("x - 1.abs()", False),
+    ("1 << n + 1", True),
+    ("0.5 + 007", False),
+    ("f(10, 0.25)", False),
+]
 
 # Everything that is written in the language — every live .moss file except
 # `examples/escape.moss`, which needs string literals (D48) and parses under
@@ -1175,22 +1320,23 @@ class TestSelfHostedSyntax(unittest.TestCase):
 
         from .test_parse import OPERATOR_ERRORS, OPERATOR_GROUPINGS
 
-        cases = [source for source, _ in OPERATOR_GROUPINGS + OPERATOR_ERRORS]
-        cases += [source for source, _ in LITERAL_SNIPPETS]
+        cases = [(source, False) for source, _ in OPERATOR_GROUPINGS]
+        cases += [(source, True) for source, _ in OPERATOR_ERRORS]
+        cases += LITERAL_SNIPPETS
         with tempfile.TemporaryDirectory(prefix="moss-ops-") as folder:
-            for i, source in enumerate(cases):
+            for i, (source, refused) in enumerate(cases):
                 with self.subTest(source=source):
                     text = f"fn f() {{ {source} }}\n"
                     (Path(folder) / f"{i}.moss").write_text(text, encoding="utf-8")
                     actual = run_driver(
                         PARSE_DRIVER, [f"{i}.moss"], preopen=f"{folder}::."
                     ).decode("utf-8")
-                    try:
-                        expected = dump(parse(text)) + "\n"
-                    except ParseError:
+                    if refused:
+                        with self.assertRaises(ParseError):
+                            parse(text)
                         self.assertTrue(actual.startswith("?"), actual)
                     else:
-                        self.assertEqual(actual, expected)
+                        self.assertEqual(actual, dump(parse(text)) + "\n")
 
 
 SCOPE_DRIVER = (
@@ -1476,6 +1622,29 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/ops.moss", prelude="lib/prelude.moss")
         self.assertEqual(self.wasmtime_run(module), OPS_OUT)
 
+    def test_literals(self):
+        """D68's literals, at f64 and — in a block that binds
+        `WasiFloats32` — at f32, from one `report` function."""
+        module = self.compile_with_moss("tests/wasi/literals.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), LITERALS_OUT)
+
+    def test_an_oversized_literal_does_what_the_arithmetic_does(self):
+        """tests/wasi/overflow.moss in both compilers: the wrapped literal,
+        the checked one that fits, and then a trap (wasmtime's exit status
+        for one is 134) where the checked one does not."""
+        import subprocess
+
+        from .test_build import compile_wasm, wasm_file, wasmtime
+
+        result = subprocess.run(
+            [wasmtime(), wasm_file(compile_wasm({}, entry="tests/wasi/overflow.moss"))],
+            capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual((result.returncode, result.stdout), (134, OVERFLOW_OUT))
+        self.assertIn("unreachable", result.stderr)
+        module = self.compile_with_moss("tests/wasi/overflow.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module, expect_code=134), OVERFLOW_OUT)
+
     def test_an_operator_the_context_lacks_is_the_method_call_error(self):
         """D68: `c + c` where nothing provides `Char.add` is reported
         exactly as `c.add(c)` is — `e_method` naming `add` — by both
@@ -1523,6 +1692,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/newton.moss", NEWTON_OUT, "lib/prelude.moss"),
             ("tests/wasi/shadow.moss", SHADOW_OUT, "lib/prelude.moss"),
             ("tests/wasi/ops.moss", OPS_OUT, "lib/prelude.moss"),
+            ("tests/wasi/literals.moss", LITERALS_OUT, "lib/prelude.moss"),
         )
         for entry, expected, *prelude in cases:
             with self.subTest(entry=entry):

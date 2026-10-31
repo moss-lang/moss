@@ -435,9 +435,23 @@ assume Std {
       e
     }
 
+    fn at_literal(): Bool {
+      if here(tk_integer()) {
+        true
+      } else {
+        here(tk_decimal())
+      }
+    }
+
     fn parse_unary(no_rec: Bool): Int {
       if here(tk_hyphen()) {
         advance();
+        # `-1.abs()` would be `-(1.abs())`, which nobody means (D68).
+        if at_literal() {
+          if peek2().eq(tk_dot()) {
+            fail();
+          }
+        }
         return ast::node2(ast::k_ex_unary(), tk_hyphen(), parse_unary(no_rec));
       }
       if here(tk_exclam()) {
@@ -524,6 +538,33 @@ assume Std {
       e
     }
 
+    # A literal's digits, as values, and where the point fell (D68).
+    fn parse_literal(): Int {
+      let decimal = here(tk_decimal());
+      let xs = int_list();
+      var fraction = zero;
+      var point = false;
+      var i = tstart.read();
+      while i.lt(tend.read()) {
+        let c = lexer::src.get(i);
+        if c.eq(char::dot) {
+          point = true;
+        } else {
+          xs.push(c.code().sub(char::digit0.code()));
+          if point {
+            fraction = fraction.add(one);
+          }
+        }
+        i = i.add(one);
+      }
+      advance();
+      var frac = ast::none();
+      if decimal {
+        frac = fraction;
+      }
+      ast::node3(ast::k_ex_lit(), ast::commit(xs), xs.length(), frac)
+    }
+
     fn parse_exprs(xs: IntList, close: Int) {
       loop {
         if here(close) {
@@ -543,6 +584,9 @@ assume Std {
     fn parse_primary(no_rec: Bool): Int {
       if accept(tk_this_value()) {
         return ast::node0(ast::k_ex_this());
+      }
+      if at_literal() {
+        return parse_literal();
       }
       if accept(tk_lparen()) {
         if accept(tk_rparen()) {

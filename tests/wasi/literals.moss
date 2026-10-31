@@ -1,0 +1,93 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiFloats32;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Numeric literals (D68). An integer literal is `Int`, folded from `zero`,
+# `one`, `.add` and `.mul`; a decimal one is `Float`, `float(m)` over
+# `float(10^k)`. Neither is a constant of any particular width: `report`
+# is written once, and the block that binds `WasiFloats32` gets the same
+# literals at f32, correctly rounded there. Each line of output is one
+# group; the comment beside it says what it must be.
+
+assume Std {
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn num(n: Int) {
+    print_int(n);
+    putchar(char::space);
+  }
+
+  fn yes(b: Bool) {
+    if b { putchar(char::y); } else { putchar(char::n); }
+  }
+
+  # A float, scaled and rounded to an `Int`: there is no float formatting.
+  fn scaled(x: Float, scale: Int) {
+    num((x * float(scale)).round());
+  }
+
+  fn report() {
+    # 0 7 10 100 1000 1234567 2147483647 -42 3 0
+    num(0);
+    num(7);
+    num(10);
+    num(100);
+    num(00001000);
+    num(1234567);
+    num(2147483647);
+    num(-42);
+    num(1.add(2));
+    num(10 - 2 * 5);
+    putchar(char::newline);
+
+    # The same literals at either precision: 3 -2 1 0 250 1 15
+    scaled(3.0, 1);
+    scaled(-2.0, 1);
+    scaled(0.5 + 0.5, 1);
+    scaled(0.0, 1);
+    scaled(0.25, 1000);
+    scaled(1.5.abs() - 0.5, 1);
+    scaled(1677721.5, 10);
+    putchar(char::newline);
+
+    # Pi to six places, which both keep; then where the precisions part:
+    # a third to nine places, and whether 0.1 + 0.2 is 0.3 (not at f64;
+    # at f32 it is).
+    scaled(3.141593, 1000000);
+    scaled(1.0 / 3.0, 1000000000);
+    yes(0.1 + 0.2 == 0.3);
+    yes(0.1 + 0.2 > 0.3);
+    putchar(char::newline);
+
+    # Long literals: nothing checks a literal's length, and its digits are
+    # built up in `Float`'s own arithmetic, so past what the format holds
+    # exactly an intermediate rounds before the division. Whatever that
+    # computes is the literal: pi to twenty places and a third to
+    # twenty-one, scaled as above.
+    scaled(3.14159265358979323846, 100000000);
+    scaled(0.333333333333333333333, 1000000000);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    report();
+    {
+      bind WasiFloats32;
+      report();
+    }
+  }
+}

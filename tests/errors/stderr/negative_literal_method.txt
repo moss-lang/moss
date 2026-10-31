@@ -1,0 +1,1 @@
+tests/errors/negative_literal_method.moss:5:14: `-` before a literal with a method call: write `(-1).abs(...)` or `-(1.abs(...))` (D68)

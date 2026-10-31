@@ -72,6 +72,8 @@ assume Std {
   fn tk_while(): Int { hex(n3(), n7()) }
   fn tk_name(): Int { hex(n3(), n8()) }
   fn tk_str(): Int { hex(n3(), n9()) }
+  fn tk_integer(): Int { hex(n3(), n10()) }
+  fn tk_decimal(): Int { hex(n3(), n11()) }
 
   fn token_code(t: Token): Int {
     match t {
@@ -133,6 +135,8 @@ assume Std {
       While => tk_while(),
       Name => tk_name(),
       Str => tk_str(),
+      Integer => tk_integer(),
+      Decimal => tk_decimal(),
     }
   }
 }

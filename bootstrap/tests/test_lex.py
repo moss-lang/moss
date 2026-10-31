@@ -77,11 +77,54 @@ class TestLex(unittest.TestCase):
             lex("unit X;\n@")
         self.assertEqual(position("unit X;\n@", ctx.exception.offset), (2, 1))
 
-    def test_no_numeric_literals(self):
-        # Digits can continue a name but cannot start a token.
-        self.assertEqual(kinds("x2"), [Kind.NAME, Kind.EOF])
-        with self.assertRaises(LexError):
-            lex("2x")
+    def test_numeric_literals(self):
+        # D68: a digit starts a literal, and still continues a name.
+        tokens = lex("x2 123 0 007 3.14 0.5")
+        self.assertEqual(
+            [(t.kind, t.text) for t in tokens[:-1]],
+            [
+                (Kind.NAME, "x2"),
+                (Kind.INTEGER, "123"),
+                (Kind.INTEGER, "0"),
+                (Kind.INTEGER, "007"),
+                (Kind.DECIMAL, "3.14"),
+                (Kind.DECIMAL, "0.5"),
+            ],
+        )
+
+    def test_a_dot_not_followed_by_a_digit_is_not_a_point(self):
+        # `1.add(2)` calls a method on `1`.
+        self.assertEqual(
+            kinds("1.add(2)"),
+            [Kind.INTEGER, Kind.DOT, Kind.NAME, Kind.LPAREN, Kind.INTEGER, Kind.RPAREN, Kind.EOF],
+        )
+        self.assertEqual(kinds("1.x"), [Kind.INTEGER, Kind.DOT, Kind.NAME, Kind.EOF])
+        self.assertEqual(kinds("1._"), [Kind.INTEGER, Kind.DOT, Kind.NAME, Kind.EOF])
+        self.assertEqual(kinds("1."), [Kind.INTEGER, Kind.DOT, Kind.EOF])
+        self.assertEqual(kinds("1.;"), [Kind.INTEGER, Kind.DOT, Kind.SEMI, Kind.EOF])
+        # ...and after a decimal literal, the next `.` is a method call.
+        self.assertEqual(
+            kinds("2.5.abs()"),
+            [Kind.DECIMAL, Kind.DOT, Kind.NAME, Kind.LPAREN, Kind.RPAREN, Kind.EOF],
+        )
+
+    def test_no_suffixes(self):
+        for source in ("2x", "2_", "1.5f", "0x10", "1e5"):
+            with self.subTest(source=source), self.assertRaises(LexError) as ctx:
+                lex(source)
+            self.assertIn("no suffix", ctx.exception.message)
+
+    def test_no_bounds(self):
+        """D68: a literal is only arithmetic over the context's symbols, so
+        nothing about its size is the lexer's business — not even digits
+        past what an f64 can hold, nor an integer past any `Int`."""
+        for source in (
+            "3.14159265358979323846264338327950288",
+            "0.00000000000000000000000001",
+            "123456789012345678901234567890",
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(len(lex(source)), 2)
 
     def test_positions(self):
         source = "unit X;\nunit Y;\n"

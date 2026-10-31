@@ -394,6 +394,28 @@ class TestOperators(unittest.TestCase):
         self.assertEqual(grouping(block.stmts[0].expr), "(a * b)")
         self.assertEqual(grouping(block.stmts[1].expr.expr), "(x + y)")
 
+    def test_literals(self):
+        self.assertEqual(self.expr("3.14"), ast.Literal("3.14"))
+        self.assertEqual(grouping(self.expr("1.add(2)")), "1.add(2)")
+        self.assertEqual(grouping(self.expr("-1 * 2")), "((-1) * 2)")
+        self.assertEqual(grouping(self.expr("(-1).abs()")), "(-1).abs()")
+        self.assertEqual(grouping(self.expr("-(1.abs())")), "(-1.abs())")
+        self.assertEqual(grouping(self.expr("x - 1.abs()")), "(x - 1.abs())")
+        self.assertEqual(grouping(self.expr("2.5.sqrt()")), "2.5.sqrt()")
+
+    def test_minus_before_a_literal_with_a_method_call(self):
+        """`-1.abs()` would be `-(1.abs())`, so D68 refuses it."""
+        for source in ("-1.abs()", "-2.5.sqrt()", "- 1.x", "- -1.abs()"):
+            with self.subTest(source=source):
+                with self.assertRaises(ParseError) as caught:
+                    self.expr(source)
+                self.assertIn("`-` before a literal with a method call", caught.exception.message)
+
+    def test_literal_errors_from_the_draft(self):
+        with self.assertRaises(ParseError) as caught:
+            self.expr("1 << n + 1")
+        self.assertIn("`<<` and `+` are not ordered", caught.exception.message)
+
     def body_of(self, source):
         (fn,) = parse(f"fn f() {{ {source} }}").decls
         return fn.body

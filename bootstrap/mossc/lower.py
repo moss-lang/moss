@@ -56,6 +56,19 @@ OPERATOR_METHODS = {
 }
 
 
+@dataclass(frozen=True)
+class Built:
+    """An expression already lowered, standing where `synth` wants syntax:
+    what a literal's desugaring (D68) is assembled from."""
+
+    node: object
+    ty: object
+    offset: int = -1
+
+    def __iter__(self):
+        return iter((self.node, self.ty))
+
+
 class LowerError(Exception):
     def __init__(self, module: str, message: str, where: str = ""):
         super().__init__(f"{module}{where}: {message}")
@@ -1255,6 +1268,10 @@ class FnChecker:
             return self.synth_operator(expr.op, expr.operand, [])
         if isinstance(expr, ast.Binary):
             return self.synth_operator(expr.op, expr.lhs, [expr.rhs])
+        if isinstance(expr, ast.Literal):
+            return self.synth_literal(expr)
+        if isinstance(expr, Built):
+            return expr.node, expr.ty
         self.error(f"unsupported expression {expr!r}")
 
     def synth_if(self, expr: ast.If, expected):
@@ -1635,6 +1652,97 @@ class FnChecker:
         if head(self.lower.canon(self.env, oty)) is None:
             self.error(f"`{show(oty)}` has no methods (it has no nominal head)")
         return self.provided_call(obj, oty, method, args)
+
+    # Literals (D68). A literal is nothing but arithmetic over fixed
+    # library symbols, provided through the context like anything else,
+    # so it means whatever the arithmetic bound here means — it wraps
+    # where `Int`'s `.add` wraps and traps where that traps, and nothing
+    # about it is checked at compile time:
+    #
+    #   integer `123`  ->  int.moss's `zero` and `one`, num.moss's `.add`
+    #                      and `.mul` at `Int`: ((1 * ten) + 2) * ten + 3,
+    #                      each digit and `ten` a sum of `one`s.
+    #   decimal `d.dd` ->  float(m).div(float(10^k)) for its digits `m`
+    #                      and `k` fractional digits, with float.moss's
+    #                      `float` and num.moss's `.mul`, `.add`, `.div` at
+    #                      `Float`. `m` and `10^k` are built in `Float` —
+    #                      a Horner sum of `float(digit)`s, a product of
+    #                      `float(ten)`s — since `Int` may be too narrow to
+    #                      hold them. While both are exact the division is
+    #                      the only rounding; past that, whatever `Float`'s
+    #                      arithmetic computes.
+
+    def synth_literal(self, expr: ast.Literal):
+        why = f"the literal `{expr.text}`"
+        if "." not in expr.text:
+            return self.int_literal(expr.text, why)
+        whole, fraction = expr.text.split(".")
+        digits = (whole + fraction).lstrip("0")
+        if not digits:
+            mantissa = self.float_of(self.int_literal("0", why), why)
+        else:
+            ten = self.float_of(self.int_literal("10", why), why)
+            mantissa = self.float_of(self.int_literal(digits[0], why), why)
+            for digit in digits[1:]:
+                mantissa = self.lang_method_call(mantissa, "mul", [ten], why)
+                if digit != "0":
+                    d = self.float_of(self.int_literal(digit, why), why)
+                    mantissa = self.lang_method_call(mantissa, "add", [d], why)
+        scale = self.float_of(self.int_literal("10", why), why)
+        ten = scale
+        for _ in range(len(fraction) - 1):
+            scale = self.lang_method_call(scale, "mul", [ten], why)
+        return self.lang_method_call(mantissa, "div", [scale], why)
+
+    def int_literal(self, text: str, why: str):
+        digits = text.lstrip("0")
+        if not digits:
+            return self.lang_val("zero", why)
+        one = Built(*self.lang_val("one", why))
+
+        def small(n: int) -> Built:
+            acc = one
+            for _ in range(n - 1):
+                acc = self.lang_method_call(acc, "add", [one], why)
+            return acc
+
+        acc = small(int(digits[0]))
+        ten = small(10) if len(digits) > 1 else None
+        for digit in digits[1:]:
+            acc = self.lang_method_call(acc, "mul", [ten], why)
+            if digit != "0":
+                acc = self.lang_method_call(acc, "add", [small(int(digit))], why)
+        return acc.node, acc.ty
+
+    def lang_val(self, name: str, why: str):
+        symbol = self.lang_symbol("int", name, "names", why)
+        if symbol not in self.env.vals:
+            self.error(
+                f"{why} means `{name}`, which is not available in the context "
+                "here (assume or bind it)"
+            )
+        return ir.NeedVal(symbol), self.env.vals[symbol]
+
+    def lang_method_call(self, obj, name: str, args, why: str):
+        obj = obj if isinstance(obj, Built) else Built(*obj)
+        args = [a if isinstance(a, Built) else Built(*a) for a in args]
+        method = self.lang_symbol("num", name, "detached", why)
+        return Built(*self.provided_call(obj.node, obj.ty, method, args))
+
+    def float_of(self, value, why: str) -> Built:
+        """float.moss's `float`, applied: an abstract fn the context
+        provides, as any call of it would be."""
+        value = value if isinstance(value, Built) else Built(*value)
+        symbol = self.lang_symbol("float", "float", "names", why)
+        sig = self.env.fns.get(symbol)
+        if sig is None:
+            self.error(
+                f"{why} means `float`, which is not available in the context "
+                "here (assume or bind it)"
+            )
+        args = self.check_args(symbol.name, sig, [value])
+        ret = self.lower.slots_of(self.env, sig.ret)
+        return Built(ir.Call(("env", symbol), tuple(args), ret_slots=ret), sig.ret)
 
     def provided_call(self, obj, oty, method: Symbol, arg_exprs):
         """A call of a method the context provides at the receiver's

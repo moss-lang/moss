@@ -1,0 +1,1 @@
+tests/errors/literal_out_of_context.moss:4:11: the literal `1` means `one`, which is not available in the context here (assume or bind it)
