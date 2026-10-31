@@ -16,6 +16,9 @@
       "include": "#strings"
     },
     {
+      "include": "#numbers"
+    },
+    {
       "include": "#names"
     },
     {
@@ -190,6 +193,18 @@
         }
       ]
     },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.decimal.moss",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.moss",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
     "names": {
       "patterns": [
         {
@@ -249,16 +264,36 @@
           "match": "=>|->"
         },
         {
+          "name": "keyword.operator.comparison.moss",
+          "match": "==|!=|<=|>="
+        },
+        {
+          "name": "keyword.operator.bitwise.shift.moss",
+          "match": "<<|>>"
+        },
+        {
           "name": "keyword.operator.assignment.moss",
           "match": "="
         },
         {
-          "name": "keyword.operator.type.union.moss",
-          "match": "\\|"
+          "name": "keyword.operator.comparison.moss",
+          "match": "[<>]"
         },
         {
-          "name": "keyword.operator.reserved.moss",
-          "match": "!=|<<|<=|==|>=|>>|[!%&*+\\-/<>^]"
+          "name": "keyword.operator.arithmetic.moss",
+          "match": "[*/%+\\-]"
+        },
+        {
+          "name": "keyword.operator.logical.moss",
+          "match": "!"
+        },
+        {
+          "name": "keyword.operator.bitwise.moss",
+          "match": "[&^]"
+        },
+        {
+          "name": "keyword.operator.moss",
+          "match": "\\|"
         }
       ]
     }
