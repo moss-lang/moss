@@ -1333,9 +1333,24 @@ assume Std {
         return symbol_type(sym);
       }
       if k.eq(ast::k_ex_call()) {
-        let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
+        var sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
         if ast::is_some(sym).not() {
           return ty_none();
+        }
+        # Provided by a primitive (D66): typed as a call to that.
+        if is_compilable(sym).not() {
+          if in_wasm(sym).not() {
+            let alias = lower::env_find(
+              cg_env.read(), lower::ek_fn(), ast::none(), sym
+            );
+            if ast::is_some(alias) {
+              if ast::is_some(lower::env_a_of(alias)) {
+                if is_compilable(lower::env_a_of(alias)).not() {
+                  sym = lower::env_a_of(alias);
+                }
+              }
+            }
+          }
         }
         # A tag construction is a value of the tag's own type (D58).
         if prog::sym_kind.get(sym).eq(prog::sk_tag()) {
@@ -1959,6 +1974,10 @@ assume Std {
         );
         if ast::is_some(bound) {
           if ast::is_some(lower::env_a_of(bound)) {
+            # Provided by a primitive (D66): a call to that.
+            if is_compilable(lower::env_a_of(bound)).not() {
+              return emit_primitive_call(body, e, m, lower::env_a_of(bound));
+            }
             emit_args(
               body, ast::b_of(e), ast::c_of(e), m,
               param_types_in(lower::env_b_of(bound), lower::env_a_of(bound))
@@ -1967,6 +1986,12 @@ assume Std {
           }
         }
       }
+      emit_primitive_call(body, e, m, sym)
+    }
+
+    # A call to an instruction, a WASI import, or `i32_bool` — the
+    # primitive context, which nothing provides because it is the bottom.
+    fn emit_primitive_call(body: IntList, e: Int, m: Int, sym: Int): Int {
       emit_args(body, ast::b_of(e), ast::c_of(e), m, param_types(sym));
       if in_wasm(sym) {
         let op = wops::find_op(prog::sym_name.get(sym));
@@ -2057,6 +2082,25 @@ assume Std {
       var i = zero;
       while i.lt(vals.length()) {
         let l = provision_of(ast::none(), vals.get(i));
+        if ast::is_some(l) {
+          provide(ast::none(), ck_slot(entry, vals.get(i)), l);
+        }
+        i = i.add(one);
+      }
+    }
+
+    # What `capture` does for a provision copied from `bound` (D66): the
+    # values travel with that provision, so each is the one `bound`
+    # carries here, not whatever its val is bound to by now.
+    fn recapture(entry: Int, bound: Int, mode: Int) {
+      if mode.ne(bw_emit()) {
+        return ();
+      }
+      let vals = int_list();
+      val_slots(vals, lower::env_a_of(entry), lower::env_b_of(entry), zero);
+      var i = zero;
+      while i.lt(vals.length()) {
+        let l = provision_of(ast::none(), ck_slot(bound, vals.get(i)));
         if ast::is_some(l) {
           provide(ast::none(), ck_slot(entry, vals.get(i)), l);
         }
@@ -2501,7 +2545,7 @@ assume Std {
       if kind.eq(prog::sk_fn()) {
         let provider = named_fn(value, m);
         if ast::is_some(provider).not() {
-          cg_error(c_unsupported(), prog::sym_name.get(sym));
+          bind_contextual(sym, value, m, mode);
           return ();
         }
         # The provider's own context is captured here, at the bind site.
@@ -2513,6 +2557,65 @@ assume Std {
         return ();
       }
       cg_error(c_unsupported(), prog::sym_name.get(sym));
+    }
+
+    # D66: `bind f = g;` where `g` is an abstract fn the context provides
+    # is sugar for binding a defined forwarder, `fn _(xs) { g(xs) }`
+    # under `assume g`. Compiled in this environment, that forwarder
+    # calls whatever provides `g` here, with the values that provision
+    # captured — so `f` gets exactly that provision: the same provider,
+    # under the environment it was bound in, its captured values read
+    # here as a call to `g` would read them. A later rebind of `g`, here
+    # or further down, is a new entry and cannot reach this one.
+    #
+    # A primitive `g` (an instruction, a WASI import) has no provision to
+    # copy, and the entry names `g` itself; a call through it is then a
+    # call to the primitive.
+    fn bind_contextual(sym: Int, value: Int, m: Int, mode: Int) {
+      if ast::kind_of(value).ne(ast::k_ex_path()) {
+        cg_error(c_unsupported(), prog::sym_name.get(sym));
+        return ();
+      }
+      let g = prog::resolve_path(m, ast::a_of(value));
+      if ast::is_some(g).not() {
+        cg_error(prog::e_scope(), ast::path_last(ast::a_of(value)));
+        return ();
+      }
+      if prog::sym_kind.get(g).ne(prog::sk_fn()) {
+        cg_error(c_unsupported(), prog::sym_name.get(sym));
+        return ();
+      }
+      let bound = lower::env_find(cg_env.read(), lower::ek_fn(), ast::none(), g);
+      if ast::is_some(bound) {
+        if ast::is_some(lower::env_a_of(bound)) {
+          cg_env.write(lower::env_push(
+            cg_env.read(), lower::ek_fn(), ast::none(), sym,
+            lower::env_a_of(bound), lower::env_b_of(bound)
+          ));
+          recapture(cg_env.read(), bound, mode);
+          return ();
+        }
+      }
+      var primitive = in_wasm(g);
+      if primitive.not() {
+        primitive = in_wasi(g);
+      }
+      if primitive.not() {
+        primitive = is_i32_bool(g);
+      }
+      # Only if this function has it: assumed, since nothing bound it.
+      if primitive {
+        primitive = lower::env_has(
+          lower::env_of(cg_where.read()), lower::ek_fn(), ast::none(), g
+        );
+      }
+      if primitive.not() {
+        cg_error(c_unbound(), prog::sym_name.get(g));
+        return ();
+      }
+      cg_env.write(lower::env_push(
+        cg_env.read(), lower::ek_fn(), ast::none(), sym, g, lower::env_empty()
+      ));
     }
 
     # `bind Horn.loud = Horn.blast;` — a detached method provided at a

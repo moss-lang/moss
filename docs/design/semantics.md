@@ -1547,6 +1547,52 @@ end kept a `let` past the end of its block, so one that shadowed an outer
 local overwrote it. Both now restore the outer local, as the self-hosted
 compiler already did. Standing test: `tests/wasi/block.moss`.
 
+**[D66] DECIDED by the designer (binding a fn to a contextual fn).**
+[D26] let `bind f=g;` name "a defined (or currently provided) fn", but
+only the first was implemented: with `g` abstract, provided by the
+context, the bootstrap said `g` must be a defined function and the
+self-hosted compiler said `c_unsupported`. That is exactly the case a
+functor written against signatures meets — `functor MaxLevelInfo: Std,
+ForceLog -> MaybeLog { bind error = force_error; ... }`, where nothing
+about `force_error` is known but that it is provided. The options were
+to capture `g` at the bind, or to resolve it late, at each call of `f`,
+to whatever `g` is then. Decided: capture, as everything else in a bind
+is captured. `bind f=g;` with `g` abstract means precisely binding a
+defined forwarder
+
+```moss
+assume <the type symbols g's signature needs>, g {
+  fn g'(x0: T0, ...): R { g(x0, ...) }
+}
+```
+
+so the signature check of [D27] is `g`'s signature against `f`'s under
+the substitutions in force, the requirement at the bind site is `g`
+itself, and a later rebind of `g` — in the same block or anywhere deeper
+in the call tree — does not reach `f`. This is pure sugar over the core
+calculus (`docs/design/core/CoreMoss.v`): the forwarder is one more
+defined declaration in the signature, `EBindFn f g' sm e` with it
+satisfies `TBindFnR` as stated (its requirements, `g` and the types,
+hold at the bind site), it evaluates by `EvBindFn` to a closure over the
+bind-site environment (`DClo g' dc`, with `compose_smap d sm`), and the
+forwarder's body is an abstract call, `ECallA g`. The elaborated program
+is an ordinary core program, so the soundness proof covers it unchanged
+and neither the mechanization nor `core-moss.tex` needed an edit. The bootstrap elaborates it that
+way, synthesizing one forwarder per abstract `g`. The self-hosted
+compiler gives `f` the provision `g` has at the bind — the same
+provider, under the environment it was bound in, with the values it
+captured — which is what the forwarder would compile to minus its own
+frame; a primitive `g` (a `Wasm` instruction, a `Wasi` import) has no
+provision, so there `f` is an alias a call resolves to the primitive.
+Method binds are unchanged: the right side of `bind X.m = ...` must
+still be a defined fn or an attached method. An abstract method there
+would want the same treatment, but it falls out of neither
+implementation and nothing needs it yet. Running the motivating program
+also relied on the back-end change just before this one — a val need is
+passed only if the function can reach it (selfhosting.md, "Keeping it out
+of quadratic time") — which is not a language change. Standing test:
+`tests/wasi/forward.moss`.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -1574,7 +1620,8 @@ vs structure, D54 method providers keep the nominal wrapper, D55 functors
 as their own declaration applied with `bind`, D61 how a method call
 finds its method, D62 provisions keyed by the receiver's identity, D63
 records are the only product type, D64 bare import paths name library
-files, D65 bare block expressions)
+files, D65 bare block expressions, D66 binding a fn to a contextual fn
+captures it at the bind)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

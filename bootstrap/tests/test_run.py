@@ -183,6 +183,41 @@ class TestContext(unittest.TestCase):
         )
         self.assertEqual(run(files), "yrxpz")
 
+    def test_fn_bind_to_contextual_fn_captures(self):
+        # D66: `bind f = g;` with `g` abstract captures `g` as provided at
+        # the bind: neither a rebind of `g` after it nor one deeper in the
+        # call tree reaches `f`. The signature mentions an abstract type.
+        files = main_body(
+            "bind T = Char; bind c = char::a; bind g = emit; bind f = g; "
+            "bind c = char::b; f(char::x); bind g = other; f(char::y); "
+            "g(char::z); deeper(char::w);",
+            decls="  type T;\n  val c: Char;\n"
+            "  assume T { fn g(x: T); fn f(x: T); }\n"
+            "  assume c { fn emit(x: Char) { putchar(c); putchar(x); } }\n"
+            "  fn other(x: Char) { putchar(char::hyphen); }\n"
+            "  assume T, f, g { fn deeper(x: T) { bind g = loud; f(x); } }\n"
+            "  assume T, g { fn loud(x: T) { g(x); g(x); } }",
+        )
+        self.assertEqual(run(files), "axay-aw")
+
+    def test_fn_bind_to_unavailable_contextual_fn(self):
+        files = main_body(
+            "bind f = g;",
+            decls="  fn g(x: Char);\n  fn f(x: Char);",
+        )
+        with self.assertRaises(LowerError) as ctx:
+            run(files)
+        self.assertIn("`g` is not available in the context here", ctx.exception.message)
+
+    def test_fn_bind_to_contextual_fn_checks_the_signature(self):
+        files = main_body(
+            "bind f = putchar;",
+            decls="  fn f(x: Int);",
+        )
+        with self.assertRaises(LowerError) as ctx:
+            run(files)
+        self.assertIn("fn bind signature mismatch", ctx.exception.message)
+
     def test_unbound_val_is_context_error(self):
         files = main_body(
             "emit();",
@@ -1290,6 +1325,15 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/block.moss")
         self.assertEqual(self.wasmtime_run(module), "EDCBGAIEE\n")
 
+    def test_a_fn_bound_to_a_contextual_fn(self):
+        """D66: `bind f = g;` with `g` abstract is a bind of a forwarder
+        to `g`, so it captures `g` as provided at the bind — at a type a
+        bind fixed, inside a functor written against the signature alone,
+        and for a primitive. Rebinding `g` afterwards, in the same frame
+        or deeper in the call tree, does not reach `f`."""
+        module = self.compile_with_moss("tests/wasi/forward.moss")
+        self.assertEqual(self.wasmtime_run(module), "CCEDEC\n")
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
@@ -1307,6 +1351,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/bulk.moss", "hi!\n"),
             ("tests/wasi/capture.moss", "CCCCE\n"),
             ("tests/wasi/block.moss", "EDCBGAIEE\n"),
+            ("tests/wasi/forward.moss", "CCEDEC\n"),
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),

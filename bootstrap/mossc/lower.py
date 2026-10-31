@@ -105,6 +105,10 @@ class Lower:
         self.val_widths: dict[int, int] = {}
         self._reqs_cache: dict[int, list] = {}
         self._const_cache: dict[int, tuple] = {}
+        # D66: the forwarder synthesized for each abstract fn bound as a
+        # provider, and the other way round.
+        self.forwarders: dict[int, Symbol] = {}  # id(abstract fn) -> forwarder
+        self.forwarded: dict[int, Symbol] = {}  # id(forwarder) -> abstract fn
         for module in program.order:
             for table in (module.names, module.detached, module.attached):
                 for symbol in table.values():
@@ -143,9 +147,49 @@ class Lower:
         module = symbol.module
         env = Env(module)
         needs: list = []
+        target = self.forwarded.get(id(symbol))
+        if target is not None:
+            # A forwarder assumes what its target's signature needs — the
+            # type symbols of the target's assumes — and the target.
+            for ty in self.type_requirements(target):
+                self.add_symbol_item(env, module, ty, {}, needs)
+            self.add_symbol_item(env, module, target, {}, needs)
+            return env, needs
         for item in symbol.assumes:
             self.add_assume_item(env, module, item, needs)
         return env, needs
+
+    def forwarder(self, target: Symbol) -> Symbol:
+        """D66: binding an abstract fn the context provides,
+        `bind f = g;`, is sugar for binding a defined function that
+        forwards to it,
+
+            assume <the types g's signature needs>, g {
+              fn g'(x0: T0, ...): R { g(x0, ...) }
+            }
+
+        so it captures `g` as provided at the bind site exactly as any
+        provider's needs are captured (D26). One per target: it is the
+        same function whichever bind asks for it."""
+        cached = self.forwarders.get(id(target))
+        if cached is not None:
+            return cached
+        decl = target.decl
+        # Parameter names no source program can spell, so none can
+        # capture or shadow anything.
+        params = [ast.Param(f"%{i}", p.ty) for i, p in enumerate(decl.params)]
+        call = ast.Call(
+            ast.PathExpr([target.name], None, offset=decl.offset),
+            [ast.PathExpr([p.name], None) for p in params],
+            offset=decl.offset,
+        )
+        body = ast.Block([], call, offset=decl.offset)
+        fwd_decl = ast.Fndef(decl.name, params, decl.ret, body, offset=decl.offset)
+        fwd = Symbol(target.module, target.name, SymKind.FN, fwd_decl)
+        self.forwarders[id(target)] = fwd
+        self.forwarded[id(fwd)] = target
+        self.fn_symbols[id(fwd_decl)] = fwd
+        return fwd
 
     def add_assume_item(self, env: Env, module: Module, item: ast.AssumeItem, needs: list):
         if item.dot is not None:
@@ -987,7 +1031,7 @@ class FnChecker:
             return ir.BindVal(target, value)
         if target.kind == SymKind.FN:
             sig = self.lower.fn_sig(target, self.env.tymap, self.env)
-            fn_symbol = self.expect_defined_fn(expr)
+            fn_symbol = self.expect_fn_provider(expr)
             needs_map = self.match_fn_sig(fn_symbol, sig, kind="fn")
             self.lower.merge(self.env, self.env.fns, module, target, sig)
             return ir.BindFn(target, fn_symbol, needs_map)
@@ -1007,6 +1051,25 @@ class FnChecker:
                 f"`{'::'.join(expr.path)}` must be a defined function to provide a bind"
             )
         return target
+
+    def expect_fn_provider(self, expr) -> Symbol:
+        """The right side of a *fn* bind: a defined function, or (D66) an
+        abstract one this context provides, through its forwarder."""
+        if isinstance(expr, ast.PathExpr) and expr.app is None:
+            target = resolve_path(self.module, expr.path)
+            if (
+                isinstance(target, Symbol)
+                and target.kind == SymKind.FN
+                and isinstance(target.decl, ast.Fndef)
+                and target.decl.body is None
+            ):
+                if target not in self.env.fns:
+                    self.error(
+                        f"`{target.name}` is not available in the context here, "
+                        "so it cannot provide a bind (assume or bind it)"
+                    )
+                return self.lower.forwarder(target)
+        return self.expect_defined_fn(expr)
 
     def expect_provider(self, expr, this_ty) -> Symbol:
         """The right side of a *method* bind: a defined function, or an

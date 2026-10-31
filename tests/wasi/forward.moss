@@ -1,0 +1,99 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# Binding a fn to an abstract fn the context provides (D66): `bind f = g;`
+# means binding a defined forwarder `fn _(x) { g(x) }` that assumes `g`,
+# so `f` captures `g` as it is provided *at the bind*. Each letter is the
+# one the comment beside it names; any other means a rebind of `g` after
+# the bind reached `f`.
+
+# A signature over an abstract type, and a functor that implements one of
+# its fns with another — written against the signature alone, so the
+# right side can only be the context's `say`.
+type Glyph;
+
+assume Glyph {
+  fn say(g: Glyph);
+  fn speak(g: Glyph);
+}
+
+functor Echo: Glyph, say -> speak {
+  bind speak = say;
+}
+
+assume Wasm, Wasi, Branch {
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn six(): I32 { w::i32_add(four(), two()) }
+
+  fn emit(c: I32) {
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
+    w::i32_store8(eight(), c);
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
+  }
+
+  fn upper_a(): I32 {
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
+  }
+
+  fn newline(): I32 { w::i32_add(eight(), two()) }
+
+  val shift: I32;
+
+  # 'A' plus the glyph plus 1 << shift: with glyph 0, 'C' for 1, 'E' for 2.
+  assume shift {
+    fn shifted(g: I32) {
+      emit(w::i32_add(w::i32_add(upper_a(), g), w::i32_shl(w::i32_one, shift)));
+    }
+  }
+
+  # 'A' plus the glyph, plus four: a different letter for a leaked rebind.
+  fn plain(g: I32) { emit(w::i32_add(w::i32_add(upper_a(), g), four())); }
+
+  # A function whose own context is the signature: it rebinds `say`
+  # deeper in the call tree than the bind that captured it.
+  assume Glyph, say, speak {
+    fn deeper(g: Glyph) {
+      bind say = deeper_say;
+      speak(g);
+    }
+  }
+
+  # Applies `Echo` to a `say` its caller provided, then rebinds `say`.
+  assume Glyph, say {
+    fn via_functor(g: Glyph) {
+      bind Echo;
+      bind say = deeper_say;
+      speak(g);
+    }
+
+    fn deeper_say(g: Glyph) { say(g); say(g); }
+  }
+
+  # A primitive can be bound too: `add` is `i32.add`.
+  fn add(a: I32, b: I32): I32;
+
+  assume add {
+    fn sum(): I32 { add(upper_a(), two()) }
+  }
+
+  fn main() {
+    bind Glyph = I32;
+    bind shift = w::i32_one;
+    bind say = shifted;
+    bind speak = say;
+    bind shift = two();
+    speak(w::i32_zero);              # 'C': `say` captured shift = 1
+    bind say = plain;
+    speak(w::i32_zero);              # 'C': still the `say` of the bind
+    say(w::i32_zero);                # 'E': `say` itself is rebound
+    deeper(w::i32_one);              # 'D': `speak` is still shifted
+    via_functor(w::i32_zero);        # 'E': the caller's `say`, once
+    bind add = w::i32_add;
+    emit(sum());                     # 'C'
+    emit(newline());
+  }
+}

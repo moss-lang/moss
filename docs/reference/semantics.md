@@ -101,7 +101,11 @@ enclosing block; inner binds shadow outer ones. Type binds take a type and
 are static. Val binds evaluate their expression once. Fn binds name a
 defined function whose signature must match the abstract signature under
 the substitutions in force — nothing is inferred from a bind, ever — and
-whose own requirements are satisfied and captured at the bind site. Method
+whose own requirements are satisfied and captured at the bind site — or an
+abstract function available here, which means binding a defined forwarder
+to it, so it is captured as provided at the bind ([D66]): `bind
+error=force_error;` and a later rebind of `force_error` leave `error` as it
+was. Method
 binds (`bind Horn.loud=Horn.blast;`) provide a detached method at a
 receiver type; an attached method is the provider that can see the receiver
 as `this`. A method bind may carry a bracket application
