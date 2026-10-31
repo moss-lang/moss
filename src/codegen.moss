@@ -4745,6 +4745,60 @@ assume Std {
         k = k + 1;
       }
       result_generic(home, ast::fu_res(d), ast::fu_nres(d), 0);
+      # Each item made at the type the code after this is checked
+      # against, the fresh generations read as the binds made them: a
+      # functor that binds, inside, a type `F`'s result mentions but does
+      # not hold (`WasiFloats` binds `Int`, which `float` takes) would
+      # otherwise provide an item at a type the caller does not have. As
+      # the bootstrap checks each branch, but here for the one bound.
+      let gens = int_list();
+      let made_tys = int_list();
+      k = 0;
+      while k < tsyms.length() {
+        gens.push(fresh_gen(spec, tsyms.get(k)));
+        made_tys.push(lower::canon(gmade, types::ty_of_symbol(types::kd_abstract(), tsyms.get(k))));
+        k = k + 1;
+      }
+      k = 0;
+      while k < syms.length() {
+        let want = lower::env_find(cg_genv.read(), kinds.get(k), recvs.get(k), syms.get(k));
+        let got = lower::env_find(gmade, kinds.get(k), mrecvs.get(k), syms.get(k));
+        if ast::is_some(want) {
+          if ast::is_some(got) {
+            if !made_as_promised(kinds.get(k), syms.get(k), got, mrecvs.get(k), want, recvs.get(k), gens, made_tys) {
+              cg_error(prog::e_functor_sig(), prog::sym_name.get(syms.get(k)));
+            }
+          }
+        }
+        k = k + 1;
+      }
+    }
+
+    # Whether a provision the binds made (row `got` of the generic
+    # environment they left, keyed at `grecv`) has the type the
+    # application promises (row `want`, at `wrecv`), once each fresh
+    # generation `gens` is read as the type `made` says the binds made it.
+    fn made_as_promised(
+      kind: Int, sym: Int, got: Int, grecv: Int, want: Int, wrecv: Int,
+      gens: IntList, made: IntList
+    ): Bool {
+      if kind == lower::ek_val() {
+        return lower::env_a_of(got) == types::subst(lower::env_a_of(want), gens, made);
+      }
+      # An abstract functor's row: nothing typed.
+      if prog::sym_kind.get(sym) == prog::sk_functor() {
+        return true;
+      }
+      let gp = sig_params(row_view(got), sym, grecv);
+      let wp = sig_params(row_view(want), sym, wrecv);
+      var i = 0;
+      while i < gp.length() {
+        if gp.get(i) != types::subst(wp.get(i), gens, made) {
+          return false;
+        }
+        i = i + 1;
+      }
+      sig_ret(row_view(got), sym, grecv) == types::subst(sig_ret(row_view(want), sym, wrecv), gens, made)
     }
 
     # D78: a functor bound to an abstract one may rely only on its own

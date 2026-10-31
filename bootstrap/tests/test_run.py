@@ -2114,8 +2114,9 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         only `G`'s inputs, whatever an application has; `bind F;` with
         nothing bound to `F` is the ordinary error for a requirement not
         in context; a functor bound to one whose result holds a type must
-        provide that type too; and no value of a type `bind F;` made may
-        leave its block. Rejected in both compilers."""
+        provide that type too; each item of the result must be made at the
+        type the application promises; and no value of a type `bind F;`
+        made may leave its block. Rejected in both compilers."""
         from .test_build import compile_wasm
 
         cases = {
@@ -2151,6 +2152,13 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "`Twice` cannot be bound to `Pick`: it does not provide "
                 "`Scalar`, which `Pick` promises",
                 "!X {} Scalar\n",
+            ),
+            # A bound functor making a result item at another type than
+            # the application promises (its own `Int`, inside).
+            "functor_promise": (
+                "`WasiFloats`, bound to `Fast`, provides `float` at another "
+                "type than `Fast` promises here (D78)",
+                "?X {} kernel float\n",
             ),
             # A value of a type `bind F;` made leaving its block, where the
             # type made differs from the one outside.

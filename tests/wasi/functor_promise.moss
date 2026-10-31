@@ -1,0 +1,32 @@
+import "../../lib/float.moss" use Floats;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiFloats;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: a functor bound to an abstract one must make each item of the
+# result at the type the application promises. `Floats` mentions `Int`
+# (`float`, `.round`), which `Fast`'s result does not hold, and the
+# library's `WasiFloats` binds `Int` to `Num` inside; so where `Fast` is
+# applied with `Int` abstract, as in `kernel`, it would provide `float` at
+# a `Num` the kernel does not have. That the caller's `Int` is `Num` too
+# changes nothing: `kernel` is checked as written. Rejected in both
+# compilers.
+
+functor Fast: Wasm, Branch -> Floats;
+
+assume Std, Wasm, Branch, Fast {
+  fn kernel(n: Int): Int {
+    bind Fast;
+    float(n).round()
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Fast = WasiFloats;
+    putchar((kernel(3) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
