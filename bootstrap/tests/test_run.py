@@ -2164,33 +2164,39 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     out.decode("utf-8").startswith(report.format(entry)), out[:200]
                 )
 
-    def test_generations_the_self_hosted_compiler_cannot_tell_apart(self):
-        """D72 and D78, rejected by the bootstrap only. Two generations of
-        a type that specialize to one type are told apart only by a
-        generic check, which the self-hosted compiler does not have yet
-        (it checks types as specialized): `x`, a `T` from before `bind T
-        = Int;`, used as a `T` after it where `T` was `Int` all along; and
-        a value of the `Float` `bind Fast;` made leaving its block where
-        that `Float` is the f64 the outer one is too. The self-hosted
-        compiler compiles both — asserted here so that the day it checks
-        generically, this test says so."""
+    def test_generations_that_specialize_alike_are_told_apart(self):
+        """D72 and D78: two generations of a type that specialize to one
+        type are still two types, since both compilers check a function
+        as written, against its generic types: `x`, a `T` from before
+        `bind T = Int;`, used as a `T` after it where `T` was `Int` all
+        along; and a value of the `Float` `bind Fast;` made leaving its
+        block where that `Float` is the f64 the outer one is too. The
+        self-hosted compiler used to check types as specialized, and
+        compiled both. Rejected in both compilers."""
         from .test_build import compile_wasm
 
         cases = {
-            "generation_mix": "`y` is declared `Int` but initialized with `T`",
+            "generation_mix": (
+                "`y` is declared `Int` but initialized with `T`",
+                "?S {} mix\n",
+            ),
             "functor_escape_same": (
                 "this block yields `Float@Fast`, the type `bind Fast;` made "
-                "in it: a value of that type cannot leave the block (D78)"
+                "in it: a value of that type cannot leave the block (D78)",
+                "?W {} leak Float\n",
             ),
         }
-        for name, message in cases.items():
+        for name, (message, report) in cases.items():
             entry = f"tests/wasi/{name}.moss"
             with self.subTest(entry=entry):
                 with self.assertRaises(LowerError) as caught:
                     compile_wasm({}, entry=entry)
                 self.assertIn(message, str(caught.exception))
                 out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
-                self.assertEqual(out[:4], b"\0asm", out[:200])
+                self.assertNotEqual(out[:4], b"\0asm")
+                self.assertTrue(
+                    out.decode("utf-8").startswith(report.format(entry)), out[:200]
+                )
 
     def test_a_union_slot_holds_one_valtype(self):
         """D75 meets D59: a union's slot has its first member's valtype,

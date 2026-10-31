@@ -5,12 +5,9 @@ import "../../lib/wasip1.moss" use Wasi;
 
 # D78: the escape of functor_escape.moss where the type `bind Fast;`
 # makes is the very type `Float` already was outside the block (f64 both
-# times). The bootstrap checks generically and refuses it: the block's
-# `Float` is a fresh generation whatever it turns out to be. The
-# self-hosted compiler checks types as specialized, where the two are
-# one type, so it cannot see this — the same gap it has for any two D72
-# generations that specialize alike — and compiles it. Rejected by the
-# bootstrap only, until that compiler checks generically.
+# times). Both compilers check the program as written and refuse it: the
+# block's `Float` is a fresh generation whatever it turns out to be, the
+# same as for any two D72 generations that specialize alike.
 
 functor Fast: Wasm, Branch -> Floats;
 

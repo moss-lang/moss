@@ -80,8 +80,16 @@ assume Std {
   # of the function is, because the locals past the parameters are
   # grouped by valtype. The first pass finds them out; the second lays
   # them out before it emits.
+  #
+  # A local has two types. `lc_type` is its type as the code is written,
+  # in the frame's generic terms (`cg_genv`), which is what it is checked
+  # and resolved against; `lc_spec` is what that is in this
+  # specialization, which is what it is laid out by. The second is
+  # recorded where the first pass makes the local, since a type a `bind
+  # F;` made (D78) means something only inside its block.
   val lc_name: IntList;
   val lc_type: IntList;
+  val lc_spec: IntList;
   val lc_start: IntList;
   val lc_slots: IntList;
   val lc_base: CellInt;
@@ -103,16 +111,45 @@ assume Std {
 
   # D78: the fresh generation each application (`bind F;`, by its spec
   # node) makes of each type in an abstract functor's result; and, as a
-  # stack to `es_top`, the types live applications made in the frame
-  # being compiled, with what their symbols were before, for the escape
-  # check (`check_escape`).
+  # stack to `es_top`, the generations live applications made in the
+  # frame being compiled, as types, beside the symbols they are
+  # generations of, for the escape check (`check_escape`).
   val fr_spec: IntList;
   val fr_type: IntList;
   val fr_sym: IntList;
   val es_made: IntList;
-  val es_outer: IntList;
   val es_sym: IntList;
   val es_top: CellInt;
+
+  # Reading a type through an environment, memoized: what a generic type
+  # is in a specialized environment (`spec`), and `lower`'s `canon` and
+  # `instantiate` through a generic one. Each is a walk of the chain per
+  # abstract symbol, and a parameter has no row in the environment that
+  # mentions it, so every such walk is the whole chain. A hash table on
+  # (what, environment, type): `sp_head` holds the newest row of a bucket
+  # plus one, and `sp_link` chains the rest.
+  val sp_what: IntList;
+  val sp_env: IntList;
+  val sp_ty: IntList;
+  val sp_res: IntList;
+  val sp_link: IntList;
+  val sp_head: IntList;
+
+  # D77 rule 5: each method call's resolution, decided against the
+  # receiver's generic type in the frame's generic environment and
+  # recorded per call site — (node, generic environment, receiver type)
+  # — so that every specialization of the frame, and both passes, call
+  # what the code as written means. A row is a defined attached method
+  # called directly (`rm_meth`), or the method a provision of which, at
+  # the receiver, is called (`rm_sym`); neither, where nothing is in
+  # scope. Bucketed on the node.
+  val rm_node: IntList;
+  val rm_genv: IntList;
+  val rm_recv: IntList;
+  val rm_meth: IntList;
+  val rm_sym: IntList;
+  val rm_link: IntList;
+  val rm_head: IntList;
 
   # Open label scopes, and the depth at which each enclosing loop's exit
   # block sits, so that `break` knows how far out to branch.
@@ -235,14 +272,13 @@ assume Std {
   val ch_head: IntList;
 
   # D70: the function synthesized for each anonymous function at a bind,
-  # one per (node, generic environment, environment) the bind runs in —
-  # its captured locals' types are the frame's, which are specialized.
+  # one per (node, generic environment) the bind runs in — its signature
+  # and its captured locals' types are the frame's, as written.
   # `lm_recv` says whether it takes a receiver; its captured locals are
   # a run of (name, val symbol) pairs in `lm_cap`. `cg_capt` holds the
   # locals that are captured ones, which a body may read but not assign.
   val lm_node: IntList;
   val lm_genv: IntList;
-  val lm_env: IntList;
   val lm_sym: IntList;
   val lm_recv: IntList;
   val lm_cstart: IntList;
@@ -252,9 +288,11 @@ assume Std {
 
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
-    lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
+    lc_name, lc_type, lc_spec, lc_start, lc_slots, lc_base, lc_visible,
     pv_recv, pv_sym, pv_local, pv_top, pv_floor,
-    fr_spec, fr_type, fr_sym, es_made, es_outer, es_sym, es_top,
+    fr_spec, fr_type, fr_sym, es_made, es_sym, es_top,
+    sp_what, sp_env, sp_ty, sp_res, sp_link, sp_head,
+    rm_node, rm_genv, rm_recv, rm_meth, rm_sym, rm_link, rm_head,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
     cg_i32, cg_i64, cg_f32, cg_f64, cg_boolty,
     cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_memory, cg_errs, cg_err_name, cg_err_at, cg_where,
@@ -263,7 +301,7 @@ assume Std {
     fl_start, fl_len, fl_types,
     un_sym, un_link, un_head, un_mark, un_stamp, un_meths, un_fstart, un_flags,
     cg_lang, cg_genv, ch_run, ch_link, ch_head,
-    lm_node, lm_genv, lm_env, lm_sym, lm_recv, lm_cstart, lm_clen, lm_cap, cg_capt;
+    lm_node, lm_genv, lm_sym, lm_recv, lm_cstart, lm_clen, lm_cap, cg_capt;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -392,32 +430,6 @@ assume Std {
         return 2;
       }
       0
-    }
-
-    # `Ref[Boxed=held]`.
-    fn ref_of(held: Int): Int {
-      let reqs = int_list();
-      types::reqs_of(cg_ref.read(), reqs);
-      let args = int_list();
-      var i = 0;
-      while i < reqs.length() {
-        if reqs.get(i) == cg_boxed.read() {
-          args.push(held);
-        } else {
-          args.push(types::ty_of_symbol(types::kd_abstract(), reqs.get(i)));
-        }
-        i = i + 1;
-      }
-      types::nominal(cg_ref.read(), args)
-    }
-
-    # What a call through a platform provision yields, at this receiver.
-    fn platform_type(prim: Int, recv_ty: Int): Int {
-      let recv = canon_ty(recv_ty);
-      if prim == 1 {
-        return ref_of(recv);
-      }
-      held_of(recv)
     }
 
     # D75. Whether a type is a `Ref`, what one holds, and the struct type
@@ -735,9 +747,9 @@ assume Std {
       }
     }
 
-    # `this`'s type, for a method: its receiver declaration.
-    fn this_type(sym: Int): Int {
-      canon_ty(types::ty_of_decl(prog::sym_recv.get(sym)))
+    # `this`'s type, for a method: its receiver declaration, read in `env`.
+    fn this_type_in(env: Int, sym: Int): Int {
+      lower::canon(env, types::ty_of_decl(prog::sym_recv.get(sym)))
     }
 
     # `this` is the first local of a method's frame, so it needs no name.
@@ -756,26 +768,6 @@ assume Std {
         return lm_recv.get(i) == 1;
       }
       false
-    }
-
-    # A provider's parameter types after the receiver, as a call passes
-    # its arguments: an anonymous function that takes the receiver has
-    # it as its first declared parameter (D70).
-    fn provider_params(penv: Int, provider: Int): IntList {
-      let all = param_types_in(penv, provider);
-      if is_defined_method(provider) {
-        return all;
-      }
-      if !takes_receiver(provider) {
-        return all;
-      }
-      let out = int_list();
-      var i = 1;
-      while i < all.length() {
-        out.push(all.get(i));
-        i = i + 1;
-      }
-      out
     }
 
     # The row of the anonymous function `sym` is, or none.
@@ -845,10 +837,28 @@ assume Std {
       !in_wasm(sym)
     }
 
-    # A captured slot has the type of the val it finally names.
-    fn need_type(slot: Int): Int {
+    # A captured slot has the type of the val it finally names: its
+    # declared type, read in `env`.
+    fn need_type_in(env: Int, slot: Int): Int {
       let sym = slot_sym(slot);
-      elab_ty(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
+      lower::elab(env, ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
+    }
+
+    # A val a frame takes as a parameter, as the frame's code sees it: the
+    # type its provision in the generic environment was made at. A slot
+    # the frame only passes on is never read here, and keeps `sty`.
+    fn need_gtype(slot: Int, sty: Int): Int {
+      if is_captured(slot) {
+        return sty;
+      }
+      let row = lower::env_find(cg_genv.read(), lower::ek_val(), ast::none(), slot);
+      if !ast::is_some(row) {
+        return sty;
+      }
+      if !ast::is_some(lower::env_a_of(row)) {
+        return sty;
+      }
+      lower::env_a_of(row)
     }
 
     fn contains(xs: IntList, v: Int): Bool {
@@ -982,9 +992,7 @@ assume Std {
             vs_append(out, ns);
           }
         } else {
-          let e = lower::env_find(
-            env, lower::ek_fn(), need_key_recv(sym, env, r), ns
-          );
+          let e = lower::env_find(env, lower::ek_fn(), r, ns);
           if ast::is_some(e) {
             if ast::is_some(lower::env_a_of(e)) {
               let row = vs_row(
@@ -1326,30 +1334,31 @@ assume Std {
     # D74: an attached method is at its receiver's instantiation. Whatever
     # the receiver's type binds — its arguments, one per requirement of
     # its declaration — the callee reads as bound so, whatever this frame
-    # has bound since; everything else it needs comes from this frame.
-    fn receiver_callee_env(recv_ty: Int, callee: Int, map: IntList): Int {
-      if types::kind_of(recv_ty) != types::kd_nominal() {
-        return callee_env(callee, map);
+    # has bound since; everything else it needs comes from this frame. So
+    # both environments gain those bindings, for as long as the caller
+    # reads the callee through them (it restores both): the generic one
+    # at the receiver's generic arguments, the specialized one at what
+    # they are here.
+    fn receiver_view(grecv: Int) {
+      if types::kind_of(grecv) != types::kd_nominal() {
+        return ();
       }
-      if types::member_count(recv_ty) == 0 {
-        return callee_env(callee, map);
+      if types::member_count(grecv) == 0 {
+        return ();
       }
       let reqs = int_list();
-      types::reqs_of(types::sym_of(recv_ty), reqs);
-      let saved = cg_env.read();
-      var view = saved;
+      types::reqs_of(types::sym_of(grecv), reqs);
+      var view = cg_env.read();
+      var gview = cg_genv.read();
       var i = 0;
       while i < reqs.length() {
-        view = lower::env_push(
-          view, lower::ek_type(), ast::none(), reqs.get(i),
-          types::member_at(recv_ty, i), ast::none()
-        );
+        let a = types::member_at(grecv, i);
+        view = lower::env_push(view, lower::ek_type(), ast::none(), reqs.get(i), spec(a), ast::none());
+        gview = lower::env_push(gview, lower::ek_type(), ast::none(), reqs.get(i), a, ast::none());
         i = i + 1;
       }
       cg_env.write(view);
-      let out = callee_env(callee, map);
-      cg_env.write(saved);
-      out
+      cg_genv.write(gview);
     }
 
     # Whether `f` can reach its plain fn need `sym`: call it, bind it
@@ -1380,7 +1389,19 @@ assume Std {
     # one per depth. Each fn entry made for the callee goes into `map`
     # beside the entry of this frame it came from, which is how its
     # captured slots are found here.
+    #
+    # A provision is found here under the key this frame's code means by
+    # the callee's need — its receiver read through the generic
+    # environment (`need_key_recv`) — and stored under the callee's own,
+    # which is the key the callee's code will look it up by. So two needs
+    # the callee tells apart stay apart, though this specialization may
+    # make them one type. A declared callee's types are given one by one;
+    # an anonymous function, made in this frame, is in this frame's terms,
+    # and takes every type this specialization has.
     fn callee_env(callee: Int, map: IntList): Int {
+      let senv = cg_env.read();
+      let genv = cg_genv.read();
+      let lambda = is_lambda(callee);
       let chain = int_list();
       var e = lower::env_of(callee);
       while ast::is_some(e) {
@@ -1388,6 +1409,9 @@ assume Std {
         e = lower::env_next_of(e);
       }
       var out = lower::env_empty();
+      if lambda {
+        out = types_of(senv);
+      }
       var i = chain.length();
       while i > 0 {
         i = i - 1;
@@ -1396,34 +1420,25 @@ assume Std {
         let recv = lower::env_recv_of(entry);
         let sym = lower::env_sym_of(entry);
         if kind == lower::ek_type() {
-          let here = lower::env_find(cg_env.read(), lower::ek_type(), recv, sym);
-          if ast::is_some(here) {
-            out = lower::env_push(
-              out, lower::ek_type(), recv, sym, lower::env_a_of(here), ast::none()
-            );
-            # An assumed type's parameter is what the callee was given
-            # for it, which a bind inside the callee leaves alone (D72):
-            # this frame's `sym` for a declared callee, and for an
-            # anonymous function, made in this frame, this frame's own
-            # parameter.
-            if lower::env_a_of(entry) == lower::as_assumed(sym) {
-              var given = lower::env_a_of(here);
-              if is_lambda(callee) {
-                given = frame_read(cg_env.read(), lower::as_assumed(sym));
-              }
+          if !lambda {
+            let here = lower::env_find(senv, lower::ek_type(), recv, sym);
+            if ast::is_some(here) {
               out = lower::env_push(
-                out, lower::ek_type(), recv, prog::param_of(sym), given, ast::none()
+                out, lower::ek_type(), recv, sym, lower::env_a_of(here), ast::none()
               );
+              # An assumed type's parameter is what the callee was given
+              # for it, which a bind inside the callee leaves alone (D72).
+              if lower::env_a_of(entry) == lower::as_assumed(sym) {
+                out = lower::env_push(
+                  out, lower::ek_type(), recv, prog::param_of(sym),
+                  lower::env_a_of(here), ast::none()
+                );
+              }
             }
           }
         } else if kind == lower::ek_fn() {
-          # Found under the caller's canonical key, stored under the one
-          # the callee will compute from its own bindings — which the
-          # loop has already pushed, since a type comes before anything
-          # whose signature mentions it.
           let here = lower::env_find(
-            cg_env.read(), lower::ek_fn(),
-            need_key_recv(callee, cg_env.read(), recv), sym
+            senv, lower::ek_fn(), need_key_recv(callee, genv, recv), sym
           );
           var keep = ast::is_some(here);
           if keep {
@@ -1436,7 +1451,7 @@ assume Std {
           }
           if keep {
             out = lower::env_push(
-              out, lower::ek_fn(), need_key_recv(callee, out, recv), sym,
+              out, lower::ek_fn(), recv, sym,
               lower::env_a_of(here), lower::env_b_of(here)
             );
             map.push(out);
@@ -1451,40 +1466,147 @@ assume Std {
 
     fn ty_none(): Int { types::ty_unit() }
 
-    fn width(ty: Int): Int { types::width(ty) }
+    # Two environments describe a frame. The *generic* one (`cg_genv`) is
+    # the code as written: its declaration's own, where an assumed type is
+    # its parameter (D72), extended by each bind the body makes. Every type
+    # the frame gives a value — a local's, an expression's — is in its
+    # terms, and every type check and every method resolution is made
+    # against it, so that each comes out the same in every specialization,
+    # as the bootstrap's do, made while it lowers a function once. The
+    # *specialized* one (`cg_env`) is what this specialization supplies: a
+    # type row for each symbol the generic types mention, saying what it
+    # is here, and a provider for each provision, under the provision's
+    # generic key. So specializing a generic type is substituting through
+    # it (`spec`), and is needed only for layout; and two generations, or
+    # two provisions, that this specialization makes one type are still
+    # two.
 
-    # Elaborated *and* resolved through the environment: a type bind is
-    # what makes an abstract symbol mean something here.
+    # A type elaborated in module `m` and read in the generic environment:
+    # a type bind is what makes a declared symbol mean something here.
     fn elab_ty(t: Int, m: Int): Int {
-      lower::elab(cg_env.read(), t, m)
+      canon_in(cg_genv.read(), types::elab(t, m))
     }
 
-    fn canon_ty(ty: Int): Int { lower::canon(cg_env.read(), ty) }
+    # What a generic type is in this specialization.
+    fn spec(t: Int): Int {
+      if !ast::is_some(t) {
+        return t;
+      }
+      let env = cg_env.read();
+      let hit = memo_find(0, env, t);
+      if ast::is_some(hit) {
+        return sp_res.get(hit);
+      }
+      memo_keep(0, env, t, unparam(lower::canon(env, t)))
+    }
 
-    # A method key names its receiver by whatever symbol was in scope
-    # where the requirement was written, and the environment may have
-    # bound that symbol since — so keys are compared after
-    # canonicalization through the bindings in force (D43).
-    # A method need's receiver as `env` knows it: the type it was required
-    # at, substituted through the bindings there (D62).
-    # A need's receiver is its declaration's, so its parameters are read
-    # as the generations in force in `env` (D72) — except an anonymous
-    # function's, which was made in a frame and is in that frame's terms.
+    # `lower::canon` and `lower::instantiate`, memoized.
+    fn canon_in(env: Int, t: Int): Int {
+      if !ast::is_some(t) {
+        return t;
+      }
+      let hit = memo_find(1, env, t);
+      if ast::is_some(hit) {
+        return sp_res.get(hit);
+      }
+      memo_keep(1, env, t, lower::canon(env, t))
+    }
+
+    fn instantiate_in(env: Int, t: Int): Int {
+      let hit = memo_find(2, env, t);
+      if ast::is_some(hit) {
+        return sp_res.get(hit);
+      }
+      memo_keep(2, env, t, lower::instantiate(env, t))
+    }
+
+    fn memo_buckets(): Int { 1 << 16 }
+
+    fn memo_bucket(what: Int, env: Int, t: Int): Int {
+      let h = (t * 31 + env * 7 + what) % memo_buckets();
+      if h < 0 {
+        h + memo_buckets()
+      } else {
+        h
+      }
+    }
+
+    fn memo_find(what: Int, env: Int, t: Int): Int {
+      if sp_head.length() == 0 {
+        return ast::none();
+      }
+      var r = sp_head.get(memo_bucket(what, env, t));
+      while r > 0 {
+        let row = r - 1;
+        if sp_ty.get(row) == t {
+          if sp_env.get(row) == env {
+            if sp_what.get(row) == what {
+              return row;
+            }
+          }
+        }
+        r = sp_link.get(row);
+      }
+      ast::none()
+    }
+
+    fn memo_keep(what: Int, env: Int, t: Int, out: Int): Int {
+      while sp_head.length() < memo_buckets() {
+        sp_head.push(0);
+      }
+      let b = memo_bucket(what, env, t);
+      sp_what.push(what);
+      sp_env.push(env);
+      sp_ty.push(t);
+      sp_res.push(out);
+      sp_link.push(sp_head.get(b));
+      sp_head.set(b, sp_what.length());
+      out
+    }
+
+    # A parameter this specialization was given nothing for — a platform
+    # type nothing binds, as `StructRef` is in `main` — is its symbol
+    # unbound, which is what the specialized environment, reading a
+    # declaration's types through their symbols, calls it too.
+    fn unparam(t: Int): Int {
+      let ps = int_list();
+      lower::params_in(t, ps);
+      if ps.length() == 0 {
+        return t;
+      }
+      let from = int_list();
+      let to = int_list();
+      var i = 0;
+      while i < ps.length() {
+        let o = prog::origin_of(ps.get(i));
+        if !ast::is_some(prog::origin_of(o)) {
+          from.push(ps.get(i));
+          to.push(types::ty_of_symbol(types::kd_abstract(), o));
+        }
+        i = i + 1;
+      }
+      if from.length() == 0 {
+        return t;
+      }
+      types::subst(t, from, to)
+    }
+
+    # How many scalars a value of a generic type is here.
+    fn width(ty: Int): Int { types::width(spec(ty)) }
+
+    # A need's key as `env`, a generic environment of the caller, knows it
+    # (D62): a declaration states its receiver in terms of its own
+    # parameters, read as the generations in force there (D72); an
+    # anonymous function was made in a frame, and its keys are already in
+    # that frame's terms.
     fn need_key_recv(f: Int, env: Int, r: Int): Int {
       if !ast::is_some(r) {
         r
       } else if is_lambda(f) {
-        frame_read(env, r)
+        r
       } else {
-        lower::instantiate(env, r)
+        instantiate_in(env, r)
       }
-    }
-
-    # A type in the terms of a frame that made it: its parameters are what
-    # that frame was given, where `env` records it (`callee_env`), and
-    # otherwise read as any declaration's are.
-    fn frame_read(env: Int, t: Int): Int {
-      lower::instantiate(env, lower::canon(env, t))
     }
 
     # Which of `Wasm`'s `I64`, `F32` and `F64` an abstract type is, as a
@@ -1514,10 +1636,12 @@ assume Std {
       ast::none()
     }
 
-    # The Wasm valtype of one slot of a value of this type. A tag is its
-    # payload (D58); a union's slot zero is its discriminant and the rest
-    # come from its members.
-    fn valtype_at(ty: Int, i: Int): Int {
+    # The Wasm valtype of one slot of a value of this type, generic. A tag
+    # is its payload (D58); a union's slot zero is its discriminant and the
+    # rest come from its members.
+    fn valtype_at(ty: Int, i: Int): Int { slot_valtype(spec(ty), i) }
+
+    fn slot_valtype(ty: Int, i: Int): Int {
       let scalar = wide_scalar(ty);
       if ast::is_some(scalar) {
         return scalar;
@@ -1529,7 +1653,7 @@ assume Std {
         if types::is_unit_decl(ty) {
           return emit::vt_i32();
         }
-        return valtype_at(types::payload_of(ty), i);
+        return slot_valtype(types::payload_of(ty), i);
       }
       if types::is_kind(ty, types::kd_union()) {
         if i == 0 {
@@ -1538,8 +1662,8 @@ assume Std {
         var j = 0;
         while j < types::member_count(ty) {
           let p = types::member_payload(types::member_at(ty, j));
-          if width(p) > i - 1 {
-            return valtype_at(p, i - 1);
+          if types::width(p) > i - 1 {
+            return slot_valtype(p, i - 1);
           }
           j = j + 1;
         }
@@ -1549,8 +1673,8 @@ assume Std {
         while j < types::field_count(ty) {
           let off = types::field_offset(ty, j);
           let f = types::field_type_at(ty, j);
-          if i < off + width(f) {
-            return valtype_at(f, i - off);
+          if i < off + types::width(f) {
+            return slot_valtype(f, i - off);
           }
           j = j + 1;
         }
@@ -1560,33 +1684,27 @@ assume Std {
 
     # Records.
 
-    # A field's type as this frame sees it. The record was laid out from
-    # the type as declared; if a binding in force gives the field a
-    # different width, the two layouts disagree, and that is reported
-    # rather than compiled (the record would have to be laid out per
-    # environment, which this back end does not do).
-    fn field_ty(rec: Int, i: Int): Int {
-      let declared = types::field_type_at(rec, i);
-      let here = canon_ty(declared);
-      if width(here) != width(declared) {
-        cg_error(c_unsupported(), types::field_name_at(rec, i));
-      }
-      here
-    }
+    # A field's type, generic, of a generic record.
+    fn field_ty(rec: Int, i: Int): Int { types::field_type_at(rec, i) }
+
+    # Where a field's run starts, which only the record's specialization
+    # can say: a field of an abstract type is as wide as what it is here.
+    fn field_off(rec: Int, i: Int): Int { types::field_offset(spec(rec), i) }
 
     # The type a tag construction builds: the tag at whatever its brackets
     # bind (`Box[Elem=Point] (...)`), or applied to its own requirements,
-    # and either way substituted through the bindings in force.
+    # and either way read through the bindings in force.
     fn tag_type(callee: Int, sym: Int, m: Int): Int {
+      let g = cg_genv.read();
       if ast::d_of(callee) == 1 {
-        return canon_ty(types::apply(sym, ast::b_of(callee), ast::c_of(callee), m));
+        return canon_in(g, types::apply(sym, ast::b_of(callee), ast::c_of(callee), m));
       }
-      canon_ty(types::ty_of_decl(sym))
+      canon_in(g, types::ty_of_decl(sym))
     }
 
     # The record an expression's value carries, or none.
     fn record_type_of(e: Int, m: Int): Int {
-      types::record_of(canon_ty(type_of(e, m)))
+      types::record_of(type_of(e, m))
     }
 
     # `x.f` where the value is already in a local: which local, and where
@@ -1628,7 +1746,7 @@ assume Std {
     fn place_offset(e: Int, m: Int): Int {
       if ast::kind_of(e) == ast::k_ex_field() {
         let rec = record_type_of(ast::a_of(e), m);
-        return place_offset(ast::a_of(e), m) + types::field_offset(rec, field_at(e, m));
+        return place_offset(ast::a_of(e), m) + field_off(rec, field_at(e, m));
       }
       0
     }
@@ -1659,7 +1777,7 @@ assume Std {
       # field's run of slots from that. The record is whatever emitting
       # it produced, which `type_of` cannot always say beforehand.
       let got = emit_expr(body, ast::a_of(e), m);
-      let rec = types::record_of(canon_ty(got));
+      let rec = types::record_of(got);
       var i = ast::none();
       if ast::is_some(rec) {
         i = types::field_index(rec, ast::b_of(e));
@@ -1672,7 +1790,7 @@ assume Std {
       let ty = field_ty(rec, i);
       let tmp = reveal(ast::none(), got);
       store_local(body, tmp);
-      let off = types::field_offset(rec, i);
+      let off = field_off(rec, i);
       var j = 0;
       while j < width(ty) {
         op_local_get(body, local_slot(tmp, off + j));
@@ -1804,7 +1922,7 @@ assume Std {
         let name = rfield_binder(pf, m);
         if ast::is_some(name) {
           let f = types::field_index(rec, ast::a_of(pf));
-          let off = base + types::field_offset(rec, f);
+          let off = base + field_off(rec, f);
           var j = 0;
           while j < width(field_ty(rec, f)) {
             op_local_get(body, local_slot(l, off + j));
@@ -1818,12 +1936,14 @@ assume Std {
 
     # Locals.
 
-    fn add_local(name: Int, ty: Int): Int {
+    # A local of generic type `ty`, laid out as `sty`, its specialization.
+    fn add_local(name: Int, ty: Int, sty: Int): Int {
       lc_name.push(name);
       lc_type.push(ty);
+      lc_spec.push(sty);
       lc_start.push(lc_slots.length());
       var i = 0;
-      while i < width(ty) {
+      while i < types::width(sty) {
         lc_slots.push(ast::none());
         i = i + 1;
       }
@@ -1836,7 +1956,7 @@ assume Std {
       lc_slots.set(lc_start.get(l) + i, slot);
     }
 
-    fn local_width(l: Int): Int { width(lc_type.get(l)) }
+    fn local_width(l: Int): Int { types::width(lc_spec.get(l)) }
 
     # Emission takes every local by revealing the next one, in order, and
     # uses the one it just revealed. Going through here rather than
@@ -1853,14 +1973,16 @@ assume Std {
     # In the first pass nothing is there yet, so revealing creates the
     # local, with slots numbered just for that pass (its output is thrown
     # away). In the second pass the cursor walks the locals the first one
-    # recorded; running off their end means the passes disagree.
+    # recorded, laid out as the first pass specialized them; running off
+    # their end means the passes disagree. Either way the local takes the
+    # generic type it is revealed at.
     fn reveal(name: Int, ty: Int): Int {
       let l = lc_visible.read();
       if l == lc_name.length() {
         if cg_real.read() == 1 {
           cg_error(c_missing(), name);
         }
-        add_local(name, ty);
+        add_local(name, ty, spec(ty));
         var i = 0;
         while i < local_width(l) {
           set_local_slot(l, i, lc_start.get(l) + i);
@@ -1869,6 +1991,7 @@ assume Std {
       }
       lc_visible.write(l + 1);
       lc_name.set(l, name);
+      lc_type.set(l, ty);
       l
     }
 
@@ -1914,6 +2037,9 @@ assume Std {
 
     # Expression types.
 
+    # An expression's generic type, before it is emitted — what emitting
+    # it would return, as far as can be said without the locals a
+    # `match` arm or a block binds.
     fn type_of(e: Int, m: Int): Int {
       let k = ast::kind_of(e);
       if k == ast::k_ex_block() {
@@ -1929,22 +2055,22 @@ assume Std {
         return lc_type.get(this_local());
       }
       if k == ast::k_ex_method() {
-        let target = method_of(e, m);
-        if ast::is_some(target) {
-          return ret_in(receiver_callee_env(type_of(ast::a_of(e), m), target, int_list()), target);
+        let recv_ty = type_of(ast::a_of(e), m);
+        let r = resolve_method(e, m, recv_ty);
+        let meth = rm_meth.get(r);
+        if ast::is_some(meth) {
+          let emark = cg_env.read();
+          let gmark = cg_genv.read();
+          receiver_view(recv_ty);
+          let ret = sig_ret(cg_genv.read(), meth, recv_ty);
+          cg_env.write(emark);
+          cg_genv.write(gmark);
+          return ret;
         }
-        let bound = method_provision(type_of(ast::a_of(e), m), e, m);
-        if !ast::is_some(bound) {
+        if !ast::is_some(rm_sym.get(r)) {
           return ty_none();
         }
-        if !ast::is_some(lower::env_a_of(bound)) {
-          return ty_none();
-        }
-        let prim = platform_prim(lower::env_a_of(bound));
-        if prim > 0 {
-          return platform_type(prim, type_of(ast::a_of(e), m));
-        }
-        return ret_in(lower::env_b_of(bound), lower::env_a_of(bound));
+        return provision_ret(recv_ty, rm_sym.get(r));
       }
       if k == ast::k_ex_unary() {
         return operator_type(e, m);
@@ -1969,24 +2095,9 @@ assume Std {
         return symbol_type(sym);
       }
       if k == ast::k_ex_call() {
-        var sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
+        let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
         if !ast::is_some(sym) {
           return ty_none();
-        }
-        # Provided by a primitive (D66): typed as a call to that.
-        if !is_compilable(sym) {
-          if !in_wasm(sym) {
-            let alias = lower::env_find(
-              cg_env.read(), lower::ek_fn(), ast::none(), sym
-            );
-            if ast::is_some(alias) {
-              if ast::is_some(lower::env_a_of(alias)) {
-                if !is_compilable(lower::env_a_of(alias)) {
-                  sym = lower::env_a_of(alias);
-                }
-              }
-            }
-          }
         }
         # A tag construction is a value of the tag's own type (D58).
         if prog::sym_kind.get(sym) == prog::sk_tag() {
@@ -1999,15 +2110,12 @@ assume Std {
           return cg_boolty.read();
         }
         if is_defined_fn(sym) {
-          return ret_in(callee_env(sym, int_list()), sym);
+          return sig_ret(cg_genv.read(), sym, ast::none());
         }
-        let bound = lower::env_find(
-          cg_env.read(), lower::ek_fn(), ast::none(), sym
-        );
-        if ast::is_some(bound) {
-          if ast::is_some(lower::env_a_of(bound)) {
-            return ret_in(lower::env_b_of(bound), lower::env_a_of(bound));
-          }
+        # Provided: typed by its provision (D72).
+        let grow = lower::env_find(cg_genv.read(), lower::ek_fn(), ast::none(), sym);
+        if ast::is_some(grow) {
+          return sig_ret(row_view(grow), sym, ast::none());
         }
         return elab_ty(
           ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym)
@@ -2025,7 +2133,7 @@ assume Std {
         if !ast::is_some(i) {
           return ty_none();
         }
-        return canon_ty(types::field_type_at(record_type_of(ast::a_of(e), m), i));
+        return field_ty(record_type_of(ast::a_of(e), m), i);
       }
       # `()`, `break`, `return` and everything this slice does not cover
       # leave nothing behind.
@@ -2033,14 +2141,7 @@ assume Std {
     }
 
     fn operator_type(e: Int, m: Int): Int {
-      let bound = provision_at(type_of(ast::b_of(e), m), op_symbol(e));
-      if !ast::is_some(bound) {
-        return ty_none();
-      }
-      if !ast::is_some(lower::env_a_of(bound)) {
-        return ty_none();
-      }
-      ret_in(lower::env_b_of(bound), lower::env_a_of(bound))
+      provision_ret(type_of(ast::b_of(e), m), op_symbol(e))
     }
 
     # An integer literal is what `one` is here, a decimal one what
@@ -2056,16 +2157,20 @@ assume Std {
         }
         return lc_type.get(l);
       }
-      let bound = float_provision();
-      if !ast::is_some(bound) {
+      let sym = lang(lg_float());
+      if !ast::is_some(sym) {
         return ty_none();
       }
-      ret_in(lower::env_b_of(bound), lower::env_a_of(bound))
+      let grow = lower::env_find(cg_genv.read(), lower::ek_fn(), ast::none(), sym);
+      if !ast::is_some(grow) {
+        return ty_none();
+      }
+      sig_ret(row_view(grow), sym, ast::none())
     }
 
     # What a path standing alone denotes: a unit value, a `Bool`
-    # constant, a `Wasm` value like `i32_zero`, or nothing this back end
-    # can produce.
+    # constant, a `Wasm` value like `i32_zero`, a contextual val, or
+    # nothing this back end can produce.
     fn symbol_type(sym: Int): Int {
       if prog::sym_kind.get(sym) == prog::sk_unit() {
         return types::ty_of_decl(sym);
@@ -2077,27 +2182,84 @@ assume Std {
         return cg_boolty.read();
       }
       if prog::sym_kind.get(sym) == prog::sk_val() {
+        let l = provision_of(ast::none(), sym);
+        if ast::is_some(l) {
+          return lc_type.get(l);
+        }
         return elab_ty(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
       }
       ty_none()
     }
 
+    # An instruction's result, as this frame's code sees the scalar type:
+    # lib/wasm.moss's own, through the `Wasm` the frame assumed.
     fn op_result(op: Int): Int {
       if !ast::is_some(op) {
         return ty_none();
       }
       let r = wops::op_res.get(op);
+      var t = ty_none();
       if r == wops::wr_i64() {
-        cg_i64.read()
+        t = cg_i64.read();
       } else if r == wops::wr_i32() {
-        cg_i32.read()
+        t = cg_i32.read();
       } else if r == wops::wr_f32() {
-        cg_f32.read()
+        t = cg_f32.read();
       } else if r == wops::wr_f64() {
-        cg_f64.read()
+        t = cg_f64.read();
       } else {
-        ty_none()
+        return ty_none();
       }
+      lower::canon(cg_genv.read(), t)
+    }
+
+    # Typing a call (D72, D74). A callee's declared signature, read
+    # through a generic environment `g`: for a direct call, the frame's
+    # own — with the receiver's view, for an attached method — whose
+    # bindings give each of the callee's type symbols the generation in
+    # force; for a provision, the one it was provided in (`row_view`), so
+    # that it is typed as provided, whatever has been bound since. `This`
+    # is the receiver `this_ty`.
+    fn sig_params(g: Int, sym: Int, this_ty: Int): IntList {
+      let out = int_list();
+      let d = prog::sym_decl.get(sym);
+      let home = prog::sym_mod.get(sym);
+      var i = 0;
+      while i < ast::fn_nparams(d) {
+        out.push(sig_ty(g, ast::b_of(ast::kid_at(ast::fn_params(d), i)), home, this_ty));
+        i = i + 1;
+      }
+      out
+    }
+
+    fn sig_ret(g: Int, sym: Int, this_ty: Int): Int {
+      sig_ty(g, ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym), this_ty)
+    }
+
+    # The environment a provision's signature is read through: what its
+    # row in the generic environment records (lower.moss), or, failing
+    # that, the frame's.
+    fn row_view(row: Int): Int {
+      if ast::is_some(lower::env_a_of(row)) {
+        return lower::env_a_of(row);
+      }
+      cg_genv.read()
+    }
+
+    # What calling the method `sym` the context provides at `recv_ty`
+    # yields, or nothing where it provides none. A platform provision
+    # (D75) is typed by its declaration like any other: `.boxed` makes a
+    # `Ref` at the `Boxed` it was provided at, which is its key, and
+    # `Ref.deref` yields that `Boxed`.
+    fn provision_ret(recv_ty: Int, sym: Int): Int {
+      if !ast::is_some(sym) {
+        return ty_none();
+      }
+      let grow = lower::env_find(cg_genv.read(), lower::ek_fn(), recv_ty, sym);
+      if !ast::is_some(grow) {
+        return ty_none();
+      }
+      sig_ret(row_view(grow), sym, recv_ty)
     }
 
     # Reachability.
@@ -2172,22 +2334,22 @@ assume Std {
       let m = prog::sym_mod.get(sym);
       let ps = int_list();
       if is_defined_method(sym) {
-        push_valtypes(ps, this_type(sym));
+        push_valtypes(ps, this_type_in(env, sym));
       }
       var i = 0;
       while i < ast::fn_nparams(d) {
         let p = ast::kid_at(ast::fn_params(d), i);
-        push_valtypes(ps, elab_ty(ast::b_of(p), m));
+        push_valtypes(ps, lower::elab(env, ast::b_of(p), m));
         i = i + 1;
       }
       let vals = int_list();
       val_slots(vals, sym, env, 0);
       i = 0;
       while i < vals.length() {
-        push_valtypes(ps, need_type(vals.get(i)));
+        push_valtypes(ps, need_type_in(env, vals.get(i)));
         i = i + 1;
       }
-      finish_signature(ps, elab_ty(ast::fn_ret(d), m))
+      finish_signature(ps, lower::elab(env, ast::fn_ret(d), m))
     }
 
     fn push_valtypes(ps: IntList, ty: Int) {
@@ -2211,7 +2373,7 @@ assume Std {
       var i = 0;
       while i < ast::fn_nparams(d) {
         let p = ast::kid_at(ast::fn_params(d), i);
-        let ty = elab_ty(ast::b_of(p), m);
+        let ty = types::elab(ast::b_of(p), m);
         var j = 0;
         while j < width(ty) {
           ps.push(valtype_at(ty, j));
@@ -2219,7 +2381,7 @@ assume Std {
         }
         i = i + 1;
       }
-      finish_signature(ps, elab_ty(ast::fn_ret(d), m))
+      finish_signature(ps, types::elab(ast::fn_ret(d), m))
     }
 
     fn declare_all() {
@@ -2310,7 +2472,7 @@ assume Std {
         while l < lc_name.length() {
           var i = 0;
           while i < local_width(l) {
-            if valtype_at(lc_type.get(l), i) == vt {
+            if slot_valtype(lc_spec.get(l), i) == vt {
               set_local_slot(l, i, next);
               next = next + 1;
             }
@@ -2482,16 +2644,20 @@ assume Std {
         cg_error(c_unsupported(), ast::none());
         return ty_none();
       }
+      if !ast::is_some(generic_row(recv_ty, sym)) {
+        cg_error(prog::e_method(), prog::sym_name.get(sym));
+        return ty_none();
+      }
       let bound = provision_at(recv_ty, sym);
       if !ast::is_some(bound) {
-        cg_error(prog::e_method(), prog::sym_name.get(sym));
+        cg_error(c_unbound(), prog::sym_name.get(sym));
         return ty_none();
       }
       if !ast::is_some(lower::env_a_of(bound)) {
         cg_error(c_unbound(), prog::sym_name.get(sym));
         return ty_none();
       }
-      emit_provided(body, bound)
+      emit_provided(body, bound, provision_ret(recv_ty, sym))
     }
 
     # `one + one + ...`, `n` of them.
@@ -2570,7 +2736,13 @@ assume Std {
         }
         return ty_none();
       }
-      emit_provided(body, bound)
+      let sym = lang(lg_float());
+      let grow = lower::env_find(cg_genv.read(), lower::ek_fn(), ast::none(), sym);
+      if !ast::is_some(grow) {
+        cg_error(c_unbound(), prog::sym_name.get(sym));
+        return ty_none();
+      }
+      emit_provided(body, bound, sig_ret(row_view(grow), sym, ast::none()))
     }
 
     # D68: an operator is a call of one fixed method of lib/num.moss,
@@ -2593,32 +2765,40 @@ assume Std {
     }
 
     # A call of the method `sym` the context provides at `recv_ty`, the
-    # receiver already emitted into `recv` and the arguments a run.
+    # receiver already emitted into `recv` and the arguments a run: typed
+    # by the provision as the generic environment has it, and called
+    # through whatever provides it in this specialization, which keys it
+    # the same way.
     fn emit_provided_method(
       body: IntList, recv: IntList, recv_ty: Int, sym: Int, run: Int, n: Int, m: Int
     ): Int {
-      let bound = provision_at(recv_ty, sym);
-      if !ast::is_some(bound) {
+      let grow = generic_row(recv_ty, sym);
+      if !ast::is_some(grow) {
         cg_error(prog::e_method(), prog::sym_name.get(sym));
         return ty_none();
       }
-      let provider = lower::env_a_of(bound);
-      let penv = lower::env_b_of(bound);
+      let bound = provision_at(recv_ty, sym);
+      var provider = ast::none();
+      if ast::is_some(bound) {
+        provider = lower::env_a_of(bound);
+      }
       if !ast::is_some(provider) {
         cg_error(c_unbound(), prog::sym_name.get(sym));
         return ty_none();
       }
+      let penv = lower::env_b_of(bound);
       if platform_prim(provider) > 0 {
         return emit_platform(
-          body, recv, recv_ty, platform_prim(provider), n, prog::sym_name.get(sym)
+          body, recv, recv_ty, platform_prim(provider), n, prog::sym_name.get(sym),
+          sig_ret(row_view(grow), sym, recv_ty)
         );
       }
       push_receiver(body, recv, recv_ty, provider);
-      emit_args(body, run, n, m, provider_params(penv, provider));
+      emit_args(body, run, n, m, sig_params(row_view(grow), sym, recv_ty));
       reach(provider, penv);
       push_needs(body, provider, penv, bound, int_list());
       op_call(body, index_of_fn(provider, penv));
-      ret_in(penv, provider)
+      sig_ret(row_view(grow), sym, recv_ty)
     }
 
     # A method call's receiver, already emitted into `recv`: an argument
@@ -2630,190 +2810,132 @@ assume Std {
       }
     }
 
-    # The environment entry providing method `sym` at this receiver,
-    # keyed by its whole type (D62).
+    # The provision of method `sym` at this receiver, keyed by its whole
+    # generic type (D62): its row in the generic environment, which types
+    # a call, and in the specialized one, which says what provides it.
+    fn generic_row(recv_ty: Int, sym: Int): Int {
+      if !ast::is_some(sym) {
+        return ast::none();
+      }
+      lower::env_find(cg_genv.read(), lower::ek_fn(), recv_ty, sym)
+    }
+
     fn provision_at(recv_ty: Int, sym: Int): Int {
       if !ast::is_some(sym) {
         return ast::none();
       }
-      lower::env_find(cg_env.read(), lower::ek_fn(), canon_ty(recv_ty), sym)
+      lower::env_find(cg_env.read(), lower::ek_fn(), recv_ty, sym)
     }
 
-    # `x.m(a)`. The receiver's type is the other half of the lookup key
-    # (D36), and forward inference means it is known first. This slice
-    # resolves to an attached method — the receiver goes in ahead of the
-    # arguments, which is exactly the shape its frame expects.
+    # `x.m(a)`. The receiver is emitted first, aside, because its type is
+    # what selects the method, and emitting is the one reliable way to
+    # know it: `type_of` cannot see into a `match`, whose arms' binders
+    # are not in scope until they are emitted. What the call means is
+    # resolved against that type as the code is written (`resolve_method`);
+    # a defined attached method is called directly, at its receiver's
+    # instantiation (D74), and anything else is a provision.
     fn emit_method(body: IntList, e: Int, m: Int): Int {
-      # The receiver is emitted first, aside, because its type is what
-      # selects the method, and emitting is the one reliable way to know
-      # it: `type_of` cannot see into a `match`, whose arms' binders are
-      # not in scope until they are emitted.
       let recv = int_list();
       let recv_ty = emit_expr(recv, ast::a_of(e), m);
-      let meth = method_of_ty(recv_ty, e, m);
-      var provider = meth;
-      var penv = ast::none();
-      var via = ast::none();
-      let map = int_list();
+      let name = ast::path_last(ast::b_of(e));
+      let r = resolve_method(e, m, recv_ty);
+      let meth = rm_meth.get(r);
       if ast::is_some(meth) {
         check_callee(meth);
-        penv = receiver_callee_env(recv_ty, meth, map);
-      } else {
-        # Not in scope as an attached method: the context must provide it
-        # at this receiver, keyed by the receiver's head (D36).
-        let bound = method_provision(recv_ty, e, m);
-        if !ast::is_some(bound) {
-          cg_error(prog::e_method(), ast::path_last(ast::b_of(e)));
-          return ty_none();
-        }
-        provider = lower::env_a_of(bound);
-        penv = lower::env_b_of(bound);
-        via = bound;
-        if !ast::is_some(provider) {
-          cg_error(c_unbound(), ast::path_last(ast::b_of(e)));
-          return ty_none();
-        }
-        let prim = platform_prim(provider);
-        if prim > 0 {
-          return emit_platform(
-            body, recv, recv_ty, prim, ast::d_of(e), ast::path_last(ast::b_of(e))
-          );
-        }
+        let map = int_list();
+        let emark = cg_env.read();
+        let gmark = cg_genv.read();
+        receiver_view(recv_ty);
+        let penv = callee_env(meth, map);
+        let ps = sig_params(cg_genv.read(), meth, recv_ty);
+        let ret = sig_ret(cg_genv.read(), meth, recv_ty);
+        cg_env.write(emark);
+        cg_genv.write(gmark);
+        push_bytes(body, recv);
+        emit_args(body, ast::c_of(e), ast::d_of(e), m, ps);
+        reach(meth, penv);
+        push_needs(body, meth, penv, ast::none(), map);
+        op_call(body, index_of_fn(meth, penv));
+        return ret;
       }
-      push_receiver(body, recv, recv_ty, provider);
-      emit_args(body, ast::c_of(e), ast::d_of(e), m, provider_params(penv, provider));
-      reach(provider, penv);
-      push_needs(body, provider, penv, via, map);
-      op_call(body, index_of_fn(provider, penv));
-      ret_in(penv, provider)
+      if !ast::is_some(rm_sym.get(r)) {
+        cg_error(prog::e_method(), name);
+        return ty_none();
+      }
+      emit_provided_method(
+        body, recv, recv_ty, rm_sym.get(r), ast::c_of(e), ast::d_of(e), m
+      )
     }
 
-    # The environment entry providing this method at this receiver. The
-    # detached symbol has to be in scope: a method call resolves by
-    # (receiver type, symbol), and the symbol half is still an ordinary
-    # lexical lookup. Matching a provision by the spelling of its
-    # method's name instead would be the structural matching D1 exists
-    # to rule out.
-    #
-    # The key is the receiver's whole type, not just its head (D62): a
-    # provision made at `Box[Elem=Char]` serves no `Box[Elem=Point]`.
-    fn method_provision(recv_ty: Int, e: Int, m: Int): Int {
-      let recv = canon_ty(recv_ty);
-      let head = types::head_of(recv);
-      var sym = ast::none();
-      # D77: the context's provision of the detached method the name means
-      # here wins over an attached method of the same name — an abstract
-      # one included, such as `Ref.deref` beside a detached `.deref`.
-      if ast::path_len(ast::b_of(e)) == 1 {
-        let detached = prog::resolve_detached(m, ast::b_of(e));
-        if ast::is_some(detached) {
-          let found = lower::env_find(cg_env.read(), lower::ek_fn(), recv, detached);
-          if ast::is_some(found) {
-            return found;
+    # D77: what `e.m(...)` calls, given its receiver's generic type —
+    # decided against the code as written and kept per call site (rule
+    # 5), so that every specialization, and both passes, call the same
+    # thing, as they do in the bootstrap, which resolves while lowering a
+    # function once (`synth_method`). The rules are D77's: where the
+    # receiver's head has an attached method of the name and the context
+    # provides, at this receiver, the detached method the name means here
+    # (imported, D61), the provision wins (rule 4); otherwise an attached
+    # method declared beside the head or in this module — a defined one is
+    # called directly, an abstract one is a key the context provides
+    # (D36); otherwise the detached method in scope, or `mod::m`, is the
+    # key. A receiver with no nominal head — a union, a record, or an
+    # abstract type, whose parameter has no methods of its own — has only
+    # detached ones (D75). Returns the row (`rm_`), which names nothing
+    # where nothing is in scope.
+    fn resolve_method(e: Int, m: Int, grecv: Int): Int {
+      let genv = cg_genv.read();
+      while rm_head.length() <= e {
+        rm_head.push(0);
+      }
+      var r = rm_head.get(e);
+      while r > 0 {
+        let row = r - 1;
+        if rm_genv.get(row) == genv {
+          if rm_recv.get(row) == grecv {
+            return row;
           }
         }
+        r = rm_link.get(row);
       }
-      if ast::is_some(head) {
-        sym = provided_method(head, e, m);
-      } else {
-        # A union or a record: only a detached method, provided at the
-        # type itself, applies (D75's `.boxed` at a union `Boxed`).
-        sym = prog::resolve_detached(m, ast::b_of(e));
-      }
-      if !ast::is_some(sym) {
-        return ast::none();
-      }
-      let found = lower::env_find(cg_env.read(), lower::ek_fn(), recv, sym);
-      if ast::is_some(found) {
-        return found;
-      }
-      # A defined attached method of the name is not a key; a detached
-      # method of the name may be (`method_of_ty`).
-      provision_named(recv, ast::path_last(ast::b_of(e)))
-    }
-
-    # The symbol half of the key. An attached method matches *by name* in
-    # the receiver's own module and needs no import; a detached one has to
-    # be in scope, or be reached as `mod::m` (D61).
-    fn provided_method(head: Int, e: Int, m: Int): Int {
       let path = ast::b_of(e);
-      if ast::path_len(path) == 1 {
-        let name = ast::path_last(path);
-        var found = prog::find_attached(prog::sym_mod.get(head), head, name);
-        if !ast::is_some(found) {
-          found = prog::find_attached(m, head, name);
+      let name = ast::path_last(path);
+      var meth = ast::none();
+      var sym = ast::none();
+      let detached = prog::resolve_detached(m, path);
+      let head = types::head_of(grecv);
+      if ast::path_len(path) > 1 {
+        sym = detached;
+      } else if ast::is_some(head) {
+        var attached = prog::find_attached(prog::sym_mod.get(head), head, name);
+        if !ast::is_some(attached) {
+          attached = prog::find_attached(m, head, name);
         }
-        if ast::is_some(found) {
-          return found;
-        }
-      }
-      prog::resolve_detached(m, path)
-    }
-
-    # The attached method a call selects, or none.
-    fn method_of(e: Int, m: Int): Int {
-      method_of_ty(type_of(ast::a_of(e), m), e, m)
-    }
-
-    # The attached method a call names, unless this scope provides the
-    # detached method of that name at the receiver. The back end sees a
-    # receiver at its specialized type, where code written against an
-    # abstract receiver — whose call [D61] resolved to the context's
-    # provision — may now find an attached method of the same name:
-    # `xs.push` on a `BigList` that is a `Packed[Item=Long]` here. The
-    # provision is what that code meant, and it carries what was captured
-    # where it was bound (a layout, D73), which a direct call of the
-    # attached method would not have. Where the provision is that same
-    # method (`bind IntList.push[Elem=Int] = Ints.push`) the two are one.
-    fn method_of_ty(recv_ty: Int, e: Int, m: Int): Int {
-      let attached = attached_of_ty(recv_ty, e, m);
-      if ast::is_some(attached) {
-        let bound = provision_named(recv_ty, ast::path_last(ast::b_of(e)));
-        if ast::is_some(bound) {
-          if ast::is_some(lower::env_a_of(bound)) {
-            return ast::none();
+        var provided = false;
+        if ast::is_some(attached) {
+          if ast::is_some(detached) {
+            provided = lower::env_has(genv, lower::ek_fn(), grecv, detached);
           }
         }
-      }
-      attached
-    }
-
-    # The provision this scope has at the receiver for a detached method
-    # of this name, found by name: the generic code may have reached the
-    # method through its receiver's home module ([D61]), which is not the
-    # specialized receiver's, nor necessarily this module.
-    fn provision_named(recv_ty: Int, name: Int): Int {
-      let recv = canon_ty(recv_ty);
-      var e = cg_env.read();
-      while ast::is_some(e) {
-        if lower::env_kind_of(e) == lower::ek_fn() {
-          if lower::env_recv_of(e) == recv {
-            let sym = lower::env_sym_of(e);
-            if prog::sym_name.get(sym) == name {
-              if !ast::is_some(prog::sym_recv.get(sym)) {
-                return e;
-              }
-            }
-          }
+        if !ast::is_some(attached) {
+          sym = detached;
+        } else if provided {
+          sym = detached;
+        } else if is_defined_method(attached) {
+          meth = attached;
+        } else {
+          sym = attached;
         }
-        e = lower::env_next_of(e);
+      } else {
+        sym = detached;
       }
-      ast::none()
-    }
-
-    fn attached_of_ty(recv_ty: Int, e: Int, m: Int): Int {
-      let head = types::head_of(canon_ty(recv_ty));
-      if !ast::is_some(head) {
-        return ast::none();
-      }
-      let found = lower::find_method_decl(m, head, ast::path_last(ast::b_of(e)));
-      if !ast::is_some(found) {
-        return ast::none();
-      }
-      if !is_defined_method(found) {
-        return ast::none();
-      }
-      found
+      rm_node.push(e);
+      rm_genv.push(genv);
+      rm_recv.push(grecv);
+      rm_meth.push(meth);
+      rm_sym.push(sym);
+      rm_link.push(rm_head.get(e));
+      rm_head.set(e, rm_node.length());
+      rm_node.length() - 1
     }
 
     # A value entering a union (D17, D58): the one place a tag is
@@ -2896,19 +3018,15 @@ assume Std {
       }
       let tmp = int_list();
       let got = emit_expr(tmp, e, m);
-      # D17 through the bindings in force (D43), as the bootstrap checks
-      # it: what a position yields must fit what it declared. A got with
-      # no width is either real unit or a body that jumped out — this
-      # back end types both as unit — so only a valued got is held to it.
-      #
-      # This is the whole of this compiler's expression typing, so it
-      # stays (`tests/wasi/misfit.moss` is an ordinary type error only it
-      # catches). It is no longer what catches an incoherent provision:
-      # that is `check_callee`, on the program as written, before the
-      # call is emitted — this check sees a specialization, and a
-      # same-width confusion (`Char` read as `Int`) got past it.
+      # D17, as the bootstrap checks it: what a position yields must fit
+      # what it declared. Both are generic — the code as written, where
+      # two generations of a type are two types (D72) however this
+      # specialization makes them — so the answer is the same in every
+      # specialization. A got with no width is either real unit or a body
+      # that jumped out — this back end types both as unit — so only a
+      # valued got is held to it.
       if width(got) > 0 {
-        if !types::fits(canon_ty(got), canon_ty(want)) {
+        if !types::fits(got, want) {
           cg_error(c_bad_type(), ast::none());
         }
       }
@@ -2916,7 +3034,7 @@ assume Std {
         push_bytes(body, tmp);
         return got;
       }
-      inject(body, tmp, got, want);
+      inject(body, tmp, spec(got), spec(want));
       want
     }
 
@@ -2997,11 +3115,12 @@ assume Std {
           # D75: a `Ref` built from a bare `StructRef` is forged, and the
           # one place a reference is cast — to the struct of what it
           # claims to hold, trapping if it does not.
-          if unknown_held(held_of(tag)) {
+          let held = held_of(spec(tag));
+          if unknown_held(held) {
             cg_error(c_unbound(), prog::sym_name.get(sym));
             return tag;
           }
-          op_ref_cast_null(body, ref_valtype(held_of(tag)));
+          op_ref_cast_null(body, ref_valtype(held));
         }
         return tag;
       }
@@ -3009,29 +3128,31 @@ assume Std {
         check_callee(sym);
         let map = int_list();
         let env = callee_env(sym, map);
-        emit_args(body, ast::b_of(e), ast::c_of(e), m, param_types_in(env, sym));
+        emit_args(body, ast::b_of(e), ast::c_of(e), m, sig_params(cg_genv.read(), sym, ast::none()));
         reach(sym, env);
         push_needs(body, sym, env, ast::none(), map);
         op_call(body, index_of_fn(sym, env));
-        return ret_in(env, sym);
+        return sig_ret(cg_genv.read(), sym, ast::none());
       }
       # An abstract fn the context provides. D2: statically a direct
-      # call, with the captured context passed as data.
+      # call, with the captured context passed as data; typed by its
+      # provision in the generic environment (D72).
       if !in_wasm(sym) {
         let bound = lower::env_find(
           cg_env.read(), lower::ek_fn(), ast::none(), sym
         );
+        let grow = lower::env_find(cg_genv.read(), lower::ek_fn(), ast::none(), sym);
         if ast::is_some(bound) {
           if ast::is_some(lower::env_a_of(bound)) {
             # Provided by a primitive (D66): a call to that.
             if !is_compilable(lower::env_a_of(bound)) {
               return emit_primitive_call(body, e, m, lower::env_a_of(bound));
             }
-            emit_args(
-              body, ast::b_of(e), ast::c_of(e), m,
-              param_types_in(lower::env_b_of(bound), lower::env_a_of(bound))
-            );
-            return emit_provided(body, bound);
+            if ast::is_some(grow) {
+              let view = row_view(grow);
+              emit_args(body, ast::b_of(e), ast::c_of(e), m, sig_params(view, sym, ast::none()));
+              return emit_provided(body, bound, sig_ret(view, sym, ast::none()));
+            }
           }
         }
       }
@@ -3073,9 +3194,10 @@ assume Std {
     # holds — its own `Boxed` (D74), whatever this frame has bound since.
     # The receiver is already emitted into `recv`.
     fn emit_platform(
-      body: IntList, recv: IntList, recv_ty: Int, prim: Int, nargs: Int, name: Int
+      body: IntList, recv: IntList, recv_ty: Int, prim: Int, nargs: Int, name: Int,
+      gret: Int
     ): Int {
-      let ty = canon_ty(recv_ty);
+      let ty = spec(recv_ty);
       var held = ty;
       if prim == 2 {
         held = held_of(ty);
@@ -3091,13 +3213,13 @@ assume Std {
       push_bytes(body, recv);
       if prim == 1 {
         op_struct_new(body, j);
-        return ref_of(held);
+        return gret;
       }
       if width(held) == 0 {
         op_drop(body);
-        return held;
+        return gret;
       }
-      let tmp = reveal(ast::none(), ty);
+      let tmp = reveal(ast::none(), recv_ty);
       store_local(body, tmp);
       var i = 0;
       while i < width(held) {
@@ -3105,18 +3227,19 @@ assume Std {
         op_struct_get(body, j, i);
         i = i + 1;
       }
-      held
+      gret
     }
 
     # A call to whatever a bind put here: the arguments are already on
-    # the stack, so this is the provider's needs and the call.
-    fn emit_provided(body: IntList, bound: Int): Int {
+    # the stack, so this is the provider's needs and the call. It yields
+    # `ret`, what the provision is typed to return.
+    fn emit_provided(body: IntList, bound: Int, ret: Int): Int {
       let provider = lower::env_a_of(bound);
       let penv = lower::env_b_of(bound);
       reach(provider, penv);
       push_needs(body, provider, penv, bound, int_list());
       op_call(body, index_of_fn(provider, penv));
-      ret_in(penv, provider)
+      ret
     }
 
     # The callee's needs, in its order, taken from this frame. A need the
@@ -3201,29 +3324,9 @@ assume Std {
       }
     }
 
-    # The declared parameter types of a callee, or an empty list when it
-    # has none the back end can see (a tag construction, an instruction).
-    # A callee's declared parameter and return types as the environment
-    # it runs in sees them: its own specialization's for a direct call,
-    # and for a provision the one captured where it was bound (D26). The
-    # caller's could differ — it may have rebound a type since — and the
-    # callee is compiled against its own.
-    fn param_types_in(env: Int, sym: Int): IntList {
-      let out = int_list();
-      let d = prog::sym_decl.get(sym);
-      let home = prog::sym_mod.get(sym);
-      var i = 0;
-      while i < ast::fn_nparams(d) {
-        out.push(lower::elab(env, ast::b_of(ast::kid_at(ast::fn_params(d), i)), home));
-        i = i + 1;
-      }
-      out
-    }
-
-    fn ret_in(env: Int, sym: Int): Int {
-      lower::elab(env, ast::fn_ret(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
-    }
-
+    # The declared parameter types of a primitive callee, as this frame's
+    # code sees them, or an empty list when it has none the back end can
+    # see (a tag construction, an instruction).
     fn param_types(sym: Int): IntList {
       let out = int_list();
       let kind = prog::sym_kind.get(sym);
@@ -3295,7 +3398,7 @@ assume Std {
       if !ast::is_some(mem) {
         return 0;
       }
-      let t = canon_ty(types::ty_of_symbol(types::kd_abstract(), mem));
+      let t = lower::canon(cg_env.read(), types::ty_of_symbol(types::kd_abstract(), mem));
       if types::is_kind(t, types::kd_abstract()) {
         if types::sym_of(t) == mem {
           return 0;
@@ -3410,7 +3513,8 @@ assume Std {
         op_unreachable(body);
         return ty_none();
       }
-      if types::head_count(sty) == 1 {
+      # The shape is the specialization's; the arms are typed generically.
+      if types::head_count(spec(sty)) == 1 {
         return emit_single_arm(body, e, m, sty, want);
       }
       emit_union_match(body, e, m, sty, want)
@@ -3744,7 +3848,7 @@ assume Std {
         var need = ast::none();
         if ast::is_some(wv) {
           if declared {
-            need = lower::instantiate(genv, wv);
+            need = instantiate_in(genv, wv);
           } else {
             need = lower::canon(genv, wv);
           }
@@ -3780,10 +3884,20 @@ assume Std {
     }
 
     # Record a bind's provision in the generic environment, with the app
-    # it is made at.
+    # it is made at, and — for a fn or a method — the environment its
+    # signature is read through there (`view`, with the bind's brackets),
+    # which types a call of it from now on (lower.moss).
     fn provided_at(kind: Int, recv: Int, sym: Int, view: Int) {
       cg_genv.write(lower::env_push(
-        cg_genv.read(), kind, recv, sym, ast::none(), lower::full_app(sym, view)
+        cg_genv.read(), kind, recv, sym, view, lower::full_app(sym, view)
+      ));
+    }
+
+    # The same for a val, which is typed by the type it was provided at.
+    fn provided_val(sym: Int, ty: Int) {
+      let genv = cg_genv.read();
+      cg_genv.write(lower::env_push(
+        genv, lower::ek_val(), ast::none(), sym, ty, lower::full_app(sym, genv)
       ));
     }
 
@@ -3831,13 +3945,15 @@ assume Std {
         # provision is found by its *symbol*, through `provide`, and a
         # name here would shadow a program local that happened to share
         # it — `val n: Char;` against a parameter `n`.
+        # Checked, and provided, at its declared type as the bind reads it.
+        let want = elab_ty(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
         if mode == bw_emit() {
-          emit_as(body, value, m, need_type(sym));
-          let l = reveal(ast::none(), need_type(sym));
+          emit_as(body, value, m, want);
+          let l = reveal(ast::none(), want);
           store_local(body, l);
           provide(ast::none(), sym, l);
         }
-        provided_at(lower::ek_val(), ast::none(), sym, cg_genv.read());
+        provided_val(sym, want);
         return ();
       }
       if kind == prog::sk_type() {
@@ -3960,9 +4076,11 @@ assume Std {
       # Keyed by the receiver's whole type as the bindings in force and the
       # bind's own brackets make it (D61, D62): `bind Box.peek[Elem=Char]`
       # provides at `Box[Elem=Char]`, as `bind Elem = Char;` before it would.
-      let recv = lower::canon(
-        lower::app_view(cg_env.read(), m, spec), types::ty_of_decl(recv_sym)
-      );
+      # In both environments that is the type as written, so a provision
+      # at one generation is not one at another that this specialization
+      # happens to make the same type.
+      let gview = lower::app_view(cg_genv.read(), m, spec);
+      let recv = lower::canon(gview, types::ty_of_decl(recv_sym));
       let head = types::head_of(recv);
       let detached = lower::find_method_decl(m, recv_sym, ast::b_of(spec));
       if !ast::is_some(detached) {
@@ -3999,12 +4117,9 @@ assume Std {
         cg_env.read(), lower::ek_fn(), recv, detached, provider, penv
       ));
       capture(cg_env.read(), map, mode);
-      # In the generic environment: keyed by the receiver as written, and
-      # made at the method's application there, brackets included.
-      let gview = lower::app_view(cg_genv.read(), m, spec);
-      provided_at(
-        lower::ek_fn(), lower::canon(gview, types::ty_of_decl(recv_sym)), detached, gview
-      );
+      # In the generic environment: made at the method's application
+      # there, brackets included.
+      provided_at(lower::ek_fn(), recv, detached, gview);
     }
 
     # A type in a signature, read through `env` in module `home`, with a
@@ -4014,7 +4129,7 @@ assume Std {
       if ast::is_kind(t, ast::k_ty_this()) {
         return this_ty;
       }
-      lower::elab(env, t, home)
+      canon_in(env, types::elab(t, home))
     }
 
     # The method `method`'s declared parameter `i` (or its result, for
@@ -4078,20 +4193,15 @@ assume Std {
       spec: Int, value: Int, bound: Int, recv_sym: Int, m: Int, depth: Int, body: IntList
     ): Int {
       let genv = cg_genv.read();
-      let env = cg_env.read();
       let bd = prog::sym_decl.get(bound);
       let home = prog::sym_mod.get(bound);
       let n = ast::fn_nparams(bd);
-      # The receiver, as written and as specialized; none for a fn.
+      # The receiver, as written; none for a fn.
       var grecv = ast::none();
-      var recv = ast::none();
       var gview = genv;
-      var view = env;
       if ast::is_some(recv_sym) {
         gview = lower::app_view(genv, m, spec);
-        view = lower::app_view(env, m, spec);
         grecv = lower::canon(gview, types::ty_of_decl(recv_sym));
-        recv = lower::canon(view, types::ty_of_decl(recv_sym));
       }
       # The signature: the declaration's, never inferred from (D27).
       var ok = ast::b_of(value) == n;
@@ -4115,26 +4225,22 @@ assume Std {
       if !ok {
         prog::error(prog::e_signature(), m, prog::sym_name.get(bound));
       }
-      # Keyed by the types in force rather than the whole environment: the
-      # function depends on this frame only through the types it reads
-      # its signature and captured locals at. Its fn needs are supplied
-      # per call, like any function's, so a frame that has rebound one
-      # gets the same function.
-      let tenv = types_of(env);
+      # One function per bind site and generic environment: its signature
+      # and its captured locals' types are the frame's as written, and
+      # what they are in a specialization is the specialization's business
+      # (`callee_env`), as for any function.
       var row = ast::none();
       i = 0;
       while i < lm_node.length() {
         if lm_node.get(i) == value {
           if lm_genv.get(i) == genv {
-            if lm_env.get(i) == tenv {
-              row = i;
-            }
+            row = i;
           }
         }
         i = i + 1;
       }
       if !ast::is_some(row) {
-        row = make_lambda(value, bound, recv, view, genv, tenv, m, depth);
+        row = make_lambda(value, bound, grecv, gview, genv, m, depth);
       }
       # The captured locals' vals, bound to their values now.
       var j = 0;
@@ -4154,11 +4260,10 @@ assume Std {
     }
 
     # The function an anonymous function is, made once per bind site and
-    # set of types in force (`tenv`). `view` reads the bound declaration's
-    # types here.
+    # generic environment. `view` reads the bound declaration's types
+    # here, generically.
     fn make_lambda(
-      value: Int, bound: Int, recv: Int, view: Int, genv: Int, tenv: Int, m: Int,
-      depth: Int
+      value: Int, bound: Int, recv: Int, view: Int, genv: Int, m: Int, depth: Int
     ): Int {
       let bd = prog::sym_decl.get(bound);
       let home = prog::sym_mod.get(bound);
@@ -4214,46 +4319,14 @@ assume Std {
           k = k + 1;
         }
       }
-      # Its context: everything in force here, as written, and the vals.
-      # What this frame's declaration assumed is written in the
-      # declaration's terms, where a receiver `T` means whatever the
-      # frame is given for `T`; to a function made in the frame, that is
-      # the frame's parameter, which a bind of `T` before this one has
-      # not changed (D72). So those receivers are read through the
-      # declaration's environment, which says so.
-      let base = lower::env_of(cg_where.read());
-      let chain = int_list();
-      let inbase = int_list();
-      var flag = 0;
-      var e = genv;
-      while ast::is_some(e) {
-        if e == base {
-          flag = 1;
-        }
-        chain.push(e);
-        inbase.push(flag);
-        e = lower::env_next_of(e);
-      }
-      var lenv = lower::env_empty();
-      var c = chain.length();
-      while c > 0 {
-        c = c - 1;
-        let x = chain.get(c);
-        var r = lower::env_recv_of(x);
-        if inbase.get(c) == 1 {
-          if ast::is_some(r) {
-            r = lower::canon(base, r);
-          }
-        }
-        lenv = lower::env_push(
-          lenv, lower::env_kind_of(x), r, lower::env_sym_of(x),
-          lower::env_a_of(x), lower::env_b_of(x)
-        );
-      }
+      # Its context: everything in force here, as written — this frame's
+      # generic environment, whose keys and types are in this frame's
+      # terms, which are the function's too — and the vals.
+      var lenv = genv;
       let recvs = int_list();
       let syms = int_list();
       let apps = int_list();
-      e = lenv;
+      var e = lenv;
       while ast::is_some(e) {
         let kind = lower::env_kind_of(e);
         if kind != lower::ek_type() {
@@ -4301,7 +4374,6 @@ assume Std {
       }
       lm_node.push(value);
       lm_genv.push(genv);
-      lm_env.push(tenv);
       lm_sym.push(lam);
       if ast::is_some(recv) {
         lm_recv.push(1);
@@ -4536,12 +4608,13 @@ assume Std {
         platform_functor(prog::sym_decl.get(provider), prog::sym_mod.get(provider));
       }
       let made = cg_env.read();
+      let gmade = cg_genv.read();
       # The type each of the result's types was made (D78). Here, in a
       # specialization, it is that type; to the code after this, checked
       # once against the generic environment, it is a fresh generation
       # (D72), one per application and type (`fresh_gen`), which this
-      # environment also maps to the type made, for anything made in the
-      # generic environment and read here.
+      # environment also maps to the type made, since the code after this
+      # gives it to values and keys provisions by it.
       var site = emark;
       var gsite = gmark;
       var k = 0;
@@ -4562,20 +4635,25 @@ assume Std {
         }
         let made_ty = lower::env_a_of(r);
         let gen = fresh_gen(spec, t);
+        let gen_ty = types::ty_of_symbol(types::kd_abstract(), gen);
         site = lower::env_push(site, lower::ek_type(), ast::none(), t, made_ty, ast::none());
         site = lower::env_push(site, lower::ek_type(), ast::none(), gen, made_ty, ast::none());
-        gsite = lower::env_push(
-          gsite, lower::ek_type(), ast::none(), t,
-          types::ty_of_symbol(types::kd_abstract(), gen), ast::none()
-        );
-        live_type(t, made_ty, lower::canon(emark, types::ty_of_decl(t)));
+        gsite = lower::env_push(gsite, lower::ek_type(), ast::none(), t, gen_ty, ast::none());
+        live_type(t, gen_ty);
         k = k + 1;
       }
-      # The rest of the result's keys, at those types.
+      # The rest of the result's keys: where the binds made each item, in
+      # the terms of the generic environment they left, and where the code
+      # after this finds it, at the fresh generations. Two applications
+      # are two sets of keys, whatever types this specialization made.
       let kinds = int_list();
+      let mrecvs = int_list();
+      let msyms = int_list();
+      result_keys(home, ast::fu_res(d), ast::fu_nres(d), gmade, kinds, mrecvs, msyms, 0);
+      let gkinds = int_list();
       let recvs = int_list();
       let syms = int_list();
-      result_keys(home, ast::fu_res(d), ast::fu_nres(d), site, kinds, recvs, syms, 0);
+      result_keys(home, ast::fu_res(d), ast::fu_nres(d), gsite, gkinds, recvs, syms, 0);
       # What the binds made for each item: an environment row, and for a
       # val, the local holding it.
       let rows = int_list();
@@ -4590,7 +4668,7 @@ assume Std {
           l = provision_above(syms.get(k), bmark);
           fresh = ast::is_some(l);
         } else {
-          r = lower::env_find(made, kinds.get(k), recvs.get(k), syms.get(k));
+          r = lower::env_find(made, kinds.get(k), mrecvs.get(k), syms.get(k));
           fresh = ast::is_some(r);
           if fresh {
             fresh = !in_chain(r, base);
@@ -4639,6 +4717,12 @@ assume Std {
         if kinds.get(k) == lower::ek_val() {
           if mode == bw_emit() {
             if ast::is_some(locals.get(k)) {
+              # Its value is the local the bind made; its type, to the
+              # code after this, is the one the application promises.
+              let vd = prog::sym_decl.get(syms.get(k));
+              lc_type.set(
+                locals.get(k), lower::elab(gsite, ast::b_of(vd), prog::sym_mod.get(syms.get(k)))
+              );
               provide(ast::none(), syms.get(k), locals.get(k));
             }
           }
@@ -4718,9 +4802,11 @@ assume Std {
             val_locals.push(l);
           }
         } else {
+          # Its key as the binds, run in this frame, will look it up: the
+          # functor's receiver read through the generic environment.
           var key = recv;
           if ast::is_some(recv) {
-            key = lower::instantiate(real, recv);
+            key = instantiate_in(cg_genv.read(), recv);
           }
           let here = lower::env_find(real, lower::ek_fn(), key, sym);
           if ast::is_some(here) {
@@ -4831,46 +4917,29 @@ assume Std {
       g
     }
 
-    # D78: a type an application made, live to the end of the block that
-    # made it, with the type its symbol had there before. Two live at
-    # once that this specialization made the same type are two
-    # generations this back end cannot tell apart (it resolves a call by
-    # the type it is compiled at), so that is refused rather than
-    # compiled as one.
-    fn live_type(t: Int, made_ty: Int, outer: Int) {
-      var i = 0;
-      while i < es_top.read() {
-        if es_made.get(i) == made_ty {
-          cg_error(c_unsupported(), prog::sym_name.get(t));
-        }
-        i = i + 1;
-      }
+    # D78: a generation an application made, live to the end of the block
+    # that made it.
+    fn live_type(t: Int, gen_ty: Int) {
       if es_top.read() < es_made.length() {
-        es_made.set(es_top.read(), made_ty);
-        es_outer.set(es_top.read(), outer);
+        es_made.set(es_top.read(), gen_ty);
         es_sym.set(es_top.read(), t);
       } else {
-        es_made.push(made_ty);
-        es_outer.push(outer);
+        es_made.push(gen_ty);
         es_sym.push(t);
       }
       es_top.write(es_top.read() + 1);
     }
 
     # D78: no value of a type an application made may leave the block
-    # that made it. This back end checks types as specialized, so it sees
-    # only what the specialization tells apart: a value of the type made
-    # where that differs from what the symbol was before the application.
-    # Where the two are the same type it cannot see the escape (as it
-    # cannot tell two D72 generations apart that specialize alike); the
-    # bootstrap, which checks generically, can.
+    # that made it — the existential's unpack. Checked on the type the
+    # block yields as the code is written, where the generation is a type
+    # of its own whatever this specialization made it, as the bootstrap
+    # checks it.
     fn check_escape(ty: Int, mark: Int) {
       var i = mark;
       while i < es_top.read() {
-        if es_made.get(i) != es_outer.get(i) {
-          if ty_mentions(ty, es_made.get(i)) {
-            cg_error(prog::e_escape(), prog::sym_name.get(es_sym.get(i)));
-          }
+        if ty_mentions(ty, es_made.get(i)) {
+          cg_error(prog::e_escape(), prog::sym_name.get(es_sym.get(i)));
         }
         i = i + 1;
       }
@@ -5011,7 +5080,7 @@ assume Std {
               result_generic(prog::sym_mod.get(s), ast::b_of(d), ast::c_of(d), depth + 1);
             } else if kind == prog::sk_val() {
               if !ast::is_some(ast::c_of(d)) {
-                provided_at(lower::ek_val(), ast::none(), s, genv);
+                provided_val(s, lower::elab(genv, ast::b_of(d), prog::sym_mod.get(s)));
               }
             } else if kind == prog::sk_fn() {
               if !ast::is_some(ast::fn_body(d)) {
@@ -5310,14 +5379,12 @@ assume Std {
           cg_error(c_unsupported(), ast::b_of(spec));
           return ();
         }
-        let recv = canon_ty(types::ty_of_decl(recv_sym));
+        let genv = cg_genv.read();
+        let recv = lower::canon(genv, types::ty_of_decl(recv_sym));
         cg_env.write(lower::env_push(
           cg_env.read(), lower::ek_fn(), recv, method, method, lower::env_empty()
         ));
-        let genv = cg_genv.read();
-        provided_at(
-          lower::ek_fn(), lower::canon(genv, types::ty_of_decl(recv_sym)), method, genv
-        );
+        provided_at(lower::ek_fn(), recv, method, genv);
         i = i + 1;
       }
     }
@@ -5378,7 +5445,7 @@ assume Std {
       if !ast::is_some(raw) {
         return raw;
       }
-      canon_ty(raw)
+      lower::canon(cg_env.read(), raw)
     }
 
     # The same, before any environment substitutes into it.
@@ -5524,12 +5591,14 @@ assume Std {
       cg_env.write(fq_env.get(qi));
       cg_genv.write(lower::env_of(sym));
       if is_defined_method(sym) {
-        add_local(ast::none(), this_type(sym));
+        let t = this_type_in(cg_genv.read(), sym);
+        add_local(ast::none(), t, spec(t));
       }
       var i = 0;
       while i < ast::fn_nparams(d) {
         let p = ast::kid_at(ast::fn_params(d), i);
-        add_local(ast::a_of(p), elab_ty(ast::b_of(p), m));
+        let t = elab_ty(ast::b_of(p), m);
+        add_local(ast::a_of(p), t, spec(t));
         i = i + 1;
       }
       # Then the needs that travel as data, in the same order the
@@ -5541,7 +5610,10 @@ assume Std {
       while i < vals.length() {
         let ns = vals.get(i);
         # Nameless, like a `bind`'s local: these are reached by symbol.
-        provide(ast::none(), ns, add_local(ast::none(), need_type(ns)));
+        # Laid out as the signature has it; typed, where this frame names
+        # it, as its provision in the generic environment says.
+        let sty = need_type_in(cg_env.read(), ns);
+        provide(ast::none(), ns, add_local(ast::none(), need_gtype(ns, sty), sty));
         nparams = nparams + 1;
         i = i + 1;
       }
@@ -5566,7 +5638,8 @@ assume Std {
       if cg_real.read() == 1 {
         var j = 0;
         while j < fl_len.get(qi) {
-          add_local(ast::none(), fl_types.get(fl_start.get(qi) + j));
+          let sty = fl_types.get(fl_start.get(qi) + j);
+          add_local(ast::none(), sty, sty);
           j = j + 1;
         }
       }
@@ -5597,7 +5670,7 @@ assume Std {
         fl_start.set(qi, fl_types.length());
         var j = lc_base.read() + nparams;
         while j < lc_name.length() {
-          fl_types.push(lc_type.get(j));
+          fl_types.push(lc_spec.get(j));
           j = j + 1;
         }
         fl_len.set(qi, lc_name.length() - (lc_base.read() + nparams));
@@ -5676,7 +5749,7 @@ assume Std {
         return ();
       }
       if ast::is_some(ast::fn_ret(md)) {
-        if width(elab_ty(ast::fn_ret(md), prog::sym_mod.get(main))) > 0 {
+        if width(types::elab(ast::fn_ret(md), prog::sym_mod.get(main))) > 0 {
           cg_error(c_no_main(), ast::none());
           return ();
         }

@@ -3,9 +3,11 @@ import "../../lib/wasip1.moss" use Wasi;
 import "../../lib/wasistd.moss" use WasiBasics, WasiContainers, WasiOutput, Basics, Containers,
   Output, Branch;
 import "../../lib/wasichar.moss" use WasiCharConsts, WasiChars;
-import "../../lib/char.moss" as char use Char;
+import "../../lib/char.moss" as char use Char, .code;
 import "../../lib/list.moss" use IntList, int_list;
 import "../../lib/int.moss" use Int, one;
+import "../../lib/num.moss" use .add, .shl;
+import "../../lib/access.moss" use .push;
 import "../../lib/std.moss" use put_bytes;
 
 # `put_bytes`: a whole buffer in one write rather than a syscall per byte.

@@ -6,10 +6,10 @@ import "../../lib/wasip1.moss" use Wasi;
 
 # D78: `bind Fast;` makes `Float` a fresh generation for the rest of its
 # block, and no value of that type may leave the block — here as the
-# block's result, kept in `r` past it. Refused in both compilers: the
-# bootstrap sees it generically; the self-hosted compiler, which checks
-# types as specialized, sees it because `Fast` is bound to f32 while
-# `Float` outside the block is no f32 (nothing outside has bound it).
+# block's result, kept in `r` past it. Refused in both compilers, which
+# check it generically (here `Fast` is bound to f32 while `Float` outside
+# the block is no f32, so the two also differ in the specialization; see
+# functor_escape_same.moss for when they do not).
 
 functor Fast: Wasm, Branch -> Floats;
 

@@ -6,6 +6,7 @@ import "../../lib/access.moss" use Elem, .get, .length, .push;
 import "../../lib/char.moss" as char use Char, .code, .char;
 import "../../lib/list.moss" use IntList, int_list;
 import "../../lib/int.moss" use Int, zero, one;
+import "../../lib/num.moss" use .add, .lt;
 import "../../lib/std.moss" use putchar;
 
 # A generic container, D51's way: one interface, its accessors keyed on an

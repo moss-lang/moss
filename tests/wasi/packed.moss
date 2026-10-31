@@ -7,10 +7,10 @@ import "../../lib/wasip1.moss" use Wasi;
 # D73's `Packed[Item]`: a list of anything is a `Layout` and nothing more.
 # `total` is written against a list of `Big`s; `main` makes `Big` an i64
 # and the list the library's packed list at a two-word layout, bound once,
-# where the layout is captured (D26). `total` is generic, so the back end
-# sees its list at the specialized type `Packed[Item=Long]`, which has
-# attached methods of the same names; the call is still the provision,
-# which carries the layout. Output: `3000000000`.
+# where the layout is captured (D26). `total` is generic, and in `main`'s
+# specialization its list is a `Packed[Item=Long]`, which has attached
+# methods of the same names; the call is resolved as written, to the
+# provision, which carries the layout (D77). Output: `3000000000`.
 
 type Big;
 type BigList;
