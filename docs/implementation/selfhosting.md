@@ -346,6 +346,24 @@ lookup is not a scan.** `asm_find` is still a linear scan over the
 nobody has factored out; if it ever holds a row per declaration it will
 be the next entry in this section.
 
+A later limit was not time but width. A function's needs come from its
+`assume` nesting alone, so everything inside `assume Std` needs all of
+`Std`'s hundred-odd vals — the character constants among them — and a
+specialization takes those, plus, for each fn need bound to a provider,
+whatever that provider takes. A function over ten bound log levels
+([`tests/wasi/levels.moss`](/tests/wasi/levels.moss)) came to 2,626 Wasm
+parameters, past the engine's limit of a thousand. Both back ends now pass a val need
+only if the function can reach it: read it, or call, bind or apply
+something that does — `used_needs` in
+[`build.py`](/bootstrap/mossc/build.py), over the IR, and `need_used` in
+[`codegen.moss`](/src/codegen.moss), over the tree, which has to guess
+a method call's target and so counts every defined method of that name.
+Over-approximating is safe because caller and callee both ask
+`val_slots`. Requirement lists, and so the "Needs" check above, are
+unchanged; and a test suite that drives the compiler through
+bootstrap-built Wasm got a third faster, since the compiler's own
+functions had been passing constants they never read.
+
 ## The idiom
 
 Every data structure here is a *typed arena*: parallel `IntList`s

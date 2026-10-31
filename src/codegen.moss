@@ -160,6 +160,23 @@ assume Std {
   val fl_len: IntList;
   val fl_types: IntList;
 
+  # Which vals each defined function can reach (`need_used`). `un_sym`
+  # holds, per function, the vals it names and the defined functions it
+  # may call or bind, chained through `un_link` from `un_head` (indexed
+  # by symbol, the newest row plus one). `un_mark` stamps symbols during
+  # one walk over that graph, and `un_flags` keeps the answer for each
+  # function's needs as a run, from `un_fstart` (indexed by symbol, the
+  # start plus one). `un_meths` lists the defined attached methods, which
+  # a method call may reach.
+  val un_sym: IntList;
+  val un_link: IntList;
+  val un_head: IntList;
+  val un_mark: IntList;
+  val un_stamp: CellInt;
+  val un_meths: IntList;
+  val un_fstart: IntList;
+  val un_flags: IntList;
+
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
@@ -168,7 +185,8 @@ assume Std {
     cg_i32, cg_i64, cg_boolty, cg_errs, cg_err_name, cg_err_at, cg_where,
     vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
     ck_entry, ck_inner, ck_link, ck_head,
-    fl_start, fl_len, fl_types;
+    fl_start, fl_len, fl_types,
+    un_sym, un_link, un_head, un_mark, un_stamp, un_meths, un_fstart, un_flags;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -523,7 +541,9 @@ assume Std {
         let r = lower::need_recv_at(sym, i);
         let ns = lower::need_sym_at(sym, i);
         if passed_need(r, ns) {
-          vs_append(out, ns);
+          if need_used(sym, i) {
+            vs_append(out, ns);
+          }
         } else {
           let e = lower::env_find(
             env, lower::ek_fn(), need_key_recv(env, r), ns
@@ -543,6 +563,229 @@ assume Std {
         }
         i = i.add(one);
       }
+    }
+
+    # Which needs a function reaches. A requirement list comes from the
+    # assume nesting alone, so everything inside `assume Std` needs every
+    # `Std` val — a hundred-odd character constants among them — and a
+    # function also takes, for each fn need bound to a provider, whatever
+    # that provider takes. Passing all of that ran functions past Wasm's
+    # thousand parameters. So a val need travels only if the function can
+    # reach it: name it, or call or bind a defined function that does.
+    # This over-approximates (a method call may reach every defined
+    # method of its name; a name that a local shadows still counts),
+    # which is safe, since both ends of a call ask `val_slots`.
+
+    fn uses_init() {
+      while un_head.length().lt(prog::sym_count()) {
+        un_head.push(zero);
+        un_mark.push(zero);
+        un_fstart.push(zero);
+      }
+      var f = zero;
+      while f.lt(prog::sym_count()) {
+        if is_defined_method(f) {
+          un_meths.push(f);
+        }
+        f = f.add(one);
+      }
+      f = zero;
+      while f.lt(prog::sym_count()) {
+        if is_compilable(f) {
+          uw_node(f, ast::fn_body(prog::sym_decl.get(f)), prog::sym_mod.get(f));
+        }
+        f = f.add(one);
+      }
+    }
+
+    fn uw_row(f: Int, s: Int) {
+      un_sym.push(s);
+      un_link.push(un_head.get(f));
+      un_head.set(f, un_sym.length());
+    }
+
+    # A symbol a body names: a val it reads, or a function it may run.
+    fn uw_sym(f: Int, s: Int) {
+      if ast::is_some(s).not() {
+        return ();
+      }
+      if prog::sym_kind.get(s).eq(prog::sk_val()) {
+        uw_row(f, s);
+      } else if is_compilable(s) {
+        uw_row(f, s);
+      }
+    }
+
+    fn uw_run(f: Int, run: Int, n: Int, m: Int) {
+      var i = zero;
+      while i.lt(n) {
+        uw_node(f, ast::kid_at(run, i), m);
+        i = i.add(one);
+      }
+    }
+
+    fn uw_node(f: Int, e: Int, m: Int) {
+      if ast::is_some(e).not() {
+        return ();
+      }
+      let k = ast::kind_of(e);
+      if k.eq(ast::k_ex_path()) {
+        uw_sym(f, prog::resolve_path(m, ast::a_of(e)));
+      } else if k.eq(ast::k_ex_call()) {
+        uw_sym(f, prog::resolve_path(m, ast::a_of(ast::a_of(e))));
+        uw_run(f, ast::b_of(e), ast::c_of(e), m);
+      } else if k.eq(ast::k_ex_field()) {
+        uw_node(f, ast::a_of(e), m);
+      } else if k.eq(ast::k_ex_method()) {
+        uw_node(f, ast::a_of(e), m);
+        uw_run(f, ast::c_of(e), ast::d_of(e), m);
+        let name = ast::path_last(ast::b_of(e));
+        var i = zero;
+        while i.lt(un_meths.length()) {
+          if prog::sym_name.get(un_meths.get(i)).eq(name) {
+            uw_row(f, un_meths.get(i));
+          }
+          i = i.add(one);
+        }
+      } else if k.eq(ast::k_ex_record()) {
+        var i = zero;
+        while i.lt(ast::c_of(e)) {
+          let field = ast::kid_at(ast::b_of(e), i);
+          if ast::is_some(ast::b_of(field)) {
+            uw_node(f, ast::b_of(field), m);
+          } else {
+            # `{ x }` reads `x`.
+            uw_sym(f, prog::lookup(m, prog::ns_name(), ast::a_of(field)));
+          }
+          i = i.add(one);
+        }
+      } else if k.eq(ast::k_ex_if()) {
+        uw_node(f, ast::a_of(e), m);
+        uw_node(f, ast::b_of(e), m);
+        uw_node(f, ast::c_of(e), m);
+      } else if k.eq(ast::k_ex_match()) {
+        uw_node(f, ast::a_of(e), m);
+        var i = zero;
+        while i.lt(ast::c_of(e)) {
+          uw_node(f, ast::b_of(ast::kid_at(ast::b_of(e), i)), m);
+          i = i.add(one);
+        }
+      } else if k.eq(ast::k_ex_return()) {
+        uw_node(f, ast::a_of(e), m);
+      } else if k.eq(ast::k_ex_block()) {
+        uw_run(f, ast::a_of(e), ast::b_of(e), m);
+        uw_node(f, ast::c_of(e), m);
+      } else if k.eq(ast::k_st_let()) {
+        uw_node(f, ast::c_of(e), m);
+      } else if k.eq(ast::k_st_var()) {
+        uw_node(f, ast::c_of(e), m);
+      } else if k.eq(ast::k_st_assign()) {
+        uw_node(f, ast::b_of(e), m);
+      } else if k.eq(ast::k_st_expr()) {
+        uw_node(f, ast::a_of(e), m);
+      } else if k.eq(ast::k_st_while()) {
+        uw_node(f, ast::a_of(e), m);
+        uw_node(f, ast::b_of(e), m);
+      } else if k.eq(ast::k_st_loop()) {
+        uw_node(f, ast::a_of(e), m);
+      } else if k.eq(ast::k_st_bind()) {
+        uw_binds(f, ast::a_of(e), ast::b_of(e), m, zero);
+      }
+    }
+
+    # A bind evaluates a val's value here, and captures a provider's
+    # needs here (D26); applying a functor does both for its binds,
+    # written in its own module.
+    fn uw_binds(f: Int, run: Int, n: Int, m: Int, depth: Int) {
+      if depth.gt(n8()) {
+        return ();
+      }
+      var i = zero;
+      while i.lt(n) {
+        let item = ast::kid_at(run, i);
+        let value = ast::b_of(item);
+        if ast::is_some(value) {
+          uw_node(f, value, m);
+          uw_provider(f, value, m);
+        } else {
+          let spec = ast::a_of(item);
+          if ast::is_some(ast::a_of(spec)) {
+            let fu = prog::resolve_path(m, ast::a_of(spec));
+            if ast::is_some(fu) {
+              if prog::sym_kind.get(fu).eq(prog::sk_functor()) {
+                let d = prog::sym_decl.get(fu);
+                var j = zero;
+                while j.lt(ast::fu_nbinds(d)) {
+                  let stmt = ast::kid_at(ast::fu_binds(d), j);
+                  uw_binds(
+                    f, ast::a_of(stmt), ast::b_of(stmt), prog::sym_mod.get(fu),
+                    depth.add(one)
+                  );
+                  j = j.add(one);
+                }
+              }
+            }
+          }
+        }
+        i = i.add(one);
+      }
+    }
+
+    # `bind Int.add = Num.add;`: an attached provider, written as a field.
+    fn uw_provider(f: Int, value: Int, m: Int) {
+      if ast::kind_of(value).ne(ast::k_ex_field()) {
+        return ();
+      }
+      let obj = ast::a_of(value);
+      if ast::kind_of(obj).ne(ast::k_ex_path()) {
+        return ();
+      }
+      let recv = prog::resolve_path(m, ast::a_of(obj));
+      if ast::is_some(recv) {
+        uw_sym(f, prog::find_attached(prog::sym_mod.get(recv), recv, ast::b_of(value)));
+      }
+    }
+
+    # Whether `f`'s `i`th need is a val it can reach. Answered for all of
+    # `f`'s needs at once, by one walk from `f`, and kept.
+    fn need_used(f: Int, i: Int): Bool {
+      # A symbol made after the walk, if any: assume it reaches all.
+      if f.ge(un_fstart.length()) {
+        return true;
+      }
+      if un_fstart.get(f).eq(zero) {
+        let stamp = un_stamp.read().add(one);
+        un_stamp.write(stamp);
+        let todo = int_list();
+        todo.push(f);
+        un_mark.set(f, stamp);
+        var t = zero;
+        while t.lt(todo.length()) {
+          var r = un_head.get(todo.get(t));
+          while r.gt(zero) {
+            let s = un_sym.get(r.sub(one));
+            if un_mark.get(s).ne(stamp) {
+              un_mark.set(s, stamp);
+              if prog::sym_kind.get(s).ne(prog::sk_val()) {
+                todo.push(s);
+              }
+            }
+            r = un_link.get(r.sub(one));
+          }
+          t = t.add(one);
+        }
+        un_fstart.set(f, un_flags.length().add(one));
+        var j = zero;
+        while j.lt(lower::needs_count(f)) {
+          if un_mark.get(lower::need_sym_at(f, j)).eq(stamp) {
+            un_flags.push(one);
+          } else {
+            un_flags.push(zero);
+          }
+          j = j.add(one);
+        }
+      }
+      un_flags.get(un_fstart.get(f).sub(one).add(i)).eq(one)
     }
 
     # The val keys a specialization takes as parameters, in the order the
@@ -2578,6 +2821,7 @@ assume Std {
       # Every defined function's requirement list, which is what the
       # calling convention below is built from.
       lower::lower_all();
+      uses_init();
       let mn = spelled();
       sp_main(mn);
       let main = prog::lookup(entry, prog::ns_name(), intern::intern_chars(mn));

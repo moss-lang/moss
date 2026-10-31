@@ -1325,6 +1325,18 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/records.moss", prelude="lib/prelude.moss")
         self.assertEqual(self.wasmtime_run(module), RECORDS_OUT)
 
+    def test_only_reachable_vals_are_passed(self):
+        """Inside `assume Std`, every function needs every `Std` val, and
+        each provider bound to one of its fn needs brings its own along.
+        Passing them all ran `bar` here past Wasm's thousand-parameter
+        limit; both back ends pass only the vals a function can reach."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/levels.moss"
+        module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), "1\n3\n")
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "1\n3\n")
+
     def test_temporaries_nested_anywhere(self):
         """A local comes from emission itself, so a construct that needs a
         temporary works however deeply it is nested: a `match` in a call's

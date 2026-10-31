@@ -1,0 +1,104 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Ten log levels, each a fn need bound to a provider, in a function that
+# assumes all of `Std`. A need comes from the assume nesting, so every
+# function here needs every `Std` val, and a provider's are threaded
+# down with it; passing all of them came to thousands of Wasm parameters,
+# past the engine's limit of a thousand. Only the vals a function can
+# reach are passed, which here is a handful.
+
+# The interface of a logging library: each level can be logged if the
+# current maximum level allows it, or forced regardless.
+assume Std {
+  fn error(message: Int);
+  fn warn(message: Int);
+  fn info(message: Int);
+  fn debug(message: Int);
+  fn trace(message: Int);
+  context MaybeLog = error, warn, info, debug, trace;
+
+  fn force_error(message: Int);
+  fn force_warn(message: Int);
+  fn force_info(message: Int);
+  fn force_debug(message: Int);
+  fn force_trace(message: Int);
+  context ForceLog = force_error, force_warn, force_info, force_debug, force_trace;
+
+  context Log = MaybeLog, ForceLog;
+
+  fn noop(message: Int) {}
+
+  fn print_int(n: Int) {
+    let ten = one.shl(one.add(one).add(one)).add(one.add(one));
+    if n.ge(ten) { print_int(n.div(ten)); }
+    putchar(n.rem(ten).add(char::digit0.code()).char());
+  }
+
+  fn print_line(message: Int) {
+    print_int(message);
+    putchar(char::newline);
+  }
+}
+
+assume Std, ForceLog {
+  fn fe(message: Int) { force_error(message); }
+  fn fw(message: Int) { force_warn(message); }
+  fn fi(message: Int) { force_info(message); }
+  fn fd(message: Int) { force_debug(message); }
+}
+
+functor MaxLevelInfo: Std, ForceLog -> MaybeLog {
+  bind error = fe;
+  bind warn = fw;
+  bind info = fi;
+  bind debug = noop;
+  bind trace = noop;
+}
+
+functor MaxLevelDebug: Std, ForceLog -> MaybeLog {
+  bind error = fe;
+  bind warn = fw;
+  bind info = fi;
+  bind debug = fd;
+  bind trace = noop;
+}
+
+functor Stdout: Std -> ForceLog {
+  bind force_error = print_line;
+  bind force_warn = print_line;
+  bind force_info = print_line;
+  bind force_debug = print_line;
+  bind force_trace = print_line;
+}
+
+assume Std, Log {
+  fn foo() {
+    debug(one.add(one).add(one));
+  }
+
+  fn bar() {
+    let two = one.add(one);
+    info(one);
+    debug(two);
+    { bind MaxLevelDebug; foo(); }
+    debug(two.add(two));
+  }
+}
+
+assume Std, ForceLog {
+  fn baz() {
+    bind MaxLevelInfo;
+    bar();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Stdout;
+    baz();
+  }
+}

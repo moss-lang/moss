@@ -275,6 +275,7 @@ class Backend:
         for field, nparams, nresults in BASE_IMPORTS:
             self.wasi_import(field, nparams, nresults)
         self.rebound = self.rebound_keys()
+        self.used = self.used_needs()
 
     def wasi_import(self, field: str, params, results) -> int:
         """The index of a WASI import, adding it to the module if new.
@@ -361,6 +362,54 @@ class Backend:
             walk(fn.body)
         return found
 
+    def used_needs(self) -> dict:
+        """Which of each function's needs it can actually reach: read,
+        call, capture at a bind, or hand to a callee that reaches it.
+        A need is derived from the assume nesting alone, so a function
+        inside `assume Std` needs every `Std` val; passing all of them, and
+        again for every provider each fn need is bound to, is what ran a
+        Wasm function past a thousand parameters. Only these are passed.
+        A least fixpoint over the whole program, since calls recurse."""
+        direct: dict = {}  # id(symbol) -> keys it uses itself
+        edges: dict = {}  # id(symbol) -> [(callee symbol, needs_map)]
+
+        def walk(node, uses: set, out: list):
+            if isinstance(node, ir.NeedVal):
+                uses.add(node.key)
+            elif isinstance(node, ir.Call):
+                kind, target = node.callee
+                if kind == "direct":
+                    out.append((target, node.needs_map or ()))
+                else:
+                    uses.add(target)
+            elif isinstance(node, ir.BindFn):
+                out.append((node.fn, node.needs_map))
+            if isinstance(node, (list, tuple)):
+                for item in node:
+                    walk(item, uses, out)
+            elif hasattr(node, "__dataclass_fields__") and type(node).__module__ == ir.__name__:
+                for name in node.__dataclass_fields__:
+                    if name not in ("callee", "needs_map", "key", "fn"):
+                        walk(getattr(node, name), uses, out)
+
+        for key, fn in self.lower.fns.items():
+            uses, out = set(), []
+            walk(fn.body, uses, out)
+            direct[key], edges[key] = uses, out
+        used = {key: set(uses) for key, uses in direct.items()}
+        changed = True
+        while changed:
+            changed = False
+            for key, out in edges.items():
+                mine = used[key]
+                for callee, needs_map in out:
+                    theirs = used.get(id(callee), ())
+                    for callee_key, caller_key in needs_map:
+                        if callee_key in theirs and caller_key not in mine:
+                            mine.add(caller_key)
+                            changed = True
+        return used
+
     def passed_need(self, key) -> bool:
         """Whether a need key is passed as a parameter: vals, unless they
         have a native provision that nothing rebinds. Everything else
@@ -392,7 +441,10 @@ class Backend:
             if depth > 32:
                 raise NotCompilable("fn binds nested too deeply")
             found: list = []
+            used = self.used.get(id(sym), ())
             for key in self.lower.needs_of[id(sym)]:
+                if key not in used:
+                    continue  # never reached, so never passed
                 if self.passed_need(key):
                     found.append(key)
                 elif key in e:
