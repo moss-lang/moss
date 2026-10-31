@@ -2660,32 +2660,74 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         `A.gimme[Foo=C]` (and a val at both) merges the two bindings, so
         `B` and `C` are one type inside it and may be used
         interchangeably. The self-hosted compiler used to keep the first
-        of the two assumptions, and found `C` where `B` was expected."""
+        of the two assumptions, and found `C` where `B` was expected.
+        Merging does not depend on the order of the assume list
+        (`merge_order`, which the bootstrap used to reject), and is done
+        in a functor's argument signature too (`merge_functor`)."""
         from .test_build import compile_wasm, run_wasm
 
-        entry = "tests/wasi/merge.moss"
-        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "qbq\n")
-        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
-        self.assertEqual(self.wasmtime_run(out), "qbq\n")
+        for name, expected in (
+            ("merge", "qbq\n"),
+            ("merge_order", "k\n"),
+            ("merge_functor", "tt\n"),
+        ):
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), expected)
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertEqual(self.wasmtime_run(out), expected)
 
     def test_an_inconsistent_merge(self):
         """D43: a merge that would identify two distinct concrete types —
         `A.gimme[Foo=U1]` with `A.gimme[Foo=U2]` — is an error where the
         context is assumed, though nothing calls the function assuming
-        it. The self-hosted compiler reports `e_merge` (`Y`), named by the
-        item whose bindings would not merge; it used to keep the first
-        and accept the program."""
+        it, or in a functor's argument signature. The self-hosted compiler
+        reports `e_merge` (`Y`), named by the item whose bindings would not
+        merge; it used to keep the first and accept the program."""
         from .test_build import compile_wasm
 
-        entry = "tests/wasi/merge_inconsistent.moss"
-        with self.assertRaises(LowerError) as caught:
-            compile_wasm({}, entry=entry)
-        self.assertIn(
-            "cannot merge `U1` with `U2` for `.gimme` (D43)", str(caught.exception)
-        )
-        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
-        self.assertNotEqual(out[:4], b"\0asm")
-        self.assertEqual(out.decode("utf-8"), f"!Y {entry} gimme\n")
+        for name in ("merge_inconsistent", "merge_functor_inconsistent"):
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(
+                    "cannot merge `U1` with `U2` for `.gimme` (D43)",
+                    str(caught.exception),
+                )
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                self.assertEqual(out.decode("utf-8"), f"!Y {entry} gimme\n")
+
+    def test_a_caller_binds_merged_types_alike(self):
+        """D43: a merged context requires the merged types to be one, so a
+        function assuming one may be called only where they are: not with
+        `B` and `C` bound to `Char` and `Int` (`merge_caller`, and
+        `merge_methods_caller`, where the merge also makes `B.m` and `C.m`
+        one key), and not from a function generic over `B` and `C` apart,
+        though every specialization of it binds both to `Char`
+        (`merge_caller_generic`, D80). The self-hosted compiler reports
+        `e_merge` (`Y`), named by the merged type."""
+        from .test_build import compile_wasm
+
+        cases = {
+            "merge_caller": "`Char` and `Int`",
+            "merge_methods_caller": "`Char` and `Int`",
+            "merge_caller_generic": "`B` and `C`",
+        }
+        for name, here in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(
+                    "needs `B` and `C` to be one type, which its context merged "
+                    f"(D43), but here they are {here}",
+                    str(caught.exception),
+                )
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                self.assertEqual(out.decode("utf-8"), f"!Y {entry} B\n")
 
     def test_relevance_does_not_depend_on_order(self):
         """The bootstrap's `type_requirements` on the same declarations,

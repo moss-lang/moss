@@ -1,0 +1,64 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D43 in a functor's argument signature. `Via`'s arguments merge `B`
+# with `C`, so its bind of `take`, declared over `B`, to `take_c`,
+# over `C`, fits: bound to the abstract `Trace`, it is checked against
+# that signature alone (D78), merged. Prints `tt`.
+
+type Foo;
+type A;
+type B;
+type C;
+
+fn .gimme(): Foo;
+
+context Ctx1 = A, B, A.gimme[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C];
+
+assume Std, B {
+  fn take(b: B);
+}
+
+assume Std, C {
+  fn take_c(c: C) { putchar(char::t); }
+}
+
+functor Trace: Std, Ctx1, Ctx2 -> take;
+
+functor Via: Std, Ctx1, Ctx2 -> take {
+  bind take = take_c;
+}
+
+assume Std, Ctx1, Ctx2, Trace {
+  fn run(a: A) {
+    bind Trace;
+    take(a.gimme());
+    let c: C = a.gimme();
+    take(c);
+  }
+}
+
+assume Std {
+  fn giveq(): Char { char::q }
+
+  fn demo() {
+    bind Foo = Char;
+    bind A = Char;
+    bind B = Char;
+    bind C = Char;
+    bind A.gimme = giveq;
+    bind Trace = Via;
+    run(char::m);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

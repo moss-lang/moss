@@ -1,0 +1,54 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D43 merging is symmetric, so the order of an assume list does not
+# matter. `B.w[Foo=X]` and `C.w[Foo=Y]` are assumed before the contexts
+# that merge `B` with `C`; once they are merged the two are one key,
+# `w` at the merged type, and merging its two bindings makes `X` and
+# `Y` one type too, so `f` may return its `X` as a `Y`. Accepted by
+# both compilers (the bootstrap used to key `B.w` and `C.w` apart when
+# they came first, and rejected `f`). Prints `k`.
+
+type Foo;
+type A;
+type B;
+type C;
+type X;
+type Y;
+
+fn .gimme(): Foo;
+fn .w(): Foo;
+
+context Ctx1 = A, B, A.gimme[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C];
+context K0 = B, C, X, Y, B.w[Foo=X], C.w[Foo=Y];
+
+assume Std, K0, Ctx1, Ctx2 {
+  fn f(x: X): Y { x }
+}
+
+assume Std {
+  fn giveq(): Char { char::q }
+
+  fn demo() {
+    bind Foo = Char;
+    bind A = Char;
+    bind B = Char;
+    bind C = Char;
+    bind X = Char;
+    bind Y = Char;
+    bind A.gimme = giveq;
+    bind C.w = giveq;
+    putchar(f(char::k));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

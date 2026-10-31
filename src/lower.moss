@@ -346,10 +346,16 @@ assume Std {
     # cached (codegen's memos key on the environment), and a declaration
     # with no duplicate items costs one walk, as before.
     fn base_env(f: Int, recv: IntList, sym: IntList): Int {
+      assume_items(prog::sym_mod.get(f), prog::sym_asm.get(f), prog::sym_nasm.get(f), recv, sym)
+    }
+
+    # The environment a run of `len` assume items (or a functor's argument
+    # signature) written in module `m` provides, merged as `base_env` says.
+    fn assume_items(m: Int, run: Int, len: Int, recv: IntList, sym: IntList): Int {
       var floor = env_empty();
       var r = int_list();
       var s = int_list();
-      var env = assume_run(floor, f, r, s);
+      var env = assume_run(floor, m, run, len, r, s);
       var fuel = 8;
       while fuel > 0 {
         let edges = edges_of(env);
@@ -359,7 +365,7 @@ assume Std {
           floor = edges;
           r = int_list();
           s = int_list();
-          env = assume_run(floor, f, r, s);
+          env = assume_run(floor, m, run, len, r, s);
           fuel = fuel - 1;
         }
       }
@@ -372,15 +378,12 @@ assume Std {
       env
     }
 
-    # One walk of `f`'s assume items, on `env`.
-    fn assume_run(env: Int, f: Int, recv: IntList, sym: IntList): Int {
-      let m = prog::sym_mod.get(f);
+    # One walk of the items, on `env`.
+    fn assume_run(env: Int, m: Int, run: Int, len: Int, recv: IntList, sym: IntList): Int {
       var out = env;
       var i = 0;
-      while i < prog::sym_nasm.get(f) {
-        out = add_assume_item(
-          out, m, ast::kid_at(prog::sym_asm.get(f), i), recv, sym
-        );
+      while i < len {
+        out = add_assume_item(out, m, ast::kid_at(run, i), recv, sym);
         i = i + 1;
       }
       out
@@ -799,6 +802,72 @@ assume Std {
         i = i + 1;
       }
       out
+    }
+
+    # D43: a context that merged two types requires them to be one, so a
+    # function whose assumes merged `B` with `C` may be called only where
+    # `B` and `C` mean the same — read through the caller's *generic*
+    # environment `genv`, so that it comes out the same in every
+    # specialization (D80), as the bootstrap's `require_merges`. Returns
+    # the symbol of the first merge edge of `f`'s whose two sides differ
+    # there, or none. A symbol not in force in `genv` constrains nothing.
+    fn merge_conflict(genv: Int, f: Int): Int {
+      var e = env_of(f);
+      while ast::is_some(e) {
+        if en_kind.get(e) == ek_type() {
+          let k = en_sym.get(e);
+          let v = en_a.get(e);
+          if v != as_assumed(k) {
+            let mentioned = int_list();
+            mentioned.push(k);
+            abstracts_in(v, mentioned);
+            var here = true;
+            var i = 0;
+            while i < mentioned.length() {
+              var t = mentioned.get(i);
+              if ast::is_some(prog::origin_of(t)) {
+                t = prog::origin_of(t);
+              }
+              if !env_has(genv, ek_type(), ast::none(), t) {
+                here = false;
+              }
+              i = i + 1;
+            }
+            if here {
+              let lhs = instantiate(genv, types::ty_of_symbol(types::kd_abstract(), k));
+              if lhs != instantiate(genv, v) {
+                return k;
+              }
+            }
+          }
+        }
+        e = en_next.get(e);
+      }
+      ast::none()
+    }
+
+    # The abstract symbols a type mentions, appended to `out`.
+    fn abstracts_in(t: Int, out: IntList) {
+      if !ast::is_some(t) {
+        return ();
+      }
+      let k = types::kind_of(t);
+      if k == types::kd_abstract() {
+        types::push_new(out, types::sym_of(t));
+      }
+      if k == types::kd_record() {
+        var i = 0;
+        while i < types::field_count(t) {
+          abstracts_in(types::field_type_at(t, i), out);
+          i = i + 1;
+        }
+      } else {
+        var i = 0;
+        while i < types::member_count(t) {
+          abstracts_in(types::member_at(t, i), out);
+          i = i + 1;
+        }
+      }
     }
 
     # An abstract type with no arguments: a symbol a merge may bind.

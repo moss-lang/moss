@@ -1,0 +1,61 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D43 in a functor's argument signature: `Bad`'s arguments would merge
+# `U1` with `U2`, so the signature its binds are checked against (D78)
+# is unsatisfiable. It takes the same items as `Trace` (`A`, `A.gimme`),
+# so it may be bound to it, and nothing else assumes `Ctx2`. Rejected in
+# both compilers.
+
+type Foo;
+type A;
+unit U1;
+unit U2;
+
+fn .gimme(): Foo;
+
+context Ctx1 = A, A.gimme[Foo=U1];
+context Ctx2 = A, A.gimme[Foo=U2];
+
+assume Std {
+  fn note();
+}
+
+assume Std {
+  fn say() { putchar(char::k); }
+}
+
+functor Trace: Std, Ctx1 -> note;
+
+functor Bad: Std, Ctx1, Ctx2 -> note {
+  bind note = say;
+}
+
+assume Std, Ctx1, Trace {
+  fn run() {
+    bind Trace;
+    note();
+  }
+}
+
+assume Std {
+  fn giveu(): U1 { U1 }
+
+  fn demo() {
+    bind Foo = U1;
+    bind A = Char;
+    bind A.gimme = giveu;
+    bind Trace = Bad;
+    run();
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

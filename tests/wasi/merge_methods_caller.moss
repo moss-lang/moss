@@ -1,0 +1,52 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D43: `B.m` and `C.m` are assumed before the contexts that merge `B`
+# with `C`, so they are one key, `m` at the merged type, whichever
+# comes first. `demo` binds `B` and `C` to two different types and
+# provides `m` only at `Int`, which is `C`: the call is rejected in
+# both compilers, as one that does not bind the merged types alike.
+# (The bootstrap used to keep `B.m` and `C.m` apart, assumed in this
+# order, and rejected the call for want of `Char.m`; the self-hosted
+# compiler accepted it.)
+
+type Foo;
+type A;
+type B;
+type C;
+
+fn .gimme(): Foo;
+fn .m(): Char;
+
+context Ctx1 = A, B, A.gimme[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C];
+context K0 = B, C, B.m, C.m;
+
+assume Std, K0, Ctx1, Ctx2 {
+  fn go(a: A): Char { let c: C = a.gimme(); c.m() }
+}
+
+assume Std {
+  fn giveq(): Char { char::q }
+  fn mc(): Char { char::c }
+
+  fn demo() {
+    bind Foo = Char;
+    bind A = Char;
+    bind B = Char;
+    bind C = Int;
+    bind A.gimme = giveq;
+    bind C.m = mc;
+    putchar(go(char::m));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

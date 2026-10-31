@@ -205,6 +205,10 @@ class Lower:
         # id(Symbol) -> {need key: the instantiation the function requires
         # it at, in the function's own terms} (coherence; see require_needs).
         self.need_apps: dict[int, dict] = {}
+        # id(Symbol) -> the union-find edges its own assumes made by
+        # merging (D43), as (symbol, type) pairs: what a caller's bindings
+        # must agree with (`FnChecker.require_merges`).
+        self.merges_of: dict[int, tuple] = {}
         # id(val Symbol) -> how many scalars its value occupies (D59), for
         # every val some defined function needs.
         self.val_widths: dict[int, int] = {}
@@ -295,19 +299,54 @@ class Lower:
         """The ambient environment of a declaration: everything its enclosing
         assume blocks provide, in order. Returns (env, runtime need keys)."""
         module = symbol.module
-        env = Env(module)
-        needs: list = []
         target = self.forwarded.get(id(symbol))
-        if target is not None:
-            # A forwarder assumes what its target's signature needs — the
-            # type symbols of the target's assumes — and the target.
-            for ty in self.type_requirements(target):
-                self.add_symbol_item(env, module, ty, {}, needs)
-            self.add_symbol_item(env, module, target, {}, needs)
-            return env, needs
-        for item in symbol.assumes:
-            self.add_assume_item(env, module, item, needs)
+
+        def walk(env: Env, needs: list):
+            if target is not None:
+                # A forwarder assumes what its target's signature needs —
+                # the type symbols of the target's assumes — and the target.
+                for ty in self.type_requirements(target):
+                    self.add_symbol_item(env, module, ty, {}, needs)
+                self.add_symbol_item(env, module, target, {}, needs)
+                return
+            for item in symbol.assumes:
+                self.add_assume_item(env, module, item, needs)
+
+        return self.merged_walk(module, walk)
+
+    def merged_walk(self, module: Module, walk) -> tuple[Env, list]:
+        """An environment built by `walk(env, needs)` from assume items,
+        with D43's merges made as if every edge had been there from the
+        start. Merging is symmetric, so which item comes first must not
+        matter; but a walk keys each method item through the union-find as
+        it stands when the item is reached, so two items whose receivers
+        only a later merge identifies (`B.m`, then `C.m`, then a context
+        merging `B` with `C`) would stay two. So when a walk adds edges,
+        the items are walked again over them, until a walk adds none."""
+        edges: dict = {}
+        for _ in range(8):
+            env = Env(module)
+            env.tymap.update(edges)
+            needs: list = []
+            walk(env, needs)
+            found = self.merge_edges(env)
+            if found == edges:
+                break
+            edges = found
         return env, needs
+
+    def merge_edges(self, env: Env) -> dict:
+        """The union-find edges merging added to an environment built from
+        assume items: every type entry but an assumed symbol's own
+        parameter (D72)."""
+        return {
+            k: v
+            for k, v in env.tymap.items()
+            if not (
+                isinstance(v, TAbstract)
+                and getattr(v.symbol, "origin", None) is k
+            )
+        }
 
     def forwarder(self, target: Symbol) -> Symbol:
         """D66: binding an abstract fn the context provides,
@@ -526,10 +565,12 @@ class Lower:
             return
         self.bodies_checked.add(id(functor))
         module = functor.module
-        env = Env(module)
-        needs: list = []
-        for spec in functor.decl.args:
-            self.add_spec(env, module, spec, {}, needs)
+
+        def walk(env: Env, needs: list):
+            for spec in functor.decl.args:
+                self.add_spec(env, module, spec, {}, needs)
+
+        env, needs = self.merged_walk(module, walk)
         env.apps = {k: self.freeze_app(env, app) for k, app in env.apps.items()}
         checker = FnChecker(self, module, env, FnSig((), TUnit()), needs, None)
         try:
@@ -743,6 +784,22 @@ class Lower:
         if isinstance(t, TRecord):
             return TRecord(tuple((n, self.instantiate(env, ty)) for n, ty in t.fields))
         return t
+
+    def params_of(self, t, out: list):
+        """The abstract symbols a type mentions, appended to `out`."""
+        if isinstance(t, TAbstract):
+            out.append(t.symbol)
+            for _, a in t.args:
+                self.params_of(a, out)
+        elif isinstance(t, TNominal):
+            for _, a in t.args:
+                self.params_of(a, out)
+        elif isinstance(t, TUnion):
+            for m in t.members:
+                self.params_of(m, out)
+        elif isinstance(t, TRecord):
+            for _, ty in t.fields:
+                self.params_of(ty, out)
 
     def canon(self, env: Env, t):
         if isinstance(t, TAbstract):
@@ -1256,6 +1313,7 @@ class Lower:
             return
         self.in_progress.add(id(symbol))
         env, needs = self.base_env(symbol)
+        self.merges_of[id(symbol)] = tuple(self.merge_edges(env).items())
         # An assumed item's instantiation is the function's whole ambient
         # one: a type assumed *after* the item in the list is in force for
         # it too, so a symbol not yet in force when the item was added is
@@ -2208,6 +2266,7 @@ class FnChecker:
         calculus's `avail` on `IMth τ m θ`, application included, and its
         coherence premise on val/fn requirements (CoreMoss.v deviation 8,
         `sat_at`)."""
+        self.require_merges(callee)
         mapping = []
         for need in needs:
             if isinstance(need, tuple):
@@ -2255,6 +2314,28 @@ class FnChecker:
                 continue
             self.check_coherent(callee, need, key, what)
         return tuple(mapping)
+
+    def require_merges(self, callee: Symbol):
+        """D43: a context that merged two types requires them to be one
+        type, so a callee whose assumes merged `B` with `C` may be called
+        only where `B` and `C` mean the same — read generically, through
+        this environment, as every check is. A symbol not in force here
+        constrains nothing: the callee's needs say what must be."""
+        for k, v in self.lower.merges_of.get(id(callee), ()):
+            mentioned = [k]
+            self.lower.params_of(v, mentioned)
+            if any(
+                getattr(t, "origin", t) not in self.env.tymap for t in mentioned
+            ):
+                continue
+            lhs = self.lower.instantiate(self.env, TAbstract(k, ()))
+            rhs = self.lower.instantiate(self.env, v)
+            if self.lower.canon(self.env, lhs) != self.lower.canon(self.env, rhs):
+                self.error(
+                    f"calling `{callee.name}` needs `{show(TAbstract(k, ()))}` and "
+                    f"`{show(v)}` to be one type, which its context merged (D43), "
+                    f"but here they are `{show(lhs)}` and `{show(rhs)}`"
+                )
 
     def check_coherent(self, callee: Symbol, need, key, what: str):
         wanted = self.lower.need_apps.get(id(callee), {}).get(need, {})

@@ -3750,6 +3750,10 @@ assume Std {
       if checked(lower::need_start(f), genv) {
         return ();
       }
+      let merged = lower::merge_conflict(genv, f);
+      if ast::is_some(merged) {
+        prog::error(prog::e_merge(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(merged));
+      }
       # The types this frame has bound, and those the callee has in force
       # that this frame's declaration does not: an app's symbol outside
       # both cannot read differently on the two sides.
@@ -4818,12 +4822,7 @@ assume Std {
       let home = prog::sym_mod.get(g);
       let nrecv = int_list();
       let nsym = int_list();
-      var decl_env = lower::env_empty();
-      var i = 0;
-      while i < ast::fu_nargs(d) {
-        decl_env = lower::add_assume_item(decl_env, home, ast::kid_at(ast::fu_args(d), i), nrecv, nsym);
-        i = i + 1;
-      }
+      let decl_env = lower::assume_items(home, ast::fu_args(d), ast::fu_nargs(d), nrecv, nsym);
       let chain = int_list();
       var e = decl_env;
       while ast::is_some(e) {

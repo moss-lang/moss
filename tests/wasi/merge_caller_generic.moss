@@ -1,0 +1,49 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D43, checked generically (D80): `relay` has `B` and `C` as two types
+# of its own, so it cannot call `go`, whose context merged them —
+# though the only call of `relay` binds both to `Char`, so that every
+# specialization would make them one. Rejected in both compilers.
+
+type Foo;
+type A;
+type B;
+type C;
+
+fn .gimme(): Foo;
+
+context Ctx1 = A, B, A.gimme[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C];
+context Ctx3 = Ctx1, Ctx2;
+
+assume Std, Ctx3 {
+  fn go(a: A): C { a.gimme() }
+}
+
+assume Std, Ctx1, C {
+  fn relay(a: A): C { go(a) }
+}
+
+assume Std {
+  fn giveq(): Char { char::q }
+
+  fn demo() {
+    bind Foo = Char;
+    bind A = Char;
+    bind B = Char;
+    bind C = Char;
+    bind A.gimme = giveq;
+    putchar(relay(char::m));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
