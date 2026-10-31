@@ -1295,7 +1295,7 @@ class FnChecker:
         if spec.app is not None and spec.dot is None:
             self.error("a bind left-hand side takes no bracket application")
         if spec.dot is not None:
-            # `bind IntList.get[Elem=Int] = Ints.get;` — a shared accessor
+            # `bind BigList.get[Elem=Big] = Packed.get;` — a shared accessor
             # is provided at one receiver at a time, and the element type
             # comes with the provision (D61). The substitution is local to
             # this bind, so the same symbol can be something else at the

@@ -142,7 +142,7 @@ the product type ([D63]). `This` is legal only inside method declarations.
 - **Assume** = `assume` **List**\[**AssumeItem**\] `{` **Decl**\* `}`
 - **Tydef** = `type` _name_ `;`
 - **Aliasdef** = `type` _name_ `=` **Type** `;`
-- **Tagdef** = `type` _name_ **Type** `;`
+- **Tagdef** = `type` _name_ (`[` **List**[_name_] `]`)? **Type** `;` — the bracketed names are listed parameters ([D73])
 - **Unitdef** = `unit` _name_ `;`
 - **Valdef** = `val` _name_ `:` **Type** (`=` **Expr**)? `;`
 - **Fndef** = `fn` **FnName** `(` **List**\[**Param**\] `)` (`:` **Type**)? (`;` | **Block**)

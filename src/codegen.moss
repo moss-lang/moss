@@ -2429,13 +2429,9 @@ assume Std {
       if ast::is_some(found) {
         return found;
       }
-      # A defined attached method of the name is not a key; the detached
-      # method the name means here may be (`method_of_ty`).
-      let detached = prog::resolve_detached(m, ast::b_of(e));
-      if ast::is_some(detached) {
-        return lower::env_find(cg_env.read(), lower::ek_fn(), recv, detached);
-      }
-      found
+      # A defined attached method of the name is not a key; a detached
+      # method of the name may be (`method_of_ty`).
+      provision_named(recv, ast::path_last(ast::b_of(e)))
     }
 
     # The symbol half of the key. An attached method matches *by name* in
@@ -2474,19 +2470,37 @@ assume Std {
     fn method_of_ty(recv_ty: Int, e: Int, m: Int): Int {
       let attached = attached_of_ty(recv_ty, e, m);
       if ast::is_some(attached) {
-        let detached = prog::resolve_detached(m, ast::b_of(e));
-        if ast::is_some(detached) {
-          let bound = lower::env_find(
-            cg_env.read(), lower::ek_fn(), canon_ty(recv_ty), detached
-          );
-          if ast::is_some(bound) {
-            if ast::is_some(lower::env_a_of(bound)) {
-              return ast::none();
-            }
+        let bound = provision_named(recv_ty, ast::path_last(ast::b_of(e)));
+        if ast::is_some(bound) {
+          if ast::is_some(lower::env_a_of(bound)) {
+            return ast::none();
           }
         }
       }
       attached
+    }
+
+    # The provision this scope has at the receiver for a detached method
+    # of this name, found by name: the generic code may have reached the
+    # method through its receiver's home module ([D61]), which is not the
+    # specialized receiver's, nor necessarily this module.
+    fn provision_named(recv_ty: Int, name: Int): Int {
+      let recv = canon_ty(recv_ty);
+      var e = cg_env.read();
+      while ast::is_some(e) {
+        if lower::env_kind_of(e).eq(lower::ek_fn()) {
+          if lower::env_recv_of(e).eq(recv) {
+            let sym = lower::env_sym_of(e);
+            if prog::sym_name.get(sym).eq(name) {
+              if ast::is_some(prog::sym_recv.get(sym)).not() {
+                return e;
+              }
+            }
+          }
+        }
+        e = lower::env_next_of(e);
+      }
+      ast::none()
     }
 
     fn attached_of_ty(recv_ty: Int, e: Int, m: Int): Int {

@@ -2503,10 +2503,13 @@ get `Item` too.
   of anything is a `Layout` (how one is laid out in words) and nothing
   more: bind the layout, then `BigList = Packed`, `big_list = packed` and
   the accessors `= Packed.push` and so on, each capturing the layout where
-  it is bound ([D26]). `Ints`, `Singles` and `Doubles` stay as they are for
-  now: their names are API that programs bind (the thesis's
-  mixed-precision example binds `Singles.push`), and moving them onto
-  `Packed` is a library change of its own.
+  it is bound ([D26]). The library's own lists followed: `Ints`, `Singles`
+  and `Doubles` are gone, and `Std`'s `IntList` is `Packed[Item=Num]` and
+  its `FloatList` `Packed[Item=Double]` (`Packed[Item=Single]` under
+  `WasiFloats32`), each accessor a lambda that binds the layout inside
+  itself, so that the layout does not reach the program's scope. The
+  compiler compiling itself, which lives on `IntList`, takes the same
+  time either way.
 - A phantom parameter keeps apart what a program keeps apart; it does not
   stop one that sets out to forge. Moss has no private constructors, so
   `match l { Packed a => Packed[Item=Num] (a) }` turns a list of `Long`s
@@ -2529,9 +2532,11 @@ back end had to change: it resolves a method call at the receiver's
 *specialized* type, where code written against an abstract receiver
 (`xs.push` on a `BigList`) can find an attached method of the same name
 (`Packed.push`) and call it directly, skipping the provision that
-carries the captured layout. It now prefers a provision of the detached
-method the call names, at that receiver, when the scope has one — which
-is what the code meant; where the provision is the attached method itself
+carries the captured layout. It now prefers a provision, at that
+receiver, of a detached method of the name the call uses, when the scope
+has one — found by name, since the generic code may have reached the
+method through its receiver's home module ([D61]) — which is what the
+code meant; where the provision is the attached method itself
 (`bind IntList.push[Elem=Int] = Ints.push`), the two are one. Standing
 tests: `tests/wasi/phantom.moss` (two element types in one function,
 each through its own codec), `tests/wasi/packed.moss` (generic code over
@@ -2593,8 +2598,7 @@ Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
 unavoidable — *not* the prelude path, see [D52]) · methods on union-headed *aliases* in general ([D47] — solved
 for `Bool` by [D45]'s nominal wrapper) · D29 the `val` half of functors ·
-[D50]'s v0 restrictions on defined vals · moving `Ints`, `Singles` and
-`Doubles` onto [D73]'s `Packed`
+[D50]'s v0 restrictions on defined vals
 
 Everything else is **DECIDED**: D1–D28 · D30–D49 (D3/D4 by designer fiat,
 D13 option.moss → alias, D16 no post-monomorphization checks, D22 total or
