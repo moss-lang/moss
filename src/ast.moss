@@ -16,93 +16,93 @@ import "./bytes.moss" use *;
 # initializer.
 
 assume Std {
-  fn none(): Int { -one }
+  fn none(): Int { -1 }
 
-  fn is_some(x: Int): Bool { x >= zero }
+  fn is_some(x: Int): Bool { x >= 0 }
 
   # Types.
-  fn k_ty_unit(): Int { zero }              # ()
-  fn k_ty_never(): Int { one }              # |
-  fn k_ty_this(): Int { n2() }              # This
-  fn k_ty_ref(): Int { n3() }               # a=path b=app run c=app len d=applied
-  fn k_ty_tuple(): Int { n4() }             # retired (D63); kept so no later kind moves
-  fn k_ty_record(): Int { n5() }            # a=run of ty_field b=len
-  fn k_ty_union(): Int { n6() }             # a=run b=len
-  fn k_ty_field(): Int { n7() }             # a=name b=type
+  fn k_ty_unit(): Int { 0 }              # ()
+  fn k_ty_never(): Int { 1 }              # |
+  fn k_ty_this(): Int { 2 }              # This
+  fn k_ty_ref(): Int { 3 }               # a=path b=app run c=app len d=applied
+  fn k_ty_tuple(): Int { 4 }             # retired (D63); kept so no later kind moves
+  fn k_ty_record(): Int { 5 }            # a=run of ty_field b=len
+  fn k_ty_union(): Int { 6 }             # a=run b=len
+  fn k_ty_field(): Int { 7 }             # a=name b=type
 
   # Expressions.
-  fn k_ex_unit(): Int { n8() }              # ()
-  fn k_ex_this(): Int { n9() }              # this
-  fn k_ex_path(): Int { n10() }             # a=path b=app run c=app len d=applied
-  fn k_ex_call(): Int { n11() }             # a=callee b=args run c=len
-  fn k_ex_field(): Int { n12() }            # a=object b=name
-  fn k_ex_method(): Int { n13() }           # a=receiver b=path c=args run d=len
-  fn k_ex_record(): Int { n14() }           # a=path b=run of ex_rfield c=len
-  fn k_ex_rfield(): Int { n15() }           # a=name b=expr (none = shorthand)
-  fn k_ex_if(): Int { hex(one, zero) }      # a=cond b=then c=else
-  fn k_ex_match(): Int { hex(one, one) }    # a=scrutinee b=run of arm c=len
-  fn k_ex_return(): Int { hex(one, n2()) }  # a=expr
-  fn k_ex_break(): Int { hex(one, n3()) }
-  fn k_ex_block(): Int { hex(one, n4()) }   # a=stmt run b=len c=tail expr
+  fn k_ex_unit(): Int { 8 }              # ()
+  fn k_ex_this(): Int { 9 }              # this
+  fn k_ex_path(): Int { 10 }             # a=path b=app run c=app len d=applied
+  fn k_ex_call(): Int { 11 }             # a=callee b=args run c=len
+  fn k_ex_field(): Int { 12 }            # a=object b=name
+  fn k_ex_method(): Int { 13 }           # a=receiver b=path c=args run d=len
+  fn k_ex_record(): Int { 14 }           # a=path b=run of ex_rfield c=len
+  fn k_ex_rfield(): Int { 15 }           # a=name b=expr (none = shorthand)
+  fn k_ex_if(): Int { 16 }      # a=cond b=then c=else
+  fn k_ex_match(): Int { 17 }    # a=scrutinee b=run of arm c=len
+  fn k_ex_return(): Int { 18 }  # a=expr
+  fn k_ex_break(): Int { 19 }
+  fn k_ex_block(): Int { 20 }   # a=stmt run b=len c=tail expr
 
   # Statements.
-  fn k_st_let(): Int { hex(one, n5()) }     # a=name b=type c=expr
-  fn k_st_var(): Int { hex(one, n6()) }     # a=name b=type c=expr
-  fn k_st_assign(): Int { hex(one, n7()) }  # a=name b=expr
-  fn k_st_bind(): Int { hex(one, n8()) }    # a=run of st_item b=len
-  fn k_st_item(): Int { hex(one, n9()) }    # a=spec b=expr (none = functor)
-  fn k_st_while(): Int { hex(one, n10()) }  # a=cond b=block
-  fn k_st_loop(): Int { hex(one, n11()) }   # a=block
-  fn k_st_expr(): Int { hex(one, n12()) }   # a=expr
+  fn k_st_let(): Int { 21 }     # a=name b=type c=expr
+  fn k_st_var(): Int { 22 }     # a=name b=type c=expr
+  fn k_st_assign(): Int { 23 }  # a=name b=expr
+  fn k_st_bind(): Int { 24 }    # a=run of st_item b=len
+  fn k_st_item(): Int { 25 }    # a=spec b=expr (none = functor)
+  fn k_st_while(): Int { 26 }  # a=cond b=block
+  fn k_st_loop(): Int { 27 }   # a=block
+  fn k_st_expr(): Int { 28 }   # a=expr
 
   # Patterns.
-  fn k_pt_wild(): Int { hex(one, n13()) }   # _
-  fn k_pt_path(): Int { hex(one, n14()) }   # a=path b=sub-pattern
-  fn k_pt_record(): Int { hex(one, n15()) } # a=path (none if bare) b=run of pt_field c=len
-  fn k_pt_field(): Int { hex(n2(), zero) }  # a=name b=pattern
-  fn k_arm(): Int { hex(n2(), one) }        # a=pattern b=body
+  fn k_pt_wild(): Int { 29 }   # _
+  fn k_pt_path(): Int { 30 }   # a=path b=sub-pattern
+  fn k_pt_record(): Int { 31 } # a=path (none if bare) b=run of pt_field c=len
+  fn k_pt_field(): Int { 32 }  # a=name b=pattern
+  fn k_arm(): Int { 33 }        # a=pattern b=body
 
   # A Spec names a symbol: a path, an attached or detached method name,
   # and an optional total application. A Binding is one `Path = Spec`
   # inside such an application.
-  fn k_spec(): Int { hex(n2(), n2()) }      # a=path b=dot name c=app run d=len
-  fn k_binding(): Int { hex(n2(), n3()) }   # a=path b=spec
-  fn k_param(): Int { hex(n2(), n4()) }     # a=name b=type
+  fn k_spec(): Int { 34 }      # a=path b=dot name c=app run d=len
+  fn k_binding(): Int { 35 }   # a=path b=spec
+  fn k_param(): Int { 36 }     # a=name b=type
 
   # Declarations.
-  fn k_d_import(): Int { hex(n2(), n5()) }  # a=run: text, alias, star, uses, len
-  fn k_d_assume(): Int { hex(n2(), n6()) }  # a=item run b=len c=decl run d=len
-  fn k_d_type(): Int { hex(n2(), n7()) }    # a=name
-  fn k_d_alias(): Int { hex(n2(), n8()) }   # a=name b=type
-  fn k_d_tag(): Int { hex(n2(), n9()) }     # a=name b=type c=listed run d=count (D73)
-  fn k_d_unit(): Int { hex(n2(), n10()) }   # a=name
-  fn k_d_val(): Int { hex(n2(), n11()) }    # a=name b=type c=init
-  fn k_d_fn(): Int { hex(n2(), n12()) }     # a=run: recv, name, params, len, ret, body
-  fn k_d_context(): Int { hex(n2(), n13()) }# a=name b=item run c=len
-  fn k_d_functor(): Int { hex(n2(), n14()) }# a=run: name, args, len, res, len, binds, len
-  fn k_d_bad(): Int { hex(n2(), n15()) }
+  fn k_d_import(): Int { 37 }  # a=run: text, alias, star, uses, len
+  fn k_d_assume(): Int { 38 }  # a=item run b=len c=decl run d=len
+  fn k_d_type(): Int { 39 }    # a=name
+  fn k_d_alias(): Int { 40 }   # a=name b=type
+  fn k_d_tag(): Int { 41 }     # a=name b=type c=listed run d=count (D73)
+  fn k_d_unit(): Int { 42 }   # a=name
+  fn k_d_val(): Int { 43 }    # a=name b=type c=init
+  fn k_d_fn(): Int { 44 }     # a=run: recv, name, params, len, ret, body
+  fn k_d_context(): Int { 45 }# a=name b=item run c=len
+  fn k_d_functor(): Int { 46 }# a=run: name, args, len, res, len, binds, len
+  fn k_d_bad(): Int { 47 }
 
   # Operators and literals (D68), after the rest so that no earlier kind
   # moves. An operator is its token code from tcode.moss; a binary one's
   # right operand is a run of one, so that it is emitted as a method
   # call's arguments are. A literal's digits are a run of their values,
   # and `c` is how many of them follow the point (none for an integer).
-  fn k_ex_unary(): Int { hex(n3(), zero) }  # a=op b=operand
-  fn k_ex_binary(): Int { hex(n3(), one) }  # a=op b=lhs c=rhs run
-  fn k_ex_lit(): Int { hex(n3(), n2()) }    # a=digit run b=len c=fraction digits
+  fn k_ex_unary(): Int { 48 }  # a=op b=operand
+  fn k_ex_binary(): Int { 49 }  # a=op b=lhs c=rhs run
+  fn k_ex_lit(): Int { 50 }    # a=digit run b=len c=fraction digits
 
   # D70: an anonymous function, legal only as a bind's right side. Its
   # parameters are `k_param`s whose type may be none, as may its result.
-  fn k_ex_lambda(): Int { hex(n3(), n3()) } # a=param run b=len c=ret type d=body
+  fn k_ex_lambda(): Int { 51 } # a=param run b=len c=ret type d=body
 
   # Never parsed: a type the back end has already elaborated, standing in
   # a declaration it synthesizes (an anonymous function's, D70), so that
   # every reader of declarations reads it as it reads any other.
-  fn k_ty_known(): Int { hex(n3(), n4()) }  # a=elaborated type
+  fn k_ty_known(): Int { 52 }  # a=elaborated type
 
   # `fn f` has no receiver; `fn .m` has the detached one.
-  fn recv_plain(): Int { -one }
-  fn recv_detached(): Int { -n2() }
+  fn recv_plain(): Int { -1 }
+  fn recv_detached(): Int { -2 }
 
   val nkind: IntList;
   val na: IntList;
@@ -171,10 +171,10 @@ assume Std {
     # them in one go.
     fn commit(xs: IntList): Int {
       let start = kids.length();
-      var i = zero;
+      var i = 0;
       while i < xs.length() {
         kids.push(xs.get(i));
-        i = i + one;
+        i = i + 1;
       }
       start
     }
@@ -186,10 +186,10 @@ assume Std {
       let id = pstart.length();
       pstart.push(pnames.length());
       plen.push(xs.length());
-      var i = zero;
+      var i = 0;
       while i < xs.length() {
         pnames.push(xs.get(i));
-        i = i + one;
+        i = i + 1;
       }
       id
     }
@@ -199,16 +199,16 @@ assume Std {
     fn path_at(p: Int, i: Int): Int { pnames.get(pstart.get(p) + i) }
 
     # The name a path resolves against: its last segment.
-    fn path_last(p: Int): Int { path_at(p, plen.get(p) - one) }
+    fn path_last(p: Int): Int { path_at(p, plen.get(p) - 1) }
 
     # Declarations with more operands than a node has slots keep them in
     # `kids`; these name the offsets so the layout is written once.
-    fn fn_recv(id: Int): Int { kid_at(a_of(id), zero) }
-    fn fn_name(id: Int): Int { kid_at(a_of(id), one) }
-    fn fn_params(id: Int): Int { kid_at(a_of(id), n2()) }
-    fn fn_nparams(id: Int): Int { kid_at(a_of(id), n3()) }
-    fn fn_ret(id: Int): Int { kid_at(a_of(id), n4()) }
-    fn fn_body(id: Int): Int { kid_at(a_of(id), n5()) }
+    fn fn_recv(id: Int): Int { kid_at(a_of(id), 0) }
+    fn fn_name(id: Int): Int { kid_at(a_of(id), 1) }
+    fn fn_params(id: Int): Int { kid_at(a_of(id), 2) }
+    fn fn_nparams(id: Int): Int { kid_at(a_of(id), 3) }
+    fn fn_ret(id: Int): Int { kid_at(a_of(id), 4) }
+    fn fn_body(id: Int): Int { kid_at(a_of(id), 5) }
 
     fn make_fn(recv: Int, name: Int, params: Int, n: Int, ret: Int, body: Int): Int {
       let xs = int_list();
@@ -221,19 +221,19 @@ assume Std {
       node1(k_d_fn(), commit(xs))
     }
 
-    fn imp_text_index(id: Int): Int { kid_at(a_of(id), zero) }
-    fn imp_alias(id: Int): Int { kid_at(a_of(id), one) }
-    fn imp_star(id: Int): Int { kid_at(a_of(id), n2()) }
-    fn imp_uses(id: Int): Int { kid_at(a_of(id), n3()) }
-    fn imp_nuses(id: Int): Int { kid_at(a_of(id), n4()) }
+    fn imp_text_index(id: Int): Int { kid_at(a_of(id), 0) }
+    fn imp_alias(id: Int): Int { kid_at(a_of(id), 1) }
+    fn imp_star(id: Int): Int { kid_at(a_of(id), 2) }
+    fn imp_uses(id: Int): Int { kid_at(a_of(id), 3) }
+    fn imp_nuses(id: Int): Int { kid_at(a_of(id), 4) }
 
     fn imp_text(id: Int): String { itexts.get(imp_text_index(id)) }
 
     # A use item is three cells of `kids`: the name, whether it was
     # dotted (a detached method), and the local name it was renamed to.
-    fn use_name(uses: Int, i: Int): Int { kid_at(uses, i * n3()) }
-    fn use_dot(uses: Int, i: Int): Int { kid_at(uses, i * n3() + one) }
-    fn use_as(uses: Int, i: Int): Int { kid_at(uses, i * n3() + n2()) }
+    fn use_name(uses: Int, i: Int): Int { kid_at(uses, i * 3) }
+    fn use_dot(uses: Int, i: Int): Int { kid_at(uses, i * 3 + 1) }
+    fn use_as(uses: Int, i: Int): Int { kid_at(uses, i * 3 + 2) }
 
     fn make_import(text: String, alias: Int, star: Int, uses: Int, n: Int): Int {
       let xs = int_list();
@@ -246,13 +246,13 @@ assume Std {
       node1(k_d_import(), commit(xs))
     }
 
-    fn fu_name(id: Int): Int { kid_at(a_of(id), zero) }
-    fn fu_args(id: Int): Int { kid_at(a_of(id), one) }
-    fn fu_nargs(id: Int): Int { kid_at(a_of(id), n2()) }
-    fn fu_res(id: Int): Int { kid_at(a_of(id), n3()) }
-    fn fu_nres(id: Int): Int { kid_at(a_of(id), n4()) }
-    fn fu_binds(id: Int): Int { kid_at(a_of(id), n5()) }
-    fn fu_nbinds(id: Int): Int { kid_at(a_of(id), n6()) }
+    fn fu_name(id: Int): Int { kid_at(a_of(id), 0) }
+    fn fu_args(id: Int): Int { kid_at(a_of(id), 1) }
+    fn fu_nargs(id: Int): Int { kid_at(a_of(id), 2) }
+    fn fu_res(id: Int): Int { kid_at(a_of(id), 3) }
+    fn fu_nres(id: Int): Int { kid_at(a_of(id), 4) }
+    fn fu_binds(id: Int): Int { kid_at(a_of(id), 5) }
+    fn fu_nbinds(id: Int): Int { kid_at(a_of(id), 6) }
 
     fn make_functor(
       name: Int, args: Int, na_: Int, res: Int, nr: Int, binds: Int, nb_: Int

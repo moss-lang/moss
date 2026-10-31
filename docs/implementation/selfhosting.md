@@ -58,7 +58,7 @@ of the context machinery is exercised by getting them right.
 | [`prog.moss`](/src/prog.moss) | the module graph, symbols, and scopes |
 | [`types.moss`](/src/types.moss) | elaborated types, hash-consed, and their layouts |
 | [`lower.moss`](/src/lower.moss) | requirement environments and each function's needs |
-| [`bytes.moss`](/src/bytes.moss) | byte buffers, LEB128, small integers |
+| [`bytes.moss`](/src/bytes.moss) | byte buffers, LEB128 |
 | [`insn.moss`](/src/insn.moss) | instruction encoding |
 | [`emit.moss`](/src/emit.moss) | the module builder and section layout |
 | [`wasmops.moss`](/src/wasmops.moss) | the `Wasm` context as a lookup table |

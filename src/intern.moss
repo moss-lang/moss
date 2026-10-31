@@ -33,33 +33,33 @@ assume Std {
   context Interner = ichars, istarts, ilens, ibuckets, ilink, imask;
 
   assume Interner {
-    fn no_name(): Int { -one }
+    fn no_name(): Int { -1 }
 
     fn hash_step(h: Int, c: Int): Int {
-      h * hex(one, n15()) + c
+      h * 31 + c
     }
 
     # 1024 buckets to start with; the mask is what turns a hash into one.
     fn ensure_table() {
-      if ibuckets.length() > zero {
+      if ibuckets.length() > 0 {
         return ();
       }
-      let size = one << hex(zero, n10());
-      var i = zero;
+      let size = 1 << 10;
+      var i = 0;
       while i < size {
         ibuckets.push(no_name());
-        i = i + one;
+        i = i + 1;
       }
-      imask.write(size - one);
+      imask.write(size - 1);
     }
 
     fn name_hash(id: Int): Int {
       let base = istarts.get(id);
-      var h = zero;
-      var i = zero;
+      var h = 0;
+      var i = 0;
       while i < ilens.get(id) {
         h = hash_step(h, ichars.get(base + i));
-        i = i + one;
+        i = i + 1;
       }
       h
     }
@@ -67,27 +67,27 @@ assume Std {
     # Double the table and re-file every name, including the one just
     # added — which is why the caller pushes its row first.
     fn rehash() {
-      let size = ibuckets.length() * n2();
+      let size = ibuckets.length() * 2;
       while ibuckets.length() < size {
         ibuckets.push(no_name());
       }
-      var i = zero;
+      var i = 0;
       while i < size {
         ibuckets.set(i, no_name());
-        i = i + one;
+        i = i + 1;
       }
-      imask.write(size - one);
-      var id = zero;
+      imask.write(size - 1);
+      var id = 0;
       while id < ilens.length() {
         let b = name_hash(id) & imask.read();
         ilink.set(id, ibuckets.get(b));
         ibuckets.set(b, id);
-        id = id + one;
+        id = id + 1;
       }
     }
 
     fn file_name(id: Int, h: Int) {
-      if ilens.length() * n2() > ibuckets.length() {
+      if ilens.length() * 2 > ibuckets.length() {
         rehash();
         return ();
       }
@@ -100,10 +100,10 @@ assume Std {
     fn put(id: Int) {
       let base = istarts.get(id);
       let n = ilens.get(id);
-      var i = zero;
+      var i = 0;
       while i < n {
         putchar(ichars.get(base + i).char());
-        i = i + one;
+        i = i + 1;
       }
     }
 
@@ -112,10 +112,10 @@ assume Std {
     # the characters it needs are the ones interning already copied.
     fn put_chars(out: IntList, id: Int) {
       let base = istarts.get(id);
-      var i = zero;
+      var i = 0;
       while i < ilens.get(id) {
         out.push(ichars.get(base + i));
-        i = i + one;
+        i = i + 1;
       }
     }
 
@@ -127,26 +127,26 @@ assume Std {
         return false;
       }
       let base = istarts.get(id);
-      var i = zero;
+      var i = 0;
       while i < cs.length() {
         if ichars.get(base + i) != cs.get(i) {
           return false;
         }
-        i = i + one;
+        i = i + 1;
       }
       true
     }
 
     fn intern_chars(cs: IntList): Int {
       ensure_table();
-      var h = zero;
-      var i = zero;
+      var h = 0;
+      var i = 0;
       while i < cs.length() {
         h = hash_step(h, cs.get(i));
-        i = i + one;
+        i = i + 1;
       }
       var id = ibuckets.get(h & imask.read());
-      while id >= zero {
+      while id >= 0 {
         if chars_eq(id, cs) {
           return id;
         }
@@ -155,10 +155,10 @@ assume Std {
       let fresh = ilens.length();
       istarts.push(ichars.length());
       ilens.push(cs.length());
-      i = zero;
+      i = 0;
       while i < cs.length() {
         ichars.push(cs.get(i));
-        i = i + one;
+        i = i + 1;
       }
       ilink.push(no_name());
       file_name(fresh, h);
@@ -172,14 +172,14 @@ assume Std {
           false
         } else {
           let base = istarts.get(id);
-          var i = zero;
+          var i = 0;
           var same = true;
           while i < nl {
             if ichars.get(base + i) != lexer::src.get(ns + i).code() {
               same = false;
               i = nl;
             } else {
-              i = i + one;
+              i = i + 1;
             }
           }
           same
@@ -187,11 +187,11 @@ assume Std {
       }
 
       fn span_hash(ns: Int, nl: Int): Int {
-        var h = zero;
-        var i = zero;
+        var h = 0;
+        var i = 0;
         while i < nl {
           h = hash_step(h, lexer::src.get(ns + i).code());
-          i = i + one;
+          i = i + 1;
         }
         h
       }
@@ -201,7 +201,7 @@ assume Std {
         ensure_table();
         let h = span_hash(ns, nl);
         var id = ibuckets.get(h & imask.read());
-        while id >= zero {
+        while id >= 0 {
           if name_eq(id, ns, nl) {
             return id;
           }
@@ -210,10 +210,10 @@ assume Std {
         let fresh = ilens.length();
         istarts.push(ichars.length());
         ilens.push(nl);
-        var i = zero;
+        var i = 0;
         while i < nl {
           ichars.push(lexer::src.get(ns + i).code());
-          i = i + one;
+          i = i + 1;
         }
         ilink.push(no_name());
         file_name(fresh, h);

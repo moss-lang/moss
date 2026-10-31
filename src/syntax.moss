@@ -31,7 +31,7 @@ assume Std {
 
   assume Cursor, lexer::src, lexer::at, lexer::mark, intern::Interner, ast::Ast {
     fn advance() {
-      if tok2.read() >= zero {
+      if tok2.read() >= 0 {
         tok.write(tok2.read());
         tstart.write(t2start.read());
         tend.write(t2end.read());
@@ -45,7 +45,7 @@ assume Std {
 
     # The token after the current one, lexed once and kept.
     fn peek2(): Int {
-      if tok2.read() < zero {
+      if tok2.read() < 0 {
         tok2.write(token_code(lexer::lex()));
         t2start.write(lexer::mark.read());
         t2end.write(lexer::at.read());
@@ -67,10 +67,10 @@ assume Std {
     }
 
     fn fail() {
-      if errs.read() == zero {
+      if errs.read() == 0 {
         errpos.write(tstart.read());
       }
-      errs.write(errs.read() + one);
+      errs.write(errs.read() + 1);
     }
 
     fn expect(k: Int) {
@@ -92,7 +92,7 @@ assume Std {
     }
 
     fn empty_name(): Int {
-      intern::intern(zero, zero)
+      intern::intern(0, 0)
     }
 
     fn name_here(): Int {
@@ -114,7 +114,7 @@ assume Std {
     fn at_wildcard(): Bool {
       if !here(tk_name()) {
         false
-      } else if tend.read() - tstart.read() == one {
+      } else if tend.read() - tstart.read() == 1 {
         lexer::src.get(tstart.read()) == char::underscore
       } else {
         false
@@ -164,7 +164,7 @@ assume Std {
         }
       }
       var run = ast::none();
-      var n = zero;
+      var n = 0;
       if accept(tk_lbracket()) {
         let xs = int_list();
         parse_app(xs);
@@ -181,7 +181,7 @@ assume Std {
       if accept(tk_dot()) {
         dot = take_name();
       }
-      ast::node4(ast::k_spec(), p, dot, ast::none(), zero)
+      ast::node4(ast::k_spec(), p, dot, ast::none(), 0)
     }
 
     # Types.
@@ -257,14 +257,14 @@ assume Std {
       }
       let p = parse_path();
       var run = ast::none();
-      var n = zero;
-      var applied = zero;
+      var n = 0;
+      var applied = 0;
       if accept(tk_lbracket()) {
         let xs = int_list();
         parse_app(xs);
         run = ast::commit(xs);
         n = xs.length();
-        applied = one;
+        applied = 1;
       }
       ast::node4(ast::k_ty_ref(), p, run, n, applied)
     }
@@ -308,12 +308,12 @@ assume Std {
     #   term:        unary (* unary)* ((/ | %) unary)?
     #   bitwise:     unary (& unary)*, likewise ^ and |, each alone
 
-    fn fam_mul(): Int { zero }
-    fn fam_frac(): Int { one }
-    fn fam_add(): Int { n2() }
-    fn fam_shift(): Int { n3() }
-    fn fam_cmp(): Int { n4() }
-    fn fam_bit(): Int { n5() }
+    fn fam_mul(): Int { 0 }
+    fn fam_frac(): Int { 1 }
+    fn fam_add(): Int { 2 }
+    fn fam_shift(): Int { 3 }
+    fn fam_cmp(): Int { 4 }
+    fn fam_bit(): Int { 5 }
 
     # A binary operator's family, or none for any other token.
     fn op_family(t: Int): Int {
@@ -542,7 +542,7 @@ assume Std {
     fn parse_literal(): Int {
       let decimal = here(tk_decimal());
       let xs = int_list();
-      var fraction = zero;
+      var fraction = 0;
       var point = false;
       var i = tstart.read();
       while i < tend.read() {
@@ -552,10 +552,10 @@ assume Std {
         } else {
           xs.push(c.code() - char::digit0.code());
           if point {
-            fraction = fraction + one;
+            fraction = fraction + 1;
           }
         }
-        i = i + one;
+        i = i + 1;
       }
       advance();
       var frac = ast::none();
@@ -636,7 +636,7 @@ assume Std {
             }
             let ps = int_list();
             ps.push(nm);
-            return ast::node4(ast::k_ex_path(), ast::path_of(ps), ast::none(), zero, zero);
+            return ast::node4(ast::k_ex_path(), ast::path_of(ps), ast::none(), 0, 0);
           }
         }
         let e = parse_expr();
@@ -657,14 +657,14 @@ assume Std {
       }
       let p = parse_path();
       var run = ast::none();
-      var n = zero;
-      var applied = zero;
+      var n = 0;
+      var applied = 0;
       if accept(tk_lbracket()) {
         let xs = int_list();
         parse_app(xs);
         run = ast::commit(xs);
         n = xs.length();
-        applied = one;
+        applied = 1;
       }
       let callee = ast::node4(ast::k_ex_path(), p, run, n, applied);
       if accept(tk_lparen()) {
@@ -887,11 +887,11 @@ assume Std {
     # Declarations.
 
     fn parse_import(): Int {
-      var text = lexer::src.slice(zero, zero);
+      var text = lexer::src.slice(0, 0);
       if here(tk_str()) {
         # The token's span covers the quotes; the path is inside them.
-        let s = tstart.read() + one;
-        text = lexer::src.slice(s, tend.read() - s - one);
+        let s = tstart.read() + 1;
+        text = lexer::src.slice(s, tend.read() - s - 1);
         advance();
       } else {
         fail();
@@ -900,11 +900,11 @@ assume Std {
       if accept(tk_as()) {
         alias = take_name();
       }
-      var star = zero;
+      var star = 0;
       let xs = int_list();
       if accept(tk_use()) {
         if accept(tk_star()) {
-          star = one;
+          star = 1;
         } else {
           loop {
             if here(tk_semi()) {
@@ -913,9 +913,9 @@ assume Std {
             if here(tk_eof()) {
               break;
             }
-            var dotted = zero;
+            var dotted = 0;
             if accept(tk_dot()) {
-              dotted = one;
+              dotted = 1;
             }
             let nm = take_name();
             var renamed = ast::none();
@@ -933,7 +933,7 @@ assume Std {
         }
       }
       expect(tk_semi());
-      let n = xs.length() / n3();
+      let n = xs.length() / 3;
       ast::make_import(text, alias, star, ast::commit(xs), n)
     }
 
@@ -1096,7 +1096,7 @@ assume Std {
         }
         let ty = parse_type();
         expect(tk_semi());
-        return ast::node4(ast::k_d_tag(), nm, ty, ast::none(), zero);
+        return ast::node4(ast::k_d_tag(), nm, ty, ast::none(), 0);
       }
       if accept(tk_val()) {
         let nm = take_name();

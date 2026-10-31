@@ -22,14 +22,14 @@ import "./prog.moss" as prog;
 # room for its widest member.
 
 assume Std {
-  fn kd_unit(): Int { zero }
-  fn kd_never(): Int { one }
-  fn kd_nominal(): Int { n2() }
-  fn kd_abstract(): Int { n3() }
-  fn kd_union(): Int { n4() }
+  fn kd_unit(): Int { 0 }
+  fn kd_never(): Int { 1 }
+  fn kd_nominal(): Int { 2 }
+  fn kd_abstract(): Int { 3 }
+  fn kd_union(): Int { 4 }
   # A record's members alternate: field name, field type, in declaration
   # order. Field order is part of the type, as it is in the bootstrap.
-  fn kd_record(): Int { n5() }
+  fn kd_record(): Int { 5 }
 
   val ty_kind: IntList;
   val ty_sym: IntList;
@@ -90,19 +90,19 @@ assume Std {
 
     # Hash-consed: scan for an identical row before adding one.
     fn intern_ty(kind: Int, sym: Int, members: IntList): Int {
-      var t = zero;
+      var t = 0;
       while t < ty_count() {
         if ty_kind.get(t) == kind {
           if ty_sym.get(t) == sym {
             if ty_mlen.get(t) == members.length() {
-              var i = zero;
+              var i = 0;
               var same = true;
               while i < members.length() {
                 if member_at(t, i) != members.get(i) {
                   same = false;
                   i = members.length();
                 } else {
-                  i = i + one;
+                  i = i + 1;
                 }
               }
               if same {
@@ -111,18 +111,18 @@ assume Std {
             }
           }
         }
-        t = t + one;
+        t = t + 1;
       }
       ty_kind.push(kind);
       ty_sym.push(sym);
       ty_mstart.push(ty_mem.length());
       ty_mlen.push(members.length());
-      var i = zero;
+      var i = 0;
       while i < members.length() {
         ty_mem.push(members.get(i));
-        i = i + one;
+        i = i + 1;
       }
-      ty_count() - one
+      ty_count() - 1
     }
 
     fn ty_simple(kind: Int): Int {
@@ -130,17 +130,17 @@ assume Std {
     }
 
     fn ty_unit(): Int {
-      if ty_unit_row.read() == zero {
-        ty_unit_row.write(ty_simple(kd_unit()) + one);
+      if ty_unit_row.read() == 0 {
+        ty_unit_row.write(ty_simple(kd_unit()) + 1);
       }
-      ty_unit_row.read() - one
+      ty_unit_row.read() - 1
     }
 
     fn ty_never(): Int {
-      if ty_never_row.read() == zero {
-        ty_never_row.write(ty_simple(kd_never()) + one);
+      if ty_never_row.read() == 0 {
+        ty_never_row.write(ty_simple(kd_never()) + 1);
       }
-      ty_never_row.read() - one
+      ty_never_row.read() - 1
     }
 
     fn ty_of_symbol(kind: Int, sym: Int): Int {
@@ -157,16 +157,16 @@ assume Std {
 
     # A unit's discriminant, assigned on first sight and stable after.
     fn unit_code(sym: Int): Int {
-      var i = zero;
+      var i = 0;
       while i < unit_syms.length() {
         if unit_syms.get(i) == sym {
           return unit_codes.get(i);
         }
-        i = i + one;
+        i = i + 1;
       }
       unit_syms.push(sym);
       unit_codes.push(unit_codes.length());
-      unit_codes.get(unit_codes.length() - one)
+      unit_codes.get(unit_codes.length() - 1)
     }
 
     # `False` is 0 and `True` is 1, so that `if` can branch on a
@@ -207,27 +207,27 @@ assume Std {
       }
       if k == ast::k_ty_union() {
         let members = int_list();
-        var i = zero;
+        var i = 0;
         while i < ast::b_of(t) {
           add_member(members, elab(ast::kid_at(ast::a_of(t), i), m));
-          i = i + one;
+          i = i + 1;
         }
-        if members.length() == zero {
+        if members.length() == 0 {
           return ty_never();
         }
-        if members.length() == one {
-          return members.get(zero);
+        if members.length() == 1 {
+          return members.get(0);
         }
         return intern_ty(kd_union(), ast::none(), members);
       }
       if k == ast::k_ty_record() {
         let members = int_list();
-        var i = zero;
+        var i = 0;
         while i < ast::b_of(t) {
           let f = ast::kid_at(ast::a_of(t), i);
           members.push(ast::a_of(f));
           members.push(elab(ast::b_of(f), m));
-          i = i + one;
+          i = i + 1;
         }
         return intern_ty(kd_record(), ast::none(), members);
       }
@@ -241,7 +241,7 @@ assume Std {
         prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(t)));
         return ty_never();
       }
-      if ast::d_of(t) == one {
+      if ast::d_of(t) == 1 {
         return apply(sym, ast::b_of(t), ast::c_of(t), m);
       }
       ty_of_decl(sym)
@@ -274,12 +274,12 @@ assume Std {
         reqs_of(sym, reqs);
       }
       let args = int_list();
-      var i = zero;
+      var i = 0;
       while i < reqs.length() {
         args.push(ty_of_symbol(kd_abstract(), reqs.get(i)));
-        i = i + one;
+        i = i + 1;
       }
-      i = zero;
+      i = 0;
       while i < len {
         let b = ast::kid_at(run, i);
         let lhs = prog::resolve_path(m, ast::a_of(b));
@@ -291,15 +291,15 @@ assume Std {
           prog::error(prog::e_irrelevant(), m, prog::sym_name.get(lhs));
         } else {
           let rhs = elab_spec(ast::b_of(b), m);
-          var j = zero;
+          var j = 0;
           while j < reqs.length() {
             if reqs.get(j) == lhs {
               args.set(j, rhs);
             }
-            j = j + one;
+            j = j + 1;
           }
         }
-        i = i + one;
+        i = i + 1;
       }
       if !ok {
         return ty_of_decl(sym);
@@ -322,7 +322,7 @@ assume Std {
         prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(spec)));
         return ty_never();
       }
-      if ast::d_of(spec) > zero {
+      if ast::d_of(spec) > 0 {
         return apply(sym, ast::c_of(spec), ast::d_of(spec), m);
       }
       ty_of_decl(sym)
@@ -330,7 +330,7 @@ assume Std {
 
     # A nominal type at these arguments, one per type requirement.
     fn nominal(sym: Int, args: IntList): Int {
-      if args.length() == zero {
+      if args.length() == 0 {
         return ty_of_symbol(kd_nominal(), sym);
       }
       intern_ty(kd_nominal(), sym, args)
@@ -347,16 +347,16 @@ assume Std {
     # `type_requirements` is the same rule.
     fn reqs_of(sym: Int, out: IntList) {
       while tr_len.length() <= sym {
-        tr_start.push(zero);
+        tr_start.push(0);
         tr_len.push(ast::none());
       }
       if tr_len.get(sym) == ast::none() {
         solve_reqs(sym);
       }
-      var i = zero;
+      var i = 0;
       while i < tr_len.get(sym) {
         out.push(tr_pool.get(tr_start.get(sym) + i));
-        i = i + one;
+        i = i + 1;
       }
     }
 
@@ -380,34 +380,34 @@ assume Std {
       let group = int_list();
       group.push(root);
       tr_start.set(root, tr_pool.length());
-      tr_len.set(root, zero);
-      var g = zero;
+      tr_len.set(root, 0);
+      var g = 0;
       while g < group.length() {
         let s = group.get(g);
         if scans_payload(s) {
           let found = int_list();
           mentioned(ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s), found);
-          var i = zero;
+          var i = 0;
           while i < found.length() {
             let f = found.get(i);
             while tr_len.length() <= f {
-              tr_start.push(zero);
+              tr_start.push(0);
               tr_len.push(ast::none());
             }
             if tr_len.get(f) == ast::none() {
               tr_start.set(f, tr_pool.length());
-              tr_len.set(f, zero);
+              tr_len.set(f, 0);
               group.push(f);
             }
-            i = i + one;
+            i = i + 1;
           }
         }
-        g = g + one;
+        g = g + 1;
       }
       var changed = true;
       while changed {
         changed = false;
-        g = zero;
+        g = 0;
         while g < group.length() {
           let s = group.get(g);
           if scans_payload(s) {
@@ -416,16 +416,16 @@ assume Std {
             free_syms(ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s), found);
             if !same_run(found, tr_start.get(s), tr_len.get(s)) {
               tr_start.set(s, tr_pool.length());
-              var i = zero;
+              var i = 0;
               while i < found.length() {
                 tr_pool.push(found.get(i));
-                i = i + one;
+                i = i + 1;
               }
               tr_len.set(s, found.length());
               changed = true;
             }
           }
-          g = g + one;
+          g = g + 1;
         }
       }
     }
@@ -438,7 +438,7 @@ assume Std {
       if ast::kind_of(d) != ast::k_d_tag() {
         return ();
       }
-      var i = zero;
+      var i = 0;
       while i < ast::d_of(d) {
         let t = prog::lookup(prog::sym_mod.get(s), prog::ns_name(), ast::kid_at(ast::c_of(d), i));
         if ast::is_some(t) {
@@ -446,7 +446,7 @@ assume Std {
             push_new(out, t);
           }
         }
-        i = i + one;
+        i = i + 1;
       }
     }
 
@@ -454,12 +454,12 @@ assume Std {
       if xs.length() != len {
         return false;
       }
-      var i = zero;
+      var i = 0;
       while i < len {
         if xs.get(i) != tr_pool.get(start + i) {
           return false;
         }
-        i = i + one;
+        i = i + 1;
       }
       true
     }
@@ -473,16 +473,16 @@ assume Std {
       if k == ast::k_ty_ref() {
         mentioned_ref(ast::a_of(t), ast::b_of(t), ast::c_of(t), m, out);
       } else if k == ast::k_ty_union() {
-        var i = zero;
+        var i = 0;
         while i < ast::b_of(t) {
           mentioned(ast::kid_at(ast::a_of(t), i), m, out);
-          i = i + one;
+          i = i + 1;
         }
       } else if k == ast::k_ty_record() {
-        var i = zero;
+        var i = 0;
         while i < ast::b_of(t) {
           mentioned(ast::b_of(ast::kid_at(ast::a_of(t), i)), m, out);
-          i = i + one;
+          i = i + 1;
         }
       }
     }
@@ -494,21 +494,21 @@ assume Std {
           out.push(sym);
         }
       }
-      var i = zero;
+      var i = 0;
       while i < len {
         let rhs = ast::b_of(ast::kid_at(run, i));
         mentioned_ref(ast::a_of(rhs), ast::c_of(rhs), ast::d_of(rhs), m, out);
-        i = i + one;
+        i = i + 1;
       }
     }
 
     fn push_new(out: IntList, v: Int) {
-      var i = zero;
+      var i = 0;
       while i < out.length() {
         if out.get(i) == v {
           return ();
         }
-        i = i + one;
+        i = i + 1;
       }
       out.push(v);
     }
@@ -522,16 +522,16 @@ assume Std {
       if k == ast::k_ty_ref() {
         free_syms_ref(ast::a_of(t), ast::b_of(t), ast::c_of(t), m, out);
       } else if k == ast::k_ty_union() {
-        var i = zero;
+        var i = 0;
         while i < ast::b_of(t) {
           free_syms(ast::kid_at(ast::a_of(t), i), m, out);
-          i = i + one;
+          i = i + 1;
         }
       } else if k == ast::k_ty_record() {
-        var i = zero;
+        var i = 0;
         while i < ast::b_of(t) {
           free_syms(ast::b_of(ast::kid_at(ast::a_of(t), i)), m, out);
-          i = i + one;
+          i = i + 1;
         }
       }
     }
@@ -544,7 +544,7 @@ assume Std {
         return ();
       }
       let bound = int_list();
-      var i = zero;
+      var i = 0;
       while i < len {
         let b = ast::kid_at(run, i);
         let lhs = prog::resolve_path(m, ast::a_of(b));
@@ -553,7 +553,7 @@ assume Std {
         }
         let rhs = ast::b_of(b);
         free_syms_ref(ast::a_of(rhs), ast::c_of(rhs), ast::d_of(rhs), m, out);
-        i = i + one;
+        i = i + 1;
       }
       let kind = prog::sym_kind.get(sym);
       if kind == prog::sk_type() {
@@ -564,22 +564,22 @@ assume Std {
       }
       let reqs = int_list();
       reqs_of(sym, reqs);
-      i = zero;
+      i = 0;
       while i < reqs.length() {
         if !contains_sym(bound, reqs.get(i)) {
           push_new(out, reqs.get(i));
         }
-        i = i + one;
+        i = i + 1;
       }
     }
 
     fn contains_sym(xs: IntList, v: Int): Bool {
-      var i = zero;
+      var i = 0;
       while i < xs.length() {
         if xs.get(i) == v {
           return true;
         }
-        i = i + one;
+        i = i + 1;
       }
       false
     }
@@ -588,43 +588,43 @@ assume Std {
     fn subst(t: Int, from: IntList, to: IntList): Int {
       let k = kind_of(t);
       if k == kd_abstract() {
-        var i = zero;
+        var i = 0;
         while i < from.length() {
           if from.get(i) == sym_of(t) {
             return to.get(i);
           }
-          i = i + one;
+          i = i + 1;
         }
         return t;
       }
       if k == kd_nominal() {
-        if member_count(t) == zero {
+        if member_count(t) == 0 {
           return t;
         }
         let args = int_list();
-        var i = zero;
+        var i = 0;
         while i < member_count(t) {
           args.push(subst(member_at(t, i), from, to));
-          i = i + one;
+          i = i + 1;
         }
         return nominal(sym_of(t), args);
       }
       if k == kd_union() {
         let members = int_list();
-        var i = zero;
+        var i = 0;
         while i < member_count(t) {
           members.push(subst(member_at(t, i), from, to));
-          i = i + one;
+          i = i + 1;
         }
         return union_of(members);
       }
       if k == kd_record() {
         let members = int_list();
-        var i = zero;
+        var i = 0;
         while i < field_count(t) {
           members.push(field_name_at(t, i));
           members.push(subst(field_type_at(t, i), from, to));
-          i = i + one;
+          i = i + 1;
         }
         return intern_ty(kd_record(), ast::none(), members);
       }
@@ -635,16 +635,16 @@ assume Std {
     # are; a single member is itself, and none is `|`.
     fn union_of(types: IntList): Int {
       let members = int_list();
-      var i = zero;
+      var i = 0;
       while i < types.length() {
         add_member(members, types.get(i));
-        i = i + one;
+        i = i + 1;
       }
-      if members.length() == zero {
+      if members.length() == 0 {
         return ty_never();
       }
-      if members.length() == one {
-        return members.get(zero);
+      if members.length() == 1 {
+        return members.get(0);
       }
       intern_ty(kd_union(), ast::none(), members)
     }
@@ -672,10 +672,10 @@ assume Std {
         let reqs = int_list();
         reqs_of(sym, reqs);
         let args = int_list();
-        var i = zero;
+        var i = 0;
         while i < reqs.length() {
           args.push(ty_of_symbol(kd_abstract(), reqs.get(i)));
-          i = i + one;
+          i = i + 1;
         }
         let t = nominal(sym, args);
         ty_by_sym.set(sym, t);
@@ -695,19 +695,19 @@ assume Std {
         return ();
       }
       if is_kind(t, kd_union()) {
-        var i = zero;
+        var i = 0;
         while i < member_count(t) {
           add_member(members, member_at(t, i));
-          i = i + one;
+          i = i + 1;
         }
         return ();
       }
-      var i = zero;
+      var i = 0;
       while i < members.length() {
         if members.get(i) == t {
           return ();
         }
-        i = i + one;
+        i = i + 1;
       }
       members.push(t);
     }
@@ -720,16 +720,16 @@ assume Std {
         return ty_unit();
       }
       let p = elab(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym));
-      if member_count(t) == zero {
+      if member_count(t) == 0 {
         return p;
       }
       let reqs = int_list();
       reqs_of(sym, reqs);
       let args = int_list();
-      var i = zero;
+      var i = 0;
       while i < member_count(t) {
         args.push(member_at(t, i));
-        i = i + one;
+        i = i + 1;
       }
       subst(p, reqs, args)
     }
@@ -755,52 +755,52 @@ assume Std {
     # so the compiler can carry on to its other diagnostics.
     fn width(t: Int): Int {
       while ty_width.length() <= t {
-        ty_width.push(zero);
+        ty_width.push(0);
       }
       let seen = ty_width.get(t);
-      if seen > zero {
-        return seen - one;
+      if seen > 0 {
+        return seen - 1;
       }
-      if seen < zero {
+      if seen < 0 {
         let sym = sym_of(t);
         prog::error(prog::e_shape(), prog::sym_mod.get(sym), prog::sym_name.get(sym));
-        ty_width.set(t, one);
-        return zero;
+        ty_width.set(t, 1);
+        return 0;
       }
       if is_kind(t, kd_nominal()) {
         ty_width.set(t, ast::none());
       }
       let w = width_of(t);
-      if ty_width.get(t) <= zero {
-        ty_width.set(t, w + one);
+      if ty_width.get(t) <= 0 {
+        ty_width.set(t, w + 1);
       }
       w
     }
 
     # A record's fields.
-    fn field_count(t: Int): Int { member_count(t) / n2() }
+    fn field_count(t: Int): Int { member_count(t) / 2 }
     fn field_name_at(t: Int, i: Int): Int { member_at(t, i + i) }
-    fn field_type_at(t: Int, i: Int): Int { member_at(t, i + i + one) }
+    fn field_type_at(t: Int, i: Int): Int { member_at(t, i + i + 1) }
 
     # The field with this interned name, or none.
     fn field_index(t: Int, name: Int): Int {
-      var i = zero;
+      var i = 0;
       while i < field_count(t) {
         if field_name_at(t, i) == name {
           return i;
         }
-        i = i + one;
+        i = i + 1;
       }
       ast::none()
     }
 
     # Where a field's run starts within the record's.
     fn field_offset(t: Int, i: Int): Int {
-      var off = zero;
-      var j = zero;
+      var off = 0;
+      var j = 0;
       while j < i {
         off = off + width(field_type_at(t, j));
-        j = j + one;
+        j = j + 1;
       }
       off
     }
@@ -827,19 +827,19 @@ assume Std {
     fn width_of(t: Int): Int {
       let k = kind_of(t);
       if k == kd_unit() {
-        return zero;
+        return 0;
       }
       if k == kd_never() {
-        return zero;
+        return 0;
       }
       if k == kd_abstract() {
         # An unbound abstract type has no layout; the environment must
         # substitute before anyone asks.
-        return one;
+        return 1;
       }
       if k == kd_nominal() {
         if is_unit_decl(t) {
-          return one;
+          return 1;
         }
         return width(payload_of(t));
       }
@@ -849,27 +849,27 @@ assume Std {
       # A union: one scalar if the members discriminate by themselves,
       # otherwise a discriminant beside room for the widest.
       if all_units(t) {
-        return one;
+        return 1;
       }
-      var widest = zero;
-      var i = zero;
+      var widest = 0;
+      var i = 0;
       while i < member_count(t) {
         let w = width(member_at(t, i));
         if w > widest {
           widest = w;
         }
-        i = i + one;
+        i = i + 1;
       }
-      widest + one
+      widest + 1
     }
 
     fn all_units(t: Int): Bool {
-      var i = zero;
+      var i = 0;
       while i < member_count(t) {
         if !is_unit_decl(member_at(t, i)) {
           return false;
         }
-        i = i + one;
+        i = i + 1;
       }
       true
     }
@@ -887,12 +887,12 @@ assume Std {
         return false;
       }
       if is_kind(t, kd_union()) {
-        var i = zero;
+        var i = 0;
         while i < member_count(t) {
           if !is_member(member_at(t, i), expected) {
             return false;
           }
-          i = i + one;
+          i = i + 1;
         }
         return true;
       }
@@ -900,12 +900,12 @@ assume Std {
     }
 
     fn is_member(t: Int, union: Int): Bool {
-      var i = zero;
+      var i = 0;
       while i < member_count(union) {
         if member_at(union, i) == t {
           return true;
         }
-        i = i + one;
+        i = i + 1;
       }
       false
     }
@@ -916,9 +916,9 @@ assume Std {
       if is_kind(t, kd_union()) {
         member_count(t)
       } else if is_kind(t, kd_never()) {
-        zero
+        0
       } else {
-        one
+        1
       }
     }
 
@@ -929,12 +929,12 @@ assume Std {
         }
         return ast::none();
       }
-      var i = zero;
+      var i = 0;
       while i < member_count(t) {
         if head_of(member_at(t, i)) == head {
           return member_at(t, i);
         }
-        i = i + one;
+        i = i + 1;
       }
       ast::none()
     }

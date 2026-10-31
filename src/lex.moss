@@ -86,7 +86,7 @@ assume Std {
     }
 
     fn advance() {
-      at.write(at.read() + one);
+      at.write(at.read() + 1);
     }
 
     # Consume the next character only if it is `want`.
@@ -145,7 +145,7 @@ assume Std {
             } else if c == char::octothorpe {
               skip_comment();
             } else {
-              mark.write(at.read() - one);
+              mark.write(at.read() - 1);
               return token_at(c);
             }
           }
@@ -304,7 +304,7 @@ assume Std {
     }
 
     fn skip_digits() {
-      while digit_ahead(zero) {
+      while digit_ahead(0) {
         advance();
       }
     }
@@ -337,11 +337,11 @@ assume Std {
 
     fn take_dot_digit(): Bool {
       let i = at.read();
-      if i + one >= src.length() {
+      if i + 1 >= src.length() {
         return false;
       }
       if src.get(i) == char::dot {
-        if is_digit(src.get(i + one)) {
+        if is_digit(src.get(i + 1)) {
           advance();
           return true;
         }

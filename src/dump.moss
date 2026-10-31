@@ -15,13 +15,11 @@ import "./tcode.moss" use *;
 
 assume Std {
   assume ast::Ast, intern::Interner {
-    fn n26(): Int { hex(one, n10()) }
-
     fn tag(k: Int) {
-      if k < n26() {
+      if k < 26 {
         putchar((char::a.code() + k).char());
       } else {
-        putchar((char::A.code() + (k - n26())).char());
+        putchar((char::A.code() + (k - 26)).char());
       }
     }
 
@@ -31,14 +29,14 @@ assume Std {
     fn close_tag() { putchar(char::rparen); }
 
     fn put_path(p: Int) {
-      var i = zero;
+      var i = 0;
       while i < ast::path_len(p) {
-        if i > zero {
+        if i > 0 {
           putchar(char::colon);
           putchar(char::colon);
         }
         intern::put(ast::path_at(p, i));
-        i = i + one;
+        i = i + 1;
       }
     }
 
@@ -60,13 +58,13 @@ assume Std {
 
     fn dump_run(run: Int, n: Int) {
       putchar(char::lbracket);
-      var i = zero;
+      var i = 0;
       while i < n {
-        if i > zero {
+        if i > 0 {
           sp();
         }
         dump(ast::kid_at(run, i));
-        i = i + one;
+        i = i + 1;
       }
       putchar(char::rbracket);
     }
@@ -101,23 +99,23 @@ assume Std {
     # A use item is a bare token: `Bool`, `.m`, or `.m>.m1`.
     fn dump_uses(uses: Int, n: Int) {
       putchar(char::lbracket);
-      var i = zero;
+      var i = 0;
       while i < n {
-        if i > zero {
+        if i > 0 {
           sp();
         }
-        if ast::use_dot(uses, i) == one {
+        if ast::use_dot(uses, i) == 1 {
           putchar(char::dot);
         }
         intern::put(ast::use_name(uses, i));
         if ast::is_some(ast::use_as(uses, i)) {
           putchar(char::greater);
-          if ast::use_dot(uses, i) == one {
+          if ast::use_dot(uses, i) == 1 {
             putchar(char::dot);
           }
           intern::put(ast::use_as(uses, i));
         }
-        i = i + one;
+        i = i + 1;
       }
       putchar(char::rbracket);
     }
@@ -204,7 +202,7 @@ assume Std {
         sp();
         dump(ast::b_of(id));
         sp();
-        dump(ast::kid_at(ast::c_of(id), zero));
+        dump(ast::kid_at(ast::c_of(id), 0));
       } else if k == ast::k_ex_lit() {
         sp();
         put_digits(id);
@@ -286,7 +284,7 @@ assume Std {
         sp();
         opt_name(ast::imp_alias(id));
         sp();
-        if ast::imp_star(id) == one {
+        if ast::imp_star(id) == 1 {
           putchar(char::star);
         } else {
           under();
@@ -314,13 +312,13 @@ assume Std {
         intern::put(ast::a_of(id));
         sp();
         putchar(char::lbracket);
-        var i = zero;
+        var i = 0;
         while i < ast::d_of(id) {
-          if i > zero {
+          if i > 0 {
             sp();
           }
           intern::put(ast::kid_at(ast::c_of(id), i));
-          i = i + one;
+          i = i + 1;
         }
         putchar(char::rbracket);
         sp();
@@ -414,13 +412,13 @@ assume Std {
     fn put_digits(id: Int) {
       let n = ast::b_of(id);
       let whole = if ast::is_some(ast::c_of(id)) { n - ast::c_of(id) } else { n };
-      var i = zero;
+      var i = 0;
       while i < n {
         if i == whole {
           putchar(char::dot);
         }
         putchar((ast::kid_at(ast::a_of(id), i) + char::digit0.code()).char());
-        i = i + one;
+        i = i + 1;
       }
     }
 
@@ -440,32 +438,32 @@ assume Std {
       putchar(char::dollar);
       sp();
       putchar(char::lbracket);
-      var i = zero;
-      var n = zero;
+      var i = 0;
+      var n = 0;
       while i < roots.length() {
         if ast::kind_of(roots.get(i)) == ast::k_d_import() {
-          if n > zero {
+          if n > 0 {
             sp();
           }
           dump(roots.get(i));
-          n = n + one;
+          n = n + 1;
         }
-        i = i + one;
+        i = i + 1;
       }
       putchar(char::rbracket);
       sp();
       putchar(char::lbracket);
-      i = zero;
-      n = zero;
+      i = 0;
+      n = 0;
       while i < roots.length() {
         if !(ast::kind_of(roots.get(i)) == ast::k_d_import()) {
-          if n > zero {
+          if n > 0 {
             sp();
           }
           dump(roots.get(i));
-          n = n + one;
+          n = n + 1;
         }
-        i = i + one;
+        i = i + 1;
       }
       putchar(char::rbracket);
       putchar(char::rparen);

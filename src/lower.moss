@@ -44,9 +44,9 @@ import "./types.moss" as types;
 # provision the caller has (`codegen::check_callee`).
 
 assume Std {
-  fn ek_type(): Int { zero }
-  fn ek_val(): Int { one }
-  fn ek_fn(): Int { n2() }
+  fn ek_type(): Int { 0 }
+  fn ek_val(): Int { 1 }
+  fn ek_fn(): Int { 2 }
 
   val en_kind: IntList;
   val en_recv: IntList;
@@ -114,13 +114,13 @@ assume Std {
     # sources, which is the shape D51-era arenas invite and the reason
     # selfhosting.md's "The idiom" now names indexing outright.
     fn env_push(env: Int, kind: Int, recv: Int, sym: Int, a: Int, b: Int): Int {
-      let key = sym + one;
+      let key = sym + 1;
       while en_head.length() <= key {
-        en_head.push(zero);
+        en_head.push(0);
       }
       var r = en_head.get(key);
-      while r > zero {
-        let e = r - one;
+      while r > 0 {
+        let e = r - 1;
         if en_next.get(e) == env {
           if en_kind.get(e) == kind {
             if en_recv.get(e) == recv {
@@ -142,7 +142,7 @@ assume Std {
       en_next.push(env);
       en_link.push(en_head.get(key));
       en_head.set(key, en_kind.length());
-      en_kind.length() - one
+      en_kind.length() - 1
     }
 
     # The entry providing this key, or none. The chain is walked from the
@@ -170,7 +170,7 @@ assume Std {
     # edges (D43's union-find, minus the union: with no applications
     # nothing ever merges two keys).
     fn canon(env: Int, t: Int): Int {
-      canon_at(env, t, zero)
+      canon_at(env, t, 0)
     }
 
     # `depth` is a backstop against a binding whose type mentions the
@@ -179,25 +179,25 @@ assume Std {
       if !ast::is_some(t) {
         return t;
       }
-      if depth > hex(n2(), zero) {
+      if depth > 32 {
         return t;
       }
       let cur = canon_top(env, t);
       let k = types::kind_of(cur);
       if k == types::kd_nominal() {
-        if types::member_count(cur) == zero {
+        if types::member_count(cur) == 0 {
           return cur;
         }
         let args = int_list();
         var same = true;
-        var i = zero;
+        var i = 0;
         while i < types::member_count(cur) {
-          let a = canon_at(env, types::member_at(cur, i), depth + one);
+          let a = canon_at(env, types::member_at(cur, i), depth + 1);
           if a != types::member_at(cur, i) {
             same = false;
           }
           args.push(a);
-          i = i + one;
+          i = i + 1;
         }
         if same {
           return cur;
@@ -207,14 +207,14 @@ assume Std {
       if k == types::kd_union() {
         let members = int_list();
         var same = true;
-        var i = zero;
+        var i = 0;
         while i < types::member_count(cur) {
-          let a = canon_at(env, types::member_at(cur, i), depth + one);
+          let a = canon_at(env, types::member_at(cur, i), depth + 1);
           if a != types::member_at(cur, i) {
             same = false;
           }
           members.push(a);
-          i = i + one;
+          i = i + 1;
         }
         if same {
           return cur;
@@ -224,15 +224,15 @@ assume Std {
       if k == types::kd_record() {
         let members = int_list();
         var same = true;
-        var i = zero;
+        var i = 0;
         while i < types::field_count(cur) {
-          let a = canon_at(env, types::field_type_at(cur, i), depth + one);
+          let a = canon_at(env, types::field_type_at(cur, i), depth + 1);
           if a != types::field_type_at(cur, i) {
             same = false;
           }
           members.push(types::field_name_at(cur, i));
           members.push(a);
-          i = i + one;
+          i = i + 1;
         }
         if same {
           return cur;
@@ -246,8 +246,8 @@ assume Std {
     # is not abstract or nothing binds it.
     fn canon_top(env: Int, t: Int): Int {
       var cur = t;
-      var fuel = hex(n2(), zero);
-      while fuel > zero {
+      var fuel = 32;
+      while fuel > 0 {
         if !types::is_kind(cur, types::kd_abstract()) {
           return cur;
         }
@@ -259,7 +259,7 @@ assume Std {
           return cur;
         }
         cur = en_a.get(e);
-        fuel = fuel - one;
+        fuel = fuel - 1;
       }
       cur
     }
@@ -288,21 +288,21 @@ assume Std {
       var i = nd_start.length();
       while i < prog::sym_count() {
         nd_start.push(ast::none());
-        nd_len.push(zero);
+        nd_len.push(0);
         nd_env.push(ast::none());
-        i = i + one;
+        i = i + 1;
       }
     }
 
     fn need_add(recv: IntList, sym: IntList, r: Int, s: Int) {
-      var i = zero;
+      var i = 0;
       while i < sym.length() {
         if sym.get(i) == s {
           if recv.get(i) == r {
             return ();
           }
         }
-        i = i + one;
+        i = i + 1;
       }
       recv.push(r);
       sym.push(s);
@@ -328,12 +328,12 @@ assume Std {
     fn base_env(f: Int, recv: IntList, sym: IntList): Int {
       let m = prog::sym_mod.get(f);
       var env = env_empty();
-      var i = zero;
+      var i = 0;
       while i < prog::sym_nasm.get(f) {
         env = add_assume_item(
           env, m, ast::kid_at(prog::sym_asm.get(f), i), recv, sym
         );
-        i = i + one;
+        i = i + 1;
       }
       env
     }
@@ -343,17 +343,17 @@ assume Std {
     # environment whatever module it was reached from, and every such
     # declaration shares one entry.
     fn asm_find(run: Int, len: Int): Int {
-      var i = zero;
+      var i = 0;
       while i < asm_run.length() {
         if asm_len.get(i) == len {
-          if len == zero {
+          if len == 0 {
             return i;
           }
           if asm_run.get(i) == run {
             return i;
           }
         }
-        i = i + one;
+        i = i + 1;
       }
       ast::none()
     }
@@ -372,7 +372,7 @@ assume Std {
         let sym = int_list();
         let env = base_env(f, recv, sym);
         let start = nd_sym.length();
-        var i = zero;
+        var i = 0;
         while i < sym.length() {
           nd_recv.push(recv.get(i));
           nd_sym.push(sym.get(i));
@@ -382,7 +382,7 @@ assume Std {
           } else {
             nd_app.push(env_empty());
           }
-          i = i + one;
+          i = i + 1;
         }
         memo = asm_run.length();
         asm_run.push(run);
@@ -402,12 +402,12 @@ assume Std {
     fn set_needs(f: Int, env: Int, recv: IntList, sym: IntList, app: IntList) {
       needs_init();
       nd_start.set(f, nd_sym.length());
-      var i = zero;
+      var i = 0;
       while i < sym.length() {
         nd_recv.push(recv.get(i));
         nd_sym.push(sym.get(i));
         nd_app.push(app.get(i));
-        i = i + one;
+        i = i + 1;
       }
       nd_len.set(f, sym.length());
       nd_env.set(f, env);
@@ -415,7 +415,7 @@ assume Std {
 
     # `assume` takes bare paths, optionally with a receiver dot (D24).
     fn add_assume_item(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
-      add_spec(env, m, spec, recv, sym, zero, env)
+      add_spec(env, m, spec, recv, sym, 0, env)
     }
 
     # One type binding of a context item's application. The left-hand side
@@ -451,10 +451,10 @@ assume Std {
     # later item can change an earlier answer.
     fn app_view(view: Int, m: Int, spec: Int): Int {
       var out = view;
-      var i = zero;
+      var i = 0;
       while i < ast::d_of(spec) {
         out = app_bind(out, m, ast::kid_at(ast::c_of(spec), i));
-        i = i + one;
+        i = i + 1;
       }
       out
     }
@@ -463,7 +463,7 @@ assume Std {
       env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, depth: Int,
       view: Int
     ): Int {
-      if depth > n16() {
+      if depth > 16 {
         prog::error(prog::e_deep(), m, ast::none());
         return env;
       }
@@ -529,13 +529,13 @@ assume Std {
       if kind == prog::sk_context() {
         var e = env;
         let d = prog::sym_decl.get(s);
-        var i = zero;
+        var i = 0;
         while i < ast::c_of(d) {
           e = add_spec(
             e, prog::sym_mod.get(s), ast::kid_at(ast::b_of(d), i),
-            recv, sym, depth + one, view
+            recv, sym, depth + 1, view
           );
-          i = i + one;
+          i = i + 1;
         }
         return e;
       }
@@ -583,7 +583,7 @@ assume Std {
     fn check_mentions(env: Int, view: Int, m: Int, t: Int, home: Int) {
       let found = int_list();
       types::free_syms(t, home, found);
-      var i = zero;
+      var i = 0;
       while i < found.length() {
         let s = found.get(i);
         if !env_has(env, ek_type(), ast::none(), s) {
@@ -591,17 +591,17 @@ assume Std {
             prog::error(prog::e_absent(), m, prog::sym_name.get(s));
           }
         }
-        i = i + one;
+        i = i + 1;
       }
     }
 
     fn check_signature(env: Int, view: Int, m: Int, f: Int) {
       let d = prog::sym_decl.get(f);
       let home = prog::sym_mod.get(f);
-      var i = zero;
+      var i = 0;
       while i < ast::fn_nparams(d) {
         check_mentions(env, view, m, ast::b_of(ast::kid_at(ast::fn_params(d), i)), home);
-        i = i + one;
+        i = i + 1;
       }
       check_mentions(env, view, m, ast::fn_ret(d), home);
     }
@@ -625,42 +625,42 @@ assume Std {
     # bootstrap's `provision_app` reads the same symbols.
     fn item_deps(s: Int, out: IntList) {
       while dp_len.length() <= s {
-        dp_start.push(zero);
+        dp_start.push(0);
         dp_len.push(ast::none());
       }
       if dp_len.get(s) == ast::none() {
         let all = int_list();
-        nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), all, zero);
+        nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), all, 0);
         let found = int_list();
         if prog::sym_kind.get(s) == prog::sk_method() {
           let said = int_list();
           signature_syms(s, said);
-          var i = zero;
+          var i = 0;
           while i < all.length() {
             if types::contains_sym(said, all.get(i)) {
               found.push(all.get(i));
             }
-            i = i + one;
+            i = i + 1;
           }
         } else {
-          var i = zero;
+          var i = 0;
           while i < all.length() {
             found.push(all.get(i));
-            i = i + one;
+            i = i + 1;
           }
         }
         dp_start.set(s, dp_pool.length());
-        var i = zero;
+        var i = 0;
         while i < found.length() {
           dp_pool.push(found.get(i));
-          i = i + one;
+          i = i + 1;
         }
         dp_len.set(s, found.length());
       }
-      var i = zero;
+      var i = 0;
       while i < dp_len.get(s) {
         out.push(dp_pool.get(dp_start.get(s) + i));
-        i = i + one;
+        i = i + 1;
       }
     }
 
@@ -669,14 +669,14 @@ assume Std {
     # D73: every parameter a tag lists must be a type its assume nesting
     # requires, as a bracket application's left side must be.
     fn check_listed() {
-      var s = zero;
+      var s = 0;
       while s < prog::sym_count() {
         let d = prog::sym_decl.get(s);
         if prog::sym_kind.get(s) == prog::sk_tag() {
-          if ast::d_of(d) > zero {
+          if ast::d_of(d) > 0 {
             let nesting = int_list();
-            nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), nesting, zero);
-            var i = zero;
+            nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), nesting, 0);
+            var i = 0;
             while i < ast::d_of(d) {
               let name = ast::kid_at(ast::c_of(d), i);
               let t = prog::lookup(prog::sym_mod.get(s), prog::ns_name(), name);
@@ -687,19 +687,19 @@ assume Std {
               if !ok {
                 prog::error(prog::e_listed(), prog::sym_mod.get(s), name);
               }
-              i = i + one;
+              i = i + 1;
             }
           }
         }
-        s = s + one;
+        s = s + 1;
       }
     }
 
     fn nest_types(m: Int, run: Int, len: Int, out: IntList, depth: Int) {
-      if depth > n16() {
+      if depth > 16 {
         return ();
       }
-      var i = zero;
+      var i = 0;
       while i < len {
         let spec = ast::kid_at(run, i);
         if !ast::is_some(ast::b_of(spec)) {
@@ -711,22 +711,22 @@ assume Std {
                 types::push_new(out, target);
               } else if kind == prog::sk_context() {
                 let d = prog::sym_decl.get(target);
-                nest_types(prog::sym_mod.get(target), ast::b_of(d), ast::c_of(d), out, depth + one);
+                nest_types(prog::sym_mod.get(target), ast::b_of(d), ast::c_of(d), out, depth + 1);
               }
             }
           }
         }
-        i = i + one;
+        i = i + 1;
       }
     }
 
     fn signature_syms(f: Int, out: IntList) {
       let d = prog::sym_decl.get(f);
       let home = prog::sym_mod.get(f);
-      var i = zero;
+      var i = 0;
       while i < ast::fn_nparams(d) {
         types::free_syms(ast::b_of(ast::kid_at(ast::fn_params(d), i)), home, out);
-        i = i + one;
+        i = i + 1;
       }
       types::free_syms(ast::fn_ret(d), home, out);
     }
@@ -739,7 +739,7 @@ assume Std {
       let deps = int_list();
       item_deps(s, deps);
       var app = env_empty();
-      var i = zero;
+      var i = 0;
       while i < deps.length() {
         let t = deps.get(i);
         let at = types::ty_of_symbol(types::kd_abstract(), t);
@@ -751,7 +751,7 @@ assume Std {
         if differs {
           app = env_push(app, ek_type(), ast::none(), t, v, ast::none());
         }
-        i = i + one;
+        i = i + 1;
       }
       app
     }
@@ -762,7 +762,7 @@ assume Std {
       let deps = int_list();
       item_deps(s, deps);
       var app = env_empty();
-      var i = zero;
+      var i = 0;
       while i < deps.length() {
         let t = deps.get(i);
         var v = ast::none();
@@ -770,7 +770,7 @@ assume Std {
           v = canon(view, types::ty_of_symbol(types::kd_abstract(), t));
         }
         app = env_push(app, ek_type(), ast::none(), t, v, ast::none());
-        i = i + one;
+        i = i + 1;
       }
       app
     }
@@ -807,12 +807,12 @@ assume Std {
       let from = int_list();
       let to = int_list();
       params_in(t, from);
-      var i = zero;
+      var i = 0;
       while i < from.length() {
         to.push(canon(
           env, types::ty_of_symbol(types::kd_abstract(), prog::origin_of(from.get(i)))
         ));
-        i = i + one;
+        i = i + 1;
       }
       canon(env, types::subst(t, from, to))
     }
@@ -827,16 +827,16 @@ assume Std {
           types::push_new(out, types::sym_of(t));
         }
       } else if k == types::kd_record() {
-        var i = zero;
+        var i = 0;
         while i < types::field_count(t) {
           params_in(types::field_type_at(t, i), out);
-          i = i + one;
+          i = i + 1;
         }
       } else {
-        var i = zero;
+        var i = 0;
         while i < types::member_count(t) {
           params_in(types::member_at(t, i), out);
-          i = i + one;
+          i = i + 1;
         }
       }
     }
@@ -865,7 +865,7 @@ assume Std {
     # Every defined function of the program, in module order.
     fn lower_all() {
       needs_init();
-      var f = zero;
+      var f = 0;
       while f < prog::sym_count() {
         let kind = prog::sym_kind.get(f);
         var is_fn = kind == prog::sk_fn();
@@ -877,7 +877,7 @@ assume Std {
             lower_needs(f);
           }
         }
-        f = f + one;
+        f = f + 1;
       }
     }
   }

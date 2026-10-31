@@ -19,16 +19,9 @@ for _d in range(10):
     CHAR_NAME[str(_d)] = f"digit{_d}"
 
 
-def _nibble(value: int) -> str:
-    return {0: "zero", 1: "one"}.get(value, f"n{value}()")
-
-
 def _number(value: int) -> str:
-    """A small Int, built from `zero` and `one` (D4): a byte is its two
-    nibbles, which is how a Wasm opcode is spelled in the specification."""
-    if value < 16:
-        return _nibble(value)
-    return f"hex({_nibble(value >> 4)}, {_nibble(value & 15)})"
+    """A small Int, as a literal (D68)."""
+    return str(value)
 
 
 # --- src/spell.moss ---------------------------------------------------
@@ -302,21 +295,21 @@ import "./intern.moss" as intern;
 
 assume Std {
   # How an intrinsic encodes.
-  fn wk_simple(): Int { zero }
-  fn wk_memarg(): Int { one }
-  fn wk_const0(): Int { n2() }
-  fn wk_const1(): Int { n3() }
-  fn wk_memzero(): Int { n4() }
-  fn wk_memcopy(): Int { n5() }
-  fn wk_memfill(): Int { n6() }
-  fn wk_prefixed(): Int { n7() }
+  fn wk_simple(): Int { 0 }
+  fn wk_memarg(): Int { 1 }
+  fn wk_const0(): Int { 2 }
+  fn wk_const1(): Int { 3 }
+  fn wk_memzero(): Int { 4 }
+  fn wk_memcopy(): Int { 5 }
+  fn wk_memfill(): Int { 6 }
+  fn wk_prefixed(): Int { 7 }
 
   # What it leaves on the stack.
-  fn wr_none(): Int { zero }
-  fn wr_i32(): Int { one }
-  fn wr_i64(): Int { n2() }
-  fn wr_f32(): Int { n3() }
-  fn wr_f64(): Int { n4() }
+  fn wr_none(): Int { 0 }
+  fn wr_i32(): Int { 1 }
+  fn wr_i64(): Int { 2 }
+  fn wr_f32(): Int { 3 }
+  fn wr_f64(): Int { 4 }
 
   val op_names: IntList;
   val op_codes: IntList;
@@ -337,14 +330,14 @@ assume Std {
 
     # The table's index for this interned name, or none.
     fn find_op(name: Int): Int {
-      var i = zero;
+      var i = 0;
       while i < op_names.length() {
         if op_names.get(i) == name {
           return i;
         }
-        i = i + one;
+        i = i + 1;
       }
-      -one
+      -1
     }
 
     fn install_wasm_ops() {''']
