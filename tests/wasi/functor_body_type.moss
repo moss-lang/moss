@@ -1,0 +1,40 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: a functor bound to an abstract one may rely only on its own
+# argument signature — for types too. `make`'s signature mentions `Int`,
+# which `Wasm, Branch` does not give `Good`, and `Good` does not bind it
+# either. (Taking `Int` as an input, as functor_promise_candidate.moss
+# does, is what makes it available.) Rejected in both compilers.
+
+type Scalar;
+
+assume Std, Scalar {
+  fn make(n: Int): Scalar;
+}
+
+functor Pick: Wasm, Branch -> Scalar, make;
+
+functor Good: Wasm, Branch -> Scalar, make {
+  bind Scalar = Bool;
+  bind make = (n) => true;
+}
+
+assume Std, Wasm, Branch, Pick {
+  fn pos(n: Int): Int {
+    bind Pick;
+    let s = make(n);
+    n
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Pick = Good;
+    putchar((pos(3) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}

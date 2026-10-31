@@ -2160,6 +2160,22 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "type than `Fast` promises here (D78)",
                 "?X {} kernel float\n",
             ),
+            # Only a functor `Pick` is bound to where nothing reaches makes
+            # `make` at another type than promised, and the application is
+            # checked against it all the same.
+            "functor_promise_candidate": (
+                "`Bad`, bound to `Pick`, provides `make` at another type "
+                "than `Pick` promises here (D78)",
+                "?X {} pos make\n",
+            ),
+            # A bound functor relies only on its own argument signature
+            # for the types its result mentions too.
+            "functor_body_type": (
+                "functor `Good`, bound to an abstract functor, may rely only "
+                "on its own argument signature (D78): type `Int` is not "
+                "available in the context here",
+                "!X {} Int\n",
+            ),
             # A value of a type `bind F;` made leaving its block, where the
             # type made differs from the one outside.
             "functor_escape": (
@@ -2590,6 +2606,130 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             with self.subTest(entry=entry):
                 out = self.compile_with_moss(entry)
                 self.assertEqual(out.decode("utf-8", "replace"), report)
+
+    MATCH_PATTERNS = {
+        # entry: (the bootstrap's message, the self-hosted report)
+        "tests/wasi/match_unit_abstract.moss": (
+            "`Red` is not a member of `T`",
+            "?S tests/wasi/match_unit_abstract.moss pick Red\n",
+        ),
+        "tests/wasi/match_unit_not_member.moss": (
+            "`Blue` is not a member of `Red | Green`",
+            "?S tests/wasi/match_unit_not_member.moss pick Blue\n",
+        ),
+    }
+
+    @unittest.expectedFailure
+    def test_a_pattern_names_a_member_by_the_bootstrap(self):
+        """D34: a unit or tag pattern, with or without a payload, names a
+        member of the scrutinee's type as written — so on a scrutinee of
+        abstract type, whose one head is the type itself, only a binder
+        or `_` is a pattern, and what a match means cannot depend on what
+        the type is specialized to (D16). A bare unit pattern on a `T`
+        bound to `Colour` and to `Green`, which the runners used to
+        disagree on, and one naming a unit outside the union."""
+        from .test_build import compile_wasm
+
+        for entry, (message, _) in self.MATCH_PATTERNS.items():
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+
+    @unittest.expectedFailure
+    def test_a_pattern_names_a_member_by_the_self_hosted_compiler(self):
+        """The same programs."""
+        for entry, (_, report) in self.MATCH_PATTERNS.items():
+            with self.subTest(entry=entry):
+                out = self.compile_with_moss(entry)
+                self.assertEqual(out.decode("utf-8", "replace"), report)
+
+    MATCH_EXHAUSTIVE = {
+        # entry: (the bootstrap's message, the self-hosted report)
+        "tests/wasi/match_not_exhaustive.moss": (
+            "match is not exhaustive; missing ['Green']",
+            "?S tests/wasi/match_not_exhaustive.moss pick Green\n",
+        ),
+        "tests/wasi/match_empty.moss": (
+            "match is not exhaustive; missing ['Red', 'Green']",
+            "?S tests/wasi/match_empty.moss pick Red\n",
+        ),
+    }
+
+    def test_a_match_is_exhaustive_by_the_bootstrap(self):
+        """D34: without a binder or `_`, a match's arms cover every head
+        of its scrutinee's type as written, whichever ones a run reaches;
+        and `match e {}` is for an `e` of type `|` alone."""
+        from .test_build import compile_wasm
+
+        for entry, (message, _) in self.MATCH_EXHAUSTIVE.items():
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+
+    @unittest.expectedFailure
+    def test_a_match_is_exhaustive_by_the_self_hosted_compiler(self):
+        """The same programs, each reported by the first head missing."""
+        for entry, (_, report) in self.MATCH_EXHAUSTIVE.items():
+            with self.subTest(entry=entry):
+                out = self.compile_with_moss(entry)
+                self.assertEqual(out.decode("utf-8", "replace"), report)
+
+    BRANCHES_DISAGREE = {
+        # entry: (the bootstrap's message, the self-hosted report)
+        "tests/wasi/if_disagree.moss": (
+            "branches disagree: `I32` vs `B[I32=I32]`",
+            "?S tests/wasi/if_disagree.moss main\n",
+        ),
+        "tests/wasi/match_disagree.moss": (
+            "branches disagree: `I32` vs `B[I32=I32]`",
+            "?S tests/wasi/match_disagree.moss pick\n",
+        ),
+        "tests/wasi/if_disagree_tailless.moss": (
+            "branches disagree: `()` vs `I32`",
+            "?S tests/wasi/if_disagree_tailless.moss main\n",
+        ),
+    }
+
+    def test_branches_agree_by_the_bootstrap(self):
+        """With nothing expected of it, an `if`'s branches and a `match`'s
+        arms must yield one type, unless one diverges — by its value: a
+        branch block without a tail yields `()`, however its last
+        statement ends."""
+        from .test_build import compile_wasm
+
+        for entry, (message, _) in self.BRANCHES_DISAGREE.items():
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+
+    @unittest.expectedFailure
+    def test_branches_agree_by_the_self_hosted_compiler(self):
+        """The same programs, compared as written (D80)."""
+        for entry, (_, report) in self.BRANCHES_DISAGREE.items():
+            with self.subTest(entry=entry):
+                out = self.compile_with_moss(entry)
+                self.assertEqual(out.decode("utf-8", "replace"), report)
+
+    def test_a_diverging_branch_agrees_by_the_bootstrap(self):
+        """A `return`, a `break`, or a call of a function returning `|`,
+        as the value of a branch, beside a branch of any type, with and
+        without an expected type. Interpreted and compiled."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/branches_diverge.moss"
+        self.assertEqual(run({}, entry=entry), "DEEIAB\n")
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "DEEIAB\n")
+
+    @unittest.expectedFailure
+    def test_a_diverging_branch_agrees_by_the_self_hosted_compiler(self):
+        """The same program. A diverging branch is typed `|`, and where
+        the `if` or `match` yields a value, a branch that cannot fall
+        through still has to validate as one that does."""
+        module = self.compile_with_moss("tests/wasi/branches_diverge.moss")
+        self.assertEqual(self.wasmtime_run(module), "DEEIAB\n")
 
     def test_an_uncalled_abstract_application_is_checked_by_the_bootstrap(self):
         """D16 and D78: `bind F;` in a function nothing calls is checked

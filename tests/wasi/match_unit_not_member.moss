@@ -1,0 +1,25 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A unit pattern naming no member of the scrutinee's union: `Blue` is not
+# a `Colour`, so the arm can never match. A pattern names a member of the
+# scrutinee's type as written, plain or carrying a payload (D34).
+# Rejected in both compilers.
+
+unit Red;
+unit Green;
+unit Blue;
+type Colour = | Red | Green;
+
+assume Wasm, Wasi {
+  fn pick(c: Colour): I32 {
+    match c {
+      Blue => w::i32_zero,
+      _ => w::i32_one,
+    }
+  }
+
+  fn main() {
+    let one = pick(Red);
+  }
+}

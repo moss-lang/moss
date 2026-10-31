@@ -1,0 +1,13 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# A branch block with no tail yields `()`, even when its last statement
+# diverges: only a diverging *value* agrees with any other branch. So
+# with nothing expected here the branches are `()` and `I32`. Rejected
+# in both compilers.
+
+assume Wasm, Branch {
+  fn main() {
+    let x = if i32_bool(w::i32_one) { return; } else { w::i32_one };
+  }
+}

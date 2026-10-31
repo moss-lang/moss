@@ -1,0 +1,51 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# A unit pattern on a scrutinee of abstract type. Its one head is `T`
+# itself, so `Red` is not a member of it, whatever `T` is bound to (D16,
+# D34): only a binder or `_` matches a `T`. Taking the match's meaning
+# from the specialization instead, the three runners disagreed — with `T`
+# bound to `Colour` and to `Green`, the bootstrap's Wasm printed AAA, its
+# interpreter ABB, and the self-hosted compiler ABA. Rejected in both
+# compilers.
+
+unit Red;
+unit Green;
+type Colour = | Red | Green;
+type T;
+
+assume Wasm, Wasi {
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn emit(c: I32) {
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
+    w::i32_store8(eight(), c);
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
+  }
+  fn upper_a(): I32 {
+    w::i32_add(w::i32_shl(w::i32_one, w::i32_add(four(), two())), w::i32_one)
+  }
+}
+
+assume Wasm, T {
+  fn pick(x: T): I32 {
+    match x {
+      Red => w::i32_zero,
+      _ => w::i32_one,
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind T = Colour;
+    emit(w::i32_add(upper_a(), pick(Red)));
+    emit(w::i32_add(upper_a(), pick(Green)));
+    bind T = Green;
+    emit(w::i32_add(upper_a(), pick(Green)));
+    emit(w::i32_add(w::i32_add(four(), four()), two()));
+  }
+}

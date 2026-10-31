@@ -1,0 +1,53 @@
+import "../../lib/int.moss" as int;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# The application of `Pick` in `pos` is reached, with `Pick` bound to
+# `Good`, which makes `make` at the type promised. But `Pick` is also
+# bound to `Bad` where nothing reaches (`other`), and `Bad` rebinds `Int`
+# before it makes `make`, so it makes it at `Num -> Bool` where `pos`
+# was promised `Int -> Scalar`. An application is checked against every
+# functor bound to its functor anywhere (D16, D78), so the program is
+# rejected though no run would ever apply `Bad`. Both compilers.
+
+type Scalar;
+
+assume Std, Scalar {
+  fn make(n: Int): Scalar;
+}
+
+functor Pick: Int, Wasm, Branch -> Scalar, make;
+
+functor Good: Int, Wasm, Branch -> Scalar, make {
+  bind Scalar = Bool;
+  bind make = (n) => true;
+}
+
+functor Bad: Int, Wasm, Branch -> Scalar, make {
+  bind int::Int = Num;
+  bind Scalar = Bool;
+  bind make = (n) => true;
+}
+
+assume Std, Wasm, Branch, Pick {
+  fn pos(n: Int): Int {
+    bind Pick;
+    let s = make(n);
+    n
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn other() {
+    bind Pick = Bad;
+  }
+
+  fn main() {
+    bind WasiStd;
+    bind Pick = Good;
+    putchar((pos(3) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}

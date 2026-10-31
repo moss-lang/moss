@@ -1,0 +1,17 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+
+# `match e {}` requires `e : |` (D34, D15); on anything else it is a
+# match that covers nothing, in a function nothing calls (D16). Rejected
+# in both compilers.
+
+unit Red;
+unit Green;
+type Colour = | Red | Green;
+
+assume Wasm {
+  fn pick(c: Colour): I32 {
+    match c {}
+  }
+
+  fn main() {}
+}

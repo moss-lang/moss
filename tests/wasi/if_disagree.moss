@@ -1,0 +1,15 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# The branches of an `if` with nothing expected of it must agree, or one
+# must diverge: `x` would be an `I32` one way and a `B` the other. With
+# an annotation each branch is checked against it instead. Rejected in
+# both compilers.
+
+type B I32;
+
+assume Wasm, Branch {
+  fn main() {
+    let x = if i32_bool(w::i32_one) { w::i32_one } else { B (w::i32_one) };
+  }
+}

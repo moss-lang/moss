@@ -1,0 +1,22 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+
+# A `match` that covers only some of its scrutinee's heads, with no
+# binder or `_` to cover the rest: exhaustiveness over the scrutinee's
+# union is required (D34). `pick` is reached only with `Red`, which the
+# arm it has covers. Rejected in both compilers.
+
+unit Red;
+unit Green;
+type Colour = | Green | Red;
+
+assume Wasm {
+  fn pick(c: Colour): I32 {
+    match c {
+      Red => w::i32_one,
+    }
+  }
+
+  fn main() {
+    let one = pick(Red);
+  }
+}

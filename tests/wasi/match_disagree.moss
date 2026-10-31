@@ -1,0 +1,21 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+
+# The arms of a `match` with nothing expected of it must agree, or one
+# must diverge: `x` would be an `I32` for `Red` and a `B` for `Green`,
+# in a function nothing calls (D16). Rejected in both compilers.
+
+type B I32;
+unit Red;
+unit Green;
+type Colour = | Red | Green;
+
+assume Wasm {
+  fn pick(c: Colour) {
+    let x = match c {
+      Red => w::i32_one,
+      Green => B (w::i32_one),
+    };
+  }
+
+  fn main() {}
+}
