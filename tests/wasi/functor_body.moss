@@ -1,0 +1,52 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: a functor bound to an abstract one may rely only on its own
+# argument signature, since that is all an application promises it.
+# `Tally`'s signature fits `Trace`'s — it needs nothing but `Std` — but
+# its bind of `note` is to `count`, which also needs `counter`. Every
+# application here happens to have `counter` in context, and before the
+# self-hosted compiler checked this the program compiled there; it is
+# refused in both compilers.
+
+assume Std {
+  fn note(value: Int);
+  val counter: CellInt;
+}
+
+assume Std, counter {
+  fn count(value: Int) { counter.write(counter.read() + value); }
+}
+
+functor Trace: Std -> note;
+
+functor Tally: Std -> note {
+  bind note = count;
+}
+
+assume Std, counter, Trace {
+  fn run() {
+    bind Trace;
+    note(2);
+    note(3);
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind counter = cell_int();
+    bind Trace = Tally;
+    run();
+    putchar((counter.read() + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

@@ -2040,7 +2040,8 @@ class TestSelfHostedBackEnd(unittest.TestCase):
     def test_abstract_functor_binds_are_checked(self):
         """D78: `bind F = G;` needs `G`'s inputs among `F`'s and `G`'s
         result exactly `F`'s, checked where the bind is written (more
-        inputs, a missing output, an extra output); `bind F;` with
+        inputs, a missing output, an extra output); `G`'s binds may use
+        only `G`'s inputs, whatever an application has; `bind F;` with
         nothing bound to `F` is the ordinary error for a requirement not
         in context; and, as implemented, an abstract functor's result
         holds no type. Rejected in both compilers."""
@@ -2061,6 +2062,14 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "`Chatty` cannot be bound to `Trace`: it also provides "
                 "`flush`, which `Trace` does not",
                 "!X {} flush\n",
+            ),
+            # A bound functor relies only on its own argument signature,
+            # though every application here has more.
+            "functor_body": (
+                "functor `Tally`, bound to an abstract functor, may rely only "
+                "on its own argument signature (D78): calling `count` needs "
+                "`counter`",
+                "?Q {} run counter\n",
             ),
             "functor_unbound": (
                 "`Trace` is not available in the context here",

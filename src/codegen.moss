@@ -96,6 +96,10 @@ assume Std {
   val pv_sym: IntList;
   val pv_local: IntList;
   val pv_top: CellInt;
+  # D78: where the provision stack starts for the binds of a functor
+  # bound to an abstract one, which see only their own inputs
+  # (`restrict_to_args`); zero everywhere else.
+  val pv_floor: CellInt;
 
   # Open label scopes, and the depth at which each enclosing loop's exit
   # block sits, so that `break` knows how far out to branch.
@@ -236,7 +240,7 @@ assume Std {
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
-    pv_recv, pv_sym, pv_local, pv_top,
+    pv_recv, pv_sym, pv_local, pv_top, pv_floor,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
     cg_i32, cg_i64, cg_f32, cg_f64, cg_boolty,
     cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_memory, cg_errs, cg_err_name, cg_err_at, cg_where,
@@ -802,7 +806,7 @@ assume Std {
     # The innermost provision for this key, so a rebind wins.
     fn provision_of(recv: Int, sym: Int): Int {
       var i = pv_top.read();
-      while i > 0 {
+      while i > pv_floor.read() {
         i = i - 1;
         if pv_sym.get(i) == sym {
           if pv_recv.get(i) == recv {
@@ -4506,7 +4510,12 @@ assume Std {
       let recvs = int_list();
       let syms = int_list();
       result_keys(home, ast::fu_res(d), ast::fu_nres(d), emark, kinds, recvs, syms, 0);
+      let floor = pv_floor.read();
+      var base = emark;
+      var bmark = pmark;
       if ast::is_some(ast::fu_binds(prog::sym_decl.get(provider))) {
+        base = restrict_to_args(provider);
+        bmark = pv_top.read();
         run_functor(body, provider, depth, mode);
       } else {
         platform_functor(prog::sym_decl.get(provider), prog::sym_mod.get(provider));
@@ -4523,13 +4532,13 @@ assume Std {
         var fresh = false;
         if kinds.get(k) == lower::ek_val() {
           # A val is a local, provided above the mark by its bind.
-          l = provision_above(syms.get(k), pmark);
+          l = provision_above(syms.get(k), bmark);
           fresh = ast::is_some(l);
         } else {
           r = lower::env_find(made, kinds.get(k), recvs.get(k), syms.get(k));
           fresh = ast::is_some(r);
           if fresh {
-            fresh = !in_chain(r, emark);
+            fresh = !in_chain(r, base);
           }
         }
         if !fresh {
@@ -4537,6 +4546,7 @@ assume Std {
           cg_env.write(emark);
           cg_genv.write(gmark);
           pv_top.write(pmark);
+          pv_floor.write(floor);
           return ();
         }
         rows.push(r);
@@ -4568,6 +4578,7 @@ assume Std {
       cg_env.write(emark);
       cg_genv.write(gmark);
       pv_top.write(pmark);
+      pv_floor.write(floor);
       k = 0;
       while k < syms.length() {
         if kinds.get(k) == lower::ek_val() {
@@ -4595,6 +4606,114 @@ assume Std {
         k = k + 1;
       }
       result_generic(home, ast::fu_res(d), ast::fu_nres(d), 0);
+    }
+
+    # D78: a functor bound to an abstract one may rely only on its own
+    # argument signature, which is all an application promises it — the
+    # bootstrap checks this once, against that signature. Here its binds
+    # run, at each application, in the environment a function assuming
+    # exactly that signature would be specialized in: the rows for its own
+    # inputs, taken from the application's (as `callee_env` takes a
+    # callee's), and only its input vals visible on the provision stack,
+    # provided again above a floor with the values their providers
+    # captured. Anything else its binds use is then missing, and reported
+    # as anywhere else. (The generic environment is left whole: what is
+    # missing from this one is missing at every use.) Returns the
+    # restricted environment, the base the binds' rows are made on.
+    fn restrict_to_args(g: Int): Int {
+      let d = prog::sym_decl.get(g);
+      let home = prog::sym_mod.get(g);
+      let nrecv = int_list();
+      let nsym = int_list();
+      var decl_env = lower::env_empty();
+      var i = 0;
+      while i < ast::fu_nargs(d) {
+        decl_env = lower::add_assume_item(decl_env, home, ast::kid_at(ast::fu_args(d), i), nrecv, nsym);
+        i = i + 1;
+      }
+      let chain = int_list();
+      var e = decl_env;
+      while ast::is_some(e) {
+        chain.push(e);
+        e = lower::env_next_of(e);
+      }
+      let real = cg_env.read();
+      var out = lower::env_empty();
+      let new_rows = int_list();
+      let old_rows = int_list();
+      let val_syms = int_list();
+      let val_locals = int_list();
+      var c = chain.length();
+      while c > 0 {
+        c = c - 1;
+        let entry = chain.get(c);
+        let kind = lower::env_kind_of(entry);
+        let recv = lower::env_recv_of(entry);
+        let sym = lower::env_sym_of(entry);
+        if kind == lower::ek_type() {
+          let here = lower::env_find(real, lower::ek_type(), ast::none(), sym);
+          if ast::is_some(here) {
+            out = lower::env_push(out, lower::ek_type(), ast::none(), sym, lower::env_a_of(here), ast::none());
+            let p = lower::env_find(real, lower::ek_type(), ast::none(), prog::param_of(sym));
+            if ast::is_some(p) {
+              out = lower::env_push(out, lower::ek_type(), ast::none(), prog::param_of(sym), lower::env_a_of(p), ast::none());
+            }
+          }
+        } else if kind == lower::ek_val() {
+          let l = provision_of(ast::none(), sym);
+          if ast::is_some(l) {
+            val_syms.push(sym);
+            val_locals.push(l);
+          }
+        } else {
+          var key = recv;
+          if ast::is_some(recv) {
+            key = lower::instantiate(real, recv);
+          }
+          let here = lower::env_find(real, lower::ek_fn(), key, sym);
+          if ast::is_some(here) {
+            if ast::is_some(lower::env_a_of(here)) {
+              out = lower::env_push(out, lower::ek_fn(), key, sym, lower::env_a_of(here), lower::env_b_of(here));
+              new_rows.push(out);
+              old_rows.push(here);
+            }
+          }
+        }
+      }
+      # What the kept providers captured, read before the floor rises.
+      let cap_row = int_list();
+      let cap_slot = int_list();
+      let cap_local = int_list();
+      var k = 0;
+      while k < new_rows.length() {
+        let r = new_rows.get(k);
+        let vals = int_list();
+        val_slots(vals, lower::env_a_of(r), lower::env_b_of(r), 0);
+        var j = 0;
+        while j < vals.length() {
+          let l = provision_of(ast::none(), ck_slot(old_rows.get(k), vals.get(j)));
+          if ast::is_some(l) {
+            cap_row.push(r);
+            cap_slot.push(vals.get(j));
+            cap_local.push(l);
+          }
+          j = j + 1;
+        }
+        k = k + 1;
+      }
+      pv_floor.write(pv_top.read());
+      k = 0;
+      while k < val_syms.length() {
+        provide(ast::none(), val_syms.get(k), val_locals.get(k));
+        k = k + 1;
+      }
+      k = 0;
+      while k < cap_row.length() {
+        provide(ast::none(), ck_slot(cap_row.get(k), cap_slot.get(k)), cap_local.get(k));
+        k = k + 1;
+      }
+      cg_env.write(out);
+      out
     }
 
     # The local a val was provided in since the provision stack stood at
@@ -5112,6 +5231,7 @@ assume Std {
       cg_ntop.write(0);
       # One frame at a time, so the provisions start empty.
       pv_top.write(0);
+      pv_floor.write(0);
       cg_env.write(fq_env.get(qi));
       cg_genv.write(lower::env_of(sym));
       if is_defined_method(sym) {
