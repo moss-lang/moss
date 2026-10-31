@@ -15,13 +15,27 @@ its definitions and metatheoretical statements.
   examples of §12b encoded and executed by computation. The header
   comment lists the handful of mechanization-level deviations from the
   paper.
+- [`Narrowing.v`](Narrowing.v) — [D71]: a tag's identity is its
+  relevant parameters (the type symbols its payload mentions), not its
+  whole assume nesting, and that is sound for the calculus: value typing
+  cannot tell apart instantiations that agree on them
+  (`vty_narrow_invariant`), every well-formed type at a narrowed
+  signature is already narrowed (`wf_ty_narrowed`), and soundness there
+  is an instance of the existing theorem (`narrowed_soundness`).
+- [`KeyOnly.v`](KeyOnly.v) — why that depends on method items carrying
+  their application θ: the same rules with method requirements matched
+  by (receiver, method) alone admit a well-formed program that goes
+  wrong, which the calculus rejects. Documentation of the coherence
+  rule both compilers now check, not a model of the language.
 
 `coqc` accepts `Admitted`, so compiling is not on its own evidence that
-the metatheory is unconditional. §13 of the file audits the assumptions
+the metatheory is unconditional. §13 of `CoreMoss.v`, and the closing
+`Print Assumptions` lines of the other two files, audit the assumptions
 of every theorem, and the flake check enforces both halves: each audited
 name must report *closed under the global context*, and the audited names
-must be exactly the file's top-level `Theorem`s, so a theorem cannot be
-added without being audited.
+of each file must be exactly its top-level `Theorem`s and `Corollary`s,
+so a theorem cannot be added without being audited. The two later files
+import the first as `NM.CoreMoss` (`coqc -Q . NM`).
 
 Both are built by flake checks, so CI keeps them compiling, and the
 paper is an ordinary package:

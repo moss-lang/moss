@@ -344,28 +344,45 @@
           # The Core Moss calculus paper: CI builds the same derivation
           # exposed as `nix build .#pdf`.
           core-calculus-pdf = self.packages.${pkgs.stdenv.hostPlatform.system}.pdf;
-          # The mechanization of the paper's definitions and metatheory.
+          # The mechanization of the paper's definitions and metatheory,
+          # and the narrowing results built on it (D71): CoreMoss.v, then
+          # Narrowing.v and KeyOnly.v, which import it as `NM.CoreMoss`.
           # Compiling is not enough on its own: coqc accepts `Admitted`, so
-          # this also audits the assumptions of every theorem (§13 of the
-          # file), and checks that every top-level Theorem is audited.
+          # this also audits the assumptions of every theorem (§13 of
+          # CoreMoss.v, the `Print Assumptions` lines at the end of the
+          # others), and checks, file by file, that the audited names are
+          # exactly its top-level Theorems and Corollaries.
           core-calculus-rocq =
             pkgs.runCommand "core-moss-rocq" { nativeBuildInputs = [ pkgs.coq ]; } ''
               export ROCQPATH=${pkgs.coqPackages.stdlib}/lib/coq/${pkgs.coq.coq-version}/user-contrib
-              cp ${./docs/design/core/CoreMoss.v} CoreMoss.v
+              files="CoreMoss Narrowing KeyOnly"
+              for f in $files; do
+                cp ${./docs/design/core}/$f.v $f.v
+              done
 
-              coqc -q CoreMoss.v > audit.log 2>&1 || { cat audit.log; exit 1; }
+              : > audit.log
+              for f in $files; do
+                coqc -q -Q . NM $f.v > $f.log 2>&1 || { cat $f.log; exit 1; }
+                cat $f.log >> audit.log
+              done
               cat audit.log
 
-              # Every top-level Theorem must have a Print Assumptions line.
-              grep -oE '^Theorem [A-Za-z0-9_'"'"']+' CoreMoss.v \
-                | cut -d' ' -f2 | sort > theorems.txt
-              grep -oE '^Print Assumptions [A-Za-z0-9_'"'"']+' CoreMoss.v \
-                | cut -d' ' -f3 | sort > audited.txt
-              if ! diff -u theorems.txt audited.txt; then
-                echo "FAIL: the audited names (§13) are not exactly the" \
-                     "top-level Theorems." >&2
-                exit 1
-              fi
+              # Every top-level Theorem or Corollary must have a Print
+              # Assumptions line in its own file (named with or without
+              # the module it sits in).
+              : > audited.txt
+              for f in $files; do
+                grep -oE '^(Theorem|Corollary) [A-Za-z0-9_'"'"']+' $f.v \
+                  | cut -d' ' -f2 | sort > theorems.txt
+                grep -oE '^Print Assumptions [A-Za-z0-9_.'"'"']+' $f.v \
+                  | cut -d' ' -f3 | sed -e 's/\.$//' -e 's/.*\.//' | sort > audited-$f.txt
+                if ! diff -u theorems.txt audited-$f.txt; then
+                  echo "FAIL: the audited names of $f.v are not exactly its" \
+                       "top-level Theorems and Corollaries." >&2
+                  exit 1
+                fi
+                cat audited-$f.txt >> audited.txt
+              done
 
               # ... and each must report closed under the global context.
               expected=$(wc -l < audited.txt)

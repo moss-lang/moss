@@ -95,7 +95,8 @@ specialization; values are the only context that exists at run time.
 
 There is deliberately no more than this. Requirement sets double as the
 generics mechanism: a declaration nested in $\kw{assume}$ blocks is
-implicitly parameterized by everything they name, and a bracket
+implicitly parameterized by everything they name (a nominal type by the
+part of it its payload mentions [D71]), and a bracket
 application such as $\smallcode{Range[T=NameId]}$ instantiates those
 parameters, with anything left unbracketed inherited from the
 surrounding $\kw{assume}$s rather than left open [D21, D22]. The design
@@ -158,8 +159,11 @@ mentions it, so its declaration must sit inside
 $\kw{assume}\;\smallcode{Elem}$---requirements are \emph{telescoped}:
 an item may be assumed only where the symbols its own signature mentions
 are already available [D20]. The tag \smallcode{Full} is declared under
-the same assumption, so \smallcode{Full} is implicitly parameterized by
-\smallcode{Elem}; that is the whole of generics [D21]. Type identity is
+the same assumption and its payload mentions it, so \smallcode{Full} is
+implicitly parameterized by \smallcode{Elem}; that is the whole of
+generics [D21]. (\smallcode{Empty} is parameterized by nothing, and
+\smallcode{Slot} by \smallcode{Elem} through \smallcode{Full}: a
+nominal's parameters are its \emph{relevant} ones [D71], below.) Type identity is
 structural over (declaration, static bindings), so once
 $\kw{bind}\;\smallcode{Elem=O}$ is in force, \smallcode{Full} means the
 same instantiated type everywhere downstream [D18].
@@ -266,6 +270,41 @@ A method signature may mention the distinguished abstract type $\This$,
 the receiver's type; in the core a method's arguments are understood as
 $(\This, \ov{\tau})$, i.e.\ every provider receives the receiver as its
 first argument (\S\ref{sec:full} explains how surface Moss spells this).
+
+\paragraph{Nominal identity: relevant parameters [D71].}
+For vals, fns and methods $\Delta$ is the whole assume nesting [D21].
+For a tag the language narrows it to the tag's \emph{relevant
+parameters}: the type symbols its payload mentions, closed through the
+nominal references the payload makes (less what their brackets bind),
+taken as the least fixpoint over mutually recursive declarations; a unit
+has none, and an abstract type symbol is a bare $t$ as here. So
+$\Sigma(N) = \ksf{tag}[\Delta]\,\tau$ with $\Delta$ exactly those type
+items, and a reference $N[\theta]$ ranges over them alone: a binding for
+any other symbol is rejected rather than ignored. Without this,
+\smallcode{unit Stop;} under an $\kw{assume}$ of a library context would
+be one type per binding of every type that context names. Nothing in the
+metatheory of \S\ref{sec:meta} assumes a tag's telescope is its whole
+nesting, and the mechanization says so (\texttt{Narrowing.v}, beside
+\texttt{CoreMoss.v} and audited with it): with $R$ the relevance map,
+value typing cannot tell apart two instantiations of a tag that agree on
+$R$ (\texttt{vty\_narrow\_invariant}); at a signature whose tag
+telescopes are exactly their relevant symbols every well-formed type is
+already narrowed (\texttt{wf\_ty\_narrowed}); and soundness there is an
+instance of Theorem~\ref{thm:sound} (\texttt{narrowed\_soundness}).
+
+What the narrowing leans on is that a method item $\tau.m[\theta]$ at a
+receiver carries the method's own application $\theta$, and that
+availability and $\varsigma$ compare it: a provision serves only the
+instantiation it was made at. Narrowing removes from a receiver the
+symbols that would otherwise have pinned $\theta$, so the receiver
+alone no longer does. \texttt{KeyOnly.v} makes this precise: the same
+rules with method requirements matched by (receiver, method) alone---the
+rule both compilers used before [D71]---admit a well-formed program over
+a narrowed signature whose $\ksf{main}$ evaluates to $\ksf{err}$
+(\texttt{keyonly\_counterexample}), which the calculus rejects
+(\texttt{counterexample\_rejected\_by\_core}); under unnarrowed
+identity the receiver key would have told the two instantiations apart
+(\texttt{d21\_key\_distinguishes}).
 
 \paragraph{Contexts in force.}
 At each program point the statics tracks $\Phi = \langle A; \sigma
