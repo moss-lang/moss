@@ -39,7 +39,9 @@ assume Int, zero, one, BaseOps {
   }
 }
 
-functor Dualize: Int, zero, one, BaseOps -> Float, float, Float.add, Float.sub, Float.mul, Float.div {
+functor Dualize: Std -> Float, float, Float.add, Float.sub, Float.mul, Float.div {
+  bind Base = Float;
+  bind lift = float;
   bind Float = Dual;
   bind float = constant;
   bind Float.add = Dual.add;
@@ -51,14 +53,10 @@ functor Dualize: Int, zero, one, BaseOps -> Float, float, Float.add, Float.sub, 
 assume Std {
   fn nested(at: Float): Float {
     {
-      bind Base = Float;
-      bind lift = float;
       bind Dualize;
       let x = variable(at);
       let y0 = 1.0;
       let inner = {
-        bind Base = Float;
-        bind lift = float;
         bind Dualize;
         (x + variable(y0)).d
       };

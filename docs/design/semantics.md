@@ -2317,16 +2317,21 @@ the bound symbol not be in force (CoreMoss.v, deviation 7, which names
 exactly this hazard: "shadowing an in-use abstract type symbol would
 conflate its two generations").
 
-Dual numbers are the program that needs it. Under `assume Std`,
+Dual numbers are the program that needs it:
 
 ```moss
-bind Base = Float;    # the duals' base: the Float in force here
-bind lift = float;
-bind Dualize;         # bind Float = Dual; bind float = constant; ...
-f(variable(x)).d      # f'(x), with f written against Float
+functor Dualize: Std -> Float, float, Float.add, Float.sub, Float.mul, Float.div {
+  bind Base = Float;    # the duals' base: the Float in force here
+  bind lift = float;
+  bind Float = Dual;    # the new Float, over the old
+  bind float = constant;
+  ...
+}
 ```
 
-makes the new `Float` a `Dual[Base=Float]` over the *old* `Float`. Keyed
+and then, under `assume Std`, `{ bind Dualize; f(variable(x)).d }` is
+f′(x) for an `f` written against `Float`. The functor makes the new
+`Float` a `Dual[Base=Float]` over the *old* `Float`. Keyed
 by symbol, that is `Float = Dual[Base=Float]`, a cycle: the bootstrap
 recursed forever and the self-hosted compiler reported a false
 incoherence.
@@ -2373,9 +2378,14 @@ calculus and its proofs are unchanged, as for [D66] and [D70].
   what rules out *perturbation confusion* (Siskind and Pearlmutter): in
   nested derivatives, the outer variable cannot be mistaken for the inner
   one, because the two are different types and the program has to say
-  how the outer is lifted (as a constant, with derivative zero). Haskell's
-  `ad` gets the same guarantee by branding perturbations with a rank-2
-  type variable; here it falls out of how binds shadow.
+  how the outer is lifted (as a constant, with derivative zero). This
+  is not peculiar to Moss: any statically typed language whose nested
+  duals have distinct types (`Dual<Dual<f64>>` in Rust) rejects the
+  confused program the same way, and Haskell's `ad`, which lifts
+  implicitly, needs a rank-2 brand for it, while dynamically typed AD
+  (ForwardDiff's promotion in Julia) can silently compute the wrong
+  answer. Here it falls out of how binds shadow, with the differentiated
+  code written against plain `Float` and no type parameter.
 - A type bind makes every fn and val whose signature mentions the type a
   requirement at the new generation, so a provision made at the old one
   no longer satisfies it ([D62], [D71]'s coherence). Code that uses such
@@ -2402,7 +2412,7 @@ called any tag containing itself a cycle, now keys by the whole
 instantiation, since `Dual[Base=Dual[Base=Float]]` contains a different
 `Dual` (with a depth bound for types that only grow). Standing tests:
 `tests/wasi/dual.moss` (f, f′ and f″ by rebinding `Float` in functions
-generic over it, Newton's method with the derivative from the same `f`,
+generic over it, with one functor binding both generations, Newton's method with the derivative from the same `f`,
 and nested differentiation giving 1), `tests/wasi/perturbation.moss`
 (the same nested program adding the outer variable as it is: a type
 error in both compilers), and `tests/wasi/generations.moss` (`n + n`

@@ -7,8 +7,9 @@ import "../../lib/wasip1.moss" use Wasi;
 # against `Float` alone; `bind Float = Dual` over the `Float` in force
 # makes the same `f` compute a derivative, and doing it twice, duals over
 # duals, a second. Each bind starts a new generation of `Float`, so the
-# new one can be defined in terms of the old — inside functions that are
-# themselves generic over `Float` — and the two never mix: `nested` has
+# new one can be defined in terms of the old — by a functor that binds
+# both, and inside functions that are themselves generic over `Float` —
+# and the two never mix: `nested` has
 # to say how the outer variable enters the inner differentiation (as a
 # constant, `still`), which is what rules out perturbation confusion
 # (tests/wasi/perturbation.moss is the same program without that).
@@ -46,7 +47,9 @@ assume Int, zero, one, BaseOps {
   }
 }
 
-functor Dualize: Int, zero, one, BaseOps -> Float, float, Float.add, Float.sub, Float.mul, Float.div {
+functor Dualize: Std -> Float, float, Float.add, Float.sub, Float.mul, Float.div {
+  bind Base = Float;
+  bind lift = float;
   bind Float = Dual;
   bind float = constant;
   bind Float.add = Dual.add;
@@ -74,19 +77,13 @@ assume Std {
   fn derivatives(x: Float) {
     show(f(x));
     show({
-      bind Base = Float;
-      bind lift = float;
       bind Dualize;
       f(variable(x)).d
     });
     show({
-      bind Base = Float;
-      bind lift = float;
       bind Dualize;
       let x1 = variable(x);
       {
-        bind Base = Float;
-        bind lift = float;
         bind Dualize;
         f(variable(x1)).d.d
       }
@@ -98,8 +95,6 @@ assume Std {
     var i = 0;
     while i < steps {
       let step = {
-        bind Base = Float;
-        bind lift = float;
         bind Dualize;
         let y = f(variable(x));
         y.v / y.d
@@ -113,14 +108,10 @@ assume Std {
   # d/dx (x * d/dy (x + y)) at x = 1, y = 1.
   fn nested(at: Float): Float {
     {
-      bind Base = Float;
-      bind lift = float;
       bind Dualize;
       let x = variable(at);
       let y0 = 1.0;
       let inner = {
-        bind Base = Float;
-        bind lift = float;
         bind Dualize;
         (still(x) + variable(y0)).d
       };
