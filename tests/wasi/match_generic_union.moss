@@ -1,0 +1,28 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+
+# As match_generic.moss, but `T` is a union where `pick` is reached, so
+# the specialization discriminates; the ill-typed arm comes after the
+# binder, which matches whatever is left, so no specialization runs it
+# either. Every arm is checked all the same (D16, D34).
+
+type T;
+type B I32;
+unit Red;
+unit Green;
+type Colour = | Red | Green;
+
+assume Wasm, T {
+  fn pick(x: T): I32 {
+    match x {
+      y => w::i32_one,
+      _ => B (w::i32_one),
+    }
+  }
+}
+
+assume Wasm {
+  fn main() {
+    bind T = Colour;
+    let one = pick(Green);
+  }
+}

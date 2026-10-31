@@ -1,0 +1,24 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+
+# A type error in the second arm of a `match` on a scrutinee of abstract
+# type, in a function nothing calls. Every arm is checked against the
+# scrutinee's type as written, whatever it is specialized to, and
+# whatever arm a specialization would run (D16, D34): `T` has one head
+# here, `T` itself, and the binder already covers it, but the wildcard
+# arm after it yields a `B` where an `I32` is expected.
+
+type T;
+type B I32;
+
+assume Wasm, T {
+  fn unused(x: T): I32 {
+    match x {
+      y => w::i32_one,
+      _ => B (w::i32_one),
+    }
+  }
+}
+
+assume Wasm {
+  fn main() {}
+}

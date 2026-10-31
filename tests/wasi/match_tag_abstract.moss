@@ -1,0 +1,24 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+
+# A tag pattern on a scrutinee of abstract type: `T`'s one head is `T`,
+# so `Box` is not a member of it, though `pick` is only ever reached
+# with `T` bound to `Box` (D16, D34). A binder or `_` is what matches a
+# `T`.
+
+type T;
+type Box I32;
+
+assume Wasm, T {
+  fn pick(x: T): I32 {
+    match x {
+      Box v => w::i32_one,
+    }
+  }
+}
+
+assume Wasm {
+  fn main() {
+    bind T = Box;
+    let one = pick(Box (w::i32_one));
+  }
+}

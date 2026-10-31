@@ -2544,6 +2544,80 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 out = self.compile_with_moss(entry, prelude=prelude)
                 self.assertEqual(out.decode("utf-8", "replace"), report)
 
+    MATCH_ARMS = {
+        # entry: (the bootstrap's message, the self-hosted report)
+        "tests/wasi/match_unreached.moss": (
+            "match arm yields `B[I32=I32]`, expected `I32`",
+            "?S tests/wasi/match_unreached.moss unused\n",
+        ),
+        "tests/wasi/match_generic.moss": (
+            "match arm yields `B[I32=I32]`, expected `I32`",
+            "?S tests/wasi/match_generic.moss pick\n",
+        ),
+        "tests/wasi/match_generic_union.moss": (
+            "match arm yields `B[I32=I32]`, expected `I32`",
+            "?S tests/wasi/match_generic_union.moss pick\n",
+        ),
+        "tests/wasi/match_tag_abstract.moss": (
+            "`Box` is not a member of `T`",
+            "?S tests/wasi/match_tag_abstract.moss pick Box\n",
+        ),
+    }
+
+    def test_every_match_arm_is_checked_by_the_bootstrap(self):
+        """D16 and D34: every arm of a `match` is checked against the
+        scrutinee's type as written, whichever arms a specialization would
+        run — on a scrutinee of abstract type `T`, whose one head is `T`
+        itself, so that a binder or `_` covers it and anything after one
+        is never run, in a function nothing calls, in one reached where
+        `T` has one head and where it is a union; and a tag pattern on it
+        names no member of `T`."""
+        from .test_build import compile_wasm
+
+        for entry, (message, _) in self.MATCH_ARMS.items():
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+
+    @unittest.expectedFailure
+    def test_every_match_arm_is_checked_by_the_self_hosted_compiler(self):
+        """The same programs. The self-hosted compiler takes a match's
+        shape from the specialization — one head runs the first arm, and
+        a union stops at the first arm that matches anything — and
+        checks the arms it does not run all the same, emitting them
+        nowhere."""
+        for entry, (_, report) in self.MATCH_ARMS.items():
+            with self.subTest(entry=entry):
+                out = self.compile_with_moss(entry)
+                self.assertEqual(out.decode("utf-8", "replace"), report)
+
+    def test_an_uncalled_abstract_application_is_checked_by_the_bootstrap(self):
+        """D16 and D78: `bind F;` in a function nothing calls is checked
+        against every functor `F` is bound to anywhere — each must make
+        each item of `F`'s result at the type the application promises
+        (functor_promise.moss, with `kernel` unreached)."""
+        from .test_build import compile_wasm
+
+        entry = "tests/wasi/functor_promise_unreached.moss"
+        with self.assertRaises(LowerError) as caught:
+            compile_wasm({}, entry=entry)
+        self.assertIn(
+            "`WasiFloats`, bound to `Fast`, provides `float` at another "
+            "type than `Fast` promises here (D78)",
+            str(caught.exception),
+        )
+
+    @unittest.expectedFailure
+    def test_an_uncalled_abstract_application_is_checked_by_the_self_hosted_compiler(self):
+        """The same program. The check pass runs the binds of each functor
+        `F` can be bound to at the application, as a reached application
+        runs the one it is bound to, and compares what they make with
+        what the application promises."""
+        entry = "tests/wasi/functor_promise_unreached.moss"
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(out.decode("utf-8", "replace"), f"?X {entry} kernel float\n")
+
     def test_a_callee_requires_what_it_assumes_and_does_not_use(self):
         """D20 and D16: a call needs everything the callee's declaration
         assumes, read off the declaration, not off what its body happens

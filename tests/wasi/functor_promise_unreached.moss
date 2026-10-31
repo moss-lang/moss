@@ -1,0 +1,29 @@
+import "../../lib/float.moss" use Floats;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiFloats;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# functor_promise.moss with `kernel` never called. D16: it is checked all
+# the same, and with it the application of `Fast` in it, which must make
+# each item of `Fast`'s result at the type it promises for every functor
+# `Fast` is bound to anywhere (D78) — here the library's `WasiFloats`,
+# which provides `float` at its own `Int`, a `Num` the kernel does not
+# have. Rejected in both compilers.
+
+functor Fast: Wasm, Branch -> Floats;
+
+assume Std, Wasm, Branch, Fast {
+  fn kernel(n: Int): Int {
+    bind Fast;
+    float(n).round()
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Fast = WasiFloats;
+    putchar(char::newline);
+  }
+}

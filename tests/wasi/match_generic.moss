@@ -1,0 +1,27 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+
+# The second arm of a `match` on a scrutinee of abstract type is
+# ill-typed, in a function that is reached, at a type with one head:
+# there the specialization needs no discriminating and runs the first
+# arm, but every arm is checked against the scrutinee's type as written
+# (D16, D34), so the program is rejected all the same.
+
+type T;
+type B I32;
+unit Red;
+
+assume Wasm, T {
+  fn pick(x: T): I32 {
+    match x {
+      y => w::i32_one,
+      _ => B (w::i32_one),
+    }
+  }
+}
+
+assume Wasm {
+  fn main() {
+    bind T = Red;
+    let one = pick(Red);
+  }
+}
