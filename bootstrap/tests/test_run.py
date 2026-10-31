@@ -2141,7 +2141,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "functor `Tally`, bound to an abstract functor, may rely only "
                 "on its own argument signature (D78): calling `count` needs "
                 "`counter`",
-                "?Q {} run counter\n",
+                "!P {} counter\n",
             ),
             "functor_unbound": (
                 "`Trace` is not available in the context here",
@@ -2514,7 +2514,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             "functor `Tally`, bound to an abstract functor, may rely only "
             "on its own argument signature (D78): calling `count` needs "
             "`counter`",
-            "?Q tests/wasi/functor_unapplied.moss Tally counter\n",
+            "!P tests/wasi/functor_unapplied.moss counter\n",
             "lib/prelude.moss",
         ),
     }
@@ -2543,6 +2543,26 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             with self.subTest(entry=entry):
                 out = self.compile_with_moss(entry, prelude=prelude)
                 self.assertEqual(out.decode("utf-8", "replace"), report)
+
+    def test_a_callee_requires_what_it_assumes_and_does_not_use(self):
+        """D20 and D16: a call needs everything the callee's declaration
+        assumes, read off the declaration, not off what its body happens
+        to use: `quiet` assumes `X.gimme` and never calls it, and calling
+        it with no `X.gimme` in context is rejected by both compilers. The
+        self-hosted compiler used to find a need missing only when
+        emitting a use of it."""
+        from .test_build import compile_wasm
+
+        entry = "tests/wasi/unused_need.moss"
+        with self.assertRaises(LowerError) as caught:
+            compile_wasm({}, entry=entry)
+        self.assertIn(
+            "calling `quiet` needs `X[Char=Char].gimme`, which is not "
+            "available in the context here",
+            str(caught.exception),
+        )
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(out.decode("utf-8", "replace"), f"!P {entry} gimme\n")
 
     def test_a_provision_answers_only_its_instantiation(self):
         """Coherence: a callee's val, fn or method requirement is met only

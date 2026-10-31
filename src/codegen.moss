@@ -3373,11 +3373,6 @@ assume Std {
         let l = provision_of(ast::none(), caller_slot(vals.get(i), ast::none(), map));
         if ast::is_some(l) {
           provide(ast::none(), ck_slot(entry, vals.get(i)), l);
-        } else if checking() {
-          # Elsewhere a call through the provision reports it; the check
-          # pass may meet no call, so it reports it at the bind, as the
-          # bootstrap does.
-          cg_error(c_unbound(), prog::sym_name.get(slot_sym(vals.get(i))));
         }
         i = i + 1;
       }
@@ -3809,8 +3804,8 @@ assume Std {
     # callee's own app for that need, read through this frame's generic
     # environment, must equal the provision's, symbol for symbol. The
     # bootstrap's `require_needs` is the same rule. A need with no
-    # provision in the generic environment is left to the rest of the
-    # back end to report; a direct call of a provision needs no check, as
+    # provision in the generic environment is not met at all (`e_absent`),
+    # used or not; a direct call of a provision needs no check, as
     # it is typed by the provision's own signature.
     fn check_callee(f: Int) {
       if !ast::is_some(f) {
@@ -3876,6 +3871,12 @@ assume Std {
           if !coherent(s, want, fbase, have, base, genv, moved, bound_here, true) {
             prog::error(prog::e_incoherent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(s));
           }
+        } else {
+          # D20, D16: a callee requires everything its declaration
+          # assumes, whether or not its body uses it — what a call needs
+          # is read off the declaration, as the bootstrap's
+          # `require_needs` reads it, not off what reaching the body finds.
+          prog::error(prog::e_absent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(s));
         }
         i = i + 1;
       }

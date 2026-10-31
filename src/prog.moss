@@ -134,7 +134,8 @@ assume Std {
   # D20: an assume item whose declared signature mentions an abstract type
   # that is neither assumed nor bound where it is assumed (`assume W.m`
   # with `.m(): T` and no `T`). Named by the type, as the bootstrap's
-  # "type `T` is not available in the context here" is.
+  # "type `T` is not available in the context here" is. Also a callee's
+  # assumed item that the call site does not have, named by the item.
   fn e_absent(): Int { 15 }
 
   # D71: a bracket binding for a symbol that is not one of the applied

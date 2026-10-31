@@ -1,0 +1,31 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D20 and D16: what a call needs is read off the callee's declaration.
+# `quiet` assumes `X.gimme` and never calls it, and `demo` calls `quiet`
+# with no `X.gimme` in its context: both compilers reject the call,
+# though reaching `quiet`'s body would find nothing missing.
+
+assume Std {
+  type X Char;
+  fn .gimme(): Char;
+}
+
+assume Std, X.gimme {
+  fn quiet() { putchar(char::q); }
+}
+
+assume Std {
+  fn demo() {
+    quiet();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
