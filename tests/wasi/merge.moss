@@ -1,0 +1,66 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D43, consistent merging, the designer's example. `Ctx1` and `Ctx2` each
+# provide `A.gimme`, at `Foo=B` and at `Foo=C`; assuming both (`Ctx3`) is
+# not an error but merges the two bindings of the one key, which unifies
+# their targets: inside, `B` and `C` are one type, used interchangeably —
+# a `B` returned as a `C`, a `C` passed where a `B` is expected, and the
+# val `v`, assumed at `Foo=B` and at `Foo=C`, read as either. Binding one
+# of the merged symbols binds them all, so every caller binds them alike.
+# Prints `qbq`.
+
+type Foo;
+type A;
+type B;
+type C;
+
+fn .gimme(): Foo;
+
+assume Foo {
+  val v: Foo;
+}
+
+context Ctx1 = A, B, A.gimme[Foo=B], v[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C], v[Foo=C];
+context Ctx3 = Ctx1, Ctx2;
+
+assume Std, Ctx3 {
+  fn go(a: A): C { a.gimme() }
+  fn takes_b(x: B): B { x }
+  fn back(c: C): B { takes_b(c) }
+  fn both(a: A): B { let c: C = v; back(go(a)) }
+
+  val b: B;
+  assume b {
+    fn takes_c(x: C): C { x }
+    fn roundtrip(): B { takes_c(b) }
+  }
+}
+
+assume Std {
+  fn giveq(): Char { char::q }
+
+  fn demo() {
+    bind Foo = Char;
+    bind A = Char;
+    bind B = Char;
+    bind C = Char;
+    bind A.gimme = giveq;
+    bind v = char::v;
+    putchar(go(char::m));
+    bind b = char::b;
+    putchar(roundtrip());
+    putchar(both(char::m));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

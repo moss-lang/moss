@@ -1,0 +1,32 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D43: merging the two `A.gimme` bindings would identify `U1` with `U2`,
+# two distinct concrete types, so assuming `Ctx3` is unsatisfiable — an
+# error where the context is formed, in both compilers, though nothing
+# ever calls `go`.
+
+type Foo;
+type A;
+unit U1;
+unit U2;
+
+fn .gimme(): Foo;
+
+context Ctx1 = A, A.gimme[Foo=U1];
+context Ctx2 = A, A.gimme[Foo=U2];
+context Ctx3 = Ctx1, Ctx2;
+
+assume Std, Ctx3 {
+  fn go() { }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    putchar(char::k);
+    putchar(char::newline);
+  }
+}
