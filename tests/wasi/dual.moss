@@ -1,0 +1,139 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D72: forward-mode differentiation by rebinding `Float`. `f` is written
+# against `Float` alone; `bind Float = Dual` over the `Float` in force
+# makes the same `f` compute a derivative, and doing it twice, duals over
+# duals, a second. Each bind starts a new generation of `Float`, so the
+# new one can be defined in terms of the old — inside functions that are
+# themselves generic over `Float` — and the two never mix: `nested` has
+# to say how the outer variable enters the inner differentiation (as a
+# constant, `still`), which is what rules out perturbation confusion
+# (tests/wasi/perturbation.moss is the same program without that).
+# Output, times a million: f(2), f'(2), f''(2); Newton's iterates for
+# the root of f from 2; then d/dx (x * d/dy (x + y)) at 1, which is 1
+# (perturbation confusion makes it 2).
+
+context Reals = Int, zero, one, Int.add, Int.mul, Float, float, Float.add, Float.sub, Float.mul, Float.div;
+
+assume Reals {
+  fn f(x: Float): Float { x * x * x - 2.0 * x - 5.0 }
+}
+
+type Base;
+
+assume Int, Base {
+  fn lift(n: Int): Base;
+  context BaseOps = Base, lift, Base.add, Base.sub, Base.mul, Base.div;
+}
+
+assume Int, zero, one, BaseOps {
+  type Dual { v: Base, d: Base };
+
+  fn constant(n: Int): Dual { Dual { v = lift(n), d = lift(zero) } }
+  fn variable(x: Base): Dual { Dual { v = x, d = lift(one) } }
+  fn still(x: Base): Dual { Dual { v = x, d = lift(zero) } }
+
+  fn Dual.add(rhs: Dual): Dual { Dual { v = this.v + rhs.v, d = this.d + rhs.d } }
+  fn Dual.sub(rhs: Dual): Dual { Dual { v = this.v - rhs.v, d = this.d - rhs.d } }
+  fn Dual.mul(rhs: Dual): Dual {
+    Dual { v = this.v * rhs.v, d = this.d * rhs.v + this.v * rhs.d }
+  }
+  fn Dual.div(rhs: Dual): Dual {
+    Dual { v = this.v / rhs.v, d = (this.d * rhs.v - this.v * rhs.d) / (rhs.v * rhs.v) }
+  }
+}
+
+functor Dualize: Int, zero, one, BaseOps -> Float, float, Float.add, Float.sub, Float.mul, Float.div {
+  bind Float = Dual;
+  bind float = constant;
+  bind Float.add = Dual.add;
+  bind Float.sub = Dual.sub;
+  bind Float.mul = Dual.mul;
+  bind Float.div = Dual.div;
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn show(x: Float) {
+    print_int((x * 1000000.0).round());
+    putchar(char::newline);
+  }
+
+  fn derivatives(x: Float) {
+    show(f(x));
+    show({
+      bind Base = Float;
+      bind lift = float;
+      bind Dualize;
+      f(variable(x)).d
+    });
+    show({
+      bind Base = Float;
+      bind lift = float;
+      bind Dualize;
+      let x1 = variable(x);
+      {
+        bind Base = Float;
+        bind lift = float;
+        bind Dualize;
+        f(variable(x1)).d.d
+      }
+    });
+  }
+
+  fn newton(x0: Float, steps: Int) {
+    var x = x0;
+    var i = 0;
+    while i < steps {
+      let step = {
+        bind Base = Float;
+        bind lift = float;
+        bind Dualize;
+        let y = f(variable(x));
+        y.v / y.d
+      };
+      x = x - step;
+      show(x);
+      i = i + 1;
+    }
+  }
+
+  # d/dx (x * d/dy (x + y)) at x = 1, y = 1.
+  fn nested(at: Float): Float {
+    {
+      bind Base = Float;
+      bind lift = float;
+      bind Dualize;
+      let x = variable(at);
+      let y0 = 1.0;
+      let inner = {
+        bind Base = Float;
+        bind lift = float;
+        bind Dualize;
+        (still(x) + variable(y0)).d
+      };
+      x * inner
+    }.d
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    derivatives(2.0);
+    newton(2.0, 4);
+    show(nested(1.0));
+  }
+}

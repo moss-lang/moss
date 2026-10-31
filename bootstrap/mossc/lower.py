@@ -28,6 +28,7 @@ from .types import (
     fits,
     head,
     members,
+    param,
     show,
 )
 
@@ -294,7 +295,9 @@ class Lower:
         self.check_totality(module, sym, subst, env)
         if sym.kind == SymKind.TYPE:
             if sym not in env.tymap:
-                env.tymap[sym] = TAbstract(sym, self.nominal_args(module, sym, env.tymap | subst))
+                env.tymap[sym] = TAbstract(
+                    param(sym), self.nominal_args(module, sym, env.tymap | subst)
+                )
         elif sym.kind == SymKind.VAL:
             if sym.decl.init is not None:
                 return  # a defined val is concrete; nothing to provide (D50)
@@ -434,7 +437,11 @@ class Lower:
         A tag that contains itself would need an endless run of scalars —
         there is no heap to break the cycle — so it is an error. Every
         such cycle passes through a tag, since only a nominal type refers
-        to a type by name, so `visiting` only needs to hold tags."""
+        to a type by name, so `visiting` only needs to hold tags: each at
+        its whole instantiation, since a tag may hold another instance of
+        itself (duals over duals, `Dual[Base=Dual[Base=Float]]`). One whose
+        instantiations only grow would never repeat, so depth is bounded
+        too."""
         ty = self.canon(env, ty)
         if isinstance(ty, TRecord):
             return sum(self.slots_of(env, t, visiting) for _, t in ty.fields)
@@ -451,14 +458,12 @@ class Lower:
                     widest = max(widest, self.slots_of(env, m, visiting))
             return 1 + widest
         if isinstance(ty, TNominal) and ty.symbol.kind == SymKind.TAG:
-            if id(ty.symbol) in visiting:
+            if ty in visiting or len(visiting) > 64:
                 self.error(
                     ty.symbol.module,
                     f"`{ty.symbol.name}` contains itself, so it has no finite layout (D58)",
                 )
-            return self.slots_of(
-                env, self.payload_type(ty, env), visiting | {id(ty.symbol)}
-            )
+            return self.slots_of(env, self.payload_type(ty, env), visiting | {ty})
         return 1
 
     def field_layout(self, env, record: TRecord) -> list:
@@ -491,6 +496,36 @@ class Lower:
     # written either by an explicit type bind or by unification during a
     # merge. `canon` chases those edges; `unify` adds them, erroring only
     # when two genuinely distinct concrete types would have to be equal.
+
+    def instantiate(self, env: Env, t):
+        """A type as a declaration states it — its parameters `param(T)`
+        standing for whatever the user supplies for `T` (D72) — read at a
+        use: each parameter becomes the generation of `T` in force here,
+        and a declared symbol is read as `canon` reads it. Only for types
+        that come from a declaration; a type this scope already gave
+        something keeps its own parameters."""
+        if isinstance(t, TAbstract):
+            origin = getattr(t.symbol, "origin", None)
+            if origin is not None:
+                here = env.tymap.get(origin)
+                if here is not None:
+                    return self.canon(env, here)
+            if t.args:
+                t = TAbstract(
+                    t.symbol, tuple((s, self.instantiate(env, a)) for s, a in t.args)
+                )
+            return self.canon(env, t)
+        if isinstance(t, TNominal):
+            if t.args:
+                return TNominal(
+                    t.symbol, tuple((s, self.instantiate(env, a)) for s, a in t.args)
+                )
+            return t
+        if isinstance(t, TUnion):
+            return TUnion(tuple(self.instantiate(env, m) for m in t.members))
+        if isinstance(t, TRecord):
+            return TRecord(tuple((n, self.instantiate(env, ty)) for n, ty in t.fields))
+        return t
 
     def canon(self, env: Env, t):
         if isinstance(t, TAbstract):
@@ -681,7 +716,7 @@ class Lower:
         def one(t, ty):
             if ty is None:
                 return f"{t.name} not in force"
-            if isinstance(ty, TAbstract) and ty.symbol is t and not ty.args:
+            if isinstance(ty, TAbstract) and ty.symbol is param(t) and not ty.args:
                 return f"{t.name} as assumed, before a later `bind {t.name}`"
             return f"{t.name}={show(ty)}"
 
@@ -1272,7 +1307,9 @@ class FnChecker:
             ty = self.lower.elab_type(
                 ast.TyRef(expr.path, expr.app), module, self.env.tymap, self.env
             )
-            self.env.tymap[target] = ty
+            # What the right side means here (D26): a later bind of a
+            # symbol it mentions must not reach back through this one.
+            self.env.tymap[target] = self.lower.canon(self.env, ty)
             return []  # static only
         if target.kind == SymKind.VAL:
             declared = self.lower.elab_type(
@@ -1512,7 +1549,9 @@ class FnChecker:
         for need in needs:
             if isinstance(need, tuple):
                 receiver, method = need
-                key = self.lower.method_key(self.env, self.module, receiver, method)
+                key = self.lower.method_key(
+                    self.env, self.module, self.lower.instantiate(self.env, receiver), method
+                )
                 if key not in self.env.methods:
                     self.error(
                         f"calling `{callee.name}` needs `{show(key[0])}{method.name}`, "
@@ -1552,7 +1591,7 @@ class FnChecker:
                 # Not in force where the callee was declared: it means
                 # whatever this context means by it.
                 ty = self.env.tymap.get(t)
-            required[t] = None if ty is None else self.lower.canon(self.env, ty)
+            required[t] = None if ty is None else self.lower.instantiate(self.env, ty)
         differ = [t for t in required if required[t] != have.get(t)]
         if differ:
             self.error(

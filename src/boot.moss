@@ -67,6 +67,8 @@ functor Boot: Std -> Compiler {
   bind prog::sym_recv = int_list();
   bind prog::sym_asm = int_list();
   bind prog::sym_nasm = int_list();
+  bind prog::sym_param = int_list();
+  bind prog::sym_origin = int_list();
   bind prog::ent_mod = int_list();
   bind prog::ent_ns = int_list();
   bind prog::ent_name = int_list();

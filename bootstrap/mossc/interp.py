@@ -772,10 +772,10 @@ def native_env(program: Program, args: list | None = None) -> dict:
 
 def receiver_type(sym: Symbol):
     """A bare receiver symbol as the type a method key holds."""
-    from .types import TAbstract, TNominal
+    from .types import TAbstract, TNominal, param
 
     if sym.kind == SymKind.TYPE:
-        return TAbstract(sym, ())
+        return TAbstract(param(sym), ())
     return TNominal(sym, ())
 
 

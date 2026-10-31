@@ -67,6 +67,11 @@ assume Std {
   # parameterization.
   val sym_asm: IntList;
   val sym_nasm: IntList;
+  # A type symbol's parameter, made on first use (`param_of`), and back:
+  # what an assumed type stands for, apart from what its name means after
+  # a later bind of it (D72). Sparse, so shorter than the symbol table.
+  val sym_param: IntList;
+  val sym_origin: IntList;
 
   # Scope entries: (module, namespace, name, target, exported).
   val ent_mod: IntList;
@@ -169,6 +174,7 @@ assume Std {
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,
     sym_mod, sym_name, sym_kind, sym_decl, sym_recv, sym_asm, sym_nasm,
+    sym_param, sym_origin,
     ent_mod, ent_ns, ent_name, ent_to, ent_pub,
     att_mod, att_recv, att_name, att_sym,
     err_code, err_mod, err_name;
@@ -202,6 +208,38 @@ assume Std {
     fn module_path(m: Int): String { mpaths.get(m) }
 
     fn sym_count(): Int { sym_kind.length() }
+
+    # The abstract type an assumed type symbol `s` stands for (D72): a
+    # symbol of its own, which no bind ever rebinds. A bind of `s` starts a
+    # new generation of the *name*, and a type already given to something
+    # must keep reading the old one, so an assumed `s` is this parameter
+    # rather than `s` itself. Same name, module and declaration as `s`.
+    fn param_of(s: Int): Int {
+      while sym_param.length().le(s) {
+        sym_param.push(ast::none());
+      }
+      if ast::is_some(sym_param.get(s)) {
+        return sym_param.get(s);
+      }
+      let p = add_symbol(
+        sym_mod.get(s), sym_name.get(s), sym_kind.get(s), sym_decl.get(s),
+        ast::none(), sym_asm.get(s), sym_nasm.get(s)
+      );
+      sym_param.set(s, p);
+      while sym_origin.length().le(p) {
+        sym_origin.push(ast::none());
+      }
+      sym_origin.set(p, s);
+      p
+    }
+
+    # The type symbol a parameter stands for, or none if `s` is not one.
+    fn origin_of(s: Int): Int {
+      if s.ge(sym_origin.length()) {
+        return ast::none();
+      }
+      sym_origin.get(s)
+    }
 
     # Paths.
 

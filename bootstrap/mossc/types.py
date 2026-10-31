@@ -46,6 +46,26 @@ class TAbstract:
 Type = object
 
 
+_params: dict = {}
+
+
+def param(sym: Symbol) -> Symbol:
+    """The abstract type an assumed type symbol stands for, as a symbol of
+    its own (D72). A type symbol names a requirement, and what it means
+    changes with every `bind` of it — each bind starts a new generation —
+    while a type already given to a local or a provision must keep meaning
+    what it meant then. So an assumed `T` is not `T` itself but this
+    parameter, which no bind ever rebinds: a later `bind T = ...` changes
+    what the name reads as, and nothing already elaborated."""
+    p = _params.get(id(sym))
+    if p is None:
+        p = Symbol(sym.module, sym.name, sym.kind, sym.decl, sym.receiver, sym.assumes)
+        p.origin = sym
+        _params[id(sym)] = (sym, p)
+        return p
+    return p[1]
+
+
 def head(t) -> Symbol | None:
     if isinstance(t, (TNominal, TAbstract)):
         return t.symbol

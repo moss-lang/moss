@@ -1165,9 +1165,11 @@ assume Std {
     # canonicalization through the bindings in force (D43).
     # A method need's receiver as `env` knows it: the type it was required
     # at, substituted through the bindings there (D62).
+    # A need's receiver is its declaration's, so its parameters are read
+    # as the generations in force in `env` (D72).
     fn need_key_recv(env: Int, r: Int): Int {
       if ast::is_some(r) {
-        lower::canon(env, r)
+        lower::instantiate(env, r)
       } else {
         r
       }
@@ -3158,15 +3160,12 @@ assume Std {
       while i.lt(lower::needs_count(f)) {
         let r = lower::need_recv_at(f, i);
         let s = lower::need_sym_at(f, i);
-        var key = r;
-        if ast::is_some(r) {
-          key = lower::canon(genv, r);
-        }
+        let key = need_key_recv(genv, r);
         let row = lower::env_find(genv, lower::need_kind(s), key, s);
         if ast::is_some(row) {
           let want = lower::need_app_at(f, i);
           let have = lower::env_b_of(row);
-          if coherent(s, want, fbase, have, base, genv, moved, bound_here).not() {
+          if coherent(s, want, fbase, have, base, genv, moved, bound_here, true).not() {
             prog::error(prog::e_incoherent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(s));
           }
         }
@@ -3194,11 +3193,13 @@ assume Std {
 
     # One need: `want` is the callee's app for item `s`, read against its
     # declaration's environment `wbase`; `have` the provision's, against
-    # `hbase`. Most needs are the same assumed item on both sides with
+    # `hbase`. A declaration's app states its types in terms of its own
+    # parameters, read as the generations in force here (D72); one made
+    # in this frame (`declared` false) is in this frame's terms already. Most needs are the same assumed item on both sides with
     # nothing rebound, and are settled without reading a symbol.
     fn coherent(
       s: Int, want: Int, wbase: Int, have: Int, hbase: Int, genv: Int,
-      moved: IntList, bound_here: Bool
+      moved: IntList, bound_here: Bool, declared: Bool
     ): Bool {
       let deps = int_list();
       lower::item_deps(s, deps);
@@ -3227,7 +3228,11 @@ assume Std {
         let wv = lower::app_get(want, t, wbase);
         var need = ast::none();
         if ast::is_some(wv) {
-          need = lower::canon(genv, wv);
+          if declared {
+            need = lower::instantiate(genv, wv);
+          } else {
+            need = lower::canon(genv, wv);
+          }
         } else if lower::env_has(genv, lower::ek_type(), ast::none(), t) {
           # Not in force where the callee was declared: it means whatever
           # this frame means by it.
@@ -3253,7 +3258,7 @@ assume Std {
       let empty = int_list();
       if coherent(
         g, want, genv, lower::env_b_of(row), lower::env_of(cg_where.read()), genv,
-        empty, true
+        empty, true, false
       ).not() {
         prog::error(prog::e_incoherent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(g));
       }

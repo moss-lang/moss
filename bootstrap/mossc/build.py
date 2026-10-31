@@ -293,6 +293,13 @@ def captured(need, slot) -> tuple:
     return ("captured", need, slot)
 
 
+def declared(t):
+    """The declaration a receiver type is headed by: an assumed type is its
+    parameter (D72), which stands for the declared symbol."""
+    h = head(t)
+    return getattr(h, "origin", h)
+
+
 def freeze_env(env: dict) -> tuple:
     """A hashable form of a binding environment, for keying specializations."""
     return tuple(
@@ -401,7 +408,7 @@ class Backend:
         names = self.lib["float"].names
         if key is names.get("float"):
             return WASM_OPS["f64_convert_i32_s"], F64
-        if not isinstance(key, tuple) or head(key[0]) is not names.get("Float"):
+        if not isinstance(key, tuple) or declared(key[0]) is not names.get("Float"):
             return None
         short = key[1].name.lstrip(".")
         if short == "trunc":
@@ -1704,7 +1711,7 @@ class FnCompiler:
                     return
             if (
                 "float" in self.b.lib
-                and head(receiver) is self.b.lib["float"].names.get("FloatList")
+                and declared(receiver) is self.b.lib["float"].names.get("FloatList")
             ):
                 # D69: the native `FloatList` is an IntList of words, two to
                 # an f64, so `.length` halves and an element is one f64

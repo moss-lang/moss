@@ -366,6 +366,15 @@ OPS_OUT = (
     "nnynyyyyn\n"
 )
 
+# What tests/wasi/dual.moss prints, times a million: f(2), f'(2) and
+# f''(2) for f(x) = x^3 - 2x - 5; Newton's iterates from 2 toward its
+# root, 2.0945514815...; and d/dx (x * d/dy (x + y)) at 1.
+DUAL_OUT = (
+    "-1000000\n10000000\n12000000\n"
+    "2100000\n2094568\n2094551\n2094551\n"
+    "1000000\n"
+)
+
 # What tests/wasi/newton.moss prints: the same report at f64, then at f32.
 NEWTON_OUT = (
     "1500000000\n1416666667\n1414213562\n1414213562\n0\n333333333\n"
@@ -1916,6 +1925,46 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
         self.assertEqual(self.wasmtime_run(module), "2\n1\n0\n11\n")
         self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "2\n1\n0\n11\n")
+
+    def test_a_type_bind_starts_a_generation(self):
+        """D72: what was typed before a bind of `Int` keeps the `Int` it
+        had, in a function generic over it, while a value made after the
+        bind adds with the new one's `+`."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/generations.moss"
+        module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), "-2\n40\n")
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "-2\n40\n")
+
+    def test_dual_numbers_by_rebinding_float(self):
+        """D72: `bind Float = Dual` over the `Float` in force, inside
+        functions generic over `Float`, differentiates code written
+        against it, and twice gives a second derivative. Nested
+        differentiation is correct (1) because the outer variable has to
+        be lifted into the inner generation; added as it is, it is a type
+        error, not perturbation confusion (2). The bootstrap's front end
+        accepts the one and rejects the other; its back end compiles each
+        function once, at one scalar per abstract type, so it cannot run
+        a `Float` two wide."""
+        from .test_build import compile_wasm
+
+        module = self.compile_with_moss("tests/wasi/dual.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), DUAL_OUT)
+        program = collect.load("tests/wasi/dual.moss", prelude=PRELUDE, root=REPO)
+        Lower(program).run()
+
+        entry = "tests/wasi/perturbation.moss"
+        with self.assertRaises(LowerError) as caught:
+            compile_wasm({}, entry=entry)
+        self.assertIn(
+            "argument `rhs` of `.add` is `Dual[Base=Dual[Base=Float]]`, "
+            "expected `Dual[Base=Float]`",
+            str(caught.exception),
+        )
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertNotEqual(out[:4], b"\0asm")
+        self.assertTrue(out.decode("utf-8").startswith(f"?S {entry} nested\n"), out[:200])
 
     def test_temporaries_nested_anywhere(self):
         """A local comes from emission itself, so a construct that needs a

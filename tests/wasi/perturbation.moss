@@ -1,0 +1,75 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D72: tests/wasi/dual.moss's `nested`, written the way that confuses
+# perturbations: the outer variable `x` is added to the inner one as it
+# is. `x` is a `Float` of the outer generation and `variable(y0)` one of
+# the inner, so the addition is a type error rather than a derivative of
+# 2 where 1 is right.
+
+context Reals = Int, zero, one, Int.add, Int.mul, Float, float, Float.add, Float.sub, Float.mul, Float.div;
+
+assume Reals {
+  fn f(x: Float): Float { x * x * x - 2.0 * x - 5.0 }
+}
+
+type Base;
+
+assume Int, Base {
+  fn lift(n: Int): Base;
+  context BaseOps = Base, lift, Base.add, Base.sub, Base.mul, Base.div;
+}
+
+assume Int, zero, one, BaseOps {
+  type Dual { v: Base, d: Base };
+
+  fn constant(n: Int): Dual { Dual { v = lift(n), d = lift(zero) } }
+  fn variable(x: Base): Dual { Dual { v = x, d = lift(one) } }
+  fn still(x: Base): Dual { Dual { v = x, d = lift(zero) } }
+
+  fn Dual.add(rhs: Dual): Dual { Dual { v = this.v + rhs.v, d = this.d + rhs.d } }
+  fn Dual.sub(rhs: Dual): Dual { Dual { v = this.v - rhs.v, d = this.d - rhs.d } }
+  fn Dual.mul(rhs: Dual): Dual {
+    Dual { v = this.v * rhs.v, d = this.d * rhs.v + this.v * rhs.d }
+  }
+  fn Dual.div(rhs: Dual): Dual {
+    Dual { v = this.v / rhs.v, d = (this.d * rhs.v - this.v * rhs.d) / (rhs.v * rhs.v) }
+  }
+}
+
+functor Dualize: Int, zero, one, BaseOps -> Float, float, Float.add, Float.sub, Float.mul, Float.div {
+  bind Float = Dual;
+  bind float = constant;
+  bind Float.add = Dual.add;
+  bind Float.sub = Dual.sub;
+  bind Float.mul = Dual.mul;
+  bind Float.div = Dual.div;
+}
+
+assume Std {
+  fn nested(at: Float): Float {
+    {
+      bind Base = Float;
+      bind lift = float;
+      bind Dualize;
+      let x = variable(at);
+      let y0 = 1.0;
+      let inner = {
+        bind Base = Float;
+        bind lift = float;
+        bind Dualize;
+        (x + variable(y0)).d
+      };
+      x * inner
+    }.d
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    nested(1.0);
+  }
+}

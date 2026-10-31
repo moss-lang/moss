@@ -1,0 +1,68 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, i32_bool;
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D72: a type bind starts a new generation of the symbol it binds, and
+# what was typed before it keeps the old one. In `double`, generic over
+# `Int`, `n` is the `Int` the caller supplied — a wrapping i32 here — and
+# stays that inside a block that binds `Int` to a checked i32: `n + n`
+# wraps to -2 rather than trapping. A value made after the bind is of
+# the new generation, and adds with its `+`. Output: `-2`, `40`.
+
+assume Std {
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+# An i32 whose addition traps on signed overflow.
+assume Wasm, Branch {
+  type Checked I32;
+
+  fn checked(c: Checked): I32 { match c { Checked v => v } }
+
+  fn Checked.plus(rhs: Checked): Checked {
+    let a = checked(this);
+    let b = checked(rhs);
+    let r = w::i32_add(a, b);
+    let flips = w::i32_and(w::i32_xor(a, r), w::i32_xor(b, r));
+    if i32_bool(w::i32_lt_s(flips, w::i32_zero)) { w::unreachable() } else { () }
+    Checked (r)
+  }
+
+  fn checked_of(n: Num): Checked { match n { Num v => Checked (v) } }
+  fn num_of(c: Checked): Num { Num (checked(c)) }
+}
+
+assume Wasm, Branch, Int, Int.add {
+  fn double(n: Int): Int {
+    {
+      bind Int = Checked;
+      bind Int.add = Checked.plus;
+      n + n
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    print_int(double(2147483647));
+    putchar(char::newline);
+    let m = {
+      bind Int = Checked;
+      bind Int.add = Checked.plus;
+      let m = checked_of(20);
+      num_of(m + m)
+    };
+    print_int(m);
+    putchar(char::newline);
+  }
+}
