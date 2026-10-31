@@ -44,6 +44,8 @@
 (*    two generations (types already stored in Γ would be re-read under the  *)
 (*    new binding).  Val/fn/method binds shadow harmlessly and remain        *)
 (*    unrestricted.  Found while designing the preservation invariant.       *)
+(*    The surface rule is now [D72]: a type bind starts a new generation,    *)
+(*    elaborated to a fresh symbol, so this premise holds by construction.   *)
 (* 8. Satisfaction carries a coherence premise: a val or fn requirement      *)
 (*    names no types, so nothing else stops f[T=Bool] from being satisfied   *)
 (*    by an ambient v : T that was provided under bind T=Int.  Where a       *)

@@ -635,7 +635,9 @@ The novel construct. D25–D28 were confirmed in notes.md.
 **Bind** from the **Expr** production in syntax.md). Its effect is lexical
 and extends from the statement to the end of the enclosing block. A later
 `bind` of the same symbol in the same or an inner block shadows. Binds do not
-escape the block upward or survive into the next iteration of a loop.
+escape the block upward or survive into the next iteration of a loop. For
+a type, shadowing starts a new generation, and what was typed before the
+bind keeps the old one ([D72]).
 
 **[D26] DECIDED (what may be bound, and to what).**
 
@@ -2300,6 +2302,114 @@ the text above did not fix, it is recorded here.
   lambdas at their binds (115 to 104 lines); both print the same in
   both compilers.
 
+**[D72] DECIDED by the designer and implemented (a type bind starts a new generation).** [D25] lets a bind
+shadow, and for vals and fns that has always meant what it means for a
+`let`: code after the bind sees the new one, and whatever was made before
+it keeps the old. For types, nothing said so, and the implementations did
+something else. A type bind was an edge in one substitution keyed by the
+symbol, and an assumed `T` was the identity entry `T ↦ T`, so `bind T =
+U;` changed what `T` meant everywhere, including in types already given
+to locals and provisions. When `T` is concrete at the bind that is
+invisible, because those types were already resolved. When it is
+abstract — any `assume`d type, in any generic function — the old and new
+`T` become one. The calculus never allowed this: `TBindTyR` requires that
+the bound symbol not be in force (CoreMoss.v, deviation 7, which names
+exactly this hazard: "shadowing an in-use abstract type symbol would
+conflate its two generations").
+
+Dual numbers are the program that needs it. Under `assume Std`,
+
+```moss
+bind Base = Float;    # the duals' base: the Float in force here
+bind lift = float;
+bind Dualize;         # bind Float = Dual; bind float = constant; ...
+f(variable(x)).d      # f'(x), with f written against Float
+```
+
+makes the new `Float` a `Dual[Base=Float]` over the *old* `Float`. Keyed
+by symbol, that is `Float = Dual[Base=Float]`, a cycle: the bootstrap
+recursed forever and the self-hosted compiler reported a false
+incoherence.
+
+*Decided.* Every type bind starts a new generation of the symbol it binds.
+
+- The right side means what it means at the bind ([D26]), resolved
+  there: `bind Float = Dual;` after `bind Base = Float;` is
+  `Dual[Base=Float₀]`, where `Float₀` is the generation in force before.
+- After the bind, every reference to `T` — a type written in the source,
+  a callee's requirement on `T`, a method key with `T` as receiver, a
+  literal or operator that goes through `T` ([D68]) — is to the new
+  generation.
+- Everything that was given a type before the bind keeps it: locals,
+  parameters, vals, and provisions made at `T₀` (a provision is keyed by
+  its receiver's type, so `Float.add` made at `Float₀` is still there, at
+  `Float₀`).
+- A generation is the type it was bound to, not a new abstract type, so a
+  block's value may leave the block whenever its type can be written
+  outside. Since the right side is resolved at the bind, it can unless it
+  mentions a type bound inside the block itself, which stays an error (as
+  in `TBindTyR`, whose result type must be well-formed outside). It also
+  means a diagnostic shows a generation as the type it is: the only
+  abstract type printed by name is the one an `assume` supplied, so no
+  error says "expected `Float`, got `Float`".
+
+This applies to every type bind, not only to rebinding an assumed type:
+when the old generation was concrete, no program can tell the difference,
+and one rule is simpler than two.
+
+*Why it is sound.* Elaboration gives each type bind a fresh core symbol,
+bound to the resolved right side, and resolves the surface name to it for
+the rest of the block. So `TBindTyR`'s freshness premise holds by
+construction, and deviation 7 becomes a fact about elaboration rather
+than a difference between the surface language and the calculus. The
+calculus and its proofs are unchanged, as for [D66] and [D70].
+
+*Consequences.*
+
+- A value of the old generation does not mix with the new: inside the
+  block above, `x + 1.0` is a type error, since `x : Float₀` and `1.0 :
+  Float`. Moving a value into the new generation is explicit
+  (`variable(x)`, `constant(n)`). For automatic differentiation this is
+  what rules out *perturbation confusion* (Siskind and Pearlmutter): in
+  nested derivatives, the outer variable cannot be mistaken for the inner
+  one, because the two are different types and the program has to say
+  how the outer is lifted (as a constant, with derivative zero). Haskell's
+  `ad` gets the same guarantee by branding perturbations with a rank-2
+  type variable; here it falls out of how binds shadow.
+- A type bind makes every fn and val whose signature mentions the type a
+  requirement at the new generation, so a provision made at the old one
+  no longer satisfies it ([D62], [D71]'s coherence). Code that uses such
+  an item after the bind must rebind it — `Dualize` binds `float` for
+  this reason — or get an error at the use.
+- A program that relied on the old rule changes meaning, and only one
+  that was unsound: `let n: Int = ...; bind Int = Checked; n + n` adds
+  with the `Int` that `n` has.
+
+*Implementation.* What an assumed `T` is, is no longer `T`: it is `T`'s
+*parameter*, a type symbol of its own (`param` in the bootstrap's
+`types.py`, `prog::param_of` in the self-hosted compiler) that no bind
+ever rebinds. A type stored anywhere mentions parameters, never the
+declared symbol, so a later `bind T` cannot reach into it; the declared
+symbol `T` is only ever read as a name, through the environment, which
+gives the generation in force. A type bind resolves its right side at
+the bind. One thing changes shape: a type as a *declaration* states it —
+a callee's need app, a need's receiver — mentions the callee's
+parameters, and reading it at a call is no longer `canon` but
+`instantiate`, which maps each parameter to the generation of its symbol
+in force at the call (one made in the calling frame, D66's forwarder's,
+is in the frame's terms already). The bootstrap's layout check, which
+called any tag containing itself a cycle, now keys by the whole
+instantiation, since `Dual[Base=Dual[Base=Float]]` contains a different
+`Dual` (with a depth bound for types that only grow). Standing tests:
+`tests/wasi/dual.moss` (f, f′ and f″ by rebinding `Float` in functions
+generic over it, Newton's method with the derivative from the same `f`,
+and nested differentiation giving 1), `tests/wasi/perturbation.moss`
+(the same nested program adding the outer variable as it is: a type
+error in both compilers), and `tests/wasi/generations.moss` (`n + n`
+above). The bootstrap's front end handles the dual programs; its back
+end compiles each function once, at one scalar per abstract type, and so
+cannot run a `Float` two wide.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -2345,7 +2455,10 @@ compilers' front ends, D70 anonymous functions as a fn or method bind's
 right side only — `(params) => body`, typed by the bound declaration,
 capturing context at the bind and locals by value, `this` the receiver of
 a method bind — sugar over the calculus, with D54's plain-function
-method providers implemented as written in both compilers)
+method providers implemented as written in both compilers, D72 every
+type bind starts a new generation of its symbol — what was typed before
+it keeps the old one — which is what lets `Float` be rebound in terms of
+itself and rules out perturbation confusion)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
