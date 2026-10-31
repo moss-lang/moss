@@ -125,6 +125,9 @@ class Aliasdef:
 class Tagdef:
     name: str
     ty: Type
+    # Parameters listed after the name, which the payload need not mention
+    # (D73): `type Packed[Item] I32;`.
+    params: tuple = ()
     offset: int = field(default=-1, compare=False)
 
 

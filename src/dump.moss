@@ -313,6 +313,17 @@ assume Std {
         sp();
         intern::put(ast::a_of(id));
         sp();
+        putchar(char::lbracket);
+        var i = zero;
+        while i.lt(ast::d_of(id)) {
+          if i.gt(zero) {
+            sp();
+          }
+          intern::put(ast::kid_at(ast::c_of(id), i));
+          i = i.add(one);
+        }
+        putchar(char::rbracket);
+        sp();
         dump(ast::b_of(id));
       } else if k.eq(ast::k_d_val()) {
         sp();

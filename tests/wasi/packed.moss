@@ -1,0 +1,85 @@
+import "../../lib/access.moss" use Elem, .get, .length, .push;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, i32_bool, Item, width, put, take, Layout, Packed, packed;
+import "../../lib/wasm.moss" as w use Wasm, I32, I64;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D73's `Packed[Item]`: a list of anything is a `Layout` and nothing more.
+# `total` is written against a list of `Big`s; `main` makes `Big` an i64
+# and the list the library's packed list at a two-word layout, bound once,
+# where the layout is captured (D26). `total` is generic, so the back end
+# sees its list at the specialized type `Packed[Item=Long]`, which has
+# attached methods of the same names; the call is still the provision,
+# which carries the layout. Output: `3000000000`.
+
+type Big;
+type BigList;
+
+assume Int, Big {
+  fn big(n: Int): Big;
+  fn small(b: Big): Int;
+
+  assume BigList {
+    fn big_list(): BigList;
+
+    context Bigs =
+      Big, big, small, Big.add, Big.div, Big.rem, Big.le,
+      BigList, big_list, BigList.push[Elem=Big], BigList.get[Elem=Big], BigList.length;
+  }
+}
+
+assume Std, Bigs {
+  fn print_big(n: Big) {
+    if big(10) <= n { print_big(n / big(10)); }
+    putchar((small(n % big(10)) + char::digit0.code()).char());
+  }
+
+  fn total(): Big {
+    let xs = big_list();
+    var i = 0;
+    while i < 3 {
+      xs.push(big(1000000000));
+      i = i + 1;
+    }
+    var sum = big(0);
+    i = 0;
+    while i < xs.length() {
+      sum = sum + xs.get(i);
+      i = i + 1;
+    }
+    sum
+  }
+}
+
+assume Wasm, Branch {
+  type Long I64;
+  fn i64_of(x: Long): I64 { match x { Long v => v } }
+}
+
+functor LongLayout: Wasm, Branch -> Layout {
+  bind Item = Long;
+  bind width = w::i32_add(w::i32_one, w::i32_one);
+  bind put = (at, value) => w::i64_store(at, i64_of(value));
+  bind take = (at) => Long (w::i64_load(at));
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Big = Long;
+    bind big = (n) => Long (w::i64_extend_i32_s(match n { Num v => v }));
+    bind small = (b) => Num (w::i32_wrap_i64(i64_of(b)));
+    bind Big.add = (r) => Long (w::i64_add(i64_of(this), i64_of(r)));
+    bind Big.div = (r) => Long (w::i64_div_s(i64_of(this), i64_of(r)));
+    bind Big.rem = (r) => Long (w::i64_rem_s(i64_of(this), i64_of(r)));
+    bind Big.le = (r) => i32_bool(w::i64_le_s(i64_of(this), i64_of(r)));
+    bind LongLayout;
+    bind BigList = Packed;
+    bind big_list = packed;
+    bind BigList.push[Elem=Big] = Packed.push;
+    bind BigList.get[Elem=Big] = Packed.get;
+    bind BigList.length = Packed.length;
+    print_big(total());
+    putchar(char::newline);
+  }
+}

@@ -74,7 +74,7 @@ assume Std {
   fn k_d_assume(): Int { hex(n2(), n6()) }  # a=item run b=len c=decl run d=len
   fn k_d_type(): Int { hex(n2(), n7()) }    # a=name
   fn k_d_alias(): Int { hex(n2(), n8()) }   # a=name b=type
-  fn k_d_tag(): Int { hex(n2(), n9()) }     # a=name b=type
+  fn k_d_tag(): Int { hex(n2(), n9()) }     # a=name b=type c=listed run d=count (D73)
   fn k_d_unit(): Int { hex(n2(), n10()) }   # a=name
   fn k_d_val(): Int { hex(n2(), n11()) }    # a=name b=type c=init
   fn k_d_fn(): Int { hex(n2(), n12()) }     # a=run: recv, name, params, len, ret, body

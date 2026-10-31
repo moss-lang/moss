@@ -1066,6 +1066,35 @@ assume Std {
       }
     }
 
+    # D74: an attached method is at its receiver's instantiation. Whatever
+    # the receiver's type binds — its arguments, one per requirement of
+    # its declaration — the callee reads as bound so, whatever this frame
+    # has bound since; everything else it needs comes from this frame.
+    fn receiver_callee_env(recv_ty: Int, callee: Int, map: IntList): Int {
+      if types::kind_of(recv_ty).ne(types::kd_nominal()) {
+        return callee_env(callee, map);
+      }
+      if types::member_count(recv_ty).eq(zero) {
+        return callee_env(callee, map);
+      }
+      let reqs = int_list();
+      types::reqs_of(types::sym_of(recv_ty), reqs);
+      let saved = cg_env.read();
+      var view = saved;
+      var i = zero;
+      while i.lt(reqs.length()) {
+        view = lower::env_push(
+          view, lower::ek_type(), ast::none(), reqs.get(i),
+          types::member_at(recv_ty, i), ast::none()
+        );
+        i = i.add(one);
+      }
+      cg_env.write(view);
+      let out = callee_env(callee, map);
+      cg_env.write(saved);
+      out
+    }
+
     # Whether `f` can reach its plain fn need `sym`: call it, bind it
     # onward, or call something that does. A symbol `f` does not list
     # among its needs is kept, to be safe.
@@ -1641,7 +1670,7 @@ assume Std {
       if k.eq(ast::k_ex_method()) {
         let target = method_of(e, m);
         if ast::is_some(target) {
-          return ret_in(callee_env(target, int_list()), target);
+          return ret_in(receiver_callee_env(type_of(ast::a_of(e), m), target, int_list()), target);
         }
         let bound = method_provision(type_of(ast::a_of(e), m), e, m);
         if ast::is_some(bound).not() {
@@ -2352,7 +2381,7 @@ assume Std {
       let map = int_list();
       if ast::is_some(meth) {
         check_callee(meth);
-        penv = callee_env(meth, map);
+        penv = receiver_callee_env(recv_ty, meth, map);
       } else {
         # Not in scope as an attached method: the context must provide it
         # at this receiver, keyed by the receiver's head (D36).
@@ -2396,7 +2425,17 @@ assume Std {
       if ast::is_some(sym).not() {
         return ast::none();
       }
-      lower::env_find(cg_env.read(), lower::ek_fn(), recv, sym)
+      let found = lower::env_find(cg_env.read(), lower::ek_fn(), recv, sym);
+      if ast::is_some(found) {
+        return found;
+      }
+      # A defined attached method of the name is not a key; the detached
+      # method the name means here may be (`method_of_ty`).
+      let detached = prog::resolve_detached(m, ast::b_of(e));
+      if ast::is_some(detached) {
+        return lower::env_find(cg_env.read(), lower::ek_fn(), recv, detached);
+      }
+      found
     }
 
     # The symbol half of the key. An attached method matches *by name* in
@@ -2422,7 +2461,35 @@ assume Std {
       method_of_ty(type_of(ast::a_of(e), m), e, m)
     }
 
+    # The attached method a call names, unless this scope provides the
+    # detached method of that name at the receiver. The back end sees a
+    # receiver at its specialized type, where code written against an
+    # abstract receiver — whose call [D61] resolved to the context's
+    # provision — may now find an attached method of the same name:
+    # `xs.push` on a `BigList` that is a `Packed[Item=Long]` here. The
+    # provision is what that code meant, and it carries what was captured
+    # where it was bound (a layout, D73), which a direct call of the
+    # attached method would not have. Where the provision is that same
+    # method (`bind IntList.push[Elem=Int] = Ints.push`) the two are one.
     fn method_of_ty(recv_ty: Int, e: Int, m: Int): Int {
+      let attached = attached_of_ty(recv_ty, e, m);
+      if ast::is_some(attached) {
+        let detached = prog::resolve_detached(m, ast::b_of(e));
+        if ast::is_some(detached) {
+          let bound = lower::env_find(
+            cg_env.read(), lower::ek_fn(), canon_ty(recv_ty), detached
+          );
+          if ast::is_some(bound) {
+            if ast::is_some(lower::env_a_of(bound)) {
+              return ast::none();
+            }
+          }
+        }
+      }
+      attached
+    }
+
+    fn attached_of_ty(recv_ty: Int, e: Int, m: Int): Int {
       let head = types::head_of(canon_ty(recv_ty));
       if ast::is_some(head).not() {
         return ast::none();
@@ -4226,6 +4293,7 @@ assume Std {
       # Every defined function's requirement list, which is what the
       # calling convention below is built from.
       lower::lower_all();
+      lower::check_listed();
       uses_init();
       let mn = spelled();
       sp_main(mn);

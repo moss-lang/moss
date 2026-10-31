@@ -236,7 +236,7 @@ def _decl(d):
     if isinstance(d, ast.Aliasdef):
         return _node("d_alias", d.name, _type(d.ty))
     if isinstance(d, ast.Tagdef):
-        return _node("d_tag", d.name, _type(d.ty))
+        return _node("d_tag", d.name, _list(list(d.params)), _type(d.ty))
     if isinstance(d, ast.Unitdef):
         return _node("d_unit", d.name)
     if isinstance(d, ast.Valdef):

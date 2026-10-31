@@ -288,6 +288,13 @@ class Parser:
         start = self.peek().offset
         self.expect(Kind.TYPE)
         name = self.expect(Kind.NAME).text
+        if self.eat(Kind.LBRACKET):
+            # D73: a tag's listed parameters.
+            params = self.comma_list(lambda: self.expect(Kind.NAME).text, Kind.RBRACKET)
+            self.expect(Kind.RBRACKET)
+            ty = self.parse_type()
+            self.expect(Kind.SEMI)
+            return ast.Tagdef(name, ty, tuple(params), offset=start)
         if self.eat(Kind.SEMI):
             return ast.Tydef(name, offset=start)
         if self.eat(Kind.EQUAL):

@@ -1065,6 +1065,27 @@ assume Std {
       }
       if accept(tk_type()) {
         let nm = take_name();
+        # D73: a tag's listed parameters, which its payload need not
+        # mention.
+        if accept(tk_lbracket()) {
+          let ps = int_list();
+          loop {
+            if here(tk_rbracket()) {
+              break;
+            }
+            if here(tk_eof()) {
+              break;
+            }
+            ps.push(take_name());
+            if accept(tk_comma()).not() {
+              break;
+            }
+          }
+          expect(tk_rbracket());
+          let ty = parse_type();
+          expect(tk_semi());
+          return ast::node4(ast::k_d_tag(), nm, ty, ast::commit(ps), ps.length());
+        }
         if accept(tk_semi()) {
           return ast::node1(ast::k_d_type(), nm);
         }
@@ -1075,7 +1096,7 @@ assume Std {
         }
         let ty = parse_type();
         expect(tk_semi());
-        return ast::node2(ast::k_d_tag(), nm, ty);
+        return ast::node4(ast::k_d_tag(), nm, ty, ast::none(), zero);
       }
       if accept(tk_val()) {
         let nm = take_name();

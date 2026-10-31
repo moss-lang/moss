@@ -779,15 +779,40 @@ class Lower:
             stack.extend(reversed(mentioned))
         for sym in group:
             self._reqs_cache[id(sym)] = []
+        listed = {id(sym): self.listed_params(sym) for sym in group}
         changed = True
         while changed:
             changed = False
             for sym in group:
-                found: list = []
+                found: list = list(listed[id(sym)])
                 self.free_type_syms(sym.decl.ty, sym.module, found)
                 if found != self._reqs_cache[id(sym)]:
                     self._reqs_cache[id(sym)] = found
                     changed = True
+
+    def listed_params(self, sym: Symbol) -> list:
+        """D73: the parameters a tag lists after its name, which seed its
+        relevance whether or not its payload mentions them. Each must be a
+        type requirement of the declaration's assume nesting, as a bracket
+        application's left side must be."""
+        names = getattr(sym.decl, "params", ())
+        if not names:
+            return []
+        nesting: list = []
+        self.assume_type_syms(sym, nesting)
+        out: list = []
+        for name in names:
+            target = resolve_path(sym.module, [name])
+            if not isinstance(target, Symbol) or target not in nesting:
+                self.error(
+                    sym.module,
+                    f"`{sym.name}` lists `{name}`, which is not a type its "
+                    "assume nesting requires (D73)",
+                    sym.decl,
+                )
+            if target not in out:
+                out.append(target)
+        return out
 
     def mentioned_nominals(self, ty, module: Module, out: list):
         """The tags and aliases a type expression names, brackets included."""
@@ -2011,10 +2036,24 @@ class FnChecker:
                     continue
                 if attached.decl.body is not None:
                     self.lower.lower_fn(attached.module, attached)
-                    needs_map = self.require_needs(
-                        attached, self.lower.needs_of[id(attached)]
-                    )
-                    sig = self.lower.fn_sig(attached, self.env.tymap, self.env, this=oty)
+                    # D74: the method is at its receiver's instantiation.
+                    # Whatever the receiver's type binds, the call reads as
+                    # bound so, whatever this scope has bound since; the
+                    # method's other needs are met here, and coherence
+                    # checks they were provided at that instantiation.
+                    outer = self.env
+                    receiver = self.lower.canon(outer, oty)
+                    if isinstance(receiver, TNominal) and receiver.args:
+                        self.env = Env(self.module, parent=outer)
+                        for t, ty in receiver.args:
+                            self.env.tymap[t] = ty
+                    try:
+                        needs_map = self.require_needs(
+                            attached, self.lower.needs_of[id(attached)]
+                        )
+                        sig = self.lower.fn_sig(attached, self.env.tymap, self.env, this=oty)
+                    finally:
+                        self.env = outer
                     args = self.check_args(attached.name, sig, expr.args)
                     ret = self.lower.slots_of(self.env, sig.ret)
                     return (

@@ -1878,6 +1878,8 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/float.moss", FLOAT_OUT),
             ("tests/wasi/plain_provider.moss", "abrcd\n", "lib/prelude.moss"),
             ("tests/wasi/lambda.moss", LAMBDA_OUT, "lib/prelude.moss"),
+            ("tests/wasi/phantom.moss", "42\nz\n42 z\n", "lib/prelude.moss"),
+            ("tests/wasi/packed.moss", "3000000000\n", "lib/prelude.moss"),
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),
@@ -1925,6 +1927,42 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
         self.assertEqual(self.wasmtime_run(module), "2\n1\n0\n11\n")
         self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "2\n1\n0\n11\n")
+
+    def test_phantoms_and_receivers_are_checked(self):
+        """D73's listed parameters must be types the declaration requires,
+        and D74's attached method is at its receiver's instantiation: a
+        `Box[T=Int]`'s `.get()` is an `Int` wherever `T` has been rebound,
+        and a `Cell[Item=Int]` read where the `Char` codec is in force
+        needs its codec at `Int`. Both used to read an `Int` as a `Char`."""
+        from .test_build import compile_wasm
+
+        cases = {
+            "phantom_unlisted": (
+                "`Cell` lists `Other`, which is not a type its assume nesting "
+                "requires (D73)",
+                "!V {} Other\n",
+            ),
+            "receiver_rebound": (
+                "argument `c` of `putchar` is `Int`, expected `Char`",
+                "?S {} demo\n",
+            ),
+            "phantom_misread": (
+                "calling `Cell.first` needs `encode` at [Item=Int], but the one "
+                "in the context here was provided at [Item=Char]",
+                "?S {} demo\n",
+            ),
+        }
+        for name, (message, report) in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                self.assertTrue(
+                    out.decode("utf-8").startswith(report.format(entry)), out[:200]
+                )
 
     def test_a_type_bind_starts_a_generation(self):
         """D72: what was typed before a bind of `Int` keeps the `Int` it

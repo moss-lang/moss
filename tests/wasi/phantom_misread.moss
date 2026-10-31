@@ -1,0 +1,80 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D73 and D74: tests/wasi/phantom.moss, reading the `Int` cell where the
+# `Char` codec is in force. `a` is a `Cell[Item=Int]`, so `a.first()` is
+# at `Item=Int` (D74) and needs `decode` provided at it; the one here was
+# provided at `Item=Char`. Without the listed parameter, `Cell` would be
+# one type and this would print the `Int` 42 as the character `*`.
+
+type Item;
+
+assume Std, Item {
+  fn encode(x: Item): Int;
+  fn decode(n: Int): Item;
+  context Codec = Item, encode, decode;
+}
+
+assume Std, Codec {
+  type Cell[Item] IntList;
+
+  fn cell(x: Item): Cell {
+    let xs = int_list();
+    xs.push(encode(x));
+    Cell (xs)
+  }
+
+  fn Cell.first(): Item { match this { Cell xs => decode(xs.get(0)) } }
+}
+
+functor Ints: Std -> Codec {
+  bind Item = Int;
+  bind encode = (x) => x;
+  bind decode = (n) => n;
+}
+
+functor Chars: Std -> Codec {
+  bind Item = Char;
+  bind encode = (c) => c.code();
+  bind decode = (n) => n.char();
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn demo() {
+    let a = { bind Ints; cell(42) };
+    let b = { bind Chars; cell(char::z) };
+    {
+      bind Ints;
+      print_int(a.first());
+      putchar(char::newline);
+    }
+    {
+      bind Chars;
+      putchar(a.first());
+      putchar(char::newline);
+    }
+    {
+      bind Chars;
+      bind Ints;
+      print_int(a.first());
+      putchar(char::space);
+      bind Chars;
+      putchar(b.first());
+      putchar(char::newline);
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

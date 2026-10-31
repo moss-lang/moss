@@ -666,6 +666,35 @@ assume Std {
 
     # The abstract types a run of assume items names, through the contexts
     # it names.
+    # D73: every parameter a tag lists must be a type its assume nesting
+    # requires, as a bracket application's left side must be.
+    fn check_listed() {
+      var s = zero;
+      while s.lt(prog::sym_count()) {
+        let d = prog::sym_decl.get(s);
+        if prog::sym_kind.get(s).eq(prog::sk_tag()) {
+          if ast::d_of(d).gt(zero) {
+            let nesting = int_list();
+            nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), nesting, zero);
+            var i = zero;
+            while i.lt(ast::d_of(d)) {
+              let name = ast::kid_at(ast::c_of(d), i);
+              let t = prog::lookup(prog::sym_mod.get(s), prog::ns_name(), name);
+              var ok = ast::is_some(t);
+              if ok {
+                ok = types::contains_sym(nesting, t);
+              }
+              if ok.not() {
+                prog::error(prog::e_listed(), prog::sym_mod.get(s), name);
+              }
+              i = i.add(one);
+            }
+          }
+        }
+        s = s.add(one);
+      }
+    }
+
     fn nest_types(m: Int, run: Int, len: Int, out: IntList, depth: Int) {
       if depth.gt(n16()) {
         return ();

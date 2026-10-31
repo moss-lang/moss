@@ -586,6 +586,24 @@ functor DoubleLayout: Wasm, Branch -> Layout {
   bind take = take_double;
 }
 
+# One handle for every element type (D73): a `Packed[Item=X]` is the
+# address of a packed list at whatever `Layout` was in force for `X`, and
+# lists of two element types are two types, though both are an `I32`. A
+# program's list of anything is its `Layout` and nothing more; its
+# methods take that layout from where they are called or bound, which
+# must have provided it at the receiver's `Item` (D74).
+assume Wasm, Branch, Layout {
+  type Packed[Item] I32;
+
+  fn packed_addr(l: Packed): I32 { match l { Packed a => a } }
+
+  fn packed(): Packed { Packed (packed_list()) }
+  fn Packed.length(): Num { packed_length(packed_addr(this)) }
+  fn Packed.get(index: Num): Item { packed_get(packed_addr(this), index) }
+  fn Packed.set(index: Num, value: Item) { packed_set(packed_addr(this), index, value); }
+  fn Packed.push(value: Item) { packed_push(packed_addr(this), value); }
+}
+
 # A receiver per element type, since a provision is keyed by its receiver
 # (D51) and only an attached method can reach the handle inside one
 # (D54). Each method is the shared implementation under its layout, so

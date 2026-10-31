@@ -1,0 +1,35 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D74: an attached method is at its receiver's instantiation. `b` is a
+# `Box[T=Int]`, so `b.get()` is an `Int` wherever it is called — here
+# where `T` has since been bound to `Char`, so passing it to `putchar` is
+# a type error. It used to be read at the `T` in force, and printed the
+# `Int` 42 as the character `*`.
+
+type T;
+
+assume T {
+  type Box T;
+  fn Box.get(): T { match this { Box x => x } }
+}
+
+assume Std {
+  fn demo() {
+    let b = { bind T = Int; Box (42) };
+    {
+      bind T = Char;
+      putchar(b.get());
+      putchar(char::newline);
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

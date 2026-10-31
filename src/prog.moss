@@ -159,6 +159,10 @@ assume Std {
   # mismatch: provider `p` has ..." is.
   fn e_signature(): Int { n16().add(n2()) }
 
+  # D73: a tag lists a parameter that is not a type its assume nesting
+  # requires (named by the parameter).
+  fn e_listed(): Int { n16().add(n5()) }
+
   # `this` where there is no receiver: in a plain function — a plain
   # function providing a method included, since it cannot see what the
   # method was called on (D54) — or an anonymous function bound to a fn

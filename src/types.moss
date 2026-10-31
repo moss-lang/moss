@@ -412,6 +412,7 @@ assume Std {
           let s = group.get(g);
           if scans_payload(s) {
             let found = int_list();
+            listed_syms(s, found);
             free_syms(ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s), found);
             if same_run(found, tr_start.get(s), tr_len.get(s)).not() {
               tr_start.set(s, tr_pool.length());
@@ -426,6 +427,26 @@ assume Std {
           }
           g = g.add(one);
         }
+      }
+    }
+
+    # D73: the parameters a tag lists after its name, which seed its
+    # relevance whether or not its payload mentions them. One that is not
+    # a type symbol in scope is left to `lower::check_listed`.
+    fn listed_syms(s: Int, out: IntList) {
+      let d = prog::sym_decl.get(s);
+      if ast::kind_of(d).ne(ast::k_d_tag()) {
+        return ();
+      }
+      var i = zero;
+      while i.lt(ast::d_of(d)) {
+        let t = prog::lookup(prog::sym_mod.get(s), prog::ns_name(), ast::kid_at(ast::c_of(d), i));
+        if ast::is_some(t) {
+          if prog::sym_kind.get(t).eq(prog::sk_type()) {
+            push_new(out, t);
+          }
+        }
+        i = i.add(one);
       }
     }
 
