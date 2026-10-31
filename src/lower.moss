@@ -29,6 +29,19 @@ import "./types.moss" as types;
 # *item*'s application is read too — `app_view` — because a provision
 # keyed on an abstract receiver an application fixes has to land at the
 # concrete one or no call finds it ([D51]).
+#
+# Coherence ([D62], [D71]): a val, fn or method provision serves only the
+# instantiation it was made at. Each provision row carries, in its `b`,
+# that instantiation as a chain of type rows — an *app* — over the item's
+# `item_deps`: for a val or fn its whole assume nesting (the calculus's
+# `dep_tys`), for a method the symbols of those its signature mentions
+# (the application θ of `IMth τ m θ`). An assumed item's app records only
+# what its brackets bind (`IntList.get[Elem=Int]`); any other symbol means
+# what the function's environment means by it, or is not in force if that
+# environment does not have it (`app_get`). A bound provision's app is
+# written out in full where it is bound (`full_app`, used by the back
+# end). The back end compares a callee's app for each need against the
+# provision the caller has (`codegen::check_callee`).
 
 assume Std {
   fn ek_type(): Int { zero }
@@ -50,6 +63,15 @@ assume Std {
   val nd_len: IntList;
   # The environment each defined function's own declaration sits in.
   val nd_env: IntList;
+  # Beside each need, the app its provision row carries in that
+  # environment: the instantiation the function requires it at.
+  val nd_app: IntList;
+
+  # Each val's, fn's and method's coherence symbols (`item_deps`), as a
+  # run in `dp_pool` indexed by symbol; `dp_len` is none until computed.
+  val dp_start: IntList;
+  val dp_len: IntList;
+  val dp_pool: IntList;
 
   # `base_env` is memoized on the run of assume items it walks, because
   # every declaration inside one `assume` block is handed the same run
@@ -70,7 +92,8 @@ assume Std {
 
   context Lower =
     en_kind, en_recv, en_sym, en_a, en_b, en_next,
-    nd_recv, nd_sym, nd_start, nd_len, nd_env,
+    nd_recv, nd_sym, nd_start, nd_len, nd_env, nd_app,
+    dp_start, dp_len, dp_pool,
     asm_run, asm_len, asm_env, asm_nstart, asm_nlen,
     en_head, en_link;
 
@@ -288,6 +311,8 @@ assume Std {
     fn needs_count(f: Int): Int { nd_len.get(f) }
     fn need_recv_at(f: Int, i: Int): Int { nd_recv.get(nd_start.get(f).add(i)) }
     fn need_sym_at(f: Int, i: Int): Int { nd_sym.get(nd_start.get(f).add(i)) }
+    fn need_app_at(f: Int, i: Int): Int { nd_app.get(nd_start.get(f).add(i)) }
+    fn need_start(f: Int): Int { nd_start.get(f) }
     fn env_of(f: Int): Int { nd_env.get(f) }
     fn is_lowered(f: Int): Bool { ast::is_some(nd_start.get(f)) }
 
@@ -344,6 +369,12 @@ assume Std {
         while i.lt(sym.length()) {
           nd_recv.push(recv.get(i));
           nd_sym.push(sym.get(i));
+          let row = env_find(env, need_kind(sym.get(i)), recv.get(i), sym.get(i));
+          if ast::is_some(row) {
+            nd_app.push(en_b.get(row));
+          } else {
+            nd_app.push(env_empty());
+          }
           i = i.add(one);
         }
         memo = asm_run.length();
@@ -459,7 +490,7 @@ assume Std {
           return env;
         }
         let ty = elab(view, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
-        return env_push(env, ek_val(), ast::none(), s, ty, ast::none());
+        return env_push(env, ek_val(), ast::none(), s, ty, assumed_app(s, view));
       }
       if kind.eq(prog::sk_fn()) {
         # A defined fn carries its own body; assuming it is a no-op.
@@ -471,7 +502,7 @@ assume Std {
         if env_has(env, ek_fn(), ast::none(), s) {
           return env;
         }
-        return env_push(env, ek_fn(), ast::none(), s, ast::none(), ast::none());
+        return env_push(env, ek_fn(), ast::none(), s, ast::none(), assumed_app(s, view));
       }
       if kind.eq(prog::sk_context()) {
         var e = env;
@@ -518,7 +549,7 @@ assume Std {
       if env_has(env, ek_fn(), this_ty, method) {
         return env;
       }
-      env_push(env, ek_fn(), this_ty, method, ast::none(), ast::none())
+      env_push(env, ek_fn(), this_ty, method, ast::none(), assumed_app(method, view))
     }
 
     # D20: an item may be assumed only where every abstract type its
@@ -551,6 +582,159 @@ assume Std {
         i = i.add(one);
       }
       check_mentions(env, view, m, ast::fn_ret(d), home);
+    }
+
+    # Coherence.
+
+    # The table a need's provision lives in: a val's, or a fn's (which a
+    # method's is too).
+    fn need_kind(s: Int): Int {
+      if prog::sym_kind.get(s).eq(prog::sk_val()) {
+        ek_val()
+      } else {
+        ek_fn()
+      }
+    }
+
+    # The type symbols a val, fn or method item depends on: for a val or
+    # a fn its whole assume nesting ([D21] unchanged for them; `dep_tys`),
+    # for a method those of them its signature mentions — its application
+    # θ, beside the receiver that is the other half of its key. The
+    # bootstrap's `provision_app` reads the same symbols.
+    fn item_deps(s: Int, out: IntList) {
+      while dp_len.length().le(s) {
+        dp_start.push(zero);
+        dp_len.push(ast::none());
+      }
+      if dp_len.get(s).eq(ast::none()) {
+        let all = int_list();
+        nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), all, zero);
+        let found = int_list();
+        if prog::sym_kind.get(s).eq(prog::sk_method()) {
+          let said = int_list();
+          signature_syms(s, said);
+          var i = zero;
+          while i.lt(all.length()) {
+            if types::contains_sym(said, all.get(i)) {
+              found.push(all.get(i));
+            }
+            i = i.add(one);
+          }
+        } else {
+          var i = zero;
+          while i.lt(all.length()) {
+            found.push(all.get(i));
+            i = i.add(one);
+          }
+        }
+        dp_start.set(s, dp_pool.length());
+        var i = zero;
+        while i.lt(found.length()) {
+          dp_pool.push(found.get(i));
+          i = i.add(one);
+        }
+        dp_len.set(s, found.length());
+      }
+      var i = zero;
+      while i.lt(dp_len.get(s)) {
+        out.push(dp_pool.get(dp_start.get(s).add(i)));
+        i = i.add(one);
+      }
+    }
+
+    # The abstract types a run of assume items names, through the contexts
+    # it names.
+    fn nest_types(m: Int, run: Int, len: Int, out: IntList, depth: Int) {
+      if depth.gt(n16()) {
+        return ();
+      }
+      var i = zero;
+      while i.lt(len) {
+        let spec = ast::kid_at(run, i);
+        if ast::is_some(ast::b_of(spec)).not() {
+          if ast::is_some(ast::a_of(spec)) {
+            let target = prog::resolve_path(m, ast::a_of(spec));
+            if ast::is_some(target) {
+              let kind = prog::sym_kind.get(target);
+              if kind.eq(prog::sk_type()) {
+                types::push_new(out, target);
+              } else if kind.eq(prog::sk_context()) {
+                let d = prog::sym_decl.get(target);
+                nest_types(prog::sym_mod.get(target), ast::b_of(d), ast::c_of(d), out, depth.add(one));
+              }
+            }
+          }
+        }
+        i = i.add(one);
+      }
+    }
+
+    fn signature_syms(f: Int, out: IntList) {
+      let d = prog::sym_decl.get(f);
+      let home = prog::sym_mod.get(f);
+      var i = zero;
+      while i.lt(ast::fn_nparams(d)) {
+        types::free_syms(ast::b_of(ast::kid_at(ast::fn_params(d), i)), home, out);
+        i = i.add(one);
+      }
+      types::free_syms(ast::fn_ret(d), home, out);
+    }
+
+    # An assumed item's app: only what the item's own brackets (`view`)
+    # make of its symbols. The rest is read against the environment the
+    # function ends up with (`app_get`), so the order of an assume list
+    # does not matter.
+    fn assumed_app(s: Int, view: Int): Int {
+      let deps = int_list();
+      item_deps(s, deps);
+      var app = env_empty();
+      var i = zero;
+      while i.lt(deps.length()) {
+        let t = deps.get(i);
+        let at = types::ty_of_symbol(types::kd_abstract(), t);
+        let v = canon(view, at);
+        if v.ne(at) {
+          app = env_push(app, ek_type(), ast::none(), t, v, ast::none());
+        }
+        i = i.add(one);
+      }
+      app
+    }
+
+    # A bound provision's app, in full: for each symbol, what it denotes
+    # in `view` where the bind is made, or none where it is not in force.
+    fn full_app(s: Int, view: Int): Int {
+      let deps = int_list();
+      item_deps(s, deps);
+      var app = env_empty();
+      var i = zero;
+      while i.lt(deps.length()) {
+        let t = deps.get(i);
+        var v = ast::none();
+        if env_has(view, ek_type(), ast::none(), t) {
+          v = canon(view, types::ty_of_symbol(types::kd_abstract(), t));
+        }
+        app = env_push(app, ek_type(), ast::none(), t, v, ast::none());
+        i = i.add(one);
+      }
+      app
+    }
+
+    # What `app` says symbol `t` denotes: its own row, or else — for an
+    # assumed item's sparse app — `t` itself if the environment `base` it
+    # was assumed in has `t`, and none (not in force) if it does not.
+    fn app_get(app: Int, t: Int, base: Int): Int {
+      var e = app;
+      while ast::is_some(e) {
+        if en_sym.get(e).eq(t) {
+          return en_a.get(e);
+        }
+        e = en_next.get(e);
+      }
+      if env_has(base, ek_type(), ast::none(), t) {
+        return types::ty_of_symbol(types::kd_abstract(), t);
+      }
+      ast::none()
     }
 
     # An attached method on the receiver, or a detached one in scope —

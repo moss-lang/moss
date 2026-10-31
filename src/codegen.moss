@@ -187,6 +187,20 @@ assume Std {
   # only says *which* symbol, so that it is never a lookup by name.
   val cg_lang: IntList;
 
+  # Coherence (D62, D71), checked on the program as written rather than
+  # on a specialization. `cg_genv` is the frame's *generic* environment:
+  # its declaration's own (`lower::env_of`), where an assumed type is
+  # itself, extended by each `bind` the body makes as it is written — so
+  # it says what a call means whatever the frame is specialized to, and
+  # each provision row in it carries the app it was made at
+  # (lower.moss). `ch_` memoizes `check_callee` on (callee's need run,
+  # generic environment), indexed by the environment as `vs_` is by
+  # symbol.
+  val cg_genv: CellInt;
+  val ch_run: IntList;
+  val ch_link: IntList;
+  val ch_head: IntList;
+
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
@@ -197,7 +211,7 @@ assume Std {
     ck_entry, ck_inner, ck_link, ck_head,
     fl_start, fl_len, fl_types,
     un_sym, un_link, un_head, un_mark, un_stamp, un_meths, un_fstart, un_flags,
-    cg_lang;
+    cg_lang, cg_genv, ch_run, ch_link, ch_head;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -2178,6 +2192,7 @@ assume Std {
       var via = ast::none();
       let map = int_list();
       if ast::is_some(meth) {
+        check_callee(meth);
         penv = callee_env(meth, map);
       } else {
         # Not in scope as an attached method: the context must provide it
@@ -2321,6 +2336,13 @@ assume Std {
       # it: what a position yields must fit what it declared. A got with
       # no width is either real unit or a body that jumped out — this
       # back end types both as unit — so only a valued got is held to it.
+      #
+      # This is the whole of this compiler's expression typing, so it
+      # stays (`tests/wasi/misfit.moss` is an ordinary type error only it
+      # catches). It is no longer what catches an incoherent provision:
+      # that is `check_callee`, on the program as written, before the
+      # call is emitted — this check sees a specialization, and a
+      # same-width confusion (`Char` read as `Int`) got past it.
       if width(got).gt(zero) {
         if types::fits(canon_ty(got), canon_ty(want)).not() {
           cg_error(c_bad_type(), ast::none());
@@ -2410,6 +2432,7 @@ assume Std {
         return tag;
       }
       if is_defined_fn(sym) {
+        check_callee(sym);
         let map = int_list();
         let env = callee_env(sym, map);
         emit_args(body, ast::b_of(e), ast::c_of(e), m, param_types_in(env, sym));
@@ -2653,6 +2676,7 @@ assume Std {
       let mark = lc_visible.read();
       let pmark = pv_top.read();
       let emark = cg_env.read();
+      let gmark = cg_genv.read();
       var i = zero;
       while i.lt(ast::b_of(e)) {
         emit_stmt(body, ast::kid_at(ast::a_of(e), i), m);
@@ -2665,6 +2689,7 @@ assume Std {
       close_scope(mark);
       pv_top.write(pmark);
       cg_env.write(emark);
+      cg_genv.write(gmark);
       ty
     }
 
@@ -2939,6 +2964,175 @@ assume Std {
     # emission created them; `bw_emit` is the only mode now.
     fn bw_emit(): Int { zero }
 
+    # Coherence (D62, D71): a callee's val, fn or method need is met only
+    # by a provision made at the instantiation the callee means — the
+    # callee's own app for that need, read through this frame's generic
+    # environment, must equal the provision's, symbol for symbol. The
+    # bootstrap's `require_needs` is the same rule. A need with no
+    # provision in the generic environment is left to the rest of the
+    # back end to report; a direct call of a provision needs no check, as
+    # it is typed by the provision's own signature.
+    fn check_callee(f: Int) {
+      if ast::is_some(f).not() {
+        return ();
+      }
+      if is_defined_fn(f).not() {
+        if is_defined_method(f).not() {
+          return ();
+        }
+      }
+      lower::lower_needs(f);
+      let genv = cg_genv.read();
+      let base = lower::env_of(cg_where.read());
+      let fbase = lower::env_of(f);
+      # A sibling called with nothing bound since: the same environment,
+      # so the same provisions at the same apps.
+      if genv.eq(base) {
+        if fbase.eq(base) {
+          return ();
+        }
+      }
+      if checked(lower::need_start(f), genv) {
+        return ();
+      }
+      # The types this frame has bound, and those the callee has in force
+      # that this frame's declaration does not: an app's symbol outside
+      # both cannot read differently on the two sides.
+      let moved = int_list();
+      var e = genv;
+      while ast::is_some(e) {
+        if e.eq(base) {
+          e = ast::none();
+        } else {
+          if lower::env_kind_of(e).eq(lower::ek_type()) {
+            types::push_new(moved, lower::env_sym_of(e));
+          }
+          e = lower::env_next_of(e);
+        }
+      }
+      let bound_here = moved.length().gt(zero);
+      e = fbase;
+      while ast::is_some(e) {
+        if lower::env_kind_of(e).eq(lower::ek_type()) {
+          if lower::env_has(base, lower::ek_type(), ast::none(), lower::env_sym_of(e)).not() {
+            types::push_new(moved, lower::env_sym_of(e));
+          }
+        }
+        e = lower::env_next_of(e);
+      }
+      var i = zero;
+      while i.lt(lower::needs_count(f)) {
+        let r = lower::need_recv_at(f, i);
+        let s = lower::need_sym_at(f, i);
+        var key = r;
+        if ast::is_some(r) {
+          key = lower::canon(genv, r);
+        }
+        let row = lower::env_find(genv, lower::need_kind(s), key, s);
+        if ast::is_some(row) {
+          let want = lower::need_app_at(f, i);
+          let have = lower::env_b_of(row);
+          if coherent(s, want, fbase, have, base, genv, moved, bound_here).not() {
+            prog::error(prog::e_incoherent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(s));
+          }
+        }
+        i = i.add(one);
+      }
+    }
+
+    fn checked(run: Int, genv: Int): Bool {
+      let key = genv.add(one);
+      while ch_head.length().le(key) {
+        ch_head.push(zero);
+      }
+      var r = ch_head.get(key);
+      while r.gt(zero) {
+        if ch_run.get(r.sub(one)).eq(run) {
+          return true;
+        }
+        r = ch_link.get(r.sub(one));
+      }
+      ch_run.push(run);
+      ch_link.push(ch_head.get(key));
+      ch_head.set(key, ch_run.length());
+      false
+    }
+
+    # One need: `want` is the callee's app for item `s`, read against its
+    # declaration's environment `wbase`; `have` the provision's, against
+    # `hbase`. Most needs are the same assumed item on both sides with
+    # nothing rebound, and are settled without reading a symbol.
+    fn coherent(
+      s: Int, want: Int, wbase: Int, have: Int, hbase: Int, genv: Int,
+      moved: IntList, bound_here: Bool
+    ): Bool {
+      let deps = int_list();
+      lower::item_deps(s, deps);
+      var quick = false;
+      if bound_here.not() {
+        quick = want.eq(have);
+      } else if ast::is_some(want).not() {
+        quick = ast::is_some(have).not();
+      }
+      if quick {
+        var clear = true;
+        var i = zero;
+        while i.lt(deps.length()) {
+          if types::contains_sym(moved, deps.get(i)) {
+            clear = false;
+          }
+          i = i.add(one);
+        }
+        if clear {
+          return true;
+        }
+      }
+      var i = zero;
+      while i.lt(deps.length()) {
+        let t = deps.get(i);
+        let wv = lower::app_get(want, t, wbase);
+        var need = ast::none();
+        if ast::is_some(wv) {
+          need = lower::canon(genv, wv);
+        } else if lower::env_has(genv, lower::ek_type(), ast::none(), t) {
+          # Not in force where the callee was declared: it means whatever
+          # this frame means by it.
+          need = lower::canon(genv, types::ty_of_symbol(types::kd_abstract(), t));
+        }
+        if need.ne(lower::app_get(have, t, hbase)) {
+          return false;
+        }
+        i = i.add(one);
+      }
+      true
+    }
+
+    # D66's forwarder for `g` assumes the types `g` depends on and `g`
+    # itself, so it needs `g` at those types as they are here.
+    fn check_forwarded(g: Int) {
+      let genv = cg_genv.read();
+      let row = lower::env_find(genv, lower::ek_fn(), ast::none(), g);
+      if ast::is_some(row).not() {
+        return ();
+      }
+      let want = lower::full_app(g, genv);
+      let empty = int_list();
+      if coherent(
+        g, want, genv, lower::env_b_of(row), lower::env_of(cg_where.read()), genv,
+        empty, true
+      ).not() {
+        prog::error(prog::e_incoherent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(g));
+      }
+    }
+
+    # Record a bind's provision in the generic environment, with the app
+    # it is made at.
+    fn provided_at(kind: Int, recv: Int, sym: Int, view: Int) {
+      cg_genv.write(lower::env_push(
+        cg_genv.read(), kind, recv, sym, ast::none(), lower::full_app(sym, view)
+      ));
+    }
+
     fn walk_binds(body: IntList, s: Int, m: Int, mode: Int) {
       var i = zero;
       while i.lt(ast::b_of(s)) {
@@ -2985,6 +3179,7 @@ assume Std {
           store_local(body, l);
           provide(ast::none(), sym, l);
         }
+        provided_at(lower::ek_val(), ast::none(), sym, cg_genv.read());
         return ();
       }
       if kind.eq(prog::sk_type()) {
@@ -2996,6 +3191,10 @@ assume Std {
         cg_env.write(lower::env_push(
           cg_env.read(), lower::ek_type(), ast::none(), sym, ty, ast::none()
         ));
+        cg_genv.write(lower::env_push(
+          cg_genv.read(), lower::ek_type(), ast::none(), sym,
+          lower::canon(cg_genv.read(), named_type_raw(value, m)), ast::none()
+        ));
         return ();
       }
       if kind.eq(prog::sk_fn()) {
@@ -3004,12 +3203,14 @@ assume Std {
           bind_contextual(sym, value, m, mode);
           return ();
         }
+        check_callee(provider);
         # The provider's own context is captured here, at the bind site.
         cg_env.write(lower::env_push(
           cg_env.read(), lower::ek_fn(), ast::none(), sym,
           provider, cg_env.read()
         ));
         capture(cg_env.read(), mode);
+        provided_at(lower::ek_fn(), ast::none(), sym, cg_genv.read());
         return ();
       }
       cg_error(c_unsupported(), prog::sym_name.get(sym));
@@ -3041,6 +3242,10 @@ assume Std {
         cg_error(c_unsupported(), prog::sym_name.get(sym));
         return ();
       }
+      # The forwarder assumes `g` at the types it depends on, as they are
+      # here: so `g` must have been provided at them.
+      check_forwarded(g);
+      provided_at(lower::ek_fn(), ast::none(), sym, cg_genv.read());
       let bound = lower::env_find(cg_env.read(), lower::ek_fn(), ast::none(), g);
       if ast::is_some(bound) {
         if ast::is_some(lower::env_a_of(bound)) {
@@ -3103,10 +3308,17 @@ assume Std {
         cg_error(c_unsupported(), ast::b_of(spec));
         return ();
       }
+      check_callee(provider);
       cg_env.write(lower::env_push(
         cg_env.read(), lower::ek_fn(), recv, detached, provider, cg_env.read()
       ));
       capture(cg_env.read(), mode);
+      # In the generic environment: keyed by the receiver as written, and
+      # made at the method's application there, brackets included.
+      let gview = lower::app_view(cg_genv.read(), m, spec);
+      provided_at(
+        lower::ek_fn(), lower::canon(gview, types::ty_of_decl(recv_sym)), detached, gview
+      );
     }
 
     # A functor application is a run of binds, inlined where it is
@@ -3143,6 +3355,15 @@ assume Std {
 
     # The type or the function a bind's right-hand side names.
     fn named_type(value: Int, m: Int): Int {
+      let raw = named_type_raw(value, m);
+      if ast::is_some(raw).not() {
+        return raw;
+      }
+      canon_ty(raw)
+    }
+
+    # The same, before any environment substitutes into it.
+    fn named_type_raw(value: Int, m: Int): Int {
       if ast::kind_of(value).ne(ast::k_ex_path()) {
         return ast::none();
       }
@@ -3153,9 +3374,9 @@ assume Std {
       # `bind U = Box[Elem=Char];` — the right side's brackets apply, as
       # they do in a type position; dropping them was a silent wrong type.
       if ast::d_of(value).eq(one) {
-        return canon_ty(types::apply(sym, ast::b_of(value), ast::c_of(value), m));
+        return types::apply(sym, ast::b_of(value), ast::c_of(value), m);
       }
-      canon_ty(types::ty_of_decl(sym))
+      types::ty_of_decl(sym)
     }
 
     fn named_fn(value: Int, m: Int): Int {
@@ -3275,6 +3496,7 @@ assume Std {
       # One frame at a time, so the provisions start empty.
       pv_top.write(zero);
       cg_env.write(fq_env.get(qi));
+      cg_genv.write(lower::env_of(sym));
       if is_defined_method(sym) {
         add_local(ast::none(), this_type(sym));
       }

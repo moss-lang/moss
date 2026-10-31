@@ -5,10 +5,11 @@ import "../../lib/wasip1.moss" use Wasi;
 
 # `mid` assumes T and `seed`, then rebinds T [D25]: the `seed` it was
 # handed was provided at the T it assumed (here Char), not at Int, so
-# `get_seed` must not be called with it. The bootstrap rejects the call.
-# The self-hosted compiler still accepts this and prints `n`, reading the
-# Char as an Int; its coherence check is the back end's `types::fits`,
-# which a same-width rebinding gets past.
+# `get_seed` must not be called with it. Both compilers reject the call.
+# The self-hosted compiler once accepted this and printed `n`, reading the
+# Char as an Int: its only coherence check was the back end's
+# `types::fits` on a specialization, which a same-width rebinding gets
+# past. It now checks coherence on the program as written (D71).
 
 type T;
 

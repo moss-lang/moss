@@ -7,8 +7,8 @@ import "../../lib/wasip1.moss" use Wasi;
 # was made at (CoreMoss.v: a method item is `IMth τ m θ`, compared with its
 # application). X does not mention Foo, so the key (X, .gimme) is the same
 # at every Foo; the provision is made at [Foo=Char] and `use_it`, called
-# while Foo = Int, would read its Char as an Int. Both compilers reject it:
-# the bootstrap at the call, the self-hosted compiler as `?S`.
+# while Foo = Int, would read its Char as an Int. Both compilers reject it
+# at the call (the self-hosted compiler as `e_incoherent`).
 
 type Foo;
 

@@ -145,6 +145,10 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_err_name = int_list();
   bind codegen::cg_err_at = int_list();
   bind codegen::cg_where = cell_int();
+  bind codegen::cg_genv = cell_int();
+  bind codegen::ch_run = int_list();
+  bind codegen::ch_link = int_list();
+  bind codegen::ch_head = int_list();
   bind codegen::vs_env = int_list();
   bind codegen::vs_start = int_list();
   bind codegen::vs_len = int_list();
@@ -195,6 +199,10 @@ functor Boot: Std -> Compiler {
   bind lower::nd_start = int_list();
   bind lower::nd_len = int_list();
   bind lower::nd_env = int_list();
+  bind lower::nd_app = int_list();
+  bind lower::dp_start = int_list();
+  bind lower::dp_len = int_list();
+  bind lower::dp_pool = int_list();
   bind lower::asm_run = int_list();
   bind lower::asm_len = int_list();
   bind lower::asm_env = int_list();

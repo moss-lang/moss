@@ -935,7 +935,18 @@ class Lower:
             return
         self.in_progress.add(id(symbol))
         env, needs = self.base_env(symbol)
-        env.apps = {k: self.freeze_app(env, app) for k, app in env.apps.items()}
+        # An assumed item's instantiation is the function's whole ambient
+        # one: a type assumed *after* the item in the list is in force for
+        # it too, so a symbol not yet in force when the item was added is
+        # read from the finished environment. (Reading it as absent made
+        # `assume seed, T` refuse a call between two functions of the same
+        # block.)
+        env.apps = {
+            k: self.freeze_app(
+                env, {t: env.tymap.get(t) if ty is None else ty for t, ty in app.items()}
+            )
+            for k, app in env.apps.items()
+        }
         self.needs_of[id(symbol)] = tuple(needs)
         self.need_apps[id(symbol)] = {k: env.apps.get(k, {}) for k in needs}
         decl = symbol.decl

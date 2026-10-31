@@ -137,6 +137,14 @@ assume Std {
   # the bootstrap's "binds `T`, which is not one of its parameters" is.
   fn e_irrelevant(): Int { n16() }
 
+  # D62, D71: a call (or a provider's bind) whose callee needs a val, fn or
+  # method at an instantiation other than the one the provision in force
+  # was made at — after a `bind T = ...`, or through a method bind's own
+  # brackets. Named by the item, as the bootstrap's "calling `f` needs
+  # `seed` at [T=Int], but the one in the context here was provided at
+  # [T=Char]" is.
+  fn e_incoherent(): Int { n16().add(one) }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,

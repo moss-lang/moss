@@ -7,9 +7,10 @@ import "../../lib/wasip1.moss" use Wasi;
 # (receiver, method) alone: with that rule a well-formed program goes
 # wrong, and the calculus, whose method items carry their application,
 # rejects it. T is bound once and never rebound. The provision fixes `.m`
-# at T = Char; `use_it` requires it at T = Point. The bootstrap's type
-# checker rejects it, not only its back end's width check; the
-# self-hosted compiler reports `?S`.
+# at T = Char; `use_it` requires it at T = Point. Both compilers' front
+# ends reject it at the call — the bootstrap's type checker, and the
+# self-hosted compiler's coherence check (`e_incoherent`), not only a
+# width check.
 
 type T;
 

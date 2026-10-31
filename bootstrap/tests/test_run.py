@@ -1800,22 +1800,28 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         method item carries its application, and a val or fn its ambient
         one (CoreMoss.v deviation 8). Each of these was accepted by the
         bootstrap, which matched the requirement by its key alone, and
-        read a `Char` as an `Int` or a `Point`. The bootstrap now rejects
-        each at the call; the self-hosted compiler reports `c_bad_type`
-        (`?S`) from the back end."""
+        read a `Char` as an `Int` or a `Point`. Both compilers now reject
+        each at the call, in the front end: the bootstrap with the message
+        below, the self-hosted compiler with `e_incoherent` (`R`), named by
+        the item. (It used to report `c_bad_type`, `?S`, from the back
+        end's `types::fits` on a specialization.)"""
         from .test_build import compile_wasm
 
         cases = {
-            "incoherent_method": ("use_it", "`X[Char=Char].gimme` at [Foo=Int]", "[Foo=Char]"),
-            "incoherent_bind_application": ("use_it", "`W[Char=Char].m` at [T=Int]", "[T=Char]"),
-            "incoherent_rebound": ("use_it", "`W[Char=Char].m` at [T=Int]", "[T=Char]"),
-            "incoherent_core_shape": (
-                "use_it", "`W[Char=Char].m` at [T=Point[Char=Char]]", "[T=Char]",
+            "incoherent_method": (
+                "use_it", "`X[Char=Char].gimme` at [Foo=Int]", "[Foo=Char]", "gimme",
             ),
-            "incoherent_val_fn": ("get_seed", "`seed` at [T=Int]", "[T=Char]"),
-            "incoherent_fn": ("get_made", "`make` at [T=Int]", "[T=Char]"),
+            "incoherent_bind_application": (
+                "use_it", "`W[Char=Char].m` at [T=Int]", "[T=Char]", "m",
+            ),
+            "incoherent_rebound": ("use_it", "`W[Char=Char].m` at [T=Int]", "[T=Char]", "m"),
+            "incoherent_core_shape": (
+                "use_it", "`W[Char=Char].m` at [T=Point[Char=Char]]", "[T=Char]", "m",
+            ),
+            "incoherent_val_fn": ("get_seed", "`seed` at [T=Int]", "[T=Char]", "seed"),
+            "incoherent_fn": ("get_made", "`make` at [T=Int]", "[T=Char]", "make"),
         }
-        for name, (callee, needs, made) in cases.items():
+        for name, (callee, needs, made, item) in cases.items():
             entry = f"tests/wasi/{name}.moss"
             with self.subTest(entry=entry):
                 with self.assertRaises(LowerError) as caught:
@@ -1827,21 +1833,39 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 )
                 out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
                 self.assertNotEqual(out[:4], b"\0asm")
-                self.assertTrue(out.decode("utf-8").startswith("?S "), out[:200])
+                report = out.decode("utf-8")
+                self.assertTrue(report.startswith(f"!R {entry} {item}\n"), report[:200])
 
     def test_a_provision_from_before_a_rebind_is_refused(self):
         """A val assumed at the ambient `T` does not serve a call made
-        after `bind T = Int` in the same body. The bootstrap rejects it;
-        the self-hosted compiler does not yet (see the file)."""
+        after `bind T = Int` in the same body. Both compilers reject it.
+        The self-hosted compiler used to accept it and read a `Char` as an
+        `Int`: the rebinding is the same width, so its back end's
+        `types::fits` on the specialization saw nothing wrong."""
         from .test_build import compile_wasm
 
+        entry = "tests/wasi/incoherent_shadowed.moss"
         with self.assertRaises(LowerError) as caught:
-            compile_wasm({}, entry="tests/wasi/incoherent_shadowed.moss")
+            compile_wasm({}, entry=entry)
         self.assertIn(
             "needs `seed` at [T=Int], but the one in the context here was "
             "provided at [T as assumed, before a later `bind T`]",
             str(caught.exception),
         )
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(out.decode("utf-8"), f"!R {entry} seed\n")
+
+    def test_an_assumed_provision_is_at_the_whole_ambient_instantiation(self):
+        """`assume seed, T` — the type after the item — still puts `seed`
+        at the function's `T`, so two functions of that block call each
+        other. The bootstrap's first coherence check read `T` as not in
+        force for `seed`, and refused the call."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/coherent_assume_order.moss"
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "c\n")
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(out), "c\n")
 
     def test_reproviding_after_a_rebind_is_coherent(self):
         """The control: provide again at the new `T`, and both compilers
