@@ -3622,6 +3622,12 @@ assume Std {
 
     fn emit_match_as(body: IntList, e: Int, m: Int, want: Int): Int {
       let sty = type_of(ast::a_of(e), m);
+      let ty = emit_match_shaped(body, e, m, sty, want);
+      check_exhaustive(e, m, sty);
+      ty
+    }
+
+    fn emit_match_shaped(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
       if ast::c_of(e) == 0 {
         # `match e {}` requires `e : |` (D34): evaluate and diverge.
         emit_expr(body, ast::a_of(e), m);
@@ -3689,6 +3695,83 @@ assume Std {
       if !ast::is_some(types::member_with_head(sty, head)) {
         cg_error(c_bad_type(), prog::sym_name.get(head));
       }
+    }
+
+    # D34: without a binder or `_`, the arms cover every head of the
+    # scrutinee's type as written — whichever a specialization has, as
+    # the bootstrap's `synth_match` checks it — and `match e {}` is for
+    # an `e : |` alone, which takes no arms. Checked after the arms, as
+    # the bootstrap does, and not at all once a pattern has named no
+    # member (`check_member` said so). Reports the first head missing,
+    # or none for a scrutinee with no head to cover.
+    fn check_exhaustive(e: Int, m: Int, sty: Int) {
+      let n = ast::c_of(e);
+      var a = 0;
+      while a < n {
+        let head = arm_head_any(ast::a_of(ast::kid_at(ast::b_of(e), a)), m);
+        if ast::is_some(head) {
+          if !ast::is_some(types::member_with_head(sty, head)) {
+            return ();
+          }
+        }
+        a = a + 1;
+      }
+      if types::is_kind(sty, types::kd_never()) {
+        if n > 0 {
+          cg_error(c_bad_type(), ast::none());
+        }
+        return ();
+      }
+      var i = 0;
+      while i < n {
+        let pat = ast::a_of(ast::kid_at(ast::b_of(e), i));
+        if ast::kind_of(pat) == ast::k_pt_wild() {
+          return ();
+        }
+        if ast::kind_of(pat) == ast::k_pt_path() {
+          if !ast::is_some(ast::b_of(pat)) {
+            if !ast::is_some(prog::resolve_path(m, ast::a_of(pat))) {
+              return ();
+            }
+          }
+        }
+        i = i + 1;
+      }
+      var count = 1;
+      if types::is_kind(sty, types::kd_union()) {
+        count = types::member_count(sty);
+      }
+      var heads = 0;
+      var j = 0;
+      while j < count {
+        var member = sty;
+        if types::is_kind(sty, types::kd_union()) {
+          member = types::member_at(sty, j);
+        }
+        let head = types::head_of(member);
+        if ast::is_some(head) {
+          heads = heads + 1;
+          if !covers(e, m, head) {
+            cg_error(c_bad_type(), prog::sym_name.get(head));
+            return ();
+          }
+        }
+        j = j + 1;
+      }
+      if heads == 0 {
+        cg_error(c_bad_type(), ast::none());
+      }
+    }
+
+    fn covers(e: Int, m: Int, head: Int): Bool {
+      var i = 0;
+      while i < ast::c_of(e) {
+        if arm_head_any(ast::a_of(ast::kid_at(ast::b_of(e), i)), m) == head {
+          return true;
+        }
+        i = i + 1;
+      }
+      false
     }
 
     # A pattern against a value already on the stack. A binder takes the

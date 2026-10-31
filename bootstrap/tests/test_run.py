@@ -2666,7 +2666,6 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     compile_wasm({}, entry=entry)
                 self.assertIn(message, str(caught.exception))
 
-    @unittest.expectedFailure
     def test_a_match_is_exhaustive_by_the_self_hosted_compiler(self):
         """The same programs, each reported by the first head missing."""
         for entry, (_, report) in self.MATCH_EXHAUSTIVE.items():
