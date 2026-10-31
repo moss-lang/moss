@@ -3270,6 +3270,131 @@ needs:
   self-hosted compiler at each application), so the calculus should
   state it as `EBindFun`'s premise.
 
+*Amended (October 2026): an abstract functor's result may hold types.*
+The first implementation refused a type in an abstract functor's result,
+which left two of this entry's own motivating cases out: `bind Fast;`
+choosing what `Float` is, and an allocator choosing what a handle is. The
+designer lifted the restriction. `functor Fast: Wasm, Branch -> Floats;`
+and `functor Alloc: Std, Wasm, Boxed, ... -> Handle, alloc, Handle.load;`
+are now legal, and a functor bound to one must provide its types as it
+provides everything else in its result (`bind Pick = Twice;` where `Twice`
+does not provide `Scalar` is refused like any missing item).
+
+- **A fresh, rigid generation per application.** At `bind F;` each type
+  in `F`'s result starts a new generation ([D72]) that the front end
+  knows nothing about: the code after it is checked once against it, as
+  code under an `assume` of that type is, and the rest of `F`'s result is
+  provided at it (`Float.add` at the fresh `Float`, `.load` at the fresh
+  `Handle`). Two applications make two generations, so the handles of
+  two `bind Alloc;`s in one block are two types, and values typed before
+  an application keep the type they had. A specialization knows the
+  concrete type the bound functor made: in the self-hosted compiler
+  naturally (the specialization's environment maps the symbol, and the
+  generation, to it); in the bootstrap through the branch of the
+  application its interpreter or back end takes, which records, per
+  generation, the type that branch made (and the key each item was made
+  under in the branch, which is not the key the code after the
+  application uses where it mentions such a type).
+- **Escape.** No value whose type mentions a type `bind F;` made may
+  leave the block in which `bind F;` occurred — the existential's
+  "unpack" rule. The only way out that type-checks at all is the
+  block's own value (as a result kept in a local, a method receiver, a
+  match scrutinee …): assignment to an outer `var`, a `return`, or an
+  argument at an outer type are already type errors, since the fresh
+  generation is no outer type. So the check is on the type each block
+  yields. Bootstrap: "this block yields `Float@Fast`, the type `bind
+  Fast;` made in it: a value of that type cannot leave the block (D78)"
+  (a fresh generation prints as `T@F`). Self-hosted: `?W ... T`, the code
+  D75's `e_platform` had (now `e_escape`).
+- **Each branch at the type the application promises.** Writing the
+  tests showed a soundness point the signature check alone missed: a
+  functor bound to `F` may bind, inside, a type that is *not* in `F`'s
+  result but that `F`'s result mentions — the library's `WasiFloats`
+  binds `Int = Num`, and `Floats` mentions `Int` (`float(n: Int)`). Where
+  `F` is applied with `Int` abstract, that binding would provide `float`
+  at a `Num` the caller does not have. The bootstrap now checks that each
+  branch makes each item of the result at exactly the type the
+  application promises, its fresh generations read as that branch made
+  them ("`WasiFloats`, bound to `Fast`, provides `float` at another type
+  than `Fast` promises here"). So `Fast` can be bound to the library's
+  float functors only where `Int` is `Num` — the test's kernel binds
+  `WasiNumerics` itself and is generic over `Fast` alone. The
+  self-hosted compiler, checking each specialization, compares concrete
+  types there and so catches the mismatch only where they differ.
+
+*Deviations and what the self-hosted compiler cannot see.*
+
+- *Its escape check sees only what a specialization tells apart.* It
+  reports an escape where the type the application made differs from
+  what the symbol was before it (`Fast` bound to f32 where the outer
+  `Float` is f64, or unbound). Where they are the same type it cannot see
+  the escape (`tests/wasi/functor_escape_same.moss`, rejected by the
+  bootstrap only). This is the gap it already had for D72: two
+  generations that specialize to one type are one type to it, e.g.
+
+  ```moss
+  assume Std, T {
+    fn mix(x: T) {
+      bind T = Int;
+      let y: T = x;   # bootstrap: `y` is declared `Int` but initialized with `T`
+    }
+  }
+  # called with `T` already `Int`: the self-hosted compiler compiles it
+  ```
+
+  (`tests/wasi/generation_mix.moss`, rejected by the bootstrap only; the
+  test also asserts the self-hosted compiler compiles both programs, so
+  that it changes when that compiler checks generically, which is
+  scheduled separately and also needed for [D77]'s rule 5).
+- *Two live generations it would compile as one are refused.* The
+  self-hosted compiler resolves a call by the type it is compiled at, so
+  two applications in one frame whose bindings make the same concrete
+  type (a pool whose handles are a plain `Slot` for every item type)
+  would have the second's `.load` serve the first's handles. It refuses
+  that (`?P ... Handle`, `c_unsupported`) rather than miscompile; the
+  bootstrap compiles it correctly. The test's pool lists what a slot
+  holds (`Slot[Boxed]`, [D73]), so the two are two types everywhere.
+- *A type a bound functor names but does not take* is refused where it is
+  bound in both compilers. The self-hosted compiler's restriction of a
+  bound functor's binds to its own inputs (`restrict_to_args`) now keeps
+  every type binding of the application — an input type's value is read
+  through them (`Celsius` over the `Int` in force) — and instead walks the
+  functor's binds at the bind for the types they name (a method's
+  receiver, the declared signature of what is bound, the inputs of a
+  functor applied), each of which must be an input type or one the
+  functor binds first (`!X ... T`). Types named only inside an anonymous
+  function's body are not walked.
+- *The allocator test.* `Alloc`'s result holds `Handle`; `Gc` binds it to
+  `Ref` and boxes through `Heap`, `Pool` binds it to `Slot[Boxed]`, an
+  index into a list of packed `Int`s made per application. The pool's
+  providers are named functions, not anonymous ones, because of a
+  self-hosted bug older than D78: an anonymous function that reaches an
+  `IntList` method does not find the context's provision of it, calls
+  `Packed`'s attached method instead and fails for want of a `Layout`
+  (reproduced on the commit before D78 with a plain `bind stash = () =>
+  { slots.push(7); ... }`). The library's two item types are one scalar
+  wide because the bootstrap's back end compiles `pool_alloc` once.
+  `alloc` is a plain fn, so the library allocates each type in turn;
+  `.load`, keyed by receiver, serves both.
+- *Fast is f64 against f32.* The bootstrap's back end runs `WasiFloats32`
+  (its interpreter and back end print f32's rounding for `newton.moss`
+  too), so the test is the pair the coordinator named. Duals would need
+  `Float` two scalars wide, which the bootstrap's back end cannot do.
+
+*What it adds to the calculus notes.* The extension sketched above gains
+the existential: res(φ) may hold type items, and `EApply φ e` becomes an
+unpack — it introduces, for each type `t` in res(φ), a fresh type
+variable `α_t` (a new generation, rigid), types `e` under Φ extended with
+res(φ)[t ↦ α_t]θ, and requires the type of `e` not to mention any `α_t`
+(the escape side condition, exactly the existential elimination rule's).
+The dynamics instantiates `α_t` with the type g's binds give `t` at θ. The
+key lemma gains its existential half: for a binding g, the binds at θ
+make each `t` some type τ_t, and provide res(φ) at [t ↦ τ_t]θ, which is
+where each item was promised once `α_t` is read as τ_t — which is the
+"each branch at the type the application promises" check above, and what
+makes the substitution of τ_t for α_t through `e`'s typing derivation
+(well-typed because `e`'s type does not mention α_t) the soundness step.
+
 **[D79] DECIDED by the designer and implemented (multiple memories).** WebAssembly modules may have more than
 one linear memory (multi-memory, part of Wasm 3.0, shipped in Chrome,
 Firefox, Node and Wasmtime; not yet Safari), but source languages barely
@@ -3480,7 +3605,8 @@ types through a reference as in Rust, and detached methods at union and
 record receivers —D78 abstract functors, `functor F: A -> B;` a
 context item bound to a functor with a body and applied with `bind F;`,
 a polymorphic provider whose binding serves every instantiation of its
-inputs — D79 multiple memories, `Memory` a contextual type that
+inputs, and whose result may hold types, each a fresh generation at the
+application that no value may carry out of its block — D79 multiple memories, `Memory` a contextual type that
 memory instructions run in and handles list, with WASI's functions
 provided at the main memory alone)
 
