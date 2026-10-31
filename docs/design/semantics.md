@@ -982,6 +982,12 @@ the scrutinee's generic type, so on an abstract scrutinee only a binder or
 `_` is legal, and a match's meaning cannot depend on a specialization
 ([D16], [D80]).
 
+Likewise for `if`: with no expected type, its branches and a match's arms
+must yield one type unless one diverges, and an `if` without `else`
+yields `()`, so its branch must yield `()` or diverge — a value there
+would have nowhere to go, and is rejected rather than discarded, as in
+Rust (`if_without_else`).
+
 **[D35] DECIDED (iteration deferred with `for`).** No `for` and no
 iteration protocol in the MVP ([D31]); designing iterator semantics is
 punted deliberately. The four `for` loops in `src/` (§12) get rewritten with

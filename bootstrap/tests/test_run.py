@@ -2719,6 +2719,10 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             "branches disagree: `()` vs `I32`",
             "?S tests/wasi/if_disagree_tailless.moss main\n",
         ),
+        "tests/wasi/if_without_else.moss": (
+            "an `if` without `else` yields `()`, but its branch yields `I32`",
+            "?S tests/wasi/if_without_else.moss main\n",
+        ),
     }
 
     def test_branches_agree_by_the_bootstrap(self):

@@ -1,0 +1,13 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# An `if` without `else` yields `()`, so its branch must yield `()` too
+# (or diverge): a value would have nowhere to go, and is far likelier a
+# mistake than something meant to be discarded. Rejected in both
+# compilers.
+
+assume Wasm, Branch {
+  fn main() {
+    if i32_bool(w::i32_one) { w::i32_one };
+  }
+}

@@ -2444,6 +2444,12 @@ class FnChecker:
         if expr.els is None:
             if expected is not None and not self.fits(TUnit(), expected):
                 self.error("an `if` without `else` yields `()`")
+            # Its branch yields nothing either: a value would have nowhere
+            # to go, so it is a type error, not discarded.
+            if not isinstance(then_ty, (TUnit, TNever)):
+                self.error(
+                    f"an `if` without `else` yields `()`, but its branch yields `{show(then_ty)}`"
+                )
             return ir.If(cond, then, None), TUnit()
         if isinstance(expr.els, ast.If):
             els, els_ty = self.synth_if(expr.els, expected)
