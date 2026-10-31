@@ -2585,6 +2585,122 @@ generic environment without the receiver's view, rejects it as a type
 error (`?S`) — still rejected, less precisely named. Standing tests:
 `tests/wasi/receiver_rebound.moss` and `tests/wasi/phantom_misread.moss`.
 
+**[D77] DECIDED by the designer and implemented (method resolution, consolidated; the provision wins).**
+How a method call finds its method is spread over [D36], [D61], [D62],
+[D68] and [D74], and two things went wrong once [D73]'s `Packed` gave a
+type attached methods with the same names as `lib/access.moss`'s
+detached accessors (`IntList` is `Packed[Item=Num]`):
+
+- **The two compilers resolve at different times.** The bootstrap
+  resolves while lowering a function once, against its generic types.
+  The self-hosted compiler resolves in codegen, against each
+  specialization's types. A call written against an abstract `IntList`
+  resolves to the context's `IntList.push` in the one and can find
+  `Packed`'s attached `.push` in the other — a different function, which
+  needs a layout the caller does not have. (The self-hosted back end
+  preferred the provision; the bootstrap failed where the receiver is
+  concrete, e.g. `xs.push(7)` in `main`.)
+- **Nothing says which wins when both exist.** [D61] says an attached
+  method matches by name and a detached one must be imported; it does not
+  say what happens when a receiver has an attached method `.push` *and*
+  the context provides the imported detached `.push` at that receiver.
+
+*The rules, as one list (current behaviour, unchanged except where
+marked).* For a call `e.m(args)` with `e : τ`:
+
+1. **Attached.** If `τ`'s declaration (its nominal head) has an attached
+   method named `m` — declared in the head's own file ([D61]) — that is a
+   candidate. A defined one is called directly; an abstract one is a key
+   the context provides ([D36]).
+2. **Detached.** If the name `m` is a detached method in scope — imported,
+   or reached as `mod::m` ([D61]) — the context's provision of it at
+   `τ`, keyed by `τ`'s whole canonical type ([D62]; a structural `τ`
+   included, [D75]), is a candidate. An operator is fixed to `num.moss`'s
+   symbol whatever is in scope ([D68]).
+3. **Instantiation.** An attached method is at its receiver's
+   instantiation ([D74]); a provision, at the one it was made at, checked
+   by coherence ([D71]).
+4. **Which wins** (new): the provision — below.
+5. **When** (new): resolution is a front-end decision, made against the
+   types *as the code is written* — generic where the code is generic —
+   and recorded; a back end never re-resolves against specialized types.
+   So a call resolves the same way in every specialization, and the two
+   compilers agree by construction.
+
+*Decided with the designer: the provision wins (rule 4).* Where a
+receiver has an attached method `m` and the context provides the
+imported detached `m` at that receiver, the call is the provision.
+
+- **It is what the code means.** The provider idiom of [D54] — `bind
+  Int.add = Num.add;` — makes the detached `.add` the interface and the
+  attached `Num.add` only where its implementation lives; `n.add(m)` on a
+  `Num` means "the context's `.add` at `Num`", and if a scope rebinds it,
+  the call follows. That a context decides behaviour is the language's
+  premise.
+- **It makes resolution stable under specialization, as a matter of
+  meaning.** The other rule, the type's own method winning (Rust's: an
+  inherent method beats a trait method), makes one spelling `x.push(v)`
+  two functions — the context's where `x`'s type is abstract, the type's
+  own where it is concrete — which is the bug that prompted this entry,
+  made a rule. With the provision winning, a call means the context's
+  method wherever the context provides one, so specializing a function
+  cannot change what a call in it means; the self-hosted back end's
+  preference for the provision was this rule, applied late.
+- **The cost:** a type's own method can be overridden from outside, by a
+  context that imports the same detached name and provides it at exactly
+  that type — which Rust forbids, and which here is [D76]'s and the
+  designer's polyfill story. A lint may flag an override by a different
+  function where that is known statically.
+- **Rejected: ambiguity as an error.** It rejects the [D54] idiom, whose
+  two candidates are usually one function, and a "unless they are the
+  same function" carve-out is not decidable where the provision comes
+  from a caller's context.
+
+*Why both kinds of method stay.* With [D70]'s lambdas the [D54] idiom is
+no longer needed — a provider can be written at its bind — and
+`lib/wasistd.moss` can drop attached methods that exist only to be bound.
+But attached methods themselves remain, because they are a different
+thing: a type's own operations, where detached methods are interfaces —
+Rust's inherent and trait methods, under other names.
+
+- An attached method with a body is a function with dot syntax: calling
+  it needs nothing in context. Were every method detached, every type's
+  ordinary API would be a context requirement, assumed by every function
+  that uses it and by everything that calls those — the threading Moss
+  exists to remove, moved into method calls.
+- It lives in its receiver's namespace and needs no import, so two types'
+  `.roll`s never clash; detached names are one symbol per spelling in a
+  scope ([D44]), which is why [D61] had to declare the accessors once.
+- It is declared in its type's own file ([D61]) — the natural boundary for
+  the encapsulation [D73] and [D75] note Moss lacks: "only a type's own
+  methods may take it apart" would make a forged `Ref` impossible, should
+  that ever be wanted.
+- An abstract attached method (`fn CellInt.read(): Int;`) is an interface
+  namespaced by its type: a requirement that needs no import.
+
+*Later, perhaps.* The property rule 5 is for — "resolution is stable under
+specialization": resolving against generic types and against any
+specialization gives the same target — is a candidate theorem about
+elaboration, which the calculus (over elaborated terms, deviation 5) does
+not cover. A differential test over both compilers, at generic and
+concrete call sites, is the cheap first step.
+
+*Implementation.* The bootstrap now prefers the provision of the detached
+method the call's name resolves to (imported, [D61]) where an attached
+method of that name also exists, and only then: elsewhere resolution is
+unchanged, and the tests that pin a detached method's import and an
+operator's fixed symbol stand. The self-hosted compiler already chose the
+provision, in codegen (`method_of_ty`); under rule 4 resolving there gives
+the same answer as resolving early, so rule 5 — moving that decision to its
+front end — is a matter of the two compilers agreeing by construction, not
+of correctness, and is still to do. `Packed` keeps its attached methods.
+Providers in `lib/wasistd.moss` that exist only to be bound may become
+lambdas, as a separate change. Standing tests:
+`tests/wasi/concrete_list.moss` (an `IntList` method called in `main`) and
+`tests/wasi/resolution.moss` (a type's own `.get` beside the context's, at
+a concrete and a generic call site, with the provision rebound in a nested
+scope: `91122` in both compilers).
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -2635,7 +2751,11 @@ it keeps the old one — which is what lets `Float` be rebound in terms of
 itself and rules out perturbation confusion, D73 a tag may list
 parameters its payload does not mention (`type Packed[Item] I32;`), so
 one handle serves every element type, D74 an attached method is at its
-receiver's instantiation, not the calling scope's)
+receiver's instantiation, not the calling scope's, D77 where a
+receiver has an attached method and the context provides the detached
+method of that name at it, the provision wins — what the code means, and
+the same in every specialization — and both kinds of method stay, as a
+type's own operations and as interfaces)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
