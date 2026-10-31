@@ -368,6 +368,10 @@ GC_AST_OUT = "-10\n0\n4096\n" * 2
 # types in one scope.
 GC_TWO_OUT = "3\n12\n7\n1\n"
 
+# D78: what tests/wasi/functor_fast.moss prints — √2 and √3 scaled by a
+# billion, at f64 and then at f32.
+FUNCTOR_FAST_OUT = "1414213562\n1732050808\n1414213504\n1732050944\n"
+
 # D78: what tests/wasi/functor_trace.moss prints — the notes of a traced
 # subtree and the whole value, under each of two tracers.
 FUNCTOR_TRACE_OUT = "2,7,4,3,3,6,\n7\n[2][7][4][3][3][6]\n7\n"
@@ -2014,18 +2018,21 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         a requirement that a scope provides by binding a functor to it,
         and that `bind F;` applies through whatever it is bound to. The
         interpreter with `Trace` bound to two tracers in one program and
-        applied inside a generic function; a library applying an abstract
-        allocator for two types, bound to the platform's `Heap` in one
-        block and to a hand-written allocator in another, each with fewer
-        inputs than the allocator takes; an abstract functor producing a
-        val, evaluated at each application; and D75's `gc_bodiless`,
+        applied inside a generic function; `Fast`, whose result holds the
+        type `Float`, bound to f64 and to f32 floats for one kernel; a
+        library applying an abstract allocator whose result holds the
+        handle type, for two types, bound to a GC-heap allocator in one
+        block and to a pool of indices in another, each with fewer inputs
+        than the allocator takes; an abstract functor producing a val,
+        evaluated at each application; and D75's `gc_bodiless`,
         whose bodiless functor outside lib/wasm.moss is now legal and
         bound to `Heap`. Interpreted and in both compilers."""
         from .test_build import compile_wasm, run_wasm
 
         for entry, expected in (
             ("tests/wasi/functor_trace.moss", FUNCTOR_TRACE_OUT),
-            ("tests/wasi/functor_alloc.moss", "3\n9\n7\n" * 2 + "8\n"),
+            ("tests/wasi/functor_fast.moss", FUNCTOR_FAST_OUT),
+            ("tests/wasi/functor_alloc.moss", "21\n4\n14\n" * 2),
             ("tests/wasi/functor_val.moss", "10\n20\n30\n3\n5\n6\n0\n"),
             ("tests/wasi/gc_bodiless.moss", "42\n"),
         ):
@@ -2043,8 +2050,9 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         inputs, a missing output, an extra output); `G`'s binds may use
         only `G`'s inputs, whatever an application has; `bind F;` with
         nothing bound to `F` is the ordinary error for a requirement not
-        in context; and, as implemented, an abstract functor's result
-        holds no type. Rejected in both compilers."""
+        in context; a functor bound to one whose result holds a type must
+        provide that type too; and no value of a type `bind F;` made may
+        leave its block. Rejected in both compilers."""
         from .test_build import compile_wasm
 
         cases = {
@@ -2075,9 +2083,18 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "`Trace` is not available in the context here",
                 "?Q {} demo Trace\n",
             ),
+            # A type in the result is provided like any other item.
             "functor_type": (
-                "abstract functor `Pick` produces the type `Scalar`",
-                "!W {} Scalar\n",
+                "`Twice` cannot be bound to `Pick`: it does not provide "
+                "`Scalar`, which `Pick` promises",
+                "!X {} Scalar\n",
+            ),
+            # A value of a type `bind F;` made leaving its block, where the
+            # type made differs from the one outside.
+            "functor_escape": (
+                "this block yields `Float@Fast`, the type `bind Fast;` made "
+                "in it: a value of that type cannot leave the block (D78)",
+                "?W {} leak Float\n",
             ),
         }
         for name, (message, report) in cases.items():
@@ -2091,6 +2108,34 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 self.assertTrue(
                     out.decode("utf-8").startswith(report.format(entry)), out[:200]
                 )
+
+    def test_generations_the_self_hosted_compiler_cannot_tell_apart(self):
+        """D72 and D78, rejected by the bootstrap only. Two generations of
+        a type that specialize to one type are told apart only by a
+        generic check, which the self-hosted compiler does not have yet
+        (it checks types as specialized): `x`, a `T` from before `bind T
+        = Int;`, used as a `T` after it where `T` was `Int` all along; and
+        a value of the `Float` `bind Fast;` made leaving its block where
+        that `Float` is the f64 the outer one is too. The self-hosted
+        compiler compiles both — asserted here so that the day it checks
+        generically, this test says so."""
+        from .test_build import compile_wasm
+
+        cases = {
+            "generation_mix": "`y` is declared `Int` but initialized with `T`",
+            "functor_escape_same": (
+                "this block yields `Float@Fast`, the type `bind Fast;` made "
+                "in it: a value of that type cannot leave the block (D78)"
+            ),
+        }
+        for name, message in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertEqual(out[:4], b"\0asm", out[:200])
 
     def test_a_union_slot_holds_one_valtype(self):
         """D75 meets D59: a union's slot has its first member's valtype,

@@ -1,0 +1,32 @@
+import "../../lib/float.moss" use Floats;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, WasiNumerics, WasiFloats32;
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: `bind Fast;` makes `Float` a fresh generation for the rest of its
+# block, and no value of that type may leave the block — here as the
+# block's result, kept in `r` past it. Refused in both compilers: the
+# bootstrap sees it generically; the self-hosted compiler, which checks
+# types as specialized, sees it because `Fast` is bound to f32 while
+# `Float` outside the block is no f32 (nothing outside has bound it).
+
+functor Fast: Wasm, Branch -> Floats;
+
+assume Wasm, Branch, Fast {
+  fn leak(n: I32): I32 {
+    bind WasiNumerics;
+    let r = {
+      bind Fast;
+      float(Num (n))
+    };
+    n
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind Fast = WasiFloats32;
+    leak(w::i32_one);
+  }
+}

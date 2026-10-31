@@ -264,9 +264,15 @@ class ApplyFunctor:
     bound to is known only where the enclosing function is specialized
     (or, in the interpreter, run), so the binds of every functor that
     can be bound to `F` were lowered here, in this function's terms, one
-    branch each: `(functor, stmts)`, where a functor with no body is the
-    platform's own provision of it. The branch `F` is bound to runs in a
-    scope of its own, and only `outs` — `F`'s result items — survive it."""
+    branch each: `(functor, stmts, pairs, types)`, where a functor with
+    no body is the platform's own provision of it. The branch `F` is
+    bound to runs in a scope of its own, and only `F`'s result survives
+    it: each `(key, out)` of `pairs` is what the branch made under `key`,
+    provided under `out`, the key the code after it uses — which differ
+    where a key mentions a type of the result, made a fresh generation
+    here; and `types` says, for each such generation, the type the
+    branch made it, so a specialization knows. `outs` are the keys of
+    the result, the same in every branch."""
 
     key: Key
     branches: tuple

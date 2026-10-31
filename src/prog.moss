@@ -175,13 +175,13 @@ assume Std {
   # captured, which it holds by value (named by the local).
   fn e_lambda(): Int { 16 + 4 }
 
-  # D78: an abstract functor (one declared with no body) whose result
-  # holds a type. A binding of it serves every instantiation of its
-  # inputs, so a type it produced would be a different type behind each
-  # binding. Named by the type, as the bootstrap's "abstract functor `F`
-  # produces the type `T`" is. (Until D78 this code was D75's refusal of
-  # a bodiless functor outside lib/wasm.moss, which is now legal.)
-  fn e_functor_type(): Int { 16 + 6 }
+  # D78: a value whose type mentions a type that `bind F;` made in a
+  # block, leaving that block. Named by the type, as the bootstrap's
+  # "this block yields `T@F`, which mentions ..." is. Seen only where
+  # the specialization tells the made type from what the symbol was
+  # before (codegen.moss's `check_escape`). (Until D78 this code was
+  # D75's refusal of a bodiless functor outside lib/wasm.moss.)
+  fn e_escape(): Int { 16 + 6 }
 
   # D78: `bind F = G;` where `G`'s signature does not fit the abstract
   # `F`'s: `G` needs an input `F` does not take, or does not provide

@@ -731,49 +731,6 @@ assume Std {
       }
     }
 
-    # D78: an abstract functor's result may hold vals, fns, methods and
-    # abstract functors, but no type: a binding of it serves every
-    # instantiation of its inputs and code that applies it is checked
-    # once, so a type it produced would be a different type behind each
-    # binding. Refused where the functor is declared, named by the type.
-    fn check_functors() {
-      var s = 0;
-      while s < prog::sym_count() {
-        if prog::sym_kind.get(s) == prog::sk_functor() {
-          let d = prog::sym_decl.get(s);
-          if !ast::is_some(ast::fu_binds(d)) {
-            no_type_result(prog::sym_mod.get(s), prog::sym_mod.get(s), ast::fu_res(d), ast::fu_nres(d), 0);
-          }
-        }
-        s = s + 1;
-      }
-    }
-
-    fn no_type_result(home: Int, m: Int, run: Int, len: Int, depth: Int) {
-      if depth > 16 {
-        return ();
-      }
-      var i = 0;
-      while i < len {
-        let spec = ast::kid_at(run, i);
-        if !ast::is_some(ast::b_of(spec)) {
-          if ast::is_some(ast::a_of(spec)) {
-            let target = prog::resolve_path(m, ast::a_of(spec));
-            if ast::is_some(target) {
-              let kind = prog::sym_kind.get(target);
-              if kind == prog::sk_type() {
-                prog::error(prog::e_functor_type(), home, prog::sym_name.get(target));
-              } else if kind == prog::sk_context() {
-                let d = prog::sym_decl.get(target);
-                no_type_result(home, prog::sym_mod.get(target), ast::b_of(d), ast::c_of(d), depth + 1);
-              }
-            }
-          }
-        }
-        i = i + 1;
-      }
-    }
-
     fn nest_types(m: Int, run: Int, len: Int, out: IntList, depth: Int) {
       if depth > 16 {
         return ();

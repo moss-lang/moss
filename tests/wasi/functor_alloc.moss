@@ -3,40 +3,79 @@ import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
-# D78: allocation strategy as one bind. The library below boxes the two
-# types it needs by applying an abstract allocator, `Alloc`, once per
-# type — it knows where it allocates and nothing about how — and `main`
-# binds `Alloc` in one block to the platform's GC `Heap` itself, and in
-# another to `Counted`, a hand-written allocator that boxes through
-# `Heap` and counts what it boxes. Both take fewer inputs than `Alloc`
-# does (`Heap` needs neither `Std` nor the counter), which is allowed:
-# every application of `Alloc` has all of `Alloc`'s. The binding is made
-# where `Boxed` means nothing, and applied in the library at `Expr` and
-# at `Stmt` — a binding serves every instantiation of the functor's
-# inputs. Output: 3, 9, 7 from each block, then the eight boxes the
-# second one counted.
+# D78: allocation strategy as one bind. An allocator stores a `Boxed` and
+# hands back a `Handle` to load it from; what a handle *is* is the
+# allocator's business, so `Handle` is a type in the abstract `Alloc`'s
+# result. The library below applies `Alloc` once per type it stores —
+# each application makes a fresh generation of `Handle` (D72), which it is
+# checked against once, knowing nothing of what it is — and `main` binds
+# `Alloc` in one block to `Gc`, whose handles are references into the GC
+# heap (`Heap`), and in another to `Pool`, whose handles are indices into
+# a list of packed values. Neither needs all of `Alloc`'s inputs: `Gc`
+# does not pack, and `Pool` does not need `Wasm`. No handle leaves the
+# block that made its type. Output: the same three lines from each block.
+#
+# `alloc` is a plain fn, so the library's second application replaces
+# the first one's (the library allocates each type in turn), while
+# `.load` is keyed by its receiver, so both stay. The pool's providers
+# are named functions rather than anonymous ones: in the self-hosted
+# compiler an anonymous function that reaches an `IntList` method does
+# not find the context's provision of it (it calls `Packed`'s own and
+# fails for want of a `Layout`), a bug older than D78. Both types are one
+# scalar wide, since the bootstrap's back end compiles `pool_alloc` once.
 
-unit Add;
-unit Mul;
+type Handle;
 
-type BinOp = Add | Mul;
+assume Std, Boxed {
+  # How a pool stores a value: as one `Int`, and back.
+  fn .pack(): Int;
+  fn unpack(n: Int): Boxed;
+}
 
-assume Std, Wasm {
-  type Literal Int;
-  type Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
-  type Expr = Binary | Literal;
+assume Boxed, Handle {
+  fn alloc(value: Boxed): Handle;
+  fn .load(): Boxed;        # detached: provided at receiver `Handle`
+}
 
-  type Print { value: Ref[Boxed=Expr] };
-  type Then { value: Ref[Boxed=Expr], rest: Ref[Boxed=Stmt] };
-  type Stmt = Then | Print;
+functor Alloc: Std, Wasm, Boxed, Boxed.pack, unpack -> Handle, alloc, Handle.load;
 
-  context Boxes =
-    Expr.boxed[Boxed=Expr],
-    Ref.deref[Boxed=Expr],
-    Stmt.boxed[Boxed=Stmt],
-    Ref.deref[Boxed=Stmt];
+# Handles into the GC heap: a `Ref` to what is stored.
+functor Gc: Wasm, Boxed -> Handle, alloc, Handle.load {
+  bind Handle = Ref;
+  bind Heap;
+  bind alloc = (value) => value.boxed();
+  bind Handle.load = () => this.deref();
+}
 
-  val allocs: CellInt;
+# Handles into a pool: an index into a list of packed values, one list
+# per application. A slot lists what it holds (D73), so slots for two
+# types are two types.
+assume Std, Boxed {
+  type Slot[Boxed] Int;
+  val slots: IntList;
+
+  assume Boxed.pack, unpack, slots {
+    fn pool_alloc(value: Boxed): Slot {
+      let i = slots.length();
+      slots.push(value.pack());
+      Slot (i)
+    }
+
+    fn Slot.fetch(): Boxed { match this { Slot i => unpack(slots.get(i)) } }
+  }
+}
+
+functor Pool: Std, Boxed, Boxed.pack, unpack -> Handle, alloc, Handle.load {
+  bind Handle = Slot;
+  bind slots = int_list();
+  bind alloc = pool_alloc;
+  bind Handle.load = Slot.fetch;
+}
+
+# The library: two types, each stored through the allocator.
+assume Std {
+  type Celsius Int;
+  type Mile Int;
 
   fn print_int(n: Int) {
     if n >= 10 {
@@ -51,88 +90,41 @@ assume Std, Wasm {
   }
 }
 
-# The allocator, as a requirement: whatever is bound to it boxes a
-# `Boxed` and follows a reference to one.
-functor Alloc: Std, Wasm, Boxed, allocs -> Boxed.boxed, Ref.deref;
-
-# A hand-written allocator: the GC heap's, counting each box in `allocs`.
-# `.boxed` inside the anonymous function is `Heap`'s, in force at the bind.
-functor Counted: Std, Wasm, Boxed, allocs -> Boxed.boxed, Ref.deref {
-  bind Heap;
-  bind Boxed.boxed = () => {
-    allocs.write(allocs.read() + 1);
-    this.boxed()
-  };
-}
-
-assume Std, Wasm, Boxes {
-  fn eval(e: Expr): Int {
-    match e {
-      Binary { op, lhs, rhs } => {
-        let l = eval(lhs.deref());
-        let r = eval(rhs.deref());
-        match op {
-          Add => l + r,
-          Mul => l * r,
-        }
-      },
-      Literal n => n,
-    }
-  }
-
-  fn exec(s: Stmt) {
-    match s {
-      Then { value, rest } => {
-        line(eval(value.deref()));
-        exec(rest.deref());
-      },
-      Print { value } => line(eval(value.deref())),
-    }
-  }
-
-  fn lit(n: Int): Ref[Boxed=Expr] {
-    let e: Expr = Literal (n);
-    e.boxed()
-  }
-
-  fn bin(op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr]): Ref[Boxed=Expr] {
-    let e: Expr = Binary { op, lhs, rhs };
-    e.boxed()
-  }
-
-  fn program() {
-    let three = bin(Add, lit(1), lit(2));
-    let nine = bin(Mul, three, lit(3));
-    let last: Stmt = Print { value = lit(7) };
-    let middle: Stmt = Then { value = nine, rest = last.boxed() };
-    let first: Stmt = Then { value = three, rest = middle.boxed() };
-    exec(first);
-  }
-}
-
-# The library: it applies the allocator at each type it boxes.
-assume Std, Wasm, allocs, Alloc {
+assume Std, Wasm, Alloc {
   fn library() {
-    bind Boxed = Expr;
+    bind Boxed = Celsius;
+    bind Boxed.pack = () => match this { Celsius c => c };
+    bind unpack = (n) => Celsius (n);
     bind Alloc;
-    bind Boxed = Stmt;
+    let warm = alloc(Celsius (21));
+    let cold = alloc(Celsius (4));
+    bind Boxed = Mile;
+    bind Boxed.pack = () => match this { Mile m => m * 2 };
+    bind unpack = (n) => Mile (n / 2);
     bind Alloc;
-    program();
+    let trip = alloc(Mile (14));
+    match warm.load() {
+      Celsius c => line(c),
+    }
+    match cold.load() {
+      Celsius c => line(c),
+    }
+    match trip.load() {
+      Mile m => line(m),
+    }
   }
 }
 
 assume Std, Wasm {
   fn demo() {
-    bind allocs = cell_int();
     {
-      bind Alloc = Heap;
+      bind Alloc = Gc;
       library();
     }
     {
-      bind Alloc = Counted;
+      bind Alloc = Pool;
       library();
     }
-    line(allocs.read());
   }
 }
 

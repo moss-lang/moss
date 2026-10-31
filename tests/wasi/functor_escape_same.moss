@@ -1,0 +1,34 @@
+import "../../lib/float.moss" use Floats;
+import "../../lib/wasistd.moss" use Branch, Num, WasiNumerics, WasiFloats;
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: the escape of functor_escape.moss where the type `bind Fast;`
+# makes is the very type `Float` already was outside the block (f64 both
+# times). The bootstrap checks generically and refuses it: the block's
+# `Float` is a fresh generation whatever it turns out to be. The
+# self-hosted compiler checks types as specialized, where the two are
+# one type, so it cannot see this — the same gap it has for any two D72
+# generations that specialize alike — and compiles it. Rejected by the
+# bootstrap only, until that compiler checks generically.
+
+functor Fast: Wasm, Branch -> Floats;
+
+assume Wasm, Branch, Fast {
+  fn leak(n: I32): I32 {
+    bind WasiNumerics;
+    bind WasiFloats;
+    let r = {
+      bind Fast;
+      float(Num (n))
+    };
+    n
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind Fast = WasiFloats;
+    leak(w::i32_one);
+  }
+}

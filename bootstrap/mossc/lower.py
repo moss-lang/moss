@@ -194,11 +194,9 @@ class Lower:
         self.program = program
         self.fns: dict[int, ir.FnIR] = {}  # id(Symbol) -> FnIR
         self.checked_functors: set = set()
-        # D78: abstract functors whose declaration has been checked,
-        # functors whose binds have been checked against their own
+        # D78: functors whose binds have been checked against their own
         # argument signature, and which functors may be bound to each
         # abstract one anywhere in the program (`functor_candidates`).
-        self.abstract_checked: set = set()
         self.bodies_checked: set = set()
         self.functor_edges: dict | None = None
         self.in_progress: set[int] = set()
@@ -278,13 +276,6 @@ class Lower:
 
     def run(self) -> None:
         for module in self.program.order:
-            for symbol in module.names.values():
-                if (
-                    symbol.module is module
-                    and symbol.kind == SymKind.FUNCTOR
-                    and symbol.decl.binds is None
-                ):
-                    self.abstract_functor(symbol)
             for decl, symbol in self.defined_fns(module):
                 self.lower_fn(module, symbol)
 
@@ -400,7 +391,6 @@ class Lower:
             # assuming it needs nothing else in force (D20), and its
             # provision is at no instantiation: a binding serves every
             # one of its inputs.
-            self.abstract_functor(sym)
             env.functors[sym] = True
             if sym not in needs:
                 needs.append(sym)
@@ -481,39 +471,6 @@ class Lower:
 
     # D78: abstract functors.
 
-    def abstract_functor(self, functor: Symbol):
-        """An abstract functor's result may hold vals, fns, methods and
-        abstract functors — everything a provision can be — but no type:
-        a binding of it serves every instantiation of its inputs, and code
-        that applies it is checked once, so a type it produced would be
-        a different type behind each binding, which nothing here can
-        name."""
-        if id(functor) in self.abstract_checked:
-            return
-        self.abstract_checked.add(id(functor))
-        for spec in functor.decl.result:
-            self.no_type_result(functor, functor.module, spec, 0)
-
-    def no_type_result(self, functor: Symbol, module: Module, spec: ast.Spec, depth: int):
-        if depth > 16:
-            self.error(module, "context nests too deeply", spec)
-        if spec.dot is not None:
-            return
-        target = resolve_path(module, spec.path)
-        if not isinstance(target, Symbol):
-            return  # reported where the item is provided
-        if target.kind == SymKind.CONTEXT:
-            for item in target.decl.items:
-                self.no_type_result(functor, target.module, item, depth + 1)
-        elif target.kind == SymKind.TYPE:
-            self.error(
-                functor.module,
-                f"abstract functor `{functor.name}` produces the type "
-                f"`{target.name}`; an abstract functor's result may hold vals, "
-                "fns, methods and abstract functors, but not types (D78)",
-                functor.decl,
-            )
-
     def signature_items(self, functor: Symbol, specs) -> dict:
         """The leaf items a functor's argument or result signature stands
         for, keyed as `spec_key` keys them, with how to name each."""
@@ -530,9 +487,6 @@ class Lower:
         did not ask for. Nothing is inferred, only checked (D27). A `G`
         with a body is checked once against its own argument signature,
         which is all an application of `F` promises it."""
-        self.abstract_functor(functor)
-        if bound.decl.binds is None:
-            self.abstract_functor(bound)
         f_in = self.signature_items(functor, functor.decl.args)
         g_in = self.signature_items(bound, bound.decl.args)
         extra = [name for key, name in g_in.items() if key not in f_in]
@@ -1392,6 +1346,10 @@ class FnChecker:
         self.this_ty = this_ty
         self.loop_depth = 0
         self.applying: set = set()  # functors being applied, to catch cycles
+        # D78: the fresh generations `bind F;` made for the types in an
+        # abstract functor's result, innermost block last; none may
+        # leave the block that made it.
+        self.fresh_types: list = []
         self.at_node = None  # the statement/expression currently checked
         self.no_this = ""  # why there is no `this`, when there is more to say
         for name, ty in sig.params:
@@ -1432,6 +1390,7 @@ class FnChecker:
         yields: its tail's, `()` without one, or `|` when its last
         statement cannot fall through."""
         outer = self.push()
+        mark = len(self.fresh_types)
         try:
             stmts = []
             self.diverged = False
@@ -1450,11 +1409,25 @@ class FnChecker:
                 tail_ty = TNever() if self.diverged else TUnit()
             else:
                 tail, tail_ty = self.synth(block.tail, expected=expected)
+            gone = self.escapes(
+                self.lower.canon(self.env, tail_ty), self.fresh_types[mark:]
+            )
+            if gone:
+                made = gone[0].name
+                what = f"`{made}`"
+                if show(tail_ty) != made:
+                    what = f"`{show(tail_ty)}`, which mentions `{made}`"
+                self.error(
+                    f"this block yields {what}, the type `bind "
+                    f"{made.split('@', 1)[1]};` made in it: a value of that "
+                    "type cannot leave the block (D78)"
+                )
             if expected is not None and not self.fits(tail_ty, expected):
                 self.error(f"block yields `{show(tail_ty)}`, expected `{show(expected)}`")
             return ir.Block(tuple(stmts), tail), tail_ty
         finally:
             self.env = outer
+            del self.fresh_types[mark:]
 
     def check_stmt(self, stmt: ast.Stmt):
         result = self._check_stmt(stmt)
@@ -1598,13 +1571,23 @@ class FnChecker:
                 f"`{functor.name}` is not available in the context here: nothing "
                 f"binds it, and nothing here assumes it (D78)"
             )
-        self.lower.abstract_functor(functor)
         home = functor.module
         for spec in functor.decl.args:
             self.argument_in_context(functor, home, spec, 0)
+        # Each type in the result starts a fresh generation here (D72),
+        # rigid: the code after this is checked against it once, as code
+        # under an `assume` of it is, whatever the binding makes it.
+        fresh = {}
+        for t in self.result_types(functor):
+            gen = Symbol(t.module, f"{t.name}@{functor.name}", SymKind.TYPE, t.decl)
+            gen.fresh_of = t
+            fresh[t] = TAbstract(gen, ())
+            self.fresh_types.append(gen)
         branches = []
+        checks = []
+        here = self.at_node
         before = self.env
-        outs = self.result_keys(functor)
+        site = self.result_keys(functor, fresh)
         for candidate in self.lower.functor_candidates(functor):
             self.env = Env(self.module, parent=before)
             try:
@@ -1612,44 +1595,168 @@ class FnChecker:
                     stmts = self.platform_functor(candidate)
                 else:
                     stmts = self.apply_body(candidate)
-                for key, name in outs:
+                made = self.result_keys(functor, {})
+                self.at_node = here
+                for (key, name), _ in zip(made, site):
                     if not self.made_here(before, key):
                         self.error(
                             f"`{candidate.name}`, bound to `{functor.name}`, does "
                             f"not provide {name} here (D78)"
                         )
+                pairs = tuple(
+                    (key, site_key)
+                    for (key, _), (site_key, _) in zip(made, site)
+                    if not self.is_type_key(key)
+                )
+                types = tuple(
+                    (fresh[t].symbol, self.lower.canon(self.env, TAbstract(t, ())))
+                    for t in fresh
+                )
+                sigs = {key: self.signature_of(key) for key, _ in pairs}
             finally:
                 self.env = before
-            branches.append((candidate, tuple(stmts)))
-        keys = self.provide_result(functor)
-        return [ir.ApplyFunctor(functor, tuple(branches), tuple(keys))]
+            branches.append((candidate, tuple(stmts), pairs, types))
+            checks.append((candidate, pairs, types, sigs))
+        keys = self.provide_result(functor, fresh)
+        outs = tuple(k for k in keys if not self.is_type_key(k))
+        # Each branch must make each item at the type the code after this
+        # is checked against, its fresh generations read as that branch
+        # made them: a functor that rebinds a type it does not provide,
+        # and that `F`'s result mentions, would otherwise provide an item
+        # at a type the caller does not have.
+        self.at_node = here
+        for candidate, pairs, types, sigs in checks:
+            made = dict(types)
+            for key, out in pairs:
+                want = self.signature_of(out)
+                if want is None or sigs[key] is None:
+                    continue
+                if self.substitute(want, made) != sigs[key]:
+                    self.error(
+                        f"`{candidate.name}`, bound to `{functor.name}`, provides "
+                        f"{self.show_key(out)} at another type than `{functor.name}` "
+                        "promises here (D78)"
+                    )
+        return [ir.ApplyFunctor(functor, tuple(branches), outs)]
+
+    def signature_of(self, key):
+        """The type a provision of `key` has here, canonical: a val's type
+        or a fn's or method's signature."""
+        canon = lambda t: self.lower.canon(self.env, t)
+        if isinstance(key, tuple):
+            sig = self.env.methods.get(key)
+        elif key.kind == SymKind.VAL:
+            t = self.env.vals.get(key)
+            return None if t is None else canon(t)
+        else:
+            sig = self.env.fns.get(key)
+        if sig is None:
+            return None
+        return (
+            tuple(canon(t) for _, t in sig.params),
+            canon(sig.ret),
+            None if sig.this is None else canon(sig.this),
+        )
+
+    def substitute(self, sig, made: dict):
+        """A signature with each fresh generation read as `made` says."""
+        from .build import subst
+
+        if not made:
+            return sig
+        if not isinstance(sig, tuple):
+            return subst(made, sig)
+        params, ret, this = sig
+        return (
+            tuple(subst(made, t) for t in params),
+            subst(made, ret),
+            None if this is None else subst(made, this),
+        )
+
+    @staticmethod
+    def is_type_key(key) -> bool:
+        return isinstance(key, Symbol) and key.kind == SymKind.TYPE
+
+    def result_types(self, functor: Symbol) -> list:
+        """The types an abstract functor's result holds, in order."""
+        out: list = []
+
+        def walk(module, specs, depth):
+            if depth > 16:
+                self.error("context nests too deeply")
+            for spec in specs:
+                if spec.dot is not None:
+                    continue
+                target = resolve_path(module, spec.path)
+                if not isinstance(target, Symbol):
+                    continue
+                if target.kind == SymKind.CONTEXT:
+                    walk(target.module, target.decl.items, depth + 1)
+                elif target.kind == SymKind.TYPE and target not in out:
+                    out.append(target)
+
+        walk(functor.module, functor.decl.result, 0)
+        return out
+
+    def escapes(self, ty, gens) -> list:
+        """The fresh generations among `gens` that a type mentions."""
+        found: list = []
+
+        def walk(t):
+            if isinstance(t, TAbstract):
+                if t.symbol in gens and t.symbol not in found:
+                    found.append(t.symbol)
+                for _, a in t.args:
+                    walk(a)
+            elif isinstance(t, TNominal):
+                for _, a in t.args:
+                    walk(a)
+            elif isinstance(t, TUnion):
+                for m in t.members:
+                    walk(m)
+            elif isinstance(t, TRecord):
+                for _, f in t.fields:
+                    walk(f)
+
+        walk(ty)
+        return found
 
     def made_here(self, before: Env, key) -> bool:
         """Whether this scope provided `key` itself, since `before`."""
+        if self.is_type_key(key):
+            return self.env.tymap.get(key) is not before.tymap.get(key)
         if isinstance(key, Symbol) and key.kind == SymKind.FUNCTOR:
             return self.env.functors.get(key) is not before.functors.get(key)
         return key in self.env.apps and self.env.apps[key] is not before.apps.get(key)
 
-    def result_keys(self, functor: Symbol) -> list:
+    def result_keys(self, functor: Symbol, fresh: dict) -> list:
         """The keys `functor`'s result provides here, with how to name each,
-        without providing them."""
+        without providing them (its types made `fresh`, if given)."""
         saved = self.env
         self.env = Env(self.module, parent=saved)
         try:
-            keys = self.provide_result(functor)
+            keys = self.provide_result(functor, fresh)
         finally:
             self.env = saved
         return [(key, self.show_key(key)) for key in keys]
 
     def show_key(self, key) -> str:
+        if self.is_type_key(key):
+            return f"the type `{key.name}`"
         if isinstance(key, tuple):
             return f"`{show(key[0])}{key[1].name}`"
         return f"`{key.name}`"
 
-    def provide_result(self, functor: Symbol) -> list:
+    def provide_result(self, functor: Symbol, fresh: dict) -> list:
         """Provide each item of `functor`'s result here, as the bind that
-        makes it would, at this scope's types; return their keys."""
-        out: list = []
+        makes it would, at this scope's types; return their keys. Its
+        types come first, each bound to its generation in `fresh` (or left
+        as they are, where `fresh` has none), since the other items'
+        signatures mention them."""
+        out: list = list(self.result_types(functor))
+        for t in out:
+            if t in fresh:
+                self.env.tymap[t] = fresh[t]
         for spec in functor.decl.result:
             self.provide_spec(functor, functor.module, spec, {}, out, 0)
         return out
@@ -1684,8 +1791,8 @@ class FnChecker:
         if target.kind == SymKind.CONTEXT:
             for item in target.decl.items:
                 self.provide_spec(functor, target.module, item, subst, out, depth + 1)
-        elif self.lower.already_provided(target):
-            return
+        elif self.lower.already_provided(target) or target.kind == SymKind.TYPE:
+            return  # a type is provided first (`provide_result`)
         elif target.kind == SymKind.VAL:
             declared = self.lower.elab_type(target.decl.ty, target.module, tymap, self.env)
             self.lower.shadow(self.env.vals, target, declared)

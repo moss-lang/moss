@@ -3,18 +3,33 @@ import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
-# D78, as implemented: an abstract functor's result may hold vals, fns,
-# methods and abstract functors, but not a type. A binding of one serves
-# every instantiation of its inputs and the code that applies it is
-# checked once, so a type it produced would be a different type behind
-# each binding, and nothing can name it. Refused where it is declared.
+# D78: an abstract functor's result may hold types, and a functor bound
+# to it must provide exactly its result — the types included. `Pick`
+# promises the type `Scalar` and `.twice` on it; `Twice` provides only
+# `.twice`, leaving `Scalar` to whatever it already was, so it cannot be
+# bound to `Pick`. Refused where the bind is written.
 
 type Scalar;
 
-functor Pick: Std -> Scalar;
+assume Scalar {
+  fn .twice(): Scalar;
+}
+
+functor Pick: Std -> Scalar, Scalar.twice;
+
+functor Twice: Std -> Scalar.twice {
+  bind Scalar.twice = () => this;
+}
+
+assume Std {
+  fn demo() {
+    bind Pick = Twice;
+  }
+}
 
 assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
+    demo();
   }
 }

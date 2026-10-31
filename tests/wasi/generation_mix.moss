@@ -1,0 +1,36 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D72: a type bind starts a new generation, and what was typed before it
+# keeps the old one. In `mix`, `x` is a `T` as `mix` was given it, and
+# after `bind T = Int;` a `T` is an `Int` — two generations, so `x` is not
+# a `T` any more. The bootstrap checks generically and refuses it. The
+# self-hosted compiler checks types as specialized, and `demo` calls
+# `mix` with `T` already `Int`, so there the two generations are one type
+# and it compiles: a known gap, closed when that compiler checks
+# generically. Rejected by the bootstrap only.
+
+type T;
+
+assume Std, T {
+  fn mix(x: T) {
+    bind T = Int;
+    let y: T = x;
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind T = Int;
+    mix(one);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

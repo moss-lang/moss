@@ -139,6 +139,13 @@ functor Boot: Std -> Compiler {
   bind codegen::pv_local = int_list();
   bind codegen::pv_top = cell_int();
   bind codegen::pv_floor = cell_int();
+  bind codegen::fr_spec = int_list();
+  bind codegen::fr_type = int_list();
+  bind codegen::fr_sym = int_list();
+  bind codegen::es_made = int_list();
+  bind codegen::es_outer = int_list();
+  bind codegen::es_sym = int_list();
+  bind codegen::es_top = cell_int();
   bind codegen::cg_depth = cell_int();
   bind codegen::cg_loops = int_list();
   bind codegen::cg_ntop = cell_int();

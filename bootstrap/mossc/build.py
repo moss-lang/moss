@@ -1603,7 +1603,7 @@ class FnCompiler:
         environment entries (a provider, a primitive, a functor), and the
         values a provider captured for its key."""
         bound = self.bound_functor(node.key)
-        for functor, stmts in node.branches:
+        for functor, stmts, pairs, types in node.branches:
             if functor is bound:
                 break
         else:
@@ -1614,16 +1614,23 @@ class FnCompiler:
             self.stmt(stmt)
         made_provisions, made_env = self.provisions, self.env
         self.provisions, self.env = saved_provisions, saved_env
-        outs = set(node.outs)
+        # What the branch made under its own keys, under the result's.
+        rename = dict(pairs)
         for key, value in made_provisions.items():
-            if key in outs or (
+            if key in rename:
+                self.provisions[rename[key]] = value
+            elif (
                 isinstance(key, tuple) and len(key) == 3 and key[0] == "captured"
-                and key[1] in outs
+                and key[1] in rename
             ):
-                self.provisions[key] = value
-        for key in node.outs:
+                self.provisions[captured(rename[key[1]], key[2])] = value
+        for key, out in pairs:
             if key in made_env:
-                self.env[key] = made_env[key]
+                self.env[out] = made_env[key]
+        # The fresh generations of the result's types, as this branch made
+        # them (D78), for whatever below needs a type argument.
+        if types:
+            self.theta = {**self.theta, **{g: subst(self.theta, t) for g, t in types}}
 
     # Expressions: every expression leaves exactly one i32.
 

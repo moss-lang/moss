@@ -356,11 +356,17 @@ class Interp:
                 frame.ctx[stmt.key] = frame.ctx[stmt.source]
         elif isinstance(stmt, ir.ApplyFunctor):
             bound = frame.ctx[stmt.key]
-            for functor, stmts in stmt.branches:
+            for functor, stmts, pairs, types in stmt.branches:
                 if functor is bound:
                     break
             else:
                 raise MossPanic(f"`{stmt.key.name}` is bound to no functor it can be")
+            if self.memory_sym is not None and types:
+                from .build import subst
+
+                frame.theta = {
+                    **frame.theta, **{g: subst(frame.theta, t) for g, t in types}
+                }
             saved = frame.ctx
             frame.ctx = dict(saved)
             try:
@@ -369,8 +375,8 @@ class Interp:
                 made = frame.ctx
             finally:
                 frame.ctx = saved
-            for key in stmt.outs:
-                frame.ctx[key] = made[key]
+            for key, out in pairs:
+                frame.ctx[out] = made[key]
         elif isinstance(stmt, ir.While):
             while self.truthy(self.eval(stmt.cond, frame)):
                 try:

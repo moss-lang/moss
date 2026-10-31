@@ -1,0 +1,75 @@
+import "../../lib/float.moss" use Floats;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, raw, WasiNumerics, WasiFloats,
+  WasiFloats32;
+import "../../lib/wasm.moss" use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: an abstract functor whose result holds types. `Fast` promises
+# `Floats` — the type `Float`, the type `FloatList`, and everything over
+# them — and the kernel below marks its inner loop `bind Fast;`. There
+# `Float` is a fresh generation (D72) that the kernel is checked against
+# once, knowing nothing of what it is; whoever binds `Fast` decides:
+# `WasiFloats` makes it f64, `WasiFloats32` f32. No value of the fresh
+# type leaves the block: the kernel returns an `I32`.
+#
+# The kernel is generic over `Fast` but not over `Int`, which it binds
+# itself (`WasiNumerics`): `Floats` mentions `Int` (`float`, `.round`),
+# and the library's float functors bind `Int` to `Num` inside, so they
+# can only be bound where `Int` already is `Num`. A kernel generic over
+# `Int` could not take them, since a binding serves every instantiation
+# of the functor's inputs; the bootstrap checks that each branch makes
+# each item at the type the application promises.
+#
+# Output: √2 and √3 to nine places, at f64 and then at f32, which rounds
+# sooner.
+
+functor Fast: Wasm, Branch -> Floats;
+
+assume Wasm, Branch, Fast {
+  # The square root of `n` by Newton's method, scaled by a billion.
+  fn root(n: I32): I32 {
+    bind WasiNumerics;
+    bind Fast;
+    let x = float(Num (n));
+    var r = x;
+    var i = 0;
+    while i < 30 {
+      r = (r + x / r) / 2.0;
+      i = i + 1;
+    }
+    raw((r * 1000000000.0).round())
+  }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Wasm, Wasi, Branch, Fast {
+  fn report() {
+    bind WasiStd;
+    print_int(Num (root(raw(2))));
+    putchar(char::newline);
+    print_int(Num (root(raw(3))));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    {
+      bind Fast = WasiFloats;
+      report();
+    }
+    {
+      bind Fast = WasiFloats32;
+      report();
+    }
+  }
+}
