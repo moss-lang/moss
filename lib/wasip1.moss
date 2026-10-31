@@ -1,6 +1,10 @@
-import "./wasm.moss" use I32, I64;
+import "./wasm.moss" use I32, I64, Memory;
 
-assume I32 {
+# Every pointer a preview-1 function takes is into the module's first memory,
+# so each is declared under `assume Memory` and provided at the root's
+# memory only (D79): code reaching one where `Memory` is rebound is
+# incoherent ([D71]), not silently wrong.
+assume I32, Memory {
   fn args_get(argv: I32, argv_buf: I32): I32;
   fn args_sizes_get(retptr0: I32, retptr1: I32): I32;
   fn environ_get(environ: I32, environ_buf: I32): I32;

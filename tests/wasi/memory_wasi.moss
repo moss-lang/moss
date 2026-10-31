@@ -1,0 +1,26 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiBasics;
+import "../../lib/wasm.moss" use Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/std.moss" use putchar;
+import "../../lib/char.moss" as char;
+
+# D79: WASI preview 1 reads only the module's first memory, so its
+# functions are declared under `assume Memory` and provided at the root's
+# memory alone. Applying a WASI-calling functor where `Memory` is rebound
+# reaches them at `Scratch`, which is incoherent (D71) in both compilers;
+# before, it wrote the byte into `Scratch` and printed `AA`, not `AB`.
+
+unit Scratch;
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    putchar(char::A);
+    {
+      bind Memory = Scratch;
+      bind WasiBasics;
+      putchar(char::B);
+    }
+  }
+}

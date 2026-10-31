@@ -2173,7 +2173,8 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         in `Scratch` is not the main memory's, though both are an address:
         passing a `Scratch` list where `main`'s `IntList` is expected, and
         printing a `Scratch` string as it is (WASI reads only the main
-        memory), are type errors in both compilers."""
+        memory), are type errors in both compilers; and calling WASI where
+        `Memory` is rebound is incoherent."""
         from .test_build import compile_wasm
 
         cases = {
@@ -2187,6 +2188,14 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "argument `s` of `print` is `Str[Memory=Scratch, I32=I32]`, "
                 "expected `Str[Memory=Memory, I32=I32]`",
                 "?S {} main\n",
+            ),
+            # WASI preview 1 reads only the first memory, so its functions
+            # are provided at the root's `Memory` alone: a WASI-calling
+            # functor applied where `Memory` is rebound is incoherent,
+            # where it used to write into `Scratch` and print `AA`.
+            "memory_wasi": (
+                "calling `wasi_putchar` needs `args_get` at [Memory=Scratch]",
+                "!R {} args_get\n",
             ),
         }
         for name, (message, report) in cases.items():
