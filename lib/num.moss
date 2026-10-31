@@ -14,6 +14,8 @@ fn .rem(rhs: This): This;
 
 fn .neg(): This;
 fn .not(): This;
+fn .abs(): This;
+fn .sqrt(): This;
 
 fn .and(rhs: This): This;
 fn .or(rhs: This): This;

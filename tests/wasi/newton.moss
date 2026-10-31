@@ -1,0 +1,130 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasichar.moss" use WasiCharConsts;
+import "../../lib/wasistd.moss" use Branch, WasiBasics, WasiContainers, WasiFiles,
+  WasiFloats32;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# `Float` (D67): written once against `Std`, run at f64 — what `WasiStd`
+# provides — and then at f32, under a `Std` assembled the same way but
+# with `WasiFloats32` for its floats. Nothing in `report` says which
+# precision it is at; the second report differs from the first only
+# because single precision rounds sooner. Floats are printed as integers,
+# scaled and rounded, since there is no float formatting.
+
+assume Std {
+  fn two(): Int { one.add(one) }
+  fn ten(): Int { one.shl(two().add(one)).add(two()) }
+
+  fn print_int(n: Int) {
+    if n.lt(zero) {
+      putchar(char::hyphen);
+      print_int(zero.sub(n));
+      return ();
+    }
+    if n.ge(ten()) {
+      print_int(n.div(ten()));
+    }
+    putchar(n.rem(ten()).add(char::digit0.code()).char());
+  }
+
+  fn yes(b: Bool) {
+    if b { putchar(char::y) } else { putchar(char::n) }
+  }
+
+  fn billion(): Int {
+    var n = one;
+    var i = zero;
+    while i.lt(ten().sub(one)) {
+      n = n.mul(ten());
+      i = i.add(one);
+    }
+    n
+  }
+
+  # How a float is printed: x * 10^9, to the nearest integer.
+  fn show(x: Float) {
+    print_int(x.mul(float(billion())).round());
+    putchar(char::newline);
+  }
+
+  # Newton's method for the square root of `a`: x <- (x + a/x) / 2,
+  # `steps` times from 1.
+  fn newton(a: Float, steps: Int): Float {
+    var x = float(one);
+    var i = zero;
+    while i.lt(steps) {
+      x = x.add(a.div(x)).div(float(two()));
+      i = i.add(one);
+    }
+    x
+  }
+
+  fn report() {
+    let a = float(two());
+    show(newton(a, one));                       # 3/2
+    show(newton(a, two()));                     # 17/12
+    show(newton(a, ten()));                     # converged
+    show(a.sqrt());                             # the instruction agrees
+    # How far the last step moved: nothing at all, once converged.
+    show(newton(a, ten()).sub(newton(a, ten().sub(one))).abs());
+    show(float(one).div(float(two().add(one))));   # 1/3
+    show(float(one).neg().div(float(ten())));      # -1/10
+
+    # 2^24 + 1 is the first Int a single cannot hold.
+    let big = one.shl(ten().add(ten()).add(two().add(two()))).add(one);
+    print_int(float(big).trunc());
+    putchar(char::newline);
+
+    # Rounding back to Int: toward zero, or to the nearest with ties to
+    # even; and out of range saturates.
+    let half = float(one).div(float(two()));
+    let five_halves = float(two()).add(half);
+    print_int(five_halves.round());
+    print_int(five_halves.add(float(one)).round());
+    print_int(five_halves.neg().round());
+    print_int(five_halves.neg().trunc());
+    putchar(char::newline);
+    print_int(float(billion()).mul(float(ten())).trunc());
+    putchar(char::newline);
+
+    # NaN is unordered, and rounds to zero.
+    let nan = float(zero).div(float(zero));
+    yes(nan.eq(nan));
+    yes(nan.ne(nan));
+    yes(nan.lt(a));
+    yes(nan.ge(a));
+    yes(a.gt(float(one)));
+    yes(a.le(a));
+    print_int(nan.round());
+    putchar(char::newline);
+  }
+}
+
+# lib/wasi.moss's `WasiStd`, but for one line.
+functor WasiStd32: Wasm, Wasi, Branch -> Std {
+  bind WasiBasics;
+  bind WasiContainers;
+  bind WasiFiles;
+  bind WasiFloats32;
+  bind WasiCharConsts;
+  bind Bool.not = Bool.flip;
+}
+
+# Each block applies a whole `Std`, and its binds end with it (D65), so
+# the two never meet: `report` is compiled once per block. Applying
+# `WasiFloats32` inside a scope that already has `WasiStd`'s floats would
+# be shorter, and the self-hosted compiler accepts it; the bootstrap does
+# not yet (D67).
+assume Wasm, Wasi, Branch {
+  fn main() {
+    {
+      bind WasiStd;
+      report();
+    }
+    {
+      bind WasiStd32;
+      report();
+    }
+  }
+}

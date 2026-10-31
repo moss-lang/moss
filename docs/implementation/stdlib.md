@@ -28,6 +28,11 @@ Layout:
   container made each spelling several symbols, and by D44 one scope
   cannot name two of them — which a compiler calling `.length` on a
   `String` and on an `IntList` needs it to (D61).
+- [`float.moss`](/lib/float.moss): abstract `Float` (D67), its
+  operations as the `FloatOps` context, and the conversions to and from
+  `Int` — `float(n)`, `.trunc()`, `.round()` — with all of it as
+  `Floats`. `WasiStd` provides it at f64; `WasiFloats32` is the same at
+  f32.
 - [`int.moss`](/lib/int.moss), [`string.moss`](/lib/string.moss),
   [`cell.moss`](/lib/cell.moss), [`list.moss`](/lib/list.moss),
   [`strlist.moss`](/lib/strlist.moss), [`path.moss`](/lib/path.moss):
@@ -37,7 +42,7 @@ Layout:
 - [`std.moss`](/lib/std.moss): the `Std` context bundling all of the
   above.
 - [`prelude.moss`](/lib/prelude.moss): what every file gets into *scope*
-  automatically — including all twenty-nine detached names the library
+  automatically — including all thirty-four detached names the library
   has, because a detached method must be in scope to be called (D61).
   Having the things still takes `assume`, as the
   [Context lesson](../learn/context.md) explains.

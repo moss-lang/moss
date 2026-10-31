@@ -12,7 +12,7 @@ from mossc import collect
 from mossc.lower import Lower, LowerError
 
 from .test_run import (
-    CAPTURE_REBOUND, FLOAT_OUT, NESTED_OUT, RECORDS_OUT, runnable_examples,
+    CAPTURE_REBOUND, FLOAT_OUT, NESTED_OUT, RECORDS_OUT, run, runnable_examples,
 )
 
 REPO = Path(__file__).resolve().parents[2]
@@ -154,6 +154,32 @@ class TestWasmBackend(unittest.TestCase):
         )
         wasm = compile_wasm({"main.moss": source})
         self.assertEqual(run_wasm(wasm), "wwwy\n")
+
+    def test_native_float(self):
+        """D67: the bootstrap's own `Std` has a `Float` too, an f64, so a
+        program over `Std` that never applies `WasiStd` gets the same
+        answers compiled as interpreted. A function taking and returning
+        a `Float` is compiled with f64 parameters and results."""
+        source = (
+            "assume Std {\n"
+            "  fn half(x: Float): Float { x.div(float(one.add(one))) }\n"
+            "  fn main() {\n"
+            "    let a = char::A.code();\n"
+            "    putchar(float(a.mul(a)).sqrt().trunc().char());\n"
+            "    let h = half(float(char::a.code()));\n"
+            "    putchar(h.round().char());\n"
+            "    putchar(h.add(float(one)).round().char());\n"
+            "    let nan = float(zero).div(float(zero));\n"
+            "    if nan.ne(nan) { putchar(char::y) } else { putchar(char::n) }\n"
+            "    if nan.ge(nan) { putchar(char::y) } else { putchar(char::n) }\n"
+            "    putchar(float(char::b.code()).neg().abs().trunc().char());\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n"
+        )
+        # 97 / 2 is 48.5, a tie that goes to the even 48; 49.5 goes to 50.
+        self.assertEqual(run({"main.moss": source}), "A02ynb\n")
+        self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), "A02ynb\n")
 
     def test_boxed_values_and_match(self):
         """Slice 2: units/unions with match, tags with payload binders, and

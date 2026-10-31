@@ -6,7 +6,7 @@ from mossc import interp
 from mossc.interp import MossPanic, f32, fdiv, fmax, fmin, fround, fsqrt, int_to_float
 from mossc.interp import reinterpret, trunc_to_int
 
-from .test_run import FLOAT_OUT, run
+from .test_run import FLOAT_OUT, NEWTON_OUT, run
 
 
 def bits32(x: float) -> int:
@@ -127,6 +127,11 @@ class TestFloatSemantics(unittest.TestCase):
         """tests/wasi/float.moss, which both back ends compile, prints the
         same thing interpreted."""
         self.assertEqual(run({}, entry="tests/wasi/float.moss"), FLOAT_OUT)
+
+    def test_the_interpreter_runs_float_over_wasi(self):
+        """`Float` as `WasiStd` and `WasiFloats32` provide it — Moss over
+        the emulated instructions, so f32 rounding here is `f32`'s."""
+        self.assertEqual(run({}, entry="tests/wasi/newton.moss"), NEWTON_OUT)
 
 
 if __name__ == "__main__":

@@ -310,9 +310,9 @@ class Backend:
         self.unit_codes: dict[int, int] = {}
         self.lib = {}
         for module in program.modules.values():
-            for short in ("access", "bool", "num", "char", "int", "std", "string",
-                          "strlist", "cell", "list", "wasm", "wasip1", "path",
-                          "wasistd"):
+            for short in ("access", "bool", "num", "char", "int", "float", "std",
+                          "string", "strlist", "cell", "list", "wasm", "wasip1",
+                          "path", "wasistd"):
                 if module.path.endswith(f"lib/{short}.moss"):
                     self.lib[short] = module
         self.imports: list[tuple[str, int, int]] = []  # (field, params, results)
@@ -381,6 +381,25 @@ class Backend:
                 return None  # handled specially (0 - x)
             return BINOPS.get(short)
         return None
+
+    def float_op(self, key) -> tuple | None:
+        """The native `Float` (D67) is an f64: a method at it, or the
+        conversion from `Int`, is an instruction or two. Returns the code
+        and the valtype it leaves."""
+        if "float" not in self.lib:
+            return None
+        names = self.lib["float"].names
+        if key is names.get("float"):
+            return WASM_OPS["f64_convert_i32_s"], F64
+        if not isinstance(key, tuple) or head(key[0]) is not names.get("Float"):
+            return None
+        short = key[1].name.lstrip(".")
+        if short == "trunc":
+            return WASM_OPS["i32_trunc_sat_f64_s"], I32
+        if short == "round":
+            return WASM_OPS["f64_nearest"] + WASM_OPS["i32_trunc_sat_f64_s"], I32
+        op = WASM_OPS.get(f"f64_{short}")
+        return (op, RESULTS[f"f64_{short}"]) if op is not None else None
 
     def is_putchar(self, key) -> bool:
         return "std" in self.lib and key is self.lib["std"].names.get("putchar")
@@ -1561,6 +1580,15 @@ class FnCompiler:
             return self.b.result_of(index, self.b.lower.fns[id(provider)].ret_slots)
         # Contextual call: a native method, putchar, or out of slice.
         key = target
+        native_float = self.b.float_op(key)
+        if native_float is not None:
+            code, result = native_float
+            if node.this is not None:
+                self.expr(node.this)
+            for arg in node.args:
+                self.expr(arg)
+            self.code += code
+            return result
         op = self.b.method_op(key)
         if op is not None:
             self.expr(node.this)

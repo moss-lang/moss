@@ -5,6 +5,7 @@ import "./cell.moss" use CellInt, cell_int;
 # `Char`: method lookup falls back to the *receiver's* home module, and
 # int.moss cannot declare it without importing char.moss back.
 import "./char.moss" use Char, Chars, .char;
+import "./float.moss" use Floats;
 import "./int.moss" use Int, IntOps, zero, one;
 import "./list.moss" use IntList, int_list;
 import "./num.moss" use .not;
@@ -41,6 +42,9 @@ context Std =
   zero,
   one,
   IntOps,
+
+  # `Float` and its conversions to and from `Int`, after `Int` (D67).
+  Floats,
 
   # Items whose signatures mention `Int` follow it: flattening walks this
   # list in order, so a type must be in scope before anything using it.

@@ -318,6 +318,14 @@ FLOAT_OUT = "".join(
     )
 )
 
+# What tests/wasi/newton.moss prints: the same report at f64, then at f32.
+NEWTON_OUT = (
+    "1500000000\n1416666667\n1414213562\n1414213562\n0\n333333333\n"
+    "-100000000\n16777217\n24-2-2\n2147483647\nnynnyy0\n"
+    "1500000000\n1416666752\n1414213504\n1414213504\n0\n333333344\n"
+    "-100000000\n16777216\n24-2-2\n2147483647\nnynnyy0\n"
+)
+
 
 # D26: a bound provider's needs are captured at the bind site, so a frame
 # between the bind and the call that rebinds them changes nothing —
@@ -1354,6 +1362,14 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/float.moss")
         self.assertEqual(self.wasmtime_run(module), FLOAT_OUT)
 
+    def test_float(self):
+        """D67's `Float`, written against `Std` and run under two of them:
+        `WasiStd`, which provides it at f64, and one assembled the same
+        way with `WasiFloats32`. One `report` function, two compiled
+        specializations, two precisions."""
+        module = self.compile_with_moss("tests/wasi/newton.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), NEWTON_OUT)
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
@@ -1376,6 +1392,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),
+            ("tests/wasi/newton.moss", NEWTON_OUT, "lib/prelude.moss"),
         )
         for entry, expected, *prelude in cases:
             with self.subTest(entry=entry):

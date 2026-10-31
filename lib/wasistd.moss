@@ -1,4 +1,4 @@
-import "./wasm.moss" as w use Wasm, I32;
+import "./wasm.moss" as w use Wasm, I32, F32, F64;
 import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
   args_sizes_get, args_get, path_open;
 # One declaration per accessor, so importing them here is unambiguous —
@@ -9,6 +9,7 @@ import "./path.moss" as path use Path, pwd;
 import "./bool.moss" use Bool, true, false;
 import "./char.moss" as char use Char, Chars, .char;
 import "./cell.moss" as cell use CellInt, cell_int;
+import "./float.moss" as float use Float, Floats, .trunc, .round;
 import "./int.moss" as int use Int, zero, one;
 import "./list.moss" as list use IntList, int_list;
 import "./std.moss" use putchar, put_bytes, Std;
@@ -441,6 +442,107 @@ functor WasiNumerics: Wasm, Branch -> Numerics {
   bind Int.ge = Num.ge;
   bind Int.lt = Num.lt;
   bind Int.eq = Num.eq;
+}
+
+# Floats (D67). `Float` binds to a nominal wrapper over a float scalar
+# for the reason `Int` binds to one over I32: only a nominal type can
+# carry methods (D54). Two of them, one per precision; `Float` itself
+# says nothing about which.
+assume Wasm, Branch {
+  type Double F64;
+
+  fn dbl(x: Double): F64 { match x { Double v => v } }
+
+  fn Double.add(rhs: Double): Double { Double (w::f64_add(dbl(this), dbl(rhs))) }
+  fn Double.sub(rhs: Double): Double { Double (w::f64_sub(dbl(this), dbl(rhs))) }
+  fn Double.mul(rhs: Double): Double { Double (w::f64_mul(dbl(this), dbl(rhs))) }
+  fn Double.div(rhs: Double): Double { Double (w::f64_div(dbl(this), dbl(rhs))) }
+  fn Double.neg(): Double { Double (w::f64_neg(dbl(this))) }
+  fn Double.sqrt(): Double { Double (w::f64_sqrt(dbl(this))) }
+  fn Double.abs(): Double { Double (w::f64_abs(dbl(this))) }
+  fn Double.eq(rhs: Double): Bool { i32_bool(w::f64_eq(dbl(this), dbl(rhs))) }
+  fn Double.ne(rhs: Double): Bool { i32_bool(w::f64_ne(dbl(this), dbl(rhs))) }
+  fn Double.lt(rhs: Double): Bool { i32_bool(w::f64_lt(dbl(this), dbl(rhs))) }
+  fn Double.gt(rhs: Double): Bool { i32_bool(w::f64_gt(dbl(this), dbl(rhs))) }
+  fn Double.le(rhs: Double): Bool { i32_bool(w::f64_le(dbl(this), dbl(rhs))) }
+  fn Double.ge(rhs: Double): Bool { i32_bool(w::f64_ge(dbl(this), dbl(rhs))) }
+
+  # An Int is an i32 here, so every one is exactly an f64. `trunc_sat`
+  # rather than `trunc`: out of range saturates, and NaN is zero.
+  fn num_to_dbl(n: Num): Double { Double (w::f64_convert_i32_s(raw(n))) }
+  fn Double.trunc(): Num { Num (w::i32_trunc_sat_f64_s(dbl(this))) }
+  fn Double.round(): Num { Num (w::i32_trunc_sat_f64_s(w::f64_nearest(dbl(this)))) }
+
+  type Single F32;
+
+  fn sgl(x: Single): F32 { match x { Single v => v } }
+
+  fn Single.add(rhs: Single): Single { Single (w::f32_add(sgl(this), sgl(rhs))) }
+  fn Single.sub(rhs: Single): Single { Single (w::f32_sub(sgl(this), sgl(rhs))) }
+  fn Single.mul(rhs: Single): Single { Single (w::f32_mul(sgl(this), sgl(rhs))) }
+  fn Single.div(rhs: Single): Single { Single (w::f32_div(sgl(this), sgl(rhs))) }
+  fn Single.neg(): Single { Single (w::f32_neg(sgl(this))) }
+  fn Single.sqrt(): Single { Single (w::f32_sqrt(sgl(this))) }
+  fn Single.abs(): Single { Single (w::f32_abs(sgl(this))) }
+  fn Single.eq(rhs: Single): Bool { i32_bool(w::f32_eq(sgl(this), sgl(rhs))) }
+  fn Single.ne(rhs: Single): Bool { i32_bool(w::f32_ne(sgl(this), sgl(rhs))) }
+  fn Single.lt(rhs: Single): Bool { i32_bool(w::f32_lt(sgl(this), sgl(rhs))) }
+  fn Single.gt(rhs: Single): Bool { i32_bool(w::f32_gt(sgl(this), sgl(rhs))) }
+  fn Single.le(rhs: Single): Bool { i32_bool(w::f32_le(sgl(this), sgl(rhs))) }
+  fn Single.ge(rhs: Single): Bool { i32_bool(w::f32_ge(sgl(this), sgl(rhs))) }
+
+  # Exact below 2^24, rounded to nearest above it.
+  fn num_to_sgl(n: Num): Single { Single (w::f32_convert_i32_s(raw(n))) }
+  fn Single.trunc(): Num { Num (w::i32_trunc_sat_f32_s(sgl(this))) }
+  fn Single.round(): Num { Num (w::i32_trunc_sat_f32_s(w::f32_nearest(sgl(this)))) }
+}
+
+# The standard one: `Float` at f64.
+functor WasiFloats: Wasm, Branch -> Floats {
+  # `Int` is the one `WasiNumerics` binds; the conversions are written
+  # against it, so it has to be bound here too.
+  bind int::Int = Num;
+  bind float::Float = Double;
+  bind Float.add = Double.add;
+  bind Float.sub = Double.sub;
+  bind Float.mul = Double.mul;
+  bind Float.div = Double.div;
+  bind Float.neg = Double.neg;
+  bind Float.sqrt = Double.sqrt;
+  bind Float.abs = Double.abs;
+  bind Float.eq = Double.eq;
+  bind Float.ne = Double.ne;
+  bind Float.lt = Double.lt;
+  bind Float.gt = Double.gt;
+  bind Float.le = Double.le;
+  bind Float.ge = Double.ge;
+  bind float::float = num_to_dbl;
+  bind Float.trunc = Double.trunc;
+  bind Float.round = Double.round;
+}
+
+# The same at f32, for a scope that wants single precision: applied
+# where a `Std` is assembled in place of `WasiFloats`, it binds `Float`
+# and everything that mentions it, and no other scope's `Float` changes.
+functor WasiFloats32: Wasm, Branch -> Floats {
+  bind int::Int = Num;
+  bind float::Float = Single;
+  bind Float.add = Single.add;
+  bind Float.sub = Single.sub;
+  bind Float.mul = Single.mul;
+  bind Float.div = Single.div;
+  bind Float.neg = Single.neg;
+  bind Float.sqrt = Single.sqrt;
+  bind Float.abs = Single.abs;
+  bind Float.eq = Single.eq;
+  bind Float.ne = Single.ne;
+  bind Float.lt = Single.lt;
+  bind Float.gt = Single.gt;
+  bind Float.le = Single.le;
+  bind Float.ge = Single.ge;
+  bind float::float = num_to_sgl;
+  bind Float.trunc = Single.trunc;
+  bind Float.round = Single.round;
 }
 
 # The two together, plus the items whose signatures need both — the whole

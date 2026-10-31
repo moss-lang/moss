@@ -1,0 +1,47 @@
+import "./int.moss" use Int;
+import "./num.moss" use .add, .sub, .mul, .div, .neg, .sqrt, .abs, .eq, .ne, .lt, .gt, .le, .ge;
+
+# A floating-point number (D67), abstract as `Int` is: what it is made of
+# is the business of whoever provides it. The standard WASI implementation
+# provides it at f64; nothing here says so, which is what lets a scope
+# bind it to something else.
+type Float;
+
+assume Int, Float {
+  # Int -> Float. A plain function rather than a method at `Int` (as
+  # `Int.char` is): a provision at `Int` is one entry in `Int`'s methods,
+  # and a scope that rebinds `Float` would have to rebind it at a
+  # different type, which merging forbids (D43). A plain function is
+  # rebound like any other, so `Float` can be bound per scope. Named for
+  # what it makes, as `.char` is.
+  fn float(n: Int): Float;
+
+  # Float -> Int, detached and provided at `Float`. Named for how they
+  # round, since a float has two nearest integers: `.trunc` toward zero,
+  # `.round` to the nearest, ties to even. Out of range saturates, and
+  # NaN is zero.
+  fn .trunc(): Int;
+  fn .round(): Int;
+
+  # No `zero` or `one`: `zero.float()` and `one.float()` are both.
+  context FloatOps =
+    Float.add,
+    Float.sub,
+    Float.mul,
+    Float.div,
+    Float.neg,
+    Float.sqrt,
+    Float.abs,
+    Float.eq,
+    Float.ne,
+    Float.lt,
+    Float.gt,
+    Float.le,
+    Float.ge,
+  ;
+
+  # Everything above, the conversions included — the unit a provider of
+  # `Float` has to bind together, since the conversions' signatures
+  # mention it.
+  context Floats = Float, FloatOps, float, Float.trunc, Float.round;
+}

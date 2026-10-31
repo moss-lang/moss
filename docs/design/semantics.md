@@ -1609,8 +1609,8 @@ every conversion among the four types — `convert`, `demote`/`promote`,
 `wasm-features.txt` already enables. Seventy-four items: the whole float
 half but its two constants. There are no float literals, for the reason
 there are no others ([D4]): a float starts life as a conversion of an
-integer built from `i32_zero` and `i32_one`, so `f64_convert_i32_s(
-w::i32_one)` is 1.0. `f32.const` and `f64.const` stay out with them —
+integer built from `i32_zero` and `i32_one`, so
+`f64_convert_i32_s(i32_one)` is 1.0. `f32.const` and `f64.const` stay out with them —
 the only constants a literal-free program could name are zero and one,
 and the conversions already give those. A slot's valtype may now be any
 of the four, and nothing else about [D59]'s layouts changed.
@@ -1633,6 +1633,44 @@ of i64: a union whose members put different valtypes in one slot, and
 the padding of a member narrower than its union where the union's slot
 is not an i32. Standing test: `tests/wasi/float.moss`, which the
 interpreter and both compilers run to the same output.
+
+*`Float`.* `lib/float.moss` declares an abstract `type Float;`, the
+counterpart of `Int`, and `Std` gains it with its operations as the
+context `Floats`. Arithmetic and comparison are `num.moss`'s detached
+methods provided at `Float` ([D47]): `.add .sub .mul .div .neg .eq .ne
+.lt .gt .le .ge`, plus two new to `num.moss` because they are numeric
+rather than float-specific, `.sqrt` and `.abs`. Not `.rem`, nor the
+bitwise ones. The conversions are `float(n: Int): Float` and, provided at
+`Float`, `.trunc(): Int` (toward zero) and `.round(): Int` (to the
+nearest, ties to even, which is Wasm's `nearest`); both saturate at
+`Int`'s range, and NaN is 0. `.trunc` and `.round` are named for their
+rounding, since which of the two integers around a float it becomes is a
+choice. `float` is a plain
+function where `.char` is a method at `Int`, and that is deliberate: a
+method provided at `Int` is an entry in `Int`'s methods, so a scope that
+binds `Float` differently would have to rebind it at another type. There
+is no `Float` `zero` or `one`; `float(zero)` and `float(one)` are those.
+
+`WasiStd` provides `Float` at f64, by binding a nominal wrapper over
+`F64` ([D54], as `Int` binds one over `I32`) in the functor `WasiFloats`.
+Nothing in `float.moss` or `Std` says f64, so another provision is
+another functor: `lib/wasistd.moss` also has `WasiFloats32`, the same
+over `F32`, and a `Std` assembled with it instead runs the same Moss at
+single precision — one specialization of each function per `Std`.
+`tests/wasi/newton.moss` does exactly that in two sibling blocks. What
+does not work yet is the shorter form, applying `WasiFloats32` *inside*
+a scope that already has `WasiStd`'s floats: the self-hosted compiler
+compiles it, but the bootstrap checks a fn or method rebind by merging
+its signature with the provision already in force, which was elaborated
+under the old `Float`, and reports a [D43] conflict. That is how the
+bootstrap checks a rebind, not something about `Float`, and settling
+whether a rebind under a rebound type replaces or merges is left for
+when something needs it. The bootstrap's own `Std` provides `Float`
+natively as an f64, so a program over `Std` that never applies
+`WasiStd` has floats too, interpreted and compiled. No float literals
+and no float formatting: a program prints a float by scaling and
+rounding it to an `Int`. Standing test: `tests/wasi/newton.moss`, run
+by the interpreter and both compilers.
 
 ## 13. Decision index
 
@@ -1663,7 +1701,8 @@ finds its method, D62 provisions keyed by the receiver's identity, D63
 records are the only product type, D64 bare import paths name library
 files, D65 bare block expressions, D66 binding a fn to a contextual fn
 captures it at the bind, D67 f32/f64 are scalars, with the float half of
-`Wasm` and no literals)
+`Wasm`, and an abstract `Float` in `Std` provided at f64, with no
+literals or formatting)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

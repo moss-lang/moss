@@ -427,8 +427,8 @@ def native_env(program: Program, args: list | None = None) -> dict:
     args = args or []
     lib = {}
     for module in program.modules.values():
-        for name in ("std", "char", "bool", "num", "int", "string", "strlist",
-                     "cell", "path", "list", "wasm", "wasip1", "wasistd"):
+        for name in ("std", "char", "bool", "num", "int", "float", "string",
+                     "strlist", "cell", "path", "list", "wasm", "wasip1", "wasistd"):
             if module.path.endswith(f"lib/{name}.moss"):
                 lib[name] = module
     if "bool" in lib:
@@ -534,6 +534,43 @@ def native_env(program: Program, args: list | None = None) -> dict:
                 env[(int_ty, det[name])] = NativeFn(
                     name, lambda a, this, op=op: boolean(op(this.value, a[0].value))
                 )
+    if "float" in lib and "num" in lib:
+        # D67: the native `Float` is an f64, which is a Python float, and
+        # its conversions to `Int` saturate at i32, as `WasiStd`'s do.
+        float_ty = lib["float"].names["Float"]
+        det = lib["num"].detached
+        float_arith = {
+            "add": lambda x, y: x + y, "sub": lambda x, y: x - y,
+            "mul": lambda x, y: x * y, "div": fdiv,
+        }
+        for name, op in float_arith.items():
+            env[(float_ty, det[name])] = NativeFn(
+                name, lambda a, this, op=op: FloatVal(op(this.value, a[0].value))
+            )
+        float_unary = {"neg": lambda x: -x, "sqrt": fsqrt, "abs": math.fabs}
+        for name, op in float_unary.items():
+            env[(float_ty, det[name])] = NativeFn(
+                name, lambda a, this, op=op: FloatVal(op(this.value))
+            )
+        float_compare = {
+            "eq": lambda x, y: x == y, "ne": lambda x, y: x != y,
+            "lt": lambda x, y: x < y, "gt": lambda x, y: x > y,
+            "le": lambda x, y: x <= y, "ge": lambda x, y: x >= y,
+        }
+        for name, op in float_compare.items():
+            env[(float_ty, det[name])] = NativeFn(
+                name, lambda a, this, op=op: boolean(op(this.value, a[0].value))
+            )
+        fdet = lib["float"].detached
+        env[lib["float"].names["float"]] = native(
+            lambda a, this: FloatVal(int_to_float(a[0].value, 53))
+        )
+        env[(float_ty, fdet["trunc"])] = native(
+            lambda a, this: IntVal(trunc_to_int(this.value, 32, True, True))
+        )
+        env[(float_ty, fdet["round"])] = native(
+            lambda a, this: IntVal(trunc_to_int(fround(this.value, round), 32, True, True))
+        )
     if "wasm" in lib:
         # D52's primitive layer. Only the two I32 constants are values, and
         # only they are meaningful here: the instructions themselves need a
