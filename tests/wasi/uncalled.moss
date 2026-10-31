@@ -1,0 +1,17 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+
+# A type error in a function nothing calls: `unused` passes a `B` where
+# `f` wants an `A`. No post-monomorphization checks (D16): every
+# function is checked, reached or not, so both compilers reject this
+# though `main` never reaches `unused`.
+
+type A I32;
+type B I32;
+
+assume Wasm {
+  fn f(a: A): I32 { w::i32_one }
+  fn unused(): I32 {
+    f(B (w::i32_one))
+  }
+  fn main() {}
+}

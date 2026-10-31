@@ -2491,6 +2491,40 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertNotEqual(out[:4], b"\0asm")
         self.assertTrue(out.decode("utf-8").startswith("?S "), out[:200])
 
+    UNCALLED = {
+        # entry: (the bootstrap's message, the self-hosted report)
+        "tests/wasi/uncalled.moss": (
+            "argument `a` of `f` is `B[I32=I32]`, expected `A[I32=I32]`",
+            "?S tests/wasi/uncalled.moss unused\n",
+        ),
+        "tests/wasi/uncalled_generic.moss": (
+            "block yields `T`, expected `I32`",
+            "?S tests/wasi/uncalled_generic.moss unused\n",
+        ),
+    }
+
+    def test_an_uncalled_function_is_checked_by_the_bootstrap(self):
+        """D16: no post-monomorphization checks, so a function is checked
+        whether or not anything calls it — a concrete one, and a generic
+        one, of which no specialization exists. The bootstrap lowers every
+        function once, against its generic types."""
+        from .test_build import compile_wasm
+
+        for entry, (message, _) in self.UNCALLED.items():
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+
+    @unittest.expectedFailure
+    def test_an_uncalled_function_is_checked_by_the_self_hosted_compiler(self):
+        """The same programs, which the self-hosted compiler rejects with
+        `c_bad_type` (`?S`), naming the uncalled function."""
+        for entry, (_, report) in self.UNCALLED.items():
+            with self.subTest(entry=entry):
+                out = self.compile_with_moss(entry)
+                self.assertEqual(out.decode("utf-8", "replace"), report)
+
     def test_a_provision_answers_only_its_instantiation(self):
         """Coherence: a callee's val, fn or method requirement is met only
         by a provision made at the instantiation the callee means — a

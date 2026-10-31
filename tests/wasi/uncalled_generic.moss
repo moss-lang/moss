@@ -1,0 +1,15 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+
+# A type error in a generic function nothing calls: `T` is whatever
+# `unused` is given, so returning it as an `I32` does not fit, though no
+# specialization of `unused` exists to show it (D16, D72).
+
+type T;
+
+assume Wasm, T {
+  fn unused(x: T): I32 { x }
+}
+
+assume Wasm {
+  fn main() {}
+}
