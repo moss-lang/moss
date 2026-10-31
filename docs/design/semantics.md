@@ -798,7 +798,9 @@ shifts) moved into `lib/num.moss`. One wrinkle discovered while folding
 them in: a method cannot attach to `Bool` because `Bool` is a transparent
 alias of a union, and unions have no single nominal head to key on — so
 there is no `.not` method; write the `if` out (or match). Methods-on-union
-types are a real design question if that ever hurts. Original finding for
+types are a real design question if that ever hurts. (Settled for detached
+methods by [D75]: they are keyed by the canonical type, a union's
+included; attached methods still need a nominal head.) Original finding for
 the record: Implementation hit a real tension between [D33] and [D43]: a
 single context cannot provide `ops::eq` at both `Int` and `Char`, because
 the two applications share the key `eq` and consistent merging would unify
@@ -2584,6 +2586,300 @@ incoherence; the self-hosted compiler, whose coherence check runs in the
 generic environment without the receiver's view, rejects it as a type
 error (`?S`) — still rejected, less precisely named. Standing tests:
 `tests/wasi/receiver_rebound.moss` and `tests/wasi/phantom_misread.moss`.
+
+**[D75] DECIDED by the designer and implemented (garbage-collected references, as one allocator among others).**
+[D59] gave Moss no heap: a value is a run of scalars, and a type that
+contains itself has no finite layout ([D58]). So Moss has no recursive
+data. Its programs build trees the way the thesis's flattened-AST example
+does: a node is an index into a pool, and the interpreter is written
+against an interface —
+
+```moss
+type ExprRef;
+assume Std, ExprRef {
+  type Binary { op: BinOp, lhs: ExprRef, rhs: ExprRef };
+  ...
+  fn .data(): Expr;            # read a node through a reference
+  fn add(expr: Expr): ExprRef; # make one
+  context Ast = ExprRef, ExprRef.data, add;
+}
+```
+
+— which is a generic allocation interface: what a reference is, how to
+follow one, how to make one. A pool of indices is one way to provide it.
+WebAssembly's garbage collection proposal (WasmGC,
+<https://github.com/WebAssembly/gc>, which Wasmtime 50 —
+the version we pin — runs by default) is another, and this entry adds it as
+a provider and nothing more: no syntax, no new kind of type, and the code
+written against `Ast` does not change.
+
+*Decided.*
+
+- `lib/wasm.moss` gains one abstract scalar type, a reference **typed by
+  what it holds** (a listed parameter, [D73]), two methods on it as
+  ordinary context items keyed by receiver ([D47], [D62]), and a
+  functor with no body that the platform provides:
+
+  ```moss
+  type StructRef;              # any GC struct reference: (ref null struct)
+
+  type Boxed;
+  assume Boxed {
+    type Ref[Boxed] StructRef;
+    fn .boxed(): Ref;          # detached: provided at receiver `Boxed`
+    fn Ref.deref(): Boxed;     # attached: provided at `Ref[Boxed=X]`
+  }
+
+  functor Heap: Wasm, Boxed -> Boxed.boxed, Ref.deref;
+  ```
+
+  The back end gives each type `Boxed` is instantiated at an immutable
+  GC struct type whose fields are that type's run of scalars ([D59]),
+  and a `Ref[Boxed=X]` the precise type `(ref null $X)`. `.boxed()` is
+  `struct.new`; `.deref()` is a `struct.get` per field. They are
+  compiled to instructions like any `Wasm` item ([D52]), except that
+  which instructions depends on the layout, as a packed list's code
+  already does ([D69]). By [D74], `.deref()` is at its
+  receiver's `Boxed`, so a well-typed program cannot read a
+  `Ref[Boxed=Expr]` as anything but an `Expr`.
+- **Recursive types, as in Rust.** A type that names itself through a
+  reference has a finite layout (a reference is one scalar) and a
+  finite identity (it is named, not expanded):
+
+  ```moss
+  type Expr = Binary | Literal;
+  type Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
+  ```
+
+  This is Rust's `Binary(Box<Expr>, Box<Expr>)`, and needs nothing new.
+  Code written *generic* over its reference type, as the thesis's AST
+  interpreter is (`Binary { lhs: ExprRef, ... }` under `assume
+  ExprRef`), cannot bind `ExprRef = Ref[Boxed=Expr]` directly — that
+  `Expr` is `Expr[ExprRef=Ref[Boxed=Expr[...]]]`, infinite, exactly as
+  Rust's `Expr<R>` at `R = Box<Expr<R>>` is — and ties the knot with a
+  nominal wrapper, as Rust's `struct Node(Box<Expr<Node>>)` does:
+
+  ```moss
+  type Node Ref[Boxed=Expr[ExprRef=Node]];
+  {
+    bind ExprRef = Node;
+    bind Boxed = Expr[ExprRef=Node];
+    bind Heap;
+    bind add = (e) => Node (e.boxed());
+    bind ExprRef.data = () => match this { Node r => r.deref() };
+    report(bin(Div, lit(7), lit(2)));   # the same interp, now on the GC heap
+  }
+  ```
+
+  (Both shapes are tests: `gc_tree` and `gc_ast`.)
+- **The one cast.** Taking a `Ref` apart gives a bare `StructRef`, which
+  forgets the precise type for free. Building a `Ref[Boxed=X]` *from* a
+  bare `StructRef` is the one place the back end must cast, to
+  `(ref null $X)`, and it is exactly forging ([D73]: Moss cannot forbid
+  rebuilding a tag at another parameter). A program that never does it
+  contains no cast; one that forges at the wrong layout traps at that
+  construction, rather than reading the wrong data later. Struct types
+  that refer to each other (`Expr`'s struct holds `(ref null $Expr)`s) are
+  emitted together as a `rec` group.
+- **Every reference is nullable**, `(ref null $X)`. A non-nullable one
+  would need the emitter to prove each local assigned before it is read;
+  nullable ones are always valid and cost no space. The possible cost is
+  a null check on each field read, which Binaryen's optimizer removes
+  where it can prove a local is never null.
+- A reference is one scalar, so records, tags and unions holding one
+  have finite layouts, and locals, parameters and results carry them as
+  they carry anything. It cannot be stored in linear memory, so there is
+  no `Layout` for it ([D69]) and no packed list of references; a list of
+  them is WasmGC arrays, later.
+- `wasm-features.txt` gains `gc` (it has `reference-types`).
+
+*Implemented (October 2026), and what the implementation changed.*
+
+- *One struct per type, not per layout.* The draft keyed a struct by
+  the run of scalars `Boxed` is laid out as. A recursive type's run
+  contains a reference to its own struct (`Expr`'s is `i32 i32 (ref
+  null $Expr) (ref null $Expr)`), so a key made of valtypes is circular;
+  making it finite would mean minimizing the whole graph of struct
+  types, as Wasm's own iso-recursive canonicalization does. A Moss type
+  is named, so keying by the (specialized) type `Boxed` is bound to is
+  finite and trivial. Consequence: two types with the same layout get
+  two struct types, so forging a `Ref[Boxed=Int]` into a
+  `Ref[Boxed=Char]` traps too — the cast checks the type, not only the
+  layout, which is stricter than the draft's "at the wrong layout".
+  All struct types are one `rec` group at the low type indices; every
+  function type's index counts past them.
+- *Boxing is a context item, provided by the platform's `Heap`
+  (designer's ruling).* The first implementation made `new_ref` and
+  `Ref.deref` primitives at every instantiation, recognized by name — a
+  capability outside the context system, which the designer rejected.
+  Instead both are abstract context items, and the platform provides
+  them through a functor with no body:
+
+  - `.boxed` is a **detached** method declared under `assume Boxed`, so
+    `This` is the receiver and its result `Ref` means `Ref[Boxed=...]`
+    at whatever `Boxed` the provision is made at. It is the [D47]/[D61]
+    shape: as `IntList.get[Elem=Int]` and `String.get[Elem=Char]` are
+    two provisions of one `.get`, `Expr.boxed[Boxed=Expr]` and
+    `Stmt.boxed[Boxed=Stmt]` are two of one `.boxed`, keyed by receiver
+    ([D62]). A plain `fn box(value: Boxed): Ref` would be keyed by its
+    symbol, so `bind Boxed = Stmt; bind Heap;` after the `Expr` one
+    would shadow it. An *attached* `fn Boxed.boxed()` would not do: a
+    call finds an attached method by name on the receiver's own
+    declaration ([D61]), and `e: Expr` is not a `Boxed`; Q5 also wants
+    an attached method's receiver nominal.
+  - `Ref.deref` is attached to `Ref`, abstract, so it is provided at
+    the receiver's whole type, `Ref[Boxed=X]` — keyed by its
+    instantiation, and so also one per boxed type.
+  - **`functor Heap: Wasm, Boxed -> Boxed.boxed, Ref.deref;`** is a
+    functor with no body, which the platform provides. Grammar:
+    **Functordef** = `functor` _name_ `:` **List**[**Spec**] `->`
+    **List**[**Spec**] (`{` **Bind**\* `}` | `;`), in both parsers and
+    both tree dumps (a bodiless functor's binds print `_`; an empty body
+    still prints `[]`). [D78] makes this an ordinary abstract functor;
+    until it is implemented, only `lib/wasm.moss` may declare one — the file
+    by which both compilers already recognize `Wasm` ([D52]) — and
+    anywhere else it is an error where it is written (bootstrap:
+    "functor `F` has no body; only the platform provides a functor, and
+    only lib/wasm.moss declares one"; self-hosted: `!W`, new code
+    `e_platform`).
+  - **`bind Heap;`** checks its argument signature is in context here —
+    `Wasm` assumed, `Boxed` assumed or bound (bootstrap: "applying `Heap`
+    needs `Boxed`, which is not available in the context here";
+    self-hosted `?Q ... Boxed`) — and then, for each method of its
+    result, makes the provision a hand-written method bind would: keyed
+    at the receiver the item names read here (`Boxed` → its binding;
+    `Ref` → `Ref[Boxed=` that `]`), shadowed into the environment, and
+    its application recorded in both compilers' coherence environments,
+    so [D71] coherence and [D74] receiver instantiation apply
+    unchanged. Only the provider is special: it is the method itself
+    (bodiless), and a call through it compiles in place — `struct.new`
+    for `.boxed`, a `struct.get` per field for `.deref`, at the struct
+    of the type `Boxed` was at the bind. The back ends' code generation
+    is the first implementation's. The bootstrap lowers it to a new
+    `ir.BindPrim(key, prim, held)`; the interpreter binds a native
+    closure; the self-hosted compiler pushes an environment row whose
+    provider is the bodiless method.
+  - So **code that has not applied `Heap`** — directly, or by assuming
+    the items from a caller that did — **cannot box**: `n.boxed()` there
+    is "no method `.boxed` is available for `Int` in the context here"
+    (self-hosted `?K ... boxed`). Code that is generic over its heap
+    assumes the items as any others, e.g. `context ExprHeap =
+    Expr.boxed[Boxed=Expr], Ref.deref[Boxed=Expr];` (the method-item
+    bracket form of [D61]), and its caller applies `Heap`.
+  - The name-based special-casing is gone from both compilers (the
+    bootstrap's `gc_prim`/`new_ref` paths, the self-hosted `is_deref`/
+    `emit_new_ref`); what is recognized is the symbol of each method
+    in lib/wasm.moss, as the provider of a `Heap` provision only.
+  - *What it cost.* **A detached method may now be provided and called
+    at a receiver with no nominal head** — a union or a record — keyed
+    by that type, in both compilers. `Boxed` is usually a union
+    (`Expr = Binary | Literal`), and `.boxed` is keyed by receiver, so
+    without this nothing but a nominal could be boxed. [D47] left
+    "methods on union types" open; this answers it for detached methods
+    only, which need no declaration to attach to and are keyed by the
+    canonical type since [D62]. Attached methods, and operators on a
+    union, still need a nominal head. The designer approved it.
+  - *And the bootstrap's specialization key.* Because `main` now binds
+    `Boxed = Expr` in its own terms (`Int` = `I32`), while `lit` boxes
+    an `Expr` in the terms of an `assume Std` (`Int` abstract), the
+    struct for "`Expr`" must be one struct across frames. The bootstrap
+    now carries *all* of a callee's type arguments when a program uses
+    references (before: only `Boxed` and types holding a reference), so
+    `Int` reaches the callee as `I32` and the two are one type. A
+    program without references specializes exactly as before.
+- *Under [D77].* `Ref` has an attached abstract `.deref`; a detached
+  `.deref` in scope and provided at a `Ref` wins over it (rule 4). A spec
+  `Ref.deref` always names the attached one, so the detached one reaches
+  a `Ref` only through an abstract receiver bound to it
+  (`tests/wasi/gc_resolution.moss`). The self-hosted back end preferred
+  an attached *abstract* method's provision there, so it now looks up
+  the detached name's provision first, as the bootstrap does. `.boxed`
+  is detached only and never in question.
+- *A union's slot holds one valtype.* [D59] gives a union a
+  discriminant and room for its widest member, each slot with the
+  valtype of the first member that reaches it. A member that puts a
+  reference where another puts a scalar — `type Tree = Leaf | Node;
+  type Leaf Int; type Node { l: Ref[Boxed=Tree], r: Ref[Boxed=Tree] }`
+  — would need a slot of each. Both compilers refuse it, naming the
+  member (bootstrap: "`Node` puts a reference where an earlier member of
+  its union puts a scalar, and a union has one valtype per slot";
+  self-hosted: `c_unsupported`, `?P ... Node`), rather than emit a
+  module that does not validate. (The same was already true, silently,
+  of i64 and f64 slots, [D67]; only reference conflicts are reported,
+  in both, so they agree.) `Expr = Binary | Literal` with `op` first is
+  fine. Laying a union out in per-valtype lanes is the fix; the
+  self-hosted compiler could, but the bootstrap lowers a function once
+  with its field offsets fixed, so it is *later*.
+- *Padding.* A union member narrower than its union is padded with
+  zeros of the union's own valtypes — `ref.null $X` for a reference
+  slot — where both compilers used to pad with `i32.const 0` (which
+  also fixes [D67]'s note about non-i32 padding, wherever the type is
+  known).
+- *The bootstrap's back end tracks type arguments.* It compiles a
+  function once per (fn bindings, parameter valtypes) and learned
+  layouts from values; generic code (`lit(n)` under `assume ExprRef`)
+  injects a `Literal` into an `Expr` whose padding is a reference only
+  if `ExprRef` is `Node`. So a direct call and a named provider's bind
+  now carry the callee's type arguments (`ir.Call.tyargs`,
+  `ir.BindFn.tyargs`), and a specialization is also keyed by them
+  (all of them, since the revision above). A program with no `Ref`
+  specializes exactly as before.
+- *The interpreter* holds a reference as a Python object that remembers
+  the type it was made at, and traps on a forged one where it can tell
+  the types apart: it lowers a generic function once, so where either
+  type is still abstract it cannot.
+- *No `Layout` for a reference.* Nothing can store one in linear memory:
+  no `Wasm` primitive takes a `StructRef`, and the bootstrap's native
+  containers hold `Int`s. So there is nothing to reject yet.
+- *Wasmtime.* The dev shell's is 50.0.0 (after upstream's `flake.lock`
+  bump), which runs GC modules by default; so does the flake's.
+
+*Why it is sound.* The calculus barely changes: `StructRef` is a type of
+the `Wasm` signature; `Ref[Boxed]` is an ordinary tag with a listed
+parameter ([D73]); `.boxed` and `.deref` are ordinary method items, and
+`.deref` is at its receiver's instantiation ([D74]). The one addition is
+a provider the calculus does not write — the platform's `Heap`, whose
+application is a run of method binds (EBindMth) to `struct_new[X]` and
+`struct_get[X]`, a family of primitives indexed by the type — and a
+detached method keyed at a structural receiver, which is [D62]'s
+identity keying with no nominal head to require.
+
+*What it buys.*
+
+- **Allocation strategy as a context.** The same interpreter runs on a
+  pool of indices in one block and on the GC heap in another, chosen by
+  a bind, statically specialized each way. This is the thesis's central
+  capability applied to memory management.
+- **The tree examples become expressible.** Sampson's pointer-based AST
+  (`Box<Expr>` in Rust), which every other language in the comparison
+  writes first, has had no Moss version; with `Ref` it is written as in
+  Rust.
+
+*Later, not now* — all of it library primitives and back end, none of it
+syntax or types:
+
+- the **null-pointer optimization**: a union of one member whose payload
+  is a single reference and otherwise units (`Some r | None`) laid out as
+  one nullable reference, `None` as `ref.null` and matching as
+  `ref.is_null` — Rust's guarantee for `Option<Box<T>>`;
+- mutable fields (`Ref.set`, over `struct.set`);
+- reference equality (`Ref.eq` over `ref.eq`, and so `==`, [D68]);
+- arrays, for a list of references;
+- how it meets multi-memory: probably one allocation interface with the
+  GC heap and each linear memory as providers.
+
+*Implementation.* Both back ends: a reference scalar kind (valtypes
+`(ref null struct)` and `(ref null $X)`), a struct type per boxed type in
+the type section (in `rec` groups where they refer to each other),
+`struct.new`, `struct.get`, and `ref.cast` at a forging construction;
+the bootstrap's interpreter holds a reference as a Python object. Tests: a
+recursive tree built and folded through `Ref`; the AST example's
+interpreter over `Ref` beside the pool, in one program; an `Expr` and a
+`Stmt` boxed side by side in one scope (`gc_two`); reading a
+`Ref[Boxed=X]` at another `Boxed` rejected as a type error; boxing
+without `Heap` (`gc_unheaped`) and applying `Heap` without `Boxed`
+(`gc_needs_boxed`) rejected as context errors; a bodiless functor
+outside lib/wasm.moss rejected (`gc_bodiless`).
 
 **[D77] DECIDED by the designer and implemented (method resolution, consolidated; the provision wins).**
 How a method call finds its method is spread over [D36], [D61], [D62],
