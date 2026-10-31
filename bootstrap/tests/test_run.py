@@ -2580,7 +2580,6 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     compile_wasm({}, entry=entry)
                 self.assertIn(message, str(caught.exception))
 
-    @unittest.expectedFailure
     def test_every_match_arm_is_checked_by_the_self_hosted_compiler(self):
         """The same programs. The self-hosted compiler takes a match's
         shape from the specialization — one head runs the first arm, and

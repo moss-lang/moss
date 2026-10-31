@@ -74,6 +74,11 @@ assume Std {
   # bootstrap checks every function. It reports, like the kept pass, and
   # otherwise behaves like the first: its output is thrown away, it
   # creates locals as it goes, and it reaches nothing (`checking`).
+  #
+  # Code a reached frame contains but never runs — the arms of a `match`
+  # its specialization does not get to — is walked the same way, into a
+  # buffer that is thrown away (`dead`): as 2 inside the kept pass, and
+  # as 3, which reports nothing, inside the first.
   val cg_real: CellInt;
 
   # WASI functions called anywhere, and the import index each gets.
@@ -324,6 +329,9 @@ assume Std {
       if cg_real.read() == 0 {
         return ();
       }
+      if cg_real.read() == 3 {
+        return ();
+      }
       cg_errs.push(code);
       cg_err_name.push(name);
       cg_err_at.push(cg_where.read());
@@ -336,7 +344,21 @@ assume Std {
     # wide, as the bootstrap's back end has it), and a provision the
     # generic environment has but nothing provides here is called
     # through nothing. Only emission needs what a provision is.
-    fn checking(): Bool { cg_real.read() == 2 }
+    fn checking(): Bool { cg_real.read() >= 2 }
+
+    # Enter code that nothing runs, to check it (`cg_real`); returns what
+    # to restore with `alive`.
+    fn dead(): Int {
+      let was = cg_real.read();
+      if was == 0 {
+        cg_real.write(3);
+      } else if was == 1 {
+        cg_real.write(2);
+      }
+      was
+    }
+
+    fn alive(was: Int) { cg_real.write(was); }
 
     # Whether a row of the specialized environment names a provider.
     fn provides(row: Int): Bool {
@@ -3600,21 +3622,72 @@ assume Std {
       emit_union_match(body, e, m, sty, want)
     }
 
-    # One possible head: bind and run the first arm.
+    # One possible head: bind and run the first arm. The rest are
+    # checked, and run nowhere.
     fn emit_single_arm(body: IntList, e: Int, m: Int, sty: Int, want: Int): Int {
-      let arm = ast::kid_at(ast::b_of(e), 0);
       let mark = lc_visible.read();
       emit_expr(body, ast::a_of(e), m);
+      let ty = emit_single_arm_body(body, ast::kid_at(ast::b_of(e), 0), m, sty, want);
+      close_scope(mark);
+      check_arms(e, m, sty, ast::none(), 1, want);
+      ty
+    }
+
+    fn emit_single_arm_body(body: IntList, arm: Int, m: Int, sty: Int, want: Int): Int {
+      let mark = lc_visible.read();
       bind_pattern(body, ast::a_of(arm), sty, m);
       let ty = emit_as(body, ast::b_of(arm), m, want);
       close_scope(mark);
       ty
     }
 
+    # D16 and D34: every arm is checked against the scrutinee's type as
+    # written, including those that this specialization's shape never
+    # runs — after the first where it has one head, after a binder or `_`
+    # in a union (`tmp` holds the scrutinee there; none for one head).
+    # On a scrutinee of abstract type both happen, whatever it is
+    # specialized to. They are walked as dead code, into nothing.
+    fn check_arms(e: Int, m: Int, sty: Int, tmp: Int, from: Int, want: Int) {
+      var i = from;
+      while i < ast::c_of(e) {
+        let was = dead();
+        let junk = int_list();
+        let arm = ast::kid_at(ast::b_of(e), i);
+        if ast::is_some(tmp) {
+          emit_match_arm_body(junk, arm, m, sty, tmp, want);
+        } else {
+          emit_single_arm_body(junk, arm, m, sty, want);
+        }
+        alive(was);
+        i = i + 1;
+      }
+    }
+
+    # D34: a tag pattern, plain or destructuring a record, names a member
+    # of the scrutinee's type as written. An abstract type's one head is
+    # itself, so no tag is a member of it, whatever it specializes to.
+    fn check_member(pat: Int, m: Int, sty: Int) {
+      var carries = ast::kind_of(pat) == ast::k_pt_record();
+      if ast::kind_of(pat) == ast::k_pt_path() {
+        carries = ast::is_some(ast::b_of(pat));
+      }
+      if !carries {
+        return ();
+      }
+      let head = arm_head_any(pat, m);
+      if !ast::is_some(head) {
+        return ();
+      }
+      if !ast::is_some(types::member_with_head(sty, head)) {
+        cg_error(c_bad_type(), prog::sym_name.get(head));
+      }
+    }
+
     # A pattern against a value already on the stack. A binder takes the
     # whole value; a tag pattern takes its payload, which is the same
     # scalars (D58); a wildcard drops it.
     fn bind_pattern(body: IntList, pat: Int, sty: Int, m: Int) {
+      check_member(pat, m, sty);
       let k = ast::kind_of(pat);
       if k == ast::k_pt_wild() {
         drop_value(body, sty);
@@ -3700,7 +3773,9 @@ assume Std {
         last = true;
       }
       if last {
-        return emit_match_arm_body(body, arm, m, sty, tmp, want);
+        let ty = emit_match_arm_body(body, arm, m, sty, tmp, want);
+        check_arms(e, m, sty, tmp, i + 1, want);
+        return ty;
       }
       op_local_get(body, local_slot(tmp, 0));
       op_i32_const(body, types::unit_code(head));
@@ -3722,6 +3797,7 @@ assume Std {
     ): Int {
       let mark = lc_visible.read();
       let pat = ast::a_of(arm);
+      check_member(pat, m, sty);
       if ast::kind_of(pat) == ast::k_pt_record() {
         # The payload sits beside the discriminant, in the scrutinee's
         # temporary.
