@@ -301,6 +301,7 @@ class Parser:
     # Statements and blocks
 
     def parse_block(self) -> ast.Block:
+        block_start = self.peek().offset
         self.expect(Kind.LBRACE)
         stmts = []
         tail = None
@@ -331,7 +332,9 @@ class Parser:
                 self.expect(Kind.SEMI)
                 stmts.append(ast.Assign(name, expr, offset=start))
             else:
-                braced = self.at_any(Kind.IF, Kind.MATCH)
+                # Expressions ending in `}` may stand without a `;`: `if`,
+                # `match`, and a bare block (D65).
+                braced = self.at_any(Kind.IF, Kind.MATCH, Kind.LBRACE)
                 expr = self.parse_expr()
                 if self.eat(Kind.SEMI):
                     stmts.append(ast.ExprStmt(expr, offset=start))
@@ -344,7 +347,7 @@ class Parser:
                         f"expected SEMI or RBRACE, found {self.peek().kind.name}", self.peek()
                     )
         self.expect(Kind.RBRACE)
-        return ast.Block(stmts, tail)
+        return ast.Block(stmts, tail, offset=block_start)
 
     # Expressions
 
@@ -420,6 +423,11 @@ class Parser:
             return expr
         if self.eat(Kind.THIS):
             return ast.ThisExpr(offset=start)
+        if self.at(Kind.LBRACE) and not no_record:
+            # A bare block (D65). Where a record expression is forbidden
+            # (an `if`/`while` condition, a `match` scrutinee), so is this:
+            # the brace there opens the body.
+            return self.parse_block()
         if self.at(Kind.NAME):
             path = self.parse_path()
             app = self.parse_app() if self.at(Kind.LBRACKET) else None

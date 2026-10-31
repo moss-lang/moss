@@ -168,6 +168,21 @@ class TestContext(unittest.TestCase):
         )
         self.assertEqual(run(files), "yx")
 
+    def test_bare_block_scopes_binds_and_lets(self):
+        # D65: a bare block scopes exactly as an if-block does. Its `let`
+        # shadows the outer one at another width — a record over a char —
+        # and the outer one is back afterwards.
+        files = main_body(
+            "bind c=char::x; let p = char::p; "
+            "{ bind c=char::y; let p = Pair { a = char::q, b = char::r }; "
+            "emit(); putchar(p.b); } "
+            "emit(); putchar(p); "
+            "putchar({ bind c=char::z; let t = got(); t });",
+            decls="  val c: Char;\n  type Pair { a: Char, b: Char };\n"
+            "  assume c { fn emit() { putchar(c); } fn got(): Char { c } }",
+        )
+        self.assertEqual(run(files), "yrxpz")
+
     def test_unbound_val_is_context_error(self):
         files = main_body(
             "emit();",
@@ -1267,6 +1282,14 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/capture.moss")
         self.assertEqual(self.wasmtime_run(module), "CCCCE\n")
 
+    def test_a_bare_block_scopes_its_binds_and_lets(self):
+        """D65: a bare block is an expression. The val and fn binds made
+        inside it are gone at its end, a `let` inside it shadows only
+        until then while an assignment to an outer `var` stays, and its
+        value is its tail — as a `let` initializer and as an argument."""
+        module = self.compile_with_moss("tests/wasi/block.moss")
+        self.assertEqual(self.wasmtime_run(module), "EDCBGAIEE\n")
+
     def test_matches_the_bootstrap_on_behaviour(self):
         """Two compilers, one program: the bytes differ — the bootstrap
         emits shims this back end has no need for — but what the modules
@@ -1283,6 +1306,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/generic.moss", "hiDCC\n"),
             ("tests/wasi/bulk.moss", "hi!\n"),
             ("tests/wasi/capture.moss", "CCCCE\n"),
+            ("tests/wasi/block.moss", "EDCBGAIEE\n"),
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),

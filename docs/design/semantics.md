@@ -1528,6 +1528,25 @@ with `./` or `../`, so nothing changed meaning. A run without a prelude
 (only test harnesses do that) has no library, and reads bare paths the
 old way.
 
+**[D65] DECIDED by the designer (bare block expressions).** A block was
+already an expression in everything but the grammar: the body of a
+function, an `if` or a match arm yields its tail, and scopes its `let`s and
+its binds ([D25]). But there was no way to write one on its own, so running
+a call under a bind and no further — the functor application `bind
+MaxLevelDebug;` around one call to `foo()` — took a helper function
+holding just those two lines. Now **Block** is a **Primary**: `{ bind
+MaxLevelDebug; foo(); }` is an expression statement, and like `if` and
+`match` it may drop its `;`. It may also yield a value (`let v = { let t =
+f(); g(t) };`). Nothing about blocks changes: the binds and `let`s inside
+are gone at the closing brace, and the value is the tail, or `()`, or `|`.
+Where a record expression is forbidden — the top of an `if` or `while`
+condition or a `match` scrutinee — so is a bare block, since the brace
+there opens the body; parenthesize it. Making it real exposed a bug of the
+bootstrap's that `if` bodies had always had: its interpreter and Wasm back
+end kept a `let` past the end of its block, so one that shadowed an outer
+local overwrote it. Both now restore the outer local, as the self-hosted
+compiler already did. Standing test: `tests/wasi/block.moss`.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -1555,7 +1574,7 @@ vs structure, D54 method providers keep the nominal wrapper, D55 functors
 as their own declaration applied with `bind`, D61 how a method call
 finds its method, D62 provisions keyed by the receiver's identity, D63
 records are the only product type, D64 bare import paths name library
-files)
+files, D65 bare block expressions)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

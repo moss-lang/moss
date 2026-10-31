@@ -795,6 +795,12 @@ class FnChecker:
     # Blocks and statements
 
     def check_block(self, block: ast.Block, expected=None) -> ir.Block:
+        return self.synth_block(block, expected)[0]
+
+    def synth_block(self, block: ast.Block, expected=None):
+        """A block, scoping its `let`s and `bind`s, and the type it
+        yields: its tail's, `()` without one, or `|` when its last
+        statement cannot fall through."""
         outer = self.push()
         try:
             stmts = []
@@ -816,7 +822,7 @@ class FnChecker:
                 tail, tail_ty = self.synth(block.tail, expected=expected)
             if expected is not None and not self.fits(tail_ty, expected):
                 self.error(f"block yields `{show(tail_ty)}`, expected `{show(expected)}`")
-            return ir.Block(tuple(stmts), tail)
+            return ir.Block(tuple(stmts), tail), tail_ty
         finally:
             self.env = outer
 
@@ -1124,6 +1130,12 @@ class FnChecker:
             return self.synth_if(expr, expected)
         if isinstance(expr, ast.Match):
             return self.synth_match(expr, expected)
+        if isinstance(expr, ast.Block):
+            # A bare block (D65). Its tail was checked against `expected`
+            # and injected there, so — as for `if` — the block as a whole
+            # already has the expected type and is not injected again.
+            block, ty = self.synth_block(expr, expected)
+            return block, (expected if expected is not None else ty)
         if isinstance(expr, ast.PathExpr):
             return self.synth_path(expr)
         if isinstance(expr, ast.Call):

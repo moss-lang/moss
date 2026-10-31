@@ -254,6 +254,7 @@ Stmt = Let | Var | Assign | Bind | While | Loop | ExprStmt
 class Block:
     stmts: list[Stmt]
     tail: "Expr | None"
+    offset: int = field(default=-1, compare=False)
 
 
 # Expressions
@@ -350,6 +351,7 @@ Expr = (
     | Match
     | Return
     | Break
+    | Block  # a bare block (D65); also the body of `if`, arms and fns
 )
 
 

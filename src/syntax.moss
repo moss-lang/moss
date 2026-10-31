@@ -401,6 +401,13 @@ assume Std {
         expect(tk_rparen());
         return e;
       }
+      # A bare block (D65), except where a record expression is also
+      # forbidden: there the brace opens the body of an `if` or `while`.
+      if no_rec.not() {
+        if accept(tk_lbrace()) {
+          return parse_block();
+        }
+      }
       if here(tk_name()).not() {
         fail();
         skip_one();
@@ -541,7 +548,13 @@ assume Std {
           expect(tk_semi());
           stmts.push(ast::node2(ast::k_st_assign(), nm, value));
         } else {
-          let braced = if here(tk_if()) { true } else { here(tk_match()) };
+          let braced = if here(tk_if()) {
+            true
+          } else if here(tk_match()) {
+            true
+          } else {
+            here(tk_lbrace())
+          };
           let e = parse_expr();
           if accept(tk_semi()) {
             stmts.push(ast::node1(ast::k_st_expr(), e));
@@ -549,7 +562,8 @@ assume Std {
             tail = e;
             break;
           } else if braced {
-            # `if` and `match` may stand as statements without a `;`.
+            # `if`, `match` and a bare block may stand as statements
+            # without a `;`.
             stmts.push(ast::node1(ast::k_st_expr(), e));
           } else {
             fail();

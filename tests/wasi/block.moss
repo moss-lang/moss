@@ -1,0 +1,79 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasistd.moss" use Branch, i32_bool;
+
+# A bare block is an expression (D65): it scopes its `let`s and its
+# `bind`s exactly as the body of an `if` does, and its value is its tail.
+# Each letter is the one the comment beside it names; any other means a
+# `let` or a `bind` outlived its block, or one did not take effect in it.
+
+assume Wasm, Wasi, Branch {
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn four(): I32 { w::i32_add(two(), two()) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+  fn six(): I32 { w::i32_add(four(), two()) }
+
+  fn emit(c: I32) {
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
+    w::i32_store8(eight(), c);
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
+  }
+
+  fn upper_a(): I32 {
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
+  }
+
+  fn newline(): I32 { w::i32_add(eight(), two()) }
+
+  val shift: I32;
+
+  # 'A' plus 1 << shift: 'C' for 1, 'E' for 2.
+  assume shift {
+    fn letter() { emit(w::i32_add(upper_a(), w::i32_shl(w::i32_one, shift))); }
+  }
+
+  fn say();
+
+  fn bee() { emit(w::i32_add(upper_a(), w::i32_one)); }
+  fn dee() { emit(w::i32_add(upper_a(), w::i32_add(two(), w::i32_one))); }
+
+  fn main() {
+    bind shift = w::i32_one;
+    bind say = bee;
+
+    # A bind inside a bare block is undone at its end — a val and a fn.
+    # The block statement needs no `;`.
+    {
+      bind shift = two();
+      bind say = dee;
+      letter();                      # 'E'
+      say();                         # 'D'
+    }
+    letter();                        # 'C'
+    say();                           # 'B'
+
+    # A `let` is scoped to its block, and may shadow an outer one; an
+    # assignment to an outer `var` is not undone.
+    let c = upper_a();
+    var n = upper_a();
+    {
+      let c = w::i32_add(upper_a(), six());
+      emit(c);                       # 'G'
+      n = w::i32_add(n, eight());
+    };
+    emit(c);                         # 'A'
+    emit(n);                         # 'I'
+
+    # A block's value is its tail, and a block goes wherever an
+    # expression does.
+    let v = {
+      bind shift = two();
+      let base = upper_a();
+      w::i32_add(base, w::i32_shl(w::i32_one, shift))
+    };
+    emit(v);                         # 'E'
+    emit({ let t = four(); w::i32_add(upper_a(), t) });   # 'E'
+    emit(newline());
+  }
+}

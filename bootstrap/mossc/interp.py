@@ -94,6 +94,7 @@ class NativeFn:
 
 
 UNIT = UnitVal(None)
+_ABSENT = object()  # a local a block's `let` did not shadow
 
 
 class MossPanic(Exception):
@@ -154,16 +155,26 @@ class Interp:
     def eval_block(self, block: ir.Block, frame: Frame, tail=False):
         # Binds are lexically scoped to the block: restore ctx on exit. A
         # _Tail escaping the block is safe: it carries its own ctx snapshot.
+        # Its `let`s are scoped the same way: a name it shadows is back
+        # afterwards, with the value it had when it was shadowed.
         saved = frame.ctx
         frame.ctx = dict(saved)
+        shadowed = {}
         try:
             for stmt in block.stmts:
+                if isinstance(stmt, ir.Let) and stmt.name not in shadowed:
+                    shadowed[stmt.name] = frame.locals.get(stmt.name, _ABSENT)
                 self.exec_stmt(stmt, frame)
             if block.tail is None:
                 return UNIT
             return self.eval(block.tail, frame, tail=tail)
         finally:
             frame.ctx = saved
+            for name, value in shadowed.items():
+                if value is _ABSENT:
+                    frame.locals.pop(name, None)
+                else:
+                    frame.locals[name] = value
 
     def exec_stmt(self, stmt, frame: Frame):
         if isinstance(stmt, (ir.Let, ir.Assign)):

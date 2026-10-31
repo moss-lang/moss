@@ -168,6 +168,41 @@ class TestExpressions(unittest.TestCase):
         block = self.body("if a { b(); } f();")
         self.assertEqual([type(s) for s in block.stmts], [ast.ExprStmt, ast.ExprStmt])
 
+    def test_bare_block(self):
+        # D65: a block is an expression; as a statement it needs no `;`.
+        block = self.body("{ bind X; foo(); } let y = { let z = f(); z }; { g() }")
+        stmt, let = block.stmts
+        bind = ast.Bind([(ast.Spec(["X"], None, None), None)])
+        call = ast.Call(ast.PathExpr(["foo"], None), [])
+        self.assertEqual(stmt, ast.ExprStmt(ast.Block([bind, ast.ExprStmt(call)], None)))
+        self.assertEqual(
+            let.expr,
+            ast.Block(
+                [ast.Let("z", None, ast.Call(ast.PathExpr(["f"], None), []))],
+                ast.PathExpr(["z"], None),
+            ),
+        )
+        self.assertEqual(
+            block.tail, ast.Block([], ast.Call(ast.PathExpr(["g"], None), []))
+        )
+
+    def test_bare_block_as_operand(self):
+        block = self.body("f({ x }); { a }.m(); {}")
+        arg = block.stmts[0].expr.args[0]
+        self.assertEqual(arg, ast.Block([], ast.PathExpr(["x"], None)))
+        method = block.stmts[1].expr
+        self.assertEqual(method.obj, ast.Block([], ast.PathExpr(["a"], None)))
+        self.assertEqual(block.tail, ast.Block([], None))
+
+    def test_no_bare_block_in_condition(self):
+        # As with a record, a brace where a condition or scrutinee begins
+        # opens the body, so a bare block there must be parenthesized.
+        for source in ("if { a } { b() }", "while { a } { b(); }", "match { a } { _ => b }"):
+            with self.subTest(source=source), self.assertRaises(ParseError):
+                self.body(source)
+        block = self.body("if ({ a }) { b() }")
+        self.assertEqual(block.tail.cond, ast.Block([], ast.PathExpr(["a"], None)))
+
     def test_loops(self):
         block = self.body("loop { break; } while a { b(); }")
         self.assertEqual([type(s) for s in block.stmts], [ast.Loop, ast.While])

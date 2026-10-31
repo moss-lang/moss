@@ -1050,8 +1050,12 @@ class FnCompiler:
     # Statements
 
     def block(self, node: ir.Block):
+        # A block scopes its binds and its `let`s: a `let` takes fresh
+        # locals (it may shadow an outer name, at another width), and the
+        # outer name's locals are back when the block ends.
         saved = dict(self.provisions)
         saved_env = dict(self.env)
+        saved_slots = dict(self.slots)
         for stmt in node.stmts:
             self.stmt(stmt)
         if node.tail is None:
@@ -1061,12 +1065,13 @@ class FnCompiler:
             layout = self.expr(node.tail)
         self.provisions = saved
         self.env = saved_env
+        self.slots = saved_slots
         return layout
 
     def stmt(self, node):
         if isinstance(node, (ir.Let, ir.Assign)):
             layout = self.expr(node.expr)
-            if node.name not in self.slots:
+            if isinstance(node, ir.Let) or node.name not in self.slots:
                 self.slots[node.name] = self.group(layout)
             self.store(self.slots[node.name])
         elif isinstance(node, ir.BindVal):

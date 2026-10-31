@@ -164,10 +164,13 @@ the prelude's `val true: Bool = Bool True;` ([D50]).
 - **Loop** = `loop` **Block**
 
 The `;` after an **Expr** statement may be omitted only when the expression
-is an **If** or **Match** (which end in `}`).
+is an **If**, a **Match** or a bare **Block** (which end in `}`).
 
 A **Block** is an expression context: its value is the trailing **Expr**, or
-`()` if there is none. In a **Bind**, a right-hand side that names a type is
+`()` if there is none. It scopes the `let`s, `var`s and `bind`s inside it,
+whether it is the body of a function, an `if` or an arm, or stands alone
+as an expression ([D65]): `{ bind MaxLevelDebug; foo(); }` runs `foo` under
+that bind and undoes it afterwards. In a **Bind**, a right-hand side that names a type is
 written as an ordinary path; which kind of binding it is falls out of the
 left-hand symbol's kind.
 
@@ -180,7 +183,7 @@ left-hand symbol's kind.
 - **Arm** = **Pattern** `=>` (**Expr** `,` | **Block** `,`?)
 - **Postfix** = **Primary** **Suffix**\*
 - **Suffix** = `.` **Path** (`(` **List**\[**Expr**\] `)`)?
-- **Primary** = `(` **Expr** `)` | `(` `)` | `this` | **Path** **App**? (**Args** | **RecordExpr**)?
+- **Primary** = `(` **Expr** `)` | `(` `)` | `this` | **Block** | **Path** **App**? (**Args** | **RecordExpr**)?
 - **Args** = `(` **List**\[**Expr**\] `)`
 - **RecordExpr** = `{` **List**\[_name_ (`=` **Expr**)?\] `}`
 
@@ -199,7 +202,11 @@ Notes:
 - Like Rust, a **RecordExpr** may not attach to a path at the top level of
   the condition of an **If** or **While** or the scrutinee of a **Match**
   (otherwise `match x { ... }` would parse the braces as a record).
-  Parenthesize to construct a record there.
+  Parenthesize to construct a record there. The same goes for a bare
+  **Block**: there, `{` opens the body, so `if { c } { ... }` is a syntax
+  error and `if ({ c }) { ... }` is not.
+- A bare **Block** at the start of an **Arm** body is the arm's block
+  form, so the comma after it stays optional.
 
 ### Patterns
 
