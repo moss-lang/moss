@@ -3251,7 +3251,8 @@ its inputs though every application has it (`functor_body`), missing an output
 with nothing bound (`functor_unbound`), and a type in an abstract
 functor's result (`functor_type`).
 
-*Not done: the calculus.* `docs/design/core/` has no functors at all —
+*The calculus: the plan* (done — see *Mechanized* at the end of this
+entry). `docs/design/core/` had no functors at all —
 they are elaborated away as runs of binds ([D55]), and the calculus is
 over elaborated terms (deviation 5). Abstract functors cannot be
 elaborated away in a function generic over one, so the mechanization
@@ -3413,6 +3414,39 @@ where each item was promised once `α_t` is read as τ_t — which is the
 "each branch at the type the application promises" check above, and what
 makes the substitution of τ_t for α_t through `e`'s typing derivation
 (well-typed because `e`'s type does not mention α_t) the soundness step.
+
+*Mechanized (October 2026).* The plan above, existential included, is in
+`docs/design/core/` — the paper's §3.4 (Figures 8–9) and `CoreMoss.v`
+(deviations 11–13, the README's "Abstract functors" section) — and every
+theorem (determinism, interpreter adequacy, phase separation, soundness)
+is re-proved over it, still closed under the global context.
+
+- *As planned:* `IFun φ`; `EBindFun φ g ς e` checked on signatures alone
+  (args(g) satisfied at the identity application in args(φ)'s merged
+  context, ς recording how; res(g) = res(φ)), with g's body checked once
+  against args(g) alone — the declaration's premise; `EApply φ ς e` with
+  args(φ) available and `e` typed under res(φ) keyed as declared; a
+  runtime entry `DFun g` with no captured context; the dynamics re-keys
+  the caller's environment to g's arguments, runs g's binds, and keeps
+  exactly res(φ). The key lemma is `safety_binds_apply`: each re-keying is
+  an instance of the defined-call case, the body runs by the same world
+  lemmas as the expression-level binds, and the result agrees at the
+  caller's grounding extended by the type each `t` was made — the witness
+  — which the escape premise keeps out of `e`'s type.
+- *Beyond the plan:* `bind φ = ψ;` with ψ abstract (`EBindFunA`), whose
+  entry is g plus a chain of re-keyings, one per copy; and functor bodies
+  as runs of binds that may themselves bind and apply abstract functors
+  (Counted's inner `bind Heap;`, an abstract functor in a result).
+- *Side conditions the plan left implicit:* the α_t are the result's own
+  type symbols, rigid and required fresh in the context (as `TBindTyR`'s,
+  deviation 7), so two applications in one scope are two generations
+  named apart by elaboration, as [D72] says of every type bind; result
+  items are formed over the arguments without merging into them; and
+  results are compared as one flattened telescope. Nothing unsound was
+  found.
+- §12c of `CoreMoss.v` runs an abstract allocator with a `Handle` output,
+  bound to a boxing functor and (through a second abstract functor) to a
+  bare one, inside one generic function, by `vm_compute`.
 
 **[D79] DECIDED by the designer and implemented (multiple memories).** WebAssembly modules may have more than
 one linear memory (multi-memory, part of Wasm 3.0, shipped in Chrome,

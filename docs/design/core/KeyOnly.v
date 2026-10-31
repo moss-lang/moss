@@ -309,7 +309,8 @@ Definition Sg : gsig := {|
   g_mth := fun mm => match mm with
                      | 0 => Some ([ITy T], mkSig [] (TAbs T))
                      | _ => None
-                     end
+                     end;
+  g_fun := fun _ => None
 |}.
 
 Definition main : fsym := 2.

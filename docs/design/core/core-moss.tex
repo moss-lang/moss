@@ -185,9 +185,12 @@ static code with captured dynamic context.
 \section{The core calculus}\label{sec:calculus}
 
 \textsc{Core Moss} strips Moss to the constructs that carry the design.
-Modules, named contexts, functors, attached methods, records,
-booleans, loops, and mutation are all omitted here and reconstructed in
-\S\ref{sec:full}; none of them adds semantic content to the core.
+Modules, named contexts, functors applied by name, attached methods,
+records, booleans, loops, and mutation are all omitted here and
+reconstructed in \S\ref{sec:full}; none of them adds semantic content to
+the core. \emph{Abstract} functors [D78] do: a function generic over one
+applies it at instantiations its caller never sees, so they cannot be
+elaborated away, and \S\ref{sec:functors} adds them to the core.
 
 \subsection{Syntax}
 
@@ -785,6 +788,166 @@ captured data. Third, \textsc{E-BindVal} evaluates its right-hand side
 exactly once, at the bind [D26]; val provisions are call-by-value data,
 not thunks.
 
+\subsection{Abstract functors}\label{sec:functors}
+
+A functor [D55] is a named block of binds from an argument telescope to a
+result telescope, and applying one by name, $\kw{bind}\;F;$, inlines the
+block---elaboration removes it (\S\ref{sec:full}). An \emph{abstract}
+functor $\kw{functor}\;F : \Delta_a \to \Delta_r;$ [D78] is a requirement
+like any other: it is assumed, provided by binding a functor whose
+signature matches, and applied wherever it is in force, with whatever it is
+bound to there. That is a \emph{polymorphic provider}: one binding serves
+every instantiation of $F$'s inputs, where a provision serves only the one
+it was made at [D62]. And when $\Delta_r$ holds a type, every binding may
+make it a different type, so the code after $\kw{bind}\;F;$ sees an
+existential: it is checked once against a fresh, rigid symbol, which no
+value may carry out of the block.
+
+\begin{figure}[t]
+\[
+\begin{array}{llcl}
+\text{items} & \iota & ::= & \cdots \mid F \\
+\text{binds} & \beta & ::= & \cdots \mid F =^{\varsigma} G
+  \mid F =^{\varsigma} F' \\
+\text{expressions} & e & ::= & \cdots \mid \kw{bind}^{\varsigma}\;F;\; e \\
+\text{body binds} & b & ::= & \beta \mid \kw{bind}^{\varsigma}\;F \\
+\text{declarations} & d & ::= & \cdots
+  \mid \kw{functor}\;F : \Delta \to \Delta
+  \mid \kw{functor}\;G : \Delta \to \Delta\;\{\,\ov{b}\,\} \\
+\text{runtime contexts} & \delta & ::= & \cdots \cup
+  \ov{F \mapsto \langle G;\, \varsigma_1 \cdots \varsigma_n \rangle}
+\end{array}
+\]
+\[
+\Sigma(F) = \ksf{functor}(\Delta_a \to \Delta_r)\,\{\ov{b}\}^?
+\]
+
+\textbf{Links}\quad
+$\Sigma \vdash \Delta \preceq^{\varsigma} \Delta'$ \;iff\;
+$\Sigma;\Phi_{\Delta'} \vdash \emptyset \entails \Delta$ with
+satisfaction map $\varsigma$ \quad ($\Phi_{\Delta'}$ the merged context of
+$\Delta'$; ``$\Delta \subseteq \Delta'$'')
+\begin{mathpar}
+\inferrule[T-BindFun]{\Sigma(F) = \ksf{functor}(\Delta_a \to \Delta_r) \\
+  \Sigma(G) = \ksf{functor}(\Delta_g \to \Delta_r)\,\{\ov{b}\} \\
+  \Sigma \vdash \Delta_g \preceq^{\varsigma} \Delta_a \\
+  \Sigma;\langle A \cup \{F\}; \sigma \rangle;\Gamma \vdash e : \tau}
+  {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash \kw{bind}\;F =^{\varsigma} G;\;e : \tau}
+
+\inferrule[T-BindFunA]{\Sigma(F) = \ksf{functor}(\Delta_a \to \Delta_r) \\
+  \Sigma(F') = \ksf{functor}(\Delta' \to \Delta_r) \\ F' \in \Phi \\
+  \Sigma \vdash \Delta' \preceq^{\varsigma} \Delta_a \\
+  \Sigma;\langle A \cup \{F\}; \sigma \rangle;\Gamma \vdash e : \tau}
+  {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash \kw{bind}\;F =^{\varsigma} F';\;e : \tau}
+
+\inferrule[T-Apply]{\Sigma(F) = \ksf{functor}(\Delta_a \to \Delta_r) \\
+  F \in \Phi \\
+  \Sigma;\Phi \vdash \emptyset \entails^{\varsigma} \Delta_a \\
+  t \notin \Phi \;\;(\forall t \in \Delta_r) \\\\
+  \Sigma;\langle A \cup \Delta_r;\, \sigma \rangle;\Gamma \vdash e : \tau \\
+  t \notin \ksf{fv}(\tau) \;\;(\forall t \in \Delta_r)}
+  {\Sigma;\langle A; \sigma \rangle;\Gamma \vdash \kw{bind}^{\varsigma}\;F;\;e : \tau}
+\end{mathpar}
+\caption{Abstract functors [D78]: syntax and typing. $F, F', G$ range
+over functor symbols. A link $\Delta \preceq^{\varsigma} \Delta'$ is the
+binding check of [D78], made on signatures alone: every item of $G$'s
+arguments is met, at the identity application, by an item of $F$'s, and
+$\varsigma$ records which; $G$'s result must be $F$'s.}
+\label{fig:functors}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\textbf{Bodies}\quad \fbox{$\Sigma;\Phi \vdash \ov{b} \dashv \Phi'$}
+\quad
+\textbf{Declarations}\quad (write $\Phi_a$ for the merged context of $\Delta_a$)
+\begin{mathpar}
+\inferrule[B-Nil]{ }{\Sigma;\Phi \vdash \emptytel \dashv \Phi}
+
+\inferrule[B-Bind]{\Sigma;\Phi;\emptyset \vdash \kw{bind}\;\beta;\; e : \tau
+    \text{ by a rule with premise } \Sigma;\Phi_1;\emptyset \vdash e : \tau \\
+  \Sigma;\Phi_1 \vdash \ov{b} \dashv \Phi'}
+  {\Sigma;\Phi \vdash \beta, \ov{b} \dashv \Phi'}
+
+\inferrule[D-Functor]{\Sigma;\emptytel \vdash \Delta_a \wf \\
+  \Sigma;\Delta_a \vdash \Delta_r \wf
+    \text{ with every item of } \Delta_r \text{ fresh (no merge)} \\\\
+  \text{if } \{\ov{b}\}:\;\;
+  \Sigma;\Phi_a \vdash \ov{b} \dashv \langle A_b; \sigma_b \rangle \\
+  \Delta_r \subseteq A_b}
+  {\Sigma;\Delta_0 \vdash \kw{functor}\;F : \Delta_a \to \Delta_r\;\{\ov{b}\}^? \wf}
+\end{mathpar}
+
+\textbf{Dynamics}\quad \fbox{$\delta \vdash \ov{b} \Eval \delta'$}\quad
+\fbox{$\delta \vdash \kw{bind}^{\varsigma}\,F \Eval \delta_r$}
+\begin{mathpar}
+\inferrule[E-BindFun]{\delta[F \mapsto \langle G;\, \varsigma \rangle];\gamma
+    \vdash e \Eval w}
+  {\delta;\gamma \vdash \kw{bind}\;F =^{\varsigma} G;\;e \Eval w}
+
+\inferrule[E-BindFunA]{\delta(F') = \langle G;\, \ov{\varsigma} \rangle \\
+  \delta[F \mapsto \langle G;\, \ov{\varsigma}\,\varsigma \rangle];\gamma
+    \vdash e \Eval w}
+  {\delta;\gamma \vdash \kw{bind}\;F =^{\varsigma} F';\;e \Eval w}
+
+\inferrule[E-Apply]{\delta \vdash \kw{bind}^{\varsigma}\,F \Eval \delta_r \\
+  \delta_r \cdot \delta;\gamma \vdash e \Eval w}
+  {\delta;\gamma \vdash \kw{bind}^{\varsigma}\;F;\;e \Eval w}
+
+\inferrule[A-Apply]{\delta(F) = \langle G;\, \varsigma_1 \cdots \varsigma_n \rangle \\
+  \Sigma(G) = \ksf{functor}(\Delta_g \to \Delta_r)\,\{\ov{b}\} \\\\
+  \delta \circ \varsigma \circ \varsigma_n \circ \cdots \circ \varsigma_1
+    \vdash \ov{b} \Eval \delta' \\
+  \delta_r = \delta'|_{\Delta_r}}
+  {\delta \vdash \kw{bind}^{\varsigma}\,F \Eval \delta_r}
+\end{mathpar}
+\caption{Abstract functors [D78]: bodies, declarations, and dynamics.
+\textsc{B-Bind} checks each body bind
+by the premises of its expression rule (Figures~\ref{fig:binds} and above;
+a val's right-hand side under no variables), continuing in the context
+$\Phi_1$ that rule types the continuation in; an application in a body is
+\textsc{T-Apply} without the escape premise, since the body has no result
+type. A body run $\delta \vdash \ov{b} \Eval \delta'$ extends $\delta$
+bind by bind as \textsc{E-Bind*} and \textsc{E-Apply} do; $\delta_r \cdot
+\delta$ puts the result's entries over $\delta$, and $\delta'|_{\Delta_r}$
+keeps exactly the result's non-type items.}
+\label{fig:functors-dyn}
+\end{figure}
+
+Figures~\ref{fig:functors} and~\ref{fig:functors-dyn} give the rules; four
+points carry the design.
+
+\begin{itemize}
+\item \emph{A binding is checked once, against signatures.}
+\textsc{T-BindFun} needs nothing in force: $G$'s arguments must be met by
+$F$'s (a link---$G$ may take fewer inputs than $F$), its result must be
+$F$'s, and its body was checked by \textsc{D-Functor} against its own
+arguments \emph{alone}---the check both compilers make. Like a fn bind it
+is static, but it captures nothing: a functor entry
+$\langle G;\, \varsigma_1 \cdots \varsigma_n \rangle$ is code plus the
+chain of re-keyings from $G$'s arguments out to $F$'s, one link per
+$\kw{bind}\;F = F';$ it was copied through (\textsc{E-BindFunA}).
+\item \emph{An application runs the binding at the inputs in force.}
+\textsc{T-Apply} needs $F$'s arguments available at the identity
+application---they are the inputs as they are here---and
+\textsc{A-Apply} re-keys the caller's context through $\varsigma$ and the
+chain to exactly $G$'s arguments, runs $G$'s binds there, and keeps only
+$F$'s result: ``its binds, run there, as $\kw{bind}\;G;$ would run them,''
+with the result alone surviving [D78].
+\item \emph{A type in the result is an existential.} \textsc{T-Apply}
+types the scope with $\Delta_r$'s types in $A$ but not in $\sigma$---rigid,
+the fresh generation [D72] the scope knows nothing about---and its type
+$\tau$ may not mention them: no value of such a type leaves the block.
+Freshness ($t \notin \Phi$) is \textsc{T-BindTy}'s, for the same reason;
+two applications of one functor in one scope are two generations, so
+elaboration names their types apart, as it does every type bind's [D72].
+\item \emph{Each binding provides at the type the application promises.}
+A body cannot rebind a type it takes (\textsc{T-BindTy} freshness), and
+$\Delta_r$ is formed over $G$'s arguments, so every item of the result is
+made at exactly the reading the application gives it---[D78]'s ``each
+branch at the type the application promises.''
+\end{itemize}
+
 \section{Metatheory}\label{sec:meta}
 
 \begin{proposition}[Resolution is search-free]\label{prop:nosearch}
@@ -804,8 +967,10 @@ fails rather than choosing.
 Say $\delta \models \Phi$ when $\delta$ is defined on every non-type item
 of $\Phi$ and each entry agrees with the item's declared signature under
 the substitutions in force (values at declared types, closures at matched
-signatures with $\delta' \models$ their own telescopes), and $\gamma
-\models \Gamma$ pointwise. If\, $\vdash P \wf$,\;
+signatures with $\delta' \models$ their own telescopes, a functor entry
+$F \mapsto \langle G;\, \ov{\varsigma} \rangle$ when $G$ has a body and
+$F$'s result and $\ov{\varsigma}$ is a chain of links from $G$'s
+arguments to $F$'s), and $\gamma \models \Gamma$ pointwise. If\, $\vdash P \wf$,\;
 $\Sigma;\Phi;\Gamma \vdash e : \tau$,\; $\delta \models \Phi$,\;
 $\gamma \models \Gamma$, and $\delta;\gamma \vdash e \Eval w$, then
 $w$ has type $\sigma\tau$; and in the instrumented semantics that signals
@@ -818,7 +983,19 @@ well-formed program yields $\unitv$.
 
 The proof is a routine induction on the evaluation derivation with
 inversion on typing, with a substitution lemma for $\sigma\thh$ and a
-weakening lemma for $\delta \circ \varsigma$. The metatheory is fully
+weakening lemma for $\delta \circ \varsigma$. The one new case of
+\S\ref{sec:functors} is \textsc{T-Apply}, and it is the \emph{polymorphic
+provider} lemma of [D78]: if $\delta \models \Phi$ and $F$'s arguments
+are available, then $\delta \circ \varsigma \circ \varsigma_n \circ \cdots
+\circ \varsigma_1 \models \Phi_g$ for $G$'s own arguments (each link is an
+instance of the defined-call case, at the identity application, and reads
+every argument symbol as the caller does); $G$'s body, checked against
+$\Phi_g$ alone, runs safely from there by the cases of the expression-level
+binds; and the result it leaves agrees with the caller's context
+\emph{extended} at $\Delta_r$'s types by whatever the body made them---the
+existential's witness. The escape premise makes that extension invisible
+in $\sigma\tau$. Abstract functors are at no instantiation, so a functor
+entry's agreement mentions no grounding at all. The metatheory is fully
 machine-checked in Rocq (\texttt{CoreMoss.v}, checked in CI): this
 theorem and every proposition here report \emph{closed under the global
 context}, via a fuel-indexed safety invariant that carries a ground
@@ -941,7 +1118,10 @@ now carries exactly this rule at telescope formation
 Functors &
 A named, signature-checked block of binds, applied with
 $\kw{bind}\;F;$ --- application inlines the block, so it elaborates to a
-run of core binds [D55]. \\[3pt]
+run of core binds [D55]. An \emph{abstract} functor cannot be inlined
+where it is assumed, and is in the core (\S\ref{sec:functors}) [D78]; a
+functor with a body survives into the core only as what one is bound
+to. \\[3pt]
 Attached methods, \texttt{this}/\texttt{This} &
 $\kw{fn}\;T.m$ is a defined fn found by name in the receiver's own
 module; a detached provision is found by key [D61]. Only an attached

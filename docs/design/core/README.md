@@ -11,8 +11,9 @@ its definitions and metatheoretical statements.
 - [`CoreMoss.v`](CoreMoss.v) — the Rocq mechanization: all definitions
   and the full metatheory of the paper's §4, machine-checked end to end
   (every theorem, type soundness included, reports closed under the
-  global context), plus the paper's Figure 1 example and the merging
-  examples of §12b encoded and executed by computation. The header
+  global context), abstract functors [D78] included, plus the paper's
+  Figure 1 example, the merging examples of §12b, and an abstract
+  allocator (§12c) encoded and executed by computation. The header
   comment lists the handful of mechanization-level deviations from the
   paper.
 - [`Narrowing.v`](Narrowing.v) — [D71]: a tag's identity is its
@@ -90,3 +91,52 @@ load-bearing mechanism is now inside the calculus, in both artifacts:
 - **Executed evidence**: §12b of `CoreMoss.v` computes the D43 example's
   merge (`C ↦ B`), the concrete-head clash, the occurs-check rejection,
   and runs a merged program (plus its erasure) to `()` by `vm_compute`.
+
+## Abstract functors (D78), with type outputs: landed
+
+[D78]'s calculus plan, including its type-outputs amendment, is in both
+artifacts (paper §3.4, Figures 8–9; `CoreMoss.v` deviations 11–13):
+
+- **Syntax.** An item `IFun φ` (an abstract functor in a telescope; its
+  argument and result telescopes, and a body for a functor that has one,
+  in the signature's new `g_fun`), the expressions `EBindFun φ g ς e`
+  (bind to a functor with a body), `EBindFunA φ ψ ς e` (copy the binding
+  of an abstract `ψ` in force) and `EApply φ ς e`, and functor bodies as
+  runs of binds without continuation (`bnd`: the five expression-level
+  binds plus a nested application).
+- **Statics.** A binding is checked on signatures alone (`fun_link`:
+  args(g) satisfied at the identity application in args(φ)'s merged
+  context, with ς; res(g) = res(φ)), and needs nothing in force. A body is
+  checked once, by `binds_ty`, against its own arguments alone, and must
+  leave every result item in force (`wf_fun_decl`). An application needs
+  φ in force and args(φ) available at the identity application; it opens
+  res(φ) over the context with its types rigid and fresh, and its scope's
+  type must not mention them — the existential's unpack.
+- **Dynamics.** A binding's runtime entry is `DFun g ς̄` — the functor and
+  its chain of re-keyings, no captured context. An application re-keys
+  the caller's environment through ς and the chain to exactly g's
+  arguments, runs g's binds there (`interp_binds` / `run_binds`), and
+  keeps exactly res(φ) (`interp_apply` / `run_apply`).
+- **Metatheory.** Every theorem is re-proved over the extension —
+  determinism, interpreter adequacy, phase separation, soundness — and
+  still reports closed under the global context. The application case is
+  the "polymorphic provider" lemma, `safety_binds_apply`: each link of
+  the chain is an instance of the defined-call case (`link_agree`,
+  `chain_agree`, over `callee_env_agree`), the body runs safely by the
+  same world lemmas as the expression-level binds (`world_bindty` …
+  `world_bindfuna`, factored out of their cases), and the result agrees
+  with the caller's grounding extended at the result's types by what the
+  body made them — the existential's witness, invisible in the scope's
+  type by the escape premise.
+- **What the mechanization added to the plan.** Nothing unsound turned
+  up; three side conditions were needed: type outputs fresh in the
+  context (as `TBindTyR`'s, deviation 7 — so two applications in one
+  scope are two generations, named apart by elaboration as D72 says of
+  type binds), result items added without merging into the arguments,
+  and results compared as one (flattened, elaborated) telescope.
+- **Executed evidence.** §12c binds an abstract `Alloc: Boxed -> Handle,
+  alloc, Handle.load` to a boxing functor and to a bare one (copied
+  through a second abstract functor), applies it in one generic
+  `roundtrip`, and runs the program, and its erasure, by `vm_compute`;
+  it also computes that an application keeps exactly the result (a
+  body's extra val is gone).
