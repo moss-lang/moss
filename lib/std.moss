@@ -1,4 +1,4 @@
-import "./access.moss" use Elem, .get, .length, .push, .read;
+import "./access.moss" use Elem, .get, .set, .length, .push, .read;
 import "./bool.moss" use Bool, False, True;
 import "./cell.moss" use CellInt, cell_int;
 # `.char` is imported by name because it is provided at `Int`, not at
@@ -79,7 +79,7 @@ context Std =
   int_list,
   IntList.push[Elem=Int],
   IntList.get[Elem=Int],
-  IntList.set,
+  IntList.set[Elem=Int],
   IntList.length,
   put_bytes,
 

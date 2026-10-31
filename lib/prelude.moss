@@ -3,13 +3,13 @@
 # scope, or reached as `mod::m` (D61) — so a program that calls `.add` or
 # `.length` needs the symbol here, and after access.moss there is exactly
 # one of each spelling to import.
-import "./access.moss" use .get, .length, .push, .read;
+import "./access.moss" use .get, .set, .length, .push, .read;
 import "./bool.moss" use Bool, False, True, false, true;
 import "./cell.moss" use CellInt, cell_int, .write;
 import "./char.moss" as char use Char, .code, .char;
 import "./float.moss" use Float, float, .trunc, .round;
 import "./int.moss" use Int, zero, one;
-import "./list.moss" use IntList, int_list, .set;
+import "./list.moss" use IntList, int_list;
 import "./num.moss" use .add, .sub, .mul, .div, .rem, .neg, .not, .abs, .sqrt,
   .and, .or, .xor, .shl, .shr, .eq, .ne, .lt, .gt, .le, .ge;
 import "./path.moss" use Path, pwd, .join, .readable;

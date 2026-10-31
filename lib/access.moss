@@ -1,6 +1,6 @@
 import "./int.moss" use Int;
 
-# The four detached accessors every container has in common, declared
+# The detached accessors every container has in common, declared
 # once. Declaring them per container made each spelling several distinct
 # symbols, and by D44 one scope cannot name two of them — which no import
 # list can rescue, since a compiler calls `.length` on a String and on an
@@ -24,6 +24,10 @@ assume Int {
 
   assume Elem {
     fn .get(index: Int): Elem;
+
+    # Lists have it, and a list of anything but `Int` will want one too,
+    # so it is shared like the rest rather than `IntList`'s own.
+    fn .set(index: Int, value: Elem);
   }
 }
 

@@ -4,7 +4,7 @@ import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
 # One declaration per accessor, so importing them here is unambiguous —
 # and `Elem` comes with them, because every provision below names the
 # element type it is providing at (D61).
-import "./access.moss" use Elem, .get, .length, .push, .read;
+import "./access.moss" use Elem, .get, .set, .length, .push, .read;
 import "./path.moss" as path use Path, pwd;
 import "./bool.moss" use Bool, true, false;
 import "./char.moss" as char use Char, Chars, .char;
@@ -52,7 +52,7 @@ context Files =
 context Containers =
   CellInt, cell_int, CellInt.read[Elem=Int], CellInt.write,
   IntList, int_list,
-  IntList.push[Elem=Int], IntList.get[Elem=Int], IntList.set, IntList.length,
+  IntList.push[Elem=Int], IntList.get[Elem=Int], IntList.set[Elem=Int], IntList.length,
   put_bytes,
   StrList, str_list,
   StrList.push[Elem=String], StrList.get[Elem=String], StrList.length;
@@ -577,7 +577,7 @@ functor WasiContainers: Wasm, Wasi, Branch -> Containers {
   bind list::int_list = wasi_int_list;
   bind IntList.push[Elem=Int] = Ints.push;
   bind IntList.get[Elem=Int] = Ints.get;
-  bind IntList.set = Ints.set;
+  bind IntList.set[Elem=Int] = Ints.set;
   bind IntList.length = Ints.length;
   bind put_bytes = wasi_put_bytes;
   bind strlist::StrList = Strs;

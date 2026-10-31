@@ -21,8 +21,8 @@ Layout:
 - [`num.moss`](/lib/num.moss): the detached arithmetic/comparison methods
   that contexts provide per receiver type (`Int.add`, `Char.eq`, ... —
   D47). When operators land (D33), they desugar to these symbols.
-- [`access.moss`](/lib/access.moss): `.get`, `.length`, `.push` and
-  `.read`, declared **once** each with the element type as a requirement,
+- [`access.moss`](/lib/access.moss): `.get`, `.set`, `.length`, `.push`
+  and `.read`, declared **once** each with the element type as a requirement,
   supplied per provision with a bracket application
   (`String.get[Elem=Char]`, `IntList.get[Elem=Int]`). Declaring them per
   container made each spelling several symbols, and by D44 one scope
