@@ -109,6 +109,9 @@ functor WasiStd32: Wasm, Wasi, Branch -> Std {
   bind WasiFloats32;
   bind WasiCharConsts;
   bind Bool.not = Bool.flip;
+  bind Bool.and = Bool.both;
+  bind Bool.or = Bool.either;
+  bind Bool.xor = Bool.differs;
 }
 
 # Each block applies a whole `Std`, and its binds end with it (D65), so

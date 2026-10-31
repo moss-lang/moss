@@ -1,6 +1,7 @@
 import "./ast.moss" as ast;
 import "./bytes.moss" use *;
 import "./intern.moss" as intern;
+import "./tcode.moss" use *;
 
 # The syntax tree, written out in the compact form of
 # bootstrap/mossc/sexpr.py — the same format from the other side, so the
@@ -192,6 +193,21 @@ assume Std {
         dump_run(ast::a_of(id), ast::b_of(id));
         sp();
         opt_node(ast::c_of(id));
+      } else if k.eq(ast::k_ex_unary()) {
+        sp();
+        put_op(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+      } else if k.eq(ast::k_ex_binary()) {
+        sp();
+        put_op(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
+        sp();
+        dump(ast::kid_at(ast::c_of(id), zero));
+      } else if k.eq(ast::k_ex_lit()) {
+        sp();
+        put_digits(id);
       } else if k.eq(ast::k_st_let()) {
         dump_binding(id);
       } else if k.eq(ast::k_st_var()) {
@@ -328,6 +344,66 @@ assume Std {
         ();
       }
       close_tag();
+    }
+
+    # An operator as it is spelled: its token, one or two characters.
+    fn put_op(t: Int) {
+      if t.eq(tk_star()) {
+        putchar(char::star);
+      } else if t.eq(tk_slash()) {
+        putchar(char::slash);
+      } else if t.eq(tk_percent()) {
+        putchar(char::percent);
+      } else if t.eq(tk_plus()) {
+        putchar(char::plus);
+      } else if t.eq(tk_hyphen()) {
+        putchar(char::hyphen);
+      } else if t.eq(tk_exclam()) {
+        putchar(char::exclam);
+      } else if t.eq(tk_ampersand()) {
+        putchar(char::ampersand);
+      } else if t.eq(tk_caret()) {
+        putchar(char::caret);
+      } else if t.eq(tk_pipe()) {
+        putchar(char::pipe);
+      } else if t.eq(tk_less()) {
+        putchar(char::less);
+      } else if t.eq(tk_greater()) {
+        putchar(char::greater);
+      } else if t.eq(tk_less_less()) {
+        putchar(char::less);
+        putchar(char::less);
+      } else if t.eq(tk_greater_greater()) {
+        putchar(char::greater);
+        putchar(char::greater);
+      } else if t.eq(tk_less_equal()) {
+        putchar(char::less);
+        putchar(char::equal);
+      } else if t.eq(tk_greater_equal()) {
+        putchar(char::greater);
+        putchar(char::equal);
+      } else if t.eq(tk_equal_equal()) {
+        putchar(char::equal);
+        putchar(char::equal);
+      } else {
+        putchar(char::exclam);
+        putchar(char::equal);
+      }
+    }
+
+    # A literal as it was written: its digits, with the point where the
+    # fraction starts.
+    fn put_digits(id: Int) {
+      let n = ast::b_of(id);
+      let whole = if ast::is_some(ast::c_of(id)) { n.sub(ast::c_of(id)) } else { n };
+      var i = zero;
+      while i.lt(n) {
+        if i.eq(whole) {
+          putchar(char::dot);
+        }
+        putchar(ast::kid_at(ast::a_of(id), i).add(char::digit0.code()).char());
+        i = i.add(one);
+      }
     }
 
     fn dump_binding(id: Int) {

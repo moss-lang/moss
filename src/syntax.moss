@@ -293,6 +293,157 @@ assume Std {
       if accept(tk_break()) {
         return ast::node0(ast::k_ex_break());
       }
+      parse_operators(no_rec)
+    }
+
+    # Operators (D68). Precedence is a partial order, drawn exactly as
+    # bootstrap/mossc/parse.py draws it: where habits differ, two
+    # operators are not ordered, and one following the other without
+    # parentheses is a syntax error.
+    #
+    #   comparison:  operand (cmp operand)?          -- does not chain
+    #   operand:     unary (<< | >>) unary           -- shifts take unaries
+    #              | additive
+    #   additive:    term ((+ | -) term)*
+    #   term:        unary (* unary)* ((/ | %) unary)?
+    #   bitwise:     unary (& unary)*, likewise ^ and |, each alone
+
+    fn fam_mul(): Int { zero }
+    fn fam_frac(): Int { one }
+    fn fam_add(): Int { n2() }
+    fn fam_shift(): Int { n3() }
+    fn fam_cmp(): Int { n4() }
+    fn fam_bit(): Int { n5() }
+
+    # A binary operator's family, or none for any other token.
+    fn op_family(t: Int): Int {
+      if t.eq(tk_star()) {
+        fam_mul()
+      } else if t.eq(tk_slash()) {
+        fam_frac()
+      } else if t.eq(tk_percent()) {
+        fam_frac()
+      } else if t.eq(tk_plus()) {
+        fam_add()
+      } else if t.eq(tk_hyphen()) {
+        fam_add()
+      } else if t.eq(tk_less_less()) {
+        fam_shift()
+      } else if t.eq(tk_greater_greater()) {
+        fam_shift()
+      } else if t.eq(tk_equal_equal()) {
+        fam_cmp()
+      } else if t.eq(tk_exclam_equal()) {
+        fam_cmp()
+      } else if t.eq(tk_less()) {
+        fam_cmp()
+      } else if t.eq(tk_greater()) {
+        fam_cmp()
+      } else if t.eq(tk_less_equal()) {
+        fam_cmp()
+      } else if t.eq(tk_greater_equal()) {
+        fam_cmp()
+      } else if t.eq(tk_ampersand()) {
+        fam_bit()
+      } else if t.eq(tk_caret()) {
+        fam_bit()
+      } else if t.eq(tk_pipe()) {
+        fam_bit()
+      } else {
+        ast::none()
+      }
+    }
+
+    fn at_op(): Bool { ast::is_some(op_family(tok.read())) }
+
+    fn at_family(f: Int): Bool { op_family(tok.read()).eq(f) }
+
+    # The operator under the cursor, consumed.
+    fn take_op(): Int {
+      let op = tok.read();
+      advance();
+      op
+    }
+
+    fn binary(op: Int, lhs: Int, rhs: Int): Int {
+      let xs = int_list();
+      xs.push(rhs);
+      ast::node3(ast::k_ex_binary(), op, lhs, ast::commit(xs))
+    }
+
+    fn parse_operators(no_rec: Bool): Int {
+      let first = parse_unary(no_rec);
+      if at_family(fam_bit()) {
+        let op = tok.read();
+        var e = first;
+        while here(op) {
+          advance();
+          e = binary(op, e, parse_unary(no_rec));
+        }
+        if at_op() {
+          fail();
+        }
+        return e;
+      }
+      let lhs = parse_operand(first, no_rec);
+      if at_family(fam_cmp()).not() {
+        if at_op() {
+          fail();
+        }
+        return lhs;
+      }
+      let op = take_op();
+      let rhs = parse_operand(parse_unary(no_rec), no_rec);
+      if at_op() {
+        fail();
+      }
+      binary(op, lhs, rhs)
+    }
+
+    # A comparison's operand: one shift, or arithmetic. Whatever operator
+    # follows it is the caller's to accept or refuse.
+    fn parse_operand(first: Int, no_rec: Bool): Int {
+      if at_family(fam_shift()) {
+        let op = take_op();
+        return binary(op, first, parse_unary(no_rec));
+      }
+      var e = parse_term(first, no_rec);
+      while at_family(fam_add()) {
+        let op = take_op();
+        e = binary(op, e, parse_term(parse_unary(no_rec), no_rec));
+      }
+      e
+    }
+
+    # `*` chains; `/` and `%` are a fraction bar, taking a single unary on
+    # the right, once.
+    fn parse_term(first: Int, no_rec: Bool): Int {
+      var e = first;
+      while here(tk_star()) {
+        advance();
+        e = binary(tk_star(), e, parse_unary(no_rec));
+      }
+      if at_family(fam_frac()) {
+        let op = take_op();
+        e = binary(op, e, parse_unary(no_rec));
+        if at_family(fam_mul()) {
+          fail();
+        } else if at_family(fam_frac()) {
+          fail();
+        }
+      }
+      e
+    }
+
+    fn parse_unary(no_rec: Bool): Int {
+      if here(tk_hyphen()) {
+        advance();
+        return ast::node2(ast::k_ex_unary(), tk_hyphen(), parse_unary(no_rec));
+      }
+      if here(tk_exclam()) {
+        advance();
+        return ast::node2(ast::k_ex_unary(), tk_exclam(), parse_unary(no_rec));
+      }
       parse_postfix(no_rec)
     }
 

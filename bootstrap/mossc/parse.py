@@ -4,6 +4,35 @@ from . import ast
 from .lex import Kind, Token, lex, position
 
 
+# D68: the binary operators, by the token that spells them. Precedence is
+# a partial order rather than a ladder, so these are families, and the
+# parser below says which families may meet without parentheses.
+BINARY = {
+    Kind.STAR: "*",
+    Kind.SLASH: "/",
+    Kind.PERCENT: "%",
+    Kind.PLUS: "+",
+    Kind.HYPHEN: "-",
+    Kind.LESS_LESS: "<<",
+    Kind.GREATER_GREATER: ">>",
+    Kind.EQUAL_EQUAL: "==",
+    Kind.EXCLAM_EQUAL: "!=",
+    Kind.LESS: "<",
+    Kind.GREATER: ">",
+    Kind.LESS_EQUAL: "<=",
+    Kind.GREATER_EQUAL: ">=",
+    Kind.AMPERSAND: "&",
+    Kind.CARET: "^",
+    Kind.PIPE: "|",
+}
+UNARY = {Kind.HYPHEN: "-", Kind.EXCLAM: "!"}
+FRACTION = ("/", "%")
+ADDITIVE = ("+", "-")
+SHIFT = ("<<", ">>")
+COMPARISON = ("==", "!=", "<", ">", "<=", ">=")
+BITWISE = ("&", "^", "|")
+
+
 class ParseError(Exception):
     def __init__(self, message: str, token: Token):
         super().__init__(message)
@@ -371,7 +400,101 @@ class Parser:
             return ast.Return(expr, offset=start)
         if self.eat(Kind.BREAK):
             return ast.Break(offset=start)
-        return self.parse_postfix(no_record)
+        return self.parse_operators(no_record)
+
+    # Operators (D68). Precedence is a partial order: where habits
+    # differ, two operators are simply not ordered, and meeting without
+    # parentheses is an error rather than a guess.
+    #
+    #   comparison:  operand (cmp operand)?          -- does not chain
+    #   operand:     unary (<< | >>) unary           -- shifts take unaries
+    #              | additive
+    #   additive:    term ((+ | -) term)*
+    #   term:        unary (* unary)* ((/ | %) unary)?
+    #   bitwise:     unary (& unary)*, likewise ^ and |, each alone
+
+    def binop(self) -> str | None:
+        return BINARY.get(self.peek().kind)
+
+    def mixed(self, before: str, token: Token):
+        after = BINARY[token.kind]
+        if before in COMPARISON and after in COMPARISON:
+            message = "comparisons do not chain"
+        elif before in SHIFT and after in SHIFT:
+            message = "shifts do not chain"
+        elif before == after:
+            message = f"`{after}` does not chain here"
+        else:
+            message = f"`{before}` and `{after}` are not ordered"
+        raise ParseError(f"{message}; add parentheses (D68)", token)
+
+    def binary(self, op: str, lhs: ast.Expr, rhs: ast.Expr) -> ast.Binary:
+        return ast.Binary(op, lhs, rhs, offset=lhs.offset)
+
+    def parse_operators(self, no_record: bool) -> ast.Expr:
+        first = self.parse_unary(no_record)
+        op = self.binop()
+        if op is None:
+            return first
+        if op in BITWISE:
+            expr = first
+            while self.binop() == op:
+                self.next()
+                expr = self.binary(op, expr, self.parse_unary(no_record))
+            if self.binop() is not None:
+                self.mixed(op, self.peek())
+            return expr
+        lhs, last = self.parse_operand(first, no_record)
+        if self.binop() not in COMPARISON:
+            if self.binop() is not None:
+                self.mixed(last, self.peek())
+            return lhs
+        op = BINARY[self.next().kind]
+        rhs, last = self.parse_operand(self.parse_unary(no_record), no_record)
+        if self.binop() is not None:
+            self.mixed(op if last is None else last, self.peek())
+        return self.binary(op, lhs, rhs)
+
+    def parse_operand(self, first: ast.Expr, no_record: bool):
+        """A comparison's operand: a shift, or an arithmetic expression.
+        Returns it and the last operator it ended on, for the message if
+        an operator that may not follow does."""
+        op = self.binop()
+        if op in SHIFT:
+            self.next()
+            return self.binary(op, first, self.parse_unary(no_record)), op
+        expr, last = self.parse_term(first, no_record)
+        while self.binop() in ADDITIVE:
+            op = BINARY[self.next().kind]
+            rhs, _ = self.parse_term(self.parse_unary(no_record), no_record)
+            expr = self.binary(op, expr, rhs)
+            last = op
+        if last is not None and self.binop() in SHIFT:
+            self.mixed(last, self.peek())
+        return expr, last
+
+    def parse_term(self, first: ast.Expr, no_record: bool):
+        expr = first
+        last = None
+        while self.binop() == "*":
+            self.next()
+            expr = self.binary("*", expr, self.parse_unary(no_record))
+            last = "*"
+        if self.binop() in FRACTION:
+            op = BINARY[self.next().kind]
+            expr = self.binary(op, expr, self.parse_unary(no_record))
+            last = op
+            if self.binop() in ("*", *FRACTION):
+                self.mixed(op, self.peek())
+        return expr, last
+
+    def parse_unary(self, no_record: bool) -> ast.Expr:
+        start = self.peek().offset
+        op = UNARY.get(self.peek().kind)
+        if op is None:
+            return self.parse_postfix(no_record)
+        self.next()
+        return ast.Unary(op, self.parse_unary(no_record), offset=start)
 
     def parse_if(self) -> ast.If:
         start = self.peek().offset

@@ -443,9 +443,17 @@ def native_env(program: Program, args: list | None = None) -> dict:
         return NativeFn(fn.__name__, fn)
 
     if "bool" in lib and "num" in lib:
-        env[(bool_ty, lib["num"].detached["not"])] = native(
-            lambda a, this: boolean(this.payload.symbol.name != "True")
-        )
+        det = lib["num"].detached
+
+        def truth(v) -> bool:
+            return v.payload.symbol.name == "True"
+
+        env[(bool_ty, det["not"])] = native(lambda a, this: boolean(not truth(this)))
+        # D68: `&`, `|` and `^` on booleans. Both operands have already
+        # been evaluated, as for any method.
+        env[(bool_ty, det["and"])] = native(lambda a, this: boolean(truth(this) and truth(a[0])))
+        env[(bool_ty, det["or"])] = native(lambda a, this: boolean(truth(this) or truth(a[0])))
+        env[(bool_ty, det["xor"])] = native(lambda a, this: boolean(truth(this) != truth(a[0])))
 
     if "std" in lib:
 

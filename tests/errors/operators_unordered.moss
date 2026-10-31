@@ -1,0 +1,10 @@
+# D68: `&` and `|` are not ordered with each other, so mixing them
+# without parentheses is a syntax error rather than a guess.
+assume Std {
+  fn main() {
+    let t = true;
+    if t & t | t {
+      putchar(char::y);
+    }
+  }
+}

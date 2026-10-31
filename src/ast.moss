@@ -82,6 +82,15 @@ assume Std {
   fn k_d_functor(): Int { hex(n2(), n14()) }# a=run: name, args, len, res, len, binds, len
   fn k_d_bad(): Int { hex(n2(), n15()) }
 
+  # Operators and literals (D68), after the rest so that no earlier kind
+  # moves. An operator is its token code from tcode.moss; a binary one's
+  # right operand is a run of one, so that it is emitted as a method
+  # call's arguments are. A literal's digits are a run of their values,
+  # and `c` is how many of them follow the point (none for an integer).
+  fn k_ex_unary(): Int { hex(n3(), zero) }  # a=op b=operand
+  fn k_ex_binary(): Int { hex(n3(), one) }  # a=op b=lhs c=rhs run
+  fn k_ex_lit(): Int { hex(n3(), n2()) }    # a=digit run b=len c=fraction digits
+
   # `fn f` has no receiver; `fn .m` has the detached one.
   fn recv_plain(): Int { one.neg() }
   fn recv_detached(): Int { n2().neg() }

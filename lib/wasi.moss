@@ -1,5 +1,5 @@
 import "./bool.moss" use Bool;
-import "./num.moss" use .not;
+import "./num.moss" use .not, .and, .or, .xor;
 import "./std.moss" use Std;
 import "./wasichar.moss" use WasiCharConsts;
 import "./wasistd.moss" use WasiBasics, WasiContainers, WasiFiles, WasiFloats, Branch;
@@ -21,4 +21,7 @@ functor WasiStd: Wasm, Wasi, Branch -> Std {
   bind WasiFloats;
   bind WasiCharConsts;
   bind Bool.not = Bool.flip;
+  bind Bool.and = Bool.both;
+  bind Bool.or = Bool.either;
+  bind Bool.xor = Bool.differs;
 }

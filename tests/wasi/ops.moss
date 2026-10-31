@@ -1,0 +1,100 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Operators (D68): each is a call of one method of lib/num.moss, provided
+# at its operand's type by `Std` — `Int`'s arithmetic, comparisons and
+# bits, and `Bool`'s `!`, `&`, `|` and `^`. Each line of output is one
+# group; the comment beside it says what it must be.
+
+assume Std {
+  fn two(): Int { one + one }
+  fn ten(): Int { two() * two() * two() + two() }
+
+  fn print_int(n: Int) {
+    if n < zero {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= ten() {
+      print_int(n / ten());
+    }
+    putchar((n % ten() + char::digit0.code()).char());
+  }
+
+  fn yes(b: Bool) {
+    if b { putchar(char::y); } else { putchar(char::n); }
+  }
+
+  fn line() { putchar(char::newline); }
+
+  fn num(n: Int) {
+    print_int(n);
+    putchar(char::space);
+  }
+
+  fn report() {
+    let three = two() + one;
+    let seven = ten() - three;
+    let t = true;
+    let f = false;
+
+    # Arithmetic: 19 -7 3 1 -7 2 23 35 21 5 1 -1
+    num(seven * three - two());
+    num(-seven);
+    num(ten() / three);
+    num(ten() % three);
+    num(ten() - seven - ten());
+    num(three * three * two() / seven);
+    num(two() + three * seven);
+    num((two() + three) * seven);
+    num(-three * -seven);
+    num(ten() - three - two());
+    num(three * seven % ten());
+    num(-(seven - three * two()));
+    line();
+
+    # Comparisons: ynynnyny and y
+    yes(three < seven);
+    yes(seven < three);
+    yes(three <= three);
+    yes(three > seven);
+    yes(seven >= ten());
+    yes(three == three);
+    yes(three != three);
+    yes(two() + one == three);
+    putchar(char::space);
+    yes(two() << three == ten() + three * two());
+    line();
+
+    # Bits: 2 15 13 1024 128 -5
+    num(seven & ten());
+    num(seven | ten());
+    num(seven ^ ten());
+    num(one << ten());
+    num((one << ten()) >> three);
+    num(-ten() >> one);
+    line();
+
+    # Bool: nnynyyyyn
+    yes(!t);
+    yes(t & f);
+    yes(t | f);
+    yes(t ^ t);
+    yes(f ^ t);
+    yes((three < seven) & (seven < ten()));
+    yes(!(three == two()) | f);
+    yes(t & t & t);
+    yes(f | f | f);
+    line();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    report();
+  }
+}

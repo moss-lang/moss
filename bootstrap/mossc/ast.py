@@ -339,6 +339,35 @@ class Break:
     offset: int = field(default=-1, compare=False)
 
 
+@dataclass(frozen=True)
+class Unary:
+    """`-a` or `!a` (D68): a call of `num.moss`'s `.neg` or `.not`."""
+
+    op: str
+    operand: "Expr"
+    offset: int = field(default=-1, compare=False)
+
+
+@dataclass(frozen=True)
+class Binary:
+    """`a + b` and the rest (D68): a call of one fixed `num.moss` method
+    on `lhs`, with `rhs` its argument."""
+
+    op: str
+    lhs: "Expr"
+    rhs: "Expr"
+    offset: int = field(default=-1, compare=False)
+
+
+@dataclass(frozen=True)
+class Literal:
+    """A numeric literal as written (D68): digits, with a `.` for a
+    decimal one. Lowering builds its value from fixed library symbols."""
+
+    text: str
+    offset: int = field(default=-1, compare=False)
+
+
 Expr = (
     UnitExpr
     | ThisExpr
@@ -351,6 +380,9 @@ Expr = (
     | Match
     | Return
     | Break
+    | Unary
+    | Binary
+    | Literal
     | Block  # a bare block (D65); also the body of `if`, arms and fns
 )
 

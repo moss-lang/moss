@@ -1,0 +1,8 @@
+# D68: `c + c` is `c.add(c)`, so at a type whose context provides no
+# `.add` it is exactly the error calling the method is.
+assume Std {
+  fn main() {
+    let c = char::a;
+    putchar(c + c);
+  }
+}

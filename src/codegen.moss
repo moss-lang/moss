@@ -6,6 +6,7 @@ import "./intern.moss" as intern;
 import "./lower.moss" as lower;
 import "./prog.moss" as prog;
 import "./spell.moss" use *;
+import "./tcode.moss" use *;
 import "./types.moss" as types;
 import "./wasmops.moss" as wops;
 
@@ -179,6 +180,13 @@ assume Std {
   val un_fstart: IntList;
   val un_flags: IntList;
 
+  # D68: the library symbols operators and literals mean, found once by
+  # the module that declares them — `num.moss`'s method for each binary
+  # operator at its token code, then the extra slots below `lg_base`.
+  # Each is still provided through the context where it is used; this
+  # only says *which* symbol, so that it is never a lookup by name.
+  val cg_lang: IntList;
+
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_start, lc_slots, lc_base, lc_visible,
@@ -188,7 +196,8 @@ assume Std {
     vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
     ck_entry, ck_inner, ck_link, ck_head,
     fl_start, fl_len, fl_types,
-    un_sym, un_link, un_head, un_mark, un_stamp, un_meths, un_fstart, un_flags;
+    un_sym, un_link, un_head, un_mark, un_stamp, un_meths, un_fstart, un_flags,
+    cg_lang;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -254,11 +263,132 @@ assume Std {
         }
         m = m.add(one);
       }
+      find_lang_symbols();
       cg_i32.write(wasm_type(zero));
       cg_i64.write(wasm_type(one));
       cg_f32.write(wasm_type(n2()));
       cg_f64.write(wasm_type(n3()));
       cg_boolty.write(bool_type());
+    }
+
+    # D68's fixed symbols. Past every token code, the slots that are not
+    # a binary operator's: the unary methods, then the literals' `zero`,
+    # `one` and `float`.
+    fn lg_base(): Int { hex(n4(), zero) }
+    fn lg_neg(): Int { lg_base() }
+    fn lg_not(): Int { lg_base().add(one) }
+    fn lg_zero(): Int { lg_base().add(n2()) }
+    fn lg_one(): Int { lg_base().add(n3()) }
+    fn lg_float(): Int { lg_base().add(n4()) }
+
+    fn lang(slot: Int): Int { cg_lang.get(slot) }
+
+    fn find_module_named(cs: IntList): Int {
+      var found = ast::none();
+      var m = zero;
+      while m.lt(prog::module_count()) {
+        if name_is(prog::basename(prog::module_path(m)), cs) {
+          found = m;
+        }
+        m = m.add(one);
+      }
+      found
+    }
+
+    fn lang_set(slot: Int, m: Int, ns: Int, cs: IntList) {
+      if ast::is_some(m) {
+        cg_lang.set(slot, prog::lookup(m, ns, intern::intern_chars(cs)));
+      }
+    }
+
+    fn find_lang_symbols() {
+      while cg_lang.length().lt(lg_base().add(n5())) {
+        cg_lang.push(ast::none());
+      }
+      let a = spelled();
+      sp_num_moss(a);
+      let num = find_module_named(a);
+      let d = prog::ns_detached();
+      let c1 = spelled();
+      sp_neg(c1);
+      lang_set(lg_neg(), num, d, c1);
+      let c2 = spelled();
+      sp_not(c2);
+      lang_set(lg_not(), num, d, c2);
+      let c3 = spelled();
+      sp_mul(c3);
+      lang_set(tk_star(), num, d, c3);
+      let c4 = spelled();
+      sp_div(c4);
+      lang_set(tk_slash(), num, d, c4);
+      let c5 = spelled();
+      sp_rem(c5);
+      lang_set(tk_percent(), num, d, c5);
+      let c6 = spelled();
+      sp_add(c6);
+      lang_set(tk_plus(), num, d, c6);
+      let c7 = spelled();
+      sp_sub(c7);
+      lang_set(tk_hyphen(), num, d, c7);
+      let c8 = spelled();
+      sp_shl(c8);
+      lang_set(tk_less_less(), num, d, c8);
+      let c9 = spelled();
+      sp_shr(c9);
+      lang_set(tk_greater_greater(), num, d, c9);
+      let c10 = spelled();
+      sp_eq(c10);
+      lang_set(tk_equal_equal(), num, d, c10);
+      let c11 = spelled();
+      sp_ne(c11);
+      lang_set(tk_exclam_equal(), num, d, c11);
+      let c12 = spelled();
+      sp_lt(c12);
+      lang_set(tk_less(), num, d, c12);
+      let c13 = spelled();
+      sp_gt(c13);
+      lang_set(tk_greater(), num, d, c13);
+      let c14 = spelled();
+      sp_le(c14);
+      lang_set(tk_less_equal(), num, d, c14);
+      let c15 = spelled();
+      sp_ge(c15);
+      lang_set(tk_greater_equal(), num, d, c15);
+      let c16 = spelled();
+      sp_and(c16);
+      lang_set(tk_ampersand(), num, d, c16);
+      let c17 = spelled();
+      sp_xor(c17);
+      lang_set(tk_caret(), num, d, c17);
+      let c18 = spelled();
+      sp_or(c18);
+      lang_set(tk_pipe(), num, d, c18);
+      let b = spelled();
+      sp_int_moss(b);
+      let int = find_module_named(b);
+      let c19 = spelled();
+      sp_zero(c19);
+      lang_set(lg_zero(), int, prog::ns_name(), c19);
+      let c20 = spelled();
+      sp_one(c20);
+      lang_set(lg_one(), int, prog::ns_name(), c20);
+      let f = spelled();
+      sp_float_moss(f);
+      let c21 = spelled();
+      sp_float(c21);
+      lang_set(lg_float(), find_module_named(f), prog::ns_name(), c21);
+    }
+
+    # The method an operator node means.
+    fn op_symbol(e: Int): Int {
+      let op = ast::a_of(e);
+      if ast::kind_of(e).eq(ast::k_ex_unary()) {
+        if op.eq(tk_hyphen()) {
+          return lang(lg_neg());
+        }
+        return lang(lg_not());
+      }
+      lang(op)
     }
 
     # The scalar types are declarations of lib/wasm.moss like any other,
@@ -649,14 +779,14 @@ assume Std {
       } else if k.eq(ast::k_ex_method()) {
         uw_node(f, ast::a_of(e), m);
         uw_run(f, ast::c_of(e), ast::d_of(e), m);
-        let name = ast::path_last(ast::b_of(e));
-        var i = zero;
-        while i.lt(un_meths.length()) {
-          if prog::sym_name.get(un_meths.get(i)).eq(name) {
-            uw_row(f, un_meths.get(i));
-          }
-          i = i.add(one);
-        }
+        uw_meths(f, ast::path_last(ast::b_of(e)));
+      } else if k.eq(ast::k_ex_unary()) {
+        uw_node(f, ast::b_of(e), m);
+        uw_lang_meths(f, op_symbol(e));
+      } else if k.eq(ast::k_ex_binary()) {
+        uw_node(f, ast::b_of(e), m);
+        uw_run(f, ast::c_of(e), one, m);
+        uw_lang_meths(f, op_symbol(e));
       } else if k.eq(ast::k_ex_record()) {
         var i = zero;
         while i.lt(ast::c_of(e)) {
@@ -700,6 +830,23 @@ assume Std {
         uw_node(f, ast::a_of(e), m);
       } else if k.eq(ast::k_st_bind()) {
         uw_binds(f, ast::a_of(e), ast::b_of(e), m, zero);
+      }
+    }
+
+    # Every defined method a call of this name may reach.
+    fn uw_meths(f: Int, name: Int) {
+      var i = zero;
+      while i.lt(un_meths.length()) {
+        if prog::sym_name.get(un_meths.get(i)).eq(name) {
+          uw_row(f, un_meths.get(i));
+        }
+        i = i.add(one);
+      }
+    }
+
+    fn uw_lang_meths(f: Int, sym: Int) {
+      if ast::is_some(sym) {
+        uw_meths(f, prog::sym_name.get(sym));
       }
     }
 
@@ -1338,6 +1485,12 @@ assume Std {
         }
         return ret_in(lower::env_b_of(bound), lower::env_a_of(bound));
       }
+      if k.eq(ast::k_ex_unary()) {
+        return operator_type(e, m);
+      }
+      if k.eq(ast::k_ex_binary()) {
+        return operator_type(e, m);
+      }
       if k.eq(ast::k_ex_path()) {
         if ast::path_len(ast::a_of(e)).eq(one) {
           let local = find_local(ast::path_at(ast::a_of(e), zero));
@@ -1413,6 +1566,17 @@ assume Std {
       # `()`, `break`, `return` and everything this slice does not cover
       # leave nothing behind.
       ty_none()
+    }
+
+    fn operator_type(e: Int, m: Int): Int {
+      let bound = provision_at(type_of(ast::b_of(e), m), op_symbol(e));
+      if ast::is_some(bound).not() {
+        return ty_none();
+      }
+      if ast::is_some(lower::env_a_of(bound)).not() {
+        return ty_none();
+      }
+      ret_in(lower::env_b_of(bound), lower::env_a_of(bound))
     }
 
     # What a path standing alone denotes: a unit value, a `Bool`
@@ -1722,8 +1886,70 @@ assume Std {
       if k.eq(ast::k_ex_field()) {
         return emit_field(body, e, m);
       }
+      if k.eq(ast::k_ex_unary()) {
+        return emit_operator(body, e, m);
+      }
+      if k.eq(ast::k_ex_binary()) {
+        return emit_operator(body, e, m);
+      }
       cg_error(c_unsupported(), ast::none());
       ty_none()
+    }
+
+    # D68: an operator is a call of one fixed method of lib/num.moss,
+    # provided at its operand's type exactly as a method call's provision
+    # is — so an operator the context does not provide there is the error
+    # calling the method would be.
+    fn emit_operator(body: IntList, e: Int, m: Int): Int {
+      let sym = op_symbol(e);
+      if ast::is_some(sym).not() {
+        cg_error(c_unsupported(), ast::none());
+        return ty_none();
+      }
+      let recv = int_list();
+      let recv_ty = emit_expr(recv, ast::b_of(e), m);
+      var nargs = zero;
+      if ast::kind_of(e).eq(ast::k_ex_binary()) {
+        nargs = one;
+      }
+      emit_provided_method(body, recv, recv_ty, sym, ast::c_of(e), nargs, m)
+    }
+
+    # A call of the method `sym` the context provides at `recv_ty`, the
+    # receiver already emitted into `recv` and the arguments a run.
+    fn emit_provided_method(
+      body: IntList, recv: IntList, recv_ty: Int, sym: Int, run: Int, n: Int, m: Int
+    ): Int {
+      let bound = provision_at(recv_ty, sym);
+      if ast::is_some(bound).not() {
+        cg_error(prog::e_method(), prog::sym_name.get(sym));
+        return ty_none();
+      }
+      let provider = lower::env_a_of(bound);
+      let penv = lower::env_b_of(bound);
+      if ast::is_some(provider).not() {
+        cg_error(c_unbound(), prog::sym_name.get(sym));
+        return ty_none();
+      }
+      push_bytes(body, recv);
+      emit_args(body, run, n, m, param_types_in(penv, provider));
+      reach(provider, penv);
+      push_needs(body, provider, penv, bound, int_list());
+      op_call(body, index_of_fn(provider, penv));
+      ret_in(penv, provider)
+    }
+
+    # The environment entry providing method `sym` at this receiver,
+    # keyed by its whole type (D62).
+    fn provision_at(recv_ty: Int, sym: Int): Int {
+      if ast::is_some(sym).not() {
+        return ast::none();
+      }
+      let recv = canon_ty(recv_ty);
+      if ast::is_some(types::head_of(recv)).not() {
+        return ast::none();
+      }
+      lower::env_find(cg_env.read(), lower::ek_fn(), recv, sym)
     }
 
     # `x.m(a)`. The receiver's type is the other half of the lookup key

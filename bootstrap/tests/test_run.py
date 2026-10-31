@@ -44,7 +44,7 @@ def run(files, entry="main.moss", args=None):
 _DRIVERS: dict = {}
 
 
-def run_driver(driver, args, expect_code=0, argv0=None):
+def run_driver(driver, args, expect_code=0, argv0=None, preopen="."):
     """Run a self-hosted driver as Wasm rather than interpreting it.
 
     A driver is ordinary Moss over `Std`, so the bootstrap can compile it
@@ -66,7 +66,7 @@ def run_driver(driver, args, expect_code=0, argv0=None):
     if argv0 is not None:
         command += ["--argv0", argv0]
     result = subprocess.run(
-        [*command, "--dir", ".", path, *args],
+        [*command, "--dir", preopen, path, *args],
         capture_output=True,
         timeout=900,
         cwd=REPO,
@@ -328,6 +328,14 @@ FLOAT_OUT = "".join(
 
 # What tests/wasi/shadow.moss prints: f64, f32, f64, f32, f64.
 SHADOW_OUT = "333333333\n333333344\n333333333\n333333344\n333333333\n"
+
+# What tests/wasi/ops.moss prints: D68's operators on `Int` and `Bool`.
+OPS_OUT = (
+    "19 -7 3 1 -7 2 23 35 21 5 1 -1 \n"
+    "ynynnyny y\n"
+    "2 15 13 1024 128 -5 \n"
+    "nnynyyyyn\n"
+)
 
 # What tests/wasi/newton.moss prints: the same report at f64, then at f32.
 NEWTON_OUT = (
@@ -593,6 +601,62 @@ class TestStdOverWasi(unittest.TestCase):
             os.chdir(cwd)
         source = (REPO / "lib/bool.moss").read_text(encoding="utf-8")
         self.assertEqual(out, source[:-1] + " yy\n")
+
+
+class TestOperators(unittest.TestCase):
+    """D68: an operator is a call of one fixed method of lib/num.moss,
+    provided through the context like any method."""
+
+    def test_over_the_moss_std(self):
+        self.assertEqual(run({}, entry="tests/wasi/ops.moss"), OPS_OUT)
+
+    def test_over_the_native_std(self):
+        from .test_build import compile_wasm, run_wasm
+
+        files = main_body(
+            "let two = one + one; let six = two * (two + one);"
+            "putchar((six * six / two - six % (two + two) + char::A.code()).char());"
+            "if !(six < two) & (six >= six) & !false { putchar(char::y); }"
+            "if (two << two) - (six >> one) == two + two + one { putchar(char::y); }"
+            "if (-two < zero) ^ true { putchar(char::n); } else { putchar(char::y); }"
+        )
+        # 36 / 2 - 6 % 4 = 16, so `Q`.
+        self.assertEqual(run(files), "Qyyy")
+        self.assertEqual(run_wasm(compile_wasm(files)), "Qyyy")
+
+    def test_an_operator_the_context_lacks_is_the_method_call_error(self):
+        messages = []
+        for body in ("c + c", "c.add(c)"):
+            with self.assertRaises(LowerError) as caught:
+                run(main_body(f"let c = char::a; putchar({body});"))
+            messages.append(caught.exception.message)
+        self.assertEqual(messages[0], messages[1])
+        self.assertIn("no method `.add` is available for `Char`", messages[0])
+
+    def test_the_symbol_is_fixed_not_looked_up_by_name(self):
+        """`+` is num.moss's `.add` even where no `.add` is in scope: a
+        file beside the library gets no prelude, and this one imports no
+        detached `.add` — yet its `+` is provided by `Std` as usual."""
+        files = {
+            "lib/plus.moss": (
+                'import "./std.moss" use Std, putchar;\n'
+                'import "./int.moss" use one;\n'
+                'import "./char.moss" as char use .char, .code;\n'
+                "assume Std {\n"
+                "  fn main() {\n"
+                "    let two = one + one;\n"
+                "    putchar((two + char::A.code()).char());\n"
+                "  }\n"
+                "}\n"
+            ),
+        }
+        self.assertEqual(run(files, entry="lib/plus.moss"), "C")
+        with self.assertRaises(LowerError) as caught:
+            run(
+                {"lib/plus.moss": files["lib/plus.moss"].replace("one + one", "one.add(one)")},
+                entry="lib/plus.moss",
+            )
+        self.assertIn("`.add` is not a detached method in scope", caught.exception.message)
 
 
 class TestRepresentation(unittest.TestCase):
@@ -1061,6 +1125,10 @@ PARSE_DRIVER = (
     "}\n"
 )
 
+# Literal snippets (D68) for the parser agreement test, beside the
+# operator tables in tests/test_parse.py: (source, refused).
+LITERAL_SNIPPETS: list = []
+
 # Everything that is written in the language — every live .moss file except
 # `examples/escape.moss`, which needs string literals (D48) and parses under
 # neither parser.
@@ -1094,6 +1162,35 @@ class TestSelfHostedSyntax(unittest.TestCase):
                 expected = dump(parse((REPO / rel).read_text(encoding="utf-8")))
                 actual = run_driver(PARSE_DRIVER, [rel]).decode("utf-8")
                 self.assertEqual(actual, expected + "\n")
+
+    def test_operators_agree_with_the_bootstrap_parser(self):
+        """D68's precedence table, snippet by snippet: the same tree where
+        the bootstrap groups, and a syntax error where it refuses. The
+        self-hosted parser reports an error as a count, so a refusal is
+        the `?` its driver prints."""
+        import tempfile
+
+        from mossc.parse import ParseError, parse
+        from mossc.sexpr import dump
+
+        from .test_parse import OPERATOR_ERRORS, OPERATOR_GROUPINGS
+
+        cases = [source for source, _ in OPERATOR_GROUPINGS + OPERATOR_ERRORS]
+        cases += [source for source, _ in LITERAL_SNIPPETS]
+        with tempfile.TemporaryDirectory(prefix="moss-ops-") as folder:
+            for i, source in enumerate(cases):
+                with self.subTest(source=source):
+                    text = f"fn f() {{ {source} }}\n"
+                    (Path(folder) / f"{i}.moss").write_text(text, encoding="utf-8")
+                    actual = run_driver(
+                        PARSE_DRIVER, [f"{i}.moss"], preopen=f"{folder}::."
+                    ).decode("utf-8")
+                    try:
+                        expected = dump(parse(text)) + "\n"
+                    except ParseError:
+                        self.assertTrue(actual.startswith("?"), actual)
+                    else:
+                        self.assertEqual(actual, expected)
 
 
 SCOPE_DRIVER = (
@@ -1373,6 +1470,26 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/float.moss")
         self.assertEqual(self.wasmtime_run(module), FLOAT_OUT)
 
+    def test_operators(self):
+        """D68's operators, compiled as the calls of `num.moss`'s methods
+        they are, at `Int` and at `Bool`."""
+        module = self.compile_with_moss("tests/wasi/ops.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), OPS_OUT)
+
+    def test_an_operator_the_context_lacks_is_the_method_call_error(self):
+        """D68: `c + c` where nothing provides `Char.add` is reported
+        exactly as `c.add(c)` is — `e_method` naming `add` — by both
+        compilers."""
+        from .test_build import compile_wasm
+
+        with self.assertRaises(LowerError):
+            compile_wasm({}, entry="tests/wasi/unprovided.moss")
+        report = self.compile_with_moss(
+            "tests/wasi/unprovided.moss", prelude="lib/prelude.moss"
+        ).decode("utf-8")
+        self.assertIn("?K tests/wasi/unprovided.moss by_operator add\n", report)
+        self.assertIn("?K tests/wasi/unprovided.moss by_method add\n", report)
+
     def test_float(self):
         """D67's `Float`, written against `Std` and run under two of them:
         `WasiStd`, which provides it at f64, and one assembled the same
@@ -1405,6 +1522,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),
             ("tests/wasi/newton.moss", NEWTON_OUT, "lib/prelude.moss"),
             ("tests/wasi/shadow.moss", SHADOW_OUT, "lib/prelude.moss"),
+            ("tests/wasi/ops.moss", OPS_OUT, "lib/prelude.moss"),
         )
         for entry, expected, *prelude in cases:
             with self.subTest(entry=entry):

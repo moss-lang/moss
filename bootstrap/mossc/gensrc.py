@@ -54,6 +54,32 @@ SPELLED = [
     "false",
     "True",
     "False",
+    # D68: the library modules whose symbols operators and literals
+    # mean, and those symbols' names.
+    "num.moss",
+    "int.moss",
+    "float.moss",
+    "neg",
+    "not",
+    "mul",
+    "div",
+    "rem",
+    "add",
+    "sub",
+    "shl",
+    "shr",
+    "eq",
+    "ne",
+    "lt",
+    "gt",
+    "le",
+    "ge",
+    "and",
+    "xor",
+    "or",
+    "zero",
+    "one",
+    "float",
 ]
 
 

@@ -8,7 +8,7 @@ import "./char.moss" use Char, Chars, .char;
 import "./float.moss" use Floats;
 import "./int.moss" use Int, IntOps, zero, one;
 import "./list.moss" use IntList, int_list;
-import "./num.moss" use .not;
+import "./num.moss" use .not, .and, .or, .xor;
 import "./path.moss" use Path, pwd;
 import "./string.moss" use String, first_arg, print, arg_count, arg_at;
 import "./strlist.moss" use StrList, str_list;
@@ -33,6 +33,9 @@ context Std =
   False,
   True,
   Bool.not,
+  Bool.and,
+  Bool.or,
+  Bool.xor,
 
   Char,
   Chars,

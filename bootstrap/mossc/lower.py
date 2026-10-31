@@ -32,6 +32,30 @@ from .types import (
 )
 
 
+# D68: the method of lib/num.moss each operator means, by its spelling
+# and how many operands besides the receiver it has.
+OPERATOR_METHODS = {
+    ("-", 0): "neg",
+    ("!", 0): "not",
+    ("*", 1): "mul",
+    ("/", 1): "div",
+    ("%", 1): "rem",
+    ("+", 1): "add",
+    ("-", 1): "sub",
+    ("<<", 1): "shl",
+    (">>", 1): "shr",
+    ("==", 1): "eq",
+    ("!=", 1): "ne",
+    ("<", 1): "lt",
+    (">", 1): "gt",
+    ("<=", 1): "le",
+    (">=", 1): "ge",
+    ("&", 1): "and",
+    ("^", 1): "xor",
+    ("|", 1): "or",
+}
+
+
 class LowerError(Exception):
     def __init__(self, module: str, message: str, where: str = ""):
         super().__init__(f"{module}{where}: {message}")
@@ -114,6 +138,13 @@ class Lower:
                 for symbol in table.values():
                     self.fn_symbols[id(symbol.decl)] = symbol
         self.bool_true, self.bool_false = self.find_bool()
+        # D68: operators and literals mean fixed symbols of these library
+        # modules, found by the file that declares them as `Bool` is.
+        self.lang: dict[str, Module] = {}
+        for module in program.order:
+            for short in ("num", "int", "float"):
+                if module.path.endswith(f"lib/{short}.moss"):
+                    self.lang[short] = module
 
     def error(self, module: Module, message: str, node=None):
         raise LowerError(module.path, message, locate(module, node))
@@ -1220,6 +1251,10 @@ class FnChecker:
             return self.synth_field(expr)
         if isinstance(expr, ast.MethodCall):
             return self.synth_method(expr)
+        if isinstance(expr, ast.Unary):
+            return self.synth_operator(expr.op, expr.operand, [])
+        if isinstance(expr, ast.Binary):
+            return self.synth_operator(expr.op, expr.lhs, [expr.rhs])
         self.error(f"unsupported expression {expr!r}")
 
     def synth_if(self, expr: ast.If, expected):
@@ -1577,10 +1612,38 @@ class FnChecker:
                     f"`.{name}` is not a detached method in scope; import it, or "
                     "call it as `mod::m` (D61)"
                 )
+        return self.provided_call(obj, oty, method, expr.args)
+
+    def lang_symbol(self, short: str, name: str, table: str, why: str) -> Symbol:
+        """One of the fixed library symbols an operator or a literal
+        means (D68). It is found by the module that declares it, never by
+        a lookup of its name where it is used — and then provided through
+        the context like any other."""
+        module = self.lower.lang.get(short)
+        symbol = None if module is None else getattr(module, table).get(name)
+        if symbol is None:
+            self.error(f"{why} means `{name}` of lib/{short}.moss, which is not loaded here")
+        return symbol
+
+    def synth_operator(self, op: str, operand, args):
+        """D68: `-a` is `a.neg()`, `a + b` is `a.add(b)`, and so on — calls
+        of `num.moss`'s detached methods, keyed by the operand's type and
+        provided by the context exactly as a method call's are."""
+        name = OPERATOR_METHODS[(op, len(args))]
+        method = self.lang_symbol("num", name, "detached", f"`{op}`")
+        obj, oty = self.synth(operand)
+        if head(self.lower.canon(self.env, oty)) is None:
+            self.error(f"`{show(oty)}` has no methods (it has no nominal head)")
+        return self.provided_call(obj, oty, method, args)
+
+    def provided_call(self, obj, oty, method: Symbol, arg_exprs):
+        """A call of a method the context provides at the receiver's
+        type: the lookup a method call ends in, and all an operator is."""
+        name = method.name.lstrip(".")
         key = self.lower.method_key(self.env, self.module, oty, method)
         sig = self.env.methods.get(key)
         if sig is not None:
-            args = self.check_args(method.name, sig, expr.args)
+            args = self.check_args(method.name, sig, arg_exprs)
             ret = self.lower.slots_of(self.env, sig.ret)
             return ir.Call(("env", key), tuple(args), this=obj, ret_slots=ret), sig.ret
         # D62: the same method at another instantiation of the receiver is

@@ -190,4 +190,161 @@ assume Std {
     push_char(out, char::e);
   }
 
+  fn sp_num_moss(out: IntList) {
+    push_char(out, char::n);
+    push_char(out, char::u);
+    push_char(out, char::m);
+    push_char(out, char::dot);
+    push_char(out, char::m);
+    push_char(out, char::o);
+    push_char(out, char::s);
+    push_char(out, char::s);
+  }
+
+  fn sp_int_moss(out: IntList) {
+    push_char(out, char::i);
+    push_char(out, char::n);
+    push_char(out, char::t);
+    push_char(out, char::dot);
+    push_char(out, char::m);
+    push_char(out, char::o);
+    push_char(out, char::s);
+    push_char(out, char::s);
+  }
+
+  fn sp_float_moss(out: IntList) {
+    push_char(out, char::f);
+    push_char(out, char::l);
+    push_char(out, char::o);
+    push_char(out, char::a);
+    push_char(out, char::t);
+    push_char(out, char::dot);
+    push_char(out, char::m);
+    push_char(out, char::o);
+    push_char(out, char::s);
+    push_char(out, char::s);
+  }
+
+  fn sp_neg(out: IntList) {
+    push_char(out, char::n);
+    push_char(out, char::e);
+    push_char(out, char::g);
+  }
+
+  fn sp_not(out: IntList) {
+    push_char(out, char::n);
+    push_char(out, char::o);
+    push_char(out, char::t);
+  }
+
+  fn sp_mul(out: IntList) {
+    push_char(out, char::m);
+    push_char(out, char::u);
+    push_char(out, char::l);
+  }
+
+  fn sp_div(out: IntList) {
+    push_char(out, char::d);
+    push_char(out, char::i);
+    push_char(out, char::v);
+  }
+
+  fn sp_rem(out: IntList) {
+    push_char(out, char::r);
+    push_char(out, char::e);
+    push_char(out, char::m);
+  }
+
+  fn sp_add(out: IntList) {
+    push_char(out, char::a);
+    push_char(out, char::d);
+    push_char(out, char::d);
+  }
+
+  fn sp_sub(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::u);
+    push_char(out, char::b);
+  }
+
+  fn sp_shl(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::h);
+    push_char(out, char::l);
+  }
+
+  fn sp_shr(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::h);
+    push_char(out, char::r);
+  }
+
+  fn sp_eq(out: IntList) {
+    push_char(out, char::e);
+    push_char(out, char::q);
+  }
+
+  fn sp_ne(out: IntList) {
+    push_char(out, char::n);
+    push_char(out, char::e);
+  }
+
+  fn sp_lt(out: IntList) {
+    push_char(out, char::l);
+    push_char(out, char::t);
+  }
+
+  fn sp_gt(out: IntList) {
+    push_char(out, char::g);
+    push_char(out, char::t);
+  }
+
+  fn sp_le(out: IntList) {
+    push_char(out, char::l);
+    push_char(out, char::e);
+  }
+
+  fn sp_ge(out: IntList) {
+    push_char(out, char::g);
+    push_char(out, char::e);
+  }
+
+  fn sp_and(out: IntList) {
+    push_char(out, char::a);
+    push_char(out, char::n);
+    push_char(out, char::d);
+  }
+
+  fn sp_xor(out: IntList) {
+    push_char(out, char::x);
+    push_char(out, char::o);
+    push_char(out, char::r);
+  }
+
+  fn sp_or(out: IntList) {
+    push_char(out, char::o);
+    push_char(out, char::r);
+  }
+
+  fn sp_zero(out: IntList) {
+    push_char(out, char::z);
+    push_char(out, char::e);
+    push_char(out, char::r);
+    push_char(out, char::o);
+  }
+
+  fn sp_one(out: IntList) {
+    push_char(out, char::o);
+    push_char(out, char::n);
+    push_char(out, char::e);
+  }
+
+  fn sp_float(out: IntList) {
+    push_char(out, char::f);
+    push_char(out, char::l);
+    push_char(out, char::o);
+    push_char(out, char::a);
+    push_char(out, char::t);
+  }
+
 }

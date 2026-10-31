@@ -1,0 +1,22 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D68: an operator is a call of a fixed method of lib/num.moss, so one the
+# context does not provide at its operand's type is the error the call
+# would be. `Std` gives `Char` comparisons but no `.add`: both compilers
+# refuse both functions below, and say the same thing about each.
+
+assume Std {
+  fn by_operator(c: Char): Char { c + c }
+  fn by_method(c: Char): Char { c.add(c) }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    putchar(by_operator(char::a));
+    putchar(by_method(char::a));
+  }
+}

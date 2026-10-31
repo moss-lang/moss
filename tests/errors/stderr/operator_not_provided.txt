@@ -1,0 +1,1 @@
+tests/errors/operator_not_provided.moss:6:13: no method `.add` is available for `Char` in the context here

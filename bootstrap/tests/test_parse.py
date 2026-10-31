@@ -244,5 +244,160 @@ class TestExpressions(unittest.TestCase):
             self.body("f() g();")
 
 
+def grouping(expr) -> str:
+    """An expression with every operator parenthesized, so a test can say
+    how the parser grouped it."""
+    if isinstance(expr, ast.Binary):
+        return f"({grouping(expr.lhs)} {expr.op} {grouping(expr.rhs)})"
+    if isinstance(expr, ast.Unary):
+        return f"({expr.op}{grouping(expr.operand)})"
+    if isinstance(expr, ast.PathExpr):
+        return "::".join(expr.path)
+    if isinstance(expr, ast.Literal):
+        return expr.text
+    if isinstance(expr, ast.MethodCall):
+        args = ", ".join(grouping(a) for a in expr.args)
+        return f"{grouping(expr.obj)}.{'::'.join(expr.path)}({args})"
+    if isinstance(expr, ast.Field):
+        return f"{grouping(expr.obj)}.{expr.name}"
+    if isinstance(expr, ast.Call):
+        args = ", ".join(grouping(a) for a in expr.args)
+        return f"{grouping(expr.callee)}({args})"
+    raise AssertionError(f"no grouping for {expr!r}")
+
+
+# D68's partial order, as (source, how it groups). tests/test_run.py holds
+# the self-hosted parser to the same table.
+OPERATOR_GROUPINGS = [
+    # Unary operators bind tightest, method calls and fields tighter.
+    ("-a * b", "((-a) * b)"),
+    ("!a & b", "((!a) & b)"),
+    ("- -a", "(-(-a))"),
+    ("!!a", "(!(!a))"),
+    ("-a.f(b)", "(-a.f(b))"),
+    ("-x.y", "(-x.y)"),
+    # `*` chains; `/` and `%` take a product on the left, a unary on the right.
+    ("a * b * c", "((a * b) * c)"),
+    ("a * b * c / d", "(((a * b) * c) / d)"),
+    ("a * b % c", "((a * b) % c)"),
+    ("a / -b", "(a / (-b))"),
+    ("(a / b) * c", "((a / b) * c)"),
+    ("a / (b / c)", "(a / (b / c))"),
+    # Additive: left-associative, looser than multiplicative.
+    ("a - b + c", "((a - b) + c)"),
+    ("a - b - c", "((a - b) - c)"),
+    ("a + b * c", "(a + (b * c))"),
+    ("a * b + c / d", "((a * b) + (c / d))"),
+    ("a + b % c - d", "((a + (b % c)) - d)"),
+    # Comparison: looser than additive, either side.
+    ("a + b == c * d", "((a + b) == (c * d))"),
+    ("a != b", "(a != b)"),
+    ("a <= b - c", "(a <= (b - c))"),
+    ("-a >= b", "((-a) >= b)"),
+    ("a > b", "(a > b)"),
+    ("a < b", "(a < b)"),
+    # Shifts take unaries, and may be a comparison's operand.
+    ("a << b", "(a << b)"),
+    ("-a >> -b", "((-a) >> (-b))"),
+    ("x << f(n) == y", "((x << f(n)) == y)"),
+    ("y == x >> n", "(y == (x >> n))"),
+    ("(a << b) + c", "((a << b) + c)"),
+    # Bitwise: each chains with itself, and nothing else.
+    ("a & b & c", "((a & b) & c)"),
+    ("a | b | c", "((a | b) | c)"),
+    ("a ^ b ^ c", "((a ^ b) ^ c)"),
+    ("!a | !b", "((!a) | (!b))"),
+    ("(a < b) & (c < d)", "((a < b) & (c < d))"),
+    ("(x & mask) == z", "((x & mask) == z)"),
+]
+
+# Mixing that D68 refuses, with what the message says.
+OPERATOR_ERRORS = [
+    ("a / b * c", "`/` and `*` are not ordered"),
+    ("a * b / c * d", "`/` and `*` are not ordered"),
+    ("a / b / c", "`/` does not chain"),
+    ("a / b % c", "`/` and `%` are not ordered"),
+    ("a % b * c", "`%` and `*` are not ordered"),
+    ("a % b % c", "`%` does not chain"),
+    ("a < b < c", "comparisons do not chain"),
+    ("a == b == c", "comparisons do not chain"),
+    ("a < b == c", "comparisons do not chain"),
+    ("k << n + k", "`<<` and `+` are not ordered"),
+    ("n + k << m", "`+` and `<<` are not ordered"),
+    ("a * b >> c", "`*` and `>>` are not ordered"),
+    ("a << b * c", "`<<` and `*` are not ordered"),
+    ("a << b << c", "shifts do not chain"),
+    ("a << b >> c", "shifts do not chain"),
+    ("a & b | c", "`&` and `|` are not ordered"),
+    ("a | b & c", "`|` and `&` are not ordered"),
+    ("a ^ b & c", "`^` and `&` are not ordered"),
+    ("a < b & c < d", "`<` and `&` are not ordered"),
+    ("x & mask == z", "`&` and `==` are not ordered"),
+    ("a & b + c", "`&` and `+` are not ordered"),
+    ("a + b & c", "`+` and `&` are not ordered"),
+    ("a << b & c", "`<<` and `&` are not ordered"),
+    ("a & b << c", "`&` and `<<` are not ordered"),
+    ("a == b | c", "`==` and `|` are not ordered"),
+]
+
+
+class TestOperators(unittest.TestCase):
+    """D68: precedence is a partial order, so some mixtures group and the
+    rest are syntax errors that say which two operators met."""
+
+    def expr(self, source):
+        (fn,) = parse(f"fn f() {{ {source} }}").decls
+        return fn.body.tail
+
+    def test_groupings(self):
+        for source, expected in OPERATOR_GROUPINGS:
+            with self.subTest(source=source):
+                self.assertEqual(grouping(self.expr(source)), expected)
+
+    def test_unordered_mixtures_are_errors(self):
+        for source, message in OPERATOR_ERRORS:
+            with self.subTest(source=source):
+                with self.assertRaises(ParseError) as caught:
+                    self.expr(source)
+                self.assertIn(message, caught.exception.message)
+                self.assertIn("add parentheses (D68)", caught.exception.message)
+
+    def test_the_error_points_at_the_second_operator(self):
+        with self.assertRaises(ParseError) as caught:
+            self.expr("a / b * c")
+        self.assertEqual(caught.exception.token.text, "*")
+
+    def test_nodes(self):
+        self.assertEqual(
+            self.expr("-a + b"),
+            ast.Binary(
+                "+", ast.Unary("-", ast.PathExpr(["a"], None)), ast.PathExpr(["b"], None)
+            ),
+        )
+
+    def test_operators_in_conditions_and_arguments(self):
+        (fn,) = parse("fn f() { while i < n { g(a + b, -c); } if !done { h() } }").decls
+        loop, cond = fn.body.stmts[0], fn.body.tail
+        self.assertEqual(grouping(loop.cond), "(i < n)")
+        self.assertEqual(
+            [grouping(a) for a in loop.body.stmts[0].expr.args], ["(a + b)", "(-c)"]
+        )
+        self.assertEqual(grouping(cond.cond), "(!done)")
+
+    def test_no_record_after_an_operator_in_a_condition(self):
+        # The brace after `b` opens the body, as it would after `b` alone.
+        (fn,) = parse("fn f() { if a < b { c } }").decls
+        self.assertEqual(grouping(fn.body.tail.cond), "(a < b)")
+
+    def test_return_and_let_take_operators(self):
+        block = self.body_of("let x = a * b; return x + y;")
+        self.assertEqual(grouping(block.stmts[0].expr), "(a * b)")
+        self.assertEqual(grouping(block.stmts[1].expr.expr), "(x + y)")
+
+    def body_of(self, source):
+        (fn,) = parse(f"fn f() {{ {source} }}").decls
+        return fn.body
+
+
 if __name__ == "__main__":
     unittest.main()
