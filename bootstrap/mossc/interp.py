@@ -502,16 +502,23 @@ def native_env(program: Program, args: list | None = None) -> dict:
         env[lib["int"].names["one"]] = IntVal(1)
         if "num" in lib:
             det = lib["num"].detached
-            env[(int_ty, det["neg"])] = native(lambda a, this: IntVal(-this.value))
+            # The compiled native `Std` lowers `Int` to i32 (`i32.add`,
+            # `i32.div_s`, ...), so the interpreter computes exactly what those
+            # instructions do: wrapping, truncating division, shift counts
+            # taken mod 32, and the same traps.
+            def i32(n: int) -> int:
+                return (n + 2**31) % 2**32 - 2**31
+
+            env[(int_ty, det["neg"])] = native(lambda a, this: IntVal(i32(-this.value)))
             arith = {
-                "add": lambda x, y: x + y,
-                "sub": lambda x, y: x - y,
-                "mul": lambda x, y: x * y,
-                "and": lambda x, y: x & y,
-                "or": lambda x, y: x | y,
-                "xor": lambda x, y: x ^ y,
-                "shl": lambda x, y: x << y,
-                "shr": lambda x, y: x >> y,
+                "add": lambda x, y: i32(x + y),
+                "sub": lambda x, y: i32(x - y),
+                "mul": lambda x, y: i32(x * y),
+                "and": lambda x, y: i32(x & y),
+                "or": lambda x, y: i32(x | y),
+                "xor": lambda x, y: i32(x ^ y),
+                "shl": lambda x, y: i32(x << (y % 32)),
+                "shr": lambda x, y: x >> (y % 32),
             }
             for name, op in arith.items():
                 env[(int_ty, det[name])] = NativeFn(
@@ -519,14 +526,20 @@ def native_env(program: Program, args: list | None = None) -> dict:
                 )
 
             def div(a, this):
-                if a[0].value == 0:
+                x, y = this.value, a[0].value
+                if y == 0:
                     raise MossPanic("division by zero")
-                return IntVal(this.value // a[0].value)
+                if x == -(2**31) and y == -1:
+                    raise MossPanic("integer overflow")
+                q = abs(x) // abs(y)
+                return IntVal(q if (x < 0) == (y < 0) else -q)
 
             def rem(a, this):
-                if a[0].value == 0:
+                x, y = this.value, a[0].value
+                if y == 0:
                     raise MossPanic("remainder by zero")
-                return IntVal(this.value % a[0].value)
+                r = abs(x) % abs(y)
+                return IntVal(r if x >= 0 else -r)
 
             env[(int_ty, det["div"])] = native(div)
             env[(int_ty, det["rem"])] = native(rem)

@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from mossc import build as build_mod
-from mossc import collect
+from mossc import collect, interp
 from mossc.lower import Lower, LowerError
 
 from .test_run import (
@@ -180,6 +180,42 @@ class TestWasmBackend(unittest.TestCase):
         # 97 / 2 is 48.5, a tie that goes to the even 48; 49.5 goes to 50.
         self.assertEqual(run({"main.moss": source}), "A02ynb\n")
         self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), "A02ynb\n")
+
+    def test_native_int_is_i32(self):
+        """The bootstrap's own `Std` compiles `Int` to i32 instructions, and
+        the interpreter's native `Int` computes exactly what they do, so a
+        program over `Std` agrees compiled and interpreted: arithmetic
+        wraps, division and remainder truncate toward zero (`i32.div_s`,
+        `i32.rem_s`), and a shift count is taken mod 32."""
+        source = (
+            "assume Std {\n"
+            "  fn yes(b: Bool) { if b { putchar(char::y) } else { putchar(char::n) } }\n"
+            "  fn main() {\n"
+            "    yes(-7 / 2 == -3);\n"
+            "    yes(-7 % 2 == -1);\n"
+            "    yes(7 % -2 == 1);\n"
+            "    yes(2147483647 + 1 == -2147483647 - 1);\n"
+            "    yes(65536 * 65536 == 0);\n"
+            "    yes(1 << 33 == 2);\n"
+            "    yes(-8 >> 1 == -4);\n"
+            "    yes(-(-2147483647 - 1) == -2147483647 - 1);\n"
+            "    putchar(char::newline);\n"
+            "  }\n"
+            "}\n"
+        )
+        self.assertEqual(run({"main.moss": source}), "yyyyyyyy\n")
+        self.assertEqual(run_wasm(compile_wasm({"main.moss": source})), "yyyyyyyy\n")
+
+    def test_native_int_division_overflow_traps(self):
+        """`i32.div_s` traps on the one quotient i32 cannot hold, so the
+        interpreter's native `Int` panics there too."""
+        source = (
+            "assume Std {\n"
+            "  fn main() { let x = (-2147483647 - 1) / -1; }\n"
+            "}\n"
+        )
+        with self.assertRaises(interp.MossPanic):
+            run({"main.moss": source})
 
     def test_boxed_values_and_match(self):
         """Slice 2: units/unions with match, tags with payload binders, and
