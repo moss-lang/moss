@@ -1,0 +1,64 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Chr, Numerics, Containers, WasiNumerics,
+  WasiContainers, heap_mark, heap_reset;
+import "../../lib/wasm.moss" use Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D72, D78: two applications of arena.moss's `Arena` in force at once
+# make two generations of its types, so a list made after the first is
+# not a list of the second's, and `total` (checked at the second) does
+# not take it. The bootstrap names the second generation `IntList@Arena#2`
+# rather than print "`IntList@Arena`, expected `IntList@Arena`"; the
+# self-hosted compiler reports a type error.
+
+unit Scratch;
+
+functor Arena: Wasm, Branch -> Memory, Containers;
+
+functor InScratch: Wasm, Branch -> Memory, Containers {
+  bind Memory = Scratch;
+  bind WasiNumerics;
+  bind Char = Chr;
+  bind WasiContainers;
+}
+
+assume Char, Numerics, Containers {
+  fn countdown(n: Int): IntList {
+    let xs = int_list();
+    var i = n;
+    while i > 0 {
+      xs.push(i);
+      i = i - 1;
+    }
+    xs
+  }
+
+  fn total(xs: IntList): Int {
+    var sum = 0;
+    var i = 0;
+    while i < xs.length() {
+      sum = sum + xs.get(i);
+      i = i + 1;
+    }
+    sum
+  }
+}
+
+assume Wasm, Wasi, Branch, Arena {
+  fn report() {
+    bind WasiStd;
+    {
+      bind Arena;
+      let xs = countdown(3);
+      bind Arena;
+      let n = total(xs);
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind Arena = InScratch;
+    report();
+  }
+}

@@ -2551,6 +2551,24 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     out.decode("utf-8").startswith(report.format(entry)), out[:200]
                 )
 
+    def test_two_applications_print_as_two_types(self):
+        """D72 and D78: two applications of one abstract functor in force
+        at once make two generations of each type in its result, and a
+        type error between them names them apart (`IntList@Arena#2`),
+        rather than "`IntList@Arena`, expected `IntList@Arena`". The
+        self-hosted compiler's type errors carry no detail."""
+        from .test_build import compile_wasm
+
+        entry = "tests/wasi/arena_twice.moss"
+        with self.assertRaises(LowerError) as caught:
+            compile_wasm({}, entry=entry)
+        self.assertIn(
+            "argument `xs` of `total` is `IntList@Arena`, expected `IntList@Arena#2`",
+            str(caught.exception),
+        )
+        out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(out.decode("utf-8"), f"?S {entry} report\n")
+
     def test_one_memory_is_one_memory(self):
         """D79 changes nothing for a program that binds no `Memory`: the
         module has one memory, as before."""

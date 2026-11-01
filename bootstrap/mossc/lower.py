@@ -1548,7 +1548,7 @@ class FnChecker:
                     what = f"`{show(tail_ty)}`, which mentions `{made}`"
                 self.error(
                     f"this block yields {what}, the type `bind "
-                    f"{made.split('@', 1)[1]};` made in it: a value of that "
+                    f"{gone[0].fresh_by.name};` made in it: a value of that "
                     "type cannot leave the block (D78)"
                 )
             if expected is not None and not self.fits(tail_ty, expected):
@@ -1708,8 +1708,18 @@ class FnChecker:
         # under an `assume` of it is, whatever the binding makes it.
         fresh = {}
         for t in self.result_types(functor):
-            gen = Symbol(t.module, f"{t.name}@{functor.name}", SymKind.TYPE, t.decl)
+            # A second application of `F` in force at once makes a second
+            # generation of `T`, which is printed `T@F#2`, so that no error
+            # says "`T@F`, expected `T@F`" (D72).
+            live = sum(
+                1 for g in self.fresh_types if g.fresh_of is t and g.fresh_by is functor
+            )
+            suffix = f"#{live + 1}" if live else ""
+            gen = Symbol(
+                t.module, f"{t.name}@{functor.name}{suffix}", SymKind.TYPE, t.decl
+            )
             gen.fresh_of = t
+            gen.fresh_by = functor
             fresh[t] = TAbstract(gen, ())
             self.fresh_types.append(gen)
         branches = []
