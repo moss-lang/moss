@@ -134,9 +134,13 @@ artifacts (paper §3.4, Figures 8–9; `CoreMoss.v` deviations 11–13):
   scope are two generations, named apart by elaboration as D72 says of
   type binds), result items added without merging into the arguments,
   and results compared as one (flattened, elaborated) telescope.
-- **Executed evidence.** §12c binds an abstract `Alloc: Boxed -> Handle,
-  alloc, Handle.load` to a boxing functor and to a bare one (copied
-  through a second abstract functor), applies it in one generic
+- **Executed and typed evidence.** §12c binds an abstract `Alloc: Boxed
+  -> Handle, alloc, Handle.load` to a boxing functor and to a bare one
+  (copied through a second abstract functor), applies it in one generic
   `roundtrip`, and runs the program, and its erasure, by `vm_compute`;
   it also computes that an application keeps exactly the result (a
-  body's extra val is gone).
+  body's extra val is gone). The same program is proved well-formed —
+  both bodies, the unpack in `roundtrip`, the binds and the copy in
+  `main` (`functor_example_ok`) — so the new rules are satisfiable, and
+  soundness covers its runs (`functor_example_safe`); both are audited
+  in §13.

@@ -995,7 +995,10 @@ binds; and the result it leaves agrees with the caller's context
 \emph{extended} at $\Delta_r$'s types by whatever the body made them---the
 existential's witness. The escape premise makes that extension invisible
 in $\sigma\tau$. Abstract functors are at no instantiation, so a functor
-entry's agreement mentions no grounding at all. The metatheory is fully
+entry's agreement mentions no grounding at all. The mechanization also
+types and runs an abstract allocator whose handle type is a result,
+bound to two functors that make it two different types and applied in
+one generic function (\texttt{functor\_example\_ok}). The metatheory is fully
 machine-checked in Rocq (\texttt{CoreMoss.v}, checked in CI): this
 theorem and every proposition here report \emph{closed under the global
 context}, via a fuel-indexed safety invariant that carries a ground

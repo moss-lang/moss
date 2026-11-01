@@ -9002,6 +9002,9 @@ Module FunctorExample.
     (EBindFunA uAlloc uAlloc2 []
     (round_call (EVar 10)))))).
 
+  (* `main` itself is unit-valued: it runs the above and drops the value. *)
+  Definition main_unit : expr := ELet 11 main_body EUnit.
+
   Definition Sg : gsig := mkGsig
     (fun t => Nat.eqb t sBoxed || Nat.eqb t sHandle || Nat.eqb t sElem
               || Nat.eqb t this_sym)
@@ -9025,7 +9028,7 @@ Module FunctorExample.
          Some ([ITy sBoxed; IFun uAlloc], mkSig [TAbs sBoxed] (TAbs sBoxed),
                Some round_body)
        else if Nat.eqb f fMain then
-         Some ([], mkSig [] (TNom nO []), Some main_body)
+         Some ([], mkSig [] TUnit, Some main_unit)
        else None)
     (fun m =>
        if Nat.eqb m mLoad then Some ([ITy sBoxed], mkSig [] (TAbs sBoxed))
@@ -9061,7 +9064,329 @@ Module FunctorExample.
     = interp_apply 100 Sg [(IFun uAlloc, DFun uBare [[]])] uAlloc [].
   Proof. vm_compute. reflexivity. Qed.
 
+
+  (* ---- The program is well-formed. ----------------------------------------
+     A typing derivation for the whole signature — the bodies of both
+     bindings against `Boxed` alone, `roundtrip`'s application with its rigid
+     `Handle`, and `main`'s binds, copy and calls — so the new rules are
+     satisfiable on a program that uses every form but a nested application,
+     and the soundness theorem covers its runs. *)
+
+  Definition PhiA : ctx := mkCtx [ITy sBoxed] [].
+
+  Lemma wf_box : forall Phi, avail Phi (ITy sBoxed) -> wf_ty Sg Phi box_ty.
+  Proof.
+    intros Phi H. eapply WfTag; [reflexivity | | ].
+    - eexists. split; [reflexivity |]. split; [reflexivity |]. split.
+      + repeat constructor; left; reflexivity.
+      + constructor.
+    - constructor; [apply WfNeed; exact H | constructor].
+  Qed.
+
+  Lemma wf_O : forall Phi, wf_ty Sg Phi (TNom nO []).
+  Proof.
+    intros Phi. eapply WfTag; [reflexivity | | constructor].
+    exists empty_ctx. split; [reflexivity |]. split; [reflexivity |]. split; constructor.
+  Qed.
+
+  Lemma sat0_boxed : forall Phi, avail Phi (ITy sBoxed) -> sat0 Sg Phi [ITy sBoxed].
+  Proof.
+    intros Phi H. exists PhiA. split; [reflexivity |]. split.
+    - split; [reflexivity |]. split; [repeat constructor; left; reflexivity | constructor].
+    - constructor; [exact H | constructor].
+  Qed.
+
+  Lemma sat0_nil : forall Phi, sat0 Sg Phi [].
+  Proof.
+    intros Phi. exists empty_ctx. split; [reflexivity |].
+    split; [split; [reflexivity | split; constructor] | constructor].
+  Qed.
+
+  Lemma tele_boxed : wf_tele Sg empty_ctx [ITy sBoxed] PhiA.
+  Proof.
+    eapply WCons; [| reflexivity | constructor].
+    constructor; [reflexivity | discriminate].
+  Qed.
+
+  Lemma sat_boxed_id : forall Phi, avail Phi (ITy sBoxed) ->
+    sat Sg Phi th_boxed [ITy sBoxed] /\ Forall (fun p => wf_ty Sg Phi (snd p)) th_boxed.
+  Proof.
+    intros Phi H. split.
+    - exists PhiA. split; [reflexivity |]. split; [reflexivity |].
+      split; [repeat constructor; left; reflexivity | constructor].
+    - constructor; [apply WfNeed; exact H | constructor].
+  Qed.
+
+  Lemma tele_res : wf_tele Sg PhiA alloc_res (mkCtx (cA PhiA ++ alloc_res) (cS PhiA)).
+  Proof.
+    eapply WCons; [constructor; [reflexivity | discriminate] | reflexivity |].
+    eapply WCons; [| reflexivity |].
+    { eapply OkFn; [reflexivity |].
+      exists (mkCtx [ITy sBoxed; ITy sHandle] []). split; [reflexivity |].
+      split; [split; [reflexivity | split; [repeat constructor; left; reflexivity | constructor]]
+             | repeat constructor]. }
+    eapply WCons; [| reflexivity | constructor].
+    destruct (@sat_boxed_id (mkCtx [ITy sBoxed; ITy sHandle; IFn fAlloc] []) eq_refl)
+      as [Hs Hw].
+    eapply OkMth; [reflexivity | apply WfNeed; reflexivity | exact Hs | exact Hw].
+  Qed.
+
+  Lemma conv : forall Phi G e t t',
+    has_ty Sg Phi G e t -> t = t' -> has_ty Sg Phi G e t'.
+  Proof. intros; subst; assumption. Qed.
+
+  Lemma tag_O : forall Phi G, has_ty Sg Phi G (ETag nO [] EUnit) (TNom nO []).
+  Proof.
+    intros Phi G. eapply conv.
+    - eapply TTagR with (D := []) (tau0 := TUnit); [reflexivity | | constructor |].
+      + exists empty_ctx. split; [reflexivity |]. split; [reflexivity | split; constructor].
+      + apply conv with (t := TUnit); [constructor | reflexivity].
+    - unfold app_subst. simpl. destruct Phi. reflexivity.
+  Qed.
+
+  Definition PhiW1 : ctx := bind_ty sHandle box_ty PhiA.
+
+  Lemma wrap_ok : exists PhiB, binds_ty Sg PhiA wrap_body PhiB
+                  /\ Forall (fun i => In i (cA PhiB)) alloc_res.
+  Proof.
+    eexists. split.
+    - eapply BtTy; [reflexivity | discriminate | simpl; intros [H | []]; discriminate
+                   | apply wf_box; reflexivity |].
+      eapply BtFn with (Df := [ITy sBoxed; ITy sHandle]) (D' := [ITy sBoxed]);
+        [reflexivity | reflexivity | | apply sat0_boxed; reflexivity | | |].
+      + exists (mkCtx [ITy sBoxed; ITy sHandle] []). split; [reflexivity |].
+        split; [split; [reflexivity | split; [repeat constructor; left; reflexivity | constructor]]
+               | repeat constructor].
+      + exists PhiA. split; [reflexivity |]. split; [reflexivity | constructor].
+      + split; reflexivity.
+      + destruct (@sat_boxed_id (add_item (IFn fAlloc) PhiW1) eq_refl) as [Hs Hw].
+        eapply BtMth with (Dm := [ITy sBoxed]) (D' := [ITy sBoxed]) (tau0' := box_ty)
+                          (rest := []);
+          [reflexivity | apply WfNeed; reflexivity | exact Hs | exact Hw | reflexivity
+          | apply sat0_boxed; reflexivity
+          | exists PhiA; split; [reflexivity | split; [reflexivity | constructor]]
+          | reflexivity | reflexivity | reflexivity | reflexivity |].
+        eapply BtVal with (Dv := []);
+          [reflexivity | apply sat0_nil | apply tag_O | apply BtNil].
+    - simpl. repeat constructor; simpl; tauto.
+  Qed.
+
+  Lemma bare_ok : exists PhiB, binds_ty Sg PhiA bare_body PhiB
+                  /\ Forall (fun i => In i (cA PhiB)) alloc_res.
+  Proof.
+    eexists. split.
+    - eapply BtTy; [reflexivity | discriminate | simpl; intros [H | []]; discriminate
+                   | apply WfNeed; reflexivity |].
+      eapply BtFn with (Df := [ITy sBoxed; ITy sHandle]) (D' := [ITy sBoxed]);
+        [reflexivity | reflexivity | | apply sat0_boxed; reflexivity | | |].
+      + exists (mkCtx [ITy sBoxed; ITy sHandle] []). split; [reflexivity |].
+        split; [split; [reflexivity | split; [repeat constructor; left; reflexivity | constructor]]
+               | repeat constructor].
+      + exists PhiA. split; [reflexivity |]. split; [reflexivity | constructor].
+      + split; reflexivity.
+      + destruct (@sat_boxed_id
+                    (add_item (IFn fAlloc) (bind_ty sHandle (TAbs sBoxed) PhiA)) eq_refl)
+          as [Hs Hw].
+        eapply BtMth with (Dm := [ITy sBoxed]) (D' := [ITy sBoxed]) (tau0' := TAbs sBoxed)
+                          (rest := []);
+          [reflexivity | apply WfNeed; reflexivity | exact Hs | exact Hw | reflexivity
+          | apply sat0_boxed; reflexivity
+          | exists PhiA; split; [reflexivity | split; [reflexivity | constructor]]
+          | reflexivity | reflexivity | reflexivity | reflexivity | apply BtNil].
+    - simpl. repeat constructor; simpl; tauto.
+  Qed.
+
+  Definition PhiR : ctx := mkCtx [ITy sBoxed; IFun uAlloc] [].
+
+  Lemma round_typed :
+    has_ty Sg PhiR (body_env (mkSig [TAbs sBoxed] (TAbs sBoxed))) round_body (TAbs sBoxed).
+  Proof.
+    eapply TApplyR with (Du := [ITy sBoxed]) (Dr := alloc_res).
+    - reflexivity.
+    - reflexivity.
+    - apply sat0_boxed; reflexivity.
+    - exists PhiA. split; [reflexivity | split; [reflexivity | constructor]].
+    - simpl. constructor; [| constructor].
+      intros [H | [H | []]]; discriminate.
+    - eapply conv.
+      + eapply TMethR with (Dm := [ITy sBoxed]) (S := mkSig [] (TAbs sBoxed))
+                           (tau0 := TAbs sHandle).
+        * reflexivity.
+        * eapply conv.
+          -- eapply TNeedR with (Df := [ITy sBoxed; ITy sHandle])
+                                (S := mkSig [TAbs sBoxed] (TAbs sHandle));
+               [reflexivity | reflexivity |].
+             constructor; [| constructor]. constructor. reflexivity.
+          -- reflexivity.
+        * simpl. right. right. left. reflexivity.
+        * reflexivity.
+        * intros i1 Hin [th' Hp]. simpl in Hin.
+          destruct Hin as [<- | [<- | [<- | [<- | [<- | []]]]]]; try discriminate.
+          reflexivity.
+        * constructor.
+      + reflexivity.
+    - simpl. constructor; [| constructor]. intros [H | []]; discriminate.
+  Qed.
+
+  Lemma boxit_typed :
+    has_ty Sg PhiA (body_env (mkSig [TAbs sBoxed] box_ty))
+           (ETag nBox [(sElem, TAbs sBoxed)] (EVar 0)) box_ty.
+  Proof.
+    eapply conv.
+    - eapply TTagR with (D := [ITy sElem]) (tau0 := TAbs sElem); [reflexivity | | |].
+      + eexists. split; [reflexivity |]. split; [reflexivity |].
+        split; [repeat constructor; left; reflexivity | constructor].
+      + constructor; [apply WfNeed; reflexivity | constructor].
+      + constructor. reflexivity.
+    - reflexivity.
+  Qed.
+
+  Lemma unbox_typed :
+    has_ty Sg PhiA (body_env (mkSig [box_ty] (TAbs sBoxed)))
+           (EMatch (EVar 0) [(nBox, 1, EVar 1)]) (TAbs sBoxed).
+  Proof.
+    eapply TMatchR with (tau0 := box_ty) (ms := [box_ty]).
+    - constructor. reflexivity.
+    - apply wf_box. reflexivity.
+    - reflexivity.
+    - constructor; [intros [] | constructor].
+    - constructor; [| constructor]. split; [reflexivity |]. eexists; eexists; reflexivity.
+    - constructor; [| constructor]. constructor. reflexivity.
+  Qed.
+
+  Lemma id_typed :
+    has_ty Sg PhiA (body_env (mkSig [TAbs sBoxed] (TAbs sBoxed))) (EVar 0) (TAbs sBoxed).
+  Proof. constructor. reflexivity. Qed.
+
+  Lemma link_boxed : fun_link Sg [ITy sBoxed] [] [ITy sBoxed].
+  Proof.
+    exists PhiA. split; [reflexivity |]. split.
+    - apply sat0_boxed. reflexivity.
+    - exists PhiA. split; [reflexivity | split; [reflexivity | constructor]].
+  Qed.
+
+  Lemma call_round : forall Phi G arg,
+    avail Phi (ITy sBoxed) -> In (IFun uAlloc) (cA Phi) ->
+    app_subst (cS Phi) (TAbs sBoxed) = TNom nO [] ->
+    has_ty Sg Phi G arg (TNom nO []) ->
+    has_ty Sg Phi G (round_call arg) (TNom nO []).
+  Proof.
+    intros Phi G arg Hb Hu Hs Harg.
+    assert (Hau : avail Phi (IFun uAlloc)).
+    { unfold avail, avail_b. apply existsb_exists. exists (IFun uAlloc).
+      split; [exact Hu | reflexivity]. }
+    eapply conv.
+    - eapply TCallR with (Df := [ITy sBoxed; IFun uAlloc])
+                         (S := mkSig [TAbs sBoxed] (TAbs sBoxed)) (body := round_body).
+      + reflexivity.
+      + eexists. split; [reflexivity |]. split; [reflexivity |].
+        split; [| constructor].
+        constructor; [left; reflexivity |].
+        constructor; [| constructor].
+        right. split; [exact Hau | constructor].
+      + constructor; [apply WfNeed; exact Hb | constructor].
+      + eexists. split; [reflexivity |]. split; [reflexivity |].
+        constructor; [| constructor]. split; [exact Hu | reflexivity].
+      + constructor; [| constructor]. eapply conv; [exact Harg |]. simpl. symmetry. exact Hs.
+    - simpl. exact Hs.
+  Qed.
+
+  Lemma main_typed :
+    has_ty Sg empty_ctx (body_env (mkSig [] TUnit)) main_unit TUnit.
+  Proof.
+    eapply TLetR with (tau1 := TNom nO []); [| constructor].
+    eapply TBindTyR; [reflexivity | discriminate | simpl; tauto | apply wf_O | | apply wf_O].
+    eapply TBindFunR with (Du := [ITy sBoxed]) (Dr := alloc_res) (Dh := [ITy sBoxed]);
+      [reflexivity | reflexivity | exact link_boxed |].
+    eapply TLetR.
+    { apply call_round; [reflexivity | simpl; tauto | reflexivity | apply tag_O]. }
+    eapply TBindFunR with (Du := [ITy sBoxed]) (Dr := alloc_res) (Dh := [ITy sBoxed]);
+      [reflexivity | reflexivity | exact link_boxed |].
+    eapply TBindFunAR with (Du := [ITy sBoxed]) (Dr := alloc_res) (Dw := [ITy sBoxed]);
+      [reflexivity | reflexivity | reflexivity | exact link_boxed |].
+    apply call_round; [reflexivity | simpl; tauto | reflexivity |].
+    constructor. reflexivity.
+  Qed.
+
+  Lemma tele_round : wf_tele Sg empty_ctx [ITy sBoxed; IFun uAlloc] PhiR.
+  Proof.
+    eapply WCons; [constructor; [reflexivity | discriminate] | reflexivity |].
+    eapply WCons; [eapply OkFun; reflexivity | reflexivity | constructor].
+  Qed.
+
+  Lemma tele_alloc : wf_tele Sg empty_ctx [ITy sBoxed; ITy sHandle]
+                       (mkCtx [ITy sBoxed; ITy sHandle] []).
+  Proof.
+    eapply WCons; [constructor; [reflexivity | discriminate] | reflexivity |].
+    eapply WCons; [constructor; [reflexivity | discriminate] | reflexivity | constructor].
+  Qed.
+
+  Lemma wf_sig : wf_gsig Sg.
+  Proof.
+    constructor.
+    - intros n D taup H.
+      destruct n as [|[|[|n]]]; simpl in H; try discriminate;
+        injection H as <- <-.
+      + exists (mkCtx [ITy sElem] []). split.
+        * eapply WCons; [constructor; [reflexivity | discriminate] | reflexivity | constructor].
+        * apply WfNeed. reflexivity.
+      + exists empty_ctx. split; constructor.
+    - intros v D tauv H.
+      destruct v as [|[|v]]; simpl in H; try discriminate; injection H as <- <-.
+      exists empty_ctx. split; [constructor | apply wf_O].
+    - intros f D S b H.
+      destruct f as [|[|[|[|[|[|[|f]]]]]]]; simpl in H; try discriminate;
+        injection H as <- <- <-.
+      + exists (mkCtx [ITy sBoxed; ITy sHandle] []). split; [exact tele_alloc |].
+        split; [constructor; [apply WfNeed; reflexivity | constructor] |].
+        split; [apply WfNeed; reflexivity | intros body Hb; discriminate Hb].
+      + exists PhiA. split; [exact tele_boxed |].
+        split; [constructor; [apply WfNeed; reflexivity | constructor] |].
+        split; [apply wf_box; reflexivity |].
+        intros body Hb. injection Hb as <-. exact boxit_typed.
+      + exists PhiA. split; [exact tele_boxed |].
+        split; [constructor; [apply wf_box; reflexivity | constructor] |].
+        split; [apply WfNeed; reflexivity |].
+        intros body Hb. injection Hb as <-. exact unbox_typed.
+      + exists PhiA. split; [exact tele_boxed |].
+        split; [constructor; [apply WfNeed; reflexivity | constructor] |].
+        split; [apply WfNeed; reflexivity |].
+        intros body Hb. injection Hb as <-. exact id_typed.
+      + exists PhiR. split; [exact tele_round |].
+        split; [constructor; [apply WfNeed; reflexivity | constructor] |].
+        split; [apply WfNeed; reflexivity |].
+        intros body Hb. injection Hb as <-. exact round_typed.
+      + exists empty_ctx. split; [constructor |].
+        split; [constructor |]. split; [constructor |].
+        intros body Hb. injection Hb as <-. exact main_typed.
+    - intros m D S H.
+      destruct m as [|[|m]]; simpl in H; try discriminate; injection H as <- <-.
+      exists PhiA. split; [exact tele_boxed |].
+      split; [constructor | apply WfNeed; reflexivity].
+    - intros u Du Dr ob H.
+      destruct u as [|[|[|[|[|u]]]]]; simpl in H; try discriminate;
+        injection H as <- <- <-; exists PhiA;
+        (split; [exact tele_boxed | split; [exact tele_res |]]);
+        intros bs Hbs; try discriminate Hbs; injection Hbs as <-.
+      + exact wrap_ok.
+      + exact bare_ok.
+  Qed.
+
 End FunctorExample.
+
+Theorem functor_example_ok :
+  wf_prog FunctorExample.Sg FunctorExample.fMain.
+Proof.
+  split; [exact FunctorExample.wf_sig | eexists; reflexivity].
+Qed.
+
+(* So no run of it goes wrong, by Theorem 4.2. *)
+Corollary functor_example_safe : forall fuel,
+  interp fuel FunctorExample.Sg [] [] FunctorExample.main_unit <> Err.
+Proof.
+  intros fuel.
+  exact (proj1 (soundness_main fuel functor_example_ok eq_refl)).
+Qed.
 
 (* ===================== 13. Assumptions audit ============================= *)
 
@@ -9080,3 +9405,5 @@ Print Assumptions interp_complete.
 Print Assumptions safety.
 Print Assumptions soundness_main.
 Print Assumptions phase_separation.
+Print Assumptions functor_example_ok.
+Print Assumptions functor_example_safe.

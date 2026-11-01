@@ -3446,7 +3446,8 @@ is re-proved over it, still closed under the global context.
   found.
 - §12c of `CoreMoss.v` runs an abstract allocator with a `Handle` output,
   bound to a boxing functor and (through a second abstract functor) to a
-  bare one, inside one generic function, by `vm_compute`.
+  bare one, inside one generic function, by `vm_compute`, and proves the
+  program well-formed (`functor_example_ok`), so soundness covers it.
 
 **[D79] DECIDED by the designer and implemented (multiple memories).** WebAssembly modules may have more than
 one linear memory (multi-memory, part of Wasm 3.0, shipped in Chrome,
