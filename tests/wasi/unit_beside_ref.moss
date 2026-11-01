@@ -1,0 +1,56 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" as w use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A unit beside a member whose payload is a reference: the union is a
+# discriminant and one reference slot, and `Nothing` only pads it, with
+# `ref.null`. And a match arm that traps, `unreachable()`, stands for an
+# arm of any type, as `|` does (D15). Output: 42, then 7.
+
+unit Nothing;
+
+assume Std, Wasm {
+  type Some Ref[Boxed=Int];
+  type Maybe = Some | Nothing;
+
+  context IntHeap = Int.boxed[Boxed=Int], Ref.deref[Boxed=Int];
+
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Std, Wasm, IntHeap {
+  fn or(m: Maybe, other: Int): Int {
+    match m {
+      Some r => r.deref(),
+      Nothing => other,
+    }
+  }
+
+  fn get(m: Maybe): Int {
+    match m {
+      Some r => r.deref(),
+      Nothing => w::unreachable(),
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Boxed = Int;
+    bind Heap;
+    let n = 42;
+    let some: Maybe = Some (n.boxed());
+    let none: Maybe = Nothing;
+    print_int(get(some));
+    putchar(char::newline);
+    print_int(or(none, 7));
+    putchar(char::newline);
+  }
+}

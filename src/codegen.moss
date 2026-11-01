@@ -2266,6 +2266,13 @@ assume Std {
       }
       let r = wops::op_res.get(op);
       var t = ty_none();
+      if wops::op_codes.get(op) == 0 {
+        # `unreachable` is declared `: |`, so it is any type (D15), as in
+        # the bootstrap: a match arm that traps can stand for any other.
+        if wops::op_kinds.get(op) == wops::wk_simple() {
+          return types::ty_never();
+        }
+      }
       if r == wops::wr_i64() {
         t = cg_i64.read();
       } else if r == wops::wr_i32() {

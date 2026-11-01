@@ -2002,6 +2002,8 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             # D75 under D77: `Ref`'s attached `.deref` unless a detached
             # `.deref` in scope is provided at the receiver.
             ("tests/wasi/gc_resolution.moss", "42\n7\n42\n", "lib/prelude.moss"),
+            # A unit beside a reference in one union, and a trapping arm.
+            ("tests/wasi/unit_beside_ref.moss", "42\n7\n", "lib/prelude.moss"),
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),

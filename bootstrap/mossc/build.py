@@ -1808,7 +1808,17 @@ class FnCompiler:
         if node.width == 1:
             return self.expr(node.value)
         self.code += I32_CONST + sleb(self.b.unit_code(node.symbol))
-        payload = self.expr(node.value)
+        # A unit's code *is* the value, already pushed as the
+        # discriminant: it only wants padding, as in the self-hosted back
+        # end — or it would put an i32 where another member may put a
+        # reference.
+        if isinstance(node.value, ir.MakeUnit):
+            payload = ()
+        elif node.symbol.kind == SymKind.UNIT:
+            self.code += DROP * len(self.expr(node.value))
+            payload = ()
+        else:
+            payload = self.expr(node.value)
         if len(payload) + 1 > node.width:
             raise NotCompilable("a union member wider than its union")
         # Pad to the union's width with zeros of its own valtypes, which
