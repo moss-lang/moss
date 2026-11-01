@@ -1,0 +1,22 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, I32, i32_one, Arrayed, .arrayed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D81: making an array is a context item, which only the platform's
+# `Arrays` provides; code that has not applied it cannot make one.
+
+assume Std, Wasm {
+  fn demo() {
+    bind Arrayed = Int;
+    let n = 42;
+    let xs = n.arrayed(i32_one);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

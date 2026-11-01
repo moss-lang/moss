@@ -66,6 +66,11 @@ OPERATOR_METHODS = {
 }
 
 
+# D81: the attached methods of lib/wasm.moss's `Array`, which `Arrays`
+# provides; each is the primitive `array_<name>`.
+ARRAY_OPS = ("length", "get", "set", "fill", "copy")
+
+
 @dataclass(frozen=True)
 class Built:
     """An expression already lowered, standing where `synth` wants syntax:
@@ -237,6 +242,7 @@ class Lower:
         # their provider, the platform functor `Heap`, whose application
         # makes primitive provisions (`platform_functor`).
         self.ref_sym = self.boxed_sym = self.structref_sym = None
+        self.array_sym = self.arrayed_sym = self.arrayref_sym = None
         # D79: lib/wasm.moss's `Memory`, under which every memory
         # instruction is declared. A call of one records the `Memory` in
         # force (`Call.memory`), which the back end and the interpreter
@@ -257,6 +263,22 @@ class Lower:
                     deref = module.attached.get((id(self.ref_sym), "deref"))
                     if deref is not None:
                         self.platform_prims[id(deref)] = "deref"
+                    # D81: `Mutable`'s.
+                    ref_set = module.attached.get((id(self.ref_sym), "set"))
+                    if ref_set is not None:
+                        self.platform_prims[id(ref_set)] = "ref_set"
+                # D81: garbage-collected arrays, provided by `Arrays`.
+                self.array_sym = module.names.get("Array")
+                self.arrayed_sym = module.names.get("Arrayed")
+                self.arrayref_sym = module.names.get("ArrayRef")
+                arrayed = module.detached.get("arrayed")
+                if arrayed is not None:
+                    self.platform_prims[id(arrayed)] = "array_new"
+                if self.array_sym is not None:
+                    for name in ARRAY_OPS:
+                        m = module.attached.get((id(self.array_sym), name))
+                        if m is not None:
+                            self.platform_prims[id(m)] = "array_" + name
         # Whether the program mentions a `Ref` at all; the back end only
         # tracks type arguments (`Call.tyargs`) when it does.
         self.uses_gc = False
@@ -1240,7 +1262,7 @@ class Lower:
                 )
             return ty
         if sym.kind in (SymKind.UNIT, SymKind.TAG):
-            if sym is self.ref_sym:
+            if sym is self.ref_sym or (sym is self.array_sym and sym is not None):
                 self.uses_gc = True
             return TNominal(sym, self.nominal_args(module, sym, tymap))
         if sym.kind == SymKind.ALIAS:
@@ -1931,7 +1953,10 @@ class FnChecker:
             key = self.lower.method_key(self.env, home, this_ty, method)
             self.lower.shadow(self.env.methods, key, sig)
             self.provided_at(key, method, tymap, method=True)
-            held = self.lower.canon(self.env, tymap[self.lower.boxed_sym])
+            # What the primitive is at: `Arrayed` for D81's arrays,
+            # `Boxed` for the rest.
+            by = self.lower.arrayed_sym if prim.startswith("array_") else self.lower.boxed_sym
+            held = self.lower.canon(self.env, tymap[by])
             self.lower.uses_gc = True
             out.append(ir.BindPrim(key, prim, held))
         return out
@@ -2661,9 +2686,12 @@ class FnChecker:
                     f"payload of `{target.name}` is `{show(vty)}`, expected "
                     f"`{show(payload_ty)}`"
                 )
-            if target is self.lower.ref_sym:
+            if target is self.lower.ref_sym or (
+                target is self.lower.array_sym and target is not None
+            ):
                 # D75: forging a reference from a bare `StructRef` is
-                # where the back end casts, so it needs the `Boxed`.
+                # where the back end casts, so it needs the `Boxed` (and
+                # D81's `Array`, from a bare `ArrayRef`, its `Arrayed`).
                 return ir.MakeTag(target, value, tag_ty), tag_ty
             return ir.MakeTag(target, value), tag_ty
         if target.kind != SymKind.FN:

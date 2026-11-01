@@ -1,0 +1,25 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D81: writing through a reference is a context item, which only the
+# platform's `Mutable` provides. `demo` has applied `Heap` but not
+# `Mutable`, so `Ref.set` is not available, and its struct stays a value.
+
+assume Std, Wasm {
+  fn demo() {
+    bind Boxed = Int;
+    bind Heap;
+    let n = 42;
+    let r = n.boxed();
+    r.set(7);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

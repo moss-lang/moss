@@ -101,6 +101,15 @@ class GcRef:
     value: object
 
 
+@dataclass(eq=False)
+class GcArray:
+    """A garbage-collected array (D81): a Python list, remembering the
+    type it was made at, as `GcRef` does."""
+
+    ty: object
+    items: list
+
+
 @dataclass(frozen=True)
 class Closure:
     fn: ir.FnIR
@@ -1212,17 +1221,99 @@ def _differ(a, b) -> bool:
 def forged_check(tag_ty, payload) -> None:
     """D75: building a `Ref[Boxed=X]` from a bare `StructRef` is a cast,
     and traps unless the struct is an `X`, as the back ends' `ref.cast`
-    does."""
-    held = next((a for s, a in tag_ty.args if s.name == "Boxed"), None)
-    if not isinstance(payload, GcRef) or held is None:
+    does; and so is building D81's `Array[Arrayed=X]` from an `ArrayRef`."""
+    held = next((a for s, a in tag_ty.args if s.name in ("Boxed", "Arrayed")), None)
+    if not isinstance(payload, (GcRef, GcArray)) or held is None:
         return
     if _differ(held, payload.ty):
         raise MossPanic("cast failure: a reference forged at another type (D75)")
 
 
+def _index(i, n: int, what: str) -> int:
+    """An array index, read unsigned as the instructions read it, which
+    traps past `n`."""
+    i = i.value % (1 << 32)
+    if i >= n:
+        raise MossPanic(f"out of bounds array access ({what})")
+    return i
+
+
+def _span(at, count, n: int, what: str) -> tuple:
+    a, c = at.value % (1 << 32), count.value % (1 << 32)
+    if a + c > n:
+        raise MossPanic(f"out of bounds array access ({what})")
+    return a, c
+
+
+def array_prim(bind: "ir.BindPrim") -> NativeFn:
+    """D81: what `bind Arrays;` provides — a Python list that remembers
+    the type it was made at, read and written with the bounds checks the
+    instructions make."""
+    which = bind.prim[len("array_"):]
+    if which == "new":
+        array = bind.key[1].module.names["Array"]
+
+        def new(a, this, held=bind.held):
+            length = a[0].value % (1 << 32)
+            if length > 1 << 28:
+                raise MossPanic("array.new: out of memory")
+            return TagVal(array, GcArray(held, [this] * length))
+
+        return NativeFn("arrayed", new)
+
+    def items(this):
+        if this.payload is None:
+            raise MossPanic("null reference")
+        return this.payload.items
+
+    if which == "length":
+        return NativeFn("length", lambda a, this: IntVal(len(items(this))))
+    if which == "get":
+        def get(a, this):
+            xs = items(this)
+            return xs[_index(a[0], len(xs), "get")]
+
+        return NativeFn("get", get)
+    if which == "set":
+        def set_(a, this):
+            xs = items(this)
+            xs[_index(a[0], len(xs), "set")] = a[1]
+            return UNIT
+
+        return NativeFn("set", set_)
+    if which == "fill":
+        def fill(a, this):
+            xs = items(this)
+            at, count = _span(a[0], a[2], len(xs), "fill")
+            xs[at : at + count] = [a[1]] * count
+            return UNIT
+
+        return NativeFn("fill", fill)
+
+    def copy(a, this):
+        dst, src = items(this), items(a[1])
+        at, count = _span(a[0], a[3], len(dst), "copy")
+        start, _ = _span(a[2], a[3], len(src), "copy")
+        dst[at : at + count] = src[start : start + count]
+        return UNIT
+
+    return NativeFn("copy", copy)
+
+
 def gc_prim(bind: "ir.BindPrim") -> NativeFn:
     """D75: what `bind Heap;` provides — boxing a value in a struct that
-    remembers the type it was made at, and reading one back."""
+    remembers the type it was made at, and reading one back — and what
+    D81's `bind Mutable;` and `bind Arrays;` do."""
+    if bind.prim.startswith("array_"):
+        return array_prim(bind)
+    if bind.prim == "ref_set":
+        def ref_set(a, this):
+            if this.payload is None:
+                raise MossPanic("null reference")
+            this.payload.value = a[0]
+            return UNIT
+
+        return NativeFn("set", ref_set)
     if bind.prim == "box":
         ref = bind.key[1].module.names["Ref"]
 

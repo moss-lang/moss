@@ -1,0 +1,36 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, raw;
+import "../../lib/wasm.moss" use Wasm, I32, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D81: forging an array, as D75's gc_forge forges a reference. Taking an
+# `Array` apart gives a bare `ArrayRef`; building one again is a cast to
+# the array type of what it claims to hold. At the type it was made at
+# the cast succeeds; at another — `Char`, laid out as one i32 like `Int`,
+# but a type of its own — it traps at the construction, before anything
+# reads it. Output: `42`, then a trap.
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Arrayed = Int;
+    bind Arrays;
+    bind Arrayed = Char;
+    bind Arrays;
+    let n = 42;
+    let xs = n.arrayed(raw(3));
+    let bare = match xs { Array a => a };
+    let ys = Array[Arrayed=Int] (bare);
+    print_int(ys.get(raw(2)));
+    putchar(char::newline);
+    let cs = Array[Arrayed=Char] (bare);
+    putchar(cs.get(raw(0)));
+  }
+}

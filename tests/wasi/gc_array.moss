@@ -1,0 +1,148 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, raw;
+import "../../lib/wasm.moss" as w
+  use Wasm, I32, I64, Boxed, Ref, Heap, .boxed, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D81: garbage-collected arrays, one per scalar of what they hold. An
+# array of `Int` is one GC array of i32; of a `Point` two; of a `Tagged`,
+# an i64 lane, an i32 lane and a lane of references; and of a
+# `Ref[Boxed=Expr]` one array of references — which no packed list can
+# hold, since a reference cannot be stored in linear memory. Each is made
+# full of one value (`.arrayed`), then written, filled and copied into,
+# and read back. `last` is generic over what an array holds, and called
+# at two types, each in a block that binds `Arrayed` to it (both one
+# scalar wide, since the bootstrap compiles a generic function once). Output: one line per number below.
+
+unit Add;
+unit Mul;
+
+type BinOp = Add | Mul;
+
+assume Std, Wasm {
+  type Literal Int;
+  type Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
+  type Expr = Binary | Literal;
+
+  type Point { x: Int, y: Int };
+  type Tagged { big: I64, n: Int, e: Ref[Boxed=Expr] };
+
+  context ExprHeap = Expr.boxed[Boxed=Expr], Ref.deref[Boxed=Expr];
+
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Std, Wasm, ExprHeap {
+  fn eval(e: Expr): Int {
+    match e {
+      Binary { op, lhs, rhs } => {
+        let l = eval(lhs.deref());
+        let r = eval(rhs.deref());
+        match op {
+          Add => l + r,
+          Mul => l * r,
+        }
+      },
+      Literal n => n,
+    }
+  }
+
+  fn lit(n: Int): Ref[Boxed=Expr] {
+    let e: Expr = Literal (n);
+    e.boxed()
+  }
+}
+
+# Generic over what the array holds: the last element.
+assume Wasm, Arrayed {
+  context Reading = Array.length, Array.get;
+
+  assume Reading {
+    fn last(xs: Array): Arrayed { xs.get(w::i32_sub(xs.length(), w::i32_one)) }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn idx(n: Num): I32 { raw(n) }
+  fn count(v: I32): Num { Num (v) }
+
+  fn main() {
+    bind WasiStd;
+    bind Boxed = Expr;
+    bind Heap;
+    bind Arrayed = Int;
+    bind Arrays;
+    bind Arrayed = Point;
+    bind Arrays;
+    bind Arrayed = Tagged;
+    bind Arrays;
+    bind Arrayed = Ref[Boxed=Expr];
+    bind Arrays;
+
+    # Ints: 7 7 7 7 7 7 7 7, then [2] = 40, [4..7) = 1, [0..2) = [5..7).
+    let seven = 7;
+    let xs = seven.arrayed(idx(8));
+    xs.set(idx(2), 40);
+    xs.fill(idx(4), 1, idx(3));
+    xs.copy(idx(0), xs, idx(5), idx(2));
+    line(count(xs.length()));
+    var sum = 0;
+    var k = 0;
+    while k < count(xs.length()) {
+      sum = sum * 10 + xs.get(idx(k));
+      k = k + 1;
+    }
+    line(sum);
+    line({ bind Arrayed = Int; last(xs) });
+
+    # Points: two lanes.
+    let origin = Point { x = 0, y = 0 };
+    let ps = origin.arrayed(idx(3));
+    ps.set(idx(1), Point { x = 3, y = 4 });
+    ps.set(idx(2), Point { x = 5, y = 12 });
+    let qs = origin.arrayed(idx(4));
+    qs.copy(idx(1), ps, idx(1), idx(2));
+    line(qs.get(idx(2)).x * 100 + qs.get(idx(2)).y);
+    line(qs.get(idx(1)).y);
+    line(qs.get(idx(3)).y);
+
+    # Tagged: three lanes, one of them references.
+    let t = Tagged { big = w::i64_extend_i32_s(idx(9)), n = 2, e = lit(3) };
+    let ts = t.arrayed(idx(2));
+    let three = Binary { op = Mul, lhs = lit(6), rhs = lit(7) };
+    let e: Expr = three;
+    ts.set(idx(1), Tagged { big = w::i64_extend_i32_s(idx(-1)), n = 5, e = e.boxed() });
+    let got = ts.get(idx(1));
+    line(count(w::i32_wrap_i64(got.big)));
+    line(got.n + eval(got.e.deref()));
+    line(eval(ts.get(idx(0)).e.deref()));
+
+    # References: one lane.
+    let one = lit(1);
+    let rs = one.arrayed(idx(5));
+    rs.set(idx(3), e.boxed());
+    var total = 0;
+    k = 0;
+    while k < count(rs.length()) {
+      total = total + eval(rs.get(idx(k)).deref());
+      k = k + 1;
+    }
+    line(total);
+    line(eval(last(rs).deref()));
+  }
+}

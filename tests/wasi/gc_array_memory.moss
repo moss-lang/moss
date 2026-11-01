@@ -1,0 +1,47 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, raw, WasiContainers, Numerics, Containers;
+import "../../lib/wasm.moss" use Wasm, I32, Memory, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D81 with D79: an array lives in no linear memory, so `Array` lists no
+# `Memory`. One made in the main memory's scope is written and read in a
+# block where `Memory` is `Scratch` — where a packed list made outside
+# could not be passed (memory_mismatch.moss) — and its sum is put in a
+# `Scratch` list made there. Output: 6, then 6.
+
+unit Scratch;
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Arrayed = Int;
+    bind Arrays;
+    let one = 1;
+    let xs = one.arrayed(raw(3));
+    let total = {
+      bind Memory = Scratch;
+      bind WasiContainers;
+      xs.set(raw(1), 2);
+      xs.set(raw(2), 3);
+      let sums = int_list();
+      sums.push(xs.get(raw(0)) + xs.get(raw(1)) + xs.get(raw(2)));
+      sums.get(0)
+    };
+    line(total);
+    line(xs.get(raw(0)) + xs.get(raw(1)) + xs.get(raw(2)));
+  }
+}

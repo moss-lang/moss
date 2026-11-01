@@ -198,6 +198,11 @@ assume Std {
   val cg_structref: CellInt;
   val cg_box: CellInt;
   val cg_deref: CellInt;
+  # D81: lib/wasm.moss's `Array`, `Arrayed` and `ArrayRef`, then the
+  # methods `Mutable` and `Arrays` provide, in `platform_prim`'s order
+  # from 3: `Ref.set`, `.arrayed`, and `Array`'s `length`, `get`, `set`,
+  # `fill` and `copy`.
+  val cg_gc: IntList;
 
   # D79: lib/wasm.moss's `Memory`, under which every memory instruction
   # is declared: what it is where an instruction is emitted says which
@@ -312,7 +317,7 @@ assume Std {
     rm_node, rm_genv, rm_recv, rm_meth, rm_sym, rm_link, rm_head,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
     cg_i32, cg_i64, cg_f32, cg_f64, cg_boolty,
-    cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_memory, cg_errs, cg_err_name, cg_err_at, cg_where,
+    cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_gc, cg_memory, cg_errs, cg_err_name, cg_err_at, cg_where,
     vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
     ck_entry, ck_inner, ck_link, ck_head,
     fl_start, fl_len, fl_types,
@@ -458,6 +463,7 @@ assume Std {
       cg_structref.write(wasm_symbol(s));
       cg_box.write(ast::none());
       cg_deref.write(ast::none());
+      find_array_symbols();
       let mm = spelled();
       sp_Memory(mm);
       cg_memory.write(wasm_symbol(mm));
@@ -478,12 +484,71 @@ assume Std {
       }
     }
 
+    # D81's: `cg_gc` as its comment lists them, none where lib/wasm.moss
+    # is not in the program.
+    fn find_array_symbols() {
+      let a = spelled();
+      sp_Array(a);
+      cg_gc.push(wasm_symbol(a));
+      let t = spelled();
+      sp_Arrayed(t);
+      cg_gc.push(wasm_symbol(t));
+      let r = spelled();
+      sp_ArrayRef(r);
+      cg_gc.push(wasm_symbol(r));
+      let st = spelled();
+      sp_set(st);
+      cg_gc.push(attached_in_wasm(cg_ref.read(), st));
+      var made = ast::none();
+      if ast::is_some(cg_wasm.read()) {
+        let n = spelled();
+        sp_arrayed(n);
+        made = prog::lookup(cg_wasm.read(), prog::ns_detached(), intern::intern_chars(n));
+      }
+      cg_gc.push(made);
+      let arr = cg_gc.get(0);
+      let len = spelled();
+      sp_length(len);
+      cg_gc.push(attached_in_wasm(arr, len));
+      let g = spelled();
+      sp_get(g);
+      cg_gc.push(attached_in_wasm(arr, g));
+      let s = spelled();
+      sp_set(s);
+      cg_gc.push(attached_in_wasm(arr, s));
+      let f = spelled();
+      sp_fill(f);
+      cg_gc.push(attached_in_wasm(arr, f));
+      let c = spelled();
+      sp_copy(c);
+      cg_gc.push(attached_in_wasm(arr, c));
+    }
+
+    fn attached_in_wasm(recv: Int, name: IntList): Int {
+      if !ast::is_some(cg_wasm.read()) {
+        return ast::none();
+      }
+      if !ast::is_some(recv) {
+        return ast::none();
+      }
+      prog::find_attached(cg_wasm.read(), recv, intern::intern_chars(name))
+    }
+
+    fn array_sym(): Int { cg_gc.get(0) }
+    fn arrayed_sym(): Int { cg_gc.get(1) }
+    fn arrayref_sym(): Int { cg_gc.get(2) }
+
     # Which of the platform's primitives a provision's provider is: 1 for
-    # `.boxed`, 2 for `Ref.deref`, 0 for anything else. `bind Heap;`
+    # `.boxed`, 2 for `Ref.deref`, 3 for `Ref.set`, 4 for `.arrayed`, 5
+    # to 9 for `Array`'s `length`, `get`, `set`, `fill` and `copy` (D81),
+    # 0 for anything else. `bind Heap;`
     # makes a provision whose provider is the method itself, which has no
     # body, and a call through it is the instructions (D75).
     fn platform_prim(provider: Int): Int {
       if !ast::is_some(provider) {
+        return 0;
+      }
+      if prog::sym_mod.get(provider) != cg_wasm.read() {
         return 0;
       }
       if provider == cg_box.read() {
@@ -491,6 +556,13 @@ assume Std {
       }
       if provider == cg_deref.read() {
         return 2;
+      }
+      var k = 3;
+      while k < cg_gc.length() {
+        if provider == cg_gc.get(k) {
+          return k;
+        }
+        k = k + 1;
       }
       0
     }
@@ -510,18 +582,33 @@ assume Std {
       types::sym_of(ty) == cg_ref.read()
     }
 
-    fn held_of(ref_ty: Int): Int {
+    fn held_of(ref_ty: Int): Int { held_by(ref_ty, cg_ref.read(), cg_boxed.read()) }
+
+    fn held_by(ref_ty: Int, head: Int, param: Int): Int {
       let reqs = int_list();
-      types::reqs_of(cg_ref.read(), reqs);
+      types::reqs_of(head, reqs);
       var i = 0;
       while i < reqs.length() {
-        if reqs.get(i) == cg_boxed.read() {
+        if reqs.get(i) == param {
           return types::member_at(ref_ty, i);
         }
         i = i + 1;
       }
       ty_none()
     }
+
+    # D81: whether a type is an `Array`, and what one holds.
+    fn is_array_type(ty: Int): Bool {
+      if !ast::is_some(array_sym()) {
+        return false;
+      }
+      if !types::is_kind(ty, types::kd_nominal()) {
+        return false;
+      }
+      types::sym_of(ty) == array_sym()
+    }
+
+    fn array_held(ty: Int): Int { held_by(ty, array_sym(), arrayed_sym()) }
 
     # Whether a type a reference would hold is one this specialization
     # does not know: `Boxed` itself, unbound.
@@ -533,7 +620,16 @@ assume Std {
       if sym == cg_boxed.read() {
         return true;
       }
-      sym == prog::param_of(cg_boxed.read())
+      if sym == prog::param_of(cg_boxed.read()) {
+        return true;
+      }
+      if !ast::is_some(arrayed_sym()) {
+        return false;
+      }
+      if sym == arrayed_sym() {
+        return true;
+      }
+      sym == prog::param_of(arrayed_sym())
     }
 
     fn struct_of(held: Int): Int {
@@ -560,6 +656,65 @@ assume Std {
     }
 
     fn ref_valtype(held: Int): Int { emit::vt_ref(struct_of(held)) }
+
+    # D81: the type of an `Array[Arrayed=held]` — an array of its one
+    # scalar, or an immutable struct of one array per scalar, the "lanes",
+    # each an array of its valtype shared by every element type with one —
+    # reserved before its lanes are computed, as a struct is. Keyed apart
+    # from the structs: a handle by -2 - 2·held, a lane by -3 - 2·valtype.
+    fn array_of(held: Int): Int {
+      let key = -2 - held - held;
+      let found = emit::find_struct(key);
+      if found >= 0 {
+        return found;
+      }
+      if checking() {
+        return 0;
+      }
+      if cg_real.read() == 1 {
+        cg_error(c_missing(), ast::none());
+      }
+      let j = emit::add_struct(key);
+      let fields = int_list();
+      let w = width(held);
+      if w == 0 {
+        # Nothing to store: a value of `()` has no scalar to lay out.
+        cg_error(c_unsupported(), ast::none());
+        fields.push(emit::vt_i32());
+        emit::make_array(j);
+      } else if w == 1 {
+        fields.push(valtype_at(held, 0));
+        emit::make_array(j);
+      } else {
+        var i = 0;
+        while i < w {
+          fields.push(emit::vt_ref(lane_of(valtype_at(held, i))));
+          i = i + 1;
+        }
+      }
+      emit::set_struct_fields(j, fields);
+      j
+    }
+
+    fn lane_of(vt: Int): Int {
+      let key = -3 - vt - vt;
+      let found = emit::find_struct(key);
+      if found >= 0 {
+        return found;
+      }
+      if checking() {
+        return 0;
+      }
+      if cg_real.read() == 1 {
+        cg_error(c_missing(), ast::none());
+      }
+      let j = emit::add_struct(key);
+      emit::make_array(j);
+      let fields = int_list();
+      fields.push(vt);
+      emit::set_struct_fields(j, fields);
+      j
+    }
 
     # A zero of a valtype: what pads a narrower member of a union, which
     # for a reference slot is `ref.null`.
@@ -1691,6 +1846,9 @@ assume Std {
       if sym == cg_structref.read() {
         return emit::vt_structref();
       }
+      if sym == arrayref_sym() {
+        return emit::vt_eqref();
+      }
       var k = 1;
       while k < emit::vt_count() {
         let cs = spelled();
@@ -1715,6 +1873,9 @@ assume Std {
       }
       if is_ref_type(ty) {
         return ref_valtype(held_of(ty));
+      }
+      if is_array_type(ty) {
+        return emit::vt_ref(array_of(array_held(ty)));
       }
       if types::is_kind(ty, types::kd_nominal()) {
         if types::is_unit_decl(ty) {
@@ -2537,15 +2698,17 @@ assume Std {
         l = l + 1;
       }
       # The scalars in `emit::vt_at`'s order, then D75's references: the
-      # bare one, then one per struct type.
+      # bare ones (D81's `ArrayRef` the second), then one per GC type.
       let counts = int_list();
       var k = 0;
-      while k < emit::vt_count() + 1 + emit::st_key.length() {
+      while k < emit::vt_count() + 2 + emit::st_key.length() {
         var vt = emit::vt_structref();
         if k < emit::vt_count() {
           vt = emit::vt_at(k);
-        } else if k > emit::vt_count() {
-          vt = emit::vt_ref(k - emit::vt_count() - 1);
+        } else if k == emit::vt_count() + 1 {
+          vt = emit::vt_eqref();
+        } else if k > emit::vt_count() + 1 {
+          vt = emit::vt_ref(k - emit::vt_count() - 2);
         }
         let first = next;
         l = lc_base.read() + nparams;
@@ -2880,9 +3043,17 @@ assume Std {
         return ty_none();
       }
       let penv = lower::env_b_of(bound);
-      if platform_prim(provider) > 0 {
+      let prim = platform_prim(provider);
+      if prim > 2 {
+        return emit_gc_op(
+          body, recv, recv_ty, prim, run, n, m,
+          sig_params(row_view(grow), sym, recv_ty), prog::sym_name.get(sym),
+          sig_ret(row_view(grow), sym, recv_ty)
+        );
+      }
+      if prim > 0 {
         return emit_platform(
-          body, recv, recv_ty, platform_prim(provider), n, prog::sym_name.get(sym),
+          body, recv, recv_ty, prim, n, prog::sym_name.get(sym),
           sig_ret(row_view(grow), sym, recv_ty)
         );
       }
@@ -3228,6 +3399,18 @@ assume Std {
           }
           op_ref_cast_null(body, ref_valtype(held));
         }
+        if is_array_type(tag) {
+          # D81: and so is an `Array` built from a bare `ArrayRef`.
+          let held = array_held(spec(tag));
+          if unknown_held(held) {
+            if checking() {
+              return tag;
+            }
+            cg_error(c_unbound(), prog::sym_name.get(sym));
+            return tag;
+          }
+          op_ref_cast_null(body, emit::vt_ref(array_of(held)));
+        }
         return tag;
       }
       if is_defined_fn(sym) {
@@ -3351,6 +3534,122 @@ assume Std {
         i = i + 1;
       }
       gret
+    }
+
+    # D81: a call through what `bind Mutable;` or `bind Arrays;` provided.
+    # The receiver (already emitted into `recv`) and each argument go to
+    # locals, and the operation is done once per lane — on the array
+    # itself where what it holds is one scalar, otherwise on each lane
+    # array the struct holds. `Ref.set` is a `struct.set` per field, and
+    # makes the struct's fields mutable.
+    fn emit_gc_op(
+      body: IntList, recv: IntList, recv_ty: Int, prim: Int, run: Int, n: Int, m: Int,
+      params: IntList, name: Int, gret: Int
+    ): Int {
+      let ty = spec(recv_ty);
+      var held = ty;
+      if prim == 3 {
+        held = held_of(ty);
+      } else if prim > 4 {
+        held = array_held(ty);
+      }
+      if n != params.length() {
+        cg_error(c_bad_type(), name);
+      }
+      if unknown_held(held) {
+        if checking() {
+          return gret;
+        }
+        cg_error(c_unbound(), name);
+        return ty_none();
+      }
+      push_bytes(body, recv);
+      let r = reveal(ast::none(), recv_ty);
+      store_local(body, r);
+      emit_args(body, run, n, m, params);
+      let args = int_list();
+      var i = 0;
+      while i < n {
+        args.push(reveal(ast::none(), params.get(i)));
+        i = i + 1;
+      }
+      i = n;
+      while i > 0 {
+        i = i - 1;
+        store_local(body, args.get(i));
+      }
+      if prim == 3 {
+        let j = struct_of(held);
+        if !checking() {
+          emit::make_mutable(j);
+        }
+        i = 0;
+        while i < width(held) {
+          op_local_get(body, local_slot(r, 0));
+          op_local_get(body, local_slot(args.get(0), i));
+          op_struct_set(body, j, i);
+          i = i + 1;
+        }
+        return gret;
+      }
+      let j = array_of(held);
+      let w = width(held);
+      if prim == 4 {
+        i = 0;
+        while i < w {
+          op_local_get(body, local_slot(r, i));
+          op_local_get(body, local_slot(args.get(0), 0));
+          op_array_new(body, lane_at(j, held, i));
+          i = i + 1;
+        }
+        if w > 1 {
+          op_struct_new(body, j);
+        }
+        return gret;
+      }
+      if prim == 5 {
+        lane(body, r, j, w, 0);
+        op_array_len(body);
+        return gret;
+      }
+      i = 0;
+      while i < w {
+        let lj = lane_at(j, held, i);
+        lane(body, r, j, w, i);
+        op_local_get(body, local_slot(args.get(0), 0));
+        if prim == 6 {
+          op_array_get(body, lj);
+        } else if prim == 7 {
+          op_local_get(body, local_slot(args.get(1), i));
+          op_array_set(body, lj);
+        } else if prim == 8 {
+          op_local_get(body, local_slot(args.get(1), i));
+          op_local_get(body, local_slot(args.get(2), 0));
+          op_array_fill(body, lj);
+        } else {
+          lane(body, args.get(1), j, w, i);
+          op_local_get(body, local_slot(args.get(2), 0));
+          op_local_get(body, local_slot(args.get(3), 0));
+          op_array_copy(body, lj);
+        }
+        i = i + 1;
+      }
+      gret
+    }
+
+    # Lane `i` of the array in local `l`: the array itself if it has one.
+    fn lane(body: IntList, l: Int, j: Int, w: Int, i: Int) {
+      op_local_get(body, local_slot(l, 0));
+      if w > 1 {
+        op_struct_get(body, j, i);
+      }
+    }
+
+    fn lane_at(j: Int, held: Int, i: Int): Int {
+      if width(held) > 1 {
+        return lane_of(valtype_at(held, i));
+      }
+      j
     }
 
     # A call to whatever a bind put here: the arguments are already on

@@ -113,6 +113,8 @@ functor Boot: Std -> Compiler {
   bind emit::st_fstart = int_list();
   bind emit::st_flen = int_list();
   bind emit::st_fields = int_list();
+  bind emit::st_kind = int_list();
+  bind emit::st_mut = int_list();
 
   bind wops::op_names = int_list();
   bind wops::op_codes = int_list();
@@ -176,6 +178,7 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_structref = cell_int();
   bind codegen::cg_box = cell_int();
   bind codegen::cg_deref = cell_int();
+  bind codegen::cg_gc = int_list();
   bind codegen::cg_memory = cell_int();
   bind codegen::cg_errs = int_list();
   bind codegen::cg_err_name = int_list();

@@ -1,0 +1,173 @@
+import "../../lib/access.moss" use Elem, .get, .length, .push, .set;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, raw, i32_bool;
+import "../../lib/wasm.moss" as w
+  use Wasm, I32, Boxed, Ref, Heap, Mutable, .boxed, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D81: a growable list is a program's business, built on GC arrays and a
+# mutable header. `GcList` below is a reference to a `Grown` — where the
+# elements are and how many there are — which `.push` replaces with
+# `Ref.set` when it grows: a new array twice as big, the old elements
+# copied in. Before the first push there is no array (`Empty`, padded with
+# a null reference), so nothing needs a value to fill one with.
+#
+# `sum_squares` is written against `lib/access.moss`'s accessors on an
+# abstract `Bag`, and runs once on `Std`'s own `IntList`, a packed list in
+# linear memory, and once on a `GcList` — pushed past the first capacity,
+# read, written, and aliased, which both share: a list is a handle. Then a
+# `GcList` of references, which no packed list can hold. Output: the same
+# three lines from each block, then 15 and 3.
+
+assume Wasm, Branch, Arrayed {
+  type Present Array;
+  unit Empty;
+  type Data = Present | Empty;
+  type Grown { data: Data, len: I32 };
+  type GcList[Arrayed] Ref[Boxed=Grown];
+
+  context Growing =
+    Arrayed.arrayed, Array.length, Array.get, Array.set, Array.copy,
+    Grown.boxed[Boxed=Grown], Ref.deref[Boxed=Grown], Ref.set[Boxed=Grown];
+
+  assume Growing {
+    fn gc_list(): GcList {
+      let g = Grown { data = Empty, len = w::i32_zero };
+      GcList (g.boxed())
+    }
+
+    fn header(l: GcList): Ref[Boxed=Grown] { match l { GcList r => r } }
+
+    fn elements(g: Grown): Array {
+      match g.data {
+        Present a => a,
+        Empty => w::unreachable(),
+      }
+    }
+
+    fn GcList.length(): Num { Num (header(this).deref().len) }
+
+    fn GcList.get(index: Num): Arrayed { elements(header(this).deref()).get(raw(index)) }
+
+    fn GcList.set(index: Num, value: Arrayed) {
+      elements(header(this).deref()).set(raw(index), value);
+    }
+
+    fn GcList.push(value: Arrayed) {
+      let h = header(this);
+      let g = h.deref();
+      let data = match g.data {
+        Present a => {
+          if i32_bool(w::i32_eq(g.len, a.length())) {
+            let bigger = value.arrayed(w::i32_shl(a.length(), w::i32_one));
+            bigger.copy(w::i32_zero, a, w::i32_zero, g.len);
+            bigger
+          } else {
+            a
+          }
+        },
+        Empty => value.arrayed(w::i32_add(w::i32_one, w::i32_one)),
+      };
+      data.set(g.len, value);
+      h.set(Grown { data = Present (data), len = w::i32_add(g.len, w::i32_one) });
+    }
+  }
+}
+
+type Bag;
+
+assume Int, Bag {
+  fn bag(): Bag;
+
+  context Bags =
+    Bag, bag, Bag.push[Elem=Int], Bag.get[Elem=Int], Bag.set[Elem=Int], Bag.length;
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+
+  type Sum { lhs: Int, rhs: Int };
+}
+
+assume Std, Bags {
+  fn sum_squares() {
+    let xs = bag();
+    var i = 0;
+    while i < 20 {
+      xs.push(i * i);
+      i = i + 1;
+    }
+    xs.set(0, 1000);
+    let ys = xs;
+    ys.push(5);
+    var s = 0;
+    i = 0;
+    while i < xs.length() {
+      s = s + xs.get(i);
+      i = i + 1;
+    }
+    line(xs.length());
+    line(s);
+    line(ys.get(20));
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    {
+      bind Bag = IntList;
+      bind bag = int_list;
+      sum_squares();
+    }
+    {
+      bind Arrayed = Int;
+      bind Arrays;
+      bind Boxed = Grown;
+      bind Heap;
+      bind Mutable;
+      bind Bag = GcList;
+      bind bag = gc_list;
+      bind Bag.push[Elem=Int] = GcList.push;
+      bind Bag.get[Elem=Int] = GcList.get;
+      bind Bag.set[Elem=Int] = GcList.set;
+      bind Bag.length = GcList.length;
+      sum_squares();
+    }
+    {
+      bind Boxed = Sum;
+      bind Heap;
+      bind Arrayed = Ref[Boxed=Sum];
+      bind Arrays;
+      bind Boxed = Grown;
+      bind Heap;
+      bind Mutable;
+      let rs = gc_list();
+      var i = 0;
+      while i < 5 {
+        let s = Sum { lhs = i, rhs = 1 };
+        rs.push(s.boxed());
+        i = i + 1;
+      }
+      var total = 0;
+      i = 0;
+      while i < rs.length() {
+        let s = rs.get(i).deref();
+        total = total + s.lhs + s.rhs;
+        i = i + 1;
+      }
+      line(total);
+      line(rs.get(2).deref().lhs + 1);
+    }
+  }
+}

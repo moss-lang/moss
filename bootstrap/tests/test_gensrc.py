@@ -68,8 +68,15 @@ class TestGeneratedSources(unittest.TestCase):
         # D75's two methods are instructions too, but which ones depends
         # on the layout of what a reference holds, so both back ends
         # select them by hand, where `bind Heap;` provides them, rather
-        # than from the table.
-        self.assertEqual(declared - set(gensrc.wasm_ops()), {".boxed", "Ref.deref"})
+        # than from the table; and so are D81's, which `Mutable` and
+        # `Arrays` provide.
+        self.assertEqual(
+            declared - set(gensrc.wasm_ops()),
+            {
+                ".boxed", "Ref.deref", "Ref.set", ".arrayed", "Array.length",
+                "Array.get", "Array.set", "Array.fill", "Array.copy",
+            },
+        )
 
 
 if __name__ == "__main__":

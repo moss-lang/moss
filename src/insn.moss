@@ -116,6 +116,35 @@ assume Std {
     uleb(buf, field);
   }
 
+  fn op_struct_set(buf: IntList, j: Int, field: Int) {
+    buf.push(251);
+    uleb(buf, 5);
+    uleb(buf, j);
+    uleb(buf, field);
+  }
+
+  # D81's arrays: an array type is its index `j`, as a struct's is.
+  fn op_array(buf: IntList, op: Int, j: Int) {
+    buf.push(251);
+    uleb(buf, op);
+    uleb(buf, j);
+  }
+
+  fn op_array_new(buf: IntList, j: Int) { op_array(buf, 6, j); }
+  fn op_array_get(buf: IntList, j: Int) { op_array(buf, 11, j); }
+  fn op_array_set(buf: IntList, j: Int) { op_array(buf, 14, j); }
+  fn op_array_fill(buf: IntList, j: Int) { op_array(buf, 16, j); }
+
+  fn op_array_len(buf: IntList) {
+    buf.push(251);
+    uleb(buf, 15);
+  }
+
+  fn op_array_copy(buf: IntList, j: Int) {
+    op_array(buf, 17, j);
+    uleb(buf, j);
+  }
+
   fn op_ref_cast_null(buf: IntList, vt: Int) {
     buf.push(251);
     uleb(buf, 23);

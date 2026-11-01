@@ -8,6 +8,11 @@ type F64;
 # Any reference to a garbage-collected struct, `(ref null struct)` (D75).
 type StructRef;
 
+# Any reference to a garbage-collected array (D81), `(ref null eq)`: an
+# `Array` of a one-scalar type is a GC array, and of a wider one a struct
+# of arrays, one per scalar ("lane"), and `eq` is what both are.
+type ArrayRef;
+
 # https://webassembly.github.io/spec/core/syntax/instructions.html#parametric-instructions
 fn unreachable(): |;
 
@@ -244,6 +249,34 @@ assume Boxed {
   type Ref[Boxed] StructRef;
   fn .boxed(): Ref;
   fn Ref.deref(): Boxed;
+
+  # D81: replacing what a reference holds, a `struct.set` per field. Only
+  # `Mutable` below provides it, and a type's struct has mutable fields
+  # only where it is applied at that type, so a `Ref` stays a value
+  # wherever nothing can write through it.
+  fn Ref.set(value: Boxed);
+}
+
+# Garbage-collected arrays (D81), shaped as `Ref` is: an `Array` is typed
+# by what it holds, a listed parameter (D73), and is one GC array per
+# scalar of that type's run (D59) — one array where it is one scalar, and
+# otherwise an immutable struct of them, each operation done once per
+# lane. The constructor is a detached method keyed by its receiver, the
+# value every element starts as (`array.new`), so arrays of several types
+# coexist in one scope; the rest are attached to `Array`, so provided at
+# `Array[Arrayed=X]`. Every operation traps on an index past the length,
+# as the instructions do. Nothing written in Moss can provide them; the
+# platform does, through `Arrays` below.
+type Arrayed;
+
+assume I32, Arrayed {
+  type Array[Arrayed] ArrayRef;
+  fn .arrayed(length: I32): Array;
+  fn Array.length(): I32;
+  fn Array.get(index: I32): Arrayed;
+  fn Array.set(index: I32, value: Arrayed);
+  fn Array.fill(at: I32, value: Arrayed, count: I32);
+  fn Array.copy(at: I32, from: Array, start: I32, count: I32);
 }
 
 context Wasm =
@@ -252,6 +285,7 @@ context Wasm =
   F32,
   F64,
   StructRef,
+  ArrayRef,
   Memory,
 
   i32_zero,
@@ -426,6 +460,8 @@ context Wasm =
   f64_reinterpret_i64,
 
   Heap,
+  Mutable,
+  Arrays,
 ;
 
 # An abstract functor (D78), which the platform provides, as it provides
@@ -437,3 +473,11 @@ context Wasm =
 # assumed on its own, and bound to another with its signature
 # (`bind Alloc = Heap;`).
 functor Heap: Wasm, Boxed -> Boxed.boxed, Ref.deref;
+
+# D81: the platform's other two. `bind Mutable;` provides `Ref.set` at
+# `Ref[Boxed=...]` for the `Boxed` in context, and `bind Arrays;` the
+# array items at the `Arrayed` in context, as `Heap` does for boxing.
+functor Mutable: Wasm, Boxed -> Ref.set;
+
+functor Arrays: Wasm, Arrayed ->
+  Arrayed.arrayed, Array.length, Array.get, Array.set, Array.fill, Array.copy;

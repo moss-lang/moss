@@ -29,9 +29,13 @@ assume Std {
   # the abstract heap type's own byte (0x6B), and `vt_ref(j)` is a
   # reference to the `j`th struct type.
   fn vt_structref(): Int { 107 }
+  # D81: a bare `ArrayRef`, `(ref null eq)`, by the byte of `eq` (0x6D).
+  fn vt_eqref(): Int { 109 }
   fn vt_ref(j: Int): Int { 256 + j }
   fn is_ref(vt: Int): Bool {
     if vt == vt_structref() {
+      true
+    } else if vt == vt_eqref() {
       true
     } else {
       vt >= 256
@@ -39,7 +43,7 @@ assume Std {
   }
 
   fn push_heaptype(out: IntList, vt: Int) {
-    if vt == vt_structref() {
+    if vt < 256 {
       out.push(vt);
     } else {
       sleb(out, vt - 256);
@@ -121,6 +125,10 @@ assume Std {
   val st_fstart: IntList;
   val st_flen: IntList;
   val st_fields: IntList;
+  # D81: which are arrays (1; their one field is the element) rather than
+  # structs (0), and which have mutable fields (1).
+  val st_kind: IntList;
+  val st_mut: IntList;
 
   context Emit =
     ft_params, ft_pstart, ft_plen, ft_res, ft_rstart, ft_rlen,
@@ -129,7 +137,7 @@ assume Std {
     fn_type, fn_locals, fn_lstart, fn_llen, fn_bstart, fn_blen, insns,
     ex_start, ex_len, ex_kind, ex_index,
     mem_pages, mem_key,
-    st_key, st_fstart, st_flen, st_fields;
+    st_key, st_fstart, st_flen, st_fields, st_kind, st_mut;
 
   assume Emit {
     # A function type, deduplicated: both sides are buffers of valtype
@@ -178,8 +186,19 @@ assume Std {
       st_key.push(key);
       st_fstart.push(0);
       st_flen.push(0);
+      st_kind.push(0);
+      st_mut.push(0);
       st_key.length() - 1
     }
+
+    # D81: a type made an array (its one field the element, mutable), or
+    # a struct's fields made mutable.
+    fn make_array(j: Int) {
+      st_kind.set(j, 1);
+      st_mut.set(j, 1);
+    }
+
+    fn make_mutable(j: Int) { st_mut.set(j, 1); }
 
     fn set_struct_fields(j: Int, fields: IntList) {
       st_fstart.set(j, st_fields.length());
@@ -307,20 +326,26 @@ assume Std {
       }
       let b = int_list();
       if st_key.length() > 0 {
-        # One `rec` group of every struct, each a final struct type of
-        # immutable fields.
+        # One `rec` group of every struct and array (D81), each final,
+        # its fields mutable or not.
         uleb(b, ft_plen.length() + 1);
         b.push(78);
         uleb(b, st_key.length());
         var s = 0;
         while s < st_key.length() {
-          b.push(95);
-          uleb(b, st_flen.get(s));
-          var f = 0;
-          while f < st_flen.get(s) {
-            push_valtype(b, struct_field(s, f));
-            b.push(0);
-            f = f + 1;
+          if st_kind.get(s) == 1 {
+            b.push(94);
+            push_valtype(b, struct_field(s, 0));
+            b.push(st_mut.get(s));
+          } else {
+            b.push(95);
+            uleb(b, st_flen.get(s));
+            var f = 0;
+            while f < st_flen.get(s) {
+              push_valtype(b, struct_field(s, f));
+              b.push(st_mut.get(s));
+              f = f + 1;
+            }
           }
           s = s + 1;
         }

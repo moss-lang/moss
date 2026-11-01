@@ -1,0 +1,65 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, Mutable, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D81: `Ref.set`, which only the platform's `Mutable` provides, replaces
+# what a reference holds — a `struct.set` per field — and every reference
+# to that struct sees it: a reference made mutable is shared, not copied.
+# `bump` is generic, written against the three items at `Counter`; `main`
+# applies `Heap` and `Mutable` at `Counter`, and `Heap` alone at `Int`,
+# whose struct stays immutable. Output: 0, then 2 and 7 through the
+# alias, then 3, then 42.
+
+assume Std {
+  type Counter { hits: Int, last: Int };
+
+  context Counting =
+    Counter.boxed[Boxed=Counter], Ref.deref[Boxed=Counter], Ref.set[Boxed=Counter];
+
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Std, Wasm, Counting {
+  fn bump(r: Ref[Boxed=Counter], last: Int) {
+    let c = r.deref();
+    r.set(Counter { hits = c.hits + 1, last });
+  }
+
+  fn demo() {
+    let zero = Counter { hits = 0, last = 0 };
+    let r = zero.boxed();
+    let alias = r;
+    line(r.deref().hits);
+    bump(r, 5);
+    bump(alias, 7);
+    line(r.deref().hits);
+    line(r.deref().last);
+    bump(r, 1);
+    line(alias.deref().hits);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Boxed = Counter;
+    bind Heap;
+    bind Mutable;
+    demo();
+    bind Boxed = Int;
+    bind Heap;
+    let n = 42;
+    line(n.boxed().deref());
+  }
+}

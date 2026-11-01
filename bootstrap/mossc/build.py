@@ -81,6 +81,19 @@ REF_CAST_NULL = 23
 REF_NULL_OP = b"\xd0"
 REC = b"\x4e"
 STRUCT_TYPE = b"\x5f"
+# D81: garbage-collected arrays. A bare `ArrayRef` is `(ref null eq)`,
+# what an array and a struct of arrays both are; an array type is 0x5E
+# and one field type.
+HT_EQ = b"\x6d"
+EQREF = REF_NULL + HT_EQ
+ARRAY_TYPE = b"\x5e"
+STRUCT_SET = 5
+ARRAY_NEW = 6
+ARRAY_GET = 11
+ARRAY_SET = 14
+ARRAY_LEN = 15
+ARRAY_FILL = 16
+ARRAY_COPY = 17
 
 # Function index space: the WASI imports the module actually uses, then a
 # fixed run of shims, then the compiled Moss functions, then `_start`.
@@ -423,7 +436,16 @@ class Backend:
         # across the passes of `build`, so an index never changes.
         self.gc = lower.uses_gc
         self.struct_of_ty: dict = {}
+        # Every GC type, in index order: a struct's field valtypes, or an
+        # array's one element valtype (D81), with which kind it is and
+        # whether its fields are mutable.
         self.struct_fields: list[tuple] = []
+        self.gc_kind: list[str] = []
+        self.gc_mut: list[bool] = []
+        # D81: the type of an `Array[Arrayed=X]`, by `X`; and the lane
+        # arrays of the wider ones, by element valtype.
+        self.array_of_ty: dict = {}
+        self.lane_of_vt: dict = {}
         self.valtype_memo: dict = {}
         # D79: the memories past the main one, each a unit `Memory` is
         # bound to somewhere, by its symbol, in the order they are met;
@@ -466,22 +488,63 @@ class Backend:
         fields are computed, since they may be references to itself."""
         index = self.struct_of_ty.get(held)
         if index is None:
-            index = len(self.struct_fields)
+            index = self.new_gc_type("struct")
             self.struct_of_ty[held] = index
-            self.struct_fields.append(())
             self.struct_fields[index] = self.valtypes(held)
         return index
+
+    def new_gc_type(self, kind: str, fields: tuple = (), mutable: bool = False) -> int:
+        self.struct_fields.append(fields)
+        self.gc_kind.append(kind)
+        self.gc_mut.append(mutable)
+        return len(self.struct_fields) - 1
+
+    # D81: arrays, one per scalar of what they hold ("lanes").
+
+    def lanes(self, held) -> tuple:
+        return self.valtypes(held)
+
+    def array_index(self, held) -> int:
+        """The type of an `Array[Arrayed=held]`: an array of its one
+        scalar, or an immutable struct of one array per scalar. Reserved
+        before its lanes are computed, since they may hold arrays of it."""
+        index = self.array_of_ty.get(held)
+        if index is None:
+            index = self.new_gc_type("array")
+            self.array_of_ty[held] = index
+            lanes = self.lanes(held)
+            if len(lanes) == 1:
+                self.struct_fields[index] = lanes
+                self.gc_mut[index] = True
+            else:
+                self.gc_kind[index] = "struct"
+                self.struct_fields[index] = tuple(
+                    REF_NULL + sleb(self.lane_index(vt)) for vt in lanes
+                )
+        return index
+
+    def lane_index(self, vt: bytes) -> int:
+        index = self.lane_of_vt.get(vt)
+        if index is None:
+            index = self.new_gc_type("array", (vt,), True)
+            self.lane_of_vt[vt] = index
+        return index
+
+    def array_type(self, held) -> bytes:
+        return REF_NULL + sleb(self.array_index(held))
 
     def ref_type(self, held) -> bytes:
         return REF_NULL + sleb(self.struct_index(held))
 
     def held_of(self, ref_ty) -> object:
-        """What a `Ref[Boxed=...]` holds."""
+        """What a `Ref[Boxed=...]` holds, or an `Array[Arrayed=...]`."""
         boxed = self.lower.boxed_sym
+        if ref_ty.symbol is self.lower.array_sym:
+            boxed = self.lower.arrayed_sym
         for s, a in ref_ty.args:
             if s is boxed:
                 return a
-        raise NotCompilable("a `Ref` that does not say what it holds")
+        raise NotCompilable("a reference that does not say what it holds")
 
     def valtypes(self, t) -> tuple:
         """The valtype of each scalar of a value of type `t` (D59): the
@@ -504,6 +567,8 @@ class Backend:
             sym = declared(t)
             if sym is self.lower.structref_sym:
                 return (STRUCTREF,)
+            if sym is self.lower.arrayref_sym and sym is not None:
+                return (EQREF,)
             if "wasm" in self.lib:
                 names = self.lib["wasm"].names
                 for name, vt in (("I64", I64), ("F32", F32), ("F64", F64)):
@@ -517,6 +582,8 @@ class Backend:
                 return (I32,)
             if t.symbol is self.lower.ref_sym:
                 return (self.ref_type(self.held_of(t)),)
+            if t.symbol is self.lower.array_sym and t.symbol is not None:
+                return (self.array_type(self.held_of(t)),)
             if t.symbol.kind == SymKind.TAG:
                 from .lower import Env
 
@@ -888,10 +955,13 @@ class Backend:
         structs = len(self.struct_fields)
         entries = [b"\x60" + vec(list(p)) + vec(list(r)) for p, r in types]
         if structs:
-            group = [
-                STRUCT_TYPE + vec([v + b"\x00" for v in fields])
-                for fields in self.struct_fields
-            ]
+            group = []
+            for fields, kind, mutable in zip(self.struct_fields, self.gc_kind, self.gc_mut):
+                mut = b"\x01" if mutable else b"\x00"
+                if kind == "array":
+                    group.append(ARRAY_TYPE + fields[0] + mut)
+                else:
+                    group.append(STRUCT_TYPE + vec([v + mut for v in fields]))
             entries.insert(0, REC + vec(group))
         type_section = section(1, vec(entries))
         import_section = section(
@@ -1665,9 +1735,12 @@ class FnCompiler:
                 # and the one place a reference is cast — to the struct of
                 # what it claims to hold, trapping if it does not.
                 held = self.held_of_here(self.b.held_of(node.ty))
-                index = self.b.struct_index(held)
+                if node.ty.symbol is self.b.lower.array_sym:
+                    index = self.b.array_index(held)  # D81
+                else:
+                    index = self.b.struct_index(held)
                 self.code += GC + uleb(REF_CAST_NULL) + sleb(index)
-                return (self.b.ref_type(held),)
+                return (REF_NULL + sleb(index),)
             return layout
         elif isinstance(node, ir.Inject):
             return self.inject(node)
@@ -1737,10 +1810,13 @@ class FnCompiler:
                 base = 0 if bare else 1
                 if pat.binder is not None:
                     self.slots[pat.binder] = list(scrut[base : base + pat.width])
-                    if pat.head is not None and pat.head is self.b.lower.ref_sym:
+                    lw = self.b.lower
+                    if pat.head is not None and pat.head in (lw.ref_sym, lw.array_sym):
                         # D75: taking a `Ref` apart forgets what it
-                        # holds — a bare `StructRef`, upcast for free.
-                        bare_ref = self.local(STRUCTREF)
+                        # holds — a bare `StructRef`, upcast for free (and
+                        # D81's `Array`, a bare `ArrayRef`).
+                        bare = STRUCTREF if pat.head is lw.ref_sym else EQREF
+                        bare_ref = self.local(bare)
                         self.code += LOCAL_GET + uleb(scrut[base])
                         self.code += LOCAL_SET + uleb(bare_ref)
                         self.slots[pat.binder] = [bare_ref]
@@ -2241,14 +2317,32 @@ class FnCompiler:
         return held
 
     def _abstract_boxed(self, t) -> bool:
-        return isinstance(t, TAbstract) and getattr(t.symbol, "origin", None) is self.b.lower.boxed_sym
+        lw = self.b.lower
+        return isinstance(t, TAbstract) and getattr(t.symbol, "origin", None) in (
+            lw.boxed_sym, lw.arrayed_sym
+        ) and getattr(t.symbol, "origin", None) is not None
 
     def gc_prim(self, provision: Primitive, node: ir.Call):
         """D75: `.boxed()` is `struct.new` of the struct for what it holds,
         and `.deref()` a `struct.get` of each of its fields."""
         held = provision.held
+        if provision.prim.startswith("array_"):
+            return self.array_prim(provision.prim[len("array_"):], held, node)
         index = self.b.struct_index(held)
         fields = self.b.struct_fields[index]
+        if provision.prim == "ref_set":
+            # D81: a `struct.set` per field, and the struct's fields are
+            # mutable because this is compiled.
+            self.b.gc_mut[index] = True
+            self.expr(node.this)
+            ref = self.local(self.b.ref_type(held))
+            self.code += LOCAL_SET + uleb(ref)
+            values = self.stash(self.expr(node.args[0]))
+            for i, v in enumerate(values):
+                self.code += LOCAL_GET + uleb(ref) + LOCAL_GET + uleb(v)
+                self.code += GC + uleb(STRUCT_SET) + uleb(index) + uleb(i)
+            self.code += I32_CONST + sleb(0)  # the Moss call yields ()
+            return (I32,)
         if provision.prim == "box":
             got = self.expr(node.this)
             if not all(
@@ -2272,6 +2366,80 @@ class FnCompiler:
             self.code += LOCAL_GET + uleb(ref)
             self.code += GC + uleb(STRUCT_GET) + uleb(index) + uleb(i)
         return tuple(fields)
+
+    def stash(self, layout) -> list:
+        """The values a layout left on the stack, popped into fresh locals:
+        their indices, in order."""
+        out = [self.local(vt) for vt in layout]
+        for i in reversed(out):
+            self.code += LOCAL_SET + uleb(i)
+        return out
+
+    def array_prim(self, op: str, held, node: ir.Call):
+        """D81: an array operation, once per lane. An array of one scalar
+        is the instruction itself; a wider one is a struct of lane arrays,
+        each taken out and operated on in turn."""
+        b = self.b
+        index = b.array_index(held)
+        lanes = b.lanes(held)
+        lane_ix = [index] if len(lanes) == 1 else [b.lane_index(vt) for vt in lanes]
+        whole = len(lanes) == 1
+
+        def lane(ref: int, i: int):
+            self.code += LOCAL_GET + uleb(ref)
+            if not whole:
+                self.code += GC + uleb(STRUCT_GET) + uleb(index) + uleb(i)
+
+        def unit():
+            self.code += I32_CONST + sleb(0)  # the Moss call yields ()
+            return (I32,)
+
+        if op == "new":
+            values = self.stash(self.expr(node.this))
+            (length,) = self.stash(self.expr(node.args[0]))
+            for i, v in enumerate(values):
+                self.code += LOCAL_GET + uleb(v) + LOCAL_GET + uleb(length)
+                self.code += GC + uleb(ARRAY_NEW) + uleb(lane_ix[i])
+            if not whole:
+                self.code += GC + uleb(STRUCT_NEW) + uleb(index)
+            return (b.array_type(held),)
+        (ref,) = self.stash(self.expr(node.this))
+        if op == "length":
+            lane(ref, 0)
+            self.code += GC + uleb(ARRAY_LEN)
+            return (I32,)
+        args = [self.stash(self.expr(a)) for a in node.args]
+        if op == "get":
+            (at,) = args[0]
+            for i in range(len(lanes)):
+                lane(ref, i)
+                self.code += LOCAL_GET + uleb(at)
+                self.code += GC + uleb(ARRAY_GET) + uleb(lane_ix[i])
+            return tuple(lanes)
+        if op == "set":
+            (at,), values = args
+            for i, v in enumerate(values):
+                lane(ref, i)
+                self.code += LOCAL_GET + uleb(at) + LOCAL_GET + uleb(v)
+                self.code += GC + uleb(ARRAY_SET) + uleb(lane_ix[i])
+            return unit()
+        if op == "fill":
+            (at,), values, (count,) = args
+            for i, v in enumerate(values):
+                lane(ref, i)
+                self.code += LOCAL_GET + uleb(at) + LOCAL_GET + uleb(v)
+                self.code += LOCAL_GET + uleb(count)
+                self.code += GC + uleb(ARRAY_FILL) + uleb(lane_ix[i])
+            return unit()
+        # copy(at, from, start, count)
+        (at,), (src,), (start,), (count,) = args
+        for i in range(len(lanes)):
+            lane(ref, i)
+            self.code += LOCAL_GET + uleb(at)
+            lane(src, i)
+            self.code += LOCAL_GET + uleb(start) + LOCAL_GET + uleb(count)
+            self.code += GC + uleb(ARRAY_COPY) + uleb(lane_ix[i]) + uleb(lane_ix[i])
+        return unit()
 
     def wasm_instruction(self, key: Symbol, node: ir.Call):
         """A `Wasm` intrinsic is the instruction of the same name; a memory

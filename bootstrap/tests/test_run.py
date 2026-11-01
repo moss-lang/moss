@@ -423,6 +423,15 @@ GC_AST_OUT = "-10\n0\n4096\n" * 2
 # types in one scope.
 GC_TWO_OUT = "3\n12\n7\n1\n"
 
+# D81: what tests/wasi/gc_array.moss prints — an array of `Int`s written,
+# filled and copied, read as digits, and its last element; `Point`s over
+# two lanes; `Tagged`s over three, one of references; and an array of
+# references, summed, and its last — and what tests/wasi/gc_list.moss
+# prints, the same three lines from a packed list and from a list built
+# on GC arrays, then a list of references.
+GC_ARRAY_OUT = "8\n15071117\n7\n512\n4\n0\n-1\n47\n3\n46\n1\n"
+GC_LIST_OUT = "21\n3475\n5\n21\n3475\n5\n15\n3\n"
+
 # D78: what tests/wasi/functor_fast.moss prints — √2 and √3 scaled by a
 # billion, at f64 and then at f32.
 FUNCTOR_FAST_OUT = "1414213562\n1732050808\n1414213504\n1732050944\n"
@@ -2004,6 +2013,12 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/gc_resolution.moss", "42\n7\n42\n", "lib/prelude.moss"),
             # A unit beside a reference in one union, and a trapping arm.
             ("tests/wasi/unit_beside_ref.moss", "42\n7\n", "lib/prelude.moss"),
+            # D81: arrays, `Ref.set`, a growable list built on them, and an
+            # array across a `Memory` bind.
+            ("tests/wasi/gc_array.moss", GC_ARRAY_OUT, "lib/prelude.moss"),
+            ("tests/wasi/gc_list.moss", GC_LIST_OUT, "lib/prelude.moss"),
+            ("tests/wasi/gc_mutable.moss", "0\n2\n7\n3\n42\n", "lib/prelude.moss"),
+            ("tests/wasi/gc_array_memory.moss", "6\n6\n", "lib/prelude.moss"),
             # Written against `Std`, so it needs the prelude in scope.
             ("tests/wasi/records.moss", RECORDS_OUT, "lib/prelude.moss"),
             ("tests/wasi/nested.moss", NESTED_OUT, "lib/prelude.moss"),
@@ -2047,6 +2062,82 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     self.assertIn("struct.get", text)
                     self.assertNotIn("ref.cast", text)
                     self.assertEqual(run_wasm(module), expected)
+
+    def test_gc_arrays(self):
+        """D81: arrays of one-scalar types (an `Int`, a reference) are one
+        GC array, and of wider ones (a record, a record of an i64, an i32
+        and a reference) a struct of one array per scalar; a growable list
+        built in Moss on them and on `Ref.set` runs the same generic code
+        as `Std`'s packed list; `Ref.set` makes only the struct it is
+        applied at mutable; and an array is used across a `Memory` bind.
+        The same output interpreted and in both compilers."""
+        from .test_build import compile_wasm, run_wasm
+
+        for entry, expected in (
+            ("tests/wasi/gc_array.moss", GC_ARRAY_OUT),
+            ("tests/wasi/gc_list.moss", GC_LIST_OUT),
+            ("tests/wasi/gc_mutable.moss", "0\n2\n7\n3\n42\n"),
+            ("tests/wasi/gc_array_memory.moss", "6\n6\n"),
+        ):
+            with self.subTest(entry=entry):
+                self.assertEqual(run({}, entry=entry), expected)
+                for module in (
+                    self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+                    compile_wasm({}, entry=entry),
+                ):
+                    self.assertTrue(starts_with_rec_group(module))
+                    text = wasm_text(module)
+                    structs = [
+                        line for line in text.splitlines()
+                        if line.strip().startswith("(type") and "(struct" in line
+                    ]
+                    if entry.endswith("gc_mutable.moss"):
+                        # `Counter`'s struct is written, `Int`'s is not.
+                        self.assertEqual(sum("(mut" in line for line in structs), 1)
+                        self.assertIn("struct.set", text)
+                        self.assertNotIn("array.new", text)
+                    else:
+                        self.assertIn("array.new", text)
+                        self.assertIn("array.get", text)
+                    if entry.endswith("gc_array.moss"):
+                        for op in ("array.set", "array.fill", "array.copy", "array.len"):
+                            self.assertIn(op, text)
+                        self.assertIn("(array (mut i64))", text)
+                    self.assertNotIn("ref.cast", text)
+                    self.assertEqual(run_wasm(module), expected)
+
+    def test_gc_arrays_trap(self):
+        """D81: an index past an array's length traps, as the instruction
+        does; and an `Array` forged from a bare `ArrayRef` at another type
+        than it was made at traps at the cast — `Char` is one i32 like
+        `Int`, but an array type of its own. In the interpreter and both
+        compilers, after the line before."""
+        import subprocess
+
+        from mossc.interp import MossPanic
+
+        from .test_build import compile_wasm, wasm_file, wasmtime
+
+        for entry, panic, trap, casts in (
+            ("tests/wasi/gc_array_bounds.moss", "out of bounds array access",
+             "out of bounds array access", 0),
+            ("tests/wasi/gc_array_forge.moss", "cast failure", "cast failure", 2),
+        ):
+            with self.subTest(entry=entry):
+                with self.assertRaises(MossPanic) as caught:
+                    run({}, entry=entry)
+                self.assertIn(panic, str(caught.exception))
+                for module in (
+                    self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+                    compile_wasm({}, entry=entry),
+                ):
+                    self.assertEqual(wasm_text(module).count("ref.cast"), casts)
+                    result = subprocess.run(
+                        [wasmtime(), wasm_file(module)],
+                        capture_output=True, text=True, timeout=120,
+                    )
+                    self.assertEqual((result.returncode, result.stdout), (134, "42\n"))
+                    self.assertIn(trap, result.stderr)
 
     def test_a_forged_reference_traps_where_it_is_forged(self):
         """D75: rebuilding a `Ref` from the bare `StructRef` it was taken
@@ -2314,6 +2405,21 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             "gc_unheaped": (
                 "no method `.boxed` is available for `Int` in the context here",
                 "?K {} demo boxed\n",
+            ),
+            # D81: so is making an array, which only `Arrays` provides...
+            "gc_unarrayed": (
+                "no method `.arrayed` is available for `Int` in the context here",
+                "?K {} demo arrayed\n",
+            ),
+            # ...and writing through a reference, which only `Mutable` does.
+            "gc_immutable": (
+                "no method `.Ref.set` is available for `Ref[Boxed=Int",
+                "?K {} demo set\n",
+            ),
+            # ...and an array's `.get` is at what it holds (D74).
+            "gc_array_misread": (
+                "argument `c` of `putchar` is `Int`, expected `Char`",
+                "?S {} demo\n",
             ),
             # ...and applying `Heap` needs its argument signature here.
             "gc_needs_boxed": (

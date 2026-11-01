@@ -1,0 +1,28 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, raw;
+import "../../lib/wasm.moss" use Wasm, I32, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D81: an array operation traps on an index past the array's length, as
+# the instruction does: the platform's bounds check, for nothing. The
+# last element reads; one past it traps. Output: `42`, then a trap.
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Arrayed = Int;
+    bind Arrays;
+    let n = 42;
+    let xs = n.arrayed(raw(3));
+    print_int(xs.get(raw(2)));
+    putchar(char::newline);
+    print_int(xs.get(raw(3)));
+  }
+}

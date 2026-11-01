@@ -157,6 +157,80 @@ assume Std {
     push_char(out, char::f);
   }
 
+  fn sp_ArrayRef(out: IntList) {
+    push_char(out, char::A);
+    push_char(out, char::r);
+    push_char(out, char::r);
+    push_char(out, char::a);
+    push_char(out, char::y);
+    push_char(out, char::R);
+    push_char(out, char::e);
+    push_char(out, char::f);
+  }
+
+  fn sp_Array(out: IntList) {
+    push_char(out, char::A);
+    push_char(out, char::r);
+    push_char(out, char::r);
+    push_char(out, char::a);
+    push_char(out, char::y);
+  }
+
+  fn sp_Arrayed(out: IntList) {
+    push_char(out, char::A);
+    push_char(out, char::r);
+    push_char(out, char::r);
+    push_char(out, char::a);
+    push_char(out, char::y);
+    push_char(out, char::e);
+    push_char(out, char::d);
+  }
+
+  fn sp_arrayed(out: IntList) {
+    push_char(out, char::a);
+    push_char(out, char::r);
+    push_char(out, char::r);
+    push_char(out, char::a);
+    push_char(out, char::y);
+    push_char(out, char::e);
+    push_char(out, char::d);
+  }
+
+  fn sp_set(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::e);
+    push_char(out, char::t);
+  }
+
+  fn sp_length(out: IntList) {
+    push_char(out, char::l);
+    push_char(out, char::e);
+    push_char(out, char::n);
+    push_char(out, char::g);
+    push_char(out, char::t);
+    push_char(out, char::h);
+  }
+
+  fn sp_get(out: IntList) {
+    push_char(out, char::g);
+    push_char(out, char::e);
+    push_char(out, char::t);
+  }
+
+  fn sp_fill(out: IntList) {
+    push_char(out, char::f);
+    push_char(out, char::i);
+    push_char(out, char::l);
+    push_char(out, char::l);
+  }
+
+  fn sp_copy(out: IntList) {
+    push_char(out, char::c);
+    push_char(out, char::o);
+    push_char(out, char::p);
+    push_char(out, char::y);
+  }
+
   fn sp_Memory(out: IntList) {
     push_char(out, char::M);
     push_char(out, char::e);

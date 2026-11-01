@@ -47,6 +47,17 @@ SPELLED = [
     "Boxed",
     "boxed",
     "deref",
+    # D81: garbage-collected arrays, and the methods `Mutable` and
+    # `Arrays` provide, likewise compiled in place.
+    "ArrayRef",
+    "Array",
+    "Arrayed",
+    "arrayed",
+    "set",
+    "length",
+    "get",
+    "fill",
+    "copy",
     # D79: the type every memory instruction is under, whose binding
     # says which memory an instruction is at.
     "Memory",

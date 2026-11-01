@@ -1,0 +1,33 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, I32, i32_zero, i32_one, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D81 with D74: an array is typed by what it holds, and `.get` is at its
+# receiver's `Arrayed`. `xs` holds `Int`s, so `xs.get` yields an `Int`
+# wherever it is called — here where `Arrayed` has since been bound to
+# `Char` and `Arrays` applied again, which provides the array items at
+# `Array[Arrayed=Char]` beside the `Int` ones. Passing it to `putchar` is
+# a type error.
+
+assume Std, Wasm {
+  fn demo() {
+    bind Arrayed = Int;
+    bind Arrays;
+    let n = 42;
+    let xs = n.arrayed(i32_one);
+    {
+      bind Arrayed = Char;
+      bind Arrays;
+      putchar(xs.get(i32_zero));
+      putchar(char::newline);
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
