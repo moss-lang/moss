@@ -581,6 +581,15 @@ class Backend:
             if t.symbol.kind == SymKind.UNIT:
                 return (I32,)
             if t.symbol is self.lower.ref_sym:
+                # D78: a `Ref` is a GC reference only where its payload is
+                # the platform's `StructRef`; a scope that binds
+                # `StructRef` (to an arena's `I32` address, say) and
+                # provides `.boxed`/`.deref` itself makes it that.
+                from .lower import Env
+
+                payload = self.valtypes(self.lower.payload_type(t, Env(t.symbol.module)))
+                if payload != (STRUCTREF,):
+                    return payload
                 return (self.ref_type(self.held_of(t)),)
             if t.symbol is self.lower.array_sym and t.symbol is not None:
                 return (self.array_type(self.held_of(t)),)
@@ -1730,10 +1739,17 @@ class FnCompiler:
         elif isinstance(node, ir.MakeTag):
             # D58: a nominal value *is* its payload. Nothing to attach.
             layout = self.expr(node.payload)
-            if node.ty is not None:
+            if (
+                node.ty is not None
+                and len(layout) == 1
+                and layout[0].startswith(REF_NULL)
+            ):
                 # D75: a `Ref` built from a bare `StructRef` is forged,
                 # and the one place a reference is cast — to the struct of
-                # what it claims to hold, trapping if it does not.
+                # what it claims to hold, trapping if it does not. Only
+                # where the payload is a reference: where a scope has
+                # bound `StructRef` to an address, there is nothing to
+                # cast (D78).
                 held = self.held_of_here(self.b.held_of(node.ty))
                 if node.ty.symbol is self.b.lower.array_sym:
                     index = self.b.array_index(held)  # D81
@@ -1811,10 +1827,15 @@ class FnCompiler:
                 if pat.binder is not None:
                     self.slots[pat.binder] = list(scrut[base : base + pat.width])
                     lw = self.b.lower
-                    if pat.head is not None and pat.head in (lw.ref_sym, lw.array_sym):
+                    if (
+                        pat.head is not None
+                        and pat.head in (lw.ref_sym, lw.array_sym)
+                        and self.local_type_of(scrut[base]).startswith(REF_NULL)
+                    ):
                         # D75: taking a `Ref` apart forgets what it
                         # holds — a bare `StructRef`, upcast for free (and
-                        # D81's `Array`, a bare `ArrayRef`).
+                        # D81's `Array`, a bare `ArrayRef`); unless a
+                        # scope bound `StructRef` to a scalar (D78).
                         bare = STRUCTREF if pat.head is lw.ref_sym else EQREF
                         bare_ref = self.local(bare)
                         self.code += LOCAL_GET + uleb(scrut[base])

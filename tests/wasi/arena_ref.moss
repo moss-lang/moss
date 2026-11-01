@@ -1,0 +1,99 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, raw, alloc;
+import "../../lib/wasm.moss" as w use Wasm, I32, StructRef, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78: swapping the GC heap. `Ref[Boxed]`'s payload is the platform's
+# abstract `StructRef`, so a scope can rebind it and provide `.boxed` and
+# `.deref` over linear memory instead: `demo` boxes two points and a
+# segment between them, and runs once with them on the GC heap (`Heap`)
+# and once in an arena, where `StructRef` is an `I32` address and the
+# providers are anonymous functions storing each field in a word.
+# Output: 29 and 42, twice.
+
+assume Std, Wasm {
+  type Point { x: Int, y: Int };
+  type Segment { from: Ref[Boxed=Point], to: Ref[Boxed=Point] };
+
+  context Boxes =
+    Point.boxed[Boxed=Point],
+    Ref.deref[Boxed=Point],
+    Segment.boxed[Boxed=Segment],
+    Ref.deref[Boxed=Segment];
+
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Std, Wasm, Boxes {
+  fn demo() {
+    let a = Point { x = 1, y = 2 }.boxed();
+    let b = Point { x = 30, y = 40 }.boxed();
+    let s = Segment { from = a, to = b }.boxed();
+    let t = s.deref();
+    line(t.to.deref().x - t.from.deref().x);
+    line(t.to.deref().y + a.deref().y);
+  }
+}
+
+# Word sizes, and a reference taken apart: in the arena, its address.
+assume Wasm, Branch {
+  fn four(): I32 { w::i32_add(w::i32_add(w::i32_one, w::i32_one), w::i32_add(w::i32_one, w::i32_one)) }
+  fn eight(): I32 { w::i32_add(four(), four()) }
+
+  assume Boxed {
+    fn address(r: Ref): StructRef { match r { Ref p => p } }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    {
+      bind Boxed = Point;
+      bind Heap;
+      bind Boxed = Segment;
+      bind Heap;
+      demo();
+    }
+    {
+      bind StructRef = I32;
+      bind Boxed = Point;
+      bind Point.boxed = () => {
+        let p = alloc(eight());
+        w::i32_store(p, raw(this.x));
+        w::i32_store(w::i32_add(p, four()), raw(this.y));
+        Ref (p)
+      };
+      bind Ref.deref = () => {
+        let p = address(this);
+        Point { x = Num (w::i32_load(p)), y = Num (w::i32_load(w::i32_add(p, four()))) }
+      };
+      bind Boxed = Segment;
+      bind Segment.boxed = () => {
+        let p = alloc(eight());
+        {
+          bind Boxed = Point;
+          w::i32_store(p, address(this.from));
+          w::i32_store(w::i32_add(p, four()), address(this.to));
+        }
+        Ref (p)
+      };
+      bind Ref.deref = () => {
+        let p = address(this);
+        bind Boxed = Point;
+        Segment { from = Ref (w::i32_load(p)), to = Ref (w::i32_load(w::i32_add(p, four()))) }
+      };
+      demo();
+    }
+  }
+}

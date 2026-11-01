@@ -2200,6 +2200,29 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 ):
                     self.assertEqual(run_wasm(module), expected)
 
+    def test_ref_over_an_arena(self):
+        """D78: `Ref[Boxed]`'s payload is the platform's abstract
+        `StructRef`, so a scope can rebind it to an `I32` address and
+        provide `.boxed` and `.deref` over linear memory. The same generic
+        code boxes on the GC heap in one block and in an arena in the
+        other: the same output interpreted and in both compilers, whose
+        back ends decide "is a reference" by `Ref`'s payload at the
+        specialization, not by the `Ref` symbol — so the arena's `Ref (p)`
+        is no cast, and its `Ref`s are `i32`s."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/arena_ref.moss"
+        expected = "29\n42\n" * 2
+        self.assertEqual(run({}, entry=entry), expected)
+        for module in (
+            self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+            compile_wasm({}, entry=entry),
+        ):
+            text = wasm_text(module)
+            self.assertIn("struct.new", text)
+            self.assertNotIn("ref.cast", text)
+            self.assertEqual(run_wasm(module), expected)
+
     def test_abstract_functor_binds_are_checked(self):
         """D78: `bind F = G;` needs `G`'s inputs among `F`'s and `G`'s
         result exactly `F`'s, checked where the bind is written (more

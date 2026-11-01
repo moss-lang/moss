@@ -3072,12 +3072,19 @@ calculus, to be mechanized, not sugar.
 
 *Swapping the GC heap.* `Ref[Boxed]`'s payload is the platform's abstract
 `StructRef`, so a scope can rebind it (`bind StructRef = I32;`) and provide
-`.boxed`/`.deref` over an arena: GC is not baked into `Ref`'s type. Two gaps
-remain, neither in the language: the self-hosted back end decides "is a
-reference" by the symbol `StructRef` rather than by its binding, and a
-generic arena needs to store any value's scalar run in linear memory, which
-today takes a hand-written `Layout` per type ([D69]) — a platform-provided
-abstract functor (`Packing: Wasm, Item -> Layout`) would close it.
+`.boxed`/`.deref` over an arena: GC is not baked into `Ref`'s type. Both
+back ends decide "is a reference" by `Ref`'s payload at the specialization
+— a GC reference where it is the platform's `StructRef`, otherwise a tag
+over whatever `StructRef` is bound to, like any other — rather than by the
+`Ref` symbol (which both did until November 2026), so the cast that forging
+a `Ref` costs ([D75]) is emitted only over a reference.
+`tests/wasi/arena_ref.moss` runs one generic function boxing two types on
+the GC heap in one block and, in the other, in an arena whose providers are
+anonymous functions storing each field in a word of linear memory. One gap
+remains, not in the language: a generic arena needs to store any value's
+scalar run in linear memory, which today takes a hand-written `Layout` per
+type ([D69]) — a platform-provided abstract functor (`Packing: Wasm, Item
+-> Layout`) would close it.
 
 *Settled with the designer.*
 
@@ -3214,10 +3221,11 @@ abstract functor (`Packing: Wasm, Item -> Layout`) would close it.
   of indices cannot be bound to the same abstract functor as `Heap`:
   whatever is bound must provide the same items at every instantiation of
   the inputs, so the handle type is fixed by `Alloc`'s signature — and a
-  pool cannot make a `Ref[Boxed=X]` (both back ends decide "is a
-  reference" by the `Ref` symbol, and a pool has no `StructRef` to put
-  in one), while the GC heap cannot make an index. A representation-
-  agnostic interface needs either a handle type in the result (the
+  pool cannot make a `Ref[Boxed=X]` (it has no `StructRef` to put in one;
+  a scope can rebind `StructRef` to an index, as *Swapping the GC heap*
+  above does, but `Alloc`'s result does not include `StructRef`, so a
+  functor bound to it cannot), while the GC heap cannot make an index.
+  A representation-agnostic interface needs either a handle type in the result (the
   deviation above) or one fixed by the binder together with the binding,
   which would tie the binding to that instantiation and is not D78's
   polymorphic provider. So "bound to GC in one block and to a pool in

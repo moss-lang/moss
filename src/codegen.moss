@@ -572,6 +572,11 @@ assume Std {
     # computed, since they may be references to it. The first pass finds
     # every one; the second only looks them up, since a function type's
     # index counts them.
+    #
+    # A `Ref` is a GC reference only where its payload is the platform's
+    # `StructRef` (D78): a scope that binds `StructRef` — to an arena's
+    # `I32` address, say — and provides `.boxed` and `.deref` itself makes
+    # it a tag over that, like any other. So `ty` is a specialized type.
     fn is_ref_type(ty: Int): Bool {
       if !ast::is_some(cg_ref.read()) {
         return false;
@@ -579,7 +584,10 @@ assume Std {
       if !types::is_kind(ty, types::kd_nominal()) {
         return false;
       }
-      types::sym_of(ty) == cg_ref.read()
+      if types::sym_of(ty) != cg_ref.read() {
+        return false;
+      }
+      wide_scalar(types::payload_of(ty)) == emit::vt_structref()
     }
 
     fn held_of(ref_ty: Int): Int { held_by(ref_ty, cg_ref.read(), cg_boxed.read()) }
@@ -3385,7 +3393,7 @@ assume Std {
         let want = int_list();
         want.push(types::member_payload(tag));
         emit_args(body, ast::b_of(e), ast::c_of(e), m, want);
-        if is_ref_type(tag) {
+        if is_ref_type(spec(tag)) {
           # D75: a `Ref` built from a bare `StructRef` is forged, and the
           # one place a reference is cast — to the struct of what it
           # claims to hold, trapping if it does not.
