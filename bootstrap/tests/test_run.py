@@ -2391,7 +2391,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "?S {} demo\n",
             ),
             "phantom_misread": (
-                "calling `Cell.first` needs `encode` at [Item=Int], but the one "
+                "calling `Cell.first` needs `decode` at [Item=Int], but the one "
                 "in the context here was provided at [Item=Char]",
                 "?S {} demo\n",
             ),
@@ -2510,10 +2510,13 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             # WASI preview 1 reads only the first memory, so its functions
             # are provided at the root's `Memory` alone: a WASI-calling
             # functor applied where `Memory` is rebound is incoherent,
-            # where it used to write into `Scratch` and print `AA`.
+            # where it used to write into `Scratch` and print `AA`. Every
+            # item of `Wasi` is incoherent there, and the one named is the
+            # one `wasi_putchar` reaches, not the first `Wasi` lists.
             "memory_wasi": (
-                "calling `wasi_putchar` needs `args_get` at [Memory=Scratch]",
-                "!R {} args_get\n",
+                "calling `wasi_putchar` needs `fd_write` at [Memory=Scratch], "
+                "reached through `write_all`",
+                "!R {} fd_write\n",
             ),
         }
         for name, (message, report) in cases.items():

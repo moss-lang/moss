@@ -4547,6 +4547,7 @@ assume Std {
         }
         e = lower::env_next_of(e);
       }
+      let incoherent = int_list();
       var i = 0;
       while i < lower::needs_count(f) {
         let r = lower::need_recv_at(f, i);
@@ -4557,7 +4558,7 @@ assume Std {
           let want = lower::need_app_at(f, i);
           let have = lower::env_b_of(row);
           if !coherent(s, want, fbase, have, base, genv, moved, bound_here, true) {
-            prog::error(prog::e_incoherent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(s));
+            incoherent.push(s);
           }
         } else {
           # D20, D16: a callee requires everything its declaration
@@ -4567,6 +4568,123 @@ assume Std {
           prog::error(prog::e_absent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(s));
         }
         i = i + 1;
+      }
+      if incoherent.length() > 0 {
+        report_incoherent(f, incoherent);
+      }
+    }
+
+    # Every incoherent need is an error, used or not (D20), but the ones
+    # worth naming are those the callee's code reaches, not every item of
+    # a context it assumes (D79: a WASI function needs all of `Wasi`, and
+    # what it calls is `fd_write`, not `args_get`). So name the ones used
+    # along some path, or the first, when it uses none of them. The
+    # bootstrap's `report_incoherent` makes the same choice.
+    fn report_incoherent(f: Int, incoherent: IntList) {
+      let used = int_list();
+      uses_into(f, int_list(), used);
+      let m = prog::sym_mod.get(cg_where.read());
+      var named = false;
+      var i = 0;
+      while i < incoherent.length() {
+        let s = incoherent.get(i);
+        if types::contains_sym(used, s) {
+          prog::error(prog::e_incoherent(), m, prog::sym_name.get(s));
+          named = true;
+        }
+        i = i + 1;
+      }
+      if !named {
+        prog::error(prog::e_incoherent(), m, prog::sym_name.get(incoherent.get(0)));
+      }
+    }
+
+    # The symbols a function's body names, and those of the defined
+    # functions it calls or binds, transitively: read off the syntax, as
+    # a diagnostic only needs. A method is selected by its receiver's
+    # type, which this does not know, so a method need is never found.
+    fn uses_into(f: Int, seen: IntList, out: IntList) {
+      if types::contains_sym(seen, f) {
+        return ();
+      }
+      seen.push(f);
+      uses_walk(ast::fn_body(prog::sym_decl.get(f)), prog::sym_mod.get(f), seen, out);
+    }
+
+    fn uses_run(run: Int, n: Int, m: Int, seen: IntList, out: IntList) {
+      var i = 0;
+      while i < n {
+        uses_walk(ast::kid_at(run, i), m, seen, out);
+        i = i + 1;
+      }
+    }
+
+    fn uses_walk(e: Int, m: Int, seen: IntList, out: IntList) {
+      if !ast::is_some(e) {
+        return ();
+      }
+      let k = ast::kind_of(e);
+      let a = ast::a_of(e);
+      let b = ast::b_of(e);
+      let c = ast::c_of(e);
+      if k == ast::k_ex_path() {
+        let sym = prog::resolve_quietly(m, a);
+        if ast::is_some(sym) {
+          types::push_new(out, sym);
+          if is_defined_fn(sym) {
+            uses_into(sym, seen, out);
+          }
+        }
+      } else if k == ast::k_ex_call() {
+        uses_walk(a, m, seen, out);
+        uses_run(b, c, m, seen, out);
+      } else if k == ast::k_ex_method() {
+        uses_walk(a, m, seen, out);
+        uses_run(c, ast::d_of(e), m, seen, out);
+      } else if k == ast::k_ex_record() {
+        uses_run(b, c, m, seen, out);
+      } else if k == ast::k_ex_match() {
+        uses_walk(a, m, seen, out);
+        uses_run(b, c, m, seen, out);
+      } else if k == ast::k_ex_block() {
+        uses_run(a, b, m, seen, out);
+        uses_walk(c, m, seen, out);
+      } else if k == ast::k_st_bind() {
+        uses_run(a, b, m, seen, out);
+      } else if k == ast::k_ex_binary() {
+        uses_walk(b, m, seen, out);
+        uses_run(c, 1, m, seen, out);
+      } else if k == ast::k_ex_if() {
+        uses_walk(a, m, seen, out);
+        uses_walk(b, m, seen, out);
+        uses_walk(c, m, seen, out);
+      } else if k == ast::k_st_while() {
+        uses_walk(a, m, seen, out);
+        uses_walk(b, m, seen, out);
+      } else if k == ast::k_ex_field() {
+        uses_walk(a, m, seen, out);
+      } else if k == ast::k_ex_return() {
+        uses_walk(a, m, seen, out);
+      } else if k == ast::k_st_loop() {
+        uses_walk(a, m, seen, out);
+      } else if k == ast::k_st_expr() {
+        uses_walk(a, m, seen, out);
+      } else if k == ast::k_st_let() {
+        uses_walk(c, m, seen, out);
+      } else if k == ast::k_st_var() {
+        uses_walk(c, m, seen, out);
+      } else if k == ast::k_st_assign() {
+        uses_walk(b, m, seen, out);
+      } else if k == ast::k_ex_rfield() {
+        uses_walk(b, m, seen, out);
+      } else if k == ast::k_arm() {
+        uses_walk(b, m, seen, out);
+      } else if k == ast::k_st_item() {
+        uses_walk(b, m, seen, out);
+      } else if k == ast::k_ex_unary() {
+        uses_walk(b, m, seen, out);
+      } else if k == ast::k_ex_lambda() {
+        uses_walk(ast::d_of(e), m, seen, out);
       }
     }
 

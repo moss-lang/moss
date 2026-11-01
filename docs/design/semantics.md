@@ -3513,7 +3513,13 @@ a compile-time choice — in Moss, a contextual type, like `Float`.
   where the contract was an address in memory 0. The fix is the same as
   for handles, putting the memory in the declaration, and needs no rule
   at the boundary between the library and the compiler, and no name for
-  the main memory.
+  the main memory. A callee needs every item its declaration assumes,
+  used or not ([D20]), so every item of `Wasi` is incoherent there; the
+  error names the one the callee's code reaches (`fd_write`, through
+  `write_all`), not the first `Wasi` lists — the bootstrap the first
+  such item with the functions it is reached through, the self-hosted
+  compiler each of them (read off the bodies' syntax, so a method need is
+  never singled out), and either the first declared when none is reached.
 - `wasm-features.txt` gains `multimemory`.
 
 *What it is for.* Arenas dropped all at once (reset one memory's allocator
@@ -3579,8 +3585,6 @@ one. (Survey: the thesis repository's `scratch/mmres/`.)
 - Specializing a function only at the context items it reaches: today
   every function under `assume Wasm` is compiled once per memory it is
   reached in, whether or not it touches memory.
-- The incoherence error names the first item of `Wasi` (`args_get`), not
-  the function actually reached (`fd_write`).
 - A name for the main memory, should one be wanted for its own sake.
 - Custom page sizes, a per-memory static attribute; memory64, an address
   type per memory; shared memories for threads.

@@ -709,7 +709,13 @@ assume Std {
     # Resolution. A path is a symbol, or — when every segment but the
     # last names a module — an export of that module.
 
-    fn resolve_path(m: Int, p: Int): Int {
+    fn resolve_path(m: Int, p: Int): Int { resolve_path_in(m, p, true) }
+
+    # The same, reporting nothing when the path names nothing: for a
+    # diagnostic's look at code it is not compiling (codegen's `uses_of`).
+    fn resolve_quietly(m: Int, p: Int): Int { resolve_path_in(m, p, false) }
+
+    fn resolve_path_in(m: Int, p: Int, report: Bool): Int {
       var cur = lookup(m, ns_name(), ast::path_at(p, 0));
       var is_mod = false;
       if !ast::is_some(cur) {
@@ -722,7 +728,9 @@ assume Std {
       var i = 1;
       while i < ast::path_len(p) {
         if !is_mod {
-          error(e_module(), m, ast::path_at(p, i - 1));
+          if report {
+            error(e_module(), m, ast::path_at(p, i - 1));
+          }
           return ast::none();
         }
         let name = ast::path_at(p, i);
@@ -733,7 +741,9 @@ assume Std {
         } else {
           let sub = export_of(cur, ns_alias(), name);
           if !ast::is_some(sub) {
-            error(e_export(), m, name);
+            if report {
+              error(e_export(), m, name);
+            }
             return ast::none();
           }
           cur = sub;

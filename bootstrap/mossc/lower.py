@@ -1327,6 +1327,55 @@ class Lower:
 
     # Functions
 
+    def uses_of(self, symbol: Symbol) -> dict:
+        """The needs of `symbol` that its lowered code reaches, each with
+        the defined functions it is reached through (empty when used
+        directly): a direct call's uses, translated by its `needs_map`,
+        are the caller's. Only for diagnostics, so it is computed on
+        demand, and a function still being lowered (a recursive call)
+        contributes nothing."""
+        out: dict = {}
+        self._uses(symbol, (), out, set())
+        return out
+
+    def _uses(self, symbol: Symbol, path: tuple, out: dict, seen: set):
+        fn = self.fns.get(id(symbol))
+        if fn is None or id(symbol) in seen:
+            return
+        seen = seen | {id(symbol)}
+
+        def use(key, via):
+            if key not in out:
+                out[key] = via
+
+        def through(target, needs_map):
+            inner: dict = {}
+            self._uses(target, (), inner, seen)
+            back = dict(needs_map)
+            for k, via in inner.items():
+                if k in back:
+                    use(back[k], path + (target,) + via)
+
+        def walk(node):
+            if isinstance(node, ir.NeedVal):
+                use(node.key, path)
+            elif isinstance(node, ir.Call):
+                kind, target = node.callee
+                if kind == "env":
+                    use(target, path)
+                elif node.needs_map is not None:
+                    through(target, node.needs_map)
+            elif isinstance(node, ir.BindFn):
+                through(node.fn, node.needs_map)
+            if isinstance(node, (tuple, list)):
+                for item in node:
+                    walk(item)
+            elif type(node).__module__ == ir.__name__:
+                for name in node.__dataclass_fields__:
+                    walk(getattr(node, name))
+
+        walk(fn.body)
+
     def lower_fn(self, module: Module, symbol: Symbol) -> None:
         """Elaborate one defined function. Its needs are derivable from the
         assume nesting alone and get registered *before* the body is checked,
@@ -2293,6 +2342,7 @@ class FnChecker:
         `sat_at`)."""
         self.require_merges(callee)
         mapping = []
+        incoherent = []
         for need in needs:
             if isinstance(need, tuple):
                 receiver, method = need
@@ -2337,7 +2387,11 @@ class FnChecker:
                 continue
             else:
                 continue
-            self.check_coherent(callee, need, key, what)
+            differ = self.incoherence(callee, need, key)
+            if differ is not None:
+                incoherent.append((need, what, differ))
+        if incoherent:
+            self.report_incoherent(callee, incoherent)
         return tuple(mapping)
 
     def require_merges(self, callee: Symbol):
@@ -2362,7 +2416,9 @@ class FnChecker:
                     f"but here they are `{show(lhs)}` and `{show(rhs)}`"
                 )
 
-    def check_coherent(self, callee: Symbol, need, key, what: str):
+    def incoherence(self, callee: Symbol, need, key):
+        """The callee's instantiation of `need` and the provision's, on
+        the symbols where they differ, or None if they agree (D62)."""
         wanted = self.lower.need_apps.get(id(callee), {}).get(need, {})
         have = self.env.apps.get(key, {})
         required = {}
@@ -2373,14 +2429,33 @@ class FnChecker:
                 ty = self.env.tymap.get(t)
             required[t] = None if ty is None else self.lower.instantiate(self.env, ty)
         differ = [t for t in required if required[t] != have.get(t)]
-        if differ:
-            self.error(
-                f"calling `{callee.name}` needs {what} at "
-                f"[{self.lower.show_app({t: required[t] for t in differ})}], "
-                f"but the one in the context here was provided at "
-                f"[{self.lower.show_app({t: have.get(t) for t in differ})}] "
-                "(a provision serves only the instantiation it was made at; D62)"
-            )
+        if not differ:
+            return None
+        return {t: required[t] for t in differ}, {t: have.get(t) for t in differ}
+
+    def report_incoherent(self, callee: Symbol, incoherent: list):
+        """A callee needs everything its declaration assumes (D20), so
+        every incoherent need is an error, used or not; but the one worth
+        naming is one the callee's code reaches, not merely the first its
+        context lists (D79: a WASI function needs all of `Wasi`, and what
+        it calls is `fd_write`, not `args_get`). So name the first that
+        is used along some path, and the path, falling back to the first
+        declared when the callee uses none of them."""
+        uses = self.lower.uses_of(callee)
+        need, what, (required, have) = next(
+            (item for item in incoherent if item[0] in uses), incoherent[0]
+        )
+        via = ""
+        path = uses.get(need)
+        if path:
+            via = ", reached through " + " -> ".join(f"`{s.name}`" for s in path)
+        self.error(
+            f"calling `{callee.name}` needs {what} at "
+            f"[{self.lower.show_app(required)}]{via}, "
+            f"but the one in the context here was provided at "
+            f"[{self.lower.show_app(have)}] "
+            "(a provision serves only the instantiation it was made at; D62)"
+        )
 
     # Expressions
 
