@@ -1,0 +1,54 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Chr, Numerics, Containers, WasiNumerics,
+  WasiContainers, heap_mark, heap_reset;
+import "../../lib/wasm.moss" use Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78, D79: arena.moss's arena, with a list made in it leaving its block
+# as the block's value. Each `bind Arena;` makes a fresh `Memory` and
+# fresh containers over it, so the list's type is one that exists only
+# in the block: refused in both compilers, before the reset at the end of
+# the block could leave `kept` pointing at reused memory.
+
+unit Scratch;
+
+functor Arena: Wasm, Branch -> Memory, Containers;
+
+functor InScratch: Wasm, Branch -> Memory, Containers {
+  bind Memory = Scratch;
+  bind WasiNumerics;
+  bind Char = Chr;
+  bind WasiContainers;
+}
+
+assume Char, Numerics, Containers {
+  fn countdown(n: Int): IntList {
+    let xs = int_list();
+    var i = n;
+    while i > 0 {
+      xs.push(i);
+      i = i - 1;
+    }
+    xs
+  }
+}
+
+assume Wasm, Wasi, Branch, Arena {
+  fn report() {
+    bind WasiStd;
+    let kept = {
+      bind Arena;
+      let mark = heap_mark();
+      let xs = countdown(3);
+      heap_reset(mark);
+      xs
+    };
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind Arena = InScratch;
+    report();
+  }
+}

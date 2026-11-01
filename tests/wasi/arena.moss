@@ -1,0 +1,119 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Chr, Numerics, Containers, WasiNumerics,
+  WasiContainers, heap_mark, heap_reset;
+import "../../lib/wasm.moss" use Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+
+# An arena whose data cannot outlive it (D78, D79). `Arena` is an
+# abstract functor whose result holds the type `Memory` and the
+# containers over it, so each `bind Arena;` makes a fresh generation of
+# `Memory`, `IntList` and the rest (D72): the code after it is checked
+# once against them, knowing nothing of what they are, and no value whose
+# type mentions them may leave the block. `report` builds each start's
+# trajectory there, keeps two numbers from it in lists in the main
+# memory, and drops the arena — resetting its allocator to where it was
+# when the block began — before the next. A trajectory kept past its
+# block is a compile error (arena_escape.moss).
+#
+# `main` decides what the arena is: `Scratch`, a second linear memory.
+# `InScratch` binds `Int` and `Char` itself because a functor bound to an
+# abstract one may rely only on its own inputs, and the library's
+# containers are written at the library's `Num` and `Chr`; for the same
+# reason `report`, which applies `Arena`, binds `WasiStd` itself rather
+# than being generic over `Std` (functor_fast.moss's kernel does the
+# same).
+#
+# Output: each start, the steps its trajectory takes to reach 1, and the
+# largest number on the way.
+
+unit Scratch;
+
+functor Arena: Wasm, Branch -> Memory, Containers;
+
+functor InScratch: Wasm, Branch -> Memory, Containers {
+  bind Memory = Scratch;
+  bind WasiNumerics;
+  bind Char = Chr;
+  bind WasiContainers;
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Char, Numerics, Containers {
+  # The Collatz trajectory of `n`, down to 1.
+  fn trajectory(n: Int): IntList {
+    let xs = int_list();
+    var x = n;
+    xs.push(x);
+    while x != 1 {
+      if x % 2 == 0 {
+        x = x / 2;
+      } else {
+        x = 3 * x + 1;
+      }
+      xs.push(x);
+    }
+    xs
+  }
+
+  fn largest(xs: IntList): Int {
+    var best = xs.get(0);
+    var i = 1;
+    while i < xs.length() {
+      if xs.get(i) > best {
+        best = xs.get(i);
+      }
+      i = i + 1;
+    }
+    best
+  }
+}
+
+assume Wasm, Wasi, Branch, Arena {
+  fn report() {
+    bind WasiStd;
+    let starts = int_list();
+    starts.push(6);
+    starts.push(7);
+    starts.push(27);
+    starts.push(97);
+    let steps = int_list();
+    let peaks = int_list();
+    var i = 0;
+    while i < starts.length() {
+      {
+        bind Arena;
+        let mark = heap_mark();
+        let path = trajectory(starts.get(i));
+        steps.push(path.length() - 1);
+        peaks.push(largest(path));
+        heap_reset(mark);
+      }
+      i = i + 1;
+    }
+    i = 0;
+    while i < starts.length() {
+      print_int(starts.get(i));
+      putchar(char::space);
+      print_int(steps.get(i));
+      putchar(char::space);
+      print_int(peaks.get(i));
+      putchar(char::newline);
+      i = i + 1;
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind Arena = InScratch;
+    report();
+  }
+}

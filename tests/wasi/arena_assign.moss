@@ -1,0 +1,54 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Chr, Numerics, Containers, WasiNumerics,
+  WasiContainers, heap_mark, heap_reset;
+import "../../lib/wasm.moss" use Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D78, D79: arena.moss's arena, with a list made in it assigned to a
+# `var` declared outside its block. The outer `var` is a list in the main
+# memory, and the arena's list is of the fresh type `bind Arena;` made, so
+# the assignment is a type error in both compilers (D78: the block's own
+# value is the only way out that type-checks at all).
+
+unit Scratch;
+
+functor Arena: Wasm, Branch -> Memory, Containers;
+
+functor InScratch: Wasm, Branch -> Memory, Containers {
+  bind Memory = Scratch;
+  bind WasiNumerics;
+  bind Char = Chr;
+  bind WasiContainers;
+}
+
+assume Char, Numerics, Containers {
+  fn countdown(n: Int): IntList {
+    let xs = int_list();
+    var i = n;
+    while i > 0 {
+      xs.push(i);
+      i = i - 1;
+    }
+    xs
+  }
+}
+
+assume Wasm, Wasi, Branch, Arena {
+  fn report() {
+    bind WasiStd;
+    var kept = int_list();
+    {
+      bind Arena;
+      let mark = heap_mark();
+      kept = countdown(3);
+      heap_reset(mark);
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind Arena = InScratch;
+    report();
+  }
+}

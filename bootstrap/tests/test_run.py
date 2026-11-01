@@ -2494,6 +2494,63 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     self.assertIn("i32.store $1", text)
                     self.assertEqual(run_wasm(module), expected)
 
+    def test_an_arena_whose_data_cannot_outlive_it(self):
+        """D78 and D79: an abstract functor whose result holds `Memory`
+        and the containers over it, bound in `main` to one that puts them
+        in a second memory, is an arena: each `bind Arena;` makes fresh
+        types, so the trajectories built there are dropped (the
+        allocator reset) at the end of each block, and the numbers kept
+        from them live in the main memory. Interpreted and in both
+        compilers, with the temporaries' loads and stores in memory 1.
+        A list made in the arena leaving its block — as the block's
+        value, assigned to an outer `var`, or inside a record — is
+        refused by both compilers."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/arena.moss"
+        expected = "6 8 16\n7 16 52\n27 111 9232\n97 118 9232\n"
+        self.assertEqual(run({}, entry=entry), expected)
+        for module in (
+            self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+            compile_wasm({}, entry=entry),
+        ):
+            text = wasm_text(module)
+            self.assertIn("(memory $1 ", text)
+            self.assertNotIn("(memory $2 ", text)
+            self.assertIn("i32.load $1", text)
+            self.assertIn("i32.store $1", text)
+            self.assertEqual(run_wasm(module), expected)
+
+        cases = {
+            "arena_escape": (
+                "this block yields `IntList@Arena`, the type `bind Arena;` "
+                "made in it: a value of that type cannot leave the block (D78)",
+                "?W {} report IntList\n",
+            ),
+            "arena_assign": (
+                "cannot assign `IntList@Arena` to `kept: Packed[Item=Num[I32=I32], "
+                "Memory=Memory, I32=I32]`",
+                "?S {} report\n",
+            ),
+            "arena_wrapped": (
+                "this block yields `Run[Int=Num[I32=I32], IntList=IntList@Arena]`, "
+                "which mentions `IntList@Arena`, the type `bind Arena;` made in "
+                "it: a value of that type cannot leave the block (D78)",
+                "?W {} report IntList\n",
+            ),
+        }
+        for name, (message, report) in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm")
+                self.assertTrue(
+                    out.decode("utf-8").startswith(report.format(entry)), out[:200]
+                )
+
     def test_one_memory_is_one_memory(self):
         """D79 changes nothing for a program that binds no `Memory`: the
         module has one memory, as before."""
