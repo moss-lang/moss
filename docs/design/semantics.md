@@ -3649,6 +3649,322 @@ than paid for it.
 *Left.* Type errors are still `?S` with no detail, and [D74]'s
 `phantom_misread` is still a type error, not incoherence.
 
+**[D81] DECIDED by the designer and implemented (garbage-collected arrays: a list of anything, references included).**
+[D75] made a reference one scalar, so a record or union holding one has a
+finite layout and travels in locals as anything does. It did not make a
+*list* of them: a reference cannot be stored in linear memory, so there
+is no `Layout` for it ([D69]) and no `Packed[Item=Ref[...]]`. A program
+holding an unbounded number of trees — the statements of a block, the
+children of an n-ary node, a worklist — has to thread them through
+`Ref`-linked cons cells. WasmGC's other aggregate is the array
+(`array.new`, `array.get`/`set`/`len`, `array.fill`, `array.copy`; [the
+GC MVP](https://github.com/WebAssembly/gc/blob/main/proposals/gc/MVP.md), part of [Wasm 3.0](https://webassembly.org/news/2025-09-17-wasm-3.0/)), and this entry adds it as
+D75 added structs: a platform type typed by what it holds, items keyed
+so that arrays of several types coexist, provided by a platform
+functor — and D75's mutable fields, which a growable list over them
+needs. The growable list itself is not in the standard library: the
+foundation is what matters, and a program builds one in Moss that
+provides `lib/access.moss`'s `.get`/`.set`/`.length`/`.push` ([D61])
+exactly as `Packed` does (a test shows it can).
+
+*Decided.*
+
+- `lib/wasm.moss` gains, beside `Boxed`/`Ref`/`Heap`:
+
+  ```moss
+  type ArrayRef;               # any GC array handle (below)
+
+  type Arrayed;
+  assume Arrayed {
+    type Array[Arrayed] ArrayRef;
+    fn .arrayed(length: I32): Array;   # detached, at receiver `Arrayed`: array.new
+    fn Array.length(): I32;            # array.len
+    fn Array.get(index: I32): Arrayed; # array.get
+    fn Array.set(index: I32, value: Arrayed);
+    fn Array.fill(at: I32, value: Arrayed, count: I32);
+    fn Array.copy(at: I32, from: Array, start: I32, count: I32);
+  }
+
+  functor Arrays: Wasm, Arrayed ->
+    Arrayed.arrayed, Array.length, Array.get, Array.set, Array.fill, Array.copy;
+  ```
+
+  The shape is `Heap`'s, for `Heap`'s reasons: the constructor is a
+  detached method keyed by its receiver, the fill value
+  (`x.arrayed(n)` is n copies of `x`), so `bind Arrayed = Expr; bind
+  Arrays; bind Arrayed = Stmt; bind Arrays;` leaves both in force, where
+  a plain `fn array_new(n, x)` keyed by its symbol would let the second
+  shadow the first; the rest are attached to `Array`, so keyed at
+  `Array[Arrayed=X]` and, by [D74], at the receiver's element type. No
+  `array.new_default`: it would be a constructor with no receiver to key
+  it by, and the library below does not need it. `Arrays` is listed in
+  `Wasm`, as `Heap` is ([D78]).
+- **Element layout: one array per lane.** A WasmGC array element is a
+  single field, and a Moss value is a run of scalars ([D59]); WasmGC has
+  no inline structs. The back end gives `Array[Arrayed=X]` the type
+  `(ref null $AX)`: where `X` is one scalar (`Int`, a float, a `Ref`, a
+  handle — the common case), `$AX` is `(array (mut t))`; where `X` is n
+  scalars, `$AX` is an immutable struct of n lanes, each a `(ref
+  (array (mut tᵢ)))` of one length, and every operation is done once
+  per lane. A union's lanes are its slots, each of one valtype ([D75]'s
+  refusal of a slot that is a reference in one member and a scalar in
+  another applies unchanged). So a list of `Expr` (`i32 i32 ref ref`)
+  is four arrays, with no allocation per element. A zero-lane element
+  (a unit, `()`) is a struct holding only its length.
+- **Forging, as for `Ref`.** Taking an `Array` apart gives the bare
+  `ArrayRef`, `(ref null eq)` — the supertype of both shapes above;
+  rebuilding one at an `Arrayed` is a `ref.cast` that traps if the array
+  was made at another type ([D73]). Array and struct types are one `rec`
+  group with D75's (an `Expr` can hold an `Array[Arrayed=Expr]`).
+- **Mutable boxes: D75's `Ref.set`, by its own functor.** A growable list
+  must change where its elements are when it grows, behind a handle
+  that does not change. That is a mutable cell, which D75 left for later:
+
+  ```moss
+  assume Boxed { fn Ref.set(value: Boxed); }   # a struct.set per field
+  functor Mutable: Wasm, Boxed -> Ref.set;
+  ```
+
+  The back end makes `$X`'s fields `mut` exactly when `Mutable` is
+  applied at `X` somewhere in the program; elsewhere structs stay
+  immutable, and code that has not applied `Mutable` cannot write.
+- **A growable list is a program's business, not `Std`'s.** Over the
+  above it is ordinary Moss — a `Ref[Boxed=Grown]` whose `Grown { data:
+  Present Array | Empty, len: I32 }` header is replaced with `Ref.set`
+  when it grows (`Empty`, padded with `ref.null`, needs no array and so
+  no fill value until the first push), growth by `.arrayed` and `.copy` —
+  and a program binds its accessors as `packed.moss` binds `Packed`'s. One
+  test builds one and runs generic code over it and over `Packed`.
+- `wasm-features.txt` needs nothing: arrays, packed `i8`/`i16` fields and
+  `array.copy`/`fill` are all in `gc`.
+
+*What it is for.* Lists of references — the case nothing else covers;
+lists of multi-scalar values with no hand-written `Layout`, since the
+platform knows every type's run; lists that are never invalidated by an
+arena reset ([D79]); and, for the thesis, a third provider of one
+container interface (native, linear memory, GC), chosen by a bind.
+
+*Why it is sound.* As for [D75]: `ArrayRef` is a type of `Wasm`;
+`Array[Arrayed]` is a tag with a listed parameter ([D73]); `Arrays` and
+`Mutable` are polymorphic providers ([D78]) whose applications are runs
+of method binds to primitive families indexed by the type (`array_new[X]`,
+`array_get[X]`, …, `struct_set[X]`). Mutation adds a store to the
+dynamics, which the calculus has for nothing yet: every container there
+is already behind an opaque handle, so this is the first point it needs
+one. A list built over them is ordinary Moss.
+
+*Settled with the designer* (the questions the draft left open, and its recommendations).
+
+1. **Lanes, or one array of boxed elements?** The alternative to lanes
+   is to admit only one-scalar elements and store anything wider as an
+   `Array[Arrayed=Ref[Boxed=X]]`: no per-lane loop in the back end, but
+   an allocation per element and an indirection per read, and `.set`
+   allocating a new box. **Lanes, taken;** boxing stays available to a
+   program that wants it, as one-lane arrays of refs. Also rejected:
+   lanes *inline* in the handle (n scalars, no wrapper struct), which
+   saves an indirection but makes a tag's width differ from its
+   payload's, which nothing else in Moss does.
+2. **Who holds the length.** (a) A mutable header through `Ref.set`:
+   one struct per list, but it reopens D75 — a `Ref` was observably a
+   value, and now, at a type `Mutable` is applied at, sharing is
+   visible. (b) A one-element `Array[Arrayed=Grown]` as the header:
+   nothing new beyond arrays, but three objects per list under lanes.
+   (c) The platform provides growable lists itself: a growth policy in
+   the compiler, against [D59] and [D69]'s one list in Moss. **(a),
+   taken**, as `Mutable` providing `Ref.set(value: Boxed)`, a
+   whole-value set; and the list itself is the program's, not `Std`'s.
+3. **Aliasing.** Nothing changes for lists: a `Packed` is an address, so
+   `let ys = xs; ys.push(1);` is already visible through `xs`, and a GC
+   list behaves the same. What changes is that two `Array` (or mutable
+   `Ref`) values can now be told apart only by identity. **No equality
+   yet**; `ref.eq` for `Ref` and `Array` together, later, as D75 lists.
+   Differences worth stating, not designing: a GC array never dangles
+   (an arena reset can leave a `Packed` pointing at reused memory), and a
+   forged one traps rather than reading the wrong layout.
+4. **Bounds.** `array.get`/`set`/`fill`/`copy` trap past the array's
+   length (and on a negative index, read unsigned) — the platform's
+   check, free. A growable list's array is its *capacity*, so an index in
+   `[len, cap)` reads a stale element, as `Packed`'s does today. Checking
+   `index < length` in linear-memory lists is **a separate fix, outside
+   D81**.
+5. **Packed `i8`/`i16`.** Moss has no 8- or 16-bit type. **Later**, when
+   GC strings are wanted: a platform tag (`type Byte I32;`) whose arrays
+   the back end stores as `(array (mut i8))`, read with `array.get_u` —
+   the one place storage would differ from a type's run.
+6. **D79.** **None:** arrays are in no linear memory and `Array` is not
+   under `assume Memory` and lists no `Memory`, so an array made outside
+   a `bind Memory = Scratch` block is used inside it unchanged.
+   WebAssembly has no array↔memory copy, so printing GC text (memory 0
+   only) is a loop.
+7. **D78 type outputs.** "GC or linear memory for a whole library, in
+   one bind" is `functor Lists: Wasm, Branch, Arrayed -> List, list,
+   List.push, …;` bound to a GC list or a packed one. The packed one
+   needs a `Layout`, which `Lists` cannot take without making every
+   element type need one, and which a reference has none of. So it waits
+   on the platform providing `Packing: Wasm, Item -> Layout` ([D78]'s
+   gap), refusing reference-holding types at specialization. **Per-type
+   binds now; `Lists` waits on `Packing`.**
+
+*Later, not now:* `array.new_fixed` (Moss has no list literals),
+`array.new_data`/`init_data` (with string literals, [D48]), `ref.eq`,
+packed fields, the null-pointer optimization for `Data`, and
+**field-assignment sugar**: `r.f = e`, for a `Ref` whose `Boxed` is a
+record type, desugars to evaluating `e` first, then `let old =
+r.deref(); r.set(<old with f replaced>)` — calls through the context and
+nothing more, since `.deref`/`.set` may be bound to any provider (an
+arena, a pool through [D78]). Only the back end, in a specialization
+where the provider is the platform's own primitive, expands them in
+place to adjacent `struct.get`s and `struct.set`s, where a peephole drops
+a `struct.set` of field i whose value is the `struct.get` of field i of
+the same reference with nothing between — the only place the saving can
+come from. A union needs a match first; generic code over an abstract
+`Boxed` has no fields to name. Deferred until an example wants it.
+
+*Platform.* Arrays are in the GC MVP ([`MVP.md`](https://github.com/WebAssembly/gc/blob/756060f5/proposals/gc/MVP.md#L536-L615): each
+instruction traps on null and out of bounds; `array.copy` handles
+overlap) and in Wasm 3.0 ([aggregate instructions](https://webassembly.github.io/spec/core/syntax/instructions.html#aggregate-instructions)). Wasmtime 50
+ships `gc` at tier 1 ([proposal status](https://github.com/bytecodealliance/wasmtime/blob/v50.0.1/docs/stability-wasm-proposals.md)), on by default, with
+the copying collector by default ([`Collector::Auto`](https://github.com/bytecodealliance/wasmtime/blob/v50.0.1/crates/wasmtime/src/config.rs#L3646-L3649)), which also
+collects cycles — the deferred-reference-counting one would leak them,
+and a mutable header can make them. A hand-written module using
+`array.new`/`new_default`/`new_fixed`/`get`/`get_s`/`get_u`/`set`/
+`len`/`fill`/`copy`, `(mut i8)` and arrays of `(ref null $struct)`
+passes `wasm-opt -O3` (Binaryen 133) with exactly `wasm-features.txt`'s
+flags and runs on the dev shell's `wasmtime 50.0.0`, out-of-bounds and
+null accesses trapping as specified.
+
+*Implemented (November 2026), and what the implementation changed.*
+
+- *What landed.* `lib/wasm.moss` declares `ArrayRef` (listed in `Wasm`),
+  `Arrayed`, `type Array[Arrayed] ArrayRef;` with the detached
+  `.arrayed(length: I32)` and the attached `Array.length/get/set/fill/copy`
+  under `assume I32, Arrayed`, `Ref.set(value: Boxed)` beside
+  `Ref.deref`, and two more platform abstract functors, both listed in
+  `Wasm` as `Heap` is: `functor Mutable: Wasm, Boxed -> Ref.set;` and
+  `functor Arrays: Wasm, Arrayed -> Arrayed.arrayed, Array.length,
+  Array.get, Array.set, Array.fill, Array.copy;`. Nothing in either front
+  end is new: D78's platform functor already provided whatever methods a
+  bodiless lib/wasm.moss functor names, so each compiler only learned to
+  recognize the seven new methods as primitives (the bootstrap's
+  `platform_prims`, the self-hosted `platform_prim`, 3 to 9), and which
+  type a primitive is at (`Arrayed` for the array ones, `Boxed` for the
+  rest). No `GcList` and no `WasiGcContainers` in the library, as the
+  designer ruled; `tests/wasi/gc_list.moss` builds one.
+- *Types.* Every GC type is still one `rec` group at the low indices, now
+  holding arrays beside structs. An `Array[Arrayed=X]` is `(ref null $AX)`,
+  `$AX` keyed by the type `X` as D75's structs are: where `X` is one
+  scalar, `(array (mut t))`; otherwise an immutable struct whose fields are
+  `(ref null $lane)`, one per scalar of `X`'s run, the lane arrays shared
+  by valtype (`(array (mut i32))` serves every i32 lane of every element
+  type). Because the handle type is per element type, an `Array[Arrayed=Int]`
+  forged into an `Array[Arrayed=Char]` traps at the cast though both are
+  one lane of i32 (`gc_array_forge`), as D75's per-type structs do. The
+  bare `ArrayRef` is `(ref null eq)` (the self-hosted `vt_eqref`, a third
+  bare reference kind beside `vt_structref`), and taking an `Array` apart
+  into it is free.
+- *Operations.* Each is the instruction once per lane, with the receiver
+  and arguments staged through locals: `.arrayed` is `array.new` per lane
+  then `struct.new` of the lanes; `.length` is `array.len` of lane 0;
+  `.get`, `.set`, `.fill` are `struct.get` of the lane then the
+  instruction; `.copy` takes the same lane of both arrays. For a
+  one-scalar element there is no struct and no `struct.get`.
+- *Mutable fields: where `Ref.set` is compiled.* A struct's fields are
+  `mut` exactly when some call of `Ref.set` at that type is compiled — a
+  hair narrower than "where `Mutable` is applied", and indistinguishable
+  from it, since a struct nobody writes is immutable either way.
+  `gc_mutable` checks that `Counter`'s struct is mutable and `Int`'s, boxed
+  beside it with `Heap` alone, is not.
+- *The interpreter* holds an array as a Python list that remembers the
+  type it was made at (`GcArray`, beside D75's `GcRef`), with the
+  instructions' bounds checks (an index read unsigned, past the length a
+  panic: "out of bounds array access"), and the forging check extended to
+  it. `Ref.set` replaces the `GcRef`'s value, so aliases see it.
+- *Two bugs older than D81, found by its tests.*
+  - The bootstrap's back end injected a unit into a union wider than one
+    scalar with its code twice — as the discriminant and again as a
+    one-scalar payload — so a unit beside a member whose first payload
+    scalar is a reference (`Data = Present | Empty`, `Present` an
+    `Array`) was refused as "a scalar where an earlier member puts a
+    reference". A unit is now only padded, as the self-hosted back end
+    already did.
+  - The self-hosted compiler typed a call of `unreachable()` as `()`, not
+    as `|` as it is declared, so a match arm that traps could not stand
+    for an arm of another type (`Empty => w::unreachable()`). Both now type
+    it as never (D15).
+
+  Both are fixed in a commit of their own, before D81's, with
+  `tests/wasi/unit_beside_ref.moss` (`Some Ref | Nothing`, and a trapping
+  arm), which main's two compilers each refuse.
+- *Not done, or deviations.*
+  - An array of `()` — zero scalars, so zero lanes — is refused by the
+    self-hosted compiler (`c_unsupported`); the draft's struct holding
+    only a length was not worth building. The bootstrap lays `()` out as
+    one i32 everywhere, so there it is one lane. Nothing wants one.
+  - `tests/wasi/gc_array.moss` calls its generic `last` only at one-scalar
+    types: the bootstrap compiles a generic function once, at one scalar
+    per abstract type (the limitation D78's allocator test hit), so a
+    generic function over arrays of `Point` runs only in the self-hosted
+    compiler. Calls of the primitives themselves are compiled in place at
+    any width, in both.
+  - The bootstrap's message for `.set` without `Mutable` is its existing
+    one for an attached method nobody provides, which spells it
+    "no method `.Ref.set`".
+  - No length check in a growable list, and none added to `Packed`: the
+    separate fix the designer recorded.
+- *Cost.* The self-hosted compiler compiling itself (S1 after
+  `wasm-opt -O3`, precompiled, five runs each): 0.50s before, 0.53s
+  after — all of it the compiler's own source having grown by 3% (its
+  output by 3.4%): the new compiler compiling the *old* source takes the
+  old compiler's 0.50–0.51s. `S1 == S2` still holds.
+
+*Tests*, in `tests/wasi/`, each run by the interpreter and both
+compilers to the same output or the same error: `gc_array` (arrays of
+`Int`, a two-lane record, a three-lane record of an i64, an i32 and a
+reference, and references; made, set, filled, copied, read, and a generic
+`last`); `gc_list` (a growable list built in the test over `Array` and
+`Ref.set`, generic code over `lib/access.moss`'s accessors run on `Std`'s
+packed `IntList` and on it, past the first capacity, aliased, then a list
+of references); `gc_mutable` (`Ref.set` seen through an alias, and only
+the written struct mutable); `gc_array_memory` (an array made in the main
+memory's scope used inside a `bind Memory = Scratch` block); and trapping
+at run time, `gc_array_bounds` (one past the length) and `gc_array_forge`
+(an `Array` forged at another type); and rejected, `gc_unarrayed`
+(`.arrayed` without `Arrays`), `gc_immutable` (`.set` without `Mutable`)
+and `gc_array_misread` (an `Array[Arrayed=Int]`'s `.get` passed as a
+`Char`, D74). bootstrap/tests: `test_gc_arrays`, `test_gc_arrays_trap`, the
+three rejections in `test_phantoms_and_receivers_are_checked`, the four
+programs in `test_matches_the_bootstrap_on_behaviour`, and
+`test_every_wasm_item_has_an_instruction` taught the seven new primitives.
+
+*Implementation.* lib/wasm.moss; the bootstrap: lower.py (the symbols and
+primitives, which type a primitive is at, `Array` forging), interp.py
+(`GcArray`, the primitives), build.py (array and lane types in the `rec`
+group, mutable fields, `(ref null eq)`, the per-lane instruction
+sequences, the unit injection fix); the self-hosted compiler: emit.moss
+(array types, mutable fields, `vt_eqref`), insn.moss (`struct.set` and
+the array instructions), codegen.moss (`cg_gc`, `array_of`/`lane_of`,
+`emit_gc_op`, forging, locals of the new valtypes, `unreachable` as
+never), boot.moss, spell.moss (regenerated from gensrc.py).
+
+*Implementation.* Both back ends: array and lane-struct types in the
+`rec` group, keyed by the type `Arrayed` is bound to, as D75's structs
+are; the per-lane instruction sequences; `ref.cast` at a forging
+construction; `mut` struct fields where `Mutable` is applied; the
+bootstrap's interpreter holds an array as a Python list. Tests, in
+`tests/wasi/`: arrays of `Int`, f64, `Ref[Boxed=Expr]` and an unboxed
+`Expr` (four lanes) made, filled, copied and summed (`gc_array`);
+a growable list built in the test over `Array` and `Ref.set`, with
+generic code over `.push`/`.get`/`.length` run on it in one block and on
+`Packed` in another, past the first capacity, to the same output, and a
+list of `Ref[Boxed=Stmt]` executed in order (`gc_list`); an array used
+inside a `bind Memory = Scratch` block (`gc_array_memory`); `Ref.set`
+seen through an alias (`gc_mutable`); an index past
+the length trapping (`gc_array_bounds`) and a forged `Array` trapping
+(`gc_array_forge`); and rejected in both compilers, an
+`Array[Arrayed=Int]` read at `Char` (`gc_array_misread`), `.arrayed`
+without `Arrays` (`gc_unarrayed`) and `.set` without `Mutable`
+(`gc_immutable`). 
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -3715,7 +4031,9 @@ application that no value may carry out of its block — D79 multiple memories, 
 memory instructions run in and handles list, with WASI's functions
 provided at the main memory alone, D80 the self-hosted compiler types each
 frame generically and resolves methods once per call site, as the
-bootstrap does)
+bootstrap does, D81 garbage-collected arrays — `Array[Arrayed]` provided by
+the platform's `Arrays` functor, one array per scalar of the element — and
+`Ref.set`, a box's whole value written, provided by `Mutable`)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap
