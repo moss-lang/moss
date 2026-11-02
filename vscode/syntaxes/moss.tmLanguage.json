@@ -19,6 +19,9 @@
       "include": "#numbers"
     },
     {
+      "include": "#methods"
+    },
+    {
       "include": "#names"
     },
     {
@@ -106,6 +109,17 @@
             },
             "2": {
               "name": "entity.name.function.moss"
+            }
+          }
+        },
+        {
+          "match": "\\b(val)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.moss"
+            },
+            "2": {
+              "name": "entity.name.constant.moss"
             }
           }
         },
@@ -202,6 +216,37 @@
         {
           "name": "constant.numeric.integer.moss",
           "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "methods": {
+      "patterns": [
+        {
+          "comment": "A method named through a type, called or not: `Value.add`, `Bool.flip`. Types are capitalized, values are not, so the name after the dot is a method rather than a field.",
+          "match": "\\b([A-Z][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "entity.name.type.moss"
+            },
+            "2": {
+              "name": "punctuation.accessor.moss"
+            },
+            "3": {
+              "name": "entity.name.function.moss"
+            }
+          }
+        },
+        {
+          "comment": "A detached method, `.m`, where no receiver can precede it: in a list of names (`use .eq, .ne`, `context C = .m`), a binding (`[T.m = .n]`), or after `->`.",
+          "match": "(?:(?<=[,=\\[:>])|(?<=\\buse)|^)\\s*(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.moss"
+            },
+            "2": {
+              "name": "entity.name.function.moss"
+            }
+          }
         }
       ]
     },

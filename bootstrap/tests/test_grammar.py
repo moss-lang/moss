@@ -55,24 +55,37 @@ def tokenize(text: str) -> list:
     `text`, one line with no nesting — which is all a token alone needs."""
     grammar = load()
     patterns = [
-        (re.compile(p.get("match", p.get("begin"))), scope_of(p))
+        (re.compile(p.get("match", p.get("begin"))), scope_of(p), p.get("captures") if "match" in p else None)
         for p in flatten(grammar, grammar["patterns"])
     ]
     out = []
     pos = 0
     while pos < len(text):
         best = None
-        for regex, scope in patterns:
+        for regex, scope, captures in patterns:
             m = regex.search(text, pos)
             if m is not None and m.end() > m.start():
                 if best is None or m.start() < best[0].start():
-                    best = (m, scope)
+                    best = (m, scope, captures)
         if best is None:
             break
-        m, scope = best
+        m, scope, captures = best
         if text[pos : m.start()].strip():
             out.append((text[pos : m.start()], None))
-        out.append((m.group(0), scope))
+        if captures:
+            # Each capture is a token of its own, as an engine scopes it;
+            # what lies between them is only whitespace.
+            at = m.start()
+            for group in sorted(captures, key=int):
+                if m.group(int(group)) is None:
+                    continue
+                start, end = m.span(int(group))
+                assert not text[at:start].strip(), (text, m.group(0))
+                out.append((text[start:end], captures[group]["name"]))
+                at = end
+            assert not text[at : m.end()].strip(), (text, m.group(0))
+        else:
+            out.append((m.group(0), scope))
         pos = m.end()
     if text[pos:].strip():
         out.append((text[pos:], None))
@@ -153,6 +166,52 @@ class TestGrammarAgreesWithTheLexer(unittest.TestCase):
         line = "if a << 2 >= -b.c & !d { x = 3.14 * y; } else { 1.add(2) }"
         lexed = [t.text for t in lex(line)[:-1]]
         self.assertEqual([text for text, _ in tokenize(line)], lexed)
+
+
+class TestMethodsAndVals(unittest.TestCase):
+    """A method is highlighted as a function wherever the syntax says it is
+    one, not only where it is called."""
+
+    def scopes(self, line):
+        return [(text, scope) for text, scope in tokenize(line) if text.strip(".,;:=[]()")]
+
+    def scope(self, line, name):
+        found = [scope for text, scope in self.scopes(line) if text == name]
+        self.assertEqual(len(found), 1, f"{name!r} in {line!r}: {self.scopes(line)}")
+        return found[0]
+
+    def test_a_method_named_through_its_type(self):
+        for line, name in [
+            ("context Arith = Value, Value.add, Value.sub;", "add"),
+            ("bind Bool.not = Bool.flip;", "not"),
+            ("bind Bool.not = Bool.flip;", "flip"),
+            ("functor Heap: Wasm, Boxed -> Boxed.boxed, Ref.deref;", "deref"),
+            ("assume Std, T, W.m {", "m"),
+            ("Value.add(x)", "add"),
+        ]:
+            with self.subTest(line=line, name=name):
+                self.assertEqual(self.scope(line, name), "entity.name.function.moss")
+
+    def test_a_detached_method(self):
+        for line, name in [
+            ('import "num.moss" use .eq, .ne;', "eq"),
+            ('import "num.moss" use .eq, .ne;', "ne"),
+            ("context Ast = ExprRef, .data, add;", "data"),
+            ("bind A.m[T=B] = .n;", "n"),
+            ("    .read,", "read"),
+        ]:
+            with self.subTest(line=line, name=name):
+                self.assertEqual(self.scope(line, name), "entity.name.function.moss")
+
+    def test_a_field_is_not_a_method(self):
+        self.assertEqual(self.scope("let y = x.f;", "f"), "variable.other.moss")
+        self.assertEqual(self.scope("let y = x.f(1);", "f"), "entity.name.function.moss")
+        self.assertEqual(self.scope("let y = 2.5;", "2.5"), "constant.numeric.decimal.moss")
+
+    def test_a_val_is_declared_as_a_constant(self):
+        for line, name in [("val A: Char;", "A"), ("val true: Bool = Bool (True);", "true")]:
+            with self.subTest(line=line):
+                self.assertEqual(self.scope(line, name), "entity.name.constant.moss")
 
 
 if __name__ == "__main__":
