@@ -70,10 +70,10 @@ token or class of tokens.
   - `loop`
   - `match`
   - `return`
+  - `tag`
   - `This`
   - `this`
   - `type`
-  - `unit`
   - `use`
   - `val`
   - `var`
@@ -142,8 +142,8 @@ the product type ([D63]). `This` is legal only inside method declarations.
 - **Assume** = `assume` **List**\[**AssumeItem**\] `{` **Decl**\* `}`
 - **Tydef** = `type` _name_ `;`
 - **Aliasdef** = `type` _name_ `=` **Type** `;`
-- **Tagdef** = `type` _name_ (`[` **List**[_name_] `]`)? **Type** `;` — the bracketed names are listed parameters ([D73])
-- **Unitdef** = `unit` _name_ `;`
+- **Tagdef** = `tag` _name_ (`[` **List**[_name_] `]`)? (`(` **Type** `)` | **RecordType**) `;` — the bracketed names are listed parameters ([D73])
+- **Unitdef** = `tag` _name_ `;`
 - **Valdef** = `val` _name_ `:` **Type** (`=` **Expr**)? `;`
 - **Fndef** = `fn` **FnName** `(` **List**\[**Param**\] `)` (`:` **Type**)? (`;` | **Block**)
 - **FnName** = _name_ | _name_ `.` _name_ | **DotName**
@@ -278,12 +278,13 @@ other, so both operands are always evaluated.
 
 ### Patterns
 
-- **Pattern** = `_` | **RecordPat** | **Path** (**Pattern** | **RecordPat**)?
+- **Pattern** = `_` | **RecordPat** | **Path** (`(` **Pattern** `)` | **RecordPat**)?
 - **RecordPat** = `{` **List**\[_name_ (`=` **Pattern**)?\] `}`
 
 A bare single-name **Path** is a binder unless it resolves to a unit or tag;
-a **Path** followed by a **Pattern** matches a tag and destructures its
-payload (`Some token`, `parse::Assume assump`); a **RecordPat** after a path
+a **Path** followed by a parenthesized **Pattern** matches a tag and
+destructures its payload (`Some(token)`, `parse::Assume(assump)`), written
+as the tag is constructed and declared ([D83]); a **RecordPat** after a path
 destructures a record payload, with `{ sig }` shorthand for `{ sig = sig }`.
 Match arms must be exhaustive over the scrutinee's union; `match e {}`
 requires `e` to have the uninhabited type ([D34]).

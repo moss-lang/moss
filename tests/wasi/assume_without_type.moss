@@ -9,16 +9,16 @@ import "../../lib/wasip1.moss" use Wasi;
 type T;
 
 assume Std {
-  type Point { x: Char, y: Char };
+  tag Point { x: Char, y: Char };
 }
 
 assume Std, T {
-  type W Char;
+  tag W(Char);
   fn .m(): T;
 }
 
 assume Std {
-  fn W.get(): Char { match this { W c => c } }
+  fn W.get(): Char { match this { W(c) => c } }
 }
 
 assume Std, T, W.m {
@@ -28,7 +28,7 @@ assume Std, T, W.m {
 assume Std, W.m {
   fn mid() {
     bind T = Point;
-    let p: Point = use_it(W (char::a));
+    let p: Point = use_it(W(char::a));
     putchar(p.x);
     putchar(p.y);
     putchar(char::newline);

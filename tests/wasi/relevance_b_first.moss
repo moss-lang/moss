@@ -15,8 +15,8 @@ import "../../lib/wasip1.moss" use Wasi;
 type T;
 
 assume T {
-  type A { b: B, t: T };
-  type B { a: A };
+  tag A { b: B, t: T };
+  tag B { a: A };
 }
 
 assume T {

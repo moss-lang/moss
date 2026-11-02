@@ -54,8 +54,8 @@ class TestLex(unittest.TestCase):
         self.assertEqual(kinds("iffy formal thistle"), [Kind.NAME] * 3 + [Kind.EOF])
 
     def test_comments_and_shebang(self):
-        source = "#!/usr/bin/env moss\nunit X; # trailing\n# whole line\n"
-        self.assertEqual(kinds(source), [Kind.UNIT, Kind.NAME, Kind.SEMI, Kind.EOF])
+        source = "#!/usr/bin/env moss\ntag X; # trailing\n# whole line\n"
+        self.assertEqual(kinds(source), [Kind.TAG, Kind.NAME, Kind.SEMI, Kind.EOF])
 
     def test_string(self):
         token = lex('import "a\\n\\"b\\\\";')[1]
@@ -74,8 +74,8 @@ class TestLex(unittest.TestCase):
 
     def test_unexpected_character(self):
         with self.assertRaises(LexError) as ctx:
-            lex("unit X;\n@")
-        self.assertEqual(position("unit X;\n@", ctx.exception.offset), (2, 1))
+            lex("tag X;\n@")
+        self.assertEqual(position("tag X;\n@", ctx.exception.offset), (2, 1))
 
     def test_numeric_literals(self):
         # D68: a digit starts a literal, and still continues a name.
@@ -127,10 +127,10 @@ class TestLex(unittest.TestCase):
                 self.assertEqual(len(lex(source)), 2)
 
     def test_positions(self):
-        source = "unit X;\nunit Y;\n"
+        source = "tag X;\ntag Y;\n"
         tokens = lex(source)
         self.assertEqual(position(source, tokens[3].offset), (2, 1))
-        self.assertEqual(position(source, tokens[4].offset), (2, 6))
+        self.assertEqual(position(source, tokens[4].offset), (2, 5))
 
 
 if __name__ == "__main__":

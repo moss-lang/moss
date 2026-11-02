@@ -10,11 +10,11 @@ import "../../lib/wasip1.moss" use Wasi;
 type T;
 
 assume Std {
-  type W Char;
+  tag W(Char);
 
   fn demo() {
-    let w = W[T=Char] (char::a);
-    match w { W c => putchar(c) }
+    let w = W[T=Char](char::a);
+    match w { W(c) => putchar(c) }
     putchar(char::newline);
   }
 }

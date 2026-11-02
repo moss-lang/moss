@@ -11,7 +11,7 @@ import "../../lib/char.moss" as char;
 # reaches them at `Scratch`, which is incoherent (D71) in both compilers;
 # before, it wrote the byte into `Scratch` and printed `AA`, not `AB`.
 
-unit Scratch;
+tag Scratch;
 
 assume Wasm, Wasi, Branch {
   fn main() {

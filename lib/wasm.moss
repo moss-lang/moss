@@ -29,7 +29,7 @@ assume I32 {
 # force where it is called, and is specialized at it: the platform
 # provides `Memory` at the root as the module's first memory, index 0,
 # exported as `memory` (which WASI preview 1 requires), and a program
-# names more as units (`unit Scratch;`) and binds `Memory` to one in a
+# names more as units (`tag Scratch;`) and binds `Memory` to one in a
 # scope. Each distinct memory reached gets its own index, which the back
 # end puts on every instruction specialized at it.
 type Memory;
@@ -246,7 +246,7 @@ assume I32, I64, F32, F64 {
 type Boxed;
 
 assume Boxed {
-  type Ref[Boxed] StructRef;
+  tag Ref[Boxed](StructRef);
   fn .boxed(): Ref;
   fn Ref.deref(): Boxed;
 
@@ -270,7 +270,7 @@ assume Boxed {
 type Arrayed;
 
 assume I32, Arrayed {
-  type Array[Arrayed] ArrayRef;
+  tag Array[Arrayed](ArrayRef);
   fn .arrayed(length: I32): Array;
   fn Array.length(): I32;
   fn Array.get(index: I32): Arrayed;

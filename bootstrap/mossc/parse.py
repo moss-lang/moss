@@ -218,11 +218,8 @@ class Parser:
             return self.parse_assume()
         if self.at(Kind.TYPE):
             return self.parse_typedecl()
-        if self.at(Kind.UNIT):
-            self.next()
-            name = self.expect(Kind.NAME).text
-            self.expect(Kind.SEMI)
-            return ast.Unitdef(name, offset=start)
+        if self.at(Kind.TAG):
+            return self.parse_tagdecl()
         if self.at(Kind.VAL):
             self.next()
             name = self.expect(Kind.NAME).text
@@ -288,25 +285,52 @@ class Parser:
         return ast.Assume(items, decls, offset=start)
 
     def parse_typedecl(self) -> ast.Decl:
+        """`type X;` or `type X = T;`: abstract, or an alias (D83)."""
         start = self.peek().offset
         self.expect(Kind.TYPE)
         name = self.expect(Kind.NAME).text
-        if self.eat(Kind.LBRACKET):
-            # D73: a tag's listed parameters.
-            params = self.comma_list(lambda: self.expect(Kind.NAME).text, Kind.RBRACKET)
-            self.expect(Kind.RBRACKET)
-            ty = self.parse_type()
-            self.expect(Kind.SEMI)
-            return ast.Tagdef(name, ty, tuple(params), offset=start)
         if self.eat(Kind.SEMI):
             return ast.Tydef(name, offset=start)
         if self.eat(Kind.EQUAL):
             ty = self.parse_type()
             self.expect(Kind.SEMI)
             return ast.Aliasdef(name, ty, offset=start)
-        ty = self.parse_type()
+        raise ParseError(
+            f"`type {name}` is abstract (`;`) or an alias (`=`); "
+            "declare a nominal type with `tag` (D83)",
+            self.peek(),
+        )
+
+    def parse_tagdecl(self) -> ast.Decl:
+        """A nominal type (D83), in one of three forms: `tag X;` a unit,
+        `tag X(T);` over a type, `tag X { f: T, ... };` over a record."""
+        start = self.peek().offset
+        self.expect(Kind.TAG)
+        name = self.expect(Kind.NAME).text
+        params = ()
+        if self.eat(Kind.LBRACKET):
+            # D73: a tag's listed parameters.
+            params = tuple(
+                self.comma_list(lambda: self.expect(Kind.NAME).text, Kind.RBRACKET)
+            )
+            self.expect(Kind.RBRACKET)
+        if not params and self.eat(Kind.SEMI):
+            return ast.Unitdef(name, offset=start)
+        if self.at(Kind.LBRACE):
+            ty = self.parse_record_type()
+        else:
+            self.expect(Kind.LPAREN)
+            at = self.peek()
+            ty = self.parse_type()
+            if isinstance(ty, ast.TyRecord):
+                raise ParseError(
+                    f"a record payload is written `tag {name} {{ ... }};` (D83)", at
+                )
+            if self.at(Kind.COMMA):
+                raise ParseError("there are no tuple types (D63); use a record", self.peek())
+            self.expect(Kind.RPAREN)
         self.expect(Kind.SEMI)
-        return ast.Tagdef(name, ty, offset=start)
+        return ast.Tagdef(name, ty, params, offset=start)
 
     def parse_fndef(self) -> ast.Fndef:
         start = self.peek().offset
@@ -644,8 +668,10 @@ class Parser:
             path = self.parse_path()
             if self.at(Kind.LBRACE):
                 return self.parse_record_pattern(path)
-            if self.at(Kind.NAME):
-                return ast.PatTag(path, self.parse_pattern(), offset=start)
+            if self.eat(Kind.LPAREN):
+                payload = self.parse_pattern()
+                self.expect(Kind.RPAREN)
+                return ast.PatTag(path, payload, offset=start)
             return ast.PatPath(path, offset=start)
         raise ParseError(f"expected a pattern, found {self.peek().kind.name}", self.peek())
 

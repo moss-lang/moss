@@ -9,7 +9,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # though reaching `quiet`'s body would find nothing missing.
 
 assume Std {
-  type X Char;
+  tag X(Char);
   fn .gimme(): Char;
 }
 

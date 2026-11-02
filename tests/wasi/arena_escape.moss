@@ -10,7 +10,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # in the block: refused in both compilers, before the reset at the end of
 # the block could leave `kept` pointing at reused memory.
 
-unit Scratch;
+tag Scratch;
 
 functor Arena: Wasm, Branch -> Memory, Containers;
 

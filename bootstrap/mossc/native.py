@@ -129,7 +129,7 @@ def gen_wasichar_moss() -> str:
         return out
 
     for name, value in CHARS.items():
-        lines.append(f"  fn char_{name}(): Chr {{ Chr ({expr(ord(value))}) }}")
+        lines.append(f"  fn char_{name}(): Chr {{ Chr({expr(ord(value))}) }}")
     lines.append("}")
     lines.append("")
     lines.append("context WasiChars =")

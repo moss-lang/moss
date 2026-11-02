@@ -26,7 +26,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # Output: each start, the steps its trajectory takes to reach 1, and the
 # largest number on the way.
 
-unit Scratch;
+tag Scratch;
 
 functor Arena: Wasm, Branch -> Memory, Containers;
 

@@ -8,10 +8,10 @@ import "../../lib/wasip1.moss" use Wasi;
 # `ref.null`. And a match arm that traps, `unreachable()`, stands for an
 # arm of any type, as `|` does (D15). Output: 42, then 7.
 
-unit Nothing;
+tag Nothing;
 
 assume Std, Wasm {
-  type Some Ref[Boxed=Int];
+  tag Some(Ref[Boxed=Int]);
   type Maybe = Some | Nothing;
 
   context IntHeap = Int.boxed[Boxed=Int], Ref.deref[Boxed=Int];
@@ -27,14 +27,14 @@ assume Std, Wasm {
 assume Std, Wasm, IntHeap {
   fn or(m: Maybe, other: Int): Int {
     match m {
-      Some r => r.deref(),
+      Some(r) => r.deref(),
       Nothing => other,
     }
   }
 
   fn get(m: Maybe): Int {
     match m {
-      Some r => r.deref(),
+      Some(r) => r.deref(),
       Nothing => w::unreachable(),
     }
   }
@@ -46,7 +46,7 @@ assume Wasm, Wasi, Branch {
     bind Boxed = Int;
     bind Heap;
     let n = 42;
-    let some: Maybe = Some (n.boxed());
+    let some: Maybe = Some(n.boxed());
     let none: Maybe = Nothing;
     print_int(get(some));
     putchar(char::newline);

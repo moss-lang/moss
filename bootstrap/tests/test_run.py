@@ -233,7 +233,7 @@ class TestContext(unittest.TestCase):
             "emit(); putchar(p.b); } "
             "emit(); putchar(p); "
             "putchar({ bind c=char::z; let t = got(); t });",
-            decls="  val c: Char;\n  type Pair { a: Char, b: Char };\n"
+            decls="  val c: Char;\n  tag Pair { a: Char, b: Char };\n"
             "  assume c { fn emit() { putchar(c); } fn got(): Char { c } }",
         )
         self.assertEqual(run(files), "yrxpz")
@@ -334,15 +334,15 @@ class TestContext(unittest.TestCase):
         arm: the outer `x` is back after the match."""
         files = {
             "main.moss": "assume Std {\n"
-            "  type Lit Char;\n"
-            "  type Both { l: Char, r: Char };\n"
+            "  tag Lit(Char);\n"
+            "  tag Both { l: Char, r: Char };\n"
             "  type Node = | Lit | Both;\n"
-            "  fn first(n: Node): Char { match n { Lit c => c, Both { l, r = _ } => l, } }\n"
+            "  fn first(n: Node): Char { match n { Lit(c) => c, Both { l, r = _ } => l, } }\n"
             "  fn main() {\n"
             "    putchar(first(Both { r = char::b, l = char::a }));\n"
-            "    putchar(first(Lit (char::c)));\n"
+            "    putchar(first(Lit(char::c)));\n"
             "    let x = char::d;\n"
-            "    match Lit (char::e) { Lit x => putchar(x), _ => (), }\n"
+            "    match Lit(char::e) { Lit(x) => putchar(x), _ => (), }\n"
             "    putchar(x);\n"
             "    putchar(char::newline);\n"
             "  }\n"
@@ -542,9 +542,9 @@ CAPTURE_REBOUND = {
 class TestMethods(unittest.TestCase):
     def test_attached_defined(self):
         files = main_body(
-            "let w = Wrap (char::q); putchar(w.get());",
-            decls="  type Wrap Char;\n"
-            "  fn Wrap.get(): Char { match this { Wrap c => c } }",
+            "let w = Wrap(char::q); putchar(w.get());",
+            decls="  tag Wrap(Char);\n"
+            "  fn Wrap.get(): Char { match this { Wrap(c) => c } }",
         )
         self.assertEqual(run(files), "q")
 
@@ -570,9 +570,9 @@ class TestMethods(unittest.TestCase):
         detached rule (import it, or `mod::m`) does not cover."""
         files = main_body(
             "bind Wrap.spell=giveq;\n"
-            "    let w = Wrap (char::z);\n"
+            "    let w = Wrap(char::z);\n"
             "    putchar(w.spell());",
-            decls="  type Wrap Char;\n"
+            decls="  tag Wrap(Char);\n"
             "  fn Wrap.spell(): Char;\n"
             "  fn giveq(): Char { char::q }\n"
             "  context Spelling = Wrap.spell;\n",
@@ -608,7 +608,7 @@ class TestMatch(unittest.TestCase):
     def test_non_exhaustive(self):
         files = main_body(
             "()",
-            decls="  unit A;\n  unit B;\n  type AB = | A | B;\n"
+            decls="  tag A;\n  tag B;\n  type AB = | A | B;\n"
             "  fn pick(x: AB): Char { match x { A => char::t, } }",
         )
         with self.assertRaises(LowerError) as ctx:
@@ -618,7 +618,7 @@ class TestMatch(unittest.TestCase):
     def test_tag_and_record(self):
         files = main_body(
             "putchar(first(Pair { x = char::a, y = char::b }));",
-            decls="  type Pair { x: Char, y: Char };\n"
+            decls="  tag Pair { x: Char, y: Char };\n"
             "  fn first(p: Pair): Char { match p { Pair { x } => x } }",
         )
         self.assertEqual(run(files), "a")
@@ -626,11 +626,11 @@ class TestMatch(unittest.TestCase):
     def test_union_injection(self):
         files = main_body(
             "putchar(show(go(true))); putchar(show(go(false)));",
-            decls="  unit Stop;\n"
-            "  type Step Char;\n"
+            decls="  tag Stop;\n"
+            "  tag Step(Char);\n"
             "  type Out = | Stop | Step;\n"
-            "  fn go(b: Bool): Out { if b { Step (char::s) } else { Stop } }\n"
-            "  fn show(o: Out): Char { match o { Step c => c, Stop => char::dot, } }",
+            "  fn go(b: Bool): Out { if b { Step(char::s) } else { Stop } }\n"
+            "  fn show(o: Out): Char { match o { Step(c) => c, Stop => char::dot, } }",
         )
         self.assertEqual(run(files), "s.")
 
@@ -901,13 +901,13 @@ class TestRepresentation(unittest.TestCase):
         agree with the compiled one."""
         source = (
             "assume Std {\n"
-            "  type A Char;\n"
-            "  unit Other;\n"
+            "  tag A(Char);\n"
+            "  tag Other;\n"
             "  type C = | Other | A;\n"
-            "  fn bare(a: A): Char { match a { A c => c } }\n"
-            "  fn tagged(c: C): Char { match c { A ch => ch, Other => char::n, } }\n"
+            "  fn bare(a: A): Char { match a { A(c) => c } }\n"
+            "  fn tagged(c: C): Char { match c { A(ch) => ch, Other => char::n, } }\n"
             "  fn main() {\n"
-            "    let a = A (char::y);\n"
+            "    let a = A(char::y);\n"
             "    putchar(bare(a));\n"
             "    putchar(tagged(a));\n"
             "    putchar(tagged(Other));\n"
@@ -983,14 +983,14 @@ class TestGenerics(unittest.TestCase):
                 'import "./tests/fixtures/cell.moss" use Cell, IsCell, .fetch as .cread, .stash as .cwrite;\n'
                 "\n"
                 "assume Std {\n"
-                "  type MyCell CellInt;\n"
+                "  tag MyCell(CellInt);\n"
                 "\n"
                 "  fn MyCell.get(): Int {\n"
-                "    match this { MyCell c => c.read() }\n"
+                "    match this { MyCell(c) => c.read() }\n"
                 "  }\n"
                 "\n"
                 "  fn MyCell.put(x: Int) {\n"
-                "    match this { MyCell c => c.write(x), }\n"
+                "    match this { MyCell(c) => c.write(x), }\n"
                 "  }\n"
                 "\n"
                 "  context CellOps = IsCell[T=Int, Cell=MyCell];\n"
@@ -1005,7 +1005,7 @@ class TestGenerics(unittest.TestCase):
                 "    bind T=Int;\n"
                 "    bind MyCell.cread=MyCell.get;\n"
                 "    bind MyCell.cwrite=MyCell.put;\n"
-                "    let c = MyCell (cell_int());\n"
+                "    let c = MyCell(cell_int());\n"
                 "    c.put(one);\n"
                 "    bump(c);\n"
                 "    if c.get().eq(one.add(one)) { putchar(char::y) }\n"
@@ -1185,8 +1185,8 @@ class TestMerging(unittest.TestCase):
             decls="  type A;\n"
             "  fn .gimme(): Foo;\n"
             "  type Foo;\n"
-            "  unit U1;\n"
-            "  unit U2;\n"
+            "  tag U1;\n"
+            "  tag U2;\n"
             "  context Ctx1 = A, A.gimme[Foo=U1];\n"
             "  context Ctx2 = A, A.gimme[Foo=U2];\n"
             "  context Ctx3 = Ctx1, Ctx2;\n"
@@ -1256,12 +1256,12 @@ class TestMultiInstantiation(unittest.TestCase):
                 'import "./tests/fixtures/cell.moss" use Cell, IsCell, .fetch as .cread, .stash as .cwrite;\n'
                 "\n"
                 "assume Std {\n"
-                "  type CA CellInt;\n"
-                "  type CB Char;\n"
+                "  tag CA(CellInt);\n"
+                "  tag CB(Char);\n"
                 "\n"
-                "  fn CA.rd(): Int { match this { CA c => c.read() } }\n"
-                "  fn CA.wr(x: Int) { match this { CA c => c.write(x), } }\n"
-                "  fn CB.rd(): Char { match this { CB c => c } }\n"
+                "  fn CA.rd(): Int { match this { CA(c) => c.read() } }\n"
+                "  fn CA.wr(x: Int) { match this { CA(c) => c.write(x), } }\n"
+                "  fn CB.rd(): Char { match this { CB(c) => c } }\n"
                 "  fn CB.wr(x: Char) { }\n"
                 "\n"
                 "  context Both = IsCell[T=Int, Cell=CA], IsCell[T=Char, Cell=CB];\n"
@@ -1280,8 +1280,8 @@ class TestMultiInstantiation(unittest.TestCase):
                 "    bind T=Char;\n"
                 "    bind CB.cread=CB.rd;\n"
                 "    bind CB.cwrite=CB.wr;\n"
-                "    let a = CA (cell_int());\n"
-                "    let b = CB (char::z);\n"
+                "    let a = CA(cell_int());\n"
+                "    let b = CB(char::z);\n"
                 "    putchar(go(a, b));\n"
                 "  }\n"
                 "}\n"
@@ -2207,7 +2207,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         code boxes on the GC heap in one block and in an arena in the
         other: the same output interpreted and in both compilers, whose
         back ends decide "is a reference" by `Ref`'s payload at the
-        specialization, not by the `Ref` symbol — so the arena's `Ref (p)`
+        specialization, not by the `Ref` symbol — so the arena's `Ref(p)`
         is no cast, and its `Ref`s are `i32`s."""
         from .test_build import compile_wasm, run_wasm
 
@@ -3125,7 +3125,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 self.assertTrue(report.startswith(f"!P {entry} T\n"), report[:200])
 
     def test_relevance_is_a_least_fixpoint(self):
-        """D71: `type A { b: B, t: T }; type B { a: A };` — both are
+        """D71: `tag A { b: B, t: T }; tag B { a: A };` — both are
         parameterized by `T`, whichever is computed first, so `get_b(): B`
         mentions `T` and assuming it without `T` is D20's error. Each
         compiler once answered by whichever declaration it reached first,

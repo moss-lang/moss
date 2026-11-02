@@ -16,7 +16,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # inside that block `Source` is the main memory, the `Memory` in force
 # before the block rebinds it (D72).
 
-unit Scratch;
+tag Scratch;
 
 type Source;
 
@@ -32,7 +32,7 @@ assume Wasm, Branch {
       w::i32_store8(w::i32_add(w::i32_add(p, four()), i), w::i32_load(elem(data, i)));
       i = w::i32_add(i, w::i32_one);
     }
-    Str (p)
+    Str(p)
   }
 
   assume Source {
@@ -48,10 +48,10 @@ assume Wasm, Branch {
         if reverse {
           from = w::i32_sub(w::i32_sub(n, w::i32_one), i);
         }
-        w::i32_store8(w::i32_add(w::i32_add(p, four()), i), code_of(s.get(Num (from))));
+        w::i32_store8(w::i32_add(w::i32_add(p, four()), i), code_of(s.get(Num(from))));
         i = w::i32_add(i, w::i32_one);
       }
-      Str (p)
+      Str(p)
     }
   }
 }

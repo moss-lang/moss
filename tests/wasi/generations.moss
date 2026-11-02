@@ -24,9 +24,9 @@ assume Std {
 
 # An i32 whose addition traps on signed overflow.
 assume Wasm, Branch {
-  type Checked I32;
+  tag Checked(I32);
 
-  fn checked(c: Checked): I32 { match c { Checked v => v } }
+  fn checked(c: Checked): I32 { match c { Checked(v) => v } }
 
   fn Checked.plus(rhs: Checked): Checked {
     let a = checked(this);
@@ -34,11 +34,11 @@ assume Wasm, Branch {
     let r = w::i32_add(a, b);
     let flips = w::i32_and(w::i32_xor(a, r), w::i32_xor(b, r));
     if i32_bool(w::i32_lt_s(flips, w::i32_zero)) { w::unreachable() } else { () }
-    Checked (r)
+    Checked(r)
   }
 
-  fn checked_of(n: Num): Checked { match n { Num v => Checked (v) } }
-  fn num_of(c: Checked): Num { Num (checked(c)) }
+  fn checked_of(n: Num): Checked { match n { Num(v) => Checked(v) } }
+  fn num_of(c: Checked): Num { Num(checked(c)) }
 }
 
 assume Wasm, Branch, Int, Int.add {

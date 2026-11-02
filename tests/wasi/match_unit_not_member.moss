@@ -6,9 +6,9 @@ import "../../lib/wasip1.moss" use Wasi;
 # scrutinee's type as written, plain or carrying a payload (D34).
 # Rejected in both compilers.
 
-unit Red;
-unit Green;
-unit Blue;
+tag Red;
+tag Green;
+tag Blue;
 type Colour = | Red | Green;
 
 assume Wasm, Wasi {

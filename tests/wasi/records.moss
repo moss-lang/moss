@@ -8,18 +8,18 @@ import "../../lib/wasip1.moss" use Wasi;
 # property; every letter is the one the comment beside it predicts.
 
 assume Std {
-  type Point { x: Char, y: Char };
+  tag Point { x: Char, y: Char };
 
   # A field wider than one scalar: a record inside a record, and a union
   # beside a discriminant.
-  type Read Char;
-  unit Eof;
-  type Span { from: Point, peek: Read | Eof, to: Point };
+  tag Read(Char);
+  tag Eof;
+  tag Span { from: Point, peek: Read | Eof, to: Point };
 
   # A union of records of different widths, as an expression tree would
   # use one.
-  type Lit Char;
-  type Both { l: Char, r: Char };
+  tag Lit(Char);
+  tag Both { l: Char, r: Char };
   type Node = | Lit | Both | Eof;
 
   fn Point.swap(): Point { Point { x = this.y, y = this.x } }
@@ -32,7 +32,7 @@ assume Std {
 
   fn first(n: Node): Char {
     match n {
-      Lit c => c,
+      Lit(c) => c,
       Both { l, r = _ } => l,
       Eof => char::z,
     }
@@ -40,14 +40,14 @@ assume Std {
 
   fn second(n: Node): Char {
     match n {
-      Both p => p.r,
+      Both(p) => p.r,
       _ => char::z,
     }
   }
 
   fn peeked(s: Span): Char {
     match s.peek {
-      Read c => c,
+      Read(c) => c,
       Eof => char::z,
     }
   }
@@ -66,7 +66,7 @@ assume Std {
     show(p.swap());                                 # ba
 
     # Nested records and a wide field, through a chain of fields.
-    let s = Span { to = p.swap(), peek = Read (char::q), from = p };
+    let s = Span { to = p.swap(), peek = Read(char::q), from = p };
     putchar(s.from.y);
     putchar(s.to.y);
     putchar(peeked(s));
@@ -77,7 +77,7 @@ assume Std {
     let n = Both { l = char::c, r = char::d };
     putchar(first(n));
     putchar(second(n));
-    putchar(first(Lit (char::e)));
+    putchar(first(Lit(char::e)));
     putchar(first(Eof));
     putchar(char::newline);                         # cdez
     match n {
@@ -88,8 +88,8 @@ assume Std {
 
     # A binder shadows a local for its arm only.
     let x = char::f;
-    match Lit (char::g) {
-      Lit x => putchar(x),
+    match Lit(char::g) {
+      Lit(x) => putchar(x),
       _ => (),
     }
     putchar(x);

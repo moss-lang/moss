@@ -16,15 +16,15 @@ assume Std, Item {
 }
 
 assume Std, Codec {
-  type Cell[Other] IntList;
+  tag Cell[Other](IntList);
 
   fn cell(x: Item): Cell {
     let xs = int_list();
     xs.push(encode(x));
-    Cell (xs)
+    Cell(xs)
   }
 
-  fn Cell.first(): Item { match this { Cell xs => decode(xs.get(0)) } }
+  fn Cell.first(): Item { match this { Cell(xs) => decode(xs.get(0)) } }
 }
 
 functor Ints: Std -> Codec {

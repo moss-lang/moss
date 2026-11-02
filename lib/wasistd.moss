@@ -132,9 +132,9 @@ assume Wasm, Branch {
   # (D54) — which costs nothing, since `Str` is in no union (D58). It
   # lists the memory it is in (D73, D79), so a string in another memory
   # is another type, and its methods read it there (D74).
-  type Str[Memory] I32;
+  tag Str[Memory](I32);
 
-  fn addr(s: Str): I32 { match s { Str a => a } }
+  fn addr(s: Str): I32 { match s { Str(a) => a } }
 
   fn string_of(p: I32, n: I32): Str {
     let s = alloc(w::i32_add(four(), n));
@@ -144,24 +144,24 @@ assume Wasm, Branch {
       w::i32_store8(w::i32_add(w::i32_add(s, four()), i), w::i32_load8_u(w::i32_add(p, i)));
       i = w::i32_add(i, w::i32_one);
     }
-    Str (s)
+    Str(s)
   }
 
   # A string's own operations, attached rather than written at
   # `WasiStrings`'s binds because they are used here too: `.concat` by
   # `WasiFiles`, and `.length` and `.get` wherever a `Str` is read
   # without `Strings` in context (tests/wasi/memory_copy.moss).
-  fn Str.length(): Num { Num (w::i32_load(addr(this))) }
+  fn Str.length(): Num { Num(w::i32_load(addr(this))) }
 
   fn Str.get(index: Num): Chr {
-    Chr (w::i32_load8_u(w::i32_add(w::i32_add(addr(this), four()), raw(index))))
+    Chr(w::i32_load8_u(w::i32_add(w::i32_add(addr(this), four()), raw(index))))
   }
 
   # A Path is a name relative to the WASI preopen, so it is a String and
   # `pwd` is the empty one.
-  type Loc Str;
+  tag Loc(Str);
 
-  fn loc_str(l: Loc): Str { match l { Loc s => s } }
+  fn loc_str(l: Loc): Str { match l { Loc(s) => s } }
 
   fn Str.concat(other: Str): Str {
     let la = w::i32_load(addr(this));
@@ -184,7 +184,7 @@ assume Wasm, Branch {
       );
       j = w::i32_add(j, w::i32_one);
     }
-    Str (s)
+    Str(s)
   }
 
   assume Wasi {
@@ -237,24 +237,24 @@ assume Wasm, Branch {
 }
 
 assume Wasm, Branch {
-  type Num I32;
+  tag Num(I32);
 
-  fn raw(n: Num): I32 { match n { Num v => v } }
+  fn raw(n: Num): I32 { match n { Num(v) => v } }
 
   # Char, wrapped so that `Char` and `Int` are two types, though both are
   # an I32.
-  type Chr I32;
+  tag Chr(I32);
 
-  fn code_of(c: Chr): I32 { match c { Chr v => v } }
+  fn code_of(c: Chr): I32 { match c { Chr(v) => v } }
 
   # One mutable word, in the memory it was made in (D79).
-  type Cell[Memory] I32;
+  tag Cell[Memory](I32);
 
-  fn cell_addr(c: Cell): I32 { match c { Cell a => a } }
+  fn cell_addr(c: Cell): I32 { match c { Cell(a) => a } }
 
   # The address a list of `Num`s holds: of [len | cap | elements...], so
   # that growing can move the elements without invalidating it.
-  fn ints_addr(l: Packed[Item=Num]): I32 { match l { Packed a => a } }
+  fn ints_addr(l: Packed[Item=Num]): I32 { match l { Packed(a) => a } }
 
   # Element `index` of such a block, for the readers that walk one
   # directly (`StrList.get`, `wasi_put_bytes`): its layout is
@@ -268,9 +268,9 @@ assume Wasm, Branch {
   # A `StrList` is one too, holding the strings' addresses.
   fn wasi_int_list(): Packed[Item=Num] { bind NumLayout; packed() }
 
-  type Strs[Memory] I32;
+  tag Strs[Memory](I32);
 
-  fn strs_addr(l: Strs): I32 { match l { Strs a => a } }
+  fn strs_addr(l: Strs): I32 { match l { Strs(a) => a } }
 
   # The whole list as bytes, in one `fd_write`. `wasi_putchar` is a
   # syscall each, which is what makes writing a module cost more than
@@ -296,19 +296,19 @@ assume Wasm, Branch {
 
 functor WasiNumerics: Wasm, Branch -> Numerics {
   bind int::Int = Num;
-  bind int::zero = Num (w::i32_zero);
-  bind int::one = Num (w::i32_one);
-  bind Int.add = (rhs) => Num (w::i32_add(raw(this), raw(rhs)));
-  bind Int.sub = (rhs) => Num (w::i32_sub(raw(this), raw(rhs)));
-  bind Int.mul = (rhs) => Num (w::i32_mul(raw(this), raw(rhs)));
-  bind Int.div = (rhs) => Num (w::i32_div_s(raw(this), raw(rhs)));
-  bind Int.rem = (rhs) => Num (w::i32_rem_s(raw(this), raw(rhs)));
-  bind Int.neg = () => Num (w::i32_sub(w::i32_zero, raw(this)));
-  bind Int.and = (rhs) => Num (w::i32_and(raw(this), raw(rhs)));
-  bind Int.or = (rhs) => Num (w::i32_or(raw(this), raw(rhs)));
-  bind Int.xor = (rhs) => Num (w::i32_xor(raw(this), raw(rhs)));
-  bind Int.shl = (rhs) => Num (w::i32_shl(raw(this), raw(rhs)));
-  bind Int.shr = (rhs) => Num (w::i32_shr_s(raw(this), raw(rhs)));
+  bind int::zero = Num(w::i32_zero);
+  bind int::one = Num(w::i32_one);
+  bind Int.add = (rhs) => Num(w::i32_add(raw(this), raw(rhs)));
+  bind Int.sub = (rhs) => Num(w::i32_sub(raw(this), raw(rhs)));
+  bind Int.mul = (rhs) => Num(w::i32_mul(raw(this), raw(rhs)));
+  bind Int.div = (rhs) => Num(w::i32_div_s(raw(this), raw(rhs)));
+  bind Int.rem = (rhs) => Num(w::i32_rem_s(raw(this), raw(rhs)));
+  bind Int.neg = () => Num(w::i32_sub(w::i32_zero, raw(this)));
+  bind Int.and = (rhs) => Num(w::i32_and(raw(this), raw(rhs)));
+  bind Int.or = (rhs) => Num(w::i32_or(raw(this), raw(rhs)));
+  bind Int.xor = (rhs) => Num(w::i32_xor(raw(this), raw(rhs)));
+  bind Int.shl = (rhs) => Num(w::i32_shl(raw(this), raw(rhs)));
+  bind Int.shr = (rhs) => Num(w::i32_shr_s(raw(this), raw(rhs)));
   bind Int.ne = (rhs) => i32_bool(w::i32_ne(raw(this), raw(rhs)));
   bind Int.gt = (rhs) => i32_bool(w::i32_gt_s(raw(this), raw(rhs)));
   bind Int.le = (rhs) => i32_bool(w::i32_le_s(raw(this), raw(rhs)));
@@ -322,13 +322,13 @@ functor WasiNumerics: Wasm, Branch -> Numerics {
 # which. Their operations are written at `WasiFloats`'s and
 # `WasiFloats32`'s binds.
 assume Wasm, Branch {
-  type Double F64;
+  tag Double(F64);
 
-  fn dbl(x: Double): F64 { match x { Double v => v } }
+  fn dbl(x: Double): F64 { match x { Double(v) => v } }
 
-  type Single F32;
+  tag Single(F32);
 
-  fn sgl(x: Single): F32 { match x { Single v => v } }
+  fn sgl(x: Single): F32 { match x { Single(v) => v } }
 }
 
 # Packed lists (D69): one implementation, for any element type that says
@@ -353,7 +353,7 @@ assume Wasm {
 }
 
 assume Wasm, Branch {
-  fn packed_length(handle: I32): Num { Num (w::i32_load(w::i32_load(handle))) }
+  fn packed_length(handle: I32): Num { Num(w::i32_load(w::i32_load(handle))) }
 
   assume Layout {
     # The address of element `index` in the block at `data`.
@@ -412,21 +412,21 @@ functor NumLayout: Wasm, Branch -> Layout {
   bind Item = Num;
   bind width = w::i32_one;
   bind put = (at, value) => w::i32_store(at, raw(value));
-  bind take = (at) => Num (w::i32_load(at));
+  bind take = (at) => Num(w::i32_load(at));
 }
 
 functor SingleLayout: Wasm, Branch -> Layout {
   bind Item = Single;
   bind width = w::i32_one;
   bind put = (at, value) => w::f32_store(at, sgl(value));
-  bind take = (at) => Single (w::f32_load(at));
+  bind take = (at) => Single(w::f32_load(at));
 }
 
 functor DoubleLayout: Wasm, Branch -> Layout {
   bind Item = Double;
   bind width = w::i32_add(w::i32_one, w::i32_one);
   bind put = (at, value) => w::f64_store(at, dbl(value));
-  bind take = (at) => Double (w::f64_load(at));
+  bind take = (at) => Double(w::f64_load(at));
 }
 
 # One handle for every element type (D73): a `Packed[Item=X]` is the
@@ -438,11 +438,11 @@ functor DoubleLayout: Wasm, Branch -> Layout {
 # they are called or bound, which must have provided it at the receiver's
 # `Item` (D74).
 assume Wasm, Branch, Layout {
-  type Packed[Item, Memory] I32;
+  tag Packed[Item, Memory](I32);
 
-  fn packed_addr(l: Packed): I32 { match l { Packed a => a } }
+  fn packed_addr(l: Packed): I32 { match l { Packed(a) => a } }
 
-  fn packed(): Packed { Packed (packed_list()) }
+  fn packed(): Packed { Packed(packed_list()) }
   fn Packed.length(): Num { packed_length(packed_addr(this)) }
   fn Packed.get(index: Num): Item { packed_get(packed_addr(this), index) }
   fn Packed.set(index: Num, value: Item) { packed_set(packed_addr(this), index, value); }
@@ -455,13 +455,13 @@ functor WasiFloats: Wasm, Branch -> Floats {
   # against it, so it has to be bound here too.
   bind int::Int = Num;
   bind float::Float = Double;
-  bind Float.add = (rhs) => Double (w::f64_add(dbl(this), dbl(rhs)));
-  bind Float.sub = (rhs) => Double (w::f64_sub(dbl(this), dbl(rhs)));
-  bind Float.mul = (rhs) => Double (w::f64_mul(dbl(this), dbl(rhs)));
-  bind Float.div = (rhs) => Double (w::f64_div(dbl(this), dbl(rhs)));
-  bind Float.neg = () => Double (w::f64_neg(dbl(this)));
-  bind Float.sqrt = () => Double (w::f64_sqrt(dbl(this)));
-  bind Float.abs = () => Double (w::f64_abs(dbl(this)));
+  bind Float.add = (rhs) => Double(w::f64_add(dbl(this), dbl(rhs)));
+  bind Float.sub = (rhs) => Double(w::f64_sub(dbl(this), dbl(rhs)));
+  bind Float.mul = (rhs) => Double(w::f64_mul(dbl(this), dbl(rhs)));
+  bind Float.div = (rhs) => Double(w::f64_div(dbl(this), dbl(rhs)));
+  bind Float.neg = () => Double(w::f64_neg(dbl(this)));
+  bind Float.sqrt = () => Double(w::f64_sqrt(dbl(this)));
+  bind Float.abs = () => Double(w::f64_abs(dbl(this)));
   bind Float.eq = (rhs) => i32_bool(w::f64_eq(dbl(this), dbl(rhs)));
   bind Float.ne = (rhs) => i32_bool(w::f64_ne(dbl(this), dbl(rhs)));
   bind Float.lt = (rhs) => i32_bool(w::f64_lt(dbl(this), dbl(rhs)));
@@ -470,9 +470,9 @@ functor WasiFloats: Wasm, Branch -> Floats {
   bind Float.ge = (rhs) => i32_bool(w::f64_ge(dbl(this), dbl(rhs)));
   # An Int is an i32 here, so every one is exactly an f64. `trunc_sat`
   # rather than `trunc`: out of range saturates, and NaN is zero.
-  bind float::float = (n) => Double (w::f64_convert_i32_s(raw(n)));
-  bind Float.trunc = () => Num (w::i32_trunc_sat_f64_s(dbl(this)));
-  bind Float.round = () => Num (w::i32_trunc_sat_f64_s(w::f64_nearest(dbl(this))));
+  bind float::float = (n) => Double(w::f64_convert_i32_s(raw(n)));
+  bind Float.trunc = () => Num(w::i32_trunc_sat_f64_s(dbl(this)));
+  bind Float.round = () => Num(w::i32_trunc_sat_f64_s(w::f64_nearest(dbl(this))));
   bind float::FloatList = Packed[Item=Double];
   bind float::float_list = () => { bind DoubleLayout; packed() };
   bind FloatList.push[Elem=Float] = (value) => { bind DoubleLayout; this.push(value); };
@@ -487,13 +487,13 @@ functor WasiFloats: Wasm, Branch -> Floats {
 functor WasiFloats32: Wasm, Branch -> Floats {
   bind int::Int = Num;
   bind float::Float = Single;
-  bind Float.add = (rhs) => Single (w::f32_add(sgl(this), sgl(rhs)));
-  bind Float.sub = (rhs) => Single (w::f32_sub(sgl(this), sgl(rhs)));
-  bind Float.mul = (rhs) => Single (w::f32_mul(sgl(this), sgl(rhs)));
-  bind Float.div = (rhs) => Single (w::f32_div(sgl(this), sgl(rhs)));
-  bind Float.neg = () => Single (w::f32_neg(sgl(this)));
-  bind Float.sqrt = () => Single (w::f32_sqrt(sgl(this)));
-  bind Float.abs = () => Single (w::f32_abs(sgl(this)));
+  bind Float.add = (rhs) => Single(w::f32_add(sgl(this), sgl(rhs)));
+  bind Float.sub = (rhs) => Single(w::f32_sub(sgl(this), sgl(rhs)));
+  bind Float.mul = (rhs) => Single(w::f32_mul(sgl(this), sgl(rhs)));
+  bind Float.div = (rhs) => Single(w::f32_div(sgl(this), sgl(rhs)));
+  bind Float.neg = () => Single(w::f32_neg(sgl(this)));
+  bind Float.sqrt = () => Single(w::f32_sqrt(sgl(this)));
+  bind Float.abs = () => Single(w::f32_abs(sgl(this)));
   bind Float.eq = (rhs) => i32_bool(w::f32_eq(sgl(this), sgl(rhs)));
   bind Float.ne = (rhs) => i32_bool(w::f32_ne(sgl(this), sgl(rhs)));
   bind Float.lt = (rhs) => i32_bool(w::f32_lt(sgl(this), sgl(rhs)));
@@ -501,9 +501,9 @@ functor WasiFloats32: Wasm, Branch -> Floats {
   bind Float.le = (rhs) => i32_bool(w::f32_le(sgl(this), sgl(rhs)));
   bind Float.ge = (rhs) => i32_bool(w::f32_ge(sgl(this), sgl(rhs)));
   # Exact below 2^24, rounded to nearest above it.
-  bind float::float = (n) => Single (w::f32_convert_i32_s(raw(n)));
-  bind Float.trunc = () => Num (w::i32_trunc_sat_f32_s(sgl(this)));
-  bind Float.round = () => Num (w::i32_trunc_sat_f32_s(w::f32_nearest(sgl(this))));
+  bind float::float = (n) => Single(w::f32_convert_i32_s(raw(n)));
+  bind Float.trunc = () => Num(w::i32_trunc_sat_f32_s(sgl(this)));
+  bind Float.round = () => Num(w::i32_trunc_sat_f32_s(w::f32_nearest(sgl(this))));
   bind float::FloatList = Packed[Item=Single];
   bind float::float_list = () => { bind SingleLayout; packed() };
   bind FloatList.push[Elem=Float] = (value) => { bind SingleLayout; this.push(value); };
@@ -521,11 +521,11 @@ context Basics =
 functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind WasiConsole;
   bind WasiNumerics;
-  bind Int.char = () => Chr (raw(this));
-  bind Char.code = () => Num (code_of(this));
+  bind Int.char = () => Chr(raw(this));
+  bind Char.code = () => Num(code_of(this));
   bind string::arg_count = () => {
     args_sizes_get(twenty_four(), twenty_eight());
-    Num (w::i32_load(twenty_four()))
+    Num(w::i32_load(twenty_four()))
   };
   bind string::arg_at = (index) => arg_slot(raw(index));
   bind WasiStrings;
@@ -549,9 +549,9 @@ functor WasiContainers: Wasm, Branch -> Containers {
   bind cell::cell_int = () => {
     let a = alloc(four());
     w::i32_store(a, w::i32_zero);
-    Cell (a)
+    Cell(a)
   };
-  bind CellInt.read[Elem=Int] = () => Num (w::i32_load(cell_addr(this)));
+  bind CellInt.read[Elem=Int] = () => Num(w::i32_load(cell_addr(this)));
   bind CellInt.write = (value) => w::i32_store(cell_addr(this), raw(value));
   # Each accessor is the packed list's code under the layout of `Num`,
   # bound inside the function so that the layout does not reach the
@@ -565,14 +565,14 @@ functor WasiContainers: Wasm, Branch -> Containers {
   bind IntList.length = () => packed_length(ints_addr(this));
   # A list of strings is a list of their addresses.
   bind strlist::StrList = Strs;
-  bind strlist::str_list = () => Strs (ints_addr(wasi_int_list()));
+  bind strlist::str_list = () => Strs(ints_addr(wasi_int_list()));
   bind StrList.push[Elem=String] = (value) => {
     bind NumLayout;
-    packed_push(strs_addr(this), Num (addr(value)));
+    packed_push(strs_addr(this), Num(addr(value)));
   };
   bind StrList.get[Elem=String] = (index) =>
-    Str (w::i32_load(elem(w::i32_load(strs_addr(this)), raw(index))));
-  bind StrList.length = () => Num (w::i32_load(w::i32_load(strs_addr(this))));
+    Str(w::i32_load(elem(w::i32_load(strs_addr(this)), raw(index))));
+  bind StrList.length = () => Num(w::i32_load(w::i32_load(strs_addr(this))));
 }
 
 functor WasiOutput: Wasm, Wasi, Branch -> Output {
@@ -581,13 +581,13 @@ functor WasiOutput: Wasm, Wasi, Branch -> Output {
 
 functor WasiFiles: Wasm, Wasi, Branch -> Files {
   bind path::Path = Loc;
-  bind path::pwd = Loc (string_of(w::i32_zero, w::i32_zero));
+  bind path::pwd = Loc(string_of(w::i32_zero, w::i32_zero));
   bind Path.join = (name) => {
     let dir = loc_str(this);
     if i32_bool(w::i32_eqz(w::i32_load(addr(dir)))) {
-      Loc (name)
+      Loc(name)
     } else {
-      Loc (dir.concat(slash()).concat(name))
+      Loc(dir.concat(slash()).concat(name))
     }
   };
   # Opening is the only way to ask: WASI has no access(2), and a stat
@@ -623,7 +623,7 @@ functor WasiFiles: Wasm, Wasi, Branch -> Files {
     w::i32_store(s, total);
     w::i32_store(sixteen(), w::i32_add(w::i32_add(s, four()), total));
     fd_close(fd);
-    Str (s)
+    Str(s)
   };
 }
 

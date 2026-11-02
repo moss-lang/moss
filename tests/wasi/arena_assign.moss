@@ -10,7 +10,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # the assignment is a type error in both compilers (D78: the block's own
 # value is the only way out that type-checks at all).
 
-unit Scratch;
+tag Scratch;
 
 functor Arena: Wasm, Branch -> Memory, Containers;
 

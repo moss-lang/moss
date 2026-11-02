@@ -10,8 +10,8 @@ import "../../lib/wasistd.moss" use Branch, i32_bool;
 # interpreter ABB, and the self-hosted compiler ABA. Rejected in both
 # compilers.
 
-unit Red;
-unit Green;
+tag Red;
+tag Green;
 type Colour = | Red | Green;
 type T;
 

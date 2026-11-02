@@ -30,7 +30,7 @@ assume Boxed, Handle {
 functor Alloc: Std, Boxed, Boxed.pack, unpack -> Handle, alloc, Handle.load;
 
 assume Std {
-  type Slot Int;
+  tag Slot(Int);
   val slots: IntList;
 }
 
@@ -40,14 +40,14 @@ functor Pool: Std, Boxed, Boxed.pack, unpack -> Handle, alloc, Handle.load {
   bind alloc = (value) => {
     let i = slots.length();
     slots.push(value.pack());
-    Slot (i)
+    Slot(i)
   };
-  bind Handle.load = () => match this { Slot i => unpack(slots.get(i)) };
+  bind Handle.load = () => match this { Slot(i) => unpack(slots.get(i)) };
 }
 
 assume Std {
-  type Celsius Int;
-  type Mile Int;
+  tag Celsius(Int);
+  tag Mile(Int);
 
   fn print_int(n: Int) {
     if n >= 10 {
@@ -65,24 +65,24 @@ assume Std {
 assume Std, Alloc {
   fn library() {
     bind Boxed = Celsius;
-    bind Boxed.pack = () => match this { Celsius c => c };
-    bind unpack = (n) => Celsius (n);
+    bind Boxed.pack = () => match this { Celsius(c) => c };
+    bind unpack = (n) => Celsius(n);
     bind Alloc;
-    let warm = alloc(Celsius (21));
-    let cold = alloc(Celsius (4));
+    let warm = alloc(Celsius(21));
+    let cold = alloc(Celsius(4));
     bind Boxed = Mile;
-    bind Boxed.pack = () => match this { Mile m => m * 2 };
-    bind unpack = (n) => Mile (n / 2);
+    bind Boxed.pack = () => match this { Mile(m) => m * 2 };
+    bind unpack = (n) => Mile(n / 2);
     bind Alloc;
-    let trip = alloc(Mile (14));
+    let trip = alloc(Mile(14));
     match warm.load() {
-      Celsius c => line(c),
+      Celsius(c) => line(c),
     }
     match cold.load() {
-      Celsius c => line(c),
+      Celsius(c) => line(c),
     }
     match trip.load() {
-      Mile m => line(m),
+      Mile(m) => line(m),
     }
   }
 }

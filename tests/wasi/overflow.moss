@@ -35,9 +35,9 @@ assume Std {
 
 # An i32 whose arithmetic traps on signed overflow.
 assume Wasm, Branch {
-  type Checked I32;
+  tag Checked(I32);
 
-  fn checked(c: Checked): I32 { match c { Checked v => v } }
+  fn checked(c: Checked): I32 { match c { Checked(v) => v } }
 
   fn Checked.plus(rhs: Checked): Checked {
     let a = checked(this);
@@ -46,7 +46,7 @@ assume Wasm, Branch {
     # Overflow iff both operands' signs differ from the result's.
     let flips = w::i32_and(w::i32_xor(a, r), w::i32_xor(b, r));
     if i32_bool(w::i32_lt_s(flips, w::i32_zero)) { w::unreachable() } else { () }
-    Checked (r)
+    Checked(r)
   }
 
   fn Checked.times(rhs: Checked): Checked {
@@ -55,13 +55,13 @@ assume Wasm, Branch {
     );
     let r = w::i32_wrap_i64(p);
     if i32_bool(w::i64_ne(w::i64_extend_i32_s(r), p)) { w::unreachable() } else { () }
-    Checked (r)
+    Checked(r)
   }
 
-  fn checked_zero(): Checked { Checked (w::i32_zero) }
-  fn checked_one(): Checked { Checked (w::i32_one) }
+  fn checked_zero(): Checked { Checked(w::i32_zero) }
+  fn checked_one(): Checked { Checked(w::i32_one) }
 
-  fn as_num(c: Checked): Num { Num (checked(c)) }
+  fn as_num(c: Checked): Num { Num(checked(c)) }
 }
 
 functor CheckedInts: Wasm, Branch -> Int, zero, one, Int.add, Int.mul {

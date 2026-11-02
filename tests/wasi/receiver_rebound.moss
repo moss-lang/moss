@@ -12,13 +12,13 @@ import "../../lib/wasip1.moss" use Wasi;
 type T;
 
 assume T {
-  type Box T;
-  fn Box.get(): T { match this { Box x => x } }
+  tag Box(T);
+  fn Box.get(): T { match this { Box(x) => x } }
 }
 
 assume Std {
   fn demo() {
-    let b = { bind T = Int; Box (42) };
+    let b = { bind T = Int; Box(42) };
     {
       bind T = Char;
       putchar(b.get());

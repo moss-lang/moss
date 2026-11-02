@@ -23,7 +23,7 @@ assume Int, Base {
 }
 
 assume Int, zero, one, BaseOps {
-  type Dual { v: Base, d: Base };
+  tag Dual { v: Base, d: Base };
 
   fn constant(n: Int): Dual { Dual { v = lift(n), d = lift(zero) } }
   fn variable(x: Base): Dual { Dual { v = x, d = lift(one) } }

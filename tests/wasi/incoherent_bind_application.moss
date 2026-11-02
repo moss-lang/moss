@@ -11,12 +11,12 @@ import "../../lib/wasip1.moss" use Wasi;
 type T;
 
 assume Std, T {
-  type W Char;
+  tag W(Char);
   fn .m(): T;
 }
 
 assume Std {
-  fn W.get(): Char { match this { W c => c } }
+  fn W.get(): Char { match this { W(c) => c } }
 }
 
 assume Std, T, W.m {
@@ -31,7 +31,7 @@ assume Std {
   fn demo() {
     bind T = Int;
     bind W.m[T=Char] = W.get;
-    let n: Int = use_it(W (char::a));
+    let n: Int = use_it(W(char::a));
     print_int(n);
     putchar(char::newline);
   }

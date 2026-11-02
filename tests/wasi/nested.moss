@@ -10,12 +10,12 @@ import "../../lib/wasip1.moss" use Wasi;
 # one the comment beside it predicts.
 
 assume Std {
-  type Read Char;
-  unit Eof;
+  tag Read(Char);
+  tag Eof;
   type Peek = | Read | Eof;
 
-  type Point { x: Char, y: Char };
-  type Span { from: Point, to: Point };
+  tag Point { x: Char, y: Char };
+  tag Span { from: Point, to: Point };
 
   fn Point.first(): Char { this.x }
 
@@ -24,14 +24,14 @@ assume Std {
   fn span(): Span { Span { from = point(char::a, char::b), to = point(char::c, char::d) } }
 
   fn letter(r: Peek): Char {
-    return match r { Read c => c, Eof => char::z, };
+    return match r { Read(c) => c, Eof => char::z, };
   }
 
   fn demo() {
     let a = char::a;
     # In a call's arguments, twice over, beside a local declared before.
-    putchar(match pick(Read (char::b)) { Read c => c, Eof => char::z, });
-    putchar(letter(match pick(Eof) { Read c => Read (c), Eof => Read (char::c), }));
+    putchar(match pick(Read(char::b)) { Read(c) => c, Eof => char::z, });
+    putchar(letter(match pick(Eof) { Read(c) => Read(c), Eof => Read(char::c), }));
     putchar(a);
     putchar(char::newline);                                   # bca
 
@@ -42,13 +42,13 @@ assume Std {
     putchar(char::newline);                                   # fda
 
     # As a method's receiver, a record field, and an unannotated `let`.
-    let p = match pick(Read (char::g)) {
-      Read c => Point { x = c, y = match pick(Eof) { Read d => d, Eof => char::h, } },
+    let p = match pick(Read(char::g)) {
+      Read(c) => Point { x = c, y = match pick(Eof) { Read(d) => d, Eof => char::h, } },
       Eof => point(char::z, char::z),
     };
     putchar(p.first());
     putchar(p.y);
-    putchar((match pick(Read (char::i)) { Read c => point(c, c), Eof => p, }).first());
+    putchar((match pick(Read(char::i)) { Read(c) => point(c, c), Eof => p, }).first());
     putchar(char::newline);                                   # ghi
   }
 }

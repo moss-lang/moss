@@ -8,7 +8,7 @@ import "../../lib/wasistd.moss" use Branch, i32_bool;
 # float literals, so every float starts as an integer conversion. Each
 # line of output is one property, printed as an integer.
 
-type Complex { re: F64, im: F64 };
+tag Complex { re: F64, im: F64 };
 
 assume Wasm, Wasi, Branch {
   fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }

@@ -10,9 +10,9 @@ name:
 
 ```moss
 assume Std {
-  unit Red;
-  unit Green;
-  unit Blue;
+  tag Red;
+  tag Green;
+  tag Blue;
 
   type Color = | Red | Green | Blue;
 
@@ -32,8 +32,8 @@ assume Std {
 }
 ```
 
-This prints `gr`. A `unit` declaration gives you a type and its single value
-in one stroke, and a union type like `Color` says a value is one of several
+This prints `gr`. A `tag` declaration with nothing after its name gives you
+a type and its single value in one stroke, and a union type like `Color` says a value is one of several
 such alternatives. Two things the compiler enforces for you:
 
 - Passing `Green` where a `Color` is expected just works: a value of a
@@ -44,34 +44,33 @@ such alternatives. Two things the compiler enforces for you:
 
 ## Tags
 
-A `type` declaration whose name is followed by another type wraps a payload
-— we call it a *tag*:
+Give a `tag` a type in parentheses and it wraps a payload of that type:
 
 ```moss
 assume Std {
-  type Wrapped Char;
+  tag Wrapped(Char);
 
-  unit Missing;
+  tag Missing;
 
   type Maybe = | Missing | Wrapped;
 
   fn show(m: Maybe) {
     match m {
-      Wrapped c => putchar(c),
+      Wrapped(c) => putchar(c),
       Missing => putchar(char::question),
     }
     putchar(char::newline);
   }
 
   fn main() {
-    show(Wrapped (char::w));
+    show(Wrapped(char::w));
     show(Missing);
   }
 }
 ```
 
-This prints `w`, then `?`. `Wrapped (char::w)` constructs a tag value;
-matching with `Wrapped c` takes it apart, binding the payload. Tags are
+This prints `w`, then `?`. `Wrapped(char::w)` constructs a tag value;
+matching with `Wrapped(c)` takes it apart, binding the payload. Tags are
 *nominal*: a `Wrapped` is not a `Char`, even though it carries one — you must
 put the value in and take it out explicitly. That's what lets `Maybe`
 discriminate its members at runtime.
@@ -81,13 +80,13 @@ standard library as a tag over a union of two units, and `true` and `false`
 are just values defined once and for all:
 
 ```moss
-unit False;
-unit True;
+tag False;
+tag True;
 
-type Bool | False | True;
+tag Bool(False | True);
 
-val false: Bool = Bool (False);
-val true: Bool = Bool (True);
+val false: Bool = Bool(False);
+val true: Bool = Bool(True);
 ```
 
 ## Records
@@ -96,7 +95,7 @@ A tag's payload can be a record, which gets you named fields:
 
 ```moss
 assume Std {
-  type Point { x: Char, y: Char };
+  tag Point { x: Char, y: Char };
 
   fn Point.show() {
     putchar(char::lparen);

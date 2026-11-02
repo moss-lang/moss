@@ -31,7 +31,7 @@ assume Wasm, Branch, Fast {
   fn root(n: I32): I32 {
     bind WasiNumerics;
     bind Fast;
-    let x = float(Num (n));
+    let x = float(Num(n));
     var r = x;
     var i = 0;
     while i < 30 {
@@ -54,9 +54,9 @@ assume Std {
 assume Wasm, Wasi, Branch, Fast {
   fn report() {
     bind WasiStd;
-    print_int(Num (root(raw(2))));
+    print_int(Num(root(raw(2))));
     putchar(char::newline);
-    print_int(Num (root(raw(3))));
+    print_int(Num(root(raw(3))));
     putchar(char::newline);
   }
 }

@@ -12,8 +12,8 @@ import "../../lib/wasip1.moss" use Wasi;
 # Output: 29 and 42, twice.
 
 assume Std, Wasm {
-  type Point { x: Int, y: Int };
-  type Segment { from: Ref[Boxed=Point], to: Ref[Boxed=Point] };
+  tag Point { x: Int, y: Int };
+  tag Segment { from: Ref[Boxed=Point], to: Ref[Boxed=Point] };
 
   context Boxes =
     Point.boxed[Boxed=Point],
@@ -51,7 +51,7 @@ assume Wasm, Branch {
   fn eight(): I32 { w::i32_add(four(), four()) }
 
   assume Boxed {
-    fn address(r: Ref): StructRef { match r { Ref p => p } }
+    fn address(r: Ref): StructRef { match r { Ref(p) => p } }
   }
 }
 
@@ -72,11 +72,11 @@ assume Wasm, Wasi, Branch {
         let p = alloc(eight());
         w::i32_store(p, raw(this.x));
         w::i32_store(w::i32_add(p, four()), raw(this.y));
-        Ref (p)
+        Ref(p)
       };
       bind Ref.deref = () => {
         let p = address(this);
-        Point { x = Num (w::i32_load(p)), y = Num (w::i32_load(w::i32_add(p, four()))) }
+        Point { x = Num(w::i32_load(p)), y = Num(w::i32_load(w::i32_add(p, four()))) }
       };
       bind Boxed = Segment;
       bind Segment.boxed = () => {
@@ -86,12 +86,12 @@ assume Wasm, Wasi, Branch {
           w::i32_store(p, address(this.from));
           w::i32_store(w::i32_add(p, four()), address(this.to));
         }
-        Ref (p)
+        Ref(p)
       };
       bind Ref.deref = () => {
         let p = address(this);
         bind Boxed = Point;
-        Segment { from = Ref (w::i32_load(p)), to = Ref (w::i32_load(w::i32_add(p, four()))) }
+        Segment { from = Ref(w::i32_load(p)), to = Ref(w::i32_load(w::i32_add(p, four()))) }
       };
       demo();
     }

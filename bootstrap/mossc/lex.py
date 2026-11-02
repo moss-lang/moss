@@ -54,10 +54,10 @@ class Kind(Enum):
     LOOP = auto()
     MATCH = auto()
     RETURN = auto()
+    TAG = auto()
     THIS_TYPE = auto()  # This
     THIS = auto()  # this
     TYPE = auto()
-    UNIT = auto()
     USE = auto()
     VAL = auto()
     VAR = auto()
@@ -86,10 +86,10 @@ KEYWORDS = {
     "loop": Kind.LOOP,
     "match": Kind.MATCH,
     "return": Kind.RETURN,
+    "tag": Kind.TAG,
     "This": Kind.THIS_TYPE,
     "this": Kind.THIS,
     "type": Kind.TYPE,
-    "unit": Kind.UNIT,
     "use": Kind.USE,
     "val": Kind.VAL,
     "var": Kind.VAR,

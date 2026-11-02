@@ -52,26 +52,26 @@ assume Std, Bigs {
 }
 
 assume Wasm, Branch {
-  type Long I64;
-  fn i64_of(x: Long): I64 { match x { Long v => v } }
+  tag Long(I64);
+  fn i64_of(x: Long): I64 { match x { Long(v) => v } }
 }
 
 functor LongLayout: Wasm, Branch -> Layout {
   bind Item = Long;
   bind width = w::i32_add(w::i32_one, w::i32_one);
   bind put = (at, value) => w::i64_store(at, i64_of(value));
-  bind take = (at) => Long (w::i64_load(at));
+  bind take = (at) => Long(w::i64_load(at));
 }
 
 assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     bind Big = Long;
-    bind big = (n) => Long (w::i64_extend_i32_s(match n { Num v => v }));
-    bind small = (b) => Num (w::i32_wrap_i64(i64_of(b)));
-    bind Big.add = (r) => Long (w::i64_add(i64_of(this), i64_of(r)));
-    bind Big.div = (r) => Long (w::i64_div_s(i64_of(this), i64_of(r)));
-    bind Big.rem = (r) => Long (w::i64_rem_s(i64_of(this), i64_of(r)));
+    bind big = (n) => Long(w::i64_extend_i32_s(match n { Num(v) => v }));
+    bind small = (b) => Num(w::i32_wrap_i64(i64_of(b)));
+    bind Big.add = (r) => Long(w::i64_add(i64_of(this), i64_of(r)));
+    bind Big.div = (r) => Long(w::i64_div_s(i64_of(this), i64_of(r)));
+    bind Big.rem = (r) => Long(w::i64_rem_s(i64_of(this), i64_of(r)));
     bind Big.le = (r) => i32_bool(w::i64_le_s(i64_of(this), i64_of(r)));
     bind LongLayout;
     bind BigList = Packed;

@@ -9,7 +9,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # could not be passed (memory_mismatch.moss) — and its sum is put in a
 # `Scratch` list made there. Output: 6, then 6.
 
-unit Scratch;
+tag Scratch;
 
 assume Std {
   fn print_int(n: Int) {

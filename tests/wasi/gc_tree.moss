@@ -16,16 +16,16 @@ import "../../lib/wasip1.moss" use Wasi;
 # full tree of 2^10 ones, its depth, and the expression again, read
 # through the val, doubled.
 
-unit Add;
-unit Sub;
-unit Mul;
-unit Div;
+tag Add;
+tag Sub;
+tag Mul;
+tag Div;
 
 type BinOp = Add | Sub | Mul | Div;
 
 assume Std, Wasm {
-  type Literal Int;
-  type Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
+  tag Literal(Int);
+  tag Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
   type Expr = Binary | Literal;
 
   context ExprHeap = Expr.boxed[Boxed=Expr], Ref.deref[Boxed=Expr];
@@ -46,7 +46,7 @@ assume Std, Wasm, ExprHeap {
           Div => if r == 0 { 0 } else { l / r },
         }
       },
-      Literal n => n,
+      Literal(n) => n,
     }
   }
 
@@ -57,12 +57,12 @@ assume Std, Wasm, ExprHeap {
         let r = depth(rhs);
         if l > r { l + 1 } else { r + 1 }
       },
-      Literal n => 1,
+      Literal(n) => 1,
     }
   }
 
   fn lit(n: Int): Ref[Boxed=Expr] {
-    let e: Expr = Literal (n);
+    let e: Expr = Literal(n);
     e.boxed()
   }
 

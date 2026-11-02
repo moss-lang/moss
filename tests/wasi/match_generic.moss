@@ -7,14 +7,14 @@ import "../../lib/wasm.moss" as w use Wasm, I32;
 # (D16, D34), so the program is rejected all the same.
 
 type T;
-type B I32;
-unit Red;
+tag B(I32);
+tag Red;
 
 assume Wasm, T {
   fn pick(x: T): I32 {
     match x {
       y => w::i32_one,
-      _ => B (w::i32_one),
+      _ => B(w::i32_one),
     }
   }
 }

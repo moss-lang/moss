@@ -16,7 +16,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # two apart too.)
 
 assume Std, Wasm {
-  type Point { x: Int, y: Int };
+  tag Point { x: Int, y: Int };
 
   fn print_int(n: Int) {
     if n >= 10 { print_int(n / 10); }
@@ -33,13 +33,13 @@ assume Wasm, Wasi, Branch {
     bind Heap;
     let pt = Point { x = 3, y = 4 };
     let p = pt.boxed();
-    let s = match p { Ref s => s };
-    let q = Ref[Boxed=Point] (s);
+    let s = match p { Ref(s) => s };
+    let q = Ref[Boxed=Point](s);
     print_int(q.deref().x);
     putchar(char::newline);
     print_int(q.deref().y);
     putchar(char::newline);
-    let n = Ref[Boxed=Int] (s);
+    let n = Ref[Boxed=Int](s);
     print_int(n.deref());
     putchar(char::newline);
   }

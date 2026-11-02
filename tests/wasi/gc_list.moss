@@ -20,11 +20,11 @@ import "../../lib/wasip1.moss" use Wasi;
 # three lines from each block, then 15 and 3.
 
 assume Wasm, Branch, Arrayed {
-  type Present Array;
-  unit Empty;
+  tag Present(Array);
+  tag Empty;
   type Data = Present | Empty;
-  type Grown { data: Data, len: I32 };
-  type GcList[Arrayed] Ref[Boxed=Grown];
+  tag Grown { data: Data, len: I32 };
+  tag GcList[Arrayed](Ref[Boxed=Grown]);
 
   context Growing =
     Arrayed.arrayed, Array.length, Array.get, Array.set, Array.copy,
@@ -33,19 +33,19 @@ assume Wasm, Branch, Arrayed {
   assume Growing {
     fn gc_list(): GcList {
       let g = Grown { data = Empty, len = w::i32_zero };
-      GcList (g.boxed())
+      GcList(g.boxed())
     }
 
-    fn header(l: GcList): Ref[Boxed=Grown] { match l { GcList r => r } }
+    fn header(l: GcList): Ref[Boxed=Grown] { match l { GcList(r) => r } }
 
     fn elements(g: Grown): Array {
       match g.data {
-        Present a => a,
+        Present(a) => a,
         Empty => w::unreachable(),
       }
     }
 
-    fn GcList.length(): Num { Num (header(this).deref().len) }
+    fn GcList.length(): Num { Num(header(this).deref().len) }
 
     fn GcList.get(index: Num): Arrayed { elements(header(this).deref()).get(raw(index)) }
 
@@ -57,7 +57,7 @@ assume Wasm, Branch, Arrayed {
       let h = header(this);
       let g = h.deref();
       let data = match g.data {
-        Present a => {
+        Present(a) => {
           if i32_bool(w::i32_eq(g.len, a.length())) {
             let bigger = value.arrayed(w::i32_shl(a.length(), w::i32_one));
             bigger.copy(w::i32_zero, a, w::i32_zero, g.len);
@@ -69,7 +69,7 @@ assume Wasm, Branch, Arrayed {
         Empty => value.arrayed(w::i32_add(w::i32_one, w::i32_one)),
       };
       data.set(g.len, value);
-      h.set(Grown { data = Present (data), len = w::i32_add(g.len, w::i32_one) });
+      h.set(Grown { data = Present(data), len = w::i32_add(g.len, w::i32_one) });
     }
   }
 }
@@ -96,7 +96,7 @@ assume Std {
     putchar(char::newline);
   }
 
-  type Sum { lhs: Int, rhs: Int };
+  tag Sum { lhs: Int, rhs: Int };
 }
 
 assume Std, Bags {

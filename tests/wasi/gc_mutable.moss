@@ -12,7 +12,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # alias, then 3, then 42.
 
 assume Std {
-  type Counter { hits: Int, last: Int };
+  tag Counter { hits: Int, last: Int };
 
   context Counting =
     Counter.boxed[Boxed=Counter], Ref.deref[Boxed=Counter], Ref.set[Boxed=Counter];

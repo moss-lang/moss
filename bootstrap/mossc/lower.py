@@ -1034,7 +1034,7 @@ class Lower:
         their payload actually *mentions*, closed through the nominals it
         mentions (less whatever those mentions' own brackets bind) — not
         everything the enclosing assumes happen to provide, which would
-        make `unit Stop;` under `assume Std` spuriously distinct per
+        make `tag Stop;` under `assume Std` spuriously distinct per
         ambient binding. Over mutually recursive declarations this is the
         *least fixpoint* (`_solve_requirements`), so `type A { b: B, t: T
         }; type B { a: A };` gives both `[T]` whichever is asked first. A
@@ -1049,7 +1049,7 @@ class Lower:
         if sym.kind in (SymKind.UNIT, SymKind.TYPE):
             # An abstract type symbol is a bare unification variable (D43);
             # giving it identity args for everything its assumes provide
-            # would block merging (and made `unit Stop;` under Std spuriously
+            # would block merging (and made `tag Stop;` under Std spuriously
             # distinct per ambient binding).
             out: list = []
         elif sym.kind in (SymKind.TAG, SymKind.ALIAS):

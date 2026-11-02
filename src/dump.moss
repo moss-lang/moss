@@ -15,7 +15,7 @@ import "./tcode.moss" use *;
 
 assume Std {
   assume ast::Ast, intern::Interner {
-    fn tag(k: Int) {
+    fn kind_char(k: Int) {
       if k < 26 {
         putchar((char::a.code() + k).char());
       } else {
@@ -25,7 +25,7 @@ assume Std {
 
     fn sp() { putchar(char::space); }
     fn under() { putchar(char::underscore); }
-    fn open_tag(k: Int) { putchar(char::lparen); tag(k); }
+    fn open_tag(k: Int) { putchar(char::lparen); kind_char(k); }
     fn close_tag() { putchar(char::rparen); }
 
     fn put_path(p: Int) {

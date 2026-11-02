@@ -5,8 +5,8 @@ import "../../lib/wasm.moss" as w use Wasm, I32;
 # union is required (D34). `pick` is reached only with `Red`, which the
 # arm it has covers. Rejected in both compilers.
 
-unit Red;
-unit Green;
+tag Red;
+tag Green;
 type Colour = | Green | Red;
 
 assume Wasm {

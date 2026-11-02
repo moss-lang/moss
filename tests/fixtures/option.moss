@@ -1,9 +1,9 @@
 import "./inner.moss" use T;
 
-unit None;
+tag None;
 
 assume T {
-  type Some T;
+  tag Some(T);
 
   type Option =
     | None

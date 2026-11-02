@@ -1,0 +1,3 @@
+assume Std {
+  type Wrapped Char;
+}

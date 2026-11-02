@@ -49,10 +49,10 @@ type Token =
   | Loop
   | Match
   | Return
+  | Tag
   | ThisType
   | ThisValue
   | Type
-  | Unit
   | Use
   | Val
   | Var
@@ -66,7 +66,7 @@ type Token =
 assume Std {
   # `Char | Eof` directly would put an abstract type in a union (D15), so
   # the character is wrapped in a nominal tag.
-  type Read Char;
+  tag Read(Char);
 
   # The lexer owns its input and position; the driver binds these. After
   # lex() returns a token, `mark` holds the token's start offset (its end
@@ -81,7 +81,7 @@ assume Std {
       if i >= src.length() {
         Eof
       } else {
-        Read (src.get(i))
+        Read(src.get(i))
       }
     }
 
@@ -93,7 +93,7 @@ assume Std {
     fn take(want: Char): Bool {
       match peek() {
         Eof => false,
-        Read c => {
+        Read(c) => {
           if c == want {
             advance();
             true
@@ -138,7 +138,7 @@ assume Std {
       loop {
         match peek() {
           Eof => return Eof,
-          Read c => {
+          Read(c) => {
             advance();
             if is_space(c) {
               ()
@@ -158,7 +158,7 @@ assume Std {
       loop {
         match peek() {
           Eof => break,
-          Read c => {
+          Read(c) => {
             advance();
             if c == char::newline {
               break
@@ -267,7 +267,7 @@ assume Std {
       loop {
         match peek() {
           Eof => return Bad,
-          Read c => {
+          Read(c) => {
             advance();
             if c == char::quote {
               return Str;
@@ -277,7 +277,7 @@ assume Std {
               # TODO: validate the escape character instead of skipping it.
               match peek() {
                 Eof => return Bad,
-                Read e => advance(),
+                Read(e) => advance(),
               }
             }
           }
@@ -322,7 +322,7 @@ assume Std {
       }
       match peek() {
         Eof => (),
-        Read c => {
+        Read(c) => {
           if is_name_char(c) {
             return Bad;
           }
@@ -354,7 +354,7 @@ assume Std {
       loop {
         match peek() {
           Eof => return Name,
-          Read c => {
+          Read(c) => {
             if is_name_char(c) {
               advance();
             } else {
@@ -369,7 +369,7 @@ assume Std {
     fn boundary(): Bool {
       match peek() {
         Eof => true,
-        Read c => {
+        Read(c) => {
           if is_name_char(c) {
             false
           } else {
@@ -496,7 +496,9 @@ assume Std {
       } else if c0 == char::T {
         kw3(char::h, char::i, char::s, ThisType)
       } else if c0 == char::t {
-        if take(char::h) {
+        if take(char::a) {
+          kw1(char::g, Tag)
+        } else if take(char::h) {
           kw2(char::i, char::s, ThisValue)
         } else if take(char::y) {
           kw2(char::p, char::e, Type)
@@ -504,9 +506,7 @@ assume Std {
           rest_of_name()
         }
       } else if c0 == char::u {
-        if take(char::n) {
-          kw2(char::i, char::t, Unit)
-        } else if take(char::s) {
+        if take(char::s) {
           kw1(char::e, Use)
         } else {
           rest_of_name()

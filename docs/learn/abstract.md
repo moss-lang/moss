@@ -46,7 +46,7 @@ Everything from the [Types](types.md) lesson can mention an abstract type:
 type T;
 
 assume Std, T {
-  type Pair { first: T, second: T };
+  tag Pair { first: T, second: T };
 
   fn swap(p: Pair): Pair {
     match p {
@@ -81,15 +81,15 @@ supplied per type:
 assume Std {
   fn .loud(): Char;
 
-  type Horn Char;
+  tag Horn(Char);
 
   fn Horn.blast(): Char {
-    match this { Horn c => c }
+    match this { Horn(c) => c }
   }
 
   fn main() {
     bind Horn.loud=Horn.blast;
-    let h = Horn (char::t);
+    let h = Horn(char::t);
     putchar(h.loud());
     putchar(char::newline);
   }

@@ -5,10 +5,10 @@
 import "../fixtures/cell.moss" as cell use T, Cell, IsCell;
 
 assume Std {
-  type MyCell CellInt;
+  tag MyCell(CellInt);
 
-  fn MyCell.g(): Int { match this { MyCell c => c.read() } }
-  fn MyCell.p(x: Int) { match this { MyCell c => c.write(x), } }
+  fn MyCell.g(): Int { match this { MyCell(c) => c.read() } }
+  fn MyCell.p(x: Int) { match this { MyCell(c) => c.write(x), } }
 
   context CellOps = IsCell[T=Int, Cell=MyCell];
 
@@ -17,7 +17,7 @@ assume Std {
   }
 
   fn main() {
-    let c = MyCell (cell_int());
+    let c = MyCell(cell_int());
     if peek(c).eq(zero) { putchar(char::y) }
   }
 }

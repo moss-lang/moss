@@ -62,7 +62,7 @@ class TestLoading(unittest.TestCase):
 class TestScopes(unittest.TestCase):
     def test_kinds(self):
         files = {
-            "m.moss": "type A; unit U; type L = A; type G A; val v: A;"
+            "m.moss": "type A; tag U; type L = A; tag G(A); val v: A;"
             "fn f(); context C = A;"
             "assume A { fn A.m(): A; fn .d(): This; }"
         }
@@ -93,7 +93,7 @@ class TestScopes(unittest.TestCase):
 
     def test_duplicate_definition(self):
         with self.assertRaises(CollectError):
-            load("m.moss", read=fake({"m.moss": "type A; unit A;"}), root=ROOT)
+            load("m.moss", read=fake({"m.moss": "type A; tag A;"}), root=ROOT)
 
     def test_detached_body_rejected(self):
         with self.assertRaises(CollectError):

@@ -11,8 +11,8 @@ import "../../lib/wasip1.moss" use Wasi;
 
 type Foo;
 type A;
-unit U1;
-unit U2;
+tag U1;
+tag U2;
 
 fn .gimme(): Foo;
 

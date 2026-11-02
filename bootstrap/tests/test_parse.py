@@ -47,20 +47,49 @@ class TestCorpus(unittest.TestCase):
 
 class TestDeclarations(unittest.TestCase):
     def test_type_forms(self):
-        file = parse("type A; type B = C; type D E; type F = | G | H; type N = |;")
+        file = parse("type A; type B = C; type F = | G | H; type N = |;")
         self.assertEqual(
             file.decls,
             [
                 ast.Tydef("A"),
                 ast.Aliasdef("B", ast.TyRef(["C"], None)),
-                ast.Tagdef("D", ast.TyRef(["E"], None)),
                 ast.Aliasdef("F", ast.TyUnion([ast.TyRef(["G"], None), ast.TyRef(["H"], None)])),
                 ast.Aliasdef("N", ast.TyNever()),
             ],
         )
 
+    def test_tag_forms(self):
+        # D83: a unit, a payload in parentheses, a record payload in braces.
+        file = parse(
+            "tag U; tag D(E); tag B(| F | G); tag P[Item](I32); tag R { x: A };"
+        )
+        self.assertEqual(
+            file.decls,
+            [
+                ast.Unitdef("U"),
+                ast.Tagdef("D", ast.TyRef(["E"], None)),
+                ast.Tagdef("B", ast.TyUnion([ast.TyRef(["F"], None), ast.TyRef(["G"], None)])),
+                ast.Tagdef("P", ast.TyRef(["I32"], None), ("Item",)),
+                ast.Tagdef("R", ast.TyRecord([("x", ast.TyRef(["A"], None))])),
+            ],
+        )
+
+    def test_nominal_types_need_tag(self):
+        with self.assertRaises(ParseError) as caught:
+            parse("type D E;")
+        self.assertIn("declare a nominal type with `tag`", str(caught.exception))
+        with self.assertRaises(ParseError):
+            parse("unit U;")
+        with self.assertRaises(ParseError):
+            parse("tag D E;")
+
+    def test_record_payload_takes_braces(self):
+        with self.assertRaises(ParseError) as caught:
+            parse("tag R({ x: A });")
+        self.assertIn("tag R { ... };", str(caught.exception))
+
     def test_record_tag_and_val(self):
-        file = parse("type P { x: A, y: (B), z: () };\nval v: P;")
+        file = parse("tag P { x: A, y: (B), z: () };\nval v: P;")
         tag, val = file.decls
         self.assertEqual(
             tag,
@@ -76,7 +105,10 @@ class TestDeclarations(unittest.TestCase):
     def test_no_tuple_types(self):
         # D63: records are the only product type; `(T)` is grouping.
         with self.assertRaises(ParseError) as caught:
-            parse("type P (A, B);")
+            parse("tag P(A, B);")
+        self.assertIn("no tuple types", str(caught.exception))
+        with self.assertRaises(ParseError) as caught:
+            parse("type P = (A, B);")
         self.assertIn("no tuple types", str(caught.exception))
 
     def test_fn_names(self):
@@ -247,7 +279,7 @@ class TestExpressions(unittest.TestCase):
 
     def test_match(self):
         block = self.body(
-            "match peek() { Eof => return, As => { next(); } Some token => f(token), _ => (), }"
+            "match peek() { Eof => return, As => { next(); } Some(token) => f(token), _ => (), }"
         )
         match = block.tail
         self.assertEqual(len(match.arms), 4)
@@ -257,6 +289,19 @@ class TestExpressions(unittest.TestCase):
         self.assertEqual(match.arms[2].pattern, ast.PatTag(["Some"], ast.PatPath(["token"])))
         self.assertEqual(match.arms[3].pattern, ast.PatWild())
         self.assertEqual(match.arms[3].body, ast.UnitExpr())
+
+    def test_tag_patterns_take_parentheses(self):
+        # D83: a tag pattern is written as its construction is.
+        block = self.body("match x { Some(Lit(n)) => a, p::Wrap(_) => b, }")
+        self.assertEqual(
+            [arm.pattern for arm in block.tail.arms],
+            [
+                ast.PatTag(["Some"], ast.PatTag(["Lit"], ast.PatPath(["n"]))),
+                ast.PatTag(["p", "Wrap"], ast.PatWild()),
+            ],
+        )
+        with self.assertRaises(ParseError):
+            self.body("match x { Some n => a, }")
 
     def test_empty_match(self):
         block = self.body("match panic() {}")

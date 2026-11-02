@@ -17,8 +17,8 @@ assume Foo {
 }
 
 assume Std {
-  type X Char;
-  fn X.get(): Char { match this { X c => c } }
+  tag X(Char);
+  fn X.get(): Char { match this { X(c) => c } }
 }
 
 assume Std, Foo, X.gimme {
@@ -33,7 +33,7 @@ assume Std {
   fn demo() {
     bind Foo = Int;
     bind X.gimme[Foo=Char] = X.get;
-    let n: Int = use_it(X (char::a));
+    let n: Int = use_it(X(char::a));
     print_int(n);
     putchar(char::newline);
   }

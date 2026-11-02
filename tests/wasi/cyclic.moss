@@ -7,8 +7,8 @@ import "../../lib/wasistd.moss" use Branch;
 # indices is the idiom instead (D51). Reported, not compiled.
 
 assume Wasm, Wasi, Branch {
-  unit Nil;
-  type Cell { head: I32, tail: Nil | Cell };
+  tag Nil;
+  tag Cell { head: I32, tail: Nil | Cell };
 
   fn main() {
     let c = Cell { head = w::i32_one, tail = Nil };

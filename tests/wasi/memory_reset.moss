@@ -11,9 +11,9 @@ import "../../lib/wasip1.moss" use Wasi;
 # there; after the reset the next list reuses the same address and
 # overwrites the dropped one, and the main list still sums as before.
 
-unit Scratch;
+tag Scratch;
 
-type Report { first: Int, second: Int, at: Int, reused: Bool };
+tag Report { first: Int, second: Int, at: Int, reused: Bool };
 
 assume Std {
   fn print_int(n: Int) {
@@ -68,7 +68,7 @@ assume Wasm, Wasi, Branch {
       Report {
         first = first,
         second = sum(zs),
-        at = Num (at),
+        at = Num(at),
         reused = i32_bool(w::i32_eq(at, ints_addr(zs))),
       }
     };

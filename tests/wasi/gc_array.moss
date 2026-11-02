@@ -14,18 +14,18 @@ import "../../lib/wasip1.moss" use Wasi;
 # at two types, each in a block that binds `Arrayed` to it (both one
 # scalar wide, since the bootstrap compiles a generic function once). Output: one line per number below.
 
-unit Add;
-unit Mul;
+tag Add;
+tag Mul;
 
 type BinOp = Add | Mul;
 
 assume Std, Wasm {
-  type Literal Int;
-  type Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
+  tag Literal(Int);
+  tag Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
   type Expr = Binary | Literal;
 
-  type Point { x: Int, y: Int };
-  type Tagged { big: I64, n: Int, e: Ref[Boxed=Expr] };
+  tag Point { x: Int, y: Int };
+  tag Tagged { big: I64, n: Int, e: Ref[Boxed=Expr] };
 
   context ExprHeap = Expr.boxed[Boxed=Expr], Ref.deref[Boxed=Expr];
 
@@ -58,12 +58,12 @@ assume Std, Wasm, ExprHeap {
           Mul => l * r,
         }
       },
-      Literal n => n,
+      Literal(n) => n,
     }
   }
 
   fn lit(n: Int): Ref[Boxed=Expr] {
-    let e: Expr = Literal (n);
+    let e: Expr = Literal(n);
     e.boxed()
   }
 }
@@ -79,7 +79,7 @@ assume Wasm, Arrayed {
 
 assume Wasm, Wasi, Branch {
   fn idx(n: Num): I32 { raw(n) }
-  fn count(v: I32): Num { Num (v) }
+  fn count(v: I32): Num { Num(v) }
 
   fn main() {
     bind WasiStd;

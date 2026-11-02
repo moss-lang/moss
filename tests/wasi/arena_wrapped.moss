@@ -9,7 +9,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # `Run` made in the block is a `Run` over the fresh `IntList`, and the
 # escape check sees through it: refused in both compilers.
 
-unit Scratch;
+tag Scratch;
 
 functor Arena: Wasm, Branch -> Memory, Containers;
 
@@ -33,7 +33,7 @@ assume Char, Numerics, Containers {
 }
 
 assume Char, Numerics, Containers {
-  type Run { start: Int, path: IntList };
+  tag Run { start: Int, path: IntList };
 }
 
 assume Wasm, Wasi, Branch, Arena {

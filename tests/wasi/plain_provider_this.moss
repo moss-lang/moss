@@ -19,13 +19,13 @@ assume Std, T, T.m {
 }
 
 assume Std {
-  type Box Char;
-  fn peek(): Char { match this { Box c => c } }
+  tag Box(Char);
+  fn peek(): Char { match this { Box(c) => c } }
 
   fn demo() {
     bind T = Box;
     bind T.m = peek;
-    putchar(use_it(Box (char::b)));
+    putchar(use_it(Box(char::b)));
     putchar(char::newline);
   }
 }

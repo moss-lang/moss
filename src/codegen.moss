@@ -1928,7 +1928,7 @@ assume Std {
     fn field_off(rec: Int, i: Int): Int { types::field_offset(spec(rec), i) }
 
     # The type a tag construction builds: the tag at whatever its brackets
-    # bind (`Box[Elem=Point] (...)`), or applied to its own requirements,
+    # bind (`Box[Elem=Point](...)`), or applied to its own requirements,
     # and either way read through the bindings in force.
     fn tag_type(callee: Int, sym: Int, m: Int): Int {
       let g = cg_genv.read();
@@ -2045,8 +2045,8 @@ assume Std {
         cg_error(prog::e_scope(), ast::path_last(path));
         return ty_none();
       }
-      let tag = tag_type(ast::a_of(e), sym, m);
-      let rec = types::record_of(tag);
+      let nominal = tag_type(ast::a_of(e), sym, m);
+      let rec = types::record_of(nominal);
       if !ast::is_some(rec) {
         cg_error(c_bad_type(), prog::sym_name.get(sym));
         return ty_none();
@@ -2094,10 +2094,10 @@ assume Std {
         }
         f = f + 1;
       }
-      tag
+      nominal
     }
 
-    # What `Tag { ... }` destructures: the tag's payload, when that is a
+    # What `Tag { ... }` destructures: the nominal's payload, when that is a
     # record itself (D34). A payload that is another nominal type has to
     # be matched through that type's own head.
     fn pattern_record(payload: Int): Int {
@@ -3387,39 +3387,39 @@ assume Std {
         return ty_none();
       }
       # A nominal value *is* its payload (D58), so constructing one emits
-      # the payload and nothing more — the payload at the tag's arguments.
+      # the payload and nothing more — the payload at the nominal's arguments.
       if prog::sym_kind.get(sym) == prog::sk_tag() {
-        let tag = tag_type(callee, sym, m);
+        let nominal = tag_type(callee, sym, m);
         let want = int_list();
-        want.push(types::member_payload(tag));
+        want.push(types::member_payload(nominal));
         emit_args(body, ast::b_of(e), ast::c_of(e), m, want);
-        if is_ref_type(spec(tag)) {
+        if is_ref_type(spec(nominal)) {
           # D75: a `Ref` built from a bare `StructRef` is forged, and the
           # one place a reference is cast — to the struct of what it
           # claims to hold, trapping if it does not.
-          let held = held_of(spec(tag));
+          let held = held_of(spec(nominal));
           if unknown_held(held) {
             if checking() {
-              return tag;
+              return nominal;
             }
             cg_error(c_unbound(), prog::sym_name.get(sym));
-            return tag;
+            return nominal;
           }
           op_ref_cast_null(body, ref_valtype(held));
         }
-        if is_array_type(tag) {
+        if is_array_type(nominal) {
           # D81: and so is an `Array` built from a bare `ArrayRef`.
-          let held = array_held(spec(tag));
+          let held = array_held(spec(nominal));
           if unknown_held(held) {
             if checking() {
-              return tag;
+              return nominal;
             }
             cg_error(c_unbound(), prog::sym_name.get(sym));
-            return tag;
+            return nominal;
           }
           op_ref_cast_null(body, emit::vt_ref(array_of(held)));
         }
-        return tag;
+        return nominal;
       }
       if is_defined_fn(sym) {
         check_callee(sym);
@@ -4431,7 +4431,7 @@ assume Std {
       if ast::kind_of(pat) == ast::k_pt_path() {
         let sub = ast::b_of(pat);
         if ast::is_some(sub) {
-          # Only a bare name takes the payload; `Tag _` names nothing, so
+          # Only a bare name takes the payload; `Tag(_)` names nothing, so
           # it needs no local.
           if ast::kind_of(sub) == ast::k_pt_path() {
             if !ast::is_some(ast::b_of(sub)) {

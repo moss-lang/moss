@@ -12,7 +12,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # Output: `91122`.
 
 assume Std {
-  type Box Int;
+  tag Box(Int);
   fn Box.get(index: Int): Int { 9 }
 
   fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
@@ -31,7 +31,7 @@ assume Std, Bags {
 assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
-    let b = Box (5);
+    let b = Box(5);
     digit(b.get(0));
     {
       bind Bag = Box;

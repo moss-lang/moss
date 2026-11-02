@@ -8,8 +8,8 @@ import "../../lib/wasistd.moss" use Branch, i32_bool;
 # A branch block that ends in a diverging *statement* still yields `()`,
 # as any block without a tail does. Both compilers.
 
-unit Red;
-unit Green;
+tag Red;
+tag Green;
 type Colour = | Red | Green;
 type Never = |;
 

@@ -12,18 +12,18 @@ import "../../lib/wasip1.moss" use Wasi;
 # applies it twice; `demo` assumes all four items and uses them in one
 # body. Output: 3, 12, 7, then 1 boxed after the second application.
 
-unit Add;
-unit Mul;
+tag Add;
+tag Mul;
 
 type BinOp = Add | Mul;
 
 assume Std, Wasm {
-  type Literal Int;
-  type Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
+  tag Literal(Int);
+  tag Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
   type Expr = Binary | Literal;
 
-  type Print { value: Ref[Boxed=Expr] };
-  type Then { value: Ref[Boxed=Expr], rest: Ref[Boxed=Stmt] };
+  tag Print { value: Ref[Boxed=Expr] };
+  tag Then { value: Ref[Boxed=Expr], rest: Ref[Boxed=Stmt] };
   type Stmt = Then | Print;
 
   context Heaps =
@@ -56,7 +56,7 @@ assume Std, Wasm, Heaps {
           Mul => l * r,
         }
       },
-      Literal n => n,
+      Literal(n) => n,
     }
   }
 
@@ -71,7 +71,7 @@ assume Std, Wasm, Heaps {
   }
 
   fn lit(n: Int): Ref[Boxed=Expr] {
-    let e: Expr = Literal (n);
+    let e: Expr = Literal(n);
     e.boxed()
   }
 
@@ -98,7 +98,7 @@ assume Wasm, Wasi, Branch {
     bind Boxed = Stmt;
     bind Heap;
     demo();
-    let one: Expr = Literal (1);
+    let one: Expr = Literal(1);
     let r = one.boxed();
     line(eval(r.deref()));
   }

@@ -11,12 +11,12 @@ type T;
 
 assume Std, T {
   val seed: T;
-  type W Char;
+  tag W(Char);
   fn .m(): T;
 }
 
 assume Std {
-  fn W.get(): Char { match this { W c => c } }
+  fn W.get(): Char { match this { W(c) => c } }
   fn W.one(): Int { one }
 }
 
@@ -29,11 +29,11 @@ assume Std {
     bind T = Char;
     bind seed = char::a;
     bind W.m = W.get;
-    putchar(both(W (char::z)));
+    putchar(both(W(char::z)));
     bind T = Int;
     bind seed = one;
     bind W.m = W.one;
-    if both(W (char::z)).eq(one) { putchar(char::b) }
+    if both(W(char::z)).eq(one) { putchar(char::b) }
     putchar(char::newline);
   }
 }

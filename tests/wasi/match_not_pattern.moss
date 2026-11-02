@@ -5,8 +5,8 @@ import "../../lib/wasip1.moss" use Wasi;
 # `red` is a function, which is neither a binder nor a unit or tag to
 # match (D34). Rejected in both compilers.
 
-unit Red;
-unit Green;
+tag Red;
+tag Green;
 type Colour = | Red | Green;
 
 assume Wasm, Wasi {

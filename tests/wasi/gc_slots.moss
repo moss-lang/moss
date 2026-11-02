@@ -10,14 +10,14 @@ import "../../lib/wasip1.moss" use Wasi;
 # module that does not validate.
 
 assume Std, Wasm {
-  type Leaf Int;
-  type Node { l: Ref[Boxed=Tree], r: Ref[Boxed=Tree] };
+  tag Leaf(Int);
+  tag Node { l: Ref[Boxed=Tree], r: Ref[Boxed=Tree] };
   type Tree = Leaf | Node;
 
   fn demo() {
     bind Boxed = Tree;
     bind Heap;
-    let leaf: Tree = Leaf (1);
+    let leaf: Tree = Leaf(1);
     let l = leaf.boxed();
     let node: Tree = Node { l, r = l };
     let t = node.boxed();

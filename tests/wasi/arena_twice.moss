@@ -11,7 +11,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # rather than print "`IntList@Arena`, expected `IntList@Arena`"; the
 # self-hosted compiler reports a type error.
 
-unit Scratch;
+tag Scratch;
 
 functor Arena: Wasm, Branch -> Memory, Containers;
 

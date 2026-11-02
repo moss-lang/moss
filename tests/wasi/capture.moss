@@ -72,7 +72,7 @@ assume Wasm, Wasi, Branch {
   }
 
   # The same through a detached method provided at a receiver.
-  type Tick I32;
+  tag Tick(I32);
 
   assume shift {
     fn Tick.loud() { letter(); }
@@ -95,7 +95,7 @@ assume Wasm, Wasi, Branch {
     later();               # 'C', not 'D' or 'I'
     task();                # 'C': bound before this frame's own rebind
     bind Tick.say = Tick.loud;
-    speak(Tick (w::i32_zero));   # 'E', captured with shift = 2
+    speak(Tick(w::i32_zero));   # 'E', captured with shift = 2
     emit(newline());
   }
 }

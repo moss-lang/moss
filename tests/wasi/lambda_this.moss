@@ -17,15 +17,15 @@ assume Std, step {
 }
 
 assume Std {
-  type Box Char;
+  tag Box(Char);
 
   fn Box.demo() {
-    bind step = (c) => match this { Box b => b };
+    bind step = (c) => match this { Box(b) => b };
     putchar(run_step(char::a));
   }
 
   fn demo() {
-    Box (char::z).demo();
+    Box(char::z).demo();
   }
 }
 

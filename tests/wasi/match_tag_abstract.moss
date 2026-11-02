@@ -6,12 +6,12 @@ import "../../lib/wasm.moss" as w use Wasm, I32;
 # `T`.
 
 type T;
-type Box I32;
+tag Box(I32);
 
 assume Wasm, T {
   fn pick(x: T): I32 {
     match x {
-      Box v => w::i32_one,
+      Box(v) => w::i32_one,
     }
   }
 }
@@ -19,6 +19,6 @@ assume Wasm, T {
 assume Wasm {
   fn main() {
     bind T = Box;
-    let one = pick(Box (w::i32_one));
+    let one = pick(Box(w::i32_one));
   }
 }

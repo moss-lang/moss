@@ -13,13 +13,13 @@ import "../../lib/wasip1.moss" use Wasi;
 type Elem;
 
 assume Std {
-  type Point { x: Char, y: Char };
+  tag Point { x: Char, y: Char };
 }
 
 assume Std, Elem {
-  type Box Elem;
+  tag Box(Elem);
   fn .peek(): Elem;
-  fn Box.open(): Elem { match this { Box e => e } }
+  fn Box.open(): Elem { match this { Box(e) => e } }
 }
 
 assume Std {
@@ -28,8 +28,8 @@ assume Std {
     bind Box.peek = Box.open;
     bind Elem = Point;
     bind Box.peek = Box.open;
-    let bc = Box[Elem=Char] (char::a);
-    let bp = Box[Elem=Point] (Point { x = char::b, y = char::c });
+    let bc = Box[Elem=Char](char::a);
+    let bp = Box[Elem=Point](Point { x = char::b, y = char::c });
     putchar(bc.peek());
     putchar(bp.peek().y);
     putchar(char::newline);

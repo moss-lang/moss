@@ -14,7 +14,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # the lists are rebound to another memory (D72: those items would be
 # needed at the new `IntList`, and nothing provides them there).
 
-unit Scratch;
+tag Scratch;
 
 assume Std {
   fn print_int(n: Int) {

@@ -742,8 +742,10 @@ assume Std {
       if accept(tk_lbrace()) {
         return parse_record_pattern(p);
       }
-      if here(tk_name()) {
-        return ast::node2(ast::k_pt_path(), p, parse_pattern());
+      if accept(tk_lparen()) {
+        let sub = parse_pattern();
+        expect(tk_rparen());
+        return ast::node2(ast::k_pt_path(), p, sub);
       }
       ast::node2(ast::k_pt_path(), p, ast::none())
     }
@@ -1060,6 +1062,53 @@ assume Std {
       ast::node4(ast::k_d_assume(), ir, items.length(), dr, inner.length())
     }
 
+    # A nominal type (D83): `tag X;` a unit, `tag X(T);` over a type,
+    # `tag X { f: T, ... };` over a record.
+    fn parse_tag(): Int {
+      let nm = take_name();
+      var ps = ast::none();
+      var n = 0;
+      # D73: a tag's listed parameters, which its payload need not
+      # mention.
+      if accept(tk_lbracket()) {
+        let xs = int_list();
+        loop {
+          if here(tk_rbracket()) {
+            break;
+          }
+          if here(tk_eof()) {
+            break;
+          }
+          xs.push(take_name());
+          if !accept(tk_comma()) {
+            break;
+          }
+        }
+        expect(tk_rbracket());
+        ps = ast::commit(xs);
+        n = xs.length();
+      }
+      if n == 0 {
+        if accept(tk_semi()) {
+          return ast::node1(ast::k_d_unit(), nm);
+        }
+      }
+      var ty = ast::none();
+      if here(tk_lbrace()) {
+        ty = parse_type_atom();
+      } else {
+        expect(tk_lparen());
+        ty = parse_type();
+        # A record payload is written with braces, not in parentheses.
+        if ast::kind_of(ty) == ast::k_ty_record() {
+          fail();
+        }
+        expect(tk_rparen());
+      }
+      expect(tk_semi());
+      ast::node4(ast::k_d_tag(), nm, ty, ps, n)
+    }
+
     fn parse_decl(): Int {
       if accept(tk_import()) {
         return parse_import();
@@ -1067,45 +1116,19 @@ assume Std {
       if accept(tk_assume()) {
         return parse_assume();
       }
-      if accept(tk_unit()) {
-        let nm = take_name();
-        expect(tk_semi());
-        return ast::node1(ast::k_d_unit(), nm);
-      }
       if accept(tk_type()) {
+        # D83: abstract or an alias; a nominal type is a `tag`.
         let nm = take_name();
-        # D73: a tag's listed parameters, which its payload need not
-        # mention.
-        if accept(tk_lbracket()) {
-          let ps = int_list();
-          loop {
-            if here(tk_rbracket()) {
-              break;
-            }
-            if here(tk_eof()) {
-              break;
-            }
-            ps.push(take_name());
-            if !accept(tk_comma()) {
-              break;
-            }
-          }
-          expect(tk_rbracket());
-          let ty = parse_type();
-          expect(tk_semi());
-          return ast::node4(ast::k_d_tag(), nm, ty, ast::commit(ps), ps.length());
-        }
         if accept(tk_semi()) {
           return ast::node1(ast::k_d_type(), nm);
         }
-        if accept(tk_equal()) {
-          let ty = parse_type();
-          expect(tk_semi());
-          return ast::node2(ast::k_d_alias(), nm, ty);
-        }
+        expect(tk_equal());
         let ty = parse_type();
         expect(tk_semi());
-        return ast::node4(ast::k_d_tag(), nm, ty, ast::none(), 0);
+        return ast::node2(ast::k_d_alias(), nm, ty);
+      }
+      if accept(tk_tag()) {
+        return parse_tag();
       }
       if accept(tk_val()) {
         let nm = take_name();

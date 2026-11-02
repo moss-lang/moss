@@ -1,12 +1,12 @@
-unit False;
-unit True;
+tag False;
+tag True;
 
 # Nominal over the sum (not a transparent alias), so that methods can
 # attach to Bool — an alias of a union has no nominal head to key on.
-type Bool | False | True;
+tag Bool(False | True);
 
-val false: Bool = Bool (False);
-val true: Bool = Bool (True);
+val false: Bool = Bool(False);
+val true: Bool = Bool(True);
 
 # The logical operations, defined rather than provided: an attached
 # method needs its receiver declared in the same module. `Std` provides

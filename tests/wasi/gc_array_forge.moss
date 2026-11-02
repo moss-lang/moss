@@ -26,11 +26,11 @@ assume Wasm, Wasi, Branch {
     bind Arrays;
     let n = 42;
     let xs = n.arrayed(raw(3));
-    let bare = match xs { Array a => a };
-    let ys = Array[Arrayed=Int] (bare);
+    let bare = match xs { Array(a) => a };
+    let ys = Array[Arrayed=Int](bare);
     print_int(ys.get(raw(2)));
     putchar(char::newline);
-    let cs = Array[Arrayed=Char] (bare);
+    let cs = Array[Arrayed=Char](bare);
     putchar(cs.get(raw(0)));
   }
 }

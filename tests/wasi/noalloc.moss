@@ -4,9 +4,9 @@ import "../../lib/wasistd.moss" use Branch, i32_bool;
 # Does constructing a nominal wrapper allocate? Read the heap pointer at
 # address 16 before and after a run of them and see whether it moved.
 assume Std, Wasm, Branch {
-  type Box Char;
+  tag Box(Char);
 
-  fn unbox(b: Box): Char { match b { Box v => v } }
+  fn unbox(b: Box): Char { match b { Box(v) => v } }
 
   fn main() {
     let one32 = w::i32_one;
@@ -15,7 +15,7 @@ assume Std, Wasm, Branch {
     var i = zero;
     var last = char::a;
     while i.lt(one.shl(one.add(one).add(one))) {
-      last = unbox(Box (char::k));
+      last = unbox(Box(char::k));
       i = i.add(one);
     }
     let after = w::i32_load(sixteen);

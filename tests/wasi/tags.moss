@@ -9,11 +9,11 @@ import "../../lib/wasistd.moss" use Branch, i32_bool;
 
 # A wrapper. Constructing one emits its payload and nothing else, and
 # matching it names that payload back.
-type Box I32;
+tag Box(I32);
 
-unit Red;
-unit Green;
-unit Blue;
+tag Red;
+tag Green;
+tag Blue;
 type Colour = | Red | Green | Blue;
 
 assume Wasm, Wasi, Branch {
@@ -38,7 +38,7 @@ assume Wasm, Wasi, Branch {
 
   fn unbox(b: Box): I32 {
     match b {
-      Box v => v,
+      Box(v) => v,
     }
   }
 
@@ -67,8 +67,8 @@ assume Wasm, Wasi, Branch {
   }
 
   fn main() {
-    emit(w::i32_add(upper_a(), Box (two()).twice()));       # 4, 'E'
-    emit(w::i32_add(upper_a(), unbox(Box (w::i32_one))));   # 1, 'B'
+    emit(w::i32_add(upper_a(), Box(two()).twice()));       # 4, 'E'
+    emit(w::i32_add(upper_a(), unbox(Box(w::i32_one))));   # 1, 'B'
     emit(w::i32_add(upper_a(), shade(Red)));                # 0, 'A'
     emit(w::i32_add(upper_a(), shade(Green)));              # 2, 'C'
     emit(w::i32_add(upper_a(), shade(Blue)));               # 4, 'E'

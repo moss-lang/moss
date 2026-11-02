@@ -62,10 +62,10 @@ assume Std {
   fn tk_loop(): Int { 45 }
   fn tk_match(): Int { 46 }
   fn tk_return(): Int { 47 }
-  fn tk_this_type(): Int { 48 }
-  fn tk_this_value(): Int { 49 }
-  fn tk_type(): Int { 50 }
-  fn tk_unit(): Int { 51 }
+  fn tk_tag(): Int { 48 }
+  fn tk_this_type(): Int { 49 }
+  fn tk_this_value(): Int { 50 }
+  fn tk_type(): Int { 51 }
   fn tk_use(): Int { 52 }
   fn tk_val(): Int { 53 }
   fn tk_var(): Int { 54 }
@@ -125,10 +125,10 @@ assume Std {
       Loop => tk_loop(),
       Match => tk_match(),
       Return => tk_return(),
+      Tag => tk_tag(),
       ThisType => tk_this_type(),
       ThisValue => tk_this_value(),
       Type => tk_type(),
-      Unit => tk_unit(),
       Use => tk_use(),
       Val => tk_val(),
       Var => tk_var(),

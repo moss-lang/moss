@@ -9,7 +9,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # main memory's. Passing one where the other is expected is a type error
 # in both compilers, though both are an address.
 
-unit Scratch;
+tag Scratch;
 
 assume Std {
   fn sum(xs: IntList): Int {

@@ -5,13 +5,13 @@ import "../../lib/wasm.moss" as w use Wasm, I32;
 # function is checked, reached or not, so both compilers reject this
 # though `main` never reaches `unused`.
 
-type A I32;
-type B I32;
+tag A(I32);
+tag B(I32);
 
 assume Wasm {
   fn f(a: A): I32 { w::i32_one }
   fn unused(): I32 {
-    f(B (w::i32_one))
+    f(B(w::i32_one))
   }
   fn main() {}
 }

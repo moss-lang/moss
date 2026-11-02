@@ -7,7 +7,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # of `Int` — so applying one to it is an error in both compilers.
 
 assume Std {
-  unit Stop;
+  tag Stop;
 
   fn demo() {
     let s: Stop[Int=Char] = Stop;

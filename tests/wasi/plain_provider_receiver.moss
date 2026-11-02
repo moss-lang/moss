@@ -21,13 +21,13 @@ assume Std, T, T.m {
 }
 
 assume Std {
-  type Box Char;
-  fn second(b: Box): Char { match b { Box c => c } }
+  tag Box(Char);
+  fn second(b: Box): Char { match b { Box(c) => c } }
 
   fn demo() {
     bind T = Box;
     bind T.m = second;
-    putchar(use_it(Box (char::b)));
+    putchar(use_it(Box(char::b)));
     putchar(char::newline);
   }
 }

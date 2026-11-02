@@ -18,7 +18,7 @@ assume Wasm, Branch, Fast {
     bind WasiNumerics;
     let r = {
       bind Fast;
-      float(Num (n))
+      float(Num(n))
     };
     n
   }

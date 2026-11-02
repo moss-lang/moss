@@ -8,13 +8,13 @@ import "../../lib/wasm.moss" as w use Wasm, I32;
 # arm after it yields a `B` where an `I32` is expected.
 
 type T;
-type B I32;
+tag B(I32);
 
 assume Wasm, T {
   fn unused(x: T): I32 {
     match x {
       y => w::i32_one,
-      _ => B (w::i32_one),
+      _ => B(w::i32_one),
     }
   }
 }

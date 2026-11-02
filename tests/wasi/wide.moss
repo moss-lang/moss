@@ -5,8 +5,8 @@ import "../../lib/wasistd.moss" use Branch, i32_bool;
 # A union two scalars wide: `Read` carries a Char-shaped payload and
 # `Eof` is a unit, so a value is a discriminant beside room for the
 # payload — the shape src/lex.moss's `peek()` returns.
-type Read I32;
-unit Eof;
+tag Read(I32);
+tag Eof;
 
 assume Wasm, Wasi, Branch {
   fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
@@ -28,13 +28,13 @@ assume Wasm, Wasi, Branch {
     if i32_bool(w::i32_ge_u(n, four())) {
       Eof
     } else {
-      Read (n)
+      Read(n)
     }
   }
 
   fn show(r: Read | Eof): I32 {
     match r {
-      Read c => w::i32_add(upper_a(), c),
+      Read(c) => w::i32_add(upper_a(), c),
       Eof => newline(),
     }
   }

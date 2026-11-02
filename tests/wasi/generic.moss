@@ -28,11 +28,11 @@ assume Int, T, L {
 }
 
 assume Basics, Containers, WasiChars {
-  type IntArr IntList;
-  type CharArr IntList;
+  tag IntArr(IntList);
+  tag CharArr(IntList);
 
-  fn ints(l: IntArr): IntList { match l { IntArr s => s } }
-  fn chars(l: CharArr): IntList { match l { CharArr s => s } }
+  fn ints(l: IntArr): IntList { match l { IntArr(s) => s } }
+  fn chars(l: CharArr): IntList { match l { CharArr(s) => s } }
 
   fn IntArr.iget(index: Int): Int { ints(this).get(index) }
   fn IntArr.ipush(value: Int) { ints(this).push(value); }
@@ -74,7 +74,7 @@ assume Basics, Containers, WasiChars {
     bind CharArr.get[Elem=Char] = CharArr.cget;
     bind CharArr.push[Elem=Char] = CharArr.cpush;
     bind CharArr.length = CharArr.clen;
-    exercise(IntArr (int_list()), CharArr (int_list()));
+    exercise(IntArr(int_list()), CharArr(int_list()));
   }
 }
 

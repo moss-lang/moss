@@ -53,7 +53,7 @@ assume Std, S, S.nth {
 }
 
 assume Std {
-  type Wrap Char;
+  tag Wrap(Char);
 
   fn say_p(): Char { char::p }
   fn say_q(): Char { char::q }
@@ -96,8 +96,8 @@ assume Std {
     }
     {
       bind S = Wrap;
-      bind S.glyph = () => match this { Wrap c => c };
-      putchar(glyph_of(Wrap (char::w)));             # w: through a wrapper
+      bind S.glyph = () => match this { Wrap(c) => c };
+      putchar(glyph_of(Wrap(char::w)));             # w: through a wrapper
     }
     {
       bind S = Char;

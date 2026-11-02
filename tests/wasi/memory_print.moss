@@ -8,7 +8,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # `Str[Memory=Scratch]`, so printing it as it is is a type error in both
 # compilers; it has to be copied first (tests/wasi/memory_copy.moss).
 
-unit Scratch;
+tag Scratch;
 
 assume Wasm, Wasi, Branch {
   fn main() {

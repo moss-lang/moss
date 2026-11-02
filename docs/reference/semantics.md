@@ -53,9 +53,10 @@ except the standard library itself.
 | form | meaning |
 |---|---|
 | `type T;` | abstract type symbol |
-| `unit X;` | nominal type with one value, both named `X` |
+| `tag X;` | nominal type with one value, both named `X` |
 | `type X = Ty;` | transparent alias |
-| `type X Ty;` | nominal tag wrapping a payload |
+| `tag X(Ty);` | nominal tag wrapping a payload |
+| `tag X { f: Ty, ... };` | nominal tag with a record payload |
 | `val v: Ty;` | abstract value |
 | `val v: Ty = e;` | defined value (concrete; needs nothing from context) |
 | `fn f(...): Ty;` / `{...}` | abstract / defined function |
@@ -73,7 +74,7 @@ way is the same type everywhere. A nominal type's identity arguments are
 its *relevant parameters*: the abstract type symbols its payload mentions,
 directly or through the nominal types it names (less what their brackets
 bind), taken over mutually recursive declarations as the least set closed
-under that rule. A `unit` has none, so `unit Stop;` is one type whatever
+under that rule. A unit tag has none, so `tag Stop;` is one type whatever
 the enclosing `assume`s provide; an abstract `type T;` has none either.
 
 A function, val or context nested in `assume` blocks is implicitly
@@ -142,7 +143,7 @@ It is sugar over the calculus: each captured local becomes a fresh val
 bound just before, and the lambda a fresh defined function assuming the
 context of the bind, bound as any provider is — for a method, with the
 receiver its first parameter. `bind debug = (message) => {};` and
-`bind Stored.widen = () => Double (w::f64_promote_f32(sgl(this)));` need
+`bind Stored.widen = () => Double(w::f64_promote_f32(sgl(this)));` need
 no named `noop` and no wrapper to attach to. A method bind may carry a bracket application
 (`bind IntList.get[Elem=Int]=Ints.get;`), which is how a method declared
 once for several receivers is provided at one of them: the bindings

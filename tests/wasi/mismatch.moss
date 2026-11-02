@@ -10,20 +10,20 @@ import "../../lib/wasip1.moss" use Wasi;
 type Elem;
 
 assume Std {
-  type Point { x: Char, y: Char };
+  tag Point { x: Char, y: Char };
 }
 
 assume Std, Elem {
-  type Box Elem;
+  tag Box(Elem);
   fn .peek(): Elem;
-  fn Box.open(): Elem { match this { Box e => e } }
+  fn Box.open(): Elem { match this { Box(e) => e } }
 }
 
 assume Std {
   fn demo() {
     bind Elem = Char;
     bind Box.peek = Box.open;
-    let bp = Box[Elem=Point] (Point { x = char::a, y = char::b });
+    let bp = Box[Elem=Point](Point { x = char::a, y = char::b });
     let c: Char = bp.peek();
     putchar(c);
     putchar(char::newline);

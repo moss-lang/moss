@@ -4,8 +4,8 @@ import "../../lib/wasm.moss" as w use Wasm, I32;
 # match that covers nothing, in a function nothing calls (D16). Rejected
 # in both compilers.
 
-unit Red;
-unit Green;
+tag Red;
+tag Green;
 type Colour = | Red | Green;
 
 assume Wasm {

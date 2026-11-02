@@ -42,15 +42,15 @@ assume Wasm, Wasi, Branch {
   # The implementation. A nominal wrapper, because only an attached
   # method can see its receiver and only a nominal type can carry one
   # (D54) — and by D58 the wrapper costs nothing.
-  type Mark I32;
+  tag Mark(I32);
 
-  fn raw(mk: Mark): I32 { match mk { Mark v => v } }
+  fn raw(mk: Mark): I32 { match mk { Mark(v) => v } }
 
-  fn Mark.bump(): Mark { Mark (w::i32_add(raw(this), w::i32_one)) }
+  fn Mark.bump(): Mark { Mark(w::i32_add(raw(this), w::i32_one)) }
 
   fn mark_stamp(mk: Mark) { emit(w::i32_add(upper_a(), raw(mk))); }
 
-  fn first_mark(): Mark { Mark (w::i32_zero) }
+  fn first_mark(): Mark { Mark(w::i32_zero) }
 }
 
 functor Ready: Wasm, Wasi, Branch -> Ink {

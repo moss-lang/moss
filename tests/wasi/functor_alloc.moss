@@ -49,17 +49,17 @@ functor Gc: Wasm, Boxed -> Handle, alloc, Handle.load {
 # per application. A slot lists what it holds (D73), so slots for two
 # types are two types.
 assume Std, Boxed {
-  type Slot[Boxed] Int;
+  tag Slot[Boxed](Int);
   val slots: IntList;
 
   assume Boxed.pack, unpack, slots {
     fn pool_alloc(value: Boxed): Slot {
       let i = slots.length();
       slots.push(value.pack());
-      Slot (i)
+      Slot(i)
     }
 
-    fn Slot.fetch(): Boxed { match this { Slot i => unpack(slots.get(i)) } }
+    fn Slot.fetch(): Boxed { match this { Slot(i) => unpack(slots.get(i)) } }
   }
 }
 
@@ -72,8 +72,8 @@ functor Pool: Std, Boxed, Boxed.pack, unpack -> Handle, alloc, Handle.load {
 
 # The library: two types, each stored through the allocator.
 assume Std {
-  type Celsius Int;
-  type Mile Int;
+  tag Celsius(Int);
+  tag Mile(Int);
 
   fn print_int(n: Int) {
     if n >= 10 {
@@ -91,24 +91,24 @@ assume Std {
 assume Std, Wasm, Alloc {
   fn library() {
     bind Boxed = Celsius;
-    bind Boxed.pack = () => match this { Celsius c => c };
-    bind unpack = (n) => Celsius (n);
+    bind Boxed.pack = () => match this { Celsius(c) => c };
+    bind unpack = (n) => Celsius(n);
     bind Alloc;
-    let warm = alloc(Celsius (21));
-    let cold = alloc(Celsius (4));
+    let warm = alloc(Celsius(21));
+    let cold = alloc(Celsius(4));
     bind Boxed = Mile;
-    bind Boxed.pack = () => match this { Mile m => m * 2 };
-    bind unpack = (n) => Mile (n / 2);
+    bind Boxed.pack = () => match this { Mile(m) => m * 2 };
+    bind unpack = (n) => Mile(n / 2);
     bind Alloc;
-    let trip = alloc(Mile (14));
+    let trip = alloc(Mile(14));
     match warm.load() {
-      Celsius c => line(c),
+      Celsius(c) => line(c),
     }
     match cold.load() {
-      Celsius c => line(c),
+      Celsius(c) => line(c),
     }
     match trip.load() {
-      Mile m => line(m),
+      Mile(m) => line(m),
     }
   }
 }

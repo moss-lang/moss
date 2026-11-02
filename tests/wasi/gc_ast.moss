@@ -12,18 +12,18 @@ import "../../lib/wasip1.moss" use Wasi;
 # platform's `Heap` at that `Expr`, whose `.boxed` and `.deref` the two
 # anonymous functions capture. Output: the same three results from each.
 
-unit Add;
-unit Sub;
-unit Mul;
-unit Div;
+tag Add;
+tag Sub;
+tag Mul;
+tag Div;
 
 type BinOp = Add | Sub | Mul | Div;
 
 type ExprRef;
 
 assume Std, ExprRef {
-  type Binary { op: BinOp, lhs: ExprRef, rhs: ExprRef };
-  type Literal Int;
+  tag Binary { op: BinOp, lhs: ExprRef, rhs: ExprRef };
+  tag Literal(Int);
 
   type Expr = Binary | Literal;
 
@@ -47,11 +47,11 @@ assume Std, Ast {
           Div => if r == 0 { 0 } else { l / r },
         }
       },
-      Literal num => num,
+      Literal(num) => num,
     }
   }
 
-  fn lit(n: Int): ExprRef { add(Literal (n)) }
+  fn lit(n: Int): ExprRef { add(Literal(n)) }
   fn bin(op: BinOp, lhs: ExprRef, rhs: ExprRef): ExprRef { add(Binary { op, lhs, rhs }) }
 
   # A tree of 2^levels ones whose two halves are one node.
@@ -112,22 +112,22 @@ assume Std {
   }
 
   # Representation 1: a node is an index into one list of triples.
-  type Slot Int;
+  tag Slot(Int);
   val triples: IntList;
 
   assume triples {
-    fn Slot.at(): Int { match this { Slot i => i } }
+    fn Slot.at(): Int { match this { Slot(i) => i } }
 
     fn Slot.node(): Expr[ExprRef=Slot] {
       let i = this.at() * 3;
       let code = triples.get(i);
       if code == 0 {
-        Literal (triples.get(i + 1))
+        Literal(triples.get(i + 1))
       } else {
         Binary[ExprRef=Slot] {
           op = op_of(code),
-          lhs = Slot (triples.get(i + 1)),
-          rhs = Slot (triples.get(i + 2)),
+          lhs = Slot(triples.get(i + 1)),
+          rhs = Slot(triples.get(i + 2)),
         }
       }
     }
@@ -140,13 +140,13 @@ assume Std {
           triples.push(lhs.at());
           triples.push(rhs.at());
         },
-        Literal num => {
+        Literal(num) => {
           triples.push(0);
           triples.push(num);
           triples.push(0);
         },
       }
-      Slot (i)
+      Slot(i)
     }
   }
 }
@@ -154,7 +154,7 @@ assume Std {
 # Representation 2: a node is a reference to the GC heap. The reference
 # is typed by what it holds, which is an `Expr` of these references.
 assume Std, Wasm {
-  type Node Ref[Boxed=Expr[ExprRef=Node]];
+  tag Node(Ref[Boxed=Expr[ExprRef=Node]]);
 }
 
 assume Std, Wasm {
@@ -170,8 +170,8 @@ assume Std, Wasm {
       bind ExprRef = Node;
       bind Boxed = Expr[ExprRef=Node];
       bind Heap;
-      bind add = (e) => Node (e.boxed());
-      bind ExprRef.data = () => match this { Node r => r.deref() };
+      bind add = (e) => Node(e.boxed());
+      bind ExprRef.data = () => match this { Node(r) => r.deref() };
       run();
     }
   }

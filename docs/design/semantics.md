@@ -231,10 +231,10 @@ The declaration forms, as actually used in `src/`:
 | form | meaning |
 |---|---|
 | `type T;` | abstract type symbol (a "need") |
-| `unit X;` | concrete nominal type with exactly one value, also named `X` |
+| `tag X;` | concrete nominal type with exactly one value, also named `X` |
 | `type X = Ty;` | transparent alias |
-| `type X Ty;` | nominal (tag) type wrapping payload `Ty` |
-| `type X { f: Ty, ... };` | nominal type with record payload (tag form where the payload is a record) |
+| `tag X(Ty);` | nominal (tag) type wrapping payload `Ty` |
+| `tag X { f: Ty, ... };` | nominal type with record payload (tag form where the payload is a record) |
 | `type X = \| A \| B;` | alias for a union (see §5) |
 | `val v: Ty;` | abstract value symbol |
 | `fn f(x: Ty): Ty;` | abstract function symbol (signature only) |
@@ -268,7 +268,7 @@ auto-injection ([D17]).
 **[D41] DECIDED (keep `unit`).** The designer dislikes that `unit X;` breaks
 the pattern `type` and `fn` otherwise follow, but the alternative floated in
 rev 2 — `type X ();` plus a bare-name construction/matching rule — was
-considered and not loved. `unit` stays.
+considered and not loved. `unit` stays. (Superseded by [D83]: `tag X;`.)
 
 **[D14] DECIDED (drop declaration-site `Needs`).** syntax.md attaches an
 optional `[Need, ...]` clause to every declaration form (**Needs**) and a
@@ -313,7 +313,7 @@ type implicitly injects into any union containing that member (this is how
 `lex()` returns `Eof` where `Token` is expected). There is no other implicit
 conversion, no width/depth record subtyping, and no union-to-union coercion
 beyond re-injection of each member (defer even that). Nominal tags do not
-inject into anything implicitly; `Some x` constructs a `Some`, which then
+inject into anything implicitly; `Some(x)` constructs a `Some`, which then
 injects into `Option`'s union because it is a member.
 
 **[D18] DECIDED (type identity / applicativity).** Type identity is
@@ -381,7 +381,7 @@ functor carrying only types and fns would leave most of the signature to
 a hand-written prologue regardless.
 
 **[D58] DECIDED by the designer (tagging belongs to the sum, not to the
-nominal type).** The backend boxed every nominal tag: `type A Foo;` became
+nominal type).** The backend boxed every nominal tag: `tag A(Foo);` became
 a heap cell `[code | payload]` wherever it appeared, which is what made
 [D54]'s wrappers expensive. That is wrong. Tagging exists to discriminate
 a sum, so a value of type `A` is represented exactly as a `Foo` — no tag
@@ -610,7 +610,7 @@ constructs `Some` with no brackets in a region where `Some`'s requirement
 `T` is neither assumed nor bound — it could only come from *inferring*
 `T=TokenId` from the argument's type. That is deriving a binding rather
 than using a known one, so for the MVP it is illegal: write
-`Some[T=TokenId] (expect(Name))`. Forward construction-site inference can
+`Some[T=TokenId](expect(Name))`. Forward construction-site inference can
 be revisited if the boilerplate hurts; if it ever lands it stays confined
 to tag construction, where the argument's type is already known ([D1]).
 
@@ -748,7 +748,7 @@ specifically, [D45]'s prelude `true`/`false` already have type `Bool`, so
 **[D50] DECIDED (defined vals), v0 restrictions PROPOSED.** From the
 designer's [D45] refinement: `val name: Type = expr;` declares a *defined*
 val — concrete like a defined function, e.g. the prelude's
-`val true: Bool = Bool (True);`. A defined val is not a context item:
+`val true: Bool = Bool(True);`. A defined val is not a context item:
 nothing provides it, listing it in a context is a no-op, and reading it
 needs only scope. Bootstrap restrictions pending a real
 global-initialization story: a defined val may not sit inside `assume`
@@ -769,7 +769,7 @@ otherwise.
 access `x.f` (which projects through a nominal-record tag: `imp.name` where
 `imp: Import`), record construction `Import { from, name, names = ns }`
 (shorthand when the local variable name equals the field name), tag
-construction by juxtaposition `Some[T=TokenId] (expect(Name))` ([D42]), unit
+construction `Some[T=TokenId](expect(Name))` ([D42], [D83]), unit
 values by name (`Eof`), `if`/`else if`/`else` as an expression, and `match`.
 Unary and binary operator expressions are out of the MVP ([D33]).
 
@@ -927,10 +927,10 @@ wrappers delegate to.
 **[D45] DECIDED (nominal `Bool` as a lang item; revised).** Confirmed by
 the designer as the easiest way for `if` to work, then refined by them to
 kill the [D47] wrinkle: `Bool` is *nominal over* the sum
-(`type Bool | False | True;` — the tag-with-union-payload form), so methods
+(`tag Bool(False | True);` — the tag-with-union-payload form), so methods
 can attach to it (`Std` provides `Bool.not`). Construction is
-`Bool (True)`, but nobody writes that: the prelude defines
-`val true: Bool = Bool (True);` and `false` likewise ([D50]), which also
+`Bool(True)`, but nobody writes that: the prelude defines
+`val true: Bool = Bool(True);` and `false` likewise ([D50]), which also
 makes `var b = true;` infer `Bool` with no annotation. `if c { a } else
 { b }` requires `c : Bool` and eliminates it; matching *through* `Bool` to
 `True`/`False` needs nested patterns, which the bootstrap doesn't support
@@ -940,8 +940,8 @@ yet — use `if`. The old
 declares concrete units and a transparent alias —
 
 ```moss
-unit False;
-unit True;
+tag False;
+tag True;
 
 type Bool = | False | True;
 ```
@@ -961,8 +961,8 @@ wants contextual booleans back, `if` needs a story first.
 ```moss
 match scrutinee {
   Eof => expr,                    # unit pattern
-  Some token => expr,             # tag pattern binding payload
-  parse::Assume assump => expr,   # qualified tag pattern
+  Some(token) => expr,            # tag pattern binding payload
+  parse::Assume(assump) => expr, # qualified tag pattern
   parse::Symbol { name = token } => expr,   # tag + record destructure
   parse::Fn { sig } => expr,      # field shorthand binds `sig`
   c => expr,                      # binder (irrefutable)
@@ -1207,7 +1207,7 @@ decisions above are confirmed.
   the record of what the rewrite had to fix:
   the `c == '!'` ladder (char literals [D4] *and* the `==` operator
   [D33]); `next_byte(): Char | Eof`, an abstract union member ([D15])
-  that needed the nominal `type Read Char;` wrapper; `pos + 1` and
+  that needed the nominal `tag Read(Char);` wrapper; `pos + 1` and
   `pos >= string.length()` in the old CLI; the `for` loops of [D35];
   `Some (expect(Name))` needing explicit application ([D42]); and
   `type Option | None | Some;` becoming an alias ([D13]).
@@ -1228,10 +1228,10 @@ method, which requires a nominal type. A `Wasi` bridge providing `Int.add`
 therefore writes:
 
 ```moss
-type Num I32;
+tag Num(I32);
 assume Wasm {
   fn Num.add(rhs: Num): Num {
-    match this { Num a => match rhs { Num b => Num (w::i32_add(a, b)) } }
+    match this { Num(a) => match rhs { Num(b) => Num(w::i32_add(a, b)) } }
   }
 }
 # bind int::Int = Num;  bind Int.add = Num.add;
@@ -1297,7 +1297,7 @@ a body of binds.
 functor WasiStd: Wasm, Wasi -> Std {
   bind int::Int = Num;
   bind char::Char = Num;
-  bind int::zero = Num (w::i32_zero);
+  bind int::zero = Num(w::i32_zero);
   bind Int.add = Num.add;              # per [D54], through the wrapper
   bind string::print = wasi_print;
   ...
@@ -1478,13 +1478,13 @@ probing the bootstrap resolves both:
   type Elem;
 
   assume Elem {
-    type Box Elem;
+    tag Box(Elem);
     fn .peek(): Elem;
-    fn Box.open(): Elem { match this { Box e => e } }
+    fn Box.open(): Elem { match this { Box(e) => e } }
   }
 
   # in main: bind Elem = Int; bind Box.peek = Box.open;
-  let bc = Box[Elem=Char] (char::a);
+  let bc = Box[Elem=Char](char::a);
   let n: Int = bc.peek();   # accepted; n is char::a
   ```
 
@@ -1577,7 +1577,7 @@ tuple `(a, b)`; tuples as sugar for records with numbered fields, which
 buys nothing because there are no numeric tokens to write `t.0` with;
 positional multi-field tags only, `type Add (Expr, Expr)`, with no
 standalone tuple values; or none at all. Decided: none. Records already
-serve every product — `type Add { l: Expr, r: Expr }`, matched as
+serve every product — `tag Add { l: Expr, r: Expr }`, matched as
 `Add { l, r }`, which is as short as a positional pattern — and naming
 fields rather than positions is the same preference Moss shows for
 context. `(A, B)` is now a syntax error and `(T)` is grouping. Nothing
@@ -1999,14 +1999,14 @@ lines of code to 76, with the same output in both compilers.
 
 *Alternatives not taken.*
 
-- **A generic nominal, `type Packed I32;` inside `assume Item`.** Under
+- **A generic nominal, `tag Packed(I32);` inside `assume Item`.** Under
   [D62], `Packed[Item=Single]` and `Packed[Item=Double]` would be distinct
   receivers with one set of attached methods, and a new element type
   would cost only its layout. Both compilers parameterize a nominal only
   by the type symbols its payload *mentions*, and a handle mentions no
   `Item`. [D21] as written says a declaration's requirements are its
   assume nesting, which would allow it; the implementations narrowed it
-  so that `unit Stop;` under `assume Std` is not a different type per
+  so that `tag Stop;` under `assume Std` is not a different type per
   binding of `Int`. A way to declare such a phantom parameter is the one
   language change that would shrink this design. Left to the designer.
 - **The layout as a need of generic attached methods.** Needs are met
@@ -2034,7 +2034,7 @@ made a declaration's requirements its parameters, and the calculus took that
 literally: `TNom n θ` is total over every type requirement of `n`'s
 telescope. Both compilers had quietly narrowed it for nominals — a tag or
 alias is parameterized only by the abstract type symbols its payload
-mentions, a unit by none — so that `unit Stop;` under `assume Std` is one
+mentions, a unit by none — so that `tag Stop;` under `assume Std` is one
 type and not one per binding of `Int`. That narrowing was never recorded,
 and the proof did not cover it. Two investigations settled what it costs
 (scratch reproducers `narrow/`, `narrow-rocq/`, `coh/`).
@@ -2087,11 +2087,11 @@ the language says.) Requirements that differ only at such a receiver
 collide when a telescope is formed.
 
 *Phantom parameters: not now* (since done, as [D73]). A handle whose payload mentions nothing but
-whose meaning depends on a symbol — [D69]'s `type Packed I32;` under
+whose meaning depends on a symbol — [D69]'s `tag Packed(I32);` under
 `assume Elem` — has methods that do not all mention it (`.length(): Int`
 depends on the element width but not, in its signature, on `Elem`), so θ
 does not save it and it must keep a nominal wrapper per element type. An
-explicit phantom list on the declaration (`type Packed[Elem] I32;`,
+explicit phantom list on the declaration (`tag Packed[Elem](I32);`,
 parameters = mentioned ∪ listed) would lift that; it stays an option for when
 the wrappers' cost matters.
 
@@ -2107,7 +2107,7 @@ the text above did not fix, it is recorded here.
   (`src/types.moss`) solve a declaration and every tag or alias it
   reaches as one least fixpoint, rescanning each payload against the
   current answers until none changes. Both used to read an in-progress
-  entry as final, so `type A { b: B, t: T }; type B { a: A };` gave `B`
+  entry as final, so `tag A { b: B, t: T }; tag B { a: A };` gave `B`
   no parameters whenever `A` was asked first. Standing tests:
   `tests/wasi/relevance_{a,b}_first.moss` (the same program in both
   orders; `get_b(): B` mentions `T`, so assuming it without `T` is
@@ -2171,9 +2171,9 @@ Syntax (an alternative of a **Bind** item's right side only):
 - **Lambda** = `(` **List**\[_name_ (`:` **Type**)?\] `)` (`:` **Type**)? `=>` **Expr**
 
 ```moss
-bind narrow = (x: Double) => Single (w::f32_demote_f64(dbl(x)));
-bind narrow = (x) => Single (w::f32_demote_f64(dbl(x)));        # types from the declaration
-bind Stored.widen = () => Double (w::f64_promote_f32(sgl(this)));  # a method: `this` is the receiver
+bind narrow = (x: Double) => Single(w::f32_demote_f64(dbl(x)));
+bind narrow = (x) => Single(w::f32_demote_f64(dbl(x)));        # types from the declaration
+bind Stored.widen = () => Double(w::f64_promote_f32(sgl(this)));  # a method: `this` is the receiver
 bind debug = (message) => {};                                      # instead of a named `noop`
 bind scale = (x) => x * k;                                         # captures the local `k`
 ```
@@ -2435,12 +2435,12 @@ cannot run a `Float` two wide.
 
 **[D73] DECIDED by the designer and implemented (listed, or phantom, parameters).** [D71] made a nominal's identity its
 relevant parameters: the type symbols its payload mentions. That is right
-for almost every type — `unit Stop;` under `assume Std` should not be a
+for almost every type — `tag Stop;` under `assume Std` should not be a
 different type for every binding of `Int` — and wrong for one important
 kind: a *handle*, whose value is an address but whose meaning depends on
 a type it never stores. [D69]'s packed list is the case. One
 implementation serves every element type, over a `Layout`; but its
-handle, `I32`, mentions no `Item`, so `type Packed I32;` under
+handle, `I32`, mentions no `Item`, so `tag Packed(I32);` under
 `assume Item` would be one type whatever `Item` is. Then a list of `Long`s
 and a list of `Num`s would be the same type, and their methods would
 collide: a provision is keyed by its receiver ([D62]), and [D71]'s
@@ -2457,7 +2457,7 @@ parameters its payload does not mention:
 
 ```moss
 assume Layout {
-  type Packed[Item] I32;
+  tag Packed[Item](I32);
 
   fn Packed.length(): Int { packed_length(addr(this)) }
   fn Packed.get(index: Int): Item { packed_get(addr(this), index) }
@@ -2481,8 +2481,8 @@ assume Layout {
 - Nothing else is new, because a listed parameter is a parameter like any
   other:
   - *construction* follows [D71]'s rule for applying one: inside the
-    declaration's assume nesting, `Packed (a)` is at the `Item` in force;
-    elsewhere it is written `Packed[Item=Long] (a)`;
+    declaration's assume nesting, `Packed(a)` is at the `Item` in force;
+    elsewhere it is written `Packed[Item=Long](a)`;
   - *relevance closes over it*: a tag whose payload mentions `Packed` is
     parameterized by `Item` too;
   - *an attached method sees the receiver's*: inside `Packed.get`, `Item`
@@ -2511,7 +2511,7 @@ get `Item` too.
 *Consequences.*
 
 - The library gains the one generic handle: `lib/wasistd.moss` declares
-  `type Packed[Item] I32;` under `assume Wasm, Branch, Layout`, with
+  `tag Packed[Item](I32);` under `assume Wasm, Branch, Layout`, with
   `packed()` and `.length`, `.get`, `.set` and `.push`, so a program's list
   of anything is a `Layout` (how one is laid out in words) and nothing
   more: bind the layout, then `BigList = Packed`, `big_list = packed` and
@@ -2525,9 +2525,9 @@ get `Item` too.
   time either way.
 - A phantom parameter keeps apart what a program keeps apart; it does not
   stop one that sets out to forge. Moss has no private constructors, so
-  `match l { Packed a => Packed[Item=Num] (a) }` turns a list of `Long`s
-  into a list of `Num`s, exactly as `Longs a` can be rewrapped as
-  `Singles (a)`. (Rust's `PhantomData` relies on field privacy for that.)
+  `match l { Packed(a) => Packed[Item=Num](a) }` turns a list of `Long`s
+  into a list of `Num`s, exactly as `Longs(a)` can be rewrapped as
+  `Singles(a)`. (Rust's `PhantomData` relies on field privacy for that.)
   This entry claims distinct types, not unforgeable ones.
 - More distinct instantiations means more specializations, but no more
   than the wrappers they replace.
@@ -2564,8 +2564,8 @@ A call of an attached method took the method's type parameters from the
 context of the call, not from its receiver. So with
 
 ```moss
-assume T { type Box T; fn Box.get(): T { match this { Box x => x } } }
-let b = { bind T = Int; Box (42) };     # b : Box[T=Int]
+assume T { tag Box(T); fn Box.get(): T { match this { Box(x) => x } } }
+let b = { bind T = Int; Box(42) };     # b : Box[T=Int]
 { bind T = Char; putchar(b.get()); }
 ```
 
@@ -2610,7 +2610,7 @@ against an interface —
 ```moss
 type ExprRef;
 assume Std, ExprRef {
-  type Binary { op: BinOp, lhs: ExprRef, rhs: ExprRef };
+  tag Binary { op: BinOp, lhs: ExprRef, rhs: ExprRef };
   ...
   fn .data(): Expr;            # read a node through a reference
   fn add(expr: Expr): ExprRef; # make one
@@ -2638,7 +2638,7 @@ written against `Ast` does not change.
 
   type Boxed;
   assume Boxed {
-    type Ref[Boxed] StructRef;
+    tag Ref[Boxed](StructRef);
     fn .boxed(): Ref;          # detached: provided at receiver `Boxed`
     fn Ref.deref(): Boxed;     # attached: provided at `Ref[Boxed=X]`
   }
@@ -2661,7 +2661,7 @@ written against `Ast` does not change.
 
   ```moss
   type Expr = Binary | Literal;
-  type Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
+  tag Binary { op: BinOp, lhs: Ref[Boxed=Expr], rhs: Ref[Boxed=Expr] };
   ```
 
   This is Rust's `Binary(Box<Expr>, Box<Expr>)`, and needs nothing new.
@@ -2673,13 +2673,13 @@ written against `Ast` does not change.
   nominal wrapper, as Rust's `struct Node(Box<Expr<Node>>)` does:
 
   ```moss
-  type Node Ref[Boxed=Expr[ExprRef=Node]];
+  tag Node(Ref[Boxed=Expr[ExprRef=Node]]);
   {
     bind ExprRef = Node;
     bind Boxed = Expr[ExprRef=Node];
     bind Heap;
-    bind add = (e) => Node (e.boxed());
-    bind ExprRef.data = () => match this { Node r => r.deref() };
+    bind add = (e) => Node(e.boxed());
+    bind ExprRef.data = () => match this { Node(r) => r.deref() };
     report(bin(Div, lit(7), lit(2)));   # the same interp, now on the GC heap
   }
   ```
@@ -3478,7 +3478,7 @@ a compile-time choice — in Moss, a contextual type, like `Float`.
   (loads, stores, `memory.size`/`grow`/`copy`/`fill`) under `assume Memory`.
   The platform provides `Memory` at the root as the module's first memory,
   index 0, exported as `memory` (which WASI preview 1 requires).
-- A program names more memories as units (`unit Scratch;`) and binds
+- A program names more memories as units (`tag Scratch;`) and binds
   `Memory` to one in a scope. The back end gives each distinct memory
   reached its own index, emits the memory section, and puts the index on
   every instruction specialized at it.
@@ -3495,7 +3495,7 @@ a compile-time choice — in Moss, a contextual type, like `Float`.
   ```
 
 - **Handles are typed by their memory.** A handle into a memory lists it as
-  a parameter ([D73]): `type Packed[Item, Memory] I32;`, and so for strings
+  a parameter ([D73]): `tag Packed[Item, Memory](I32);`, and so for strings
   and cells. A list in `Scratch` and one in the main memory are different
   types, both an address. Inside the block above, `Memory` is a new
   generation ([D72]), so an outer list cannot be passed where an inner one
@@ -3688,7 +3688,7 @@ exactly as `Packed` does (a test shows it can).
 
   type Arrayed;
   assume Arrayed {
-    type Array[Arrayed] ArrayRef;
+    tag Array[Arrayed](ArrayRef);
     fn .arrayed(length: I32): Array;   # detached, at receiver `Arrayed`: array.new
     fn Array.length(): I32;            # array.len
     fn Array.get(index: I32): Arrayed; # array.get
@@ -3800,7 +3800,7 @@ one. A list built over them is ordinary Moss.
    `index < length` in linear-memory lists is **a separate fix, outside
    D81**.
 5. **Packed `i8`/`i16`.** Moss has no 8- or 16-bit type. **Later**, when
-   GC strings are wanted: a platform tag (`type Byte I32;`) whose arrays
+   GC strings are wanted: a platform tag (`tag Byte(I32);`) whose arrays
    the back end stores as `(array (mut i8))`, read with `array.get_u` —
    the one place storage would differ from a type's run.
 6. **D79.** **None:** arrays are in no linear memory and `Array` is not
@@ -3848,7 +3848,7 @@ null accesses trapping as specified.
 *Implemented (November 2026), and what the implementation changed.*
 
 - *What landed.* `lib/wasm.moss` declares `ArrayRef` (listed in `Wasm`),
-  `Arrayed`, `type Array[Arrayed] ArrayRef;` with the detached
+  `Arrayed`, `tag Array[Arrayed](ArrayRef);` with the detached
   `.arrayed(length: I32)` and the attached `Array.length/get/set/fill/copy`
   under `assume I32, Arrayed`, `Ref.set(value: Boxed)` beside
   `Ref.deref`, and two more platform abstract functors, both listed in
@@ -3977,6 +3977,53 @@ the length trapping (`gc_array_bounds`) and a forged `Array` trapping
 without `Arrays` (`gc_unarrayed`) and `.set` without `Mutable`
 (`gc_immutable`). 
 
+**[D83] DECIDED by the designer and implemented (`tag` declares nominal types, in Rust's three forms).**
+`type` had three forms and `unit` one, and two of `type`'s told a
+nominal type from an alias by a single `=`: `type Option | None | Some;`
+and `type Option = | None | Some;` are different declarations, which is
+the bug [D13] fixed. `unit X;` broke the pattern the other declarations
+follow ([D41]). And a tag was written three ways: `type Literal Int;` to
+declare, `Literal (a)` to construct, `Literal n` to match. Making
+construction juxtaposition too, `Literal a`, was tried and dropped: the
+parser cannot tell a tag from a function, so `X (a).m()` would have to
+group as `(X(a)).m()` for one and `X ((a).m())` for the other, which only
+whitespace or name resolution could decide.
+
+*Decided.* `type` declares the types with no identity of their own; `tag`
+declares the nominal ones, with the three forms of Rust's `struct`, and a
+tag is declared, constructed and matched alike:
+
+| declaration | construction | pattern |
+|---|---|---|
+| `tag Eof;` | `Eof` | `Eof` |
+| `tag Literal(Int);` | `Literal(a)` | `Literal(n)` |
+| `tag Binary { op: BinOp, lhs: E, rhs: E };` | `Binary { op, lhs, rhs }` | `Binary { op, lhs, rhs }` |
+
+- `type X;` is abstract and `type X = T;` an alias; there is no other
+  `type` form, and `unit` is gone.
+- The parentheses hold one type: there are no tuples ([D63]), so
+  `tag X(A, B);` is an error, and several fields are a record. A union is
+  one type, `tag Bool(False | True);`.
+- A record payload is written with braces, never `tag X({ f: T });`: no
+  expression builds a record without a path, so the parenthesized form
+  could not be constructed.
+- Listed parameters ([D73]) go before the payload, `tag Packed[Item](I32);`.
+- `tag` is a keyword; the compiler's own variables of that name were
+  renamed.
+
+Nothing below the parser changed: the forms parse to the same trees as
+before, which is how the corpus was rewritten, each file checked to parse
+to the tree it had. Construction sites dropped the space they were written
+with, `Literal (a)` to `Literal(a)`, since it now reads as the call it
+parses as.
+
+*Implementation.* Both lexers (`tag` for `unit`; src/tcode.moss
+regenerated) and both parsers; the VS Code grammar. Tests:
+`test_tag_forms`, `test_nominal_types_need_tag`,
+`test_record_payload_takes_braces`, `test_no_tuple_types` and
+`test_tag_patterns_take_parentheses` in bootstrap/tests/test_parse.py, and
+`tests/errors/type_not_tag.moss`.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -3996,7 +4043,7 @@ Everything else is **DECIDED**: D1–D28 · D30–D49 (D3/D4 by designer fiat,
 D13 option.moss → alias, D16 no post-monomorphization checks, D22 total or
 absent, D24 dropped, D30 depth backstop as sole D16 exception, D31/D35 no
 `for`, D33 no operators in the MVP (since landed as D68), D36
-methods via Q1–Q7, D41 keep `unit`, D43 consistent merging, D44 import
+methods via Q1–Q7, D41 keep `unit` (superseded by D83), D43 consistent merging, D44 import
 collisions + `::` tighter than `.`, D45 concrete `Bool`, D46 aliases
 export, D47 operators are methods, D49 no automatic TCE — loops are the
 idiom, D52 `Wasi` primitive with `Std` a library over it, D53 signature
@@ -4025,7 +4072,7 @@ method providers implemented as written in both compilers, D72 every
 type bind starts a new generation of its symbol — what was typed before
 it keeps the old one — which is what lets `Float` be rebound in terms of
 itself and rules out perturbation confusion, D73 a tag may list
-parameters its payload does not mention (`type Packed[Item] I32;`), so
+parameters its payload does not mention (`tag Packed[Item](I32);`), so
 one handle serves every element type, D74 an attached method is at its
 receiver's instantiation, not the calling scope's, D77 where a
 receiver has an attached method and the context provides the detached
@@ -4045,7 +4092,9 @@ provided at the main memory alone, D80 the self-hosted compiler types each
 frame generically and resolves methods once per call site, as the
 bootstrap does, D81 garbage-collected arrays — `Array[Arrayed]` provided by
 the platform's `Arrays` functor, one array per scalar of the element — and
-`Ref.set`, a box's whole value written, provided by `Mutable`)
+`Ref.set`, a box's whole value written, provided by `Mutable`, D83 `tag`
+declares nominal types as `tag X;`, `tag X(T);` or `tag X { ... };`, matched
+as constructed, with `type` for abstract types and aliases and no `unit`)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

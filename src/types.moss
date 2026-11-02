@@ -340,7 +340,7 @@ assume Std {
     # relevant parameters (D71, narrowing D18/D21): those its payload
     # mentions, directly or through the types it names, minus any those
     # names' own brackets bind. Not everything the enclosing assumes
-    # provide, or `unit Stop;` under `assume Std` would be a different
+    # provide, or `tag Stop;` under `assume Std` would be a different
     # type per ambient binding. Over mutually recursive declarations it is
     # the least fixpoint (`solve_reqs`), so the answer does not depend on
     # which declaration was asked about first. The bootstrap's

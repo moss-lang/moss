@@ -12,11 +12,11 @@ import "../../lib/wasip1.moss" use Wasi;
 type T;
 
 assume Std {
-  type Point { x: Char, y: Char };
+  tag Point { x: Char, y: Char };
 }
 
 assume Std, T {
-  type Pair { first: T, second: T };
+  tag Pair { first: T, second: T };
 
   fn Pair.swap(): Pair { Pair { first = this.second, second = this.first } }
 }
