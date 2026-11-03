@@ -469,11 +469,12 @@ source meant reading 243 of those.
   same two generations are twenty-three seconds. See **Speed** above.
 - `prog.moss` reports a syntax error as a per-module flag; the position
   the parser recorded is not surfaced.
-- The two diagnostic code spaces are `prog.moss`'s `e_` constants (A–N)
-  and `codegen.moss`'s `c_` constants (O–U), which continue where the
-  first stop *because they share one list* — the back end reports both
-  kinds, and two codes that print as the same letter cannot be told
-  apart. They could once. Adding an `e_` means shifting every `c_`.
+- The two diagnostic code spaces are `prog.moss`'s `e_` constants,
+  printed after `!`, and `codegen.moss`'s `c_` constants, printed after
+  `?`. The `c_` codes were once numbered to continue where the `e_` codes
+  stopped, and still start at `O`, but the two now overlap, told apart
+  by the prefix alone. `e_partial` (D55's totality) is `Z`, the last
+  letter: the next `e_` code prints as `[`.
 - A resolution error can be raised *during* codegen — elaborating a type
   and flattening a context are the back end's work — so `cli.moss` checks
   both tables after compiling and not just before. It once checked

@@ -1,0 +1,41 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/num.moss" use .add;
+
+# D55: a functor must bind everything its result promises. `Over`
+# promises `Base.add` but binds only `Base`, which leaves `Base.add` to
+# resolve to `Int.add` through `Base = Int` — a provision nobody made.
+# Rejected at the functor, in both compilers; the self-hosted one used to
+# accept it and print 5.
+
+type Base;
+
+assume Base {
+  context BaseAdd = Base, Base.add;
+}
+
+functor Over: Std -> BaseAdd {
+  bind Base = Int;
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn demo() {
+    bind Over;
+    print_int(2 + 3);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

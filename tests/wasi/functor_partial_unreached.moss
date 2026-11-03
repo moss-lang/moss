@@ -1,0 +1,38 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D55 and D16: `Greeter` promises `greeting` and binds only `emit`,
+# through the functor it applies. The application is in a function
+# nothing calls and nothing there reads `greeting`, so only the
+# totality check can notice. Rejected at the functor, in both compilers.
+
+assume Std {
+  fn emit(c: Char);
+  val greeting: Char;
+  context Greeting = emit, greeting;
+  fn shout(c: Char) { putchar(c); putchar(char::exclam); }
+}
+
+functor Emitter: Std -> emit {
+  bind emit = shout;
+}
+
+functor Greeter: Std -> Greeting {
+  bind Emitter;
+}
+
+assume Std {
+  fn unused() {
+    bind Greeter;
+    emit(char::h);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    putchar(char::newline);
+  }
+}

@@ -196,6 +196,14 @@ assume Std {
   # bootstrap's "cannot merge `U1` with `U2` for `.gimme`" is.
   fn e_merge(): Int { 16 + 8 }
 
+  # D55, D22: a functor with binds whose result signature promises an
+  # item that none of its binds binds, nor any functor it applies
+  # provides (`bind Base = Int;` for a promised `Base.add`). Reported in
+  # the functor's module, once per item, named by the item (a method's
+  # name, without the dot), as the bootstrap's "functor `F` does not bind
+  # `x`" is.
+  fn e_partial(): Int { 16 + 9 }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,

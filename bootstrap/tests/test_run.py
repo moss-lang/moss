@@ -2726,6 +2726,35 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 self.assertEqual(self.wasmtime_run(module), expected)
                 self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), expected)
 
+    def test_a_functor_binds_everything_it_promises(self):
+        """D55: a functor with binds must bind each item of its result
+        itself, or apply a functor that provides it — a type bind does
+        not bind a method the type then resolves to (`bind Base = Int;`
+        for a promised `Base.add`) — checked at the functor wherever it
+        is applied, in a function nothing calls too. The self-hosted
+        compiler reports `e_partial` (`Z`), named by the item; it used
+        to accept both."""
+        from .test_build import compile_wasm
+
+        cases = {
+            "functor_partial": (
+                "functor `Over` does not bind `Base.add`",
+                "!Z {} add\n",
+            ),
+            "functor_partial_unreached": (
+                "functor `Greeter` does not bind `greeting`",
+                "!Z {} greeting\n",
+            ),
+        }
+        for name, (message, report) in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertEqual(out.decode("utf-8"), report.format(entry))
+
     def test_temporaries_nested_anywhere(self):
         """A local comes from emission itself, so a construct that needs a
         temporary works however deeply it is nested: a `match` in a call's

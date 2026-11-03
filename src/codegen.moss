@@ -324,6 +324,10 @@ assume Std {
   # its own argument signature, as the bootstrap's `check_functor_body`.
   val fb_sym: IntList;
 
+  # D55: each functor with binds whose totality has been checked, so it
+  # is checked once however often it is applied (`check_functor_total`).
+  val ft_sym: IntList;
+
   context Codegen =
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_spec, lc_start, lc_slots, lc_base, lc_visible,
@@ -342,7 +346,7 @@ assume Std {
     un_used, un_listed, un_ustamp, ce_start, ce_len, ce_pool,
     cg_lang, cg_genv, ch_run, ch_link, ch_head,
     lm_node, lm_genv, lm_sym, lm_recv, lm_cstart, lm_clen, lm_cap, cg_capt,
-    fb_sym;
+    fb_sym, ft_sym;
 
   assume Codegen, ast::Ast, intern::Interner, prog::Prog, wops::WasmOps,
     emit::Emit, types::Types, lower::Lower {
@@ -5535,6 +5539,7 @@ assume Std {
         apply_abstract(body, spec, sym, depth, mode);
         return ();
       }
+      check_functor_total(sym, 0);
       run_functor(body, sym, depth, mode);
     }
 
@@ -6313,6 +6318,7 @@ assume Std {
         return ();
       }
       if ast::is_some(ast::fu_binds(prog::sym_decl.get(g))) {
+        check_functor_total(g, 0);
         let allowed = int_list();
         let gd = prog::sym_decl.get(g);
         result_types(prog::sym_mod.get(g), ast::fu_args(gd), ast::fu_nargs(gd), allowed, 0);
@@ -6452,6 +6458,79 @@ assume Std {
         return false;
       }
       sig_within(g_out_s, g_out_d, f_out_s, f_out_d, m)
+    }
+
+    # D55, D22: a functor with binds must bind every leaf item of its
+    # result signature itself — a bind whose left-hand side is that item,
+    # or an application of a functor whose result holds it. A type bind
+    # binds the type and nothing it then makes reachable: `bind Base =
+    # Int;` does not bind a promised `Base.add`, though `Int.add` is what
+    # `Base.add` would then resolve to. Checked once per functor, where it
+    # is applied or bound to an abstract one, as the bootstrap's
+    # `check_functor_total`; each item missing is `e_partial`, in the
+    # functor's module, named as `sig_within` names one.
+    fn check_functor_total(fu: Int, depth: Int) {
+      if depth > 16 {
+        return ();
+      }
+      if contains(ft_sym, fu) {
+        return ();
+      }
+      ft_sym.push(fu);
+      let d = prog::sym_decl.get(fu);
+      if !ast::is_some(ast::fu_binds(d)) {
+        return ();
+      }
+      let home = prog::sym_mod.get(fu);
+      let want_s = int_list();
+      let want_d = int_list();
+      sig_items(home, ast::fu_res(d), ast::fu_nres(d), want_s, want_d, 0);
+      let got_s = int_list();
+      let got_d = int_list();
+      var i = 0;
+      while i < ast::fu_nbinds(d) {
+        let stmt = ast::kid_at(ast::fu_binds(d), i);
+        var j = 0;
+        while j < ast::b_of(stmt) {
+          let item = ast::kid_at(ast::a_of(stmt), j);
+          let spec = ast::a_of(item);
+          let s = prog::resolve_path(home, ast::a_of(spec));
+          if ast::is_some(s) {
+            if ast::is_some(ast::b_of(item)) {
+              got_s.push(s);
+              got_d.push(ast::b_of(spec));
+            } else if prog::sym_kind.get(s) == prog::sk_functor() {
+              # An application provides its own result signature.
+              check_functor_total(s, depth + 1);
+              let sd = prog::sym_decl.get(s);
+              sig_items(prog::sym_mod.get(s), ast::fu_res(sd), ast::fu_nres(sd), got_s, got_d, 0);
+            }
+          }
+          j = j + 1;
+        }
+        i = i + 1;
+      }
+      i = 0;
+      while i < want_s.length() {
+        var found = false;
+        var j = 0;
+        while j < got_s.length() {
+          if got_s.get(j) == want_s.get(i) {
+            if got_d.get(j) == want_d.get(i) {
+              found = true;
+            }
+          }
+          j = j + 1;
+        }
+        if !found {
+          if ast::is_some(want_d.get(i)) {
+            prog::error(prog::e_partial(), home, want_d.get(i));
+          } else {
+            prog::error(prog::e_partial(), home, prog::sym_name.get(want_s.get(i)));
+          }
+        }
+        i = i + 1;
+      }
     }
 
     # Whether every item of the first list is in the second; the first
