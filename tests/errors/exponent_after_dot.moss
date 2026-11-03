@@ -1,0 +1,8 @@
+# D68: `1.` followed by anything but a digit is the integer `1` and an
+# accessor, so `1.e5` is no exponent but a member `e5` of `1`, which an
+# `Int` does not have. `1.0e5` or `1e5` is meant.
+assume Std {
+  fn main() {
+    let x = 1.e5;
+  }
+}

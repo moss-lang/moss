@@ -3013,12 +3013,19 @@ class FnChecker:
     #                      hold them. While both are exact the division is
     #                      the only rounding; past that, whatever `Float`'s
     #                      arithmetic computes.
+    #   exponent `d.ddeN` -> the same `m`, then for `n = N - k`: `.div` by
+    #                      `10^-n` if `n < 0` (so with no exponent, N = 0,
+    #                      this is the decimal case exactly), `.mul` by
+    #                      `10^n` if `n > 0`, and `m` alone if `n = 0`;
+    #                      `10^|n|` is the same product of `float(ten)`s.
 
     def synth_literal(self, expr: ast.Literal):
         why = f"the literal `{expr.text}`"
-        if "." not in expr.text:
-            return self.int_literal(expr.text, why)
-        whole, fraction = expr.text.split(".")
+        mantissa_text, exponent = ast.split_exponent(expr.text)
+        if exponent is None and "." not in mantissa_text:
+            return self.int_literal(mantissa_text, why)
+        whole, _, fraction = mantissa_text.partition(".")
+        shift = (exponent or 0) - len(fraction)
         digits = (whole + fraction).lstrip("0")
         if not digits:
             mantissa = self.float_of(self.int_literal("0", why), why)
@@ -3030,11 +3037,13 @@ class FnChecker:
                 if digit != "0":
                     d = self.float_of(self.int_literal(digit, why), why)
                     mantissa = self.lang_method_call(mantissa, "add", [d], why)
+        if shift == 0:
+            return mantissa
         scale = self.float_of(self.int_literal("10", why), why)
         ten = scale
-        for _ in range(len(fraction) - 1):
+        for _ in range(abs(shift) - 1):
             scale = self.lang_method_call(scale, "mul", [ten], why)
-        return self.lang_method_call(mantissa, "div", [scale], why)
+        return self.lang_method_call(mantissa, "mul" if shift > 0 else "div", [scale], why)
 
     def int_literal(self, text: str, why: str):
         digits = text.lstrip("0")

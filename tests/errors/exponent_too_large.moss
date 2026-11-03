@@ -1,0 +1,8 @@
+# D68: an exponent is at most 999. A literal is built by multiplying by
+# ten, once per power, so the bound keeps its expansion proportionate;
+# f64's range ends near 1e308 anyway, and `1e999` is still inf there.
+assume Std {
+  fn main() {
+    let x = 1e1000;
+  }
+}

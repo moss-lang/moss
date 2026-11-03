@@ -1,0 +1,8 @@
+# D68: an exponent is `e` or `E`, a sign perhaps, and at least one digit.
+# Without a digit straight after it, the `e` is a suffix, which a
+# numeric literal never has.
+assume Std {
+  fn main() {
+    let x = 1e;
+  }
+}

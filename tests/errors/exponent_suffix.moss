@@ -1,0 +1,7 @@
+# D68: `1ex` is no exponent, since no digit follows the `e`, so it is a
+# literal running straight into a name.
+assume Std {
+  fn main() {
+    let x = 1ex;
+  }
+}

@@ -424,6 +424,10 @@ assume Std {
         putchar((ast::kid_at(ast::a_of(id), i) + char::digit0.code()).char());
         i = i + 1;
       }
+      if ast::is_some(ast::d_of(id)) {
+        putchar(char::e);
+        put_int(ast::kid_at(ast::d_of(id), 0));
+      }
     }
 
     fn dump_binding(id: Int) {

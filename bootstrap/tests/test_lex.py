@@ -108,8 +108,46 @@ class TestLex(unittest.TestCase):
             [Kind.DECIMAL, Kind.DOT, Kind.NAME, Kind.LPAREN, Kind.RPAREN, Kind.EOF],
         )
 
+    def test_exponents(self):
+        """D68: `e` or `E`, an optional sign and digits make a literal
+        decimal, with or without a point."""
+        for source in ("1e9", "1e-9", "1E3", "1.5e+3", "2.5E10", "0e0", "6.02E23", "1e0999"):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    [(t.kind, t.text) for t in lex(source)[:-1]], [(Kind.DECIMAL, source)]
+                )
+        # After an exponent, a `.` is a method call, as after a point.
+        self.assertEqual(
+            kinds("1e5.abs()"),
+            [Kind.DECIMAL, Kind.DOT, Kind.NAME, Kind.LPAREN, Kind.RPAREN, Kind.EOF],
+        )
+        # `1.` then a letter is still an integer and an accessor, so
+        # `1.e5` names a member `e5` of `1` and `1.exp()` calls a method.
+        self.assertEqual(kinds("1.e5"), [Kind.INTEGER, Kind.DOT, Kind.NAME, Kind.EOF])
+        self.assertEqual(kinds("1.exp()"), kinds("1.add()"))
+        self.assertEqual(
+            kinds("1.5.e3"), [Kind.DECIMAL, Kind.DOT, Kind.NAME, Kind.EOF]
+        )
+        # A `-` after a literal without `e` is subtraction, as ever.
+        self.assertEqual(kinds("1-9"), [Kind.INTEGER, Kind.HYPHEN, Kind.INTEGER, Kind.EOF])
+
+    def test_an_exponent_needs_digits(self):
+        for source, offset in (("1e+", 3), ("1e-x", 3), ("2.5E-", 5)):
+            with self.subTest(source=source), self.assertRaises(LexError) as ctx:
+                lex(source)
+            self.assertIn("an exponent needs at least one digit", ctx.exception.message)
+            self.assertEqual(ctx.exception.offset, offset)
+
+    def test_an_exponent_is_at_most_999(self):
+        """The one bound on a literal: its expansion grows with its
+        exponent, so `1e999999` would be a million multiplications."""
+        for source in ("1e1000", "1e-1000", "1e999999", "1e" + "9" * 5000):
+            with self.subTest(source=source[:10]), self.assertRaises(LexError) as ctx:
+                lex(source)
+            self.assertIn("an exponent is at most 999", ctx.exception.message)
+
     def test_no_suffixes(self):
-        for source in ("2x", "2_", "1.5f", "0x10", "1e5"):
+        for source in ("2x", "2_", "1.5f", "0x10", "1e", "1E", "1ex", "1e5x", "1.5e3f", "1e_5"):
             with self.subTest(source=source), self.assertRaises(LexError) as ctx:
                 lex(source)
             self.assertIn("no suffix", ctx.exception.message)

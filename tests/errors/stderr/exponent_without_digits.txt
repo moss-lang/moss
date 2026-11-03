@@ -1,0 +1,1 @@
+tests/errors/exponent_without_digits.moss:6:14: a numeric literal has no suffix; separate it from the name (D68)

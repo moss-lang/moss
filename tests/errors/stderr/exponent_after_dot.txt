@@ -1,0 +1,1 @@
+tests/errors/exponent_after_dot.moss:6:13: `Int` has no fields

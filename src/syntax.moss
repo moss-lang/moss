@@ -538,17 +538,31 @@ assume Std {
       e
     }
 
-    # A literal's digits, as values, and where the point fell (D68).
+    # A literal's digits, as values, where the point fell, and its
+    # exponent's value if it has one (D68).
     fn parse_literal(): Int {
       let decimal = here(tk_decimal());
       let xs = int_list();
       var fraction = 0;
       var point = false;
+      var exponent = false;
+      var negative = false;
+      var power = 0;
       var i = tstart.read();
       while i < tend.read() {
         let c = lexer::src.get(i);
-        if c == char::dot {
+        if exponent {
+          if c == char::hyphen {
+            negative = true;
+          } else if c >= char::digit0 {
+            power = power * 10 + (c.code() - char::digit0.code());
+          }
+        } else if c == char::dot {
           point = true;
+        } else if c == char::e {
+          exponent = true;
+        } else if c == char::E {
+          exponent = true;
         } else {
           xs.push(c.code() - char::digit0.code());
           if point {
@@ -562,7 +576,18 @@ assume Std {
       if decimal {
         frac = fraction;
       }
-      ast::node3(ast::k_ex_lit(), ast::commit(xs), xs.length(), frac)
+      let digits = ast::commit(xs);
+      var scale = ast::none();
+      if exponent {
+        let ps = int_list();
+        if negative {
+          ps.push(0 - power);
+        } else {
+          ps.push(power);
+        }
+        scale = ast::commit(ps);
+      }
+      ast::node4(ast::k_ex_lit(), digits, xs.length(), frac, scale)
     }
 
     fn parse_exprs(xs: IntList, close: Int) {

@@ -367,11 +367,21 @@ class Binary:
 
 @dataclass(frozen=True)
 class Literal:
-    """A numeric literal as written (D68): digits, with a `.` for a
-    decimal one. Lowering builds its value from fixed library symbols."""
+    """A numeric literal as written (D68): digits, with a `.` or an
+    exponent for a decimal one. Lowering builds its value from fixed
+    library symbols."""
 
     text: str
     offset: int = field(default=-1, compare=False)
+
+
+def split_exponent(text: str) -> tuple[str, int | None]:
+    """A literal's digits and point, and its exponent's value if it has
+    one: `1.5E+3` is `("1.5", 3)`, `2.5` is `("2.5", None)`."""
+    for i, c in enumerate(text):
+        if c in "eE":
+            return text[:i], int(text[i + 1 :])
+    return text, None
 
 
 @dataclass(frozen=True)

@@ -1372,7 +1372,8 @@ assume Std {
         uw_lang_meths(f, op_symbol(e));
       } else if k == ast::k_ex_lit() {
         # D68: a literal reads `zero` and `one` and calls `.add`, `.mul`
-        # and, for a decimal one, `float` and `.div`.
+        # and, for a decimal one (an exponent makes one), `float` and
+        # `.div`.
         uw_sym(f, lang(lg_zero()));
         uw_sym(f, lang(lg_one()));
         uw_lang_meths(f, lang(tk_plus()));
@@ -2923,7 +2924,11 @@ assume Std {
     #            at `Int`, Horner over the digits with each digit and ten
     #            a sum of `one`s;
     #   decimal: float(m).div(float(10^k)), `m` and `10^k` built in
-    #            `Float` from `float(digit)`s and `float(ten)`s.
+    #            `Float` from `float(digit)`s and `float(ten)`s;
+    #   exponent `eN`: the same `m`, and for `n = N - k`, `.div` by
+    #            `10^-n` if `n < 0` (so with no exponent, N = 0, this is
+    #            the decimal case), `.mul` by `10^n` if `n > 0`, and `m`
+    #            alone if `n = 0`.
     #
     # Nothing is checked: a literal means what that arithmetic computes,
     # wrapping, trapping or rounding as the bound `Int` and `Float` do.
@@ -2937,7 +2942,10 @@ assume Std {
       if !ast::is_some(ast::c_of(e)) {
         return emit_digits(body, run, n);
       }
-      let k = ast::c_of(e);
+      var shift = 0 - ast::c_of(e);
+      if ast::is_some(ast::d_of(e)) {
+        shift = ast::kid_at(ast::d_of(e), 0) - ast::c_of(e);
+      }
       var i = 0;
       while i < n {
         if ast::kid_at(run, i) != 0 {
@@ -2962,14 +2970,25 @@ assume Std {
           i = i + 1;
         }
       }
+      if shift == 0 {
+        return t;
+      }
+      var count = shift;
+      if count < 0 {
+        count = 0 - count;
+      }
       var scale = emit_float_digit(body, 10);
       var j = 1;
-      while j < k {
+      while j < count {
         emit_float_digit(body, 10);
         scale = emit_lang_method(body, scale, tk_star());
         j = j + 1;
       }
-      emit_lang_method(body, t, tk_slash())
+      if shift > 0 {
+        emit_lang_method(body, t, tk_star())
+      } else {
+        emit_lang_method(body, t, tk_slash())
+      }
     }
 
     fn emit_lang_val(body: IntList, slot: Int): Int {

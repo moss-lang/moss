@@ -159,11 +159,29 @@ class TestGrammarAgreesWithTheLexer(unittest.TestCase):
         )
         self.assertEqual(tokenize("x2")[0], ("x2", "variable.other.moss"))
 
+    def test_exponents(self):
+        """D68: an exponent makes a decimal literal, point or no point."""
+        for literal in ("1e9", "1e-9", "1E3", "1.5e+3", "2.5E10", "6.02E23"):
+            with self.subTest(literal=literal):
+                self.assertEqual(
+                    self.assert_one_token(literal, ("constant.numeric",)),
+                    "constant.numeric.decimal.moss",
+                )
+        # `1.e5` is `1`, an accessor and a name, as the lexer has it.
+        self.assertEqual(
+            tokenize("1.e5")[:2],
+            [("1", "constant.numeric.integer.moss"), (".", "punctuation.accessor.moss")],
+        )
+        self.assertEqual(
+            tokenize("1e5.abs()")[:2],
+            [("1e5", "constant.numeric.decimal.moss"), (".", "punctuation.accessor.moss")],
+        )
+
     def test_the_lexer_and_the_grammar_split_alike(self):
         """Every token the lexer makes of a line, the grammar makes too."""
         from mossc.lex import lex
 
-        line = "if a << 2 >= -b.c & !d { x = 3.14 * y; } else { 1.add(2) }"
+        line = "if a << 2 >= -b.c & !d { x = 3.14 * y - 1e-9; } else { 1.add(2.5E+3) }"
         lexed = [t.text for t in lex(line)[:-1]]
         self.assertEqual([text for text, _ in tokenize(line)], lexed)
 

@@ -2484,6 +2484,10 @@ class FnCompiler:
 def build(program: Program, lower, main: Symbol) -> bytes:
     from .interp import native_env
 
+    # As the interpreter does: the tree is walked recursively, and a
+    # literal's arithmetic nests as deep as it is long — `1e-999` is a
+    # thousand calls deep (D68). That is no limit on Moss programs.
+    sys.setrecursionlimit(max(sys.getrecursionlimit(), 100000))
     natives = native_env(program, [])
     backend = Backend(program, lower, natives)
     return backend.build(main)

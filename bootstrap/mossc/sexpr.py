@@ -129,7 +129,12 @@ def _expr(e):
     if isinstance(e, ast.Binary):
         return _node("ex_binary", e.op, _expr(e.lhs), _expr(e.rhs))
     if isinstance(e, ast.Literal):
-        return _node("ex_lit", e.text)
+        # An exponent as its value, the one form the self-hosted parser
+        # keeps: `1E+03` is `1e3`.
+        digits, exponent = ast.split_exponent(e.text)
+        if exponent is not None:
+            digits += f"e{exponent}"
+        return _node("ex_lit", digits)
     if isinstance(e, ast.Lambda):
         return _node(
             "ex_lambda",

@@ -219,6 +219,15 @@ is checked at compile time.
   `k <= 22` at f64; `m < 2^24`, `k <= 10` at f32 — roughly 15 and 7
   significant digits) the result is the nearest float; a longer literal
   rounds on the way and may be an ulp off it.
+- A literal with an exponent, `d.ddd` or `ddd` then `eN`, is a `Float`
+  too, even with no point: for `n = N - k` it is `float(m).div(10^-n)`
+  when `n < 0` (so `1e-9` is exactly `0.000000001`), `float(m).mul(10^n)`
+  when `n > 0`, and `float(m)` when `n = 0`, with `m` and the power of
+  ten built as above. The power is exact up to `10^22` at f64 and
+  `10^10` at f32, so there, with `m` exact, the literal is the nearest
+  float. Past the format's range the arithmetic overflows or underflows:
+  at f64 `1e999` is inf and `1e-999` is 0, and so is any literal whose
+  `10^|n|` overflows, even where its value would not (`5e-324`).
 
 A literal is typed `Int` or `Float`, never inferred from the expected
 type; other types convert explicitly. With `zero` and `one` provided as

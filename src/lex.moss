@@ -311,14 +311,32 @@ assume Std {
 
     # D68: a digit run, then `.` and a digit, is a decimal literal; a `.`
     # followed by anything else is not part of it, so `1.add(2)` calls a
-    # method on `1`. A name character straight after is no suffix but an
-    # error. Nothing else about a literal is checked: it means whatever
-    # the arithmetic it is made of computes.
+    # method on `1`. Either may take an exponent — `e` or `E`, a sign
+    # perhaps, and digits — which makes it decimal, and whose value is at
+    # most 999. A name character straight after is no suffix but an
+    # error, as is a sign with no digit after it. Nothing else about a
+    # literal is checked: it means whatever the arithmetic it is made of
+    # computes.
     fn number_token(): Token {
       skip_digits();
-      let decimal = take_dot_digit();
+      var decimal = take_dot_digit();
       if decimal {
         skip_digits();
+      }
+      let lead = exponent_lead();
+      if lead < 0 {
+        return Bad;
+      }
+      if lead > 0 {
+        decimal = true;
+        var i = 0;
+        while i < lead {
+          advance();
+          i = i + 1;
+        }
+        if !take_exponent_digits() {
+          return Bad;
+        }
       }
       match peek() {
         Eof => (),
@@ -333,6 +351,52 @@ assume Std {
       } else {
         Integer
       }
+    }
+
+    # The character `ahead` past the cursor, if it is `want`.
+    fn char_ahead(ahead: Int, want: Char): Bool {
+      let i = at.read() + ahead;
+      if i >= src.length() {
+        false
+      } else {
+        src.get(i) == want
+      }
+    }
+
+    # How long an exponent's `e` and sign are, if a digit follows them; 0
+    # if no exponent starts here, -1 if a sign follows the `e` but no
+    # digit follows the sign.
+    fn exponent_lead(): Int {
+      if !char_ahead(0, char::e) {
+        if !char_ahead(0, char::E) {
+          return 0;
+        }
+      }
+      var lead = 1;
+      if char_ahead(1, char::plus) {
+        lead = 2;
+      } else if char_ahead(1, char::hyphen) {
+        lead = 2;
+      }
+      if digit_ahead(lead) {
+        lead
+      } else if lead == 2 {
+        -1
+      } else {
+        0
+      }
+    }
+
+    # An exponent's digits, and whether their value is within the bound.
+    fn take_exponent_digits(): Bool {
+      var value = 0;
+      while digit_ahead(0) {
+        if value <= 999 {
+          value = value * 10 + (src.get(at.read()).code() - char::digit0.code());
+        }
+        advance();
+      }
+      value <= 999
     }
 
     fn take_dot_digit(): Bool {

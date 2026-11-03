@@ -1,0 +1,43 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "./dual.moss" use Reals, Dualize, variable;
+
+# Exponent notation (D68) under a library `Float`: dual.moss's `Dualize`
+# binds `Float` to `Dual` and `float` to `constant`, so inside it `2.5e-1`
+# is `constant(25)` over a product of `constant(10)`s, divided in `Dual`
+# arithmetic, and `1.5e2` is `constant(15)` times `constant(10)` — each a
+# constant, with no derivative of its own. Output, times a million, for
+# g(x) = 2.5e-1 x^2 + 1.5e2 x at 2: g(2) = 301 and g'(2) = 151.
+
+assume Reals {
+  fn g(x: Float): Float { 2.5e-1 * x * x + 1.5e2 * x }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn show(x: Float) {
+    print_int((x * 1e6).round());
+    putchar(char::newline);
+  }
+
+  fn report(x: Float) {
+    show(g(x));
+    show({
+      bind Dualize;
+      g(variable(x)).d
+    });
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    report(2.0);
+  }
+}

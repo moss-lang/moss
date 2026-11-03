@@ -485,10 +485,15 @@ class TestOperators(unittest.TestCase):
         self.assertEqual(grouping(self.expr("-(1.abs())")), "(-1.abs())")
         self.assertEqual(grouping(self.expr("x - 1.abs()")), "(x - 1.abs())")
         self.assertEqual(grouping(self.expr("2.5.sqrt()")), "2.5.sqrt()")
+        self.assertEqual(self.expr("1.5E+3"), ast.Literal("1.5E+3"))
+        self.assertEqual(grouping(self.expr("1e5.abs()")), "1e5.abs()")
+        self.assertEqual(grouping(self.expr("1.exp()")), "1.exp()")
+        self.assertEqual(grouping(self.expr("x - 1e-9")), "(x - 1e-9)")
+        self.assertEqual(grouping(self.expr("-1e-9 * 2")), "((-1e-9) * 2)")
 
     def test_minus_before_a_literal_with_a_method_call(self):
         """`-1.abs()` would be `-(1.abs())`, so D68 refuses it."""
-        for source in ("-1.abs()", "-2.5.sqrt()", "- 1.x", "- -1.abs()"):
+        for source in ("-1.abs()", "-2.5.sqrt()", "- 1.x", "- -1.abs()", "-1e5.abs()"):
             with self.subTest(source=source):
                 with self.assertRaises(ParseError) as caught:
                     self.expr(source)

@@ -178,6 +178,12 @@ class LexError(Exception):
 DIGITS = "0123456789"
 
 
+# D68: the largest exponent a literal may have, of either sign. A literal
+# is built by repeated multiplication by ten, so this bounds its expansion
+# by its length plus this; f64's range ends near 1e308.
+MAX_EXPONENT = 999
+
+
 def is_name_start(c: str) -> bool:
     return c.isalpha() or c == "_"
 
@@ -206,7 +212,9 @@ def lex(source: str) -> list[Token]:
         elif c in DIGITS:
             # D68: a digit run, then `.` and a digit, is a decimal literal;
             # a `.` followed by anything else is not part of it, so
-            # `1.add(2)` calls a method on `1`.
+            # `1.add(2)` calls a method on `1`. Either may take an
+            # exponent, `e` or `E`, an optional sign and digits, which
+            # makes it decimal; its value is at most MAX_EXPONENT.
             j = i + 1
             while j < n and source[j] in DIGITS:
                 j += 1
@@ -216,6 +224,22 @@ def lex(source: str) -> list[Token]:
                 j += 2
                 while j < n and source[j] in DIGITS:
                     j += 1
+            k = j + 1
+            if j < n and source[j] in "eE" and k < n and source[k] in "+-":
+                k += 1
+                if k == n or source[k] not in DIGITS:
+                    raise LexError("an exponent needs at least one digit (D68)", k)
+            if j < n and source[j] in "eE" and k < n and source[k] in DIGITS:
+                start = k
+                while k < n and source[k] in DIGITS:
+                    k += 1
+                digits = source[start:k].lstrip("0")
+                if len(digits) > len(str(MAX_EXPONENT)) or int(digits or "0") > MAX_EXPONENT:
+                    raise LexError(
+                        f"an exponent is at most {MAX_EXPONENT} (D68)", start
+                    )
+                kind = Kind.DECIMAL
+                j = k
             if j < n and is_name_continue(source[j]):
                 raise LexError(
                     "a numeric literal has no suffix; separate it from the name (D68)", j

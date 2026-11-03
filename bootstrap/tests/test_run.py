@@ -381,6 +381,17 @@ FLOAT_OUT = "".join(
     )
 )
 
+# What tests/wasi/exponents.moss prints: the same report at f64, then f32.
+EXPONENTS_OUT = (
+    "yyyyyyyyy\n"
+    "1500 125 1 250 -42 100000 602 \n"
+    "n nn yy\n"
+    "yyyyyyyyy\n"
+    "1500 125 1 250 -42 100000 602 \n"
+    # `1e39` is inf at f32 and `1e-46` zero.
+    "n yy yy\n"
+)
+
 # What tests/wasi/shadow.moss prints: f64, f32, f64, f32, f64.
 SHADOW_OUT = "333333333\n333333344\n333333333\n333333344\n333333333\n"
 
@@ -772,6 +783,37 @@ class TestOperators(unittest.TestCase):
     def test_over_the_moss_std(self):
         self.assertEqual(run({}, entry="tests/wasi/ops.moss"), OPS_OUT)
 
+    def test_exponents_over_the_moss_std(self):
+        self.assertEqual(run({}, entry="tests/wasi/exponents.moss"), EXPONENTS_OUT)
+
+    def test_exponent_constructions(self):
+        """An exponent `N` over `k` fractional digits divides `m` by
+        `10^(k-N)` when that is positive — so `1e-9` is exactly
+        `0.000000001`, and a decimal literal is the case `N` = 0,
+        unchanged — multiplies it by `10^(N-k)` when that is, and is
+        `float(m)` alone between; each power a product of `float(ten)`s,
+        left to right."""
+        from .test_build import compile_wasm
+
+        def module(expr):
+            return compile_wasm(main_body(f"let x = {expr}; putchar(char::A);"))
+
+        ten = "float(10)"
+        tens = lambda n: "(" + " * ".join([ten] * n) + ")"
+        for literal, same in (
+            ("1e-9", "0.000000001"),
+            ("1.5e0", "1.5"),
+            ("2.5E-3", "0.0025"),
+            ("1e-9", f"float(1) / {tens(9)}"),
+            ("2.5e10", f"(float(2) * {ten} + float(5)) * {tens(9)}"),
+            ("1.5e+3", f"(float(1) * {ten} + float(5)) * {tens(2)}"),
+            ("1.5e1", f"float(1) * {ten} + float(5)"),
+            ("1e0", "float(1)"),
+            ("0e5", f"float(0) * {tens(5)}"),
+        ):
+            with self.subTest(literal=literal, same=same):
+                self.assertEqual(module(literal), module(same))
+
     def test_over_the_native_std(self):
         from .test_build import compile_wasm, run_wasm
 
@@ -853,6 +895,13 @@ class TestLiterals(unittest.TestCase):
                  "}\n"
                  "assume Std { fn main() { } }"})
         self.assertIn("means `float`, which is not available", caught.exception.message)
+        # An exponent makes a literal `Float` with no point at all.
+        with self.assertRaises(LowerError) as caught:
+            run({"main.moss": "assume Int, zero, one, Int.add, Int.mul {\n"
+                 "  fn f() { let x = 1e3; }\n"
+                 "}\n"
+                 "assume Std { fn main() { } }"})
+        self.assertIn("the literal `1e3` means `float`", caught.exception.message)
 
     def test_an_oversized_literal_does_what_the_arithmetic_does(self):
         """tests/wasi/overflow.moss: 2^32 + 1 wraps to 1 under `WasiStd`'s
@@ -1134,6 +1183,16 @@ class TestSelfHostedLexer(unittest.TestCase):
             ("1.x 1. 2.5.abs", "I.nI.D.n"),
             ("2x", "bn"),
             ("1.5f", "bn"),
+            # An exponent makes a decimal; without digits it is a suffix,
+            # and a sign with no digit after it is an error too.
+            ("1e9 1e-9 1.5e+3 2.5E10 0e0 1e5.abs", "DDDDDD.n"),
+            ("1e", "bn"),
+            ("1e+", "bn_"),
+            ("1ex", "bn"),
+            ("1e5x", "bn"),
+            ("1.e5 1.5.e3", "I.nD.n"),
+            ("1e999 1e-0000999", "DD"),
+            ("1e1000", "b"),
             ("000000000000000000001.5 0.00000000000000000000001", "DD"),
             ("3.14159265358979323846264338327950288", "D"),
             ("123456789012345678901234567890", "I"),
@@ -1424,6 +1483,12 @@ LITERAL_SNIPPETS = [
     ("1 << n + 1", True),
     ("0.5 + 007", False),
     ("f(10, 0.25)", False),
+    # Exponents: the dump writes the exponent's value, `1E+03` as `1e3`.
+    ("1e-9 + 2.5E10 * 1.5e+3", False),
+    ("f(1E+03, 0.000123e-0004, 0e0, 7e999)", False),
+    ("1e5.abs() - 1.exp()", False),
+    ("1.e5 + 1.5.e3", False),
+    ("-1e5.abs()", True),
 ]
 
 # What tests/wasi/lambda.moss prints: each letter is named beside the
@@ -1935,6 +2000,11 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         module = self.compile_with_moss("tests/wasi/literals.moss", prelude="lib/prelude.moss")
         self.assertEqual(self.wasmtime_run(module), LITERALS_OUT)
 
+    def test_exponents(self):
+        """D68's exponent notation, at f64 and at f32."""
+        module = self.compile_with_moss("tests/wasi/exponents.moss", prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), EXPONENTS_OUT)
+
     def test_float_lists(self):
         """D69's packed lists: an `IntList` and a `FloatList` side by side,
         at f64 and — in a block binding `WasiFloats32` — at f32, from one
@@ -2031,6 +2101,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/shadow.moss", SHADOW_OUT, "lib/prelude.moss"),
             ("tests/wasi/ops.moss", OPS_OUT, "lib/prelude.moss"),
             ("tests/wasi/literals.moss", LITERALS_OUT, "lib/prelude.moss"),
+            ("tests/wasi/exponents.moss", EXPONENTS_OUT, "lib/prelude.moss"),
             ("tests/wasi/lists.moss", LISTS_OUT, "lib/prelude.moss"),
         )
         for entry, expected, *prelude in cases:
@@ -2673,6 +2744,18 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
         self.assertNotEqual(out[:4], b"\0asm")
         self.assertTrue(out.decode("utf-8").startswith(f"?S {entry} nested\n"), out[:200])
+
+    def test_exponents_under_dual_numbers(self):
+        """D68's exponent literals under a library `Float`: inside
+        `Dualize`, `2.5e-1` and `1.5e2` are built from `constant` and
+        `Dual`'s own `.mul`, `.add` and `.div`, constants with no
+        derivative, so g(x) = 2.5e-1 x^2 + 1.5e2 x has g'(2) = 151. As
+        for tests/wasi/dual.moss, the bootstrap only lowers it."""
+        entry = "tests/wasi/exponents_dual.moss"
+        module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), "301000000\n151000000\n")
+        program = collect.load(entry, prelude=PRELUDE, root=REPO)
+        Lower(program).run()
 
     def test_dual_numbers_under_all_of_std(self):
         """D72 as numeric code meets it: `f` assumes all of `Std`, and

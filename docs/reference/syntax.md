@@ -83,7 +83,10 @@ token or class of tokens.
 - _string_: delimited by double quotes, may include escape sequences `\"`,
   `\\`, `\n`, `\r`, `\t`
 - _integer_: one or more decimal digits (`0`, `123`, `007`)
-- _decimal_: one or more digits, `.`, one or more digits (`3.14`, `0.5`)
+- _decimal_: one or more digits, optionally `.` and one or more digits,
+  then an optional exponent — `e` or `E`, optionally `+` or `-`, one or
+  more digits — where at least one of the point and the exponent must be
+  present (`3.14`, `0.5`, `1e-9`, `2.5E10`, `1.5e+3`)
 
 Notes:
 
@@ -92,10 +95,17 @@ Notes:
   (`==` is one token, never two `=`).
 - A digit run followed by `.` and a digit is a _decimal_; followed by `.`
   and anything else it is an _integer_ and then `.`, so `1.add(2)` calls a
-  method on `1` and `2.5.abs()` one on `2.5`. A digit run may not run
-  straight into a letter or `_` (no suffixes, exponents, hex or
-  underscores yet: `1e5` and `2x` are errors), but a digit may continue a
-  _name_ (`x2`).
+  method on `1` and `2.5.abs()` one on `2.5`. So too `1.e5` is `1`, `.`
+  and the name `e5`, not an exponent. A `.` after an exponent is never
+  part of the literal: `1e5.abs()` calls a method on `1e5`, and `1.5.e3`
+  is `1.5`, `.`, `e3`.
+- An exponent's value is at most 999 (`1e1000` and `1e-1000` are errors;
+  leading zeros do not count). `e` or `E` not followed by a digit, or by a
+  sign and a digit, is no exponent, and an `e` and sign with no digit
+  after them is an error (`1e+`).
+- A digit run may not run straight into a letter or `_` (no suffixes,
+  hex or underscores yet: `2x`, `1e`, `1ex` and `1e5x` are errors), but a
+  digit may continue a _name_ (`x2`).
 - One token is lexed but reserved: the keyword `for` appears in no
   production below.
 

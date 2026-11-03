@@ -87,10 +87,11 @@ assume Std {
   # moves. An operator is its token code from tcode.moss; a binary one's
   # right operand is a run of one, so that it is emitted as a method
   # call's arguments are. A literal's digits are a run of their values,
-  # and `c` is how many of them follow the point (none for an integer).
+  # `c` is how many of them follow the point (none for an integer, 0 for
+  # `1e9`), and `d` is a run of one, its exponent's value, if it has one.
   fn k_ex_unary(): Int { 48 }  # a=op b=operand
   fn k_ex_binary(): Int { 49 }  # a=op b=lhs c=rhs run
-  fn k_ex_lit(): Int { 50 }    # a=digit run b=len c=fraction digits
+  fn k_ex_lit(): Int { 50 }    # a=digit run b=len c=fraction digits d=exponent run
 
   # D70: an anonymous function, legal only as a bind's right side. Its
   # parameters are `k_param`s whose type may be none, as may its result.

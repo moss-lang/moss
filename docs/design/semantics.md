@@ -1833,11 +1833,49 @@ everything else, so it means whatever the arithmetic bound there means:
   `1.0 / 3.0` — and that is simply what the bound float arithmetic
   computes. No literal is checked at compile time. Literals guaranteed to
   be the nearest float could later be one more contextual symbol.
-- No suffixes, exponents, hex, or underscores yet.
+- An exponent `eN` (or `EN`, `N` signed or not) makes a literal `Float`,
+  point or no point (`1e9` too, as in most languages). With digits `m`,
+  `k` of them fractional, and `n = N - k`, it means `float(m).div(10^-n)`
+  if `n < 0`, `float(m).mul(10^n)` if `n > 0`, and `float(m)` alone if
+  `n = 0`, with `m` built as above and `10^|n|` the same left-to-right
+  product of `float(ten)`s that `10^k` is. A decimal literal is the case
+  `N = 0` and builds exactly what it did before exponents, and `1e-9`
+  builds exactly what `0.000000001` does; `2.5e10` is `float(25)` times
+  `10^9`. At f64 `10^n` is exact up to `n = 22`, so `6.02E23`, 602 times
+  an exact `10^21`, is the nearest float, where
+  `602000000000000000000000.0` — 25 digits summed in `Float`, then
+  divided by ten — is an ulp off. Past the format's range the arithmetic overflows and underflows as
+  it does anywhere: at f64 `1e999` is inf and `1e-999` is 0, and so is
+  `5e-324`, since it divides by a `10^324` that is already inf — and
+  `0e400` is NaN, zero times inf. Correctly rounded literals across the
+  whole range would be the contextual symbol above.
+- `N` is at most 999 in absolute value, the one bound on a literal, so
+  that `1e999999` is an error rather than a million multiplications. The
+  expansion is linear in `|n|`, and that is the price of the rule above:
+  square-and-multiply would build `10^|n|` in a logarithmic number of
+  steps but round differently past the exact range, so `1e-30` would no
+  longer be `0.000000000000000000000000000001` — and would be no more
+  accurate for it: of `1e-23` through `1e-308` at f64, the chain gives
+  the nearest float for 50, squaring for 29. 999 is past the range of
+  f64 and of any double-double built over it. The cost is the optimizer's:
+  a chain of `|n|` calls is `|n|` deep, and `wasm-opt -O3` (Binaryen 133)
+  took 2 s on a program using `1e-30`, 14 s with `1e-100` and 2 min with
+  `1e-300`, against 0.6 s with `0.5`; it folds the chain away in the end.
+  A positional literal as long costs the same. Building the power once
+  into a local and squaring it would make that logarithmic, at the
+  rounding difference above; nothing compiled without `-O` notices.
+- No suffixes, hex, or underscores yet.
 - Lexing: a digit run followed by `.` and a digit is a decimal literal; a
   digit run followed by `.` and anything else is an integer literal followed
-  by `.` (so `1.add(2)` calls a method on `1`). A digit run running straight
-  into a letter or `_` is a syntax error.
+  by `.` (so `1.add(2)` calls a method on `1`, and `1.e5` is the member
+  `e5` of `1`, not an exponent). Either may then take an exponent: `e` or
+  `E`, an optional `+` or `-`, and one or more digits; leading zeros do not
+  count against the bound. A `.` after an exponent is never part of the
+  literal, so `1e5.abs()` calls a method on `1e5` and `1.5.e3` is the
+  member `e3` of `1.5`. A digit run running straight into a letter or `_`
+  is a syntax error, and an `e` not followed by a digit or by a sign and a
+  digit is no exponent but that error (`1e`, `1ex`); an `e` and sign
+  with no digit after them is an error of its own (`1e+`).
 
 A literal is typed `Int` or `Float`, never inferred from the expected type:
 `zero`/`one` are vals, which cannot be keyed by a receiver type the way
@@ -1860,11 +1898,17 @@ as `Bool`'s units are found ([D45]; `Lower.lang` in the bootstrap,
 context where the operator or literal is written, so a function that
 uses a literal needs `zero`, `one`, `Int.add` and `Int.mul` in its
 context (`assume Std` has them), a decimal one `float`, `Float.mul`,
-`Float.add` and `Float.div` as well, and an operator at a type nobody
+`Float.add` and `Float.div` as well (an exponent's, whichever of these
+its expansion calls), and an operator at a type nobody
 provides it at is the method call's error: `` no method `.add` is
 available for `Char` in the context here ``. A literal's `zero` and `one`
 are vals, so in a function over `Std` they arrive as parameters like any
-other val ([D59]).
+other val ([D59]). An exponent needs no token of its own: the lexers
+make it part of a _decimal_ token, the self-hosted tree keeps its value
+beside the fractional-digit count (`k_ex_lit`'s `d`, a run of one), and
+the dump both parsers write gives it as that value, `1E+03` as `1e3`.
+The bootstrap's back end walks a literal's arithmetic recursively, so it
+raises Python's recursion limit as its interpreter already did.
 
 `Bool`'s four are attached methods of `lib/bool.moss` — `Bool.flip`,
 `Bool.both`, `Bool.either`, `Bool.differs` — which `Std` lists as
@@ -1882,15 +1926,21 @@ additions under one `-O3`, and folded to `i32.const 1234567` under
 `-O3 --converge`: the constants are only constants once `wasi_one()` has
 been inlined into the caller.
 
-Standing tests: `tests/wasi/ops.moss` and `tests/wasi/literals.moss`
-(the latter at f64 and, in a nested `{ bind WasiFloats32; … }`, at f32,
-long literals included), run by the interpreter and both compilers to the
-same output; `tests/wasi/overflow.moss`, where `4294967297` is 1 under
+Standing tests: `tests/wasi/ops.moss`, `tests/wasi/literals.moss` and
+`tests/wasi/exponents.moss` (the latter two at f64 and, in a nested
+`{ bind WasiFloats32; … }`, at f32, long literals and exponents past
+either range included), run by the interpreter and both compilers to the
+same output; `tests/wasi/exponents_dual.moss`, exponents under
+`tests/wasi/dual.moss`'s `Dual` as `Float`, compiled by the self-hosted
+compiler and lowered by the bootstrap; `tests/wasi/overflow.moss`, where `4294967297` is 1 under
 `WasiStd`'s wrapping `Int` and, in a bare block binding a test-local
 `Int` whose `.add` and `.mul` trap on overflow, traps — all three
 implementations; `tests/wasi/numbers.moss` and `tests/wasi/shadow.moss`
 now use both; the precedence table and every refusal are parser tests,
-held to the self-hosted parser snippet by snippet; and
+held to the self-hosted parser snippet by snippet; each exponent case is
+checked in the bootstrap to build exactly the arithmetic written out by
+hand (`TestLiterals.test_exponent_constructions`), and each lexing case
+against the self-hosted lexer; and
 `bootstrap/tests/test_grammar.py` keeps the VS Code grammar in step with
 the lexer.
 
