@@ -1085,11 +1085,22 @@ assume Std {
       !in_wasm(sym)
     }
 
-    # A captured slot has the type of the val it finally names: its
-    # declared type, read in `env`.
+    # A val need's type: its declared type, read in `env`. A captured slot
+    # has the type of the val it finally names, read where that val was
+    # needed — in the environment of the provider whose bind captured it,
+    # one capture at a time — and not in `env`: a frame that only passes a
+    # capture on may know nothing of the types its declaration mentions
+    # (`Holder[Item]`, with `Item` bound beside the bind), and would lay
+    # it out as a scalar per abstract type.
     fn need_type_in(env: Int, slot: Int): Int {
-      let sym = slot_sym(slot);
-      lower::elab(env, ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym))
+      var e = env;
+      var s = slot;
+      while is_captured(s) {
+        let row = ck_row(s);
+        e = lower::env_b_of(ck_entry.get(row));
+        s = ck_inner.get(row);
+      }
+      lower::elab(e, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s))
     }
 
     # A val a frame takes as a parameter, as the frame's code sees it: the

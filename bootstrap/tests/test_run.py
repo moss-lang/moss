@@ -2706,6 +2706,26 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertEqual(self.wasmtime_run(module), "6\n")
         self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "6\n")
 
+    def test_a_capture_is_laid_out_where_it_was_captured(self):
+        """D26, D70: an anonymous provider captures a val whose type
+        mentions a type bound beside the bind (`Holder[Item]`, `Item =
+        Float`, and then a record of two `Int`s), and a function generic
+        over the provided fn takes the capture to pass on, directly and
+        through a second provider's capture. Its type is read where it
+        was captured; read in the callee's environment, which knows
+        nothing of `Item`, it was one scalar, and the module did not
+        validate."""
+        from .test_build import compile_wasm, run_wasm
+
+        for entry, expected in (
+            ("tests/wasi/capture_width.moss", "15\n29\n15\n"),
+            ("tests/wasi/capture_wide.moss", "15\n29\n"),
+        ):
+            with self.subTest(entry=entry):
+                module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertEqual(self.wasmtime_run(module), expected)
+                self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), expected)
+
     def test_temporaries_nested_anywhere(self):
         """A local comes from emission itself, so a construct that needs a
         temporary works however deeply it is nested: a `match` in a call's

@@ -126,7 +126,12 @@ What is left, none of it on the path to self-hosting:
   each compiled for its own type (`tests/wasi/provisions.moss`). A
   callee's parameter and return types are read in the environment it is
   compiled in — a provision's, captured where it was bound — rather
-  than the caller's, which may have rebound a type since.
+  than the caller's, which may have rebound a type since. A captured
+  val's type is read where it was captured, in the environment of the
+  provider whose bind captured it: a function that only passes a capture
+  on may know nothing of the types its declaration mentions, and read
+  in its own environment `Holder[Item]` was one scalar however wide
+  `Item` was bound beside the bind (`tests/wasi/capture_width.moss`).
   What was already done, as the other half of the same mechanism, is a
   receiver an application binds: a context item may key a detached method
   on an **abstract** receiver (`context IsList = L.get[Elem=T];`) which

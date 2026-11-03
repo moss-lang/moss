@@ -1,0 +1,58 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# tests/wasi/capture_width.moss at a wider `Item`: a record of two Ints,
+# so the captured `Holder[Item]` is two scalars where the generic `twice`
+# would have read it as one, leaving a value on the stack. Prints 15 and
+# 29, in both compilers.
+
+type Item;
+
+assume Std {
+  tag Pair { lo: Int, hi: Int };
+}
+
+assume Item {
+  tag Holder { x: Item };
+  val held: Holder;
+}
+
+assume Int {
+  fn bump(n: Int): Int;
+  fn bump4(n: Int): Int;
+}
+
+assume Std, bump {
+  fn twice(n: Int): Int { bump(bump(n)) }
+}
+
+assume Std, bump4 {
+  fn quad(n: Int): Int { bump4(n) }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn demo() {
+    bind Item = Pair;
+    bind held = Holder { x = Pair { lo = 3, hi = 4 } };
+    bind bump = (n) => n + held.x.lo + held.x.hi;
+    print_int(twice(1));
+    putchar(char::newline);
+    bind bump4 = (n) => twice(twice(n));
+    print_int(quad(1));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
