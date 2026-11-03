@@ -3457,6 +3457,32 @@ is re-proved over it, still closed under the global context.
   bare one, inside one generic function, by `vm_compute`, and proves the
   program well-formed (`functor_example_ok`), so soundness covers it.
 
+*Open, for later (noted with the designer, not decided).*
+
+- *Generativity at a functor's definition.* Applying an abstract functor
+  makes fresh, rigid types that cannot leave the block; applying a
+  concrete one is transparent, so two applications share their types. The
+  choice is the applier's, which mirrors OCaml's generative/applicative
+  split but at the use site. A library whose applications must never mix
+  — a tape-based reverse-mode AD, where a `Var` from one tape used on a
+  sibling tape over the same `Float` is accepted and silently wrong (found
+  by a prototype outside this repository) — can offer the safe form
+  only as a pattern: an abstract functor its users assume and `main`
+  binds. A functor marked generative at its definition, fresh at every
+  application however it is applied, would let the author make that the
+  default. Left as is for now.
+- *Captured values, once each.* A provider that captures a val passes it
+  on, so a val captured once and reached through several providers
+  arrives as several parameters, one per path (third-order reverse-mode
+  AD reaches 1950, past Wasm's 1000-parameter limit; only Binaryen's
+  `-O3` removes the duplicates). A back-end calling convention keyed by
+  the binding occurrence a capture refers to — not by the val's symbol,
+  since a provider may hold an older binding than the caller's — would
+  pass each once, with a record in linear memory as the fallback past
+  the limit, which until then should be a compile error rather than an
+  invalid module. Not a semantic change; deferred until a program in the
+  proposal needs it.
+
 **[D79] DECIDED by the designer and implemented (multiple memories).** WebAssembly modules may have more than
 one linear memory (multi-memory, part of Wasm 3.0, shipped in Chrome,
 Firefox, Node and Wasmtime; not yet Safari), but source languages barely
