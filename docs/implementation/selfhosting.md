@@ -368,6 +368,26 @@ unchanged; and a test suite that drives the compiler through
 bootstrap-built Wasm got a third faster, since the compiler's own
 functions had been passing constants they never read.
 
+The same limit came back through method needs, which that filter
+skipped: a plain fn the callee cannot reach was left out of the
+environment it is compiled in, but every bound method was kept, and with
+it whatever its provider captured. A functor's anonymous functions are
+each made with every provider bound before them in force, so the last
+captured what all the earlier ones had, and a function that assumed them
+all took the val once per *subset* of them. Differentiating code that
+assumes all of `Std` ([`tests/wasi/dual_std.moss`](/tests/wasi/dual_std.moss),
+whose `Dualize` binds nineteen methods) came to 4,101 parameters for one
+application, and inside itself did not finish. Now a method need is kept
+only if the callee can reach a method call of that name, abstract
+methods included in what a call of a name may reach
+([`tests/wasi/unreached_providers.moss`](/tests/wasi/unreached_providers.moss)).
+Which entries a callee keeps depends on the callee alone, so
+`callee_chain` works it out once rather than at every call site, which
+made the compiler compile itself about a fifth faster with the same
+output. The growth itself is still there for providers that *do* reach
+each other: a slot is named by the path of captures it came through, and
+two paths to one capture are two parameters.
+
 ## The idiom
 
 Every data structure here is a *typed arena*: parallel `IntList`s

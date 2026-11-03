@@ -1,0 +1,75 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A function that assumes many methods and calls one. Each is provided by
+# an anonymous function that reads `one`, so each provider takes `one`
+# as a parameter, captured where it is bound (D26) — and, because every
+# provider is made with everything bound before it in force, also what
+# each earlier provider captured, whether it calls it or not. Passing
+# all of that down, `f` took `one` once per subset of the providers:
+# 4095 parameters, past Wasm's limit of 1000, so the self-hosted
+# compiler wrote a module no engine would load; a few more methods, or
+# the functor applied inside its own application, and it did not finish
+# at all (tests/wasi/dual_std.moss). A function now takes only the
+# providers of the methods it can reach, by name, as it already did for
+# plain functions. Prints 6.
+
+type Num;
+
+assume Num {
+  fn .p1(): Num;
+  fn .p2(): Num;
+  fn .p3(): Num;
+  fn .p4(): Num;
+  fn .p5(): Num;
+  fn .p6(): Num;
+  fn .p7(): Num;
+  fn .p8(): Num;
+  fn .p9(): Num;
+  fn .p10(): Num;
+  fn .p11(): Num;
+  fn .p12(): Num;
+  context Nums =
+    Num,
+    Num.p1, Num.p2, Num.p3, Num.p4, Num.p5, Num.p6,
+    Num.p7, Num.p8, Num.p9, Num.p10, Num.p11, Num.p12;
+}
+
+tag Wrap { n: Int };
+
+functor Wrapped: Std -> Nums {
+  bind Num = Wrap;
+  bind Num.p1 = () => Wrap { n = this.n + one };
+  bind Num.p2 = () => Wrap { n = this.n + one };
+  bind Num.p3 = () => Wrap { n = this.n + one };
+  bind Num.p4 = () => Wrap { n = this.n + one };
+  bind Num.p5 = () => Wrap { n = this.n + one };
+  bind Num.p6 = () => Wrap { n = this.n + one };
+  bind Num.p7 = () => Wrap { n = this.n + one };
+  bind Num.p8 = () => Wrap { n = this.n + one };
+  bind Num.p9 = () => Wrap { n = this.n + one };
+  bind Num.p10 = () => Wrap { n = this.n + one };
+  bind Num.p11 = () => Wrap { n = this.n + one };
+  bind Num.p12 = () => Wrap { n = this.n + one };
+}
+
+assume Std, Nums {
+  fn f(x: Num): Num { x.p12() }
+}
+
+assume Std {
+  fn g(n: Int): Int {
+    bind Wrapped;
+    f(Wrap { n = n }).n
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    putchar((g(5) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}

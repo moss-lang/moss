@@ -256,16 +256,32 @@ assume Std {
   # by symbol, the newest row plus one). `un_mark` stamps symbols during
   # one walk over that graph, and `un_flags` keeps the answer for each
   # function's needs as a run, from `un_fstart` (indexed by symbol, the
-  # start plus one). `un_meths` lists the defined attached methods, which
-  # a method call may reach.
+  # start plus one). `un_meths` lists every method, defined or abstract,
+  # that a method call may reach — a defined one is a body to walk, an
+  # abstract one a need that call keeps — chained by name through
+  # `un_mlink` from `un_mhead` (indexed by name id, the newest plus one).
   val un_sym: IntList;
   val un_link: IntList;
   val un_head: IntList;
   val un_mark: IntList;
+  val un_last: IntList;
   val un_stamp: CellInt;
   val un_meths: IntList;
+  val un_mlink: IntList;
+  val un_mhead: IntList;
   val un_fstart: IntList;
   val un_flags: IntList;
+  # One function's needs at a time, by symbol, for `callee_chain`:
+  # stamped `un_ustamp` in `un_listed` where it lists one, and in
+  # `un_used` where one it lists is reached.
+  val un_used: IntList;
+  val un_listed: IntList;
+  val un_ustamp: CellInt;
+  # `callee_chain`'s runs, indexed by symbol (`ce_start` is the start
+  # plus one).
+  val ce_start: IntList;
+  val ce_len: IntList;
+  val ce_pool: IntList;
 
   # D68: the library symbols operators and literals mean, found once by
   # the module that declares them — `num.moss`'s method for each binary
@@ -321,7 +337,9 @@ assume Std {
     vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
     ck_entry, ck_inner, ck_link, ck_head,
     fl_start, fl_len, fl_types,
-    un_sym, un_link, un_head, un_mark, un_stamp, un_meths, un_fstart, un_flags,
+    un_sym, un_link, un_head, un_mark, un_last, un_stamp, un_meths, un_mlink, un_mhead,
+    un_fstart, un_flags,
+    un_used, un_listed, un_ustamp, ce_start, ce_len, ce_pool,
     cg_lang, cg_genv, ch_run, ch_link, ch_head,
     lm_node, lm_genv, lm_sym, lm_recv, lm_cstart, lm_clen, lm_cap, cg_capt,
     fb_sym;
@@ -1255,12 +1273,19 @@ assume Std {
       while un_head.length() < prog::sym_count() {
         un_head.push(0);
         un_mark.push(0);
+        un_last.push(0);
         un_fstart.push(0);
       }
       var f = 0;
       while f < prog::sym_count() {
-        if is_defined_method(f) {
+        if prog::sym_kind.get(f) == prog::sk_method() {
+          let name = prog::sym_name.get(f);
+          while un_mhead.length() <= name {
+            un_mhead.push(0);
+          }
           un_meths.push(f);
+          un_mlink.push(un_mhead.get(name));
+          un_mhead.set(name, un_meths.length());
         }
         f = f + 1;
       }
@@ -1274,6 +1299,10 @@ assume Std {
     }
 
     fn uw_row(f: Int, s: Int) {
+      if un_last.get(s) == f + 1 {
+        return ();
+      }
+      un_last.set(s, f + 1);
       un_sym.push(s);
       un_link.push(un_head.get(f));
       un_head.set(f, un_sym.length());
@@ -1387,14 +1416,17 @@ assume Std {
       }
     }
 
-    # Every defined method a call of this name may reach.
+    # Every method a call of this name may reach: a defined one, whose
+    # body it may run, and an abstract one, a need it may call (which is
+    # how `fn_need_used` knows a method need is reached).
     fn uw_meths(f: Int, name: Int) {
-      var i = 0;
-      while i < un_meths.length() {
-        if prog::sym_name.get(un_meths.get(i)) == name {
-          uw_row(f, un_meths.get(i));
-        }
-        i = i + 1;
+      if name >= un_mhead.length() {
+        return ();
+      }
+      var r = un_mhead.get(name);
+      while r > 0 {
+        uw_row(f, un_meths.get(r - 1));
+        r = un_mlink.get(r - 1);
       }
     }
 
@@ -1591,30 +1623,91 @@ assume Std {
       cg_genv.write(gview);
     }
 
-    # Whether `f` can reach its plain fn need `sym`: call it, bind it
-    # onward, or call something that does. A symbol `f` does not list
-    # among its needs is kept, to be safe.
-    fn fn_need_used(f: Int, sym: Int): Bool {
-      var listed = false;
+    # Which of its fn needs `f` can reach: call it, bind it onward, or
+    # call something that does — a method by name, whatever its receiver.
+    # Stamps `f`'s needs by symbol, in `un_listed` and, where reached, in
+    # `un_used`, and returns the stamp `fn_need_used` reads them by.
+    fn fn_needs_used(f: Int): Int {
+      let stamp = un_ustamp.read() + 1;
+      un_ustamp.write(stamp);
+      while un_used.length() < prog::sym_count() {
+        un_used.push(0);
+        un_listed.push(0);
+      }
       var j = 0;
       while j < lower::needs_count(f) {
-        if lower::need_sym_at(f, j) == sym {
-          if need_used(f, j) {
-            return true;
-          }
-          listed = true;
+        let sym = lower::need_sym_at(f, j);
+        un_listed.set(sym, stamp);
+        if need_used(f, j) {
+          un_used.set(sym, stamp);
         }
         j = j + 1;
       }
-      !listed
+      stamp
+    }
+
+    # Whether the function `fn_needs_used` last stamped can reach its fn
+    # need `sym`. A symbol it does not list among its needs is kept, to
+    # be safe.
+    fn fn_need_used(stamp: Int, sym: Int): Bool {
+      if un_used.get(sym) == stamp {
+        true
+      } else {
+        un_listed.get(sym) != stamp
+      }
+    }
+
+    # The entries of a callee's base environment that `callee_env` takes
+    # from the caller, outermost first: its type entries, unless it is an
+    # anonymous function, and the fn needs it can reach. That depends on
+    # the callee alone, and every call site asks, so it is worked out
+    # once; returns the run's start in `ce_pool`, its length in `ce_len`.
+    fn callee_chain(callee: Int): Int {
+      while ce_start.length() < prog::sym_count() {
+        ce_start.push(0);
+        ce_len.push(0);
+      }
+      if ce_start.get(callee) > 0 {
+        return ce_start.get(callee) - 1;
+      }
+      let lambda = is_lambda(callee);
+      let used = fn_needs_used(callee);
+      let chain = int_list();
+      var e = lower::env_of(callee);
+      while ast::is_some(e) {
+        chain.push(e);
+        e = lower::env_next_of(e);
+      }
+      let start = ce_pool.length();
+      var i = chain.length();
+      while i > 0 {
+        i = i - 1;
+        let entry = chain.get(i);
+        let kind = lower::env_kind_of(entry);
+        if kind == lower::ek_type() {
+          if !lambda {
+            ce_pool.push(entry);
+          }
+        } else if kind == lower::ek_fn() {
+          if fn_need_used(used, lower::env_sym_of(entry)) {
+            ce_pool.push(entry);
+          }
+        }
+      }
+      ce_start.set(callee, start + 1);
+      ce_len.set(callee, ce_pool.length() - start);
+      start
     }
 
     # The environment a callee is compiled in: its own bindings, taken
     # from this frame. Built by walking the callee's base environment
     # outermost first, so that the same bindings always give the same
-    # chain — which is what lets it key the specialization cache. A plain
-    # fn the callee never reaches is left out, so that bindings it cannot
-    # observe do not make a specialization of their own: a function that
+    # chain — which is what lets it key the specialization cache. A fn or
+    # method the callee never reaches is left out (`callee_chain`), so
+    # that bindings it cannot observe do not make a specialization of
+    # their own, nor pass it what their providers capture — every
+    # provider bound above it, each capturing what the ones before it
+    # did, which grows with the number of them. And a function that
     # rebinds such a fn on its own recursive path would otherwise demand
     # one per depth. Each fn entry made for the callee goes into `map`
     # beside the entry of this frame it came from, which is how its
@@ -1632,20 +1725,15 @@ assume Std {
       let senv = cg_env.read();
       let genv = cg_genv.read();
       let lambda = is_lambda(callee);
-      let chain = int_list();
-      var e = lower::env_of(callee);
-      while ast::is_some(e) {
-        chain.push(e);
-        e = lower::env_next_of(e);
-      }
+      let start = callee_chain(callee);
       var out = lower::env_empty();
       if lambda {
         out = types_of(senv);
       }
-      var i = chain.length();
-      while i > 0 {
-        i = i - 1;
-        let entry = chain.get(i);
+      var i = 0;
+      while i < ce_len.get(callee) {
+        let entry = ce_pool.get(start + i);
+        i = i + 1;
         let kind = lower::env_kind_of(entry);
         let recv = lower::env_recv_of(entry);
         let sym = lower::env_sym_of(entry);
@@ -1673,11 +1761,6 @@ assume Std {
           var keep = ast::is_some(here);
           if keep {
             keep = ast::is_some(lower::env_a_of(here));
-          }
-          if keep {
-            if !ast::is_some(recv) {
-              keep = fn_need_used(callee, sym);
-            }
           }
           if keep {
             out = lower::env_push(
@@ -5274,6 +5357,7 @@ assume Std {
       while un_head.length() < prog::sym_count() {
         un_head.push(0);
         un_mark.push(0);
+        un_last.push(0);
         un_fstart.push(0);
       }
       uw_node(lam, lbody, m);

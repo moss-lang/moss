@@ -494,6 +494,11 @@ DUAL_OUT = (
     "1000000\n"
 )
 
+# What tests/wasi/dual_std.moss prints, times a million: f(2), f'(2) and
+# f''(2) for f(x) = sqrt(x + x^2 + x^3) — sqrt 14 = 3.7416573868,
+# 17 / (2 sqrt 14) = 2.2717205563 and 103 / (56 sqrt 14) = 0.4915697842.
+DUAL_STD_OUT = "3741657\n2271721\n491570\n"
+
 # What tests/wasi/newton.moss prints: the same report at f64, then at f32.
 NEWTON_OUT = (
     "1500000000\n1416666667\n1414213562\n1414213562\n0\n333333333\n"
@@ -2668,6 +2673,38 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
         self.assertNotEqual(out[:4], b"\0asm")
         self.assertTrue(out.decode("utf-8").startswith(f"?S {entry} nested\n"), out[:200])
+
+    def test_dual_numbers_under_all_of_std(self):
+        """D72 as numeric code meets it: `f` assumes all of `Std`, and
+        `Dualize` provides all of float.moss's `Floats` at duals — the
+        comparisons, `.sqrt`, `.trunc` and `.round`, and `FloatList` as
+        two lists of the base `Float` — applied once for f' and inside
+        itself for f''. Every one of those providers is an anonymous
+        function made with every one bound before it in force, and the
+        self-hosted compiler used to pass each function what all of them
+        captured: a module with a function of 4101 parameters for f', and
+        no end to compiling f''. As for tests/wasi/dual.moss, the
+        bootstrap's back end cannot run a two-scalar `Float`, so it only
+        lowers this."""
+        entry = "tests/wasi/dual_std.moss"
+        module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), DUAL_STD_OUT)
+        program = collect.load(entry, prelude=PRELUDE, root=REPO)
+        Lower(program).run()
+
+    def test_a_function_takes_only_the_providers_it_reaches(self):
+        """A method a function assumes but cannot reach by name passes
+        nothing to it, as an unreached plain fn already did: `f` assumes
+        twelve methods, each provided by an anonymous function that reads
+        `one`, and calls one of them. It used to take `one` once per
+        subset of the twelve providers, 4095 parameters, which no engine
+        would load."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/unreached_providers.moss"
+        module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), "6\n")
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), "6\n")
 
     def test_temporaries_nested_anywhere(self):
         """A local comes from emission itself, so a construct that needs a

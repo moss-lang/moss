@@ -1,0 +1,142 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/float.moss" use Floats;
+import "../../lib/access.moss" use Elem, .get, .set, .length, .push;
+
+# Differentiating code written the ordinary way. `f` assumes all of `Std`
+# and uses what numeric code uses — a list it makes itself, literals,
+# a comparison, `.sqrt` — with nothing in it written for being
+# differentiated. `Dualize` provides all of `Floats` at duals over the
+# `Float` in force: every item of `Std` that mentions `Float`, so a
+# function that assumes `Std` can be called under it, and under it twice.
+# Output, times a million: f(2), f'(2), f''(2), for
+# f(x) = sqrt(x + x^2 + x^3).
+
+assume Std {
+  fn f(x: Float): Float {
+    let powers = float_list();
+    powers.push(x);
+    powers.push(x * x);
+    powers.push(x * x * x);
+    var total = 0.0;
+    var i = 0;
+    while i < powers.length() {
+      total = total + powers.get(i);
+      i = i + 1;
+    }
+    if total < 0.0 { 0.0 } else { total.sqrt() }
+  }
+}
+
+# What duals are made of: the `Float` in force where `Dualize` is applied,
+# with its list.
+type Base;
+type BaseList;
+
+assume Int, Base {
+  fn lift(n: Int): Base;
+
+  assume BaseList {
+    fn base_list(): BaseList;
+
+    context BaseOps =
+      Base, lift,
+      Base.add, Base.sub, Base.mul, Base.div, Base.neg, Base.sqrt, Base.abs,
+      Base.eq, Base.ne, Base.lt, Base.gt, Base.le, Base.ge, Base.trunc, Base.round,
+      BaseList, base_list,
+      BaseList.push[Elem=Base], BaseList.get[Elem=Base], BaseList.set[Elem=Base], BaseList.length,
+    ;
+  }
+}
+
+assume Int, zero, one, BaseOps {
+  tag Dual { v: Base, d: Base };
+  # A list of duals as two lists of their parts.
+  tag DualList { vs: BaseList, ds: BaseList };
+
+  fn constant(n: Int): Dual { Dual { v = lift(n), d = lift(zero) } }
+  fn variable(x: Base): Dual { Dual { v = x, d = lift(one) } }
+}
+
+# All of `Floats` at duals: arithmetic by the usual rules, comparisons and
+# rounding by the value alone, and lists of duals.
+functor Dualize: Std -> Floats {
+  bind Base = Float;
+  bind lift = float;
+  bind BaseList = FloatList;
+  bind base_list = float_list;
+  bind Float = Dual;
+  bind float = constant;
+  bind FloatList = DualList;
+  bind float_list = () => DualList { vs = base_list(), ds = base_list() };
+  bind Float.add = (r) => Dual { v = this.v + r.v, d = this.d + r.d };
+  bind Float.sub = (r) => Dual { v = this.v - r.v, d = this.d - r.d };
+  bind Float.mul = (r) => Dual { v = this.v * r.v, d = this.d * r.v + this.v * r.d };
+  bind Float.div = (r) => Dual { v = this.v / r.v, d = (this.d * r.v - this.v * r.d) / (r.v * r.v) };
+  bind Float.neg = () => Dual { v = -this.v, d = -this.d };
+  bind Float.sqrt = () => {
+    let s = this.v.sqrt();
+    Dual { v = s, d = this.d / (s + s) }
+  };
+  bind Float.abs = () => if this.v < lift(zero) { Dual { v = -this.v, d = -this.d } } else { this };
+  bind Float.eq = (r) => this.v == r.v;
+  bind Float.ne = (r) => this.v != r.v;
+  bind Float.lt = (r) => this.v < r.v;
+  bind Float.gt = (r) => this.v > r.v;
+  bind Float.le = (r) => this.v <= r.v;
+  bind Float.ge = (r) => this.v >= r.v;
+  bind Float.trunc = () => this.v.trunc();
+  bind Float.round = () => this.v.round();
+  bind FloatList.push[Elem=Float] = (x) => {
+    this.vs.push(x.v);
+    this.ds.push(x.d);
+  };
+  bind FloatList.get[Elem=Float] = (i) => Dual { v = this.vs.get(i), d = this.ds.get(i) };
+  bind FloatList.set[Elem=Float] = (i, x) => {
+    this.vs.set(i, x.v);
+    this.ds.set(i, x.d);
+  };
+  bind FloatList.length = () => this.vs.length();
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn show(x: Float) {
+    print_int((x * 1000000.0).round());
+    putchar(char::newline);
+  }
+
+  fn derivatives(x: Float) {
+    show(f(x));
+    show({
+      bind Dualize;
+      f(variable(x)).d
+    });
+    show({
+      bind Dualize;
+      let x1 = variable(x);
+      {
+        bind Dualize;
+        f(variable(x1)).d.d
+      }
+    });
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    derivatives(2.0);
+  }
+}
