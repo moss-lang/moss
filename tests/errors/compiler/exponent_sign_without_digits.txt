@@ -1,0 +1,1 @@
+!G tests/errors/exponent_sign_without_digits.moss

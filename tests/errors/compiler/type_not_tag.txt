@@ -1,0 +1,1 @@
+!G tests/errors/type_not_tag.moss

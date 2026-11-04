@@ -1,5 +1,7 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
 import "../../lib/wasistd.moss" use Branch, i32_bool;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasip1.moss" use Wasi;
 
 # Does constructing a nominal wrapper allocate? Read the heap pointer at
 # address 16 before and after a run of them and see whether it moved.
@@ -8,7 +10,7 @@ assume Std, Wasm, Branch {
 
   fn unbox(b: Box): Char { match b { Box(v) => v } }
 
-  fn main() {
+  fn run() {
     let one32 = w::i32_one;
     let sixteen = w::i32_shl(one32, w::i32_add(w::i32_add(one32, one32), w::i32_add(one32, one32)));
     let before = w::i32_load(sixteen);
@@ -22,5 +24,14 @@ assume Std, Wasm, Branch {
     putchar(last);
     if i32_bool(w::i32_eq(before, after)) { putchar(char::y) } else { putchar(char::n) }
     putchar(char::newline);
+  }
+}
+
+# The platform runs `main` with the primitive context, and `run` under the
+# `Std` it installs (D52).
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    run();
   }
 }

@@ -1,0 +1,14 @@
+[package]
+name = "moss-tests"
+version.workspace = true
+edition.workspace = true
+description = "The Moss test suite: compiles and runs programs with the self-hosted compiler, the Rocq oracle and Wasmtime"
+publish = false
+
+[[bin]]
+name = "gensrc"
+path = "src/bin/gensrc.rs"
+
+[[test]]
+name = "suite"
+path = "tests/suite/main.rs"

@@ -1,0 +1,1 @@
+!U tests/errors/lambda_outside_bind.moss

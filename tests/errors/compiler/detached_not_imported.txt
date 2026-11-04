@@ -1,0 +1,2 @@
+!P tests/errors/detached_not_imported.moss fetch
+!P tests/errors/detached_not_imported.moss stash

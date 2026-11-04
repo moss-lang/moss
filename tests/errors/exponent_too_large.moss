@@ -1,8 +1,22 @@
 # D68: an exponent is at most 999. A literal is built by multiplying by
 # ten, once per power, so the bound keeps its expansion proportionate;
 # f64's range ends near 1e308 anyway, and `1e999` is still inf there.
+import "wasi.moss" use WasiStd;
+import "wasistd.moss" use Branch;
+import "wasm.moss" use Wasm;
+import "wasip1.moss" use Wasi;
+
 assume Std {
-  fn main() {
+  fn run() {
     let x = 1e1000;
+  }
+}
+
+# The platform runs `main` with the primitive context, and `run` under
+# the `Std` it installs (D52).
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    run();
   }
 }

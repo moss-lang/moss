@@ -1,0 +1,1 @@
+!G tests/errors/stray_colon.moss

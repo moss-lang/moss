@@ -1,11 +1,13 @@
 import "../../lib/wasm.moss" as w use Wasm, I32, I64;
 import "../../lib/wasistd.moss" use Branch, i32_bool;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasip1.moss" use Wasi;
 
 # i64 is a scalar type like any other (D59), including in a local: `wide`
 # below holds one, and would not fit in the i32 the backend used to
 # assume every value was.
 assume Std, Wasm, Branch {
-  fn main() {
+  fn run() {
     let one32 = w::i32_one;
     let two = w::i32_add(one32, one32);
     let five = w::i32_add(w::i32_add(two, two), one32);
@@ -22,5 +24,14 @@ assume Std, Wasm, Branch {
     let back = w::i32_wrap_i64(w::i64_shr_u(wide, w::i64_extend_i32_u(thirty_two)));
     if i32_bool(w::i32_eq(back, one32)) { putchar(char::y) } else { putchar(char::n) }
     putchar(char::newline);
+  }
+}
+
+# The platform runs `main` with the primitive context, and `run` under the
+# `Std` it installs (D52).
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    run();
   }
 }

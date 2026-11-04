@@ -1,8 +1,22 @@
 # D68: `c + c` is `c.add(c)`, so at a type whose context provides no
 # `.add` it is exactly the error calling the method is.
+import "wasi.moss" use WasiStd;
+import "wasistd.moss" use Branch;
+import "wasm.moss" use Wasm;
+import "wasip1.moss" use Wasi;
+
 assume Std {
-  fn main() {
+  fn run() {
     let c = char::a;
     putchar(c + c);
+  }
+}
+
+# The platform runs `main` with the primitive context, and `run` under
+# the `Std` it installs (D52).
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    run();
   }
 }

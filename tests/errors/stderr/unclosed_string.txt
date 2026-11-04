@@ -1,1 +1,0 @@
-tests/errors/unclosed_string.moss:1:8: unclosed string

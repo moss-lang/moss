@@ -1,0 +1,1 @@
+!T tests/errors/this_not_method.moss

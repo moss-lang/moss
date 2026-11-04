@@ -1,0 +1,2 @@
+?K tests/errors/operator_not_provided.moss run add
+?P tests/errors/operator_not_provided.moss run

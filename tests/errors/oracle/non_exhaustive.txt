@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/non_exhaustive.moss: match is not exhaustive; missing B]

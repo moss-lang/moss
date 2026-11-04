@@ -3,6 +3,10 @@
 # this module never imported the symbol, so the call has nothing to name
 # — `use .fetch`, or write `cell::fetch`.
 import "../fixtures/cell.moss" as cell use T, Cell, IsCell;
+import "wasi.moss" use WasiStd;
+import "wasistd.moss" use Branch;
+import "wasm.moss" use Wasm;
+import "wasip1.moss" use Wasi;
 
 assume Std {
   tag MyCell(CellInt);
@@ -16,8 +20,17 @@ assume Std {
     fn peek(c: MyCell): Int { c.fetch() }
   }
 
-  fn main() {
+  fn run() {
     let c = MyCell(cell_int());
     if peek(c).eq(zero) { putchar(char::y) }
+  }
+}
+
+# The platform runs `main` with the primitive context, and `run` under
+# the `Std` it installs (D52).
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    run();
   }
 }

@@ -1,10 +1,24 @@
 # D68: `&` and `|` are not ordered with each other, so mixing them
 # without parentheses is a syntax error rather than a guess.
+import "wasi.moss" use WasiStd;
+import "wasistd.moss" use Branch;
+import "wasm.moss" use Wasm;
+import "wasip1.moss" use Wasi;
+
 assume Std {
-  fn main() {
+  fn run() {
     let t = true;
     if t & t | t {
       putchar(char::y);
     }
+  }
+}
+
+# The platform runs `main` with the primitive context, and `run` under
+# the `Std` it installs (D52).
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    run();
   }
 }

@@ -1,0 +1,1 @@
+?B tests/errors/undefined.moss run foo

@@ -1,1 +1,0 @@
-tests/errors/operators_unordered.moss:6:14: `&` and `|` are not ordered; add parentheses (D68)

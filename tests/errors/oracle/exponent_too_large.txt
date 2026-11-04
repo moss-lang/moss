@@ -1,0 +1,1 @@
+[moss_m2 front end: bundle: tests/errors/exponent_too_large.moss: 11:15: LexError: an exponent is at most 999 (D68)]

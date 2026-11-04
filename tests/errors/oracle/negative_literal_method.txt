@@ -1,0 +1,1 @@
+[moss_m2 front end: bundle: tests/errors/negative_literal_method.moss: 10:14: ParseError: `-` before a literal with a method call: write `(-1).abs(...)` or `-(1.abs(...))` (D68)]

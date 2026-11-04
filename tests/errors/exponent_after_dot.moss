@@ -1,8 +1,22 @@
 # D68: `1.` followed by anything but a digit is the integer `1` and an
 # accessor, so `1.e5` is no exponent but a member `e5` of `1`, which an
 # `Int` does not have. `1.0e5` or `1e5` is meant.
+import "wasi.moss" use WasiStd;
+import "wasistd.moss" use Branch;
+import "wasm.moss" use Wasm;
+import "wasip1.moss" use Wasi;
+
 assume Std {
-  fn main() {
+  fn run() {
     let x = 1.e5;
+  }
+}
+
+# The platform runs `main` with the primitive context, and `run` under
+# the `Std` it installs (D52).
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    run();
   }
 }

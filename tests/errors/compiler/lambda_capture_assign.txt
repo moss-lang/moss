@@ -1,0 +1,1 @@
+!U tests/errors/lambda_capture_assign.moss count

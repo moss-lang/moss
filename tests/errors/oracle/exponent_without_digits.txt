@@ -1,0 +1,1 @@
+[moss_m2 front end: bundle: tests/errors/exponent_without_digits.moss: 11:14: LexError: a numeric literal has no suffix; separate it from the name (D68)]

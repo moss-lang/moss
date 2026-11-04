@@ -1,0 +1,2 @@
+!G tests/errors/unclosed_string.moss
+!O 

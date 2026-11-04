@@ -1,1 +1,0 @@
-tests/errors/exponent_sign_without_digits.moss:4:16: an exponent needs at least one digit (D68)
