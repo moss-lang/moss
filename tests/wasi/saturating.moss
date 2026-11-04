@@ -1,0 +1,84 @@
+# A `Std`-only library that rebinds `Int`: saturating 32-bit arithmetic
+# over the `Int` in force where it is applied (the "narrow" one). It
+# imports nothing from wasistd.moss or wasm.moss.
+
+import "../../lib/int.moss" use Int, zero, one, IntOps;
+import "../../lib/size.moss" use Size, Sizes, .size, .int;
+import "../../lib/bool.moss" use Bool, true, false;
+
+type Narrow;
+
+assume Narrow {
+  val nzero: Narrow;
+  val none: Narrow;
+  context NarrowOps =
+    Narrow, nzero, none,
+    Narrow.add, Narrow.sub, Narrow.mul, Narrow.div, Narrow.rem, Narrow.neg,
+    Narrow.and, Narrow.or, Narrow.xor, Narrow.shl, Narrow.shr,
+    Narrow.eq, Narrow.ne, Narrow.lt, Narrow.gt, Narrow.le, Narrow.ge;
+}
+
+assume NarrowOps {
+  tag Sat(Narrow);
+
+  fn nar(x: Sat): Narrow { match x { Sat(n) => n } }
+  fn hi(): Narrow {
+    let thirty = (none + none + none) * (none + none + none + none + none + none + none + none + none + none);
+    let half = none << thirty;
+    half - none + half
+  }
+  fn lo(): Narrow { -hi() - none }
+
+  fn sat_add(a: Narrow, b: Narrow): Sat {
+    let r = a + b;
+    if b > nzero { if r < a { return Sat(hi()); } }
+    if b < nzero { if r > a { return Sat(lo()); } }
+    Sat(r)
+  }
+  fn sat_sub(a: Narrow, b: Narrow): Sat {
+    let r = a - b;
+    if b < nzero { if r < a { return Sat(hi()); } }
+    if b > nzero { if r > a { return Sat(lo()); } }
+    Sat(r)
+  }
+  fn sat_mul(a: Narrow, b: Narrow): Sat {
+    if a == nzero { return Sat(nzero); }
+    let r = a * b;
+    if r / a != b {
+      if a < nzero { if b < nzero { return Sat(hi()); } return Sat(lo()); }
+      if b < nzero { return Sat(lo()); }
+      return Sat(hi());
+    }
+    Sat(r)
+  }
+}
+
+functor Saturating: Int, zero, one, IntOps, Sizes -> Int, zero, one, IntOps, Int.size, Size.int {
+  bind Narrow = Int;
+  bind nzero = zero;
+  bind none = one;
+  bind Int = Sat;
+  bind zero = Sat(nzero);
+  bind one = Sat(none);
+  bind Int.add = (r) => sat_add(nar(this), nar(r));
+  bind Int.sub = (r) => sat_sub(nar(this), nar(r));
+  bind Int.mul = (r) => sat_mul(nar(this), nar(r));
+  bind Int.div = (r) => Sat(nar(this) / nar(r));
+  bind Int.rem = (r) => Sat(nar(this) % nar(r));
+  bind Int.neg = () => sat_sub(nzero, nar(this));
+  bind Int.and = (r) => Sat(nar(this) & nar(r));
+  bind Int.or = (r) => Sat(nar(this) | nar(r));
+  bind Int.xor = (r) => Sat(nar(this) ^ nar(r));
+  bind Int.shl = (r) => Sat(nar(this) << nar(r));
+  bind Int.shr = (r) => Sat(nar(this) >> nar(r));
+  bind Int.eq = (r) => nar(this) == nar(r);
+  bind Int.ne = (r) => nar(this) != nar(r);
+  bind Int.lt = (r) => nar(this) < nar(r);
+  bind Int.gt = (r) => nar(this) > nar(r);
+  bind Int.le = (r) => nar(this) <= nar(r);
+  bind Int.ge = (r) => nar(this) >= nar(r);
+  # `Size` is not rebound: it stays the generation it was (D72). Only
+  # the conversions that mention `Int` follow it.
+  bind Int.size = () => nar(this).size();
+  bind Size.int = () => Sat(this.int());
+}

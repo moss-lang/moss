@@ -1,6 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/array.moss" as array use FloatArraysOf, ArrayHandle, Arrays;
 import "../../lib/wasm.moss" use ArrayRef;
+import "../../lib/size.moss" as size use Size, .size, .int;
 import "../../lib/wasichar.moss" use WasiCharConsts;
 import "../../lib/wasistd.moss" use Branch, WasiBasics, WasiContainers, WasiOutput,
   WasiFiles, WasiFloats32, GcArrays;
@@ -110,6 +111,9 @@ functor WasiStd32: Wasm, Wasi, Branch -> Std {
   bind WasiOutput;
   bind WasiFiles;
   bind WasiFloats32;
+  bind size::Size = Int;
+  bind Int.size = () => this;
+  bind Size.int = () => this;
   bind array::ArrayHandle = ArrayRef;
   bind Arrays = GcArrays;
   bind FloatArraysOf;

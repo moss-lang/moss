@@ -948,6 +948,25 @@ class TestLists(unittest.TestCase):
         self.assertEqual(run({}, entry="tests/wasi/lists.moss"), LISTS_OUT)
 
 
+SIZE_REBIND_OUT = "1705032704\n-294967296\n-2\n"
+
+
+class TestSizeAndFor(unittest.TestCase):
+    """Draft, over D84's Rule A: arrays indexed by `Size`, which a
+    rebinding of `Int` leaves alone (D72), and `for` over access.moss's
+    iteration methods."""
+
+    def test_for(self):
+        self.assertEqual(run({}, entry="tests/wasi/iterate.moss"), "503217abc\n")
+
+    def test_a_std_only_library_rebinds_int_and_keeps_arrays(self):
+        self.assertEqual(run({}, entry="tests/wasi/size_rebind.moss"), SIZE_REBIND_OUT)
+
+    def test_generic_code_does_not_mix_int_and_size(self):
+        with self.assertRaisesRegex(LowerError, "argument `index` of `.get` is `Int`, expected `Size`"):
+            run({}, entry="tests/wasi/size_mix.moss")
+
+
 class TestRepresentation(unittest.TestCase):
     def test_injection_is_where_the_tag_appears(self):
         """D58, on the interpreter: same program, same answer. Its own
@@ -2043,6 +2062,12 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         self.assertIn("?K tests/wasi/unprovided.moss by_operator add\n", report)
         self.assertIn("?K tests/wasi/unprovided.moss by_method add\n", report)
 
+    def test_generic_code_does_not_mix_int_and_size(self):
+        report = self.compile_with_moss(
+            "tests/wasi/size_mix.moss", prelude="lib/prelude.moss"
+        ).decode("utf-8")
+        self.assertIn("?S tests/wasi/size_mix.moss total\n", report)
+
     def test_float(self):
         """D67's `Float`, written against `Std` and run under two of them:
         `WasiStd`, which provides it at f64, and one assembled the same
@@ -2091,6 +2116,9 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             # D81: arrays, `Ref.set`, a growable list built on them, and an
             # array across a `Memory` bind.
             ("tests/wasi/gc_array.moss", GC_ARRAY_OUT, "lib/prelude.moss"),
+            # Draft: `for`, and `Size` across a rebinding of `Int`.
+            ("tests/wasi/iterate.moss", "503217abc\n", "lib/prelude.moss"),
+            ("tests/wasi/size_rebind.moss", SIZE_REBIND_OUT, "lib/prelude.moss"),
             ("tests/wasi/gc_list.moss", GC_LIST_OUT, "lib/prelude.moss"),
             ("tests/wasi/gc_mutable.moss", "0\n2\n7\n3\n42\n", "lib/prelude.moss"),
             ("tests/wasi/gc_array_memory.moss", "6\n6\n", "lib/prelude.moss"),

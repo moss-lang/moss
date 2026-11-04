@@ -17,14 +17,12 @@ import "../../lib/array.moss" use FloatArrays, FloatArraysOf, .arrayed;
 
 assume Std {
   fn f(x: Float): Float {
-    let powers = x.arrayed(3);
-    powers.set(1, x * x);
-    powers.set(2, x * x * x);
+    let powers = x.arrayed(3.size());
+    powers.set(1.size(), x * x);
+    powers.set(2.size(), x * x * x);
     var total = 0.0;
-    var i = 0;
-    while i < powers.length() {
-      total = total + powers.get(i);
-      i = i + 1;
+    for p in powers {
+      total = total + p;
     }
     if total < 0.0 { 0.0 } else { total.sqrt() }
   }

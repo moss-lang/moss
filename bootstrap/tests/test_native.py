@@ -38,6 +38,7 @@ class TestNativeTables(unittest.TestCase):
                 "Int",
                 "IntList",
                 "Path",
+                "Size",
                 "Std",
                 "StrList",
                 "String",

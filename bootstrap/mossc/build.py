@@ -440,7 +440,7 @@ class Backend:
         for module in program.modules.values():
             for short in ("access", "bool", "num", "char", "int", "float", "std",
                           "string", "strlist", "cell", "list", "wasm", "wasip1",
-                          "path", "wasistd"):
+                          "path", "wasistd", "size"):
                 if module.path.endswith(f"lib/{short}.moss"):
                     self.lib[short] = module
         self.imports: list[tuple[str, int, int]] = []  # (field, params, results)
@@ -2239,6 +2239,10 @@ class FnCompiler:
                 if short == "not":
                     self.expr(node.this)
                     self.code += I32_CONST + sleb(1) + BINOPS["xor"]
+                    return
+            if "size" in self.b.lib and home is self.b.lib["size"]:
+                if short in ("size", "int"):
+                    self.expr(node.this)  # the native `Size` is the native `Int`
                     return
             if "char" in self.b.lib and home is self.b.lib["char"]:
                 if short in ("code", "char"):

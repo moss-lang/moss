@@ -1,6 +1,7 @@
 import "./ast.moss" as ast;
 import "./bytes.moss" use *;
 import "./intern.moss" as intern;
+import "./spell.moss" use *;
 import "./tcode.moss" use *;
 
 # The syntax tree, written out in the compact form of
@@ -420,6 +421,25 @@ assume Std {
       } else if t == tk_equal_equal() {
         putchar(char::equal);
         putchar(char::equal);
+      } else if t >= ast::op_begin() {
+        # `for`'s calls (draft), as sexpr.py writes them: `for.begin`.
+        let cs = int_list();
+        sp_for(cs);
+        cs.push(char::dot.code());
+        if t == ast::op_begin() {
+          sp_begin(cs);
+        } else if t == ast::op_more() {
+          sp_more(cs);
+        } else if t == ast::op_after() {
+          sp_after(cs);
+        } else {
+          sp_get(cs);
+        }
+        var i = 0;
+        while i < cs.length() {
+          putchar(cs.get(i).char());
+          i = i + 1;
+        }
       } else {
         putchar(char::exclam);
         putchar(char::equal);

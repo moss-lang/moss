@@ -566,7 +566,8 @@ def native_env(program: Program, args: list | None = None) -> dict:
     lib = {}
     for module in program.modules.values():
         for name in ("std", "char", "bool", "num", "int", "float", "string",
-                     "strlist", "cell", "path", "list", "wasm", "wasip1", "wasistd"):
+                     "strlist", "cell", "path", "list", "wasm", "wasip1", "wasistd",
+                     "size"):
             if module.path.endswith(f"lib/{name}.moss"):
                 lib[name] = module
     if "bool" in lib:
@@ -576,6 +577,9 @@ def native_env(program: Program, args: list | None = None) -> dict:
 
         def boolean(b):
             return true if b else false
+
+        global _native_bool
+        _native_bool = boolean
 
     def native(fn):
         return NativeFn(fn.__name__, fn)
@@ -693,6 +697,12 @@ def native_env(program: Program, args: list | None = None) -> dict:
                 env[(int_ty, det[name])] = NativeFn(
                     name, lambda a, this, op=op: boolean(op(this.value, a[0].value))
                 )
+    if "size" in lib and "int" in lib:
+        # The native `Size` is the native `Int`: both conversions are the
+        # identity, as `WasiStd`'s are.
+        size = lib["size"]
+        env[(lib["int"].names["Int"], size.detached["size"])] = native(lambda a, this: this)
+        env[(size.names["Size"], size.detached["int"])] = native(lambda a, this: this)
     if "float" in lib and "num" in lib:
         # D67: the native `Float` is an f64, which is a Python float, and
         # its conversions to `Int` saturate at i32, as `WasiStd`'s do.
@@ -1370,7 +1380,16 @@ def _array_method(name: str):
         "get": lambda a, this: this.items[index(a, this)],
         "set": array_set,
         "length": lambda a, this: IntVal(len(this.items)),
+        # Iteration (draft): the cursor is an index.
+        "begin": lambda a, this: IntVal(0),
+        "more": lambda a, this: _native_bool(a[0].value < len(this.items)),
+        "after": lambda a, this: IntVal(a[0].value + 1),
     }.get(name.lstrip("."))
+
+
+# The prelude's `true` and `false`, for natives that answer one and are
+# made without a program at hand (`_array_method`); set by `native_env`.
+_native_bool = None
 
 
 def native_array(need):

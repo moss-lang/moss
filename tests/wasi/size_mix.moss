@@ -1,0 +1,25 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/array.moss" use Item, Array, .arrayed;
+
+# The index loop, unchanged: under `Std`, `Size` and `Int` are two
+# abstract types, and `0` is an `Int` (D68), so `xs.get(i)` is refused
+# by both compilers. (In `main`, after `bind WasiStd;`, both are `Num`,
+# and the same loop compiles.)
+assume Std {
+  fn total(xs: Array[Item=Float]): Float {
+    var s = 0.0;
+    var i = 0;
+    while i < xs.length().int() { s = s + xs.get(i); i = i + 1; }
+    s
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    total(1.0.arrayed(2));
+  }
+}

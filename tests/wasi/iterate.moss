@@ -1,0 +1,80 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/array.moss" use Item, Array, Arrays, .arrayed;
+
+# `for x in xs { ... }` (draft): access.moss's `.begin`, `.more`,
+# `.get` and `.after` at the collection, which `Arrays` provides at every
+# `Item`, here `Float` and `Char`. A `break` leaves the loop, a `return`
+# the function; loops nest; an empty array runs the body never; the
+# binder is scoped to the body and shadows.
+
+assume Std {
+  fn digit(n: Int) { putchar((n + 48).char()); }
+
+  fn count(xs: Array[Item=Float]): Int {
+    var n = 0;
+    for x in xs { n = n + 1; }
+    n
+  }
+
+  # The index of the first element above `t`, counted in `Int`.
+  fn above(xs: Array[Item=Float], t: Float): Int {
+    var i = 0;
+    for x in xs {
+      if x > t { return i; }
+      i = i + 1;
+    }
+    -1
+  }
+
+  fn until(xs: Array[Item=Float], t: Float): Int {
+    var n = 0;
+    for x in xs {
+      if x > t { break; }
+      n = n + 1;
+    }
+    n
+  }
+
+  fn pairs(xs: Array[Item=Float]): Int {
+    var n = 0;
+    for x in xs {
+      for y in xs {
+        if x < y { n = n + 1; }
+      }
+    }
+    n
+  }
+
+  fn ramp(n: Int): Array[Item=Float] {
+    let xs = 0.0.arrayed(n.size());
+    var i = 0;
+    while i < n { xs.set(i.size(), float(i)); i = i + 1; }
+    xs
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let xs = ramp(5);
+    digit(count(xs));
+    digit(count(ramp(0)));
+    digit(above(xs, 2.5));
+    digit(until(xs, 1.5));
+    digit(pairs(xs) - 9);
+    let x = 7;
+    for x in xs { }
+    digit(x);
+    # Arrays of another element type, from the same binding.
+    bind Item = Char;
+    bind Arrays;
+    let cs = char::a.arrayed(3.size());
+    cs.set(1.size(), char::b);
+    cs.set(2.size(), char::c);
+    for c in cs { putchar(c); }
+    putchar(char::newline);
+  }
+}

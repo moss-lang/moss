@@ -31,35 +31,39 @@ assume Std {
 
   fn report() {
     let ints = int_list();
-    let xs = 0.1.arrayed(1000);
+    let xs = 0.1.arrayed(1000.size());
     var i = 0;
     while i < 1000 {
       ints.push(i * i);
-      xs.set(i, 0.1);
+      xs.set(i.size(), 0.1);
       i = i + 1;
     }
     # The sums of a thousand 0.1s and of the squares below 1000, read
-    # back with `.get`.
+    # back: the array by iterating it, the list with `.get`. Arrays are
+    # indexed by `Size` and lists by `Int`, so one index serves both
+    # only through `.size()`.
     var sum = 0.0;
+    for x in xs {
+      sum = sum + x;
+    }
     var total = 0;
     i = 0;
-    while i < xs.length() {
-      sum = sum + xs.get(i);
+    while i < ints.length() {
       total = total + ints.get(i);
       i = i + 1;
     }
-    num(xs.length());
+    num(xs.length().int());
     num(ints.length());
     num((sum * 1000000.0).round());
     num(total);
     putchar(char::newline);
     # `.set`, then the neighbours, to see an element overwrote nothing
     # but itself: a third, scaled by 10^9.
-    xs.set(500, 1.0 / 3.0);
+    xs.set(500.size(), 1.0 / 3.0);
     ints.set(500, -7);
-    num((xs.get(500) * 1000000000.0).round());
-    num((xs.get(499) * 10.0).round());
-    num((xs.get(501) * 10.0).round());
+    num((xs.get(500.size()) * 1000000000.0).round());
+    num((xs.get(499.size()) * 10.0).round());
+    num((xs.get(501.size()) * 10.0).round());
     num(ints.get(500));
     num(ints.get(501));
     putchar(char::newline);
