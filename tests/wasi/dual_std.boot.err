@@ -1,0 +1,70 @@
+Traceback (most recent call last):
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-work/tool.py", line 76, in <module>
+    data = boot(path) if mode == "boot" else selfhosted(path)
+           ~~~~^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-work/tool.py", line 46, in boot
+    return build.build(program, lower, program.entry.names["main"])
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 2631, in build
+    return backend.build(main)
+           ~~~~~~~~~~~~~^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 941, in build
+    self.compile_fn(main)
+    ~~~~~~~~~~~~~~~^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 899, in compile_fn
+    body = compiler.run()  # may recursively compile callees
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1529, in run
+    tail = self.block(self.fn.body)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1607, in block
+    self.stmt(stmt)
+    ~~~~~~~~~^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1666, in stmt
+    layout = self.expr(node.expr)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1857, in expr
+    got = self.expr_inner(node)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1917, in expr_inner
+    return self.call(node)
+           ~~~~~~~~~^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 2180, in call
+    index = self.b.compile_fn(target, callee_env, params, theta)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 899, in compile_fn
+    body = compiler.run()  # may recursively compile callees
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1529, in run
+    tail = self.block(self.fn.body)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1607, in block
+    self.stmt(stmt)
+    ~~~~~~~~~^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1666, in stmt
+    layout = self.expr(node.expr)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1857, in expr
+    got = self.expr_inner(node)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1917, in expr_inner
+    return self.call(node)
+           ~~~~~~~~~^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 2165, in call
+    layouts.append(self.expr(arg))
+                   ~~~~~~~~~^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1857, in expr
+    got = self.expr_inner(node)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1931, in expr_inner
+    return self.block(node)
+           ~~~~~~~~~~^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1612, in block
+    layout = self.expr(node.tail)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1857, in expr
+    got = self.expr_inner(node)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1910, in expr_inner
+    layout = self.expr(node.obj)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1857, in expr
+    got = self.expr_inner(node)
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 1917, in expr_inner
+    return self.call(node)
+           ~~~~~~~~~^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 2166, in call
+    self.check_widths(self.b.lower.fns[id(target)], layouts, node)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/admin/github/moss-lang/moss/scratch/ruleA-impl/bootstrap/mossc/build.py", line 2153, in check_widths
+    raise NotCompilable(
+    ...<2 lines>...
+    )
+mossc.build.NotCompilable: `f` instantiated at a type wider than it was lowered for (the bootstrap compiles each function once)

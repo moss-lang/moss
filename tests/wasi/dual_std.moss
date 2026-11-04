@@ -3,10 +3,11 @@ import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 import "../../lib/float.moss" use Floats;
-import "../../lib/access.moss" use Elem, .get, .set, .length, .push;
+import "../../lib/access.moss" use Elem, .get, .set, .length;
+import "../../lib/array.moss" use FloatArrays, FloatArraysOf, .arrayed;
 
 # Differentiating code written the ordinary way. `f` assumes all of `Std`
-# and uses what numeric code uses — a list it makes itself, literals,
+# and uses what numeric code uses — an array it makes itself, literals,
 # a comparison, `.sqrt` — with nothing in it written for being
 # differentiated. `Dualize` provides all of `Floats` at duals over the
 # `Float` in force: every item of `Std` that mentions `Float`, so a
@@ -16,10 +17,9 @@ import "../../lib/access.moss" use Elem, .get, .set, .length, .push;
 
 assume Std {
   fn f(x: Float): Float {
-    let powers = float_list();
-    powers.push(x);
-    powers.push(x * x);
-    powers.push(x * x * x);
+    let powers = x.arrayed(3);
+    powers.set(1, x * x);
+    powers.set(2, x * x * x);
     var total = 0.0;
     var i = 0;
     while i < powers.length() {
@@ -30,47 +30,34 @@ assume Std {
   }
 }
 
-# What duals are made of: the `Float` in force where `Dualize` is applied,
-# with its list.
+# What duals are made of: the `Float` in force where `Dualize` is applied.
 type Base;
-type BaseList;
 
 assume Int, Base {
   fn lift(n: Int): Base;
 
-  assume BaseList {
-    fn base_list(): BaseList;
-
-    context BaseOps =
-      Base, lift,
-      Base.add, Base.sub, Base.mul, Base.div, Base.neg, Base.sqrt, Base.abs,
-      Base.eq, Base.ne, Base.lt, Base.gt, Base.le, Base.ge, Base.trunc, Base.round,
-      BaseList, base_list,
-      BaseList.push[Elem=Base], BaseList.get[Elem=Base], BaseList.set[Elem=Base], BaseList.length,
-    ;
-  }
+  context BaseOps =
+    Base, lift,
+    Base.add, Base.sub, Base.mul, Base.div, Base.neg, Base.sqrt, Base.abs,
+    Base.eq, Base.ne, Base.lt, Base.gt, Base.le, Base.ge, Base.trunc, Base.round,
+  ;
 }
 
 assume Int, zero, one, BaseOps {
   tag Dual { v: Base, d: Base };
-  # A list of duals as two lists of their parts.
-  tag DualList { vs: BaseList, ds: BaseList };
 
   fn constant(n: Int): Dual { Dual { v = lift(n), d = lift(zero) } }
   fn variable(x: Base): Dual { Dual { v = x, d = lift(one) } }
 }
 
 # All of `Floats` at duals: arithmetic by the usual rules, comparisons and
-# rounding by the value alone, and lists of duals.
-functor Dualize: Std -> Floats {
+# rounding by the value alone; and arrays of duals, which are whatever the
+# array implementation in force makes of a `Dual` (D84, draft).
+functor Dualize: Std -> Floats, FloatArrays {
   bind Base = Float;
   bind lift = float;
-  bind BaseList = FloatList;
-  bind base_list = float_list;
   bind Float = Dual;
   bind float = constant;
-  bind FloatList = DualList;
-  bind float_list = () => DualList { vs = base_list(), ds = base_list() };
   bind Float.add = (r) => Dual { v = this.v + r.v, d = this.d + r.d };
   bind Float.sub = (r) => Dual { v = this.v - r.v, d = this.d - r.d };
   bind Float.mul = (r) => Dual { v = this.v * r.v, d = this.d * r.v + this.v * r.d };
@@ -89,16 +76,7 @@ functor Dualize: Std -> Floats {
   bind Float.ge = (r) => this.v >= r.v;
   bind Float.trunc = () => this.v.trunc();
   bind Float.round = () => this.v.round();
-  bind FloatList.push[Elem=Float] = (x) => {
-    this.vs.push(x.v);
-    this.ds.push(x.d);
-  };
-  bind FloatList.get[Elem=Float] = (i) => Dual { v = this.vs.get(i), d = this.ds.get(i) };
-  bind FloatList.set[Elem=Float] = (i, x) => {
-    this.vs.set(i, x.v);
-    this.ds.set(i, x.d);
-  };
-  bind FloatList.length = () => this.vs.length();
+  bind FloatArraysOf;
 }
 
 assume Std {

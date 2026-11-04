@@ -2468,9 +2468,21 @@ class FnChecker:
             if x in before.tymap:
                 mentioned(lower.canon(before, TAbstract(x, ())))
         poly = [t for t in poly if t not in held]
+        # Types `F`'s inputs merge (D43) are one type here too: one fresh
+        # type per merged class.
+        def walk_args(env, needs):
+            for spec in functor.decl.args:
+                lower.add_spec(env, functor.module, spec, {}, needs)
+
+        fenv, _ = lower.merged_walk(functor.module, walk_args)
+        by_rep: dict = {}
         for t in poly:
-            gen = Symbol(t.module, f"{t.name}@{functor.name}", SymKind.TYPE, t.decl)
-            gen.origin = t
+            rep = lower.canon(fenv, TAbstract(t, ())) if t in fenv.tymap else t
+            gen = by_rep.get(rep)
+            if gen is None:
+                gen = Symbol(t.module, f"{t.name}@{functor.name}", SymKind.TYPE, t.decl)
+                gen.origin = t
+                by_rep[rep] = gen
             base.tymap[t] = TAbstract(gen, ())
             gens.append((t, gen))
         outputs = self.result_types(functor)

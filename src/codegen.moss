@@ -1273,7 +1273,14 @@ assume Std {
           }
         } else {
           let e = lower::env_find(env, lower::ek_fn(), r, ns);
-          if ast::is_some(e) {
+          var walk = ast::is_some(e);
+          if walk {
+            # D84 (draft): a functor binding's row holds the environment it
+            # captured, which passes nothing at run time (no val is
+            # captured across frames in this trial).
+            walk = prog::sym_kind.get(ns) != prog::sk_functor();
+          }
+          if walk {
             if ast::is_some(lower::env_a_of(e)) {
               let row = vs_row(
                 lower::env_a_of(e), lower::env_b_of(e), depth + 1
@@ -5738,7 +5745,11 @@ assume Std {
         }
         e = lower::env_next_of(e);
       }
-      pv_floor.write(pv_top.read());
+      # Provided again on top, without a floor: what the binds use was
+      # checked against their own inputs where they were bound, and a
+      # provider made here may be asked for more than it uses (a method
+      # call is taken to reach every method of its name), which only the
+      # frame has.
       i = 0;
       while i < val_syms.length() {
         provide(ast::none(), val_syms.get(i), val_locals.get(i));

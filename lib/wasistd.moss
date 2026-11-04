@@ -10,7 +10,7 @@ import "./path.moss" as path use Path, pwd;
 import "./bool.moss" use Bool, true, false;
 import "./char.moss" as char use Char, Chars, .char;
 import "./cell.moss" as cell use CellInt, cell_int;
-import "./float.moss" as float use Float, FloatList, Floats, .trunc, .round;
+import "./float.moss" as float use Float, Floats, .trunc, .round;
 import "./int.moss" as int use Int, zero, one;
 import "./list.moss" as list use IntList, int_list;
 import "./std.moss" use putchar, put_bytes, Std;
@@ -475,12 +475,6 @@ functor WasiFloats: Wasm, Branch -> Floats {
   bind float::float = (n) => Double(w::f64_convert_i32_s(raw(n)));
   bind Float.trunc = () => Num(w::i32_trunc_sat_f64_s(dbl(this)));
   bind Float.round = () => Num(w::i32_trunc_sat_f64_s(w::f64_nearest(dbl(this))));
-  bind float::FloatList = Packed[Item=Double];
-  bind float::float_list = () => { bind DoubleLayout; packed() };
-  bind FloatList.push[Elem=Float] = (value) => { bind DoubleLayout; this.push(value); };
-  bind FloatList.get[Elem=Float] = (index) => { bind DoubleLayout; this.get(index) };
-  bind FloatList.set[Elem=Float] = (index, value) => { bind DoubleLayout; this.set(index, value); };
-  bind FloatList.length = () => { bind DoubleLayout; this.length() };
 }
 
 # The same at f32, for a scope that wants single precision: `bind
@@ -506,12 +500,6 @@ functor WasiFloats32: Wasm, Branch -> Floats {
   bind float::float = (n) => Single(w::f32_convert_i32_s(raw(n)));
   bind Float.trunc = () => Num(w::i32_trunc_sat_f32_s(sgl(this)));
   bind Float.round = () => Num(w::i32_trunc_sat_f32_s(w::f32_nearest(sgl(this))));
-  bind float::FloatList = Packed[Item=Single];
-  bind float::float_list = () => { bind SingleLayout; packed() };
-  bind FloatList.push[Elem=Float] = (value) => { bind SingleLayout; this.push(value); };
-  bind FloatList.get[Elem=Float] = (index) => { bind SingleLayout; this.get(index) };
-  bind FloatList.set[Elem=Float] = (index, value) => { bind SingleLayout; this.set(index, value); };
-  bind FloatList.length = () => { bind SingleLayout; this.length() };
 }
 
 # The two together, plus the items whose signatures need both — the whole

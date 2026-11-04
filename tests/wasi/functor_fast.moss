@@ -5,7 +5,7 @@ import "../../lib/wasm.moss" use Wasm, I32;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D78: an abstract functor whose result holds types. `Fast` promises
-# `Floats` — the type `Float`, the type `FloatList`, and everything over
+# `Floats` — the type `Float` and everything over
 # them — and the kernel below marks its inner loop `bind Fast;`. There
 # `Float` is a fresh generation (D72) that the kernel is checked against
 # once, knowing nothing of what it is; whoever binds `Fast` decides:

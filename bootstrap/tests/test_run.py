@@ -2312,9 +2312,12 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         from .test_build import compile_wasm
 
         cases = {
+            # D84 (draft, corrected): an input mentioning a type each
+            # application supplies must be an input of `Trace`.
             "functor_inputs": (
                 "`Counting` cannot be bound to `Trace`: it needs `counter`, "
-                "which `Trace` does not take",
+                "which mentions `CellInt`, which each application of `Trace` "
+                "supplies, so it must be an input of `Trace` (D84)",
                 "!X {} counter\n",
             ),
             "functor_missing": (
@@ -2347,17 +2350,19 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ),
             # A bound functor making a result item at another type than
             # the application promises (its own `Int`, inside).
+            # D84 (draft, corrected): refused where it is bound, since an
+            # unbracketed `Fast` is polymorphic in `Int`.
             "functor_promise": (
-                "`WasiFloats`, bound to `Fast`, provides `float` at another "
-                "type than `Fast` promises here (D78)",
+                "`WasiFloats` cannot be bound to `Fast`: it binds `Int` to "
+                "`Num[I32=I32@Fast]`, and `Fast` is polymorphic in `Int` (D84)",
                 "?X {} kernel float\n",
             ),
             # Only a functor `Pick` is bound to where nothing reaches makes
             # `make` at another type than promised, and the application is
             # checked against it all the same.
             "functor_promise_candidate": (
-                "`Bad`, bound to `Pick`, provides `make` at another type "
-                "than `Pick` promises here (D78)",
+                "`Bad` cannot be bound to `Pick`: it binds `Int` to "
+                "`Num[I32=I32@Pick]`, and `Pick` is polymorphic in `Int` (D84)",
                 "?X {} pos make\n",
             ),
             # A bound functor relies only on its own argument signature
@@ -2604,8 +2609,9 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "?W {} report IntList\n",
             ),
             "arena_assign": (
-                "cannot assign `IntList@Arena` to `kept: Packed[Item=Num[I32=I32], "
-                "Memory=Memory, I32=I32]`",
+                # D84 (draft): `report` is generic over `Std` now, so the
+                # outer list is `Std`'s `IntList`.
+                "cannot assign `IntList@Arena` to `kept: IntList`",
                 "?S {} report\n",
             ),
             "arena_wrapped": (
@@ -3151,8 +3157,8 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         with self.assertRaises(LowerError) as caught:
             compile_wasm({}, entry=entry)
         self.assertIn(
-            "`WasiFloats`, bound to `Fast`, provides `float` at another "
-            "type than `Fast` promises here (D78)",
+            "`WasiFloats` cannot be bound to `Fast`: it binds `Int` to "
+            "`Num[I32=I32@Fast]`, and `Fast` is polymorphic in `Int` (D84)",
             str(caught.exception),
         )
 
@@ -3164,7 +3170,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         makes each of `Floats`' items over `Int` at its own."""
         entry = "tests/wasi/functor_promise_unreached.moss"
         out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
-        items = ("float", "trunc", "round", "get", "set", "length")
+        items = ("float", "trunc", "round")  # D84: `Floats` has no list now
         self.assertEqual(
             out.decode("utf-8", "replace"),
             "".join(f"?X {entry} kernel {item}\n" for item in items),

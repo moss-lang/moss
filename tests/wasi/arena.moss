@@ -28,7 +28,7 @@ import "../../lib/wasip1.moss" use Wasi;
 
 tag Scratch;
 
-functor Arena: Wasm, Branch -> Memory, Containers;
+functor Arena[]: Wasm, Branch -> Memory, Containers;
 
 functor InScratch: Wasm, Branch -> Memory, Containers {
   bind Memory = Scratch;
@@ -76,9 +76,8 @@ assume Char, Numerics, Containers {
   }
 }
 
-assume Wasm, Wasi, Branch, Arena {
+assume Std, Wasm, Wasi, Branch, Arena {
   fn report() {
-    bind WasiStd;
     let starts = int_list();
     starts.push(6);
     starts.push(7);
@@ -113,6 +112,7 @@ assume Wasm, Wasi, Branch, Arena {
 
 assume Wasm, Wasi, Branch {
   fn main() {
+    bind WasiStd;
     bind Arena = InScratch;
     report();
   }
