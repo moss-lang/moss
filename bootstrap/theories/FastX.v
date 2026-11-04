@@ -896,9 +896,3 @@ Proof.
   intros. unfold frun_main, run_main. destruct (xp_fn P main) as [body|]; auto.
   rewrite (fxinterp_agrees fuel P [] st0 body (conv_env_rel d0)). reflexivity.
 Qed.
-
-
-(* ===================== 6. Audit ========================================= *)
-
-Print Assumptions fxinterp_agrees.
-Print Assumptions frun_main_eq.

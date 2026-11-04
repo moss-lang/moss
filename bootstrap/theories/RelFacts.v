@@ -76,6 +76,3 @@ Proof.
              destruct Ha as (? & ? & ? & ? & Ha); destruct Hb as (? & ? & ? & Hb); congruence
          end).
 Qed.
-
-Print Assumptions attached_unique.
-Print Assumptions method_choice_unique.

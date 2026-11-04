@@ -167,6 +167,3 @@ Proof.
   }
   vm_compute; reflexivity.
 Qed.
-
-Print Assumptions family_elaborator_agrees.
-Print Assumptions pick_elab.

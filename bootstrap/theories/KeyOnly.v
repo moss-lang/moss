@@ -533,7 +533,3 @@ Proof.
 Qed.
 
 End CE.
-
-Print Assumptions CE.sig_narrowed.
-Print Assumptions CE.keyonly_counterexample.
-Print Assumptions CE.counterexample_rejected_by_core.

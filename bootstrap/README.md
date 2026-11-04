@@ -75,7 +75,8 @@ errors and positions included.
   library).
 - [`dune-project`](dune-project): `dune build` here compiles the theories,
   extracts them and builds the oracle, `_build/default/ocaml/moss_m2.exe`.
-- [`check.sh`](check.sh): compiles every file and audits every theorem.
+- [`check.sh`](check.sh): compiles every file and audits the certificate
+  ([`assumptions/`](assumptions), below).
 
 ## Building and checking
 
@@ -113,13 +114,15 @@ linear memory stays reachable (17 GB on the self-compile instead of 3).
 The build fails on any other OCaml, and compiles the oracle with `-O3
 -inline 200 -unsafe` ([`ocaml/dune`](ocaml/dune)).
 
-`check.sh` is the audit, since `coqc` alone accepts `Admitted`: every
-top-level `Theorem` and `Corollary` has a `Print Assumptions` line, and
-the audited names are exactly those; the calculus files' theorems must be
-closed under the global context; the others may assume only the kernel's
-`Primitive` declarations (Rocq's primitive integers, floats and arrays);
-nothing says `Admitted`; and `Audit.v` declares `Parameter`s and `Axiom`s
-only inside module types.
+`check.sh` is the audit, since Rocq alone accepts `Admitted`. It audits
+the certificate, which transitively covers everything the guarantee
+depends on: what `Certified.v` binds, and the extracted roots, may assume
+only the kernel's `Primitive` declarations (Rocq's primitive integers,
+floats and arrays; [`assumptions/Certificate.v`](assumptions/Certificate.v)).
+The theorems the design notes cite as closed under the global context
+must be ([`assumptions/Closed.v`](assumptions/Closed.v)). Nothing says
+`Admitted`, and `Parameter`s and `Axiom`s are declared only inside module
+types (`Audit.v`'s obligations).
 
 ## What is trusted
 

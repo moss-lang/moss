@@ -72,7 +72,7 @@ nix flake check
 ```
 
 That includes `bootstrap-rocq`, which compiles the Rocq development and
-audits its theorems' assumptions (about 5 minutes and 6 GB);
+audits the assumptions of what it certifies (about 5 minutes and 6 GB);
 `bootstrap/check.sh` runs the same in `nix develop .#bootstrap`, where
 `dune build` in `bootstrap` builds the oracle
 ([`bootstrap/README.md`](bootstrap/README.md)).

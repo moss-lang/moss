@@ -72,7 +72,6 @@ Proof.
     destruct H4 as (n & ps & rt & Hast). crunch.
 Qed.
 
-Print Assumptions misfit_unrelated.
 
 (* ===================== tests/wasi/match_not_exhaustive.moss ============= *)
 (*   tag Red;  tag Green;  type Colour = | Green | Red;
@@ -138,5 +137,3 @@ Proof.
     destruct H' as [E|[]]; [left; reflexivity | reflexivity | discriminate E]
   end.
 Qed.
-
-Print Assumptions nonex_unrelated.

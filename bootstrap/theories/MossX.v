@@ -19,7 +19,7 @@
 (*    bootstrap IR's form of abstract-functor application (a closed list of *)
 (*    branches, one per functor the abstract one can be bound to).          *)
 (*                                                                           *)
-(* What is proved here (see the Print Assumptions at the end):              *)
+(* What is proved here:                                                     *)
 (*  - xinterp_conservative: on the image of the embedding of Core Moss, the *)
 (*    extended interpreter computes exactly what CoreMoss.interp computes,  *)
 (*    for every fuel (Ok values, Err, OutOfFuel), leaving the locals and    *)
@@ -1442,9 +1442,3 @@ Proof.
     split_matches; simpl; auto.
   all: try (split; [reflexivity|]; destruct (negb _); auto).
 Qed.
-
-(* ===================== 12. Audit ========================================= *)
-
-Print Assumptions xinterp_conservative.
-Print Assumptions xsoundness_main_core.
-Print Assumptions prim_sound.

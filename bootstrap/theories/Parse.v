@@ -1360,7 +1360,3 @@ Proof.
     remember (String.concat "::" (y :: q)) as rest eqn:Er. simpl.
     rewrite Er, IH by auto. rewrite app_nil_r, rev_involutive. reflexivity.
 Qed.
-
-Print Assumptions parse_moss_deterministic.
-Print Assumptions lex_ends_eof.
-Print Assumptions split_join.

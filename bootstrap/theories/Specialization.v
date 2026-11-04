@@ -2942,21 +2942,3 @@ Theorem bad_provider_refused :
   /\ interp 10 BadProvider.Sg [(IFn BadProvider.f, DClo BadProvider.bad [])] []
        (ECallA BadProvider.f []) = Ok (VTag BadProvider.nB VUnit).
 Proof. split; [exact BadProvider.refused | exact BadProvider.runs_B]. Qed.
-
-(* ===================== 8. Assumptions audit ============================= *)
-(* As CoreMoss.v §13: each line must print "Closed under the global
-   context", and the names audited are exactly this file's top-level
-   Theorems and Corollaries. *)
-
-Print Assumptions spec_eval.
-Print Assumptions spec_typed.
-Print Assumptions unit_spec.
-Print Assumptions specialization.
-Print Assumptions runtime_binding.
-Print Assumptions spec_example_two_bindings.
-Print Assumptions functor_example_two_bindings.
-Print Assumptions match_on_abstract_rejected.
-Print Assumptions collapse_finding.
-Print Assumptions polyrec_all_specialized.
-Print Assumptions polyrec_infinite.
-Print Assumptions bad_provider_refused.

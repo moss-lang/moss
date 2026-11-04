@@ -1346,13 +1346,3 @@ Proof.
   split; [apply FamilyApply.prog_ok, FamilyApply.hoisted_typed |].
   split; [apply FamilyApply.placed_returns | apply FamilyApply.hoisted_diverges].
 Qed.
-
-(* ===================== Assumptions audit ================================= *)
-Print Assumptions on_demand_elaboration.
-Print Assumptions on_demand_theta_determined.
-Print Assumptions arrays_on_demand_ok.
-Print Assumptions arrays_on_demand_safe.
-Print Assumptions family_fn_result_incoherent.
-Print Assumptions family_val_placement.
-Print Assumptions held_narrow_rejected.
-Print Assumptions family_apply_placement.

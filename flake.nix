@@ -114,6 +114,7 @@
           bootstrapSource = pkgs.lib.fileset.toSource {
             root = ./bootstrap;
             fileset = pkgs.lib.fileset.unions [
+              ./bootstrap/assumptions
               ./bootstrap/check.sh
               ./bootstrap/dune-project
               ./bootstrap/ocaml
@@ -438,6 +439,7 @@
               ''
                 cp -r ${self.packages.${pkgs.stdenv.hostPlatform.system}.oracle.src} bootstrap
                 chmod -R u+w bootstrap
+                export DUNE_JOBS=$NIX_BUILD_CORES
                 patchShebangs bootstrap/check.sh
                 bootstrap/check.sh
                 touch $out

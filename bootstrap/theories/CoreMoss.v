@@ -10611,38 +10611,3 @@ Proof.
   split; [exact H3 |]. split; [exact H4 |].
   intros Hwf. apply (proj1 (soundness_main 101 Hwf eq_refl)). vm_compute. reflexivity.
 Qed.
-
-(* ===================== 13. Assumptions audit ============================= *)
-
-(* The gate that `coqc` alone does not provide: coqc accepts `Admitted`, so a
-   clean compile is not evidence that the metatheory is unconditional.  Each
-   directive below must print "Closed under the global context".  The flake
-   check enforces this mechanically, and additionally that the set of names
-   audited here is exactly the set of top-level Theorems in this file, so a
-   theorem cannot be added without being audited. *)
-
-Print Assumptions availability_decidable.
-Print Assumptions method_resolution_functional.
-Print Assumptions eval_deterministic.
-Print Assumptions interp_sound.
-Print Assumptions interp_complete.
-Print Assumptions safety.
-Print Assumptions soundness_main.
-Print Assumptions phase_separation.
-Print Assumptions functor_example_ok.
-Print Assumptions functor_example_safe.
-Print Assumptions polymorphic_provider_fixed.
-Print Assumptions capture_at_bind.
-Print Assumptions capture_through_copy.
-Print Assumptions fixed_inputs_never_stale.
-Print Assumptions fixed_ok_decidable.
-Print Assumptions res_coherent_decidable.
-Print Assumptions pins_hold_decidable.
-Print Assumptions capture_fixed_decidable.
-Print Assumptions identity_application_conservative.
-Print Assumptions empty_capture_conservative.
-Print Assumptions identity_keys_conservative.
-Print Assumptions arrays_example_ok.
-Print Assumptions arrays_example_safe.
-Print Assumptions stale_twin_rejected.
-Print Assumptions res_coherence_needed.

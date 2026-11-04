@@ -1,7 +1,7 @@
 (* ------------------------------------------------------------------------ *)
 (* ElabSound.v — what is proved about the Gallina elaborator (Elab.v).      *)
 (*                                                                           *)
-(* Proved here (see the Print Assumptions at the end):                       *)
+(* Proved here:                                                              *)
 (*  1. Totality and determinism: `elaborate` is a Gallina function, so it    *)
 (*     answers every bundle with exactly one Good program or Bad error.     *)
 (*     (Stated for the record; they are true by construction.)              *)
@@ -303,12 +303,3 @@ Definition elab_sound_core : Prop :=
    TODO_match_core: the elaborator emits MossX's XMatchP for every match;
      a match whose arms are each a tag head with a binder should be emitted
      as XMatch (the core's EMatch) for the fragment to be non-trivial.     *)
-(* ===================== 7. Audit =========================================== *)
-
-Print Assumptions elaborate_total.
-Print Assumptions elaborate_deterministic.
-Print Assumptions resolve_prov_sound.
-Print Assumptions resolve_prov_complete.
-Print Assumptions typed_call_resolves.
-Print Assumptions require_needs_sound.
-Print Assumptions get_mth_set.

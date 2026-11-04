@@ -827,6 +827,3 @@ Proof.
   - apply run_main_pruned. eapply compute_R_check; eauto.
   - right. reflexivity.
 Qed.
-
-Print Assumptions run_main_pruned.
-Print Assumptions oracle_agrees.

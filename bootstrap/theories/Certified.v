@@ -56,14 +56,3 @@ End Certified.
 (* The executable roots (Extract2.v extracts these). *)
 Definition elaborate_sx := Certified.elaborate_sx.
 Definition run_main := MossX.XS.run_main.
-
-Print Assumptions Certified.elaborate_sx_reads.
-Print Assumptions Certified.eval_deterministic.
-Print Assumptions Certified.interp_sound.
-Print Assumptions Certified.interp_complete.
-Print Assumptions Certified.spec_eval.
-Print Assumptions Certified.xinterp_conservative.
-Print Assumptions Certified.prim_law.
-Print Assumptions Certified.typed_safe.
-Print Assumptions Certified.typed_inhabited.
-Print Assumptions Certified.method_choice_unique.

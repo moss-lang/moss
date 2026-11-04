@@ -84,8 +84,3 @@ Proof. fnelab "tests/wasi/bridge.moss"%string (TAbs 172) [("one", 0); ("two", 1)
    (numbered 0) and four statements of memory instructions and fd_write. *)
 Theorem put_elab : FnElab W_br P_br 412.
 Proof. fnelab "tests/wasi/bridge.moss"%string TUnit [("c", 0); ("one", 1); ("four", 2); ("eight", 3)]. Qed.
-
-Print Assumptions app_elab.
-Print Assumptions main_elab.
-Print Assumptions bang_elab.
-Print Assumptions put_elab.

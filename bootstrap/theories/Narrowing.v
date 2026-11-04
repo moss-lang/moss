@@ -32,9 +32,9 @@
 (* (narrowed_key_conflates) — which is why the compilers check coherence    *)
 (* on (receiver, method, θ).                                                *)
 (*                                                                          *)
-(* Built by the flake check core-calculus-rocq after CoreMoss.v, with the   *)
-(* logical prefix NM; its Print Assumptions lines are audited as            *)
-(* CoreMoss.v's §13 are.                                                    *)
+(* Built after CoreMoss.v, with the logical prefix NM; its theorems that    *)
+(* the design notes cite are audited as closed by                           *)
+(* bootstrap/assumptions/Closed.v.                                          *)
 (* ------------------------------------------------------------------------ *)
 
 From NM Require Import CoreMoss.
@@ -265,8 +265,3 @@ Theorem narrowed_soundness :
 Proof.
   intros Sg R main body fuel _ Hwf Hmain. exact (soundness_main fuel Hwf Hmain).
 Qed.
-
-Print Assumptions vty_narrow_invariant.
-Print Assumptions vty_nom_relevant_only.
-Print Assumptions wf_ty_narrowed.
-Print Assumptions narrowed_soundness.
