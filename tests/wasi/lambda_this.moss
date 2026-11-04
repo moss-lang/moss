@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D70: an anonymous function bound to a fn has no receiver, so `this` in
@@ -29,7 +29,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     demo();

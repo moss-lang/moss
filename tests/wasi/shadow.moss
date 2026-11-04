@@ -1,7 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
-import "../../lib/array.moss" use FloatArraysOf;
 import "../../lib/wasistd.moss" use Branch, WasiFloats, WasiFloats32;
-import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # A bind shadows (D25), including one that rebinds a type and everything
@@ -28,17 +27,15 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     third();                 # f64
     {
       bind WasiFloats32;
-      bind FloatArraysOf;
       third();               # f32
       {
         bind WasiFloats;
-        bind FloatArraysOf;
         third();             # f64 again
       }
       third();               # f32: the inner block's binds are gone

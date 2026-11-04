@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D43, checked generically (D80): `relay` has `B` and `C` as two types
@@ -41,7 +41,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     demo();

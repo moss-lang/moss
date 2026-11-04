@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw;
 import "../../lib/wasm.moss" as w
-  use Wasm, I32, I64, Boxed, Ref, Heap, .boxed, Arrayed, Array, Arrays, .arrayed;
+  use Gc, Wasm, I32, I64, Boxed, Ref, Heap, .boxed, Arrayed, Array, Arrays, .arrayed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D81: garbage-collected arrays, one per scalar of what they hold. An
@@ -77,7 +77,7 @@ assume Wasm, Arrayed {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn idx(n: Num): I32 { raw(n) }
   fn count(v: I32): Num { Num(v) }
 

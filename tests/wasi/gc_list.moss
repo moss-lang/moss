@@ -2,7 +2,7 @@ import "../../lib/access.moss" use Elem, .get, .length, .push, .set;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw, i32_bool;
 import "../../lib/wasm.moss" as w
-  use Wasm, I32, Boxed, Ref, Heap, Mutable, .boxed, Arrayed, Array, Arrays, .arrayed;
+  use Gc, Wasm, I32, Boxed, Ref, Heap, Mutable, .boxed, Arrayed, Array, Arrays, .arrayed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D81: a growable list is a program's business, built on GC arrays and a
@@ -122,7 +122,7 @@ assume Std, Bags {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     {

@@ -7,7 +7,7 @@
 
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 import "../../lib/access.moss" use Elem, .get, .set, .length;
 import "../../lib/array.moss" use Item, Array, ArrayHandle, Arrays, .arrayed;
@@ -30,7 +30,7 @@ assume Std {
     pr(s.round()); putchar(10.char());
   }
 }
-assume Wasm, Wasi, Branch { fn main() {
+assume Wasm, Gc, Wasi, Branch { fn main() {
   bind WasiStd;
   go();
   { bind Saturating; go(); }

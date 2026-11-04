@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D78: a functor bound to an abstract one may rely only on its own
@@ -30,7 +30,7 @@ assume Std, Wasm, Branch, Pick {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     bind Pick = Good;

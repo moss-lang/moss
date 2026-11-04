@@ -458,10 +458,6 @@ context Wasm =
   i64_reinterpret_f64,
   f32_reinterpret_i32,
   f64_reinterpret_i64,
-
-  Heap,
-  Mutable,
-  Arrays,
 ;
 
 # An abstract functor (D78), which the platform provides, as it provides
@@ -486,3 +482,10 @@ functor Mutable[Boxed]: Wasm, Boxed -> Ref.set;
 
 functor Arrays[Arrayed]: Wasm, Arrayed ->
   Arrayed.arrayed, Array.length, Array.get, Array.set, Array.fill, Array.copy;
+
+# The platform's functors, in a context of their own (D84, O2): not in
+# `Wasm`, which each of them takes, so none is among its own inputs — a
+# functor bound to `Heap` that applies `Heap` captures the platform's,
+# a polyfill — and a function that assumes `Wasm` needs none of them.
+# Like `Wasm`, the platform provides it to `main`.
+context Gc = Heap, Mutable, Arrays;

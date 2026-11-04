@@ -1,13 +1,15 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasm.moss" use Gc, Wasm, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D81: writing through a reference is a context item, which only the
 # platform's `Mutable` provides. `demo` has applied `Heap` but not
-# `Mutable`, so `Ref.set` is not available, and its struct stays a value.
+# `Mutable`, which it does not assume (D84 rule 7 would otherwise give
+# `Ref.set` on demand), so `Ref.set` is not available, and its struct
+# stays a value.
 
-assume Std, Wasm {
+assume Std, Wasm, Heap {
   fn demo() {
     bind Boxed = Int;
     bind Heap;
@@ -17,7 +19,7 @@ assume Std, Wasm {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     demo();

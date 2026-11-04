@@ -1,5 +1,4 @@
 import "./access.moss" use Elem, .get, .set, .length, .begin, .more, .after;
-import "./float.moss" use Float;
 import "./int.moss" use Int;
 import "./size.moss" use Size;
 
@@ -26,12 +25,18 @@ assume Size, ArrayHandle, Item {
   fn .arrayed(length: Size): Array;
 }
 
-# Arrays of every element type, from one binding (D84, Rule A): `Arrays`
-# is polymorphic in `Item`, which each application reads, and fixed in
-# `Size` and `ArrayHandle`, which a binding captures where it is made. So
-# `bind Item = X; bind Arrays;` gives arrays of `X` anywhere, from the
-# implementation `main` chose, as long as `Size` and `ArrayHandle` still
-# mean what they meant there — which a rebinding of `Int` does not touch.
+# Arrays of every element type, from one binding (D84): `Arrays` is
+# polymorphic in `Item`, which each application reads, and fixed in
+# `Size` and `ArrayHandle`, which a binding captures where it is made.
+# It is a family (D84 rule 7) — its result is methods only, each keyed
+# by a receiver that names `Item` — so code that assumes `Arrays` (as
+# everything under `Std` does) need not apply it: a call whose key is
+# one of its items, at an `Item` nothing provides it at, gets that item
+# from the binding of `Arrays` in force, applied at the `Item` the
+# receiver names. So arrays follow a rebound `Float` with no line of
+# their own, as long as `Size` and `ArrayHandle` still mean what they
+# meant where `Arrays` was bound — which a rebinding of `Int` does not
+# touch. `bind Item = X; bind Arrays;` still applies it by hand.
 functor Arrays[Item]: Size, ArrayHandle ->
   Item.arrayed,
   Array.get[Elem=Item, Int=Size],
@@ -40,23 +45,3 @@ functor Arrays[Item]: Size, ArrayHandle ->
   Array.begin[Int=Size],
   Array.more[Int=Size],
   Array.after[Int=Size];
-
-assume Size, Float, ArrayHandle {
-  # The arrays of `Float`, which `Std` carries so that code over `Float`
-  # need not apply `Arrays` itself; a provider of `Float` derives them
-  # with `bind FloatArraysOf;` after binding `Float`.
-  context FloatArrays =
-    Item.arrayed[Item=Float],
-    Array.get[Item=Float, Elem=Float, Int=Size],
-    Array.set[Item=Float, Elem=Float, Int=Size],
-    Array.length[Item=Float, Int=Size],
-    Array.begin[Item=Float, Int=Size],
-    Array.more[Item=Float, Int=Size],
-    Array.after[Item=Float, Int=Size],
-  ;
-}
-
-functor FloatArraysOf: Size, Float, ArrayHandle, Arrays -> FloatArrays {
-  bind Item = Float;
-  bind Arrays;
-}

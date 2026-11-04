@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasm.moss" use Gc, Wasm, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D75: references to two types in one scope. `.boxed` is a detached
@@ -90,7 +90,7 @@ assume Std, Wasm, Heaps {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     bind Boxed = Expr;

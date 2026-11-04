@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasm.moss" use Gc, Wasm, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D75: allocation strategy as a context. The interpreter is written once,
@@ -153,11 +153,11 @@ assume Std {
 
 # Representation 2: a node is a reference to the GC heap. The reference
 # is typed by what it holds, which is an `Expr` of these references.
-assume Std, Wasm {
+assume Std, Wasm, Gc {
   tag Node(Ref[Boxed=Expr[ExprRef=Node]]);
 }
 
-assume Std, Wasm {
+assume Std, Wasm, Gc {
   fn demo() {
     {
       bind triples = int_list();
@@ -177,7 +177,7 @@ assume Std, Wasm {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     demo();

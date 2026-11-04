@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm, I32, i32_zero, i32_one, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasm.moss" use Gc, Wasm, I32, i32_zero, i32_one, Arrayed, Array, Arrays, .arrayed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D81 with D74: an array is typed by what it holds, and `.get` is at its
@@ -10,7 +10,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # `Array[Arrayed=Char]` beside the `Int` ones. Passing it to `putchar` is
 # a type error.
 
-assume Std, Wasm {
+assume Std, Wasm, Gc {
   fn demo() {
     bind Arrayed = Int;
     bind Arrays;
@@ -25,7 +25,7 @@ assume Std, Wasm {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     demo();

@@ -42,7 +42,7 @@ assume Int, Float {
 
   # Everything above, the conversions included — the unit a provider of
   # `Float` has to bind together, since their signatures mention it.
-  # `Float`'s arrays are `Std`'s `FloatArrays` (array.moss, D84 draft),
-  # derived from `Float` by whatever `Arrays` is in force.
+  # `Float`'s arrays are `Std`'s `Arrays` at `Item=Float`, on demand
+  # (array.moss, D84 rule 7), so a provider of `Float` binds none.
   context Floats = Float, FloatOps, float, Float.trunc, Float.round;
 }

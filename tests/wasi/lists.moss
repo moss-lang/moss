@@ -1,14 +1,14 @@
 import "../../lib/wasi.moss" use WasiStd;
-import "../../lib/array.moss" use FloatArraysOf, .arrayed;
+import "../../lib/array.moss" use .arrayed;
 import "../../lib/wasistd.moss" use Branch, WasiFloats32;
-import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # A packed `IntList` (D69) beside a fixed-size array of `Float` (D84,
 # draft: `Std`'s `Array[Item=Float]`, which replaced `FloatList`), so
 # `report` is written once and runs at f64 under `WasiStd` and at f32 in
-# the block that binds `WasiFloats32` (and derives its arrays again with
-# `FloatArraysOf`). Pushing far past the first capacity grows the int
+# the block that binds `WasiFloats32`, whose arrays come on demand from
+# `Std`'s `Arrays` at the new `Float` (D84 rule 7). Pushing far past the first capacity grows the int
 # list; the array is made at its length.
 
 assume Std {
@@ -70,13 +70,12 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     report();
     {
       bind WasiFloats32;
-      bind FloatArraysOf;
       report();
     }
   }

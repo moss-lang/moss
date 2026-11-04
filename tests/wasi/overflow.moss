@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, i32_bool;
-import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasm.moss" as w use Gc, Wasm, I32;
 import "../../lib/wasip1.moss" use Wasi;
 
 # An integer literal is nothing but `zero`, `one`, `.add` and `.mul` at
@@ -72,7 +72,7 @@ functor CheckedInts: Wasm, Branch -> Int, zero, one, Int.add, Int.mul {
   bind Int.mul = Checked.times;
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     print_int(big());

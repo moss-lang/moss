@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm, Boxed;
+import "../../lib/wasm.moss" use Gc, Wasm, Boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D78: two applications of one abstract functor in one function, whose
@@ -94,7 +94,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     demo();

@@ -6,7 +6,7 @@ import "./cell.moss" use CellInt, cell_int;
 # int.moss cannot declare it without importing char.moss back.
 import "./char.moss" use Char, Chars, .char;
 import "./float.moss" use Floats;
-import "./array.moss" use ArrayHandle, Arrays, FloatArrays;
+import "./array.moss" use ArrayHandle, Arrays;
 import "./int.moss" use Int, IntOps, zero, one;
 import "./size.moss" use Size, Sizes;
 import "./list.moss" use IntList, int_list;
@@ -55,11 +55,10 @@ context Std =
   # `Float` and its conversions to and from `Int`, after `Int` (D67).
   Floats,
 
-  # Fixed-size arrays (D84, draft): the handle, the functor that makes
-  # them for any `Item`, and those of `Float`.
+  # Fixed-size arrays (D84): the handle, and the family that makes them
+  # for any `Item`, whose members code gets on demand (rule 7).
   ArrayHandle,
   Arrays,
-  FloatArrays,
 
   # Items whose signatures mention `Int` follow it: flattening walks this
   # list in order, so a type must be in scope before anything using it.

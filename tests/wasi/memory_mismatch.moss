@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, WasiContainers;
-import "../../lib/wasm.moss" use Wasm, Memory;
+import "../../lib/wasm.moss" use Gc, Wasm, Memory;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D79: a list's type says which memory it is in. `ys` is made in
@@ -23,7 +23,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     let ys = {

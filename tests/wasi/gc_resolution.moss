@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasm.moss" use Gc, Wasm, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D75 under D77. `Ref` has an attached, abstract `.deref`, which `Heap`
@@ -20,7 +20,7 @@ assume Wrapped {
   fn .deref(): Int;
 }
 
-assume Std, Wasm {
+assume Std, Wasm, Gc {
   fn print_int(n: Int) {
     if n >= 10 {
       print_int(n / 10);
@@ -50,7 +50,7 @@ assume Std, Wasm {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     demo();

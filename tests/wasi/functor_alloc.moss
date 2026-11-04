@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasm.moss" use Gc, Wasm, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D78: allocation strategy as one bind. An allocator stores a `Boxed` and
@@ -9,11 +9,11 @@ import "../../lib/wasip1.moss" use Wasi;
 # result. The library below applies `Alloc` once per type it stores —
 # each application makes a fresh generation of `Handle` (D72), which it is
 # checked against once, knowing nothing of what it is — and `main` binds
-# `Alloc` in one block to `Gc`, whose handles are references into the GC
+# `Alloc` in one block to `GcAlloc`, whose handles are references into the GC
 # heap (`Heap`), and in another to `Pool`, whose handles are indices into
-# a list of packed values. Neither needs all of `Alloc`'s inputs: `Gc`
-# does not pack, and `Pool` does not need `Wasm`. No handle leaves the
-# block that made its type. Output: the same three lines from each block.
+# a list of packed values. `GcAlloc` captures `Wasm` and `Heap` where it
+# is bound (D84), and does not pack; `Pool` needs exactly `Alloc`'s
+# inputs. No handle leaves the block that made its type. Output: the same three lines from each block.
 #
 # `alloc` is a plain fn, so the library's second application replaces
 # the first one's (the library allocates each type in turn), while
@@ -35,10 +35,10 @@ assume Boxed, Handle {
   fn .load(): Boxed;        # detached: provided at receiver `Handle`
 }
 
-functor Alloc: Std, Wasm, Boxed, Boxed.pack, unpack -> Handle, alloc, Handle.load;
+functor Alloc: Std, Boxed, Boxed.pack, unpack -> Handle, alloc, Handle.load;
 
 # Handles into the GC heap: a `Ref` to what is stored.
-functor Gc: Wasm, Boxed -> Handle, alloc, Handle.load {
+functor GcAlloc: Wasm, Heap, Boxed -> Handle, alloc, Handle.load {
   bind Handle = Ref;
   bind Heap;
   bind alloc = (value) => value.boxed();
@@ -113,10 +113,10 @@ assume Std, Wasm, Alloc {
   }
 }
 
-assume Std, Wasm {
+assume Std, Wasm, Gc {
   fn demo() {
     {
-      bind Alloc = Gc;
+      bind Alloc = GcAlloc;
       library();
     }
     {
@@ -126,7 +126,7 @@ assume Std, Wasm {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     demo();

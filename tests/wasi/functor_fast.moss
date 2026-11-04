@@ -1,8 +1,9 @@
-import "../../lib/float.moss" use Floats;
-import "../../lib/wasi.moss" use WasiStd;
-import "../../lib/wasistd.moss" use Branch, WasiFloats, WasiFloats32;
-import "../../lib/wasm.moss" use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi;
+import "float.moss" use Floats;
+import "wasi.moss" use WasiStd;
+import "wasistd.moss" use Branch, WasiFloats, WasiFloats32;
+import "int.moss" use Int;
+import "wasm.moss" use Gc, Wasm, I32;
+import "wasip1.moss" use Wasi;
 
 # D78: an abstract functor whose result holds types. `Fast` promises
 # `Floats` — the type `Float` and everything over
@@ -22,7 +23,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # Output: √2 and √3 to nine places, at f64 and then at f32, which rounds
 # sooner.
 
-functor Fast[]: Wasm, Branch -> Floats;
+functor Fast[]: Int -> Floats;
 
 assume Std, Wasm, Branch, Fast {
   # The square root of `n` by Newton's method, scaled by a billion.
@@ -57,7 +58,7 @@ assume Std, Wasm, Branch, Fast {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     {

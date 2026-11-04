@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw;
-import "../../lib/wasm.moss" use Wasm, I32, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasm.moss" use Gc, Wasm, I32, Arrayed, Array, Arrays, .arrayed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D81: forging an array, as D75's gc_forge forges a reference. Taking an
@@ -17,7 +17,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     bind Arrayed = Int;

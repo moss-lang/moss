@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasm.moss" use Gc, Wasm, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D75 meets D59's union layout: a union's slot has one valtype, its first
@@ -9,7 +9,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # which neither compiler does yet, so both refuse it rather than emit a
 # module that does not validate.
 
-assume Std, Wasm {
+assume Std, Wasm, Gc {
   tag Leaf(Int);
   tag Node { l: Ref[Boxed=Tree], r: Ref[Boxed=Tree] };
   type Tree = Leaf | Node;
@@ -25,7 +25,7 @@ assume Std, Wasm {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     demo();

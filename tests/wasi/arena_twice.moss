@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Chr, Numerics, Containers, WasiNumerics,
   WasiContainers, heap_mark, heap_reset;
-import "../../lib/wasm.moss" use Wasm, Memory;
+import "../../lib/wasm.moss" use Gc, Wasm, Memory;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D72, D78: two applications of arena.moss's `Arena` in force at once
@@ -44,7 +44,7 @@ assume Char, Numerics, Containers {
   }
 }
 
-assume Wasm, Wasi, Branch, Arena {
+assume Wasm, Gc, Wasi, Branch, Arena {
   fn report() {
     bind WasiStd;
     {
@@ -56,7 +56,7 @@ assume Wasm, Wasi, Branch, Arena {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind Arena = InScratch;
     report();

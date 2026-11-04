@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
-import "../../lib/array.moss" as array use FloatArraysOf, ArrayHandle, Arrays;
-import "../../lib/wasm.moss" use ArrayRef;
+import "../../lib/array.moss" as array use ArrayHandle, Arrays;
+import "../../lib/wasm.moss" use Gc, ArrayRef;
 import "../../lib/size.moss" as size use Size, .size, .int;
 import "../../lib/wasichar.moss" use WasiCharConsts;
 import "../../lib/wasistd.moss" use Branch, WasiBasics, WasiContainers, WasiOutput,
@@ -105,7 +105,7 @@ assume Std {
 }
 
 # lib/wasi.moss's `WasiStd`, but for one line.
-functor WasiStd32: Wasm, Wasi, Branch -> Std {
+functor WasiStd32: Wasm, Gc, Wasi, Branch -> Std {
   bind WasiBasics;
   bind WasiContainers;
   bind WasiOutput;
@@ -116,7 +116,6 @@ functor WasiStd32: Wasm, Wasi, Branch -> Std {
   bind Size.int = () => this;
   bind array::ArrayHandle = ArrayRef;
   bind Arrays = GcArrays;
-  bind FloatArraysOf;
   bind WasiCharConsts;
   bind Bool.not = Bool.flip;
   bind Bool.and = Bool.both;
@@ -128,7 +127,7 @@ functor WasiStd32: Wasm, Wasi, Branch -> Std {
 # the two never meet: `report` is compiled once per block. Applying
 # `WasiFloats32` inside a scope that already has `WasiStd`'s floats works
 # too, and is tests/wasi/shadow.moss.
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     {
       bind WasiStd;

@@ -2,10 +2,10 @@
 
 import "wasi.moss" use WasiStd;
 import "wasistd.moss" use Branch;
-import "wasm.moss" use Wasm;
+import "wasm.moss" use Gc, Wasm;
 import "wasip1.moss" use Wasi;
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     putchar(char::H);

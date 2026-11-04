@@ -1,4 +1,4 @@
-import "./wasm.moss" as w use Wasm, I32, F32, F64, Memory, ArrayRef, Arrayed;
+import "./wasm.moss" as w use Wasm, Gc, I32, F32, F64, Memory, ArrayRef, Arrayed;
 import "./array.moss" as array use Item, Array, ArrayHandle, .arrayed;
 import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
   args_sizes_get, args_get, path_open;
@@ -639,10 +639,10 @@ functor WasiConsole: Wasm, Wasi, Branch -> Console {
 # `Array[Item=X]` holds the GC array's `ArrayRef`, and each access forges
 # it back (`ref.cast`) to the `Array[Arrayed=X]` the platform made, one
 # array per scalar of `X` (D81's lanes). It pins `Size` and `ArrayHandle`,
-# which `Arrays` is fixed in, and captures `Wasm` and `Branch` where it
-# is bound (D84, draft). An index is a `Size`, which is `Num` here, and
+# which `Arrays` is fixed in, and captures `Wasm`, `Branch` and the
+# platform's `Arrays` (`Gc`) where it is bound (D84). An index is a `Size`, which is `Num` here, and
 # iteration steps it without asking `Int` for anything.
-functor GcArrays: Wasm, Branch, Item ->
+functor GcArrays: Wasm, Gc, Branch, Item ->
   Item.arrayed,
   Array.get[Elem=Item, Int=Size],
   Array.set[Elem=Item, Int=Size],

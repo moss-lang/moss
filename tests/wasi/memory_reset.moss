@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, WasiContainers, Numerics, Containers,
   heap_mark, heap_reset, ints_addr, Num, i32_bool;
-import "../../lib/wasm.moss" as w use Wasm, Memory;
+import "../../lib/wasm.moss" as w use Gc, Wasm, Memory;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D79: an arena. `Scratch` is a memory of its own, so resetting its
@@ -49,7 +49,7 @@ assume Char, Numerics, Containers {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     let xs = int_list();

@@ -1,10 +1,10 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 import "../../lib/float.moss" use Floats;
 import "../../lib/access.moss" use Elem, .get, .set, .length;
-import "../../lib/array.moss" use FloatArrays, FloatArraysOf, .arrayed;
+import "../../lib/array.moss" use .arrayed;
 
 # Differentiating code written the ordinary way. `f` assumes all of `Std`
 # and uses what numeric code uses — an array it makes itself, literals,
@@ -49,9 +49,9 @@ assume Int, zero, one, BaseOps {
 }
 
 # All of `Floats` at duals: arithmetic by the usual rules, comparisons and
-# rounding by the value alone; and arrays of duals, which are whatever the
-# array implementation in force makes of a `Dual` (D84, draft).
-functor Dualize: Std -> Floats, FloatArrays {
+# rounding by the value alone. Arrays of duals need no line here: they
+# are `Std`'s `Arrays` at `Item=Dual`, on demand (D84 rule 7).
+functor Dualize: Std -> Floats {
   bind Base = Float;
   bind lift = float;
   bind Float = Dual;
@@ -74,7 +74,6 @@ functor Dualize: Std -> Floats, FloatArrays {
   bind Float.ge = (r) => this.v >= r.v;
   bind Float.trunc = () => this.v.trunc();
   bind Float.round = () => this.v.round();
-  bind FloatArraysOf;
 }
 
 assume Std {
@@ -110,7 +109,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
     derivatives(2.0);

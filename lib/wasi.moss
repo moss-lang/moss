@@ -4,8 +4,8 @@ import "./std.moss" use Std;
 import "./wasichar.moss" use WasiCharConsts;
 import "./wasistd.moss" use WasiBasics, WasiContainers, WasiOutput, WasiFiles,
   WasiFloats, Branch, GcArrays;
-import "./wasm.moss" use Wasm, ArrayRef;
-import "./array.moss" as array use ArrayHandle, Arrays, FloatArraysOf;
+import "./wasm.moss" use Wasm, Gc, ArrayRef;
+import "./array.moss" as array use ArrayHandle, Arrays;
 import "./size.moss" as size use Size, .size, .int;
 import "./int.moss" use Int;
 import "./wasip1.moss" use Wasi;
@@ -18,7 +18,7 @@ import "./wasip1.moss" use Wasi;
 # This lives above wasistd.moss and wasichar.moss because it composes
 # both, and the generated char constants import the wrappers from the
 # former.
-functor WasiStd: Wasm, Wasi, Branch -> Std {
+functor WasiStd: Wasm, Gc, Wasi, Branch -> Std {
   bind WasiBasics;
   bind WasiContainers;
   bind WasiOutput;
@@ -30,11 +30,10 @@ functor WasiStd: Wasm, Wasi, Branch -> Std {
   bind size::Size = Int;
   bind Int.size = () => this;
   bind Size.int = () => this;
-  # Arrays are GC arrays (D81), bound once here for every element type,
-  # and `Float`'s are derived from them (D84, draft).
+  # Arrays are GC arrays (D81), bound once here for every element type
+  # (D84): code under `Std` gets them at any `Item` on demand.
   bind array::ArrayHandle = ArrayRef;
   bind Arrays = GcArrays;
-  bind FloatArraysOf;
   bind WasiCharConsts;
   bind Bool.not = Bool.flip;
   bind Bool.and = Bool.both;
