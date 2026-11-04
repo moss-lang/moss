@@ -6,8 +6,9 @@
    Gallina front end (Parse.load_bundle; this driver only reads files), or
    BUNDLE.bx, a bundle already in Audit.v's s-expression form (Part I),
    which the OCaml tokenizer below reads.  The bundle is elaborated by the
-   Gallina elaborator (Elab.elaborate_sx), and MossX.run_main runs the
-   result.  The prelude is P, else $MOSS_LIB/prelude.moss, else
+   Gallina elaborator (Elab.elaborate_sx), and the result is pruned
+   (Prune.oracle_program) and run by an engine proved equal to
+   MossX.run_main (MOSS_ENGINE, below; CloX.crun_main by default).  The prelude is P, else $MOSS_LIB/prelude.moss, else
    lib/prelude.moss (from the working directory).  --bundle-text prints the
    bundle; --dump writes each file's dump (Parse.print_sx) or `ERROR msg` to
    OUTDIR/<mangled path>.rocq.sx. Exit status: 63 the front end rejected
@@ -269,13 +270,73 @@ let () =
       with Sys_error _ -> None);
   } in
   let st0 = init_state (Uint63.of_int !pages) in
-  (* MOSS_ENGINE=fast: FastX.frun_main (map-keyed environments), proved
-     equal to Audit's interpreter (FastX.frun_main_eq); default: Audit's
-     interpreter itself (XS.run_main).  Both on the pruned program unless
-     MOSS_PRUNE=0 (Prune.run_main_pruned, Prune.oracle_agrees). *)
-  let r = match Sys.getenv_opt "MOSS_ENGINE" with
-    | Some "fast" -> FastX.frun_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
-    | _ -> run_main max_int prog p.Audit.xo_main p.Audit.xo_env st0 in
+  (* MOSS_ENGINE: which interpreter runs the program (pruned unless
+     MOSS_PRUNE=0).  Each is proved equal to Audit's interpreter:
+     - fold (default): the program pre-resolved (SlotX), its calls to small
+       fns folded (FoldX) and closure-compiled (CloX), run by
+       CloX.crun_main; CloX.engine_agrees, on the pruned program;
+     - clo: the same without folding (CloX.clo_oracle_agrees);
+     - slot: SlotX.rrun_main on the pre-resolved program
+       (SlotX.slot_oracle_agrees);
+     - ref: Audit's interpreter itself (XS.run_main);
+     - fast: FastX.frun_main, map-keyed environments (FastX.frun_main_eq).
+     The arrays below are trusted driver code, as the Hashtbl realizing
+     program_of's xp_fn above is: they are the hypotheses of
+     CloX.engine_agrees (README.md, What is trusted).  `table` realizes
+     SlotX.rprog_of's `nlook f (compile_fns sh p)` (the first entry for a
+     symbol wins, as nlook); tb is the static bodies of that program, the
+     arrays afn'/afun' its bodies folded (R'), and tbl/ftbl the closure
+     code of R', closures that read the very arrays they are stored in
+     (the knot CloX.tbl_ok describes). *)
+  let engine = match Sys.getenv_opt "MOSS_ENGINE" with Some e -> e | None -> "fold" in
+  let r = match engine with
+    | "fast" -> FastX.frun_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
+    | "ref" -> run_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
+    | "slot" | "clo" | "fold" ->
+        let tc = Unix.gettimeofday () in
+        let m = SlotX.shapes p in
+        let sh f = FastX.tget m f in
+        let table l =
+          let n = Stdlib.List.fold_left (fun a (k, _) -> max a (k + 1)) 0 l in
+          let a = Array.make n None in
+          Stdlib.List.iter (fun (k, v) -> match a.(k) with None -> a.(k) <- Some v | Some _ -> ()) l;
+          n, a in
+        let nf, afn = table (SlotX.compile_fns sh p) in
+        let nu, afun = table (SlotX.compile_funs sh p) in
+        let rfn f = if f >= 0 && f < nf then afn.(f) else None in
+        let rfun h = if h >= 0 && h < nu then afun.(h) else None in
+        let rp = { SlotX.rp_x = prog; SlotX.rp_fn = rfn; SlotX.rp_fun = rfun } in
+        if engine = "slot" then begin
+          if Sys.getenv_opt "MOSS_REF_TIME" <> None then
+            Printf.eprintf "[moss_m2: slot-compiled in %.3fs]\n%!" (Unix.gettimeofday () -. tc);
+          SlotX.rrun_main max_int rp p.Audit.xo_main p.Audit.xo_env st0
+        end else begin
+          let afn, afun =
+            if engine <> "fold" then afn, afun else begin
+              let tb f = match rfn f with Some (bs, _) -> Some bs | None -> None in
+              let m = 200 and n = 6 in
+              Array.map (function
+                | Some (bs, bd) -> Some (FoldX.fold_e tb m n bs, FoldX.fold_e tb m n bd) | None -> None) afn,
+              Array.map (function
+                | Some (dr, bs) -> Some (dr, Stdlib.List.map (FoldX.fold_b tb m n) bs) | None -> None) afun
+            end in
+          let rp = { SlotX.rp_x = prog;
+                     SlotX.rp_fn = (fun f -> if f >= 0 && f < nf then afn.(f) else None);
+                     SlotX.rp_fun = (fun h -> if h >= 0 && h < nu then afun.(h) else None) } in
+          let tarr = Array.make nf None and farr = Array.make nu None in
+          let tbl f = if f >= 0 && f < nf then tarr.(f) else None in
+          let ftbl h = if h >= 0 && h < nu then farr.(h) else None in
+          Array.iteri (fun f e -> match e with
+            | Some (bs, bd) -> tarr.(f) <- Some (CloX.cc rp tbl ftbl bs, CloX.cc rp tbl ftbl bd)
+            | None -> ()) afn;
+          Array.iteri (fun h e -> match e with
+            | Some (dr, bs) -> farr.(h) <- Some (dr, CloX.ccbs rp tbl ftbl bs)
+            | None -> ()) afun;
+          if Sys.getenv_opt "MOSS_REF_TIME" <> None then
+            Printf.eprintf "[moss_m2: closure-compiled in %.3fs]\n%!" (Unix.gettimeofday () -. tc);
+          CloX.crun_main tbl max_int p.Audit.xo_main p.Audit.xo_env st0
+        end
+    | e -> Printf.eprintf "[moss_m2: unknown MOSS_ENGINE %s]\n" e; exit 2 in
   let t2 = Unix.gettimeofday () in
   !memprof_report ();
   if Sys.getenv_opt "MOSS_REF_TIME" <> None then

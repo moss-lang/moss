@@ -3,7 +3,7 @@
    transitively everything the guarantee rests on, and check.sh requires
    them to be only the kernel's `Primitive` declarations (Rocq's primitive
    integers, floats and arrays): no Axiom, no Admitted. *)
-From NM Require Certified.
+From NM Require Certified Prune SlotX FoldX CloX.
 
 Print Assumptions NM.Certified.Certified.elaborate.
 Print Assumptions NM.Certified.Certified.elaborate_sx.
@@ -20,3 +20,18 @@ Print Assumptions NM.Certified.Certified.typed_inhabited.
 Print Assumptions NM.Certified.Certified.method_choice_unique.
 Print Assumptions NM.Certified.elaborate_sx.
 Print Assumptions NM.Certified.run_main.
+
+(* The default engine (MOSS_ENGINE=fold), as moss_m2.ml runs it: pruning,
+   pre-resolution, folding and closure compilation, then the run; and the
+   theorem that makes it Audit's semantics, given the tables the driver
+   builds (README.md, What is trusted). *)
+Print Assumptions NM.Prune.oracle_program.
+Print Assumptions NM.SlotX.shapes.
+Print Assumptions NM.SlotX.compile_fns.
+Print Assumptions NM.SlotX.compile_funs.
+Print Assumptions NM.FoldX.fold_e.
+Print Assumptions NM.FoldX.fold_b.
+Print Assumptions NM.CloX.cc.
+Print Assumptions NM.CloX.ccbs.
+Print Assumptions NM.CloX.crun_main.
+Print Assumptions NM.CloX.engine_agrees.

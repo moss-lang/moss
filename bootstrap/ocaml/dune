@@ -6,9 +6,9 @@
 (rocq.extraction
  (prelude Extract2)
  (extracted_modules Ascii Audit BinInt BinNat BinNums BinPos Bool0 Byte Byte0
-  Datatypes Decimal Elab FastX FloatClass Hexadecimal IntDef List0 ListDef
-  MossX NMap Nat NatDef Number Parse PeanoNat PosDef PrimArray PrimFloat
-  PrimInt63 Prune Specif String0 Uint63Axioms)
+  CloX Datatypes Decimal Elab FastX FloatClass FoldX Hexadecimal IntDef List0
+  ListDef MossX NMap Nat NatDef Number Parse PeanoNat PosDef PrimArray
+  PrimFloat PrimInt63 Prune SlotX Specif String0 Uint63Axioms)
  (theories NM Stdlib))
 
 ; The OCaml must be flambda: only flambda honours the `[@inlined]` in
