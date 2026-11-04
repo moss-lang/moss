@@ -1,0 +1,37 @@
+# A library over `Std` alone (saturating.moss) rebinds `Int` and every
+# item of `Std` that mentions it, by converting at the edge, so code
+# written against all of `Std` runs under it. Its arrays of `Float` need
+# nothing: `Std`'s `FloatArrays` mention `Size`, `Float` and the handle,
+# none of which the library rebinds. Output: the same `go` at the root
+# (wrapping) and in the block (saturating).
+
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/access.moss" use Elem, .get, .set, .length;
+import "../../lib/array.moss" use Item, Array, ArrayHandle, Arrays, .arrayed;
+import "./saturating.moss" use Saturating;
+import "../../lib/int.moss" use IntOps;
+import "../../lib/size.moss" use Sizes;
+assume Std {
+  fn pr(n: Int) {
+    if n < 0 { putchar(45.char()); pr(-n); return; }
+    if n >= 10 { pr(n / 10); }
+    putchar((n % 10 + 48).char());
+  }
+  fn go() {
+    let l = int_list();
+    l.push(2000000000); l.push(2000000000);
+    pr(l.get(0) + l.get(1)); putchar(10.char());
+    let xs = 1.5.arrayed(3.size());
+    var s = 0.0;
+    for x in xs { s = s + x; }
+    pr(s.round()); putchar(10.char());
+  }
+}
+assume Wasm, Wasi, Branch { fn main() {
+  bind WasiStd;
+  go();
+  { bind Saturating; go(); }
+} }

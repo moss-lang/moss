@@ -5,6 +5,13 @@
 import "../../lib/int.moss" use Int, zero, one, IntOps;
 import "../../lib/size.moss" use Size, Sizes, .size, .int;
 import "../../lib/bool.moss" use Bool, true, false;
+import "../../lib/float.moss" use Float, float, .trunc, .round;
+import "../../lib/char.moss" use Char, .code, .char;
+import "../../lib/string.moss" use String, arg_count, arg_at, .slice;
+import "../../lib/strlist.moss" use StrList, str_list;
+import "../../lib/cell.moss" use CellInt, cell_int, .write;
+import "../../lib/list.moss" use IntList;
+import "../../lib/access.moss" use Elem, .get, .set, .length, .push, .read;
 
 type Narrow;
 
@@ -53,7 +60,7 @@ assume NarrowOps {
   }
 }
 
-functor Saturating: Int, zero, one, IntOps, Sizes -> Int, zero, one, IntOps, Int.size, Size.int {
+functor SaturatingInt: Int, zero, one, IntOps, Sizes -> Int, zero, one, IntOps, Int.size, Size.int {
   bind Narrow = Int;
   bind nzero = zero;
   bind none = one;
@@ -81,4 +88,38 @@ functor Saturating: Int, zero, one, IntOps, Sizes -> Int, zero, one, IntOps, Int
   # the conversions that mention `Int` follow it.
   bind Int.size = () => nar(this).size();
   bind Size.int = () => Sat(this.int());
+}
+
+# All of `Std` that mentions `Int`, at the saturating `Int`: what a
+# library over `Std` alone must provide for code under all of `Std` to
+# run in its block. Every one of these is a provision at a receiver the
+# library did not rebind (`Char`, `Float`, `String`, `IntList`, ...),
+# rebound with the new `Int` in its signature, by converting at the edge.
+functor Saturating: Std -> Int, zero, one, IntOps, Int.size, Size.int,
+  float, Float.trunc, Float.round, Char.code, Int.char,
+  String.length, String.get[Elem=Char], String.slice, arg_count, arg_at,
+  StrList.get[Elem=String], StrList.length,
+  str_list, cell_int, CellInt.read[Elem=Int], CellInt.write,
+  IntList.push[Elem=Int], IntList.get[Elem=Int], IntList.set[Elem=Int], IntList.length {
+  bind SaturatingInt;
+  bind float = (n) => float(nar(n));
+  bind Float.trunc = () => Sat(this.trunc());
+  bind Float.round = () => Sat(this.round());
+  bind Char.code = () => Sat(this.code());
+  bind Int.char = () => nar(this).char();
+  bind String.length = () => Sat(this.length());
+  bind String.get[Elem=Char] = (i) => this.get(nar(i));
+  bind String.slice = (a, n) => this.slice(nar(a), nar(n));
+  bind arg_count = () => Sat(arg_count());
+  bind arg_at = (i) => arg_at(nar(i));
+  bind StrList.get[Elem=String] = (i) => this.get(nar(i));
+  bind StrList.length = () => Sat(this.length());
+  bind str_list = () => str_list();
+  bind cell_int = () => cell_int();
+  bind CellInt.read[Elem=Int] = () => Sat(this.read());
+  bind CellInt.write = (v) => this.write(nar(v));
+  bind IntList.push[Elem=Int] = (v) => this.push(nar(v));
+  bind IntList.get[Elem=Int] = (i) => Sat(this.get(nar(i)));
+  bind IntList.set[Elem=Int] = (i, v) => this.set(nar(i), nar(v));
+  bind IntList.length = () => Sat(this.length());
 }

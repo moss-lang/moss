@@ -949,6 +949,7 @@ class TestLists(unittest.TestCase):
 
 
 SIZE_REBIND_OUT = "1705032704\n-294967296\n-2\n"
+SIZE_STD_OUT = "-294967296\n4\n2147483647\n4\n"
 
 
 class TestSizeAndFor(unittest.TestCase):
@@ -961,6 +962,9 @@ class TestSizeAndFor(unittest.TestCase):
 
     def test_a_std_only_library_rebinds_int_and_keeps_arrays(self):
         self.assertEqual(run({}, entry="tests/wasi/size_rebind.moss"), SIZE_REBIND_OUT)
+
+    def test_all_of_std_under_a_std_only_int(self):
+        self.assertEqual(run({}, entry="tests/wasi/size_std.moss"), SIZE_STD_OUT)
 
     def test_generic_code_does_not_mix_int_and_size(self):
         with self.assertRaisesRegex(LowerError, "argument `index` of `.get` is `Int`, expected `Size`"):
@@ -2119,6 +2123,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             # Draft: `for`, and `Size` across a rebinding of `Int`.
             ("tests/wasi/iterate.moss", "503217abc\n", "lib/prelude.moss"),
             ("tests/wasi/size_rebind.moss", SIZE_REBIND_OUT, "lib/prelude.moss"),
+            ("tests/wasi/size_std.moss", SIZE_STD_OUT, "lib/prelude.moss"),
             ("tests/wasi/gc_list.moss", GC_LIST_OUT, "lib/prelude.moss"),
             ("tests/wasi/gc_mutable.moss", "0\n2\n7\n3\n42\n", "lib/prelude.moss"),
             ("tests/wasi/gc_array_memory.moss", "6\n6\n", "lib/prelude.moss"),
