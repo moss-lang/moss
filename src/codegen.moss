@@ -4038,6 +4038,11 @@ assume Std {
         if t == main_memory() {
           return 0;
         }
+        # D84 3c: a `Memory` each application supplies, fresh where a
+        # binding is checked: code nothing runs.
+        if checking() {
+          return 0;
+        }
       }
       if types::is_kind(t, types::kd_nominal()) {
         if types::is_unit_decl(t) {
@@ -6337,6 +6342,19 @@ assume Std {
           if fresh {
             fresh = !in_chain(r, base);
           }
+          if !fresh {
+            if checking() {
+              # The check pass: made generically, by a bind of something
+              # nothing here provides (`bind_contextual`).
+              let gr = lower::env_find(gmade, kinds.get(k), mrecvs.get(k), syms.get(k));
+              if ast::is_some(gr) {
+                if !in_chain(gr, gmark) {
+                  fresh = true;
+                  r = ast::none();
+                }
+              }
+            }
+          }
         }
         if !fresh {
           cg_error(c_unbound(), prog::sym_name.get(syms.get(k)));
@@ -6360,7 +6378,14 @@ assume Std {
           if kinds.get(k) != lower::ek_val() {
             let r = rows.get(k);
             let vals = int_list();
-            val_slots(vals, lower::env_a_of(r), lower::env_b_of(r), 0);
+            if !ast::is_some(r) {
+              # Nothing provides it here (the check pass).
+            } else if prog::sym_kind.get(syms.get(k)) == prog::sk_functor() {
+              # D84 6: a result functor's binding carries what it captured.
+              functor_slots(r, vals, 0);
+            } else {
+              val_slots(vals, lower::env_a_of(r), lower::env_b_of(r), 0);
+            }
             var j = 0;
             while j < vals.length() {
               cap_entry.push(k);
@@ -6390,7 +6415,7 @@ assume Std {
               provide(ast::none(), syms.get(k), locals.get(k));
             }
           }
-        } else {
+        } else if ast::is_some(rows.get(k)) {
           let r = rows.get(k);
           cg_env.write(lower::env_push(
             cg_env.read(), kinds.get(k), recvs.get(k), syms.get(k),
@@ -6428,6 +6453,18 @@ assume Std {
         # not here, where the binds' generic terms are the binding's.
         if cl_check.read() == 0 {
           return ();
+        }
+        # D84 3d: after the binds each type `F` is fixed in denotes
+        # exactly what it denotes here (a pin is a manifest equation).
+        let xs = int_list();
+        lower::functor_fixed(fu, xs);
+        k = 0;
+        while k < xs.length() {
+          let at = types::ty_of_symbol(types::kd_abstract(), xs.get(k));
+          if lower::canon(gmade, at) != lower::canon(gmark, at) {
+            cg_error(prog::e_functor_sig(), prog::sym_name.get(xs.get(k)));
+          }
+          k = k + 1;
         }
       }
       k = 0;
