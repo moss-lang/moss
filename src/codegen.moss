@@ -1399,6 +1399,38 @@ assume Std {
         }
         f = f + 1;
       }
+      # D84 rule 7: a function's method need may be met by applying a
+      # family on demand where it is called (`demand_needs`), so needing
+      # a member reaches the families that produce one of its name.
+      f = 0;
+      while f < prog::sym_count() {
+        if is_compilable(f) {
+          if lower::is_lowered(f) {
+            var i = 0;
+            while i < lower::needs_count(f) {
+              if ast::is_some(lower::need_recv_at(f, i)) {
+                uw_families(f, prog::sym_name.get(lower::need_sym_at(f, i)));
+              }
+              i = i + 1;
+            }
+          }
+        }
+        f = f + 1;
+      }
+    }
+
+    # The families among what a call by `name` may reach (`uw_meths`).
+    fn uw_families(f: Int, name: Int) {
+      if name >= un_mhead.length() {
+        return ();
+      }
+      var r = un_mhead.get(name);
+      while r > 0 {
+        if is_family(un_meths.get(r - 1)) {
+          uw_row(f, un_meths.get(r - 1));
+        }
+        r = un_mlink.get(r - 1);
+      }
     }
 
     fn uw_row(f: Int, s: Int) {
@@ -3333,6 +3365,12 @@ assume Std {
       let r = resolve_method(e, m, recv_ty);
       let meth = rm_meth.get(r);
       if ast::is_some(meth) {
+        let demark = cg_env.read();
+        let dgmark = cg_genv.read();
+        let dpmark = pv_top.read();
+        let dfloor = pv_floor.read();
+        let dsmark = es_top.read();
+        demand_needs(body, meth, e);
         check_callee(meth);
         let map = int_list();
         let emark = cg_env.read();
@@ -3348,6 +3386,11 @@ assume Std {
         reach(meth, penv);
         push_needs(body, meth, penv, ast::none(), map);
         op_call(body, index_of_fn(meth, penv));
+        cg_env.write(demark);
+        cg_genv.write(dgmark);
+        pv_top.write(dpmark);
+        pv_floor.write(dfloor);
+        es_top.write(dsmark);
         return ret;
       }
       if !ast::is_some(rm_sym.get(r)) {
@@ -3642,6 +3685,12 @@ assume Std {
         return nominal;
       }
       if is_defined_fn(sym) {
+        let demark = cg_env.read();
+        let dgmark = cg_genv.read();
+        let dpmark = pv_top.read();
+        let dfloor = pv_floor.read();
+        let dsmark = es_top.read();
+        demand_needs(body, sym, e);
         check_callee(sym);
         let map = int_list();
         let env = callee_env(sym, map);
@@ -3649,7 +3698,13 @@ assume Std {
         reach(sym, env);
         push_needs(body, sym, env, ast::none(), map);
         op_call(body, index_of_fn(sym, env));
-        return sig_ret(cg_genv.read(), sym, ast::none());
+        let ret = sig_ret(cg_genv.read(), sym, ast::none());
+        cg_env.write(demark);
+        cg_genv.write(dgmark);
+        pv_top.write(dpmark);
+        pv_floor.write(dfloor);
+        es_top.write(dsmark);
+        return ret;
       }
       # An abstract fn the context provides. D2: statically a direct
       # call, with the captured context passed as data; typed by its
@@ -6016,6 +6071,115 @@ assume Std {
         e = lower::env_next_of(e);
       }
       found
+    }
+
+    # D84 rule 7 for a callee's needs: each method need of `f` — listed
+    # in its assumes, or by a context it assumes — whose key nothing in
+    # the generic environment provides but a family in force produces is
+    # applied on demand, as a call of that member is (`emit_on_demand`):
+    # `bind F;` at the θ read off the key, one application per family and
+    # θ, emitted before the call. θ holds for the application only: the
+    # types of `P(F)` mean what they meant before for the call, wherever
+    # they were bound before. The caller restores the environments after
+    # the call (`demand_restore`). The bootstrap's `demand_needs` is the
+    # same.
+    fn demand_needs(body: IntList, f: Int, e: Int) {
+      lower::lower_needs(f);
+      let fus = int_list();
+      let starts = int_list();
+      let ts = int_list();
+      let tt = int_list();
+      var i = 0;
+      while i < lower::needs_count(f) {
+        let r = lower::need_recv_at(f, i);
+        let s = lower::need_sym_at(f, i);
+        if ast::is_some(r) {
+          let genv = cg_genv.read();
+          let key = need_key_recv(f, genv, r);
+          if !ast::is_some(lower::env_find(genv, lower::need_kind(s), key, s)) {
+            let s1 = int_list();
+            let t1 = int_list();
+            let fu = family_member(key, s, s1, t1);
+            if ast::is_some(fu) {
+              if !demand_seen(fus, starts, ts, tt, fu, s1, t1) {
+                fus.push(fu);
+                starts.push(ts.length());
+                var j = 0;
+                while j < s1.length() {
+                  ts.push(s1.get(j));
+                  tt.push(t1.get(j));
+                  j = j + 1;
+                }
+              }
+            }
+          }
+        }
+        i = i + 1;
+      }
+      var k = 0;
+      while k < fus.length() {
+        var end = ts.length();
+        if k + 1 < fus.length() {
+          end = starts.get(k + 1);
+        }
+        let ebefore = cg_env.read();
+        let gbefore = cg_genv.read();
+        var j = starts.get(k);
+        while j < end {
+          cg_env.write(lower::env_push(cg_env.read(), lower::ek_type(), ast::none(), ts.get(j), spec(tt.get(j)), ast::none()));
+          cg_genv.write(lower::env_push(cg_genv.read(), lower::ek_type(), ast::none(), ts.get(j), tt.get(j), ast::none()));
+          j = j + 1;
+        }
+        apply_abstract(body, e, fus.get(k), 0, bw_emit());
+        j = starts.get(k);
+        while j < end {
+          let pe = lower::env_find(ebefore, lower::ek_type(), ast::none(), ts.get(j));
+          if ast::is_some(pe) {
+            cg_env.write(lower::env_push(cg_env.read(), lower::ek_type(), ast::none(), ts.get(j), lower::env_a_of(pe), ast::none()));
+          }
+          let pg = lower::env_find(gbefore, lower::ek_type(), ast::none(), ts.get(j));
+          if ast::is_some(pg) {
+            cg_genv.write(lower::env_push(cg_genv.read(), lower::ek_type(), ast::none(), ts.get(j), lower::env_a_of(pg), ast::none()));
+          }
+          j = j + 1;
+        }
+        k = k + 1;
+      }
+    }
+
+    # Whether the application of `fu` at θ (`s1`, `t1`) is among those
+    # `demand_needs` has gathered.
+    fn demand_seen(
+      fus: IntList, starts: IntList, ts: IntList, tt: IntList, fu: Int,
+      s1: IntList, t1: IntList
+    ): Bool {
+      var k = 0;
+      while k < fus.length() {
+        if fus.get(k) == fu {
+          var end = ts.length();
+          if k + 1 < fus.length() {
+            end = starts.get(k + 1);
+          }
+          if end - starts.get(k) == s1.length() {
+            var same = true;
+            var j = 0;
+            while j < s1.length() {
+              if ts.get(starts.get(k) + j) != s1.get(j) {
+                same = false;
+              }
+              if tt.get(starts.get(k) + j) != t1.get(j) {
+                same = false;
+              }
+              j = j + 1;
+            }
+            if same {
+              return true;
+            }
+          }
+        }
+        k = k + 1;
+      }
+      false
     }
 
     # The call, as if preceded by `bind F;` with `P(F)` at θ, in a scope

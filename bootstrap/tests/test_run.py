@@ -2317,8 +2317,9 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         application (`fn_input`), a captured val across frames, a captured
         memory, merged polymorphic inputs, arrays in a scratch memory, an
         abstract functor in a result, family members on demand (rule 7),
-        and a polyfill of the platform's `Heap` (O2). The interpreter and
-        both compilers agree."""
+        for a call of the member and for a callee that needs it, and a
+        polyfill of the platform's `Heap` (O2). The interpreter and both
+        compilers agree."""
         from .test_build import compile_wasm, run_wasm
 
         for entry, expected in (
@@ -2329,6 +2330,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             ("tests/wasi/arrays_in_scratch.moss", "6\n"),
             ("tests/wasi/functor_in_result_ok.moss", "5\n"),
             ("tests/wasi/arrays_on_demand.moss", "33\n"),
+            ("tests/wasi/family_need.moss", "55\n55\n6\n"),
             ("tests/wasi/functor_polyfill.moss", "7\n"),
         ):
             with self.subTest(entry=entry):

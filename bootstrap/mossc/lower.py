@@ -3628,9 +3628,15 @@ class FnChecker:
         defined = isinstance(target.decl, ast.Fndef) and target.decl.body is not None
         needs_map = None
         tyargs = None
+        demand: list = []
         if defined:
             self.lower.lower_fn(target.module, target)
-            needs_map = self.require_needs(target, self.lower.needs_of[id(target)])
+            outer = self.env
+            try:
+                demand = self.demand_needs(target, self.lower.needs_of[id(target)])
+                needs_map = self.require_needs(target, self.lower.needs_of[id(target)])
+            finally:
+                self.env = outer
             sig = self.lower.fn_sig(target, self.env.tymap, self.env)
             callee = ("direct", target)
             tyargs = self.tyargs(target)
@@ -3644,12 +3650,12 @@ class FnChecker:
             callee = ("env", target)
         args = self.check_args(target.name, sig, expr.args)
         ret = self.lower.slots_of(self.env, sig.ret)
-        return (
-            ir.Call(
-                callee, tuple(args), needs_map=needs_map, ret_slots=ret, tyargs=tyargs,
-            ),
-            sig.ret,
+        call = ir.Call(
+            callee, tuple(args), needs_map=needs_map, ret_slots=ret, tyargs=tyargs,
         )
+        if demand:
+            call = ir.Block(tuple(demand), call)
+        return call, sig.ret
 
     def check_args(self, name, sig: FnSig, arg_exprs):
         if len(arg_exprs) != len(sig.params):
@@ -3776,23 +3782,27 @@ class FnChecker:
                         self.env = Env(self.module, parent=outer)
                         for t, ty in receiver.args:
                             self.env.tymap[t] = ty
+                    demand: list = []
                     try:
+                        sig = self.lower.fn_sig(attached, self.env.tymap, self.env, this=oty)
+                        tyargs = self.tyargs(attached)
+                        demand = self.demand_needs(
+                            attached, self.lower.needs_of[id(attached)]
+                        )
                         needs_map = self.require_needs(
                             attached, self.lower.needs_of[id(attached)]
                         )
-                        sig = self.lower.fn_sig(attached, self.env.tymap, self.env, this=oty)
-                        tyargs = self.tyargs(attached)
                     finally:
                         self.env = outer
                     args = self.check_args(attached.name, sig, expr.args)
                     ret = self.lower.slots_of(self.env, sig.ret)
-                    return (
-                        ir.Call(
-                            ("direct", attached), tuple(args), this=obj,
-                            needs_map=needs_map, ret_slots=ret, tyargs=tyargs,
-                        ),
-                        sig.ret,
+                    call = ir.Call(
+                        ("direct", attached), tuple(args), this=obj,
+                        needs_map=needs_map, ret_slots=ret, tyargs=tyargs,
                     )
+                    if demand:
+                        call = ir.Block(tuple(demand), call)
+                    return call, sig.ret
                 if method is None:
                     method = attached
         # Provided: detached or abstract-attached, from the context. The
@@ -3969,6 +3979,49 @@ class FnChecker:
         ret = self.lower.slots_of(self.env, sig.ret)
         call = ir.Call(("env", key), tuple(args), this=obj, ret_slots=ret)
         return ir.Block(tuple(stmts), call), sig.ret
+
+    def demand_needs(self, callee: Symbol, needs) -> list:
+        """D84 rule 7 for a callee's needs: each method need of `callee`
+        — listed in its assumes, or by a context it assumes — whose key
+        nothing here provides but a family in force produces is applied
+        on demand, as a call of that member would be: `bind F;` at the θ
+        read off the key, one application per family and θ. Returns the
+        applications' statements, with `self.env` a scope of its own
+        holding their results (the caller restores it); `[]`, with the
+        environment as it was, when no need is met this way."""
+        apps: list = []
+        for need in needs:
+            if not isinstance(need, tuple):
+                continue
+            receiver, method = need
+            key = self.lower.method_key(
+                self.env, self.module, self.lower.instantiate(self.env, receiver), method
+            )
+            if key in self.env.methods:
+                continue
+            member = self.lower.family_member(self.env, key, self.module)
+            if member is None:
+                continue
+            if not any(f is member[0] and th == member[1] for f, th in apps):
+                apps.append(member)
+        if not apps:
+            return []
+        stmts: list = []
+        self.env = Env(self.module, parent=self.env)
+        for functor, theta in apps:
+            # θ only for the application: its result is method keys at
+            # the receivers θ made, and the type symbols of `P(F)` mean
+            # what they meant before, for the call and the next θ.
+            saved = {p: self.env.tymap[p] for p in theta if p in self.env.tymap}
+            for p, ty in theta.items():
+                self.env.tymap[p] = ty
+            stmts.extend(self.apply_abstract(functor))
+            for p in theta:
+                if p in saved:
+                    self.env.tymap[p] = saved[p]
+                else:
+                    self.env.tymap.pop(p, None)
+        return stmts
 
     def provided_call(self, obj, oty, method: Symbol, arg_exprs):
         """A call of a method the context provides at the receiver's

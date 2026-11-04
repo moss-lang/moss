@@ -1,0 +1,110 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/access.moss" use Elem, Index;
+import "../../lib/array.moss" use Item, Array, .arrayed;
+
+# D84 rule 7 for a callee's needs: `fill` and `total` require
+# `Store.set` and `Store.get` through the context `Storage`, written
+# against no container in particular. Where `Store` is bound to an array
+# type, nothing provides those keys, but `Std`'s family `Arrays` produces
+# them, so each call gets them on demand, at the `Item` the key names —
+# as a call of `xs.set` there would — with no `bind Item = …; bind
+# Arrays;` of its own. `convert` needs members at two `Item`s, so its
+# call applies the family twice. Output: 55 (arrays of `Int`), 55 (of
+# `Float`), then 6.
+
+type Stored;
+type Store;
+
+assume Std, Stored, Store {
+  fn store(n: Int): Store;
+  fn narrow(x: Int): Stored;
+  fn widen(x: Stored): Int;
+  context Storage =
+    Stored, Store, store, narrow, widen,
+    Store.set[Elem=Stored, Index=Int], Store.get[Elem=Stored, Index=Int];
+}
+
+type Ints;
+type Floats;
+
+assume Std, Ints, Floats {
+  context Both =
+    Ints, Floats, Ints.get[Elem=Int, Index=Int], Floats.set[Elem=Float, Index=Int];
+}
+
+assume Std, Both {
+  fn convert(xs: Ints, ys: Floats, n: Int) {
+    var i = 0;
+    while i < n {
+      ys.set(i, float(xs.get(i)));
+      i = i + 1;
+    }
+  }
+}
+
+assume Std, Storage {
+  fn fill(n: Int): Store {
+    let xs = store(n);
+    var i = 0;
+    while i < n {
+      xs.set(i, narrow(i + 1));
+      i = i + 1;
+    }
+    xs
+  }
+
+  fn total(xs: Store, n: Int): Int {
+    var sum = 0;
+    var i = 0;
+    while i < n {
+      sum = sum + widen(xs.get(i));
+      i = i + 1;
+    }
+    sum
+  }
+
+  fn report(n: Int) {
+    let s = total(fill(n), n);
+    if s >= 10 { putchar((s / 10 + char::digit0.code()).char()); }
+    putchar((s % 10 + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    {
+      bind Stored = Int;
+      bind Store = Array[Item=Int];
+      bind store = (n) => 0.arrayed(n);
+      bind narrow = (x) => x;
+      bind widen = (x) => x;
+      report(10);
+    }
+    {
+      bind Stored = Float;
+      bind Store = Array[Item=Float];
+      bind store = (n) => 0.0.arrayed(n);
+      bind narrow = (x) => float(x);
+      bind widen = (x) => x.round();
+      report(10);
+    }
+    {
+      bind Ints = Array[Item=Int];
+      bind Floats = Array[Item=Float];
+      let xs = 0.arrayed(3);
+      xs.set(0, 1);
+      xs.set(1, 2);
+      xs.set(2, 3);
+      let ys = 0.0.arrayed(3);
+      convert(xs, ys, 3);
+      let s = (ys.get(0) + ys.get(1) + ys.get(2)).round();
+      putchar((s + char::digit0.code()).char());
+      putchar(char::newline);
+    }
+  }
+}
