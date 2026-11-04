@@ -188,6 +188,11 @@ class Functordef:
     result: list[Spec]
     binds: "list[Bind] | None"
     offset: int = field(default=-1, compare=False)
+    # D84 (draft): `functor F[P, ...]: A -> B;` names the abstract
+    # functor's polymorphic type inputs; every other type input is fixed
+    # where it is bound. `None` (no brackets) keeps D78's meaning, every
+    # type input polymorphic.
+    params: "tuple[str, ...] | None" = None
 
 
 Decl = (

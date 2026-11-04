@@ -1027,6 +1027,27 @@ assume Std {
 
     fn parse_functor(): Int {
       let nm = take_name();
+      # D84 (draft): an abstract functor's polymorphic type inputs.
+      var ps = ast::none();
+      var np = 0 - 1;
+      if accept(tk_lbracket()) {
+        let xs = int_list();
+        loop {
+          if here(tk_rbracket()) {
+            break;
+          }
+          if here(tk_eof()) {
+            break;
+          }
+          xs.push(take_name());
+          if !accept(tk_comma()) {
+            break;
+          }
+        }
+        expect(tk_rbracket());
+        ps = ast::commit(xs);
+        np = xs.length();
+      }
       expect(tk_colon());
       let args = int_list();
       parse_specs(args, tk_hyphen_greater());
@@ -1038,8 +1059,11 @@ assume Std {
       # No body: an abstract functor, a requirement (D78).
       if accept(tk_semi()) {
         return ast::make_functor(
-          nm, ar, args.length(), rr, res.length(), ast::none(), 0
+          nm, ar, args.length(), rr, res.length(), ast::none(), 0, ps, np
         );
+      }
+      if np >= 0 {
+        fail();
       }
       expect(tk_lbrace());
       let binds = int_list();
@@ -1060,7 +1084,7 @@ assume Std {
       expect(tk_rbrace());
       let br = ast::commit(binds);
       ast::make_functor(
-        nm, ar, args.length(), rr, res.length(), br, binds.length()
+        nm, ar, args.length(), rr, res.length(), br, binds.length(), ps, np
       )
     }
 

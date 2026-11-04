@@ -83,23 +83,23 @@ assume Wasm, Branch {
   # There are no literals (D4), so the addresses and sizes below are built
   # from `i32_one`. The scratch layout matches the backend's: an iovec at
   # 0, a byte at 8, a result word at 12, argv sizes at 24 and 28.
-  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn two(): I32 { w::i32_add(w::i32_one(), w::i32_one()) }
   fn four(): I32 { w::i32_add(two(), two()) }
   fn eight(): I32 { w::i32_add(four(), four()) }
   fn twelve(): I32 { w::i32_add(eight(), four()) }
   fn sixteen(): I32 { w::i32_add(eight(), eight()) }
   fn twenty_four(): I32 { w::i32_add(sixteen(), eight()) }
   fn thirty_two(): I32 { w::i32_add(sixteen(), sixteen()) }
-  fn chunk_size(): I32 { w::i32_shl(w::i32_one, twelve()) }
-  fn slash(): Str { string_of(slash_byte(), w::i32_one) }
+  fn chunk_size(): I32 { w::i32_shl(w::i32_one(), twelve()) }
+  fn slash(): Str { string_of(slash_byte(), w::i32_one()) }
   # '/' written into scratch that nothing else is using at the time.
   fn slash_byte(): I32 {
     let at = twenty_four();
-    w::i32_store8(at, w::i32_or(w::i32_shl(w::i32_one, five()), fifteen()));
+    w::i32_store8(at, w::i32_or(w::i32_shl(w::i32_one(), five()), fifteen()));
     at
   }
-  fn five(): I32 { w::i32_add(four(), w::i32_one) }
-  fn fifteen(): I32 { w::i32_sub(sixteen(), w::i32_one) }
+  fn five(): I32 { w::i32_add(four(), w::i32_one()) }
+  fn fifteen(): I32 { w::i32_sub(sixteen(), w::i32_one()) }
   fn twenty_eight(): I32 { w::i32_add(twenty_four(), four()) }
 
   # The bump allocator, in Moss. The heap pointer lives at address 16 of
@@ -109,13 +109,13 @@ assume Wasm, Branch {
   fn alloc(n: I32): I32 {
     let base = w::i32_load(sixteen());
     let top = w::i32_and(
-      w::i32_add(w::i32_add(base, n), w::i32_sub(four(), w::i32_one)),
-      w::i32_sub(w::i32_zero, four())
+      w::i32_add(w::i32_add(base, n), w::i32_sub(four(), w::i32_one())),
+      w::i32_sub(w::i32_zero(), four())
     );
     w::i32_store(sixteen(), top);
     if i32_bool(w::i32_gt_u(top, w::i32_shl(w::memory_size(), sixteen()))) {
       let grown = w::memory_grow(
-        w::i32_add(w::i32_sub(w::i32_shr_u(top, sixteen()), w::memory_size()), w::i32_one)
+        w::i32_add(w::i32_sub(w::i32_shr_u(top, sixteen()), w::memory_size()), w::i32_one())
       );
     }
     base
@@ -139,10 +139,10 @@ assume Wasm, Branch {
   fn string_of(p: I32, n: I32): Str {
     let s = alloc(w::i32_add(four(), n));
     w::i32_store(s, n);
-    var i = w::i32_zero;
+    var i = w::i32_zero();
     while i32_bool(w::i32_lt_u(i, n)) {
       w::i32_store8(w::i32_add(w::i32_add(s, four()), i), w::i32_load8_u(w::i32_add(p, i)));
-      i = w::i32_add(i, w::i32_one);
+      i = w::i32_add(i, w::i32_one());
     }
     Str(s)
   }
@@ -168,30 +168,30 @@ assume Wasm, Branch {
     let lb = w::i32_load(addr(other));
     let s = alloc(w::i32_add(four(), w::i32_add(la, lb)));
     w::i32_store(s, w::i32_add(la, lb));
-    var i = w::i32_zero;
+    var i = w::i32_zero();
     while i32_bool(w::i32_lt_u(i, la)) {
       w::i32_store8(
         w::i32_add(w::i32_add(s, four()), i),
         w::i32_load8_u(w::i32_add(w::i32_add(addr(this), four()), i))
       );
-      i = w::i32_add(i, w::i32_one);
+      i = w::i32_add(i, w::i32_one());
     }
-    var j = w::i32_zero;
+    var j = w::i32_zero();
     while i32_bool(w::i32_lt_u(j, lb)) {
       w::i32_store8(
         w::i32_add(w::i32_add(w::i32_add(s, four()), la), j),
         w::i32_load8_u(w::i32_add(w::i32_add(addr(other), four()), j))
       );
-      j = w::i32_add(j, w::i32_one);
+      j = w::i32_add(j, w::i32_one());
     }
     Str(s)
   }
 
   assume Wasi {
     fn write_all(ptr: I32, len: I32) {
-      w::i32_store(w::i32_zero, ptr);
+      w::i32_store(w::i32_zero(), ptr);
       w::i32_store(four(), len);
-      fd_write(w::i32_one, w::i32_zero, w::i32_one, twelve());
+      fd_write(w::i32_one(), w::i32_zero(), w::i32_one(), twelve());
     }
 
     # Named, though only `WasiConsole` binds it, because a diagnostic
@@ -199,7 +199,7 @@ assume Wasm, Branch {
     # (bootstrap/tests/test_run.py).
     fn wasi_putchar(c: Chr) {
       w::i32_store8(eight(), code_of(c));
-      write_all(eight(), w::i32_one);
+      write_all(eight(), w::i32_one());
     }
 
     # path_open against the preopen, for reading, leaving the descriptor
@@ -208,12 +208,12 @@ assume Wasm, Branch {
     # `.read`, disagree about what a failure means.
     fn open_read(p: I32): I32 {
       let rights = w::i64_or(
-        w::i64_extend_i32_u(w::i32_one), w::i64_extend_i32_u(two())
+        w::i64_extend_i32_u(w::i32_one()), w::i64_extend_i32_u(two())
       );
       path_open(
-        w::i32_add(two(), w::i32_one), w::i32_zero,
-        w::i32_add(p, four()), w::i32_load(p), w::i32_zero,
-        rights, w::i64_extend_i32_u(w::i32_zero), w::i32_zero, thirty_two()
+        w::i32_add(two(), w::i32_one()), w::i32_zero(),
+        w::i32_add(p, four()), w::i32_load(p), w::i32_zero(),
+        rights, w::i64_extend_i32_u(w::i32_zero()), w::i32_zero(), thirty_two()
       )
     }
 
@@ -224,12 +224,12 @@ assume Wasm, Branch {
       let buf = alloc(w::i32_load(twenty_eight()));
       args_get(argv, buf);
       if i32_bool(w::i32_ge_u(want, argc)) {
-        return string_of(w::i32_zero, w::i32_zero);
+        return string_of(w::i32_zero(), w::i32_zero());
       }
       let p = w::i32_load(w::i32_add(argv, w::i32_mul(want, four())));
-      var n = w::i32_zero;
+      var n = w::i32_zero();
       while i32_bool(w::i32_load8_u(w::i32_add(p, n))) {
-        n = w::i32_add(n, w::i32_one);
+        n = w::i32_add(n, w::i32_one());
       }
       string_of(p, n)
     }
@@ -284,10 +284,10 @@ assume Wasm, Branch {
       let data = w::i32_load(ints_addr(bytes));
       let n = w::i32_load(data);
       let buf = alloc(n);
-      var i = w::i32_zero;
+      var i = w::i32_zero();
       while i32_bool(w::i32_lt_u(i, n)) {
         w::i32_store8(w::i32_add(buf, i), w::i32_load(elem(data, i)));
-        i = w::i32_add(i, w::i32_one);
+        i = w::i32_add(i, w::i32_one());
       }
       write_all(buf, n);
     }
@@ -296,14 +296,14 @@ assume Wasm, Branch {
 
 functor WasiNumerics: Wasm, Branch -> Numerics {
   bind int::Int = Num;
-  bind int::zero = Num(w::i32_zero);
-  bind int::one = Num(w::i32_one);
+  bind int::zero = Num(w::i32_zero());
+  bind int::one = Num(w::i32_one());
   bind Int.add = (rhs) => Num(w::i32_add(raw(this), raw(rhs)));
   bind Int.sub = (rhs) => Num(w::i32_sub(raw(this), raw(rhs)));
   bind Int.mul = (rhs) => Num(w::i32_mul(raw(this), raw(rhs)));
   bind Int.div = (rhs) => Num(w::i32_div_s(raw(this), raw(rhs)));
   bind Int.rem = (rhs) => Num(w::i32_rem_s(raw(this), raw(rhs)));
-  bind Int.neg = () => Num(w::i32_sub(w::i32_zero, raw(this)));
+  bind Int.neg = () => Num(w::i32_sub(w::i32_zero(), raw(this)));
   bind Int.and = (rhs) => Num(w::i32_and(raw(this), raw(rhs)));
   bind Int.or = (rhs) => Num(w::i32_or(raw(this), raw(rhs)));
   bind Int.xor = (rhs) => Num(w::i32_xor(raw(this), raw(rhs)));
@@ -364,8 +364,8 @@ assume Wasm, Branch {
     # Room for eight elements to start.
     fn packed_list(): I32 {
       let handle = alloc(four());
-      let data = alloc(slot(w::i32_zero, eight()));
-      w::i32_store(data, w::i32_zero);
+      let data = alloc(slot(w::i32_zero(), eight()));
+      w::i32_store(data, w::i32_zero());
       w::i32_store(w::i32_add(data, four()), eight());
       w::i32_store(handle, data);
       handle
@@ -386,21 +386,21 @@ assume Wasm, Branch {
       if i32_bool(w::i32_eq(len, cap)) {
         # Grow by copying, word by word, since the bump allocator never
         # frees and the words are all the same to it.
-        let bigger = alloc(slot(w::i32_zero, w::i32_mul(cap, two())));
+        let bigger = alloc(slot(w::i32_zero(), w::i32_mul(cap, two())));
         w::i32_store(bigger, len);
         w::i32_store(w::i32_add(bigger, four()), w::i32_mul(cap, two()));
         let words = w::i32_mul(len, width);
-        var i = w::i32_zero;
+        var i = w::i32_zero();
         while i32_bool(w::i32_lt_u(i, words)) {
           let at = w::i32_add(eight(), w::i32_mul(i, four()));
           w::i32_store(w::i32_add(bigger, at), w::i32_load(w::i32_add(data, at)));
-          i = w::i32_add(i, w::i32_one);
+          i = w::i32_add(i, w::i32_one());
         }
         w::i32_store(handle, bigger);
         data = bigger;
       }
       put(slot(data, len), value);
-      w::i32_store(data, w::i32_add(len, w::i32_one));
+      w::i32_store(data, w::i32_add(len, w::i32_one()));
     }
   }
 }
@@ -410,21 +410,21 @@ assume Wasm, Branch {
 # nothing is reinterpreted on the way in or out.
 functor NumLayout: Wasm, Branch -> Layout {
   bind Item = Num;
-  bind width = w::i32_one;
+  bind width = w::i32_one();
   bind put = (at, value) => w::i32_store(at, raw(value));
   bind take = (at) => Num(w::i32_load(at));
 }
 
 functor SingleLayout: Wasm, Branch -> Layout {
   bind Item = Single;
-  bind width = w::i32_one;
+  bind width = w::i32_one();
   bind put = (at, value) => w::f32_store(at, sgl(value));
   bind take = (at) => Single(w::f32_load(at));
 }
 
 functor DoubleLayout: Wasm, Branch -> Layout {
   bind Item = Double;
-  bind width = w::i32_add(w::i32_one, w::i32_one);
+  bind width = w::i32_add(w::i32_one(), w::i32_one());
   bind put = (at, value) => w::f64_store(at, dbl(value));
   bind take = (at) => Double(w::f64_load(at));
 }
@@ -548,7 +548,7 @@ functor WasiContainers: Wasm, Branch -> Containers {
   bind cell::CellInt = Cell;
   bind cell::cell_int = () => {
     let a = alloc(four());
-    w::i32_store(a, w::i32_zero);
+    w::i32_store(a, w::i32_zero());
     Cell(a)
   };
   bind CellInt.read[Elem=Int] = () => Num(w::i32_load(cell_addr(this)));
@@ -581,7 +581,7 @@ functor WasiOutput: Wasm, Wasi, Branch -> Output {
 
 functor WasiFiles: Wasm, Wasi, Branch -> Files {
   bind path::Path = Loc;
-  bind path::pwd = Loc(string_of(w::i32_zero, w::i32_zero));
+  bind path::pwd = Loc(string_of(w::i32_zero(), w::i32_zero()));
   bind Path.join = (name) => {
     let dir = loc_str(this);
     if i32_bool(w::i32_eqz(w::i32_load(addr(dir)))) {
@@ -610,12 +610,12 @@ functor WasiFiles: Wasm, Wasi, Branch -> Files {
     if i32_bool(err) { w::unreachable() } else { () }
     let fd = w::i32_load(thirty_two());
     let s = alloc(four());
-    var total = w::i32_zero;
+    var total = w::i32_zero();
     loop {
       let chunk = alloc(chunk_size());
-      w::i32_store(w::i32_zero, w::i32_add(w::i32_add(s, four()), total));
+      w::i32_store(w::i32_zero(), w::i32_add(w::i32_add(s, four()), total));
       w::i32_store(four(), chunk_size());
-      fd_read(fd, w::i32_zero, w::i32_one, twelve());
+      fd_read(fd, w::i32_zero(), w::i32_one(), twelve());
       let got = w::i32_load(twelve());
       if i32_bool(w::i32_eqz(got)) { break; }
       total = w::i32_add(total, got);
@@ -634,7 +634,7 @@ functor WasiConsole: Wasm, Wasi, Branch -> Console {
   bind string::String = Str;
   bind putchar = wasi_putchar;
   bind string::print = (s) => write_all(w::i32_add(addr(s), four()), w::i32_load(addr(s)));
-  bind string::first_arg = () => arg_slot(w::i32_one);
+  bind string::first_arg = () => arg_slot(w::i32_one());
   bind Char.eq = (rhs) => i32_bool(w::i32_eq(code_of(this), code_of(rhs)));
   bind Char.ne = (rhs) => i32_bool(w::i32_ne(code_of(this), code_of(rhs)));
   bind Char.lt = (rhs) => i32_bool(w::i32_lt_u(code_of(this), code_of(rhs)));

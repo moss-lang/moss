@@ -245,13 +245,24 @@ class Parser:
         start = self.peek().offset
         self.expect(Kind.FUNCTOR)
         name = self.expect(Kind.NAME).text
+        params = None
+        if self.eat(Kind.LBRACKET):
+            # D84 (draft): the abstract functor's polymorphic type inputs.
+            params = tuple(
+                self.comma_list(lambda: self.expect(Kind.NAME).text, Kind.RBRACKET)
+            )
+            self.expect(Kind.RBRACKET)
         self.expect(Kind.COLON)
         args = self.comma_list(self.parse_spec, Kind.HYPHEN_GREATER)
         self.expect(Kind.HYPHEN_GREATER)
         result = self.comma_list(self.parse_spec, Kind.LBRACE, Kind.SEMI)
         if self.eat(Kind.SEMI):
             # No body: the platform provides it (D75's `Heap`).
-            return ast.Functordef(name, args, result, None, offset=start)
+            return ast.Functordef(name, args, result, None, offset=start, params=params)
+        if params is not None:
+            raise ParseError(
+                "only an abstract functor lists polymorphic inputs (D84)", self.peek()
+            )
         self.expect(Kind.LBRACE)
         binds = []
         while not self.at(Kind.RBRACE):

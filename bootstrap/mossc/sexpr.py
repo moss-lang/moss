@@ -262,6 +262,7 @@ def _decl(d):
         return _node(
             "d_functor",
             d.name,
+            _opt(d.params, lambda ps: _list(list(ps))),
             _list([_spec(s) for s in d.args]),
             _list([_spec(s) for s in d.result]),
             _opt(d.binds, lambda binds: _list([_bind(b) for b in binds])),

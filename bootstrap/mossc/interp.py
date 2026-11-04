@@ -716,12 +716,10 @@ def native_env(program: Program, args: list | None = None) -> dict:
             lambda a, this: IntVal(len(this.items))
         )
     if "wasm" in lib:
-        # D52's primitive layer. Only the two I32 constants are values, and
-        # only they are meaningful here: the instructions themselves need a
-        # linear memory the interpreter does not have yet, so a program
-        # assuming `Wasm` compiles but does not interpret.
-        env[lib["wasm"].names["i32_zero"]] = IntVal(0)
-        env[lib["wasm"].names["i32_one"]] = IntVal(1)
+        # D52's primitive layer: the two I32 constants, instructions of
+        # no arguments (D84, draft).
+        env[lib["wasm"].names["i32_zero"]] = NativeFn("i32_zero", lambda a, this: IntVal(0))
+        env[lib["wasm"].names["i32_one"]] = NativeFn("i32_one", lambda a, this: IntVal(1))
         # D78: the platform provides the abstract functors lib/wasm.moss
         # declares (D75's `Heap`). A functor's binding is which functor it
         # is; the platform's is the functor itself, whose application

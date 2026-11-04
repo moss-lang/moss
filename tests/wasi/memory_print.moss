@@ -17,7 +17,7 @@ assume Wasm, Wasi, Branch {
       bind Memory = Scratch;
       bind WasiContainers;
       # A string made here is in `Scratch`: the empty one.
-      let empty = string_of(w::i32_zero, w::i32_zero);
+      let empty = string_of(w::i32_zero(), w::i32_zero());
       empty.concat(empty)
     };
     print(s);

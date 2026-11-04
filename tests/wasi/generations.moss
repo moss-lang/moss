@@ -33,7 +33,7 @@ assume Wasm, Branch {
     let b = checked(rhs);
     let r = w::i32_add(a, b);
     let flips = w::i32_and(w::i32_xor(a, r), w::i32_xor(b, r));
-    if i32_bool(w::i32_lt_s(flips, w::i32_zero)) { w::unreachable() } else { () }
+    if i32_bool(w::i32_lt_s(flips, w::i32_zero())) { w::unreachable() } else { () }
     Checked(r)
   }
 

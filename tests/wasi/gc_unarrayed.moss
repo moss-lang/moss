@@ -10,7 +10,7 @@ assume Std, Wasm {
   fn demo() {
     bind Arrayed = Int;
     let n = 42;
-    let xs = n.arrayed(i32_one);
+    let xs = n.arrayed(i32_one());
   }
 }
 

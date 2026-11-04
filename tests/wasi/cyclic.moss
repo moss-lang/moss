@@ -11,6 +11,6 @@ assume Wasm, Wasi, Branch {
   tag Cell { head: I32, tail: Nil | Cell };
 
   fn main() {
-    let c = Cell { head = w::i32_one, tail = Nil };
+    let c = Cell { head = w::i32_one(), tail = Nil };
   }
 }

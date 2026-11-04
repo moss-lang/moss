@@ -11,8 +11,8 @@ type Colour = | Red | Green;
 assume Wasm, Wasi {
   fn pick(c: Colour): I32 {
     match c {
-      Red(x) => w::i32_one,
-      _ => w::i32_zero,
+      Red(x) => w::i32_one(),
+      _ => w::i32_zero(),
     }
   }
 

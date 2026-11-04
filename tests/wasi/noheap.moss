@@ -13,7 +13,7 @@ assume Std, Wasm, Branch {
   fn show(m: Maybe): Char { match m { Wrapped(c) => c, Missing => char::n, } }
 
   fn main() {
-    let sixteen = w::i32_shl(w::i32_one, w::i32_add(w::i32_add(w::i32_one, w::i32_one), w::i32_add(w::i32_one, w::i32_one)));
+    let sixteen = w::i32_shl(w::i32_one(), w::i32_add(w::i32_add(w::i32_one(), w::i32_one()), w::i32_add(w::i32_one(), w::i32_one())));
     let before = w::i32_load(sixteen);
     var i = zero;
     var last = char::q;

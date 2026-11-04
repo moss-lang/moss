@@ -332,6 +332,11 @@ def _result(name: str) -> bytes:
     return {"i64": I64, "f32": F32, "f64": F64}.get(prefix, I32)
 
 
+# `Wasm`'s two constants are zero-argument instructions (D84, draft: so
+# that `Wasm` holds no vals).
+WASM_OPS["i32_zero"] = b"\x41\x00"
+WASM_OPS["i32_one"] = b"\x41\x01"
+
 # What each of them leaves on the stack.
 RESULTS = {name: _result(name) for name in WASM_OPS}
 

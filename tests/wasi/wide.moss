@@ -9,17 +9,17 @@ tag Read(I32);
 tag Eof;
 
 assume Wasm, Wasi, Branch {
-  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
+  fn two(): I32 { w::i32_add(w::i32_one(), w::i32_one()) }
   fn four(): I32 { w::i32_add(two(), two()) }
   fn eight(): I32 { w::i32_add(four(), four()) }
   fn six(): I32 { w::i32_add(four(), two()) }
   fn emit(c: I32) {
-    w::i32_store(w::i32_zero, eight());
-    w::i32_store(four(), w::i32_one);
+    w::i32_store(w::i32_zero(), eight());
+    w::i32_store(four(), w::i32_one());
     w::i32_store8(eight(), c);
-    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
+    fd_write(w::i32_one(), w::i32_zero(), w::i32_one(), w::i32_add(eight(), four()));
   }
-  fn upper_a(): I32 { w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one) }
+  fn upper_a(): I32 { w::i32_add(w::i32_shl(w::i32_one(), six()), w::i32_one()) }
   fn newline(): I32 { w::i32_add(eight(), two()) }
 
   # Both branches inject into the union, and the function returns two
@@ -40,10 +40,10 @@ assume Wasm, Wasi, Branch {
   }
 
   fn main() {
-    var i = w::i32_zero;
-    while i32_bool(w::i32_lt_u(i, w::i32_add(four(), w::i32_one))) {
+    var i = w::i32_zero();
+    while i32_bool(w::i32_lt_u(i, w::i32_add(four(), w::i32_one()))) {
       emit(show(peek(i)));
-      i = w::i32_add(i, w::i32_one);
+      i = w::i32_add(i, w::i32_one());
     }
   }
 }

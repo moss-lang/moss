@@ -18,10 +18,11 @@ fn unreachable(): |;
 
 assume I32 {
   # There are no literals (D4), so every I32 is built from these two, the
-  # way `Int`'s `zero` and `one` work. They are the only `Wasm` items that
-  # are values rather than instructions.
-  val i32_zero: I32;
-  val i32_one: I32;
+  # way `Int`'s `zero` and `one` work. Each is an instruction, `i32.const`,
+  # like everything else here: `Wasm` holds no vals, so a functor bind
+  # can capture it whole (D84, draft; D29).
+  fn i32_zero(): I32;
+  fn i32_one(): I32;
 }
 
 # A linear memory (D79). Every memory instruction is under `assume

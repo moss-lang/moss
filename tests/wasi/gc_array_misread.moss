@@ -15,11 +15,11 @@ assume Std, Wasm {
     bind Arrayed = Int;
     bind Arrays;
     let n = 42;
-    let xs = n.arrayed(i32_one);
+    let xs = n.arrayed(i32_one());
     {
       bind Arrayed = Char;
       bind Arrays;
-      putchar(xs.get(i32_zero));
+      putchar(xs.get(i32_zero()));
       putchar(char::newline);
     }
   }

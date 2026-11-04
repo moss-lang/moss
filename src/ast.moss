@@ -79,7 +79,8 @@ assume Std {
   fn k_d_val(): Int { 43 }    # a=name b=type c=init
   fn k_d_fn(): Int { 44 }     # a=run: recv, name, params, len, ret, body
   fn k_d_context(): Int { 45 }# a=name b=item run c=len
-  fn k_d_functor(): Int { 46 }# a=run: name, args, len, res, len, binds, len
+  fn k_d_functor(): Int { 46 }# a=run: name, args, len, res, len, binds, len,
+                              # params, len + 1 (0: no brackets; D84)
                               # (binds none: no body, an abstract functor; D78)
   fn k_d_bad(): Int { 47 }
 
@@ -255,9 +256,16 @@ assume Std {
     fn fu_nres(id: Int): Int { kid_at(a_of(id), 4) }
     fn fu_binds(id: Int): Int { kid_at(a_of(id), 5) }
     fn fu_nbinds(id: Int): Int { kid_at(a_of(id), 6) }
+    # D84 (draft): an abstract functor's polymorphic type inputs, a run of
+    # names, as `[P, ...]` lists them; `fu_nparams` is negative where
+    # there are no brackets (D78's meaning: every type input polymorphic).
+    fn fu_params(id: Int): Int { kid_at(a_of(id), 7) }
+    fn fu_nparams(id: Int): Int { kid_at(a_of(id), 8) - 1 }
+    fn fu_bracketed(id: Int): Bool { fu_nparams(id) >= 0 }
 
     fn make_functor(
-      name: Int, args: Int, na_: Int, res: Int, nr: Int, binds: Int, nb_: Int
+      name: Int, args: Int, na_: Int, res: Int, nr: Int, binds: Int, nb_: Int,
+      params: Int, np_: Int
     ): Int {
       let xs = int_list();
       xs.push(name);
@@ -267,6 +275,8 @@ assume Std {
       xs.push(nr);
       xs.push(binds);
       xs.push(nb_);
+      xs.push(params);
+      xs.push(np_ + 1);
       node1(k_d_functor(), commit(xs))
     }
 

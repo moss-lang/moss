@@ -350,6 +350,21 @@ assume Std {
         sp();
         intern::put(ast::fu_name(id));
         sp();
+        if ast::fu_bracketed(id) {
+          putchar(char::lbracket);
+          var i = 0;
+          while i < ast::fu_nparams(id) {
+            if i > 0 {
+              sp();
+            }
+            intern::put(ast::kid_at(ast::fu_params(id), i));
+            i = i + 1;
+          }
+          putchar(char::rbracket);
+        } else {
+          under();
+        }
+        sp();
         dump_run(ast::fu_args(id), ast::fu_nargs(id));
         sp();
         dump_run(ast::fu_res(id), ast::fu_nres(id));
