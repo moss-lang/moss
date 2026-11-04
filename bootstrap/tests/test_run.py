@@ -2309,6 +2309,81 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 ):
                     self.assertEqual(run_wasm(module), expected)
 
+    def test_d84_functors_run(self):
+        """D84's standing tests that run: a functor's own inputs read per
+        application (`fn_input`), a captured val across frames, a captured
+        memory, merged polymorphic inputs, arrays in a scratch memory, an
+        abstract functor in a result, family members on demand (rule 7),
+        and a polyfill of the platform's `Heap` (O2). The interpreter and
+        both compilers agree."""
+        from .test_build import compile_wasm, run_wasm
+
+        for entry, expected in (
+            ("tests/wasi/functor_input_per_application.moss", "22\n"),
+            ("tests/wasi/functor_capture_val.moss", "55\n"),
+            ("tests/wasi/functor_capture_memory.moss", "07\n"),
+            ("tests/wasi/functor_merge_bracketed.moss", "tt\n"),
+            ("tests/wasi/arrays_in_scratch.moss", "6\n"),
+            ("tests/wasi/functor_in_result_ok.moss", "5\n"),
+            ("tests/wasi/arrays_on_demand.moss", "33\n"),
+            ("tests/wasi/functor_polyfill.moss", "7\n"),
+        ):
+            with self.subTest(entry=entry):
+                self.assertEqual(run({}, entry=entry), expected)
+                for module in (
+                    self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+                    compile_wasm({}, entry=entry),
+                ):
+                    self.assertEqual(run_wasm(module), expected)
+
+    def test_d84_arrays_follow_a_rebound_float(self):
+        """D84's `dd_arrays`: the thesis's `sd` over `Array[Item=Float]`
+        with `for`, under `DoubleDouble` and `Shadow`, which have no array
+        lines. The bootstrap lowers it (its back end compiles each
+        function once, which this program outgrows); the self-hosted
+        compiler runs it."""
+        from .test_build import run_wasm
+
+        entry = "tests/wasi/dd_arrays.moss"
+        program = collect.load(str(REPO / entry), prelude=str(REPO / "lib/prelude.moss"))
+        Lower(program).run()
+        module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(run_wasm(module), "0\n100000000\n1000000000\n")
+
+    def test_d84_functors_refused(self):
+        """D84's standing tests that are refused, by both compilers: a
+        fixed input rebound before an application (`StructRef`, `I32`), a
+        copy narrower than its source, a captured item mentioning a type
+        applications supply, a pin through a polymorphic input (the
+        "held" closure), a pin inside a functor result, an unbracketed
+        functor's binding that pins what it is polymorphic in, and rule
+        7's conditions: two families producing one key, a member bound
+        directly, two items of one family sharing a key's instance, and a
+        family binding applying a functor that is not a family."""
+        from .test_build import compile_wasm
+
+        cases = {
+            "functor_fixed_stale": "where the types it is fixed in mean what they meant",
+            "functor_fixed_stale_i32": "where the types it is fixed in mean what they meant",
+            "functor_copy_narrower": "promises to be polymorphic in `StructRef`",
+            "functor_capture_mentions_poly": "which each application of `F` supplies",
+            "functor_pin_through_input": "a type each application of `F` supplies (D84 3d)",
+            "functor_in_result_pin": "it pins `K`, which `Outer` is fixed in",
+            "functor_unbracketed_pin": "and `Fast` is polymorphic in `Int` (D84)",
+            "family_collision": "are families that produce the same method key",
+            "family_direct": "is a member of the family `Arrays`",
+            "family_ambiguous": "is two items of the family `F` here",
+            "family_apply": "its bindings apply no functor but a family",
+        }
+        for name, message in cases.items():
+            entry = f"tests/wasi/{name}.moss"
+            with self.subTest(entry=entry):
+                with self.assertRaises(LowerError) as caught:
+                    compile_wasm({}, entry=entry)
+                self.assertIn(message, str(caught.exception))
+                out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+                self.assertNotEqual(out[:4], b"\0asm", out[:200])
+
     def test_ref_over_an_arena(self):
         """D78: `Ref[Boxed]`'s payload is the platform's abstract
         `StructRef`, so a scope can rebind it to an `I32` address and

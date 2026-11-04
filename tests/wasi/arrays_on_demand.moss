@@ -1,0 +1,46 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiFloats32;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/array.moss" use Item, Array, ArrayHandle, Arrays, .arrayed;
+import "../../lib/access.moss" use Elem, .get, .set, .length;
+import "../../lib/int.moss" use IntOps;
+import "../../lib/size.moss" use Size, Sizes, .size, .int;
+import "../../lib/float.moss" use Floats;
+
+# D84 rule 7: on-demand family members (on_demand_manual without its two
+# explicit lines). Was: elaborated by hand: `total`
+# requires the family `Arrays` (not `FloatArrays`) and applies it at the
+# `Float` in force at its use, which is the `EApply Arrays θ` an
+# on-demand rule would insert. The block rebinds `Float` (f32) with no
+# `bind FloatArraysOf;`. Expected: 3 twice.
+
+assume Int, zero, one, IntOps, Floats, Sizes, ArrayHandle, Arrays {
+  fn total(n: Int): Int {
+    let xs = float(one).arrayed(n.size());
+    var s = float(zero);
+    var i = zero;
+    while i < xs.length().int() {
+      s = s + xs.get(i.size());
+      i = i + one;
+    }
+    s.round()
+  }
+}
+
+assume Std {
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    digit(total(3));
+    let r = {
+      bind WasiFloats32;
+      total(3)
+    };
+    digit(r);
+    putchar(char::newline);
+  }
+}

@@ -1,0 +1,48 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D84 probe: is an abstract functor's own fn input read where it is
+# applied (the calculus: F's inputs are linked per application, through
+# ς) or where it was bound? `Get` takes `pick`; the block rebinds `pick`
+# and then applies `Get`. Expected (calculus): 2, then 2 for the
+# unbracketed twin.
+
+assume Std {
+  fn pick(): Int;
+  fn get(): Int;
+  fn one_fn(): Int { 1 }
+  fn two_fn(): Int { 2 }
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+}
+
+functor Get[]: Std, pick -> get;
+functor Get2: Std, pick -> get;
+functor ByPick: Std, pick -> get { bind get = () => pick(); }
+
+assume Std {
+  fn demo() {
+    bind pick = one_fn;
+    bind Get = ByPick;
+    bind Get2 = ByPick;
+    {
+      bind pick = two_fn;
+      bind Get;
+      digit(get());
+    }
+    {
+      bind pick = two_fn;
+      bind Get2;
+      digit(get());
+    }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

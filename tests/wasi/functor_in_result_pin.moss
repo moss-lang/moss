@@ -1,0 +1,62 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D84 probe (audit C7): an abstract functor in another's result. `Inner[]`
+# is fixed in `K`. `OuterImpl`, bound to `Outer[]`, binds `K = A` and then
+# `Inner = InnerA`, which pins `K = A`: so the `Inner` that leaves
+# `bind Outer;` was bound where `K` was `A`. The calculus counts `Inner`'s
+# fixed inputs among what `Outer`'s result reads (dep_tys (IFun Inner) =
+# X(Inner)), so `K` ∈ M(Outer) = X(Outer), and `OuterImpl`'s pin of `K` is
+# checked where `Outer` is bound, here at `K` = `B`: refused. Printing 7
+# means an `A` was read as a `B`.
+
+assume Std {
+  tag A(Int);
+  tag B(Int);
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+}
+
+type K;
+
+assume K {
+  fn getk(): K;
+}
+
+functor Inner[]: K -> getk;
+functor Outer[]: Std, K -> Inner;
+
+functor InnerA: Std -> getk {
+  bind K = A;
+  bind getk = () => A(7);
+}
+
+functor OuterImpl: Std -> Inner {
+  bind K = A;
+  bind Inner = InnerA;
+}
+
+assume Std, K, Outer {
+  fn use_it(): K {
+    bind Outer;
+    bind Inner;
+    getk()
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind K = B;
+    bind Outer = OuterImpl;
+    match use_it() { B(n) => digit(n) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

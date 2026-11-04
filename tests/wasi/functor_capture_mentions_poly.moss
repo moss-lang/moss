@@ -1,0 +1,51 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D84 probe (audit C5; the calculus's closed captured telescope): `G`
+# captures `mk0`, which `F` does not take and whose signature mentions
+# `T`, a polymorphic input of `F`. Captured at the bind (`T` = `A`), it
+# would be used at an application where `T` = `B`. Expected: refused at
+# `bind F = G;`.
+
+assume Std {
+  tag A(Int);
+  tag B(Int);
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+}
+
+type T;
+
+assume T {
+  fn mk(): T;
+  fn mk0(): T;
+}
+
+functor F[T]: T -> mk;
+
+functor G: T, mk0 -> mk {
+  bind mk = mk0;
+}
+
+assume Std {
+  fn mk_a(): A { A(7) }
+  fn demo() {
+    bind T = A;
+    bind mk0 = mk_a;
+    bind F = G;
+    {
+      bind T = B;
+      bind F;
+      match mk() { B(n) => digit(n) }
+    }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

@@ -1,0 +1,20 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" as w use Gc, Wasm, I32, Boxed, Ref, Heap, StructRef, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Probe: apply the platform's `Heap` after rebinding one of its fixed
+# inputs (`StructRef`, which `Ref[Boxed]`'s payload mentions).
+tag Point { x: Int, y: Int };
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind StructRef = I32;
+    bind Boxed = Point;
+    bind Heap;
+    let r = Point { x = one, y = one + one }.boxed();
+    putchar((r.deref().y + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}

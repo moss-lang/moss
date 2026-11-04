@@ -1,0 +1,55 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, raw;
+import "../../lib/wasm.moss" as w use Gc, Wasm, Memory, I32;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D84 probe (D79): which memory does a bound functor's memory instruction
+# use when it is applied in a `Scratch` block? `Poke[]` takes `Wasm`
+# (so `Memory` is one of its inputs, outside M(Poke) = {I32}: read per
+# application); `Poke2[]` takes nothing, so its binding captures `Wasm`,
+# `Memory` included. Each pokes 7 into address 60000 inside the block;
+# then the main memory's word there is printed. Expected: 0 for `Poke`
+# (the store went to Scratch); for `Poke2` the rule must say.
+
+tag Scratch;
+
+# Declared under `I32`, not `Wasm`: `poke`'s dependencies are its whole
+# telescope (D84 rule 1 as strengthened, D71/D79), and under `Wasm` they
+# would include `Memory`, so `Poke` would be fixed in it and refused in
+# the `Scratch` block (the probe's original form).
+assume I32 {
+  fn poke(a: I32, v: I32);
+}
+
+functor Poke[]: Wasm -> poke;
+functor Poke2[]: -> poke;
+functor Store: Wasm -> poke {
+  bind poke = (a, v) => w::i32_store(a, v);
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn demo() {
+    bind WasiStd;
+    bind Poke = Store;
+    bind Poke2 = Store;
+    {
+      bind Memory = Scratch;
+      bind Poke;
+      poke(raw(60000), raw(7));
+    }
+    putchar((Num(w::i32_load(raw(60000))) + char::digit0.code()).char());
+    {
+      bind Memory = Scratch;
+      bind Poke2;
+      poke(raw(60000), raw(7));
+    }
+    putchar((Num(w::i32_load(raw(60000))) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    demo();
+  }
+}

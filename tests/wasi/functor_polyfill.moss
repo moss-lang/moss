@@ -1,0 +1,24 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Today's D78: rebinding the platform's own `Heap` to a wrapper that
+# applies `Heap` inside (the polyfill pattern). `Heap`'s inputs are
+# `Wasm, Boxed`; under D84 (O2) `Wasm` no longer lists `Heap`, and the wrapper takes `Heap` itself, captured at the bind: a polyfill. Before, the wrapper.s inner
+# `bind Heap;` reads `Heap` per application -- and finds the wrapper.
+functor Wrapped: Wasm, Heap, Boxed -> Boxed.boxed, Ref.deref {
+  bind Heap;
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Heap = Wrapped;
+    bind Boxed = Int;
+    bind Heap;
+    let r = 7.boxed();
+    putchar((r.deref() + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}

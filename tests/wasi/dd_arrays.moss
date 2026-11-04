@@ -1,0 +1,99 @@
+import "../../lib/access.moss" use .get, .set, .length;
+import "../../lib/array.moss" use Item, Array, .arrayed;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "./doubledouble.moss" use DoubleDouble;
+import "./shadowing.moss" use Shadow, tolerance;
+
+# D84's standing test `dd_arrays`: the thesis's `sd(xs: Array[Item=Float])`,
+# iterating with `for x in xs`, run under `bind DoubleDouble;` and
+# `bind Shadow;`, neither of which has an array line: the arrays of the
+# new `Float` come on demand from `Std`'s `Arrays` (D84 rule 7). Output:
+# NumAcc4's standard deviation at f64, at double-double, and under the
+# shadow on benign inputs.
+
+assume Std {
+  fn print_int(n: Int) {
+    if n < 0 {
+      putchar(char::hyphen);
+      print_int(-n);
+      return;
+    }
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn print_line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+assume Std {
+  # NIST StRD NumAcc4: 10000000.2, then 10000000.1 and 10000000.3 in turn.
+  fn readings(): Array[Item=Float] {
+    let xs = 10000000.2.arrayed(1001.size());
+    var i = 1;
+    while i < 1001 {
+      if i % 2 == 1 { xs.set(i.size(), 10000000.1); } else { xs.set(i.size(), 10000000.3); }
+      i = i + 1;
+    }
+    xs
+  }
+
+  # The schoolbook one-pass formula, as PostgreSQL's `stddev` computed
+  # it until version 12, clamp included.
+  fn sd(xs: Array[Item=Float]): Float {
+    var n = 0.0;
+    var sum = 0.0;
+    var sum_sq = 0.0;
+    for x in xs {
+      n = n + 1.0;
+      sum = sum + x;
+      sum_sq = sum_sq + x * x;
+    }
+    let numerator = n * sum_sq - sum * sum;
+    if numerator <= 0.0 { 0.0 } else { (numerator / (n * (n - 1.0))).sqrt() }
+  }
+
+  fn show(sd: Float) { print_line((sd * 1000000000.0).round()); }
+
+  fn report() { show(sd(readings())); }
+}
+
+# Not from the example: benign inputs for the same `sd`.
+assume Std {
+  # NumAcc4's shape, centred near 0: 0.2, then 0.1 and 0.3 in turn.
+  fn centred(): Array[Item=Float] {
+    let xs = 0.2.arrayed(1001.size());
+    var i = 1;
+    while i < 1001 {
+      if i % 2 == 1 { xs.set(i.size(), 0.1); } else { xs.set(i.size(), 0.3); }
+      i = i + 1;
+    }
+    xs
+  }
+
+  # Small integers in the same shape: 2, then 1 and 3 in turn.
+  fn small(): Array[Item=Float] {
+    let xs = 2.0.arrayed(1001.size());
+    var i = 1;
+    while i < 1001 {
+      if i % 2 == 1 { xs.set(i.size(), 1.0); } else { xs.set(i.size(), 3.0); }
+      i = i + 1;
+    }
+    xs
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    report();
+    { bind DoubleDouble; report(); }
+    bind tolerance = 1e-9;
+    { bind Shadow; show(sd(small())); }
+  }
+}

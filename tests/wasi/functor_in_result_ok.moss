@@ -1,0 +1,57 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D84 control for fun_in_result.moss: the same shapes, but nothing pins
+# `K`: `OuterOK` binds `Inner` to a functor that makes its `K` with
+# `kdef`, which `Outer` takes. Correct: prints 5.
+
+assume Std {
+  tag B(Int);
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+}
+
+type K;
+
+assume K {
+  fn getk(): K;
+  fn kdef(): K;
+}
+
+functor Inner[]: K -> getk;
+functor Outer[]: Std, K, kdef -> Inner;
+
+functor InnerK: K, kdef -> getk {
+  bind getk = kdef;
+}
+
+functor OuterOK: Std, K, kdef -> Inner {
+  bind Inner = InnerK;
+}
+
+assume Std, K, kdef, Outer {
+  fn use_it(): K {
+    bind Outer;
+    bind Inner;
+    getk()
+  }
+}
+
+assume Std {
+  fn five(): B { B(5) }
+  fn demo() {
+    bind K = B;
+    bind kdef = five;
+    bind Outer = OuterOK;
+    match use_it() { B(n) => digit(n) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

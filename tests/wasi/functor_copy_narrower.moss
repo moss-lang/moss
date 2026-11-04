@@ -1,0 +1,35 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" as w use Gc, Wasm, I32, Boxed, Ref, Heap, StructRef, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Copying the platform's `Heap` into an UNBRACKETED abstract functor, as
+# tests/wasi/gc_bodiless.moss does (`bind Boxing = Heap;`). Even with
+# `Heap[Boxed]` bracketed (draft section 6, default 2), `Boxing` is
+# polymorphic in every type of `Wasm` (section 3, statement 1), so no
+# staleness check fires when generic code applies it after `StructRef`
+# is rebound: the miscompile of probes/heap_rebound_generic.moss comes
+# back through the copy, unless a copy requires P(Boxing) within P(Heap).
+tag Point { x: Int, y: Int };
+
+functor Boxing: Wasm, Boxed -> Boxed.boxed, Ref.deref;
+
+assume Wasm, Std, Boxing {
+  fn second(p: Point): Int {
+    bind Boxed = Point;
+    bind Boxing;
+    p.boxed().deref().y
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Boxing = Heap;
+    {
+      bind StructRef = I32;
+      putchar((second(Point { x = one, y = one }) + char::digit0.code()).char());
+    }
+    putchar(char::newline);
+  }
+}

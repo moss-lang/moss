@@ -1,0 +1,69 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D84 probe for the bootstrap's "held" types (adjustment 2): `F[]` is fixed
+# in `K` and reads `T` (and `mk`) per application. `G` pins `K = Wrap`,
+# and `Wrap` lists `T`, so where the binding is made `K` mentions the
+# abstract `T` and the bootstrap holds `T` at the bind instead of making
+# it fresh. The block then rebinds `T` (and `mk`) and applies `F`: `K` is
+# unchanged, so the fixed-input check passes, but the closure's `mk` now
+# comes from the application, at the new `T`. In the calculus `T` would be
+# captured (the pin mentions it) and is an input of `F`, so it must be in
+# X(F) (cap_ok) — impossible, X(F) ⊆ M(F) = {K} — and the bind is refused.
+# Correct behaviour: a static error. Printing 9 means a `B` was read as an
+# `A`.
+
+assume Std {
+  tag A(Int);
+  tag B(Int);
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+}
+
+type T;
+type K;
+
+assume T {
+  fn mk(): T;
+  tag Wrap(T);
+}
+
+assume K {
+  fn getk(): K;
+}
+
+functor F[]: T, mk -> getk;
+
+functor G: T, mk -> getk {
+  bind K = Wrap;
+  bind getk = () => Wrap(mk());
+}
+
+assume Std {
+  fn mk_b(): B { B(9) }
+  fn mk_a(): A { A(7) }
+}
+
+assume Std, T, mk {
+  fn demo(): T {
+    bind K = Wrap;
+    bind F = G;
+    {
+      bind T = B;
+      bind mk = mk_b;
+      bind F;
+      match getk() { Wrap(x) => x }
+    }
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind T = A;
+    bind mk = mk_a;
+    match demo() { A(n) => digit(n) }
+    putchar(char::newline);
+  }
+}

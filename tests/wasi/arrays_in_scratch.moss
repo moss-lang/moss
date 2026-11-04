@@ -1,0 +1,30 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, raw, WasiContainers;
+import "../../lib/wasm.moss" use Gc, Wasm, I32, Memory, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Draft section 6, default 2: bracket `Arrays[Arrayed]`, every other type
+# of its inputs fixed. `Wasm` lists `Memory` (lib/wasm.moss:289), so
+# `Memory` would be in X(Arrays), and the platform's binding is at the
+# root's memory. Applying `Arrays` in a `bind Memory = Scratch` block, as
+# here, would become a stale use -- though a GC array lives in no linear
+# memory (D81, settled point 6). Today it runs and prints 6.
+tag Scratch;
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let total = {
+      bind Memory = Scratch;
+      bind WasiContainers;
+      bind Arrayed = Int;
+      bind Arrays;
+      let xs = 1.arrayed(raw(3));
+      xs.set(raw(1), 2);
+      xs.set(raw(2), 3);
+      xs.get(raw(0)) + xs.get(raw(1)) + xs.get(raw(2))
+    };
+    putchar((total + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}

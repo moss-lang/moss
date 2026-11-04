@@ -1,0 +1,254 @@
+# A copy of the thesis's shadow.moss, for tests/wasi/dd_arrays.moss.
+# Kahan's imagined debugger (Mindless, 2006, §14), the harness half, as
+# a library: `bind Shadow;` makes every `Float` below it a pair of the
+# `Float` in force (p's value, "x") and its analog in double-double (P's,
+# "X"), computed side by side, interleaved one operation at a time.
+#
+# - Arithmetic runs in both halves. Literals need nothing special: by D68
+#   a decimal literal is `float(m) / float(10^k)` (the compiler builds `m`
+#   and `10^k` by Horner from `float(digit)`s, exactly in both halves),
+#   and that division runs in both halves too, so each half gets the
+#   literal correctly rounded at its own precision, not p's widened.
+# - Comparisons, `.round` and `.trunc` answer from p's half, so P follows
+#   p's branches (Kahan's technicality (b)). The first time P's half would
+#   have answered differently, it is reported, and the program continues.
+# - After every arithmetic operation, |x - X| / |X| is checked against
+#   `tolerance` (Kahan's technicality (c)), and the first operation where
+#   it is exceeded is reported, with its operands, both results and the
+#   relative difference.
+#
+# Operations are numbered from the bind, literals' arithmetic included,
+# so a report says which one. Each kind of report is made at most once
+# per application. Over the base `Float` only: P is double-double.
+
+import "../../lib/access.moss" use Elem, Index, .get, .set, .length, .push;
+import "../../lib/char.moss" use Char, .char;
+import "../../lib/int.moss" use Int, IntOps, zero, one;
+import "../../lib/bool.moss" use Bool, true, false;
+import "../../lib/list.moss" use IntList, int_list;
+import "../../lib/std.moss" use Std, putchar;
+import "../../lib/float.moss" use Float, Floats;
+import "./doubledouble.moss" use Base, lift, BaseOps,
+  DD, widen, dd_add, dd_neg, dd_mul, dd_div, dd_sqrt, dd_lt, dd_eq,
+  dd_round, dd_trunc;
+
+# How far P may stray, relative: bound by whoever applies `Shadow`, in
+# the `Float` in force there.
+assume Float {
+  val tolerance: Float;
+}
+
+assume Int, Base {
+  # The tolerance, as a base float, and the harness's state: the number
+  # of operations so far, and whether each kind of report has been made.
+  val tol: Base;
+  val state: IntList;
+
+  # Everything the harness counts, remembers or says goes through this
+  # one fn, bound once per application. `op` says which operation (see
+  # `op_add` and on): for arithmetic, operands a, b, results x, X, and
+  # their relative difference q; for a comparison where the halves
+  # disagree, p's answer `said`, operands a, b in p and x, X in P; for
+  # `.round`/`.trunc`, a in p, b in P, and the answers x and X. The
+  # providers below call only this, and their own code has no Int
+  # literal: what this captures is captured once rather than by each
+  # provider, and literals in a provider cost hidden parameters (bugs/).
+  fn note(op: Base, said: Bool, a: Base, b: Base, x: Base, X: Base, q: Base);
+}
+
+context Out =
+  Bool, true, false, Bool.xor, Int, zero, one, IntOps, Char, putchar, Int.char,
+  IntList, int_list, IntList.push[Elem=Int], IntList.get[Elem=Int, Index=Int],
+  IntList.set[Elem=Int, Index=Int], IntList.length[Index=Int];
+
+# Printing, without string literals (D5): a character by its ASCII code,
+# and a word of up to six lowercase letters packed into an Int, base 32,
+# a = 1 (so `word(1156)` prints "add").
+assume Out {
+  fn word(w: Int) {
+    if w >= 32 { word(w / 32); }
+    putchar((w % 32 + 96).char());
+  }
+  fn ch(c: Int) { putchar(c.char()); }
+  fn sp() { ch(32); }
+  fn int(n: Int) {
+    if n < zero { ch(45); int(-n); return; }
+    if n >= 10 { int(n / 10); }
+    putchar((n % 10 + 48).char());
+  }
+}
+
+assume Out, BaseOps {
+  # Nine significant digits, as d.dddddddde±n: enough to tell the halves
+  # apart, not to reproduce either (the scaling by ten rounds).
+  fn num(x: Base) {
+    if x != x { word(14 * 32 + 1); word(14); return; }            # nan
+    if x < lift(zero) { ch(45); num(-x); return; }
+    if x == lift(zero) { ch(48); return; }
+    if x - x != lift(zero) { word(9 * 1024 + 14 * 32 + 6); return; } # inf
+    var y = x;
+    var e = 0;
+    while y >= lift(10) { y = y / lift(10); e = e + 1; }
+    while y < lift(one) { y = y * lift(10); e = e - 1; }
+    var m = (y * lift(100000000)).round();
+    if m >= 1000000000 { m = m / 10; e = e + 1; }
+    int(m / 100000000);
+    ch(46);
+    var d = 10000000;
+    var r = m % 100000000;
+    while d > zero { int(r / d); r = r % d; d = d / 10; }
+    ch(101);
+    int(e);
+  }
+  fn bool(b: Bool) { if b { word(674469); } else { word(6337125); } }   # true, false
+}
+
+assume Out, BaseOps, tol, state {
+  # Which word names operation `op`, packed as for `word`.
+  fn op_name(op: Int): Int {
+    if op == 1 { 1156 } else if op == 2 { 20130 } else if op == 3 { 13996 }    # add sub mul
+    else if op == 4 { 4406 } else if op == 5 { 640596 } else if op == 6 { 404 } # div sqrt lt
+    else if op == 7 { 244 } else if op == 8 { 389 } else if op == 9 { 229 }      # gt le ge
+    else if op == 10 { 177 } else if op == 11 { 453 } else if op == 12 { 19387844 } # eq ne round
+    else { 21583299 }                                                             # trunc
+  }
+
+  # "shadow: op N name", or for a decision, which is not an operation,
+  # "shadow: after op N, name".
+  fn head(name: Int, after: Bool) {
+    word(645960183); ch(58); sp();                                      # shadow:
+    if after { word(1265842); sp(); }                                   # after
+    word(496); sp(); int(state.get(0));                                 # op N
+    if after { ch(44); }
+    sp(); word(name);
+  }
+
+  fn shadow_note(op: Base, said: Bool, a: Base, b: Base, x: Base, X: Base, q: Base) {
+    let code = op.round();
+    let name = op_name(code);
+    if code <= 5 {
+      state.set(0, state.get(0) + 1);
+      if state.get(1) == zero {
+        if q > tol {
+          state.set(1, one);
+          head(name, false);
+          ch(40); num(a); ch(44); sp(); num(b); ch(41);
+          sp(); word(139986516); word(19); ch(58); sp();                # departs:
+          ch(112); sp(); num(x); ch(44); sp();                          # p
+          ch(80); sp(); num(X); ch(44); sp();                           # P
+          word(18604); sp(); num(q);                                    # rel
+          ch(10);
+        }
+      }
+      return;
+    }
+    if state.get(2) == zero {
+      state.set(2, one);
+      head(name, true);
+      ch(32); word(86030440); ch(58); sp();                             # branch:
+      if code >= 12 {
+        ch(112); sp(); num(a); sp(); num(x); ch(44); sp();
+        ch(80); sp(); num(b); sp(); num(X);
+      } else {
+        ch(112); sp(); ch(40); num(a); ch(44); sp(); num(b); ch(41); sp();
+        bool(said); ch(44); sp();
+        ch(80); sp(); ch(40); num(x); ch(44); sp(); num(X); ch(41); sp();
+        bool(said ^ true);
+      }
+      ch(10);
+    }
+  }
+}
+
+assume Int, zero, one, IntOps, Bool, true, false, Bool.xor, BaseOps, note {
+  tag Sh { x: Base, X: DD };
+
+  # |x - X| / |X|, with x - X in double-double so the difference is P's
+  # to the last bit; 0 if both are 0, infinite if only X is.
+  fn rel(r: Sh): Base {
+    let d = dd_add(widen(r.x), dd_neg(r.X));
+    if d.hi == lift(zero) { return lift(zero); }
+    d.hi.abs() / r.X.hi.abs()
+  }
+
+  # Operations, numbered for `note` without Int literals.
+  fn next(op: Base): Base { op + lift(one) }
+  fn op_add(): Base { lift(one) }
+  fn op_sub(): Base { next(op_add()) }
+  fn op_mul(): Base { next(op_sub()) }
+  fn op_div(): Base { next(op_mul()) }
+  fn op_sqrt(): Base { next(op_div()) }
+  fn op_lt(): Base { next(op_sqrt()) }
+  fn op_gt(): Base { next(op_lt()) }
+  fn op_le(): Base { next(op_gt()) }
+  fn op_ge(): Base { next(op_le()) }
+  fn op_eq(): Base { next(op_ge()) }
+  fn op_ne(): Base { next(op_eq()) }
+  fn op_round(): Base { next(op_ne()) }
+  fn op_trunc(): Base { next(op_round()) }
+
+  # Every operation is noted, with how far its halves are apart.
+  fn check(op: Base, a: Sh, b: Sh, r: Sh): Sh {
+    note(op, false, a.x, b.x, r.x, r.X.hi, rel(r));
+    r
+  }
+
+  # A decision: p's answer, after noting where P's differs.
+  fn decide(op: Base, a: Sh, b: Sh, p: Bool, q: Bool): Bool {
+    if p ^ q { note(op, p, a.x, b.x, a.X.hi, b.X.hi, lift(zero)); }
+    p
+  }
+  fn decide_int(op: Base, a: Sh, p: Int, q: Int): Int {
+    if lift(p) != lift(q) { note(op, false, a.x, a.X.hi, lift(p), lift(q), lift(zero)); }
+    p
+  }
+
+  fn sh_add(a: Sh, b: Sh): Sh { check(op_add(), a, b, Sh { x = a.x + b.x, X = dd_add(a.X, b.X) }) }
+  fn sh_sub(a: Sh, b: Sh): Sh { check(op_sub(), a, b, Sh { x = a.x - b.x, X = dd_add(a.X, dd_neg(b.X)) }) }
+  fn sh_mul(a: Sh, b: Sh): Sh { check(op_mul(), a, b, Sh { x = a.x * b.x, X = dd_mul(a.X, b.X) }) }
+  fn sh_div(a: Sh, b: Sh): Sh { check(op_div(), a, b, Sh { x = a.x / b.x, X = dd_div(a.X, b.X) }) }
+  fn sh_sqrt(a: Sh): Sh { check(op_sqrt(), a, a, Sh { x = a.x.sqrt(), X = dd_sqrt(a.X) }) }
+  fn sh_neg(a: Sh): Sh { Sh { x = -a.x, X = dd_neg(a.X) } }
+  fn sh_abs(a: Sh): Sh {
+    Sh { x = a.x.abs(), X = if a.X.hi < lift(zero) { dd_neg(a.X) } else { a.X } }
+  }
+  fn sh_lt(a: Sh, b: Sh): Bool { decide(op_lt(), a, b, a.x < b.x, dd_lt(a.X, b.X)) }
+  fn sh_gt(a: Sh, b: Sh): Bool { decide(op_gt(), a, b, a.x > b.x, dd_lt(b.X, a.X)) }
+  fn sh_le(a: Sh, b: Sh): Bool { decide(op_le(), a, b, a.x <= b.x, if dd_lt(b.X, a.X) { false } else { true }) }
+  fn sh_ge(a: Sh, b: Sh): Bool { decide(op_ge(), a, b, a.x >= b.x, if dd_lt(a.X, b.X) { false } else { true }) }
+  fn sh_eq(a: Sh, b: Sh): Bool { decide(op_eq(), a, b, a.x == b.x, dd_eq(a.X, b.X)) }
+  fn sh_ne(a: Sh, b: Sh): Bool { decide(op_ne(), a, b, a.x != b.x, if dd_eq(a.X, b.X) { false } else { true }) }
+  fn sh_round(a: Sh): Int { decide_int(op_round(), a, a.x.round(), dd_round(a.X)) }
+  fn sh_trunc(a: Sh): Int { decide_int(op_trunc(), a, a.x.trunc(), dd_trunc(a.X)) }
+  fn sh_of(n: Int): Sh { Sh { x = lift(n), X = widen(lift(n)) } }
+}
+
+# All of `Floats` as p and P side by side, over the `Float` in force.
+functor Shadow: Std, tolerance -> Floats {
+  bind Base = Float;
+  bind lift = float;
+  bind tol = tolerance;
+  bind state = {
+    let s = int_list();
+    s.push(0); s.push(0); s.push(0);
+    s
+  };
+  bind note = shadow_note;
+  bind Float = Sh;
+  bind float = sh_of;
+  bind Float.add = (r) => sh_add(this, r);
+  bind Float.sub = (r) => sh_sub(this, r);
+  bind Float.mul = (r) => sh_mul(this, r);
+  bind Float.div = (r) => sh_div(this, r);
+  bind Float.neg = () => sh_neg(this);
+  bind Float.sqrt = () => sh_sqrt(this);
+  bind Float.abs = () => sh_abs(this);
+  bind Float.eq = (r) => sh_eq(this, r);
+  bind Float.ne = (r) => sh_ne(this, r);
+  bind Float.lt = (r) => sh_lt(this, r);
+  bind Float.gt = (r) => sh_gt(this, r);
+  bind Float.le = (r) => sh_le(this, r);
+  bind Float.ge = (r) => sh_ge(this, r);
+  bind Float.trunc = () => sh_trunc(this);
+  bind Float.round = () => sh_round(this);
+}

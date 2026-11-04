@@ -1,0 +1,45 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D84 probe: a val the binding captures (`seed`, an input of `BySeed`
+# that `Get` does not take), read in another frame (`show`, generic over
+# `Get`). Expected: 55 — the binding holds `seed` as it was at the bind,
+# even after `seed` is rebound.
+
+assume Std {
+  val seed: Int;
+  fn get(): Int;
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+}
+
+functor Get[]: Std -> get;
+functor BySeed: Std, seed -> get { bind get = () => seed + one; }
+
+assume Std, Get {
+  fn show() {
+    bind Get;
+    digit(get());
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind seed = 4;
+    bind Get = BySeed;
+    show();
+    {
+      bind seed = 6;
+      show();
+    }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

@@ -1,0 +1,19 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D84 rule 7 (strengthened; D84.v `family_apply_placement`): a family's
+# binding that binds no val but applies a functor whose binding does.
+# Expected: refused at `bind F = G;`.
+type A;
+assume A { fn .m(): A; }
+assume Std { val count: Int; }
+functor Tick: Std -> count;
+functor Counted: Std -> count { bind count = 1; }
+functor F[A]: Std -> A.m;
+functor G: Std, A, Tick -> A.m { bind Tick; bind A.m = () => this; }
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() { bind WasiStd; bind Tick = Counted; bind F = G; putchar(char::newline); }
+}
