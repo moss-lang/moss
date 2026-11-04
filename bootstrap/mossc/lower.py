@@ -241,7 +241,7 @@ class Lower:
         # modules, found by the file that declares them as `Bool` is.
         self.lang: dict[str, Module] = {}
         for module in program.order:
-            for short in ("num", "int", "float"):
+            for short in ("num", "int", "float", "access"):
                 if module.path.endswith(f"lib/{short}.moss"):
                     self.lang[short] = module
         # D75: lib/wasm.moss's garbage-collected references, found by the
@@ -3662,8 +3662,13 @@ class FnChecker:
         """D68: `-a` is `a.neg()`, `a + b` is `a.add(b)`, and so on — calls
         of `num.moss`'s detached methods, keyed by the operand's type and
         provided by the context exactly as a method call's are."""
-        name = OPERATOR_METHODS[(op, len(args))]
-        method = self.lang_symbol("num", name, "detached", f"`{op}`")
+        if op.startswith("for."):
+            # `for` (draft): access.moss's iteration methods, found as
+            # the operators' are (parse.py's `parse_for`).
+            method = self.lang_symbol("access", op[4:], "detached", "`for`")
+        else:
+            name = OPERATOR_METHODS[(op, len(args))]
+            method = self.lang_symbol("num", name, "detached", f"`{op}`")
         obj, oty = self.synth(operand)
         if head(self.lower.canon(self.env, oty)) is None:
             self.error(f"`{show(oty)}` has no methods (it has no nominal head)")

@@ -6,6 +6,8 @@ import "./wasistd.moss" use WasiBasics, WasiContainers, WasiOutput, WasiFiles,
   WasiFloats, Branch, GcArrays;
 import "./wasm.moss" use Wasm, ArrayRef;
 import "./array.moss" as array use ArrayHandle, Arrays, FloatArraysOf;
+import "./size.moss" as size use Size, .size, .int;
+import "./int.moss" use Int;
 import "./wasip1.moss" use Wasi;
 
 # All of it: the `Std` signature, provided in Moss over the primitive
@@ -22,6 +24,12 @@ functor WasiStd: Wasm, Wasi, Branch -> Std {
   bind WasiOutput;
   bind WasiFiles;
   bind WasiFloats;
+  # Lengths and indices are the root `Int`, a generation of their own
+  # (D72), so a later rebinding of `Int` leaves them, and the arrays,
+  # where they are.
+  bind size::Size = Int;
+  bind Int.size = () => this;
+  bind Size.int = () => this;
   # Arrays are GC arrays (D81), bound once here for every element type,
   # and `Float`'s are derived from them (D84, draft).
   bind array::ArrayHandle = ArrayRef;

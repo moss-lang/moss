@@ -1,4 +1,4 @@
-import "./access.moss" use Elem, .get, .set, .length, .push, .read;
+import "./access.moss" use Elem, .get, .set, .length, .push, .read, .begin, .more, .after;
 import "./bool.moss" use Bool, False, True;
 import "./cell.moss" use CellInt, cell_int;
 # `.char` is imported by name because it is provided at `Int`, not at
@@ -8,6 +8,7 @@ import "./char.moss" use Char, Chars, .char;
 import "./float.moss" use Floats;
 import "./array.moss" use ArrayHandle, Arrays, FloatArrays;
 import "./int.moss" use Int, IntOps, zero, one;
+import "./size.moss" use Size, Sizes;
 import "./list.moss" use IntList, int_list;
 import "./num.moss" use .not, .and, .or, .xor;
 import "./path.moss" use Path, pwd;
@@ -46,6 +47,10 @@ context Std =
   zero,
   one,
   IntOps,
+
+  # Array lengths and indices, and their conversions to and from `Int`
+  # (size.moss), after `Int`.
+  Sizes,
 
   # `Float` and its conversions to and from `Int`, after `Int` (D67).
   Floats,

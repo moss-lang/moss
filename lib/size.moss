@@ -1,0 +1,21 @@
+import "./int.moss" use Int;
+
+# The type of array lengths and indices (draft, on top of D84's Rule A):
+# abstract, like `Int`, and distinct from it, so that the arrays are fixed
+# in `Size` and their handle only. `WasiStd` binds it to `Int` at its root
+# (`bind Size = Int;`); since a type bind starts a new generation (D72), a
+# scope that later rebinds `Int` (64-bit, checked) leaves `Size`, and
+# every array, where they were. Generic code under `Std` sees two types,
+# and an integer literal is an `Int` (D68), so code that needs an index
+# converts: `i.size()`, and back with `n.int()`. Code that only needs the
+# elements iterates instead (`for x in xs { ... }`), and never names one.
+type Size;
+
+assume Int, Size {
+  # Int -> Size, provided at `Int`, and Size -> Int, provided at `Size`.
+  # Neither checks anything: they mean what the binding says.
+  fn .size(): Size;
+  fn .int(): Int;
+
+  context Sizes = Size, Int.size, Size.int;
+}

@@ -1,3 +1,4 @@
+import "./bool.moss" use Bool;
 import "./int.moss" use Int;
 
 # The detached accessors every container has in common, declared
@@ -29,6 +30,21 @@ assume Int {
     # (D69) — so it is shared like the rest rather than any one's own.
     fn .set(index: Int, value: Elem);
   }
+
+  # Iteration (draft): `for x in xs { body }` means, with `c` and `i`
+  # names the program cannot write,
+  #
+  #     { let c = xs; var i = c.begin();
+  #       while c.more(i) { let x = c.get(i); i = c.after(i); body } }
+  #
+  # calls of these four symbols, found by this file as an operator's
+  # are found by num.moss (D68), and provided at the collection's type
+  # like any accessor (D61). `Int` is the index type the provision says
+  # (`Array.begin[Int=Size]`), so the loop never does arithmetic on it in
+  # the program's terms: the collection steps its own index.
+  fn .begin(): Int;
+  fn .more(at: Int): Bool;
+  fn .after(at: Int): Int;
 }
 
 assume Elem {

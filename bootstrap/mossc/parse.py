@@ -412,6 +412,8 @@ class Parser:
             elif self.at(Kind.LOOP):
                 self.next()
                 stmts.append(ast.Loop(self.parse_block(), offset=start))
+            elif self.at(Kind.FOR):
+                stmts.append(self.parse_for())
             elif self.at(Kind.NAME) and self.at(Kind.EQUAL, 1):
                 name = self.next().text
                 self.next()
@@ -435,6 +437,51 @@ class Parser:
                     )
         self.expect(Kind.RBRACE)
         return ast.Block(stmts, tail, offset=block_start)
+
+    def parse_for(self) -> ast.ExprStmt:
+        """`for x in e { body }` (draft): sugar, at parse time, for
+        `{ let c = e; var i = c.begin(); while c.more(i) { let x =
+        c.get(i); i = c.after(i); body } }`, where `c` and `i` are
+        spelled as keywords, so no program can name them, and the four
+        calls are of access.moss's symbols whatever is in scope (as an
+        operator's are of num.moss's, D68): `ast.Unary`/`ast.Binary` with
+        a `for.` operator. Only the cursor's methods are provided at the
+        collection; nothing is asked of the index type itself."""
+        start = self.next().offset
+        name = self.expect(Kind.NAME).text
+        word = self.expect(Kind.NAME)
+        if word.text != "in":
+            raise ParseError(f"expected `in`, found {word.text!r}", word)
+        coll = self.parse_expr(no_record=True)
+        body = self.parse_block()
+        c, i = "for", "while"
+
+        def ref(n):
+            return ast.PathExpr([n], None, offset=start)
+
+        loop = ast.While(
+            ast.Binary("for.more", ref(c), ref(i), offset=start),
+            ast.Block(
+                [
+                    ast.Let(name, None, ast.Binary("for.get", ref(c), ref(i), offset=start), offset=start),
+                    ast.Assign(i, ast.Binary("for.after", ref(c), ref(i), offset=start), offset=start),
+                    ast.ExprStmt(body, offset=start),
+                ],
+                None,
+                offset=start,
+            ),
+            offset=start,
+        )
+        block = ast.Block(
+            [
+                ast.Let(c, None, coll, offset=start),
+                ast.Var(i, None, ast.Unary("for.begin", ref(c), offset=start), offset=start),
+                loop,
+            ],
+            None,
+            offset=start,
+        )
+        return ast.ExprStmt(block, offset=start)
 
     # Expressions
 

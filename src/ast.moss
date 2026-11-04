@@ -103,6 +103,18 @@ assume Std {
   # every reader of declarations reads it as it reads any other.
   fn k_ty_known(): Int { 52 }  # a=elaborated type
 
+  # `for x in e { body }` (draft) is parsed into a bare block of `let`,
+  # `var` and `while`, whose calls of access.moss's iteration methods are
+  # operator nodes with these operators: past every token code, and past
+  # the slots the back end keeps for `-`, `!`, `zero`, `one` and `float`
+  # (codegen.moss's `lg_base`), so that the back end finds each one's
+  # method as it finds an operator's (D68). `.begin` is unary, the rest
+  # binary.
+  fn op_begin(): Int { 69 }
+  fn op_more(): Int { 70 }
+  fn op_after(): Int { 71 }
+  fn op_get(): Int { 72 }
+
   # `fn f` has no receiver; `fn .m` has the detached one.
   fn recv_plain(): Int { -1 }
   fn recv_detached(): Int { -2 }

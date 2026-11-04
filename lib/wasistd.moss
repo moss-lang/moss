@@ -5,13 +5,14 @@ import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
 # One declaration per accessor, so importing them here is unambiguous —
 # and `Elem` comes with them, because every provision below names the
 # element type it is providing at (D61).
-import "./access.moss" use Elem, .get, .set, .length, .push, .read;
+import "./access.moss" use Elem, .get, .set, .length, .push, .read, .begin, .more, .after;
 import "./path.moss" as path use Path, pwd;
 import "./bool.moss" use Bool, true, false;
 import "./char.moss" as char use Char, Chars, .char;
 import "./cell.moss" as cell use CellInt, cell_int;
 import "./float.moss" as float use Float, Floats, .trunc, .round;
 import "./int.moss" as int use Int, zero, one;
+import "./size.moss" as size use Size;
 import "./list.moss" as list use IntList, int_list;
 import "./std.moss" use putchar, put_bytes, Std;
 import "./string.moss" as string use String, print, first_arg, arg_count, arg_at;
@@ -637,17 +638,29 @@ functor WasiConsole: Wasm, Wasi, Branch -> Console {
 # ones: the standard binding of `Arrays`, made in `WasiStd`. An
 # `Array[Item=X]` holds the GC array's `ArrayRef`, and each access forges
 # it back (`ref.cast`) to the `Array[Arrayed=X]` the platform made, one
-# array per scalar of `X` (D81's lanes). It pins `Int` and `ArrayHandle`,
+# array per scalar of `X` (D81's lanes). It pins `Size` and `ArrayHandle`,
 # which `Arrays` is fixed in, and captures `Wasm` and `Branch` where it
-# is bound (D84, draft).
+# is bound (D84, draft). An index is a `Size`, which is `Num` here, and
+# iteration steps it without asking `Int` for anything.
 functor GcArrays: Wasm, Branch, Item ->
-  Item.arrayed, Array.get[Elem=Item], Array.set[Elem=Item], Array.length {
-  bind int::Int = Num;
+  Item.arrayed,
+  Array.get[Elem=Item, Int=Size],
+  Array.set[Elem=Item, Int=Size],
+  Array.length[Int=Size],
+  Array.begin[Int=Size],
+  Array.more[Int=Size],
+  Array.after[Int=Size] {
+  bind size::Size = Num;
   bind array::ArrayHandle = ArrayRef;
   bind Arrayed = Item;
   bind w::Arrays;
   bind Item.arrayed = (length) => match this.w::arrayed(raw(length)) { w::Array(h) => Array(h) };
-  bind Array.get[Elem=Item] = (index) => match this { Array(h) => w::Array(h).get(raw(index)) };
-  bind Array.set[Elem=Item] = (index, value) => match this { Array(h) => w::Array(h).set(raw(index), value) };
-  bind Array.length = () => match this { Array(h) => Num(w::Array(h).length()) };
+  bind Array.get[Elem=Item, Int=Size] = (index) => match this { Array(h) => w::Array(h).get(raw(index)) };
+  bind Array.set[Elem=Item, Int=Size] = (index, value) => match this { Array(h) => w::Array(h).set(raw(index), value) };
+  bind Array.length[Int=Size] = () => match this { Array(h) => Num(w::Array(h).length()) };
+  bind Array.begin[Int=Size] = () => Num(w::i32_zero);
+  bind Array.more[Int=Size] = (at) => match this {
+    Array(h) => i32_bool(w::i32_lt_u(raw(at), w::Array(h).length())),
+  };
+  bind Array.after[Int=Size] = (at) => Num(w::i32_add(raw(at), w::i32_one));
 }

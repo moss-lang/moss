@@ -472,4 +472,60 @@ assume Std {
     push_char(out, char::t);
   }
 
+  fn sp_access_moss(out: IntList) {
+    push_char(out, char::a);
+    push_char(out, char::c);
+    push_char(out, char::c);
+    push_char(out, char::e);
+    push_char(out, char::s);
+    push_char(out, char::s);
+    push_char(out, char::dot);
+    push_char(out, char::m);
+    push_char(out, char::o);
+    push_char(out, char::s);
+    push_char(out, char::s);
+  }
+
+  fn sp_begin(out: IntList) {
+    push_char(out, char::b);
+    push_char(out, char::e);
+    push_char(out, char::g);
+    push_char(out, char::i);
+    push_char(out, char::n);
+  }
+
+  fn sp_more(out: IntList) {
+    push_char(out, char::m);
+    push_char(out, char::o);
+    push_char(out, char::r);
+    push_char(out, char::e);
+  }
+
+  fn sp_after(out: IntList) {
+    push_char(out, char::a);
+    push_char(out, char::f);
+    push_char(out, char::t);
+    push_char(out, char::e);
+    push_char(out, char::r);
+  }
+
+  fn sp_in(out: IntList) {
+    push_char(out, char::i);
+    push_char(out, char::n);
+  }
+
+  fn sp_for(out: IntList) {
+    push_char(out, char::f);
+    push_char(out, char::o);
+    push_char(out, char::r);
+  }
+
+  fn sp_while(out: IntList) {
+    push_char(out, char::w);
+    push_char(out, char::h);
+    push_char(out, char::i);
+    push_char(out, char::l);
+    push_char(out, char::e);
+  }
+
 }

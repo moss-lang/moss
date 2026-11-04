@@ -2,6 +2,7 @@ import "./ast.moss" as ast;
 import "./bytes.moss" use *;
 import "./intern.moss" as intern;
 import "./lex.moss" as lexer;
+import "./spell.moss" use *;
 import "./tcode.moss" use *;
 
 # Recursive descent over the whole grammar of docs/reference/syntax.md —
@@ -830,6 +831,9 @@ assume Std {
           advance();
           expect(tk_lbrace());
           stmts.push(ast::node1(ast::k_st_loop(), parse_block()));
+        } else if here(tk_for()) {
+          advance();
+          stmts.push(parse_for());
         } else if at_assign() {
           let nm = take_name();
           expect(tk_equal());
@@ -862,6 +866,65 @@ assume Std {
       }
       expect(tk_rbrace());
       ast::node3(ast::k_ex_block(), ast::commit(stmts), stmts.length(), tail)
+    }
+
+    # `for x in e { body }` (draft), `for` already consumed: sugar for
+    #
+    #     { let c = e; var i = c.begin();
+    #       while c.more(i) { let x = c.get(i); i = c.after(i); body } }
+    #
+    # with `c` and `i` spelled `for` and `while`, which no program can
+    # write as names, and the calls operator nodes (`ast::op_begin` and
+    # on), so that they mean access.moss's methods whatever is in scope.
+    fn parse_for(): Int {
+      let nm = take_name();
+      let word = spelled_name_in();
+      if take_name() != word {
+        fail();
+      }
+      let coll = parse_expr_at(true);
+      expect(tk_lbrace());
+      let body = parse_block();
+      let cs = int_list();
+      sp_for(cs);
+      let c = intern::intern_chars(cs);
+      let is = int_list();
+      sp_while(is);
+      let i = intern::intern_chars(is);
+      let inner = int_list();
+      inner.push(ast::node3(ast::k_st_let(), nm, ast::none(), for_call(ast::op_get(), c, i)));
+      inner.push(ast::node2(ast::k_st_assign(), i, for_call(ast::op_after(), c, i)));
+      inner.push(ast::node1(ast::k_st_expr(), body));
+      let step = ast::node3(ast::k_ex_block(), ast::commit(inner), inner.length(), ast::none());
+      let outer = int_list();
+      outer.push(ast::node3(ast::k_st_let(), c, ast::none(), coll));
+      outer.push(ast::node3(
+        ast::k_st_var(), i, ast::none(), ast::node2(ast::k_ex_unary(), ast::op_begin(), local_ref(c))
+      ));
+      outer.push(ast::node2(ast::k_st_while(), for_call(ast::op_more(), c, i), step));
+      ast::node1(
+        ast::k_st_expr(),
+        ast::node3(ast::k_ex_block(), ast::commit(outer), outer.length(), ast::none())
+      )
+    }
+
+    fn spelled_name_in(): Int {
+      let cs = int_list();
+      sp_in(cs);
+      intern::intern_chars(cs)
+    }
+
+    fn local_ref(nm: Int): Int {
+      let ps = int_list();
+      ps.push(nm);
+      ast::node4(ast::k_ex_path(), ast::path_of(ps), ast::none(), 0, 0)
+    }
+
+    # `c.m(i)` for one of `for`'s binary operators.
+    fn for_call(op: Int, c: Int, i: Int): Int {
+      let rhs = int_list();
+      rhs.push(local_ref(i));
+      ast::node3(ast::k_ex_binary(), op, local_ref(c), ast::commit(rhs))
     }
 
     # The one place the grammar needs two tokens: `x = e;` is an

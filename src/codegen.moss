@@ -821,7 +821,7 @@ assume Std {
     }
 
     fn find_lang_symbols() {
-      while cg_lang.length() < lg_base() + 5 {
+      while cg_lang.length() < ast::op_get() + 1 {
         cg_lang.push(ast::none());
       }
       let a = spelled();
@@ -896,6 +896,22 @@ assume Std {
       let c21 = spelled();
       sp_float(c21);
       lang_set(lg_float(), find_module_named(f), prog::ns_name(), c21);
+      # `for` (draft): access.moss's iteration methods, and `.get`.
+      let acc = spelled();
+      sp_access_moss(acc);
+      let access = find_module_named(acc);
+      let c22 = spelled();
+      sp_begin(c22);
+      lang_set(ast::op_begin(), access, d, c22);
+      let c23 = spelled();
+      sp_more(c23);
+      lang_set(ast::op_more(), access, d, c23);
+      let c24 = spelled();
+      sp_after(c24);
+      lang_set(ast::op_after(), access, d, c24);
+      let c25 = spelled();
+      sp_get(c25);
+      lang_set(ast::op_get(), access, d, c25);
     }
 
     # The method an operator node means.
@@ -904,6 +920,9 @@ assume Std {
       if ast::kind_of(e) == ast::k_ex_unary() {
         if op == tk_hyphen() {
           return lang(lg_neg());
+        }
+        if op == ast::op_begin() {
+          return lang(op);
         }
         return lang(lg_not());
       }

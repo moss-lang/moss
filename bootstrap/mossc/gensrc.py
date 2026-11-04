@@ -95,6 +95,17 @@ SPELLED = [
     "zero",
     "one",
     "float",
+    # `for` (draft): the module whose iteration methods it calls, those
+    # methods, the word between its binder and its collection, and the
+    # two keywords its hidden locals are named by, which no program can
+    # write as a name.
+    "access.moss",
+    "begin",
+    "more",
+    "after",
+    "in",
+    "for",
+    "while",
 ]
 
 
