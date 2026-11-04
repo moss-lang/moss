@@ -5214,6 +5214,17 @@ assume Std {
         cg_error(prog::e_method(), ast::b_of(spec));
         return ();
       }
+      # D84 rule 7 (O3 a): a member of a family in force is not bound
+      # directly — except by the binds of a binding (a closure's), which
+      # are how the family is provided.
+      if !ast::is_some(cl_base.read()) {
+        let fts = int_list();
+        let ftt = int_list();
+        if ast::is_some(family_member(recv, detached, fts, ftt)) {
+          prog::error(prog::e_family(), m, ast::b_of(spec));
+          return ();
+        }
+      }
       var provider = ast::none();
       if ast::is_kind(value, ast::k_ex_lambda()) {
         provider = bind_lambda(spec, value, detached, recv_sym, m, depth, body);
@@ -5878,6 +5889,7 @@ assume Std {
       family_leaves(prog::sym_mod.get(fu), ast::fu_res(d), ast::fu_nres(d), mods, specs, 0);
       let ps = int_list();
       family_params(fu, ps);
+      var found = false;
       var i = 0;
       while i < specs.length() {
         let m = mods.get(i);
@@ -5904,18 +5916,24 @@ assume Std {
             j = j + 1;
           }
           if lower::canon(lower::app_view(venv, m, spec), types::ty_of_decl(r)) == recv_ty {
+            if found {
+              # D84 rule 7 (strengthened): two items of one family share
+              # this instance of their key.
+              cg_error(prog::e_family(), prog::sym_name.get(sym));
+              return true;
+            }
+            found = true;
             j = 0;
             while j < s1.length() {
               ts.push(s1.get(j));
               tt.push(t1.get(j));
               j = j + 1;
             }
-            return true;
           }
         }
         i = i + 1;
       }
-      false
+      found
     }
 
     # D84 rule 7: the family in force (in the generic environment) that
@@ -6873,6 +6891,9 @@ assume Std {
         if !check_self_application(fu, g, m) {
           return ();
         }
+        if !check_family_binding(fu, g, m) {
+          return ();
+        }
         if !contains(fb_sym, g) {
           fb_sym.push(g);
         }
@@ -6914,6 +6935,46 @@ assume Std {
           i = i + 1;
         }
       }
+    }
+
+    # D84 rule 7 (O3 c, strengthened): a family's bindings bind no vals
+    # and apply no functor but a family, so where an application is
+    # placed on demand cannot be observed.
+    fn check_family_binding(fu: Int, g: Int, m: Int): Bool {
+      if !is_family(fu) {
+        return true;
+      }
+      let gd = prog::sym_decl.get(g);
+      let home = prog::sym_mod.get(g);
+      var i = 0;
+      while i < ast::fu_nbinds(gd) {
+        let stmt = ast::kid_at(ast::fu_binds(gd), i);
+        var j = 0;
+        while j < ast::b_of(stmt) {
+          let item = ast::kid_at(ast::a_of(stmt), j);
+          let spec = ast::a_of(item);
+          if ast::is_some(ast::a_of(spec)) {
+            if !ast::is_some(ast::b_of(spec)) {
+              let s = prog::resolve_path(home, ast::a_of(spec));
+              if ast::is_some(s) {
+                var bad = false;
+                if ast::is_some(ast::b_of(item)) {
+                  bad = prog::sym_kind.get(s) == prog::sk_val();
+                } else {
+                  bad = !is_family(s);
+                }
+                if bad {
+                  prog::error(prog::e_family(), m, prog::sym_name.get(s));
+                  return false;
+                }
+              }
+            }
+          }
+          j = j + 1;
+        }
+        i = i + 1;
+      }
+      true
     }
 
     # D84 3f (D55): `G` applies `F`, and `F` is among `F`'s own inputs,

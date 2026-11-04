@@ -1075,8 +1075,12 @@ assume Std {
               mention_walk(prog::sym_mod.get(t), ast::b_of(d), ast::c_of(d), out, depth + 1);
               item = false;
             } else if kind == prog::sk_val() {
+              # D84 rule 1 (strengthened): a val's or fn's dependencies,
+              # its whole telescope (D71, D79), not only its signature.
+              item_deps(t, syms);
               types::free_syms(ast::b_of(d), prog::sym_mod.get(t), syms);
             } else if kind == prog::sk_fn() {
+              item_deps(t, syms);
               signature_syms(t, syms);
             } else if kind == prog::sk_functor() {
               # D84 rule 1: an abstract functor item `G` mentions `X(G)`.

@@ -382,10 +382,20 @@ class Lower:
                 elif target.kind == SymKind.CONTEXT:
                     walk(target.module, target.decl.items, depth + 1)
                     continue
-                elif target.kind == SymKind.VAL and target.decl.init is None:
-                    self.free_type_syms(target.decl.ty, target.module, syms)
-                elif target.kind == SymKind.FN and target.decl.body is None:
-                    sig_syms(target, syms)
+                elif (target.kind == SymKind.VAL and target.decl.init is None) or (
+                    target.kind == SymKind.FN and target.decl.body is None
+                ):
+                    # D84 rule 1 (as strengthened): a val's or fn's
+                    # dependencies, its whole telescope (D71, D79), not
+                    # only its signature.
+                    syms.extend(
+                        t for t in self.type_requirements(target)
+                        if not (self.is_memory_instruction(target) and t is self.memory_sym)
+                    )
+                    if target.kind == SymKind.VAL:
+                        self.free_type_syms(target.decl.ty, target.module, syms)
+                    else:
+                        sig_syms(target, syms)
                 elif (
                     target.kind == SymKind.FUNCTOR and target.decl.binds is None
                     and target is not functor
@@ -607,7 +617,17 @@ class Lower:
                         continue
                 except LowerError:
                     continue
-                if all(f is not functor for f, _ in found):
+                same = [th for f, th in found if f is functor]
+                if same and same[0] != theta:
+                    # D84 rule 7 (strengthened): two items of one family's
+                    # result share this instance of their key.
+                    self.error(
+                        where,
+                        f"`{show(recv)}{method.name}` is two items of the family "
+                        f"`{functor.name}` here, so which one is meant is "
+                        "ambiguous (D84 rule 7)",
+                    )
+                if not same:
                     found.append((functor, theta))
         if len(found) > 1:
             self.error(
@@ -2553,6 +2573,22 @@ class FnChecker:
                             f"`{bound.name}` cannot be bound to `{functor.name}`: "
                             f"`{functor.name}` is a family, and its bindings bind no "
                             f"vals, but `{bound.name}` binds `{target.name}` (D84 rule 7)"
+                        )
+        # D84 rule 7 (strengthened): nor applies a functor other than a
+        # family — one whose binding binds a val would make placement
+        # observable again (D84.v `family_apply_placement`).
+        if lower.is_family(functor):
+            for bind in bound.decl.binds:
+                for spec, expr in bind.items:
+                    if expr is not None:
+                        continue
+                    target = resolve_path(bound.module, spec.path)
+                    if isinstance(target, Symbol) and not lower.is_family(target):
+                        self.error(
+                            f"`{bound.name}` cannot be bound to `{functor.name}`: "
+                            f"`{functor.name}` is a family, and its bindings apply no "
+                            f"functor but a family, but `{bound.name}` applies "
+                            f"`{target.name}` (D84 rule 7)"
                         )
         # D84 3f ([D55]): an application of `F` in `G`'s binds reads `F`
         # as each application supplies it when `F` is among its own
