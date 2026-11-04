@@ -410,6 +410,13 @@
             # and a bare import path still finds it (D64).
             cp "$source" hello.moss
             "$moss" hello.moss | grep -qx 'Hello, world!'
+            # Even inside another tree with a `lib/` of its own (another
+            # checkout or worktree), the library is the compiler's own: a
+            # broken prelude above the entry file must not be read.
+            mkdir -p other/lib other/src
+            echo 'this is not Moss' > other/lib/prelude.moss
+            cp "$source" other/src/hello.moss
+            "$moss" other/src/hello.moss | grep -qx 'Hello, world!'
             touch $out
           '';
           bootstrap =

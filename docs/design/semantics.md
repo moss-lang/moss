@@ -1603,6 +1603,20 @@ with `./` or `../`, so nothing changed meaning. A run without a prelude
 (only test harnesses do that) has no library, and reads bare paths the
 old way.
 
+*Amended (November 2026), pending the designer's confirmation: the
+library is the compiler's own.* The driver no longer looks for a prelude
+beside the entry file. It used the nearest `lib/prelude.moss` above the
+entry, so a compiler from one checkout run on a file inside another (a
+worktree on another branch) read that checkout's library, which it was
+not built against; the shipped compiler then appeared to behave unlike
+the bootstrap-built one the tests run, on the same source. Now the
+library is the installed one, or that of the source tree the compiler is
+built from (`MOSS_ROOT`, or the tree around the working directory).
+Since bare paths reach the library from anywhere, nothing needed the
+search. A relative path such as `"../lib/wasi.moss"` still names that
+file, so a program that imports another checkout's library explicitly
+still gets it. Standing check: the flake's `cli` check.
+
 **[D65] DECIDED by the designer (bare block expressions).** A block was
 already an expression in everything but the grammar: the body of a
 function, an `if` or a match arm yields its tail, and scopes its `let`s and

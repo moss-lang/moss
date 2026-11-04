@@ -296,13 +296,16 @@ fn run_compiler(
     entry: &Path,
 ) -> Result<Vec<u8>> {
     let cwd = env::current_dir()?;
-    let library_root = entry
-        .ancestors()
-        .find(|candidate| candidate.join("lib/prelude.moss").is_file())
-        .unwrap_or(root);
-    let filesystem_root = common_ancestor(library_root, &cwd)
+    // The library is the one beside the compiler: installed with it, or the
+    // source tree it was built from. Never one found by walking up from the
+    // entry file, which may sit in another checkout (a worktree, a branch)
+    // whose `lib/` this compiler was not built against. Pairing a compiler
+    // with another version's library made the shipped compiler disagree
+    // with the one the tests run.
+    let filesystem_root = common_ancestor(root, &cwd)
+        .and_then(|common| common_ancestor(common, entry))
         .ok_or_else(|| anyhow!("compiler inputs do not share a filesystem root"))?;
-    let prelude = library_root.join("lib/prelude.moss");
+    let prelude = root.join("lib/prelude.moss");
     let argv = vec![
         wasi_path(prelude.strip_prefix(filesystem_root)?)?,
         wasi_path(entry.strip_prefix(filesystem_root)?)?,
