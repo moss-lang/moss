@@ -1,8 +1,8 @@
 # `Size` (draft, over D84's Rule A): arrays are fixed in `Size` and their
 # handle, not in `Int`, so a library over `Std` alone (saturating.moss)
 # can rebind `Int` and arrays of the new `Int` are still derived from the
-# `GcArrays` that `WasiStd` bound. `Size` stays the root `Int`'s
-# generation (D72); at the root the two are one type, `Num`, and in the
+# `GcArrays` that `WasiStd` bound, on demand (D84 rule 7). `Size` stays
+# the root `Int`'s generation (D72); at the root the two are one type, `Num`, and in the
 # block two. Output: a wrapped sum, a wrapped `at2`, and the saturated
 # arithmetic of the block, carried out of it as a `Size`.
 
@@ -16,21 +16,10 @@ import "./saturating.moss" use Saturating;
 import "../../lib/int.moss" use IntOps;
 import "../../lib/size.moss" use Sizes;
 
-# Arrays of whatever `Int` is in force, as a context; and code over it
-# that never names an index.
-assume Int, Size, ArrayHandle {
-  context IntArrays =
-    ArrayHandle,
-    Item.arrayed[Item=Int],
-    Array.get[Item=Int, Elem=Int, Int=Size],
-    Array.set[Item=Int, Elem=Int, Int=Size],
-    Array.length[Item=Int, Int=Size],
-    Array.begin[Item=Int, Int=Size],
-    Array.more[Item=Int, Int=Size],
-    Array.after[Item=Int, Int=Size];
-}
-
-assume Int, zero, one, IntOps, Size, Int.size, IntArrays {
+# Code over arrays of whatever `Int` is in force that never names an
+# index: it assumes the family `Arrays`, and gets its members at
+# `Item=Int` on demand (D84 rule 7).
+assume Int, zero, one, IntOps, Size, Int.size, ArrayHandle, Arrays {
   fn big(): Int { 2000000000 }
   fn fill(n: Int): Array[Item=Int] {
     let xs = big().arrayed(n.size());
@@ -58,15 +47,11 @@ assume Std {
 assume Wasm, Gc, Wasi, Branch {
   fn main() {
     bind WasiStd;
-    bind Item = Int;
-    bind Arrays;
     pr(sum(fill(3))); nl();                  # wraps: 6000000000 mod 2^32
     let outer = fill(2);
     pr(at2(outer, 0, 1.size())); nl();       # wraps
     let r = {
-      bind Saturating;
-      bind Item = Int;
-      bind Arrays;                           # derived from WasiStd's GcArrays
+      bind Saturating;                       # arrays of the new Int: on demand
       let s = sum(fill(3));                  # saturates at 2^31 - 1
       let n = outer.length();                # a Size: the root Int's generation
       let k: Int = n.int();                  # the new Int, by the rebound Size.int

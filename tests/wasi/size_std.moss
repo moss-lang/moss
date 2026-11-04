@@ -1,8 +1,8 @@
 # A library over `Std` alone (saturating.moss) rebinds `Int` and every
 # item of `Std` that mentions it, by converting at the edge, so code
 # written against all of `Std` runs under it. Its arrays of `Float` need
-# nothing: `Std`'s `FloatArrays` mention `Size`, `Float` and the handle,
-# none of which the library rebinds. Output: the same `go` at the root
+# nothing: they come on demand from `Std`'s `Arrays` (D84 rule 7), fixed
+# in `Size` and the handle, neither of which the library rebinds. Output: the same `go` at the root
 # (wrapping) and in the block (saturating).
 
 import "../../lib/wasi.moss" use WasiStd;
