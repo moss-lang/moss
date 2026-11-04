@@ -70,8 +70,11 @@ class TestGeneratedSources(unittest.TestCase):
         # select them by hand, where `bind Heap;` provides them, rather
         # than from the table; and so are D81's, which `Mutable` and
         # `Arrays` provide.
+        # D79's are `Addr`'s methods, which `Memories` provides: each is
+        # the instruction of its name, at the receiver's memory.
+        ops = set(gensrc.wasm_ops())
         self.assertEqual(
-            declared - set(gensrc.wasm_ops()),
+            {d for d in declared - ops if not (d.startswith("Addr.") and d[5:] in ops)},
             {
                 ".boxed", "Ref.deref", "Ref.set", ".arrayed", "Array.length",
                 "Array.get", "Array.set", "Array.fill", "Array.copy",

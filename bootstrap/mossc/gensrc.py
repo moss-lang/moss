@@ -58,9 +58,11 @@ SPELLED = [
     "get",
     "fill",
     "copy",
-    # D79: the type every memory instruction is under, whose binding
-    # says which memory an instruction is at.
+    # D79: the memory instructions are `Addr`'s methods, which the
+    # platform's `Memories` provides, each at the memory its receiver's
+    # `Memory` is.
     "Memory",
+    "Addr",
     "bool.moss",
     "wasistd.moss",
     "i32_bool",

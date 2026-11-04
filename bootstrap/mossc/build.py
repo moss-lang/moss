@@ -470,8 +470,7 @@ class Backend:
         # bound to somewhere, by its symbol, in the order they are met;
         # the main memory (an unbound `Memory`) is index 0. Kept across
         # the passes of `build`, like the struct types.
-        self.memories = lower.uses_memories
-        self.memory_of: dict[int, int] = {}
+        self.memory_of: dict = {}
         self.memory_syms: list = []
 
     def wasi_import(self, field: str, params, results) -> int:
@@ -639,31 +638,28 @@ class Backend:
         held, so `Expr` read where `Int` is abstract and `Expr` read where
         `Int` is `I32` must reach the back end as one type — which they
         are once the callee's `Int` is the caller's."""
-        if not tyargs or not (self.gc or self.memories):
+        if not tyargs or not self.gc:
             return {}
-        # D79: so does one that binds `Memory`, which is what every memory
-        # instruction below it is at — and all of them, since `Memory` may
-        # be bound to another abstract type a caller supplies.
         return {p: subst(theta, t) for p, t in tyargs}
 
     def memory_index(self, t) -> int:
         """Which memory a `Memory` type is (D79): the main memory, 0, is
         `Memory` as the platform provides it, bound to nothing; any other
-        is a unit, given the next index the first time it is met."""
+        type names a memory of its own, given the next index the first
+        time it is met. `Memories` is polymorphic in `Memory` (D84), so
+        its provision is at every type."""
         if t is None:
             return 0
         if isinstance(t, TAbstract) and declared(t) is self.lower.memory_sym:
             return 0
-        if isinstance(t, TNominal) and t.symbol.kind == SymKind.UNIT:
-            index = self.memory_of.get(id(t.symbol))
-            if index is None:
-                index = len(self.memory_syms) + 1
-                self.memory_of[id(t.symbol)] = index
-                self.memory_syms.append(t.symbol)
-            return index
-        raise NotCompilable(
-            "a memory instruction where `Memory` is not a memory: bind it to a unit"
-        )
+        if isinstance(t, TAbstract):
+            raise NotCompilable(f"a memory instruction at `{t}`, which nothing bound")
+        index = self.memory_of.get(t)
+        if index is None:
+            index = len(self.memory_syms) + 1
+            self.memory_of[t] = index
+            self.memory_syms.append(t)
+        return index
 
     def zero(self, valtype: bytes) -> bytes:
         """A zero of this valtype: what pads a union's narrower member."""
@@ -2491,6 +2487,8 @@ class FnCompiler:
         held = provision.held
         if provision.prim.startswith("array_"):
             return self.array_prim(provision.prim[len("array_"):], held, node)
+        if provision.prim.startswith("mem_"):
+            return self.mem_prim(provision.prim[len("mem_"):], held, node)
         index = self.b.struct_index(held)
         fields = self.b.struct_fields[index]
         if provision.prim == "ref_set":
@@ -2604,18 +2602,36 @@ class FnCompiler:
             self.code += GC + uleb(ARRAY_COPY) + uleb(lane_ix[i]) + uleb(lane_ix[i])
         return unit()
 
+    def mem_prim(self, name: str, held, node: ir.Call):
+        """D79: a memory instruction, `Addr`'s method of the same name,
+        provided by the platform's `Memories` at the memory `held` (the
+        receiver's `Memory`): the address is the receiver's payload, and
+        `memory.size`/`grow` evaluate the receiver only for its type."""
+        op = WASM_OPS[name]
+        self.expr(node.this)
+        if name in ("memory_size", "memory_grow"):
+            self.code += DROP
+        for arg in node.args:
+            self.expr(arg)
+        index = self.b.memory_index(held)
+        if index:
+            op = at_memory(name, op, index)
+        self.code += op
+        if name in RESULTS and not (
+            name.startswith(("i32_store", "i64_store", "f32_store", "f64_store"))
+            or name in ("memory_copy", "memory_fill")
+        ):
+            return (RESULTS[name],)
+        self.code += I32_CONST + sleb(0)  # stores and fills yield ()
+        return (I32,)
+
     def wasm_instruction(self, key: Symbol, node: ir.Call):
-        """A `Wasm` intrinsic is the instruction of the same name; a memory
-        instruction names the memory `Memory` is here (D79)."""
+        """A `Wasm` intrinsic is the instruction of the same name."""
         op = WASM_OPS.get(key.name)
         if op is None:
             raise NotCompilable(f"`{key.name}` is not an instruction")
         for arg in node.args:
             self.expr(arg)
-        if node.memory is not None:
-            index = self.b.memory_index(subst(self.theta, node.memory))
-            if index:
-                op = at_memory(key.name, op, index)
         self.code += op
         if key.decl.ret is None:
             self.code += I32_CONST + sleb(0)  # stores and fills yield ()

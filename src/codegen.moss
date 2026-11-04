@@ -204,9 +204,10 @@ assume Std {
   # `fill` and `copy`.
   val cg_gc: IntList;
 
-  # D79: lib/wasm.moss's `Memory`, under which every memory instruction
-  # is declared: what it is where an instruction is emitted says which
-  # memory the instruction names.
+  # D79: lib/wasm.moss's `Memory`. The memory instructions are `Addr`'s
+  # methods (`cg_gc`'s last), which the platform's family `Memories`
+  # provides: what the receiver's `Memory` is in the specialization says
+  # which memory an instruction names.
   val cg_memory: CellInt;
 
   val cg_errs: IntList;
@@ -561,6 +562,9 @@ assume Std {
       let c = spelled();
       sp_copy(c);
       cg_gc.push(attached_in_wasm(arr, c));
+      let ad = spelled();
+      sp_Addr(ad);
+      cg_gc.push(wasm_symbol(ad));
     }
 
     fn attached_in_wasm(recv: Int, name: IntList): Int {
@@ -574,13 +578,18 @@ assume Std {
     }
 
     fn array_sym(): Int { cg_gc.get(0) }
+    fn addr_sym(): Int { cg_gc.get(10) }
+
+    # `platform_prim`'s answer for `Addr`'s methods, the memory
+    # instructions (D79), each the instruction of its own name.
+    fn mem_prim(): Int { 100 }
     fn arrayed_sym(): Int { cg_gc.get(1) }
     fn arrayref_sym(): Int { cg_gc.get(2) }
 
     # Which of the platform's primitives a provision's provider is: 1 for
     # `.boxed`, 2 for `Ref.deref`, 3 for `Ref.set`, 4 for `.arrayed`, 5
     # to 9 for `Array`'s `length`, `get`, `set`, `fill` and `copy` (D81),
-    # 0 for anything else. `bind Heap;`
+    # `mem_prim()` for a method of `Addr` (D79), 0 for anything else. `bind Heap;`
     # makes a provision whose provider is the method itself, which has no
     # body, and a call through it is the instructions (D75).
     fn platform_prim(provider: Int): Int {
@@ -597,11 +606,16 @@ assume Std {
         return 2;
       }
       var k = 3;
-      while k < cg_gc.length() {
+      while k < 10 {
         if provider == cg_gc.get(k) {
           return k;
         }
         k = k + 1;
+      }
+      if ast::is_some(addr_sym()) {
+        if prog::sym_recv.get(provider) == addr_sym() {
+          return mem_prim();
+        }
       }
       0
     }
@@ -3251,6 +3265,13 @@ assume Std {
       }
       let penv = lower::env_b_of(bound);
       let prim = platform_prim(provider);
+      if prim == mem_prim() {
+        return emit_mem_op(
+          body, recv, recv_ty, run, n, m,
+          sig_params(row_view(grow), sym, recv_ty), prog::sym_name.get(sym),
+          sig_ret(row_view(grow), sym, recv_ty)
+        );
+      }
       if prim > 2 {
         return emit_gc_op(
           body, recv, recv_ty, prim, run, n, m,
@@ -3993,41 +4014,65 @@ assume Std {
       }
     }
 
-    fn emit_op(body: IntList, op: Int) {
+    # D79: a memory instruction, `Addr`'s method `name`, which the
+    # platform's `Memories` provides: the receiver is the address (for
+    # `memory.size` and `memory.grow`, only which memory: evaluated and
+    # dropped), at the memory its `Memory` is in this specialization.
+    fn emit_mem_op(
+      body: IntList, recv: IntList, recv_ty: Int, run: Int, n: Int, m: Int,
+      params: IntList, name: Int, gret: Int
+    ): Int {
+      let op = wops::find_op(name);
+      if !ast::is_some(op) {
+        cg_error(c_unknown_op(), name);
+        return ty_none();
+      }
+      let mem = memory_at(held_by(spec(recv_ty), addr_sym(), cg_memory.read()));
+      push_bytes(body, recv);
+      if wops::op_kinds.get(op) == wops::wk_memzero() {
+        drop_value(body, recv_ty);
+      }
+      emit_args(body, run, n, m, params);
+      emit_op_at(body, op, mem);
+      gret
+    }
+
+    fn emit_op(body: IntList, op: Int) { emit_op_at(body, op, 0); }
+
+    fn emit_op_at(body: IntList, op: Int, mem: Int) {
       let kind = wops::op_kinds.get(op);
       let code = wops::op_codes.get(op);
       if kind == wops::wk_simple() {
         body.push(code);
       } else if kind == wops::wk_memarg() {
-        op_mem_at(body, code, wops::op_aligns.get(op), memory_here());
+        op_mem_at(body, code, wops::op_aligns.get(op), mem);
       } else if kind == wops::wk_const0() {
         op_i32_const(body, 0);
       } else if kind == wops::wk_const1() {
         op_i32_const(body, 1);
       } else if kind == wops::wk_memzero() {
         body.push(code);
-        uleb(body, memory_here());
+        uleb(body, mem);
       } else if kind == wops::wk_memcopy() {
-        op_memory_copy_at(body, memory_here());
+        op_memory_copy_at(body, mem);
       } else if kind == wops::wk_prefixed() {
         # 0xFC, then the sub-opcode the table keeps as an alignment.
         body.push(code);
         uleb(body, wops::op_aligns.get(op));
       } else {
-        op_memory_fill_at(body, memory_here());
+        op_memory_fill_at(body, mem);
       }
     }
 
-    # D79: the memory a memory instruction emitted here names — what
-    # `Memory` is in this specialization. Unbound, it is the platform's,
-    # the main memory, 0; bound to a unit, that unit's memory, numbered
-    # the first time it is met. Anything else is not a memory.
-    fn memory_here(): Int {
+    # D79: the memory a memory instruction names, from `t`, what its
+    # receiver's `Memory` is in this specialization. The platform's, the
+    # main memory, is 0; any other type, a memory of its own, numbered the
+    # first time it is met (`Memories` is polymorphic in `Memory`, D84).
+    fn memory_at(t: Int): Int {
       let mem = cg_memory.read();
       if !ast::is_some(mem) {
         return 0;
       }
-      let t = lower::canon(cg_env.read(), types::ty_of_symbol(types::kd_abstract(), mem));
       if types::is_kind(t, types::kd_abstract()) {
         if types::sym_of(t) == mem {
           return 0;
@@ -4044,16 +4089,14 @@ assume Std {
           return 0;
         }
       }
-      if types::is_kind(t, types::kd_nominal()) {
-        if types::is_unit_decl(t) {
-          if checking() {
-            return 0;
-          }
-          return emit::memory_index(t);
-        }
+      if types::is_kind(t, types::kd_abstract()) {
+        cg_error(c_unsupported(), prog::sym_name.get(mem));
+        return 0;
       }
-      cg_error(c_unsupported(), prog::sym_name.get(mem));
-      0
+      if checking() {
+        return 0;
+      }
+      emit::memory_index(t)
     }
 
     fn emit_block(body: IntList, e: Int, m: Int): Int {

@@ -2690,6 +2690,26 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                     self.assertIn("i32.store $1", text)
                     self.assertEqual(run_wasm(module), expected)
 
+    def test_any_type_names_a_memory(self):
+        """D79 under D84: the memory instructions are `Addr`'s methods, a
+        family polymorphic in `Memory`, so binding `Memory` to any type —
+        here `Num` and `Chr`, neither a unit — names a memory of its own,
+        and nothing is refused after checking (D16)."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/memory_any_type.moss"
+        expected = "5050\n51225\n1275\n5050\n"
+        self.assertEqual(run({}, entry=entry), expected)
+        for module in (
+            self.compile_with_moss(entry, prelude="lib/prelude.moss"),
+            compile_wasm({}, entry=entry),
+        ):
+            text = wasm_text(module)
+            self.assertIn("(memory $2 ", text)
+            self.assertNotIn("(memory $3 ", text)
+            self.assertIn("i32.store $2", text)
+            self.assertEqual(run_wasm(module), expected)
+
     def test_an_arena_whose_data_cannot_outlive_it(self):
         """D78 and D79: an abstract functor whose result holds `Memory`
         and the containers over it, bound in `main` to one that puts them

@@ -1,0 +1,60 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiContainers, Numerics, Containers, Num, Chr;
+import "../../lib/wasm.moss" use Gc, Wasm, Memory;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D79 under D84: `Memory` bound to types that are not units, `Num` and
+# `Chr`. The memory instructions are the family `Memories`, polymorphic
+# in `Memory`, so the platform's provision is at every type, and each
+# distinct type names a memory of its own: three memories, the main
+# memory's list untouched by the other two.
+
+assume Std {
+  fn line(n: Int) {
+    if n >= 10 { line_(n / 10); putchar((n % 10 + char::digit0.code()).char()); } else { putchar((n + char::digit0.code()).char()); }
+    putchar(char::newline);
+  }
+  fn line_(n: Int) {
+    if n >= 10 { line_(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Char, Numerics, Containers {
+  fn fill(xs: IntList, from: Int, count: Int) {
+    var i = 0;
+    while i < count { xs.push(from + i); i = i + 1; }
+  }
+  fn sum(xs: IntList): Int {
+    var total = 0;
+    var i = 0;
+    while i < xs.length() { total = total + xs.get(i); i = i + 1; }
+    total
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let xs = int_list();
+    fill(xs, 1, 100);
+    let a = {
+      bind Memory = Num;
+      bind WasiContainers;
+      let ys = int_list();
+      fill(ys, 1000, 50);
+      sum(ys)
+    };
+    let b = {
+      bind Memory = Chr;
+      bind WasiContainers;
+      let ys = int_list();
+      fill(ys, 1, 50);
+      sum(ys)
+    };
+    line(sum(xs));
+    line(a);
+    line(b);
+    line(sum(xs));
+  }
+}

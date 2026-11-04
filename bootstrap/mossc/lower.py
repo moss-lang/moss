@@ -247,11 +247,11 @@ class Lower:
         # makes primitive provisions (`platform_functor`).
         self.ref_sym = self.boxed_sym = self.structref_sym = None
         self.array_sym = self.arrayed_sym = self.arrayref_sym = None
-        # D79: lib/wasm.moss's `Memory`, under which every memory
-        # instruction is declared. A call of one records the `Memory` in
-        # force (`Call.memory`), which the back end and the interpreter
-        # read at their own type arguments.
-        self.memory_sym = None
+        # D79: lib/wasm.moss's `Addr` and `Memory`. The memory
+        # instructions are `Addr`'s methods, which the platform's family
+        # `Memories` provides (D84 rule 7) as primitives held at the
+        # receiver's `Memory`, as `Arrays`'s are at its `Arrayed`.
+        self.memory_sym = self.addr_sym = None
         # id(method Symbol) -> the primitive the platform provides it with.
         self.platform_prims: dict[int, str] = {}
         for module in program.order:
@@ -260,6 +260,11 @@ class Lower:
                 self.boxed_sym = module.names.get("Boxed")
                 self.structref_sym = module.names.get("StructRef")
                 self.memory_sym = module.names.get("Memory")
+                self.addr_sym = module.names.get("Addr")
+                if self.addr_sym is not None:
+                    for (recv, name), m in module.attached.items():
+                        if recv == id(self.addr_sym):
+                            self.platform_prims[id(m)] = "mem_" + name
                 boxed = module.detached.get("boxed")
                 if boxed is not None:
                     self.platform_prims[id(boxed)] = "box"
@@ -286,10 +291,6 @@ class Lower:
         # Whether the program mentions a `Ref` at all; the back end only
         # tracks type arguments (`Call.tyargs`) when it does.
         self.uses_gc = False
-        # Whether the program binds `Memory` anywhere (D79); only then do
-        # the back end and the interpreter track its type argument, so a
-        # program with one memory specializes exactly as before.
-        self.uses_memories = False
         # id(Symbol) -> the type symbols a defined function assumes, whose
         # parameters its body's types mention (D72): what a call's
         # `tyargs` supplies.
@@ -388,10 +389,7 @@ class Lower:
                     # D84 rule 1 (as strengthened): a val's or fn's
                     # dependencies, its whole telescope (D71, D79), not
                     # only its signature.
-                    syms.extend(
-                        t for t in self.type_requirements(target)
-                        if not (self.is_memory_instruction(target) and t is self.memory_sym)
-                    )
+                    syms.extend(self.type_requirements(target))
                     if target.kind == SymKind.VAL:
                         self.free_type_syms(target.decl.ty, target.module, syms)
                     else:
@@ -799,13 +797,7 @@ class Lower:
         elif sym.kind == SymKind.FN:
             sig = self.fn_sig(sym, env.tymap | subst, env)
             self.merge(env, env.fns, module, sym, sig)
-            app = self.provision_app(sym, env.tymap | subst)
-            if self.is_memory_instruction(sym):
-                # D79: the platform provides a memory instruction at every
-                # memory — which one is the `Memory` in force where it is
-                # called — so assuming one does not tie it to a memory.
-                app.pop(self.memory_sym, None)
-            env.apps.setdefault(sym, app)
+            env.apps.setdefault(sym, self.provision_app(sym, env.tymap | subst))
             if sym not in needs:
                 needs.append(sym)
         elif sym.kind == SymKind.CONTEXT:
@@ -1373,14 +1365,6 @@ class Lower:
         if method:
             reqs = self.signature_type_syms(sym, reqs)
         return {t: tymap.get(t) for t in reqs}
-
-    def is_memory_instruction(self, sym: Symbol) -> bool:
-        """Whether `sym` is one of lib/wasm.moss's memory instructions,
-        declared under `assume Memory` (D79)."""
-        mem = self.memory_sym
-        if mem is None or sym.module is not mem.module or sym.kind != SymKind.FN:
-            return False
-        return mem in self.type_requirements(sym)
 
     def signature_type_syms(self, sym: Symbol, reqs: list) -> list:
         cached = self._sig_syms_cache.get(id(sym))
@@ -2508,9 +2492,6 @@ class FnChecker:
                 lower.free_type_syms(p.ty, target.module, syms)
             if target.decl.ret is not None:
                 lower.free_type_syms(target.decl.ret, target.module, syms)
-            if lower.is_memory_instruction(target):
-                # At every memory (D79): `Memory` only, not its `I32`s.
-                syms = [t for t in syms if t is not lower.memory_sym]
         return syms
 
     def check_rule_a_binding(self, functor: Symbol, bound: Symbol, poly: list):
@@ -2814,8 +2795,12 @@ class FnChecker:
             self.lower.shadow(self.env.methods, key, sig)
             self.provided_at(key, method, tymap, method=True)
             # What the primitive is at: `Arrayed` for D81's arrays,
-            # `Boxed` for the rest.
-            by = self.lower.arrayed_sym if prim.startswith("array_") else self.lower.boxed_sym
+            # `Memory` for D79's instructions, `Boxed` for the rest.
+            by = (
+                self.lower.arrayed_sym if prim.startswith("array_")
+                else self.lower.memory_sym if prim.startswith("mem_")
+                else self.lower.boxed_sym
+            )
             held = self.lower.canon(self.env, tymap[by])
             self.lower.uses_gc = True
             out.append(ir.BindPrim(key, prim, held))
@@ -2927,8 +2912,6 @@ class FnChecker:
             # What the right side means here (D26): a later bind of a
             # symbol it mentions must not reach back through this one.
             self.env.tymap[target] = self.lower.canon(self.env, ty)
-            if target is self.lower.memory_sym:
-                self.lower.uses_memories = True
             return []  # static only
         if target.kind == SymKind.VAL:
             declared = self.lower.elab_type(
@@ -3627,16 +3610,11 @@ class FnChecker:
                     "(assume or bind it)"
                 )
             callee = ("env", target)
-        memory = None
-        if self.lower.is_memory_instruction(target):
-            # D79: a memory instruction is at the `Memory` in force.
-            memory = self.env.tymap.get(self.lower.memory_sym)
         args = self.check_args(target.name, sig, expr.args)
         ret = self.lower.slots_of(self.env, sig.ret)
         return (
             ir.Call(
                 callee, tuple(args), needs_map=needs_map, ret_slots=ret, tyargs=tyargs,
-                memory=memory,
             ),
             sig.ret,
         )

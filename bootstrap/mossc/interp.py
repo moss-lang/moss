@@ -125,14 +125,6 @@ class NativeFn:
     call: object  # (args: list, this) -> value
 
 
-@dataclass(frozen=True)
-class MemoryFn(NativeFn):
-    """A memory instruction (D79): `select` points the emulated
-    instructions at the memory a `Memory` type is, for one call."""
-
-    select: object = None  # (Memory type | None) -> None
-
-
 UNIT = UnitVal(None)
 _ABSENT = object()  # a local a block's `let` did not shadow
 
@@ -286,22 +278,22 @@ class Frame:
         self.ctx = ctx
         self.this = this
         # The frame's type arguments, as the back end's `theta`, kept only
-        # when the program binds `Memory` (D79), so that a generic
-        # function's memory instructions know which memory.
+        # when the program uses the platform's primitives, so that a
+        # generic function's memory instructions know which memory (D79).
         self.theta = theta or {}
 
 
 class Interp:
-    def __init__(self, fns: dict, memory_sym=None):
+    def __init__(self, fns: dict, track=False):
         self.fns = fns  # id(Symbol) -> FnIR
-        # lib/wasm.moss's `Memory`, when the program binds it (D79).
-        self.memory_sym = memory_sym
+        # Whether frames carry their type arguments (`Frame.theta`).
+        self.track = track
 
     def theta_for(self, tyargs, theta: dict) -> dict:
-        """A callee's type arguments, at the caller's (D79): all of them,
-        since `Memory` may be bound to another abstract type a caller
-        supplies."""
-        if self.memory_sym is None or not tyargs:
+        """A callee's type arguments, at the caller's: all of them, since
+        a type a primitive is held at may be bound to another abstract
+        type a caller supplies."""
+        if not self.track or not tyargs:
             return {}
         from .build import subst
 
@@ -366,7 +358,12 @@ class Interp:
             )
             frame.ctx[stmt.key] = Closure(fn, captured, theta)
         elif isinstance(stmt, ir.BindPrim):
-            frame.ctx[stmt.key] = gc_prim(stmt)
+            if stmt.prim.startswith("mem_"):
+                from .build import subst
+
+                frame.ctx[stmt.key] = mem_prim(stmt, subst(frame.theta, stmt.held))
+            else:
+                frame.ctx[stmt.key] = gc_prim(stmt)
         elif isinstance(stmt, ir.BindFunctor):
             # D78: which functor the abstract one now is — a functor with
             # a body, or whatever another abstract functor is here.
@@ -399,7 +396,7 @@ class Interp:
                     self.exec_stmt(s, inner)
                 for mk, out in zip(closure.made, stmt.outs):
                     frame.ctx[out] = inner.ctx[mk]
-                if self.memory_sym is not None and stmt.gens:
+                if self.track and stmt.gens:
                     made = dict(closure.types)
                     frame.theta = {
                         **frame.theta,
@@ -411,7 +408,7 @@ class Interp:
                     break
             else:
                 raise MossPanic(f"`{stmt.key.name}` is bound to no functor it can be")
-            if self.memory_sym is not None and types:
+            if self.track and types:
                 from .build import subst
 
                 frame.theta = {
@@ -494,14 +491,6 @@ class Interp:
                     return _Tail(fn, args, ctx, this, theta)
                 return self.call_fn(fn, args, ctx, this, theta)
             impl = frame.ctx[target]
-            if expr.memory is not None and isinstance(impl, MemoryFn):
-                from .build import subst
-
-                impl.select(subst(frame.theta, expr.memory))
-                try:
-                    return impl.call(args, this)
-                finally:
-                    impl.select(None)
             if tail and isinstance(impl, Closure):
                 return _Tail(impl.fn, args, impl.ctx, this, impl.theta)
             return self.invoke(impl, args, this)
@@ -909,15 +898,11 @@ def receiver_type(sym: Symbol):
 
 
 PAGE = 65536
-# The instructions lib/wasm.moss declares under `assume Memory` (D79).
-MEMORY_OPS = frozenset(
-    [f"i32_load{s}" for s in ("", "8_s", "8_u", "16_s", "16_u")]
-    + [f"i64_load{s}" for s in ("", "8_s", "8_u", "16_s", "16_u", "32_s", "32_u")]
-    + [f"i32_store{s}" for s in ("", "8", "16")]
-    + [f"i64_store{s}" for s in ("", "8", "16", "32")]
-    + ["f32_load", "f64_load", "f32_store", "f64_store"]
-    + ["memory_size", "memory_grow", "memory_copy", "memory_fill"]
-)
+# D79: the memory instructions, by name, as `wasm_env` emulates them over
+# its memories: (impl over the address and arguments, select), where
+# `select` points them at the memory a `Memory` type is. `mem_prim` makes
+# `Memories`'s provisions of `Addr`'s methods from them.
+MEMORY_IMPLS: dict = {}
 HEAP_BASE = 1024
 PREOPEN_FD = 3
 
@@ -952,15 +937,14 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
         ):
             current[0] = memory
             return
-        if isinstance(t, TNominal) and t.symbol.kind == SymKind.UNIT:
-            got = others.get(id(t.symbol))
-            if got is None:
-                got = bytearray(2 * PAGE)
-                got[16:20] = HEAP_BASE.to_bytes(4, "little")
-                others[id(t.symbol)] = got
-            current[0] = got
-            return
-        raise MossPanic("a memory instruction where `Memory` is not a memory (D79)")
+        if isinstance(t, TAbstract):
+            raise MossPanic(f"a memory instruction at `{t}`, which nothing bound")
+        got = others.get(t)
+        if got is None:
+            got = bytearray(2 * PAGE)
+            got[16:20] = HEAP_BASE.to_bytes(4, "little")
+            others[t] = got
+        current[0] = got
 
     def wrap(n: int, bits: int = 32) -> int:
         n &= (1 << bits) - 1
@@ -988,32 +972,32 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
     def fn(name: str, impl):
         symbol = lib["wasm"].names.get(name) or lib["wasip1"].names.get(name)
         if symbol is not None:
-            if name in MEMORY_OPS:
-                env[symbol] = MemoryFn(name, lambda a, this, impl=impl: impl(a), select)
-            else:
-                env[symbol] = NativeFn(name, lambda a, this, impl=impl: impl(a))
+            env[symbol] = NativeFn(name, lambda a, this, impl=impl: impl(a))
 
-    # Memory instructions.
+    def mem(name: str, impl):
+        MEMORY_IMPLS[name] = (impl, select)
+
+    # Memory instructions: each takes the address first.
     loads = {"i32_load": (4, True), "i32_load8_s": (1, True), "i32_load8_u": (1, False),
              "i32_load16_s": (2, True), "i32_load16_u": (2, False),
              "i64_load": (8, True)}
     for name, (width, signed) in loads.items():
-        fn(name, lambda a, w=width, sg=signed: IntVal(load(a[0].value, w, sg)))
+        mem(name, lambda a, w=width, sg=signed: IntVal(load(a[0].value, w, sg)))
     for name, width in {"i32_store": 4, "i32_store8": 1, "i32_store16": 2,
                         "i64_store": 8}.items():
-        fn(name, lambda a, w=width: (store(a[0].value, w, a[1].value), UNIT)[1])
-    fn("memory_size", lambda a: IntVal(len(current[0]) // PAGE))
+        mem(name, lambda a, w=width: (store(a[0].value, w, a[1].value), UNIT)[1])
+    mem("memory_size", lambda a: IntVal(len(current[0]) // PAGE))
 
     def memory_grow(a):
         before = len(current[0]) // PAGE
-        current[0].extend(bytes(a[0].value * PAGE))
+        current[0].extend(bytes(a[1].value * PAGE))
         return IntVal(before)
 
-    fn("memory_grow", memory_grow)
-    fn("memory_copy", lambda a: (current[0].__setitem__(
+    mem("memory_grow", memory_grow)
+    mem("memory_copy", lambda a: (current[0].__setitem__(
         slice(a[0].value, a[0].value + a[2].value),
         current[0][a[1].value : a[1].value + a[2].value]), UNIT)[1])
-    fn("memory_fill", lambda a: (current[0].__setitem__(
+    mem("memory_fill", lambda a: (current[0].__setitem__(
         slice(a[0].value, a[0].value + a[2].value),
         bytes([a[1].value & 0xFF]) * a[2].value), UNIT)[1])
 
@@ -1068,9 +1052,9 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
                 b)))
     for name, width in {"i64_load8_s": 1, "i64_load8_u": 1, "i64_load16_s": 2,
                         "i64_load16_u": 2, "i64_load32_s": 4, "i64_load32_u": 4}.items():
-        fn(name, lambda a, w=width, sg=name.endswith("_s"): IntVal(load(a[0].value, w, sg)))
+        mem(name, lambda a, w=width, sg=name.endswith("_s"): IntVal(load(a[0].value, w, sg)))
     for name, width in {"i64_store8": 1, "i64_store16": 2, "i64_store32": 4}.items():
-        fn(name, lambda a, w=width: (store(a[0].value, w, a[1].value), UNIT)[1])
+        mem(name, lambda a, w=width: (store(a[0].value, w, a[1].value), UNIT)[1])
     for name, bits in {"i32_extend8_s": 8, "i32_extend16_s": 16, "i64_extend8_s": 8,
                        "i64_extend16_s": 16, "i64_extend32_s": 32}.items():
         fn(name, lambda a, b=bits: IntVal(wrap(a[0].value, b)))
@@ -1082,9 +1066,9 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
     # could leave it with more than single precision.
     for prefix, rnd in (("f32", f32), ("f64", lambda x: x)):
         width, code = (4, "<f") if prefix == "f32" else (8, "<d")
-        fn(f"{prefix}_load", lambda a, w=width, c=code: FloatVal(
+        mem(f"{prefix}_load", lambda a, w=width, c=code: FloatVal(
             struct.unpack(c, (grow(a[0].value + w), current[0][a[0].value : a[0].value + w])[1])[0]))
-        fn(f"{prefix}_store", lambda a, w=width, c=code: (
+        mem(f"{prefix}_store", lambda a, w=width, c=code: (
             grow(a[0].value + w),
             current[0].__setitem__(slice(a[0].value, a[0].value + w), struct.pack(c, a[1].value)),
             UNIT)[2])
@@ -1325,6 +1309,27 @@ def array_prim(bind: "ir.BindPrim") -> NativeFn:
     return NativeFn("copy", copy)
 
 
+def mem_prim(bind: "ir.BindPrim", held) -> NativeFn:
+    """D79: what the platform's `Memories` provides — `Addr`'s method of
+    the same name, at the memory `held` is: the receiver's address and
+    the arguments, an address argument (`memory.copy`'s `src`) read as
+    its own."""
+    name = bind.prim[len("mem_"):]
+    impl, select = MEMORY_IMPLS[name]
+
+    def addr(v):
+        return v.payload if isinstance(v, TagVal) else v
+
+    def call(a, this):
+        select(held)
+        try:
+            return impl([addr(this), *(addr(x) for x in a)])
+        finally:
+            select(None)
+
+    return NativeFn(name, call)
+
+
 def gc_prim(bind: "ir.BindPrim") -> NativeFn:
     """D75: what `bind Heap;` provides — boxing a value in a struct that
     remembers the type it was made at, and reading one back — and what
@@ -1441,5 +1446,4 @@ def run_main(program: Program, lower, args: list | None = None) -> None:
                 f"`main` assumes `{name}`, which is not part of the `Std` context"
             )
         ctx[need] = provision
-    memory_sym = lower.memory_sym if lower.uses_memories else None
-    Interp(lower.fns, memory_sym).call_fn(fn, [], ctx)
+    Interp(lower.fns, lower.uses_gc).call_fn(fn, [], ctx)
