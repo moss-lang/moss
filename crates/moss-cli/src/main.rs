@@ -1,4 +1,5 @@
 mod binaryen;
+mod validate;
 mod wasmtime;
 
 use std::{
@@ -15,6 +16,7 @@ use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
 #[cfg(not(moss_embedded_compiler))]
 use std::process::{Command, Stdio};
+use validate::{validate, Producer};
 use wasmtime::{Access, Engine, Module, Wasi};
 
 #[cfg(not(moss_embedded_compiler))]
@@ -88,6 +90,14 @@ fn real_main() -> Result<i32> {
         }
         Commands::Build { file, output } => {
             let wasm = compile(&engine, &root, &file, cli.optimization)?;
+            // The artifact, checked whoever wrote it last. `moss run` needs
+            // no such check: Wasmtime validates as it compiles (see
+            // `run_program`).
+            let producer = match cli.optimization {
+                Some(_) => Producer::Binaryen,
+                None => Producer::Compiler,
+            };
+            validate(&engine, &wasm, producer)?;
             match output {
                 Some(path) => fs::write(path, wasm)?,
                 None => {
@@ -159,9 +169,18 @@ fn compile(
     let compiler = self_hosted_compiler(engine, root)?;
     let bytes = run_compiler(engine, root, &compiler, &entry)?;
     match optimization {
-        Some(opt) => optimize_wasm(bytes, opt),
+        Some(opt) => optimized(engine, bytes, opt),
         None => Ok(bytes),
     }
+}
+
+/// Binaryen's rewrite of a module, once the module has validated. Binaryen's
+/// C API reads without validating, so an invalid module can come out of it
+/// quietly "repaired" into a valid one that means something else, or abort
+/// the whole process; only the compiler's own output says which bug it was.
+fn optimized(engine: &Engine, bytes: Vec<u8>, opt: Opt) -> Result<Vec<u8>> {
+    validate(engine, &bytes, Producer::Compiler)?;
+    optimize_wasm(bytes, opt)
 }
 
 fn absolute(path: &Path) -> Result<PathBuf> {
@@ -222,14 +241,14 @@ fn self_hosted_compiler(engine: &Engine, root: &Path) -> Result<CompilerModule> 
     fs::create_dir_all(&target)?;
     eprintln!("Building the self-hosted Moss compiler...");
     let s0 = bootstrap_compile(root, &root.join("src/main.moss"))?;
-    let s0 = optimize_wasm(s0, COMPILER_OPT)?;
+    let s0 = optimized(engine, s0, COMPILER_OPT)?;
     let s1 = run_compiler(
         engine,
         root,
         &CompilerModule::Wasm(s0),
         &root.join("src/main.moss"),
     )?;
-    let ready = optimize_wasm(s1, COMPILER_OPT)?;
+    let ready = optimized(engine, s1, COMPILER_OPT)?;
 
     let compiler_tmp = target.join(format!("moss.wasm.{}", std::process::id()));
     let manifest_tmp = target.join(format!("moss.inputs.{}", std::process::id()));
@@ -383,7 +402,14 @@ fn run_program(
     wasi.inherit_stdin();
     wasi.inherit_stdout();
     wasi.inherit_stderr();
-    let module = Module::new(engine, bytes)?;
+    // Wasmtime validates the module here, so an invalid one stops before it
+    // runs; the compiler accepted the program, so that is the compiler's bug.
+    let module = Module::new(engine, bytes).map_err(|error| {
+        anyhow!(
+            "Wasmtime refused the compiled module: {error:#}\n{}",
+            validate::COMPILER_BUG
+        )
+    })?;
     wasmtime::run(engine, &module, wasi)
 }
 

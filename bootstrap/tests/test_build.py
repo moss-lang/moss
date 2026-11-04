@@ -27,10 +27,83 @@ _wasm_names = itertools.count()
 
 
 def wasm_file(module: bytes) -> str:
-    """A module as a path wasmtime can run."""
+    """A module as a path wasmtime can run, once it has validated.
+
+    Every module these tests run, optimize or disassemble is written here
+    first, so this is where a compiler that writes an invalid module is
+    caught: before `wasm-opt`, which reads one without complaint and may
+    quietly repair it at `-O0`..`-O2` (or abort at `-O3`), and before
+    wasmtime, whose refusal reads like a runtime failure. The driver checks
+    the compiler's output too, with Wasmtime's validator; this is the same
+    check for modules the tests make without it."""
     path = Path(_WASM_DIR.name) / f"{next(_wasm_names)}.wasm"
     path.write_bytes(module)
+    if module.startswith(b"\0asm"):
+        validate_wasm(str(path))
     return str(path)
+
+
+# Each name in `wasm-features.txt` (Binaryen's) as wasmparser, and so
+# `wasm-tools validate`, names it, with what Binaryen lets the flag
+# through. `crates/moss-cli/src/binaryen.rs` maps the same names.
+_VALIDATOR_FEATURES = {
+    "mutable-globals": ["mutable-global"],
+    "nontrapping-float-to-int": ["saturating-float-to-int"],
+    "sign-ext": ["sign-extension"],
+    "multivalue": ["multi-value"],
+    "bulk-memory": ["bulk-memory"],
+    "bulk-memory-opt": ["bulk-memory-opt"],
+    "reference-types": ["reference-types"],
+    "call-indirect-overlong": ["call-indirect-overlong"],
+    "simd": ["simd"],
+    "tail-call": ["tail-call"],
+    "extended-const": ["extended-const"],
+    "multimemory": ["multi-memory"],
+    "memory64": ["memory64"],
+    # Binaryen folds typed function references into its GC feature.
+    "gc": ["gc", "function-references"],
+    "exception-handling": ["exceptions"],
+    "relaxed-simd": ["relaxed-simd"],
+    "threads": ["threads"],
+}
+
+
+def validator_features() -> str:
+    """`wasm-features.txt` as a `wasm-tools validate --features` list:
+    those features and no others, as the driver's validator enables."""
+    names = ["-all", "mvp"]
+    for feature in wasm_features():
+        if feature not in _VALIDATOR_FEATURES:
+            raise AssertionError(
+                f"wasm-features.txt names a feature the tests cannot validate: {feature}"
+            )
+        names += _VALIDATOR_FEATURES[feature]
+    return ",".join(names)
+
+
+def validate_wasm(path: str) -> None:
+    """`wasm-tools validate`, which is wasmparser, the validator Wasmtime
+    uses: it also enforces the limits engines impose, such as at most 1000
+    parameters per function type, which the specification does not.
+
+    A hard requirement, like wasmtime: wasm-tools is in the dev shell and
+    in the flake's `bootstrap` check."""
+    tool = shutil.which("wasm-tools")
+    if tool is None:
+        raise AssertionError(
+            "wasm-tools not found on PATH; enter the Nix dev shell "
+            "(or run `nix flake check`), which provides it"
+        )
+    result = subprocess.run(
+        [tool, "validate", f"--features={validator_features()}", path],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"the compiler wrote an invalid module: {result.stderr.strip()}"
+        )
 
 
 def wasmtime() -> str:
@@ -122,6 +195,40 @@ def run_wasm(wasm: bytes) -> str:
     if result.returncode != 0:
         raise AssertionError(f"wasmtime failed: {result.stderr}")
     return result.stdout
+
+
+class TestModulesAreValidated(unittest.TestCase):
+    """`wasm_file`, which every module the tests run passes through,
+    refuses an invalid one before anything reads it."""
+
+    def module(self, params: int) -> bytes:
+        """One function type of `params` i32 parameters (fewer than 16384,
+        for a two-byte count), and one function of it."""
+        count = bytes([0x80 | (params & 0x7F), params >> 7])
+        types = b"\x01\x60" + count + b"\x7f" * params + b"\x00"
+        size = len(types)
+        return (
+            b"\0asm\x01\0\0\0"
+            + b"\x01" + bytes([0x80 | (size & 0x7F), size >> 7]) + types
+            + b"\x03\x02\x01\x00"
+            + b"\x0a\x04\x01\x02\x00\x0b"
+        )
+
+    def test_a_valid_module_is_written(self):
+        wasm_file(self.module(1000))
+
+    def test_too_many_parameters_are_refused(self):
+        """The shadow example's first design had 4,477: valid by the
+        specification, refused by every engine, read by Binaryen."""
+        with self.assertRaises(AssertionError) as caught:
+            wasm_file(self.module(4477))
+        self.assertIn("function params size is out of bounds", str(caught.exception))
+
+    def test_only_the_listed_features(self):
+        shared_memory = b"\0asm\x01\0\0\0\x05\x04\x01\x03\x01\x01"
+        with self.assertRaises(AssertionError) as caught:
+            wasm_file(shared_memory)
+        self.assertIn("threads", str(caught.exception))
 
 
 class TestWasmBackend(unittest.TestCase):

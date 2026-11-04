@@ -86,7 +86,10 @@ def compile_driver(driver: str) -> str:
             _lock(lock)
             if not target.exists():
                 partial = target.with_suffix(f".{os.getpid()}.partial")
-                partial.write_bytes(compile_wasm({"main.moss": driver}))
+                # Through `wasm_file`, so the driver is validated too.
+                partial.write_bytes(
+                    Path(wasm_file(compile_wasm({"main.moss": driver}))).read_bytes()
+                )
                 os.replace(partial, target)
         path = str(target)
     _DRIVERS[driver] = path

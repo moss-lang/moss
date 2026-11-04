@@ -398,7 +398,7 @@
 
               touch $out
             '';
-          cli = pkgs.runCommand "moss-cli-check" { } ''
+          cli = pkgs.runCommand "moss-cli-check" { nativeBuildInputs = [ pkgs.wasm-tools ]; } ''
             moss=${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/moss
             source=${./.}/examples/hello.moss
             "$moss" --help >/dev/null
@@ -417,6 +417,24 @@
             echo 'this is not Moss' > other/lib/prelude.moss
             cp "$source" other/src/hello.moss
             "$moss" other/src/hello.moss | grep -qx 'Hello, world!'
+            # An invalid module is never written, optimized or not, nor run:
+            # a stand-in compiler writes one, which the driver refuses before
+            # Binaryen reads it.
+            wasm-tools parse ${./tests/cli/invalid-output.wat} -o invalid-output.wasm
+            export MOSS_COMPILER=$PWD/invalid-output.wasm
+            for level in "" -O0 -O3; do
+              if "$moss" $level build hello.moss -o out.wasm 2>err.txt; then
+                false
+              fi
+              test ! -e out.wasm
+              grep -q 'function params size is out of bounds' err.txt
+              grep -q 'This is a compiler bug' err.txt
+            done
+            if "$moss" hello.moss 2>err.txt; then
+              false
+            fi
+            grep -q 'This is a compiler bug' err.txt
+            unset MOSS_COMPILER
             touch $out
           '';
           bootstrap =
@@ -425,6 +443,7 @@
                 nativeBuildInputs = [
                   pkgs.binaryen # `wasm-opt`, which the self-hosting tests run.
                   pkgs.python3
+                  pkgs.wasm-tools # Validates every module the tests write.
                   pkgs.wasmtime
                 ];
               }
@@ -481,7 +500,7 @@
             pkgs.python3
             pkgs.rust-bin.stable.latest.default
             pkgs.vsce # For manually packaging the VS Code extension.
-            pkgs.wasm-tools
+            pkgs.wasm-tools # The bootstrap tests validate every module with it.
             pkgs.wasmtime # The bootstrap's Wasm backend tests run it.
           ];
           BINARYEN_LIB_DIR = "${pkgs.binaryen}/lib";

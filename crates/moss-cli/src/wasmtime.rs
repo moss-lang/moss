@@ -103,6 +103,18 @@ impl Module {
     }
 }
 
+/// Checks that `wasm` is a module this engine would accept, without
+/// compiling it: the same validation `Module::new` does first.
+pub fn validate(engine: &Engine, wasm: &[u8]) -> Result<()> {
+    unsafe {
+        check(wasmtime_module_validate(
+            engine.raw,
+            wasm.as_ptr(),
+            wasm.len(),
+        ))
+    }
+}
+
 impl Drop for Module {
     fn drop(&mut self) {
         unsafe { wasmtime_module_delete(self.raw) }
@@ -450,6 +462,11 @@ extern "C" {
     fn wasm_engine_new() -> *mut wasm_engine_t;
     fn wasm_engine_delete(engine: *mut wasm_engine_t);
 
+    fn wasmtime_module_validate(
+        engine: *mut wasm_engine_t,
+        wasm: *const u8,
+        len: usize,
+    ) -> *mut wasmtime_error_t;
     fn wasmtime_module_new(
         engine: *mut wasm_engine_t,
         wasm: *const u8,
