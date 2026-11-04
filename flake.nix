@@ -128,6 +128,7 @@
             version = "0.0.0";
             src = bootstrapSource;
             nativeBuildInputs = (oracleTools pkgs).inputs;
+            DUNE_CACHE = "disabled"; # there is no home to keep it in
             buildPhase = ''
               runHook preBuild
               dune build --release -j $NIX_BUILD_CORES ocaml/moss_m2.exe
@@ -435,6 +436,7 @@
             pkgs.runCommand "moss-bootstrap-rocq"
               {
                 nativeBuildInputs = (oracleTools pkgs).inputs;
+                DUNE_CACHE = "disabled"; # there is no home to keep it in
               }
               ''
                 cp -r ${self.packages.${pkgs.stdenv.hostPlatform.system}.oracle.src} bootstrap
