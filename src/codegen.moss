@@ -1294,10 +1294,18 @@ assume Std {
           let e = lower::env_find(env, lower::ek_fn(), r, ns);
           var walk = ast::is_some(e);
           if walk {
-            # D84 (draft): a functor binding's row holds the environment it
-            # captured, which passes nothing at run time (no val is
-            # captured across frames in this trial).
-            walk = prog::sym_kind.get(ns) != prog::sk_functor();
+            if prog::sym_kind.get(ns) == prog::sk_functor() {
+              # D84 6: a functor binding's entry carries the vals it
+              # captured, as a fn provider's does.
+              walk = false;
+              let slots = int_list();
+              functor_slots(e, slots, depth + 1);
+              var j = 0;
+              while j < slots.length() {
+                vs_append(out, ck_slot(e, slots.get(j)));
+                j = j + 1;
+              }
+            }
           }
           if walk {
             if ast::is_some(lower::env_a_of(e)) {
@@ -1344,6 +1352,29 @@ assume Std {
           un_meths.push(f);
           un_mlink.push(un_mhead.get(name));
           un_mhead.set(name, un_meths.length());
+        }
+        f = f + 1;
+      }
+      # D84 rule 7: a call by a family member's name may apply the family
+      # on demand, so it reaches the family as `bind F;` would.
+      f = 0;
+      while f < prog::sym_count() {
+        if is_family(f) {
+          let d = prog::sym_decl.get(f);
+          let mods = int_list();
+          let specs = int_list();
+          family_leaves(prog::sym_mod.get(f), ast::fu_res(d), ast::fu_nres(d), mods, specs, 0);
+          var i = 0;
+          while i < specs.length() {
+            let name = ast::b_of(specs.get(i));
+            while un_mhead.length() <= name {
+              un_mhead.push(0);
+            }
+            un_meths.push(f);
+            un_mlink.push(un_mhead.get(name));
+            un_mhead.set(name, un_meths.length());
+            i = i + 1;
+          }
         }
         f = f + 1;
       }
@@ -2642,7 +2673,7 @@ assume Std {
       }
       let grow = lower::env_find(cg_genv.read(), lower::ek_fn(), recv_ty, sym);
       if !ast::is_some(grow) {
-        return ty_none();
+        return on_demand_ret(recv_ty, sym);
       }
       sig_ret(row_view(grow), sym, recv_ty)
     }
@@ -3181,7 +3212,7 @@ assume Std {
       if ast::kind_of(e) == ast::k_ex_binary() {
         nargs = 1;
       }
-      emit_provided_method(body, recv, recv_ty, sym, ast::c_of(e), nargs, m)
+      emit_provided_method(body, recv, recv_ty, sym, ast::c_of(e), nargs, m, e)
     }
 
     # A call of the method `sym` the context provides at `recv_ty`, the
@@ -3190,10 +3221,18 @@ assume Std {
     # through whatever provides it in this specialization, which keys it
     # the same way.
     fn emit_provided_method(
-      body: IntList, recv: IntList, recv_ty: Int, sym: Int, run: Int, n: Int, m: Int
+      body: IntList, recv: IntList, recv_ty: Int, sym: Int, run: Int, n: Int, m: Int,
+      e: Int
     ): Int {
       let grow = generic_row(recv_ty, sym);
       if !ast::is_some(grow) {
+        # D84 rule 7: a member of a family in force, on demand.
+        let ts = int_list();
+        let tt = int_list();
+        let fu = family_member(recv_ty, sym, ts, tt);
+        if ast::is_some(fu) {
+          return emit_on_demand(body, recv, recv_ty, sym, run, n, m, e, fu, ts, tt);
+        }
         cg_error(prog::e_method(), prog::sym_name.get(sym));
         return ty_none();
       }
@@ -3295,7 +3334,7 @@ assume Std {
         return ty_none();
       }
       emit_provided_method(
-        body, recv, recv_ty, rm_sym.get(r), ast::c_of(e), ast::d_of(e), m
+        body, recv, recv_ty, rm_sym.get(r), ast::c_of(e), ast::d_of(e), m, e
       )
     }
 
@@ -4722,17 +4761,8 @@ assume Std {
         let s = lower::need_sym_at(f, i);
         let key = need_key_recv(f, genv, r);
         let row = lower::env_find(genv, lower::need_kind(s), key, s);
-        # D84 (draft): a bracketed functor is compared only where the
-        # callee reaches an application of it: `Wasm` lists the
-        # platform's, so a scope that swaps the GC heap could otherwise
-        # call nothing that assumes `Wasm` (tests/wasi/arena_ref.moss).
-        var skip = false;
-        if prog::sym_kind.get(s) == prog::sk_functor() {
-          skip = !need_used(f, i);
-        }
-        if skip {
-          # Nothing to compare.
-        } else if ast::is_some(row) {
+        # D84 (O2): a functor is compared like any need, used or not.
+        if ast::is_some(row) {
           let want = lower::need_app_at(f, i);
           let have = lower::env_b_of(row);
           if !coherent(s, want, fbase, have, base, genv, moved, bound_here, true) {
@@ -5673,17 +5703,10 @@ assume Std {
       if ast::is_some(row) {
         captured = lower::env_b_of(row);
       }
-      if ast::fu_bracketed(d) {
-        # D84 (draft): its fixed inputs as where it was provided; and its
-        # binding was checked where it was made, so nothing is scanned.
-        if !check_stale(fu) {
-          return ();
-        }
-      } else {
-        # Whatever `F` is bound to here, the application is checked
-        # against every functor it is bound to anywhere, as the bootstrap
-        # lowers each as a branch: each must make the result as promised.
-        check_candidates(spec, fu, provider, depth, mode);
+      # D84: its fixed inputs as where it was provided (none, unbracketed);
+      # its binding was checked where it was made, so nothing is scanned.
+      if !check_stale(fu) {
+        return ();
       }
       if !ast::is_some(provider) {
         if checking() {
@@ -5694,6 +5717,303 @@ assume Std {
         return ();
       }
       apply_closure_at(body, spec, fu, provider, captured, cg_env.read(), cg_genv.read(), depth, mode);
+    }
+
+
+    # D84 rule 7: families, whose members code gets on demand. A family
+    # is an abstract functor whose result is method items only, each of
+    # whose keys (receiver and brackets) determines every symbol of
+    # `P(F)` the item mentions. Its result's leaves, contexts flattened,
+    # into `mods`/`specs`; false where one is not a method.
+    fn family_leaves(m: Int, run: Int, n: Int, mods: IntList, specs: IntList, depth: Int): Bool {
+      if depth > 16 {
+        return false;
+      }
+      var i = 0;
+      while i < n {
+        let spec = ast::kid_at(run, i);
+        let s = prog::resolve_path(m, ast::a_of(spec));
+        if !ast::is_some(s) {
+          return false;
+        }
+        if ast::is_some(ast::b_of(spec)) {
+          mods.push(m);
+          specs.push(spec);
+        } else if prog::sym_kind.get(s) == prog::sk_context() {
+          if ast::d_of(spec) > 0 {
+            return false;
+          }
+          let d = prog::sym_decl.get(s);
+          if !family_leaves(prog::sym_mod.get(s), ast::b_of(d), ast::c_of(d), mods, specs, depth + 1) {
+            return false;
+          }
+        } else {
+          return false;
+        }
+        i = i + 1;
+      }
+      true
+    }
+
+    fn family_params(fu: Int, out: IntList) {
+      if ast::fu_bracketed(prog::sym_decl.get(fu)) {
+        lower::functor_params(fu, out);
+      } else {
+        lower::functor_mentions(fu, out);
+      }
+    }
+
+    fn is_family(fu: Int): Bool {
+      if prog::sym_kind.get(fu) != prog::sk_functor() {
+        return false;
+      }
+      let d = prog::sym_decl.get(fu);
+      if ast::is_some(ast::fu_binds(d)) {
+        return false;
+      }
+      let mods = int_list();
+      let specs = int_list();
+      if !family_leaves(prog::sym_mod.get(fu), ast::fu_res(d), ast::fu_nres(d), mods, specs, 0) {
+        return false;
+      }
+      let ps = int_list();
+      family_params(fu, ps);
+      var i = 0;
+      while i < specs.length() {
+        let m = mods.get(i);
+        let spec = specs.get(i);
+        let r = prog::resolve_path(m, ast::a_of(spec));
+        let method = lower::find_method_decl(m, r, ast::b_of(spec));
+        if !ast::is_some(method) {
+          return false;
+        }
+        let keyed = int_list();
+        types::free_syms_ref(ast::a_of(spec), ast::none(), 0, m, keyed);
+        let said = int_list();
+        lower::signature_syms(method, said);
+        let bound = int_list();
+        var b = 0;
+        while b < ast::d_of(spec) {
+          let lhs = prog::resolve_path(m, ast::a_of(ast::kid_at(ast::c_of(spec), b)));
+          if ast::is_some(lhs) {
+            bound.push(lhs);
+          }
+          b = b + 1;
+        }
+        let all = int_list();
+        var j = 0;
+        while j < said.length() {
+          if !types::contains_sym(bound, said.get(j)) {
+            all.push(said.get(j));
+          }
+          j = j + 1;
+        }
+        b = 0;
+        while b < ast::d_of(spec) {
+          let rhs = ast::b_of(ast::kid_at(ast::c_of(spec), b));
+          types::free_syms_ref(ast::a_of(rhs), ast::c_of(rhs), ast::d_of(rhs), m, all);
+          b = b + 1;
+        }
+        j = 0;
+        while j < all.length() {
+          if types::contains_sym(ps, all.get(j)) {
+            if !types::contains_sym(keyed, all.get(j)) {
+              return false;
+            }
+          }
+          j = j + 1;
+        }
+        i = i + 1;
+      }
+      true
+    }
+
+    # `pat`, a type over the symbols `ps`, matched against `t`: what each
+    # of `ps` it mentions is there, into `th_s`/`th_t`.
+    fn ty_match(pat: Int, t: Int, ps: IntList, th_s: IntList, th_t: IntList) {
+      if pat == t {
+        return ();
+      }
+      let k = types::kind_of(pat);
+      if k == types::kd_abstract() {
+        if types::contains_sym(ps, types::sym_of(pat)) {
+          if !types::contains_sym(th_s, types::sym_of(pat)) {
+            th_s.push(types::sym_of(pat));
+            th_t.push(t);
+          }
+          return ();
+        }
+      }
+      if k == types::kd_record() {
+        return ();
+      }
+      if types::kind_of(t) != k {
+        return ();
+      }
+      if types::sym_of(t) != types::sym_of(pat) {
+        return ();
+      }
+      if types::member_count(t) != types::member_count(pat) {
+        return ();
+      }
+      var i = 0;
+      while i < types::member_count(pat) {
+        ty_match(types::member_at(pat, i), types::member_at(t, i), ps, th_s, th_t);
+        i = i + 1;
+      }
+    }
+
+    # Whether the family `fu` produces the method key `(recv_ty, sym)` in
+    # the generic environment `genv`, and at which `P(F)` (θ, read off the
+    # key, into `ts`/`tt`).
+    fn family_theta(fu: Int, recv_ty: Int, sym: Int, genv: Int, ts: IntList, tt: IntList): Bool {
+      let d = prog::sym_decl.get(fu);
+      let mods = int_list();
+      let specs = int_list();
+      family_leaves(prog::sym_mod.get(fu), ast::fu_res(d), ast::fu_nres(d), mods, specs, 0);
+      let ps = int_list();
+      family_params(fu, ps);
+      var i = 0;
+      while i < specs.length() {
+        let m = mods.get(i);
+        let spec = specs.get(i);
+        let r = prog::resolve_path(m, ast::a_of(spec));
+        if lower::find_method_decl(m, r, ast::b_of(spec)) == sym {
+          var penv = genv;
+          var j = 0;
+          while j < ps.length() {
+            penv = lower::env_push(
+              penv, lower::ek_type(), ast::none(), ps.get(j),
+              types::ty_of_symbol(types::kd_abstract(), ps.get(j)), ast::none()
+            );
+            j = j + 1;
+          }
+          let pat = lower::canon(lower::app_view(penv, m, spec), types::ty_of_decl(r));
+          let s1 = int_list();
+          let t1 = int_list();
+          ty_match(pat, recv_ty, ps, s1, t1);
+          var venv = genv;
+          j = 0;
+          while j < s1.length() {
+            venv = lower::env_push(venv, lower::ek_type(), ast::none(), s1.get(j), t1.get(j), ast::none());
+            j = j + 1;
+          }
+          if lower::canon(lower::app_view(venv, m, spec), types::ty_of_decl(r)) == recv_ty {
+            j = 0;
+            while j < s1.length() {
+              ts.push(s1.get(j));
+              tt.push(t1.get(j));
+              j = j + 1;
+            }
+            return true;
+          }
+        }
+        i = i + 1;
+      }
+      false
+    }
+
+    # D84 rule 7: the family in force (in the generic environment) that
+    # produces the key `(recv_ty, sym)`, with θ, or none. Two families
+    # producing it is an error, as two imports of one name are (D44).
+    fn family_member(recv_ty: Int, sym: Int, ts: IntList, tt: IntList): Int {
+      let genv = cg_genv.read();
+      let seen = int_list();
+      var found = ast::none();
+      var e = genv;
+      while ast::is_some(e) {
+        let s = lower::env_sym_of(e);
+        if lower::env_kind_of(e) == lower::ek_fn() {
+          if !ast::is_some(lower::env_recv_of(e)) {
+            if !contains(seen, s) {
+              seen.push(s);
+              if is_family(s) {
+                let s1 = int_list();
+                let t1 = int_list();
+                if family_theta(s, recv_ty, sym, genv, s1, t1) {
+                  if ast::is_some(found) {
+                    cg_error(prog::e_family(), prog::sym_name.get(sym));
+                    return ast::none();
+                  }
+                  found = s;
+                  var j = 0;
+                  while j < s1.length() {
+                    ts.push(s1.get(j));
+                    tt.push(t1.get(j));
+                    j = j + 1;
+                  }
+                }
+              }
+            }
+          }
+        }
+        e = lower::env_next_of(e);
+      }
+      found
+    }
+
+    # The call, as if preceded by `bind F;` with `P(F)` at θ, in a scope
+    # of its own: `{ bind F at θ; recv.sym(args) }`.
+    fn emit_on_demand(
+      body: IntList, recv: IntList, recv_ty: Int, sym: Int, run: Int, n: Int, m: Int,
+      e: Int, fu: Int, ts: IntList, tt: IntList
+    ): Int {
+      let emark = cg_env.read();
+      let gmark = cg_genv.read();
+      let pmark = pv_top.read();
+      let floor = pv_floor.read();
+      let smark = es_top.read();
+      let concrete = int_list();
+      var i = 0;
+      while i < ts.length() {
+        concrete.push(spec(tt.get(i)));
+        i = i + 1;
+      }
+      i = 0;
+      while i < ts.length() {
+        cg_env.write(lower::env_push(cg_env.read(), lower::ek_type(), ast::none(), ts.get(i), concrete.get(i), ast::none()));
+        cg_genv.write(lower::env_push(cg_genv.read(), lower::ek_type(), ast::none(), ts.get(i), tt.get(i), ast::none()));
+        i = i + 1;
+      }
+      apply_abstract(body, e, fu, 0, bw_emit());
+      var ret = ty_none();
+      if ast::is_some(generic_row(recv_ty, sym)) {
+        ret = emit_provided_method(body, recv, recv_ty, sym, run, n, m, e);
+      } else {
+        cg_error(prog::e_method(), prog::sym_name.get(sym));
+      }
+      cg_env.write(emark);
+      cg_genv.write(gmark);
+      pv_top.write(pmark);
+      pv_floor.write(floor);
+      es_top.write(smark);
+      ret
+    }
+
+    # What a call of a family's member on demand yields: its declared
+    # return, read where `F`'s result is provided at θ.
+    fn on_demand_ret(recv_ty: Int, sym: Int): Int {
+      let ts = int_list();
+      let tt = int_list();
+      let fu = family_member(recv_ty, sym, ts, tt);
+      if !ast::is_some(fu) {
+        return ty_none();
+      }
+      let gmark = cg_genv.read();
+      var i = 0;
+      while i < ts.length() {
+        cg_genv.write(lower::env_push(cg_genv.read(), lower::ek_type(), ast::none(), ts.get(i), tt.get(i), ast::none()));
+        i = i + 1;
+      }
+      let d = prog::sym_decl.get(fu);
+      result_generic(prog::sym_mod.get(fu), ast::fu_res(d), ast::fu_nres(d), 0);
+      var ret = ty_none();
+      let grow = lower::env_find(cg_genv.read(), lower::ek_fn(), recv_ty, sym);
+      if ast::is_some(grow) {
+        ret = sig_ret(row_view(grow), sym, recv_ty);
+      }
+      cg_genv.write(gmark);
+      ret
     }
 
     # D84 (draft): `bind F;` where `F` is bound to `provider`, whose
@@ -5720,6 +6040,7 @@ assume Std {
       if !ast::is_some(gout) {
         gout = greal;
       }
+      let gcap = gout;
       let per = int_list();
       lower::functor_poly(fu, per);
       var i = 0;
@@ -5746,36 +6067,144 @@ assume Std {
         }
         i = i + 1;
       }
-      # `F`'s input vals, as this application has them.
+      # D84 3b: `F`'s other inputs are linked — each application supplies
+      # them, as they are here: vals by their locals, fns, methods and
+      # abstract functors by the application's entries, with what those
+      # carry.
       let d = prog::sym_decl.get(fu);
       let nrecv = int_list();
       let nsym = int_list();
       let decl_env = lower::assume_items(prog::sym_mod.get(fu), ast::fu_args(d), ast::fu_nargs(d), nrecv, nsym);
       let val_syms = int_list();
       let val_locals = int_list();
+      let new_rows = int_list();
+      let old_rows = int_list();
       var e = decl_env;
       while ast::is_some(e) {
-        if lower::env_kind_of(e) == lower::ek_val() {
-          let l = provision_of(ast::none(), lower::env_sym_of(e));
+        let kind = lower::env_kind_of(e);
+        let sym = lower::env_sym_of(e);
+        if kind == lower::ek_val() {
+          # Generically at the types applications supply (D84 3c).
+          let vd = prog::sym_decl.get(sym);
+          let vty = lower::elab(gout, ast::b_of(vd), prog::sym_mod.get(sym));
+          var l = provision_of(ast::none(), sym);
+          if cl_check.read() == 1 {
+            # At the bind, a val is an application's, at a fresh type:
+            # a local of that type, in dead code.
+            l = reveal(ast::none(), vty);
+          }
           if ast::is_some(l) {
-            val_syms.push(lower::env_sym_of(e));
+            val_syms.push(sym);
             val_locals.push(l);
           }
+          gout = lower::env_push(gout, lower::ek_val(), ast::none(), sym, vty, lower::full_app(sym, gout));
+        } else if kind == lower::ek_fn() {
+          var key = lower::env_recv_of(e);
+          var key0 = key;
+          if ast::is_some(key) {
+            key = instantiate_in(greal, key);
+            key0 = instantiate_in(gcap, key0);
+          }
+          var here = lower::env_find(real, lower::ek_fn(), key, sym);
+          if !ast::is_some(here) {
+            # At the bind, where what applications supply is fresh, the
+            # entry is the one in force here at the types as they are.
+            here = lower::env_find(real, lower::ek_fn(), key0, sym);
+          }
+          if ast::is_some(here) {
+            out = lower::env_push(out, lower::ek_fn(), key, sym, lower::env_a_of(here), lower::env_b_of(here));
+            new_rows.push(out);
+            old_rows.push(here);
+          }
+          # Generically, provided at the types applications supply (D84
+          # 3c): read through the closure's own view, where each is the
+          # application's (or, at the bind, fresh).
+          let view = view_over(lower::env_a_of(e), decl_env, gout);
+          gout = lower::env_push(gout, lower::ek_fn(), key, sym, view, lower::full_app(sym, view));
         }
         e = lower::env_next_of(e);
       }
-      # Provided again on top, without a floor: what the binds use was
-      # checked against their own inputs where they were bound, and a
-      # provider made here may be asked for more than it uses (a method
-      # call is taken to reach every method of its name), which only the
-      # frame has.
+      # What the linked providers carry, read before anything is pushed.
+      let cap_key = int_list();
+      let cap_local = int_list();
+      var k = 0;
+      while k < new_rows.length() {
+        let r = new_rows.get(k);
+        let vals = int_list();
+        if prog::sym_kind.get(lower::env_sym_of(r)) == prog::sk_functor() {
+          functor_slots(r, vals, 0);
+        } else if ast::is_some(lower::env_a_of(r)) {
+          val_slots(vals, lower::env_a_of(r), lower::env_b_of(r), 0);
+        }
+        var j = 0;
+        while j < vals.length() {
+          let l = provision_of(ast::none(), ck_slot(old_rows.get(k), vals.get(j)));
+          if ast::is_some(l) {
+            cap_key.push(ck_slot(r, vals.get(j)));
+            cap_local.push(l);
+          }
+          j = j + 1;
+        }
+        k = k + 1;
+      }
+      # D84 6: the vals the binding captured, under their own keys again,
+      # from the entry `F` is bound by here, which carried them (from the
+      # frame that bound it, or across frames as parameters).
+      let own = lower::env_find(real, lower::ek_fn(), ast::none(), fu);
+      if ast::is_some(own) {
+        let slots = int_list();
+        functor_slots(own, slots, 0);
+        var j = 0;
+        while j < slots.length() {
+          let l = provision_of(ast::none(), ck_slot(own, slots.get(j)));
+          if ast::is_some(l) {
+            cap_key.push(slots.get(j));
+            cap_local.push(l);
+          }
+          j = j + 1;
+        }
+      }
+      # Provided again on top: what the binds use was checked where they
+      # were bound.
       i = 0;
       while i < val_syms.length() {
         provide(ast::none(), val_syms.get(i), val_locals.get(i));
         i = i + 1;
       }
+      i = 0;
+      while i < cap_key.length() {
+        provide(ast::none(), cap_key.get(i), cap_local.get(i));
+        i = i + 1;
+      }
       cg_env.write(out);
       cg_genv.write(gout);
+      out
+    }
+
+    # The type rows an item's view has above the declaration environment
+    # `base` (its own brackets, and its contexts'), pushed onto `onto`,
+    # outermost first, each read in `onto`'s terms.
+    fn view_over(view: Int, base: Int, onto: Int): Int {
+      let syms = int_list();
+      let tys = int_list();
+      var v = view;
+      while ast::is_some(v) {
+        if in_chain(v, base) {
+          v = ast::none();
+        } else {
+          if lower::env_kind_of(v) == lower::ek_type() {
+            syms.push(lower::env_sym_of(v));
+            tys.push(lower::env_a_of(v));
+          }
+          v = lower::env_next_of(v);
+        }
+      }
+      var out = onto;
+      var i = syms.length();
+      while i > 0 {
+        i = i - 1;
+        out = lower::env_push(out, lower::ek_type(), ast::none(), syms.get(i), instantiate_in(onto, tys.get(i)), ast::none());
+      }
       out
     }
 
@@ -5814,67 +6243,6 @@ assume Std {
       }
     }
 
-    # D78: every functor the abstract `fu` can be bound to anywhere in the
-    # program — by a `bind F = G;`, reached or not, or through another
-    # abstract functor — and `fu` itself if the platform provides it, as
-    # the bootstrap's `functor_candidates`. Read off the rows
-    # `uw_functor_bind` hung on `fu`.
-    fn functor_candidates(fu: Int, out: IntList, seen: IntList) {
-      if contains(seen, fu) {
-        return ();
-      }
-      seen.push(fu);
-      if in_wasm(fu) {
-        if !contains(out, fu) {
-          out.push(fu);
-        }
-      }
-      if fu >= un_head.length() {
-        return ();
-      }
-      var r = un_head.get(fu);
-      while r > 0 {
-        let g = un_sym.get(r - 1);
-        if prog::sym_kind.get(g) == prog::sk_functor() {
-          if !ast::is_some(ast::fu_binds(prog::sym_decl.get(g))) {
-            functor_candidates(g, out, seen);
-          } else if !contains(out, g) {
-            out.push(g);
-          }
-        }
-        r = un_link.get(r - 1);
-      }
-    }
-
-    # `bind F;` with each functor `F` can be bound to but is not here,
-    # applied as dead code and thrown away, scope and all: where the
-    # application is reached that checks the others, and where nothing
-    # provides `F` (the check pass), all of them.
-    fn check_candidates(spec: Int, fu: Int, provider: Int, depth: Int, mode: Int) {
-      let cands = int_list();
-      functor_candidates(fu, cands, int_list());
-      var i = 0;
-      while i < cands.length() {
-        let g = cands.get(i);
-        if g != provider {
-          let emark = cg_env.read();
-          let gmark = cg_genv.read();
-          let pmark = pv_top.read();
-          let floor = pv_floor.read();
-          let smark = es_top.read();
-          let was = dead();
-          apply_bound(int_list(), spec, fu, g, depth, mode);
-          alive(was);
-          cg_env.write(emark);
-          cg_genv.write(gmark);
-          pv_top.write(pmark);
-          pv_floor.write(floor);
-          es_top.write(smark);
-        }
-        i = i + 1;
-      }
-    }
-
     # `bind F;` where `F` is bound to `provider`.
     fn apply_bound(body: IntList, spec: Int, fu: Int, provider: Int, depth: Int, mode: Int) {
       let d = prog::sym_decl.get(fu);
@@ -5890,15 +6258,13 @@ assume Std {
       var bmark = pmark;
       let captured = cl_cur.read();
       cl_cur.write(lower::env_empty());
-      let closed = captured != lower::env_empty();
-      if ast::is_some(ast::fu_binds(prog::sym_decl.get(provider))) {
+      # D84: every binding with a body is a closure, checked where it was
+      # made (`check_at_bind`).
+      let closed = ast::is_some(ast::fu_binds(prog::sym_decl.get(provider)));
+      if closed {
         let held_base = cl_base.read();
-        if closed {
-          base = closure_env(fu, captured);
-          cl_base.write(captured_base(captured));
-        } else {
-          base = restrict_to_args(provider);
-        }
+        base = closure_env(fu, captured);
+        cl_base.write(captured_base(captured));
         bmark = pv_top.read();
         run_functor(body, provider, depth, mode);
         cl_base.write(held_base);
@@ -6138,108 +6504,6 @@ assume Std {
         i = i + 1;
       }
       sig_ret(row_view(got), sym, grecv) == types::subst(sig_ret(row_view(want), sym, wrecv), gens, made)
-    }
-
-    # D78: a functor bound to an abstract one may rely only on its own
-    # argument signature, which is all an application promises it — the
-    # bootstrap checks this once, against that signature. Here its binds
-    # run, at each application, in the environment a function assuming
-    # exactly that signature would be specialized in: the rows for its own
-    # inputs, taken from the application's (as `callee_env` takes a
-    # callee's), and only its input vals visible on the provision stack,
-    # provided again above a floor with the values their providers
-    # captured. Anything else its binds use is then missing, and reported
-    # as anywhere else. (The generic environment is left whole: what is
-    # missing from this one is missing at every use.) Returns the
-    # restricted environment, the base the binds' rows are made on.
-    fn restrict_to_args(g: Int): Int {
-      let d = prog::sym_decl.get(g);
-      let home = prog::sym_mod.get(g);
-      let nrecv = int_list();
-      let nsym = int_list();
-      let decl_env = lower::assume_items(home, ast::fu_args(d), ast::fu_nargs(d), nrecv, nsym);
-      let chain = int_list();
-      var e = decl_env;
-      while ast::is_some(e) {
-        chain.push(e);
-        e = lower::env_next_of(e);
-      }
-      let real = cg_env.read();
-      # Every type binding is kept: types are not provisions, and what an
-      # input type is made of (a `Celsius` over the `Int` in force) is
-      # read through them. A type the functor names but does not take is
-      # refused where it is bound (`check_bound_types`).
-      var out = types_of(real);
-      let new_rows = int_list();
-      let old_rows = int_list();
-      let val_syms = int_list();
-      let val_locals = int_list();
-      var c = chain.length();
-      while c > 0 {
-        c = c - 1;
-        let entry = chain.get(c);
-        let kind = lower::env_kind_of(entry);
-        let recv = lower::env_recv_of(entry);
-        let sym = lower::env_sym_of(entry);
-        if kind == lower::ek_type() {
-          # Kept already, with the rest of the types.
-        } else if kind == lower::ek_val() {
-          let l = provision_of(ast::none(), sym);
-          if ast::is_some(l) {
-            val_syms.push(sym);
-            val_locals.push(l);
-          }
-        } else {
-          # Its key as the binds, run in this frame, will look it up: the
-          # functor's receiver read through the generic environment.
-          var key = recv;
-          if ast::is_some(recv) {
-            key = instantiate_in(cg_genv.read(), recv);
-          }
-          let here = lower::env_find(real, lower::ek_fn(), key, sym);
-          if ast::is_some(here) {
-            if ast::is_some(lower::env_a_of(here)) {
-              out = lower::env_push(out, lower::ek_fn(), key, sym, lower::env_a_of(here), lower::env_b_of(here));
-              new_rows.push(out);
-              old_rows.push(here);
-            }
-          }
-        }
-      }
-      # What the kept providers captured, read before the floor rises.
-      let cap_row = int_list();
-      let cap_slot = int_list();
-      let cap_local = int_list();
-      var k = 0;
-      while k < new_rows.length() {
-        let r = new_rows.get(k);
-        let vals = int_list();
-        val_slots(vals, lower::env_a_of(r), lower::env_b_of(r), 0);
-        var j = 0;
-        while j < vals.length() {
-          let l = provision_of(ast::none(), ck_slot(old_rows.get(k), vals.get(j)));
-          if ast::is_some(l) {
-            cap_row.push(r);
-            cap_slot.push(vals.get(j));
-            cap_local.push(l);
-          }
-          j = j + 1;
-        }
-        k = k + 1;
-      }
-      pv_floor.write(pv_top.read());
-      k = 0;
-      while k < val_syms.length() {
-        provide(ast::none(), val_syms.get(k), val_locals.get(k));
-        k = k + 1;
-      }
-      k = 0;
-      while k < cap_row.length() {
-        provide(ast::none(), ck_slot(cap_row.get(k), cap_slot.get(k)), cap_local.get(k));
-        k = k + 1;
-      }
-      cg_env.write(out);
-      out
     }
 
     # The local a val was provided in since the provision stack stood at
@@ -6543,35 +6807,25 @@ assume Std {
           }
         }
       }
-      let bracketed = ast::fu_bracketed(prog::sym_decl.get(fu));
-      if bracketed {
-        # Its fixed inputs must be in force where it is bound.
-        let xs = int_list();
-        lower::functor_fixed(fu, xs);
-        var x = 0;
-        while x < xs.length() {
-          if !lower::env_has(cg_genv.read(), lower::ek_type(), ast::none(), xs.get(x)) {
-            cg_error(c_unbound(), prog::sym_name.get(xs.get(x)));
-            return ();
-          }
-          x = x + 1;
-        }
-      }
-      var bodied = ast::is_some(ast::fu_binds(prog::sym_decl.get(g)));
-      if bracketed {
-        if bodied {
-          # Inputs `F` does not take are captured here (D84), so only the
-          # result is compared.
-          if !check_outputs(fu, g, m) {
-            return ();
-          }
-        } else if !check_binding(fu, g, m) {
+      # Its fixed inputs (none, unbracketed) must be in force here.
+      let xs = int_list();
+      lower::functor_fixed(fu, xs);
+      var x = 0;
+      while x < xs.length() {
+        if !lower::env_has(cg_genv.read(), lower::ek_type(), ast::none(), xs.get(x)) {
+          cg_error(c_unbound(), prog::sym_name.get(xs.get(x)));
           return ();
         }
-      } else if !check_binding(fu, g, m) {
-        return ();
+        x = x + 1;
       }
-      if ast::is_some(ast::fu_binds(prog::sym_decl.get(g))) {
+      let bodied = ast::is_some(ast::fu_binds(prog::sym_decl.get(g)));
+      var source = ast::none();
+      if bodied {
+        # Inputs `F` does not take are captured here (D84 3b), so only the
+        # result is compared.
+        if !check_outputs(fu, g, m) {
+          return ();
+        }
         check_functor_total(g, 0);
         let allowed = int_list();
         let gd = prog::sym_decl.get(g);
@@ -6579,23 +6833,157 @@ assume Std {
         if !check_bound_types(g, allowed, m, 0) {
           return ();
         }
+        if !check_self_application(fu, g, m) {
+          return ();
+        }
         if !contains(fb_sym, g) {
           fb_sym.push(g);
         }
-      }
-      if bracketed {
-        if bodied {
-          # D84 (draft): the binding captures this environment, both of
-          # them, and its binds are checked here once, generic in `P`.
-          captured = cg_env.read();
-          remember_capture(captured, cg_genv.read());
-          check_at_bind(value, fu, g, captured, depth, mode);
+        # D84 3: the binding captures this environment, both of them, and
+        # its binds are checked here once, generic in what applications
+        # supply.
+        captured = cg_env.read();
+        remember_capture(captured, cg_genv.read());
+        check_at_bind(value, fu, g, captured, depth, mode);
+      } else {
+        if !check_binding(fu, g, m) {
+          return ();
         }
+        source = lower::env_find(cg_env.read(), lower::ek_fn(), ast::none(), g);
       }
       cg_env.write(lower::env_push(
         cg_env.read(), lower::ek_fn(), ast::none(), fu, provider, captured
       ));
       provided_at(lower::ek_fn(), ast::none(), fu, cg_genv.read());
+      # D84 6: the vals the binding captured travel with `F` across
+      # frames, as a fn provider's captured context does: each provided
+      # again under the entry just made.
+      if mode == bw_emit() {
+        let row = cg_env.read();
+        let slots = int_list();
+        functor_slots(row, slots, 0);
+        var i = 0;
+        while i < slots.length() {
+          var l = ast::none();
+          if ast::is_some(source) {
+            l = provision_of(ast::none(), ck_slot(source, slots.get(i)));
+          }
+          if !ast::is_some(l) {
+            l = provision_of(ast::none(), slots.get(i));
+          }
+          if ast::is_some(l) {
+            provide(ast::none(), ck_slot(row, slots.get(i)), l);
+          }
+          i = i + 1;
+        }
+      }
+    }
+
+    # D84 3f (D55): `G` applies `F`, and `F` is among `F`'s own inputs,
+    # so each application would reach itself. Otherwise an application of
+    # `F` in `G`'s binds is of the binding captured here (a polyfill).
+    fn check_self_application(fu: Int, g: Int, m: Int): Bool {
+      let fd = prog::sym_decl.get(fu);
+      let frecv = int_list();
+      let fsym = int_list();
+      lower::assume_items(prog::sym_mod.get(fu), ast::fu_args(fd), ast::fu_nargs(fd), frecv, fsym);
+      if !contains(fsym, fu) {
+        return true;
+      }
+      let gd = prog::sym_decl.get(g);
+      var i = 0;
+      while i < ast::fu_nbinds(gd) {
+        let stmt = ast::kid_at(ast::fu_binds(gd), i);
+        var j = 0;
+        while j < ast::b_of(stmt) {
+          let item = ast::kid_at(ast::a_of(stmt), j);
+          if !ast::is_some(ast::b_of(item)) {
+            let spec = ast::a_of(item);
+            if ast::is_some(ast::a_of(spec)) {
+              if prog::resolve_path(prog::sym_mod.get(g), ast::a_of(spec)) == fu {
+                prog::error(prog::e_self_apply(), m, prog::sym_name.get(fu));
+                return false;
+              }
+            }
+          }
+          j = j + 1;
+        }
+        i = i + 1;
+      }
+      true
+    }
+
+    # D84 6: the vals a functor binding's entry `e` captured, which travel
+    # with it: each input of its functor `G` that `F` does not take — a
+    # val, by value, and what a captured provider (or binding) carries in
+    # turn, under that provider's entry in the captured environment.
+    fn functor_slots(e: Int, out: IntList, depth: Int) {
+      if depth > 16 {
+        return ();
+      }
+      let fu = lower::env_sym_of(e);
+      let g = lower::env_a_of(e);
+      let cap = lower::env_b_of(e);
+      if !ast::is_some(g) {
+        return ();
+      }
+      if prog::sym_kind.get(g) != prog::sk_functor() {
+        return ();
+      }
+      let gd = prog::sym_decl.get(g);
+      if !ast::is_some(ast::fu_binds(gd)) {
+        return ();
+      }
+      if cap == lower::env_empty() {
+        return ();
+      }
+      let fd = prog::sym_decl.get(fu);
+      let frecv = int_list();
+      let fsym = int_list();
+      lower::assume_items(prog::sym_mod.get(fu), ast::fu_args(fd), ast::fu_nargs(fd), frecv, fsym);
+      let grecv = int_list();
+      let gsym = int_list();
+      lower::assume_items(prog::sym_mod.get(g), ast::fu_args(gd), ast::fu_nargs(gd), grecv, gsym);
+      var genv = captured_genv(cap);
+      if !ast::is_some(genv) {
+        genv = cg_genv.read();
+      }
+      var i = 0;
+      while i < gsym.length() {
+        let s = gsym.get(i);
+        if !contains(fsym, s) {
+          if passed_need(grecv.get(i), s) {
+            vs_append(out, s);
+          } else if lower::need_kind(s) == lower::ek_fn() {
+            var key = grecv.get(i);
+            if ast::is_some(key) {
+              key = instantiate_in(genv, key);
+            }
+            let r = lower::env_find(cap, lower::ek_fn(), key, s);
+            if ast::is_some(r) {
+              if ast::is_some(lower::env_a_of(r)) {
+                let inner = int_list();
+                if prog::sym_kind.get(s) == prog::sk_functor() {
+                  functor_slots(r, inner, depth + 1);
+                } else if prog::sym_kind.get(lower::env_a_of(r)) != prog::sk_functor() {
+                  let row = vs_row(lower::env_a_of(r), lower::env_b_of(r), depth + 1);
+                  var j = 0;
+                  while j < vs_len.get(row) {
+                    inner.push(vs_pool.get(vs_start.get(row) + j));
+                    j = j + 1;
+                  }
+                }
+                var j = 0;
+                while j < inner.length() {
+                  vs_append(out, ck_slot(r, inner.get(j)));
+                  j = j + 1;
+                }
+              }
+            }
+          }
+        }
+        i = i + 1;
+      }
     }
 
     # D84 (draft): the generic environment captured beside a specialized
@@ -6654,13 +7042,36 @@ assume Std {
       let pmark = pv_top.read();
       let floor = pv_floor.read();
       let smark = es_top.read();
+      # D84 3c: every type each application supplies is fresh — `P(F)`
+      # and `F`'s input types outside `X(F)` — one per class `F`'s inputs
+      # merge (D43).
       let ps = int_list();
-      lower::functor_params(fu, ps);
+      lower::functor_poly(fu, ps);
+      let fd = prog::sym_decl.get(fu);
+      let nrecv = int_list();
+      let nsym = int_list();
+      let decl_env = lower::assume_items(prog::sym_mod.get(fu), ast::fu_args(fd), ast::fu_nargs(fd), nrecv, nsym);
+      let reps = int_list();
+      let gens = int_list();
       var i = 0;
       while i < ps.length() {
-        let gty = types::ty_of_symbol(types::kd_abstract(), fresh_gen(spec, ps.get(i)));
-        cg_env.write(lower::env_push(cg_env.read(), lower::ek_type(), ast::none(), ps.get(i), gty, ast::none()));
-        cg_genv.write(lower::env_push(cg_genv.read(), lower::ek_type(), ast::none(), ps.get(i), gty, ast::none()));
+        let p = ps.get(i);
+        let rep = lower::canon(decl_env, types::ty_of_symbol(types::kd_abstract(), p));
+        var gty = ast::none();
+        var j = 0;
+        while j < reps.length() {
+          if reps.get(j) == rep {
+            gty = gens.get(j);
+          }
+          j = j + 1;
+        }
+        if !ast::is_some(gty) {
+          gty = types::ty_of_symbol(types::kd_abstract(), fresh_gen(spec, p));
+          reps.push(rep);
+          gens.push(gty);
+        }
+        cg_env.write(lower::env_push(cg_env.read(), lower::ek_type(), ast::none(), p, gty, ast::none()));
+        cg_genv.write(lower::env_push(cg_genv.read(), lower::ek_type(), ast::none(), p, gty, ast::none()));
         i = i + 1;
       }
       let was = dead();

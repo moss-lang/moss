@@ -204,6 +204,15 @@ assume Std {
   # `x`" is.
   fn e_partial(): Int { 16 + 9 }
 
+  # D84 rule 7: two families in force produce one method key, or a
+  # member of a family in force is bound directly. Named by the method.
+  fn e_family(): Int { 16 + 10 }
+
+  # D84 3f (D55): `bind F = G;` where `G` applies `F` and `F` is among
+  # `F`'s own inputs, so each application would reach itself. Named by
+  # `F`.
+  fn e_self_apply(): Int { 16 + 11 }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,

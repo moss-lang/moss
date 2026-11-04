@@ -1,6 +1,7 @@
 import "../../lib/float.moss" use Floats;
-import "../../lib/wasistd.moss" use Branch, Num, WasiNumerics, WasiFloats;
-import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, WasiFloats;
+import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D78: the escape of functor_escape.moss where the type `bind Fast;`
@@ -9,23 +10,22 @@ import "../../lib/wasip1.moss" use Wasi;
 # block's `Float` is a fresh generation whatever it turns out to be, the
 # same as for any two D72 generations that specialize alike.
 
-functor Fast: Wasm, Branch -> Floats;
+functor Fast[]: Int -> Floats;
 
-assume Wasm, Branch, Fast {
-  fn leak(n: I32): I32 {
-    bind WasiNumerics;
-    bind WasiFloats;
+assume Std, Fast {
+  fn leak(n: Int): Int {
     let r = {
       bind Fast;
-      float(Num(n))
+      float(n)
     };
     n
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
+    bind WasiStd;
     bind Fast = WasiFloats;
-    leak(w::i32_one);
+    leak(one);
   }
 }

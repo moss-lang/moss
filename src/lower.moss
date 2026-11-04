@@ -962,9 +962,14 @@ assume Std {
         } else {
           # D79: the platform provides a memory instruction at every
           # memory — which one is the `Memory` in force where it is
-          # called — so its provision is not tied to one.
+          # called — so its provision is not tied to one. Only a memory
+          # instruction: a platform functor keeps `Memory` (D84).
           var memory = ast::none();
-          if prog::is_platform(prog::sym_mod.get(s)) {
+          var exempt = prog::is_platform(prog::sym_mod.get(s));
+          if exempt {
+            exempt = prog::sym_kind.get(s) == prog::sk_fn();
+          }
+          if exempt {
             let cs = int_list();
             sp_Memory(cs);
             memory = prog::lookup(prog::sym_mod.get(s), prog::ns_name(), intern::intern_chars(cs));
@@ -1073,6 +1078,13 @@ assume Std {
               types::free_syms(ast::b_of(d), prog::sym_mod.get(t), syms);
             } else if kind == prog::sk_fn() {
               signature_syms(t, syms);
+            } else if kind == prog::sk_functor() {
+              # D84 rule 1: an abstract functor item `G` mentions `X(G)`.
+              if ast::is_some(ast::fu_binds(d)) {
+                item = false;
+              } else {
+                functor_fixed(t, syms);
+              }
             } else {
               item = false;
             }
@@ -1112,7 +1124,12 @@ assume Std {
     # The types each application of a bracketed `F` supplies: `P(F)`, and
     # `F`'s input types outside `X(F)`.
     fn functor_poly(s: Int, out: IntList) {
-      functor_params(s, out);
+      # An unbracketed `F` is polymorphic in all of `M(F)` (D84 rule 1).
+      if ast::fu_bracketed(prog::sym_decl.get(s)) {
+        functor_params(s, out);
+      } else {
+        functor_mentions(s, out);
+      }
       let xs = int_list();
       functor_fixed(s, xs);
       let d = prog::sym_decl.get(s);

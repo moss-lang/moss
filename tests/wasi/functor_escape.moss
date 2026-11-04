@@ -1,7 +1,7 @@
 import "../../lib/float.moss" use Floats;
 import "../../lib/wasi.moss" use WasiStd;
-import "../../lib/wasistd.moss" use Branch, Num, WasiNumerics, WasiFloats32;
-import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasistd.moss" use Branch, WasiFloats32;
+import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D78: `bind Fast;` makes `Float` a fresh generation for the rest of its
@@ -9,24 +9,25 @@ import "../../lib/wasip1.moss" use Wasi;
 # block's result, kept in `r` past it. Refused in both compilers, which
 # check it generically (here `Fast` is bound to f32 while `Float` outside
 # the block is no f32, so the two also differ in the specialization; see
-# functor_escape_same.moss for when they do not).
+# functor_escape_same.moss for when they do not). `Fast` is fixed in
+# `Int` (D84), which the binding captures in `main`.
 
-functor Fast: Wasm, Branch -> Floats;
+functor Fast[]: Int -> Floats;
 
-assume Wasm, Branch, Fast {
-  fn leak(n: I32): I32 {
-    bind WasiNumerics;
+assume Std, Fast {
+  fn leak(n: Int): Int {
     let r = {
       bind Fast;
-      float(Num(n))
+      float(n)
     };
     n
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, Gc, Wasi, Branch {
   fn main() {
+    bind WasiStd;
     bind Fast = WasiFloats32;
-    leak(w::i32_one);
+    leak(one);
   }
 }

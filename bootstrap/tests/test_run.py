@@ -2351,7 +2351,10 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "`Counting` cannot be bound to `Trace`: it needs `counter`, "
                 "which mentions `CellInt`, which each application of `Trace` "
                 "supplies, so it must be an input of `Trace` (D84)",
-                "!X {} counter\n",
+                # D84: the self-hosted compiler checks the binding where it
+                # is made, at fresh types: the provider it captures is
+                # refused there, in its lambda.
+                "?S {} note\n",
             ),
             "functor_missing": (
                 "`Half` cannot be bound to `Trace`: it does not provide "
@@ -2369,7 +2372,9 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "functor `Tally`, bound to an abstract functor, may rely only "
                 "on its own argument signature (D78): calling `count` needs "
                 "`counter`",
-                "!P {} counter\n",
+                # D84: refused also where it is bound (`count` is checked
+                # at the types each application supplies).
+                "!R {0} counter\n!P {0} counter\n",
             ),
             "functor_unbound": (
                 "`Trace` is not available in the context here",
@@ -2388,7 +2393,8 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             "functor_promise": (
                 "`WasiFloats` cannot be bound to `Fast`: it binds `Int` to "
                 "`Num[I32=I32@Fast]`, and `Fast` is polymorphic in `Int` (D84)",
-                "?X {} kernel float\n",
+                # D84: at the bind, in `main`.
+                "?X {0} main float\n?X {0} main trunc\n?X {0} main round\n",
             ),
             # Only a functor `Pick` is bound to where nothing reaches makes
             # `make` at another type than promised, and the application is
@@ -2396,7 +2402,8 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             "functor_promise_candidate": (
                 "`Bad` cannot be bound to `Pick`: it binds `Int` to "
                 "`Num[I32=I32@Pick]`, and `Pick` is polymorphic in `Int` (D84)",
-                "?X {} pos make\n",
+                # D84: at the bind, which nothing reaches.
+                "?X {} other make\n",
             ),
             # A bound functor relies only on its own argument signature
             # for the types its result mentions too.
@@ -2648,7 +2655,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
                 "?S {} report\n",
             ),
             "arena_wrapped": (
-                "this block yields `Run[Int=Num[I32=I32], IntList=IntList@Arena]`, "
+                "this block yields `Run[Int=Int, IntList=IntList@Arena]`, "
                 "which mentions `IntList@Arena`, the type `bind Arena;` made in "
                 "it: a value of that type cannot leave the block (D78)",
                 "?W {} report IntList\n",
@@ -2947,6 +2954,7 @@ class TestSelfHostedBackEnd(unittest.TestCase):
             "functor `Tally`, bound to an abstract functor, may rely only "
             "on its own argument signature (D78): calling `count` needs "
             "`counter`",
+            "!R tests/wasi/functor_unapplied.moss counter\n"
             "!P tests/wasi/functor_unapplied.moss counter\n",
             "lib/prelude.moss",
         ),
@@ -3196,17 +3204,17 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         )
 
     def test_an_uncalled_abstract_application_is_checked_by_the_self_hosted_compiler(self):
-        """The same program. Each application, reached or not, runs the
-        binds of every functor `F` can be bound to, as dead code, as a
-        reached application runs the one it is bound to, and compares
-        what they make with what the application promises: `WasiFloats`
-        makes each of `Floats`' items over `Int` at its own."""
+        """The same program. D84: each binding is checked where it is
+        made, generic in what applications supply, whether or not any
+        application is reached: `WasiFloats` makes each of `Floats`'
+        items over `Int` at its own, which an unbracketed `Fast` is
+        polymorphic in."""
         entry = "tests/wasi/functor_promise_unreached.moss"
         out = self.compile_with_moss(entry, prelude="lib/prelude.moss")
         items = ("float", "trunc", "round")  # D84: `Floats` has no list now
         self.assertEqual(
             out.decode("utf-8", "replace"),
-            "".join(f"?X {entry} kernel {item}\n" for item in items),
+            "".join(f"?X {entry} main {item}\n" for item in items),
         )
 
     def test_a_callee_requires_what_it_assumes_and_does_not_use(self):
