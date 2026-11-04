@@ -1,3 +1,9 @@
 (lang dune 3.21)
 
 (using rocq 0.11)
+
+; Each module sees only the libraries it names: Rocq's runtime libraries
+; are unwrapped, and its `clib` has modules such as `Int` and `Option`
+; that would otherwise shadow the OCaml standard library's.
+
+(implicit_transitive_deps false)

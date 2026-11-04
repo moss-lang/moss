@@ -1,9 +1,7 @@
 ; The oracle: Extract2.v extracts the front end, the elaborator and the
-; interpreter, and moss_m2.ml drives them. kernel/ is Rocq's OCaml
-; implementation of its primitive integers, floats and arrays, which the
-; extracted code links against.
-
-(copy_files# kernel/*.{ml,mli})
+; interpreter, and moss_m2.ml drives them. The extracted code links Rocq's
+; own runtime library for its primitive integers, floats and arrays
+; (Uint63, Float64, Parray, from rocq-runtime.kernel).
 
 (rocq.extraction
  (prelude Extract2)
@@ -28,7 +26,7 @@
 
 (executable
  (name moss_m2)
- (libraries unix)
+ (libraries unix rocq-runtime.kernel)
  (link_deps flambda)
  (flags (:standard -w -a))
  (ocamlopt_flags (:standard -O3 -inline 200 -unsafe)))

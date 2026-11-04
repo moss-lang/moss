@@ -68,10 +68,11 @@ errors and positions included.
   - [`Certified.v`](theories/Certified.v): binds the implementation to the
     obligations `Audit.v` states, as far as they are proved.
 - [`ocaml/`](ocaml): the oracle. [`Extract2.v`](ocaml/Extract2.v) is
-  the extraction to OCaml, `moss_m2.ml` the driver (it reads files and the
-  command line, and prints), and `kernel/` Rocq's OCaml implementations of
-  its primitive integers, floats and arrays, which the extracted code
-  links against.
+  the extraction to OCaml, and `moss_m2.ml` the driver (it reads files and
+  the command line, and prints). The extracted code links against Rocq's
+  own implementations of its primitive integers, floats and arrays
+  (`Uint63`, `Float64` and `Parray`, in the `rocq-runtime.kernel`
+  library).
 - [`dune-project`](dune-project): `dune build` here compiles the theories,
   extracts them and builds the oracle, `_build/default/ocaml/moss_m2.exe`.
 - [`check.sh`](check.sh): compiles every file and audits every theorem.
@@ -154,9 +155,9 @@ decision), and the obligations, as module types (Part VI):
   soundness against the relation.
 
 Outside Rocq, what is trusted is the OCaml driver (reading files and
-arguments, printing), Rocq's extraction, and the OCaml compiler and
-`kernel/` implementations of the primitives. Whether MossX's primitives
-are the right meaning of `i32.add` or `fd_write` matters to the
+arguments, printing), Rocq's extraction, the OCaml compiler, and Rocq's
+runtime implementations of the primitives. Whether MossX's primitives are
+the right meaning of `i32.add` or `fd_write` matters to the
 comparison with the compiler, not to any theorem: the test suite checks it.
 
 ## What it does not model

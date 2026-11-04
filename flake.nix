@@ -31,11 +31,14 @@
         );
       # The oracle's toolchain: an OCaml with flambda, the only one that
       # honours the `[@inlined]` the extracted interpreter relies on to keep
-      # its memory in check (bootstrap/README.md), Rocq and its standard
-      # library built with it (a few minutes), so that Rocq, findlib and
-      # dune all see one OCaml, and dune. A flambda OCaml isn't in the binary cache, so
-      # it is built from source; its own test suite is skipped, since it
-      # adds minutes to every CI run and tests OCaml, not Moss.
+      # its memory in check (bootstrap/README.md); Rocq and its standard
+      # library built with it (a few minutes); and dune. The extracted code
+      # links Rocq's runtime library for the primitive integers, floats and
+      # arrays, and flambda cannot link what another OCaml compiled, so
+      # Rocq has to be built with the same one. A flambda OCaml isn't in the
+      # binary cache, so it is built from source; its own test suite is
+      # skipped, since it adds minutes to every CI run and tests OCaml, not
+      # Moss.
       oracleTools = pkgs: rec {
         ocamlFlambda =
           (pkgs.ocaml-ng.ocamlPackages_4_14.ocaml.override { flambdaSupport = true; }).overrideAttrs
