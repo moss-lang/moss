@@ -6,8 +6,8 @@ all of it, and writes a WebAssembly module — **including its own source**:
 
 ```sh
 ulimit -s unlimited
-bootstrap/_build/moss_m2 --pages 2 --argv0 lib/prelude.moss \
-  src/main.moss src/main.moss > S1.wasm                       # about 35 minutes
+bootstrap/_build/default/ocaml/moss_m2.exe --pages 2 --argv0 lib/prelude.moss \
+  src/main.moss src/main.moss > S1.wasm                       # about 20 minutes
 wasmtime --argv0 lib/prelude.moss --dir . S1.wasm src/main.moss > S2.wasm
 cmp S1.wasm S2.wasm                                           # equal
 ```
@@ -475,7 +475,7 @@ source meant reading 243 of those.
 
 ## Sharp edges
 
-- Interpreting the compiler is slow: the oracle takes about 35 minutes
+- Interpreting the compiler is slow: the oracle takes about 20 minutes
   to run `src/main.moss` compiling itself, where a compiled generation
   takes about a second. So everyday work and the test suite start from a
   seed, a compiled compiler built before (`CONTRIBUTING.md`), and go

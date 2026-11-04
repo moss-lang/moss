@@ -189,7 +189,7 @@
           # src/main.moss with the Rocq front end, elaborates it, and
           # interprets it compiling src/main.moss: what it writes is the
           # module the compiler written in src/ makes of itself, S1, without
-          # any compiled compiler involved. That takes about 35 minutes and
+          # any compiled compiler involved. That takes about 20 minutes and
           # 3 GB; local development reuses a compiler built before
           # (CONTRIBUTING.md).
           #

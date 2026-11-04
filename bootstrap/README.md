@@ -11,11 +11,13 @@ writes of itself, and the flake checks exactly that
 ```
 src/main.moss --(theories/Parse.v: lexer, parser, module loader)--> bundle
               --(theories/Elab.v: elaborator)--> elaborated program
-              --(theories/Prune.v)--> MossX.run_main, on `src/main.moss`
+              --(theories/Prune.v)--> pruned program
+              --(SlotX.v, FoldX.v, CloX.v: the engine)--> MossX.run_main's
+                result, on `src/main.moss`
               --> S1, the compiler; S1 compiling src/ must give S1 again
 ```
 
-It takes about 35 minutes and 3 GB, so everyday work reuses a compiler
+It takes about 20 minutes and 3 GB, so everyday work reuses a compiler
 built before ([`CONTRIBUTING.md`](../CONTRIBUTING.md)). The same program,
 `moss_m2`, is the *oracle* of the test suite
 ([`crates/moss-tests`](../crates/moss-tests)): it runs test programs as a
@@ -46,6 +48,9 @@ errors and positions included.
     heap); [`FastX.v`](theories/FastX.v) (map-keyed environments) and
     [`Prune.v`](theories/Prune.v) (read-set pruning) make it fast and are
     proved equal to it.
+  - [`SlotX.v`](theories/SlotX.v), [`FoldX.v`](theories/FoldX.v) and
+    [`CloX.v`](theories/CloX.v): the engine that runs the pruned program
+    (below), each proved equal to the interpreter before it.
   - [`CoreMoss.v`](theories/CoreMoss.v): the core calculus, its typing
     and dynamics, and its metatheory (type soundness included);
     [`Narrowing.v`](theories/Narrowing.v) (D71),
@@ -68,11 +73,12 @@ errors and positions included.
   - [`Certified.v`](theories/Certified.v): binds the implementation to the
     obligations `Audit.v` states, as far as they are proved.
 - [`ocaml/`](ocaml): the oracle. [`Extract2.v`](ocaml/Extract2.v) is
-  the extraction to OCaml, and `moss_m2.ml` the driver (it reads files and
-  the command line, and prints). The extracted code links against Rocq's
-  own implementations of its primitive integers, floats and arrays
-  (`Uint63`, `Float64` and `Parray`, in the `rocq-runtime.kernel`
-  library).
+  the extraction to OCaml (`CloX.v` a second time on its own, with
+  extraction's optimizations off; below), and `moss_m2.ml` the driver (it
+  reads files and the command line, builds the engine's tables, and
+  prints). The extracted code links against Rocq's own implementations of
+  its primitive integers, floats and arrays (`Uint63`, `Float64` and
+  `Parray`, in the `rocq-runtime.kernel` library).
 - [`dune-project`](dune-project): `dune build` here compiles the theories,
   extracts them and builds the oracle, `_build/default/ocaml/moss_m2.exe`.
 - [`check.sh`](check.sh): compiles every file and audits the certificate
@@ -84,7 +90,7 @@ With Nix, everything is a flake output:
 
 ```sh
 nix build .#oracle            # result/bin/moss_m2
-nix build .#compiler          # the bootstrap: about 35 minutes
+nix build .#compiler          # the bootstrap: about 20 minutes
 nix build .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).bootstrap-rocq
 ```
 
@@ -116,13 +122,51 @@ The build fails on any other OCaml, and compiles the oracle with `-O3
 
 `check.sh` is the audit, since Rocq alone accepts `Admitted`. It audits
 the certificate, which transitively covers everything the guarantee
-depends on: what `Certified.v` binds, and the extracted roots, may assume
-only the kernel's `Primitive` declarations (Rocq's primitive integers,
-floats and arrays; [`assumptions/Certificate.v`](assumptions/Certificate.v)).
+depends on: what `Certified.v` binds, the extracted roots (the default
+engine's among them), and `CloX.engine_agrees`, may assume only the
+kernel's `Primitive` declarations (Rocq's primitive integers, floats and
+arrays; [`assumptions/Certificate.v`](assumptions/Certificate.v)).
 The theorems the design notes cite as closed under the global context
 must be ([`assumptions/Closed.v`](assumptions/Closed.v)). Nothing says
 `Admitted`, and `Parameter`s and `Axiom`s are declared only inside module
 types (`Audit.v`'s obligations).
+
+## The engine
+
+`MOSS_ENGINE` chooses what runs the elaborated program, which is first
+pruned (`Prune.oracle_program`; `MOSS_PRUNE=0` skips it). Every engine is
+proved to compute exactly what Audit's interpreter (`XS.run_main`)
+computes, for every fuel, unless that run gets stuck (pruning's caveat,
+`Prune.oracle_agrees`):
+
+- `fold`, the default: the program pre-resolved, its calls to small fns
+  folded, and compiled to closures, run by `CloX.crun_main`
+  (`CloX.engine_agrees`). It bootstraps the compiler about 1.7 times as
+  fast as `ref`.
+  - [`SlotX.v`](theories/SlotX.v) resolves each lookup in the
+    environment to a position before the run, wherever the environment's
+    keys are known, as they are at most program points (a fn body starts in
+    the composition of its satisfaction map, and each bind conses a known
+    key); `SlotX.rinterp` mirrors `xinterp` clause for clause
+    (`rinterp_agrees`, `slot_run_main`).
+  - [`FoldX.v`](theories/FoldX.v) replaces a direct call to a fn that
+    only reads, tags, matches one pattern, applies primitives and calls
+    such fns (to depth 6) by one expression over the caller's environment,
+    which runs when the fuel suffices and every step succeeds, and
+    otherwise falls back to the call (`fold_sound`, `fold_agrees`).
+  - [`CloX.v`](theories/CloX.v) turns each expression into a Gallina
+    function, an OCaml closure once extracted, so the dispatch on the term
+    happens once (`cc_agrees`). Extract2.v extracts CloX a second time
+    alone (`Extraction Library CloX`, last) with extraction's term
+    optimizations off (`Set Extraction Flag 0`), so the code of a node's
+    children and argument lists stays computed once, outside the closure
+    that runs it, rather than being rebuilt at every evaluation.
+- `clo`: the same without folding (`CloX.clo_oracle_agrees`);
+- `slot`: `SlotX.rinterp` on the pre-resolved program
+  (`SlotX.slot_oracle_agrees`);
+- `ref`: Audit's interpreter itself;
+- `fast`: [`FastX.v`](theories/FastX.v)'s, with environments keyed by a
+  map (`FastX.frun_main_eq`).
 
 ## What is trusted
 
@@ -158,10 +202,24 @@ decision), and the obligations, as module types (Part VI):
   soundness against the relation.
 
 Outside Rocq, what is trusted is the OCaml driver (reading files and
-arguments, printing), Rocq's extraction, the OCaml compiler, and Rocq's
-runtime implementations of the primitives. Whether MossX's primitives are
-the right meaning of `i32.add` or `fd_write` matters to the
-comparison with the compiler, not to any theorem: the test suite checks it.
+arguments, printing, and the engine's tables, below), Rocq's extraction,
+the OCaml compiler, and Rocq's runtime implementations of the primitives.
+Whether MossX's primitives are the right meaning of `i32.add` or
+`fd_write` matters to the comparison with the compiler, not to any
+theorem: the test suite checks it.
+
+The driver also realizes some of the theorems' functions as tables, as
+it has always realized `program_of`'s fn lookup (`xp_fn`) with a hash
+table. For the `fold`, `clo` and `slot` engines, `SlotX.rprog_of`'s
+lookup of a compiled body (`nlook` over `SlotX.compile_fns` and
+`compile_funs`) is an array indexed by symbol, its first entry for a
+symbol winning, as `nlook`'s does; for `fold`, the static bodies FoldX
+may unfold (`tb`) and the folded program (`R'`) are arrays of the same;
+and the closure tables `tbl` and `ftbl` are arrays of closures that read
+the very arrays they are stored in (the knot `CloX.tbl_ok` describes).
+These are the hypotheses of `CloX.engine_agrees`, and no theorem checks
+that the arrays meet them: that rests on reading `moss_m2.ml`'s
+`MOSS_ENGINE` block, and on testing against the `ref` engine.
 
 ## What it does not model
 

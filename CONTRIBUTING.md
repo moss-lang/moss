@@ -13,7 +13,7 @@ The compiler is written in Moss, under [`src`](src), and compiles itself.
 Building it from nothing is the job of [`bootstrap`](bootstrap): a front
 end and interpreter for Moss written in Rocq and extracted to OCaml (the
 *oracle*), which runs `src/main.moss` compiling itself. That is the
-flake's `compiler` package, and it takes about 35 minutes and 3 GB:
+flake's `compiler` package, and it takes about 20 minutes and 3 GB:
 
 ```sh
 nix build .#compiler -o result-compiler   # the bootstrap
