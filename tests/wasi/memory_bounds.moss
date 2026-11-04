@@ -1,0 +1,22 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" as w use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A load just past the end of memory traps, as Wasm's does: a memory
+# grows only by `memory_grow`, which the library's allocator calls when
+# it runs out. Output: `a`, then a trap.
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    putchar(char::a);
+    putchar(char::newline);
+    let two = w::i32_add(w::i32_one, w::i32_one);
+    let sixteen = w::i32_shl(w::i32_one, w::i32_shl(two, w::i32_one));
+    let end = w::i32_shl(w::memory_size(), sixteen);
+    let past = w::i32_load(end);
+    putchar(char::b);
+    putchar(char::newline);
+  }
+}

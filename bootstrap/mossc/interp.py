@@ -480,8 +480,10 @@ class Interp:
             obj = self.eval(expr.obj, frame)
             return obj.fields[expr.name]
         if isinstance(expr, ir.Call):
-            args = [self.eval(a, frame) for a in expr.args]
+            # The receiver first, then the arguments left to right, as
+            # both back ends evaluate them.
             this = self.eval(expr.this, frame) if expr.this is not None else None
+            args = [self.eval(a, frame) for a in expr.args]
             kind, target = expr.callee
             if kind == "direct":
                 fn = self.fns[id(target)]
@@ -538,7 +540,12 @@ class Interp:
         if head is not pat.head:
             return False
         if pat.binder is not None:
-            frame.locals[pat.binder] = value.payload
+            # A brace tag's payload is its fields, as a structural record
+            # (D83: its pattern takes parentheses like any tag's).
+            frame.locals[pat.binder] = (
+                RecordVal(None, value.fields) if isinstance(value, RecordVal)
+                else value.payload
+            )
         if pat.fields is not None:
             for field_name, binder, *_ in pat.fields:
                 frame.locals[binder] = value.fields[field_name]
@@ -950,23 +957,26 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
         n &= (1 << bits) - 1
         return n - (1 << bits) if n >> (bits - 1) else n
 
-    def grow(end: int) -> None:
-        mem = current[0]
-        if end > len(mem):
-            mem.extend(bytes(-(-(end - len(mem)) // PAGE) * PAGE))
+    def bounds(addr: int, length: int, mem=None) -> None:
+        """Trap on an access past the memory's end, as Wasm does: a
+        memory grows only by `memory_grow`. An address is unsigned, so a
+        negative one is past the end too."""
+        mem = current[0] if mem is None else mem
+        if addr < 0 or length < 0 or addr + length > len(mem):
+            raise MossPanic("out of bounds memory access")
 
     def load(addr: int, width: int, signed: bool) -> int:
-        grow(addr + width)
+        bounds(addr, width)
         return int.from_bytes(current[0][addr : addr + width], "little", signed=signed)
 
     def store(addr: int, width: int, value: int) -> None:
-        grow(addr + width)
+        bounds(addr, width)
         current[0][addr : addr + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(
             width, "little"
         )
 
     def text(addr: int, length: int) -> str:
-        grow(addr + length)
+        bounds(addr, length, memory)
         return memory[addr : addr + length].decode("utf-8", "replace")
 
     def fn(name: str, impl):
@@ -994,12 +1004,16 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
         return IntVal(before)
 
     mem("memory_grow", memory_grow)
-    mem("memory_copy", lambda a: (current[0].__setitem__(
-        slice(a[0].value, a[0].value + a[2].value),
-        current[0][a[1].value : a[1].value + a[2].value]), UNIT)[1])
-    mem("memory_fill", lambda a: (current[0].__setitem__(
-        slice(a[0].value, a[0].value + a[2].value),
-        bytes([a[1].value & 0xFF]) * a[2].value), UNIT)[1])
+    mem("memory_copy", lambda a: (
+        bounds(a[0].value, a[2].value), bounds(a[1].value, a[2].value),
+        current[0].__setitem__(
+            slice(a[0].value, a[0].value + a[2].value),
+            current[0][a[1].value : a[1].value + a[2].value]), UNIT)[3])
+    mem("memory_fill", lambda a: (
+        bounds(a[0].value, a[2].value),
+        current[0].__setitem__(
+            slice(a[0].value, a[0].value + a[2].value),
+            bytes([a[1].value & 0xFF]) * a[2].value), UNIT)[2])
 
     def unreachable(a):
         raise MossPanic("unreachable")
@@ -1067,9 +1081,9 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
     for prefix, rnd in (("f32", f32), ("f64", lambda x: x)):
         width, code = (4, "<f") if prefix == "f32" else (8, "<d")
         mem(f"{prefix}_load", lambda a, w=width, c=code: FloatVal(
-            struct.unpack(c, (grow(a[0].value + w), current[0][a[0].value : a[0].value + w])[1])[0]))
+            struct.unpack(c, (bounds(a[0].value, w), current[0][a[0].value : a[0].value + w])[1])[0]))
         mem(f"{prefix}_store", lambda a, w=width, c=code: (
-            grow(a[0].value + w),
+            bounds(a[0].value, w),
             current[0].__setitem__(slice(a[0].value, a[0].value + w), struct.pack(c, a[1].value)),
             UNIT)[2])
         binary = {"add": lambda x, y: x + y, "sub": lambda x, y: x - y,
@@ -1121,7 +1135,7 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
     def fd_write(a):
         total = 0
         for base, length in iovecs(a[1].value, a[2].value):
-            grow(base + length)
+            bounds(base, length, memory)
             emit(bytes(memory[base : base + length]))
             total += length
         store(a[3].value, 4, total)
@@ -1137,7 +1151,7 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
         for i, item in enumerate(argv):
             store(a[0].value + i * 4, 4, cursor)
             raw = item.encode() + b"\0"
-            grow(cursor + len(raw))
+            bounds(cursor, len(raw), memory)
             memory[cursor : cursor + len(raw)] = raw
             cursor += len(raw)
         return IntVal(0)
@@ -1158,7 +1172,7 @@ def wasm_env(program: Program, lib: dict, env: dict, args: list) -> None:
         total = 0
         for base, length in iovecs(a[1].value, a[2].value):
             chunk = handle.read(length) if handle else b""
-            grow(base + len(chunk))
+            bounds(base, len(chunk), memory)
             memory[base : base + len(chunk)] = chunk
             total += len(chunk)
         store(a[3].value, 4, total)

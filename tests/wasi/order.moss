@@ -1,0 +1,47 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Evaluation order: a call evaluates its receiver first, then its
+# arguments left to right. The receiver prints `r`, the argument `a`, and
+# the call's result is `b`; an operator is a method call (D68), so its
+# left operand is the receiver. Output: `rab`, `rab`, `xy`.
+
+type T;
+
+assume Std, T {
+  fn .mark(c: Char): Char;
+}
+
+assume Std {
+  tag Box(Char);
+  fn Box.pair(c: Char): Char { c }
+
+  fn noisy_box(): Box { putchar(char::r); Box(char::z) }
+  fn noisy_char(): Char { putchar(char::a); char::b }
+  fn noisy_int(c: Char, n: Int): Int { putchar(c); n }
+
+  fn demo() {
+    # an attached method, called directly
+    putchar(noisy_box().pair(noisy_char()));
+    putchar(char::newline);
+    # a method the context provides
+    {
+      bind T = Box;
+      bind T.mark = Box.pair;
+      putchar(noisy_box().mark(noisy_char()));
+      putchar(char::newline);
+    }
+    # an operator: `.add` at Int, provided by Std
+    let s = noisy_int(char::x, one) + noisy_int(char::y, one);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

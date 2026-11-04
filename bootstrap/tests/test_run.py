@@ -2568,6 +2568,53 @@ class TestSelfHostedBackEnd(unittest.TestCase):
         destructure by name — renamed, wildcarded, or whole."""
         module = self.compile_with_moss("tests/wasi/records.moss", prelude="lib/prelude.moss")
         self.assertEqual(self.wasmtime_run(module), RECORDS_OUT)
+        # The interpreter too, which matches a brace tag with a binder
+        # pattern (`Box(b)`, D83) by binding its fields as a record.
+        self.assertEqual(run({}, entry="tests/wasi/records.moss"), RECORDS_OUT)
+
+    def test_receiver_first_then_arguments_left_to_right(self):
+        """tests/wasi/order.moss: a call evaluates its receiver, then its
+        arguments left to right — an attached method, a provided one, and
+        an operator — in both compilers and in the interpreter."""
+        from .test_build import compile_wasm, run_wasm
+
+        entry = "tests/wasi/order.moss"
+        expected = "rab\nrab\nxy\n"
+        module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module), expected)
+        self.assertEqual(run_wasm(compile_wasm({}, entry=entry)), expected)
+        self.assertEqual(run({}, entry=entry), expected)
+
+    def test_a_load_past_the_end_of_memory_traps(self):
+        """tests/wasi/memory_bounds.moss: memory grows only by
+        `memory_grow`, so a load past its end traps (wasmtime's exit
+        status for one is 134) in both compilers, and panics in the
+        interpreter, which used to grow the memory instead."""
+        import subprocess
+
+        from .test_build import compile_wasm, wasm_file, wasmtime
+
+        entry = "tests/wasi/memory_bounds.moss"
+        result = subprocess.run(
+            [wasmtime(), wasm_file(compile_wasm({}, entry=entry))],
+            capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual((result.returncode, result.stdout), (134, "a\n"))
+        self.assertIn("out of bounds memory access", result.stderr)
+        module = self.compile_with_moss(entry, prelude="lib/prelude.moss")
+        self.assertEqual(self.wasmtime_run(module, expect_code=134), "a\n")
+        out = bytearray()
+        original = interp.emit
+        interp.emit = out.extend
+        try:
+            program = collect.load(entry, prelude=PRELUDE, root=REPO)
+            lower = Lower(program)
+            lower.run()
+            with self.assertRaisesRegex(interp.MossPanic, "out of bounds memory access"):
+                interp.run_main(program, lower, None)
+        finally:
+            interp.emit = original
+        self.assertEqual(bytes(out).decode(), "a\n")
 
     def test_only_reachable_vals_are_passed(self):
         """Inside `assume Std`, every function needs every `Std` val, and
