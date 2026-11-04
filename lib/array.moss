@@ -8,7 +8,7 @@ import "./size.moss" use Size;
 # listed by what it holds (D73), so arrays of two element types are two
 # types. Its accessors are access.moss's `.get`, `.set` and `.length`,
 # provided at `Array[Item=X]` with `Elem=X` (D61), and indexed by `Size`
-# (size.moss), not `Int`: access.moss's `Int` is applied to `Size` in
+# (size.moss), not `Int`: access.moss's `Index` is applied to `Size` in
 # each provision. So are its iteration methods, `.begin`, `.more` and
 # `.after`, which `for x in xs` calls. Growable lists stay a program's
 # business (D81).
