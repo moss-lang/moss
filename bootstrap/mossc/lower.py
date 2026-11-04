@@ -14,6 +14,7 @@ Deliberate v0 simplifications, each marked TODO in place:
   calling module (no orphan-style global search).
 """
 
+import os
 from dataclasses import dataclass
 
 from . import ast, ir
@@ -222,6 +223,10 @@ class Lower:
         self._const_cache: dict[int, tuple] = {}
         self._mentions_cache: dict[int, list] = {}
         self._uses_memo: dict[int, dict] = {}
+        self._fu_direct: dict[int, tuple] = {}
+        # D84 (draft): calls whose callee needs a bracketed functor at
+        # another instantiation, refused if the callee reaches it.
+        self.pending_functor_checks: list = []
         self._poly_cache: dict[int, list] = {}
         # D66: the forwarder synthesized for each abstract fn bound as a
         # provider, and the other way round.
@@ -311,6 +316,16 @@ class Lower:
         for module in self.program.order:
             for decl, symbol in self.defined_fns(module):
                 self.lower_fn(module, symbol)
+        for callee, need, (required, have), module, node in self.pending_functor_checks:
+            if need in self.functor_uses(callee)[0]:
+                self.error(
+                    module,
+                    f"calling `{callee.name}` needs `{need.name}` at "
+                    f"[{self.show_app(required)}], but the one in the context "
+                    f"here was provided at [{self.show_app(have)}] (a provision "
+                    "serves only the instantiation it was made at; D62, D84)",
+                    node,
+                )
 
     # D84 (draft), Rule A: an abstract functor `F[P...]` is polymorphic in
     # `P` and fixed in its other type inputs, `X(F)`, which a binding
@@ -1486,37 +1501,50 @@ class Lower:
         """D84 (draft): the abstract functors `symbol`'s code applies or
         copies, directly or through what it calls, named as `symbol`
         knows them; and whether that is complete (a function still being
-        lowered contributes nothing). Memoized when complete."""
+        lowered contributes nothing). Memoized when complete; each body
+        is walked once (`functor_direct`)."""
         memo = self._uses_memo.get(id(symbol))
         if memo is not None:
             return memo, True
-        fn = self.fns.get(id(symbol))
-        if fn is None or id(symbol) in seen:
+        direct = self.functor_direct(symbol)
+        if direct is None or id(symbol) in seen:
             return set(), False
         seen = seen | {id(symbol)}
-        out: set = set()
-        complete = [True]
-
-        def through(target, needs_map):
+        mine, edges = direct
+        out = set(mine)
+        complete = True
+        for target, needs_map in edges:
             inner, done = self.functor_uses(target, seen)
-            if not done:
-                complete[0] = False
+            complete = complete and done
             if inner:
-                back = dict(needs_map)
-                for k in inner:
-                    if k in back:
-                        out.add(back[k])
+                for callee_key, caller_key in needs_map:
+                    if callee_key in inner:
+                        out.add(caller_key)
+        if complete:
+            self._uses_memo[id(symbol)] = out
+        return out, complete
+
+    def functor_direct(self, symbol: Symbol):
+        """What one lowered body applies itself, and the calls and fn
+        binds through which it may apply more."""
+        cached = self._fu_direct.get(id(symbol))
+        if cached is not None:
+            return cached
+        fn = self.fns.get(id(symbol))
+        if fn is None:
+            return None
+        out: set = set()
+        edges: list = []
 
         def walk(node):
             if isinstance(node, ir.Call):
                 kind, target = node.callee
                 if kind != "env" and node.needs_map is not None:
-                    through(target, node.needs_map)
+                    edges.append((target, node.needs_map))
+            elif isinstance(node, ir.BindFn):
+                edges.append((node.fn, node.needs_map))
                 return
-            if isinstance(node, ir.BindFn):
-                through(node.fn, node.needs_map)
-                return
-            if isinstance(node, ir.ApplyFunctor):
+            elif isinstance(node, ir.ApplyFunctor):
                 out.add(node.key)
             elif isinstance(node, ir.BindFunctor) and node.source is not None:
                 out.add(node.source)
@@ -1529,9 +1557,8 @@ class Lower:
                         walk(getattr(node, name))
 
         walk(fn.body)
-        if complete[0]:
-            self._uses_memo[id(symbol)] = out
-        return out, complete[0]
+        self._fu_direct[id(symbol)] = (out, edges)
+        return out, edges
 
     def uses_of(self, symbol: Symbol) -> dict:
         """The needs of `symbol` that its lowered code reaches, each with
@@ -1869,7 +1896,46 @@ class FnChecker:
         if target.decl.binds is None:
             return self.apply_abstract(target)
         self.lower.check_functor_total(target)
+        if os.environ.get("MOSS_CONTAIN") and not self.applying:
+            return self.apply_contained(target)
         return self.apply_body(target)
+
+    def apply_contained(self, target: Symbol) -> list:
+        """D84 trial, §6 default 6 (measured, not adopted): a concrete
+        functor's binds of items outside its result stay inside it, as an
+        abstract functor's do. Static only — the scope after the
+        application sees the environment from before it, plus the
+        result's items as the binds made them — which is enough to find
+        what relies on the leak."""
+        before = self.env
+        self.env = Env(self.module, parent=before)
+        try:
+            stmts = self.apply_body(target)
+            after = self.env
+            keys = self.result_keys(target, {})
+        finally:
+            self.env = before
+        out = Env(self.module, parent=before)
+        for key, _ in keys:
+            if self.is_type_key(key):
+                if key in after.tymap:
+                    out.tymap[key] = after.tymap[key]
+            elif isinstance(key, tuple):
+                if key in after.methods:
+                    out.methods[key] = after.methods[key]
+            elif key.kind == SymKind.VAL:
+                if key in after.vals:
+                    out.vals[key] = after.vals[key]
+            elif key.kind == SymKind.FUNCTOR:
+                if key in after.functors:
+                    out.functors[key] = after.functors[key]
+            elif key in after.fns:
+                out.fns[key] = after.fns[key]
+            if key in after.apps:
+                out.apps[key] = after.apps[key]
+        self.env.tymap, self.env.vals, self.env.fns = out.tymap, out.vals, out.fns
+        self.env.methods, self.env.functors, self.env.apps = out.methods, out.functors, out.apps
+        return stmts
 
     def apply_body(self, target: Symbol) -> list:
         """A functor's binds, run here (D55)."""
@@ -2373,6 +2439,17 @@ class FnChecker:
             )
         lower.check_functor_total(bound)
         lower.check_functor_body(bound)
+        # Each application supplies `F`'s own inputs, and `Wasm` lists the
+        # platform's functors, so a binding whose binds apply `F` would
+        # apply itself at every application, without end.
+        for bind in bound.decl.binds:
+            for spec, expr in bind.items:
+                if expr is None and resolve_path(bound.module, spec.path) is functor:
+                    self.error(
+                        f"`{bound.name}` cannot be bound to `{functor.name}`: it "
+                        f"applies `{functor.name}`, which would then be itself "
+                        "(D55, D84)"
+                    )
 
     def per_application(self, functor: Symbol, provide: bool) -> list:
         """The keys of `F`'s inputs that are not types — vals, fns,
@@ -2984,10 +3061,14 @@ class FnChecker:
                 # function assuming `Wasm` needs `Heap`, and a scope that
                 # swaps the GC heap (`bind StructRef = I32;`) could then
                 # call none of them (D84 trial; tests/wasi/arena_ref.moss).
-                if need not in self.lower.functor_uses(callee)[0]:
-                    continue
-                key = need
-                what = f"`{need.name}`"
+                # Decided after every body is lowered (`Lower.run`), when
+                # what each reaches is known.
+                differ = self.incoherence(callee, need, need)
+                if differ is not None:
+                    self.lower.pending_functor_checks.append(
+                        (callee, need, differ, self.module, self.at_node)
+                    )
+                continue
             else:
                 continue
             differ = self.incoherence(callee, need, key)

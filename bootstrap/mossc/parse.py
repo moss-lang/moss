@@ -253,7 +253,20 @@ class Parser:
             )
             self.expect(Kind.RBRACKET)
         self.expect(Kind.COLON)
-        args = self.comma_list(self.parse_spec, Kind.HYPHEN_GREATER)
+        pins = []
+
+        def arg() -> ast.Spec:
+            # D84 trial, §6 question 5 (bootstrap only): `Int = Num` in a
+            # functor's arguments, a pin in the signature. It is the type
+            # input `Int`, bound to `Num` before the functor's binds.
+            spec = self.parse_spec()
+            if self.at(Kind.EQUAL):
+                at = self.peek().offset
+                self.expect(Kind.EQUAL)
+                pins.append(ast.Bind([(spec, self.parse_expr())], offset=at))
+            return spec
+
+        args = self.comma_list(arg, Kind.HYPHEN_GREATER)
         self.expect(Kind.HYPHEN_GREATER)
         result = self.comma_list(self.parse_spec, Kind.LBRACE, Kind.SEMI)
         if self.eat(Kind.SEMI):
@@ -264,7 +277,7 @@ class Parser:
                 "only an abstract functor lists polymorphic inputs (D84)", self.peek()
             )
         self.expect(Kind.LBRACE)
-        binds = []
+        binds = list(pins)
         while not self.at(Kind.RBRACE):
             binds.append(self.parse_bind())
         self.expect(Kind.RBRACE)
