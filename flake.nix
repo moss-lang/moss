@@ -32,11 +32,15 @@
       # The oracle's toolchain: Rocq, its standard library, and an OCaml
       # with flambda, the only one that honours the `[@inlined]` the
       # extracted interpreter relies on to keep its memory in check
-      # (bootstrap/README.md).
+      # (bootstrap/README.md). A flambda OCaml isn't in the binary cache, so
+      # it is built from source; its own test suite is skipped, since it
+      # adds minutes to every CI run and tests OCaml, not Moss.
       oracleTools = pkgs: rec {
         rocq = pkgs.rocqPackages.coq;
         rocqPath = "${pkgs.rocqPackages.stdlib}/lib/coq/${rocq.coq-version}/user-contrib";
-        ocamlFlambda = pkgs.ocaml-ng.ocamlPackages_4_14.ocaml.override { flambdaSupport = true; };
+        ocamlFlambda =
+          (pkgs.ocaml-ng.ocamlPackages_4_14.ocaml.override { flambdaSupport = true; }).overrideAttrs
+            { doCheck = false; };
       };
     in
     {
