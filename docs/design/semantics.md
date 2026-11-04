@@ -64,6 +64,29 @@ methods, with a consequence for how [D33] operators should desugar), the
 string literals — a character trie suffices — and there is no automatic
 tail-call elimination; loops are the idiom).
 
+**A note on "the bootstrap".** Until [D86], the bootstrap compiler was
+written in Python (`bootstrap/mossc/`: `lex.py`, `parse.py`, `collect.py`,
+`lower.py`, `ir.py`, `interp.py`, `build.py`, ..., with its unittest suite
+in `bootstrap/tests/`), and that is what "the bootstrap", "its
+interpreter", "its back end", "its native `Std`" and, mostly, "both
+compilers" (it and the self-hosted compiler under `src/`) mean in the
+entries before [D86]. That compiler and its tests have since been deleted,
+replaced by the Rocq bootstrap ([`bootstrap/`](../../bootstrap/README.md):
+a front end, elaborator and interpreter written in Rocq and extracted to
+OCaml, the *oracle*), and the test suite is now Rust
+([`crates/moss-tests`](../../crates/moss-tests)). The entries are a record
+of what was true when they were written, and their present tense about the
+Python bootstrap describes it as it was; the self-hosted compiler is
+unaffected. The oracle's elaborator (`bootstrap/theories/Elab.v`) was built
+against the same decisions and reproduces the Python bootstrap's error
+messages, but where an entry says what the bootstrap did, only the
+self-hosted compiler is claimed to still do it. Likewise
+`docs/design/core/`, the home of the core calculus: its Rocq files
+(`CoreMoss.v`, `Narrowing.v`, `KeyOnly.v`) are now in
+[`bootstrap/theories/`](../../bootstrap/theories), and the paper
+`core-moss.tex` is no longer kept (it is in the history, at
+`docs/design/core/core-moss.tex` as of 5ea4e2e).
+
 ## 1. Design thesis
 
 Moss separates **scope** from **context**:
@@ -322,14 +345,14 @@ sentence above false as a description of the compilers. What stands:
 - **Polymorphic recursion** is what it was for, and it crashes today. A
   function that binds a type in terms of itself and calls itself (`nest(x:
   T, n: Int)` binding `T = Wrap` over the `T` in force, `Wrap(T)` a tag)
-  needs infinitely many specializations, and both compilers crash on it:
-  the self-hosted one exhausts its call stack, and the bootstrap's back
-  end recurses without bound (since [D84]'s closures; before them it
-  compiled `nest` once and ran it). The bootstrap's interpreter, which
-  specializes nothing, runs it.
+  needs infinitely many specializations, and both compilers crashed on
+  it: the self-hosted one exhausts its call stack, and the Python
+  bootstrap's back end recursed without bound (since [D84]'s closures;
+  before them it compiled `nest` once and ran it). The Python bootstrap's
+  interpreter, which specialized nothing, ran it. (The Python bootstrap
+  has since been replaced, [D86]; the self-hosted compiler still crashes.)
   The calculus agrees that specialization need not be finite
-  (`polyrec_infinite`, in a specialization proof not yet moved into
-  `docs/design/core/`). **Planned
+  (`polyrec_infinite`, in `bootstrap/theories/Specialization.v`). **Planned
   resolution, chosen by the designer:** a static check that rejects a
   cycle of calls whose type bindings grow along it (an *expanding*
   cycle), made generically, before specialization — so this stops being
@@ -338,8 +361,8 @@ sentence above false as a description of the compilers. What stands:
   another** only after specialization: a union whose slot is an abstract
   type in one member and a `Ref` in another type-checks generically and is
   refused at a specialization where the abstract type is a scalar
-  ([D75]'s one valtype per slot; the self-hosted compiler's `?P`, the
-  bootstrap's `NotCompilable`). Recorded here; per-valtype lanes would
+  ([D75]'s one valtype per slot; the self-hosted compiler's `?P`, and
+  formerly the Python bootstrap's `NotCompilable`). Recorded here; per-valtype lanes would
   remove it.
 - *No longer an exception:* [D79]'s memories. A `Memory` bound to
   something that was not a memory was refused where an instruction was
@@ -571,7 +594,7 @@ than mapping into an atom set, which is invisible semantically but worth
 revisiting when contexts get reified for tooling.
 
 *Calculus note (July 2026):* merging is now part of the core calculus
-([docs/design/core](core/)): telescope formation merges duplicate keys by
+(then `docs/design/core/`, now [`bootstrap/theories/`](../../bootstrap/theories)): telescope formation merges duplicate keys by
 unifying the colliding bindings, failing exactly when two distinct
 concrete heads would be identified — and, a finding of the mechanization,
 when the equations are cyclic (D43 is silent on cyclic merges; the core
@@ -957,9 +980,9 @@ languages that require TCE for basic iteration are disliked on purpose.
 Ruling: iteration is written with loops (`src/lex.moss` rewritten
 accordingly); unbounded tail recursion is not a supported pattern; a
 future *explicit* tail-call construct that maps to Wasm `return_call` is
-welcome, but elimination is never implicit semantics. The bootstrap
-interpreter happens to contain a tail-call trampoline — that is a
-non-semantic implementation detail that code must not rely on.
+welcome, but elimination is never implicit semantics. The Python
+bootstrap's interpreter happened to contain a tail-call trampoline — that
+was a non-semantic implementation detail that code must not rely on.
 
 **[D51] FINDING, corrected by the designer (generic containers work via
 unique receivers).** Rev 6 claimed generic containers hit the [D47] wall —
@@ -1184,7 +1207,11 @@ need not assume it. Only `main` has it so. Any other function that
 applies or needs a platform functor assumes `Gc`, as any requirement is
 assumed (`assume Std, Wasm, Gc { … bind Heap; … }`).
 
-**[D38] DECIDED (bootstrap shortcut).** The bootstrap compiler provides
+**[D38] DECIDED (bootstrap shortcut).** *(Since retired: the native
+layer described here was the Python bootstrap's interpreter and back end,
+and went with them ([D86]). [D52] had already made `Wasi` the primitive
+context; `Std` is now provided only in Moss, over `Wasm`/`Wasi`.)* The
+bootstrap compiler provides
 `Std` natively at first (Python implementations of `String`, `Path`, `Cell`,
 `print`, chars, ints), *and* provides `Wasm`/`Wasi` natively (Python ints and
 a bytearray memory), so that `moss run` works before the in-Moss `Std`
@@ -1205,6 +1232,11 @@ diagnostics from day one, since the distinction is the language's pedagogical
 core.
 
 ## 11. Bootstrap compiler pipeline (Python)
+
+*This section describes the Python bootstrap compiler (`bootstrap/mossc/`),
+which was built to this plan, Wasm back end included, and has since been
+replaced by the Rocq bootstrap ([D86]; [`bootstrap/README.md`](../../bootstrap/README.md)).
+It is kept as the record of the design.*
 
 The agreed shape, answering "checker + tree-walking interpreter vs
 monomorphizing abstract interpreter":
@@ -1243,6 +1275,16 @@ every doc example must lex and parse from day one (golden AST dumps);
 elaboration and execution tests grow file-by-file starting from a rewritten
 literal-free hello. `tests/errors/` continues as golden-diagnostics tests.
 The old `examples/` and `lib/` are excluded until rewritten.
+*Now ([D86]):* the Python unittest suite that implemented this
+(`bootstrap/tests/`, with `sexpr.py`'s parse dumps as the parser-agreement
+reference) is gone. The suite is Rust,
+[`crates/moss-tests`](../../crates/moss-tests) (`cargo test`), with the
+oracle as the second implementation that runs test programs; the corpus
+idea lives on as the Rocq parser's dumps against the self-hosted parser's,
+and as an accept/reject agreement check between the oracle's front end and
+the self-hosted compiler
+([`agreement.rs`](../../crates/moss-tests/tests/suite/agreement.rs)).
+`tests/errors/` keeps golden diagnostics from both front ends.
 
 ## 12. Errata in existing artifacts
 
@@ -1453,9 +1495,10 @@ Implementation found the bootstrap violating the second half. Its
 searching the environment's provisions for one whose method's
 *declaration* name matched the call — with an ambiguity error when two
 did. That is matching by spelling, which is the weakness [D55] rejected
-option B1 for and which [D1] exists to rule out. **Both compilers now
-implement the rule as stated above**; the library change below is what
-made the bootstrap able to follow.
+option B1 for and which [D1] exists to rule out. **Both compilers then
+implemented the rule as stated above** (the self-hosted compiler still
+does; the Python bootstrap is gone, [D86]); the library change below is
+what made the bootstrap able to follow.
 
 **What the strict rule cost, and the fix.** Removing the fallback broke
 103 of the bootstrap's tests, all for one reason. Four detached
@@ -1538,8 +1581,9 @@ numbering, not a missing construct.
 
 **[D62] DECIDED by the designer (provisions keyed by identity; first found by the mechanization).** The
 core-calculus soundness proof
-([docs/design/core](core/)) refuted two rules the bootstrap shares, and
-probing the bootstrap resolves both:
+(then in `docs/design/core/`, now in
+[`bootstrap/theories/`](../../bootstrap/theories)) refuted two rules the
+bootstrap shares, and probing the bootstrap resolves both:
 
 - **Method provisions are head-keyed, and that is a live hole.** A
   provision is stored under (receiver *symbol*, method) —
@@ -1626,7 +1670,7 @@ probing the bootstrap resolves both:
   beside the receiver that is the key's other half. A callee's
   requirement is met only when the instantiation the callee means,
   read through the caller's bindings, equals the provision's, symbol
-  for symbol. Otherwise `lower.py` rejects the call ("calling `use_it`
+  for symbol. Otherwise `lower.py` rejected the call ("calling `use_it`
   needs `X[...].gimme` at [Foo=Int], but the one in the context here
   was provided at [Foo=Char]"). Since calls take no brackets, a call's
   application is the caller's own bindings. A direct call of a provided
@@ -1735,7 +1779,8 @@ so the signature check of [D27] is `g`'s signature against `f`'s under
 the substitutions in force, the requirement at the bind site is `g`
 itself, and a later rebind of `g` — in the same block or anywhere deeper
 in the call tree — does not reach `f`. This is pure sugar over the core
-calculus (`docs/design/core/CoreMoss.v`): the forwarder is one more
+calculus (`CoreMoss.v`, then in `docs/design/core/`, now
+`bootstrap/theories/`): the forwarder is one more
 defined declaration in the signature, `EBindFn f g' sm e` with it
 satisfies `TBindFnR` as stated (its requirements, `g` and the types,
 hold at the bind site), it evaluates by `EvBindFn` to a closure over the
@@ -1789,7 +1834,7 @@ specialization's parameter valtypes from the call site's arguments —
 one specialization per fn binding *and* parameter valtypes — and its
 result valtypes from its compiled body, a recursive call in the
 meantime assuming i32s and the assumption checked once the body is
-done. The interpreter's floats are Python floats, an f32 rounded to
+done. The interpreter's floats were Python floats, an f32 rounded to
 single precision after every operation; NaN, the infinities, signed
 zeros, `min`/`max`, ties-to-even `nearest`, trapping and saturating
 truncation, and integer-to-float conversion rounded once are all as
@@ -1997,8 +2042,9 @@ other val ([D59]). An exponent needs no token of its own: the lexers
 make it part of a _decimal_ token, the self-hosted tree keeps its value
 beside the fractional-digit count (`k_ex_lit`'s `d`, a run of one), and
 the dump both parsers write gives it as that value, `1E+03` as `1e3`.
-The bootstrap's back end walks a literal's arithmetic recursively, so it
-raises Python's recursion limit as its interpreter already did.
+The Python bootstrap's back end walked a literal's arithmetic
+recursively, so it raised Python's recursion limit as its interpreter
+already did.
 
 `Bool`'s four are attached methods of `lib/bool.moss` — `Bool.flip`,
 `Bool.both`, `Bool.either`, `Bool.differs` — which `Std` lists as
@@ -2029,10 +2075,11 @@ implementations; `tests/wasi/numbers.moss` and `tests/wasi/shadow.moss`
 now use both; the precedence table and every refusal are parser tests,
 held to the self-hosted parser snippet by snippet; each exponent case is
 checked in the bootstrap to build exactly the arithmetic written out by
-hand (`TestLiterals.test_exponent_constructions`), and each lexing case
-against the self-hosted lexer; and
-`bootstrap/tests/test_grammar.py` keeps the VS Code grammar in step with
-the lexer.
+hand (`TestLiterals.test_exponent_constructions`; the Rust suite's
+`exponent_constructions` now checks the same of the self-hosted
+compiler), and each lexing case against the self-hosted lexer; and
+`bootstrap/tests/test_grammar.py` kept the VS Code grammar in step with
+the lexer (that Python suite is gone, [D86]).
 
 **[D69] DECIDED by the designer (direction) and implemented (a packed list
 for any element type, generic over its layout).** [D59] made containers
@@ -2110,10 +2157,10 @@ nothing in scope ([D61]), and as providers they ask nothing of the
 caller's context. `WasiFloats` binds `FloatList` to `Doubles`,
 `WasiFloats32` to `Singles`.
 
-Under the bootstrap's native `Std`, `FloatList` is native like `IntList`:
-a Python list in the interpreter, and in its back end an `IntList` of
-words, two to an element, read and written with one `f64.load` or
-`f64.store`. The self-hosted compiler has no native `Std` and needs
+Under the Python bootstrap's native `Std` ([D38], since retired),
+`FloatList` was native like `IntList`: a Python list in the interpreter,
+and in its back end an `IntList` of words, two to an element, read and
+written with one `f64.load` or `f64.store`. The self-hosted compiler has no native `Std` and needs
 nothing.
 
 *A list of something other than `Float`.* `Singles`, `Doubles` and their
@@ -2196,9 +2243,10 @@ instantiations that agree on the relevant parameters
 already narrowed (`wf_ty_narrowed`), and soundness holds for it
 (`narrowed_soundness`, an instance of the existing theorem, which never
 needed a tag's telescope to be its whole assume nesting). These are now
-in the tracked development: `docs/design/core/Narrowing.v`, with the
+in the tracked development: `Narrowing.v`, with the
 counterexample below as `KeyOnly.v`, both built and audited by the
-`core-calculus-rocq` flake check.
+`core-calculus-rocq` flake check (then in `docs/design/core/`; now in
+`bootstrap/theories/`, checked by the `bootstrap-rocq` flake check).
 
 *What it depends on: coherence keyed by θ.* The calculus is protected because
 a method item `IMth τ m θ` carries the method's own type arguments θ, and
@@ -2237,7 +2285,7 @@ the wrappers' cost matters.
 
 *Implementation.* Relevance by least fixpoint in both compilers; front-end
 coherence in the self-hosted compiler (closing `incoherent_shadowed`); the
-Rocq lemmas into `docs/design/core/`, with the paper's prose on nominal
+Rocq lemmas into `docs/design/core/` (now `bootstrap/theories/`), with the paper's prose on nominal
 identity amended; [D21]'s text gains a pointer here.
 
 *Implemented (October 2026).* Where the implementation forced a detail
@@ -2345,7 +2393,7 @@ else in a bind is ([D26], [D66]):
 A lambda has no name, so it cannot call itself; recursion takes a named fn.
 
 Elaboration — pure sugar over the core calculus, so the soundness proof of
-`docs/design/core/CoreMoss.v` covers it unchanged (as for [D66]): each
+`CoreMoss.v` (now `bootstrap/theories/CoreMoss.v`) covers it unchanged (as for [D66]): each
 captured local `k` becomes a fresh val symbol bound to `k`'s value
 immediately before the bind (`EBindVal`), and the lambda becomes a fresh
 defined function, assuming the context items and vals it uses, whose body
@@ -2447,7 +2495,8 @@ the text above did not fix, it is recorded here.
   method seeing `this` through a wrapper and with none, a block body, one
   lambda inside another, a float result), the errors
   `tests/wasi/lambda_{arity,annotation,assign,outside,this,recursive}.moss`
-  in both compilers, the bootstrap goldens `tests/errors/lambda_*.moss`,
+  in both compilers, the bootstrap goldens `tests/errors/lambda_*.moss`
+  (the bootstrap's messages now held as the oracle's, `tests/errors/oracle/`),
   and the parser agreement snippets `LAMBDA_SNIPPETS`.
 - *The gain.* In the thesis's examples (rewritten in a scratch copy),
   the logging example's `noop` becomes `(message) => {}` (91 to 89
@@ -2549,7 +2598,7 @@ calculus and its proofs are unchanged, as for [D66] and [D70].
   with the `Int` that `n` has.
 
 *Implementation.* What an assumed `T` is, is no longer `T`: it is `T`'s
-*parameter*, a type symbol of its own (`param` in the bootstrap's
+*parameter*, a type symbol of its own (`param` in the Python bootstrap's
 `types.py`, `prog::param_of` in the self-hosted compiler) that no bind
 ever rebinds. A type stored anywhere mentions parameters, never the
 declared symbol, so a later `bind T` cannot reach into it; the declared
@@ -2977,7 +3026,7 @@ written against `Ast` does not change.
   `ir.BindFn.tyargs`), and a specialization is also keyed by them
   (all of them, since the revision above). A program with no `Ref`
   specializes exactly as before.
-- *The interpreter* holds a reference as a Python object that remembers
+- *The interpreter* (the Python bootstrap's) held a reference as a Python object that remembers
   the type it was made at, and traps on a forged one where it can tell
   the types apart: it lowers a generic function once, so where either
   type is still abstract it cannot.
@@ -3025,7 +3074,7 @@ syntax or types:
 `(ref null struct)` and `(ref null $X)`), a struct type per boxed type in
 the type section (in `rec` groups where they refer to each other),
 `struct.new`, `struct.get`, and `ref.cast` at a forging construction;
-the bootstrap's interpreter holds a reference as a Python object. Tests: a
+the Python bootstrap's interpreter held a reference as a Python object. Tests: a
 recursive tree built and folded through `Ref`; the AST example's
 interpreter over `Ref` beside the pool, in one program; an `Expr` and a
 `Stmt` boxed side by side in one scope (`gc_two`); reading a
@@ -3398,7 +3447,7 @@ type ([D69]) — a platform-provided abstract functor (`Packing: Wasm, Item
   too.
 
 *Implementation.* lib/wasm.moss (`Heap` in `Wasm`, its comment); the
-bootstrap: collect.py (restriction removed), lower.py (abstract functors
+Python bootstrap (since replaced, [D86]): collect.py (restriction removed), lower.py (abstract functors
 in environments and needs, `bind F = G;` and its signature and body
 checks, `bind F;` lowered as branches, the declaration check), ir.py
 (`BindFunctor`, `ApplyFunctor`), interp.py (the platform's bindings,
@@ -3424,7 +3473,7 @@ with nothing bound (`functor_unbound`), and a type in an abstract
 functor's result (`functor_type`).
 
 *The calculus: the plan* (done — see *Mechanized* at the end of this
-entry). `docs/design/core/` had no functors at all —
+entry). `docs/design/core/` (the calculus; now `bootstrap/theories/`) had no functors at all —
 they are elaborated away as runs of binds ([D55]), and the calculus is
 over elaborated terms (deviation 5). Abstract functors cannot be
 elaborated away in a function generic over one, so the mechanization
@@ -3593,9 +3642,11 @@ where each item was promised once `α_t` is read as τ_t — which is the
 makes the substitution of τ_t for α_t through `e`'s typing derivation
 (well-typed because `e`'s type does not mention α_t) the soundness step.
 
-*Mechanized (October 2026).* The plan above, existential included, is in
-`docs/design/core/` — the paper's §3.4 (Figures 8–9) and `CoreMoss.v`
-(deviations 11–13, the README's "Abstract functors" section) — and every
+*Mechanized (October 2026).* The plan above, existential included, was put
+in `docs/design/core/` — the paper's §3.4 (Figures 8–9) and `CoreMoss.v`
+(deviations 11–13, the README's "Abstract functors" section); the paper
+and that README are in the history now (as of 5ea4e2e), and `CoreMoss.v`
+is in `bootstrap/theories/` — and every
 theorem (determinism, interpreter adequacy, phase separation, soundness)
 is re-proved over it, still closed under the global context.
 
@@ -4136,7 +4187,7 @@ null accesses trapping as specified.
   from it, since a struct nobody writes is immutable either way.
   `gc_mutable` checks that `Counter`'s struct is mutable and `Int`'s, boxed
   beside it with `Heap` alone, is not.
-- *The interpreter* holds an array as a Python list that remembers the
+- *The interpreter* (the Python bootstrap's) held an array as a Python list that remembers the
   type it was made at (`GcArray`, beside D75's `GcRef`), with the
   instructions' bounds checks (an index read unsigned, past the length a
   panic: "out of bounds array access"), and the forging check extended to
@@ -4193,12 +4244,12 @@ at run time, `gc_array_bounds` (one past the length) and `gc_array_forge`
 (an `Array` forged at another type); and rejected, `gc_unarrayed`
 (`.arrayed` without `Arrays`), `gc_immutable` (`.set` without `Mutable`)
 and `gc_array_misread` (an `Array[Arrayed=Int]`'s `.get` passed as a
-`Char`, D74). bootstrap/tests: `test_gc_arrays`, `test_gc_arrays_trap`, the
+`Char`, D74). bootstrap/tests (the Python suite, since replaced, [D86]): `test_gc_arrays`, `test_gc_arrays_trap`, the
 three rejections in `test_phantoms_and_receivers_are_checked`, the four
 programs in `test_matches_the_bootstrap_on_behaviour`, and
 `test_every_wasm_item_has_an_instruction` taught the seven new primitives.
 
-*Implementation.* lib/wasm.moss; the bootstrap: lower.py (the symbols and
+*Implementation.* lib/wasm.moss; the Python bootstrap: lower.py (the symbols and
 primitives, which type a primitive is at, `Array` forging), interp.py
 (`GcArray`, the primitives), build.py (array and lane types in the `rec`
 group, mutable fields, `(ref null eq)`, the per-lane instruction
@@ -4206,7 +4257,8 @@ sequences, the unit injection fix); the self-hosted compiler: emit.moss
 (array types, mutable fields, `vt_eqref`), insn.moss (`struct.set` and
 the array instructions), codegen.moss (`cg_gc`, `array_of`/`lane_of`,
 `emit_gc_op`, forging, locals of the new valtypes, `unreachable` as
-never), boot.moss, spell.moss (regenerated from gensrc.py). (A second,
+never), boot.moss, spell.moss (regenerated from gensrc.py, which is now
+`crates/moss-tests/src/gensrc.rs`). (A second,
 shorter *Implementation* paragraph that repeated the bullets and *Tests*
 above was removed in November 2026.)
 
@@ -4254,7 +4306,8 @@ parses as.
 regenerated) and both parsers; the VS Code grammar. Tests:
 `test_tag_forms`, `test_nominal_types_need_tag`,
 `test_record_payload_takes_braces`, `test_no_tuple_types` and
-`test_tag_patterns_take_parentheses` in bootstrap/tests/test_parse.py, and
+`test_tag_patterns_take_parentheses` in bootstrap/tests/test_parse.py (the
+Python suite, since replaced, [D86]), and
 `tests/errors/type_not_tag.moss`.
 
 **[D84] DECIDED by the designer and implemented (an abstract functor's fixed and polymorphic inputs; a functor binding is a closure; members of a family on demand).**
@@ -4453,8 +4506,9 @@ as I see more real examples").
 *Why it is sound.* The rules are mechanized as an extension of the core
 calculus (an application `EApply u θ sm e` at a substitution θ, a binding
 `EBindFun u h sm smc e` recording what it captured, a runtime entry `DFun
-h sms dc` carrying it), in a `CoreMoss.v` and a `D84.v` that are yet to be
-moved into `docs/design/core/`; every theorem closes under the global
+h sms dc` carrying it), in a `CoreMoss.v` and a `D84.v` that were then yet
+to be moved into `docs/design/core/` (both are now in
+`bootstrap/theories/`); every theorem closes under the global
 context.
 
 - *Bind.* The captured telescope is closed, which is 3b's last sentence;
@@ -4569,7 +4623,8 @@ functor application whose inputs list a member.
   D84 refusals reuse existing codes, and the tests require only that it
   refuse.
 - *Calculus:* as above; the paper's §3.4 and the README of
-  `docs/design/core/` still describe [D78]'s version.
+  `docs/design/core/` still described [D78]'s version when both were
+  removed ([D86]; in the history as of 5ea4e2e).
 
 *Standing tests* (`tests/wasi/`), interpreted and in both compilers unless
 said. Run: `functor_fast` (`Fast[]: Int -> Floats`, four roots);
@@ -4635,12 +4690,74 @@ count. This reverses [D31] and [D35] on `for`.
 
 *Implementation.* Both parsers (`for`, already a keyword, was reserved);
 lib/size.moss, lib/access.moss, lib/array.moss, `Std`, `WasiStd`,
-`GcArrays`; the bootstrap's native table provides `Size`. Tests, in
+`GcArrays`; the Python bootstrap's native table provided `Size`. Tests, in
 `tests/wasi/`: `iterate` (`for` over arrays of `Float` and `Char`, with
 `break`, `return`, nesting, an empty array and shadowing), `size_rebind`
 and `size_std` (over `saturating.moss`, a `Std`-only library rebinding
 `Int`), interpreted and in both compilers; and refused by both,
 `size_mix`.
+
+**[D86] DECIDED by the designer and implemented (the bootstrap is the Rocq front end and interpreter; the Python bootstrap is gone).**
+Until now the compiler was bootstrapped by a second compiler, written in
+Python (`bootstrap/mossc/`, [§11](#11-bootstrap-compiler-pipeline-python)),
+which compiled `src/main.moss` to the first generation S0. It was also the
+test suite's reference: its parser's dumps, its loader's scope tables and
+its requirement lists were the goldens the self-hosted stages were held
+to, and its tree-walking interpreter was a third way to run a program.
+Keeping it meant implementing every decision twice, in two languages,
+and trusting a Python program nothing checked except by comparison.
+
+Decided:
+
+1. **The bootstrap is the verified front end and interpreter**
+   ([`bootstrap/`](/bootstrap)): Moss's lexer, parser and module loader,
+   its elaborator and the interpreter of elaborated programs, written in
+   Rocq, extracted to OCaml (`moss_m2`, "the oracle"). The flake's
+   `compiler` is the oracle interpreting `src/main.moss` compiling itself.
+   What that writes is S1, exactly what the compiled compiler writes of
+   itself, so it is the compiler, after `wasm-opt`; and the compiler built
+   from it must write S1 again from `src/`, byte for byte. That one
+   comparison holds the interpreted and the compiled compiler to each
+   other, and the compiler to its own fixpoint. It takes about 35 minutes
+   and 3 GB per platform. What of the oracle is proved, and what is still
+   an obligation (the elaborator's soundness and completeness for the
+   draft elaboration relation, the parser's for a grammar, and the
+   `Memories` fast path), is in [`bootstrap/README.md`](/bootstrap/README.md);
+   its contract is `bootstrap/theories/Audit.v`.
+2. **The Python bootstrap is removed**, with its unit tests of its own
+   lexer, parser, loader and float helpers. Statements in this log about
+   what "the bootstrap" did refer to it where they predate this entry.
+3. **The test runner is Rust** (`crates/moss-tests`, `cargo test`). It
+   compiles every program of `tests/` and `examples/` with the compiler
+   under test and runs it under Wasmtime, after `wasm-tools validate` on
+   the raw module; checks the expected errors of `tests/errors` against
+   goldens from both front ends; checks the fixpoint; checks that the
+   generated sources (`src/spell.moss`, `src/tcode.moss`,
+   `src/wasmops.moss`, `lib/char.moss`, `lib/wasichar.moss`, generated by
+   its `gensrc`) are up to date; and asks the oracle wherever the Python
+   interpreter or back end was the second opinion. The Rocq parser's dump
+   is the reference for the self-hosted parser, as Python's was.
+4. **The two front ends accept and reject the same programs**: the
+   oracle's and the self-hosted compiler's, over `tests/wasi`,
+   `tests/errors` and `examples`, up to an explicit, commented list of
+   known gaps (the oracle's single memory and forged handles, library
+   modules with no `main`, a Wasm layout limit of the compiler, and two
+   self-hosted compiler bugs: an attached method on an abstract type, Q5,
+   and an unchecked argument count, both accepted).
+5. **The development model**: everyday work reuses a previously built
+   compiler as the *seed*, which compiles the current source and whose
+   output then compiles it again; `moss` in a source checkout and the
+   test suite both do this. The bootstrap is rebuilt only when needed (no
+   compiler at hand can compile the current source, or `bootstrap/`
+   changed). CI runs the full `nix flake check`, bootstrap included, so
+   every commit on `main` is known to bootstrap from Rocq alone.
+
+Consequences: a language change is implemented in `src/` and in the
+Rocq elaborator (or listed as a gap of the oracle), not in Python; a
+feature the compiler's own source uses has to land before its use, so
+that some earlier compiler can build it; and the Core Moss paper
+(`core-moss.tex`) is no longer kept, its mechanization now living with
+the rest of the development in `bootstrap/theories/`.
 
 ## 13. Decision index
 
@@ -4724,10 +4841,15 @@ the rest of what its result mentions, its binding a closure checked once
 at the bind, members of a family applied on demand, and the platform's
 functors in `Gc`, in `main`'s root context, D85 `Size` for array lengths
 and indices, `Index` for access.moss's, and `for x in xs` over four
-iteration methods; and D32 as amended: a call evaluates its receiver,
+iteration methods, D86 the bootstrap is the Rocq front end and
+interpreter, which runs the compiler compiling itself, with the Python
+bootstrap removed, the tests in Rust, the two front ends held to accept
+and reject alike, and everyday work on a previously built compiler; and D32 as amended: a call evaluates its receiver,
 then its arguments left to right)
 
-The MVP language is fully pinned down. Next: rewrite
-`docs/reference/syntax.md` against this log, then build the bootstrap
-pipeline of §11 with the [D40] corpus tests, applying the §12 errata to
-`src/` as the corpus comes online.
+The MVP language is fully pinned down. Next (the plan as of revision 4):
+rewrite `docs/reference/syntax.md` against this log, then build the
+bootstrap pipeline of §11 with the [D40] corpus tests, applying the §12
+errata to `src/` as the corpus comes online. (Since then the syntax
+reference was rewritten and the Python pipeline of §11 built; it has in
+turn been replaced by the Rocq bootstrap, [D86].)

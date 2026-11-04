@@ -5,21 +5,30 @@ source file, loads everything that file imports, resolves every name in
 all of it, and writes a WebAssembly module — **including its own source**:
 
 ```sh
-python3 -m mossc src/main.moss > S0.wasm                            # B(S)
-wasmtime --argv0 lib/prelude.moss --dir . S0.wasm src/main.moss > S1.wasm
+ulimit -s unlimited
+bootstrap/_build/moss_m2 --pages 2 --argv0 lib/prelude.moss \
+  src/main.moss src/main.moss > S1.wasm                       # about 35 minutes
 wasmtime --argv0 lib/prelude.moss --dir . S1.wasm src/main.moss > S2.wasm
-cmp S1.wasm S2.wasm                                                 # equal
+cmp S1.wasm S2.wasm                                           # equal
 ```
 
-`S1 == S2` byte for byte is the fixpoint: whatever the bootstrap did
-differently is gone by the second generation, and the compiler reproduces
-its own input exactly. `S0 != S1` is expected — two different compilers
-emit different code for one source — and is asserted too, so that the
-comparison cannot degenerate into comparing something with itself.
-`TestSelfHostedFixpoint` in [`tests/test_build.py`](/bootstrap/tests/test_build.py)
-is the standing check.
+The first line is the bootstrap ([`bootstrap/`](/bootstrap/README.md)):
+the oracle, a front end and interpreter for Moss written in Rocq,
+*interprets* `src/main.moss` compiling itself, so what it writes, S1, is
+already the module the compiler makes of itself. `S1 == S2` byte for byte
+is the fixpoint: the interpreted compiler and the compiled one agree on the
+one input that exercises all of it. The flake's `compiler` package is that
+check; everyday work starts instead from a *seed*, a compiler built
+before, and the test suite checks the seed's compile of `src/` the same way
+([`fixpoint.rs`](/crates/moss-tests/tests/suite/fixpoint.rs)).
 
-It runs under the bootstrap's interpreter too:
+(Until [D86](../design/semantics.md) the bootstrap was a compiler written in
+Python, `bootstrap/mossc/`: it *compiled* `src/main.moss` to S0, S0
+compiled it to S1, and `S1 == S2` showed that whatever the bootstrap did
+differently was gone by the second generation; `S0 != S1` was asserted too,
+in the Python suite's `TestSelfHostedFixpoint`.)
+
+The compiled compiler compiles any program:
 
 ```sh
 wasmtime --argv0 "" --dir . S1.wasm tests/wasi/prim.moss > prim.wasm
@@ -31,13 +40,11 @@ prelude is what a program written against the primitive context wants, since
 `Wasm` and `Wasi` are imported by name and there is no standard library
 underneath ([D52](../design/semantics.md)).
 
-Compiled by the bootstrap it is a single WASI module — the whole
-compiler, `Std` and all, as one 1.2MB `.wasm` — which writes
-byte-for-byte the same output, about a thousand times faster:
+It is a single WASI module — the whole compiler, `Std` and all — which
+writes byte-for-byte what the interpreted compiler writes, far faster:
 
 ```sh
-python3 -m mossc src/main.moss > mossc.wasm
-wasmtime --argv0 lib/prelude.moss --dir . mossc.wasm examples/hello.moss > hello.wasm
+wasmtime --argv0 lib/prelude.moss --dir . S1.wasm examples/hello.moss > hello.wasm
 wasmtime hello.wasm            # Hello, world!
 ```
 
@@ -65,31 +72,42 @@ of the context machinery is exercised by getting them right.
 | [`codegen.moss`](/src/codegen.moss) | instruction selection |
 | [`spell.moss`](/src/spell.moss) | the strings the compiler must hold itself |
 | [`boot.moss`](/src/boot.moss) | a functor from `Std` to the whole compiler context |
-| [`dump.moss`](/src/dump.moss) | the tree, in the format the bootstrap also writes |
+| [`dump.moss`](/src/dump.moss) | the tree, in the format the bootstrap's parser also writes |
 | [`cli.moss`](/src/cli.moss), [`main.moss`](/src/main.moss) | the command line, over `Wasi` |
 
 ## How it is checked
 
-Not by looking at its output, but by holding it to the bootstrap's.
+Not by looking at its output, but by holding it to the bootstrap's. The
+checks below were first made against the Python bootstrap; since
+[D86](../design/semantics.md) the other implementation is the oracle, and
+the suite is the Rust crate [`crates/moss-tests`](/crates/moss-tests).
 
 - **Parsing.** Both parsers write a tree in one compact S-expression
-  format — [`bootstrap/mossc/sexpr.py`](/bootstrap/mossc/sexpr.py) and
+  format — the Python bootstrap's `sexpr.py` at first, now the Rocq
+  parser's dump ([`Parse.v`](/bootstrap/theories/Parse.v)), and
   [`dump.moss`](/src/dump.moss) — and over the whole live corpus, every
   file in `src/`, `lib/`, `examples/` and `tests/wasi/`, the two agree
   character for character.
 - **Collect.** The module graph, the symbol every declaration gets, and
-  the scope each module ends up with are compared as a set of
-  (module, namespace, name, target) rows. For the compiler's own
-  sources — now 35 modules — the two agree on all 3061 rows.
+  the scope each module ends up with were compared with the Python
+  bootstrap's as a set of (module, namespace, name, target) rows. For the
+  compiler's own sources — then 35 modules — the two agreed on all 3061
+  rows.
 - **Needs.** Every defined function's requirement list, in order — its
-  calling convention. Checked on `tests/wasi/full.moss`, which reaches
-  all of `Std` provided in Moss over the primitive context (185
-  functions), and on the compiler's own 35 modules (780).
-- **Codegen.** The `tests/wasi/` programs are compiled by both
-  compilers and the modules behave identically; the self-hosted one is
-  also run twice — once interpreted, once as Wasm — and the bytes match.
-  And every runnable example, compiled by the self-hosted compiler,
-  matches the golden output the bootstrap produces for it.
+  calling convention — was compared with the Python bootstrap's, on
+  `tests/wasi/full.moss`, which reaches all of `Std` provided in Moss
+  over the primitive context (185 functions), and on the compiler's own
+  35 modules (780). These two comparisons went with the Python bootstrap.
+- **Acceptance.** The oracle's front end and the self-hosted compiler
+  accept and reject the same programs of `tests/wasi`, `tests/errors` and
+  `examples`, up to a commented list of known gaps
+  ([`agreement.rs`](/crates/moss-tests/tests/suite/agreement.rs)).
+- **Codegen.** The `tests/wasi/` programs are compiled by the
+  self-hosted compiler and run, and the oracle runs them to the same
+  output; every runnable example, compiled by the self-hosted compiler,
+  matches its golden output, and so does the oracle's run of it. (Against
+  the Python bootstrap, the modules both compilers wrote were compared,
+  and the self-hosted compiler was also run interpreted.)
 - **Itself.** Two generations of self-compilation agree byte for byte,
   which is the only check with nothing outside it to appeal to: the
   compiler is held to its own output on its own source.
@@ -141,18 +159,19 @@ What is left, none of it on the path to self-hosting:
   brackets bind, for the length of that item and no further, which is
   what lets one scope hold the same interface at two element types.
   `tests/wasi/generic.moss` is the standing test.
-- **The bootstrap compiles each function once.** It lowers a function at
+- **The Python bootstrap compiled each function once** (history: it has
+  been replaced, [D86](../design/semantics.md)). It lowered a function at
   its declaration, with every abstract type one scalar wide, and
-  specializes per fn binding but not per type binding; this back end
+  specialized per fn binding but not per type binding; this back end
   specializes per both. So a program that instantiates a function at a
-  wider type — `widened.moss`, `provisions.moss` — runs here and is
-  refused by the bootstrap, which checks each call's widths against the
-  callee's rather than compile against the wrong layout. Nothing in
-  `src/` needs it, so the bootstrap still compiles this compiler. What
-  it does take per call is the parameters' *valtypes*, from the
-  arguments' layouts, since an abstract type one scalar wide may be an
-  i32 or an f64 ([D67](../design/semantics.md)); widths still have to
-  match.
+  wider type — `widened.moss`, `provisions.moss` — ran here and was
+  refused by the Python bootstrap, which checked each call's widths
+  against the callee's rather than compile against the wrong layout.
+  Nothing in `src/` needed it, so the Python bootstrap could still
+  compile this compiler. What it did take per call was the parameters'
+  *valtypes*, from the arguments' layouts, since an abstract type one
+  scalar wide may be an i32 or an f64 ([D67](../design/semantics.md));
+  widths still had to match.
 - **Diagnostics** are a code letter, the frame they came from, and a
   name — no line or column. The machinery for a real message is a string
   the compiler holds, which is [D48](../design/semantics.md).
@@ -223,10 +242,11 @@ contextual val arrives as a trailing parameter and is found by its
 symbol, so naming that parameter would let `val n: Char;` shadow a
 parameter called `n` — which it did.
 
-The Python originals are [`lower.py`](/bootstrap/mossc/lower.py) and
-[`build.py`](/bootstrap/mossc/build.py) — and the self-hosted back end
-turned out to be much less work than their line count suggests, because
-most of `build.py` is shims implementing a native `Std` and there was
+The Python originals were `bootstrap/mossc/lower.py` and
+`bootstrap/mossc/build.py` (since removed, [D86](../design/semantics.md))
+— and the self-hosted back end
+turned out to be much less work than their line count suggested, because
+most of `build.py` was shims implementing a native `Std` and there was
 nothing there to reimplement: the day the constructs `WasiStd` is written
 in compiled, `Std` came for free.
 
@@ -304,7 +324,7 @@ number, so it is the one place that hashes: a base-31 polynomial over
 the codepoints into a power-of-two bucket table, doubling when it
 passes half full.
 
-What that came to, all under the interpreter, on `tests/wasi/full.moss`:
+What that came to, all under the (Python bootstrap's) interpreter, on `tests/wasi/full.moss`:
 
 | phase | before | after |
 |---|---|---|
@@ -364,7 +384,7 @@ whatever that provider takes. A function over ten bound log levels
 parameters, past the engine's limit of a thousand. Both back ends now pass a val need
 only if the function can reach it: read it, or call, bind or apply
 something that does — `used_needs` in
-[`build.py`](/bootstrap/mossc/build.py), over the IR, and `need_used` in
+the Python bootstrap's `build.py`, over the IR, and `need_used` in
 [`codegen.moss`](/src/codegen.moss), over the tree, which has to guess
 a method call's target and so counts every defined method of that name.
 Over-approximating is safe because caller and callee both ask
@@ -444,8 +464,9 @@ lexer's keyword trie recognizes keywords without literals.
 hundred-odd `Wasm` intrinsic names, which the back end must recognize to
 select an instruction — interned once at startup, after which a lookup
 is a comparison of ids. Both files are
-generated by [`bootstrap/mossc/gensrc.py`](/bootstrap/mossc/gensrc.py)
-and checked against it, and neither is pleasant to read, but nothing
+generated by [`crates/moss-tests/src/gensrc.rs`](/crates/moss-tests/src/gensrc.rs)
+(`cargo run -p moss-tests --bin gensrc`; a port of the Python bootstrap's
+`gensrc.py`) and checked against it, and neither is pleasant to read, but nothing
 about the emitter was blocked. The
 pressure that remains is diagnostics: a message with words in it is
 still out of reach, which is why an error here is a letter, a frame and a
@@ -454,15 +475,15 @@ source meant reading 243 of those.
 
 ## Sharp edges
 
-- Interpreting the compiler is about three orders of magnitude slower
-  than running it as Wasm, because the bootstrap interpreter is a Python
-  tree-walker over the core IR and builds an object per value it handles.
-  Nothing is boxed in the compiled module — D58 made a nominal value its
-  payload — but the interpreter does not know that. So the tests compile
-  each driver to a WASI module with the bootstrap and run *that*: the
-  four self-hosted stage tests took 534 seconds interpreted and take 8.5
-  compiled. `moss build src/main.moss` is likewise the way to actually run
-  this compiler rather than `moss run`.
+- Interpreting the compiler is slow: the oracle takes about 35 minutes
+  to run `src/main.moss` compiling itself, where a compiled generation
+  takes about a second. So everyday work and the test suite start from a
+  seed, a compiled compiler built before (`CONTRIBUTING.md`), and go
+  through the oracle only to bootstrap. (The Python bootstrap's
+  interpreter, a tree-walker that built an object per value it handled,
+  was about three orders of magnitude slower than Wasm too; its tests
+  compiled each driver with the bootstrap and ran that, 534 seconds
+  interpreted against 8.5 compiled for the four self-hosted stage tests.)
 - The suite is about forty-five seconds. The fixpoint test's two
   generations are under two seconds each — 0.9 of Wasm and 0.8 of
   `wasm-opt` — and no longer the bulk of it. Without the optimizer the
@@ -483,5 +504,5 @@ source meant reading 243 of those.
 - The back end recognizes `Wasm`, `Wasi`, `Bool` and `i32_bool` by the
   file that declares them, and so the symbols operators and literals mean
   ([D68]): `num.moss`'s methods, `int.moss`'s `zero` and `one`,
-  `float.moss`'s `float`. So does the bootstrap, which is the precedent;
-  it is still a spelling dependency.
+  `float.moss`'s `float`. So did the Python bootstrap, which is the
+  precedent; it is still a spelling dependency.

@@ -7,22 +7,62 @@ the root of a clone of this repository:
 nix develop
 ```
 
-The compiler is a dependency-free Python program under
-[`bootstrap`](bootstrap). To run its test suite (the dev shell provides
-Wasmtime, which the Wasm backend tests require):
+## How the compiler is built
+
+The compiler is written in Moss, under [`src`](src), and compiles itself.
+Building it from nothing is the job of [`bootstrap`](bootstrap): a front
+end and interpreter for Moss written in Rocq and extracted to OCaml (the
+*oracle*), which runs `src/main.moss` compiling itself. That is the
+flake's `compiler` package, and it takes about 35 minutes and 3 GB:
 
 ```sh
-cd bootstrap && python3 -m tests.parallel
+nix build .#compiler -o result-compiler   # the bootstrap
+nix build .#oracle -o result-oracle       # just the oracle, a few minutes
 ```
 
-That spreads the tests over a worker process per core, and is
-what the flake's `bootstrap` check runs; `python3 -m unittest` runs the
-same tests one after another, some seven times slower. The floor is the
-slowest single test, which the runner lists at the end. To iterate on
-anything else, name what you are working on —
-`python3 -m unittest tests.test_run` — and run the whole suite before you
-commit. What a generation costs and where it goes is in
-[`docs/implementation/selfhosting.md`](docs/implementation/selfhosting.md).
+You do not do that for everyday work. Any compiler built before, from an
+older commit too, can build the current one, as long as it compiles the
+current source correctly: what it writes is then compiled once more by
+itself. So:
+
+- **Everyday work reuses a previously built compiler**, the *seed*. The
+  [`moss`](bin/moss) launcher and the test suite both look for one in
+  `MOSS_SEED` (a `mossc.wasm`), and otherwise in `result-compiler`; the
+  launcher also reuses the compiler it built last in `target/`. Get one
+  once, with the bootstrap above or copied from a machine that has built
+  one, and keep it.
+- **Rebuild through the bootstrap only when needed**: when no compiler you
+  have can compile the current source (a change the old compiler does not
+  understand, such as new syntax the compiler's own source uses), or when
+  you change `bootstrap/` itself. When the source uses a feature its own
+  previous version lacks, land the feature first and its use after.
+- **CI runs the full `nix flake check`** on every platform, bootstrap
+  included, so every merged commit is known to bootstrap from Rocq alone.
+
+## Tests
+
+The test suite is the Rust crate [`crates/moss-tests`](crates/moss-tests).
+It needs a seed (above) and the oracle (`MOSS_ORACLE`, else
+`result-oracle/bin/moss_m2`, else `bootstrap/_build/moss_m2`):
+
+```sh
+cargo test
+```
+
+That runs the whole workspace: the driver's unit tests and the suite,
+which compiles `src/` with the seed, checks that the result is a fixpoint
+of itself, and then holds it to every program of `tests/` and `examples/`
+(goldens, expected errors, and what the oracle makes of the same
+programs). Name a module to iterate on it, as in `cargo test -p
+moss-tests language::`, and run the whole suite before you commit. Its
+modules say what they check; `MOSS_BLESS=1` rewrites the goldens of
+[`tests/errors`](tests/errors).
+
+The oracle and the compiler must accept and reject the same programs, up
+to an explicit, commented list of known gaps
+([`agreement.rs`](crates/moss-tests/tests/suite/agreement.rs)). A program
+added to `tests/` that one accepts and the other rejects fails the suite
+until one of them is fixed or the gap is listed with its reason.
 
 Everything CI enforces is a flake check:
 
@@ -30,9 +70,20 @@ Everything CI enforces is a flake check:
 nix flake check
 ```
 
+That includes `bootstrap-rocq`, which compiles the Rocq development and
+audits its theorems' assumptions (about 5 minutes and 6 GB);
+`bootstrap/check.sh` runs the same in `nix develop .#bootstrap`.
+
+## Where things are
+
 The working design record lives in
 [`docs/design/semantics.md`](docs/design/semantics.md); language changes
 should land there first. The self-hosted compiler sources are under
-[`src`](src), and the standard library under [`lib`](lib) —
-[`lib/char.moss`](lib/char.moss) is generated from
-`bootstrap/mossc/native.py` (a test enforces agreement).
+[`src`](src), and the standard library under [`lib`](lib). Five files are
+generated, and a test enforces that they are up to date: `src/spell.moss`,
+`src/tcode.moss`, `src/wasmops.moss`, `lib/char.moss` and
+`lib/wasichar.moss`. Regenerate them with
+
+```sh
+cargo run -p moss-tests --bin gensrc
+```

@@ -2,13 +2,19 @@
 
 The standard library lives in [`lib`](/lib), written in Moss. Its
 declarations are almost all *abstract* — `type Char;`, `val a: Char;`,
-`fn putchar(c: Char);` — and the compiler provides their implementations
-natively (decision [D38](../design/semantics.md)): the interpreter from
-Python values in `bootstrap/mossc/interp.py`, the Wasm backend from
-instructions and WASI shims in `bootstrap/mossc/build.py`. The single
-source of truth for what "natively" means is `bootstrap/mossc/native.py`;
-[`lib/char.moss`](/lib/char.moss) is *generated* from it, and a test fails
-if the two drift.
+`fn putchar(c: Char);` — and [`wasi.moss`](/lib/wasi.moss)'s `WasiStd`
+provides their implementations in Moss, over the primitive `Wasm`/`Wasi`
+contexts (below). (They were first
+provided natively, decision [D38](../design/semantics.md), by the Python
+bootstrap: its interpreter from Python values in `bootstrap/mossc/interp.py`,
+its Wasm backend from instructions and WASI shims in
+`bootstrap/mossc/build.py`, with `bootstrap/mossc/native.py` the single
+source of truth for what "natively" meant. That compiler and its native
+`Std` are gone, [D86](../design/semantics.md).)
+[`lib/char.moss`](/lib/char.moss) is *generated*, by
+[`crates/moss-tests/src/gensrc.rs`](/crates/moss-tests/src/gensrc.rs)
+(`cargo run -p moss-tests --bin gensrc`), and a test fails if the file
+drifts from its generator.
 
 Layout:
 
@@ -62,7 +68,8 @@ The milestone that retires the native table has been reached:
 [`wasi.moss`](/lib/wasi.moss)'s `WasiStd` implements the whole of `Std` in
 Moss over the `Wasm`/`Wasi` declarations (`lib/wasm.moss`,
 `lib/wasip1.moss`), so only those two contexts are primitive, and the
-self-hosted compiler runs on it. The native table stays because the
-bootstrap's own back end and interpreter still provide `Std` that way, and
-because that is the faster of the two by a factor of fifteen — see
-[selfhosting.md](selfhosting.md).
+self-hosted compiler runs on it. The native table stayed as long as the
+Python bootstrap did, whose back end and interpreter provided `Std` that
+way, faster by a factor of fifteen (see [selfhosting.md](selfhosting.md));
+it went with that compiler ([D86](../design/semantics.md)), so `Std` is now
+provided only in Moss, over `Wasm`/`Wasi`.

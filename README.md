@@ -9,7 +9,7 @@ An experimental programming language, exploring new ways to manage context.
 
 First you must [clone](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) this Git repository; any commands listed below should be run in that clone.
 
-The compiler is a dependency-free Python program under [`bootstrap`](bootstrap); see [`bootstrap/README.md`](bootstrap/README.md) for its pipeline and [`docs/design/semantics.md`](docs/design/semantics.md) for the working design record. A second compiler, written in Moss, lives under [`src`](src) and now compiles itself: see [`docs/implementation/selfhosting.md`](docs/implementation/selfhosting.md).
+The compiler is written in Moss, under [`src`](src), and compiles itself; see [`docs/implementation/selfhosting.md`](docs/implementation/selfhosting.md). It is bootstrapped by a front end and interpreter for Moss written in [Rocq](https://rocq-prover.org/) and extracted to OCaml, under [`bootstrap`](bootstrap), which runs the compiler compiling itself; see [`bootstrap/README.md`](bootstrap/README.md) for what it is and what of it is proved. The working design record is [`docs/design/semantics.md`](docs/design/semantics.md).
 
 If you use [direnv](https://direnv.net/) and have [Nix](https://nixos.org/) with [flakes](https://wiki.nixos.org/wiki/Flakes) enabled, the easiest way to get all necessary dependencies is via the dev shell provided in this repo:
 
@@ -20,10 +20,11 @@ echo use flake > .envrc && direnv allow
 The dev shell puts the [`moss`](bin/moss) development launcher on your `PATH`.
 It builds a native driver that links
 [Wasmtime](https://wasmtime.dev/) and
-[Binaryen](https://github.com/WebAssembly/binaryen), both from Nix. Python
-3.12+ is needed
-only to bootstrap a changed self-hosted compiler in a source checkout; the
-packaged compiler already contains that result.
+[Binaryen](https://github.com/WebAssembly/binaryen), both from Nix. In a
+source checkout, the first run after `src` or `lib` changes rebuilds the
+self-hosted compiler with one built before (see
+[`CONTRIBUTING.md`](CONTRIBUTING.md)); the packaged compiler already
+contains that result.
 
 `nix build` produces the normal Nix package. `nix build .#standalone` produces
 a bundle for Linux or macOS that can be copied and used without Nix; an
