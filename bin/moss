@@ -1,56 +1,9 @@
-#!/usr/bin/env python3
-"""Development launcher for the native Moss driver."""
-
-import os
-import subprocess
-import sys
-from pathlib import Path
-
-
-ROOT = Path(__file__).resolve().parent.parent
-PROFILE = "release"
-
-
-def eprint(line: bytes) -> None:
-    sys.stderr.buffer.write(line)
-    sys.stderr.flush()
-
-
-def build() -> None:
-    command = [
-        "cargo",
-        "build",
-        "--package=moss-cli",
-        f"--profile={PROFILE}",
-        "--color=always",
-    ]
-    process = subprocess.Popen(command, cwd=ROOT, stderr=subprocess.PIPE)
-    assert process.stderr is not None
-    buffered = []
-    cached = True
-    for line in process.stderr:
-        if cached:
-            buffered.append(line)
-            if b"    Finished" not in line and b"    Blocking" not in line:
-                cached = False
-                for pending in buffered:
-                    eprint(pending)
-        else:
-            eprint(line)
-    if process.wait() != 0:
-        raise SystemExit(process.returncode)
-
-
-def main() -> None:
-    build()
-    executable = ROOT / f"target/{PROFILE}/moss"
-    env = os.environ.copy()
-    env["MOSS_ROOT"] = str(ROOT)
-    os.execve(executable, [str(executable), *sys.argv[1:]], env)
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        raise SystemExit(130)
+#!/bin/sh
+# Development launcher for the native Moss driver: builds it (quietly, unless
+# something needs saying) and runs it against this checkout's `src/` and
+# `lib/`. The first run after `src/` or `lib/` changes rebuilds the
+# self-hosted compiler from a seed (see CONTRIBUTING.md).
+set -e
+root=$(cd "$(dirname "$0")/.." && pwd)
+cargo build --quiet --package=moss-cli --profile=release --manifest-path "$root/Cargo.toml"
+MOSS_ROOT=$root exec "$root/target/release/moss" "$@"

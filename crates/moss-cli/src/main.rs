@@ -14,8 +14,6 @@ use binaryen::{optimize_wasm, parse_opt, Opt};
 use clap::{Parser, Subcommand};
 #[cfg(not(moss_embedded_compiler))]
 use sha2::{Digest, Sha256};
-#[cfg(not(moss_embedded_compiler))]
-use std::process::{Command, Stdio};
 use validate::{validate, Producer};
 use wasmtime::{Access, Engine, Module, Wasi};
 
@@ -150,7 +148,7 @@ fn repository_root() -> Result<PathBuf> {
     let cwd = env::current_dir()?;
     for candidate in cwd.ancestors() {
         if candidate.join("src/main.moss").is_file()
-            && candidate.join("bootstrap/mossc").is_dir()
+            && candidate.join("bootstrap/theories").is_dir()
             && candidate.join("lib/prelude.moss").is_file()
         {
             return Ok(candidate.to_path_buf());
@@ -191,23 +189,28 @@ fn absolute(path: &Path) -> Result<PathBuf> {
     }
 }
 
-/// Builds the self-hosted compiler from source, the first time round.
+/// A compiler built before, to compile the current source with: `MOSS_SEED`
+/// (a `.wasm`), else the one this checkout last built, else
+/// `result-compiler` (`nix build .#compiler -o result-compiler`, which
+/// bootstraps one from nothing with the Rocq oracle in about 35 minutes).
+/// Any compiler that compiles the current source correctly will do, since
+/// what it writes is compiled once more by itself.
 #[cfg(not(moss_embedded_compiler))]
-fn bootstrap_compile(root: &Path, entry: &Path) -> Result<Vec<u8>> {
-    let output = Command::new("python3")
-        .args(["-m", "mossc"])
-        .arg(entry)
-        .current_dir(root)
-        .env("PYTHONPATH", root.join("bootstrap"))
-        .env("MOSS_LIB", root.join("lib"))
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("could not start the Python bootstrap compiler")?
-        .wait_with_output()?;
-    if !output.status.success() {
-        bail!("bootstrap compiler exited with {}", output.status);
+fn seed_compiler(root: &Path, last: &Path) -> Result<Vec<u8>> {
+    if let Some(path) = env::var_os("MOSS_SEED") {
+        return fs::read(&path)
+            .with_context(|| format!("cannot read MOSS_SEED={}", Path::new(&path).display()));
     }
-    valid_wasm(output.stdout)
+    for candidate in [last.to_path_buf(), root.join("result-compiler")] {
+        if candidate.is_file() {
+            return Ok(fs::read(candidate)?);
+        }
+    }
+    bail!(
+        "no compiler to build the self-hosted compiler with: set MOSS_SEED to a \
+         previously built mossc.wasm, or run `nix build .#compiler -o result-compiler` \
+         (see CONTRIBUTING.md)"
+    )
 }
 
 #[cfg(moss_embedded_compiler)]
@@ -240,15 +243,20 @@ fn self_hosted_compiler(engine: &Engine, root: &Path) -> Result<CompilerModule> 
 
     fs::create_dir_all(&target)?;
     eprintln!("Building the self-hosted Moss compiler...");
-    let s0 = bootstrap_compile(root, &root.join("src/main.moss"))?;
-    let s0 = optimized(engine, s0, COMPILER_OPT)?;
-    let s1 = run_compiler(
-        engine,
-        root,
-        &CompilerModule::Wasm(s0),
-        &root.join("src/main.moss"),
-    )?;
-    let ready = optimized(engine, s1, COMPILER_OPT)?;
+    // Two turns of the crank: the seed's compile of the source, and that
+    // compiler's compile of it, which is what the source means however the
+    // seed was built.
+    let seed = seed_compiler(root, &compiler)?;
+    let mut ready = seed;
+    for _ in 0..2 {
+        let next = run_compiler(
+            engine,
+            root,
+            &CompilerModule::Wasm(ready),
+            &root.join("src/main.moss"),
+        )?;
+        ready = optimized(engine, next, COMPILER_OPT)?;
+    }
 
     let compiler_tmp = target.join(format!("moss.wasm.{}", std::process::id()));
     let manifest_tmp = target.join(format!("moss.inputs.{}", std::process::id()));
@@ -280,7 +288,6 @@ fn installed_compiler() -> Option<PathBuf> {
 #[cfg(not(moss_embedded_compiler))]
 fn compiler_hash(root: &Path) -> Result<String> {
     let mut files = Vec::new();
-    collect_files(&root.join("bootstrap/mossc"), "py", &mut files)?;
     collect_files(&root.join("src"), "moss", &mut files)?;
     collect_files(&root.join("lib"), "moss", &mut files)?;
     files.sort();

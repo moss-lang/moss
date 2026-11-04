@@ -59,7 +59,7 @@ pub fn parse_opt(value: &str) -> Result<Opt, String> {
 }
 
 /// The Wasm features Binaryen may read and write, by their `wasm-opt
-/// --enable-` names: the one list the flake and the bootstrap tests read
+/// --enable-` names: the one list the flake and the test suite read
 /// too, so no caller has to be kept in step by hand. The file says what it
 /// covers, and why `BinaryenFeatureAll` is not an option.
 const WASM_FEATURES: &str = include_str!("../../../wasm-features.txt");

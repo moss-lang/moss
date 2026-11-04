@@ -29,6 +29,15 @@
             }
           )
         );
+      # The oracle's toolchain: Rocq, its standard library, and an OCaml
+      # with flambda, the only one that honours the `[@inlined]` the
+      # extracted interpreter relies on to keep its memory in check
+      # (bootstrap/README.md).
+      oracleTools = pkgs: rec {
+        rocq = pkgs.rocqPackages.coq;
+        rocqPath = "${pkgs.rocqPackages.stdlib}/lib/coq/${rocq.coq-version}/user-contrib";
+        ocamlFlambda = pkgs.ocaml-ng.ocamlPackages_4_14.ocaml.override { flambdaSupport = true; };
+      };
     in
     {
       packages = forAll (
@@ -44,7 +53,7 @@
             ];
           };
           # The Wasm features Binaryen may use, from the one list the
-          # bootstrap tests and the driver read too: `wasm-features.txt`
+          # test suite and the driver read too: `wasm-features.txt`
           # says what it covers, and why `-all` is not an option.
           wasmFeatures = builtins.filter (line: line != "" && !pkgs.lib.hasPrefix "#" line) (
             pkgs.lib.splitString "\n" (builtins.readFile ./wasm-features.txt)
@@ -52,13 +61,71 @@
           wasmOptFlags = pkgs.lib.concatStringsSep " " (
             [ "-mvp" ] ++ map (feature: "--enable-${feature}") wasmFeatures
           );
+          # The same features as `wasm-tools validate` (wasmparser, which
+          # Wasmtime uses) names them, for validating a module before
+          # Binaryen reads it; crates/moss-tests/src/lib.rs and
+          # crates/moss-cli/src/binaryen.rs map the same names.
+          validatorNames = {
+            mutable-globals = [ "mutable-global" ];
+            nontrapping-float-to-int = [ "saturating-float-to-int" ];
+            sign-ext = [ "sign-extension" ];
+            multivalue = [ "multi-value" ];
+            bulk-memory = [ "bulk-memory" ];
+            reference-types = [ "reference-types" ];
+            simd = [ "simd" ];
+            gc = [
+              "gc"
+              "function-references"
+            ];
+            multimemory = [ "multi-memory" ];
+          };
+          validatorFeatures = pkgs.lib.concatStringsSep "," (
+            [
+              "-all"
+              "mvp"
+            ]
+            ++ pkgs.lib.concatMap (feature: validatorNames.${feature}) wasmFeatures
+          );
           compilerSource = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
-              ./bootstrap/mossc
               ./lib
               ./src
             ];
+          };
+          inherit (oracleTools pkgs) rocq rocqPath ocamlFlambda;
+          bootstrapSource = pkgs.lib.fileset.toSource {
+            root = ./bootstrap;
+            fileset = pkgs.lib.fileset.unions [
+              ./bootstrap/build.sh
+              ./bootstrap/check.sh
+              ./bootstrap/ocaml
+              ./bootstrap/theories
+            ];
+          };
+          # The bootstrap: the Rocq front end, elaborator and interpreter,
+          # extracted to OCaml (bootstrap/README.md).
+          oracle = pkgs.stdenv.mkDerivation {
+            pname = "moss-oracle";
+            version = "0.0.0";
+            src = bootstrapSource;
+            nativeBuildInputs = [
+              rocq
+              ocamlFlambda
+            ];
+            ROCQPATH = rocqPath;
+            OCAMLOPT = "${ocamlFlambda}/bin/ocamlopt";
+            buildPhase = ''
+              runHook preBuild
+              patchShebangs build.sh
+              ./build.sh
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              install -D _build/moss_m2 $out/bin/moss_m2
+              runHook postInstall
+            '';
           };
           installData = ''
             mkdir -p $out/share/moss
@@ -105,26 +172,43 @@
               platforms = old.meta.platforms ++ [ "x86_64-windows" ];
             };
           });
-          # B(S), followed by S0(S): the compiler believed to be at the
-          # self-hosting fixpoint. The test suite turns the crank once more.
+          # The compiler, bootstrapped by the oracle. `moss_m2` reads
+          # src/main.moss with the Rocq front end, elaborates it, and
+          # interprets it compiling src/main.moss: what it writes is the
+          # module the compiler written in src/ makes of itself, S1, without
+          # any compiled compiler involved. That takes about 35 minutes and
+          # 3 GB; local development reuses a compiler built before
+          # (CONTRIBUTING.md).
+          #
+          # S1, optimized, then compiles src/ again, and the result must be
+          # S1 byte for byte: the compiler is a fixpoint of itself, and the
+          # interpreted and the compiled compiler agree on the one input
+          # that exercises all of it. The raw modules are compared, never
+          # the optimized ones; the optimized S1 is the package.
           portableCompiler =
             pkgs.runCommand "mossc.wasm"
               {
                 nativeBuildInputs = [
                   pkgs.binaryen
-                  pkgs.python3
+                  pkgs.wasm-tools
                   pkgs.wasmtime
                 ];
               }
               ''
-                export HOME=$TMPDIR
-                export PYTHONPATH=${compilerSource}/bootstrap
-                export MOSS_LIB=${compilerSource}/lib
-                python3 -m mossc ${compilerSource}/src/main.moss > s0.wasm
-                wasm-opt ${wasmOptFlags} -O3 s0.wasm -o s0-opt.wasm
+                export HOME=$TMPDIR # wasmtime wants a writable cache directory
+                # The interpreter recurses as deeply as the program it runs.
+                ulimit -s unlimited 2>/dev/null || ulimit -s "$(ulimit -H -s)"
+                (cd ${compilerSource} && ${oracle}/bin/moss_m2 --pages 2 \
+                  --argv0 lib/prelude.moss src/main.moss src/main.moss) > s1.wasm
+                wasm-tools validate --features=${validatorFeatures} s1.wasm
+                wasm-opt ${wasmOptFlags} -O3 s1.wasm -o s1-opt.wasm
                 wasmtime run --argv0 lib/prelude.moss --dir ${compilerSource}::. \
-                  s0-opt.wasm src/main.moss > s1.wasm
-                wasm-opt ${wasmOptFlags} -O3 s1.wasm -o $out
+                  s1-opt.wasm src/main.moss > s2.wasm
+                if ! cmp s1.wasm s2.wasm; then
+                  echo "the compiler is not a fixpoint: S1 != S2" >&2
+                  exit 1
+                fi
+                cp s1-opt.wasm $out
               '';
           # Machine code for the compiler, compiled ahead of time by the same
           # Wasmtime the driver links, so the driver can just map it in.
@@ -179,22 +263,7 @@
         in
         (rec {
           compiler = portableCompiler;
-          # The Core Moss calculus paper (docs/design/core/core-moss.tex).
-          pdf =
-            pkgs.runCommand "core-moss-pdf"
-              {
-                nativeBuildInputs = [
-                  (pkgs.texliveMedium.withPackages (ps: [ ps.mathpartir ]))
-                ];
-              }
-              ''
-                export HOME=$TMPDIR
-                cp ${./docs/design/core/core-moss.tex} core-moss.tex
-                pdflatex -interaction=nonstopmode core-moss.tex
-                pdflatex -interaction=nonstopmode core-moss.tex # cross-references
-                mkdir $out
-                cp core-moss.pdf $out/
-              '';
+          inherit oracle;
           # Just the Rust driver: no compiler baked in, so editing `src` or
           # `lib` does not recompile it.
           #
@@ -341,63 +410,22 @@
       checks = forAll (
         pkgs:
         {
-          # The Core Moss calculus paper: CI builds the same derivation
-          # exposed as `nix build .#pdf`.
-          core-calculus-pdf = self.packages.${pkgs.stdenv.hostPlatform.system}.pdf;
-          # The mechanization of the paper's definitions and metatheory,
-          # and the narrowing results built on it (D71): CoreMoss.v, then
-          # Narrowing.v and KeyOnly.v, which import it as `NM.CoreMoss`.
-          # Compiling is not enough on its own: coqc accepts `Admitted`, so
-          # this also audits the assumptions of every theorem (§13 of
-          # CoreMoss.v, the `Print Assumptions` lines at the end of the
-          # others), and checks, file by file, that the audited names are
-          # exactly its top-level Theorems and Corollaries.
-          core-calculus-rocq =
-            pkgs.runCommand "core-moss-rocq" { nativeBuildInputs = [ pkgs.coq ]; } ''
-              export ROCQPATH=${pkgs.coqPackages.stdlib}/lib/coq/${pkgs.coq.coq-version}/user-contrib
-              files="CoreMoss Narrowing KeyOnly"
-              for f in $files; do
-                cp ${./docs/design/core}/$f.v $f.v
-              done
-
-              : > audit.log
-              for f in $files; do
-                coqc -q -Q . NM $f.v > $f.log 2>&1 || { cat $f.log; exit 1; }
-                cat $f.log >> audit.log
-              done
-              cat audit.log
-
-              # Every top-level Theorem or Corollary must have a Print
-              # Assumptions line in its own file (named with or without
-              # the module it sits in).
-              : > audited.txt
-              for f in $files; do
-                grep -oE '^(Theorem|Corollary) [A-Za-z0-9_'"'"']+' $f.v \
-                  | cut -d' ' -f2 | sort > theorems.txt
-                grep -oE '^Print Assumptions [A-Za-z0-9_.'"'"']+' $f.v \
-                  | cut -d' ' -f3 | sed -e 's/\.$//' -e 's/.*\.//' | sort > audited-$f.txt
-                if ! diff -u theorems.txt audited-$f.txt; then
-                  echo "FAIL: the audited names of $f.v are not exactly its" \
-                       "top-level Theorems and Corollaries." >&2
-                  exit 1
-                fi
-                cat audited-$f.txt >> audited.txt
-              done
-
-              # ... and each must report closed under the global context.
-              expected=$(wc -l < audited.txt)
-              actual=$(grep -c '^Closed under the global context$' audit.log \
-                       || true)
-              if [ "$expected" -ne "$actual" ]; then
-                echo "FAIL: $actual of $expected theorems are closed under" \
-                     "the global context; the rest depend on axioms or" \
-                     "Admitted lemmas (see the log above)." >&2
-                exit 1
-              fi
-              echo "audit: all $expected theorems closed under the global context"
-
-              touch $out
-            '';
+          # The Rocq development of bootstrap/: every file compiles, and
+          # every theorem's assumptions are audited (bootstrap/check.sh says
+          # what is enforced). About five minutes and 6 GB.
+          bootstrap-rocq =
+            pkgs.runCommand "moss-bootstrap-rocq"
+              {
+                nativeBuildInputs = [ (oracleTools pkgs).rocq ];
+                ROCQPATH = (oracleTools pkgs).rocqPath;
+              }
+              ''
+                cp -r ${self.packages.${pkgs.stdenv.hostPlatform.system}.oracle.src} bootstrap
+                chmod -R u+w bootstrap
+                patchShebangs bootstrap/check.sh
+                bootstrap/check.sh
+                touch $out
+              '';
           cli = pkgs.runCommand "moss-cli-check" { nativeBuildInputs = [ pkgs.wasm-tools ]; } ''
             moss=${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/moss
             source=${./.}/examples/hello.moss
@@ -437,24 +465,47 @@
             unset MOSS_COMPILER
             touch $out
           '';
-          bootstrap =
-            pkgs.runCommand "moss-bootstrap-test"
-              {
-                nativeBuildInputs = [
-                  pkgs.binaryen # `wasm-opt`, which the self-hosting tests run.
-                  pkgs.python3
-                  pkgs.wasm-tools # Validates every module the tests write.
-                  pkgs.wasmtime
-                ];
-              }
-              ''
-                export HOME=$TMPDIR # wasmtime wants a writable cache directory
-                cd ${./.}/bootstrap
-                # NIX_BUILD_CORES is 0 when the build may use every core,
-                # which is also what the runner takes 0 to mean.
-                python3 -m tests.parallel --jobs "''${NIX_BUILD_CORES:-0}"
-                touch $out
-              '';
+          # The test suite (crates/moss-tests): every program of tests/ and
+          # examples/ compiled and run, the expected errors, the fixpoint,
+          # the generated sources, and the oracle's agreement with the
+          # compiler, with the compiler built above as the seed.
+          tests = pkgs.rustPlatform.buildRustPackage {
+            pname = "moss-tests";
+            version = "0.0.0";
+            src = pkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = pkgs.lib.fileset.unions [
+                ./Cargo.toml
+                ./Cargo.lock
+                ./crates
+                ./examples
+                ./lib
+                ./src
+                ./tests
+                ./vscode/syntaxes
+                ./wasm-features.txt
+              ];
+            };
+            cargoLock.lockFile = ./Cargo.lock;
+            cargoBuildFlags = [
+              "--package"
+              "moss-tests"
+            ];
+            cargoTestFlags = [
+              "--package"
+              "moss-tests"
+            ];
+            nativeCheckInputs = [
+              pkgs.binaryen # `wasm-opt` and `wasm-dis`
+              pkgs.wasm-tools # Validates every module the tests write.
+              pkgs.wasmtime
+            ];
+            MOSS_SEED = self.packages.${pkgs.stdenv.hostPlatform.system}.compiler;
+            MOSS_ORACLE = "${self.packages.${pkgs.stdenv.hostPlatform.system}.oracle}/bin/moss_m2";
+            preCheck = ''
+              export HOME=$TMPDIR # wasmtime wants a writable cache directory
+            '';
+          };
           vscode = self.packages.${pkgs.stdenv.hostPlatform.system}.vscode;
         }
         // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
@@ -497,11 +548,10 @@
         default = pkgs.mkShellNoCC {
           buildInputs = [
             pkgs.binaryen
-            pkgs.python3
             pkgs.rust-bin.stable.latest.default
             pkgs.vsce # For manually packaging the VS Code extension.
-            pkgs.wasm-tools # The bootstrap tests validate every module with it.
-            pkgs.wasmtime # The bootstrap's Wasm backend tests run it.
+            pkgs.wasm-tools # The test suite validates every module with it.
+            pkgs.wasmtime # The test suite runs every module with it.
           ];
           BINARYEN_LIB_DIR = "${pkgs.binaryen}/lib";
           WASMTIME_LIB_DIR = "${pkgs.wasmtime.lib}/lib";
@@ -513,6 +563,20 @@
             PATH=$PWD/bin:$PATH
           '';
         };
+        # For working on bootstrap/: `bootstrap/build.sh` and
+        # `bootstrap/check.sh` need nothing else.
+        bootstrap =
+          let
+            tools = oracleTools pkgs;
+          in
+          pkgs.mkShellNoCC {
+            buildInputs = [
+              tools.rocq
+              tools.ocamlFlambda
+            ];
+            ROCQPATH = tools.rocqPath;
+            OCAMLOPT = "${tools.ocamlFlambda}/bin/ocamlopt";
+          };
       });
       overlays.default = final: prev: {
         moss = self.packages.${prev.stdenv.hostPlatform.system}.default;

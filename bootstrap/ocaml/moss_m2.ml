@@ -1,0 +1,305 @@
+(* moss_m2: the oracle, the Rocq front end and interpreter extracted to OCaml.
+   Usage: moss_m2 [--pages N] [--argv0 A] [--elab-only] [--prelude P] PROGRAM [ARG...]
+          moss_m2 --bundle-text [--prelude P] FILE.moss
+          moss_m2 --dump OUTDIR FILE.moss...
+   PROGRAM is FILE.moss, which is read, lexed, parsed and bundled by the
+   Gallina front end (Parse.load_bundle; this driver only reads files), or
+   BUNDLE.bx, a bundle already in Audit.v's s-expression form (Part I),
+   which the OCaml tokenizer below reads.  The bundle is elaborated by the
+   Gallina elaborator (Elab.elaborate_sx), and MossX.run_main runs the
+   result.  The prelude is P, else $MOSS_LIB/prelude.moss, else
+   lib/prelude.moss (from the working directory).  --bundle-text prints the
+   bundle; --dump writes each file's dump (Parse.print_sx) or `ERROR msg` to
+   OUTDIR/<mangled path>.rocq.sx. Exit status: 63 the front end rejected
+   the program (a lex, parse or load error), 64 the elaborator rejected it,
+   65 a construct the oracle does not model; otherwise 0 normal, the code
+   for proc_exit, 134 trap, 3 stuck, 4 unsupported primitive, 5 out of
+   fuel. *)
+
+open Audit
+open MossX
+open MossX.XS
+
+
+(* tokens: atoms, "quoted", ( ... ) and [ ... ] *)
+let tokenize (s : string) : Audit.Input.sx =
+  let n = String.length s in
+  let pos = ref 0 in
+  let rec skip () =
+    if !pos < n then
+      match s.[!pos] with
+      | ' ' | '\n' | '\t' | '\r' -> incr pos; skip ()
+      | _ -> () in
+  let stack = ref [] and cur = ref [] and result = ref None in
+  while !result = None do
+    skip ();
+    if !pos >= n then failwith "unexpected end of input";
+    match s.[!pos] with
+    | '(' | '[' -> incr pos; stack := !cur :: !stack; cur := []
+    | ')' | ']' as c ->
+        incr pos;
+        let done_ = Audit.Input.SL (c = ']', Stdlib.List.rev !cur) in
+        (match !stack with
+         | [] -> failwith "unbalanced"
+         | [_] -> result := Some done_
+         | top :: rest -> stack := rest; cur := done_ :: top)
+    | '"' ->
+        incr pos;
+        let b = Buffer.create 16 in
+        while s.[!pos] <> '"' do
+          if s.[!pos] = '\\' then incr pos;
+          Buffer.add_char b s.[!pos]; incr pos
+        done;
+        incr pos;
+        cur := Audit.Input.SA (Buffer.contents b) :: !cur
+    | _ ->
+        let start = !pos in
+        while !pos < n && (match s.[!pos] with
+                          | ' ' | '\n' | '\t' | '\r' | '(' | ')' | '[' | ']' -> false
+                          | _ -> true) do incr pos done;
+        cur := Audit.Input.SA (String.sub s start (!pos - start)) :: !cur
+  done;
+  match !result with Some r -> r | None -> assert false
+
+let bytes_of_string s = Stdlib.List.init (String.length s) (fun i -> Uint63.of_int (Char.code s.[i]))
+
+(* MOSS_GCLOG=1: after each major cycle, print live and heap words *)
+let () =
+  if Sys.getenv_opt "MOSS_GCLOG" <> None then begin
+    let t0 = Unix.gettimeofday () in
+    ignore (Gc.create_alarm (fun () ->
+      let s = Gc.stat () in
+      Printf.eprintf "[gc %.1fs major=%d live=%dMB heap=%dMB top=%dMB]\n%!"
+        (Unix.gettimeofday () -. t0) s.Gc.major_collections
+        (s.Gc.live_words / 131072) (s.Gc.heap_words / 131072) (s.Gc.top_heap_words / 131072)))
+  end
+
+(* MOSS_MEMPROF=rate: sample allocations; at exit, report the call sites of
+   the samples still alive, by their innermost frames *)
+let memprof_report = ref (fun () -> ())
+let () =
+  match Sys.getenv_opt "MOSS_MEMPROF" with
+  | None -> ()
+  | Some r ->
+    let live : (int, (int * Printexc.raw_backtrace)) Hashtbl.t = Hashtbl.create 100000 in
+    let ctr = ref 0 in
+    let depth = try int_of_string (Sys.getenv "MOSS_MEMPROF_DEPTH") with _ -> 6 in
+    let track (info : Gc.Memprof.allocation) =
+      incr ctr; let id = !ctr in
+      Hashtbl.replace live id (info.n_samples, info.callstack); Some id in
+    Gc.Memprof.start ~sampling_rate:(float_of_string r) ~callstack_size:depth
+      { Gc.Memprof.null_tracker with
+        alloc_minor = track; alloc_major = track;
+        promote = (fun id -> Some id);
+        dealloc_minor = (fun id -> Hashtbl.remove live id);
+        dealloc_major = (fun id -> Hashtbl.remove live id) };
+    memprof_report := (fun () ->
+      Gc.full_major ();
+      Gc.Memprof.stop ();
+      let agg = Hashtbl.create 1000 in
+      let tot = ref 0 in
+      Hashtbl.iter (fun _ (w, bt) ->
+        let key = match Printexc.backtrace_slots bt with
+          | None -> "?"
+          | Some sl -> String.concat " < " (Array.to_list (Array.map (fun s ->
+              match Printexc.Slot.location s with
+              | Some l -> Printf.sprintf "%s:%d" l.Printexc.filename l.Printexc.line_number
+              | None -> "?") sl)) in
+        tot := !tot + w;
+        Hashtbl.replace agg key (w + (try Hashtbl.find agg key with Not_found -> 0))) live;
+      let l = List.sort (fun (_, a) (_, b) -> compare b a) (Hashtbl.fold (fun k v acc -> (k, v) :: acc) agg []) in
+      Printf.eprintf "[memprof: %d sampled words live (est %d MB)]\n" !tot (int_of_float (float !tot /. float_of_string r /. 131072.));
+      List.iteri (fun i (k, w) -> if i < 40 then Printf.eprintf "%6.2f%% %s\n%!" (100. *. float w /. float !tot) k) l);
+    (match Sys.getenv_opt "MOSS_MEMPROF_AT" with
+     | Some t ->
+       Sys.set_signal Sys.sigalrm (Sys.Signal_handle (fun _ ->
+         let f = !memprof_report in memprof_report := (fun () -> ()); f ()));
+       ignore (Unix.alarm (int_of_string t))
+     | None -> ())
+
+(* the front end's only effect: reading a file (the bundle's `read` oracle) *)
+let read_file path =
+  try Some (In_channel.with_open_bin path In_channel.input_all) with Sys_error _ -> None
+
+let mangle f =
+  let p = if Filename.is_relative f then Filename.concat (Sys.getcwd ()) f else f in
+  let p = String.concat "_" (List.filter (fun s -> s <> "") (String.split_on_char '/' p)) in
+  p
+
+let () =
+  let args = Array.to_list Sys.argv in
+  let pages = ref 1 and argv0_override = ref None and elab_only = ref false in
+  let prelude = ref (match Sys.getenv_opt "MOSS_LIB" with
+                     | Some d -> Filename.concat d "prelude.moss" | None -> "lib/prelude.moss") in
+  let bundle_text = ref false and dump_dir = ref None in
+  let rec opts = function
+    | "--pages" :: n :: rest -> pages := int_of_string n; opts rest
+    | "--argv0" :: a :: rest -> argv0_override := Some a; opts rest
+    | "--elab-only" :: rest -> elab_only := true; opts rest
+    | "--prelude" :: p :: rest -> prelude := p; opts rest
+    | "--bundle-text" :: rest -> bundle_text := true; opts rest
+    | "--dump" :: d :: rest -> dump_dir := Some d; opts rest
+    | rest -> rest in
+  let rest = opts (match args with _ :: r -> r | [] -> []) in
+  (match !dump_dir with
+   | Some d ->
+       Stdlib.List.iter (fun f ->
+         let text = match read_file f with Some t -> t | None -> failwith ("cannot read " ^ f) in
+         let out = match Parse.parse_moss text with
+           | Audit.Input.Good a -> Parse.print_sx (Parse.dump_file a) ^ "\n"
+           | Audit.Input.Bad m -> "ERROR " ^ m ^ "\n" in
+         Out_channel.with_open_bin (Filename.concat d (mangle f ^ ".rocq.sx"))
+           (fun oc -> output_string oc out)) rest;
+       exit 0
+   | None -> ());
+  let file, prog_args = match rest with f :: a -> f, a | [] -> failwith "usage" in
+  let t0 = Unix.gettimeofday () in
+  let input =
+    if Filename.check_suffix file ".moss" then begin
+      match Parse.load_bundle read_file (Sys.getcwd ()) !prelude file with
+      | Audit.Input.Bad msg -> Printf.eprintf "[moss_m2 front end: %s]\n" msg; exit 63
+      | Audit.Input.Good ((entry, prel), ms) ->
+          if !bundle_text then (print_string (Parse.print_bundle entry prel ms); exit 0);
+          if Sys.getenv_opt "MOSS_REF_TIME" <> None then
+            Printf.eprintf "[moss_m2: parsed %d modules in %.3fs]\n%!" (Stdlib.List.length ms) (Unix.gettimeofday () -. t0);
+          Parse.bundle_sx entry prel ms
+    end else tokenize (In_channel.with_open_bin file In_channel.input_all) in
+  let p = match Elab.elaborate_sx input with
+    | Audit.Input.Good p -> p
+    | Audit.Input.Bad msg ->
+        let uns = String.length msg >= 12 && String.sub msg 0 12 = "unsupported:" in
+        Printf.eprintf "[moss_m2 elab: %s]\n" msg;
+        exit (if uns then 65 else 64) in
+  let t1 = Unix.gettimeofday () in
+  if !elab_only then begin
+    Printf.eprintf "[moss_m2: elaborated in %.3fs: %d fns, %d functor bodies]\n%!" (t1 -. t0)
+      (Stdlib.List.length p.Audit.xo_fns) (Stdlib.List.length p.Audit.xo_funs);
+    exit 0 end;
+  (* MOSS_PRUNE=0: run the elaborated program as is; default: the pruned
+     program (Prune.oracle_program; Prune.oracle_agrees) *)
+  let p = if Sys.getenv_opt "MOSS_PRUNE" = Some "0" then p else begin
+    let t = Unix.gettimeofday () in
+    let p' = Prune.oracle_program p in
+    if Sys.getenv_opt "MOSS_REF_TIME" <> None || p' == p then
+      Printf.eprintf "[moss_m2: pruned in %.3fs%s]\n%!" (Unix.gettimeofday () -. t)
+        (if p' == p then " (check FAILED: running UNPRUNED)" else " (check accepted)");
+    p' end in
+  (* MOSS_STATS=1: static context sizes (smap lengths) per node kind, in
+     the program as run (pruned unless MOSS_PRUNE=0) *)
+  if Sys.getenv_opt "MOSS_STATS" <> None then begin
+    let tbl : (string, int list ref) Hashtbl.t = Hashtbl.create 16 in
+    let add k sm = let r = try Hashtbl.find tbl k with Not_found -> let r = ref [] in Hashtbl.replace tbl k r; r in
+      r := Stdlib.List.length sm :: !r in
+    let rec ex e = match e with
+      | XVar _ | XUnit | XBreak | XVl _ -> ()
+      | XTag (_, _, e1) | XBindTy (_, _, e1) | XLoop e1 | XReturn e1 | XField (e1, _) | XAssign (_, e1)
+      | XBindFunSym (_, _, e1) | XBindPrim (_, _, e1) | XBindFunCopy (_, _, e1) -> ex e1
+      | XCallD (_, _, sm, a) -> add "call" sm; Stdlib.List.iter ex a
+      | XCallA (_, a) -> Stdlib.List.iter ex a
+      | XMeth (e0, _, _, a) -> ex e0; Stdlib.List.iter ex a
+      | XMatch (e0, arms) -> ex e0; Stdlib.List.iter (fun (_, b) -> ex b) arms
+      | XLet (_, a, b) | XBindVal (_, a, b) | XSeq (a, b) | XWhile (a, b) -> ex a; ex b
+      | XIf (a, b, c) -> ex a; ex b; ex c
+      | XBindFn (_, _, sm, e1) -> add "bindfn" sm; ex e1
+      | XBindMth (_, _, _, _, sm, e1) -> add "bindmth" sm; ex e1
+      | XBindFun (_, _, sm, smc, e1) -> add "bindfun" sm; add "bindfun.c" smc; ex e1
+      | XBindFunA (_, _, sm, e1) -> add "bindfuna" sm; ex e1
+      | XApply (_, _, sm, e1) -> add "apply(expr)" sm; ex e1
+      | XRec fs -> Stdlib.List.iter (fun (_, x) -> ex x) fs
+      | XMatchP (a, arms) -> ex a; Stdlib.List.iter (fun (_, b) -> ex b) arms
+      | XApplyBr (_, brs, e1) -> Stdlib.List.iter (fun ((_, bs), pr) -> add "applybr(expr)" pr; Stdlib.List.iter bx bs) brs; ex e1
+    and bx b = match b with
+      | XBVal (_, e1) -> ex e1
+      | XBFn (_, _, sm) -> add "xb.fn" sm
+      | XBMth (_, _, _, _, sm) -> add "xb.mth" sm
+      | XBFun (_, _, sm, smc) -> add "xb.fun" sm; add "xb.fun.c" smc
+      | XBFunA (_, _, sm) -> add "xb.funa" sm
+      | XBApply (_, _, sm) -> add "xb.apply" sm
+      | XBApplyBr (_, brs) -> Stdlib.List.iter (fun ((_, bs), pr) -> add "xb.applybr" pr; Stdlib.List.iter bx bs) brs
+      | _ -> () in
+    Stdlib.List.iter (fun (_, b) -> ex b) p.Audit.xo_fns;
+    Stdlib.List.iter (fun (_, (_, bs)) -> Stdlib.List.iter bx bs) p.Audit.xo_funs;
+    Stdlib.List.iter (fun (u, (dr, bs)) ->
+      let kinds = String.concat " " (Stdlib.List.map (function
+        | XBTy _ -> "ty" | XBVal _ -> "val" | XBFn (_,_,sm) -> Printf.sprintf "fn%d" (Stdlib.List.length sm)
+        | XBMth (_,_,_,_,sm) -> Printf.sprintf "mth%d" (Stdlib.List.length sm)
+        | XBFun (_,_,sm,smc) -> Printf.sprintf "fun%d/%d" (Stdlib.List.length sm) (Stdlib.List.length smc)
+        | XBFunA _ -> "funa" | XBApply (v,th,sm) -> Printf.sprintf "apply(u%d,%d)" v (Stdlib.List.length sm)
+        | XBFunSym _ -> "funsym" | XBFunCopy _ -> "funcopy" | XBApplyBr _ -> "applybr" | XBPrim _ -> "prim") bs) in
+      Printf.eprintf "[moss_m2 stats: functor body u%d: |Dr|=%d binds: %s]\n" u (Stdlib.List.length dr) kinds) p.Audit.xo_funs;
+    let rec sites e = match e with
+      | XApply (u, th, sm, e1) -> Printf.eprintf "[moss_m2 stats: XApply u%d |th|=%d |sm|=%d body=%s]\n" u (Stdlib.List.length th) (Stdlib.List.length sm)
+          (match e1 with XMeth _ -> "meth" | _ -> "other"); sites e1
+      | XVar _ | XUnit | XBreak | XVl _ -> ()
+      | XTag (_, _, e1) | XBindTy (_, _, e1) | XLoop e1 | XReturn e1 | XField (e1, _) | XAssign (_, e1)
+      | XBindFunSym (_, _, e1) | XBindPrim (_, _, e1) | XBindFunCopy (_, _, e1) | XBindFn (_,_,_,e1) | XBindMth (_,_,_,_,_,e1)
+      | XBindFun (_,_,_,_,e1) | XBindFunA (_,_,_,e1) | XApplyBr (_,_,e1) -> sites e1
+      | XCallD (_, _, _, a) | XCallA (_, a) -> Stdlib.List.iter sites a
+      | XMeth (e0, _, _, a) -> sites e0; Stdlib.List.iter sites a
+      | XMatch (e0, arms) -> sites e0; Stdlib.List.iter (fun (_, b) -> sites b) arms
+      | XLet (_, a, b) | XBindVal (_, a, b) | XSeq (a, b) | XWhile (a, b) -> sites a; sites b
+      | XIf (a, b, c) -> sites a; sites b; sites c
+      | XRec fs -> Stdlib.List.iter (fun (_, x) -> sites x) fs
+      | XMatchP (a, arms) -> sites a; Stdlib.List.iter (fun (_, b) -> sites b) arms in
+    if Sys.getenv_opt "MOSS_STATS" = Some "2" then Stdlib.List.iter (fun (_, b) -> sites b) p.Audit.xo_fns;
+    Printf.eprintf "[moss_m2 stats: %d fns, %d functor bodies]\n" (Stdlib.List.length p.Audit.xo_fns) (Stdlib.List.length p.Audit.xo_funs);
+    Hashtbl.iter (fun k r ->
+      let a = Array.of_list !r in Array.sort compare a; let n = Array.length a in
+      let tot = Array.fold_left (+) 0 a in
+      Printf.eprintf "[moss_m2 stats: %-14s n=%6d mean=%7.1f median=%4d max=%5d]\n%!" k n
+        (float tot /. float (max n 1)) (if n = 0 then 0 else a.(n / 2)) (if n = 0 then 0 else a.(n - 1))) tbl
+  end;
+  let fns = Hashtbl.create 4096 in
+  Stdlib.List.iter (fun (f, b) -> Hashtbl.replace fns f b) (Stdlib.List.rev p.Audit.xo_fns);
+  let funs = Hashtbl.create 64 in
+  Stdlib.List.iter (fun (u, b) -> Hashtbl.replace funs u b) (Stdlib.List.rev p.Audit.xo_funs);
+  let prims = Array.of_list p.Audit.xo_prims in
+  let argv0 = match !argv0_override with
+    | Some a -> a
+    | None -> Filename.remove_extension (Filename.basename file) ^ ".wasm" in
+  let prog = {
+    xp_fn = (fun f -> Hashtbl.find_opt fns f);
+    xp_fun = (fun u -> Hashtbl.find_opt funs u);
+    xp_bool = p.Audit.xo_bool; xp_true = p.Audit.xo_true; xp_false = p.Audit.xo_false;
+    xp_argv = Stdlib.List.map bytes_of_string (argv0 :: prog_args);
+    xp_read = (fun name ->
+      let path = String.init (Stdlib.List.length name)
+                   (fun i -> Char.chr (snd (Uint63.to_int2 (Stdlib.List.nth name i)))) in
+      try Some (bytes_of_string (In_channel.with_open_bin path In_channel.input_all))
+      with Sys_error _ -> None);
+  } in
+  let st0 = init_state (Uint63.of_int !pages) in
+  (* MOSS_ENGINE=fast: FastX.frun_main (map-keyed environments), proved
+     equal to Audit's interpreter (FastX.frun_main_eq); default: Audit's
+     interpreter itself (XS.run_main).  Both on the pruned program unless
+     MOSS_PRUNE=0 (Prune.run_main_pruned, Prune.oracle_agrees). *)
+  let r = match Sys.getenv_opt "MOSS_ENGINE" with
+    | Some "fast" -> FastX.frun_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
+    | _ -> run_main max_int prog p.Audit.xo_main p.Audit.xo_env st0 in
+  let t2 = Unix.gettimeofday () in
+  !memprof_report ();
+  if Sys.getenv_opt "MOSS_REF_TIME" <> None then
+    Printf.eprintf "[moss_m2: final pages %d, heap objects %d]\n" (snd (Uint63.to_int2 r.xr_st.ms_pages)) (snd (Uint63.to_int2 r.xr_st.ms_hnext));
+  let out l =
+    let b = Buffer.create 4096 in
+    Stdlib.List.iter (fun c -> Buffer.add_char b (Char.chr (Uint63.to_int2 c |> snd))) (Stdlib.List.rev l);
+    Buffer.contents b in
+  print_string (out r.xr_st.ms_out);
+  flush stdout;
+  prerr_string (out r.xr_st.ms_err);
+  if Sys.getenv_opt "MOSS_REF_TIME" <> None then
+    Printf.eprintf "[moss_m2: elaborate %.3fs, run %.3fs]\n" (t1 -. t0) (t2 -. t1);
+  let unsupported i = try prims.(i) with _ -> "?" in
+  match r.xr_out with
+  | XOk _ -> exit 0
+  | XExit c -> exit (snd (Uint63.to_int2 c))
+  | XTrap c ->
+      Printf.eprintf "[moss_ref: trap %s]\n"
+        (match c with 1 -> "unreachable" | 2 -> "integer divide by zero"
+                    | 3 -> "integer overflow" | 4 -> "out of bounds memory access"
+                    | 5 -> "invalid conversion to integer" | _ -> string_of_int c);
+      exit 134
+  | XErr c -> Printf.eprintf "[moss_ref: stuck (XErr %d)]\n" c; exit 3
+  | XUns c -> Printf.eprintf "[moss_ref: unsupported primitive %s]\n" (unsupported c); exit 4
+  | XFuel -> Printf.eprintf "[moss_ref: out of fuel]\n"; exit 5
+  | XRet _ | XBrk -> Printf.eprintf "[moss_ref: stray control transfer]\n"; exit 3

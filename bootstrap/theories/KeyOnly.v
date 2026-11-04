@@ -310,7 +310,10 @@ Definition Sg : gsig := {|
                      | 0 => Some ([ITy T], mkSig [] (TAbs T))
                      | _ => None
                      end;
-  g_fun := fun _ => None
+  g_fun := fun _ => None;
+  g_fixed := fun _ => [];
+  g_poly := fun _ => [];
+  g_cap := fun _ => ([], [])
 |}.
 
 Definition main : fsym := 2.
