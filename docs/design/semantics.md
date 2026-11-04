@@ -110,6 +110,13 @@ depends on its kind, and this determines the compilation model:
 So after lowering, types and fns disappear into specialization, and vals are
 the only context that exists at runtime.
 
+*Amended by [D84] (November 2026): a fourth kind.* Providing an
+**abstract functor** symbol (`bind F = G;`, [D78]) supplies a closure:
+`G`'s binds, plus the context captured at the bind — types, fns, methods,
+abstract functors, and vals by value. It is static as code, like a fn
+binding; its captured vals are run-time data, as a fn binding's captured
+context is. So vals are still the only context that exists at runtime.
+
 ## 2. Lexical structure
 
 **[D3] DECIDED (keywords).** The keyword set is:
@@ -307,6 +314,43 @@ a union rule — rev 1's proposal of a post-monomorphization distinctness
 check for unions is off the table, which is exactly why union members must
 already be nominal where the union is written ([D15]). The sole sanctioned
 exception is the instantiation-depth backstop of [D30].
+
+*Exceptions, listed honestly (November 2026).* An audit found the
+sentence above false as a description of the compilers. What stands:
+
+- **[D30]'s backstop** is sanctioned and implemented in neither compiler.
+- **Polymorphic recursion** is what it was for, and it crashes today. A
+  function that binds a type in terms of itself and calls itself (`nest(x:
+  T, n: Int)` binding `T = Wrap` over the `T` in force, `Wrap(T)` a tag)
+  needs infinitely many specializations, and both compilers crash on it:
+  the self-hosted one exhausts its call stack, and the bootstrap's back
+  end recurses without bound (since [D84]'s closures; before them it
+  compiled `nest` once and ran it). The bootstrap's interpreter, which
+  specializes nothing, runs it.
+  The calculus agrees that specialization need not be finite
+  (`polyrec_infinite`, in a specialization proof not yet moved into
+  `docs/design/core/`). **Planned
+  resolution, chosen by the designer:** a static check that rejects a
+  cycle of calls whose type bindings grow along it (an *expanding*
+  cycle), made generically, before specialization — so this stops being
+  an exception, and [D30]'s backstop is not needed. Not implemented.
+- **A union slot that is a reference in one member and a scalar in
+  another** only after specialization: a union whose slot is an abstract
+  type in one member and a `Ref` in another type-checks generically and is
+  refused at a specialization where the abstract type is a scalar
+  ([D75]'s one valtype per slot; the self-hosted compiler's `?P`, the
+  bootstrap's `NotCompilable`). Recorded here; per-valtype lanes would
+  remove it.
+- *No longer an exception:* [D79]'s memories. A `Memory` bound to
+  something that was not a memory was refused where an instruction was
+  compiled; since the memory instructions became a family ([D84] rule 7,
+  [D79]'s amendment), any type names a memory and nothing is refused
+  after checking.
+
+[D84] keeps the principle for functors: a platform functor applied after
+rebinding a type its binding is fixed in (`bind StructRef = I32; …; bind
+Heap;`) compiled to an invalid module before it, and is refused
+statically now (`functor_fixed_stale`, `functor_fixed_stale_i32`).
 
 **[D17] DECIDED (subtyping is injection-only).** A value of a union member
 type implicitly injects into any union containing that member (this is how
@@ -676,36 +720,29 @@ requirement set to be available the same way — matched by symbol identity,
 with square-bracket applications composed. This check is the core of the
 lowering phase, and per [D1] it is a set-membership test, not a search.
 
-**[D29] OPEN (functors).** syntax.md's unused `fn f(): bind Needs` return
+**[D29] DECIDED (functors; settled by [D53], [D55] and [D84]).** syntax.md's unused `fn f(): bind Needs` return
 form and `bind f();` call form were the spring design's answer to a real
 need: mapping an instance of one context shape to an instance of another.
 The designer's new framing: under the ML-modules reading that operation is a
 *functor*, and functors deserve to be their own construct, distinct from
 functions even syntactically — the fn-returning-`bind` conflation was one of
-the least elegant parts of the spring design. The unresolved wrinkle is
+the least elegant parts of the spring design. The wrinkle was
 vals: "take some stuff in my current context plus a couple of runtime
 values, and give back a context that uses them" is genuinely useful, and a
 val-taking functor is what made fn-returning-`bind` attractive in the first
 place.
 
-One reframing worth discussing, riding the [D2] static/dynamic split:
-restrict functors to *static* items — they may consume and produce only type
-and fn bindings, applied entirely at elaboration time. Since the only
-runtime content of a context is val data, the val-threading half of the use
-case is then served by ordinary code: a defined function that evaluates its
-arguments and `bind`s them before calling onward, i.e. exactly the manual
-prologue `src/cli.moss`'s `parse` already writes
-(`let pos = zero(); bind cell=pos; bind string=text; ...`). If that split
-holds, functors never touch runtime data, and "functor over vals" stops
-being a construct and becomes a code pattern. Whether that pattern is
-ergonomic enough without sugar is the open half of the question.
-
-For the MVP: no functors, no fn-returning-`bind`; both grammar forms are
-cut, and the manual-prologue pattern covers the current corpus. The designer
-has accepted the static-only split as a starting point but remains concerned
-that `val` support will be needed eventually — so the val half of the
-question stays open rather than dissolved, to be revisited with evidence
-from rewriting `src/`.
+*How it was settled.* Rev 3 floated restricting functors to *static*
+items (types and fns only), leaving vals to a hand-written prologue; for
+the MVP both grammar forms were cut. [D53] rejected the static-only
+reframing (`Std` is mostly vals), [D55] made functors their own
+declaration, applied with `bind F;`, and made them **produce** vals. The
+other half, a functor **taking** vals, is settled by capture: a binding of
+an abstract functor captures the vals it needs where it is made, by value
+([D84] rule 3), as a fn binding captures its context ([D26]). So "take
+some stuff in my current context plus a couple of runtime values" is a
+functor whose binding captures them; there is no `bind F(x);`, as [D55]
+point 2 preferred, and no fn returns a `bind`.
 
 **[D30] DECIDED (monomorphization depth backstop).** Because type/fn binds
 drive specialization, a recursive function that re-binds a *type* on the
@@ -718,6 +755,12 @@ This is the sole exception to [D16]'s no-post-monomorphization-checks
 principle, with precedent: Rust likewise accepts polymorphic-recursion-
 shaped programs at check time and only fails with a recursion-limit error
 when monomorphization actually runs.
+
+*Not implemented, and not the plan (November 2026).* Neither compiler has
+the backstop, and the self-hosted one crashes on such a program. The
+designer has chosen to resolve polymorphic recursion with a static
+expanding-cycle check instead, which keeps [D16] without this exception;
+see [D16]'s list of exceptions.
 
 ## 8. Expressions, statements, and patterns
 
@@ -738,6 +781,8 @@ break;          # loops only; carries no value
 `for` is out of the MVP entirely — designing an iteration protocol is
 deferred with it ([D35]). Both `while` and `loop` stay; each is trivial once
 the other exists.
+*(Reversed by [D85], confirmed by the designer: `for x in xs { ... }` is a
+statement, sugar over four iteration methods of `lib/access.moss`.)*
 
 *Amendment (rev 5, DECIDED):* `let`/`var` take an optional type annotation
 (`var x: Foo = ...;`). Forced by forward inference: without it, initializing
@@ -772,6 +817,16 @@ access `x.f` (which projects through a nominal-record tag: `imp.name` where
 construction `Some[T=TokenId](expect(Name))` ([D42], [D83]), unit
 values by name (`Eof`), `if`/`else if`/`else` as an expression, and `match`.
 Unary and binary operator expressions are out of the MVP ([D33]).
+
+*Evaluation order (November 2026, DECIDED by the designer).* A call
+evaluates its receiver first, if it has one, then its arguments left to
+right, then calls: `x.m(a, b)` evaluates `x`, `a`, `b`, and `f(a, b)`
+evaluates `a`, `b`. An operator is a method call ([D68]), so `a + b`
+evaluates `a` before `b`, and both always ([D68]'s no `&&`). Nothing
+had said so. Both compilers and the Rocq reference interpreter already
+did this; the bootstrap's Python interpreter evaluated the arguments
+before the receiver, and was changed to match, with a test. Not yet
+specified: the order of a record construction's fields.
 
 **[D33] DECIDED (no operators in the MVP).** No unary or binary operator
 expressions at all for now; the operator tokens stay lexed but reserved
@@ -994,6 +1049,8 @@ punted deliberately. The four `for` loops in `src/` (§12) get rewritten with
 `loop`/`while` over explicit state, and the typed-binder form
 (`for Import imp in imports`, `src/lower.moss:45`) is cut along with the
 rest.
+*(Reversed by [D85]: `for x in xs` exists, over `.begin`, `.more`, `.get`
+and `.after`. The typed-binder form stays cut.)*
 
 ## 9. Methods: attached and detached
 
@@ -1114,6 +1171,18 @@ any subset of `Std` (hello.md). The only primitively provided contexts are
 `Wasm` (instruction intrinsics, `lib/wasm.moss`) and `Wasi` (host imports,
 `lib/wasip1.moss`); `Std` is meant to be *implemented in Moss* on top of them
 and bound by a driver, which is the `# TODO: Bind Std` in `src/main.moss`.
+
+*Amended by [D84] (November 2026): the platform's root context.* The
+platform runs `main` in its root context, and `main` assumes what it
+uses of it (`assume Wasm, Wasi, Branch`, and `bind WasiStd;` for
+`Std`). Since [D84] the platform's functors (`Heap`, `Mutable`, `Arrays`)
+are not in `Wasm` but in a context of their own, `Gc`
+(`lib/wasm.moss`), and `Gc` is in force in `main` whatever `main`
+assumes, together with the types its functors are fixed in (`StructRef`,
+`I32`, `ArrayRef`): a program that binds `WasiStd`, which takes `Gc`,
+need not assume it. Only `main` has it so. Any other function that
+applies or needs a platform functor assumes `Gc`, as any requirement is
+assumed (`assume Std, Wasm, Gc { … bind Heap; … }`).
 
 **[D38] DECIDED (bootstrap shortcut).** The bootstrap compiler provides
 `Std` natively at first (Python implementations of `String`, `Path`, `Cell`,
@@ -1353,6 +1422,12 @@ Sub-questions, as the designer settled them:
    shadows for the rest of the block, exactly as two hand-written binds do
    today. The only check worth adding is that a functor may not apply
    itself, which would not terminate at elaboration.
+   *(Amended by [D84] rule 3f: for a functor bound to an abstract `F`, the
+   check is made at the bind, and only through `F`'s own inputs. A `G`
+   bound to `F` that applies `F` reads it per application, and so reaches
+   itself, only when `F` is among `F`'s inputs; otherwise it captures the
+   binding of `F` in force at the bind, a polyfill. Both compilers name
+   the error.)*
 
 Two options from rev 7 are withdrawn. Extending bracket application to fns
 and vals was a category error — brackets *refine a signature* ([D53]) and
@@ -1593,7 +1668,8 @@ which works only for programs that sit inside a copy of this repository.
 A program elsewhere had to keep its own copy of `lib/` beside it, and a
 symlink would not do, because the compiler sees one preopened directory
 under WASI. The driver already knows where the library is: it finds the
-prelude, beside the entry file or installed, to pass it as argument zero.
+prelude, beside the entry file or installed, to pass it as argument zero
+(not beside the entry file any more: see the amendment below).
 So an import path whose first segment is `.` or `..` keeps its meaning,
 and any other path is relative to the prelude's directory: `import
 "wasi.moss"` is the library's `wasi.moss` from any file. Absolute paths
@@ -1603,8 +1679,8 @@ with `./` or `../`, so nothing changed meaning. A run without a prelude
 (only test harnesses do that) has no library, and reads bare paths the
 old way.
 
-*Amended (November 2026), pending the designer's confirmation: the
-library is the compiler's own.* The driver no longer looks for a prelude
+*Amended (November 2026), DECIDED by the designer: the library is the
+compiler's own.* The driver no longer looks for a prelude
 beside the entry file. It used the nearest `lib/prelude.moss` above the
 entry, so a compiler from one checkout run on a file inside another (a
 worktree on another branch) read that checkout's library, which it was
@@ -2529,7 +2605,7 @@ assume Layout {
 }
 ```
 
-- **Tagdef** = `type` _name_ (`[` **List**[_name_] `]`)? **Type** `;`
+- **Tagdef** = `tag` _name_ (`[` **List**[_name_] `]`)? (`(` **Type** `)` | **RecordType**) `;` (in [D83]'s spelling)
 - A tag's parameters are the type symbols its payload mentions, closed
   through the nominals it mentions as in [D71], **together with** those
   it lists. So `Packed[Item=Long]` and `Packed[Item=Num]` are different
@@ -3021,8 +3097,10 @@ imported detached `m` at that receiver, the call is the provision.
   preference for the provision was this rule, applied late.
 - **The cost:** a type's own method can be overridden from outside, by a
   context that imports the same detached name and provides it at exactly
-  that type — which Rust forbids, and which here is [D76]'s and the
-  designer's polyfill story. A lint may flag an override by a different
+  that type — which Rust forbids, and which here is the designer's
+  polyfill story ([D84]'s `functor_polyfill` is the same for a platform
+  functor; this cited a "[D76]", but no entry D76 was ever written). A
+  lint may flag an override by a different
   function where that is known statically.
 - **Rejected: ambiguity as an error.** It rejects the [D54] idiom, whose
   two candidates are usually one function, and a "unless they are the
@@ -3099,7 +3177,8 @@ requirement like any other.
 - The platform provides the abstract functors `lib/wasm.moss` declares, as
   it provides that file's abstract fns ([D52]). `Heap` ([D75]) is the first:
   `functor Heap: Wasm, Boxed -> Boxed.boxed, Ref.deref;`, and nothing about
-  it is special syntax.
+  it is special syntax. *(Since [D84], `Heap[Boxed]`: polymorphic in
+  `Boxed`, fixed in `StructRef`, and listed in `Gc`, not `Wasm`.)*
 
 *What it is for.* Separating **where** a mode applies, which the code that
 applies it decides, from **what** the mode is, which whoever binds the
@@ -3123,7 +3202,9 @@ name.
 made at its inputs as they are at the application — `bind Heap;` after
 `bind Boxed = Expr` provides at `Expr`, after `bind Boxed = Stmt` at
 `Stmt`. So a functor bound to `F` serves *every* instantiation of `F`'s
-inputs, where a provision serves only the one it was made at ([D62]). For a
+inputs *(of its polymorphic inputs only, since [D84]: it is fixed in the
+other types its result mentions, captured at the bind)*, where a
+provision serves only the one it was made at ([D62]). For a
 functor with a body that is just elaboration: its binds are written in
 Moss, run per application. For an abstract functor it is not: generic code
 that assumes `F` applies it at instantiations its caller never sees, so the
@@ -3156,7 +3237,11 @@ type ([D69]) — a platform-provided abstract functor (`Packing: Wasm, Item
   application of `F` has all of `F`'s inputs in context, so `G`'s are met —
   and must provide *exactly* `F`'s outputs: fewer would leave a promised
   provision missing, more would bind what the caller did not ask for.
-  Nothing is inferred, only checked ([D27]).
+  Nothing is inferred, only checked ([D27]). *(Amended by [D84] rule 3:
+  `G`'s inputs that `F` takes, or that are among `F`'s polymorphic types,
+  are supplied by each application; any other input of `G` is captured
+  at the bind, and must not mention a type applications supply. So `G`
+  may also take *more* than `F`.)*
 - An abstract functor may produce vals, as any functor may ([D55]): a val
   output is a bind evaluated at the application, which runs there anyway.
 - `bind F;` with nothing bound to `F` is the ordinary error for a
@@ -3181,6 +3266,11 @@ type ([D69]) — a platform-provided abstract functor (`Packing: Wasm, Item
   `Heap` outside `Wasm`, assumed by name — would make a library that
   boxes say so separately, which [D78]'s "a library that needs `Heap`
   says so" might have meant; it is one line of lib/wasm.moss either way.
+  *(Reversed by [D84]: the platform's functors are in `context Gc`, not
+  `Wasm`, so none is among its own inputs and code that assumes `Wasm`
+  needs none of them; `main` has `Gc` from the platform's root context
+  ([D37]). And `assume Heap` alone no longer works: assuming it needs
+  `StructRef`, which it is fixed in, in force ([D84] rule 2).)*
 - *A binding is static and captures nothing.* `bind F = G;` records
   which functor `F` is: in the bootstrap an `ir.BindFunctor` (the
   interpreter's context entry, and the back end's specialization
@@ -3192,6 +3282,10 @@ type ([D69]) — a platform-provided abstract functor (`Packing: Wasm, Item
   to callees, keyed in the specialization cache — but at no
   instantiation: coherence ([D62], [D71]) has nothing to compare, since
   a binding serves every instantiation of the inputs.
+  *(Replaced by [D84] rules 2 and 3: a binding is a closure, capturing
+  what `G` takes beyond what applications supply, vals by value; and `F`
+  is at an instantiation of its fixed inputs, on which coherence compares
+  it.)*
 - *The polymorphic provider is elaboration per application, in both.*
   - The self-hosted compiler already elaborates per specialization: `bind
     F;` looks up `F`'s row in the specialization's environment and runs
@@ -3209,7 +3303,11 @@ type ([D69]) — a platform-provided abstract functor (`Packing: Wasm, Item
     specialization (whose type arguments it already tracks). Every
     candidate is therefore type-checked at every application of `F`,
     used there or not — harmless when, as below, each is checked against
-    its own inputs.
+    its own inputs. *(Replaced by [D84] rule 3: a binding with a body is
+    checked once, at the bind, generic in what applications supply, and
+    lowered there as a closure, which an application runs. The bootstrap
+    still lowers the platform's own bindings as branches at the
+    application; they are all its scan still finds.)*
   - Tests cover a binding made where the inputs mean nothing (`Boxed`
     unbound in `main`) and applied inside a generic library at two
     instantiations (`Expr`, `Stmt`), a binding copied from an assumed
@@ -3255,7 +3353,9 @@ type ([D69]) — a platform-provided abstract functor (`Packing: Wasm, Item
   same programs, with one difference of timing that is the self-hosted
   compiler's everywhere: a bad `G` bound but never applied is reported
   by the bootstrap and not by the self-hosted compiler, as an uncalled
-  generic function's errors are.
+  generic function's errors are. *(Since [D84] both check at the bind,
+  with each type applications supply fresh, so the self-hosted compiler
+  reports a bad `G` bound but never applied too.)*
 - *`bind F;` with nothing bound* is "`F` is not available in the context
   here: nothing binds it, and nothing here assumes it (D78)" in the
   bootstrap and `?Q ... F` (`c_unbound`) in the self-hosted compiler, the
@@ -3408,6 +3508,12 @@ does not provide `Scalar` is refused like any missing item).
   self-hosted compiler, checking each specialization, compares concrete
   types there and so catches the mismatch only where they differ.
   (Since [D80] it is checked generically, in both: `functor_promise`.)
+  *(Replaced by [D84] rule 3d: a binding's pins are checked at the bind.
+  An unbracketed `Fast` is polymorphic in everything its result
+  mentions, `Int` included, so `bind Fast = WasiFloats;` is refused
+  there, in both (`functor_promise`, `functor_promise_candidate`,
+  `functor_unbracketed_pin`); `functor_fast` now declares `Fast[]: Int
+  -> Floats`, fixed in `Int` and taking nothing it does not need.)*
 
 *Deviations and what the self-hosted compiler cannot see.* All but the last
 two points below were closed by [D80], which gave the self-hosted compiler
@@ -3500,7 +3606,8 @@ is re-proved over it, still closed under the global context.
   args(φ) available and `e` typed under res(φ) keyed as declared; a
   runtime entry `DFun g` with no captured context; the dynamics re-keys
   the caller's environment to g's arguments, runs g's binds, and keeps
-  exactly res(φ). The key lemma is `safety_binds_apply`: each re-keying is
+  exactly res(φ) *(since [D84], `DFun h sms dc`, carrying the context
+  captured at the bind)*. The key lemma is `safety_binds_apply`: each re-keying is
   an instance of the defined-call case, the body runs by the same world
   lemmas as the expression-level binds, and the result agrees at the
   caller's grounding extended by the type each `t` was made — the witness
@@ -3545,7 +3652,12 @@ is re-proved over it, still closed under the global context.
   pass each once, with a record in linear memory as the fallback past
   the limit, which until then should be a compile error rather than an
   invalid module. Not a semantic change; deferred until a program in the
-  proposal needs it.
+  proposal needs it. *(November 2026: the driver now validates the
+  compiler's output with Wasmtime before Binaryen wherever it optimizes,
+  and the artifact `moss build` writes, and `moss run` relies on
+  Wasmtime's own validation; so a function past the limit is refused, as
+  a compiler bug, rather than written. Still not a compile error. [D84]'s
+  captured vals add to these parameters.)*
 
 **[D79] DECIDED by the designer and implemented (multiple memories).** WebAssembly modules may have more than
 one linear memory (multi-memory, part of Wasm 3.0, shipped in Chrome,
@@ -3568,6 +3680,9 @@ a compile-time choice — in Moss, a contextual type, like `Float`.
   (loads, stores, `memory.size`/`grow`/`copy`/`fill`) under `assume Memory`.
   The platform provides `Memory` at the root as the module's first memory,
   index 0, exported as `memory` (which WASI preview 1 requires).
+  *(Amended by the November 2026 note at the end of this entry: the
+  memory instructions are methods of `Addr[Memory]`, provided by the
+  platform's family `Memories[Memory]`.)*
 - A program names more memories as units (`tag Scratch;`) and binds
   `Memory` to one in a scope. The back end gives each distinct memory
   reached its own index, emits the memory section, and puts the index on
@@ -3648,6 +3763,8 @@ one. (Survey: the thesis repository's `scratch/mmres/`.)
   tied to one; which memory it uses is the `Memory` in force where it is
   specialized. Binding `Memory` to anything but a unit or the platform's
   own is refused where an instruction is compiled, not at the bind.
+  *(Both halves replaced in November 2026, below: an instruction's memory
+  is its receiver's, and any type names a memory.)*
 - *The library regrouped.* `bind Memory = Scratch; bind WasiContainers;`
   did not work as the library was grouped: the string list did not
   type-check, and `put_bytes`, a WASI call, would have run in `Scratch`.
@@ -3699,6 +3816,39 @@ allocator leaving the other's data intact (`memory_reset`); text made in
 list where the main memory's is expected (`memory_mismatch`), printing a
 `Scratch` string as it is (`memory_print`), and applying a WASI-calling
 functor where `Memory` is rebound (`memory_wasi`).
+
+*Amended (November 2026): the memory instructions are a family, and any
+type names a memory.* Under [D84] the exemption above — instructions
+provided at every memory though the rule for any other provision ties it
+to the `Memory` it was made at — was a special case in both compilers,
+which also kept `Memory` out of the instructions' dependencies. It is
+gone, and so is the rule:
+
+- `lib/wasm.moss` declares `tag Addr[Memory](I32);`, an address typed by
+  the memory it is into ([D73]), and the memory instructions are its
+  attached methods (`Addr.i32_load()`, `Addr.i32_store(value)`,
+  `Addr.memory_size()`, `Addr.memory_copy(src: Addr, len)`, …). The
+  platform provides them through `functor Memories[Memory]: I32, I64,
+  F32, F64, Memory -> Addr.i32_load, …;`, a family ([D84] rule 7),
+  polymorphic in `Memory` and fixed in the scalar types, listed in
+  `Wasm`. Code that assumes `Wasm` gets each instruction on demand at the
+  memory its receiver names: `Addr[Memory=M]` selects memory `M`.
+- The bare-address forms the library is written with (`i32_load(address:
+  I32)`, …) are ordinary Moss under `assume …, Memory, Memories`: each
+  makes `Addr(address)`, an address in the `Memory` in force where it is
+  called, and calls the member. So which memory an instruction uses is
+  said by a type, as for a handle; a functor binding that captured
+  `Memory` uses the bind's, by capture, with no rule about memories
+  (`functor_capture_memory`: `Poke[]: Wasm -> poke` takes `Wasm`, so
+  `Memory`, which its result does not mention, is read per application;
+  `Poke2[]: -> poke` takes nothing, so its binding captures `Memory`).
+- The platform's provision of a family is total in its polymorphic inputs
+  ([D84] rule 7), so `Memory` may be bound to any type, and each distinct
+  type reached names a memory of its own: `memory_any_type` binds it to
+  `Num` and to `Chr` and gets three memories. Nothing is refused after
+  checking, and [D16] lists no memory exception.
+- The WASI functions are unchanged: under `assume Memory`, provided at the
+  root's memory only.
 
 **[D80] DECIDED by the designer and implemented (the self-hosted compiler types generically).**
 The bootstrap lowers each function once, against its generic types: an
@@ -3800,7 +3950,8 @@ exactly as `Packed` does (a test shows it can).
   `Array[Arrayed=X]` and, by [D74], at the receiver's element type. No
   `array.new_default`: it would be a constructor with no receiver to key
   it by, and the library below does not need it. `Arrays` is listed in
-  `Wasm`, as `Heap` is ([D78]).
+  `Wasm`, as `Heap` is ([D78]). *(Since [D84], `Arrays[Arrayed]` and
+  `Mutable[Boxed]`, listed in `Gc` with `Heap`.)*
 - **Element layout: one array per lane.** A WasmGC array element is a
   single field, and a Moss value is a run of scalars ([D59]); WasmGC has
   no inline structs. The back end gives `Array[Arrayed=X]` the type
@@ -3837,6 +3988,15 @@ exactly as `Packed` does (a test shows it can).
   no fill value until the first push), growth by `.arrayed` and `.copy` —
   and a program binds its accessors as `packed.moss` binds `Packed`'s. One
   test builds one and runs generic code over it and over `Packed`.
+  *(Amended by [D84]: **fixed-size arrays are in `Std`**; growable lists
+  stay a program's business. `lib/array.moss` declares `tag
+  Array[Item](ArrayHandle);` over an abstract handle, and the family
+  `Arrays[Item]: Size, ArrayHandle -> Item.arrayed, Array.get, Array.set,
+  Array.length, Array.begin, Array.more, Array.after` (indexed by `Size`,
+  [D85]); `Std` lists `ArrayHandle` and `Arrays`, and `WasiStd` binds
+  them to this entry's GC arrays (`GcArrays`), once for every element
+  type. Code under `Std` gets an array's members on demand, at whatever
+  `Item` its receiver names.)*
 - `wasm-features.txt` needs nothing: arrays, packed `i8`/`i16` fields and
   `array.copy`/`fill` are all in `gc`.
 
@@ -4046,26 +4206,9 @@ sequences, the unit injection fix); the self-hosted compiler: emit.moss
 (array types, mutable fields, `vt_eqref`), insn.moss (`struct.set` and
 the array instructions), codegen.moss (`cg_gc`, `array_of`/`lane_of`,
 `emit_gc_op`, forging, locals of the new valtypes, `unreachable` as
-never), boot.moss, spell.moss (regenerated from gensrc.py).
-
-*Implementation.* Both back ends: array and lane-struct types in the
-`rec` group, keyed by the type `Arrayed` is bound to, as D75's structs
-are; the per-lane instruction sequences; `ref.cast` at a forging
-construction; `mut` struct fields where `Mutable` is applied; the
-bootstrap's interpreter holds an array as a Python list. Tests, in
-`tests/wasi/`: arrays of `Int`, f64, `Ref[Boxed=Expr]` and an unboxed
-`Expr` (four lanes) made, filled, copied and summed (`gc_array`);
-a growable list built in the test over `Array` and `Ref.set`, with
-generic code over `.push`/`.get`/`.length` run on it in one block and on
-`Packed` in another, past the first capacity, to the same output, and a
-list of `Ref[Boxed=Stmt]` executed in order (`gc_list`); an array used
-inside a `bind Memory = Scratch` block (`gc_array_memory`); `Ref.set`
-seen through an alias (`gc_mutable`); an index past
-the length trapping (`gc_array_bounds`) and a forged `Array` trapping
-(`gc_array_forge`); and rejected in both compilers, an
-`Array[Arrayed=Int]` read at `Char` (`gc_array_misread`), `.arrayed`
-without `Arrays` (`gc_unarrayed`) and `.set` without `Mutable`
-(`gc_immutable`). 
+never), boot.moss, spell.moss (regenerated from gensrc.py). (A second,
+shorter *Implementation* paragraph that repeated the bullets and *Tests*
+above was removed in November 2026.)
 
 **[D83] DECIDED by the designer and implemented (`tag` declares nominal types, in Rust's three forms).**
 `type` had three forms and `unit` one, and two of `type`'s told a
@@ -4114,6 +4257,391 @@ regenerated) and both parsers; the VS Code grammar. Tests:
 `test_tag_patterns_take_parentheses` in bootstrap/tests/test_parse.py, and
 `tests/errors/type_not_tag.moss`.
 
+**[D84] DECIDED by the designer and implemented (an abstract functor's fixed and polymorphic inputs; a functor binding is a closure; members of a family on demand).**
+[D78] made a binding of an abstract functor serve *every* instantiation of
+its inputs, capture nothing, and be checked per application. Three things
+were wrong with that.
+
+- **The platform's bindings did not serve every instantiation.** `bind
+  StructRef = I32; bind Boxed = Point; bind Heap;` was accepted by both
+  front ends and compiled to an invalid module (the self-hosted compiler)
+  or ignored the rebind (the bootstrap), and so did `I32` rebound before
+  `bind Arrays;` in both: [D16] violations. The platform provides `Heap`
+  at one `StructRef`, not at every one.
+- **A binding that pins a type its result mentions was checked by a
+  closed-world scan.** `WasiFloats` binds `Int = Num`, and `Floats`
+  mentions `Int`; the bootstrap checked, at each application of `Fast`,
+  every functor that could be bound to it anywhere in the program.
+- **A rebound `Float` took its containers with it by hand.** `FloatList`
+  was part of `Floats`, so every provider of `Float` provided a list too,
+  and generic arrays would have needed a line per element type in every
+  provider (`DoubleDouble`, `Shadow`, `Dualize`, `WasiFloats32`).
+
+*In one paragraph.* An abstract functor `F[P…]` is polymorphic in the
+types `P` and **fixed** in `X(F)`, the other types its result mentions.
+`bind F = G;` makes a closure: what `G` takes that `F` takes is supplied
+by each application, the rest is captured where the bind is, and `G`'s
+body is checked there once, generic in what applications supply, making
+`F`'s result with `X(F)` as it is there. `bind F;` reads `F`'s inputs
+where it is, and `X(F)` must still mean what it meant at the bind
+([D72]), else a static error. A **family** — an abstract functor whose
+result is methods only, each keyed so that its key names the instantiation
+— need not be applied by hand: code that requires the family gets each
+member at the instantiation its receiver names, by applying the binding in
+force there. An unbracketed functor is polymorphic in everything its
+result mentions (`X = ∅`).
+
+*Decided.*
+
+1. **Declaration.** `functor F[P₁, …, Pₖ]: Inputs -> Outputs;` (brackets
+   on an abstract functor only; `F[]` is legal) lists `P(F)`. `M(F)` is
+   the type symbols the items of `Outputs` mention — for a val or fn, its
+   dependencies: the type symbols of its whole `assume` nesting, which is
+   what coherence compares it on ([D71], [D79]), not only its signature's;
+   for a method, its receiver, its brackets' right-hand sides and its
+   signature, less the bracketed symbols; for an abstract functor item
+   `G`, `X(G)` — closed through relevant parameters ([D71], [D73]), less
+   `F`'s type outputs. **`X(F) = M(F) ∖ P(F)`**, a property of the
+   declaration alone. An unbracketed `functor F: …;` means `P(F) = M(F)`.
+   Symbols of `P(F) ∪ M(F)` that `Inputs` does not list are implicit
+   inputs. Type inputs outside `X(F)` (`P(F)`, and e.g. `Memory` under
+   `Heap`) are read at each application; type outputs are never fixed. So
+   a fn declared under `assume Wasm` fixes a functor whose result holds it
+   in `Memory`; `functor_capture_memory` declares its `poke` under `I32`
+   for this reason.
+2. **A context item at an instantiation.** `F` is at an instantiation of
+   `X(F)`, as a val is at its telescope's ([D62], [D71]). Assuming or
+   listing `F` needs `X(F)` in force ([D20]: "assuming `Heap` needs
+   `StructRef` in force"); coherence compares `F` on `X(F)` alone, the
+   functor analogue of comparing a method on the symbols its signature
+   mentions. A callee's need of `F` is compared like any need, used or not
+   ([D20], [D79]); so the platform's functors are not in `Wasm` (8), or
+   every function assuming `Wasm` would need `Heap` coherent.
+3. **`bind F = G;`, `G` with a body.**
+   - (a) `X(F)` is in force here.
+   - (b) An input of `G` that `F` takes, or that is in `P(F)`, is
+     **linked**: each application supplies it, as it is there. Every
+     other input of `G` is **captured** here, as it is here ([D26],
+     [D66], [D70]) — types, fns, methods, abstract functors, and **vals,
+     by value** — and must be available here. No captured item may
+     mention a type applications supply (`functor_capture_mentions_poly`,
+     `functor_inputs`).
+   - (c) `G`'s binds are checked here once: each type applications supply
+     is fresh (one per class `F`'s inputs merge, [D43]), linked items are
+     provided at them, captured items are as here.
+   - (d) **Pins.** After `G`'s binds each `x ∈ X(F)` denotes exactly what
+     it denotes here: a body's `bind Int = Num` is a manifest equation
+     (Leroy 1994). Pins are binds in `G`'s body; there is no form of them
+     in the signature. They may not change a type of `P(F) ∩ M(F)`; they
+     may rebind a type outside `M(F)` for their own use. A pin whose type
+     mentions a type that applications supply is an error: the fixed set
+     is *not* widened per binding to what a pin mentions, which would be
+     unsound (`functor_pin_through_input` would read a `B` as an `A`).
+     The only closure of `X` is the declaration's, through relevance (1).
+   - (e) `G`'s result equals `F`'s, item by item, exactly ([D27]): `X(F)`
+     read here, `P(F)` abstract, type outputs existential ([D78]). An
+     abstract functor `K` in the result puts `X(K)` in `M(F)` (1), so a
+     pin cannot leak through it: pinning a type `K` is fixed in is checked
+     by (d) (`functor_in_result_pin`).
+   - (f) If `G` applies `F` and `F` is among `F`'s own inputs, the
+     application would reach itself: an error at the bind ([D55]).
+     Otherwise `G` captures the binding of `F` in force: with the
+     platform's functors in `Gc`, none is among its own inputs, and a `G`
+     bound to `Heap` that applies `Heap` is a polyfill
+     (`functor_polyfill`).
+4. **`bind F = H;`, `H` abstract in force:** `X(F)` in force here; `H`
+   coherent here; `X(H) ⊆ X(F)` (equivalently `P(F) ⊆ P(H)`); `F`'s
+   entry is `H`'s, capture included (`functor_copy_narrower`).
+5. **`bind F;`** `F` and its inputs in force; each `x ∈ X(F)` denotes what
+   it did where `F` was provided (bound, or assumed: the identity), else a
+   static error, as for any item mentioning a rebound type ([D72];
+   `functor_fixed_stale`, `functor_fixed_stale_i32`). Type outputs are
+   fresh rigid generations; exactly `F`'s result survives ([D78]), its
+   items made at the application's generations, and a result functor item
+   at its fixed inputs as here.
+6. **Run time.** A binding is a closure: `G`'s binds, its captured
+   entries (vals by value), and its captured type arguments ([D2] gains a
+   fourth kind of provision). An application runs the binds over the
+   linked entries, then the captured ones, and files the result under its
+   items read at the application. Captured vals travel with `F` across
+   frames, as a fn provider's captured context does.
+7. **Families on demand.** A **family** is an abstract functor whose
+   result is method items only (no type, val, fn or functor), each of
+   whose items' key — receiver and brackets — determines every `P(F)`
+   symbol the item mentions. Being one is a property of the declaration,
+   as `X(F)` is; nothing marks it. Its conditions:
+   - Its bindings bind no vals and apply no functor but a family, so where
+     an application is placed cannot be observed (`family_apply`).
+   - No two items of its result share an instance of their key: a call
+     where they would (`F[A, B]: Std -> A.m, B.m` at `A = B`) is an
+     ambiguity error (`family_ambiguous`).
+   - At most one family in a context may produce a given method key; a
+     collision is an error, as two imports of one name are ([D44];
+     `family_collision`). A member of a family in force cannot be bound
+     directly: the family is how it is provided (`family_direct`).
+
+   **Calls.** Where a method call's key `(receiver at τ, m)` is in a
+   family `F`'s result and no provision of it is in force, the call is
+   checked and compiled as if preceded by `bind F;` with `P(F)` read off
+   the key (θ), in a scope of its own: the explicit application of 5, at
+   θ. The key names the family by declaration and the binding is the one
+   in force, so nothing is searched ([D1]).
+
+   **Needs.** So too where a call's callee needs such a key: a need of a
+   defined function, or an item of a context it assumes, that lists a
+   member's key. Where nothing in force provides it, the call is checked
+   and compiled as if preceded by `bind F;` at the θ read off each such
+   key — one application per family and θ — in a scope of its own around
+   the call. For example, with
+
+   ```moss
+   assume Std, Stored, Store {
+     ...
+     context Storage = Stored, Store, store, narrow, widen,
+       Store.set[Elem=Stored, Index=Int], Store.get[Elem=Stored, Index=Int];
+   }
+   ```
+
+   and `report` assuming `Std, Storage`, a block of `main` with `bind
+   Store = Array[Item=Float]; …; report(n);` needs no `bind Item = Float;
+   bind Arrays;` of its own: `report`'s needs of `Store.set` and
+   `Store.get` are keys of `Arrays` at `Item = Float`.
+
+   A context need not list a family's members: `Std` lists `Arrays`, not
+   its members, and `Floats` lists no containers. The **platform's**
+   binding of a family it declares is total in the family's polymorphic
+   inputs — it serves every θ — so any type may be `Boxed`, `Arrayed` or
+   `Memory` ([D79]'s amendment).
+8. **Library.** `Heap[Boxed]`, `Mutable[Boxed]` and `Arrays[Arrayed]`
+   are bracketed, fixed in `StructRef` or in `I32` and `ArrayRef`, and
+   listed in `context Gc` in `lib/wasm.moss`, not in `Wasm`; the memory
+   instructions are the family `Memories[Memory]` in `Wasm` ([D79]).
+   The platform runs `main` in its root context, so `Gc`, with the types
+   its functors are fixed in, is in force in `main` beside whatever `main`
+   assumes; `main` need not assume it, and any other function that applies
+   or needs a platform functor assumes `Gc` ([D37]). `Std` carries
+   `ArrayHandle` and the family `Arrays[Item]: Size, ArrayHandle ->
+   Item.arrayed, Array.get[Elem=Item, Index=Size], …` (lib/array.moss,
+   indexed by `Size`, [D85]); `WasiStd` binds it to `GcArrays`, which
+   pins `Size = Num` and `ArrayHandle = ArrayRef` and captures `Wasm`,
+   `Branch` and `Gc` (so the platform's `Arrays`). `FloatList` is gone, so
+   `DoubleDouble`, `Shadow`, `Dualize` and `WasiFloats32` have no array
+   or list lines. Concrete functors' binds still land in the block
+   ([D55]); nothing is contained.
+
+*Settled with the designer* (provisionally, "it should become clear later
+as I see more real examples").
+
+- The fixed set is the declaration's, never widened by a binding's pins
+  (3d): that widening made `X` depend on the binding, which generic code
+  cannot see, and was unsound.
+- The platform's functors leave `Wasm` for `Gc`, and coherence of a
+  functor need is checked unconditionally, like any need. The special
+  case that checked it only where the callee reached an application is
+  gone; across the test corpus it served only functions that assumed
+  `Heap` through `Wasm` without using it. `Gc` is in the platform's root
+  context rather than assumed by every `main`.
+- Rule 7's conditions as written: no direct binding of a member, keys
+  determining all of `P`, no val binds or non-family applications in a
+  family's bindings, no colliding families, no shared key instance
+  within one; and needs covered as well as calls.
+- Pins in the functor body only; the bootstrap's signature form is gone.
+- No `F[x=τ]` context items: rule 7 covers the case that motivated them.
+- `Size`, `Index` and `for`, which arrays indexed apart from `Int` and
+  iteration over them need: [D85].
+
+*Why it is sound.* The rules are mechanized as an extension of the core
+calculus (an application `EApply u θ sm e` at a substitution θ, a binding
+`EBindFun u h sm smc e` recording what it captured, a runtime entry `DFun
+h sms dc` carrying it), in a `CoreMoss.v` and a `D84.v` that are yet to be
+moved into `docs/design/core/`; every theorem closes under the global
+context.
+
+- *Bind.* The captured telescope is closed, which is 3b's last sentence;
+  pins are equations on captured types checked at the bind; a captured
+  symbol that is an input or output of `F` must be in `X(F)`, which is
+  what refuses 3d's widening (`held_narrow_rejected`). `capture_at_bind`
+  and `capture_through_copy`: the entry agrees with the caller's world.
+- *Application.* `polymorphic_provider_fixed`: an application at θ yields
+  exactly its result read at θ, the entry being closure-shaped.
+  `fixed_inputs_never_stale`: a pinned body runs only at the generation
+  it was checked at, for every captured fixed input — nothing else is
+  read from the capture. *Result coherence* is a premise
+  (`res_coherence_needed` shows a result val goes wrong without it); a
+  surface `bind F;` reads every input from the context, so elaboration
+  discharges it, and for a family it is vacuous.
+- *On demand (7)* elaborates to an application of `F` at θ around the
+  call, θ not the identity in general: the application rule as proved,
+  with no new safety lemma, plus weakening of the variable environment
+  (`on_demand_elaboration`); θ is a function of the key on what the member
+  mentions (`on_demand_theta_determined`); and an example applies
+  `Arrays[Item]` at two `Item`s in one well-formed program
+  (`arrays_on_demand_ok`). The conditions are needed: a fn in a family's
+  result makes a run go wrong (`family_fn_result_incoherent`), and a val
+  bind in a family's binding, or an application of a functor whose
+  binding has one, makes placement observable — two well-typed
+  placements, one returning and one diverging (`family_val_placement`,
+  `family_apply_placement`). Two items of one family at one key instance
+  have no answer, so the call is refused.
+- *Decidability:* `fixed_ok_decidable`, `res_coherent_decidable`,
+  `pins_hold_decidable`, `capture_fixed_decidable`; no judgment
+  quantifies over the program's functors, so [D1] stands and the
+  closed-world scan is not needed. *Conservativity*, rule by rule:
+  `identity_application_conservative`, `empty_capture_conservative`,
+  `identity_keys_conservative`; every earlier theorem and example
+  re-checks. *Specialization* (`spec_typed`, `specialization`) is
+  re-proved with applications at θ, but its functor entries do not yet
+  carry the capture. The coherence argument that compares a functor on
+  `X(F)` alone (as a method on its signature's symbols) is argued and
+  tested, not proved.
+
+*Amends.* Each is noted in place.
+
+- [D2]: a functor binding is a fourth kind of provision, (binds, captured
+  context).
+- [D29]: decided — a binding captures vals by value.
+- [D55]: a functor may not apply itself — at the bind, and only through
+  `F`'s own inputs.
+- [D78]: "serves *every* instantiation of `F`'s inputs" — of its
+  polymorphic ones; "`G` may require *fewer* inputs" — its other inputs
+  are captured; "*A binding is static and captures nothing*", the
+  per-application scan, and "*Each branch at the type the application
+  promises*" — replaced by 2 and 3; "`Heap` is listed in `Wasm`" —
+  reversed.
+- [D79]: the memory instructions are the family `Memories[Memory]`, and
+  any type names a memory.
+- [D81]: fixed-size arrays are in `Std`; growable lists stay a program's
+  business.
+- [D16]: kept, now for functors too; its exceptions are listed there.
+- [D37]: `Gc` is in `main`'s root context.
+
+*Consequences.*
+
+- Rebinding a fixed input obliges a scope to rebind the functor with the
+  rest of that input's family of items — [D72]'s rule with one more kind
+  of item. Rebinding a polymorphic one costs nothing: arrays follow a
+  rebound `Float` (7), and since they are fixed in `Size`, not `Int`, a
+  rebound `Int` too ([D85]).
+- A provider takes as inputs only what is polymorphic and captures what
+  is platform-specific: `Fast[]: Int -> Floats`, not `Fast: Wasm, Branch
+  -> Floats`; taking `Wasm` would make `I32` per-application, and
+  `WasiFloats`'s pin of `Int` would be refused by 3d.
+- A `Std`-only library that rebinds `Int` (`tests/wasi/saturating.moss`)
+  must still re-provide what genuinely depends on `Int`: its conversions,
+  and — until they are families indexed by `Size` — the lists, cells and
+  strings, which are still indexed by `Int`. Arrays it leaves alone.
+- Two bindings at one `X` make the same output types (applicative,
+  [D18]); generativity stays open under [D78].
+
+*Implementation.* Both compilers: one path for bracketed and unbracketed
+functors (`P(F) = M(F)` for the latter, so the per-application candidate
+check is gone); `M(F)` through dependencies and result functor items;
+the bind check generic in every per-application type; applications
+checked against the binding's fixed inputs; result functor items
+provided at the application's fixed inputs; coherence of functor needs
+checked unconditionally; rule 7's family checks and on-demand members at
+method calls, lowered as an application at θ in a scope around the
+call; `FloatList`, `FloatArrays` and `FloatArraysOf` deleted from the
+library and the tests' array lines with them.
+
+Rule 7's needs are covered at a call of a defined function or attached
+method, in both compilers (`demand_needs` in each): the callee's method
+needs that nothing in force provides and a family in force produces are
+applied before the call, in a scope of its own (`family_need`). Not yet
+covered: a provider bound with `bind f = g;` whose `g` needs a member,
+which is still refused at the bind as a need nothing provides, and a
+functor application whose inputs list a member.
+
+- *Bootstrap:* a binding with a body lowers to a closure at the bind
+  (`ir.BindFunctor.closure`, `ir.FunctorClosure`; `build.BoundClosure`
+  and the interpreter's `BoundClosure`, with captured val slots), and an
+  application carries θ on its polymorphic types (`ApplyFunctor.pargs`)
+  and its linked items; lower.py's `functor_mentions`, `functor_fixed`,
+  `functor_poly`, `is_family`, `family_member` and `on_demand`. The
+  platform's own bindings are still lowered as branches at the
+  application. Removed: the per-binding widening, the containment
+  variant, signature pins.
+- *Self-hosted:* every functor through one closure path, linked items per
+  application, captured vals across frames, the bind check with every
+  per-application type fresh, pins checked at the bind, functor results
+  carrying their captures, `Memory` in checking frames; two new codes,
+  `e_family` (a member bound directly) and `e_self_apply` (3f). Its other
+  D84 refusals reuse existing codes, and the tests require only that it
+  refuse.
+- *Calculus:* as above; the paper's §3.4 and the README of
+  `docs/design/core/` still describe [D78]'s version.
+
+*Standing tests* (`tests/wasi/`), interpreted and in both compilers unless
+said. Run: `functor_fast` (`Fast[]: Int -> Floats`, four roots);
+`functor_input_per_application` (`22`); `functor_capture_val` (`55`);
+`functor_capture_memory` (`07`); `functor_merge_bracketed` (`tt`);
+`arrays_in_scratch` (`6`); `functor_in_result_ok` (`5`);
+`arrays_on_demand` (`33`); `family_need` (rule 7's needs: `55`, `55`,
+`6`); `functor_polyfill` (`7`); `memory_any_type`;
+`dd_arrays` (`sd(xs: Array[Item=Float])` with `for x in xs` inside `bind
+DoubleDouble;` and `bind Shadow;`, which have no array lines; run by the
+self-hosted compiler, lowered by the bootstrap, whose back end compiles
+each function once); `size_rebind`, `size_std`; and, adapted,
+`gc_bodiless`, `lists`, `dual_std`, `newton`. Refused by both:
+`functor_fixed_stale`, `functor_fixed_stale_i32` (at the application);
+`functor_copy_narrower` (at the copy); `functor_capture_mentions_poly`,
+`functor_pin_through_input`, `functor_in_result_pin`,
+`functor_unbracketed_pin`, `functor_promise`,
+`functor_promise_candidate`, `family_apply`, `family_direct` (at the
+bind); `family_collision` (where both families are in force);
+`family_ambiguous` (at the call).
+
+**[D85] DECIDED by the designer and implemented (`Size`, `Index`, and `for x in xs`).**
+[D84]'s arrays are fixed in their index type. Indexed by `Int`, they
+would be fixed in `Int`, and a scope that rebinds `Int` (64-bit, checked,
+saturating) would have to rebind arrays with it. And with arrays of
+anything in `Std`, code that only wants the elements should not have to
+count. This reverses [D31] and [D35] on `for`.
+
+*Decided.*
+
+- **`Size`** (`lib/size.moss`): `type Size;`, abstract like `Int` and
+  distinct from it, the type of array lengths and indices, with `.size()`
+  at `Int` and `.int()` at `Size` (`context Sizes`), listed in `Std`
+  after `Int`. `WasiStd` binds `Size = Int` at its root, a generation of
+  its own ([D72]), and both conversions as the identity, so a scope that
+  later rebinds `Int` leaves `Size`, and every array, where they were
+  (`size_rebind`, `size_std`). Under `Std` the two are two types and an
+  integer literal is an `Int` ([D68]), so index arithmetic converts
+  (`xs.get(i.size())`); the loop `while i < xs.length().int() { …
+  xs.get(i) … }` is refused under `Std` (`size_mix`) and compiles in
+  `main`, where both are `Num`.
+- **`Index`** (`lib/access.moss`): the shared accessors are declared over
+  an index type of their own — `.length(): Index`, `.get(index: Index):
+  Elem`, `.set(index: Index, value: Elem)` — applied per provision:
+  `Index=Int` for strings and lists (`IntList.get[Elem=Int, Index=Int]`),
+  `Index=Size` for arrays.
+- **`for x in xs { body }`** is a statement, sugar at parse time for
+
+  ```moss
+  { let c = xs; var i = c.begin(); while c.more(i) { let x = c.get(i); i = c.after(i); body } }
+  ```
+
+  where `c` and `i` are names no program can write, and the four calls are
+  of `lib/access.moss`'s `.begin(): Index`, `.more(at: Index): Bool`,
+  `.get` and `.after(at: Index): Index` whatever is in scope, as an
+  operator's are of `num.moss`'s ([D68]). So the loop does no arithmetic
+  on the index in the program's terms: the collection steps its own.
+  `in` is not a keyword. The binder is scoped to the body; `break` leaves
+  the loop and `return` the function. What can be iterated is whatever
+  provides the four at its type: in `Std`, arrays, whose family provides
+  them on demand ([D84] rule 7); `Std`'s lists and strings do not provide
+  them yet. The typed-binder form ([D35]) stays cut.
+
+*Implementation.* Both parsers (`for`, already a keyword, was reserved);
+lib/size.moss, lib/access.moss, lib/array.moss, `Std`, `WasiStd`,
+`GcArrays`; the bootstrap's native table provides `Size`. Tests, in
+`tests/wasi/`: `iterate` (`for` over arrays of `Float` and `Char`, with
+`break`, `return`, nesting, an empty array and shadowing), `size_rebind`
+and `size_std` (over `saturating.moss`, a `Std`-only library rebinding
+`Int`), interpreted and in both compilers; and refused by both,
+`size_mix`.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -4126,13 +4654,16 @@ written in Moss. (Records are done, and there are no tuples [D63].)
 Still awaiting the designer, all deferred rather than blocking: [D48]
 string literals (when diagnostics/codegen make embedded strings
 unavoidable — *not* the prelude path, see [D52]) · attached methods on union-headed *aliases* in general ([D47] — solved
-for `Bool` by [D45]'s nominal wrapper, and for detached methods by [D75]) · D29 the `val` half of functors ·
-[D50]'s v0 restrictions on defined vals
+for `Bool` by [D45]'s nominal wrapper, and for detached methods by [D75]) ·
+[D50]'s v0 restrictions on defined vals · the planned expanding-cycle
+check for polymorphic recursion ([D16]; decided, not implemented)
 
-Everything else is **DECIDED**: D1–D28 · D30–D49 (D3/D4 by designer fiat,
-D13 option.moss → alias, D16 no post-monomorphization checks, D22 total or
-absent, D24 dropped, D30 depth backstop as sole D16 exception, D31/D35 no
-`for`, D33 no operators in the MVP (since landed as D68), D36
+Everything else is **DECIDED**: D1–D49 (D3/D4 by designer fiat,
+D13 option.moss → alias, D16 no post-monomorphization checks, with its
+exceptions listed, D22 total or
+absent, D24 dropped, D29 functors, taking vals by capture (D84), D30 depth backstop, not
+implemented and superseded as the plan by D16's expanding-cycle check, D31/D35 no
+`for` (reversed by D85), D33 no operators in the MVP (since landed as D68), D36
 methods via Q1–Q7, D41 keep `unit` (superseded by D83), D43 consistent merging, D44 import
 collisions + `::` tighter than `.`, D45 concrete `Bool`, D46 aliases
 export, D47 operators are methods, D49 no automatic TCE — loops are the
@@ -4150,7 +4681,8 @@ partial-order precedence, with no `&&`/`||`, and numeric literals as
 nothing but arithmetic over `zero`, `one`, `.add`, `.mul`, `float` and
 `.div`, meaning whatever that bound arithmetic computes, D69 a packed
 list for any element type — one implementation over a layout, a nominal
-receiver per element type, and `FloatList` in `Std` bound with `Float`,
+receiver per element type, and `FloatList` in `Std` bound with `Float`
+(gone since D84: `Std`'s arrays are a family),
 D71 a nominal's identity is its relevant parameters — the type symbols
 its payload mentions, by least fixpoint; applying any other is an error —
 with coherence checked on (receiver, method, θ) and on `dep_tys` in both
@@ -4175,16 +4707,25 @@ types through a reference as in Rust, and detached methods at union and
 record receivers —D78 abstract functors, `functor F: A -> B;` a
 context item bound to a functor with a body and applied with `bind F;`,
 a polymorphic provider whose binding serves every instantiation of its
-inputs, and whose result may hold types, each a fresh generation at the
+inputs (its polymorphic ones, since D84), and whose result may hold types, each a fresh generation at the
 application that no value may carry out of its block — D79 multiple memories, `Memory` a contextual type that
-memory instructions run in and handles list, with WASI's functions
+memory instructions run in and handles list (since D84 the instructions
+are `Addr[Memory]`'s, from the family `Memories`, and any type names a
+memory), with WASI's functions
 provided at the main memory alone, D80 the self-hosted compiler types each
 frame generically and resolves methods once per call site, as the
 bootstrap does, D81 garbage-collected arrays — `Array[Arrayed]` provided by
 the platform's `Arrays` functor, one array per scalar of the element — and
 `Ref.set`, a box's whole value written, provided by `Mutable`, D83 `tag`
 declares nominal types as `tag X;`, `tag X(T);` or `tag X { ... };`, matched
-as constructed, with `type` for abstract types and aliases and no `unit`)
+as constructed, with `type` for abstract types and aliases and no `unit`,
+D84 an abstract functor polymorphic in its bracketed types and fixed in
+the rest of what its result mentions, its binding a closure checked once
+at the bind, members of a family applied on demand, and the platform's
+functors in `Gc`, in `main`'s root context, D85 `Size` for array lengths
+and indices, `Index` for access.moss's, and `for x in xs` over four
+iteration methods; and D32 as amended: a call evaluates its receiver,
+then its arguments left to right)
 
 The MVP language is fully pinned down. Next: rewrite
 `docs/reference/syntax.md` against this log, then build the bootstrap

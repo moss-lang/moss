@@ -3,10 +3,11 @@
 A valid Moss source file can be parsed according to a grammar defined on an
 alphabet of tokens. This grammar describes the MVP language pinned down in
 the [semantics decision log](../design/semantics.md); constructs that were
-cut from the MVP (`for` loops, character and string literal expressions,
-declaration-site needs, bind-returning functions) are absent here even where
-earlier revisions of this document had them. Operator expressions and
-numeric literals came back with [D68].
+cut from the MVP (character and string literal expressions, declaration-site
+needs, bind-returning functions) are absent here even where earlier
+revisions of this document had them. Operator expressions and numeric
+literals came back with [D68], and `for` loops, over an iteration protocol,
+with [D85]. References like [D68] are to entries of the decision log.
 
 ## Tokens
 
@@ -106,8 +107,7 @@ Notes:
 - A digit run may not run straight into a letter or `_` (no suffixes,
   hex or underscores yet: `2x`, `1e`, `1ex` and `1e5x` are errors), but a
   digit may continue a _name_ (`x2`).
-- One token is lexed but reserved: the keyword `for` appears in no
-  production below.
+- `in`, in a **For**, is a _name_ there, not a keyword.
 
 ## Grammar
 
@@ -126,9 +126,11 @@ by the comma token `,` with an optional trailing comma.
 
 A **Spec** names a symbol: a plain path (`Token`, `parser::TokenId`), an
 attached or receiver-keyed detached method (`Path.join`, `A.gimme[Foo=B]`),
-or a bare detached method (`.m`). An **App** must bind *all* of its target's
-requirements (total application, [D22]); **AssumeItem** deliberately has no
-**App** ([D24]).
+or a bare detached method (`.m`). An **App** binds some of its target's
+requirements; each one it does not bind must be in force where the
+reference is written, and passes through as that same symbol, so nothing
+is left dangling ([D22] and its clarification). **AssumeItem**
+deliberately has no **App** ([D24]).
 
 ### Types
 
@@ -159,7 +161,7 @@ the product type ([D63]). `This` is legal only inside method declarations.
 - **FnName** = _name_ | _name_ `.` _name_ | **DotName**
 - **Param** = _name_ `:` **Type**
 - **Ctxdef** = `context` _name_ `=` **List**\[**Spec**\] `;`
-- **Functordef** = `functor` _name_ `:` **List**\[**Spec**\] `->` **List**\[**Spec**\] (`{` **Bind**\* `}` | `;`)
+- **Functordef** = `functor` _name_ (`[` **List**\[_name_\] `]`)? `:` **List**\[**Spec**\] `->` **List**\[**Spec**\] (`{` **Bind**\* `}` | `;`)
 
 In a **UseItem** rename, both sides must agree on dottedness (`use .m as
 .m1`, never `use .m as m1`). The three **FnName** forms are a plain
@@ -167,28 +169,37 @@ function, an attached method (the receiver must elaborate to a nominal
 type), and a detached method. A **Fndef** ending in `;` declares an abstract
 function; detached methods admit only that form ([D36]). A **Valdef** with
 an initializer is a *defined* val — concrete like a defined function, e.g.
-the prelude's `val true: Bool = Bool True;` ([D50]). A **Functordef**
-ending in `;` has no body: the platform provides it, and only
-`lib/wasm.moss` may declare one — its `Heap`, whose application provides
-`.boxed` and `Ref.deref` with GC instructions ([D75]).
+the prelude's `val true: Bool = Bool(True);` ([D50]). A **Functordef**
+ending in `;` declares an *abstract functor*, a requirement like an
+abstract fn, provided by `bind F = G;` ([D78]); a module anywhere may
+declare one, and the platform provides those of `lib/wasm.moss`. Only an
+abstract functor may have brackets, which list the types it is
+polymorphic in (`functor Heap[Boxed]: …;`, `F[]` included); a functor with
+a body has none ([D84]). The binds of a functor with a body are its
+whole body, and its result is what they provide ([D55]).
 
 ### Statements and blocks
 
 - **Block** = `{` **Stmt**\* **Expr**? `}`
-- **Stmt** = **Let** | **Var** | **Assign** | **Bind** | **While** | **Loop** | (**Expr** `;`?)
+- **Stmt** = **Let** | **Var** | **Assign** | **Bind** | **While** | **Loop** | **For** | (**Expr** `;`?)
 - **Let** = `let` _name_ (`:` **Type**)? `=` **Expr** `;`
 - **Var** = `var` _name_ (`:` **Type**)? `=` **Expr** `;`
 - **Assign** = _name_ `=` **Expr** `;`
 - **Bind** = `bind` **List**\[**Spec** (`=` (**Lambda** | **Expr**))?\] `;`
-  - an item with no `=` applies a functor of that name (D55)
+  - an item with no `=` applies a functor of that name ([D55])
 - **Lambda** = `(` **List**\[_name_ (`:` **Type**)?\] `)` (`:` **Type**)? `=>` **Expr**
   - an anonymous function ([D70]), legal only as the right side of a fn or
     method bind
 - **While** = `while` **Expr** **Block**
 - **Loop** = `loop` **Block**
+- **For** = `for` _name_ `in` **Expr** **Block**
+  - sugar for a `while` over the collection's `.begin`, `.more`, `.get`
+    and `.after` ([D85])
 
 The `;` after an **Expr** statement may be omitted only when the expression
-is an **If**, a **Match** or a bare **Block** (which end in `}`).
+is an **If**, a **Match** or a bare **Block** (which end in `}`). The
+condition of a **While** and the collection of a **For** are parsed as the
+condition of an **If** is (see the notes under Expressions).
 
 A **Block** is an expression context: its value is the trailing **Expr**, or
 `()` if there is none. It scopes the `let`s, `var`s and `bind`s inside it,

@@ -839,10 +839,9 @@ class Lower:
             pass  # concrete; always available
         elif sym.kind == SymKind.FUNCTOR and sym.decl.binds is None:
             # D78: an abstract functor is a requirement like any other.
-            # Its signature is read where it is applied, not here, so
-            # assuming it needs nothing else in force (D20), and its
-            # provision is at no instantiation: a binding serves every
-            # one of its inputs.
+            # Its signature is read where it is applied, not here, and
+            # a binding serves every instantiation of its polymorphic
+            # inputs (D84); it is at an instantiation of the rest.
             self.check_family_collision(env, module, sym)
             env.functors[sym] = True
             # D84 (draft): a bracketed one is at an instantiation of its

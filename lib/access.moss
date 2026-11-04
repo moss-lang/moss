@@ -30,8 +30,9 @@ assume Index {
   assume Elem {
     fn .get(index: Index): Elem;
 
-    # Lists have it — IntList, FloatList and the packed lists under them
-    # (D69) — so it is shared like the rest rather than any one's own.
+    # Lists have it — IntList and the packed lists under it (D69) — and
+    # so do `Std`'s arrays (D84), so it is shared like the rest rather
+    # than any one's own.
     fn .set(index: Index, value: Elem);
   }
 

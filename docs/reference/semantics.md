@@ -31,14 +31,18 @@ compilation model:
   monomorphization.
 - A **fn** or **method** binding supplies code plus the context it captured
   at the bind site.
-- A **val** binding supplies a runtime value. Vals are the only context
-  that exists at runtime.
+- An **abstract functor** binding supplies a closure: a functor's binds,
+  plus the context it captured at the bind site.
+- A **val** binding supplies a runtime value. Vals, including those
+  captured by the bindings above, are the only context that exists at
+  runtime.
 
 ## Modules
 
 A module is a source file. An `import` path whose first segment is `.`
 or `..` is relative to the importing file; any other names a file in the
-standard library, so `import "wasi.moss"` works from anywhere ([D64]).
+standard library — the compiler's own, wherever the importing file is —
+so `import "wasi.moss"` works from anywhere ([D64]).
 Cycles are errors. `as` binds a module alias for `::`
 access; `use` copies names into file scope (`*` copies all exports).
 Exports are the module's own top-level declarations, its explicit `use`d
@@ -64,6 +68,8 @@ except the standard library itself.
 | `fn .m(...);` | detached method (receiver supplied per provision) |
 | `context C = items;` | named requirement bundle |
 | `assume items { decls }` | requirement block |
+| `functor F: In -> Out { binds }` | functor: a run of binds providing `Out` from `In` |
+| `functor F[P, ...]: In -> Out;` | abstract functor, polymorphic in `P, ...` |
 
 Types are unit `()`, structural records, unions, the uninhabited
 `|`, and references to declared types. Union members must be nominal with
@@ -80,12 +86,15 @@ the enclosing `assume`s provide; an abstract `type T;` has none either.
 A function, val or context nested in `assume` blocks is implicitly
 parameterized by everything they name, and a nominal type by its relevant
 parameters among them — this is the entire generics mechanism. A
-square-bracket application like `Pair[T=Int]` must bind *all* of the
-target's requirements, and on a type may bind only its relevant
+square-bracket application like `Pair[T=Int]` substitutes for the
+requirements it names; every requirement it does not name must be in
+force where it is written and passes through as the same symbol, so no
+reference leaves one dangling. On a type it may bind only relevant
 parameters: `Stop[Int=Char]`, or `W[T=Char]` where `W`'s payload does not
 mention `T`, is an error. An unapplied reference substitutes nothing and
-passes requirements through as the same symbols. There is nothing in
-between.
+passes every requirement through. A tag may also list, in brackets after
+its name, parameters its payload does not mention (`tag
+Packed[Item](I32);`), which are relevant like the rest.
 
 A val, fn or method provision serves only the instantiation it was made
 at: for a val or fn, what each type symbol of its whole `assume` nesting
@@ -93,7 +102,8 @@ denoted where it was assumed or bound; for a method, what the symbols its
 signature mentions denoted (its own application, beside the receiver).
 A call whose callee needs the item at a different instantiation — after
 `bind T = ...` rebinds a symbol, or through a method bind's own brackets —
-is rejected.
+is rejected. An abstract functor is at the instantiation of the types it
+is fixed in (see Functors).
 
 ## Contexts and merging
 
@@ -114,7 +124,14 @@ types is an error, reported where the context is formed.
 
 `bind x=e;` provides a symbol from the statement to the end of the
 enclosing block; inner binds shadow outer ones. Type binds take a type and
-are static. Val binds evaluate their expression once. Fn binds name a
+are static. Each type bind starts a new *generation* of its symbol: the
+right side is resolved at the bind, so `bind Float = Dual;` may mention the
+`Float` in force before it; after it, every reference to the symbol is to
+the new generation; and everything typed before it keeps the old one. A
+value of the old generation does not mix with the new, and a provision
+made at the old one does not serve a need at the new one, so code that
+uses an item mentioning the type after rebinding it must rebind that item
+too. Val binds evaluate their expression once. Fn binds name a
 defined function whose signature must match the abstract signature under
 the substitutions in force — nothing is inferred from a bind, ever — and
 whose own requirements are satisfied and captured at the bind site — or an
@@ -171,7 +188,61 @@ own module is the only place it is looked for, and it matches by name. A
 **detached** method must be imported, or reached as `mod::m`, which
 resolves it to one exact symbol; the name it was *declared* under is not
 what a call matches on, so a renamed import (`use .m as .m1`) is called
-as `.m1`. Absence is an error.
+as `.m1`. Absence is an error. Where a receiver has an attached method `m`
+and the context provides the imported detached `m` at it, the call is the
+provision ([D77]), decided against the types as written, so it is the
+same in every specialization. An attached method is at its receiver's
+instantiation, not the calling scope's ([D74]).
+
+## Functors
+
+A functor maps the items its inputs name to the items its result names.
+`functor F: In -> Out { binds }` declares one with a body, whose binds
+must provide every item of `Out` (checked where it is declared). `bind
+F;` applies it: `In` must be in force, and its binds take effect there,
+in the current block, as if written in place (names in them resolve where
+the functor is written).
+
+`functor F: In -> Out;` declares an **abstract functor**, a requirement
+like an abstract fn: assumed or listed in a context, provided by `bind F
+= G;` (`G` a functor with a body, or another abstract functor in force),
+and applied by `bind F;`, which runs whatever `F` is bound to there and
+keeps exactly `F`'s result. Brackets list the types it is *polymorphic*
+in (`functor Heap[Boxed]: Wasm, Boxed -> Boxed.boxed, Ref.deref;`); it is
+*fixed* in the other type symbols its result mentions (here `StructRef`,
+through `Ref`'s payload), and an unbracketed abstract functor is
+polymorphic in all of them.
+
+- `bind F = G;` is a closure. An input of `G` that `F` takes, or that is
+  one of `F`'s polymorphic types, is supplied by each application;
+  every other input of `G` — a type, fn, method, abstract functor, or a
+  val, by value — is captured at the bind, and may not mention a type
+  applications supply. `G` is checked there once, generic in what
+  applications supply, and must provide exactly `F`'s result. Its binds
+  may *pin* a type `F` is fixed in (`bind Int = Num;`) only to what that
+  type already means at the bind, and may not touch a polymorphic one.
+- `bind F;` needs `F` and its inputs in force, and each type `F` is fixed
+  in must mean what it meant where `F` was provided; otherwise it is an
+  error, as for any item after its type is rebound. Each type in `F`'s
+  result is a fresh generation at the application, which no value may
+  carry out of the block.
+- A functor bound to `F` that applies `F` captures the binding of `F` in
+  force at the bind, unless `F` is among `F`'s own inputs, which is an
+  error.
+
+A **family** is an abstract functor whose result is methods only, each
+keyed so that its receiver (with brackets) determines the polymorphic
+types it mentions; `Std`'s `Arrays[Item]` and the platform's `Heap`,
+`Mutable`, `Arrays` and `Memories` are families. Code that requires a
+family need not apply it: a method call, or a callee's need, whose key is
+a member's and that nothing in force provides is checked and compiled as
+if preceded by `bind F;` at the instantiation the key names, in a scope
+of its own around the call. So code under `Std` uses arrays of any
+element type, of whatever `Float` is in force, with no binds. A family's
+bindings bind no vals and apply no functor but a family; a member of a
+family in force cannot be bound directly; two families producing one
+method key cannot both be in force; and two items of one family at one
+key are an ambiguity at the call.
 
 ## Expressions
 
@@ -181,8 +252,14 @@ or an expression of type `|`). `if`/`while` conditions have type `Bool`,
 which is a standard-library tag over two units, eliminated only by `if` (or
 by matching the tag). `match` is exhaustive over the scrutinee's union;
 `match e {}` requires `e : |`. `return` and `break` are expressions of type
-`|`. Iteration is `while` and `loop`: tail calls are *not* eliminated as a
-matter of semantics, and recursion is not the loop idiom. There are no
+`|`. Iteration is `while`, `loop` and `for`: tail calls are *not*
+eliminated as a matter of semantics, and recursion is not the loop idiom.
+`for x in xs { body }` evaluates `xs` once and is `var i = xs.begin();
+while xs.more(i) { let x = xs.get(i); i = xs.after(i); body }`, calling
+`lib/access.moss`'s four methods at the collection's type, provided like
+any method (`Std` provides them for arrays). A call evaluates its receiver,
+if any, then its arguments left to right; an operator's left operand is
+its receiver. There are no
 character or string literals; strings appear only as import paths, and
 other values enter programs through the environment (`char::a`,
 `first_arg()`, `Path.read`).
@@ -235,10 +312,21 @@ constants, the expansion is constant-foldable, and an optimizer folds it.
 
 ## Execution
 
-`main` takes no parameters, returns `()`, and may assume any subset of
-`Std`. Running a program elaborates every definition, checks `main`'s
-requirements against `Std`, and runs `main` with the runtime's provisions
-in force. Three distinct errors mark the boundaries: a name nobody declared
-is *not in scope*; a declared but unprovided symbol is *not available in
-the context*; a requirement beyond `Std` is *not part of the `Std`
-context*.
+`main` takes no parameters and returns `()`. The platform runs it in its
+root context: `main` may assume any of `Wasm` (the instructions,
+`lib/wasm.moss`), `Wasi` (the host's functions, `lib/wasip1.moss`) and
+`Branch` (`i32_bool`, `lib/wasistd.moss`), and `Gc` — the platform's
+functors `Heap`, `Mutable` and `Arrays`, with the types they are fixed
+in — is in force in `main` whether or not it assumes it. `Std` is a
+library over these: a program usually starts `main` with `bind WasiStd;`
+(`lib/wasi.moss`) and calls code that assumes `Std`. Any function but
+`main` that needs a platform functor assumes `Gc`. Three distinct errors
+mark the boundaries: a name nobody declared is *not in scope*; a declared
+but unprovided symbol is *not available in the context*; a requirement of
+`main`'s that the platform does not provide is an error at link.
+
+The platform provides `Memory`, the type of a linear memory, as the
+module's first memory. A program names more by binding `Memory` to any
+other type in a scope; the memory instructions are methods of
+`Addr[Memory]`, an address typed by its memory, so each runs in the memory
+its address names, and handles into memory list theirs ([D79]).

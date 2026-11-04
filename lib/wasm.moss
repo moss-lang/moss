@@ -519,5 +519,6 @@ functor Arrays[Arrayed]: Wasm, Arrayed ->
 # `Wasm`, which each of them takes, so none is among its own inputs — a
 # functor bound to `Heap` that applies `Heap` captures the platform's,
 # a polyfill — and a function that assumes `Wasm` needs none of them.
-# Like `Wasm`, the platform provides it to `main`.
+# The platform runs `main` in its root context, which has `Gc`, so `main`
+# need not assume it (D37); any other function that needs one assumes it.
 context Gc = Heap, Mutable, Arrays;
