@@ -1,7 +1,7 @@
 (* Extraction of the M2 oracle: the Gallina elaborator and MossX.run_main. *)
 From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
-From NM Require Import Audit CoreMoss MossX Sx Elab FastX Prune Parse SlotX FoldX CloX.
+From NM Require Import Audit CoreMoss MossX Sx Elab FastX Prune Parse SlotX FoldX CloX FastPath.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".
@@ -39,7 +39,7 @@ Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
    closure-compile time.  Unchanged in meaning. *)
 Extraction Inline lnil lcons lvar lval bnil capply cbranch csnil cscons.
 Extraction Blacklist String List Char Bool.
-Separate Extraction run_main frun_main oracle_program init_state xinterp f64_bits f64_of_bits elaborate_sx
+Separate Extraction run_main frun_main fast_program oracle_program init_state xinterp f64_bits f64_of_bits elaborate_sx
   parse_moss dump_file print_sx load_bundle bundle_sx print_bundle
   rrun_main shapes compile_fns compile_funs cc ccbs crun_main fold_e fold_b.
 (* CloX again, alone (Extraction Library), with the extraction's term

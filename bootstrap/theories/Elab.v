@@ -672,8 +672,6 @@ Inductive xstmt : Type :=
 | SBindFun  : nat -> nat -> smap -> smap -> xstmt
 | SBindFunA : nat -> nat -> smap -> xstmt
 | SApply    : nat -> subst -> smap -> xstmt
-(* m4, speed: the platform's `Memories` applied keeping the members used *)
-| SApplyBr  : nat -> list (nat * list xbind * smap) -> xstmt
 | SBindPrim : item -> prim -> xstmt
 | SWhile    : xexpr -> xexpr -> xstmt
 | SLoop     : xexpr -> xstmt
@@ -693,7 +691,6 @@ Fixpoint fold_stmts (ss : list xstmt) (tail : xexpr) : xexpr :=
       | SBindFun u h sm smc => XBindFun u h sm smc rest
       | SBindFunA u w sm => XBindFunA u w sm rest
       | SApply u th sm => XApply u th sm rest
-      | SApplyBr u brs => XApplyBr u brs rest
       | SBindPrim i p => XBindPrim i p rest
       | SWhile c b => XSeq (XWhile c b) rest
       | SLoop b => XSeq (XLoop b) rest
@@ -709,7 +706,6 @@ Definition stmt_bind (s : xstmt) : option xbind :=
   | SBindFun u h sm smc => Some (XBFun u h sm smc)
   | SBindFunA u w sm => Some (XBFunA u w sm)
   | SApply u th sm => Some (XBApply u th sm)
-  | SApplyBr u brs => Some (XBApplyBr u brs)
   | SBindPrim i p => Some (XBPrim i p)
   | _ => None
   end.
@@ -743,11 +739,7 @@ Record st : Type := St {
   st_memory_used : bool;
   st_checked_total : list nat;
   st_lang : list (string * nat);   (* lib/{num,int,float,bool,wasm}.moss *)
-  st_unsup : list string;          (* constructs the oracle does not model *)
-  (* m4, speed: the `Memories` fast path (memories_branch) is on; a bind
-     with `Memories` on either side was seen (its precondition fails) *)
-  st_mfast : bool;
-  st_mbound : bool
+  st_unsup : list string           (* constructs the oracle does not model *)
 }.
 
 Definition M (A : Type) : Type := st -> res (A * st).
@@ -783,84 +775,79 @@ Definition fresh : M nat :=
     St (st_w s) (st_syms s) (S (st_next s)) (st_reqs s) (st_sigsyms s) (st_info s)
        (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
        (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-       (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s)).
+       (st_checked_total s) (st_lang s) (st_unsup s)).
 
 (* record updates, one field each *)
 Definition s_syms (f : nmap gsym -> nmap gsym) (s : st) : st :=
   St (st_w s) (f (st_syms s)) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_reqs (f : nmap (list nat) -> nmap (list nat)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (f (st_reqs s)) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_sigsyms (f : nmap (list nat) -> nmap (list nat)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (f (st_sigsyms s)) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_info (f : nmap fninfo -> nmap fninfo) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (f (st_info s))
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_fns (f : list (nat * xexpr) -> list (nat * xexpr)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (f (st_fns s)) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_funs (f : list (nat * (tele * list xbind)) -> list (nat * (tele * list xbind))) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (f (st_funs s)) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_fwd (f : nmap nat -> nmap nat) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (f (st_fwd s)) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_links (f : list ((nat * nat) * nat) -> list ((nat * nat) * nat)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (f (st_links s)) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_flds (f : list (string * nat) -> list (string * nat)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (f (st_flds s)) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_consts (f : nmap (xexpr * ety) -> nmap (xexpr * ety)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (f (st_consts s))
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_wrappers (f : nmap nat -> nmap nat) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (f (st_wrappers s)) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_vars (vs : list (string * nat)) (n : nat) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) vs n (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_memory (b u : bool) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (b || st_memory_bound s) (u || st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
-Definition s_mbound (s : st) : st :=
-  St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
-     (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
-     (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s) (st_mfast s) true.
+     (st_checked_total s) (st_lang s) (st_unsup s).
 Definition s_checked (f : list nat -> list nat) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (f (st_checked_total s)) (st_lang s) (st_unsup s) (st_mfast s) (st_mbound s).
+     (f (st_checked_total s)) (st_lang s) (st_unsup s).
 
 Definition dummy_sym : gsym := GSym 0 0 "?" KUnit (ADUnit "?") None [] OSource.
 
@@ -1814,7 +1801,7 @@ Definition unsupported (why : string) : M unit :=
   fun s => Good (tt, St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s +++ [why]) (st_mfast s) (st_mbound s)).
+     (st_checked_total s) (st_lang s) (st_unsup s +++ [why])).
 
 (* ===================== 9. Into MossX: keys, items, locals ================ *)
 
@@ -2800,33 +2787,6 @@ Definition platform_fun (fg : gsym) : M nat :=
       ret h
   end.
 
-(* m4, speed: the `Memories` fast path, an implementation optimization
-   (Audit.v DRAFT NOTE 24).  Under it the platform's `Memories` enters
-   main's root context as the core functor symbol of its primitives
-   (XDFunSym h, platform_entry), and each application of it is the
-   bootstrap IR's `bind F;` branch for h (XApplyBr), keeping of the
-   family's result at θ only the members the site looks up (apply_family
-   narrows; an explicit `bind Memories;` keeps them all).  Its precondition:
-   the entry in force for `Memories` is always the platform's, i.e. no bind
-   has `Memories` on either side (bind_functor records one in st_mbound);
-   when it fails, or the fast run fails, `elaborate` elaborates again
-   without the fast path, by rule 7 as drafted.  A wanted member missing
-   from the result leaves the application as it was. *)
-Definition memories_branch (fg : gsym) (pre : list xstmt) : M (list xstmt) :=
-  let! s0 := get in
-  if negb (st_mfast s0) then ret pre else
-  let! h := platform_fun fg in
-  let! s := get in
-  match assoc Nat.eqb h (st_funs s) with
-  | None => ret pre
-  | Some (dr, bs) =>
-      ret (map (fun st => match st with
-                          | SApply u th sm =>
-                              if Nat.eqb u (gs_id fg) then SApplyBr u [(h, bs, inst_smap th dr)] else st
-                          | _ => st
-                          end) pre)
-  end.
-
 Fixpoint synth (fuel : nat) (c : cx) (e : env) (x : aexpr) (exp : option ety) {struct fuel}
     : M (xexpr * ety) :=
   match fuel with 0 => deep | S f =>
@@ -3372,7 +3332,10 @@ with provided_call (fuel : nat) (c : cx) (e : env) (ox : xexpr) (oty : ety) (m :
   | _ => fail "internal: method key"
   end end
 
-(* m4, D84 rule 7: `bind F;` at θ (P(F) read as θ for the application only) *)
+(* m4, D84 rule 7: `bind F;` at θ (P(F) read as θ for the application only).
+   `want` is the members the site uses; the elaborator no longer reads it
+   (the application is narrowed to the members used after elaboration, by
+   FastPath.fast_program). *)
 with apply_family (fuel : nat) (c : cx) (e : env) (fg : gsym) (th : list (nat * ety)) (want : list item) {struct fuel}
     : M (list xstmt * env) :=
   match fuel with 0 => deep | S f =>
@@ -3380,17 +3343,6 @@ with apply_family (fuel : nat) (c : cx) (e : env) (fg : gsym) (th : list (nat * 
   let! (pre, e2, _) := apply_abstract f c e1 fg in
   let! mem := is_memories fg in
   (if mem then upd (s_memory false true) else ret tt) ;;
-  (* m4, speed: narrow apply_abstract's full branch to the members used *)
-  let pre := if mem then map (fun st => match st with
-                                        | SApplyBr u [(h, bs, all)] =>
-                                            let pairs := filter (fun p => existsb (item_eqb (fst p)) want) all in
-                                            if forallb (fun w => existsb (fun p => item_eqb (fst p) w) pairs) want then
-                                              SApplyBr u [(h, filter (fun b => match b with
-                                                                     | XBPrim i _ => existsb (fun p => item_eqb (snd p) i) pairs
-                                                                     | _ => true end) bs, pairs)]
-                                            else st
-                                        | _ => st end) pre
-             else pre in
   ret (pre, restore_tn e2 e (map fst th))
   end
 
@@ -3888,19 +3840,13 @@ with apply_abstract (fuel : nat) (c : cx) (e : env) (fg : gsym) {struct fuel} : 
   let! th2 := mmap (fun p => ret (fst p, TAbs (snd p))) (filter (fun p => negb (Nat.eqb (fst p) (snd p))) gens) in
   let! sm := smap_of (map (fun k => (k, site k)) needs) in
   let! (e', _) := provide_result e fg gens in
-  let! mem := is_memories fg in
-  let! pre := if mem then memories_branch fg [SApply (gs_id fg) (th +++ th2) sm]
-              else ret [SApply (gs_id fg) (th +++ th2) sm] in
-  ret (pre, e', cx_with_fresh c (cx_fresh c +++ map snd gens))
+  ret ([SApply (gs_id fg) (th +++ th2) sm], e', cx_with_fresh c (cx_fresh c +++ map snd gens))
   end
 
 (* D84 rule 3, `bind F = G;`, and rule 4, `bind F = H;` *)
 with bind_functor (fuel : nat) (c : cx) (e : env) (fg : gsym) (y : aexpr) {struct fuel} : M (list xstmt * env) :=
   match fuel with 0 => deep | S f =>
   let mi := cx_mod c in
-  (* m4, speed: a bind of `Memories` turns the fast path off (memories_branch) *)
-  let! fmem := is_memories fg in
-  (if fmem then upd s_mbound else ret tt) ;;
   match functor_parts fg with
   | (_, _, Some _) =>
       err mi ("`" ++ gs_name fg ++ "` has a body, so it is applied (`bind " ++ gs_name fg ++
@@ -3915,8 +3861,6 @@ with bind_functor (fuel : nat) (c : cx) (e : env) (fg : gsym) (y : aexpr) {struc
           if negb (kind_eqb (gs_kind bg) KFunctor) then
             err mi ("`" ++ gs_name bg ++ "` is not a functor, so it cannot be bound to `" ++ gs_name fg ++ "`")
           else
-          let! bmem := is_memories bg in
-          (if bmem then upd s_mbound else ret tt) ;;
           let '(bargs, bres, bbody) := functor_parts bg in
           (if negb (is_some bbody) && negb (is_some (nget (en_funs e) (gs_id bg))) then
              err mi ("`" ++ gs_name bg ++ "` is not available in the context here, so it cannot provide a bind (assume or bind it)")
@@ -4194,10 +4138,7 @@ Definition platform_entry (k : key) (prims : list string) : M (option (xdentry *
                match functor_parts g with
                | (_, _, None) => if plat (gs_mod g) then
                                    let! h := platform_fun g in
-                                   let! mem := is_memories g in
-                                   let! s := get in
-                                   (* m4, speed: see memories_branch *)
-                                   ret (Some (if mem && st_mfast s then XDFunSym h else XDFun h [] [], prims))
+                                   ret (Some (XDFun h [] [], prims))
                                  else ret None
                | _ => ret None
                end
@@ -4261,14 +4202,10 @@ Definition lang_modules (w : world) : list (string * nat) :=
 (* The elaborator: a total function from a bundle to a program or an error. *)
 Definition elaborate (b : bundle) : res xprogram :=
   let* w := load_world b in
-  let s0 fast := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false [] (lang_modules w) [] fast false in
-  (* m4, speed: with the `Memories` fast path when its precondition holds
-     (memories_branch), else as drafted *)
-  match elab_program (s0 true) with
-  | Good (p, s) => if st_mbound s then
-                     match elab_program (s0 false) with Good (p, _) => Good p | Bad m => Bad m end
-                   else Good p
-  | Bad _ => match elab_program (s0 false) with Good (p, _) => Good p | Bad m => Bad m end
+  let s0 := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false [] (lang_modules w) [] in
+  match elab_program s0 with
+  | Good (p, _) => Good p
+  | Bad m => Bad m
   end.
 
 (* From the CLI's tokens. *)

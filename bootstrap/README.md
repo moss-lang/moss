@@ -47,7 +47,9 @@ errors and positions included.
     and the concrete primitives (linear memory, IEEE floats, WASI, the GC
     heap); [`FastX.v`](theories/FastX.v) (map-keyed environments) and
     [`Prune.v`](theories/Prune.v) (read-set pruning) make it fast and are
-    proved equal to it.
+    proved equal to it; [`FastPath.v`](theories/FastPath.v) applies a
+    platform family keeping only the members used, proved equal to
+    applying it whole.
   - [`SlotX.v`](theories/SlotX.v), [`FoldX.v`](theories/FoldX.v) and
     [`CloX.v`](theories/CloX.v): the engine that runs the pruned program
     (below), each proved equal to the interpreter before it.
@@ -134,10 +136,12 @@ types (`Audit.v`'s obligations).
 ## The engine
 
 `MOSS_ENGINE` chooses what runs the elaborated program, which is first
-pruned (`Prune.oracle_program`; `MOSS_PRUNE=0` skips it). Every engine is
-proved to compute exactly what Audit's interpreter (`XS.run_main`)
-computes, for every fuel, unless that run gets stuck (pruning's caveat,
-`Prune.oracle_agrees`):
+given the family fast path (`FastPath.fast_program`; `MOSS_FASTPATH=0`
+skips it), then pruned (`Prune.oracle_program`; `MOSS_PRUNE=0` skips it).
+Every engine is proved to compute exactly what Audit's interpreter
+(`XS.run_main`) computes, for every fuel, unless that run gets stuck
+(pruning's caveat, `Prune.oracle_agrees`) or, after the fast path, runs
+out of fuel (`FastPath.fast_run`):
 
 - `fold`, the default: the program pre-resolved, its calls to small fns
   folded, and compiled to closures, run by `CloX.crun_main`
@@ -191,15 +195,20 @@ decision), and the obligations, as module types (Part VI):
   establishes about the front end and the elaborator is that they are
   total and deterministic Gallina functions, plus the lemmas of
   `Parse.v` and `ElabSound.v`, plus the evidence of testing.
-- **The `Memories` fast path** (`Audit.v` DRAFT NOTE 24). Applying the
-  platform's memory family at every memory access would compose all 27 of
-  its members each time, two thirds of the bootstrap's time; the
-  elaborator instead gives each access only the members it reads
-  (`Elab.memories_branch`), unless a program binds `Memories` itself, in
-  which case it elaborates again without the fast path, so what is
-  accepted does not change. That the two elaborations behave alike is a
-  stated, **unproved** lemma (in note 24), needed for the elaborator's
-  soundness against the relation.
+- **The family fast path** (`Audit.v` DRAFT NOTE 24) is proved, and is
+  not the elaborator's: the elaborator applies a family exactly by rule 7
+  as drafted. Applying the platform's memory family at every memory
+  access would compose all 27 of its members each time, two thirds of the
+  bootstrap's time; so the oracle runs `FastPath.fast_program` of the
+  elaborated program (before pruning; `MOSS_FASTPATH=0` skips it), which
+  gives each application of a platform family whose members are
+  primitives (`Memories`) only the members the code after it can look
+  up, when a syntactic check shows that nothing binds, copies or renames
+  the family. `FastPath.fast_run`: the result is exactly the elaborated
+  program's, at every fuel at which that run does not run out of fuel;
+  `Certified.v` binds it (`fast_path_agrees`), and composed with
+  `CloX.engine_agrees` (`fast_path_engine_agrees`) it covers the default
+  pipeline.
 
 Outside Rocq, what is trusted is the OCaml driver (reading files and
 arguments, printing, and the engine's tables, below), Rocq's extraction,

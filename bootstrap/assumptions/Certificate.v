@@ -3,7 +3,7 @@
    transitively everything the guarantee rests on, and check.sh requires
    them to be only the kernel's `Primitive` declarations (Rocq's primitive
    integers, floats and arrays): no Axiom, no Admitted. *)
-From NM Require Certified Parse Prune SlotX FoldX CloX.
+From NM Require Certified Parse FastPath Prune SlotX FoldX CloX.
 
 Print Assumptions NM.Certified.Certified.elaborate.
 Print Assumptions NM.Certified.Certified.elaborate_sx.
@@ -20,6 +20,9 @@ Print Assumptions NM.Certified.Certified.typed_inhabited.
 Print Assumptions NM.Certified.Certified.method_choice_unique.
 Print Assumptions NM.Certified.elaborate_sx.
 Print Assumptions NM.Certified.run_main.
+Print Assumptions NM.Certified.fast_path.
+Print Assumptions NM.Certified.fast_path_agrees.
+Print Assumptions NM.Certified.fast_path_engine_agrees.
 
 (* The front end moss_m2.ml runs on a source file: the Gallina lexer,
    parser and bundler (the driver only reads files), whose output the
@@ -27,10 +30,11 @@ Print Assumptions NM.Certified.run_main.
 Print Assumptions NM.Parse.load_bundle.
 Print Assumptions NM.Parse.bundle_sx.
 
-(* The default engine (MOSS_ENGINE=fold), as moss_m2.ml runs it: pruning,
-   pre-resolution, folding and closure compilation, then the run; and the
-   theorem that makes it Audit's semantics, given the tables the driver
+(* The default engine (MOSS_ENGINE=fold), as moss_m2.ml runs it: the family
+   fast path, pruning, pre-resolution, folding and closure compilation,
+   then the run; and the theorem that makes it Audit's semantics, given the tables the driver
    builds (README.md, What is trusted). *)
+Print Assumptions NM.FastPath.fast_program.
 Print Assumptions NM.Prune.oracle_program.
 Print Assumptions NM.SlotX.shapes.
 Print Assumptions NM.SlotX.compile_fns.

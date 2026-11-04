@@ -16,6 +16,7 @@
 
 From Stdlib Require Import List.
 From NM Require Import Audit CoreMoss MossX Sx Elab Specialization RelFacts.
+From NM Require FastPath.
 Import ListNotations.
 
 Module Certified <: PROVED_NOW.
@@ -52,6 +53,17 @@ Module Certified <: PROVED_NOW.
 
   Definition method_choice_unique := RelFacts.method_choice_unique.
 End Certified.
+
+(* Audit.v DRAFT NOTE 24, the family fast path: the oracle runs
+   FastPath.fast_program of the elaborated program (each application of a
+   platform family of primitives, `Memories`, keeping only the members
+   used).  Proved: that program runs exactly as the elaborated one, at
+   every fuel at which the elaborated one does not run out of fuel; and
+   the default engine on it, pruned, computes the elaborated program's
+   result unless that run runs out of fuel or gets stuck. *)
+Definition fast_path := FastPath.fast_program.
+Definition fast_path_agrees := FastPath.fast_run.
+Definition fast_path_engine_agrees := FastPath.fast_engine_agrees.
 
 (* The executable roots (Extract2.v extracts these). *)
 Definition elaborate_sx := Certified.elaborate_sx.

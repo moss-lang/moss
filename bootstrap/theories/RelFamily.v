@@ -22,14 +22,12 @@ Local Open Scope string_scope.
 Local Open Scope list_scope.
 
 (* m4: the elaborator's bodies (the program has no `main`, so they are read
-   after `lower_all`, before `elab_program` looks for one), with the
-   `Memories` fast path on, as Elab.elaborate first runs it (it does not
-   touch other families) *)
+   after `lower_all`, before `elab_program` looks for one) *)
 Definition family_fns : list (nat * xexpr) := Eval vm_compute in
   match read_bundle family_sx with
   | Good b => match load_world b with
               | Good w => match lower_all (St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0
-                                                false false [] (lang_modules w) [] true false) with
+                                                false false [] (lang_modules w) []) with
                           | Good (_, s) => st_fns s
                           | Bad _ => []
                           end

@@ -24,7 +24,7 @@ Local Open Scope list_scope.
 (* ===================== The elaborator's state, kept =================== *)
 
 Definition dummy_st : st :=
-  St (Elab.World NE [] 0 NE 0 NE) NE 0 NE NE NE [] [] NE [] [] NE NE [] 0 false false [] [] [] false false.
+  St (Elab.World NE [] 0 NE 0 NE) NE 0 NE NE NE [] [] NE [] [] NE NE [] 0 false false [] [] [].
 
 (* Run the elaborator and keep its final state, with every symbol's
    requirements computed (the elaborator computes them lazily). *)
@@ -33,10 +33,8 @@ Definition run_elab (x : Input.sx) : Input.res (xprogram * st) :=
   | Good b =>
       match load_world b with
       | Good w =>
-          (* m4: without Elab's `Memories` fast path (Audit.v DRAFT NOTE 24):
-             the output as the relation drafts it *)
           let s0 := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false []
-                       (lang_modules w) [] false false in
+                       (lang_modules w) [] in
           match elab_program s0 with
           | Good (p, s) =>
               Good (p, fold_left (fun s i => match reqs i s with Good (_, s') => s' | Bad _ => s end)
@@ -401,10 +399,8 @@ Definition run_world (x : Input.sx) : Input.res st :=
   | Good b =>
       match load_world b with
       | Good w =>
-          (* m4: without Elab's `Memories` fast path (Audit.v DRAFT NOTE 24):
-             the output as the relation drafts it *)
           let s0 := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false []
-                       (lang_modules w) [] false false in
+                       (lang_modules w) [] in
           Good (fold_left (fun s i => match reqs i s with Good (_, s') => s' | Bad _ => s end)
                           (seq 1 (w_nsyms w)) s0)
       | Bad m => Bad m

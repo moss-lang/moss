@@ -6,7 +6,8 @@
    Gallina front end (Parse.load_bundle; this driver only reads files), or
    BUNDLE.bx, a bundle already in Audit.v's s-expression form (Part I),
    which the OCaml tokenizer below reads.  The bundle is elaborated by the
-   Gallina elaborator (Elab.elaborate_sx), and the result is pruned
+   Gallina elaborator (Elab.elaborate_sx), and the result is given the
+   family fast path (FastPath.fast_program), pruned
    (Prune.oracle_program) and run by an engine proved equal to
    MossX.run_main (MOSS_ENGINE, below; CloX.crun_main by default).  The prelude is P, else $MOSS_LIB/prelude.moss, else
    lib/prelude.moss (from the working directory).  --bundle-text prints the
@@ -176,6 +177,16 @@ let () =
     Printf.eprintf "[moss_m2: elaborated in %.3fs: %d fns, %d functor bodies]\n%!" (t1 -. t0)
       (Stdlib.List.length p.Audit.xo_fns) (Stdlib.List.length p.Audit.xo_funs);
     exit 0 end;
+  (* MOSS_FASTPATH=0: run the elaborated program as is; default: each
+     platform family applied keeping only the members used
+     (FastPath.fast_program; FastPath.fast_run) *)
+  let p = if Sys.getenv_opt "MOSS_FASTPATH" = Some "0" then p else begin
+    let t = Unix.gettimeofday () in
+    let p' = FastPath.fast_program p in
+    if Sys.getenv_opt "MOSS_REF_TIME" <> None then
+      Printf.eprintf "[moss_m2: fast path in %.3fs%s]\n%!" (Unix.gettimeofday () -. t)
+        (if p' == p then " (no family accepted)" else "");
+    p' end in
   (* MOSS_PRUNE=0: run the elaborated program as is; default: the pruned
      program (Prune.oracle_program; Prune.oracle_agrees) *)
   let p = if Sys.getenv_opt "MOSS_PRUNE" = Some "0" then p else begin

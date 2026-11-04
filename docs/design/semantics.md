@@ -4721,8 +4721,7 @@ Decided:
    other, and the compiler to its own fixpoint. It takes about 35 minutes
    and 3 GB per platform. What of the oracle is proved, and what is still
    an obligation (the elaborator's soundness and completeness for the
-   draft elaboration relation, the parser's for a grammar, and the
-   `Memories` fast path), is in [`bootstrap/README.md`](/bootstrap/README.md);
+   draft elaboration relation, and the parser's for a grammar), is in [`bootstrap/README.md`](/bootstrap/README.md);
    its contract is `bootstrap/theories/Audit.v`.
 2. **The Python bootstrap is removed**, with its unit tests of its own
    lexer, parser, loader and float helpers. Statements in this log about
