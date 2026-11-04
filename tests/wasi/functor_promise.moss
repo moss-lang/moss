@@ -1,7 +1,7 @@
 import "../../lib/float.moss" use Floats;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, WasiFloats;
-import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D78: a functor bound to an abstract one must make each item of the
@@ -22,7 +22,7 @@ assume Std, Wasm, Branch, Fast {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     bind Fast = WasiFloats;

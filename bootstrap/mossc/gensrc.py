@@ -63,6 +63,9 @@ SPELLED = [
     # `Memory` is.
     "Memory",
     "Addr",
+    # D84 (O2): the platform's functors, in a context of their own that
+    # the platform runs `main` in.
+    "Gc",
     "bool.moss",
     "wasistd.moss",
     "i32_bool",

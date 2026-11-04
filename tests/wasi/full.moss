@@ -1,4 +1,4 @@
-import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
@@ -19,7 +19,7 @@ assume Std {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     greet();

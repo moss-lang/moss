@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # A recursive function that rebinds one of its own fn needs on its own
@@ -48,7 +48,7 @@ assume Std, note {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     bind note = (n) => {};

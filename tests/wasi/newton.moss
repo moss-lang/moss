@@ -127,7 +127,7 @@ functor WasiStd32: Wasm, Gc, Wasi, Branch -> Std {
 # the two never meet: `report` is compiled once per block. Applying
 # `WasiFloats32` inside a scope that already has `WasiStd`'s floats works
 # too, and is tests/wasi/shadow.moss.
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     {
       bind WasiStd;

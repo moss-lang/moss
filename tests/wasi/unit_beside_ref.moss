@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" as w use Gc, Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasm.moss" as w use Wasm, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # A unit beside a member whose payload is a reference: the union is a
@@ -40,7 +40,7 @@ assume Std, Wasm, IntHeap {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     bind Boxed = Int;

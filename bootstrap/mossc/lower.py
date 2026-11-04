@@ -698,8 +698,40 @@ class Lower:
                 return
             for item in symbol.assumes:
                 self.add_assume_item(env, module, item, needs)
+            if self.is_main(symbol):
+                self.add_root_context(env, module, needs)
 
         return self.merged_walk(module, walk)
+
+    def is_main(self, symbol: Symbol) -> bool:
+        """Whether `symbol` is its module's own `main`: whichever module
+        is the entry, so that a function is checked the same wherever the
+        program starts (D16)."""
+        return (
+            symbol.kind == SymKind.FN
+            and symbol.receiver is None
+            and symbol.module.names.get("main") is symbol
+        )
+
+    def add_root_context(self, env: Env, module: Module, needs: list):
+        """The platform runs `main` in its root context: beside what `main`
+        assumes, lib/wasm.moss's `Gc` — the platform's functors, which
+        left `Wasm` (D84, O2) — with the types they are fixed in, so a
+        program that binds `WasiStd` need not assume it (D37)."""
+        for module_ in self.program.order:
+            if not is_platform(module_.path):
+                continue
+            gc = module_.names.get("Gc")
+            if not isinstance(gc, Symbol) or gc.kind != SymKind.CONTEXT:
+                return
+            for spec in gc.decl.items:
+                functor = resolve_path(gc.module, spec.path)
+                if not isinstance(functor, Symbol) or functor in env.functors:
+                    continue
+                for t in self.functor_fixed(functor):
+                    self.add_symbol_item(env, module, t, {}, needs)
+                self.add_symbol_item(env, module, functor, {}, needs)
+            return
 
     def merged_walk(self, module: Module, walk) -> tuple[Env, list]:
         """An environment built by `walk(env, needs)` from assume items,

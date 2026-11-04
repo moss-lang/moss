@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 import "./dual.moss" use Reals, Dualize, variable;
 
@@ -35,7 +35,7 @@ assume Std {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     report(2.0);

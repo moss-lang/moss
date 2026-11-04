@@ -2,6 +2,7 @@ import "./ast.moss" as ast;
 import "./bytes.moss" use *;
 import "./intern.moss" as intern;
 import "./prog.moss" as prog;
+import "./spell.moss" use sp_main, sp_Gc;
 import "./types.moss" as types;
 
 # Requirement environments: what a region *has*.
@@ -433,19 +434,73 @@ assume Std {
       ast::none()
     }
 
+    # The platform runs `main` in its root context (D37): beside what
+    # `main` assumes, lib/wasm.moss's `Gc` — the platform's functors,
+    # which left `Wasm` (D84, O2) — after the types they are fixed in, so
+    # a program that binds `WasiStd` need not assume it. The bootstrap's
+    # `add_root_context` is the same.
+    fn root_context(): IntList {
+      let out = int_list();
+      let gn = int_list();
+      sp_Gc(gn);
+      var w = 0;
+      while w < prog::module_count() {
+        if prog::is_platform(w) {
+          let gc = prog::lookup(w, prog::ns_name(), intern::intern_chars(gn));
+          if !ast::is_some(gc) {
+            return out;
+          }
+          if prog::sym_kind.get(gc) != prog::sk_context() {
+            return out;
+          }
+          let d = prog::sym_decl.get(gc);
+          var i = 0;
+          while i < ast::c_of(d) {
+            let fu = prog::resolve_path(w, ast::a_of(ast::kid_at(ast::b_of(d), i)));
+            if ast::is_some(fu) {
+              if prog::sym_kind.get(fu) == prog::sk_functor() {
+                functor_fixed(fu, out);
+              }
+            }
+            i = i + 1;
+          }
+          out.push(gc);
+          return out;
+        }
+        w = w + 1;
+      }
+      out
+    }
+
     # Compute and record one function's requirement list. Registered
     # before any body is looked at, so recursion terminates.
-    fn lower_needs(f: Int) {
+    fn lower_needs(f: Int) { lower_needs_at(f, int_list()) }
+
+    # The same, with the items of `root` assumed after the declaration's
+    # own: the platform's root context, which `main` runs in (D37, D84
+    # O2). Not memoized, since `main` shares its run of assume items
+    # with whatever else its `assume` block declares.
+    fn lower_needs_at(f: Int, root: IntList) {
       if is_lowered(f) {
         return ();
       }
       let run = prog::sym_asm.get(f);
       let len = prog::sym_nasm.get(f);
-      var memo = asm_find(run, len);
+      var memo = ast::none();
+      if root.length() == 0 {
+        memo = asm_find(run, len);
+      }
       if !ast::is_some(memo) {
         let recv = int_list();
         let sym = int_list();
-        let env = base_env(f, recv, sym);
+        var env = base_env(f, recv, sym);
+        var k = 0;
+        while k < root.length() {
+          env = add_symbol_item(
+            env, prog::sym_mod.get(f), root.get(k), recv, sym, 0, env, int_list()
+          );
+          k = k + 1;
+        }
         let start = nd_sym.length();
         var i = 0;
         while i < sym.length() {
@@ -458,6 +513,12 @@ assume Std {
             nd_app.push(env_empty());
           }
           i = i + 1;
+        }
+        if root.length() > 0 {
+          nd_start.set(f, start);
+          nd_len.set(f, sym.length());
+          nd_env.set(f, env);
+          return ();
         }
         memo = asm_run.length();
         asm_run.push(run);
@@ -1350,8 +1411,30 @@ assume Std {
     }
 
     # Every defined function of the program, in module order.
+    # Every defined function's needs; a module's `main`'s with the root
+    # context beside its own (`lower_needs_at`).
     fn lower_all() {
       needs_init();
+      # Each module's own `main`, whichever module is the entry: a
+      # function is checked the same wherever the program starts (D16).
+      let mn = int_list();
+      sp_main(mn);
+      let name = intern::intern_chars(mn);
+      let root = root_context();
+      var m = 0;
+      while m < prog::module_count() {
+        let main = prog::lookup(m, prog::ns_name(), name);
+        if ast::is_some(main) {
+          if prog::sym_mod.get(main) == m {
+            if prog::sym_kind.get(main) == prog::sk_fn() {
+              if ast::is_some(ast::fn_body(prog::sym_decl.get(main))) {
+                lower_needs_at(main, root);
+              }
+            }
+          }
+        }
+        m = m + 1;
+      }
       var f = 0;
       while f < prog::sym_count() {
         let kind = prog::sym_kind.get(f);

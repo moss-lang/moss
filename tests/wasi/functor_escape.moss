@@ -1,7 +1,7 @@
 import "../../lib/float.moss" use Floats;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, WasiFloats32;
-import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D78: `bind Fast;` makes `Float` a fresh generation for the rest of its
@@ -24,7 +24,7 @@ assume Std, Fast {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     bind Fast = WasiFloats32;

@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D68: an operator is a call of a fixed method of lib/num.moss, so one the
@@ -13,7 +13,7 @@ assume Std {
   fn by_method(c: Char): Char { c.add(c) }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     putchar(by_operator(char::a));

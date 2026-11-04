@@ -2,7 +2,7 @@
 
 import "wasi.moss" use WasiStd;
 import "wasistd.moss" use Branch;
-import "wasm.moss" use Gc, Wasm;
+import "wasm.moss" use Wasm;
 import "wasip1.moss" use Wasi;
 
 assume Std {
@@ -21,7 +21,7 @@ assume Std {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     bind c=char::h;

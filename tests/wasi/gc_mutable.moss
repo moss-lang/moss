@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Gc, Wasm, Boxed, Ref, Heap, Mutable, .boxed;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, Mutable, .boxed;
 import "../../lib/wasip1.moss" use Wasi;
 
 # D81: `Ref.set`, which only the platform's `Mutable` provides, replaces
@@ -50,7 +50,7 @@ assume Std, Wasm, Counting {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     bind Boxed = Counter;

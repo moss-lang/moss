@@ -177,7 +177,7 @@ assume Std, Wasm, Gc {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     demo();

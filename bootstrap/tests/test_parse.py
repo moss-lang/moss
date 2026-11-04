@@ -33,7 +33,6 @@ class TestCorpus(unittest.TestCase):
             assume.items,
             [
                 ast.AssumeItem(["Wasm"], None),
-                ast.AssumeItem(["Gc"], None),
                 ast.AssumeItem(["Wasi"], None),
                 ast.AssumeItem(["Branch"], None),
             ],
