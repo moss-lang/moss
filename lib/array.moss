@@ -1,4 +1,4 @@
-import "./access.moss" use Elem, .get, .set, .length, .begin, .more, .after;
+import "./access.moss" use Elem, Index, .get, .set, .length, .begin, .more, .after;
 import "./int.moss" use Int;
 import "./size.moss" use Size;
 
@@ -39,9 +39,9 @@ assume Size, ArrayHandle, Item {
 # touch. `bind Item = X; bind Arrays;` still applies it by hand.
 functor Arrays[Item]: Size, ArrayHandle ->
   Item.arrayed,
-  Array.get[Elem=Item, Int=Size],
-  Array.set[Elem=Item, Int=Size],
-  Array.length[Int=Size],
-  Array.begin[Int=Size],
-  Array.more[Int=Size],
-  Array.after[Int=Size];
+  Array.get[Elem=Item, Index=Size],
+  Array.set[Elem=Item, Index=Size],
+  Array.length[Index=Size],
+  Array.begin[Index=Size],
+  Array.more[Index=Size],
+  Array.after[Index=Size];

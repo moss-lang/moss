@@ -1,4 +1,4 @@
-import "./access.moss" use Elem, .get, .set, .length, .push, .read, .begin, .more, .after;
+import "./access.moss" use Elem, Index, .get, .set, .length, .push, .read, .begin, .more, .after;
 import "./bool.moss" use Bool, False, True;
 import "./cell.moss" use CellInt, cell_int;
 # `.char` is imported by name because it is provided at `Int`, not at
@@ -70,16 +70,16 @@ context Std =
   arg_count,
   arg_at,
   print,
-  String.length,
-  String.get[Elem=Char],
+  String.length[Index=Int],
+  String.get[Elem=Char, Index=Int],
   String.slice,
   String.concat,
 
   StrList,
   str_list,
   StrList.push[Elem=String],
-  StrList.get[Elem=String],
-  StrList.length,
+  StrList.get[Elem=String, Index=Int],
+  StrList.length[Index=Int],
 
   CellInt,
   cell_int,
@@ -89,9 +89,9 @@ context Std =
   IntList,
   int_list,
   IntList.push[Elem=Int],
-  IntList.get[Elem=Int],
-  IntList.set[Elem=Int],
-  IntList.length,
+  IntList.get[Elem=Int, Index=Int],
+  IntList.set[Elem=Int, Index=Int],
+  IntList.length[Index=Int],
   put_bytes,
 
   Path,

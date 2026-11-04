@@ -1,5 +1,4 @@
 import "./bool.moss" use Bool;
-import "./int.moss" use Int;
 
 # The detached accessors every container has in common, declared
 # once. Declaring them per container made each spelling several distinct
@@ -20,15 +19,20 @@ import "./int.moss" use Int;
 
 type Elem;
 
-assume Int {
-  fn .length(): Int;
+# The index type (O5): what a container's positions and length are,
+# applied per provision — `Index=Int` for the lists and strings,
+# `Index=Size` for `Std`'s arrays.
+type Index;
+
+assume Index {
+  fn .length(): Index;
 
   assume Elem {
-    fn .get(index: Int): Elem;
+    fn .get(index: Index): Elem;
 
     # Lists have it — IntList, FloatList and the packed lists under them
     # (D69) — so it is shared like the rest rather than any one's own.
-    fn .set(index: Int, value: Elem);
+    fn .set(index: Index, value: Elem);
   }
 
   # Iteration (draft): `for x in xs { body }` means, with `c` and `i`
@@ -39,12 +43,12 @@ assume Int {
   #
   # calls of these four symbols, found by this file as an operator's
   # are found by num.moss (D68), and provided at the collection's type
-  # like any accessor (D61). `Int` is the index type the provision says
-  # (`Array.begin[Int=Size]`), so the loop never does arithmetic on it in
+  # like any accessor (D61). `Index` is the index type the provision says
+  # (`Array.begin[Index=Size]`), so the loop never does arithmetic on it in
   # the program's terms: the collection steps its own index.
-  fn .begin(): Int;
-  fn .more(at: Int): Bool;
-  fn .after(at: Int): Int;
+  fn .begin(): Index;
+  fn .more(at: Index): Bool;
+  fn .after(at: Index): Index;
 }
 
 assume Elem {

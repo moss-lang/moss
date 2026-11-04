@@ -1,4 +1,4 @@
-import "../../lib/access.moss" use Elem, .get;
+import "../../lib/access.moss" use Elem, Index, .get;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
@@ -21,7 +21,7 @@ assume Std {
 type Bag;
 
 assume Std, Bag {
-  context Bags = Bag, Bag.get[Elem=Int];
+  context Bags = Bag, Bag.get[Elem=Int, Index=Int];
 }
 
 assume Std, Bags {
@@ -35,11 +35,11 @@ assume Wasm, Gc, Wasi, Branch {
     digit(b.get(0));
     {
       bind Bag = Box;
-      bind Bag.get[Elem=Int] = (index) => 1;
+      bind Bag.get[Elem=Int, Index=Int] = (index) => 1;
       digit(b.get(0));
       digit(generic(b));
       {
-        bind Bag.get[Elem=Int] = (index) => 2;
+        bind Bag.get[Elem=Int, Index=Int] = (index) => 2;
         digit(b.get(0));
         digit(generic(b));
       }

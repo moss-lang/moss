@@ -2,7 +2,7 @@ import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 import "../../lib/wasistd.moss" use WasiBasics, WasiContainers, Basics, Containers, Branch;
 import "../../lib/wasichar.moss" use WasiCharConsts, WasiChars;
-import "../../lib/access.moss" use Elem, .get, .length, .push;
+import "../../lib/access.moss" use Elem, Index, .get, .length, .push;
 import "../../lib/char.moss" as char use Char, .code, .char;
 import "../../lib/list.moss" use IntList, int_list;
 import "../../lib/int.moss" use Int, zero, one;
@@ -24,7 +24,7 @@ type T;
 type L;
 
 assume Int, T, L {
-  context IsList = L.get[Elem=T], L.push[Elem=T], L.length;
+  context IsList = L.get[Elem=T, Index=Int], L.push[Elem=T], L.length[Index=Int];
 }
 
 assume Basics, Containers, WasiChars {
@@ -68,12 +68,12 @@ assume Basics, Containers, WasiChars {
   }
 
   fn run() {
-    bind IntArr.get[Elem=Int] = IntArr.iget;
+    bind IntArr.get[Elem=Int, Index=Int] = IntArr.iget;
     bind IntArr.push[Elem=Int] = IntArr.ipush;
-    bind IntArr.length = IntArr.ilen;
-    bind CharArr.get[Elem=Char] = CharArr.cget;
+    bind IntArr.length[Index=Int] = IntArr.ilen;
+    bind CharArr.get[Elem=Char, Index=Int] = CharArr.cget;
     bind CharArr.push[Elem=Char] = CharArr.cpush;
-    bind CharArr.length = CharArr.clen;
+    bind CharArr.length[Index=Int] = CharArr.clen;
     exercise(IntArr(int_list()), CharArr(int_list()));
   }
 }

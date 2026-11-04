@@ -11,7 +11,7 @@ import "../../lib/string.moss" use String, arg_count, arg_at, .slice;
 import "../../lib/strlist.moss" use StrList, str_list;
 import "../../lib/cell.moss" use CellInt, cell_int, .write;
 import "../../lib/list.moss" use IntList;
-import "../../lib/access.moss" use Elem, .get, .set, .length, .push, .read;
+import "../../lib/access.moss" use Elem, Index, .get, .set, .length, .push, .read;
 
 type Narrow;
 
@@ -97,29 +97,29 @@ functor SaturatingInt: Int, zero, one, IntOps, Sizes -> Int, zero, one, IntOps, 
 # rebound with the new `Int` in its signature, by converting at the edge.
 functor Saturating: Std -> Int, zero, one, IntOps, Int.size, Size.int,
   float, Float.trunc, Float.round, Char.code, Int.char,
-  String.length, String.get[Elem=Char], String.slice, arg_count, arg_at,
-  StrList.get[Elem=String], StrList.length,
+  String.length[Index=Int], String.get[Elem=Char, Index=Int], String.slice, arg_count, arg_at,
+  StrList.get[Elem=String, Index=Int], StrList.length[Index=Int],
   str_list, cell_int, CellInt.read[Elem=Int], CellInt.write,
-  IntList.push[Elem=Int], IntList.get[Elem=Int], IntList.set[Elem=Int], IntList.length {
+  IntList.push[Elem=Int], IntList.get[Elem=Int, Index=Int], IntList.set[Elem=Int, Index=Int], IntList.length[Index=Int] {
   bind SaturatingInt;
   bind float = (n) => float(nar(n));
   bind Float.trunc = () => Sat(this.trunc());
   bind Float.round = () => Sat(this.round());
   bind Char.code = () => Sat(this.code());
   bind Int.char = () => nar(this).char();
-  bind String.length = () => Sat(this.length());
-  bind String.get[Elem=Char] = (i) => this.get(nar(i));
+  bind String.length[Index=Int] = () => Sat(this.length());
+  bind String.get[Elem=Char, Index=Int] = (i) => this.get(nar(i));
   bind String.slice = (a, n) => this.slice(nar(a), nar(n));
   bind arg_count = () => Sat(arg_count());
   bind arg_at = (i) => arg_at(nar(i));
-  bind StrList.get[Elem=String] = (i) => this.get(nar(i));
-  bind StrList.length = () => Sat(this.length());
+  bind StrList.get[Elem=String, Index=Int] = (i) => this.get(nar(i));
+  bind StrList.length[Index=Int] = () => Sat(this.length());
   bind str_list = () => str_list();
   bind cell_int = () => cell_int();
   bind CellInt.read[Elem=Int] = () => Sat(this.read());
   bind CellInt.write = (v) => this.write(nar(v));
   bind IntList.push[Elem=Int] = (v) => this.push(nar(v));
-  bind IntList.get[Elem=Int] = (i) => Sat(this.get(nar(i)));
-  bind IntList.set[Elem=Int] = (i, v) => this.set(nar(i), nar(v));
-  bind IntList.length = () => Sat(this.length());
+  bind IntList.get[Elem=Int, Index=Int] = (i) => Sat(this.get(nar(i)));
+  bind IntList.set[Elem=Int, Index=Int] = (i, v) => this.set(nar(i), nar(v));
+  bind IntList.length[Index=Int] = () => Sat(this.length());
 }

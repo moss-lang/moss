@@ -1,4 +1,4 @@
-import "../../lib/access.moss" use Elem, .get, .length, .push, .set;
+import "../../lib/access.moss" use Elem, Index, .get, .length, .push, .set;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw, i32_bool;
 import "../../lib/wasm.moss" as w
@@ -80,7 +80,7 @@ assume Int, Bag {
   fn bag(): Bag;
 
   context Bags =
-    Bag, bag, Bag.push[Elem=Int], Bag.get[Elem=Int], Bag.set[Elem=Int], Bag.length;
+    Bag, bag, Bag.push[Elem=Int], Bag.get[Elem=Int, Index=Int], Bag.set[Elem=Int, Index=Int], Bag.length[Index=Int];
 }
 
 assume Std {
@@ -139,9 +139,9 @@ assume Wasm, Gc, Wasi, Branch {
       bind Bag = GcList;
       bind bag = gc_list;
       bind Bag.push[Elem=Int] = GcList.push;
-      bind Bag.get[Elem=Int] = GcList.get;
-      bind Bag.set[Elem=Int] = GcList.set;
-      bind Bag.length = GcList.length;
+      bind Bag.get[Elem=Int, Index=Int] = GcList.get;
+      bind Bag.set[Elem=Int, Index=Int] = GcList.set;
+      bind Bag.length[Index=Int] = GcList.length;
       sum_squares();
     }
     {

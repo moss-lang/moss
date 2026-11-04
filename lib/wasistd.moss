@@ -5,7 +5,7 @@ import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
 # One declaration per accessor, so importing them here is unambiguous —
 # and `Elem` comes with them, because every provision below names the
 # element type it is providing at (D61).
-import "./access.moss" use Elem, .get, .set, .length, .push, .read, .begin, .more, .after;
+import "./access.moss" use Elem, Index, .get, .set, .length, .push, .read, .begin, .more, .after;
 import "./path.moss" as path use Path, pwd;
 import "./bool.moss" use Bool, true, false;
 import "./char.moss" as char use Char, Chars, .char;
@@ -49,7 +49,7 @@ context Files =
 # Strings, which live in memory like any container: `String` and the
 # methods that read and make one, with nothing that calls WASI.
 context Strings =
-  String, String.length, String.get[Elem=Char], String.slice, String.concat;
+  String, String.length[Index=Int], String.get[Elem=Char, Index=Int], String.slice, String.concat;
 
 # The containers, over the library's own allocator rather than the
 # compiler's — which no longer has one (D59). Everything here lives in
@@ -63,9 +63,9 @@ context Containers =
   Strings,
   CellInt, cell_int, CellInt.read[Elem=Int], CellInt.write,
   IntList, int_list,
-  IntList.push[Elem=Int], IntList.get[Elem=Int], IntList.set[Elem=Int], IntList.length,
+  IntList.push[Elem=Int], IntList.get[Elem=Int, Index=Int], IntList.set[Elem=Int, Index=Int], IntList.length[Index=Int],
   StrList, str_list,
-  StrList.push[Elem=String], StrList.get[Elem=String], StrList.length;
+  StrList.push[Elem=String], StrList.get[Elem=String, Index=Int], StrList.length[Index=Int];
 
 # `put_bytes` is a container's bytes and a WASI call, and WASI preview 1
 # reads only the main memory (D79), so it stays out of `Containers`: it
@@ -527,8 +527,8 @@ functor WasiStrings: Wasm, Branch -> Strings {
   # A shared accessor is provided at one receiver at a time, and the
   # element type comes with the provision (D61). `Char` is bound to `Chr`
   # where this is applied, so `Elem=Char` means `Chr` here.
-  bind String.length = Str.length;
-  bind String.get[Elem=Char] = Str.get;
+  bind String.length[Index=Int] = Str.length;
+  bind String.get[Elem=Char, Index=Int] = Str.get;
   bind String.slice = (start, len) =>
     string_of(w::i32_add(w::i32_add(addr(this), four()), raw(start)), raw(len));
   bind String.concat = Str.concat;
@@ -551,9 +551,9 @@ functor WasiContainers: Wasm, Branch -> Containers {
   bind list::IntList = Packed[Item=Num];
   bind list::int_list = wasi_int_list;
   bind IntList.push[Elem=Int] = (value) => { bind NumLayout; packed_push(ints_addr(this), value); };
-  bind IntList.get[Elem=Int] = (index) => { bind NumLayout; packed_get(ints_addr(this), index) };
-  bind IntList.set[Elem=Int] = (index, value) => { bind NumLayout; packed_set(ints_addr(this), index, value); };
-  bind IntList.length = () => packed_length(ints_addr(this));
+  bind IntList.get[Elem=Int, Index=Int] = (index) => { bind NumLayout; packed_get(ints_addr(this), index) };
+  bind IntList.set[Elem=Int, Index=Int] = (index, value) => { bind NumLayout; packed_set(ints_addr(this), index, value); };
+  bind IntList.length[Index=Int] = () => packed_length(ints_addr(this));
   # A list of strings is a list of their addresses.
   bind strlist::StrList = Strs;
   bind strlist::str_list = () => Strs(ints_addr(wasi_int_list()));
@@ -561,9 +561,9 @@ functor WasiContainers: Wasm, Branch -> Containers {
     bind NumLayout;
     packed_push(strs_addr(this), Num(addr(value)));
   };
-  bind StrList.get[Elem=String] = (index) =>
+  bind StrList.get[Elem=String, Index=Int] = (index) =>
     Str(w::i32_load(elem(w::i32_load(strs_addr(this)), raw(index))));
-  bind StrList.length = () => Num(w::i32_load(w::i32_load(strs_addr(this))));
+  bind StrList.length[Index=Int] = () => Num(w::i32_load(w::i32_load(strs_addr(this))));
 }
 
 functor WasiOutput: Wasm, Wasi, Branch -> Output {
@@ -644,23 +644,23 @@ functor WasiConsole: Wasm, Wasi, Branch -> Console {
 # iteration steps it without asking `Int` for anything.
 functor GcArrays: Wasm, Gc, Branch, Item ->
   Item.arrayed,
-  Array.get[Elem=Item, Int=Size],
-  Array.set[Elem=Item, Int=Size],
-  Array.length[Int=Size],
-  Array.begin[Int=Size],
-  Array.more[Int=Size],
-  Array.after[Int=Size] {
+  Array.get[Elem=Item, Index=Size],
+  Array.set[Elem=Item, Index=Size],
+  Array.length[Index=Size],
+  Array.begin[Index=Size],
+  Array.more[Index=Size],
+  Array.after[Index=Size] {
   bind size::Size = Num;
   bind array::ArrayHandle = ArrayRef;
   bind Arrayed = Item;
   bind w::Arrays;
   bind Item.arrayed = (length) => match this.w::arrayed(raw(length)) { w::Array(h) => Array(h) };
-  bind Array.get[Elem=Item, Int=Size] = (index) => match this { Array(h) => w::Array(h).get(raw(index)) };
-  bind Array.set[Elem=Item, Int=Size] = (index, value) => match this { Array(h) => w::Array(h).set(raw(index), value) };
-  bind Array.length[Int=Size] = () => match this { Array(h) => Num(w::Array(h).length()) };
-  bind Array.begin[Int=Size] = () => Num(w::i32_zero);
-  bind Array.more[Int=Size] = (at) => match this {
+  bind Array.get[Elem=Item, Index=Size] = (index) => match this { Array(h) => w::Array(h).get(raw(index)) };
+  bind Array.set[Elem=Item, Index=Size] = (index, value) => match this { Array(h) => w::Array(h).set(raw(index), value) };
+  bind Array.length[Index=Size] = () => match this { Array(h) => Num(w::Array(h).length()) };
+  bind Array.begin[Index=Size] = () => Num(w::i32_zero);
+  bind Array.more[Index=Size] = (at) => match this {
     Array(h) => i32_bool(w::i32_lt_u(raw(at), w::Array(h).length())),
   };
-  bind Array.after[Int=Size] = (at) => Num(w::i32_add(raw(at), w::i32_one));
+  bind Array.after[Index=Size] = (at) => Num(w::i32_add(raw(at), w::i32_one));
 }
