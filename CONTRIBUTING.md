@@ -43,7 +43,8 @@ itself. So:
 
 The test suite is the Rust crate [`crates/moss-tests`](crates/moss-tests).
 It needs a seed (above) and the oracle (`MOSS_ORACLE`, else
-`result-oracle/bin/moss_m2`, else `bootstrap/_build/moss_m2`):
+`result-oracle/bin/moss_m2`, else
+`bootstrap/_build/default/ocaml/moss_m2.exe`):
 
 ```sh
 cargo test
@@ -72,7 +73,9 @@ nix flake check
 
 That includes `bootstrap-rocq`, which compiles the Rocq development and
 audits its theorems' assumptions (about 5 minutes and 6 GB);
-`bootstrap/check.sh` runs the same in `nix develop .#bootstrap`.
+`bootstrap/check.sh` runs the same in `nix develop .#bootstrap`, where
+`dune build` in `bootstrap` builds the oracle
+([`bootstrap/README.md`](bootstrap/README.md)).
 
 ## Where things are
 

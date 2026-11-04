@@ -31,7 +31,7 @@ errors and positions included.
 
 ## Layout
 
-- [`theories/`](theories): the Rocq development (`coqc -Q theories NM`).
+- [`theories/`](theories): the Rocq development, the dune theory `NM`.
   - [`Audit.v`](theories/Audit.v): what a reader has to trust, and nothing
     else (below). It imports only Rocq's standard library.
   - [`Parse.v`](theories/Parse.v): the lexer, the parser, the parse dump
@@ -67,12 +67,13 @@ errors and positions included.
     earlier tree; they are inputs to those proofs, not to the oracle.
   - [`Certified.v`](theories/Certified.v): binds the implementation to the
     obligations `Audit.v` states, as far as they are proved.
-  - [`Extract2.v`](theories/Extract2.v): the extraction to OCaml.
-- [`ocaml/`](ocaml): `moss_m2.ml`, the driver (it reads files and the
-  command line, and prints), and `kernel/`, Rocq's OCaml implementations of
+- [`ocaml/`](ocaml): the oracle. [`Extract2.v`](ocaml/Extract2.v) is
+  the extraction to OCaml, `moss_m2.ml` the driver (it reads files and the
+  command line, and prints), and `kernel/` Rocq's OCaml implementations of
   its primitive integers, floats and arrays, which the extracted code
   links against.
-- [`build.sh`](build.sh): builds the oracle, `_build/moss_m2`.
+- [`dune-project`](dune-project): `dune build` here compiles the theories,
+  extracts them and builds the oracle, `_build/default/ocaml/moss_m2.exe`.
 - [`check.sh`](check.sh): compiles every file and audits every theorem.
 
 ## Building and checking
@@ -85,15 +86,16 @@ nix build .#compiler          # the bootstrap: about 35 minutes
 nix build .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).bootstrap-rocq
 ```
 
-By hand, in `nix develop .#bootstrap` (Rocq 9.1, its standard library on
-`ROCQPATH`, and OCaml 4.14 with flambda as `OCAMLOPT`):
+By hand, in `nix develop .#bootstrap` (OCaml 4.14 with flambda, and dune,
+Rocq 9.1 and its standard library built with it):
 
 ```sh
-bootstrap/build.sh            # about a minute
+(cd bootstrap && dune build ocaml/moss_m2.exe)   # under a minute
 bootstrap/check.sh            # about 5 minutes, 6 GB
-bootstrap/_build/moss_m2 examples/hello.moss                  # run a program
-bootstrap/_build/moss_m2 --elab-only tests/wasi/tags.moss     # only check it
-ulimit -s unlimited && bootstrap/_build/moss_m2 --pages 2 \
+m2=bootstrap/_build/default/ocaml/moss_m2.exe
+$m2 examples/hello.moss                       # run a program
+$m2 --elab-only tests/wasi/tags.moss          # only check it
+ulimit -s unlimited && $m2 --pages 2 \
   --argv0 lib/prelude.moss src/main.moss src/main.moss > s1.wasm   # the bootstrap
 ```
 
@@ -107,6 +109,8 @@ The OCaml must be flambda: only flambda honours the `[@inlined]` in
 `Extract2.v`'s `nat_case`, and without it the interpreter keeps every
 active frame's incoming machine state alive, so the whole version chain of
 linear memory stays reachable (17 GB on the self-compile instead of 3).
+The build fails on any other OCaml, and compiles the oracle with `-O3
+-inline 200 -unsafe` ([`ocaml/dune`](ocaml/dune)).
 
 `check.sh` is the audit, since `coqc` alone accepts `Admitted`: every
 top-level `Theorem` and `Corollary` has a `Print Assumptions` line, and

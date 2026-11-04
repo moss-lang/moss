@@ -1,0 +1,7 @@
+; The Rocq development, under the logical prefix NM (README.md).
+
+(rocq.theory
+ (name NM)
+ (theories Stdlib)
+ (flags
+  (:standard -w -abstract-large-number,-non-full-mutual,-deprecated)))

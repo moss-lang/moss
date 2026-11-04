@@ -384,13 +384,16 @@ pub fn rejects_with(entry: &str, prelude: &str) -> String {
 }
 
 /// The oracle, from `MOSS_ORACLE`, else `result-oracle/bin/moss_m2` (`nix
-/// build .#oracle -o result-oracle`), else `bootstrap/_build/moss_m2`
-/// (`bootstrap/build.sh`).
+/// build .#oracle -o result-oracle`), else
+/// `bootstrap/_build/default/ocaml/moss_m2.exe` (`dune build` in `bootstrap`).
 pub fn oracle_path() -> PathBuf {
     if let Some(path) = std::env::var_os("MOSS_ORACLE") {
         return PathBuf::from(path);
     }
-    for candidate in ["result-oracle/bin/moss_m2", "bootstrap/_build/moss_m2"] {
+    for candidate in [
+        "result-oracle/bin/moss_m2",
+        "bootstrap/_build/default/ocaml/moss_m2.exe",
+    ] {
         let path = repo().join(candidate);
         if path.is_file() {
             return path;
@@ -398,7 +401,7 @@ pub fn oracle_path() -> PathBuf {
     }
     panic!(
         "no oracle: set MOSS_ORACLE, or run `nix build .#oracle -o result-oracle` \
-         or `bootstrap/build.sh` (CONTRIBUTING.md)"
+         or `dune build` in `bootstrap` (CONTRIBUTING.md)"
     )
 }
 

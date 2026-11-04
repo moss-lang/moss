@@ -3,6 +3,8 @@ From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
 From NM Require Import Audit CoreMoss MossX Sx Elab FastX Prune Parse.
 Extraction Language OCaml.
+(* dune runs this in its build directory, where the extracted files go. *)
+Set Warnings "-extraction-default-directory".
 Extraction NoInline PrimArray.array.
 (* ExtrOcamlNatInt's nat_case, with its two branches inlined.  Unchanged in
    meaning; it only changes what the native code keeps alive.  Without the
@@ -32,6 +34,5 @@ Extract Constant Nat.modulo => "fun n m -> if m = 0 then n else n mod m".
 Extract Inlined Constant tleft => "(fun k -> k = 0 || k land 1 = 1)".
 Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
 Extraction Blacklist String List Char Bool.
-Set Extraction Output Directory "extracted".
 Separate Extraction run_main frun_main oracle_program init_state xinterp f64_bits f64_of_bits elaborate_sx
   parse_moss dump_file print_sx load_bundle bundle_sx print_bundle.

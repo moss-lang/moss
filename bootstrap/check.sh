@@ -13,23 +13,24 @@
 # - Audit.v may declare Parameters and Axioms only inside module types: they
 #   are the pending obligations (README.md), never assumptions.
 #
-# Needs `coqc` and ROCQPATH as for ./build.sh. Works in _build/check.
+# Needs `rocq` with the Rocq standard library on ROCQPATH, as in
+# `nix develop .#bootstrap`. Works in _build/check.
 set -euo pipefail
 cd "$(dirname "$0")"
 rm -rf _build/check && mkdir -p _build/check
 cp theories/*.v _build/check/
 cd _build/check
-CORELIB=$(coqc -where)/theories
+CORELIB=$(rocq c -where)/theories
 PRIMS=$(cat $CORELIB/Numbers/Cyclic/Int63/PrimInt63.v $CORELIB/Floats/PrimFloat.v $CORELIB/Array/PrimArray.v \
         | grep -oE '^Primitive [A-Za-z0-9_]+' | cut -d' ' -f2 | sort -u)
 FILES="Audit RelFacts CoreMoss Narrowing KeyOnly Specialization D84 MossX FastX NMap Sx Elab Parse Prune
        ElabSound Certified RelSupport BxBridged BxMisfit BxNonex BxFamily RelExamples RelNegative RelFamily"
 # Every file must be in the list: a file left out would be neither compiled
 # nor audited.
-diff <(printf '%s\n' $FILES Extract2 | sort) <(ls *.v | sed 's/\.v$//' | sort) \
-  || { echo "check.sh: FILES is not every .v file but Extract2.v" >&2; exit 1; }
+diff <(printf '%s\n' $FILES | sort) <(ls *.v | sed 's/\.v$//' | sort) \
+  || { echo "check.sh: FILES is not every .v file" >&2; exit 1; }
 for f in $FILES; do
-  coqc -q -w -abstract-large-number,-non-full-mutual,-deprecated -Q . NM $f.v > $f.log 2>&1 || { cat $f.log; exit 1; }
+  rocq c -q -w -abstract-large-number,-non-full-mutual,-deprecated -Q . NM $f.v > $f.log 2>&1 || { cat $f.log; exit 1; }
   a=$(grep -c '^Print Assumptions' $f.v || true)
   case $f in
     CoreMoss|Narrowing|KeyOnly|Specialization|D84)

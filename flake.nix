@@ -29,18 +29,29 @@
             }
           )
         );
-      # The oracle's toolchain: Rocq, its standard library, and an OCaml
-      # with flambda, the only one that honours the `[@inlined]` the
-      # extracted interpreter relies on to keep its memory in check
-      # (bootstrap/README.md). A flambda OCaml isn't in the binary cache, so
+      # The oracle's toolchain: an OCaml with flambda, the only one that
+      # honours the `[@inlined]` the extracted interpreter relies on to keep
+      # its memory in check (bootstrap/README.md), Rocq and its standard
+      # library built with it (a few minutes), so that Rocq, findlib and
+      # dune all see one OCaml, and dune. A flambda OCaml isn't in the binary cache, so
       # it is built from source; its own test suite is skipped, since it
       # adds minutes to every CI run and tests OCaml, not Moss.
       oracleTools = pkgs: rec {
-        rocq = pkgs.rocqPackages.coq;
-        rocqPath = "${pkgs.rocqPackages.stdlib}/lib/coq/${rocq.coq-version}/user-contrib";
         ocamlFlambda =
           (pkgs.ocaml-ng.ocamlPackages_4_14.ocaml.override { flambdaSupport = true; }).overrideAttrs
             { doCheck = false; };
+        ocamlPackages = pkgs.ocaml-ng.ocamlPackages_4_14.overrideScope (_: _: { ocaml = ocamlFlambda; });
+        rocqPackages = pkgs.mkRocqPackages (
+          pkgs.rocqPackages.rocq-core.override { customOCamlPackages = ocamlPackages; }
+        );
+        # Everything `dune build` in bootstrap/ needs.
+        inputs = [
+          rocqPackages.rocq-core
+          rocqPackages.stdlib
+          ocamlPackages.ocaml
+          ocamlPackages.findlib
+          pkgs.dune_3
+        ];
       };
     in
     {
@@ -97,12 +108,11 @@
               ./src
             ];
           };
-          inherit (oracleTools pkgs) rocq rocqPath ocamlFlambda;
           bootstrapSource = pkgs.lib.fileset.toSource {
             root = ./bootstrap;
             fileset = pkgs.lib.fileset.unions [
-              ./bootstrap/build.sh
               ./bootstrap/check.sh
+              ./bootstrap/dune-project
               ./bootstrap/ocaml
               ./bootstrap/theories
             ];
@@ -113,21 +123,15 @@
             pname = "moss-oracle";
             version = "0.0.0";
             src = bootstrapSource;
-            nativeBuildInputs = [
-              rocq
-              ocamlFlambda
-            ];
-            ROCQPATH = rocqPath;
-            OCAMLOPT = "${ocamlFlambda}/bin/ocamlopt";
+            nativeBuildInputs = (oracleTools pkgs).inputs;
             buildPhase = ''
               runHook preBuild
-              patchShebangs build.sh
-              ./build.sh
+              dune build --release -j $NIX_BUILD_CORES ocaml/moss_m2.exe
               runHook postBuild
             '';
             installPhase = ''
               runHook preInstall
-              install -D _build/moss_m2 $out/bin/moss_m2
+              install -D _build/default/ocaml/moss_m2.exe $out/bin/moss_m2
               runHook postInstall
             '';
           };
@@ -420,14 +424,13 @@
       checks = forAll (
         pkgs:
         {
-          # The Rocq development of bootstrap/: every file compiles, and
-          # every theorem's assumptions are audited (bootstrap/check.sh says
+          # The Rocq development of bootstrap/: every file compiles, and the
+          # certificate's assumptions are audited (bootstrap/check.sh says
           # what is enforced). About five minutes and 6 GB.
           bootstrap-rocq =
             pkgs.runCommand "moss-bootstrap-rocq"
               {
-                nativeBuildInputs = [ (oracleTools pkgs).rocq ];
-                ROCQPATH = (oracleTools pkgs).rocqPath;
+                nativeBuildInputs = (oracleTools pkgs).inputs;
               }
               ''
                 cp -r ${self.packages.${pkgs.stdenv.hostPlatform.system}.oracle.src} bootstrap
@@ -573,20 +576,9 @@
             PATH=$PWD/bin:$PATH
           '';
         };
-        # For working on bootstrap/: `bootstrap/build.sh` and
+        # For working on bootstrap/: `dune build` there and
         # `bootstrap/check.sh` need nothing else.
-        bootstrap =
-          let
-            tools = oracleTools pkgs;
-          in
-          pkgs.mkShellNoCC {
-            buildInputs = [
-              tools.rocq
-              tools.ocamlFlambda
-            ];
-            ROCQPATH = tools.rocqPath;
-            OCAMLOPT = "${tools.ocamlFlambda}/bin/ocamlopt";
-          };
+        bootstrap = pkgs.mkShellNoCC { buildInputs = (oracleTools pkgs).inputs; };
       });
       overlays.default = final: prev: {
         moss = self.packages.${prev.stdenv.hostPlatform.system}.default;

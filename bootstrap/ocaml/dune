@@ -1,0 +1,34 @@
+; The oracle: Extract2.v extracts the front end, the elaborator and the
+; interpreter, and moss_m2.ml drives them. kernel/ is Rocq's OCaml
+; implementation of its primitive integers, floats and arrays, which the
+; extracted code links against.
+
+(copy_files# kernel/*.{ml,mli})
+
+(rocq.extraction
+ (prelude Extract2)
+ (extracted_modules Ascii Audit BinInt BinNat BinNums BinPos Bool0 Byte Byte0
+  Datatypes Decimal Elab FastX FloatClass Hexadecimal IntDef List0 ListDef
+  MossX NMap Nat NatDef Number Parse PeanoNat PosDef PrimArray PrimFloat
+  PrimInt63 Prune Specif String0 Uint63Axioms)
+ (theories NM Stdlib))
+
+; The OCaml must be flambda: only flambda honours the `[@inlined]` in
+; Extract2.v's `nat_case`, without which the interpreter keeps every
+; frame's incoming machine state alive, and the self-compile takes more
+; than 17 GB instead of 3 (README.md).
+
+(rule
+ (target flambda)
+ (action
+  (progn
+   (system
+    "test %{ocaml-config:flambda} = true || { echo 'moss_m2 needs a flambda OCaml: without it the interpreter retains every version of linear memory (README.md)' >&2; exit 1; }")
+   (write-file %{target} ""))))
+
+(executable
+ (name moss_m2)
+ (libraries unix)
+ (link_deps flambda)
+ (flags (:standard -w -a))
+ (ocamlopt_flags (:standard -O3 -inline 200 -unsafe)))
