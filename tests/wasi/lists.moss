@@ -1,4 +1,5 @@
 import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/array.moss" use FloatArraysOf;
 import "../../lib/wasistd.moss" use Branch, WasiFloats32;
 import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
@@ -70,6 +71,7 @@ assume Wasm, Wasi, Branch {
     report();
     {
       bind WasiFloats32;
+      bind FloatArraysOf;
       report();
     }
   }

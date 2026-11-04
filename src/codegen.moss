@@ -324,6 +324,23 @@ assume Std {
   # its own argument signature, as the bootstrap's `check_functor_body`.
   val fb_sym: IntList;
 
+  # D84 (draft): each captured environment of a binding of a bracketed
+  # abstract functor — the specialized one, which the binding's row holds
+  # in its `b` — beside the generic one in force with it at the bind.
+  val cl_env: IntList;
+  val cl_genv: IntList;
+  # Whether `apply_bound` is the check made where a bracketed functor is
+  # bound, which compares what the binds made with the promise.
+  val cl_check: CellInt;
+  # The capture `apply_bound` is to run its binds in, for the call in
+  # hand (none: D78's restriction to the functor's own inputs).
+  val cl_cur: CellInt;
+  # The declaration environment of the frame each capture was made in,
+  # beside `cl_env`, and the one in force while captured binds run (none:
+  # the frame's own), which an assumed row's app is read against.
+  val cl_bases: IntList;
+  val cl_base: CellInt;
+
   # D55: each functor with binds whose totality has been checked, so it
   # is checked once however often it is applied (`check_functor_total`).
   val ft_sym: IntList;
@@ -332,7 +349,7 @@ assume Std {
     fq_sym, fq_env, fq_index, wi_sym, wi_index, cg_env, cg_real, cg_ret,
     lc_name, lc_type, lc_spec, lc_start, lc_slots, lc_base, lc_visible,
     pv_recv, pv_sym, pv_local, pv_top, pv_floor,
-    fr_spec, fr_type, fr_sym, es_made, es_sym, es_top,
+    fr_spec, fr_type, fr_sym, es_made, es_sym, es_top, cl_env, cl_genv, cl_check, cl_cur, cl_bases, cl_base,
     sp_what, sp_env, sp_ty, sp_res, sp_link, sp_head,
     rm_node, rm_genv, rm_recv, rm_meth, rm_sym, rm_link, rm_head,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
@@ -4679,7 +4696,17 @@ assume Std {
         let s = lower::need_sym_at(f, i);
         let key = need_key_recv(f, genv, r);
         let row = lower::env_find(genv, lower::need_kind(s), key, s);
-        if ast::is_some(row) {
+        # D84 (draft): a bracketed functor is compared only where the
+        # callee reaches an application of it: `Wasm` lists the
+        # platform's, so a scope that swaps the GC heap could otherwise
+        # call nothing that assumes `Wasm` (tests/wasi/arena_ref.moss).
+        var skip = false;
+        if prog::sym_kind.get(s) == prog::sk_functor() {
+          skip = !need_used(f, i);
+        }
+        if skip {
+          # Nothing to compare.
+        } else if ast::is_some(row) {
           let want = lower::need_app_at(f, i);
           let have = lower::env_b_of(row);
           if !coherent(s, want, fbase, have, base, genv, moved, bound_here, true) {
@@ -4958,7 +4985,7 @@ assume Std {
       }
       let kind = prog::sym_kind.get(sym);
       if kind == prog::sk_functor() {
-        bind_functor(sym, value, m);
+        bind_functor(sym, value, m, depth, mode);
         return ();
       }
       if kind == prog::sk_val() {
@@ -5616,10 +5643,22 @@ assume Std {
           provider = fu;
         }
       }
-      # Whatever `F` is bound to here, the application is checked against
-      # every functor it is bound to anywhere, as the bootstrap lowers
-      # each as a branch: each must make the result as promised.
-      check_candidates(spec, fu, provider, depth, mode);
+      var captured = lower::env_empty();
+      if ast::is_some(row) {
+        captured = lower::env_b_of(row);
+      }
+      if ast::fu_bracketed(d) {
+        # D84 (draft): its fixed inputs as where it was provided; and its
+        # binding was checked where it was made, so nothing is scanned.
+        if !check_stale(fu) {
+          return ();
+        }
+      } else {
+        # Whatever `F` is bound to here, the application is checked
+        # against every functor it is bound to anywhere, as the bootstrap
+        # lowers each as a branch: each must make the result as promised.
+        check_candidates(spec, fu, provider, depth, mode);
+      }
       if !ast::is_some(provider) {
         if checking() {
           apply_generic(body, spec, d, home);
@@ -5628,7 +5667,121 @@ assume Std {
         cg_error(c_unbound(), prog::sym_name.get(fu));
         return ();
       }
+      apply_closure_at(body, spec, fu, provider, captured, cg_env.read(), cg_genv.read(), depth, mode);
+    }
+
+    # D84 (draft): `bind F;` where `F` is bound to `provider`, whose
+    # binding captured `captured` (none: D78's, which captures nothing).
+    fn apply_closure_at(
+      body: IntList, spec: Int, fu: Int, provider: Int, captured: Int, senv: Int,
+      genv: Int, depth: Int, mode: Int
+    ) {
+      let held = cl_cur.read();
+      cl_cur.write(captured);
       apply_bound(body, spec, fu, provider, depth, mode);
+      cl_cur.write(held);
+    }
+
+    # D84 (draft): the environments a captured binding's binds run in —
+    # the captured ones, with each type the application supplies (`P(F)`
+    # and `F`'s input types outside `X(F)`) as it is here, and `F`'s input
+    # vals as they are here, above a floor. Returns the specialized one.
+    fn closure_env(fu: Int, captured: Int): Int {
+      let real = cg_env.read();
+      let greal = cg_genv.read();
+      var out = captured;
+      var gout = captured_genv(captured);
+      if !ast::is_some(gout) {
+        gout = greal;
+      }
+      let per = int_list();
+      lower::functor_poly(fu, per);
+      var i = 0;
+      while i < per.length() {
+        let t = per.get(i);
+        let gr = lower::env_find(greal, lower::ek_type(), ast::none(), t);
+        if ast::is_some(gr) {
+          gout = lower::env_push(gout, lower::ek_type(), ast::none(), t, lower::env_a_of(gr), ast::none());
+          # What the generic type names, as this specialization has it.
+          let syms = int_list();
+          abstract_syms(lower::env_a_of(gr), syms);
+          var j = 0;
+          while j < syms.length() {
+            let r = lower::env_find(real, lower::ek_type(), ast::none(), syms.get(j));
+            if ast::is_some(r) {
+              out = lower::env_push(out, lower::ek_type(), ast::none(), syms.get(j), lower::env_a_of(r), ast::none());
+            }
+            j = j + 1;
+          }
+        }
+        let r = lower::env_find(real, lower::ek_type(), ast::none(), t);
+        if ast::is_some(r) {
+          out = lower::env_push(out, lower::ek_type(), ast::none(), t, lower::env_a_of(r), ast::none());
+        }
+        i = i + 1;
+      }
+      # `F`'s input vals, as this application has them.
+      let d = prog::sym_decl.get(fu);
+      let nrecv = int_list();
+      let nsym = int_list();
+      let decl_env = lower::assume_items(prog::sym_mod.get(fu), ast::fu_args(d), ast::fu_nargs(d), nrecv, nsym);
+      let val_syms = int_list();
+      let val_locals = int_list();
+      var e = decl_env;
+      while ast::is_some(e) {
+        if lower::env_kind_of(e) == lower::ek_val() {
+          let l = provision_of(ast::none(), lower::env_sym_of(e));
+          if ast::is_some(l) {
+            val_syms.push(lower::env_sym_of(e));
+            val_locals.push(l);
+          }
+        }
+        e = lower::env_next_of(e);
+      }
+      pv_floor.write(pv_top.read());
+      i = 0;
+      while i < val_syms.length() {
+        provide(ast::none(), val_syms.get(i), val_locals.get(i));
+        i = i + 1;
+      }
+      cg_env.write(out);
+      cg_genv.write(gout);
+      out
+    }
+
+    # The abstract symbols a type mentions.
+    fn abstract_syms(t: Int, out: IntList) {
+      if !ast::is_some(t) {
+        return ();
+      }
+      let k = types::kind_of(t);
+      if k == types::kd_abstract() {
+        types::push_new(out, types::sym_of(t));
+        return ();
+      }
+      if k == types::kd_record() {
+        var i = 0;
+        while i < types::field_count(t) {
+          abstract_syms(types::field_type_at(t, i), out);
+          i = i + 1;
+        }
+        return ();
+      }
+      if k == types::kd_nominal() {
+        var i = 0;
+        while i < types::member_count(t) {
+          abstract_syms(types::member_at(t, i), out);
+          i = i + 1;
+        }
+        return ();
+      }
+      if k == types::kd_union() {
+        var i = 0;
+        while i < types::member_count(t) {
+          abstract_syms(types::member_at(t, i), out);
+          i = i + 1;
+        }
+      }
     }
 
     # D78: every functor the abstract `fu` can be bound to anywhere in the
@@ -5705,10 +5858,20 @@ assume Std {
       let floor = pv_floor.read();
       var base = emark;
       var bmark = pmark;
+      let captured = cl_cur.read();
+      cl_cur.write(lower::env_empty());
+      let closed = captured != lower::env_empty();
       if ast::is_some(ast::fu_binds(prog::sym_decl.get(provider))) {
-        base = restrict_to_args(provider);
+        let held_base = cl_base.read();
+        if closed {
+          base = closure_env(fu, captured);
+          cl_base.write(captured_base(captured));
+        } else {
+          base = restrict_to_args(provider);
+        }
         bmark = pv_top.read();
         run_functor(body, provider, depth, mode);
+        cl_base.write(held_base);
       } else {
         platform_functor(prog::sym_decl.get(provider), prog::sym_mod.get(provider));
       }
@@ -5863,6 +6026,13 @@ assume Std {
         gens.push(fresh_gen(spec, tsyms.get(k)));
         made_tys.push(lower::canon(gmade, types::ty_of_symbol(types::kd_abstract(), tsyms.get(k))));
         k = k + 1;
+      }
+      if closed {
+        # D84 (draft): checked where it was bound (`check_at_bind`), and
+        # not here, where the binds' generic terms are the binding's.
+        if cl_check.read() == 0 {
+          return ();
+        }
       }
       k = 0;
       while k < syms.length() {
@@ -6292,7 +6462,7 @@ assume Std {
     # a fn bind, and capturing nothing: `G`'s binds run where `F` is
     # applied. `G` may need fewer inputs than `F` takes, and must provide
     # exactly `F`'s result (`check_binding`).
-    fn bind_functor(fu: Int, value: Int, m: Int) {
+    fn bind_functor(fu: Int, value: Int, m: Int, depth: Int, mode: Int) {
       if ast::is_some(ast::fu_binds(prog::sym_decl.get(fu))) {
         cg_error(c_unsupported(), prog::sym_name.get(fu));
         return ();
@@ -6311,15 +6481,25 @@ assume Std {
         return ();
       }
       var provider = g;
+      var captured = lower::env_empty();
       if !ast::is_some(ast::fu_binds(prog::sym_decl.get(g))) {
         if !lower::env_has(cg_genv.read(), lower::ek_fn(), ast::none(), g) {
           cg_error(c_unbound(), prog::sym_name.get(g));
+          return ();
+        }
+        # D84 (draft): a copy needs `H` usable here, and polymorphic in at
+        # least what `F` promises to be.
+        if !check_stale(g) {
+          return ();
+        }
+        if !params_within(fu, g, m) {
           return ();
         }
         let row = lower::env_find(cg_env.read(), lower::ek_fn(), ast::none(), g);
         provider = ast::none();
         if ast::is_some(row) {
           provider = lower::env_a_of(row);
+          captured = lower::env_b_of(row);
         }
         if !ast::is_some(provider) {
           if in_wasm(g) {
@@ -6333,7 +6513,32 @@ assume Std {
           }
         }
       }
-      if !check_binding(fu, g, m) {
+      let bracketed = ast::fu_bracketed(prog::sym_decl.get(fu));
+      if bracketed {
+        # Its fixed inputs must be in force where it is bound.
+        let xs = int_list();
+        lower::functor_fixed(fu, xs);
+        var x = 0;
+        while x < xs.length() {
+          if !lower::env_has(cg_genv.read(), lower::ek_type(), ast::none(), xs.get(x)) {
+            cg_error(c_unbound(), prog::sym_name.get(xs.get(x)));
+            return ();
+          }
+          x = x + 1;
+        }
+      }
+      var bodied = ast::is_some(ast::fu_binds(prog::sym_decl.get(g)));
+      if bracketed {
+        if bodied {
+          # Inputs `F` does not take are captured here (D84), so only the
+          # result is compared.
+          if !check_outputs(fu, g, m) {
+            return ();
+          }
+        } else if !check_binding(fu, g, m) {
+          return ();
+        }
+      } else if !check_binding(fu, g, m) {
         return ();
       }
       if ast::is_some(ast::fu_binds(prog::sym_decl.get(g))) {
@@ -6348,10 +6553,179 @@ assume Std {
           fb_sym.push(g);
         }
       }
+      if bracketed {
+        if bodied {
+          # D84 (draft): the binding captures this environment, both of
+          # them, and its binds are checked here once, generic in `P`.
+          captured = cg_env.read();
+          remember_capture(captured, cg_genv.read());
+          check_at_bind(value, fu, g, captured, depth, mode);
+        }
+      }
       cg_env.write(lower::env_push(
-        cg_env.read(), lower::ek_fn(), ast::none(), fu, provider, lower::env_empty()
+        cg_env.read(), lower::ek_fn(), ast::none(), fu, provider, captured
       ));
       provided_at(lower::ek_fn(), ast::none(), fu, cg_genv.read());
+    }
+
+    # D84 (draft): the generic environment captured beside a specialized
+    # one.
+    fn remember_capture(senv: Int, genv: Int) {
+      var i = 0;
+      while i < cl_env.length() {
+        if cl_env.get(i) == senv {
+          return ();
+        }
+        i = i + 1;
+      }
+      cl_env.push(senv);
+      cl_genv.push(genv);
+      cl_bases.push(frame_base());
+    }
+
+    # What an assumed row's app is read against here.
+    fn frame_base(): Int {
+      if ast::is_some(cl_base.read()) {
+        return cl_base.read();
+      }
+      lower::env_of(cg_where.read())
+    }
+
+    fn captured_base(senv: Int): Int {
+      var i = 0;
+      while i < cl_env.length() {
+        if cl_env.get(i) == senv {
+          return cl_bases.get(i);
+        }
+        i = i + 1;
+      }
+      ast::none()
+    }
+
+    fn captured_genv(senv: Int): Int {
+      var i = 0;
+      while i < cl_env.length() {
+        if cl_env.get(i) == senv {
+          return cl_genv.get(i);
+        }
+        i = i + 1;
+      }
+      ast::none()
+    }
+
+    # D84 (draft): `bind F = G;` with `F` bracketed — `G`'s binds run here,
+    # as dead code, in the environment they capture, with each of `P(F)` a
+    # fresh type; what they make is compared with what `F`, read here,
+    # promises (`cl_check`), so a pin of a fixed input that disagrees with
+    # it here is refused here, once.
+    fn check_at_bind(spec: Int, fu: Int, g: Int, captured: Int, depth: Int, mode: Int) {
+      let emark = cg_env.read();
+      let gmark = cg_genv.read();
+      let pmark = pv_top.read();
+      let floor = pv_floor.read();
+      let smark = es_top.read();
+      let ps = int_list();
+      lower::functor_params(fu, ps);
+      var i = 0;
+      while i < ps.length() {
+        let gty = types::ty_of_symbol(types::kd_abstract(), fresh_gen(spec, ps.get(i)));
+        cg_env.write(lower::env_push(cg_env.read(), lower::ek_type(), ast::none(), ps.get(i), gty, ast::none()));
+        cg_genv.write(lower::env_push(cg_genv.read(), lower::ek_type(), ast::none(), ps.get(i), gty, ast::none()));
+        i = i + 1;
+      }
+      let was = dead();
+      let held = cl_check.read();
+      cl_check.write(1);
+      apply_closure_at(int_list(), spec, fu, g, captured, cg_env.read(), cg_genv.read(), depth, mode);
+      cl_check.write(held);
+      alive(was);
+      cg_env.write(emark);
+      cg_genv.write(gmark);
+      pv_top.write(pmark);
+      pv_floor.write(floor);
+      es_top.write(smark);
+    }
+
+    # D84 (draft): the fixed inputs of a bracketed `F` mean here what they
+    # meant where `F` was provided (its generic row's app), or it cannot
+    # be used here.
+    fn check_stale(fu: Int): Bool {
+      let xs = int_list();
+      lower::functor_fixed(fu, xs);
+      if xs.length() == 0 {
+        return true;
+      }
+      let genv = cg_genv.read();
+      let row = lower::env_find(genv, lower::ek_fn(), ast::none(), fu);
+      if !ast::is_some(row) {
+        return true;
+      }
+      let base = frame_base();
+      var i = 0;
+      while i < xs.length() {
+        let x = xs.get(i);
+        let have = lower::app_get(lower::env_b_of(row), x, base);
+        var now = ast::none();
+        let at = types::ty_of_symbol(types::kd_abstract(), x);
+        if lower::env_has(genv, lower::ek_type(), ast::none(), x) {
+          now = lower::canon(genv, at);
+        }
+        # The symbol itself and its parameter are both "as assumed".
+        if now == at {
+          now = lower::as_assumed(x);
+        }
+        var had = have;
+        if had == at {
+          had = lower::as_assumed(x);
+        }
+        if had != now {
+          cg_error(prog::e_incoherent(), prog::sym_name.get(fu));
+          return false;
+        }
+        i = i + 1;
+      }
+      true
+    }
+
+    # D84: `P(F)` within `P(H)` for a copy `bind F = H;`, where each is
+    # all of `M` when it has no brackets.
+    fn params_within(fu: Int, h: Int, m: Int): Bool {
+      if !ast::fu_bracketed(prog::sym_decl.get(h)) {
+        return true;
+      }
+      let mine = int_list();
+      if ast::fu_bracketed(prog::sym_decl.get(fu)) {
+        lower::functor_params(fu, mine);
+      } else {
+        lower::functor_mentions(fu, mine);
+      }
+      let theirs = int_list();
+      lower::functor_params(h, theirs);
+      var i = 0;
+      while i < mine.length() {
+        if !types::contains_sym(theirs, mine.get(i)) {
+          prog::error(prog::e_functor_sig(), m, prog::sym_name.get(mine.get(i)));
+          return false;
+        }
+        i = i + 1;
+      }
+      true
+    }
+
+    # `G`'s result exactly `F`'s, as leaf items.
+    fn check_outputs(fu: Int, g: Int, m: Int): Bool {
+      let fd = prog::sym_decl.get(fu);
+      let gd = prog::sym_decl.get(g);
+      let f_out_s = int_list();
+      let f_out_d = int_list();
+      let g_out_s = int_list();
+      let g_out_d = int_list();
+      sig_items(prog::sym_mod.get(fu), ast::fu_res(fd), ast::fu_nres(fd), f_out_s, f_out_d, 0);
+      sig_items(prog::sym_mod.get(g), ast::fu_res(gd), ast::fu_nres(gd), g_out_s, g_out_d, 0);
+      if !sig_within(f_out_s, f_out_d, g_out_s, g_out_d, m) {
+        return false;
+      }
+      sig_within(g_out_s, g_out_d, f_out_s, f_out_d, m)
     }
 
     # D78: the types a functor bound to an abstract one names must be its
@@ -6877,6 +7251,8 @@ assume Std {
       pv_top.write(0);
       pv_floor.write(0);
       es_top.write(0);
+      cl_cur.write(lower::env_empty());
+      cl_base.write(ast::none());
       cg_env.write(env);
       cg_genv.write(lower::env_of(sym));
       if is_defined_method(sym) {
@@ -7063,6 +7439,8 @@ assume Std {
       pv_top.write(0);
       pv_floor.write(0);
       es_top.write(0);
+      cl_cur.write(lower::env_empty());
+      cl_base.write(ast::none());
       cg_genv.write(genv);
       cg_env.write(types_of(genv));
       cg_ret.write(ty_none());

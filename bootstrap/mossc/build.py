@@ -332,11 +332,6 @@ def _result(name: str) -> bytes:
     return {"i64": I64, "f32": F32, "f64": F64}.get(prefix, I32)
 
 
-# `Wasm`'s two constants are zero-argument instructions (D84, draft: so
-# that `Wasm` holds no vals).
-WASM_OPS["i32_zero"] = b"\x41\x00"
-WASM_OPS["i32_one"] = b"\x41\x01"
-
 # What each of them leaves on the stack.
 RESULTS = {name: _result(name) for name in WASM_OPS}
 
@@ -364,6 +359,20 @@ class Primitive:
     held: object
 
 
+@dataclass(frozen=True, eq=False)
+class BoundClosure:
+    """D84 (draft): what an abstract functor is bound to in a
+    specialization — the binds lowered where it was bound, with that
+    specialization's environment and type arguments, which they capture,
+    and the vals they read there (`cap`), which travel as
+    `captured(key, slot)` parameters as a fn provider's do."""
+
+    closure: object
+    env: dict
+    theta: dict
+    cap: tuple
+
+
 def freeze_env(env: dict) -> tuple:
     """A hashable form of a binding environment, for keying specializations."""
 
@@ -372,6 +381,11 @@ def freeze_env(env: dict) -> tuple:
             return (id(k), 0, (entry.prim, entry.held), ())
         if isinstance(entry, Symbol):
             return (id(k), 1, id(entry), ())  # D78: which functor
+        if isinstance(entry, BoundClosure):
+            return (
+                id(k), 2, id(entry.closure),
+                (freeze_env(entry.env), freeze_theta(entry.theta), entry.cap),
+            )
         g, sub, theta = entry
         return (id(k), id(g), freeze_env(sub), freeze_theta(theta))
 
@@ -768,6 +782,7 @@ class Backend:
                 out.append((node.fn, node.needs_map))
             elif isinstance(node, ir.ApplyFunctor):
                 uses.add(node.key)
+                uses.update(node.ins)  # D84: what it supplies a closure
             elif isinstance(node, ir.BindFunctor) and node.source is not None:
                 uses.add(node.source)
             if isinstance(node, (list, tuple)):
@@ -833,6 +848,8 @@ class Backend:
                     continue  # never reached, so never passed
                 if self.passed_need(key):
                     found.append(key)
+                elif key in e and isinstance(e[key], BoundClosure):
+                    found.extend(captured(key, slot) for slot in e[key].cap)
                 elif key in e and not isinstance(e[key], (Primitive, Symbol)):
                     provider, sub, _ = e[key]
                     found.extend(
@@ -1456,6 +1473,10 @@ class FnCompiler:
         # local indices rather than one.
         self.slots: dict = {}  # name -> [local index, ...]
         self.provisions: dict = {}  # key -> ('local', idx) | ('const', n)
+        # D84 (draft): inside a closure applied here, a key the closure
+        # reads that this application supplies natively, by the key the
+        # application knows it under.
+        self.aliases: dict = {}
         index = 0
         widths = list(fn.param_slots) or [1] * (len(fn.params) + (1 if fn.has_this else 0))
         names = (["this"] if fn.has_this else []) + list(fn.params)
@@ -1535,6 +1556,7 @@ class FnCompiler:
     def provide(self, key):
         if key in self.provisions:
             return self.provisions[key]
+        key = self.aliases.get(key, key)
         provision = self.b.natives.get(key)
         const = self.b.native_const(provision)
         if const is not None:
@@ -1632,7 +1654,9 @@ class FnCompiler:
             self.env[node.key] = Primitive(node.prim, self.held_of_here(node.held))
         elif isinstance(node, ir.BindFunctor):
             # D78: static, like a fn bind: which functor it now is.
-            if node.functor is not None:
+            if node.closure is not None:
+                self.bind_closure(node)
+            elif node.functor is not None:
                 self.env[node.key] = node.functor
             else:
                 self.env[node.key] = self.bound_functor(node.source)
@@ -1687,6 +1711,9 @@ class FnCompiler:
         environment entries (a provider, a primitive, a functor), and the
         values a provider captured for its key."""
         bound = self.bound_functor(node.key)
+        if isinstance(bound, BoundClosure):
+            self.apply_closure(node, bound)
+            return
         for functor, stmts, pairs, types in node.branches:
             if functor is bound:
                 break
@@ -1715,6 +1742,112 @@ class FnCompiler:
         # them (D78), for whatever below needs a type argument.
         if types:
             self.theta = {**self.theta, **{g: subst(self.theta, t) for g, t in types}}
+
+    def bind_closure(self, node: ir.BindFunctor):
+        """D84 (draft): `bind F = G;` — record the closure, this
+        specialization's environment and type arguments, and the vals its
+        binds read here, provided again under `captured(F, slot)` so that
+        they travel with `F` to wherever it is applied."""
+        closure = node.closure
+        wanted: set = set()
+
+        def walk(n):
+            if isinstance(n, ir.NeedVal):
+                wanted.add(n.key)
+            elif isinstance(n, (ir.BindFn, ir.Call)):
+                for _, caller_key in (n.needs_map or ()):
+                    wanted.add(caller_key)
+                if isinstance(n, ir.Call) and n.callee[0] == "env":
+                    wanted.add(n.callee[1])
+            elif isinstance(n, ir.BindFunctor) and n.source is not None:
+                wanted.add(n.source)
+            elif isinstance(n, ir.ApplyFunctor):
+                wanted.add(n.key)
+                wanted.update(n.ins)
+            if isinstance(n, (list, tuple)):
+                for item in n:
+                    walk(item)
+            elif hasattr(n, "__dataclass_fields__") and type(n).__module__ == ir.__name__:
+                for name in n.__dataclass_fields__:
+                    if name not in ("callee", "needs_map", "key", "fn", "source"):
+                        walk(getattr(n, name))
+
+        walk(closure.stmts)
+        ins = set(closure.ins)
+        cap = []
+        for key in list(self.provisions):
+            base = key[1] if isinstance(key, tuple) and len(key) == 3 and key[0] == "captured" else key
+            if base in wanted and base not in ins:
+                cap.append(key)
+        # What a closure already in the environment carries, too.
+        for k in wanted:
+            entry = self.env.get(k)
+            if isinstance(entry, BoundClosure):
+                for slot in entry.cap:
+                    c = captured(k, slot)
+                    if c in self.provisions and c not in cap:
+                        cap.append(c)
+        for ck in cap:
+            self.provisions[captured(node.key, ck)] = self.provisions[ck]
+        self.env[node.key] = BoundClosure(closure, dict(self.env), dict(self.theta), tuple(cap))
+
+    def apply_closure(self, node: ir.ApplyFunctor, bound: BoundClosure):
+        """D84 (draft): `bind F;` where `F` is bound to a closure: its
+        binds compiled here, in place, in the environment and at the type
+        arguments captured where it was bound, each type the application
+        supplies at the type it is here, with what this application
+        supplies and the captured vals provided; then only `F`'s result
+        survives."""
+        closure = bound.closure
+        theta = dict(bound.theta)
+        pargs = dict(node.pargs)
+        for p_, gen in closure.params:
+            theta[gen] = subst(self.theta, pargs[p_])
+        provisions = {}
+        for ck in bound.cap:
+            provisions[ck] = self.provide(captured(node.key, ck))
+        env = dict(bound.env)
+        aliases = dict(self.aliases)
+        for ck, ak in zip(closure.ins, node.ins):
+            if ak in self.env:
+                env[ck] = self.env[ak]
+                for key, value in self.provisions.items():
+                    if isinstance(key, tuple) and len(key) == 3 and key[0] == "captured" and key[1] == ak:
+                        provisions[captured(ck, key[2])] = value
+            else:
+                env.pop(ck, None)
+                aliases[ck] = aliases.get(ak, ak)
+            try:
+                provisions[ck] = self.provide(ak)
+            except NotCompilable:
+                pass
+        saved = (self.provisions, self.env, self.theta, self.aliases)
+        self.provisions, self.env, self.theta, self.aliases = provisions, env, theta, aliases
+        try:
+            for stmt in closure.stmts:
+                self.stmt(stmt)
+            made_provisions, made_env, made_theta = self.provisions, self.env, self.theta
+        finally:
+            self.provisions, self.env, self.theta, self.aliases = saved
+        rename = dict(zip(closure.made, node.outs))
+        for key, value in made_provisions.items():
+            if key in rename:
+                self.provisions[rename[key]] = value
+            elif (
+                isinstance(key, tuple) and len(key) == 3 and key[0] == "captured"
+                and key[1] in rename
+            ):
+                self.provisions[captured(rename[key[1]], key[2])] = value
+        for key, out in rename.items():
+            if key in made_env:
+                self.env[out] = made_env[key]
+            else:
+                self.env.pop(out, None)
+        if node.gens:
+            made = dict(closure.types)
+            self.theta = {
+                **self.theta, **{g: subst(made_theta, made[t]) for t, g in node.gens}
+            }
 
     # Expressions: every expression leaves exactly one i32.
 
@@ -2070,7 +2203,7 @@ class FnCompiler:
             self.code += CALL + uleb(index)
             return self.b.result_of(index, self.b.lower.fns[id(provider)].ret_slots)
         # Contextual call: a native method, putchar, or out of slice.
-        key = target
+        key = self.aliases.get(target, target)
         native_float = self.b.float_op(key)
         if native_float is not None:
             code, result = native_float

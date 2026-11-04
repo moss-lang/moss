@@ -9,9 +9,9 @@ tag A(I32);
 tag B(I32);
 
 assume Wasm {
-  fn f(a: A): I32 { w::i32_one() }
+  fn f(a: A): I32 { w::i32_one }
   fn unused(): I32 {
-    f(B(w::i32_one()))
+    f(B(w::i32_one))
   }
   fn main() {}
 }

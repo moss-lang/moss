@@ -10,6 +10,6 @@ tag B(I32);
 
 assume Wasm, Branch {
   fn main() {
-    let x = if i32_bool(w::i32_one()) { w::i32_one() } else { B(w::i32_one()) };
+    let x = if i32_bool(w::i32_one) { w::i32_one } else { B(w::i32_one) };
   }
 }

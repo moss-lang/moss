@@ -3,8 +3,9 @@ import "./num.moss" use .not, .and, .or, .xor;
 import "./std.moss" use Std;
 import "./wasichar.moss" use WasiCharConsts;
 import "./wasistd.moss" use WasiBasics, WasiContainers, WasiOutput, WasiFiles,
-  WasiFloats, Branch;
-import "./wasm.moss" use Wasm;
+  WasiFloats, Branch, GcArrays;
+import "./wasm.moss" use Wasm, ArrayRef;
+import "./array.moss" as array use ArrayHandle, Arrays, FloatArraysOf;
 import "./wasip1.moss" use Wasi;
 
 # All of it: the `Std` signature, provided in Moss over the primitive
@@ -21,6 +22,11 @@ functor WasiStd: Wasm, Wasi, Branch -> Std {
   bind WasiOutput;
   bind WasiFiles;
   bind WasiFloats;
+  # Arrays are GC arrays (D81), bound once here for every element type,
+  # and `Float`'s are derived from them (D84, draft).
+  bind array::ArrayHandle = ArrayRef;
+  bind Arrays = GcArrays;
+  bind FloatArraysOf;
   bind WasiCharConsts;
   bind Bool.not = Bool.flip;
   bind Bool.and = Bool.both;

@@ -14,19 +14,19 @@ type Colour = | Red | Green;
 type Never = |;
 
 assume Wasm, Wasi, Branch {
-  fn two(): I32 { w::i32_add(w::i32_one(), w::i32_one()) }
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
   fn four(): I32 { w::i32_add(two(), two()) }
   fn eight(): I32 { w::i32_add(four(), four()) }
 
   fn emit(c: I32) {
-    w::i32_store(w::i32_zero(), eight());
-    w::i32_store(four(), w::i32_one());
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
     w::i32_store8(eight(), c);
-    fd_write(w::i32_one(), w::i32_zero(), w::i32_one(), w::i32_add(eight(), four()));
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
   }
 
   fn letter(n: I32) {
-    emit(w::i32_add(w::i32_add(w::i32_shl(w::i32_one(), w::i32_add(four(), two())), w::i32_one()), n));
+    emit(w::i32_add(w::i32_add(w::i32_shl(w::i32_one, w::i32_add(four(), two())), w::i32_one), n));
   }
 
   fn stop(): Never {
@@ -43,7 +43,7 @@ assume Wasm, Wasi, Branch {
   # Nothing expected: the `if` and the `match` take the other branch's
   # type.
   fn bare(c: Colour) {
-    let x = if i32_bool(w::i32_zero()) { return } else { w::i32_one() };
+    let x = if i32_bool(w::i32_zero) { return } else { w::i32_one };
     let y = match c {
       Red => return,
       Green => two(),
@@ -55,8 +55,8 @@ assume Wasm, Wasi, Branch {
   # declared type, whether it diverges by its tail or by its last
   # statement.
   fn tail(c: Colour): I32 {
-    if i32_bool(w::i32_zero()) {
-      return w::i32_zero()
+    if i32_bool(w::i32_zero) {
+      return w::i32_zero
     } else {
       match c {
         Red => { return four(); },
@@ -79,11 +79,11 @@ assume Wasm, Wasi, Branch {
     letter(tail(Red));
     letter(tail(Green));
     letter(never(Red));
-    var i = w::i32_zero();
+    var i = w::i32_zero;
     loop {
       let n = if i32_bool(w::i32_eq(i, two())) { break } else { i };
       letter(n);
-      i = w::i32_add(i, w::i32_one());
+      i = w::i32_add(i, w::i32_one);
     }
     emit(w::i32_add(eight(), two()));
   }

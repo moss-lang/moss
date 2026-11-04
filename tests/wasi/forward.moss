@@ -23,20 +23,20 @@ functor Echo: Glyph, say -> speak {
 }
 
 assume Wasm, Wasi, Branch {
-  fn two(): I32 { w::i32_add(w::i32_one(), w::i32_one()) }
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
   fn four(): I32 { w::i32_add(two(), two()) }
   fn eight(): I32 { w::i32_add(four(), four()) }
   fn six(): I32 { w::i32_add(four(), two()) }
 
   fn emit(c: I32) {
-    w::i32_store(w::i32_zero(), eight());
-    w::i32_store(four(), w::i32_one());
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
     w::i32_store8(eight(), c);
-    fd_write(w::i32_one(), w::i32_zero(), w::i32_one(), w::i32_add(eight(), four()));
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
   }
 
   fn upper_a(): I32 {
-    w::i32_add(w::i32_shl(w::i32_one(), six()), w::i32_one())
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
   }
 
   fn newline(): I32 { w::i32_add(eight(), two()) }
@@ -46,7 +46,7 @@ assume Wasm, Wasi, Branch {
   # 'A' plus the glyph plus 1 << shift: with glyph 0, 'C' for 1, 'E' for 2.
   assume shift {
     fn shifted(g: I32) {
-      emit(w::i32_add(w::i32_add(upper_a(), g), w::i32_shl(w::i32_one(), shift)));
+      emit(w::i32_add(w::i32_add(upper_a(), g), w::i32_shl(w::i32_one, shift)));
     }
   }
 
@@ -82,16 +82,16 @@ assume Wasm, Wasi, Branch {
 
   fn main() {
     bind Glyph = I32;
-    bind shift = w::i32_one();
+    bind shift = w::i32_one;
     bind say = shifted;
     bind speak = say;
     bind shift = two();
-    speak(w::i32_zero());              # 'C': `say` captured shift = 1
+    speak(w::i32_zero);              # 'C': `say` captured shift = 1
     bind say = plain;
-    speak(w::i32_zero());              # 'C': still the `say` of the bind
-    say(w::i32_zero());                # 'E': `say` itself is rebound
-    deeper(w::i32_one());              # 'D': `speak` is still shifted
-    via_functor(w::i32_zero());        # 'E': the caller's `say`, once
+    speak(w::i32_zero);              # 'C': still the `say` of the bind
+    say(w::i32_zero);                # 'E': `say` itself is rebound
+    deeper(w::i32_one);              # 'D': `speak` is still shifted
+    via_functor(w::i32_zero);        # 'E': the caller's `say`, once
     bind add = w::i32_add;
     emit(sum());                     # 'C'
     emit(newline());

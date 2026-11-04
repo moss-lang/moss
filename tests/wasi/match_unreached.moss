@@ -13,8 +13,8 @@ tag B(I32);
 assume Wasm, T {
   fn unused(x: T): I32 {
     match x {
-      y => w::i32_one(),
-      _ => B(w::i32_one()),
+      y => w::i32_one,
+      _ => B(w::i32_one),
     }
   }
 }

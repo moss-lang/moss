@@ -13,8 +13,8 @@ tag Red;
 assume Wasm, T {
   fn pick(x: T): I32 {
     match x {
-      y => w::i32_one(),
-      _ => B(w::i32_one()),
+      y => w::i32_one,
+      _ => B(w::i32_one),
     }
   }
 }

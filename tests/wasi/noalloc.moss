@@ -9,7 +9,7 @@ assume Std, Wasm, Branch {
   fn unbox(b: Box): Char { match b { Box(v) => v } }
 
   fn main() {
-    let one32 = w::i32_one();
+    let one32 = w::i32_one;
     let sixteen = w::i32_shl(one32, w::i32_add(w::i32_add(one32, one32), w::i32_add(one32, one32)));
     let before = w::i32_load(sixteen);
     var i = zero;

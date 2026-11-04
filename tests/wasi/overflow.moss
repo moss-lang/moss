@@ -45,7 +45,7 @@ assume Wasm, Branch {
     let r = w::i32_add(a, b);
     # Overflow iff both operands' signs differ from the result's.
     let flips = w::i32_and(w::i32_xor(a, r), w::i32_xor(b, r));
-    if i32_bool(w::i32_lt_s(flips, w::i32_zero())) { w::unreachable() } else { () }
+    if i32_bool(w::i32_lt_s(flips, w::i32_zero)) { w::unreachable() } else { () }
     Checked(r)
   }
 
@@ -58,8 +58,8 @@ assume Wasm, Branch {
     Checked(r)
   }
 
-  fn checked_zero(): Checked { Checked(w::i32_zero()) }
-  fn checked_one(): Checked { Checked(w::i32_one()) }
+  fn checked_zero(): Checked { Checked(w::i32_zero) }
+  fn checked_one(): Checked { Checked(w::i32_one) }
 
   fn as_num(c: Checked): Num { Num(checked(c)) }
 }

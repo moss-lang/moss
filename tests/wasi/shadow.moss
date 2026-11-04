@@ -1,4 +1,5 @@
 import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/array.moss" use FloatArraysOf;
 import "../../lib/wasistd.moss" use Branch, WasiFloats, WasiFloats32;
 import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
@@ -33,9 +34,11 @@ assume Wasm, Wasi, Branch {
     third();                 # f64
     {
       bind WasiFloats32;
+      bind FloatArraysOf;
       third();               # f32
       {
         bind WasiFloats;
+        bind FloatArraysOf;
         third();             # f64 again
       }
       third();               # f32: the inner block's binds are gone

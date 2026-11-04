@@ -14,7 +14,7 @@ assume Wasm, Wasi {
 
   fn pick(c: Colour): I32 {
     match c {
-      red => w::i32_one(),
+      red => w::i32_one,
     }
   }
 

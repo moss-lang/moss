@@ -27,10 +27,10 @@ assume Wasm, Branch {
     let n = w::i32_load(data);
     let p = alloc(w::i32_add(four(), n));
     w::i32_store(p, n);
-    var i = w::i32_zero();
+    var i = w::i32_zero;
     while i32_bool(w::i32_lt_u(i, n)) {
       w::i32_store8(w::i32_add(w::i32_add(p, four()), i), w::i32_load(elem(data, i)));
-      i = w::i32_add(i, w::i32_one());
+      i = w::i32_add(i, w::i32_one);
     }
     Str(p)
   }
@@ -42,14 +42,14 @@ assume Wasm, Branch {
       let n = raw(s.length());
       let p = alloc(w::i32_add(four(), n));
       w::i32_store(p, n);
-      var i = w::i32_zero();
+      var i = w::i32_zero;
       while i32_bool(w::i32_lt_u(i, n)) {
         var from = i;
         if reverse {
-          from = w::i32_sub(w::i32_sub(n, w::i32_one()), i);
+          from = w::i32_sub(w::i32_sub(n, w::i32_one), i);
         }
         w::i32_store8(w::i32_add(w::i32_add(p, four()), i), code_of(s.get(Num(from))));
-        i = w::i32_add(i, w::i32_one());
+        i = w::i32_add(i, w::i32_one);
       }
       Str(p)
     }

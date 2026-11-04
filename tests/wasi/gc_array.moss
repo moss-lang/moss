@@ -73,7 +73,7 @@ assume Wasm, Arrayed {
   context Reading = Array.length, Array.get;
 
   assume Reading {
-    fn last(xs: Array): Arrayed { xs.get(w::i32_sub(xs.length(), w::i32_one())) }
+    fn last(xs: Array): Arrayed { xs.get(w::i32_sub(xs.length(), w::i32_one)) }
   }
 }
 

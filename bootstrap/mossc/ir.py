@@ -256,6 +256,30 @@ class BindFunctor:
     key: Key
     functor: Symbol | None
     source: Symbol | None = None
+    # D84 (draft): for an abstract functor that lists its polymorphic
+    # inputs, `functor`'s binds lowered here, generic in those inputs;
+    # the binding captures this frame's context with them.
+    closure: "FunctorClosure | None" = None
+
+
+@dataclass(frozen=True)
+class FunctorClosure:
+    """D84 (draft): a functor bound to a bracketed abstract one, lowered
+    where it is bound. `stmts` are its binds in the binding function's
+    terms, except that each polymorphic input `P` is a fresh type
+    (`params`: `(P, fresh)`), which an application supplies. `made` are
+    the keys its result is made under, positionally the application's
+    `outs`; `ins` the keys under which it reads what each application
+    supplies (vals, and items mentioning `P`), positionally the
+    application's `ins`."""
+
+    stmts: tuple
+    params: tuple
+    made: tuple
+    ins: tuple
+    # Each type of the result with the type the binds made it, in the
+    # closure's terms (D78's type outputs).
+    types: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -277,6 +301,13 @@ class ApplyFunctor:
     key: Key
     branches: tuple
     outs: tuple
+    # D84 (draft): for a bracketed `F`, each polymorphic input with the
+    # type it is here, and the keys of what this application supplies, in
+    # the order a bound closure reads them (`FunctorClosure`).
+    pargs: tuple = ()
+    ins: tuple = ()
+    # Each type of the result with the fresh generation made here.
+    gens: tuple = ()
 
 
 @dataclass(frozen=True)

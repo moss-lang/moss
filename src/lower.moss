@@ -668,7 +668,9 @@ assume Std {
           if env_has(env, ek_fn(), ast::none(), s) {
             return env;
           }
-          return env_push(env, ek_fn(), ast::none(), s, ast::none(), env_empty());
+          # D84 (draft): a bracketed one is at the identity of its fixed
+          # inputs, as an assumed val is.
+          return env_push(env, ek_fn(), ast::none(), s, ast::none(), assumed_app(s, view));
         }
       }
       # A unit, tag or alias is concrete and always available; a functor
@@ -938,9 +940,13 @@ assume Std {
       if dp_len.get(s) == ast::none() {
         let all = int_list();
         # D78: an abstract functor's binding serves every instantiation
-        # of its inputs, so it depends on no type symbol.
+        # of its inputs, so it depends on no type symbol — unless it lists
+        # its polymorphic inputs (D84, draft): then it is at an
+        # instantiation of the rest of what its result mentions.
         if prog::sym_kind.get(s) != prog::sk_functor() {
           nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), all, 0);
+        } else {
+          functor_fixed(s, all);
         }
         let found = int_list();
         if prog::sym_kind.get(s) == prog::sk_method() {
@@ -982,6 +988,161 @@ assume Std {
       var i = 0;
       while i < dp_len.get(s) {
         out.push(dp_pool.get(dp_start.get(s) + i));
+        i = i + 1;
+      }
+    }
+
+    # D84 (draft): `P(F)`, the polymorphic inputs a bracketed abstract
+    # functor lists, resolved in its module.
+    fn functor_params(s: Int, out: IntList) {
+      let d = prog::sym_decl.get(s);
+      var i = 0;
+      while i < ast::fu_nparams(d) {
+        let t = prog::lookup(prog::sym_mod.get(s), prog::ns_name(), ast::kid_at(ast::fu_params(d), i));
+        if ast::is_some(t) {
+          types::push_new(out, t);
+        }
+        i = i + 1;
+      }
+    }
+
+    # `M(F)`: the type symbols the items of `F`'s result mention, through
+    # relevant parameters, less the types the result holds itself.
+    fn functor_mentions(s: Int, out: IntList) {
+      let d = prog::sym_decl.get(s);
+      let outputs = int_list();
+      result_type_syms(prog::sym_mod.get(s), ast::fu_res(d), ast::fu_nres(d), outputs, 0);
+      let found = int_list();
+      mention_walk(prog::sym_mod.get(s), ast::fu_res(d), ast::fu_nres(d), found, 0);
+      var i = 0;
+      while i < found.length() {
+        if !types::contains_sym(outputs, found.get(i)) {
+          types::push_new(out, found.get(i));
+        }
+        i = i + 1;
+      }
+    }
+
+    fn result_type_syms(m: Int, run: Int, n: Int, out: IntList, depth: Int) {
+      if depth > 16 {
+        return ();
+      }
+      var i = 0;
+      while i < n {
+        let spec = ast::kid_at(run, i);
+        if !ast::is_some(ast::b_of(spec)) {
+          let t = prog::resolve_path(m, ast::a_of(spec));
+          if ast::is_some(t) {
+            let kind = prog::sym_kind.get(t);
+            if kind == prog::sk_type() {
+              types::push_new(out, t);
+            } else if kind == prog::sk_context() {
+              let d = prog::sym_decl.get(t);
+              result_type_syms(prog::sym_mod.get(t), ast::b_of(d), ast::c_of(d), out, depth + 1);
+            }
+          }
+        }
+        i = i + 1;
+      }
+    }
+
+    fn mention_walk(m: Int, run: Int, n: Int, out: IntList, depth: Int) {
+      if depth > 16 {
+        return ();
+      }
+      var i = 0;
+      while i < n {
+        let spec = ast::kid_at(run, i);
+        let t = prog::resolve_path(m, ast::a_of(spec));
+        if ast::is_some(t) {
+          let syms = int_list();
+          var item = true;
+          if ast::is_some(ast::b_of(spec)) {
+            types::free_syms_ref(ast::a_of(spec), ast::none(), 0, m, syms);
+            let method = find_method_decl(m, t, ast::b_of(spec));
+            if ast::is_some(method) {
+              signature_syms(method, syms);
+            }
+          } else {
+            let kind = prog::sym_kind.get(t);
+            let d = prog::sym_decl.get(t);
+            if kind == prog::sk_context() {
+              mention_walk(prog::sym_mod.get(t), ast::b_of(d), ast::c_of(d), out, depth + 1);
+              item = false;
+            } else if kind == prog::sk_val() {
+              types::free_syms(ast::b_of(d), prog::sym_mod.get(t), syms);
+            } else if kind == prog::sk_fn() {
+              signature_syms(t, syms);
+            } else {
+              item = false;
+            }
+          }
+          if item {
+            # The item's own brackets: what they bind is not mentioned,
+            # what their right-hand sides mention is.
+            let bound = int_list();
+            var b = 0;
+            while b < ast::d_of(spec) {
+              let binding = ast::kid_at(ast::c_of(spec), b);
+              let lhs = prog::resolve_path(m, ast::a_of(binding));
+              if ast::is_some(lhs) {
+                bound.push(lhs);
+              }
+              b = b + 1;
+            }
+            var j = 0;
+            while j < syms.length() {
+              if !types::contains_sym(bound, syms.get(j)) {
+                types::push_new(out, syms.get(j));
+              }
+              j = j + 1;
+            }
+            b = 0;
+            while b < ast::d_of(spec) {
+              let rhs = ast::b_of(ast::kid_at(ast::c_of(spec), b));
+              types::free_syms_ref(ast::a_of(rhs), ast::c_of(rhs), ast::d_of(rhs), m, out);
+              b = b + 1;
+            }
+          }
+        }
+        i = i + 1;
+      }
+    }
+
+    # The types each application of a bracketed `F` supplies: `P(F)`, and
+    # `F`'s input types outside `X(F)`.
+    fn functor_poly(s: Int, out: IntList) {
+      functor_params(s, out);
+      let xs = int_list();
+      functor_fixed(s, xs);
+      let d = prog::sym_decl.get(s);
+      let ins = int_list();
+      nest_types(prog::sym_mod.get(s), ast::fu_args(d), ast::fu_nargs(d), ins, 0);
+      var i = 0;
+      while i < ins.length() {
+        if !types::contains_sym(xs, ins.get(i)) {
+          types::push_new(out, ins.get(i));
+        }
+        i = i + 1;
+      }
+    }
+
+    # `X(F)` = `M(F)` less `P(F)`, for a bracketed `F`; nothing for an
+    # unbracketed one, whose binding serves every instantiation (D78).
+    fn functor_fixed(s: Int, out: IntList) {
+      let d = prog::sym_decl.get(s);
+      if !ast::fu_bracketed(d) {
+        return ();
+      }
+      let ps = int_list();
+      functor_params(s, ps);
+      let ms = int_list();
+      functor_mentions(s, ms);
+      var i = 0;
+      while i < ms.length() {
+        if !types::contains_sym(ps, ms.get(i)) {
+          types::push_new(out, ms.get(i));
+        }
         i = i + 1;
       }
     }

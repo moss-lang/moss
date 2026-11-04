@@ -17,21 +17,21 @@ tag Blue;
 type Colour = | Red | Green | Blue;
 
 assume Wasm, Wasi, Branch {
-  fn two(): I32 { w::i32_add(w::i32_one(), w::i32_one()) }
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
   fn four(): I32 { w::i32_add(two(), two()) }
   fn eight(): I32 { w::i32_add(four(), four()) }
   fn six(): I32 { w::i32_add(four(), two()) }
 
   # iovec at 0 is [ptr=8, len=1]; the byte goes at 8, nwritten at 12.
   fn emit(c: I32) {
-    w::i32_store(w::i32_zero(), eight());
-    w::i32_store(four(), w::i32_one());
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
     w::i32_store8(eight(), c);
-    fd_write(w::i32_one(), w::i32_zero(), w::i32_one(), w::i32_add(eight(), four()));
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
   }
 
   fn upper_a(): I32 {
-    w::i32_add(w::i32_shl(w::i32_one(), six()), w::i32_one())
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
   }
 
   fn newline(): I32 { w::i32_add(eight(), two()) }
@@ -46,7 +46,7 @@ assume Wasm, Wasi, Branch {
   # chain of comparisons and no memory is touched.
   fn shade(c: Colour): I32 {
     match c {
-      Red => w::i32_zero(),
+      Red => w::i32_zero,
       Green => two(),
       Blue => four(),
     }
@@ -61,14 +61,14 @@ assume Wasm, Wasi, Branch {
   # stack balanced whether or not they use the value.
   fn is_red(c: Colour): I32 {
     match c {
-      Red => w::i32_one(),
-      _ => w::i32_zero(),
+      Red => w::i32_one,
+      _ => w::i32_zero,
     }
   }
 
   fn main() {
     emit(w::i32_add(upper_a(), Box(two()).twice()));       # 4, 'E'
-    emit(w::i32_add(upper_a(), unbox(Box(w::i32_one()))));   # 1, 'B'
+    emit(w::i32_add(upper_a(), unbox(Box(w::i32_one))));   # 1, 'B'
     emit(w::i32_add(upper_a(), shade(Red)));                # 0, 'A'
     emit(w::i32_add(upper_a(), shade(Green)));              # 2, 'C'
     emit(w::i32_add(upper_a(), shade(Blue)));               # 4, 'E'

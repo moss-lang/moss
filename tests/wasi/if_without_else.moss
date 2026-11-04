@@ -8,6 +8,6 @@ import "../../lib/wasistd.moss" use Branch, i32_bool;
 
 assume Wasm, Branch {
   fn main() {
-    if i32_bool(w::i32_one()) { w::i32_one() };
+    if i32_bool(w::i32_one) { w::i32_one };
   }
 }

@@ -269,6 +269,17 @@ class _Tail:
     theta: object = None
 
 
+@dataclass
+class BoundClosure:
+    """D84 (draft): what an abstract functor is bound to — the lowered
+    binds of the functor bound, and the context and type arguments of the
+    frame that bound it, which they capture."""
+
+    closure: object
+    ctx: dict
+    theta: dict
+
+
 class Frame:
     def __init__(self, locals_: dict, ctx: dict, this, theta=None):
         self.locals = locals_
@@ -359,12 +370,42 @@ class Interp:
         elif isinstance(stmt, ir.BindFunctor):
             # D78: which functor the abstract one now is — a functor with
             # a body, or whatever another abstract functor is here.
-            if stmt.functor is not None:
+            if stmt.closure is not None:
+                # D84 (draft): the binds lowered here, with this frame's
+                # context (vals by value) and type arguments.
+                frame.ctx[stmt.key] = BoundClosure(stmt.closure, dict(frame.ctx), frame.theta)
+            elif stmt.functor is not None:
                 frame.ctx[stmt.key] = stmt.functor
             else:
                 frame.ctx[stmt.key] = frame.ctx[stmt.source]
         elif isinstance(stmt, ir.ApplyFunctor):
             bound = frame.ctx[stmt.key]
+            if isinstance(bound, NativeArrays):
+                for out in stmt.outs:
+                    frame.ctx[out] = native_array(out)
+                return
+            if isinstance(bound, BoundClosure):
+                from .build import subst
+
+                closure = bound.closure
+                theta = dict(bound.theta)
+                pargs = dict(stmt.pargs)
+                for p_, gen in closure.params:
+                    theta[gen] = subst(frame.theta, pargs[p_])
+                inner = Frame({}, dict(bound.ctx), frame.this, theta)
+                for ck, ak in zip(closure.ins, stmt.ins):
+                    inner.ctx[ck] = frame.ctx[ak]
+                for s in closure.stmts:
+                    self.exec_stmt(s, inner)
+                for mk, out in zip(closure.made, stmt.outs):
+                    frame.ctx[out] = inner.ctx[mk]
+                if self.memory_sym is not None and stmt.gens:
+                    made = dict(closure.types)
+                    frame.theta = {
+                        **frame.theta,
+                        **{g: subst(inner.theta, made[t]) for t, g in stmt.gens},
+                    }
+                return
             for functor, stmts, pairs, types in stmt.branches:
                 if functor is bound:
                     break
@@ -716,10 +757,12 @@ def native_env(program: Program, args: list | None = None) -> dict:
             lambda a, this: IntVal(len(this.items))
         )
     if "wasm" in lib:
-        # D52's primitive layer: the two I32 constants, instructions of
-        # no arguments (D84, draft).
-        env[lib["wasm"].names["i32_zero"]] = NativeFn("i32_zero", lambda a, this: IntVal(0))
-        env[lib["wasm"].names["i32_one"]] = NativeFn("i32_one", lambda a, this: IntVal(1))
+        # D52's primitive layer. Only the two I32 constants are values, and
+        # only they are meaningful here: the instructions themselves need a
+        # linear memory the interpreter does not have yet, so a program
+        # assuming `Wasm` compiles but does not interpret.
+        env[lib["wasm"].names["i32_zero"]] = IntVal(0)
+        env[lib["wasm"].names["i32_one"]] = IntVal(1)
         # D78: the platform provides the abstract functors lib/wasm.moss
         # declares (D75's `Heap`). A functor's binding is which functor it
         # is; the platform's is the functor itself, whose application
@@ -1332,6 +1375,51 @@ class LinkError(Exception):
     pass
 
 
+class NativeArrays:
+    """D84 (draft): the native `Std`'s binding of array.moss's `Arrays`:
+    applied at any `Item`, it provides arrays as Python lists."""
+
+
+def _array_method(name: str):
+    def index(a, this):
+        i = a[0].value
+        if not 0 <= i < len(this.items):
+            raise MossPanic(f"Array index {i} out of range")
+        return i
+
+    def array_set(a, this):
+        this.items[index(a, this)] = a[1]
+        return UNIT
+
+    return {
+        "arrayed": lambda a, this: ListVal([this] * a[0].value),
+        "get": lambda a, this: this.items[index(a, this)],
+        "set": array_set,
+        "length": lambda a, this: IntVal(len(this.items)),
+    }.get(name.lstrip("."))
+
+
+def native_array(need):
+    """The native `Std`'s arrays (D84, draft), which are keyed at
+    instantiations no bare receiver spells: `Arrays`, and the `Float`
+    arrays `FloatArrays` lists."""
+    if isinstance(need, Symbol):
+        if need.kind == SymKind.FUNCTOR and need.module.path.endswith("lib/array.moss"):
+            return NativeArrays()
+        return None
+    if not isinstance(need, tuple):
+        return None
+    receiver, method = need
+    head = getattr(receiver, "symbol", None)
+    if method.module.path.endswith("lib/array.moss") or (
+        head is not None and head.module.path.endswith("lib/array.moss")
+    ):
+        impl = _array_method(method.name)
+        if impl is not None:
+            return NativeFn(method.name, impl)
+    return None
+
+
 def run_main(program: Program, lower, args: list | None = None) -> None:
     """D39: find main, check its needs against the native Std, run it."""
     # A Moss frame costs several Python ones, and the self-hosted compiler
@@ -1350,6 +1438,8 @@ def run_main(program: Program, lower, args: list | None = None) -> None:
     ctx = {}
     for need in fn.needs:
         provision = natives.get(need)
+        if provision is None:
+            provision = native_array(need)
         if provision is None:
             name = need.name if isinstance(need, Symbol) else (
                 f"{need[0].name}{need[1].name}"

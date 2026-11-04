@@ -109,20 +109,20 @@ def gen_wasichar_moss() -> str:
         "",
         "assume Wasm {",
         "  # Shift amounts, built from `i32_one` like everything else.",
-        "  fn n1(): I32 { w::i32_one() }",
+        "  fn n1(): I32 { w::i32_one }",
         "  fn n2(): I32 { w::i32_add(n1(), n1()) }",
         "  fn n3(): I32 { w::i32_add(n2(), n1()) }",
         "  fn n4(): I32 { w::i32_add(n2(), n2()) }",
         "  fn n5(): I32 { w::i32_add(n4(), n1()) }",
         "  fn n6(): I32 { w::i32_add(n4(), n2()) }",
         "",
-        "  fn bit(k: I32): I32 { w::i32_shl(w::i32_one(), k) }",
+        "  fn bit(k: I32): I32 { w::i32_shl(w::i32_one, k) }",
         "",
     ]
 
     def expr(code: int) -> str:
         bits = [k for k in range(7) if code >> k & 1]
-        terms = ["w::i32_one()" if k == 0 else f"bit(n{k}())" for k in bits]
+        terms = ["w::i32_one" if k == 0 else f"bit(n{k}())" for k in bits]
         out = terms[0]
         for term in terms[1:]:
             out = f"w::i32_or({out}, {term})"

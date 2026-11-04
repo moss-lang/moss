@@ -11,31 +11,31 @@ import "../../lib/wasistd.moss" use Branch, i32_bool;
 fn .say();
 
 assume Wasm, Wasi, Branch {
-  fn two(): I32 { w::i32_add(w::i32_one(), w::i32_one()) }
+  fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
   fn four(): I32 { w::i32_add(two(), two()) }
   fn eight(): I32 { w::i32_add(four(), four()) }
   fn six(): I32 { w::i32_add(four(), two()) }
 
   fn emit(c: I32) {
-    w::i32_store(w::i32_zero(), eight());
-    w::i32_store(four(), w::i32_one());
+    w::i32_store(w::i32_zero, eight());
+    w::i32_store(four(), w::i32_one);
     w::i32_store8(eight(), c);
-    fd_write(w::i32_one(), w::i32_zero(), w::i32_one(), w::i32_add(eight(), four()));
+    fd_write(w::i32_one, w::i32_zero, w::i32_one, w::i32_add(eight(), four()));
   }
 
   fn upper_a(): I32 {
-    w::i32_add(w::i32_shl(w::i32_one(), six()), w::i32_one())
+    w::i32_add(w::i32_shl(w::i32_one, six()), w::i32_one)
   }
 
   fn newline(): I32 { w::i32_add(eight(), two()) }
 
-  fn three(): I32 { w::i32_add(two(), w::i32_one()) }
+  fn three(): I32 { w::i32_add(two(), w::i32_one) }
 
   val shift: I32;
 
   # 'A' plus 1 << shift: 'C' for 1, 'E' for 2, 'I' for 3.
   assume shift {
-    fn letter() { emit(w::i32_add(upper_a(), w::i32_shl(w::i32_one(), shift))); }
+    fn letter() { emit(w::i32_add(upper_a(), w::i32_shl(w::i32_one, shift))); }
   }
 
   fn task();
@@ -86,7 +86,7 @@ assume Wasm, Wasi, Branch {
   }
 
   fn main() {
-    bind shift = w::i32_one();
+    bind shift = w::i32_one;
     bind task = letter;
     relay();               # 'C', not 'E'
     deep();                # 'C', not 'I'
@@ -95,7 +95,7 @@ assume Wasm, Wasi, Branch {
     later();               # 'C', not 'D' or 'I'
     task();                # 'C': bound before this frame's own rebind
     bind Tick.say = Tick.loud;
-    speak(Tick(w::i32_zero()));   # 'E', captured with shift = 2
+    speak(Tick(w::i32_zero));   # 'E', captured with shift = 2
     emit(newline());
   }
 }

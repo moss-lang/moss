@@ -58,7 +58,7 @@ assume Wasm, Branch {
 
 functor LongLayout: Wasm, Branch -> Layout {
   bind Item = Long;
-  bind width = w::i32_add(w::i32_one(), w::i32_one());
+  bind width = w::i32_add(w::i32_one, w::i32_one);
   bind put = (at, value) => w::i64_store(at, i64_of(value));
   bind take = (at) => Long(w::i64_load(at));
 }

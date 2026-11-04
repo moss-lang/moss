@@ -32,7 +32,7 @@ assume Wasm, Branch, Arrayed {
 
   assume Growing {
     fn gc_list(): GcList {
-      let g = Grown { data = Empty, len = w::i32_zero() };
+      let g = Grown { data = Empty, len = w::i32_zero };
       GcList(g.boxed())
     }
 
@@ -59,17 +59,17 @@ assume Wasm, Branch, Arrayed {
       let data = match g.data {
         Present(a) => {
           if i32_bool(w::i32_eq(g.len, a.length())) {
-            let bigger = value.arrayed(w::i32_shl(a.length(), w::i32_one()));
-            bigger.copy(w::i32_zero(), a, w::i32_zero(), g.len);
+            let bigger = value.arrayed(w::i32_shl(a.length(), w::i32_one));
+            bigger.copy(w::i32_zero, a, w::i32_zero, g.len);
             bigger
           } else {
             a
           }
         },
-        Empty => value.arrayed(w::i32_add(w::i32_one(), w::i32_one())),
+        Empty => value.arrayed(w::i32_add(w::i32_one, w::i32_one)),
       };
       data.set(g.len, value);
-      h.set(Grown { data = Present(data), len = w::i32_add(g.len, w::i32_one()) });
+      h.set(Grown { data = Present(data), len = w::i32_add(g.len, w::i32_one) });
     }
   }
 }

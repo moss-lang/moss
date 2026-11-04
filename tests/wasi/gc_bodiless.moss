@@ -10,7 +10,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # platform's `Heap`, as it would bind any functor with that signature.
 # Output: 42.
 
-functor Boxing: Wasm, Boxed -> Boxed.boxed, Ref.deref;
+functor Boxing[Boxed]: Wasm, Boxed -> Boxed.boxed, Ref.deref;
 
 assume Std, Wasm, Boxing {
   fn round_trip(n: Int): Int {

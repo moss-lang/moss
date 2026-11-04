@@ -27,6 +27,6 @@ assume Wasm, Branch, Fast {
 assume Wasm, Wasi, Branch {
   fn main() {
     bind Fast = WasiFloats32;
-    leak(w::i32_one());
+    leak(w::i32_one);
   }
 }

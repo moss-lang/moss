@@ -18,11 +18,10 @@ fn unreachable(): |;
 
 assume I32 {
   # There are no literals (D4), so every I32 is built from these two, the
-  # way `Int`'s `zero` and `one` work. Each is an instruction, `i32.const`,
-  # like everything else here: `Wasm` holds no vals, so a functor bind
-  # can capture it whole (D84, draft; D29).
-  fn i32_zero(): I32;
-  fn i32_one(): I32;
+  # way `Int`'s `zero` and `one` work. They are the only `Wasm` items that
+  # are values rather than instructions.
+  val i32_zero: I32;
+  val i32_one: I32;
 }
 
 # A linear memory (D79). Every memory instruction is under `assume
@@ -473,12 +472,17 @@ context Wasm =
 # applied it cannot box anything. Like any abstract functor it may be
 # assumed on its own, and bound to another with its signature
 # (`bind Alloc = Heap;`).
-functor Heap: Wasm, Boxed -> Boxed.boxed, Ref.deref;
+functor Heap[Boxed]: Wasm, Boxed -> Boxed.boxed, Ref.deref;
 
+# Each is polymorphic in the type it boxes or arrays, and fixed in the
+# rest of what its result mentions (D84, draft): `StructRef`, or `I32`
+# and `ArrayRef`, which the platform's provision exists only at, so a
+# scope that rebinds one cannot apply it until it binds it again.
+#
 # D81: the platform's other two. `bind Mutable;` provides `Ref.set` at
 # `Ref[Boxed=...]` for the `Boxed` in context, and `bind Arrays;` the
 # array items at the `Arrayed` in context, as `Heap` does for boxing.
-functor Mutable: Wasm, Boxed -> Ref.set;
+functor Mutable[Boxed]: Wasm, Boxed -> Ref.set;
 
-functor Arrays: Wasm, Arrayed ->
+functor Arrays[Arrayed]: Wasm, Arrayed ->
   Arrayed.arrayed, Array.length, Array.get, Array.set, Array.fill, Array.copy;

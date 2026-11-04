@@ -220,6 +220,9 @@ class Lower:
         self._reqs_cache: dict[int, list] = {}
         self._sig_syms_cache: dict[int, list] = {}
         self._const_cache: dict[int, tuple] = {}
+        self._mentions_cache: dict[int, list] = {}
+        self._uses_memo: dict[int, dict] = {}
+        self._poly_cache: dict[int, list] = {}
         # D66: the forwarder synthesized for each abstract fn bound as a
         # provider, and the other way round.
         self.forwarders: dict[int, Symbol] = {}  # id(abstract fn) -> forwarder
@@ -302,8 +305,153 @@ class Lower:
 
     def run(self) -> None:
         for module in self.program.order:
+            for symbol in list(module.names.values()):
+                if symbol.kind == SymKind.FUNCTOR and symbol.decl.params is not None:
+                    self.check_bracketed_decl(symbol)
+        for module in self.program.order:
             for decl, symbol in self.defined_fns(module):
                 self.lower_fn(module, symbol)
+
+    # D84 (draft), Rule A: an abstract functor `F[P...]` is polymorphic in
+    # `P` and fixed in its other type inputs, `X(F)`, which a binding
+    # captures where it is made.
+
+    def functor_params(self, functor: Symbol) -> list | None:
+        """`P(F)`, or None for a functor with no brackets (D78's meaning)."""
+        names = getattr(functor.decl, "params", None)
+        if names is None:
+            return None
+        out = []
+        for name in names:
+            t = resolve_path(functor.module, [name])
+            if not isinstance(t, Symbol) or t.kind != SymKind.TYPE:
+                self.error(
+                    functor.module,
+                    f"`{name}`, listed as a polymorphic input of `{functor.name}`, "
+                    "is not a type in scope (D84)",
+                    functor.decl,
+                )
+            out.append(t)
+        return out
+
+    def functor_mentions(self, functor: Symbol) -> list:
+        """`M(F)`: the type symbols the items of `F`'s result mention,
+        closed through relevant parameters (D71, D73), less the types the
+        result itself holds (its type outputs)."""
+        cached = self._mentions_cache.get(id(functor))
+        if cached is not None:
+            return cached
+        outputs: list = []
+        found: list = []
+
+        def types_of(module, specs, depth):
+            for spec in specs:
+                if spec.dot is not None:
+                    continue
+                target = resolve_path(module, spec.path)
+                if not isinstance(target, Symbol):
+                    continue
+                if target.kind == SymKind.CONTEXT and depth < 16:
+                    types_of(target.module, target.decl.items, depth + 1)
+                elif target.kind == SymKind.TYPE and target not in outputs:
+                    outputs.append(target)
+
+        types_of(functor.module, functor.decl.result, 0)
+
+        def sig_syms(sym, out):
+            decl = sym.decl
+            for p in getattr(decl, "params", None) or ():
+                self.free_type_syms(p.ty, sym.module, out)
+            if getattr(decl, "ret", None) is not None:
+                self.free_type_syms(decl.ret, sym.module, out)
+
+        def walk(module, specs, depth):
+            if depth > 16:
+                return
+            for spec in specs:
+                target = resolve_path(module, spec.path)
+                if not isinstance(target, Symbol):
+                    continue
+                syms: list = []
+                if spec.dot is not None:
+                    self.free_type_syms(ast.TyRef(spec.path, None), module, syms)
+                    method = self.find_method_decl(module, target, spec.dot)
+                    if method is not None:
+                        sig_syms(method, syms)
+                elif target.kind == SymKind.CONTEXT:
+                    walk(target.module, target.decl.items, depth + 1)
+                    continue
+                elif target.kind == SymKind.VAL and target.decl.init is None:
+                    self.free_type_syms(target.decl.ty, target.module, syms)
+                elif target.kind == SymKind.FN and target.decl.body is None:
+                    sig_syms(target, syms)
+                else:
+                    continue
+                if spec.app is not None:
+                    bound = []
+                    for binding in spec.app:
+                        lhs = resolve_path(module, binding.path)
+                        if isinstance(lhs, Symbol):
+                            bound.append(lhs)
+                        if binding.spec.path is not None:
+                            self.free_type_syms(
+                                ast.TyRef(binding.spec.path, binding.spec.app), module, syms
+                            )
+                    syms = [t for t in syms if t not in bound] + [
+                        t for t in syms if t in bound and False
+                    ]
+                    for binding in spec.app:
+                        if binding.spec.path is not None:
+                            self.free_type_syms(
+                                ast.TyRef(binding.spec.path, binding.spec.app), module, syms
+                            )
+                for t in syms:
+                    if t.kind == SymKind.TYPE and t not in outputs and t not in found:
+                        found.append(t)
+
+        walk(functor.module, functor.decl.result, 0)
+        self._mentions_cache[id(functor)] = found
+        return found
+
+    def functor_fixed(self, functor: Symbol) -> list:
+        """`X(F)` = `M(F)` less `P(F)`: what a binding of a bracketed `F`
+        is fixed in and captures (D84, draft, as corrected). None for an
+        unbracketed functor, which is polymorphic in all of `M(F)`."""
+        params = self.functor_params(functor)
+        if params is None:
+            return []
+        return [t for t in self.functor_mentions(functor) if t not in params]
+
+    def functor_poly(self, functor: Symbol) -> list:
+        """The type symbols each application of `F` supplies: `P(F)` (all
+        of `M(F)` for an unbracketed `F`) and `F`'s input types outside
+        `X(F)`, in a fixed order."""
+        cached = self._poly_cache.get(id(functor))
+        if cached is not None:
+            return cached
+        params = self.functor_params(functor)
+        fixed = self.functor_fixed(functor)
+        out = list(self.functor_mentions(functor) if params is None else params)
+
+        def walk(module, specs, depth):
+            for spec in specs:
+                if spec.dot is not None:
+                    continue
+                target = resolve_path(module, spec.path)
+                if not isinstance(target, Symbol):
+                    continue
+                if target.kind == SymKind.CONTEXT and depth < 16:
+                    walk(target.module, target.decl.items, depth + 1)
+                elif target.kind == SymKind.TYPE and target not in out and target not in fixed:
+                    out.append(target)
+
+        walk(functor.module, functor.decl.args, 0)
+        self._poly_cache[id(functor)] = out
+        return out
+
+    def check_bracketed_decl(self, functor: Symbol):
+        """`functor F[P...]: ...;` lists type symbols in scope."""
+        self.functor_params(functor)
 
     def defined_fns(self, module: Module):
         for table in (module.names, module.attached):
@@ -453,6 +601,12 @@ class Lower:
             # provision is at no instantiation: a binding serves every
             # one of its inputs.
             env.functors[sym] = True
+            # D84 (draft): a bracketed one is at an instantiation of its
+            # fixed inputs, here the identity, as an assumed val's is.
+            fixed = self.functor_fixed(sym)
+            if fixed:
+                tymap = env.tymap | subst
+                env.apps.setdefault(sym, {t: tymap.get(t) for t in fixed})
             if sym not in needs:
                 needs.append(sym)
         else:
@@ -630,8 +784,9 @@ class Lower:
             for g in self.functor_edges.get(id(f), ()):
                 if g.decl.binds is None:
                     visit(g)
-                elif g not in out:
-                    out.append(g)
+                # A functor with a body bound to an abstract one is
+                # lowered where it is bound, as a closure (D84, draft),
+                # not here: only the platform's own are branches.
 
         visit(functor)
         return out
@@ -1327,6 +1482,57 @@ class Lower:
 
     # Functions
 
+    def functor_uses(self, symbol: Symbol, seen: frozenset = frozenset()):
+        """D84 (draft): the abstract functors `symbol`'s code applies or
+        copies, directly or through what it calls, named as `symbol`
+        knows them; and whether that is complete (a function still being
+        lowered contributes nothing). Memoized when complete."""
+        memo = self._uses_memo.get(id(symbol))
+        if memo is not None:
+            return memo, True
+        fn = self.fns.get(id(symbol))
+        if fn is None or id(symbol) in seen:
+            return set(), False
+        seen = seen | {id(symbol)}
+        out: set = set()
+        complete = [True]
+
+        def through(target, needs_map):
+            inner, done = self.functor_uses(target, seen)
+            if not done:
+                complete[0] = False
+            if inner:
+                back = dict(needs_map)
+                for k in inner:
+                    if k in back:
+                        out.add(back[k])
+
+        def walk(node):
+            if isinstance(node, ir.Call):
+                kind, target = node.callee
+                if kind != "env" and node.needs_map is not None:
+                    through(target, node.needs_map)
+                return
+            if isinstance(node, ir.BindFn):
+                through(node.fn, node.needs_map)
+                return
+            if isinstance(node, ir.ApplyFunctor):
+                out.add(node.key)
+            elif isinstance(node, ir.BindFunctor) and node.source is not None:
+                out.add(node.source)
+            if isinstance(node, (tuple, list)):
+                for item in node:
+                    walk(item)
+            elif type(node).__module__ == ir.__name__ and hasattr(node, "__dataclass_fields__"):
+                for name in node.__dataclass_fields__:
+                    if name not in ("callee", "needs_map", "key", "fn", "outs", "source", "pargs", "ins", "gens"):
+                        walk(getattr(node, name))
+
+        walk(fn.body)
+        if complete[0]:
+            self._uses_memo[id(symbol)] = out
+        return out, complete[0]
+
     def uses_of(self, symbol: Symbol) -> dict:
         """The needs of `symbol` that its lowered code reaches, each with
         the defined functions it is reached through (empty when used
@@ -1367,6 +1573,10 @@ class Lower:
                     through(target, node.needs_map)
             elif isinstance(node, ir.BindFn):
                 through(node.fn, node.needs_map)
+            elif isinstance(node, ir.ApplyFunctor):
+                use(node.key, path)
+            elif isinstance(node, ir.BindFunctor) and node.source is not None:
+                use(node.source, path)
             if isinstance(node, (tuple, list)):
                 for item in node:
                     walk(item)
@@ -1703,6 +1913,18 @@ class FnChecker:
         home = functor.module
         for spec in functor.decl.args:
             self.argument_in_context(functor, home, spec, 0)
+        # D84 (draft): fixed inputs as they were where `F` was provided.
+        self.check_coherent_functor(functor, f"applying `{functor.name}`")
+        pargs = []
+        for t in self.lower.functor_poly(functor):
+            if t not in self.env.tymap:
+                self.error(
+                    f"applying `{functor.name}` needs `{t.name}`, which is not "
+                    "available in the context here"
+                )
+            pargs.append((t, self.lower.canon(self.env, TAbstract(t, ()))))
+        pargs = tuple(pargs)
+        ins = tuple(self.per_application(functor, provide=False))
         # Each type in the result starts a fresh generation here (D72),
         # rigid: the code after this is checked against it once, as code
         # under an `assume` of it is, whatever the binding makes it.
@@ -1776,7 +1998,8 @@ class FnChecker:
                         f"{self.show_key(out)} at another type than `{functor.name}` "
                         "promises here (D78)"
                     )
-        return [ir.ApplyFunctor(functor, tuple(branches), outs)]
+        gens = tuple((t, fresh[t].symbol) for t in fresh)
+        return [ir.ApplyFunctor(functor, tuple(branches), outs, pargs, ins, gens)]
 
     def signature_of(self, key):
         """The type a provision of `key` has here, canonical: a val's type
@@ -1975,11 +2198,349 @@ class FnChecker:
                 f"`{bound.name}` is not available in the context here, so it "
                 "cannot provide a bind (assume or bind it)"
             )
-        self.lower.check_binding(functor, bound, self.error)
-        self.env.functors[functor] = object()
+        # D84 (draft, as corrected): every binding of an abstract
+        # functor is checked here, generic in what each application
+        # supplies, and captures the rest.
+        return self.bind_rule_a(functor, bound)
+
+    # D84 (draft), Rule A, as corrected by the consistency audit.
+
+    def fixed_here(self, functor: Symbol) -> dict:
+        """What each of `F`'s fixed inputs denotes here, canonical; None
+        where one is not in force."""
+        out = {}
+        for x in self.lower.functor_fixed(functor):
+            out[x] = (
+                None if x not in self.env.tymap
+                else self.lower.canon(self.env, TAbstract(x, ()))
+            )
+        return out
+
+    def check_coherent_functor(self, functor: Symbol, doing: str):
+        """A bracketed functor is used only where its fixed inputs denote
+        what they did where it was bound or assumed (D84; D72's rule for
+        every other item that mentions them)."""
+        have = self.env.apps.get(functor, {})
+        now = self.fixed_here(functor)
+        differ = [x for x in now if now[x] != have.get(x)]
+        if not differ:
+            return
+
+        def one(t):
+            return "not in force" if t is None else f"`{show(t)}`"
+
+        was = ", ".join(f"`{x.name}` was {one(have.get(x))}" for x in differ)
+        is_ = ", ".join(f"`{x.name}` is {one(now[x])}" for x in differ)
+        self.error(
+            f"{doing} needs `{functor.name}` where the types it is fixed in mean "
+            f"what they meant where it was provided: there {was}; here {is_} (D84)"
+        )
+
+    def bind_rule_a(self, functor: Symbol, bound: Symbol) -> list:
+        lower = self.lower
+        here = self.fixed_here(functor)
+        for x, t in here.items():
+            if t is None:
+                self.error(
+                    f"binding `{functor.name}` needs `{x.name}` in force here: "
+                    f"`{functor.name}` is fixed in it where it is bound (D84)"
+                )
         if bound.decl.binds is None:
+            # A copy: `bind F = H;`. H must be usable here, and polymorphic
+            # in at least what F promises to be.
+            if bound not in self.env.functors:
+                self.error(
+                    f"`{bound.name}` is not available in the context here, so it "
+                    "cannot provide a bind (assume or bind it)"
+                )
+            self.check_coherent_functor(bound, f"binding it to `{functor.name}`")
+            mine = lower.functor_params(functor)
+            mine = lower.functor_mentions(functor) if mine is None else mine
+            theirs = lower.functor_params(bound)
+            theirs = lower.functor_mentions(bound) if theirs is None else theirs
+            narrower = [t for t in mine if t not in theirs]
+            if narrower:
+                fixed = ", ".join(f"`{t.name}`" for t in narrower)
+                self.error(
+                    f"`{bound.name}` cannot be bound to `{functor.name}`: "
+                    f"`{functor.name}` promises to be polymorphic in {fixed}, which "
+                    f"`{bound.name}` is fixed in (D84)"
+                )
+            lower.check_binding(functor, bound, self.error)
+            self.env.functors[functor] = object()
+            if here:
+                self.env.apps[functor] = here
             return [ir.BindFunctor(functor, None, bound)]
-        return [ir.BindFunctor(functor, bound)]
+        poly = lower.functor_poly(functor)
+        self.check_rule_a_binding(functor, bound, poly)
+        closure = self.functor_closure(functor, bound, poly)
+        self.env.functors[functor] = object()
+        if here:
+            self.env.apps[functor] = here
+        return [ir.BindFunctor(functor, bound, None, closure)]
+
+    def input_leaves(self, functor: Symbol) -> list:
+        """(module, spec) for each leaf of an argument signature."""
+        out: list = []
+
+        def walk(module, specs, depth):
+            if depth > 16:
+                return
+            for spec in specs:
+                target = resolve_path(module, spec.path)
+                if spec.dot is None and isinstance(target, Symbol) and target.kind == SymKind.CONTEXT:
+                    walk(target.module, target.decl.items, depth + 1)
+                else:
+                    out.append((module, spec))
+
+        walk(functor.module, functor.decl.args, 0)
+        return out
+
+    def leaf_mentions(self, module, spec) -> list:
+        """The type symbols an input leaf's instantiation mentions."""
+        lower = self.lower
+        target = resolve_path(module, spec.path)
+        syms: list = []
+        if not isinstance(target, Symbol):
+            return syms
+        if spec.dot is not None:
+            lower.free_type_syms(ast.TyRef(spec.path, None), module, syms)
+            method = lower.find_method_decl(module, target, spec.dot)
+            if method is not None:
+                for p in method.decl.params:
+                    lower.free_type_syms(p.ty, method.module, syms)
+                if method.decl.ret is not None:
+                    lower.free_type_syms(method.decl.ret, method.module, syms)
+        elif target.kind == SymKind.TYPE:
+            syms.append(target)
+        elif target.kind == SymKind.VAL:
+            lower.free_type_syms(target.decl.ty, target.module, syms)
+        elif target.kind == SymKind.FN:
+            if lower.is_memory_instruction(target):
+                return []  # at every memory (D79)
+            for p in target.decl.params:
+                lower.free_type_syms(p.ty, target.module, syms)
+            if target.decl.ret is not None:
+                lower.free_type_syms(target.decl.ret, target.module, syms)
+        return syms
+
+    def check_rule_a_binding(self, functor: Symbol, bound: Symbol, poly: list):
+        """`G`'s result exactly `F`'s; `G`'s inputs are `F`'s, or captured
+        here — types, fns, abstract functors and vals, by value (D26) —
+        except that an input whose instantiation mentions what each
+        application supplies must be one of `F`'s (it cannot mean
+        anything here); `G`'s binds rely only on its inputs."""
+        lower = self.lower
+        f_in = lower.signature_items(functor, functor.decl.args)
+        for t in poly:
+            f_in[(id(t), None)] = f"`{t.name}`"
+        for module, spec in self.input_leaves(bound):
+            key = lower.spec_key(module, spec)
+            if key in f_in:
+                continue
+            hit = [t for t in self.leaf_mentions(module, spec) if t in poly]
+            if hit:
+                self.error(
+                    f"`{bound.name}` cannot be bound to `{functor.name}`: it needs "
+                    f"`{show_spec(spec)}`, which mentions `{hit[0].name}`, which each "
+                    f"application of `{functor.name}` supplies, so it must be an input "
+                    f"of `{functor.name}` (D84)"
+                )
+            try:
+                self.argument_in_context(bound, module, spec, 0)
+            except LowerError:
+                self.error(
+                    f"`{bound.name}` cannot be bound to `{functor.name}` here: it needs "
+                    f"`{show_spec(spec)}`, which `{functor.name}` does not take, so it "
+                    "is captured where it is bound, and it is not in force here (D84)"
+                )
+        f_out = lower.signature_items(functor, functor.decl.result)
+        g_out = lower.signature_items(bound, bound.decl.result)
+        missing = [name for key, name in f_out.items() if key not in g_out]
+        if missing:
+            self.error(
+                f"`{bound.name}` cannot be bound to `{functor.name}`: it does not "
+                f"provide {', '.join(sorted(missing))}, which `{functor.name}` "
+                "promises (D78)"
+            )
+        more = [name for key, name in g_out.items() if key not in f_out]
+        if more:
+            self.error(
+                f"`{bound.name}` cannot be bound to `{functor.name}`: it also "
+                f"provides {', '.join(sorted(more))}, which `{functor.name}` does "
+                "not; a functor bound to an abstract one provides exactly its "
+                "result (D78)"
+            )
+        lower.check_functor_total(bound)
+        lower.check_functor_body(bound)
+
+    def per_application(self, functor: Symbol, provide: bool) -> list:
+        """The keys of `F`'s inputs that are not types — vals, fns,
+        methods, abstract functors — which each application supplies, in
+        order; with `provide`, provided here as `F` declares them."""
+        lower = self.lower
+        out: list = []
+
+        def walk(module, spec, outer, depth):
+            if depth > 16:
+                self.error("context nests too deeply")
+            subst = dict(outer)
+            if spec.app is not None:
+                subst.update(lower.app_subst(self.env, module, spec.app, outer))
+            tymap = self.env.tymap | subst
+            if spec.dot is not None:
+                receiver = lower.resolve_type_symbol(self.env, module, spec.path)
+                method = lower.find_method_decl(module, receiver, spec.dot)
+                if method is None:
+                    return
+                this_ty = tymap.get(receiver)
+                if this_ty is None:
+                    this_ty = lower.symbol_type(module, receiver, tymap, self.env)
+                key = lower.method_key(self.env, module, this_ty, method)
+                if provide:
+                    sig = lower.fn_sig(method, tymap, self.env, this=this_ty)
+                    lower.shadow(self.env.methods, key, sig)
+                    self.provided_at(key, method, tymap, method=True)
+                out.append(key)
+                return
+            target = resolve_path(module, spec.path)
+            if not isinstance(target, Symbol):
+                return
+            if target.kind == SymKind.CONTEXT:
+                for item in target.decl.items:
+                    walk(target.module, item, subst, depth + 1)
+            elif target.kind == SymKind.VAL and target.decl.init is None:
+                if provide:
+                    declared = lower.elab_type(target.decl.ty, target.module, tymap, self.env)
+                    lower.shadow(self.env.vals, target, declared)
+                    self.provided_at(target, target, tymap)
+                out.append(target)
+            elif target.kind == SymKind.FN and target.decl.body is None:
+                if provide:
+                    sig = lower.fn_sig(target, tymap, self.env)
+                    lower.shadow(self.env.fns, target, sig)
+                    self.provided_at(target, target, tymap)
+                out.append(target)
+            elif target.kind == SymKind.FUNCTOR and target.decl.binds is None:
+                if provide:
+                    self.env.functors[target] = object()
+                    fixed = lower.functor_fixed(target)
+                    if fixed:
+                        self.env.apps[target] = {
+                            x: None if x not in tymap else lower.canon(self.env, tymap[x])
+                            for x in fixed
+                        }
+                out.append(target)
+
+        for spec in functor.decl.args:
+            walk(functor.module, spec, {}, 0)
+        return out
+
+    def functor_closure(self, functor: Symbol, bound: Symbol, poly: list):
+        """`G`'s binds, lowered here — in this function's terms, every
+        captured input of `G` as it is here — but generic in what each
+        application supplies: each type of `poly` a fresh type, and `F`'s
+        other inputs provided at them. Checked here, once: `G` makes each
+        item of `F`'s result exactly as `F`, read here, promises it, its
+        pins included."""
+        lower = self.lower
+        before = self.env
+        here_node = self.at_node
+        base = Env(self.module, parent=before)
+        gens = []
+        # A type each application would supply but that what a fixed input
+        # denotes here mentions (`Int` is `Num`, a tag over `I32`) is fixed
+        # with it: it means here what it meant where `F` was bound.
+        held: set = set()
+
+        def mentioned(t):
+            if isinstance(t, TAbstract):
+                held.add(getattr(t.symbol, "origin", t.symbol))
+                held.add(t.symbol)
+            for _, a in getattr(t, "args", ()) or ():
+                mentioned(a)
+            for m in getattr(t, "members", ()) or ():
+                mentioned(m)
+            for _, f in getattr(t, "fields", ()) or ():
+                mentioned(f)
+
+        for x in lower.functor_fixed(functor):
+            if x in before.tymap:
+                mentioned(lower.canon(before, TAbstract(x, ())))
+        poly = [t for t in poly if t not in held]
+        for t in poly:
+            gen = Symbol(t.module, f"{t.name}@{functor.name}", SymKind.TYPE, t.decl)
+            gen.origin = t
+            base.tymap[t] = TAbstract(gen, ())
+            gens.append((t, gen))
+        outputs = self.result_types(functor)
+        try:
+            self.env = base
+            ins = self.per_application(functor, provide=True)
+            # The result as promised, its types fresh generations.
+            fresh = {}
+            for t in outputs:
+                g = Symbol(t.module, f"{t.name}@{functor.name}", SymKind.TYPE, t.decl)
+                g.fresh_of = t
+                g.fresh_by = functor
+                fresh[t] = TAbstract(g, ())
+            self.env = Env(self.module, parent=base)
+            site_keys = self.provide_result(functor, fresh)
+            site = [(k, self.signature_of(k)) for k in site_keys if not self.is_type_key(k)]
+            self.env = Env(self.module, parent=base)
+            stmts = self.apply_body(bound)
+            self.at_node = here_node
+            for t in outputs:
+                if not self.made_here(base, t):
+                    self.error(
+                        f"`{bound.name}`, bound to `{functor.name}`, does not provide "
+                        f"the type `{t.name}` (D78)"
+                    )
+            made_types = {
+                fresh[t].symbol: lower.canon(self.env, TAbstract(t, ())) for t in outputs
+            }
+            made_keys = [
+                k for k, _ in self.result_keys(functor, {}) if not self.is_type_key(k)
+            ]
+            for x in lower.functor_fixed(functor):
+                want = lower.canon(base, TAbstract(x, ()))
+                got = lower.canon(self.env, TAbstract(x, ()))
+                if want != got:
+                    self.error(
+                        f"`{bound.name}` cannot be bound to `{functor.name}` here: "
+                        f"it binds `{x.name}` to `{show(got)}`, and here `{x.name}` "
+                        f"is `{show(want)}`; `{functor.name}` is fixed in `{x.name}`, "
+                        "so its binding must make its result at the "
+                        f"`{x.name}` in force where it is bound (D84)"
+                    )
+            for x in poly:
+                got = lower.canon(self.env, TAbstract(x, ()))
+                if got != base.tymap[x] and x in lower.functor_mentions(functor):
+                    self.error(
+                        f"`{bound.name}` cannot be bound to `{functor.name}`: it binds "
+                        f"`{x.name}` to `{show(got)}`, and `{functor.name}` is "
+                        f"polymorphic in `{x.name}` (D84)"
+                    )
+            for key, (site_key, want) in zip(made_keys, site):
+                if not self.made_here(base, key):
+                    self.error(
+                        f"`{bound.name}`, bound to `{functor.name}`, does not provide "
+                        f"{self.show_key(site_key)} here (D78)"
+                    )
+                got = self.signature_of(key)
+                if want is not None and got is not None and self.substitute(want, made_types) != got:
+                    self.error(
+                        f"`{bound.name}`, bound to `{functor.name}`, provides "
+                        f"{self.show_key(site_key)} at another type than "
+                        f"`{functor.name}` promises where it is bound (D84)"
+                    )
+            types = tuple((t, lower.canon(self.env, TAbstract(t, ()))) for t in outputs)
+        finally:
+            self.env = before
+            self.at_node = here_node
+        return ir.FunctorClosure(
+            tuple(stmts), tuple(gens), tuple(made_keys), tuple(ins), types
+        )
 
     def platform_functor(self, functor: Symbol) -> list:
         """D75: the platform's own provision of an abstract functor that
@@ -2020,7 +2581,9 @@ class FnChecker:
             out.append(ir.BindPrim(key, prim, held))
         return out
 
-    def argument_in_context(self, functor: Symbol, module: Module, spec: ast.Spec, depth: int):
+    def argument_in_context(
+        self, functor: Symbol, module: Module, spec: ast.Spec, depth: int, outer=None
+    ):
         """Whether one item of an abstract functor's argument signature is
         available here: a type assumed or bound, a val, fn, method or
         abstract functor provided."""
@@ -2028,11 +2591,17 @@ class FnChecker:
             self.error("context nests too deeply")
         target = resolve_path(module, spec.path)
         missing = None
+        subst = dict(outer or {})
+        if spec.app is not None:
+            # A bracketed item (`Item.arrayed[Item=Float]`) is read at its
+            # application, as `add_spec` reads it.
+            subst.update(self.lower.app_subst(self.env, module, spec.app, subst))
         if spec.dot is not None:
+            tymap = self.env.tymap | subst
             receiver = self.lower.resolve_type_symbol(self.env, module, spec.path)
             method = self.lower.find_method_decl(module, receiver, spec.dot)
-            this_ty = self.env.tymap.get(receiver) or self.lower.symbol_type(
-                module, receiver, self.env.tymap, self.env
+            this_ty = tymap.get(receiver) or self.lower.symbol_type(
+                module, receiver, tymap, self.env
             )
             if method is None or self.lower.method_key(
                 self.env, module, this_ty, method
@@ -2042,7 +2611,7 @@ class FnChecker:
             missing = show_spec(spec)
         elif target.kind == SymKind.CONTEXT:
             for item in target.decl.items:
-                self.argument_in_context(functor, target.module, item, depth + 1)
+                self.argument_in_context(functor, target.module, item, depth + 1, subst)
         elif target.kind == SymKind.TYPE:
             if target not in self.env.tymap:
                 missing = target.name
@@ -2387,14 +2956,26 @@ class FnChecker:
             elif need.kind == SymKind.FUNCTOR:
                 # D78: an abstract functor's binding serves every
                 # instantiation of its inputs, so there is no coherence
-                # to check, only that something provides it.
+                # to check, only that something provides it — unless it
+                # lists its polymorphic inputs (D84, draft): then it is
+                # at an instantiation of the rest, compared as a val's.
                 if need not in self.env.functors:
                     self.error(
                         f"calling `{callee.name}` needs `{need.name}`, which is not "
                         "available in the context here"
                     )
                 mapping.append((need, need))
-                continue
+                if not self.lower.functor_fixed(need):
+                    continue
+                # Only where the callee reaches an application (or a copy)
+                # of it: `Wasm` lists the platform's functors, so every
+                # function assuming `Wasm` needs `Heap`, and a scope that
+                # swaps the GC heap (`bind StructRef = I32;`) could then
+                # call none of them (D84 trial; tests/wasi/arena_ref.moss).
+                if need not in self.lower.functor_uses(callee)[0]:
+                    continue
+                key = need
+                what = f"`{need.name}`"
             else:
                 continue
             differ = self.incoherence(callee, need, key)

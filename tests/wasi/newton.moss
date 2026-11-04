@@ -1,7 +1,9 @@
 import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/array.moss" as array use FloatArraysOf, ArrayHandle, Arrays;
+import "../../lib/wasm.moss" use ArrayRef;
 import "../../lib/wasichar.moss" use WasiCharConsts;
 import "../../lib/wasistd.moss" use Branch, WasiBasics, WasiContainers, WasiOutput,
-  WasiFiles, WasiFloats32;
+  WasiFiles, WasiFloats32, GcArrays;
 import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
@@ -108,6 +110,9 @@ functor WasiStd32: Wasm, Wasi, Branch -> Std {
   bind WasiOutput;
   bind WasiFiles;
   bind WasiFloats32;
+  bind array::ArrayHandle = ArrayRef;
+  bind Arrays = GcArrays;
+  bind FloatArraysOf;
   bind WasiCharConsts;
   bind Bool.not = Bool.flip;
   bind Bool.and = Bool.both;

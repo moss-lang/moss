@@ -47,7 +47,7 @@ assume Std, Wasm, Boxes {
 
 # Word sizes, and a reference taken apart: in the arena, its address.
 assume Wasm, Branch {
-  fn four(): I32 { w::i32_add(w::i32_add(w::i32_one(), w::i32_one()), w::i32_add(w::i32_one(), w::i32_one())) }
+  fn four(): I32 { w::i32_add(w::i32_add(w::i32_one, w::i32_one), w::i32_add(w::i32_one, w::i32_one)) }
   fn eight(): I32 { w::i32_add(four(), four()) }
 
   assume Boxed {

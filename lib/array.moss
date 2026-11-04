@@ -1,0 +1,49 @@
+import "./access.moss" use Elem, .get, .set, .length;
+import "./float.moss" use Float;
+import "./int.moss" use Int;
+
+# A fixed-size array of anything, in `Std`'s terms (D84, draft). An
+# `Array[Item=X]` is a handle of whatever type the platform binds
+# `ArrayHandle` to (`WasiStd`: the garbage collector's `ArrayRef`, D81),
+# listed by what it holds (D73), so arrays of two element types are two
+# types. Its accessors are access.moss's `.get`, `.set` and `.length`,
+# provided at `Array[Item=X]` with `Elem=X` (D61), indexed by `Int`.
+# Growable lists stay a program's business (D81).
+type Item;
+type ArrayHandle;
+
+assume ArrayHandle, Item {
+  tag Array[Item](ArrayHandle);
+}
+
+assume Int, ArrayHandle, Item {
+  # `x.arrayed(n)` is n copies of `x`: detached and keyed by its receiver,
+  # as D81's `.arrayed` is, so arrays of several types coexist in a scope.
+  fn .arrayed(length: Int): Array;
+}
+
+# Arrays of every element type, from one binding (D84, Rule A): `Arrays`
+# is polymorphic in `Item`, which each application reads, and fixed in
+# `Int` and `ArrayHandle`, which a binding captures where it is made. So
+# `bind Item = X; bind Arrays;` gives arrays of `X` anywhere, from the
+# implementation `main` chose, as long as `Int` and `ArrayHandle` still
+# mean what they meant there.
+functor Arrays[Item]: Int, ArrayHandle ->
+  Item.arrayed, Array.get[Elem=Item], Array.set[Elem=Item], Array.length;
+
+assume Int, Float, ArrayHandle {
+  # The arrays of `Float`, which `Std` carries so that code over `Float`
+  # need not apply `Arrays` itself; a provider of `Float` derives them
+  # with `bind FloatArraysOf;` after binding `Float`.
+  context FloatArrays =
+    Item.arrayed[Item=Float],
+    Array.get[Item=Float, Elem=Float],
+    Array.set[Item=Float, Elem=Float],
+    Array.length[Item=Float],
+  ;
+}
+
+functor FloatArraysOf: Int, Float, ArrayHandle, Arrays -> FloatArrays {
+  bind Item = Float;
+  bind Arrays;
+}
