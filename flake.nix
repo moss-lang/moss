@@ -249,6 +249,12 @@
                   "--bin"
                   "moss"
                 ];
+                # The workspace's other crate is the test suite, which the
+                # `tests` check runs with a compiler to test.
+                cargoTestFlags = [
+                  "--package"
+                  "moss-cli"
+                ];
                 buildInputs = [
                   binaryen
                   wasmtime
