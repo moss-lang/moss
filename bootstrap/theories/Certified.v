@@ -19,6 +19,7 @@
 From Stdlib Require Import List.
 From NM Require Import Audit CoreMoss MossX Sx Elab Specialization RelFacts.
 From NM Require FastPath WorldSound ElabFrame ReqsTotal.
+From NM Require XTyping XSafety XExample XHeapC.
 Import ListNotations.
 
 Module Certified <: PROVED_NOW.
@@ -40,6 +41,8 @@ Module Certified <: PROVED_NOW.
   Module X := MossX.XS.
   Definition xinterp_conservative := MossX.xinterp_conservative.
   Definition prim_law := MossX.prim_sound.
+  Definition prim_mlaw := MossX.prim_msound.
+  Definition prim_ulaw := MossX.prim_usound.
 
   Definition Typed := CoreMoss.wf_prog.
   Lemma typed_safe : forall Sg main body fuel,
@@ -97,3 +100,54 @@ Definition elaborate_world_of := ReqsTotal.elaborate_world_of.
 (* The executable roots (Extract2.v extracts these). *)
 Definition elaborate_sx := Certified.elaborate_sx.
 Definition run_main := MossX.XS.run_main.
+
+(* Track B: type safety of MossX itself (XTyping.v's judgment,
+   XSafety.v's proof), for the interpreter above over the concrete
+   primitives.  Not an obligation of Audit.v yet: it is the step towards
+   accepted_never_err that does not depend on the elaboration relation.
+   - x_typed_safe: a typed MossX expression, run in an environment agreeing
+     with its context at a store typing the machine's GC heap agrees with,
+     never produces XErr at any fuel; a value it produces has its type at
+     an extension of that store typing, a `return` the fn's result type,
+     and `break` only happens inside a loop.
+   - x_run_main_safe: in a well-formed program (XTyping.xwf), `run_main`
+     never produces XErr, given an initial environment agreeing with what
+     main assumes. *)
+Definition x_typed_safe := XSafety.mossx_typed_safe.
+Definition x_run_main_safe := XSafety.mossx_run_main_safe.
+(* Non-vacuity, as typed_inhabited for the core: a program that binds
+   primitives, builds and reads a struct, loops, assigns and matches is
+   well-formed (XExample.v). *)
+Lemma x_typed_inhabited : exists Sg Rp P Fb, XTyping.xwf Sg Rp P Fb
+  /\ exists main body, xp_fn P main = Some body
+  /\ g_fn Sg main = Some ([], mkSig [] TUnit, None).
+Proof.
+  exists XExample.XExample.Sg, XExample.XExample.Rp, XExample.XExample.P, XExample.XExample.Fb.
+  split; [exact XExample.XExample.example_wf |].
+  exists XExample.XExample.fMain, XExample.XExample.main_body. split; reflexivity.
+Qed.
+
+(* And on the GC heap: a well-formed program whose main binds the `Ref`
+   primitives at Ref[I32] (typed by their shapes, XTyping.gc_shape) and,
+   run, allocates a box and writes it (XExample.XExampleRef). *)
+Lemma x_heap_inhabited : exists Sg Rp P Fb, XTyping.xwf Sg Rp P Fb
+  /\ exists main body st0, xp_fn P main = Some body
+  /\ g_fn Sg main = Some ([], mkSig [] TUnit, None)
+  /\ MossX.XS.xr_out (MossX.XS.run_main 30 P main [] st0) = XOk XVUnit
+  /\ MossX.ms_heap (MossX.XS.xr_st (MossX.XS.run_main 30 P main [] st0)) <> HTrie.TE.
+Proof.
+  exists XExample.XExampleRef.Sg, XExample.XExampleRef.Rp, XExample.XExampleRef.P,
+    XExample.XExampleRef.Fb.
+  split; [exact XExample.XExampleRef.ref_wf |].
+  exists XExample.XExampleRef.fMain, XExample.XExampleRef.main_body, XExample.XExampleRef.st0.
+  destruct XExample.XExampleRef.ref_runs as [Ho Hh].
+  split; [reflexivity|]. split; [reflexivity|]. split; [exact Ho|].
+  rewrite Hh. discriminate.
+Qed.
+
+(* Track B: MossX's concrete GC heap (tries, HTrie.v) satisfies the heap law
+   XHeap.HEAP_LAWS, without the kernel's array axioms. *)
+Definition x_heap_mono := XHeapC.ConcreteHeap.heap_mono.
+Definition x_heap_empty := XHeapC.ConcreteHeap.heap_empty.
+Definition x_heap_other := XHeapC.ConcreteHeap.heap_other.
+Definition x_heap_gc := XHeapC.ConcreteHeap.heap_gc.

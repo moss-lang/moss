@@ -1980,13 +1980,18 @@ Definition res_agree (r : res) (o : xout) : Prop :=
 
 (* ===================== 11. Primitives, typed by signature ================ *)
 
-Inductive xty : Type := XTI32 | XTI64 | XTF32 | XTF64 | XTUnit | XTBool.
+Inductive xty : Type := XTI32 | XTI64 | XTF32 | XTF64 | XTUnit | XTBool
+(* Track B: an address as `Memories`' members receive it (an `Addr`, a tag
+   over an I32), and any tag (the memory a member is a method of) *)
+| XTAddr | XTTag.
 
 Definition xvty (P : xprog) (w : xvalue) (t : xty) : Prop :=
   match t, w with
   | XTI32, XVI32 _ | XTI64, XVI64 _ | XTF32, XVF32 _ | XTF64, XVF64 _ => True
   | XTUnit, XVUnit => True
   | XTBool, XVTag b (XVTag t' XVUnit) => b = xp_bool P /\ (t' = xp_true P \/ t' = xp_false P)
+  | XTAddr, XVTag _ (XVI32 _) => True
+  | XTTag, XVTag _ _ => True
   | _, _ => False
   end.
 
@@ -2042,6 +2047,29 @@ Definition prim_sig (p : prim) : option (list xty * xty) :=
   | PF64ReinterpI64 => Some ([XTI64], XTF64)
   | PBox _ | PDeref | PRefSet | PArrNew _ | PArrLen | PArrGet | PArrSet
   | PArrFill | PArrCopy | PUnsupported _ => None
+  end.
+
+(* Track B.  The memory primitives as the platform provides them, as
+   methods of `Memories` (D79 as amended, DRAFT NOTE 23): an address
+   argument is an `Addr`, and memory.size and memory.grow receive the
+   memory they are a method of.  MossX's primitives read the bare address
+   (MossX.mem_args); `prim_mlaw` (Part VI) is the law at these
+   signatures. *)
+Definition prim_msig (p : prim) : option (list xty * xty) :=
+  match p with
+  | PLoad _ => Some ([XTAddr], XTI32)
+  | PStore _ => Some ([XTAddr; XTI32], XTUnit)
+  | PF64Load => Some ([XTAddr], XTF64)
+  | PF64Store => Some ([XTAddr; XTF64], XTUnit)
+  | PF32Load => Some ([XTAddr], XTF32)
+  | PF32Store => Some ([XTAddr; XTF32], XTUnit)
+  | PI64Load _ => Some ([XTAddr], XTI64)
+  | PI64Store _ => Some ([XTAddr; XTI64], XTUnit)
+  | PMemCopy => Some ([XTAddr; XTAddr; XTI32], XTUnit)
+  | PMemFill => Some ([XTAddr; XTI32; XTI32], XTUnit)
+  | PMemSize => Some ([XTTag], XTI32)
+  | PMemGrow => Some ([XTTag; XTI32], XTI32)
+  | _ => None
   end.
 
 (* Which library fn is which primitive: the elaborator gives `main`'s need of
@@ -2667,51 +2695,108 @@ Definition MethodNamed (W : world) (p : string) (r : nat) (n : name) (m : nat) :
   Attached W r n m \/
   ((forall m', ~ Attached W r n m') /\ w_scope W p NSDetached n = Some (ESym m)).
 
-(* `ItemEntries W p tm sp es tm'`: the context item `sp`, written in module
-   p, with outer bracket substitution `tm`, introduces entries `es`; the
-   type meanings in force grow from tm to tm' (each assumed type is its own
-   generation, TAbs t).  [D20]: a type the item mentions must already be in
-   force (TyOf fails otherwise). *)
-Inductive ItemEntries (W : world) : string -> list (nat * ty) -> spec -> list entry -> list (nat * ty) -> Prop :=
-| IEType : forall p tm pa t,
+(* The fixed inputs of a functor ([D84] rule 1), here because assuming an
+   abstract functor asks them in force (ItemEntries, note 70). *)
+
+Definition functor_parts (d : adecl) : option (option (list name) * list spec * list spec * option (list (list (spec * option aexpr)))) :=
+  match d with ADFunctor _ ps a r b => Some (ps, a, r, b) | _ => None end.
+
+(* The type outputs of F: the type symbols its result lists (through contexts). *)
+Definition FunOutputs (W : world) (u : nat) (t : nat) : Prop :=
+  exists d ps a r b sp, w_decl W u = Some d /\ functor_parts (d_ast d) = Some (ps, a, r, b) /\
+    In sp r /\ SpecTypes W (d_mod d) sp t.
+
+(* M(F) ([D84] rule 1, with DECISIONS.md's correction): the type symbols the
+   result items mention — a val's or fn's requirements (its dependencies,
+   for a fn its whole telescope), a method's receiver and the requirements
+   its signature mentions, less what brackets bind, plus the brackets'
+   right sides; closed through relevance (w_reqs); less F's outputs. *)
+Inductive ResultMentions (W : world) : string -> spec -> nat -> Prop :=
+| RMValFn : forall p pa a s t,
+    resolve_sym W p pa = Some s -> (kind_sym W s = Some DKVal \/ kind_sym W s = Some DKFn) ->
+    In t (w_reqs W s) ->
+    ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
+    ResultMentions W p (Spec (Some pa) None a) t
+| RMMeth : forall p pa dn a r m t,
+    resolve_sym W p pa = Some r -> MethodNamed W p r dn m ->
+    (t = r /\ kind_sym W r = Some DKType \/ In t (w_reqs W r) \/ In t (w_reqs W m)) ->
+    ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
+    ResultMentions W p (Spec (Some pa) (Some dn) a) t
+| RMBracket : forall p pa d a bp sp sa t,
+    In (bp, Spec (Some sp) None sa) (match a with Some bs => bs | None => [] end) ->
+    FreeIn W (w_reqs W) p (ATRef sp sa) t ->
+    ResultMentions W p (Spec (Some pa) d a) t
+| RMCtx : forall p pa c dc n its sp t,
+    resolve_sym W p pa = Some c -> w_decl W c = Some dc -> d_ast dc = ADCtx n its ->
+    In sp its -> ResultMentions W (d_mod dc) sp t ->
+    ResultMentions W p (Spec (Some pa) None None) t.
+
+Definition Mentions (W : world) (u : nat) (t : nat) : Prop :=
+  exists d ps a r b sp, w_decl W u = Some d /\ functor_parts (d_ast d) = Some (ps, a, r, b) /\
+    In sp r /\ ResultMentions W (d_mod d) sp t /\ ~ FunOutputs W u t.
+
+(* P(F): the brackets; an unbracketed abstract functor has P(F) = M(F). *)
+Definition Poly (W : world) (u : nat) (t : nat) : Prop :=
+  exists d n ps a r, w_decl W u = Some d /\ d_ast d = ADFunctor n ps a r None /\
+    match ps with
+    | None => Mentions W u t
+    | Some names => exists x, In x names /\ resolve_sym W (d_mod d) [x] = Some t
+    end.
+
+(* X(F) = M(F) ∖ P(F), the fixed inputs ([D84] rule 1). *)
+Definition Fixed (W : world) (u : nat) (t : nat) : Prop := Mentions W u t /\ ~ Poly W u t.
+
+(* `ItemEntries W p ob tm sp es tm'`: the context item `sp`, written in
+   module p, under the enclosing items' bracket bindings `ob`, introduces
+   entries `es`; the type meanings in force grow from tm to tm' (each
+   assumed type is its own generation, TAbs t).  An item is read at
+   `ob ++ tm`: a bracket binds only while the item it is on is read, and a
+   type item is put in force as its own generation even where a bracket
+   binds it (note 71).  [D20]: a type the item mentions must already be in
+   force or bound (TyOf fails otherwise). *)
+Inductive ItemEntries (W : world) : string -> list (nat * ty) -> list (nat * ty) -> spec -> list entry -> list (nat * ty) -> Prop :=
+| IEType : forall p ob tm pa t,
     resolve_sym W p pa = Some t -> kind_sym W t = Some DKType ->
-    ItemEntries W p tm (Spec (Some pa) None None) [NTy t]
+    ItemEntries W p ob tm (Spec (Some pa) None None) [NTy t]
                 (match nlook t tm with Some _ => tm | None => (t, TAbs t) :: tm end)
-| IENothing : forall p tm pa s k,
+| IENothing : forall p ob tm pa s k,
     resolve_sym W p pa = Some s -> kind_sym W s = Some k ->
     (k = DKUnit \/ k = DKTag \/ k = DKAlias \/
      (k = DKVal /\ exists d n t i, w_decl W s = Some d /\ d_ast d = ADVal n t (Some i))) ->
-    ItemEntries W p tm (Spec (Some pa) None None) [] tm
-| IEVal : forall p tm a pa s d n t ty0 bs ap,
+    ItemEntries W p ob tm (Spec (Some pa) None None) [] tm
+| IEVal : forall p ob tm a pa s d n t ty0 bs ap,
     resolve_sym W p pa = Some s -> w_decl W s = Some d -> d_ast d = ADVal n t None ->
-    Brackets W p tm s a bs ->
-    TyOf W (d_mod d) (bs ++ tm) None t ty0 -> AppOf W s (bs ++ tm) ap ->
-    ItemEntries W p tm (Spec (Some pa) None a) [NVal s ty0 ap] tm
-| IEFn : forall p tm a pa s g bs ap,
+    Brackets W p (ob ++ tm) s a bs ->
+    TyOf W (d_mod d) (bs ++ ob ++ tm) None t ty0 -> AppOf W s (bs ++ ob ++ tm) ap ->
+    ItemEntries W p ob tm (Spec (Some pa) None a) [NVal s ty0 ap] tm
+| IEFn : forall p ob tm a pa s g bs ap,
     resolve_sym W p pa = Some s -> kind_sym W s = Some DKFn ->
-    Brackets W p tm s a bs ->
-    SigOf W s (bs ++ tm) None g -> AppOf W s (bs ++ tm) ap ->
-    ItemEntries W p tm (Spec (Some pa) None a) [NFn s g ap] tm
-| IEFun : forall p tm pa u d n ps args res,
+    Brackets W p (ob ++ tm) s a bs ->
+    SigOf W s (bs ++ ob ++ tm) None g -> AppOf W s (bs ++ ob ++ tm) ap ->
+    ItemEntries W p ob tm (Spec (Some pa) None a) [NFn s g ap] tm
+| IEFun : forall p ob tm pa u d n ps args res,
     resolve_sym W p pa = Some u -> w_decl W u = Some d -> d_ast d = ADFunctor n ps args res None ->
-    ItemEntries W p tm (Spec (Some pa) None None) [NFun u] tm
-| IEMeth : forall p tm a pa dn r m rt g bs ap,
+    (* [D84] rule 2, [D20]: F is at an instantiation of X(F), so assuming
+       it asks X(F) in force (note 70) *)
+    (forall x, Fixed W u x -> nlook x (ob ++ tm) <> None) ->
+    ItemEntries W p ob tm (Spec (Some pa) None None) [NFun u] tm
+| IEMeth : forall p ob tm a pa dn r m rt g bs ap,
     resolve_sym W p pa = Some r -> MethodNamed W p r dn m ->
-    Brackets W p tm m a bs ->
-    RecvTy W r (bs ++ tm) rt ->
-    SigOf W m (bs ++ tm) (Some rt) g -> AppOf W m (bs ++ tm) ap ->
-    ItemEntries W p tm (Spec (Some pa) (Some dn) a) [NMth rt m g ap] tm
-| IECtx : forall p tm a pa c d n its bs es tm',
+    Brackets W p (ob ++ tm) m a bs ->
+    RecvTy W r (bs ++ ob ++ tm) rt ->
+    SigOf W m (bs ++ ob ++ tm) (Some rt) g -> AppOf W m (bs ++ ob ++ tm) ap ->
+    ItemEntries W p ob tm (Spec (Some pa) (Some dn) a) [NMth rt m g ap] tm
+| IECtx : forall p ob tm a pa c d n its bs es tm',
     resolve_sym W p pa = Some c -> w_decl W c = Some d -> d_ast d = ADCtx n its ->
-    Brackets W p tm c a bs ->
+    Brackets W p (ob ++ tm) c a bs ->
     (* [D61]: the items of a context are read in the module that wrote them *)
-    ItemsEntries W (d_mod d) (bs ++ tm) its es tm' ->
-    ItemEntries W p tm (Spec (Some pa) None a) es tm'
-with ItemsEntries (W : world) : string -> list (nat * ty) -> list spec -> list entry -> list (nat * ty) -> Prop :=
-| IsNil : forall p tm, ItemsEntries W p tm [] [] tm
-| IsCons : forall p tm sp r es1 tm1 es2 tm2,
-    ItemEntries W p tm sp es1 tm1 -> ItemsEntries W p tm1 r es2 tm2 ->
-    ItemsEntries W p tm (sp :: r) (es1 ++ es2) tm2.
+    ItemsEntries W (d_mod d) (bs ++ ob) tm its es tm' ->
+    ItemEntries W p ob tm (Spec (Some pa) None a) es tm'
+with ItemsEntries (W : world) : string -> list (nat * ty) -> list (nat * ty) -> list spec -> list entry -> list (nat * ty) -> Prop :=
+| IsNil : forall p ob tm, ItemsEntries W p ob tm [] [] tm
+| IsCons : forall p ob tm sp r es1 tm1 es2 tm2,
+    ItemEntries W p ob tm sp es1 tm1 -> ItemsEntries W p ob tm1 r es2 tm2 ->
+    ItemsEntries W p ob tm (sp :: r) (es1 ++ es2) tm2.
 
 (* An assume item `p` or `R.m` is the context item `p` or `R.m` unbracketed. *)
 Definition assume_spec (it : path * option name) : spec := Spec (Some (fst it)) (snd it) None.
@@ -2770,8 +2855,51 @@ Definition entries_cx (s : subst) (tm : list (nat * ty)) (es : list entry) : cx 
 Definition Needs (s : subst) (es : list entry) (ns : list item) : Prop :=
   NoDup ns /\ forall k, In k ns <-> exists e, In e es /\ entry_key s e = Some k.
 
-(* `CtxOf W s C ns`, the context the assume nesting of s forms, is defined
-   after Fixed (V.5), which main's root context reads (note 54). *)
+(* [D84] (8), [D37] (note 54): `main` runs in the platform's root context.
+   Beside what it assumes, a module's own `fn main` has lib/wasm.moss's
+   `Gc`: each abstract functor `Gc` lists that is not already in force,
+   after the types it is fixed in (X(F), [D84] rule 1), each in force as
+   its own generation unless it is already. *)
+Definition IsMainFn (W : world) (s : nat) : Prop :=
+  exists d ps rt body, w_decl W s = Some d /\ d_ast d = ADFn RPlain "main" ps rt body /\
+    w_scope W (d_mod d) NSName "main" = Some (ESym s).
+
+Definition add_tys (xs : list nat) (tm : list (nat * ty)) : list (nat * ty) :=
+  fold_left (fun tm x => match nlook x tm with Some _ => tm | None => (x, TAbs x) :: tm end) xs tm.
+
+(* `RootItems W q es0 tm its es tm'`: Gc's items `its` (written in module
+   q), after the entries es0 and with meanings tm, add the entries es. *)
+Inductive RootItems (W : world) (q : string) : list entry -> list (nat * ty) -> list spec -> list entry -> list (nat * ty) -> Prop :=
+| RINil : forall es0 tm, RootItems W q es0 tm [] [] tm
+| RIFun : forall es0 tm p a rest u du n ps args res xs es tm',
+    resolve_sym W q p = Some u -> w_decl W u = Some du -> d_ast du = ADFunctor n ps args res None ->
+    ~ In (NFun u) es0 -> NoDup xs -> (forall x, In x xs <-> Fixed W u x) ->
+    RootItems W q (es0 ++ map NTy xs ++ [NFun u]) (add_tys xs tm) rest es tm' ->
+    RootItems W q es0 tm (Spec (Some p) None a :: rest) (map NTy xs ++ [NFun u] ++ es) tm'
+| RISkip : forall es0 tm sp rest es tm',
+    match sp with
+    | Spec (Some p) None _ => forall u, resolve_sym W q p = Some u -> kind_sym W u = Some DKFunctor -> In (NFun u) es0
+    | _ => True
+    end ->
+    RootItems W q es0 tm rest es tm' -> RootItems W q es0 tm (sp :: rest) es tm'.
+
+Inductive RootCtx (W : world) (s : nat) (es0 : list entry) (tm : list (nat * ty)) : list entry -> list (nat * ty) -> Prop :=
+| RootNone :
+    (~ IsMainFn W s \/ forall gc d n its, LangSym W "wasm" NSName "Gc" gc -> w_decl W gc = Some d -> d_ast d <> ADCtx n its) ->
+    RootCtx W s es0 tm [] tm
+| RootGc : forall gc d n its es tm',
+    IsMainFn W s -> LangSym W "wasm" NSName "Gc" gc -> w_decl W gc = Some d -> d_ast d = ADCtx n its ->
+    RootItems W (d_mod d) es0 tm its es tm' -> RootCtx W s es0 tm es tm'.
+
+(* `CtxOf W s C ns`: the context the assume nesting of symbol s forms (and,
+   for `main`, the root context: note 54), and its needs (what a caller
+   must provide, [D20]). *)
+Definition CtxOf (W : world) (s : nat) (C : cx) (ns : list item) : Prop :=
+  exists d es tm er tmr σ,
+    w_decl W s = Some d /\
+    ItemsEntries W (d_mod d) [] [] (map assume_spec (d_assumes d)) es tm /\
+    RootCtx W s es tm er tmr /\
+    MostGeneralMerge σ (es ++ er) /\ C = entries_cx σ tmr (es ++ er) /\ Needs σ (es ++ er) ns.
 
 (* ======================================================================== *)
 (* V.4 Calls: needs, satisfaction maps and coherence                        *)
@@ -2820,106 +2948,12 @@ Definition Satisfies (C : cx) (Cs : cx) (ns : list item) (sm : smap) : Prop :=
 (* V.5 Functors ([D55], [D78], [D84] with DECISIONS.md)                       *)
 (* ======================================================================== *)
 
-Definition functor_parts (d : adecl) : option (option (list name) * list spec * list spec * option (list (list (spec * option aexpr)))) :=
-  match d with ADFunctor _ ps a r b => Some (ps, a, r, b) | _ => None end.
-
-(* The type outputs of F: the type symbols its result lists (through contexts). *)
-Definition FunOutputs (W : world) (u : nat) (t : nat) : Prop :=
-  exists d ps a r b sp, w_decl W u = Some d /\ functor_parts (d_ast d) = Some (ps, a, r, b) /\
-    In sp r /\ SpecTypes W (d_mod d) sp t.
-
-(* M(F) ([D84] rule 1, with DECISIONS.md's correction): the type symbols the
-   result items mention — a val's or fn's requirements (its dependencies,
-   for a fn its whole telescope), a method's receiver and the requirements
-   its signature mentions, less what brackets bind, plus the brackets'
-   right sides; closed through relevance (w_reqs); less F's outputs. *)
-Inductive ResultMentions (W : world) : string -> spec -> nat -> Prop :=
-| RMValFn : forall p pa a s t,
-    resolve_sym W p pa = Some s -> (kind_sym W s = Some DKVal \/ kind_sym W s = Some DKFn) ->
-    In t (w_reqs W s) ->
-    ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
-    ResultMentions W p (Spec (Some pa) None a) t
-| RMMeth : forall p pa dn a r m t,
-    resolve_sym W p pa = Some r -> MethodNamed W p r dn m ->
-    (t = r /\ kind_sym W r = Some DKType \/ In t (w_reqs W r) \/ In t (w_reqs W m)) ->
-    ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
-    ResultMentions W p (Spec (Some pa) (Some dn) a) t
-| RMBracket : forall p pa d a bp sp sa t,
-    In (bp, Spec (Some sp) None sa) (match a with Some bs => bs | None => [] end) ->
-    FreeIn W (w_reqs W) p (ATRef sp sa) t ->
-    ResultMentions W p (Spec (Some pa) d a) t
-| RMCtx : forall p pa c dc n its sp t,
-    resolve_sym W p pa = Some c -> w_decl W c = Some dc -> d_ast dc = ADCtx n its ->
-    In sp its -> ResultMentions W (d_mod dc) sp t ->
-    ResultMentions W p (Spec (Some pa) None None) t.
-
-Definition Mentions (W : world) (u : nat) (t : nat) : Prop :=
-  exists d ps a r b sp, w_decl W u = Some d /\ functor_parts (d_ast d) = Some (ps, a, r, b) /\
-    In sp r /\ ResultMentions W (d_mod d) sp t /\ ~ FunOutputs W u t.
-
-(* P(F): the brackets; an unbracketed abstract functor has P(F) = M(F). *)
-Definition Poly (W : world) (u : nat) (t : nat) : Prop :=
-  exists d n ps a r, w_decl W u = Some d /\ d_ast d = ADFunctor n ps a r None /\
-    match ps with
-    | None => Mentions W u t
-    | Some names => exists x, In x names /\ resolve_sym W (d_mod d) [x] = Some t
-    end.
-
-(* X(F) = M(F) ∖ P(F), the fixed inputs ([D84] rule 1). *)
-Definition Fixed (W : world) (u : nat) (t : nat) : Prop := Mentions W u t /\ ~ Poly W u t.
-
-(* [D84] (8), [D37] (note 54): `main` runs in the platform's root context.
-   Beside what it assumes, a module's own `fn main` has lib/wasm.moss's
-   `Gc`: each abstract functor `Gc` lists that is not already in force,
-   after the types it is fixed in (X(F), [D84] rule 1), each in force as
-   its own generation unless it is already. *)
-Definition IsMainFn (W : world) (s : nat) : Prop :=
-  exists d ps rt body, w_decl W s = Some d /\ d_ast d = ADFn RPlain "main" ps rt body /\
-    w_scope W (d_mod d) NSName "main" = Some (ESym s).
-
-Definition add_tys (xs : list nat) (tm : list (nat * ty)) : list (nat * ty) :=
-  fold_left (fun tm x => match nlook x tm with Some _ => tm | None => (x, TAbs x) :: tm end) xs tm.
-
-(* `RootItems W q es0 tm its es tm'`: Gc's items `its` (written in module
-   q), after the entries es0 and with meanings tm, add the entries es. *)
-Inductive RootItems (W : world) (q : string) : list entry -> list (nat * ty) -> list spec -> list entry -> list (nat * ty) -> Prop :=
-| RINil : forall es0 tm, RootItems W q es0 tm [] [] tm
-| RIFun : forall es0 tm p a rest u du n ps args res xs es tm',
-    resolve_sym W q p = Some u -> w_decl W u = Some du -> d_ast du = ADFunctor n ps args res None ->
-    ~ In (NFun u) es0 -> NoDup xs -> (forall x, In x xs <-> Fixed W u x) ->
-    RootItems W q (es0 ++ map NTy xs ++ [NFun u]) (add_tys xs tm) rest es tm' ->
-    RootItems W q es0 tm (Spec (Some p) None a :: rest) (map NTy xs ++ [NFun u] ++ es) tm'
-| RISkip : forall es0 tm sp rest es tm',
-    match sp with
-    | Spec (Some p) None _ => forall u, resolve_sym W q p = Some u -> kind_sym W u = Some DKFunctor -> In (NFun u) es0
-    | _ => True
-    end ->
-    RootItems W q es0 tm rest es tm' -> RootItems W q es0 tm (sp :: rest) es tm'.
-
-Inductive RootCtx (W : world) (s : nat) (es0 : list entry) (tm : list (nat * ty)) : list entry -> list (nat * ty) -> Prop :=
-| RootNone :
-    (~ IsMainFn W s \/ forall gc d n its, LangSym W "wasm" NSName "Gc" gc -> w_decl W gc = Some d -> d_ast d <> ADCtx n its) ->
-    RootCtx W s es0 tm [] tm
-| RootGc : forall gc d n its es tm',
-    IsMainFn W s -> LangSym W "wasm" NSName "Gc" gc -> w_decl W gc = Some d -> d_ast d = ADCtx n its ->
-    RootItems W (d_mod d) es0 tm its es tm' -> RootCtx W s es0 tm es tm'.
-
-(* `CtxOf W s C ns`: the context the assume nesting of symbol s forms (and,
-   for `main`, the root context: note 54), and its needs (what a caller
-   must provide, [D20]). *)
-Definition CtxOf (W : world) (s : nat) (C : cx) (ns : list item) : Prop :=
-  exists d es tm er tmr σ,
-    w_decl W s = Some d /\
-    ItemsEntries W (d_mod d) [] (map assume_spec (d_assumes d)) es tm /\
-    RootCtx W s es tm er tmr /\
-    MostGeneralMerge σ (es ++ er) /\ C = entries_cx σ tmr (es ++ er) /\ Needs σ (es ++ er) ns.
-
 (* F's own terms: the context its argument telescope forms, plus its
    implicit inputs (rule 1: P(F) ∪ M(F) symbols the inputs do not list). *)
 Definition FunCtx (W : world) (u : nat) (C : cx) (ns : list item) : Prop :=
   exists d ps a r b es tm tm' σ implicit,
     w_decl W u = Some d /\ functor_parts (d_ast d) = Some (ps, a, r, b) /\
-    ItemsEntries W (d_mod d) [] a es tm /\
+    ItemsEntries W (d_mod d) [] [] a es tm /\
     (* implicit inputs: only an abstract functor has them *)
     (forall t, In t implicit <-> (b = None /\ (Mentions W u t \/ Poly W u t) /\ nlook t tm = None)) /\
     tm' = map (fun t => (t, TAbs t)) implicit ++ tm /\
@@ -2933,7 +2967,7 @@ Definition ProvideResult (W : world) (u : nat) (C : cx) (out : nat -> ty) (C' : 
   exists d ps a r b outs es tm',
     w_decl W u = Some d /\ functor_parts (d_ast d) = Some (ps, a, r, b) /\
     (forall t, In t outs <-> FunOutputs W u t) /\
-    ItemsEntries W (d_mod d) (map (fun t => (t, out t)) outs ++ c_ty C) r es tm' /\
+    ItemsEntries W (d_mod d) [] (map (fun t => (t, out t)) outs ++ c_ty C) r es tm' /\
     Needs (c_sub C) es ks /\
     C' = Cx (map (fun q => (fst q, canon C (snd q))) tm') (c_sub C)
             (flat_map (fun e => match e with NVal v t _ => [(v, canon C t)] | _ => [] end) es ++ c_vals C)
@@ -4497,6 +4531,42 @@ End Elaboration.
       prelude's path).  (b) is the principled one: the program above is
       then accepted by both, and a program's own `lib/wasm.moss` is never
       the platform's.
+
+   CHANGES OF TRACK B (the typing bridge; notes 70-71):
+  70. (relation permissive; adjusted to the elaborator, no change in what
+      is accepted) [D84] rule 2 / [D20]: assuming an abstract functor F
+      asks its fixed inputs X(F) in force, as the elaborator has checked
+      since m4 (add_symbol_item: "assuming `F` needs `T` in force: `F` is
+      fixed in them").  IEFun did not ask it, so the relation related
+      programs the elaborator rejects, and Core's OkFun (X(φ) available
+      where φ is listed) could not be read off a CtxOf (Track B).  IEFun
+      now asks every x with Fixed W u x to have a meaning in tm; Fixed
+      and what it is built from move ahead of ItemEntries.
+  71. (relation wrong; adjusted to the elaborator, no change in what an
+      implementation accepts) Brackets on a context item, `C[T=U]`.  The
+      elaborator (add_spec, add_symbol_item; provide_spec likewise) reads
+      the items of C under the bracket substitution, which it passes down
+      and drops when C is done, and puts a type item `T` of C in force as
+      its own generation whether or not a bracket binds it (the env, not
+      the substitution, holds the types in force).  IECtx instead walked
+      C's items at `bs ++ tm` and returned the walk's tm', so the bindings
+      outlived C: in `context Outer = T, U, Inner[T=U];` (with `Inner`
+      under `assume T`) T meant U for the rest of the walk and in the
+      context made, where the elaborator has T as its own generation; and
+      IEType did not put a bracket-bound T in force.  So Part V gave such
+      a context meanings the elaborator does not (typing `fn f(t: T): T`
+      at U -> U, and relating `fn g(t: T): U { t }`, which the elaborator
+      rejects), and keys that are no requirement (tests/wasi/generic.moss:
+      T and L in `exercise`'s context).  ItemEntries/ItemsEntries now take
+      the enclosing brackets `ob` apart from the types in force `tm`: an
+      item is read at `ob ++ tm` (its own brackets at `bs ++ ob ++ tm`),
+      IECtx walks C's items under `bs ++ ob` with tm threaded alone, and
+      IEType consults and extends tm only.  CtxOf, FunCtx and
+      ProvideResult start with no brackets.  The elaborator is unchanged;
+      the relation's worked examples (RelSupport's tactic) bracket no
+      context item, so their proofs stand.  Track B: what makes
+      BRIDGE-A2's "each requirement means its own generation, and only
+      requirements have meanings" true of Part V.
 *)
 
 (* ######################################################################## *)
@@ -4599,6 +4669,20 @@ Module Type PROVED_NOW.
     | XTrap _ | XExit _ => True
     | _ => False
     end.
+
+  (* Track B: the same law at the memory primitives' method signatures. *)
+  Parameter prim_mlaw : forall P p ps r ws st,
+    prim_msig p = Some (ps, r) -> Forall2 (xvty P) ws ps ->
+    match fst (Prims.run_prim P p ws st) with
+    | XOk w => xvty P w r
+    | XTrap _ | XExit _ => True
+    | _ => False
+    end.
+
+  (* Track B: a primitive the model does not implement stops the program
+     (XUns), whatever its arguments. *)
+  Parameter prim_ulaw : forall P c ws st,
+    fst (Prims.run_prim P (PUnsupported c) ws st) = XUns c.
 
   (* Core safety, through a typing predicate the implementation chooses.
      `Typed` is a proof device: an auditor need not read its definition.

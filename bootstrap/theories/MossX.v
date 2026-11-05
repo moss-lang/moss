@@ -36,7 +36,7 @@
 
 From Stdlib Require Import List Bool Arith Lia.
 From Stdlib Require Import PrimInt63 Uint63 PrimFloat FloatClass PArray ZArith.
-From NM Require Import CoreMoss.
+From NM Require Import CoreMoss HTrie.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -55,17 +55,26 @@ Local Open Scope nat_scope.
 
 (* The machine: a linear memory of 64 KiB pages, each a persistent array of
    bytes, and the output written so far (most recent byte first). *)
+(* The GC heap's objects.  A GC array is its elements as a trie over its
+   indices (HTrie.v) with a default for the indices never set: no primitive
+   array, so the heap's laws hold without the kernel's array axioms
+   (XHeapC.v). *)
+Definition garr : Type := (xvalue * trie xvalue)%type.
+Definition garr_get (xs : garr) (i : int) : xvalue :=
+  match tget (snd xs) i with Some v => v | None => fst xs end.
+Definition garr_set (xs : garr) (i : int) (v : xvalue) : garr := (fst xs, tset (snd xs) i v).
+
 Inductive hobj : Type :=
 | HNone : hobj
 | HBox  : xvalue -> hobj
-| HArr  : array xvalue -> int -> hobj.   (* elements, length *)
+| HArr  : garr -> int -> hobj.   (* elements, length *)
 
 Record mstate : Type := MS {
   ms_mem   : array (array int);
   ms_pages : int;
   ms_out   : list int;
   ms_err   : list int;
-  ms_heap  : array hobj;
+  ms_heap  : trie hobj;           (* the GC heap, by address *)
   ms_hnext : int;
   ms_fds   : list (int * list int);   (* open files: descriptor, bytes left *)
   ms_nextfd : int
@@ -763,29 +772,24 @@ Definition i64_store (s : store64k) (st : mstate) (a : int) (z : Z) : option mst
           end)
   else None.
 
-(* The heap: a persistent array of objects, doubled when full. *)
+(* The heap: a trie of objects by address; ms_hnext is the next address. *)
 Definition heap_max : int := 4194303%uint63.
 
 Definition heap_alloc (st : mstate) (o : hobj) : option (int * mstate) :=
-  let h := ms_heap st in
   let n := ms_hnext st in
-  let h :=
-    if (n <? PArray.length h)%uint63 then Some h
-    else if (heap_max <=? n)%uint63 then None
-    else int_loop loop_fuel 0 n (fun i h' => Some (PArray.set h' i (PArray.get h i)))
-                  (PArray.make (if (heap_max <? 2 * n)%uint63 then heap_max else 2 * n)%uint63 HNone) in
-  match h with
-  | Some h => Some (n, MS (ms_mem st) (ms_pages st) (ms_out st) (ms_err st)
-                          (PArray.set h n o) (n + 1)%uint63 (ms_fds st) (ms_nextfd st))
-  | None => None
-  end.
+  if (heap_max <=? n)%uint63 then None
+  else match tget (ms_heap st) n with
+       | Some _ => None   (* never: no address at or above ms_hnext is in use *)
+       | None => Some (n, MS (ms_mem st) (ms_pages st) (ms_out st) (ms_err st)
+                             (tset (ms_heap st) n o) (n + 1)%uint63 (ms_fds st) (ms_nextfd st))
+       end.
 
 Definition heap_get (st : mstate) (a : int) : hobj :=
-  if (a <? ms_hnext st)%uint63 then PArray.get (ms_heap st) a else HNone.
+  match tget (ms_heap st) a with Some o => o | None => HNone end.
 
 Definition heap_set (st : mstate) (a : int) (o : hobj) : mstate :=
   MS (ms_mem st) (ms_pages st) (ms_out st) (ms_err st)
-     (PArray.set (ms_heap st) a o) (ms_hnext st) (ms_fds st) (ms_nextfd st).
+     (tset (ms_heap st) a o) (ms_hnext st) (ms_fds st) (ms_nextfd st).
 
 Definition ref_of (w : xvalue) : option int :=
   match w with
@@ -797,7 +801,7 @@ Notation trap_null := 6%nat (only parsing).
 Notation trap_array_oob := 7%nat (only parsing).
 Notation trap_oom := 8%nat (only parsing).
 
-Definition arr_of (st : mstate) (w : xvalue) : option (int * array xvalue * int) :=
+Definition arr_of (st : mstate) (w : xvalue) : option (int * garr * int) :=
   match ref_of w with
   | Some a => match heap_get st a with HArr xs n => Some (a, xs, n) | _ => None end
   | None => None
@@ -828,7 +832,7 @@ Definition gc_prim (p : prim) (ws : list xvalue) (st : mstate) : xout * mstate :
       end
   | PArrNew ar, [v; XVI32 n] =>
       if (heap_max <? n)%uint63 then (XTrap trap_oom, st)
-      else match heap_alloc st (HArr (PArray.make n v) n) with
+      else match heap_alloc st (HArr (v, TE) n) with
            | Some (a, s) => (XOk (XVTag ar (XVRef a)), s)
            | None => (XTrap trap_oom, st)
            end
@@ -839,14 +843,14 @@ Definition gc_prim (p : prim) (ws : list xvalue) (st : mstate) : xout * mstate :
       end
   | PArrGet, [r; XVI32 i] =>
       match arr_of st r with
-      | Some (_, xs, n) => if (i <? n)%uint63 then (XOk (PArray.get xs i), st)
+      | Some (_, xs, n) => if (i <? n)%uint63 then (XOk (garr_get xs i), st)
                            else (XTrap trap_array_oob, st)
       | None => (XTrap trap_null, st)
       end
   | PArrSet, [r; XVI32 i; v] =>
       match arr_of st r with
       | Some (a, xs, n) => if (i <? n)%uint63
-                           then (XOk XVUnit, heap_set st a (HArr (PArray.set xs i v) n))
+                           then (XOk XVUnit, heap_set st a (HArr (garr_set xs i v) n))
                            else (XTrap trap_array_oob, st)
       | None => (XTrap trap_null, st)
       end
@@ -854,7 +858,7 @@ Definition gc_prim (p : prim) (ws : list xvalue) (st : mstate) : xout * mstate :
       match arr_of st r with
       | Some (a, xs, n) =>
           if (n <? at0 + c)%uint63 then (XTrap trap_array_oob, st)
-          else match int_loop loop_fuel 0 c (fun i ys => Some (PArray.set ys (at0 + i)%uint63 v)) xs with
+          else match int_loop loop_fuel 0 c (fun i ys => Some (garr_set ys (at0 + i)%uint63 v)) xs with
                | Some ys => (XOk XVUnit, heap_set st a (HArr ys n))
                | None => (XTrap trap_oom, st)
                end
@@ -865,10 +869,11 @@ Definition gc_prim (p : prim) (ws : list xvalue) (st : mstate) : xout * mstate :
       | Some (a, xs, n), Some (_, ys, m) =>
           if (n <? at0 + c)%uint63 || (m <? start + c)%uint63 then (XTrap trap_array_oob, st)
           else
-            (* read the source run first, then write: slice-assignment semantics *)
-            let src := PArray.copy ys in
+            (* read the source run first, then write: slice-assignment
+               semantics (the source is persistent, so it is its own copy) *)
+            let src := ys in
             match int_loop loop_fuel 0 c
-                    (fun i zs => Some (PArray.set zs (at0 + i)%uint63 (PArray.get src (start + i)%uint63)))
+                    (fun i zs => Some (garr_set zs (at0 + i)%uint63 (garr_get src (start + i)%uint63)))
                     (match arr_of st r with Some (_, xs', _) => xs' | None => xs end) with
             | Some zs => (XOk XVUnit, heap_set st a (HArr zs n))
             | None => (XTrap trap_oom, st)
@@ -1057,8 +1062,23 @@ Definition mem_args (p : prim) (ws : list xvalue) : list xvalue :=
   | _ => ws
   end.
 
+(* Only the GC primitives touch the GC heap: every other one runs with the
+   heap it was given handed back, which XHeapC.v's laws read off directly. *)
+Definition is_gc_prim (p : prim) : bool :=
+  match p with
+  | PBox _ | PDeref | PRefSet | PArrNew _ | PArrLen | PArrGet | PArrSet
+  | PArrFill | PArrCopy => true
+  | _ => false
+  end.
+
+Definition keep_heap (st s : mstate) : mstate :=
+  MS (ms_mem s) (ms_pages s) (ms_out s) (ms_err s) (ms_heap st) (ms_hnext st)
+     (ms_fds s) (ms_nextfd s).
+
 Definition run_prim (P : xprog) (p : prim) (ws : list xvalue) (st : mstate)
-  : xout * mstate := run_prim0 P p (mem_args p ws) st.
+  : xout * mstate :=
+  if is_gc_prim p then run_prim0 P p (mem_args p ws) st
+  else let (o, s) := run_prim0 P p (mem_args p ws) st in (o, keep_heap st s).
 
 Module ConcretePrims <: PRIM_SEMANTICS.
   Definition mstate := mstate.
@@ -1074,7 +1094,7 @@ Local Open Scope uint63_scope.
    holding 1024 (both compilers' `_start`, and the bootstrap interpreter). *)
 Definition init_state (pages : int) : mstate :=
   let st := MS (PArray.make max_pages (PArray.make 1 0)) 0 [] []
-                (PArray.make 1024 HNone) 0 [] 4 in
+                TE 0 [] 4 in
   let st1 := snd (mem_grow st pages) in
   store_le st1 16 1024 4.
 Local Close Scope uint63_scope.
@@ -1442,3 +1462,41 @@ Proof.
     split_matches; simpl; auto.
   all: try (split; [reflexivity|]; destruct (negb _); auto).
 Qed.
+
+(* Track B: the law at the memory primitives' method signatures (Part IV,
+   prim_msig): an `Addr` argument is unwrapped by mem_args before the
+   primitive reads it. *)
+Ltac margs_shape :=
+  repeat match goal with
+  | H : Forall2 _ _ (_ :: _) |- _ => inversion H; subst; clear H
+  | H : Forall2 _ _ [] |- _ => inversion H; subst; clear H
+  | H : xvty _ ?w XTAddr |- _ =>
+      destruct w as [| ? w | | | | | |]; simpl in H; try contradiction;
+      destruct w; simpl in H; try contradiction; clear H
+  | H : xvty _ ?w _ |- _ => destruct w; simpl in H; try contradiction; clear H
+  end.
+
+Theorem prim_msound : forall P p ps r ws st,
+  prim_msig p = Some (ps, r) ->
+  Forall2 (xvty P) ws ps ->
+  match fst (run_prim P p ws st) with
+  | XOk w => xvty P w r
+  | XTrap _ | XExit _ => True
+  | _ => False
+  end.
+Proof.
+  intros P p ps r ws st Hsig Hargs. unfold run_prim.
+  destruct p; simpl in Hsig;
+    repeat match type of Hsig with
+    | context [match ?o with _ => _ end] => destruct o
+    end;
+    try discriminate;
+    injection Hsig as <- <-;
+    margs_shape; simpl; unfold okv, unit_or_trap, xbool;
+    split_matches; simpl; auto.
+Qed.
+
+(* Track B: an unmodelled primitive stops the program with XUns. *)
+Theorem prim_usound : forall P c ws st,
+  fst (run_prim P (PUnsupported c) ws st) = XUns c.
+Proof. intros P c ws st. unfold run_prim. simpl. destruct ws; reflexivity. Qed.

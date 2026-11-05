@@ -49,7 +49,8 @@ Definition relmap := nsym -> list tsym.
 
 Definition memb (t : tsym) (l : list tsym) : bool := existsb (Nat.eqb t) l.
 
-(* Drop every entry of a nominal reference that is not relevant, recursively. *)
+(* Drop every entry of a nominal reference that is not relevant, recursively.
+   A record (CoreMoss.WfRec) keeps every field: its fields are its type. *)
 Fixpoint narrow (R : relmap) (tau : ty) {struct tau} : ty :=
   match tau with
   | TUnit => TUnit
@@ -58,7 +59,7 @@ Fixpoint narrow (R : relmap) (tau : ty) {struct tau} : ty :=
       TNom n ((fix go (l : list (tsym * ty)) : list (tsym * ty) :=
                  match l with
                  | [] => []
-                 | p :: r => if memb (fst p) (R n)
+                 | p :: r => if Nat.eqb n rec_nom || memb (fst p) (R n)
                              then (fst p, narrow R (snd p)) :: go r
                              else go r
                  end) th)
@@ -71,14 +72,14 @@ Fixpoint narrow (R : relmap) (tau : ty) {struct tau} : ty :=
   end.
 
 Definition keep (R : relmap) (n : nsym) (th : subst) : subst :=
-  filter (fun p => memb (fst p) (R n)) th.
+  filter (fun p => Nat.eqb n rec_nom || memb (fst p) (R n)) th.
 
 Lemma narrow_nom : forall R n th,
   narrow R (TNom n th) = TNom n (map_snd (narrow R) (keep R n th)).
 Proof.
   intros R n th. simpl. f_equal. unfold keep, map_snd.
   induction th as [| [t tau] r IH]; simpl; [reflexivity |].
-  destruct (memb t (R n)); simpl; rewrite IH; reflexivity.
+  destruct (Nat.eqb n rec_nom || memb t (R n)); simpl; rewrite IH; reflexivity.
 Qed.
 
 Lemma narrow_union : forall R ms,
@@ -101,7 +102,7 @@ Proof.
   - rewrite app_subst_nom, !narrow_nom, app_subst_nom. f_equal.
     unfold keep, map_snd. induction H as [| [t tau] r Hp Hr IH]; simpl;
       [reflexivity |].
-    simpl in Hp. destruct (memb t (R n)); simpl.
+    simpl in Hp. destruct (Nat.eqb n rec_nom || memb t (R n)); simpl.
     + rewrite Hp. f_equal. exact IH.
     + exact IH.
   - rewrite app_subst_union, !narrow_union, app_subst_union. f_equal.
@@ -124,9 +125,9 @@ Proof.
   intros R n th t Hm. unfold keep.
   induction th as [| [t' tau] r IH]; simpl; [reflexivity |].
   destruct (Nat.eqb t t') eqn:E.
-  - apply Nat.eqb_eq in E; subst t'. rewrite Hm. simpl.
+  - apply Nat.eqb_eq in E; subst t'. rewrite Hm, orb_true_r. simpl.
     rewrite Nat.eqb_refl. reflexivity.
-  - destruct (memb t' (R n)); simpl; [rewrite E |]; exact IH.
+  - destruct (Nat.eqb n rec_nom || memb t' (R n)); simpl; [rewrite E |]; exact IH.
 Qed.
 
 Lemma memb_In : forall t l, memb t l = true <-> In t l.
@@ -227,15 +228,20 @@ Lemma keep_all : forall R n th,
   map fst th = R n -> keep R n th = th.
 Proof.
   intros R n th E. unfold keep. apply forallb_filter_id.
-  apply forallb_forall. intros p Hp. rewrite memb_In, <- E.
+  apply forallb_forall. intros p Hp. apply orb_true_iff. right. rewrite memb_In, <- E.
   apply in_map. exact Hp.
+Qed.
+
+Lemma keep_rec : forall R th, keep R rec_nom th = th.
+Proof.
+  intros R th. unfold keep. apply forallb_filter_id. apply forallb_forall. reflexivity.
 Qed.
 
 Theorem wf_ty_narrowed : forall Sg R Phi tau,
   narrowed_sig Sg R -> wf_ty Sg Phi tau -> narrow R tau = tau.
 Proof.
   intros Sg R Phi tau [_ HN] H.
-  apply (@wf_ty_ind' Sg Phi (fun t => narrow R t = t)); [| | | | exact H].
+  apply (@wf_ty_ind' Sg Phi (fun t => narrow R t = t)); [| | | | | exact H].
   - reflexivity.
   - reflexivity.
   - intros n D tau0 th Htag Hsat Hwf IH.
@@ -250,6 +256,10 @@ Proof.
   - intros ms Hwf IH Hnom Hnd. rewrite narrow_union. f_equal.
     clear -IH. induction IH as [| t r Hp Hr IHr]; simpl; [reflexivity |].
     rewrite Hp. f_equal. exact IHr.
+  - intros fts _ _ IH. rewrite narrow_nom, keep_rec. f_equal.
+    unfold map_snd. clear -IH.
+    induction IH as [| [t ty0] r Hp Hr IHr]; simpl; [reflexivity |].
+    simpl in Hp. rewrite Hp. f_equal. exact IHr.
 Qed.
 
 (* Type soundness of the narrowed calculus: an instance of soundness_main,

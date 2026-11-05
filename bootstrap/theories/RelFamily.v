@@ -95,6 +95,16 @@ Proof.
   - match goal with H : In _ [] |- _ => destruct H end.
 Qed.
 
+(* So Fam has no fixed inputs (note 70: nothing to have in force). *)
+Lemma fam_no_fixed : forall t, ~ Fixed W_fa 4 t.
+Proof.
+  intros t [Hm Hp]. apply fam_mentions in Hm. subst t. apply Hp.
+  do 5 eexists. split; [comp |]. split; [comp |].
+  simpl. eexists. split; [left; reflexivity | comp].
+Qed.
+
+Ltac fixed_hook ::= intros ?x ?Hx; exfalso; exact (fam_no_fixed _ Hx).
+
 Lemma fam_no_outputs : forall t, ~ FunOutputs W_fa 4 t.
 Proof.
   intros t (d & ps & a & r & b & sp & Hd & Hp & Hin & Hs). vm_compute in Hd. injection Hd as <-.

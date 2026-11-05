@@ -319,19 +319,32 @@ Ltac recvty :=
 Ltac methodnamed :=
   first [ (left; unfold Attached; comp) | (right; split; [intros ? HA; unfold Attached in HA; vm_compute in HA; discriminate HA | comp]) ].
 
+(* Note 70: an unbracketed abstract functor has P(F) = M(F), so no fixed
+   inputs to have in force; a bracketed one is shown case by case
+   (fixed_hook, redefined where needed). *)
+Lemma fixed_unbracketed : forall W u d n a r (tm : list (nat * ty)), w_decl W u = Some d ->
+  d_ast d = ADFunctor n None a r None -> forall x, Fixed W u x -> nlook x tm <> None.
+Proof.
+  intros W u d n a r tm Hd Ha x [Hm Hp]. exfalso. apply Hp. exists d, n, None, a, r. auto.
+Qed.
+
+Ltac fixed_hook := fail.
+
+Ltac fixed_in_force := first [ (eapply fixed_unbracketed; [comp | comp]) | fixed_hook ].
+
 Ltac item :=
   first
   [ (eapply IEType; [comp | comp])
   | (eapply IEMeth; [comp | methodnamed | apply BrNone | recvty | sigof | appof])
   | (eapply IEVal; [comp | comp | comp | apply BrNone | simpl; tyof | appof])
   | (eapply IEFn; [comp | comp | apply BrNone | sigof | appof])
-  | (eapply IEFun; [comp | comp | comp])
+  | (eapply IEFun; [comp | comp | comp | fixed_in_force])
   | (eapply IECtx; [comp | comp | comp | apply BrNone | items])
   | (eapply IENothing; [comp | comp | first [ left; reflexivity | right; left; reflexivity
                                             | right; right; left; reflexivity
                                             | right; right; right; split; [reflexivity | do 4 eexists; split; comp] ] ]) ]
 with items :=
-  match goal with |- ItemsEntries _ ?p ?tm ?l _ _ => reduce_list p; reduce_list tm; reduce_list l end;
+  match goal with |- ItemsEntries _ ?p ?ob ?tm ?l _ _ => reduce_list p; reduce_list ob; reduce_list tm; reduce_list l end;
   first [ apply IsNil | (eapply IsCons; [item | items]) ].
 
 (* No symbol of the elaborator's reading is filed under (ns, n). *)

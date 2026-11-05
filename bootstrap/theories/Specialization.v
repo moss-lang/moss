@@ -338,7 +338,7 @@ Definition item_reg (Sg : gsig) (A : list item) : Prop :=
 
 Definition mth_shapes (Sg : gsig) (A : list item) : Prop :=
   forall rt m th Dm Sm, In (IMth rt m th) A -> g_mth Sg m = Some (Dm, Sm) ->
-    exists PhiDm, tele_ctx Dm = Some PhiDm /\ map fst th = tyreqs (cA PhiDm).
+    msat th Dm Sm.
 
 (* (g, M) is a binding of the generic context Φ: g grounds every type symbol
    in force (and only those), absorbing the substitution in force; M resolves
@@ -731,8 +731,7 @@ Proof.
     by (intros i Hi; destruct Hi).
   assert (Hmth0 : forall rt0 m0 ap0 Dm0 Sm0,
       In (IMth rt0 m0 ap0) (cA empty_ctx) -> g_mth Sg m0 = Some (Dm0, Sm0) ->
-      exists PhiDm0, tele_ctx Dm0 = Some PhiDm0
-                     /\ map fst ap0 = tyreqs (cA PhiDm0))
+      msat ap0 Dm0 Sm0)
     by (intros rt0 m0 ap0 Dm0 Sm0 Hi; destruct Hi).
   (* every satisfier has an entry *)
   assert (Hsmlook : Forall (fun p => exists en, lookup_menv (snd p) M = Some en) sm).
@@ -826,11 +825,11 @@ Proof.
       simpl in Hmatch.
       injection Hmatch as Hrt Hap.
       destruct (@callee_env_agree_aux11 Sg empty_ctx D PhiD rt' m ap' Dm Sm
-                  Wtel Hmth0 Hin Hm) as [PhiDm [HtcDm Hapdom]].
-      assert (Hapdom' : map fst ap = tyreqs (cA PhiDm)).
+                  Wtel Hmth0 Hin Hm) as [PhiDm [HtcDm [Hapinc Hapcov]]].
+      assert (Hdomeq : map fst ap = map fst ap').
       { pose proof (f_equal (map (@fst tsym ty)) Hap) as E.
         unfold map_snd in E. rewrite !map_map in E. simpl in E.
-        rewrite <- Hapdom. symmetry. exact E. }
+        symmetry. exact E. }
       assert (Hwf_tau :
         wf_ty Sg (add_item (ITy this_sym) PhiDm) tau).
       { destruct (wf_mth_decl WF _ Hm) as [PhiDm0 [WtDm [Hps Hret]]].
@@ -887,19 +886,19 @@ Proof.
          assert (Hinap : In t (map fst ap)).
          { pose proof (@callee_env_agree_aux1 t ap b Hb) as Hp.
            apply (in_map (@fst tsym ty)) in Hp. simpl in Hp. exact Hp. }
-         rewrite Hapdom' in Hinap. rewrite <- Hapdom in Hinap.
+         rewrite Hdomeq in Hinap.
          destruct (subst_chain_aux1 t ap' Hinap) as [x Hx].
          rewrite Ha in Hx. discriminate.
       -- exfalso.
          assert (Hinap : In t (map fst ap')).
          { pose proof (@callee_env_agree_aux1 t ap' a Ha) as Hp.
            apply (in_map (@fst tsym ty)) in Hp. simpl in Hp. exact Hp. }
-         rewrite Hapdom in Hinap. rewrite <- Hapdom' in Hinap.
+         rewrite <- Hdomeq in Hinap.
          destruct (subst_chain_aux1 t ap Hinap) as [x Hx].
          rewrite Hb in Hx. discriminate.
       -- assert (Htthis : t = this_sym).
          { destruct Hfree_tau as [Heq|HinD]; [symmetry; exact Heq|].
-           exfalso. rewrite <- Hapdom' in HinD.
+           exfalso. apply (Hapcov t (@msig_frees_in _ _ _ Htau Ht)) in HinD. rewrite <- Hdomeq in HinD.
            destruct (subst_chain_aux1 t ap HinD) as [x Hx].
            rewrite Hb in Hx. discriminate. }
          subst t. simpl.
@@ -1024,7 +1023,7 @@ Lemma binding_push : forall Sg Phi g M i en,
   incl (dep_tys Sg i ++ item_ty_frees i ++ method_item_frees Sg i) (tyreqs (cA Phi)) ->
   is_ty_item i = false ->
   (forall rt m th Dm Sm, i = IMth rt m th -> g_mth Sg m = Some (Dm, Sm) ->
-     exists PhiDm, tele_ctx Dm = Some PhiDm /\ map fst th = tyreqs (cA PhiDm)) ->
+     msat th Dm Sm) ->
   binding_ok Sg (add_item i Phi) g ((i, en) :: M).
 Proof.
   intros Sg Phi g M i en [Hg [Hdomg [Hmr [Hreg Hmth]]]] Hok Hi Hty Hsh.
@@ -1133,7 +1132,7 @@ Proof.
     + eapply Forall_impl; [|exact Hreg]. intros i Hi z Hz. apply open_res_tyreqs. exact (Hi z Hz).
   - assert (Hmth0 : forall rt0 m0 ap0 Dm0 Sm0,
       In (IMth rt0 m0 ap0) (cA empty_ctx) -> g_mth Sg m0 = Some (Dm0, Sm0) ->
-      exists PhiDm0, tele_ctx Dm0 = Some PhiDm0 /\ map fst ap0 = tyreqs (cA PhiDm0))
+      msat ap0 Dm0 Sm0)
       by (intros rt0 m0 ap0 Dm0 Sm0 Hi; destruct Hi).
     intros rt m th Dm Sm Hin Hm. simpl in Hin. apply in_app_or in Hin.
     destruct Hin as [Hin|Hin]; [|exact (Hmth rt m th Dm Sm Hin Hm)].
@@ -1221,7 +1220,7 @@ Proof.
     + eapply Forall_impl; [|exact Hreg]. intros i Hi z Hz. apply open_res_tyreqs. exact (Hi z Hz).
   - assert (Hmth0 : forall rt0 m0 ap0 Dm0 Sm0,
       In (IMth rt0 m0 ap0) (cA empty_ctx) -> g_mth Sg m0 = Some (Dm0, Sm0) ->
-      exists PhiDm0, tele_ctx Dm0 = Some PhiDm0 /\ map fst ap0 = tyreqs (cA PhiDm0))
+      msat ap0 Dm0 Sm0)
       by (intros rt0 m0 ap0 Dm0 Sm0 Hi; destruct Hi).
     intros rt m th0 Dm Sm Hin Hm. simpl in Hin. apply in_app_or in Hin.
     destruct Hin as [Hin|Hin]; [|exact (Hmth rt m th0 Dm Sm Hin Hm)].
@@ -1351,7 +1350,8 @@ Lemma payload_subst : forall Sg g Phi m,
   app_subst g (member_payload Sg m) = member_payload Sg (app_subst g m).
 Proof.
   intros Sg g Phi m WF Hw [n [th ->]]. rewrite app_subst_nom. simpl.
-  inversion Hw as [| |n' D tau0 th' Hn Hsat Hth|]; subst.
+  inversion Hw as [| |n' D tau0 th' Hn Hsat Hth| |fts' Hr0 Hfts]; subst;
+    [| rewrite Hr0; reflexivity].
   rewrite Hn. apply app_subst_chain.
   destruct (wf_tag_decl WF _ Hn) as [PhiD [Wt Hwt]].
   rewrite (sat_dom Hsat (@wf_tele_ctx Sg _ _ Wt)). eapply wf_ty_frees. exact Hwt.
@@ -1496,29 +1496,32 @@ Section SpecCases.
     destruct en as [|f' ps r|f' ci|]; simpl in Hok; try contradiction.
     destruct Hok as [-> _].
     pose proof Hb as [[Hgr [Habs _]] [_ [_ [Hreg Hmth]]]].
-    destruct (Hmth _ _ _ _ _ Hin Hm) as [PhiDm [HtcDm Hthdom]].
+    destruct (Hmth _ _ _ _ _ Hin Hm) as [PhiDm [HtcDm [Hthinc Hthcov]]].
     destruct (wf_mth_decl WF _ Hm) as [PhiDm' [WtDm [Hps Hret]]].
     rewrite (@wf_tele_ctx Sg _ _ WtDm) in HtcDm. injection HtcDm as <-.
     assert (Hgrt : app_subst g tau0 = app_subst g rt0).
     { rewrite <- (bo_abs Hb tau0), <- (bo_abs Hb rt0), Hrt. reflexivity. }
     assert (Hnth : ~ In this_sym (map fst th0)).
-    { rewrite Hthdom. apply (@callee_env_agree_aux13 Sg empty_ctx Dm PhiDm' WtDm). intro H; exact H. }
+    { intros Hx. exact (@callee_env_agree_aux13 Sg empty_ctx Dm PhiDm' WtDm (fun H => H) (Hthinc _ Hx)). }
     assert (Hran : Forall (fun p => incl (ty_frees (snd p)) (map fst g)) th0).
     { rewrite Forall_forall. intros [x a] Hp z Hz. unfold item_reg in Hreg.
       rewrite Forall_forall in Hreg. eapply bo_dom_frees; [exact Hb| |exact Hz].
       intros q Hq. apply (Hreg _ Hin). apply in_or_app. right. apply in_or_app. left.
       simpl. apply in_or_app. right. apply in_flat_map. exists (x, a). split; assumption. }
-    assert (Hconv : forall tau, wf_ty Sg (add_item (ITy this_sym) PhiDm') tau ->
+    assert (Hconv : forall tau, In tau (fs_params S) \/ tau = fs_ret S ->
+              wf_ty Sg (add_item (ITy this_sym) PhiDm') tau ->
               app_subst g (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0) tau)
               = mparam (app_subst g rt0) (map_snd (app_subst g) th0) tau).
-    { intros tau Hw. rewrite <- Hgrt. apply mparam_ground; try assumption.
+    { intros tau Htau Hw. rewrite <- Hgrt. apply mparam_ground; try assumption.
       - exact (bo_this Hb).
-      - apply wf_ty_frees in Hw. simpl in Hw. rewrite Hthdom. exact Hw. }
-    rewrite (Hconv _ Hret).
+      - intros z Hz. pose proof (wf_ty_frees Hw z Hz) as Hz0. simpl in Hz0.
+        destruct Hz0 as [<- | Hz0]; [left; reflexivity |].
+        right. exact (Hthcov z (@msig_frees_in _ _ _ Htau Hz) Hz0). }
+    rewrite (Hconv _ (or_intror eq_refl) Hret).
     eapply MTMeth; [exact Hm | exact He | rewrite <- Hgrt; apply IH0; exact Hb |].
     apply Forall2_map_both. eapply Forall2_impl_in; [|exact IH].
     intros a b _ Hbin Hab. pose proof (Hab g M Hb) as H.
-    rewrite Hconv in H; [exact H|]. rewrite Forall_forall in Hps. apply Hps. exact Hbin.
+    rewrite Hconv in H; [exact H | left; exact Hbin |]. rewrite Forall_forall in Hps. apply Hps. exact Hbin.
   Qed.
 
   Lemma case_match : forall Phi G e0 tau0 ms arms tau,
@@ -1763,7 +1766,8 @@ Section SpecCases.
         * eapply safety_case_bindmth_aux_regular; [exact WF|exact Hm|exact Hwk|exact Hsat|exact Hth|exact Hu].
       + intros rt m0 th0 Dm0 Sm0 E Hm0. injection E as <- <- <-.
         rewrite Hm in Hm0. injection Hm0 as <- <-.
-        exists PhiDm. split; [exact (@wf_tele_ctx Sg _ _ WtDm) | exact Hthdom].
+        exists PhiDm. split; [exact (@wf_tele_ctx Sg _ _ WtDm) |].
+        rewrite Hthdom. split; [apply incl_refl | intros t _ Ht; exact Ht].
   Qed.
 
   Lemma fixed_reg : forall Phi u, Forall (fun x => avail Phi (ITy x)) (g_fixed Sg u) ->
@@ -2432,7 +2436,7 @@ Module SpecExample.
           eapply WCons; [| reflexivity | constructor].
           eapply OkMth with (Dm := []) (S := mkSig [] (TAbs this_sym)) (th := []);
             [reflexivity | apply WfNeed; reflexivity | | constructor].
-          exists empty_ctx. split; [reflexivity|]. split; [reflexivity|]. split; constructor.
+          exists empty_ctx. split; [reflexivity|]. split; [intros x [] | intros t _ []].
         * split; [constructor; [apply WfNeed; reflexivity | constructor]|].
           split.
           -- eapply WfTag with (D := [ITy sE]) (tau0 := TAbs sE); [reflexivity | |].

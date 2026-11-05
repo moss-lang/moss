@@ -751,7 +751,7 @@ Module FamilyVal.
 
     Lemma key_ok : forall Phi, item_ok S0 Phi key.
     Proof.
-      intros Phi. eapply OkMth; [reflexivity | apply wf_tag; unfold nK; lia | apply sat_nil | constructor].
+      intros Phi. eapply OkMth; [reflexivity | apply wf_tag; unfold nK; lia | apply (sat_msat (Sg := S0) (Phi := Phi)); apply sat_nil | constructor].
     Qed.
 
     Lemma wf_sig_of : has_ty S0 empty_ctx (body_env (mkSig [] TUnit)) (ELet 9 mainb EUnit) TUnit ->
@@ -1235,11 +1235,11 @@ Module FamilyApply.
 
     Lemma key_ok : forall Phi, item_ok S0 Phi key.
     Proof.
-      intros Phi. eapply OkMth; [reflexivity | apply wf_tag; unfold nK; lia | apply sat_nil | constructor].
+      intros Phi. eapply OkMth; [reflexivity | apply wf_tag; unfold nK; lia | apply (sat_msat (Sg := S0) (Phi := Phi)); apply sat_nil | constructor].
     Qed.
 
     Lemma v_ok : forall Phi, item_ok S0 Phi (IVal vV).
-    Proof. intros Phi. eapply OkVal; [reflexivity | apply sat0_nil]. Qed.
+    Proof. intros Phi. eapply OkVal; [reflexivity | constructor]. Qed.
 
     Lemma wf_sig_of : has_ty S0 empty_ctx (body_env (mkSig [] TUnit)) (ELet 9 mainb EUnit) TUnit ->
       wf_gsig S0.

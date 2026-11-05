@@ -76,6 +76,23 @@ errors and positions included.
     of the elaborator keeps that reading. The `Bx*.v` files are those programs'
     bundles as Gallina terms, generated once from parse dumps of an
     earlier tree; they are inputs to those proofs, not to the oracle.
+  - [`XTyping.v`](theories/XTyping.v), [`XEnv.v`](theories/XEnv.v) and
+    [`XSafety.v`](theories/XSafety.v): a typing judgment for MossX's
+    elaborated programs (the core's, extended with machine numbers,
+    structs, `var`, loops, `return`, field patterns and primitives typed by
+    their signatures, and abstract functors with Rule A's captures and
+    pins) and its type safety for `xinterp`: a well-typed program never
+    produces `XErr`, at any fuel, GC heap included.
+    [`XHeap.v`](theories/XHeap.v) states the GC primitives' law and
+    [`XHeapC.v`](theories/XHeapC.v) proves it
+    of MossX's GC heap, which is a trie ([`HTrie.v`](theories/HTrie.v))
+    rather than a primitive array, so that no array axiom is needed.
+    [`XBridge.v`](theories/XBridge.v) begins the bridge from the
+    elaboration relation to that typing: Σ, the representations and the
+    functor-body table built from a reading of the bundle, under stated
+    hypotheses on what the soundness proof is to supply;
+    [`MergeWf.v`](theories/MergeWf.v) proves that a formed telescope's
+    merge substitution binds only formed types.
   - [`Certified.v`](theories/Certified.v): binds the implementation to the
     obligations `Audit.v` states, as far as they are proved.
 - [`ocaml/`](ocaml): the oracle. [`Extract2.v`](ocaml/Extract2.v) is
