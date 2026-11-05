@@ -1821,12 +1821,15 @@ Definition add_root_context (e : env) (mi : nat) (needs : list key) : M (env * l
   end.
 
 (* lower.base_env + the bookkeeping of lower_fn: a function's needs, the
-   instantiation it needs each at, and the merges its context made *)
-Definition fn_info (g : gsym) : M fninfo :=
+   instantiation it needs each at, and the merges its context made.  The
+   cache is keyed by symbol, so the info is computed from the symbol table's
+   entry for it (Audit note 58). *)
+Definition fn_info (g0 : gsym) : M fninfo :=
   let! x := get in
-  match nget (st_info x) (gs_id g) with
+  match nget (st_info x) (gs_id g0) with
   | Some i => ret i
   | None =>
+      let! g := sym (gs_id g0) in
       let mi := gs_mod g in
       let walk (e : env) : M (env * list key) :=
         match gs_origin g with
@@ -1847,7 +1850,7 @@ Definition fn_info (g : gsym) : M fninfo :=
       let e := freeze_all_apps e in
       let apps := map (fun k => (k, match get_app e k with Some (a, _) => a | None => [] end)) needs in
       let i := FInfo e needs apps merges in
-      upd (s_info (fun m => nset m (gs_id g) i)) ;; ret i
+      upd (s_info (fun m => nset m (gs_id g0) i)) ;; ret i
   end.
 
 Definition unsupported (why : string) : M unit :=

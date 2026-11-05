@@ -4326,6 +4326,21 @@ End Elaboration.
       call `a.gimme()` in a body is rejected ("not a detached method in
       scope").  Either the elaborator drops the fallback (newly rejecting
       such a context) or IEMeth gains it: a designer's choice.
+  58. (elaborator fragile; made robust for the proof, no change on any
+      program) fn_info caches a function's info under its symbol, but
+      computed it from the gsym record it was handed, so the cache was
+      only as good as every caller's record: an entry under a symbol
+      could have been made from another record with that number.  It
+      now reads the symbol table's entry for the number (sym) before it
+      walks.  PROVED (InfoCache.v): every entry of the cache is fn_info's
+      merged walk of the table's entry for its key, or (lambda_provider)
+      an entry for a symbol the elaborator made, and every step keeps
+      this, so fn_info forms its function's context (CtxOf with the
+      enclosing brackets apart, CtxMerge.CtxOfIE) whether its answer was
+      cached or not, for a function neither a forwarder nor `main`.
+      Oracle stdout, stderr and exit status are identical to the previous
+      oracle's on all programs of tests/wasi, tests/errors and examples
+      and on the compiler compiling tests/wasi/tags.moss.
 *)
 
 (* ######################################################################## *)

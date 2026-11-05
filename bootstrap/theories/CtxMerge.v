@@ -516,20 +516,23 @@ Definition fi_walk (g : gsym) (e : env) : M (env * list key) :=
       if main then add_root_context (fst acc) mi (snd acc) else ret acc
   end.
 
-Lemma fn_info_miss : forall g s i s', fn_info g s = Good (i, s') -> nget (st_info s) (gs_id g) = None ->
-  exists e needs s1, merged_walk (gs_mod g) (fi_walk g) s = Good ((e, needs), s1) /\
+Lemma fn_info_miss : forall g0 s i s', fn_info g0 s = Good (i, s') -> nget (st_info s) (gs_id g0) = None ->
+  exists g e needs s1, nget (st_syms s) (gs_id g0) = Some g /\
+    merged_walk (gs_mod g) (fi_walk g) s = Good ((e, needs), s1) /\
     i = FInfo (freeze_all_apps e) needs
               (map (fun k => (k, match get_app (freeze_all_apps e) k with Some (a, _) => a | None => [] end)) needs)
               (merge_edges e) /\
-    s' = St (st_w s1) (st_syms s1) (st_next s1) (st_reqs s1) (st_sigsyms s1) (nset (st_info s1) (gs_id g) i)
+    s' = St (st_w s1) (st_syms s1) (st_next s1) (st_reqs s1) (st_sigsyms s1) (nset (st_info s1) (gs_id g0) i)
             (st_fns s1) (st_funs s1) (st_fwd s1) (st_links s1) (st_flds s1) (st_consts s1)
             (st_wrappers s1) (st_vars s1) (st_nvar s1) (st_memory_bound s1) (st_memory_used s1)
             (st_checked_total s1) (st_lang s1) (st_unsup s1).
 Proof.
-  intros g s i s' H N. unfold fn_info in H. apply bind_inv in H as (x & s0 & H0 & H). injection H0 as <- <-.
-  rewrite N in H. apply bind_inv in H as ([e needs] & s1 & H1 & H). exists e, needs, s1. split; [exact H1|].
-  cbn beta iota zeta in H. apply bind_inv in H as (u & s2 & H2 & H). injection H as <- <-. unfold upd in H2.
-  injection H2 as _ <-. split; reflexivity.
+  intros g0 s i s' H N. unfold fn_info in H. apply bind_inv in H as (x & s0 & H0 & H). injection H0 as <- <-.
+  rewrite N in H. apply bind_inv in H as (g & s2 & H2 & H). unfold sym in H2.
+  destruct (nget (st_syms s) (gs_id g0)) as [g'|] eqn:Eg; [|discriminate]. injection H2 as -> <-.
+  apply bind_inv in H as ([e needs] & s1 & H1 & H). exists g, e, needs, s1. split; [reflexivity|]. split; [exact H1|].
+  cbn beta iota zeta in H. apply bind_inv in H as (u & s3 & H3 & H). injection H as <- <-. unfold upd in H3.
+  injection H3 as _ <-. split; reflexivity.
 Qed.
 
 Section FnWalk.
@@ -783,7 +786,9 @@ Theorem fn_info_ctx : forall g s i s',
     (forall k m, ety_ok k = true -> canon e k = k -> A.mlook (trF k) m (A.c_mths C) = option_map (csig Fl e) (get_mth e k m)).
 Proof.
   intros g s i s' Hg Nf Nm Nm' H N Hi Hw L e0.
-  destruct (fn_info_miss g s i s' H N) as (e & needs & s1 & H1 & -> & ->). subst e0.
+  destruct (fn_info_miss g s i s' H N) as (g' & e & needs & s1 & Eg & H1 & -> & ->). subst e0.
+  rewrite (iv_loader _ Hi b ltac:(rewrite Hw; exact Hload) _ _ ltac:(rewrite Hw; exact Hg)) in Eg.
+  injection Eg as <-.
   apply later_info in L.
   pose proof (loader_mod_in w R Fl b Hload _ _ Hg) as Hmi.
   destruct (assumes_merged w R Fl b Hload Finj MS g s e needs s1 Nf Nm' Hmi H1 Hi Hw L)
