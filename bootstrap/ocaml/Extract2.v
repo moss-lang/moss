@@ -40,7 +40,7 @@ Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
 Extraction Inline lnil lcons lvar lval bnil capply cbranch csnil cscons.
 Extraction Blacklist String List Char Bool.
 Separate Extraction run_main frun_main fast_program oracle_program init_state xinterp f64_bits f64_of_bits elaborate_sx
-  parse_moss dump_file print_sx load_bundle bundle_sx print_bundle
+  parse_moss Dump.dump_file print_sx load_bundle bundle_sx print_bundle
   rrun_main shapes compile_fns compile_funs cc ccbs crun_main fold_e fold_b.
 (* CloX again, alone (Extraction Library), with the extraction's term
    optimizations off (flag 0); this rewrites the CloX.ml written above, and

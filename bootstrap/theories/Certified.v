@@ -3,7 +3,9 @@
 (* Part VI).  No checker or elaborator logic here: every operation and      *)
 (* proof is an alias of something compiled and checked elsewhere.           *)
 (*                                                                           *)
-(* Bound:   Audit.PROVED_NOW, by `Certified` below.                          *)
+(* Bound:   Audit.PROVED_NOW, by `Certified` below; and Audit.FRONT_END, by  *)
+(*          `FrontEndCertified` below (the parser sound and complete for     *)
+(*          Syntax.Derives); and Audit.LOADER, by `LoaderCertified`.         *)
 (* Pending: the rest of Audit.COMPLETE, i.e. exactly                         *)
 (*   - elaborate_sound      (elaborate b = Good p -> Elaborates b p); its    *)
 (*                           first step, the loader's reading, is bound     *)
@@ -20,6 +22,7 @@ From Stdlib Require Import List.
 From NM Require Import Audit CoreMoss MossX Sx Elab Specialization RelFacts.
 From NM Require FastPath WorldSound ElabFrame ReqsTotal.
 From NM Require XTyping XSafety XExample XHeapC.
+From NM Require Parse FrontEnd FrontEndComplete FrontEndLoader.
 Import ListNotations.
 
 Module Certified <: PROVED_NOW.
@@ -96,6 +99,23 @@ Definition assume_types_exact := WorldSound.load_world_assume_types.
    least relevance-closed ones, and AssumeTypes, for the symbols it never
    asked about) and any injective field numbering is a WorldOf of it *)
 Definition elaborate_world_of := ReqsTotal.elaborate_world_of.
+(* FRONT_END: the front end Parse.parse_moss is sound and complete for
+   Audit.Syntax.Derives (FrontEnd.v, FrontEndComplete.v). *)
+Module FrontEndCertified <: FRONT_END.
+  Definition parse := Parse.parse_moss.
+  Definition parser_sound : forall s f, parse s = Input.Good f -> Syntax.Derives (String.list_byte_of_string s) f :=
+    FrontEnd.parse_moss_sound.
+  Definition parser_complete : forall s f, Syntax.Derives (String.list_byte_of_string s) f -> parse s = Input.Good f :=
+    FrontEndComplete.parse_moss_complete.
+End FrontEndCertified.
+
+(* LOADER: a bundle the loader loads (Parse.load: load_bundle's modules,
+   their dumps read back) is what Audit.Loader.Bundled says
+   (FrontEndLoader.v). *)
+Module LoaderCertified <: LOADER.
+  Definition load := Parse.load.
+  Definition load_sound := FrontEndLoader.load_sound.
+End LoaderCertified.
 
 (* The executable roots (Extract2.v extracts these). *)
 Definition elaborate_sx := Certified.elaborate_sx.

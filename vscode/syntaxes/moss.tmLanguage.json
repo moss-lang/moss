@@ -150,7 +150,7 @@
         },
         {
           "name": "keyword.control.repeat.moss",
-          "match": "\\b(while|loop)\\b"
+          "match": "\\b(while|loop|for|in)\\b"
         },
         {
           "name": "keyword.control.flow.moss",
@@ -163,10 +163,6 @@
         {
           "name": "storage.type.moss",
           "match": "\\b(assume|bind|context|fn|functor|let|tag|type|val|var)\\b"
-        },
-        {
-          "name": "keyword.other.reserved.moss",
-          "match": "\\bfor\\b"
         },
         {
           "name": "storage.type.builtin.moss",

@@ -28,6 +28,11 @@ Print Assumptions NM.Certified.x_heap_mono.
 Print Assumptions NM.Certified.x_heap_empty.
 Print Assumptions NM.Certified.x_heap_other.
 Print Assumptions NM.Certified.x_heap_gc.
+Print Assumptions NM.Certified.FrontEndCertified.parse.
+Print Assumptions NM.Certified.FrontEndCertified.parser_sound.
+Print Assumptions NM.Certified.FrontEndCertified.parser_complete.
+Print Assumptions NM.Certified.LoaderCertified.load.
+Print Assumptions NM.Certified.LoaderCertified.load_sound.
 Print Assumptions NM.Certified.elaborate_sx.
 Print Assumptions NM.Certified.run_main.
 Print Assumptions NM.Certified.fast_path.

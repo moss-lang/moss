@@ -1,0 +1,3 @@
+# D73: only a tag with a payload lists parameters; a unit tag is written
+# `tag Nothing;`, without brackets, not even empty ones.
+tag Nothing[];

@@ -64,7 +64,7 @@ assume I32, Memory {
     new_path_len: I32,
   ): I32;
   fn path_unlink_file(fd: I32, path: I32, path_len: I32): I32;
-  fn poll_oneoff(in: I32, out: I32, nsubscriptions: I32, retptr0: I32): I32;
+  fn poll_oneoff(subscriptions: I32, out: I32, nsubscriptions: I32, retptr0: I32): I32;
   fn proc_exit(rval: I32);
   fn sched_yield(): I32;
   fn random_get(buf: I32, buf_len: I32): I32;

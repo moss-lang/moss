@@ -49,6 +49,7 @@ tag For;
 tag Functor;
 tag If;
 tag Import;
+tag In;
 tag Let;
 tag Loop;
 tag Match;

@@ -93,6 +93,13 @@ errors and positions included.
     hypotheses on what the soundness proof is to supply;
     [`MergeWf.v`](theories/MergeWf.v) proves that a formed telescope's
     merge substitution binds only formed types.
+  - [`FrontEnd.v`](theories/FrontEnd.v): the lexer and parser against
+    `Audit.Syntax.Derives`, the front end's grammar (Audit.v Part I.2):
+    the parser is sound for it and the lexer complete;
+    [`FrontEndComplete.v`](theories/FrontEndComplete.v): the parser is
+    complete for it; [`FrontEndLoader.v`](theories/FrontEndLoader.v): the
+    loader against `Audit.Loader.Bundled`. [`FrontEndExamples.v`](theories/FrontEndExamples.v)
+    checks the grammar on real files and on syntax errors of `tests/errors`.
   - [`Certified.v`](theories/Certified.v): binds the implementation to the
     obligations `Audit.v` states, as far as they are proved.
 - [`ocaml/`](ocaml): the oracle. [`Extract2.v`](ocaml/Extract2.v) is
@@ -210,12 +217,17 @@ decision), and the obligations, as module types (Part VI):
 - **Pending**, the rest of `COMPLETE`: the elaborator is sound and
   complete for the relation (`elaborate_sound`, `elaborate_complete`),
   accepted programs never get stuck (`accepted_never_err`), and the
-  core-fragment output is typed (`elaborated_typed`); and `FRONT_END`,
-  the parser's soundness and completeness for a grammar that is not yet
-  written as a relation. Until these are proved, what the oracle
-  establishes about the front end and the elaborator is that they are
-  total and deterministic Gallina functions, plus the lemmas of
-  `Parse.v` and `ElabSound.v`, plus the evidence of testing.
+  core-fragment output is typed (`elaborated_typed`). Until these are
+  proved, what the oracle establishes about the elaborator is that it is
+  a total and deterministic Gallina function, plus the lemmas of
+  `ElabSound.v`, plus the evidence of testing.
+- `FRONT_END`, which `Certified.v` binds: the lexer and parser
+  (`Parse.parse_moss`) are sound and complete for `Audit.Syntax.Derives`,
+  the grammar of Moss's surface syntax (`Audit.v` Part I.2), file by
+  file; and `LOADER`: a bundle the loader loads is `Audit.Loader.Bundled`,
+  every module a readable file deriving its AST, each once, closed under
+  its imports and the prelude. That the dump reads back as the AST it
+  was made from is not proved yet (`FrontEnd.v`, `bundle_todo`).
 - **The family fast path** (`Audit.v` DRAFT NOTE 24) is proved, and is
   not the elaborator's: the elaborator applies a family exactly by rule 7
   as drafted. Applying the platform's memory family at every memory

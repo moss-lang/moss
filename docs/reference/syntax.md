@@ -67,6 +67,7 @@ token or class of tokens.
   - `functor`
   - `if`
   - `import`
+  - `in`
   - `let`
   - `loop`
   - `match`
@@ -107,7 +108,7 @@ Notes:
 - A digit run may not run straight into a letter or `_` (no suffixes,
   hex or underscores yet: `2x`, `1e`, `1ex` and `1e5x` are errors), but a
   digit may continue a _name_ (`x2`).
-- `in`, in a **For**, is a _name_ there, not a keyword.
+- `in` is a keyword: it is the word of a **For**, and names nothing ([D85]).
 
 ## Grammar
 
@@ -155,7 +156,7 @@ the product type ([D63]). `This` is legal only inside method declarations.
 - **Tydef** = `type` _name_ `;`
 - **Aliasdef** = `type` _name_ `=` **Type** `;`
 - **Tagdef** = `tag` _name_ (`[` **List**[_name_] `]`)? (`(` **Type** `)` | **RecordType**) `;` — the bracketed names are listed parameters ([D73])
-- **Unitdef** = `tag` _name_ `;`
+- **Unitdef** = `tag` _name_ `;` — no brackets, not even empty ones: `tag X[];` is an error ([D73])
 - **Valdef** = `val` _name_ `:` **Type** (`=` **Expr**)? `;`
 - **Fndef** = `fn` **FnName** `(` **List**\[**Param**\] `)` (`:` **Type**)? (`;` | **Block**)
 - **FnName** = _name_ | _name_ `.` _name_ | **DotName**

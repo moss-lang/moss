@@ -58,22 +58,23 @@ assume Std {
   fn tk_functor(): Int { 41 }
   fn tk_if(): Int { 42 }
   fn tk_import(): Int { 43 }
-  fn tk_let(): Int { 44 }
-  fn tk_loop(): Int { 45 }
-  fn tk_match(): Int { 46 }
-  fn tk_return(): Int { 47 }
-  fn tk_tag(): Int { 48 }
-  fn tk_this_type(): Int { 49 }
-  fn tk_this_value(): Int { 50 }
-  fn tk_type(): Int { 51 }
-  fn tk_use(): Int { 52 }
-  fn tk_val(): Int { 53 }
-  fn tk_var(): Int { 54 }
-  fn tk_while(): Int { 55 }
-  fn tk_name(): Int { 56 }
-  fn tk_str(): Int { 57 }
-  fn tk_integer(): Int { 58 }
-  fn tk_decimal(): Int { 59 }
+  fn tk_in(): Int { 44 }
+  fn tk_let(): Int { 45 }
+  fn tk_loop(): Int { 46 }
+  fn tk_match(): Int { 47 }
+  fn tk_return(): Int { 48 }
+  fn tk_tag(): Int { 49 }
+  fn tk_this_type(): Int { 50 }
+  fn tk_this_value(): Int { 51 }
+  fn tk_type(): Int { 52 }
+  fn tk_use(): Int { 53 }
+  fn tk_val(): Int { 54 }
+  fn tk_var(): Int { 55 }
+  fn tk_while(): Int { 56 }
+  fn tk_name(): Int { 57 }
+  fn tk_str(): Int { 58 }
+  fn tk_integer(): Int { 59 }
+  fn tk_decimal(): Int { 60 }
 
   fn token_code(t: Token): Int {
     match t {
@@ -121,6 +122,7 @@ assume Std {
       Functor => tk_functor(),
       If => tk_if(),
       Import => tk_import(),
+      In => tk_in(),
       Let => tk_let(),
       Loop => tk_loop(),
       Match => tk_match(),

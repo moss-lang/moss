@@ -148,7 +148,7 @@ let () =
        Stdlib.List.iter (fun f ->
          let text = match read_file f with Some t -> t | None -> failwith ("cannot read " ^ f) in
          let out = match Parse.parse_moss text with
-           | Audit.Input.Good a -> Parse.print_sx (Parse.dump_file a) ^ "\n"
+           | Audit.Input.Good a -> Parse.print_sx (Audit.Dump.dump_file a) ^ "\n"
            | Audit.Input.Bad m -> "ERROR " ^ m ^ "\n" in
          Out_channel.with_open_bin (Filename.concat d (mangle f ^ ".rocq.sx"))
            (fun oc -> output_string oc out)) rest;

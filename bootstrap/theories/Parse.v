@@ -22,70 +22,16 @@ From Stdlib Require Import String Ascii List Bool Arith.
 From Stdlib Require Import Strings.Byte.
 From NM Require Import Audit.
 Import ListNotations.
-Import Audit.Input.
+Import Audit.Input Audit.Syntax Audit.Dump Audit.Loader.
 Local Open Scope string_scope.
 
 (* ######################################################################## *)
 (* Lexer (lex.py)                                                            *)
 (* ######################################################################## *)
 
-(* A token: its kind, spelled as lex.py's `Kind` member name (so the
-   parser's messages need no table), its text, and its byte offset. *)
-Record token := Tok { tk : string; tx : string; toff : nat }.
-
-Definition is_digit (b : byte) : bool := match b with "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => true | _ => false end%byte.
-Definition is_alpha (b : byte) : bool := match b with "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z" => true | _ => false end%byte.
-Definition is_name_start (b : byte) : bool := is_alpha b || Byte.eqb b "_"%byte.
-Definition is_name_cont (b : byte) : bool := is_name_start b || is_digit b.
-Definition is_ws (b : byte) : bool := match b with " " | x09 | x0d | x0a => true | _ => false end%byte.
-Definition is_e (b : byte) : bool := match b with "e" | "E" => true | _ => false end%byte.
-Definition is_sign (b : byte) : bool := match b with "+" | "-" => true | _ => false end%byte.
-Definition is_escape (b : byte) : bool := match b with """" | "\" | "n" | "r" | "t" => true | _ => false end%byte.
-
-Definition KEYWORDS : list (string * string) :=
-  [("as", "AS"); ("assume", "ASSUME"); ("functor", "FUNCTOR"); ("bind", "BIND");
-   ("break", "BREAK"); ("context", "CONTEXT"); ("else", "ELSE"); ("fn", "FN");
-   ("for", "FOR"); ("if", "IF"); ("import", "IMPORT"); ("let", "LET");
-   ("loop", "LOOP"); ("match", "MATCH"); ("return", "RETURN"); ("tag", "TAG");
-   ("This", "THIS_TYPE"); ("this", "THIS"); ("type", "TYPE"); ("use", "USE");
-   ("val", "VAL"); ("var", "VAR"); ("while", "WHILE")].
-
-Fixpoint assoc (k : string) (l : list (string * string)) : option string :=
-  match l with [] => None | (a, b) :: r => if String.eqb a k then Some b else assoc k r end.
-
-Definition one_char (b : byte) : option string :=
-  match b with
-  | "!"%byte => Some "EXCLAM" | "%"%byte => Some "PERCENT" | "&"%byte => Some "AMPERSAND"
-  | "("%byte => Some "LPAREN" | ")"%byte => Some "RPAREN" | "*"%byte => Some "STAR"
-  | "+"%byte => Some "PLUS" | ","%byte => Some "COMMA" | "-"%byte => Some "HYPHEN"
-  | "."%byte => Some "DOT" | "/"%byte => Some "SLASH" | ":"%byte => Some "COLON"
-  | ";"%byte => Some "SEMI" | "<"%byte => Some "LESS" | "="%byte => Some "EQUAL"
-  | ">"%byte => Some "GREATER" | "["%byte => Some "LBRACKET" | "]"%byte => Some "RBRACKET"
-  | "^"%byte => Some "CARET" | "{"%byte => Some "LBRACE" | "|"%byte => Some "PIPE"
-  | "}"%byte => Some "RBRACE"
-  | _ => None
-  end.
-
-Definition two_char (a b : byte) : option string :=
-  match a, b with
-  | "!"%byte, "="%byte => Some "EXCLAM_EQUAL" | ":"%byte, ":"%byte => Some "COLON_COLON"
-  | "="%byte, ">"%byte => Some "EQUAL_GREATER" | "<"%byte, "<"%byte => Some "LESS_LESS"
-  | "<"%byte, "="%byte => Some "LESS_EQUAL" | "="%byte, "="%byte => Some "EQUAL_EQUAL"
-  | ">"%byte, "="%byte => Some "GREATER_EQUAL" | ">"%byte, ">"%byte => Some "GREATER_GREATER"
-  | "-"%byte, ">"%byte => Some "HYPHEN_GREATER"
-  | _, _ => None
-  end.
-
-Fixpoint span (p : byte -> bool) (cs : list byte) : list byte * list byte :=
-  match cs with
-  | c :: r => if p c then let (a, b) := span p r in (c :: a, b) else ([], cs)
-  | [] => ([], [])
-  end.
-
-Definition hexdig (n : nat) : string :=
-  match n with 0 => "0" | 1 => "1" | 2 => "2" | 3 => "3" | 4 => "4" | 5 => "5"
-  | 6 => "6" | 7 => "7" | 8 => "8" | 9 => "9" | 10 => "a" | 11 => "b" | 12 => "c"
-  | 13 => "d" | 14 => "e" | _ => "f" end.
+(* Tokens, character classes, the keyword and symbol tables, and the token
+   readers `peek`/`kind`/`advance` are Audit.Syntax's: the specification
+   is stated in their terms. *)
 
 (* Python's repr of a one-character string (ASCII; a byte >= 0x80 is shown
    as \xNN, where Python would show the decoded character). *)
@@ -113,8 +59,6 @@ Inductive lres := LOk (ts : list token) | LErr (msg : string) (off : nat).
 
 Definition MAX_EXPONENT_DIGITS := 3.  (* MAX_EXPONENT = 999 *)
 
-Fixpoint strip_zeros (ds : list byte) : list byte :=
-  match ds with "0"%byte :: r => strip_zeros r | _ => ds end.
 
 (* A string literal's body, from just after the opening quote at [i]:
    the bytes up to the closing quote, and what follows. *)
@@ -230,19 +174,6 @@ Fixpoint lex_go (fuel : nat) (cs : list byte) (i : nat) (acc : list token) : lre
 
 Definition lex (cs : list byte) : lres := lex_go (S (length cs)) cs 0 [].
 
-(* Token.string_value: the escapes decoded. *)
-Fixpoint unescape (cs : list byte) : list byte :=
-  match cs with
-  | "\"%byte :: d :: r =>
-      (match d with "n" => x0a | "r" => x0d | "t" => x09 | _ => d end)%byte :: unescape r
-  | c :: r => c :: unescape r
-  | [] => []
-  end.
-
-Definition string_value (t : string) : string :=
-  let cs := list_byte_of_string t in
-  (* drop the quotes *)
-  string_of_list_byte (unescape (removelast (tl cs))).
 
 (* lex.position: 1-based line and column of a byte offset. *)
 Fixpoint line_col (cs : list byte) (off line col : nat) : nat * nat :=
@@ -251,13 +182,6 @@ Fixpoint line_col (cs : list byte) (off line col : nat) : nat * nat :=
   | S o, c :: r => if Byte.eqb c x0a then line_col r o (S line) 1 else line_col r o line (S col)
   end.
 
-Fixpoint nat_digits (fuel n : nat) (acc : string) : string :=
-  match fuel with
-  | 0 => acc
-  | S f => let acc := hexdig (n mod 10) ++ acc in
-           if Nat.ltb n 10 then acc else nat_digits f (n / 10) acc
-  end.
-Definition show_nat (n : nat) : string := nat_digits 25 n "".
 
 (* ######################################################################## *)
 (* Parser (parse.py), producing Audit.Input's surface AST                    *)
@@ -275,22 +199,8 @@ Definition pbind {A B} (r : pr A) (k : A -> list token -> pr B) : pr B :=
 Notation "'let@' x '&' ts ':=' r 'in' k" := (pbind r (fun x ts => k))
   (at level 200, x pattern, ts name, r at level 100, k at level 200).
 
-Definition eof_tok : token := Tok "EOF" "" 0.
-Definition peek (ts : list token) : token := match ts with t :: _ => t | [] => eof_tok end.
-(* Parser.peek(ahead): clamped at the final EOF token *)
-Fixpoint peekn (n : nat) (ts : list token) : token :=
-  match ts with
-  | [] => eof_tok
-  | [t] => t
-  | t :: r => match n with 0 => t | S m => peekn m r end
-  end.
-Definition kind (ts : list token) : string := tk (peek ts).
-Definition kind_at (n : nat) (ts : list token) : string := tk (peekn n ts).
 Definition at_ (k : string) (ts : list token) : bool := String.eqb (kind ts) k.
 Definition at_any (ks : list string) (ts : list token) : bool := existsb (String.eqb (kind ts)) ks.
-(* Parser.next: EOF, the last token, is never consumed *)
-Definition advance (ts : list token) : list token :=
-  match ts with [_] => ts | _ :: r => r | [] => [] end.
 Definition err {A} (msg : string) (ts : list token) : pr A := PErr msg (toff (peek ts)).
 Definition fuel_err {A} (ts : list token) : pr A := err "parser out of fuel" ts.
 Definition expect (k : string) (ts : list token) : pr token :=
@@ -472,20 +382,6 @@ with pat_field (n : nat) (ts : list token) : pr (name * option apat) :=
 
 (* ===================== Operators (D68) ==================================== *)
 
-Definition BINARY : list (string * string) :=
-  [("STAR", "*"); ("SLASH", "/"); ("PERCENT", "%"); ("PLUS", "+"); ("HYPHEN", "-");
-   ("LESS_LESS", "<<"); ("GREATER_GREATER", ">>"); ("EQUAL_EQUAL", "==");
-   ("EXCLAM_EQUAL", "!="); ("LESS", "<"); ("GREATER", ">"); ("LESS_EQUAL", "<=");
-   ("GREATER_EQUAL", ">="); ("AMPERSAND", "&"); ("CARET", "^"); ("PIPE", "|")].
-Definition FRACTION := ["/"; "%"].
-Definition ADDITIVE := ["+"; "-"].
-Definition SHIFT := ["<<"; ">>"].
-Definition COMPARISON := ["=="; "!="; "<"; ">"; "<="; ">="].
-Definition BITWISE := ["&"; "^"; "|"].
-Definition mem (s : string) (l : list string) : bool := existsb (String.eqb s) l.
-Definition binop (ts : list token) : option string := assoc (kind ts) BINARY.
-Definition binop_in (l : list string) (ts : list token) : bool :=
-  match binop ts with Some o => mem o l | None => false end.
 Definition unary_op (k : string) : option string :=
   if String.eqb k "HYPHEN" then Some "-" else if String.eqb k "EXCLAM" then Some "!" else None.
 
@@ -502,58 +398,10 @@ Definition mixed {A} (before : option string) (ts : list token) : pr A :=
            end in
   err (m ++ "; add parentheses (D68)") ts.
 
-(* Parser.at_lambda (D70), at `(` *)
-Definition at_lambda (ts : list token) : bool :=
-  let arrow k := String.eqb k "EQUAL_GREATER" || String.eqb k "COLON" in
-  if String.eqb (kind_at 1 ts) "RPAREN" then arrow (kind_at 2 ts)
-  else if String.eqb (kind_at 1 ts) "NAME" then
-    if String.eqb (kind_at 2 ts) "COLON" || String.eqb (kind_at 2 ts) "COMMA" then true
-    else String.eqb (kind_at 2 ts) "RPAREN" && arrow (kind_at 3 ts)
-  else false.
-
-(* ===================== Literals =========================================== *)
-
-(* sexpr.py's rendering of a literal: an exponent as its value, `1E+03` is
-   `1e3`, `2e-0` is `2e0` (ast.split_exponent, then f"e{exponent}"). *)
-Fixpoint digits_value (ds : list byte) (acc : nat) : nat :=
-  match ds with
-  | d :: r => digits_value r (acc * 10 + (Byte.to_nat d - 48))
-  | [] => acc
-  end.
-
-Definition lit_norm (t : string) : string :=
-  let cs := list_byte_of_string t in
-  let (pre, post) := span (fun b => negb (is_e b)) cs in
-  match post with
-  | [] => t
-  | _ :: ex =>
-      let '(neg, ds) := match ex with
-                        | "-"%byte :: ds => (true, ds)
-                        | "+"%byte :: ds => (false, ds)
-                        | ds => (false, ds)
-                        end in
-      let v := digits_value ds 0 in
-      string_of_list_byte pre ++ "e" ++ (if neg && negb (Nat.eqb v 0) then "-" else "") ++ show_nat v
-  end.
-
 (* ===================== Expressions, statements, blocks ==================== *)
 
-Definition ref (x : string) : aexpr := AEPath [x] None.
-
-(* `for x in e { body }` (D85; Parser.parse_for): sugar, at parse time, for
-   `{ let for = e; var while = for.begin(); while for.more(while) { let x =
-   for.get(while); while = for.after(while); body } }` with the four calls
-   as `for.`-operators (the cursor's names are keywords, so no program can
-   name them). *)
-Definition for_desugar (x : name) (coll : aexpr) (body : ablock) : astmt :=
-  let c := "for" in let i := "while" in
-  let loop := ASWhile (AEBinary "for.more" (ref c) (ref i))
-                (ABlock [ASLet x None (AEBinary "for.get" (ref c) (ref i));
-                         ASAssign i (AEBinary "for.after" (ref c) (ref i));
-                         ASExpr (AEBlock body)] None) in
-  ASExpr (AEBlock (ABlock [ASLet c None coll;
-                           ASVar i None (AEUnary "for.begin" (ref c));
-                           loop] None)).
+(* A literal's text is normalized by Audit.Syntax.lit_norm, and `for` is
+   desugared by Audit.Syntax.for_desugar (D85). *)
 
 Fixpoint parse_expr (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
   match n with
@@ -819,8 +667,7 @@ with block_loop (n : nat) (ts : list token) : pr (list astmt * option aexpr) :=
       else if at_ "FOR" ts then
         let ts := advance ts in
         let@ x & ts := expect_name ts in
-        let@ w & ts := expect "NAME" ts in
-        if negb (String.eqb (tx w) "in") then PErr ("expected `in`, found '" ++ tx w ++ "'") (toff w) else
+        let@ _ & ts := expect "IN" ts in
         let@ coll & ts := parse_expr n true ts in
         let@ body & ts := parse_block n ts in
         more (for_desugar x coll body) ts
@@ -887,8 +734,11 @@ Fixpoint parse_decl (n : nat) (ts : list token) : pr adecl :=
         else err ("`type " ++ x ++ "` is abstract (`;`) or an alias (`=`); declare a nominal type with `tag` (D83)") ts
       else if at_ "TAG" ts then
         let@ x & ts := expect_name (advance ts) in
-        let@ ps & ts := (if at_ "LBRACKET" ts then name_list n ts else POk [] ts) in
-        if match ps with [] => at_ "SEMI" ts | _ => false end then POk (ADUnit x) (advance ts) else
+        let bracketed := at_ "LBRACKET" ts in
+        let@ ps & ts := (if bracketed then name_list n ts else POk [] ts) in
+        if at_ "SEMI" ts then
+          (if bracketed then err ("a tag with listed parameters has a payload; a unit tag is `tag " ++ x ++ ";` (D73)") ts
+           else POk (ADUnit x) (advance ts)) else
         let@ t & ts :=
           (if at_ "LBRACE" ts then parse_record_type n ts
            else
@@ -1018,16 +868,6 @@ Definition parse_tokens (ts : list token) : pr afile :=
   let@ ds & ts := decls_to_eof n ts in
   POk (AFile is ds) ts.
 
-(* Python reads a source file with universal newlines: `\r\n` and a lone
-   `\r` become `\n` (which ends a comment, and counts as a line). *)
-Fixpoint newlines (cs : list byte) : list byte :=
-  match cs with
-  | x0d :: x0a :: r => x0a :: newlines r
-  | x0d :: r => x0a :: newlines r
-  | c :: r => c :: newlines r
-  | [] => []
-  end.
-
 (* parse.parse with error_message's `line:col: ` and the error's class *)
 Definition parse_moss (src : string) : res afile :=
   let cs := newlines (list_byte_of_string src) in
@@ -1041,118 +881,8 @@ Definition parse_moss (src : string) : res afile :=
       end
   end.
 
-(* ######################################################################## *)
-(* The dump (sexpr.py): AST -> sx                                            *)
-(* ######################################################################## *)
-
-Definition nd (tag : string) (xs : list sx) : sx := SL false (SA tag :: xs).
-Definition sl (xs : list sx) : sx := SL true xs.
-Definition dopt {X} (f : X -> sx) (o : option X) : sx :=
-  match o with None => SA "_" | Some x => f x end.
-Definition dpath (p : path) : sx := SA (join_path p).
-
-Fixpoint dspec (s : spec) : sx :=
-  match s with
-  | Spec p d a =>
-      nd "I" [dopt dpath p; dopt SA d;
-              match a with
-              | None => SA "_"
-              | Some bs => sl (map (fun '(bp, bs1) => nd "J" [dpath bp; dspec bs1]) bs)
-              end]
-  end.
-
-Definition dapp (a : sapp) : sx :=
-  match a with
-  | None => SA "_"
-  | Some bs => sl (map (fun '(bp, s) => nd "J" [dpath bp; dspec s]) bs)
-  end.
-
-Fixpoint dty (t : aty) : sx :=
-  match t with
-  | ATNever => nd "b" []
-  | ATThis => nd "c" []
-  | ATUnit => nd "a" []
-  | ATRec fs => nd "f" [sl (map (fun '(x, t1) => nd "h" [SA x; dty t1]) fs)]
-  | ATUnion ms => nd "g" [sl (map dty ms)]
-  | ATRef p a => nd "d" [dpath p; dapp a]
-  end.
-
-Fixpoint dpat (p : apat) : sx :=
-  match p with
-  | APWild => nd "D" []
-  | APPath q => nd "E" [dpath q; SA "_"]
-  | APTag q s => nd "E" [dpath q; dpat s]
-  | APRec q fs => nd "F" [dopt dpath q; sl (map (fun '(x, s) => nd "G" [SA x; dopt dpat s]) fs)]
-  end.
-
-Fixpoint dexpr (e : aexpr) : sx :=
-  match e with
-  | AEUnit => nd "i" []
-  | AEThis => nd "j" []
-  | AEPath p a => nd "k" [dpath p; dapp a]
-  | AECall p a args => nd "l" [nd "k" [dpath p; dapp a]; sl (map dexpr args)]
-  | AEField o f => nd "m" [dexpr o; SA f]
-  | AEMeth o p args => nd "n" [dexpr o; dpath p; sl (map dexpr args)]
-  | AERec p a fs => nd "o" [nd "k" [dpath p; dapp a];
-                            sl (map (fun '(x, v) => nd "p" [SA x; dopt dexpr v]) fs)]
-  | AEIf c t el => nd "q" [dexpr c; dblock t; dopt dexpr el]
-  | AEMatch s arms => nd "r" [dexpr s; sl (map (fun '(p, b) => nd "H" [dpat p; dexpr b]) arms)]
-  | AEReturn o => nd "s" [dopt dexpr o]
-  | AEBreak => nd "t" []
-  | AEBlock b => dblock b
-  | AEUnary op x => nd "W" [SA op; dexpr x]
-  | AEBinary op l r => nd "X" [SA op; dexpr l; dexpr r]
-  | AELit t => nd "Y" [SA t]
-  | AELam ps ret body => nd "Z" [sl (map (fun '(x, t) => nd "K" [SA x; dopt dty t]) ps);
-                                 dopt dty ret; dexpr body]
-  end
-with dblock (b : ablock) : sx :=
-  match b with
-  | ABlock ss t => nd "u" [sl (map dstmt ss); dopt dexpr t]
-  end
-with dstmt (s : astmt) : sx :=
-  match s with
-  | ASLet x t e => nd "v" [SA x; dopt dty t; dexpr e]
-  | ASVar x t e => nd "w" [SA x; dopt dty t; dexpr e]
-  | ASAssign x e => nd "x" [SA x; dexpr e]
-  | ASBind its => nd "y" [sl (map (fun '(s, v) => nd "z" [dspec s; dopt dexpr v]) its)]
-  | ASWhile c b => nd "A" [dexpr c; dblock b]
-  | ASLoop b => nd "B" [dblock b]
-  | ASExpr e => nd "C" [dexpr e]
-  end.
-
-Definition dbind (its : list (spec * option aexpr)) : sx :=
-  nd "y" [sl (map (fun '(s, v) => nd "z" [dspec s; dopt dexpr v]) its)].
-
-Fixpoint ddecl (d : adecl) : sx :=
-  match d with
-  | ADAssume its ds => nd "M" [sl (map (fun '(p, o) => nd "I" [dpath p; dopt SA o; SA "_"]) its);
-                               sl (map ddecl ds)]
-  | ADType x => nd "N" [SA x]
-  | ADAlias x t => nd "O" [SA x; dty t]
-  | ADTag x ps t => nd "P" [SA x; sl (map SA ps); dty t]
-  | ADUnit x => nd "Q" [SA x]
-  | ADVal x t i => nd "R" [SA x; dty t; dopt dexpr i]
-  | ADFn r x ps ret body =>
-      nd "S" [SA (match r with RDetached => "." | RPlain => "_" | RAttached q => q end); SA x;
-              sl (map (fun '(p, t) => nd "K" [SA p; dty t]) ps); dopt dty ret; dopt dblock body]
-  | ADCtx x its => nd "T" [SA x; sl (map dspec its)]
-  | ADFunctor x ps args res body =>
-      nd "U" [SA x; dopt (fun l => sl (map SA l)) ps; sl (map dspec args); sl (map dspec res);
-              dopt (fun bs => sl (map dbind bs)) body]
-  end.
-
-Definition duse_side (d : bool) (x : name) : string := (if d then "." else "") ++ x.
-Definition duse (u : ause) : sx :=
-  SA (duse_side (u_dot u) (u_name u) ++
-      match u_alias u with None => "" | Some (d, y) => ">" ++ duse_side d y end).
-
-Definition dimport (i : aimport) : sx :=
-  nd "L" [SA (i_path i); dopt SA (i_alias i); SA (if i_glob i then "*" else "_");
-          sl (map duse (i_uses i))].
-
-Definition dump_file (f : afile) : sx :=
-  nd "$" [sl (map dimport (f_imports f)); sl (map ddecl (f_decls f))].
+(* The dump (sexpr.py's format, AST -> sx) is Audit.Dump's: the
+   specification of the loader (Audit.Loader.Bundled) is stated with it. *)
 
 (* ===================== Text ================================================ *)
 
@@ -1177,59 +907,7 @@ Definition print_sx (x : sx) : string := String.concat "" (pr_sx x []).
 (* Bundles (py/bundle.py; collect.Loader's normalize, resolve, wants_prelude) *)
 (* ######################################################################## *)
 
-Fixpoint split_bytes (sep : byte) (cs : list byte) (cur : list byte) : list (list byte) :=
-  match cs with
-  | [] => [rev' cur]
-  | c :: r => if Byte.eqb c sep then rev' cur :: split_bytes sep r [] else split_bytes sep r (c :: cur)
-  end.
-
-(* PurePosixPath's parts after the root: empty and `.` segments dropped *)
-Definition segs (s : string) : list string :=
-  map string_of_list_byte
-    (filter (fun seg => negb (match seg with [] => true | ["."%byte] => true | _ => false end))
-            (split_bytes "/"%byte (list_byte_of_string s) [])).
-
-Definition is_abs (s : string) : bool :=
-  match list_byte_of_string s with "/"%byte :: _ => true | _ => false end.
-
-(* Loader.normalize(base, path), with `root` the working directory *)
-Definition normalize (root : string) (base : option string) (p : string) : string :=
-  let '(jabs, jsegs) :=
-    if is_abs p then (true, segs p)
-    else match base with
-         | None => (false, segs p)
-         | Some b => (is_abs b, app (removelast (segs b)) (segs p))
-         end in
-  let parts := if jabs then "/" :: jsegs else "/" :: app (segs root) jsegs in
-  let acc := fold_left (fun acc part =>
-                if String.eqb part ".." then
-                  match acc with h :: t => if String.eqb h ".." then part :: acc else t | [] => [part] end
-                else part :: acc) parts [] in
-  match rev' acc with
-  | [] => "."
-  | "/" :: rest => "/" ++ String.concat "/" rest
-  | ps => String.concat "/" ps
-  end.
-
-Definition first_segment (p : string) : string :=
-  match split_bytes "/"%byte (list_byte_of_string p) [] with
-  | s :: _ => string_of_list_byte s
-  | [] => ""
-  end.
-
-(* Loader.resolve (D64): `.`/`..`-relative and absolute paths are the
-   importer's; any other names a file of the library, the prelude's
-   directory *)
-Definition resolve (root prelude importer p : string) : string :=
-  let first := first_segment p in
-  if is_abs p || String.eqb first "." || String.eqb first ".." then normalize root (Some importer) p
-  else normalize root (Some prelude) p.
-
-Definition parent_str (p : string) : string :=
-  "/" ++ String.concat "/" (removelast (segs p)).
-
-Definition wants_prelude (prelude p : string) : bool :=
-  negb (String.eqb p prelude) && negb (String.prefix (parent_str prelude ++ "/") p).
+(* normalize, resolve and wants_prelude are Audit.Loader's. *)
 
 Record lmod := LMod { lm_path : string; lm_wants : bool; lm_targets : list string; lm_dump : sx }.
 
@@ -1271,6 +949,14 @@ Definition load_bundle (read : string -> option string) (root prelude_in entry_i
   let entry := normalize root None entry_in in
   let* ms := walk 100000 read root prelude [entry] [] [] in
   Good (entry, prelude, ms).
+
+(* The bundle the elaborator reads, as Part VI's LOADER states it: the
+   loaded modules' dumps, read back (Elab.elaborate_sx reads them so). *)
+Definition load (read : string -> option string) (root prelude_in entry_in : string) : res bundle :=
+  match load_bundle read root prelude_in entry_in with
+  | Good (e, p, ms) => read_bundle (bundle_sx e p ms)
+  | Bad m => Bad m
+  end.
 
 (* bundle.py's text, byte for byte (quote() escapes backslashes and double quotes) *)
 Fixpoint quote_bytes (cs : list byte) : list byte :=

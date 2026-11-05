@@ -2666,7 +2666,9 @@ assume Layout {
   checks that such a list is complete (a lint could).
 - Only tags. An alias is the type it stands for, so a parameter it does
   not mention cannot affect it; a unit has no payload to stand beside,
-  and nothing yet wants a family of units.
+  and nothing yet wants a family of units. So a unit tag has no brackets,
+  not even empty ones (amended: `tag X[];` was read as `tag X;` and is
+  now a syntax error, in both front ends; `tests/errors/unit_tag_brackets`).
 - Nothing else is new, because a listed parameter is a parameter like any
   other:
   - *construction* follows [D71]'s rule for applying one: inside the
@@ -4293,6 +4295,7 @@ tag is declared, constructed and matched alike:
   expression builds a record without a path, so the parenthesized form
   could not be constructed.
 - Listed parameters ([D73]) go before the payload, `tag Packed[Item](I32);`.
+  A unit has none, so `tag Eof[];` is an error (amended with [D73]).
 - `tag` is a keyword; the compiler's own variables of that name were
   renamed.
 
@@ -4682,7 +4685,9 @@ count. This reverses [D31] and [D35] on `for`.
   `.get` and `.after(at: Index): Index` whatever is in scope, as an
   operator's are of `num.moss`'s ([D68]). So the loop does no arithmetic
   on the index in the program's terms: the collection steps its own.
-  `in` is not a keyword. The binder is scoped to the body; `break` leaves
+  `in` is a keyword (amended; it was first a name, matched by spelling,
+  and the one program that used it as one, `lib/wasip1.moss`'s
+  `poll_oneoff(in: …)`, now says `subscriptions`). The binder is scoped to the body; `break` leaves
   the loop and `return` the function. What can be iterated is whatever
   provides the four at its type: in `Std`, arrays, whose family provides
   them on demand ([D84] rule 7); `Std`'s lists and strings do not provide

@@ -45,6 +45,7 @@ type Token =
   | Functor
   | If
   | Import
+  | In
   | Let
   | Loop
   | Match
@@ -542,6 +543,8 @@ assume Std {
           kw(If)
         } else if take(char::m) {
           kw4(char::p, char::o, char::r, char::t, Import)
+        } else if take(char::n) {
+          kw(In)
         } else {
           rest_of_name()
         }

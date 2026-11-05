@@ -878,10 +878,7 @@ assume Std {
     # on), so that they mean access.moss's methods whatever is in scope.
     fn parse_for(): Int {
       let nm = take_name();
-      let word = spelled_name_in();
-      if take_name() != word {
-        fail();
-      }
+      expect(tk_in());
       let coll = parse_expr_at(true);
       expect(tk_lbrace());
       let body = parse_block();
@@ -906,12 +903,6 @@ assume Std {
         ast::k_st_expr(),
         ast::node3(ast::k_ex_block(), ast::commit(outer), outer.length(), ast::none())
       )
-    }
-
-    fn spelled_name_in(): Int {
-      let cs = int_list();
-      sp_in(cs);
-      intern::intern_chars(cs)
     }
 
     fn local_ref(nm: Int): Int {
@@ -1180,6 +1171,7 @@ assume Std {
       let nm = take_name();
       var ps = ast::none();
       var n = 0;
+      var listed = false;
       # D73: a tag's listed parameters, which its payload need not
       # mention.
       if accept(tk_lbracket()) {
@@ -1199,8 +1191,11 @@ assume Std {
         expect(tk_rbracket());
         ps = ast::commit(xs);
         n = xs.length();
+        listed = true;
       }
-      if n == 0 {
+      # A unit tag has no brackets, not even empty ones (D73): `tag X[];`
+      # is refused.
+      if !listed {
         if accept(tk_semi()) {
           return ast::node1(ast::k_d_unit(), nm);
         }

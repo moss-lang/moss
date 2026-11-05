@@ -521,11 +521,6 @@ assume Std {
     push_char(out, char::r);
   }
 
-  fn sp_in(out: IntList) {
-    push_char(out, char::i);
-    push_char(out, char::n);
-  }
-
   fn sp_for(out: IntList) {
     push_char(out, char::f);
     push_char(out, char::o);

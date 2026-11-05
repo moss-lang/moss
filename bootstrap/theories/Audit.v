@@ -11,9 +11,10 @@
 (*             `dump_file`, and `load_bundle`, bundle.py's walk and         *)
 (*             collect.Loader's path resolution), so what is trusted is the *)
 (*             OCaml driver's `read` (reading a file) and nothing of Python.*)
-(*             The parser is not yet specified here: its grammar is the     *)
-(*             pending obligation FRONT_END of Part VI.  The old path (the  *)
-(*             Python parser's dump, the OCaml tokenizer) still works.      *)
+(*             Part I.2 (module Syntax) specifies the lexer and parser:     *)
+(*             `Derives`, a declarative grammar from a file's bytes to its  *)
+(*             AST (DRAFT), the subject of FRONT_END in Part VI; Part I.3   *)
+(*             the dump and the loader, `Bundled`, the subject of LOADER.   *)
 (*   Part II   Elaborated programs: Core Moss's syntax (types, items,       *)
 (*             terms, Σ) and MossX's extension (records, loops, memory,     *)
 (*             primitives) — what the elaborator outputs.                   *)
@@ -37,6 +38,7 @@
 
 From Stdlib Require Import PrimInt63 Uint63 PrimFloat PArray ZArith.
 From Stdlib Require Import String Ascii List Bool Arith.
+From Stdlib Require Strings.Byte.
 Import ListNotations.
 
 (* ######################################################################## *)
@@ -496,20 +498,967 @@ Record amodule := AModule {
 
 Record bundle := Bundle { b_entry : string; b_prelude : string; b_mods : list amodule }.
 
+Definition read_module (m : sx) : res amodule :=
+  match m with
+  | SL false [SA "module"; SA path; SA w; SL false ts; f] =>
+      let* ts' := rmap atom ts in
+      let* f' := read_file f in
+      Good (AModule path (String.eqb w "1") ts' f')
+  | _ => bad "module"
+  end.
+
 Definition read_bundle (x : sx) : res bundle :=
   match x with
   | SL false (SA "bundle" :: SA e :: SA p :: ms) =>
-      let* ms' := rmap (fun m => match m with
-                                 | SL false [SA "module"; SA path; SA w; SL false ts; f] =>
-                                     let* ts' := rmap atom ts in
-                                     let* f' := read_file f in
-                                     Good (AModule path (String.eqb w "1") ts' f')
-                                 | _ => bad "module"
-                                 end) ms in
+      let* ms' := rmap read_module ms in
       Good (Bundle e p ms')
   | _ => bad "bundle"
   end.
 End Input.
+
+
+(* ######################################################################## *)
+(* Part I.2  The concrete syntax: `Derives`, the front end's specification   *)
+(* ######################################################################## *)
+
+(* DRAFT, for the designer's review.  `Derives bytes f` says that the source
+   file `bytes` has the surface AST `f` (above).  It is the specification
+   of Parse.v's lexer and parser: Part VI's FRONT_END obliges
+   `Parse.parse_moss` to be sound and complete for it; FrontEnd.v and
+   FrontEndComplete.v prove both, and Certified.v binds them.
+
+   It is in two layers, as docs/reference/syntax.md is:
+
+   1. Lexical structure (`Lexes`): the bytes are a sequence of whitespace,
+      comments and tokens, each token the longest that fits (`Lexeme`).
+   2. A grammar over tokens, one relation per nonterminal, each named after
+      the nonterminal of the thesis proposal's grammar figure (proposal.typ,
+      <grammar>) that it refines, with that figure's letter: File F, Import
+      m, Use u, Path p, Head h, Spec s, Reference r, Type τ, Declaration d,
+      Function f, Block b, Statement i, Bind w, Binding β, Expression e,
+      Binary ⊕, Unary ⊖, Conditional c, Arm a, Pattern π.
+
+   HOW TO READ A RULE.  A grammar relation `X ts v rest` says: the token
+   list `ts` begins with an X whose AST is `v`, and `rest` is what follows
+   it (so `ts` = the X's tokens ++ `rest`).  A rule's premises read left to
+   right as the production does: `Tk "LET" ts0 ts1` is the token `let`,
+   `TkName ts1 x ts2` a name `x`, `Expr false ts2 e ts3` an expression, and
+   so on, each starting where the last ended.  Premises about `kind ts`
+   (the kind of the next token, not consumed) are LOOKAHEAD conditions:
+   they are what makes the grammar unambiguous, and each says, in the
+   comment above its rule, why it is there.
+
+   Unlike the figure, the grammar is unambiguous: every token list has at
+   most one parse.  Where the figure is ambiguous the refinement is one of
+   these, each a design decision of the language:
+   - precedence and associativity of operators: D68's partial order, the
+     layers Operators > Comparison/Bitwise > Operand > Additive > Term >
+     Unary below.  Two operators that the order does not relate have NO
+     derivation when they meet unparenthesized (`a & b | c`, `a < b < c`,
+     `1 << n + 1`): that is the syntax error;
+   - where an expression ends: every repetition (a path's `::`, a chain of
+     `*`, suffixes `.f`, a union's `|`, ...) takes as much as it can (the
+     lookahead conditions "not followed by ..."), and an operator
+     expression may not be followed by a binary operator at all (D68);
+   - where a record expression `p { ... }` and a block may stand (not in
+     the condition of an `if`/`while`, the scrutinee of a `match`, the
+     collection of a `for`: the `nr` flag, "no record");
+   - statements: a `;` may be left out after an expression statement only
+     when the statement STARTS with `if`, `match` or `{` (see `Stmts`);
+   - `for` is sugar: `Derives` relates a `for` statement directly to its
+     desugaring `for_desugar` (D85), since the AST, the elaborator's input,
+     has no `for` node.  Why: the AST is what Part V's elaboration relation
+     reads, and D85 defines `for` by this desugaring, so stating it here,
+     in eight lines, is the most direct reading of D85; adding a node would
+     change the AST, the dump, the elaborator and Part V for no gain in
+     what is guaranteed.
+
+   CHANGES THE PROOFS FORCED (the grammar shaped to the parser).  Each is a
+   place where the grammar says a little more than the language needs, in
+   the parser's terms, so that soundness and completeness are proved by
+   following the parser step by step; none changes which files derive what,
+   except where marked [!]:
+   (a) Tokens are consumed as the parser consumes them, `ts' = advance ts`,
+       which never steps past the final EOF token: this only matters for
+       token lists that do not end in EOF, which `Lexes` never produces.
+   (b) Exit conditions of every repetition are stated in the rule that ends
+       it ("not followed by `,`/`::`/`*`/`.`/`|`..."), where the parser
+       peeks, although the enclosing rule usually implies them.  Likewise
+       the statement rules repeat "not `x = ...`" (`assign_ahead`), which
+       the expression rules imply, and an arm body not starting with `{`
+       is the expression form (a `{` there is always the block form).
+   (c) Literals: the AST of a numeric literal is its text normalized by
+       `lit_norm` (an exponent as its value: `1E+03` is `1e3`), and of an
+       import path the string's value (`string_value`, escapes decoded):
+       the parser does both, and the dump format fixes them.
+   (d) [!] The source is read with universal newlines (`newlines`: `\r\n`
+       and a lone `\r` are `\n`), as the parser reads it.
+   (e) The lambda/parenthesis decision is the parser's two-to-three-token
+       lookahead `at_lambda` (D70), stated as such. *)
+
+Module Syntax.
+Import Stdlib.Strings.Byte.
+Import Input.
+Local Open Scope string_scope.
+
+(* ===================== Tokens ============================================= *)
+
+(* A token: its kind (lex.py's `Kind` name: "NAME", "LPAREN", "EOF", ...),
+   its text, and its byte offset (only error messages use it). *)
+Record token := Tok { tk : string; tx : string; toff : nat }.
+
+(* Character classes. *)
+Definition is_digit (b : byte) : bool := match b with "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => true | _ => false end%byte.
+Definition is_alpha (b : byte) : bool := match b with "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z" => true | _ => false end%byte.
+Definition is_name_start (b : byte) : bool := is_alpha b || Byte.eqb b "_"%byte.
+Definition is_name_cont (b : byte) : bool := is_name_start b || is_digit b.
+Definition is_ws (b : byte) : bool := match b with " " | x09 | x0d | x0a => true | _ => false end%byte.
+Definition is_e (b : byte) : bool := match b with "e" | "E" => true | _ => false end%byte.
+Definition is_sign (b : byte) : bool := match b with "+" | "-" => true | _ => false end%byte.
+Definition is_escape (b : byte) : bool := match b with """" | "\" | "n" | "r" | "t" => true | _ => false end%byte.
+
+(* The keywords, and the kind of each. *)
+Definition KEYWORDS : list (string * string) :=
+  [("as", "AS"); ("assume", "ASSUME"); ("functor", "FUNCTOR"); ("bind", "BIND");
+   ("break", "BREAK"); ("context", "CONTEXT"); ("else", "ELSE"); ("fn", "FN");
+   ("for", "FOR"); ("if", "IF"); ("import", "IMPORT"); ("let", "LET");
+   ("loop", "LOOP"); ("match", "MATCH"); ("return", "RETURN"); ("tag", "TAG");
+   ("This", "THIS_TYPE"); ("this", "THIS"); ("type", "TYPE"); ("use", "USE");
+   ("val", "VAL"); ("var", "VAR"); ("while", "WHILE"); ("in", "IN")].
+
+Fixpoint assoc (k : string) (l : list (string * string)) : option string :=
+  match l with [] => None | (a, b) :: r => if String.eqb a k then Some b else assoc k r end.
+
+(* The symbols: one character, and two (the longer always wins). *)
+Definition one_char (b : byte) : option string :=
+  match b with
+  | "!"%byte => Some "EXCLAM" | "%"%byte => Some "PERCENT" | "&"%byte => Some "AMPERSAND"
+  | "("%byte => Some "LPAREN" | ")"%byte => Some "RPAREN" | "*"%byte => Some "STAR"
+  | "+"%byte => Some "PLUS" | ","%byte => Some "COMMA" | "-"%byte => Some "HYPHEN"
+  | "."%byte => Some "DOT" | "/"%byte => Some "SLASH" | ":"%byte => Some "COLON"
+  | ";"%byte => Some "SEMI" | "<"%byte => Some "LESS" | "="%byte => Some "EQUAL"
+  | ">"%byte => Some "GREATER" | "["%byte => Some "LBRACKET" | "]"%byte => Some "RBRACKET"
+  | "^"%byte => Some "CARET" | "{"%byte => Some "LBRACE" | "|"%byte => Some "PIPE"
+  | "}"%byte => Some "RBRACE"
+  | _ => None
+  end.
+
+Definition two_char (a b : byte) : option string :=
+  match a, b with
+  | "!"%byte, "="%byte => Some "EXCLAM_EQUAL" | ":"%byte, ":"%byte => Some "COLON_COLON"
+  | "="%byte, ">"%byte => Some "EQUAL_GREATER" | "<"%byte, "<"%byte => Some "LESS_LESS"
+  | "<"%byte, "="%byte => Some "LESS_EQUAL" | "="%byte, "="%byte => Some "EQUAL_EQUAL"
+  | ">"%byte, "="%byte => Some "GREATER_EQUAL" | ">"%byte, ">"%byte => Some "GREATER_GREATER"
+  | "-"%byte, ">"%byte => Some "HYPHEN_GREATER"
+  | _, _ => None
+  end.
+
+(* Does the input start with a byte of the class? *)
+Definition starts (p : byte -> bool) (cs : list byte) : bool :=
+  match cs with c :: _ => p c | [] => false end.
+
+Fixpoint strip_zeros (ds : list byte) : list byte :=
+  match ds with "0"%byte :: r => strip_zeros r | _ => ds end.
+
+(* (d) Universal newlines: `\r\n` and a lone `\r` read as `\n`. *)
+Fixpoint newlines (cs : list byte) : list byte :=
+  match cs with
+  | x0d :: x0a :: r => x0a :: newlines r
+  | x0d :: r => x0a :: newlines r
+  | c :: r => c :: newlines r
+  | [] => []
+  end.
+
+(* A string literal's body: plain bytes (not `"`, `\` or a newline) and the
+   escapes `\"`, `\\`, `\n`, `\r`, `\t`. *)
+Inductive StrBody : list byte -> Prop :=
+| SBEnd : StrBody []
+| SBByte : forall c r, c <> """"%byte -> c <> "\"%byte -> c <> x0a -> StrBody r -> StrBody (c :: r)
+| SBEsc : forall d r, is_escape d = true -> StrBody r -> StrBody ("\"%byte :: d :: r).
+
+(* A numeric literal's parts (D68): a fraction `.` digit+, and an exponent
+   `e`/`E`, an optional sign, digit+ of value at most 999. *)
+Definition Fraction (frac : list byte) : Prop :=
+  frac = [] \/ exists d ds, frac = "."%byte :: d :: ds /\ forallb is_digit (d :: ds) = true.
+Definition Exponent (ex : list byte) : Prop :=
+  ex = [] \/ exists e sign d ds, ex = e :: sign ++ d :: ds /\ is_e e = true /\
+              (sign = [] \/ exists s, sign = [s] /\ is_sign s = true) /\
+              forallb is_digit (d :: ds) = true /\ length (strip_zeros (d :: ds)) <= 3.
+
+(* `Lexeme cs k rest`: the bytes `cs` are one token of kind `k` when `rest`
+   follows; the conditions on `rest` make it the longest token there. *)
+Inductive Lexeme : list byte -> string -> list byte -> Prop :=
+| LxSym2 : forall a b k rest, two_char a b = Some k -> Lexeme [a; b] k rest
+| LxSym1 : forall a k rest, one_char a = Some k ->
+    (forall b r, rest = b :: r -> two_char a b = None) -> Lexeme [a] k rest
+(* a name or keyword (`in` is a keyword, of `for`) *)
+| LxWord : forall c ns rest,
+    is_name_start c = true -> forallb is_name_cont ns = true -> starts is_name_cont rest = false ->
+    Lexeme (c :: ns) (match assoc (string_of_list_byte (c :: ns)) KEYWORDS with
+                      | Some k => k | None => "NAME" end) rest
+| LxString : forall body rest, StrBody body ->
+    Lexeme (""""%byte :: body ++ [""""%byte]) "STRING" rest
+(* digits, then the optional fraction and exponent; a numeric literal may
+   not run into a letter, digit or `_`, and a digit run followed by `.` and
+   a digit takes the fraction *)
+| LxNumber : forall d ds frac ex rest,
+    forallb is_digit (d :: ds) = true -> Fraction frac -> Exponent ex ->
+    starts is_name_cont rest = false ->
+    (frac = [] -> ex = [] -> forall c r, rest = "."%byte :: c :: r -> is_digit c = false) ->
+    Lexeme (d :: ds ++ frac ++ ex)
+           (match frac, ex with [], [] => "INTEGER" | _, _ => "DECIMAL" end) rest.
+
+(* `Lexes i cs ts`: the bytes `cs`, starting at offset `i`, are the tokens
+   `ts`: whitespace and comments (`#` to the end of the line) between
+   tokens, and the token "EOF" at the end. *)
+Inductive Lexes : nat -> list byte -> list token -> Prop :=
+| LexEnd : forall i, Lexes i [] [Tok "EOF" "" i]
+| LexSpace : forall i c r ts, is_ws c = true -> Lexes (S i) r ts -> Lexes i (c :: r) ts
+| LexComment : forall i com r ts,
+    forallb (fun b => negb (Byte.eqb b x0a)) com = true ->
+    starts (fun b => negb (Byte.eqb b x0a)) r = false ->
+    Lexes (S i + length com) r ts -> Lexes i ("#"%byte :: com ++ r) ts
+| LexToken : forall i cs k r ts, Lexeme cs k r -> Lexes (i + length cs) r ts ->
+    Lexes i (cs ++ r) (Tok k (string_of_list_byte cs) i :: ts).
+
+(* ===================== Reading tokens ===================================== *)
+
+(* The next token (the final EOF stands for itself and for anything after
+   it), the n-th token ahead, and what follows the next one. *)
+Definition eof_tok : token := Tok "EOF" "" 0.
+Definition peek (ts : list token) : token := match ts with t :: _ => t | [] => eof_tok end.
+Fixpoint peekn (n : nat) (ts : list token) : token :=
+  match ts with
+  | [] => eof_tok
+  | [t] => t
+  | t :: r => match n with 0 => t | S m => peekn m r end
+  end.
+Definition kind (ts : list token) : string := tk (peek ts).
+Definition kind_at (n : nat) (ts : list token) : string := tk (peekn n ts).
+Definition advance (ts : list token) : list token :=
+  match ts with [_] => ts | _ :: r => r | [] => [] end.
+
+(* `Tk k ts ts'`: a token of kind k, then ts'.  `TkText k ts x ts'`: the
+   same, whose text is x; `TkName` for a name. *)
+Definition Tk (k : string) (ts ts' : list token) : Prop := kind ts = k /\ ts' = advance ts.
+Definition TkText (k : string) (ts : list token) (x : string) (ts' : list token) : Prop :=
+  kind ts = k /\ tx (peek ts) = x /\ ts' = advance ts.
+Definition TkName := TkText "NAME".
+(* An optional token. *)
+Definition OptTk (k : string) (ts ts' : list token) : Prop :=
+  Tk k ts ts' \/ (kind ts <> k /\ ts' = ts).
+
+(* List[X]: X, separated by `,`, with an optional trailing comma, up to
+   (not including) one of the `closers`. *)
+Inductive CommaList {A : Type} (X : list token -> A -> list token -> Prop) (closers : list string)
+  : list token -> list A -> list token -> Prop :=
+| CLNil : forall ts, In (kind ts) closers -> CommaList X closers ts [] ts
+| CLLast : forall ts x ts1, ~ In (kind ts) closers -> X ts x ts1 -> kind ts1 <> "COMMA" ->
+    CommaList X closers ts [x] ts1
+| CLCons : forall ts x ts1 ts2 xs ts3, ~ In (kind ts) closers -> X ts x ts1 -> Tk "COMMA" ts1 ts2 ->
+    CommaList X closers ts2 xs ts3 -> CommaList X closers ts (x :: xs) ts3.
+
+(* ===================== Names: Path p, Head h, Spec s, Reference r ========= *)
+
+(* p ::= x | p::x *)
+Inductive Path : list token -> path -> list token -> Prop :=
+| PathOne : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> "COLON_COLON" -> Path ts [x] ts1
+| PathMore : forall ts x ts1 ts2 p ts3, TkName ts x ts1 -> Tk "COLON_COLON" ts1 ts2 ->
+    Path ts2 p ts3 -> Path ts (x :: p) ts3.
+
+(* h ::= p | p.x | .x *)
+Inductive Head : list token -> option path * option name -> list token -> Prop :=
+| HeadPath : forall ts p ts1, Path ts p ts1 -> kind ts1 <> "DOT" -> Head ts (Some p, None) ts1
+| HeadMeth : forall ts p ts1 ts2 x ts3, Path ts p ts1 -> Tk "DOT" ts1 ts2 -> TkName ts2 x ts3 ->
+    Head ts (Some p, Some x) ts3
+| HeadDot : forall ts ts1 x ts2, Tk "DOT" ts ts1 -> TkName ts1 x ts2 -> Head ts (None, Some x) ts2.
+
+(* s ::= h | h[p = s, ...]   (the brackets are `App`, optional) *)
+Inductive Spec_ : list token -> spec -> list token -> Prop :=
+| SpecG : forall ts p d ts1 a ts2, Head ts (p, d) ts1 -> App ts1 a ts2 -> Spec_ ts (Input.Spec p d a) ts2
+with App : list token -> sapp -> list token -> Prop :=
+| AppNone : forall ts, kind ts <> "LBRACKET" -> App ts None ts
+| AppSome : forall ts ts1 bs ts2 ts3, Tk "LBRACKET" ts ts1 ->
+    CommaList AppBinding ["RBRACKET"] ts1 bs ts2 -> Tk "RBRACKET" ts2 ts3 -> App ts (Some bs) ts3
+with AppBinding : list token -> path * spec -> list token -> Prop :=
+| AppBindingG : forall ts p ts1 ts2 s ts3, Path ts p ts1 -> Tk "EQUAL" ts1 ts2 -> Spec_ ts2 s ts3 ->
+    AppBinding ts (p, s) ts3.
+
+(* r ::= p | p[p = s, ...] *)
+Definition Reference (ts : list token) (r : path * sapp) (rest : list token) : Prop :=
+  exists ts1, Path ts (fst r) ts1 /\ App ts1 (snd r) rest.
+
+(* ===================== Types τ ============================================ *)
+
+(* τ ::= r | This | () | (τ) | {x: τ, ...} | τ | τ | `|`
+   Refined: a type is a bare `|` (the uninhabited type), or one or more
+   atoms separated by `|`, optionally preceded by `|`; several atoms are a
+   union, one is itself. *)
+Inductive Type_ : list token -> aty -> list token -> Prop :=
+| TyNever : forall ts ts1, Tk "PIPE" ts ts1 ->
+    ~ In (kind ts1) ["NAME"; "THIS_TYPE"; "LPAREN"; "LBRACE"] -> Type_ ts ATNever ts1
+| TyMembers : forall ts ts1 ms ts2, OptTk "PIPE" ts ts1 -> Members ts1 ms ts2 ->
+    Type_ ts (match ms with [m] => m | _ => ATUnion ms end) ts2
+with Members : list token -> list aty -> list token -> Prop :=
+| MemOne : forall ts t ts1, TypeAtom ts t ts1 -> kind ts1 <> "PIPE" -> Members ts [t] ts1
+| MemMore : forall ts t ts1 ts2 ms ts3, TypeAtom ts t ts1 -> Tk "PIPE" ts1 ts2 ->
+    Members ts2 ms ts3 -> Members ts (t :: ms) ts3
+with TypeAtom : list token -> aty -> list token -> Prop :=
+| TARef : forall ts p ts1 a ts2, Path ts p ts1 -> App ts1 a ts2 -> TypeAtom ts (ATRef p a) ts2
+| TAThis : forall ts ts1, Tk "THIS_TYPE" ts ts1 -> TypeAtom ts ATThis ts1
+| TAUnit : forall ts ts1 ts2, Tk "LPAREN" ts ts1 -> Tk "RPAREN" ts1 ts2 -> TypeAtom ts ATUnit ts2
+| TAParen : forall ts ts1 t ts2 ts3, Tk "LPAREN" ts ts1 -> Type_ ts1 t ts2 -> Tk "RPAREN" ts2 ts3 ->
+    TypeAtom ts t ts3
+| TARecord : forall ts t ts1, RecordType ts t ts1 -> TypeAtom ts t ts1
+with RecordType : list token -> aty -> list token -> Prop :=
+| RecordTypeG : forall ts ts1 fs ts2 ts3, Tk "LBRACE" ts ts1 ->
+    CommaList TypeField ["RBRACE"] ts1 fs ts2 -> Tk "RBRACE" ts2 ts3 -> RecordType ts (ATRec fs) ts3
+with TypeField : list token -> name * aty -> list token -> Prop :=
+| TypeFieldG : forall ts x ts1 ts2 t ts3, TkName ts x ts1 -> Tk "COLON" ts1 ts2 -> Type_ ts2 t ts3 ->
+    TypeField ts (x, t) ts3.
+
+(* (`:` τ)? *)
+Inductive OptType : list token -> option aty -> list token -> Prop :=
+| OptTypeNone : forall ts, kind ts <> "COLON" -> OptType ts None ts
+| OptTypeSome : forall ts ts1 t ts2, Tk "COLON" ts ts1 -> Type_ ts1 t ts2 -> OptType ts (Some t) ts2.
+
+(* ===================== Patterns π ========================================= *)
+
+(* π ::= _ | p | p(π) | {x = π, ...} | p{x = π, ...}   (`= π` optional) *)
+Inductive Pattern : list token -> apat -> list token -> Prop :=
+| PatWild : forall ts ts1, TkName ts "_" ts1 -> kind ts1 <> "COLON_COLON" -> Pattern ts APWild ts1
+(* a path other than `_` itself, not followed by `(` or `{` *)
+| PatPath : forall ts p ts1, Path ts p ts1 -> p <> ["_"] -> ~ In (kind ts1) ["LBRACE"; "LPAREN"] ->
+    Pattern ts (APPath p) ts1
+| PatTag : forall ts p ts1 ts2 q ts3 ts4, Path ts p ts1 -> p <> ["_"] -> Tk "LPAREN" ts1 ts2 ->
+    Pattern ts2 q ts3 -> Tk "RPAREN" ts3 ts4 -> Pattern ts (APTag p q) ts4
+| PatRecord : forall ts p ts1 fs ts2, Path ts p ts1 -> p <> ["_"] -> RecordPattern ts1 fs ts2 ->
+    Pattern ts (APRec (Some p) fs) ts2
+| PatAnon : forall ts fs ts1, RecordPattern ts fs ts1 -> Pattern ts (APRec None fs) ts1
+with RecordPattern : list token -> list (name * option apat) -> list token -> Prop :=
+| RecordPatternG : forall ts ts1 fs ts2 ts3, Tk "LBRACE" ts ts1 ->
+    CommaList PatField ["RBRACE"] ts1 fs ts2 -> Tk "RBRACE" ts2 ts3 -> RecordPattern ts fs ts3
+with PatField : list token -> name * option apat -> list token -> Prop :=
+| PatFieldShort : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> "EQUAL" -> PatField ts (x, None) ts1
+| PatFieldLong : forall ts x ts1 ts2 q ts3, TkName ts x ts1 -> Tk "EQUAL" ts1 ts2 ->
+    Pattern ts2 q ts3 -> PatField ts (x, Some q) ts3.
+
+(* ===================== Operators: Binary ⊕, Unary ⊖ ======================= *)
+
+(* ⊕: the token kinds of the binary operators, and the operator each is. *)
+Definition BINARY : list (string * string) :=
+  [("STAR", "*"); ("SLASH", "/"); ("PERCENT", "%"); ("PLUS", "+"); ("HYPHEN", "-");
+   ("LESS_LESS", "<<"); ("GREATER_GREATER", ">>"); ("EQUAL_EQUAL", "==");
+   ("EXCLAM_EQUAL", "!="); ("LESS", "<"); ("GREATER", ">"); ("LESS_EQUAL", "<=");
+   ("GREATER_EQUAL", ">="); ("AMPERSAND", "&"); ("CARET", "^"); ("PIPE", "|")].
+(* D68's classes *)
+Definition FRACTION := ["/"; "%"].
+Definition ADDITIVE := ["+"; "-"].
+Definition SHIFT := ["<<"; ">>"].
+Definition COMPARISON := ["=="; "!="; "<"; ">"; "<="; ">="].
+Definition BITWISE := ["&"; "^"; "|"].
+Definition mem (s : string) (l : list string) : bool := existsb (String.eqb s) l.
+(* the binary operator next, if any *)
+Definition binop (ts : list token) : option string := assoc (kind ts) BINARY.
+Definition binop_in (l : list string) (ts : list token) : bool :=
+  match binop ts with Some o => mem o l | None => false end.
+
+(* `ops`-chains, left-associated: `acc op1 X1 op2 X2 ...`, every op one of
+   `ops`, as long as the next operator is one (D68: `a - b + c` is
+   `(a - b) + c`). *)
+Inductive LeftChain (X : list token -> aexpr -> list token -> Prop) (ops : list string)
+  : aexpr -> list token -> aexpr -> list token -> Prop :=
+| ChainEnd : forall acc ts, binop_in ops ts = false -> LeftChain X ops acc ts acc ts
+| ChainStep : forall acc ts op r ts1 e ts2, binop ts = Some op -> In op ops ->
+    X (advance ts) r ts1 -> LeftChain X ops (AEBinary op acc r) ts1 e ts2 ->
+    LeftChain X ops acc ts e ts2.
+
+(* ===================== Literals and lookahead ============================= *)
+
+(* A literal's AST text: an exponent as its value (`1E+03` is `1e3`,
+   `2e-0` is `2e0`); (c). *)
+Fixpoint digits_value (ds : list byte) (acc : nat) : nat :=
+  match ds with
+  | d :: r => digits_value r (acc * 10 + (Byte.to_nat d - 48))
+  | [] => acc
+  end.
+Definition hexdig (n : nat) : string :=
+  match n with 0 => "0" | 1 => "1" | 2 => "2" | 3 => "3" | 4 => "4" | 5 => "5"
+  | 6 => "6" | 7 => "7" | 8 => "8" | 9 => "9" | 10 => "a" | 11 => "b" | 12 => "c"
+  | 13 => "d" | 14 => "e" | _ => "f" end.
+Fixpoint nat_digits (fuel n : nat) (acc : string) : string :=
+  match fuel with
+  | 0 => acc
+  | S f => let acc := hexdig (n mod 10) ++ acc in
+           if Nat.ltb n 10 then acc else nat_digits f (n / 10) acc
+  end.
+Definition show_nat (n : nat) : string := nat_digits 25 n "".
+Fixpoint span (p : byte -> bool) (cs : list byte) : list byte * list byte :=
+  match cs with
+  | c :: r => if p c then let (a, b) := span p r in (c :: a, b) else ([], cs)
+  | [] => ([], [])
+  end.
+Definition lit_norm (t : string) : string :=
+  let cs := list_byte_of_string t in
+  let (pre, post) := span (fun b => negb (is_e b)) cs in
+  match post with
+  | [] => t
+  | _ :: ex =>
+      let '(neg, ds) := match ex with
+                        | "-"%byte :: ds => (true, ds)
+                        | "+"%byte :: ds => (false, ds)
+                        | ds => (false, ds)
+                        end in
+      let v := digits_value ds 0 in
+      string_of_list_byte pre ++ "e" ++ (if neg && negb (Nat.eqb v 0) then "-" else "") ++ show_nat v
+  end.
+
+(* A string token's value: the quotes dropped, the escapes decoded; (c). *)
+Fixpoint unescape (cs : list byte) : list byte :=
+  match cs with
+  | "\"%byte :: d :: r =>
+      (match d with "n" => x0a | "r" => x0d | "t" => x09 | _ => d end)%byte :: unescape r
+  | c :: r => c :: unescape r
+  | [] => []
+  end.
+Definition string_value (t : string) : string :=
+  string_of_list_byte (unescape (removelast (tl (list_byte_of_string t)))).
+
+(* (e) D70: at `(`, a lambda is next: `()` or `(x)` followed by `=>` or
+   `:`, or `(x` followed by `:` or `,`. *)
+Definition at_lambda (ts : list token) : bool :=
+  let arrow k := String.eqb k "EQUAL_GREATER" || String.eqb k "COLON" in
+  if String.eqb (kind_at 1 ts) "RPAREN" then arrow (kind_at 2 ts)
+  else if String.eqb (kind_at 1 ts) "NAME" then
+    if String.eqb (kind_at 2 ts) "COLON" || String.eqb (kind_at 2 ts) "COMMA" then true
+    else String.eqb (kind_at 2 ts) "RPAREN" && arrow (kind_at 3 ts)
+  else false.
+
+(* D68: `-` before a literal with a method call or field (`-1.abs()`) is
+   refused: `-` binds looser than `.`, and nobody means `-(1.abs())`. *)
+Definition neg_literal_dot (ts : list token) : Prop :=
+  In (kind ts) ["INTEGER"; "DECIMAL"] /\ kind_at 1 ts = "DOT".
+
+(* A statement `x = e;` is next. *)
+Definition assign_ahead (ts : list token) : Prop := kind ts = "NAME" /\ kind_at 1 ts = "EQUAL".
+
+(* D85: `for x in coll { body }` is
+   `{ let for = coll; var while = for.begin();
+      while for.more(while) { let x = for.get(while); while = for.after(while); { body } } }`
+   with the four calls as `for.`-operators; the cursor's names `for` and
+   `while` are keywords, so no program can name them. *)
+Definition ref (x : string) : aexpr := AEPath [x] None.
+Definition for_desugar (x : name) (coll : aexpr) (body : ablock) : astmt :=
+  let c := "for" in let i := "while" in
+  let loop := ASWhile (AEBinary "for.more" (ref c) (ref i))
+                (ABlock [ASLet x None (AEBinary "for.get" (ref c) (ref i));
+                         ASAssign i (AEBinary "for.after" (ref c) (ref i));
+                         ASExpr (AEBlock body)] None) in
+  ASExpr (AEBlock (ABlock [ASLet c None coll;
+                           ASVar i None (AEUnary "for.begin" (ref c));
+                           loop] None)).
+
+(* ===================== Expressions e, Blocks b, Statements i ============== *)
+
+(* Every relation below that takes `nr` ("no record") is the same in two
+   contexts: `nr = true` in the condition of an `if`/`while`, the scrutinee
+   of a `match` and the collection of a `for`, where a path followed by `{`
+   is not a record expression and a `{` does not open a block expression
+   (the `{` there opens the body); `nr = false` everywhere else.
+   Parenthesized, an expression is in `nr = false` again. *)
+
+(* e ::= c | match e {a ...} | return e? | break | (the operator forms)
+   `return` takes an expression unless `;`, `,`, `}` or `)` follows. *)
+Inductive Expr : bool -> list token -> aexpr -> list token -> Prop :=
+| ECond : forall nr ts e ts1, Cond ts e ts1 -> Expr nr ts e ts1
+| EMatch : forall nr ts ts1 s ts2 ts3 arms ts4 ts5, Tk "MATCH" ts ts1 -> Expr true ts1 s ts2 ->
+    Tk "LBRACE" ts2 ts3 -> Arms ts3 arms ts4 -> Tk "RBRACE" ts4 ts5 -> Expr nr ts (AEMatch s arms) ts5
+| EReturnNone : forall nr ts ts1, Tk "RETURN" ts ts1 -> In (kind ts1) ["SEMI"; "COMMA"; "RBRACE"; "RPAREN"] ->
+    Expr nr ts (AEReturn None) ts1
+| EReturn : forall nr ts ts1 e ts2, Tk "RETURN" ts ts1 -> ~ In (kind ts1) ["SEMI"; "COMMA"; "RBRACE"; "RPAREN"] ->
+    Expr nr ts1 e ts2 -> Expr nr ts (AEReturn (Some e)) ts2
+| EBreak : forall nr ts ts1, Tk "BREAK" ts ts1 -> Expr nr ts AEBreak ts1
+| EOperators : forall nr ts e ts1, Operators nr ts e ts1 -> Expr nr ts e ts1
+
+(* c ::= if e b (else b | else c)? *)
+with Cond : list token -> aexpr -> list token -> Prop :=
+| CondIf : forall ts ts1 c ts2 t ts3, Tk "IF" ts ts1 -> Expr true ts1 c ts2 -> Block ts2 t ts3 ->
+    kind ts3 <> "ELSE" -> Cond ts (AEIf c t None) ts3
+| CondElseIf : forall ts ts1 c ts2 t ts3 ts4 e ts5, Tk "IF" ts ts1 -> Expr true ts1 c ts2 ->
+    Block ts2 t ts3 -> Tk "ELSE" ts3 ts4 -> Cond ts4 e ts5 -> Cond ts (AEIf c t (Some e)) ts5
+| CondElse : forall ts ts1 c ts2 t ts3 ts4 b ts5, Tk "IF" ts ts1 -> Expr true ts1 c ts2 ->
+    Block ts2 t ts3 -> Tk "ELSE" ts3 ts4 -> Block ts4 b ts5 -> Cond ts (AEIf c t (Some (AEBlock b))) ts5
+
+(* a ::= π => e, | π => b ,?   — and the last arm's `,` is optional in
+   both forms; an arm body starting with `{` is the block form (b). *)
+with Arms : list token -> list (apat * aexpr) -> list token -> Prop :=
+| ArmsEnd : forall ts, kind ts = "RBRACE" -> Arms ts [] ts
+| ArmsCons : forall ts p ts1 ts2 body ts3 arms ts4, Pattern ts p ts1 -> Tk "EQUAL_GREATER" ts1 ts2 ->
+    ArmBody ts2 body ts3 -> Arms ts3 arms ts4 -> Arms ts ((p, body) :: arms) ts4
+with ArmBody : list token -> aexpr -> list token -> Prop :=
+| ArmBlock : forall ts b ts1 ts2, Block ts b ts1 -> OptTk "COMMA" ts1 ts2 -> ArmBody ts (AEBlock b) ts2
+| ArmExpr : forall ts e ts1 ts2, kind ts <> "LBRACE" -> Expr false ts e ts1 -> Tk "COMMA" ts1 ts2 ->
+    ArmBody ts e ts2
+| ArmExprLast : forall ts e ts1, kind ts <> "LBRACE" -> Expr false ts e ts1 -> kind ts1 = "RBRACE" ->
+    ArmBody ts e ts1
+
+(* e ⊕ e, D68's partial order.  An operator expression is one of
+     Bitwise    = Unary (op Unary)+, one op of `&` `^` `|` throughout,
+     Comparison = Operand cmp Operand,
+     Operand,
+   and is never followed by another binary operator: two operators the
+   order does not relate have no derivation.  *)
+with Operators : bool -> list token -> aexpr -> list token -> Prop :=
+| OpsBitwise : forall nr ts u ts1 op e ts2, Unary nr ts u ts1 -> binop ts1 = Some op -> In op BITWISE ->
+    LeftChain (Unary nr) [op] u ts1 e ts2 -> binop ts2 = None -> Operators nr ts e ts2
+| OpsCompare : forall nr ts l ts1 op r ts2, Operand nr ts l ts1 -> binop ts1 = Some op ->
+    In op COMPARISON -> Operand nr (advance ts1) r ts2 -> binop ts2 = None ->
+    Operators nr ts (AEBinary op l r) ts2
+| OpsOperand : forall nr ts e ts1, Operand nr ts e ts1 -> binop ts1 = None -> Operators nr ts e ts1
+
+(* Operand = Unary (`<<` | `>>`) Unary | Additive  (a shift's operands are
+   unary: `1 << n + 1` is refused) *)
+with Operand : bool -> list token -> aexpr -> list token -> Prop :=
+| OperandShift : forall nr ts l ts1 op r ts2, Unary nr ts l ts1 -> binop ts1 = Some op -> In op SHIFT ->
+    Unary nr (advance ts1) r ts2 -> Operand nr ts (AEBinary op l r) ts2
+| OperandAdditive : forall nr ts e ts1, Additive nr ts e ts1 -> binop_in SHIFT ts1 = false ->
+    Operand nr ts e ts1
+
+(* Additive = Term ((`+` | `-`) Term)*, left-associated *)
+with Additive : bool -> list token -> aexpr -> list token -> Prop :=
+| AdditiveG : forall nr ts t ts1 e ts2, Term nr ts t ts1 -> LeftChain (Term nr) ADDITIVE t ts1 e ts2 ->
+    Additive nr ts e ts2
+
+(* Term = Unary (`*` Unary)* ((`/` | `%`) Unary)?: a quotient or remainder
+   ends a term (`a / b * c`, `a / b / c` are refused) *)
+with Term : bool -> list token -> aexpr -> list token -> Prop :=
+| TermProduct : forall nr ts u ts1 e ts2, Unary nr ts u ts1 -> LeftChain (Unary nr) ["*"] u ts1 e ts2 ->
+    binop_in FRACTION ts2 = false -> Term nr ts e ts2
+| TermQuotient : forall nr ts u ts1 e ts2 op r ts3, Unary nr ts u ts1 ->
+    LeftChain (Unary nr) ["*"] u ts1 e ts2 -> binop ts2 = Some op -> In op FRACTION ->
+    Unary nr (advance ts2) r ts3 -> binop_in ("*" :: FRACTION) ts3 = false ->
+    Term nr ts (AEBinary op e r) ts3
+
+(* ⊖e: `-` and `!` *)
+with Unary : bool -> list token -> aexpr -> list token -> Prop :=
+| UnaryNeg : forall nr ts ts1 u ts2, Tk "HYPHEN" ts ts1 -> ~ neg_literal_dot ts1 -> Unary nr ts1 u ts2 ->
+    Unary nr ts (AEUnary "-" u) ts2
+| UnaryNot : forall nr ts ts1 u ts2, Tk "EXCLAM" ts ts1 -> Unary nr ts1 u ts2 ->
+    Unary nr ts (AEUnary "!" u) ts2
+| UnaryPostfix : forall nr ts p ts1 e ts2, Primary nr ts p ts1 -> Suffixes p ts1 e ts2 -> Unary nr ts e ts2
+
+(* e.p(e, ...) | e.x: suffixes, as many as follow *)
+with Suffixes : aexpr -> list token -> aexpr -> list token -> Prop :=
+| SufEnd : forall e ts, kind ts <> "DOT" -> Suffixes e ts e ts
+| SufMethod : forall e ts ts1 p ts2 ts3 args ts4 ts5 e' ts6, Tk "DOT" ts ts1 -> Path ts1 p ts2 ->
+    Tk "LPAREN" ts2 ts3 -> CommaList (Expr false) ["RPAREN"] ts3 args ts4 -> Tk "RPAREN" ts4 ts5 ->
+    Suffixes (AEMeth e p args) ts5 e' ts6 -> Suffixes e ts e' ts6
+| SufField : forall e ts ts1 x ts2 e' ts3, Tk "DOT" ts ts1 -> Path ts1 [x] ts2 -> kind ts2 <> "LPAREN" ->
+    Suffixes (AEField e x) ts2 e' ts3 -> Suffixes e ts e' ts3
+
+(* (e) | () | this | b | int | dec | r | r(e, ...) | r{x = e, ...}, and
+   the lambda (x: τ, ...): τ => e (D70), which the figure lists under β *)
+with Primary : bool -> list token -> aexpr -> list token -> Prop :=
+| PrimLambda : forall nr ts e ts1, Lambda ts e ts1 -> Primary nr ts e ts1
+| PrimUnit : forall nr ts ts1 ts2, Tk "LPAREN" ts ts1 -> at_lambda ts = false -> Tk "RPAREN" ts1 ts2 ->
+    Primary nr ts AEUnit ts2
+| PrimParen : forall nr ts ts1 e ts2 ts3, Tk "LPAREN" ts ts1 -> at_lambda ts = false ->
+    Expr false ts1 e ts2 -> Tk "RPAREN" ts2 ts3 -> Primary nr ts e ts3
+| PrimThis : forall nr ts ts1, Tk "THIS" ts ts1 -> Primary nr ts AEThis ts1
+| PrimLit : forall nr ts, In (kind ts) ["INTEGER"; "DECIMAL"] ->
+    Primary nr ts (AELit (lit_norm (tx (peek ts)))) (advance ts)
+| PrimBlock : forall ts b ts1, Block ts b ts1 -> Primary false ts (AEBlock b) ts1
+| PrimRef : forall nr ts p ts1 a ts2, Path ts p ts1 -> App ts1 a ts2 -> kind ts2 <> "LPAREN" ->
+    (nr = true \/ kind ts2 <> "LBRACE") -> Primary nr ts (AEPath p a) ts2
+| PrimCall : forall nr ts p ts1 a ts2 ts3 args ts4 ts5, Path ts p ts1 -> App ts1 a ts2 ->
+    Tk "LPAREN" ts2 ts3 -> CommaList (Expr false) ["RPAREN"] ts3 args ts4 -> Tk "RPAREN" ts4 ts5 ->
+    Primary nr ts (AECall p a args) ts5
+| PrimRecord : forall ts p ts1 a ts2 ts3 fs ts4 ts5, Path ts p ts1 -> App ts1 a ts2 ->
+    Tk "LBRACE" ts2 ts3 -> CommaList RecField ["RBRACE"] ts3 fs ts4 -> Tk "RBRACE" ts4 ts5 ->
+    Primary false ts (AERec p a fs) ts5
+with RecField : list token -> name * option aexpr -> list token -> Prop :=
+| RecFieldShort : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> "EQUAL" -> RecField ts (x, None) ts1
+| RecFieldLong : forall ts x ts1 ts2 e ts3, TkName ts x ts1 -> Tk "EQUAL" ts1 ts2 -> Expr false ts2 e ts3 ->
+    RecField ts (x, Some e) ts3
+with Lambda : list token -> aexpr -> list token -> Prop :=
+| LambdaG : forall ts ts1 ps ts2 ts3 ret ts4 ts5 body ts6, Tk "LPAREN" ts ts1 ->
+    CommaList LamParam ["RPAREN"] ts1 ps ts2 -> Tk "RPAREN" ts2 ts3 -> OptType ts3 ret ts4 ->
+    Tk "EQUAL_GREATER" ts4 ts5 -> Expr false ts5 body ts6 -> Lambda ts (AELam ps ret body) ts6
+with LamParam : list token -> name * option aty -> list token -> Prop :=
+| LamParamG : forall ts x ts1 t ts2, TkName ts x ts1 -> OptType ts1 t ts2 -> LamParam ts (x, t) ts2
+
+(* b ::= { i ... e? } *)
+with Block : list token -> ablock -> list token -> Prop :=
+| BlockG : forall ts ts1 ss tl ts2 ts3, Tk "LBRACE" ts ts1 -> Stmts ts1 ss tl ts2 -> Tk "RBRACE" ts2 ts3 ->
+    Block ts (ABlock ss tl) ts3
+
+(* i ...  e?: the statements of a block, and its trailing expression.
+   i ::= let x (: τ)? = e; | var x (: τ)? = e; | x = e; | w
+       | while e b | loop b | for x in e b | e; | e
+   An expression statement without `;` must START with `if`, `match` or
+   `{` and not be followed by `;` or `}` (then it is the trailing
+   expression).  The expression rules are tried only where no keyword
+   statement and no `x = ...` is next (b). *)
+with Stmts : list token -> list astmt -> option aexpr -> list token -> Prop :=
+| StEnd : forall ts, kind ts = "RBRACE" -> Stmts ts [] None ts
+| StLet : forall ts ts1 x ts2 t ts3 ts4 e ts5 ts6 ss tl ts7, Tk "LET" ts ts1 -> TkName ts1 x ts2 ->
+    OptType ts2 t ts3 -> Tk "EQUAL" ts3 ts4 -> Expr false ts4 e ts5 -> Tk "SEMI" ts5 ts6 ->
+    Stmts ts6 ss tl ts7 -> Stmts ts (ASLet x t e :: ss) tl ts7
+| StVar : forall ts ts1 x ts2 t ts3 ts4 e ts5 ts6 ss tl ts7, Tk "VAR" ts ts1 -> TkName ts1 x ts2 ->
+    OptType ts2 t ts3 -> Tk "EQUAL" ts3 ts4 -> Expr false ts4 e ts5 -> Tk "SEMI" ts5 ts6 ->
+    Stmts ts6 ss tl ts7 -> Stmts ts (ASVar x t e :: ss) tl ts7
+| StBind : forall ts w ts1 ss tl ts2, Bind ts w ts1 -> Stmts ts1 ss tl ts2 -> Stmts ts (ASBind w :: ss) tl ts2
+| StWhile : forall ts ts1 c ts2 b ts3 ss tl ts4, Tk "WHILE" ts ts1 -> Expr true ts1 c ts2 ->
+    Block ts2 b ts3 -> Stmts ts3 ss tl ts4 -> Stmts ts (ASWhile c b :: ss) tl ts4
+| StLoop : forall ts ts1 b ts2 ss tl ts3, Tk "LOOP" ts ts1 -> Block ts1 b ts2 -> Stmts ts2 ss tl ts3 ->
+    Stmts ts (ASLoop b :: ss) tl ts3
+| StFor : forall ts ts1 x ts2 ts3 coll ts4 body ts5 ss tl ts6, Tk "FOR" ts ts1 -> TkName ts1 x ts2 ->
+    Tk "IN" ts2 ts3 -> Expr true ts3 coll ts4 -> Block ts4 body ts5 -> Stmts ts5 ss tl ts6 ->
+    Stmts ts (for_desugar x coll body :: ss) tl ts6
+| StAssign : forall ts x ts1 ts2 e ts3 ts4 ss tl ts5, TkName ts x ts1 -> Tk "EQUAL" ts1 ts2 ->
+    Expr false ts2 e ts3 -> Tk "SEMI" ts3 ts4 -> Stmts ts4 ss tl ts5 -> Stmts ts (ASAssign x e :: ss) tl ts5
+| StExpr : forall ts e ts1 ts2 ss tl ts3, ~ assign_ahead ts -> Expr false ts e ts1 -> Tk "SEMI" ts1 ts2 ->
+    Stmts ts2 ss tl ts3 -> Stmts ts (ASExpr e :: ss) tl ts3
+| StBraced : forall ts e ts1 ss tl ts2, ~ assign_ahead ts -> In (kind ts) ["IF"; "MATCH"; "LBRACE"] ->
+    Expr false ts e ts1 -> ~ In (kind ts1) ["SEMI"; "RBRACE"] -> Stmts ts1 ss tl ts2 ->
+    Stmts ts (ASExpr e :: ss) tl ts2
+| StTail : forall ts e ts1, ~ assign_ahead ts -> Expr false ts e ts1 -> kind ts1 = "RBRACE" ->
+    Stmts ts [] (Some e) ts1
+
+(* w ::= bind β, ...;    β ::= s | s = e *)
+with Bind : list token -> list (spec * option aexpr) -> list token -> Prop :=
+| BindG : forall ts ts1 bs ts2 ts3, Tk "BIND" ts ts1 -> CommaList Binding ["SEMI"] ts1 bs ts2 ->
+    Tk "SEMI" ts2 ts3 -> Bind ts bs ts3
+with Binding : list token -> spec * option aexpr -> list token -> Prop :=
+| BindingApply : forall ts s ts1, Spec_ ts s ts1 -> kind ts1 <> "EQUAL" -> Binding ts (s, None) ts1
+| BindingBind : forall ts s ts1 ts2 e ts3, Spec_ ts s ts1 -> Tk "EQUAL" ts1 ts2 -> Expr false ts2 e ts3 ->
+    Binding ts (s, Some e) ts3.
+
+(* ===================== Declarations d ===================================== *)
+
+(* [x, ...], as a tag's or functor's brackets *)
+Definition NameList (ts : list token) (xs : list name) (rest : list token) : Prop :=
+  exists ts1 ts2, Tk "LBRACKET" ts ts1 /\ CommaList TkName ["RBRACKET"] ts1 xs ts2 /\ Tk "RBRACKET" ts2 rest.
+
+(* f ::= x | x.x | .x *)
+Inductive Function_ : list token -> fnrecv * name -> list token -> Prop :=
+| FnPlain : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> "DOT" -> Function_ ts (RPlain, x) ts1
+| FnAttached : forall ts r ts1 ts2 x ts3, TkName ts r ts1 -> Tk "DOT" ts1 ts2 -> TkName ts2 x ts3 ->
+    Function_ ts (RAttached r, x) ts3
+| FnDetached : forall ts ts1 x ts2, Tk "DOT" ts ts1 -> TkName ts1 x ts2 -> Function_ ts (RDetached, x) ts2.
+
+Inductive Param : list token -> name * aty -> list token -> Prop :=
+| ParamG : forall ts x ts1 ts2 t ts3, TkName ts x ts1 -> Tk "COLON" ts1 ts2 -> Type_ ts2 t ts3 ->
+    Param ts (x, t) ts3.
+
+(* an assume's item: h, but not `.x` *)
+Definition AssumeItem (ts : list token) (it : path * option name) (rest : list token) : Prop :=
+  Head ts (Some (fst it), snd it) rest.
+
+(* `[x, ...]` after `tag x`, possibly absent or empty *)
+Definition TagParams (ts : list token) (xs : list name) (rest : list token) : Prop :=
+  (kind ts <> "LBRACKET" /\ xs = [] /\ rest = ts) \/ NameList ts xs rest.
+
+(* d ::= assume h, ... { d ... } | type x; | type x = τ; | val x: τ (= e)?;
+       | tag x; | tag x([x, ...])? (τ); | tag x([x, ...])? {x: τ, ...};
+       | fn f(x: τ, ...) (: τ)? ; | fn f(x: τ, ...) (: τ)? b
+       | context x = s, ...; | functor x([x, ...])?: s, ... -> s, ...;
+       | functor x: s, ... -> s, ... { w ... } *)
+Inductive Decl : list token -> adecl -> list token -> Prop :=
+| DAssume : forall ts ts1 its ts2 ts3 ds ts4 ts5, Tk "ASSUME" ts ts1 ->
+    CommaList AssumeItem ["LBRACE"] ts1 its ts2 -> Tk "LBRACE" ts2 ts3 -> Decls ts3 ds ts4 ->
+    Tk "RBRACE" ts4 ts5 -> Decl ts (ADAssume its ds) ts5
+| DType : forall ts ts1 x ts2 ts3, Tk "TYPE" ts ts1 -> TkName ts1 x ts2 -> Tk "SEMI" ts2 ts3 ->
+    Decl ts (ADType x) ts3
+| DAlias : forall ts ts1 x ts2 ts3 t ts4 ts5, Tk "TYPE" ts ts1 -> TkName ts1 x ts2 -> Tk "EQUAL" ts2 ts3 ->
+    Type_ ts3 t ts4 -> Tk "SEMI" ts4 ts5 -> Decl ts (ADAlias x t) ts5
+(* `tag x;`, without brackets: `tag x[];` is refused (D73) *)
+| DUnit : forall ts ts1 x ts2 ts3, Tk "TAG" ts ts1 -> TkName ts1 x ts2 -> kind ts2 <> "LBRACKET" ->
+    Tk "SEMI" ts2 ts3 -> Decl ts (ADUnit x) ts3
+| DTagRecord : forall ts ts1 x ts2 ps ts3 t ts4 ts5, Tk "TAG" ts ts1 -> TkName ts1 x ts2 ->
+    TagParams ts2 ps ts3 -> RecordType ts3 t ts4 -> Tk "SEMI" ts4 ts5 -> Decl ts (ADTag x ps t) ts5
+(* a record payload is written with braces, not `({...})` (D83) *)
+| DTag : forall ts ts1 x ts2 ps ts3 ts4 t ts5 ts6 ts7, Tk "TAG" ts ts1 -> TkName ts1 x ts2 ->
+    TagParams ts2 ps ts3 -> Tk "LPAREN" ts3 ts4 -> Type_ ts4 t ts5 -> (forall fs, t <> ATRec fs) ->
+    Tk "RPAREN" ts5 ts6 -> Tk "SEMI" ts6 ts7 -> Decl ts (ADTag x ps t) ts7
+| DVal : forall ts ts1 x ts2 ts3 t ts4 ts5, Tk "VAL" ts ts1 -> TkName ts1 x ts2 -> Tk "COLON" ts2 ts3 ->
+    Type_ ts3 t ts4 -> Tk "SEMI" ts4 ts5 -> Decl ts (ADVal x t None) ts5
+| DValDefined : forall ts ts1 x ts2 ts3 t ts4 ts5 e ts6 ts7, Tk "VAL" ts ts1 -> TkName ts1 x ts2 ->
+    Tk "COLON" ts2 ts3 -> Type_ ts3 t ts4 -> Tk "EQUAL" ts4 ts5 -> Expr false ts5 e ts6 ->
+    Tk "SEMI" ts6 ts7 -> Decl ts (ADVal x t (Some e)) ts7
+| DFnAbstract : forall ts ts1 rx ts2 ts3 ps ts4 ts5 ret ts6 ts7, Tk "FN" ts ts1 -> Function_ ts1 rx ts2 ->
+    Tk "LPAREN" ts2 ts3 -> CommaList Param ["RPAREN"] ts3 ps ts4 -> Tk "RPAREN" ts4 ts5 ->
+    OptType ts5 ret ts6 -> Tk "SEMI" ts6 ts7 -> Decl ts (ADFn (fst rx) (snd rx) ps ret None) ts7
+| DFn : forall ts ts1 rx ts2 ts3 ps ts4 ts5 ret ts6 b ts7, Tk "FN" ts ts1 -> Function_ ts1 rx ts2 ->
+    Tk "LPAREN" ts2 ts3 -> CommaList Param ["RPAREN"] ts3 ps ts4 -> Tk "RPAREN" ts4 ts5 ->
+    OptType ts5 ret ts6 -> Block ts6 b ts7 -> Decl ts (ADFn (fst rx) (snd rx) ps ret (Some b)) ts7
+| DContext : forall ts ts1 x ts2 ts3 ss ts4 ts5, Tk "CONTEXT" ts ts1 -> TkName ts1 x ts2 ->
+    Tk "EQUAL" ts2 ts3 -> CommaList Spec_ ["SEMI"] ts3 ss ts4 -> Tk "SEMI" ts4 ts5 -> Decl ts (ADCtx x ss) ts5
+(* an abstract functor, its brackets optional (D78, D84) *)
+| DFunctorAbstract : forall ts ts1 x ts2 ps ts3 ts4 args ts5 ts6 res ts7 ts8, Tk "FUNCTOR" ts ts1 ->
+    TkName ts1 x ts2 ->
+    ((kind ts2 <> "LBRACKET" /\ ps = None /\ ts3 = ts2) \/ exists l, ps = Some l /\ NameList ts2 l ts3) ->
+    Tk "COLON" ts3 ts4 -> CommaList Spec_ ["HYPHEN_GREATER"] ts4 args ts5 -> Tk "HYPHEN_GREATER" ts5 ts6 ->
+    CommaList Spec_ ["LBRACE"; "SEMI"] ts6 res ts7 -> Tk "SEMI" ts7 ts8 ->
+    Decl ts (ADFunctor x ps args res None) ts8
+(* a functor with a body has no brackets (D84) *)
+| DFunctor : forall ts ts1 x ts2 ts3 args ts4 ts5 res ts6 ts7 ws ts8 ts9, Tk "FUNCTOR" ts ts1 ->
+    TkName ts1 x ts2 -> kind ts2 <> "LBRACKET" -> Tk "COLON" ts2 ts3 ->
+    CommaList Spec_ ["HYPHEN_GREATER"] ts3 args ts4 -> Tk "HYPHEN_GREATER" ts4 ts5 ->
+    CommaList Spec_ ["LBRACE"; "SEMI"] ts5 res ts6 -> Tk "LBRACE" ts6 ts7 -> Binds ts7 ws ts8 ->
+    Tk "RBRACE" ts8 ts9 -> Decl ts (ADFunctor x None args res (Some ws)) ts9
+with Decls : list token -> list adecl -> list token -> Prop :=
+| DeclsEnd : forall ts, kind ts = "RBRACE" -> Decls ts [] ts
+| DeclsCons : forall ts d ts1 ds ts2, Decl ts d ts1 -> Decls ts1 ds ts2 -> Decls ts (d :: ds) ts2
+with Binds : list token -> list (list (spec * option aexpr)) -> list token -> Prop :=
+| BindsEnd : forall ts, kind ts = "RBRACE" -> Binds ts [] ts
+| BindsCons : forall ts w ts1 ws ts2, Bind ts w ts1 -> Binds ts1 ws ts2 -> Binds ts (w :: ws) ts2.
+
+(* ===================== Imports m, Uses u, the File F ====================== *)
+
+(* u ::= x | x as x | .x | .x as .x   (a rename keeps the dottedness) *)
+Definition UseName (ts : list token) (u : bool * name) (rest : list token) : Prop :=
+  exists ts1, ((fst u = true /\ Tk "DOT" ts ts1) \/ (fst u = false /\ kind ts <> "DOT" /\ ts1 = ts)) /\
+              TkName ts1 (snd u) rest.
+Inductive Use : list token -> ause -> list token -> Prop :=
+| UsePlain : forall ts d x ts1, UseName ts (d, x) ts1 -> kind ts1 <> "AS" -> Use ts (AUse d x None) ts1
+| UseRenamed : forall ts d x ts1 ts2 y ts3, UseName ts (d, x) ts1 -> Tk "AS" ts1 ts2 ->
+    UseName ts2 (d, y) ts3 -> Use ts (AUse d x (Some (d, y))) ts3.
+
+(* m ::= import str (as x)? (use * | use u, ...)?; *)
+Inductive Import_ : list token -> aimport -> list token -> Prop :=
+| ImportG : forall ts ts1 s ts2 alias ts3 glob uses ts4 ts5, Tk "IMPORT" ts ts1 ->
+    TkText "STRING" ts1 s ts2 ->
+    ((kind ts2 <> "AS" /\ alias = None /\ ts3 = ts2) \/
+     exists ts' a, alias = Some a /\ Tk "AS" ts2 ts' /\ TkName ts' a ts3) ->
+    ((kind ts3 <> "USE" /\ glob = false /\ uses = [] /\ ts4 = ts3) \/
+     (exists ts', Tk "USE" ts3 ts' /\ Tk "STAR" ts' ts4 /\ glob = true /\ uses = []) \/
+     (exists ts', Tk "USE" ts3 ts' /\ kind ts' <> "STAR" /\ glob = false /\
+                  CommaList Use ["SEMI"] ts' uses ts4)) ->
+    Tk "SEMI" ts4 ts5 -> Import_ ts (AImport (string_value s) alias glob uses) ts5.
+
+Inductive Imports : list token -> list aimport -> list token -> Prop :=
+| ImportsEnd : forall ts, kind ts <> "IMPORT" -> Imports ts [] ts
+| ImportsCons : forall ts m ts1 ms ts2, Import_ ts m ts1 -> Imports ts1 ms ts2 -> Imports ts (m :: ms) ts2.
+
+Inductive DeclsToEnd : list token -> list adecl -> list token -> Prop :=
+| EndOfFile : forall ts, kind ts = "EOF" -> DeclsToEnd ts [] ts
+| DeclThen : forall ts d ts1 ds ts2, Decl ts d ts1 -> DeclsToEnd ts1 ds ts2 -> DeclsToEnd ts (d :: ds) ts2.
+
+(* F ::= m ... d ... (then the end of the file) *)
+Definition File (ts : list token) (f : afile) : Prop :=
+  exists ts1 ts2, Imports ts (f_imports f) ts1 /\ DeclsToEnd ts1 (f_decls f) ts2.
+
+(* The specification: the bytes of a source file have the AST f. *)
+Definition Derives (bytes : list byte) (f : afile) : Prop :=
+  exists ts, Lexes 0 (newlines bytes) ts /\ File ts f.
+
+End Syntax.
+
+(* ######################################################################## *)
+(* Part I.3  The dump and the loader                                        *)
+(* ######################################################################## *)
+
+(* The dump: an AST as the s-expression the readers of Part I.1 read
+   (sexpr.py's format).  Moved verbatim from Parse.v: the loader's
+   specification below is stated with it. *)
+Module Dump.
+Import Input.
+Local Open Scope string_scope.
+
+Definition nd (tag : string) (xs : list sx) : sx := SL false (SA tag :: xs).
+Definition sl (xs : list sx) : sx := SL true xs.
+Definition dopt {X} (f : X -> sx) (o : option X) : sx :=
+  match o with None => SA "_" | Some x => f x end.
+Definition dpath (p : path) : sx := SA (join_path p).
+
+Fixpoint dspec (s : spec) : sx :=
+  match s with
+  | Spec p d a =>
+      nd "I" [dopt dpath p; dopt SA d;
+              match a with
+              | None => SA "_"
+              | Some bs => sl (map (fun '(bp, bs1) => nd "J" [dpath bp; dspec bs1]) bs)
+              end]
+  end.
+
+Definition dapp (a : sapp) : sx :=
+  match a with
+  | None => SA "_"
+  | Some bs => sl (map (fun '(bp, s) => nd "J" [dpath bp; dspec s]) bs)
+  end.
+
+Fixpoint dty (t : aty) : sx :=
+  match t with
+  | ATNever => nd "b" []
+  | ATThis => nd "c" []
+  | ATUnit => nd "a" []
+  | ATRec fs => nd "f" [sl (map (fun '(x, t1) => nd "h" [SA x; dty t1]) fs)]
+  | ATUnion ms => nd "g" [sl (map dty ms)]
+  | ATRef p a => nd "d" [dpath p; dapp a]
+  end.
+
+Fixpoint dpat (p : apat) : sx :=
+  match p with
+  | APWild => nd "D" []
+  | APPath q => nd "E" [dpath q; SA "_"]
+  | APTag q s => nd "E" [dpath q; dpat s]
+  | APRec q fs => nd "F" [dopt dpath q; sl (map (fun '(x, s) => nd "G" [SA x; dopt dpat s]) fs)]
+  end.
+
+Fixpoint dexpr (e : aexpr) : sx :=
+  match e with
+  | AEUnit => nd "i" []
+  | AEThis => nd "j" []
+  | AEPath p a => nd "k" [dpath p; dapp a]
+  | AECall p a args => nd "l" [nd "k" [dpath p; dapp a]; sl (map dexpr args)]
+  | AEField o f => nd "m" [dexpr o; SA f]
+  | AEMeth o p args => nd "n" [dexpr o; dpath p; sl (map dexpr args)]
+  | AERec p a fs => nd "o" [nd "k" [dpath p; dapp a];
+                            sl (map (fun '(x, v) => nd "p" [SA x; dopt dexpr v]) fs)]
+  | AEIf c t el => nd "q" [dexpr c; dblock t; dopt dexpr el]
+  | AEMatch s arms => nd "r" [dexpr s; sl (map (fun '(p, b) => nd "H" [dpat p; dexpr b]) arms)]
+  | AEReturn o => nd "s" [dopt dexpr o]
+  | AEBreak => nd "t" []
+  | AEBlock b => dblock b
+  | AEUnary op x => nd "W" [SA op; dexpr x]
+  | AEBinary op l r => nd "X" [SA op; dexpr l; dexpr r]
+  | AELit t => nd "Y" [SA t]
+  | AELam ps ret body => nd "Z" [sl (map (fun '(x, t) => nd "K" [SA x; dopt dty t]) ps);
+                                 dopt dty ret; dexpr body]
+  end
+with dblock (b : ablock) : sx :=
+  match b with
+  | ABlock ss t => nd "u" [sl (map dstmt ss); dopt dexpr t]
+  end
+with dstmt (s : astmt) : sx :=
+  match s with
+  | ASLet x t e => nd "v" [SA x; dopt dty t; dexpr e]
+  | ASVar x t e => nd "w" [SA x; dopt dty t; dexpr e]
+  | ASAssign x e => nd "x" [SA x; dexpr e]
+  | ASBind its => nd "y" [sl (map (fun '(s, v) => nd "z" [dspec s; dopt dexpr v]) its)]
+  | ASWhile c b => nd "A" [dexpr c; dblock b]
+  | ASLoop b => nd "B" [dblock b]
+  | ASExpr e => nd "C" [dexpr e]
+  end.
+
+Definition dbind (its : list (spec * option aexpr)) : sx :=
+  nd "y" [sl (map (fun '(s, v) => nd "z" [dspec s; dopt dexpr v]) its)].
+
+Fixpoint ddecl (d : adecl) : sx :=
+  match d with
+  | ADAssume its ds => nd "M" [sl (map (fun '(p, o) => nd "I" [dpath p; dopt SA o; SA "_"]) its);
+                               sl (map ddecl ds)]
+  | ADType x => nd "N" [SA x]
+  | ADAlias x t => nd "O" [SA x; dty t]
+  | ADTag x ps t => nd "P" [SA x; sl (map SA ps); dty t]
+  | ADUnit x => nd "Q" [SA x]
+  | ADVal x t i => nd "R" [SA x; dty t; dopt dexpr i]
+  | ADFn r x ps ret body =>
+      nd "S" [SA (match r with RDetached => "." | RPlain => "_" | RAttached q => q end); SA x;
+              sl (map (fun '(p, t) => nd "K" [SA p; dty t]) ps); dopt dty ret; dopt dblock body]
+  | ADCtx x its => nd "T" [SA x; sl (map dspec its)]
+  | ADFunctor x ps args res body =>
+      nd "U" [SA x; dopt (fun l => sl (map SA l)) ps; sl (map dspec args); sl (map dspec res);
+              dopt (fun bs => sl (map dbind bs)) body]
+  end.
+
+Definition duse_side (d : bool) (x : name) : string := (if d then "." else "") ++ x.
+Definition duse (u : ause) : sx :=
+  SA (duse_side (u_dot u) (u_name u) ++
+      match u_alias u with None => "" | Some (d, y) => ">" ++ duse_side d y end).
+
+Definition dimport (i : aimport) : sx :=
+  nd "L" [SA (i_path i); dopt SA (i_alias i); SA (if i_glob i then "*" else "_");
+          sl (map duse (i_uses i))].
+
+Definition dump_file (f : afile) : sx :=
+  nd "$" [sl (map dimport (f_imports f)); sl (map ddecl (f_decls f))].
+
+End Dump.
+
+(* The loader (py/bundle.py; collect.Loader's normalize, resolve and
+   wants_prelude, moved verbatim from Parse.v), and `Bundled`, what a
+   bundle loaded from a file system `read` must be. *)
+Module Loader.
+Import Stdlib.Strings.Byte.
+Import Input.
+Local Open Scope string_scope.
+
+Fixpoint split_bytes (sep : byte) (cs : list byte) (cur : list byte) : list (list byte) :=
+  match cs with
+  | [] => [rev' cur]
+  | c :: r => if Byte.eqb c sep then rev' cur :: split_bytes sep r [] else split_bytes sep r (c :: cur)
+  end.
+
+(* PurePosixPath's parts after the root: empty and `.` segments dropped *)
+Definition segs (s : string) : list string :=
+  map string_of_list_byte
+    (filter (fun seg => negb (match seg with [] => true | ["."%byte] => true | _ => false end))
+            (split_bytes "/"%byte (list_byte_of_string s) [])).
+
+Definition is_abs (s : string) : bool :=
+  match list_byte_of_string s with "/"%byte :: _ => true | _ => false end.
+
+(* Loader.normalize(base, path), with `root` the working directory *)
+Definition normalize (root : string) (base : option string) (p : string) : string :=
+  let '(jabs, jsegs) :=
+    if is_abs p then (true, segs p)
+    else match base with
+         | None => (false, segs p)
+         | Some b => (is_abs b, app (removelast (segs b)) (segs p))
+         end in
+  let parts := if jabs then "/" :: jsegs else "/" :: app (segs root) jsegs in
+  let acc := fold_left (fun acc part =>
+                if String.eqb part ".." then
+                  match acc with h :: t => if String.eqb h ".." then part :: acc else t | [] => [part] end
+                else part :: acc) parts [] in
+  match rev' acc with
+  | [] => "."
+  | "/" :: rest => "/" ++ String.concat "/" rest
+  | ps => String.concat "/" ps
+  end.
+
+Definition first_segment (p : string) : string :=
+  match split_bytes "/"%byte (list_byte_of_string p) [] with
+  | s :: _ => string_of_list_byte s
+  | [] => ""
+  end.
+
+(* Loader.resolve (D64): `.`/`..`-relative and absolute paths are the
+   importer's; any other names a file of the library, the prelude's
+   directory *)
+Definition resolve (root prelude importer p : string) : string :=
+  let first := first_segment p in
+  if is_abs p || String.eqb first "." || String.eqb first ".." then normalize root (Some importer) p
+  else normalize root (Some prelude) p.
+
+Definition parent_str (p : string) : string :=
+  "/" ++ String.concat "/" (removelast (segs p)).
+
+Definition wants_prelude (prelude p : string) : bool :=
+  negb (String.eqb p prelude) && negb (String.prefix (parent_str prelude ++ "/") p).
+
+
+(* `Bundled read root prelude entry b`: the bundle b is what loading
+   `entry` with `prelude` means.  Its entry and prelude are the given
+   paths, normalized against the working directory `root`; it has each
+   module once, the entry among them; and each module is a file that
+   `read` gives, whose bytes derive an AST f (Syntax.Derives), and the
+   module holds f as the dump reads it back, whether it wants the prelude,
+   and its imports resolved (D64); and every module it imports, and the
+   prelude if it wants it, is in the bundle too. *)
+Definition Bundled (read : string -> option string) (root prelude_in entry_in : string) (b : bundle) : Prop :=
+  b_entry b = normalize root None entry_in /\ b_prelude b = normalize root None prelude_in /\
+  NoDup (map am_path (b_mods b)) /\ In (b_entry b) (map am_path (b_mods b)) /\
+  forall m, In m (b_mods b) ->
+    exists text f, read (am_path m) = Some text /\ Syntax.Derives (list_byte_of_string text) f /\
+      read_file (Dump.dump_file f) = Good (am_file m) /\
+      am_prelude m = wants_prelude (b_prelude b) (am_path m) /\
+      am_targets m = map (fun i => resolve root (b_prelude b) (am_path m) (i_path i)) (f_imports f) /\
+      (forall t, In t (am_targets m) -> In t (map am_path (b_mods b))) /\
+      (am_prelude m = true -> In (b_prelude b) (map am_path (b_mods b))).
+End Loader.
 
 (* ######################################################################## *)
 (* Part II. Elaborated programs                                              *)
@@ -4602,22 +5551,29 @@ Definition choice_of (x : xexpr) : option choice :=
   end.
 
 (* What Certified.v binds today.  Read the comment on each. *)
-(* m4: PENDING.  The front end's contract, in Ender's ProblemGrammar /
-   parser_sound / parser_complete pattern: a declarative grammar of Moss's
-   surface syntax (docs/reference/syntax.md, D68's partial order of
-   operators, D85's `for` sugar, D83's `tag` forms, D84's brackets) over a
-   file's bytes, relating it to the surface AST of Part I; and the Gallina
-   parser (Parse.parse_moss) sound and complete for it.  Not drafted: the
-   grammar is not yet written as a relation.  What is established about the
-   parser today is empirical (README, Part 1: byte-identical dumps with the
-   Python parser on the whole corpus and 30000 mutants) plus what Gallina
-   gives (totality, determinism) and Parse.v's lemmas. *)
+(* The front end's contract, in Ender's ProblemGrammar / parser_sound /
+   parser_complete pattern: `Syntax.Derives` (Part I.2, a DRAFT for the
+   designer's review) is the declarative grammar of Moss's surface syntax
+   over a file's bytes, relating it to the surface AST of Part I, and the
+   parser must be sound and complete for it.  FrontEnd.v and
+   FrontEndComplete.v prove both for Parse.parse_moss, and Certified.v
+   binds them (`FrontEndCertified <: FRONT_END`). *)
 Module Type FRONT_END.
-  Parameter Derives : list Byte.byte -> Input.afile -> Prop.
   Parameter parse : string -> Input.res Input.afile.
-  Axiom parser_sound : forall s f, parse s = Input.Good f -> Derives (list_byte_of_string s) f.
-  Axiom parser_complete : forall s f, Derives (list_byte_of_string s) f -> parse s = Input.Good f.
+  Axiom parser_sound : forall s f, parse s = Input.Good f -> Syntax.Derives (list_byte_of_string s) f.
+  Axiom parser_complete : forall s f, Syntax.Derives (list_byte_of_string s) f -> parse s = Input.Good f.
 End FRONT_END.
+
+(* The loader's contract: a bundle loaded from a file system `read` is
+   what Loader.Bundled says (Part I.3): every module a file whose bytes
+   derive its AST, each once, closed under imports and the prelude.  It
+   is soundness only: a loader that fails on every input meets it (that
+   one which reads and derives every file succeeds is not stated). *)
+Module Type LOADER.
+  Parameter load : (string -> option string) -> string -> string -> string -> Input.res Input.bundle.
+  Axiom load_sound : forall read root prelude entry b,
+    load read root prelude entry = Input.Good b -> Loader.Bundled read root prelude entry b.
+End LOADER.
 
 Module Type PROVED_NOW.
   (* The elaborator: a total Gallina function from the tokens of a bundle
