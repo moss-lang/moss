@@ -2116,6 +2116,15 @@ Proof.
   exact (assume_type_syms_exact b st e L R F g s l s' (conj Hsw Hsk) Hg Ha).
 Qed.
 
+Lemma load_world_ids : forall b w, load_world b = Good w ->
+  forall i g, nget (w_syms w) i = Some g -> gs_id g = i.
+Proof.
+  intros b w H i g Hg. unfold load_world in H.
+  apply rbind_good in H as ([e st] & Hl & H). injection H as <-.
+  destruct (load_spec b _ _ _ _ _ _ Hl (linv_init b)) as (L & _).
+  exact (proj1 (proj2 (proj2 (li_syms _ _ L i g Hg)))).
+Qed.
+
 (* What the elaborator reads a bundle as, when it accepts it. *)
 Corollary elaborate_world_reads : forall b p, elaborate b = Good p ->
   exists w, load_world b = Good w /\ forall R F, LoaderReading b (W_read w R F).
@@ -2230,11 +2239,11 @@ Qed.
      resolved_loader), and Elab.assume_type_syms computes exactly
      AssumeTypes, without repeats, in any state elaboration reaches
      (assume_type_syms_exact, load_world_assume_types).  Remaining:
-     (a) an invariant on st_reqs (ElabFrame's Inv, extended): a cached list
-         of a val/fn/method/context/functor is assume_type_syms's, of a
-         type or unit [], so rr_plain/rr_none hold of the cache; set_reqs
-         occurs only in the requirements group, whose frame lemma must
-         then be proved by hand rather than by okt;
+     (a) DONE (ElabFrame.v, ReqOK in elab_frame): every cached list is
+         without repeats and of a symbol; of a val/fn/method/context/
+         functor it is AssumeTypes, of a type or unit [].  (The elaborator's
+         two tag/alias writes go through set_nominal_reqs, a guard and a
+         dedup that change nothing on any input: Audit.v note 29.)
      (b) for tags and aliases, that solve_requirements' iteration from the
          listed parameters reaches the least relevance-closed sets
          (rr_closed, rr_least, rr_listed): a Kleene-iteration argument

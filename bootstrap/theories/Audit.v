@@ -3850,6 +3850,13 @@ End Elaboration.
       exit status were checked identical before and after on the same
       programs as note 27's, the compiler compiling tests/wasi/tags.moss
       included, and cargo test passes with it.
+  29. (elaborator, for the proof; no change in behaviour) solve_requirements
+      writes a tag's or alias's requirements through set_nominal_reqs,
+      which writes only if the symbol is a tag or alias and drops repeats.
+      Its group holds only tags and aliases and its lists have no repeats,
+      so nothing changes (oracle outputs checked identical, as in note 27);
+      the guard makes the requirement cache's invariant (ElabFrame.ReqOK)
+      provable step by step.
 *)
 
 (* ######################################################################## *)

@@ -982,6 +982,14 @@ Definition cached_reqs (s : nat) : M (option (list nat)) :=
   let! x := get in ret (nget (st_reqs x) s).
 Definition set_reqs (s : nat) (l : list nat) : M unit := upd (s_reqs (fun m => nset m s l)).
 
+(* a tag's or alias's requirements, during solve_requirements.  Its group
+   holds only tags and aliases and every list it computes is without
+   repeats, so the guard and the dedup change nothing; they make the cache
+   invariant local (Track A, ElabFrame.v) *)
+Definition set_nominal_reqs (s : nat) (l : list nat) : M unit :=
+  let! g := sym s in
+  if kind_eqb (gs_kind g) KTag || kind_eqb (gs_kind g) KAlias then set_reqs s (nodup Nat.eq_dec l) else ret tt.
+
 (* free_type_syms, against the current approximation of relevance *)
 Fixpoint free_type_syms (fuel : nat) (t : aty) (mi : nat) (out : list nat) : M (list nat) :=
   match fuel with
@@ -1052,7 +1060,7 @@ with solve_requirements (fuel : nat) (root : gsym) : M unit :=
             end
         end in
       let! group := collect 100000 [gs_id root] [] in
-      miter (fun s => set_reqs s []) group ;;
+      miter (fun s => set_nominal_reqs s []) group ;;
       let! listed := mmap (fun s => let! g := sym s in let! l := listed_params f g in ret (s, l)) group in
       let fix iterate (n : nat) : M unit :=
         match n with
@@ -1067,7 +1075,7 @@ with solve_requirements (fuel : nat) (root : gsym) : M unit :=
                               end in
                 let! old := cached_reqs s in
                 if list_eq_dec Nat.eq_dec found (opt_default [] old) then ret ch
-                else set_reqs s found ;; ret true) false group in
+                else set_nominal_reqs s found ;; ret true) false group in
             if changed then iterate n' else ret tt
         end in
       iterate 10000
