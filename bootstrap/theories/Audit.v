@@ -4025,6 +4025,15 @@ End Elaboration.
       Oracle outputs are identical on all 243 programs and on the compiler
       compiling tests/wasi/tags.moss; the self-hosted compiler (src/) is
       unchanged and still accepts such a program.
+  41. (discrepancy, open) `main` under another name.  Elaborates asks
+      that the entry's scope map `main` to xo_main and that xo_main's
+      declaration be `fn main` (ADFn RPlain "main" ...).  The elaborator
+      takes whatever symbol the entry's scope has under `main`, so it runs
+      an entry that is only `import "./lib.moss" use start as main;`,
+      whose `main` is lib's `fn start`; that program has no relation.
+      Either the relation drops the name (the scope already says which fn
+      is main), or the elaborator asks that the entry declare `main`
+      itself.  Nothing proved depends on the choice.
 *)
 
 (* ######################################################################## *)
