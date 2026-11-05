@@ -2498,6 +2498,18 @@ Definition LangSym (W : world) (short : string) (ns : nspace) (n : name) (s : na
   exists d, w_decl W s = Some d /\ ends_with (String.append "lib/" (String.append short ".moss")) (d_mod d) /\
             filed_name (d_ast d) = Some (ns, n).
 
+(* [D75]/m4: the platform's reference tags, `Ref` and `Array` of
+   lib/wasm.moss, which only the library builds from a bare handle (note
+   32). *)
+Definition PlatformRefTag (W : world) (s : nat) : Prop :=
+  LangSym W "wasm" NSName "Ref" s \/ LangSym W "wasm" NSName "Array" s.
+
+(* Module p is one of the library's: its path has the directory of the
+   loaded lib/wasm.moss as a prefix (Elab.in_library). *)
+Definition InLibrary (W : world) (p : string) : Prop :=
+  exists s d dir rest, w_decl W s = Some d /\ ends_with "lib/wasm.moss" (d_mod d) /\
+    d_mod d = String.append dir "wasm.moss" /\ p = String.append dir rest.
+
 (* ======================================================================== *)
 (* V.2 Types                                                                 *)
 (* ======================================================================== *)
@@ -3149,6 +3161,8 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
 (* a tag applied to its payload *)
 | ExTag : forall F C exp pa a args s bs xs pay y v ty,
     resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag ->
+    (* a bare handle becomes a `Ref`/`Array` only in the library (note 32) *)
+    ~ (PlatformRefTag W s /\ ~ InLibrary W (fr_mod F)) ->
     Brackets W (fr_mod F) (c_ty C) s a bs ->
     Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ c_ty C) = Some (snd ra)) (w_reqs W s) xs ->
     PayloadOf W s xs pay ->
@@ -3911,6 +3925,16 @@ End Elaboration.
       mentioned in a nominal's body (FNom) require nothing while the
       elaborator reads its fixed requirements: least is now over the R
       that agree with w_reqs on everything but tags and aliases.
+  32. (relation permissive) [D75]/m4: a `Ref`/`Array` built from a bare
+      `StructRef`/`ArrayRef`.  The elaborator rejects `Ref(h)`/`Array(h)`
+      outside the library's directory, but `ExTag` accepted it.  Minimal
+      rule: `ExTag` gains the premise
+      `~ (PlatformRefTag W s /\ ~ InLibrary W (fr_mod F))`, where
+      `PlatformRefTag W s := LangSym W "wasm" NSName "Ref" s \/
+      LangSym W "wasm" NSName "Array" s`, and `InLibrary W p` says p's path
+      has the directory of the loaded `lib/wasm.moss` as a prefix, as
+      Elab's `in_library` checks.  (RelSupport's `ex` discharges it with
+      `not_ref` for every other tag.)
 *)
 
 (* ######################################################################## *)

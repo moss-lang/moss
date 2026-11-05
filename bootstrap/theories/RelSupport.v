@@ -323,6 +323,13 @@ Ltac locals_none :=
   let n := fresh "n" in let E := fresh "E" in
   intros n E; first [ discriminate E | injection E as <-; comp ].
 
+(* ExTag's library premise (note 32), for a tag that is not lib/wasm.moss's
+   `Ref` or `Array` *)
+Ltac not_ref :=
+  let H := fresh "H" in let d := fresh "d" in let Hd := fresh "Hd" in let Hn := fresh "Hn" in
+  intros [H _]; destruct H as [(d & Hd & _ & Hn)|(d & Hd & _ & Hn)];
+  vm_compute in Hd; injection Hd; intro; subst d; vm_compute in Hn; discriminate Hn.
+
 Ltac fits_tac := first [ left; vm_compute; reflexivity | right; left; vm_compute; reflexivity ].
 
 Ltac opt_fits_tac := first [ exact I | simpl; fits_tac ].
@@ -345,7 +352,7 @@ Ltac ex :=
   | (eapply ExVal; [locals_none | comp | comp | comp | comp])
   | (eapply ExCallA; [comp | comp | do 3 eexists; comp | comp | args])
   | (eapply ExCallD; [comp | comp | do 4 eexists; comp | ctx_tac | satisfies | sigof | args])
-  | (eapply ExTag; [comp | comp | apply BrNone | forall2_args | payload | reflexivity | ex | fits_tac]) ]
+  | (eapply ExTag; [comp | comp | not_ref | apply BrNone | forall2_args | payload | reflexivity | ex | fits_tac]) ]
 with args := first [ apply ArgsNil | (eapply ArgsCons; [ex | fits_tac | args]) ]
 with payload := eapply PayTag; [comp | comp | simpl; tyof]
 with satisfies :=
