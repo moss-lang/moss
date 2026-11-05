@@ -18,7 +18,7 @@
 
 From Stdlib Require Import List.
 From NM Require Import Audit CoreMoss MossX Sx Elab Specialization RelFacts.
-From NM Require FastPath WorldSound ElabFrame.
+From NM Require FastPath WorldSound ElabFrame ReqsTotal.
 Import ListNotations.
 
 Module Certified <: PROVED_NOW.
@@ -88,6 +88,11 @@ Definition elaboration_frame := ElabFrame.elaborate_frame.
 (* the requirements the elaborator computes for a val, fn, method, context
    or functor are Part V's AssumeTypes (toward ReqsReading's rr_plain) *)
 Definition assume_types_exact := WorldSound.load_world_assume_types.
+(* and, steps 1-3 together: whenever the elaborator accepts a bundle, the
+   loader's world with the requirement lists the elaborator cached (the
+   least relevance-closed ones, and AssumeTypes, for the symbols it never
+   asked about) and any injective field numbering is a WorldOf of it *)
+Definition elaborate_world_of := ReqsTotal.elaborate_world_of.
 
 (* The executable roots (Extract2.v extracts these). *)
 Definition elaborate_sx := Certified.elaborate_sx.

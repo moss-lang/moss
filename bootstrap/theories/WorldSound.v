@@ -2367,45 +2367,22 @@ Proof.
 Qed.
 
 (* ======================================================================== *)
-(* world_todo: what WorldOf still needs, stated and NOT proved              *)
+(* world_todo: what WorldOf needed (now all proved)                         *)
 (* ======================================================================== *)
 
 (* With s the elaborator's final state (RelSupport.run_elab keeps it) and
    w = st_w s the loader's world:
 
-   TODO_reqs_reading:
-     ReqsReading (W_read w R F) for an R that agrees with every requirement
-     list the elaborator uses.  PROVED so far: a loader symbol's kind is its
-     declaration's (LInv's li_kind, KindOK), every scope or export entry
-     that is not a module alias is a loader symbol (sym_entries,
-     resolved_loader), and Elab.assume_type_syms computes exactly
-     AssumeTypes, without repeats, in any state elaboration reaches
-     (assume_type_syms_exact, load_world_assume_types).  Remaining:
-     (a) DONE (ElabFrame.v, ReqOK in elab_frame): every cached list is
-         without repeats and of a symbol; of a val/fn/method/context/
-         functor it is AssumeTypes, of a type or unit [].  (The elaborator's
-         two tag/alias writes go through set_nominal_reqs, a guard and a
-         dedup that change nothing on any input: Audit.v note 29.)
-     (b) DONE (ReqsSolve.v; RC and RL in elab_frame): for every tag or
-         alias the elaborator cached, its list is closed against the cache
-         (its listed parameters, and the FreeIn symbols of its body read
-         against the cache, are in it, and every symbol its body reads is
-         cached), each listed parameter is a type its assume nesting
-         requires (rr_listed), and it is inside every relevance-closed R
-         that holds the cached lists of the symbols that are no tag or
-         alias (rr_least, for any R agreeing with the cache there).
-         solve_requirements' group is exactly the uncached tags and aliases
-         its root reaches; its rounds read only cached tags and aliases, so
-         nothing nests, and a round that changes nothing leaves the group
-         closed.  What rr_closed/rr_least still need is (c): lists for
-         the symbols never cached, agreeing with these;
-     (c) R for the symbols the elaborator never asked about: an
-         independent, proved computation of the same sets (AssumeTypes is
-         a reachability through contexts that may be cyclic, which the
-         elaborator's 64-step walk does not finish), or RelSupport.run_elab's
-         fold of `reqs` over every symbol, proved to succeed on accepted
-         bundles (it need not: an unused context nested 65 deep).
-     Estimate: (c) 500-800 lines.
+   TODO_reqs_reading: DONE.  (a) ElabFrame.v's ReqOK: the cached lists of
+   symbols that are no tag or alias.  (b) ReqsSolve.v: the cached lists of
+   tags and aliases are closed and least.  (c) ReqsTotal.v: lists for the
+   symbols never cached (AssumeTypes and the least relevance-closed sets,
+   computed by a Kleene iteration over the loader's symbols, so neither
+   the depth nor the cycles of contexts matter), agreeing with the cache;
+   and every tag's listed parameters, which the elaborator now checks of
+   every tag (Audit.v note 40).  ReqsTotal.elaborate_world_of: an accepted
+   bundle's loader world, with those lists and any injective field
+   numbering, is a WorldOf of it.
 
    TODO_fld_injective and TODO_syms_frame: DONE in ElabFrame.v
    (elab_frame, elaborate_frame): every function of the elaborator keeps
