@@ -1378,6 +1378,7 @@ Record ReqsReading (W : A.world) : Prop := {
   rr_none : forall s, A.kind_sym W s = Some A.DKType \/ A.kind_sym W s = Some A.DKUnit -> A.w_reqs W s = [];
   rr_closed : A.RelevanceClosed W (A.w_reqs W);
   rr_least : forall R, A.RelevanceClosed W R ->
+      (forall s, A.kind_sym W s <> Some A.DKTag -> A.kind_sym W s <> Some A.DKAlias -> R s = A.w_reqs W s) ->
       forall g, (A.kind_sym W g = Some A.DKTag \/ A.kind_sym W g = Some A.DKAlias) -> incl (A.w_reqs W g) (R g);
   rr_listed : forall g d ps t n, A.w_decl W g = Some d -> A.nominal_body (A.d_ast d) = Some (ps, t) -> In n ps ->
       exists x, A.resolve_sym W (A.d_mod d) [n] = Some x /\ A.AssumeTypes W g x

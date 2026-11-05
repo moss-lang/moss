@@ -2435,6 +2435,8 @@ Inductive FreeIn (W : world) (R : nat -> list nat) (p : string) : aty -> nat -> 
     ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some x) ->
     FreeIn W R p (ATRef pa a) x
 | FBracket : forall pa a bpath sp d sa x,
+    (* the head resolves to a symbol (note 31) *)
+    resolve_sym W p pa <> None ->
     In (bpath, Spec (Some sp) d sa) (match a with Some bs => bs | None => [] end) ->
     FreeIn W R p (ATRef sp sa) x -> FreeIn W R p (ATRef pa a) x.
 
@@ -2477,6 +2479,9 @@ Record WorldOf (b : bundle) (W : world) : Prop := {
   wo_reqs_none : forall s, kind_sym W s = Some DKType \/ kind_sym W s = Some DKUnit -> w_reqs W s = [];
   wo_reqs_closed : RelevanceClosed W (w_reqs W);
   wo_reqs_least : forall R, RelevanceClosed W R ->
+      (* R agrees with the requirements fixed above, of everything but a
+         tag or alias (note 31) *)
+      (forall s, kind_sym W s <> Some DKTag -> kind_sym W s <> Some DKAlias -> R s = w_reqs W s) ->
       forall g, (kind_sym W g = Some DKTag \/ kind_sym W g = Some DKAlias) -> incl (w_reqs W g) (R g);
   wo_listed : forall g d ps t n, w_decl W g = Some d -> nominal_body (d_ast d) = Some (ps, t) -> In n ps ->
       exists x, resolve_sym W (d_mod d) [n] = Some x /\ AssumeTypes W g x;
@@ -3857,6 +3862,36 @@ End Elaboration.
       so nothing changes (oracle outputs checked identical, as in note 27);
       the guard makes the requirement cache's invariant (ElabFrame.ReqOK)
       provable step by step.
+  30. (discrepancy, open) Depth of contexts.  AssumeTypes/SpecTypes
+      (V.1) reach a context's type symbols through contexts nested to any
+      depth, and allow cycles (context A naming context B naming A: the
+      inductive simply has finite derivations).  The elaborator walks
+      contexts 64 deep (assume_type_syms -> walk_specs 64) and fails
+      ("context nests too deeply") beyond that, including on any cycle.
+      Soundness is unaffected where the elaborator succeeds
+      (WorldSound.assume_type_syms_exact: what it computes is exactly
+      AssumeTypes).  It matters for (i) completeness (a bundle with a
+      65-deep or cyclic nesting has a reading, and the elaborator rejects
+      it), and (ii) WorldOf's requirement lists for symbols the
+      elaborator never asks about (TODO_reqs_reading (c)), which cannot be
+      had by running the elaborator's own `reqs` on them.  Options:
+      (a) the relation bounds the depth too (SpecTypes indexed by a depth
+          <= 64): faithful, but an arbitrary constant in the language;
+      (b) the relation forbids cyclic contexts (a WorldOf condition, like
+          wo_acyclic for imports) and the elaborator walks to a fixed point
+          over a visited set, so no bound is needed: the design notes
+          should say whether a cycle of contexts is legal;
+      (c) keep both and record that completeness holds only below depth 64.
+      Proved work around it does not depend on the choice.
+  31. (relation wrong, adjusted to the elaborator) Relevance (V.1).
+      FreeIn's FBracket read a bracket's right side even when the head of
+      `R[…]` resolves to nothing; the elaborator (free_type_syms) reads
+      brackets only under a head that resolves to a symbol.  FBracket now
+      asks that.  And wo_reqs_least quantified over every relevance-closed
+      R, which constrains only tags and aliases, so R could make a val
+      mentioned in a nominal's body (FNom) require nothing while the
+      elaborator reads its fixed requirements: least is now over the R
+      that agree with w_reqs on everything but tags and aliases.
 *)
 
 (* ######################################################################## *)
