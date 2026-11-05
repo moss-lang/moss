@@ -1310,7 +1310,8 @@ Fixpoint elab_type (fuel : nat) (t : aty) (mi : nat) (tm : list (nat * ety)) (e 
                              end
                        | _ => let! s := show x in err mi ("union member `" ++ s ++ "` is not nominal (D15)")
                        end) out (members y)) [] ms in
-          ret (YUnion out)
+          (* a union of no members is `|` (Audit note 42) *)
+          ret (match out with [] => YNever | _ => YUnion out end)
       | ATRef p a =>
           let! g := resolve_type_symbol mi p in
           match a with
@@ -2008,40 +2009,44 @@ Definition require_needs (mi : nat) (e : env) (callee : gsym) (info : fninfo) : 
 
 (* ===================== 12. Syntax helpers ================================= *)
 
-Fixpoint has_break_e (fuel : nat) (x : aexpr) : bool :=
-  match fuel with
-  | 0 => false
-  | S f =>
-      match x with
-      | AEBreak => true
-      | AECall _ _ args => existsb (has_break_e f) args
-      | AEField o _ => has_break_e f o
-      | AEMeth o _ args => has_break_e f o || existsb (has_break_e f) args
-      | AERec _ _ fs => existsb (fun p => match snd p with Some v => has_break_e f v | None => false end) fs
-      | AEIf c t el => has_break_e f c || has_break_b f t ||
-                       match el with Some y => has_break_e f y | None => false end
-      | AEMatch s arms => has_break_e f s || existsb (fun a => has_break_e f (snd a)) arms
-      | AEReturn (Some y) => has_break_e f y
-      | AEBlock b => has_break_b f b
-      | AEUnary _ y => has_break_e f y
-      | AEBinary _ l r => has_break_e f l || has_break_e f r
-      | AELam _ _ b => has_break_e f b
-      | _ => false
-      end
+(* whether a `break` in x (or b) leaves the innermost enclosing loop: not
+   one inside a nested `while` or `loop` (Audit note 42: structural, so at
+   any depth) *)
+Fixpoint has_break_e (x : aexpr) : bool :=
+  match x with
+  | AEBreak => true
+  | AECall _ _ args => (fix go (l : list aexpr) := match l with [] => false | y :: r => has_break_e y || go r end) args
+  | AEField o _ => has_break_e o
+  | AEMeth o _ args =>
+      has_break_e o || (fix go (l : list aexpr) := match l with [] => false | y :: r => has_break_e y || go r end) args
+  | AERec _ _ fs =>
+      (fix go (l : list (name * option aexpr)) :=
+         match l with [] => false | (_, Some v) :: r => has_break_e v || go r | (_, None) :: r => go r end) fs
+  | AEIf c t el => has_break_e c || has_break_b t ||
+                   match el with Some y => has_break_e y | None => false end
+  | AEMatch s arms =>
+      has_break_e s ||
+      (fix go (l : list (apat * aexpr)) := match l with [] => false | (_, y) :: r => has_break_e y || go r end) arms
+  | AEReturn (Some y) => has_break_e y
+  | AEBlock b => has_break_b b
+  | AEUnary _ y => has_break_e y
+  | AEBinary _ l r => has_break_e l || has_break_e r
+  | AELam _ _ b => has_break_e b
+  | _ => false
   end
-with has_break_b (fuel : nat) (b : ablock) : bool :=
-  match fuel with
-  | 0 => false
-  | S f =>
-      match b with
-      | ABlock ss t =>
-          existsb (fun s => match s with
-                            | ASLet _ _ y | ASVar _ _ y | ASAssign _ y | ASExpr y => has_break_e f y
-                            | ASBind its => existsb (fun p => match snd p with Some y => has_break_e f y | None => false end) its
-                            | ASWhile _ _ | ASLoop _ => false
-                            end) ss ||
-          match t with Some y => has_break_e f y | None => false end
-      end
+with has_break_b (b : ablock) : bool :=
+  match b with
+  | ABlock ss t =>
+      (fix go (l : list astmt) := match l with [] => false | s :: r => has_break_s s || go r end) ss ||
+      match t with Some y => has_break_e y | None => false end
+  end
+with has_break_s (s : astmt) : bool :=
+  match s with
+  | ASLet _ _ y | ASVar _ _ y | ASAssign _ y | ASExpr y => has_break_e y
+  | ASBind its =>
+      (fix go (l : list (spec * option aexpr)) :=
+         match l with [] => false | (_, Some y) :: r => has_break_e y || go r | (_, None) :: r => go r end) its
+  | ASWhile _ _ | ASLoop _ => false
   end.
 
 (* every single-segment name an expression might read as a local *)
@@ -2981,7 +2986,7 @@ with check_stmt (fuel : nat) (c : cx) (e : env) (s : astmt) {struct fuel}
       ret ([SWhile cond body], e, c, false)
   | ASLoop b =>
       let! (body, _, _) := synth_block f (cx_in_loop c) e b None in
-      ret ([SLoop body], e, c, negb (has_break_b 10000 b))
+      ret ([SLoop body], e, c, negb (has_break_b b))
   | ASExpr y =>
       let! (v, t) := synth f c e y None in
       ret ([SExpr v], e, c, is_never t)
@@ -3737,6 +3742,12 @@ with lower_body (fuel : nat) (g : gsym) {struct fuel} : M unit :=
       let e := fold_left (fun e p => set_local e (fst p) (snd p) LLet) (sg_params sg) e in
       let vars := (match this with Some _ => [("this", 0)] | None => [] end) in
       let vars := vars +++ combine (map fst (sg_params sg)) (seq (List.length vars) (List.length (sg_params sg))) in
+      (* parameters are numbered by name: no two may share one (Audit note 43) *)
+      let fix dup (l : list string) : option string :=
+        match l with [] => None | x :: r => if smem x r then Some x else dup r end in
+      match dup (map fst vars) with
+      | Some n => err mi ("parameter `" ++ n ++ "` of `" ++ gs_name g ++ "` is declared twice")
+      | None =>
       let c := Cx mi sg this 0 [] "" [] [] in
       emit_fn (gs_id g) XUnit ;;   (* a placeholder, so a recursive reference finds it lowered *)
       let! (body, _, _) := with_vars vars (synth_block f c e b (Some (sg_ret sg))) in
@@ -3747,6 +3758,7 @@ with lower_body (fuel : nat) (g : gsym) {struct fuel} : M unit :=
                       | KyVal v => match nget (en_vals e) v with Some t => layout_ok e t | None => ret tt end
                       | _ => ret tt end) (fi_needs info) ;;
       emit_fn (gs_id g) body
+      end
   end end
 
 (* D70: an anonymous function at a bind: captured locals become vals bound

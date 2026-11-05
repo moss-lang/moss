@@ -3079,6 +3079,43 @@ Inductive LetStmt : astmt -> name -> option aty -> aexpr -> lmut -> Prop :=
 | LSLet : forall n a y, LetStmt (ASLet n a y) n a y LLet
 | LSVar : forall n a y, LetStmt (ASVar n a y) n a y LVar.
 
+(* Whether a `break` in an expression, block or statement leaves the
+   innermost loop around it: one not inside a nested `while` or `loop`
+   (note 42). *)
+Inductive Breaks : aexpr -> Prop :=
+| BkBreak : Breaks AEBreak
+| BkCall : forall p a args y, In y args -> Breaks y -> Breaks (AECall p a args)
+| BkField : forall o n, Breaks o -> Breaks (AEField o n)
+| BkMethRecv : forall o p args, Breaks o -> Breaks (AEMeth o p args)
+| BkMethArg : forall o p args y, In y args -> Breaks y -> Breaks (AEMeth o p args)
+| BkRec : forall p a fs n y, In (n, Some y) fs -> Breaks y -> Breaks (AERec p a fs)
+| BkIfC : forall c b e, Breaks c -> Breaks (AEIf c b e)
+| BkIfB : forall c b e, BlockBreaks b -> Breaks (AEIf c b e)
+| BkIfE : forall c b y, Breaks y -> Breaks (AEIf c b (Some y))
+| BkMatchS : forall s arms, Breaks s -> Breaks (AEMatch s arms)
+| BkMatchA : forall s arms pt y, In (pt, y) arms -> Breaks y -> Breaks (AEMatch s arms)
+| BkReturn : forall y, Breaks y -> Breaks (AEReturn (Some y))
+| BkBlock : forall b, BlockBreaks b -> Breaks (AEBlock b)
+| BkUnary : forall op y, Breaks y -> Breaks (AEUnary op y)
+| BkBinL : forall op l r, Breaks l -> Breaks (AEBinary op l r)
+| BkBinR : forall op l r, Breaks r -> Breaks (AEBinary op l r)
+| BkLam : forall ps r y, Breaks y -> Breaks (AELam ps r y)
+with BlockBreaks : ablock -> Prop :=
+| BBStmt : forall ss tl s, In s ss -> StmtBreaks s -> BlockBreaks (ABlock ss tl)
+| BBTail : forall ss y, Breaks y -> BlockBreaks (ABlock ss (Some y))
+with StmtBreaks : astmt -> Prop :=
+| SBLet : forall n t y, Breaks y -> StmtBreaks (ASLet n t y)
+| SBVar : forall n t y, Breaks y -> StmtBreaks (ASVar n t y)
+| SBAssign : forall n y, Breaks y -> StmtBreaks (ASAssign n y)
+| SBExpr : forall y, Breaks y -> StmtBreaks (ASExpr y)
+| SBBind : forall its sp y, In (sp, Some y) its -> Breaks y -> StmtBreaks (ASBind its).
+
+(* The type a block has as a branch of an `if` or a `match` arm: its
+   tail's, and `()` without a tail, even if it cannot fall through
+   (note 42). *)
+Definition branch_ty (b : ablock) (t : ty) : ty :=
+  match b with ABlock _ None => TUnit | ABlock _ (Some _) => t end.
+
 (* Auxiliary judgments (not mutually recursive with the main ones). *)
 
 Inductive Join : ty -> ty -> option ty -> ty -> Prop :=
@@ -3246,7 +3283,7 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     Ex W P F C (AEIf c b None) exp (XIf cx' bx XUnit) TUnit
 | ExIfElse : forall F C exp c b y cx' bx bt ex' et t,
     Cond W P F C c cx' -> BlkE W P F C b exp bx bt ->
-    Ex W P F C y exp ex' et -> Join bt et exp t ->
+    Branch W P F C y exp ex' et -> Join (branch_ty b bt) et exp t ->
     Ex W P F C (AEIf c b (Some y)) exp (XIf cx' bx ex') t
 | ExMatch : forall F C exp s arms sx st xarms t,
     Ex W P F C s None sx st ->
@@ -3275,7 +3312,8 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     Ex W P F C (AERec pa a fs) exp (XTag s xs (XRec xfs)) (TNom s xs)
 | ExField : forall F C exp o n ox ot rec t,
     Ex W P F C o None ox ot ->
-    (match ot with TNom s xs => kind_sym W s = Some DKTag /\ PayloadOf W s xs rec | _ => rec = ot end) ->
+    (* a tag's payload, or a bare record (note 44) *)
+    ((exists s xs, ot = TNom s xs /\ kind_sym W s = Some DKTag /\ PayloadOf W s xs rec) \/ rec = ot) ->
     (exists ftys, rec = TNom rec_head ftys /\ nlook (w_fld W n) ftys = Some t) ->
     Ex W P F C (AEField o n) exp (XField ox (w_fld W n)) t
 
@@ -3293,6 +3331,15 @@ with Cond (W : world) (P : xprogram) : frame -> cx -> aexpr -> xexpr -> Prop :=
     LangSym W "bool" NSName "Bool" b ->
     Ex W P F C c (Some (TNom b [])) x t -> fits t (TNom b []) -> Cond W P F C c x
 
+(* a branch of an `if` (its `else`) or a match arm: a block has its
+   branch type, or the expected one (note 42) *)
+with Branch (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> xexpr -> ty -> Prop :=
+| BranchBlock : forall F C b exp x t,
+    BlkE W P F C b exp x t ->
+    Branch W P F C (AEBlock b) exp x (match exp with Some e => e | None => branch_ty b t end)
+| BranchExpr : forall F C y exp x t,
+    (forall b, y <> AEBlock b) -> Ex W P F C y exp x t -> Branch W P F C y exp x t
+
 (* branches agree, or the expected type decides *)
 
 with Arms (W : world) (P : xprogram) : frame -> cx -> ty -> list (apat * aexpr) -> option ty -> list (xpat * xexpr) -> ty -> Prop :=
@@ -3307,13 +3354,13 @@ with Arms (W : world) (P : xprogram) : frame -> cx -> ty -> list (apat * aexpr) 
 with ArmsList (W : world) (P : xprogram) : frame -> cx -> ty -> list (apat * aexpr) -> option ty -> list (xpat * xexpr) -> list nat -> bool -> ty -> Prop :=
 | ArmsOne : forall F C st pat body exp xp binds hs ca bx bt,
     PatOf W F st pat xp binds hs ca ->
-    Ex W P F (fold_left (fun C q => add_local C (fst q) (snd q) LLet) binds C) body exp bx bt ->
+    Branch W P F (fold_left (fun C q => add_local C (fst q) (snd q) LLet) binds C) body exp bx bt ->
     opt_fits bt exp ->
-    ArmsList W P F C st [(pat, body)] exp [(xp, bx)] hs ca (match exp with Some e => e | None => bt end)
+    ArmsList W P F C st [(pat, body)] exp [(xp, bx)] hs ca bt
 | ArmsMore : forall F C st pat body rest exp xp binds hs ca bx bt xr hr cr tr t,
     rest <> [] ->
     PatOf W F st pat xp binds hs ca ->
-    Ex W P F (fold_left (fun C q => add_local C (fst q) (snd q) LLet) binds C) body exp bx bt ->
+    Branch W P F (fold_left (fun C q => add_local C (fst q) (snd q) LLet) binds C) body exp bx bt ->
     opt_fits bt exp ->
     ArmsList W P F C st rest exp xr hr cr tr ->
     Join bt tr exp t ->
@@ -3432,9 +3479,15 @@ with Blk (W : world) (P : xprogram) : frame -> cx -> list astmt -> option aexpr 
     Blk W P F C rest tl exp xr t made ->
     Blk W P F C (ASWhile c b :: rest) tl exp (XSeq (XWhile cx' bx) xr) t made
 | BlkLoop : forall F C b rest tl exp bx bt xr t made,
+    (rest <> [] \/ tl <> None \/ BlockBreaks b) ->
     BlkE W P (with_loop F) C b None bx bt ->
     Blk W P F C rest tl exp xr t made ->
     Blk W P F C (ASLoop b :: rest) tl exp (XSeq (XLoop bx) xr) t made
+(* a block whose last statement is a `loop` no `break` leaves cannot fall
+   through (note 42) *)
+| BlkLoopLast : forall F C b exp bx bt,
+    BlkE W P (with_loop F) C b None bx bt -> ~ BlockBreaks b ->
+    Blk W P F C [ASLoop b] None exp (XSeq (XLoop bx) XUnit) never []
 (* a bind statement: its items in order, each wrapping the rest *)
 | BlkBind : forall F C its rest tl exp wrap C' F' xr t made made',
     BindItems W P F C its wrap C' F' made ->
@@ -4034,6 +4087,56 @@ End Elaboration.
       Either the relation drops the name (the scope already says which fn
       is main), or the elaborator asks that the entry declare `main`
       itself.  Nothing proved depends on the choice.
+  42. (relation incomplete and wrong; adjusted to the elaborator, which
+      changes only where noted) Divergence in blocks.  The elaborator
+      gives a block two types: the one its value has (`|` when its last
+      statement cannot fall through: an expression of type `|`, or a
+      `loop` no `break` leaves), and its type as a branch (its tail's, `()`
+      without a tail), which `if` and `match` join.  The relation had only
+      the first, and not for a loop:
+      (a) `fn stop(): Never { loop {} }` (tests/wasi/branches_diverge.moss)
+          had no reading: Blk typed a block ending in a statement `loop`
+          `()`.  New rule BlkLoopLast: a block whose last statement is a
+          `loop` no `break` leaves (BlockBreaks, defined structurally) is
+          `|`; BlkLoop now asks that something follow or that the loop
+          break, as BlkExpr does.
+      (b) a branch block without a tail that cannot fall through is `()`
+          to the elaborator (synth_if, synth_match use block_type) and was
+          `|` to the relation, so `if c { return; } else { return; }` was
+          `()` there and `|` here, and a later `match` on it (a catch-all
+          arm, accepted) had no reading (ArmsSome asks st <> never).  New
+          judgment Branch (an `else` and a match arm: a block has
+          branch_ty, `()` without a tail, or the expected type), used by
+          ExIfElse (the then-block joins at branch_ty too) and ArmsOne/
+          ArmsMore; ArmsOne's type is the arm's, as the elaborator's
+          one-arm match is (it joined with the expected type only from
+          the second arm on).
+      (c) elaborator: has_break_e/has_break_b walked 10000 deep, so a
+          `break` nested deeper made its loop count as never falling
+          through (and the program ran into what followed).  They are now
+          structural (has_break_s for statements), BlockBreaks's mirror.
+      (d) elaborator: a union type all of whose members are `|` (`N | N`
+          for `type N = |;`) was YUnion [], which is_never does not see,
+          while TyUnion makes it TUnion [] = never; elab_type now gives
+          YNever for a union of no members.
+      Oracle stdout, stderr and exit status are identical on all 243
+      programs and on the compiler compiling tests/wasi/tags.moss.
+  43. (elaborator unsound; adjusted to the relation) Two parameters of a
+      fn with one name, `fn pick(x: I32, x: I32): I32 { x }`.  Numbering
+      (V.6) numbers parameter i as i (after `this`) by name, so no
+      numbering exists and such a fn has no reading; the elaborator
+      accepted it (`x` read the first).  lower_body now rejects it ("is
+      declared twice"), as lambda_provider already did for an anonymous
+      function's parameters.  Oracle outputs identical as in note 42; the
+      self-hosted compiler (src/) is unchanged.
+  44. (relation incomplete; adjusted to the elaborator) A field of a bare
+      record, `fn get(r: { a: I32, b: I32 }): I32 { r.b }`
+      (tests/wasi/record_payload_param.moss, note 35).  A record's type is
+      TNom rec_head …, which ExField's `match ot with TNom s xs => …`
+      read as a tag's application and asked kind_sym W rec_head = tag,
+      which never holds, so the program had no reading.  ExField now asks
+      that the receiver be a tag's application whose payload is the
+      record, or the record itself.
 *)
 
 (* ######################################################################## *)

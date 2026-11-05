@@ -44,13 +44,58 @@ Record Inv (s : st) : Prop := {
   iv_reqs : forall b, load_world b = Good (st_w s) -> ReqOK s
 }.
 
+(* The locals numbered so far: distinct names, numbered 0, 1, … in order
+   (BodySound.v reads a body's frame off them). *)
+Definition VShape (s : st) : Prop :=
+  NoDup (map fst (st_vars s)) /\ map snd (st_vars s) = seq 0 (List.length (st_vars s)) /\
+  st_nvar s = List.length (st_vars s).
+
+(* What a step does to the body-level state: locals only numbered anew,
+   bodies only emitted (prepended), unsupported constructs only noted, the
+   library modules unchanged. *)
+Record FrX (s s' : st) : Prop := {
+  fx_vars : exists l, st_vars s' = st_vars s ++ l;
+  fx_vshape : VShape s -> VShape s';
+  fx_fns : exists l, st_fns s' = l ++ st_fns s;
+  fx_funs : exists l, st_funs s' = l ++ st_funs s;
+  fx_unsup : exists l, st_unsup s' = st_unsup s ++ l;
+  fx_lang : st_lang s' = st_lang s
+}.
+
+Lemma frx_same : forall s s', st_vars s' = st_vars s -> st_nvar s' = st_nvar s -> st_fns s' = st_fns s ->
+  st_funs s' = st_funs s -> st_unsup s' = st_unsup s -> st_lang s' = st_lang s -> FrX s s'.
+Proof.
+  intros s s' E1 E2 E3 E4 E5 E6. constructor.
+  - exists []. rewrite app_nil_r. exact E1.
+  - unfold VShape. rewrite E1, E2. auto.
+  - exists []. exact E3.
+  - exists []. exact E4.
+  - exists []. rewrite app_nil_r. exact E5.
+  - exact E6.
+Qed.
+
+Lemma frx_trans : forall s1 s2 s3, FrX s1 s2 -> FrX s2 s3 -> FrX s1 s3.
+Proof.
+  intros s1 s2 s3 [(l1 & V1) S1 (f1 & N1) (g1 & G1) (u1 & U1) L1] [(l2 & V2) S2 (f2 & N2) (g2 & G2) (u2 & U2) L2].
+  constructor.
+  - exists (l1 ++ l2). rewrite V2, V1, app_assoc. reflexivity.
+  - auto.
+  - exists (f2 ++ f1). rewrite N2, N1, app_assoc. reflexivity.
+  - exists (g2 ++ g1). rewrite G2, G1, app_assoc. reflexivity.
+  - exists (u1 ++ u2). rewrite U2, U1, app_assoc. reflexivity.
+  - congruence.
+Qed.
+
+#[export] Hint Extern 1 (FrX _ _) => (apply frx_same; reflexivity) : core.
+
 Record Fr0 (s s' : st) : Prop := {
   fr_w : st_w s' = st_w s;
   fr_next : st_next s <= st_next s';
   fr_keep : forall i g, nget (st_syms s) i = Some g -> nget (st_syms s') i = Some g;
   fr_new : forall i g, nget (st_syms s) i = None -> nget (st_syms s') i = Some g -> gs_origin g <> OSource;
   fr_new_above : forall i g, nget (st_syms s) i = None -> nget (st_syms s') i = Some g -> st_next s <= i;
-  fr_flds : forall f n, sassoc f (st_flds s) = Some n -> sassoc f (st_flds s') = Some n
+  fr_flds : forall f n, sassoc f (st_flds s) = Some n -> sassoc f (st_flds s') = Some n;
+  fr_x : FrX s s'
 }.
 
 Record Fr (s s' : st) : Prop := {
@@ -69,7 +114,7 @@ Proof. intros s s' F E1 E2. constructor; [exact F | exact (relok_same s s' E1 E2
 
 Lemma fr0_trans : forall s1 s2 s3, Fr0 s1 s2 -> Fr0 s2 s3 -> Fr0 s1 s3.
 Proof.
-  intros s1 s2 s3 [A1 B1 C1 D1 G1 E1] [A2 B2 C2 D2 G2 E2]. constructor; auto.
+  intros s1 s2 s3 [A1 B1 C1 D1 G1 E1 X1] [A2 B2 C2 D2 G2 E2 X2]. constructor; auto.
   - congruence.
   - lia.
   - intros i g H1 H3. destruct (nget (st_syms s2) i) as [g'|] eqn:E.
@@ -78,6 +123,7 @@ Proof.
   - intros i g H1 H3. destruct (nget (st_syms s2) i) as [g'|] eqn:E.
     + rewrite (C2 i g' E) in H3. injection H3 as <-. exact (G1 i g' H1 E).
     + pose proof (G2 i g E H3). lia.
+  - exact (frx_trans _ _ _ X1 X2).
 Qed.
 
 Lemma fr_trans : forall s1 s2 s3, Fr s1 s2 -> Fr s2 s3 -> Fr s1 s3.
@@ -113,16 +159,16 @@ Proof. intros A r s a s' Hi H. unfold lift in H. destruct r; [injection H as <- 
 Lemma ok_keep : forall A (f : st -> A * st),
   (forall s, st_w (snd (f s)) = st_w s /\ st_next (snd (f s)) = st_next s /\
              st_syms (snd (f s)) = st_syms s /\ st_flds (snd (f s)) = st_flds s /\
-             st_reqs (snd (f s)) = st_reqs s) ->
+             st_reqs (snd (f s)) = st_reqs s /\ FrX s (snd (f s))) ->
   ok (fun s => Good (f s)).
 Proof.
-  intros A f Hf s a s' [Ia If Id Il Ifr Ir] H. injection H as E. destruct (Hf s) as (E1 & E2 & E3 & E4 & E5).
-  rewrite E in E1, E2, E3, E4, E5. cbn in E1, E2, E3, E4, E5.
+  intros A f Hf s a s' [Ia If Id Il Ifr Ir] H. injection H as E. destruct (Hf s) as (E1 & E2 & E3 & E4 & E5 & E6).
+  rewrite E in E1, E2, E3, E4, E5, E6. cbn in E1, E2, E3, E4, E5, E6.
   split; [constructor; [rewrite E2, E3; exact Ia | rewrite E4; exact If | rewrite E3; exact Id
                        | rewrite E1, E3; exact Il | rewrite E1, E3; exact Ifr
                        | intros b Hb; rewrite E1 in Hb; unfold ReqOK; rewrite E1, E3, E5; exact (Ir b Hb)]|].
   apply fr_of0; [|exact E1 | exact E5].
-  constructor; [exact E1 | lia | rewrite E3; auto | rewrite E3; intros; congruence | rewrite E3; intros; congruence | rewrite E4; auto].
+  constructor; [exact E1 | lia | rewrite E3; auto | rewrite E3; intros; congruence | rewrite E3; intros; congruence | rewrite E4; auto | exact E6].
 Qed.
 
 Lemma ok_fresh : ok fresh.
@@ -188,6 +234,83 @@ Qed.
 Lemma ok_reader : forall A (m : M A), (forall s a s', m s = Good (a, s') -> s' = s) -> ok m.
 Proof. intros A m Hm s a s' Hi H. rewrite (Hm _ _ _ H). split; [exact Hi | apply fr_refl]. Qed.
 
+(* The four steps that change the body-level state. *)
+Lemma ok_with_vars : forall A init (m : M A), ok m -> ok (with_vars init m).
+Proof.
+  intros A init m Hm s a s' Hi H. unfold with_vars in H.
+  apply bind_inv in H as (s0 & s1 & E0 & H). injection E0 as <- <-.
+  apply bind_inv in H as (u & s2 & E1 & H). unfold upd in E1. injection E1 as <- <-.
+  apply bind_inv in H as (r & s3 & H3 & H).
+  apply bind_inv in H as (u' & s4 & E2 & H). unfold upd in E2. injection E2 as <- <-.
+  injection H as <- <-.
+  assert (Hi2 : Inv (s_vars init (List.length init) s)) by (destruct Hi; constructor; assumption).
+  destruct (Hm _ _ _ Hi2 H3) as [Hi3 [[F1 F2 F3 F4 F5 F6 [_ _ X3 X4 X5 X6]] Fr3]].
+  split; [destruct Hi3; constructor; assumption|]. constructor.
+  - constructor; cbn [s_vars st_w st_next st_syms st_flds st_vars st_nvar st_fns st_funs st_unsup st_lang] in *; auto.
+    constructor; cbn [s_vars st_w st_next st_syms st_flds st_vars st_nvar st_fns st_funs st_unsup st_lang] in *; auto.
+    + exists []. rewrite app_nil_r. reflexivity.
+  - intro Hr. apply Fr3. exact Hr.
+Qed.
+
+Lemma ok_local_var : forall x, ok (local_var x).
+Proof.
+  intros x s a s' Hi H. unfold local_var in H. apply bind_inv in H as (s0 & s1 & E0 & H). injection E0 as <- <-.
+  destruct (sassoc x (st_vars s)) as [n|] eqn:Ex.
+  - injection H as <- <-. split; [exact Hi | apply fr_refl].
+  - apply bind_inv in H as (u & s2 & E1 & H). unfold upd in E1. injection E1 as <- <-. injection H as <- <-.
+    split; [destruct Hi; constructor; assumption|].
+    apply fr_of0; [|reflexivity|reflexivity]. constructor; cbn; auto; try (intros; congruence).
+    constructor; cbn; auto.
+    + exists [(x, st_nvar s)]. reflexivity.
+    + intros (Nd & Sn & Nv). unfold VShape. cbn. rewrite !map_app, !length_app. cbn.
+      split; [|split].
+      * apply NoDup_app; [exact Nd | constructor; [intros []|constructor] |].
+        intros y Hy [<-|[]]. apply in_map_iff in Hy as ([y' k] & E & Hy). cbn in E. subst y'.
+        clear -Ex Hy. induction (st_vars s) as [|[y k'] r IH]; [destruct Hy|]. cbn in Ex.
+        destruct (String.eqb_spec x y); [discriminate|]. destruct Hy as [E|Hy]; [congruence | exact (IH Ex Hy)].
+      * rewrite Sn, seq_app. cbn. rewrite Nv. reflexivity.
+      * lia.
+    + exists []. reflexivity.
+    + exists []. reflexivity.
+    + exists []. rewrite app_nil_r. reflexivity.
+Qed.
+
+Lemma ok_emit_fn : forall g x, ok (emit_fn g x).
+Proof.
+  intros g x s a s' Hi H. unfold emit_fn, upd in H. injection H as <- <-.
+  split; [destruct Hi; constructor; assumption|].
+  apply fr_of0; [|reflexivity|reflexivity]. constructor; cbn; auto; try (intros; congruence).
+  constructor; cbn; auto.
+  - exists []. rewrite app_nil_r. reflexivity.
+  - exists [(g, x)]. reflexivity.
+  - exists []. reflexivity.
+  - exists []. rewrite app_nil_r. reflexivity.
+Qed.
+
+Lemma ok_funs_cons : forall x, ok (upd (s_funs (fun l => x :: l))).
+Proof.
+  intros x s a s' Hi H. unfold upd in H. injection H as <- <-.
+  split; [destruct Hi; constructor; assumption|].
+  apply fr_of0; [|reflexivity|reflexivity]. constructor; cbn; auto; try (intros; congruence).
+  constructor; cbn; auto.
+  - exists []. rewrite app_nil_r. reflexivity.
+  - exists []. reflexivity.
+  - exists [x]. reflexivity.
+  - exists []. rewrite app_nil_r. reflexivity.
+Qed.
+
+Lemma ok_unsupported : forall why, ok (unsupported why).
+Proof.
+  intros why s a s' Hi H. unfold unsupported in H. injection H as <- <-.
+  split; [destruct Hi; constructor; assumption|].
+  apply fr_of0; [|reflexivity|reflexivity]. constructor; cbn; auto; try (intros; congruence).
+  constructor; cbn; auto.
+  - exists []. rewrite app_nil_r. reflexivity.
+  - exists []. reflexivity.
+  - exists []. reflexivity.
+  - exists [why]. reflexivity.
+Qed.
+
 Ltac reader :=
   apply ok_reader; let s := fresh "s" in let a := fresh "a" in let s' := fresh "s'" in let H := fresh "H" in
   intros s a s' H;
@@ -195,7 +318,7 @@ Ltac reader :=
   try discriminate; congruence.
 
 Create HintDb okdb.
-#[export] Hint Resolve ok_ret ok_fail ok_get ok_lift ok_fresh ok_fld_id : okdb.
+#[export] Hint Resolve ok_ret ok_fail ok_get ok_lift ok_fresh ok_fld_id ok_local_var ok_emit_fn ok_unsupported : okdb.
 #[export] Hint Extern 1 (ok (new_sym _ _ _ _ _)) => (apply ok_new_sym; discriminate) : okdb.
 
 Ltac head_of t := lazymatch t with ?f _ => head_of f | _ => t end.
@@ -219,8 +342,10 @@ Ltac okt :=
   | |- ok (mmap _ _) => apply ok_mmap
   | |- ok (mfold _ _ _) => apply ok_mfold
   | |- ok (miter _ _) => apply ok_miter
-  | |- ok (upd _) => unfold upd; apply ok_keep; intro; split; [reflexivity|split; [reflexivity|split; [reflexivity|split; reflexivity]]]
-  | |- ok (fun s => Good (_, _)) => apply ok_keep; intro; split; [reflexivity|split; [reflexivity|split; [reflexivity|split; reflexivity]]]
+  | |- ok (upd (s_funs (fun l => ?x :: l))) => apply ok_funs_cons
+  | |- ok (upd _) => unfold upd; apply ok_keep; intro; split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|auto]]]]]
+  | |- ok (fun s => Good (_, _)) => apply ok_keep; intro; split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|auto]]]]]
+  | |- ok (with_vars _ _) => apply ok_with_vars
   | |- ok (fun s => _) => reader
   | |- ok ?t =>
       first [ solve [auto with okdb]
