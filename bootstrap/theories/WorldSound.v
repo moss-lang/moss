@@ -169,6 +169,15 @@ Definition is_attached (d : adecl) : Prop :=
 Lemma attached_not_filed : forall d, is_attached d -> A.filed_name d = None.
 Proof. intros d (rn & n & ps & rt & body & ->). reflexivity. Qed.
 
+(* A symbol's kind, as Part V reads it off its declaration. *)
+Definition kconv (k : kind) : A.dkind :=
+  match k with
+  | KType => A.DKType | KUnit => A.DKUnit | KAlias => A.DKAlias | KTag => A.DKTag | KVal => A.DKVal
+  | KFn => A.DKFn | KCtx => A.DKCtx | KMethod => A.DKMeth | KFunctor => A.DKFunctor
+  end.
+
+Definition KindOK (g : gsym) : Prop := A.kind_of (gs_decl g) = Some (kconv (gs_kind g)).
+
 Section Declare.
 
 Variable mi : nat.
@@ -201,7 +210,8 @@ Record DInv (st : decl_st) : Prop := {
        gs_decl g = ADFn (RAttached rn) n ps rt body /\ sassoc rn (gm_names (ds_mod st)) = Some r;
   di_pending : forall d asm, In (d, asm) (ds_pending st) -> Leaf asm d /\ is_attached d;
   di_path : gm_path (ds_mod st) = path;
-  di_aliases : gm_aliases (ds_mod st) = []
+  di_aliases : gm_aliases (ds_mod st) = [];
+  di_kind : forall s g, nget (ds_syms st) s = Some g -> next0 <= s -> KindOK g
 }.
 
 Definition HasSym (st : decl_st) (d : adecl) (asm : list (Input.path * option name)) : Prop :=
@@ -220,9 +230,10 @@ Lemma fresh_name_spec : forall st n k d asm st1,
   define_name (DSt (ds_mod st) (nset (ds_syms st) (ds_next st) (GSym (ds_next st) mi n k d None asm OSource))
                    (S (ds_next st)) (ds_pending st)) n (ds_next st) = Good st1 ->
   A.filed_name d = Some (A.NSName, n) -> A.kind_of d <> None -> Leaf asm d ->
+  A.kind_of d = Some (kconv k) ->
   DInv st -> DInv st1 /\ (forall d' a, Has st d' a -> Has st1 d' a) /\ HasSym st1 d asm.
 Proof.
-  intros st n k d asm st1 Hdef Hf Hk Hl H.
+  intros st n k d asm st1 Hdef Hf Hk Hl Hkd H.
   unfold define_name in Hdef. cbn [ds_mod ds_syms ds_next ds_pending] in Hdef.
   destruct (sassoc n (gm_names (ds_mod st))) eqn:En; [discriminate|].
   injection Hdef as <-.
@@ -266,6 +277,9 @@ Proof.
     + exact (di_pending _ H).
     + exact (di_path _ H).
     + exact (di_aliases _ H).
+    + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
+      * injection Hg0 as <-. unfold KindOK, g. cbn [gs_decl gs_kind]. exact Hkd.
+      * exact (di_kind _ H s0 g0 Hg0 Hs0).
   - intros d' a [(s & g' & Hle & Hs & E1 & E2)|Hp]; [left|right; exact Hp].
     exists s, g'. split; [exact Hle|]. split; [apply Hget; exact Hs|]. auto.
   - exists id, g. cbn [ds_syms]. rewrite nget_nset_same. split; [exact (di_next _ H)|]. auto.
@@ -275,6 +289,7 @@ Qed.
 Lemma fresh_detached_spec : forall st n d asm,
   sassoc n (gm_detached (ds_mod st)) = None ->
   A.filed_name d = Some (A.NSDetached, n) -> A.kind_of d <> None -> Leaf asm d ->
+  A.kind_of d = Some (kconv KMethod) ->
   DInv st ->
   let id := ds_next st in
   let st1 := DSt (ds_mod st) (nset (ds_syms st) id (GSym id mi ("." ++ n) KMethod d None asm OSource)) (S id) (ds_pending st) in
@@ -285,7 +300,7 @@ Lemma fresh_detached_spec : forall st n d asm,
                  (ds_syms st1) (ds_next st1) (ds_pending st1) in
   DInv st2 /\ (forall d' a, Has st d' a -> Has st2 d' a) /\ HasSym st2 d asm.
 Proof.
-  intros st n d asm En Hf Hk Hl H id st1 m1 st2.
+  intros st n d asm En Hf Hk Hl Hkd H id st1 m1 st2.
   subst st2 m1 st1. set (g := GSym id mi ("." ++ n) KMethod d None asm OSource).
   assert (Hid : forall s g', nget (ds_syms st) s = Some g' -> s <> id).
   { intros s g' Hs E. subst s. pose proof (dinv_sym_lt _ _ _ H Hs). unfold id in *. lia. }
@@ -325,6 +340,9 @@ Proof.
     + exact (di_pending _ H).
     + exact (di_path _ H).
     + exact (di_aliases _ H).
+    + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
+      * injection Hg0 as <-. unfold KindOK, g. cbn [gs_decl gs_kind]. exact Hkd.
+      * exact (di_kind _ H s0 g0 Hg0 Hs0).
   - intros d' a [(s & g' & Hle & Hs & E1 & E2)|Hp]; [left|right; exact Hp].
     exists s, g'. split; [exact Hle|]. split; [apply Hget; exact Hs|]. auto.
   - exists id, g. cbn [ds_syms]. rewrite nget_nset_same. split; [exact (di_next _ H)|]. auto.
@@ -380,19 +398,20 @@ Proof.
                 (forall its inner, d <> ADAssume its inner) ->
                 define_name (DSt (ds_mod st) (nset (ds_syms st) (ds_next st) (GSym (ds_next st) mi n k d None asm OSource))
                                  (S (ds_next st)) (ds_pending st)) n (ds_next st) = Good st1 ->
+                A.kind_of d = Some (kconv k) ->
                 DInv st1 /\ (forall d0 a, Has st d0 a -> Has st1 d0 a) /\
                 (forall asm' d', ((d' = d /\ asm' = [] /\ forall its inner, d <> ADAssume its inner) \/
                                   (exists its inner a', d = ADAssume its inner /\ A.OccursIn inner a' d' /\ asm' = its ++ a')) ->
                                  A.kind_of d' <> None -> Has st1 d' (asm ++ asm'))).
-      { intros n k Hf Hk Hna Hdef.
-        destruct (fresh_name_spec st n k d asm st1 Hdef Hf Hk (HL0 Hna) H) as (D1 & D2 & D3).
+      { intros n k Hf Hk Hna Hdef Hkd.
+        destruct (fresh_name_spec st n k d asm st1 Hdef Hf Hk (HL0 Hna) Hkd H) as (D1 & D2 & D3).
         split; [exact D1|]. split; [exact D2|].
         intros asm' d' [(-> & -> & _)|(its & inner & a' & E & _)] _.
         - rewrite app_nil_r. left. exact D3.
         - exfalso. exact (Hna its inner E). }
       destruct d as [its inner|n|n t|n ps t|n|n t i|[| |rn] n ps rt body|n its|n ps a r b];
         cbv beta iota zeta in Hd; try unfold fresh_sym in Hd; cbv beta iota zeta in Hd;
-        try (apply (Hnamed _ _ eq_refl ltac:(discriminate) ltac:(discriminate) Hd)).
+        try (apply (Hnamed _ _ eq_refl ltac:(discriminate) ltac:(discriminate) Hd eq_refl)).
       - (* assume *)
         destruct (IH st (asm ++ its) inner st1 Hd) as (D1 & D2 & D3).
         + intros a d' Ho. rewrite <- app_assoc. apply Hl. eapply A.OccNested; [left; reflexivity | exact Ho].
@@ -406,7 +425,7 @@ Proof.
         destruct (sassoc n (gm_detached (ds_mod st))) eqn:En; [unfold err_in in Hd; discriminate|].
         injection Hd as <-.
         assert (Hna : forall its inner, ADFn RDetached n ps rt None <> ADAssume its inner) by discriminate.
-        destruct (fresh_detached_spec st n (ADFn RDetached n ps rt None) asm En eq_refl ltac:(discriminate) (HL0 Hna) H)
+        destruct (fresh_detached_spec st n (ADFn RDetached n ps rt None) asm En eq_refl ltac:(discriminate) (HL0 Hna) eq_refl H)
           as (D1 & D2 & D3).
         split; [exact D1|]. split; [exact D2|].
         intros asm' d' [(-> & -> & _)|(its & inner & a' & E & _)] _.
@@ -489,6 +508,9 @@ Proof.
     + exact (di_pending _ H).
     + exact (di_path _ H).
     + exact (di_aliases _ H).
+    + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
+      * injection Hg0 as <-. unfold KindOK, g. cbn [gs_decl gs_kind]. reflexivity.
+      * exact (di_kind _ H s0 g0 Hg0 Hs0).
   - intros d' a (s & g' & Hle & Hs & E1 & E2).
     exists s, g'. split; [exact Hle|]. split; [apply Hget; exact Hs|]. auto.
   - exists id, g. cbn [ds_syms]. rewrite nget_nset_same. split; [exact (di_next _ H)|]. auto.
@@ -541,7 +563,8 @@ Proof.
     - intros r n s E. discriminate E.
     - intros d a [].
     - reflexivity.
-    - reflexivity. }
+    - reflexivity.
+    - intros s g Hg Hs. rewrite (Hold s Hs) in Hg. discriminate. }
   destruct (declare_walk_spec _ _ _ _ _ Hw (fun a d Ho => Ho) H0) as (W1 & _ & W3).
   assert (W1' : DInv (DSt (ds_mod st1) (ds_syms st1) (ds_next st1) [])) by (apply dinv_pending; [exact W1 | intros d a []]).
   destruct (declare_attached_spec _ _ _ Ha (di_pending _ W1) W1') as (A1 & A2 & A3 & A4).
@@ -901,7 +924,8 @@ Record LInv (st : load_st) : Prop := {
   li_tables : forall p i m am, In (p, i) (ls_loaded st) -> nget (ls_mods st) i = Some m ->
     A.module_of b p = Some am ->
     Rep m (fun ns n x => OwnRaw (ls_syms st) i ns n x \/ ImpsRaw st am ns n x)
-          (fun ns n x => OwnRaw (ls_syms st) i ns n x \/ ImpsRaw st am ns n x \/ GlobsRaw st am ns n x)
+          (fun ns n x => OwnRaw (ls_syms st) i ns n x \/ ImpsRaw st am ns n x \/ GlobsRaw st am ns n x);
+  li_kind : forall s g, nget (ls_syms st) s = Some g -> KindOK g
 }.
 
 Lemma loaded_fun : forall st p i j, LInv st -> In (p, i) (ls_loaded st) -> In (p, j) (ls_loaded st) -> i = j.
@@ -1195,6 +1219,9 @@ Proof.
       eapply rep_ext; [exact R| |]; intros ns n x; cbn [ls_syms];
         rewrite (add_own_old i Hne), (add_imps_old am' q i Hq' Hma); [reflexivity|].
       rewrite (add_globs_old am' q i Hq' Hma). reflexivity.
+  - intros s g Hs. cbn [ls_syms] in Hs. destruct (add_syms_split _ _ Hs) as [Hs'|(Hle & _)].
+    + exact (li_kind _ H1 s g Hs').
+    + exact (di_kind _ _ _ _ _ _ DI s g Hs Hle).
 Qed.
 
 End Add.
@@ -1746,6 +1773,277 @@ Proof.
     + injection H as <-. reflexivity.
 Qed.
 
+(* ---- requirements of a val/fn/method/context/functor: assume_type_syms ---- *)
+
+Lemma sym_entries : forall i p m am, In (p, i) (ls_loaded st) -> nget (ls_mods st) i = Some m ->
+  A.module_of b p = Some am ->
+  forall ex ns n x, ns <> A.NSAlias -> sassoc n (tbl m ex ns) = Some x -> exists g, nget (ls_syms st) x = Some g.
+Proof.
+  intro i. induction i as [i IH] using lt_wf_ind. intros p m am Hi Hm Hma ex ns n x Hns Hx.
+  pose proof (li_tables _ _ HI p i m am Hi Hm Hma) as Rp.
+  assert (Hs : sassoc n (tbl m false ns) = Some x)
+    by (destruct ex; [apply (rep_scope _ _ _ Rp), (rep_sub _ _ _ Rp), (rep_exp _ _ _ Rp); exact Hx | exact Hx]).
+  apply (rep_scope _ _ _ Rp) in Hs as [(g & Hg & _)|[(t & imp & tj & tm & Hin & Htj & Htm & Hq9)|(t & imp & tj & tm & Hin & Htj & Htm & _ & Hq9)]].
+  - exists g. exact Hg.
+  - destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm' & Hj & Hlt & _).
+    pose proof (loaded_fun _ _ _ _ _ HI Htj Hj) as ->.
+    destruct (fin_path t j Hj) as (tm'' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
+    destruct Hq9 as [(_ & E & _)|(_ & u & _ & _ & [(_ & -> & Ex)|[(_ & -> & Ex)|(_ & E & _)]])];
+      try (exfalso; exact (Hns E)).
+    + exact (IH j Hlt t tm amt Hj Htm Hamt true A.NSDetached (u_name u) x ltac:(discriminate) Ex).
+    + exact (IH j Hlt t tm amt Hj Htm Hamt true A.NSName (u_name u) x ltac:(discriminate) Ex).
+  - destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm' & Hj & Hlt & _).
+    pose proof (loaded_fun _ _ _ _ _ HI Htj Hj) as ->.
+    destruct (fin_path t j Hj) as (tm'' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
+    exact (IH j Hlt t tm amt Hj Htm Hamt true ns n x Hns Hq9).
+Qed.
+
+Lemma find_mod_loaded : forall p cm, find_mod w p (w_order w) = Some cm ->
+  exists j q am, In (q, j) (ls_loaded st) /\ nget (ls_mods st) j = Some cm /\ A.module_of b q = Some am.
+Proof.
+  intros p cm. cbn [w_order w].
+  assert (Hall : forall j, In j (ls_order st) -> exists q, In (q, j) (ls_loaded st)) by (intros j Hj; apply (li_order _ _ HI); exact Hj).
+  revert Hall. generalize (ls_order st). intro l. induction l as [|j r IHl]; intros Hall H; [discriminate|].
+  cbn [find_mod] in H. destruct (String.eqb (gm_path (get_mod w j)) p).
+  - injection H as <-. destruct (Hall j (or_introl eq_refl)) as (q & Hq).
+    destruct (fin_path q j Hq) as (m & am & Em & Gm & _ & Hma). exists j, q, am. rewrite Gm. auto.
+  - apply IHl; [intros j' Hj'; apply Hall; right; exact Hj' | exact H].
+Qed.
+
+Lemma table_esym : forall (tab : string -> A.nspace -> name -> option A.ent) ex p ns n x,
+  (forall p ns n, tab p ns n = match find_mod w p (w_order w) with
+                               | Some m => option_map (aent w ns) (sassoc n (tbl m ex ns)) | None => None end) ->
+  tab p ns n = Some (A.ESym x) -> exists g, nget (ls_syms st) x = Some g.
+Proof.
+  intros tab ex p ns n x Ht H. rewrite Ht in H.
+  destruct (find_mod w p (w_order w)) as [cm|] eqn:Ef; [|discriminate].
+  destruct (find_mod_loaded p cm Ef) as (j & q & am & Hq & Ej & Hma).
+  destruct (sassoc n (tbl cm ex ns)) as [y|] eqn:Ey; [|discriminate]. cbn in H.
+  destruct ns; cbn in H; try discriminate; injection H as ->.
+  - exact (sym_entries j q cm am Hq Ej Hma ex A.NSName n x ltac:(discriminate) Ey).
+  - exact (sym_entries j q cm am Hq Ej Hma ex A.NSDetached n x ltac:(discriminate) Ey).
+Qed.
+
+Lemma resolved_loader : forall p pa x, A.resolve W p pa = Some (A.ESym x) -> exists g, nget (ls_syms st) x = Some g.
+Proof.
+  assert (Hrest : forall segs e0 x, A.resolve_rest W e0 segs = Some (A.ESym x) ->
+            e0 = A.ESym x \/ exists t ns seg, A.w_exp W t ns seg = Some (A.ESym x)).
+  { induction segs as [|seg r IH]; intros e0 x H; cbn [A.resolve_rest] in H.
+    - injection H as ->. left. reflexivity.
+    - destruct e0 as [s0|t]; [discriminate|]. right.
+      destruct (A.w_exp W t A.NSName seg) as [e1|] eqn:E1.
+      + destruct (IH e1 x H) as [->|X]; [exists t, A.NSName, seg; exact E1 | exact X].
+      + destruct (A.w_exp W t A.NSAlias seg) as [e1|] eqn:E2; [|discriminate].
+        destruct (IH e1 x H) as [->|X]; [exists t, A.NSAlias, seg; exact E2 | exact X]. }
+  intros p [|hd rest] x H; cbn [A.resolve] in H; [discriminate|].
+  assert (Hsc : forall ns, A.w_scope W p ns hd = Some (A.ESym x) -> exists g, nget (ls_syms st) x = Some g)
+    by (intros ns E; exact (table_esym (A.w_scope W) false p ns hd x (fun _ _ _ => eq_refl) E)).
+  assert (Hex : forall t ns seg, A.w_exp W t ns seg = Some (A.ESym x) -> exists g, nget (ls_syms st) x = Some g)
+    by (intros t ns seg E; exact (table_esym (A.w_exp W) true t ns seg x (fun _ _ _ => eq_refl) E)).
+  destruct (A.w_scope W p A.NSName hd) as [e1|] eqn:E1.
+  - destruct (Hrest rest e1 x H) as [->|(t & ns & seg & X)]; [exact (Hsc _ E1) | exact (Hex _ _ _ X)].
+  - destruct (A.w_scope W p A.NSAlias hd) as [e1|] eqn:E2; [|discriminate].
+    destruct (Hrest rest e1 x H) as [->|(t & ns & seg & X)]; [exact (Hsc _ E2) | exact (Hex _ _ _ X)].
+Qed.
+
+(* the states elaboration reaches keep the loader's world and symbols *)
+Definition GS (s : Elab.st) : Prop :=
+  st_w s = w /\ forall i g, nget (ls_syms st) i = Some g -> nget (st_syms s) i = Some g.
+
+Definition pathi (mi : nat) : string := gm_path (get_mod w mi).
+
+Lemma esym_resolve : forall mi pa s r s', GS s -> In mi (ls_order st) ->
+  Elab.resolve_sym mi pa s = Good (r, s') ->
+  s' = s /\ match r with
+            | Some g => A.resolve_sym W (pathi mi) pa = Some (gs_id g) /\ nget (ls_syms st) (gs_id g) = Some g
+            | None => A.resolve_sym W (pathi mi) pa = None
+            end.
+Proof.
+  intros mi pa s r s' [Gw Gk] Hmi H. unfold Elab.resolve_sym in H.
+  apply bind_inv in H as (r0 & s1 & H1 & H). unfold rpath in H1. rewrite Gw in H1.
+  destruct (Elab.resolve_path w mi pa) as [r1|m] eqn:Er; [|discriminate]. injection H1 as -> E2. subst s1.
+  destruct (proj1 (li_order _ _ HI mi) Hmi) as (q & Hq).
+  destruct (fin_path q mi Hq) as (m & am & Em & Gm & Pm & _).
+  pose proof (resolve_path_agrees q mi m pa r0 Hq Em Er) as Ra.
+  assert (Hp : pathi mi = q) by (unfold pathi; rewrite Gm; exact Pm).
+  unfold A.resolve_sym. rewrite Hp, Ra.
+  destruct r0 as [[x|j]|].
+  - apply bind_inv in H as (g & s2 & H2 & H). unfold sym in H2.
+    destruct (nget (st_syms s) x) as [g'|] eqn:Ex; [|discriminate]. injection H2 as <- <-. injection H as <- <-.
+    split; [reflexivity|].
+    destruct (resolved_loader q pa x ltac:(rewrite Ra; reflexivity)) as (g0 & Hg0).
+    rewrite (Gk x g0 Hg0) in Ex. injection Ex as <-.
+    destruct (li_syms _ _ HI x g0 Hg0) as (_ & _ & Hid & _). rewrite Hid. auto.
+  - injection H as <- <-. auto.
+  - injection H as <- <-. auto.
+Qed.
+
+Lemma kconv_type : forall k, kconv k = A.DKType -> k = KType.
+Proof. intros []; cbn; congruence. Qed.
+Lemma kconv_ctx : forall k, kconv k = A.DKCtx -> k = KCtx.
+Proof. intros []; cbn; congruence. Qed.
+
+Lemma loader_decl : forall x g, nget (ls_syms st) x = Some g ->
+  A.w_decl W x = Some (A.Decl (pathi (gs_mod g)) (gs_decl g) (gs_assumes g)) /\
+  A.kind_sym W x = Some (kconv (gs_kind g)) /\ In (gs_mod g) (ls_order st).
+Proof.
+  intros x g Hg. assert (D : A.w_decl W x = Some (A.Decl (pathi (gs_mod g)) (gs_decl g) (gs_assumes g)))
+    by (rewrite fin_decl, Hg; reflexivity).
+  split; [exact D|]. split; [unfold A.kind_sym; rewrite D; exact (li_kind _ _ HI x g Hg)|].
+  destruct (li_syms _ _ HI x g Hg) as (_ & _ & _ & q & Hq). apply (li_order _ _ HI). exists q. exact Hq.
+Qed.
+
+(* the property of a walker of a context's items, at module mi *)
+Definition WalkOk (wk : nat -> list spec -> list nat -> Elab.M (list nat)) : Prop :=
+  forall mi its out s l s', GS s -> In mi (ls_order st) -> NoDup out -> wk mi its out s = Good (l, s') ->
+    s' = s /\ NoDup l /\ incl out l /\
+    (forall t, In t l -> In t out \/ exists sp, In sp its /\ A.SpecTypes W (pathi mi) sp t) /\
+    (forall sp t, In sp its -> A.SpecTypes W (pathi mi) sp t -> In t l).
+
+Definition wstep (wk : nat -> list spec -> list nat -> Elab.M (list nat)) (mi : nat) (p : path) (out : list nat)
+    : Elab.M (list nat) :=
+  let! tg := Elab.resolve_sym mi p in
+  match tg with
+  | Some g =>
+      if kind_eqb (gs_kind g) KType then ret (if nmem (gs_id g) out then out else out ++ [gs_id g])
+      else if kind_eqb (gs_kind g) KCtx then
+        match gs_decl g with
+        | ADCtx _ its => wk (gs_mod g) its out
+        | _ => ret out
+        end
+      else ret out
+  | None => ret out
+  end.
+
+Lemma nmem_in : forall x l, nmem x l = true <-> In x l.
+Proof.
+  intros x l. induction l as [|y r IH]; cbn; [split; [discriminate | intros []]|].
+  rewrite orb_true_iff, Nat.eqb_eq, IH. split; intros [H|H]; auto.
+Qed.
+
+Lemma kind_eqb_spec : forall a c, kind_eqb a c = true <-> a = c.
+Proof. intros [] []; cbn; split; intro H; congruence. Qed.
+
+Lemma wstep_ok : forall wk, WalkOk wk -> forall mi p out s l s', GS s -> In mi (ls_order st) -> NoDup out ->
+  wstep wk mi p out s = Good (l, s') ->
+  s' = s /\ NoDup l /\ incl out l /\
+  (forall t, In t l -> In t out \/ forall a, A.SpecTypes W (pathi mi) (Spec (Some p) None a) t) /\
+  (forall a t, A.SpecTypes W (pathi mi) (Spec (Some p) None a) t -> In t l).
+Proof.
+  intros wk Hwk mi p out s l s' Hgs Hmi Hnd H. unfold wstep in H.
+  apply bind_inv in H as (r & s1 & H1 & H). destruct (esym_resolve mi p s r s1 Hgs Hmi H1) as [-> Hr0].
+  destruct r as [g|].
+  - destruct Hr0 as [Er Hg]. destruct (loader_decl _ g Hg) as (Dg & Kg & Og).
+    destruct (kind_eqb (gs_kind g) KType) eqn:Kt.
+    + apply kind_eqb_spec in Kt. injection H as <- <-.
+      assert (Hin : In (gs_id g) (if nmem (gs_id g) out then out else out ++ [gs_id g])).
+      { destruct (nmem (gs_id g) out) eqn:Em; [apply nmem_in; exact Em | apply in_or_app; right; left; reflexivity]. }
+      split; [reflexivity|]. split.
+      { destruct (nmem (gs_id g) out) eqn:Em; [exact Hnd|]. apply NoDup_app; [exact Hnd | repeat constructor; auto|].
+        intros x Hx [<-|[]]. assert (nmem (gs_id g) out = true) by (apply nmem_in; exact Hx). congruence. }
+      split; [intros x Hx; destruct (nmem (gs_id g) out); [exact Hx | apply in_or_app; left; exact Hx]|].
+      split.
+      * intros t Ht. destruct (nmem (gs_id g) out); [left; exact Ht|].
+        apply in_app_or in Ht as [Ht|[<-|[]]]; [left; exact Ht|]. right. intro a.
+        apply A.STType; [exact Er | rewrite Kg, Kt; reflexivity].
+      * intros a t Hst. inversion Hst as [p0 pa a0 t0 Er' Kt' | p0 pa a0 c d n its sp t0 Er' Dc Ec Hsp Hsub]; subst.
+        -- rewrite Er in Er'. injection Er' as <-. exact Hin.
+        -- rewrite Er in Er'. injection Er' as <-. rewrite Dg in Dc. injection Dc as <-. cbn in Ec.
+           exfalso. pose proof (li_kind _ _ HI _ g Hg) as Kd. unfold KindOK in Kd. rewrite Ec, Kt in Kd. discriminate.
+    + destruct (kind_eqb (gs_kind g) KCtx) eqn:Kc.
+      * apply kind_eqb_spec in Kc. pose proof (li_kind _ _ HI _ g Hg) as Kd. unfold KindOK in Kd. rewrite Kc in Kd.
+        destruct (gs_decl g) as [| | | | | | [| |] ? ? ? ? | n its |] eqn:Ed; cbn in Kd; try discriminate.
+        destruct (Hwk (gs_mod g) its out s l s' Hgs Og Hnd H) as (E1 & E2 & E3 & E4 & E5).
+        split; [exact E1|]. split; [exact E2|]. split; [exact E3|]. split.
+        -- intros t Ht. destruct (E4 t Ht) as [Ho|(sp & Hsp & Hst)]; [left; exact Ho|]. right. intro a.
+           eapply A.STCtx; [exact Er | exact Dg | reflexivity | exact Hsp | exact Hst].
+        -- intros a t Hst. inversion Hst as [p0 pa a0 t0 Er' Kt' | p0 pa a0 c d n' its' sp t0 Er' Dc Ec Hsp Hsub]; subst.
+           ++ rewrite Er in Er'. injection Er' as <-. rewrite Kg, Kc in Kt'. discriminate.
+           ++ rewrite Er in Er'. injection Er' as <-. rewrite Dg in Dc. injection Dc as <-. cbn in Ec, Hsub.
+              try rewrite Ed in Ec. injection Ec as <- <-. exact (E5 sp t Hsp Hsub).
+      * injection H as <- <-. split; [reflexivity|]. split; [exact Hnd|]. split; [intros x Hx; exact Hx|].
+        split; [intros t Ht; left; exact Ht|].
+        intros a t Hst. exfalso. inversion Hst as [p0 pa a0 t0 Er' Kt' | p0 pa a0 c d n' its' sp t0 Er' Dc Ec Hsp Hsub]; subst.
+        -- rewrite Er in Er'. injection Er' as <-. rewrite Kg in Kt'. injection Kt' as Kt'.
+           apply kconv_type in Kt'. rewrite Kt' in Kt. discriminate.
+        -- rewrite Er in Er'. injection Er' as <-. rewrite Dg in Dc. injection Dc as <-. cbn in Ec.
+           pose proof (li_kind _ _ HI _ g Hg) as Kd. unfold KindOK in Kd. rewrite Ec in Kd. injection Kd as Kd.
+           symmetry in Kd. apply kconv_ctx in Kd. rewrite Kd in Kc. discriminate.
+  - injection H as <- <-. split; [reflexivity|]. split; [exact Hnd|]. split; [intros x Hx; exact Hx|].
+    split; [intros t Ht; left; exact Ht|].
+    intros a t Hst. exfalso. inversion Hst; subst; congruence.
+Qed.
+
+(* a fold of steps over a list, each answering its element's types *)
+Lemma fold_walk : forall X (step : list nat -> X -> Elab.M (list nat)) (P : X -> nat -> Prop),
+  (forall x out s l s', GS s -> NoDup out -> step out x s = Good (l, s') ->
+     s' = s /\ NoDup l /\ incl out l /\ (forall t, In t l -> In t out \/ P x t) /\ (forall t, P x t -> In t l)) ->
+  forall xs out s l s', GS s -> NoDup out -> mfold step out xs s = Good (l, s') ->
+  s' = s /\ NoDup l /\ incl out l /\ (forall t, In t l -> In t out \/ exists x, In x xs /\ P x t) /\
+  (forall x t, In x xs -> P x t -> In t l).
+Proof.
+  intros X step P Hs xs. induction xs as [|x r IH]; intros out s l s' Hg Hnd H; cbn [mfold] in H.
+  - injection H as <- <-. split; [reflexivity|]. split; [exact Hnd|]. split; [intros y Hy; exact Hy|].
+    split; [intros t Ht; left; exact Ht | intros x t []].
+  - apply bind_inv in H as (o1 & s1 & H1 & H2).
+    destruct (Hs x out s o1 s1 Hg Hnd H1) as (-> & N1 & I1 & S1 & C1).
+    destruct (IH o1 s l s' Hg N1 H2) as (-> & N2 & I2 & S2 & C2).
+    split; [reflexivity|]. split; [exact N2|]. split; [intros y Hy; apply I2, I1, Hy|]. split.
+    + intros t Ht. destruct (S2 t Ht) as [Ho|(y & Hy & Py)].
+      * destruct (S1 t Ho) as [Ho'|Px]; [left; exact Ho' | right; exists x; split; [left; reflexivity | exact Px]].
+      * right. exists y. split; [right; exact Hy | exact Py].
+    + intros y t [<-|Hy] Py; [apply I2, C1, Py | exact (C2 y t Hy Py)].
+Qed.
+
+Lemma walk_specs_ok : forall fuel, WalkOk (walk_specs fuel).
+Proof.
+  induction fuel as [|f IH]; intros mi its out s l s' Hg Hmi Hnd H; [discriminate|].
+  change (mfold (fun out sp => match sp with
+                               | Spec (Some p) None _ => wstep (walk_specs f) mi p out
+                               | _ => ret out end) out its s = Good (l, s')) in H.
+  refine (fold_walk spec _ (fun sp t => A.SpecTypes W (pathi mi) sp t) _ its out s l s' Hg Hnd H).
+  intros [[p|] [n|] a] o s0 l0 s0' Hg0 Hnd0 H0;
+    try (injection H0 as <- <-; split; [reflexivity|]; split; [exact Hnd0|]; split; [intros y Hy; exact Hy|];
+         split; [intros t Ht; left; exact Ht | intros t Hst; exfalso; inversion Hst]).
+  destruct (wstep_ok _ IH mi p o s0 l0 s0' Hg0 Hmi Hnd0 H0) as (E1 & E2 & E3 & E4 & E5).
+  split; [exact E1|]. split; [exact E2|]. split; [exact E3|].
+  split; [intros t Ht; destruct (E4 t Ht) as [Ho|Hs]; [left; exact Ho | right; exact (Hs a)]|].
+  intros t Hst. exact (E5 a t Hst).
+Qed.
+
+(* The requirements of a val, fn, method, context or functor: what the
+   elaborator computes is exactly AssumeTypes, without repeats. *)
+Theorem assume_type_syms_exact : forall g s l s', GS s -> nget (ls_syms st) (gs_id g) = Some g ->
+  assume_type_syms g s = Good (l, s') ->
+  s' = s /\ NoDup l /\ forall t, In t l <-> A.AssumeTypes W (gs_id g) t.
+Proof.
+  intros g s l s' Hg Hgid H.
+  destruct (loader_decl _ g Hgid) as (Dg & _ & Og).
+  change (mfold (fun out it => match it with
+                               | (p, None) => wstep (walk_specs 64) (gs_mod g) p out
+                               | _ => ret out end) [] (gs_assumes g) s = Good (l, s')) in H.
+  set (step := fun out (it : Input.path * option name) => match it with
+                               | (p, None) => wstep (walk_specs 64) (gs_mod g) p out
+                               | _ => ret out end).
+  set (P := fun (it : Input.path * option name) t =>
+              snd it = None /\ A.SpecTypes W (pathi (gs_mod g)) (Spec (Some (fst it)) None None) t).
+  assert (Hstep : forall x out s l s', GS s -> NoDup out -> step out x s = Good (l, s') ->
+     s' = s /\ NoDup l /\ incl out l /\ (forall t, In t l -> In t out \/ P x t) /\ (forall t, P x t -> In t l)).
+  { intros [p [n|]] o s0 l0 s0' Hg0 Hnd0 H0; unfold step in H0; unfold P.
+    - injection H0 as <- <-. split; [reflexivity|]. split; [exact Hnd0|]. split; [intros y Hy; exact Hy|].
+      split; [intros t Ht; left; exact Ht | intros t [E _]; discriminate E].
+    - destruct (wstep_ok _ (walk_specs_ok 64) (gs_mod g) p o s0 l0 s0' Hg0 Og Hnd0 H0) as (E1 & E2 & E3 & E4 & E5).
+      split; [exact E1|]. split; [exact E2|]. split; [exact E3|].
+      split; [intros t Ht; destruct (E4 t Ht) as [Ho|Hs]; [left; exact Ho | right; split; [reflexivity | exact (Hs None)]]|].
+      intros t [_ Hst]. exact (E5 None t Hst). }
+  destruct (fold_walk _ step P Hstep (gs_assumes g) [] s l s' Hg (NoDup_nil _) H) as (E1 & E2 & _ & E4 & E5).
+  split; [exact E1|]. split; [exact E2|]. intro t. split.
+  - intro Ht. destruct (E4 t Ht) as [[]|([p o] & Hin & Ho & Hst)]. unfold P in *. cbn in Ho, Hst. subst o.
+    exists (A.Decl (pathi (gs_mod g)) (gs_decl g) (gs_assumes g)), p. split; [exact Dg|]. split; [exact Hin|]. exact Hst.
+  - intros (d & pa & Dd & Hin & Hst). rewrite Dg in Dd. injection Dd as <-. cbn in Hin, Hst.
+    exact (E5 (pa, None) t Hin (conj eq_refl Hst)).
+Qed.
+
 End Final.
 
 (* ======================================================================== *)
@@ -1766,6 +2064,7 @@ Proof.
   - intros p i m am [].
   - intros i m r n s H. rewrite nget_NE in H. discriminate.
   - intros p i m am [].
+  - intros s g H. rewrite nget_NE in H. discriminate.
 Qed.
 
 (* Track A, step 1 of elaborate_sound: the loader's reading of a bundle
@@ -1797,6 +2096,24 @@ Proof.
   destruct (li_loaded _ _ L p i Hp) as [_ (m & am & Em & Pm & _)].
   pose proof (resolve_path_agrees b st e L R F p i m pa r Hp Em Hres) as X.
   rewrite (fin_get_mod st e i m Em), Pm. exact X.
+Qed.
+
+(* The requirements of a val, fn, method, context or functor, as the
+   elaborator computes them (Elab.assume_type_syms) in any state that keeps
+   the loader's world and symbols (ElabFrame: every state elaboration
+   reaches): exactly Part V's AssumeTypes, without repeats. *)
+Theorem load_world_assume_types : forall b w R F, load_world b = Good w ->
+  forall s g l s', st_w s = w -> (forall i g0, nget (w_syms w) i = Some g0 -> nget (st_syms s) i = Some g0) ->
+  nget (w_syms w) (gs_id g) = Some g ->
+  assume_type_syms g s = Good (l, s') ->
+  s' = s /\ NoDup l /\ forall t, In t l <-> A.AssumeTypes (W_read w R F) (gs_id g) t.
+Proof.
+  intros b w R F H s g l s' Hsw Hsk Hg Ha. unfold load_world in H.
+  apply rbind_good in H as ([e st] & Hl & H). injection H as <-.
+  destruct (load_spec b _ _ _ _ _ _ Hl (linv_init b)) as (L & _ & He & Hr & _).
+  assert (Hr' : forall q j, In (q, j) (ls_loaded st) -> Reach b (b_entry b) q)
+    by (intros q j Hq; destruct (Hr q j Hq) as [[]|Hq']; exact Hq').
+  exact (assume_type_syms_exact b st e L R F g s l s' (conj Hsw Hsk) Hg Ha).
 Qed.
 
 (* What the elaborator reads a bundle as, when it accepts it. *)
@@ -1906,17 +2223,29 @@ Qed.
    w = st_w s the loader's world:
 
    TODO_reqs_reading:
-     ReqsReading (W_read w (fun x => opt_default [] (nget (st_reqs s') x)) F)
-   where s' is s after `reqs i` for every source symbol i (RelSupport.run_elab
-   does exactly this fold).  The work: type_requirements/solve_requirements
-   compute, per group of mutually mentioning tags and aliases, the least
-   fixed point of free_type_syms from the listed parameters; the proof is a
-   Kleene-iteration argument (monotone, bounded by the group's assume types)
-   plus the caching invariant (a cached list is final).  Two things to check
-   against the relation first: `reqs` runs on fuel 200 and `iterate` on 10000
-   (a failure is an error, so only soundness matters), and wo_reqs_plain
-   counts a context's or functor's own assume nesting (assume_type_syms does
-   too).  Estimate: 1500-2500 lines.
+     ReqsReading (W_read w R F) for an R that agrees with every requirement
+     list the elaborator uses.  PROVED so far: a loader symbol's kind is its
+     declaration's (LInv's li_kind, KindOK), every scope or export entry
+     that is not a module alias is a loader symbol (sym_entries,
+     resolved_loader), and Elab.assume_type_syms computes exactly
+     AssumeTypes, without repeats, in any state elaboration reaches
+     (assume_type_syms_exact, load_world_assume_types).  Remaining:
+     (a) an invariant on st_reqs (ElabFrame's Inv, extended): a cached list
+         of a val/fn/method/context/functor is assume_type_syms's, of a
+         type or unit [], so rr_plain/rr_none hold of the cache; set_reqs
+         occurs only in the requirements group, whose frame lemma must
+         then be proved by hand rather than by okt;
+     (b) for tags and aliases, that solve_requirements' iteration from the
+         listed parameters reaches the least relevance-closed sets
+         (rr_closed, rr_least, rr_listed): a Kleene-iteration argument
+         over each group, with the cached lists of earlier groups final;
+     (c) R for the symbols the elaborator never asked about: an
+         independent, proved computation of the same sets (AssumeTypes is
+         a reachability through contexts that may be cyclic, which the
+         elaborator's 64-step walk does not finish), or RelSupport.run_elab's
+         fold of `reqs` over every symbol, proved to succeed on accepted
+         bundles (it need not: an unused context nested 65 deep).
+     Estimate: (a) 300 lines, (b) 1000-1500, (c) 500-800.
 
    TODO_fld_injective and TODO_syms_frame: DONE in ElabFrame.v
    (elab_frame, elaborate_frame): every function of the elaborator keeps

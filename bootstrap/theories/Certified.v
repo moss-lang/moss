@@ -83,6 +83,9 @@ Definition world_resolves := WorldSound.load_world_resolves.
 (* and what elaboration keeps of that world: its symbols, unchanged; only
    fresh, non-source symbols made; record fields numbered injectively *)
 Definition elaboration_frame := ElabFrame.elaborate_frame.
+(* the requirements the elaborator computes for a val, fn, method, context
+   or functor are Part V's AssumeTypes (toward ReqsReading's rr_plain) *)
+Definition assume_types_exact := WorldSound.load_world_assume_types.
 
 (* The executable roots (Extract2.v extracts these). *)
 Definition elaborate_sx := Certified.elaborate_sx.
