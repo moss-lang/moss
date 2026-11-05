@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/context_brackets.moss: application of `C` binds `U`, which is not one of its parameters (the type symbols its payload mentions: `T`; D71)]

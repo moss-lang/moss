@@ -29,6 +29,11 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
          call to `putchar`, and writes a module that does not validate",
     ),
     (
+        "tests/errors/context_brackets.moss",
+        "the self-hosted compiler lets a bracket on a context item bind a \
+         type symbol that is none of the item's requirements (Audit.v note 56)",
+    ),
+    (
         "tests/errors/merge_cyclic.moss",
         "the self-hosted compiler merges a generation with a type that \
          contains it (no occurs check; Audit.v note 53)",

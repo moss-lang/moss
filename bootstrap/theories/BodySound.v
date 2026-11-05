@@ -156,11 +156,11 @@ End Tr.
 (* canon without merges is the identity *)
 Lemma canon_go_nil : forall fuel t, canon_go fuel [] t = t.
 Proof.
-  induction fuel as [|f IH]; intros t; [reflexivity|]. cbn [canon_go].
-  destruct t as [| |g|n xs|ms|fs]; try reflexivity.
-  - f_equal. induction xs as [|[a y] r IHr]; [reflexivity|]. cbn [map]. rewrite IH. cbn. f_equal. exact IHr.
-  - f_equal. induction ms as [|y r IHr]; [reflexivity|]. cbn [map]. rewrite IH. f_equal. exact IHr.
-  - f_equal. induction fs as [|[a y] r IHr]; [reflexivity|]. cbn [map]. rewrite IH. cbn. f_equal. exact IHr.
+  intros [|f] t; [reflexivity|]. cbn [canon_go].
+  induction t as [| |g|n xs IH|ms IH|fs IH] using ety_ind'; try reflexivity.
+  - f_equal. induction IH as [|[a y] r Hy Hr IHr]; [reflexivity|]. cbn [map fst snd] in *. rewrite Hy. f_equal. exact IHr.
+  - f_equal. induction IH as [|y r Hy Hr IHr]; [reflexivity|]. cbn [map] in *. rewrite Hy. f_equal. exact IHr.
+  - f_equal. induction IH as [|[a y] r Hy Hr IHr]; [reflexivity|]. cbn [map fst snd] in *. rewrite Hy. f_equal. exact IHr.
 Qed.
 
 Lemma canon_nil : forall e t, en_uf e = [] -> canon e t = t.

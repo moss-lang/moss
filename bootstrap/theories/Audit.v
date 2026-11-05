@@ -2549,15 +2549,16 @@ Inductive TyOf (W : world) : string -> list (nat * ty) -> option ty -> aty -> ty
     TyOf W (d_mod d) (bs ++ tm) None body tau ->
     TyOf W p tm th (ATRef pa a) tau
 (* `Brackets W p tm g a bs`: the bracket application `a` on g binds each
-   left side (a type symbol among g's requirements, [D71]) to its right
-   side read here; later bindings override earlier ones. *)
+   left side (a type symbol among g's requirements, [D71]; on a method,
+   any type symbol: note 56) to its right side read here; later bindings
+   override earlier ones. *)
 with Brackets (W : world) : string -> list (nat * ty) -> nat -> option (list (path * spec)) -> list (nat * ty) -> Prop :=
 | BrNone : forall p tm g, Brackets W p tm g None []
 | BrSome : forall p tm g bs l,
     Forall2 (fun b tb =>
                exists sp sa, snd b = Spec (Some sp) None sa /\
                  resolve_sym W p (fst b) = Some (fst tb) /\ kind_sym W (fst tb) = Some DKType /\
-                 In (fst tb) (w_reqs W g) /\
+                 (kind_sym W g <> Some DKMeth -> In (fst tb) (w_reqs W g)) /\
                  TyOf W p tm None (ATRef sp sa) (snd tb)) bs l ->
     Brackets W p tm g (Some bs) (rev l).
 
@@ -4263,6 +4264,48 @@ End Elaboration.
       relation only; the oracle is unchanged.  Still open: note 41 (a
       `main` imported under that name), which IsMainFn, like the
       elaborator's is_main, does not count.
+  55. (elaborator fragile; made total for the proof, no change on any
+      program tried) [D43] Elab.canon followed the merges with a fuel of
+      5000 that counted the type's depth as well as the merge steps, and
+      returned what it had reached when the fuel ran out: a deep enough
+      type, or a long enough chain of merges, came back unresolved, and a
+      key or a fits read off it would not be the relation's (σ is a
+      resolution).  The merges unify makes are triangular (an edge g ↦ t
+      maps a generation not merged yet to a canonical type without g, by
+      the occurs check of note 53), so following them from any type takes
+      at most as many steps along a path as there are edges: canon's fuel
+      now counts only those steps, and is the number of edges plus one,
+      which never runs out (Merge.canon_go_fuel).  unify also compares a
+      nominal's argument keys before zipping its arguments (one head has
+      one argument list, its requirements in order; `combine` dropped a
+      longer list's tail).  PROVED (Merge.v): canon is the resolution of
+      the edges and is idempotent; σ = suf uf, the edges resolved, is an
+      idempotent substitution with tr (canon t) = σ (tr t); whatever
+      respects the edges is unchanged by σ first (resp_mg, most
+      generality); unify keeps the edges triangular, adds only edges every
+      unifier of its two sides respects, and when it adds none its two
+      sides already resolve alike (unify_spec).
+  56. (elaborator unsound; adjusted to the relation) [D71] A bracket on a
+      context, val or fn item binds a type symbol among the item's
+      requirements (Brackets asks it), as on a type or a bind, but
+      add_spec never checked it: `context D = Int, C[T = Int, U = Int];`
+      for a `C` that requires only `T` was accepted (exit status 0), and
+      no CtxOf reads it.  add_spec now checks (check_relevant, the
+      message elab_type's has).  Test: tests/errors/context_brackets.moss;
+      the self-hosted compiler still accepts it (listed as its bug).
+      (relation incomplete; adjusted to the elaborator) A method item's
+      brackets: the designer's [D43] example tests/wasi/merge.moss (and
+      merge_order, merge_functor, functor_merge_bracketed, ...) writes
+      `A.gimme[Foo=B]` for `fn .gimme(): Foo;`, whose requirements are none
+      (it is declared under no assume), so Brackets, asking Foo among them,
+      gave those programs no CtxOf, though the oracle runs them (merge.moss
+      prints `qbq`).  The elaborator binds any type symbol on a method item
+      (and rejects it on a bind: check_relevant, as before); Brackets now
+      asks the left side among the requirements only for a target that is
+      not a method.  Oracle stdout, stderr and exit status for notes 55 and
+      56 are identical to the previous oracle's on all 243 programs of
+      tests/wasi, tests/errors and examples and on the compiler compiling
+      tests/wasi/tags.moss, but for the new error test.
 *)
 
 (* ######################################################################## *)

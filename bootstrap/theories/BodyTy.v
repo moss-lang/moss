@@ -383,10 +383,11 @@ Proof.
         { apply A.BrSome. assert (Gen : forall bs', incl bs' bs -> forall lr', Forall2 (BrRel (path_of mi) tmr) bs' lr' ->
               Forall2 (fun b0 tb => exists sp sa, snd b0 = Spec (Some sp) None sa /\
                  A.resolve_sym WW (path_of mi) (fst b0) = Some (fst tb) /\ A.kind_sym WW (fst tb) = Some A.DKType /\
-                 In (fst tb) (A.w_reqs WW (gs_id g)) /\ A.TyOf WW (path_of mi) tmr None (ATRef sp sa) (snd tb)) bs' lr').
+                 (A.kind_sym WW (gs_id g) <> Some A.DKMeth -> In (fst tb) (A.w_reqs WW (gs_id g))) /\
+                 A.TyOf WW (path_of mi) tmr None (ATRef sp sa) (snd tb)) bs' lr').
           { intros bs' Hin lr' F. induction F as [|b0 tb r r' Hb Hr' IHr]; constructor.
             - destruct Hb as (sp & sa & E1 & E2 & E3 & E4). exists sp, sa. split; [exact E1|]. split; [exact E2|].
-              split; [exact E3|]. split; [|exact E4].
+              split; [exact E3|]. split; [|exact E4]. intros _.
               exact (check_relevant_spec mi g bs s u1 s2 Hi Hw Hmi H2 L2 b0 _ (Hin b0 (or_introl eq_refl)) E2 E3).
             - apply IHr. intros z Hz. apply Hin. right. exact Hz. }
           exact (Gen bs (incl_refl _) lr Fa). }

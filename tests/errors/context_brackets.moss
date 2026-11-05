@@ -1,0 +1,20 @@
+# A bracket on a context item binds one of the item's requirements, as on a
+# type or a bind (D71): `C` requires only `T`, so `C[T = Int, U = Int]`
+# binds `U`, which is not one of them (Audit.v note 56).
+import "../../lib/int.moss" use Int;
+
+type T;
+type U;
+
+assume T {
+  fn same(x: T): T { x }
+  context C = T, same;
+}
+
+context D = Int, C[T = Int, U = Int];
+
+assume D {
+  fn g() {}
+}
+
+fn main() {}

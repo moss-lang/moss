@@ -1118,23 +1118,30 @@ Definition signature_type_syms (g : gsym) (rs : list nat) : M (list nat) :=
 
 (* ===================== 7. Merging and type elaboration =================== *)
 
-Fixpoint canon_go (fuel : nat) (uf : list (nat * ety)) (t : ety) : ety :=
+(* The merges (en_uf) are triangular: unify maps a generation not merged
+   yet to a canonical type that does not contain it, so an entry's type
+   mentions no generation merged at or before it.  Following them from a
+   type therefore takes at most as many steps along any path as there are
+   merges, and canon's fuel counts only those steps, not the type's depth:
+   it cannot run out on a type it has not resolved (Audit note 55). *)
+Fixpoint canon_go (fuel : nat) (uf : list (nat * ety)) (t : ety) {struct fuel} : ety :=
   match fuel with
   | 0 => t
   | S f =>
-      match t with
-      | YAbs g =>
-          match nassoc g uf with
-          | Some t' => if ety_eqb t' t then t else canon_go f uf t'
-          | None => t
-          end
-      | YNom n xs => YNom n (map (fun p => (fst p, canon_go f uf (snd p))) xs)
-      | YUnion ms => YUnion (map (canon_go f uf) ms)
-      | YRec fs => YRec (map (fun p => (fst p, canon_go f uf (snd p))) fs)
-      | _ => t
-      end
+      (fix go (t : ety) : ety :=
+         match t with
+         | YAbs g =>
+             match nassoc g uf with
+             | Some t' => if ety_eqb t' t then t else canon_go f uf t'
+             | None => t
+             end
+         | YNom n xs => YNom n (map (fun p => (fst p, go (snd p))) xs)
+         | YUnion ms => YUnion (map go ms)
+         | YRec fs => YRec (map (fun p => (fst p, go (snd p))) fs)
+         | _ => t
+         end) t
   end.
-Definition canon (e : env) (t : ety) : ety := canon_go FUEL (en_uf e) t.
+Definition canon (e : env) (t : ety) : ety := canon_go (S (List.length (en_uf e))) (en_uf e) t.
 
 (* lower.instantiate: a declaration's type read at a use — each parameter
    becomes the generation of its symbol in force here *)
@@ -1195,8 +1202,13 @@ Fixpoint unify (fuel : nat) (e : env) (mi : nat) (a b : ety) (why : string) : M 
       | YAbs g, _ => if nmem g (ety_gens b) then cyclic else ret (set_uf e g b)
       | _, YAbs g => if nmem g (ety_gens a) then cyclic else ret (set_uf e g a)
       | YNom n xs, YNom m ys =>
-          if Nat.eqb n m then mfold (fun e p => unify f e mi (fst p) (snd p) why) e
-                                    (combine (map snd xs) (map snd ys))
+          (* one head has one argument list (its requirements, in their
+             order); compared for the proof (Audit note 55) *)
+          if Nat.eqb n m then
+            if list_eq_dec Nat.eq_dec (map fst xs) (map fst ys)
+            then mfold (fun e p => unify f e mi (fst p) (snd p) why) e
+                       (combine (map snd xs) (map snd ys))
+            else mismatch
           else mismatch
       | YUnion xs, YUnion ys =>
           if Nat.eqb (List.length xs) (List.length ys)
@@ -1681,6 +1693,11 @@ with add_spec (fuel : nat) (e : env) (mi : nat) (sp : spec) (outer : list (nat *
                         | Some bs => let! s := app_subst 200 e mi bs outer in ret (s +++ outer)
                         | None => ret outer
                         end in
+          (* D71: a bracket on a context, val or fn item binds a type
+             symbol among the item's requirements, as on a type or a bind
+             (a method item's may bind any type symbol: Audit note 56) *)
+          let relevant (g : gsym) : M unit :=
+            match a with Some bs => check_relevant mi g bs | None => ret tt end in
           match d, p with
           | Some dn, None => err mi "a context item needs a receiver for a detached method"
           | Some dn, Some pp =>
@@ -1691,7 +1708,7 @@ with add_spec (fuel : nat) (e : env) (mi : nat) (sp : spec) (outer : list (nat *
               match tg with
               | None => err mi ("`" ++ show_path pp ++ "` is not in scope")
               | Some (EMod _) => err mi "cannot put a module in a context"
-              | Some (ESym s) => let! g := sym s in add_symbol_item f e mi g subst needs
+              | Some (ESym s) => let! g := sym s in relevant g ;; add_symbol_item f e mi g subst needs
               end
           | None, None => err mi "an empty context item"
           end

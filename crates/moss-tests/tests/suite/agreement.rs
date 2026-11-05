@@ -36,6 +36,10 @@ const SELF_HOSTED_BUG_Q5: &str = "self-hosted compiler bug: an attached method o
 /// A self-hosted compiler bug: it reads `T[]` for a type symbol as `T`;
 /// the oracle rejects it (Audit.v note 50).
 const SELF_HOSTED_BUG_TYPE_BRACKETS: &str = "self-hosted compiler bug: empty brackets on a type symbol are accepted";
+/// A self-hosted compiler bug: a bracket on a context item may bind a type
+/// symbol that is none of the item's requirements; the oracle rejects it
+/// (Audit.v note 56).
+const SELF_HOSTED_BUG_CONTEXT_BRACKETS: &str = "self-hosted compiler bug: a context item's bracket binds a non-requirement";
 /// A self-hosted compiler bug: it merges a generation with a type that
 /// contains it; the oracle rejects it (Audit.v note 53).
 const SELF_HOSTED_BUG_MERGE_CYCLE: &str = "self-hosted compiler bug: a cyclic merge is accepted";
@@ -67,6 +71,7 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/arg_count_mismatch.moss", Accept, Reject, SELF_HOSTED_BUG_ARITY),
     ("tests/errors/attached_on_abstract.moss", Accept, Reject, SELF_HOSTED_BUG_Q5),
     ("tests/errors/beyond_std.moss", Reject, Unsupported, BEYOND),
+    ("tests/errors/context_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_CONTEXT_BRACKETS),
     ("tests/errors/merge_cyclic.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_CYCLE),
     ("tests/errors/merge_unsettled.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_ROUNDS),
     ("tests/errors/type_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_TYPE_BRACKETS),
