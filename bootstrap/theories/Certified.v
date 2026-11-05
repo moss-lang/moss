@@ -81,7 +81,9 @@ Definition world_of_reading := WorldSound.worldof_of_reading.
    V's `resolve` resolves to the same entity *)
 Definition world_resolves := WorldSound.load_world_resolves.
 (* and what elaboration keeps of that world: its symbols, unchanged; only
-   fresh, non-source symbols made; record fields numbered injectively *)
+   fresh, non-source symbols made; record fields numbered injectively; and
+   the requirement lists it caches for tags and aliases are closed and least
+   (toward ReqsReading's rr_closed, rr_least and rr_listed) *)
 Definition elaboration_frame := ElabFrame.elaborate_frame.
 (* the requirements the elaborator computes for a val, fn, method, context
    or functor are Part V's AssumeTypes (toward ReqsReading's rr_plain) *)

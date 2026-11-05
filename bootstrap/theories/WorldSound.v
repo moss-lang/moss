@@ -2386,17 +2386,26 @@ Qed.
          functor it is AssumeTypes, of a type or unit [].  (The elaborator's
          two tag/alias writes go through set_nominal_reqs, a guard and a
          dedup that change nothing on any input: Audit.v note 29.)
-     (b) for tags and aliases, that solve_requirements' iteration from the
-         listed parameters reaches the least relevance-closed sets
-         (rr_closed, rr_least, rr_listed): a Kleene-iteration argument
-         over each group, with the cached lists of earlier groups final;
+     (b) DONE (ReqsSolve.v; RC and RL in elab_frame): for every tag or
+         alias the elaborator cached, its list is closed against the cache
+         (its listed parameters, and the FreeIn symbols of its body read
+         against the cache, are in it, and every symbol its body reads is
+         cached), each listed parameter is a type its assume nesting
+         requires (rr_listed), and it is inside every relevance-closed R
+         that holds the cached lists of the symbols that are no tag or
+         alias (rr_least, for any R agreeing with the cache there).
+         solve_requirements' group is exactly the uncached tags and aliases
+         its root reaches; its rounds read only cached tags and aliases, so
+         nothing nests, and a round that changes nothing leaves the group
+         closed.  What rr_closed/rr_least still need is (c): lists for
+         the symbols never cached, agreeing with these;
      (c) R for the symbols the elaborator never asked about: an
          independent, proved computation of the same sets (AssumeTypes is
          a reachability through contexts that may be cyclic, which the
          elaborator's 64-step walk does not finish), or RelSupport.run_elab's
          fold of `reqs` over every symbol, proved to succeed on accepted
          bundles (it need not: an unused context nested 65 deep).
-     Estimate: (a) 300 lines, (b) 1000-1500, (c) 500-800.
+     Estimate: (c) 500-800 lines.
 
    TODO_fld_injective and TODO_syms_frame: DONE in ElabFrame.v
    (elab_frame, elaborate_frame): every function of the elaborator keeps
