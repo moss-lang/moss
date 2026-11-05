@@ -2657,7 +2657,9 @@ Definition compile_pattern (mi : nat) (e : env) (p : apat) (sty : ety) (heads : 
       | Some (ESym s), _ =>
           let! g := sym s in
           if kind_eqb (gs_kind g) KUnit || kind_eqb (gs_kind g) KTag then
-            if is_some (nassoc s heads) then ret (XPHead s None [], [], [s], false)
+            (* a member of that head is the tag's (or unit's) application,
+               never an abstract type that shares its number (Audit note 61) *)
+            if match nassoc s heads with Some (YNom _ _) => true | _ => false end then ret (XPHead s None [], [], [s], false)
             else let! ss := show sty in err mi ("`" ++ gs_name g ++ "` is not a member of `" ++ ss ++ "`")
           else err mi ("`" ++ show_path pp ++ "` is not a matchable pattern")
       | _, _ => err mi ("`" ++ show_path pp ++ "` is not a matchable pattern")
@@ -2668,7 +2670,8 @@ Definition compile_pattern (mi : nat) (e : env) (p : apat) (sty : ety) (heads : 
       | Some g =>
           if negb (kind_eqb (gs_kind g) KTag) then err mi ("`" ++ show_path pp ++ "` is not a tag") else
           match nassoc (gs_id g) heads with
-          | None => let! ss := show sty in err mi ("`" ++ gs_name g ++ "` is not a member of `" ++ ss ++ "`")
+          | None | Some (YUnit | YNever | YAbs _ | YUnion _ | YRec _) =>
+              let! ss := show sty in err mi ("`" ++ gs_name g ++ "` is not a member of `" ++ ss ++ "`")
           | Some mem =>
               let! pay := payload_type mem e in
               let! bn := binder_name sub in
@@ -2687,7 +2690,8 @@ Definition compile_pattern (mi : nat) (e : env) (p : apat) (sty : ety) (heads : 
       | Some g =>
           if negb (kind_eqb (gs_kind g) KTag) then err mi ("`" ++ show_path pp ++ "` is not a tag") else
           match nassoc (gs_id g) heads with
-          | None => let! ss := show sty in err mi ("`" ++ gs_name g ++ "` is not a member of `" ++ ss ++ "`")
+          | None | Some (YUnit | YNever | YAbs _ | YUnion _ | YRec _) =>
+              let! ss := show sty in err mi ("`" ++ gs_name g ++ "` is not a member of `" ++ ss ++ "`")
           | Some mem =>
               let! pay := payload_type mem e in
               match pay with
@@ -2746,6 +2750,21 @@ Definition parse_exp (l : list ascii) : bool * nat :=
                     | _ => (false, l)
                     end in
   (neg, fold_left (fun n c => 10 * n + digit_val c) ds 0).
+
+(* A literal's text as the parser writes it (Parse.lit_norm): digits, an
+   optional `.` and digits, an optional `e`, `-` and digits; no `E` (Track A,
+   Audit note 65: Part V's lit_value reads only that form). *)
+Definition is_digit_char (c : ascii) : bool := Nat.leb 48 (nat_of_ascii c) && Nat.leb (nat_of_ascii c) 57.
+Definition digits_wf (l : list ascii) : bool :=
+  match l with [] => false | _ => forallb is_digit_char l end.
+Definition lit_wf (text : string) : bool :=
+  let cs := list_ascii_of_string text in
+  negb (existsb (fun c => Ascii.eqb c "E"%char) cs) &&
+  let '(mant, ex) := split_at_e cs [] in
+  let '(whole, frac) := split_at_dot mant [] in
+  digits_wf whole &&
+  match frac with None => true | Some fr => digits_wf fr end &&
+  match ex with None => true | Some ("-"%char :: d) => digits_wf d | Some d => digits_wf d end.
 
 Definition lowered (g : nat) : M bool :=
   let! s := get in ret (is_some (nassoc g (st_fns s))).
@@ -2885,6 +2904,24 @@ Definition platform_fun (fg : gsym) : M nat :=
       upd (s_funs (fun l => (h, (map fst items, List.concat (map snd items))) :: l)) ;;
       upd (s_links (fun l => ((gs_id fg, gs_id fg), h) :: l)) ;;
       ret h
+  end.
+
+(* provided_call's report when nothing provides m at r (lang_call reports it
+   itself, so that a literal's arithmetic is only ever provided_call's
+   direct case: Track A, BodyLit.v) *)
+Definition no_provision (mi : nat) (e : env) (oty : ety) (m : gsym) (r : ety) (mid : nat) : M (xexpr * ety) :=
+  let nm := match gs_name m with String "."%char r => r | s => s end in
+  let others := filter (fun q => match head (fst q), head r with
+                                 | Some a, Some b => Nat.eqb a b && negb (ety_eqb (fst q) r)
+                                 | _, _ => false end)
+                       (opt_default [] (nget (en_mths e) mid)) in
+  let! so := show oty in
+  match others with
+  | _ :: _ =>
+      let! ws := mmap (fun q => show (fst q)) others in
+      err mi ("`." ++ nm ++ "` is provided at `" ++ String.concat "`, `" ws ++ "`, not at `" ++ so ++
+              "`: a method provision serves only the instantiation it was made at (D62)")
+  | [] => err mi ("no method `." ++ nm ++ "` is available for `" ++ so ++ "` in the context here")
   end.
 
 Fixpoint synth (fuel : nat) (c : cx) (e : env) (x : aexpr) (exp : option ety) {struct fuel}
@@ -3115,7 +3152,13 @@ with const_val (fuel : nat) (g : gsym) {struct fuel} : M (xexpr * ety) :=
           let c := Cx (gs_mod g) (FSig [] declared None) None 0 [] "" [] [] in
           let! (v, vt) := with_vars [] (synth f c empty_env init (Some declared)) in
           if fits empty_env vt declared then
-            upd (s_consts (fun m => nset m (gs_id g) (v, declared))) ;; ret (v, declared)
+            (* the cache only grows (Track A: BodySound's Later reads every
+               entry; an initializer never caches its own val, which would
+               recurse until the fuel runs out) *)
+            upd (s_consts (fun m => match nget m (gs_id g) with
+                                    | Some _ => m
+                                    | None => nset m (gs_id g) (v, declared)
+                                    end)) ;; ret (v, declared)
           else let! a := show declared in let! b := show vt in
                err (gs_mod g) ("`" ++ gs_name g ++ "` is declared `" ++ a ++ "` but its initializer is `" ++ b ++ "`")
       | _, _ => fail "internal: const"
@@ -3282,6 +3325,11 @@ with synth_record (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (fs : li
           match missing with
           | _ :: _ => err mi ("missing field(s) " ++ String.concat ", " (map fst missing) ++ " of `" ++ gs_name g ++ "`")
           | [] =>
+              (* every field given once: a payload that names a field twice
+                 has no record literal (Audit note 62) *)
+              if negb (Nat.eqb (List.length fs) (List.length ftys)) then
+                err mi ("`" ++ gs_name g ++ "` names a field twice, so no record literal builds it")
+              else
               let! xfs := mmap (fun q => let! i := fld_id (fst q) in
                                          ret (i, opt_default XUnit (sassoc (fst q) given))) ftys in
               let! th := tag_theta xs in
@@ -3506,7 +3554,26 @@ with lang_call (fuel : nat) (c : cx) (e : env) (o : xexpr * ety) (n : string) (a
     (why : string) {struct fuel} : M (xexpr * ety) :=
   match fuel with 0 => deep | S f =>
   let! m := lang_symbol "num" n true why (cx_mod c) in
-  provided_call f c e (fst o) (snd o) m (map (fun a => AB (fst a) (snd a)) args)
+  (* D68: a literal's arithmetic is provided here, at its type; a family in
+     force that would produce it is not applied (Audit note 64) *)
+  let! k := method_key e (cx_mod c) (snd o) m in
+  let call := provided_call f c e (fst o) (snd o) m (map (fun a => AB (fst a) (snd a)) args) in
+  match k with
+  | KyMth r mid =>
+      match get_mth e r mid with
+      | Some _ => call
+      | None =>
+          let! fam := family_member (cx_mod c) e r mid in
+          match fam with
+          | Some (fg, _) =>
+              let! so := show (snd o) in
+              err (cx_mod c) (why ++ " needs `." ++ n ++ "` provided at `" ++ so ++ "` here; `" ++ gs_name fg ++
+                              "` would produce it, but a literal's arithmetic is not a call (D68)")
+          | None => no_provision (cx_mod c) e (snd o) m r mid
+          end
+      end
+  | _ => call
+  end
   end
 
 with int_literal (fuel : nat) (c : cx) (e : env) (ds : list ascii) (why : string) {struct fuel}
@@ -3547,6 +3614,7 @@ with float_of (fuel : nat) (c : cx) (e : env) (v : xexpr * ety) (why : string) {
 with synth_literal (fuel : nat) (c : cx) (e : env) (text : string) {struct fuel} : M (xexpr * ety) :=
   match fuel with 0 => deep | S f =>
   let why := "the literal `" ++ text ++ "`" in
+  if negb (lit_wf text) then err (cx_mod c) (why ++ " is not a numeric literal (D68)") else
   let '(mant, ex) := split_at_e (list_ascii_of_string text) [] in
   let '(whole, frac) := split_at_dot mant [] in
   match ex, frac with

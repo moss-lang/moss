@@ -41,7 +41,11 @@ Record Inv (s : st) : Prop := {
     forall i g, nget (w_syms (st_w s)) i = Some g -> nget (st_syms s) i = Some g;
   iv_fresh : forall b, load_world b = Good (st_w s) ->
     forall i g, nget (w_syms (st_w s)) i = None -> nget (st_syms s) i = Some g -> gs_assumes g = [];
-  iv_reqs : forall b, load_world b = Good (st_w s) -> ReqOK s
+  iv_reqs : forall b, load_world b = Good (st_w s) -> ReqOK s;
+  (* a symbol elaboration makes is never a tag or a unit, so the head of a
+     nominal type is the loader's (BodyData.v) *)
+  iv_kind : forall b, load_world b = Good (st_w s) ->
+    forall i g, nget (w_syms (st_w s)) i = None -> nget (st_syms s) i = Some g -> gs_kind g <> KTag /\ gs_kind g <> KUnit
 }.
 
 (* The locals numbered so far: distinct names, numbered 0, 1, … in order
@@ -59,24 +63,27 @@ Record FrX (s s' : st) : Prop := {
   fx_fns : exists l, st_fns s' = l ++ st_fns s;
   fx_funs : exists l, st_funs s' = l ++ st_funs s;
   fx_unsup : exists l, st_unsup s' = st_unsup s ++ l;
-  fx_lang : st_lang s' = st_lang s
+  fx_lang : st_lang s' = st_lang s;
+  (* defined vals' cache only grows (BodySound's Later reads its entries) *)
+  fx_consts : forall k r, nget (st_consts s) k = Some r -> nget (st_consts s') k = Some r
 }.
 
 Lemma frx_same : forall s s', st_vars s' = st_vars s -> st_nvar s' = st_nvar s -> st_fns s' = st_fns s ->
-  st_funs s' = st_funs s -> st_unsup s' = st_unsup s -> st_lang s' = st_lang s -> FrX s s'.
+  st_funs s' = st_funs s -> st_unsup s' = st_unsup s -> st_lang s' = st_lang s -> st_consts s' = st_consts s -> FrX s s'.
 Proof.
-  intros s s' E1 E2 E3 E4 E5 E6. constructor.
+  intros s s' E1 E2 E3 E4 E5 E6 E7. constructor.
   - exists []. rewrite app_nil_r. exact E1.
   - unfold VShape. rewrite E1, E2. auto.
   - exists []. exact E3.
   - exists []. exact E4.
   - exists []. rewrite app_nil_r. exact E5.
   - exact E6.
+  - rewrite E7. auto.
 Qed.
 
 Lemma frx_trans : forall s1 s2 s3, FrX s1 s2 -> FrX s2 s3 -> FrX s1 s3.
 Proof.
-  intros s1 s2 s3 [(l1 & V1) S1 (f1 & N1) (g1 & G1) (u1 & U1) L1] [(l2 & V2) S2 (f2 & N2) (g2 & G2) (u2 & U2) L2].
+  intros s1 s2 s3 [(l1 & V1) S1 (f1 & N1) (g1 & G1) (u1 & U1) L1 K1] [(l2 & V2) S2 (f2 & N2) (g2 & G2) (u2 & U2) L2 K2].
   constructor.
   - exists (l1 ++ l2). rewrite V2, V1, app_assoc. reflexivity.
   - auto.
@@ -84,6 +91,7 @@ Proof.
   - exists (g2 ++ g1). rewrite G2, G1, app_assoc. reflexivity.
   - exists (u1 ++ u2). rewrite U2, U1, app_assoc. reflexivity.
   - congruence.
+  - auto.
 Qed.
 
 #[export] Hint Extern 1 (FrX _ _) => (apply frx_same; reflexivity) : core.
@@ -164,25 +172,26 @@ Lemma ok_keep : forall A (f : st -> A * st),
              st_reqs (snd (f s)) = st_reqs s /\ FrX s (snd (f s))) ->
   ok (fun s => Good (f s)).
 Proof.
-  intros A f Hf s a s' [Ia If Id Il Ifr Ir] H. injection H as E. destruct (Hf s) as (E1 & E2 & E3 & E4 & E5 & E6).
+  intros A f Hf s a s' [Ia If Id Il Ifr Ir Ik] H. injection H as E. destruct (Hf s) as (E1 & E2 & E3 & E4 & E5 & E6).
   rewrite E in E1, E2, E3, E4, E5, E6. cbn in E1, E2, E3, E4, E5, E6.
   split; [constructor; [rewrite E2, E3; exact Ia | rewrite E4; exact If | rewrite E3; exact Id
                        | rewrite E1, E3; exact Il | rewrite E1, E3; exact Ifr
-                       | intros b Hb; rewrite E1 in Hb; unfold ReqOK; rewrite E1, E3, E5; exact (Ir b Hb)]|].
+                       | intros b Hb; rewrite E1 in Hb; unfold ReqOK; rewrite E1, E3, E5; exact (Ir b Hb)
+                       | rewrite E1, E3; exact Ik]|].
   apply fr_of0; [|exact E1 | exact E5].
   constructor; [exact E1 | lia | rewrite E3; auto | rewrite E3; intros; congruence | rewrite E3; intros; congruence | rewrite E4; auto | exact E6].
 Qed.
 
 Lemma ok_fresh : ok fresh.
 Proof.
-  intros s a s' [Ia If Id Il Ifr Ir] H. unfold fresh in H. injection H as <- <-. cbn.
-  split; [constructor; cbn; [intros i Hi; apply Ia; lia | exact If | exact Id | exact Il | exact Ifr | exact Ir]|].
+  intros s a s' [Ia If Id Il Ifr Ir Ik] H. unfold fresh in H. injection H as <- <-. cbn.
+  split; [constructor; cbn; [intros i Hi; apply Ia; lia | exact If | exact Id | exact Il | exact Ifr | exact Ir | exact Ik]|].
   apply fr_of0; [|reflexivity|reflexivity]. constructor; cbn; auto; intros; congruence.
 Qed.
 
-Lemma ok_new_sym : forall mi n k d o, o <> OSource -> ok (new_sym mi n k d o).
+Lemma ok_new_sym : forall mi n k d o, o <> OSource -> k <> KTag /\ k <> KUnit -> ok (new_sym mi n k d o).
 Proof.
-  intros mi n k d o Ho s a s' [Ia If Id Il Ifr Ir] H. unfold new_sym in H.
+  intros mi n k d o Ho Hk s a s' [Ia If Id Il Ifr Ir Ik] H. unfold new_sym in H.
   apply bind_inv in H as (id & s1 & H1 & H). unfold fresh in H1. injection H1 as <- <-.
   apply bind_inv in H as (u & s2 & H2 & H). unfold upd in H2. injection H2 as <- <-.
   injection H as <- <-. unfold s_syms. cbn -[nset nget].
@@ -197,6 +206,7 @@ Proof.
     + intros b Hb i g Hn Hg. cbn -[nset nget] in *. rewrite nget_nset in Hg. destruct (Nat.eqb_spec i (st_next s)) as [->|]; [injection Hg as <-; reflexivity | exact (Ifr b Hb i g Hn Hg)].
     + intros b Hb x l Hx. cbn -[nset nget] in *. destruct (Ir b Hb x l Hx) as (Nd & g & Hg & P1 & P2). split; [exact Nd|].
       exists g. rewrite nget_nset_other; [auto | exact (Hne _ _ Hg)].
+    + intros b Hb i g Hn Hg. cbn -[nset nget] in *. rewrite nget_nset in Hg. destruct (Nat.eqb_spec i (st_next s)) as [->|]; [injection Hg as <-; exact Hk | exact (Ik b Hb i g Hn Hg)].
   - apply fr_of0; [|reflexivity|reflexivity]. constructor; cbn -[nset nget]; auto.
     + intros i g Hg. rewrite nget_nset_other; [exact Hg|]. intro E. subst i. rewrite (Ia (st_next s) (le_n _)) in Hg. discriminate.
     + intros i g Hn Hg. rewrite nget_nset in Hg. destruct (Nat.eqb_spec i (st_next s)); [|congruence].
@@ -206,7 +216,7 @@ Qed.
 
 Lemma ok_fld_id : forall f, ok (fld_id f).
 Proof.
-  intros f s a s' [Ia If Id Il Ifr Ir] H. pose proof (fld_id_numbered f s a s' H If) as [Nn _].
+  intros f s a s' [Ia If Id Il Ifr Ir Ik] H. pose proof (fld_id_numbered f s a s' H If) as [Nn _].
   unfold fld_id in H. cbn in H. destruct (sassoc f (st_flds s)) as [m|] eqn:E.
   - injection H as <- <-. split; [constructor; assumption | apply fr_refl].
   - injection H as <- <-. unfold s_flds. cbn. split; [constructor; cbn; assumption|].
@@ -246,10 +256,10 @@ Proof.
   apply bind_inv in H as (u' & s4 & E2 & H). unfold upd in E2. injection E2 as <- <-.
   injection H as <- <-.
   assert (Hi2 : Inv (s_vars init (List.length init) s)) by (destruct Hi; constructor; assumption).
-  destruct (Hm _ _ _ Hi2 H3) as [Hi3 [[F1 F2 F3 F4 F5 F6 [_ _ X3 X4 X5 X6]] Fr3 Fx3]].
+  destruct (Hm _ _ _ Hi2 H3) as [Hi3 [[F1 F2 F3 F4 F5 F6 [_ _ X3 X4 X5 X6 X7]] Fr3 Fx3]].
   split; [destruct Hi3; constructor; assumption|]. constructor.
-  - constructor; cbn [s_vars st_w st_next st_syms st_flds st_vars st_nvar st_fns st_funs st_unsup st_lang] in *; auto.
-    constructor; cbn [s_vars st_w st_next st_syms st_flds st_vars st_nvar st_fns st_funs st_unsup st_lang] in *; auto.
+  - constructor; cbn [s_vars st_w st_next st_syms st_flds st_vars st_nvar st_fns st_funs st_unsup st_lang st_consts] in *; auto.
+    constructor; cbn [s_vars st_w st_next st_syms st_flds st_vars st_nvar st_fns st_funs st_unsup st_lang st_consts] in *; auto.
     + exists []. rewrite app_nil_r. reflexivity.
   - intro Hr. apply Fr3. exact Hr.
   - exact Fx3.
@@ -302,6 +312,22 @@ Proof.
   - exists []. rewrite app_nil_r. reflexivity.
 Qed.
 
+(* const_val's cache write: a new entry only *)
+Lemma ok_consts_add : forall k x,
+  ok (upd (s_consts (fun m => match nget m k with Some _ => m | None => nset m k x end))).
+Proof.
+  intros k x s a s' Hi H. unfold upd in H. injection H as <- <-.
+  split; [destruct Hi; constructor; assumption|].
+  apply fr_of0; [|reflexivity|reflexivity]. constructor; cbn -[nset nget]; auto; try (intros; congruence).
+  constructor; cbn -[nset nget]; auto.
+  - exists []. rewrite app_nil_r. reflexivity.
+  - exists []. reflexivity.
+  - exists []. reflexivity.
+  - exists []. rewrite app_nil_r. reflexivity.
+  - intros j r Hj. destruct (nget (st_consts s) k) as [y|] eqn:Ek; [exact Hj|].
+    rewrite nget_nset. destruct (Nat.eqb_spec j k) as [->|]; [congruence | exact Hj].
+Qed.
+
 Lemma ok_unsupported : forall why, ok (unsupported why).
 Proof.
   intros why s a s' Hi H. unfold unsupported in H. injection H as <- <-.
@@ -322,7 +348,7 @@ Ltac reader :=
 
 Create HintDb okdb.
 #[export] Hint Resolve ok_ret ok_fail ok_get ok_lift ok_fresh ok_fld_id ok_local_var ok_emit_fn ok_unsupported : okdb.
-#[export] Hint Extern 1 (ok (new_sym _ _ _ _ _)) => (apply ok_new_sym; discriminate) : okdb.
+#[export] Hint Extern 1 (ok (new_sym _ _ _ _ _)) => (apply ok_new_sym; [discriminate | split; discriminate]) : okdb.
 
 Ltac head_of t := lazymatch t with ?f _ => head_of f | _ => t end.
 
@@ -346,6 +372,7 @@ Ltac okt :=
   | |- ok (mfold _ _ _) => apply ok_mfold
   | |- ok (miter _ _) => apply ok_miter
   | |- ok (upd (s_funs (fun l => ?x :: l))) => apply ok_funs_cons
+  | |- ok (upd (s_consts _)) => apply ok_consts_add
   | |- ok (upd _) => unfold upd; apply ok_keep; intro; split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|auto]]]]]
   | |- ok (fun s => Good (_, _)) => apply ok_keep; intro; split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|auto]]]]]
   | |- ok (with_vars _ _) => apply ok_with_vars
@@ -425,7 +452,7 @@ Proof.
   apply bind_inv in H as (g & s1 & H1 & H). unfold sym in H1.
   destruct (nget (st_syms s) x) as [g'|] eqn:Hx; [|discriminate]. injection H1 as <- <-.
   destruct (kind_eqb (gs_kind g') KTag || kind_eqb (gs_kind g') KAlias) eqn:Kn.
-  - unfold set_reqs, upd in H. injection H as <- <-. destruct Hi as [Ia If Id Il Ifr Ir]. unfold s_reqs. cbn -[nset nget].
+  - unfold set_reqs, upd in H. injection H as <- <-. destruct Hi as [Ia If Id Il Ifr Ir Ik]. unfold s_reqs. cbn -[nset nget].
     split.
     + constructor; cbn -[nset nget]; try assumption.
       intros b Hb y l' Hy. cbn -[nset nget] in *. rewrite nget_nset in Hy. destruct (Nat.eqb_spec y x) as [->|Hne].
@@ -499,7 +526,7 @@ Proof.
                (kind_plain (gs_kind g') = true -> forall t, In t l <-> A.AssumeTypes (W0 (st_w s1)) x t) /\
                (gs_kind g' = KType \/ gs_kind g' = KUnit -> l = [])) ->
             Inv (s_reqs (fun m => nset m x l) s1) /\ Fr s1 (s_reqs (fun m => nset m x l) s1)).
-  { intros s1 l [Ja Jf Jd Jl Jfr Jr] Hx1 Hc1 Hk1 Hl. unfold s_reqs. cbn -[nset nget]. split.
+  { intros s1 l [Ja Jf Jd Jl Jfr Jr Jk] Hx1 Hc1 Hk1 Hl. unfold s_reqs. cbn -[nset nget]. split.
     - constructor; cbn -[nset nget]; try assumption.
       intros b Hb y l' Hy. cbn -[nset nget] in *. rewrite nget_nset in Hy. destruct (Nat.eqb_spec y x) as [->|Hne].
       + injection Hy as <-. destruct (Hl b Hb) as (Nd & P1 & P2). split; [exact Nd|]. exists g'. auto.
@@ -998,8 +1025,9 @@ Proof.
     - exact (load_world_ids b w Hw).
     - intros b' Hb' i g Hg. exact Hg.
     - intros b' Hb' i g Hn Hg. rewrite Hn in Hg. discriminate.
-    - intros b' Hb' x l Hx. destruct x; discriminate Hx. }
-  destruct (ok_elab_program _ _ _ I0 He) as [[_ Nf _ _ _ Ir] [[Fw _ Fk Fn Fa _] Frel]].
+    - intros b' Hb' x l Hx. destruct x; discriminate Hx.
+    - intros b' Hb' i g Hn Hg. rewrite Hn in Hg. discriminate. }
+  destruct (ok_elab_program _ _ _ I0 He) as [[_ Nf _ _ _ Ir _] [[Fw _ Fk Fn Fa _] Frel]].
   cbn [st_w st_syms st_next s_init] in Fw, Fk, Fn, Fa.
   split; [exact Fw|]. split; [exact Fk|]. split.
   - intros i g Hn Hg. split; [exact (Fn i g Hn Hg)|]. intros R F. split.

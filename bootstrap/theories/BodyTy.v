@@ -21,7 +21,7 @@ Module A := Audit.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 
 Section Ty.
-Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
+Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 
 Notation WW := (BodySound.W w R Fl).
@@ -67,9 +67,9 @@ Lemma ok_reqs : forall x, ok (reqs x).
 Proof. intro x. rewrite reqs_eq. apply ok_type_requirements. Qed.
 
 (* a requirement list read is the reading's *)
-Lemma reqs_R : forall x s rs s', Inv s -> reqs x s = Good (rs, s') -> Later w R Fl s' -> R x = rs.
+Lemma reqs_R : forall x s rs s', Inv s -> reqs x s = Good (rs, s') -> Later w P R Fl s' -> R x = rs.
 Proof.
-  intros x s rs s' Hi H L. apply (lt_reqs _ _ _ _ L).
+  intros x s rs s' Hi H L. apply (lt_reqs _ _ _ _ _ L).
   rewrite reqs_eq in H.
   revert H. generalize 200. intros n H.
   exact (reqs_cached n x s rs s' (fun g Hg => iv_ids _ Hi x g Hg) H).
@@ -132,8 +132,8 @@ Qed.
 Lemma later_step : forall A (m : M A) s a s', ok m -> Inv s -> m s = Good (a, s') -> Inv s' /\ Fr s s'.
 Proof. intros A m s a s' Hm Hi H. exact (Hm s a s' Hi H). Qed.
 
-Lemma later_from : forall s s', Fr s s' -> Later w R Fl s' -> Later w R Fl s.
-Proof. exact (later_back w R Fl). Qed.
+Lemma later_from : forall s s', Fr s s' -> Later w P R Fl s' -> Later w P R Fl s.
+Proof. exact (later_back w P R Fl). Qed.
 
 
 Ltac noerr' H := exfalso;
@@ -147,8 +147,8 @@ Proof. intros s s' F E. rewrite (fr_w _ _ F). exact E. Qed.
 (* a list mapped by an `ok` step, related element by element *)
 Lemma mmap_ok_rel : forall X Y (f : X -> M Y) (Q : X -> Y -> Prop) xs s ys s',
   (forall x, ok (f x)) ->
-  (forall x, In x xs -> forall s y s1, f x s = Good (y, s1) -> Inv s -> st_w s = w -> Later w R Fl s1 -> Q x y) ->
-  mmap f xs s = Good (ys, s') -> Inv s -> st_w s = w -> Later w R Fl s' -> Forall2 Q xs ys.
+  (forall x, In x xs -> forall s y s1, f x s = Good (y, s1) -> Inv s -> st_w s = w -> Later w P R Fl s1 -> Q x y) ->
+  mmap f xs s = Good (ys, s') -> Inv s -> st_w s = w -> Later w P R Fl s' -> Forall2 Q xs ys.
 Proof.
   intros X Y f Q xs. induction xs as [|x r IH]; intros s ys s' Hok HQ H Hi Hw L; cbn [mmap] in H.
   - injection H as <- <-. constructor.
@@ -190,7 +190,7 @@ Proof.
 Qed.
 
 Lemma check_relevant_spec : forall mi g bs s u s', Inv s -> st_w s = w -> In mi (w_order w) ->
-  check_relevant mi g bs s = Good (u, s') -> Later w R Fl s' ->
+  check_relevant mi g bs s = Good (u, s') -> Later w P R Fl s' ->
   forall b0 x, In b0 bs -> A.resolve_sym WW (path_of mi) (fst b0) = Some x -> A.kind_sym WW x = Some A.DKType ->
   In x (R (gs_id g)).
 Proof.
@@ -259,11 +259,36 @@ Qed.
 Lemma head_tr : forall x, (exists h xs, x = YNom h xs /\ h <> 0) -> A.head (trF x) = Elab.head x.
 Proof. intros x (h & xs & -> & _). reflexivity. Qed.
 
+(* a union the elaborator makes from well-formed members' members, each a
+   tag or unit application, is well formed (BodySound.ety_wf) *)
+Lemma members_wf : forall y, WFty y -> Forall WFty (Elab.members y).
+Proof.
+  intros y Wy. destruct y as [| |n|n xs|ms|fs]; cbn [Elab.members]; try (constructor; [exact Wy | constructor]).
+  - constructor.
+  - unfold WFty in Wy. cbn [ety_wf] in Wy. destruct ms as [|m0 r]; [discriminate|].
+    rewrite Forall_forall. intros m Hm. pose proof (proj1 (forallb_forall _ _) Wy m Hm) as Wm.
+    destruct m; try discriminate Wm. exact Wm.
+Qed.
+
+Lemma union_wf : forall ys out, Forall WFty ys -> out = flat_map Elab.members ys ->
+  Forall (fun x => exists h xs, x = YNom h xs /\ h <> 0) out ->
+  WFty (match out with [] => YNever | _ => YUnion out end).
+Proof.
+  intros ys out Wy Eo U.
+  assert (Wm : Forall WFty out).
+  { subst out. clear U. induction Wy as [|y r Hy Hr IH]; [constructor|]. cbn [flat_map]. apply Forall_app.
+    split; [exact (members_wf y Hy) | exact IH]. }
+  destruct out as [|m0 r]; [reflexivity|].
+  change (forallb (fun m => match m with YNom _ _ => ety_wf m | _ => false end) (m0 :: r) = true).
+  apply forallb_forall. intros m Hm. rewrite Forall_forall in U, Wm.
+  destruct (U m Hm) as (h & xs & -> & _). exact (Wm _ Hm).
+Qed.
+
 (* ---- the judgments ---- *)
 
 Definition ETyOK (f : nat) : Prop :=
   forall t mi tm e this s d s' tmr, elab_type f t mi tm e this s = Good (d, s') ->
-  Inv s -> st_w s = w -> In mi (w_order w) -> TmRel tm tmr e -> opt_wf this -> Later w R Fl s' ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> TmRel tm tmr e -> opt_wf this -> Later w P R Fl s' ->
   A.TyOf WW (path_of mi) tmr (option_map trF this) t (trF d) /\ WFty d.
 
 Definition BrRel (p : string) (tmr : list (nat * ty)) (b0 : path * spec) (tb : nat * ty) : Prop :=
@@ -273,12 +298,12 @@ Definition BrRel (p : string) (tmr : list (nat * ty)) (b0 : path * spec) (tb : n
 
 Definition SubstOK (f : nat) : Prop :=
   forall e mi bs outer s l s' tmr, app_subst f e mi bs outer s = Good (l, s') ->
-  Inv s -> st_w s = w -> In mi (w_order w) -> TmRel (outer ++ tymap e) tmr e -> Later w R Fl s' ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> TmRel (outer ++ tymap e) tmr e -> Later w P R Fl s' ->
   exists lr, Forall2 (BrRel (path_of mi) tmr) bs lr /\ map trp l = rev lr /\ Forall (fun q => WFty (snd q)) l.
 
 Definition SymOK (f : nat) : Prop :=
   forall mi g tm e s d s' tmr, symbol_type f mi g tm e s = Good (d, s') ->
-  Inv s -> st_w s = w -> nget (w_syms w) (gs_id g) = Some g -> TmRel tm tmr e -> Later w R Fl s' ->
+  Inv s -> st_w s = w -> nget (w_syms w) (gs_id g) = Some g -> TmRel tm tmr e -> Later w P R Fl s' ->
   WFty d /\
   match gs_kind g with
   | KType => A.nlook (gs_id g) tmr = Some (trF d)
@@ -301,24 +326,28 @@ Proof.
   - (* elab_type *)
     intros t mi tm e this s d s' tmr H Hi Hw Hmi Ht Wth L. cbn [elab_type] in H.
     destruct t as [| | |fs|ms|p a].
-    + injection H as <- <-. split; [apply A.TyNever | discriminate].
+    + injection H as <- <-. split; [apply A.TyNever | reflexivity].
     + destruct this as [y|]; [|noerr' H]. injection H as <- <-. split; [apply A.TyThis | exact Wth].
-    + injection H as <- <-. split; [apply A.TyUnit | discriminate].
+    + injection H as <- <-. split; [apply A.TyUnit | reflexivity].
     + (* a record *)
-      apply bind_inv in H as (fs' & s1 & H1 & H). injection H as <- <-. split; [|discriminate].
-      assert (Q : Forall2 (fun nt q => fst q = fst nt /\ A.TyOf WW (path_of mi) tmr (option_map trF this) (snd nt) (trF (snd q))) fs fs').
+      apply bind_inv in H as (fs' & s1 & H1 & H). injection H as <- <-.
+      assert (Q : Forall2 (fun nt q => fst q = fst nt /\ A.TyOf WW (path_of mi) tmr (option_map trF this) (snd nt) (trF (snd q)) /\ WFty (snd q)) fs fs').
       { refine (mmap_ok_rel _ _ _ _ fs s fs' s1 _ _ H1 Hi Hw L).
         - intro x. apply ok_bind; [apply ok_elab_type | intro; apply ok_ret].
         - intros [n0 t0] _ s2 q s3 E Hi2 Hw2 L3. apply bind_inv in E as (y & s4 & E1 & E). injection E as <- <-.
           destruct (ok_elab_type _ _ _ _ _ _ s2 y s4 Hi2 E1) as [_ F4].
-          split; [reflexivity|]. exact (proj1 (IE _ _ _ _ _ _ _ _ _ E1 Hi2 Hw2 Hmi Ht Wth L3)). }
-      cbn [tr]. apply A.TyRec. clear -Q. induction Q as [|[n0 t0] [n1 y] r r' [E1 Ty] Hr IHr]; constructor; [|exact IHr].
-      cbn in *. subst n1. split; [reflexivity | exact Ty].
+          split; [reflexivity|]. exact (IE _ _ _ _ _ _ _ _ _ E1 Hi2 Hw2 Hmi Ht Wth L3). }
+      split.
+      { cbn [tr]. apply A.TyRec. clear -Q. induction Q as [|[n0 t0] [n1 y] r r' [E1 [Ty _]] Hr IHr]; constructor; [|exact IHr].
+        cbn in *. subst n1. split; [reflexivity | exact Ty]. }
+      { unfold WFty. cbn [ety_wf]. apply forallb_forall. intros q Hq. clear -Q Hq.
+        induction Q as [|nt q' r r' [_ [_ Wq]] Hr IHr]; [destruct Hq|].
+        destruct Hq as [<-|Hq]; [exact Wq | exact (IHr Hq)]. }
     + (* a union *)
       apply bind_inv in H as (out & s1 & H1 & H). injection H as <- <-.
       match type of H1 with mfold ?fn _ _ _ = _ =>
       assert (Gen : forall ms1 out0 s0 out1 s2, mfold fn out0 ms1 s0 = Good (out1, s2) -> Inv s0 -> st_w s0 = w ->
-                Later w R Fl s2 -> UInv out0 ->
+                Later w P R Fl s2 -> UInv out0 ->
                 exists ys, Forall2 (fun m y => A.TyOf WW (path_of mi) tmr (option_map trF this) m (trF y) /\ WFty y) ms1 ys /\
                            out1 = out0 ++ flat_map Elab.members ys /\ UInv out1) end.
       { induction ms1 as [|m r IH]; intros out0 s0 out1 s2 E Hi0 Hw0 L2 U0; cbn [mfold] in E.
@@ -327,7 +356,7 @@ Proof.
           destruct (ok_elab_type _ _ _ _ _ _ s0 y s4 Hi0 E2) as [Hi4 F4].
           destruct (union_inner mi _ _ _ _ _ U0 E1) as (-> & U1 & ->).
           destruct (IH _ _ _ _ E Hi4 (fr_w' _ _ F4 Hw0) L2 U1) as (ys & Q & -> & U2).
-          assert (L4 : Later w R Fl s4).
+          assert (L4 : Later w P R Fl s4).
           { refine (later_from _ _ _ L2). refine (proj2 (ok_mfold _ _ _ r _ _ _ _ _ Hi4 E)).
             intros a0 x. apply ok_bind; [apply ok_elab_type|]. intro y0. apply ok_mfold. intros a1 x1.
             repeat (match goal with |- ok (match ?x with _ => _ end) => destruct x end); okt. }
@@ -336,7 +365,7 @@ Proof.
       destruct (Gen _ [] s out s1 H1 Hi Hw L (conj (Forall_nil _) (NoDup_nil _))) as (ys & Q & Eo & [U1 U2]).
       cbn [app] in Eo.
       assert (Etr : trF (match out with [] => YNever | _ => YUnion out end) = TUnion (map trF out)) by (destruct out; reflexivity).
-      rewrite Etr. split; [|destruct out; discriminate].
+      rewrite Etr. split; [|refine (union_wf ys out _ Eo U1); clear -Q; induction Q as [|m y r r' Hy Hr IHr]; constructor; [exact (proj2 Hy) | exact IHr]].
       apply A.TyUnion with (ts := map trF ys).
       * clear -Q. induction Q as [|m y r r' Hy Hr IHr]; constructor; [exact (proj1 Hy) | exact IHr].
       * subst out. clear. induction ys as [|y r IH]; [reflexivity|]. cbn [flat_map map]. rewrite map_app, IH, members_tr. reflexivity.
@@ -424,27 +453,35 @@ Proof.
     destruct (gs_kind g) eqn:K; try noerr' H.
     + destruct (nassoc (gs_id g) tm) as [y|] eqn:Ey; [|noerr' H]. injection H as <- <-.
       split; [exact (proj1 (proj2 Ht) _ _ Ey)|]. rewrite (proj1 Ht), Ey. reflexivity.
-    + apply bind_inv in H as (xs & s1 & H1 & H). injection H as <- <-. split; [discriminate|].
+    + apply bind_inv in H as (xs & s1 & H1 & H). injection H as <- <-.
       unfold nominal_args in H1. apply bind_inv in H1 as (rs & s2 & H2 & H1).
       match type of H1 with mmap ?fn _ _ = _ =>
         assert (MR : forall r, In r rs -> forall q s3, fn r s2 = Good (q, s3) -> s3 = s2 /\ (fst q = r /\ nassoc r tm = Some (snd q)))
           by (intros r _ q s3 E; cbv beta in E; destruct (nassoc r tm) as [y|] eqn:Ey; [unfold ret in E; injection E as <- <-; auto | noerr' E]) end.
-      destruct (mmap_reader _ _ _ (fun r q => fst q = r /\ nassoc r tm = Some (snd q)) rs s2 xs s1 MR H1) as [-> P].
+      destruct (mmap_reader _ _ _ (fun r q => fst q = r /\ nassoc r tm = Some (snd q)) rs s2 xs s1 MR H1) as [-> PP].
+      split.
+      { unfold WFty. cbn [ety_wf]. apply forallb_forall. intros q Hq. clear -PP Ht Hq.
+        induction PP as [|r q' rs' xs' [E1 E2] Pr IHr]; [destruct Hq|].
+        destruct Hq as [<-|Hq]; [exact (proj1 (proj2 Ht) _ _ E2) | exact (IHr Hq)]. }
       rewrite (reqs_R _ _ _ _ Hi H2 L). exists (map trp xs). split; [reflexivity|].
-      clear -P Ht. induction P as [|r q rs' xs' [E1 E2] Pr IHr]; constructor; [|exact IHr].
+      clear -PP Ht. induction PP as [|r q rs' xs' [E1 E2] Pr IHr]; constructor; [|exact IHr].
       split; [exact E1 | cbn; rewrite (proj1 Ht), E2; reflexivity].
     + destruct (gs_decl g) as [| |n0 t0| | | | | |] eqn:D; try noerr' H.
       destruct (IE _ _ _ _ _ _ _ _ tmr H Hi Hw (loader_mod_in _ _ Hg) Ht I L) as [Ty Wd].
       split; [exact Wd|]. exists n0, t0. auto.
 
-    + apply bind_inv in H as (xs & s1 & H1 & H). injection H as <- <-. split; [discriminate|].
+    + apply bind_inv in H as (xs & s1 & H1 & H). injection H as <- <-.
       unfold nominal_args in H1. apply bind_inv in H1 as (rs & s2 & H2 & H1).
       match type of H1 with mmap ?fn _ _ = _ =>
         assert (MR : forall r, In r rs -> forall q s3, fn r s2 = Good (q, s3) -> s3 = s2 /\ (fst q = r /\ nassoc r tm = Some (snd q)))
           by (intros r _ q s3 E; cbv beta in E; destruct (nassoc r tm) as [y|] eqn:Ey; [unfold ret in E; injection E as <- <-; auto | noerr' E]) end.
-      destruct (mmap_reader _ _ _ (fun r q => fst q = r /\ nassoc r tm = Some (snd q)) rs s2 xs s1 MR H1) as [-> P].
+      destruct (mmap_reader _ _ _ (fun r q => fst q = r /\ nassoc r tm = Some (snd q)) rs s2 xs s1 MR H1) as [-> PP].
+      split.
+      { unfold WFty. cbn [ety_wf]. apply forallb_forall. intros q Hq. clear -PP Ht Hq.
+        induction PP as [|r q' rs' xs' [E1 E2] Pr IHr]; [destruct Hq|].
+        destruct Hq as [<-|Hq]; [exact (proj1 (proj2 Ht) _ _ E2) | exact (IHr Hq)]. }
       rewrite (reqs_R _ _ _ _ Hi H2 L). exists (map trp xs). split; [reflexivity|].
-      clear -P Ht. induction P as [|r q rs' xs' [E1 E2] Pr IHr]; constructor; [|exact IHr].
+      clear -PP Ht. induction PP as [|r q rs' xs' [E1 E2] Pr IHr]; constructor; [|exact IHr].
       split; [exact E1 | cbn; rewrite (proj1 Ht), E2; reflexivity].
 Qed.
 
@@ -458,12 +495,12 @@ Proof. reflexivity. Qed.
 
 (* BodySound's pd_ty *)
 Theorem pd_ty_holds : forall ty c e s d s', ety_of ty (cx_mod c) (tymap e) e (cx_this c) s = Good (d, s') ->
-  forall F C, Inv s -> CxRel w Fl c e F C -> Later w R Fl s' ->
+  forall F C, Inv s -> CxRel w Fl c e F C -> Later w P R Fl s' ->
   A.TyOf WW (A.fr_mod F) (A.c_ty C) (A.fr_this F) ty (trF d) /\ WFty d.
 Proof.
   intros ty c e s d s' H F C Hi Hc L.
   destruct (ok_ety_of ty (cx_mod c) (tymap e) e (cx_this c) s d s' Hi H) as [_ Fs].
-  assert (Hw : st_w s = w) by (rewrite <- (fr_w _ _ Fs); exact (lt_w _ _ _ _ L)).
+  assert (Hw : st_w s = w) by (rewrite <- (fr_w _ _ Fs); exact (lt_w _ _ _ _ _ L)).
   rewrite ety_of_eq in H. revert H. generalize 200. intros n H.
   rewrite (cr_mod _ _ _ _ _ _ Hc), (cr_this _ _ _ _ _ _ Hc).
   refine (proj1 (ty_all n) _ _ _ _ _ _ _ _ _ H Hi Hw (cr_mod_in _ _ _ _ _ _ Hc) _ (cr_this_wf _ _ _ _ _ _ Hc) L).

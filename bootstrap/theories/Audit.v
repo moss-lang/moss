@@ -3064,17 +3064,28 @@ Inductive LitTerm (W : world) (C : cx) (t : ty) : xexpr -> nat -> nat -> Prop :=
     nlook f (c_fns C) = Some (FSig [ti] t) -> LitTerm W C ti x a b ->
     LitTerm W C t (XCallA f [x]) a b.
 
-(* Operators ([D68], [D77] rule 2): fixed to num.moss's detached methods. *)
-Definition operator_method (op : string) (unary : bool) : option string :=
+(* Operators ([D68], [D77] rule 2): fixed to num.moss's detached methods;
+   the `for.` operators of [D85]'s `for` sugar (Parse.for_desugar) to
+   access.moss's (note 60).  The library module's short name, and the
+   method's name in it. *)
+Definition operator_method (op : string) (unary : bool) : option (string * string) :=
   if unary then
-    match op with "-" => Some "neg" | "!" => Some "not" | _ => None end
+    match op with
+    | "-" => Some ("num", "neg") | "!" => Some ("num", "not")
+    | "for.begin" => Some ("access", "begin") | _ => None
+    end
   else
     match op with
-    | "+" => Some "add" | "-" => Some "sub" | "*" => Some "mul" | "/" => Some "div"
-    | "%" => Some "rem" | "&" => Some "and" | "|" => Some "or" | "^" => Some "xor"
-    | "<<" => Some "shl" | ">>" => Some "shr" | "==" => Some "eq" | "!=" => Some "ne"
-    | "<" => Some "lt" | ">" => Some "gt" | "<=" => Some "le" | ">=" => Some "ge"
-    | _ => None end.
+    | "*" => Some ("num", "mul") | "/" => Some ("num", "div") | "%" => Some ("num", "rem")
+    | "+" => Some ("num", "add") | "-" => Some ("num", "sub") | "<<" => Some ("num", "shl")
+    | ">>" => Some ("num", "shr") | "==" => Some ("num", "eq") | "!=" => Some ("num", "ne")
+    | "<" => Some ("num", "lt") | ">" => Some ("num", "gt") | "<=" => Some ("num", "le")
+    | ">=" => Some ("num", "ge") | "&" => Some ("num", "and") | "^" => Some ("num", "xor")
+    | "|" => Some ("num", "or")
+    | "for.more" => Some ("access", "more") | "for.get" => Some ("access", "get")
+    | "for.after" => Some ("access", "after")
+    | _ => None
+    end.
 
 (* the payload type of a tag at its arguments *)
 Inductive PayloadOf (W : world) : nat -> list (nat * ty) -> ty -> Prop :=
@@ -3312,20 +3323,24 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     Ex W P F C o None ox ot ->
     MethCall W P F C ox (canon C ot) pa args x t ->
     Ex W P F C (AEMeth o pa args) exp x t
-(* [D68] operators: the receiver is the (left) operand *)
-| ExUnary : forall F C exp op y n m ox ot x t,
-    operator_method op true = Some n -> LangSym W "num" NSDetached n m ->
+(* [D68] operators: the receiver is the (left) operand ([D85]: and the
+   `for.` operators, note 60) *)
+| ExUnary : forall F C exp op y lib n m ox ot x t,
+    operator_method op true = Some (lib, n) -> LangSym W lib NSDetached n m ->
     Ex W P F C y None ox ot -> head (canon C ot) <> None ->
     Provided W P F C ox (canon C ot) m [] x t ->
     Ex W P F C (AEUnary op y) exp x t
-| ExBinary : forall F C exp op l r n m ox ot x t,
-    operator_method op false = Some n -> LangSym W "num" NSDetached n m ->
+| ExBinary : forall F C exp op l r lib n m ox ot x t,
+    operator_method op false = Some (lib, n) -> LangSym W lib NSDetached n m ->
     Ex W P F C l None ox ot -> head (canon C ot) <> None ->
     Provided W P F C ox (canon C ot) m [r] x t ->
     Ex W P F C (AEBinary op l r) exp x t
 (* [D68] literals *)
-| ExLit : forall F C exp text x t num den o,
-    LangSym W "int" NSName "one" o -> nlook o (c_vals C) = Some t \/ is_float_lit text = true ->
+| ExLit : forall F C exp text x t num den,
+    (* its type: `one`'s, `zero`'s (`0` needs only `zero`: note 63), or a float's *)
+    ((exists o, LangSym W "int" NSName "one" o /\ nlook o (c_vals C) = Some t) \/
+     (exists z, LangSym W "int" NSName "zero" z /\ nlook z (c_vals C) = Some t) \/
+     is_float_lit text = true) ->
     lit_value text = (num, den) ->
     LitTerm W C t x num den ->
     Ex W P F C (AELit text) exp x t
@@ -4365,6 +4380,123 @@ End Elaboration.
       canon e): it newly accepts only such programs.  Left for that lift,
       as it changes synth/check_stmt, which the bodies track (proof-a2) is
       changing too.
+
+   CHANGES OF TRACK A, PART 3 (fields, match, records, operators, tags,
+   literals, defined vals; notes 60-68):
+  60. (relation incomplete; adjusted to the elaborator) [D85] `for x in
+      xs` is sugar (Parse.for_desugar) over four operators, `for.begin`,
+      `for.more`, `for.get` and `for.after`, which the elaborator reads as
+      access.moss's detached `.begin`/`.more`/`.get`/`.after`.  Part V's
+      operator_method knew only num.moss's, so no program with a `for`
+      loop had a reading, among them tests/wasi/lists.moss, iterate.moss,
+      newton.moss and five more, which the oracle runs.  operator_method
+      now gives the library module with the method's name, as the
+      elaborator's does (the same table, BodyOps.operator_rel), and
+      ExUnary/ExBinary read LangSym at that module.
+  61. (elaborator, for the proof; no change in behaviour) A pattern names a
+      member of the scrutinee's type by its head, and compile_pattern's
+      table of heads also holds an abstract type's (a generation's or a
+      `type`'s number).  A tag never shares its number with a type, but
+      nothing local says so; compile_pattern now asks that the member it
+      finds under a tag's or unit's head be that tag's application
+      (YNom), so PUnit/PTagBind/PRecord's `In (TNom s xs) (members st)`
+      follows (BodyData.pat_step).  Union members are tag and unit
+      applications (BodySound.ety_wf, which the proof of elab_type
+      against TyOf now owes), so the exhaustiveness check reads heads as
+      ArmsSome does.
+  62. (elaborator unsound; adjusted to the relation) A record literal of a
+      payload that names a field twice, `tag P { a: I32, a: I32 };` and
+      `P { a = one }`: ExRecord asks for as many fields as the payload
+      has (`length fs = length ftys`, every field given once), the
+      elaborator only that each payload field's name be given, and it
+      ran the program.  synth_record now rejects it ("names a field
+      twice, so no record literal builds it").  Such a type is still
+      readable (TyRec), and `P(r)`, patterns and field reads of it are
+      unchanged.  Test: tests/errors/record_field_twice.moss (the oracle
+      ran it and exited 1; the self-hosted compiler still accepts it).
+  63. (relation incomplete; adjusted to the elaborator) The literal `0`
+      needs only lib/int.moss's `zero`: the elaborator types it at
+      zero's type, but ExLit asked for `one` in force at the literal's
+      type (or a float literal), so `assume Int, zero { fn f(): Int { 0 }
+      }` was accepted (the oracle ran it) with no reading.  ExLit now also
+      takes zero's type.
+  64. (relation and elaborator disagree; adjusted to the relation,
+      provisionally) [D68] A literal's arithmetic is `.add`/`.mul`/`.div`
+      provided at its type (LitTerm: `mlook t m (c_mths C)`), but the
+      elaborator's lang_call went through provided_call, which on a miss
+      applies a family in force that produces the key ([D84] rule 7), so
+      `2` under `bind AddF = AddG;` for `functor AddF[T]: -> T.add;` was
+      accepted (the oracle ran it) with no reading: LitTerm has no
+      PrFamily.  lang_call now reports the family instead ("a literal's
+      arithmetic is not a call (D68)"); a miss with no family reports what
+      it did.  The other way, LitTerm rules mirroring PrFamily, is the
+      designer's call.  Test: tests/errors/literal_family.moss.
+  65. (elaborator unsound on bundles the parser does not write; adjusted
+      to the relation) [D68] lit_value and is_float_lit read a literal's
+      text in the parser's normal form (Parse.lit_norm): digits, then
+      optionally `.` and digits, then optionally `e`, `-` and digits.  The
+      elaborator also split an exponent at `E`, and read any character as
+      a digit (code - 48), so a bundle with `(Y "1E3")` (a Float at 1000;
+      lit_value: not a float literal) or `(Y "/")` (one; lit_value: 0) had
+      no reading.  synth_literal now rejects a text not in that form ("is
+      not a numeric literal (D68)").  The oracle parses source, whose
+      literals are always in that form, so it cannot be given one; outputs
+      identical on all 245 programs.
+  66. (elaborator, for the proof; no change in behaviour) const_val's
+      cache write now only adds an entry: an initializer that reaches its
+      own val recurses until the fuel runs out, so no successful run
+      overwrote one.  The cache so only grows (ElabFrame's fx_consts), and
+      BodySound's Later reads every entry as its val's ExConst premises
+      (lt_consts, ConstFact; BodyConst.v proves pd_const).  That the last
+      state of a run holds only such entries is an obligation of the
+      whole run (each entry is made by const_val's fresh case, which
+      BodyConst.const_fresh relates, from an earlier state), proved in
+      ElabConsts.v (elab_consts: every step keeps the cache valid).
+  67. (elaborator, for the proof; no change in behaviour) lang_call (a
+      literal's `.add`/`.mul`/`.div`, note 64) called provided_call also
+      when no provision was in force and no family produced the key, for
+      provided_call to search for a family again, on a later state (fresh
+      numbers), and report the missing provision.  lang_call now reports
+      it itself (Elab.no_provision, the same message), so a literal's
+      arithmetic is provided_call's direct case only (BodyLit.v).
+  68. (discrepancy, open; the elaborator accepts what the relation
+      rejects) [D75]/note 32: two loaded modules whose paths end in
+      `lib/wasm.moss`.  Imports resolve relative to the importer, so a
+      program may load its own `lib/wasm.moss` beside the library's:
+
+        # dir/lib/wasm.moss
+        tag Ref(Int);
+        # dir/main.moss
+        import "<the library>/wasi.moss" use WasiStd;
+        import "<the library>/wasistd.moss" use Branch;
+        import "<the library>/wasm.moss" use Wasm;
+        import "<the library>/wasip1.moss" use Wasi;
+        import "./lib/wasm.moss" as mine use Ref;
+        assume Std { fn get(r: Ref): Int { match r { Ref(n) => n } } }
+        assume Wasm, Wasi, Branch {
+          fn main() { bind WasiStd; let r = Ref(one);
+                      putchar((get(r) + char::digit0.code()).char());
+                      putchar(char::newline); } }
+
+      The oracle runs it (prints `1`, exit 0): lang_modules takes the
+      library's wasm.moss (loaded first), so is_platform_sym does not
+      find the program's `Ref`.  Part V's LangSym reads any module with
+      that suffix, so the program's `Ref` is a PlatformRefTag, and main.moss
+      is under neither loaded `lib/` directory (InLibrary): no ExTag
+      derivation.  BodyTag.v so keeps Hwasm (at most one such module) as a
+      hypothesis; it cannot be discharged from the loader.  The same holds
+      of every library module LangSym names (Hbool, Hlang, Hnumsig, Hfloat
+      read the first `lib/<short>.moss`).  Proposed fixes, not made (each
+      changes acceptance, on programs such as this one only): (a) the
+      elaborator rejects a bundle in which two loaded modules end in the
+      same `lib/<short>.moss` of lang_modules' list (then lang_modules has
+      one entry per short, and Hwasm follows from elaboration); or (b) Part
+      V names the library by the prelude's directory (b_prelude), LangSym
+      reading the module at `<that directory>/<short>.moss`, and the
+      elaborator's lang_modules the same path (the world would carry the
+      prelude's path).  (b) is the principled one: the program above is
+      then accepted by both, and a program's own `lib/wasm.moss` is never
+      the platform's.
 *)
 
 (* ######################################################################## *)

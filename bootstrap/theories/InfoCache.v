@@ -324,33 +324,36 @@ Record FrL (s s' : st) : Prop := {
   fl_unsup : exists l, st_unsup s' = st_unsup s ++ l;
   fl_lang : st_lang s' = st_lang s;
   fl_reqs : Ext (st_reqs s) (st_reqs s');
-  fl_keep : forall i g, nget (st_syms s) i = Some g -> nget (st_syms s') i = Some g
+  fl_keep : forall i g, nget (st_syms s) i = Some g -> nget (st_syms s') i = Some g;
+  fl_consts : forall k r, nget (st_consts s) k = Some r -> nget (st_consts s') k = Some r
 }.
 
 Lemma frl_of_fr : forall s s', Fr s s' -> FrL s s'.
 Proof.
-  intros s s' [[Fw _ Fk _ _ Ffl [_ _ _ _ Fu Fl]] _ Fx]. constructor; assumption.
+  intros s s' [[Fw _ Fk _ _ Ffl [_ _ _ _ Fu Fl Fc]] _ Fx]. constructor; assumption.
 Qed.
 
 Lemma frl_trans : forall s1 s2 s3, FrL s1 s2 -> FrL s2 s3 -> FrL s1 s3.
 Proof.
-  intros s1 s2 s3 [W1 F1 (u1 & U1) L1 X1 K1] [W2 F2 (u2 & U2) L2 X2 K2]. constructor.
+  intros s1 s2 s3 [W1 F1 (u1 & U1) L1 X1 K1 C1] [W2 F2 (u2 & U2) L2 X2 K2 C2]. constructor.
   - congruence.
   - auto.
   - exists (u1 ++ u2). rewrite U2, U1, app_assoc. reflexivity.
   - congruence.
   - exact (ext_trans _ _ _ X1 X2).
   - auto.
+  - auto.
 Qed.
 
-Lemma later_fromL : forall w R Fl s s', FrL s s' -> Later w R Fl s' -> Later w R Fl s.
+Lemma later_fromL : forall w {P} R Fl s s', FrL s s' -> Later w P R Fl s' -> Later w P R Fl s.
 Proof.
-  intros w R Fl s s' [Fw Ffl (u & Eu) Fla Fx _] [Lw Lf Lu Ll Lr]. constructor.
+  intros w P R Fl s s' [Fw Ffl (u & Eu) Fla Fx _ Fc] [Lw Lf Lu Ll Lr Lc]. constructor.
   - congruence.
   - intros a n H. exact (Lf a n (Ffl a n H)).
   - rewrite Lu in Eu. destruct (st_unsup s); [reflexivity | discriminate].
   - congruence.
   - intros x l H. exact (Lr x l (Fx x l H)).
+  - intros k x t H. exact (Lc k x t (Fc k (x, t) H)).
 Qed.
 
 (* x is no symbol of the loader's (a symbol the elaborator made) *)
@@ -530,12 +533,12 @@ Proof.
   - exact (entry_frl _ _ _ _ (I y j Hy) (frl_info s _)).
 Qed.
 
-Lemma okI_new_sym_bind : forall A mi n k d o (K : nat -> M A), o <> OSource -> (forall t, o <> OForwarder t) ->
+Lemma okI_new_sym_bind : forall A mi n k d o (K : nat -> M A), o <> OSource -> k <> KTag /\ k <> KUnit -> (forall t, o <> OForwarder t) ->
   (forall pid, okIF pid (K pid)) -> okI (mbind (new_sym mi n k d o) K).
 Proof.
-  intros A mi n k d o K Ho Hf HK. split; [apply ok_bind; [apply ok_new_sym; exact Ho | intro pid; exact (proj1 (HK pid))]|].
+  intros A mi n k d o K Ho Hk Hf HK. split; [apply ok_bind; [apply ok_new_sym; [exact Ho | exact Hk] | intro pid; exact (proj1 (HK pid))]|].
   intros s a s'' Hi I H. apply bind_inv in H as (pid & s1 & H1 & H2).
-  destruct (ok_new_sym mi n k d o Ho s pid s1 Hi H1) as [Hi1 F1].
+  destruct (ok_new_sym mi n k d o Ho Hk s pid s1 Hi H1) as [Hi1 F1].
   assert (N1 : NI (new_sym mi n k d o)) by (unfold new_sym; nit).
   pose proof (info_step s s1 I (frl_of_fr _ _ F1) (N1 _ _ _ H1)) as I1.
   apply (proj2 (HK pid) s1 a s'' Hi1 I1); [|exact H2].
@@ -550,11 +553,11 @@ Proof.
 Qed.
 
 (* a forwarder's continuation never writes the cache under the forwarder *)
-Lemma okI_new_sym_fwd : forall A mi n k d t (K : nat -> M A),
+Lemma okI_new_sym_fwd : forall A mi n k d t (K : nat -> M A), k <> KTag /\ k <> KUnit ->
   (forall pid, okI (K pid)) -> okI (mbind (new_sym mi n k d (OForwarder t)) K).
 Proof.
-  intros A mi n k d t K HK. apply okI_bind; [|exact HK].
-  apply okI_ni; [apply ok_new_sym; discriminate | unfold new_sym; nit].
+  intros A mi n k d t K Hk HK. apply okI_bind; [|exact HK].
+  apply okI_ni; [apply ok_new_sym; [discriminate | exact Hk] | unfold new_sym; nit].
 Qed.
 
 
@@ -586,8 +589,8 @@ Ltac okIFt :=
   end)
 with okIt :=
   repeat (fintros; lazymatch goal with
-  | |- okI (mbind (new_sym _ _ _ _ (OForwarder _)) _) => apply okI_new_sym_fwd; intro
-  | |- okI (mbind (new_sym _ _ _ _ _) _) => apply okI_new_sym_bind; [discriminate | intros ? ?; discriminate | intro; okIFt]
+  | |- okI (mbind (new_sym _ _ _ _ (OForwarder _)) _) => apply okI_new_sym_fwd; [split; discriminate|]; intro
+  | |- okI (mbind (new_sym _ _ _ _ _) _) => apply okI_new_sym_bind; [discriminate | split; discriminate | intros ? ?; discriminate | intro; okIFt]
   | |- okI (mbind _ _) => apply okI_bind
   | |- okI (mmap _ _) => apply okI_mmap
   | |- okI (mfold _ _ _) => apply okI_mfold
@@ -801,10 +804,10 @@ Proof. intros w p s H Hi. exact (proj2 okI_elab_program _ _ _ Hi (info_init w) H
 (* ======================================================================== *)
 
 Section Use.
-Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
+Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
-Hypothesis MS : MethStep w R Fl.
+Hypothesis MS : @MethStep w P R Fl.
 Notation WW := (BodySound.W w R Fl).
 Notation trF := (tr Fl).
 
@@ -824,7 +827,7 @@ Definition FnCtx (g : gsym) (i : fninfo) : Prop :=
 Lemma walk_ctx : forall g s e needs s1,
   nget (w_syms w) (gs_id g) = Some g -> (forall t, gs_origin g <> OForwarder t) ->
   ~ A.IsMainFn WW (gs_id g) -> (forall s0 m s2, st_w s0 = w -> is_main g s0 = Good (m, s2) -> m = false) ->
-  merged_walk (gs_mod g) (fi_walk g) s = Good ((e, needs), s1) -> Inv s -> st_w s = w -> Later w R Fl s1 ->
+  merged_walk (gs_mod g) (fi_walk g) s = Good ((e, needs), s1) -> Inv s -> st_w s = w -> Later w P R Fl s1 ->
   FnCtx g (FInfo (freeze_all_apps e) needs
               (map (fun k => (k, match get_app (freeze_all_apps e) k with Some (a, _) => a | None => [] end)) needs)
               (merge_edges e)).
@@ -855,7 +858,7 @@ Qed.
 Theorem fn_info_ctx_any : forall g s i s',
   nget (w_syms w) (gs_id g) = Some g -> (forall t, gs_origin g <> OForwarder t) ->
   ~ A.IsMainFn WW (gs_id g) -> (forall s0 m s1, st_w s0 = w -> is_main g s0 = Good (m, s1) -> m = false) ->
-  fn_info g s = Good (i, s') -> Inv s -> InfoInv s -> st_w s = w -> Later w R Fl s' ->
+  fn_info g s = Good (i, s') -> Inv s -> InfoInv s -> st_w s = w -> Later w P R Fl s' ->
   FnCtx g i.
 Proof.
   intros g s i s' Hg Nf Nm Nm' H Hi I Hw L.
@@ -956,7 +959,7 @@ Proof.
 Qed.
 
 Section Fwd.
-Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
+Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 Notation WW := (BodySound.W w R Fl).
 
@@ -1007,7 +1010,7 @@ Qed.
 
 Lemma fwd_walk_needs : forall g t tg e0 s e needs s', gs_origin g = OForwarder t ->
   nget (w_syms w) t = Some tg -> gs_kind tg = KFn -> ReqTypes t ->
-  fi_walk g e0 s = Good ((e, needs), s') -> Inv s -> st_w s = w -> Later w R Fl s' -> needs = [KyFn t].
+  fi_walk g e0 s = Good ((e, needs), s') -> Inv s -> st_w s = w -> Later w P R Fl s' -> needs = [KyFn t].
 Proof.
   intros g t tg e0 s e needs s' O Ht K Rt H Hi Hw L. unfold fi_walk in H. rewrite O in H.
   apply bind_inv in H as (tg' & s1 & H1 & H). destruct (sym_loader_st _ _ _ _ _ Hi Hw Ht H1) as [-> ->].
@@ -1017,7 +1020,7 @@ Proof.
     by (intros; apply ok_bind; [unfold sym; okt | intro; apply ok_add_symbol_item]).
   destruct (bstep _ _ _ _ _ _ _ (ok_mfold _ _ _ rs (e0, []) Okf) Hi3 H4) as ([e4 n4] & s4 & H5 & H6 & Hi4 & F4).
   destruct (ok_add_symbol_item cf e4 (gs_mod g) tg [] n4 s4 _ s' Hi4 H6) as [_ F6].
-  assert (Er : R t = rs) by (apply (reqs_R w R Fl _ s rs s2 Hi H2); exact (later_from w R Fl _ _ F3 (later_from w R Fl _ _ F4 (later_from w R Fl _ _ F6 L)))).
+  assert (Er : R t = rs) by (apply (@reqs_R w P R Fl _ s rs s2 Hi H2); exact (later_from w R Fl _ _ F3 (later_from w R Fl _ _ F4 (later_from w R Fl _ _ F6 L)))).
   pose proof (fwd_reqs_needs _ _ _ _ _ _ _ H5 Hi3 (fr_w' w _ _ F3 (fr_w' w _ _ F2 Hw)) ltac:(rewrite <- Er; exact Rt)) as N4.
   cbn [snd] in N4. subst n4.
   rewrite (asi_fn_needs _ _ _ _ _ _ _ _ _ H6 K), (load_world_ids b w Hload t tg Ht). reflexivity.
@@ -1028,14 +1031,14 @@ Qed.
 Theorem fn_info_fwd : forall g0 g t tg s i s',
   nget (st_syms s) (gs_id g0) = Some g -> gs_origin g = OForwarder t ->
   nget (w_syms w) t = Some tg -> gs_kind tg = KFn -> ReqTypes t ->
-  fn_info g0 s = Good (i, s') -> Inv s -> InfoInv s -> st_w s = w -> Later w R Fl s' ->
+  fn_info g0 s = Good (i, s') -> Inv s -> InfoInv s -> st_w s = w -> Later w P R Fl s' ->
   fi_needs i = [KyFn t].
 Proof.
   intros g0 g t tg s i s' Gs O Ht K Rt H Hi I Hw L.
   assert (Gen : forall g' s0 e needs s1, nget (st_syms s0) (gs_id g0) = Some g' -> g' = g -> Inv s0 -> st_w s0 = w ->
-            Later w R Fl s1 -> merged_walk (gs_mod g') (fi_walk g') s0 = Good ((e, needs), s1) -> needs = [KyFn t]).
+            Later w P R Fl s1 -> merged_walk (gs_mod g') (fi_walk g') s0 = Good ((e, needs), s1) -> needs = [KyFn t]).
   { intros g' s0 e needs s1 _ -> Hi0 Hw0 L1 H1. rewrite (mw_go_eq (fi_walk g)) in H1.
-    exact (mw_round (fi_walk g) (fun n => n = [KyFn t]) (fun s2 => st_w s2 = w) (Later w R Fl) (gs_mod g)
+    exact (mw_round (fi_walk g) (fun n => n = [KyFn t]) (fun s2 => st_w s2 = w) (Later w P R Fl) (gs_mod g)
              (ok_fi_walk g) (fun s2 s3 F E => fr_w' w s2 s3 F E) (fun s2 s3 F L2 => later_from w R Fl s2 s3 F L2)
              (fun e0 s2 e2 n2 s3 Hi2 Hw2 L3 H2 => fwd_walk_needs g t tg e0 s2 e2 n2 s3 O Ht K Rt H2 Hi2 Hw2 L3)
              8 [] [] s0 e needs s1 H1 Hi0 Hw0 L1). }

@@ -116,16 +116,29 @@ Definition tr_mut (m : Elab.lmut) : A.lmut :=
 Lemma members_tr : forall t, A.members (tr t) = map tr (Elab.members t).
 Proof. intros [| | | | |]; reflexivity. Qed.
 
-(* `|` as the elaborator writes it: no type it makes is a union of nothing
-   (elab_type, Audit note 42(d)), so is_never and the relation's never
-   agree on its types. *)
-Definition WFty (t : ety) : Prop := t <> YUnion [].
+(* The types the elaborator makes.  `|` as it writes it: no type it makes
+   is a union of nothing, anywhere in it (elab_type, Audit note 42(d)), so
+   is_never and the relation's never agree on its types and on the types
+   inside them (a record's fields, a tag's arguments: BodyData.v); and a
+   union's members are tag or unit applications ([D15]: elab_type, and
+   substitution keeps them so), so a `match` reads its heads as the
+   relation does (BodyData.v). *)
+Fixpoint ety_wf (t : ety) : bool :=
+  match t with
+  | YUnion [] => false
+  | YUnion ms => forallb (fun m => match m with YNom _ _ => ety_wf m | _ => false end) ms
+  | YNom _ xs => forallb (fun p => ety_wf (snd p)) xs
+  | YRec fs => forallb (fun p => ety_wf (snd p)) fs
+  | _ => true
+  end.
+
+Definition WFty (t : ety) : Prop := ety_wf t = true.
 
 Lemma never_tr : forall t, WFty t -> (tr t = A.never <-> t = YNever).
 Proof.
   intros t W. unfold A.never. split; intro H; [|subst; reflexivity].
   destruct t as [| | |n xs|ms|fs]; cbn in H; try discriminate; [reflexivity|].
-  destruct ms as [|m r]; [exfalso; exact (W eq_refl) | discriminate].
+  destruct ms as [|m r]; [discriminate W | discriminate].
 Qed.
 
 Lemma is_never_tr : forall t, WFty t -> is_never t = ty_eqb (tr t) A.never.
@@ -445,6 +458,14 @@ Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> 
 Definition W : A.world := W_read w R Fl.
 Notation trF := (tr Fl).
 
+(* What ExConst asks of a defined val k's inlined initializer, elaborated
+   to x at type t (the const_val cache's entries: ConstOK, Later). *)
+Definition ConstFact (k : nat) (x : xexpr) (t : ety) : Prop :=
+  forall d n t0 i, A.w_decl W k = Some d -> A.d_ast d = ADVal n t0 (Some i) ->
+    A.d_assumes d = [] /\ A.TyOf W (A.d_mod d) [] None t0 (trF t) /\ WFty t /\
+    exists F0 t', A.Ex W P F0 (A.Cx [] [] [] [] [] [] [] []) i (Some (trF t)) x t' /\ A.fits t' (trF t) /\
+                  A.fr_mod F0 = A.d_mod d.
+
 (* What the final state still holds of a state s. *)
 Record Later (s : st) : Prop := {
   lt_w : st_w s = w;
@@ -452,17 +473,22 @@ Record Later (s : st) : Prop := {
   lt_unsup : st_unsup s = [];
   lt_lang : st_lang s = lang_modules w;
   (* the requirement lists cached so far are the reading's *)
-  lt_reqs : forall x l, nget (st_reqs s) x = Some l -> R x = l
+  lt_reqs : forall x l, nget (st_reqs s) x = Some l -> R x = l;
+  (* every defined val the cache holds is its initializer (an obligation
+     of the whole run: the run's last state's entries, each made by
+     const_val from a state before it) *)
+  lt_consts : forall k x t, nget (st_consts s) k = Some (x, t) -> ConstFact k x t
 }.
 
 Lemma later_back : forall s s', Fr s s' -> Later s' -> Later s.
 Proof.
-  intros s s' Fs [Lw Lf Lu Ll Lr]. destruct Fs as [[Fw _ _ _ _ Ffl [_ _ _ _ (u & Eu) Elang]] _ Fx]. constructor.
+  intros s s' Fs [Lw Lf Lu Ll Lr Lc]. destruct Fs as [[Fw _ _ _ _ Ffl [_ _ _ _ (u & Eu) Elang Ecs]] _ Fx]. constructor.
   - congruence.
   - intros a n H. exact (Lf a n (Ffl a n H)).
   - rewrite Lu in Eu. destruct (st_unsup s); [reflexivity | discriminate].
   - congruence.
   - intros x l H. exact (Lr x l (Fx x l H)).
+  - intros k x t H. exact (Lc k x t (Ecs k (x, t) H)).
 Qed.
 
 (* The locals numbered so far are the frame's. *)
@@ -731,7 +757,7 @@ Proof.
     unfold KindOK in KO.
     destruct (gs_kind a0) eqn:Kg; try noerr H0.
     - (* a unit *)
-      injection H0 as <- <- <-. split; [|discriminate].
+      injection H0 as <- <- <-. split; [|reflexivity].
       eapply A.ExUnitTag; [exact Nl | exact Hrs | unfold W; rewrite Hk; reflexivity].
     - (* a val *)
       destruct (gs_decl a0) as [| | | | |n0 t0 [i|]| | |] eqn:Dg; cbn in KO;
@@ -839,7 +865,7 @@ Proof.
   assert (Fin : forall s0, Inv s0 -> Fr s s0 -> s0 = s1 -> Post s1 F).
   { intros s0 Hi0 _ ->. stepok Hinj (ok_inject_check e t0 exp) Hi0 Hi2 Fs2. exact (post_back _ _ _ Fs2 Hp). }
   destruct x; cbn in Pe; try discriminate Pe; cbn beta iota zeta in H1.
-  - (* () *) injection H1 as <- <- <-. split; [apply A.ExUnit | discriminate].
+  - (* () *) injection H1 as <- <- <-. split; [apply A.ExUnit | reflexivity].
   - (* this *) destruct (cx_this c) as [th|] eqn:Et; [|noerr H1]. injection H1 as <- <- <-.
     split; [apply A.ExThis; rewrite (cr_this _ _ _ _ Hc), Et; reflexivity|].
     pose proof (cr_this_wf _ _ _ _ Hc) as W0. rewrite Et in W0. exact W0.
@@ -853,14 +879,14 @@ Proof.
       stepok Hy (ok_synth f c e y (Some (sg_ret (cx_sig c)))) Hi Hi3 Fs3.
       destruct (fits e ty (sg_ret (cx_sig c))) eqn:Ef; [|noerr H1]. injection H1 as <- <- <-.
       destruct (bs_synth _ IH c e y _ s vy ty s3 Hy F C Hi Hc (cr_ret_wf _ _ _ _ Hc) (Fin s3 Hi3 Fs3 eq_refl)) as [Ey Wy].
-      split; [|discriminate]. eapply A.ExReturn.
+      split; [|reflexivity]. eapply A.ExReturn.
       * rewrite (cr_ret _ _ _ _ Hc). exact Ey.
       * rewrite (cr_ret _ _ _ _ Hc). exact (fits_tr e ty _ (cr_uf _ _ _ _ Hc) Ef).
     + destruct (is_unit_or_never (sg_ret (cx_sig c))) eqn:Eu; [|noerr H1]. injection H1 as <- <- <-.
-      split; [|discriminate]. apply A.ExReturnUnit. rewrite (cr_ret _ _ _ _ Hc).
+      split; [|reflexivity]. apply A.ExReturnUnit. rewrite (cr_ret _ _ _ _ Hc).
       destruct (sg_ret (cx_sig c)); try discriminate Eu; [left | right]; reflexivity.
   - (* break *) destruct (Nat.eqb (cx_loop c) 0) eqn:El; [noerr H1|]. injection H1 as <- <- <-.
-    split; [|discriminate]. apply A.ExBreak. rewrite (cr_loop _ _ _ _ Hc), El. reflexivity.
+    split; [|reflexivity]. apply A.ExBreak. rewrite (cr_loop _ _ _ _ Hc), El. reflexivity.
   - (* a block *) binv H1 as r3 s3 Hb. destruct r3 as [[vb tb] bt]. injection H1 as <- <- <-.
     stepok Hb (ok_synth_block f c e a exp) Hi Hi3 Fs3.
     destruct (bs_block _ IH c e a exp s vb tb bt s3 Hb F C Hi Hc Hx (Fin s3 Hi3 Fs3 eq_refl)) as (Eb & Wb & _).
@@ -914,7 +940,7 @@ Proof.
     + eapply A.BlkECheck; [| exact Hesc | exact Hof].
       replace (trF (if d then YNever else YUnit)) with (if d then A.never else TUnit) by (destruct d; reflexivity).
       apply Ln.
-    + split; [destruct d; discriminate|]. split; [reflexivity|]. destruct d; [right | left]; reflexivity.
+    + split; [destruct d; reflexivity|]. split; [reflexivity|]. destruct d; [right | left]; reflexivity.
 Qed.
 
 Lemma fold_stmts_app : forall xs ys tx, fold_stmts (xs ++ ys) tx = fold_stmts xs (fold_stmts ys tx).
@@ -1107,7 +1133,7 @@ Proof.
   cbn [check_bool] in H. binv H as bt s1 H1. binv H as r s2 H2. destruct r as [v0 t0].
   destruct (bool_type_spec _ _ _ _ H1 Ls) as [-> (bi & x & Eb & Ex & ->)].
   destruct (fits e t0 (YNom x [])) eqn:Ef; [|noerr H]. injection H as E1 E2. subst.
-  destruct (bs_synth _ IH c e y (Some (YNom x [])) s v t0 s' H2 F C Hi Hc ltac:(discriminate) Hp) as [Ey _].
+  destruct (bs_synth _ IH c e y (Some (YNom x [])) s v t0 s' H2 F C Hi Hc eq_refl Hp) as [Ey _].
   eapply A.CondBool; [exact (Hbool bi x Eb Ex) | exact Ey | exact (fits_tr e t0 _ (cr_uf _ _ _ _ Hc) Ef)].
 Qed.
 
@@ -1115,7 +1141,7 @@ Lemma branch_tr : forall bl t, trF (block_bt bl t) = A.branch_ty bl (trF t).
 Proof. intros [ss [y|]] t; reflexivity. Qed.
 
 Lemma block_bt_wf : forall bl t, WFty t -> WFty (block_bt bl t).
-Proof. intros [ss [y|]] t W0; cbn; [exact W0 | discriminate]. Qed.
+Proof. intros [ss [y|]] t W0; cbn; [exact W0 | reflexivity]. Qed.
 
 Lemma if_step : forall f, OK f -> IfOK (S f).
 Proof.
@@ -1129,7 +1155,7 @@ Proof.
     destruct (negb (is_unit_or_never tty)) eqn:E2; [noerr H|]. injection H as <- <- <-.
     pose proof (bs_cond _ IH c e c0 s cond s1 H1 F C Hi Hc (post_back _ _ _ Fs2 Hp)) as Hcd.
     destruct (bs_block _ IH c e thn exp s1 tx t1 tty s2 H2 F C Hi1 Hc Hx Hp) as (Eb & Wb & Et & Tl).
-    split; [|discriminate].
+    split; [|reflexivity].
     eapply A.ExIfThen; [exact Hcd | exact Eb | |].
     + apply negb_false_iff in E1. exact (elab_opt_fits_tr e YUnit exp (cr_uf _ _ _ _ Hc) E1).
     + apply negb_false_iff in E2. destruct thn as [ss [y0|]]; cbn in Et, Tl; subst tty.

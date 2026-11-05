@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/literal_family.moss: the literal `2` needs `.add` provided at `Int` here; `AddF` would produce it, but a literal's arithmetic is not a call (D68)]

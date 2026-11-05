@@ -75,7 +75,7 @@ Proof.
 Qed.
 
 Section Main.
-Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
+Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 Notation WW := (BodySound.W w R Fl).
 

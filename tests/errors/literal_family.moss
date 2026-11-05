@@ -1,0 +1,15 @@
+import "../../lib/int.moss" use Int, one;
+import "../../lib/num.moss" use .add;
+
+# D68: a literal is arithmetic over `one` and the `.add` provided at its
+# type here. A family in force that would produce `Int.add` (D84 rule 7)
+# is not applied for it: a literal is not a call (Audit note 64).
+type T;
+functor AddF[T]: -> T.add;
+functor AddG: T -> T.add { bind T.add = (rhs) => this; }
+
+assume Int, one {
+  fn two(): Int { bind AddF = AddG; 2 }
+}
+
+fn main() {}

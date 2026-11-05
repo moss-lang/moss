@@ -94,7 +94,7 @@ Inductive lent :=
 (* ety_ok (BodySound.v): a type tr reads apart from every other such type. *)
 
 Section Walk.
-Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
+Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 
 Notation WW := (BodySound.W w R Fl).
@@ -394,7 +394,7 @@ Qed.
 
 (* the relation's reading of the instantiation provision_app records *)
 Lemma provision_app_rel : forall g tm tmr e s a s', Inv s -> provision_app g tm false s = Good (a, s') ->
-  Later w R Fl s' -> TmRel Fl tm tmr e -> A.kind_sym WW (gs_id g) <> Some A.DKMeth -> A.AppOf WW (gs_id g) tmr (tr_inst a).
+  Later w P R Fl s' -> TmRel Fl tm tmr e -> A.kind_sym WW (gs_id g) <> Some A.DKMeth -> A.AppOf WW (gs_id g) tmr (tr_inst a).
 Proof.
   intros g tm tmr e s a s' Hi H L Ht Hk. unfold provision_app in H. apply bind_inv in H as (rs & s1 & H1 & H).
   cbn beta iota in H. apply bind_inv in H as (rs' & s2 & H2 & H). injection H2 as <- <-. injection H as <- <-.
@@ -408,7 +408,7 @@ Lemma tmrel_walk : forall U e tm les needs subst ob, WS U e tm les needs -> map 
 Proof.
   intros U e tm les needs subst ob Hws Hob Hwf. apply (tmrel_app Fl); [|exact Hob | exact Hwf].
   apply tmrel_tymap; [|exact (ws_tn _ _ _ _ _ Hws)].
-  intros t y H. rewrite (ws_tn_get _ _ _ _ _ Hws t y H). discriminate.
+  intros t y H. rewrite (ws_tn_get _ _ _ _ _ Hws t y H). reflexivity.
 Qed.
 
 
@@ -660,7 +660,7 @@ Proof.
 Qed.
 
 Lemma ety_of_rel : forall t mi tm tmr e s d s', ety_of t mi tm e None s = Good (d, s') ->
-  Inv s -> st_w s = w -> In mi (w_order w) -> TmRel Fl tm tmr e -> Later w R Fl s' ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> TmRel Fl tm tmr e -> Later w P R Fl s' ->
   A.TyOf WW (path_of mi) tmr None t (trF d) /\ WFty d.
 Proof.
   intros t mi tm tmr e s d s' H Hi Hw Hmi Ht L. rewrite ety_of_eq in H.
@@ -669,7 +669,7 @@ Qed.
 
 Lemma fn_sig_rel : forall g tm tmr e s sg s' rcv n ps rt body, fn_sig g tm e None s = Good (sg, s') ->
   Inv s -> st_w s = w -> nget (w_syms w) (gs_id g) = Some g -> gs_decl g = ADFn rcv n ps rt body ->
-  TmRel Fl tm tmr e -> Later w R Fl s' ->
+  TmRel Fl tm tmr e -> Later w P R Fl s' ->
   A.SigOf WW (gs_id g) tmr None (tr_sig sg) /\ sg_this sg = None.
 Proof.
   intros g tm tmr e s sg s' rcv n ps rt body H Hi Hw Hg D Ht L.
@@ -729,14 +729,14 @@ Definition ISym (x : nat) (sb tm : list (nat * ty)) (es : list A.entry) (tm' : l
 Definition SymOK' (f : nat) : Prop :=
   forall e mi g subst needs s e' needs' s' U tm les ob,
   add_symbol_item f e mi g subst needs s = Good ((e', needs'), s') ->
-  Inv s -> st_w s = w -> In mi (w_order w) -> nget (w_syms w) (gs_id g) = Some g -> Later w R Fl s' ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> nget (w_syms w) (gs_id g) = Some g -> Later w P R Fl s' ->
   WS U e tm les needs -> map (trp Fl) subst = ob -> Forall (fun q => WFty (snd q)) subst ->
   exists les' es tm', ISym (gs_id g) ob tm es tm' /\ map tr_ent les' = es /\ WS U e' tm' (les ++ les') needs'.
 
 Definition SpecOK' (f : nat) : Prop :=
   forall e mi sp outer needs s e' needs' s' U tm les ob,
   add_spec f e mi sp outer needs s = Good ((e', needs'), s') ->
-  Inv s -> st_w s = w -> In mi (w_order w) -> Later w R Fl s' ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> Later w P R Fl s' ->
   WS U e tm les needs -> map (trp Fl) outer = ob -> Forall (fun q => WFty (snd q)) outer ->
   exists les' es tm', IE WW (path_of mi) ob tm sp es tm' /\ map tr_ent les' = es /\ WS U e' tm' (les ++ les') needs'.
 
@@ -744,7 +744,7 @@ Definition SpecOK' (f : nat) : Prop :=
 Definition MethStep : Prop :=
   forall e mi r dn subst needs s e' needs' s' U tm les ob,
   add_method_item e mi r dn subst needs s = Good ((e', needs'), s') ->
-  Inv s -> st_w s = w -> In mi (w_order w) -> nget (w_syms w) (gs_id r) = Some r -> Later w R Fl s' ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> nget (w_syms w) (gs_id r) = Some r -> Later w P R Fl s' ->
   WS U e tm les needs -> map (trp Fl) subst = ob -> Forall (fun q => WFty (snd q)) subst ->
   exists m rt g ap les', A.MethodNamed WW (path_of mi) (gs_id r) dn m /\ A.kind_sym WW m = Some A.DKMeth /\
     A.RecvTy WW (gs_id r) (ob ++ tm) rt /\ A.SigOf WW m (ob ++ tm) (Some rt) g /\ A.AppOf WW m (ob ++ tm) ap /\
@@ -869,7 +869,7 @@ Proof.
     destruct (gs_decl g) as [| | | | | |rcv0 ? ? ? ?|n its|] eqn:D; cbn in KO; try discriminate KO;
       try (destruct rcv0; discriminate KO). try rewrite D in Wd.
     assert (Gen : forall its0 acc s0 res s3, mfold (fun acc sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc)) acc its0 s0 = Good (res, s3) ->
-              Inv s0 -> st_w s0 = w -> Later w R Fl s3 -> forall tm0 les0, WS U (fst acc) tm0 les0 (snd acc) ->
+              Inv s0 -> st_w s0 = w -> Later w P R Fl s3 -> forall tm0 les0, WS U (fst acc) tm0 les0 (snd acc) ->
               exists les' es tm', IEs WW (path_of (gs_mod g)) ob tm0 its0 es tm' /\ map tr_ent les' = es /\
                 WS U (fst res) tm' (les0 ++ les') (snd res)).
     { induction its0 as [|sp r IH]; intros acc s0 res s3 Hm Hi0 Hw0 L0 tm0 les0 W0; cbn [mfold] in Hm.
@@ -917,7 +917,7 @@ Lemma subst_rel : forall (a : option (list (path * spec))) e mi outer s subst0 s
    | Some bs => mbind (app_subst 200 e mi bs outer) (fun l => ret (l ++ outer))
    | None => ret outer
    end) s = Good (subst0, s') ->
-  Inv s -> st_w s = w -> In mi (w_order w) -> Later w R Fl s' -> WS U e tm les needs ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> Later w P R Fl s' -> WS U e tm les needs ->
   map (trp Fl) outer = ob -> Forall (fun q => WFty (snd q)) outer ->
   exists bsr, map (trp Fl) subst0 = bsr ++ ob /\ Forall (fun q => WFty (snd q)) subst0 /\ (a = None -> bsr = []) /\
     forall x, (forall bs, a = Some bs -> forall b0 y, In b0 bs -> A.resolve_sym WW (path_of mi) (fst b0) = Some y ->
@@ -1052,7 +1052,7 @@ Proof. unfold ctx_fuel, walk_fuel. okt. Qed.
 
 Lemma assume_step : forall e mi it needs s e' needs' s' U tm les,
   add_assume_item e mi it needs s = Good ((e', needs'), s') ->
-  Inv s -> st_w s = w -> In mi (w_order w) -> Later w R Fl s' -> WS U e tm les needs ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> Later w P R Fl s' -> WS U e tm les needs ->
   exists les' es tm', IE WW (path_of mi) [] tm (A.assume_spec it) es tm' /\ map tr_ent les' = es /\
     WS U e' tm' (les ++ les') needs'.
 Proof.
@@ -1085,7 +1085,7 @@ Proof. intros e mi [p0 [d0|]] needs; unfold add_assume_item; okt. Qed.
 
 Lemma assumes_walk : forall mi its e needs s e' needs' s' U tm les,
   mfold (fun acc it => add_assume_item (fst acc) mi it (snd acc)) (e, needs) its s = Good ((e', needs'), s') ->
-  Inv s -> st_w s = w -> In mi (w_order w) -> Later w R Fl s' -> WS U e tm les needs ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> Later w P R Fl s' -> WS U e tm les needs ->
   exists les' es tm', IEs WW (path_of mi) [] tm (map A.assume_spec its) es tm' /\ map tr_ent les' = es /\
     WS U e' tm' (les ++ les') needs'.
 Proof.

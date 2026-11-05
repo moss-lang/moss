@@ -537,10 +537,10 @@ Proof.
 Qed.
 
 Section FnWalk.
-Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
+Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
-Hypothesis MS : MethStep w R Fl.
+Hypothesis MS : @MethStep w P R Fl.
 Notation WW := (BodySound.W w R Fl).
 
 Lemma ok_is_main : forall g, ok (is_main g).
@@ -554,7 +554,7 @@ Theorem assumes_merged : forall g s e needs s',
   (forall s0 m s1, st_w s0 = w -> is_main g s0 = Good (m, s1) -> m = false) ->
   In (gs_mod g) (w_order w) ->
   merged_walk (gs_mod g) (fi_walk g) s = Good ((e, needs), s') ->
-  Inv s -> st_w s = w -> Later w R Fl s' ->
+  Inv s -> st_w s = w -> Later w P R Fl s' ->
   exists les tm, IEs WW (gm_path (get_mod w (gs_mod g))) [] [] (map A.assume_spec (gs_assumes g)) (map (tr_ent Fl) les) tm /\
     WS Fl (en_uf e) e tm les needs /\
     A.MostGeneralMerge (suf Fl (en_uf e)) (map (tr_ent Fl) les) /\
@@ -572,7 +572,7 @@ Proof.
                  [unfold add_root_context; okt | apply ok_ret])
            (fun es tm => IEs WW (gm_path (get_mod w (gs_mod g))) [] [] (map A.assume_spec (gs_assumes g)) es tm)
            (fun es tm es' tm' H1 H2 => proj1 (ies_det _ _ _ _ _ _ _ _ _ H1 H2))
-           (fun s0 => st_w s0 = w) (Later w R Fl)
+           (fun s0 => st_w s0 = w) (Later w P R Fl)
            (fun s0 s1 F E => fr_w' w s0 s1 F E) (fun s0 s1 F L1 => later_from w R Fl s0 s1 F L1))
     with (mi := gs_mod g) (s := s) (s' := s'); [|exact H | exact Hi | exact Hw | exact L].
   clear e needs s s' H Hi Hw L. intros U s e needs s' T Hi Hw L H. rewrite Ew in H.
@@ -870,18 +870,18 @@ Definition CtxOfIE (W : A.world) (s : nat) (C : A.cx) (ns : list item) : Prop :=
     A.MostGeneralMerge σ (es ++ er) /\ C = A.entries_cx σ tmr (es ++ er) /\ A.Needs σ (es ++ er) ns.
 
 Section FnInfo.
-Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
+Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
-Hypothesis MS : MethStep w R Fl.
+Hypothesis MS : @MethStep w P R Fl.
 Notation WW := (BodySound.W w R Fl).
 Notation trF := (tr Fl).
 
-Lemma later_info : forall s c, Later w R Fl (St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) c
+Lemma later_info : forall s c, Later w P R Fl (St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) c
             (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
             (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-            (st_checked_total s) (st_lang s) (st_unsup s)) -> Later w R Fl s.
-Proof. intros s c [L1 L2 L3 L4 L5]. constructor; assumption. Qed.
+            (st_checked_total s) (st_lang s) (st_unsup s)) -> Later w P R Fl s.
+Proof. intros s c [L1 L2 L3 L4 L5 L6]. constructor; assumption. Qed.
 
 (* A function g of the program, neither a forwarder nor `main`, whose info
    fn_info computes (not cached): the context it forms, with its needs, and
@@ -890,7 +890,7 @@ Theorem fn_info_ctx : forall g s i s',
   nget (w_syms w) (gs_id g) = Some g -> (forall t, gs_origin g <> OForwarder t) ->
   ~ A.IsMainFn WW (gs_id g) -> (forall s0 m s1, st_w s0 = w -> is_main g s0 = Good (m, s1) -> m = false) ->
   fn_info g s = Good (i, s') -> nget (st_info s) (gs_id g) = None ->
-  Inv s -> st_w s = w -> Later w R Fl s' ->
+  Inv s -> st_w s = w -> Later w P R Fl s' ->
   let e := fi_env i in
   exists C, CtxOfIE WW (gs_id g) C (map (key_tr Fl) (fi_needs i)) /\
     A.c_sub C = suf Fl (en_uf e) /\ fi_merges i = en_uf e /\

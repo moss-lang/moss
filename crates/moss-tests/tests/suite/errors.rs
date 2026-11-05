@@ -49,6 +49,11 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
          and uses what it has, settled or not (Audit.v note 52)",
     ),
     (
+        "tests/errors/record_field_twice.moss",
+        "the self-hosted compiler does not check that a record literal \
+         gives a payload's fields once each (Audit.v note 62)",
+    ),
+    (
         "tests/errors/type_brackets.moss",
         "the self-hosted compiler reads `T[]` for a type symbol as `T` \
          (Audit.v note 50)",

@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/record_field_twice.moss: `P` names a field twice, so no record literal builds it]

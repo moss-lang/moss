@@ -49,6 +49,10 @@ const SELF_HOSTED_BUG_MERGE_CYCLE: &str = "self-hosted compiler bug: a cyclic me
 /// A self-hosted compiler bug: it stops merging a context after 7 rounds
 /// and uses an unsettled merge; the oracle rejects it (Audit.v note 52).
 const SELF_HOSTED_BUG_MERGE_ROUNDS: &str = "self-hosted compiler bug: an unsettled merge is used";
+/// A record literal of a payload that names a field twice: the oracle (and
+/// Part V's ExRecord) asks for every field once, the self-hosted compiler
+/// does not check it (Audit.v note 62).
+const SELF_HOSTED_BUG_FIELD_TWICE: &str = "self-hosted compiler bug: a record literal of a payload that names a field twice is accepted";
 /// `main` assumes an item no platform provides. The oracle runs `main` in
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
@@ -78,6 +82,7 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/context_item_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_ITEM_BRACKETS),
     ("tests/errors/merge_cyclic.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_CYCLE),
     ("tests/errors/merge_unsettled.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_ROUNDS),
+    ("tests/errors/record_field_twice.moss", Accept, Reject, SELF_HOSTED_BUG_FIELD_TWICE),
     ("tests/errors/type_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_TYPE_BRACKETS),
     ("tests/wasi/acrosslib.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/app.moss", Reject, Unsupported, LIBRARY),
