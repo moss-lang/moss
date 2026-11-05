@@ -248,8 +248,8 @@ Qed.
 Theorem get_mth_set : forall e t m s,
   S m < 2 ^ 64 -> get_mth (set_mth e t m s) t m = Some s.
 Proof.
-  intros e t m s Hm. unfold get_mth, set_mth. cbn [en_mths]. unfold nset.
-  rewrite (nget_nset_go_same _ 64 _ m _ Hm).
+  intros e t m s _. unfold get_mth, set_mth. cbn [en_mths]. unfold nset.
+  rewrite (nget_nset_go_same _ (S m) _ m _ (Nat.pow_gt_lin_r 2 (S m) (le_n 2))).
   apply assoc_aset_same. exact ety_eqb_refl.
 Qed.
 

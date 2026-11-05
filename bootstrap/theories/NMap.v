@@ -43,5 +43,9 @@ Fixpoint nset_go {A} (fuel : nat) (m : nmap A) (k : nat) (x : A) : nmap A :=
       end
   end.
 
-(* 64 levels: every key below 2^63 (an OCaml int) fits. *)
-Definition nset {A} (m : nmap A) (k : nat) (x : A) : nmap A := nset_go 64 m k x.
+(* A key k is at depth at most k + 1, so S k levels always suffice; every
+   key that is an OCaml int is at depth at most 64, so this is what 64
+   levels did on every key below 2^62 (Track A: with a fixed 64, a key of
+   2^64 or more was silently dropped, which no soundness theorem about the
+   elaborator's tables could rule out). *)
+Definition nset {A} (m : nmap A) (k : nat) (x : A) : nmap A := nset_go (S k) m k x.

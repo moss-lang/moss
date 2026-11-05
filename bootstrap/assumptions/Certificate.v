@@ -23,6 +23,9 @@ Print Assumptions NM.Certified.run_main.
 Print Assumptions NM.Certified.fast_path.
 Print Assumptions NM.Certified.fast_path_agrees.
 Print Assumptions NM.Certified.fast_path_engine_agrees.
+Print Assumptions NM.Certified.world_reads.
+Print Assumptions NM.Certified.elaborate_world_reads.
+Print Assumptions NM.Certified.world_of_reading.
 
 (* The front end moss_m2.ml runs on a source file: the Gallina lexer,
    parser and bundler (the driver only reads files), whose output the

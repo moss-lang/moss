@@ -5,7 +5,9 @@
 (*                                                                           *)
 (* Bound:   Audit.PROVED_NOW, by `Certified` below.                          *)
 (* Pending: the rest of Audit.COMPLETE, i.e. exactly                         *)
-(*   - elaborate_sound      (elaborate b = Good p -> Elaborates b p)         *)
+(*   - elaborate_sound      (elaborate b = Good p -> Elaborates b p); its    *)
+(*                           first step, the loader's reading, is bound     *)
+(*                           below (world_reads, WorldSound.v)              *)
 (*   - elaborate_complete   (b elaborable -> elaborate b = Good _)           *)
 (*   - accepted_never_err   (accepted programs never get stuck, MossX)       *)
 (*   - elaborated_typed     (core-fragment output is Typed; the bridge from  *)
@@ -16,7 +18,7 @@
 
 From Stdlib Require Import List.
 From NM Require Import Audit CoreMoss MossX Sx Elab Specialization RelFacts.
-From NM Require FastPath.
+From NM Require FastPath WorldSound.
 Import ListNotations.
 
 Module Certified <: PROVED_NOW.
@@ -64,6 +66,17 @@ End Certified.
 Definition fast_path := FastPath.fast_program.
 Definition fast_path_agrees := FastPath.fast_run.
 Definition fast_path_engine_agrees := FastPath.fast_engine_agrees.
+
+(* Toward elaborate_sound (Audit.v, Part VI, COMPLETE), step 1: the static
+   world the elaborator's loader reads a bundle as satisfies every condition
+   of Part V's WorldOf about modules, imports, declarations, D44 exports and
+   scopes and D61 attached methods (WorldSound.LoaderReading), whatever the
+   requirements and field numbering; with those two (ReqsReading, an
+   injective numbering) it is a WorldOf (world_of_reading).  The remaining
+   conditions are WorldSound.v's section world_todo. *)
+Definition world_reads := WorldSound.load_world_reads.
+Definition elaborate_world_reads := WorldSound.elaborate_world_reads.
+Definition world_of_reading := WorldSound.worldof_of_reading.
 
 (* The executable roots (Extract2.v extracts these). *)
 Definition elaborate_sx := Certified.elaborate_sx.

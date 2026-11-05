@@ -2155,9 +2155,12 @@ End PrimNames.
 (* Part V. The declarative elaboration relation — DRAFT                      *)
 (* ######################################################################## *)
 
-(* STATUS: DRAFT, for the designer's review.  Nothing is proved against it
-   yet: the elaborator (Elab.v) is neither shown sound nor complete for it.
-   Certified.v lists both as pending.  RelExamples.v checks it on examples.
+(* STATUS: DRAFT, for the designer's review.  The elaborator (Elab.v) is
+   neither shown sound nor complete for it; Certified.v lists both as
+   pending.  RelExamples.v checks it on examples.  Proved toward soundness
+   (WorldSound.v, bound as Certified.world_reads): the loader's reading of
+   an accepted bundle meets every condition of WorldOf (V.1) except the
+   requirement lists and the field numbering.
 
    WHAT IT SAYS.  `Elaborates b p` relates a bundle `b` (Part I) to an
    elaborated program `p` (Part II): `p` is *an* elaboration of `b` if
@@ -2338,7 +2341,10 @@ Inductive Exports (b : bundle) (W : world) : string -> nspace -> name -> ent -> 
     module_of b p = Some m -> In (t, imp) (imports_of b m) -> i_glob imp = false ->
     In u (i_uses imp) ->
     ns = (if u_dot u then NSDetached else NSName) ->
-    (Exports b W t ns (u_name u) e \/ (u_dot u = false /\ Exports b W t NSAlias (u_name u) e)) ->
+    (* a plain name is the symbol t exports under it, else the module alias
+       (as path resolution reads it): note 25 *)
+    (Exports b W t ns (u_name u) e \/
+     (u_dot u = false /\ w_exp W t NSName (u_name u) = None /\ Exports b W t NSAlias (u_name u) e)) ->
     Exports b W p (match e with EMod _ => NSAlias | _ => ns end)
             (match u_alias u with Some (_, a) => a | None => u_name u end) e
 | ExAlias : forall p m t imp a,
@@ -3738,38 +3744,36 @@ End Elaboration.
       source); and a `Ref`/`Array` rebuilt from a bare handle inside the
       library (GcArrays) is an unchecked cast (see note 1).
   24. (m4, implementation optimization; the relation is unchanged) Under
-      PrFamily, `XApply F θ sm e` composes the family's whole result at θ
-      (inst_smap θ Dr) at every application though e reads one member: for
-      the platform's `Memories` (27 members) at every memory access, about
-      two thirds of the 5ea4e2e compiler's interpreted time.  The
-      elaborator therefore has a fast path for `Memories` alone
-      (Elab.memories_branch): `Memories` enters main's root context as
-      XDFunSym h (h: the core functor of its primitives) instead of
-      XDFun h [] [], and each application is `XApplyBr F [(h, bs', ps)] e`
-      with ps = the pairs of inst_smap θ Dr whose requirement the site
-      looks up and bs' their primitives' binds (an explicit `bind
-      Memories;` keeps all of them).  Precondition: no bind has `Memories`
-      on either side (bind_functor records one); if it fails, or the fast
-      run fails, Elab.elaborate elaborates again without the fast path,
-      i.e. by PrFamily exactly, so acceptance is unchanged.
-      PENDING (needed for the elaborator's soundness against the relation;
-      not proved): for every bundle b, if elab_program from the initial
-      state with the fast path off gives p, and with it on gives p' with
-      st_mbound false, then for all argv, rd and every fuel at which
-      neither run reports XFuel,
-        let r  := run_main fuel (program_of p argv rd) (xo_main p) (xo_env p) st0 in
-        let r' := run_main fuel (program_of p' argv rd) (xo_main p') (xo_env p') st0 in
-        ms_out (xr_st r) = ms_out (xr_st r') /\ ms_err (xr_st r) = ms_err (xr_st r')
-        /\ out_kind (xr_out r) = out_kind (xr_out r')
-      (out_kind: XOk/XExit c/XTrap c/XErr/XUns/XFuel, values ignored;
-      p and p' number their symbols differently, so the statement is on
-      what is observed).  The heart of it: in an environment whose entries
-      for `Memories` are all the platform's, `XApplyBr F [(h, bs', ps)] e`
-      and `XApply F θ [] e` give e the same entries at every item e looks
-      up, since e's other lookups of the family's members at θ find the
-      same primitive entry below.  A general per-family version would need
-      an application form that composes only the items read (a MossX
-      change) or a lazily composing engine proved equal to xinterp.
+      PrFamily, `XApply F θ sm e` composes the family's whole result at θ at
+      every application, though e reads one member: for the platform's
+      `Memories` (27 members) at every memory access, about two thirds of
+      the compiler's interpreted time.  The elaborator applies families
+      exactly as drafted; the oracle then runs FastPath.fast_program of its
+      output.  For each platform functor of primitives in main's root
+      context that no bind, copy or satisfaction map moves (a syntactic
+      check), that pass files it as XDFunSym h and turns each
+      `XApply F θ [] e` into `XApplyBr F [(h, bs', ps)] e`, where ps is the
+      pairs of inst_smap θ Dr whose requirement e may look up and bs' the
+      primitives they read.  PROVED (FastPath.fast_run, bound as
+      Certified.fast_path_agrees): for every program, argv, rd and fuel, the
+      transformed program's run equals the original's unless the original
+      reports XFuel; with CloX.engine_agrees, Certified.fast_path_engine_agrees
+      covers the default pipeline.
+
+   CHANGES THE SOUNDNESS PROOF FORCED (Track A, WorldSound.v):
+  25. (relation wrong; adjusted to the elaborator) [D44] a `use` of a plain
+      name that its target exports both as a symbol and as a module alias:
+      ExUse gave the importer both, the elaborator (Elab.link_uses) only
+      the symbol, as path resolution (`resolve`) reads the first segment.
+      ExUse's alias branch now requires that t export no symbol of that
+      name (`w_exp W t NSName (u_name u) = None`).  Without it no reading
+      of such a bundle by the elaborator is a `WorldOf`.
+  26. (elaborator support fixed, not the relation) NMap.nset walked a fixed
+      64 levels, so a key of 2^64 or more was silently not stored; no
+      theorem about the loader's symbol table could hold for every bundle.
+      It now walks S k levels (enough for every key; identical to 64 levels
+      on every key an OCaml int can hold, so the extracted oracle is
+      unchanged).
 *)
 
 (* ######################################################################## *)
