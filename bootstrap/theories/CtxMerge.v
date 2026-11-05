@@ -18,6 +18,12 @@
 (*    reading and keep WS.                                                  *)
 (* 5. fn_info's walk for a function that is not a forwarder and not `main`  *)
 (*    (assumes_merged), from CtxWalk's assumes_walk, given MethStep.        *)
+(* 6. The context's tables (types, vals, fns, methods at a canonical key)  *)
+(*    against the walk's environment, read canonically.                     *)
+(* 7. fn_info on a cache miss (fn_info_ctx): CtxOfIE, CtxOf with IEs for    *)
+(*    ItemsEntries, of the function, with fi_needs as its needs and the     *)
+(*    tables of 6 against fi_env.  Not yet: the cache (st_info), `main`'s  *)
+(*    root context, forwarders, c_funs and c_apps.                          *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
@@ -576,3 +582,226 @@ Proof.
 Qed.
 
 End FnWalk.
+
+(* ======================================================================== *)
+(* 6. The context's tables against the walk's environment                    *)
+(* ======================================================================== *)
+
+Section Tables.
+Variable Fl : string -> nat.
+Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
+Notation trF := (tr Fl).
+
+(* a signature in force, read canonically *)
+Definition csig (e : env) (g : Elab.fsig) : A.fsig :=
+  A.FSig (map trF (map (fun p => canon e (snd p)) (sg_params g))) (trF (canon e (sg_ret g))).
+
+Lemma tri_nassoc : forall U g t, Tri U -> In (g, t) U -> nassoc g U = Some t.
+Proof.
+  intros U g t T. induction T as [|U g' t' T IH Hg _ _]; [intros []|]. intro Hin. rewrite Merge.nassoc_app'.
+  apply in_app_iff in Hin as [Hin|[E|[]]].
+  - rewrite (IH Hin). reflexivity.
+  - injection E as <- <-. rewrite Hg. cbn. rewrite Nat.eqb_refl. reflexivity.
+Qed.
+
+(* σ respects the merges it resolves *)
+Lemma suf_resp : forall U, Tri U -> RespE Fl (suf Fl U) U.
+Proof.
+  intros U T g t Hin. cbn [tr Audit.app_subst]. rewrite lookup_suf, (tri_nassoc U g t T Hin). cbn [option_map].
+  rewrite (res_abs U (tri_rk U T) g), (tri_nassoc U g t T Hin). symmetry. exact (tr_res Fl U (tri_rk U T) t).
+Qed.
+
+Lemma tr_ent_val : forall l v ty a, tr_ent Fl l = A.NVal v ty a -> exists y a0, l = LVal v y a0 /\ ty = trF y.
+Proof. intros l v ty a H; destruct l; cbn in H; try discriminate. injection H as <- <- _. eauto. Qed.
+Lemma tr_ent_fn : forall l f g a, tr_ent Fl l = A.NFn f g a -> exists g0 a0, l = LFn f g0 a0 /\ g = tr_sig Fl g0.
+Proof. intros l f g a H; destruct l; cbn in H; try discriminate. injection H as <- <- _. eauto. Qed.
+Lemma tr_ent_mth : forall l r m g a, tr_ent Fl l = A.NMth r m g a -> exists r0 g0 a0, l = LMth r0 m g0 a0 /\ r = trF r0 /\ g = tr_sig Fl g0.
+Proof. intros l r m g a H; destruct l; cbn in H; try discriminate. injection H as <- <- <- _. eauto 7. Qed.
+
+Lemma nlook_map_snd : forall X Y (f : X -> Y) k (l : list (nat * X)),
+  A.nlook k (map (fun q => (fst q, f (snd q))) l) = option_map f (A.nlook k l).
+Proof. intros X Y f k l. induction l as [|[a x] r IH]; [reflexivity|]. cbn. destruct (Nat.eqb k a); [reflexivity | exact IH]. Qed.
+
+Definition cvals (s : tsubst) (es : list A.entry) : list (nat * ty) :=
+  flat_map (fun e => match e with A.NVal v t _ => [(v, asub s t)] | _ => [] end) es.
+Definition cfns (s : tsubst) (es : list A.entry) : list (nat * A.fsig) :=
+  flat_map (fun e => match e with A.NFn f g _ => [(f, A.sig_subst s g)] | _ => [] end) es.
+Definition cmths (s : tsubst) (es : list A.entry) : list ((ty * nat) * A.fsig) :=
+  flat_map (fun e => match e with A.NMth r m g _ => [((asub s r, m), A.sig_subst s g)] | _ => [] end) es.
+
+Lemma cvals_some : forall s es v t, A.nlook v (cvals s es) = Some t -> exists ty a, In (A.NVal v ty a) es /\ t = asub s ty.
+Proof.
+  intros s es v t. induction es as [|e0 r IH]; [discriminate|]. unfold cvals in *. cbn [flat_map].
+  destruct e0 as [|v' ty a|f g a|r0 m g a|u]; cbn [List.app]; try (intro H; destruct (IH H) as (ty1 & a1 & Hi & E1); exists ty1, a1; split; [right; exact Hi | exact E1]).
+  cbn [A.nlook]. destruct (Nat.eqb_spec v v') as [->|Ne].
+  - intro H. injection H as <-. exists ty, a. split; [left; reflexivity | reflexivity].
+  - intro H. destruct (IH H) as (ty' & a' & Hi & E). exists ty', a'. split; [right; exact Hi | exact E].
+Qed.
+
+Lemma cvals_none : forall s es v ty a, A.nlook v (cvals s es) = None -> ~ In (A.NVal v ty a) es.
+Proof.
+  intros s es v ty a. induction es as [|e0 r IH]; [intros _ []|]. unfold cvals in *. cbn [flat_map].
+  destruct e0 as [|v' ty' a'|f g a'|r0 m g a'|u]; cbn [List.app]; try (intros H [E|Hi]; [discriminate | exact (IH H Hi)]).
+  cbn [A.nlook]. destruct (Nat.eqb_spec v v') as [->|Ne]; [discriminate|].
+  intros H [E|Hi]; [injection E as <- _ _; exact (Ne eq_refl) | exact (IH H Hi)].
+Qed.
+
+Lemma cfns_some : forall s es f g, A.nlook f (cfns s es) = Some g -> exists g0 a, In (A.NFn f g0 a) es /\ g = A.sig_subst s g0.
+Proof.
+  intros s es f g. induction es as [|e0 r IH]; [discriminate|]. unfold cfns in *. cbn [flat_map].
+  destruct e0 as [|v ty a|f' g' a|r0 m g' a|u]; cbn [List.app]; try (intro H; destruct (IH H) as (g1 & a1 & Hi & E1); exists g1, a1; split; [right; exact Hi | exact E1]).
+  cbn [A.nlook]. destruct (Nat.eqb_spec f f') as [->|Ne].
+  - intro H. injection H as <-. exists g', a. split; [left; reflexivity | reflexivity].
+  - intro H. destruct (IH H) as (g0 & a0 & Hi & E). exists g0, a0. split; [right; exact Hi | exact E].
+Qed.
+
+Lemma cfns_none : forall s es f g a, A.nlook f (cfns s es) = None -> ~ In (A.NFn f g a) es.
+Proof.
+  intros s es f g a. induction es as [|e0 r IH]; [intros _ []|]. unfold cfns in *. cbn [flat_map].
+  destruct e0 as [|v ty a'|f' g' a'|r0 m g' a'|u]; cbn [List.app]; try (intros H [E|Hi]; [discriminate | exact (IH H Hi)]).
+  cbn [A.nlook]. destruct (Nat.eqb_spec f f') as [->|Ne]; [discriminate|].
+  intros H [E|Hi]; [injection E as <- _ _; exact (Ne eq_refl) | exact (IH H Hi)].
+Qed.
+
+Lemma cmths_some : forall s es r m g, A.mlook r m (cmths s es) = Some g ->
+  exists r0 g0 a, In (A.NMth r0 m g0 a) es /\ asub s r0 = r /\ g = A.sig_subst s g0.
+Proof.
+  intros s es r m g. induction es as [|e0 rest IH]; [discriminate|]. unfold cmths in *. cbn [flat_map].
+  destruct e0 as [|v ty a|f g' a|r0 m0 g' a|u]; cbn [List.app];
+    try (intro H; destruct (IH H) as (r9 & g9 & a9 & Hi & E1 & E2); exists r9, g9, a9; split; [right; exact Hi | split; assumption]).
+  cbn [A.mlook]. destruct (ty_eqb r (asub s r0) && Nat.eqb m m0) eqn:E.
+  - apply andb_true_iff in E as [E1 E2]. apply CoreMoss.ty_eqb_eq in E1. apply Nat.eqb_eq in E2. subst.
+    intro H. injection H as <-. exists r0, g', a. split; [left; reflexivity | split; reflexivity].
+  - intro H. destruct (IH H) as (r1 & g0 & a0 & Hi & E1 & E2). exists r1, g0, a0. split; [right; exact Hi | split; assumption].
+Qed.
+
+Lemma cmths_none : forall s es r m r0 g a, A.mlook r m (cmths s es) = None -> In (A.NMth r0 m g a) es -> asub s r0 <> r.
+Proof.
+  intros s es r m r0 g a. induction es as [|e0 rest IH]; [intros _ []|]. unfold cmths in *. cbn [flat_map].
+  destruct e0 as [|v ty a'|f g' a'|r1 m1 g' a'|u]; cbn [List.app]; try (intros H [Eq|Hi]; [discriminate | exact (IH H Hi)]).
+  cbn [A.mlook]. destruct (ty_eqb r (asub s r1) && Nat.eqb m m1) eqn:E; [discriminate|].
+  intros H [Eq|Hi]; [|exact (IH H Hi)]. injection Eq as -> -> _ _. intro Er. subst r.
+  rewrite (proj2 (CoreMoss.ty_eqb_eq _ _) eq_refl), Nat.eqb_refl in E. discriminate.
+Qed.
+
+Variables (U : list (nat * ety)) (e : env) (tm : list (nat * ty)) (les : list lent) (needs : list key).
+Hypothesis Hws : WS Fl U e tm les needs.
+Hypothesis E : en_uf e = U.
+Let T : Tri U := eq_ind _ Tri (ws_tri _ _ _ _ _ _ Hws) _ E.
+Notation σ := (suf Fl U).
+Notation es := (map (tr_ent Fl) les).
+
+Lemma ctx_ty : forall k, A.nlook k (map (fun q => (fst q, asub σ (snd q))) tm) = option_map (fun y => trF (canon e y)) (tn_get e k).
+Proof.
+  intro k. rewrite nlook_map_snd, (ws_tn _ _ _ _ _ _ Hws k). destruct (tn_get e k); [|reflexivity].
+  cbn. rewrite (sigma_tr Fl U e _ E T). reflexivity.
+Qed.
+
+Lemma ctx_vals : forall v, A.nlook v (cvals σ es) = option_map (fun y => trF (canon e y)) (nget (en_vals e) v).
+Proof.
+  intro v. destruct (A.nlook v (cvals σ es)) as [t|] eqn:H.
+  - destruct (cvals_some _ _ _ _ H) as (ty & a & Hi & ->). apply in_map_iff in Hi as (l & El & Hl).
+    destruct (tr_ent_val l v ty a El) as (y & a0 & -> & ->).
+    destruct (ws_vals _ _ _ _ _ _ Hws v y a0 Hl) as (y0 & _ & G & _ & C). rewrite G. cbn.
+    rewrite (sigma_tr Fl U e _ E T), (C E). reflexivity.
+  - destruct (nget (en_vals e) v) as [y0|] eqn:G; [|reflexivity]. exfalso.
+    destruct (ws_vals_in _ _ _ _ _ _ Hws v y0 G) as (a0 & Hl).
+    apply (cvals_none σ es v (trF y0) (tr_inst Fl a0) H). apply (in_map (tr_ent Fl) _ _ Hl).
+Qed.
+
+Lemma ctx_fns : forall f, A.nlook f (cfns σ es) = option_map (csig e) (nget (en_fns e) f).
+Proof.
+  intro f. destruct (A.nlook f (cfns σ es)) as [g|] eqn:H.
+  - destruct (cfns_some _ _ _ _ H) as (g1 & a & Hi & ->). apply in_map_iff in Hi as (l & El & Hl).
+    destruct (tr_ent_fn l f g1 a El) as (g0 & a0 & -> & ->).
+    destruct (ws_fns _ _ _ _ _ _ Hws f g0 a0 Hl) as (_ & g2 & _ & G & _ & C). rewrite G. cbn.
+    rewrite (sigcanon_tr Fl U e _ _ E T (C E)). f_equal. exact (sig_tr Fl U e g2 E T).
+  - destruct (nget (en_fns e) f) as [g0|] eqn:G; [|reflexivity]. exfalso.
+    destruct (ws_fns_in _ _ _ _ _ _ Hws f g0 G) as (a0 & Hl).
+    apply (cfns_none σ es f (tr_sig Fl g0) (tr_inst Fl a0) H). apply (in_map (tr_ent Fl) _ _ Hl).
+Qed.
+
+(* a method in force, asked at a canonical receiver key that tr reads apart *)
+Lemma ctx_mths : forall k m, ety_ok k = true -> canon e k = k ->
+  A.mlook (trF k) m (cmths σ es) = option_map (csig e) (get_mth e k m).
+Proof.
+  intros k m Ok Ck. destruct (A.mlook (trF k) m (cmths σ es)) as [g|] eqn:H.
+  - destruct (cmths_some _ _ _ _ _ H) as (r1 & g1 & a & Hi & Er & ->). apply in_map_iff in Hi as (l & El & Hl).
+    destruct (tr_ent_mth l r1 m g1 a El) as (r0 & g0 & a0 & -> & -> & ->).
+    destruct (ws_mths _ _ _ _ _ _ Hws E r0 m g0 a0 Hl) as (O0 & g2 & G & C).
+    rewrite (sigma_tr Fl U e _ E T) in Er. rewrite (tr_inj Fl Finj _ _ O0 Ok Er) in G. rewrite G. cbn.
+    rewrite (sigcanon_tr Fl U e _ _ E T C). f_equal. exact (sig_tr Fl U e g2 E T).
+  - destruct (get_mth e k m) as [g0|] eqn:G; [|reflexivity]. exfalso.
+    destruct (ws_mths_in _ _ _ _ _ _ Hws k m g0 G) as (r0 & a0 & Hl & Rs).
+    apply (cmths_none σ es (trF k) m (trF r0) (tr_sig Fl g0) (tr_inst Fl a0) H (in_map (tr_ent Fl) _ _ Hl)).
+    rewrite (Rs σ ltac:(rewrite E; exact (suf_resp U T))), (sigma_tr Fl U e _ E T), Ck. reflexivity.
+Qed.
+
+End Tables.
+
+(* ======================================================================== *)
+(* 7. fn_info on a cache miss: the context its function forms               *)
+(* ======================================================================== *)
+
+(* CtxOf with the enclosing brackets apart (IEs), the form the bridge track
+   gives ItemsEntries (Audit note 71 on proof-bridge). *)
+Definition CtxOfIE (W : A.world) (s : nat) (C : A.cx) (ns : list item) : Prop :=
+  exists d es tm er tmr σ,
+    A.w_decl W s = Some d /\
+    IEs W (A.d_mod d) [] [] (map A.assume_spec (A.d_assumes d)) es tm /\
+    A.RootCtx W s es tm er tmr /\
+    A.MostGeneralMerge σ (es ++ er) /\ C = A.entries_cx σ tmr (es ++ er) /\ A.Needs σ (es ++ er) ns.
+
+Section FnInfo.
+Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
+Hypothesis Hload : load_world b = Good w.
+Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
+Hypothesis MS : MethStep w R Fl.
+Notation WW := (BodySound.W w R Fl).
+Notation trF := (tr Fl).
+
+Lemma later_info : forall s c, Later w R Fl (St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) c
+            (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
+            (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
+            (st_checked_total s) (st_lang s) (st_unsup s)) -> Later w R Fl s.
+Proof. intros s c [L1 L2 L3 L4 L5]. constructor; assumption. Qed.
+
+(* A function g of the program, neither a forwarder nor `main`, whose info
+   fn_info computes (not cached): the context it forms, with its needs, and
+   that context's tables read off fi_env (canonically, under its merges). *)
+Theorem fn_info_ctx : forall g s i s',
+  nget (w_syms w) (gs_id g) = Some g -> (forall t, gs_origin g <> OForwarder t) ->
+  ~ A.IsMainFn WW (gs_id g) -> (forall s0 m s1, st_w s0 = w -> is_main g s0 = Good (m, s1) -> m = false) ->
+  fn_info g s = Good (i, s') -> nget (st_info s) (gs_id g) = None ->
+  Inv s -> st_w s = w -> Later w R Fl s' ->
+  let e := fi_env i in
+  exists C, CtxOfIE WW (gs_id g) C (map (key_tr Fl) (fi_needs i)) /\
+    A.c_sub C = suf Fl (en_uf e) /\ fi_merges i = en_uf e /\
+    (forall k, A.nlook k (A.c_ty C) = option_map (fun y => trF (canon e y)) (tn_get e k)) /\
+    (forall v, A.nlook v (A.c_vals C) = option_map (fun y => trF (canon e y)) (nget (en_vals e) v)) /\
+    (forall f, A.nlook f (A.c_fns C) = option_map (csig Fl e) (nget (en_fns e) f)) /\
+    (forall k m, ety_ok k = true -> canon e k = k -> A.mlook (trF k) m (A.c_mths C) = option_map (csig Fl e) (get_mth e k m)).
+Proof.
+  intros g s i s' Hg Nf Nm Nm' H N Hi Hw L e0.
+  destruct (fn_info_miss g s i s' H N) as (e & needs & s1 & H1 & -> & ->). subst e0.
+  apply later_info in L.
+  pose proof (loader_mod_in w R Fl b Hload _ _ Hg) as Hmi.
+  destruct (assumes_merged w R Fl b Hload Finj MS g s e needs s1 Nf Nm' Hmi H1 Hi Hw L)
+    as (les & tm & I & Hws & Mg & Nd).
+  set (U := en_uf e) in *.
+  assert (T : Tri U) by exact (ws_tri _ _ _ _ _ _ Hws).
+  assert (Ef : forall t, canon (freeze_all_apps e) t = canon e t) by reflexivity.
+  exists (A.entries_cx (suf Fl U) tm (map (tr_ent Fl) les)). cbn [fi_env fi_needs fi_merges].
+  split; [|split; [reflexivity|split]].
+  - exists (A.Decl (gm_path (get_mod w (gs_mod g))) (gs_decl g) (gs_assumes g)), (map (tr_ent Fl) les), tm, [], tm, (suf Fl U).
+    rewrite !app_nil_r. split; [exact (w_decl_rd w R Fl _ _ Hg)|]. split; [exact I|]. split; [|auto].
+    apply A.RootNone. left. exact Nm.
+  - unfold merge_edges. rewrite (tne_nil _ _ _ _ _ _ Hws). reflexivity.
+  - split; [|split; [|split]].
+    + intro k. exact (ctx_ty Fl U e tm les needs Hws eq_refl k).
+    + intro v. exact (ctx_vals Fl U e tm les needs Hws eq_refl v).
+    + intro f. exact (ctx_fns Fl U e tm les needs Hws eq_refl f).
+    + intros k m Ok Ck. exact (ctx_mths Fl Finj U e tm les needs Hws eq_refl k m Ok Ck).
+Qed.
+
+End FnInfo.
