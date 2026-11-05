@@ -211,7 +211,9 @@ Record DInv (st : decl_st) : Prop := {
   di_pending : forall d asm, In (d, asm) (ds_pending st) -> Leaf asm d /\ is_attached d;
   di_path : gm_path (ds_mod st) = path;
   di_aliases : gm_aliases (ds_mod st) = [];
-  di_kind : forall s g, nget (ds_syms st) s = Some g -> next0 <= s -> KindOK g
+  di_kind : forall s g, nget (ds_syms st) s = Some g -> next0 <= s -> KindOK g;
+  (* only an attached method has a receiver *)
+  di_recv : forall s g, nget (ds_syms st) s = Some g -> next0 <= s -> gs_recv g = None \/ gs_kind g = KMethod
 }.
 
 Definition HasSym (st : decl_st) (d : adecl) (asm : list (Input.path * option name)) : Prop :=
@@ -280,6 +282,9 @@ Proof.
     + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
       * injection Hg0 as <-. unfold KindOK, g. cbn [gs_decl gs_kind]. exact Hkd.
       * exact (di_kind _ H s0 g0 Hg0 Hs0).
+    + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
+      * injection Hg0 as <-. left. reflexivity.
+      * exact (di_recv _ H s0 g0 Hg0 Hs0).
   - intros d' a [(s & g' & Hle & Hs & E1 & E2)|Hp]; [left|right; exact Hp].
     exists s, g'. split; [exact Hle|]. split; [apply Hget; exact Hs|]. auto.
   - exists id, g. cbn [ds_syms]. rewrite nget_nset_same. split; [exact (di_next _ H)|]. auto.
@@ -343,6 +348,9 @@ Proof.
     + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
       * injection Hg0 as <-. unfold KindOK, g. cbn [gs_decl gs_kind]. exact Hkd.
       * exact (di_kind _ H s0 g0 Hg0 Hs0).
+    + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
+      * injection Hg0 as <-. left. reflexivity.
+      * exact (di_recv _ H s0 g0 Hg0 Hs0).
   - intros d' a [(s & g' & Hle & Hs & E1 & E2)|Hp]; [left|right; exact Hp].
     exists s, g'. split; [exact Hle|]. split; [apply Hget; exact Hs|]. auto.
   - exists id, g. cbn [ds_syms]. rewrite nget_nset_same. split; [exact (di_next _ H)|]. auto.
@@ -511,6 +519,9 @@ Proof.
     + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
       * injection Hg0 as <-. unfold KindOK, g. cbn [gs_decl gs_kind]. reflexivity.
       * exact (di_kind _ H s0 g0 Hg0 Hs0).
+    + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
+      * injection Hg0 as <-. right. reflexivity.
+      * exact (di_recv _ H s0 g0 Hg0 Hs0).
   - intros d' a (s & g' & Hle & Hs & E1 & E2).
     exists s, g'. split; [exact Hle|]. split; [apply Hget; exact Hs|]. auto.
   - exists id, g. cbn [ds_syms]. rewrite nget_nset_same. split; [exact (di_next _ H)|]. auto.
@@ -564,6 +575,7 @@ Proof.
     - intros d a [].
     - reflexivity.
     - reflexivity.
+    - intros s g Hg Hs. rewrite (Hold s Hs) in Hg. discriminate.
     - intros s g Hg Hs. rewrite (Hold s Hs) in Hg. discriminate. }
   destruct (declare_walk_spec _ _ _ _ _ Hw (fun a d Ho => Ho) H0) as (W1 & _ & W3).
   assert (W1' : DInv (DSt (ds_mod st1) (ds_syms st1) (ds_next st1) [])) by (apply dinv_pending; [exact W1 | intros d a []]).
@@ -925,7 +937,8 @@ Record LInv (st : load_st) : Prop := {
     A.module_of b p = Some am ->
     Rep m (fun ns n x => OwnRaw (ls_syms st) i ns n x \/ ImpsRaw st am ns n x)
           (fun ns n x => OwnRaw (ls_syms st) i ns n x \/ ImpsRaw st am ns n x \/ GlobsRaw st am ns n x);
-  li_kind : forall s g, nget (ls_syms st) s = Some g -> KindOK g
+  li_kind : forall s g, nget (ls_syms st) s = Some g -> KindOK g;
+  li_recv : forall s g, nget (ls_syms st) s = Some g -> gs_recv g = None \/ gs_kind g = KMethod
 }.
 
 Lemma loaded_fun : forall st p i j, LInv st -> In (p, i) (ls_loaded st) -> In (p, j) (ls_loaded st) -> i = j.
@@ -1222,6 +1235,9 @@ Proof.
   - intros s g Hs. cbn [ls_syms] in Hs. destruct (add_syms_split _ _ Hs) as [Hs'|(Hle & _)].
     + exact (li_kind _ H1 s g Hs').
     + exact (di_kind _ _ _ _ _ _ DI s g Hs Hle).
+  - intros s g Hs. cbn [ls_syms] in Hs. destruct (add_syms_split _ _ Hs) as [Hs'|(Hle & _)].
+    + exact (li_recv _ H1 s g Hs').
+    + exact (di_recv _ _ _ _ _ _ DI s g Hs Hle).
 Qed.
 
 End Add.
@@ -2207,6 +2223,7 @@ Proof.
   - intros i m r n s H. rewrite nget_NE in H. discriminate.
   - intros p i m am [].
   - intros s g H. rewrite nget_NE in H. discriminate.
+  - intros s g H. rewrite nget_NE in H. discriminate.
 Qed.
 
 (* Track A, step 1 of elaborate_sound: the loader's reading of a bundle
@@ -2238,6 +2255,20 @@ Proof.
   destruct (li_loaded _ _ L p i Hp) as [_ (m & am & Em & Pm & _)].
   pose proof (resolve_path_agrees b st e L R F p i m pa r Hp Em Hres) as X.
   rewrite (fin_get_mod st e i m Em), Pm. exact X.
+Qed.
+
+(* every module of the loader's world is Loaded, at its path *)
+Theorem load_world_loaded : forall b w, load_world b = Good w ->
+  forall i, In i (w_order w) -> A.Loaded b (gm_path (get_mod w i)).
+Proof.
+  intros b w H i Hi. unfold load_world in H.
+  apply rbind_good in H as ([e st] & Hl & H). injection H as <-.
+  destruct (load_spec b _ _ _ _ _ _ Hl (linv_init b)) as (L & _ & He & Hr & _).
+  assert (Hr' : forall q j, In (q, j) (ls_loaded st) -> Reach b (b_entry b) q)
+    by (intros q j Hq; destruct (Hr q j Hq) as [[]|Hq']; exact Hq').
+  cbn [w_order] in Hi. destruct (proj1 (li_order _ _ L i) Hi) as (p & Hp).
+  destruct (li_loaded _ _ L p i Hp) as [_ (m & am & Em & Pm & _)].
+  rewrite (fin_get_mod st e i m Em), Pm. apply (proj2 (fin_loaded b st e L He Hr' p)). exists i. exact Hp.
 Qed.
 
 (* The requirements of a val, fn, method, context or functor, as the
