@@ -323,27 +323,29 @@ Record FrL (s s' : st) : Prop := {
   fl_flds : forall f n, sassoc f (st_flds s) = Some n -> sassoc f (st_flds s') = Some n;
   fl_unsup : exists l, st_unsup s' = st_unsup s ++ l;
   fl_lang : st_lang s' = st_lang s;
-  fl_reqs : Ext (st_reqs s) (st_reqs s')
+  fl_reqs : Ext (st_reqs s) (st_reqs s');
+  fl_keep : forall i g, nget (st_syms s) i = Some g -> nget (st_syms s') i = Some g
 }.
 
 Lemma frl_of_fr : forall s s', Fr s s' -> FrL s s'.
 Proof.
-  intros s s' [[Fw _ _ _ _ Ffl [_ _ _ _ Fu Fl]] _ Fx]. constructor; assumption.
+  intros s s' [[Fw _ Fk _ _ Ffl [_ _ _ _ Fu Fl]] _ Fx]. constructor; assumption.
 Qed.
 
 Lemma frl_trans : forall s1 s2 s3, FrL s1 s2 -> FrL s2 s3 -> FrL s1 s3.
 Proof.
-  intros s1 s2 s3 [W1 F1 (u1 & U1) L1 X1] [W2 F2 (u2 & U2) L2 X2]. constructor.
+  intros s1 s2 s3 [W1 F1 (u1 & U1) L1 X1 K1] [W2 F2 (u2 & U2) L2 X2 K2]. constructor.
   - congruence.
   - auto.
   - exists (u1 ++ u2). rewrite U2, U1, app_assoc. reflexivity.
   - congruence.
   - exact (ext_trans _ _ _ X1 X2).
+  - auto.
 Qed.
 
 Lemma later_fromL : forall w R Fl s s', FrL s s' -> Later w R Fl s' -> Later w R Fl s.
 Proof.
-  intros w R Fl s s' [Fw Ffl (u & Eu) Fla Fx] [Lw Lf Lu Ll Lr]. constructor.
+  intros w R Fl s s' [Fw Ffl (u & Eu) Fla Fx _] [Lw Lf Lu Ll Lr]. constructor.
   - congruence.
   - intros a n H. exact (Lf a n (Ffl a n H)).
   - rewrite Lu in Eu. destruct (st_unsup s); [reflexivity | discriminate].
@@ -355,15 +357,27 @@ Qed.
 Definition NL (s : st) (x : nat) : Prop :=
   forall b, load_world b = Good (st_w s) -> nget (w_syms (st_w s)) x = None.
 
+(* x is a symbol the elaborator made that is not a forwarder (a lambda
+   provider's) *)
+Definition NLx (s : st) (x : nat) : Prop :=
+  NL s x /\ exists g, nget (st_syms s) x = Some g /\ forall t, gs_origin g <> OForwarder t.
+
+Lemma nlx_frl : forall s s' x, NLx s x -> FrL s s' -> NLx s' x.
+Proof.
+  intros s s' x [N (g & G & O)] F. split; [unfold NL; rewrite (fl_w _ _ F); exact N|].
+  exists g. split; [exact (fl_keep _ _ F _ _ G) | exact O].
+Qed.
+
 (* an entry of the cache: fn_info's merged walk of the symbol table's entry,
-   or (lambda_provider's) an entry for a symbol the elaborator made *)
+   or (lambda_provider's) an entry for a symbol the elaborator made, not a
+   forwarder *)
 Definition InfoEntry (s : st) (x : nat) (i : fninfo) : Prop :=
   (exists g s0 e needs s1, nget (st_syms s0) x = Some g /\ Inv s0 /\
     merged_walk (gs_mod g) (fi_walk g) s0 = Good ((e, needs), s1) /\
     i = FInfo (freeze_all_apps e) needs
               (map (fun k => (k, match get_app (freeze_all_apps e) k with Some (a, _) => a | None => [] end)) needs)
               (merge_edges e) /\
-    FrL s1 s) \/ NL s x.
+    FrL s1 s) \/ NLx s x.
 
 Definition InfoInv (s : st) : Prop := forall x i, nget (st_info s) x = Some i -> InfoEntry s x i.
 
@@ -371,7 +385,7 @@ Lemma info_step : forall s s', InfoInv s -> FrL s s' -> st_info s' = st_info s -
 Proof.
   intros s s' I F E x i H. rewrite E in H. destruct (I x i H) as [(g & s0 & e & needs & s1 & H1 & H2 & H3 & H4 & H5)|N].
   - left. exists g, s0, e, needs, s1. repeat (split; [assumption|]). exact (frl_trans _ _ _ H5 F).
-  - right. unfold NL. rewrite (fl_w _ _ F). exact N.
+  - right. exact (nlx_frl _ _ _ N F).
 Qed.
 
 Definition okI {A} (m : M A) : Prop :=
@@ -463,13 +477,13 @@ Proof.
   - injection Hy as <-. left. exists g, s, e, needs, s1. auto 6.
   - destruct (I1 y j Hy) as [(g' & s0 & e' & n' & s3 & P1 & P2 & P3 & P4 & P5)|Nl].
     + left. exists g', s0, e', n', s3. repeat (split; [assumption|]). exact (frl_trans _ _ _ P5 F2).
-    + right. unfold NL. rewrite (fl_w _ _ F2). exact Nl.
+    + right. exact (nlx_frl _ _ _ Nl F2).
 Qed.
 
 (* ---- lambda_provider writes the cache, for the symbol it made ---- *)
 
 Definition okIF {A} (pid : nat) (m : M A) : Prop :=
-  ok m /\ forall s a s', Inv s -> InfoInv s -> NL s pid -> m s = Good (a, s') -> InfoInv s'.
+  ok m /\ forall s a s', Inv s -> InfoInv s -> NLx s pid -> m s = Good (a, s') -> InfoInv s'.
 
 Lemma okIF_of_okI : forall A pid (m : M A), okI m -> okIF pid m.
 Proof. intros A pid m [O P]. split; [exact O|]. intros s a s' Hi I _ H. exact (P s a s' Hi I H). Qed.
@@ -479,7 +493,7 @@ Proof.
   intros A B pid m k [Om Pm] Hk. split; [apply ok_bind; [exact Om | intro a; exact (proj1 (Hk a))]|].
   intros s b s'' Hi I N H. apply bind_inv in H as (a & s' & H1 & H2).
   destruct (Om _ _ _ Hi H1) as [Hi' F]. refine (proj2 (Hk a) s' b s'' Hi' (Pm _ _ _ Hi I N H1) _ H2).
-  unfold NL. rewrite (fr_w _ _ F). exact N.
+  exact (nlx_frl _ _ _ N (frl_of_fr _ _ F)).
 Qed.
 
 Lemma okIF_with_vars : forall A pid init (m : M A), okIF pid m -> okIF pid (with_vars init m).
@@ -505,7 +519,7 @@ Lemma entry_frl : forall s s' x i, InfoEntry s x i -> FrL s s' -> InfoEntry s' x
 Proof.
   intros s s' x i [(g & s0 & e & needs & s1 & H1 & H2 & H3 & H4 & H5)|N] F.
   - left. exists g, s0, e, needs, s1. repeat (split; [assumption|]). exact (frl_trans _ _ _ H5 F).
-  - right. unfold NL. rewrite (fl_w _ _ F). exact N.
+  - right. exact (nlx_frl _ _ _ N F).
 Qed.
 
 Lemma okIF_write : forall pid info, okIF pid (upd (s_info (fun m => nset m pid info))).
@@ -516,20 +530,31 @@ Proof.
   - exact (entry_frl _ _ _ _ (I y j Hy) (frl_info s _)).
 Qed.
 
-Lemma okI_new_sym_bind : forall A mi n k d o (K : nat -> M A), o <> OSource ->
+Lemma okI_new_sym_bind : forall A mi n k d o (K : nat -> M A), o <> OSource -> (forall t, o <> OForwarder t) ->
   (forall pid, okIF pid (K pid)) -> okI (mbind (new_sym mi n k d o) K).
 Proof.
-  intros A mi n k d o K Ho HK. split; [apply ok_bind; [apply ok_new_sym; exact Ho | intro pid; exact (proj1 (HK pid))]|].
+  intros A mi n k d o K Ho Hf HK. split; [apply ok_bind; [apply ok_new_sym; exact Ho | intro pid; exact (proj1 (HK pid))]|].
   intros s a s'' Hi I H. apply bind_inv in H as (pid & s1 & H1 & H2).
   destruct (ok_new_sym mi n k d o Ho s pid s1 Hi H1) as [Hi1 F1].
   assert (N1 : NI (new_sym mi n k d o)) by (unfold new_sym; nit).
   pose proof (info_step s s1 I (frl_of_fr _ _ F1) (N1 _ _ _ H1)) as I1.
   apply (proj2 (HK pid) s1 a s'' Hi1 I1); [|exact H2].
-  intros b Hb. rewrite (fr_w _ _ F1) in Hb |- *. unfold new_sym, fresh in H1.
+  unfold new_sym, fresh in H1.
   apply bind_inv in H1 as (id & s2 & E1 & H1). injection E1 as <- <-.
-  apply bind_inv in H1 as (u & s3 & E2 & H1). unfold upd in E2. injection E2 as <- <-. injection H1 as <- _.
-  destruct (nget (w_syms (st_w s)) (st_next s)) as [g|] eqn:Eg; [|reflexivity].
-  pose proof (iv_loader _ Hi b Hb _ _ Eg) as Es. rewrite (iv_above _ Hi (st_next s) (le_n _)) in Es. discriminate.
+  apply bind_inv in H1 as (u & s3 & E2 & H1). unfold upd in E2. injection E2 as <- <-. injection H1 as <- <-.
+  split.
+  - intros b Hb. cbn in Hb |- *.
+    destruct (nget (w_syms (st_w s)) (st_next s)) as [g|] eqn:Eg; [|reflexivity].
+    pose proof (iv_loader _ Hi b Hb _ _ Eg) as Es. rewrite (iv_above _ Hi (st_next s) (le_n _)) in Es. discriminate.
+  - eexists. cbn. split; [apply nget_nset_same | exact Hf].
+Qed.
+
+(* a forwarder's continuation never writes the cache under the forwarder *)
+Lemma okI_new_sym_fwd : forall A mi n k d t (K : nat -> M A),
+  (forall pid, okI (K pid)) -> okI (mbind (new_sym mi n k d (OForwarder t)) K).
+Proof.
+  intros A mi n k d t K HK. apply okI_bind; [|exact HK].
+  apply okI_ni; [apply ok_new_sym; discriminate | unfold new_sym; nit].
 Qed.
 
 
@@ -561,7 +586,8 @@ Ltac okIFt :=
   end)
 with okIt :=
   repeat (fintros; lazymatch goal with
-  | |- okI (mbind (new_sym _ _ _ _ _) _) => apply okI_new_sym_bind; [discriminate | intro; okIFt]
+  | |- okI (mbind (new_sym _ _ _ _ (OForwarder _)) _) => apply okI_new_sym_fwd; intro
+  | |- okI (mbind (new_sym _ _ _ _ _) _) => apply okI_new_sym_bind; [discriminate | intros ? ?; discriminate | intro; okIFt]
   | |- okI (mbind _ _) => apply okI_bind
   | |- okI (mmap _ _) => apply okI_mmap
   | |- okI (mfold _ _ _) => apply okI_mfold
@@ -846,7 +872,7 @@ Proof.
       { assert (Hb0 : load_world b = Good (st_w s0)) by (rewrite W0; exact Hload).
         pose proof (iv_loader _ Hi0 b Hb0 (gs_id g) g ltac:(rewrite W0; exact Hg)) as E0. congruence. }
       subst g'. exact (walk_ctx g s0 e needs s1 Hg Nf Nm Nm' H1 Hi0 W0 (later_fromL w R Fl _ _ F L)).
-    + exfalso. pose proof (N b Hb) as N0. rewrite Hw in N0. congruence.
+    + exfalso. pose proof (proj1 N b Hb) as N0. rewrite Hw in N0. congruence.
   - (* computed *)
     destruct (fn_info_miss g s i s' H Ej) as (g' & e & needs & s1 & Eg & H1 & -> & ->).
     rewrite Gs in Eg. injection Eg as <-.
@@ -854,3 +880,149 @@ Proof.
 Qed.
 
 End Use.
+
+(* ======================================================================== *)
+(* 5. Forwarders: their needs                                                *)
+(* ======================================================================== *)
+
+(* The relation reads no CtxOf for a forwarder (FPForward: a Fresh symbol
+   whose satisfaction map is [(IFn g, IFn g)]); what the elaborator owes is
+   that a forwarder's needs are exactly its target's key.  Its walk assumes
+   the target's requirements, type symbols (of a fn: its assume nesting's,
+   WorldOf), which add no need, and then the target, a fn. *)
+
+(* merged_walk answers with one of its rounds *)
+Lemma mw_round : forall (walk : env -> M (env * list key)) (P : list key -> Prop) (Pre Post : st -> Prop) mi,
+  (forall e, ok (walk e)) -> (forall s s', Fr s s' -> Pre s -> Pre s') -> (forall s s', Fr s s' -> Post s' -> Post s) ->
+  (forall e0 s e needs s', Inv s -> Pre s -> Post s' -> walk e0 s = Good ((e, needs), s') -> P needs) ->
+  forall n tne ufe s e needs s', mw_go walk mi n tne ufe s = Good ((e, needs), s') -> Inv s -> Pre s -> Post s' -> P needs.
+Proof.
+  intros walk P Pre Post mi Hok Pf Pb Hr n. induction n as [|n IH]; intros tne ufe s e needs s' H Hi Hp Hq;
+    cbn [mw_go] in H; apply bind_inv in H as ([e1 n1] & s1 & H1 & H2); destruct (Hok _ s _ s1 Hi H1) as [Hi1 F1];
+    cbn beta iota zeta in H2.
+  - destruct (edges_eqb _ _); [|noerr H2]. injection H2; intros; subst. exact (Hr _ _ _ _ _ Hi Hp Hq H1).
+  - destruct (edges_eqb _ _).
+    + injection H2; intros; subst. exact (Hr _ _ _ _ _ Hi Hp Hq H1).
+    + exact (IH _ _ s1 e needs s' H2 Hi1 (Pf _ _ F1 Hp) Hq).
+Qed.
+
+Lemma asi_ty_needs : forall f e mi g needs s e' n' s', add_symbol_item f e mi g [] needs s = Good ((e', n'), s') ->
+  gs_kind g = KType -> n' = needs.
+Proof.
+  intros [|f] e mi g needs s e' n' s' H K; [discriminate|]. cbn [add_symbol_item] in H.
+  apply bind_inv in H as (u & s1 & _ & H). cbn beta zeta in H. rewrite K in H.
+  destruct (tn_get e (gs_id g)); [injection H as _ <- _; reflexivity|].
+  apply bind_inv in H as (st0 & s2 & _ & H). injection H as _ <- _. reflexivity.
+Qed.
+
+Lemma asi_fn_needs : forall f e mi g needs s e' n' s', add_symbol_item f e mi g [] needs s = Good ((e', n'), s') ->
+  gs_kind g = KFn -> n' = add_need needs (KyFn (gs_id g)).
+Proof.
+  intros [|f] e mi g needs s e' n' s' H K; [discriminate|]. cbn [add_symbol_item] in H.
+  apply bind_inv in H as (u & s1 & _ & H). cbn beta zeta in H. rewrite K in H.
+  apply bind_inv in H as (sg & s2 & _ & H).
+  apply bind_inv in H as (e1 & s3 & _ & H).
+  apply bind_inv in H as (a & s4 & _ & H).
+  apply bind_inv in H as (mem & s5 & _ & H).
+  apply bind_inv in H as (ms & s6 & _ & H). cbn beta zeta in H.
+  apply bind_inv in H as (e2 & s7 & _ & H). injection H as _ <- _. reflexivity.
+Qed.
+
+Section Fwd.
+Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
+Hypothesis Hload : load_world b = Good w.
+Notation WW := (BodySound.W w R Fl).
+
+(* the target's requirements are type symbols of the loader's *)
+Definition ReqTypes (t : nat) : Prop :=
+  forall r, In r (R t) -> exists rg, nget (w_syms w) r = Some rg /\ gs_kind rg = KType.
+
+Lemma spectypes_type : forall p sp r, A.SpecTypes WW p sp r -> A.kind_sym WW r = Some A.DKType.
+Proof. intros p sp r H. induction H; assumption. Qed.
+
+(* of a fn, they are (WorldOf: its assume nesting's type symbols) *)
+Lemma fn_req_types : forall t tg, A.WorldOf b WW -> nget (w_syms w) t = Some tg -> gs_kind tg = KFn -> ReqTypes t.
+Proof.
+  intros t tg Wo Ht K r Hr.
+  assert (Kt : A.kind_sym WW t = Some A.DKFn) by (rewrite (kind_sym_rd w R Fl b Hload _ _ Ht), K; reflexivity).
+  apply (proj1 (A.wo_reqs_plain Wo t Kt ltac:(discriminate) ltac:(discriminate) ltac:(discriminate) ltac:(discriminate) r)) in Hr.
+  destruct Hr as (d & pa & _ & _ & St). pose proof (spectypes_type _ _ _ St) as Kr.
+  unfold A.kind_sym in Kr. destruct (A.w_decl WW r) eqn:Dr; [|discriminate].
+  cbn [A.w_decl BodySound.W W_read] in Dr. destruct (nget (w_syms w) r) as [rg|] eqn:Er; [|discriminate].
+  exists rg. split; [reflexivity|]. apply kconv_type.
+  pose proof (kind_sym_rd w R Fl b Hload _ _ Er) as Kr'. unfold A.kind_sym in Kr'.
+  cbn [A.w_decl BodySound.W W_read] in Kr'. rewrite Er in Kr'. injection Dr as <-. rewrite Kr in Kr'.
+  injection Kr' as E. exact (eq_sym E).
+Qed.
+
+Lemma sym_loader_st : forall x g s g' s', Inv s -> st_w s = w -> nget (w_syms w) x = Some g -> sym x s = Good (g', s') ->
+  g' = g /\ s' = s.
+Proof.
+  intros x g s g' s' Hi Hw Hg H. unfold sym in H.
+  rewrite (iv_loader _ Hi b ltac:(rewrite Hw; exact Hload) x g ltac:(rewrite Hw; exact Hg)) in H.
+  injection H as <- <-. auto.
+Qed.
+
+Lemma fwd_reqs_needs : forall cf mi rs acc s res s',
+  mfold (fun acc r => let! rg := sym r in add_symbol_item cf (fst acc) mi rg [] (snd acc)) acc rs s = Good (res, s') ->
+  Inv s -> st_w s = w -> (forall r, In r rs -> exists rg, nget (w_syms w) r = Some rg /\ gs_kind rg = KType) ->
+  snd res = snd acc.
+Proof.
+  intros cf mi rs. induction rs as [|r rest IH]; intros acc s res s' H Hi Hw Ht; cbn [mfold] in H.
+  - injection H as <- _. reflexivity.
+  - apply bind_inv in H as (a1 & s1 & H1 & H2). apply bind_inv in H1 as (rg & s0 & Hs & H1).
+    destruct (Ht r (or_introl eq_refl)) as (rg' & Er & Kr).
+    destruct (sym_loader_st _ _ _ _ _ Hi Hw Er Hs) as [-> ->].
+    destruct a1 as [e1 n1]. destruct (ok_add_symbol_item cf (fst acc) mi rg' [] (snd acc) s _ s1 Hi H1) as [Hi1 F1].
+    rewrite (IH (e1, n1) s1 res s' H2 Hi1 (fr_w' w _ _ F1 Hw) (fun r0 H0 => Ht r0 (or_intror H0))).
+    exact (asi_ty_needs _ _ _ _ _ _ _ _ _ H1 Kr).
+Qed.
+
+Lemma fwd_walk_needs : forall g t tg e0 s e needs s', gs_origin g = OForwarder t ->
+  nget (w_syms w) t = Some tg -> gs_kind tg = KFn -> ReqTypes t ->
+  fi_walk g e0 s = Good ((e, needs), s') -> Inv s -> st_w s = w -> Later w R Fl s' -> needs = [KyFn t].
+Proof.
+  intros g t tg e0 s e needs s' O Ht K Rt H Hi Hw L. unfold fi_walk in H. rewrite O in H.
+  apply bind_inv in H as (tg' & s1 & H1 & H). destruct (sym_loader_st _ _ _ _ _ Hi Hw Ht H1) as [-> ->].
+  destruct (bstep _ _ _ _ _ _ _ (ok_reqs t) Hi H) as (rs & s2 & H2 & H3 & Hi2 & F2).
+  destruct (bstep _ _ _ _ _ _ _ ok_ctx_fuel Hi2 H3) as (cf & s3 & _ & H4 & Hi3 & F3).
+  assert (Okf : forall acc r, ok (let! rg := sym r in add_symbol_item cf (fst acc) (gs_mod g) rg [] (snd acc)))
+    by (intros; apply ok_bind; [unfold sym; okt | intro; apply ok_add_symbol_item]).
+  destruct (bstep _ _ _ _ _ _ _ (ok_mfold _ _ _ rs (e0, []) Okf) Hi3 H4) as ([e4 n4] & s4 & H5 & H6 & Hi4 & F4).
+  destruct (ok_add_symbol_item cf e4 (gs_mod g) tg [] n4 s4 _ s' Hi4 H6) as [_ F6].
+  assert (Er : R t = rs) by (apply (reqs_R w R Fl _ s rs s2 Hi H2); exact (later_from w R Fl _ _ F3 (later_from w R Fl _ _ F4 (later_from w R Fl _ _ F6 L)))).
+  pose proof (fwd_reqs_needs _ _ _ _ _ _ _ H5 Hi3 (fr_w' w _ _ F3 (fr_w' w _ _ F2 Hw)) ltac:(rewrite <- Er; exact Rt)) as N4.
+  cbn [snd] in N4. subst n4.
+  rewrite (asi_fn_needs _ _ _ _ _ _ _ _ _ H6 K), (load_world_ids b w Hload t tg Ht). reflexivity.
+Qed.
+
+(* fn_info of a forwarder (the symbol table's entry for its number), cached
+   or not: its needs are its target's key *)
+Theorem fn_info_fwd : forall g0 g t tg s i s',
+  nget (st_syms s) (gs_id g0) = Some g -> gs_origin g = OForwarder t ->
+  nget (w_syms w) t = Some tg -> gs_kind tg = KFn -> ReqTypes t ->
+  fn_info g0 s = Good (i, s') -> Inv s -> InfoInv s -> st_w s = w -> Later w R Fl s' ->
+  fi_needs i = [KyFn t].
+Proof.
+  intros g0 g t tg s i s' Gs O Ht K Rt H Hi I Hw L.
+  assert (Gen : forall g' s0 e needs s1, nget (st_syms s0) (gs_id g0) = Some g' -> g' = g -> Inv s0 -> st_w s0 = w ->
+            Later w R Fl s1 -> merged_walk (gs_mod g') (fi_walk g') s0 = Good ((e, needs), s1) -> needs = [KyFn t]).
+  { intros g' s0 e needs s1 _ -> Hi0 Hw0 L1 H1. rewrite (mw_go_eq (fi_walk g)) in H1.
+    exact (mw_round (fi_walk g) (fun n => n = [KyFn t]) (fun s2 => st_w s2 = w) (Later w R Fl) (gs_mod g)
+             (ok_fi_walk g) (fun s2 s3 F E => fr_w' w s2 s3 F E) (fun s2 s3 F L2 => later_from w R Fl s2 s3 F L2)
+             (fun e0 s2 e2 n2 s3 Hi2 Hw2 L3 H2 => fwd_walk_needs g t tg e0 s2 e2 n2 s3 O Ht K Rt H2 Hi2 Hw2 L3)
+             8 [] [] s0 e needs s1 H1 Hi0 Hw0 L1). }
+  destruct (nget (st_info s) (gs_id g0)) as [j|] eqn:Ej.
+  - pose proof H as H0. unfold fn_info in H0. apply bind_inv in H0 as (x & s2 & E & H0). injection E as <- <-.
+    rewrite Ej in H0. injection H0 as <- <-.
+    destruct (I _ _ Ej) as [(g' & s0 & e & needs & s1 & G0 & Hi0 & H1 & -> & F)|[_ (g' & G' & Nf)]].
+    + destruct (ok_merged_fi g' s0 _ s1 Hi0 H1) as [_ F1].
+      assert (W0 : st_w s0 = w) by (rewrite <- Hw, (fl_w _ _ F), (fr_w _ _ F1); reflexivity).
+      assert (Eg : g' = g) by (pose proof (fl_keep _ _ F _ _ (fr_keep _ _ F1 _ _ G0)) as G1; congruence).
+      exact (Gen g' s0 e needs s1 G0 Eg Hi0 W0 (later_fromL w R Fl _ _ F L) H1).
+    + exfalso. rewrite Gs in G'. injection G' as <-. exact (Nf t O).
+  - destruct (fn_info_miss g0 s i s' H Ej) as (g' & e & needs & s1 & Eg & H1 & -> & ->).
+    exact (Gen g' s e needs s1 Eg ltac:(congruence) Hi Hw (later_info w R Fl s1 _ L) H1).
+Qed.
+
+End Fwd.
