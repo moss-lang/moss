@@ -124,8 +124,9 @@ Proof.
   (* (an empty match, for `|` only, does not apply: there is an arm) *)
   match goal with H : ArmsList _ _ _ _ _ _ _ _ _ _ _ |- _ => inversion H; subst; clear H end;
       [| match goal with H : [] <> [] |- _ => contradiction H; reflexivity end].
-  rewrite Hm in *.
+  try rewrite Hm in *.
   match goal with H : PatOf _ _ _ _ _ _ _ _ |- _ => inversion H; subst; clear H end;
+    try rewrite Hm in *;
     try (match goal with H : resolve _ _ _ = None |- _ => vm_compute in H; discriminate H end).
   crunch.
   (* not exhaustive: no catch-all, and Green's head is not covered *)

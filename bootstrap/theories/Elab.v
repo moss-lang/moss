@@ -1296,9 +1296,18 @@ Fixpoint elab_type (fuel : nat) (t : aty) (mi : nat) (tm : list (nat * ety)) (e 
                        match x with
                        | YAbs _ => let! s := show x in
                                    err mi ("union member `" ++ s ++ "` is abstract and not constrained to a nominal type (D15)")
-                       | YNom _ _ =>
+                       | YNom h _ =>
                            if ety_mem x out then let! s := show x in err mi ("duplicate union member `" ++ s ++ "`")
-                           else ret (out +++ [x])
+                           else
+                             (* D15: no two members share a head, so a
+                                match arm's head names one member (Audit
+                                note 33) *)
+                             match find (fun y => match y with YNom h' _ => Nat.eqb h h' | _ => false end) out with
+                             | Some y => let! s := show x in let! s' := show y in
+                                         err mi ("union members `" ++ s' ++ "` and `" ++ s ++
+                                                 "` share a head (D15)")
+                             | None => ret (out +++ [x])
+                             end
                        | _ => let! s := show x in err mi ("union member `" ++ s ++ "` is not nominal (D15)")
                        end) out (members y)) [] ms in
           ret (YUnion out)

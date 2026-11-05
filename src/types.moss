@@ -212,6 +212,7 @@ assume Std {
           add_member(members, elab(ast::kid_at(ast::a_of(t), i), m));
           i = i + 1;
         }
+        check_members(members, m);
         if members.length() == 0 {
           return ty_never();
         }
@@ -686,6 +687,29 @@ assume Std {
       }
       prog::error(prog::e_type(), prog::sym_mod.get(sym), prog::sym_name.get(sym));
       ty_never()
+    }
+
+    # D15: a written union's members are nominal, and no two share a head.
+    fn check_members(members: IntList, m: Int) {
+      var i = 0;
+      while i < members.length() {
+        let x = members.get(i);
+        if is_kind(x, kd_record()) {
+          prog::error(prog::e_union(), m, ast::none());
+        }
+        if is_kind(x, kd_nominal()) {
+          var j = 0;
+          while j < i {
+            if is_kind(members.get(j), kd_nominal()) {
+              if sym_of(members.get(j)) == sym_of(x) {
+                prog::error(prog::e_union(), m, prog::sym_name.get(sym_of(x)));
+              }
+            }
+            j = j + 1;
+          }
+        }
+        i = i + 1;
+      }
     }
 
     # A union's members are deduplicated and flattened, so that

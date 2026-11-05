@@ -1,0 +1,25 @@
+import "../../lib/wasm.moss" as w use Wasm, I32, I64;
+import "../../lib/wasip1.moss" use Wasi, proc_exit;
+
+# D15: no two members of a union share a head. Here they would be two
+# instantiations of `A`, and an arm `A(y)` could not say which one y is
+# (Audit note 33); the union is refused where it is written.
+type X;
+assume X { tag A[X](X); }
+
+type U = | A[X=I32] | A[X=I64];
+
+assume Wasm, Wasi {
+  fn first(u: U): I32 {
+    match u {
+      A(y) => y,
+    }
+  }
+
+  fn main() {
+    let one = w::i32_one;
+    let three = w::i32_add(w::i32_add(one, one), one);
+    let u: U = A[X=I64](w::i64_extend_i32_u(three));
+    proc_exit(first(u));
+  }
+}

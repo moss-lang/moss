@@ -484,6 +484,16 @@ fn both_exit(entry: &str, code: i32) {
     assert_eq!(theirs.code, code, "the oracle on {entry}: {}", theirs.stderr);
 }
 
+/// Binding a struct tag's payload gives a bare record type, which a
+/// parameter can name and another tag of the same payload can take
+/// (Audit.v note 35). A union may not have one as a member
+/// (tests/errors/union_record_member.moss).
+#[test]
+fn a_bound_record_payload_is_a_bare_record() {
+    both_exit("tests/wasi/record_payload_param.moss", 3);
+    both_exit("tests/wasi/record_payload_shared.moss", 3);
+}
+
 /// Audit.v note 30: contexts nest to any depth, and the types a cycle of
 /// them requires are the union of theirs. (A function's context cannot
 /// be made from a cycle: tests/errors/context_cycle.moss.)

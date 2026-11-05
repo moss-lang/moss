@@ -1,0 +1,1 @@
+!] tests/errors/union_shared_head_other.moss A

@@ -2530,8 +2530,9 @@ Inductive TyOf (W : world) : string -> list (nat * ty) -> option ty -> aty -> ty
 | TyUnion : forall p tm th ms ts flat,
     Forall2 (TyOf W p tm th) ms ts ->
     flat = flat_map members ts ->
-    (* [D15]: members are nominal, and appear once *)
-    Forall (fun m => exists n xs, m = TNom n xs) flat -> NoDup flat ->
+    (* [D15]: members are nominal (a record's reserved head is not: note
+       34), and no two share a head (note 33), so each appears once *)
+    Forall (fun m => exists n xs, m = TNom n xs /\ n <> rec_head) flat -> NoDup (map head flat) ->
     TyOf W p tm th (ATUnion ms) (TUnion flat)
 | TyType  : forall p tm th pa t tau,
     resolve_sym W p pa = Some t -> kind_sym W t = Some DKType -> nlook t tm = Some tau ->
@@ -3023,17 +3024,55 @@ Definition operator_method (op : string) (unary : bool) : option string :=
     | "<" => Some "lt" | ">" => Some "gt" | "<=" => Some "le" | ">=" => Some "ge"
     | _ => None end.
 
-(* The pattern judgment: a source pattern against scrutinee type `st`
-   compiles to an xpat, binding locals; `hs` are the heads it covers and
-   `catch` whether it matches everything. *)
-Inductive PatOf (W : world) (p : string) (st : ty) : apat -> xpat -> list (name * ty) -> list nat -> bool -> Prop :=
-| PWild : PatOf W p st APWild (XPAny None) [] [] true
+(* the payload type of a tag at its arguments *)
+Inductive PayloadOf (W : world) : nat -> list (nat * ty) -> ty -> Prop :=
+| PayTag : forall s xs d n ps t pay,
+    w_decl W s = Some d -> d_ast d = ADTag n ps t -> TyOf W (d_mod d) xs None t pay ->
+    PayloadOf W s xs pay.
+
+(* The fields of a record pattern `P{…}` against the payload's fields
+   `ftys`, in the order written: `x` binds the field x to a local x, `x =
+   y` to a local y, `x = _` binds nothing (note 35). *)
+Inductive FieldPats (W : world) (F : frame) (ftys : list (nat * ty))
+    : list (name * option apat) -> list (name * ty) -> list (fld * var) -> Prop :=
+| FPNil : FieldPats W F ftys [] [] []
+| FPPun : forall n t r bs xs,
+    nlook (w_fld W n) ftys = Some t -> Named F n -> FieldPats W F ftys r bs xs ->
+    FieldPats W F ftys ((n, None) :: r) ((n, t) :: bs) ((w_fld W n, var_of F n) :: xs)
+| FPWild : forall n t r bs xs,
+    nlook (w_fld W n) ftys = Some t -> FieldPats W F ftys r bs xs ->
+    FieldPats W F ftys ((n, Some APWild) :: r) bs xs
+| FPBind : forall n y t r bs xs,
+    nlook (w_fld W n) ftys = Some t -> resolve W (fr_mod F) [y] = None -> Named F y ->
+    FieldPats W F ftys r bs xs ->
+    FieldPats W F ftys ((n, Some (APPath [y])) :: r) ((y, t) :: bs) ((w_fld W n, var_of F y) :: xs).
+
+(* The pattern judgment: a source pattern, in frame F, against scrutinee
+   type `st` compiles to an xpat, binding locals; `hs` are the heads it
+   covers and `catch` whether it matches everything.  A head names the one
+   member of st with that head ([D15], note 33). *)
+Inductive PatOf (W : world) (F : frame) (st : ty) : apat -> xpat -> list (name * ty) -> list nat -> bool -> Prop :=
+| PWild : PatOf W F st APWild (XPAny None) [] [] true
 | PBinder : forall n,
-    resolve W p [n] = None ->
-    PatOf W p st (APPath [n]) (XPAny None) [(n, st)] [] true
-| PUnit : forall pa s xs,
-    resolve_sym W p pa = Some s -> kind_sym W s = Some DKUnit -> In (TNom s xs) (members st) ->
-    PatOf W p st (APPath pa) (XPHead s None []) [] [s] false.
+    resolve W (fr_mod F) [n] = None -> Named F n ->
+    PatOf W F st (APPath [n]) (XPAny (Some (var_of F n))) [(n, st)] [] true
+| PUnit : forall pa s k xs,
+    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some k -> (k = DKUnit \/ k = DKTag) ->
+    In (TNom s xs) (members st) ->
+    PatOf W F st (APPath pa) (XPHead s None []) [] [s] false
+(* `S(y)`: y is the payload, at the member's arguments; a struct tag's is a
+   bare record type (note 35) *)
+| PTagBind : forall pa s xs y pay,
+    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag -> In (TNom s xs) (members st) ->
+    PayloadOf W s xs pay ->
+    resolve W (fr_mod F) [y] = None -> Named F y ->
+    PatOf W F st (APTag pa (APPath [y])) (XPHead s (Some (var_of F y)) []) [(y, pay)] [s] false
+(* `S{x, x = y, x = _}`: S's payload is a record, its fields bound by name *)
+| PRecord : forall pa s xs fs ftys bs fxs,
+    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag -> In (TNom s xs) (members st) ->
+    PayloadOf W s xs (TNom rec_head ftys) ->
+    FieldPats W F ftys fs bs fxs ->
+    PatOf W F st (APRec (Some pa) fs) (XPHead s None fxs) bs [s] false.
 
 (* `let` binds an immutable local, `var` an assignable one. *)
 Inductive LetStmt : astmt -> name -> option aty -> aexpr -> lmut -> Prop :=
@@ -3041,10 +3080,6 @@ Inductive LetStmt : astmt -> name -> option aty -> aexpr -> lmut -> Prop :=
 | LSVar : forall n a y, LetStmt (ASVar n a y) n a y LVar.
 
 (* Auxiliary judgments (not mutually recursive with the main ones). *)
-Inductive PayloadOf (W : world) : nat -> list (nat * ty) -> ty -> Prop :=
-| PayTag : forall s xs d n ps t pay,
-    w_decl W s = Some d -> d_ast d = ADTag n ps t -> TyOf W (d_mod d) xs None t pay ->
-    PayloadOf W s xs pay.
 
 Inductive Join : ty -> ty -> option ty -> ty -> Prop :=
 | JoinExp : forall a b t, Join a b (Some t) t
@@ -3271,13 +3306,13 @@ with Arms (W : world) (P : xprogram) : frame -> cx -> ty -> list (apat * aexpr) 
 
 with ArmsList (W : world) (P : xprogram) : frame -> cx -> ty -> list (apat * aexpr) -> option ty -> list (xpat * xexpr) -> list nat -> bool -> ty -> Prop :=
 | ArmsOne : forall F C st pat body exp xp binds hs ca bx bt,
-    PatOf W (fr_mod F) st pat xp binds hs ca ->
+    PatOf W F st pat xp binds hs ca ->
     Ex W P F (fold_left (fun C q => add_local C (fst q) (snd q) LLet) binds C) body exp bx bt ->
     opt_fits bt exp ->
     ArmsList W P F C st [(pat, body)] exp [(xp, bx)] hs ca (match exp with Some e => e | None => bt end)
 | ArmsMore : forall F C st pat body rest exp xp binds hs ca bx bt xr hr cr tr t,
     rest <> [] ->
-    PatOf W (fr_mod F) st pat xp binds hs ca ->
+    PatOf W F st pat xp binds hs ca ->
     Ex W P F (fold_left (fun C q => add_local C (fst q) (snd q) LLet) binds C) body exp bx bt ->
     opt_fits bt exp ->
     ArmsList W P F C st rest exp xr hr cr tr ->
@@ -3935,6 +3970,50 @@ End Elaboration.
       has the directory of the loaded `lib/wasm.moss` as a prefix, as
       Elab's `in_library` checks.  (RelSupport's `ex` discharges it with
       `not_ref` for every other tag.)
+
+   CHANGES DECIDED BY THE DESIGNER (spec fixes):
+  33. (relation and both implementations unsound; decided: rejected)
+      [D15] two union members with one head, as in `A[X=I32] | A[X=I64]`
+      for `tag A[X](X)`.  A match arm names a member by its head alone
+      (`A(y)`), so such a union gives the arm no one payload type: the
+      elaborator typed it at the last such member (its table of heads,
+      Elab.synth_match, keeps the last member set under a head), the
+      self-hosted compiler at the first, and the program then ran stuck
+      under the oracle, or compiled to an invalid module or a wrong
+      value.  TyUnion now asks that no two members
+      share a head (`NoDup (map head flat)`, which implies the old
+      `NoDup flat`); the elaborator reports "union members `A[X=I32]` and
+      `A[X=I64]` share a head (D15)" and the compiler e_union, named by
+      the head.  Only a written union is checked: a union type arises from
+      nothing else (Join without an expected type asks for equal types),
+      and substitution keeps heads.  PatOf's tag rules (note 35) find
+      their member by head, which is now unique.  Tests:
+      tests/errors/union_shared_head*.moss.
+  34. (relation permissive; decided: rejected) [D15] a union member that
+      is a bare record type, as in `type U = | {a: I32} | Red;`.  TyUnion
+      counted `TNom rec_head` (V.0: a record's reserved head) as nominal;
+      the elaborator rejected it ("not nominal (D15)") and the self-hosted
+      compiler accepted it.  TyUnion now asks `n <> rec_head` of each
+      member, and the compiler reports e_union, named by nothing.  Test:
+      tests/errors/union_record_member.moss.
+  35. (relation incomplete; adjusted to the elaborator) Patterns.  PatOf
+      had no rule for a tag pattern with a payload binder (`S(y)`) or a
+      record pattern (`S{x, x = y, x = _}`), so no match with one was
+      related.  PTagBind binds y to S's payload at the member's
+      arguments (PayloadOf): for a struct tag that is the bare record
+      type `TNom rec_head ftys`, which a parameter or another tag of the
+      same payload can take (tests/wasi/record_payload_*.moss).  PRecord
+      binds fields by name through FieldPats, in the order written.  As
+      the elaborator (compile_pattern) does: a sub-pattern of `S(…)` is
+      a binder only, a field's is a binder or `_`, and `{…}` with no tag
+      head is rejected, so neither has a rule.  Two more changes make
+      PatOf match it: PatOf takes the frame, and a binder (PBinder,
+      PTagBind, FieldPats) is the local `var_of F y`, where PBinder had
+      `XPAny None` (the elaborator writes the local's number, so no
+      match with a binder arm was related); and PUnit also covers a
+      bare `S` for a tag with a payload, which the elaborator accepts.
+      Not stated, as layouts are nowhere in the relation: the
+      elaborator's layout check (layout_ok) of a bound payload.
 *)
 
 (* ######################################################################## *)

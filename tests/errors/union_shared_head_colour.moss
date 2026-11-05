@@ -1,0 +1,31 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, proc_exit;
+
+# D15, as in union_shared_head.moss, with members of one representation:
+# the arm would read an A[X=I32]'s payload as a Colour.
+type X;
+assume X { tag A[X](X); }
+tag Red;
+tag Green;
+type Colour = | Red | Green;
+
+type U = | A[X=Colour] | A[X=I32];
+
+assume Wasm, Wasi {
+  fn pick(u: U): I32 {
+    let one = w::i32_one;
+    match u {
+      A(y) => match y {
+        Red => w::i32_add(one, one),
+        Green => w::i32_add(w::i32_add(one, one), one),
+      },
+    }
+  }
+
+  fn main() {
+    let one = w::i32_one;
+    let seven = w::i32_add(w::i32_add(w::i32_add(one, one), w::i32_add(one, one)), w::i32_add(w::i32_add(one, one), one));
+    let u: U = A[X=I32](seven);
+    proc_exit(pick(u));
+  }
+}

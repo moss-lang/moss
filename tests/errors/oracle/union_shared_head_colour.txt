@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/union_shared_head_colour.moss: union members `A[X=Red | Green]` and `A[X=I32]` share a head (D15)]

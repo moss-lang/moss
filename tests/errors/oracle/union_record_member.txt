@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/union_record_member.moss: union member `{a: I32}` is not nominal (D15)]

@@ -214,6 +214,11 @@ assume Std {
   # `F`.
   fn e_self_apply(): Int { 16 + 11 }
 
+  # D15: a union member that is not nominal — a record, named by nothing —
+  # or two members with one head (`A[X=I32] | A[X=I64]`), named by the
+  # head: a match arm names a member by its head alone.
+  fn e_union(): Int { 16 + 12 }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, pinfo,
     ent_head, ent_link,
