@@ -72,7 +72,8 @@ errors and positions included.
     related to their source). [`WorldSound.v`](theories/WorldSound.v)
     proves the first step of soundness: the loader's reading of a bundle
     is a reading (`WorldOf`) in all but its requirements and field
-    numbering. The `Bx*.v` files are those programs'
+    numbering, and [`ElabFrame.v`](theories/ElabFrame.v) that every step
+    of the elaborator keeps that reading. The `Bx*.v` files are those programs'
     bundles as Gallina terms, generated once from parse dumps of an
     earlier tree; they are inputs to those proofs, not to the oracle.
   - [`Certified.v`](theories/Certified.v): binds the implementation to the

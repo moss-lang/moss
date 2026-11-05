@@ -18,7 +18,7 @@
 
 From Stdlib Require Import List.
 From NM Require Import Audit CoreMoss MossX Sx Elab Specialization RelFacts.
-From NM Require FastPath WorldSound.
+From NM Require FastPath WorldSound ElabFrame.
 Import ListNotations.
 
 Module Certified <: PROVED_NOW.
@@ -80,6 +80,9 @@ Definition world_of_reading := WorldSound.worldof_of_reading.
 (* and every path the elaborator resolves in a module of that world, Part
    V's `resolve` resolves to the same entity *)
 Definition world_resolves := WorldSound.load_world_resolves.
+(* and what elaboration keeps of that world: its symbols, unchanged; only
+   fresh, non-source symbols made; record fields numbered injectively *)
+Definition elaboration_frame := ElabFrame.elaborate_frame.
 
 (* The executable roots (Extract2.v extracts these). *)
 Definition elaborate_sx := Certified.elaborate_sx.

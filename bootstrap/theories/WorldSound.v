@@ -1918,13 +1918,8 @@ Qed.
    counts a context's or functor's own assume nesting (assume_type_syms does
    too).  Estimate: 1500-2500 lines.
 
-   TODO_fld_injective: Numbered (st_flds s) for the final state s.  Section 7
-   proves the rest: fld_id keeps a table Numbered (fld_id_numbered), and
-   fld_ext over a Numbered table is injective (numbered_inj, fld_ext_inj);
-   what remains is that no other M action writes st_flds (the frame
-   invariant below).
-
-   TODO_syms_frame: every M action leaves st_w unchanged and adds to st_syms
-   only symbols with ids >= w_nsyms whose origin is not OSource, so
-   RelSupport.W_of s and W_read (st_w s) agree on every source symbol, and
-   A.Fresh holds of every symbol elaboration makes.  Same frame invariant. *)
+   TODO_fld_injective and TODO_syms_frame: DONE in ElabFrame.v
+   (elab_frame, elaborate_frame): every function of the elaborator keeps
+   the loader's world and symbols, makes only non-source symbols, fresh in
+   W_read, and numbers fields 1, 2, …, so fld_ext of the final table is an
+   injective field numbering. *)
