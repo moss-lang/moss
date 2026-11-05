@@ -4014,6 +4014,17 @@ End Elaboration.
       bare `S` for a tag with a payload, which the elaborator accepts.
       Not stated, as layouts are nowhere in the relation: the
       elaborator's layout check (layout_ok) of a bound payload.
+  40. (elaborator unsound; adjusted to the relation) [D73] Listed
+      parameters of a tag nothing uses.  WorldOf's wo_listed asks of every
+      tag that each parameter it lists is a type its assume nesting
+      requires.  The elaborator checked that only in solve_requirements,
+      that is, only of the tags elaboration reaches, so it accepted a
+      program with an unused `tag Bad[T](I32)` whose nesting does not
+      require T, which has no reading.  It now checks every tag of the
+      loader's world first (Elab.check_listed, the same listed_params).
+      Oracle outputs are identical on all 243 programs and on the compiler
+      compiling tests/wasi/tags.moss; the self-hosted compiler (src/) is
+      unchanged and still accepts such a program.
 *)
 
 (* ######################################################################## *)

@@ -4224,7 +4224,19 @@ Definition lower_all : M unit :=
                              then lower_body ELAB_FUEL g else ret tt)
                  (map snd (gm_names m) +++ map snd (gm_attached m))) (w_order w).
 
+(* D73, of every tag, used or not: what it lists are types its assume
+   nesting requires (Audit note 40; solve_requirements checks it only of
+   the tags elaboration reaches) *)
+Definition check_listed : M unit :=
+  let! s := get in
+  let w := st_w s in
+  miter (fun i => match nget (w_syms w) i with
+                  | Some g => if kind_eqb (gs_kind g) KTag then let! _ := listed_params 0 g in ret tt else ret tt
+                  | None => ret tt
+                  end) (seq 0 (w_nsyms w)).
+
 Definition elab_program : M xprogram :=
+  check_listed ;;
   lower_all ;;
   let! s := get in
   let w := st_w s in
