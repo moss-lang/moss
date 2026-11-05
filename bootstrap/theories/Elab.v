@@ -536,17 +536,13 @@ Definition fits_raw (t expected : ety) : bool :=
 Definition FUEL : nat := 5000.
 
 (* The generations a type mentions. *)
-Fixpoint ety_gens (fuel : nat) (t : ety) : list nat :=
-  match fuel with
-  | 0 => []
-  | S f =>
-      match t with
-      | YAbs g => [g]
-      | YNom _ xs => flat_map (fun p => ety_gens f (snd p)) xs
-      | YUnion ms => flat_map (ety_gens f) ms
-      | YRec fs => flat_map (fun p => ety_gens f (snd p)) fs
-      | _ => []
-      end
+Fixpoint ety_gens (t : ety) : list nat :=
+  match t with
+  | YAbs g => [g]
+  | YNom _ xs => (fix go (l : list (nat * ety)) := match l with [] => [] | p :: r => ety_gens (snd p) +++ go r end) xs
+  | YUnion ms => (fix go (l : list ety) := match l with [] => [] | m :: r => ety_gens m +++ go r end) ms
+  | YRec fs => (fix go (l : list (string * ety)) := match l with [] => [] | p :: r => ety_gens (snd p) +++ go r end) fs
+  | _ => []
   end.
 
 (* Substituting generations (a functor result read at fresh ones). *)
@@ -1949,7 +1945,7 @@ Definition oety_eqb (a b : option ety) : bool :=
 Definition require_merges (mi : nat) (e : env) (callee : gsym) (info : fninfo) : M unit :=
   miter (fun p =>
            let '(k, v) := p in
-           let mentioned := k :: ety_gens FUEL v in
+           let mentioned := k :: ety_gens v in
            if forallb (fun t => is_some (tn_get e t)) mentioned then
              let lhs := canon e (instantiate e (YAbs k)) in
              let rhs := canon e (instantiate e v) in
@@ -2497,7 +2493,7 @@ Definition family_member (mi : nat) (e : env) (r : ety) (mid : nat) : M (option 
           if negb (Nat.eqb (gs_id m) mid) then ret found else
           let! pat := receiver_at em lmi rg subst in
           let th := pmatch FUEL back pat r [] in
-          let mentioned := filter (fun q => nmem (snd q) (ety_gens FUEL pat)) marks in
+          let mentioned := filter (fun q => nmem (snd q) (ety_gens pat)) marks in
           if negb (forallb (fun q => is_some (nassoc (fst q) th)) mentioned) then ret found else
           let at_th := canon e (ety_subst FUEL (map (fun q => (snd q, opt_default (YAbs (snd q)) (nassoc (fst q) th))) marks) pat) in
           if negb (ety_eqb at_th r) then ret found else
@@ -2911,7 +2907,7 @@ with synth_block (fuel : nat) (c : cx) (e : env) (b : ablock) (exp : option ety)
                         | Some y => synth f c' e' y exp
                         end in
       let made := skipn (List.length (cx_fresh c)) (cx_fresh c') in
-      let gone := filter (fun g => nmem g made) (ety_gens FUEL (canon e' tty)) in
+      let gone := filter (fun g => nmem g made) (ety_gens (canon e' tty)) in
       match gone with
       | g :: _ =>
           let! gg := sym g in
@@ -3091,6 +3087,10 @@ with synth_path (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) {struct fu
   match local with
   | Some (n, t) => let! x := local_var n in ret (XVar x, t)
   | None =>
+      (* a value is not applied to brackets: no rule reads them (Audit note 45) *)
+      match a with
+      | Some _ => err mi ("`" ++ show_path p ++ "[…]`: only a type or a tag constructor takes brackets")
+      | None =>
       let! tg := rpath mi p in
       match tg with
       | None => err mi ("`" ++ show_path p ++ "` is not in scope")
@@ -3108,6 +3108,7 @@ with synth_path (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) {struct fu
           | KTag, _ => err mi ("`" ++ gs_name g ++ "` is a tag; construct it with a payload")
           | _, _ => err mi ("`" ++ gs_name g ++ "` is not a value")
           end
+      end
       end
   end end
 
@@ -4079,10 +4080,10 @@ with link_body (fuel : nat) (fg bg : gsym) {struct fuel} : M nat :=
       (* rule 3b: no captured item mentions a type applications supply *)
       miter (fun k =>
                let mentions := match k with
-                               | KyMth r m => ety_gens FUEL r +++
-                                              match key_sig eg k with Some (ps, rt) => flat_map (ety_gens FUEL) (rt :: ps) | None => [] end
-                               | KyVal v => match nget (en_vals eg) v with Some t => ety_gens FUEL t | None => [] end
-                               | KyFn fn => match key_sig eg k with Some (ps, rt) => flat_map (ety_gens FUEL) (rt :: ps) | None => [] end
+                               | KyMth r m => ety_gens r +++
+                                              match key_sig eg k with Some (ps, rt) => flat_map ety_gens (rt :: ps) | None => [] end
+                               | KyVal v => match nget (en_vals eg) v with Some t => ety_gens t | None => [] end
+                               | KyFn fn => match key_sig eg k with Some (ps, rt) => flat_map ety_gens (rt :: ps) | None => [] end
                                | KyFun _ => []
                                end in
                match k with
@@ -4101,9 +4102,9 @@ with link_body (fuel : nat) (fg bg : gsym) {struct fuel} : M nat :=
       (* F's result in F's own terms, its types as themselves *)
       let! (ef', dr) := provide_result ef fg (map (fun t => (t, t)) rts) in
       let mf := filter (fun g => negb (nmem g rts))
-                       (flat_map (fun k => match k with KyMth r _ => ety_gens FUEL r | _ => [] end) dr
+                       (flat_map (fun k => match k with KyMth r _ => ety_gens r | _ => [] end) dr
                         +++ flat_map (fun k => match key_sig ef' k with
-                                              | Some (ps, r) => flat_map (ety_gens FUEL) (r :: ps)
+                                              | Some (ps, r) => flat_map ety_gens (r :: ps)
                                               | None => [] end) dr) in
       (* m4, D84 3d: pins may not change a type of P(F) ∩ M(F); X(F) may be
          pinned (a manifest equation, checked at the bind) *)

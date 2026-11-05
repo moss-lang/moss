@@ -4137,6 +4137,16 @@ End Elaboration.
       which never holds, so the program had no reading.  ExField now asks
       that the receiver be a tag's application whose payload is the
       record, or the record itself.
+  45. (elaborator unsound; adjusted to the relation) (a) A value path
+      with brackets, `let r = Red[I32 = I32];` for a unit `Red`: no rule
+      reads a value path's brackets (ExUnitTag, ExVal, ExConst ask
+      `AEPath pa None`), but synth_path ignored them and accepted.  It now
+      rejects them ("only a type or a tag constructor takes brackets").
+      (b) The escape check of a block ([D78], BlkE: no generation `bind
+      F;` made may occur in the block's type) read the type's generations
+      with ety_gens, which stopped 5000 deep; it is now structural, as
+      Part V's gens is.  Oracle outputs identical on all 243 programs and
+      on the compiler compiling tests/wasi/tags.moss.
 *)
 
 (* ######################################################################## *)
