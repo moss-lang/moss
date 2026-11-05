@@ -1708,7 +1708,18 @@ with add_spec (fuel : nat) (e : env) (mi : nat) (sp : spec) (outer : list (nat *
               match tg with
               | None => err mi ("`" ++ show_path pp ++ "` is not in scope")
               | Some (EMod _) => err mi "cannot put a module in a context"
-              | Some (ESym s) => let! g := sym s in relevant g ;; add_symbol_item f e mi g subst needs
+              | Some (ESym s) =>
+                  let! g := sym s in relevant g ;;
+                  (* only a context, an assumed val and a fn take brackets
+                     here: the others introduce no reading of them (Audit
+                     note 57) *)
+                  let bracketless :=
+                    match gs_kind g, gs_decl g with
+                    | KCtx, _ | KFn, _ | KVal, ADVal _ _ None => false
+                    | _, _ => true
+                    end in
+                  if is_some a && bracketless then err mi ("`" ++ gs_name g ++ "` takes no brackets in a context (D71)")
+                  else add_symbol_item f e mi g subst needs
               end
           | None, None => err mi "an empty context item"
           end

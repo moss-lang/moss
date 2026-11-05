@@ -4306,6 +4306,26 @@ End Elaboration.
       56 are identical to the previous oracle's on all 243 programs of
       tests/wasi, tests/errors and examples and on the compiler compiling
       tests/wasi/tags.moss, but for the new error test.
+  57. (elaborator unsound; adjusted to the relation) [D71] Brackets on a
+      context item that takes none: ItemEntries reads a type, a tag, a
+      unit, an alias, a defined val and a functor item only unbracketed
+      (IEType, IENothing, IEFun), but add_spec elaborated the brackets and
+      add_symbol_item ignored them, so `context K = T[];` and
+      `context L = Int, Box[T = Int];` were accepted (exit status 0) with no
+      CtxOf.  add_spec now rejects them ("`T` takes no brackets in a
+      context").  Test: tests/errors/context_item_brackets.moss; the
+      self-hosted compiler still accepts it (listed as its bug).  Oracle
+      stdout, stderr and exit status are identical to the previous
+      oracle's on all programs and on the compiler compiling
+      tests/wasi/tags.moss, but for the new error test.
+      STILL OPEN (reported, not changed): find_method_decl, for a method
+      item `A.m` of a context, falls back to a detached `.m` of A's own
+      module when none is in scope here; MethodNamed (IEMeth) does not, so
+      `context K = Int, A, A.gimme;` with `.gimme` detached in A's module
+      and not imported is accepted (exit status 0) with no CtxOf, while a
+      call `a.gimme()` in a body is rejected ("not a detached method in
+      scope").  Either the elaborator drops the fallback (newly rejecting
+      such a context) or IEMeth gains it: a designer's choice.
 *)
 
 (* ######################################################################## *)

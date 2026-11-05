@@ -1,0 +1,12 @@
+# Only a context, an assumed val and a fn take brackets as context items:
+# brackets on a type, a tag, a unit, an alias, a defined val or a functor
+# have no reading (D71; Audit.v note 57), not even empty ones.
+type T;
+
+context K = T[];
+
+assume K {
+  fn f() {}
+}
+
+fn main() {}
