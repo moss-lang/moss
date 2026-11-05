@@ -566,13 +566,25 @@
       );
       devShells = forAll (pkgs: {
         default = pkgs.mkShellNoCC {
-          buildInputs = [
-            pkgs.binaryen
-            pkgs.rust-bin.stable.latest.default
-            pkgs.vsce # For manually packaging the VS Code extension.
-            pkgs.wasm-tools # The test suite validates every module with it.
-            pkgs.wasmtime # The test suite runs every module with it.
-          ];
+          buildInputs =
+            let
+              tools = oracleTools pkgs;
+            in
+            tools.inputs
+            ++ [
+              # VsRocq also needs the Coq compatibility shim, built with the
+              # same flambda OCaml as Rocq to avoid mixing runtime libraries.
+              (tools.rocqPackages.vsrocq-language-server.override {
+                coq = tools.rocqPackages.coq.override {
+                  customOCamlPackages = tools.ocamlPackages;
+                };
+              })
+              pkgs.binaryen
+              pkgs.rust-bin.stable.latest.default
+              pkgs.vsce # For manually packaging the VS Code extension.
+              pkgs.wasm-tools # The test suite validates every module with it.
+              pkgs.wasmtime # The test suite runs every module with it.
+            ];
           BINARYEN_LIB_DIR = "${pkgs.binaryen}/lib";
           WASMTIME_LIB_DIR = "${pkgs.wasmtime.lib}/lib";
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [

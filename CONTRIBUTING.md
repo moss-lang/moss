@@ -77,6 +77,20 @@ audits the assumptions of what it certifies (about 5 minutes and 6 GB);
 `dune build` in `bootstrap` builds the oracle
 ([`bootstrap/README.md`](bootstrap/README.md)).
 
+For editing proofs with
+[VsRocq](https://marketplace.visualstudio.com/items?itemName=rocq-prover.vsrocq),
+build the dependencies and launch VS Code from the default dev shell:
+
+```sh
+nix develop
+(cd bootstrap && dune build)
+code .
+```
+
+The shell supplies `vsrocqtop` built with the same Rocq and OCaml as the
+proofs. [`_RocqProject`](_RocqProject) maps `NM` to Dune's compiled theories;
+rerun `dune build` in `bootstrap/` after changing dependencies.
+
 ## Where things are
 
 The working design record lives in
