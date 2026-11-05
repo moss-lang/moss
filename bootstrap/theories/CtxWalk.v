@@ -12,8 +12,9 @@
 (* (`lent`, the elaborator's, which `tr_ent` reads as Part V's) to its     *)
 (* environment (WS): the types in force, the merges (triangular, extending *)
 (* U, each respected by whatever respects U and unifies the entries), the  *)
-(* vals and fns in force and their entries, and, when the run made no new *)
-(* merge, that entries under one key agree up to the merges.               *)
+(* vals, fns and methods in force and their entries, and, when the run     *)
+(* made no new merge, that entries under one key agree up to the merges    *)
+(* (a method's receiver key then ety_ok, so that tr reads keys apart).      *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
@@ -88,6 +89,16 @@ Inductive lent :=
 | LMth (r : ety) (m : nat) (g : Elab.fsig) (a : Elab.inst)
 | LFun (u : nat).
 
+(* A type whose reading by tr no other such type shares (tr_inj, CtxMerge.v):
+   no nominal headed by the records' reserved 0, no union of nothing. *)
+Fixpoint ety_ok (t : ety) : bool :=
+  match t with
+  | YNom h xs => negb (Nat.eqb h 0) && forallb (fun p => ety_ok (snd p)) xs
+  | YUnion ms => match ms with [] => false | _ => forallb ety_ok ms end
+  | YRec fs => forallb (fun p => ety_ok (snd p)) fs
+  | _ => true
+  end.
+
 Section Walk.
 Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
@@ -126,7 +137,7 @@ Definition SigCanon (e : env) (g g0 : Elab.fsig) : Prop :=
 (* a run of the walk, from the merges U *)
 Record WS (U : list (nat * ety)) (e : env) (tm : list (nat * ty)) (les : list lent) (needs : list key) : Prop := {
   ws_tn : forall k, A.nlook k tm = option_map trF (tn_get e k);
-  ws_tnabs : forall k y, tn_get e k = Some y -> y = YAbs k;
+  ws_tnabs : forall k p, In (k, p) (en_tn e) -> fst p = YAbs k;
   ws_tri : Tri (en_uf e);
   ws_ext : exists nw, en_uf e = U ++ nw;
   ws_mg : forall sb, RespE Fl sb U -> A.Unifies sb (map tr_ent les) -> RespE Fl sb (en_uf e);
@@ -136,6 +147,12 @@ Record WS (U : list (nat * ety)) (e : env) (tm : list (nat * ty)) (les : list le
   ws_fns : forall f g a, In (LFn f g a) les -> sg_this g = None /\ exists g0 a0, nget (en_fns e) f = Some g0 /\
               In (LFn f g0 a0) les /\ (en_uf e = U -> SigCanon e g g0);
   ws_fns_in : forall f g0, nget (en_fns e) f = Some g0 -> exists a0, In (LFn f g0 a0) les;
+  (* methods, filed under their receivers' canonical types: read only when
+     the run made no new merge (what a later merge changes is a key) *)
+  ws_mths : en_uf e = U -> forall r m g a, In (LMth r m g a) les -> ety_ok (canon e r) = true /\
+              exists g0, get_mth e (canon e r) m = Some g0 /\ SigCanon e g g0;
+  ws_mths_in : forall r m g0, get_mth e r m = Some g0 -> exists r0 a0, In (LMth r0 m g0 a0) les /\
+              forall sb, RespE Fl sb (en_uf e) -> asub sb (trF r0) = asub sb (trF r);
   ws_needs : en_uf e = U -> forall k, In k needs <-> exists l, In l les /\ lkey e l = Some k;
   ws_nodup : NoDup needs
 }.
@@ -191,32 +208,62 @@ Proof.
   intros x Hx [<-|[]]. apply key_mem_in in Hx. congruence.
 Qed.
 
+Lemma in_aset : forall K V (eqb : K -> K -> bool) k (v : V) l x, In x (aset eqb k v l) -> x = (k, v) \/ In x l.
+Proof.
+  intros K V eqb k v l x. induction l as [|[k' v'] r IH]; cbn; [intros [<-|[]]; left; reflexivity|].
+  destruct (eqb k k'); cbn; intros [<-|H]; auto. destruct (IH H); auto.
+Qed.
+
+Lemma get_mth_same : forall e e' r m, en_mths e' = en_mths e -> get_mth e' r m = get_mth e r m.
+Proof. intros e e' r m E. unfold get_mth. rewrite E. reflexivity. Qed.
+
+Lemma ws_tn_get : forall U e tm les needs, WS U e tm les needs -> forall k y, tn_get e k = Some y -> y = YAbs k.
+Proof.
+  intros U e tm les needs Hws k y H. unfold tn_get in H. destruct (nassoc k (en_tn e)) as [p|] eqn:E; [|discriminate].
+  injection H as <-. exact (ws_tnabs _ _ _ _ _ Hws k p (Merge.nassoc_in _ _ _ _ E)).
+Qed.
+
+Lemma sigcanon_same : forall e e1 g g0, en_uf e1 = en_uf e -> SigCanon e g g0 -> SigCanon e1 g g0.
+Proof.
+  intros e e1 g g0 E [P1 P2]. unfold SigCanon. rewrite !(canon_same e e1 _ E). split; [|exact P2].
+  rewrite (map_ext _ _ (fun p => canon_same e e1 (snd p) E)), (map_ext (fun p => canon e1 (snd p)) _ (fun p => canon_same e e1 (snd p) E)).
+  exact P1.
+Qed.
+
 (* the walk's environment changed only where the entries do not look *)
 Lemma ws_env : forall U e e' tm les needs, WS U e tm les needs ->
   en_tn e' = en_tn e -> en_uf e' = en_uf e -> en_vals e' = en_vals e -> en_fns e' = en_fns e ->
-  WS U e' tm les needs.
+  en_mths e' = en_mths e -> WS U e' tm les needs.
 Proof.
-  intros U e e' tm les needs [T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11] E1 E2 E3 E4.
+  intros U e e' tm les needs [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11] E1 E2 E3 E4 E5.
   assert (Etn : forall k, tn_get e' k = tn_get e k) by (intro k; unfold tn_get; rewrite E1; reflexivity).
-  constructor; try rewrite E2; try rewrite E3; try rewrite E4; auto.
+  constructor.
   - intro k. rewrite Etn. apply T1.
-  - intros k y H. rewrite Etn in H. exact (T2 k y H).
-  - intros v y a H. destruct (T6 v y a H) as (y0 & a0 & H1 & H2 & H3). exists y0, a0. split; [exact H1|]. split; [exact H2|].
-    intro E. rewrite !(canon_same e e' _ E2). exact (H3 E).
+  - rewrite E1. exact T2.
+  - rewrite E2. exact T3.
+  - rewrite E2. exact T4.
+  - rewrite E2. exact T5.
+  - intros v y a H. destruct (T6 v y a H) as (y0 & a0 & H1 & H2 & H3). exists y0, a0. rewrite E3. split; [exact H1|]. split; [exact H2|].
+    intro E. rewrite !(canon_same e e' _ E2). rewrite E2 in E. exact (H3 E).
+  - rewrite E3. exact T7.
   - intros f g a H. destruct (T8 f g a H) as (Ht & g0 & a0 & H1 & H2 & H3). split; [exact Ht|]. exists g0, a0.
-    split; [exact H1|]. split; [exact H2|]. intro E. destruct (H3 E) as [P1 P2].
-    unfold SigCanon. rewrite !(canon_same e e' _ E2) in *. split; [|exact P2].
-    rewrite (map_ext _ _ (fun p => canon_same e e' (snd p) E2)), (map_ext (fun p => canon e' (snd p)) _ (fun p => canon_same e e' (snd p) E2)).
-    exact P1.
-  - intros E k. rewrite (T10 E k). split; intros (l & Hl & Hk); exists l; split; auto;
+    rewrite E4. split; [exact H1|]. split; [exact H2|]. intro E. rewrite E2 in E. exact (sigcanon_same e e' g g0 E2 (H3 E)).
+  - rewrite E4. exact T9.
+  - intros E r m g a H. rewrite E2 in E. destruct (Q1 E r m g a H) as (Ok & g0 & G & C).
+    rewrite (canon_same e e' _ E2), (get_mth_same e e' _ _ E5). split; [exact Ok|]. exists g0.
+    split; [exact G | exact (sigcanon_same e e' g g0 E2 C)].
+  - intros r m g0 G. rewrite (get_mth_same e e' _ _ E5) in G. rewrite E2. exact (Q2 r m g0 G).
+  - intros E k. rewrite E2 in E. rewrite (T10 E k). split; intros (l & Hl & Hk); exists l; split; auto;
       [rewrite (lkey_same e e' l E2) | rewrite <- (lkey_same e e' l E2)]; exact Hk.
+  - exact T11.
 Qed.
 
 (* adding entries without keys or table changes *)
 Lemma ws_les_nokey : forall U e tm les needs l, WS U e tm les needs -> lkey e l = None ->
-  (forall v y a, l <> LVal v y a) -> (forall f g a, l <> LFn f g a) -> WS U e tm (les ++ [l]) needs.
+  (forall v y a, l <> LVal v y a) -> (forall f g a, l <> LFn f g a) -> (forall r m g a, l <> LMth r m g a) ->
+  WS U e tm (les ++ [l]) needs.
 Proof.
-  intros U e tm les needs l [T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11] Hk Hv Hf. constructor; auto.
+  intros U e tm les needs l [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11] Hk Hv Hf Hm. constructor; auto.
   - intros sb Hr Hu. apply T5; [exact Hr|]. rewrite map_app in Hu. exact (unifies_app _ _ _ Hu).
   - intros v y a H. apply in_app_iff in H as [H|[H|[]]]; [|exfalso; exact (Hv v y a H)].
     destruct (T6 v y a H) as (y0 & a0 & H1 & H2 & H3). exists y0, a0. split; [exact H1|]. split; [apply in_or_app; left; exact H2 | exact H3].
@@ -225,6 +272,8 @@ Proof.
     destruct (T8 f g a H) as (Ht & g0 & a0 & H1 & H2 & H3). split; [exact Ht|]. exists g0, a0. split; [exact H1|].
     split; [apply in_or_app; left; exact H2 | exact H3].
   - intros f g0 H. destruct (T9 f g0 H) as (a0 & H1). exists a0. apply in_or_app. left. exact H1.
+  - intros E r m g a H. apply in_app_iff in H as [H|[H|[]]]; [exact (Q1 E r m g a H) | exfalso; exact (Hm r m g a H)].
+  - intros r m g0 G. destruct (Q2 r m g0 G) as (r0 & a0 & H1 & H2). exists r0, a0. split; [apply in_or_app; left; exact H1 | exact H2].
   - intros E k. rewrite (T10 E k). split; intros (l' & Hl & Hk').
     + exists l'. split; [apply in_or_app; left; exact Hl | exact Hk'].
     + apply in_app_iff in Hl as [Hl|[<-|[]]]; [exists l'; auto | congruence].
@@ -250,7 +299,7 @@ Lemma ok_fn_sig : forall g tm e this, ok (fn_sig g tm e this).
 Proof. intros. unfold fn_sig. apply ok_bind; [apply ok_mmap; intro; apply ok_bind; [apply ok_ety_of | intro; apply ok_ret]|]. intro. apply ok_bind; [destruct (fn_ret g); [apply ok_ety_of | apply ok_ret] | intro; apply ok_ret]. Qed.
 
 Lemma setdefault_env : forall e k a s e' s', setdefault_app e k a s = Good (e', s') ->
-  en_tn e' = en_tn e /\ en_uf e' = en_uf e /\ en_vals e' = en_vals e /\ en_fns e' = en_fns e.
+  en_tn e' = en_tn e /\ en_uf e' = en_uf e /\ en_vals e' = en_vals e /\ en_fns e' = en_fns e /\ en_mths e' = en_mths e.
 Proof.
   intros e k a s e' s' H. unfold setdefault_app in H. destruct (get_app e k).
   - injection H as <- _. auto.
@@ -273,7 +322,7 @@ Lemma tmrel_walk : forall U e tm les needs subst ob, WS U e tm les needs -> map 
 Proof.
   intros U e tm les needs subst ob Hws Hob Hwf. apply (tmrel_app Fl); [|exact Hob | exact Hwf].
   apply tmrel_tymap; [|exact (ws_tn _ _ _ _ _ Hws)].
-  intros t y H. rewrite (ws_tnabs _ _ _ _ _ Hws t y H). discriminate.
+  intros t y H. rewrite (ws_tn_get _ _ _ _ _ Hws t y H). discriminate.
 Qed.
 
 
@@ -285,22 +334,17 @@ Proof.
   rewrite app_nil_r in E1, E2. split; [exact E1 | exact E2].
 Qed.
 
-Lemma sigcanon_same : forall e e1 g g0, en_uf e1 = en_uf e -> SigCanon e g g0 -> SigCanon e1 g g0.
-Proof.
-  intros e e1 g g0 E [P1 P2]. unfold SigCanon. rewrite !(canon_same e e1 _ E). split; [|exact P2].
-  rewrite (map_ext _ _ (fun p => canon_same e e1 (snd p) E)), (map_ext (fun p => canon e1 (snd p)) _ (fun p => canon_same e e1 (snd p) E)).
-  exact P1.
-Qed.
 
 (* the tables move only where the new entry's key is *)
 Record TabStep (e e1 : env) : Prop := {
   tb_tn : en_tn e1 = en_tn e;
   tb_ustep : exists n2, en_uf e1 = en_uf e ++ n2;
-  tb_tri : Tri (en_uf e1)
+  tb_tri : Tri (en_uf e1);
+  tb_mths : en_mths e1 = en_mths e
 }.
 
 Lemma ws_step_common : forall U e e1 tm les needs l k,
-  WS U e tm les needs -> TabStep e e1 -> lkey e l = Some k ->
+  WS U e tm les needs -> TabStep e e1 -> lkey e l = Some k -> (forall r m g a, l <> LMth r m g a) ->
   (forall sb, RespE Fl sb U -> A.Unifies sb (map tr_ent (les ++ [l])) -> RespE Fl sb (en_uf e1)) ->
   (forall v y a, In (LVal v y a) (les ++ [l]) -> exists y0 a0, nget (en_vals e1) v = Some y0 /\
      In (LVal v y0 a0) (les ++ [l]) /\ (en_uf e1 = U -> canon e1 y = canon e1 y0)) ->
@@ -310,12 +354,19 @@ Lemma ws_step_common : forall U e e1 tm les needs l k,
   (forall f g0, nget (en_fns e1) f = Some g0 -> exists a0, In (LFn f g0 a0) (les ++ [l])) ->
   WS U e1 tm (les ++ [l]) (add_need needs k).
 Proof.
-  intros U e e1 tm les needs l k Hws [Tn (n2 & Ex) Tr] Hk Mg V1 V2 F1 F2.
+  intros U e e1 tm les needs l k Hws [Tn (n2 & Ex) Tr Tm] Hk Hm Mg V1 V2 F1 F2.
   assert (Etn : forall k, tn_get e1 k = tn_get e k) by (intro; unfold tn_get; rewrite Tn; reflexivity).
   constructor; auto.
   - intro k'. rewrite Etn. apply (ws_tn _ _ _ _ _ Hws).
-  - intros k' y H. rewrite Etn in H. exact (ws_tnabs _ _ _ _ _ Hws k' y H).
+  - rewrite Tn. exact (ws_tnabs _ _ _ _ _ Hws).
   - destruct (ws_ext _ _ _ _ _ Hws) as (n1 & E1). exists (n1 ++ n2). rewrite Ex, E1, app_assoc. reflexivity.
+  - intros E r m g a H. apply in_app_iff in H as [H|[H|[]]]; [|exfalso; exact (Hm r m g a H)].
+    destruct (uf_squeeze U e e1 (ws_ext _ _ _ _ _ Hws) (ex_intro _ n2 Ex) E) as [E0 E01].
+    destruct (ws_mths _ _ _ _ _ Hws E0 r m g a H) as (Ok & g0 & G & C).
+    rewrite (canon_same e e1 _ E01), (get_mth_same e e1 _ _ Tm). split; [exact Ok|]. exists g0.
+    split; [exact G | exact (sigcanon_same e e1 g g0 E01 C)].
+  - intros r m g0 G. rewrite (get_mth_same e e1 _ _ Tm) in G. destruct (ws_mths_in _ _ _ _ _ Hws r m g0 G) as (r0 & a0 & H1 & H2).
+    exists r0, a0. split; [apply in_or_app; left; exact H1|]. intros sb Hr. apply H2. rewrite Ex in Hr. exact (resp_app Fl _ _ _ Hr).
   - intros E k'. destruct (uf_squeeze U e e1 (ws_ext _ _ _ _ _ Hws) (ex_intro _ n2 Ex) E) as [E0 E01].
     rewrite add_need_in, (ws_needs _ _ _ _ _ Hws E0 k'). split.
     + intros [(l' & Hl & Hk')| ->]; [exists l'; split; [apply in_or_app; left; exact Hl|] | exists l; split; [apply in_or_app; right; left; reflexivity|]];
@@ -333,19 +384,19 @@ Lemma ws_val : forall U e e1 tm les needs x y a,
   WS U e1 tm (les ++ [LVal x y a]) (add_need needs (KyVal x)).
 Proof.
   intros U e e1 tm les needs x y a Hws C.
-  destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11] eqn:Hws0. clear Hws0.
+  destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11] eqn:Hws0. clear Hws0.
   assert (Ts : TabStep e e1 /\ en_fns e1 = en_fns e /\
                (nget (en_vals e1) x = Some (match nget (en_vals e) x with Some old => old | None => y end)) /\
                (forall v, v <> x -> nget (en_vals e1) v = nget (en_vals e) v)).
   { destruct C as [[N ->]|(old & O & U1 & _ & _)].
-    - split; [constructor; [reflexivity | exists []; rewrite app_nil_r; reflexivity | exact T3]|].
+    - split; [constructor; [reflexivity | exists []; rewrite app_nil_r; reflexivity | exact T3 | reflexivity]|].
       split; [reflexivity|]. rewrite N. cbn [set_val en_vals]. split; [apply nget_nset_same|]. intros v Hv. apply nget_nset_other. exact Hv.
     - rewrite (us_same _ _ U1). cbn [with_uf en_tn en_uf en_vals en_fns]. rewrite O.
-      split; [constructor; [reflexivity | exact (us_ext _ _ U1) | exact (us_tri _ _ U1)]|]. auto. }
+      split; [constructor; [reflexivity | exact (us_ext _ _ U1) | exact (us_tri _ _ U1) | reflexivity]|]. auto. }
   destruct Ts as (Ts & Ef & Ex & Eo).
   assert (Hu : en_uf e1 = U -> en_uf e = U /\ en_uf e1 = en_uf e)
     by (intro E; exact (uf_squeeze U e e1 T4 (tb_ustep _ _ Ts) E)).
-  eapply ws_step_common; [exact Hws | exact Ts | reflexivity | | | | |].
+  eapply ws_step_common; [exact Hws | exact Ts | reflexivity | discriminate | | | | |].
   - intros sb Hr Hun. assert (R0 : RespE Fl sb (en_uf e)).
     { apply T5; [exact Hr|]. rewrite map_app in Hun. exact (unifies_app _ _ _ Hun). }
     destruct C as [[N ->]|(old & O & U1 & R1 & _)]; [exact R0|]. apply (R1 sb R0).
@@ -394,7 +445,7 @@ Lemma ws_fn : forall U e e1 tm les needs x g a,
   WS U e1 tm (les ++ [LFn x g a]) (add_need needs (KyFn x)).
 Proof.
   intros U e e1 tm les needs x g a Hws Hthis C.
-  destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11] eqn:Hws0. clear Hws0.
+  destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11] eqn:Hws0. clear Hws0.
   assert (C' : (nget (en_fns e) x = None /\ e1 = set_fn e x g) \/
                (exists old, nget (en_fns e) x = Some old /\ UStep e e1 /\
                   List.length (sg_params old) = List.length (sg_params g) /\
@@ -408,14 +459,14 @@ Proof.
                (nget (en_fns e1) x = Some (match nget (en_fns e) x with Some old => old | None => g end)) /\
                (forall v, v <> x -> nget (en_fns e1) v = nget (en_fns e) v)).
   { destruct C as [[N ->]|(old & O & U1 & _)].
-    - split; [constructor; [reflexivity | exists []; rewrite app_nil_r; reflexivity | exact T3]|].
+    - split; [constructor; [reflexivity | exists []; rewrite app_nil_r; reflexivity | exact T3 | reflexivity]|].
       split; [reflexivity|]. rewrite N. cbn [set_fn en_fns]. split; [apply nget_nset_same|]. intros v Hv. apply nget_nset_other. exact Hv.
     - rewrite (us_same _ _ U1). cbn [with_uf en_tn en_uf en_vals en_fns]. rewrite O.
-      split; [constructor; [reflexivity | exact (us_ext _ _ U1) | exact (us_tri _ _ U1)]|]. auto. }
+      split; [constructor; [reflexivity | exact (us_ext _ _ U1) | exact (us_tri _ _ U1) | reflexivity]|]. auto. }
   destruct Ts as (Ts & Ev & Ex & Eo).
   assert (Hu : en_uf e1 = U -> en_uf e = U /\ en_uf e1 = en_uf e)
     by (intro E; exact (uf_squeeze U e e1 T4 (tb_ustep _ _ Ts) E)).
-  eapply ws_step_common; [exact Hws | exact Ts | reflexivity | | | | |].
+  eapply ws_step_common; [exact Hws | exact Ts | reflexivity | discriminate | | | | |].
   - intros sb Hr Hun. assert (R0 : RespE Fl sb (en_uf e)).
     { apply T5; [exact Hr|]. rewrite map_app in Hun. exact (unifies_app _ _ _ Hun). }
     destruct C as [[N ->]|(old & O & U1 & L1 & R1 & _)]; [exact R0|]. apply (R1 sb R0).
@@ -456,12 +507,12 @@ Proof.
 Qed.
 
 Lemma ws_fun : forall U e e1 tm les needs u, WS U e tm les needs ->
-  en_tn e1 = en_tn e -> en_uf e1 = en_uf e -> en_vals e1 = en_vals e -> en_fns e1 = en_fns e ->
+  en_tn e1 = en_tn e -> en_uf e1 = en_uf e -> en_vals e1 = en_vals e -> en_fns e1 = en_fns e -> en_mths e1 = en_mths e ->
   WS U e1 tm (les ++ [LFun u]) (add_need needs (KyFun u)).
 Proof.
-  intros U e e1 tm les needs u Hws E1 E2 E3 E4.
+  intros U e e1 tm les needs u Hws E1 E2 E3 E4 E5.
   assert (Hu : en_uf e1 = U -> en_uf e = U) by (rewrite E2; auto).
-  eapply ws_step_common; [exact Hws | constructor; [exact E1 | exists []; rewrite app_nil_r; exact E2 | rewrite E2; exact (ws_tri _ _ _ _ _ Hws)] | reflexivity | | | | |].
+  eapply ws_step_common; [exact Hws | constructor; [exact E1 | exists []; rewrite app_nil_r; exact E2 | rewrite E2; exact (ws_tri _ _ _ _ _ Hws) | exact E5] | reflexivity | discriminate | | | | |].
   - intros sb Hr Hun. rewrite E2. apply (ws_mg _ _ _ _ _ Hws sb Hr). rewrite map_app in Hun. exact (unifies_app _ _ _ Hun).
   - intros v y a Hin. apply in_app_iff in Hin as [Hin|[Eq|[]]]; [|discriminate].
     destruct (ws_vals _ _ _ _ _ Hws v y a Hin) as (y0 & a0 & G & Hy & Hc). exists y0, a0. rewrite E3.
@@ -589,17 +640,17 @@ Proof.
     destruct (tn_get e (gs_id g)) as [y|] eqn:Et.
     + injection H as <- <- <-. exists tm. split; [left; split; [exact Ks|split; [reflexivity|]]|].
       * rewrite (ws_tn _ _ _ _ _ Hws), Et. reflexivity.
-      * split; [reflexivity|]. apply ws_les_nokey; [exact Hws | reflexivity | discriminate | discriminate].
+      * split; [reflexivity|]. apply ws_les_nokey; [exact Hws | reflexivity | discriminate | discriminate | discriminate].
     + apply bind_inv in H as (st0 & s2 & _ & H). injection H as <- <- <-.
       exists ((gs_id g, TAbs (gs_id g)) :: tm). split; [left; split; [exact Ks|split; [reflexivity|]]|].
       * rewrite (ws_tn _ _ _ _ _ Hws), Et. reflexivity.
-      * split; [reflexivity|]. apply ws_les_nokey; [|reflexivity | discriminate | discriminate].
-        destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11].
+      * split; [reflexivity|]. apply ws_les_nokey; [|reflexivity | discriminate | discriminate | discriminate].
+        destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11].
         assert (Ee : forall k, tn_get (set_tn e (gs_id g) (YAbs (gs_id g)) st0) k =
                                if Nat.eqb k (gs_id g) then Some (YAbs (gs_id g)) else tn_get e k) by apply tn_get_set_tn.
         constructor; cbn [set_tn en_uf en_vals en_fns].
         -- intro k. rewrite Ee. cbn [A.nlook]. destruct (Nat.eqb_spec k (gs_id g)) as [->|]; [reflexivity | apply T1].
-        -- intros k y Hk. rewrite Ee in Hk. destruct (Nat.eqb_spec k (gs_id g)) as [->|]; [injection Hk as <-; reflexivity | exact (T2 k y Hk)].
+        -- intros k p Hk. apply in_aset in Hk as [Hk|Hk]; [injection Hk as -> Ep; subst p; reflexivity | exact (T2 k p Hk)].
         -- exact T3.
         -- exact T4.
         -- exact T5.
@@ -607,6 +658,8 @@ Proof.
         -- exact T7.
         -- exact T8.
         -- exact T9.
+        -- exact Q1.
+        -- exact Q2.
         -- intros E k. rewrite (T10 E k). reflexivity.
         -- exact T11.
   - (* unit *)
@@ -644,8 +697,8 @@ Proof.
       { right; right; left. eexists _, n, t, (trF y), (tr_inst a). split; [exact Wd|]. split; [reflexivity|].
         split; [exact Ty|]. split; [exact Ap|]. split; reflexivity. }
       split; [reflexivity|].
-      destruct (setdefault_env _ _ _ _ _ _ He2) as (E1 & E2 & E3 & E4).
-      apply (ws_env _ e1); [|exact E1 | exact E2 | exact E3 | exact E4].
+      destruct (setdefault_env _ _ _ _ _ _ He2) as (E1 & E2 & E3 & E4 & E5).
+      apply (ws_env _ e1); [|exact E1 | exact E2 | exact E3 | exact E4 | exact E5].
       apply (ws_val _ e); [exact Hws|]. destruct (nget (en_vals e) (gs_id g)) as [old|] eqn:O.
       * right. exists old. split; [reflexivity|].
         exact (proj2 (unify_spec Fl _ _ _ _ _ _ _ _ _ (ws_tri _ _ _ _ _ Hws) He1)).
@@ -674,8 +727,8 @@ Proof.
     { right; right; right; left. exists (tr_sig sg), (tr_inst a). split; [exact Ks|]. split; [exact Sg|].
       split; [exact Ap|]. split; reflexivity. }
     split; [reflexivity|].
-    destruct (setdefault_env _ _ _ _ _ _ He2) as (E1 & E2 & E3 & E4).
-    apply (ws_env _ e1); [|exact E1 | exact E2 | exact E3 | exact E4].
+    destruct (setdefault_env _ _ _ _ _ _ He2) as (E1 & E2 & E3 & E4 & E5).
+    apply (ws_env _ e1); [|exact E1 | exact E2 | exact E3 | exact E4 | exact E5].
     apply (ws_fn _ e); [exact Hws | exact Th|]. destruct (nget (en_fns e) (gs_id g)) as [old|] eqn:O.
     + right. exists old, mi, (gs_name g), s2, s3. split; [reflexivity|]. split; [exact (ws_tri _ _ _ _ _ Hws) | exact He1].
     + left. injection He1 as <- _. split; reflexivity.
@@ -713,8 +766,8 @@ Proof.
     exists [LFun (gs_id g)], [A.NFun (gs_id g)], tm. split.
     { right; right; right; right; left. eexists _, n, ps, args, res. split; [exact Wd|]. split; [reflexivity|split; reflexivity]. }
     split; [reflexivity|].
-    destruct (setdefault_env _ _ _ _ _ _ He2) as (E1 & E2 & E3 & E4).
-    apply (ws_fun _ e); [exact Hws | exact E1 | exact E2 | exact E3 | exact E4].
+    destruct (setdefault_env _ _ _ _ _ _ He2) as (E1 & E2 & E3 & E4 & E5).
+    apply (ws_fun _ e); [exact Hws | exact E1 | exact E2 | exact E3 | exact E4 | exact E5].
 Qed.
 
 
@@ -923,12 +976,14 @@ End Walks.
 Lemma ws_start : forall U, Tri U -> WS U (env_with_edges [] U) [] [] [].
 Proof.
   intros U T. constructor; cbn; auto.
-  - intros k y H. discriminate.
+  - intros k p [].
   - exists []. rewrite app_nil_r. reflexivity.
   - intros v y a [].
   - intros v y0 H. discriminate.
   - intros f g a [].
   - intros f g0 H. discriminate.
+  - intros _ r m g a [].
+  - intros r m g0 H. discriminate.
   - intros _ k. split; [intros [] | intros (l & [] & _)].
   - constructor.
 Qed.
