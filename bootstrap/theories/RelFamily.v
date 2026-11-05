@@ -50,7 +50,7 @@ Proof. vm_compute. reflexivity. Qed.
    in a scope of its own, around the call of the provision it makes. *)
 Definition pick_body : xexpr :=
   XApply 4 [(1, TNom 3 [])] []
-    (XMeth (XVar 0) 6 (IMth (TNom 2 [(1, TNom 3 [])]) 6 []) []).
+    (XMeth (XVar 0) 6 (IMth (TNom 2 [(1, TNom 3 [])]) 6 [(1, TNom 3 [])]) []).
 
 Definition P_fa : xprogram := XProgram [(5, pick_body)] [] 0 0 0 5 [] [].
 

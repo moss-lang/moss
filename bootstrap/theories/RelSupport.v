@@ -220,16 +220,14 @@ Lemma satisfies_by : forall C Cs ns,
   forallb (fun k => provides_b C (at_site C k)) ns = true ->
   coh_b C Cs ns = true ->
   c_sub Cs = [] ->
-  Satisfies C Cs ns (map (fun k => (k, at_site C k)) ns).
+  Satisfies C Cs ns (map (fun k => (rkey_of Cs k, rkey_of C (at_site C k))) ns).
 Proof.
-  intros C Cs ns Hp Hc Hs. split; [|split; [|split]].
-  - rewrite map_map. simpl. apply map_id.
-  - intros k k' Hin. apply in_map_iff in Hin as (k0 & E & Hk0). injection E as <- <-.
-    split; [reflexivity|]. apply provides_b_sound. rewrite forallb_forall in Hp. exact (Hp k0 Hk0).
-  - intros k k' a Hin Ha t want Hw. apply in_map_iff in Hin as (k0 & E & Hk0). injection E as <- <-.
-    unfold coh_b in Hc. rewrite forallb_forall in Hc. specialize (Hc k0 Hk0). rewrite Ha in Hc.
+  intros C Cs ns Hp Hc Hs. split; [reflexivity|]. split; [|split].
+  - intros k Hk. apply provides_b_sound. rewrite forallb_forall in Hp. exact (Hp k Hk).
+  - intros k a Hk Ha t want Hw.
+    unfold coh_b in Hc. rewrite forallb_forall in Hc. specialize (Hc k Hk). rewrite Ha in Hc.
     rewrite forallb_forall in Hc. specialize (Hc _ Hw). simpl in Hc.
-    destruct (ilook (at_site C k0) (c_apps C)) as [have|]; [|exact I].
+    destruct (ilook (at_site C k) (c_apps C)) as [have|]; [|exact I].
     apply existsb_exists in Hc as ([t' o] & Hh & E). apply andb_true_iff in E as [E1 E2].
     apply Nat.eqb_eq in E1. apply oty_eqb_eq in E2. simpl in E1, E2. subst. exact Hh.
   - intros g t H. rewrite Hs in H. destruct H.

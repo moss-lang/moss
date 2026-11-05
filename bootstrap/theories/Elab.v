@@ -668,7 +668,7 @@ Inductive xstmt : Type :=
 | SAssign   : nat -> xexpr -> xstmt
 | SBindVal  : nat -> xexpr -> xstmt
 | SBindFn   : nat -> nat -> smap -> xstmt
-| SBindMth  : ty -> nat -> nat -> smap -> xstmt
+| SBindMth  : ty -> nat -> subst -> nat -> smap -> xstmt
 | SBindFun  : nat -> nat -> smap -> smap -> xstmt
 | SBindFunA : nat -> nat -> smap -> xstmt
 | SApply    : nat -> subst -> smap -> xstmt
@@ -688,7 +688,7 @@ Fixpoint fold_stmts (ss : list xstmt) (tail : xexpr) : xexpr :=
       | SAssign x e => XSeq (XAssign x e) rest
       | SBindVal v e => XBindVal v e rest
       | SBindFn f f' sm => XBindFn f f' sm rest
-      | SBindMth t m f' sm => XBindMth t m [] f' sm rest
+      | SBindMth t m th f' sm => XBindMth t m th f' sm rest
       | SBindFun u h sm smc => XBindFun u h sm smc rest
       | SBindFunA u w sm => XBindFunA u w sm rest
       | SApply u th sm => XApply u th sm rest
@@ -704,7 +704,7 @@ Definition stmt_bind (s : xstmt) : option xbind :=
   match s with
   | SBindVal v e => Some (XBVal v e)
   | SBindFn f f' sm => Some (XBFn f f' sm)
-  | SBindMth t m f' sm => Some (XBMth t m [] f' sm)
+  | SBindMth t m th f' sm => Some (XBMth t m th f' sm)
   | SBindFun u h sm smc => Some (XBFun u h sm smc)
   | SBindFunA u w sm => Some (XBFunA u w sm)
   | SApply u th sm => Some (XBApply u th sm)
@@ -1852,6 +1852,31 @@ Definition tag_theta (xs : list (nat * ety)) : M subst :=
 Definition smap_of (ps : list (key * key)) : M smap :=
   mmap (fun p => let! a := key_item (fst p) in let! b := key_item (snd p) in ret (a, b)) ps.
 
+(* θ of a method provision's key in env e (Track A, note 28): the
+   instantiation the provision was made at, as e records it, its known
+   entries only, canonical. *)
+Definition key_theta (e : env) (k : key) : M subst :=
+  match get_app e k with
+  | Some (a, _) =>
+      let! l := mmap (fun q => match snd q with
+                               | Some y => let! t := ety_ty (canon e y) in ret [(fst q, t)]
+                               | None => ret []
+                               end) a in
+      ret (List.concat l)
+  | None => ret []
+  end.
+
+Definition key_item_at (e : env) (k : key) : M item :=
+  match k with
+  | KyMth t m => let! t' := ety_ty t in let! th := key_theta e k in ret (IMth t' m th)
+  | _ => key_item k
+  end.
+
+(* a satisfaction map: each pair's left key read in the callee's env ei,
+   its right key in the caller's eo *)
+Definition smap_at (ei eo : env) (ps : list (key * key)) : M smap :=
+  mmap (fun p => let! a := key_item_at ei (fst p) in let! b := key_item_at eo (snd p) in ret (a, b)) ps.
+
 Definition local_var (x : string) : M nat :=
   let! s := get in
   match sassoc x (st_vars s) with
@@ -2754,6 +2779,9 @@ Definition platform_fun (fg : gsym) : M nat :=
   | None =>
       let mi := gs_mod fg in
       let! (ef, _) := fun_env fg in
+      (* the result in F's own terms, where its items' instantiations are *)
+      let! rts := result_types fg in
+      let! (efr, _) := provide_result ef fg (map (fun t => (t, t)) rts) in
       let! wm := the_mod mi in
       let ref := opt_default 0 (sassoc "Ref" (gm_names wm)) in
       let arr := opt_default 0 (sassoc "Array" (gm_names wm)) in
@@ -2769,7 +2797,7 @@ Definition platform_fun (fg : gsym) : M nat :=
                   let tm := tymap ef in
                   let! this := match nassoc (gs_id r) tm with Some y => ret y | None => symbol_type 200 mi r tm ef end in
                   let! k := method_key ef mi this m in
-                  let! it := key_item k in
+                  let! it := key_item_at efr k in
                   let pr := match gs_name m with
                             | ".boxed" => Some (PBox ref) | "Ref.deref" => Some PDeref | "Ref.set" => Some PRefSet
                             | ".arrayed" => Some (PArrNew arr) | "Array.length" => Some PArrLen
@@ -3139,7 +3167,7 @@ with synth_call (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (args : li
                 let! info := fn_info g in
                 let! (pre, e) := demand_needs f c e info in
                 let! pairs := require_needs mi e g info in
-                let! sm := smap_of pairs in
+                let! sm := smap_at (fi_env info) e pairs in
                 let! sg := fn_sig g (tymap e) e None in
                 let! xs := check_args f c e (gs_name g) sg (map AA args) in
                 layout_ok e (sg_ret sg) ;;
@@ -3278,7 +3306,7 @@ with synth_method (fuel : nat) (c : cx) (e : env) (o : aexpr) (p : path) (args :
                    end in
         let! (pre, e2) := demand_needs f c e2 info in
         let! pairs := require_needs mi e2 att info in
-        let! sm := smap_of pairs in
+        let! sm := smap_at (fi_env info) e2 pairs in
         let! sg := fn_sig att (tymap e2) e2 (Some oty) in
         let! xs := check_args f c e (gs_name att) sg (map AA args) in
         layout_ok e (sg_ret sg) ;;
@@ -3311,7 +3339,7 @@ with provided_call (fuel : nat) (c : cx) (e : env) (ox : xexpr) (oty : ety) (m :
       match get_mth e r mid with
       | Some sg =>
           let! xs := check_args f c e (gs_name m) sg args in
-          let! it := key_item k in
+          let! it := key_item_at e k in
           layout_ok e (sg_ret sg) ;;
           ret (XMeth ox mid it xs, sg_ret sg)
       | None =>
@@ -3325,7 +3353,7 @@ with provided_call (fuel : nat) (c : cx) (e : env) (ox : xexpr) (oty : ety) (m :
               match get_mth e2 r mid with
               | Some sg =>
                   let! xs := check_args f c e (gs_name m) sg args in
-                  let! it := key_item k in
+                  let! it := key_item_at e2 k in
                   layout_ok e (sg_ret sg) ;;
                   ret (fold_stmts pre (XMeth ox mid it xs), sg_ret sg)
               | None => let! sr := show r in
@@ -3536,7 +3564,8 @@ with check_bind (fuel : nat) (c : cx) (e : env) (sp : spec) (y : aexpr) {struct 
           let e := match k with KyMth t mid => set_mth e t mid sg | _ => e end in
           let! e := provided_at e k m tm true in
           match k with
-          | KyMth t mid => let! t' := ety_ty t in ret (pre +++ [SBindMth t' mid target sm], e, c)
+          | KyMth t mid => let! t' := ety_ty t in let! th := key_theta e k in
+                           ret (pre +++ [SBindMth t' mid th target sm], e, c)
           | _ => fail "internal: method key"
           end
       end
@@ -3621,7 +3650,7 @@ with match_fn_sig (fuel : nat) (c : cx) (e : env) (pv : gsym) (wanted : fsig) (k
   let! info := fn_info pv in
   let! pairs := require_needs mi e pv info in
   let! got := fn_sig pv (tymap e) e None in
-  if sig_eqb_in e got e wanted then smap_of pairs
+  if sig_eqb_in e got e wanted then smap_at (fi_env info) e pairs
   else
     let! gp := mmap (fun p => show (snd p)) (sg_params got) in
     let! gr := show (sg_ret got) in
@@ -3643,7 +3672,7 @@ with wrapper (fuel : nat) (pv : gsym) {struct fuel} : M nat :=
   | Some w => ret w
   | None =>
       let! info := fn_info pv in
-      let! sm := smap_of (map (fun k => (k, k)) (fi_needs info)) in
+      let! sm := smap_at (fi_env info) (fi_env info) (map (fun k => (k, k)) (fi_needs info)) in
       let! w := new_sym (gs_mod pv) (gs_name pv ++ "$recv") KFn (gs_decl pv) OLambda in
       let n := List.length (fn_params pv) in
       let! th := call_theta (fi_env info) pv in
@@ -3771,7 +3800,7 @@ with lambda_provider (fuel : nat) (c : cx) (e : env) (ps : list (name * option a
   emit_fn pid fbody ;;
   let info := FInfo le needs (map (fun k => (k, match get_app le k with Some (a, _) => a | None => [] end)) needs) [] in
   upd (s_info (fun m => nset m pid info)) ;;
-  let! sm := smap_of (map (fun k => (k, k)) needs) in
+  let! sm := smap_at le e (map (fun k => (k, k)) needs) in
   ret (pid, pre, sm)
   end end
 
@@ -3858,7 +3887,7 @@ with apply_abstract (fuel : nat) (c : cx) (e : env) (fg : gsym) {struct fuel} : 
                               end) rts in
   let! th := mmap (fun t => let! y := ety_ty (canon e (opt_default YUnit (tn_get e t))) in ret (t, y)) argtys in
   let! th2 := mmap (fun p => ret (fst p, TAbs (snd p))) (filter (fun p => negb (Nat.eqb (fst p) (snd p))) gens) in
-  let! sm := smap_of (map (fun k => (k, site k)) needs) in
+  let! sm := smap_at ef e (map (fun k => (k, site k)) needs) in
   let! (e', _) := provide_result e fg gens in
   ret ([SApply (gs_id fg) (th +++ th2) sm], e', cx_with_fresh c (cx_fresh c +++ map snd gens))
   end
@@ -3915,7 +3944,7 @@ with bind_functor (fuel : nat) (c : cx) (e : env) (fg : gsym) (y : aexpr) {struc
                               else let! xg := sym x in
                                    err mi ("`" ++ gs_name bg ++ "` cannot be bound to `" ++ gs_name fg ++ "`: it is fixed in `" ++
                                            gs_name xg ++ "`, in which `" ++ gs_name fg ++ "` is polymorphic (D84 rule 4)")) xh ;;
-              let! sm := smap_of (map (fun k => (k, k)) gneeds) in
+              let! sm := smap_at eg ef (map (fun k => (k, k)) gneeds) in
               let e' := set_fun e (gs_id fg) stamp in
               let! s2 := fresh in
               let e' := set_app e' (KyFun (gs_id fg)) (map (fun x => (x, option_map (canon e) (tn_get e x))) xf) s2 in
@@ -3930,8 +3959,8 @@ with bind_functor (fuel : nat) (c : cx) (e : env) (fg : gsym) (y : aexpr) {struc
                               else let! s := show_key (site k) in
                                    err mi ("`" ++ gs_name bg ++ "`, bound to `" ++ gs_name fg ++ "`, captures " ++ s ++
                                            ", which is not available here (D84 3b)")) captured ;;
-              let! sm := smap_of (map (fun k => (k, k)) linked) in
-              let! smc := smap_of (map (fun k => (k, site k)) captured) in
+              let! sm := smap_at eg ef (map (fun k => (k, k)) linked) in
+              let! smc := smap_at eg e (map (fun k => (k, site k)) captured) in
               (* m4, D84 rule 7: a family's binding binds no val and applies no
                  functor but a family *)
               let! fam := is_family fg in
@@ -4066,17 +4095,25 @@ with link_body (fuel : nat) (fg bg : gsym) {struct fuel} : M nat :=
          equation, so F's promise is read through it) *)
       let made_tys := map (fun t => (t, canon eb (opt_default (YAbs t) (tn_get eb t)))) (rts +++ xf) in
       let body_key k := match k with KyMth r m => KyMth (canon eb (instantiate eb r)) m | _ => k end in
+      (* a result method item is filed under its key as F declares it (its
+         receiver and θ in F's terms) besides the body's own key *)
       let! renames := mmap (fun k => match k, body_key k with
                                      | KyMth r m, KyMth r' _ =>
-                                         if ety_eqb r r' then ret []
-                                         else let! t := ety_ty r in let! t' := ety_ty r' in ret [(t', m, t)]
+                                         let! t' := ety_ty r' in
+                                         let! it := key_item_at ef' k in
+                                         match it with
+                                         | IMth t0 _ th0 => ret [(t', m, (t0, th0))]
+                                         | _ => ret []
+                                         end
                                      | _, _ => ret []
                                      end) dr in
       let renames := List.concat renames in
       let binds := flat_map (fun b => match b with
                                       | XBMth t m th f' sm =>
-                                          b :: flat_map (fun q => let '(t', m', t0) := q in
-                                                                  if ty_eqb t t' && Nat.eqb m m' then [XBMth t0 m th f' sm] else [])
+                                          b :: flat_map (fun q => let '(t', m', (t0, th0)) := q in
+                                                                  if ty_eqb t t' && Nat.eqb m m' &&
+                                                                     negb (item_eqb (IMth t0 m th0) (IMth t m th))
+                                                                  then [XBMth t0 m th0 f' sm] else [])
                                                         renames
                                       | _ => [b]
                                       end) binds in
@@ -4116,7 +4153,7 @@ with link_body (fuel : nat) (fg bg : gsym) {struct fuel} : M nat :=
                | _, _ => ret tt
                end) dr ;;
       let! h := new_sym mi (gs_name bg) KFunctor (gs_decl bg) (OLink (gs_id fg) (gs_id bg)) in
-      let! dri := mmap key_item dr in
+      let! dri := mmap (key_item_at ef') dr in
       upd (s_funs (fun l => (h, (map ITy rts +++ dri, binds)) :: l)) ;;
       upd (s_links (fun l => ((gs_id fg, gs_id bg), h) :: l)) ;;
       ret h
@@ -4190,7 +4227,7 @@ Definition elab_program : M xprogram :=
           let '(env0, prims) := acc in
           let! o := platform_entry k prims in
           match o with
-          | Some (en, prims') => let! it := key_item k in ret (env0 +++ [(it, en)], prims')
+          | Some (en, prims') => let! it := key_item_at (fi_env info) k in ret (env0 +++ [(it, en)], prims')
           | None => let! sk := show_key k in
                     fail ("unsupported: main assumes " ++ sk ++ ", which only the bootstrap's native Std provides")
           end) ([], []) (fi_needs info) in

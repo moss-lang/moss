@@ -2581,6 +2581,17 @@ Definition canon (C : cx) (t : ty) : ty := app_subst (c_sub C) t.
    elaborated items carry θ = [] at this milestone (DRAFT NOTE 3). *)
 Definition mkey (r : ty) (m : nat) : item := IMth r m [].
 
+(* Note 28: a method provision is filed (c_mths, c_apps) under its
+   receiver and method, mkey; its run-time key carries θ, the
+   instantiation it was made at (its known entries, canonical). *)
+Definition known (a : inst) : subst :=
+  flat_map (fun q => match snd q with Some t => [(fst q, t)] | None => [] end) a.
+Definition theta_of (C : cx) (a : inst) : subst := map (fun q => (fst q, canon C (snd q))) (known a).
+Definition rkey (C : cx) (r : ty) (m : nat) : item :=
+  IMth r m (match ilook (mkey r m) (c_apps C) with Some a => theta_of C a | None => [] end).
+Definition rkey_of (C : cx) (k : item) : item :=
+  match k with IMth r m _ => rkey C r m | _ => k end.
+
 Definition provides (C : cx) (i : item) : Prop :=
   match i with
   | IVal v => nlook v (c_vals C) <> None
@@ -2763,12 +2774,14 @@ Definition theta_at (W : world) (C : cx) (s : nat) : subst :=
    in force, at the instantiation the callee needs it at (coherence); and
    the callee's merges ([D43]) must hold here. *)
 Definition Satisfies (C : cx) (Cs : cx) (ns : list item) (sm : smap) : Prop :=
-  map fst sm = ns /\
-  (forall k k', In (k, k') sm -> k' = at_site C k /\ provides C k') /\
+  (* each need, by its run-time key in the callee, to the caller's
+     provision of it read here, by its run-time key here (note 28) *)
+  sm = map (fun k => (rkey_of Cs k, rkey_of C (at_site C k))) ns /\
+  (forall k, In k ns -> provides C (at_site C k)) /\
   (* coherence: where both say what a requirement means, they agree *)
-  (forall k k' a, In (k, k') sm -> ilook k (c_apps Cs) = Some a ->
+  (forall k a, In k ns -> ilook k (c_apps Cs) = Some a ->
      forall t want, In (t, Some want) a ->
-       match ilook k' (c_apps C) with
+       match ilook (at_site C k) (c_apps C) with
        | Some have => In (t, Some (canon C (app_subst (c_ty C) want))) have
        | None => True
        end) /\
@@ -2968,15 +2981,15 @@ Inductive LitTerm (W : world) (C : cx) (t : ty) : xexpr -> nat -> nat -> Prop :=
 | LitAdd : forall m x y a b c d, LangSym W "num" NSDetached "add" m ->
     mlook t m (c_mths C) = Some (FSig [t] t) ->
     LitTerm W C t x a b -> LitTerm W C t y c d ->
-    LitTerm W C t (XMeth x m (mkey t m) [y]) (a * d + c * b) (b * d)
+    LitTerm W C t (XMeth x m (rkey C t m) [y]) (a * d + c * b) (b * d)
 | LitMul : forall m x y a b c d, LangSym W "num" NSDetached "mul" m ->
     mlook t m (c_mths C) = Some (FSig [t] t) ->
     LitTerm W C t x a b -> LitTerm W C t y c d ->
-    LitTerm W C t (XMeth x m (mkey t m) [y]) (a * c) (b * d)
+    LitTerm W C t (XMeth x m (rkey C t m) [y]) (a * c) (b * d)
 | LitDiv : forall m x y a b c d, LangSym W "num" NSDetached "div" m ->
     mlook t m (c_mths C) = Some (FSig [t] t) ->
     LitTerm W C t x a b -> LitTerm W C t y c d -> c <> 0 ->
-    LitTerm W C t (XMeth x m (mkey t m) [y]) (a * d) (b * c)
+    LitTerm W C t (XMeth x m (rkey C t m) [y]) (a * d) (b * c)
 | LitFloat : forall f ti x a b, LangSym W "float" NSName "float" f ->
     nlook f (c_fns C) = Some (FSig [ti] t) -> LitTerm W C ti x a b ->
     LitTerm W C t (XCallA f [x]) a b.
@@ -3031,6 +3044,19 @@ Inductive ResultLeaf (W : world) : nat -> (nat * option name) -> Prop :=
 (* [D78]/[D84] 3e: G's result is F's, leaf by leaf. *)
 Definition SameResult (W : world) (u g : nat) : Prop :=
   forall k, ResultLeaf W u k <-> ResultLeaf W g k.
+
+(* a method bind, filed also under each key it answers as another spelling
+   (pairs: the body's key, the key as declared) *)
+Definition refile (pairs : list (item * item)) (b : xbind) : list xbind :=
+  match b with
+  | XBMth t m th f sm =>
+      b :: flat_map (fun p => match p with
+                              | (IMth t' m' _, IMth t0 _ th0) =>
+                                  if ty_eqb t t' && Nat.eqb m m' && negb (item_eqb (IMth t0 m th0) (IMth t m th))
+                                  then [XBMth t0 m th0 f sm] else []
+                              | _ => [] end) pairs
+  | _ => [b]
+  end.
 
 Inductive BindsOf : xexpr -> list xbind -> Prop :=
 | BOEnd : BindsOf XUnit []
@@ -3288,7 +3314,7 @@ with Provided (W : world) (P : xprogram) : frame -> cx -> xexpr -> ty -> nat -> 
 | PrIn : forall F C ox ot m args g xs,
     mlook ot m (c_mths C) = Some g ->
     Args W P F C args (sg_params g) xs ->
-    Provided W P F C ox ot m args (XMeth ox m (mkey ot m) xs) (sg_ret g)
+    Provided W P F C ox ot m args (XMeth ox m (rkey C ot m) xs) (sg_ret g)
 (* [D84] rule 7: no provision here, but a family F in force produces the
    key at θ (read off the key: θ instantiates P(F) so that a result item's
    receiver becomes ot); the call is elaborated as if preceded by `bind F;`
@@ -3307,7 +3333,7 @@ with Provided (W : world) (P : xprogram) : frame -> cx -> xexpr -> ty -> nat -> 
     Satisfies C Cu nsu sm ->
     mlook ot m (c_mths C') = Some g ->
     Args W P F C args (sg_params g) xs ->
-    Provided W P F C ox ot m args (XApply u th sm (XMeth ox m (mkey ot m) xs)) (sg_ret g)
+    Provided W P F C ox ot m args (XApply u th sm (XMeth ox m (rkey C' ot m) xs)) (sg_ret g)
 
 (* a block whose type is checked against `exp` and may not let a value of
    a generation it made escape ([D78]) *)
@@ -3414,7 +3440,7 @@ with BindItem (W : world) (P : xprogram) : frame -> cx -> (spec * option aexpr) 
     MethProvider W P F C y sg rt target pre sm ->
     AppOf W m (bs ++ c_ty C) ap ->
     BindItem W P F C (Spec (Some pa) (Some dn) a, Some y)
-             (fun x => pre (XBindMth (canon C rt) m [] target sm x))
+             (fun x => pre (XBindMth (canon C rt) m (theta_of C ap) target sm x))
              (provide C (mkey (canon C rt) m) ap (set_mth C (canon C rt) m sg)) F []
 (* [D55] `bind F;` for F with a body: F's binds, here, read in F's module *)
 | BApplyBody : forall F C pa u d n ps a r bodies wrap C' F' made,
@@ -3451,7 +3477,7 @@ with BindItem (W : world) (P : xprogram) : frame -> cx -> (spec * option aexpr) 
     nlook h (c_funs C) <> None ->
     FunCtx W u Cu nsu -> FunCtx W h Ch nsh -> incl nsh nsu ->
     SameResult W u h ->
-    sm = map (fun k => (k, k)) nsh ->
+    sm = map (fun k => (rkey_of Ch k, rkey_of Cu k)) nsh ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (XBindFunA u h sm) (set_fun C u fx) F []
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
@@ -3467,8 +3493,8 @@ with BindItem (W : world) (P : xprogram) : frame -> cx -> (spec * option aexpr) 
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     SameResult W u gg ->
     LinkBody W P u gg h ->
-    sm = map (fun k => (k, k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
-    smc = map (fun k => (k, at_site C k)) (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) ->
+    sm = map (fun k => (rkey_of Cg k, rkey_of Cu k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
+    smc = map (fun k => (rkey_of Cg k, rkey_of C (at_site C k))) (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) ->
     (forall k k', In (k, k') smc -> provides C k') ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (XBindFun u h sm smc) (set_fun C u fx) F []
@@ -3502,7 +3528,7 @@ with MethProvider (W : world) (P : xprogram) : frame -> cx -> aexpr -> fsig -> t
     FnProvider W P F C (AEPath pa None) sg None g sm ->
     CtxOf W g Cg nsg -> n = length (sg_params sg) ->
     Fresh W w ->
-    body_of P w = Some (XCallD g (theta_at W Cg g) (map (fun k => (k, k)) nsg) (map XVar (seq 1 n))) ->
+    body_of P w = Some (XCallD g (theta_at W Cg g) (map (fun k => (rkey_of Cg k, rkey_of Cg k)) nsg) (map XVar (seq 1 n))) ->
     MethProvider W P F C (AEPath pa None) sg rt w (fun x => x) sm
 | MPLambda : forall F C ps r body sg rt pid pre sm,
     LambdaProvider W P F C ps r body sg (Some rt) pid pre sm ->
@@ -3545,7 +3571,7 @@ with LambdaProvider (W : world) (P : xprogram) : frame -> cx -> list (name * opt
                                     (combine caps capvals)) ->
     (* its needs: every key in force here, each answered by itself *)
     (forall k, In k keys <-> (provides Cl k /\ match k with ITy _ => False | _ => True end)) ->
-    NoDup keys -> sm = map (fun k => (k, k)) keys ->
+    NoDup keys -> sm = map (fun k => (rkey_of Cl k, rkey_of C k)) keys ->
     LambdaProvider W P F C ps rt body sg this pid
       (fun x => fold_right (fun q x => XBindVal (snd q) (XVar (var_of F (fst q))) x) x (combine caps capvals))
       sm
@@ -3560,7 +3586,7 @@ with LambdaProvider (W : world) (P : xprogram) : frame -> cx -> list (name * opt
    that applications supply; 3d: pins may not rebind M(F); 3e: every item
    of F's result is made by the binds, at the types F promises. *)
 with LinkBody (W : world) (P : xprogram) : nat -> nat -> nat -> Prop :=
-| LB : forall u gg h dg n ps a r bodies Cg nsg Fg wrap Cb Fb made outs Cr ks binds,
+| LB : forall u gg h dg n ps a r bodies Cg nsg Fg wrap Cb Fb made outs Cr ks binds0 binds,
     w_decl W gg = Some dg -> d_ast dg = ADFunctor n ps a r (Some bodies) ->
     FunCtx W gg Cg nsg ->
     (* 3b *)
@@ -3575,9 +3601,12 @@ with LinkBody (W : world) (P : xprogram) : nat -> nat -> nat -> Prop :=
     (* 3e: each result key is provided by the body *)
     (forall k, In k ks -> provides Cb k) ->
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
-    BindsOf (wrap XUnit) binds ->
+    BindsOf (wrap XUnit) binds0 ->
+    (* a result method item is filed under its key as F declares it too
+       (receiver and θ in F's terms, note 28) *)
+    binds = flat_map (refile (map (fun k => (at_site Cb k, rkey_of Cr k)) ks)) binds0 ->
     Fresh W h ->
-    funbody_of P h = Some (map ITy outs ++ ks, binds) ->
+    funbody_of P h = Some (map ITy outs ++ map (rkey_of Cr) ks, binds) ->
     LinkBody W P u gg h.
 
 (* ======================================================================== *)
@@ -3637,7 +3666,7 @@ Definition Elaborates (b : bundle) (P : xprogram) : Prop :=
        platform provides *)
     w_scope W (b_entry b) NSName "main" = Some (ESym (xo_main P)) /\
     (exists d ps rt body, w_decl W (xo_main P) = Some d /\ d_ast d = ADFn RPlain "main" ps rt (Some body)) /\
-    (exists C ns, CtxOf W (xo_main P) C ns /\ map fst (xo_env P) = ns /\
+    (exists C ns, CtxOf W (xo_main P) C ns /\ map fst (xo_env P) = map (rkey_of C) ns /\
        Forall (fun ie => PlatformEntry W P (fst ie) (snd ie)) (xo_env P)) /\
     (* Bool's symbols, when lib/bool.moss is loaded ([D45]) *)
     (LangSym W "bool" NSName "Bool" (xo_bool P) /\ LangSym W "bool" NSName "True" (xo_true P) /\
@@ -3799,8 +3828,28 @@ End Elaboration.
       status were checked identical before and after on every program of
       tests/wasi, tests/errors and examples and on the compiler compiling
       tests/wasi/tags.moss.
-      Method keys (mkey, at_site, Satisfies' coherence) still carry
-      θ = []: see the report of Track A's second round.
+  28. (decided by the designer, Track A) θ in method keys: a method
+      provision is still filed under its receiver and method (mkey, in
+      c_mths and c_apps: at most one per key, [D62]), but its run-time key
+      carries θ, the instantiation it was made at (rkey C r m: c_apps's
+      entry, its known entries, canonical).  Every elaborated key is the
+      run-time key read in the context that holds or looks it up:
+      XMeth's (PrIn, PrFamily after the application, LitTerm), XBindMth's
+      (BMethBind: θ = the provision's AppOf), and each side of every
+      satisfaction map (Satisfies: callee's needs in the callee's
+      context, provisions in the caller's; the wrapper's, lambda's and
+      functor binds' maps likewise), main's environment, and a linked
+      functor body's result telescope (in F's own terms).  A linked body's
+      method binds are filed under F's spelling of the key as well
+      (`refile`; the elaborator filed a renamed receiver so already, and
+      now does for θ: a body that pins a fixed input, e.g. `bind Index =
+      Int;`, makes its key's θ differ from F's).  Part VI's choice_of now
+      compares provisions by identity (provision_id: the key without θ),
+      since θ is where a provision was made, not which one it is.
+      This changes MossX's run-time keys: the oracle's stdout, stderr and
+      exit status were checked identical before and after on the same
+      programs as note 27's, the compiler compiling tests/wasi/tags.moss
+      included, and cargo test passes with it.
 *)
 
 (* ######################################################################## *)
@@ -3821,11 +3870,17 @@ Definition program_of (p : xprogram) (argv : list (list int)) (rd : list int -> 
    A family application's θ is not part of the choice (DRAFT NOTE 7). *)
 Inductive choice := CDirect (f : nat) | CProv (i : item) | CFamily (u : nat) (i : item).
 
+(* The provision chosen is its identity, the key without θ: θ is where the
+   provision was made (Part V, note 28), and for a family application the
+   application's own θ (DRAFT NOTE 7). *)
+Definition provision_id (it : item) : item :=
+  match it with IMth r m _ => IMth r m [] | _ => it end.
+
 Definition choice_of (x : xexpr) : option choice :=
   match x with
   | XCallD f _ _ _ => Some (CDirect f)
-  | XMeth _ _ it _ => Some (CProv it)
-  | XApply u _ _ (XMeth _ _ it _) => Some (CFamily u it)
+  | XMeth _ _ it _ => Some (CProv (provision_id it))
+  | XApply u _ _ (XMeth _ _ it _) => Some (CFamily u (provision_id it))
   | _ => None
   end.
 
