@@ -18,12 +18,13 @@
 (*    reading and keep WS.                                                  *)
 (* 5. fn_info's walk for a function that is not a forwarder and not `main`  *)
 (*    (assumes_merged), from CtxWalk's assumes_walk, given MethStep.        *)
-(* 6. The context's tables (types, vals, fns, methods at a canonical key)  *)
-(*    against the walk's environment, read canonically.                     *)
+(* 6. The context's tables (types, vals, fns, methods at a canonical key,  *)
+(*    abstract functors, and each provision's instantiation at a key tr   *)
+(*    reads apart) against the walk's environment, read canonically.      *)
 (* 7. fn_info on a cache miss (fn_info_ctx): CtxOfIE, CtxOf with IEs for    *)
 (*    ItemsEntries, of the function, with fi_needs as its needs and the     *)
-(*    tables of 6 against fi_env.  Not yet: the cache (st_info), `main`'s  *)
-(*    root context, forwarders, c_funs and c_apps.                          *)
+(*    tables of 6 against fi_env.  (The cache: InfoCache.v.)  Not yet:     *)
+(*    `main`'s root context, forwarders.                                    *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
@@ -740,6 +741,119 @@ Proof.
     rewrite (Rs σ ltac:(rewrite E; exact (suf_resp U T))), (sigma_tr Fl U e _ E T), Ck. reflexivity.
 Qed.
 
+(* ---- the abstract functors in force ---- *)
+
+Definition cfuns (xs : list A.entry) : list (nat * list (nat * ty)) :=
+  flat_map (fun e => match e with A.NFun u => [(u, [])] | _ => [] end) xs.
+
+Lemma cfuns_in : forall xs u, In (A.NFun u) xs -> A.nlook u (cfuns xs) = Some [].
+Proof.
+  intros xs u. induction xs as [|e0 r IH]; [intros []|]. unfold cfuns in *. cbn [flat_map].
+  intros [->|H]; [cbn; rewrite Nat.eqb_refl; reflexivity|].
+  destruct e0 as [|v ty a|f g a|r0 m g a|u']; cbn [List.app]; try exact (IH H).
+  cbn [A.nlook]. destruct (Nat.eqb u u'); [reflexivity | exact (IH H)].
+Qed.
+
+Lemma cfuns_none : forall xs u, ~ In (A.NFun u) xs -> A.nlook u (cfuns xs) = None.
+Proof.
+  intros xs u. induction xs as [|e0 r IH]; [reflexivity|]. unfold cfuns in *. cbn [flat_map]. intro N.
+  destruct e0 as [|v ty a|f g a|r0 m g a|u']; cbn [List.app]; try (apply IH; intro H; exact (N (or_intror H))).
+  cbn [A.nlook]. destruct (Nat.eqb_spec u u') as [->|_]; [exfalso; exact (N (or_introl eq_refl))|].
+  apply IH. intro H. exact (N (or_intror H)).
+Qed.
+
+Lemma ctx_funs : forall u, A.nlook u (cfuns es) = option_map (fun _ => []) (nget (en_funs e) u).
+Proof.
+  intro u. destruct (nget (en_funs e) u) as [st|] eqn:G.
+  - apply cfuns_in. assert (Hl : In (LFun u) les) by (apply (proj1 (ws_funs _ _ _ _ _ _ Hws u)); congruence).
+    exact (in_map (tr_ent Fl) _ _ Hl).
+  - apply cfuns_none. intro H. apply in_map_iff in H as (l & El & Hl).
+    destruct l; cbn in El; try discriminate. injection El as ->.
+    apply (proj2 (ws_funs _ _ _ _ _ _ Hws u)) in Hl. exact (Hl G).
+Qed.
+
+(* ---- the instantiation each provision is made at ---- *)
+
+(* entries_cx's c_apps *)
+Definition capps (s : tsubst) (tm : list (nat * ty)) (xs : list A.entry) : list (item * A.inst) :=
+  let fz (a : A.inst) : A.inst :=
+    map (fun q => (fst q, option_map (asub s)
+                            (match snd q with Some t => Some t | None => A.nlook (fst q) tm end))) a in
+  flat_map (fun e => match e, A.entry_key s e with
+                     | A.NVal _ _ a, Some k | A.NFn _ _ a, Some k | A.NMth _ _ _ a, Some k => [(k, fz a)]
+                     | _, _ => [] end) xs.
+
+Definition capp_fz (a : A.inst) : A.inst :=
+  map (fun q => (fst q, option_map (asub σ) (match snd q with Some t => Some t | None => A.nlook (fst q) tm end))) a.
+
+(* the keys whose items tr reads apart *)
+Definition key_ok (k : key) : bool := match k with KyMth t _ => ety_ok t | _ => true end.
+
+Lemma key_tr_inj : forall k k', key_ok k = true -> key_ok k' = true -> key_tr Fl k = key_tr Fl k' -> k = k'.
+Proof.
+  intros [x|x|t m|x] [y|y|t' m'|y] O O' H; cbn in H; try discriminate; try (injection H as ->; reflexivity).
+  injection H as Et ->. cbn in O, O'. rewrite (tr_inj Fl Finj _ _ O O' Et). reflexivity.
+Qed.
+
+Lemma key_tr_eqb : forall k k', key_ok k = true -> key_ok k' = true ->
+  item_eqb (key_tr Fl k) (key_tr Fl k') = key_eqb k k'.
+Proof.
+  intros k k' O O'. destruct (key_eqb k k') eqn:Ek.
+  - apply key_eqb_true in Ek. subst. apply CoreMoss.item_eqb_eq. reflexivity.
+  - destruct (item_eqb (key_tr Fl k) (key_tr Fl k')) eqn:I; [|reflexivity].
+    apply CoreMoss.item_eqb_eq in I. rewrite (key_tr_inj k k' O O' I), key_eqb_refl in Ek. discriminate.
+Qed.
+
+(* the elaborator's instantiation, frozen as freeze_all_apps does, read by tr *)
+Definition fzE (a : Elab.inst) : Elab.inst :=
+  freeze_app e (map (fun q => (fst q, match snd q with Some y => Some y | None => tn_get e (fst q) end)) a).
+
+Lemma tr_fzE : forall a, tr_inst Fl (fzE a) = capp_fz (tr_inst Fl a).
+Proof.
+  intro a. unfold fzE, freeze_app, capp_fz, tr_inst. rewrite !map_map. apply map_ext. intros [x o]. cbn [fst snd].
+  f_equal. destruct o as [y|]; cbn.
+  - f_equal. symmetry. exact (sigma_tr Fl U e y E T).
+  - rewrite (ws_tn _ _ _ _ _ _ Hws x). destruct (tn_get e x) as [y|]; [|reflexivity]. cbn.
+    f_equal. symmetry. exact (sigma_tr Fl U e y E T).
+Qed.
+
+Lemma get_app_freeze : forall k, get_app (freeze_all_apps e) k = option_map (fun p => (fzE (fst p), snd p)) (get_app e k).
+Proof.
+  intro k. unfold get_app, freeze_all_apps, fzE. cbn [en_apps]. induction (en_apps e) as [|[k0 [a s]] r IH]; [reflexivity|].
+  cbn. destruct (key_eqb k k0); [reflexivity | exact IH].
+Qed.
+
+Lemma capps_lfirst : forall k, key_ok k = true -> forall l0,
+  (forall r m g a, In (LMth r m g a) l0 -> ety_ok (canon e r) = true) ->
+  A.ilook (key_tr Fl k) (capps σ tm (map (tr_ent Fl) l0)) = option_map (fun a => capp_fz (tr_inst Fl a)) (lfirst e k l0).
+Proof.
+  intros k Ok l0. induction l0 as [|l r IH]; intro Hm; [reflexivity|].
+  assert (IH' : A.ilook (key_tr Fl k) (capps σ tm (map (tr_ent Fl) r)) = option_map (fun a => capp_fz (tr_inst Fl a)) (lfirst e k r))
+    by (apply IH; intros r0 m g a H; exact (Hm r0 m g a (or_intror H))).
+  unfold capps in *. cbn [map flat_map lfirst].
+  destruct l as [t|v y a|f g a|r0 m g a|u]; cbn [tr_ent A.entry_key lapp List.app].
+  - exact IH'.
+  - cbn [A.ilook]. change (IVal v) with (key_tr Fl (KyVal v)). rewrite (key_tr_eqb k (KyVal v) Ok eq_refl).
+    destruct (key_eqb k (KyVal v)); [reflexivity | exact IH'].
+  - cbn [A.ilook]. change (IFn f) with (key_tr Fl (KyFn f)). rewrite (key_tr_eqb k (KyFn f) Ok eq_refl).
+    destruct (key_eqb k (KyFn f)); [reflexivity | exact IH'].
+  - cbn [A.ilook]. unfold A.mkey. rewrite (sigma_tr Fl U e r0 E T).
+    change (IMth (trF (canon e r0)) m []) with (key_tr Fl (KyMth (canon e r0) m)).
+    rewrite (key_tr_eqb k (KyMth (canon e r0) m) Ok (Hm r0 m g a (or_introl eq_refl))).
+    destruct (key_eqb k (KyMth (canon e r0) m)); [reflexivity | exact IH'].
+  - exact IH'.
+Qed.
+
+(* c_apps against fi_env's (frozen) instantiations, at a key tr reads apart *)
+Lemma ctx_apps : forall k, nofun k = true -> key_ok k = true ->
+  A.ilook (key_tr Fl k) (capps σ tm es) = option_map (fun p => tr_inst Fl (fst p)) (get_app (freeze_all_apps e) k).
+Proof.
+  intros k Nf Ok. rewrite get_app_freeze, (capps_lfirst k Ok les).
+  - rewrite <- (ws_apps _ _ _ _ _ _ Hws E k Nf). destruct (get_app e k) as [[a st]|]; [|reflexivity].
+    cbn [option_map fst]. rewrite tr_fzE. reflexivity.
+  - intros r m g a H. exact (proj1 (ws_mths _ _ _ _ _ _ Hws E r m g a H)).
+Qed.
+
 End Tables.
 
 (* ======================================================================== *)
@@ -783,7 +897,10 @@ Theorem fn_info_ctx : forall g s i s',
     (forall k, A.nlook k (A.c_ty C) = option_map (fun y => trF (canon e y)) (tn_get e k)) /\
     (forall v, A.nlook v (A.c_vals C) = option_map (fun y => trF (canon e y)) (nget (en_vals e) v)) /\
     (forall f, A.nlook f (A.c_fns C) = option_map (csig Fl e) (nget (en_fns e) f)) /\
-    (forall k m, ety_ok k = true -> canon e k = k -> A.mlook (trF k) m (A.c_mths C) = option_map (csig Fl e) (get_mth e k m)).
+    (forall k m, ety_ok k = true -> canon e k = k -> A.mlook (trF k) m (A.c_mths C) = option_map (csig Fl e) (get_mth e k m)) /\
+    (forall u, A.nlook u (A.c_funs C) = option_map (fun _ => []) (nget (en_funs e) u)) /\
+    (forall k, nofun k = true -> key_ok k = true ->
+       A.ilook (key_tr Fl k) (A.c_apps C) = option_map (fun p => tr_inst Fl (fst p)) (get_app e k)).
 Proof.
   intros g s i s' Hg Nf Nm Nm' H N Hi Hw L e0.
   destruct (fn_info_miss g s i s' H N) as (g' & e & needs & s1 & Eg & H1 & -> & ->). subst e0.
@@ -802,11 +919,13 @@ Proof.
     rewrite !app_nil_r. split; [exact (w_decl_rd w R Fl _ _ Hg)|]. split; [exact I|]. split; [|auto].
     apply A.RootNone. left. exact Nm.
   - unfold merge_edges. rewrite (tne_nil _ _ _ _ _ _ Hws). reflexivity.
-  - split; [|split; [|split]].
+  - split; [|split; [|split; [|split; [|split]]]].
     + intro k. exact (ctx_ty Fl U e tm les needs Hws eq_refl k).
     + intro v. exact (ctx_vals Fl U e tm les needs Hws eq_refl v).
     + intro f. exact (ctx_fns Fl U e tm les needs Hws eq_refl f).
     + intros k m Ok Ck. exact (ctx_mths Fl Finj U e tm les needs Hws eq_refl k m Ok Ck).
+    + intro u. exact (ctx_funs Fl U e tm les needs Hws u).
+    + intros k Nk Ok. exact (ctx_apps Fl Finj U e tm les needs Hws eq_refl k Nk Ok).
 Qed.
 
 End FnInfo.

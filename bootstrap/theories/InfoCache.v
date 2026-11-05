@@ -790,7 +790,10 @@ Definition FnCtx (g : gsym) (i : fninfo) : Prop :=
     (forall k, A.nlook k (A.c_ty C) = option_map (fun y => trF (canon e y)) (tn_get e k)) /\
     (forall v, A.nlook v (A.c_vals C) = option_map (fun y => trF (canon e y)) (nget (en_vals e) v)) /\
     (forall f, A.nlook f (A.c_fns C) = option_map (csig Fl e) (nget (en_fns e) f)) /\
-    (forall k m, ety_ok k = true -> canon e k = k -> A.mlook (trF k) m (A.c_mths C) = option_map (csig Fl e) (get_mth e k m)).
+    (forall k m, ety_ok k = true -> canon e k = k -> A.mlook (trF k) m (A.c_mths C) = option_map (csig Fl e) (get_mth e k m)) /\
+    (forall u, A.nlook u (A.c_funs C) = option_map (fun _ => []) (nget (en_funs e) u)) /\
+    (forall k, nofun k = true -> key_ok k = true ->
+       A.ilook (key_tr Fl k) (A.c_apps C) = option_map (fun p => tr_inst Fl (fst p)) (get_app e k)).
 
 Lemma walk_ctx : forall g s e needs s1,
   nget (w_syms w) (gs_id g) = Some g -> (forall t, gs_origin g <> OForwarder t) ->
@@ -811,11 +814,13 @@ Proof.
     rewrite !app_nil_r. split; [exact (w_decl_rd w R Fl _ _ Hg)|]. split; [exact I|]. split; [|auto].
     apply A.RootNone. left. exact Nm.
   - unfold merge_edges. rewrite (tne_nil _ _ _ _ _ _ Hws). reflexivity.
-  - split; [|split; [|split]].
+  - split; [|split; [|split; [|split; [|split]]]].
     + intro k. exact (ctx_ty Fl U e tm les needs Hws eq_refl k).
     + intro v. exact (ctx_vals Fl U e tm les needs Hws eq_refl v).
     + intro f. exact (ctx_fns Fl U e tm les needs Hws eq_refl f).
     + intros k m Ok Ck. exact (ctx_mths Fl Finj U e tm les needs Hws eq_refl k m Ok Ck).
+    + intro u. exact (ctx_funs Fl U e tm les needs Hws u).
+    + intros k Nk Ok. exact (ctx_apps Fl Finj U e tm les needs Hws eq_refl k Nk Ok).
 Qed.
 
 (* fn_info of a function of the program, neither a forwarder nor `main`,
