@@ -273,7 +273,7 @@ Definition BrRel (p : string) (tmr : list (nat * ty)) (b0 : path * spec) (tb : n
 
 Definition SubstOK (f : nat) : Prop :=
   forall e mi bs outer s l s' tmr, app_subst f e mi bs outer s = Good (l, s') ->
-  Inv s -> st_w s = w -> In mi (w_order w) -> TmRel outer tmr e -> Later w R Fl s' ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> TmRel (outer ++ tymap e) tmr e -> Later w R Fl s' ->
   exists lr, Forall2 (BrRel (path_of mi) tmr) bs lr /\ map trp l = rev lr /\ Forall (fun q => WFty (snd q)) l.
 
 Definition SymOK (f : nat) : Prop :=
@@ -377,7 +377,7 @@ Proof.
         destruct (O4 _ _ _ Hi3 H4) as [Hi4 F4]. destruct (ok_symbol_type _ _ _ _ _ _ _ _ Hi4 H) as [_ F5].
         pose proof (fr_w' _ _ F2 Hw) as Hw2. pose proof (fr_w' _ _ F3 Hw2) as Hw3. pose proof (fr_w' _ _ F4 Hw3) as Hw4.
         pose proof (later_from _ _ F5 L) as L4. pose proof (later_from _ _ F4 L4) as L3. pose proof (later_from _ _ F3 L3) as L2.
-        destruct (IS _ _ _ _ _ _ _ tmr H3 Hi2 Hw2 Hmi Ht L3) as (lr & Fa & El & Wl).
+        destruct (IS _ _ _ _ _ _ _ tmr H3 Hi2 Hw2 Hmi (tmrel_outer _ _ _ Ht) L3) as (lr & Fa & El & Wl).
         destruct (IY _ _ _ _ _ _ _ (rev lr ++ tmr) H Hi4 Hw4 Hg (tmrel_app _ _ _ _ _ Ht El Wl) L) as [Wd K].
         assert (Br : A.Brackets WW (path_of mi) tmr (gs_id g) (Some bs) (rev lr)).
         { apply A.BrSome. assert (Gen : forall bs', incl bs' bs -> forall lr', Forall2 (BrRel (path_of mi) tmr) bs' lr' ->
@@ -410,7 +410,7 @@ Proof.
         destruct (kind_eqb (gs_kind g0) KType) eqn:Kt; [|noerr' E2]. injection E2 as <- <-.
         destruct (snd b0) as [[sp|] [dn|] sa] eqn:Esb; try noerr' E.
         apply bind_inv in E as (y & s6 & E6 & E). injection E as <- <-.
-        destruct (IE _ _ _ _ _ _ _ _ tmr E6 Hi0 Hw0 Hmi (tmrel_outer _ _ _ Ht) I L2) as [Ty Wy].
+        destruct (IE _ _ _ _ _ _ _ _ tmr E6 Hi0 Hw0 Hmi Ht I L2) as [Ty Wy].
         split; [|exact Wy]. exists sp, sa. split; [exact Esb|].
         pose proof (load_world_ids b w Hload x _ Hg0) as Eid. cbn [fst snd trp].
         split; [unfold A.resolve_sym; rewrite Hres; cbn; rewrite Eid; reflexivity|].
