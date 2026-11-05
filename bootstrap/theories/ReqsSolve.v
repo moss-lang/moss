@@ -167,28 +167,26 @@ Proof.
   - injection H as <- <-; reflexivity.
 Qed.
 
-Lemma walk_specs_reader : forall fuel mi its out s l s', walk_specs fuel mi its out s = Good (l, s') -> s' = s.
+Lemma walk_specs_reader : forall fuel mi its acc s l s', walk_specs fuel mi its acc s = Good (l, s') -> s' = s.
 Proof.
-  induction fuel as [|f IH]; intros mi its out s l s' H; [discriminate|]. cbn [walk_specs] in H.
-  refine (mfold_reader _ _ _ its out s l s' _ H).
+  induction fuel as [|f IH]; intros mi its acc s l s' H; [discriminate|]. cbn [walk_specs] in H.
+  refine (mfold_reader _ _ _ its acc s l s' _ H).
   intros o [[p|] [n|] a] s0 r s0' H0; try (injection H0 as _ <-; reflexivity).
   apply bind_inv in H0 as (tg & s1 & H1 & H0). rewrite (resolve_sym_reader _ _ _ _ _ H1) in H0.
   destruct tg as [g|]; [|injection H0 as _ <-; reflexivity].
   destruct (kind_eqb (gs_kind g) KType); [injection H0 as _ <-; reflexivity|].
   destruct (kind_eqb (gs_kind g) KCtx); [|injection H0 as _ <-; reflexivity].
+  destruct (nmem (gs_id g) (fst o)); [injection H0 as _ <-; reflexivity|].
   destruct (gs_decl g); try (injection H0 as _ <-; reflexivity). exact (IH _ _ _ _ _ _ H0).
 Qed.
 
 Lemma assume_type_syms_reader : forall g s l s', assume_type_syms g s = Good (l, s') -> s' = s.
 Proof.
-  intros g s l s' H. unfold assume_type_syms in H.
-  refine (mfold_reader _ _ _ _ [] s l s' _ H).
-  intros o [p [n|]] s0 r s0' H0; [injection H0 as _ <-; reflexivity|].
-  apply bind_inv in H0 as (tg & s1 & H1 & H0). rewrite (resolve_sym_reader _ _ _ _ _ H1) in H0.
-  destruct tg as [t|]; [|injection H0 as _ <-; reflexivity].
-  destruct (kind_eqb (gs_kind t) KType); [injection H0 as _ <-; reflexivity|].
-  destruct (kind_eqb (gs_kind t) KCtx); [|injection H0 as _ <-; reflexivity].
-  destruct (gs_decl t); try (injection H0 as _ <-; reflexivity). exact (walk_specs_reader _ _ _ _ _ _ _ H0).
+  intros g s l s' H. unfold assume_type_syms, nesting_types, walk_fuel in H.
+  apply bind_inv in H as (n & s1 & H1 & H). apply bind_inv in H1 as (x & s2 & E1 & E2).
+  injection E1 as <- <-. injection E2 as <- <-.
+  apply bind_inv in H as (r & s3 & H3 & H). rewrite (walk_specs_reader _ _ _ _ _ _ _ H3) in H.
+  injection H as _ <-. reflexivity.
 Qed.
 
 (* The group solve_requirements gathers, and its rounds (the local fixes of
