@@ -412,18 +412,6 @@ Lemma ok_symbol_type : forall fuel mi g tm e, ok (symbol_type fuel mi g tm e).
 Proof. intros fuel mi g tm e. exact ((proj2 (proj2 (ok_elab_type_group fuel))) mi g tm e). Qed.
 #[export] Hint Resolve ok_symbol_type : okdb.
 
-Lemma ok_result_types_go_group : forall fuel,
-  (forall mi specs out, ok (result_types_go fuel mi specs out)).
-Proof.
-  induction fuel as [|fuel IH].
-  { idtac; fintros; cbn [result_types_go]; okt. }
-  pose proof IH as I0.
-  idtac; fintros; cbn [result_types_go]; okt.
-Qed.
-
-Lemma ok_result_types_go : forall fuel mi specs out, ok (result_types_go fuel mi specs out).
-Proof. intros fuel mi specs out. exact ((ok_result_types_go_group fuel) mi specs out). Qed.
-#[export] Hint Resolve ok_result_types_go : okdb.
 
 Lemma ok_result_mentions_go_group : forall fuel,
   (forall self mi specs out, ok (result_mentions_go fuel self mi specs out)) /\

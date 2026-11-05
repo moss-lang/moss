@@ -3862,27 +3862,46 @@ End Elaboration.
       so nothing changes (oracle outputs checked identical, as in note 27);
       the guard makes the requirement cache's invariant (ElabFrame.ReqOK)
       provable step by step.
-  30. (discrepancy, open) Depth of contexts.  AssumeTypes/SpecTypes
-      (V.1) reach a context's type symbols through contexts nested to any
-      depth, and allow cycles (context A naming context B naming A: the
-      inductive simply has finite derivations).  The elaborator walks
-      contexts 64 deep (assume_type_syms -> walk_specs 64) and fails
-      ("context nests too deeply") beyond that, including on any cycle.
-      Soundness is unaffected where the elaborator succeeds
-      (WorldSound.assume_type_syms_exact: what it computes is exactly
-      AssumeTypes).  It matters for (i) completeness (a bundle with a
-      65-deep or cyclic nesting has a reading, and the elaborator rejects
-      it), and (ii) WorldOf's requirement lists for symbols the
-      elaborator never asks about (TODO_reqs_reading (c)), which cannot be
-      had by running the elaborator's own `reqs` on them.  Options:
-      (a) the relation bounds the depth too (SpecTypes indexed by a depth
-          <= 64): faithful, but an arbitrary constant in the language;
-      (b) the relation forbids cyclic contexts (a WorldOf condition, like
-          wo_acyclic for imports) and the elaborator walks to a fixed point
-          over a visited set, so no bound is needed: the design notes
-          should say whether a cycle of contexts is legal;
-      (c) keep both and record that completeness holds only below depth 64.
-      Proved work around it does not depend on the choice.
+  30. (discrepancy, resolved by the designer: the elaborator now follows
+      the relation, which is unchanged) Depth of contexts.
+      AssumeTypes/SpecTypes (V.1) reach a context's type symbols through
+      contexts nested to any depth, and allow cycles (context A naming
+      context B naming A: the inductive simply has finite derivations).
+      The elaborator walked contexts 64 deep (assume_type_syms ->
+      walk_specs 64) and failed ("context nests too deeply") beyond that,
+      including on any cycle; the self-hosted compiler (lower.nest_types)
+      stopped silently 17 deep.  That cost (i) completeness, and (ii)
+      WorldOf's requirement lists for symbols the elaborator never asks
+      about (TODO_reqs_reading (c)) could not be had by running its own
+      `reqs` on them.  The options were to bound the relation, to forbid
+      cyclic contexts, or to record that completeness held only below 64.
+      Decided: neither implementation bounds the depth.  Both walk an
+      assume nesting depth first with the set of contexts entered so far,
+      entering each context once, until nothing new appears; a cycle
+      requires the union of its contexts' types.  Elab.walk_specs (fuel
+      one more than the symbols, which only a bug could use up: each
+      call enters a context not entered before) gives the types in the
+      order the old walk did on every nesting it accepted, so requirement
+      lists, and with them TNom argument order, are unchanged there
+      (oracle outputs checked identical on tests/wasi, tests/errors and
+      examples).  WorldSound.assume_type_syms_exact is re-proved for the
+      new walk: what it computes is exactly AssumeTypes, at any depth and
+      through cycles.  The same walk reads a functor's result types
+      (V.5 FunOutputs: Elab.result_types, which stopped at 17, and
+      lower.result_type_syms, silently at 17).
+      Making a function's context (V.3 ItemEntries) walks the same
+      nesting, with brackets, and there a cycle has no finite derivation:
+      a body that assumes a cycle of contexts has no reading.  The
+      elaborator bounded that walk at 64 and the compiler at 16.  Its fuel
+      is now twice `walk_fuel`, which only a cycle uses up (Elab reports
+      "contexts nest in a cycle"; the compiler stops at a context already
+      being walked and reports it, e_deep), so it has no depth bound
+      either and rejects exactly the cycles.  Still bounded: the D84 walks
+      of a functor's result (Elab.result_mentions_go, expand_spec,
+      provide_spec, family_leaves at 17; lower.mention_walk and
+      codegen.result_keys at 16).  Tests: tests/wasi/context_deep.moss
+      (70 deep), tests/wasi/context_cycle.moss and
+      tests/errors/context_cycle.moss.
   31. (relation wrong, adjusted to the elaborator) Relevance (V.1).
       FreeIn's FBracket read a bracket's right side even when the head of
       `R[…]` resolves to nothing; the elaborator (free_type_syms) reads

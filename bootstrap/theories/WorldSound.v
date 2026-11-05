@@ -1996,20 +1996,168 @@ Proof.
     + intros y t [<-|Hy] Py; [apply I2, C1, Py | exact (C2 y t Hy Py)].
 Qed.
 
-Lemma walk_specs_ok : forall fuel, WalkOk (walk_specs fuel).
+(* ---- the walk of an assume nesting: each context entered once (Audit
+   note 30), so the walk is exact for nestings of any depth, cycles
+   included ---- *)
+
+(* the item sp, written in module q, names the type t, or the context c *)
+Definition Direct (q : string) (sp : spec) (t : nat) : Prop :=
+  exists pa a, sp = Spec (Some pa) None a /\ A.resolve_sym W q pa = Some t /\ A.kind_sym W t = Some A.DKType.
+
+Definition DirCtx (q : string) (sp : spec) (c : nat) : Prop :=
+  exists pa a d n its, sp = Spec (Some pa) None a /\ A.resolve_sym W q pa = Some c /\
+    A.w_decl W c = Some d /\ A.d_ast d = ADCtx n its.
+
+(* every item of context c has its type in out and its context in V *)
+Definition Finished (V out : list nat) (c : nat) : Prop :=
+  forall d n its, A.w_decl W c = Some d -> A.d_ast d = ADCtx n its -> forall sp, In sp its ->
+    (forall t, Direct (A.d_mod d) sp t -> In t out) /\ (forall c', DirCtx (A.d_mod d) sp c' -> In c' V).
+
+Lemma finished_mono : forall V out V' out' c, incl V V' -> incl out out' -> Finished V out c -> Finished V' out' c.
 Proof.
-  induction fuel as [|f IH]; intros mi its out s l s' Hg Hmi Hnd H; [discriminate|].
-  change (mfold (fun out sp => match sp with
-                               | Spec (Some p) None _ => wstep (walk_specs f) mi p out
-                               | _ => ret out end) out its s = Good (l, s')) in H.
-  refine (fold_walk spec _ (fun sp t => A.SpecTypes W (pathi mi) sp t) _ its out s l s' Hg Hnd H).
-  intros [[p|] [n|] a] o s0 l0 s0' Hg0 Hnd0 H0;
-    try (injection H0 as <- <-; split; [reflexivity|]; split; [exact Hnd0|]; split; [intros y Hy; exact Hy|];
-         split; [intros t Ht; left; exact Ht | intros t Hst; exfalso; inversion Hst]).
-  destruct (wstep_ok _ IH mi p o s0 l0 s0' Hg0 Hmi Hnd0 H0) as (E1 & E2 & E3 & E4 & E5).
-  split; [exact E1|]. split; [exact E2|]. split; [exact E3|].
-  split; [intros t Ht; destruct (E4 t Ht) as [Ho|Hs]; [left; exact Ho | right; exact (Hs a)]|].
-  intros t Hst. exact (E5 a t Hst).
+  intros V out V' out' c Iv Io H d n its Hd Ha sp Hsp. destruct (H d n its Hd Ha sp Hsp) as [H1 H2].
+  split; [intros t Ht; apply Io, H1, Ht | intros c' Hc; apply Iv, H2, Hc].
+Qed.
+
+(* the walk from (V, out) over items its, in module q, ends at (V', out') *)
+Definition WalkPost (q : string) (its : list spec) (V out V' out' : list nat) : Prop :=
+  NoDup out' /\ incl out out' /\ incl V V' /\
+  (forall t, In t out' -> In t out \/ exists sp, In sp its /\ A.SpecTypes W q sp t) /\
+  (forall sp t, In sp its -> Direct q sp t -> In t out') /\
+  (forall sp c, In sp its -> DirCtx q sp c -> In c V') /\
+  (forall c, In c V' -> ~ In c V -> Finished V' out' c).
+
+Lemma fold_walk2 : forall X (step : list nat * list nat -> X -> Elab.M (list nat * list nat))
+    (P D K : X -> nat -> Prop),
+  (forall x V out s V' out' s', GS s -> NoDup out -> step (V, out) x s = Good ((V', out'), s') ->
+     s' = s /\ NoDup out' /\ incl out out' /\ incl V V' /\ (forall t, In t out' -> In t out \/ P x t) /\
+     (forall t, D x t -> In t out') /\ (forall c, K x c -> In c V') /\
+     (forall c, In c V' -> ~ In c V -> Finished V' out' c)) ->
+  forall xs V out s V' out' s', GS s -> NoDup out -> mfold step (V, out) xs s = Good ((V', out'), s') ->
+  s' = s /\ NoDup out' /\ incl out out' /\ incl V V' /\
+  (forall t, In t out' -> In t out \/ exists x, In x xs /\ P x t) /\
+  (forall x t, In x xs -> D x t -> In t out') /\ (forall x c, In x xs -> K x c -> In c V') /\
+  (forall c, In c V' -> ~ In c V -> Finished V' out' c).
+Proof.
+  intros X step P D K Hs xs. induction xs as [|x r IH]; intros V out s V' out' s' Hg Hnd H; cbn [mfold] in H.
+  - injection H as <- <- <-. split; [reflexivity|]. split; [exact Hnd|]. split; [intros y Hy; exact Hy|].
+    split; [intros y Hy; exact Hy|]. split; [intros t Ht; left; exact Ht|].
+    split; [intros x t []|]. split; [intros x c []|]. intros c Hc Hn. contradiction.
+  - apply bind_inv in H as ([V1 o1] & s1 & H1 & H2).
+    destruct (Hs x V out s V1 o1 s1 Hg Hnd H1) as (-> & N1 & Io1 & Iv1 & S1 & D1 & K1 & F1).
+    destruct (IH V1 o1 s V' out' s' Hg N1 H2) as (-> & N2 & Io2 & Iv2 & S2 & D2 & K2 & F2).
+    split; [reflexivity|]. split; [exact N2|]. split; [intros y Hy; apply Io2, Io1, Hy|].
+    split; [intros y Hy; apply Iv2, Iv1, Hy|]. split.
+    + intros t Ht. destruct (S2 t Ht) as [Ho|(y & Hy & Py)].
+      * destruct (S1 t Ho) as [Ho'|Px]; [left; exact Ho' | right; exists x; split; [left; reflexivity | exact Px]].
+      * right. exists y. split; [right; exact Hy | exact Py].
+    + split; [intros y t [<-|Hy] Py; [apply Io2, D1, Py | exact (D2 y t Hy Py)]|].
+      split; [intros y c [<-|Hy] Py; [apply Iv2, K1, Py | exact (K2 y c Hy Py)]|].
+      intros c Hc Hn. destruct (in_dec Nat.eq_dec c V1) as [H1c|H1c].
+      * exact (finished_mono _ _ _ _ c Iv2 Io2 (F1 c H1c Hn)).
+      * exact (F2 c Hc H1c).
+Qed.
+
+Lemma direct_sym : forall q pa a t g, A.resolve_sym W q pa = Some (gs_id g) -> nget (ls_syms st) (gs_id g) = Some g ->
+  Direct q (Spec (Some pa) None a) t -> t = gs_id g /\ gs_kind g = KType.
+Proof.
+  intros q pa a t g Er Hg (pa' & a' & E & Er' & Kt). injection E as <- <-. rewrite Er in Er'. injection Er' as <-.
+  split; [reflexivity|]. destruct (loader_decl _ g Hg) as (_ & Kg & _). rewrite Kg in Kt. injection Kt as Kt.
+  exact (kconv_type _ Kt).
+Qed.
+
+Lemma dirctx_sym : forall q pa a c g, A.resolve_sym W q pa = Some (gs_id g) -> nget (ls_syms st) (gs_id g) = Some g ->
+  DirCtx q (Spec (Some pa) None a) c -> c = gs_id g /\ gs_kind g = KCtx /\ exists n its, gs_decl g = ADCtx n its.
+Proof.
+  intros q pa a c g Er Hg (pa' & a' & d & n & its & E & Er' & Dd & Ad). injection E as <- <-.
+  rewrite Er in Er'. injection Er' as <-. split; [reflexivity|].
+  destruct (loader_decl _ g Hg) as (Dg & _ & _). rewrite Dg in Dd. injection Dd as <-. cbn in Ad.
+  pose proof (li_kind _ _ HI _ g Hg) as Kd. unfold KindOK in Kd. rewrite Ad in Kd. injection Kd as Kd.
+  split; [symmetry in Kd; exact (kconv_ctx _ Kd) | exists n, its; exact Ad].
+Qed.
+
+Lemma walk_ok : forall fuel mi its V out s V' out' s', GS s -> In mi (ls_order st) -> NoDup out ->
+  walk_specs fuel mi its (V, out) s = Good ((V', out'), s') -> s' = s /\ WalkPost (pathi mi) its V out V' out'.
+Proof.
+  induction fuel as [|f IH]; intros mi its V out s V' out' s' Hg Hmi Hnd H; [discriminate|].
+  cbn [walk_specs] in H.
+  match type of H with mfold ?stp _ _ _ = _ =>
+    pose proof (fold_walk2 spec stp (fun sp t => A.SpecTypes W (pathi mi) sp t) (Direct (pathi mi)) (DirCtx (pathi mi)))
+      as FW
+  end.
+  lapply FW; [intro FW'; destruct (FW' its V out s V' out' s' Hg Hnd H) as (E1 & N & Io & Iv & S & D & K & Fn);
+              split; [exact E1 | exact (conj N (conj Io (conj Iv (conj S (conj D (conj K Fn))))))] | clear FW].
+  intros [[p|] [n|] a] V0 o0 s0 V1 o1 s1 Hg0 Hnd0 H0; cbn beta iota in H0;
+    try (injection H0 as <- <- <-; split; [reflexivity|]; split; [exact Hnd0|]; split; [intros y Hy; exact Hy|];
+         split; [intros y Hy; exact Hy|]; split; [intros t Ht; left; exact Ht|];
+         split; [intros t (pa & a' & E & _); discriminate E|];
+         split; [intros c (pa & a' & d & n' & its' & E & _); discriminate E|]; intros c Hc Hn; contradiction).
+  apply bind_inv in H0 as (r & s2 & H1 & H0). destruct (esym_resolve mi p s0 r s2 Hg0 Hmi H1) as [-> Hr0].
+  destruct r as [g|].
+  2: { injection H0 as <- <- <-. split; [reflexivity|]. split; [exact Hnd0|]. split; [intros y Hy; exact Hy|].
+       split; [intros y Hy; exact Hy|]. split; [intros t Ht; left; exact Ht|].
+       split; [intros t (pa & a' & E & Er & _); injection E as <- <-; rewrite Hr0 in Er; discriminate Er|].
+       split; [intros c (pa & a' & d & n' & its' & E & Er & _); injection E as <- <-; rewrite Hr0 in Er; discriminate Er|].
+       intros c Hc Hn. contradiction. }
+  destruct Hr0 as [Er Hgl]. destruct (loader_decl _ g Hgl) as (Dg & Kg & Og). cbn [fst snd] in H0.
+  destruct (kind_eqb (gs_kind g) KType) eqn:Kt.
+  - (* a type *)
+    apply kind_eqb_spec in Kt. injection H0 as <- <- <-.
+    assert (Hin : In (gs_id g) (if nmem (gs_id g) o0 then o0 else o0 ++ [gs_id g])).
+    { destruct (nmem (gs_id g) o0) eqn:Em; [apply nmem_in; exact Em | apply in_or_app; right; left; reflexivity]. }
+    split; [reflexivity|]. split.
+    { destruct (nmem (gs_id g) o0) eqn:Em; [exact Hnd0|]. apply NoDup_app; [exact Hnd0 | repeat constructor; auto|].
+      intros x Hx [<-|[]]. assert (nmem (gs_id g) o0 = true) by (apply nmem_in; exact Hx). congruence. }
+    split; [intros x Hx; destruct (nmem (gs_id g) o0); [exact Hx | apply in_or_app; left; exact Hx]|].
+    split; [intros y Hy; exact Hy|]. split.
+    { intros t Ht. destruct (nmem (gs_id g) o0); [left; exact Ht|].
+      apply in_app_or in Ht as [Ht|[<-|[]]]; [left; exact Ht|]. right.
+      apply A.STType; [exact Er | rewrite Kg, Kt; reflexivity]. }
+    split; [intros t Hd; destruct (direct_sym _ _ _ _ g Er Hgl Hd) as [-> _]; exact Hin|].
+    split; [intros c Hc; destruct (dirctx_sym _ _ _ _ g Er Hgl Hc) as (_ & Kc & _); congruence|].
+    intros c Hc Hn. contradiction.
+  - destruct (kind_eqb (gs_kind g) KCtx) eqn:Kc.
+    2: { (* neither *)
+      injection H0 as <- <- <-. split; [reflexivity|]. split; [exact Hnd0|]. split; [intros y Hy; exact Hy|].
+      split; [intros y Hy; exact Hy|]. split; [intros t Ht; left; exact Ht|].
+      split; [intros t Hd; destruct (direct_sym _ _ _ _ g Er Hgl Hd) as [_ E]; rewrite E in Kt; discriminate Kt|].
+      split; [intros c Hc'; destruct (dirctx_sym _ _ _ _ g Er Hgl Hc') as (_ & E & _); rewrite E in Kc; discriminate Kc|].
+      intros c Hc' Hn. contradiction. }
+    apply kind_eqb_spec in Kc.
+    assert (NotD : forall t, ~ Direct (pathi mi) (Spec (Some p) None a) t)
+      by (intros t Hd; destruct (direct_sym _ _ _ _ g Er Hgl Hd) as [_ E]; rewrite E in Kt; discriminate Kt).
+    destruct (nmem (gs_id g) V0) eqn:Ev.
+    + (* entered before *)
+      injection H0 as <- <- <-. split; [reflexivity|]. split; [exact Hnd0|]. split; [intros y Hy; exact Hy|].
+      split; [intros y Hy; exact Hy|]. split; [intros t Ht; left; exact Ht|].
+      split; [intros t Hd; destruct (NotD t Hd)|].
+      split; [intros c Hc'; destruct (dirctx_sym _ _ _ _ g Er Hgl Hc') as (-> & _); apply nmem_in; exact Ev|].
+      intros c Hc' Hn. contradiction.
+    + pose proof (li_kind _ _ HI _ g Hgl) as Kd. unfold KindOK in Kd. rewrite Kc in Kd.
+      destruct (gs_decl g) as [| | | | | | [| |] ? ? ? ? | n0 its0 |] eqn:Ed; cbn in Kd; try discriminate.
+      destruct (IH (gs_mod g) its0 (gs_id g :: V0) o0 s0 V1 o1 s1 Hg0 Og Hnd0 H0)
+        as (-> & N1 & Io1 & Iv1 & S1 & D1 & K1 & F1).
+      split; [reflexivity|]. split; [exact N1|]. split; [exact Io1|].
+      split; [intros y Hy; apply Iv1; right; exact Hy|]. split.
+      { intros t Ht. destruct (S1 t Ht) as [Ho|(sp & Hsp & Hst)]; [left; exact Ho|]. right.
+        eapply A.STCtx; [exact Er | exact Dg | cbn; reflexivity | exact Hsp | exact Hst]. }
+      split; [intros t Hd; destruct (NotD t Hd)|].
+      split; [intros c Hc'; destruct (dirctx_sym _ _ _ _ g Er Hgl Hc') as (-> & _); apply Iv1; left; reflexivity|].
+      intros c Hc' Hn. destruct (Nat.eq_dec c (gs_id g)) as [->|Hne].
+      * intros d n1 its1 Hd Ha sp Hsp. rewrite Dg in Hd. injection Hd as <-. cbn in Ha |- *.
+        try rewrite Ed in Ha. injection Ha as <- <-. split; [intros t0; exact (D1 sp t0 Hsp) | intros c0; exact (K1 sp c0 Hsp)].
+      * apply F1; [exact Hc'|]. intros [E|E]; [exact (Hne (eq_sym E)) | exact (Hn E)].
+Qed.
+
+(* completeness: what a context reaches through finished contexts *)
+Lemma spec_complete : forall V out, (forall c, In c V -> Finished V out c) ->
+  forall q sp t, A.SpecTypes W q sp t ->
+  (forall t', Direct q sp t' -> In t' out) -> (forall c, DirCtx q sp c -> In c V) -> In t out.
+Proof.
+  intros V out HF q sp t H. induction H as [q pa a t Er Kt | q pa a c d n its sp t Er Dd Ad Hsp _ IH]; intros HD HK.
+  - apply HD. exists pa, a. auto.
+  - assert (Hc : In c V) by (apply HK; exists pa, a, d, n, its; auto).
+    destruct (HF c Hc d n its Dd Ad sp Hsp) as [F1 F2]. exact (IH F1 F2).
 Qed.
 
 (* The requirements of a val, fn, method, context or functor: what the
@@ -2020,29 +2168,22 @@ Theorem assume_type_syms_exact : forall g s l s', GS s -> nget (ls_syms st) (gs_
 Proof.
   intros g s l s' Hg Hgid H.
   destruct (loader_decl _ g Hgid) as (Dg & _ & Og).
-  change (mfold (fun out it => match it with
-                               | (p, None) => wstep (walk_specs 64) (gs_mod g) p out
-                               | _ => ret out end) [] (gs_assumes g) s = Good (l, s')) in H.
-  set (step := fun out (it : Input.path * option name) => match it with
-                               | (p, None) => wstep (walk_specs 64) (gs_mod g) p out
-                               | _ => ret out end).
-  set (P := fun (it : Input.path * option name) t =>
-              snd it = None /\ A.SpecTypes W (pathi (gs_mod g)) (Spec (Some (fst it)) None None) t).
-  assert (Hstep : forall x out s l s', GS s -> NoDup out -> step out x s = Good (l, s') ->
-     s' = s /\ NoDup l /\ incl out l /\ (forall t, In t l -> In t out \/ P x t) /\ (forall t, P x t -> In t l)).
-  { intros [p [n|]] o s0 l0 s0' Hg0 Hnd0 H0; unfold step in H0; unfold P.
-    - injection H0 as <- <-. split; [reflexivity|]. split; [exact Hnd0|]. split; [intros y Hy; exact Hy|].
-      split; [intros t Ht; left; exact Ht | intros t [E _]; discriminate E].
-    - destruct (wstep_ok _ (walk_specs_ok 64) (gs_mod g) p o s0 l0 s0' Hg0 Og Hnd0 H0) as (E1 & E2 & E3 & E4 & E5).
-      split; [exact E1|]. split; [exact E2|]. split; [exact E3|].
-      split; [intros t Ht; destruct (E4 t Ht) as [Ho|Hs]; [left; exact Ho | right; split; [reflexivity | exact (Hs None)]]|].
-      intros t [_ Hst]. exact (E5 None t Hst). }
-  destruct (fold_walk _ step P Hstep (gs_assumes g) [] s l s' Hg (NoDup_nil _) H) as (E1 & E2 & _ & E4 & E5).
-  split; [exact E1|]. split; [exact E2|]. intro t. split.
-  - intro Ht. destruct (E4 t Ht) as [[]|([p o] & Hin & Ho & Hst)]. unfold P in *. cbn in Ho, Hst. subst o.
-    exists (A.Decl (pathi (gs_mod g)) (gs_decl g) (gs_assumes g)), p. split; [exact Dg|]. split; [exact Hin|]. exact Hst.
+  unfold assume_type_syms, nesting_types, walk_fuel in H.
+  apply bind_inv in H as (n & s1 & H1 & H). apply bind_inv in H1 as (s2 & s3 & E1 & E2).
+  injection E1 as <- <-. injection E2 as <- <-.
+  apply bind_inv in H as ([V' o'] & s4 & H4 & H). injection H as <- <-.
+  destruct (walk_ok _ (gs_mod g) (assume_specs (gs_assumes g)) [] [] s V' o' s4 Hg Og (NoDup_nil _) H4)
+    as (-> & N & _ & _ & S & D & K & Fn).
+  split; [reflexivity|]. split; [exact N|]. intro t. split.
+  - intro Ht. destruct (S t Ht) as [[]|(sp & Hsp & Hst)].
+    unfold assume_specs in Hsp. apply in_flat_map in Hsp as ([p [o|]] & Hin & Hsp); [destruct Hsp|].
+    destruct Hsp as [<-|[]].
+    exists (A.Decl (pathi (gs_mod g)) (gs_decl g) (gs_assumes g)), p.
+    split; [exact Dg|]. split; [exact Hin|]. exact Hst.
   - intros (d & pa & Dd & Hin & Hst). rewrite Dg in Dd. injection Dd as <-. cbn in Hin, Hst.
-    exact (E5 (pa, None) t Hin (conj eq_refl Hst)).
+    assert (Hsp : In (Spec (Some pa) None None) (assume_specs (gs_assumes g)))
+      by (apply in_flat_map; exists (pa, None); split; [exact Hin | left; reflexivity]).
+    exact (spec_complete V' o' (fun c Hc => Fn c Hc (fun E => E)) _ _ t Hst (fun t0 => D _ t0 Hsp) (fun c0 => K _ c0 Hsp)).
 Qed.
 
 End Final.

@@ -497,7 +497,7 @@ assume Std {
         var k = 0;
         while k < root.length() {
           env = add_symbol_item(
-            env, prog::sym_mod.get(f), root.get(k), recv, sym, 0, env, int_list()
+            env, prog::sym_mod.get(f), root.get(k), recv, sym, int_list(), env, int_list()
           );
           k = k + 1;
         }
@@ -551,7 +551,7 @@ assume Std {
 
     # `assume` takes bare paths, optionally with a receiver dot (D24).
     fn add_assume_item(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
-      add_spec(env, m, spec, recv, sym, 0, int_list())
+      add_spec(env, m, spec, recv, sym, int_list(), int_list())
     }
 
     # One type binding of a context item's application. The left-hand side
@@ -596,15 +596,13 @@ assume Std {
     # contexts' brackets make (`over`, a run of (symbol, type) pairs, each
     # context's resolved once, where it is written), and then its own
     # brackets. The bootstrap's `add_spec` reads items the same way
-    # (`env.tymap | subst`).
+    # (`env.tymap | subst`). `walking` is the contexts being walked,
+    # outermost first: contexts nest to any depth, but one met again inside itself
+    # would be walked forever (`add_symbol_item`).
     fn add_spec(
-      env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, depth: Int,
+      env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, walking: IntList,
       over: IntList
     ): Int {
-      if depth > 16 {
-        prog::error(prog::e_deep(), m, ast::none());
-        return env;
-      }
       let outer = overlay(env, over);
       let inner = app_view(outer, m, spec);
       let dot = ast::b_of(spec);
@@ -634,7 +632,7 @@ assume Std {
         i = i + 1;
       }
       bracket_pairs(inner, outer, inside);
-      add_symbol_item(env, m, target, recv, sym, depth, inner, inside)
+      add_symbol_item(env, m, target, recv, sym, walking, inner, inside)
     }
 
     # `env` with the pairs of `over` pushed on it, in order.
@@ -666,7 +664,7 @@ assume Std {
     }
 
     fn add_symbol_item(
-      env: Int, m: Int, s: Int, recv: IntList, sym: IntList, depth: Int,
+      env: Int, m: Int, s: Int, recv: IntList, sym: IntList, walking: IntList,
       view: Int, over: IntList
     ): Int {
       let kind = prog::sym_kind.get(s);
@@ -704,13 +702,26 @@ assume Std {
         return env_push(env, ek_fn(), ast::none(), s, view, assumed_app(s, view));
       }
       if kind == prog::sk_context() {
+        # A context inside itself has no reading (the bootstrap's "contexts
+        # nest in a cycle"), named by the context.
+        if types::contains_sym(walking, s) {
+          prog::error(prog::e_deep(), m, prog::sym_name.get(s));
+          return env;
+        }
+        let within = int_list();
+        var k = 0;
+        while k < walking.length() {
+          within.push(walking.get(k));
+          k = k + 1;
+        }
+        within.push(s);
         var e = env;
         let d = prog::sym_decl.get(s);
         var i = 0;
         while i < ast::c_of(d) {
           e = add_spec(
             e, prog::sym_mod.get(s), ast::kid_at(ast::b_of(d), i),
-            recv, sym, depth + 1, over
+            recv, sym, within, over
           );
           i = i + 1;
         }
@@ -1004,7 +1015,7 @@ assume Std {
         # its polymorphic inputs (D84, draft): then it is at an
         # instantiation of the rest of what its result mentions.
         if prog::sym_kind.get(s) != prog::sk_functor() {
-          nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), all, 0);
+          nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), all, int_list());
         } else {
           functor_fixed(s, all);
         }
@@ -1060,7 +1071,7 @@ assume Std {
     fn functor_mentions(s: Int, out: IntList) {
       let d = prog::sym_decl.get(s);
       let outputs = int_list();
-      result_type_syms(prog::sym_mod.get(s), ast::fu_res(d), ast::fu_nres(d), outputs, 0);
+      result_type_syms(prog::sym_mod.get(s), ast::fu_res(d), ast::fu_nres(d), outputs);
       let found = int_list();
       mention_walk(prog::sym_mod.get(s), ast::fu_res(d), ast::fu_nres(d), found, 0);
       var i = 0;
@@ -1072,27 +1083,10 @@ assume Std {
       }
     }
 
-    fn result_type_syms(m: Int, run: Int, n: Int, out: IntList, depth: Int) {
-      if depth > 16 {
-        return ();
-      }
-      var i = 0;
-      while i < n {
-        let spec = ast::kid_at(run, i);
-        if !ast::is_some(ast::b_of(spec)) {
-          let t = prog::resolve_path(m, ast::a_of(spec));
-          if ast::is_some(t) {
-            let kind = prog::sym_kind.get(t);
-            if kind == prog::sk_type() {
-              types::push_new(out, t);
-            } else if kind == prog::sk_context() {
-              let d = prog::sym_decl.get(t);
-              result_type_syms(prog::sym_mod.get(t), ast::b_of(d), ast::c_of(d), out, depth + 1);
-            }
-          }
-        }
-        i = i + 1;
-      }
+    # The types a functor's result holds, through contexts: the same walk
+    # as an assume nesting's (`nest_types`).
+    fn result_type_syms(m: Int, run: Int, n: Int, out: IntList) {
+      nest_types(m, run, n, out, int_list());
     }
 
     fn mention_walk(m: Int, run: Int, n: Int, out: IntList, depth: Int) {
@@ -1182,7 +1176,7 @@ assume Std {
       functor_fixed(s, xs);
       let d = prog::sym_decl.get(s);
       let ins = int_list();
-      nest_types(prog::sym_mod.get(s), ast::fu_args(d), ast::fu_nargs(d), ins, 0);
+      nest_types(prog::sym_mod.get(s), ast::fu_args(d), ast::fu_nargs(d), ins, int_list());
       var i = 0;
       while i < ins.length() {
         if !types::contains_sym(xs, ins.get(i)) {
@@ -1223,7 +1217,7 @@ assume Std {
         if prog::sym_kind.get(s) == prog::sk_tag() {
           if ast::d_of(d) > 0 {
             let nesting = int_list();
-            nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), nesting, 0);
+            nest_types(prog::sym_mod.get(s), prog::sym_asm.get(s), prog::sym_nasm.get(s), nesting, int_list());
             var i = 0;
             while i < ast::d_of(d) {
               let name = ast::kid_at(ast::c_of(d), i);
@@ -1243,10 +1237,11 @@ assume Std {
       }
     }
 
-    fn nest_types(m: Int, run: Int, len: Int, out: IntList, depth: Int) {
-      if depth > 16 {
-        return ();
-      }
+    # Depth first, entering each context once (`seen`), so contexts nest
+    # to any depth and a cycle of them is the union of their items; the
+    # types come out in order of first reaching, as the bootstrap's
+    # `walk_specs` gives them.
+    fn nest_types(m: Int, run: Int, len: Int, out: IntList, seen: IntList) {
       var i = 0;
       while i < len {
         let spec = ast::kid_at(run, i);
@@ -1258,8 +1253,11 @@ assume Std {
               if kind == prog::sk_type() {
                 types::push_new(out, target);
               } else if kind == prog::sk_context() {
-                let d = prog::sym_decl.get(target);
-                nest_types(prog::sym_mod.get(target), ast::b_of(d), ast::c_of(d), out, depth + 1);
+                if !types::contains_sym(seen, target) {
+                  seen.push(target);
+                  let d = prog::sym_decl.get(target);
+                  nest_types(prog::sym_mod.get(target), ast::b_of(d), ast::c_of(d), out, seen);
+                }
               }
             }
           }

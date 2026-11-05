@@ -933,50 +933,53 @@ Fixpoint mentioned_nominals (fuel : nat) (t : aty) (mi : nat) : M (list nat) :=
       end
   end.
 
-(* the type symbols of an assume nesting, through contexts *)
-Fixpoint walk_specs (fuel : nat) (mi : nat) (specs : list spec) (out : list nat) : M (list nat) :=
+(* the type symbols of an assume nesting, through contexts (V.1's
+   SpecTypes): depth first, entering each context once (`fst acc`, the
+   contexts seen), so contexts nest to any depth and a cycle of them reads
+   as the union of their items (Audit note 30).  The types come out in
+   order of first reaching, as the walk of every context each time did on
+   the nestings it accepted.  Each call enters a context not seen before,
+   so `walk_fuel` (one more than the symbols) is never used up. *)
+Fixpoint walk_specs (fuel : nat) (mi : nat) (specs : list spec) (acc : list nat * list nat)
+    : M (list nat * list nat) :=
   match fuel with
-  | 0 => fail "context nests too deeply"
+  | 0 => fail "internal: the context walk ran out of fuel"
   | S f =>
-      mfold (fun out sp =>
+      mfold (fun acc sp =>
                match sp with
                | Spec (Some p) None _ =>
                    let! tg := resolve_sym mi p in
                    match tg with
                    | Some g =>
                        if kind_eqb (gs_kind g) KType then
-                         ret (if nmem (gs_id g) out then out else out +++ [gs_id g])
+                         ret (fst acc, if nmem (gs_id g) (snd acc) then snd acc else snd acc +++ [gs_id g])
                        else if kind_eqb (gs_kind g) KCtx then
-                         match gs_decl g with
-                         | ADCtx _ its => walk_specs f (gs_mod g) its out
-                         | _ => ret out
-                         end
-                       else ret out
-                   | None => ret out
+                         if nmem (gs_id g) (fst acc) then ret acc
+                         else match gs_decl g with
+                              | ADCtx _ its => walk_specs f (gs_mod g) its (gs_id g :: fst acc, snd acc)
+                              | _ => ret acc
+                              end
+                       else ret acc
+                   | None => ret acc
                    end
-               | _ => ret out
-               end) out specs
+               | _ => ret acc
+               end) acc specs
   end.
 
+Definition walk_fuel : M nat := let! s := get in ret (S (w_nsyms (st_w s))).
+
+(* the type symbols a run of context items names, through contexts *)
+Definition nesting_types (mi : nat) (specs : list spec) : M (list nat) :=
+  let! n := walk_fuel in
+  let! r := walk_specs n mi specs ([], []) in
+  ret (snd r).
+
+(* an assume item `p` (not `R.m`) is the context item `p` *)
+Definition assume_specs (its : list (path * option name)) : list spec :=
+  flat_map (fun it => match it with (p, None) => [Spec (Some p) None None] | _ => [] end) its.
+
 Definition assume_type_syms (g : gsym) : M (list nat) :=
-  mfold (fun out it =>
-           match it with
-           | (p, None) =>
-               let! tg := resolve_sym (gs_mod g) p in
-               match tg with
-               | Some t =>
-                   if kind_eqb (gs_kind t) KType then
-                     ret (if nmem (gs_id t) out then out else out +++ [gs_id t])
-                   else if kind_eqb (gs_kind t) KCtx then
-                     match gs_decl t with
-                     | ADCtx _ its => walk_specs 64 (gs_mod t) its out
-                     | _ => ret out
-                     end
-                   else ret out
-               | None => ret out
-               end
-           | _ => ret out
-           end) [] (gs_assumes g).
+  nesting_types (gs_mod g) (assume_specs (gs_assumes g)).
 
 Definition cached_reqs (s : nat) : M (option (list nat)) :=
   let! x := get in ret (nget (st_reqs x) s).
@@ -1428,29 +1431,10 @@ Definition functor_parts (g : gsym) : list spec * list spec * option (list (list
 Definition functor_brackets (g : gsym) : option (list name) :=
   match gs_decl g with ADFunctor _ ps _ _ _ => ps | _ => None end.
 
-(* the types a functor's result holds, in order *)
-Fixpoint result_types_go (fuel : nat) (mi : nat) (specs : list spec) (out : list nat) : M (list nat) :=
-  match fuel with
-  | 0 => err mi "context nests too deeply"
-  | S f =>
-      mfold (fun out sp =>
-               match sp with
-               | Spec (Some p) None _ =>
-                   let! tg := resolve_sym mi p in
-                   match tg with
-                   | Some g =>
-                       match gs_kind g, gs_decl g with
-                       | KCtx, ADCtx _ its => result_types_go f (gs_mod g) its out
-                       | KType, _ => ret (if nmem (gs_id g) out then out else out +++ [gs_id g])
-                       | _, _ => ret out
-                       end
-                   | None => ret out
-                   end
-               | _ => ret out
-               end) out specs
-  end.
+(* the types a functor's result holds, in order (V.5 FunOutputs: the
+   same walk as an assume nesting's) *)
 Definition result_types (g : gsym) : M (list nat) :=
-  let '(_, r, _) := functor_parts g in result_types_go 17 (gs_mod g) r [].
+  let '(_, r, _) := functor_parts g in nesting_types (gs_mod g) r.
 
 (* m4, D84 rule 1: P(F), the bracketed type symbols; None unbracketed *)
 Definition functor_params (g : gsym) : M (option (list nat)) :=
@@ -1591,10 +1575,18 @@ Definition add_method_item (e : env) (mi : nat) (recv : gsym) (n : name) (subst 
   end.
 
 
+(* Assuming an item walks the contexts it names, and theirs (V.3's
+   ItemEntries).  A context met again inside itself would be walked
+   forever: the relation has no reading of it, and the elaborator reports
+   it.  Each level of nesting takes two of the fuel, and an acyclic
+   nesting enters each context at most once on the way down, so twice
+   `walk_fuel` runs out only on a cycle (Audit note 30). *)
+Definition ctx_fuel : M nat := let! n := walk_fuel in ret (2 * n).
+
 Fixpoint add_symbol_item (fuel : nat) (e : env) (mi : nat) (g : gsym) (subst : list (nat * ety))
     (needs : list key) {struct fuel} : M (env * list key) :=
   match fuel with
-  | 0 => err mi "context nests too deeply"
+  | 0 => err mi "contexts nest in a cycle"
   | S f =>
       check_totality mi g subst e ;;
       let tm := subst +++ tymap e in
@@ -1665,7 +1657,7 @@ Fixpoint add_symbol_item (fuel : nat) (e : env) (mi : nat) (g : gsym) (subst : l
 with add_spec (fuel : nat) (e : env) (mi : nat) (sp : spec) (outer : list (nat * ety))
     (needs : list key) {struct fuel} : M (env * list key) :=
   match fuel with
-  | 0 => err mi "context nests too deeply"
+  | 0 => err mi "contexts nest in a cycle"
   | S f =>
       match sp with
       | Spec p d a =>
@@ -1700,7 +1692,7 @@ Definition add_assume_item (e : env) (mi : nat) (it : path * option name) (needs
       match tg with
       | None => err mi ("`" ++ show_path p ++ "` is not in scope")
       | Some (EMod _) => err mi ("cannot assume a module (`" ++ show_path p ++ "`)")
-      | Some (ESym s) => let! g := sym s in add_symbol_item 64 e mi g [] needs
+      | Some (ESym s) => let! g := sym s in let! cf := ctx_fuel in add_symbol_item cf e mi g [] needs
       end
   end.
 
@@ -1767,9 +1759,10 @@ Definition add_root_context (e : env) (mi : nat) (needs : list key) : M (env * l
                       | Some fg =>
                           if negb (kind_eqb (gs_kind fg) KFunctor) || is_some (nget (en_funs e) (gs_id fg)) then ret acc else
                           let! xs := functor_fixed fg in
+                          let! cf := ctx_fuel in
                           let! (e, needs) := mfold (fun acc t => let! tg := sym t in
-                                                     add_symbol_item 64 (fst acc) mi tg [] (snd acc)) (e, needs) xs in
-                          add_symbol_item 64 e mi fg [] needs
+                                                     add_symbol_item cf (fst acc) mi tg [] (snd acc)) (e, needs) xs in
+                          add_symbol_item cf e mi fg [] needs
                       | None => ret acc
                       end
                   | _ => ret acc
@@ -1792,9 +1785,10 @@ Definition fn_info (g : gsym) : M fninfo :=
         | OForwarder t =>
             let! tg := sym t in
             let! rs := reqs t in
+            let! cf := ctx_fuel in
             let! (e, needs) := mfold (fun acc r => let! rg := sym r in
-                                                   add_symbol_item 64 (fst acc) mi rg [] (snd acc)) (e, []) rs in
-            add_symbol_item 64 e mi tg [] needs
+                                                   add_symbol_item cf (fst acc) mi rg [] (snd acc)) (e, []) rs in
+            add_symbol_item cf e mi tg [] needs
         | _ =>
             let! acc := mfold (fun acc it => add_assume_item (fst acc) mi it (snd acc)) (e, []) (gs_assumes g) in
             let! main := is_main g in
@@ -2212,12 +2206,13 @@ Definition fun_env (g : gsym) : M (env * list key) :=
   (* implicit inputs are a declaration's (rule 1): a functor with a body
      relies on its own argument signature alone *)
   let ms := if is_some body then [] else ms in
+  let! cf := ctx_fuel in
   let! (e, needs) := merged_walk (fun e =>
-      let! (e, needs) := mfold (fun acc sp => add_spec 64 (fst acc) (gs_mod g) sp [] (snd acc)) (e, []) args in
+      let! (e, needs) := mfold (fun acc sp => add_spec cf (fst acc) (gs_mod g) sp [] (snd acc)) (e, []) args in
       mfold (fun acc t =>
                if nmem t rts || is_some (tn_get (fst acc) t) then ret acc
                else let! tg := sym t in
-                    if kind_eqb (gs_kind tg) KType then add_symbol_item 64 (fst acc) (gs_mod g) tg [] (snd acc)
+                    if kind_eqb (gs_kind tg) KType then add_symbol_item cf (fst acc) (gs_mod g) tg [] (snd acc)
                     else ret acc) (e, needs) ms) in
   ret (freeze_all_apps e, needs).
 

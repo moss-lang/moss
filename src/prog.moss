@@ -112,7 +112,8 @@ assume Std {
   # No such method for that receiver.
   fn e_method(): Int { 10 }
 
-  # A context that nests too deeply to be real.
+  # A context that nests too deeply to be real; in an assume nesting, one
+  # inside itself (named by the context), which has no reading.
   fn e_deep(): Int { 11 }
 
   # A bracket application on something that takes none — a val, a fn, a

@@ -477,6 +477,22 @@ fn a_type_that_contains_itself_is_rejected() {
     assert!(theirs.contains("`Cell` contains itself"), "{theirs}");
 }
 
+/// Each program exits with `code`, compiled and under the oracle.
+fn both_exit(entry: &str, code: i32) {
+    assert_eq!(run_module_code(&build(entry), &[], code), "", "the self-hosted compiler on {entry}");
+    let theirs = oracle(entry, &[]);
+    assert_eq!(theirs.code, code, "the oracle on {entry}: {}", theirs.stderr);
+}
+
+/// Audit.v note 30: contexts nest to any depth, and the types a cycle of
+/// them requires are the union of theirs. (A function's context cannot
+/// be made from a cycle: tests/errors/context_cycle.moss.)
+#[test]
+fn contexts_nest_to_any_depth() {
+    both_exit("tests/wasi/context_deep.moss", 2);
+    both_exit("tests/wasi/context_cycle.moss", 2);
+}
+
 /// The same, watched from underneath: constructing a wrapper leaves the
 /// heap pointer where it was.
 #[test]

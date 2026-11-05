@@ -1,0 +1,90 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, proc_exit;
+
+# Contexts nest to any depth (Audit note 30): `T` is seventy contexts down,
+# both for what `Box` and `open` require and for the context `open`'s body
+# is checked in. Exits 2.
+
+type T;
+context C0 = T;
+context C1 = C0;
+context C2 = C1;
+context C3 = C2;
+context C4 = C3;
+context C5 = C4;
+context C6 = C5;
+context C7 = C6;
+context C8 = C7;
+context C9 = C8;
+context C10 = C9;
+context C11 = C10;
+context C12 = C11;
+context C13 = C12;
+context C14 = C13;
+context C15 = C14;
+context C16 = C15;
+context C17 = C16;
+context C18 = C17;
+context C19 = C18;
+context C20 = C19;
+context C21 = C20;
+context C22 = C21;
+context C23 = C22;
+context C24 = C23;
+context C25 = C24;
+context C26 = C25;
+context C27 = C26;
+context C28 = C27;
+context C29 = C28;
+context C30 = C29;
+context C31 = C30;
+context C32 = C31;
+context C33 = C32;
+context C34 = C33;
+context C35 = C34;
+context C36 = C35;
+context C37 = C36;
+context C38 = C37;
+context C39 = C38;
+context C40 = C39;
+context C41 = C40;
+context C42 = C41;
+context C43 = C42;
+context C44 = C43;
+context C45 = C44;
+context C46 = C45;
+context C47 = C46;
+context C48 = C47;
+context C49 = C48;
+context C50 = C49;
+context C51 = C50;
+context C52 = C51;
+context C53 = C52;
+context C54 = C53;
+context C55 = C54;
+context C56 = C55;
+context C57 = C56;
+context C58 = C57;
+context C59 = C58;
+context C60 = C59;
+context C61 = C60;
+context C62 = C61;
+context C63 = C62;
+context C64 = C63;
+context C65 = C64;
+context C66 = C65;
+context C67 = C66;
+context C68 = C67;
+context C69 = C68;
+
+assume C69 {
+  tag Box[T](T);
+  fn open(b: Box): T { match b { Box(x) => x, } }
+}
+
+assume Wasm, Wasi {
+  fn main() {
+    bind T = I32;
+    proc_exit(open(Box(w::i32_add(w::i32_one, w::i32_one))));
+  }
+}
