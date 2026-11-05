@@ -153,6 +153,17 @@ Proof. intros t [x|] H; cbn; [exact (fits_raw_tr t x H) | exact I]. Qed.
 
 End Tr.
 
+(* A type whose reading by tr no other such type shares (tr_inj, CtxMerge.v):
+   no nominal headed by the records' reserved 0, no union of nothing.  The
+   receivers methods are filed under are such types (CtxWalk.WS). *)
+Fixpoint ety_ok (t : ety) : bool :=
+  match t with
+  | YNom h xs => negb (Nat.eqb h 0) && forallb (fun p => ety_ok (snd p)) xs
+  | YUnion ms => match ms with [] => false | _ => forallb ety_ok ms end
+  | YRec fs => forallb (fun p => ety_ok (snd p)) fs
+  | _ => true
+  end.
+
 (* canon without merges is the identity *)
 Lemma canon_go_nil : forall fuel t, canon_go fuel [] t = t.
 Proof.
@@ -465,7 +476,8 @@ Proof.
 Qed.
 
 (* The checker context and environment, against a frame and a context.
-   Without merges for now: en_uf = [] and c_sub = []. *)
+   Without merges for now: en_uf = [] and c_sub = [].  The tables are the
+   context's: types, vals, fns and methods in force. *)
 Definition opt_wf (o : option ety) : Prop := match o with Some t => WFty t | None => True end.
 
 Record CxRel (c : cx) (e : env) (F : A.frame) (C : A.cx) : Prop := {
@@ -484,7 +496,13 @@ Record CxRel (c : cx) (e : env) (F : A.frame) (C : A.cx) : Prop := {
   cr_vals : forall v, A.nlook v (A.c_vals C) = option_map trF (nget (en_vals e) v);
   cr_vals_wf : forall v t, nget (en_vals e) v = Some t -> WFty t;
   cr_ty : forall t, A.nlook t (A.c_ty C) = option_map trF (tn_get e t);
-  cr_ty_wf : forall t y, tn_get e t = Some y -> WFty y
+  cr_ty_wf : forall t y, tn_get e t = Some y -> WFty y;
+  (* the fns and methods in force (a method at a receiver key tr reads
+     apart), as the context's tables hold them *)
+  cr_fns : forall f, A.nlook f (A.c_fns C) =
+             option_map (fun g => A.FSig (map (fun p => trF (snd p)) (sg_params g)) (trF (sg_ret g))) (nget (en_fns e) f);
+  cr_mths : forall k m, ety_ok k = true -> A.mlook (trF k) m (A.c_mths C) =
+             option_map (fun g => A.FSig (map (fun p => trF (snd p)) (sg_params g)) (trF (sg_ret g))) (get_mth e k m)
 }.
 
 (* adding a local *)

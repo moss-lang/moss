@@ -4341,6 +4341,30 @@ End Elaboration.
       Oracle stdout, stderr and exit status are identical to the previous
       oracle's on all programs of tests/wasi, tests/errors and examples
       and on the compiler compiling tests/wasi/tags.moss.
+  59. (discrepancy, reported, not changed: the relation reads more than the
+      elaborator accepts) [D43] Merged types in a body.  CtxOf reads a
+      body's types canonically (σ applied: c_ty, c_vals, a parameter's
+      type), so a type symbol merged with `|` is `|` there and two merged
+      type symbols are one type.  The elaborator tests divergence
+      (check_stmt's `ASExpr` flag is_never, synth_if's and `return`'s
+      is_unit_or_never, a match on `|`) and joins branches (join: is_never,
+      ety_eqb) on its types as they are, not canonically (canon e).  So
+      with `type N = |;`, `context C1 = A, B, A.gimme[Foo=B];` and
+      `context C2 = A, A.gimme[Foo=N];`, the fn
+      `assume Wasm, C1, C2 { fn f(x: B): I32 { x; } }` is rejected ("block
+      yields `()`, expected `I32`", exit status 64) though BlkExprLast reads
+      its body as `|`; and, B and C merged (as in tests/wasi/merge.moss),
+      `fn pick(k: Bool, b: B, c: C): B { let r = if k { b } else { c }; r }`
+      is rejected ("branches disagree: `B` vs `C`") though Join reads it.
+      Every test the elaborator passes implies the canonical one, so no
+      accepted program lacks a reading on this account; but where they
+      differ the elaborator's statement-level divergence (`x;` is `()` to
+      it, `|` to the relation) is not the relation's, which BodySound's
+      StmtConcl equates.  Lifting CxRel's en_uf = [] therefore needs the
+      elaborator to test canonically (is_never (canon e t), join over
+      canon e): it newly accepts only such programs.  Left for that lift,
+      as it changes synth/check_stmt, which the bodies track (proof-a2) is
+      changing too.
 *)
 
 (* ######################################################################## *)

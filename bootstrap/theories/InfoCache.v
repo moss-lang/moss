@@ -879,6 +879,33 @@ Proof.
     exact (walk_ctx g s e needs s1 Hg Nf Nm Nm' H1 Hi Hw (later_info w R Fl s1 _ L)).
 Qed.
 
+(* Without merges (BodySound's CxRel, for now), the context's tables are
+   fi_env's read by tr, in CxRel's form *)
+Corollary fnctx_nomerge : forall g i, FnCtx g i -> en_uf (fi_env i) = [] ->
+  let e := fi_env i in
+  exists C, CtxOfIE WW (gs_id g) C (map (key_tr Fl) (fi_needs i)) /\ A.c_sub C = [] /\ fi_merges i = [] /\
+    (forall k, A.nlook k (A.c_ty C) = option_map trF (tn_get e k)) /\
+    (forall v, A.nlook v (A.c_vals C) = option_map trF (nget (en_vals e) v)) /\
+    (forall f, A.nlook f (A.c_fns C) =
+       option_map (fun g => A.FSig (map (fun p => trF (snd p)) (sg_params g)) (trF (sg_ret g))) (nget (en_fns e) f)) /\
+    (forall k m, ety_ok k = true -> A.mlook (trF k) m (A.c_mths C) =
+       option_map (fun g => A.FSig (map (fun p => trF (snd p)) (sg_params g)) (trF (sg_ret g))) (get_mth e k m)) /\
+    (forall u, A.nlook u (A.c_funs C) = option_map (fun _ => []) (nget (en_funs e) u)) /\
+    (forall k, nofun k = true -> key_ok k = true ->
+       A.ilook (key_tr Fl k) (A.c_apps C) = option_map (fun p => tr_inst Fl (fst p)) (get_app e k)).
+Proof.
+  intros g i (C & Hc & Hs & Hm & Ht & Hv & Hf & Hmt & Hu & Ha) U e. subst e.
+  assert (Cn : forall t, canon (fi_env i) t = t) by (intro t; exact (canon_nil _ t U)).
+  assert (Sg : forall g0, csig Fl (fi_env i) g0 = A.FSig (map (fun p => trF (snd p)) (sg_params g0)) (trF (sg_ret g0))).
+  { intro g0. unfold csig. rewrite Cn, map_map. f_equal. apply map_ext. intro p. rewrite Cn. reflexivity. }
+  exists C. split; [exact Hc|]. split; [rewrite Hs, U; reflexivity|]. split; [rewrite Hm; exact U|].
+  split; [intro k; rewrite Ht; destruct (tn_get _ k); cbn; [rewrite Cn|]; reflexivity|].
+  split; [intro v; rewrite Hv; destruct (nget _ v); cbn; [rewrite Cn|]; reflexivity|].
+  split; [intro f; rewrite Hf; destruct (nget _ f); cbn; [rewrite Sg|]; reflexivity|].
+  split; [|exact (conj Hu Ha)].
+  intros k m Ok. rewrite (Hmt k m Ok (Cn k)). destruct (get_mth _ k m); cbn; [rewrite Sg|]; reflexivity.
+Qed.
+
 End Use.
 
 (* ======================================================================== *)

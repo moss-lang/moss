@@ -91,15 +91,7 @@ Inductive lent :=
 | LMth (r : ety) (m : nat) (g : Elab.fsig) (a : Elab.inst)
 | LFun (u : nat).
 
-(* A type whose reading by tr no other such type shares (tr_inj, CtxMerge.v):
-   no nominal headed by the records' reserved 0, no union of nothing. *)
-Fixpoint ety_ok (t : ety) : bool :=
-  match t with
-  | YNom h xs => negb (Nat.eqb h 0) && forallb (fun p => ety_ok (snd p)) xs
-  | YUnion ms => match ms with [] => false | _ => forallb ety_ok ms end
-  | YRec fs => forallb (fun p => ety_ok (snd p)) fs
-  | _ => true
-  end.
+(* ety_ok (BodySound.v): a type tr reads apart from every other such type. *)
 
 Section Walk.
 Variables (w : Elab.world) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
