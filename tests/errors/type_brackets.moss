@@ -1,0 +1,9 @@
+# A type symbol takes no brackets, not even empty ones: `T[]` has no
+# reading as a type (Audit.v note 50).
+type T;
+
+assume T {
+  fn same(x: T[]): T { x }
+}
+
+fn main() {}

@@ -1187,9 +1187,13 @@ Fixpoint unify (fuel : nat) (e : env) (mi : nat) (a b : ety) (why : string) : M 
       if ety_eqb a b then ret e else
       let mismatch := let! sa := show a in let! sb := show b in
                       err mi ("cannot merge `" ++ sa ++ "` with `" ++ sb ++ "`" ++ why ++ " (D43)") in
+      (* occurs check: a generation is never merged with a type that
+         contains it, which no finite type unifies (Audit note 53) *)
+      let cyclic := let! sa := show a in let! sb := show b in
+                    err mi ("cannot merge `" ++ sa ++ "` with `" ++ sb ++ "`" ++ why ++ ", which contains it (D43)") in
       match a, b with
-      | YAbs g, _ => ret (set_uf e g b)
-      | _, YAbs g => ret (set_uf e g a)
+      | YAbs g, _ => if nmem g (ety_gens b) then cyclic else ret (set_uf e g b)
+      | _, YAbs g => if nmem g (ety_gens a) then cyclic else ret (set_uf e g a)
       | YNom n xs, YNom m ys =>
           if Nat.eqb n m then mfold (fun e p => unify f e mi (fst p) (snd p) why) e
                                     (combine (map snd xs) (map snd ys))
@@ -1293,6 +1297,9 @@ Fixpoint elab_type (fuel : nat) (t : aty) (mi : nat) (tm : list (nat * ety)) (e 
                        | YAbs _ => let! s := show x in
                                    err mi ("union member `" ++ s ++ "` is abstract and not constrained to a nominal type (D15)")
                        | YNom h _ =>
+                           (* 0 is no symbol (records' reserved head, Audit
+                              note 34): never so; checked for the proof *)
+                           if Nat.eqb h 0 then err mi "union member is not nominal (D15)" else
                            if ety_mem x out then let! s := show x in err mi ("duplicate union member `" ++ s ++ "`")
                            else
                              (* D15: no two members share a head, so a
@@ -1317,6 +1324,9 @@ Fixpoint elab_type (fuel : nat) (t : aty) (mi : nat) (tm : list (nat * ety)) (e 
               let! s := app_subst f e mi bs tm in
               let tm' := s +++ tm in
               check_totality mi g tm' e ;;
+              (* a type symbol takes no brackets, not even `T[]` (Audit
+                 note 50) *)
+              if kind_eqb (gs_kind g) KType then err mi ("type `" ++ gs_name g ++ "` takes no brackets") else
               symbol_type f mi g tm' e
           end
       end
@@ -1715,17 +1725,21 @@ Definition edges_eqb (a b : list (nat * ety)) : bool :=
 Definition env_with_edges (tn_edges uf_edges : list (nat * ety)) : env :=
   Env (map (fun p => (fst p, (snd p, 0))) tn_edges) uf_edges NE NE NE NE [] [].
 
-(* lower.merged_walk: rebuild until the walk adds no edge *)
-Definition merged_walk (walk : env -> M (env * list key)) : M (env * list key) :=
+(* lower.merged_walk: rebuild until the walk adds no edge, at most 8
+   times.  A walk that still adds one in its 9th round, the check of the
+   8th, is rejected: what it made is no merge of its telescope (Audit
+   note 52). *)
+Definition merged_walk (mi : nat) (walk : env -> M (env * list key)) : M (env * list key) :=
   let fix go (n : nat) (tne ufe : list (nat * ety)) : M (env * list key) :=
     let! (e, needs) := walk (env_with_edges tne ufe) in
     let tne' := filter (fun p => negb (ety_eqb (snd p) (YAbs (fst p)))) (tymap e) in
     let ufe' := en_uf e in
+    if edges_eqb (tne' +++ ufe') (tne +++ ufe) then ret (e, needs) else
     match n with
-    | 0 => ret (e, needs)
-    | S n' => if edges_eqb (tne' +++ ufe') (tne +++ ufe) then ret (e, needs) else go n' tne' ufe'
+    | 0 => err mi "merging the context does not settle in 8 rounds (D43)"
+    | S n' => go n' tne' ufe'
     end in
-  go 7 [] [].
+  go 8 [] [].
 
 Definition freeze_all_apps (e : env) : env :=
   Env (en_tn e) (en_uf e) (en_vals e) (en_fns e) (en_mths e) (en_funs e) (en_locals e)
@@ -1800,7 +1814,7 @@ Definition fn_info (g : gsym) : M fninfo :=
             let! main := is_main g in
             if main then add_root_context (fst acc) mi (snd acc) else ret acc
         end in
-      let! (e, needs) := merged_walk walk in
+      let! (e, needs) := merged_walk mi walk in
       let merges := merge_edges e in
       let e := freeze_all_apps e in
       let apps := map (fun k => (k, match get_app e k with Some (a, _) => a | None => [] end)) needs in
@@ -2217,7 +2231,7 @@ Definition fun_env (g : gsym) : M (env * list key) :=
      relies on its own argument signature alone *)
   let ms := if is_some body then [] else ms in
   let! cf := ctx_fuel in
-  let! (e, needs) := merged_walk (fun e =>
+  let! (e, needs) := merged_walk (gs_mod g) (fun e =>
       let! (e, needs) := mfold (fun acc sp => add_spec cf (fst acc) (gs_mod g) sp [] (snd acc)) (e, []) args in
       mfold (fun acc t =>
                if nmem t rts || is_some (tn_get (fst acc) t) then ret acc

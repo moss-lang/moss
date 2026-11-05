@@ -33,6 +33,15 @@ const SELF_HOSTED_BUG_ARITY: &str = "self-hosted compiler bug: a call to `putcha
 /// nominal receiver, which the self-hosted compiler does not check. The
 /// Python bootstrap and the oracle reject it.
 const SELF_HOSTED_BUG_Q5: &str = "self-hosted compiler bug: an attached method on an abstract type is accepted (Q5)";
+/// A self-hosted compiler bug: it reads `T[]` for a type symbol as `T`;
+/// the oracle rejects it (Audit.v note 50).
+const SELF_HOSTED_BUG_TYPE_BRACKETS: &str = "self-hosted compiler bug: empty brackets on a type symbol are accepted";
+/// A self-hosted compiler bug: it merges a generation with a type that
+/// contains it; the oracle rejects it (Audit.v note 53).
+const SELF_HOSTED_BUG_MERGE_CYCLE: &str = "self-hosted compiler bug: a cyclic merge is accepted";
+/// A self-hosted compiler bug: it stops merging a context after 7 rounds
+/// and uses an unsettled merge; the oracle rejects it (Audit.v note 52).
+const SELF_HOSTED_BUG_MERGE_ROUNDS: &str = "self-hosted compiler bug: an unsettled merge is used";
 /// `main` assumes an item no platform provides. The oracle runs `main` in
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
@@ -58,6 +67,9 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/arg_count_mismatch.moss", Accept, Reject, SELF_HOSTED_BUG_ARITY),
     ("tests/errors/attached_on_abstract.moss", Accept, Reject, SELF_HOSTED_BUG_Q5),
     ("tests/errors/beyond_std.moss", Reject, Unsupported, BEYOND),
+    ("tests/errors/merge_cyclic.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_CYCLE),
+    ("tests/errors/merge_unsettled.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_ROUNDS),
+    ("tests/errors/type_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_TYPE_BRACKETS),
     ("tests/wasi/acrosslib.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/app.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/arena.moss", Accept, Unsupported, MEMORIES),

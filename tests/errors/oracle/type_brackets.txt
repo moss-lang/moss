@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/type_brackets.moss: type `T` takes no brackets]

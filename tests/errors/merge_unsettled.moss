@@ -1,0 +1,43 @@
+# D43: merging this context takes more rounds than the elaborator runs:
+# each round only finds that B(k-1) and C(k-1) are one, which makes
+# B(k-1).w and C(k-1).w one key, so B(k) and C(k) one type, in the next.
+# A walk that has not settled is no merge of the telescope, so it is
+# rejected, not used (Audit.v note 52).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type B0;
+type C0;
+type B1;
+type C1;
+type B2;
+type C2;
+type B3;
+type C3;
+type B4;
+type C4;
+type B5;
+type C5;
+type B6;
+type C6;
+type B7;
+type C7;
+type B8;
+type C8;
+
+fn .gimme(): Foo;
+fn .w(): Foo;
+
+context Ctx1 = A, B0, A.gimme[Foo=B0];
+context Ctx2 = A, C0, A.gimme[Foo=C0];
+context K0 = B7, C7, B8, C8, B7.w[Foo=B8], C7.w[Foo=C8], B6, C6, B7, C7, B6.w[Foo=B7], C6.w[Foo=C7], B5, C5, B6, C6, B5.w[Foo=B6], C5.w[Foo=C6], B4, C4, B5, C5, B4.w[Foo=B5], C4.w[Foo=C5], B3, C3, B4, C4, B3.w[Foo=B4], C3.w[Foo=C4], B2, C2, B3, C3, B2.w[Foo=B3], C2.w[Foo=C3], B1, C1, B2, C2, B1.w[Foo=B2], C1.w[Foo=C2], B0, C0, B1, C1, B0.w[Foo=B1], C0.w[Foo=C1];
+assume Std, K0, Ctx1, Ctx2 {
+  fn f(x: B8): B8 { x }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; }
+}

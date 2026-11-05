@@ -2635,11 +2635,21 @@ Definition SigOf (W : world) (s : nat) (tm : list (nat * ty)) (this : option ty)
     Forall2 (fun pt t => TyOf W (d_mod d) tm this (snd pt) t) ps (sg_params g) /\
     match rt with Some r => TyOf W (d_mod d) tm this r (sg_ret g) | None => sg_ret g = TUnit end.
 
+(* A requirement t of fn or method s that its signature (a parameter's or
+   the result's type) mentions (note 51). *)
+Definition SigMentions (W : world) (s : nat) (t : nat) : Prop :=
+  exists d rcv n ps rt body, w_decl W s = Some d /\ d_ast d = ADFn rcv n ps rt body /\
+    ((exists pt, In pt ps /\ FreeIn W (w_reqs W) (d_mod d) (snd pt) t) \/
+     (exists r, rt = Some r /\ FreeIn W (w_reqs W) (d_mod d) r t)).
+
 (* The instantiation a provision of s is made at: each requirement's meaning
-   (for a method, only the requirements its signature mentions). *)
+   (for a method, exactly the requirements its signature mentions, in
+   their fixed order: note 51). *)
 Definition AppOf (W : world) (s : nat) (tm : list (nat * ty)) (a : inst) : Prop :=
   exists rs, incl rs (w_reqs W s) /\ a = map (fun r => (r, nlook r tm)) rs /\
-    (kind_sym W s <> Some DKMeth -> rs = w_reqs W s).
+    (kind_sym W s <> Some DKMeth -> rs = w_reqs W s) /\
+    (kind_sym W s = Some DKMeth -> exists ms, rs = map snd (filter fst (combine ms (w_reqs W s))) /\
+       Forall2 (fun m r => m = true <-> SigMentions W s r) ms (w_reqs W s)).
 
 (* The receiver type of a method item `R.m`: R's meaning if R is a type
    symbol, else R as a nominal at its requirements' meanings. *)
@@ -3804,8 +3814,8 @@ End Elaboration.
       among *self-consistent* unifiers (keys compared under the unifier
       itself), which is what "union the atom graphs, unify per key" means
       when method keys contain merged types.  The elaborator iterates its
-      walk at most 7 times; a telescope needing more rounds is rejected by
-      it and accepted here.
+      walk at most 8 times (and a 9th must add nothing, note 52); a
+      telescope needing more rounds is rejected by it and accepted here.
    6. (deliberately loose) [D68] literals: any term over zero/one/add/mul
       (/div, float) denoting the literal's exact value is allowed; the
       elaborator's is a Horner chain with digits as sums of `one`.  If the
@@ -4147,6 +4157,55 @@ End Elaboration.
       with ety_gens, which stopped 5000 deep; it is now structural, as
       Part V's gens is.  Oracle outputs identical on all 243 programs and
       on the compiler compiling tests/wasi/tags.moss.
+
+   CHANGES OF TRACK A, PART 2 (calls, contexts, types; notes 50-59):
+  50. (elaborator unsound; adjusted to the relation) A type symbol with
+      empty brackets, `x: T[]` for `type T;`: TyType reads only
+      `ATRef pa None`, so `T[]` has no reading, but elab_type read it as
+      `T` (check_relevant and check_totality pass an empty application).
+      elab_type now rejects brackets on a type symbol ("type `T` takes no
+      brackets"; nonempty ones are still rejected first by check_relevant,
+      with the message they had).  Test: tests/errors/type_brackets.moss;
+      the self-hosted compiler still accepts it (listed as its bug in
+      errors.rs and agreement.rs).  Also for the proof, with no change in
+      behaviour: a union member whose head is 0 is rejected (0 is no
+      symbol; TyUnion asks n <> rec_head).  Oracle outputs: see note 53.
+      PROVED (BodyTy.pd_ty_holds): elab_type, app_subst and symbol_type
+      against TyOf and Brackets, discharging BodySound's pd_ty.
+  51. (relation loose; tightened to the elaborator, asked by Track B)
+      AppOf let a method provision's instantiation range over any subset
+      of its requirements.  It is now exactly those its signature mentions
+      (SigMentions: FreeIn of a parameter's or the result's type, against
+      w_reqs), in w_reqs order, as Elab.provision_app records it
+      (signature_type_syms filters the requirement list by free_type_syms
+      of the signature).  The relation only; the oracle is unchanged.
+  52. (elaborator unsound; adjusted to the relation) [D43] merged_walk
+      re-ran the assume walk with the merges found so far until a round
+      added none, but after its 8th run it returned without checking, so a
+      telescope whose merges take more rounds (each round finds that
+      B(k-1) and C(k-1) are one, which makes `B(k-1).w` and `C(k-1).w` one
+      key, and so B(k) and C(k) one type, in the next) was used half
+      merged: its σ does not unify its entries, so it is no CtxOf and the
+      body has no reading, yet a body that did not need the missing merges
+      was accepted.  merged_walk now checks every round, the last too
+      (eight walks and a ninth that must add nothing; a telescope that
+      settles in eight is accepted as before), and rejects one that has
+      not settled ("merging the context does not settle in 8 rounds";
+      draft note 5 said so already).  Test:
+      tests/errors/merge_unsettled.moss (eight levels); the same with
+      seven is accepted as before.  The self-hosted compiler
+      (lower.merged_walk) still accepts it (listed as its bug).
+  53. (elaborator unsound; adjusted to the relation) [D43] unify had no
+      occurs check: merging `A.gimme[Foo=X]` with `A.gimme[Foo=Box[T=X]]`
+      set X to Box[T=X], a cyclic merge, which no finite type unifies and
+      MostGeneralMerge (idempotent σ) excludes; a function in that context
+      that never read X was accepted.  unify now rejects merging a
+      generation with a type that contains it.  Test:
+      tests/errors/merge_cyclic.moss; the self-hosted compiler still
+      accepts it (listed as its bug).  For notes 50, 52 and 53 together,
+      oracle stdout, stderr and exit status are identical on all 243
+      programs of tests/wasi, tests/errors and examples and on the compiler
+      compiling tests/wasi/tags.moss.
 *)
 
 (* ######################################################################## *)

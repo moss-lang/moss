@@ -6,7 +6,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable.
 Import ListNotations.
 
 Local Strategy opaque [Nat.of_num_uint].
@@ -100,17 +100,19 @@ Record Fr0 (s s' : st) : Prop := {
 
 Record Fr (s s' : st) : Prop := {
   fr_0 :> Fr0 s s';
-  fr_rel : RelOK s -> RelOK s'
+  fr_rel : RelOK s -> RelOK s';
+  (* a cached requirement list never changes (ReqsStable.v) *)
+  fr_ext : Ext (st_reqs s) (st_reqs s')
 }.
 
 Lemma fr0_refl : forall s, Fr0 s s.
 Proof. intro s. constructor; auto; intros i g H1 H2; congruence. Qed.
 
 Lemma fr_refl : forall s, Fr s s.
-Proof. intro s. constructor; [apply fr0_refl | auto]. Qed.
+Proof. intro s. constructor; [apply fr0_refl | auto | apply ext_refl]. Qed.
 
 Lemma fr_of0 : forall s s', Fr0 s s' -> st_w s' = st_w s -> st_reqs s' = st_reqs s -> Fr s s'.
-Proof. intros s s' F E1 E2. constructor; [exact F | exact (relok_same s s' E1 E2)]. Qed.
+Proof. intros s s' F E1 E2. constructor; [exact F | exact (relok_same s s' E1 E2) | rewrite E2; apply ext_refl]. Qed.
 
 Lemma fr0_trans : forall s1 s2 s3, Fr0 s1 s2 -> Fr0 s2 s3 -> Fr0 s1 s3.
 Proof.
@@ -128,7 +130,7 @@ Qed.
 
 Lemma fr_trans : forall s1 s2 s3, Fr s1 s2 -> Fr s2 s3 -> Fr s1 s3.
 Proof.
-  intros s1 s2 s3 [F1 R1] [F2 R2]. constructor; [|auto]. revert F1 F2. apply fr0_trans.
+  intros s1 s2 s3 [F1 R1 X1] [F2 R2 X2]. constructor; [|auto|exact (ext_trans _ _ _ X1 X2)]. revert F1 F2. apply fr0_trans.
 Qed.
 
 Definition ok {A} (m : M A) : Prop :=
@@ -244,12 +246,13 @@ Proof.
   apply bind_inv in H as (u' & s4 & E2 & H). unfold upd in E2. injection E2 as <- <-.
   injection H as <- <-.
   assert (Hi2 : Inv (s_vars init (List.length init) s)) by (destruct Hi; constructor; assumption).
-  destruct (Hm _ _ _ Hi2 H3) as [Hi3 [[F1 F2 F3 F4 F5 F6 [_ _ X3 X4 X5 X6]] Fr3]].
+  destruct (Hm _ _ _ Hi2 H3) as [Hi3 [[F1 F2 F3 F4 F5 F6 [_ _ X3 X4 X5 X6]] Fr3 Fx3]].
   split; [destruct Hi3; constructor; assumption|]. constructor.
   - constructor; cbn [s_vars st_w st_next st_syms st_flds st_vars st_nvar st_fns st_funs st_unsup st_lang] in *; auto.
     constructor; cbn [s_vars st_w st_next st_syms st_flds st_vars st_nvar st_fns st_funs st_unsup st_lang] in *; auto.
     + exists []. rewrite app_nil_r. reflexivity.
   - intro Hr. apply Fr3. exact Hr.
+  - exact Fx3.
 Qed.
 
 Lemma ok_local_var : forall x, ok (local_var x).
@@ -501,7 +504,7 @@ Proof.
       intros b Hb y l' Hy. cbn -[nset nget] in *. rewrite nget_nset in Hy. destruct (Nat.eqb_spec y x) as [->|Hne].
       + injection Hy as <-. destruct (Hl b Hb) as (Nd & P1 & P2). split; [exact Nd|]. exists g'. auto.
       + exact (Jr b Hb y l' Hy).
-    - constructor; [constructor; cbn; auto; intros; congruence|].
+    - constructor; [constructor; cbn; auto; intros; congruence| |cbn [st_reqs]; exact (ext_set_new _ _ _ _ (ext_refl _) Hc1)].
       intros Hr b Hb. cbn [st_w st_reqs] in Hb |- *. destruct (Hr b Hb) as [Hrc Hrl].
       apply (rel_set_plain_w b (st_w s1) (st_reqs s1) x l Hb Hrc Hrl Hc1).
       intros g0 Hg0. rewrite (Jl b Hb x g0 Hg0) in Hx1. injection Hx1 as <-. exact Hk1. }
@@ -566,7 +569,7 @@ Proof.
        cache's closedness is ReqsSolve.solve_rel *)
     intros root s a s' Hi H.
     assert (O0 : ok0 (solve_requirements (S fuel) root)) by (cbn [solve_requirements]; okt0).
-    destruct (O0 s a s' Hi H) as [Hi' F0]. split; [exact Hi'|]. constructor; [exact F0|].
+    destruct (O0 s a s' Hi H) as [Hi' F0]. split; [exact Hi'|]. constructor; [exact F0| |exact (rq_solve_requirements _ root s a s' H)].
     intros Hr b Hb. rewrite (fr_w _ _ F0) in Hb |- *. destruct (Hr b Hb) as [Hrc Hrl].
     exact (solve_rel_w b (st_w s) fuel root s a s' Hb eq_refl (iv_loader _ Hi b Hb) Hrc Hrl H).
   - fintros; cbn [listed_params]; okt.

@@ -1,0 +1,30 @@
+# D43: merging the two provisions of `A.gimme` would make `X` the type
+# `Box[T=X]`, which contains it: no finite type is a unifier, so the
+# context does not form, even for a function that never reads `X`
+# (Audit.v note 53).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type T;
+
+assume T {
+  tag Box(T);
+}
+
+fn .gimme(): Foo;
+
+context Ctx1 = A, X, A.gimme[Foo=X];
+context Ctx2 = A, X, A.gimme[Foo=Box[T=X]];
+
+assume Ctx1, Ctx2 {
+  fn f() {}
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; }
+}

@@ -277,10 +277,37 @@ Ltac sigof :=
   [ forall2_tyof
   | simpl; first [ reflexivity | tyof ] ].
 
+(* a type expression mentions t (FreeIn), against concrete tables *)
+Ltac freein :=
+  first
+  [ (eapply FType; [comp | comp | let HH := fresh "HH" in intros (? & HH & _); destruct HH])
+  | (eapply FNom; [comp | let HH := fresh "HH" in intro HH; vm_compute in HH; discriminate HH
+                  | vm_compute; tauto | let HH := fresh "HH" in intros (? & HH & _); destruct HH])
+  | (eapply FRec; [simpl; tauto | freein])
+  | (eapply FUnion; [simpl; tauto | freein]) ].
+
+(* a fn's or method's signature mentions t (note 51) *)
+Ltac sigmentions :=
+  do 6 eexists; split; [comp|]; split; [comp|];
+  first [ (left; eexists; split; [simpl; tauto | simpl; freein])
+        | (right; eexists; split; [reflexivity | freein]) ].
+
+(* a method's requirements, each mentioned by its signature *)
+Ltac appof_meth :=
+  first [ let HH := fresh "HH" in intro HH; vm_compute in HH; discriminate HH | appof_meth' ]
+with appof_meth' :=
+  match goal with
+  | |- _ -> exists ms, ?rs = _ /\ _ =>
+      intros _; let v := eval vm_compute in rs in
+      exists (map (fun _ => true) v); split; [vm_compute; reflexivity|];
+      change rs with v; simpl map;
+      repeat (apply Forall2_cons; [split; [intros _; sigmentions | intros _; reflexivity] |]); apply Forall2_nil
+  end.
+
 Ltac appof :=
   match goal with
   | |- AppOf ?W ?s ?tm ?a =>
-      exists (w_reqs W s); split; [apply incl_refl | split; [ reflexivity | intros _; reflexivity ] ]
+      exists (w_reqs W s); split; [apply incl_refl | split; [ reflexivity | split; [intros _; reflexivity | appof_meth] ] ]
   end.
 
 Ltac recvty :=

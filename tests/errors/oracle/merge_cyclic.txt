@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/merge_cyclic.moss: cannot merge `X` with `Box[T=X]` for `.gimme`, which contains it (D43)]

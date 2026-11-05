@@ -38,7 +38,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame.
 From NM Require CoreMoss.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -439,16 +439,19 @@ Record Later (s : st) : Prop := {
   lt_w : st_w s = w;
   lt_flds : forall a n, sassoc a (st_flds s) = Some n -> Fl a = n;
   lt_unsup : st_unsup s = [];
-  lt_lang : st_lang s = lang_modules w
+  lt_lang : st_lang s = lang_modules w;
+  (* the requirement lists cached so far are the reading's *)
+  lt_reqs : forall x l, nget (st_reqs s) x = Some l -> R x = l
 }.
 
 Lemma later_back : forall s s', Fr s s' -> Later s' -> Later s.
 Proof.
-  intros s s' Fs [Lw Lf Lu Ll]. destruct Fs as [[Fw _ _ _ _ Ffl [_ _ _ _ (u & Eu) Elang]] _]. constructor.
+  intros s s' Fs [Lw Lf Lu Ll Lr]. destruct Fs as [[Fw _ _ _ _ Ffl [_ _ _ _ (u & Eu) Elang]] _ Fx]. constructor.
   - congruence.
   - intros a n H. exact (Lf a n (Ffl a n H)).
   - rewrite Lu in Eu. destruct (st_unsup s); [reflexivity | discriminate].
   - congruence.
+  - intros x l H. exact (Lr x l (Fx x l H)).
 Qed.
 
 (* The locals numbered so far are the frame's. *)
@@ -480,7 +483,8 @@ Record CxRel (c : cx) (e : env) (F : A.frame) (C : A.cx) : Prop := {
   cr_locals_wf : forall n p, sassoc n (en_locals e) = Some p -> WFty (fst p);
   cr_vals : forall v, A.nlook v (A.c_vals C) = option_map trF (nget (en_vals e) v);
   cr_vals_wf : forall v t, nget (en_vals e) v = Some t -> WFty t;
-  cr_ty : forall t, A.nlook t (A.c_ty C) = option_map trF (tn_get e t)
+  cr_ty : forall t, A.nlook t (A.c_ty C) = option_map trF (tn_get e t);
+  cr_ty_wf : forall t y, tn_get e t = Some y -> WFty y
 }.
 
 (* adding a local *)

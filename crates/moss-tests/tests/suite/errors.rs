@@ -28,6 +28,21 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
         "the self-hosted compiler does not check the argument count of a \
          call to `putchar`, and writes a module that does not validate",
     ),
+    (
+        "tests/errors/merge_cyclic.moss",
+        "the self-hosted compiler merges a generation with a type that \
+         contains it (no occurs check; Audit.v note 53)",
+    ),
+    (
+        "tests/errors/merge_unsettled.moss",
+        "the self-hosted compiler stops merging a context after 7 rounds \
+         and uses what it has, settled or not (Audit.v note 52)",
+    ),
+    (
+        "tests/errors/type_brackets.moss",
+        "the self-hosted compiler reads `T[]` for a type symbol as `T` \
+         (Audit.v note 50)",
+    ),
 ];
 
 /// Programs the oracle does not model, so it cannot reject them either.
