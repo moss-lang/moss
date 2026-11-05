@@ -109,7 +109,9 @@ Proof.
   repeat match goal with H : TyOf _ _ _ _ (ATRef _ None) _ |- _ => inversion H; subst; clear H; crunch end.
   repeat match goal with H : Forall2 _ (w_reqs _ _) _ |- _ => vm_compute in H; inversion H; subst; clear H end.
   (* the context's locals: just the parameter *)
-  destruct Hctx as (dc & es & tm & σ & Hdc & Hit & Hmg & -> & Hn).
+  destruct Hctx as (dc & es & tm & er & tmr & σ & Hdc & Hit & Hroot & Hmg & -> & Hn).
+  assert (Nm : ~ IsMainFn W_ne 365) by notmain.
+  destruct (root_nonmain _ _ _ _ _ _ Nm Hroot) as [-> ->]. rewrite app_nil_r in *.
   (* the body: a block whose tail is the match *)
   inversion Hblk; subst.
   match goal with H : Blk _ _ _ _ [] _ _ _ _ _ |- _ => inversion H; subst; clear H end.

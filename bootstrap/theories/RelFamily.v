@@ -112,7 +112,7 @@ Proof.
   eexists; eexists.
   split.
   { (* [D20] assume Fam: the family is in force *)
-    eexists; eexists; eexists; exists []. split; [comp|]. split; [items|].
+    eexists; eexists; eexists; eexists; eexists; exists []. split; [comp|]. split; [items|]. split; [rootctx|].
     split; [apply mgm_nil; vm_compute; reflexivity|]. split; [vm_compute; reflexivity|].
     split; [repeat constructor; simpl; tauto|]. intro k; simpl; split.
     - intros [<-|[]]. exists (NFun 4). split; [left; reflexivity | reflexivity].

@@ -334,11 +334,59 @@ with items :=
   match goal with |- ItemsEntries _ ?p ?tm ?l _ _ => reduce_list p; reduce_list tm; reduce_list l end;
   first [ apply IsNil | (eapply IsCons; [item | items]) ].
 
+(* No symbol of the elaborator's reading is filed under (ns, n). *)
+Fixpoint nall {A} (f : A -> bool) (m : nmap A) : bool :=
+  match m with
+  | NE => true
+  | NN l v r => nall f l && match v with Some a => f a | None => true end && nall f r
+  end.
+
+Lemma nall_spec : forall A (f : A -> bool) m k a, nall f m = true -> nget m k = Some a -> f a = true.
+Proof.
+  intros A f m. induction m as [|l IHl v r IHr]; intros k a H E; [discriminate E|].
+  cbn [nall] in H. apply andb_true_iff in H as [H H3]. apply andb_true_iff in H as [H1 H2].
+  destruct k as [|k]; cbn [nget] in E.
+  - subst v. exact H2.
+  - destruct (is_even_nat k); [exact (IHl _ _ H1 E) | exact (IHr _ _ H3 E)].
+Qed.
+
+Definition filed_as (ns : nspace) (n : Input.name) (d : adecl) : bool :=
+  match filed_name d, ns with
+  | Some (NSName, n'), NSName | Some (NSDetached, n'), NSDetached | Some (NSAlias, n'), NSAlias => String.eqb n n'
+  | _, _ => false
+  end.
+
+Lemma no_filed : forall s ns n x d, nall (fun g => negb (filed_as ns n (gs_decl g))) (st_syms s) = true ->
+  w_decl (W_of s) x = Some d -> filed_name (d_ast d) <> Some (ns, n).
+Proof.
+  intros s ns n x d H E F. cbn [W_of w_decl] in E.
+  destruct (nget (st_syms s) x) as [g|] eqn:Eg; [|discriminate E].
+  destruct (gs_origin g); try discriminate E. destruct (has_kind (gs_decl g)); [|discriminate E].
+  injection E as <-. cbn [d_ast] in F. pose proof (nall_spec _ _ _ _ _ H Eg) as Hg. cbn beta in Hg.
+  unfold filed_as in Hg. rewrite F in Hg. destruct ns; rewrite String.eqb_refl in Hg; discriminate Hg.
+Qed.
+
+Ltac notmain := let Hd := fresh "Hd" in let Ha := fresh "Ha" in
+  intros (? & ? & ? & ? & Hd & Ha & _); vm_compute in Hd; injection Hd as <-; vm_compute in Ha; discriminate Ha.
+
+Lemma root_nonmain : forall W s es tm er tmr, ~ IsMainFn W s -> RootCtx W s es tm er tmr -> er = [] /\ tmr = tm.
+Proof. intros W s es tm er tmr Hn H. destruct H; [auto | contradiction]. Qed.
+
+(* main's root context (Audit note 54): none, for a fn that is not its
+   module's `main` or a reading with no `Gc` *)
+Ltac rootctx :=
+  apply RootNone;
+  first [ (left; notmain)
+        | (right; let HL := fresh "HL" in let Hd := fresh "Hd" in let Hf := fresh "Hf" in
+           intros ? ? ? ? HL _ _; destruct HL as (? & Hd & _ & Hf);
+           refine (no_filed _ _ _ _ _ _ Hd Hf); vm_compute; reflexivity) ].
+
 (* the context a symbol's assumes form, with nothing to merge *)
 Ltac ctxof :=
-  eexists; eexists; eexists; exists [];
+  eexists; eexists; eexists; eexists; eexists; exists [];
   split; [comp|];
   split; [items|];
+  split; [rootctx|];
   split; [apply mgm_nil; vm_compute; reflexivity|];
   split; [reflexivity | apply needs_keys_of].
 

@@ -2769,13 +2769,8 @@ Definition entries_cx (s : subst) (tm : list (nat * ty)) (es : list entry) : cx 
 Definition Needs (s : subst) (es : list entry) (ns : list item) : Prop :=
   NoDup ns /\ forall k, In k ns <-> exists e, In e es /\ entry_key s e = Some k.
 
-(* `CtxOf W s C ns`: the context the assume nesting of symbol s forms, and
-   its needs (what a caller must provide, [D20]). *)
-Definition CtxOf (W : world) (s : nat) (C : cx) (ns : list item) : Prop :=
-  exists d es tm σ,
-    w_decl W s = Some d /\
-    ItemsEntries W (d_mod d) [] (map assume_spec (d_assumes d)) es tm /\
-    MostGeneralMerge σ es /\ C = entries_cx σ tm es /\ Needs σ es ns.
+(* `CtxOf W s C ns`, the context the assume nesting of s forms, is defined
+   after Fixed (V.5), which main's root context reads (note 54). *)
 
 (* ======================================================================== *)
 (* V.4 Calls: needs, satisfaction maps and coherence                        *)
@@ -2871,6 +2866,52 @@ Definition Poly (W : world) (u : nat) (t : nat) : Prop :=
 
 (* X(F) = M(F) ∖ P(F), the fixed inputs ([D84] rule 1). *)
 Definition Fixed (W : world) (u : nat) (t : nat) : Prop := Mentions W u t /\ ~ Poly W u t.
+
+(* [D84] (8), [D37] (note 54): `main` runs in the platform's root context.
+   Beside what it assumes, a module's own `fn main` has lib/wasm.moss's
+   `Gc`: each abstract functor `Gc` lists that is not already in force,
+   after the types it is fixed in (X(F), [D84] rule 1), each in force as
+   its own generation unless it is already. *)
+Definition IsMainFn (W : world) (s : nat) : Prop :=
+  exists d ps rt body, w_decl W s = Some d /\ d_ast d = ADFn RPlain "main" ps rt body /\
+    w_scope W (d_mod d) NSName "main" = Some (ESym s).
+
+Definition add_tys (xs : list nat) (tm : list (nat * ty)) : list (nat * ty) :=
+  fold_left (fun tm x => match nlook x tm with Some _ => tm | None => (x, TAbs x) :: tm end) xs tm.
+
+(* `RootItems W q es0 tm its es tm'`: Gc's items `its` (written in module
+   q), after the entries es0 and with meanings tm, add the entries es. *)
+Inductive RootItems (W : world) (q : string) : list entry -> list (nat * ty) -> list spec -> list entry -> list (nat * ty) -> Prop :=
+| RINil : forall es0 tm, RootItems W q es0 tm [] [] tm
+| RIFun : forall es0 tm p a rest u du n ps args res xs es tm',
+    resolve_sym W q p = Some u -> w_decl W u = Some du -> d_ast du = ADFunctor n ps args res None ->
+    ~ In (NFun u) es0 -> NoDup xs -> (forall x, In x xs <-> Fixed W u x) ->
+    RootItems W q (es0 ++ map NTy xs ++ [NFun u]) (add_tys xs tm) rest es tm' ->
+    RootItems W q es0 tm (Spec (Some p) None a :: rest) (map NTy xs ++ [NFun u] ++ es) tm'
+| RISkip : forall es0 tm sp rest es tm',
+    match sp with
+    | Spec (Some p) None _ => forall u, resolve_sym W q p = Some u -> kind_sym W u = Some DKFunctor -> In (NFun u) es0
+    | _ => True
+    end ->
+    RootItems W q es0 tm rest es tm' -> RootItems W q es0 tm (sp :: rest) es tm'.
+
+Inductive RootCtx (W : world) (s : nat) (es0 : list entry) (tm : list (nat * ty)) : list entry -> list (nat * ty) -> Prop :=
+| RootNone :
+    (~ IsMainFn W s \/ forall gc d n its, LangSym W "wasm" NSName "Gc" gc -> w_decl W gc = Some d -> d_ast d <> ADCtx n its) ->
+    RootCtx W s es0 tm [] tm
+| RootGc : forall gc d n its es tm',
+    IsMainFn W s -> LangSym W "wasm" NSName "Gc" gc -> w_decl W gc = Some d -> d_ast d = ADCtx n its ->
+    RootItems W (d_mod d) es0 tm its es tm' -> RootCtx W s es0 tm es tm'.
+
+(* `CtxOf W s C ns`: the context the assume nesting of symbol s forms (and,
+   for `main`, the root context: note 54), and its needs (what a caller
+   must provide, [D20]). *)
+Definition CtxOf (W : world) (s : nat) (C : cx) (ns : list item) : Prop :=
+  exists d es tm er tmr σ,
+    w_decl W s = Some d /\
+    ItemsEntries W (d_mod d) [] (map assume_spec (d_assumes d)) es tm /\
+    RootCtx W s es tm er tmr /\
+    MostGeneralMerge σ (es ++ er) /\ C = entries_cx σ tmr (es ++ er) /\ Needs σ (es ++ er) ns.
 
 (* F's own terms: the context its argument telescope forms, plus its
    implicit inputs (rule 1: P(F) ∪ M(F) symbols the inputs do not list). *)
@@ -4206,6 +4247,22 @@ End Elaboration.
       oracle stdout, stderr and exit status are identical on all 243
       programs of tests/wasi, tests/errors and examples and on the compiler
       compiling tests/wasi/tags.moss.
+  54. (relation incomplete; adjusted to the elaborator, which is
+      unchanged) [D84] (8), note 20: the elaborator forms `main`'s context
+      with the platform's root context (Elab.add_root_context: lib/wasm.moss's
+      `Gc`, each of its abstract functors not already in force after the
+      types it is fixed in), but CtxOf had only the assumes.  So a `main`
+      that assumes `Wasm, Wasi, Branch` and calls a fn assuming `Gc` (or
+      binds `Heap`) had no reading, though the oracle accepts and runs it
+      (exit status 0): tests/wasi/gc_slots.moss, whose `main` assumes
+      `Wasm, Wasi, Branch` and calls `demo`, which assumes `Gc`; likewise
+      functor_alloc, gc_ast, gc_bodiless and gc_resolution.  CtxOf now adds RootCtx's entries
+      for a module's own `fn main` (IsMainFn), as the elaborator does,
+      by symbol (Gc's items are read in lib/wasm.moss, where they are in
+      scope); the merge, the context and the needs are over both.  The
+      relation only; the oracle is unchanged.  Still open: note 41 (a
+      `main` imported under that name), which IsMainFn, like the
+      elaborator's is_main, does not count.
 *)
 
 (* ######################################################################## *)
