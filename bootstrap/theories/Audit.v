@@ -2751,6 +2751,12 @@ Definition at_site (C : cx) (k : item) : item :=
   | _ => k
   end.
 
+(* θ of a direct call of s from context C (note 27): each of s's
+   requirements, in their fixed order (w_reqs), read at the site — its
+   meaning in C, or itself where C gives it none — canonically. *)
+Definition theta_at (W : world) (C : cx) (s : nat) : subst :=
+  map (fun r => (r, canon C (app_subst (c_ty C) (TAbs r)))) (w_reqs W s).
+
 (* [D20]/[D62]/[D71]: a call of callee s (assume context Cs, needs ns)
    from context C is answered by satisfaction map sm: sm sends each need
    (exactly once) to the caller's provision of it read here, which must be
@@ -3028,6 +3034,7 @@ Definition SameResult (W : world) (u g : nat) : Prop :=
 
 Inductive BindsOf : xexpr -> list xbind -> Prop :=
 | BOEnd : BindsOf XUnit []
+| BOTy : forall t tau x r, BindsOf x r -> BindsOf (XBindTy t tau x) (XBTy t tau :: r)
 | BOVal : forall v e x r, BindsOf x r -> BindsOf (XBindVal v e x) (XBVal v e :: r)
 | BOFn : forall f g sm x r, BindsOf x r -> BindsOf (XBindFn f g sm x) (XBFn f g sm :: r)
 | BOMth : forall t m th f sm x r, BindsOf x r -> BindsOf (XBindMth t m th f sm x) (XBMth t m th f sm :: r)
@@ -3115,7 +3122,7 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ c_ty C) = Some (snd ra)) (w_reqs W s) xs ->
     PayloadOf W s xs pay ->
     args = [y] -> Ex W P F C y (Some pay) v ty -> fits ty pay ->
-    Ex W P F C (AECall pa a args) exp (XTag s [] v) (TNom s xs)
+    Ex W P F C (AECall pa a args) exp (XTag s xs v) (TNom s xs)
 (* [D20]/[D21] a defined fn: its needs answered from here (sm), its
    signature read with the meanings here *)
 | ExCallD : forall F C exp pa args f Cf ns sm g xs,
@@ -3124,7 +3131,7 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     CtxOf W f Cf ns -> Satisfies C Cf ns sm ->
     SigOf W f (c_ty C) None g ->
     Args W P F C args (sg_params g) xs ->
-    Ex W P F C (AECall pa None args) exp (XCallD f [] sm xs) (sg_ret g)
+    Ex W P F C (AECall pa None args) exp (XCallD f (theta_at W C f) sm xs) (sg_ret g)
 (* an abstract fn: whatever provides it here *)
 | ExCallA : forall F C exp pa args f g xs,
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
@@ -3185,7 +3192,7 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
                exists n v vt, w_fld W n = fst ft /\ In (n, v) fs /\
                  Ex W P F C (match v with Some y => y | None => AEPath [n] None end) (Some (snd ft)) (snd xf) vt /\
                  fits vt (snd ft)) ftys xfs ->
-    Ex W P F C (AERec pa a fs) exp (XTag s [] (XRec xfs)) (TNom s xs)
+    Ex W P F C (AERec pa a fs) exp (XTag s xs (XRec xfs)) (TNom s xs)
 | ExField : forall F C exp o n ox ot rec t,
     Ex W P F C o None ox ot ->
     (match ot with TNom s xs => kind_sym W s = Some DKTag /\ PayloadOf W s xs rec | _ => rec = ot end) ->
@@ -3258,7 +3265,9 @@ with MethCall (W : world) (P : xprogram) : frame -> cx -> xexpr -> ty -> path ->
     Satisfies (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) Ca ns sm ->
     SigOf W att (rargs ++ c_ty C) (Some ot) g ->
     Args W P F C args (sg_params g) xs ->
-    MethCall W P F C ox ot [n] args (XCallD att [] sm (ox :: xs)) (sg_ret g)
+    MethCall W P F C ox ot [n] args
+             (XCallD att (theta_at W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) att) sm (ox :: xs))
+             (sg_ret g)
 (* an abstract attached method: a key the context provides ([D36]) *)
 | MCAttachedAbstract : forall F C ox ot n args h att x t,
     head ot = Some h -> Attached W h n att ->
@@ -3368,7 +3377,8 @@ with BindItem (W : world) (P : xprogram) : frame -> cx -> (spec * option aexpr) 
     resolve_sym W (fr_mod F) pa = Some t -> kind_sym W t = Some DKType ->
     ~ In t (fr_pins F) ->
     TyOf W (fr_mod F) (c_ty C) None (ATRef rp ra) tau ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath rp ra)) (fun x => x) (set_ty C t (canon C tau)) F []
+    BindItem W P F C (Spec (Some pa) None None, Some (AEPath rp ra)) (XBindTy t (canon C tau))
+             (set_ty C t (canon C tau)) F []
 (* `bind v = e;` *)
 | BValBind : forall F C pa v d n t0 i declared y x xt a,
     resolve_sym W (fr_mod F) pa = Some v -> w_decl W v = Some d -> d_ast d = ADVal n t0 i ->
@@ -3492,7 +3502,7 @@ with MethProvider (W : world) (P : xprogram) : frame -> cx -> aexpr -> fsig -> t
     FnProvider W P F C (AEPath pa None) sg None g sm ->
     CtxOf W g Cg nsg -> n = length (sg_params sg) ->
     Fresh W w ->
-    body_of P w = Some (XCallD g [] (map (fun k => (k, k)) nsg) (map XVar (seq 1 n))) ->
+    body_of P w = Some (XCallD g (theta_at W Cg g) (map (fun k => (k, k)) nsg) (map XVar (seq 1 n))) ->
     MethProvider W P F C (AEPath pa None) sg rt w (fun x => x) sm
 | MPLambda : forall F C ps r body sg rt pid pre sm,
     LambdaProvider W P F C ps r body sg (Some rt) pid pre sm ->
@@ -3648,11 +3658,7 @@ End Elaboration.
       m4: they are `Addr`'s methods and the family `Memories` (D79 as
       amended); the elaborator reports "unsupported" where `Memories` is
       applied in a program that binds `Memory`, since MossX has one memory.
-   3. (spec gap) θ is not recorded: every elaborated call, tag and method
-      key carries θ = [] (XCallD f [] …, XTag s [] …, IMth τ m []).  The
-      core's typing needs θ (ElabSound's TODO_method_items_theta).  The
-      relation states what M2 emits; the designer should say whether the
-      elaboration *contract* includes θ.
+   3. (decided: see note 27) θ is part of the elaboration contract.
    4. (spec gap) Order.  Requirement lists, needs and satisfaction maps
       are sets here; the elaborator's order is its walk's.  Observable only
       through `TNom` argument order, which the draft fixes per symbol
@@ -3774,6 +3780,27 @@ End Elaboration.
       It now walks S k levels (enough for every key; identical to 64 levels
       on every key an OCaml int can hold, so the extracted oracle is
       unchanged).
+  27. (decided by the designer, Track A) θ is part of the elaboration
+      contract, so that elaborated programs are typable (Track B found
+      elaborated_typed false for polymorphic programs without it):
+      - a tag `S(e)`/`S{…}` at type TNom S xs is XTag S xs …: θ is the
+        type's own arguments (ExTag, ExRecord; a unit has none);
+      - a direct call of f (a defined fn, a defined attached method at
+        its receiver's instantiation, a wrapper's call of its provider) is
+        XCallD f (theta_at W C f) …: each of f's requirements, in w_reqs
+        order, read at the site (its meaning in C, else itself),
+        canonical (ExCallD, MCAttachedDefined with the receiver's
+        arguments set, MPWrapped in the provider's own context);
+      - `bind T = τ;` is XBindTy T τ (canonical) in a body and XBTy T τ in
+        a functor body's binds (BTypeBind, BindsOf's BOTy); it was
+        omitted before.
+      None of these changes what MossX computes (xinterp ignores XTag's
+      and XCallD's θ and XBindTy); the oracle's stdout, stderr and exit
+      status were checked identical before and after on every program of
+      tests/wasi, tests/errors and examples and on the compiler compiling
+      tests/wasi/tags.moss.
+      Method keys (mkey, at_site, Satisfies' coherence) still carry
+      θ = []: see the report of Track A's second round.
 *)
 
 (* ######################################################################## *)

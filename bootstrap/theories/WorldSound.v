@@ -1702,6 +1702,97 @@ Proof.
 Qed.
 
 (* ======================================================================== *)
+(* 7. Field numbering: an injective extension of the elaborator's table     *)
+(* ======================================================================== *)
+
+(* An injective code of strings, base 257. *)
+Fixpoint str_code (s : string) : nat :=
+  match s with
+  | EmptyString => 0
+  | String c r => S (Ascii.nat_of_ascii c) + 257 * str_code r
+  end.
+
+Lemma str_code_inj : forall a b, str_code a = str_code b -> a = b.
+Proof.
+  induction a as [|c r IH]; intros [|c' r'] H; cbn [str_code] in H; try lia; [reflexivity|].
+  pose proof (Ascii.nat_ascii_bounded c) as Bc. pose proof (Ascii.nat_ascii_bounded c') as Bc'.
+  assert (E1 : S (Ascii.nat_of_ascii c) = S (Ascii.nat_of_ascii c') /\ str_code r = str_code r').
+  { assert (M1 : (S (Ascii.nat_of_ascii c) + 257 * str_code r) mod 257 = S (Ascii.nat_of_ascii c))
+      by (rewrite (Nat.mul_comm 257), Nat.Div0.mod_add; apply Nat.mod_small; lia).
+    assert (M2 : (S (Ascii.nat_of_ascii c') + 257 * str_code r') mod 257 = S (Ascii.nat_of_ascii c'))
+      by (rewrite (Nat.mul_comm 257), Nat.Div0.mod_add; apply Nat.mod_small; lia).
+    rewrite H in M1. rewrite M1 in M2. split; [exact M2|]. lia. }
+  destruct E1 as [Ec Er]. f_equal.
+  - rewrite <- (Ascii.ascii_nat_embedding c), <- (Ascii.ascii_nat_embedding c'). f_equal. lia.
+  - exact (IH r' Er).
+Qed.
+
+(* The elaborator's table where it has the name, else past every number in
+   it.  `bound` is any number at least every number the table holds. *)
+Definition fld_ext (flds : list (string * nat)) (bound : nat) (f : string) : nat :=
+  match sassoc f flds with Some n => n | None => S bound + str_code f end.
+
+Theorem fld_ext_inj : forall flds bound,
+  (forall a c n, sassoc a flds = Some n -> sassoc c flds = Some n -> a = c) ->
+  (forall a n, sassoc a flds = Some n -> n <= bound) ->
+  forall a c, fld_ext flds bound a = fld_ext flds bound c -> a = c.
+Proof.
+  intros flds bound Hinj Hb a c. unfold fld_ext.
+  destruct (sassoc a flds) as [na|] eqn:Ea, (sassoc c flds) as [nc|] eqn:Ec; intro H.
+  - subst. exact (Hinj a c nc Ea Ec).
+  - pose proof (Hb a na Ea). lia.
+  - pose proof (Hb c nc Ec). lia.
+  - apply str_code_inj. lia.
+Qed.
+
+(* The elaborator numbers fields 1, 2, … in order of first use (Elab.fld_id);
+   a table so built satisfies fld_ext_inj's premises. *)
+Definition Numbered (flds : list (string * nat)) : Prop :=
+  NoDup (map fst flds) /\ map snd flds = seq 1 (List.length flds).
+
+Lemma numbered_snoc : forall flds f, Numbered flds -> sassoc f flds = None ->
+  Numbered (flds ++ [(f, S (List.length flds))]).
+Proof.
+  intros flds f [N Hs] Hf. split.
+  - rewrite map_app. cbn. apply NoDup_app; [exact N | repeat constructor; auto |].
+    intros x Hx [<-|[]]. exact (sassoc_none _ _ _ Hf Hx).
+  - rewrite map_app, Hs, length_app. cbn. rewrite Nat.add_1_r, seq_S. reflexivity.
+Qed.
+
+Lemma numbered_inj : forall flds, Numbered flds ->
+  (forall a c n, sassoc a flds = Some n -> sassoc c flds = Some n -> a = c) /\
+  (forall a n, sassoc a flds = Some n -> n <= List.length flds).
+Proof.
+  intros flds [N Hs].
+  assert (Hin : forall a n, sassoc a flds = Some n -> In (a, n) flds) by (intros; apply sassoc_in; assumption).
+  assert (Hbound : forall a n, In (a, n) flds -> 1 <= n <= List.length flds).
+  { intros a n H. assert (In n (map snd flds)) by (apply in_map_iff; exists (a, n); auto).
+    rewrite Hs in H0. apply in_seq in H0. lia. }
+  split.
+  - intros a c n Ha Hc. apply Hin in Ha, Hc.
+    assert (Hnd : NoDup (map snd flds)) by (rewrite Hs; apply seq_NoDup).
+    clear Hs Hin Hbound. induction flds as [|[k v] r IH]; [destruct Ha|].
+    inversion N as [|? ? Nk Nr]; subst. inversion Hnd as [|? ? Vk Vr]; subst.
+    destruct Ha as [Ea|Ha]; destruct Hc as [Ec|Hc].
+    + congruence.
+    + injection Ea as -> ->. exfalso. apply Vk. apply in_map_iff. exists (c, n). auto.
+    + injection Ec as -> ->. exfalso. apply Vk. apply in_map_iff. exists (a, n). auto.
+    + exact (IH Nr Ha Hc Vr).
+  - intros a n Ha. exact (proj2 (Hbound a n (Hin a n Ha))).
+Qed.
+
+(* fld_id keeps a table Numbered. *)
+Lemma fld_id_numbered : forall f s n s', fld_id f s = Good (n, s') -> Numbered (st_flds s) ->
+  Numbered (st_flds s') /\ sassoc f (st_flds s') = Some n.
+Proof.
+  intros f s n s' H Hn. unfold fld_id in H. cbn in H.
+  destruct (sassoc f (st_flds s)) as [m|] eqn:E.
+  - injection H as <- <-. auto.
+  - injection H as <- <-. cbn. split; [apply numbered_snoc; assumption|].
+    apply sassoc_snoc_new. exact E.
+Qed.
+
+(* ======================================================================== *)
 (* world_todo: what WorldOf still needs, stated and NOT proved              *)
 (* ======================================================================== *)
 

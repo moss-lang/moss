@@ -673,6 +673,7 @@ Inductive xstmt : Type :=
 | SBindFunA : nat -> nat -> smap -> xstmt
 | SApply    : nat -> subst -> smap -> xstmt
 | SBindPrim : item -> prim -> xstmt
+| SBindTy   : nat -> ty -> xstmt          (* `bind T = τ;`: no run-time effect *)
 | SWhile    : xexpr -> xexpr -> xstmt
 | SLoop     : xexpr -> xstmt
 | SExpr     : xexpr -> xstmt.
@@ -692,6 +693,7 @@ Fixpoint fold_stmts (ss : list xstmt) (tail : xexpr) : xexpr :=
       | SBindFunA u w sm => XBindFunA u w sm rest
       | SApply u th sm => XApply u th sm rest
       | SBindPrim i p => XBindPrim i p rest
+      | SBindTy t tau => XBindTy t tau rest
       | SWhile c b => XSeq (XWhile c b) rest
       | SLoop b => XSeq (XLoop b) rest
       | SExpr e => XSeq e rest
@@ -707,6 +709,7 @@ Definition stmt_bind (s : xstmt) : option xbind :=
   | SBindFunA u w sm => Some (XBFunA u w sm)
   | SApply u th sm => Some (XBApply u th sm)
   | SBindPrim i p => Some (XBPrim i p)
+  | SBindTy t tau => Some (XBTy t tau)
   | _ => None
   end.
 
@@ -1834,6 +1837,17 @@ Definition key_item (k : key) : M item :=
   | KyFun u => ret (IFun u)
   | KyMth t m => let! t' := ety_ty t in ret (IMth t' m [])
   end.
+
+(* θ of a direct call of g (D20/D21, Track A): each of g's requirements,
+   in reqs order, read at the site (its meaning here, or itself where it is
+   not in force), canonical. *)
+Definition call_theta (e : env) (g : gsym) : M subst :=
+  let! rs := reqs (gs_id g) in
+  mmap (fun r => let! y := ety_ty (canon e (instantiate e (YAbs r))) in ret (r, y)) rs.
+
+(* θ of a tag: its type's arguments. *)
+Definition tag_theta (xs : list (nat * ety)) : M subst :=
+  mmap (fun p => let! y := ety_ty (snd p) in ret (fst p, y)) xs.
 
 Definition smap_of (ps : list (key * key)) : M smap :=
   mmap (fun p => let! a := key_item (fst p) in let! b := key_item (snd p) in ret (a, b)) ps.
@@ -3107,7 +3121,8 @@ with synth_call (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (args : li
                 let! lib := in_library mi in
                 (if (isref || isarr) && negb lib then unsupported "D75: a reference built from a bare StructRef/ArrayRef (a checked cast)"
                  else ret tt) ;;
-                ret (XTag s [] v, tag_ty)
+                let! th := tag_theta xs in
+                ret (XTag s th v, tag_ty)
           | _ => err mi ("tag `" ++ gs_name g ++ "` takes exactly one payload")
           end
       | KFn =>
@@ -3128,7 +3143,8 @@ with synth_call (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (args : li
                 let! sg := fn_sig g (tymap e) e None in
                 let! xs := check_args f c e (gs_name g) sg (map AA args) in
                 layout_ok e (sg_ret sg) ;;
-                ret (fold_stmts pre (XCallD s [] sm xs), sg_ret sg)
+                let! th := call_theta e g in
+                ret (fold_stmts pre (XCallD s th sm xs), sg_ret sg)
               else
                 match nget (en_fns e) s with
                 | None => err mi ("`" ++ gs_name g ++ "` is not available in the context here (assume or bind it)")
@@ -3177,7 +3193,8 @@ with synth_record (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (fs : li
           | [] =>
               let! xfs := mmap (fun q => let! i := fld_id (fst q) in
                                          ret (i, opt_default XUnit (sassoc (fst q) given))) ftys in
-              ret (XTag (gs_id g) [] (XRec xfs), tag_ty)
+              let! th := tag_theta xs in
+              ret (XTag (gs_id g) th (XRec xfs), tag_ty)
           end
       | _ => err mi ("`" ++ gs_name g ++ "` does not have a record payload")
       end
@@ -3265,7 +3282,8 @@ with synth_method (fuel : nat) (c : cx) (e : env) (o : aexpr) (p : path) (args :
         let! sg := fn_sig att (tymap e2) e2 (Some oty) in
         let! xs := check_args f c e (gs_name att) sg (map AA args) in
         layout_ok e (sg_ret sg) ;;
-        ret (fold_stmts pre (XCallD (gs_id att) [] sm (ox :: xs)), sg_ret sg)
+        let! th := call_theta e2 att in
+        ret (fold_stmts pre (XCallD (gs_id att) th sm (ox :: xs)), sg_ret sg)
       else provided_call f c e ox oty att (map AA args)
   | None =>
       match m1, p with
@@ -3541,7 +3559,8 @@ with check_bind (fuel : nat) (c : cx) (e : env) (sp : spec) (y : aexpr) {struct 
                   (match ms with Some m => if Nat.eqb m s then upd (s_memory true false) else ret tt
                                | None => ret tt end) ;;
                   let! stamp := fresh in
-                  ret ([], set_tn e s (canon e ty) stamp, c)
+                  let! ty' := ety_ty (canon e ty) in
+                  ret ([SBindTy s ty'], set_tn e s (canon e ty) stamp, c)
               | _ => err mi ("binding type `" ++ gs_name g ++ "` needs a type on the right")
               end
           | KVal =>
@@ -3627,7 +3646,8 @@ with wrapper (fuel : nat) (pv : gsym) {struct fuel} : M nat :=
       let! sm := smap_of (map (fun k => (k, k)) (fi_needs info)) in
       let! w := new_sym (gs_mod pv) (gs_name pv ++ "$recv") KFn (gs_decl pv) OLambda in
       let n := List.length (fn_params pv) in
-      emit_fn w (XCallD (gs_id pv) [] sm (map XVar (seq 1 n))) ;;
+      let! th := call_theta (fi_env info) pv in
+      emit_fn w (XCallD (gs_id pv) th sm (map XVar (seq 1 n))) ;;
       upd (s_wrappers (fun m => nset m (gs_id pv) w)) ;;
       ret w
   end end
