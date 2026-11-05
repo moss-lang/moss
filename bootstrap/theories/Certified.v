@@ -77,6 +77,9 @@ Definition fast_path_engine_agrees := FastPath.fast_engine_agrees.
 Definition world_reads := WorldSound.load_world_reads.
 Definition elaborate_world_reads := WorldSound.elaborate_world_reads.
 Definition world_of_reading := WorldSound.worldof_of_reading.
+(* and every path the elaborator resolves in a module of that world, Part
+   V's `resolve` resolves to the same entity *)
+Definition world_resolves := WorldSound.load_world_resolves.
 
 (* The executable roots (Extract2.v extracts these). *)
 Definition elaborate_sx := Certified.elaborate_sx.

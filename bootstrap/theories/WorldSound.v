@@ -1661,6 +1661,91 @@ Proof.
       cbn [A.w_attached W W_read w_syms w]. rewrite Hgr. rewrite Egr, (fin_get_mod _ _ Emm). exact Ear.
 Qed.
 
+(* ---- name resolution: the elaborator's resolve_path is the relation's ---- *)
+
+Lemma alias_loaded : forall i p m am, In (p, i) (ls_loaded st) -> nget (ls_mods st) i = Some m ->
+  A.module_of b p = Some am ->
+  forall ex n x, sassoc n (tbl m ex A.NSAlias) = Some x -> exists q, In (q, x) (ls_loaded st).
+Proof.
+  intro i. induction i as [i IH] using lt_wf_ind. intros p m am Hi Hm Hma ex n x Hx.
+  pose proof (li_tables _ _ HI p i m am Hi Hm Hma) as Rp.
+  assert (Hs : sassoc n (tbl m false A.NSAlias) = Some x)
+    by (destruct ex; [apply (rep_scope _ _ _ Rp), (rep_sub _ _ _ Rp), (rep_exp _ _ _ Rp); exact Hx | exact Hx]).
+  apply (rep_scope _ _ _ Rp) in Hs as [(g & _ & _ & Hf)|[(t & imp & tj & tm & Hin & Htj & Htm & Hq9)|(t & imp & tj & tm & Hin & Htj & Htm & _ & Hq9)]].
+  - exfalso. exact (filed_not_alias _ _ Hf).
+  - destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm' & Hj & Hlt & _).
+    pose proof (loaded_fun _ _ _ _ _ HI Htj Hj) as ->.
+    destruct (fin_path t j Hj) as (tm'' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
+    destruct Hq9 as [(_ & _ & ->)|(_ & u & _ & _ & [(_ & E & _)|[(_ & E & _)|(_ & _ & _ & Ex)]])]; try discriminate.
+    + exists t. exact Hj.
+    + exact (IH j Hlt t tm amt Hj Htm Hamt true (u_name u) x Ex).
+  - destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm' & Hj & Hlt & _).
+    pose proof (loaded_fun _ _ _ _ _ HI Htj Hj) as ->.
+    destruct (fin_path t j Hj) as (tm'' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
+    exact (IH j Hlt t tm amt Hj Htm Hamt true n x Hq9).
+Qed.
+
+Definition conv_ent (e0 : Elab.ent) : A.ent :=
+  match e0 with Elab.ESym s => A.ESym s | Elab.EMod j => A.EMod (gm_path (get_mod w j)) end.
+
+Definition go_res (m : gmod) :=
+  fix go (cur : Elab.ent) (hd : string) (segs : list string) : res (option Elab.ent) :=
+    match segs with
+    | [] => Good (Some cur)
+    | seg :: r =>
+        match cur with
+        | Elab.ESym _ => err_in m ("`" ++ hd ++ "` is not a module")%string
+        | Elab.EMod ci =>
+            let cm := get_mod w ci in
+            match sassoc seg (gm_exp_names cm) with
+            | Some s => go (Elab.ESym s) seg r
+            | None =>
+                match sassoc seg (gm_exp_aliases cm) with
+                | Some s => go (Elab.EMod s) seg r
+                | None => err_in m ("`" ++ gm_path cm ++ "` does not export `" ++ seg ++ "`")%string
+                end
+            end
+        end
+    end.
+
+Lemma go_res_agrees : forall m segs cur hd r,
+  (match cur with Elab.EMod j => exists q, In (q, j) (ls_loaded st) | _ => True end) ->
+  go_res m cur hd segs = Good r -> A.resolve_rest W (conv_ent cur) segs = option_map conv_ent r.
+Proof.
+  intros m segs. induction segs as [|seg rest IH]; intros cur hd r Hc H.
+  - injection H as <-. reflexivity.
+  - cbn [go_res] in H. destruct cur as [s|j]; [unfold err_in in H; discriminate|].
+    destruct Hc as (q & Hq). destruct (fin_path q j Hq) as (cm & amq & Ecm & Gcm & Pcm & Hamq).
+    cbn [A.resolve_rest conv_ent]. rewrite Gcm in H |- *. rewrite Pcm.
+    rewrite (fin_exp q j cm A.NSName seg Hq Ecm), (fin_exp q j cm A.NSAlias seg Hq Ecm). cbn [tbl aent].
+    destruct (sassoc seg (gm_exp_names cm)) as [s|] eqn:En.
+    + cbn [option_map]. apply (IH (Elab.ESym s) seg r I H).
+    + destruct (sassoc seg (gm_exp_aliases cm)) as [k|] eqn:Ea; [|unfold err_in in H; discriminate].
+      cbn [option_map]. change (A.EMod (gm_path (get_mod w k))) with (conv_ent (Elab.EMod k)).
+      apply (IH (Elab.EMod k) seg r); [|exact H].
+      exact (alias_loaded j q cm amq Hq Ecm Hamq true seg k Ea).
+Qed.
+
+(* Whatever the elaborator resolves a path to in a loaded module, the
+   relation's `resolve` resolves it to (and where the elaborator finds
+   nothing, so does the relation). *)
+Theorem resolve_path_agrees : forall p i m pa r, In (p, i) (ls_loaded st) -> nget (ls_mods st) i = Some m ->
+  Elab.resolve_path w i pa = Good r -> A.resolve W p pa = option_map conv_ent r.
+Proof.
+  intros p i m pa r Hi Hm H. destruct (fin_path p i Hi) as (m' & am & Em & Gm & Pm & Hma).
+  rewrite Hm in Em. injection Em as <-.
+  unfold Elab.resolve_path in H. rewrite Gm in H. destruct pa as [|hd rest]; [injection H as <-; reflexivity|].
+  cbn [A.resolve]. rewrite (fin_scope p i m A.NSName hd Hi Hm), (fin_scope p i m A.NSAlias hd Hi Hm). cbn [tbl aent].
+  destruct (sassoc hd (gm_names m)) as [s|] eqn:En.
+  - cbn [option_map]. change (A.ESym s) with (conv_ent (Elab.ESym s)).
+    exact (go_res_agrees m rest (Elab.ESym s) hd r I H).
+  - destruct (sassoc hd (gm_aliases m)) as [k|] eqn:Ea; cbn [option_map] in H |- *.
+    + change (A.EMod (gm_path (get_mod w k))) with (conv_ent (Elab.EMod k)).
+      apply (go_res_agrees m rest (Elab.EMod k) hd r); [|exact H].
+      exact (alias_loaded i p m am Hi Hm Hma false hd k Ea).
+    + injection H as <-. reflexivity.
+Qed.
+
 End Final.
 
 (* ======================================================================== *)
@@ -1691,6 +1776,27 @@ Proof.
   apply rbind_good in H as ([e st] & Hl & H). injection H as <-.
   destruct (load_spec b _ _ _ _ _ _ Hl (linv_init b)) as (L & _ & He & Hr & _).
   apply (final_reading b st e L He). intros q j Hq. destruct (Hr q j Hq) as [[]|Hq']. exact Hq'.
+Qed.
+
+(* The elaborator's entity, as the relation's. *)
+Definition ent_of (w : Elab.world) (e0 : Elab.ent) : A.ent :=
+  match e0 with Elab.ESym s => A.ESym s | Elab.EMod j => A.EMod (gm_path (get_mod w j)) end.
+
+(* Name resolution agrees: in every module of the loader's world, what the
+   elaborator resolves a path to is what Part V's `resolve` does. *)
+Theorem load_world_resolves : forall b w R F, load_world b = Good w ->
+  forall i pa r, In i (w_order w) -> Elab.resolve_path w i pa = Good r ->
+  A.resolve (W_read w R F) (gm_path (get_mod w i)) pa = option_map (ent_of w) r.
+Proof.
+  intros b w R F H i pa r Hi Hres. unfold load_world in H.
+  apply rbind_good in H as ([e st] & Hl & H). injection H as <-.
+  destruct (load_spec b _ _ _ _ _ _ Hl (linv_init b)) as (L & _ & He & Hr & _).
+  assert (Hr' : forall q j, In (q, j) (ls_loaded st) -> Reach b (b_entry b) q)
+    by (intros q j Hq; destruct (Hr q j Hq) as [[]|Hq']; exact Hq').
+  cbn [w_order] in Hi. destruct (proj1 (li_order _ _ L i) Hi) as (p & Hp).
+  destruct (li_loaded _ _ L p i Hp) as [_ (m & am & Em & Pm & _)].
+  pose proof (resolve_path_agrees b st e L R F p i m pa r Hp Em Hres) as X.
+  rewrite (fin_get_mod st e i m Em), Pm. exact X.
 Qed.
 
 (* What the elaborator reads a bundle as, when it accepts it. *)
@@ -1812,12 +1918,11 @@ Qed.
    counts a context's or functor's own assume nesting (assume_type_syms does
    too).  Estimate: 1500-2500 lines.
 
-   TODO_fld_injective: the field numbering st_flds s is injective with values
-   1..length (only fld_id writes it: an invariant of every M action of the
-   elaborator, i.e. over the whole of `synth`), and F extends it injectively
-   to all strings (e.g. F f = length + 1 + an injective string code for an
-   unseen f).  Estimate: 300 lines for the extension, plus the frame
-   invariant over synth (shared with the body judgments below).
+   TODO_fld_injective: Numbered (st_flds s) for the final state s.  Section 7
+   proves the rest: fld_id keeps a table Numbered (fld_id_numbered), and
+   fld_ext over a Numbered table is injective (numbered_inj, fld_ext_inj);
+   what remains is that no other M action writes st_flds (the frame
+   invariant below).
 
    TODO_syms_frame: every M action leaves st_w unchanged and adds to st_syms
    only symbols with ids >= w_nsyms whose origin is not OSource, so
