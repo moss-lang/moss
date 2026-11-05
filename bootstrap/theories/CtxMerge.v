@@ -23,8 +23,8 @@
 (*    reads apart) against the walk's environment, read canonically.      *)
 (* 7. fn_info on a cache miss (fn_info_ctx): CtxOfIE, CtxOf with IEs for    *)
 (*    ItemsEntries, of the function, with fi_needs as its needs and the     *)
-(*    tables of 6 against fi_env.  (The cache: InfoCache.v.)  Not yet:     *)
-(*    `main`'s root context, forwarders.                                    *)
+(*    tables of 6 against fi_env.  (The cache, and a forwarder's needs:    *)
+(*    InfoCache.v; is_main: MainRoot.v.)  Not yet: `main`'s root context.  *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
