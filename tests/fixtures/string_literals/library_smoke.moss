@@ -6,8 +6,8 @@ import "../../../lib/wasip1.moss" use Wasi;
 assume Std {
   fn sample(): String {
     let b = string_begin(2);
-    let b = string_write(b, 0, 104);
-    let b = string_write(b, 1, 105);
+    let b = string_write1(b, 0, byte::x68);
+    let b = string_write1(b, 1, byte::x69);
     string_finish(b)
   }
   fn line(value: String) { print(value); putchar(char::newline); }
@@ -26,9 +26,9 @@ assume Std {
     let zeroed = string_finish(string_begin(2));
     if zeroed.get(1).code() != 0 { putchar(char::question); }
     let b = string_begin(1);
-    let b = string_write(b, 0, 65);
+    let b = string_write1(b, 0, byte::x41);
     let frozen = string_finish(b);
-    let b = string_write(b, 0, 66);
+    let b = string_write1(b, 0, byte::x42);
     line(frozen);
     line(string_finish(b));
     line(arg_at(1));

@@ -1,0 +1,21 @@
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+assume Std {
+  fn run() {
+    let b = string_begin(24);
+    let b = string_write1(b, 0, byte::x41);
+    let b = string_write2(b, 1, byte::xc2, byte::xa2);
+    let b = string_write3(b, 3, byte::ThreeE0 { lead = byte::xe0, second = byte::xa0 }, byte::x80);
+    let b = string_write3(b, 6, byte::ThreeED { lead = byte::xed, second = byte::x9f }, byte::xbf);
+    let b = string_write3(b, 9, byte::ThreeOrdinary { lead = byte::xef, second = byte::xbf }, byte::xbf);
+    let b = string_write4(b, 12, byte::FourF0 { lead = byte::xf0, second = byte::x90 }, byte::x80, byte::x80);
+    let b = string_write4(b, 16, byte::FourMiddle { lead = byte::xf1, second = byte::x90 }, byte::x80, byte::x80);
+    let b = string_write4(b, 20, byte::FourF4 { lead = byte::xf4, second = byte::x8f }, byte::xbf, byte::xbf);
+    print(string_finish(b));
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; run(); }
+}

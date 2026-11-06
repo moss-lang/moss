@@ -10,7 +10,8 @@ assume Std {
     var builder = string_begin(n);
     var i = 0;
     while i < n {
-      builder = string_write(builder, i, 65 + i);
+      let value = if i == 0 { byte::x41 } else { if i == 1 { byte::x42 } else { byte::x43 } };
+      builder = string_write1(builder, i, value);
       i = i + 1;
     }
     print(string_finish(builder));
