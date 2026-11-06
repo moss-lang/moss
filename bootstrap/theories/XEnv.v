@@ -14,10 +14,41 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit CoreMoss XTyping.
+From NM Require Import Audit CoreMoss XTyping XRuntimeEnv XRuntimeCall XCast.
 Import ListNotations.
 
 Set Implicit Arguments.
+
+Lemma smap_composed_typefree : forall Phi th sm D d dc,
+  smap_ok Phi th sm D -> xcompose d sm = Some dc -> typefree dc.
+Proof.
+  intros Phi th sm D d dc [PhiD [_ [Dom Rest]]] Hc.
+  eapply xcompose_typefree; [|exact Hc]. apply Forall_forall. intros p Hp.
+  assert (Hin : In (fst p) (map fst sm)) by (apply in_map; exact Hp).
+  rewrite Dom in Hin. apply filter_In in Hin as [_ Hn]. apply negb_true_iff; exact Hn.
+Qed.
+
+Lemma xenv_lookup_app : forall i d e,
+  lookup_xdenv i (d ++ e) = match lookup_xdenv i d with Some en => Some en | None => lookup_xdenv i e end.
+Proof. intros i d; induction d as [|[j en] r IH]; intro e; simpl; [reflexivity|]. destruct (item_eqb i j); auto. Qed.
+Lemma lookup_xresult_non_type : forall P db Dr dr d i,
+  is_ty_item i = false ->
+  lookup_xdenv i (xresult_env P db Dr dr ++ d) = lookup_xdenv i (dr ++ d).
+Proof.
+  intros P db Dr dr d i Nt. unfold xresult_env. destruct (xreify P); [|reflexivity].
+  rewrite <- app_assoc, !xenv_lookup_app. destruct (lookup_xdenv i dr); [reflexivity|].
+  unfold xresult_types.
+  pose proof (call_lookup_filter (fun j => existsb (item_eqb j) Dr) (xtype_env db) i) as Filt.
+  cbn beta in Filt. rewrite Filt. rewrite lookup_type_env_non_type by exact Nt.
+  destruct (existsb (item_eqb i) Dr); reflexivity.
+Qed.
+Lemma inst_smap_typefree : forall d th Dr dr,
+  xcompose d (inst_smap th Dr) = Some dr -> typefree dr.
+Proof.
+  intros d th Dr dr Hc. eapply xcompose_typefree; [|exact Hc].
+  apply Forall_forall. intros p Hp. unfold inst_smap in Hp. apply in_map_iff in Hp as [i [<- Hi]].
+  apply filter_In in Hi as [_ Hn]. apply negb_true_iff in Hn. destruct i; simpl in *; auto.
+Qed.
 
 Section XEnv.
 
@@ -35,13 +66,14 @@ Definition body_chain (Dh : tele) (sms : list smap) (u : usym) : Prop :=
   exists sm r w Dw Drw, sms = sm :: r /\ g_fun Sg w = Some (Dw, Drw, None)
   /\ fun_link Sg Dh sm Dw /\ chain_ok Sg w r u.
 
-Local Notation xvt := (xvt Sg Rp Hst).
+Local Notation xvt := (xvt Sg Rp P Hst).
 Local Notation pty_ok := (pty_ok Sg Rp P).
 
 (* Entry-level agreement, CoreMoss.dentry_agree's clauses for vals and
    closures (a closure's code is a fn P has a body for), plus primitives. *)
 Fixpoint xdentry_agree (g : subst) (i : item) (en : xdentry) {struct en} : Prop :=
   match i, en with
+  | ITy _, XDType _ => True
   | IVal v, XDVal w =>
       match g_val Sg v with
       | Some (_, tauv) => xvt w (app_subst g tauv)
@@ -61,6 +93,7 @@ Fixpoint xdentry_agree (g : subst) (i : item) (en : xdentry) {struct en} : Prop 
             Forall (fun p =>
               incl (dep_tys Sg (fst p) ++ item_ty_frees (fst p)
                     ++ method_item_frees Sg (fst p)) (tyreqs (cA PhiD'))) d' /\
+            runtime_types P g' (cA PhiD') d' /\
             (fix all (dd : xdenv) : Prop :=
                match dd with
                | [] => True
@@ -87,6 +120,7 @@ Fixpoint xdentry_agree (g : subst) (i : item) (en : xdentry) {struct en} : Prop 
             Forall (fun p =>
               incl (dep_tys Sg (fst p) ++ item_ty_frees (fst p)
                     ++ method_item_frees Sg (fst p)) (tyreqs (cA PhiD'))) d' /\
+            runtime_types P g' (cA PhiD') d' /\
             (fix all (dd : xdenv) : Prop :=
                match dd with
                | [] => True
@@ -104,6 +138,23 @@ Fixpoint xdentry_agree (g : subst) (i : item) (en : xdentry) {struct en} : Prop 
       match g_mth Sg m with
       | Some (_, Sm) =>
           prim_ok Sg Rp P p
+               (app_subst g rt
+                :: map (fun tau =>
+                          app_subst g (app_subst (this_subst rt) (app_subst th tau)))
+                       (fs_params Sm))
+               (app_subst g (app_subst (this_subst rt) (app_subst th (fs_ret Sm))))
+      | None => False
+      end
+  | IFn f, XDPrimAt p held =>
+      match g_fn Sg f with
+      | Some (_, Sf, None) =>
+          prim_at_ok Sg Rp P p held (map (app_subst g) (fs_params Sf)) (app_subst g (fs_ret Sf))
+      | _ => False
+      end
+  | IMth rt m th, XDPrimAt p held =>
+      match g_mth Sg m with
+      | Some (_, Sm) =>
+          prim_at_ok Sg Rp P p held
                (app_subst g rt
                 :: map (fun tau =>
                           app_subst g (app_subst (this_subst rt) (app_subst th tau)))
@@ -135,6 +186,7 @@ Fixpoint xdentry_agree (g : subst) (i : item) (en : xdentry) {struct en} : Prop 
                        In x (tyreqs Dh ++ res_reads Sg Dr) ->
                        In x (g_fixed Sg u)
                        /\ app_subst g' (TAbs x) = app_subst g (TAbs x)) /\
+            runtime_types P g' (cA PhiC) dc /\
             (fix all (dd : xdenv) : Prop :=
                match dd with
                | [] => True
@@ -147,7 +199,7 @@ Fixpoint xdentry_agree (g : subst) (i : item) (en : xdentry) {struct en} : Prop 
 
 (* The strong form: every entry of the environment agrees.  It holds of
    what a closure captures and of what a call or an application composes;
-   a running scope only needs the relaxed form (`xdenv_agree`, below). *)
+   a running scope only needs the relaxed form (`xdenv_values`, below). *)
 Definition xdenv_strong (g : subst) (A : list item) (d : xdenv) : Prop :=
   Forall (fun i => is_ty_item i = true \/
                    exists en, lookup_xdenv i d = Some en) A
@@ -264,10 +316,10 @@ Proof.
   destruct i1 as [t1|v1|f1|rt1 m1 th1|u1];
     destruct i2 as [t2|v2|f2|rt2 m2 th2|u2];
     try (simpl in Hit; discriminate);
-    [ destruct en; simpl in Hag; contradiction | | | | ].
+    [ destruct en; simpl in Hag |- *; try contradiction; exact I | | | | ].
   - (* val *)
     simpl in Hit. injection Hit as Hv. subst v2.
-    destruct en as [w| | | |]; simpl in Hag |- *; try contradiction.
+    destruct en as [w| | | | | |]; simpl in Hag |- *; try contradiction.
     destruct (g_val Sg v1) as [[Dv tauv]|] eqn:E; [|destruct Hag].
     simpl in Hdep. rewrite E in Hdep.
     destruct (wf_val_decl WF _ E) as [PhiDv [Wtv Hwf]].
@@ -294,7 +346,7 @@ Proof.
     assert (Hret' : app_subst g1 (fs_ret Sf) = app_subst g2 (fs_ret Sf)).
     { apply dentry_agree_retype_aux1. intros t Ht. apply Hdep.
       apply wf_ty_frees in Hrt. simpl in Hrt. apply Hcnv. apply Hrt. exact Ht. }
-    destruct en as [w|f' d'|hf sms dc|p|hs]; simpl in Hag |- *; rewrite ?E in Hag |- *;
+    destruct en as [w|f' d'|hf sms dc|p|hs|ty|p held]; simpl in Hag |- *; rewrite ?E in Hag |- *;
       try contradiction.
     + destruct b; [destruct Hag|].
       destruct (g_fn Sg f') as [[[D' S'] b']|] eqn:E'; [|destruct Hag].
@@ -307,6 +359,7 @@ Proof.
       split; [rewrite Hret; exact Hret' | exact Hrest].
     + destruct b; [destruct Hag|].
       rewrite <- Hpar', <- Hret'. exact Hag.
+    + destruct b; [destruct Hag|]. rewrite <- Hpar', <- Hret'. exact Hag.
   - (* method *)
     simpl in Hit. injection Hit as Hrt Hmm Hth. subst m2.
     destruct (g_mth Sg m1) as [[Dm Sm]|] eqn:E;
@@ -320,7 +373,7 @@ Proof.
                   = map (fun tau => app_subst g2 (app_subst (this_subst rt2) (app_subst th2 tau)))
                         (fs_params Sm)).
     { apply map_ext_in. intros tau Htau. apply Hm'. left; exact Htau. }
-    destruct en as [w|f' d'|hf sms dc|p|hs]; simpl in Hag |- *; rewrite ?E in Hag |- *;
+    destruct en as [w|f' d'|hf sms dc|p|hs|ty|p held]; simpl in Hag |- *; rewrite ?E in Hag |- *;
       try contradiction.
     + destruct (g_fn Sg f') as [[[D' S'] b']|] eqn:E'; [|destruct Hag].
       destruct b'; [destruct Hag|].
@@ -332,9 +385,10 @@ Proof.
       * rewrite Hpar, Hrt, Hpar'. reflexivity.
       * split; [|exact Hrest]. rewrite Hret. apply Hm'. right; reflexivity.
     + rewrite <- Hrt, <- Hpar', <- (Hm' (fs_ret Sm) (or_intror eq_refl)). exact Hag.
+    + rewrite <- Hrt, <- Hpar', <- (Hm' (fs_ret Sm) (or_intror eq_refl)). exact Hag.
   - (* functor: the grounding is read only at the fixed inputs *)
     simpl in Hit. injection Hit as Hu. subst u2.
-    destruct en as [| | hf sms dc | |]; simpl in Hag |- *; try contradiction.
+    destruct en as [| | hf sms dc | | | |]; simpl in Hag |- *; try contradiction.
     simpl in Hdep.
     destruct (g_fun Sg u1) as [[[Du Dr] [b|]]|]; try exact Hag.
     destruct (Fb hf) as [[[Dh Dc] pins]|]; try exact Hag.
@@ -345,6 +399,52 @@ Proof.
     split; [| exact H8].
     intros x Hx Hx'. destruct (Hfx x Hx Hx') as [Hin Heq].
     split; [exact Hin |]. rewrite Heq. apply Hdep. exact Hin.
+Qed.
+
+Lemma lookup_xdenv_app_some : forall i d dc en,
+ lookup_xdenv i dc = Some en -> lookup_xdenv i (dc ++ d) = Some en.
+Proof.
+ intros i d dc en; induction dc as [|[j e] dc IH]; simpl; [discriminate|].
+ destruct (item_eqb i j); auto.
+Qed.
+
+Lemma xdenv_strong_close : forall g A d dc,
+ xdenv_strong g A dc -> xdenv_strong g A (xclose d dc).
+Proof.
+ intros g A d dc [Hcov [Hall [Hreg Hdeps]]]; unfold xclose.
+ split.
+ - eapply Forall_impl; [|exact Hcov]; intros i [Hi|[en He]]; [left;exact Hi|].
+   right; exists en; apply lookup_xdenv_app_some; exact He.
+ - split.
+   + apply Forall_app; split; auto.
+     clear; induction d as [|[i en] d IH]; simpl; auto.
+     destruct i,en; simpl; auto; constructor; auto; exact I.
+   + split; auto; apply Forall_app; split; auto.
+     clear; induction d as [|[i en] d IH]; simpl; auto.
+     destruct i,en; simpl; auto; constructor; auto; unfold incl; intros x Hx; contradiction.
+Qed.
+
+Lemma lookup_xinst_prefix : forall i dt th dc,
+  is_ty_item i = false -> lookup_xdenv i (xinst dt th ++ dc) = lookup_xdenv i dc.
+Proof.
+  intros i dt th. induction th as [|[t tau] r IH]; intros dc Nt; [reflexivity|].
+  destruct i; simpl in *; try discriminate; apply IH; exact Nt.
+Qed.
+Lemma xdenv_strong_call : forall g A dt th dc,
+  xdenv_strong g A dc -> xdenv_strong g A (xcall_env P dt th dc).
+Proof.
+  intros g A dt th dc Hs. unfold xcall_env. destruct (xreify P); [|exact Hs].
+  destruct (xdenv_strong_close dt Hs) as [Cov [Hall [Reg Deps]]].
+  split.
+  - eapply Forall_impl; [|exact Cov]. intros i [Hi|[en He]]; [left;exact Hi|].
+    destruct (is_ty_item i) eqn:Nt; [left;reflexivity|right;exists en].
+    rewrite lookup_xinst_prefix by exact Nt. exact He.
+  - split.
+    + apply Forall_app; split; [|exact Hall]. clear.
+      induction th as [|[t tau] r IH]; simpl; constructor; auto; exact I.
+    + split; [exact Reg|]. apply Forall_app; split; [|exact Deps]. clear.
+      induction th as [|[t tau] r IH]; simpl; constructor; auto.
+      unfold incl; intros x Hx; contradiction.
 Qed.
 
 (* The callee's environment at a call (CoreMoss.callee_env_agree). *)
@@ -932,11 +1032,12 @@ Hypothesis WF : wf_gsig Sg.
       absorbs gc0 (cS PhiD0) ->
       map (app_subst gc0) (fs_params S0) = map (app_subst g0) (fs_params Sf0) ->
       app_subst gc0 (fs_ret S0) = app_subst g0 (fs_ret Sf0) ->
+      runtime_types P gc0 (cA PhiD0) dc0 ->
       xdenv_strong gc0 (cA PhiD0) dc0 ->
       xdentry_agree g0 (IFn f0) (XDClo f'0 dc0).
   Proof.
     intros g0 f0 Df0 Sf0 f'0 D0 S0 body0 PhiD0 gc0 dc0
-           Hf0 Hf'0 Hb0 Htc Hgr Hcov Habs Hp Hr Hda.
+           Hf0 Hf'0 Hb0 Htc Hgr Hcov Habs Hp Hr Htypes Hda.
     simpl. rewrite Hf0, Hf'0, Hb0. simpl.
     exists PhiD0, gc0.
     split; [exact Htc |].
@@ -948,6 +1049,7 @@ Hypothesis WF : wf_gsig Sg.
     destruct Hda as [Hc1 [Hc2 [Hreg Hkeys]]].
     split; [exact Hc1 |].
     split; [exact Hkeys |].
+    split; [exact Htypes |].
     revert Hc2. generalize dc0. intros dd.
     induction dd as [| p r IH]; intros Hall.
     - exact I.
@@ -967,7 +1069,7 @@ Hypothesis WF : wf_gsig Sg.
 
   (* The world a fn bind leaves: shared by the expression-level rule and a
      functor body's bind. *)
-  Lemma world_bindfn_s : forall Phi f Df Sf f' D' S' body sm d g,
+  Lemma world_bindfn_s : forall Phi f Df Sf f' D' S' body sm d dt g,
       g_fn Sg f = Some (Df, Sf, None) ->
       g_fn Sg f' = Some (D', S', None) -> xp_fn P f' = Some body ->
       sat0 Sg Phi Df ->
@@ -975,13 +1077,15 @@ Hypothesis WF : wf_gsig Sg.
       smap_ok Phi (id_app D') sm D' ->
       sig_eq (cS Phi) S' Sf ->
       ctx_grounded g Phi ->
+      runtime_types P g (cA Phi) dt ->
       xdenv_strong g (cA Phi) d ->
       exists dc, xcompose d sm = Some dc
       /\ ctx_grounded g (add_item (IFn f) Phi)
-      /\ xdenv_strong g (cA (add_item (IFn f) Phi)) ((IFn f, XDClo f' dc) :: d).
+      /\ xdenv_strong g (cA (add_item (IFn f) Phi)) ((IFn f, XDClo f' (xclose dt dc)) :: d).
   Proof.
-    intros Phi f Df Sf f' D' S' body sm d g
-           Hf Hf' Hb Hsf Hs' Hsm Hsig Hg Hd.
+    intros Phi f Df Sf f' D' S' body sm d dt g
+           Hf Hf' Hb Hsf Hs' Hsm Hsig Hg Htypes Hd.
+    pose proof Hs' as Hs0.
     pose proof WF as WF0. destruct WF0 as [Wtag Wval Wfn Wmth Wfun].
     destruct (Wfn f' D' S' None Hf') as [PhiD [Wt' [Wps' [Wrt' _]]]].
     pose proof (wf_tele_ctx Wt') as Htc.
@@ -1047,11 +1151,17 @@ Hypothesis WF : wf_gsig Sg.
       { pose proof Wrt' as Hw. apply wf_ty_frees in Hw. exact Hw. }
       rewrite Hgcr by exact Hfr.
       destruct Hsig as [_ Hsr]. rewrite Hsr. apply Habs. }
-    assert (Hnew : xdentry_agree g (IFn f) (XDClo f' dc)).
+    assert (Hfree : typefree dc) by (eapply smap_composed_typefree; [exact Hsm'|exact Hcomp]).
+    assert (Hcapture : runtime_types P (callee_grounding g Phi (id_app (cA PhiD)) (cA PhiD))
+      (cA PhiD) (xclose dt dc)).
+    { eapply runtime_types_capture; [exact Htypes|exact Hg|exact Hs0|exact Htc|].
+      intro t; apply typefree_lookup; exact Hfree. }
+    assert (Hnew : xdentry_agree g (IFn f) (XDClo f' (xclose dt dc))).
     { destruct Hcgc as [Hgr0 [Hab0 [Hcov0 _]]].
       eapply safety_case_bindfn_aux4;
         [ exact Hf | exact Hf' | exact Hb | exact Htc | exact Hgr0 | exact Hcov0
-        | exact Hab0 | exact Hpar | exact Hrt | exact Hdc ]. }
+        | exact Hab0 | exact Hpar | exact Hrt | exact Hcapture |].
+      apply xdenv_strong_close. exact Hdc. }
     assert (Hg' : ctx_grounded g (add_item (IFn f) Phi)).
     { destruct Hg as [Hgr [Hab [Hcv [Hsr Hth]]]].
       split; [exact Hgr |]. split; [exact Hab |].
@@ -1067,18 +1177,18 @@ Hypothesis WF : wf_gsig Sg.
       rewrite Forall_forall in Havf. apply Havf.
       apply (proj2 (tele_ctx_tyreqs Df Htcf u)). exact Hu. }
     assert (Hd' : xdenv_strong g (cA (add_item (IFn f) Phi))
-                             ((IFn f, XDClo f' dc) :: d)).
+                             ((IFn f, XDClo f' (xclose dt dc)) :: d)).
     { destruct Hd as [Hdcov [Hdentries [Hdreg Hdkeys]]].
       split.
       - simpl. constructor.
-        + right. exists (XDClo f' dc). simpl.
+        + right. exists (XDClo f' (xclose dt dc)). simpl.
           rewrite Nat.eqb_refl. reflexivity.
         + eapply Forall_impl; [| exact Hdcov].
           intros i [Hty | [en Hen]].
           * left; exact Hty.
           * right. simpl.
             destruct (item_eqb i (IFn f)) eqn:Hi.
-            -- exists (XDClo f' dc). reflexivity.
+            -- exists (XDClo f' (xclose dt dc)). reflexivity.
             -- exists en. exact Hen.
       - split.
         + constructor; [exact Hnew | exact Hdentries].
@@ -1172,11 +1282,12 @@ Hypothesis WF : wf_gsig Sg.
       app_subst gc0 (fs_ret S0)
         = app_subst g0
             (app_subst (this_subst rt) (app_subst th0 (fs_ret Sm0))) ->
+      runtime_types P gc0 (cA PhiD0) dc0 ->
       xdenv_strong gc0 (cA PhiD0) dc0 ->
       xdentry_agree g0 (IMth rt m0 th0) (XDClo f'0 dc0).
   Proof.
     intros g0 rt m0 th0 Dm0 Sm0 f'0 D0 S0 body0 PhiD0 gc0 dc0
-           Hm0 Hf'0 Hb0 Htc0 Hgr Hcov Hab Hp Hr Hda.
+           Hm0 Hf'0 Hb0 Htc0 Hgr Hcov Hab Hp Hr Htypes Hda.
     simpl. rewrite Hm0, Hf'0, Hb0. simpl.
     exists PhiD0, gc0.
     split; [exact Htc0 |].
@@ -1188,6 +1299,7 @@ Hypothesis WF : wf_gsig Sg.
     destruct Hda as [Hc1 [Hc2 [Hreg Hkeys]]].
     split; [exact Hc1 |].
     split; [exact Hkeys |].
+    split; [exact Htypes |].
     revert Hc2. generalize dc0. intros dd.
     induction dd as [| p r IH]; intros Hall.
     - exact I.
@@ -1238,7 +1350,7 @@ Hypothesis WF : wf_gsig Sg.
   Qed.
 
   Lemma world_bindmth_s : forall Phi tauk m Dm Sf th f' D' S' body sm
-                                     tau0' rest d g,
+                                     tau0' rest d dt g,
       g_mth Sg m = Some (Dm, Sf) ->
       wf_ty Sg Phi tauk ->
       msat th Dm Sf ->
@@ -1253,14 +1365,16 @@ Hypothesis WF : wf_gsig Sg.
       app_subst (cS Phi) (fs_ret S')
         = interp_m (cS Phi) th (app_subst (cS Phi) tauk) (fs_ret Sf) ->
       ctx_grounded g Phi ->
+      runtime_types P g (cA Phi) dt ->
       xdenv_strong g (cA Phi) d ->
       exists dc, xcompose d sm = Some dc
       /\ ctx_grounded g (add_item (IMth tauk m th) Phi)
       /\ xdenv_strong g (cA (add_item (IMth tauk m th) Phi))
-                    ((IMth tauk m th, XDClo f' dc) :: d).
+                    ((IMth tauk m th, XDClo f' (xclose dt dc)) :: d).
   Proof.
-    intros Phi tauk m Dm Sf th f' D' S' body sm tau0' rest d g
-           Hm Hwk Hsat Hthwf Hf' Hb Hs' Hsm Hpar0 Hteq Hprest Hpret Hg Hd.
+    intros Phi tauk m Dm Sf th f' D' S' body sm tau0' rest d dt g
+           Hm Hwk Hsat Hthwf Hf' Hb Hs' Hsm Hpar0 Hteq Hprest Hpret Hg Htypes Hd.
+    pose proof Hs' as Hs0.
     pose proof WF as WF0. destruct WF0 as [Wtag Wval Wfn Wmth Wfun].
     destruct (Wfn f' D' S' None Hf') as [PhiD' [Wt' [Wps' [Wrt' _]]]].
     pose proof (wf_tele_ctx Wt') as Htc'.
@@ -1318,11 +1432,17 @@ Hypothesis WF : wf_gsig Sg.
     { rewrite Hgcr by (exact (wf_ty_frees Wrt')).
       rewrite Hpret. unfold interp_m. rewrite Habs.
       apply safety_case_bindmth_auxN. apply Habs. }
-    assert (Hnew : xdentry_agree g (IMth tauk m th) (XDClo f' dc)).
+    assert (Hfree : typefree dc) by (eapply smap_composed_typefree; [exact Hsm2|exact Hcomp]).
+    assert (Hcapture : runtime_types P (callee_grounding g Phi (id_app (cA PhiD')) (cA PhiD'))
+      (cA PhiD') (xclose dt dc)).
+    { eapply runtime_types_capture; [exact Htypes|exact Hg|exact Hs0|exact Htc'|].
+      intro t; apply typefree_lookup; exact Hfree. }
+    assert (Hnew : xdentry_agree g (IMth tauk m th) (XDClo f' (xclose dt dc))).
     { destruct Hcgc as [Hgr0 [Hab0 [Hcov0 _]]].
       eapply safety_case_bindmth_aux3;
         [ exact Hm | exact Hf' | exact Hb | exact Htc' | exact Hgr0 | exact Hcov0
-        | exact Hab0 | exact Hpar | exact Hrt | exact Hdc ]. }
+        | exact Hab0 | exact Hpar | exact Hrt | exact Hcapture |].
+      apply xdenv_strong_close. exact Hdc. }
     assert (Hg' : ctx_grounded g (add_item (IMth tauk m th) Phi)).
     { destruct Hg as [Hgr [Hab Hcv]].
       split; [exact Hgr |]. split; [exact Hab | exact Hcv]. }
@@ -1335,11 +1455,11 @@ Hypothesis WF : wf_gsig Sg.
       - exact Hsat.
       - exact Hthwf. }
     assert (Hd' : xdenv_strong g (cA (add_item (IMth tauk m th) Phi))
-                             ((IMth tauk m th, XDClo f' dc) :: d)).
+                             ((IMth tauk m th, XDClo f' (xclose dt dc)) :: d)).
     { destruct Hd as [Hdcov [Hdentries [Hdreg Hdkeys]]].
       split.
       - simpl. constructor.
-        + right. exists (XDClo f' dc). apply safety_case_bindmth_aux4.
+        + right. exists (XDClo f' (xclose dt dc)). apply safety_case_bindmth_aux4.
         + eapply Forall_impl; [| exact Hdcov].
           intros i [Hty | [en Hen]].
           * left; exact Hty.
@@ -1444,7 +1564,7 @@ End XWorld.
    the entry a lookup of a non-type item in force finds agrees.  Entries the
    context does not reach (shadowed ones, or ones for items not in force,
    such as the platform's provisions main does not assume) are unconstrained. *)
-Definition xdenv_agree (g : subst) (A : list item) (d : xdenv) : Prop :=
+Definition xdenv_values (g : subst) (A : list item) (d : xdenv) : Prop :=
   Forall (fun i => is_ty_item i = true \/
                    exists en, lookup_xdenv i d = Some en) A
   /\ (forall i en, In i A -> is_ty_item i = false ->
@@ -1453,17 +1573,23 @@ Definition xdenv_agree (g : subst) (A : list item) (d : xdenv) : Prop :=
        incl (dep_tys Sg i ++ item_ty_frees i ++ method_item_frees Sg i)
             (tyreqs A)) A.
 
+(* Running scopes carry both value provisions and executable type meanings.
+   Strong capture/composition facts remain values-only because satisfaction
+   maps deliberately omit ITy entries. *)
+Definition xdenv_agree (g : subst) (A : list item) (d : xdenv) : Prop :=
+  xdenv_values g A d /\ runtime_types P g A d.
+
 Definition agree_on (A : list item) (d1 d2 : xdenv) : Prop :=
   forall i, In i A -> is_ty_item i = false -> lookup_xdenv i d1 = lookup_xdenv i d2.
 
-Lemma strong_agree : forall g A d, xdenv_strong g A d -> xdenv_agree g A d.
+Lemma strong_values : forall g A d, xdenv_strong g A d -> xdenv_values g A d.
 Proof.
   intros g A d [H1 [H2 [H3 _]]]. split; [exact H1 | split; [| exact H3]].
   intros i en _ _ Hl. rewrite Forall_forall in H2. exact (H2 _ (lookup_xdenv_in _ _ Hl)).
 Qed.
 
-Lemma agree_ext : forall g A d1 d2,
-  xdenv_agree g A d1 -> agree_on A d1 d2 -> xdenv_agree g A d2.
+Lemma values_ext : forall g A d1 d2,
+  xdenv_values g A d1 -> agree_on A d1 d2 -> xdenv_values g A d2.
 Proof.
   intros g A d1 d2 [H1 [H2 H3]] He. split; [| split; [| exact H3]].
   - rewrite Forall_forall in H1 |- *. intros i Hi.
@@ -1482,8 +1608,8 @@ Proof.
 Qed.
 
 (* A scope's environment, restricted to what its context reaches. *)
-Lemma agree_restrict : forall g A d,
-  xdenv_agree g A d -> exists dA, xdenv_strong g A dA /\ agree_on A dA d.
+Lemma values_restrict : forall g A d,
+  xdenv_values g A d -> exists dA, xdenv_strong g A dA /\ agree_on A dA d.
 Proof.
   intros g A d [H1 [H2 H3]].
   assert (Hdef : Forall (fun p => exists en, lookup_xdenv (snd p) d = Some en) (id_smap A)).
@@ -1524,77 +1650,152 @@ Proof.
   rewrite IH; [reflexivity | exact Hr | intros p Hp; apply Hreq; right; exact Hp].
 Qed.
 
-Lemma xcallee_env_agree : forall g Phi th sm D d PhiD,
+Lemma xcallee_env_values : forall g Phi th sm D d PhiD,
   wf_gsig Sg ->
   wf_tele Sg empty_ctx D PhiD ->
   sat Sg Phi th D ->
   Forall (fun p => wf_ty Sg Phi (snd p)) th ->
   smap_ok Phi th sm D ->
   ctx_grounded g Phi ->
-  xdenv_agree g (cA Phi) d ->
+  xdenv_values g (cA Phi) d ->
   exists d', xcompose d sm = Some d'
     /\ ctx_grounded (callee_grounding g Phi th (cA PhiD)) PhiD
     /\ xdenv_strong (callee_grounding g Phi th (cA PhiD)) (cA PhiD) d'.
 Proof.
   intros g Phi th sm D d PhiD WF Wt Hsat Hth Hsm Hcg Hd.
-  destruct (agree_restrict Hd) as [dA [HdA Hag]].
+  destruct (values_restrict Hd) as [dA [HdA Hag]].
   rewrite <- (xcompose_agree_on Hsm Hag).
   exact (xcallee_env_strong WF Wt Hsat Hth Hsm Hcg HdA).
+Qed.
+
+(* Executable type meanings travel with the relaxed running-scope invariant. *)
+Lemma strong_agree : forall g A d,
+  xdenv_strong g A d -> runtime_types P g A d -> xdenv_agree g A d.
+Proof. intros g A d Hs Ht. split; [apply strong_values; exact Hs|exact Ht]. Qed.
+Lemma agree_restrict : forall g A d,
+  xdenv_agree g A d -> exists dA, xdenv_strong g A dA /\ agree_on A dA d.
+Proof. intros g A d [Hv Ht]. apply values_restrict; exact Hv. Qed.
+Lemma agree_ext : forall g A d1 d2,
+  xdenv_agree g A d1 -> agree_on A d1 d2 -> runtime_types P g A d2 -> xdenv_agree g A d2.
+Proof. intros g A d1 d2 [Hv Ht] E T. split; [eapply values_ext; eauto|exact T]. Qed.
+Lemma xcallee_env_agree : forall g Phi th sm D d PhiD,
+  wf_gsig Sg -> wf_tele Sg empty_ctx D PhiD -> sat Sg Phi th D ->
+  Forall (fun p => wf_ty Sg Phi (snd p)) th -> smap_ok Phi th sm D ->
+  ctx_grounded g Phi -> xdenv_agree g (cA Phi) d ->
+  exists d', xcompose d sm = Some d'
+    /\ ctx_grounded (callee_grounding g Phi th (cA PhiD)) PhiD
+    /\ xdenv_strong (callee_grounding g Phi th (cA PhiD)) (cA PhiD) d'.
+Proof.
+  intros g Phi th sm D d PhiD Wg Wt Sat Wth Sm Cg [Hv Ht].
+  eapply xcallee_env_values; eauto.
+Qed.
+
+Lemma runtime_types_capture_incl : forall g gc A B dt dc,
+  runtime_types P g A dt -> incl (tyreqs B) (tyreqs A) ->
+  (forall t, In t (tyreqs B) -> app_subst gc (TAbs t) = app_subst g (TAbs t)) ->
+  typefree dc -> runtime_types P gc B (xclose dt dc).
+Proof.
+  intros g gc A B dt dc Rt Incl Eq Free Reify t Hi.
+  specialize (Rt Reify). assert (Ht : In t (tyreqs B)) by (apply call_type_item; exact Hi).
+  assert (Hin : In (ITy t) A) by (apply call_type_item; apply Incl; exact Ht).
+  destruct (@types_match_type_env g A dt Rt t Hin) as [tau [Hl E]]. exists tau. split.
+  - unfold xclose. rewrite lookup_xdenv_app_typefree by exact Free. exact Hl.
+  - rewrite E. symmetry. apply Eq; exact Ht.
+Qed.
+
+Lemma runtime_types_push_non_type : forall g A d i en,
+  runtime_types P g A d -> is_ty_item i = false ->
+  runtime_types P g (i::A) ((i,en)::d).
+Proof.
+  intros g A d i en Rt Nt Reify t Hi. specialize (Rt Reify).
+  destruct Hi as [Eq|Hi].
+  - subst i. discriminate Nt.
+  - destruct (Rt t Hi) as [tau [L E]]. exists tau. split; [|exact E].
+    destruct i; simpl in *; try discriminate; exact L.
+Qed.
+
+Lemma runtime_types_bind_ty : forall g Phi d t tau,
+  runtime_types P g (cA Phi) d -> ctx_grounded g Phi -> wf_ty Sg Phi tau ->
+  runtime_types P ((t,app_subst g (app_subst (cS Phi) tau))::g)
+    (ITy t::cA Phi) (xbind_ty P d t tau).
+Proof.
+  intros g Phi d t tau Rt [Gr [Abs [Cov Rest]]] Wtau Reify.
+  specialize (Rt Reify). unfold xbind_ty. rewrite Reify.
+  intros u Hu. destruct (Nat.eqb u t) eqn:Eut.
+  - apply Nat.eqb_eq in Eut. subst u.
+    exists (xground d tau). split; [simpl; rewrite Nat.eqb_refl; reflexivity|].
+    change (xground d tau = app_subst ((t,app_subst g (app_subst (cS Phi) tau))::g) (TAbs t)).
+    simpl. rewrite Nat.eqb_refl.
+    rewrite (@types_match_reads g (cA Phi) d tau Rt Cov (wf_ty_frees Wtau)).
+    symmetry. apply absorbs_all, Abs.
+  - assert (Hin : In (ITy u) (cA Phi)).
+    { destruct Hu as [Eq|Hi]; [injection Eq as Eq; subst; rewrite Nat.eqb_refl in Eut; discriminate|exact Hi]. }
+    destruct (Rt u Hin) as [a [L E]]. exists a. split; [simpl; rewrite Eut; exact L|].
+    change (a = app_subst ((t,app_subst g (app_subst (cS Phi) tau))::g) (TAbs u)).
+    simpl. rewrite Eut. exact E.
+Qed.
+
+Lemma xdenv_values_bind_ty : forall g A d t tau,
+  xdenv_values g A d -> xdenv_values g A (xbind_ty P d t tau).
+Proof.
+  intros g A d t tau V. eapply values_ext; [exact V|].
+  intros i Hi Nt. unfold xbind_ty. destruct (xreify P); [|reflexivity].
+  destruct i; simpl in *; try discriminate; reflexivity.
 Qed.
 
 Section XWorldR.
 Hypothesis WF : wf_gsig Sg.
 
-Lemma xdenv_agree_push : forall g A d i en,
-    xdenv_agree g A d ->
+Lemma xdenv_values_push : forall g A d i en,
+    xdenv_values g A d ->
     xdentry_agree g i en ->
     incl (dep_tys Sg i ++ item_ty_frees i ++ method_item_frees Sg i) (tyreqs A) ->
-    xdenv_agree g (i :: A) ((i, en) :: d).
+    xdenv_values g (i :: A) ((i, en) :: d).
 Proof.
   intros g A d i en Hd Hen Hi.
-  destruct (agree_restrict Hd) as [dA [HdA Hag]].
-  eapply agree_ext; [exact (strong_agree (xdenv_strong_push i en HdA Hen Hi)) |].
+  destruct (values_restrict Hd) as [dA [HdA Hag]].
+  eapply values_ext; [exact (strong_values (xdenv_strong_push i en HdA Hen Hi)) |].
   apply agree_on_cons. exact Hag.
 Qed.
 
-Lemma world_bindty : forall Phi t tau' d g,
+Lemma world_bindty_values : forall Phi t tau' d g,
     t <> this_sym ->
     ~ In (ITy t) (cA Phi) ->
     wf_ty Sg Phi tau' ->
     ctx_grounded g Phi ->
-    xdenv_agree g (cA Phi) d ->
+    xdenv_values g (cA Phi) d ->
     ctx_grounded ((t, app_subst g (app_subst (cS Phi) tau')) :: g) (bind_ty t tau' Phi)
-    /\ xdenv_agree ((t, app_subst g (app_subst (cS Phi) tau')) :: g)
+    /\ xdenv_values ((t, app_subst g (app_subst (cS Phi) tau')) :: g)
                    (cA (bind_ty t tau' Phi)) d
     /\ (forall u, In u (tyreqs (cA Phi)) ->
           lookup_subst u ((t, app_subst g (app_subst (cS Phi) tau')) :: g)
           = lookup_subst u g).
 Proof.
   intros Phi t tau' d g Hneq Hfresh Htau' Hg Hd.
-  destruct (agree_restrict Hd) as [dA [HdA Hag]].
+  destruct (values_restrict Hd) as [dA [HdA Hag]].
   destruct (world_bindty_s WF Hneq Hfresh Htau' Hg HdA) as [Hg2 [Hd2 Hl]].
   split; [exact Hg2 |]. split; [| exact Hl].
-  eapply agree_ext; [exact (strong_agree Hd2) |].
+  eapply values_ext; [exact (strong_values Hd2) |].
   intros j [E | Hj] Ht; [subst j; discriminate Ht | exact (Hag j Hj Ht)].
 Qed.
 
-Lemma world_bindval : forall Phi v Dv tauv w1 d g,
+Lemma world_bindval_values : forall Phi v Dv tauv w1 d g,
     g_val Sg v = Some (Dv, tauv) ->
     sat0 Sg Phi Dv ->
     xvt w1 (app_subst g tauv) ->
     ctx_grounded g Phi ->
-    xdenv_agree g (cA Phi) d ->
+    xdenv_values g (cA Phi) d ->
     ctx_grounded g (add_item (IVal v) Phi)
-    /\ xdenv_agree g (cA (add_item (IVal v) Phi)) ((IVal v, XDVal w1) :: d).
+    /\ xdenv_values g (cA (add_item (IVal v) Phi)) ((IVal v, XDVal w1) :: d).
 Proof.
   intros Phi v Dv tauv w1 d g Hgv Hsat S1 Hg Hd.
-  destruct (agree_restrict Hd) as [dA [HdA Hag]].
+  destruct (values_restrict Hd) as [dA [HdA Hag]].
   destruct (world_bindval_s v Hgv Hsat S1 Hg HdA) as [Hg' Hd'].
   split; [exact Hg' |].
-  eapply agree_ext; [exact (strong_agree Hd') |]. apply agree_on_cons. exact Hag.
+  eapply values_ext; [exact (strong_values Hd') |]. apply agree_on_cons. exact Hag.
 Qed.
 
-Lemma world_bindfn : forall Phi f Df Sf f' D' S' body sm d g,
+Lemma world_bindfn_values : forall Phi f Df Sf f' D' S' body sm d dt g,
     g_fn Sg f = Some (Df, Sf, None) ->
     g_fn Sg f' = Some (D', S', None) -> xp_fn P f' = Some body ->
     sat0 Sg Phi Df ->
@@ -1602,20 +1803,21 @@ Lemma world_bindfn : forall Phi f Df Sf f' D' S' body sm d g,
     smap_ok Phi (id_app D') sm D' ->
     sig_eq (cS Phi) S' Sf ->
     ctx_grounded g Phi ->
-    xdenv_agree g (cA Phi) d ->
+    runtime_types P g (cA Phi) dt ->
+    xdenv_values g (cA Phi) d ->
     exists dc, xcompose d sm = Some dc
     /\ ctx_grounded g (add_item (IFn f) Phi)
-    /\ xdenv_agree g (cA (add_item (IFn f) Phi)) ((IFn f, XDClo f' dc) :: d).
+    /\ xdenv_values g (cA (add_item (IFn f) Phi)) ((IFn f, XDClo f' (xclose dt dc)) :: d).
 Proof.
-  intros Phi f Df Sf f' D' S' body sm d g Hf Hf' Hb Hsf Hs' Hsm Hsig Hg Hd.
-  destruct (agree_restrict Hd) as [dA [HdA Hag]].
-  destruct (world_bindfn_s WF f f' Hf Hf' Hb Hsf Hs' Hsm Hsig Hg HdA) as [dc [Hc [Hg' Hd']]].
+  intros Phi f Df Sf f' D' S' body sm d dt g Hf Hf' Hb Hsf Hs' Hsm Hsig Hg Htypes Hd.
+  destruct (values_restrict Hd) as [dA [HdA Hag]].
+  destruct (world_bindfn_s WF f f' Hf Hf' Hb Hsf Hs' Hsm Hsig Hg Htypes HdA) as [dc [Hc [Hg' Hd']]].
   exists dc. split; [rewrite (xcompose_agree_on Hsm Hag) in Hc; exact Hc |].
   split; [exact Hg' |].
-  eapply agree_ext; [exact (strong_agree Hd') |]. apply agree_on_cons. exact Hag.
+  eapply values_ext; [exact (strong_values Hd') |]. apply agree_on_cons. exact Hag.
 Qed.
 
-Lemma world_bindmth : forall Phi tauk m Dm Sf th f' D' S' body sm tau0' rest d g,
+Lemma world_bindmth_values : forall Phi tauk m Dm Sf th f' D' S' body sm tau0' rest d dt g,
     g_mth Sg m = Some (Dm, Sf) ->
     wf_ty Sg Phi tauk ->
     msat th Dm Sf ->
@@ -1630,20 +1832,97 @@ Lemma world_bindmth : forall Phi tauk m Dm Sf th f' D' S' body sm tau0' rest d g
     app_subst (cS Phi) (fs_ret S')
       = interp_m (cS Phi) th (app_subst (cS Phi) tauk) (fs_ret Sf) ->
     ctx_grounded g Phi ->
-    xdenv_agree g (cA Phi) d ->
+    runtime_types P g (cA Phi) dt ->
+    xdenv_values g (cA Phi) d ->
     exists dc, xcompose d sm = Some dc
     /\ ctx_grounded g (add_item (IMth tauk m th) Phi)
-    /\ xdenv_agree g (cA (add_item (IMth tauk m th) Phi))
-                  ((IMth tauk m th, XDClo f' dc) :: d).
+    /\ xdenv_values g (cA (add_item (IMth tauk m th) Phi))
+                  ((IMth tauk m th, XDClo f' (xclose dt dc)) :: d).
 Proof.
-  intros Phi tauk m Dm Sf th f' D' S' body sm tau0' rest d g
-         Hm Hwk Hsat Hthwf Hf' Hb Hs' Hsm Hpar0 Hteq Hprest Hpret Hg Hd.
-  destruct (agree_restrict Hd) as [dA [HdA Hag]].
-  destruct (world_bindmth_s WF m f' Hm Hwk Hsat Hthwf Hf' Hb Hs' Hsm Hpar0 Hteq Hprest Hpret Hg HdA)
+  intros Phi tauk m Dm Sf th f' D' S' body sm tau0' rest d dt g
+         Hm Hwk Hsat Hthwf Hf' Hb Hs' Hsm Hpar0 Hteq Hprest Hpret Hg Htypes Hd.
+  destruct (values_restrict Hd) as [dA [HdA Hag]].
+  destruct (world_bindmth_s WF m f' Hm Hwk Hsat Hthwf Hf' Hb Hs' Hsm Hpar0 Hteq Hprest Hpret Hg Htypes HdA)
     as [dc [Hc [Hg' Hd']]].
   exists dc. split; [rewrite (xcompose_agree_on Hsm Hag) in Hc; exact Hc |].
   split; [exact Hg' |].
-  eapply agree_ext; [exact (strong_agree Hd') |]. apply agree_on_cons. exact Hag.
+  eapply values_ext; [exact (strong_values Hd') |]. apply agree_on_cons. exact Hag.
+Qed.
+
+Lemma xdenv_agree_push : forall g A d i en,
+  xdenv_agree g A d -> is_ty_item i = false -> xdentry_agree g i en ->
+  incl (dep_tys Sg i ++ item_ty_frees i ++ method_item_frees Sg i) (tyreqs A) ->
+  xdenv_agree g (i::A) ((i,en)::d).
+Proof.
+  intros g A d i en [V T] Nt Hen Hi. split.
+  - eapply xdenv_values_push; eauto.
+  - eapply runtime_types_push_non_type; eauto.
+Qed.
+
+Lemma world_bindty : forall Phi t tau' d g,
+  t <> this_sym -> ~ In (ITy t) (cA Phi) -> wf_ty Sg Phi tau' ->
+  ctx_grounded g Phi -> xdenv_agree g (cA Phi) d ->
+  ctx_grounded ((t,app_subst g (app_subst (cS Phi) tau'))::g) (bind_ty t tau' Phi)
+  /\ xdenv_agree ((t,app_subst g (app_subst (cS Phi) tau'))::g)
+       (cA (bind_ty t tau' Phi)) (xbind_ty P d t tau')
+  /\ (forall u, In u (tyreqs (cA Phi)) ->
+    lookup_subst u ((t,app_subst g (app_subst (cS Phi) tau'))::g) = lookup_subst u g).
+Proof.
+  intros Phi t tau' d g Hneq Fresh Wtau Cg [V T].
+  destruct (world_bindty_values Hneq Fresh Wtau Cg V) as [Cg' [V' Lookup]].
+  split; [exact Cg'|]. split; [|exact Lookup]. split.
+  - apply xdenv_values_bind_ty; exact V'.
+  - apply runtime_types_bind_ty; assumption.
+Qed.
+
+Lemma world_bindval : forall Phi v Dv tauv w1 d g,
+  g_val Sg v = Some (Dv,tauv) -> sat0 Sg Phi Dv ->
+  xvt w1 (app_subst g tauv) -> ctx_grounded g Phi -> xdenv_agree g (cA Phi) d ->
+  ctx_grounded g (add_item (IVal v) Phi) /\
+  xdenv_agree g (cA (add_item (IVal v) Phi)) ((IVal v,XDVal w1)::d).
+Proof.
+  intros Phi v Dv tauv w1 d g Hv Sat Hw Cg [V T].
+  assert (W : ctx_grounded g (add_item (IVal v) Phi) /\
+    xdenv_values g (cA (add_item (IVal v) Phi)) ((IVal v,XDVal w1)::d)).
+  { eapply world_bindval_values; eauto. }
+  destruct W as [Cg' V']. split; [exact Cg'|]. split; [exact V'|].
+  eapply runtime_types_push_non_type; [exact T|reflexivity].
+Qed.
+
+Lemma world_bindfn : forall Phi f Df Sf f' D' S' body sm d g,
+  g_fn Sg f = Some (Df,Sf,None) ->
+  g_fn Sg f' = Some (D',S',None) -> xp_fn P f' = Some body ->
+  sat0 Sg Phi Df -> sat0 Sg Phi D' -> smap_ok Phi (id_app D') sm D' ->
+  sig_eq (cS Phi) S' Sf -> ctx_grounded g Phi -> xdenv_agree g (cA Phi) d ->
+  exists dc, xcompose d sm = Some dc /\ ctx_grounded g (add_item (IFn f) Phi) /\
+    xdenv_agree g (cA (add_item (IFn f) Phi)) ((IFn f,XDClo f' (xclose d dc))::d).
+Proof.
+  intros Phi f Df Sf f' D' S' body sm d g Hf Hf' Hb Sat Sat' Sm Sig Cg [V T].
+  assert (W : exists dc, xcompose d sm = Some dc /\ ctx_grounded g (add_item (IFn f) Phi) /\
+    xdenv_values g (cA (add_item (IFn f) Phi)) ((IFn f,XDClo f' (xclose d dc))::d)).
+  { eapply world_bindfn_values; eauto. }
+  destruct W as [dc [E [Cg' V']]]. exists dc. split; [exact E|]. split; [exact Cg'|].
+  split; [exact V'|]. eapply runtime_types_push_non_type; [exact T|reflexivity].
+Qed.
+
+Lemma world_bindmth : forall Phi tauk m Dm Sf th f' D' S' body sm tau0' rest d g,
+  g_mth Sg m = Some (Dm,Sf) -> wf_ty Sg Phi tauk -> msat th Dm Sf ->
+  Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+  g_fn Sg f' = Some (D',S',None) -> xp_fn P f' = Some body -> sat0 Sg Phi D' ->
+  smap_ok Phi (id_app D') sm D' -> fs_params S' = tau0'::rest -> ty_eq (cS Phi) tau0' tauk ->
+  map (app_subst (cS Phi)) rest = map (interp_m (cS Phi) th (app_subst (cS Phi) tauk)) (fs_params Sf) ->
+  app_subst (cS Phi) (fs_ret S') = interp_m (cS Phi) th (app_subst (cS Phi) tauk) (fs_ret Sf) ->
+  ctx_grounded g Phi -> xdenv_agree g (cA Phi) d ->
+  exists dc, xcompose d sm = Some dc /\ ctx_grounded g (add_item (IMth tauk m th) Phi) /\
+    xdenv_agree g (cA (add_item (IMth tauk m th) Phi)) ((IMth tauk m th,XDClo f' (xclose d dc))::d).
+Proof.
+  intros Phi tauk m Dm Sf th f' D' S' body sm tau0' rest d g
+    Hm Wk Ms Wth Hf' Hb Sat Sm Par Teq Prest Pret Cg [V T].
+  assert (W : exists dc, xcompose d sm = Some dc /\ ctx_grounded g (add_item (IMth tauk m th) Phi) /\
+    xdenv_values g (cA (add_item (IMth tauk m th) Phi)) ((IMth tauk m th,XDClo f' (xclose d dc))::d)).
+  { eapply world_bindmth_values; eauto. }
+  destruct W as [dc [E [Cg' V']]]. exists dc. split; [exact E|]. split; [exact Cg'|].
+  split; [exact V'|]. eapply runtime_types_push_non_type; [exact T|reflexivity].
 Qed.
 
 End XWorldR.
@@ -1652,11 +1931,11 @@ End XEnv.
 
 (* ===================== Growing the store typing =========================== *)
 
-Lemma xvt_mono : forall Sg Rp H H', sext H H' ->
-  forall w t, xvt Sg Rp H w t -> xvt Sg Rp H' w t.
+Lemma xvt_mono : forall Sg Rp P H H', sext H H' ->
+  forall w t, xvt Sg Rp P H w t -> xvt Sg Rp P H' w t.
 Proof.
-  intros Sg Rp H H' Hext. fix IH 3. intros w t D.
-  destruct D as [ | | | | | | | fts fs Hr1 Hr0 Hk HF | | ].
+  intros Sg Rp P H H' Hext. fix IH 3. intros w t D.
+  destruct D as [ | | | | | | | fts fs Hr1 Hr0 Hk HF | | | | | | | ].
   - constructor.
   - eapply XvTag; eauto.
   - eapply XvInj; eauto.
@@ -1669,8 +1948,13 @@ Proof.
     destruct F as [|x y l1' l2' Hxy F']; constructor.
     + apply IH. exact Hxy.
     + apply go. exact F'.
-  - eapply XvRef; [eassumption | apply Hext; eassumption].
-  - eapply XvArr; [eassumption | apply Hext; eassumption].
+  - eapply XvRef; try eassumption; apply Hext; eassumption.
+  - eapply XvArr; try eassumption; apply Hext; eassumption.
+  - eapply XvHandle; [eassumption | apply Hext; eassumption].
+  - eapply XvLegacyHandle; [eassumption | apply Hext; eassumption].
+  - eapply XvRefAt; try eassumption; apply Hext; eassumption.
+  - eapply XvArrAt; try eassumption; apply Hext; eassumption.
+  - eapply XvReboundRef; eauto.
 Qed.
 
 Lemma xdentry_agree_mono : forall Sg Rp P Fb H H', sext H H' ->
@@ -1684,31 +1968,41 @@ Proof.
        match dd with [] => True | p :: r => xdentry_agree Sg Rp P Fb H' g (fst p) (snd p) /\ all r end) dd).
   { intros g. fix go 1. intros [|[i en] r] A; [exact I |].
     destruct A as [A1 A2]. split; [apply IH; exact A1 | apply go; exact A2]. }
-  intros en g i A. destruct en as [w|f' d'|h sms dc|p|hs]; destruct i; simpl in A |- *; try exact A.
-  - destruct (g_val Sg v) as [[? ?]|]; [exact (@xvt_mono Sg Rp H H' Hext _ _ A) | exact A].
+  intros en g i A. destruct en as [w|f' d'|h sms dc|p|hs|ty|p held]; destruct i; simpl in A |- *; try exact A.
+  - destruct (g_val Sg v) as [[? ?]|]; [exact (@xvt_mono Sg Rp P H H' Hext _ _ A) | exact A].
   - destruct (g_fn Sg f) as [[[? ?] [?|]]|]; try exact A.
     destruct (g_fn Sg f') as [[[? ?] [?|]]|]; try exact A.
     destruct (xp_fn P f'); try exact A.
     destruct A as [PhiD' [g' [A1 [A2 [A3 [A4 [A5 [A6 [A7 [A8 A9]]]]]]]]]].
-    exists PhiD', g'. repeat (split; [assumption |]). apply Hall. exact A9.
+    destruct A9 as [A9 A10].
+    exists PhiD', g'. repeat (split; [assumption |]). apply Hall. exact A10.
   - destruct (g_mth Sg m) as [[? ?]|]; try exact A.
     destruct (g_fn Sg f') as [[[? ?] [?|]]|]; try exact A.
     destruct (xp_fn P f'); try exact A.
     destruct A as [PhiD' [g' [A1 [A2 [A3 [A4 [A5 [A6 [A7 [A8 A9]]]]]]]]]].
-    exists PhiD', g'. repeat (split; [assumption |]). apply Hall. exact A9.
+    destruct A9 as [A9 A10].
+    exists PhiD', g'. repeat (split; [assumption |]). apply Hall. exact A10.
   - destruct (g_fun Sg u) as [[[? ?] [?|]]|]; try exact A.
     destruct (Fb h) as [[[? ?] ?]|]; try exact A.
     destruct (xp_fun P h) as [[? ?]|]; try exact A.
     destruct A as [E1 [Hch [PhiC [g' [A1 [A2 [A3 [A4 [A5 [A6 [A7 [A8 A9]]]]]]]]]]]].
+    destruct A9 as [A9 A10].
     split; [exact E1 |]. split; [exact Hch |]. exists PhiC, g'.
-    repeat (split; [assumption |]). apply Hall. exact A9.
+    repeat (split; [assumption |]). apply Hall. exact A10.
+Qed.
+
+Lemma xdenv_values_mono : forall Sg Rp P Fb H H' g A d, sext H H' ->
+  xdenv_values Sg Rp P Fb H g A d -> xdenv_values Sg Rp P Fb H' g A d.
+Proof.
+  intros Sg Rp P Fb H H' g A d Hext [H1 [H2 H3]]. split; [exact H1 | split; [| exact H3]].
+  intros i en Hi Ht Hl. exact (@xdentry_agree_mono Sg Rp P Fb H H' Hext _ _ _ (H2 i en Hi Ht Hl)).
 Qed.
 
 Lemma xdenv_agree_mono : forall Sg Rp P Fb H H' g A d, sext H H' ->
   xdenv_agree Sg Rp P Fb H g A d -> xdenv_agree Sg Rp P Fb H' g A d.
 Proof.
-  intros Sg Rp P Fb H H' g A d Hext [H1 [H2 H3]]. split; [exact H1 | split; [| exact H3]].
-  intros i en Hi Ht Hl. exact (@xdentry_agree_mono Sg Rp P Fb H H' Hext _ _ _ (H2 i en Hi Ht Hl)).
+  intros Sg Rp P Fb H H' g A d Ext [V T]. split; [|exact T].
+  eapply xdenv_values_mono; eauto.
 Qed.
 
 Lemma xdenv_strong_mono : forall Sg Rp P Fb H H' g A d, sext H H' ->
@@ -1719,13 +2013,13 @@ Proof.
   eapply Forall_impl; [| exact H2]. intros [i en] Hp. exact (@xdentry_agree_mono Sg Rp P Fb H H' Hext _ _ _ Hp).
 Qed.
 
-Lemma venv_ok_mono : forall Sg Rp H H' g A G ge, sext H H' ->
-  venv_ok Sg Rp H g A G ge -> venv_ok Sg Rp H' g A G ge.
+Lemma venv_ok_mono : forall Sg Rp P H H' g A G ge, sext H H' ->
+  venv_ok Sg Rp P H g A G ge -> venv_ok Sg Rp P H' g A G ge.
 Proof.
-  intros Sg Rp H H' g A G ge Hext [H1 H2]. split; [| exact H2]. clear H2.
+  intros Sg Rp P H H' g A G ge Hext [H1 H2]. split; [| exact H2]. clear H2.
   induction H1 as [|p q G ge [Hk Hw] Hr IH]; [constructor |].
   constructor; [| exact IH].
-  split; [exact Hk | exact (@xvt_mono Sg Rp H H' Hext _ _ Hw)].
+  split; [exact Hk | exact (@xvt_mono Sg Rp P H H' Hext _ _ Hw)].
 Qed.
 
 Lemma sext_refl : forall H, sext H H.

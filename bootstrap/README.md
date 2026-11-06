@@ -17,6 +17,9 @@ src/main.moss --(theories/Parse.v: lexer, parser, module loader)--> bundle
               --> S1, the compiler; S1 compiling src/ must give S1 again
 ```
 
+The [verification status](STATUS.md) describes the proved components and
+remaining source soundness and runtime typing obligations for this milestone.
+
 It takes about 20 minutes and 3 GB, so everyday work reuses a compiler
 built before ([`CONTRIBUTING.md`](../CONTRIBUTING.md)). The same program,
 `moss_m2`, is the *oracle* of the test suite
@@ -172,9 +175,10 @@ Every engine is proved to compute exactly what Audit's interpreter
 out of fuel (`FastPath.fast_run`):
 
 - `fold`, the default: the program pre-resolved, its calls to small fns
-  folded, and compiled to closures, run by `CloX.crun_main`
-  (`CloX.engine_agrees`). It bootstraps the compiler about 1.7 times as
-  fast as `ref`.
+  folded when eligible, and compiled to closures, run by `CloX.crun_main`
+  (`CloX.engine_agrees`). Programs with checked GC casts retain runtime
+  type environments, so `FoldX.guard_fold_e` preserves their original
+  compiled bodies. Closure compilation and read-set pruning still apply.
   - [`SlotX.v`](theories/SlotX.v) resolves each lookup in the
     environment to a position before the run, wherever the environment's
     keys are known, as they are at most program points (a fn body starts in
@@ -227,7 +231,9 @@ decision), and the obligations, as module types (Part VI):
   file; and `LOADER`: a bundle the loader loads is `Audit.Loader.Bundled`,
   every module a readable file deriving its AST, each once, closed under
   its imports and the prelude. That the dump reads back as the AST it
-  was made from is not proved yet (`FrontEnd.v`, `bundle_todo`).
+  was made from is proved in `DumpRoundTrip.v`; the loader checks the
+  dump's name restrictions at the serialization boundary, and `Bundled`
+  requires the module's AST to equal the parsed one.
 - **The family fast path** (`Audit.v` DRAFT NOTE 24) is proved, and is
   not the elaborator's: the elaborator applies a family exactly by rule 7
   as drafted. Applying the platform's memory family at every memory
@@ -256,7 +262,7 @@ table. For the `fold`, `clo` and `slot` engines, `SlotX.rprog_of`'s
 lookup of a compiled body (`nlook` over `SlotX.compile_fns` and
 `compile_funs`) is an array indexed by symbol, its first entry for a
 symbol winning, as `nlook`'s does; for `fold`, the static bodies FoldX
-may unfold (`tb`) and the folded program (`R'`) are arrays of the same;
+may unfold (`tb`) and the guarded folded program (`R'`) are arrays of the same;
 and the closure tables `tbl` and `ftbl` are arrays of closures that read
 the very arrays they are stored in (the knot `CloX.tbl_ok` describes).
 These are the hypotheses of `CloX.engine_agrees`, and no theorem checks
@@ -271,7 +277,5 @@ them; the agreement check of the test suite lists each program it affects
 
 - more than one linear memory (D79): MossX has one, so a program that
   binds `Memory` and uses memory is unsupported;
-- a `Ref` or `Array` rebuilt from a bare handle outside the library (D75,
-  D81), which is a checked cast natively;
 - a program with no `main`, or whose `main` assumes more than the
   platform's root context.

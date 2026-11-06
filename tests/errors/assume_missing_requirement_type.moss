@@ -1,0 +1,5 @@
+type T;
+assume T { fn f(); }
+# T is a requirement even though f's signature does not mention it.
+assume f { fn g() {} }
+fn main() {}

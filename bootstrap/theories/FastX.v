@@ -126,13 +126,15 @@ Inductive fentry : Type :=
 | FFun    : usym -> list smap -> fenv -> fentry
 | FPrim   : prim -> fentry
 | FFunSym : usym -> fentry
+| FType : ty -> fentry
+| FPrimAt : prim -> ty -> fentry
 (* one trie per item kind: types, vals, fns, functors; methods by symbol,
    each a bucket of (receiver type, θ, entry), the most recent first *)
 with fenv : Type :=
 | FEnv : tmap fentry -> tmap fentry -> tmap fentry -> tmap fentry
-         -> tmap (list (ty * subst * fentry)) -> fenv.
+         -> tmap (list (ty * subst * fentry)) -> subst -> fenv.
 
-Definition fempty : fenv := FEnv TE TE TE TE TE.
+Definition fempty : fenv := FEnv TE TE TE TE TE [].
 
 Fixpoint bfind (r : ty) (th : subst) (b : list (ty * subst * fentry)) : option fentry :=
   match b with
@@ -142,7 +144,7 @@ Fixpoint bfind (r : ty) (th : subst) (b : list (ty * subst * fentry)) : option f
 
 Definition flookup (i : item) (d : fenv) : option fentry :=
   match d with
-  | FEnv mt mv mf mu mm =>
+  | FEnv mt mv mf mu mm meta =>
       match i with
       | ITy t => tget mt t
       | IVal v => tget mv v
@@ -154,22 +156,22 @@ Definition flookup (i : item) (d : fenv) : option fentry :=
 
 Definition fadd (i : item) (en : fentry) (d : fenv) : fenv :=
   match d with
-  | FEnv mt mv mf mu mm =>
+  | FEnv mt mv mf mu mm meta =>
       match i with
-      | ITy t => FEnv (tset mt t en) mv mf mu mm
-      | IVal v => FEnv mt (tset mv v en) mf mu mm
-      | IFn f => FEnv mt mv (tset mf f en) mu mm
-      | IFun u => FEnv mt mv mf (tset mu u en) mm
+      | ITy t => FEnv (tset mt t en) mv mf mu mm (match en with FType tau => (t,tau)::meta | _ => meta end)
+      | IVal v => FEnv mt (tset mv v en) mf mu mm meta
+      | IFn f => FEnv mt mv (tset mf f en) mu mm meta
+      | IFun u => FEnv mt mv mf (tset mu u en) mm meta
       | IMth r m th =>
           FEnv mt mv mf mu
-               (tset mm m ((r, th, en) :: match tget mm m with Some b => b | None => [] end))
+               (tset mm m ((r, th, en) :: match tget mm m with Some b => b | None => [] end)) meta
       end
   end.
 
 Lemma flookup_fadd : forall i i' en d,
   flookup i (fadd i' en d) = if item_eqb i i' then Some en else flookup i d.
 Proof.
-  intros i i' en [mt mv mf mu mm].
+  intros i i' en [mt mv mf mu mm meta].
   destruct i, i'; simpl; rewrite ?tget_tset; auto.
   destruct (Nat.eqb m m0) eqn:E; simpl.
   - apply Nat.eqb_eq in E; subst. rewrite andb_true_r. simpl.
@@ -213,10 +215,15 @@ Fixpoint conv_entry (en : xdentry) : fentry :=
                      match l with [] => fempty | (i, e) :: r => fadd i (conv_entry e) (go r) end) d)
   | XDPrim p => FPrim p
   | XDFunSym h => FFunSym h
+  | XDType tau => FType tau
+  | XDPrimAt p tau => FPrimAt p tau
   end.
 
 Fixpoint conv_env (l : list (item * xdentry)) : fenv :=
   match l with [] => fempty | (i, e) :: r => fadd i (conv_entry e) (conv_env r) end.
+
+Definition ftypes (d : fenv) : subst := match d with FEnv _ _ _ _ _ meta => meta end.
+Definition fground (d : fenv) (tau : ty) : ty := app_subst (ftypes d) tau.
 
 (* ===================== 3. Representation ================================= *)
 
@@ -229,10 +236,13 @@ Inductive erel : fentry -> xdentry -> Prop :=
 | RFun : forall h sms fe d, envrel fe d -> erel (FFun h sms fe) (XDFun h sms d)
 | RPrim : forall p, erel (FPrim p) (XDPrim p)
 | RFunSym : forall h, erel (FFunSym h) (XDFunSym h)
+| RType : forall tau, erel (FType tau) (XDType tau)
+| RPrimAt : forall p tau, erel (FPrimAt p tau) (XDPrimAt p tau)
 with envrel : fenv -> xdenv -> Prop :=
 | ERel : forall fe d,
     (forall i, flookup i fe = None -> lookup_xdenv i d = None) ->
     (forall i a, flookup i fe = Some a -> exists b, lookup_xdenv i d = Some b /\ erel a b) ->
+    ftypes fe = xdtypes d ->
     envrel fe d.
 
 Definition orel (a : option fentry) (b : option xdentry) : Prop :=
@@ -244,28 +254,31 @@ Definition orel (a : option fentry) (b : option xdentry) : Prop :=
 
 Lemma envrel_lookup : forall fe d i, envrel fe d -> orel (flookup i fe) (lookup_xdenv i d).
 Proof.
-  intros fe d i H. inversion H as [? ? Hn Hs]; subst. unfold orel.
+  intros fe d i H. inversion H as [? ? Hn Hs Ht]; subst. unfold orel.
   destruct (flookup i fe) as [a|] eqn:E.
   - destruct (Hs i a E) as [b [-> Hb]]. exact Hb.
   - rewrite (Hn i E). exact I.
 Qed.
 
-Lemma envrel_intro : forall fe d, (forall i, orel (flookup i fe) (lookup_xdenv i d)) -> envrel fe d.
+Lemma envrel_intro : forall fe d, ftypes fe = xdtypes d -> (forall i, orel (flookup i fe) (lookup_xdenv i d)) -> envrel fe d.
 Proof.
-  intros fe d H. constructor.
+  intros fe d Ht H. constructor.
   - intros i E. specialize (H i). rewrite E in H. unfold orel in H.
     destruct (lookup_xdenv i d); [contradiction|auto].
   - intros i a E. specialize (H i). rewrite E in H. unfold orel in H.
     destruct (lookup_xdenv i d) as [b|]; [eauto|contradiction].
+  - exact Ht.
 Qed.
 
 Lemma envrel_empty : envrel fempty [].
-Proof. apply envrel_intro. intros []; simpl; auto. Qed.
+Proof. apply envrel_intro; [reflexivity|]. intros []; simpl; auto. Qed.
 
 Lemma envrel_add : forall fe d i a b,
   erel a b -> envrel fe d -> envrel (fadd i a fe) ((i, b) :: d).
 Proof.
-  intros fe d i a b Hab H. apply envrel_intro. intro j.
+  intros fe d i a b Hab H. apply envrel_intro.
+  - inversion H as [? ? Hn Hs Ht]. destruct fe, i; inversion Hab; subst; simpl in *; congruence.
+  - intro j.
   rewrite flookup_fadd. simpl. destruct (item_eqb j i); simpl; auto.
   apply envrel_lookup, H.
 Qed.
@@ -311,7 +324,7 @@ Qed.
 
 Lemma conv_rel : forall en, erel (conv_entry en) en.
 Proof.
-  fix IH 1. intros [w|f d|h sms d|p|h]; simpl; constructor.
+  fix IH 1. intros [w|f d|h sms d|p|h|tau|p tau]; simpl; constructor.
   all: induction d as [|[i e] r IHd]; [apply envrel_empty|].
   all: apply envrel_add; [apply IH|exact IHd].
 Qed.
@@ -320,6 +333,167 @@ Lemma conv_env_rel : forall d, envrel (conv_env d) d.
 Proof.
   induction d as [|[i e] r IH]; simpl; [apply envrel_empty|].
   apply envrel_add; [apply conv_rel|exact IH].
+Qed.
+
+(* A separate type stream keeps the semantics of xdtypes even when an
+   ill-shaped ITy entry shadows a later XDType in the ordinary lookup map. *)
+Definition ftype_pairs (meta : subst) : xdenv :=
+  map (fun p => (ITy (fst p), XDType (snd p))) meta.
+Definition ftype_env (fe : fenv) : fenv := conv_env (ftype_pairs (ftypes fe)).
+
+Fixpoint toverlay {A} (a b : tmap A) : tmap A :=
+  match a, b with
+  | TE, _ => b
+  | _, TE => a
+  | TN al av ar, TN bl bv br => TN (toverlay al bl)
+       (match av with Some v => Some v | None => bv end) (toverlay ar br)
+  end.
+Lemma tget_toverlay : forall A (a b : tmap A) k,
+  tget (toverlay a b) k = match tget a k with Some x => Some x | None => tget b k end.
+Proof.
+  intros A a. induction a as [|al IL av ar IR]; intros b k; [reflexivity|].
+  destruct b as [|bl bv br]; cbn [toverlay tget].
+  - destruct (Nat.eqb k 0); [destruct av|destruct (tleft k); destruct (tget al (tdown k)); destruct (tget ar (tdown k))]; reflexivity.
+  - destruct (Nat.eqb k 0); [destruct av; reflexivity|].
+    destruct (tleft k); [apply IL|apply IR].
+Qed.
+Definition fattach_types (fe dc : fenv) : fenv :=
+  match dc, ftype_env fe with
+  | FEnv mt mv mf mu mm meta, FEnv type_map _ _ _ _ _ =>
+      FEnv (toverlay mt type_map) mv mf mu mm (meta ++ ftypes fe)
+  end.
+Definition fbind_ty (P : xprog) (fe : fenv) (t : tsym) (tau : ty) : fenv :=
+  if xreify P then fadd (ITy t) (FType (fground fe tau)) fe else fe.
+Definition finst (fe : fenv) (th : subst) : list (item * fentry) :=
+  map (fun p => (ITy (fst p), FType (fground fe (snd p)))) th.
+Definition fcall_env (P : xprog) (fe : fenv) (th : subst) (dc : fenv) : fenv :=
+  if xreify P then fapp (finst fe th) (fattach_types fe dc) else dc.
+Definition fapply_env (P : xprog) (fe : fenv) (h : usym) (th : subst) (dc : fenv) : fenv :=
+  fcall_env P fe (filter (fun p => existsb (Nat.eqb (fst p)) (xp_inputs P h)) th) dc.
+
+Definition fresult_types (Dr : tele) (fe : fenv) : list (item * fentry) :=
+  map (fun p => (ITy (fst p), FType (snd p)))
+    (filter (fun p => existsb (item_eqb (ITy (fst p))) Dr) (ftypes fe)).
+Definition fresult_env (P : xprog) (fe : fenv) (Dr : tele) (dr : list (item * fentry)) : list (item * fentry) :=
+  if xreify P then dr ++ fresult_types Dr fe else dr.
+
+Definition fprim_entry (fe : fenv) (i : item) (p : prim) : fentry :=
+  match p, i with
+  | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => FPrimAt p (fground fe tau)
+  | _, _ => FPrim p
+  end.
+Definition fcast (P : xprog) (fe : fenv) (n : nsym) (th : subst) (v : xvalue) : xout :=
+  xcast P (ftype_pairs (ftypes fe)) n th v.
+
+Lemma xdtypes_pairs : forall meta, xdtypes (ftype_pairs meta) = meta.
+Proof. induction meta as [|[t tau] r IH]; simpl; congruence. Qed.
+Lemma xtype_env_pairs : forall d, xtype_env d = ftype_pairs (xdtypes d).
+Proof.
+  induction d as [|[i en] r IH]; [reflexivity|].
+  destruct i; destruct en; cbn [xtype_env xdtypes ftype_pairs]; try exact IH; rewrite IH; reflexivity.
+Qed.
+Lemma envrel_types : forall fe d, envrel fe d -> ftypes fe = xdtypes d.
+Proof. intros fe d H. inversion H; assumption. Qed.
+Lemma fground_rel : forall fe d, envrel fe d -> forall tau, fground fe tau = xground d tau.
+Proof. intros fe d H tau. unfold fground, xground. rewrite (envrel_types H). reflexivity. Qed.
+Lemma ftype_env_rel : forall fe d, envrel fe d -> envrel (ftype_env fe) (xtype_env d).
+Proof.
+  intros fe d H. unfold ftype_env. rewrite xtype_env_pairs, <- (envrel_types H). apply conv_env_rel.
+Qed.
+Lemma flookup_type_env_other : forall fe i,
+  (match i with ITy _ => False | _ => True end) -> flookup i (ftype_env fe) = None.
+Proof.
+  intros fe i Hi. unfold ftype_env, ftype_pairs. generalize (ftypes fe). intro meta.
+  induction meta as [|[t tau] r IH]; [destruct i; simpl; auto|].
+  change (flookup i (fadd (ITy t) (FType tau) (conv_env (ftype_pairs r))) = None).
+  rewrite flookup_fadd. destruct i; simpl in *; auto; contradiction.
+Qed.
+Lemma flookup_attach : forall fe dc i,
+  flookup i (fattach_types fe dc) =
+    match flookup i dc with Some a => Some a | None => flookup i (ftype_env fe) end.
+Proof.
+  intros fe [mt mv mf mu mm meta] i.
+  pose proof (flookup_type_env_other fe i) as Ot.
+  unfold fattach_types. destruct (ftype_env fe) as [type_map tv tf tu tm ts].
+  destruct i; cbn [flookup] in *; rewrite ?tget_toverlay; auto;
+    rewrite Ot by exact I; repeat match goal with |- context [tget ?m ?k] => destruct (tget m k) | |- context [bfind ?r ?th ?b] => destruct (bfind r th b) end; reflexivity.
+Qed.
+Lemma lookup_xdenv_app : forall a b i,
+  lookup_xdenv i (a ++ b) = match lookup_xdenv i a with Some x => Some x | None => lookup_xdenv i b end.
+Proof.
+  induction a as [|[j en] a IH]; intros b i; simpl; [reflexivity|].
+  destruct (item_eqb i j); [reflexivity|apply IH].
+Qed.
+Lemma xdtypes_app : forall a b, xdtypes (a ++ b) = xdtypes a ++ xdtypes b.
+Proof.
+  induction a as [|[i en] a IH]; intros b; simpl; [reflexivity|].
+  destruct i; destruct en; cbn [xdtypes]; rewrite IH; reflexivity.
+Qed.
+Lemma fattach_types_rel : forall fe d fc dc, envrel fe d -> envrel fc dc ->
+  envrel (fattach_types fe fc) (xclose d dc).
+Proof.
+  intros fe d fc dc H Hc. apply envrel_intro.
+  - unfold xclose. rewrite xdtypes_app, xtype_env_pairs, xdtypes_pairs.
+    pose proof (envrel_types Hc) as Mt.
+    unfold fattach_types. destruct fc; destruct (ftype_env fe); simpl.
+    cbn [ftypes] in Mt. rewrite Mt, (envrel_types H). reflexivity.
+  - intro i. rewrite flookup_attach. unfold xclose. rewrite lookup_xdenv_app.
+    pose proof (envrel_lookup i Hc) as Q. unfold orel in Q.
+    destruct (flookup i fc), (lookup_xdenv i dc); try contradiction; auto.
+    apply envrel_lookup, ftype_env_rel, H.
+Qed.
+Lemma fbind_ty_rel : forall P fe d t tau, envrel fe d ->
+  envrel (fbind_ty P fe t tau) (xbind_ty P d t tau).
+Proof.
+  intros P fe d t tau H. unfold fbind_ty, xbind_ty. destruct (xreify P); auto.
+  rewrite (fground_rel H). apply envrel_add; [constructor|exact H].
+Qed.
+Lemma finst_rel : forall fe d th, envrel fe d -> lrel (finst fe th) (xinst d th).
+Proof.
+  intros fe d th H. induction th as [|[t tau] r IH]; [constructor|].
+  constructor; [simpl; split; [reflexivity|rewrite (fground_rel H); constructor]|exact IH].
+Qed.
+Lemma fcall_env_rel : forall P fe d th fc dc, envrel fe d -> envrel fc dc ->
+  envrel (fcall_env P fe th fc) (xcall_env P d th dc).
+Proof.
+  intros P fe d th fc dc H Hc. unfold fcall_env, xcall_env. destruct (xreify P); auto.
+  apply envrel_app; [apply finst_rel; exact H|apply fattach_types_rel; assumption].
+Qed.
+Lemma fapply_env_rel : forall P fe d h th fc dc, envrel fe d -> envrel fc dc ->
+  envrel (fapply_env P fe h th fc) (xapply_env P d h th dc).
+Proof. intros; unfold fapply_env, xapply_env; apply fcall_env_rel; assumption. Qed.
+Lemma fprim_entry_rel : forall fe d i p, envrel fe d -> erel (fprim_entry fe i p) (xprim_entry d i p).
+Proof.
+  intros fe d i p H. destruct p; destruct i; cbn [fprim_entry xprim_entry];
+    try constructor; rewrite (fground_rel H); constructor.
+Qed.
+Lemma fcast_rel : forall P fe d n th v, envrel fe d -> fcast P fe n th v = xcast P d n th v.
+Proof.
+  intros P fe d n th v H. unfold fcast, xcast, xground.
+  rewrite xdtypes_pairs, (envrel_types H). reflexivity.
+Qed.
+
+Lemma xresult_pairs : forall Dr meta,
+  filter (fun p => existsb (item_eqb (fst p)) Dr) (ftype_pairs meta) =
+    ftype_pairs (filter (fun p => existsb (item_eqb (ITy (fst p))) Dr) meta).
+Proof.
+  intros Dr meta. induction meta as [|[t tau] r IH]; [reflexivity|].
+  cbn [ftype_pairs xtype_env filter fst snd]. destruct (existsb (item_eqb (ITy t)) Dr) eqn:E; simpl; rewrite IH; rewrite ?E; reflexivity.
+Qed.
+Lemma fresult_types_rel : forall Dr fe d, envrel fe d -> lrel (fresult_types Dr fe) (xresult_types Dr d).
+Proof.
+  intros Dr fe d H. unfold xresult_types. rewrite xtype_env_pairs, <- (envrel_types H).
+  rewrite xresult_pairs. unfold fresult_types, ftype_pairs.
+  generalize (filter (fun p => existsb (item_eqb (ITy (fst p))) Dr) (ftypes fe)). intro meta.
+  induction meta as [|[t tau] r IH]; constructor; [simpl; split; [reflexivity|constructor]|exact IH].
+Qed.
+Lemma lrel_app : forall a b c d, lrel a b -> lrel c d -> lrel (a ++ c) (b ++ d).
+Proof. intros a b c d H Hc. induction H; simpl; auto. constructor; auto. Qed.
+Lemma fresult_env_rel : forall P Dr fe d dr dr', envrel fe d -> lrel dr dr' ->
+  lrel (fresult_env P fe Dr dr) (xresult_env P d Dr dr').
+Proof.
+  intros P Dr fe d dr dr' H Hd. unfold fresult_env, xresult_env. destruct (xreify P); auto.
+  apply lrel_app; auto. apply fresult_types_rel; exact H.
 Qed.
 
 (* ===================== 4. The interpreter ================================ *)
@@ -346,7 +520,7 @@ Fixpoint fxinterp (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate)
                  end
       | XTag n th e1 =>
           match fxinterp k P d g st e1 with
-          | XR (XOk w) g1 st1 => XR (XOk (XVTag n w)) g1 st1
+          | XR (XOk w) g1 st1 => XR (fcast P d n th w) g1 st1
           | r => r
           end
       | XCallD f th sm args =>
@@ -355,7 +529,7 @@ Fixpoint fxinterp (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate)
               match fxinterp_list k P d g st args with
               | inl (ws, g1, st1) =>
                   match fcompose d sm with
-                  | Some d' => ret_call g1 (fxinterp k P (fapp d' fempty) (mk_xvenv ws) st1 body)
+                  | Some d' => ret_call g1 (fxinterp k P (fcall_env P d th (fapp d' fempty)) (mk_xvenv ws) st1 body)
                   | None => XR (XErr e_compose) g1 st1
                   end
               | inr r => r
@@ -376,7 +550,13 @@ Fixpoint fxinterp (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate)
           | Some (FPrim p) =>
               match fxinterp_list k P d g st args with
               | inl (ws, g1, st1) =>
-                  let (o, st2) := run_prim P p ws st1 in XR o g1 st2
+                  let (o, st2) := run_prim_at P p None ws st1 in XR o g1 st2
+              | inr r => r
+              end
+          | Some (FPrimAt p tau) =>
+              match fxinterp_list k P d g st args with
+              | inl (ws, g1, st1) =>
+                  let (o, st2) := run_prim_at P p (Some tau) ws st1 in XR o g1 st2
               | inr r => r
               end
           | _ => XR (XErr e_entry) g st
@@ -402,7 +582,17 @@ Fixpoint fxinterp (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate)
               | XR (XOk w0) g0 st0 =>
                   match fxinterp_list k P d g0 st0 args with
                   | inl (ws, g1, st1) =>
-                      let (o, st2) := run_prim P p (w0 :: ws) st1 in XR o g1 st2
+                      let (o, st2) := run_prim_at P p None (w0 :: ws) st1 in XR o g1 st2
+                  | inr r => r
+                  end
+              | r => r
+              end
+          | Some (FPrimAt p tau) =>
+              match fxinterp k P d g st e0 with
+              | XR (XOk w0) g0 st0 =>
+                  match fxinterp_list k P d g0 st0 args with
+                  | inl (ws, g1, st1) =>
+                      let (o, st2) := run_prim_at P p (Some tau) (w0 :: ws) st1 in XR o g1 st2
                   | inr r => r
                   end
               | r => r
@@ -424,7 +614,7 @@ Fixpoint fxinterp (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate)
           | XR (XOk w1) g1 st1 => pop1 (fxinterp k P d ((x, w1) :: g1) st1 e2)
           | r => r
           end
-      | XBindTy _ _ e1 => fxinterp k P d g st e1
+      | XBindTy t tau e1 => fxinterp k P (fbind_ty P d t tau) g st e1
       | XBindVal v e1 e2 =>
           match fxinterp k P d g st e1 with
           | XR (XOk w1) g1 st1 => fxinterp k P (fadd (IVal v) (FVal w1) d) g1 st1 e2
@@ -432,17 +622,17 @@ Fixpoint fxinterp (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate)
           end
       | XBindFn f f' sm e1 =>
           match fcompose d sm with
-          | Some dc => fxinterp k P (fadd (IFn f) (FClo f' (fapp dc fempty)) d) g st e1
+          | Some dc => fxinterp k P (fadd (IFn f) (FClo f' (fattach_types d (fapp dc fempty))) d) g st e1
           | None => XR (XErr e_compose) g st
           end
       | XBindMth tauk m th f' sm e1 =>
           match fcompose d sm with
-          | Some dc => fxinterp k P (fadd (IMth tauk m th) (FClo f' (fapp dc fempty)) d) g st e1
+          | Some dc => fxinterp k P (fadd (IMth tauk m th) (FClo f' (fattach_types d (fapp dc fempty))) d) g st e1
           | None => XR (XErr e_compose) g st
           end
       | XBindFun u h sm smc e1 =>
           match fcompose d smc with
-          | Some dc => fxinterp k P (fadd (IFun u) (FFun h [sm] (fapp dc fempty)) d) g st e1
+          | Some dc => fxinterp k P (fadd (IFun u) (FFun h [sm] (fattach_types d (fapp dc fempty))) d) g st e1
           | None => XR (XErr e_compose) g st
           end
       | XBindFunA u u' sm e1 =>
@@ -455,6 +645,11 @@ Fixpoint fxinterp (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate)
           match fxinterp_apply k P d u th sm st with
           | inl (dr, st1) => fxinterp k P (fapp dr d) g st1 e1
           | inr r => with_g g r
+          end
+      | XApplyR u inputs outputs e1 =>
+          match fxinterp_apply_r k P d u inputs outputs st with
+          | inl (dr, st1) => fxinterp k P (fapp dr d) g st1 e1
+          | inr rr => with_g g rr
           end
       | XSeq e1 e2 =>
           match fxinterp k P d g st e1 with
@@ -542,7 +737,9 @@ Fixpoint fxinterp (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate)
           | inl (dr, g1, st1) => fxinterp k P (fapp dr d) g1 st1 e1
           | inr r => r
           end
-      | XBindPrim i p e1 => fxinterp k P (fadd i (FPrim p) d) g st e1
+      | XBindPrim i p e1 => fxinterp k P (fadd i (fprim_entry d i p) d) g st e1
+      | XConst _ initializer => match k with O => XR XFuel g st
+          | S _ => fxinterp k P d g st initializer end
       end
   end
 with fxinterp_list (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate)
@@ -570,7 +767,7 @@ with fxinterp_binds (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate
   | S k =>
       match bs with
       | [] => inl (d, g, st)
-      | XBTy _ _ :: r => fxinterp_binds k P d g st r
+      | XBTy t tau :: r => fxinterp_binds k P (fbind_ty P d t tau) g st r
       | XBVal v e1 :: r =>
           match fxinterp k P d g st e1 with
           | XR (XOk w1) g1 st1 => fxinterp_binds k P (fadd (IVal v) (FVal w1) d) g1 st1 r
@@ -578,18 +775,18 @@ with fxinterp_binds (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate
           end
       | XBFn f f' sm :: r =>
           match fcompose d sm with
-          | Some dc => fxinterp_binds k P (fadd (IFn f) (FClo f' (fapp dc fempty)) d) g st r
+          | Some dc => fxinterp_binds k P (fadd (IFn f) (FClo f' (fattach_types d (fapp dc fempty))) d) g st r
           | None => inr (XR (XErr e_compose) g st)
           end
       | XBMth tauk m th f' sm :: r =>
           match fcompose d sm with
           | Some dc =>
-              fxinterp_binds k P (fadd (IMth tauk m th) (FClo f' (fapp dc fempty)) d) g st r
+              fxinterp_binds k P (fadd (IMth tauk m th) (FClo f' (fattach_types d (fapp dc fempty))) d) g st r
           | None => inr (XR (XErr e_compose) g st)
           end
       | XBFun u h sm smc :: r =>
           match fcompose d smc with
-          | Some dc => fxinterp_binds k P (fadd (IFun u) (FFun h [sm] (fapp dc fempty)) d) g st r
+          | Some dc => fxinterp_binds k P (fadd (IFun u) (FFun h [sm] (fattach_types d (fapp dc fempty))) d) g st r
           | None => inr (XR (XErr e_compose) g st)
           end
       | XBFunA u u' sm :: r =>
@@ -600,6 +797,11 @@ with fxinterp_binds (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate
           end
       | XBApply u th sm :: r =>
           match fxinterp_apply k P d u th sm st with
+          | inl (dr, st1) => fxinterp_binds k P (fapp dr d) g st1 r
+          | inr rr => inr (with_g g rr)
+          end
+      | XBApplyR u inputs outputs :: r =>
+          match fxinterp_apply_r k P d u inputs outputs st with
           | inl (dr, st1) => fxinterp_binds k P (fapp dr d) g st1 r
           | inr rr => inr (with_g g rr)
           end
@@ -614,7 +816,7 @@ with fxinterp_binds (fuel : nat) (P : xprog) (d : fenv) (g : xvenv) (st : mstate
           | inl (dr, g1, st1) => fxinterp_binds k P (fapp dr d) g1 st1 r
           | inr rr => inr rr
           end
-      | XBPrim i p :: r => fxinterp_binds k P (fadd i (FPrim p) d) g st r
+      | XBPrim i p :: r => fxinterp_binds k P (fadd i (fprim_entry d i p) d) g st r
       end
   end
 with fxinterp_apply (fuel : nat) (P : xprog) (d : fenv) (u : usym) (th : subst)
@@ -630,10 +832,43 @@ with fxinterp_apply (fuel : nat) (P : xprog) (d : fenv) (u : usym) (th : subst)
               | Some d1 =>
                   match fchain d1 sms with
                   | Some d2 =>
-                      match fxinterp_binds k P (fapp d2 dc) [] st bs with
+                      match fxinterp_binds k P (fapply_env P d h th (fapp d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
                           match fcompose d3 (inst_smap th Dr) with
-                          | Some dr => inl (dr, st3)
+                          | Some dr => inl (fresult_env P d3 Dr dr, st3)
+                          | None => inr (XR (XErr e_compose) [] st3)
+                          end
+                      | inr rr => inr rr
+                      end
+                  | None => inr (XR (XErr e_chain) [] st)
+                  end
+              | None => inr (XR (XErr e_compose) [] st)
+              end
+          | None => inr (XR (XErr e_nobody) [] st)
+          end
+      | _ => inr (XR (XErr e_fun) [] st)
+      end
+  end
+with fxinterp_apply_r (fuel : nat) (P : xprog) (d : fenv) (u : usym) (inputs outputs : smap) (st : mstate) {struct fuel} : (list (item * fentry) * mstate) + xres :=
+  match fuel with
+  | 0 => inr (XR XFuel [] st)
+  | S k =>
+      match flookup (IFun u) d with
+      | Some (FFun h sms dc) =>
+          match xp_fun P h with
+          | Some (_, bs) =>
+              match fcompose d inputs with
+              | Some d1 =>
+                  match fchain d1 sms with
+                  | Some d2 =>
+                      match fxinterp_binds k P (fapp d2 dc) [] st bs with
+                      | inl (d3, _, st3) =>
+                          match fcompose d3 (xp_exports P h) with
+                          | Some named =>
+                              match fcompose (fapp named fempty) outputs with
+                              | Some dr => inl (dr, st3)
+                              | None => inr (XR (XErr e_compose) [] st3)
+                              end
                           | None => inr (XR (XErr e_compose) [] st3)
                           end
                       | inr rr => inr rr
@@ -710,7 +945,9 @@ Definition AGREE (k : nat) : Prop :=
   /\ (forall P fe d u th sm st, envrel fe d ->
         arel (fxinterp_apply k P fe u th sm st) (xinterp_apply k P d u th sm st))
   /\ (forall P fe d g st u brs, envrel fe d ->
-        rrel (fxinterp_branch k P fe g st u brs) (xinterp_branch k P d g st u brs)).
+        rrel (fxinterp_branch k P fe g st u brs) (xinterp_branch k P d g st u brs))
+  /\ (forall P fe d u inputs outputs st, envrel fe d ->
+        arel (fxinterp_apply_r k P fe u inputs outputs st) (xinterp_apply_r k P d u inputs outputs st)).
 
 (* Case on a lookup in related environments. *)
 Ltac lk H i :=
@@ -728,20 +965,25 @@ Ltac dfn := match goal with |- context [xp_fn ?P ?x] => destruct (xp_fn P x) end
 
 Lemma agree_step : forall k, AGREE k -> AGREE (S k).
 Proof.
-  intros k [IHe [IHl [IHb [IHa IHr]]]].
-  split; [|split; [|split; [|split]]].
+  intros k [IHe [IHl [IHb [IHa [IHr IHar]]]]].
+  split; [|split; [|split; [|split; [|split]]]].
   - intros P fe d g st e H. destruct e; simpl.
     all: try (erewrite ?(IHe P fe d) by exact H; reflexivity).
     + (* XVl *) lk H (IVal v); auto.
+    + (* XTag *)
+      rewrite (IHe P fe d) by exact H.
+      destruct (xinterp k P d g st e) as [[v| | | | | | |] gg ss]; auto.
+      rewrite (fcast_rel P n s v H). reflexivity.
     + (* XCallD *)
       destruct (xp_fn P f); auto. rewrite (IHl P fe d) by exact H.
       destruct (xinterp_list k P d g st l) as [[[ws g1] st1]|]; auto.
-      cp H s0; auto. f_equal. apply IHe, envrel_of_lrel; auto.
+      cp H s0; auto. f_equal. apply IHe, fcall_env_rel; [exact H|apply envrel_of_lrel; auto].
     + (* XCallA *)
       lk H (IFn f); auto.
       * dfn; auto. rewrite (IHl P fe d) by exact H.
         destruct (xinterp_list k P d g st l) as [[[ws g1] st1]|]; auto.
         f_equal. apply IHe; auto.
+      * rewrite (IHl P fe d) by exact H. reflexivity.
       * rewrite (IHl P fe d) by exact H. reflexivity.
     + (* XMeth *)
       lk H i; auto.
@@ -750,6 +992,9 @@ Proof.
         rewrite (IHl P fe d) by exact H.
         destruct (xinterp_list k P d g0 st0 l) as [[[ws g1] st1]|]; auto.
         f_equal. apply IHe; auto.
+      * rewrite (IHe P fe d) by exact H.
+        destruct (xinterp k P d g st e) as [[w0| | | | | | |] g0 st0]; auto; try (apply IHe; assumption).
+        rewrite (IHl P fe d) by exact H. reflexivity.
       * rewrite (IHe P fe d) by exact H.
         destruct (xinterp k P d g st e) as [[w0| | | | | | |] g0 st0]; auto; try (apply IHe; assumption).
         rewrite (IHl P fe d) by exact H. reflexivity.
@@ -762,22 +1007,30 @@ Proof.
       rewrite (IHe P fe d) by exact H.
       destruct (xinterp k P d g st e1) as [[w0| | | | | | |] g0 st0]; auto; try (apply IHe; assumption).
       rewrite (IHe P fe d) by exact H. reflexivity.
+    + (* XBindTy *) apply IHe, fbind_ty_rel, H.
     + (* XBindVal *)
       rewrite (IHe P fe d) by exact H.
       destruct (xinterp k P d g st e1) as [[w0| | | | | | |] g0 st0]; auto; try (apply IHe; assumption).
       apply IHe, envrel_add; auto. constructor.
     + (* XBindFn *)
-      cp H s; auto. apply IHe, envrel_add; auto. constructor. apply envrel_of_lrel; auto.
+      cp H s; auto. apply IHe, envrel_add; auto. constructor. apply fattach_types_rel; [exact H|apply envrel_of_lrel; auto].
     + (* XBindMth *)
-      cp H s0; auto. apply IHe, envrel_add; auto. constructor. apply envrel_of_lrel; auto.
+      cp H s0; auto. apply IHe, envrel_add; auto. constructor. apply fattach_types_rel; [exact H|apply envrel_of_lrel; auto].
     + (* XBindFun *)
-      cp H s0; auto. apply IHe, envrel_add; auto. constructor. apply envrel_of_lrel; auto.
+      cp H s0; auto. apply IHe, envrel_add; auto. constructor. apply fattach_types_rel; [exact H|apply envrel_of_lrel; auto].
     + (* XBindFunA *)
       lk H (IFun u0); auto. apply IHe, envrel_add; auto. constructor; auto.
     + (* XApply *)
       pose proof (IHa P fe d u s s0 st H) as Ha.
       destruct (fxinterp_apply k P fe u s s0 st) as [[dr st1]|r1],
                (xinterp_apply k P d u s s0 st) as [[dr' st1']|r1']; simpl in Ha;
+        try contradiction.
+      * destruct Ha as [Hdr ->]. apply IHe, envrel_app; auto.
+      * subst; reflexivity.
+    + (* XApplyR *)
+      pose proof (IHar P fe d u s s0 st H) as Ha.
+      destruct (fxinterp_apply_r k P fe u s s0 st) as [[dr st1]|r1],
+               (xinterp_apply_r k P d u s s0 st) as [[dr' st1']|r1']; simpl in Ha;
         try contradiction.
       * destruct Ha as [Hdr ->]. apply IHe, envrel_app; auto.
       * subst; reflexivity.
@@ -816,24 +1069,30 @@ Proof.
         try contradiction.
       * destruct Hr as [Hdr [-> ->]]. apply IHe, envrel_app; auto.
       * subst; reflexivity.
-    + (* XBindPrim *) apply IHe, envrel_add; auto. constructor.
+    + (* XBindPrim *) apply IHe, envrel_add; [apply fprim_entry_rel|]; exact H.
   - intros P fe d g st l H. destruct l as [|e r]; simpl; auto.
     rewrite (IHe P fe d) by exact H.
     destruct (xinterp k P d g st e) as [[w0| | | | | | |] g0 st0]; auto; try (apply IHe; assumption).
     rewrite (IHl P fe d) by exact H. reflexivity.
   - intros P fe d g st bs H. destruct bs as [|b r]; simpl; [auto|].
     destruct b; simpl.
-    + apply IHb; auto.
+    + apply IHb, fbind_ty_rel, H.
     + rewrite (IHe P fe d) by exact H.
       destruct (xinterp k P d g st x) as [[w0| | | | | | |] g0 st0]; simpl; auto.
       apply IHb, envrel_add; auto. constructor.
-    + cp H s; simpl; auto. apply IHb, envrel_add; auto. constructor. apply envrel_of_lrel; auto.
-    + cp H s0; simpl; auto. apply IHb, envrel_add; auto. constructor. apply envrel_of_lrel; auto.
-    + cp H s0; simpl; auto. apply IHb, envrel_add; auto. constructor. apply envrel_of_lrel; auto.
+    + cp H s; simpl; auto. apply IHb, envrel_add; auto. constructor. apply fattach_types_rel; [exact H|apply envrel_of_lrel; auto].
+    + cp H s0; simpl; auto. apply IHb, envrel_add; auto. constructor. apply fattach_types_rel; [exact H|apply envrel_of_lrel; auto].
+    + cp H s0; simpl; auto. apply IHb, envrel_add; auto. constructor. apply fattach_types_rel; [exact H|apply envrel_of_lrel; auto].
     + lk H (IFun u0); simpl; auto. apply IHb, envrel_add; auto. constructor; auto.
     + pose proof (IHa P fe d u s s0 st H) as Ha.
       destruct (fxinterp_apply k P fe u s s0 st) as [[dr st1]|r1],
                (xinterp_apply k P d u s s0 st) as [[dr' st1']|r1']; simpl in Ha;
+        try contradiction.
+      * destruct Ha as [Hdr ->]. apply IHb, envrel_app; auto.
+      * subst; reflexivity.
+    + pose proof (IHar P fe d u s s0 st H) as Ha.
+      destruct (fxinterp_apply_r k P fe u s s0 st) as [[dr st1]|r1],
+               (xinterp_apply_r k P d u s s0 st) as [[dr' st1']|r1']; simpl in Ha;
         try contradiction.
       * destruct Ha as [Hdr ->]. apply IHb, envrel_app; auto.
       * subst; reflexivity.
@@ -847,7 +1106,7 @@ Proof.
         try contradiction.
       * destruct Hr as [Hdr [-> ->]]. apply IHb, envrel_app; auto.
       * subst; reflexivity.
-    + apply IHb, envrel_add; auto. constructor.
+    + apply IHb, envrel_add; [apply fprim_entry_rel|]; exact H.
   - intros P fe d u th sm st H. simpl.
     lk H (IFun u); simpl; auto.
     match goal with |- context [xp_fun ?P ?x] => destruct (xp_fun P x) as [[Dr bs]|] end;
@@ -860,14 +1119,14 @@ Proof.
         try contradiction; simpl; auto
     end.
     match goal with
-    | Hd : envrel ?fe0 ?d0 |- context [fxinterp_binds k P (fapp l1 ?fe0) [] st bs] =>
-        pose proof (IHb P (fapp l1 fe0) (l2 ++ d0) [] st bs (envrel_app Hch Hd)) as Hb;
-        destruct (fxinterp_binds k P (fapp l1 fe0) [] st bs) as [[[d3 g3] st3]|r3],
-                 (xinterp_binds k P (l2 ++ d0) [] st bs) as [[[d3' g3'] st3']|r3'];
+    | Hd : envrel ?fe0 ?d0 |- context [fxinterp_binds k P (fapply_env P fe h th (fapp l1 ?fe0)) [] st bs] =>
+        pose proof (IHb P (fapply_env P fe h th (fapp l1 fe0)) (xapply_env P d h th (l2 ++ d0)) [] st bs (fapply_env_rel P h th H (envrel_app Hch Hd))) as Hb;
+        destruct (fxinterp_binds k P (fapply_env P fe h th (fapp l1 fe0)) [] st bs) as [[[d3 g3] st3]|r3],
+                 (xinterp_binds k P (xapply_env P d h th (l2 ++ d0)) [] st bs) as [[[d3' g3'] st3']|r3'];
         simpl in Hb; try contradiction; auto
     end.
     destruct Hb as [Hd3 [-> ->]].
-    cp Hd3 (inst_smap th Dr); simpl; auto.
+    cp Hd3 (inst_smap th Dr); simpl; auto. split; [apply fresult_env_rel; assumption|reflexivity].
   - intros P fe d g st u brs H. simpl.
     lk H (IFun u); simpl; auto.
     match goal with |- context [find_branch ?h brs] =>
@@ -878,6 +1137,23 @@ Proof.
       try contradiction; auto.
     destruct Hb as [Hd3 [-> ->]].
     cp Hd3 pairs; simpl; auto.
+  - intros P fe d u inputs outputs st H. simpl.
+    lk H (IFun u); simpl; auto.
+    match goal with |- context[xp_fun ?P ?h] => destruct(xp_fun P h)as[[Dr bs]|]end; simpl;auto.
+    cp H inputs; simpl;auto.
+    match goal with Hc:lrel ?a ?b |-context[fchain ?a ?sms] =>
+      pose proof(fchain_rel sms Hc)as Hch; unfold crel in Hch;
+      destruct(fchain a sms)as[l1|],(xrun_chain b sms)as[l2|]; try contradiction;simpl;auto end.
+    match goal with Hd:envrel ?fe0 ?d0 |-context[fxinterp_binds k P (fapp l1 ?fe0) [] st bs] =>
+      pose proof(IHb P (fapp l1 fe0)(l2++d0) [] st bs (envrel_app Hch Hd))as Hb;
+      destruct(fxinterp_binds k P (fapp l1 fe0) [] st bs)as[[[d3 g3]st3]|r3],
+      (xinterp_binds k P (l2++d0) [] st bs)as[[[d3' g3']st3']|r3'];simpl in Hb;try contradiction;auto end.
+    destruct Hb as[Hd3[-> ->]].
+    cp Hd3 (xp_exports P h); simpl;auto.
+    match goal with |-context[fcompose(fapp ?named fempty) outputs] =>
+      match goal with Hn:lrel named ?named' |- _ => cp (envrel_of_lrel Hn) outputs end end;
+      simpl;auto.
+
 Qed.
 
 Theorem fxinterp_agrees : forall fuel P fe d g st e,

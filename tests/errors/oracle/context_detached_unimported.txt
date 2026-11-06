@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/context_detached_unimported.moss: no method `.private_method` for `Receiver` is in scope]

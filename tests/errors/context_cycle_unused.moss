@@ -1,0 +1,4 @@
+# Cycles are errors at declaration, even when no body assumes the context.
+context A = B;
+context B = A;
+fn main() {}

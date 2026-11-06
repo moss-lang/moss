@@ -322,9 +322,26 @@ assume Std {
 
     fn dir_of(p: String): String { p.slice(0, path_cut(p)) }
 
+    # Language-defined modules are siblings of the selected prelude.
+    # A user module with the same basename is an ordinary module.
+    fn library_module(m: Int): Bool {
+      let dir = dir_of(module_path(m));
+      # An empty argv0 disables automatic imports, not library identity.
+      # With no selected prelude the library is `lib/` from the cwd.
+      if pinfo.length() == 0 {
+        if dir.length() != 4 { return false; }
+        if dir.get(0) != char::l { return false; }
+        if dir.get(1) != char::i { return false; }
+        if dir.get(2) != char::b { return false; }
+        return dir.get(3) == char::slash;
+      }
+      str_eq(dir, dir_of(pinfo.get(0)))
+    }
+
     # Whether a module is the primitive context's own declaration, known
     # by its file as the back end knows `Wasm` (D52).
     fn is_platform(m: Int): Bool {
+      if !library_module(m) { return false; }
       let base = basename(module_path(m));
       let cs = int_list();
       sp_wasm_moss(cs);

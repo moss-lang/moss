@@ -37,7 +37,7 @@ Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
    (`lcons (cc e) cr`); as top-level 6-ary OCaml functions every call would
    go through caml_curry.  Inlined, each is a 4-ary closure built once, at
    closure-compile time.  Unchanged in meaning. *)
-Extraction Inline lnil lcons lvar lval bnil capply cbranch csnil cscons.
+Extraction Inline lnil lcons lvar lval bnil capply capply_r cbranch csnil cscons.
 Extraction Blacklist String List Char Bool.
 Separate Extraction run_main frun_main fast_program oracle_program init_state xinterp f64_bits f64_of_bits elaborate_sx
   parse_moss Dump.dump_file print_sx load_bundle bundle_sx print_bundle

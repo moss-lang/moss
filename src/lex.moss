@@ -62,6 +62,7 @@ type Token =
   | Str
   | Integer
   | Decimal
+  | Underscore
 ;
 
 assume Std {
@@ -592,6 +593,8 @@ assume Std {
         }
       } else if c0 == char::w {
         kw4(char::h, char::i, char::l, char::e, While)
+      } else if c0 == char::underscore {
+        kw(Underscore)
       } else {
         rest_of_name()
       }

@@ -56,20 +56,21 @@ Theorem misfit_unrelated : forall P F C exp x t,
 Proof.
   intros P F C exp x t HF H.
   inversion H; subst; rewrite HF in *; crunch.
-  - (* a defined fn: its parameter is an A *)
-    destruct H9 as (d & rcv & n & ps & rt & body & Hd & Ha & Hps & Hrt).
-    crunch.
-    destruct g as [gps gr]; simpl in *.
-    inversion Hps as [|pt pa ps' gps' Hty Hrest]; subst. inversion Hrest; subst.
-    simpl in Hty. inversion Hty; subst; crunch.
-    (* the argument is a B *)
-    inversion H13; subst.
-    match goal with Hx : Ex _ _ _ _ (AECall ["B"] _ _) _ _ _ |- _ => inversion Hx; subst end;
-      try rewrite HF in *; crunch.
-    match goal with Hf : fits _ _ |- _ =>
-      unfold canon in Hf; simpl in Hf; revert Hf; apply fits_heads; discriminate end.
-  - (* an abstract fn: f has a body *)
-    destruct H4 as (n & ps & rt & Hast). crunch.
+  all: try solve[
+    match goal with Hd : exists n ps rt,ast_of W_mf 364=Some(ADFn RPlain n ps rt None) |- _ =>
+      destruct Hd as(n&ps&rt&Hast);crunch end].
+  all: match goal with Hsig : SigOf W_mf 364 _ None _ |- _ =>
+    destruct Hsig as(d&rcv&n&ps&rt&body&Hd&Ha&Hps&Hrt)end.
+  all: crunch.
+  all: destruct g as[gps gr];simpl in *.
+  all: inversion Hps as[|pt pa ps' gps' Hty Hrest];subst;inversion Hrest;subst.
+  all: simpl in Hty;inversion Hty;subst;crunch.
+  all: match goal with Hargs : Args _ _ _ _ [AECall["B"]None[AEPath["w";"i32_one"]None]] _ _ |- _ =>
+    inversion Hargs;subst end.
+  all: match goal with Hx : Ex _ _ _ _ (AECall["B"] _ _) _ _ _ |- _ =>inversion Hx;subst end;
+    try rewrite HF in *;crunch.
+  all: match goal with Hf : fits _ _ |- _ =>
+    unfold canon in Hf;simpl in Hf;revert Hf;apply fits_heads;discriminate end.
 Qed.
 
 

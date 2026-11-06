@@ -49,7 +49,7 @@
     "declarations": {
       "patterns": [
         {
-          "match": "\\b(type|tag)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(type|tag)\\s+((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "storage.type.moss"
@@ -60,7 +60,7 @@
           }
         },
         {
-          "match": "\\b(context|functor)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(context|functor)\\s+((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "storage.type.moss"
@@ -71,7 +71,7 @@
           }
         },
         {
-          "match": "\\b(fn)\\s+(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(fn)\\s+(\\.)((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "storage.type.function.moss"
@@ -85,7 +85,7 @@
           }
         },
         {
-          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(fn)\\s+((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)(\\.)((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "storage.type.function.moss"
@@ -102,7 +102,7 @@
           }
         },
         {
-          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(fn)\\s+((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "storage.type.function.moss"
@@ -113,7 +113,7 @@
           }
         },
         {
-          "match": "\\b(val)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(val)\\s+((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "storage.type.moss"
@@ -124,7 +124,7 @@
           }
         },
         {
-          "match": "\\b(import)\\s+(\"(?:[^\"\\\\]|\\\\[\"\\\\nrt])*\")\\s+(as)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(import)\\s+(\"(?:[^\"\\\\]|\\\\[\"\\\\nrt])*\")\\s+(as)\\s+((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "keyword.control.import.moss"
@@ -219,7 +219,7 @@
       "patterns": [
         {
           "comment": "A method named through a type, called or not: `Value.add`, `Bool.flip`. Types are capitalized, values are not, so the name after the dot is a method rather than a field.",
-          "match": "\\b([A-Z][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b([A-Z][A-Za-z0-9_]*)(\\.)((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "entity.name.type.moss"
@@ -234,7 +234,7 @@
         },
         {
           "comment": "A detached method, `.m`, where no receiver can precede it: in a list of names (`use .eq, .ne`, `context C = .m`), a binding (`[T.m = .n]`), or after `->`.",
-          "match": "(?:(?<=[,=\\[:>])|(?<=\\buse)|^)\\s*(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "(?:(?<=[,=\\[:>])|(?<=\\buse)|^)\\s*(\\.)((?!_\\b)[A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
               "name": "punctuation.accessor.moss"
@@ -254,11 +254,11 @@
         },
         {
           "name": "entity.name.namespace.moss",
-          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=::)"
+          "match": "\\b(?!_\\b)[A-Za-z_][A-Za-z0-9_]*(?=::)"
         },
         {
           "name": "entity.name.function.moss",
-          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+          "match": "\\b(?!_\\b)[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
         },
         {
           "name": "entity.name.type.moss",
@@ -266,7 +266,7 @@
         },
         {
           "name": "variable.other.moss",
-          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+          "match": "\\b(?!_\\b)[A-Za-z_][A-Za-z0-9_]*\\b"
         }
       ]
     },

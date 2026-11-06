@@ -16,7 +16,7 @@ Local Open Scope list_scope.
 (* ===================== tests/wasi/bridged.moss ========================== *)
 
 Definition bridged := Eval vm_compute in run_elab bridged_sx.
-Definition P_br : xprogram := match bridged with Good (p, _) => p | Bad _ => XProgram [] [] 0 0 0 0 [] [] end.
+Definition P_br : xprogram := match bridged with Good (p, _) => p | Bad _ => XProgram [] [] 0 0 0 0 [] [] [] [] [] false [] [] end.
 Definition S_br : st := match bridged with Good (_, s) => s | Bad _ => dummy_st end.
 Definition W_br : Elaboration.world := W_of S_br.
 

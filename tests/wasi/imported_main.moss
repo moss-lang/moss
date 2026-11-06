@@ -1,0 +1,1 @@
+import "../fixtures/imported_main/provider.moss" use start as main;

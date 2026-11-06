@@ -3,7 +3,8 @@
    transitively everything the guarantee rests on, and check.sh requires
    them to be only the kernel's `Primitive` declarations (Rocq's primitive
    integers, floats and arrays): no Axiom, no Admitted. *)
-From NM Require Certified Parse FastPath Prune SlotX FoldX CloX.
+From NM Require Certified Parse FastPath Prune SlotX FoldX CloX
+  FunctionFrameProgram XElabTyped.
 
 Print Assumptions NM.Certified.Certified.elaborate.
 Print Assumptions NM.Certified.Certified.elaborate_sx.
@@ -42,8 +43,18 @@ Print Assumptions NM.Certified.world_reads.
 Print Assumptions NM.Certified.elaborate_world_reads.
 Print Assumptions NM.Certified.world_of_reading.
 Print Assumptions NM.Certified.world_resolves.
+Print Assumptions NM.Certified.context_method_named.
+Print Assumptions NM.Certified.context_type_meanings.
+Print Assumptions NM.Certified.dump_reads.
 Print Assumptions NM.Certified.elaboration_frame.
 Print Assumptions NM.Certified.assume_types_exact.
+
+(* Partial verification milestone: actual function-frame coverage and
+   runtime safety given an explicit typing certificate. These do not assert
+   that every accepted source program supplies that certificate. *)
+Print Assumptions NM.FunctionFrameProgram.actual_function_frame_specifications_total.
+Print Assumptions NM.XElabTyped.typed_runtime_never_err.
+Print Assumptions NM.XElabTyped.certified_reification_never_err.
 
 (* The front end moss_m2.ml runs on a source file: the Gallina lexer,
    parser and bundler (the driver only reads files), whose output the

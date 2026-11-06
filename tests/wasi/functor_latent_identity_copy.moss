@@ -1,0 +1,7 @@
+type T;tag U;
+assume T {fn offered():T|U;}
+functor Inner[T]: T -> offered;
+val x:();
+functor Outer[]: Inner -> x;
+functor G: Inner -> x {bind Inner=Inner;bind x=();}
+fn main(){bind Outer=G;}

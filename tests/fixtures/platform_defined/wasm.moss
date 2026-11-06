@@ -1,0 +1,6 @@
+type I32;
+assume I32 {
+  val i32_one: I32;
+  fn i32_add(a: I32, b: I32): I32 { a }
+  fn defined_platform(a: I32): I32 { a }
+}

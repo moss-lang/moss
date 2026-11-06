@@ -1,0 +1,9 @@
+type A;
+type X;
+assume X { val v: X; }
+functor F[A]: A -> v;
+assume X { context C = F; }
+# A bracket on C cannot stand in for having F's fixed X in force.
+context D = Char, C[X=Char];
+assume D { fn unused() {} }
+fn main() {}

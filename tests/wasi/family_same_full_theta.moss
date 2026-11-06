@@ -1,0 +1,19 @@
+# A.foo infers only A and B.bar only B. These are distinct demand
+# groups even though both applications emit the same complete A/B arguments.
+type A;
+type B;
+tag R;
+assume A { fn .foo(); }
+assume B { fn .bar(); }
+functor F[A,B]: A,B -> A.foo,B.bar;
+functor G: A,B -> A.foo,B.bar {
+ bind A.foo=()=>();
+ bind B.bar=()=>();
+}
+assume A,B,F,A.foo,B.bar { fn work(a:A,b:B) { a.foo();b.bar(); } }
+fn main() {
+ bind A=R;
+ bind B=R;
+ bind F=G;
+ work(R,R);
+}

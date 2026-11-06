@@ -182,11 +182,43 @@ Proof.
   constructor; [exact E1 | lia | rewrite E3; auto | rewrite E3; intros; congruence | rewrite E3; intros; congruence | rewrite E4; auto | exact E6].
 Qed.
 
+Lemma ok_reify_update : forall f, ok (upd (s_reify f)).
+Proof.
+  intro f. unfold upd. apply ok_keep. intro s. cbn.
+  split; [reflexivity|]. split; [reflexivity|].
+  split; [reflexivity|]. split; [reflexivity|].
+  split; [reflexivity|]. apply frx_same; reflexivity.
+Qed.
+
+Lemma ok_reify_code : forall A owner (m : M A), ok m -> ok (in_reify_code owner m).
+Proof.
+  intros A owner m Hm. unfold in_reify_code.
+  apply ok_bind; [apply ok_get|]. intro prior_state.
+  apply ok_bind; [apply ok_reify_update|]. intro u.
+  apply ok_bind; [exact Hm|]. intro a.
+  apply ok_bind; [apply ok_reify_update|]. intro u'. apply ok_ret.
+Qed.
+
 Lemma ok_fresh : ok fresh.
 Proof.
   intros s a s' [Ia If Id Il Ifr Ir Ik] H. unfold fresh in H. injection H as <- <-. cbn.
   split; [constructor; cbn; [intros i Hi; apply Ia; lia | exact If | exact Id | exact Il | exact Ifr | exact Ir | exact Ik]|].
   apply fr_of0; [|reflexivity|reflexivity]. constructor; cbn; auto; intros; congruence.
+Qed.
+
+Lemma ok_fresh_marker:forall e,ok(fresh_marker e).
+Proof.
+ intros e s a s' [Ia If Id Il Ifr Ir Ik] H;unfold fresh_marker in H;injection H as <- <-.
+ pose proof(Nat.le_max_l(st_next s)(marker_floor e))as Bound.
+ split;[constructor;cbn;[intros i Hi;apply Ia;lia|exact If|exact Id|exact Il|exact Ifr|exact Ir|exact Ik]|].
+ apply fr_of0;[|reflexivity|reflexivity]. constructor;cbn;auto;try lia;intros;congruence.
+Qed.
+Lemma ok_fresh_marker_for:forall e r,ok(fresh_marker_for e r).
+Proof.
+ intros e r s a s' [Ia If Id Il Ifr Ir Ik] H;unfold fresh_marker_for in H;injection H as <- <-.
+ pose proof(Nat.le_max_l(st_next s)(Nat.max(marker_floor e)(fold_right(fun g top=>Nat.max(S g)top)0(ety_gens r))))as Bound.
+ split;[constructor;cbn;[intros i Hi;apply Ia;lia|exact If|exact Id|exact Il|exact Ifr|exact Ir|exact Ik]|].
+ apply fr_of0;[|reflexivity|reflexivity]. constructor;cbn;auto;try lia;intros;congruence.
 Qed.
 
 Lemma ok_new_sym : forall mi n k d o, o <> OSource -> k <> KTag /\ k <> KUnit -> ok (new_sym mi n k d o).
@@ -347,6 +379,7 @@ Ltac reader :=
   try discriminate; congruence.
 
 Create HintDb okdb.
+#[export]Hint Resolve ok_fresh_marker ok_fresh_marker_for:okdb.
 #[export] Hint Resolve ok_ret ok_fail ok_get ok_lift ok_fresh ok_fld_id ok_local_var ok_emit_fn ok_unsupported : okdb.
 #[export] Hint Extern 1 (ok (new_sym _ _ _ _ _)) => (apply ok_new_sym; [discriminate | split; discriminate]) : okdb.
 
@@ -371,10 +404,13 @@ Ltac okt :=
   | |- ok (mmap _ _) => apply ok_mmap
   | |- ok (mfold _ _ _) => apply ok_mfold
   | |- ok (miter _ _) => apply ok_miter
+  | |- ok (upd (s_reify _)) => apply ok_reify_update
   | |- ok (upd (s_funs (fun l => ?x :: l))) => apply ok_funs_cons
   | |- ok (upd (s_consts _)) => apply ok_consts_add
   | |- ok (upd _) => unfold upd; apply ok_keep; intro; split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|auto]]]]]
   | |- ok (fun s => Good (_, _)) => apply ok_keep; intro; split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|split; [reflexivity|auto]]]]]
+  | |- ok (in_reify_code _ _) => apply ok_reify_code
+  | |- ok (upd (s_reify _)) => apply ok_reify_update
   | |- ok (with_vars _ _) => apply ok_with_vars
   | |- ok (fun s => _) => reader
   | |- ok ?t =>
@@ -610,6 +646,13 @@ Lemma ok_type_requirements : forall fuel s, ok (type_requirements fuel s).
 Proof. intros fuel s. exact ((proj1 (proj2 (ok_free_type_syms_group fuel))) s). Qed.
 #[export] Hint Resolve ok_type_requirements : okdb.
 
+Lemma reqs_frame_eq : forall x, reqs x = type_requirements 200 x.
+Proof. reflexivity. Qed.
+Lemma ok_reqs_frame : forall x, ok (reqs x).
+Proof. intro x. rewrite reqs_frame_eq. apply ok_type_requirements. Qed.
+#[export] Hint Resolve ok_reqs_frame : okdb.
+Local Strategy opaque [reqs].
+
 Lemma ok_solve_requirements : forall fuel root, ok (solve_requirements fuel root).
 Proof. intros fuel root. exact ((proj1 (proj2 (proj2 (ok_free_type_syms_group fuel)))) root). Qed.
 #[export] Hint Resolve ok_solve_requirements : okdb.
@@ -685,6 +728,13 @@ Proof. intros fuel self mi specs out. exact ((proj1 (ok_result_mentions_go_group
 Lemma ok_functor_fixed_go : forall fuel g, ok (functor_fixed_go fuel g).
 Proof. intros fuel g. exact ((proj2 (ok_result_mentions_go_group fuel)) g). Qed.
 #[export] Hint Resolve ok_functor_fixed_go : okdb.
+
+Lemma ok_check_literal_sig : forall e mi m oty args sg,
+  ok (check_literal_sig e mi m oty args sg).
+Proof.
+  intros. unfold check_literal_sig. destruct (literal_sig_ok e oty args sg); okt.
+Qed.
+#[export] Hint Resolve ok_check_literal_sig : okdb.
 
 Lemma ok_add_symbol_item_group : forall fuel,
   (forall e mi g subst needs, ok (add_symbol_item fuel e mi g subst needs)) /\
@@ -769,6 +819,49 @@ Lemma ok_provide_spec : forall fuel e fg mi sp outer out, ok (provide_spec fuel 
 Proof. intros fuel e fg mi sp outer out. exact ((ok_provide_spec_group fuel) e fg mi sp outer out). Qed.
 #[export] Hint Resolve ok_provide_spec : okdb.
 
+Lemma ok_provide_result : forall e fg roles, ok (provide_result e fg roles).
+Proof. intros; unfold provide_result; okt. Qed.
+#[export] Hint Resolve ok_provide_result : okdb.
+
+Lemma ok_fresh_target_output_view : forall e fg, ok (fresh_target_output_view e fg).
+Proof. intros; unfold fresh_target_output_view; okt. Qed.
+#[export] Hint Resolve ok_fresh_target_output_view : okdb.
+
+Lemma ok_bind_fixed_present : forall mi e fg xs, ok (bind_fixed_present mi e fg xs).
+Proof. intros; unfold bind_fixed_present; okt. Qed.
+#[export] Hint Resolve ok_bind_fixed_present : okdb.
+
+Lemma ok_copy_fixed_current : forall mi e fg xs, ok (copy_fixed_current mi e fg xs).
+Proof. intros; unfold copy_fixed_current; okt. Qed.
+#[export] Hint Resolve ok_copy_fixed_current : okdb.
+
+Lemma ok_defined_link_inputs_compatible : forall mi site ef eg fg bg fixed fneeds gneeds,
+  ok(defined_link_inputs_compatible mi site ef eg fg bg fixed fneeds gneeds).
+Proof. intros;unfold defined_link_inputs_compatible;okt. Qed.
+#[export]Hint Resolve ok_defined_link_inputs_compatible:okdb.
+
+Lemma ok_check_link_fixed_current : forall mi site fg bg fixed,
+  ok(check_link_fixed_current mi site fg bg fixed).
+Proof. intros;unfold check_link_fixed_current;okt. Qed.
+#[export] Hint Resolve ok_check_link_fixed_current : okdb.
+
+Lemma ok_check_constant_effects : forall mi x, ok (check_constant_effects mi x).
+Proof. intros; unfold check_constant_effects; okt. Qed.
+#[export] Hint Resolve ok_check_constant_effects : okdb.
+
+Lemma ok_check_provider_effects : forall mi bs, ok (check_provider_effects mi bs).
+Proof. intros; unfold check_provider_effects; okt. Qed.
+#[export] Hint Resolve ok_check_provider_effects : okdb.
+
+Lemma ok_check_captured_reading : forall mi site prototype formal actual,
+  ok(check_captured_reading mi site prototype formal actual).
+Proof. intros;unfold check_captured_reading;okt. Qed.
+#[export] Hint Resolve ok_check_captured_reading : okdb.
+
+Lemma ok_copy_output_compatible : forall mi site ef eg fg bg fixed fneeds gneeds, ok (copy_output_compatible mi site ef eg fg bg fixed fneeds gneeds).
+Proof. intros; unfold copy_output_compatible; okt. Qed.
+#[export] Hint Resolve ok_copy_output_compatible : okdb.
+
 Lemma ok_family_leaves_ok_group : forall fuel,
   (forall mi ps specs, ok (family_leaves_ok fuel mi ps specs)).
 Proof.
@@ -794,6 +887,36 @@ Qed.
 Lemma ok_family_leaves : forall fuel e mi specs outer, ok (family_leaves fuel e mi specs outer).
 Proof. intros fuel e mi specs outer. exact ((ok_family_leaves_group fuel) e mi specs outer). Qed.
 #[export] Hint Resolve ok_family_leaves : okdb.
+
+
+(* Share the context walk's frame proof across callers and validation. *)
+Lemma ok_merged_walk_frame : forall mi walk,
+  (forall e, ok (walk e)) -> ok (merged_walk mi walk).
+Proof. intros mi walk H. unfold merged_walk. okt. Qed.
+#[export] Hint Resolve ok_merged_walk_frame : okdb.
+
+Lemma ok_fn_info_frame : forall g, ok (fn_info g).
+Proof. intro g. unfold fn_info. okt. all: apply ok_merged_walk_frame; intros; okt. Qed.
+#[export] Hint Resolve ok_fn_info_frame : okdb.
+Local Strategy opaque [fn_info].
+
+Lemma ok_check_assumed_requirements_frame : forall mi e k,
+  ok (check_assumed_requirements mi e k).
+Proof. intros. unfold check_assumed_requirements. okt. Qed.
+#[export] Hint Resolve ok_check_assumed_requirements_frame : okdb.
+
+Lemma ok_check_assumes_frame : ok check_assumes.
+Proof. unfold check_assumes. okt. Qed.
+#[export] Hint Resolve ok_check_assumes_frame : okdb.
+Local Strategy opaque [check_assumed_requirements check_assumes].
+
+Lemma ok_remember_reify_constant : forall id start, ok (remember_reify_constant id start).
+Proof. intros. unfold remember_reify_constant. okt. Qed.
+#[export] Hint Resolve ok_remember_reify_constant : okdb.
+
+Lemma ok_replay_reify_constant : forall id, ok (replay_reify_constant id).
+Proof. intros. unfold replay_reify_constant. okt. Qed.
+#[export] Hint Resolve ok_replay_reify_constant : okdb.
 
 Lemma ok_synth_group : forall fuel,
   (forall c e x exp, ok (synth fuel c e x exp)) /\
@@ -979,6 +1102,23 @@ Proof. intros fuel fg bg. exact ((proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (proj
 #[export] Hint Resolve ok_link_body : okdb.
 
 
+Lemma ok_entry_zero_width : forall fuel e t, ok (entry_zero_width fuel e t).
+Proof. induction fuel; intros e t; cbn [entry_zero_width]; okt. Qed.
+#[export] Hint Resolve ok_entry_zero_width : okdb.
+
+Lemma ok_check_main_arity : forall g, ok (check_main_arity g).
+Proof. intros g. unfold check_main_arity. okt. Qed.
+#[export] Hint Resolve ok_check_main_arity : okdb.
+
+Lemma ok_check_main_signature : forall g info, ok (check_main_signature g info).
+Proof. intros g info. unfold check_main_signature. okt. Qed.
+#[export] Hint Resolve ok_check_main_signature : okdb.
+
+Lemma ok_check_platform_entry_view : forall e k entry,
+    ok (check_platform_entry_view e k entry).
+Proof. intros. unfold check_platform_entry_view. okt. Qed.
+#[export] Hint Resolve ok_check_platform_entry_view : okdb.
+
 Lemma ok_elab_program : ok elab_program.
 Proof. unfold elab_program. okt. Qed.
 
@@ -988,7 +1128,7 @@ Proof. unfold elab_program. okt. Qed.
 (* ======================================================================== *)
 
 Definition s_init (w : Elab.world) : st :=
-  St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false [] (lang_modules w) [].
+  St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false [] (lang_modules w) [] (ReifyData.empty_reify_metadata ety key).
 
 Lemma load_world_syms : forall b w, load_world b = Good w ->
   0 < w_nsyms w /\ forall i, w_nsyms w <= i -> nget (w_syms w) i = None.

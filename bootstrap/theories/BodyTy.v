@@ -12,7 +12,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySound.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySound Merge CanonTypes TyOfSubst.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -495,16 +495,31 @@ Proof. reflexivity. Qed.
 
 (* BodySound's pd_ty *)
 Theorem pd_ty_holds : forall ty c e s d s', ety_of ty (cx_mod c) (tymap e) e (cx_this c) s = Good (d, s') ->
-  forall F C, Inv s -> CxRel w Fl c e F C -> Later w P R Fl s' ->
-  A.TyOf WW (A.fr_mod F) (A.c_ty C) (A.fr_this F) ty (trF d) /\ WFty d.
+  forall F C, Inv s -> CxRel w R Fl c e F C -> Later w P R Fl s' ->
+  A.TyOf WW (A.fr_mod F) (A.c_ty C) (A.fr_this F) ty (trF (canon e d)) /\ WFty d.
 Proof.
   intros ty c e s d s' H F C Hi Hc L.
   destruct (ok_ety_of ty (cx_mod c) (tymap e) e (cx_this c) s d s' Hi H) as [_ Fs].
   assert (Hw : st_w s = w) by (rewrite <- (fr_w _ _ Fs); exact (lt_w _ _ _ _ _ L)).
-  rewrite ety_of_eq in H. revert H. generalize 200. intros n H.
-  rewrite (cr_mod _ _ _ _ _ _ Hc), (cr_this _ _ _ _ _ _ Hc).
-  refine (proj1 (ty_all n) _ _ _ _ _ _ _ _ _ H Hi Hw (cr_mod_in _ _ _ _ _ _ Hc) _ (cr_this_wf _ _ _ _ _ _ Hc) L).
-  apply tmrel_tymap; [exact (cr_ty_wf _ _ _ _ _ _ Hc) | exact (cr_ty _ _ _ _ _ _ Hc)].
+  assert (Etm : forall k, nassoc k (tymap e) = tn_get e k).
+  { intro k. unfold tymap, tn_get. induction (en_tn e) as [|[n [y stamp]] l IH]; cbn; [reflexivity|].
+    destruct (Nat.eqb k n); [reflexivity|exact IH]. }
+  assert (TR : TmRel (tymap e) (map trp (tymap e)) e).
+  { apply tmrel_tymap; [exact (cr_ty_wf _ _ _ _ _ _ _ Hc)|]. intro k. rewrite nlook_trp, Etm. reflexivity. }
+  rewrite ety_of_eq in H.
+  destruct (proj1 (ty_all 200) _ _ _ _ _ _ _ _ _ H Hi Hw (cr_mod_in _ _ _ _ _ _ _ Hc)
+    TR (cr_this_wf _ _ _ _ _ _ _ Hc) L) as [Ty Wd]. split; [|exact Wd].
+  pose proof (proj1 (cr_uf _ _ _ _ _ _ _ Hc)) as T.
+  pose proof (tyof_subst WW (suf Fl (en_uf e)) _ _ _ _ _ Ty (A.c_ty C)) as Ts.
+  assert (SR : SubRel (suf Fl (en_uf e)) (map trp (tymap e)) (A.c_ty C)).
+  { intro k. rewrite (cr_ty _ _ _ _ _ _ _ Hc), nlook_trp, Etm.
+    destruct (tn_get e k); cbn [option_map]; [rewrite tr_canon by exact T|]; reflexivity. }
+  specialize (Ts SR). rewrite tr_canon in Ts by exact T.
+  rewrite (cr_mod _ _ _ _ _ _ _ Hc), (cr_this _ _ _ _ _ _ _ Hc).
+  assert (Ethis : option_map (Audit.app_subst (suf Fl (en_uf e))) (option_map trF (cx_this c)) =
+    option_map (fun y => trF (canon e y)) (cx_this c)).
+  { destruct (cx_this c); cbn [option_map]; [rewrite tr_canon by exact T|]; reflexivity. }
+  rewrite Ethis in Ts. exact Ts.
 Qed.
 
 End Ty.

@@ -313,7 +313,9 @@ Definition Sg : gsig := {|
   g_fun := fun _ => None;
   g_fixed := fun _ => [];
   g_poly := fun _ => [];
-  g_cap := fun _ => ([], [])
+  g_cap := fun _ => ([], []);
+  g_opaque := fun _ => None;
+  g_opaque_fun := fun _ => false
 |}.
 
 Definition main : fsym := 2.
@@ -527,9 +529,10 @@ Proof.
   - intros n D taup H t Ht.
     destruct n as [|[|[|n]]]; simpl in H; try discriminate;
       injection H as <- <-; simpl in Ht; contradiction.
-  - intros n D taup H.
-    destruct n as [|[|[|n]]]; simpl in H; try discriminate;
-      injection H as <- <-; (split; [reflexivity | apply NoDup_nil]).
+  - split.
+    + intros n D taup H.
+      destruct n as [|[|[|n]]]; simpl in H; try discriminate;
+        injection H as <- <-; (split; [reflexivity | apply NoDup_nil]).
+    + intros n D Impossible;discriminate Impossible.
 Qed.
-
 End CE.

@@ -1,0 +1,3 @@
+import "../fixtures/imported_main/provider.moss" use start as main;
+# Assuming a main also requires its implicit platform root context.
+assume main { fn bad() {} }

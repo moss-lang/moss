@@ -1,0 +1,26 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/int.moss" use Int, one;
+
+# The family argument A is absent in work, and B is an unused parameter. Its A.foo prerequisite must
+# be checked after inferring A=Int from one.bar(), without adding A to
+# the enclosing context. Both implementations print y.
+type A;
+type B;
+assume A { fn .foo(); fn .bar(): A; }
+functor F[A, B]: A, A.foo -> A.bar;
+functor G: A, A.foo -> A.bar { bind A.bar = () => { this.foo(); this }; }
+
+assume F, Int, one, Int.foo { fn work(): Int { one.bar() } }
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Int.foo = () => ();
+    bind A = Int;
+    bind F = G;
+    if work() == one { putchar(char::y); } else { putchar(char::n); }
+  }
+}

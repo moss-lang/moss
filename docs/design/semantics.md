@@ -613,18 +613,19 @@ receiver is shared and only the method's application differs.
 **[D20] DECIDED (assume).** `assume xs { decls }` adds the items `xs` to the
 requirement set of every declaration inside. Requirement sets nest by union:
 `src/lex.moss`'s `lex` sits inside `assume Char { ... assume next_byte { }}`
-and so requires `{Char, next_byte}`. Assuming a symbol also makes everything
-it *mentions* usable: assuming `next_byte` (whose signature returns
-`Char | Eof`) is only well-formed in a region that also assumes `Char`, which
-is why the blocks nest in that order. **DECIDED** (confirmed): an `assume x`
-is legal only where every abstract symbol appearing in `x`'s declared
-signature/definition is already assumed or bound.
-*Note (October 2026):* the bootstrap enforced this from the start, as a
-side effect of elaborating the item ("type `T` is not available in the
-context here"). The self-hosted compiler did not: `assume W.m` with
-`.m(): T`, or `assume seed` with `seed: T`, and no `T` in force, compiled.
-It now reports `e_absent` (`!P`, naming the type) at the assume.
-Standing tests: `tests/wasi/assume_without_type*.moss`.
+and so requires `{Char, next_byte}`. Assuming a symbol requires all of its requirements to be in force, both
+type symbols and needs, including those absent from its declared signature.
+They may be supplied by the same `assume` list or an enclosing region;
+order within that list does not matter. For example, if `f` is declared
+inside `assume T, seed`, then `assume f` also needs `T` and `seed`, even
+when `f` takes no arguments and returns unit. A method keeps the signature-relevant type requirements used by its
+provision ([D71], Audit note 51); its item's brackets may supply those
+local signature types. An abstract functor's
+application inputs remain deferred under [D84], while its fixed inputs
+must already be in force and cannot be supplied by a context bracket.
+Standing tests include `assume_missing_requirement_type.moss`,
+`assume_missing_requirement_need.moss`, `assume_requirements_same_list.moss`
+and `functor_fixed_bracket.moss`.
 
 **[D21] DECIDED (implicit parameterization = generics).** A declaration's
 requirement set is its parameter list. `Range` is declared inside `assume T`,
@@ -1737,6 +1738,15 @@ search. A relative path such as `"../lib/wasi.moss"` still names that
 file, so a program that imports another checkout's library explicitly
 still gets it. Standing check: the flake's `cli` check.
 
+The library's identity is the selected prelude's directory, independently of
+whether its declarations are automatically imported. Language-defined names
+(operators, literals, booleans and platform primitives) are looked up in the
+scope of the exact sibling library module, so reexports work normally. A
+user file with the same basename does not become a platform module. When
+automatic prelude imports are disabled without selecting a different library,
+`lib/` relative to the working directory remains the library directory.
+This resolves [Audit.v note 68](../../bootstrap/theories/Audit.v).
+
 **[D65] DECIDED by the designer (bare block expressions).** A block was
 already an expression in everything but the grammar: the body of a
 function, an `if` or a match arm yields its tail, and scopes its `let`s and
@@ -1886,6 +1896,11 @@ tokens and settled their direction; [D47] fixed the target: an operator is a
 call of one specific detached method of `lib/num.moss`, keyed by the receiver
 type like any method, so `a + b` at `Int` and `c + d` at `Char` coexist in one
 scope. This entry pins down the rest.
+
+Literal arithmetic uses the same method lookup as an explicit call, including
+on-demand application of a unique family that provides the needed method
+([D84], rule 7). At each literal use, its arithmetic method must take and
+return the literal's own type. This is checked even for a custom library.
 
 Operators and their symbols (all methods of `lib/num.moss` unless noted):
 
@@ -2234,6 +2249,20 @@ symbol has none (as in the calculus already, `TAbs t`). Functions, vals and
 contexts keep their whole assume nesting ([D21] unchanged for them).
 `Range[T=NameId]` is still how a relevant parameter is applied; applying an
 irrelevant one is an error.
+
+*Method context items.* A bracket on a method item may bind a free type
+symbol of its signature even when it is not among the method's enclosing
+requirements. For example, `A.gimme[Foo=B]` supplies the free return type
+of `fn .gimme(): Foo;`. This exemption is specific to method items; a
+bracket on a context, val or function item still binds only one of that
+item's requirements. This is the designer-approved resolution of
+[Audit.v note 56](../../bootstrap/theories/Audit.v).
+
+*Detached method names in context items.* `A.m` selects an attached method
+of `A`, or the detached `.m` in the current scope. A detached method in
+`A`'s module must be imported explicitly; naming the receiver does not
+bring it into scope. This is the designer-approved resolution of
+[Audit.v note 57](../../bootstrap/theories/Audit.v).
 
 *Why it is sound.* The calculus is unchanged except that a tag's telescope
 is its relevant parameters. Mechanized (`Narrowing.v`, no `Admitted`, no
@@ -4727,7 +4756,9 @@ Decided:
    and 3 GB per platform. What of the oracle is proved, and what is still
    an obligation (the elaborator's soundness and completeness for the
    draft elaboration relation, and the parser's for a grammar), is in [`bootstrap/README.md`](/bootstrap/README.md);
-   its contract is `bootstrap/theories/Audit.v`.
+   its contract is `bootstrap/theories/Audit.v`. The current partial-proof
+   milestone and remaining obligations are listed in
+   [`bootstrap/STATUS.md`](../../bootstrap/STATUS.md).
 2. **The Python bootstrap is removed**, with its unit tests of its own
    lexer, parser, loader and float helpers. Statements in this log about
    what "the bootstrap" did refer to it where they predate this entry.
@@ -4857,3 +4888,9 @@ bootstrap pipeline of §11 with the [D40] corpus tests, applying the §12
 errata to `src/` as the corpus comes online. (Since then the syntax
 reference was rewritten and the Python pipeline of §11 built; it has in
 turn been replaced by the Rocq bootstrap, [D86].)
+
+The entry function is the function in scope as `main` in the entry module;
+it may be imported under that name. Its declaration need not itself be
+named `main`. Any function exposed as `main` in a loaded module receives
+the platform root context during checking, including an imported function
+([Audit.v note 41](../../bootstrap/theories/Audit.v)).

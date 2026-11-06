@@ -217,6 +217,7 @@ let () =
       | XBindFun (_, _, sm, smc, e1) -> add "bindfun" sm; add "bindfun.c" smc; ex e1
       | XBindFunA (_, _, sm, e1) -> add "bindfuna" sm; ex e1
       | XApply (_, _, sm, e1) -> add "apply(expr)" sm; ex e1
+      | XApplyR (_, inputs, outputs, e1) -> add "applyr.in" inputs; add "applyr.out" outputs; ex e1
       | XRec fs -> Stdlib.List.iter (fun (_, x) -> ex x) fs
       | XMatchP (a, arms) -> ex a; Stdlib.List.iter (fun (_, b) -> ex b) arms
       | XApplyBr (_, brs, e1) -> Stdlib.List.iter (fun ((_, bs), pr) -> add "applybr(expr)" pr; Stdlib.List.iter bx bs) brs; ex e1
@@ -227,6 +228,7 @@ let () =
       | XBFun (_, _, sm, smc) -> add "xb.fun" sm; add "xb.fun.c" smc
       | XBFunA (_, _, sm) -> add "xb.funa" sm
       | XBApply (_, _, sm) -> add "xb.apply" sm
+      | XBApplyR (_, inputs, outputs) -> add "xb.applyr.in" inputs; add "xb.applyr.out" outputs
       | XBApplyBr (_, brs) -> Stdlib.List.iter (fun ((_, bs), pr) -> add "xb.applybr" pr; Stdlib.List.iter bx bs) brs
       | _ -> () in
     Stdlib.List.iter (fun (_, b) -> ex b) p.Audit.xo_fns;
@@ -237,6 +239,7 @@ let () =
         | XBMth (_,_,_,_,sm) -> Printf.sprintf "mth%d" (Stdlib.List.length sm)
         | XBFun (_,_,sm,smc) -> Printf.sprintf "fun%d/%d" (Stdlib.List.length sm) (Stdlib.List.length smc)
         | XBFunA _ -> "funa" | XBApply (v,th,sm) -> Printf.sprintf "apply(u%d,%d)" v (Stdlib.List.length sm)
+        | XBApplyR _ -> "applyr"
         | XBFunSym _ -> "funsym" | XBFunCopy _ -> "funcopy" | XBApplyBr _ -> "applybr" | XBPrim _ -> "prim") bs) in
       Printf.eprintf "[moss_m2 stats: functor body u%d: |Dr|=%d binds: %s]\n" u (Stdlib.List.length dr) kinds) p.Audit.xo_funs;
     let rec sites e = match e with
@@ -245,7 +248,7 @@ let () =
       | XVar _ | XUnit | XBreak | XVl _ -> ()
       | XTag (_, _, e1) | XBindTy (_, _, e1) | XLoop e1 | XReturn e1 | XField (e1, _) | XAssign (_, e1)
       | XBindFunSym (_, _, e1) | XBindPrim (_, _, e1) | XBindFunCopy (_, _, e1) | XBindFn (_,_,_,e1) | XBindMth (_,_,_,_,_,e1)
-      | XBindFun (_,_,_,_,e1) | XBindFunA (_,_,_,e1) | XApplyBr (_,_,e1) -> sites e1
+      | XBindFun (_,_,_,_,e1) | XBindFunA (_,_,_,e1) | XApplyBr (_,_,e1) | XApplyR (_,_,_,e1) -> sites e1
       | XCallD (_, _, _, a) | XCallA (_, a) -> Stdlib.List.iter sites a
       | XMeth (e0, _, _, a) -> sites e0; Stdlib.List.iter sites a
       | XMatch (e0, arms) -> sites e0; Stdlib.List.iter (fun (_, b) -> sites b) arms
@@ -272,6 +275,12 @@ let () =
   let prog = {
     xp_fn = (fun f -> Hashtbl.find_opt fns f);
     xp_fun = (fun u -> Hashtbl.find_opt funs u);
+    xp_inputs = (fun h -> match Stdlib.List.assoc_opt h p.Audit.xo_inputs with Some ts -> ts | None -> []);
+    xp_cast = p.Audit.xo_cast;
+    xp_exports = (fun h -> match Stdlib.List.assoc_opt h p.Audit.xo_exports with Some sm -> sm | None -> []);
+    xp_immutable = p.Audit.xo_immutable;
+    xp_fixed_inst = (fun h -> match Stdlib.List.assoc_opt h p.Audit.xo_fixed_inst with Some th -> th | None -> []);
+    xp_fixed_keys = (fun h -> match Stdlib.List.assoc_opt h p.Audit.xo_fixed_keys with Some keys -> keys | None -> []);
     xp_bool = p.Audit.xo_bool; xp_true = p.Audit.xo_true; xp_false = p.Audit.xo_false;
     xp_argv = Stdlib.List.map bytes_of_string (argv0 :: prog_args);
     xp_read = (fun name ->
@@ -323,7 +332,7 @@ let () =
           SlotX.rrun_main max_int rp p.Audit.xo_main p.Audit.xo_env st0
         end else begin
           let afn, afun =
-            if engine <> "fold" then afn, afun else begin
+            if engine <> "fold" || Audit.xreify prog then afn, afun else begin
               let tb f = match rfn f with Some (bs, _) -> Some bs | None -> None in
               let m = 200 and n = 6 in
               Array.map (function

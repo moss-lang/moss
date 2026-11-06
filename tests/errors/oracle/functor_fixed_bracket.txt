@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/functor_fixed_bracket.moss: assuming `F` needs `X` in force: `F` is fixed in them (D84, D20)]

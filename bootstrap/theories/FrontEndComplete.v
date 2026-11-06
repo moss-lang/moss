@@ -189,18 +189,11 @@ Qed.
 
 (* ===================== Patterns =========================================== *)
 
-Lemma path_not_wild_bool ts p rest : Path ts p rest -> p <> ["_"] ->
-  (tx (peek ts) =? "_") && negb (kind_at 1 ts =? "COLON_COLON") = false.
+Lemma pattern_first ts p rest : Pattern ts p rest ->
+  kind ts = "UNDERSCORE" \/ kind ts = "NAME" \/ kind ts = "LBRACE".
 Proof.
-  intros Hp Hw. rewrite kind_at1. inversion Hp as [? x ? (E1 & E2 & ->) Hk | ? x ? ? ? ? (E1 & E2 & ->) [E3 ->] _]; subst.
-  - destruct (tx (peek ts) =? "_")%string eqn:E; auto. apply String.eqb_eq in E. congruence.
-  - rewrite E3. simpl. apply andb_false_r.
-Qed.
-
-Lemma pattern_first ts p rest : Pattern ts p rest -> kind ts = "NAME" \/ kind ts = "LBRACE".
-Proof.
-  destruct 1 as [? ? (E & _) _ | ? ? ? Hp _ _ | ? ? ? ? ? ? ? Hp _ _ _ _ | ? ? ? ? ? Hp _ _ | ? ? ? Hr];
-    try (left; eapply path_kind; eauto; fail); auto.
+  destruct 1 as [? ? (E & _) | ? ? ? Hp _ | ? ? ? ? ? ? ? Hp _ _ _ | ? ? ? ? ? Hp _ | ? ? ? Hr];
+    try (right; left; eapply path_kind; eauto; fail); auto.
   destruct Hr as [? ? ? ? ? [E _] _ _]. auto.
 Qed.
 
@@ -212,18 +205,17 @@ Lemma pattern_group : forall n,
 Proof.
   induction n as [|n (IH1 & IH2 & IH3)]; [repeat split; intros; lia|].
   repeat (match goal with |- _ /\ _ => split end); intros ts v rest H He Hn.
-  - simpl. destruct H as [? ? Hx Hk | ? ? ? Hp Hw Hk | ? ? ? ? ? ? ? Hp Hw Ht Hq Ht2 | ? ? ? ? ? Hp Hw Hr
+  - simpl. destruct H as [? ? Hx | ? ? ? Hp Hk | ? ? ? ? ? ? ? Hp Ht Hq Ht2 | ? ? ? ? ? Hp Hr
                          | ? ? ? Hr].
-    + destruct Hx as (E1 & E2 & ->). destruct (ends_advance ts He ltac:(congruence)).
-      rewrite at_neq by congruence. rewrite at_eq by auto.
-      rewrite kind_at1, E2. simpl. rewrite (proj2 (String.eqb_neq _ _) Hk). simpl. fin.
-    + pose proof (path_kind _ _ _ Hp). rewrite at_neq by congruence. rewrite at_eq by auto.
-      rewrite (path_not_wild_bool _ _ _ Hp Hw). ext path_complete Hp n. step. fin.
-    + pose proof (path_kind _ _ _ Hp). rewrite at_neq by congruence. rewrite at_eq by auto.
-      rewrite (path_not_wild_bool _ _ _ Hp Hw). ext path_complete Hp n.
+    + destruct Hx as (E1 & ->). destruct (ends_advance ts He ltac:(congruence)).
+      rewrite at_neq by congruence. rewrite at_eq by auto. fin.
+    + pose proof (path_kind _ _ _ Hp). rewrite !at_neq by congruence. rewrite at_eq by auto.
+      ext path_complete Hp n. step. fin.
+    + pose proof (path_kind _ _ _ Hp). rewrite !at_neq by congruence. rewrite at_eq by auto.
+      ext path_complete Hp n.
       pose proof (pattern_first _ _ _ Hq). step. ih IH1 Hq. step. fin.
-    + pose proof (path_kind _ _ _ Hp). rewrite at_neq by congruence. rewrite at_eq by auto.
-      rewrite (path_not_wild_bool _ _ _ Hp Hw). ext path_complete Hp n.
+    + pose proof (path_kind _ _ _ Hp). rewrite !at_neq by congruence. rewrite at_eq by auto.
+      ext path_complete Hp n.
       destruct Hr as [? ? ? ? ? Ht Hl Ht2] eqn:Er. step.
       destruct (IH2 _ _ _ Hr ltac:(assumption) ltac:(lia) (Some p)) as (E & E1 & L1). rw E. fin.
     + destruct Hr as [? ? ? ? ? Ht Hl Ht2] eqn:Er. step.

@@ -154,13 +154,6 @@ Proof.
   - inversion Hp; subst; eexists; split; [reflexivity| | reflexivity|]; discriminate.
 Qed.
 
-Lemma path_not_wild ts p rest : Path ts p rest ->
-  tx (peek ts) <> "_" \/ kind_at 1 ts = "COLON_COLON" -> p <> ["_"].
-Proof.
-  intros Hp E Ep. destruct (path_first _ _ _ Hp) as (q & Eq & Hq). subst p. injection Eq as Ex Eq.
-  subst q. rewrite kind_at1 in E. destruct E as [E|E]; [auto|]. apply Hq; auto.
-Qed.
-
 Lemma parse_assume_item_sound n ts it rest : parse_assume_item n ts = POk it rest -> AssumeItem ts it rest.
 Proof.
   unfold parse_assume_item, AssumeItem. intro H. crush; apply parse_path_sound in H0; simpl; eauto with fe.
@@ -279,11 +272,9 @@ Proof.
   induction n as [|n (IH1 & IH2 & IH3)]; [repeat split; intros; discriminate|].
   repeat split.
   - intros ts v rest H. simpl in H. crush; use_sound; feed; unfold RecPatAfter in *; feed; subst.
-    all: try match goal with Hp : Path ?t ?p _ |- Pattern ?t _ _ =>
-               assert (p <> ["_"]) by (apply (path_not_wild _ _ _ Hp); auto) end.
     all: try solve [eauto with fe].
     all: first
-      [ apply PatWild; [repeat split; auto|]; rewrite <- kind_at1; intro K; rewrite K in *; contradiction
+      [ apply PatWild; split; auto
       | apply PatPath; auto; simpl; intros [K|[K|[]]]; auto ].
   - intros p ts v rest H. simpl in H. crush; feed_lists; unfold RecPatAfter; eauto with fe.
   - intros ts v rest H. simpl in H. crush; feed; eauto with fe.
@@ -1225,22 +1216,10 @@ Qed.
    FrontEndComplete.v from the lemmas above (lex_complete, lexes_ends,
    comma_list_complete, path_complete) by induction on the parser's fuel. *)
 
-(* ===================== bundle_todo ======================================== *)
+(* ===================== Dump and loader =================================== *)
 
-(* FRONT_END covers one file; Part VI's LOADER, proved in FrontEndLoader.v
-   (load_sound), covers the bundle: every loaded module is a file `read`
-   gives whose bytes derive an AST f, held as `read_file (dump_file f)`.
-   What remains is that the dump reads back as f:
-
-     dump_reads : forall f f', wf_names f -> read_file (dump_file f) = Good f' -> f' = f
-
-   by induction on the AST (`split_join` above is its path case).  It
-   needs `wf_names`, and not only for `:` in names (no NAME token has
-   one): the dump writes an absent option as the atom `_`, and so a
-   present name `_` reads back as absent where a name is optional — a
-   spec's `.name` (`bind T._;`), an import's alias (`import "x" as _;`),
-   an attached method's receiver (`fn _.m()` reads back as a plain `fn
-   m()`) and an assume item's `.name`.  Those programs derive, and the
-   elaborator sees a different AST: either the grammar should refuse `_`
-   there or the dump should spell `_` apart from absence.  Not proved
-   yet. *)
+(* DumpRoundTrip.dump_reads proves that a name-safe AST whose dump reads
+   successfully reads back as that very AST. Parse.walk checks the small
+   wf_names predicate at the serialization boundary. FrontEndLoader.load_sound
+   therefore proves Bundled with the exact parsed AST, not merely an AST
+   obtained by reading its dump. `_` is a wildcard token, never a name. *)

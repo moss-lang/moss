@@ -1,0 +1,3 @@
+import "../../lib/wasm.moss" as w;
+import "../fixtures/imported_main/provider.moss" use start as main;
+assume w::StructRef, w::I32, w::ArrayRef, w::Gc, main { fn okay() {} }

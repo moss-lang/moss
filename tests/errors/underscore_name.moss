@@ -1,0 +1,2 @@
+# `_` is a wildcard, not a parameter name.
+fn f(_: Int);

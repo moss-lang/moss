@@ -6,16 +6,18 @@ import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
 # and `Elem` comes with them, because every provision below names the
 # element type it is providing at (D61).
 import "./access.moss" use Elem, Index, .get, .set, .length, .push, .read, .begin, .more, .after;
-import "./path.moss" as path use Path, pwd;
+import "./path.moss" as path use Path, pwd, .join, .readable;
 import "./bool.moss" use Bool, true, false;
-import "./char.moss" as char use Char, Chars, .char;
-import "./cell.moss" as cell use CellInt, cell_int;
+import "./char.moss" as char use Char, Chars, .code, .char;
+import "./cell.moss" as cell use CellInt, cell_int, .write;
 import "./float.moss" as float use Float, Floats, .trunc, .round;
 import "./int.moss" as int use Int, zero, one;
+import "./num.moss" use .add, .sub, .mul, .div, .rem, .neg, .not, .abs, .sqrt,
+  .and, .or, .xor, .shl, .shr, .eq, .ne, .lt, .gt, .le, .ge;
 import "./size.moss" as size use Size;
 import "./list.moss" as list use IntList, int_list;
 import "./std.moss" use putchar, put_bytes, Std;
-import "./string.moss" as string use String, print, first_arg, arg_count, arg_at;
+import "./string.moss" as string use String, print, first_arg, arg_count, arg_at, .slice, .concat;
 import "./strlist.moss" as strlist use StrList, str_list;
 
 # `Std`, implemented in Moss over the primitive context (D52). This is the

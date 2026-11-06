@@ -1,0 +1,1 @@
+!P tests/errors/assume_missing_requirement_need.moss seed

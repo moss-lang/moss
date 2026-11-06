@@ -20,7 +20,7 @@
 
 From Stdlib Require Import String Ascii List Bool Arith.
 From Stdlib Require Import Strings.Byte.
-From NM Require Import Audit.
+From NM Require Import Audit DumpRoundTrip.
 Import ListNotations.
 Import Audit.Input Audit.Syntax Audit.Dump Audit.Loader.
 Local Open Scope string_scope.
@@ -349,16 +349,14 @@ Fixpoint parse_pattern (n : nat) (ts : list token) : pr apat :=
   | 0 => fuel_err ts
   | S n =>
       if at_ "LBRACE" ts then parse_record_pattern n None ts
+      else if at_ "UNDERSCORE" ts then POk APWild (advance ts)
       else if at_ "NAME" ts then
-        if String.eqb (tx (peek ts)) "_" && negb (String.eqb (kind_at 1 ts) "COLON_COLON") then
-          POk APWild (advance ts)
-        else
-          let@ p & ts := parse_path n ts in
-          if at_ "LBRACE" ts then parse_record_pattern n (Some p) ts
-          else if at_ "LPAREN" ts then
-            let@ sub & ts := parse_pattern n (advance ts) in
-            let@ _ & ts := expect "RPAREN" ts in POk (APTag p sub) ts
-          else POk (APPath p) ts
+        let@ p & ts := parse_path n ts in
+        if at_ "LBRACE" ts then parse_record_pattern n (Some p) ts
+        else if at_ "LPAREN" ts then
+          let@ sub & ts := parse_pattern n (advance ts) in
+          let@ _ & ts := expect "RPAREN" ts in POk (APTag p sub) ts
+        else POk (APPath p) ts
       else err ("expected a pattern, found " ++ kind ts) ts
   end
 with parse_record_pattern (n : nat) (p : option path) (ts : list token) : pr apat :=
@@ -928,11 +926,13 @@ Fixpoint walk (fuel : nat) (read : string -> option string) (root prelude : stri
           match parse_moss text with
           | Bad m => Bad ("bundle: " ++ p ++ ": " ++ m)
           | Good f =>
+              if DumpRoundTrip.wf_names f then
               let w := wants_prelude prelude p in
               let ts := map (fun i => resolve root prelude p (i_path i)) (f_imports f) in
               let todo := app ts todo in
               let todo := if w then prelude :: todo else todo in
               walk fuel read root prelude todo (p :: seen) (LMod p w ts (dump_file f) :: acc)
+              else Bad ("bundle: " ++ p ++ ": names cannot be represented in the AST dump")
           end
       end
   end end.

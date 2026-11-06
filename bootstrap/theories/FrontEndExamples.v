@@ -7,7 +7,7 @@
 (* ======================================================================== *)
 
 From Stdlib Require Import String List.
-From NM Require Import Audit Parse FrontEnd.
+From NM Require Import Audit Parse FrontEnd FrontEndComplete.
 Import ListNotations Audit.Input Audit.Syntax.
 Local Open Scope string_scope.
 
@@ -209,3 +209,33 @@ Proof. intros f (ts & Hl & ts1 & ts2 & Hi & Hd). refute_file Hl Hi Hd. Qed.
 (* D73: a unit tag has no brackets: `tag Nothing[];` *)
 Example unit_tag_brackets_rejected : forall f, ~ Derives (list_byte_of_string err_unit_tag_brackets) f.
 Proof. intros f (ts & Hl & ts1 & ts2 & Hi & Hd). refute_file Hl Hi Hd. Qed.
+
+(* `_` is a wildcard token, never a declaration, parameter or import name.
+   A longer name may still start or end with an underscore. *)
+Example underscore_parameter_rejected : forall f,
+  ~ Derives (list_byte_of_string "fn f(_: Int);") f.
+Proof.
+  intros f H. apply FrontEndComplete.parse_moss_complete in H.
+  vm_compute in H. discriminate.
+Qed.
+
+Example underscore_receiver_rejected : forall f,
+  ~ Derives (list_byte_of_string "fn _.m();") f.
+Proof.
+  intros f H. apply FrontEndComplete.parse_moss_complete in H.
+  vm_compute in H. discriminate.
+Qed.
+
+Example underscore_alias_rejected : forall f,
+  ~ Derives (list_byte_of_string "import ""x"" as _;") f.
+Proof.
+  intros f H. apply FrontEndComplete.parse_moss_complete in H.
+  vm_compute in H. discriminate.
+Qed.
+
+Example underscore_names_and_wildcard :
+  exists f, Derives (list_byte_of_string
+    "fn _f(x_: Int): Int { match x_ { _ => x_ } }") f.
+Proof.
+  eexists. apply parse_moss_sound. vm_compute. reflexivity.
+Qed.

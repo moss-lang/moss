@@ -76,7 +76,7 @@ Definition Fb (_ : usym) : option (tele * tele * subst) := None.
 
 Definition P : xprog :=
   mkXProg (fun f => if Nat.eqb f fMain then Some main_body else None)
-          (fun _ => None) nBool nTrue nFalse [] (fun _ => None).
+          (fun _ => None) nBool nTrue nFalse [] (fun _ => None) [] (fun _ => []) (fun _ => []) false (fun _ => []) (fun _ => []).
 
 (* --- Formation. ----------------------------------------------------------- *)
 
@@ -112,20 +112,20 @@ Proof. intros. apply wf_nom. eexists; reflexivity. Qed.
 Lemma wf_sig : wf_gsig Sg.
 Proof.
   constructor.
-  - intros n D taup H. exists empty_ctx. unfold Sg in H. cbn [g_tag] in H.
+  - intros n D taup H. exists empty_ctx. unfold Sg in H. cbn [mkGsig g_tag] in H.
     destruct (Nat.eqb n nBool) eqn:E1;
       [| destruct (Nat.eqb n nTrue) eqn:E2;
          [| destruct (Nat.eqb n nFalse) eqn:E3;
             [| destruct (Nat.eqb n nI32) eqn:E4;
                [| destruct (Nat.eqb n nPt) eqn:E5; [| discriminate]]]]];
-      injection H as <- <-; (split; [constructor|]); try (apply WfUnit || apply WfUnion).
+      injection H as <- <-; (split; [constructor|apply (@wf_ty_frees Sg empty_ctx)]); try (apply WfUnit || apply WfUnion).
     + constructor; [apply wf_nom; eexists; reflexivity |].
       constructor; [apply wf_nom; eexists; reflexivity | constructor].
     + repeat constructor; eexists; eexists; reflexivity.
     + simpl. apply NoDup_cons; [intros [Hx | []]; discriminate Hx | apply NoDup_cons; [intros [] | constructor]].
     + apply WfRec; [reflexivity | constructor; [apply wf_I32 | constructor]].
   - intros v D tauv H. discriminate H.
-  - intros f D S b H. exists empty_ctx. unfold Sg in H. cbn [g_fn] in H.
+  - intros f D S b H. exists empty_ctx. unfold Sg in H. cbn [mkGsig g_fn] in H.
     destruct (Nat.eqb f fMain) eqn:E1;
       [| destruct (Nat.eqb f fSize) eqn:E2;
          [| destruct (Nat.eqb f fAdd) eqn:E3;
@@ -137,6 +137,7 @@ Proof.
       intros body Hb; discriminate.
   - intros m D S H. discriminate H.
   - intros u Du Dr ob H. discriminate H.
+  - intros n D Impossible;discriminate Impossible.
 Qed.
 
 (* --- The body's typing. --------------------------------------------------- *)
@@ -155,7 +156,7 @@ Qed.
 Lemma field_f : forall R L, xhas Sg Rp P Fb R L Phi3 G2 (XField (XVar 1) fldF) I32.
 Proof.
   intros. change I32 with (app_subst [] I32).
-  eapply XtField; [apply XtVar; reflexivity | apply wf_Pt | reflexivity | reflexivity | reflexivity | reflexivity].
+  eapply XtField; [apply XtVar; reflexivity | apply wf_Pt | reflexivity | reflexivity | reflexivity | discriminate | reflexivity].
 Qed.
 
 Lemma main_typed :
@@ -169,12 +170,12 @@ Proof.
       split; [repeat constructor; eexists; eexists; split; reflexivity | eexists; eexists; split; reflexivity]] |].
   eapply XtBindPrim; [reflexivity | apply sat0_nil |
     right; left; eexists; eexists; split; [left; reflexivity |
-      split; [repeat constructor; eexists; eexists; split; reflexivity | reflexivity]] |].
+      split; [repeat constructor; eexists; eexists; split; reflexivity | split; [discriminate|reflexivity]]] |].
   fold Phi3.
   eapply XtLet; [apply call_size | intros u [] |].
   eapply XtLet with (tau1 := Pt).
   { change Pt with (app_subst (cS Phi3) (TNom nPt [])).
-    eapply XtTag; [reflexivity | reflexivity | apply sat_nil | constructor |]. cbn.
+    eapply XtTag; [reflexivity | reflexivity | apply sat_nil | constructor | discriminate |]. cbn.
     apply XtRec; [reflexivity | constructor; [apply XtVar; reflexivity | constructor]]. }
   { intros u []. }
   fold G2.
@@ -196,11 +197,11 @@ Proof.
     + intros ms Hm. injection Hm as <-. repeat constructor. intros [].
     + right. exists [Bool]. split; [reflexivity|].
       constructor; [| constructor].
-      exists nBool, []. split; [reflexivity|]. split; [reflexivity|]. split; [discriminate|].
+      exists nBool, []. split; [reflexivity|]. split; [left;reflexivity|]. split; [discriminate|].
       exists None, [], XUnit. left. reflexivity.
     + constructor; [| constructor].
-      exact (@PoTag Sg Rp Bool Bool nBool [] [Bool] [] (TUnion [TNom nTrue []; TNom nFalse []]) None
-               eq_refl (or_introl eq_refl) eq_refl eq_refl).
+      exact (@PoTag Sg Rp P Bool Bool nBool [] [Bool] [] (TUnion [TNom nTrue []; TNom nFalse []]) None
+               eq_refl (or_introl eq_refl) eq_refl eq_refl ltac:(discriminate)).
     + repeat constructor.
     + constructor; [apply XtUnit | constructor].
 Qed.
@@ -212,14 +213,23 @@ Proof.
   - intros f D S b H. unfold Sg in H. simpl in H.
     repeat (destruct (Nat.eqb _ _); [injection H as _ _ <-; reflexivity |]). discriminate.
   - intros u Du Dr b H. discriminate H.
-  - intros h Dh Dc pins Dr bs H. discriminate H.
+  - intros _ h Dh Dc pins Dr bs H. discriminate H.
+  - intros Bad;discriminate Bad.
+  - intros Bad;discriminate Bad.
   - intros f D S body Hf Hb. unfold P in Hb. simpl in Hb.
     destruct (Nat.eqb f fMain) eqn:E; [| discriminate].
     apply Nat.eqb_eq in E. subst f. injection Hb as <-.
     unfold Sg in Hf. simpl in Hf. injection Hf as <- <-.
     exists empty_ctx. split; [constructor | exact main_typed].
-  - repeat split; eexists; reflexivity.
+  - right;split;[reflexivity|]. split;[reflexivity|]. split;[reflexivity|]. split.
+    + exists [],[TNom nTrue [];TNom nFalse []];split;[reflexivity|].
+      split;[intros x H;exact H|]. split;[left;reflexivity|right;left;reflexivity].
+    + split;exists [];reflexivity.
   - split; reflexivity.
+  - intros n spec H;discriminate H.
+  - intros n spec D pay H;discriminate H.
+  - intros h Dh Dc pins H;discriminate H.
+  - intros n spec h expected H;discriminate H.
 Qed.
 
 (* So no run of it gets stuck, on the oracle's interpreter. *)
@@ -232,7 +242,7 @@ Proof.
   - constructor.
   - split; [constructor|]. split; [intros t tau Ht; discriminate Ht|].
     split; [intros t []|]. split; [split; [intros x [] | constructor] | intros []].
-  - split; [constructor | split; [intros i en [] | constructor]].
+  - split; [split; [constructor | split; [intros i en [] | constructor]]|intros Reify t []].
 Qed.
 
 End XExample.
@@ -261,6 +271,7 @@ Definition nTrue : nsym := 2.
 Definition nFalse : nsym := 3.
 Definition nI32 : nsym := 4.
 Definition nRef : nsym := 5.
+Definition nHandle : nsym := 6.
 Definition tX : tsym := 1.
 Definition fMain : fsym := 1.
 Definition fSize : fsym := 2.
@@ -279,7 +290,8 @@ Definition Sg : gsig := mkGsig
      else if Nat.eqb n nTrue then Some ([], TUnit)
      else if Nat.eqb n nFalse then Some ([], TUnit)
      else if Nat.eqb n nI32 then Some ([], TUnit)
-     else if Nat.eqb n nRef then Some ([ITy tX], TUnit)
+     else if Nat.eqb n nRef then Some ([ITy tX], TNom nHandle [])
+     else if Nat.eqb n nHandle then Some ([],TUnit)
      else None)
   (fun _ => None)
   (fun f =>
@@ -297,6 +309,7 @@ Definition Sg : gsig := mkGsig
 Definition Rp (n : nsym) : option rep :=
   if Nat.eqb n nI32 then Some RI32
   else if Nat.eqb n nRef then Some (RRef tX)
+  else if Nat.eqb n nHandle then Some (RHandle false)
   else None.
 
 Definition main_body : xexpr :=
@@ -313,7 +326,7 @@ Definition Fb (_ : usym) : option (tele * tele * subst) := None.
 
 Definition P : xprog :=
   mkXProg (fun f => if Nat.eqb f fMain then Some main_body else None)
-          (fun _ => None) nBool nTrue nFalse [] (fun _ => None).
+          (fun _ => None) nBool nTrue nFalse [] (fun _ => None) [(nRef,XCastSpec false tX None)] (fun _ => []) (fun _ => []) false (fun _ => []) (fun _ => []).
 
 (* --- Formation. ----------------------------------------------------------- *)
 
@@ -347,22 +360,24 @@ Qed.
 Lemma wf_sig : wf_gsig Sg.
 Proof.
   constructor.
-  - intros n D taup H. unfold Sg in H. cbn [g_tag] in H.
+  - intros n D taup H. unfold Sg in H. cbn [mkGsig g_tag] in H.
     destruct (Nat.eqb n nBool) eqn:E1;
       [| destruct (Nat.eqb n nTrue) eqn:E2;
          [| destruct (Nat.eqb n nFalse) eqn:E3;
             [| destruct (Nat.eqb n nI32) eqn:E4;
-               [| destruct (Nat.eqb n nRef) eqn:E5; [| discriminate]]]]];
+               [| destruct (Nat.eqb n nRef) eqn:E5;
+                  [|destruct(Nat.eqb n nHandle)eqn:E6;[|discriminate]]]]]];
       injection H as <- <-.
-    1-4: exists empty_ctx; (split; [constructor|]); try constructor.
+    1-4: exists empty_ctx; (split; [constructor|apply (@wf_ty_frees Sg empty_ctx)]); try constructor.
     + constructor; [apply wf_nom; eexists; reflexivity |].
       constructor; [apply wf_nom; eexists; reflexivity | constructor].
     + repeat constructor; eexists; eexists; reflexivity.
     + simpl. apply NoDup_cons; [intros [Hx | []]; discriminate Hx | apply NoDup_cons; [intros [] | constructor]].
-    + eexists. split; [| constructor].
+    + eexists. split; [| intros x Hx;cbn in Hx;contradiction].
       eapply WCons; [constructor; [reflexivity | discriminate] | reflexivity | constructor].
+    + exists empty_ctx;split;[constructor|intros x Hx;contradiction].
   - intros v D tauv H. discriminate H.
-  - intros f D S b H. exists empty_ctx. unfold Sg in H. cbn [g_fn] in H.
+  - intros f D S b H. exists empty_ctx. unfold Sg in H. cbn [mkGsig g_fn] in H.
     destruct (Nat.eqb f fMain) eqn:E1;
       [| destruct (Nat.eqb f fSize) eqn:E2;
          [| destruct (Nat.eqb f fBox) eqn:E3;
@@ -376,6 +391,7 @@ Proof.
       intros body Hb; discriminate.
   - intros m D S H. discriminate H.
   - intros u Du Dr ob H. discriminate H.
+  - intros n D Impossible;discriminate Impossible.
 Qed.
 
 (* --- The body's typing: each GC primitive by its shape. ------------------ *)
@@ -420,6 +436,19 @@ Qed.
 Lemma ref_contents : contents [(tX, I32)] tX = I32.
 Proof. reflexivity. Qed.
 
+Lemma schema_ref : forall th,gc_schema Sg Rp P false nRef th tX.
+Proof.
+ intros th;exists(XCastSpec false tX None).
+ split;[reflexivity|]. split;[reflexivity|]. split;[reflexivity|]. split;[exact I|].
+ exists [ITy tX],(TNom nHandle []);split;[reflexivity|].
+ apply HtNom;reflexivity.
+Qed.
+Lemma ref_shape : is_ref Sg Rp P false RefI I32.
+Proof.
+ exists nRef,[(tX,I32)],tX;split;[reflexivity|]. split;[reflexivity|].
+ split;[reflexivity|apply schema_ref].
+Qed.
+
 Lemma main_typed :
   xhas Sg Rp P Fb (Some TUnit) false empty_ctx [] main_body TUnit.
 Proof.
@@ -429,13 +458,13 @@ Proof.
     right; left; eexists; eexists; split; [left; reflexivity | split; [constructor | eexists; eexists; split; reflexivity]] |].
   (* Ref.new at I32 -> Ref[I32] *)
   eapply XtBindPrim; [reflexivity | apply sat0_nil |
-    right; right; exists [(tX, I32)], tX; split; [reflexivity | split; reflexivity] |].
+    right; right; exists [(tX, I32)], tX; split;[reflexivity|split;[reflexivity|split;[reflexivity|apply schema_ref]]] |].
   (* Ref.get at Ref[I32] -> I32 *)
   eapply XtBindPrim; [reflexivity | apply sat0_nil |
-    right; right; exists nRef, [(tX, I32)], tX; split; [reflexivity | split; reflexivity] |].
+    right; right; exact ref_shape |].
   (* Ref.set at (Ref[I32], I32) -> () *)
   eapply XtBindPrim; [reflexivity | apply sat0_nil |
-    right; right; split; [exists nRef, [(tX, I32)], tX; split; [reflexivity | split; reflexivity] | reflexivity] |].
+    right; right; split; [exact ref_shape|reflexivity] |].
   (* i32.add *)
   eapply XtBindPrim; [reflexivity | apply sat0_nil |
     right; left; eexists; eexists; split; [left; reflexivity |
@@ -458,14 +487,29 @@ Proof.
   - intros f D S b H. unfold Sg in H. simpl in H.
     repeat (destruct (Nat.eqb _ _); [injection H as _ _ <-; reflexivity |]). discriminate.
   - intros u Du Dr b H. discriminate H.
-  - intros h Dh Dc pins Dr bs H. discriminate H.
+  - intros _ h Dh Dc pins Dr bs H. discriminate H.
+  - intros Bad;discriminate Bad.
+  - intros Bad;discriminate Bad.
   - intros f D S body Hf Hb. unfold P in Hb. simpl in Hb.
     destruct (Nat.eqb f fMain) eqn:E; [| discriminate].
     apply Nat.eqb_eq in E. subst f. injection Hb as <-.
     unfold Sg in Hf. simpl in Hf. injection Hf as <- <-.
     exists empty_ctx. split; [constructor | exact main_typed].
-  - repeat split; eexists; reflexivity.
+  - right;split;[reflexivity|]. split;[reflexivity|]. split;[reflexivity|]. split.
+    + exists [],[TNom nTrue [];TNom nFalse []];split;[reflexivity|].
+      split;[intros x H;exact H|]. split;[left;reflexivity|right;left;reflexivity].
+    + split;exists [];reflexivity.
   - split; reflexivity.
+  - intros n spec H;cbn[lookup_cast P xp_cast]in H.
+    destruct(Nat.eqb n nRef)eqn:E;[|discriminate]. apply Nat.eqb_eq in E;subst n.
+    injection H as <-;reflexivity.
+  - intros n spec D pay H Tag;cbn[lookup_cast P xp_cast]in H.
+    destruct(Nat.eqb n nRef)eqn:E;[|discriminate]. apply Nat.eqb_eq in E;subst n.
+    injection H as <-;cbn[Sg g_tag nRef nBool nTrue nFalse nI32]in Tag;injection Tag as <- <-.
+    split;[left;reflexivity|intros h expected Bad;discriminate Bad].
+  - intros h Dh Dc pins H;discriminate H.
+  - intros n spec h expected H;cbn[lookup_cast P xp_cast]in H.
+    destruct(Nat.eqb n nRef);[|discriminate]. injection H as <-;discriminate.
 Qed.
 
 (* --- Safety on the GC heap. ---------------------------------------------- *)
@@ -474,15 +518,15 @@ Qed.
    (XHeapC's heap_ok), every run of the body is safe: no XErr, and its
    outcome is typed at an extension of the store typing. *)
 Corollary ref_safe : forall st fuel,
-  XHeapC.ConcreteHeap.heap_ok (XSafetyC.PsiH Sg Rp (fun _ => None)) st ->
-  XSafetyC.xsafe Sg Rp (fun _ => None) [] empty_ctx [] (Some TUnit) false TUnit
+  XHeapC.ConcreteHeap.heap_ok (XSafetyC.PsiH Sg Rp P (fun _ => None)) st ->
+  XSafetyC.xsafe Sg Rp P (fun _ => None) [] empty_ctx [] (Some TUnit) false TUnit
     (MossX.XS.xinterp fuel P [] [] st main_body).
 Proof.
   intros st fuel Hh.
   eapply (@mossx_typed_safe Sg Rp P Fb ref_wf); [exact main_typed | | | | exact Hh].
   - split; [constructor|]. split; [intros t tau Ht; discriminate Ht|].
     split; [intros t []|]. split; [split; [intros x [] | constructor] | intros []].
-  - split; [constructor | split; [intros i en [] | constructor]].
+  - split; [split; [constructor | split; [intros i en [] | constructor]]|intros Reify t []].
   - split; constructor.
 Qed.
 
@@ -495,7 +539,7 @@ Proof.
   - constructor.
   - split; [constructor|]. split; [intros t tau Ht; discriminate Ht|].
     split; [intros t []|]. split; [split; [intros x [] | constructor] | intros []].
-  - split; [constructor | split; [intros i en [] | constructor]].
+  - split; [split; [constructor | split; [intros i en [] | constructor]]|intros Reify t []].
 Qed.
 
 (* --- A run. ---------------------------------------------------------------- *)

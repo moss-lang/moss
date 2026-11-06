@@ -1,0 +1,9 @@
+fn f();
+functor F: -> f {
+  bind f = () => { let n = (); n; };
+}
+fn main() {
+  let n = ();
+  bind F;
+  f();
+}
