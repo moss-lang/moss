@@ -20,7 +20,7 @@ src/main.moss --(theories/Parse.v: lexer, parser, module loader)--> bundle
 The [verification status](STATUS.md) describes the proved components and
 remaining source soundness and runtime typing obligations for this milestone.
 
-It takes about 20 minutes and 3 GB, so everyday work reuses a compiler
+The interpreted self-compile is expensive, so everyday work reuses a compiler
 built before ([`CONTRIBUTING.md`](../CONTRIBUTING.md)). The same program,
 `moss_m2`, is the *oracle* of the test suite
 ([`crates/moss-tests`](../crates/moss-tests)): it runs test programs as a
@@ -122,17 +122,21 @@ errors and positions included.
 With Nix, everything is a flake output:
 
 ```sh
-nix build .#oracle            # result/bin/moss_m2
-nix build .#compiler          # the bootstrap: about 20 minutes
+nix build .#oracle            # audited build; result/bin/moss_m2
+nix build .#compiler          # the bootstrap (prints phase timings)
 nix build .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).bootstrap-rocq
 ```
+
+The Nix oracle build runs the full proof and assumption audit before
+extracting the executable, reusing the same release-profile build tree.
+The `bootstrap-rocq` check exposes its audit logs without rebuilding proofs.
 
 By hand, in `nix develop .#bootstrap` (OCaml 4.14 with flambda, and dune,
 Rocq 9.1 and its standard library built with it):
 
 ```sh
 (cd bootstrap && dune build ocaml/moss_m2.exe)   # under a minute
-bootstrap/check.sh            # about 5 minutes, 6 GB
+bootstrap/check.sh            # all theories and assumption audits
 m2=bootstrap/_build/default/ocaml/moss_m2.exe
 $m2 examples/hello.moss                       # run a program
 $m2 --elab-only tests/wasi/tags.moss          # only check it

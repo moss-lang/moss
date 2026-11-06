@@ -204,7 +204,7 @@ let () =
       r := Stdlib.List.length sm :: !r in
     let rec ex e = match e with
       | XVar _ | XUnit | XBreak | XVl _ -> ()
-      | XTag (_, _, e1) | XBindTy (_, _, e1) | XLoop e1 | XReturn e1 | XField (e1, _) | XAssign (_, e1)
+      | XConst (_, e1) | XTag (_, _, e1) | XBindTy (_, _, e1) | XLoop e1 | XReturn e1 | XField (e1, _) | XAssign (_, e1)
       | XBindFunSym (_, _, e1) | XBindPrim (_, _, e1) | XBindFunCopy (_, _, e1) -> ex e1
       | XCallD (_, _, sm, a) -> add "call" sm; Stdlib.List.iter ex a
       | XCallA (_, a) -> Stdlib.List.iter ex a
@@ -246,7 +246,7 @@ let () =
       | XApply (u, th, sm, e1) -> Printf.eprintf "[moss_m2 stats: XApply u%d |th|=%d |sm|=%d body=%s]\n" u (Stdlib.List.length th) (Stdlib.List.length sm)
           (match e1 with XMeth _ -> "meth" | _ -> "other"); sites e1
       | XVar _ | XUnit | XBreak | XVl _ -> ()
-      | XTag (_, _, e1) | XBindTy (_, _, e1) | XLoop e1 | XReturn e1 | XField (e1, _) | XAssign (_, e1)
+      | XConst (_, e1) | XTag (_, _, e1) | XBindTy (_, _, e1) | XLoop e1 | XReturn e1 | XField (e1, _) | XAssign (_, e1)
       | XBindFunSym (_, _, e1) | XBindPrim (_, _, e1) | XBindFunCopy (_, _, e1) | XBindFn (_,_,_,e1) | XBindMth (_,_,_,_,_,e1)
       | XBindFun (_,_,_,_,e1) | XBindFunA (_,_,_,e1) | XApplyBr (_,_,e1) | XApplyR (_,_,_,e1) -> sites e1
       | XCallD (_, _, _, a) | XCallA (_, a) -> Stdlib.List.iter sites a

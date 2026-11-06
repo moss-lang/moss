@@ -436,13 +436,14 @@ Proof.
 Qed.
 
 (* main's root context (Audit note 54): none, for a fn that is not its
-   module's `main` or a reading with no `Gc` *)
+   module's `main` or a reading with no `Gc`. Try the reflected scope
+   check first: a failing notmain search can destruct a large world. *)
 Ltac rootctx :=
   apply RootNone;
-  first [ (left; notmain)
-        | (right; let HL := fresh "HL" in let Hd := fresh "Hd" in let Hf := fresh "Hf" in
+  first [ (right; let HL := fresh "HL" in let Hd := fresh "Hd" in let Hf := fresh "Hf" in
            intros ? ? ? ? HL _ _; destruct HL as (? & ? & Hd & _ & Hf);
-           refine (no_scope _ _ _ _ _ _ Hf); vm_compute; reflexivity) ].
+           refine (no_scope _ _ _ _ _ _ Hf); vm_compute; reflexivity)
+        | (left; notmain) ].
 
 (* the context a symbol's assumes form, with nothing to merge *)
 Ltac ctxof :=

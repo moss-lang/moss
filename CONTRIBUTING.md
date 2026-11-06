@@ -13,11 +13,12 @@ The compiler is written in Moss, under [`src`](src), and compiles itself.
 Building it from nothing is the job of [`bootstrap`](bootstrap): a front
 end and interpreter for Moss written in Rocq and extracted to OCaml (the
 *oracle*), which runs `src/main.moss` compiling itself. That is the
-flake's `compiler` package, and it takes about 20 minutes and 3 GB:
+flake's `compiler` package. This is an expensive interpreted self-compile;
+the build prints phase timings to stderr:
 
 ```sh
 nix build .#compiler -o result-compiler   # the bootstrap
-nix build .#oracle -o result-oracle       # just the oracle, a few minutes
+nix build .#oracle -o result-oracle       # audited oracle without self-compilation
 ```
 
 You do not do that for everyday work. Any compiler built before, from an
@@ -81,8 +82,9 @@ Everything CI enforces is a flake check:
 nix flake check
 ```
 
-That includes `bootstrap-rocq`, which compiles the Rocq development and
-audits the assumptions of what it certifies (about 5 minutes and 6 GB);
+That includes `bootstrap-rocq`, which depends on the audited oracle build.
+The oracle compiles every Rocq theory, audits the assumptions of what it
+certifies, and extracts the executable in the same release build tree;
 `bootstrap/check.sh` runs the same in `nix develop .#bootstrap`, where
 `dune build` in `bootstrap` builds the oracle
 ([`bootstrap/README.md`](bootstrap/README.md)).

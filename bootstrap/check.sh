@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Compile every Rocq file and audit the certificate (`nix flake check` runs
-# this as the `bootstrap-rocq` check; about 5 minutes and 6 GB). Needs what
+# this as the `bootstrap-rocq` check). Needs what
 # `nix develop .#bootstrap` provides.
 #
 # - assumptions/Certificate.v: what Certified.v binds, and the extracted
@@ -14,7 +14,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 fail() { echo "check.sh: $*" >&2; exit 1; }
 
-dune build @theories/all
+echo "check.sh: compiling all Rocq theories (${DUNE_PROFILE:-dev} profile)" >&2
+dune_jobs=()
+if [ -n "${DUNE_JOBS:-}" ]; then dune_jobs=(-j "$DUNE_JOBS"); fi
+dune build --profile "${DUNE_PROFILE:-dev}" "${dune_jobs[@]}" @theories/all
+echo "check.sh: auditing certificate assumptions and closed theorems" >&2
 for f in Certificate Closed; do
   rocq c -q -no-glob -Q _build/default/theories NM -o _build/$f.vo assumptions/$f.v > _build/$f.log
 done
