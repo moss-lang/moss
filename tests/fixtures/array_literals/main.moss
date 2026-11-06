@@ -1,0 +1,60 @@
+import "./protocol.moss" use *;
+import "./provider.moss" use *;
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+
+assume Std, Wasm {
+  tag Wrapped { before: Int, text: WideText, after: Int };
+}
+
+assume Std, Literals {
+  fn hello(): Text {
+    let b = literal_begin(5);
+    let b = literal_write(b, 0, 104);
+    let b = literal_write(b, 1, 101);
+    let b = literal_write(b, 2, 108);
+    let b = literal_write(b, 3, 108);
+    let b = literal_write(b, 4, 111);
+    literal_finish(b)
+  }
+  fn show(text: Text) {
+    var i = 0;
+    while i < text_length(text) {
+      putchar(text_at(text, i).char());
+      i = i + 1;
+    }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind LiteralBuilder = Building;
+    bind Text = ArrayText;
+    bind literal_begin = begin_array;
+    bind literal_write = write_array;
+    bind literal_finish = finish_array;
+    bind text_length = array_length;
+    bind text_at = array_at;
+    # A runtime choice keeps the union's distinct payload lanes live.
+    let text = if arg_count() % 2 == 1 { hello() } else { runtime_text(65 + arg_count(), 33) };
+    let wrapped = Wrapped { before = 7, text = widen(reverse(text)), after = 9 };
+    if wrapped.before + wrapped.after != 16 { putchar(char::question); }
+    show(restore(wrapped.text));
+    show(hello());
+    show(runtime_text(65 + arg_count(), 33));
+    {
+      bind LiteralBuilder = Int;
+      bind Text = Int;
+      bind literal_begin = (length) => 0;
+      bind literal_write = (builder, index, value) => builder + value;
+      bind literal_finish = (builder) => builder;
+      bind text_length = (text) => 1;
+      bind text_at = (text, index) => text % 26 + 65;
+      show(hello());
+    }
+  }
+}

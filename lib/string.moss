@@ -4,9 +4,20 @@ import "./int.moss" use Int;
 
 type String;
 
+# Literal construction is ordinary contextual code. The frontend supplies UTF-8
+# bytes as Int values; a provider chooses the representation and construction.
+type StringBuilder;
+assume Int, StringBuilder, String {
+  fn string_begin(length: Int): StringBuilder;
+  fn string_write(builder: StringBuilder, index: Int, value: Int): StringBuilder;
+  fn string_finish(builder: StringBuilder): String;
+  context StringLiterals = StringBuilder, string_begin, string_write, string_finish;
+}
+
 # `.get` and `.length` are the shared accessors of access.moss, provided
 # here at `String` with `Elem=Char` (D61). `.concat` and `.slice` are this
-# module's own.
+# module's own. The default provider uses UTF-8 bytes: length and indices
+# count bytes, and get returns one byte as a Char.
 
 assume String {
   assume Int {

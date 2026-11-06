@@ -613,6 +613,7 @@ with parse_primary (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
         let@ _ & ts := expect "RPAREN" ts in POk e ts
       else if at_ "THIS" ts then POk AEThis (advance ts)
       else if at_any ["INTEGER"; "DECIMAL"] ts then POk (AELit (lit_norm (tx (peek ts)))) (advance ts)
+      else if at_ "STRING" ts then POk (string_desugar (string_value (tx (peek ts)))) (advance ts)
       else if at_ "LBRACE" ts && negb nr then
         let@ b & ts := parse_block n ts in POk (AEBlock b) ts
       else if at_ "NAME" ts then

@@ -1,0 +1,12 @@
+# The proposed literal desugaring only knows this abstract protocol.
+type LiteralBuilder;
+type Text;
+assume Int, LiteralBuilder, Text {
+  fn literal_begin(length: Int): LiteralBuilder;
+  fn literal_write(builder: LiteralBuilder, index: Int, value: Int): LiteralBuilder;
+  fn literal_finish(builder: LiteralBuilder): Text;
+  fn text_length(text: Text): Int;
+  fn text_at(text: Text, index: Int): Int;
+  context Literals = LiteralBuilder, Text, literal_begin, literal_write,
+    literal_finish, text_length, text_at;
+}

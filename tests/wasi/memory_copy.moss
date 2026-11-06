@@ -1,4 +1,4 @@
-import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasi.moss" use WasiRawStd;
 import "../../lib/wasistd.moss" use Branch, WasiContainers, Str, Num, Packed, Item,
   alloc, four, raw, code_of, ints_addr, elem, i32_bool;
 import "../../lib/wasm.moss" as w use Wasm, Memory;
@@ -6,7 +6,7 @@ import "../../lib/wasip1.moss" use Wasi;
 
 # D79: printing text made in another memory. WASI preview 1 reads only
 # the main memory, so `print` takes a string there — `String` as
-# `WasiStd` bound it, in the main memory — and a string made in
+# `WasiRawStd` bound it, in the main memory — and a string made in
 # `Scratch` is another type, `Str[Memory=Scratch]`, which `print` does
 # not take (tests/wasi/memory_print.moss). It is copied first: `copied`
 # makes a string in the memory in force out of one in `Source`, reading
@@ -58,7 +58,7 @@ assume Wasm, Branch {
 
 assume Wasm, Wasi, Branch {
   fn main() {
-    bind WasiStd;
+    bind WasiRawStd;
     let s = {
       bind Memory = Scratch;
       bind WasiContainers;

@@ -171,7 +171,8 @@ the current reality. Consequences:
   replacement.
 
 Numeric literals have since arrived, as arithmetic over library symbols
-rather than constants ([D68]); character and string literals have not.
+rather than constants ([D68]); quoted string expressions followed in [D87].
+Character constants still use names such as `char::a`.
 
 **[D5] DECIDED (strings only in import position).** The _string_ token
 survives in the lexer solely because `import` paths need it
@@ -182,6 +183,9 @@ etc. (This is actually sufficient for a compiler, which reads files and
 writes bytes.) Char values come from named vals like the `char` module in
 hello.md; small integers from named vals (`zero`, plus whatever Std grows,
 e.g. `one` or an `Int.succ`-style function).
+
+*Superseded by [D87]: a string token may also be an ordinary protocol
+expression. Import paths retain their existing lexical meaning.*
 
 **[D6] DECIDED (comments).** `#` to end of line; comments and whitespace are
 not tokens. `#!` shebang lines fall out for free.
@@ -511,6 +515,9 @@ value being i64 is just a different layout. So i64 support and the
 heapless value model are one change, not two — and its first half is
 done: a slot carries a valtype, `Wasm`'s i64 instructions compile, and
 `lib/wasistd.moss` implements `Path.read` with real u64 rights masks.
+[D87] later separates incompatible reference payloads into distinct union
+lanes; the finite, unboxed value model stays the same.
+
 Both halves are done. A slot carries a valtype, so `Wasm`'s i64
 instructions compile and `lib/wasistd.moss` implements `Path.read` with
 real u64 rights; and a value is a *run* of slots, so a record is one
@@ -940,6 +947,9 @@ literals is weaker than rev 7 expected. The diagnostics argument is
 unchanged and is now the whole of it — the self-hosted compiler reports
 an error as a code letter and a name, because a sentence is a string it
 would have to hold. Still deferred.
+
+*Resolved by [D87]: quoted expressions use a generic construction protocol;
+data pooling is deferred to a separate backend change.*
 
 **[D52] DECIDED by the designer (`Wasi` is the primitive context; `Std` is
 a library over it).** [D38] made `Std` primitive: the bootstrap provides it
@@ -3014,6 +3024,9 @@ written against `Ast` does not change.
   fine. Laying a union out in per-valtype lanes is the fix; the
   self-hosted compiler could, but the bootstrap lowers a function once
   with its field offsets fixed, so it is *later*.
+  *Superseded by [D87]: the emitter now assigns incompatible reference
+  payloads separate typed lanes, including inside records and recursive
+  boxes; no such reference-slot conflict remains an acceptance gap.*
 - *Padding.* A union member narrower than its union is padded with
   zeros of the union's own valtypes — `ref.null $X` for a reference
   slot — where both compilers used to pad with `i32.const 0` (which
@@ -4013,8 +4026,9 @@ exactly as `Packed` does (a test shows it can).
   scalars, `$AX` is an immutable struct of n lanes, each a `(ref
   (array (mut tᵢ)))` of one length, and every operation is done once
   per lane. A union's lanes are its slots, each of one valtype ([D75]'s
-  refusal of a slot that is a reference in one member and a scalar in
-  another applies unchanged). So a list of `Expr` (`i32 i32 ref ref`)
+  original refusal of conflicting reference slots was lifted by [D87],
+  which assigns incompatible payloads separate typed lanes). So a list of
+  `Expr` (`i32 i32 ref ref`)
   is four arrays, with no allocation per element. A zero-lane element
   (a unit, `()`) is a struct holding only its length.
 - **Forging, as for `Ref`.** Taking an `Array` apart gives the bare
@@ -4763,6 +4777,70 @@ that some earlier compiler can build it; and the Core Moss paper
 (`core-moss.tex`) is no longer kept, its mechanization now living with
 the rest of the development in `bootstrap/theories/`.
 
+**[D87] DECIDED by the designer and implemented (generic quoted strings and typed reference union layouts).**
+[D48]'s deferred string syntax is now ordinary frontend sugar. The
+language stays independent of concrete string storage. Backend pooling
+and representation contraction are deferred to a separate stacked change.
+
+1. **Quoted expressions are a protocol, not a primitive.** A decoded
+   UTF-8 byte string expands to a block with one hidden mutable builder:
+   `string_begin(length)`, then `string_write(builder, index, byte)` for
+   every byte in order, assigning each result back to that builder, then
+   `string_finish(builder)`. The builder has one fixed type, and its
+   generated keyword name cannot collide with source bindings. Length,
+   indices and bytes are ordinary integer literals; all three function
+   names resolve lexically where the string is written. An empty string
+   performs begin and finish with no writes. The escapes are those of
+   import paths: quote, backslash, `n`, `r` and `t`. This replaces [D4]
+   and [D5]'s prohibition of string expressions. There is no new core
+   expression, primitive string operation, or program-wide enumeration
+   of literals. Effects happen only when the expression is reached,
+   exactly as with its explicit calls.
+2. **`Std` includes `StringLiterals`; its default provider is ordinary
+   Moss over WasmGC.** [`lib/string.moss`](../../lib/string.moss) declares
+   `StringBuilder` and the protocol. [`WasiStd`](../../lib/wasi.moss)
+   supplies [`Text`](../../lib/gcstring.moss), a nominal wrapper over a
+   union of literal and dynamic variants backed by distinct nominal byte
+   array element types. Finishing a builder copies its contents, so
+   later writes through a builder alias cannot mutate an existing
+   string. The public string interface has no mutator. Strings from
+   arguments and files and the results of concatenation and slicing use
+   the dynamic backing. WASI preview 1 bridges copy bytes into the main
+   linear memory as needed; `WasiRawStd` retains the linear-memory
+   provider for raw code and the self-hosted compiler. Contexts can
+   replace the protocol and representation as usual. The current provider
+   constructs a builder and copies its bytes into a fresh snapshot on each
+   evaluation; literal construction still allocates and takes work
+   proportional to the byte length.
+3. **Incompatible precise reference payloads get separate union lanes.**
+   [D59]'s finite scalar runs and allocation-free records and unions
+   remain. [D75]'s conflict between a reference and another valtype in
+   one union slot is no longer rejected: the emitter uses a discriminant
+   followed by separate payload runs when their precise reference types
+   cannot share a slot. Inactive references are null. Compatible unions
+   keep their compact layout. Injection, projection, union widening and
+   reordering, record fields, function signatures, GC arrays and recursive
+   boxes all use that same physical layout. Moss type identity and
+   matching do not change. Arrays are keyed by the full Moss element
+   type, with GC types in one `rec` group; distinct nominal byte element
+   tags therefore preserve distinct backing types before optimization.
+4. **Pooling is a separate backend follow-up.** It is not part of this
+   language implementation, which emits ordinary array constructions.
+   A later pass must prove initialization is unobserved and check mutation,
+   identity observations, escapes and other uses before replacing arrays
+   with shared storage. The agreed options are active data in a private
+   memory, or private GC globals initialized from passive data. The latter
+   could also merge backing types and contract proven private
+   tag/reference flows to one reference. These optimizations must preserve
+   ordinary protocol semantics without recognizing string protocol names.
+
+The [oracle grammar and parser](../../bootstrap/theories/Audit.v) use the
+same ordinary desugaring, with parser soundness and completeness checked
+by Rocq. [Integration tests](../../crates/moss-tests/tests/suite/string_literals.rs)
+check UTF-8, rebinding and effect timing, immutable builder aliases,
+WASI bridges, runtime builders and large literals against the oracle.
+Pooling performance checks belong to the separate backend change.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -4772,9 +4850,8 @@ fallback is gone, and the compiler under `src/` compiles itself to a
 fixpoint. What remains is engineering: the constant factor of `Std`
 written in Moss. (Records are done, and there are no tuples [D63].)
 
-Still awaiting the designer, all deferred rather than blocking: [D48]
-string literals (when diagnostics/codegen make embedded strings
-unavoidable — *not* the prelude path, see [D52]) · attached methods on union-headed *aliases* in general ([D47] — solved
+Still awaiting the designer, all deferred rather than blocking: attached
+methods on union-headed *aliases* in general ([D47] — solved
 for `Bool` by [D45]'s nominal wrapper, and for detached methods by [D75]) ·
 [D50]'s v0 restrictions on defined vals · the planned expanding-cycle
 check for polymorphic recursion ([D16]; decided, not implemented)
@@ -4848,7 +4925,10 @@ and indices, `Index` for access.moss's, and `for x in xs` over four
 iteration methods, D86 the bootstrap is the Rocq front end and
 interpreter, which runs the compiler compiling itself, with the Python
 bootstrap removed, the tests in Rust, the two front ends held to accept
-and reject alike, and everyday work on a previously built compiler; and D32 as amended: a call evaluates its receiver,
+and reject alike, and everyday work on a previously built compiler,
+D87 quoted strings as ordinary contextual construction calls, a default
+GC string provider with immutable snapshots, separate typed union lanes
+for incompatible references, with backend pooling deferred; and D32 as amended: a call evaluates its receiver,
 then its arguments left to right)
 
 The MVP language is fully pinned down. Next (the plan as of revision 4):

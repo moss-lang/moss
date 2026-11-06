@@ -264,6 +264,14 @@ assume Std {
       }
     }
 
+    fn string_escape(c: Char): Bool {
+      if c == char::quote { return true; }
+      if c == char::backslash { return true; }
+      if c == char::n { return true; }
+      if c == char::r { return true; }
+      c == char::t
+    }
+
     fn string_token(): Token {
       loop {
         match peek() {
@@ -275,10 +283,12 @@ assume Std {
             } else if c == char::newline {
               return Bad;
             } else if c == char::backslash {
-              # TODO: validate the escape character instead of skipping it.
               match peek() {
                 Eof => return Bad,
-                Read(e) => advance(),
+                Read(e) => {
+                  advance();
+                  if !string_escape(e) { return Bad; }
+                },
               }
             }
           }

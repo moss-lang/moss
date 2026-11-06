@@ -1,0 +1,21 @@
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    {
+      bind String = Int;
+      bind StringBuilder = Int;
+      bind string_begin = (length) => { putchar(char::B); length };
+      bind string_write = (builder, index, value) => { putchar(char::W); builder + index + value };
+      bind string_finish = (builder) => { putchar(char::F); builder };
+      if false { let unused = "never"; }
+      let empty = "";
+      let text = "abc";
+      putchar((text % 26 + 65).char());
+      putchar(char::newline);
+    }
+  }
+}

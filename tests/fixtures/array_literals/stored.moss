@@ -1,0 +1,34 @@
+import "./main.moss" use hello, show;
+import "./protocol.moss" use *;
+import "./provider.moss" use *;
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch, raw;
+import "../../../lib/wasm.moss" as w use Wasm, Boxed, Heap, .boxed, Arrayed, Arrays, .arrayed;
+import "../../../lib/wasip1.moss" use Wasi;
+
+assume Wasm {
+  tag Stored { text: ArrayText };
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind LiteralBuilder = Building;
+    bind Text = ArrayText;
+    bind literal_begin = begin_array;
+    bind literal_write = write_array;
+    bind literal_finish = finish_array;
+    bind text_length = array_length;
+    bind text_at = array_at;
+    bind Boxed = Stored;
+    bind Heap;
+    let boxed = Stored { text = hello() }.boxed();
+    match boxed.deref() { Stored { text } => show(text) }
+    bind Arrayed = ArrayText;
+    bind Arrays;
+    let strings = hello().arrayed(raw(arg_count()));
+    show(strings.get(raw(arg_count() - 1)));
+    strings.set(w::i32_zero, runtime_text(65 + arg_count(), 33));
+    show(strings.get(w::i32_zero));
+  }
+}

@@ -105,7 +105,7 @@ The `putchar` function is pretty straightforward, it just prints a character to 
 
 ### `char::*`
 
-Moss is still experimental, so the set of features is still quite limited. In particular, there are currently no string literals, or literals of any kind. As a result, this simple "Hello, world!" program needs to awkwardly list every single character in the string instead of just having one string literal.
+Moss also supports quoted strings: under `Std`, `print("Hello, world!");` prints the same text. The character-by-character version above shows how values and operations are supplied by the context.
 
 The double colon `::` indicates the access of a symbol inside of a namespace. The prelude provides a `char` symbol which points to a module containing many different character values. So, `char::e` accesses the symbol `e` from that `char` module. All these characters are provided by the `Std` context.
 

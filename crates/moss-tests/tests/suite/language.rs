@@ -628,13 +628,11 @@ mod std_lib {
         agree(&entry, &["abc"], "a,abc,");
     }
 
-    /// The Python bootstrap's native `Std` panicked on a slice past the
-    /// end. `WasiStd`'s `String.slice` (lib/wasistd.moss) does not check
-    /// its bounds, so neither runner traps: they agree that it runs.
+    /// The GC string provider checks slice bounds in both runners.
     #[test]
     fn string_slice_out_of_range_panics() {
         let entry = prog("", "let s = first_arg().slice(zero, one.add(one));");
-        agree(&entry, &["x"], "");
+        traps(&entry, &["x"], "");
     }
 
     #[test]

@@ -147,13 +147,11 @@ assume Std {
             .collect()
     }
 
-    /// Everything that is written in the language — every live .moss file
-    /// except `examples/escape.moss`, which needs string literals (D48) and
-    /// parses under neither parser.
+    /// Every live source file, including the quoted string fixtures.
     fn corpus() -> Vec<String> {
         let mut files = Vec::new();
-        for dir in ["src", "lib", "examples", "tests/wasi"] {
-            files.extend(moss_tests::moss_files(dir).into_iter().filter(|f| f != "examples/escape.moss"));
+        for dir in ["src", "lib", "examples", "tests/wasi", "tests/fixtures/string_literals"] {
+            files.extend(moss_tests::moss_files(dir));
         }
         files
     }

@@ -15,7 +15,8 @@ import "./int.moss" as int use Int, zero, one;
 import "./size.moss" as size use Size;
 import "./list.moss" as list use IntList, int_list;
 import "./std.moss" use putchar, put_bytes, Std;
-import "./string.moss" as string use String, print, first_arg, arg_count, arg_at;
+import "./string.moss" as string use String, StringBuilder, StringLiterals,
+  string_begin, string_write, string_finish, print, first_arg, arg_count, arg_at;
 import "./strlist.moss" as strlist use StrList, str_list;
 
 # `Std`, implemented in Moss over the primitive context (D52). This is the
@@ -46,10 +47,11 @@ context Console =
 context Files =
   Path, pwd, Path.join, Path.readable, Path.read[Elem=String];
 
-# Strings, which live in memory like any container: `String` and the
-# methods that read and make one, with nothing that calls WASI.
+# The raw string interface: String, literal construction and operations that
+# read or make one, with nothing that calls WASI. WasiStrings below uses linear
+# memory; the default WasiStd replaces it with gcstring.moss's GC provider.
 context Strings =
-  String, String.length[Index=Int], String.get[Elem=Char, Index=Int], String.slice, String.concat;
+  String, StringLiterals, String.length[Index=Int], String.get[Elem=Char, Index=Int], String.slice, String.concat;
 
 # The containers, over the library's own allocator rather than the
 # compiler's — which no longer has one (D59). Everything here lives in
@@ -147,6 +149,32 @@ assume Wasm, Branch {
       i = w::i32_add(i, w::i32_one);
     }
     Str(s)
+  }
+
+  # The raw provider has the same public literal protocol. Finishing copies,
+  # so retaining a builder never grants mutation of a finished String.
+  fn raw_string_begin(length: Num): Str {
+    let n = raw(length);
+    if i32_bool(w::i32_lt_s(n, w::i32_zero)) { w::unreachable(); }
+    let bytes = w::i32_add(four(), n);
+    if i32_bool(w::i32_lt_u(bytes, n)) { w::unreachable(); }
+    let p = alloc(bytes);
+    w::i32_store(p, n);
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, n)) {
+      w::i32_store8(w::i32_add(w::i32_add(p, four()), i), w::i32_zero);
+      i = w::i32_add(i, w::i32_one);
+    }
+    Str(p)
+  }
+  fn raw_string_write(builder: Str, index: Num, value: Num): Str {
+    let i = raw(index);
+    if i32_bool(w::i32_ge_u(i, w::i32_load(addr(builder)))) { w::unreachable(); }
+    w::i32_store8(w::i32_add(w::i32_add(addr(builder), four()), i), raw(value));
+    builder
+  }
+  fn raw_string_finish(builder: Str): Str {
+    string_of(w::i32_add(addr(builder), four()), w::i32_load(addr(builder)))
   }
 
   # A string's own operations, attached rather than written at
@@ -522,8 +550,18 @@ functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind WasiStrings;
 }
 
+functor WasiStringLiterals: Wasm, Branch -> StringLiterals {
+  bind int::Int = Num;
+  bind string::String = Str;
+  bind string::StringBuilder = Str;
+  bind string::string_begin = raw_string_begin;
+  bind string::string_write = raw_string_write;
+  bind string::string_finish = raw_string_finish;
+}
+
 functor WasiStrings: Wasm, Branch -> Strings {
   bind string::String = Str;
+  bind WasiStringLiterals;
   # A shared accessor is provided at one receiver at a time, and the
   # element type comes with the provision (D61). `Char` is bound to `Chr`
   # where this is applied, so `Elem=Char` means `Chr` here.

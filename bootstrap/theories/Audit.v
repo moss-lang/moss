@@ -924,6 +924,26 @@ Fixpoint unescape (cs : list byte) : list byte :=
 Definition string_value (t : string) : string :=
   string_of_list_byte (unescape (removelast (tl (list_byte_of_string t)))).
 
+(* Quoted strings are ordinary protocol calls. The payload is UTF-8 bytes,
+   with the same escape decoding as import strings. Numeric arguments retain
+   the language's ordinary literal semantics and all three protocol functions
+   resolve in the source scope, so contexts can replace their interpretation. *)
+Fixpoint string_writes (bytes : list byte) (index : nat) : list astmt :=
+  match bytes with
+  | [] => []
+  | b :: rest =>
+      ASAssign "return"
+        (AECall ["string_write"] None
+           [AEPath ["return"] None; AELit (show_nat index);
+            AELit (show_nat (Byte.to_nat b))]) :: string_writes rest (S index)
+  end.
+Definition string_desugar (value : string) : aexpr :=
+  let bytes := list_byte_of_string value in
+  AEBlock (ABlock
+    (ASVar "return" None (AECall ["string_begin"] None
+       [AELit (show_nat (List.length bytes))]) :: string_writes bytes 0)
+    (Some (AECall ["string_finish"] None [AEPath ["return"] None]))).
+
 (* (e) D70: at `(`, a lambda is next: `()` or `(x)` followed by `=>` or
    `:`, or `(x` followed by `:` or `,`. *)
 Definition at_lambda (ts : list token) : bool :=
@@ -1067,6 +1087,8 @@ with Primary : bool -> list token -> aexpr -> list token -> Prop :=
 | PrimThis : forall nr ts ts1, Tk "THIS" ts ts1 -> Primary nr ts AEThis ts1
 | PrimLit : forall nr ts, In (kind ts) ["INTEGER"; "DECIMAL"] ->
     Primary nr ts (AELit (lit_norm (tx (peek ts)))) (advance ts)
+| PrimString : forall nr ts, kind ts = "STRING" ->
+    Primary nr ts (string_desugar (string_value (tx (peek ts)))) (advance ts)
 | PrimBlock : forall ts b ts1, Block ts b ts1 -> Primary false ts (AEBlock b) ts1
 | PrimRef : forall nr ts p ts1 a ts2, Path ts p ts1 -> App ts1 a ts2 -> kind ts2 <> "LPAREN" ->
     (nr = true \/ kind ts2 <> "LBRACE") -> Primary nr ts (AEPath p a) ts2

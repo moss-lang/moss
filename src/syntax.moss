@@ -607,7 +607,71 @@ assume Std {
       expect(close);
     }
 
+    # String expressions are ordinary contextual calls, like their explicit
+    # spelling. A keyword local cannot collide with a source binding. Keeping
+    # writes in a flat block avoids AST depth proportional to byte length.
+    fn integer_node(value: Int): Int {
+      let reverse = int_list();
+      var n = value;
+      loop {
+        reverse.push(n % 10);
+        n = n / 10;
+        if n == 0 { break; }
+      }
+      let digits = int_list();
+      var i = reverse.length();
+      while i > 0 { i = i - 1; digits.push(reverse.get(i)); }
+      ast::node4(ast::k_ex_lit(), ast::commit(digits), digits.length(), ast::none(), ast::none())
+    }
+
+    fn string_call(which: Int, args: IntList): Int {
+      let name = int_list();
+      if which == 0 { sp_string_begin(name); }
+      else if which == 1 { sp_string_write(name); }
+      else { sp_string_finish(name); }
+      ast::node3(ast::k_ex_call(), local_ref(intern::intern_chars(name)), ast::commit(args), args.length())
+    }
+
+    fn parse_string_literal(): Int {
+      let bytes = int_list();
+      var i = tstart.read() + 1;
+      let stop = tend.read() - 1;
+      while i < stop {
+        var c = lexer::src.get(i);
+        i = i + 1;
+        if c == char::backslash {
+          c = lexer::src.get(i);
+          i = i + 1;
+          if c == char::n { c = char::newline; }
+          else if c == char::r { c = char::cr; }
+          else if c == char::t { c = char::tab; }
+        }
+        bytes.push(c.code());
+      }
+      advance();
+      let keyword = int_list();
+      sp_return(keyword);
+      let builder = intern::intern_chars(keyword);
+      let statements = int_list();
+      let begin_args = int_list();
+      begin_args.push(integer_node(bytes.length()));
+      statements.push(ast::node3(ast::k_st_var(), builder, ast::none(), string_call(0, begin_args)));
+      i = 0;
+      while i < bytes.length() {
+        let write_args = int_list();
+        write_args.push(local_ref(builder));
+        write_args.push(integer_node(i));
+        write_args.push(integer_node(bytes.get(i)));
+        statements.push(ast::node2(ast::k_st_assign(), builder, string_call(1, write_args)));
+        i = i + 1;
+      }
+      let finish_args = int_list();
+      finish_args.push(local_ref(builder));
+      ast::node3(ast::k_ex_block(), ast::commit(statements), statements.length(), string_call(2, finish_args))
+    }
+
     fn parse_primary(no_rec: Bool): Int {
+      if here(tk_str()) { return parse_string_literal(); }
       if accept(tk_this_value()) {
         return ast::node0(ast::k_ex_this());
       }

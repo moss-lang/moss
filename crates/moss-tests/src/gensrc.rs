@@ -163,6 +163,10 @@ pub const SPELLED: &[&str] = &[
     "after",
     "for",
     "while",
+    "return",
+    "string_begin",
+    "string_write",
+    "string_finish",
 ];
 
 pub fn gen_spell_moss() -> String {
