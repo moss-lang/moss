@@ -1,3 +1,4 @@
+import "./byte.moss" use ByteTypes;
 import "./wasibyte.moss" use WasiByteTypes, RawAscii, RawLead2,
   RawContinuation, RawPrefix3, RawPrefix4, ascii_raw, lead2_raw,
   continuation_raw, prefix3_lead, prefix3_second, prefix4_lead, prefix4_second;
@@ -54,7 +55,7 @@ context Files =
 # read or make one, with nothing that calls WASI. WasiStrings below uses linear
 # memory; the default WasiStd replaces it with gcstring.moss's GC provider.
 context Strings =
-  String, StringLiterals, String.length[Index=Int], String.get[Elem=Char, Index=Int], String.slice, String.concat;
+  ByteTypes, String, StringLiterals, String.length[Index=Int], String.get[Elem=Char, Index=Int], String.slice, String.concat;
 
 # The containers, over the library's own allocator rather than the
 # compiler's — which no longer has one (D59). Everything here lives in
@@ -587,6 +588,7 @@ functor WasiStringLiterals: Wasm, Branch -> StringLiterals {
 }
 
 functor WasiStrings: Wasm, Branch -> Strings {
+  bind WasiByteTypes;
   bind string::String = Str;
   bind WasiStringLiterals;
   # A shared accessor is provided at one receiver at a time, and the
