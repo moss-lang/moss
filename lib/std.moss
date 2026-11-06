@@ -4,6 +4,7 @@ import "./cell.moss" use CellInt, cell_int;
 # `.char` is imported by name because it is provided at `Int`, not at
 # `Char`: method lookup falls back to the *receiver's* home module, and
 # int.moss cannot declare it without importing char.moss back.
+import "./byte.moss" use ByteTypes, Bytes;
 import "./char.moss" use Char, Chars, .char;
 import "./float.moss" use Floats;
 import "./array.moss" use ArrayHandle, Arrays;
@@ -41,6 +42,8 @@ context Std =
 
   Char,
   Chars,
+  ByteTypes,
+  Bytes,
   putchar,
 
   Int,

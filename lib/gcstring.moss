@@ -1,6 +1,6 @@
-# The standard immutable String representation, over two nominal GC array types.
-# Literal construction stays contextual; the backend may pool its concrete byte
-# array once initialization and all reference uses have been checked.
+import "./wasibyte.moss" use WasiByteTypes, RawAscii, RawLead2,
+  RawContinuation, RawPrefix3, RawPrefix4, ascii_raw, lead2_raw,
+  continuation_raw, prefix3_lead, prefix3_second, prefix4_lead, prefix4_second;
 import "./wasm.moss" as w use Wasm, Gc, I32, Arrayed, Boxed;
 import "./wasistd.moss" as raw use Branch, Num, Chr, Str, Loc,
   i32_bool, code_of, alloc, heap_mark, heap_reset,
@@ -10,7 +10,7 @@ import "./int.moss" as int use Int;
 import "./char.moss" as char use Char;
 import "./access.moss" use Elem, Index, .get, .set, .length, .push, .read;
 import "./string.moss" as string use String, StringBuilder, StringLiterals,
-  string_begin, string_write, string_finish, print, first_arg, arg_count, arg_at;
+  string_begin, string_write1, string_write2, string_write3, string_write4, string_finish, print, first_arg, arg_count, arg_at;
 import "./path.moss" as path use Path, pwd, .readable;
 import "./strlist.moss" as strlist use StrList, str_list;
 
@@ -106,11 +106,32 @@ assume Wasm, Gc, Branch {
     bind w::Arrays;
     BuilderByte(w::i32_zero).w::arrayed(raw::raw(length))
   }
-  fn write(builder: Builder, index: Num, value: Num): Builder {
+  fn write_byte(builder: Builder, index: I32, value: I32): Builder {
     bind w::Arrayed = BuilderByte;
     bind w::Arrays;
-    builder.set(raw::raw(index), BuilderByte(byte(raw::raw(value))));
+    builder.set(index, BuilderByte(byte(value)));
     builder
+  }
+  fn write1(builder: Builder, index: Num, a: RawAscii): Builder {
+    write_byte(builder, raw::raw(index), ascii_raw(a))
+  }
+  fn write2(builder: Builder, index: Num, a: RawLead2, b: RawContinuation): Builder {
+    let i = raw::raw(index);
+    let next = write_byte(builder, i, lead2_raw(a));
+    write_byte(next, w::i32_add(i, w::i32_one), continuation_raw(b))
+  }
+  fn write3(builder: Builder, index: Num, prefix: RawPrefix3, last: RawContinuation): Builder {
+    let i = raw::raw(index);
+    let next = write_byte(builder, i, prefix3_lead(prefix));
+    let next = write_byte(next, w::i32_add(i, w::i32_one), prefix3_second(prefix));
+    write_byte(next, w::i32_add(i, raw::two()), continuation_raw(last))
+  }
+  fn write4(builder: Builder, index: Num, prefix: RawPrefix4, c: RawContinuation, d: RawContinuation): Builder {
+    let i = raw::raw(index);
+    let next = write_byte(builder, i, prefix4_lead(prefix));
+    let next = write_byte(next, w::i32_add(i, w::i32_one), prefix4_second(prefix));
+    let next = write_byte(next, w::i32_add(i, raw::two()), continuation_raw(c));
+    write_byte(next, w::i32_add(i, w::i32_add(raw::two(), w::i32_one)), continuation_raw(d))
   }
   fn builder_length(builder: Builder): I32 {
     bind w::Arrayed = BuilderByte;
@@ -243,12 +264,16 @@ context GcStrings =
   Path, pwd, Path.join, Path.readable, Path.read[Elem=String];
 
 functor WasiGcStrings: Wasm, Gc, Wasi, Branch -> GcStrings {
+  bind WasiByteTypes;
   bind int::Int = Num;
   bind char::Char = Chr;
   bind string::String = Text;
   bind string::StringBuilder = Builder;
   bind string::string_begin = begin;
-  bind string::string_write = write;
+  bind string::string_write1 = write1;
+  bind string::string_write2 = write2;
+  bind string::string_write3 = write3;
+  bind string::string_write4 = write4;
   bind string::string_finish = finish;
   bind String.length[Index=Int] = Text.length;
   bind String.get[Elem=Char, Index=Int] = Text.get;

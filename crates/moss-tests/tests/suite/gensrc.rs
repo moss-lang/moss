@@ -3,7 +3,7 @@
 //! compiles the wrong instruction, so the files are checked, not just
 //! produced.
 
-use moss_tests::gensrc::{chars, generated, wasm_ops};
+use moss_tests::gensrc::{byte_class, bytes, chars, generated, wasm_ops};
 use moss_tests::read;
 
 #[test]
@@ -27,6 +27,23 @@ fn chars_values_are_single_chars() {
     values.sort();
     values.dedup();
     assert_eq!(values.len(), all.len(), "two char constants are one character");
+}
+
+#[test]
+fn byte_constants_cover_every_value_once() {
+    let all = bytes();
+    assert_eq!(all.len(), 256);
+    let signature = read("lib/byte.moss");
+    let provider = read("lib/wasibyte.moss");
+    for (index, (name, value)) in all.iter().enumerate() {
+        assert_eq!(usize::from(*value), index);
+        assert_eq!(*name, format!("x{index:02x}"));
+        assert!(signature.contains(&format!("  val {name}: {};", byte_class(*value))));
+        assert!(provider.contains(&format!("  bind byte::{name} = byte_{name}();")));
+    }
+    assert_eq!(signature.lines().filter(|line| line.trim_start().starts_with("val x")).count(), 256);
+    assert!(!provider.contains("wasistd.moss"));
+    assert!(!provider.contains("int.moss"));
 }
 
 /// Every function and val of the `Wasm` context is in the table, so the

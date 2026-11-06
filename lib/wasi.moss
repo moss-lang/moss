@@ -2,6 +2,7 @@ import "./bool.moss" use Bool;
 import "./gcstring.moss" use WasiGcStrings;
 import "./num.moss" use .not, .and, .or, .xor;
 import "./std.moss" use Std;
+import "./wasibyte.moss" use WasiByteConsts;
 import "./wasichar.moss" use WasiCharConsts;
 import "./wasistd.moss" use WasiBasics, WasiContainers, WasiOutput, WasiFiles,
   WasiFloats, Branch, GcArrays;
@@ -38,6 +39,7 @@ functor WasiRawStd: Wasm, Gc, Wasi, Branch -> Std {
   bind array::ArrayHandle = ArrayRef;
   bind Arrays = GcArrays;
   bind WasiCharConsts;
+  bind WasiByteConsts;
   bind Bool.not = Bool.flip;
   bind Bool.and = Bool.both;
   bind Bool.or = Bool.either;
