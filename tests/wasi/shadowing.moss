@@ -221,6 +221,23 @@ assume Int, zero, one, IntOps, Bool, true, false, Bool.xor, BaseOps, note {
   fn sh_round(a: Sh): Int { decide_int(op_round(), a, a.x.round(), dd_round(a.X)) }
   fn sh_trunc(a: Sh): Int { decide_int(op_trunc(), a, a.x.trunc(), dd_trunc(a.X)) }
   fn sh_of(n: Int): Sh { Sh { x = lift(n), X = widen(lift(n)) } }
+
+  # Method providers capture this arithmetic interface, rather than all of Std.
+  fn Sh.provide_add(r: Sh): Sh { sh_add(this, r) }
+  fn Sh.provide_sub(r: Sh): Sh { sh_sub(this, r) }
+  fn Sh.provide_mul(r: Sh): Sh { sh_mul(this, r) }
+  fn Sh.provide_div(r: Sh): Sh { sh_div(this, r) }
+  fn Sh.provide_neg(): Sh { sh_neg(this) }
+  fn Sh.provide_sqrt(): Sh { sh_sqrt(this) }
+  fn Sh.provide_abs(): Sh { sh_abs(this) }
+  fn Sh.provide_eq(r: Sh): Bool { sh_eq(this, r) }
+  fn Sh.provide_ne(r: Sh): Bool { sh_ne(this, r) }
+  fn Sh.provide_lt(r: Sh): Bool { sh_lt(this, r) }
+  fn Sh.provide_gt(r: Sh): Bool { sh_gt(this, r) }
+  fn Sh.provide_le(r: Sh): Bool { sh_le(this, r) }
+  fn Sh.provide_ge(r: Sh): Bool { sh_ge(this, r) }
+  fn Sh.provide_trunc(): Int { sh_trunc(this) }
+  fn Sh.provide_round(): Int { sh_round(this) }
 }
 
 # All of `Floats` as p and P side by side, over the `Float` in force.
@@ -236,19 +253,19 @@ functor Shadow: Std, tolerance -> Floats {
   bind note = shadow_note;
   bind Float = Sh;
   bind float = sh_of;
-  bind Float.add = (r) => sh_add(this, r);
-  bind Float.sub = (r) => sh_sub(this, r);
-  bind Float.mul = (r) => sh_mul(this, r);
-  bind Float.div = (r) => sh_div(this, r);
-  bind Float.neg = () => sh_neg(this);
-  bind Float.sqrt = () => sh_sqrt(this);
-  bind Float.abs = () => sh_abs(this);
-  bind Float.eq = (r) => sh_eq(this, r);
-  bind Float.ne = (r) => sh_ne(this, r);
-  bind Float.lt = (r) => sh_lt(this, r);
-  bind Float.gt = (r) => sh_gt(this, r);
-  bind Float.le = (r) => sh_le(this, r);
-  bind Float.ge = (r) => sh_ge(this, r);
-  bind Float.trunc = () => sh_trunc(this);
-  bind Float.round = () => sh_round(this);
+  bind Float.add = Sh.provide_add;
+  bind Float.sub = Sh.provide_sub;
+  bind Float.mul = Sh.provide_mul;
+  bind Float.div = Sh.provide_div;
+  bind Float.neg = Sh.provide_neg;
+  bind Float.sqrt = Sh.provide_sqrt;
+  bind Float.abs = Sh.provide_abs;
+  bind Float.eq = Sh.provide_eq;
+  bind Float.ne = Sh.provide_ne;
+  bind Float.lt = Sh.provide_lt;
+  bind Float.gt = Sh.provide_gt;
+  bind Float.le = Sh.provide_le;
+  bind Float.ge = Sh.provide_ge;
+  bind Float.trunc = Sh.provide_trunc;
+  bind Float.round = Sh.provide_round;
 }
