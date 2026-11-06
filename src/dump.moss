@@ -10,9 +10,8 @@ import "./tcode.moss" use *;
 #
 # A node prints as `(TAG children...)`, a run as `[a b c]`, an absent
 # operand as `_`. The tag is one character: the node kinds of ast.moss in
-# order, 'a' through 'z' then 'A' onward. One character rather than a
-# word because a word would be a spelled string (D48) and a letter is
-# arithmetic on a char constant.
+# order, 'a' through 'z' then 'A' onward. Keep these compact tags stable
+# so dumps remain comparable to the bootstrap parser.
 
 assume Std {
   assume ast::Ast, intern::Interner {
@@ -33,8 +32,7 @@ assume Std {
       var i = 0;
       while i < ast::path_len(p) {
         if i > 0 {
-          putchar(char::colon);
-          putchar(char::colon);
+          print("::");
         }
         intern::put(ast::path_at(p, i));
         i = i + 1;
@@ -407,20 +405,15 @@ assume Std {
       } else if t == tk_greater() {
         putchar(char::greater);
       } else if t == tk_less_less() {
-        putchar(char::less);
-        putchar(char::less);
+        print("<<");
       } else if t == tk_greater_greater() {
-        putchar(char::greater);
-        putchar(char::greater);
+        print(">>");
       } else if t == tk_less_equal() {
-        putchar(char::less);
-        putchar(char::equal);
+        print("<=");
       } else if t == tk_greater_equal() {
-        putchar(char::greater);
-        putchar(char::equal);
+        print(">=");
       } else if t == tk_equal_equal() {
-        putchar(char::equal);
-        putchar(char::equal);
+        print("==");
       } else if t >= ast::op_begin() {
         # `for`'s calls (draft), as sexpr.py writes them: `for.begin`.
         let cs = int_list();
@@ -441,8 +434,7 @@ assume Std {
           i = i + 1;
         }
       } else {
-        putchar(char::exclam);
-        putchar(char::equal);
+        print("!=");
       }
     }
 
@@ -477,8 +469,7 @@ assume Std {
     # A whole file: its imports, then everything else, matching the
     # `File(imports, decls)` split the bootstrap's AST makes.
     fn dump_file(roots: IntList) {
-      putchar(char::lparen);
-      putchar(char::dollar);
+      print("($");
       sp();
       putchar(char::lbracket);
       var i = 0;
@@ -508,9 +499,7 @@ assume Std {
         }
         i = i + 1;
       }
-      putchar(char::rbracket);
-      putchar(char::rparen);
-      putchar(char::newline);
+      print("])\n");
     }
   }
 }

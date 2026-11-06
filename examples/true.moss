@@ -9,8 +9,7 @@ assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
     if true {
-      putchar(char::t);
-      putchar(char::newline);
+      print("t\n");
     }
   }
 }

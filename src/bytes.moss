@@ -10,6 +10,15 @@ assume Std {
     buf.push(c.code());
   }
 
+  # Append textual UTF-8 bytes without changing the binary buffer API.
+  fn push_string(buf: IntList, text: String) {
+    var i = 0;
+    while i < text.length() {
+      buf.push(text.get(i).code());
+      i = i + 1;
+    }
+  }
+
   fn push_bytes(dst: IntList, src: IntList) {
     var i = 0;
     while i < src.length() {

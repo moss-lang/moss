@@ -14,10 +14,9 @@ import "./prog.moss" as prog;
 # an installed driver choose its library location.
 #
 # Output is the module's bytes on standard output, or diagnostics — one
-# line each, a letter for the rule and the name that broke it. There are
-# no string literals (D48), so a message is a code and a name rather
-# than a sentence; the codes are the `e_` and `c_` constants of
-# prog.moss and codegen.moss.
+# line each, a letter for the rule and the name that broke it. Keep this
+# compact diagnostic protocol stable; its codes are the `e_` and `c_`
+# constants of prog.moss and codegen.moss.
 
 assume Std {
   fn cli() {
@@ -73,7 +72,7 @@ assume Std {
         putchar(char::question);
         putchar((char::A.code() + codegen::cg_errs.get(e)).char());
         # Which frame was being emitted, as `module fn` — the nearest
-        # thing to a position this compiler can say (D48).
+        # thing to a source position currently recorded.
         let at = codegen::cg_err_at.get(e);
         if ast::is_some(at) {
           putchar(char::space);
