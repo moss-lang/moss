@@ -84,8 +84,10 @@ token or class of tokens.
 - _name_: must start with a letter or underscore that can be followed by zero
   or more letters, underscores, or numbers; `_` alone is reserved for the
   wildcard pattern (`_x` and `x_` are names)
-- _string_: delimited by double quotes, may include escape sequences `\"`,
+- _string_: a quoted string, delimited by double quotes, may include escape sequences `\"`,
   `\\`, `\n`, `\r`, `\t`
+- _raw-string_: consecutive line-leading `> ` or bare `>` lines (see
+  [Raw multiline strings](#raw-multiline-strings))
 - _integer_: one or more decimal digits (`0`, `123`, `007`)
 - _decimal_: one or more digits, optionally `.` and one or more digits,
   then an optional exponent — `e` or `E`, optionally `+` or `-`, one or
@@ -135,6 +137,41 @@ requirements; each one it does not bind must be in force where the
 reference is written, and passes through as that same symbol, so nothing
 is left dangling ([D22] and its clarification). **AssumeItem**
 deliberately has no **App** ([D24]).
+
+### Raw multiline strings
+
+A `>` that is the first character after any spaces or tabs on a line, followed by
+one ASCII space or the end of the line (including end of file), starts a
+raw string line. Consecutive marked lines form one string expression:
+
+```moss
+let message =
+  > Hello,
+  > world!
+;
+```
+
+This has the value `"Hello,\nworld!\n"`. Indentation before each marker and
+exactly one space after it are removed. All remaining bytes are literal:
+quotes, backslashes, `#`, tabs, and trailing spaces have no special meaning.
+Each marked line contributes its text followed by LF, including the last
+line even at end of file. A bare `>` contributes one LF; a final empty
+marked line adds a blank line. CRLF and CR line endings become LF in the
+value.
+
+The first unmarked line ends the literal. Blank source lines and comments
+also end it; use a marked empty line for a blank line inside the string.
+Closing punctuation belongs on a following line because the rest of every
+marked line is text. Marker indentation may vary between lines.
+
+This reserves line-leading `> ` for strings: a greater-than comparison
+with a space after its operator must keep `>` on the preceding line.
+`>=`, `>>`, and `>value` retain their operator meanings at the start of a
+line. A tab immediately after `>` does not introduce a string.
+
+Raw strings use the same UTF-8 validation and contextual construction
+protocol as quoted string expressions. Import paths still require double
+quotes.
 
 ### Types
 
@@ -230,7 +267,7 @@ anywhere but a bind's right side. Its body is a whole **Expr**, so
 - **Arm** = **Pattern** `=>` (**Expr** `,` | **Block** `,`?)
 - **Postfix** = **Primary** **Suffix**\*
 - **Suffix** = `.` **Path** (`(` **List**\[**Expr**\] `)`)?
-- **Primary** = `(` **Expr** `)` | `(` `)` | `this` | _integer_ | _decimal_ | _string_ | **Block** | **Path** **App**? (**Args** | **RecordExpr**)?
+- **Primary** = `(` **Expr** `)` | `(` `)` | `this` | _integer_ | _decimal_ | _string_ | _raw-string_ | **Block** | **Path** **App**? (**Args** | **RecordExpr**)?
 - **Args** = `(` **List**\[**Expr**\] `)`
 - **RecordExpr** = `{` **List**\[_name_ (`=` **Expr**)?\] `}`
 

@@ -137,7 +137,7 @@ Proof. eexists. apply parse_moss_sound. vm_compute. reflexivity. Qed.
 
 (* Lexical errors have no derivation: a derivation's tokens are what the
    lexer computes (lex_complete), and here it reports an error. *)
-Lemma lex_rejects s m o : lex (newlines (list_byte_of_string s)) = LErr m o ->
+Lemma lex_rejects s m o : lex (source_bytes (list_byte_of_string s)) = LErr m o ->
   forall f, ~ Derives (list_byte_of_string s) f.
 Proof.
   intros H f (ts & Hl & _). apply lex_complete in Hl. congruence.
@@ -239,3 +239,18 @@ Example underscore_names_and_wildcard :
 Proof.
   eexists. apply parse_moss_sound. vm_compute. reflexivity.
 Qed.
+
+(* D88: the raw spelling has exactly the ordinary string expression's AST. *)
+Example raw_string_matches_quoted :
+  parse_moss "fn main() { let text =
+  > hello
+  > world
+  >
+;
+}" = parse_moss "fn main() { let text = ""hello\nworld\n\n""; }".
+Proof. vm_compute. reflexivity. Qed.
+
+Example raw_empty_at_eof :
+  source_bytes (list_byte_of_string ">") =
+  list_byte_of_string "(""\n"")".
+Proof. vm_compute. reflexivity. Qed.

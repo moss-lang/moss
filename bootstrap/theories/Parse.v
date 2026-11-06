@@ -872,8 +872,11 @@ Definition parse_tokens (ts : list token) : pr afile :=
 
 (* parse.parse with error_message's `line:col: ` and the error's class *)
 Definition parse_moss (src : string) : res afile :=
-  let cs := newlines (list_byte_of_string src) in
-  let where_ o := let (l, c) := line_col cs o 1 1 in show_nat l ++ ":" ++ show_nat c ++ ": " in
+  let original := newlines (list_byte_of_string src) in
+  let expanded := raw_source original in
+  let cs := map fst expanded in
+  let where_ o := let original_off := snd (nth o expanded (x00, length original)) in
+    let (l, c) := line_col original original_off 1 1 in show_nat l ++ ":" ++ show_nat c ++ ": " in
   match lex cs with
   | LErr m o => Bad (where_ o ++ "LexError: " ++ m)
   | LOk ts =>

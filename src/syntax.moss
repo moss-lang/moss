@@ -699,21 +699,47 @@ assume Std {
       4
     }
 
+    fn raw_string_line(bytes: IntList, start: Int): Int {
+      bytes.push(char::newline.code());
+      var i = start;
+      while i < tend.read() {
+        if lexer::src.get(i) == char::greater { break; }
+        i = i + 1;
+      }
+      i = i + 1;
+      if i < tend.read() { if lexer::src.get(i) == char::space { i = i + 1; } }
+      i
+    }
+
     fn parse_string_literal(): Int {
       let bytes = int_list();
       var i = tstart.read() + 1;
-      let stop = tend.read() - 1;
-      while i < stop {
-        var c = lexer::src.get(i);
-        i = i + 1;
-        if c == char::backslash {
-          c = lexer::src.get(i);
+      if lexer::src.get(tstart.read()) == char::greater {
+        if i < tend.read() { if lexer::src.get(i) == char::space { i = i + 1; } }
+        while i < tend.read() {
+          let c = lexer::src.get(i);
           i = i + 1;
-          if c == char::n { c = char::newline; }
-          else if c == char::r { c = char::cr; }
-          else if c == char::t { c = char::tab; }
+          if c == char::newline { i = raw_string_line(bytes, i); }
+          else if c == char::cr {
+            if i < tend.read() { if lexer::src.get(i) == char::newline { i = i + 1; } }
+            i = raw_string_line(bytes, i);
+          } else { bytes.push(c.code()); }
         }
-        bytes.push(c.code());
+        bytes.push(char::newline.code());
+      } else {
+        let stop = tend.read() - 1;
+        while i < stop {
+          var c = lexer::src.get(i);
+          i = i + 1;
+          if c == char::backslash {
+            c = lexer::src.get(i);
+            i = i + 1;
+            if c == char::n { c = char::newline; }
+            else if c == char::r { c = char::cr; }
+            else if c == char::t { c = char::tab; }
+          }
+          bytes.push(c.code());
+        }
       }
       advance();
       let keyword = int_list();
@@ -1109,6 +1135,7 @@ assume Std {
     fn parse_import(): Int {
       var text = lexer::src.slice(0, 0);
       if here(tk_str()) {
+        if lexer::src.get(tstart.read()) != char::quote { fail(); }
         # The token's span covers the quotes; the path is inside them.
         let s = tstart.read() + 1;
         text = lexer::src.slice(s, tend.read() - s - 1);

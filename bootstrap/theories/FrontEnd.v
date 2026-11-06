@@ -842,7 +842,7 @@ Proof. unfold lex. intro H. apply lex_go_sound in H as (ts' & -> & H). exact H. 
 Theorem parse_moss_sound s f : parse_moss s = Good f -> Derives (list_byte_of_string s) f.
 Proof.
   unfold parse_moss. intro H.
-  destruct (lex (newlines (list_byte_of_string s))) as [ts|m o] eqn:El; [|discriminate].
+  destruct (lex (map fst (raw_source (newlines (list_byte_of_string s))))) as [ts|m o] eqn:El; [|discriminate].
   destruct (parse_tokens ts) as [f' rest|m o] eqn:Ep; [|discriminate].
   injection H as <-. exists ts. split; [apply lex_sound; auto | eapply parse_tokens_sound; eauto].
 Qed.

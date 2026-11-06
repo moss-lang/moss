@@ -4903,6 +4903,27 @@ check UTF-8, rebinding and effect timing, immutable builder aliases,
 WASI bridges, runtime builders and large literals against the oracle.
 Pooling performance checks belong to the separate backend change.
 
+**[D88] DECIDED by the designer and implemented (raw multiline strings).**
+
+Reserve line-leading `> `, or bare `>` at end of line/file, for raw string
+expressions. Each marked line contributes its text followed by LF, including
+the last line even at end of file. Strip indentation before each marker
+and exactly one ASCII space after it; preserve the
+remaining payload literally. A bare `>` contributes one LF; a final empty
+marked line adds a blank line. Blank unmarked lines and comments terminate
+the literal. Normalize CRLF and CR to LF. The ordinary quoted-string UTF-8 validation and contextual
+construction protocol apply; import paths remain double-quoted.
+
+This sacrifices line-leading spaced greater-than comparisons while
+preserving `>=`, `>>`, and `>value`. It avoids disturbing the established
+line-leading union-type syntax that a `|` marker would displace. See the
+[syntax reference](../reference/syntax.md#raw-multiline-strings) for examples.
+
+The bootstrap specifies this syntax as a source expansion to parenthesized,
+escaped quoted expressions before the existing token grammar. The expansion
+retains source offsets for diagnostics. The self-hosted lexer reads each
+raw run as one string token and its parser decodes the markers directly.
+
 ## 13. Decision index
 
 No outstanding implementation work is blocked on a decision. [D61]'s
@@ -4990,7 +5011,8 @@ bootstrap removed, the tests in Rust, the two front ends held to accept
 and reject alike, and everyday work on a previously built compiler,
 D87 quoted strings as ordinary contextual construction calls, a default
 GC string provider with immutable snapshots, separate typed union lanes
-for incompatible references, with backend pooling deferred; and D32 as amended: a call evaluates its receiver,
+for incompatible references, with backend pooling deferred; D88 line-leading
+`> ` raw multiline string expressions; and D32 as amended: a call evaluates its receiver,
 then its arguments left to right)
 
 The MVP language is fully pinned down. Next (the plan as of revision 4):
@@ -5005,3 +5027,20 @@ it may be imported under that name. Its declaration need not itself be
 named `main`. Any function exposed as `main` in a loaded module receives
 the platform root context during checking, including an imported function
 ([Audit.v note 41](../../bootstrap/theories/Audit.v)).
+
+
+## Base: the compiler-provided context
+
+`lib/base.moss` names the complete primitive context `Base`: `Wasm`,
+`Wasi`, `Branch`, and `Gc`. The prelude imports it and `StdBase`, the
+ordinary library functor from `Base` to `Std`. Entry points can assume
+`Base` and bind `StdBase`; reusable library code can continue to assume
+`Std` or narrower contexts. The individual primitive groups remain
+available. `WasiStd` remains a compatibility wrapper around `StdBase`.
+`println` is ordinary library code over contextual string construction
+and `print`, and appends one newline.
+
+Importing `StdBase` through the prelude also brings the GC string
+implementation into the compiler's source bundle. The compiler still
+binds `WasiRawStd` and uses linear-memory strings; the old assertion that
+the bundle excludes `gcstring.moss` no longer applies.

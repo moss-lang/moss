@@ -1,10 +1,5 @@
 #!/usr/bin/env moss
 
-import "wasi.moss" use WasiStd;
-import "wasistd.moss" use Branch;
-import "wasm.moss" use Wasm;
-import "wasip1.moss" use Wasi;
-
 assume Std {
 
   fn foo(second: Char, first: Char) {
@@ -15,9 +10,9 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Base {
   fn main() {
-    bind WasiStd;
+    bind StdBase;
     foo(char::g, char::h);
   }
 }

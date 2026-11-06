@@ -181,7 +181,8 @@ assume Std {
       } else if c == char::less {
         less_token()
       } else if c == char::greater {
-        greater_token()
+        if raw_line_start(mark.read()) { raw_string_token() }
+        else { greater_token() }
       } else if c == char::percent {
         Percent
       } else if c == char::ampersand {
@@ -263,6 +264,64 @@ assume Std {
       } else {
         Greater
       }
+    }
+
+    # A raw marker is line-leading, followed by one space or end of line.
+    fn raw_line_start(start: Int): Bool {
+      let next = start + 1;
+      if next < src.length() {
+        let c = src.get(next);
+        if c != char::space {
+          if c != char::newline { if c != char::cr { return false; } }
+        }
+      }
+      var i = start;
+      while i > 0 {
+        i = i - 1;
+        let c = src.get(i);
+        if c == char::newline { return true; }
+        if c == char::cr { return true; }
+        if c != char::space { if c != char::tab { return false; } }
+      }
+      true
+    }
+
+    fn raw_string_token(): Token {
+      loop {
+        match peek() {
+          Eof => return Str,
+          Read(c) => {
+            if c == char::newline {
+              if !raw_string_next() { return Str; }
+            } else if c == char::cr {
+              if !raw_string_next() { return Str; }
+            } else { advance(); }
+          },
+        }
+      }
+    }
+
+    # Only consume a line ending and indentation when another marker follows.
+    fn raw_string_next(): Bool {
+      var i = at.read();
+      if src.get(i) == char::cr {
+        i = i + 1;
+        if i < src.length() { if src.get(i) == char::newline { i = i + 1; } }
+      } else { i = i + 1; }
+      while i < src.length() {
+        let c = src.get(i);
+        if c != char::space { if c != char::tab { break; } }
+        i = i + 1;
+      }
+      if i < src.length() {
+        if src.get(i) == char::greater {
+          if raw_line_start(i) {
+            at.write(i + 1);
+            return true;
+          }
+        }
+      }
+      false
     }
 
     fn string_escape(c: Char): Bool {

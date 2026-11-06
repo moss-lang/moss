@@ -762,7 +762,7 @@ Qed.
 (* Part VI's parser_complete. *)
 Theorem parse_moss_complete s f : Derives (list_byte_of_string s) f -> parse_moss s = Good f.
 Proof.
-  intros (ts & Hl & Hf). unfold parse_moss.
+  intros (ts & Hl & Hf). unfold source_bytes in Hl. unfold parse_moss.
   rewrite (lex_complete _ _ Hl).
   destruct (parse_tokens_complete _ _ Hf (lexes_ends _ _ _ Hl)) as (rest & ->). reflexivity.
 Qed.

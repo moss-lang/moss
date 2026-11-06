@@ -1,3 +1,4 @@
+import "./base.moss" use Base;
 import "./gcstring.moss" use WasiGcStrings;
 import "./std.moss" use Std;
 import "./wasirawstd.moss" as raw;
@@ -6,14 +7,19 @@ import "./wasm.moss" use Wasm, Gc;
 import "./wasip1.moss" use Wasi;
 
 # Preserve the public raw-memory interface. The compiler imports its
-# implementation directly, keeping GC strings outside the bootstrap closure.
+# implementation directly, keeping its own strings in linear memory.
 functor WasiRawStd: Wasm, Gc, Wasi, Branch -> Std {
   bind raw::WasiRawStd;
 }
 
 # User programs get immutable GC strings by default; the raw implementation
 # remains an ordinary alternative context with the same public interface.
-functor WasiStd: Wasm, Gc, Wasi, Branch -> Std {
+functor StdBase: Base -> Std {
   bind WasiRawStd;
   bind WasiGcStrings;
+}
+
+# Compatibility for programs that name the WASI implementation explicitly.
+functor WasiStd: Wasm, Gc, Wasi, Branch -> Std {
+  bind StdBase;
 }

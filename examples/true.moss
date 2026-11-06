@@ -1,13 +1,8 @@
 #!/usr/bin/env moss
 
-import "wasi.moss" use WasiStd;
-import "wasistd.moss" use Branch;
-import "wasm.moss" use Wasm;
-import "wasip1.moss" use Wasi;
-
-assume Wasm, Wasi, Branch {
+assume Base {
   fn main() {
-    bind WasiStd;
+    bind StdBase;
     if true {
       putchar(char::t);
       putchar(char::newline);
