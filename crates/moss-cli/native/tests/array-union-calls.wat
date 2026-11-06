@@ -1,0 +1,58 @@
+(module
+ (type $Bytes (array (mut i8)))
+ (global $literal (ref $Bytes)
+  (array.new_fixed $Bytes 3 (i32.const 104) (i32.const 105) (i32.const 33)))
+ (global $effects (mut i32) (i32.const 0))
+ (func $produce (param $literal i32) (param $size i32)
+   (result i32 (ref null $Bytes) (ref null $Bytes))
+  (if (result i32 (ref null $Bytes) (ref null $Bytes)) (local.get $literal)
+   (then (tuple.make 3 (i32.const 7) (global.get $literal) (ref.null none)))
+   (else (tuple.make 3 (i32.const 9) (ref.null none)
+    (array.new $Bytes (i32.const 9) (local.get $size))))))
+ (func $read (param $tag i32) (param $literal (ref null $Bytes))
+   (param $dynamic (ref null $Bytes)) (param $index i32) (result i32)
+  (array.get_u $Bytes
+   (select (result (ref null $Bytes)) (local.get $literal) (local.get $dynamic)
+    (i32.eq (local.get $tag) (i32.const 7)))
+   (local.get $index)))
+ (func $length (param $tag i32) (param $literal (ref null $Bytes))
+   (param $dynamic (ref null $Bytes)) (result i32)
+  (array.len
+   (select (result (ref null $Bytes)) (local.get $literal) (local.get $dynamic)
+    (i32.eq (local.get $tag) (i32.const 7)))))
+ (func (export "_start")
+  (local $q (tuple i32 (ref null $Bytes) (ref null $Bytes)))
+  (local $p (tuple i32 (ref null $Bytes) (ref null $Bytes)))
+  ;; before
+  (local.set $q (call $produce (i32.const 1) (i32.const 3)))
+  (local.set $p (call $produce (i32.const 0) (i32.const 4)))
+  ;; observe
+  (if (i32.ne
+   (call $read
+    (block (result i32)
+     (global.set $effects (i32.add (i32.mul (global.get $effects) (i32.const 10)) (i32.const 1)))
+     (tuple.extract 3 0 (local.get $q)))
+    (block (result (ref null $Bytes))
+     (global.set $effects (i32.add (i32.mul (global.get $effects) (i32.const 10)) (i32.const 2)))
+     (tuple.extract 3 1 (local.get $q)))
+    (block (result (ref null $Bytes))
+     (global.set $effects (i32.add (i32.mul (global.get $effects) (i32.const 10)) (i32.const 3)))
+     (tuple.extract 3 2 (local.get $q)))
+    (block (result i32)
+     (global.set $effects (i32.add (i32.mul (global.get $effects) (i32.const 10)) (i32.const 4)))
+     (i32.const 1)))
+   (i32.const 105)) (then unreachable))
+  (if (i32.ne (global.get $effects) (i32.const 1234)) (then unreachable))
+  (if (i32.ne
+   (call $length (tuple.extract 3 0 (local.get $q))
+    (tuple.extract 3 1 (local.get $q)) (tuple.extract 3 2 (local.get $q)))
+   (i32.const 3)) (then unreachable))
+  (if (i32.ne
+   (call $read (tuple.extract 3 0 (local.get $p))
+    (tuple.extract 3 1 (local.get $p)) (tuple.extract 3 2 (local.get $p)) (i32.const 0))
+   (i32.const 9)) (then unreachable))
+  (if (i32.ne
+   (call $length (tuple.extract 3 0 (local.get $p))
+    (tuple.extract 3 1 (local.get $p)) (tuple.extract 3 2 (local.get $p)))
+   (i32.const 4)) (then unreachable))
+ ))

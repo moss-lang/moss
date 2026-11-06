@@ -14,6 +14,22 @@ fn main() {
     println!("cargo:rerun-if-env-changed=WASMTIME_STATIC");
 
     let binaryen_lib_dir = env::var_os("BINARYEN_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=BINARYEN_INCLUDE_DIR");
+    println!("cargo:rerun-if-changed=native");
+    let binaryen_include = env::var_os("BINARYEN_INCLUDE_DIR").expect(
+        "BINARYEN_INCLUDE_DIR must point to src/ of the same Binaryen source as the linked library; enter nix develop",
+    );
+    cc::Build::new()
+        .cpp(true)
+        .cpp_link_stdlib(None)
+        .std("c++20")
+        .opt_level(2)
+        .flag_if_supported("-Wno-unused-parameter")
+        .flag_if_supported("-fno-strict-aliasing")
+        .define("NDEBUG", None)
+        .include(binaryen_include)
+        .file("native/static_bytes.cpp")
+        .compile("moss_backend");
     if let Some(dir) = &binaryen_lib_dir {
         println!(
             "cargo:rustc-link-search=native={}",
@@ -78,7 +94,11 @@ fn main() {
         let static_cpp = env::var("BINARYEN_STATIC_STDCPP").is_ok_and(|value| value != "0");
         println!(
             "cargo:rustc-link-lib={}{}",
-            if static_cpp { "static=" } else { "" },
+            // The target linker supplies the C++ runtime search path. Do not
+            // bundle its archive into our rlib: rustc cannot discover that
+            // linker-only path while building the library crate. Keep the
+            // static dependency for the final executable link instead.
+            if static_cpp { "static:-bundle=" } else { "" },
             cpp
         );
         if target_os == "windows" {

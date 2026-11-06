@@ -1,0 +1,20 @@
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+
+assume Std {
+  fn run() {
+    var i = 0;
+    while i < 2 {
+      print("pooled¢ࠀ퟿￿𐀀񐀀􏿿");
+      print("pooled¢ࠀ퟿￿𐀀񐀀􏿿");
+      print("");
+      i = i + 1;
+    }
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; run(); }
+}

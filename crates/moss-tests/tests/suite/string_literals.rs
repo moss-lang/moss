@@ -8,6 +8,19 @@ fn quoted_strings_preserve_utf8_escapes_and_immutable_contents() {
     let raw = build(entry);
     assert_eq!(run_module(&raw, &[]), expected);
     assert_eq!(oracle_run(entry, &[]), expected);
+    for storage in [
+        moss_cli::binaryen::StaticBytes::Memory,
+        moss_cli::binaryen::StaticBytes::Globals,
+    ] {
+        let optimized = moss_cli::binaryen::optimize_wasm(
+            raw.clone(),
+            moss_cli::binaryen::parse_opt("3")
+                .unwrap()
+                .with_static_bytes(storage),
+        )
+        .unwrap();
+        assert_eq!(run_module(&optimized, &[]), expected, "{storage:?}");
+    }
 }
 
 #[test]
@@ -17,6 +30,19 @@ fn quoted_strings_resolve_ordinary_names_and_only_run_when_reached() {
     let raw = build(entry);
     assert_eq!(run_module(&raw, &[]), expected);
     assert_eq!(oracle_run(entry, &[]), expected);
+    for storage in [
+        moss_cli::binaryen::StaticBytes::Memory,
+        moss_cli::binaryen::StaticBytes::Globals,
+    ] {
+        let optimized = moss_cli::binaryen::optimize_wasm(
+            raw.clone(),
+            moss_cli::binaryen::parse_opt("3")
+                .unwrap()
+                .with_static_bytes(storage),
+        )
+        .unwrap();
+        assert_eq!(run_module(&optimized, &[]), expected, "{storage:?}");
+    }
 }
 
 #[test]
@@ -155,5 +181,117 @@ fn typed_manual_utf8_chunks_reject_invalid_ranges_and_rep_repacking() {
         assert!(!moss_tests::compile(&entry, "lib/prelude.moss").is_module(), "accepted {call}");
         let oracle = moss_tests::oracle_command(&["--elab-only", &entry]);
         assert_eq!(oracle.code, 64, "oracle did not type-reject {call}: {}", oracle.stderr);
+    }
+}
+
+// wasm-dis indents every module-level function by one space. Restrict allocation
+// checks to those bodies: global GC constant initializers may allocate once.
+fn function_bodies(text: &str) -> String {
+    let mut inside = false;
+    let mut bodies = String::new();
+    for line in text.lines() {
+        if line.starts_with(" (func ") {
+            inside = true;
+        }
+        if inside {
+            bodies.push_str(line);
+            bodies.push('\n');
+        }
+        if line == " )" {
+            inside = false;
+        }
+    }
+    assert!(!bodies.is_empty(), "no function bodies in wasm-dis output");
+    bodies
+}
+
+#[test]
+fn quoted_literals_pool_without_per_evaluation_array_allocations() {
+    let entry = "tests/fixtures/string_literals/pooled.moss";
+    let expected = format!("{}\n", "pooled¢ࠀ퟿￿𐀀񐀀􏿿".repeat(4));
+    let raw = build(entry);
+    assert_eq!(run_module(&raw, &[]), expected);
+    assert_eq!(oracle_run(entry, &[]), expected);
+    for storage in [
+        moss_cli::binaryen::StaticBytes::Memory,
+        moss_cli::binaryen::StaticBytes::Globals,
+    ] {
+        for level in ["2", "3", "4", "s", "z"] {
+            let optimized = moss_cli::binaryen::optimize_wasm(
+                raw.clone(),
+                moss_cli::binaryen::parse_opt(level)
+                    .unwrap()
+                    .with_static_bytes(storage),
+            )
+            .unwrap();
+            let text = moss_tests::wasm_text(&optimized);
+            let bodies = function_bodies(&text);
+            assert!(
+                text.contains("(data "),
+                "-O{level} {storage:?}: missing pooled data"
+            );
+            assert_eq!(
+                text.lines()
+                    .filter(|line| line.starts_with(" (data "))
+                    .count(),
+                1,
+                "-O{level} {storage:?}: equal payloads not deduplicated"
+            );
+            for instruction in [
+                "(array.new ",
+                "(array.new_default ",
+                "(array.new_fixed ",
+                "(array.set ",
+            ] {
+                assert!(
+                    !bodies.contains(instruction),
+                    "-O{level} {storage:?}: per-evaluation {instruction}\n{text}"
+                );
+            }
+            if storage == moss_cli::binaryen::StaticBytes::Globals {
+                for instruction in ["tuple.make", "tuple.extract", "tuple.select"] {
+                    assert!(
+                        !text.contains(instruction),
+                        "-O{level}: split String representation survived: {instruction}"
+                    );
+                }
+            }
+            assert_eq!(
+                run_module(&optimized, &[]),
+                expected,
+                "-O{level} {storage:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn runtime_length_builder_does_not_disable_literal_pooling() {
+    let entry = "tests/fixtures/string_literals/runtime_builder.moss";
+    let raw = build(entry);
+    let cases = [(vec![], "literalA\n"), (vec!["one", "two"], "literalABC\n")];
+    for (args, expected) in &cases {
+        assert_eq!(run_module(&raw, args), *expected);
+        assert_eq!(oracle_run(entry, args), *expected);
+    }
+    for storage in [
+        moss_cli::binaryen::StaticBytes::Memory,
+        moss_cli::binaryen::StaticBytes::Globals,
+    ] {
+        let optimized = moss_cli::binaryen::optimize_wasm(
+            raw.clone(),
+            moss_cli::binaryen::parse_opt("3")
+                .unwrap()
+                .with_static_bytes(storage),
+        )
+        .unwrap();
+        let text = moss_tests::wasm_text(&optimized);
+        assert!(
+            text.contains("(data "),
+            "{storage:?}: runtime finish disabled static pooling\n{text}"
+        );
+        for (args, expected) in &cases {
+            assert_eq!(run_module(&optimized, args), *expected, "{storage:?}");
+        }
     }
 }

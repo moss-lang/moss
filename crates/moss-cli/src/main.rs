@@ -1,4 +1,4 @@
-mod binaryen;
+use moss_cli::binaryen;
 mod validate;
 mod wasmtime;
 
@@ -10,7 +10,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use binaryen::{optimize_wasm, parse_opt, Opt};
+use binaryen::{optimize_wasm, parse_opt, parse_static_bytes, Opt, StaticBytes};
 use clap::{Parser, Subcommand};
 #[cfg(not(moss_embedded_compiler))]
 use sha2::{Digest, Sha256};
@@ -38,6 +38,10 @@ struct Cli {
     /// Binaryen optimization level: 0, 1, 2, 3, 4, s, or z
     #[arg(short = 'O', value_name = "LEVEL", value_parser = parse_opt, global = true)]
     optimization: Option<Opt>,
+
+    /// Static array backing: memory or globals (implies -O3 unless -O is set)
+    #[arg(long, value_parser = parse_static_bytes, global = true)]
+    static_bytes: Option<StaticBytes>,
 
     #[command(subcommand)]
     command: Commands,
@@ -77,7 +81,14 @@ fn main() -> ExitCode {
 }
 
 fn real_main() -> Result<i32> {
-    let cli = Cli::parse_from(normalized_args());
+    let mut cli = Cli::parse_from(normalized_args());
+    if let Some(storage) = cli.static_bytes {
+        cli.optimization = Some(
+            cli.optimization
+                .unwrap_or(Opt::new(3, 0))
+                .with_static_bytes(storage),
+        );
+    }
     let root = repository_root()?;
     let engine = Engine::new()?;
 
@@ -119,7 +130,8 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
     while let Some(argument) = args.get(index) {
         match argument.as_str() {
             "-h" | "--help" | "-V" | "--version" => return args,
-            "-O" => index += 2,
+            "-O" | "--static-bytes" => index += 2,
+            argument if argument.starts_with("--static-bytes=") => index += 1,
             argument if argument.starts_with("-O") && argument.len() > 2 => index += 1,
             _ => break,
         }
@@ -452,6 +464,24 @@ mod tests {
         assert_eq!(args[1], "run");
         let cli = Cli::try_parse_from(args).unwrap();
         assert!(matches!(cli.command, Commands::Run { .. }));
+    }
+
+    #[test]
+    fn static_storage_options_work_before_an_explicit_subcommand() {
+        for option in [
+            vec!["--static-bytes", "globals"],
+            vec!["--static-bytes=memory"],
+        ] {
+            let mut args = vec!["moss"];
+            args.extend(option);
+            args.extend(["build", "main.moss"]);
+            let cli = Cli::try_parse_from(normalize_args(
+                args.into_iter().map(str::to_owned).collect(),
+            ))
+            .unwrap();
+            assert!(matches!(cli.command, Commands::Build { .. }));
+            assert!(cli.static_bytes.is_some());
+        }
     }
 
     #[test]

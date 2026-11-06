@@ -12,3 +12,6 @@ path = "src/bin/gensrc.rs"
 [[test]]
 name = "suite"
 path = "tests/suite/main.rs"
+
+[dev-dependencies]
+moss-cli = { path = "../moss-cli" }

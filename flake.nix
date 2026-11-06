@@ -273,6 +273,9 @@
                   wasmtime
                 ];
                 BINARYEN_LIB_DIR = "${binaryen}/lib";
+                # The native pass uses Binaryen's typed IR. Headers must come
+                # from the exact source revision of the linked library.
+                BINARYEN_INCLUDE_DIR = "${binaryen.src}/src";
                 WASMTIME_LIB_DIR = "${wasmtime}/lib";
                 postInstall = installData;
               }
@@ -515,6 +518,13 @@
               "--package"
               "moss-tests"
             ];
+            buildInputs = [
+              pkgs.binaryen
+              pkgs.wasmtime.lib
+            ];
+            BINARYEN_LIB_DIR = "${pkgs.binaryen}/lib";
+            BINARYEN_INCLUDE_DIR = "${pkgs.binaryen.src}/src";
+            WASMTIME_LIB_DIR = "${pkgs.wasmtime.lib}/lib";
             nativeCheckInputs = [
               pkgs.binaryen # `wasm-opt` and `wasm-dis`
               pkgs.wasm-tools # Validates every module the tests write.
@@ -580,12 +590,14 @@
                 };
               })
               pkgs.binaryen
+              pkgs.stdenv.cc
               pkgs.rust-bin.stable.latest.default
               pkgs.vsce # For manually packaging the VS Code extension.
               pkgs.wasm-tools # The test suite validates every module with it.
               pkgs.wasmtime # The test suite runs every module with it.
             ];
           BINARYEN_LIB_DIR = "${pkgs.binaryen}/lib";
+          BINARYEN_INCLUDE_DIR = "${pkgs.binaryen.src}/src";
           WASMTIME_LIB_DIR = "${pkgs.wasmtime.lib}/lib";
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
             pkgs.binaryen
