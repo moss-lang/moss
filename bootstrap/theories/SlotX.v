@@ -97,15 +97,58 @@ Fixpoint rdtypes (d : renv) : subst :=
 Definition rground d tau := Audit.app_subst (rdtypes d) tau.
 Fixpoint rtype_env (d : renv) : renv :=
   match d with [] => [] | (ITy t,QType tau)::r => (ITy t,QType tau)::rtype_env r | _::r => rtype_env r end.
+(* Read precisely the type projection: malformed rows never shadow a
+   later well-formed type entry, matching rdtypes/lookup_subst. *)
+Fixpoint rlookup_type (t : tsym) (d : renv) : option ty :=
+  match d with
+  | [] => None
+  | (ITy key, QType tau) :: rest =>
+      if Nat.eqb t key then Some tau else rlookup_type t rest
+  | _ :: rest => rlookup_type t rest
+  end.
+Lemma rlookup_type_exact : forall d t,
+  rlookup_type t d = lookup_subst t (rdtypes d).
+Proof.
+  induction d as [|[i entry] rest IH]; intros t; [reflexivity|].
+  destruct i, entry; cbn [rlookup_type rdtypes lookup_subst];
+    try apply IH; destruct (Nat.eqb t t0); [reflexivity|apply IH].
+Qed.
+Definition rinst_abs (d : renv) (tau : ty) : ty :=
+  match tau with
+  | TAbs t => match rlookup_type t d with Some result => result | None => TAbs t end
+  | _ => tau
+  end.
+Definition rinst_all_abs (th : subst) : bool :=
+  forallb (fun p => match snd p with TAbs _ => true | _ => false end) th.
+
+(* Renaming-only substitutions can read the matching rows directly. Compound
+   substitutions keep the shared projection, avoiding repeated whole-env walks. *)
 Definition rinst d th : renv :=
  match th with
  | [] => []
- | _::_ => let types:=rdtypes d in
-     map(fun p=>(ITy(fst p),QType(Audit.app_subst types(snd p))))th
+ | _::_ =>
+     if rinst_all_abs th then
+       map (fun p => (ITy (fst p), QType (rinst_abs d (snd p)))) th
+     else let types:=rdtypes d in
+       map(fun p=>(ITy(fst p),QType(Audit.app_subst types(snd p))))th
  end.
+Lemma rinst_abs_map : forall d th,
+  rinst_all_abs th = true ->
+  map (fun p => (ITy (fst p), QType (rinst_abs d (snd p)))) th =
+  map (fun p => (ITy (fst p), QType (rground d (snd p)))) th.
+Proof.
+  intros d th; induction th as [|[key tau] rest IH]; intros Good; [reflexivity|].
+  cbn [rinst_all_abs forallb snd] in Good; apply andb_true_iff in Good as [This Rest].
+  destruct tau; try discriminate This.
+  cbn [map fst snd rinst_abs rground Audit.app_subst].
+  rewrite rlookup_type_exact, (IH Rest); reflexivity.
+Qed.
 Lemma rinst_map : forall d th,
  rinst d th=map(fun p=>(ITy(fst p),QType(rground d(snd p))))th.
-Proof. intros d[|p th];reflexivity. Qed.
+Proof.
+ intros d [|p th]; [reflexivity|]; unfold rinst.
+ destruct (rinst_all_abs (p :: th)) eqn:Good; [apply rinst_abs_map; exact Good|reflexivity].
+Qed.
 Definition rclose d dc := dc ++ rtype_env d.
 Definition rbind_ty P d t tau := if xreify P then (ITy t,QType (rground d tau))::d else d.
 Definition rcall_env P d th dc := if xreify P then rinst d th ++ rclose d dc else dc.
