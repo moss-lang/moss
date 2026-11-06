@@ -177,6 +177,16 @@
     "strings": {
       "patterns": [
         {
+          "name": "string.unquoted.raw.moss",
+          "begin": "^[ \t]*(>)(?: |$)",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.string.begin.moss"
+            }
+          },
+          "end": "$"
+        },
+        {
           "name": "string.quoted.double.moss",
           "begin": "\"",
           "beginCaptures": {

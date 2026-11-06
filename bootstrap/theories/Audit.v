@@ -898,6 +898,57 @@ Fixpoint span (p : byte -> bool) (cs : list byte) : list byte * list byte :=
   | c :: r => if p c then let (a, b) := span p r in (c :: a, b) else ([], cs)
   | [] => ([], [])
   end.
+
+(* D88: line-leading > followed by one space or end of line is raw text.
+   Expand raw runs to parenthesized quoted expressions before the ordinary
+   grammar. Each emitted byte retains its source offset for diagnostics.
+   Modes: 0 ordinary, 1 quoted, 2 escaped, 3 comment, 4 raw. *)
+Definition raw_indent (c : byte) : bool := Byte.eqb c " "%byte || Byte.eqb c x09.
+Definition raw_after (cs : list byte) : bool :=
+  match cs with [] => true | c :: _ => Byte.eqb c " "%byte || Byte.eqb c x0a end.
+Definition raw_marker (cs : list byte) : bool :=
+  match cs with ">"%byte :: r => raw_after r | _ => false end.
+Definition raw_escape (c : byte) : list byte :=
+  if Byte.eqb c "\"%byte || Byte.eqb c """"%byte then ["\"%byte; c] else [c].
+
+Fixpoint raw_expand (fuel : nat) (cs : list byte) (off mode : nat) (bol : bool)
+  : list (byte * nat) :=
+  match fuel with
+  | 0 => []
+  | S fuel =>
+    match cs with
+    | [] => if Nat.eqb mode 4 then [("\"%byte, off); ("n"%byte, off); (""""%byte, off); (")"%byte, off)] else []
+    | c :: r =>
+      let emit bs tail := app (map (fun b => (b, off)) bs) tail in
+      if Nat.eqb mode 4 then
+        if Byte.eqb c x0a then
+          let '(indent, rest) := span raw_indent r in
+          if raw_marker rest then
+            let after := tl rest in
+            let '(skip, body) := match after with " "%byte :: body => (1, body) | _ => (0, after) end in
+            emit ["\"%byte; "n"%byte]
+              (raw_expand fuel body (off + 2 + length indent + skip) 4 false)
+          else emit ["\"%byte; "n"%byte; """"%byte; ")"%byte; c] (raw_expand fuel r (S off) 0 true)
+        else emit (raw_escape c) (raw_expand fuel r (S off) 4 false)
+      else if Nat.eqb mode 1 then
+        emit [c] (raw_expand fuel r (S off)
+          (if Byte.eqb c "\"%byte then 2 else if Byte.eqb c """"%byte then 0 else 1) false)
+      else if Nat.eqb mode 2 then emit [c] (raw_expand fuel r (S off) 1 false)
+      else if Nat.eqb mode 3 then
+        emit [c] (raw_expand fuel r (S off) (if Byte.eqb c x0a then 0 else 3) (Byte.eqb c x0a))
+      else if bol && Byte.eqb c ">"%byte && raw_after r then
+        let '(skip, body) := match r with " "%byte :: body => (1, body) | _ => (0, r) end in
+        emit ["("%byte; """"%byte] (raw_expand fuel body (S off + skip) 4 false)
+      else emit [c] (raw_expand fuel r (S off)
+        (if Byte.eqb c "#"%byte then 3 else if Byte.eqb c """"%byte then 1 else 0)
+        (Byte.eqb c x0a || (bol && raw_indent c)))
+    end
+  end.
+Definition raw_source (cs : list byte) : list (byte * nat) :=
+  raw_expand (S (length cs)) cs 0 0 true.
+Definition source_bytes (cs : list byte) : list byte := map fst (raw_source (newlines cs)).
+
+
 Definition lit_norm (t : string) : string :=
   let cs := list_byte_of_string t in
   let (pre, post) := span (fun b => negb (is_e b)) cs in
@@ -1344,7 +1395,7 @@ Definition File (ts : list token) (f : afile) : Prop :=
 
 (* The specification: the bytes of a source file have the AST f. *)
 Definition Derives (bytes : list byte) (f : afile) : Prop :=
-  exists ts, Lexes 0 (newlines bytes) ts /\ File ts f.
+  exists ts, Lexes 0 (source_bytes bytes) ts /\ File ts f.
 
 End Syntax.
 

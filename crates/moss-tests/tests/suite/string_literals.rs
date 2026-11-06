@@ -157,3 +157,76 @@ fn typed_manual_utf8_chunks_reject_invalid_ranges_and_rep_repacking() {
         assert_eq!(oracle.code, 64, "oracle did not type-reject {call}: {}", oracle.stderr);
     }
 }
+
+#[test]
+fn raw_multiline_strings_preserve_text_and_control_newlines() {
+    for (body, expected) in [
+        ("print(\n  > Hello,\n  > world!\n);", "Hello,\nworld!\n"),
+        ("print(\n  >\n);", "\n"),
+        ("print(\n > A¢ࠀ𐀀\n);", "A¢ࠀ𐀀\n"),
+        ("print(\n  > first\n  >\n  > third\n  >\n);", "first\n\nthird\n\n"),
+        ("print(\n\t>  é \\\" # >\t \n    > second\n);", " é \\\" # >\t \nsecond\n"),
+        ("print(\r\n  > first\r\n  > second\r\n);", "first\nsecond\n"),
+        ("print(\r  > first\r  > second\r);", "first\nsecond\n"),
+        ("let s =\n > text\n; print(s);", "text\n"),
+        ("print(\n > a\n);\n\nprint(\n > b\n);", "a\nb\n"),
+        ("print(\" > quoted\"); # > comment\nprint(\n > raw\n);", " > quotedraw\n"),
+        ("if 2 > 1 { print(\n > yes\n); }", "yes\n"),
+        ("if 2\n >= 1 { if (8\n >> 1) == 4 { print(\n > yes\n); } }", "yes\n"),
+        ("if 2\n >1 { print(\n > yes\n); }", "yes\n"),
+    ] {
+        let entry = moss_tests::source(&moss_tests::std_program("", body));
+        assert_eq!(run_module(&build(&entry), &[]), expected, "{body}");
+        assert_eq!(oracle_run(&entry, &[]), expected, "{body}");
+    }
+}
+
+#[test]
+fn raw_multiline_strings_require_line_leading_markers_and_adjacent_lines() {
+    for body in [
+        "print(> text\n);",
+        "print(\n >\ttext\n);",
+        "print(\n > first\n\n > second\n);",
+        "print(\n > first\n # comment\n > second\n);",
+        "if 2\n > 1 {}",
+        "print(\n > first\n >second\n);",
+    ] {
+        let entry = moss_tests::source(&moss_tests::std_program("", body));
+        assert!(!moss_tests::compile(&entry, "lib/prelude.moss").is_module(), "{body}");
+        assert_ne!(moss_tests::oracle_command(&["--elab-only", &entry]).code, 0, "{body}");
+    }
+}
+
+#[test]
+fn raw_multiline_expansion_preserves_diagnostic_source_positions() {
+    let entry = moss_tests::source("fn main() {\n let text =\n > a \"quote\" \\\n > b\n ; @\n}");
+    let out = moss_tests::oracle_command(&["--elab-only", &entry]);
+    assert_eq!(out.code, 63);
+    assert!(out.stderr.contains("5:4:"), "{}", out.stderr);
+}
+
+#[test]
+fn raw_multiline_strings_use_the_contextual_string_protocol() {
+    let quoted = std::fs::read_to_string(
+        moss_tests::repo().join("tests/fixtures/string_literals/rebound.moss"),
+    ).unwrap();
+    let raw = quoted.replace("../../../lib/", "{root}/lib/").replace("\"abc\"", "\n        > abc\n")
+        .replace("\"\"", "\n        >\n");
+    let raw = raw.replace("bind byte::x61", "bind byte::x0a = byte::Ascii(10);\n      bind byte::x61");
+    let entry = moss_tests::source(&raw);
+    assert_eq!(run_module(&build(&entry), &[]), "BWFBWWWWFC\n");
+    assert_eq!(oracle_run(&entry, &[]), "BWFBWWWWFC\n");
+}
+
+#[test]
+fn raw_multiline_strings_reject_malformed_utf8() {
+    let program = moss_tests::std_program("", "print(\n > PAYLOAD\n);");
+    let (prefix, suffix) = program.split_once("PAYLOAD").unwrap();
+    for bytes in [&[0xff][..], &[0xed, 0xa0, 0x80], &[0xf4, 0x90, 0x80, 0x80]] {
+        let entry = moss_tests::source("");
+        std::fs::write(moss_tests::repo().join(&entry),
+            [prefix.as_bytes(), bytes, suffix.as_bytes()].concat()).unwrap();
+        assert!(!moss_tests::compile(&entry, "lib/prelude.moss").is_module());
+        assert_eq!(moss_tests::oracle_command(&["--elab-only", &entry]).code, 63);
+    }
+}

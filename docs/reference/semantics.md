@@ -269,6 +269,10 @@ string expressions use the ordinary construction protocol described below.
 and backslash. Other escapes are errors. Lengths and indices count bytes,
 including the individual UTF-8 bytes of non-ASCII characters.
 
+[Raw multiline strings](syntax.md#raw-multiline-strings) are expressions
+with the same construction protocol. Their payload is literal text with
+LF after every marked line (including the last), without escape processing.
+
 A quoted expression expands to ordinary calls to `string_begin`,
 `string_write1` through `string_write4`, and `string_finish`, resolved
 lexically at the expression. Each write corresponds to one Unicode scalar
