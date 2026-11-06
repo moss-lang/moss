@@ -482,14 +482,12 @@ pub fn source(text: &str) -> String {
 
 /// The imports and `main` that make a program written against `Std` a
 /// program the platform runs (D52): `main` assumes the primitive context
-/// and applies `WasiStd`, then calls the program's own `run`.
-pub const WASI_IMPORTS: &str = "import \"wasi.moss\" use WasiStd;\n\
-     import \"wasistd.moss\" use Branch;\n\
-     import \"wasm.moss\" use Wasm;\n\
-     import \"wasip1.moss\" use Wasi;\n";
+/// and applies `StdBase`, then calls the program's own `run`.
+pub const WASI_IMPORTS: &str = "import \"base.moss\" use Base;\n\
+     import \"wasi.moss\" use StdBase;\n";
 
 pub const WASI_MAIN: &str =
-    "assume Wasm, Wasi, Branch {\n  fn main() {\n    bind WasiStd;\n    run();\n  }\n}\n";
+    "assume Base {\n  fn main() {\n    bind StdBase;\n    run();\n  }\n}\n";
 
 /// A program over `Std`, as the Python bootstrap ran one with its native
 /// `Std`: `imports`, then `assume Std { decls fn run() { body } }`, then
@@ -504,7 +502,7 @@ pub fn std_program(decls: &str, body: &str) -> String {
 
 /// A whole program whose `main` assumes `Std` (the Python bootstrap's
 /// native `Std` ran those), made one the platform runs: its `fn main()`
-/// becomes `fn run()`, which the platform's `main` calls under `WasiStd`.
+/// becomes `fn run()`, which the platform's `main` calls under `StdBase`.
 pub fn std_main(text: &str) -> String {
     assert!(text.contains("fn main()"), "no main in {text}");
     let (imports, rest): (Vec<&str>, Vec<&str>) =

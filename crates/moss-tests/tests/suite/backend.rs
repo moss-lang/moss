@@ -1272,8 +1272,8 @@ fn dual_numbers_by_rebinding_float() {
     let entry = wasi("perturbation");
     oracle_says(
         &entry,
-        "argument `rhs` of `.add` is `Dual[Base=Dual[Base=Float]]`, \
-         expected `Dual[Base=Float]`",
+        "argument `rhs` of `.add` is `Dual[Scalar=Dual[Scalar=Float]]`, \
+         expected `Dual[Scalar=Float]`",
     );
     let out = report(&entry, PRELUDE);
     assert!(out.starts_with(&format!("?S {entry} nested\n")), "{out}");
@@ -1335,15 +1335,15 @@ fn a_capture_is_laid_out_where_it_was_captured() {
 
 /// D55: a functor with binds must bind each item of its result itself, or
 /// apply a functor that provides it — a type bind does not bind a method
-/// the type then resolves to (`bind Base = Int;` for a promised
-/// `Base.add`) — checked at the functor wherever it is applied, in a
+/// the type then resolves to (`bind Scalar = Int;` for a promised
+/// `Scalar.add`) — checked at the functor wherever it is applied, in a
 /// function nothing calls too. The self-hosted compiler reports
 /// `e_partial` (`Z`), named by the item; it used to accept both.
 #[test]
 fn a_functor_binds_everything_it_promises() {
     refused(
         &[
-            ("functor_partial", "functor `Over` does not bind `Base.add`", "!Z {} add\n"),
+            ("functor_partial", "functor `Over` does not bind `Scalar.add`", "!Z {} add\n"),
             ("functor_partial_unreached", "functor `Greeter` does not bind `greeting`", "!Z {} greeting\n"),
         ],
         true,

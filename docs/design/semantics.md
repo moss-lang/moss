@@ -4968,3 +4968,20 @@ bootstrap pipeline of §11 with the [D40] corpus tests, applying the §12
 errata to `src/` as the corpus comes online. (Since then the syntax
 reference was rewritten and the Python pipeline of §11 built; it has in
 turn been replaced by the Rocq bootstrap, [D86].)
+
+
+## Base: the compiler-provided context
+
+`lib/base.moss` names the complete primitive context `Base`: `Wasm`,
+`Wasi`, `Branch`, and `Gc`. The prelude imports it and `StdBase`, the
+ordinary library functor from `Base` to `Std`. Entry points can assume
+`Base` and bind `StdBase`; reusable library code can continue to assume
+`Std` or narrower contexts. The individual primitive groups remain
+available. `WasiStd` remains a compatibility wrapper around `StdBase`.
+`println` is ordinary library code over contextual string construction
+and `print`, and appends one newline.
+
+Importing `StdBase` through the prelude also brings the GC string
+implementation into the compiler's source bundle. The compiler still
+binds `WasiRawStd` and uses linear-memory strings; the old assertion that
+the bundle excludes `gcstring.moss` no longer applies.

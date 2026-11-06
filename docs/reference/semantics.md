@@ -413,14 +413,15 @@ constants, the expansion is constant-foldable, and an optimizer folds it.
 ## Execution
 
 `main` takes no parameters and returns `()`. The platform runs it in its
-root context: `main` may assume any of `Wasm` (the instructions,
-`lib/wasm.moss`), `Wasi` (the host's functions, `lib/wasip1.moss`) and
-`Branch` (`i32_bool`, `lib/wasistd.moss`), and `Gc` — the platform's
-functors `Heap`, `Mutable` and `Arrays`, with the types they are fixed
-in — is in force in `main` whether or not it assumes it. `Std` is a
-library over these: a program usually starts `main` with `bind WasiStd;`
-(`lib/wasi.moss`) and calls code that assumes `Std`. Any function but
-`main` that needs a platform functor assumes `Gc`. Three distinct errors
+root context, named [`Base`](../../lib/base.moss). `Base` groups
+`Wasm` (the instructions, `lib/wasm.moss`), `Wasi` (the host's functions,
+`lib/wasip1.moss`), `Branch` (`i32_bool`, `lib/wasistd.moss`), and `Gc`
+(the platform's functors `Heap`, `Mutable`, and `Arrays`). `Gc`, with the
+types its functors are fixed in, is in force in `main` whether or not
+it assumes it. `Std` is a library over these: a program usually declares
+`assume Base`, starts `main` with `bind StdBase;` (`lib/wasi.moss`), and
+calls code that assumes `Std`. Other functions that need platform
+functors can assume `Gc` or `Base`. Three distinct errors
 mark the boundaries: a name nobody declared is *not in scope*; a declared
 but unprovided symbol is *not available in the context*; a requirement of
 `main`'s that the platform does not provide is an error at link.

@@ -1,7 +1,7 @@
 import "./access.moss" use .get, .length;
 import "./char.moss" use Char;
-import "./byte.moss" use ByteTypes, Ascii, Lead2, Continuation, Prefix3, Prefix4;
-import "./int.moss" use Int;
+import "./byte.moss" as byte use ByteTypes, Bytes, Ascii, Lead2, Continuation, Prefix3, Prefix4;
+import "./int.moss" use Int, zero, one;
 
 type String;
 
@@ -46,5 +46,13 @@ assume String {
     # A fresh String holding `len` characters from `start`. Indices are
     # the same ones `.get` and `.length` use.
     fn .slice(start: Int, len: Int): String;
+  }
+}
+
+# A line is two ordinary writes, using the current string provider.
+assume String, Int, zero, one, ByteTypes, Bytes, StringLiterals, print {
+  fn println(s: String) {
+    print(s);
+    print("\n");
   }
 }
