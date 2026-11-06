@@ -1,0 +1,17 @@
+import "./library_smoke.moss" use sample, line;
+import "../../../lib/array.moss" use .arrayed;
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+assume Std {
+  fn run() {
+    let xs = sample().arrayed(arg_count().size());
+    line(xs.get((arg_count() - 1).size()));
+    xs.set(0.size(), sample().concat(sample()));
+    line(xs.get(0.size()));
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; run(); }
+}

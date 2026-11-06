@@ -1,0 +1,34 @@
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../../lib/wasip1.moss" use Wasi;
+assume Std, Wasm {
+  tag TA(Ref[Boxed=B]);
+  tag TC(Ref[Boxed=Int]);
+  type T = TA | TC;
+  tag BD(Ref[Boxed=T]);
+  tag BE(Ref[Boxed=Int]);
+  type B = BD | BE;
+  context TI = T.boxed[Boxed=T], Ref.deref[Boxed=T];
+  context BI = B.boxed[Boxed=B], Ref.deref[Boxed=B];
+  context II = Int.boxed[Boxed=Int], Ref.deref[Boxed=Int];
+}
+assume Std, Wasm, TI, BI, II {
+ fn evalT(t:T):Int { match t { TA(r)=>evalB(r.deref()), TC(r)=>r.deref(), } }
+ fn evalB(b:B):Int { match b { BD(r)=>evalT(r.deref()), BE(r)=>r.deref(), } }
+}
+assume Wasm, Wasi, Branch {
+ fn main(){
+  bind WasiStd;
+  bind Boxed=Int; bind Heap;
+  let n=65;
+  let r=n.boxed();
+  bind Boxed=B; bind Heap;
+  let b:B=BE(r);
+  let br=b.boxed();
+  bind Boxed=T; bind Heap;
+  let t:T=TA(br);
+  putchar(evalT(t).char());
+  putchar(char::newline);
+ }
+}

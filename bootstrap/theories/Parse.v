@@ -613,6 +613,10 @@ with parse_primary (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
         let@ _ & ts := expect "RPAREN" ts in POk e ts
       else if at_ "THIS" ts then POk AEThis (advance ts)
       else if at_any ["INTEGER"; "DECIMAL"] ts then POk (AELit (lit_norm (tx (peek ts)))) (advance ts)
+      else if at_ "STRING" ts then
+        let value := string_value (tx (peek ts)) in
+        if string_utf8_valid value then POk (string_desugar value) (advance ts)
+        else err "invalid UTF-8 in string literal" ts
       else if at_ "LBRACE" ts && negb nr then
         let@ b & ts := parse_block n ts in POk (AEBlock b) ts
       else if at_ "NAME" ts then

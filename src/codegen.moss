@@ -203,6 +203,8 @@ assume Std {
   # from 3: `Ref.set`, `.arrayed`, and `Array`'s `length`, `get`, `set`,
   # `fill` and `copy`.
   val cg_gc: IntList;
+  # Physical widths, after preserving incompatible reference union lanes.
+  val cg_width: IntList;
 
   # D79: lib/wasm.moss's `Memory`. The memory instructions are `Addr`'s
   # methods (`cg_gc`'s last), which the platform's family `Memories`
@@ -355,7 +357,7 @@ assume Std {
     rm_node, rm_genv, rm_recv, rm_meth, rm_sym, rm_link, rm_head,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
     cg_i32, cg_i64, cg_f32, cg_f64, cg_boolty,
-    cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_gc, cg_memory, cg_errs, cg_err_name, cg_err_at, cg_where,
+    cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_gc, cg_width, cg_memory, cg_errs, cg_err_name, cg_err_at, cg_where,
     vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
     ck_entry, ck_inner, ck_link, ck_head,
     fl_start, fl_len, fl_types,
@@ -2041,7 +2043,134 @@ assume Std {
     }
 
     # How many scalars a value of a generic type is here.
-    fn width(ty: Int): Int { types::width(spec(ty)) }
+    fn width(ty: Int): Int {
+      let t = spec(ty);
+      let base = types::width(t);
+      if checking() { return base; }
+      while cg_width.length() <= t { cg_width.push(0); }
+      if cg_width.get(t) > 0 { return cg_width.get(t) - 1; }
+      if cg_width.get(t) < 0 { return base; }
+      cg_width.set(t, -1);
+      let w = physical_width(t, base);
+      cg_width.set(t, w + 1);
+      w
+    }
+
+    fn physical_width(ty: Int, base: Int): Int {
+      if is_ref_type(ty) { return 1; }
+      if is_array_type(ty) { return 1; }
+      if types::is_kind(ty, types::kd_nominal()) {
+        if types::is_unit_decl(ty) { return 1; }
+        return width(types::payload_of(ty));
+      }
+      if types::is_kind(ty, types::kd_record()) {
+        return field_off(ty, types::field_count(ty));
+      }
+      if types::is_kind(ty, types::kd_union()) {
+        var total = 1;
+        var widest = 0;
+        var i = 0;
+        while i < types::member_count(ty) {
+          let w = width(types::member_payload(types::member_at(ty, i)));
+          total = total + w;
+          if w > widest { widest = w; }
+          i = i + 1;
+        }
+        if disjoint_union(ty) { return total; }
+        return widest + 1;
+      }
+      base
+    }
+
+    # Keep precise reference types in separate lanes when payloads cannot
+    # share a Wasm slot. Ordinary compatible unions keep the compact layout.
+    fn disjoint_union(ty: Int): Bool {
+      if checking() { return false; }
+      if !types::is_kind(ty, types::kd_union()) { return false; }
+      var a = 0;
+      while a < types::member_count(ty) {
+        let pa = types::member_payload(types::member_at(ty, a));
+        var b = 0;
+        while b < a {
+          let pb = types::member_payload(types::member_at(ty, b));
+          var i = 0;
+          while i < width(pa) {
+            if i < width(pb) {
+              let va = layout_lane_key(pa, i);
+              let vb = layout_lane_key(pb, i);
+              if va != vb {
+                if va < 0 { return true; }
+                if emit::is_ref(va) { return true; }
+                if vb < 0 { return true; }
+                if emit::is_ref(vb) { return true; }
+              }
+            }
+            i = i + 1;
+          }
+          b = b + 1;
+        }
+        a = a + 1;
+      }
+      false
+    }
+
+    # Compare lane identities without constructing GC types. In particular,
+    # recursive boxed unions must finish physical layout before struct_of
+    # starts filling their fields. Precise refs use their canonical held type.
+    fn layout_lane_key(ty: Int, i: Int): Int {
+      let scalar = wide_scalar(ty);
+      if ast::is_some(scalar) { return scalar; }
+      if is_ref_type(ty) {
+        let held = held_of(ty);
+        return -2 - held - held;
+      }
+      if is_array_type(ty) {
+        let held = array_held(ty);
+        return -3 - held - held;
+      }
+      if types::is_kind(ty, types::kd_nominal()) {
+        if types::is_unit_decl(ty) { return emit::vt_i32(); }
+        return layout_lane_key(types::payload_of(ty), i);
+      }
+      if types::is_kind(ty, types::kd_record()) {
+        var j = 0;
+        while j < types::field_count(ty) {
+          let off = field_off(ty, j);
+          let field = types::field_type_at(ty, j);
+          if i < off + width(field) { return layout_lane_key(field, i - off); }
+          j = j + 1;
+        }
+      }
+      if types::is_kind(ty, types::kd_union()) {
+        if i == 0 { return emit::vt_i32(); }
+        var offset = 1;
+        var j = 0;
+        let separate = disjoint_union(ty);
+        while j < types::member_count(ty) {
+          let payload = types::member_payload(types::member_at(ty, j));
+          if i >= offset {
+            if i < offset + width(payload) { return layout_lane_key(payload, i - offset); }
+          }
+          if separate { offset = offset + width(payload); }
+          j = j + 1;
+        }
+      }
+      emit::vt_i32()
+    }
+
+    fn union_offset(ty: Int, head: Int): Int {
+      let t = spec(ty);
+      if !disjoint_union(t) { return 1; }
+      var offset = 1;
+      var i = 0;
+      while i < types::member_count(t) {
+        let member = types::member_at(t, i);
+        if types::head_of(member) == head { return offset; }
+        offset = offset + width(types::member_payload(member));
+        i = i + 1;
+      }
+      offset
+    }
 
     # A need's key as `env`, a generic environment of the caller, knows it
     # (D62): a declaration states its receiver in terms of its own
@@ -2115,20 +2244,23 @@ assume Std {
           return emit::vt_i32();
         }
         var j = 0;
+        var offset = 1;
+        let separate = disjoint_union(ty);
         while j < types::member_count(ty) {
           let p = types::member_payload(types::member_at(ty, j));
-          if types::width(p) > i - 1 {
-            return slot_valtype(p, i - 1);
+          if i >= offset {
+            if width(p) > i - offset { return slot_valtype(p, i - offset); }
           }
+          if separate { offset = offset + width(p); }
           j = j + 1;
         }
       }
       if types::is_kind(ty, types::kd_record()) {
         var j = 0;
         while j < types::field_count(ty) {
-          let off = types::field_offset(ty, j);
+          let off = field_off(ty, j);
           let f = types::field_type_at(ty, j);
-          if i < off + types::width(f) {
+          if i < off + width(f) {
             return slot_valtype(f, i - off);
           }
           j = j + 1;
@@ -2144,7 +2276,16 @@ assume Std {
 
     # Where a field's run starts, which only the record's specialization
     # can say: a field of an abstract type is as wide as what it is here.
-    fn field_off(rec: Int, i: Int): Int { types::field_offset(spec(rec), i) }
+    fn field_off(rec: Int, i: Int): Int {
+      let r = spec(rec);
+      var offset = 0;
+      var j = 0;
+      while j < i {
+        offset = offset + width(types::field_type_at(r, j));
+        j = j + 1;
+      }
+      offset
+    }
 
     # The type a tag construction builds: the tag at whatever its brackets
     # bind (`Box[Elem=Point](...)`), or applied to its own requirements,
@@ -2398,7 +2539,7 @@ assume Std {
       lc_spec.push(sty);
       lc_start.push(lc_slots.length());
       var i = 0;
-      while i < types::width(sty) {
+      while i < width(sty) {
         lc_slots.push(ast::none());
         i = i + 1;
       }
@@ -2411,7 +2552,7 @@ assume Std {
       lc_slots.set(lc_start.get(l) + i, slot);
     }
 
-    fn local_width(l: Int): Int { types::width(lc_spec.get(l)) }
+    fn local_width(l: Int): Int { width(lc_spec.get(l)) }
 
     # Emission takes every local by revealing the next one, in order, and
     # uses the one it just revealed. Going through here rather than
@@ -3478,11 +3619,61 @@ assume Std {
     # member, so the value is emitted into a buffer first and the
     # discriminant goes in ahead of it. A unit member needs none of that
     # — the code *is* the value — so it only wants padding.
+    fn union_remap_needed(got: Int, want: Int): Bool {
+      let g = spec(got);
+      let w = spec(want);
+      if g == w { return false; }
+      if !types::is_kind(g, types::kd_union()) { return false; }
+      if !types::is_kind(w, types::kd_union()) { return false; }
+      if disjoint_union(g) { return true; }
+      disjoint_union(w)
+    }
+
+    fn remap_union(body: IntList, valbuf: IntList, got: Int, want: Int) {
+      let tmp = reveal(ast::none(), got);
+      push_bytes(body, valbuf);
+      store_local(body, tmp);
+      var member = 0;
+      let n = types::member_count(got);
+      while member < n {
+        let variant = types::member_at(got, member);
+        let head = types::head_of(variant);
+        if member + 1 < n {
+          op_local_get(body, local_slot(tmp, 0));
+          op_i32_const(body, types::unit_code(head));
+          body.push(70);
+          op_if_ty(body, want);
+        }
+        op_local_get(body, local_slot(tmp, 0));
+        let from = union_offset(got, head);
+        let to = union_offset(want, head);
+        var i = 1;
+        while i < to {
+          push_zero(body, valtype_at(want, i));
+          i = i + 1;
+        }
+        i = 0;
+        while i < width(types::member_payload(variant)) {
+          op_local_get(body, local_slot(tmp, from + i));
+          i = i + 1;
+        }
+        pad(body, want, to + i);
+        if member + 1 < n { op_else(body); }
+        member = member + 1;
+      }
+      member = 1;
+      while member < n { op_end(body); member = member + 1; }
+    }
+
     fn inject(body: IntList, valbuf: IntList, got: Int, want: Int) {
       if is_never(got) {
         # It never arrives, so it is any type at all (D15).
         push_bytes(body, valbuf);
         settle(body, got, want);
+        return ();
+      }
+      if union_remap_needed(got, want) {
+        remap_union(body, valbuf, spec(got), spec(want));
         return ();
       }
       if width(want) <= width(got) {
@@ -3503,11 +3694,17 @@ assume Std {
       # A limit of this layout, not a type error: the check pass, laying
       # out nothing real, has nothing to say about it.
       if !checking() {
-        check_slots(got, want, head);
+        if !disjoint_union(spec(want)) { check_slots(got, want, head); }
       }
+      let offset = union_offset(want, head);
       op_i32_const(body, types::unit_code(head));
+      var i = 1;
+      while i < offset {
+        push_zero(body, valtype_at(want, i));
+        i = i + 1;
+      }
       push_bytes(body, valbuf);
-      pad(body, want, 1 + width(got));
+      pad(body, want, offset + width(got));
     }
 
     # A union's slot has one valtype, its first member's that reaches it
@@ -3576,8 +3773,10 @@ assume Std {
         }
       }
       if width(got) == width(want) {
-        push_bytes(body, tmp);
-        return got;
+        if !union_remap_needed(got, want) {
+          push_bytes(body, tmp);
+          return got;
+        }
       }
       inject(body, tmp, spec(got), spec(want));
       want
@@ -4725,7 +4924,7 @@ assume Std {
         # temporary.
         let rec = pattern_record(arm_payload(pat, m, sty));
         if record_pattern_ok(pat, rec, m) {
-          bind_record_fields(body, pat, rec, m, tmp, 1);
+          bind_record_fields(body, pat, rec, m, tmp, union_offset(sty, arm_head_any(pat, m)));
         } else {
           cg_error(c_unsupported(), ast::none());
         }
@@ -4740,7 +4939,7 @@ assume Std {
               let payload = arm_payload(pat, m, sty);
               var j = 0;
               while j < width(payload) {
-                op_local_get(body, local_slot(tmp, j + 1));
+                op_local_get(body, local_slot(tmp, j + union_offset(sty, arm_head_any(pat, m))));
                 j = j + 1;
               }
               bind_here(body, ast::path_last(ast::a_of(sub)), payload);

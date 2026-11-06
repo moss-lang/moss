@@ -1,3 +1,7 @@
+import "./byte.moss" use ByteTypes;
+import "./wasibyte.moss" use WasiByteTypes, RawAscii, RawLead2,
+  RawContinuation, RawPrefix3, RawPrefix4, ascii_raw, lead2_raw,
+  continuation_raw, prefix3_lead, prefix3_second, prefix4_lead, prefix4_second;
 import "./wasm.moss" as w use Wasm, Gc, I32, F32, F64, Memory, ArrayRef, Arrayed;
 import "./array.moss" as array use Item, Array, ArrayHandle, .arrayed;
 import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
@@ -15,7 +19,8 @@ import "./int.moss" as int use Int, zero, one;
 import "./size.moss" as size use Size;
 import "./list.moss" as list use IntList, int_list;
 import "./std.moss" use putchar, put_bytes, Std;
-import "./string.moss" as string use String, print, first_arg, arg_count, arg_at;
+import "./string.moss" as string use String, StringBuilder, StringLiterals,
+  string_begin, string_write1, string_write2, string_write3, string_write4, string_finish, print, first_arg, arg_count, arg_at;
 import "./strlist.moss" as strlist use StrList, str_list;
 
 # `Std`, implemented in Moss over the primitive context (D52). This is the
@@ -46,10 +51,11 @@ context Console =
 context Files =
   Path, pwd, Path.join, Path.readable, Path.read[Elem=String];
 
-# Strings, which live in memory like any container: `String` and the
-# methods that read and make one, with nothing that calls WASI.
+# The raw string interface: String, literal construction and operations that
+# read or make one, with nothing that calls WASI. WasiStrings below uses linear
+# memory; the default WasiStd replaces it with gcstring.moss's GC provider.
 context Strings =
-  String, String.length[Index=Int], String.get[Elem=Char, Index=Int], String.slice, String.concat;
+  ByteTypes, String, StringLiterals, String.length[Index=Int], String.get[Elem=Char, Index=Int], String.slice, String.concat;
 
 # The containers, over the library's own allocator rather than the
 # compiler's — which no longer has one (D59). Everything here lives in
@@ -147,6 +153,52 @@ assume Wasm, Branch {
       i = w::i32_add(i, w::i32_one);
     }
     Str(s)
+  }
+
+  # The raw provider has the same public literal protocol. Finishing copies,
+  # so retaining a builder never grants mutation of a finished String.
+  fn raw_string_begin(length: Num): Str {
+    let n = raw(length);
+    if i32_bool(w::i32_lt_s(n, w::i32_zero)) { w::unreachable(); }
+    let bytes = w::i32_add(four(), n);
+    if i32_bool(w::i32_lt_u(bytes, n)) { w::unreachable(); }
+    let p = alloc(bytes);
+    w::i32_store(p, n);
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, n)) {
+      w::i32_store8(w::i32_add(w::i32_add(p, four()), i), w::i32_zero);
+      i = w::i32_add(i, w::i32_one);
+    }
+    Str(p)
+  }
+  fn raw_string_write_byte(builder: Str, index: I32, value: I32): Str {
+    if i32_bool(w::i32_ge_u(index, w::i32_load(addr(builder)))) { w::unreachable(); }
+    w::i32_store8(w::i32_add(w::i32_add(addr(builder), four()), index), value);
+    builder
+  }
+  fn raw_string_write1(builder: Str, index: Num, a: RawAscii): Str {
+    raw_string_write_byte(builder, raw(index), ascii_raw(a))
+  }
+  fn raw_string_write2(builder: Str, index: Num, a: RawLead2, b: RawContinuation): Str {
+    let i = raw(index);
+    let next = raw_string_write_byte(builder, i, lead2_raw(a));
+    raw_string_write_byte(next, w::i32_add(i, w::i32_one), continuation_raw(b))
+  }
+  fn raw_string_write3(builder: Str, index: Num, prefix: RawPrefix3, last: RawContinuation): Str {
+    let i = raw(index);
+    let next = raw_string_write_byte(builder, i, prefix3_lead(prefix));
+    let next = raw_string_write_byte(next, w::i32_add(i, w::i32_one), prefix3_second(prefix));
+    raw_string_write_byte(next, w::i32_add(i, two()), continuation_raw(last))
+  }
+  fn raw_string_write4(builder: Str, index: Num, prefix: RawPrefix4, c: RawContinuation, d: RawContinuation): Str {
+    let i = raw(index);
+    let next = raw_string_write_byte(builder, i, prefix4_lead(prefix));
+    let next = raw_string_write_byte(next, w::i32_add(i, w::i32_one), prefix4_second(prefix));
+    let next = raw_string_write_byte(next, w::i32_add(i, two()), continuation_raw(c));
+    raw_string_write_byte(next, w::i32_add(i, w::i32_add(two(), w::i32_one)), continuation_raw(d))
+  }
+  fn raw_string_finish(builder: Str): Str {
+    string_of(w::i32_add(addr(builder), four()), w::i32_load(addr(builder)))
   }
 
   # A string's own operations, attached rather than written at
@@ -522,8 +574,23 @@ functor WasiBasics: Wasm, Wasi, Branch -> Basics {
   bind WasiStrings;
 }
 
-functor WasiStrings: Wasm, Branch -> Strings {
+functor WasiStringLiterals: Wasm, Branch -> StringLiterals {
+  bind WasiByteTypes;
+  bind int::Int = Num;
   bind string::String = Str;
+  bind string::StringBuilder = Str;
+  bind string::string_begin = raw_string_begin;
+  bind string::string_write1 = raw_string_write1;
+  bind string::string_write2 = raw_string_write2;
+  bind string::string_write3 = raw_string_write3;
+  bind string::string_write4 = raw_string_write4;
+  bind string::string_finish = raw_string_finish;
+}
+
+functor WasiStrings: Wasm, Branch -> Strings {
+  bind WasiByteTypes;
+  bind string::String = Str;
+  bind WasiStringLiterals;
   # A shared accessor is provided at one receiver at a time, and the
   # element type comes with the provision (D61). `Char` is bound to `Chr`
   # where this is applied, so `Elem=Char` means `Chr` here.

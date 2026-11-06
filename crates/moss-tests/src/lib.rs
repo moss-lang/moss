@@ -520,8 +520,7 @@ pub fn std_main(text: &str) -> String {
     out
 }
 
-/// Every example but `escape`, which is still written in the old language
-/// (it needs string literals, D48). Listed from the directory, so a new
+/// Every example, listed from the directory, so a new
 /// example cannot be forgotten and a deleted one cannot leave its golden
 /// behind.
 pub fn runnable_examples() -> Vec<String> {
@@ -530,7 +529,6 @@ pub fn runnable_examples() -> Vec<String> {
         .map(|e| e.unwrap().path())
         .filter(|p| p.extension().is_some_and(|x| x == "moss"))
         .map(|p| p.file_stem().unwrap().to_str().unwrap().to_string())
-        .filter(|name| name != "escape")
         .collect();
     names.sort();
     names

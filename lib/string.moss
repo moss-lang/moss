@@ -1,12 +1,30 @@
 import "./access.moss" use .get, .length;
 import "./char.moss" use Char;
+import "./byte.moss" use ByteTypes, Ascii, Lead2, Continuation, Prefix3, Prefix4;
 import "./int.moss" use Int;
 
 type String;
 
+# Literal construction is ordinary contextual code. The frontend supplies UTF-8
+# bytes through contextual byte constants; a provider chooses the
+# representation and construction. Each literal write groups the one to four
+# bytes of a Unicode scalar; lengths and write indices count bytes.
+type StringBuilder;
+assume Int, ByteTypes, StringBuilder, String {
+  fn string_begin(length: Int): StringBuilder;
+  fn string_write1(builder: StringBuilder, index: Int, a: Ascii): StringBuilder;
+  fn string_write2(builder: StringBuilder, index: Int, a: Lead2, b: Continuation): StringBuilder;
+  fn string_write3(builder: StringBuilder, index: Int, prefix: Prefix3, last: Continuation): StringBuilder;
+  fn string_write4(builder: StringBuilder, index: Int, prefix: Prefix4, c: Continuation, d: Continuation): StringBuilder;
+  fn string_finish(builder: StringBuilder): String;
+  context StringLiterals = StringBuilder, string_begin,
+    string_write1, string_write2, string_write3, string_write4, string_finish;
+}
+
 # `.get` and `.length` are the shared accessors of access.moss, provided
 # here at `String` with `Elem=Char` (D61). `.concat` and `.slice` are this
-# module's own.
+# module's own. The default provider uses UTF-8 bytes: length and indices
+# count bytes, and get returns one byte as a Char.
 
 assume String {
   assume Int {

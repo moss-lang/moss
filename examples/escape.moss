@@ -1,5 +1,14 @@
-assume Std;
+#!/usr/bin/env moss
 
-fn main() {
-  println("\"Hello there,\"\n\\said I.\\");
+import "wasi.moss" use WasiStd;
+import "wasistd.moss" use Branch;
+import "wasm.moss" use Wasm;
+import "wasip1.moss" use Wasi;
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    print("\"Hello there,\"\n\\said I.\\");
+    putchar(char::newline);
+  }
 }

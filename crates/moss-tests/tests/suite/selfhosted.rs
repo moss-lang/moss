@@ -147,15 +147,49 @@ assume Std {
             .collect()
     }
 
-    /// Everything that is written in the language — every live .moss file
-    /// except `examples/escape.moss`, which needs string literals (D48) and
-    /// parses under neither parser.
+    /// Every live source file, including the quoted string fixtures.
     fn corpus() -> Vec<String> {
         let mut files = Vec::new();
-        for dir in ["src", "lib", "examples", "tests/wasi"] {
-            files.extend(moss_tests::moss_files(dir).into_iter().filter(|f| f != "examples/escape.moss"));
+        for dir in ["src", "lib", "examples", "tests/wasi", "tests/fixtures/string_literals"] {
+            files.extend(moss_tests::moss_files(dir));
         }
         files
+    }
+
+    #[test]
+    fn quoted_payload_ast_uses_contextual_byte_paths() {
+        let file = moss_tests::source(r#"fn demo() { let text = "Aé\n\"\\\t\r"; }"#);
+        let expected = rocq_dumps(&[file.clone()]).remove(0);
+        let actual = run_driver(parse_driver(), None, &[&file]).text();
+        assert_eq!(actual, expected);
+        assert_eq!(actual.matches("(k string_write1 _)").count(), 6);
+        assert_eq!(actual.matches("(k string_write2 _)").count(), 1);
+        for name in ["41", "c3", "a9", "0a", "22", "5c", "09", "0d"] {
+            assert!(actual.contains(&format!("(k byte::x{name} _)")), "{actual}");
+        }
+        // Only lengths and indices remain integer literals (8 and 0..7).
+        for value in [65, 195, 169, 10, 34, 92, 9, 13] {
+            assert!(!actual.contains(&format!("(Y {value})")), "{actual}");
+        }
+
+        let payload = "\u{800}\u{d7ff}\u{ffff}\u{10000}\u{50000}\u{10ffff}";
+        let file = moss_tests::source(&format!("fn demo() {{ let text = \"{payload}\"; }}"));
+        let expected = rocq_dumps(&[file.clone()]).remove(0);
+        let actual = run_driver(parse_driver(), None, &[&file]).text();
+        assert_eq!(actual, expected);
+        assert_eq!(actual.matches("(k string_write3 _)").count(), 3);
+        assert_eq!(actual.matches("(k string_write4 _)").count(), 3);
+        for (name, lead, second) in [
+            ("ThreeE0", "e0", "a0"), ("ThreeED", "ed", "9f"),
+            ("ThreeOrdinary", "ef", "bf"), ("FourF0", "f0", "90"),
+            ("FourMiddle", "f1", "90"), ("FourF4", "f4", "8f"),
+        ] {
+            let prefix = format!("(o (k byte::{name} _) [(p lead (k byte::x{lead} _)) (p second (k byte::x{second} _))])");
+            assert!(actual.contains(&prefix), "{actual}");
+        }
+        for value in [224, 160, 128, 237, 159, 191, 239, 240, 144, 241, 244, 143] {
+            assert!(!actual.contains(&format!("(Y {value})")), "{actual}");
+        }
     }
 
     /// src/syntax.moss against the oracle's Rocq parser, over the whole

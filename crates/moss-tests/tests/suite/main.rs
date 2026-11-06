@@ -16,3 +16,6 @@ mod language;
 mod selfhosted;
 mod validate;
 mod wasm_backend;
+
+mod string_literals;
+mod typed_reference_unions;

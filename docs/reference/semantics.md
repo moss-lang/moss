@@ -259,10 +259,110 @@ while xs.more(i) { let x = xs.get(i); i = xs.after(i); body }`, calling
 `lib/access.moss`'s four methods at the collection's type, provided like
 any method (`Std` provides them for arrays). A call evaluates its receiver,
 if any, then its arguments left to right; an operator's left operand is
-its receiver. There are no
-character or string literals; strings appear only as import paths, and
-other values enter programs through the environment (`char::a`,
-`first_arg()`, `Path.read`).
+its receiver. Character constants use names such as `char::a`. Quoted
+string expressions use the ordinary construction protocol described below.
+
+## Quoted strings
+
+`"hello"` is an expression. Its payload is UTF-8 bytes; the escapes `\n`,
+`\r`, `\t`, `\"`, and `\\` mean newline, carriage return, tab, quote,
+and backslash. Other escapes are errors. Lengths and indices count bytes,
+including the individual UTF-8 bytes of non-ASCII characters.
+
+A quoted expression expands to ordinary calls to `string_begin`,
+`string_write1` through `string_write4`, and `string_finish`, resolved
+lexically at the expression. Each write corresponds to one Unicode scalar
+in the source. Its bytes are contextual values; three- and four-byte
+scalars package their first two bytes into an ordinary typed prefix record.
+Invalid UTF-8 encodings are rejected before desugaring.
+For example, `"hi"` has the behavior of:
+
+```moss
+{
+  var builder = string_begin(2);
+  builder = string_write1(builder, 0, byte::x68);
+  builder = string_write1(builder, 1, byte::x69);
+  string_finish(builder)
+}
+```
+
+For `"é"`, the single write is
+`string_write2(builder, 0, byte::xc3, byte::xa9)`, with byte length 2.
+For `"€"`, it is:
+
+```moss
+string_write3(builder, 0,
+  byte::ThreeOrdinary { lead = byte::xe2, second = byte::x82 }, byte::xac)
+```
+
+For `"😀"`, it is:
+
+```moss
+string_write4(builder, 0,
+  byte::FourF0 { lead = byte::xf0, second = byte::x9f }, byte::x98, byte::x80)
+```
+
+Each write's index is the scalar's byte offset, advancing by its encoded
+width: 2 for `é`, 3 for `€`, and 4 for `😀`.
+
+The generated builder binding is inaccessible to source code. It has one
+fixed type. Length and index arguments are ordinary integer literals.
+Payload bytes are ordinary qualified value references `byte::x00` through
+`byte::xff`, with exactly two lowercase hexadecimal digits. The prelude's
+`byte` namespace names [`lib/byte.moss`](../../lib/byte.moss), which declares
+twelve nominal byte-range types over opaque representation types supplied
+by `ByteTypes`, their union `Byte`, and the `Bytes` context of all 256
+values, each at its precise range type. Payload bytes therefore do not use `Int` arithmetic: changing `zero`, `one`, or integer
+operations changes lengths and indices, while rebinding range
+representations, byte values or the write functions changes how payloads
+are interpreted. The namespace
+itself resolves by ordinary lexical lookup.
+
+The protocol's parameter types also check manual calls. `string_write1`
+takes `Ascii`; `string_write2` takes `Lead2` and `Continuation`;
+`string_write3` takes a `Prefix3` and `Continuation`; and
+`string_write4` takes a `Prefix4` and two `Continuation` values. The
+prefix unions distinguish `ThreeE0`, `ThreeED`, `ThreeOrdinary`, `FourF0`,
+`FourF4` and `FourMiddle`. Their `lead` and `second` field types enforce
+the restricted second-byte ranges for E0, ED, F0 and F4; the remaining
+bytes must be continuations. With the standard byte representations and
+values, these ordinary Moss types ensure each manually supplied scalar is
+valid UTF-8. The range wrappers are nominal; `ByteTypes` supplies their
+opaque payload representations, so no union of abstract types is needed.
+The standard provider uses distinct representations for the ranges. Code
+that explicitly imports raw provider constructors or uses Wasm can forge
+values outside this interface's guarantees.
+
+This checks each scalar supplied to a write, rather than the whole
+builder's contents: manually chosen byte offsets can overlap or split
+existing sequences. String lengths, indices and slices are byte-based,
+so a slice can also split an encoding; file and argument data need not be
+valid UTF-8. Quoted source is validated; the default `String` type itself
+carries no proof of UTF-8 validity.
+
+An empty string calls `string_begin(0)` and then `string_finish`, with no
+writes. Calls occur in that order, only when execution reaches the
+expression; rebinding the functions can change their behavior and result
+type. There is no program-wide enumeration or initialization of literals
+in the language semantics. The
+[`StringLiterals` context](../../lib/string.moss) names this protocol;
+[`Std`](../../lib/std.moss) includes it and exposes no string mutator.
+The standard provider snapshots a builder when finishing it, preserving
+the resulting string even if an alias of the builder is subsequently written.
+
+[`WasiStd`](../../lib/wasi.moss) uses distinct WasmGC byte array types for
+literal and dynamic strings behind the same `String` interface. Its
+current implementation constructs a builder and snapshots its bytes at
+runtime whenever a literal is evaluated, allocating storage and doing
+work proportional to the byte length. Pooling literals into data segments
+or constant GC globals, and contracting the split representation, are
+deferred to a separate backend change.
+
+WASI preview 1 output and file APIs copy GC string bytes into the main
+linear memory when needed. `WasiRawStd` provides the linear-memory string
+representation for code that needs the existing raw layout. The
+[decision log](../design/semantics.md) records the language and the separate
+optimization plan as D87.
 
 ## Operators and numeric literals
 

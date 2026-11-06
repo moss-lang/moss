@@ -924,6 +924,96 @@ Fixpoint unescape (cs : list byte) : list byte :=
 Definition string_value (t : string) : string :=
   string_of_list_byte (unescape (removelast (tl (list_byte_of_string t)))).
 
+(* Quoted strings are ordinary contextual calls over validated UTF-8 scalars.
+   Payload bytes name byte::x00 .. byte::xff vals; only byte lengths and
+   offsets use integer literals. Three/four-byte prefixes are ordinary record
+   constructors expressing valid lead/second-byte combinations in their types.
+   No primitive or new expression is involved. *)
+Definition byte_name (b : byte) : string :=
+  let n := Byte.to_nat b in "x" ++ hexdig (n / 16) ++ hexdig (n mod 16).
+Definition byte_between (lo hi : nat) (b : byte) : bool :=
+  Nat.leb lo (Byte.to_nat b) && Nat.leb (Byte.to_nat b) hi.
+Definition utf8_cont (b : byte) : bool := byte_between 128 191 b.
+Definition utf8_three (a b : byte) : bool :=
+  (byte_between 224 224 a && byte_between 160 191 b) ||
+  (byte_between 225 236 a && utf8_cont b) ||
+  (byte_between 237 237 a && byte_between 128 159 b) ||
+  (byte_between 238 239 a && utf8_cont b).
+Definition utf8_four (a b : byte) : bool :=
+  (byte_between 240 240 a && byte_between 144 191 b) ||
+  (byte_between 241 243 a && utf8_cont b) ||
+  (byte_between 244 244 a && byte_between 128 143 b).
+Fixpoint utf8_valid (bytes : list byte) : bool :=
+  match bytes with
+  | [] => true
+  | a :: rest =>
+      if byte_between 0 127 a then utf8_valid rest else
+      match rest with
+      | b :: rest =>
+          if byte_between 194 223 a && utf8_cont b then utf8_valid rest else
+          match rest with
+          | c :: rest =>
+              if utf8_three a b && utf8_cont c then utf8_valid rest else
+              match rest with
+              | d :: rest => utf8_four a b && utf8_cont c && utf8_cont d && utf8_valid rest
+              | [] => false
+              end
+          | [] => false
+          end
+      | [] => false
+      end
+  end.
+Definition string_utf8_valid (value : string) : bool := utf8_valid (list_byte_of_string value).
+Arguments string_utf8_valid : simpl never.
+Definition utf8_width (b : byte) : nat :=
+  if byte_between 0 127 b then 1 else
+  if byte_between 194 223 b then 2 else
+  if byte_between 224 239 b then 3 else
+  if byte_between 240 244 b then 4 else 0.
+Definition byte_expr (b : byte) : aexpr := AEPath ["byte"; byte_name b] None.
+Definition string_prefix (head : string) (a b : byte) : aexpr :=
+  AERec ["byte"; head] None [("lead", Some (byte_expr a)); ("second", Some (byte_expr b))].
+Definition string_chunk_args (payload : list byte) : list aexpr :=
+  match payload with
+  | [a; b; c] =>
+      [string_prefix (if byte_between 224 224 a then "ThreeE0" else
+                      if byte_between 237 237 a then "ThreeED" else "ThreeOrdinary") a b;
+       byte_expr c]
+  | [a; b; c; d] =>
+      [string_prefix (if byte_between 240 240 a then "FourF0" else
+                      if byte_between 244 244 a then "FourF4" else "FourMiddle") a b;
+       byte_expr c; byte_expr d]
+  | _ => map byte_expr payload
+  end.
+Definition string_write_chunk (payload : list byte) (index : nat) : astmt :=
+  ASAssign "return"
+    (AECall ["string_write" ++ show_nat (List.length payload)] None
+       ([AEPath ["return"] None; AELit (show_nat index)] ++ string_chunk_args payload)).
+Fixpoint string_writes (bytes : list byte) (index : nat) : list astmt :=
+  match bytes with
+  | [] => []
+  | a :: rest =>
+      match utf8_width a with
+      | 1 => string_write_chunk [a] index :: string_writes rest (index + 1)
+      | 2 => match rest with
+             | b :: rest => string_write_chunk [a; b] index :: string_writes rest (index + 2)
+             | _ => [] end
+      | 3 => match rest with
+             | b :: c :: rest => string_write_chunk [a; b; c] index :: string_writes rest (index + 3)
+             | _ => [] end
+      | 4 => match rest with
+             | b :: c :: d :: rest => string_write_chunk [a; b; c; d] index :: string_writes rest (index + 4)
+             | _ => [] end
+      | _ => []
+      end
+  end.
+Definition string_desugar (value : string) : aexpr :=
+  let bytes := list_byte_of_string value in
+  AEBlock (ABlock
+    (ASVar "return" None (AECall ["string_begin"] None
+       [AELit (show_nat (List.length bytes))]) :: string_writes bytes 0)
+    (Some (AECall ["string_finish"] None [AEPath ["return"] None]))).
+
 (* (e) D70: at `(`, a lambda is next: `()` or `(x)` followed by `=>` or
    `:`, or `(x` followed by `:` or `,`. *)
 Definition at_lambda (ts : list token) : bool :=
@@ -1067,6 +1157,9 @@ with Primary : bool -> list token -> aexpr -> list token -> Prop :=
 | PrimThis : forall nr ts ts1, Tk "THIS" ts ts1 -> Primary nr ts AEThis ts1
 | PrimLit : forall nr ts, In (kind ts) ["INTEGER"; "DECIMAL"] ->
     Primary nr ts (AELit (lit_norm (tx (peek ts)))) (advance ts)
+| PrimString : forall nr ts, kind ts = "STRING" ->
+    string_utf8_valid (string_value (tx (peek ts))) = true ->
+    Primary nr ts (string_desugar (string_value (tx (peek ts)))) (advance ts)
 | PrimBlock : forall ts b ts1, Block ts b ts1 -> Primary false ts (AEBlock b) ts1
 | PrimRef : forall nr ts p ts1 a ts2, Path ts p ts1 -> App ts1 a ts2 -> kind ts2 <> "LPAREN" ->
     (nr = true \/ kind ts2 <> "LBRACE") -> Primary nr ts (AEPath p a) ts2

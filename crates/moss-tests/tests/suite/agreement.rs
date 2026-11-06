@@ -67,10 +67,6 @@ const FORGED: &str = "oracle gap: a forged reference handle (D75)";
 /// self-hosted compiler reports the missing `main`, and the oracle, which
 /// only runs whole programs, reports it unsupported.
 const LIBRARY: &str = "a library module with no `main`";
-/// D59, D75: a union's slot has its first member's valtype, so a reference
-/// where an i32 goes is a Wasm layout limit of the compiler, which refuses
-/// it; the oracle has no layout and accepts it.
-const LAYOUT: &str = "compiler limitation: a union slot holds one valtype (D59, D75)";
 
 /// Known gaps: (program, the self-hosted compiler's verdict, the oracle's,
 /// why). Sorted by program.
@@ -95,7 +91,6 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/gc_array_forge.moss", Accept, Unsupported, FORGED),
     ("tests/wasi/gc_array_memory.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/gc_forge.moss", Accept, Unsupported, FORGED),
-    ("tests/wasi/gc_slots.moss", Reject, Accept, LAYOUT),
     ("tests/wasi/memories.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_any_type.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_copy.moss", Accept, Unsupported, MEMORIES),

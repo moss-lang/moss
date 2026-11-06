@@ -3,7 +3,7 @@
 A valid Moss source file can be parsed according to a grammar defined on an
 alphabet of tokens. This grammar describes the MVP language pinned down in
 the [semantics decision log](../design/semantics.md); constructs that were
-cut from the MVP (character and string literal expressions, declaration-site
+cut from the MVP (character literal expressions, declaration-site
 needs, bind-returning functions) are absent here even where earlier
 revisions of this document had them. Operator expressions and numeric
 literals came back with [D68], and `for` loops, over an iteration protocol,
@@ -92,8 +92,9 @@ token or class of tokens.
 
 Notes:
 
-- There are no literal tokens for characters, and _string_ is accepted by
-  the grammar only as an `import` path. Longest-match applies to symbols
+- There are no literal tokens for characters. A _string_ is an import
+  path or a quoted expression (see [Quoted strings](semantics.md#quoted-strings)).
+  Longest-match applies to symbols
   (`==` is one token, never two `=`).
 - A digit run followed by `.` and a digit is a _decimal_; followed by `.`
   and anything else it is an _integer_ and then `.`, so `1.add(2)` calls a
@@ -227,7 +228,7 @@ anywhere but a bind's right side. Its body is a whole **Expr**, so
 - **Arm** = **Pattern** `=>` (**Expr** `,` | **Block** `,`?)
 - **Postfix** = **Primary** **Suffix**\*
 - **Suffix** = `.` **Path** (`(` **List**\[**Expr**\] `)`)?
-- **Primary** = `(` **Expr** `)` | `(` `)` | `this` | _integer_ | _decimal_ | **Block** | **Path** **App**? (**Args** | **RecordExpr**)?
+- **Primary** = `(` **Expr** `)` | `(` `)` | `this` | _integer_ | _decimal_ | _string_ | **Block** | **Path** **App**? (**Args** | **RecordExpr**)?
 - **Args** = `(` **List**\[**Expr**\] `)`
 - **RecordExpr** = `{` **List**\[_name_ (`=` **Expr**)?\] `}`
 
