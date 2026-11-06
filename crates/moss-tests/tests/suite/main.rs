@@ -19,3 +19,6 @@ mod wasm_backend;
 
 mod string_literals;
 mod typed_reference_unions;
+
+mod static_byte_containers;
+mod static_bytes;

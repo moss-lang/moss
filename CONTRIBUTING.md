@@ -7,6 +7,12 @@ the root of a clone of this repository:
 nix develop
 ```
 
+The Rust driver includes a C++20 pass over Binaryen's typed IR. The dev
+shell provides the compiler and sets `BINARYEN_INCLUDE_DIR` to the `src/`
+directory of the exact Binaryen revision it links. Builds outside Nix must
+provide that directory as well as `BINARYEN_LIB_DIR` and `WASMTIME_LIB_DIR`.
+The public Binaryen C API headers alone are insufficient for this pass.
+
 ## How the compiler is built
 
 The compiler is written in Moss, under [`src`](src), and compiles itself.

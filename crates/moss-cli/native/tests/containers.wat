@@ -1,0 +1,33 @@
+(module
+ (rec
+  (type $A (array (mut i8)))
+  (type $Destination (array (mut i8)))
+  (type $Row (array (mut (ref null $A))))
+  (type $Box (struct (field (mut (ref null $Row))))))
+ (func $literal (result (ref $A))
+  (array.new_fixed $A 2 (i32.const 104) (i32.const 105)))
+ (func $copyrow (param $r (ref $Row)) (result (ref $Row)) (local.get $r))
+ (func (export "_start")
+  (local $r (ref $Row))
+  (local $s (ref $Row))
+  (local $b (ref $Box))
+  (local $destination (ref $Destination))
+  (local.set $r (array.new $Row (ref.null $A) (i32.const 2)))
+  (array.set $Row (local.get $r) (i32.const 0) (call $literal))
+  (array.fill $Row (local.get $r) (i32.const 1) (call $literal) (i32.const 1))
+  (local.set $s (array.new $Row (ref.null $A) (i32.const 2)))
+  (array.copy $Row $Row (local.get $s) (i32.const 0) (call $copyrow (local.get $r)) (i32.const 0) (i32.const 2))
+  (local.set $b (struct.new $Box (local.get $r)))
+  (struct.set $Box 0 (local.get $b) (local.get $s))
+  (if (ref.eq (local.get $r) (local.get $s)) (then unreachable))
+  (if (i32.eqz (ref.eq (local.get $b) (local.get $b))) (then unreachable))
+  (if (i32.ne
+      (array.get_u $A
+        (array.get $Row (struct.get $Box 0 (local.get $b)) (i32.const 1))
+        (i32.const 1))
+      (i32.const 105)) (then unreachable))
+  (local.set $destination (array.new $Destination (i32.const 0) (i32.const 2)))
+  (array.copy $Destination $A (local.get $destination) (i32.const 0) (call $literal) (i32.const 0) (i32.const 2))
+  (if (i32.ne (array.get_u $Destination (local.get $destination) (i32.const 1)) (i32.const 105)) (then unreachable))
+  ;; checks
+ ))

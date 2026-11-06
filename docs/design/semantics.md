@@ -948,8 +948,8 @@ unchanged and is now the whole of it — the self-hosted compiler reports
 an error as a code letter and a name, because a sentence is a string it
 would have to hold. Still deferred.
 
-*Resolved by [D87]: quoted expressions use a generic construction protocol;
-data pooling is deferred to a separate backend change.*
+*Resolved by [D87]: quoted expressions use a generic construction protocol,
+with data pooling proved separately by the Wasm backend.*
 
 **[D52] DECIDED by the designer (`Wasi` is the primitive context; `Std` is
 a library over it).** [D38] made `Std` primitive: the bootstrap provides it
@@ -4779,8 +4779,8 @@ the rest of the development in `bootstrap/theories/`.
 
 **[D87] DECIDED by the designer and implemented (generic quoted strings and typed reference union layouts).**
 [D48]'s deferred string syntax is now ordinary frontend sugar. The
-language stays independent of concrete string storage. Backend pooling
-and representation contraction are deferred to a separate stacked change.
+language stays independent of concrete string storage; the backend proves
+whether an ordinary array construction can be pooled.
 
 1. **Quoted expressions are a protocol, not a primitive.** A decoded,
    validated UTF-8 string expands to a block with one hidden mutable builder:
@@ -4839,10 +4839,10 @@ and representation contraction are deferred to a separate stacked change.
    the dynamic backing. WASI preview 1 bridges copy bytes into the main
    linear memory as needed; `WasiRawStd` retains the linear-memory
    provider for raw code and the self-hosted compiler. Contexts can
-   replace the protocol and representation as usual. The current provider
-   constructs a builder and copies its bytes into a fresh snapshot on each
-   evaluation; literal construction still allocates and takes work
-   proportional to the byte length.
+   replace the protocol and representation as usual. Without pooling, the
+   current provider constructs a builder and copies its bytes into a fresh
+   snapshot on each evaluation; literal construction still allocates and
+   takes work proportional to the byte length.
 3. **Incompatible precise reference payloads get separate union lanes.**
    [D59]'s finite scalar runs and allocation-free records and unions
    remain. [D75]'s conflict between a reference and another valtype in
@@ -4855,22 +4855,26 @@ and representation contraction are deferred to a separate stacked change.
    matching do not change. Arrays are keyed by the full Moss element
    type, with GC types in one `rec` group; distinct nominal byte element
    tags therefore preserve distinct backing types before optimization.
-4. **Pooling is a separate backend follow-up.** It is not part of this
-   language implementation, which emits ordinary array constructions.
-   A later pass must prove initialization is unobserved and check mutation,
-   identity observations, escapes and other uses before replacing arrays
-   with shared storage. The agreed options are active data in a private
-   memory, or private GC globals initialized from passive data. The latter
-   could also merge backing types and contract proven private
-   tag/reference flows to one reference. These optimizations must preserve
-   ordinary protocol semantics without recognizing string protocol names.
+4. **Pooling and representation contraction are backend proofs.** The
+   [static array pass](../implementation/static-byte-pooling.md) recognizes
+   initialized arrays and checks their uses for mutation, identity
+   observation, escapes and other observable behavior. Eligible constant
+   contents can use deduplicated active data in a private memory, or
+   private GC globals initialized from passive data. Both remove work
+   proportional to the literal's length at evaluation. Runtime builders
+   can coexist with pooled constants. The globals route may subsequently
+   merge backing types and contract proven private tag/reference flows
+   to one reference. Unsupported or observed flows retain their original
+   representation; neither pooling nor contraction changes language
+   semantics or relies on recognizing string protocol names.
 
 The [oracle grammar and parser](../../bootstrap/theories/Audit.v) use the
 same ordinary desugaring, with parser soundness and completeness checked
 by Rocq. [Integration tests](../../crates/moss-tests/tests/suite/string_literals.rs)
 check UTF-8, rebinding and effect timing, immutable builder aliases,
-WASI bridges, runtime builders and large literals against the oracle.
-Pooling performance checks belong to the separate backend change.
+WASI bridges, runtime builders and large literals against the oracle; both pooling modes
+at every pooling optimization level deduplicate equal literals and remove
+per-evaluation array construction from the literal-only fixture.
 
 ## 13. Decision index
 
@@ -4959,7 +4963,7 @@ bootstrap removed, the tests in Rust, the two front ends held to accept
 and reject alike, and everyday work on a previously built compiler,
 D87 quoted strings as ordinary contextual construction calls, a default
 GC string provider with immutable snapshots, separate typed union lanes
-for incompatible references, with backend pooling deferred; and D32 as amended: a call evaluates its receiver,
+for incompatible references, and proof-based backend pooling; and D32 as amended: a call evaluates its receiver,
 then its arguments left to right)
 
 The MVP language is fully pinned down. Next (the plan as of revision 4):

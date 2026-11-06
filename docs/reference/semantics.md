@@ -351,18 +351,17 @@ The standard provider snapshots a builder when finishing it, preserving
 the resulting string even if an alias of the builder is subsequently written.
 
 [`WasiStd`](../../lib/wasi.moss) uses distinct WasmGC byte array types for
-literal and dynamic strings behind the same `String` interface. Its
-current implementation constructs a builder and snapshots its bytes at
-runtime whenever a literal is evaluated, allocating storage and doing
-work proportional to the byte length. Pooling literals into data segments
-or constant GC globals, and contracting the split representation, are
-deferred to a separate backend change.
-
-WASI preview 1 output and file APIs copy GC string bytes into the main
-linear memory when needed. `WasiRawStd` provides the linear-memory string
-representation for code that needs the existing raw layout. The
-[decision log](../design/semantics.md) records the language and the separate
-optimization plan as D87.
+literal and dynamic strings behind the same `String` interface. Without
+pooling, evaluating a literal constructs a builder and snapshots its bytes,
+allocating storage and doing work proportional to the byte length. Backend
+optimizations can pool eligible literal arrays into private memory or
+constant GC globals; this does not change the construction protocol's
+meaning. WASI preview 1 output and file APIs copy GC string bytes into the
+main linear memory when needed. `WasiRawStd` provides the linear-memory
+string representation for code that needs the existing raw layout. The
+[decision log](../design/semantics.md) records this as D87; the
+[backend implementation](../implementation/static-byte-pooling.md) describes
+pooling and its conservative eligibility checks.
 
 ## Operators and numeric literals
 

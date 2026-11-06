@@ -14,3 +14,6 @@ anyhow.workspace = true
 clap.workspace = true
 libc.workspace = true
 sha2.workspace = true
+
+[build-dependencies]
+cc = "1"
