@@ -26,7 +26,11 @@ fn chars_values_are_single_chars() {
     let mut values: Vec<char> = all.iter().map(|(_, c)| *c).collect();
     values.sort();
     values.dedup();
-    assert_eq!(values.len(), all.len(), "two char constants are one character");
+    assert_eq!(
+        values.len(),
+        all.len(),
+        "two char constants are one character"
+    );
 }
 
 #[test]
@@ -41,9 +45,65 @@ fn byte_constants_cover_every_value_once() {
         assert!(signature.contains(&format!("  val {name}: {};", byte_class(*value))));
         assert!(provider.contains(&format!("  bind byte::{name} = byte_{name}();")));
     }
-    assert_eq!(signature.lines().filter(|line| line.trim_start().starts_with("val x")).count(), 256);
+    assert_eq!(
+        signature
+            .lines()
+            .filter(|line| line.trim_start().starts_with("val x"))
+            .count(),
+        256
+    );
     assert!(!provider.contains("wasistd.moss"));
     assert!(!provider.contains("int.moss"));
+}
+
+/// Check the range partition against an independent UTF-8 decoder. Together
+/// with generated-signature checks and runtime value roundtrips, this ensures
+/// a constant cannot accidentally acquire a type that permits an invalid scalar.
+#[test]
+fn byte_ranges_match_utf8_encoding_rules() {
+    let valid = |bytes: &[u8]| std::str::from_utf8(bytes).is_ok();
+    for byte in 0..=255 {
+        let mut classes = Vec::new();
+        if valid(&[byte]) {
+            classes.push("Ascii");
+        }
+        if valid(&[0xf4, byte, 0x80, 0x80]) {
+            classes.push("Cont808F");
+        }
+        if valid(&[0xf0, byte, 0x80, 0x80]) && valid(&[0xed, byte, 0x80]) {
+            classes.push("Cont909F");
+        }
+        if valid(&[0xe0, byte, 0x80]) {
+            classes.push("ContA0BF");
+        }
+        if valid(&[byte, 0x80]) {
+            classes.push("Lead2");
+        }
+        let three_low = valid(&[byte, 0x80, 0x80]);
+        let three_high = valid(&[byte, 0xa0, 0x80]);
+        match (three_low, three_high) {
+            (false, true) => classes.push("LeadE0"),
+            (true, true) => classes.push("LeadE1EC_EEEF"),
+            (true, false) => classes.push("LeadED"),
+            _ => {}
+        }
+        let four_low = valid(&[byte, 0x80, 0x80, 0x80]);
+        let four_high = valid(&[byte, 0xbf, 0x80, 0x80]);
+        match (four_low, four_high) {
+            (false, true) => classes.push("LeadF0"),
+            (true, true) => classes.push("LeadF1F3"),
+            (true, false) => classes.push("LeadF4"),
+            _ => {}
+        }
+        assert!(
+            classes.len() <= 1,
+            "overlapping ranges for {byte:02x}: {classes:?}"
+        );
+        assert_eq!(
+            byte_class(byte),
+            classes.first().copied().unwrap_or("Invalid")
+        );
+    }
 }
 
 /// Every function and val of the `Wasm` context is in the table, so the
@@ -64,7 +124,8 @@ fn every_wasm_item_has_an_instruction() {
         }
     }
     assert!(!declared.is_empty());
-    let ops: std::collections::BTreeSet<String> = wasm_ops().into_iter().map(|op| op.name).collect();
+    let ops: std::collections::BTreeSet<String> =
+        wasm_ops().into_iter().map(|op| op.name).collect();
     // D75's two methods are instructions too, but which ones depends on
     // the layout of what a reference holds, so the back end selects them by
     // hand, where `bind Heap;` provides them, rather than from the table;
@@ -78,8 +139,15 @@ fn every_wasm_item_has_an_instruction() {
         .map(String::as_str)
         .collect();
     let expected: std::collections::BTreeSet<&str> = [
-        ".boxed", "Ref.deref", "Ref.set", ".arrayed", "Array.length", "Array.get", "Array.set",
-        "Array.fill", "Array.copy",
+        ".boxed",
+        "Ref.deref",
+        "Ref.set",
+        ".arrayed",
+        "Array.length",
+        "Array.get",
+        "Array.set",
+        "Array.fill",
+        "Array.copy",
     ]
     .into();
     assert_eq!(missing, expected);
