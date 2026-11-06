@@ -1,9 +1,9 @@
 //! Generators for the Moss sources that are tables.
 //!
-//! Five files are mechanical: three under `src/` — the spelling of every
+//! Seven files are mechanical: three under `src/` — the spelling of every
 //! string the compiler must hold itself (D48), the token kinds as Ints,
-//! and the `Wasm` context as an opcode table — and two under `lib/`, the
-//! char constants and their values over `Wasm`. Writing any of them by
+//! and the `Wasm` context as an opcode table — and four under `lib/`, the
+//! char and byte constants and their values over `Wasm`. Writing any of them by
 //! hand is a typo per character, so they are generated here, written by
 //! `cargo run -p moss-tests --bin gensrc`, and checked against disk by the
 //! suite's `gensrc` tests. Ported from the Python bootstrap's
@@ -163,6 +163,22 @@ pub const SPELLED: &[&str] = &[
     "after",
     "for",
     "while",
+    "return",
+    "byte",
+    "ThreeE0",
+    "ThreeOrdinary",
+    "ThreeED",
+    "FourF0",
+    "FourMiddle",
+    "FourF4",
+    "lead",
+    "second",
+    "string_begin",
+    "string_write1",
+    "string_write2",
+    "string_write3",
+    "string_write4",
+    "string_finish",
 ];
 
 pub fn gen_spell_moss() -> String {
@@ -666,6 +682,164 @@ pub fn gen_wasichar_moss() -> String {
     lines.join("\n")
 }
 
+/// All byte values, with stable hexadecimal names independent of `Int`.
+pub fn bytes() -> Vec<(String, u8)> {
+    (0u16..256).map(|n| (format!("x{n:02x}"), n as u8)).collect()
+}
+
+pub const BYTE_CLASSES: [&str; 12] = [
+    "Ascii", "Cont808F", "Cont909F", "ContA0BF", "Lead2", "LeadE0",
+    "LeadE1EC_EEEF", "LeadED", "LeadF0", "LeadF1F3", "LeadF4", "Invalid",
+];
+
+/// Smallest public range class containing this byte.
+pub fn byte_class(value: u8) -> &'static str {
+    match value {
+        0x00..=0x7f => "Ascii",
+        0x80..=0x8f => "Cont808F",
+        0x90..=0x9f => "Cont909F",
+        0xa0..=0xbf => "ContA0BF",
+        0xc2..=0xdf => "Lead2",
+        0xe0 => "LeadE0",
+        0xe1..=0xec | 0xee..=0xef => "LeadE1EC_EEEF",
+        0xed => "LeadED",
+        0xf0 => "LeadF0",
+        0xf1..=0xf3 => "LeadF1F3",
+        0xf4 => "LeadF4",
+        _ => "Invalid",
+    }
+}
+
+pub fn gen_byte_moss() -> String {
+    let mut lines = vec![SRC_HEADER.into(), String::new(),
+        "# Nominal ranges with opaque payloads constrain UTF-8 scalar writes.".into()];
+    for class in BYTE_CLASSES {
+        lines.push(format!("type {class}Rep;"));
+        lines.push(format!("assume {class}Rep {{ tag {class}({class}Rep); }}"));
+    }
+    lines.extend([String::new(), format!("context ByteTypes = {};", BYTE_CLASSES.iter().map(|class| format!("{class}Rep")).collect::<Vec<_>>().join(", ")),
+        String::new(), "assume ByteTypes {".into(),
+        "  type Continuation = Cont808F | Cont909F | ContA0BF;".into(),
+        "  type ContLow = Cont808F | Cont909F;".into(),
+        "  type ContHigh = Cont909F | ContA0BF;".into(),
+        format!("  type Byte = {};", BYTE_CLASSES.join(" | ")),
+        String::new()]);
+    for (name, value) in bytes() {
+        lines.push(format!("  val {name}: {};", byte_class(value)));
+    }
+    lines.push(String::new());
+    lines.push("  context Bytes =".into());
+    for (name, _) in bytes() {
+        lines.push(format!("    {name},"));
+    }
+    lines.extend([
+        "  ;", "",
+        "  tag ThreeE0 { lead: LeadE0, second: ContA0BF };",
+        "  tag ThreeOrdinary { lead: LeadE1EC_EEEF, second: Continuation };",
+        "  tag ThreeED { lead: LeadED, second: ContLow };",
+        "  type Prefix3 = ThreeE0 | ThreeOrdinary | ThreeED;", "",
+        "  tag FourF0 { lead: LeadF0, second: ContHigh };",
+        "  tag FourMiddle { lead: LeadF1F3, second: Continuation };",
+        "  tag FourF4 { lead: LeadF4, second: Cont808F };",
+        "  type Prefix4 = FourF0 | FourMiddle | FourF4;",
+        "}", "",
+    ].into_iter().map(String::from));
+    lines.join("\n")
+}
+
+/// Independent Wasm range representations. Distinct nominal wrappers preserve
+/// the public range distinctions; constants never use the language's `Int`.
+pub fn gen_wasibyte_moss() -> String {
+    let mut lines: Vec<String> = [
+        SRC_HEADER, "",
+        "import \"./wasm.moss\" as w use Wasm, I32;",
+        "import \"./byte.moss\" as byte use ByteTypes, Bytes,",
+    ].into_iter().map(String::from).collect();
+    lines.push(format!("  {};", BYTE_CLASSES.iter().map(|class| format!("{class}Rep")).collect::<Vec<_>>().join(", ")));
+    lines.extend(["", "assume Wasm {"].into_iter().map(String::from));
+    for class in BYTE_CLASSES {
+        lines.push(format!("  tag Octet{class}(I32);"));
+    }
+    for class in BYTE_CLASSES {
+        lines.push(format!("  type Raw{class} = byte::{class}[{class}Rep=Octet{class}];"));
+    }
+    lines.extend([
+        "",
+        "  type RawContinuation = RawCont808F | RawCont909F | RawContA0BF;",
+        "  type RawPrefix3 = byte::Prefix3[LeadE0Rep=OctetLeadE0, LeadE1EC_EEEFRep=OctetLeadE1EC_EEEF, LeadEDRep=OctetLeadED, Cont808FRep=OctetCont808F, Cont909FRep=OctetCont909F, ContA0BFRep=OctetContA0BF];",
+        "  type RawPrefix4 = byte::Prefix4[LeadF0Rep=OctetLeadF0, LeadF1F3Rep=OctetLeadF1F3, LeadF4Rep=OctetLeadF4, Cont808FRep=OctetCont808F, Cont909FRep=OctetCont909F, ContA0BFRep=OctetContA0BF];",
+        "",
+        "  fn ascii_raw(value: RawAscii): I32 { match value { byte::Ascii(rep) => match rep { OctetAscii(raw) => raw } } }",
+        "  fn lead2_raw(value: RawLead2): I32 { match value { byte::Lead2(rep) => match rep { OctetLead2(raw) => raw } } }",
+        "  fn continuation_raw(value: RawContinuation): I32 {",
+        "    match value {",
+        "      byte::Cont808F(rep) => match rep { OctetCont808F(raw) => raw },",
+        "      byte::Cont909F(rep) => match rep { OctetCont909F(raw) => raw },",
+        "      byte::ContA0BF(rep) => match rep { OctetContA0BF(raw) => raw },",
+        "    }",
+        "  }",
+        "  fn prefix3_lead(prefix: RawPrefix3): I32 {",
+        "    match prefix {",
+        "      byte::ThreeE0 { lead, second = _ } => match lead { byte::LeadE0(rep) => match rep { OctetLeadE0(raw) => raw } },",
+        "      byte::ThreeOrdinary { lead, second = _ } => match lead { byte::LeadE1EC_EEEF(rep) => match rep { OctetLeadE1EC_EEEF(raw) => raw } },",
+        "      byte::ThreeED { lead, second = _ } => match lead { byte::LeadED(rep) => match rep { OctetLeadED(raw) => raw } },",
+        "    }",
+        "  }",
+        "  fn prefix3_second(prefix: RawPrefix3): I32 {",
+        "    match prefix {",
+        "      byte::ThreeE0 { lead = _, second } => continuation_raw(second),",
+        "      byte::ThreeOrdinary { lead = _, second } => continuation_raw(second),",
+        "      byte::ThreeED { lead = _, second } => continuation_raw(second),",
+        "    }",
+        "  }",
+        "  fn prefix4_lead(prefix: RawPrefix4): I32 {",
+        "    match prefix {",
+        "      byte::FourF0 { lead, second = _ } => match lead { byte::LeadF0(rep) => match rep { OctetLeadF0(raw) => raw } },",
+        "      byte::FourMiddle { lead, second = _ } => match lead { byte::LeadF1F3(rep) => match rep { OctetLeadF1F3(raw) => raw } },",
+        "      byte::FourF4 { lead, second = _ } => match lead { byte::LeadF4(rep) => match rep { OctetLeadF4(raw) => raw } },",
+        "    }",
+        "  }",
+        "  fn prefix4_second(prefix: RawPrefix4): I32 {",
+        "    match prefix {",
+        "      byte::FourF0 { lead = _, second } => continuation_raw(second),",
+        "      byte::FourMiddle { lead = _, second } => continuation_raw(second),",
+        "      byte::FourF4 { lead = _, second } => continuation_raw(second),",
+        "    }",
+        "  }", "",
+        "  fn n1(): I32 { w::i32_one }",
+        "  fn n2(): I32 { w::i32_add(n1(), n1()) }",
+        "  fn n3(): I32 { w::i32_add(n2(), n1()) }",
+        "  fn n4(): I32 { w::i32_add(n2(), n2()) }",
+        "  fn n5(): I32 { w::i32_add(n4(), n1()) }",
+        "  fn n6(): I32 { w::i32_add(n4(), n2()) }",
+        "  fn n7(): I32 { w::i32_add(n4(), n3()) }",
+        "  fn bit(k: I32): I32 { w::i32_shl(w::i32_one, k) }", "",
+    ].into_iter().map(String::from));
+    for (name, code) in bytes() {
+        let terms: Vec<String> = (0..8).filter(|k| code >> k & 1 == 1)
+            .map(|k| if k == 0 { "w::i32_one".into() } else { format!("bit(n{k}())") }).collect();
+        let mut expr = terms.first().cloned().unwrap_or_else(|| "w::i32_zero".into());
+        for term in terms.iter().skip(1) {
+            expr = format!("w::i32_or({expr}, {term})");
+        }
+        let class = byte_class(code);
+        lines.push(format!("  fn byte_{name}(): Raw{class} {{ byte::{class}[{class}Rep=Octet{class}](Octet{class}({expr})) }}"));
+    }
+    lines.extend(["}".into(), String::new(),
+        "functor WasiByteTypes: Wasm -> ByteTypes {".into()]);
+    for class in BYTE_CLASSES {
+        lines.push(format!("  bind byte::{class}Rep = Octet{class};"));
+    }
+    lines.extend(["}".into(), String::new(),
+        "functor WasiByteConsts: Wasm -> ByteTypes, Bytes {".into(),
+        "  bind WasiByteTypes;".into()]);
+    for (name, _) in bytes() {
+        lines.push(format!("  bind byte::{name} = byte_{name}();"));
+    }
+    lines.extend(["}".into(), String::new()]);
+    lines.join("\n")
+}
+
 /// Every generated file, by its path in the repository.
 pub fn generated() -> Vec<(&'static str, String)> {
     vec![
@@ -674,5 +848,7 @@ pub fn generated() -> Vec<(&'static str, String)> {
         ("src/wasmops.moss", gen_wasmops_moss()),
         ("lib/char.moss", gen_char_moss()),
         ("lib/wasichar.moss", gen_wasichar_moss()),
+        ("lib/byte.moss", gen_byte_moss()),
+        ("lib/wasibyte.moss", gen_wasibyte_moss()),
     ]
 }

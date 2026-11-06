@@ -8,19 +8,6 @@ import "wasip1.moss" use Wasi;
 assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
-    putchar(char::H);
-    putchar(char::e);
-    putchar(char::l);
-    putchar(char::l);
-    putchar(char::o);
-    putchar(char::comma);
-    putchar(char::space);
-    putchar(char::w);
-    putchar(char::o);
-    putchar(char::r);
-    putchar(char::l);
-    putchar(char::d);
-    putchar(char::exclam);
-    putchar(char::newline);
+    print("Hello, world!\n");
   }
 }

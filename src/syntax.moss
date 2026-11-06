@@ -596,7 +596,159 @@ assume Std {
       expect(close);
     }
 
+    # String expressions are ordinary contextual calls, like their explicit
+    # spelling. A keyword local cannot collide with a source binding. Keeping
+    # writes in a flat block avoids AST depth proportional to byte length.
+    fn integer_node(value: Int): Int {
+      let reverse = int_list();
+      var n = value;
+      loop {
+        reverse.push(n % 10);
+        n = n / 10;
+        if n == 0 { break; }
+      }
+      let digits = int_list();
+      var i = reverse.length();
+      while i > 0 { i = i - 1; digits.push(reverse.get(i)); }
+      ast::node4(ast::k_ex_lit(), ast::commit(digits), digits.length(), ast::none(), ast::none())
+    }
+
+    fn string_call(which: Int, args: IntList): Int {
+      let name = int_list();
+      if which == 0 { sp_string_begin(name); }
+      else if which == 1 { sp_string_write1(name); }
+      else if which == 2 { sp_string_write2(name); }
+      else if which == 3 { sp_string_write3(name); }
+      else if which == 4 { sp_string_write4(name); }
+      else { sp_string_finish(name); }
+      ast::node3(ast::k_ex_call(), local_ref(intern::intern_chars(name)), ast::commit(args), args.length())
+    }
+
+    # Payload bytes are contextual values, not integer literal expressions.
+    # Hexadecimal names cover every UTF-8 byte without extra arithmetic in
+    # the desugared program.
+    fn byte_digit(value: Int): Char {
+      if value < 10 { (char::digit0.code() + value).char() }
+      else { (char::a.code() + value - 10).char() }
+    }
+
+    fn byte_path(name: IntList): Int {
+      let namespace = int_list();
+      sp_byte(namespace);
+      let path = int_list();
+      path.push(intern::intern_chars(namespace));
+      path.push(intern::intern_chars(name));
+      ast::node4(ast::k_ex_path(), ast::path_of(path), ast::none(), 0, 0)
+    }
+
+    fn byte_node(value: Int): Int {
+      let name = int_list();
+      push_char(name, char::x);
+      push_char(name, byte_digit(value / 16));
+      push_char(name, byte_digit(value % 16));
+      byte_path(name)
+    }
+
+    # Prefix constructors express the correlated first/second-byte ranges
+    # of three- and four-byte scalars using ordinary record/tag types.
+    fn byte_prefix(first: Int, second: Int, width: Int): Int {
+      let name = int_list();
+      if width == 3 {
+        if first == 224 { sp_ThreeE0(name); }
+        else if first == 237 { sp_ThreeED(name); }
+        else { sp_ThreeOrdinary(name); }
+      } else {
+        if first == 240 { sp_FourF0(name); }
+        else if first == 244 { sp_FourF4(name); }
+        else { sp_FourMiddle(name); }
+      }
+      let fields = int_list();
+      let lead = int_list();
+      sp_lead(lead);
+      fields.push(ast::node2(ast::k_ex_rfield(), intern::intern_chars(lead), byte_node(first)));
+      let next = int_list();
+      sp_second(next);
+      fields.push(ast::node2(ast::k_ex_rfield(), intern::intern_chars(next), byte_node(second)));
+      ast::node3(ast::k_ex_record(), byte_path(name), ast::commit(fields), fields.length())
+    }
+
+    fn utf8_continuation(bytes: IntList, index: Int): Bool {
+      if index >= bytes.length() { return false; }
+      let value = bytes.get(index);
+      if value < 128 { false } else { value <= 191 }
+    }
+
+    # Width of one Unicode scalar, or zero for an invalid encoding. The
+    # restricted second bytes exclude overlong forms, surrogates, and values
+    # above U+10FFFF.
+    fn utf8_width(bytes: IntList, index: Int): Int {
+      let first = bytes.get(index);
+      if first < 128 { return 1; }
+      if first < 194 { return 0; }
+      if first > 244 { return 0; }
+      if !utf8_continuation(bytes, index + 1) { return 0; }
+      if first < 224 { return 2; }
+      if !utf8_continuation(bytes, index + 2) { return 0; }
+      let second = bytes.get(index + 1);
+      if first == 224 { if second < 160 { return 0; } }
+      if first == 237 { if second > 159 { return 0; } }
+      if first < 240 { return 3; }
+      if !utf8_continuation(bytes, index + 3) { return 0; }
+      if first == 240 { if second < 144 { return 0; } }
+      if first == 244 { if second > 143 { return 0; } }
+      4
+    }
+
+    fn parse_string_literal(): Int {
+      let bytes = int_list();
+      var i = tstart.read() + 1;
+      let stop = tend.read() - 1;
+      while i < stop {
+        var c = lexer::src.get(i);
+        i = i + 1;
+        if c == char::backslash {
+          c = lexer::src.get(i);
+          i = i + 1;
+          if c == char::n { c = char::newline; }
+          else if c == char::r { c = char::cr; }
+          else if c == char::t { c = char::tab; }
+        }
+        bytes.push(c.code());
+      }
+      advance();
+      let keyword = int_list();
+      sp_return(keyword);
+      let builder = intern::intern_chars(keyword);
+      let statements = int_list();
+      let begin_args = int_list();
+      begin_args.push(integer_node(bytes.length()));
+      statements.push(ast::node3(ast::k_st_var(), builder, ast::none(), string_call(0, begin_args)));
+      i = 0;
+      while i < bytes.length() {
+        let width = utf8_width(bytes, i);
+        if width == 0 { fail(); return ast::node0(ast::k_ex_unit()); }
+        let write_args = int_list();
+        write_args.push(local_ref(builder));
+        write_args.push(integer_node(i));
+        var offset = 0;
+        if width >= 3 {
+          write_args.push(byte_prefix(bytes.get(i), bytes.get(i + 1), width));
+          offset = 2;
+        }
+        while offset < width {
+          write_args.push(byte_node(bytes.get(i + offset)));
+          offset = offset + 1;
+        }
+        statements.push(ast::node2(ast::k_st_assign(), builder, string_call(width, write_args)));
+        i = i + width;
+      }
+      let finish_args = int_list();
+      finish_args.push(local_ref(builder));
+      ast::node3(ast::k_ex_block(), ast::commit(statements), statements.length(), string_call(5, finish_args))
+    }
+
     fn parse_primary(no_rec: Bool): Int {
+      if here(tk_str()) { return parse_string_literal(); }
       if accept(tk_this_value()) {
         return ast::node0(ast::k_ex_this());
       }

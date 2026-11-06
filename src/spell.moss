@@ -535,4 +535,198 @@ assume Std {
     push_char(out, char::e);
   }
 
+  fn sp_return(out: IntList) {
+    push_char(out, char::r);
+    push_char(out, char::e);
+    push_char(out, char::t);
+    push_char(out, char::u);
+    push_char(out, char::r);
+    push_char(out, char::n);
+  }
+
+  fn sp_byte(out: IntList) {
+    push_char(out, char::b);
+    push_char(out, char::y);
+    push_char(out, char::t);
+    push_char(out, char::e);
+  }
+
+  fn sp_ThreeE0(out: IntList) {
+    push_char(out, char::T);
+    push_char(out, char::h);
+    push_char(out, char::r);
+    push_char(out, char::e);
+    push_char(out, char::e);
+    push_char(out, char::E);
+    push_char(out, char::digit0);
+  }
+
+  fn sp_ThreeOrdinary(out: IntList) {
+    push_char(out, char::T);
+    push_char(out, char::h);
+    push_char(out, char::r);
+    push_char(out, char::e);
+    push_char(out, char::e);
+    push_char(out, char::O);
+    push_char(out, char::r);
+    push_char(out, char::d);
+    push_char(out, char::i);
+    push_char(out, char::n);
+    push_char(out, char::a);
+    push_char(out, char::r);
+    push_char(out, char::y);
+  }
+
+  fn sp_ThreeED(out: IntList) {
+    push_char(out, char::T);
+    push_char(out, char::h);
+    push_char(out, char::r);
+    push_char(out, char::e);
+    push_char(out, char::e);
+    push_char(out, char::E);
+    push_char(out, char::D);
+  }
+
+  fn sp_FourF0(out: IntList) {
+    push_char(out, char::F);
+    push_char(out, char::o);
+    push_char(out, char::u);
+    push_char(out, char::r);
+    push_char(out, char::F);
+    push_char(out, char::digit0);
+  }
+
+  fn sp_FourMiddle(out: IntList) {
+    push_char(out, char::F);
+    push_char(out, char::o);
+    push_char(out, char::u);
+    push_char(out, char::r);
+    push_char(out, char::M);
+    push_char(out, char::i);
+    push_char(out, char::d);
+    push_char(out, char::d);
+    push_char(out, char::l);
+    push_char(out, char::e);
+  }
+
+  fn sp_FourF4(out: IntList) {
+    push_char(out, char::F);
+    push_char(out, char::o);
+    push_char(out, char::u);
+    push_char(out, char::r);
+    push_char(out, char::F);
+    push_char(out, char::digit4);
+  }
+
+  fn sp_lead(out: IntList) {
+    push_char(out, char::l);
+    push_char(out, char::e);
+    push_char(out, char::a);
+    push_char(out, char::d);
+  }
+
+  fn sp_second(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::e);
+    push_char(out, char::c);
+    push_char(out, char::o);
+    push_char(out, char::n);
+    push_char(out, char::d);
+  }
+
+  fn sp_string_begin(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::t);
+    push_char(out, char::r);
+    push_char(out, char::i);
+    push_char(out, char::n);
+    push_char(out, char::g);
+    push_char(out, char::underscore);
+    push_char(out, char::b);
+    push_char(out, char::e);
+    push_char(out, char::g);
+    push_char(out, char::i);
+    push_char(out, char::n);
+  }
+
+  fn sp_string_write1(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::t);
+    push_char(out, char::r);
+    push_char(out, char::i);
+    push_char(out, char::n);
+    push_char(out, char::g);
+    push_char(out, char::underscore);
+    push_char(out, char::w);
+    push_char(out, char::r);
+    push_char(out, char::i);
+    push_char(out, char::t);
+    push_char(out, char::e);
+    push_char(out, char::digit1);
+  }
+
+  fn sp_string_write2(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::t);
+    push_char(out, char::r);
+    push_char(out, char::i);
+    push_char(out, char::n);
+    push_char(out, char::g);
+    push_char(out, char::underscore);
+    push_char(out, char::w);
+    push_char(out, char::r);
+    push_char(out, char::i);
+    push_char(out, char::t);
+    push_char(out, char::e);
+    push_char(out, char::digit2);
+  }
+
+  fn sp_string_write3(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::t);
+    push_char(out, char::r);
+    push_char(out, char::i);
+    push_char(out, char::n);
+    push_char(out, char::g);
+    push_char(out, char::underscore);
+    push_char(out, char::w);
+    push_char(out, char::r);
+    push_char(out, char::i);
+    push_char(out, char::t);
+    push_char(out, char::e);
+    push_char(out, char::digit3);
+  }
+
+  fn sp_string_write4(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::t);
+    push_char(out, char::r);
+    push_char(out, char::i);
+    push_char(out, char::n);
+    push_char(out, char::g);
+    push_char(out, char::underscore);
+    push_char(out, char::w);
+    push_char(out, char::r);
+    push_char(out, char::i);
+    push_char(out, char::t);
+    push_char(out, char::e);
+    push_char(out, char::digit4);
+  }
+
+  fn sp_string_finish(out: IntList) {
+    push_char(out, char::s);
+    push_char(out, char::t);
+    push_char(out, char::r);
+    push_char(out, char::i);
+    push_char(out, char::n);
+    push_char(out, char::g);
+    push_char(out, char::underscore);
+    push_char(out, char::f);
+    push_char(out, char::i);
+    push_char(out, char::n);
+    push_char(out, char::i);
+    push_char(out, char::s);
+    push_char(out, char::h);
+  }
+
 }

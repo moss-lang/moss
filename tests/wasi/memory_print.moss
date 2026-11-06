@@ -1,4 +1,4 @@
-import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasi.moss" use WasiRawStd;
 import "../../lib/wasistd.moss" use Branch, WasiContainers, string_of;
 import "../../lib/wasm.moss" as w use Wasm, Memory;
 import "../../lib/wasip1.moss" use Wasi;
@@ -12,7 +12,7 @@ tag Scratch;
 
 assume Wasm, Wasi, Branch {
   fn main() {
-    bind WasiStd;
+    bind WasiRawStd;
     let s = {
       bind Memory = Scratch;
       bind WasiContainers;

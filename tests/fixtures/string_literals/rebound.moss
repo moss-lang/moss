@@ -1,0 +1,25 @@
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    {
+      bind byte::AsciiRep = Int;
+      bind byte::x61 = byte::Ascii(97);
+      bind byte::x62 = byte::Ascii(98);
+      bind byte::x63 = byte::Ascii(99);
+      bind String = Int;
+      bind StringBuilder = Int;
+      bind string_begin = (length) => { putchar(char::B); length };
+      bind string_write1 = (builder, index, value) => { putchar(char::W); match value { byte::Ascii(n) => builder + index + n } };
+      bind string_finish = (builder) => { putchar(char::F); builder };
+      if false { let unused = "abc"; }
+      let empty = "";
+      let text = "abc";
+      putchar((text % 26 + 65).char());
+      putchar(char::newline);
+    }
+  }
+}

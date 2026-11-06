@@ -1,0 +1,312 @@
+import "./byte.moss" use ByteTypes;
+import "./wasibyte.moss" use WasiByteTypes, RawAscii, RawLead2,
+  RawContinuation, RawPrefix3, RawPrefix4, ascii_raw, lead2_raw,
+  continuation_raw, prefix3_lead, prefix3_second, prefix4_lead, prefix4_second;
+import "./wasm.moss" as w use Wasm, Gc, I32, Arrayed, Boxed;
+import "./wasistd.moss" as raw use Branch, Num, Chr, Str, Loc,
+  i32_bool, code_of, alloc, heap_mark, heap_reset,
+  addr, loc_str, string_of, arg_slot, write_all, four, two, slash;
+import "./wasip1.moss" use Wasi, args_sizes_get;
+import "./int.moss" as int use Int;
+import "./char.moss" as char use Char;
+import "./access.moss" use Elem, Index, .get, .set, .length, .push, .read;
+import "./string.moss" as string use String, StringBuilder, StringLiterals,
+  string_begin, string_write1, string_write2, string_write3, string_write4, string_finish, print, first_arg, arg_count, arg_at, .slice, .concat;
+import "./path.moss" as path use Path, pwd, .join, .readable;
+import "./strlist.moss" as strlist use StrList, str_list;
+
+assume Wasm {
+  tag BuilderByte(I32);
+  tag LiteralByte(I32);
+  tag DynamicByte(I32);
+  tag Literal(w::Array[Arrayed=LiteralByte]);
+  tag Dynamic(w::Array[Arrayed=DynamicByte]);
+  tag Text(Literal | Dynamic);
+  type Builder = w::Array[Arrayed=BuilderByte];
+  tag VectorState { buffer: w::Array[Arrayed=Text], length: I32 };
+  type TextList = w::Ref[Boxed=VectorState];
+}
+
+assume Wasm, Gc, Branch {
+  fn byte(value: I32): I32 {
+    w::i32_and(value, w::i32_sub(w::i32_shl(w::i32_one, raw::eight()), w::i32_one))
+  }
+  fn dynamic_bytes(length: I32): w::Array[Arrayed=DynamicByte] {
+    bind w::Arrayed = DynamicByte;
+    bind w::Arrays;
+    DynamicByte(w::i32_zero).w::arrayed(length)
+  }
+  fn byte_count(text: Text): I32 {
+    match text { Text(value) => match value {
+      Literal(xs) => {
+        bind w::Arrayed = LiteralByte;
+        bind w::Arrays;
+        xs.length()
+      },
+      Dynamic(xs) => {
+        bind w::Arrayed = DynamicByte;
+        bind w::Arrays;
+        xs.length()
+      },
+    } }
+  }
+  fn byte_at(text: Text, index: I32): I32 {
+    match text { Text(value) => match value {
+      Literal(xs) => {
+        bind w::Arrayed = LiteralByte;
+        bind w::Arrays;
+        match xs.get(index) { LiteralByte(value) => value }
+      },
+      Dynamic(xs) => {
+        bind w::Arrayed = DynamicByte;
+        bind w::Arrays;
+        match xs.get(index) { DynamicByte(value) => value }
+      },
+    } }
+  }
+  fn Text.length(): Num { Num(byte_count(this)) }
+  fn Text.get(index: Num): Chr { Chr(byte_at(this, raw::raw(index))) }
+  fn Text.slice(start: Num, length: Num): Text {
+    let at = raw::raw(start);
+    let n = raw::raw(length);
+    let count = byte_count(this);
+    if i32_bool(w::i32_gt_u(at, count)) { w::unreachable(); }
+    if i32_bool(w::i32_gt_u(n, w::i32_sub(count, at))) { w::unreachable(); }
+    let xs = dynamic_bytes(n);
+    bind w::Arrayed = DynamicByte;
+    bind w::Arrays;
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, n)) {
+      xs.set(i, DynamicByte(byte(byte_at(this, w::i32_add(at, i)))));
+      i = w::i32_add(i, w::i32_one);
+    }
+    Text(Dynamic(xs))
+  }
+  fn Text.concat(other: Text): Text {
+    let a = byte_count(this);
+    let b = byte_count(other);
+    let n = w::i32_add(a, b);
+    if i32_bool(w::i32_lt_u(n, a)) { w::unreachable(); }
+    let xs = dynamic_bytes(n);
+    bind w::Arrayed = DynamicByte;
+    bind w::Arrays;
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, a)) {
+      xs.set(i, DynamicByte(byte(byte_at(this, i))));
+      i = w::i32_add(i, w::i32_one);
+    }
+    var j = w::i32_zero;
+    while i32_bool(w::i32_lt_u(j, b)) {
+      xs.set(w::i32_add(a, j), DynamicByte(byte(byte_at(other, j))));
+      j = w::i32_add(j, w::i32_one);
+    }
+    Text(Dynamic(xs))
+  }
+  fn begin(length: Num): Builder {
+    bind w::Arrayed = BuilderByte;
+    bind w::Arrays;
+    BuilderByte(w::i32_zero).w::arrayed(raw::raw(length))
+  }
+  fn write_byte(builder: Builder, index: I32, value: I32): Builder {
+    bind w::Arrayed = BuilderByte;
+    bind w::Arrays;
+    builder.set(index, BuilderByte(byte(value)));
+    builder
+  }
+  fn write1(builder: Builder, index: Num, a: RawAscii): Builder {
+    write_byte(builder, raw::raw(index), ascii_raw(a))
+  }
+  fn write2(builder: Builder, index: Num, a: RawLead2, b: RawContinuation): Builder {
+    let i = raw::raw(index);
+    let next = write_byte(builder, i, lead2_raw(a));
+    write_byte(next, w::i32_add(i, w::i32_one), continuation_raw(b))
+  }
+  fn write3(builder: Builder, index: Num, prefix: RawPrefix3, last: RawContinuation): Builder {
+    let i = raw::raw(index);
+    let next = write_byte(builder, i, prefix3_lead(prefix));
+    let next = write_byte(next, w::i32_add(i, w::i32_one), prefix3_second(prefix));
+    write_byte(next, w::i32_add(i, raw::two()), continuation_raw(last))
+  }
+  fn write4(builder: Builder, index: Num, prefix: RawPrefix4, c: RawContinuation, d: RawContinuation): Builder {
+    let i = raw::raw(index);
+    let next = write_byte(builder, i, prefix4_lead(prefix));
+    let next = write_byte(next, w::i32_add(i, w::i32_one), prefix4_second(prefix));
+    let next = write_byte(next, w::i32_add(i, raw::two()), continuation_raw(c));
+    write_byte(next, w::i32_add(i, w::i32_add(raw::two(), w::i32_one)), continuation_raw(d))
+  }
+  fn builder_length(builder: Builder): I32 {
+    bind w::Arrayed = BuilderByte;
+    bind w::Arrays;
+    builder.length()
+  }
+  fn builder_at(builder: Builder, index: I32): I32 {
+    bind w::Arrayed = BuilderByte;
+    bind w::Arrays;
+    match builder.get(index) { BuilderByte(value) => value }
+  }
+  # Finishing copies: retaining and reusing a builder cannot mutate the String.
+  # Constant builders expose a pure copy loop for backend normalization.
+  fn copy_builder(builder: Builder): w::Array[Arrayed=LiteralByte] {
+    let n = builder_length(builder);
+    bind w::Arrayed = LiteralByte;
+    bind w::Arrays;
+    let xs = LiteralByte(w::i32_zero).w::arrayed(n);
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, n)) {
+      xs.set(i, LiteralByte(builder_at(builder, i)));
+      i = w::i32_add(i, w::i32_one);
+    }
+    xs
+  }
+  fn finish(builder: Builder): Text { Text(Literal(copy_builder(builder))) }
+
+  # Only the WASI adapters use linear memory. A GC string never points into
+  # scratch or an arena, so heap resets cannot invalidate it.
+  fn from_raw(value: Str): Text {
+    let n = w::i32_load(addr(value));
+    let xs = dynamic_bytes(n);
+    bind w::Arrayed = DynamicByte;
+    bind w::Arrays;
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, n)) {
+      xs.set(i, DynamicByte(w::i32_load8_u(w::i32_add(w::i32_add(addr(value), four()), i))));
+      i = w::i32_add(i, w::i32_one);
+    }
+    Text(Dynamic(xs))
+  }
+  fn to_raw(value: Text): Str {
+    let n = byte_count(value);
+    let p = alloc(w::i32_add(four(), n));
+    w::i32_store(p, n);
+    var i = w::i32_zero;
+    while i32_bool(w::i32_lt_u(i, n)) {
+      w::i32_store8(w::i32_add(w::i32_add(p, four()), i), byte_at(value, i));
+      i = w::i32_add(i, w::i32_one);
+    }
+    Str(p)
+  }
+  fn list_new(): TextList {
+    bind w::Arrayed = Text;
+    bind w::Arrays;
+    bind w::Boxed = VectorState;
+    bind w::Heap;
+    let empty = Text(Dynamic(dynamic_bytes(w::i32_zero)));
+    let xs = empty.w::arrayed(w::i32_zero);
+    VectorState { buffer = xs, length = w::i32_zero }.w::boxed()
+  }
+  fn list_push(list: TextList, value: Text) {
+    bind w::Arrayed = Text;
+    bind w::Arrays;
+    bind w::Boxed = VectorState;
+    bind w::Heap;
+    bind w::Mutable;
+    let state = list.deref();
+    var xs = state.buffer;
+    let n = state.length;
+    let cap = xs.length();
+    if i32_bool(w::i32_ge_u(n, cap)) {
+      let next = if i32_bool(w::i32_eqz(cap)) { four() } else { w::i32_mul(cap, two()) };
+      if i32_bool(w::i32_le_u(next, cap)) { w::unreachable(); }
+      let grown = value.w::arrayed(next);
+      grown.copy(w::i32_zero, xs, w::i32_zero, n);
+      xs = grown;
+    }
+    xs.set(n, value);
+    list.set(VectorState { buffer = xs, length = w::i32_add(n, w::i32_one) });
+  }
+  fn list_get(list: TextList, index: Num): Text {
+    bind w::Arrayed = Text;
+    bind w::Arrays;
+    bind w::Boxed = VectorState;
+    bind w::Heap;
+    let state = list.deref();
+    let at = raw::raw(index);
+    if i32_bool(w::i32_ge_u(at, state.length)) { w::unreachable(); }
+    state.buffer.get(at)
+  }
+  fn list_length(list: TextList): Num {
+    bind w::Boxed = VectorState;
+    bind w::Heap;
+    Num(list.deref().length)
+  }
+
+  assume Wasi {
+    fn output(value: Text) {
+      let mark = heap_mark();
+      let s = to_raw(value);
+      write_all(w::i32_add(addr(s), four()), w::i32_load(addr(s)));
+      heap_reset(mark);
+    }
+    fn argument(index: I32): Text {
+      let mark = heap_mark();
+      let result = from_raw(arg_slot(index));
+      heap_reset(mark);
+      result
+    }
+    fn read_raw(file: Loc): Str {
+      bind string::String = Str;
+      bind raw::WasiFiles;
+      file.read()
+    }
+    fn file_read(file: Loc): Text {
+      let mark = heap_mark();
+      let result = from_raw(read_raw(file));
+      heap_reset(mark);
+      result
+    }
+
+  }
+}
+
+context GcStrings =
+  ByteTypes, String, StringLiterals, first_arg, arg_count, arg_at, print,
+  String.length[Index=Int], String.get[Elem=Char, Index=Int], String.slice, String.concat,
+  StrList, str_list, StrList.push[Elem=String], StrList.get[Elem=String, Index=Int], StrList.length[Index=Int],
+  Path, pwd, Path.join, Path.readable, Path.read[Elem=String];
+
+functor WasiGcStrings: Wasm, Gc, Wasi, Branch -> GcStrings {
+  bind WasiByteTypes;
+  bind int::Int = Num;
+  bind char::Char = Chr;
+  bind string::String = Text;
+  bind string::StringBuilder = Builder;
+  bind string::string_begin = begin;
+  bind string::string_write1 = write1;
+  bind string::string_write2 = write2;
+  bind string::string_write3 = write3;
+  bind string::string_write4 = write4;
+  bind string::string_finish = finish;
+  bind String.length[Index=Int] = Text.length;
+  bind String.get[Elem=Char, Index=Int] = Text.get;
+  bind String.slice = Text.slice;
+  bind String.concat = Text.concat;
+  bind string::print = output;
+  bind string::first_arg = () => argument(w::i32_one);
+  bind string::arg_count = () => {
+    args_sizes_get(raw::twenty_four(), raw::twenty_eight());
+    Num(w::i32_load(raw::twenty_four()))
+  };
+  bind string::arg_at = (index) => argument(raw::raw(index));
+  bind strlist::StrList = TextList;
+  bind strlist::str_list = list_new;
+  bind StrList.push[Elem=String] = (value) => list_push(this, value);
+  bind StrList.get[Elem=String, Index=Int] = (index) => list_get(this, index);
+  bind StrList.length[Index=Int] = () => list_length(this);
+  bind path::Path = Loc;
+  bind path::pwd = Loc(string_of(w::i32_zero, w::i32_zero));
+  bind Path.join = (name) => {
+    let dir = loc_str(this);
+    let part = to_raw(name);
+    if i32_bool(w::i32_eqz(w::i32_load(addr(dir)))) {
+      Loc(part)
+    } else {
+      Loc(dir.concat(slash()).concat(part))
+    }
+  };
+  bind Path.readable = () => {
+    bind string::String = Str;
+    bind raw::WasiFiles;
+    this.readable()
+  };
+  bind Path.read[Elem=String] = () => file_read(this);
+}

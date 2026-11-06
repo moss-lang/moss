@@ -1,0 +1,295 @@
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch, Num;
+import "../../../lib/wasm.moss" as w use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+import "../../../lib/wasibyte.moss" as wb;
+
+# This concrete-provider test deliberately inspects the opaque representations.
+# Ordinary Std clients cannot turn arbitrary integers into byte ranges.
+assume Wasm {
+  type RawByte = wb::RawAscii | wb::RawCont808F | wb::RawCont909F | wb::RawContA0BF | wb::RawLead2 | wb::RawLeadE0 | wb::RawLeadE1EC_EEEF | wb::RawLeadED | wb::RawLeadF0 | wb::RawLeadF1F3 | wb::RawLeadF4 | wb::RawInvalid;
+  fn byte_number(value: RawByte): Num {
+    match value {
+      byte::Ascii(rep) => match rep { wb::OctetAscii(n) => Num(n) },
+      byte::Cont808F(rep) => match rep { wb::OctetCont808F(n) => Num(n) },
+      byte::Cont909F(rep) => match rep { wb::OctetCont909F(n) => Num(n) },
+      byte::ContA0BF(rep) => match rep { wb::OctetContA0BF(n) => Num(n) },
+      byte::Lead2(rep) => match rep { wb::OctetLead2(n) => Num(n) },
+      byte::LeadE0(rep) => match rep { wb::OctetLeadE0(n) => Num(n) },
+      byte::LeadE1EC_EEEF(rep) => match rep { wb::OctetLeadE1EC_EEEF(n) => Num(n) },
+      byte::LeadED(rep) => match rep { wb::OctetLeadED(n) => Num(n) },
+      byte::LeadF0(rep) => match rep { wb::OctetLeadF0(n) => Num(n) },
+      byte::LeadF1F3(rep) => match rep { wb::OctetLeadF1F3(n) => Num(n) },
+      byte::LeadF4(rep) => match rep { wb::OctetLeadF4(n) => Num(n) },
+      byte::Invalid(rep) => match rep { wb::OctetInvalid(n) => Num(n) },
+    }
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let values = int_list();
+    values.push(byte_number(byte::x00));
+    values.push(byte_number(byte::x01));
+    values.push(byte_number(byte::x02));
+    values.push(byte_number(byte::x03));
+    values.push(byte_number(byte::x04));
+    values.push(byte_number(byte::x05));
+    values.push(byte_number(byte::x06));
+    values.push(byte_number(byte::x07));
+    values.push(byte_number(byte::x08));
+    values.push(byte_number(byte::x09));
+    values.push(byte_number(byte::x0a));
+    values.push(byte_number(byte::x0b));
+    values.push(byte_number(byte::x0c));
+    values.push(byte_number(byte::x0d));
+    values.push(byte_number(byte::x0e));
+    values.push(byte_number(byte::x0f));
+    values.push(byte_number(byte::x10));
+    values.push(byte_number(byte::x11));
+    values.push(byte_number(byte::x12));
+    values.push(byte_number(byte::x13));
+    values.push(byte_number(byte::x14));
+    values.push(byte_number(byte::x15));
+    values.push(byte_number(byte::x16));
+    values.push(byte_number(byte::x17));
+    values.push(byte_number(byte::x18));
+    values.push(byte_number(byte::x19));
+    values.push(byte_number(byte::x1a));
+    values.push(byte_number(byte::x1b));
+    values.push(byte_number(byte::x1c));
+    values.push(byte_number(byte::x1d));
+    values.push(byte_number(byte::x1e));
+    values.push(byte_number(byte::x1f));
+    values.push(byte_number(byte::x20));
+    values.push(byte_number(byte::x21));
+    values.push(byte_number(byte::x22));
+    values.push(byte_number(byte::x23));
+    values.push(byte_number(byte::x24));
+    values.push(byte_number(byte::x25));
+    values.push(byte_number(byte::x26));
+    values.push(byte_number(byte::x27));
+    values.push(byte_number(byte::x28));
+    values.push(byte_number(byte::x29));
+    values.push(byte_number(byte::x2a));
+    values.push(byte_number(byte::x2b));
+    values.push(byte_number(byte::x2c));
+    values.push(byte_number(byte::x2d));
+    values.push(byte_number(byte::x2e));
+    values.push(byte_number(byte::x2f));
+    values.push(byte_number(byte::x30));
+    values.push(byte_number(byte::x31));
+    values.push(byte_number(byte::x32));
+    values.push(byte_number(byte::x33));
+    values.push(byte_number(byte::x34));
+    values.push(byte_number(byte::x35));
+    values.push(byte_number(byte::x36));
+    values.push(byte_number(byte::x37));
+    values.push(byte_number(byte::x38));
+    values.push(byte_number(byte::x39));
+    values.push(byte_number(byte::x3a));
+    values.push(byte_number(byte::x3b));
+    values.push(byte_number(byte::x3c));
+    values.push(byte_number(byte::x3d));
+    values.push(byte_number(byte::x3e));
+    values.push(byte_number(byte::x3f));
+    values.push(byte_number(byte::x40));
+    values.push(byte_number(byte::x41));
+    values.push(byte_number(byte::x42));
+    values.push(byte_number(byte::x43));
+    values.push(byte_number(byte::x44));
+    values.push(byte_number(byte::x45));
+    values.push(byte_number(byte::x46));
+    values.push(byte_number(byte::x47));
+    values.push(byte_number(byte::x48));
+    values.push(byte_number(byte::x49));
+    values.push(byte_number(byte::x4a));
+    values.push(byte_number(byte::x4b));
+    values.push(byte_number(byte::x4c));
+    values.push(byte_number(byte::x4d));
+    values.push(byte_number(byte::x4e));
+    values.push(byte_number(byte::x4f));
+    values.push(byte_number(byte::x50));
+    values.push(byte_number(byte::x51));
+    values.push(byte_number(byte::x52));
+    values.push(byte_number(byte::x53));
+    values.push(byte_number(byte::x54));
+    values.push(byte_number(byte::x55));
+    values.push(byte_number(byte::x56));
+    values.push(byte_number(byte::x57));
+    values.push(byte_number(byte::x58));
+    values.push(byte_number(byte::x59));
+    values.push(byte_number(byte::x5a));
+    values.push(byte_number(byte::x5b));
+    values.push(byte_number(byte::x5c));
+    values.push(byte_number(byte::x5d));
+    values.push(byte_number(byte::x5e));
+    values.push(byte_number(byte::x5f));
+    values.push(byte_number(byte::x60));
+    values.push(byte_number(byte::x61));
+    values.push(byte_number(byte::x62));
+    values.push(byte_number(byte::x63));
+    values.push(byte_number(byte::x64));
+    values.push(byte_number(byte::x65));
+    values.push(byte_number(byte::x66));
+    values.push(byte_number(byte::x67));
+    values.push(byte_number(byte::x68));
+    values.push(byte_number(byte::x69));
+    values.push(byte_number(byte::x6a));
+    values.push(byte_number(byte::x6b));
+    values.push(byte_number(byte::x6c));
+    values.push(byte_number(byte::x6d));
+    values.push(byte_number(byte::x6e));
+    values.push(byte_number(byte::x6f));
+    values.push(byte_number(byte::x70));
+    values.push(byte_number(byte::x71));
+    values.push(byte_number(byte::x72));
+    values.push(byte_number(byte::x73));
+    values.push(byte_number(byte::x74));
+    values.push(byte_number(byte::x75));
+    values.push(byte_number(byte::x76));
+    values.push(byte_number(byte::x77));
+    values.push(byte_number(byte::x78));
+    values.push(byte_number(byte::x79));
+    values.push(byte_number(byte::x7a));
+    values.push(byte_number(byte::x7b));
+    values.push(byte_number(byte::x7c));
+    values.push(byte_number(byte::x7d));
+    values.push(byte_number(byte::x7e));
+    values.push(byte_number(byte::x7f));
+    values.push(byte_number(byte::x80));
+    values.push(byte_number(byte::x81));
+    values.push(byte_number(byte::x82));
+    values.push(byte_number(byte::x83));
+    values.push(byte_number(byte::x84));
+    values.push(byte_number(byte::x85));
+    values.push(byte_number(byte::x86));
+    values.push(byte_number(byte::x87));
+    values.push(byte_number(byte::x88));
+    values.push(byte_number(byte::x89));
+    values.push(byte_number(byte::x8a));
+    values.push(byte_number(byte::x8b));
+    values.push(byte_number(byte::x8c));
+    values.push(byte_number(byte::x8d));
+    values.push(byte_number(byte::x8e));
+    values.push(byte_number(byte::x8f));
+    values.push(byte_number(byte::x90));
+    values.push(byte_number(byte::x91));
+    values.push(byte_number(byte::x92));
+    values.push(byte_number(byte::x93));
+    values.push(byte_number(byte::x94));
+    values.push(byte_number(byte::x95));
+    values.push(byte_number(byte::x96));
+    values.push(byte_number(byte::x97));
+    values.push(byte_number(byte::x98));
+    values.push(byte_number(byte::x99));
+    values.push(byte_number(byte::x9a));
+    values.push(byte_number(byte::x9b));
+    values.push(byte_number(byte::x9c));
+    values.push(byte_number(byte::x9d));
+    values.push(byte_number(byte::x9e));
+    values.push(byte_number(byte::x9f));
+    values.push(byte_number(byte::xa0));
+    values.push(byte_number(byte::xa1));
+    values.push(byte_number(byte::xa2));
+    values.push(byte_number(byte::xa3));
+    values.push(byte_number(byte::xa4));
+    values.push(byte_number(byte::xa5));
+    values.push(byte_number(byte::xa6));
+    values.push(byte_number(byte::xa7));
+    values.push(byte_number(byte::xa8));
+    values.push(byte_number(byte::xa9));
+    values.push(byte_number(byte::xaa));
+    values.push(byte_number(byte::xab));
+    values.push(byte_number(byte::xac));
+    values.push(byte_number(byte::xad));
+    values.push(byte_number(byte::xae));
+    values.push(byte_number(byte::xaf));
+    values.push(byte_number(byte::xb0));
+    values.push(byte_number(byte::xb1));
+    values.push(byte_number(byte::xb2));
+    values.push(byte_number(byte::xb3));
+    values.push(byte_number(byte::xb4));
+    values.push(byte_number(byte::xb5));
+    values.push(byte_number(byte::xb6));
+    values.push(byte_number(byte::xb7));
+    values.push(byte_number(byte::xb8));
+    values.push(byte_number(byte::xb9));
+    values.push(byte_number(byte::xba));
+    values.push(byte_number(byte::xbb));
+    values.push(byte_number(byte::xbc));
+    values.push(byte_number(byte::xbd));
+    values.push(byte_number(byte::xbe));
+    values.push(byte_number(byte::xbf));
+    values.push(byte_number(byte::xc0));
+    values.push(byte_number(byte::xc1));
+    values.push(byte_number(byte::xc2));
+    values.push(byte_number(byte::xc3));
+    values.push(byte_number(byte::xc4));
+    values.push(byte_number(byte::xc5));
+    values.push(byte_number(byte::xc6));
+    values.push(byte_number(byte::xc7));
+    values.push(byte_number(byte::xc8));
+    values.push(byte_number(byte::xc9));
+    values.push(byte_number(byte::xca));
+    values.push(byte_number(byte::xcb));
+    values.push(byte_number(byte::xcc));
+    values.push(byte_number(byte::xcd));
+    values.push(byte_number(byte::xce));
+    values.push(byte_number(byte::xcf));
+    values.push(byte_number(byte::xd0));
+    values.push(byte_number(byte::xd1));
+    values.push(byte_number(byte::xd2));
+    values.push(byte_number(byte::xd3));
+    values.push(byte_number(byte::xd4));
+    values.push(byte_number(byte::xd5));
+    values.push(byte_number(byte::xd6));
+    values.push(byte_number(byte::xd7));
+    values.push(byte_number(byte::xd8));
+    values.push(byte_number(byte::xd9));
+    values.push(byte_number(byte::xda));
+    values.push(byte_number(byte::xdb));
+    values.push(byte_number(byte::xdc));
+    values.push(byte_number(byte::xdd));
+    values.push(byte_number(byte::xde));
+    values.push(byte_number(byte::xdf));
+    values.push(byte_number(byte::xe0));
+    values.push(byte_number(byte::xe1));
+    values.push(byte_number(byte::xe2));
+    values.push(byte_number(byte::xe3));
+    values.push(byte_number(byte::xe4));
+    values.push(byte_number(byte::xe5));
+    values.push(byte_number(byte::xe6));
+    values.push(byte_number(byte::xe7));
+    values.push(byte_number(byte::xe8));
+    values.push(byte_number(byte::xe9));
+    values.push(byte_number(byte::xea));
+    values.push(byte_number(byte::xeb));
+    values.push(byte_number(byte::xec));
+    values.push(byte_number(byte::xed));
+    values.push(byte_number(byte::xee));
+    values.push(byte_number(byte::xef));
+    values.push(byte_number(byte::xf0));
+    values.push(byte_number(byte::xf1));
+    values.push(byte_number(byte::xf2));
+    values.push(byte_number(byte::xf3));
+    values.push(byte_number(byte::xf4));
+    values.push(byte_number(byte::xf5));
+    values.push(byte_number(byte::xf6));
+    values.push(byte_number(byte::xf7));
+    values.push(byte_number(byte::xf8));
+    values.push(byte_number(byte::xf9));
+    values.push(byte_number(byte::xfa));
+    values.push(byte_number(byte::xfb));
+    values.push(byte_number(byte::xfc));
+    values.push(byte_number(byte::xfd));
+    values.push(byte_number(byte::xfe));
+    values.push(byte_number(byte::xff));
+    var i = 0;
+    while i < 256 {
+      if values.get(i) != i { putchar(char::question); }
+      i = i + 1;
+    }
+    putchar(char::O); putchar(char::K); putchar(char::newline);
+  }
+}

@@ -1,0 +1,34 @@
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let old_zero = 0;
+    let old_one = 1;
+    let expected = 97;
+    {
+      bind byte::AsciiRep = Int;
+      bind byte::x61 = byte::Ascii(expected);
+      bind String = Int;
+      bind StringBuilder = Int;
+      # Lengths and indices still use the rebound integer constructors.
+      bind zero = old_one;
+      bind one = old_zero;
+      bind string_begin = (length) => {
+        if length != old_zero { putchar(char::question); }
+        old_zero
+      };
+      bind string_write1 = (builder, index, value) => {
+        if index != old_one { putchar(char::question); }
+        match value { byte::Ascii(n) => n }
+      };
+      bind string_finish = (builder) => builder;
+      # Its payload resolves byte::x61 rather than constructing an Int 97.
+      let text = "a";
+      if text != expected { putchar(char::question); }
+    }
+    putchar(char::O); putchar(char::K); putchar(char::newline);
+  }
+}

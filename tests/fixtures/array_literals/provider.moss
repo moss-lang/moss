@@ -1,0 +1,77 @@
+import "../../../lib/wasm.moss" as w use Wasm, Array, Arrayed, Arrays, .arrayed;
+import "../../../lib/wasistd.moss" use Branch, Num, raw;
+
+# Nominal element types retain distinct GC backing even with equal scalar layout.
+assume Wasm {
+  tag LiteralByte(w::I32);
+  tag DynamicByte(w::I32);
+  type Building = Array[Arrayed=LiteralByte];
+  tag LiteralText(Array[Arrayed=LiteralByte]);
+  tag DynamicText(Array[Arrayed=DynamicByte]);
+  type ArrayText = LiteralText | DynamicText;
+  type ReversedText = DynamicText | LiteralText;
+  tag NoText;
+  tag ExtraText(w::I32);
+  type WideText = NoText | DynamicText | ExtraText | LiteralText;
+}
+
+assume Wasm, Branch, Arrays {
+  fn begin_array(length: Num): Building {
+    bind Arrayed = LiteralByte;
+    bind Arrays;
+    LiteralByte(w::i32_zero).arrayed(raw(length))
+  }
+  fn write_array(builder: Building, index: Num, value: Num): Building {
+    bind Arrayed = LiteralByte;
+    bind Arrays;
+    builder.set(raw(index), LiteralByte(raw(value)));
+    builder
+  }
+  fn finish_array(builder: Building): ArrayText { LiteralText(builder) }
+  fn array_length(text: ArrayText): Num {
+    match text {
+      LiteralText(xs) => {
+        bind Arrayed = LiteralByte;
+        bind Arrays;
+        Num(xs.length())
+      },
+      DynamicText(xs) => {
+        bind Arrayed = DynamicByte;
+        bind Arrays;
+        Num(xs.length())
+      },
+    }
+  }
+  fn array_at(text: ArrayText, index: Num): Num {
+    match text {
+      LiteralText(xs) => {
+        bind Arrayed = LiteralByte;
+        bind Arrays;
+        match xs.get(raw(index)) { LiteralByte(value) => Num(value) }
+      },
+      DynamicText(xs) => {
+        bind Arrayed = DynamicByte;
+        bind Arrays;
+        match xs.get(raw(index)) { DynamicByte(value) => Num(value) }
+      },
+    }
+  }
+  fn reverse(text: ArrayText): ReversedText { text }
+  fn widen(text: ReversedText): WideText { text }
+  fn restore(text: WideText): ArrayText {
+    match text {
+      LiteralText(xs) => LiteralText(xs),
+      DynamicText(xs) => DynamicText(xs),
+      NoText => w::unreachable(),
+      ExtraText(value) => w::unreachable(),
+    }
+  }
+  fn runtime_text(value: Num, punctuation: Num): ArrayText {
+    bind Arrayed = DynamicByte;
+    bind Arrays;
+    let xs = DynamicByte(w::i32_zero).arrayed(w::i32_add(w::i32_one, w::i32_one));
+    xs.set(w::i32_zero, DynamicByte(raw(value)));
+    xs.set(w::i32_one, DynamicByte(raw(punctuation)));
+    DynamicText(xs)
+  }
+}

@@ -186,6 +186,7 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_box = cell_int();
   bind codegen::cg_deref = cell_int();
   bind codegen::cg_gc = int_list();
+  bind codegen::cg_width = int_list();
   bind codegen::cg_memory = cell_int();
   bind codegen::cg_errs = int_list();
   bind codegen::cg_err_name = int_list();

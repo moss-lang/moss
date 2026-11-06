@@ -22,3 +22,5 @@ mod wasm_backend;
 mod solved_merges;
 
 mod bindings;
+mod string_literals;
+mod typed_reference_unions;

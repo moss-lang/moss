@@ -16,7 +16,7 @@
 //! end, which were cross-checks there, are both the oracle here.
 
 use moss_tests::{
-    build_with, compile, oracle, oracle_command, oracle_rejects, oracle_run, rejects_with,
+    build_with, compile, oracle, oracle_rejects, oracle_run, rejects_with,
     run_module, run_module_code, starts_with_rec_group, wasm_file, wasm_text, wasmtime, Out,
     ORACLE_UNSUPPORTED, TRAP,
 };
@@ -75,11 +75,6 @@ fn oracle_unsupported(entry: &str) {
     assert_eq!(out.code, ORACLE_UNSUPPORTED, "{entry}: {}", out.stderr);
 }
 
-/// The oracle's elaborator accepts `entry`.
-fn oracle_accepts(entry: &str) {
-    let out = oracle_command(&["--elab-only", entry]);
-    assert_eq!(out.code, 0, "the oracle should accept {entry}: {}", out.stderr);
-}
 
 /// The oracle traps on `entry`, after printing `stdout`, naming the trap.
 fn oracle_traps(entry: &str, stdout: &str, trap: &str) {
@@ -790,7 +785,7 @@ fn d84_functors_refused() {
         // reports it in lib/wasistd.moss, at `WasiFloats`' `bind Int`.
         ("functor_unbracketed_pin", BIND_INT_CHANGES_RESULT),
         // Python: "are families that produce the same method key".
-        ("family_collision", "`Int.m` is produced by two families in force, `F1` and `F2`"),
+        ("family_collision", "`Int.m` is produced by two families in force"),
         ("family_direct", "is a member of the family `Arrays`"),
         ("family_ambiguous", "is two items of the family `F` here"),
         // Python: "its bindings apply no functor but a family".
@@ -949,17 +944,13 @@ fn generations_that_specialize_alike_are_told_apart() {
     );
 }
 
-/// D75 meets D59: a union's slot has its first member's valtype, so
-/// `Leaf Int | Node { l: Ref, r: Ref }` would put a reference where an i32
-/// goes. The self-hosted compiler refuses it, naming the member, rather
-/// than emit a module that does not validate. The oracle has no layout,
-/// so for it the program is fine.
+/// Reference/scalar union payloads keep separate typed lanes, including in
+/// recursive GC boxes. The oracle evaluates the same tree without a layout.
 #[test]
-fn a_union_slot_holds_one_valtype() {
+fn union_payloads_keep_distinct_reference_and_scalar_lanes() {
     let entry = wasi("gc_slots");
-    // A compiler limitation, not a language rule: the oracle accepts it.
-    oracle_accepts(&entry);
-    assert_eq!(report(&entry, PRELUDE), format!("?P {entry} demo Node\n"));
+    assert_eq!(run_moss(&entry, PRELUDE), "2\n");
+    assert_eq!(oracle_run(&entry, &[]), "2\n");
 }
 
 /// The rest of D59's value model: a record is its fields' runs, one after

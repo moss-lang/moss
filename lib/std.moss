@@ -2,6 +2,7 @@ import "./access.moss" use Elem, Index, .get, .set, .length, .push, .read, .begi
 import "./bool.moss" use Bool, False, True;
 import "./cell.moss" use CellInt, cell_int, .write;
 # Detached methods must be imported where their context items are named.
+import "./byte.moss" use ByteTypes, Bytes;
 import "./char.moss" use Char, Chars, .code, .char;
 import "./float.moss" use Floats;
 import "./array.moss" use ArrayHandle, Arrays;
@@ -10,7 +11,7 @@ import "./size.moss" use Size, Sizes;
 import "./list.moss" use IntList, int_list;
 import "./num.moss" use .not, .and, .or, .xor;
 import "./path.moss" use Path, pwd, .join, .readable;
-import "./string.moss" use String, first_arg, print, arg_count, arg_at, .slice, .concat;
+import "./string.moss" use String, StringLiterals, first_arg, print, arg_count, arg_at, .slice, .concat;
 import "./strlist.moss" use StrList, str_list;
 
 assume Char {
@@ -39,6 +40,8 @@ context Std =
 
   Char,
   Chars,
+  ByteTypes,
+  Bytes,
   putchar,
 
   Int,
@@ -64,6 +67,7 @@ context Std =
   Int.char,
 
   String,
+  StringLiterals,
   first_arg,
   arg_count,
   arg_at,

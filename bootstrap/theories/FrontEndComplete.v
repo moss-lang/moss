@@ -244,11 +244,12 @@ Proof. first_tk. Qed.
 Lemma bind_first ts w rest : Bind ts w rest -> kind ts = "BIND".
 Proof. first_tk. Qed.
 
-Definition UFIRST := ["HYPHEN"; "EXCLAM"; "LPAREN"; "THIS"; "INTEGER"; "DECIMAL"; "LBRACE"; "NAME"].
+Definition UFIRST := ["HYPHEN"; "EXCLAM"; "LPAREN"; "THIS"; "INTEGER"; "DECIMAL"; "STRING"; "LBRACE"; "NAME"].
 
 Ltac start_kind :=
   match goal with |- In (kind ?t) _ =>
     first [ match goal with Hk : Tk _ t _ |- _ => rewrite (proj1 Hk) end
+          | match goal with Hk : kind t = _ |- _ => rewrite Hk end
           | match goal with Hk : Path t _ _ |- _ => rewrite (path_kind _ _ _ Hk) end
           | match goal with Hk : Block t _ _ |- _ => rewrite (block_first _ _ _ Hk) end
           | match goal with Hk : Lambda t _ _ |- _ => rewrite (lambda_first _ _ _ Hk) end
@@ -256,7 +257,7 @@ Ltac start_kind :=
   simpl; intuition.
 
 Lemma primary_first nr ts e rest : Primary nr ts e rest ->
-  In (kind ts) ["LPAREN"; "THIS"; "INTEGER"; "DECIMAL"; "LBRACE"; "NAME"].
+  In (kind ts) ["LPAREN"; "THIS"; "INTEGER"; "DECIMAL"; "STRING"; "LBRACE"; "NAME"].
 Proof. intro H; destruct H; start_kind. Qed.
 
 Lemma unary_first nr ts e rest : Unary nr ts e rest -> In (kind ts) UFIRST.
@@ -281,7 +282,7 @@ Proof.
 Qed.
 
 Definition EFIRST := ["IF"; "MATCH"; "RETURN"; "BREAK"; "HYPHEN"; "EXCLAM"; "LPAREN"; "THIS"; "INTEGER";
-                      "DECIMAL"; "LBRACE"; "NAME"].
+                      "DECIMAL"; "STRING"; "LBRACE"; "NAME"].
 Lemma expr_first nr ts e rest : Expr nr ts e rest -> In (kind ts) EFIRST.
 Proof.
   intro H. destruct H; unfold EFIRST.
@@ -571,6 +572,7 @@ Proof.
     + tks. rewrite at_eq by auto. rewrite H0. cbn [andb]. step. ihp IH1 Expr. step. fin.
     + step. cbn [andb]. step. fin.
     + step. cbn [andb]. step. destruct (ends_advance ts He); [intro E; rewrite E in *; simpl in *; intuition discriminate|]. fin.
+    + step. cbn [andb]. step. rewrite H0. destruct (ends_advance ts He); [intro E; rewrite E in *; simpl in *; intuition discriminate|]. fin.
     + step. cbn [andb negb]. step. ihp IH15 Block. fin.
     + step. cbn [andb negb]. step. exp path_complete Path n. exp app_complete App n. step.
       destruct H2 as [-> | Hk]; [cbn [negb]; rewrite andb_false_r | rewrite at_neq by auto]; cbn [andb]; fin.

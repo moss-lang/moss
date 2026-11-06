@@ -6,6 +6,7 @@
 import "./access.moss" use .get, .set, .length, .push, .read, .begin, .more, .after;
 import "./bool.moss" use Bool, False, True, false, true;
 import "./cell.moss" use CellInt, cell_int, .write;
+import "./byte.moss" as byte use Byte, ByteTypes, Bytes;
 import "./char.moss" as char use Char, .code, .char;
 import "./float.moss" use Float, float, .trunc, .round;
 import "./int.moss" use Int, zero, one;
@@ -15,6 +16,7 @@ import "./num.moss" use .add, .sub, .mul, .div, .rem, .neg, .not, .abs, .sqrt,
   .and, .or, .xor, .shl, .shr, .eq, .ne, .lt, .gt, .le, .ge;
 import "./path.moss" use Path, pwd, .join, .readable;
 import "./std.moss" use Std, putchar, put_bytes;
-import "./string.moss" use String, first_arg, print, arg_count, arg_at,
+import "./string.moss" use String, StringBuilder, StringLiterals,
+  string_begin, string_write1, string_write2, string_write3, string_write4, string_finish, first_arg, print, arg_count, arg_at,
   .concat, .slice;
 import "./strlist.moss" use StrList, str_list;

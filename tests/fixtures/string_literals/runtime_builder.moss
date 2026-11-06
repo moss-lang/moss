@@ -1,0 +1,23 @@
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+
+assume Std {
+  fn run() {
+    print("literal");
+    let n = arg_count();
+    var builder = string_begin(n);
+    var i = 0;
+    while i < n {
+      let value = if i == 0 { byte::x41 } else { if i == 1 { byte::x42 } else { byte::x43 } };
+      builder = string_write1(builder, i, value);
+      i = i + 1;
+    }
+    print(string_finish(builder));
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; run(); }
+}

@@ -1,0 +1,19 @@
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+assume Std {
+  fn run() {
+    let file = pwd.join(first_arg());
+    if file.readable() {
+      let bytes = file.read();
+      putchar(bytes.get(0));
+      putchar(char::newline);
+    } else { putchar(char::question); }
+    print(arg_at(1));
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; run(); }
+}

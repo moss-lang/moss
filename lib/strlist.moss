@@ -2,16 +2,14 @@ import "./access.moss" use .get, .length, .push;
 import "./int.moss" use Int;
 import "./string.moss" use String;
 
-# A growable list of String, with the same shape as IntList — in the Wasm
-# backend a String is a pointer, so it is literally the same code — but a
-# distinct nominal type, because a *provided* container is one receiver
-# per element type: a body that reaches its own store must be an attached
-# method (D54) and an attached method needs a nominal receiver (Q5), so
-# the two lists share an interface and not an implementation. Its
-# accessors are the shared ones of access.moss, provided here at
-# `StrList` with `Elem=String`: one symbol per accessor, keyed by the
-# receiver, which is what lets one scope name IntList's, String's and
-# this module's at once (D61).
+# A growable list of String with the same public accessors as IntList.
+# WasiStd uses a typed GC vector, retaining immutable string values without
+# copying their bytes. WasiRawStd is the linear-memory alternative, storing
+# raw string addresses. The representation remains a contextual choice.
+#
+# Accessors are shared declarations from access.moss, provided here at
+# StrList with Elem=String: one symbol per accessor, keyed by the receiver,
+# so one scope can name IntList's, String's and this module's at once.
 
 type StrList;
 

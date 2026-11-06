@@ -64,10 +64,6 @@ const MEMORIES: &str = "oracle gap: more than one memory (D79)";
 /// self-hosted compiler reports the missing `main`, and the oracle, which
 /// only runs whole programs, reports it unsupported.
 const LIBRARY: &str = "a library module with no `main`";
-/// D59, D75: a union's slot has its first member's valtype, so a reference
-/// where an i32 goes is a Wasm layout limit of the compiler, which refuses
-/// it; the oracle has no layout and accepts it.
-const LAYOUT: &str = "compiler limitation: a union slot holds one valtype (D59, D75)";
 
 /// Known gaps: (program, the self-hosted compiler's verdict, the oracle's,
 /// why). Sorted by program.
@@ -89,7 +85,6 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/doubledouble.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/functor_capture_memory.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/gc_array_memory.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/gc_slots.moss", Reject, Accept, LAYOUT),
     ("tests/wasi/memories.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_any_type.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_copy.moss", Accept, Unsupported, MEMORIES),

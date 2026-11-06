@@ -1,0 +1,36 @@
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    {
+      bind String = Int;
+      bind StringBuilder = Int;
+      bind string_begin = (length) => {
+        if length != 10 { putchar(char::question); }
+        0
+      };
+      bind string_write1 = (builder, index, a) => {
+        if index != 0 { putchar(char::question); }
+        putchar(char::digit1); builder
+      };
+      bind string_write2 = (builder, index, a, b) => {
+        if index != 1 { putchar(char::question); }
+        putchar(char::digit2); builder
+      };
+      bind string_write3 = (builder, index, prefix, last) => {
+        if index != 3 { putchar(char::question); }
+        putchar(char::digit3); builder
+      };
+      bind string_write4 = (builder, index, prefix, third, last) => {
+        if index != 6 { putchar(char::question); }
+        putchar(char::digit4); builder
+      };
+      bind string_finish = (builder) => builder;
+      let text = "Aé€😀";
+    }
+    putchar(char::newline);
+  }
+}
