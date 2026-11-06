@@ -39,6 +39,16 @@ itself. So:
 - **CI runs the full `nix flake check`** on every platform, bootstrap
   included, so every merged commit is known to bootstrap from Rocq alone.
 
+Keep the bootstrap's dependency graph limited to the compiler and the
+libraries it needs. Future tools written in Moss, such as an LSP server,
+should reuse shared compiler services through separate entry points; the
+compiler's bootstrap entry point must not import tool-specific code.
+User-facing integration must preserve this boundary. Check the actual
+module/import closure: removing unused code during WebAssembly generation
+does not spare the Rocq front end from loading and elaborating it first.
+Keep compiler build-input filesets equally narrow, so edits to tool-only
+files do not invalidate an otherwise unchanged compiler bootstrap.
+
 ## Tests
 
 The test suite is the Rust crate [`crates/moss-tests`](crates/moss-tests).
