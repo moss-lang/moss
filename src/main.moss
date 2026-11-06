@@ -1,7 +1,7 @@
 #!/usr/bin/env moss
 
 import "./cli.moss" as cli;
-import "../lib/wasi.moss" use WasiRawStd;
+import "../lib/wasirawstd.moss" use WasiRawStd;
 import "../lib/wasistd.moss" use Branch;
 import "../lib/wasm.moss" use Wasm;
 import "../lib/wasip1.moss" use Wasi;

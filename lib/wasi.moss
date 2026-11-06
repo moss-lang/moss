@@ -1,49 +1,14 @@
-import "./bool.moss" use Bool;
 import "./gcstring.moss" use WasiGcStrings;
-import "./num.moss" use .not, .and, .or, .xor;
 import "./std.moss" use Std;
-import "./wasibyte.moss" use WasiByteConsts;
-import "./wasichar.moss" use WasiCharConsts;
-import "./wasistd.moss" use WasiBasics, WasiContainers, WasiOutput, WasiFiles,
-  WasiFloats, Branch, GcArrays;
-import "./wasm.moss" use Wasm, Gc, ArrayRef;
-import "./array.moss" as array use ArrayHandle, Arrays;
-import "./size.moss" as size use Size, .size, .int;
-import "./int.moss" use Int;
+import "./wasirawstd.moss" as raw;
+import "./wasistd.moss" use Branch;
+import "./wasm.moss" use Wasm, Gc;
 import "./wasip1.moss" use Wasi;
 
-# All of it: the `Std` signature, provided in Moss over the primitive
-# context. A program applies this once at the top of `main` (D52) and is
-# otherwise written against `Std` exactly as it always was, with nothing
-# native underneath.
-#
-# This lives above wasistd.moss and wasichar.moss because it composes
-# both, and the generated char constants import the wrappers from the
-# former.
-# Explicit raw-memory standard bindings, useful for the compiler/bootstrap and
-# applications deliberately managing linear-memory arenas.
+# Preserve the public raw-memory interface. The compiler imports its
+# implementation directly, keeping GC strings outside the bootstrap closure.
 functor WasiRawStd: Wasm, Gc, Wasi, Branch -> Std {
-  bind WasiBasics;
-  bind WasiContainers;
-  bind WasiOutput;
-  bind WasiFiles;
-  bind WasiFloats;
-  # Lengths and indices are the root `Int`, a generation of their own
-  # (D72), so a later rebinding of `Int` leaves them, and the arrays,
-  # where they are.
-  bind size::Size = Int;
-  bind Int.size = () => this;
-  bind Size.int = () => this;
-  # Arrays are GC arrays (D81), bound once here for every element type
-  # (D84): code under `Std` gets them at any `Item` on demand.
-  bind array::ArrayHandle = ArrayRef;
-  bind Arrays = GcArrays;
-  bind WasiCharConsts;
-  bind WasiByteConsts;
-  bind Bool.not = Bool.flip;
-  bind Bool.and = Bool.both;
-  bind Bool.or = Bool.either;
-  bind Bool.xor = Bool.differs;
+  bind raw::WasiRawStd;
 }
 
 # User programs get immutable GC strings by default; the raw implementation
