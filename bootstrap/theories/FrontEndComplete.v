@@ -580,7 +580,7 @@ Proof.
     + tks. rewrite at_eq by auto. rewrite H0. cbn [andb]. step. ihp IH1 Expr. step. fin.
     + step. cbn [andb]. step. fin.
     + step. cbn [andb]. step. destruct (ends_advance ts He); [intro E; rewrite E in *; simpl in *; intuition discriminate|]. fin.
-    + step. cbn [andb]. step. destruct (ends_advance ts He); [intro E; rewrite E in *; simpl in *; intuition discriminate|]. fin.
+    + step. cbn [andb]. step. rewrite H0. destruct (ends_advance ts He); [intro E; rewrite E in *; simpl in *; intuition discriminate|]. fin.
     + step. cbn [andb negb]. step. ihp IH15 Block. fin.
     + step. cbn [andb negb]. step. exp path_complete Path n. exp app_complete App n. step.
       destruct H2 as [-> | Hk]; [cbn [negb]; rewrite andb_false_r | rewrite at_neq by auto]; cbn [andb]; fin.

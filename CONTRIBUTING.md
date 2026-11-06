@@ -96,10 +96,10 @@ rerun `dune build` in `bootstrap/` after changing dependencies.
 The working design record lives in
 [`docs/design/semantics.md`](docs/design/semantics.md); language changes
 should land there first. The self-hosted compiler sources are under
-[`src`](src), and the standard library under [`lib`](lib). Five files are
+[`src`](src), and the standard library under [`lib`](lib). Seven files are
 generated, and a test enforces that they are up to date: `src/spell.moss`,
-`src/tcode.moss`, `src/wasmops.moss`, `lib/char.moss` and
-`lib/wasichar.moss`. Regenerate them with
+`src/tcode.moss`, `src/wasmops.moss`, `lib/char.moss`, `lib/wasichar.moss`,
+`lib/byte.moss` and `lib/wasibyte.moss`. Regenerate them with
 
 ```sh
 cargo run -p moss-tests --bin gensrc
