@@ -89,6 +89,22 @@ certifies, and extracts the executable in the same release build tree;
 `dune build` in `bootstrap` builds the oracle
 ([`bootstrap/README.md`](bootstrap/README.md)).
 
+For a proof edit, build the individual module so Dune reuses its unchanged
+dependencies (choose a job count that fits available memory):
+
+```sh
+nix develop .#bootstrap
+cd bootstrap
+dune build -j 2 theories/BodyPending.vo
+```
+
+Use the full audit at integration checkpoints. Keep expensive stable
+computations and reusable witnesses separate from frequently edited proofs.
+When a proof is slow, measure both tactic construction and kernel checking;
+replace repeated search with named lemmas where it helps. Generic tactics
+should inspect the relevant hypothesis, such as `discriminate H`, rather
+than search an entire context containing large induction hypotheses.
+
 For editing proofs with
 [VsRocq](https://marketplace.visualstudio.com/items?itemName=rocq-prover.vsrocq),
 build the dependencies and launch VS Code from the default dev shell:

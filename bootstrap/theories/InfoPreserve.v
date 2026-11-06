@@ -48,7 +48,7 @@ Ltac nistate :=
   let s := fresh "s" in let a := fresh "a" in let s' := fresh "s'" in let H := fresh "H" in
   intros s a s' H;
   repeat (match type of H with context [match ?x with _ => _ end] => destruct x end);
-  try discriminate; injection H; intros; subst; reflexivity.
+  try discriminate H; injection H; intros; subst; reflexivity.
 
 Ltac nifixind1 :=
   lazymatch goal with |- NI (?F ?N) =>

@@ -3,6 +3,41 @@ From NM Require Import Audit NMap Sx Elab ElabFrame ElabInv FnReadonly LambdaRow
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
+Local Strategy opaque [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body].
+
+Local Lemma lc_readonly_input : forall A (m : M A), ok m -> keeps st_fns m -> LC m.
+Proof. intros A m O K; apply lc_keeps; [apply FnBound.bf_keeps; assumption|assumption]. Qed.
+Local Lemma lc_bind_fixed_present_input : forall mi e fg xs, LC (bind_fixed_present mi e fg xs).
+Proof. intros; apply lc_readonly_input; [apply ok_bind_fixed_present|unfold bind_fixed_present; keepst]. Qed.
+Local Lemma lc_copy_fixed_current_input : forall mi e fg xs, LC (copy_fixed_current mi e fg xs).
+Proof. intros; apply lc_readonly_input; [apply ok_copy_fixed_current|unfold copy_fixed_current; keepst]. Qed.
+Local Lemma lc_defined_link_inputs_input : forall mi site ef eg fg bg fixed fneeds gneeds,
+ LC (defined_link_inputs_compatible mi site ef eg fg bg fixed fneeds gneeds).
+Proof. intros; apply lc_readonly_input; [apply ok_defined_link_inputs_compatible|unfold defined_link_inputs_compatible; keepst]. Qed.
+Local Lemma lc_copy_output_input : forall mi site ef eg fg bg fixed fneeds gneeds,
+ LC (copy_output_compatible mi site ef eg fg bg fixed fneeds gneeds).
+Proof. intros; apply lc_readonly_input; [apply ok_copy_output_compatible|unfold copy_output_compatible; keepst]. Qed.
+Local Lemma lc_ety_of_input : forall t mi tm e this, LC (ety_of t mi tm e this).
+Proof. intros; apply lc_readonly_input; [unfold ety_of; apply ok_elab_type|apply kf_ety_of_input]. Qed.
+Local Lemma lc_payload_input : forall t e, LC (payload_type t e).
+Proof. intros; apply lc_readonly_input; [unfold payload_type; okt|apply kf_payload_type_input]. Qed.
+Local Lemma lc_fn_sig_input : forall g tm e this, LC (fn_sig g tm e this).
+Proof. intros; apply lc_readonly_input; [unfold fn_sig; okt|apply kf_fn_sig_input]. Qed.
+Local Lemma lc_nominal_args_input : forall mi g tm, LC (nominal_args mi g tm).
+Proof. intros; apply lc_readonly_input; unfold nominal_args; [okt|keepst]. Qed.
+Local Lemma lc_call_theta_input : forall e g, LC (call_theta e g).
+Proof. intros; apply lc_readonly_input; unfold call_theta; [okt|keepst]. Qed.
+Local Lemma lc_smap_at_input : forall ei eo ps, LC (smap_at ei eo ps).
+Proof. intros; apply lc_readonly_input; unfold smap_at; [okt|keepst]. Qed.
+Local Lemma lc_require_needs_input : forall mi e callee info, LC (require_needs mi e callee info).
+Proof. intros; apply lc_readonly_input; unfold require_needs; [okt|keepst]. Qed.
+Local Lemma lc_fun_env_input : forall g, LC (fun_env g).
+Proof.
+ intros g; apply lc_readonly_input; [|apply kf_fun_env_input].
+ unfold fun_env; okt. all: apply ok_merged_walk_frame; intros; okt.
+Qed.
+#[local] Hint Resolve lc_bind_fixed_present_input lc_copy_fixed_current_input lc_defined_link_inputs_input lc_copy_output_input lc_ety_of_input lc_payload_input lc_fn_sig_input lc_nominal_args_input lc_call_theta_input lc_smap_at_input lc_require_needs_input lc_fun_env_input : lcdb.
+Local Strategy opaque [slots_go elab_type app_subst symbol_type reqs type_requirements listed_params fn_info fun_env fn_sig ety_of payload_type nominal_args call_theta require_needs smap_at bind_fixed_present copy_fixed_current defined_link_inputs_compatible copy_output_compatible].
 
 Lemma lc_synth_group : forall fuel,
   (forall c e x exp, LC (synth fuel c e x exp)) /\
@@ -45,7 +80,16 @@ Proof.
   { refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))); fintros; first [solve[apply lc_lower_body_zero]|cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; lct]. }
   destruct IH as (I0 & I1 & I2 & I3 & I4 & I5 & I6 & I7 & I8 & I9 & I10 & I11 & I12 & I13 & I14 & I15 & I16 & I17 & I18 & I19 & I20 & I21 & I22 & I23 & I24 & I25 & I26 & I27 & I28 & I29 & I30 & I31 & I32 & I33 & I34).
   refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))).
-  all: solve [fintros; first [apply lc_wrapper|apply lc_forwarder_step;exact I28|apply lc_lower_body_step;exact I2|apply lc_lambda_provider_step;exact I2|cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; lct]].
+  (* Dispatch specialized emitters by their syntactic head. Trying these
+     lemmas on unrelated goals forces conversion of the elaborator first. *)
+  all: solve [fintros; lazymatch goal with
+    | |- LC (wrapper _ _) => apply lc_wrapper
+    | |- LC (forwarder _ _) => apply lc_forwarder_step; exact I28
+    | |- LCLower _ _ => apply lc_lower_body_step; exact I2
+    | |- LC (lambda_provider _ _ _ _ _ _ _ _ _ _) =>
+        apply lc_lambda_provider_step; exact I2
+    | _ => cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; lct
+    end].
 Qed.
 
 Lemma lc_synth : forall fuel c e x exp, LC (synth fuel c e x exp).

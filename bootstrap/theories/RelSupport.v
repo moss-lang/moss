@@ -345,6 +345,8 @@ Qed.
 Ltac fixed_readings_hook := fail.
 Ltac fixed_readings := first[(apply fixed_readings_empty;fixed_in_force)|fixed_readings_hook].
 
+Ltac items_hook := fail.
+
 Ltac item :=
   first
   [ (eapply IEType; [comp | comp])
@@ -357,8 +359,9 @@ Ltac item :=
                                             | right; right; left; reflexivity
                                             | right; right; right; split; [reflexivity | do 4 eexists; split; comp] ] ]) ]
 with items :=
-  match goal with |- ItemsEntries _ ?p ?ob ?tm ?l _ _ => reduce_list p; reduce_list ob; reduce_list tm; reduce_list l end;
-  first [ apply IsNil | (eapply IsCons; [item | items]) ].
+  first [ items_hook |
+    match goal with |- ItemsEntries _ ?p ?ob ?tm ?l _ _ => reduce_list p; reduce_list ob; reduce_list tm; reduce_list l end;
+    first [ apply IsNil | (eapply IsCons; [item | items]) ] ].
 
 (* No symbol of the elaborator's reading is filed under (ns, n). *)
 Fixpoint nall {A} (f : A -> bool) (m : nmap A) : bool :=

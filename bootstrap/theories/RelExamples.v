@@ -7,7 +7,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit CoreMoss MossX NMap Sx Elab RelSupport BxBridged.
+From NM Require Import Audit CoreMoss MossX NMap Sx Elab RelSupport BxBridged RelExampleData RelExampleWasm.
 Import ListNotations.
 Import Audit.Elaboration.
 Local Open Scope string_scope.
@@ -15,11 +15,16 @@ Local Open Scope list_scope.
 
 (* ===================== tests/wasi/bridged.moss ========================== *)
 
-Definition bridged := Eval vm_compute in run_elab bridged_sx.
-Definition P_br : xprogram := match bridged with Good (p, _) => p | Bad _ => XProgram [] [] 0 0 0 0 [] [] [] [] [] false [] [] end.
-Definition S_br : st := match bridged with Good (_, s) => s | Bad _ => dummy_st end.
-Definition W_br : Elaboration.world := W_of S_br.
+(* The unchanged elaboration result is shared with the context certificates. *)
+Definition bridged := RelExampleData.bridged.
+Definition P_br : xprogram := RelExampleData.P_br.
+Definition S_br : st := RelExampleData.S_br.
+Definition W_br : Elaboration.world := RelExampleData.W_br.
 
+
+(* Reuse the checked Wasm subcontext rather than rebuilding its items for
+   each function. All remaining goals use the ordinary relation tactics. *)
+Ltac items_hook ::= exact wasm_entries.
 
 (* The contexts of the functions involved, formed once: main and put
    assume Wasm, Wasi; bang assumes Wasm; app assumes MiniStd. *)

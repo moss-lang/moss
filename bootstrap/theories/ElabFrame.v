@@ -376,7 +376,7 @@ Ltac reader :=
   apply ok_reader; let s := fresh "s" in let a := fresh "a" in let s' := fresh "s'" in let H := fresh "H" in
   intros s a s' H;
   repeat (match type of H with context [match ?x with _ => _ end] => destruct x end);
-  try discriminate; congruence.
+  try discriminate H; congruence.
 
 Create HintDb okdb.
 #[export]Hint Resolve ok_fresh_marker ok_fresh_marker_for:okdb.
