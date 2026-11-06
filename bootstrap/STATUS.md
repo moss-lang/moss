@@ -35,6 +35,9 @@ The development includes proofs of:
   stated premises ([`CoreMoss.v`](theories/CoreMoss.v),
   [`XSafety.v`](theories/XSafety.v), [`XHeapC.v`](theories/XHeapC.v),
   [`CloX.v`](theories/CloX.v)).
+- Exact preparation and reuse of nonallocating scalar-family results in the
+  closure engine, retaining type arguments, result order and fuel behavior
+  ([`CloScalar.v`](theories/CloScalar.v)).
 
 “Checked” here describes proved component theorems, including their explicit
 premises. It does not assert that every premise has been discharged for every

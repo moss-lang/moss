@@ -46,7 +46,7 @@ Lemma call_lookup_inst : forall d th t,
   lookup_xdenv (ITy t) (xinst d th) =
     match lookup_subst t th with Some tau => Some (XDType (xground d tau)) | None => None end.
 Proof.
-  intros d th. induction th as [|[u tau] r IH]; intro t; simpl; [reflexivity|].
+  intros d th. rewrite xinst_map. induction th as [|[u tau] r IH]; intro t; simpl; [reflexivity|].
   destruct (Nat.eqb t u); [reflexivity|apply IH].
 Qed.
 

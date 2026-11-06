@@ -1877,7 +1877,15 @@ Fixpoint xtype_env (d : xdenv) : xdenv :=
   | _ :: r => xtype_env r
   end.
 Definition xinst (d : xdenv) (th : subst) : xdenv :=
-  map (fun p => (ITy (fst p), XDType (xground d (snd p)))) th.
+  match th with
+  | [] => []
+  | _ :: _ =>
+      let types := xdtypes d in
+      map (fun p => (ITy (fst p), XDType (app_subst types (snd p)))) th
+  end.
+Lemma xinst_map : forall d th,
+  xinst d th = map (fun p => (ITy (fst p), XDType (xground d (snd p)))) th.
+Proof. intros d [|p th]; reflexivity. Qed.
 Definition xclose (d dc : xdenv) : xdenv := dc ++ xtype_env d.
 Definition xprim_entry (d : xdenv) (i : item) (p : prim) : xdentry :=
   match p, i with

@@ -23,7 +23,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
-From NM Require Import Audit CoreMoss MossX FastX Elab Prune SlotX FoldX.
+From NM Require Import Audit CoreMoss MossX FastX Elab Prune SlotX FoldX CloScalar.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -36,7 +36,7 @@ Definition bcode := nat -> renv -> xvenv -> mstate -> (renv * xvenv * mstate) + 
 Section CC.
 Variable R : rprog.
 Variable tbl : fsym -> option (code * code).
-Variable ftbl : usym -> option (tele * bcode).
+Variable ftbl : usym -> option (tele * bcode * option(nat*renv)).
 
 Local Notation P := (rp_x R).
 
@@ -131,18 +131,24 @@ Definition capply (l : rlk) (th : subst) (pl : plan) : nat -> renv -> mstate -> 
       match rlook l d with
       | Some (QFun h sms dc) =>
           match ftbl h with
-          | Some (Dr, cb) =>
+          | Some (Dr, cb, prepared) =>
               match rcompose d pl with
               | Some d1 =>
                   match rchain d1 sms with
                   | Some d2 =>
-                      match cb k (rapply_env (rp_x R) d h th (d2 ++ dc)) [] st with
+                      match prepared with
+                      | Some (count, result) =>
+                          if Nat.ltb count k then
+                            inl (instantiate_scalar_fast th result, st)
+                          else inr (XR XFuel [] st)
+                      | None => match cb k (rapply_env (rp_x R) d h th (d2 ++ dc)) [] st with
                       | inl (d3, _, st3) =>
                           match rcompose_dyn d3 (inst_smap th Dr) with
                           | Some dr => inl (rresult_env (rp_x R) d3 Dr dr, st3)
                           | None => inr (XR (XErr e_compose) [] st3)
                           end
                       | inr rr => inr rr
+                      end
                       end
                   | None => inr (XR (XErr e_chain) [] st)
                   end
@@ -162,7 +168,7 @@ Definition capply_r (l : rlk) (pl : plan) (outputs : smap) : nat -> renv -> msta
       match rlook l d with
       | Some (QFun h sms dc) =>
           match ftbl h with
-          | Some (_, cb) =>
+          | Some (_, cb, _) =>
               match rcompose d pl with
               | Some d1 =>
                   match rchain d1 sms with
@@ -335,7 +341,7 @@ Fixpoint cc (e : rexpr) {struct e} : code :=
       match n with
       | 0 => XR XFuel g st
       | S k => match c1 k d g st with
-               | XR (XOk w) g1 st1 => XR (xcast (rp_x R) (rcast_env d) t th w) g1 st1
+               | XR (XOk w) g1 st1 => XR (rtyped_cast (rp_x R) d t th w) g1 st1
                | r => r
                end
       end
@@ -786,12 +792,12 @@ End CC.
 Section Agree.
 Variable R : rprog.
 Variable tbl : fsym -> option (code * code).
-Variable ftbl : usym -> option (tele * bcode).
+Variable ftbl : usym -> option (tele * bcode * option(nat*renv)).
 (* the table holds the code of R's bodies *)
 Hypothesis Htbl : forall f, tbl f =
   match rp_fn R f with Some (bs, bd) => Some (cc R tbl ftbl bs, cc R tbl ftbl bd) | None => None end.
 Hypothesis Hftbl : forall h, ftbl h =
-  match rp_fun R h with Some (Dr, bs) => Some (Dr, ccbs R tbl ftbl bs) | None => None end.
+  match rp_fun R h with Some (Dr, bs) => Some (Dr, ccbs R tbl ftbl bs, prepare_scalar Dr bs) | None => None end.
 
 Local Notation cc := (cc R tbl ftbl).
 Local Notation ccb := (ccb R tbl ftbl).
@@ -936,7 +942,14 @@ Proof.
     destruct b; cbn [ccb rinterp_binds];
       try match goal with e : rexpr |- _ => fold (cc e) end;
       fold_lists; dig IHe IHl IHr IHb IHa IHbr IHar.
-  - intros l th pl d st. cbn [capply rinterp_apply]. dig IHe IHl IHr IHb IHa IHbr IHar.
+  - intros l th pl d st. cbn [capply rinterp_apply].
+    destruct(rlook l d)as[a|];[destruct a|];try reflexivity.
+    rewrite Hftbl;destruct(rp_fun R u)as[[Dr bs]|];[|reflexivity].
+    destruct(rcompose d pl)as[d1|];[|reflexivity].
+    destruct(rchain d1 l0)as[d2|];[|reflexivity].
+    destruct(prepare_scalar Dr bs)as[[count result]|]eqn:Prepared.
+    +rewrite instantiate_scalar_fast_exact;symmetry;eapply prepared_scalar_execution;exact Prepared.
+    +rewrite IHb;reflexivity.
   - intros l brs d g st. cbn [cbranch rinterp_branch]. dig IHe IHl IHr IHb IHa IHbr IHar.
     all: rewrite rfind_cbranch_cc;
       match goal with |- context [rfind_branch ?h ?a] => destruct (rfind_branch h a) as [[? ?]|] end;
@@ -962,11 +975,11 @@ End Agree.
 
 (* ===================== Running main ===================================== *)
 
-Definition tbl_ok (R : rprog) (tbl : fsym -> option (code * code)) (ftbl : usym -> option (tele * bcode)) : Prop :=
+Definition tbl_ok (R : rprog) (tbl : fsym -> option (code * code)) (ftbl : usym -> option (tele * bcode * option(nat*renv))) : Prop :=
   (forall f, tbl f =
      match rp_fn R f with Some (bs, bd) => Some (cc R tbl ftbl bs, cc R tbl ftbl bd) | None => None end)
   /\ (forall h, ftbl h =
-     match rp_fun R h with Some (Dr, bs) => Some (Dr, ccbs R tbl ftbl bs) | None => None end).
+     match rp_fun R h with Some (Dr, bs) => Some (Dr, ccbs R tbl ftbl bs, prepare_scalar Dr bs) | None => None end).
 
 Definition crun_main (tbl : fsym -> option (code * code)) (fuel : nat) (main : fsym)
     (d0 : xdenv) (st0 : mstate) : xres :=

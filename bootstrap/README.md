@@ -179,6 +179,9 @@ out of fuel (`FastPath.fast_run`):
   (`CloX.engine_agrees`). Programs with checked GC casts retain runtime
   type environments, so `FoldX.guard_fold_e` preserves their original
   compiled bodies. Closure compilation and read-set pruning still apply.
+  [`CloScalar.v`](theories/CloScalar.v) prepares nonallocating scalar-family
+  results once, preserving all provisions, type arguments and fuel checks
+  while avoiding repeated interpretation of their primitive bindings.
   - [`SlotX.v`](theories/SlotX.v) resolves each lookup in the
     environment to a position before the run, wherever the environment's
     keys are known, as they are at most program points (a fn body starts in
@@ -265,6 +268,8 @@ symbol winning, as `nlook`'s does; for `fold`, the static bodies FoldX
 may unfold (`tb`) and the guarded folded program (`R'`) are arrays of the same;
 and the closure tables `tbl` and `ftbl` are arrays of closures that read
 the very arrays they are stored in (the knot `CloX.tbl_ok` describes).
+Functor entries also contain the scalar result templates computed by the
+extracted `CloScalar.prepare_scalar`; `tbl_ok` requires those exact templates.
 These are the hypotheses of `CloX.engine_agrees`, and no theorem checks
 that the arrays meet them: that rests on reading `moss_m2.ml`'s
 `MOSS_ENGINE` block, and on testing against the `ref` engine.

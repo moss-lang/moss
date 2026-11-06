@@ -450,7 +450,7 @@ Proof.
 Qed.
 Lemma finst_rel : forall fe d th, envrel fe d -> lrel (finst fe th) (xinst d th).
 Proof.
-  intros fe d th H. induction th as [|[t tau] r IH]; [constructor|].
+  intros fe d th H. rewrite xinst_map; unfold finst. induction th as [|[t tau] r IH]; [constructor|].
   constructor; [simpl; split; [reflexivity|rewrite (fground_rel H); constructor]|exact IH].
 Qed.
 Lemma fcall_env_rel : forall P fe d th fc dc, envrel fe d -> envrel fc dc ->

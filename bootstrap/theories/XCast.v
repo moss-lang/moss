@@ -19,8 +19,8 @@ Qed.
 Lemma xdtypes_inst : forall d th,
   xdtypes (xinst d th) = map_snd (xground d) th.
 Proof.
-  intros d th. induction th as [|[t tau] th IH]; simpl; auto.
-  unfold xinst in *. simpl in *. rewrite IH. reflexivity.
+  intros d th. rewrite xinst_map. induction th as [|[t tau] th IH]; simpl; auto.
+  rewrite IH. reflexivity.
 Qed.
 
 Lemma lookup_type_env_non_type : forall d i,

@@ -52,4 +52,5 @@ Separate Extraction run_main frun_main fast_program oracle_program init_state xi
    every call).  Unchanged in meaning: the same terms, extracted
    literally. *)
 Set Extraction Flag 0.
+Extraction Library CloScalar.
 Extraction Library CloX.

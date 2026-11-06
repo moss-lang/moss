@@ -75,5 +75,7 @@ Print Assumptions NM.FoldX.fold_e.
 Print Assumptions NM.FoldX.fold_b.
 Print Assumptions NM.CloX.cc.
 Print Assumptions NM.CloX.ccbs.
+Print Assumptions NM.CloScalar.prepare_scalar.
+Print Assumptions NM.CloScalar.prepared_scalar_execution.
 Print Assumptions NM.CloX.crun_main.
 Print Assumptions NM.CloX.engine_agrees.

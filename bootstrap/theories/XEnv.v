@@ -427,7 +427,7 @@ Qed.
 Lemma lookup_xinst_prefix : forall i dt th dc,
   is_ty_item i = false -> lookup_xdenv i (xinst dt th ++ dc) = lookup_xdenv i dc.
 Proof.
-  intros i dt th. induction th as [|[t tau] r IH]; intros dc Nt; [reflexivity|].
+  intros i dt th. rewrite xinst_map. induction th as [|[t tau] r IH]; intros dc Nt; [reflexivity|].
   destruct i; simpl in *; try discriminate; apply IH; exact Nt.
 Qed.
 Lemma xdenv_strong_call : forall g A dt th dc,
@@ -440,9 +440,9 @@ Proof.
     destruct (is_ty_item i) eqn:Nt; [left;reflexivity|right;exists en].
     rewrite lookup_xinst_prefix by exact Nt. exact He.
   - split.
-    + apply Forall_app; split; [|exact Hall]. clear.
+    + apply Forall_app; split; [|exact Hall]. rewrite xinst_map. clear.
       induction th as [|[t tau] r IH]; simpl; constructor; auto; exact I.
-    + split; [exact Reg|]. apply Forall_app; split; [|exact Deps]. clear.
+    + split; [exact Reg|]. apply Forall_app; split; [|exact Deps]. rewrite xinst_map. clear.
       induction th as [|[t tau] r IH]; simpl; constructor; auto.
       unfold incl; intros x Hx; contradiction.
 Qed.

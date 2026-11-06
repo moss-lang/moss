@@ -268,7 +268,7 @@ Proof.
     + (* RTag *)
       destruct (tos tb m n pl e) as [s1|] eqn:E; inversion Ht; subst. simpl in Hs, Hk.
       destruct (sev P d g st s1) as [[w1 st1]|] eqn:Es; inversion Hs; subst.
-      simpl. rewrite (IHe _ _ _ _ _ _ _ _ _ _ _ E Hr Es) by lia. rewrite xcast_plain by exact Hplain; reflexivity.
+      simpl. rewrite (IHe _ _ _ _ _ _ _ _ _ _ _ E Hr Es) by lia. rewrite rtyped_cast_exact, xcast_plain by exact Hplain; reflexivity.
     + (* RCallD *)
       destruct b; [|discriminate]. destruct n as [|n']; [discriminate|].
       destruct (tb f) as [bs|] eqn:Etb; [|discriminate].

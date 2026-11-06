@@ -350,7 +350,7 @@ let () =
             | Some (bs, bd) -> tarr.(f) <- Some (CloX.cc rp tbl ftbl bs, CloX.cc rp tbl ftbl bd)
             | None -> ()) afn;
           Array.iteri (fun h e -> match e with
-            | Some (dr, bs) -> farr.(h) <- Some (dr, CloX.ccbs rp tbl ftbl bs)
+            | Some (dr, bs) -> farr.(h) <- Some ((dr, CloX.ccbs rp tbl ftbl bs), CloScalar.prepare_scalar dr bs)
             | None -> ()) afun;
           if Sys.getenv_opt "MOSS_REF_TIME" <> None then
             Printf.eprintf "[moss_m2: closure-compiled in %.3fs]\n%!" (Unix.gettimeofday () -. tc);

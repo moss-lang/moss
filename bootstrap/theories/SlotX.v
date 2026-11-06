@@ -97,7 +97,15 @@ Fixpoint rdtypes (d : renv) : subst :=
 Definition rground d tau := Audit.app_subst (rdtypes d) tau.
 Fixpoint rtype_env (d : renv) : renv :=
   match d with [] => [] | (ITy t,QType tau)::r => (ITy t,QType tau)::rtype_env r | _::r => rtype_env r end.
-Definition rinst d th : renv := map (fun p => (ITy (fst p),QType (rground d (snd p)))) th.
+Definition rinst d th : renv :=
+ match th with
+ | [] => []
+ | _::_ => let types:=rdtypes d in
+     map(fun p=>(ITy(fst p),QType(Audit.app_subst types(snd p))))th
+ end.
+Lemma rinst_map : forall d th,
+ rinst d th=map(fun p=>(ITy(fst p),QType(rground d(snd p))))th.
+Proof. intros d[|p th];reflexivity. Qed.
 Definition rclose d dc := dc ++ rtype_env d.
 Definition rbind_ty P d t tau := if xreify P then (ITy t,QType (rground d tau))::d else d.
 Definition rcall_env P d th dc := if xreify P then rinst d th ++ rclose d dc else dc.
@@ -111,6 +119,21 @@ Definition rresult_types (Dr : tele) (d : renv) : renv :=
 Definition rresult_env P d Dr dr := if xreify P then dr ++ rresult_types Dr d else dr.
 Definition rflag d b := match rtype_env d with [] => b | _ => false end.
 Definition rcast_env d : xdenv := map (fun p => (ITy (fst p),XDType (snd p))) (rdtypes d).
+(* Ordinary tags do not inspect runtime types. Avoid constructing their
+   metadata argument in the strict extracted evaluator. *)
+Definition rtyped_cast P d n th w : xout :=
+ match lookup_cast n(xp_cast P)with
+ | None=>XOk(XVTag n w)
+ | Some _=>xcast P(rcast_env d)n th w
+ end.
+Lemma rtyped_cast_exact : forall P d n th w,
+ rtyped_cast P d n th w=xcast P(rcast_env d)n th w.
+Proof.
+ intros P d n th w;unfold rtyped_cast.
+ destruct(lookup_cast n(xp_cast P))eqn:Read;[reflexivity|].
+ unfold xcast;rewrite Read;reflexivity.
+Qed.
+
 
 Fixpoint rlookup (i : item) (d : renv) : option rentry :=
   match d with
@@ -398,7 +421,7 @@ Fixpoint rinterp (fuel : nat) (R : rprog) (d : renv) (g : xvenv) (st : mstate)
                  end
       | RTag n th e1 =>
           match rinterp k R d g st e1 with
-          | XR (XOk w) g1 st1 => XR (xcast (rp_x R) (rcast_env d) n th w) g1 st1
+          | XR (XOk w) g1 st1 => XR (rtyped_cast (rp_x R) d n th w) g1 st1
           | r => r
           end
       | RCallD f th b pl args =>
@@ -1014,7 +1037,7 @@ Lemma rclose_rel : forall re d rc dc, envrel re d -> envrel rc dc -> envrel (rcl
 Proof. intros; unfold rclose,xclose; apply envrel_app; auto using rtype_env_rel. Qed.
 Lemma rinst_rel : forall re d th, envrel re d -> envrel (rinst re th) (xinst d th).
 Proof.
-  intros re d th H; unfold rinst,xinst; induction th as [|[t tau] th IH]; simpl; constructor; auto.
+  intros re d th H; rewrite rinst_map,xinst_map; induction th as [|[t tau] th IH]; simpl; constructor; auto.
   rewrite (rground_rel tau H); constructor.
 Qed.
 Lemma rcall_env_rel : forall P re d th rc dc, envrel re d -> envrel rc dc ->
@@ -1035,9 +1058,9 @@ Lemma rcast_env_types : forall re, xdtypes (rcast_env re) = rdtypes re.
 Proof.
  intro re; unfold rcast_env; induction (rdtypes re) as [|[t tau] r IH]; simpl; congruence.
 Qed.
-Lemma rcast_rel : forall P re d n th w, envrel re d -> xcast P (rcast_env re) n th w = xcast P d n th w.
+Lemma rcast_rel : forall P re d n th w, envrel re d -> rtyped_cast P re n th w = xcast P d n th w.
 Proof.
- intros; unfold xcast,xground; rewrite rcast_env_types, (rdtypes_rel H); reflexivity.
+ intros; rewrite rtyped_cast_exact; unfold xcast,xground; rewrite rcast_env_types, (rdtypes_rel H); reflexivity.
 Qed.
 
 Lemma rapply_env_rel : forall P re d h th rc dc, envrel re d -> envrel rc dc ->
