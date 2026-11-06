@@ -120,8 +120,7 @@ assume Std {
     }
 
     # The same, for a name the compiler spells itself rather than reads
-    # out of a file: the back end has to know how `i32_add` is written to
-    # recognize it, and there are no string literals (D48).
+    # out of a file, such as an intrinsic's quoted spelling.
     fn chars_eq(id: Int, cs: IntList): Bool {
       if ilens.get(id) != cs.length() {
         return false;

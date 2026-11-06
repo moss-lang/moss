@@ -8,7 +8,6 @@ import "wasip1.moss" use Wasi;
 assume Wasm, Wasi, Branch {
   fn main() {
     bind WasiStd;
-    print("\"Hello there,\"\n\\said I.\\");
-    putchar(char::newline);
+    print("\"Hello there,\"\n\\said I.\\\n");
   }
 }

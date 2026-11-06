@@ -215,9 +215,8 @@ assume Std {
   val cg_errs: IntList;
   val cg_err_name: IntList;
   # The function whose body was being emitted, recorded with each
-  # diagnostic. A message with words in it is still out of reach (D48),
-  # but the frame a complaint came from costs one symbol id and is the
-  # difference between a legible report and a list of letters.
+  # diagnostic. The frame a complaint came from costs one symbol id and
+  # identifies which function produced the error code.
   val cg_err_at: IntList;
   val cg_where: CellInt;
 
