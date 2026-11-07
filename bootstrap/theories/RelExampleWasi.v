@@ -3,11 +3,13 @@
 
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit CoreMoss MossX NMap Sx Elab RelSupport BxBridged.
-From NM Require Import RelExampleData RelExampleWasm.
+From NM Require Import RelExampleData RelExampleWasm RelSimpleItems.
 Import ListNotations.
 Import Audit.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
+
+Ltac items_hook ::= scalar_items_prefix; items.
 
 Definition wasi_specs := Eval vm_compute in
   match w_decl W_br 407 with
