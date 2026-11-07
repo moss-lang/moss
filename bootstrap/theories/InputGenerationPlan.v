@@ -9,7 +9,9 @@ Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].
 
 Definition input_environment_support(e:env):list nat:=
  reify_generation_ids e ++ private_merge_support e ++
- flat_map(fun t=>ety_gens(canon e t))(reify_scope_types e).
+ flat_map(fun t=>ety_gens(canon e t))(reify_scope_types e) ++
+ (* Application receipts may retain a method receiver absent from all slots. *)
+ flat_map(fun p=>scope_key_gens(fst p))(en_apps e).
 Definition link_input_support(target provider:env):list nat:=
  input_environment_support target ++ input_environment_support provider.
 Definition link_input_generations(start:nat)(target provider:env):generation_substitution:=
@@ -39,8 +41,15 @@ Qed.
 Lemma input_support_canonical_type : forall e t g,
  In t(reify_scope_types e)->In g(ety_gens(canon e t))->In g(input_environment_support e).
 Proof.
- intros e t g T G;unfold input_environment_support;apply in_or_app;right;apply in_or_app;right.
+ intros e t g T G;unfold input_environment_support;apply in_or_app;right;apply in_or_app;right;apply in_or_app;left.
  apply in_flat_map;exists t;auto.
+Qed.
+Lemma input_support_application_key : forall e k record,
+ In(k,record)(en_apps e)->incl(scope_key_gens k)(input_environment_support e).
+Proof.
+ intros e k record Member g G;unfold input_environment_support.
+ apply in_or_app;right;apply in_or_app;right;apply in_or_app;right.
+ apply in_flat_map;exists(k,record);split;[exact Member|exact G].
 Qed.
 Lemma link_support_side : forall target provider e,
  (e=target \/ e=provider)->forall g,
