@@ -5545,14 +5545,14 @@ Fixpoint choice_of (x : xexpr) : option choice :=
   end.
 
 (* What Certified.v binds today.  Read the comment on each. *)
-(* The front end's contract, in Ender's ProblemGrammar / parser_sound /
-   parser_complete pattern: `Syntax.Derives` (Part I.2, a DRAFT for the
-   designer's review) is the declarative grammar of Moss's surface syntax
-   over a file's bytes, relating it to the surface AST of Part I, and the
-   parser must be sound and complete for it.  FrontEnd.v and
-   FrontEndComplete.v prove both for Parse.parse_moss, and Certified.v
-   binds them (`FrontEndCertified <: FRONT_END`). *)
+(* The lexer agrees with Lexes on the bytes it receives. The parser
+   agrees with Derives, which includes source normalization before lexing. *)
 Module Type FRONT_END.
+Import Stdlib.Strings.Byte.
+  Parameter lex : list byte -> option (list Syntax.token).
+  Axiom lexer_sound : forall bytes ts, lex bytes = Some ts -> Syntax.Lexes 0 bytes ts.
+  Axiom lexer_complete : forall bytes ts, Syntax.Lexes 0 bytes ts -> lex bytes = Some ts.
+
   Parameter parse : string -> Input.res Input.afile.
   Axiom parser_sound : forall s f, parse s = Input.Good f -> Syntax.Derives (list_byte_of_string s) f.
   Axiom parser_complete : forall s f, Syntax.Derives (list_byte_of_string s) f -> parse s = Input.Good f.

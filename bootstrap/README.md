@@ -238,10 +238,10 @@ decision), and the obligations, as module types (Part VI):
   proved, what the oracle establishes about the elaborator is that it is
   a total and deterministic Gallina function, plus the lemmas of
   `ElabSound.v`, plus the evidence of testing.
-- `FRONT_END`, which `Certified.v` binds: the lexer and parser
-  (`Parse.parse_moss`) are sound and complete for `Audit.Syntax.Derives`,
-  the grammar of Moss's surface syntax (`Audit.v` Part I.2), file by
-  file; and `LOADER`: a bundle the loader loads is `Audit.Loader.Bundled`,
+- `FRONT_END`, which `Certified.v` binds: `Parse.lex` is sound and complete
+  for `Audit.Syntax.Lexes` on the bytes it receives, and `Parse.parse_moss`
+  is sound and complete for `Audit.Syntax.Derives` on source text.
+- `LOADER`: a bundle the loader loads is `Audit.Loader.Bundled`,
   every module a readable file deriving its AST, each once, closed under
   its imports and the prelude. `Bundled` requires the module's AST to equal
   the parsed one. The loader proof uses the round-trip theorem from

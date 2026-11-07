@@ -96,9 +96,22 @@ Definition assume_types_exact := WorldSound.load_world_assume_types.
    least relevance-closed ones, and AssumeTypes, for the symbols it never
    asked about) and any injective field numbering is a WorldOf of it *)
 Definition elaborate_world_of := ReqsTotal.elaborate_world_of.
-(* FRONT_END: the front end Parse.parse_moss is sound and complete for
-   Audit.Syntax.Derives (FrontEnd.v, FrontEndComplete.v). *)
+(* FRONT_END: bind the successful lexer and parser results to the audit. *)
 Module FrontEndCertified <: FRONT_END.
+  Definition lex bytes :=
+    match Parse.lex bytes with
+    | Parse.LOk ts => Some ts
+    | Parse.LErr _ _ => None
+    end.
+  Lemma lexer_sound : forall bytes ts, lex bytes = Some ts -> Syntax.Lexes 0 bytes ts.
+  Proof.
+    intros bytes ts H. unfold lex in H.
+    destruct (Parse.lex bytes) eqn:E; [|discriminate].
+    injection H as <-. exact (FrontEnd.lex_sound bytes _ E).
+  Qed.
+  Lemma lexer_complete : forall bytes ts, Syntax.Lexes 0 bytes ts -> lex bytes = Some ts.
+  Proof. intros bytes ts H. unfold lex. now rewrite (FrontEnd.lex_complete bytes ts H). Qed.
+
   Definition parse := Parse.parse_moss.
   Definition parser_sound : forall s f, parse s = Input.Good f -> Syntax.Derives (String.list_byte_of_string s) f :=
     FrontEnd.parse_moss_sound.
