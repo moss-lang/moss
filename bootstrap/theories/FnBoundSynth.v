@@ -4,6 +4,15 @@ Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
 
+Local Lemma bf_pure_input : forall A (f : st -> A),
+  BF (fun s => Good (f s, s)).
+Proof.
+  intros A f. apply bf_keeps.
+  - apply ok_reader. intros s a final Run. injection Run as _ <-. reflexivity.
+  - unfold keeps. intros s a final Run. injection Run as _ <-. reflexivity.
+Qed.
+#[local] Hint Resolve bf_pure_input : bfdb.
+
 Lemma bf_synth_group : forall fuel,
   (forall c e x exp, BF (synth fuel c e x exp)) /\
   (forall c e a exp, BF (synth_arg fuel c e a exp)) /\

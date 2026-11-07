@@ -386,6 +386,13 @@ Qed.
 Lemma okI_ret : forall A (a : A), okI (ret a).
 Proof. intros. apply okI_ni; [apply ok_ret | apply ni_ret|unfold keeps;intros;injection H as _ <-;reflexivity]. Qed.
 
+Lemma okI_get : okI get.
+Proof. apply okI_ni; [apply ok_get | unfold get; nit | unfold get; keepst]. Qed.
+Lemma okI_fail : forall A msg, @okI A (fail msg).
+Proof. intros. apply okI_ni; [apply ok_fail | apply ni_fail | unfold fail; keepst]. Qed.
+Lemma okI_sym : forall id, okI (sym id).
+Proof. intros. apply okI_ni; [unfold sym; okt | unfold sym; nit | unfold sym; keepst]. Qed.
+
 Lemma okI_bind : forall A B (m : M A) (k : A -> M B), okI m -> (forall a, okI (k a)) -> okI (mbind m k).
 Proof.
   intros A B m k [Om Pm] Hk. split; [apply ok_bind; [exact Om | intro a; exact (proj1 (Hk a))]|].
@@ -681,7 +688,7 @@ Proof. intro g. apply okI_ni;[apply ok_fun_env_frame|apply ni_fun_env_frame|appl
 
 
 Create HintDb okIdb.
-#[export] Hint Resolve okI_ret okI_fn_info : okIdb.
+#[export] Hint Resolve okI_ret okI_get okI_fail okI_sym okI_fn_info : okIdb.
 #[export] Hint Extern 5 (okI _) => (apply okI_ni; [solve [auto with okdb] | solve [nit]|solve[keepst]]) : okIdb.
 
 Ltac okIfixind1 :=
@@ -949,8 +956,69 @@ Proof.
 Qed.
 #[export] Hint Resolve okI_check_platform_entry_view : okIdb.
 
+(* Name the phase proofs once. Repeatedly asking okIt to discover the whole
+   program proof speculates about read-only phases and reconstructs these
+   proofs along several failing paths. The final proof follows each bind. *)
+Lemma okI_check_listed : okI check_listed.
+Proof. unfold check_listed. okIt. Qed.
+Lemma okI_check_contexts : okI check_contexts.
+Proof. unfold check_contexts. okIt. Qed.
+Lemma okI_check_runtime_library : okI check_runtime_library.
+Proof. unfold check_runtime_library. okIt. Qed.
+Lemma okI_lower_all : okI lower_all.
+Proof. unfold lower_all. okIt. Qed.
+Lemma okI_check_assumed_requirements : forall mi e k, okI (check_assumed_requirements mi e k).
+Proof. intros. unfold check_assumed_requirements. okIt. Qed.
+#[local] Hint Resolve okI_check_assumed_requirements : okIdb.
+
+Lemma okI_check_assumes : okI check_assumes.
+Proof. unfold check_assumes. okIt. Qed.
+Lemma okI_platform_entry : forall k prims, okI (platform_entry k prims).
+Proof. intros. unfold platform_entry. okIt. Qed.
+Lemma okI_runtime_symbols : okI runtime_symbols.
+Proof. unfold runtime_symbols. okIt. Qed.
+
 Lemma okI_elab_program : okI elab_program.
-Proof. unfold elab_program. okIt. Qed.
+Proof.
+  unfold elab_program.
+  apply okI_bind; [exact okI_check_listed | intros _].
+  apply okI_bind; [exact okI_check_contexts | intros _].
+  apply okI_bind; [exact okI_check_runtime_library | intros _].
+  apply okI_bind; [exact okI_lower_all | intros _].
+  apply okI_bind; [exact okI_check_assumes | intros _].
+  apply okI_bind; [exact okI_get | intro s].
+  destruct (sassoc "main" (gm_names (get_mod (st_w s) (w_entry (st_w s))))) as [msym|];
+    [| apply okI_fail].
+  apply okI_bind; [apply okI_sym | intro mg].
+  destruct (negb (is_defined_fn mg)); [apply okI_fail |].
+  apply okI_bind; [apply okI_fn_info | intro info].
+  apply okI_bind; [apply okI_check_main_signature | intros _].
+  apply okI_bind.
+  - apply okI_mfold. intros [env0 prims] k.
+    apply okI_bind; [apply okI_platform_entry | intros [[en prims']|]].
+    + apply okI_bind; [apply okI_check_platform_entry_view | intros _].
+      apply okI_bind; [unfold key_item_at; okIt | intro it].
+      apply okI_ret.
+    + apply okI_bind; [unfold show_key; okIt | intro sk].
+      apply okI_fail.
+  - intros [env0 prims].
+    apply okI_bind; [exact okI_get | intro s1].
+    apply okI_bind.
+    + destruct (st_memory_bound s1 && st_memory_used s1); [apply okI_fail | apply okI_ret].
+    + intros _. apply okI_bind.
+      * destruct (st_unsup s1); [apply okI_ret | apply okI_fail].
+      * intros _. apply okI_bind; [exact okI_runtime_symbols | intro sc].
+        destruct (runtime_bool_tuple sc) as [[b t] fl].
+        apply okI_bind.
+        -- apply okI_mmap. intro p.
+           apply okI_bind; [apply okI_runtime_provider_inputs | intro ts].
+           apply okI_ret.
+        -- intro input_types. apply okI_bind; [exact okI_get | intro s2].
+           apply okI_bind.
+           ++ apply okI_mmap. intro q.
+              apply okI_bind; [apply okI_ety_ty | intro tau]. apply okI_ret.
+           ++ intro main_types. apply okI_ret.
+Qed.
 
 Lemma info_init : forall w, InfoInv (s_init w).
 Proof. intro w;constructor;intros;discriminate. Qed.

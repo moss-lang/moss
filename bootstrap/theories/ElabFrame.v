@@ -896,7 +896,18 @@ Proof. intros mi walk H. unfold merged_walk. okt. Qed.
 #[export] Hint Resolve ok_merged_walk_frame : okdb.
 
 Lemma ok_fn_info_frame : forall g, ok (fn_info g).
-Proof. intro g. unfold fn_info. okt. all: apply ok_merged_walk_frame; intros; okt. Qed.
+Proof.
+  intro g0. unfold fn_info.
+  apply ok_bind; [apply ok_get | intro snapshot].
+  destruct (nget (st_info snapshot) (gs_id g0)) as [info|].
+  - apply ok_ret.
+  - apply ok_bind; [okt | intro g].
+    cbn beta zeta.
+    apply ok_bind.
+    + apply ok_merged_walk_frame. intro e.
+      destruct (gs_origin g); okt.
+    + intros [e needs]. cbn beta iota zeta. okt.
+Qed.
 #[export] Hint Resolve ok_fn_info_frame : okdb.
 Local Strategy opaque [fn_info].
 
