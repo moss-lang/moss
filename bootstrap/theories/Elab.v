@@ -4984,7 +4984,7 @@ with link_body (fuel : nat) (fg bg : gsym) {struct fuel} : M nat :=
                let mentions := match k with
                                | KyMth r m => ety_gens r +++
                                               match key_sig eg k with Some (ps, rt) => flat_map ety_gens (rt :: ps) | None => [] end
-                               | KyVal v => match nget (en_vals eg) v with Some t => ety_gens t | None => [] end
+                               | KyVal v => match nget (en_vals eg) v with Some t => ety_gens (canon eg t) | None => [] end
                                | KyFn fn => match key_sig eg k with Some (ps, rt) => flat_map ety_gens (rt :: ps) | None => [] end
                                | KyFun _ => match get_app eg k with
                                    | Some (captured,_) => flat_map (fun p => match snd p with

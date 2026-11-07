@@ -1,0 +1,29 @@
+# Provider merges A with B through seed. The captured value is allowed
+# because Target fixes B rather than receiving it afresh at each application.
+type P;
+type A;
+type B;
+assume P {
+  val seed: P;
+  val captured: P;
+}
+context Left = A, seed[P=A];
+context Right = B, seed[P=B];
+assume B { fn out(): B; }
+functor Target[]: B, seed[P=B] -> out;
+functor Provider: Left, Right, captured[P=A] -> out {
+  bind out = () => captured;
+}
+context Captured = captured[P=A];
+assume Left, Right, Captured {
+  fn exercise() { bind Target = Provider; bind Target; out(); }
+}
+tag Concrete;
+fn main() {
+  bind P = Concrete;
+  bind A = Concrete;
+  bind B = Concrete;
+  bind seed = Concrete;
+  bind captured = Concrete;
+  exercise();
+}

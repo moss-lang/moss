@@ -1,0 +1,1 @@
+!X tests/errors/functor_capture_merged_poly.moss captured

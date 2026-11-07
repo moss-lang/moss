@@ -7963,6 +7963,9 @@ assume Std {
       let bodied = ast::is_some(ast::fu_binds(prog::sym_decl.get(g)));
       var source = ast::none();
       if bodied {
+        if !check_captured_values(fu, g, m) {
+          return ();
+        }
         # Inputs `F` does not take are captured here (D84 3b), so only the
         # result is compared.
         if !check_outputs(fu, g, m) {
@@ -8344,6 +8347,45 @@ assume Std {
           return false;
         }
         i = i + 1;
+      }
+      true
+    }
+
+    # A captured value's type is read through the provider's input
+    # merges before looking for a type supplied by each application.
+    fn check_captured_values(fu: Int, g: Int, m: Int): Bool {
+      let fd = prog::sym_decl.get(fu);
+      let gd = prog::sym_decl.get(g);
+      let fenv = lower::assume_items(prog::sym_mod.get(fu), ast::fu_args(fd), ast::fu_nargs(fd), int_list(), int_list());
+      let genv = lower::assume_items(prog::sym_mod.get(g), ast::fu_args(gd), ast::fu_nargs(gd), int_list(), int_list());
+      let inputs = int_list();
+      result_types(prog::sym_mod.get(fu), ast::fu_args(fd), ast::fu_nargs(fd), inputs, 0);
+      lower::functor_mentions(fu, inputs);
+      let fixed = int_list();
+      lower::functor_fixed(fu, fixed);
+      var e = genv;
+      while ast::is_some(e) {
+        let v = lower::env_sym_of(e);
+        if lower::env_kind_of(e) == lower::ek_val() {
+          if !lower::env_has(fenv, lower::ek_val(), ast::none(), v) {
+            let mentioned = int_list();
+            abstract_syms(lower::canon(genv, lower::env_a_of(e)), mentioned);
+            var i = 0;
+            while i < mentioned.length() {
+              var t = mentioned.get(i);
+              let origin = prog::origin_of(t);
+              if ast::is_some(origin) { t = origin; }
+              if types::contains_sym(inputs, t) {
+                if !types::contains_sym(fixed, t) {
+                  prog::error(prog::e_functor_sig(), m, prog::sym_name.get(v));
+                  return false;
+                }
+              }
+              i = i + 1;
+            }
+          }
+        }
+        e = lower::env_next_of(e);
       }
       true
     }

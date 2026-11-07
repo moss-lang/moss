@@ -708,6 +708,11 @@ fn attached_provider_receiver_uses_merged_type() {
 }
 
 #[test]
+fn merged_capture_can_use_a_fixed_target_type() {
+    agree("tests/wasi/functor_capture_merged_fixed.moss", &[], "");
+}
+
+#[test]
 fn functor_application_checks_merged_input_types() {
     let entry = "tests/wasi/functor_merge_apply.moss";
     assert!(!compile(entry, "lib/prelude.moss").is_module());

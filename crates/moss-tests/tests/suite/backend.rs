@@ -831,9 +831,8 @@ fn abstract_functor_binds_are_checked() {
         &[
             // D84 (draft, corrected): an input mentioning a type each
             // application supplies must be an input of `Trace`. D84: the
-            // self-hosted compiler checks the binding where it is made, at
-            // fresh types: the provider it captures is refused there, in
-            // its lambda.
+            // self-hosted compiler checks captured values in the provider's
+            // merged input context and names the invalid captured value.
             // The oracle's message; the Python bootstrap said "`Counting`
             // cannot be bound to `Trace`: it needs `counter`, which mentions
             // `CellInt`, which each application of `Trace` supplies, so it
@@ -842,7 +841,7 @@ fn abstract_functor_binds_are_checked() {
                 "functor_inputs",
                 "`Counting`, bound to `Trace`, captures `counter`, which \
                  mentions a type each application of `Trace` supplies (D84 3b)",
-                "?S {} note\n",
+                "!X {} counter\n",
             ),
             (
                 "functor_missing",
