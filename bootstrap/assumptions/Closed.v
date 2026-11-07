@@ -9,7 +9,7 @@
      Specialization.v;
    - semantics.md [D71] ("Why it is sound": "no Admitted, no axioms beyond
      the development's"): Narrowing.v's three. *)
-From NM Require CoreMoss D84 Specialization Narrowing.
+From NM Require CoreMoss D84 Specialization Narrowing DumpRoundTrip.
 
 (* [D78], CoreMoss.v's header *)
 Print Assumptions NM.CoreMoss.eval_deterministic.
@@ -48,3 +48,5 @@ Print Assumptions NM.Specialization.specialization.
 Print Assumptions NM.Narrowing.vty_narrow_invariant.
 Print Assumptions NM.Narrowing.wf_ty_narrowed.
 Print Assumptions NM.Narrowing.narrowed_soundness.
+
+Print Assumptions NM.DumpRoundTrip.dump_reads.

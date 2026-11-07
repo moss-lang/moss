@@ -474,6 +474,27 @@ pub fn wasm_ops() -> Vec<Op> {
     ops
 }
 
+// Runtime input shapes, encoded base 8 (one scalar per digit). Memory
+// methods check their nominal address separately in the back end.
+fn op_inputs(op: &Op) -> Vec<Res> {
+    use Res::*;
+    let n = op.name.as_str();
+    if n == "unreachable" || n == "i32_zero" || n == "i32_one" || n == "memory_size" { return vec![]; }
+    if n == "memory_grow" { return vec![I32]; }
+    if n == "memory_copy" || n == "memory_fill" { return vec![I32, I32, I32]; }
+    let scalar = |x: &str| match x { "i32" => I32, "i64" => I64, "f32" => F32, "f64" => F64, _ => unreachable!("unknown scalar {x}") };
+    let parts: Vec<_> = n.split('_').collect();
+    let t = scalar(parts[0]);
+    if parts[1].starts_with("load") { return vec![I32]; }
+    if parts[1].starts_with("store") { return vec![I32, t]; }
+    if matches!(parts[1], "wrap" | "extend" | "convert" | "trunc" | "reinterpret" | "demote" | "promote") && parts.len() >= 3 {
+        let input = if parts[2] == "sat" { parts[3] } else { parts[2] };
+        return vec![scalar(input)];
+    }
+    if matches!(parts[1], "eqz" | "clz" | "ctz" | "popcnt" | "abs" | "neg" | "ceil" | "floor" | "trunc" | "nearest" | "sqrt" | "extend8" | "extend16" | "extend32") { return vec![t]; }
+    vec![t, t]
+}
+
 pub fn gen_wasmops_moss() -> String {
     let mut out = vec![format!(
         "import \"./bytes.moss\" use *;
@@ -512,16 +533,18 @@ assume Std {{
   val op_kinds: IntList;
   val op_aligns: IntList;
   val op_res: IntList;
+  val op_args: IntList;
 
-  context WasmOps = op_names, op_codes, op_kinds, op_aligns, op_res;
+  context WasmOps = op_names, op_codes, op_kinds, op_aligns, op_res, op_args;
 
   assume WasmOps, intern::Interner {{
-    fn add_op(cs: IntList, code: Int, kind: Int, align: Int, res: Int) {{
+    fn add_op(cs: IntList, code: Int, kind: Int, align: Int, res: Int, args: Int) {{
       op_names.push(intern::intern_chars(cs));
       op_codes.push(code);
       op_kinds.push(kind);
       op_aligns.push(align);
       op_res.push(res);
+      op_args.push(args);
     }}
 
     # The table's index for this interned name, or none.
@@ -546,11 +569,12 @@ assume Std {{
             .map(|c| format!(" push_char({buf}, char::{});", char_name(c)))
             .collect();
         out.push(format!(
-            "      let {buf} = int_list();{pushes} add_op({buf}, {}, {}, {}, {});",
+            "      let {buf} = int_list();{pushes} add_op({buf}, {}, {}, {}, {}, {});",
             op.code,
             op.kind.function(),
             op.align,
-            op.res.function()
+            op.res.function(),
+            op_inputs(&op).iter().rev().fold(0u32, |v, r| v * 8 + match r { Res::None => 0, Res::I32 => 1, Res::I64 => 2, Res::F32 => 3, Res::F64 => 4 })
         ));
     }
     out.push("    }".into());

@@ -1,0 +1,5 @@
+# Importing the detached method makes the context item available.
+import "../fixtures/context_detached/receiver.moss" use Receiver, .private_method;
+context K = Receiver, Receiver.private_method;
+assume K { fn unused() {} }
+fn main() {}

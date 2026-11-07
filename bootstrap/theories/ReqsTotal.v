@@ -16,11 +16,13 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require Import ComponentContracts.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame.
 Import ListNotations.
 Local Open Scope list_scope.
 
 Module A := Audit.Elaboration.
+Import ComponentContracts.SourceReading.
 
 Local Strategy opaque [Nat.of_num_uint].
 
@@ -181,12 +183,12 @@ Variable ls : load_st.
 Variable e : nat.
 Hypothesis HI : LInv b ls.
 
-Let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls).
+Let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)).
 Let W := W0r w.
 Let N := ls_next_sym ls.
 
 Lemma decl_none' : forall x, nget (ls_syms ls) x = None -> A.w_decl W x = None.
-Proof. intros x H. exact (decl_none ls e (fun _ => []) (fun _ => 0) x H). Qed.
+Proof. intros x H. exact (decl_none b ls e (fun _ => []) (fun _ => 0) x H). Qed.
 
 Lemma rsym_loader' : forall p pa x, A.resolve_sym W p pa = Some x -> exists g, nget (ls_syms ls) x = Some g.
 Proof. intros p pa x H. exact (rsym_loader b ls e HI (fun _ => []) (fun _ => 0) p pa x H). Qed.
@@ -614,7 +616,7 @@ Lemma loader_kind' : forall x g, nget (ls_syms ls) x = Some g -> A.kind_sym W x 
 Proof. intros x g H. exact (loader_kind b ls e HI (fun _ => []) (fun _ => 0) x g H). Qed.
 
 Lemma visible_loader' : forall x, A.kind_sym W x <> None -> exists g, nget (ls_syms ls) x = Some g.
-Proof. intros x H. exact (visible_loader ls e (fun _ => []) (fun _ => 0) x H). Qed.
+Proof. intros x H. exact (visible_loader b ls e (fun _ => []) (fun _ => 0) x H). Qed.
 
 Lemma headin_visible' : forall p t h, HeadIn W p t h -> A.kind_sym W h <> None.
 Proof. intros p t h H. exact (headin_visible b ls e HI (fun _ => []) (fun _ => 0) p t h H). Qed.
@@ -783,7 +785,7 @@ Proof.
 Qed.
 
 Theorem reqs_reading : forall b ls e, LInv b ls ->
-  let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) in
+  let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)) in
   forall syms c,
   (forall i g, nget (ls_syms ls) i = Some g -> nget syms i = Some g) ->
   (forall x l, nget c x = Some l -> NoDup l /\ exists g, nget syms x = Some g /\
@@ -792,18 +794,18 @@ Theorem reqs_reading : forall b ls e, LInv b ls ->
   RC (W0r w) c -> RL (W0r w) c ->
   (forall g d ps t n, A.w_decl (W0r w) g = Some d -> A.nominal_body (A.d_ast d) = Some (ps, t) -> In n ps ->
      exists x, A.resolve_sym (W0r w) (A.d_mod d) [n] = Some x /\ A.AssumeTypes (W0r w) g x) ->
-  forall F, ReqsReading (W_read w (Rfin ls e c) F).
+  forall F, ReqsReading (W_read w (Rfin b ls e c) F).
 Proof.
   intros b ls e HI w syms c Hk Hq Hrc Hrl Hl F. constructor.
-  - exact (Rfin_nodup ls e syms c Hq).
-  - intros x k Hx H1 H2 H3 H4 t. rewrite (W0_assume w (Rfin ls e c) F x t).
+  - exact (Rfin_nodup b ls e syms c Hq).
+  - intros x k Hx H1 H2 H3 H4 t. rewrite (W0_assume w (Rfin b ls e c) F x t).
     exact (Rfin_plain b ls e HI syms c Hk Hq x k Hx H1 H2 H3 H4 t).
   - exact (Rfin_none b ls e HI syms c Hk Hq).
   - apply (closed_RF w (fun _ => []) (fun _ => 0)). exact (Rfin_closed b ls e HI syms c Hk Hq Hrc Hrl).
   - intros R Hc Ha g Hg. apply (Rfin_least b ls e HI syms c Hk Hq Hrl R); [exact (closed_RF w _ _ _ _ R Hc) | exact Ha | exact Hg].
   - intros g d ps t n Hd Hb Hn. destruct (Hl g d ps t n Hd Hb Hn) as (x & Hr & Ha). exists x. split.
-    + rewrite (rs_RF w (Rfin ls e c) F (fun _ => []) (fun _ => 0)). exact Hr.
-    + apply (W0_assume w (Rfin ls e c) F). exact Ha.
+    + rewrite (rs_RF w (Rfin b ls e c) F (fun _ => []) (fun _ => 0)). exact Hr.
+    + apply (W0_assume w (Rfin b ls e c) F). exact Ha.
 Qed.
 
 (* ======================================================================== *)
@@ -821,17 +823,17 @@ Proof.
 Qed.
 
 Lemma check_listed_ok : forall b ls e, LInv b ls ->
-  let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) in
-  forall s u s', GS ls e s -> check_listed s = Good (u, s') ->
+  let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)) in
+  forall s u s', GS b ls e s -> check_listed s = Good (u, s') ->
   forall g d ps t n, A.w_decl (W0r w) g = Some d -> A.nominal_body (A.d_ast d) = Some (ps, t) -> In n ps ->
   exists x, A.resolve_sym (W0r w) (A.d_mod d) [n] = Some x /\ A.AssumeTypes (W0r w) g x.
 Proof.
   intros b ls e HI w s u s' Hg H g d ps t n Hd Hb Hn.
   unfold check_listed in H. apply bind_inv in H as (s0 & s1 & E1 & H). injection E1 as <- <-.
-  destruct Hg as [Gw Gk]. pose proof (conj Gw Gk : GS ls e s) as Hg. rewrite Gw in H. cbn [w_syms w_nsyms] in H.
-  destruct (decl_loader ls e g d Hd) as (g0 & Hg0).
+  destruct Hg as [Gw Gk]. pose proof (conj Gw Gk : GS b ls e s) as Hg. rewrite Gw in H. cbn [w_syms w_nsyms] in H.
+  destruct (decl_loader b ls e g d Hd) as (g0 & Hg0).
   destruct (ldecl b ls e HI (fun _ => []) (fun _ => 0) g g0 Hg0) as (Dg & _).
-  assert (Ed : A.w_decl (W0r w) g = Some (A.Decl (pathi ls e (gs_mod g0)) (gs_decl g0) (gs_assumes g0))) by exact Dg.
+  assert (Ed : A.w_decl (W0r w) g = Some (A.Decl (pathi b ls e (gs_mod g0)) (gs_decl g0) (gs_assumes g0))) by exact Dg.
   rewrite Ed in Hd. injection Hd as <-. cbn [A.d_ast A.d_mod] in Hb |- *.
   destruct (li_syms _ _ HI g g0 Hg0) as (_ & Hlt & Hid & _).
   assert (Hin : In g (seq 0 (ls_next_sym ls))) by (apply in_seq; lia).
@@ -848,7 +850,7 @@ Proof.
   rewrite Kt in Hs. cbn [kind_eqb] in Hs. apply bind_inv in Hs as (lst & s3 & H3 & _).
   destruct (listed_spec b ls e HI (fun _ => []) (fun _ => 0) 0 g0 s lst s3 Hg H3) as [_ Hlok].
   rewrite Hid in Hlok. specialize (Hlok Hg0).
-  assert (Hb' : A.nominal_body (A.d_ast (A.Decl (pathi ls e (gs_mod g0)) (gs_decl g0) (gs_assumes g0))) = Some (tps, tt))
+  assert (Hb' : A.nominal_body (A.d_ast (A.Decl (pathi b ls e (gs_mod g0)) (gs_decl g0) (gs_assumes g0))) = Some (tps, tt))
     by (cbn; rewrite Dd; reflexivity).
   destruct (Hlok _ tps tt Dg eq_refl) as [_ L2]. destruct (L2 n Hn) as (x & Hrs & _ & Ha). exists x. split; [exact Hrs | exact Ha].
 Qed.
@@ -868,7 +870,7 @@ Theorem elaborate_world_of : forall b p, elaborate b = Good p ->
 Proof.
   intros b p H. destruct (elaborate_frame b p H) as (w & s & Hw & He & Sw & Sk & _ & _ & _ & Hq & Hrc & Hrl).
   destruct (load_world_inv b w Hw) as (ls & e & HI & Ew).
-  exists w, s, (Rfin ls e (st_reqs s)). split; [exact Hw|]. split; [exact He|]. split.
+  exists w, s, (Rfin b ls e (st_reqs s)). split; [exact Hw|]. split; [exact He|]. split.
   { intros x l Hx. unfold Rfin. rewrite Hx. reflexivity. }
   intros F Hf. apply worldof_of_reading; [exact (load_world_reads b w _ F Hw) | | exact Hf].
   rewrite Ew in Sk, Hrc, Hrl, He |- *. rewrite Ew in Sw.
@@ -876,6 +878,6 @@ Proof.
   - intros x l Hx. destruct (Hq x l Hx) as (Nd & g & Hg & P1 & P2). split; [exact Nd|]. exists g. split; [exact Hg|].
     rewrite Sw in P1. split; [exact P1 | exact P2].
   - unfold elab_program in He. apply bind_inv in He as (u & s1 & H1 & _).
-    apply (check_listed_ok b ls e HI (s_init (Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls))) u s1);
+    apply (check_listed_ok b ls e HI (s_init (Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)))) u s1);
       [split; [reflexivity | intros i g Hi; exact Hi] | exact H1].
 Qed.

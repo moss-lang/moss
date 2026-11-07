@@ -1,0 +1,30 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+type A;
+type B;
+type T;
+assume T { fn get(): T; }
+assume Std, A { fn out(): A; }
+functor F[A]: Std, A, get[T=A] -> out;
+functor G: Std, A, get[T=A] -> out { bind out = get; }
+context Caller = Std, A, B, get[T=B], F;
+assume Caller {
+  fn run(): A { bind F; out() }
+}
+assume Std {
+  tag Box(Int);
+  fn givechar(): Char { char::q }
+  fn demo() {
+    bind A = Box;
+    bind B = Char;
+    bind get = givechar;
+    bind F = G;
+    let value = match run() { Box(v) => v };
+    putchar((value + char::digit0.code()).char());
+  }
+}
+assume Wasm, Gc, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

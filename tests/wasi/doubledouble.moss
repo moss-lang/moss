@@ -16,23 +16,23 @@ import "../../lib/array.moss" use Item, Array, ArrayHandle, Arrays, .arrayed;
 import "../../lib/float.moss" use Floats;
 import "../../lib/size.moss" use Size;
 
-type Base;
+type Scalar;
 
-assume Int, Base {
-  fn lift(n: Int): Base;
+assume Int, Scalar {
+  fn lift(n: Int): Scalar;
   context BaseOps =
-    Base, lift,
-    Base.add, Base.sub, Base.mul, Base.div, Base.neg, Base.sqrt, Base.abs,
-    Base.eq, Base.ne, Base.lt, Base.gt, Base.le, Base.ge, Base.trunc, Base.round,
+    Scalar, lift,
+    Scalar.add, Scalar.sub, Scalar.mul, Scalar.div, Scalar.neg, Scalar.sqrt, Scalar.abs,
+    Scalar.eq, Scalar.ne, Scalar.lt, Scalar.gt, Scalar.le, Scalar.ge, Scalar.trunc, Scalar.round,
   ;
 }
 
 assume Int, zero, one, Int.add, Int.sub, Int.mul, Int.lt, BaseOps {
-  tag DD { hi: Base, lo: Base };
+  tag DD { hi: Scalar, lo: Scalar };
 
   # A base float as a double-double, exactly: for values made outside
   # the block that applied `DoubleDouble`.
-  fn widen(x: Base): DD { DD { hi = x, lo = lift(zero) } }
+  fn widen(x: Scalar): DD { DD { hi = x, lo = lift(zero) } }
 
   # And an array of them. No array code of its own: an array of `DD` is
   # whatever the array implementation in force makes of one (two f64
@@ -42,7 +42,7 @@ assume Int, zero, one, Int.add, Int.sub, Int.mul, Int.lt, BaseOps {
   context Widening = ArrayHandle, Size, Int.size, Arrays;
 
   assume Widening {
-    fn widen_all(xs: Array[Item=Base]): Array[Item=DD] {
+    fn widen_all(xs: Array[Item=Scalar]): Array[Item=DD] {
       let ys = widen(lift(zero)).arrayed(xs.length());
       var i = 0;
       for x in xs {
@@ -53,20 +53,20 @@ assume Int, zero, one, Int.add, Int.sub, Int.mul, Int.lt, BaseOps {
     }
   }
 
-  fn quick_two_sum(s: Base, e: Base): DD {
+  fn quick_two_sum(s: Scalar, e: Scalar): DD {
     let h = s + e;
     DD { hi = h, lo = e - (h - s) }
   }
-  fn two_sum(a: Base, b: Base): DD {
+  fn two_sum(a: Scalar, b: Scalar): DD {
     let s = a + b;
     let bb = s - a;
     DD { hi = s, lo = (a - (s - bb)) + (b - bb) }
   }
-  fn split(a: Base): Base {
+  fn split(a: Scalar): Scalar {
     let t = lift(134217729) * a;
     t - (t - a)
   }
-  fn two_prod(a: Base, b: Base): DD {
+  fn two_prod(a: Scalar, b: Scalar): DD {
     let p = a * b;
     let ah = split(a);
     let al = a - ah;
@@ -86,7 +86,7 @@ assume Int, zero, one, Int.add, Int.sub, Int.mul, Int.lt, BaseOps {
     let p = two_prod(a.hi, b.hi);
     quick_two_sum(p.hi, p.lo + (a.hi * b.lo + a.lo * b.hi))
   }
-  fn dd_scale(a: DD, b: Base): DD {
+  fn dd_scale(a: DD, b: Scalar): DD {
     let p = two_prod(a.hi, b);
     quick_two_sum(p.hi, p.lo + a.lo * b)
   }
@@ -141,7 +141,7 @@ assume Int, zero, one, Int.add, Int.sub, Int.mul, Int.lt, BaseOps {
 # Its arrays need no line: they are `Std`'s `Arrays` at `Item=DD`, on
 # demand (D84 rule 7).
 functor DoubleDouble: Std -> Floats {
-  bind Base = Float;
+  bind Scalar = Float;
   bind lift = float;
   bind Float = DD;
   bind float = (n) => widen(lift(n));

@@ -57,6 +57,8 @@ assume Std {
   fn ek_type(): Int { 0 }
   fn ek_val(): Int { 1 }
   fn ek_fn(): Int { 2 }
+  # Codegen-only lexical functor-link metadata; never a source binding.
+  fn ek_capture(): Int { 3 }
 
   val en_kind: IntList;
   val en_recv: IntList;
@@ -100,12 +102,17 @@ assume Std {
   val en_head: IntList;
   val en_link: IntList;
 
+  # A bounded memo table for env_find. Its six-cell rows hold a valid flag,
+  # the four lookup arguments, and the answer. It belongs to these immutable
+  # environment rows and is initialized empty alongside them in boot.moss.
+  val en_find_cache: IntList;
+
   context Lower =
     en_kind, en_recv, en_sym, en_a, en_b, en_next,
     nd_recv, nd_sym, nd_start, nd_len, nd_env, nd_app,
     dp_start, dp_len, dp_pool,
     asm_run, asm_len, asm_env, asm_nstart, asm_nlen,
-    en_head, en_link;
+    en_head, en_link, en_find_cache;
 
   assume Lower, ast::Ast, prog::Prog, types::Types, intern::Interner {
     # Environments.
@@ -157,7 +164,7 @@ assume Std {
 
     # The entry providing this key, or none. The chain is walked from the
     # head, so the innermost binding wins.
-    fn env_find(env: Int, kind: Int, recv: Int, sym: Int): Int {
+    fn env_find_uncached(env: Int, kind: Int, recv: Int, sym: Int): Int {
       var e = env;
       while ast::is_some(e) {
         if en_kind.get(e) == kind {
@@ -170,6 +177,40 @@ assume Std {
         e = en_next.get(e);
       }
       ast::none()
+    }
+
+    fn env_find(env: Int, kind: Int, recv: Int, sym: Int): Int {
+      # Masking keeps the index in range even when Int arithmetic wraps.
+      # A collision only replaces a memo row: a hit compares all arguments.
+      let at = ((env * 31 + recv * 7 + sym * 127 + kind) & 4095) * 6;
+      if en_find_cache.length() == 0 {
+        var i = 0;
+        while i < 24576 {
+          en_find_cache.push(0);
+          i = i + 1;
+        }
+      }
+      if en_find_cache.get(at) == 1 {
+        if en_find_cache.get(at + 1) == env {
+          if en_find_cache.get(at + 2) == kind {
+            if en_find_cache.get(at + 3) == recv {
+              if en_find_cache.get(at + 4) == sym {
+                return en_find_cache.get(at + 5);
+              }
+            }
+          }
+        }
+      }
+      let found = env_find_uncached(env, kind, recv, sym);
+      # en_kind/en_sym/en_recv/en_next are append-only. An old head's chain
+      # never changes when env_push adds a new head, so this answer stays valid.
+      en_find_cache.set(at + 1, env);
+      en_find_cache.set(at + 2, kind);
+      en_find_cache.set(at + 3, recv);
+      en_find_cache.set(at + 4, sym);
+      en_find_cache.set(at + 5, found);
+      en_find_cache.set(at, 1);
+      found
     }
 
     fn env_has(env: Int, kind: Int, recv: Int, sym: Int): Bool {
@@ -735,6 +776,15 @@ assume Std {
       # functor it is bound to.
       if kind == prog::sk_functor() {
         if !ast::is_some(ast::fu_binds(prog::sym_decl.get(s))) {
+          let fixed = int_list();
+          functor_fixed(s, fixed);
+          var x = 0;
+          while x < fixed.length() {
+            if !env_has(env, ek_type(), ast::none(), fixed.get(x)) {
+              prog::error(prog::e_absent(), m, prog::sym_name.get(fixed.get(x)));
+            }
+            x = x + 1;
+          }
           need_add(recv, sym, ast::none(), s);
           if env_has(env, ek_fn(), ast::none(), s) {
             return env;
@@ -883,13 +933,19 @@ assume Std {
     # environment `genv`, so that it comes out the same in every
     # specialization (D80), as the bootstrap's `require_merges`. Returns
     # the symbol of the first merge edge of `f`'s whose two sides differ
-    # there, or none. A symbol not in force in `genv` constrains nothing.
+    # there, or none. Resolve the complete merge first: an intermediate
+    # symbol absent from `genv` cannot hide a constraint on a symbol that
+    # is in force there. A symbol absent from the solved equation constrains nothing.
     fn merge_conflict(genv: Int, f: Int): Int {
-      var e = env_of(f);
+      merge_conflict_env(genv, env_of(f))
+    }
+
+    fn merge_conflict_env(genv: Int, own: Int): Int {
+      var e = own;
       while ast::is_some(e) {
         if en_kind.get(e) == ek_type() {
           let k = en_sym.get(e);
-          let v = en_a.get(e);
+          let v = canon(own, as_assumed(k));
           if v != as_assumed(k) {
             let mentioned = int_list();
             mentioned.push(k);
@@ -1090,7 +1146,7 @@ assume Std {
     }
 
     fn mention_walk(m: Int, run: Int, n: Int, out: IntList, depth: Int) {
-      if depth > 16 {
+      if depth > 2 * prog::sym_count() {
         return ();
       }
       var i = 0;
@@ -1387,33 +1443,233 @@ assume Std {
       }
     }
 
-    # An attached method on the receiver, or a detached one in scope —
-    # falling back to the receiver's home module, so that `CellInt.read`
-    # in a context finds the `.read` declared beside `CellInt` without
-    # the context's module importing it (D54).
+    # An attached method on the receiver, or a detached one in scope.
+    # Detached methods must be imported even in context items.
     fn find_method_decl(m: Int, receiver: Int, name: Int): Int {
       let home = prog::sym_mod.get(receiver);
       var found = prog::find_attached(home, receiver, name);
       if ast::is_some(found) {
         return found;
       }
-      found = prog::find_attached(m, receiver, name);
-      if ast::is_some(found) {
-        return found;
+      prog::lookup(m, prog::ns_detached(), name)
+    }
+
+    # Validate every context declaration, including unused ones. A
+    # recursion stack distinguishes cycles from shared subcontexts.
+    fn check_context_cycle(s: Int, walking: IntList, done: IntList) {
+      if types::contains_sym(walking, s) {
+        prog::error(prog::e_deep(), prog::sym_mod.get(s), prog::sym_name.get(s));
+        return ();
       }
-      found = prog::lookup(m, prog::ns_detached(), name);
-      if ast::is_some(found) {
-        return found;
+      if types::contains_sym(done, s) {
+        return ();
       }
-      prog::lookup(home, prog::ns_detached(), name)
+      let within = int_list();
+      var i = 0;
+      while i < walking.length() {
+        within.push(walking.get(i));
+        i = i + 1;
+      }
+      within.push(s);
+      let d = prog::sym_decl.get(s);
+      i = 0;
+      while i < ast::c_of(d) {
+        let spec = ast::kid_at(ast::b_of(d), i);
+        if !ast::is_some(ast::b_of(spec)) {
+          let t = prog::resolve_path(prog::sym_mod.get(s), ast::a_of(spec));
+          if ast::is_some(t) {
+            if prog::sym_kind.get(t) == prog::sk_context() {
+              check_context_cycle(t, within, done);
+            }
+          }
+        }
+        i = i + 1;
+      }
+      done.push(s);
+    }
+
+    # A function gets the root context when exposed as main, regardless
+    # of which name its declaration used.
+    fn is_root_fn(s: Int): Bool {
+      if prog::sym_kind.get(s) != prog::sk_fn() {
+        return false;
+      }
+      let mn = int_list();
+      sp_main(mn);
+      let name = intern::intern_chars(mn);
+      var m = 0;
+      while m < prog::module_count() {
+        if prog::lookup(m, prog::ns_name(), name) == s {
+          return true;
+        }
+        m = m + 1;
+      }
+      false
+    }
+
+    # D20: validate the callee's complete context, including the platform
+    # root when it is main. Reconstructing just its written assumes would
+    # omit those implicit type and functor requirements.
+    fn check_assumed_requirements(env: Int, m: Int, receiver: Int, s: Int) {
+      if prog::sym_kind.get(s) == prog::sk_functor() {
+        return ();
+      }
+      if is_root_fn(s) {
+        lower_needs_at(s, root_context());
+      } else {
+        lower_needs(s);
+      }
+      let row = env_find(env, need_kind(s), receiver, s);
+      var app = env_empty();
+      if ast::is_some(row) {
+        app = en_b.get(row);
+      }
+      let all = int_list();
+      var at = env_of(s);
+      while ast::is_some(at) {
+        if en_kind.get(at) == ek_type() {
+          types::push_new(all, en_sym.get(at));
+        }
+        at = en_next.get(at);
+      }
+      let mentioned = int_list();
+      if prog::sym_kind.get(s) == prog::sk_method() {
+        signature_syms(s, mentioned);
+      }
+      var view = env;
+      var i = 0;
+      while i < all.length() {
+        let t = all.get(i);
+        var relevant = true;
+        if prog::sym_kind.get(s) == prog::sk_method() {
+          relevant = types::contains_sym(mentioned, t);
+        }
+        if relevant {
+          let ty = app_get(app, t, env);
+          if !ast::is_some(ty) {
+            prog::error(prog::e_absent(), m, prog::sym_name.get(t));
+          } else {
+            view = env_push(view, ek_type(), ast::none(), t, canon(env, ty), ast::none());
+          }
+        }
+        i = i + 1;
+      }
+      i = 0;
+      while i < needs_count(s) {
+        let ds = need_sym_at(s, i);
+        let dr = need_recv_at(s, i);
+        var here = dr;
+        if ast::is_some(dr) {
+          here = instantiate(view, dr);
+        }
+        if !env_has(view, need_kind(ds), here, ds) {
+          prog::error(prog::e_absent(), m, prog::sym_name.get(ds));
+        }
+        i = i + 1;
+      }
+    }
+
+    # Defined functions do not become run-time provisions in the native
+    # compiler, but listing one still checks its ambient requirements.
+    # Traverse those items separately from the run-time need list.
+    fn check_defined_items(env: Int, m: Int, run: Int, n: Int, walking: IntList) {
+      var i = 0;
+      while i < n {
+        let spec = ast::kid_at(run, i);
+        if !ast::is_some(ast::b_of(spec)) {
+          let s = prog::resolve_path(m, ast::a_of(spec));
+          if ast::is_some(s) {
+            let view = app_view(env, m, spec);
+            let kind = prog::sym_kind.get(s);
+            let d = prog::sym_decl.get(s);
+            if kind == prog::sk_fn() {
+              if ast::is_some(ast::fn_body(d)) {
+                check_assumed_requirements(view, m, ast::none(), s);
+              }
+            } else if kind == prog::sk_context() {
+              if !types::contains_sym(walking, s) {
+                let next = int_list();
+                var j = 0;
+                while j < walking.length() {
+                  next.push(walking.get(j));
+                  j = j + 1;
+                }
+                next.push(s);
+                check_defined_items(view, prog::sym_mod.get(s), ast::b_of(d), ast::c_of(d), next);
+              }
+            }
+          }
+        }
+        i = i + 1;
+      }
+    }
+
+    fn check_assumes() {
+      let seen_run = int_list();
+      let seen_len = int_list();
+      let seen_root = int_list();
+      var f = 0;
+      while f < prog::sym_count() {
+        let kind = prog::sym_kind.get(f);
+        var checked = kind == prog::sk_fn();
+        if !checked { checked = kind == prog::sk_method(); }
+        if !checked { checked = kind == prog::sk_val(); }
+        if !checked { checked = kind == prog::sk_context(); }
+        if !checked { checked = kind == prog::sk_functor(); }
+        if checked {
+          let run = prog::sym_asm.get(f);
+          let len = prog::sym_nasm.get(f);
+          var rooted = 0;
+          if is_root_fn(f) { rooted = 1; }
+          var seen = false;
+          var at = 0;
+          while at < seen_run.length() {
+            if seen_run.get(at) == run {
+              if seen_len.get(at) == len {
+                if seen_root.get(at) == rooted {
+                  seen = true;
+                }
+              }
+            }
+            at = at + 1;
+          }
+          if !seen {
+            seen_run.push(run);
+            seen_len.push(len);
+            seen_root.push(rooted);
+            let recv = int_list();
+            let syms = int_list();
+            var env = base_env(f, recv, syms);
+            if rooted == 1 {
+              lower_needs_at(f, root_context());
+              env = env_of(f);
+            }
+            var i = 0;
+            while i < syms.length() {
+              check_assumed_requirements(env, prog::sym_mod.get(f), recv.get(i), syms.get(i));
+              i = i + 1;
+            }
+            check_defined_items(env, prog::sym_mod.get(f), run, len, int_list());
+          }
+        }
+        f = f + 1;
+      }
     }
 
     # Every defined function of the program, in module order.
     # Every defined function's needs; a module's `main`'s with the root
     # context beside its own (`lower_needs_at`).
     fn lower_all() {
+      let done = int_list();
+      var ctx = 0;
+      while ctx < prog::sym_count() {
+        if prog::sym_kind.get(ctx) == prog::sk_context() {
+          check_context_cycle(ctx, int_list(), done);
+        }
+        ctx = ctx + 1;
+      }
       needs_init();
-      # Each module's own `main`, whichever module is the entry: a
+      # Each module's `main`, including an import, wherever execution starts: a
       # function is checked the same wherever the program starts (D16).
       let mn = int_list();
       sp_main(mn);
@@ -1423,11 +1679,9 @@ assume Std {
       while m < prog::module_count() {
         let main = prog::lookup(m, prog::ns_name(), name);
         if ast::is_some(main) {
-          if prog::sym_mod.get(main) == m {
-            if prog::sym_kind.get(main) == prog::sk_fn() {
-              if ast::is_some(ast::fn_body(prog::sym_decl.get(main))) {
-                lower_needs_at(main, root);
-              }
+          if prog::sym_kind.get(main) == prog::sk_fn() {
+            if ast::is_some(ast::fn_body(prog::sym_decl.get(main))) {
+              lower_needs_at(main, root);
             }
           }
         }
@@ -1447,6 +1701,7 @@ assume Std {
         }
         f = f + 1;
       }
+      check_assumes();
     }
   }
 }

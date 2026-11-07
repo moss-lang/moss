@@ -1,0 +1,2 @@
+?P tests/errors/method_provider_brackets.moss main method
+?K tests/errors/method_provider_brackets.moss main method

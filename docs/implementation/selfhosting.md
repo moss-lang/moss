@@ -123,12 +123,12 @@ contextual vals with `bind`, methods, and the static context: type binds,
 fn binds, method binds and functor application, with one compiled
 specialization per environment.
 
-That includes `Std` itself. `Std` is Moss already, and
-[`lib/wasi.moss`](/lib/wasi.moss)'s `WasiStd` maps
-`Wasm, Wasi, Branch -> Std` in one functor with nothing native
-underneath; the compiler both *runs on* it and *compiles* it, which is
-what makes `src/main.moss` — `assume Wasm, Wasi, Branch` and one
-`bind WasiStd;` — a program it can read.
+That includes `Std` itself. [`lib/wasi.moss`](/lib/wasi.moss)'s
+`StdBase` maps [`Base`](/lib/base.moss) to `Std` using ordinary Moss
+code. The compiler's own [`src/main.moss`](/src/main.moss) assumes
+`Base` and binds `WasiRawStd`, the raw-memory alternative, to keep its own
+strings in linear memory. The prelude also imports `StdBase`, so the
+source bundle includes the default GC string implementation.
 
 What is left, none of it on the path to self-hosting:
 

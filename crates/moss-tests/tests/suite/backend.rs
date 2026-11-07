@@ -645,7 +645,7 @@ fn gc_arrays() {
 /// and an `Array` forged from a bare `ArrayRef` at another type than it
 /// was made at traps at the cast — `Char` is one i32 like `Int`, but an
 /// array type of its own. Compiled, after the line before; the oracle
-/// traps on the first and does not model the second.
+/// takes both traps after the same preceding output.
 #[test]
 fn gc_arrays_trap() {
     for (name, trap, casts) in [
@@ -654,9 +654,7 @@ fn gc_arrays_trap() {
     ] {
         let entry = wasi(name);
         if name == "gc_array_forge" {
-            // Oracle gap (D75, D81): a forged array handle outside the
-            // library is unsupported.
-            oracle_unsupported(&entry);
+            oracle_traps(&entry, "42\n", "[moss_ref: trap 37]");
         } else {
             // The oracle names this trap only by its code (7, an array
             // index out of bounds): its driver has no message for it.
@@ -677,9 +675,7 @@ fn gc_arrays_trap() {
 #[test]
 fn a_forged_reference_traps_where_it_is_forged() {
     let entry = wasi("gc_forge");
-    // Oracle gap (D75): a forged reference handle outside the library is
-    // unsupported.
-    oracle_unsupported(&entry);
+    oracle_traps(&entry, "3\n4\n", "[moss_ref: trap 37]");
     let module = build_with(&entry, PRELUDE);
     assert_eq!(wasm_text(&module).matches("ref.cast").count(), 2);
     let out = wasmtime_out(&module);
@@ -810,9 +806,7 @@ fn d84_functors_refused() {
 #[test]
 fn ref_over_an_arena() {
     let entry = wasi("arena_ref");
-    // Oracle gap (D75): `Ref(p)` from a bare handle outside the library is
-    // unsupported.
-    oracle_unsupported(&entry);
+    assert_eq!(oracle_run(&entry, &[]), "29\n42\n".repeat(2));
     let module = build_with(&entry, PRELUDE);
     let text = wasm_text(&module);
     assert!(text.contains("struct.new"));
@@ -1272,8 +1266,8 @@ fn dual_numbers_by_rebinding_float() {
     let entry = wasi("perturbation");
     oracle_says(
         &entry,
-        "argument `rhs` of `.add` is `Dual[Base=Dual[Base=Float]]`, \
-         expected `Dual[Base=Float]`",
+        "argument `rhs` of `.add` is `Dual[Scalar=Dual[Scalar=Float]]`, \
+         expected `Dual[Scalar=Float]`",
     );
     let out = report(&entry, PRELUDE);
     assert!(out.starts_with(&format!("?S {entry} nested\n")), "{out}");
@@ -1335,15 +1329,15 @@ fn a_capture_is_laid_out_where_it_was_captured() {
 
 /// D55: a functor with binds must bind each item of its result itself, or
 /// apply a functor that provides it — a type bind does not bind a method
-/// the type then resolves to (`bind Base = Int;` for a promised
-/// `Base.add`) — checked at the functor wherever it is applied, in a
+/// the type then resolves to (`bind Scalar = Int;` for a promised
+/// `Scalar.add`) — checked at the functor wherever it is applied, in a
 /// function nothing calls too. The self-hosted compiler reports
 /// `e_partial` (`Z`), named by the item; it used to accept both.
 #[test]
 fn a_functor_binds_everything_it_promises() {
     refused(
         &[
-            ("functor_partial", "functor `Over` does not bind `Base.add`", "!Z {} add\n"),
+            ("functor_partial", "functor `Over` does not bind `Scalar.add`", "!Z {} add\n"),
             ("functor_partial_unreached", "functor `Greeter` does not bind `greeting`", "!Z {} greeting\n"),
         ],
         true,
@@ -1905,4 +1899,47 @@ fn provisions_are_keyed_by_instantiation() {
     let report = report(&wasi("mismatch"), PRELUDE);
     assert!(report.starts_with("?K "), "{report}");
     assert!(report.contains("peek"), "{report}");
+}
+
+/// D70: applying a defined functor does not capture its caller's locals;
+/// a same-name local inside the lambda belongs to the lambda itself.
+#[test]
+fn anonymous_function_in_functor_shadows_caller_local() {
+    let entry = wasi("lambda_functor_shadow");
+    assert_eq!(oracle_run(&entry, &[]), "");
+    assert_eq!(run_moss(&entry, PRELUDE), "");
+}
+
+/// D70: a lambda body may return one member of its declared result union.
+#[test]
+fn anonymous_function_result_can_be_subtype() {
+    let entry = wasi("lambda_result_subtype");
+    assert_eq!(oracle_run(&entry, &[]), "");
+    assert_eq!(run_moss(&entry, PRELUDE), "");
+}
+
+/// A method bind reads bracket arguments in its caller's type context.
+#[test]
+fn method_bind_brackets_read_caller_types() {
+    let entry = wasi("method_bind_caller_brackets");
+    assert_eq!(oracle_run(&entry, &[]), "");
+    assert_eq!(run_moss(&entry, PRELUDE), "");
+}
+
+/// Copying a functor to itself preserves an untouched latent interface;
+/// an inhabited interface still applies with the original fixed reading.
+#[test]
+fn functor_identity_copy_preserves_latent_interfaces() {
+    for name in [
+        "functor_latent_identity_copy",
+        "functor_latent_identity_reexport",
+        "functor_identity_copy_applied",
+    ] {
+        let entry = wasi(name);
+        assert_eq!(oracle_run(&entry, &[]), "", "{name}");
+        assert_eq!(run_moss(&entry, PRELUDE), "", "{name}");
+    }
+    let stale = wasi("functor_identity_copy_stale");
+    rejects_with(&stale, PRELUDE);
+    assert!(oracle_rejects(&stale).contains("fixed"));
 }

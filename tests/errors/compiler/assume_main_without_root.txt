@@ -1,0 +1,6 @@
+!P tests/errors/assume_main_without_root.moss ArrayRef
+!P tests/errors/assume_main_without_root.moss I32
+!P tests/errors/assume_main_without_root.moss StructRef
+!P tests/errors/assume_main_without_root.moss Heap
+!P tests/errors/assume_main_without_root.moss Mutable
+!P tests/errors/assume_main_without_root.moss Arrays

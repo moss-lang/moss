@@ -268,14 +268,14 @@ Variable e : nat.
 Hypothesis HI : LInv b ls.
 Variables (R0 : nat -> list nat) (F0 : string -> nat).
 
-Let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls).
+Let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)).
 Let W := W_read w R0 F0.
 
 Lemma loader_kind : forall x g, nget (ls_syms ls) x = Some g -> A.kind_sym W x = Some (kconv (gs_kind g)).
 Proof. intros x g H. exact (proj1 (proj2 (loader_decl b ls e HI R0 F0 x g H))). Qed.
 
 Lemma ldecl : forall x g, nget (ls_syms ls) x = Some g ->
-  A.w_decl W x = Some (A.Decl (pathi ls e (gs_mod g)) (gs_decl g) (gs_assumes g)) /\ In (gs_mod g) (ls_order ls).
+  A.w_decl W x = Some (A.Decl (pathi b ls e (gs_mod g)) (gs_decl g) (gs_assumes g)) /\ In (gs_mod g) (ls_order ls).
 Proof. intros x g H. destruct (loader_decl b ls e HI R0 F0 x g H) as (D & _ & O). split; [exact D | exact O]. Qed.
 
 Lemma kind_none : forall x, nget (ls_syms ls) x = None -> A.kind_sym W x = None.
@@ -283,7 +283,7 @@ Proof.
   intros x H. unfold A.kind_sym.
   assert (E : A.w_decl W x = match nget (ls_syms ls) x with
                              | Some g => Some (A.Decl (gm_path (get_mod w (gs_mod g))) (gs_decl g) (gs_assumes g))
-                             | None => None end) by exact (fin_decl ls e R0 F0 x).
+                             | None => None end) by exact (fin_decl b ls e R0 F0 x).
   rewrite E, H. reflexivity.
 Qed.
 
@@ -292,7 +292,7 @@ Proof.
   intros x H.
   assert (E : A.w_decl W x = match nget (ls_syms ls) x with
                              | Some g => Some (A.Decl (gm_path (get_mod w (gs_mod g))) (gs_decl g) (gs_assumes g))
-                             | None => None end) by exact (fin_decl ls e R0 F0 x).
+                             | None => None end) by exact (fin_decl b ls e R0 F0 x).
   rewrite E, H. reflexivity.
 Qed.
 
@@ -335,11 +335,11 @@ Qed.
 
 (* resolution in any module: a module the loader did not load resolves
    nothing *)
-Lemma esym_any : forall mi pa s r s', GS ls e s -> Elab.resolve_sym mi pa s = Good (r, s') ->
+Lemma esym_any : forall mi pa s r s', GS b ls e s -> Elab.resolve_sym mi pa s = Good (r, s') ->
   s' = s /\ match r with
-            | Some g => In mi (ls_order ls) /\ A.resolve_sym W (pathi ls e mi) pa = Some (gs_id g) /\
+            | Some g => In mi (ls_order ls) /\ A.resolve_sym W (pathi b ls e mi) pa = Some (gs_id g) /\
                         nget (ls_syms ls) (gs_id g) = Some g
-            | None => In mi (ls_order ls) -> A.resolve_sym W (pathi ls e mi) pa = None
+            | None => In mi (ls_order ls) -> A.resolve_sym W (pathi b ls e mi) pa = None
             end.
 Proof.
   intros mi pa s r s' Hg H. destruct (in_dec Nat.eq_dec mi (ls_order ls)) as [Hmi|Hmi].
@@ -377,7 +377,7 @@ Proof.
   - exact (D2 x l E2 H3).
 Qed.
 
-Lemma FP_GS : forall s s', GS ls e s -> FP s s' -> GS ls e s'.
+Lemma FP_GS : forall s s', GS b ls e s -> FP s s' -> GS b ls e s'.
 Proof. intros s s' [Gw Gk] (A1 & B1 & _). split; [congruence|]. rewrite B1. exact Gk. Qed.
 
 Lemma FP_set : forall s x l g, nget (st_reqs s) x = None -> nget (ls_syms ls) x = Some g ->
@@ -391,11 +391,11 @@ Qed.
 
 (* the nominal heads of t are cached *)
 Definition Pre (c : nmap (list nat)) (mi : nat) (t : aty) : Prop :=
-  In mi (ls_order ls) -> forall h, HeadIn W (pathi ls e mi) t h -> NomW W h -> nget c h <> None.
+  In mi (ls_order ls) -> forall h, HeadIn W (pathi b ls e mi) t h -> NomW W h -> nget c h <> None.
 
 (* every head of t that is no type is cached *)
 Definition HC (c : nmap (list nat)) (mi : nat) (t : aty) : Prop :=
-  forall h, HeadIn W (pathi ls e mi) t h -> A.kind_sym W h <> Some A.DKType -> nget c h <> None.
+  forall h, HeadIn W (pathi b ls e mi) t h -> A.kind_sym W h <> Some A.DKType -> nget c h <> None.
 
 Lemma Pre_ext : forall c c' mi t, Ext c c' -> Pre c mi t -> Pre c' mi t.
 Proof. intros c c' mi t He Hp Hmi h Hh Hn. exact (ext_cached _ _ _ He (Hp Hmi h Hh Hn)). Qed.
@@ -406,18 +406,18 @@ Proof. intros c c' mi t He Hp h Hh Hn. exact (ext_cached _ _ _ He (Hp h Hh Hn)).
 (* What a step of free_type_syms computes: out, and the FreeIn symbols of t
    read against the cache it leaves. *)
 Definition StepOK (step : list nat -> M (list nat)) (mi : nat) (t : aty) : Prop :=
-  forall o s r s', GS ls e s -> Pre (st_reqs s) mi t -> step o s = Good (r, s') ->
+  forall o s r s', GS b ls e s -> Pre (st_reqs s) mi t -> step o s = Good (r, s') ->
   FP s s' /\ incl o r /\
   (In mi (ls_order ls) -> HC (st_reqs s') mi t /\
-     forall y, In y r <-> In y o \/ A.FreeIn W (cv (st_reqs s')) (pathi ls e mi) t y).
+     forall y, In y r <-> In y o \/ A.FreeIn W (cv (st_reqs s')) (pathi b ls e mi) t y).
 
 Lemma fold_fts : forall X (step : list nat -> X -> M (list nat)) (T : X -> aty) mi xs,
   (forall x, In x xs -> StepOK (fun o => step o x) mi (T x)) ->
-  forall out s r s', GS ls e s -> (forall x, In x xs -> Pre (st_reqs s) mi (T x)) ->
+  forall out s r s', GS b ls e s -> (forall x, In x xs -> Pre (st_reqs s) mi (T x)) ->
   mfold step out xs s = Good (r, s') ->
   FP s s' /\ incl out r /\
   (In mi (ls_order ls) -> (forall x, In x xs -> HC (st_reqs s') mi (T x)) /\
-     forall y, In y r <-> In y out \/ exists x, In x xs /\ A.FreeIn W (cv (st_reqs s')) (pathi ls e mi) (T x) y).
+     forall y, In y r <-> In y out \/ exists x, In x xs /\ A.FreeIn W (cv (st_reqs s')) (pathi b ls e mi) (T x) y).
 Proof.
   intros X step T mi xs Hs. induction xs as [|x rest IH]; intros out s r s' Hg Hp H; cbn [mfold] in H.
   - injection H as <- <-. split; [apply FP_refl|]. split; [intros y Hy; exact Hy|]. intros _.
@@ -439,11 +439,11 @@ Proof.
       * intros [Hy|(x' & [<-|Hx'] & Hy)]; [left; left; exact Hy | left; right; exact Hy | right; exists x'; split; assumption].
 Qed.
 
-Lemma bound_spec : forall mi (bs : list (path * spec)) s bl s', GS ls e s ->
+Lemma bound_spec : forall mi (bs : list (path * spec)) s bl s', GS b ls e s ->
   mmap (fun b0 => let! l := Elab.resolve_sym mi (fst b0) in
                   ret (match l with Some x => [gs_id x] | None => [] end)) bs s = Good (bl, s') ->
   s' = s /\ (In mi (ls_order ls) -> forall y, In y (List.concat bl) <->
-               exists b0, In b0 bs /\ A.resolve_sym W (pathi ls e mi) (fst b0) = Some y).
+               exists b0, In b0 bs /\ A.resolve_sym W (pathi b ls e mi) (fst b0) = Some y).
 Proof.
   intros mi bs. induction bs as [|b0 rest IH]; intros s bl s' Hg H; cbn [mmap] in H.
   - injection H as <- <-. split; [reflexivity|]. intros _ y. cbn. split; [intros []|intros (b0 & [] & _)].
@@ -461,7 +461,7 @@ Proof.
 Qed.
 
 (* type_requirements of a head: cached, or (no tag or alias) computed now *)
-Lemma tr_spec : forall fuel g s rq s', GS ls e s -> nget (ls_syms ls) (gs_id g) = Some g ->
+Lemma tr_spec : forall fuel g s rq s', GS b ls e s -> nget (ls_syms ls) (gs_id g) = Some g ->
   (nominal_k (gs_kind g) = true -> nget (st_reqs s) (gs_id g) <> None) ->
   type_requirements fuel (gs_id g) s = Good (rq, s') ->
   FP s s' /\ nget (st_reqs s') (gs_id g) = Some rq.
@@ -550,16 +550,16 @@ Proof.
     destruct (R3 Hmi) as [HC3 E3].
     (* the brackets, as FreeIn reads them *)
     assert (Hbr : forall c, Ext (st_reqs s3) c -> forall y,
-              (exists x, In x (opt_default [] a) /\ A.FreeIn W (cv (st_reqs s3)) (pathi ls e mi) (Tb x) y) <->
+              (exists x, In x (opt_default [] a) /\ A.FreeIn W (cv (st_reqs s3)) (pathi b ls e mi) (Tb x) y) <->
               (exists bpath sp d sa, In (bpath, Spec (Some sp) d sa) (opt_default [] a) /\
-                                     A.FreeIn W (cv c) (pathi ls e mi) (ATRef sp sa) y)).
+                                     A.FreeIn W (cv c) (pathi b ls e mi) (ATRef sp sa) y)).
     { intros c Hc y. split.
       - intros ([bp [[sp|] d sa]] & Hx & Hy); [|inversion Hy].
         exists bp, sp, d, sa. split; [exact Hx|]. exact (proj1 (FreeIn_stable W _ _ _ _ (HC3 _ Hx) Hc y) Hy).
       - intros (bp & sp & d & sa & Hx & Hy). exists (bp, Spec (Some sp) d sa). split; [exact Hx|].
         exact (proj2 (FreeIn_stable W _ _ _ _ (HC3 _ Hx) Hc y) Hy). }
     assert (Hbound : forall y, In y (List.concat bl) <-> exists b0, In b0 (match a with Some bs => bs | None => [] end) /\
-                                                     A.resolve_sym W (pathi ls e mi) (fst b0) = Some y)
+                                                     A.resolve_sym W (pathi b ls e mi) (fst b0) = Some y)
       by exact Hbl.
     destruct (kind_eqb (gs_kind g) KType) eqn:Kt.
     + (* a type *)
@@ -630,20 +630,20 @@ Proof.
 Qed.
 
 (* mentioned_nominals finds every tag or alias FreeIn can read *)
-Lemma mn_spec : forall fuel t mi s l s', GS ls e s -> mentioned_nominals fuel t mi s = Good (l, s') ->
-  s' = s /\ (In mi (ls_order ls) -> forall h, HeadIn W (pathi ls e mi) t h -> NomW W h -> In h l).
+Lemma mn_spec : forall fuel t mi s l s', GS b ls e s -> mentioned_nominals fuel t mi s = Good (l, s') ->
+  s' = s /\ (In mi (ls_order ls) -> forall h, HeadIn W (pathi b ls e mi) t h -> NomW W h -> In h l).
 Proof.
   induction fuel as [|f IH]; intros t mi s l s' Hg H; [discriminate|]. cbn [mentioned_nominals] in H.
   destruct t as [| | |fs|ms|pa a].
   1-3: injection H as <- <-; split; [reflexivity | intros _ h Hh; inversion Hh].
   - apply bind_inv in H as (lss & s1 & H1 & H). injection H as <- <-.
-    destruct (mmap_reader _ _ _ (fun p l => In mi (ls_order ls) -> forall h, HeadIn W (pathi ls e mi) (snd p) h -> NomW W h -> In h l)
+    destruct (mmap_reader _ _ _ (fun p l => In mi (ls_order ls) -> forall h, HeadIn W (pathi b ls e mi) (snd p) h -> NomW W h -> In h l)
                 fs s lss s1 (fun x _ y s2 H2 => IH (snd x) mi s y s2 Hg H2) H1) as [-> Hf].
     split; [reflexivity|]. intros Hmi h Hh Hn. inversion Hh as [fs' n t h' Hin Hh'| | |]; subst.
     destruct (forall2_in_l _ _ _ _ _ Hf (n, t) Hin) as (l0 & Hl0 & P0).
     apply in_concat. exists l0. split; [exact Hl0 | exact (P0 Hmi h Hh' Hn)].
   - apply bind_inv in H as (lss & s1 & H1 & H). injection H as <- <-.
-    destruct (mmap_reader _ _ _ (fun m l => In mi (ls_order ls) -> forall h, HeadIn W (pathi ls e mi) m h -> NomW W h -> In h l)
+    destruct (mmap_reader _ _ _ (fun m l => In mi (ls_order ls) -> forall h, HeadIn W (pathi b ls e mi) m h -> NomW W h -> In h l)
                 ms s lss s1 (fun x _ y s2 H2 => IH x mi s y s2 Hg H2) H1) as [-> Hf].
     split; [reflexivity|]. intros Hmi h Hh Hn. inversion Hh as [|ms' t h' Hin Hh'| |]; subst.
     destruct (forall2_in_l _ _ _ _ _ Hf t Hin) as (l0 & Hl0 & P0).
@@ -653,7 +653,7 @@ Proof.
     apply bind_inv in H as (more & s2 & H2 & H). injection H as <- <-.
     apply (mmap_reader _ _ _ (fun b0 l => match snd b0 with
                                           | Spec (Some sp) _ sa => In mi (ls_order ls) ->
-                                              forall h, HeadIn W (pathi ls e mi) (ATRef sp sa) h -> NomW W h -> In h l
+                                              forall h, HeadIn W (pathi b ls e mi) (ATRef sp sa) h -> NomW W h -> In h l
                                           | _ => True end)) in H2 as [-> Hm].
     2: { intros [bp [[sp|] d sa]] _ y s3 H3; [exact (IH _ mi s y s3 Hg H3) | injection H3 as <- <-; split; [reflexivity | exact I]]. }
     split; [reflexivity|]. intros Hmi h Hh Hn. apply in_or_app.
@@ -675,7 +675,7 @@ Definition Ment (s : st) (x : nat) (l : list nat) : Prop :=
 
 (* the group is uncached, and closed: what its members mention is in it or
    cached *)
-Lemma collect_spec : forall n stack seen s G s', GS ls e s ->
+Lemma collect_spec : forall n stack seen s G s', GS b ls e s ->
   collect_fn n stack seen s = Good (G, s') ->
   (forall x, In x seen -> nget (st_reqs s) x = None /\ exists l, Ment s x l /\
      forall y, In y l -> In y seen \/ In y stack \/ nget (st_reqs s) y <> None) ->
@@ -738,14 +738,14 @@ Proof.
     + intros x' [<-|Hx']; [|exact (C2 x' Hx')]. exists y0. split; [exact P0 | apply I2, Y0].
 Qed.
 
-Lemma listed_spec : forall f g s l s', GS ls e s -> listed_params f g s = Good (l, s') ->
+Lemma listed_spec : forall f g s l s', GS b ls e s -> listed_params f g s = Good (l, s') ->
   s' = s /\ (nget (ls_syms ls) (gs_id g) = Some g -> LOK (gs_id g) l).
 Proof.
   intros f g s l s' Hg H.
   assert (E : listed_params f g = listed_params 0 g) by (destruct f; reflexivity).
   rewrite E in H. cbn [listed_params] in H.
   assert (Hdecl : nget (ls_syms ls) (gs_id g) = Some g -> forall d, A.w_decl W (gs_id g) = Some d ->
-            d = A.Decl (pathi ls e (gs_mod g)) (gs_decl g) (gs_assumes g) /\ In (gs_mod g) (ls_order ls)).
+            d = A.Decl (pathi b ls e (gs_mod g)) (gs_decl g) (gs_assumes g) /\ In (gs_mod g) (ls_order ls)).
   { intros Hgl d Hd. destruct (ldecl _ g Hgl) as (D & Og).
     rewrite Hd in D. injection D as ->. split; [reflexivity | exact Og]. }
   destruct (gs_decl g) as [| | |tn [|n1 names] t| | | | |] eqn:Dg.
@@ -753,7 +753,7 @@ Proof.
             destruct (Hdecl Hgl d Hd) as [-> _]; cbn [A.d_ast] in Hb; try rewrite Dg in Hb; cbn in Hb;
             first [discriminate Hb | injection Hb as <- <-; split; [intros ? [] | intros ? []]]).
   apply bind_inv in H as (nesting & s1 & H1 & H). pose proof (assume_type_syms_reader _ _ _ _ H1) as ->.
-  set (P := fun n y => A.resolve_sym W (pathi ls e (gs_mod g)) [n] = Some y /\ In y nesting).
+  set (P := fun n y => A.resolve_sym W (pathi b ls e (gs_mod g)) [n] = Some y /\ In y nesting).
   apply (mfold_names _ _ P) in H as (-> & _ & S & C).
   - split; [reflexivity|]. intros Hgl d ps t' Hd Hb. destruct (Hdecl Hgl d Hd) as [-> _].
     cbn [A.d_ast A.d_mod] in Hb |- *. try rewrite Dg in Hb. cbn in Hb. injection Hb as <- <-.
@@ -786,7 +786,7 @@ Proof.
   intros [E|H]; [injection E as -> _; contradiction | exact (IH H)].
 Qed.
 
-Lemma listed_all : forall f G s ll s', GS ls e s ->
+Lemma listed_all : forall f G s ll s', GS b ls e s ->
   mmap (fun x => let! g := sym x in let! l := listed_params f g in ret (x, l)) G s = Good (ll, s') ->
   s' = s /\ (forall x l, In (x, l) ll -> LOK x l) /\ (forall x, In x G -> exists l, nassoc x ll = Some l).
 Proof.
@@ -847,7 +847,7 @@ Proof.
 Qed.
 
 Record K (s0 : st) (G : list nat) (s : st) : Prop := {
-  k_gs : GS ls e s;
+  k_gs : GS b ls e s;
   k_w : st_w s = st_w s0;
   k_syms : st_syms s = st_syms s0;
   k_ext : Ext (st_reqs s0) (st_reqs s);
@@ -939,12 +939,12 @@ Proof.
     rewrite (Gk x gx Hgxl) in Hgx. injection Hgx as <-. split; assumption. }
   assert (Hf : FP s s2 /\ incl (opt_default [] (nassoc x ll)) found /\
      (NomW W x -> exists t, decl_ty (gs_decl g) = Some t /\ In (gs_mod g) (ls_order ls) /\ HC (st_reqs s2) (gs_mod g) t /\
-        forall y, In y found <-> In y (opt_default [] (nassoc x ll)) \/ A.FreeIn W (cv (st_reqs s2)) (pathi ls e (gs_mod g)) t y)).
+        forall y, In y found <-> In y (opt_default [] (nassoc x ll)) \/ A.FreeIn W (cv (st_reqs s2)) (pathi b ls e (gs_mod g)) t y)).
   { destruct (decl_ty (gs_decl g)) as [t|] eqn:Dt.
     - assert (Hp : Pre (st_reqs s) (gs_mod g) t).
       { intros Hmi h Hh Hn. destruct (gp_closed _ _ _ Hgp x Hx) as (l & (g0 & Hg0 & Hm) & Hl).
         rewrite <- (k_syms _ _ _ Hk), Hgx in Hg0. injection Hg0 as <-. rewrite Dt in Hm.
-        assert (GS0 : GS ls e s0).
+        assert (GS0 : GS b ls e s0).
         { destruct (k_gs _ _ _ Hk) as [Gw Gk]. split; [rewrite <- (k_w _ _ _ Hk); exact Gw | rewrite <- (k_syms _ _ _ Hk); exact Gk]. }
         destruct (mn_spec _ t (gs_mod g) s0 l s0 GS0 Hm) as [_ Hin]. pose proof (Hin Hmi h Hh Hn) as Hhl.
         destruct (Hl h Hhl) as [HG|Hc0].
@@ -962,9 +962,9 @@ Proof.
   assert (C2 : Cov G s2).
   { apply (Cov_grow G s s2); [exact (proj1 (proj2 F2)) | intros y; apply ext_cached, (proj1 (proj2 (proj2 F2))) | exact Hc]. }
   (* the tag's or alias's body and listed parameters *)
-  assert (Hbody : NomW W x -> exists ps t, A.w_decl W x = Some (A.Decl (pathi ls e (gs_mod g)) (gs_decl g) (gs_assumes g)) /\
+  assert (Hbody : NomW W x -> exists ps t, A.w_decl W x = Some (A.Decl (pathi b ls e (gs_mod g)) (gs_decl g) (gs_assumes g)) /\
             A.nominal_body (gs_decl g) = Some (ps, t) /\ In (gs_mod g) (ls_order ls) /\ HC (st_reqs s2) (gs_mod g) t /\
-            (forall y, In y found <-> In y (opt_default [] (nassoc x ll)) \/ A.FreeIn W (cv (st_reqs s2)) (pathi ls e (gs_mod g)) t y) /\
+            (forall y, In y found <-> In y (opt_default [] (nassoc x ll)) \/ A.FreeIn W (cv (st_reqs s2)) (pathi b ls e (gs_mod g)) t y) /\
             LOK x (opt_default [] (nassoc x ll))).
   { intro Hn. destruct (R2 Hn) as (t & Dt & Og & HC2 & E2). destruct (Hnx Hn) as [Hgxl Hkx].
     destruct (nominal_decl x g Hgxl Hkx) as (ps & t' & Hb & Dt'). rewrite Dt in Dt'. injection Dt' as <-.
@@ -1042,7 +1042,7 @@ Proof.
 Qed.
 
 (* solve_requirements keeps the cache closed and least *)
-Lemma solve_rel : forall f root s u s', GS ls e s -> RC W (st_reqs s) -> RL W (st_reqs s) ->
+Lemma solve_rel : forall f root s u s', GS b ls e s -> RC W (st_reqs s) -> RL W (st_reqs s) ->
   solve_requirements (S f) root s = Good (u, s') -> RC W (st_reqs s') /\ RL W (st_reqs s').
 Proof.
   intros f root s u s' Hg Hrc Hrl H. cbn [solve_requirements] in H.
@@ -1088,7 +1088,7 @@ End Solve.
 (* ======================================================================== *)
 
 Lemma load_world_inv : forall b w, load_world b = Good w ->
-  exists ls e, LInv b ls /\ w = Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls).
+  exists ls e, LInv b ls /\ w = Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)).
 Proof.
   intros b w H. unfold load_world in H. apply rbind_good in H as ([e ls] & Hl & H). injection H as <-.
   destruct (load_spec b _ _ _ _ _ _ Hl (linv_init b)) as (L & _). exists ls, e. split; [exact L | reflexivity].

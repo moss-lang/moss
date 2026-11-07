@@ -1,0 +1,15 @@
+type T;
+tag Unit;
+tag Other;
+assume T { fn offered(): T; }
+functor Inner[]: T -> offered;
+functor Provider: T, offered -> offered { bind offered = offered; }
+fn main() {
+ bind T = Unit;
+ bind offered = () => Unit;
+ bind Inner = Provider;
+ bind T = Other;
+ bind Inner = Inner;
+ bind Inner;
+ match offered() { Unit => () };
+}

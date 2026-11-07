@@ -1,0 +1,7 @@
+# A type alias denotes its underlying receiver in context method items.
+tag Item;
+type Alias = Item;
+fn .touch();
+context K = Alias.touch;
+assume K { fn unused() {} }
+fn main() {}

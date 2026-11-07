@@ -1,0 +1,45 @@
+import "../../src/boot.moss" as boot;
+import "../../src/lower.moss" as lower;
+import "../../lib/wasirawstd.moss" use WasiRawStd;
+import "../../lib/base.moss" use Base;
+
+assume Std {
+  assume boot::Compiler {
+    fn check(env: Int, kind: Int, recv: Int, sym: Int) {
+      if lower::env_find(env, kind, recv, sym) != lower::env_find_uncached(env, kind, recv, sym) {
+        print("bad lookup\n");
+      }
+    }
+  }
+
+  fn probe() {
+    bind boot::Boot;
+    let empty = lower::env_empty();
+    check(empty, 1, 0, 7);
+    let outer = lower::env_push(empty, 1, 0, 7, 101, 0);
+    check(outer, 1, 0, 7);
+    let inner = lower::env_push(outer, 1, 0, 7, 202, 0);
+    if lower::env_find(inner, 1, 0, 7) != inner { print("bad shadow\n"); }
+    if lower::env_find(outer, 1, 0, 7) != outer { print("bad ancestor\n"); }
+    check(empty, 1, 0, 7);
+    let sibling = lower::env_push(outer, 2, 3, 7, 303, 0);
+    var head = inner;
+    var i = 0;
+    while i < 128 {
+      head = lower::env_push(head, i % 3, i % 5, i % 31, i, 0);
+      check(head, i % 3, i % 5, i % 31);
+      check(head, i % 3, i % 5, (i % 31) + 65536);
+      check(head, (i + 1) % 3, (i + 1) % 5, i % 31);
+      check(outer, 1, 0, 7);
+      check(inner, 1, 0, 7);
+      check(sibling, 2, 3, 7);
+      check(empty, 1, 0, 7);
+      i = i + 1;
+    }
+    print("ok\n");
+  }
+}
+
+assume Base {
+  fn main() { bind WasiRawStd; probe(); }
+}

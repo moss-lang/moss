@@ -1,0 +1,57 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D43, Audit.v note 59: branches join on their types as the merges in
+# force read them. `B` and `C` are merged (as in merge.moss), so an `if`
+# whose branches are a `B` and a `C` has one type even without an expected
+# type, and so does a `match` whose arms are. Prints `bcbc`.
+
+type Foo;
+type A;
+type B;
+type C;
+tag Yes;
+tag No;
+
+fn .gimme(): Foo;
+
+context Ctx1 = A, B, A.gimme[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C];
+context Ctx3 = Ctx1, Ctx2;
+
+assume Std, Ctx3 {
+  fn pick(k: Bool, b: B, c: C): B {
+    let r = if k { b } else { c };
+    r
+  }
+  fn choose(k: Yes | No, b: B, c: C): C {
+    let r = match k { Yes => c, No => b };
+    r
+  }
+}
+
+assume Std {
+  fn giveq(): Char { char::q }
+
+  fn demo() {
+    bind Foo = Char;
+    bind A = Char;
+    bind B = Char;
+    bind C = Char;
+    bind A.gimme = giveq;
+    putchar(pick(true, char::b, char::c));
+    putchar(pick(false, char::b, char::c));
+    putchar(choose(No, char::b, char::c));
+    putchar(choose(Yes, char::b, char::c));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

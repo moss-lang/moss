@@ -18,7 +18,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit CoreMoss XTyping XEnv XHeap HTrie.
+From NM Require Import Audit CoreMoss XTyping XEnv XHeap HTrie XCastTyping XRuntimeEnv XRuntimeCall PayloadInst PayloadInstCore XProvision XProvisionBind ReifyEntries ReifyContracts ReifyMaps ReifyUninhabited.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -68,16 +68,26 @@ Local Notation xhas := (xhas Sg Rp P Fb).
 Lemma WF : wf_gsig Sg.
 Proof. exact (xwf_decls WFX). Qed.
 
+Lemma xcast_ordinary : forall d n th w, Rp n = None ->
+ xcast P d n th w = XOk (XVTag n w).
+Proof.
+ intros d n th w Hr; unfold xcast.
+ destruct (lookup_cast n (xp_cast P)) as [spec|] eqn:E; [|reflexivity].
+ pose proof (@xwf_cast Sg Rp P Fb WFX n spec E) as Hrep.
+ rewrite Hr in Hrep; discriminate.
+Qed.
+
 (* ===================== 1. At a fixed store typing ======================== *)
 
 (* Everything up to the cases reads values at one store typing Hs. *)
 Section Fixed.
 Variable Hst : sty.
-Local Notation xvt := (XTyping.xvt Sg Rp Hst).
+Local Notation xvt := (XTyping.xvt Sg Rp P Hst).
 Local Notation xdentry_agree := (XEnv.xdentry_agree Sg Rp P Fb Hst).
 Local Notation xdenv_agree := (XEnv.xdenv_agree Sg Rp P Fb Hst).
 Local Notation xdenv_strong := (XEnv.xdenv_strong Sg Rp P Fb Hst).
-Local Notation venv_ok := (XEnv.venv_ok Sg Rp Hst).
+Local Notation xdenv_values := (XEnv.xdenv_values Sg Rp P Fb Hst).
+Local Notation venv_ok := (XEnv.venv_ok Sg Rp P Hst).
 
 (* What a run may end in, read at the context it started in. *)
 Definition xsafe0 (g : subst) (Phi : ctx) (G : tenv) (R : option ty) (L : bool)
@@ -254,7 +264,8 @@ Proof.
   intros s tau t H. destruct t; simpl in *;
     try (destruct H as [n [th [-> Hn]]]; exists n; eexists; split; [reflexivity | exact Hn]).
   - subst. reflexivity.
-  - subst. reflexivity.
+  - destruct H as [Hnz ->]; split; [exact Hnz|].
+    unfold bool_ty; destruct (Nat.eqb (xp_bool P) 0); reflexivity.
   - destruct H as [n [th [D [m [thm [-> [Hn [Hg Hm]]]]]]]].
     exists n, (map_snd (app_subst s) th), D, m, thm. auto.
 Qed.
@@ -266,8 +277,17 @@ Lemma xvt_union_inv : forall w ms, xvt w (TUnion ms) -> exists t, In t ms /\ xvt
 Proof. intros w ms H. inversion H; subst. eauto. Qed.
 
 Lemma xvt_tag_inv : forall w n th, xvt w (TNom n th) -> Rp n = None -> g_tag Sg n <> None ->
-  exists D taup w', w = XVTag n w' /\ g_tag Sg n = Some (D, taup) /\ xvt w' (app_subst th taup).
+  exists D taup w', w = XVTag n w' /\ g_tag Sg n = Some (D, taup) /\ xvt w' (ordinary_payload P th taup).
 Proof. intros w n th H Hn Hg. inversion H; subst; try congruence. eauto 6. Qed.
+
+Lemma xvt_tagged_shape : forall w n th,
+ xvt w (TNom n th) ->
+ (Rp n = None \/ exists (k : bool) x, Rp n = Some (if k then RArr x else RRef x)) ->
+ g_tag Sg n <> None -> exists pay, w = XVTag n pay.
+Proof.
+ intros w n th Hw [Hr|[k [x Hr]]] Hg; inversion Hw; subst; try congruence;
+ try (destruct k; congruence); eauto.
+Qed.
 
 Lemma xvt_rec_inv : forall w fts, xvt w (TNom rec_nom fts) ->
   Rp rec_nom = None -> g_tag Sg rec_nom = None ->
@@ -280,16 +300,36 @@ Lemma bool_value : forall w,
   w = XVTag (xp_bool P) (XVTag (xp_true P) XVUnit)
   \/ w = XVTag (xp_bool P) (XVTag (xp_false P) XVUnit).
 Proof.
-  intros w [Hb [Ht [Hf [[Db Hgb] [[Dt Hgt] [Df Hgf]]]]]] H. unfold bool_ty in H.
+  intros w Bok H. unfold bool_ty in H.
+  destruct (Nat.eqb (xp_bool P) 0) eqn:Ezero.
+  { destruct (xvt_union_inv H) as [t [Hin _]]; contradiction. }
+  destruct Bok as [[Ez _]|[Hb [Ht [Hf [[Db [ms [Hgb [Hmembers [Htrue Hfalse]]]]] [[Dt Hgt] [Df Hgf]]]]]]].
+  { rewrite Ez, Nat.eqb_refl in Ezero; discriminate. }
   destruct (xvt_tag_inv H Hb ltac:(rewrite Hgb; discriminate)) as [D [taup [w' [-> [Hg Hw']]]]].
-  rewrite Hgb in Hg. injection Hg as <- <-. simpl in Hw'.
+  rewrite Hgb in Hg. injection Hg as <- <-.
+  assert (Epayload : ordinary_payload P [] (TUnion ms) = TUnion ms).
+  { unfold ordinary_payload. destruct (xp_immutable P); [|apply app_subst_nil].
+    cbn [payload_inst]. unfold payload_join.
+    assert (Emap : map (payload_inst []) ms = ms).
+    { rewrite <- (map_id ms) at 2. apply map_ext_in. intros t Hin.
+      apply Hmembers in Hin. destruct Hin as [<-|[<-|[]]]; reflexivity. }
+    rewrite Emap. f_equal. apply payload_flat_atoms_identity.
+    rewrite Forall_forall. intros t Hin inner Eq. apply Hmembers in Hin.
+    destruct Hin as [<-|[<-|[]]]; discriminate. }
+  rewrite Epayload in Hw'.
   destruct (xvt_union_inv Hw') as [t [Hin Ht']].
-  destruct Hin as [<- | [<- | []]].
+  apply Hmembers in Hin. destruct Hin as [<- | [<- | []]].
   - destruct (xvt_tag_inv Ht' Ht ltac:(rewrite Hgt; discriminate)) as [D' [tp [w'' [-> [Hg' Hw'']]]]].
-    rewrite Hgt in Hg'. injection Hg' as <- <-. simpl in Hw''.
+    rewrite Hgt in Hg'. injection Hg' as <- <-.
+    assert (Eunit : ordinary_payload P [] TUnit = TUnit) by
+      (unfold ordinary_payload; destruct (xp_immutable P); reflexivity).
+    rewrite Eunit in Hw''.
     rewrite (xvt_unit_inv Hw''). left. reflexivity.
   - destruct (xvt_tag_inv Ht' Hf ltac:(rewrite Hgf; discriminate)) as [D' [tp [w'' [-> [Hg' Hw'']]]]].
-    rewrite Hgf in Hg'. injection Hg' as <- <-. simpl in Hw''.
+    rewrite Hgf in Hg'. injection Hg' as <- <-.
+    assert (Eunit : ordinary_payload P [] TUnit = TUnit) by
+      (unfold ordinary_payload; destruct (xp_immutable P); reflexivity).
+    rewrite Eunit in Hw''.
     rewrite (xvt_unit_inv Hw''). right. reflexivity.
 Qed.
 
@@ -297,16 +337,22 @@ Lemma pty_xvty : forall tau t w,
   bool_ok Sg Rp P -> pty_ok tau t -> xvt w tau -> xvty P w t.
 Proof.
   intros tau t w Hb Hp Hw. destruct t; simpl in Hp.
-  - destruct Hp as [n [th [-> Hn]]]. inversion Hw; subst; simpl; try exact I; congruence.
-  - destruct Hp as [n [th [-> Hn]]]. inversion Hw; subst; simpl; try exact I; congruence.
-  - destruct Hp as [n [th [-> Hn]]]. inversion Hw; subst; simpl; try exact I; congruence.
-  - destruct Hp as [n [th [-> Hn]]]. inversion Hw; subst; simpl; try exact I; congruence.
+  - destruct Hp as [n [th [-> Hn]]]. inversion Hw; subst; simpl; try exact I; try congruence;
+      match goal with Hgc : _ = Some (if ?k then RArr _ else RRef _) |- _ => destruct k; simpl in *; congruence end.
+  - destruct Hp as [n [th [-> Hn]]]. inversion Hw; subst; simpl; try exact I; try congruence;
+      match goal with Hgc : _ = Some (if ?k then RArr _ else RRef _) |- _ => destruct k; simpl in *; congruence end.
+  - destruct Hp as [n [th [-> Hn]]]. inversion Hw; subst; simpl; try exact I; try congruence;
+      match goal with Hgc : _ = Some (if ?k then RArr _ else RRef _) |- _ => destruct k; simpl in *; congruence end.
+  - destruct Hp as [n [th [-> Hn]]]. inversion Hw; subst; simpl; try exact I; try congruence;
+      match goal with Hgc : _ = Some (if ?k then RArr _ else RRef _) |- _ => destruct k; simpl in *; congruence end.
   - subst. rewrite (xvt_unit_inv Hw). exact I.
-  - subst. destruct (bool_value Hb Hw) as [-> | ->]; simpl; auto.
+  - destruct Hp as [Hnz ->]. destruct (bool_value Hb Hw) as [-> | ->]; simpl; auto.
   - destruct Hp as [n [th [D [m [thm [-> [Hn [Hg Hm]]]]]]]].
     destruct (xvt_tag_inv Hw Hn ltac:(rewrite Hg; discriminate)) as [D' [taup [w' [-> [Hg' Hw']]]]].
-    rewrite Hg in Hg'. injection Hg' as <- <-. simpl in Hw'.
-    inversion Hw'; subst; simpl; try exact I; congruence.
+    rewrite Hg in Hg'. injection Hg' as <- <-.
+    unfold ordinary_payload in Hw'; destruct (xp_immutable P); cbn [payload_inst] in Hw';
+    inversion Hw'; subst; simpl; try exact I; try congruence;
+      match goal with Hgc : _ = Some (if ?k then RArr _ else RRef _) |- _ => destruct k; simpl in *; congruence end.
   - destruct Hp as [n [th [-> [Hn Hg]]]].
     destruct (xvt_tag_inv Hw Hn Hg) as [D' [taup [w' [-> _]]]]. exact I.
 Qed.
@@ -315,20 +361,28 @@ Lemma xvty_pty : forall tau t w,
   bool_ok Sg Rp P -> t <> XTAddr -> t <> XTTag -> pty_ok tau t -> xvty P w t -> xvt w tau.
 Proof.
   intros tau t w Hb Hna Hnt Hp Hw.
-  destruct Hb as [Hb [Ht [Hf [[Db Hgb] [[Dt Hgt] [Df Hgf]]]]]].
   destruct t; simpl in Hp.
   - destruct Hp as [n [th [-> Hn]]]. destruct w; simpl in Hw; try contradiction. constructor; exact Hn.
   - destruct Hp as [n [th [-> Hn]]]. destruct w; simpl in Hw; try contradiction. constructor; exact Hn.
   - destruct Hp as [n [th [-> Hn]]]. destruct w; simpl in Hw; try contradiction. constructor; exact Hn.
   - destruct Hp as [n [th [-> Hn]]]. destruct w; simpl in Hw; try contradiction. constructor; exact Hn.
   - subst. destruct w; simpl in Hw; try contradiction. constructor.
-  - subst. destruct w as [| b w | | | | | |]; simpl in Hw; try contradiction.
-    destruct w as [| t' w | | | | | |]; try contradiction.
+  - destruct Hp as [Hnz ->].
+    destruct Hb as [[Ez _]|[Hb [Ht [Hf [[Db [ms [Hgb [Hmembers [Htrue Hfalse]]]]] [[Dt Hgt] [Df Hgf]]]]]]].
+    { contradiction. }
+    destruct w as [| b w | | | | | | |]; simpl in Hw; try contradiction.
+    destruct w as [| t' w | | | | | | |]; try contradiction.
     destruct w; try contradiction. destruct Hw as [-> Ht'].
-    unfold bool_ty. eapply XvTag; [exact Hb | exact Hgb |]. simpl.
+    unfold bool_ty. assert (Ez : Nat.eqb (xp_bool P) 0 = false) by (apply Nat.eqb_neq; exact Hnz).
+    rewrite Ez. eapply XvTag; [exact Hb | exact Hgb |].
+    rewrite ordinary_payload_nil_shape_identity.
+    2: { constructor; rewrite Forall_forall; intros t Hin; apply Hmembers in Hin;
+      destruct Hin as [<-|[<-|[]]]; try (constructor; constructor); do 2 eexists; reflexivity. }
     destruct Ht' as [-> | ->].
-    + eapply XvInj; [| left; reflexivity]. eapply XvTag; [exact Ht | exact Hgt | constructor].
-    + eapply XvInj; [| right; left; reflexivity]. eapply XvTag; [exact Hf | exact Hgf | constructor].
+    + eapply XvInj; [|exact Htrue]. eapply XvTag; [exact Ht | exact Hgt |].
+      rewrite ordinary_payload_nil_shape_identity; constructor.
+    + eapply XvInj; [|exact Hfalse]. eapply XvTag; [exact Hf | exact Hgf |].
+      rewrite ordinary_payload_nil_shape_identity; constructor.
   - contradiction.
   - contradiction.
 Qed.
@@ -489,7 +543,7 @@ Lemma bindty_world : forall R L Phi G t tau' tau d ge g,
     xdenv_agree g (cA Phi) d ->
     venv_ok g (cA Phi) G ge ->
     ctx_grounded ((t, app_subst g (app_subst (cS Phi) tau')) :: g) (bind_ty t tau' Phi)
-    /\ xdenv_agree ((t, app_subst g (app_subst (cS Phi) tau')) :: g) (cA (bind_ty t tau' Phi)) d
+    /\ xdenv_agree ((t, app_subst g (app_subst (cS Phi) tau')) :: g) (cA (bind_ty t tau' Phi)) (xbind_ty P d t tau')
     /\ venv_ok ((t, app_subst g (app_subst (cS Phi) tau')) :: g) (cA (bind_ty t tau' Phi)) G ge
     /\ forall r, xsafe0 ((t, app_subst g (app_subst (cS Phi) tau')) :: g) (bind_ty t tau' Phi) G R L tau r
                 -> xsafe0 g Phi G R L tau r.
@@ -570,20 +624,22 @@ Proof. intros Phi ms H. inversion H; subst. split; assumption. Qed.
 Lemma wf_tag_inv : forall Phi n th,
   wf_ty Sg Phi (TNom n th) ->
   (exists D taup, g_tag Sg n = Some (D, taup) /\ sat Sg Phi th D)
-  \/ (n = rec_nom /\ g_tag Sg rec_nom = None /\ Forall (fun p => wf_ty Sg Phi (snd p)) th).
-Proof. intros Phi n th H. inversion H; subst; [left | right]; eauto. Qed.
+  \/ g_tag Sg n = None.
+Proof. intros Phi n th H;inversion H;subst;[left|right|right];eauto. Qed.
 
-(* A tag's: not a record's. *)
+(* A payload-bearing nominal: neither a record nor an opaque type head. *)
 Lemma wf_tag_inv' : forall Phi n th, g_tag Sg n <> None ->
   wf_ty Sg Phi (TNom n th) -> exists D taup, g_tag Sg n = Some (D, taup) /\ sat Sg Phi th D.
 Proof.
-  intros Phi n th Hn H. destruct (wf_tag_inv H) as [Hx | [-> [Hg _]]]; [exact Hx | congruence].
+  intros Phi n th Hn H;destruct(wf_tag_inv H)as[Known|Absent];[exact Known|congruence].
 Qed.
 
-Lemma rec_payload_wf : forall Phi fts, g_tag Sg rec_nom = None ->
-  wf_ty Sg Phi (TNom rec_nom fts) -> Forall (fun p => wf_ty Sg Phi (snd p)) fts.
+Lemma rec_payload_scoped : forall Phi fts,
+  incl (ty_frees (TNom rec_nom fts)) (tyreqs (cA Phi)) ->
+  Forall (fun p => incl (ty_frees (snd p)) (tyreqs (cA Phi))) fts.
 Proof.
-  intros Phi fts Hg H. destruct (wf_tag_inv H) as [[D [taup [Hg' _]]] | [_ [_ Hf]]]; [congruence | exact Hf].
+  intros Phi fts Hscope. apply Forall_forall. intros [f tau] Hin t Ht.
+  apply Hscope. cbn. apply in_flat_map. exists (f,tau). auto.
 Qed.
 
 Lemma member_wf : forall Phi ts ms mem,
@@ -591,7 +647,7 @@ Lemma member_wf : forall Phi ts ms mem,
   exists n th, mem = TNom n th /\
   ((exists D taup PhiD, g_tag Sg n = Some (D, taup)
     /\ tele_ctx D = Some PhiD /\ map fst th = tyreqs (cA PhiD))
-   \/ (n = rec_nom /\ g_tag Sg rec_nom = None)).
+   \/ g_tag Sg n = None).
 Proof.
   intros Phi ts ms mem Hwf Hm Hin.
   assert (Hw : wf_ty Sg Phi mem /\ is_nom mem).
@@ -601,9 +657,9 @@ Proof.
       split; [apply Hall | apply Hnom]; exact Hin. }
   destruct Hw as [Hw [n [th ->]]].
   exists n, th. split; [reflexivity|].
-  destruct (wf_tag_inv Hw) as [[D [taup [Hg [PhiD [Htc [Hdom _]]]]]] | [-> [Hg _]]].
+  destruct (wf_tag_inv Hw) as [[D [taup [Hg [PhiD [Htc [Hdom _]]]]]] | Hg].
   - left. exists D, taup, PhiD. auto.
-  - right. auto.
+  - right. exact Hg.
 Qed.
 
 Lemma member_of_value : forall Phi g ts ms w,
@@ -647,13 +703,33 @@ Proof.
     split; [reflexivity | exact (assoc_ty_in _ _ Ha)].
 Qed.
 
+Lemma bind_fields_typed_F : forall (F0 : ty -> ty) fts r fs tys (Fg : ty -> ty),
+  map fst r = map fst fts ->
+  Forall2 (fun ft fw => xvt (snd fw) (F0 (snd ft))) fts r ->
+  Forall2 (fun fx t => assoc_ty (fst fx) fts = Some t) fs tys ->
+  (forall t v, In t (map snd fts) -> xvt v (F0 t) -> xvt v (Fg t)) ->
+  exists bs, bind_fields fs r = Some bs
+  /\ Forall2 (fun p q => fst p = fst q /\ xvt (snd q) (snd p))
+             (combine (map snd fs) (map Fg tys)) bs.
+Proof.
+  intros F0 fts r fs tys Fg Hk Hr Hfs Hconv.
+  induction Hfs as [|[f x] t fs tys Ha Hrest IH]; simpl.
+  - exists []. split; [reflexivity | constructor].
+  - simpl in Ha. destruct (@assoc_typed_F F0 fts r f t Hk Hr Ha) as [v [Hv Hvt]].
+    destruct IH as [bs [Hb Hbs]].
+    rewrite Hv, Hb. eexists. split; [reflexivity|].
+    constructor; [| exact Hbs]. simpl. split; [reflexivity|].
+    apply (Hconv t v); [| exact Hvt]. apply in_map_iff. exists (f, t).
+    split; [reflexivity | exact (assoc_ty_in _ _ Ha)].
+Qed.
+
 (* A typed pattern never fails on a value of the scrutinee's type, and binds
    what it says. *)
 Lemma pat_sound : forall Phi g tau0 p Gb w,
   ctx_grounded g Phi ->
   wf_ty Sg Phi (app_subst (cS Phi) tau0) ->
   (forall ms, members (app_subst (cS Phi) tau0) = Some ms -> NoDup (map member_head ms)) ->
-  pat_ok Sg Rp tau0 (app_subst (cS Phi) tau0) p Gb ->
+  pat_ok Sg Rp P tau0 (app_subst (cS Phi) tau0) p Gb ->
   xvt w (app_subst g (app_subst (cS Phi) tau0)) ->
   match match_pat p w with
   | PMatch bs => Forall2 (fun q b => fst q = fst b /\ xvt (snd b) (app_subst g (snd q))) Gb bs
@@ -664,12 +740,13 @@ Proof.
   intros Phi g tau0 p Gb w Hg Hwf Hnd Hp Hw.
   assert (Hcol : forall tau, app_subst g (app_subst (cS Phi) tau) = app_subst g tau)
     by (destruct Hg as [_ [Hab _]]; exact (absorbs_all Hab)).
-  destruct Hp as [ | x | n thn ms D taup ob Hm Hin Hrp Hg0
-                 | n thn ms D fts fs tys Hm Hin Hrp Hg0 Hfs ]; simpl.
+  destruct Hp as [ | x | n thn ms D taup ob Hm Hin Hrp Hg0 Hpayload
+                 | n thn ms D taup ob xc k0 Hm Hin Hrp Hg0
+                 | n thn ms D fts fs tys Hm Hin Hrp Hg0 Hpayload Hfs ]; simpl.
   - constructor.
   - constructor; [| constructor]. split; [reflexivity|]. simpl. rewrite <- Hcol. exact Hw.
   - destruct (@member_of_value _ _ _ _ _ Hwf Hm Hw) as [n1 [th1 [Hin1 Hw1]]].
-    destruct w as [| n' pay | | | | | |]; try exact I.
+    destruct w as [| n' pay | | | | | | |]; try exact I.
     destruct (Nat.eqb n n') eqn:E; [| exact I]. apply Nat.eqb_eq in E. subst n'.
     assert (Hn1 : n1 = n) by (inversion Hw1; reflexivity). subst n1.
     rewrite (@nodup_heads_same _ _ _ _ (Hnd ms Hm) Hin Hin1) in *.
@@ -678,45 +755,66 @@ Proof.
       rewrite Hg0 in Hg1. injection Hg1 as <- <-.
       destruct (@member_wf _ _ _ _ Hwf Hm Hin1) as [n2 [th2 [E2 Halt]]].
       injection E2 as <- <-.
-      destruct Halt as [[D2 [taup2 [PhiD [Hg2 [Htc Hdom]]]]] | [Er Hr0]];
-        [| rewrite Er in Hg0; congruence].
+      destruct Halt as [[D2 [taup2 [PhiD [Hg2 [Htc Hdom]]]]] | Hr0];
+        [| rewrite Hr0 in Hg0; discriminate].
       rewrite Hg0 in Hg2. injection Hg2 as <- <-.
       destruct (wf_tag_decl WF _ Hg0) as [PhiD' [Wt Hwt]].
       rewrite (wf_tele_ctx Wt) in Htc. injection Htc as <-.
       destruct ob as [x|]; [| constructor].
       constructor; [| constructor]. split; [reflexivity|]. simpl.
-      rewrite <- (@read_member g th1 taup _ Hdom (wf_ty_frees Hwt)). exact Hpay.
+      rewrite ordinary_payload_commutes; [exact Hpay| |exact Hpayload].
+      apply payload_covered_from_frees. intros t Ht.
+      apply subst_chain_aux1. rewrite Hdom. exact (Hwt t Ht).
   - destruct (@member_of_value _ _ _ _ _ Hwf Hm Hw) as [n1 [th1 [Hin1 Hw1]]].
-    destruct w as [| n' pay | | | | | |]; try exact I.
+    destruct w as [| n' pay | | | | | | |]; try exact I.
+    destruct (Nat.eqb n n') eqn:E; [| exact I]. apply Nat.eqb_eq in E. subst n'.
+    assert (Hn1 : n1 = n) by (inversion Hw1; reflexivity). subst n1.
+    rewrite (@nodup_heads_same _ _ _ _ (Hnd ms Hm) Hin Hin1) in *.
+    + pose proof (@cast_tag_payload Sg Rp P Hst n (map_snd (app_subst g) th1) pay D taup k0 xc Hrp Hg0 Hw1) as Hpay.
+      destruct (@member_wf _ _ _ _ Hwf Hm Hin1) as [n2 [th2 [E2 Halt]]].
+      injection E2 as <- <-.
+      destruct Halt as [[D2 [taup2 [PhiD [Hg2 [Htc Hdom]]]]] | Hr0];
+        [| rewrite Hr0 in Hg0; discriminate].
+      rewrite Hg0 in Hg2. injection Hg2 as <- <-.
+      destruct (wf_tag_decl WF _ Hg0) as [PhiD' [Wt Hwt]].
+      rewrite (wf_tele_ctx Wt) in Htc. injection Htc as <-.
+      destruct ob as [x|]; [| constructor].
+      constructor; [| constructor]. split; [reflexivity|]. simpl.
+      rewrite <- (@read_member g th1 taup _ Hdom Hwt). exact Hpay.
+  - destruct (@member_of_value _ _ _ _ _ Hwf Hm Hw) as [n1 [th1 [Hin1 Hw1]]].
+    destruct w as [| n' pay | | | | | | |]; try exact I.
     destruct (Nat.eqb n n') eqn:E; [| exact I]. apply Nat.eqb_eq in E. subst n'.
     assert (Hn1 : n1 = n) by (inversion Hw1; reflexivity). subst n1.
     rewrite (@nodup_heads_same _ _ _ _ (Hnd ms Hm) Hin Hin1) in *.
     destruct (xvt_tag_inv Hw1 Hrp ltac:(rewrite Hg0; discriminate)) as [D1 [taup1 [pay' [E1 [Hg1 Hpay]]]]].
     injection E1; intros; subst pay'.
     rewrite Hg0 in Hg1. injection Hg1 as <- <-.
-    rewrite app_subst_nom in Hpay.
+    rewrite ordinary_payload_nom in Hpay.
     destruct (@xwf_rec Sg Rp P Fb WFX) as [Hrr Hgr].
     destruct (xvt_rec_inv Hpay Hrr Hgr) as [r [-> [Hk Hr]]].
     assert (Hk' : map fst r = map fst fts) by (rewrite Hk; exact (map_snd_fst _ _)).
     clear Hk; rename Hk' into Hk. apply Forall2_map_snd_l in Hr.
     destruct (@member_wf _ _ _ _ Hwf Hm Hin1) as [n2 [th2 [E2 Halt]]].
     injection E2 as <- <-.
-    destruct Halt as [[D2 [taup2 [PhiD [Hg2 [Htc Hdom]]]]] | [Er Hr0]];
-      [| rewrite Er in Hg0; congruence].
+    destruct Halt as [[D2 [taup2 [PhiD [Hg2 [Htc Hdom]]]]] | Hr0];
+      [| rewrite Hr0 in Hg0; discriminate].
     rewrite Hg0 in Hg2. injection Hg2 as <- <-.
     destruct (wf_tag_decl WF _ Hg0) as [PhiD' [Wt Hwt]].
-    pose proof (rec_payload_wf Hgr Hwt) as Hfts.
+    pose proof (rec_payload_scoped _ _ Hwt) as Hfts.
     rewrite (wf_tele_ctx Wt) in Htc. injection Htc as <-.
-    destruct (@bind_fields_typed (map_snd (app_subst g) th1) fts r fs tys
-                (fun t => app_subst g (app_subst th1 t)) Hk Hr Hfs) as [bs [Hb Hbs]].
-    { intros t v Ht Hv. rewrite <- (@read_member g th1 t _ Hdom); [exact Hv|].
-      apply in_map_iff in Ht. destruct Ht as [[f t'] [<- Hin']].
-      rewrite Forall_forall in Hfts. exact (wf_ty_frees (Hfts _ Hin')). }
+    destruct (@bind_fields_typed_F (ordinary_payload P (map_snd (app_subst g) th1)) fts r fs tys
+                (fun t => app_subst g (ordinary_payload P th1 t)) Hk Hr Hfs) as [bs [Hb Hbs]].
+    { intros t v Ht Hv. apply in_map_iff in Ht.
+      destruct Ht as [[f t'] [<- Hin']].
+      rewrite ordinary_payload_commutes; [exact Hv| |].
+      - apply payload_covered_from_frees. intros u Hu. apply subst_chain_aux1.
+        rewrite Hdom. rewrite Forall_forall in Hfts. exact (Hfts _ Hin' u Hu).
+      - eapply ordinary_payload_nom_parameter_ok; eassumption. }
     destruct fs as [|fx fs'].
     + simpl. inversion Hfs; subst. constructor.
     + rewrite Hb. rewrite app_nil_r.
-      replace (combine (map snd (fx :: fs')) (map (app_subst th1) tys))
-        with (map (fun q => (fst q, app_subst th1 (snd q))) (combine (map snd (fx :: fs')) tys)).
+      replace (combine (map snd (fx :: fs')) (map (ordinary_payload P th1) tys))
+        with (map (fun q => (fst q, ordinary_payload P th1 (snd q))) (combine (map snd (fx :: fs')) tys)).
       * clear -Hbs. revert Hbs. generalize (fx :: fs'). intros l.
         revert tys bs. induction l as [|a l IH]; intros tys bs H; simpl in *.
         -- inversion H; subst. constructor.
@@ -742,7 +840,7 @@ Proof.
     injection E as <- <-.
     exists (XPHead n1 ob fs, eb). split; [exact Ha|]. simpl.
     assert (Hshape : exists pay, w = XVTag n1 pay).
-    { destruct (xvt_tag_inv Hw1 Hrp Hgn) as [D [taup [pay [-> _]]]]. eauto. }
+    { eapply xvt_tagged_shape; eauto. }
     destruct Hshape as [pay ->]. rewrite Nat.eqb_refl.
     destruct fs; [discriminate|]. destruct pay; try discriminate.
     destruct (bind_fields _ _); discriminate.
@@ -753,7 +851,7 @@ Lemma select_typed : forall Phi g tau0 G R L tau arms Gbs w,
   wf_ty Sg Phi (app_subst (cS Phi) tau0) ->
   (forall ms, members (app_subst (cS Phi) tau0) = Some ms -> NoDup (map member_head ms)) ->
   (exists a, In a arms /\ match_pat (fst a) w <> PNo) ->
-  Forall2 (fun a Gb => pat_ok Sg Rp tau0 (app_subst (cS Phi) tau0) (fst a) Gb) arms Gbs ->
+  Forall2 (fun a Gb => pat_ok Sg Rp P tau0 (app_subst (cS Phi) tau0) (fst a) Gb) arms Gbs ->
   Forall (fun Gb => Forall (fun p => incl (ty_frees (snd p)) (tyreqs (cA Phi))) Gb) Gbs ->
   Forall2 (fun a Gb => xhas R L Phi (Gb ++ G) (snd a) tau) arms Gbs ->
   xvt w (app_subst g (app_subst (cS Phi) tau0)) ->
@@ -818,7 +916,7 @@ Lemma xlink_agree : forall Phi Din PhiIn sm d g,
     sat0 Sg Phi Din ->
     smap_ok Phi (id_app Din) sm Din ->
     ctx_grounded g Phi ->
-    xdenv_agree g (cA Phi) d ->
+    xdenv_values g (cA Phi) d ->
     exists d' g', xcompose d sm = Some d'
     /\ ctx_grounded g' PhiIn
     /\ xdenv_strong g' (cA PhiIn) d'
@@ -840,7 +938,7 @@ Proof.
   assert (Hsat : sat Sg Phi (id_app (cA PhiIn)) Din)
     by (exists PhiIn; split; [exact Htc | exact Hsat']).
   pose proof (@safety_case_bindmth_aux8 Phi Din (cA PhiIn) sm Din Hsm) as Hsm2.
-  destruct (@xcallee_env_agree Sg Rp P Fb Hst g Phi (id_app (cA PhiIn)) sm Din d PhiIn
+  destruct (@xcallee_env_values Sg Rp P Fb Hst g Phi (id_app (cA PhiIn)) sm Din d PhiIn
               WF Wt Hsat Hwfth Hsm2 Hg Hd) as [d' [Hcomp [Hcg Hda]]].
   exists d', (callee_grounding g Phi (id_app (cA PhiIn)) (cA PhiIn)).
   split; [exact Hcomp |]. split; [exact Hcg |]. split; [exact Hda |].
@@ -856,13 +954,13 @@ Lemma xchain_agree : forall h sms u, chain_ok Sg h sms u ->
     g_fun Sg u = Some (Du, Dru, bu) ->
     wf_tele Sg empty_ctx Du PhiU ->
     ctx_grounded g PhiU ->
-    xdenv_agree g (cA PhiU) d ->
+    xdenv_values g (cA PhiU) d ->
     exists Dh Drh bh PhiH d' g',
       g_fun Sg h = Some (Dh, Drh, bh)
       /\ wf_tele Sg empty_ctx Dh PhiH
       /\ xrun_chain d sms = Some d'
       /\ ctx_grounded g' PhiH
-      /\ xdenv_agree g' (cA PhiH) d'
+      /\ xdenv_values g' (cA PhiH) d'
       /\ (forall x, In x (tyreqs (cA PhiH)) ->
             app_subst g' (TAbs x) = app_subst g (TAbs x))
       /\ incl (tyreqs (cA PhiH)) (tyreqs (cA PhiU)).
@@ -885,7 +983,7 @@ Proof.
     exists Dh, Drh, bh, PhiH, d', g'.
     split; [exact Hh |]. split; [exact Wh |].
     split; [simpl; rewrite Hrc; exact Hcomp |].
-    split; [exact Hg' |]. split; [exact (strong_agree Hd') |].
+    split; [exact Hg' |]. split; [exact (strong_values Hd') |].
     split.
     + intros x Hx. rewrite (Hr' x Hx). apply HrW. apply Hi'. exact Hx.
     + intros x Hx. apply HiW. apply Hi'. exact Hx.
@@ -909,14 +1007,14 @@ Lemma xbchain_agree : forall Dh sms u, body_chain Sg Dh sms u ->
     wf_tele Sg empty_ctx Du PhiU ->
     wf_tele Sg empty_ctx Dh PhiH ->
     ctx_grounded g PhiU ->
-    xdenv_agree g (cA PhiU) d ->
+    xdenv_values g (cA PhiU) d ->
     exists d' g',
       xrun_chain d sms = Some d'
       /\ ctx_grounded g' PhiH
       /\ xdenv_strong g' (cA PhiH) d'
       /\ (forall x, In x (tyreqs (cA PhiH)) ->
             app_subst g' (TAbs x) = app_subst g (TAbs x))
-      /\ incl (tyreqs (cA PhiH)) (tyreqs (cA PhiU)).
+      /\ incl (tyreqs (cA PhiH)) (tyreqs (cA PhiU)) /\ typefree d'.
 Proof.
   intros Dh sms u [sm [r [w [Dw [Drw [-> [Hw [Hl Hch]]]]]]]]
          Du Dru PhiU PhiH d g Hu Wu Wh Hg Hd.
@@ -932,7 +1030,9 @@ Proof.
   split; [exact Hg' |]. split; [exact Hd' |].
   split.
   - intros x Hx. rewrite (Hr' x Hx). apply HrW. apply Hi'. exact Hx.
-  - intros x Hx. apply HiW. apply Hi'. exact Hx.
+  - split.
+    + intros x Hx. apply HiW. apply Hi'. exact Hx.
+    + eapply smap_composed_typefree; [exact Hsm|exact Hcomp].
 Qed.
 
 Lemma body_chain_snoc : forall Dh sms w u sm Dw Drw Du Dru,
@@ -951,7 +1051,7 @@ Qed.
 (* A functor with a body (CoreMoss.fun_body_regular, from xwf): its linked
    arguments, captured inputs, pins, body, and the regularity of its result
    formed over them. *)
-Lemma fb_regular : forall h Dh Dc pins Dr bs,
+Lemma fb_regular : xp_immutable P=false ->forall h Dh Dc pins Dr bs,
   Fb h = Some (Dh, Dc, pins) -> xp_fun P h = Some (Dr, bs) ->
   exists PhiD PhiC, tele_ctx Dh = Some PhiD
   /\ wf_tele Sg empty_ctx Dh PhiD
@@ -965,8 +1065,8 @@ Lemma fb_regular : forall h Dh Dc pins Dr bs,
         incl (dep_tys Sg i ++ item_ty_frees i ++ method_item_frees Sg i)
              (tyreqs (cA PhiD ++ cA PhiC ++ Dr))).
 Proof.
-  intros h Dh Dc pins Dr bs Hh Hb.
-  destruct (@xwf_fb Sg Rp P Fb WFX h Dh Dc pins Dr bs Hh Hb)
+  intros Legacy h Dh Dc pins Dr bs Hh Hb.
+  destruct (@xwf_fb Sg Rp P Fb WFX Legacy h Dh Dc pins Dr bs Hh Hb)
     as [PhiD [PhiC [Wa [Wc [Hp [Wr Hbody]]]]]].
   exists PhiD, PhiC. split; [exact (wf_tele_ctx Wa) |]. split; [exact Wa |].
   split; [exact Wc |]. split; [exact Hp |]. split; [exact Wr |].
@@ -984,16 +1084,16 @@ Qed.
 
 (* Where a symbol of a functor's linked arguments, or of what its result
    reads, comes from: φ's arguments or φ's outputs. *)
-Lemma link_reads_bound : forall u Du Dr h Dh Dc pins bs sm x,
+Lemma link_reads_bound : xp_immutable P=false ->forall u Du Dr h Dh Dc pins bs sm x,
     g_fun Sg u = Some (Du, Dr, None) ->
     Fb h = Some (Dh, Dc, pins) -> xp_fun P h = Some (Dr, bs) ->
     fun_link Sg Dh sm Du ->
     In x (tyreqs Dh ++ res_reads Sg Dr) ->
     In x (tyreqs Du ++ tyreqs Dr).
 Proof.
-  intros u Du Dr h Dh Dc pins bs sm x Hu Hh Hb Hl Hx.
+  intros Legacy u Du Dr h Dh Dc pins bs sm x Hu Hh Hb Hl Hx.
   destruct (@fun_decl_regular Sg u Du Dr WF Hu) as [PhiU [HtcU [WU [_ HregU]]]].
-  destruct (@fb_regular h Dh Dc pins Dr bs Hh Hb) as [PhiH [_ [HtcH _]]].
+  destruct (@fb_regular Legacy h Dh Dc pins Dr bs Hh Hb) as [PhiH [_ [HtcH _]]].
   apply in_app_or in Hx. destruct Hx as [Hx | Hx]; apply in_or_app.
   - left. destruct Hl as [PhiOut [HtcO [Hs0 _]]].
     rewrite HtcU in HtcO. injection HtcO as <-.
@@ -1009,7 +1109,7 @@ Proof.
 Qed.
 
 (* `bind φ = h;` captures h's captured inputs here: a closure. *)
-Lemma world_bindfun : forall Phi u Du Dr h Dh Dc pins sm smc d g,
+Lemma world_bindfun : xp_immutable P=false ->forall Phi u Du Dr h Dh Dc pins sm smc d g,
     g_fun Sg u = Some (Du, Dr, None) ->
     Fb h = Some (Dh, Dc, pins) ->
     (exists bs, xp_fun P h = Some (Dr, bs)) ->
@@ -1020,21 +1120,25 @@ Lemma world_bindfun : forall Phi u Du Dr h Dh Dc pins sm smc d g,
     xdenv_agree g (cA Phi) d ->
     exists dc, xcompose d smc = Some dc
     /\ ctx_grounded g (add_item (IFun u) Phi)
-    /\ xdenv_agree g (cA (add_item (IFun u) Phi)) ((IFun u, XDFun h [sm] dc) :: d).
+    /\ xdenv_agree g (cA (add_item (IFun u) Phi)) ((IFun u, XDFun h [sm] (xclose d dc)) :: d).
 Proof.
-  intros Phi u Du Dr h Dh Dc pins sm smc d g Hu Hh [bs Hb] Hl [Hs0 [Hsmc [Hpins Hstat]]] Hfx Hg Hd.
-  destruct (@fb_regular h Dh Dc pins Dr bs Hh Hb)
+  intros Legacy Phi u Du Dr h Dh Dc pins sm smc d g Hu Hh [bs Hb] Hl [Hs0 [Hsmc [Hpins Hstat]]] Hfx Hg Hd.
+  destruct (@fb_regular Legacy h Dh Dc pins Dr bs Hh Hb)
     as [PhiH [PhiC [_ [_ [Wc [[Hpd Hpr] _]]]]]].
-  destruct (@xlink_agree Phi _ PhiC smc d g Wc Hs0 Hsmc Hg Hd)
-    as [dc [g' [Hcomp [Hg' [Hd' [Hr' _]]]]]].
+  destruct (@xlink_agree Phi _ PhiC smc d g Wc Hs0 Hsmc Hg (proj1 Hd))
+    as [dc [g' [Hcomp [Hg' [Hd' [Hr' HiC]]]]]].
   assert (Habs : forall t0, app_subst g (app_subst (cS Phi) t0) = app_subst g t0).
   { destruct Hg as [_ [Hab _]]. apply (absorbs_all Hab). }
-  assert (Hnew : xdentry_agree g (IFun u) (XDFun h [sm] dc)).
+  assert (Hclosed : xdenv_strong g' (cA PhiC) (xclose d dc)) by (apply xdenv_strong_close; exact Hd').
+  assert (Hcapture : runtime_types P g' (cA PhiC) (xclose d dc)).
+  { eapply runtime_types_capture_incl; [exact (proj2 Hd)|exact HiC|exact Hr'|].
+    eapply smap_composed_typefree; eauto. }
+  assert (Hnew : xdentry_agree g (IFun u) (XDFun h [sm] (xclose d dc))).
   { simpl. rewrite Hu, Hh, Hb. split; [reflexivity |].
     split; [exists sm, [], u, Du, Dr; split; [reflexivity |];
             split; [exact Hu |]; split; [exact Hl | apply ChNil] |].
     destruct Hg' as [Hgr [Hab' [Hcov _]]].
-    destruct Hd' as [Hdc1 [Hdc2 [_ Hdc4]]].
+    destruct Hclosed as [Hdc1 [Hdc2 [_ Hdc4]]].
     exists PhiC, g'. split; [exact (wf_tele_ctx Wc) |].
     split; [exact Hgr |]. split; [exact Hcov |]. split; [exact Hab' |].
     split.
@@ -1053,12 +1157,12 @@ Proof.
       intros z Hz. apply Hr'. rewrite Forall_forall in Hpr.
       exact (Hpr (t, tau) Hin z Hz). }
     split; [exact Hdc1 |]. split; [exact Hdc4 |].
-    split; [| apply xdentry_all_Forall; exact Hdc2].
+    split; [|split; [exact Hcapture|apply xdentry_all_Forall; exact Hdc2]].
     intros x Hx Hxr. split; [| exact (Hr' x Hx)].
     apply Hstat; [apply (proj1 (tele_ctx_tyreqs _ (wf_tele_ctx Wc) x)); exact Hx |].
-    exact (@link_reads_bound u Du Dr h Dh Dc pins bs sm x Hu Hh Hb Hl Hxr). }
+    exact (@link_reads_bound Legacy u Du Dr h Dh Dc pins bs sm x Hu Hh Hb Hl Hxr). }
   exists dc. split; [exact Hcomp |]. split; [exact Hg |].
-  apply xdenv_agree_push; [exact Hd | exact Hnew | exact (@fixed_regular Phi u Hfx)].
+  apply xdenv_agree_push; [exact Hd |reflexivity| exact Hnew | exact (@fixed_regular Phi u Hfx)].
 Qed.
 
 Lemma world_bindfuna : forall Phi u Du Dr w Dw sm d g,
@@ -1076,22 +1180,22 @@ Lemma world_bindfuna : forall Phi u Du Dr w Dw sm d g,
                   ((IFun u, XDFun h (sms ++ [sm]) dc) :: d).
 Proof.
   intros Phi u Du Dr w Dw sm d g Hu Hw Hav Hl Hxx Hfx Hg Hd.
-  pose proof Hd as [Hcov [Hent _]].
+  pose proof (proj1 Hd) as [Hcov [Hent _]].
   assert (Hin : In (IFun w) (cA Phi)) by (apply avail_fun_in; exact Hav).
   rewrite Forall_forall in Hcov.
   destruct (Hcov _ Hin) as [Hbad | [en Hlk]]; [discriminate Hbad |].
   pose proof (Hent _ _ Hin eq_refl Hlk) as Hag.
-  destruct en as [wv | fc dc0 | h sms dc | p | hs]; simpl in Hag; try contradiction.
+  destruct en as [wv | fc dc0 | h sms dc | p | hs | ty | p held]; simpl in Hag; try contradiction.
   rewrite Hw in Hag.
   destruct (Fb h) as [[[Dh Dc] pins]|] eqn:Hh; try contradiction.
   destruct (xp_fun P h) as [[Drp bs]|] eqn:Ep; try contradiction.
-  destruct Hag as [E1 [Hch [PhiC [g' [H1 [H2 [H3 [H4 [H5 [H6 [H7 [HK H8]]]]]]]]]]]].
+  destruct Hag as [E1 [Hch [PhiC [g' [H1 [H2 [H3 [H4 [H5 [H6 [H7 [HK [Htypes H8]]]]]]]]]]]]].
   subst Drp.
   exists h, sms, dc. split; [exact Hlk |]. split; [exact Hg |].
-  apply xdenv_agree_push; [exact Hd | | exact (@fixed_regular Phi u Hfx)].
+  apply xdenv_agree_push; [exact Hd |reflexivity| | exact (@fixed_regular Phi u Hfx)].
   simpl. rewrite Hu, Hh, Ep. split; [reflexivity |].
   split; [exact (@body_chain_snoc Dh sms w u sm Dw Dr Du Dr Hch Hw Hu Hl) |].
-  exists PhiC, g'. repeat (split; [assumption |]). split; [| exact H8].
+  exists PhiC, g'. repeat (split; [assumption |]). split; [|split; assumption].
   intros x Hx Hxr. destruct (HK x Hx Hxr) as [Hxw Heq].
   split; [apply Hxx; exact Hxw | exact Heq].
 Qed.
@@ -1101,11 +1205,16 @@ End Fixed.
 
 (* ===================== 6d. Across store typings =========================== *)
 
-Local Notation xvt := (XTyping.xvt Sg Rp).
+Local Notation xvt := (XTyping.xvt Sg Rp P).
 Local Notation xdentry_agree := (XEnv.xdentry_agree Sg Rp P Fb).
-Local Notation xdenv_agree := (XEnv.xdenv_agree Sg Rp P Fb).
+Local Notation xdenv_agree := (provision_environment Sg Rp P Fb).
+Lemma shared_mono : forall H H' g A d,sext H H' ->
+ xdenv_agree H g A d ->xdenv_agree H' g A d.
+Proof. intros;eapply (@provision_environment_mono Sg Rp P Fb);eassumption. Qed.
+Arguments shared_mono {H H' g A d} _ _.
 Local Notation xdenv_strong := (XEnv.xdenv_strong Sg Rp P Fb).
-Local Notation venv_ok := (XEnv.venv_ok Sg Rp).
+Local Notation xdenv_values := (XEnv.xdenv_values Sg Rp P Fb).
+Local Notation venv_ok := (XEnv.venv_ok Sg Rp P).
 
 (* The heap typing a store typing H reads: an address's contents satisfy
    value typing at H's type for it. *)
@@ -1200,11 +1309,12 @@ Proof.
 Qed.
 
 Lemma is_ref_subst : forall s k t c,
-  is_ref Rp k t c -> is_ref Rp k (app_subst s t) (app_subst s c).
+  is_ref Sg Rp P k t c -> is_ref Sg Rp P k (app_subst s t) (app_subst s c).
 Proof.
-  intros s k t c [n [th [x [-> [Hn <-]]]]].
-  exists n, (map_snd (app_subst s) th), x. split; [reflexivity |]. split; [exact Hn |].
-  apply contents_subst.
+ intros s k t c [n [th [x [-> [Hn [<- Hschema]]]]]].
+ exists n, (map_snd (app_subst s) th), x; split; [reflexivity|]; split; [exact Hn|]; split.
+ - apply contents_subst.
+ - eapply gc_schema_subst; eauto.
 Qed.
 
 Lemma pty_ok_subst' : forall s tau t, pty_ok tau t -> pty_ok (app_subst s tau) t.
@@ -1233,29 +1343,27 @@ Proof.
          | (eexists; split; apply is_ref_subst; eassumption)
          | (eexists; eexists; split; [apply app_subst_nom | split; [eassumption | apply contents_subst]])
          | (eexists; eexists; split; [apply app_subst_nom | eassumption]) ].
+  all: eexists; eexists; split; [apply app_subst_nom|]; split; [eassumption|]; split;
+    [apply contents_subst|eapply gc_schema_subst; eauto].
 Qed.
 
 Lemma PsiH_some : forall H kk k T, H kk = Some (k, T) -> PsiH H kk = Some (k, fun v => xvt H v T).
 Proof. intros H kk k T E. unfold PsiH. rewrite E. reflexivity. Qed.
 
 Lemma ref_typed : forall H k w t c,
-  xvt H w t -> is_ref Rp k t c ->
-  exists n a, w = XVTag n (XVRef a) /\ H (key a) = Some (k, c)
-  /\ href (PsiH H) k w (fun v => xvt H v c).
+  xvt H w t -> is_ref Sg Rp P k t c ->
+  exists n a, xgc_receiver w = XVTag n (XVRef a) /\ H (key a) = Some (k, c)
+  /\ href (PsiH H) k (xgc_receiver w) (fun v => xvt H v c).
 Proof.
-  intros H k w t c Hw [n [th [x [-> [Hn <-]]]]].
-  destruct k; simpl in Hn; inversion Hw; subst; try congruence;
-    match goal with
-    | Hr0 : Rp n = Some _, Ha0 : H (key ?a) = Some (_, contents th ?x0) |- _ =>
-        rewrite Hn in Hr0; injection Hr0 as <-;
-        exists n, a; split; [reflexivity |]; split; [exact Ha0 |];
-        exists n, a; split; [reflexivity | exact (PsiH_some _ _ Ha0)]
-    end.
+ intros H k w t c Hw Hr; destruct (gc_receiver_typed Hw Hr) as [n [a [He Ha]]].
+ exists n,a; split; [exact He|]; split; [exact Ha|].
+ exists n,a; split; [exact He|exact (PsiH_some _ _ Ha)].
 Qed.
 
 Lemma i32_typed : forall H w t, xvt H w t -> pty_ok t XTI32 -> exists i, w = XVI32 i.
 Proof.
-  intros H w t Hw [n [th [-> Hn]]]. inversion Hw; subst; try congruence. eauto.
+  intros H w t Hw [n [th [-> Hn]]]. inversion Hw; subst; try congruence; try solve[eauto].
+  match goal with Hgc : _ = Some (if ?k then RArr _ else RRef _) |- _ => destruct k; simpl in *; congruence end.
 Qed.
 
 Definition supd (H : sty) (kk : list bool) (c : bool * ty) : sty :=
@@ -1298,7 +1406,7 @@ Proof. intros. unfold supd. destruct (list_eq_dec bool_dec kk kk); congruence. Q
    or a trap. *)
 Lemma gc_run : forall H p taus rty ws st,
   gc_shape Sg Rp P p taus rty -> Forall2 (xvt H) ws taus -> HL.heap_ok (PsiH H) st ->
-  match run_prim P p ws st with
+  match run_prim P p (xgc_args p ws) st with
   | (XOk w, st') => exists H', sext H H' /\ HL.heap_ok (PsiH H') st' /\ xvt H' w rty
   | (XTrap _, st') => HL.heap_ok (PsiH H) st'
   | _ => False
@@ -1306,17 +1414,17 @@ Lemma gc_run : forall H p taus rty ws st,
 Proof.
   intros H p taus rty ws st Hs Hws Hh.
   pose proof (xwf_bool WFX) as Hb.
-  assert (Gen : forall Q, gc_pre (PsiH H) p ws Q ->
-    (forall Psi' w, hext (PsiH H) Psi' -> HL.heap_ok Psi' (snd (run_prim P p ws st)) ->
+  assert (Gen : forall Q, gc_pre (PsiH H) p (xgc_args p ws) Q ->
+    (forall Psi' w, hext (PsiH H) Psi' -> HL.heap_ok Psi' (snd (run_prim P p (xgc_args p ws) st)) ->
        gc_post (PsiH H) Psi' p Q w ->
-       exists H', sext H H' /\ HL.heap_ok (PsiH H') (snd (run_prim P p ws st)) /\ xvt H' w rty) ->
-    match run_prim P p ws st with
+       exists H', sext H H' /\ HL.heap_ok (PsiH H') (snd (run_prim P p (xgc_args p ws) st)) /\ xvt H' w rty) ->
+    match run_prim P p (xgc_args p ws) st with
     | (XOk w, st') => exists H', sext H H' /\ HL.heap_ok (PsiH H') st' /\ xvt H' w rty
     | (XTrap _, st') => HL.heap_ok (PsiH H) st'
     | _ => False
     end).
-  { intros Q Hpre Hpost. pose proof (HL.heap_gc P p ws st (PsiH H) Q Hh Hpre) as Hg.
-    destruct (run_prim P p ws st) as [o st'] eqn:Er. simpl in Hpost.
+  { intros Q Hpre Hpost. pose proof (HL.heap_gc P p (xgc_args p ws) st (PsiH H) Q Hh Hpre) as Hg.
+    destruct (run_prim P p (xgc_args p ws) st) as [o st'] eqn:Er. simpl in Hpost.
     destruct o; try exact Hg.
     destruct Hg as [Psi' [Hh' Hpost']].
     exact (Hpost Psi' x (proj1 Hpost') Hh' Hpost'). }
@@ -1326,6 +1434,7 @@ Proof.
            | Hx : Forall2 _ _ (_ :: _) |- _ => inversion Hx; subst; clear Hx
            | Hx : Forall2 _ _ [] |- _ => inversion Hx; subst; clear Hx
            end.
+  all: cbn [xgc_args] in Gen |- *.
   all: repeat match goal with Hx : _ /\ _ |- _ => destruct Hx end;
     repeat match goal with
            | Hw : xvt _ ?w ?t, Hi : pty_ok ?t XTI32 |- _ =>
@@ -1334,19 +1443,21 @@ Proof.
                let i := fresh "i" in destruct (i32_typed Hw Hi) as [i ->]; clear Hi
            end;
     repeat match goal with
-           | Hw : xvt _ ?w ?t, Hr : is_ref Rp ?k ?t ?c |- _ =>
+           | Hw : xvt _ ?w ?t, Hr : is_ref Sg Rp P ?k ?t ?c |- _ =>
                let n := fresh "n" in let a := fresh "a" in let Ha := fresh "Ha" in
                let Hrr := fresh "Hrr" in
-               destruct (ref_typed Hw Hr) as [n [a [-> [Ha Hrr]]]]; clear Hr
+               destruct (ref_typed Hw Hr) as [n [a [Hreceiver [Ha Hrr]]]];
+               rewrite Hreceiver in Gen,Hrr |- *; clear Hr Hreceiver
            end.
   - (* box *)
-    destruct Hs as [thb [xb [-> [Hrf Ec]]]].
+    destruct Hs as [thb [xb [-> [Hrf [Ec Hschema]]]]].
     match goal with Hv : xvt _ ?v ?c |- _ =>
       apply (Gen (fun v => xvt H v c)); [simpl; exact Hv |] end.
     intros Psi' w Hx Hh' [_ [a [-> [Hf Ha]]]].
     destruct (@gc_alloc H Psi' _ a false _ Hx Hf Ha Hh') as [Hext Hok].
     eexists. split; [exact Hext |]. split; [exact Hok |].
-    eapply XvRef; [exact Hrf |]. rewrite supd_here, Ec. reflexivity.
+    destruct Hschema as [spec [Hlook [Hkind [Hheld [Hgate [D [pay [Htag Hpayload]]]]]]]].
+    eapply XvRef; [exact Hrf| |exact Htag|exact Hpayload]. rewrite supd_here, Ec. reflexivity.
   - (* deref *)
     apply (Gen (fun v => xvt H v rty)); [assumption |].
     intros Psi' w Hx Hh' [_ Hw]. exists H. split; [apply sext_refl |].
@@ -1357,17 +1468,19 @@ Proof.
     intros Psi' w Hx Hh' [_ Hw]. subst w. exists H. split; [apply sext_refl |].
     split; [exact (gc_same Hx Hh') | constructor].
   - (* array new *)
-    match goal with Hs : ex _ |- _ => destruct Hs as [thb [xb [-> [Hrf Ec]]]] end.
+    match goal with Hs : ex _ |- _ => destruct Hs as [thb [xb [-> [Hrf [Ec Hschema]]]]] end.
     match goal with Hv : xvt _ ?v ?c, Ec : contents _ _ = ?c |- _ =>
       apply (Gen (fun v => xvt H v c)); [simpl; exact Hv |] end.
     intros Psi' w Hx Hh' [_ [a [-> [Hf Ha]]]].
     destruct (@gc_alloc H Psi' _ a true _ Hx Hf Ha Hh') as [Hext Hok].
     eexists. split; [exact Hext |]. split; [exact Hok |].
-    eapply XvArr; [exact Hrf |]. rewrite supd_here, Ec. reflexivity.
+    destruct Hschema as [spec [Hlook [Hkind [Hheld [Hgate [D [pay [Htag Hpayload]]]]]]]].
+    eapply XvArr; [exact Hrf| |exact Htag|exact Hpayload]. rewrite supd_here, Ec. reflexivity.
   - (* array length *)
-    match goal with Hs : exists c, is_ref Rp true _ c |- _ => destruct Hs as [c Hr0] end.
+    match goal with Hs : exists c, is_ref Sg Rp P true _ c |- _ => destruct Hs as [c Hr0] end.
     match goal with Hw : xvt _ ?w ?t |- _ =>
-      destruct (ref_typed Hw Hr0) as [n [a [-> [Ha Hr]]]] end.
+      destruct (ref_typed Hw Hr0) as [n [a [Hreceiver [Ha Hr]]]];
+      rewrite Hreceiver in Gen,Hr |- * end.
     apply (Gen (fun v => xvt H v c)); [exact Hr |].
     intros Psi' w Hx Hh' [_ [m ->]]. exists H. split; [apply sext_refl |].
     split; [exact (gc_same Hx Hh') |].
@@ -1388,13 +1501,14 @@ Proof.
     split; [exact (gc_same Hx Hh') | constructor].
   - (* array copy *)
     subst rty.
-    match goal with Hs : exists c, is_ref Rp true _ c /\ is_ref Rp true _ c |- _ =>
+    match goal with Hs : exists c, is_ref Sg Rp P true _ c /\ is_ref Sg Rp P true _ c |- _ =>
       destruct Hs as [c [Hr0 Hr2]] end.
     repeat match goal with
-           | Hw : xvt _ ?w ?t, Hr : is_ref Rp true ?t c |- _ =>
+           | Hw : xvt _ ?w ?t, Hr : is_ref Sg Rp P true ?t c |- _ =>
                let n := fresh "n" in let a := fresh "a" in let Ha := fresh "Ha" in
                let Hrr := fresh "Hrr" in
-               destruct (ref_typed Hw Hr) as [n [a [-> [Ha Hrr]]]]; clear Hr
+               destruct (ref_typed Hw Hr) as [n [a [Hreceiver [Ha Hrr]]]];
+               rewrite Hreceiver in Gen,Hrr |- *; clear Hr Hreceiver
            end.
     apply (Gen (fun v => xvt H v c)).
     + simpl. split; [eassumption |]. exists (fun v => xvt H v c). split; [eassumption | auto].
@@ -1405,26 +1519,86 @@ Qed.
 Lemma prim_sigs_not_gc : forall p ps r, prim_sigs p ps r -> is_gc p = false.
 Proof. intros p ps r [E | E]; destruct p; simpl in E |- *; congruence. Qed.
 
+Lemma xgc_args_not_gc : forall p ws, is_gc p = false -> xgc_args p ws = ws.
+Proof. intros p ws H; destruct p; simpl in H |- *; try discriminate; reflexivity. Qed.
+
 (* Any primitive at a signature it provides. *)
 Lemma prim_run_h : forall H p taus rty ws st,
   prim_ok Sg Rp P p taus rty -> Forall2 (xvt H) ws taus -> HL.heap_ok (PsiH H) st ->
-  match run_prim P p ws st with
+  match run_prim_at P p None ws st with
   | (XOk w, st') => exists H', sext H H' /\ HL.heap_ok (PsiH H') st' /\ xvt H' w rty
   | (XTrap _, st') | (XExit _, st') | (XUns _, st') => HL.heap_ok (PsiH H) st'
   | _ => False
   end.
 Proof.
+  unfold run_prim_at.
   intros H p taus rty ws st [[c ->] | [[ps [r [Hsig [Hps Hr]]]] | Hgc]] Hws Hh.
-  - pose proof (prim_ulaw P c ws st) as Hu.
+  - cbn [xgc_args]. pose proof (prim_ulaw P c ws st) as Hu.
     pose proof (HL.heap_other P (PUnsupported c) ws st (PsiH H) eq_refl Hh) as Hk.
     destruct (run_prim P (PUnsupported c) ws st) as [o st']. simpl in Hu, Hk. subst o. exact Hk.
-  - pose proof (@prim_run H p ps r ws taus rty st Hsig Hws Hps Hr) as Hrun.
+  - rewrite xgc_args_not_gc by exact (prim_sigs_not_gc Hsig).
+    pose proof (@prim_run H p ps r ws taus rty st Hsig Hws Hps Hr) as Hrun.
     pose proof (HL.heap_other P p ws st (PsiH H) (prim_sigs_not_gc Hsig) Hh) as Hk.
     destruct (run_prim P p ws st) as [o st']. simpl in Hrun, Hk.
     destruct o; try contradiction; try exact Hk.
     exists H. split; [apply sext_refl | split; [exact Hk | exact Hrun]].
   - pose proof (@gc_run H p taus rty ws st Hgc Hws Hh) as R0.
-    destruct (run_prim P p ws st) as [[] st']; first [exact R0 | contradiction].
+    destruct (run_prim P p (xgc_args p ws) st) as [[] st']; first [exact R0 | contradiction].
+Qed.
+
+Lemma xallocation_typed : forall H p held taus ret w,
+ prim_at_ok Sg Rp P p held taus ret -> xvt H w ret ->
+ match xallocation p held (XOk w) with XOk v => xvt H v ret | _ => False end.
+Proof.
+ intros H p held taus ret w [Hp Hheld] Hw.
+ destruct p; simpl in Hheld; try contradiction.
+ all: destruct taus as [|c ts]; [contradiction|].
+ all: subst held; destruct Hp as [[code Bad]|[[ps [r [Bad Rest]]]|Shape]];
+   try discriminate; try (destruct Bad; discriminate).
+ - destruct ts as [|c0 ts]; simpl in Shape; try contradiction.
+   destruct Shape as [th [x [-> [Hr [Hc Hschema]]]]].
+   unfold xallocation; destruct w; try exact Hw.
+   destruct w; try exact Hw.
+   destruct (@gc_receiver_typed Sg Rp P H (XVTag n0 (XVRef i)) (TNom n th) false c Hw)
+     as [n1 [a [He Hcell]]].
+   + exists n,th,x; repeat split; auto.
+   + simpl in He; inversion He; subst.
+     assert (n1 = n) as -> by (inversion Hw; reflexivity).
+     destruct Hschema as [spec [Hl [Hk [Hx [Hg [D [pay [Ht Hpay]]]]]]]].
+     eapply XvRefAt; eauto.
+ - destruct ts as [|i32 ts]; simpl in Shape; try contradiction.
+   destruct ts; simpl in Shape; try contradiction.
+   destruct Shape as [Hi [th [x [-> [Hr [Hc Hschema]]]]]].
+   unfold xallocation; destruct w; try exact Hw.
+   destruct w; try exact Hw.
+   destruct (@gc_receiver_typed Sg Rp P H (XVTag n0 (XVRef i)) (TNom n th) true c Hw)
+     as [n1 [a [He Hcell]]].
+   + exists n,th,x; repeat split; auto.
+   + simpl in He; inversion He; subst.
+     assert (n1 = n) as -> by (inversion Hw; reflexivity).
+     destruct Hschema as [spec [Hl [Hk [Hx [Hg [D [pay [Ht Hpay]]]]]]]].
+     eapply XvArrAt; eauto.
+Qed.
+
+Lemma prim_run_at_h : forall H p held taus rty ws st,
+ prim_at_ok Sg Rp P p held taus rty -> Forall2 (xvt H) ws taus -> HL.heap_ok (PsiH H) st ->
+ match run_prim_at P p (Some held) ws st with
+ | (XOk w,st') => exists H', sext H H' /\ HL.heap_ok (PsiH H') st' /\ xvt H' w rty
+ | (XTrap _,st') | (XExit _,st') | (XUns _,st') => HL.heap_ok (PsiH H) st'
+ | _ => False end.
+Proof.
+ intros H p held taus rty ws st Hpa Hws Hheap.
+ pose proof (@prim_run_h H p taus rty ws st (proj1 Hpa) Hws Hheap) as Base.
+ unfold run_prim_at in Base |- *.
+ destruct (run_prim P p (xgc_args p ws) st) as [o st']; simpl in Base |- *.
+ destruct o; try contradiction.
+ - destruct Base as [H' [Hext [Hok Htyped]]].
+   pose proof (@xallocation_typed H' p held taus rty x Hpa Htyped) as Ha.
+   destruct (xallocation p held (XOk x)); try contradiction.
+   exists H'; auto.
+ - destruct p; exact Base.
+ - destruct p; exact Base.
+ - destruct p; exact Base.
 Qed.
 
 (* A primitive call's outcome, as the calling expression's. *)
@@ -1496,7 +1670,7 @@ Proof.
       try (eapply xsafe_ctl_of; [exact Hres | intros ? ?; discriminate]).
     destruct Hres as [H1 [Hx1 [Hh1 [Hw Hv1]]]]. simpl in Hh1, Hv1.
     specialize (IH j' (Nat.le_trans _ _ _ (Nat.le_succ_diag_r j') Hj) g1 st1 H1
-                  (xdenv_agree_mono Hx1 Hd) Hv1 Hh1).
+                  (shared_mono Hx1 Hd) Hv1 Hh1).
     destruct (xinterp_list j' P d g1 st1 args) as [[[ws g2] st2] | rr].
     + destruct IH as [H2 [Hx2 [Hh2 [Hws Hv2]]]].
       exists H2. split; [exact (sext_trans Hx1 Hx2) |]. split; [exact Hh2 |].
@@ -1529,19 +1703,20 @@ Proof.
 Qed.
 
 (* The world inside a closure, from its agreement. *)
-Lemma closure_world : forall H f' D' S' gc dc PhiD',
+Lemma closure_world : xp_immutable P=false ->forall H f' D' S' gc dc PhiD',
   g_fn Sg f' = Some (D', S', None) ->
   tele_ctx D' = Some PhiD' ->
   grounding gc -> covers gc (tyreqs (cA PhiD')) -> absorbs gc (cS PhiD') ->
   Forall (fun i => is_ty_item i = true \/ exists en, lookup_xdenv i dc = Some en) (cA PhiD') ->
   Forall (fun p => incl (dep_tys Sg (fst p) ++ item_ty_frees (fst p)
                          ++ method_item_frees Sg (fst p)) (tyreqs (cA PhiD'))) dc ->
+  XRuntimeEnv.runtime_types P gc (cA PhiD') dc ->
   Forall (fun p => xdentry_agree H gc (fst p) (snd p)) dc ->
   exists PhiD, wf_tele Sg empty_ctx D' PhiD /\ PhiD = PhiD'
   /\ Forall (wf_ty Sg PhiD) (fs_params S') /\ wf_ty Sg PhiD (fs_ret S')
   /\ ctx_grounded gc PhiD /\ xdenv_agree H gc (cA PhiD) dc.
 Proof.
-  intros H f' D' S' gc dc PhiD' Hf' Htc Hgr Hcov Hab Htcov Hkreg Hall.
+  intros Legacy H f' D' S' gc dc PhiD' Hf' Htc Hgr Hcov Hab Htcov Hkreg Htypes Hall.
   destruct (wf_fn_decl WF _ Hf') as [PhiD [Wt [Wp [Wr _]]]].
   pose proof (wf_tele_ctx Wt) as Htc2. rewrite Htc in Htc2. injection Htc2 as E. subst PhiD.
   exists PhiD'. split; [exact Wt|]. split; [reflexivity|]. split; [exact Wp|]. split; [exact Wr|].
@@ -1550,7 +1725,8 @@ Proof.
     + apply (@tele_sigma_regular Sg empty_ctx D' PhiD' Wt).
       split; [intros x Hx; destruct Hx | constructor].
     + apply (@callee_env_agree_aux13 Sg empty_ctx D' PhiD' Wt). intros Hx. destruct Hx.
-  - apply strong_agree.
+  - unfold provision_environment;rewrite Legacy.
+    apply strong_agree; [|exact Htypes].
     split; [exact Htcov | split; [exact Hall | split; [| exact Hkreg]]].
     rewrite Forall_forall. intros i Hi.
     apply (@tele_items_regular Sg empty_ctx D' PhiD' WF Wt); [| exact Hi].
@@ -1582,6 +1758,51 @@ Proof.
   intros H' Hx R0. eapply ret_call_safe; [exact R0 | exact Hab | exact Heq | exact (venv_ok_mono Hx Hv)].
 Qed.
 
+Lemma case_cast_tag : forall R L Phi G n D tau0 th e spec d ge g st H,
+ lookup_cast n (xp_cast P) = Some spec ->
+ Rp n = Some (if xc_array spec then RArr (xc_held spec) else RRef (xc_held spec)) ->
+ g_tag Sg n = Some (D,tau0) -> sat Sg Phi th D ->
+ Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+ xhas R L Phi G e (app_subst (cS Phi) (app_subst th tau0)) ->
+ ctx_grounded g Phi -> xdenv_agree H g (cA Phi) d ->
+ venv_ok H g (cA Phi) G ge -> HL.heap_ok (PsiH H) st ->
+ xsafe H g Phi G R L (app_subst (cS Phi) (TNom n th))
+  (xinterp (S k) P d ge st (XTag n th e)).
+Proof.
+ intros R L Phi G n D tau0 th e spec d ge g st H Hl Hr Htag Hsat Hth Hty Hcg Hd Hv Hhp.
+ assert (Hcg0 := Hcg); destruct Hcg0 as [Gr [Abs [Cov Rest]]].
+ assert (Hcol : forall a, app_subst g (app_subst (cS Phi) a) = app_subst g a)
+   by (apply absorbs_all; exact Abs).
+ assert (Reify : xreify P = true).
+ { unfold xreify; destruct (xp_cast P) eqn:E; [simpl in Hl; discriminate|apply orb_true_r]. }
+ set (logical := map_snd (app_subst g) th).
+ assert (Hground : forall t a, lookup_subst t th = Some a -> xground d a = contents logical t).
+ { intros t a Ha; unfold logical,contents; rewrite lookup_map_snd,Ha.
+   eapply types_match_reads; [exact (@provision_types Sg Rp P Fb H g (cA Phi) d Hd Reify)|exact Cov|].
+   rewrite Forall_forall in Hth.
+   exact (wf_ty_frees (Hth (t,a) (@callee_env_agree_aux1 t th a Ha))). }
+ assert (Hkeys : cast_keys spec th) by (eapply cast_keys_sat; eauto).
+ destruct (wf_tag_decl WF _ Htag) as [PhiD [Wt Wpay]].
+ assert (Hfr : incl (ty_frees tau0) (map fst th)).
+ { destruct Hsat as [PhiD' [Htc [Hdom _]]].
+   rewrite (wf_tele_ctx Wt) in Htc; inversion Htc; subst PhiD'.
+   rewrite Hdom; exact Wpay. }
+ pose proof (@IHfuel k (le_n k) R L Phi G e _ d ge g st H Hty Hcg Hd Hv Hhp) as S0.
+ cbn [xinterp]; destruct (xinterp k P d ge st e) as [o ge1 st1] eqn:E.
+ destruct o; try (eapply xsafe_pass; [exact S0|intros; discriminate]).
+ destruct S0 as [H1 [Hx [Hheap [Hw Hv1]]]].
+ assert (Hpay : xvt H1 x (app_subst logical tau0)).
+ { unfold logical; rewrite <- app_subst_chain by exact Hfr.
+   rewrite !Hcol in Hw; exact Hw. }
+ pose proof (@xcast_typed Sg Rp P H1 d n th logical spec D tau0 x Hl Hr Htag Hkeys Hground Hpay) as Cast.
+ change (match xcast P d n th x with
+  | XOk v => xvt H1 v (TNom n logical) | XTrap _ => True | _ => False end) in Cast.
+ destruct (xcast P d n th x); simpl in Cast; try contradiction.
+ - exists H1; split; [exact Hx|]; split; [exact Hheap|].
+   split; [|exact Hv1]. rewrite !Hcol, app_subst_nom; exact Cast.
+ - exists H1; split; [exact Hx|]; split; [exact Hheap|exact I].
+Qed.
+
 Lemma case_need : forall R L Phi G f Df Sf args d ge g st H,
     g_fn Sg f = Some (Df, Sf, None) ->
     avail Phi (IFn f) ->
@@ -1598,30 +1819,26 @@ Proof.
   assert (Hcol : forall tau, app_subst g (app_subst (cS Phi) tau) = app_subst g tau)
     by (exact (@absorbs_all g (cS Phi) Hab)).
   assert (Hin := @avail_fn_in Phi f Hav).
-  assert (Hd2 := Hd). destruct Hd2 as [Hcov1 [Hall1 Hdreg]].
-  rewrite Forall_forall in Hcov1. specialize (Hcov1 _ Hin).
-  destruct Hcov1 as [Hbad | [en Hlook]]; [ simpl in Hbad; discriminate | ].
-  assert (Hda0 : xdentry_agree H g (IFn f) en).
-  { exact (Hall1 _ _ Hin eq_refl Hlook). }
+  destruct(@provision_lookup Sg Rp P Fb H g(cA Phi)d(IFn f) Hd eq_refl Hin)
+    as[en[Hlook Hda0]].
   pose proof (@xsafe_args_at R L Phi G d g args (app_subst (cS Phi)) (fs_params Sf) ge st H
                 Hargs Hcg Hd Hv Hh) as Hsa.
   simpl. rewrite Hlook.
-  pose proof Hda0 as Hda.
-  destruct en as [w0 | f' df | hh ss dc | p | hs]; simpl in Hda; rewrite ?Hf in Hda;
-    try contradiction.
+  destruct en as[w0|f' df|hh ss dc|p|hs|ty|p held];
+    try solve[unfold provision_entry in Hda0;destruct(xp_immutable P);
+      cbn[reified_entry xdentry_agree]in Hda0;contradiction].
   - (* a closure *)
-    destruct (g_fn Sg f') as [[[D' S'] b'] | ] eqn:Hf'; [ | contradiction ].
-    destruct b'; [ contradiction | ].
-    destruct (xp_fn P f') as [body|] eqn:Hb; [ | contradiction ].
+    destruct(@provision_function_code Sg Rp P Fb H g f Df Sf f' df Hf Hda0)
+      as[D'[S'[body[Hf' Hb]]]].
+    rewrite Hb.
     destruct (xinterp_list k P d ge st args) as [[[ws g1] st1] | rr]; [| apply xsafe_of_ctl; exact Hsa].
     destruct Hsa as [H1 [Hx1 [Hh1 [Hws Hv1]]]].
-    pose proof (@xdentry_agree_mono Sg Rp P Fb _ _ Hx1 _ _ _ Hda0) as Hda1. simpl in Hda1.
-    rewrite Hf, Hf', Hb in Hda1.
-    destruct Hda1 as
-      [PhiD' [g' [Htc' [Hgr' [Hcov' [Habs' [Hpar [Hret [Htcov [Hkreg Hdd]]]]]]]]]].
-    apply xdentry_all_Forall in Hdd.
-    destruct (@closure_world H1 f' D' S' g' df PhiD' Hf' Htc' Hgr' Hcov' Habs' Htcov Hkreg Hdd)
-      as [PhiD [Wt [-> [Wp [Wr [Hcgb Hdb]]]]]].
+    pose proof(@provision_entry_mono Sg Rp P Fb H H1 Hx1 g(IFn f)(XDClo f' df)Hda0)as Hda1.
+    destruct(@provision_function_closure Sg Rp P Fb H1 g f f' df Df Sf D' S' body Hf Hf' Hb Hda1)
+      as[PhiD'[g'[Htc'[Hgr'[Hcov'[Habs'[Hpar[Hret Hdb]]]]]]]].
+    destruct(wf_fn_decl WF _ Hf')as[PhiD[Wt[Wp[Wr Rest]]]].
+    pose proof(wf_tele_ctx Wt)as TD;rewrite Htc' in TD;injection TD as <-.
+    pose proof(@provision_capture_grounded Sg D' PhiD' g' Wt Hgr' Hcov' Habs')as Hcgb.
     assert (Hws' : Forall2 (fun w tau => xvt H1 w (app_subst g' tau)) ws (fs_params S')).
     { assert (H2 : Forall2 (xvt H1) ws (map (app_subst g) (fs_params Sf))).
       { apply (@F2_map_l _ _ (xvt H1) (app_subst g)).
@@ -1636,6 +1853,7 @@ Proof.
     eapply ret_call_safe_h; [exact Hres | exact Habs' | | exact Hv1].
     rewrite Hret, !Hcol. reflexivity.
   - (* a primitive *)
+    pose proof(@provision_function_primitive Sg Rp P Fb H g f Df Sf p Hf Hda0)as Hda.
     destruct (xinterp_list k P d ge st args) as [[[ws g1] st1] | rr]; [| apply xsafe_of_ctl; exact Hsa].
     destruct Hsa as [H1 [Hx1 [Hh1 [Hws Hv1]]]].
     assert (Hws' : Forall2 (xvt H1) ws (map (app_subst g) (fs_params Sf))).
@@ -1643,16 +1861,31 @@ Proof.
       refine (@F2_impl _ _ _ _ _ _ _ Hws). intros w tau Hw. rewrite !Hcol in Hw. exact Hw. }
     pose proof (@prim_run_h H1 p _ _ ws st1 Hda Hws' Hh1) as Hrun.
     apply (xsafe_ext Hx1).
-    destruct (run_prim P p ws st1) as [o st2].
+    destruct (run_prim_at P p None ws st1) as [o st2].
+    eapply prim_result; [exact Hrun | rewrite !Hcol; reflexivity | exact Hv1].
+  - (* a primitive with an allocation type header *)
+    pose proof(@provision_function_primitive_at Sg Rp P Fb H g f Df Sf p held Hf Hda0)as Hda.
+    destruct (xinterp_list k P d ge st args) as [[[ws g1] st1] | rr]; [| apply xsafe_of_ctl; exact Hsa].
+    destruct Hsa as [H1 [Hx1 [Hh1 [Hws Hv1]]]].
+    assert (Hws' : Forall2 (xvt H1) ws (map (app_subst g) (fs_params Sf))).
+    { apply (@F2_map_l _ _ (xvt H1) (app_subst g)).
+      refine (@F2_impl _ _ _ _ _ _ _ Hws). intros w tau Hw. rewrite !Hcol in Hw. exact Hw. }
+    pose proof (@prim_run_at_h H1 p held _ _ ws st1 Hda Hws' Hh1) as Hrun.
+    apply (xsafe_ext Hx1).
+    destruct (run_prim_at P p (Some held) ws st1) as [o st2].
     eapply prim_result; [exact Hrun | rewrite !Hcol; reflexivity | exact Hv1].
 Qed.
 
-Lemma case_call : forall R L Phi G f Df Sf body th th0 sm args d ge g st H,
+Lemma case_call : xp_immutable P=false ->forall R L Phi G f Df Sf body th th0 sm args d ge g st H,
     g_fn Sg f = Some (Df, Sf, None) ->
     xp_fn P f = Some body ->
     sat Sg Phi th Df ->
     Forall (fun p => wf_ty Sg Phi (snd p)) th ->
     smap_ok Phi th sm Df ->
+    Forall (fun p => wf_ty Sg Phi (snd p)) th0 ->
+    (forall t, In t (tyreqs Df) ->
+      app_subst (cS Phi) (app_subst th0 (TAbs t)) =
+      app_subst (cS Phi) (app_subst th (TAbs t))) ->
     Forall2 (fun e tau => xhas R L Phi G e (app_subst (cS Phi) (app_subst th tau)))
             args (fs_params Sf) ->
     ctx_grounded g Phi ->
@@ -1662,8 +1895,10 @@ Lemma case_call : forall R L Phi G f Df Sf body th th0 sm args d ge g st H,
     xsafe H g Phi G R L (app_subst (cS Phi) (app_subst th (fs_ret Sf)))
           (xinterp (S k) P d ge st (XCallD f th0 sm args)).
 Proof.
-  intros R L Phi G f Df Sf body th th0 sm args d ge g st H
-         Hf Hb Hsat Hth Hsm Hargs Hcg Hd Hv Hh.
+  intros Legacy R L Phi G f Df Sf body th th0 sm args d ge g st H
+         Hf Hb Hsat Hth Hsm Hth0 Htheta Hargs Hcg Hd Hv Hh.
+  assert(HdLegacy:XEnv.xdenv_agree Sg Rp P Fb H g(cA Phi)d).
+  { unfold provision_environment in Hd;rewrite Legacy in Hd;exact Hd. }
   assert (Hcg2 := Hcg). destruct Hcg2 as [Hgr [Hab [Hcov [Hsreg Hthis]]]].
   assert (Hcol : forall tau, app_subst g (app_subst (cS Phi) tau) = app_subst g tau)
     by (exact (@absorbs_all g (cS Phi) Hab)).
@@ -1681,22 +1916,72 @@ Proof.
   simpl. rewrite Hb.
   destruct (xinterp_list k P d ge st args) as [[[ws g1] st1] | rr]; [| apply xsafe_of_ctl; exact Hsa].
   destruct Hsa as [H1 [Hx1 [Hh1 [Hws Hv1]]]].
-  destruct (xcallee_env_agree WF Wt Hsat Hth Hsm Hcg (xdenv_agree_mono Hx1 Hd))
+  destruct (xcallee_env_agree WF Wt Hsat Hth Hsm Hcg (xdenv_agree_mono Hx1 HdLegacy))
     as [d' [Hcomp [Hcgc Hdc]]].
   rewrite Hcomp.
   set (cg := callee_grounding g Phi th (cA PhiD)) in *.
   assert (Hws' : Forall2 (fun w tau => xvt H1 w (app_subst cg tau)) ws (fs_params Sf)).
   { refine (@F2_conv H1 ws (fs_params Sf) _ _ _ Hws). intros tau Hin.
     rewrite (Hread tau (Hfp tau Hin)), !Hcol. reflexivity. }
+  assert (Hactual : xdenv_agree H1 cg (cA PhiD) (xcall_env P d th0 d')).
+  { unfold provision_environment;rewrite Legacy.
+    apply strong_agree; [apply xdenv_strong_call; exact Hdc|].
+    unfold cg. eapply runtime_types_call; [exact (proj2 HdLegacy)|exact Hcg|exact Wt|
+      exact Hsat|exact Hth|exact Hth0|exact Htheta|].
+    intro t; apply typefree_lookup; eapply smap_composed_typefree; eauto. }
   destruct Hcgc as [Hgr' [Hab' Hrest']].
   assert (Hvb : venv_ok H1 cg (cA PhiD) (body_env Sf) (mk_xvenv ws)).
   { apply venv_body'; [exact Hws'|]. rewrite Forall_forall. exact Hfp. }
-  pose proof (@IHfuel k (le_n k) _ _ _ _ _ _ d' (mk_xvenv ws) cg st1 H1
+  pose proof (@IHfuel k (le_n k) _ _ _ _ _ _ (xcall_env P d th0 d') (mk_xvenv ws) cg st1 H1
                 (@body_typed f Df Sf body PhiD Hf Hb Wt) (conj Hgr' (conj Hab' Hrest'))
-                (strong_agree Hdc) Hvb Hh1) as Hres.
+                Hactual Hvb Hh1) as Hres.
   apply (xsafe_ext Hx1).
   eapply ret_call_safe_h; [exact Hres | exact Hab' | | exact Hv1].
   rewrite (Hread _ Hfr), !Hcol. reflexivity.
+Qed.
+
+Lemma case_call_r : forall R L Phi G f D S body PhiD slot sm args d ge g st H,
+ xp_immutable P=true ->g_fn Sg f=Some(D,S,None) ->xp_fn P f=Some body ->
+ tele_ctx D=Some PhiD ->reified_scope_closed Sg P(cA PhiD) ->
+ callable_map_contract Sg P Phi PhiD sm slot S ->
+ Forall2(fun e tau=>xhas R L Phi G e(app_subst(cS Phi)tau))args(fs_params slot) ->
+ ctx_grounded g Phi ->xdenv_agree H g(cA Phi)d ->
+ venv_ok H g(cA Phi)G ge ->HL.heap_ok(PsiH H)st ->
+ xsafe H g Phi G R L(app_subst(cS Phi)(fs_ret slot))
+   (xinterp(Datatypes.S k)P d ge st(XCallD f [] sm args)).
+Proof.
+ intros R L Phi G f D S body PhiD slot sm args d ge g st H
+ Mode Fn Code Tele Closed Contract Args Ground Env Vars Heap.
+ pose proof(@absorbs_all g(cS Phi)(proj1(proj2 Ground)))as Col.
+ destruct(wf_fn_decl WF _ Fn)as[PhiD0[Wt[Params[Ret Rest]]]].
+ pose proof(wf_tele_ctx Wt)as Tele0;rewrite Tele in Tele0;injection Tele0 as <-.
+ pose proof(@xsafe_args_at R L Phi G d g args(app_subst(cS Phi))(fs_params slot)
+ ge st H Args Ground Env Vars Heap)as ArgumentsSafe.
+ cbn[xinterp];rewrite Code.
+ destruct(xinterp_list k P d ge st args)as[[[ws ge1]st1]|rr]eqn:Run;
+ [|apply xsafe_of_ctl;exact ArgumentsSafe].
+ destruct ArgumentsSafe as[H1[Ext[Heap1[Values Vars1]]]].
+ pose proof(shared_mono Ext Env)as Env1.
+ unfold provision_environment in Env1;rewrite Mode in Env1;destruct Env1 as[Env1 Scope].
+ destruct(@reified_direct_call_environment Sg Rp P Fb H1 Phi PhiD g d sm slot S
+ Mode Ground Env1 Contract)as[gc[dc[Compose[GroundC[Signature EnvC]]]]].
+ rewrite Compose.
+ unfold grounded_call_signature in Signature;injection Signature as Ps Rt.
+ assert(ValuesC:Forall2(fun w tau=>xvt H1 w(app_subst gc tau))ws(fs_params S)).
+ { apply F2_map_r;rewrite Ps.
+   apply (@F2_map_l _ _ (xvt H1)(app_subst g)).
+   refine(@F2_impl _ _ _ _ _ _ _ Values).
+   intros w tau Value;rewrite !Col in Value;exact Value. }
+ assert(VarsC:venv_ok H1 gc(cA PhiD)(body_env S)(mk_xvenv ws)).
+ { apply venv_body';[exact ValuesC|].
+   eapply Forall_impl;[|exact Params];intros tau T;exact(wf_ty_frees T). }
+ assert(BodyEnv:xdenv_agree H1 gc(cA PhiD)(xcall_env P d [] dc)).
+ { unfold provision_environment;rewrite Mode;auto. }
+ pose proof(@IHfuel k(le_n k)_ _ _ _ _ _(xcall_env P d [] dc)(mk_xvenv ws)gc st1 H1
+ (@body_typed f D S body PhiD Fn Code Wt)GroundC BodyEnv VarsC Heap1)as SafeBody.
+ apply(xsafe_ext Ext);eapply ret_call_safe_h;
+ [exact SafeBody|exact(proj1(proj2 GroundC))| |exact Vars1].
+ rewrite Rt,!Col;reflexivity.
 Qed.
 
 Lemma case_meth : forall R L Phi G e0 tau0 m Dm Sf rt0 th0 args d ge g st H,
@@ -1727,12 +2012,8 @@ Proof.
              = app_subst g (app_subst (this_subst rt0) (app_subst th0 tau))).
   { intros tau. unfold interp_m. rewrite Hcol, Hcol.
     apply this_read. symmetry. exact HR0. }
-  assert (Hen0 : exists en, lookup_xdenv (IMth rt0 m th0) d = Some en).
-  { destruct Hd as [Hcvd _]. rewrite Forall_forall in Hcvd.
-    destruct (Hcvd _ Hin) as [Hbad | Hok]; [ simpl in Hbad; discriminate | exact Hok ]. }
-  destruct Hen0 as [en Hen].
-  assert (Hag0 : xdentry_agree H g (IMth rt0 m th0) en).
-  { destruct Hd as [_ [Hd2 _]]. exact (Hd2 _ _ Hin eq_refl Hen). }
+  destruct(@provision_lookup Sg Rp P Fb H g(cA Phi)d(IMth rt0 m th0)Hd eq_refl Hin)
+    as[en[Hen Hag0]].
   pose proof (@IHfuel k (le_n k) R L Phi G e0 tau0 d ge g st H Hty0 Hcg Hd Hv Hh) as Hrcv.
   (* the arguments, read as the entry reads them *)
   assert (Hargs_at : forall H0 g0 st0, sext H H0 -> venv_ok H0 g (cA Phi) G g0 ->
@@ -1748,19 +2029,19 @@ Proof.
   { intros H0 g0 st0 Hx0 Hv0 Hh0.
     pose proof (@xsafe_args_at R L Phi G d g args
                   (interp_m (cS Phi) th0 (app_subst (cS Phi) tau0)) (fs_params Sf) g0 st0 H0
-                  Hargs Hcg (xdenv_agree_mono Hx0 Hd) Hv0 Hh0) as Hsa.
+                  Hargs Hcg (shared_mono Hx0 Hd) Hv0 Hh0) as Hsa.
     destruct (xinterp_list k P d g0 st0 args) as [[[ws g1] st1] | rr]; [| exact Hsa].
     destruct Hsa as [H1 [Hx1 [Hh1 [Hws Hv1]]]]. exists H1. split; [exact Hx1 |].
     split; [exact Hh1 |]. split; [| exact Hv1].
     refine (@F2_conv H1 ws (fs_params Sf) _ _ _ Hws). intros tau _. apply Hcv. }
   simpl. rewrite Hen.
-  pose proof Hag0 as Hag.
-  destruct en as [wv | f' dc | hh ss dc | p | hs]; simpl in Hag; rewrite ?Hm in Hag;
-    try contradiction.
+  destruct en as[wv|f' dc|hh ss dc|p|hs|ty|p held];
+    try solve[unfold provision_entry in Hag0;destruct(xp_immutable P);
+      cbn[reified_entry xdentry_agree]in Hag0;contradiction].
   - (* a provider closure *)
-    destruct (g_fn Sg f') as [[[D' S'] b'] | ] eqn:Ef'; [ | contradiction ].
-    destruct b'; [ contradiction | ].
-    destruct (xp_fn P f') as [body|] eqn:Hb; [ | contradiction ].
+    destruct(@provision_method_code Sg Rp P Fb H g rt0 m th0 Dm Sf f' dc Hm Hag0)
+      as[D'[S'[body[Ef' Hb]]]].
+    rewrite Hb.
     destruct (xinterp k P d ge st e0) as [o0 g0 st0] eqn:E0.
     destruct o0 as [w0 | | | | | | |];
       try (apply (@xsafe_pass H g Phi G R L tau0); [exact Hrcv | intros w Hw; discriminate]).
@@ -1769,13 +2050,14 @@ Proof.
     destruct (xinterp_list k P d g0 st0 args) as [[[ws g1] st1] | rr];
       [| apply xsafe_of_ctl; exact (xsafe_ctl_ext Hx0 Hargs_at)].
     destruct Hargs_at as [H1 [Hx1 [Hh1 [Hws Hv1]]]].
-    pose proof (@xdentry_agree_mono Sg Rp P Fb _ _ (sext_trans Hx0 Hx1) _ _ _ Hag0) as Hag1. simpl in Hag1.
-    rewrite Hm, Ef', Hb in Hag1.
-    destruct Hag1 as
-      [PhiD' [gc [Htc [Hgrc [Hcovc [Habc [Hpar [Hret [Htcov [Hkreg Hdd]]]]]]]]]].
-    apply xdentry_all_Forall in Hdd.
-    destruct (@closure_world H1 f' D' S' gc dc PhiD' Ef' Htc Hgrc Hcovc Habc Htcov Hkreg Hdd)
-      as [PhiD [Wt [-> [Wp [Wr [Hcgb Hdb]]]]]].
+    pose proof(@provision_entry_mono Sg Rp P Fb H H1(sext_trans Hx0 Hx1)
+      g(IMth rt0 m th0)(XDClo f' dc)Hag0)as Hag1.
+    destruct(@provision_method_closure Sg Rp P Fb H1 g rt0 m th0 f' dc Dm Sf D' S' body
+      Hm Ef' Hb Hag1)
+      as[PhiD'[gc[Htc[Hgrc[Hcovc[Habc[Hpar[Hret Hdb]]]]]]]].
+    destruct(wf_fn_decl WF _ Ef')as[PhiD[Wt[Wp[Wr Rest]]]].
+    pose proof(wf_tele_ctx Wt)as TD;rewrite Htc in TD;injection TD as <-.
+    pose proof(@provision_capture_grounded Sg D' PhiD' gc Wt Hgrc Hcovc Habc)as Hcgb.
     remember (fs_params S') as psl eqn:Eps.
     destruct psl as [| p0 rest]; [ simpl in Hpar; discriminate |].
     simpl in Hpar. injection Hpar as Hp0 Hprest.
@@ -1796,6 +2078,7 @@ Proof.
     eapply ret_call_safe_h; [exact Hres | exact Habc | | exact Hv1].
     rewrite Hret, Hcv. reflexivity.
   - (* a primitive provision *)
+    pose proof(@provision_method_primitive Sg Rp P Fb H g rt0 m th0 Dm Sf p Hm Hag0)as Hag.
     destruct (xinterp k P d ge st e0) as [o0 g0 st0] eqn:E0.
     destruct o0 as [w0 | | | | | | |];
       try (apply (@xsafe_pass H g Phi G R L tau0); [exact Hrcv | intros w Hw; discriminate]).
@@ -1813,7 +2096,28 @@ Proof.
       exact Hws. }
     pose proof (@prim_run_h H1 p _ _ (w0 :: ws) st1 Hag Hws' Hh1) as Hrun.
     apply (xsafe_ext (sext_trans Hx0 Hx1)).
-    destruct (run_prim P p (w0 :: ws) st1) as [o st2].
+    destruct (run_prim_at P p None (w0 :: ws) st1) as [o st2].
+    eapply prim_result; [exact Hrun | rewrite Hcv; reflexivity | exact Hv1].
+  - (* a primitive provision with an allocation type header *)
+    pose proof(@provision_method_primitive_at Sg Rp P Fb H g rt0 m th0 Dm Sf p held Hm Hag0)as Hag.
+    destruct (xinterp k P d ge st e0) as [o0 g0 st0] eqn:E0.
+    destruct o0 as [w0 | | | | | | |];
+      try (apply (@xsafe_pass H g Phi G R L tau0); [exact Hrcv | intros w Hw; discriminate]).
+    destruct Hrcv as [H0 [Hx0 [Hh0 [Hw0 Hv0]]]]. simpl in Hv0, Hh0.
+    specialize (Hargs_at H0 g0 st0 Hx0 Hv0 Hh0).
+    destruct (xinterp_list k P d g0 st0 args) as [[[ws g1] st1] | rr];
+      [| apply xsafe_of_ctl; exact (xsafe_ctl_ext Hx0 Hargs_at)].
+    destruct Hargs_at as [H1 [Hx1 [Hh1 [Hws Hv1]]]].
+    assert (Hws' : Forall2 (xvt H1) (w0 :: ws)
+                     (app_subst g rt0
+                      :: map (fun tau => app_subst g (app_subst (this_subst rt0) (app_subst th0 tau)))
+                             (fs_params Sf))).
+    { constructor; [rewrite HR0; exact (xvt_mono Hx1 Hw0) |].
+      apply (@F2_map_l _ _ (xvt H1) (fun tau => app_subst g (app_subst (this_subst rt0) (app_subst th0 tau)))).
+      exact Hws. }
+    pose proof (@prim_run_at_h H1 p held _ _ (w0 :: ws) st1 Hag Hws' Hh1) as Hrun.
+    apply (xsafe_ext (sext_trans Hx0 Hx1)).
+    destruct (run_prim_at P p (Some held) (w0 :: ws) st1) as [o st2].
     eapply prim_result; [exact Hrun | rewrite Hcv; reflexivity | exact Hv1].
 Qed.
 
@@ -1821,20 +2125,99 @@ Lemma colg : forall g Phi, ctx_grounded g Phi ->
   forall t, app_subst g (app_subst (cS Phi) t) = app_subst g t.
 Proof. intros g Phi [_ [Hab _]]. exact (absorbs_all Hab). Qed.
 
+Lemma venv_meanings_reground : forall H g g' A A' G ge,
+ venv_ok H g A G ge ->incl(tyreqs A)(tyreqs A') ->meanings_on A g' g ->
+ venv_ok H g' A' G ge.
+Proof.
+ intros H g g' A A' G ge[Values Scope]Incl Mean;split.
+ - clear Incl;induction Values as[|p q G ge[Key Value]Tail IH];constructor;
+   inversion Scope as[|? ? Head Rest];subst.
+   + split;[exact Key|]. rewrite(@meanings_on_type A g' g(snd p)Mean Head);exact Value.
+   + apply IH;exact Rest.
+ - eapply Forall_impl;[|exact Scope];intros p Free t Hin;apply Incl,Free;exact Hin.
+Qed.
+
+Lemma shared_bindty_world : forall Hs R L Phi G t tau' tau d ge g,
+    t <> this_sym ->
+    ~ In (ITy t) (cA Phi) ->
+    wf_ty Sg Phi tau' ->
+    wf_ty Sg Phi tau ->
+    ret_wf Sg Phi R ->
+    ctx_grounded g Phi ->
+    xdenv_agree Hs g (cA Phi) d ->
+    venv_ok Hs g (cA Phi) G ge ->
+    ctx_grounded ((t, app_subst g (app_subst (cS Phi) tau')) :: g) (bind_ty t tau' Phi)
+    /\ xdenv_agree Hs ((t, app_subst g (app_subst (cS Phi) tau')) :: g) (cA (bind_ty t tau' Phi)) (xbind_ty P d t tau')
+    /\ venv_ok Hs ((t, app_subst g (app_subst (cS Phi) tau')) :: g) (cA (bind_ty t tau' Phi)) G ge
+    /\ forall r, xsafe0 Hs ((t, app_subst g (app_subst (cS Phi) tau')) :: g) (bind_ty t tau' Phi) G R L tau r
+                -> xsafe0 Hs g Phi G R L tau r.
+Proof.
+  intros Hs R L Phi G t tau' tau d ge g Hneq Hfresh Htau' Htau HR Hg Hd Hv.
+  destruct(@provision_bind_type Sg Rp P Fb Hs Phi t tau' d g WF Hneq Hfresh Htau' Hg Hd)as[Hg2 Hd2].
+  destruct(@reified_bindty_ground Sg Phi t tau' g Hneq Hfresh Htau' Hg)as[_ Hlook].
+  set (g2 := (t, app_subst g (app_subst (cS Phi) tau')) :: g) in *.
+  assert (Hnot : ~ In t (tyreqs (cA Phi))).
+  { intro H. apply Hfresh. apply safety_case_bindty_aux1. exact H. }
+  assert (Hran : Forall (fun p => incl (ty_frees (snd p)) (tyreqs (cA Phi))) (cS Phi)).
+  { destruct Hg as [_ [_ [_ [[_ Hran] _]]]]. exact Hran. }
+  assert (Hincl : incl (tyreqs (cA Phi)) (tyreqs (cA (bind_ty t tau' Phi)))).
+  { intros u Hu. simpl. right. exact Hu. }
+  (* a type well-formed outside reads the same inside *)
+  assert (Hsame : forall a, incl (ty_frees a) (tyreqs (cA Phi)) ->
+            app_subst g2 a = app_subst g a).
+  { intros a Ha. apply app_subst_frees_agree. intros u Hu. apply Hlook. exact (Ha u Hu). }
+  split; [exact Hg2|]. split; [exact Hd2|]. split.
+  - eapply venv_reground; [exact Hv | exact Hincl | exact Hlook].
+  - intros r Hr. eapply xsafe0_back; [exact Hr | | |].
+    + assert (Hfree : incl (ty_frees tau) (tyreqs (cA Phi))) by exact (wf_ty_frees Htau).
+      rewrite (app_subst_frees_agree (cS (bind_ty t tau' Phi)) (cS Phi) tau).
+      * apply Hsame. apply safety_case_bindty_aux3; assumption.
+      * intros u Hu. simpl. destruct (Nat.eqb u t) eqn:E; [|reflexivity].
+        apply Nat.eqb_eq in E. subst. exfalso. apply Hnot. exact (Hfree t Hu).
+    + intros rt E. subst R. apply Hsame. exact (wf_ty_frees HR).
+    + intros ge0 [H1 _]. split; [| exact (proj2 Hv)].
+      pose proof (proj2 Hv) as HGreg. clear - H1 HGreg Hsame.
+      induction H1 as [|p q G0 ge1 [Hk Hw] Hr0 IH]; constructor;
+        inversion HGreg as [|? ? Hp Hps]; subst.
+      * split; [exact Hk|]. rewrite <- (Hsame _ Hp). exact Hw.
+      * apply IH. exact Hps.
+Qed.
+
 Ltac pass H := eapply xsafe_pass; [exact H | intros ? ?; discriminate].
 
 
 
 (* The worlds the primitive binds leave. *)
+Lemma alloc_prim_reify : forall p taus ret,
+  prim_ok Sg Rp P p taus ret ->
+  (match p with PBox _ | PArrNew _ => True | _ => False end) -> xreify P = true.
+Proof.
+  intros p taus ret Hp Alloc. destruct p; try contradiction.
+  all: destruct Hp as [[code Bad]|[[ps [r [Bad Rest]]]|Shape]];
+    try discriminate; try (destruct Bad; discriminate).
+  - destruct taus as [|c ts]; simpl in Shape; try contradiction.
+    destruct ts; simpl in Shape; try contradiction.
+    destruct Shape as [th [x [Er [Hr [Hc Hschema]]]]].
+    destruct Hschema as [spec [Hl Hrest]]. unfold xreify.
+    destruct (xp_cast P); [discriminate Hl|apply orb_true_r].
+  - destruct taus as [|c ts]; simpl in Shape; try contradiction.
+    destruct ts as [|i ts]; simpl in Shape; try contradiction.
+    destruct ts; simpl in Shape; try contradiction.
+    destruct Shape as [Hi [th [x [Er [Hr [Hc Hschema]]]]]].
+    destruct Hschema as [spec [Hl Hrest]]. unfold xreify.
+    destruct (xp_cast P); [discriminate Hl|apply orb_true_r].
+Qed.
+
 Lemma world_bindprim : forall H Phi f Df S p d g,
     g_fn Sg f = Some (Df, S, None) ->
     sat0 Sg Phi Df ->
     prim_ok Sg Rp P p (map (app_subst (cS Phi)) (fs_params S)) (app_subst (cS Phi) (fs_ret S)) ->
     ctx_grounded g Phi ->
     xdenv_agree H g (cA Phi) d ->
-    xdenv_agree H g (cA (add_item (IFn f) Phi)) ((IFn f, XDPrim p) :: d).
+    xdenv_agree H g (cA (add_item (IFn f) Phi)) ((IFn f, xprim_entry d (IFn f) p) :: d).
 Proof.
   intros H Phi f Df S p d g Hf Hsf Hok Hcg Hd.
+  assert (Ep : xprim_entry d (IFn f) p = XDPrim p) by (destruct p; reflexivity). rewrite Ep.
   pose proof (colg Hcg) as Hcol.
   assert (Hen : xdentry_agree H g (IFn f) (XDPrim p)).
   { simpl. rewrite Hf.
@@ -1850,7 +2233,9 @@ Proof.
     apply wf_ty_frees_aux3. apply avail_ty_in.
     rewrite Forall_forall in Havf. apply Havf.
     apply (proj2 (tele_ctx_tyreqs Df Htcf u)). exact Hu. }
-  exact (xdenv_agree_push (IFn f) (XDPrim p) Hd Hen Hdep).
+  eapply(@provision_push_non_type Sg Rp P Fb H g(cA Phi)d(IFn f)(XDPrim p));
+    [exact Hd|reflexivity| |exact Hdep].
+  apply(proj2(@provision_primitive_agreement Sg Rp P Fb H g(IFn f)p));exact Hen.
 Qed.
 
 Lemma world_bindprimm : forall H Phi tauk m Dm S th p d g,
@@ -1863,7 +2248,7 @@ Lemma world_bindprimm : forall H Phi tauk m Dm S th p d g,
             (interp_m (cS Phi) th (app_subst (cS Phi) tauk) (fs_ret S)) ->
     ctx_grounded g Phi ->
     xdenv_agree H g (cA Phi) d ->
-    xdenv_agree H g (cA (add_item (IMth tauk m th) Phi)) ((IMth tauk m th, XDPrim p) :: d).
+    xdenv_agree H g (cA (add_item (IMth tauk m th) Phi)) ((IMth tauk m th, xprim_entry d (IMth tauk m th) p) :: d).
 Proof.
   intros H Phi tauk m Dm S th p d g Hm Hwk Hsat Hthwf Hok Hcg Hd.
   pose proof (colg Hcg) as Hcol.
@@ -1885,7 +2270,23 @@ Proof.
   { intros u Hu. simpl in Hu. apply in_app_or in Hu. destruct Hu as [Hu | Hu].
     - exact (@tele_items_regular_aux1 Sg Phi _ Hok' u Hu).
     - exact (@tele_items_regular_aux2 Sg Phi _ WF Hok' u Hu). }
-  exact (xdenv_agree_push (IMth tauk m th) (XDPrim p) Hd Hen Hdep).
+  assert (HenActual : xdentry_agree H g (IMth tauk m th) (xprim_entry d (IMth tauk m th) p)).
+  { assert (Ground : prim_ok Sg Rp P p
+        (app_subst g tauk :: map (fun a => app_subst g (app_subst (this_subst tauk) (app_subst th a))) (fs_params S))
+        (app_subst g (app_subst (this_subst tauk) (app_subst th (fs_ret S))))).
+    { cbn [xdentry_agree] in Hen. rewrite Hm in Hen. exact Hen. }
+    destruct p; cbn [xprim_entry]; try exact Hen.
+    all: cbn [xdentry_agree]; rewrite Hm; split; [exact Ground|].
+    all: change (xground d tauk = app_subst g tauk).
+    all: eapply types_match_reads.
+    all: try exact (wf_ty_frees Hwk).
+    all: try exact (proj1 (proj2 (proj2 Hcg))).
+    all: apply (@provision_types Sg Rp P Fb H g(cA Phi)d Hd); eapply alloc_prim_reify; [exact Ground|exact I]. }
+  eapply(@provision_push_non_type Sg Rp P Fb H g(cA Phi)d(IMth tauk m th)
+    (xprim_entry d(IMth tauk m th)p));[exact Hd|reflexivity| |exact Hdep].
+  destruct p;cbn[xprim_entry]in HenActual|-*;
+    first[apply(proj2(@provision_primitive_agreement Sg Rp P Fb H g _ _));exact HenActual|
+          apply(proj2(@provision_header_primitive_agreement Sg Rp P Fb H g _ _ _));exact HenActual].
 Qed.
 
 (* ---- What a body's run, and an application, promise. ---- *)
@@ -1905,7 +2306,7 @@ Definition binds_post (H : sty) (Phi Phi' : ctx) (g : subst)
   | inl (d', ge', st') => ge' = [] /\ exists H' g', sext H H' /\ HL.heap_ok (PsiH H') st'
               /\ ctx_grounded g' Phi'
               /\ xdenv_agree H' g' (cA Phi') d'
-              /\ (forall x, In x (tyreqs (cA Phi)) -> lookup_subst x g' = lookup_subst x g)
+              /\ meanings_on(cA Phi)g' g
   | inr rr => ok_ctl H rr
   end.
 
@@ -1919,6 +2320,15 @@ Definition apply_post (H : sty) (Phi : ctx) (Dr : tele) (g : subst) (d : xdenv)
   | inr rr => ok_ctl H rr
   end.
 
+Definition apply_r_post(H:sty)(Phi:ctx)(Dr:tele)(g:subst)(d:xdenv)
+ (r:(xdenv*mstate)+xres):Prop:=
+ match r with
+ | inl(dr,st')=>exists H' g',sext H H' /\HL.heap_ok(PsiH H')st' /\
+ ctx_grounded g'(open_res Dr Phi) /\xdenv_agree H' g'(cA(open_res Dr Phi))(dr++d) /\
+ meanings_on(cA Phi)g' g
+ | inr rr=>ok_ctl H rr
+ end.
+
 Lemma ok_ctl_ext : forall H H1 r, sext H H1 -> ok_ctl H1 r -> ok_ctl H r.
 Proof.
   intros H H1 [o gr st] Hx R0. unfold ok_ctl in *. simpl in *.
@@ -1929,7 +2339,7 @@ Qed.
 Lemma binds_post_step : forall H H1 Phi Phi1 Phi' g g1 r,
     binds_post H1 Phi1 Phi' g1 r -> sext H H1 ->
     incl (tyreqs (cA Phi)) (tyreqs (cA Phi1)) ->
-    (forall x, In x (tyreqs (cA Phi)) -> lookup_subst x g1 = lookup_subst x g) ->
+    meanings_on(cA Phi)g1 g ->
     binds_post H Phi Phi' g r.
 Proof.
   intros H H1 Phi Phi1 Phi' g g1 r R0 Hx Hincl Hl.
@@ -1942,7 +2352,62 @@ Qed.
 
 (* ---- Abstract functors: an application, and a body's run. ---- *)
 
-Lemma xapply_step : forall j,
+Lemma xapply_r_step : forall j,
+ (forall Phi bs Phi',xbinds_ty Sg Rp P Fb Phi bs Phi' ->forall d g st H,
+ ctx_grounded g Phi ->xdenv_agree H g(cA Phi)d ->HL.heap_ok(PsiH H)st ->
+ binds_post H Phi Phi' g(xinterp_binds j P d [] st bs)) ->
+ xp_immutable P=true ->forall H Phi g d st u Du Dr results inputs outputs,
+ g_fun Sg u=Some(Du,Dr,None)->In(IFun u)(cA Phi)->
+ ctx_grounded g Phi ->xdenv_agree H g(cA Phi)d ->
+ application_input_contract Sg P Phi u Du inputs ->
+ result_map_contract Sg P Phi u Du Dr results outputs ->
+ reified_scope_closed Sg P(cA(open_res results Phi))->HL.heap_ok(PsiH H)st ->
+ apply_r_post H Phi results g d(xinterp_apply_r(S j)P d u inputs outputs st).
+Proof.
+ intros j IHb Mode H Phi g d st u Du Dr results inputs outputs Decl Hin Ground Env Inputs Outputs ClosedResult Heap.
+ destruct(@provision_lookup Sg Rp P Fb H g (cA Phi) d (IFun u) Env eq_refl Hin)as[entry[Lookup Entry]].
+ unfold provision_entry in Entry;rewrite Mode in Entry.
+ destruct entry as[w|f dc|h sms dc|p|sym|ty|p ty];
+ try solve[cbn[reified_entry]in Entry;contradiction].
+ (* Keep the original closure relation intact while exposing its shape. *)
+ destruct(Inputs g Ground)as[gin[Input InputMap]].
+ unfold provision_environment in Env;rewrite Mode in Env.
+ destruct Env as[Env Closed].
+ destruct(@reified_map_composes Sg Rp P Fb H gin g Du (cA Phi) inputs d Env InputMap)as[din[Compose[Keys[InEnv All]]]].
+ destruct(@reified_application_body_ready Sg Rp P Fb H g u h sms dc Du Dr gin din
+ Mode WF Decl Entry Input InEnv Keys((@xwf_reified_fun_inputs Sg Rp P Fb WFX Mode h)))
+ as[Dh[Dc[pins[code[PhiD[PhiC[gb[dh[FB[Code[TD[TC[GB[Run[BodyEnv[Hdecl Back]]]]]]]]]]]]]]]].
+ destruct code as[bodyresults bs].
+ destruct(@xwf_fb_r Sg Rp P Fb WFX Mode h Dh Dc pins Dr bodyresults bs FB Hdecl Code)
+ as[PD[PC[PhiEnd[WD[WC[Pins[ClosedBody[Typed Exports]]]]]]]].
+ pose proof(wf_tele_ctx WD)as TD0;rewrite TD in TD0;injection TD0 as <-.
+ pose proof(wf_tele_ctx WC)as TC0;rewrite TC in TC0;injection TC0 as <-.
+ assert(EnvBody:xdenv_agree H gb(cA(fun_ctx PhiD PhiC pins))(dh++dc)).
+ { unfold provision_environment;rewrite Mode;auto. }
+ pose proof(IHb _ _ _ Typed(dh++dc)gb st H GB EnvBody Heap)as BodySafe.
+ unfold apply_r_post.
+ cbn[xinterp_apply_r];rewrite Lookup,Code,Compose,Run.
+ destruct(xinterp_binds j P(dh++dc)[]st bs)as[[[bodyenv ge]st']|rr]eqn:Eval.
+ - cbn in BodySafe;destruct BodySafe as[Ge[H'[bodyout[Ext[Heap'[GroundOut[EnvOut Mean]]]]]]].
+   unfold provision_environment in EnvOut;rewrite Mode in EnvOut.
+   destruct EnvOut as[EnvOut ClosedOut].
+   destruct(@reified_body_exports Sg Rp P Fb H' _ _ Dh Dr _ gb bodyout bodyenv Exports GB GroundOut Mean EnvOut)
+   as[canonical[returned[Schema[Export[ReturnKeys ReturnEnv]]]]].
+   destruct(Back canonical Schema)as[gout[Result Trail]].
+   pose proof(@reified_result_transport Sg Rp P Fb H' gout canonical Dr Trail returned ReturnEnv)as Returned.
+   assert(OldEnv:reified_environment Sg Rp P Fb H' g(cA Phi)d).
+   { eapply (@reified_environment_mono Sg Rp P Fb H H');eassumption. }
+   destruct(@reified_application_results Sg Rp P Fb H' Phi g d u Du Dr results outputs gin gout returned Mode WF Closed Ground OldEnv Outputs Input Result Returned)
+   as[gcaller[dr[GroundCaller[ComposeOut[KeysOut[EnvCaller OldMean]]]]]].
+   rewrite Export,ComposeOut;cbn.
+   exists H',gcaller;split;[exact Ext|]. split;[exact Heap'|].
+   split;[exact GroundCaller|]. split;[|exact OldMean].
+   unfold provision_environment;rewrite Mode;split;[exact EnvCaller|].
+   exact ClosedResult.
+ - exact BodySafe.
+Qed.
+
+Lemma xapply_step : xp_immutable P=false ->forall j,
     (forall Phi bs Phi', xbinds_ty Sg Rp P Fb Phi bs Phi' ->
        forall d g st H, ctx_grounded g Phi -> xdenv_agree H g (cA Phi) d ->
        HL.heap_ok (PsiH H) st ->
@@ -1960,9 +2425,10 @@ Lemma xapply_step : forall j,
     HL.heap_ok (PsiH Hstt) st ->
     apply_post Hstt Phi (app_tele th Dr) g d (xinterp_apply (S j) P d u th sm st).
 Proof.
-  intros j IHb Phi u Du Dr th sm Hu Hav Hsat Hthw Hsm Hfix Hcoh Hfresh d g st Hstt Hg Hd Hhp.
+  intros Legacy j IHb Phi u Du Dr th sm Hu Hav Hsat Hthw Hsm Hfix Hcoh Hfresh d g st Hstt Hg Hd Hhp.
+  unfold provision_environment in Hd;rewrite Legacy in Hd.
   simpl xinterp_apply.
-  pose proof Hd as [Hcov0 [Hent0 _]].
+  pose proof (proj1 Hd) as [Hcov0 [Hent0 _]].
   assert (Hin : In (IFun u) (cA Phi)) by (apply avail_fun_in; exact Hav).
   rewrite Forall_forall in Hcov0.
   destruct (Hcov0 _ Hin) as [Hbad | [en Hlk]]; [discriminate Hbad |].
@@ -1971,23 +2437,23 @@ Proof.
   destruct (agree_restrict Hd) as [dA [HdA HagA]].
   pose proof HdA as [Hcov [Hent [HAreg Hkeys]]].
   rewrite Forall_forall in Hent, Hcov.
-  destruct en as [wv | fc dc0 | h sms dc | p | hs]; simpl in Hag; try contradiction.
+  destruct en as [wv | fc dc0 | h sms dc | p | hs | ty | p held]; simpl in Hag; try contradiction.
   rewrite Hu in Hag.
   destruct (Fb h) as [[[Dh Dc] pins]|] eqn:Hh; try contradiction.
   destruct (xp_fun P h) as [[Drp bs]|] eqn:Ep; try contradiction.
   destruct Hag as [E1 [Hch [PhiC [gc [HtcC [Hgrc [Hcovc [Habsc [Hpinc
-                   [Htcov [Hkeysc [HK Hallc]]]]]]]]]]]].
+                   [Htcov [Hkeysc [HK [HtypesC Hallc]]]]]]]]]]]]].
   subst Drp.
   destruct (@fun_decl_regular Sg u Du Dr WF Hu) as [PhiU [HtcU [WU [WrU HregU]]]].
-  destruct (@fb_regular h Dh Dc pins Dr bs Hh Ep)
+  destruct (@fb_regular Legacy h Dh Dc pins Dr bs Hh Ep)
     as [PhiH [PhiC' [HtcH [WH [WC [Hpok [WrF [[PhiB [Hbt Hprov]] HregF]]]]]]]].
   assert (EC : PhiC' = PhiC) by (rewrite (wf_tele_ctx WC) in HtcC; congruence).
   subst PhiC'.
   destruct (@xcallee_env_agree Sg Rp P Fb Hstt g Phi th sm Du d PhiU WF WU Hsat Hthw Hsm Hg Hd)
     as [d1 [Hc1 [Hg1 Hd1]]].
   rewrite Hc1.
-  destruct (@xbchain_agree Hstt Dh sms u Hch Du Dr PhiU PhiH d1 _ Hu WU WH Hg1 (strong_agree Hd1))
-    as [d2 [g2 [Hrc [Hg2 [Hd2 [Hr2 Hi2]]]]]].
+  destruct (@xbchain_agree Hstt Dh sms u Hch Du Dr PhiU PhiH d1 _ Hu WU WH Hg1 (strong_values Hd1))
+    as [d2 [g2 [Hrc [Hg2 [Hd2 [Hr2 [Hi2 Hfree2]]]]]]].
   rewrite Hrc.
   assert (Habs : forall t0, app_subst g (app_subst (cS Phi) t0) = app_subst g t0).
   { destruct Hg as [_ [Hab _]]. apply (absorbs_all Hab). }
@@ -2118,15 +2584,31 @@ Proof.
         apply in_or_app. left. exact (Hp x Hx).
       + eapply Forall_impl; [| exact Hkeysc]. intros p Hp x Hx.
         apply in_or_app. right. exact (Hp x Hx). }
-  (* the body, checked once *)
-  pose proof (IHb _ _ _ Hbt (d2 ++ dc) gH st Hstt HgH (strong_agree HdH) Hhp) as B.
-  destruct (xinterp_binds j P (d2 ++ dc) [] st bs) as [[[d3 ge3] st3] | rr] eqn:Eb;
+  assert (Hactual : xdenv_agree Hstt gH (cA (fun_ctx PhiH PhiC pins))
+    (xapply_env P d h th (d2 ++ dc))).
+  { unfold provision_environment;rewrite Legacy;split.
+    - apply strong_values. unfold xapply_env. apply xdenv_strong_call; exact HdH.
+    - eapply runtime_types_apply.
+      + exact (proj2 Hd).
+      + exact Hg.
+      + exact Hthw.
+      + intros t Ht. apply call_lookup_defined. rewrite Hdomth. apply Hi2; exact Ht.
+      + intro t. rewrite (@xwf_inputs Sg Rp P Fb WFX h Dh Dc pins Hh t).
+        symmetry. apply tele_ctx_tyreqs; exact HtcH.
+      + intros t Ht. rewrite (HgHH t Ht). apply HgPhi; exact Ht.
+      + exact HgHC.
+      + exact HtypesC.
+      + exact Hfree2. }
+  (* the body, checked once, at its actual restricted type application *)
+  pose proof (IHb _ _ _ Hbt (xapply_env P d h th (d2 ++ dc)) gH st Hstt HgH Hactual Hhp) as B.
+  destruct (xinterp_binds j P (xapply_env P d h th (d2 ++ dc)) [] st bs) as [[[d3 ge3] st3] | rr] eqn:Eb;
     [| exact B].
   destruct B as [_ [HB [gB [HxB [HhB [HgB [HdB HlB]]]]]]].
+  unfold provision_environment in HdB;rewrite Legacy in HdB.
   assert (Hres : exists dr, xcompose d3 (inst_smap th Dr) = Some dr).
   { apply xcompose_defined. apply Forall_forall. intros [a b] Hp.
     destruct (inst_smap_in _ _ _ _ Hp) as [_ [Hb Hnt]]. simpl.
-    destruct HdB as [HcB _]. rewrite Forall_forall in HcB, Hprov.
+    destruct (proj1 HdB) as [HcB _]. rewrite Forall_forall in HcB, Hprov.
     destruct (HcB b (Hprov b Hb)) as [Hty | Hen]; [| exact Hen].
     rewrite Hty in Hnt. discriminate Hnt. }
   destruct Hres as [dr Hdr]. rewrite Hdr.
@@ -2187,7 +2669,7 @@ Proof.
       { apply in_app_or in HxF. destruct HxF as [H | H]; [left; exact H |].
         apply in_app_or in H. destruct H as [H | H]; [right; exact H | contradiction]. }
       assert (HlBx : app_subst gB (TAbs x) = app_subst gH (TAbs x)).
-      { simpl. rewrite (HlB x); [reflexivity |]. simpl. rewrite tyreqs_app.
+      { apply HlB. simpl. rewrite tyreqs_app.
         destruct HxF' as [H | H]; apply in_or_app; [left | right]; exact H. }
       rewrite HlBx.
       assert (HxU : In x (tyreqs (cA PhiU))).
@@ -2285,7 +2767,10 @@ Proof.
       apply open_res_tyreqs.
     + simpl. rewrite tyreqs_app, tyreqs_app_tele. intros Hin'. apply in_app_or in Hin'.
       destruct Hin' as [Hin' | Hin']; [exact (HthisR Hin') | exact (Hthis Hin')].
-  - apply (@agree_ext Sg Rp P Fb HB g' _ (dr ++ dA)).
+  - unfold provision_environment;rewrite Legacy;split.
+    + assert (Vresult : xdenv_values HB g' (cA (open_res (app_tele th Dr) Phi)) (dr ++ d)).
+      {
+    apply (@values_ext Sg Rp P Fb HB g' _ (dr ++ dA)).
     2: { intros jj Hj Ht. rewrite !lookup_xdenv_app.
          destruct (lookup_xdenv jj dr) eqn:Ej; [reflexivity |].
          simpl in Hj. apply in_app_or in Hj. destruct Hj as [Hj | Hj]; [| exact (HagA jj Hj Ht)].
@@ -2294,7 +2779,7 @@ Proof.
          destruct (@lookup_smap_inst th Dr i Hi Hti) as [i'' Hl''].
          destruct (@xcompose_first d3 (inst_smap th Dr) dr _ i'' Hdr Hl'') as [en [_ Hen]].
          congruence. }
-    apply strong_agree.
+    apply strong_values.
     simpl. split; [| split; [| split]].
     + apply Forall_app. split.
       * apply Forall_forall. intros i' Hi'.
@@ -2316,7 +2801,7 @@ Proof.
         destruct (@xcompose_entry d3 (inst_smap th Dr) dr _ Hdr Hp) as [sat' [Hs Hl']].
         simpl in Hs, Hl'.
         destruct (inst_smap_in _ _ _ _ Hs) as [-> [Hi Hnt]].
-        destruct HdB as [_ [HeB _]].
+        destruct (proj1 HdB) as [_ [HeB _]].
         assert (HiB : In sat' (cA PhiB)) by (rewrite Forall_forall in Hprov; exact (Hprov _ Hi)).
         pose proof (HeB sat' en HiB Hnt Hl') as HagB.
         exact (Htrans sat' en Hi HagB).
@@ -2340,6 +2825,17 @@ Proof.
                  (conj Hdom Hran) _ (in_app_tele th Dr sat' Hi)).
       * eapply Forall_impl; [| exact Hkeys].
         intros p Hp x Hx. apply open_res_tyreqs. exact (Hp x Hx).
+      }
+      eapply values_ext; [exact Vresult|].
+      intros i Hi Nt. symmetry. apply lookup_xresult_non_type; exact Nt.
+    + eapply runtime_types_result.
+      * exact (proj2 Hd).
+      * exact (proj2 HdB).
+      * exact HDrB.
+      * intros t Ht. unfold g',gx. rewrite app_subst_TAbs.
+        rewrite (lookup_prefix_in (fun t => app_subst gB (TAbs t)) (tyreqs Dr) t g Ht). reflexivity.
+      * intros t Ht. symmetry; apply Hreads; exact Ht.
+      * eapply inst_smap_typefree; exact Hdr.
   - intros x Hx. rewrite tyreqs_app_tele in Hx. exact (Hlg x Hx).
 Qed.
 
@@ -2348,7 +2844,7 @@ Lemma xsafety_binds_apply : forall j, j <= k ->
        forall d g st H, ctx_grounded g Phi -> xdenv_agree H g (cA Phi) d ->
        HL.heap_ok (PsiH H) st ->
        binds_post H Phi Phi' g (xinterp_binds j P d [] st bs))
-    /\ (forall Phi u Du Dr th sm,
+    /\ (xp_immutable P=false ->forall Phi u Du Dr th sm,
           g_fun Sg u = Some (Du, Dr, None) ->
           avail Phi (IFun u) ->
           sat Sg Phi th Du ->
@@ -2359,31 +2855,50 @@ Lemma xsafety_binds_apply : forall j, j <= k ->
           Forall (fun t => ~ In (ITy t) (cA Phi)) (tyreqs Dr) ->
           forall d g st H, ctx_grounded g Phi -> xdenv_agree H g (cA Phi) d ->
           HL.heap_ok (PsiH H) st ->
-          apply_post H Phi (app_tele th Dr) g d (xinterp_apply j P d u th sm st)).
+          apply_post H Phi (app_tele th Dr) g d (xinterp_apply j P d u th sm st))
+    /\ (xp_immutable P=true ->forall H Phi g d st u Du Dr results inputs outputs,
+      g_fun Sg u=Some(Du,Dr,None)->In(IFun u)(cA Phi)->
+      ctx_grounded g Phi ->xdenv_agree H g(cA Phi)d ->
+      application_input_contract Sg P Phi u Du inputs ->
+      result_map_contract Sg P Phi u Du Dr results outputs ->
+      reified_scope_closed Sg P(cA(open_res results Phi))->HL.heap_ok(PsiH H)st ->
+      apply_r_post H Phi results g d(xinterp_apply_r j P d u inputs outputs st)).
 Proof.
   induction j as [| j IHj]; intros Hj.
-  { split; intros; simpl; eexists; (split; [apply sext_refl | eassumption]). }
+  { split;[|split].
+    all:(intros;cbn;eexists;split;[apply sext_refl|eassumption]). }
   assert (Hj' : j <= k) by lia.
-  destruct (IHj Hj') as [IHb IHa].
-  split; [| exact (@xapply_step j IHb)].
+  destruct (IHj Hj') as [IHb [IHa IHra]].
+  split.
+  2:{ split;[intros Legacy;exact(@xapply_step Legacy j IHb)|exact(@xapply_r_step j IHb)]. }
+
   intros Phi bs Phi' Hb.
   destruct Hb as [Phi
     | Phi t tau' r Phi' Hgt Hneq Hfresh Htau' Hr
     | Phi v Dv tauv e1 r Phi' Hgv Hs0 He1 Hr
-    | Phi f Df Sf f' D' S' body sm r Phi' Hf Hf' Hbd Hsf Hs' Hsm Hsig Hr
+    | Phi f Df Sf f' D' S' body sm r Phi' Hlegacy Hf Hf' Hbd Hsf Hs' Hsm Hsig Hr
     | Phi tauk m Dm Sf th f' D' S' body sm tau0' rest r Phi'
-        Hm Hwk Hsat Hthwf Hf' Hbd Hs' Hsm Hpar0 Hteq Hprest Hpret Hr
+        Hlegacy Hm Hwk Hsat Hthwf Hf' Hbd Hs' Hsm Hpar0 Hteq Hprest Hpret Hr
     | Phi f Df S p r Phi' Hf Hsf Hok Hr
     | Phi tauk m Dm S th p r Phi' Hm Hwk Hsat Hthwf Hok Hr
-    | Phi u Du Dr h Dh Dc pins sm smc r Phi' Hu Hh Hbh Hl Hcap Hfx Hr
-    | Phi u Du Dr w Dw sm r Phi' Hu Hw Hav Hl Hxx Hfx Hr
-    | Phi u Du Dr th sm r Phi' Hu Hav Hsat Hthw Hsm Hfix Hcoh Hfresh Hr];
+    | Phi u Du Dr h Dh Dc pins sm smc r Phi' Hlegacy Hu Hh Hbh Hl Hcap Hfx Hr
+    | Phi u Du Dr w Dw sm r Phi' Hlegacy Hu Hw Hav Hl Hxx Hfx Hr
+    | Phi u Du Dr th sm r Phi' Hlegacy Hu Hav Hsat Hthw Hsm Hfix Hcoh Hfresh Hr
+    | Phi f Df Sf code Dc Sc body PhiC sm r Phi' Mode Slot Code Body Tele Closed Contract ClosedNext Hr
+    | Phi rt m th Dm Sm code Dc Sc body PhiC sm r Phi' Mode Slot Wrt Sat Wth Code Body Tele Closed Contract ClosedNext Hr
+    | Phi u h Du Dh Dr Dc pins PhiD PhiC sm smc code r Phi' Mode U Hdcl FB Code TD TC Closed Contract ClosedNext Hr
+    | Phi u w Du Dw Dr sm r Phi' Mode U W Available Link ClosedNext Hr
+    | Phi u Du Dr results inputs outputs r Phi' Mode U Available Inputs Outputs ClosedNext Hr
+    | Phi bs Phi' u Mode Available Missing];
     intros d g st H Hg Hd Hhp; simpl xinterp_binds.
   - split; [reflexivity |]. exists H, g. split; [apply sext_refl |]. split; [exact Hhp |].
-    split; [exact Hg |]. split; [exact Hd |]. intros; reflexivity.
-  - destruct (world_bindty WF Hneq Hfresh Htau' Hg Hd) as [Hg2 [Hd2 Hlook]].
-    eapply binds_post_step; [exact (IHb _ _ _ Hr _ _ st H Hg2 Hd2 Hhp) | apply sext_refl | | exact Hlook].
-    intros x Hx. simpl. right. exact Hx.
+    split; [exact Hg |]. split; [exact Hd |]. apply meanings_on_refl.
+  - destruct(@provision_bind_type Sg Rp P Fb H Phi t tau' d g WF Hneq Hfresh Htau' Hg Hd)as[Hg2 Hd2].
+    destruct(@reified_bindty_ground Sg Phi t tau' g Hneq Hfresh Htau' Hg)as[_ Hlook].
+    eapply binds_post_step; [exact (IHb _ _ _ Hr _ _ st H Hg2 Hd2 Hhp) | apply sext_refl | | ].
+    + intros x Hx. simpl. right. exact Hx.
+    + intros x Hx;change(match lookup_subst x ((t,app_subst g(app_subst(cS Phi)tau'))::g)with Some a=>a|None=>TAbs x end= app_subst g(TAbs x)).
+      rewrite(Hlook x Hx);reflexivity.
   - assert (Hv0 : venv_ok H g (cA Phi) [] []) by (split; constructor).
     pose proof (@IHfuel j Hj' None false Phi [] e1 _ d [] g st H He1 Hg Hd Hv0 Hhp) as S1.
     destruct (xinterp j P d [] st e1) as [o g1 st1] eqn:E1.
@@ -2395,49 +2910,87 @@ Proof.
       try (exists H1; split; [exact Hx1 | exact Hh1]).
     destruct S1 as [Hw [Hv1 _]]. inversion Hv1; subst.
     rewrite (colg Hg), (colg Hg) in Hw.
-    destruct (world_bindval v Hgv Hs0 Hw Hg (xdenv_agree_mono Hx1 Hd)) as [Hg1 Hd1].
+    destruct (@provision_bind_value Sg Rp P Fb H1 Phi g d v Dv tauv x Hgv Hs0 Hw Hg (shared_mono Hx1 Hd)) as [Hg1 Hd1].
     eapply binds_post_step;
       [ exact (IHb _ _ _ Hr _ _ st1 H1 Hg1 Hd1 Hh1) | exact Hx1 | intros y Hy; exact Hy
-      | intros; reflexivity ].
-  - destruct (world_bindfn WF f f' Hf Hf' Hbd Hsf Hs' Hsm Hsig Hg Hd) as [dc [Hcomp [Hg1 Hd1]]].
+      | apply meanings_on_refl ].
+  - unfold provision_environment in Hd;rewrite Hlegacy in Hd.
+    destruct (world_bindfn WF f f' Hf Hf' Hbd Hsf Hs' Hsm Hsig Hg Hd) as [dc [Hcomp [Hg1 Hd1]]].
     rewrite Hcomp.
     eapply binds_post_step;
-      [ exact (IHb _ _ _ Hr _ _ st H Hg1 Hd1 Hhp) | apply sext_refl | intros y Hy; exact Hy
-      | intros; reflexivity ].
-  - destruct (world_bindmth WF m f' Hm Hwk Hsat Hthwf Hf' Hbd Hs' Hsm Hpar0 Hteq Hprest Hpret Hg Hd)
+      [ exact (IHb _ _ _ Hr _ _ st H Hg1 ltac:(unfold provision_environment;rewrite Hlegacy;exact Hd1) Hhp) | apply sext_refl | intros y Hy; exact Hy
+      | apply meanings_on_refl ].
+  - unfold provision_environment in Hd;rewrite Hlegacy in Hd.
+    destruct (world_bindmth WF m f' Hm Hwk Hsat Hthwf Hf' Hbd Hs' Hsm Hpar0 Hteq Hprest Hpret Hg Hd)
       as [dc [Hcomp [Hg1 Hd1]]].
     rewrite Hcomp.
     eapply binds_post_step;
-      [ exact (IHb _ _ _ Hr _ _ st H Hg1 Hd1 Hhp) | apply sext_refl | intros y Hy; exact Hy
-      | intros; reflexivity ].
+      [ exact (IHb _ _ _ Hr _ _ st H Hg1 ltac:(unfold provision_environment;rewrite Hlegacy;exact Hd1) Hhp) | apply sext_refl | intros y Hy; exact Hy
+      | apply meanings_on_refl ].
   - eapply binds_post_step;
       [ exact (IHb _ _ _ Hr _ _ st H Hg (@world_bindprim H Phi f Df S p d g Hf Hsf Hok Hg Hd) Hhp)
-      | apply sext_refl | intros y Hy; exact Hy | intros; reflexivity ].
+      | apply sext_refl | intros y Hy; exact Hy | apply meanings_on_refl ].
   - eapply binds_post_step;
       [ exact (IHb _ _ _ Hr _ _ st H Hg
                  (@world_bindprimm H Phi tauk m Dm S th p d g Hm Hwk Hsat Hthwf Hok Hg Hd) Hhp)
-      | apply sext_refl | intros y Hy; exact Hy | intros; reflexivity ].
-  - destruct (@world_bindfun H Phi u Du Dr h Dh Dc pins sm smc d g Hu Hh Hbh Hl Hcap Hfx Hg Hd)
+      | apply sext_refl | intros y Hy; exact Hy | apply meanings_on_refl ].
+  - unfold provision_environment in Hd;rewrite Hlegacy in Hd.
+    destruct (@world_bindfun H Hlegacy Phi u Du Dr h Dh Dc pins sm smc d g Hu Hh Hbh Hl Hcap Hfx Hg Hd)
       as [dc [Hcomp [Hg1 Hd1]]].
     rewrite Hcomp.
     eapply binds_post_step;
-      [ exact (IHb _ _ _ Hr _ _ st H Hg1 Hd1 Hhp) | apply sext_refl | intros y Hy; exact Hy
-      | intros; reflexivity ].
-  - destruct (@world_bindfuna H Phi u Du Dr w Dw sm d g Hu Hw Hav Hl Hxx Hfx Hg Hd)
+      [ exact (IHb _ _ _ Hr _ _ st H Hg1 ltac:(unfold provision_environment;rewrite Hlegacy;exact Hd1) Hhp) | apply sext_refl | intros y Hy; exact Hy
+      | apply meanings_on_refl ].
+  - unfold provision_environment in Hd;rewrite Hlegacy in Hd.
+    destruct (@world_bindfuna H Phi u Du Dr w Dw sm d g Hu Hw Hav Hl Hxx Hfx Hg Hd)
       as [h [sms [dc [Hlk [Hg1 Hd1]]]]].
     rewrite Hlk.
     eapply binds_post_step;
-      [ exact (IHb _ _ _ Hr _ _ st H Hg1 Hd1 Hhp) | apply sext_refl | intros y Hy; exact Hy
-      | intros; reflexivity ].
-  - pose proof (IHa Phi u Du Dr th sm Hu Hav Hsat Hthw Hsm Hfix Hcoh Hfresh d g st H Hg Hd Hhp) as A1.
+      [ exact (IHb _ _ _ Hr _ _ st H Hg1 ltac:(unfold provision_environment;rewrite Hlegacy;exact Hd1) Hhp) | apply sext_refl | intros y Hy; exact Hy
+      | apply meanings_on_refl ].
+  - pose proof (IHa Hlegacy Phi u Du Dr th sm Hu Hav Hsat Hthw Hsm Hfix Hcoh Hfresh d g st H Hg Hd Hhp) as A1.
     destruct (xinterp_apply j P d u th sm st) as [[dr st1] | rr] eqn:Ea.
     + destruct A1 as [H1 [g1 [Hx1 [Hh1 [Hg1 [Hd1 Hl1]]]]]].
       eapply binds_post_step;
         [ exact (IHb _ _ _ Hr _ _ st1 H1 Hg1 Hd1 Hh1) | exact Hx1 | apply open_res_tyreqs | ].
-      intros x Hx. apply Hl1. intros Hin. rewrite tyreqs_app_tele in Hin.
+      intros x Hx. change(match lookup_subst x g1 with Some a=>a|None=>TAbs x end=app_subst g(TAbs x)).
+      rewrite Hl1;[reflexivity|]. intros Hin. rewrite tyreqs_app_tele in Hin.
       rewrite Forall_forall in Hfresh. apply (Hfresh x Hin).
       apply safety_case_bindty_aux1. exact Hx.
     + destruct rr as [o g1 st1]. exact A1.
+  - destruct(@provision_bind_function Sg Rp P Fb H Mode Phi g d f code Df Sf Dc Sc PhiC sm body
+      Slot Code Body Tele Hg Hd Closed Contract ClosedNext)as[dc[Compose[GroundNext EnvNext]]].
+    rewrite Compose;eapply binds_post_step;
+    [exact(IHb _ _ _ Hr _ _ st H GroundNext EnvNext Hhp)|apply sext_refl|
+     intros t Hin;exact Hin|apply meanings_on_refl].
+  - destruct(@provision_bind_method Sg Rp P Fb H Mode Phi g d rt m th code Dm Sm Dc Sc PhiC sm body
+      Slot Code Body Tele Hg Hd Closed Contract ClosedNext)as[dc[Compose[GroundNext EnvNext]]].
+    rewrite Compose;eapply binds_post_step;
+    [exact(IHb _ _ _ Hr _ _ st H GroundNext EnvNext Hhp)|apply sext_refl|
+     intros t Hin;exact Hin|apply meanings_on_refl].
+  - destruct(@provision_bind_functor Sg Rp P Fb H Mode Phi g d u h Du Dh Dr Dc pins PhiD PhiC sm smc code
+      U Hdcl FB Code TD TC Hg Hd Closed Contract ClosedNext)as[dc[Compose[GroundNext EnvNext]]].
+    rewrite Compose;eapply binds_post_step;
+    [exact(IHb _ _ _ Hr _ _ st H GroundNext EnvNext Hhp)|apply sext_refl|
+     intros t Hin;exact Hin|apply meanings_on_refl].
+  - destruct(@provision_link_functor Sg Rp P Fb H Mode Phi g d u w Du Dw Dr sm U W
+      (avail_fun_in Available)Hg Hd(Link g Hg)ClosedNext)
+      as[h[sms[dc[Lookup[GroundNext EnvNext]]]]].
+    rewrite Lookup;eapply binds_post_step;
+    [exact(IHb _ _ _ Hr _ _ st H GroundNext EnvNext Hhp)|apply sext_refl|
+     intros t Hin;exact Hin|apply meanings_on_refl].
+  - pose proof(IHra Mode H Phi g d st u Du Dr results inputs outputs U(avail_fun_in Available)
+      Hg Hd Inputs Outputs ClosedNext Hhp)as Result.
+    destruct(xinterp_apply_r j P d u inputs outputs st)as[[dr st1]|rr]eqn:Run.
+    + destruct Result as[H1[g1[Ext[Heap1[GroundNext[EnvNext Mean]]]]]].
+      eapply binds_post_step;
+      [exact(IHb _ _ _ Hr _ _ st1 H1 GroundNext EnvNext Heap1)|exact Ext|
+       apply open_res_tyreqs|exact Mean].
+    + destruct rr;exact Result.
+
+  - exfalso;eapply(@provision_missing_functor_impossible Sg Rp P Fb H g(cA Phi)d u);
+    [exact Hd|apply avail_fun_in;exact Available|exact Missing].
+
 Qed.
 
 Lemma rec_fields_typed : forall H1 (g : subst) (Fc : ty -> ty) (fts : list (fld * ty)) (fs : list (fld * xexpr)) (ws : list xvalue),
@@ -2516,6 +3069,16 @@ Proof.
   intros H' _ R0. eapply xsafe0_popn; eassumption.
 Qed.
 
+Lemma xsafe_const_boundary : forall R L Phi G initializer tau id d ge g st H,
+  xsafe H g Phi G R L tau (xinterp k P d ge st initializer) ->
+  HL.heap_ok(PsiH H)st ->
+  xsafe H g Phi G R L tau (xinterp(S k)P d ge st(XConst id initializer)).
+Proof.
+ intros R L Phi G initializer tau id d ge g st H Safe Heap.
+ cbn[xinterp];destruct k;[|exact Safe].
+ exists H;split;[apply sext_refl|];split;[exact Heap|exact I].
+Qed.
+
 Lemma xsafe_step : XSAFE (S k).
 Proof.
   pose proof (IHfuel (le_n k)) as SK.
@@ -2526,25 +3089,32 @@ Proof.
     | L Phi G
     | L Phi G e tau' tau Hty Hsub Hwf
     | L Phi G v Dv tauv Hgv Hav
-    | L Phi G n D tau0 th th0 e Hrp Hgt Hsat Hth Hty
+    | L Phi G n D tau0 th th0 e Hrp Hgt Hsat Hth Hpayload Hty
+    | L Phi G n D tau0 th e spec Hcast Hrp Hgt Hsat Hth Hty
     | L Phi G f Df S args Hf Hav Hargs
-    | L Phi G f Df S body th th0 sm args Hf Hb Hsat Hth Hsm Hargs
+    | L Phi G f Df S body th th0 sm args Hlegacy Hf Hb Hsat Hth Hsm Hth0 Htheta Hargs
     | L Phi G e0 tau0 m Dm S rt0 th0 args Hm Hty0 Hin Hrec Huniq Hargs
     | L Phi G x e1 e2 tau1 tau Hty1 Hfr Hty2
     | L Phi G t tau' e tau Hgt Hne Hfresh Htau' Hty Htau HR
-    | L Phi G t tau' e tau Hgt Hne Hfresh Htau' Hty Htau HR
+    | L Phi G t tau' e tau Hplain Hgt Hne Hfresh Htau' Hty Htau HR
     | L Phi G v Dv tauv e1 e tau Hgv Hsat Hty1 Hty
-    | L Phi G f Df S f' D' S' body sm e tau Hf Hf' Hb Hsf Hs' Hsm Hsig Hty
+    | L Phi G f Df S f' D' S' body sm e tau Hlegacy Hf Hf' Hb Hsf Hs' Hsm Hsig Hty
     | L Phi G tauk m Dm S th f' D' S' body sm tau0' rest e tau
-        Hm Hwk Hsat Hthwf Hf' Hb Hs' Hsm Hpar0 Hteq Hprest Hpret Hty
+        Hlegacy Hm Hwk Hsat Hthwf Hf' Hb Hs' Hsm Hpar0 Hteq Hprest Hpret Hty
     | L Phi G f Df S p e tau Hf Hsf Hok Hty
     | L Phi G tauk m Dm S th p e tau Hm Hwk Hsat Hthwf Hok Hty
-    | L Phi G u Du Dr h Dh Dc pins sm smc e tau Hu Hh Hbh Hl Hcap Hfx Hty
-    | L Phi G u Du Dr w Dw sm e tau Hu Hw Hav Hl Hxx Hfx Hty
-    | L Phi G u Du Dr th sm e tau Hu Hav Hsat Hthw Hsm Hfix Hcoh Hfresh Hty Hesc HRf
+    | L Phi G u Du Dr h Dh Dc pins sm smc e tau Hlegacy Hu Hh Hbh Hl Hcap Hfx Hty
+    | L Phi G u Du Dr w Dw sm e tau Hlegacy Hu Hw Hav Hl Hxx Hfx Hty
+    | L Phi G u Du Dr th sm e tau Hlegacy Hu Hav Hsat Hthw Hsm Hfix Hcoh Hfresh Hty Hesc HRf
+    | L Phi G f D S body PhiD slot sm args Mode Fn Code Tele Closed Contract Args
+    | L Phi G f Df Sf code Dc Sc body PhiC sm e tau Mode Slot Code Body Tele Closed Contract ClosedNext Hty
+    | L Phi G rt m th Dm Sm code Dc Sc body PhiC sm e tau Mode Slot Wrt Sat Wth Code Body Tele Closed Contract ClosedNext Hty
+    | L Phi G u h Du Dh Dr Dc pins PhiD PhiC sm smc code e tau Mode U Hdcl FB Code TD TC Closed Contract ClosedNext Hty
+    | L Phi G u w Du Dw Dr sm e tau Mode U W Available Link ClosedNext Hty
+    | L Phi G u Du Dr results inputs outputs e tau Mode U Available Inputs Outputs ClosedNext Hty Htau HR
     | L Phi G fs fts Hk Hfs
     | L Phi G e tau fts f tf Hty Hwf Heq Ha
-    | L Phi G e tau n th D fts f tf Hty Hwf Heq Hrp Hg0 Ha
+    | L Phi G e tau n th D fts f tf Hty Hwf Heq Hrp Hg0 Hpayload Ha
     | L Phi G e1 e2 tau1 tau Hty1 Hty2
     | L Phi G x e tx Hx Hty
     | L Phi G c e1 e2 tau Hc Hty1 Hty2
@@ -2552,7 +3122,10 @@ Proof.
     | L Phi G b tb Hb
     | L Phi G e rt tau HR Hty
     | Phi G tau
-    | L Phi G e0 tau0 arms Gbs tau Hty0 Hwf Hnd Hex Hpats Hregs Hbodies ];
+    | L Phi G e0 tau0 arms Gbs tau Hty0 Hwf Hnd Hex Hpats Hregs Hbodies
+    | L Phi G id initializer tau Hty
+    | L Phi G e tau' tau Mode Hty GroundEq Wtau
+    | L Phi G e tau u Mode Available Missing ];
     intros Hcg Hd Hv Hhp; pose proof (colg Hcg) as Hcol.
   - (* var *)
     destruct (@venv_lookup H g (cA Phi) G ge x tau Hv Hx) as [w [Hl Hw]].
@@ -2564,12 +3137,8 @@ Proof.
     eapply xsafe_sub_h; [exact (IH R L Phi G e tau' d ge g st H Hty Hcg Hd Hv Hhp) | exact Hsub].
   - (* val *)
     assert (Hin : In (IVal v) (cA Phi)) by (apply avail_val_in; exact Hav).
-    destruct Hd as [Hcover [Hall _]].
-    rewrite Forall_forall in Hcover.
-    destruct (Hcover _ Hin) as [Hbad | [en Hlook]]; [simpl in Hbad; discriminate|].
-    pose proof (Hall _ _ Hin eq_refl Hlook) as Hen.
-    destruct en as [w | | | |]; simpl in Hen; try contradiction.
-    rewrite Hgv in Hen.
+    destruct(@provision_value Sg Rp P Fb H g(cA Phi)d v Dv tauv Hd Hin Hgv)
+      as[w[Hlook Hen]].
     apply xsafe_here; simpl; rewrite Hlook; [exact Hhp |].
     simpl. split; [rewrite Hcol, Hcol; exact Hen | exact Hv].
   - (* tag *)
@@ -2578,17 +3147,20 @@ Proof.
     { destruct Hsat as [PhiD [Htc [Hdom _]]]. rewrite Hdom.
       destruct (wf_tag_decl WF _ Hgt) as [PhiD' [Wt Hwf]].
       rewrite (wf_tele_ctx Wt) in Htc. injection Htc as <-.
-      exact (wf_ty_frees Hwf). }
+      exact Hwf. }
     cbn [xinterp]. destruct (xinterp k P d ge st e) as [o g1 st1] eqn:E.
     destruct o; try pass Hres.
     destruct Hres as [H1 [Hx1 [Hh1 [Hw Hv1]]]].
+    erewrite xcast_ordinary by exact Hrp.
     exists H1. split; [exact Hx1 |]. split; [exact Hh1 |].
     unfold xsafe0. cbn [xr_out xr_g]. split; [| exact Hv1].
     rewrite Hcol, Hcol in Hw. rewrite Hcol, Hcol, app_subst_nom.
     eapply XvTag; [exact Hrp | exact Hgt |].
-    rewrite <- (app_subst_chain g th tau0 Hincl). exact Hw.
+    rewrite <- ordinary_payload_commutes; [exact Hw| |exact Hpayload].
+    apply payload_covered_from_frees. intros t Ht. apply subst_chain_aux1. exact (Hincl t Ht).
+  - exact (@case_cast_tag R L Phi G n D tau0 th e spec d ge g st H Hcast Hrp Hgt Hsat Hth Hty Hcg Hd Hv Hhp).
   - exact (@case_need R L Phi G f Df S args d ge g st H Hf Hav Hargs Hcg Hd Hv Hhp).
-  - exact (@case_call R L Phi G f Df S body th th0 sm args d ge g st H Hf Hb Hsat Hth Hsm Hargs Hcg Hd Hv Hhp).
+  - exact (@case_call Hlegacy R L Phi G f Df S body th th0 sm args d ge g st H Hf Hb Hsat Hth Hsm Hth0 Htheta Hargs Hcg Hd Hv Hhp).
   - exact (@case_meth R L Phi G e0 tau0 m Dm S rt0 th0 args d ge g st H Hm Hty0 Hin Hrec Hargs Hcg Hd Hv Hhp).
   - (* let *)
     pose proof (SK R L Phi G e1 tau1 d ge g st H Hty1 Hcg Hd Hv Hhp) as R1.
@@ -2598,40 +3170,43 @@ Proof.
     apply (xsafe_ext Hx1).
     apply (@xsafe_pop1_h H1 g Phi x tau1 G R L tau).
     apply (SK R L Phi ((x, tau1) :: G) e2 tau d ((x, x0) :: g1) g st1 H1 Hty2 Hcg
-              (xdenv_agree_mono Hx1 Hd)); [| exact Hh1].
+              (shared_mono Hx1 Hd)); [| exact Hh1].
     exact (@venv_cons H1 g (cA Phi) G g1 x tau1 x0 Hv1 Hw Hfr).
   - (* type bind *)
-    destruct (@bindty_world H R L Phi G t tau' tau d ge g Hne Hfresh Htau' Htau HR Hcg Hd Hv)
+    destruct (@shared_bindty_world H R L Phi G t tau' tau d ge g Hne Hfresh Htau' Htau HR Hcg Hd Hv)
       as [Hg2 [Hd2 [Hv2 _]]].
-    simpl. pose proof (SK R L _ G e tau d ge _ st H Hty Hg2 Hd2 Hv2 Hhp) as R0.
+    simpl. pose proof (SK R L _ G e tau (xbind_ty P d t tau') ge _ st H Hty Hg2 Hd2 Hv2 Hhp) as R0.
     eapply xsafe_map; [reflexivity | | exact R0].
     intros H' Hx R1.
-    destruct (@bindty_world H' R L Phi G t tau' tau d ge g Hne Hfresh Htau' Htau HR Hcg
-                (xdenv_agree_mono Hx Hd) (venv_ok_mono Hx Hv)) as [_ [_ [_ Hback]]].
+    destruct (@shared_bindty_world H' R L Phi G t tau' tau d ge g Hne Hfresh Htau' Htau HR Hcg
+                (shared_mono Hx Hd) (venv_ok_mono Hx Hv)) as [_ [_ [_ Hback]]].
     exact (Hback _ R1).
   - (* implicit type bind: the same term, at the same fuel *)
-    destruct (@bindty_world H R L Phi G t tau' tau d ge g Hne Hfresh Htau' Htau HR Hcg Hd Hv)
+    destruct (@shared_bindty_world H R L Phi G t tau' tau d ge g Hne Hfresh Htau' Htau HR Hcg Hd Hv)
       as [Hg2 [Hd2 [Hv2 _]]].
+    unfold xbind_ty in Hd2; rewrite Hplain in Hd2.
     pose proof (IH R L _ G e tau d ge _ st H Hty Hg2 Hd2 Hv2 Hhp) as R0.
     eapply xsafe_map; [reflexivity | | exact R0].
     intros H' Hx R1.
-    destruct (@bindty_world H' R L Phi G t tau' tau d ge g Hne Hfresh Htau' Htau HR Hcg
-                (xdenv_agree_mono Hx Hd) (venv_ok_mono Hx Hv)) as [_ [_ [_ Hback]]].
+    destruct (@shared_bindty_world H' R L Phi G t tau' tau d ge g Hne Hfresh Htau' Htau HR Hcg
+                (shared_mono Hx Hd) (venv_ok_mono Hx Hv)) as [_ [_ [_ Hback]]].
     exact (Hback _ R1).
   - (* val bind *)
     pose proof (SK R L Phi G e1 _ d ge g st H Hty1 Hcg Hd Hv Hhp) as R1.
     simpl. destruct (xinterp k P d ge st e1) as [o g1 st1] eqn:E.
     destruct o; try pass R1.
     destruct R1 as [H1 [Hx1 [Hh1 [Hw Hv1]]]]. rewrite Hcol, Hcol in Hw.
-    destruct (world_bindval v Hgv Hsat Hw Hcg (xdenv_agree_mono Hx1 Hd)) as [Hg' Hd'].
+    destruct (@provision_bind_value Sg Rp P Fb H1 Phi g d v Dv tauv x Hgv Hsat Hw Hcg (shared_mono Hx1 Hd)) as [Hg' Hd'].
     apply (xsafe_ext Hx1). exact (SK R L _ G e tau _ g1 g st1 H1 Hty Hg' Hd' Hv1 Hh1).
   - (* fn bind *)
+    unfold provision_environment in Hd;rewrite Hlegacy in Hd.
     destruct (world_bindfn WF f f' Hf Hf' Hb Hsf Hs' Hsm Hsig Hcg Hd) as [dc [Hcomp [Hg' Hd']]].
-    simpl. rewrite Hcomp. exact (SK R L _ G e tau _ ge g st H Hty Hg' Hd' Hv Hhp).
+    simpl. rewrite Hcomp. exact (SK R L _ G e tau _ ge g st H Hty Hg' ltac:(unfold provision_environment;rewrite Hlegacy;exact Hd') Hv Hhp).
   - (* method bind *)
+    unfold provision_environment in Hd;rewrite Hlegacy in Hd.
     destruct (world_bindmth WF m f' Hm Hwk Hsat Hthwf Hf' Hb Hs' Hsm Hpar0 Hteq Hprest Hpret Hcg Hd)
       as [dc [Hcomp [Hg' Hd']]].
-    simpl. rewrite Hcomp. exact (SK R L _ G e tau _ ge g st H Hty Hg' Hd' Hv Hhp).
+    simpl. rewrite Hcomp. exact (SK R L _ G e tau _ ge g st H Hty Hg' ltac:(unfold provision_environment;rewrite Hlegacy;exact Hd') Hv Hhp).
   - (* primitive bind *)
     simpl. exact (SK R L (add_item (IFn f) Phi) G e tau _ ge g st H Hty Hcg
                     (@world_bindprim H Phi f Df S p d g Hf Hsf Hok Hcg Hd) Hv Hhp).
@@ -2639,16 +3214,18 @@ Proof.
     simpl. exact (SK R L (add_item (IMth tauk m th) Phi) G e tau _ ge g st H Hty Hcg
                     (@world_bindprimm H Phi tauk m Dm S th p d g Hm Hwk Hsat Hthwf Hok Hcg Hd) Hv Hhp).
   - (* functor bind *)
-    destruct (@world_bindfun H Phi u Du Dr h Dh Dc pins sm smc d g Hu Hh Hbh Hl Hcap Hfx Hcg Hd)
+    unfold provision_environment in Hd;rewrite Hlegacy in Hd.
+    destruct (@world_bindfun H Hlegacy Phi u Du Dr h Dh Dc pins sm smc d g Hu Hh Hbh Hl Hcap Hfx Hcg Hd)
       as [dc [Hcomp [Hg' Hd']]].
-    simpl. rewrite Hcomp. exact (SK R L _ G e tau _ ge g st H Hty Hg' Hd' Hv Hhp).
+    simpl. rewrite Hcomp. exact (SK R L _ G e tau _ ge g st H Hty Hg' ltac:(unfold provision_environment;rewrite Hlegacy;exact Hd') Hv Hhp).
   - (* functor copy *)
+    unfold provision_environment in Hd;rewrite Hlegacy in Hd.
     destruct (@world_bindfuna H Phi u Du Dr w Dw sm d g Hu Hw Hav Hl Hxx Hfx Hcg Hd)
       as [h [sms [dc [Hlk [Hg' Hd']]]]].
-    simpl. rewrite Hlk. exact (SK R L _ G e tau _ ge g st H Hty Hg' Hd' Hv Hhp).
+    simpl. rewrite Hlk. exact (SK R L _ G e tau _ ge g st H Hty Hg' ltac:(unfold provision_environment;rewrite Hlegacy;exact Hd') Hv Hhp).
   - (* application: the existential's unpack *)
-    destruct (xsafety_binds_apply (le_n k)) as [_ SA].
-    pose proof (SA Phi u Du Dr th sm Hu Hav Hsat Hthw Hsm Hfix Hcoh Hfresh d g st H Hcg Hd Hhp) as A1.
+    destruct (xsafety_binds_apply (le_n k)) as [_ [SA _]].
+    pose proof (SA Hlegacy Phi u Du Dr th sm Hu Hav Hsat Hthw Hsm Hfix Hcoh Hfresh d g st H Hcg Hd Hhp) as A1.
     simpl. destruct (xinterp_apply k P d u th sm st) as [[dr st1] | rr] eqn:Ea.
     2: { destruct rr as [o g1 st1]. unfold ok_ctl in A1. simpl in A1.
          destruct o; try contradiction; destruct A1 as [H' [Hx Hh']];
@@ -2682,6 +3259,42 @@ Proof.
       * split; [exact Hk|]. rewrite <- (app_subst_frees_agree g' g (snd p)); [exact Hw|].
         intros x Hx. apply Hl''. apply Hfr. exact (Hp x Hx).
       * apply IH. exact Hps.
+  - exact(@case_call_r R L Phi G f D S body PhiD slot sm args d ge g st H
+      Mode Fn Code Tele Closed Contract Args Hcg Hd Hv Hhp).
+  - destruct(@provision_bind_function Sg Rp P Fb H Mode Phi g d f code Df Sf Dc Sc PhiC sm body
+      Slot Code Body Tele Hcg Hd Closed Contract ClosedNext)as[dc[Compose[GroundNext EnvNext]]].
+    cbn[xinterp];rewrite Compose;exact(SK R L _ G e tau _ ge g st H Hty GroundNext EnvNext Hv Hhp).
+  - destruct(@provision_bind_method Sg Rp P Fb H Mode Phi g d rt m th code Dm Sm Dc Sc PhiC sm body
+      Slot Code Body Tele Hcg Hd Closed Contract ClosedNext)as[dc[Compose[GroundNext EnvNext]]].
+    cbn[xinterp];rewrite Compose;exact(SK R L _ G e tau _ ge g st H Hty GroundNext EnvNext Hv Hhp).
+  - destruct(@provision_bind_functor Sg Rp P Fb H Mode Phi g d u h Du Dh Dr Dc pins PhiD PhiC sm smc code
+      U Hdcl FB Code TD TC Hcg Hd Closed Contract ClosedNext)as[dc[Compose[GroundNext EnvNext]]].
+    cbn[xinterp];rewrite Compose;exact(SK R L _ G e tau _ ge g st H Hty GroundNext EnvNext Hv Hhp).
+  - destruct(@provision_link_functor Sg Rp P Fb H Mode Phi g d u w Du Dw Dr sm U W
+      (avail_fun_in Available)Hcg Hd(Link g Hcg)ClosedNext)
+      as[h[sms[dc[Lookup[GroundNext EnvNext]]]]].
+    cbn[xinterp];rewrite Lookup;exact(SK R L _ G e tau _ ge g st H Hty GroundNext EnvNext Hv Hhp).
+  - destruct(xsafety_binds_apply(le_n k))as[_[_ Apply]].
+    pose proof(Apply Mode H Phi g d st u Du Dr results inputs outputs U(avail_fun_in Available)
+      Hcg Hd Inputs Outputs ClosedNext Hhp)as Applied.
+    cbn[xinterp];destruct(xinterp_apply_r k P d u inputs outputs st)as[[dr st1]|rr]eqn:Run.
+    2:{ destruct rr as[o ge1 st1];unfold ok_ctl in Applied;cbn in Applied;
+        destruct o;try contradiction;destruct Applied as[H1[Ext Heap]];
+        exists H1;(split;[exact Ext|split;[exact Heap|exact I]]). }
+    destruct Applied as[H1[g1[Ext[Heap1[GroundNext[EnvNext Mean]]]]]].
+    assert(VarsNext:venv_ok H1 g1(cA(open_res results Phi))G ge).
+    { eapply venv_meanings_reground;[exact(venv_ok_mono Ext Hv)|apply open_res_tyreqs|exact Mean]. }
+    pose proof(SK R L _ G e tau(dr++d)ge g1 st1 H1 Hty GroundNext EnvNext VarsNext Heap1)as Tail.
+    apply(xsafe_ext Ext);eapply xsafe_map;[reflexivity| |exact Tail].
+    intros H2 Ext2 Safe;eapply xsafe0_back;[exact Safe| | |].
+    + rewrite(colg GroundNext),Hcol;eapply meanings_on_type;[exact Mean|exact(wf_ty_frees Htau)].
+    + intros rt ER;subst R;eapply meanings_on_type;[exact Mean|exact(wf_ty_frees HR)].
+    + intros ge0[Values _];split;[|exact(proj2 Hv)].
+      pose proof(proj2 Hv)as Scope;clear - Values Scope Mean.
+      induction Values as[|p q G ge0[Key Value]Rest IH];constructor;
+      inversion Scope as[|? ? Free More];subst.
+      * split;[exact Key|]. rewrite <-(@meanings_on_type(cA Phi)g1 g(snd p)Mean Free);exact Value.
+      * apply IH;exact More.
   - exact (@case_rec R L Phi G fs fts d ge g st H Hk Hfs Hcg Hd Hv Hhp).
   - (* a record's field *)
     pose proof (SK R L Phi G e tau d ge g st H Hty Hcg Hd Hv Hhp) as R1.
@@ -2701,7 +3314,7 @@ Proof.
     destruct o; try pass R1.
     destruct R1 as [H1 [Hx1 [Hh1 [Hw Hv1]]]]. rewrite Heq, app_subst_nom in Hw.
     destruct (xvt_tag_inv Hw Hrp ltac:(rewrite Hg0; discriminate)) as [D1 [taup1 [w' [-> [Hg1 Hw']]]]].
-    rewrite Hg0 in Hg1. injection Hg1 as <- <-. rewrite app_subst_nom in Hw'.
+    rewrite Hg0 in Hg1. injection Hg1 as <- <-. rewrite ordinary_payload_nom in Hw'.
     destruct (@xwf_rec Sg Rp P Fb WFX) as [Hrr Hgr].
     destruct (xvt_rec_inv Hw' Hrr Hgr) as [r [-> [Hk Hr]]].
     assert (Hk' : map fst r = map fst fts) by (rewrite Hk; exact (map_snd_fst _ _)).
@@ -2715,16 +3328,19 @@ Proof.
     rewrite Hg0 in Hg2. injection Hg2 as <- <-.
     destruct (wf_tag_decl WF _ Hg0) as [PhiD' [Wt Hwt]].
     rewrite (wf_tele_ctx Wt) in Htc. injection Htc as <-.
-    pose proof (rec_payload_wf Hgr Hwt) as Hfts.
-    rewrite Hcol. rewrite <- (@read_member g th tf PhiD' Hdom); [exact Hvt|].
-    rewrite Forall_forall in Hfts. exact (wf_ty_frees (Hfts _ (assoc_ty_in _ _ Ha))).
+    pose proof (rec_payload_scoped _ _ Hwt) as Hfts.
+    rewrite Hcol. rewrite ordinary_payload_commutes; [exact Hvt| |].
+    + apply payload_covered_from_frees. intros t Ht. apply subst_chain_aux1.
+      rewrite Hdom. rewrite Forall_forall in Hfts.
+      exact (Hfts _ (assoc_ty_in _ _ Ha) t Ht).
+    + eapply ordinary_payload_nom_parameter_ok; [exact Hpayload|exact (assoc_ty_in _ _ Ha)].
   - (* sequence *)
     pose proof (SK R L Phi G e1 tau1 d ge g st H Hty1 Hcg Hd Hv Hhp) as R1.
     simpl. destruct (xinterp k P d ge st e1) as [o g1 st1] eqn:E.
     destruct o; try pass R1.
     destruct R1 as [H1 [Hx1 [Hh1 [_ Hv1]]]].
     apply (xsafe_ext Hx1).
-    exact (SK R L Phi G e2 tau d g1 g st1 H1 Hty2 Hcg (xdenv_agree_mono Hx1 Hd) Hv1 Hh1).
+    exact (SK R L Phi G e2 tau d g1 g st1 H1 Hty2 Hcg (shared_mono Hx1 Hd) Hv1 Hh1).
   - (* assignment *)
     pose proof (SK R L Phi G e tx d ge g st H Hty Hcg Hd Hv Hhp) as R1.
     simpl. destruct (xinterp k P d ge st e) as [o g1 st1] eqn:E.
@@ -2738,20 +3354,22 @@ Proof.
     simpl. destruct (xinterp k P d ge st c) as [o g1 st1] eqn:E.
     destruct o; try pass R1.
     destruct R1 as [H1 [Hx1 [Hh1 [Hw Hv1]]]].
+    rewrite !bool_ty_subst in Hw.
     destruct (@truthy_typed H1 x Hw) as [bb Hb]. rewrite Hb.
     apply (xsafe_ext Hx1).
-    destruct bb; [exact (SK R L Phi G e1 tau d g1 g st1 H1 Hty1 Hcg (xdenv_agree_mono Hx1 Hd) Hv1 Hh1)
-                 | exact (SK R L Phi G e2 tau d g1 g st1 H1 Hty2 Hcg (xdenv_agree_mono Hx1 Hd) Hv1 Hh1)].
+    destruct bb; [exact (SK R L Phi G e1 tau d g1 g st1 H1 Hty1 Hcg (shared_mono Hx1 Hd) Hv1 Hh1)
+                 | exact (SK R L Phi G e2 tau d g1 g st1 H1 Hty2 Hcg (shared_mono Hx1 Hd) Hv1 Hh1)].
   - (* while *)
     pose proof (SK R L Phi G c _ d ge g st H Hc Hcg Hd Hv Hhp) as R1.
     simpl. destruct (xinterp k P d ge st c) as [o g1 st1] eqn:E.
     destruct o; try pass R1.
     destruct R1 as [H1 [Hx1 [Hh1 [Hw Hv1]]]].
+    rewrite !bool_ty_subst in Hw.
     destruct (@truthy_typed H1 x Hw) as [bb Hbb]. rewrite Hbb.
     apply (xsafe_ext Hx1).
     destruct bb; [| exists H1; split; [apply sext_refl | split; [exact Hh1 |]];
                     simpl; split; [constructor | exact Hv1]].
-    pose proof (SK R true Phi G b tb d g1 g st1 H1 Hb Hcg (xdenv_agree_mono Hx1 Hd) Hv1 Hh1) as R2.
+    pose proof (SK R true Phi G b tb d g1 g st1 H1 Hb Hcg (shared_mono Hx1 Hd) Hv1 Hh1) as R2.
     destruct (xinterp k P d g1 st1 b) as [o2 g2 st2] eqn:E2.
     destruct R2 as [H2 [Hx2 [Hh2 R2]]]. simpl in Hh2.
     unfold xsafe0 in R2. simpl in R2.
@@ -2760,7 +3378,7 @@ Proof.
     + destruct R2 as [_ Hv2]. apply (xsafe_ext Hx2).
       exact (SK R L Phi G (XWhile c b) TUnit d g2 g st2 H2
                (@XtWhile Sg Rp P Fb R L Phi G c b tb Hc Hb) Hcg
-               (xdenv_agree_mono (sext_trans Hx1 Hx2) Hd) Hv2 Hh2).
+               (shared_mono (sext_trans Hx1 Hx2) Hd) Hv2 Hh2).
     + destruct R2 as [_ Hv2]. exists H2. split; [exact Hx2 |]. split; [exact Hh2 |].
       simpl. split; [constructor | exact Hv2].
   - (* loop *)
@@ -2772,7 +3390,7 @@ Proof.
       try (exists H2; split; [exact Hx2 | split; [exact Hh2 | exact R2]]).
     + destruct R2 as [_ Hv2]. apply (xsafe_ext Hx2).
       exact (SK R L Phi G (XLoop b) TUnit d g2 g st2 H2
-               (@XtLoop Sg Rp P Fb R L Phi G b tb Hb) Hcg (xdenv_agree_mono Hx2 Hd) Hv2 Hh2).
+               (@XtLoop Sg Rp P Fb R L Phi G b tb Hb) Hcg (shared_mono Hx2 Hd) Hv2 Hh2).
     + destruct R2 as [_ Hv2]. exists H2. split; [exact Hx2 |]. split; [exact Hh2 |].
       simpl. split; [constructor | exact Hv2].
   - (* return *)
@@ -2796,9 +3414,21 @@ Proof.
     rewrite <- (Forall2_length Hbs).
     apply (xsafe_ext Hx1).
     apply xsafe_popn_h.
-    apply (SK R L Phi (Gb ++ G) eb tau d (bs ++ g1) g st1 H1 Heb Hcg (xdenv_agree_mono Hx1 Hd));
+    apply (SK R L Phi (Gb ++ G) eb tau d (bs ++ g1) g st1 H1 Heb Hcg (shared_mono Hx1 Hd));
       [| exact Hh1].
     exact (@venv_app H1 g (cA Phi) Gb G bs g1 Hbs Hreg Hv1).
+  - (* constant initializer boundary *)
+    apply xsafe_const_boundary;[exact(SK R L Phi G initializer tau d ge g st H Hty Hcg Hd Hv Hhp)|exact Hhp].
+  - (* Immutable checked scopes may identify types through their grounding equations. *)
+    pose proof(IH R L Phi G e tau' d ge g st H Hty Hcg Hd Hv Hhp)as Safe.
+    eapply xsafe_map;[reflexivity| |exact Safe].
+    intros H' Ext Safe0;unfold xsafe0 in *.
+    destruct(xr_out(xinterp(S k)P d ge st e));try exact Safe0.
+    rewrite Hcol in Safe0 |- *;rewrite(GroundEq g Hcg)in Safe0;exact Safe0.
+
+  - exfalso;eapply(@provision_missing_functor_impossible Sg Rp P Fb H g(cA Phi)d u);
+    [exact Hd|apply avail_fun_in;exact Available|exact Missing].
+
 Qed.
 
 End Cases.
@@ -2882,10 +3512,10 @@ Theorem mossx_typed_safe : forall Sg Rp P Fb, xwf Sg Rp P Fb ->
   forall R L Phi G e tau d ge g st H,
     xhas Sg Rp P Fb R L Phi G e tau ->
     ctx_grounded g Phi ->
-    xdenv_agree Sg Rp P Fb H g (cA Phi) d ->
-    venv_ok Sg Rp H g (cA Phi) G ge ->
-    XHeapC.ConcreteHeap.heap_ok (XSafetyC.PsiH Sg Rp H) st ->
-    forall fuel, XSafetyC.xsafe Sg Rp H g Phi G R L tau
+    provision_environment Sg Rp P Fb H g (cA Phi) d ->
+    venv_ok Sg Rp P H g (cA Phi) G ge ->
+    XHeapC.ConcreteHeap.heap_ok (XSafetyC.PsiH Sg Rp P H) st ->
+    forall fuel, XSafetyC.xsafe Sg Rp P H g Phi G R L tau
                    (MossX.XS.xinterp fuel P d ge st e).
 Proof.
   intros Sg Rp P Fb Hwf R L Phi G e tau d ge g st H Hty Hg Hd Hv Hh fuel.
@@ -2900,7 +3530,7 @@ Theorem mossx_run_main_safe : forall Sg Rp P Fb, xwf Sg Rp P Fb ->
     xp_fn P main = Some body ->
     wf_tele Sg empty_ctx Dm PhiD ->
     ctx_grounded g0 PhiD ->
-    xdenv_agree Sg Rp P Fb (fun _ => None) g0 (cA PhiD) d0 ->
+    provision_environment Sg Rp P Fb (fun _ => None) g0 (cA PhiD) d0 ->
     forall fuel st0 c, MossX.XS.xr_out (MossX.XS.run_main fuel P main d0 st0) <> XErr c.
 Proof.
   intros Sg Rp P Fb Hwf main Dm Sm body PhiD g0 d0 Hm Hps Hb Wt Hg Hd fuel st0 c.

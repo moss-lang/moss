@@ -5,13 +5,12 @@
 (*    declares, is the name the declaration is filed under (imports come    *)
 (*    from modules of lower rank).                                          *)
 (* 2. Elab.is_main against Part V's IsMainFn, for a symbol of the loader's: *)
-(*    a fn without receiver that its own module has in scope as `main`.     *)
-(*    Like IsMainFn, it does not count a `main` imported under that name    *)
-(*    (Audit note 41, open).                                                *)
+(*    a fn without receiver in scope as `main` in any loaded module,       *)
+(*    including an imported function renamed to main (Audit note 41).     *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySound BodyTy Merge CtxWalk CtxMerge InfoCache.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySoundCore BodyTy Merge CtxWalk CtxMerge InfoCache MethodLookup.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -77,7 +76,7 @@ Qed.
 Section Main.
 Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 
 Lemma kind_fn_decl : forall x g, nget (w_syms w) x = Some g -> gs_kind g = KFn ->
   exists n ps rt body, gs_decl g = ADFn RPlain n ps rt body.
@@ -88,47 +87,57 @@ Qed.
 
 Lemma scope_alias_mod : forall p n e, A.w_scope WW p A.NSAlias n = Some e -> exists q, e = A.EMod q.
 Proof.
-  intros p n e H. cbn [A.w_scope BodySound.W W_read] in H. destruct (find_mod w p (w_order w)); [|discriminate].
+  intros p n e H. cbn [A.w_scope BodySoundCore.W W_read] in H. destruct (find_mod w p (w_order w)); [|discriminate].
   destruct (sassoc n _); cbn in H; [injection H as <-; eauto | discriminate].
 Qed.
 
-(* is_main reads IsMainFn, for a symbol of the loader's *)
+Lemma find_mod_member : forall w0 p ids m, find_mod w0 p ids = Some m ->
+  exists mi, In mi ids /\ get_mod w0 mi = m.
+Proof.
+  intros w0 p ids. induction ids as [|mi ids IH]; intros m H; [discriminate|].
+  cbn [find_mod] in H. destruct (String.eqb (gm_path (get_mod w0 mi)) p).
+  - injection H as <-. exists mi. split; [left; reflexivity|reflexivity].
+  - destruct (IH m H) as (j & Hj & E). exists j. split; [right; exact Hj|exact E].
+Qed.
+
+(* is_main reads every module's scope, including an imported main. *)
 Theorem is_main_spec : forall g s m s', nget (w_syms w) (gs_id g) = Some g -> st_w s = w ->
   is_main g s = Good (m, s') -> (m = true <-> A.IsMainFn WW (gs_id g)).
 Proof.
   intros g s m s' Hg Hw H. pose proof (w_decl_rd w R Fl _ _ Hg) as Wd.
-  pose proof (loader_mod_in w R Fl b Hload _ _ Hg) as Hmi.
   unfold is_main in H.
   destruct (negb (kind_eqb (gs_kind g) KFn) || is_some (gs_recv g)) eqn:Ek.
-  - injection H as <- _. split; [discriminate|]. intros (d & ps & rt & body & D & Da & _).
+  - injection H as <- _. split; [discriminate|].
+    intros (d & n & ps & rt & body & p & D & Da & Hsc).
     rewrite Wd in D. injection D as <-. cbn [A.d_ast] in Da.
-    pose proof (load_world_kind b w Hload _ _ Hg) as KO. unfold KindOK in KO. rewrite Da in KO.
-    cbn in KO. injection KO as KO. change A.DKFn with (kconv KFn) in KO. apply kconv_inj in KO.
-    destruct (load_world_recv b w Hload _ _ Hg) as [Rn|Km]; [|rewrite <- KO in Km; discriminate].
-    rewrite <- KO, Rn in Ek. cbn in Ek. discriminate.
-  - apply orb_false_iff in Ek as [Ek Er]. apply negb_false_iff, kind_eqb_spec in Ek.
-    unfold the_mod in H. apply bind_inv in H as (gm & s1 & E1 & H). injection E1 as <- <-. rewrite Hw in H.
-    injection H as <- _.
+    pose proof (load_world_kind b w Hload _ _ Hg) as KO.
+    unfold KindOK in KO. rewrite Da in KO. cbn in KO.
+    injection KO as KO. change A.DKFn with (kconv KFn) in KO.
+    apply kconv_inj in KO.
+    destruct (load_world_recv b w Hload _ _ Hg) as [Rn|Km];
+      [|rewrite <- KO in Km; discriminate].
+    rewrite <- KO, Rn in Ek. discriminate.
+  - apply orb_false_iff in Ek as [Ek Er].
+    apply negb_false_iff, kind_eqb_spec in Ek.
+    cbn [mbind get ret] in H. rewrite Hw in H. injection H as <- _.
     destruct (kind_fn_decl _ _ Hg Ek) as (n & ps & rt & body & Dg).
     split.
-    + intro Em. destruct (sassoc "main"%string (gm_names (get_mod w (gs_mod g)))) as [x|] eqn:Ex; [|discriminate].
-      apply Nat.eqb_eq in Em. subst x.
-      assert (Rp : Elab.resolve_path w (gs_mod g) ["main"%string] = Good (Some (Elab.ESym (gs_id g))))
-        by (unfold Elab.resolve_path; rewrite Ex; reflexivity).
-      pose proof (load_world_resolves b w R Fl Hload _ _ _ Hmi Rp) as Ra. cbn [option_map ent_of] in Ra.
-      assert (Sc : A.w_scope WW (gm_path (get_mod w (gs_mod g))) A.NSName "main"%string = Some (A.ESym (gs_id g))).
-      { unfold A.resolve in Ra. change (W_read w R Fl) with (BodySound.W w R Fl) in Ra. destruct (A.w_scope WW _ A.NSName _) as [e0|] eqn:E0; [exact Ra|].
-        exfalso. destruct (A.w_scope WW _ A.NSAlias _) as [e1|] eqn:E1; [|discriminate].
-        cbn [A.resolve_rest] in Ra. injection Ra as ->. destruct (scope_alias_mod _ _ _ E1) as (q & Eq). discriminate. }
-      destruct (load_world_reads b w R Fl Hload) as [(rank & Hrank) _ _ _ Lsc _].
-      pose proof (proj1 (Lsc _ _ _ _ (load_world_loaded b w Hload _ Hmi)) Sc) as Is.
-      pose proof (scope_own b WW rank Hrank _ _ _ _ _ (load_world_loaded b w Hload _ Hmi) Is Wd eq_refl) as Fd.
-      cbn [A.d_ast] in Fd. rewrite Dg in Fd. cbn in Fd. injection Fd as ->.
-      exists (A.Decl (gm_path (get_mod w (gs_mod g))) (gs_decl g) (gs_assumes g)), ps, rt, body.
-      split; [exact Wd|]. split; [exact Dg | exact Sc].
-    + intros (d & ps' & rt' & body' & D & Da & _). rewrite Wd in D. injection D as <-. cbn [A.d_ast] in Da.
-      rewrite (load_world_names b w Hload _ _ "main"%string Hg ltac:(rewrite Da; reflexivity)).
-      apply Nat.eqb_refl.
+    + intro Em. apply existsb_exists in Em as (mi & Hmi & Em).
+      destruct (sassoc "main"%string (gm_names (get_mod w mi))) as [x|] eqn:Ex;
+        [|discriminate]. apply Nat.eqb_eq in Em. subst x.
+      exists (A.Decl (gm_path (get_mod w (gs_mod g))) (gs_decl g) (gs_assumes g)),
+        n, ps, rt, body, (gm_path (get_mod w mi)).
+      split; [exact Wd|]. split; [exact Dg|].
+      exact (eq_trans (loaded_scope_table b w R Fl Hload mi A.NSName "main"%string Hmi)
+        ltac:(cbn [tbl]; rewrite Ex; reflexivity)).
+    + intros (d & n' & ps' & rt' & body' & p & D & Da & Hsc).
+      cbn [A.w_scope BodySoundCore.W W_read] in Hsc.
+      destruct (find_mod w p (w_order w)) as [gm|] eqn:Ef; [|discriminate].
+      destruct (find_mod_member w p (w_order w) gm Ef) as (mi & Hmi & <-).
+      cbn [tbl] in Hsc.
+      destruct (sassoc "main"%string (gm_names (get_mod w mi))) as [x|] eqn:Ex;
+        [|discriminate]. injection Hsc as ->.
+      apply existsb_exists. exists mi. split; [exact Hmi|]. rewrite Ex. apply Nat.eqb_refl.
 Qed.
 
 (* what fn_info_ctx asks of a function that is not `main` *)

@@ -1,0 +1,23 @@
+# Left and Right require the same value at T and Receiver, so their
+# shared context merges T with Receiver. An attached provider must be
+# checked against that canonical receiver, rather than the raw T name.
+type P;
+type T;
+tag Receiver;
+assume P { val seed: P; }
+context Left = T, seed[P=T];
+context Right = seed[P=Receiver];
+fn .method();
+fn Receiver.provide() {}
+assume Left, Right {
+  fn exercise() {
+    bind T.method = Receiver.provide;
+    Receiver.method();
+  }
+}
+fn main() {
+  bind P = Receiver;
+  bind T = Receiver;
+  bind seed = Receiver;
+  exercise();
+}

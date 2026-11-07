@@ -13,17 +13,7 @@
 //! the raw output of each, never the optimized one: raw equality implies
 //! optimized equality and not the other way round.
 
-use moss_tests::{compile_self, compiler, compiler_raw, oracle_command, wasm_file, wasm_opt, wasmtime};
-
-#[test]
-fn compiler_bootstrap_omits_gc_string_implementation() {
-    let bundle = oracle_command(&["--bundle-text", "src/main.moss"]);
-    assert_eq!(bundle.code, 0, "{}", bundle.stderr);
-    assert!(
-        !bundle.text().contains("gcstring.moss"),
-        "the compiler bootstrap imports the unused GC string implementation"
-    );
-}
+use moss_tests::{compile_self, compiler, compiler_raw, wasm_file, wasm_opt, wasmtime};
 
 #[test]
 fn the_compiler_is_a_fixpoint_of_itself() {

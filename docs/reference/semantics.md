@@ -165,7 +165,9 @@ no named `noop` and no wrapper to attach to. A method bind may carry a bracket a
 (`bind IntList.get[Elem=Int]=Ints.get;`), which is how a method declared
 once for several receivers is provided at one of them: the bindings
 interpret the abstract signature the provider is matched against, and they
-apply to that bind alone. No other kind of bind takes one.
+apply to that bind alone. No other kind of bind takes one. Named function
+and method providers are unapplied names; an explicit application belongs on the method bind's
+left-hand side, rather than on the provider name.
 
 Calling a defined function requires each of its needs to be available at
 the call site by key. Since a bound symbol may be known to the callee under
@@ -268,6 +270,10 @@ string expressions use the ordinary construction protocol described below.
 `\r`, `\t`, `\"`, and `\\` mean newline, carriage return, tab, quote,
 and backslash. Other escapes are errors. Lengths and indices count bytes,
 including the individual UTF-8 bytes of non-ASCII characters.
+
+[Raw multiline strings](syntax.md#raw-multiline-strings) are expressions
+with the same construction protocol. Their payload is literal text with
+LF after every marked line (including the last), without escape processing.
 
 A quoted expression expands to ordinary calls to `string_begin`,
 `string_write1` through `string_write4`, and `string_finish`, resolved
@@ -413,14 +419,15 @@ constants, the expansion is constant-foldable, and an optimizer folds it.
 ## Execution
 
 `main` takes no parameters and returns `()`. The platform runs it in its
-root context: `main` may assume any of `Wasm` (the instructions,
-`lib/wasm.moss`), `Wasi` (the host's functions, `lib/wasip1.moss`) and
-`Branch` (`i32_bool`, `lib/wasistd.moss`), and `Gc` — the platform's
-functors `Heap`, `Mutable` and `Arrays`, with the types they are fixed
-in — is in force in `main` whether or not it assumes it. `Std` is a
-library over these: a program usually starts `main` with `bind WasiStd;`
-(`lib/wasi.moss`) and calls code that assumes `Std`. Any function but
-`main` that needs a platform functor assumes `Gc`. Three distinct errors
+root context, named [`Base`](../../lib/base.moss). `Base` groups
+`Wasm` (the instructions, `lib/wasm.moss`), `Wasi` (the host's functions,
+`lib/wasip1.moss`), `Branch` (`i32_bool`, `lib/wasistd.moss`), and `Gc`
+(the platform's functors `Heap`, `Mutable`, and `Arrays`). `Gc`, with the
+types its functors are fixed in, is in force in `main` whether or not
+it assumes it. `Std` is a library over these: a program usually declares
+`assume Base`, starts `main` with `bind StdBase;` (`lib/wasi.moss`), and
+calls code that assumes `Std`. Other functions that need platform
+functors can assume `Gc` or `Base`. Three distinct errors
 mark the boundaries: a name nobody declared is *not in scope*; a declared
 but unprovided symbol is *not available in the context*; a requirement of
 `main`'s that the platform does not provide is an error at link.

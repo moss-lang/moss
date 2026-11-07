@@ -1,0 +1,7 @@
+import "./wasm.moss" use I32, i32_one, i32_add, defined_platform;
+assume I32, i32_one, i32_add, defined_platform {
+  fn main() {
+    let known = i32_add(i32_one, i32_one);
+    let unknown = defined_platform(known);
+  }
+}

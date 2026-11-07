@@ -1,0 +1,10 @@
+type A;
+type B;
+tag Unit;
+tag Receiver;
+assume A { fn .value(): A; }
+fn main() {
+ bind B = Unit;
+ bind Receiver.value[A=B] = () => Unit;
+ match Receiver.value() { Unit => () };
+}

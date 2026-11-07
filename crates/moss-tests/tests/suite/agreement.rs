@@ -60,9 +60,6 @@ const BEYOND: &str = "oracle gap: `main` assumes more than the platform provides
 /// D79: the oracle's machine (MossX) has one linear memory, so it reports a
 /// program that binds `Memory` and uses memory unsupported.
 const MEMORIES: &str = "oracle gap: more than one memory (D79)";
-/// D75, D81: a `Ref` or `Array` rebuilt from a bare handle is a checked
-/// cast natively, which the oracle does not model outside the library.
-const FORGED: &str = "oracle gap: a forged reference handle (D75)";
 /// A library module that other tests import, with no `main`: the
 /// self-hosted compiler reports the missing `main`, and the oracle, which
 /// only runs whole programs, reports it unsupported.
@@ -83,14 +80,11 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/acrosslib.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/app.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/arena.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/arena_ref.moss", Accept, Unsupported, FORGED),
     ("tests/wasi/arrays_in_scratch.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/bridge.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/doubledouble.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/functor_capture_memory.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/gc_array_forge.moss", Accept, Unsupported, FORGED),
     ("tests/wasi/gc_array_memory.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/gc_forge.moss", Accept, Unsupported, FORGED),
     ("tests/wasi/memories.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_any_type.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_copy.moss", Accept, Unsupported, MEMORIES),

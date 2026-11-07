@@ -34,7 +34,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: lockfiles
-      - run: nix flake check --print-build-logs
+      - run: nix flake check --print-build-logs --max-jobs 1 --cores 1
 
       - run: nix build --print-build-logs .#standalone
       - run: cp -RL result moss-linux-x86
@@ -59,7 +59,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: lockfiles
-      - run: nix flake check --print-build-logs
+      - run: nix flake check --print-build-logs --max-jobs 1 --cores 1
 
       - run: nix build --print-build-logs .#standalone
       - run: cp -RL result moss-linux-arm
@@ -77,7 +77,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: lockfiles
-      - run: nix flake check --print-build-logs
+      - run: nix flake check --print-build-logs --max-jobs 1 --cores 1
 
       - run: nix build --print-build-logs .#standalone
       - run: cp -RL result moss-macos-arm

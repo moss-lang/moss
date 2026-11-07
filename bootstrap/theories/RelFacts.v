@@ -4,7 +4,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit.
+From NM Require Import Audit ComponentContracts.
 Import ListNotations.
 Import Audit.Elaboration.
 
@@ -52,6 +52,18 @@ Ltac uniq_lookups :=
       match type of m1 with nat => rewrite H1 in H2; injection H2 as ?E; subst m2 end
   end.
 
+Lemma demand_choice_direct:forall W C0 wanted used C wrap C' f th sm xs,
+ Demand W C0 wanted used C wrap C'->choice_of(wrap(XCallD f th sm xs))=Some(CDirect f).
+Proof.
+ intros W C0 wanted used C wrap C' f th sm xs H;induction H;[reflexivity|].
+ cbn[choice_of];destruct(wrap(XCallD f th sm xs));cbn[choice_of]in IHDemand|-*;try exact IHDemand;discriminate IHDemand.
+Qed.
+Ltac choice_demands :=
+ repeat match goal with
+ | D:Demand _ _ _ _ _ ?wrap _ |-context[choice_of(?wrap(XCallD ?f ?th ?sm ?xs))]=>
+ rewrite(demand_choice_direct _ _ _ _ _ _ _ f th sm xs D)
+ end.
+
 Theorem method_choice_unique : forall b W P F C ox ot pa args x1 t1 x2 t2,
   WorldOf b W ->
   MethCall W P F C ox ot pa args x1 t1 ->
@@ -62,6 +74,7 @@ Proof.
   inversion H1; subst; inversion H2; subst;
     try (match goal with H : Datatypes.length [_] > 1 |- _ => simpl in H; lia end);
     uniq_heads; uniq_att; uniq_lookups;
+    choice_demands;
     try (eapply provided_choice; eassumption);
     try reflexivity;
     exfalso;

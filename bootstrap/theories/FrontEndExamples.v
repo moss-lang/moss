@@ -7,7 +7,7 @@
 (* ======================================================================== *)
 
 From Stdlib Require Import String List.
-From NM Require Import Audit Parse FrontEnd.
+From NM Require Import Audit Parse FrontEnd FrontEndComplete.
 Import ListNotations Audit.Input Audit.Syntax.
 Local Open Scope string_scope.
 
@@ -137,7 +137,7 @@ Proof. eexists. apply parse_moss_sound. vm_compute. reflexivity. Qed.
 
 (* Lexical errors have no derivation: a derivation's tokens are what the
    lexer computes (lex_complete), and here it reports an error. *)
-Lemma lex_rejects s m o : lex (newlines (list_byte_of_string s)) = LErr m o ->
+Lemma lex_rejects s m o : lex (source_bytes (list_byte_of_string s)) = LErr m o ->
   forall f, ~ Derives (list_byte_of_string s) f.
 Proof.
   intros H f (ts & Hl & _). apply lex_complete in Hl. congruence.
@@ -209,3 +209,48 @@ Proof. intros f (ts & Hl & ts1 & ts2 & Hi & Hd). refute_file Hl Hi Hd. Qed.
 (* D73: a unit tag has no brackets: `tag Nothing[];` *)
 Example unit_tag_brackets_rejected : forall f, ~ Derives (list_byte_of_string err_unit_tag_brackets) f.
 Proof. intros f (ts & Hl & ts1 & ts2 & Hi & Hd). refute_file Hl Hi Hd. Qed.
+
+(* `_` is a wildcard token, never a declaration, parameter or import name.
+   A longer name may still start or end with an underscore. *)
+Example underscore_parameter_rejected : forall f,
+  ~ Derives (list_byte_of_string "fn f(_: Int);") f.
+Proof.
+  intros f H. apply FrontEndComplete.parse_moss_complete in H.
+  vm_compute in H. discriminate.
+Qed.
+
+Example underscore_receiver_rejected : forall f,
+  ~ Derives (list_byte_of_string "fn _.m();") f.
+Proof.
+  intros f H. apply FrontEndComplete.parse_moss_complete in H.
+  vm_compute in H. discriminate.
+Qed.
+
+Example underscore_alias_rejected : forall f,
+  ~ Derives (list_byte_of_string "import ""x"" as _;") f.
+Proof.
+  intros f H. apply FrontEndComplete.parse_moss_complete in H.
+  vm_compute in H. discriminate.
+Qed.
+
+Example underscore_names_and_wildcard :
+  exists f, Derives (list_byte_of_string
+    "fn _f(x_: Int): Int { match x_ { _ => x_ } }") f.
+Proof.
+  eexists. apply parse_moss_sound. vm_compute. reflexivity.
+Qed.
+
+(* D88: the raw spelling has exactly the ordinary string expression's AST. *)
+Example raw_string_matches_quoted :
+  parse_moss "fn main() { let text =
+  > hello
+  > world
+  >
+;
+}" = parse_moss "fn main() { let text = ""hello\nworld\n\n""; }".
+Proof. vm_compute. reflexivity. Qed.
+
+Example raw_empty_at_eof :
+  source_bytes (list_byte_of_string ">") =
+  list_byte_of_string "(""\n"")".
+Proof. vm_compute. reflexivity. Qed.

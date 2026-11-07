@@ -1,10 +1,5 @@
 #!/usr/bin/env moss
 
-import "wasi.moss" use WasiStd;
-import "wasistd.moss" use Branch;
-import "wasm.moss" use Wasm;
-import "wasip1.moss" use Wasi;
-
 assume Std {
 
   val c: Char;
@@ -21,9 +16,9 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Base {
   fn main() {
-    bind WasiStd;
+    bind StdBase;
     bind c=char::h;
     wait_for_it();
   }

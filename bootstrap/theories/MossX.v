@@ -39,6 +39,10 @@ From Stdlib Require Import PrimInt63 Uint63 PrimFloat FloatClass PArray ZArith.
 From NM Require Import CoreMoss HTrie.
 Import ListNotations.
 
+Lemma xinst_map : forall d th,
+  xinst d th = map (fun p => (ITy (fst p), XDType (xground d (snd p)))) th.
+Proof. intros d [|p th]; reflexivity. Qed.
+
 Set Implicit Arguments.
 
 Local Open Scope nat_scope.
@@ -1211,15 +1215,30 @@ Ltac agree_destr :=
   | H : False |- _ => contradiction
   end.
 
+Lemma xtype_env_emb : forall d, xtype_env (emb_denv d) = [].
+Proof.
+  induction d as [|[i en] d IH]; simpl; auto.
+  destruct en; destruct i; simpl in *; assumption.
+Qed.
+Lemma xclose_emb : forall d dc, xclose (emb_denv d) dc = dc.
+Proof. intros; unfold xclose; rewrite xtype_env_emb, app_nil_r; reflexivity. Qed.
+Lemma xcall_env_emb : forall Sg d th dc, xcall_env (emb_prog Sg) d th dc = dc.
+Proof. reflexivity. Qed.
+
+Lemma xapply_env_emb : forall Sg d h th dc, xapply_env (emb_prog Sg) d h th dc = dc.
+Proof. reflexivity. Qed.
+Lemma xresult_env_emb : forall Sg d Dr dc, xresult_env (emb_prog Sg) d Dr dc = dc.
+Proof. reflexivity. Qed.
+
 Lemma cons_step : forall k, CONS k -> CONS (S k).
 Proof.
   intros k [IHe [IHl [IHb IHa]]].
   split; [|split; [|split]].
   - (* expressions *)
     intros Sg d g e st. destruct e; simpl.
-    + (* EVar *) rewrite lookup_venv_emb. destruct (lookup_venv v g); simpl; auto.
+    + (* EVar *) rewrite lookup_venv_emb. destruct (lookup_venv v g); simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
     + auto.
-    + (* EVl *) rewrite lookup_emb. destruct (lookup_denv (IVal v) d) as [[w| |]|]; simpl; auto.
+    + (* EVl *) rewrite lookup_emb. destruct (lookup_denv (IVal v) d) as [[w| |]|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
     + (* ETag *)
       specialize (IHe Sg d g e st).
       destruct (interp k Sg d g e) as [w| |];
@@ -1227,13 +1246,13 @@ Proof.
       simpl in *; agree_destr; destruct o; simpl in *; try contradiction; subst; auto.
     + (* ECallD *)
       all: try rewrite emb_prog_fn.
-      destruct (g_fn Sg f) as [[[? ?] [body|]]|]; simpl; auto.
+      destruct (g_fn Sg f) as [[[? ?] [body|]]|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       specialize (IHl Sg d g l st).
       destruct (interp_list k Sg d g l) as [ws|rr];
       destruct (xinterp_list k (emb_prog Sg) (emb_denv d) (emb_venv g) st (map emb_expr l))
         as [[[ws' g'] st']|[o g' st']]; simpl in *; agree_destr; subst; auto.
-      rewrite compose_emb. destruct (compose_smap d s0) as [d'|]; simpl; auto.
-      rewrite ?emb_denv_eq. rewrite mk_venv_emb.
+      rewrite compose_emb. destruct (compose_smap d s0) as [d'|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
+      rewrite ?emb_denv_eq, ?xcall_env_emb. rewrite mk_venv_emb.
       specialize (IHe Sg d' (mk_venv ws) body st).
       destruct (interp k Sg d' (mk_venv ws) body) as [w| |];
       destruct (xinterp k (emb_prog Sg) (emb_denv d') (emb_venv (mk_venv ws)) st (emb_expr body))
@@ -1241,15 +1260,15 @@ Proof.
       destruct o; simpl in *; try contradiction; auto.
     + (* ECallA *)
       rewrite lookup_emb.
-      destruct (lookup_denv (IFn f) d) as [[w|f' df|h sms dc]|]; simpl; auto.
+      destruct (lookup_denv (IFn f) d) as [[w|f' df|h sms dc]|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       all: try rewrite emb_denv_eq.
       all: try rewrite emb_prog_fn.
-      destruct (g_fn Sg f') as [[[? ?] [body|]]|]; simpl; auto.
+      destruct (g_fn Sg f') as [[[? ?] [body|]]|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       specialize (IHl Sg d g l st).
       destruct (interp_list k Sg d g l) as [ws|rr];
       destruct (xinterp_list k (emb_prog Sg) (emb_denv d) (emb_venv g) st (map emb_expr l))
         as [[[ws' g'] st']|[o g' st']]; simpl in *; agree_destr; subst; auto.
-      rewrite ?emb_denv_eq. rewrite mk_venv_emb.
+      rewrite ?emb_denv_eq, ?xcall_env_emb. rewrite mk_venv_emb.
       specialize (IHe Sg df (mk_venv ws) body st).
       destruct (interp k Sg df (mk_venv ws) body) as [w| |];
       destruct (xinterp k (emb_prog Sg) (emb_denv df) (emb_venv (mk_venv ws)) st (emb_expr body))
@@ -1257,10 +1276,10 @@ Proof.
       destruct o; simpl in *; try contradiction; auto.
     + (* EMeth *)
       rewrite lookup_emb.
-      destruct (lookup_denv i d) as [[w|f' d'|h sms dc]|]; simpl; auto.
+      destruct (lookup_denv i d) as [[w|f' d'|h sms dc]|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       all: try rewrite emb_denv_eq.
       all: try rewrite emb_prog_fn.
-      destruct (g_fn Sg f') as [[[? ?] [body|]]|]; simpl; auto.
+      destruct (g_fn Sg f') as [[[? ?] [body|]]|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       pose proof (IHe Sg d g e st) as He.
       destruct (interp k Sg d g e) as [w0| |];
       destruct (xinterp k (emb_prog Sg) (emb_denv d) (emb_venv g) st (emb_expr e))
@@ -1271,7 +1290,7 @@ Proof.
       destruct (xinterp_list k (emb_prog Sg) (emb_denv d) (emb_venv g) st (map emb_expr l))
         as [[[ws' g'] st']|[o g' st']]; simpl in *; agree_destr; subst; auto.
       change (emb_value w0 :: map emb_value ws) with (map emb_value (w0 :: ws)).
-      rewrite ?emb_denv_eq. rewrite mk_venv_emb.
+      rewrite ?emb_denv_eq, ?xcall_env_emb. rewrite mk_venv_emb.
       specialize (IHe Sg d' (mk_venv (w0 :: ws)) body st).
       destruct (interp k Sg d' (mk_venv (w0 :: ws)) body) as [w| |];
       destruct (xinterp k (emb_prog Sg) (emb_denv d') (emb_venv (mk_venv (w0 :: ws))) st
@@ -1283,9 +1302,9 @@ Proof.
       destruct (xinterp k (emb_prog Sg) (emb_denv d) (emb_venv g) st (emb_expr e))
         as [o0 g0 st0]; simpl in *; agree_destr; subst;
       destruct o0; simpl in *; try contradiction; subst; auto.
-      destruct w0 as [|n w']; simpl; auto.
+      destruct w0 as [|n w']; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       fold (emb_arms l). rewrite find_arm_emb.
-      destruct (find_arm n l) as [[x eb]|]; simpl; auto.
+      destruct (find_arm n l) as [[x eb]|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       specialize (IHe Sg d ((x, w') :: g) eb st). simpl in IHe.
       destruct (interp k Sg d ((x, w') :: g) eb) as [w| |];
       destruct (xinterp k (emb_prog Sg) (emb_denv d) ((x, emb_value w') :: emb_venv g) st
@@ -1311,17 +1330,17 @@ Proof.
       destruct o0; simpl in *; try contradiction; subst; auto.
       all: try (specialize (IHe Sg ((IVal v, DVal w1) :: d) g e2 st); simpl in IHe; exact IHe).
     + (* EBindFn *)
-      rewrite compose_emb. destruct (compose_smap d s) as [dc|]; simpl; auto.
+      rewrite compose_emb. destruct (compose_smap d s) as [dc|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       all: try (specialize (IHe Sg ((IFn f, DClo f0 dc) :: d) g e st); simpl in IHe; exact IHe).
     + (* EBindMth *)
-      rewrite compose_emb. destruct (compose_smap d s0) as [dc|]; simpl; auto.
+      rewrite compose_emb. destruct (compose_smap d s0) as [dc|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       all: try (specialize (IHe Sg ((IMth t m s, DClo f dc) :: d) g e st); simpl in IHe; exact IHe).
     + (* EBindFun *)
-      rewrite compose_emb. destruct (compose_smap d s0) as [dc|]; simpl; auto.
+      rewrite compose_emb. destruct (compose_smap d s0) as [dc|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       all: try (specialize (IHe Sg ((IFun u, DFun u0 [s] dc) :: d) g e st); simpl in IHe; exact IHe).
     + (* EBindFunA *)
       rewrite lookup_emb.
-      destruct (lookup_denv (IFun u0) d) as [[w|f' df|h sms dc]|]; simpl; auto.
+      destruct (lookup_denv (IFun u0) d) as [[w|f' df|h sms dc]|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       all: try rewrite emb_denv_eq.
       all: try (specialize (IHe Sg ((IFun u, DFun h (sms ++ [s]) dc) :: d) g e st); simpl in IHe; exact IHe).
     + (* EApply *)
@@ -1331,7 +1350,7 @@ Proof.
         as [[dr' st']|[o g' st']]; simpl in *; agree_destr; subst; auto.
       rewrite <- emb_denv_app. apply IHe.
   - (* lists *)
-    intros Sg d g l st. destruct l as [|e r]; simpl; auto.
+    intros Sg d g l st. destruct l as [|e r]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
     pose proof (IHe Sg d g e st) as He.
     destruct (interp k Sg d g e) as [w| |];
     destruct (xinterp k (emb_prog Sg) (emb_denv d) (emb_venv g) st (emb_expr e))
@@ -1342,7 +1361,7 @@ Proof.
     destruct (xinterp_list k (emb_prog Sg) (emb_denv d) (emb_venv g) st (map emb_expr r))
       as [[[ws' g'] st']|[o g' st']]; simpl in *; agree_destr; subst; auto.
   - (* binds *)
-    intros Sg d bs st. destruct bs as [|b r]; simpl; auto.
+    intros Sg d bs st. destruct bs as [|b r]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
     destruct b; simpl.
     + apply IHb.
     + pose proof (IHe Sg d [] e st) as He. simpl in He.
@@ -1351,14 +1370,14 @@ Proof.
         as [o0 g0 st0]; simpl in *; agree_destr; subst;
       destruct o0; simpl in *; try contradiction; subst; auto.
       all: try (specialize (IHb Sg ((IVal v, DVal w) :: d) r st); simpl in IHb; exact IHb).
-    + rewrite compose_emb. destruct (compose_smap d s) as [dc|]; simpl; auto.
+    + rewrite compose_emb. destruct (compose_smap d s) as [dc|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       all: try (specialize (IHb Sg ((IFn f, DClo f0 dc) :: d) r st); simpl in IHb; exact IHb).
-    + rewrite compose_emb. destruct (compose_smap d s0) as [dc|]; simpl; auto.
+    + rewrite compose_emb. destruct (compose_smap d s0) as [dc|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       all: try (specialize (IHb Sg ((IMth t m s, DClo f dc) :: d) r st); simpl in IHb; exact IHb).
-    + rewrite compose_emb. destruct (compose_smap d s0) as [dc|]; simpl; auto.
+    + rewrite compose_emb. destruct (compose_smap d s0) as [dc|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       all: try (specialize (IHb Sg ((IFun u, DFun u0 [s] dc) :: d) r st); simpl in IHb; exact IHb).
     + rewrite lookup_emb.
-      destruct (lookup_denv (IFun u0) d) as [[w|f' df|h sms dc]|]; simpl; auto.
+      destruct (lookup_denv (IFun u0) d) as [[w|f' df|h sms dc]|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
       all: try rewrite emb_denv_eq.
       all: try (specialize (IHb Sg ((IFun u, DFun h (sms ++ [s]) dc) :: d) r st); simpl in IHb; exact IHb).
     + specialize (IHa Sg d u s s0 st).
@@ -1369,17 +1388,17 @@ Proof.
   - (* applications *)
     intros Sg d u th sm st. simpl.
     rewrite lookup_emb.
-    destruct (lookup_denv (IFun u) d) as [[w|f' df|h sms dc]|]; simpl; auto.
+    destruct (lookup_denv (IFun u) d) as [[w|f' df|h sms dc]|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
     all: try rewrite emb_denv_eq.
-    destruct (g_fun Sg h) as [[[? Dr] [bs|]]|] eqn:Hf; simpl; auto.
-    rewrite compose_emb. destruct (compose_smap d sm) as [d1|]; simpl; auto.
-    rewrite chain_emb. destruct (run_chain d1 sms) as [d2|]; simpl; auto.
+    destruct (g_fun Sg h) as [[[? Dr] [bs|]]|] eqn:Hf; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
+    rewrite compose_emb. destruct (compose_smap d sm) as [d1|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
+    rewrite chain_emb. destruct (run_chain d1 sms) as [d2|]; simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
     rewrite <- emb_denv_app.
     specialize (IHb Sg (d2 ++ dc) bs st).
     destruct (interp_binds k Sg (d2 ++ dc) bs) as [d3|rr];
     destruct (xinterp_binds k (emb_prog Sg) (emb_denv (d2 ++ dc)) [] st (map emb_bnd bs))
       as [[[d3' g3] st3]|[o g' st']]; simpl in *; agree_destr; subst; auto.
-    rewrite compose_emb. destruct (compose_smap d3 (inst_smap th Dr)); simpl; auto.
+    rewrite compose_emb. destruct (compose_smap d3 (inst_smap th Dr)); simpl; rewrite ?xclose_emb, ?xcall_env_emb, ?xapply_env_emb, ?xresult_env_emb; auto.
 Qed.
 
 Theorem xinterp_conservative : forall fuel Sg d g e st,
@@ -1471,7 +1490,7 @@ Ltac margs_shape :=
   | H : Forall2 _ _ (_ :: _) |- _ => inversion H; subst; clear H
   | H : Forall2 _ _ [] |- _ => inversion H; subst; clear H
   | H : xvty _ ?w XTAddr |- _ =>
-      destruct w as [| ? w | | | | | |]; simpl in H; try contradiction;
+      destruct w as [| ? w | | | | | | |]; simpl in H; try contradiction;
       destruct w; simpl in H; try contradiction; clear H
   | H : xvty _ ?w _ |- _ => destruct w; simpl in H; try contradiction; clear H
   end.

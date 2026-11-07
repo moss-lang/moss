@@ -1,0 +1,13 @@
+# The attached call installs its receiver arguments before demanding the
+# missing family method; its ordinary R argument uses the caller context.
+type A;
+tag R;
+assume A { tag Box(A); fn .foo(); }
+functor F[A]: A -> A.foo;
+functor G: A -> A.foo { bind A.foo = () => (); }
+assume A, F, A.foo { fn Box.work(a: A) { a.foo(); } }
+fn main() {
+  bind A = R;
+  bind F = G;
+  Box[A=R](R).work(R);
+}

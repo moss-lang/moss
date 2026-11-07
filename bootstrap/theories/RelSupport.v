@@ -24,17 +24,17 @@ Local Open Scope list_scope.
 (* ===================== The elaborator's state, kept =================== *)
 
 Definition dummy_st : st :=
-  St (Elab.World NE [] 0 NE 0 NE) NE 0 NE NE NE [] [] NE [] [] NE NE [] 0 false false [] [] [].
+  St (Elab.World NE [] 0 NE 0 NE None) NE 0 NE NE NE [] [] NE [] [] NE NE [] 0 false false [] [] [] (ReifyData.empty_reify_metadata Elab.ety Elab.key).
 
 (* Run the elaborator and keep its final state, with every symbol's
    requirements computed (the elaborator computes them lazily). *)
-Definition run_elab (x : Input.sx) : Input.res (xprogram * st) :=
+Definition run_elab (x : Sx.sx) : Sx.res (xprogram * st) :=
   match read_bundle x with
   | Good b =>
       match load_world b with
       | Good w =>
           let s0 := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false []
-                       (lang_modules w) [] in
+                       (lang_modules w) [] (ReifyData.empty_reify_metadata Elab.ety Elab.key) in
           match elab_program s0 with
           | Good (p, s) =>
               Good (p, fold_left (fun s i => match reqs i s with Good (_, s') => s' | Bad _ => s end)
@@ -85,7 +85,7 @@ Definition W_of (s : st) : Elaboration.world :=
                 | None => None
                 end)
     (fun x => opt_default [] (nget (st_reqs s) x))
-    (fun f => opt_default 0 (sassoc f (st_flds s))).
+    (fun f => opt_default 0 (sassoc f (st_flds s))) (Elab.w_library w).
 
 (* ===================== Merging with nothing to merge =================== *)
 
@@ -314,7 +314,11 @@ Ltac recvty :=
   unfold RecvTy;
   match goal with |- context [nlook ?r ?tm] => let v := eval vm_compute in (nlook r tm) in change (nlook r tm) with v end;
   cbv iota beta;
-  first [ reflexivity | (eexists; split; [reflexivity | forall2_args]) ].
+  try (match goal with |- context [w_decl ?W ?r] =>
+         let d := eval vm_compute in (w_decl W r) in change (w_decl W r) with d
+       end);
+  cbn [d_ast];
+  first [ reflexivity | tyof | (eexists; split; [reflexivity | forall2_args]) ].
 
 Ltac methodnamed :=
   first [ (left; unfold Attached; comp) | (right; split; [intros ? HA; unfold Attached in HA; vm_compute in HA; discriminate HA | comp]) ].
@@ -332,20 +336,32 @@ Ltac fixed_hook := fail.
 
 Ltac fixed_in_force := first [ (eapply fixed_unbracketed; [comp | comp]) | fixed_hook ].
 
+Lemma fixed_readings_empty : forall W u tm,
+ (forall x,Fixed W u x ->nlook x ([]:list(nat*ty))<>None) ->FixedReadings W u tm [].
+Proof.
+ intros W u tm Empty x tx;split;[intros Bad;contradiction|].
+ intros[Fixed Read];exfalso;apply(Empty x Fixed);reflexivity.
+Qed.
+Ltac fixed_readings_hook := fail.
+Ltac fixed_readings := first[(apply fixed_readings_empty;fixed_in_force)|fixed_readings_hook].
+
+Ltac items_hook := fail.
+
 Ltac item :=
   first
   [ (eapply IEType; [comp | comp])
   | (eapply IEMeth; [comp | methodnamed | apply BrNone | recvty | sigof | appof])
   | (eapply IEVal; [comp | comp | comp | apply BrNone | simpl; tyof | appof])
   | (eapply IEFn; [comp | comp | apply BrNone | sigof | appof])
-  | (eapply IEFun; [comp | comp | comp | fixed_in_force])
+  | (eapply IEFun; [comp | comp | comp | fixed_in_force | fixed_readings])
   | (eapply IECtx; [comp | comp | comp | apply BrNone | items])
   | (eapply IENothing; [comp | comp | first [ left; reflexivity | right; left; reflexivity
                                             | right; right; left; reflexivity
                                             | right; right; right; split; [reflexivity | do 4 eexists; split; comp] ] ]) ]
 with items :=
-  match goal with |- ItemsEntries _ ?p ?ob ?tm ?l _ _ => reduce_list p; reduce_list ob; reduce_list tm; reduce_list l end;
-  first [ apply IsNil | (eapply IsCons; [item | items]) ].
+  first [ items_hook |
+    match goal with |- ItemsEntries _ ?p ?ob ?tm ?l _ _ => reduce_list p; reduce_list ob; reduce_list tm; reduce_list l end;
+    first [ apply IsNil | (eapply IsCons; [item | items]) ] ].
 
 (* No symbol of the elaborator's reading is filed under (ns, n). *)
 Fixpoint nall {A} (f : A -> bool) (m : nmap A) : bool :=
@@ -379,20 +395,58 @@ Proof.
   unfold filed_as in Hg. rewrite F in Hg. destruct ns; rewrite String.eqb_refl in Hg; discriminate Hg.
 Qed.
 
-Ltac notmain := let Hd := fresh "Hd" in let Ha := fresh "Ha" in
-  intros (? & ? & ? & ? & Hd & Ha & _); vm_compute in Hd; injection Hd as <-; vm_compute in Ha; discriminate Ha.
+Ltac notmain :=
+  let Hd := fresh "Hd" in let Ha := fresh "Ha" in let Hs := fresh "Hs" in
+  intros (? & ? & ? & ? & ? & ? & Hd & Ha & Hs);
+  vm_compute in Hd; injection Hd as <-;
+  vm_compute in Ha; try discriminate Ha;
+  vm_compute in Hs;
+  repeat match type of Hs with context [if ?b then _ else _] => destruct b end;
+  discriminate Hs.
 
 Lemma root_nonmain : forall W s es tm er tmr, ~ IsMainFn W s -> RootCtx W s es tm er tmr -> er = [] /\ tmr = tm.
 Proof. intros W s es tm er tmr Hn H. destruct H; [auto | contradiction]. Qed.
 
+(* A reflected scope check also handles reexports and renamed imports.
+   Declaration spelling alone is insufficient for library-selected names. *)
+Definition excludes_scope (s : st) (ns : nspace) (n : Input.name) (x : nat) : bool :=
+  forallb (fun mi => let m := get_mod (st_w s) mi in
+    match sassoc n (match ns with NSName => gm_names m | NSDetached => gm_detached m | NSAlias => gm_aliases m end) with
+    | Some y => negb (Nat.eqb y x) | None => true end) (w_order (st_w s)).
+
+Lemma find_mod_member : forall w p ids m, find_mod w p ids = Some m ->
+  exists mi, In mi ids /\ get_mod w mi = m.
+Proof.
+  intros w p ids. induction ids as [|mi ids IH]; intros m H; [discriminate|].
+  cbn [find_mod] in H. destruct (String.eqb (gm_path (get_mod w mi)) p).
+  - injection H as <-. exists mi. split; [left; reflexivity|reflexivity].
+  - destruct (IH m H) as (j & Hj & E). exists j. split; [right; exact Hj|exact E].
+Qed.
+
+Lemma no_scope : forall s ns n x, excludes_scope s ns n x = true ->
+  forall p, w_scope (W_of s) p ns n <> Some (ESym x).
+Proof.
+  intros s ns n x H p E. cbn [W_of w_scope] in E.
+  destruct (find_mod (st_w s) p (w_order (st_w s))) as [m|] eqn:Em; [|discriminate].
+  destruct (find_mod_member _ _ _ _ Em) as (mi & Hi & Eg).
+  unfold excludes_scope in H. rewrite forallb_forall in H.
+  specialize (H mi Hi). rewrite Eg in H. destruct ns; cbn in E, H.
+  - destruct (sassoc n (gm_names m)) as [y|] eqn:Ey; [|discriminate].
+    injection E as ->. rewrite Nat.eqb_refl in H. discriminate.
+  - destruct (sassoc n (gm_detached m)) as [y|] eqn:Ey; [|discriminate].
+    injection E as ->. rewrite Nat.eqb_refl in H. discriminate.
+  - destruct (sassoc n (gm_aliases m)); discriminate.
+Qed.
+
 (* main's root context (Audit note 54): none, for a fn that is not its
-   module's `main` or a reading with no `Gc` *)
+   module's `main` or a reading with no `Gc`. Try the reflected scope
+   check first: a failing notmain search can destruct a large world. *)
 Ltac rootctx :=
   apply RootNone;
-  first [ (left; notmain)
-        | (right; let HL := fresh "HL" in let Hd := fresh "Hd" in let Hf := fresh "Hf" in
-           intros ? ? ? ? HL _ _; destruct HL as (? & Hd & _ & Hf);
-           refine (no_filed _ _ _ _ _ _ Hd Hf); vm_compute; reflexivity) ].
+  first [ (right; let HL := fresh "HL" in let Hd := fresh "Hd" in let Hf := fresh "Hf" in
+           intros ? ? ? ? HL _ _; destruct HL as (? & ? & Hd & _ & Hf);
+           refine (no_scope _ _ _ _ _ _ Hf); vm_compute; reflexivity)
+        | (left; notmain) ].
 
 (* the context a symbol's assumes form, with nothing to merge *)
 Ltac ctxof :=
@@ -414,9 +468,10 @@ Ltac locals_none :=
 (* ExTag's library premise (note 32), for a tag that is not lib/wasm.moss's
    `Ref` or `Array` *)
 Ltac not_ref :=
-  let H := fresh "H" in let d := fresh "d" in let Hd := fresh "Hd" in let Hn := fresh "Hn" in
-  intros [H _]; destruct H as [(d & Hd & _ & Hn)|(d & Hd & _ & Hn)];
-  vm_compute in Hd; injection Hd; intro; subst d; vm_compute in Hn; discriminate Hn.
+  let H := fresh "H" in let d := fresh "d" in let p := fresh "p" in
+  let Hd := fresh "Hd" in let Hn := fresh "Hn" in
+  intros [H _]; destruct H as [(d & p & Hd & _ & Hn)|(d & p & Hd & _ & Hn)];
+  refine (no_scope _ _ _ _ _ _ Hn); vm_compute; reflexivity.
 
 Ltac fits_tac := first [ left; vm_compute; reflexivity | right; left; vm_compute; reflexivity ].
 
@@ -440,7 +495,7 @@ Ltac ex :=
   | (eapply ExVal; [locals_none | comp | comp | comp | comp])
   | (eapply ExCallA; [comp | comp | do 3 eexists; comp | comp | args])
   | (eapply ExCallD; [comp | comp | do 4 eexists; comp | ctx_tac | satisfies | sigof | args])
-  | (eapply ExTag; [comp | comp | not_ref | apply BrNone | forall2_args | payload | reflexivity | ex | fits_tac]) ]
+  | (eapply ExTag; [comp | comp | apply BrNone | forall2_args | payload | reflexivity | ex | fits_tac]) ]
 with args := first [ apply ArgsNil | (eapply ArgsCons; [ex | fits_tac | args]) ]
 with payload := eapply PayTag; [comp | comp | simpl; tyof]
 with satisfies :=
@@ -487,13 +542,13 @@ Ltac fnelab m ret vars :=
 (* The static reading of a bundle the elaborator rejects: its loader's
    world and every source symbol's requirements, without elaborating any
    body. *)
-Definition run_world (x : Input.sx) : Input.res st :=
+Definition run_world (x : Sx.sx) : Sx.res st :=
   match read_bundle x with
   | Good b =>
       match load_world b with
       | Good w =>
           let s0 := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false []
-                       (lang_modules w) [] in
+                       (lang_modules w) [] (ReifyData.empty_reify_metadata Elab.ety Elab.key) in
           Good (fold_left (fun s i => match reqs i s with Good (_, s') => s' | Bad _ => s end)
                           (seq 1 (w_nsyms w)) s0)
       | Bad m => Bad m

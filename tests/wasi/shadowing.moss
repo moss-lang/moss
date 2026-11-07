@@ -30,7 +30,7 @@ import "../../lib/std.moss" use Std, putchar;
 import "../../lib/string.moss" use String, StringLiterals, print;
 import "../../lib/byte.moss" as byte use ByteTypes;
 import "../../lib/float.moss" use Float, Floats;
-import "./doubledouble.moss" use Base, lift, BaseOps,
+import "./doubledouble.moss" use Scalar, lift, BaseOps,
   DD, widen, dd_add, dd_neg, dd_mul, dd_div, dd_sqrt, dd_lt, dd_eq,
   dd_round, dd_trunc;
 
@@ -40,10 +40,10 @@ assume Float {
   val tolerance: Float;
 }
 
-assume Int, Base {
+assume Int, Scalar {
   # The tolerance, as a base float, and the harness's state: the number
   # of operations so far, and whether each kind of report has been made.
-  val tol: Base;
+  val tol: Scalar;
   val state: IntList;
 
   # Everything the harness counts, remembers or says goes through this
@@ -55,7 +55,7 @@ assume Int, Base {
   # providers below call only this, and their own code has no Int
   # literal: what this captures is captured once rather than by each
   # provider, and literals in a provider cost hidden parameters (bugs/).
-  fn note(op: Base, said: Bool, a: Base, b: Base, x: Base, X: Base, q: Base);
+  fn note(op: Scalar, said: Bool, a: Scalar, b: Scalar, x: Scalar, X: Scalar, q: Scalar);
 }
 
 context Out =
@@ -82,7 +82,7 @@ assume Out {
 assume Out, BaseOps {
   # Nine significant digits, as d.dddddddde±n: enough to tell the halves
   # apart, not to reproduce either (the scaling by ten rounds).
-  fn num(x: Base) {
+  fn num(x: Scalar) {
     if x != x { print("nan"); return; }
     if x < lift(zero) { print("-"); num(-x); return; }
     if x == lift(zero) { print("0"); return; }
@@ -123,7 +123,7 @@ assume Out, BaseOps, tol, state {
     print(" "); print(name);
   }
 
-  fn shadow_note(op: Base, said: Bool, a: Base, b: Base, x: Base, X: Base, q: Base) {
+  fn shadow_note(op: Scalar, said: Bool, a: Scalar, b: Scalar, x: Scalar, X: Scalar, q: Scalar) {
     let code = op.round();
     let name = op_name(code);
     if code <= 5 {
@@ -161,44 +161,44 @@ assume Out, BaseOps, tol, state {
 }
 
 assume Int, zero, one, IntOps, Bool, true, false, Bool.xor, BaseOps, note {
-  tag Sh { x: Base, X: DD };
+  tag Sh { x: Scalar, X: DD };
 
   # |x - X| / |X|, with x - X in double-double so the difference is P's
   # to the last bit; 0 if both are 0, infinite if only X is.
-  fn rel(r: Sh): Base {
+  fn rel(r: Sh): Scalar {
     let d = dd_add(widen(r.x), dd_neg(r.X));
     if d.hi == lift(zero) { return lift(zero); }
     d.hi.abs() / r.X.hi.abs()
   }
 
   # Operations, numbered for `note` without Int literals.
-  fn next(op: Base): Base { op + lift(one) }
-  fn op_add(): Base { lift(one) }
-  fn op_sub(): Base { next(op_add()) }
-  fn op_mul(): Base { next(op_sub()) }
-  fn op_div(): Base { next(op_mul()) }
-  fn op_sqrt(): Base { next(op_div()) }
-  fn op_lt(): Base { next(op_sqrt()) }
-  fn op_gt(): Base { next(op_lt()) }
-  fn op_le(): Base { next(op_gt()) }
-  fn op_ge(): Base { next(op_le()) }
-  fn op_eq(): Base { next(op_ge()) }
-  fn op_ne(): Base { next(op_eq()) }
-  fn op_round(): Base { next(op_ne()) }
-  fn op_trunc(): Base { next(op_round()) }
+  fn next(op: Scalar): Scalar { op + lift(one) }
+  fn op_add(): Scalar { lift(one) }
+  fn op_sub(): Scalar { next(op_add()) }
+  fn op_mul(): Scalar { next(op_sub()) }
+  fn op_div(): Scalar { next(op_mul()) }
+  fn op_sqrt(): Scalar { next(op_div()) }
+  fn op_lt(): Scalar { next(op_sqrt()) }
+  fn op_gt(): Scalar { next(op_lt()) }
+  fn op_le(): Scalar { next(op_gt()) }
+  fn op_ge(): Scalar { next(op_le()) }
+  fn op_eq(): Scalar { next(op_ge()) }
+  fn op_ne(): Scalar { next(op_eq()) }
+  fn op_round(): Scalar { next(op_ne()) }
+  fn op_trunc(): Scalar { next(op_round()) }
 
   # Every operation is noted, with how far its halves are apart.
-  fn check(op: Base, a: Sh, b: Sh, r: Sh): Sh {
+  fn check(op: Scalar, a: Sh, b: Sh, r: Sh): Sh {
     note(op, false, a.x, b.x, r.x, r.X.hi, rel(r));
     r
   }
 
   # A decision: p's answer, after noting where P's differs.
-  fn decide(op: Base, a: Sh, b: Sh, p: Bool, q: Bool): Bool {
+  fn decide(op: Scalar, a: Sh, b: Sh, p: Bool, q: Bool): Bool {
     if p ^ q { note(op, p, a.x, b.x, a.X.hi, b.X.hi, lift(zero)); }
     p
   }
-  fn decide_int(op: Base, a: Sh, p: Int, q: Int): Int {
+  fn decide_int(op: Scalar, a: Sh, p: Int, q: Int): Int {
     if lift(p) != lift(q) { note(op, false, a.x, a.X.hi, lift(p), lift(q), lift(zero)); }
     p
   }
@@ -242,7 +242,7 @@ assume Int, zero, one, IntOps, Bool, true, false, Bool.xor, BaseOps, note {
 
 # All of `Floats` as p and P side by side, over the `Float` in force.
 functor Shadow: Std, tolerance -> Floats {
-  bind Base = Float;
+  bind Scalar = Float;
   bind lift = float;
   bind tol = tolerance;
   bind state = {

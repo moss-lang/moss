@@ -5,19 +5,19 @@ import "../../lib/wasip1.moss" use Wasi;
 import "../../lib/num.moss" use .add;
 
 # D55: a functor must bind everything its result promises. `Over`
-# promises `Base.add` but binds only `Base`, which leaves `Base.add` to
-# resolve to `Int.add` through `Base = Int` — a provision nobody made.
+# promises `Scalar.add` but binds only `Scalar`, which leaves `Scalar.add` to
+# resolve to `Int.add` through `Scalar = Int` — a provision nobody made.
 # Rejected at the functor, in both compilers; the self-hosted one used to
 # accept it and print 5.
 
-type Base;
+type Scalar;
 
-assume Base {
-  context BaseAdd = Base, Base.add;
+assume Scalar {
+  context BaseAdd = Scalar, Scalar.add;
 }
 
 functor Over: Std -> BaseAdd {
-  bind Base = Int;
+  bind Scalar = Int;
 }
 
 assume Std {

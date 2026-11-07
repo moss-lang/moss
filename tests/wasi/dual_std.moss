@@ -29,30 +29,30 @@ assume Std {
 }
 
 # What duals are made of: the `Float` in force where `Dualize` is applied.
-type Base;
+type Scalar;
 
-assume Int, Base {
-  fn lift(n: Int): Base;
+assume Int, Scalar {
+  fn lift(n: Int): Scalar;
 
   context BaseOps =
-    Base, lift,
-    Base.add, Base.sub, Base.mul, Base.div, Base.neg, Base.sqrt, Base.abs,
-    Base.eq, Base.ne, Base.lt, Base.gt, Base.le, Base.ge, Base.trunc, Base.round,
+    Scalar, lift,
+    Scalar.add, Scalar.sub, Scalar.mul, Scalar.div, Scalar.neg, Scalar.sqrt, Scalar.abs,
+    Scalar.eq, Scalar.ne, Scalar.lt, Scalar.gt, Scalar.le, Scalar.ge, Scalar.trunc, Scalar.round,
   ;
 }
 
 assume Int, zero, one, BaseOps {
-  tag Dual { v: Base, d: Base };
+  tag Dual { v: Scalar, d: Scalar };
 
   fn constant(n: Int): Dual { Dual { v = lift(n), d = lift(zero) } }
-  fn variable(x: Base): Dual { Dual { v = x, d = lift(one) } }
+  fn variable(x: Scalar): Dual { Dual { v = x, d = lift(one) } }
 }
 
 # All of `Floats` at duals: arithmetic by the usual rules, comparisons and
 # rounding by the value alone. Arrays of duals need no line here: they
 # are `Std`'s `Arrays` at `Item=Dual`, on demand (D84 rule 7).
 functor Dualize: Std -> Floats {
-  bind Base = Float;
+  bind Scalar = Float;
   bind lift = float;
   bind Float = Dual;
   bind float = constant;

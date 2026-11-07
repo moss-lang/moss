@@ -1,0 +1,36 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type B;
+type C;
+fn .gimme(): Foo;
+context Ctx1 = A, B, A.gimme[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C];
+context Ctx3 = Ctx1, Ctx2;
+assume B { tag Box(B); }
+
+# B and C are merged in this context. The constructor's XTag annotation
+# must carry that canonical argument through construction and unpacking.
+assume Std, Ctx3 {
+  fn wrap(b: B): Box { Box(b) }
+  fn unpack(b: Box): C { match b { Box(value) => value } }
+}
+assume Std {
+  fn giveq(): Char { char::q }
+  fn demo() {
+    bind Foo = Char;
+    bind A = Char;
+    bind B = Char;
+    bind C = Char;
+    bind A.gimme = giveq;
+    putchar(unpack(wrap(char::b)));
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

@@ -2,9 +2,9 @@
 
 The standard library lives in [`lib`](/lib), written in Moss. Its
 declarations are almost all *abstract* — `type Char;`, `val a: Char;`,
-`fn putchar(c: Char);` — and [`wasi.moss`](/lib/wasi.moss)'s `WasiStd`
-provides their implementations in Moss, over the primitive `Wasm`/`Wasi`
-contexts (below). (They were first
+`fn putchar(c: Char);` — and [`wasi.moss`](/lib/wasi.moss)'s `StdBase`
+provides their implementations in Moss, over the primitive [`Base`](../../lib/base.moss)
+context (below). (They were first
 provided natively, decision [D38](../design/semantics.md), by the Python
 bootstrap: its interpreter from Python values in `bootstrap/mossc/interp.py`,
 its Wasm backend from instructions and WASI shims in
@@ -38,7 +38,7 @@ Layout:
   operations as the `FloatOps` context, and the conversions to and from
   `Int` — `float(n)`, `.trunc()`, `.round()` — and `FloatList`, a
   growable packed list of `Float` made by `float_list()` (D69), with all
-  of it as `Floats`. `WasiStd` provides it at f64; `WasiFloats32` is the
+  of it as `Floats`. `StdBase` provides it at f64; `WasiFloats32` is the
   same at f32, list included, so binding it in a block makes that block's
   `float_list()` a list of f32s.
 - [`int.moss`](/lib/int.moss), [`string.moss`](/lib/string.moss),
@@ -65,10 +65,11 @@ another type costs a layout and a receiver; see D69 for why the receiver
 cannot yet be shared.
 
 The milestone that retires the native table has been reached:
-[`wasi.moss`](/lib/wasi.moss)'s `WasiStd` implements the whole of `Std` in
-Moss over the `Wasm`/`Wasi` declarations (`lib/wasm.moss`,
-`lib/wasip1.moss`), so only those two contexts are primitive, and the
-self-hosted compiler runs on it. The native table stayed as long as the
+[`wasi.moss`](/lib/wasi.moss)'s `StdBase` implements the whole of `Std` in
+Moss over the primitive `Base` context. Its components include the
+`Wasm`/`Wasi` declarations (`lib/wasm.moss`, `lib/wasip1.moss`), the
+branching bridge, and GC functors. The self-hosted compiler uses the
+raw-memory implementation of the same `Std` interface. The native table stayed as long as the
 Python bootstrap did, whose back end and interpreter provided `Std` that
 way, faster by a factor of fifteen (see [selfhosting.md](selfhosting.md));
 it went with that compiler ([D86](../design/semantics.md)), so `Std` is now

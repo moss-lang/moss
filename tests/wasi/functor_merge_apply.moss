@@ -1,0 +1,69 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Reject applying a functor whose merged input types disagree here.
+# Without the application check the oracle gets stuck while unwrapping Box.
+
+type Foo;
+type A;
+type B;
+type C;
+assume Std { tag Box(Int); }
+
+fn .gimme(): Foo;
+
+context Ctx1 = A, B, A.gimme[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C];
+
+assume Std, B {
+  fn take(b: B);
+}
+
+assume Std, C {
+  fn consume(c: C);
+}
+assume Std, C, consume {
+  fn take_c(c: C) { consume(c); }
+}
+
+functor Trace[A, B, C]: Std, Ctx1, Ctx2, consume -> take;
+
+functor Via: Std, Ctx1, Ctx2, consume -> take {
+  bind take = take_c;
+}
+
+assume Std, Ctx1, C, consume, Trace {
+  fn run(a: A) {
+    bind Trace;
+    take(a.gimme());
+  }
+}
+
+assume Std {
+  fn giveq(): Char { char::q }
+  fn accept_box(x: Box) {
+    let value = match x { Box(v) => v };
+    putchar((value + char::digit0.code()).char());
+  }
+
+  fn demo() {
+    bind Foo = Char;
+    bind A = Char;
+    bind B = Char;
+    bind C = Box;
+    bind A.gimme = giveq;
+    bind consume = accept_box;
+    bind Trace = Via;
+    run(char::m);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

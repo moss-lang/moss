@@ -1,0 +1,8 @@
+# A function provider is a name, with its arguments supplied at the bind.
+# Explicit applications on the provider must not be silently ignored.
+fn wanted();
+fn provide() {}
+fn main() {
+  bind wanted = provide[Missing=DoesNotExist];
+  wanted();
+}

@@ -24,6 +24,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require Import ComponentContracts.
 From NM Require Import Audit NMap Sx Elab ElabSound.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -189,6 +190,26 @@ Hypothesis Hold : forall s, next0 <= s -> nget syms0 s = None.
 
 Definition Leaf (asm : list (Input.path * option name)) (d : adecl) : Prop := A.OccursIn (f_decls f) asm d.
 
+Definition ReceiverAt(names:list(name*nat))(g:gsym):Prop:=
+ match gs_decl g with
+ |ADFn(RAttached rn)_ _ _ _=>gs_recv g=sassoc rn names
+ |_=>gs_recv g=None end.
+
+Lemma receiver_at_plain:forall names g,gs_recv g=None->~is_attached(gs_decl g)->ReceiverAt names g.
+Proof.
+ intros names g R Not;unfold ReceiverAt;destruct(gs_decl g)as[| | | | | |[| |rn] n ps rt body| |]eqn:D;try exact R.
+ exfalso;apply Not;unfold is_attached;eauto 8.
+Qed.
+Lemma receiver_at_extend:forall names names' g,
+ ReceiverAt names g->
+ (forall rn n ps rt body,gs_decl g=ADFn(RAttached rn)n ps rt body->sassoc rn names<>None)->
+ (forall n v,sassoc n names=Some v->sassoc n names'=Some v)->ReceiverAt names' g.
+Proof.
+ intros names names' g Rx Present Keep;unfold ReceiverAt in *.
+ destruct(gs_decl g)as[| | | | | |[| |rn] n ps rt body| |]eqn:D;try exact Rx.
+ destruct(sassoc rn names)as[r|]eqn:At;[rewrite Rx;symmetry;exact(Keep _ _ At)|exfalso;exact(Present rn n ps rt body eq_refl At)].
+Qed.
+
 Record DInv (st : decl_st) : Prop := {
   di_next : next0 <= ds_next st;
   di_old : forall s, s < next0 -> nget (ds_syms st) s = nget syms0 s;
@@ -213,7 +234,8 @@ Record DInv (st : decl_st) : Prop := {
   di_aliases : gm_aliases (ds_mod st) = [];
   di_kind : forall s g, nget (ds_syms st) s = Some g -> next0 <= s -> KindOK g;
   (* only an attached method has a receiver *)
-  di_recv : forall s g, nget (ds_syms st) s = Some g -> next0 <= s -> gs_recv g = None \/ gs_kind g = KMethod
+  di_recv : forall s g, nget (ds_syms st) s = Some g -> next0 <= s -> gs_recv g = None \/ gs_kind g = KMethod;
+  di_receiver : forall s g,nget(ds_syms st)s=Some g->next0<=s->ReceiverAt(gm_names(ds_mod st))g
 }.
 
 Definition HasSym (st : decl_st) (d : adecl) (asm : list (Input.path * option name)) : Prop :=
@@ -285,6 +307,14 @@ Proof.
     + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
       * injection Hg0 as <-. left. reflexivity.
       * exact (di_recv _ H s0 g0 Hg0 Hs0).
+    + intros s0 g0 Hg0 Hs0;rewrite nget_nset in Hg0;destruct(Nat.eqb_spec s0 id)as[->|Different].
+      * injection Hg0 as <-;apply receiver_at_plain;[reflexivity|exact(Hnot Hf)].
+      * eapply receiver_at_extend;[exact(di_receiver _ H s0 g0 Hg0 Hs0)| |].
+        -- intros rn n' ps rt body D NoneAt.
+           destruct(di_sym _ H s0 g0 Hs0 Hg0)as(_&_&_&_&_&_&Att).
+           destruct(Att ltac:(unfold is_attached;rewrite D;eauto 8))as(rn'&n''&ps'&rt'&body'&r&gr&Ed&At&Rest).
+           rewrite D in Ed;injection Ed as <- <- <- <- <-;rewrite At in NoneAt;discriminate.
+        -- intros n' value At;apply sassoc_snoc_old;exact At.
   - intros d' a [(s & g' & Hle & Hs & E1 & E2)|Hp]; [left|right; exact Hp].
     exists s, g'. split; [exact Hle|]. split; [apply Hget; exact Hs|]. auto.
   - exists id, g. cbn [ds_syms]. rewrite nget_nset_same. split; [exact (di_next _ H)|]. auto.
@@ -351,6 +381,9 @@ Proof.
     + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
       * injection Hg0 as <-. left. reflexivity.
       * exact (di_recv _ H s0 g0 Hg0 Hs0).
+    + intros s0 g0 Hg0 Hs0;rewrite nget_nset in Hg0;destruct(Nat.eqb_spec s0 id)as[->|Different].
+      * injection Hg0 as <-;apply receiver_at_plain;[reflexivity|exact Hnot].
+      * exact(di_receiver _ H s0 g0 Hg0 Hs0).
   - intros d' a [(s & g' & Hle & Hs & E1 & E2)|Hp]; [left|right; exact Hp].
     exists s, g'. split; [exact Hle|]. split; [apply Hget; exact Hs|]. auto.
   - exists id, g. cbn [ds_syms]. rewrite nget_nset_same. split; [exact (di_next _ H)|]. auto.
@@ -522,6 +555,9 @@ Proof.
     + intros s0 g0 Hg0 Hs0. rewrite nget_nset in Hg0. destruct (Nat.eqb_spec s0 id) as [->|Hne0].
       * injection Hg0 as <-. right. reflexivity.
       * exact (di_recv _ H s0 g0 Hg0 Hs0).
+    + intros s0 g0 Hg0 Hs0;rewrite nget_nset in Hg0;destruct(Nat.eqb_spec s0 id)as[->|Different].
+      * injection Hg0 as <-;unfold ReceiverAt,g,d;cbn[gs_recv gs_decl];symmetry;exact Hr.
+      * exact(di_receiver _ H s0 g0 Hg0 Hs0).
   - intros d' a (s & g' & Hle & Hs & E1 & E2).
     exists s, g'. split; [exact Hle|]. split; [apply Hget; exact Hs|]. auto.
   - exists id, g. cbn [ds_syms]. rewrite nget_nset_same. split; [exact (di_next _ H)|]. auto.
@@ -575,6 +611,7 @@ Proof.
     - intros d a [].
     - reflexivity.
     - reflexivity.
+    - intros s g Hg Hs. rewrite (Hold s Hs) in Hg. discriminate.
     - intros s g Hg Hs. rewrite (Hold s Hs) in Hg. discriminate.
     - intros s g Hg Hs. rewrite (Hold s Hs) in Hg. discriminate. }
   destruct (declare_walk_spec _ _ _ _ _ Hw (fun a d Ho => Ho) H0) as (W1 & _ & W3).
@@ -938,7 +975,8 @@ Record LInv (st : load_st) : Prop := {
     Rep m (fun ns n x => OwnRaw (ls_syms st) i ns n x \/ ImpsRaw st am ns n x)
           (fun ns n x => OwnRaw (ls_syms st) i ns n x \/ ImpsRaw st am ns n x \/ GlobsRaw st am ns n x);
   li_kind : forall s g, nget (ls_syms st) s = Some g -> KindOK g;
-  li_recv : forall s g, nget (ls_syms st) s = Some g -> gs_recv g = None \/ gs_kind g = KMethod
+  li_recv : forall s g, nget (ls_syms st) s = Some g -> gs_recv g = None \/ gs_kind g = KMethod;
+  li_receiver : forall s g,nget(ls_syms st)s=Some g->forall m,nget(ls_mods st)(gs_mod g)=Some m->ReceiverAt(gm_names m)g
 }.
 
 Lemma loaded_fun : forall st p i j, LInv st -> In (p, i) (ls_loaded st) -> In (p, j) (ls_loaded st) -> i = j.
@@ -1238,6 +1276,17 @@ Proof.
   - intros s g Hs. cbn [ls_syms] in Hs. destruct (add_syms_split _ _ Hs) as [Hs'|(Hle & _)].
     + exact (li_recv _ H1 s g Hs').
     + exact (di_recv _ _ _ _ _ _ DI s g Hs Hle).
+  - intros s g Hs m Hm;cbn[ls_syms]in Hs.
+    destruct(add_syms_split _ _ Hs)as[Old|(Hle&Rest)].
+    + destruct(li_syms _ H1 s g Old)as(Pos&Bound&Id&q&Home).
+      rewrite add_old_mods in Hm;[exact(li_receiver _ H1 s g Old m Hm)|exact(add_old_ne _ _ Home)].
+    + destruct(di_sym _ _ _ _ _ _ DI s g Hle Hs)as(Id&Mod&Occ&Kind&Names&Detached&Att).
+      rewrite Mod in Hm;rewrite Hm1 in Hm;injection Hm as <-.
+      eapply receiver_at_extend;[exact(di_receiver _ _ _ _ _ _ DI s g Hs Hle)| |].
+      * intros rn n ps rt body D NoneAt.
+        destruct(Att ltac:(unfold is_attached;rewrite D;eauto 8))as(rn'&n'&ps'&rt'&body'&r&gr&Ed&At&Rest').
+        rewrite D in Ed;injection Ed as <- <- <- <- <-;rewrite At in NoneAt;discriminate.
+      * exact add_names_transfer.
 Qed.
 
 End Add.
@@ -1369,41 +1418,14 @@ Definition W_read (w : Elab.world) (R : nat -> list nat) (F : string -> nat) : A
                 | Some g => assoc attached_eqb (r, n) (gm_attached (get_mod w (gs_mod g)))
                 | None => None
                 end)
-    R F.
+    R F (Elab.w_library w).
 
-(* The fields of WorldOf about the loader: everything but requirements and
-   field numbering. *)
-Record LoaderReading (b : bundle) (W : A.world) : Prop := {
-  lr_acyclic : exists rank : string -> nat, forall p m t imp,
-      A.Loaded b p -> A.module_of b p = Some m -> In (t, imp) (A.imports_of b m) ->
-      A.module_of b t <> None /\ rank t < rank p;
-  lr_decl_sound : forall s d, A.w_decl W s = Some d -> s <> 0 /\ A.Declared b d /\ A.kind_of (A.d_ast d) <> None;
-  lr_decl_complete : forall d, A.Declared b d -> A.kind_of (A.d_ast d) <> None ->
-      exists s, A.w_decl W s = Some d /\ forall s', A.w_decl W s' = Some d -> s' = s;
-  lr_exports : forall p ns n e, A.Loaded b p -> (A.w_exp W p ns n = Some e <-> A.Exports b W p ns n e);
-  lr_scope : forall p ns n e, A.Loaded b p -> (A.w_scope W p ns n = Some e <-> A.InScope b W p ns n e);
-  lr_attached : forall r n s, A.w_attached W r n = Some s <-> A.AttachedDecl W r n s
-}.
-
-(* The rest: requirements ([D71]/[D73]) and field numbering. *)
-Record ReqsReading (W : A.world) : Prop := {
-  rr_nodup : forall s, NoDup (A.w_reqs W s);
-  rr_plain : forall s k, A.kind_sym W s = Some k ->
-      k <> A.DKTag -> k <> A.DKAlias -> k <> A.DKType -> k <> A.DKUnit ->
-      forall t, In t (A.w_reqs W s) <-> A.AssumeTypes W s t;
-  rr_none : forall s, A.kind_sym W s = Some A.DKType \/ A.kind_sym W s = Some A.DKUnit -> A.w_reqs W s = [];
-  rr_closed : A.RelevanceClosed W (A.w_reqs W);
-  rr_least : forall R, A.RelevanceClosed W R ->
-      (forall s, A.kind_sym W s <> Some A.DKTag -> A.kind_sym W s <> Some A.DKAlias -> R s = A.w_reqs W s) ->
-      forall g, (A.kind_sym W g = Some A.DKTag \/ A.kind_sym W g = Some A.DKAlias) -> incl (A.w_reqs W g) (R g);
-  rr_listed : forall g d ps t n, A.w_decl W g = Some d -> A.nominal_body (A.d_ast d) = Some (ps, t) -> In n ps ->
-      exists x, A.resolve_sym W (A.d_mod d) [n] = Some x /\ A.AssumeTypes W g x
-}.
+Export ComponentContracts.SourceReading.
 
 Theorem worldof_of_reading : forall b W,
   LoaderReading b W -> ReqsReading W -> (forall a c, A.w_fld W a = A.w_fld W c -> a = c) -> A.WorldOf b W.
 Proof.
-  intros b W [L1 L2 L3 L4 L5 L6] [R1 R2 R3 R4 R5 R6] F. constructor; assumption.
+  intros b W [L1 L2 L3 L4 L5 L6 L7] [R1 R2 R3 R4 R5 R6] F. constructor; assumption.
 Qed.
 
 Section Final.
@@ -1416,7 +1438,7 @@ Hypothesis He : In (b_entry b, e) (ls_loaded st).
 Hypothesis Hr : forall q j, In (q, j) (ls_loaded st) -> Reach b (b_entry b) q.
 Variables (R : nat -> list nat) (F : string -> nat).
 
-Let w := Elab.World (ls_mods st) (ls_order st) e (ls_syms st) (ls_next_sym st) (ls_files st).
+Let w := Elab.World (ls_mods st) (ls_order st) e (ls_syms st) (ls_next_sym st) (ls_files st) (Loader.library_dir (b_prelude b)).
 Let W := W_read w R F.
 
 Lemma fin_get_mod : forall i m, nget (ls_mods st) i = Some m -> get_mod w i = m.
@@ -1703,6 +1725,7 @@ Proof.
       rewrite Pm in Hsc. rewrite (fin_scope q _ m _ rn Hq Emm) in Hsc. cbn [tbl] in Hsc. rewrite Er in Hsc.
       injection Hsc as <-.
       cbn [A.w_attached W W_read w_syms w]. rewrite Hgr. rewrite Egr, (fin_get_mod _ _ Emm). exact Ear.
+  - reflexivity.
 Qed.
 
 (* ---- name resolution: the elaborator's resolve_path is the relation's ---- *)
@@ -2224,6 +2247,7 @@ Proof.
   - intros p i m am [].
   - intros s g H. rewrite nget_NE in H. discriminate.
   - intros s g H. rewrite nget_NE in H. discriminate.
+  - intros s g H. rewrite nget_NE in H. discriminate.
 Qed.
 
 (* Track A, step 1 of elaborate_sound: the loader's reading of a bundle
@@ -2254,7 +2278,7 @@ Proof.
   cbn [w_order] in Hi. destruct (proj1 (li_order _ _ L i) Hi) as (p & Hp).
   destruct (li_loaded _ _ L p i Hp) as [_ (m & am & Em & Pm & _)].
   pose proof (resolve_path_agrees b st e L R F p i m pa r Hp Em Hres) as X.
-  rewrite (fin_get_mod st e i m Em), Pm. exact X.
+  rewrite (fin_get_mod b st e i m Em), Pm. exact X.
 Qed.
 
 (* every module of the loader's world is Loaded, at its path *)
@@ -2268,7 +2292,7 @@ Proof.
     by (intros q j Hq; destruct (Hr q j Hq) as [[]|Hq']; exact Hq').
   cbn [w_order] in Hi. destruct (proj1 (li_order _ _ L i) Hi) as (p & Hp).
   destruct (li_loaded _ _ L p i Hp) as [_ (m & am & Em & Pm & _)].
-  rewrite (fin_get_mod st e i m Em), Pm. apply (proj2 (fin_loaded b st e L He Hr' p)). exists i. exact Hp.
+  rewrite (fin_get_mod b st e i m Em), Pm. apply (proj2 (fin_loaded b st e L He Hr' p)). exists i. exact Hp.
 Qed.
 
 (* The requirements of a val, fn, method, context or functor, as the
@@ -2420,3 +2444,14 @@ Qed.
    the loader's world and symbols, makes only non-source symbols, fresh in
    W_read, and numbers fields 1, 2, …, so fld_ext of the final table is an
    injective field numbering. *)
+
+Theorem load_world_receiver_shape:forall b w,
+ load_world b=Good w->forall key g,nget(w_syms w)key=Some g->
+ ReceiverAt(gm_names(get_mod w(gs_mod g)))g.
+Proof.
+ intros b w Load key g At;unfold load_world in Load.
+ apply rbind_good in Load as([entry ls]&Run&Load);injection Load as <-.
+ destruct(load_spec b _ _ _ _ _ _ Run(linv_init b))as[Inv Rest].
+ destruct(li_symfacts _ _ Inv key g At)as[m[path[am[Mod FactsRest]]]].
+ unfold get_mod;cbn[w_mods];rewrite Mod;exact(li_receiver _ _ Inv key g At m Mod).
+Qed.

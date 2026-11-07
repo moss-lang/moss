@@ -1,0 +1,1 @@
+!P tests/errors/functor_fixed_bracket.moss X

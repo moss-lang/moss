@@ -1,0 +1,8 @@
+# Even an empty bracket application is not an unapplied provider name.
+tag Receiver;
+fn Receiver.provide() {}
+fn .method();
+fn main() {
+  bind Receiver.method = Receiver[].provide;
+  Receiver.method();
+}

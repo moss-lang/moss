@@ -1,0 +1,24 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/int.moss" use Int, one;
+type A;
+type B;
+assume A, B { fn .bar(v: B): B; }
+assume B { val give: B; }
+functor Good[A]: A, B -> A.bar;
+functor NotFamily[A, B]: A, B -> A.bar;
+functor G: A, B -> A.bar { bind A.bar = (v) => v; }
+assume B, give, Good, NotFamily, Int, one { fn work(): B { one.bar(give) } }
+assume Wasm, Wasi, Branch {
+ fn main() {
+  bind WasiStd;
+  bind A = Int;
+  bind B = Int;
+  bind give = one;
+  bind Good = G;
+  bind NotFamily = G;
+  if work() == one { putchar(char::y); } else { putchar(char::n); }
+ }
+}

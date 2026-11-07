@@ -1,0 +1,24 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/int.moss" use Int, one;
+import "../../lib/num.moss" use .add;
+
+# D68 arithmetic can be produced by a family on demand, just like a
+# method call. This provider deliberately makes addition return its receiver,
+# so the literal 2 evaluates to the provided one, rather than machine 2.
+type T;
+functor AddF[T]: -> T.add;
+functor AddG: T -> T.add { bind T.add = (rhs) => this; }
+
+assume Int, one {
+  fn two(): Int { bind AddF = AddG; 2 }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    if two() == one { putchar(char::y); } else { putchar(char::n); }
+  }
+}

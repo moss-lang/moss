@@ -1,0 +1,7 @@
+# Reusing a subcontext is sharing, not a cycle.
+context SharedLeaf = Int;
+context Left = SharedLeaf;
+context Right = SharedLeaf;
+context Both = Left, Right;
+assume Both { fn unused(x: Int): Int { x } }
+fn main() {}

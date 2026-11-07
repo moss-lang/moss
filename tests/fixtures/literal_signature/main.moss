@@ -1,0 +1,3 @@
+import "./prelude.moss" use Int, one, .add;
+assume Int, one, Int.add { fn bad() { 2 } }
+fn main() {}
