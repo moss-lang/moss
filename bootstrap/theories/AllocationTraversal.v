@@ -221,6 +221,12 @@ Local Ltac generic_reader :=
  try discriminate Run;injection Run as _ <-;reflexivity.
 
 Local Ltac generic_leaf := first[solve[generic_reader]|apply P_base;[solve[keepst]|solve[keepst]|solve[keepst]|solve[okt]]].
+(* Restrict this search to induction hypotheses and base cases; the
+   structural operations have their own branches below. *)
+Local Ltac generic_previous :=
+ clear P_base P_bind P_map P_fold P_iter P_vars P_allocate P_expect_step
+       P_wrapper P_forwarder_step P_lower_body_step P_lambda_provider_step;
+ auto 2.
 Local Ltac generic_tac := repeat(fintros;lazymatch goal with
  | |-P(mbind(new_sym _ _ _ _ _)_)=>apply P_allocate;[discriminate|split;discriminate|discriminate|intros;discriminate|intro]
  | |-P(mbind _ _)=>apply P_bind
@@ -229,12 +235,12 @@ Local Ltac generic_tac := repeat(fintros;lazymatch goal with
  | |-P(miter _ _)=>apply P_iter
  | |-P(with_vars _ _)=>apply P_vars
  | |-P(in_reify_code _ _)=>unfold in_reify_code
- | |-P ?m=>first[solve[generic_named]|solve[auto 2]|lazymatch m with
+ | |-P ?m=>first[solve[generic_named]|solve[generic_previous]|lazymatch m with
   |upd _=>generic_leaf
   |(fun s=>_)=>generic_leaf
   |_=>first[match m with context[match ?x with _=>_ end]=>destruct x end|let h:=head_of m in progress unfold h]
   end]
- | _=>solve[auto 2]
+ | _=>solve[generic_previous]
  end).
 Lemma synth_preservation_group : forall fuel,
   (forall c e x exp, P (synth fuel c e x exp)) /\
