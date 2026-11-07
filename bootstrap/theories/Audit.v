@@ -3613,6 +3613,11 @@ Inductive ResultLeaf (W : world) : nat -> (nat * option name) -> Prop :=
 Definition SameResult (W : world) (u g : nat) : Prop :=
   forall k, ResultLeaf W u k <-> ResultLeaf W g k.
 
+(* Restore fresh output generations to their declared symbols when filing
+   the reusable code body. Input meanings remain those of the target. *)
+Definition output_renaming (outs : list nat) (gen : nat -> nat) (k : item) : item :=
+  app_subst_item (map (fun t => (gen t, TAbs t)) outs) k.
+
 (* a method bind, filed also under each key it answers as another spelling
    (pairs: the body's key, the key as declared) *)
 Definition refile (pairs : list (item * item)) (b : xbind) : list xbind :=
@@ -4243,7 +4248,7 @@ with LambdaProvider (W : world) (P : xprogram) : frame -> cx -> list (name * opt
    that applications supply; 3d: pins may not rebind M(F); 3e: every item
    of F's result is made by the binds, at the types F promises. *)
 with LinkBody (W : world) (P : xprogram) : nat -> nat -> nat -> Prop :=
-| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs Cr ks binds0 binds,
+| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds,
     w_decl W gg = Some dg -> d_ast dg = ADFunctor n ps a r (Some bodies) ->
     FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
     (* 3b: a captured value may mention fixed or privately captured types,
@@ -4256,16 +4261,20 @@ with LinkBody (W : world) (P : xprogram) : nat -> nat -> nat -> Prop :=
     fr_mod Fg = d_mod dg -> fr_pins Fg = [] \/ (forall x, In x (fr_pins Fg) <-> Mentions W u x) ->
     BindItems W P Fg Cg (concat bodies) wrap Cb Fb made ->
     (forall t, In t outs <-> FunOutputs W u t) ->
-    ProvideResult W u Cg (fun t => TAbs t) Cr ks ->
+    NoDup (map gen outs) ->
+    (forall t, In t outs -> Fresh W (gen t)) ->
+    ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks ->
     (* 3e: each result key is provided by the body *)
-    (forall k, In k ks -> provides Cb k) ->
+    (forall k, In k ks -> provides Cb (at_site Cb (output_renaming outs gen k))) ->
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
     BindsOf (wrap XUnit) binds0 ->
     (* a result method item is filed under its key as F declares it too
        (receiver and θ in F's terms, note 28) *)
-    binds = flat_map (refile (map (fun k => (at_site Cb k, rkey_of Cr k)) ks)) binds0 ->
+    binds = flat_map (refile (map (fun k =>
+      (at_site Cb (output_renaming outs gen k),
+       output_renaming outs gen (rkey_of Cr k))) ks)) binds0 ->
     Fresh W h ->
-    funbody_of P h = Some (map ITy outs ++ map (rkey_of Cr) ks, binds) ->
+    funbody_of P h = Some (map ITy outs ++ map (fun k => output_renaming outs gen (rkey_of Cr k)) ks, binds) ->
     LinkBody W P u gg h.
 
 (* ======================================================================== *)
