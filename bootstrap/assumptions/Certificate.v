@@ -1,4 +1,4 @@
-(* The checked contracts in Audit.v, supporting proof milestones, and
+(* The checked component contracts, supporting proof milestones, and
    the executable roots Extract2.v extracts. Their assumptions are
    transitively everything the guarantee rests on, and check.sh requires
    them to be only the kernel's `Primitive` declarations (Rocq's primitive

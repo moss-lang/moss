@@ -4,7 +4,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit.
+From NM Require Import Audit ComponentContracts.
 Import ListNotations.
 Import Audit.Elaboration.
 

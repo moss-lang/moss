@@ -1,3 +1,4 @@
-(* The concrete heap proofs share the store typing and laws in Audit.v. *)
+(* Shared store typing from Audit.v and component heap laws. *)
+From NM Require Import ComponentContracts.
 From NM Require Import Audit.
-Export Audit.Heap.
+Export Audit.Heap ComponentContracts.HeapContracts.

@@ -1,6 +1,6 @@
-(* The fueled interpreter for the Core Moss evaluation relation in Audit.v. *)
+(* The fueled interpreter for the Core Moss evaluation relation in CoreFragment.v. *)
 From Stdlib Require Import List.
-From NM Require Import Audit.
+From NM Require Export Audit CoreFragment.
 Import ListNotations.
 
 Fixpoint interp (fuel : nat) (Sg : gsig) (d : denv) (g : venv) (e : expr)

@@ -16,12 +16,13 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require Import ComponentContracts.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame.
 Import ListNotations.
 Local Open Scope list_scope.
 
 Module A := Audit.Elaboration.
-Import Audit.SourceReading.
+Import ComponentContracts.SourceReading.
 
 Local Strategy opaque [Nat.of_num_uint].
 

@@ -2,10 +2,16 @@
 
 This checkpoint contains a substantial proof development, not an end-to-end
 verified compiler. In particular, **source elaboration soundness and the
-universal runtime typing certificate remain open**. The authoritative bound
-contract is [`Certified.v`](theories/Certified.v), which implements
-`Audit.PROVED_NOW`, `FRONT_END` and `LOADER`; it does not implement
-`Audit.COMPLETE`.
+universal runtime typing certificate remain open**. The public contract is
+[`Audit.Public.CORRECT`](theories/Audit.v): build soundness and completeness,
+run soundness and completeness, and safety. These five end-to-end
+obligations remain pending. Audit.v defines Builds, Runs and their semantic
+dependencies directly.
+
+[Certified.v](theories/Certified.v) binds the existing component results in
+[ComponentContracts.v](theories/ComponentContracts.v).
+[CoreFragment.v](theories/CoreFragment.v) contains the smaller calculus used
+by those proofs.
 
 ## Checked components
 
@@ -73,13 +79,13 @@ successful elaboration, or record a fresh full-build result for this checkout.
 candidate. It is deliberately separate from the production driver.
 [`XElabTyped.v`](theories/XElabTyped.v) proves that a program *with* a runtime
 typing certificate never produces `XErr`.
-`Audit.SOURCE_RUNTIME_COMPLETE.source_runtime_certificate` states the pending
+`ComponentContracts.SOURCE_RUNTIME_COMPLETE.source_runtime_certificate` states the pending
 universal certificate-construction obligation. Consequently, this
 checkpoint does **not** prove that every accepted source program avoids
 `XErr`. Type safety also permits modeled traps and fuel exhaustion; it is
 not a termination or trap-freedom guarantee.
 
-`Audit.COMPLETE` additionally names elaboration completeness. No completeness
+`ComponentContracts.COMPLETE` additionally names elaboration completeness. No completeness
 claim is made here; completeness is outside the current soundness milestone.
 
 A known remaining native/oracle discrepancy is attached method-provider

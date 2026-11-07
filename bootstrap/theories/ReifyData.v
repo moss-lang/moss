@@ -1,6 +1,7 @@
 (* Checked source metadata consumed by immutable lowering.  These records are
    ghost data: the runtime consumes only the lowered program and export maps. *)
 From Stdlib Require Import List Arith Bool.
+From NM Require Import CoreFragment.
 From NM Require Import Audit.
 Import ListNotations.
 

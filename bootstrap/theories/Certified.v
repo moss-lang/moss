@@ -1,24 +1,10 @@
 (* ------------------------------------------------------------------------ *)
-(* Certified.v — binds the implementation to the audit contract (Audit.v,   *)
-(* Part VI). Implementation aliases and adapter proofs connect the       *)
-(* operations and guarantees to the public contracts.                       *)
-(*                                                                           *)
-(* The module ascriptions below bind the checked contracts in Audit.v.      *)
-(* Pending: Audit.COMPLETE and Audit.SOURCE_RUNTIME_COMPLETE.              *)
-(*   - elaborate_sound      (elaborate b = Good p -> Elaborates b p); its    *)
-(*                           first step, the loader's reading, is bound     *)
-(*                           below (world_reads, WorldSound.v)              *)
-(*   - elaborate_complete   (b elaborable -> elaborate b = Good _)           *)
-(*   - accepted_never_err   (accepted programs never get stuck, MossX)       *)
-(*   - elaborated_typed     (core-fragment output is Typed; the bridge from  *)
-(*                           the elaborator to typed_safe)                   *)
-(*   - source_runtime_certificate (accepted source lowers to a typed       *)
-(*                                 executable runtime program)             *)
-(* There is no Admitted, Axiom or Parameter in this file, and COMPLETE is    *)
-(* not claimed: `Certified` is ascribed PROVED_NOW only.                     *)
-(* ------------------------------------------------------------------------ *)
+(* Certified.v binds the checked component contracts in
+   ComponentContracts.v. The five end-to-end obligations in
+   Audit.Public.CORRECT remain pending. *)
 
 From Stdlib Require Import List.
+From NM Require Import ComponentContracts.
 From NM Require Import Audit CoreMoss MossX Sx Elab Specialization RelFacts.
 From NM Require FastPath WorldSound ElabFrame ReqsTotal MethodLookup XBridgeCtx.
 From NM Require XTyping XSafety XExample XHeapC.
@@ -28,7 +14,7 @@ Import ListNotations.
 
 Module Certified := EarlyCertified.Certified.
 
-(* Toward elaborate_sound (Audit.v, Part VI, COMPLETE), step 1: the static
+(* Toward ComponentContracts.COMPLETE.elaborate_sound, step 1: the static
    world the elaborator's loader reads a bundle as satisfies every condition
    of Part V's WorldOf about modules, imports, declarations, D44 exports and
    scopes and D61 attached methods (WorldSound.LoaderReading), whatever the
@@ -74,9 +60,9 @@ Module FrontEndCertified <: FRONT_END.
   Proof. intros bytes ts H. unfold lex. now rewrite (FrontEnd.lex_complete bytes ts H). Qed.
 
   Definition parse := Parse.parse_moss.
-  Definition parser_sound : forall s f, parse s = Input.Good f -> Syntax.Derives (String.list_byte_of_string s) f :=
+  Definition parser_sound : forall s f, parse s = Sx.Good f -> Syntax.Derives (String.list_byte_of_string s) f :=
     FrontEnd.parse_moss_sound.
-  Definition parser_complete : forall s f, Syntax.Derives (String.list_byte_of_string s) f -> parse s = Input.Good f :=
+  Definition parser_complete : forall s f, Syntax.Derives (String.list_byte_of_string s) f -> parse s = Sx.Good f :=
     FrontEndComplete.parse_moss_complete.
 End FrontEndCertified.
 
@@ -93,8 +79,8 @@ End LoaderCertified.
 Definition elaborate_sx := Elab.elaborate_sx.
 Lemma elaborate_sx_reads : forall x,
   elaborate_sx x = match Sx.read_bundle x with
-                   | Input.Good b => Certified.elaborate b
-                   | Input.Bad m => Input.Bad m
+                   | Sx.Good b => Certified.elaborate b
+                   | Sx.Bad m => Sx.Bad m
                    end.
 Proof. intro x. reflexivity. Qed.
 
@@ -113,8 +99,8 @@ Module SourceCertified <: SOURCE_PROGRESS Certified.
   Definition module_path w i := Elab.gm_path (Elab.get_mod w i).
   Definition resolve_path w i path :=
     match Elab.resolve_path w i path with
-    | Input.Good entity => Input.Good (option_map (WorldSound.ent_of w) entity)
-    | Input.Bad msg => Input.Bad msg
+    | Sx.Good entity => Sx.Good (option_map (WorldSound.ent_of w) entity)
+    | Sx.Bad msg => Sx.Bad msg
     end.
   Definition cached_requirements source x := NMap.nget (Elab.st_reqs source) x.
   Definition frame_specs :=
@@ -131,8 +117,8 @@ Module SourceCertified <: SOURCE_PROGRESS Certified.
   Definition context_type_meanings := XBridgeCtx.ctx_tys_self.
 
   Lemma world_resolves : forall b w requirements fields i path entity,
-    load_world b = Input.Good w -> In i (module_ids w) ->
-    resolve_path w i path = Input.Good entity ->
+    load_world b = Sx.Good w -> In i (module_ids w) ->
+    resolve_path w i path = Sx.Good entity ->
     Elaboration.resolve (read_world w requirements fields) (module_path w i) path = entity.
   Proof.
     intros b w R F i path entity Load Member Resolve.
@@ -143,10 +129,10 @@ Module SourceCertified <: SOURCE_PROGRESS Certified.
   Qed.
 
   Lemma elaborate_world_of : forall b p,
-    Certified.elaborate b = Input.Good p ->
+    Certified.elaborate b = Sx.Good p ->
     exists w source requirements,
-      load_world b = Input.Good w /\
-      elaborate_with_metadata b = Input.Good (p, source) /\
+      load_world b = Sx.Good w /\
+      elaborate_with_metadata b = Sx.Good (p, source) /\
       (forall x l, cached_requirements source x = Some l -> requirements x = l) /\
       forall fields, (forall a c, fields a = fields c -> a = c) ->
       Elaboration.WorldOf b (read_world w requirements fields).
@@ -154,15 +140,15 @@ Module SourceCertified <: SOURCE_PROGRESS Certified.
     intros b p H.
     destruct (ReqsTotal.elaborate_world_of _ _ H) as (w & s & R & Load & Run & Reqs & World).
     exists w, s, R. split; [exact Load|]. split; [|exact (conj Reqs World)].
-    unfold elaborate_with_metadata, Elab.elaborate_with_metadata, Input.rbind.
+    unfold elaborate_with_metadata, Elab.elaborate_with_metadata, Sx.rbind.
     now rewrite Load.
   Qed.
 
   Lemma function_frames_total : forall b p source,
-    elaborate_with_metadata b = Input.Good (p, source) ->
+    elaborate_with_metadata b = Sx.Good (p, source) ->
     exists specs, function_frame_specifications source p = Some specs.
   Proof.
-    intros b p source H. unfold elaborate_with_metadata, Elab.elaborate_with_metadata, Input.rbind in H.
+    intros b p source H. unfold elaborate_with_metadata, Elab.elaborate_with_metadata, Sx.rbind in H.
     destruct (Elab.load_world b) as [w|msg] eqn:E; [|discriminate].
     exact (@FunctionFrameProgram.actual_function_frame_specifications_total b w p source E H).
   Qed.

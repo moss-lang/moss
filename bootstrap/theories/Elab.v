@@ -27,6 +27,7 @@
 
 From Stdlib Require Import List String Ascii Bool Arith PrimInt63 Uint63.
 From NM Require Import Audit NMap Sx ReifyData.
+From NM Require Export Sx.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Open Scope string_scope.

@@ -5,6 +5,26 @@ Export Audit.Input.
 Import ListNotations.
 Local Open Scope string_scope.
 
+(* ===================== Results ============================================ *)
+
+Inductive res (A : Type) : Type :=
+| Good : A -> res A
+| Bad  : string -> res A.
+Arguments Good {A}.
+Arguments Bad {A}.
+
+Definition rbind {A B : Type} (r : res A) (f : A -> res B) : res B :=
+  match r with Good a => f a | Bad m => Bad m end.
+
+Notation "'let*' x ':=' r 'in' k" := (rbind r (fun x => k))
+  (at level 200, x pattern, r at level 100, k at level 200).
+
+Fixpoint rmap {A B : Type} (f : A -> res B) (l : list A) : res (list B) :=
+  match l with
+  | [] => Good []
+  | x :: r => let* y := f x in let* ys := rmap f r in Good (y :: ys)
+  end.
+
 (* ===================== Tokens ============================================= *)
 
 Inductive sx : Type :=

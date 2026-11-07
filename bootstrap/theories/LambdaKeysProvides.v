@@ -42,7 +42,7 @@ Qed.
 Theorem all_keys_provides:forall c e F C,
  CxRel w R Fl c e F C->MethodRowsUnique e->MethodRowsCanonical e->LambdaMethodDomain Fl e C->
  forall key,In key(map(key_tr Fl)(all_keys e))<->
- A.provides C key/\(match key with ITy _=>False|_=>True end)/\key=Audit.provision_id key.
+ A.provides C key/\(match key with ITy _=>False|_=>True end)/\key=Audit.Elaboration.provision_id key.
 Proof.
  intros c e F C HC Unique Clean Domain key;split.
  - intro Member;apply in_map_iff in Member as[k[Eq Hit]];subst key.

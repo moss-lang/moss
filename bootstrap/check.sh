@@ -9,7 +9,7 @@
 # - assumptions/Closed.v: the theorems the design notes cite as closed are
 #   closed under the global context.
 # - Nothing is Admitted, and Parameters and Axioms are declared only inside
-#   module types (Audit.v's obligations, never assumptions).
+#   module types (public and component obligations, never assumptions).
 set -euo pipefail
 cd "$(dirname "$0")"
 fail() { echo "check.sh: $*" >&2; exit 1; }
@@ -45,7 +45,7 @@ open=$(grep -vx 'Closed under the global context' "$build_dir/Closed.log" || tru
 [ -z "$open" ] || fail "a theorem of assumptions/Closed.v is not closed: $open"
 
 if grep -nE '\b(Admitted|admit)\.' theories/*.v ocaml/*.v; then fail "Admitted"; fi
-if sed '/^Module Type /,/^End /d' theories/*.v | grep -E '^\s*(Parameter|Axiom)\b'; then
+if sed '/^[[:space:]]*Module Type /,/^[[:space:]]*End /d' theories/*.v | grep -E '^\s*(Parameter|Axiom)\b'; then
   fail "a Parameter or Axiom outside a module type"
 fi
 echo "check.sh: every file compiles, and the certificate assumes only the kernel's primitives"

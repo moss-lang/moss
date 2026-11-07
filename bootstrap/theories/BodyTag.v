@@ -25,6 +25,13 @@ From NM Require Import TagArgsExec NominalSupport.
 
 Module A := Audit.Elaboration.
 
+(* Proof predicates for identifying platform reference tags and libraries. *)
+Definition PlatformRefTag (W : A.world) (s : nat) : Prop :=
+  A.LangSym W "wasm"%string A.NSName "Ref"%string s \/
+  A.LangSym W "wasm"%string A.NSName "Array"%string s.
+Definition InLibrary (W : A.world) (p : string) : Prop :=
+  exists dir rest, A.w_library W = Some dir /\ p = String.append dir rest.
+
 Local Strategy opaque [Nat.of_num_uint FUEL].
 
 Tactic Notation "bi" hyp(H) "as" ident(a) ident(s1) ident(H1) :=
@@ -112,7 +119,7 @@ Definition Htagargs := @BodyData.Htagargs w P R Fl b Hload.
 (* A platform reference tag is selected by wasm's scope, including a
    deliberate reexport. Its declaration may live in another module. *)
 
-Lemma platform_ref : forall x g, nget (w_syms w) x = Some g -> A.PlatformRefTag WW x ->
+Lemma platform_ref : forall x g, nget (w_syms w) x = Some g -> PlatformRefTag WW x ->
   exists wm, sassoc "wasm" (lang_modules w) = Some wm /\
   A.LibraryModule WW "wasm" (gm_path (get_mod w wm)) /\
   (sassoc "Ref" (gm_names (get_mod w wm)) = Some x \/
@@ -140,7 +147,7 @@ Qed.
 
 Lemma in_library_true : forall mi s s' wm, in_library mi s = Good (true, s') -> Later w P R Fl s ->
   sassoc "wasm" (lang_modules w) = Some wm -> A.LibraryModule WW "wasm" (gm_path (get_mod w wm)) ->
-  A.InLibrary WW (gm_path (get_mod w mi)).
+  InLibrary WW (gm_path (get_mod w mi)).
 Proof.
   intros mi s s' wm H L Ew Ep. unfold in_library in H.
   bi H as s0 s1 Hg. injection Hg as <- <-.

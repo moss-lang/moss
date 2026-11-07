@@ -39,6 +39,10 @@ From Stdlib Require Import PrimInt63 Uint63 PrimFloat FloatClass PArray ZArith.
 From NM Require Import CoreMoss HTrie.
 Import ListNotations.
 
+Lemma xinst_map : forall d th,
+  xinst d th = map (fun p => (ITy (fst p), XDType (xground d (snd p)))) th.
+Proof. intros d [|p th]; reflexivity. Qed.
+
 Set Implicit Arguments.
 
 Local Open Scope nat_scope.

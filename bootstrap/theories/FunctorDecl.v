@@ -39,7 +39,7 @@ Proof.
  - intros u fx[].
  - apply entries_functor_append;[apply entries_functor_types|].
    apply entries_functor_append;[|exact IHRootItems].
-   intros u0 fx0[Eq|[]];injection Eq as <- <-;exists du,n,ps,args,res0;split;assumption.
+   intros u0 fx0[Eq|[]];injection Eq as <- <-;exists du,n,ps,args; eexists;split;eassumption.
  - exact IHRootItems.
 Qed.
 Lemma root_functor_decls:forall W s es0 tm es tm',

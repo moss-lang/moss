@@ -148,8 +148,8 @@ let () =
        Stdlib.List.iter (fun f ->
          let text = match read_file f with Some t -> t | None -> failwith ("cannot read " ^ f) in
          let out = match Parse.parse_moss text with
-           | Audit.Input.Good a -> Parse.print_sx (Sx.Dump.dump_file a) ^ "\n"
-           | Audit.Input.Bad m -> "ERROR " ^ m ^ "\n" in
+           | Sx.Good a -> Parse.print_sx (Sx.Dump.dump_file a) ^ "\n"
+           | Sx.Bad m -> "ERROR " ^ m ^ "\n" in
          Out_channel.with_open_bin (Filename.concat d (mangle f ^ ".rocq.sx"))
            (fun oc -> output_string oc out)) rest;
        exit 0
@@ -159,16 +159,16 @@ let () =
   let input =
     if Filename.check_suffix file ".moss" then begin
       match Parse.load_bundle read_file (Sys.getcwd ()) !prelude file with
-      | Audit.Input.Bad msg -> Printf.eprintf "[moss_m2 front end: %s]\n" msg; exit 63
-      | Audit.Input.Good ((entry, prel), ms) ->
+      | Sx.Bad msg -> Printf.eprintf "[moss_m2 front end: %s]\n" msg; exit 63
+      | Sx.Good ((entry, prel), ms) ->
           if !bundle_text then (print_string (Parse.print_bundle entry prel ms); exit 0);
           if Sys.getenv_opt "MOSS_REF_TIME" <> None then
             Printf.eprintf "[moss_m2: parsed %d modules in %.3fs]\n%!" (Stdlib.List.length ms) (Unix.gettimeofday () -. t0);
           Parse.bundle_sx entry prel ms
     end else tokenize (In_channel.with_open_bin file In_channel.input_all) in
   let p = match Elab.elaborate_sx input with
-    | Audit.Input.Good p -> p
-    | Audit.Input.Bad msg ->
+    | Sx.Good p -> p
+    | Sx.Bad msg ->
         let uns = String.length msg >= 12 && String.sub msg 0 12 = "unsupported:" in
         Printf.eprintf "[moss_m2 elab: %s]\n" msg;
         exit (if uns then 65 else 64) in

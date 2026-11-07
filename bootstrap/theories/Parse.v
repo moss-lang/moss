@@ -20,7 +20,8 @@
 
 From Stdlib Require Import String Ascii List Bool Arith.
 From Stdlib Require Import Strings.Byte.
-From NM Require Import Audit Sx DumpRoundTrip.
+From NM Require Export Sx.
+From NM Require Import Audit DumpRoundTrip.
 Import ListNotations.
 Import Audit.Input Audit.Syntax Sx.Dump Audit.Loader.
 Local Open Scope string_scope.

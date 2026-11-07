@@ -45,7 +45,8 @@ errors and positions included.
   - [`Sx.v`](theories/Sx.v): the S-expression codec for parsed files and
     bundles.
   - [`CoreInterp.v`](theories/CoreInterp.v): the fueled implementation of
-    Core Moss's `eval`, bound to the audit contract by `Certified.v`.
+    Core Moss's `eval` in [`CoreFragment.v`](theories/CoreFragment.v), bound
+    to [`ComponentContracts.v`](theories/ComponentContracts.v) by `Certified.v`.
   - [`Elab.v`](theories/Elab.v): the elaborator, from a bundle to an
     elaborated program (Core Moss extended with records, loops, memory and
     primitives) or an error message. [`NMap.v`](theories/NMap.v) supports it.
@@ -89,7 +90,7 @@ errors and positions included.
     their signatures, and abstract functors with Rule A's captures and
     pins) and its type safety for `xinterp`: a well-typed program never
     produces `XErr`, at any fuel, GC heap included.
-    `Audit.Heap.HEAP_LAWS` states the GC primitives' law,
+    `ComponentContracts.HeapContracts.HEAP_LAWS` states the GC primitives' law,
     [`XHeap.v`](theories/XHeap.v) re-exports it, and
     [`XHeapC.v`](theories/XHeapC.v) proves it
     of MossX's GC heap, which is a trie ([`HTrie.v`](theories/HTrie.v))
@@ -256,51 +257,34 @@ out of fuel (`FastPath.fast_run`):
 
 ## What is trusted
 
-**`Audit.v`** is the contract, and is meant to be read in full. It states
-the input (Part I: the bundle and the surface syntax tree), elaborated
-programs and their meaning (Parts II–IV: MossX, with the primitives
-abstract), the declarative elaboration relation (Part V, a
-DRAFT for the designer's review, with numbered DRAFT NOTES on each
-decision), and the obligations, as module types (Part VI). A supporting
-core calculus before Part VI supplies the existing core proof contracts.
-Historical review notes and counterexamples are preserved in
-[`audit-notes.md`](../docs/design/audit-notes.md).
+**[Audit.v](theories/Audit.v)** is the self-contained language model and public build/run
+contract. It defines source files, syntax, elaboration, reference execution,
+the host interface laws, and both semantic predicates in the same file.
+Its final module type, **Public.CORRECT**, has exactly five obligations:
 
-- `PROVED_NOW`, which `Certified.v` binds: the elaborator is a total
-  function; Core Moss's evaluation is deterministic and its interpreter
-  adequate; specialization preserves evaluation; MossX is conservative
-  over Core Moss; the primitives obey their law; the core type system is
-  sound; and method resolution is search-free (D1).
-- **Pending**, the rest of `COMPLETE`: the elaborator is sound and
-  complete for the relation (`elaborate_sound`, `elaborate_complete`),
-  accepted programs never get stuck (`accepted_never_err`), and the
-  core-fragment output is typed (`elaborated_typed`). Until these are
-  proved, what the oracle establishes about the elaborator is that it is
-  a total and deterministic Gallina function, plus the lemmas of
-  `ElabSound.v`, plus the evidence of testing.
-- `FRONT_END`, which `Certified.v` binds: `Parse.lex` is sound and complete
-  for `Audit.Syntax.Lexes` on the bytes it receives, and `Parse.parse_moss`
-  is sound and complete for `Audit.Syntax.Derives` on source text.
-- `LOADER`: a bundle the loader loads is `Audit.Loader.Bundled`,
-  every module a readable file deriving its AST, each once, closed under
-  its imports and the prelude. `Bundled` requires the module's AST to equal
-  the parsed one. The loader proof uses the round-trip theorem from
-  `DumpRoundTrip.v`, and the loader checks the theorem's name restrictions
-  at the serialization boundary.
-- `SOURCE_PROGRESS` states the checked world-reading and function-frame
-  milestones. The dump codec and its round-trip and adapter lemmas live
-  outside the public audit contract.
-- `RUNTIME_SAFETY` states MossX expression and entry-point safety, including
-  safety of a lowered program given its typing certificate. `Heap.HEAP_LAWS`
-  states the laws that the concrete GC primitives satisfy.
-- `ORACLE_AGREEMENT.interpreter_correct` states correctness of the default
-  direct closure engine, including its driver table conditions and
-  exceptions for fuel exhaustion and stuck reference runs.
-  [`LazyOracle.v`](theories/LazyOracle.v) binds `LazyClo` to this contract
-  and checks the component agreement results used by its proof.
-- **Pending**, `SOURCE_RUNTIME_COMPLETE.source_runtime_certificate`: every
-  successful source elaboration must produce a successful immutable
-  lowering with a runtime typing certificate.
+- **build_sound**: every successful build satisfies Builds.
+- **build_complete**: every source admitted by Builds is accepted.
+- **run_sound**: for an admissible program and valid host/state, every
+  terminating implementation result satisfies Runs.
+- **run_complete**: under those conditions, every terminating Runs
+  execution is reproduced.
+- **safety**: building a program and supplying a valid host interface and
+  state excludes an internal Wrong result at every finite observation.
+
+These end-to-end obligations are pending. Fuel represents finite
+observations of partial execution; fuel exhaustion is distinct from an
+explicit Wrong outcome. Traps, exits and unsupported primitives have
+separate outcomes.
+
+**[ComponentContracts.v](theories/ComponentContracts.v)** retains the smaller contracts and pending proof
+milestones bound by [Certified.v](theories/Certified.v). **[CoreFragment.v](theories/CoreFragment.v)** contains the supporting
+core calculus. Their existing proofs and the executable extraction roots
+remain covered by the assumption audits. These component results do not
+constitute an implementation of Public.CORRECT.
+
+Historical review notes and counterexamples are preserved in
+[audit-notes.md](../docs/design/audit-notes.md).
+
 - **The family fast path** ([design note 24](../docs/design/audit-notes.md)) is proved, and is
   not the elaborator's: the elaborator applies a family exactly by rule 7
   as drafted. Applying the platform's memory family at every memory

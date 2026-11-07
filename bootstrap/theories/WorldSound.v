@@ -24,6 +24,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require Import ComponentContracts.
 From NM Require Import Audit NMap Sx Elab ElabSound.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -1419,7 +1420,7 @@ Definition W_read (w : Elab.world) (R : nat -> list nat) (F : string -> nat) : A
                 end)
     R F (Elab.w_library w).
 
-Export Audit.SourceReading.
+Export ComponentContracts.SourceReading.
 
 Theorem worldof_of_reading : forall b W,
   LoaderReading b W -> ReqsReading W -> (forall a c, A.w_fld W a = A.w_fld W c -> a = c) -> A.WorldOf b W.
