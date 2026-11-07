@@ -1,6 +1,6 @@
 (* Formation of a functor's own executable input context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy Merge CanonTypes
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy Merge CanonTypes
  SourceClean ContextClean CtxWalk CtxMerge CtxMethodExec FunctorMerge ImplicitTypeWalk FunctorScopeTypes ResultMentionsExact NestingTypesExec NeedKeys.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -9,7 +9,7 @@ Section Context.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Let MS:@MethStep w P R Fl:=meth_step_holds w R Fl b Hload.
 Lemma specs_walk:forall f mi specs e needs s e' needs' s' U tm les,
  mfold(fun acc sp=>add_spec f(fst acc)mi sp[](snd acc))(e,needs)specs s=Good((e',needs'),s')->

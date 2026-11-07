@@ -1,6 +1,6 @@
 (* Actual successful requirement checks retain their checked equations. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr Merge CanonTypes InstantiateTr.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr Merge CanonTypes InstantiateTr.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].

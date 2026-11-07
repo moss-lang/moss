@@ -1,6 +1,6 @@
 (* Adding the type-only implicit inputs of a functor preserves walk tables. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound Merge CanonTypes
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore Merge CanonTypes
  SourceClean ContextClean CtxWalk.
 Import ListNotations.
 Module A:=Audit.Elaboration.

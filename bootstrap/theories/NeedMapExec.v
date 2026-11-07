@@ -1,6 +1,6 @@
 (* Successful need resolution preserves exact caller keys and coherence checks. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr CtxWalk CtxMerge Merge CanonTypes TySupport SourceSupport NominalSupport NeedExec InstantiateTr MethodKeyTr.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr CtxWalk KeyTranslation Merge CanonTypes TySupport SourceSupport NominalSupport NeedExec InstantiateTr MethodKeyTr.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Lemma mmap_forall2_inv : forall X Y(f:X->M Y)(P:X->Y->Prop) l s ys s',

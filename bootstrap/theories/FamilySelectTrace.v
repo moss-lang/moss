@@ -1,6 +1,6 @@
 (* The selected family is a genuinely classified loaded abstract target. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  FunctorDecl FunctorDeclExec NMapEnum FamilyKeysExec PMatchExec NominalSupport.
 Import ListNotations.
 Local Open Scope string_scope.
@@ -115,7 +115,7 @@ Section Classified.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Definition Classified(q:family_candidate):Prop:=nget(w_syms w)(gs_id(fst q))=Some(fst q)/\A.Family W(gs_id(fst q)).
 Lemma family_search_step_classified:forall c e F C mi r mid found u stamp s found' sf,
  CxRel w R Fl c e F C->nget(en_funs e)u=Some stamp->

@@ -1,6 +1,6 @@
 (* The actual family parameters and markers supply the full semantic specialization. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy
  TyOfSubst SourceReadingExtend FamilyKeysExec FamilyMarkersExec FamilyMarkerContext FamilyMarkedSubst ProvideResultContext FunctorScopeTypes FunctorContext NestingTypesExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -10,7 +10,7 @@ Section Specialize.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma family_params_types:forall g n names args res s ps sf,
  A.WorldOf b W->nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->
  family_params g s=Good(ps,sf)->Inv s->st_w s=w->Later w P R Fl sf->

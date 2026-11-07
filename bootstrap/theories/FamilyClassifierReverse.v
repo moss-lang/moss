@@ -1,6 +1,6 @@
 (* Reverse correctness of successful family leaf classification. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  FreeVisitorCore NestingTypesExec FamilyShapeExec FamilyKeysExec MethodLookup MethodLookupNone ContextCheckExec.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -10,7 +10,7 @@ Section Reverse.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Notation path_of mi:=(gm_path(get_mod w mi)).
 Lemma family_method_classifies:forall u f mi ps pa dn a s answer sf,
  family_leaf_step f mi ps(Spec(Some pa)(Some dn)a)s=Good(answer,sf)->

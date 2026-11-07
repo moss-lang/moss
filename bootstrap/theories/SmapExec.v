@@ -1,6 +1,6 @@
 (* Runtime satisfaction keys are read from the two actual contexts. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr Merge CtxMerge MethodKeyTr.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr Merge CtxMerge MethodKeyTr.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Section Keys.

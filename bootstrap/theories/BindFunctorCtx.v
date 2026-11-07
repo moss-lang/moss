@@ -1,6 +1,6 @@
 (* Installing a functor retains its actual fixed-input snapshot. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr NominalSupport NominalMergeSupport FunctorDecl.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr NominalSupport NominalMergeSupport FunctorDecl.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Definition fun_tr_inst(Fl:string->nat)(a:Elab.inst):A.inst:=
@@ -66,7 +66,7 @@ Lemma fun_env_support_app:forall W e k a stamp,
 Proof. intros W e k a stamp[T U V F M L];constructor;auto. Qed.
 Section Context.
 Variables(w:Elab.world)(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem cxrel_functor:forall c e F C u stamp a sa fx,
  CxRel w R Fl c e F C->FunctorDecl W u->NoDup(map fst fx)->
  (forall x tx,In(x,tx)fx->A.Fixed W u x)->fun_tr_inst Fl a=A.fixed_app fx->

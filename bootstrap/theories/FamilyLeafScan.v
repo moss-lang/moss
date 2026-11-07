@@ -1,6 +1,6 @@
 (* The actual scanner retains the semantic leaf's bracket/context route. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  MethodLookup MethodLookupNone MethodKind FamilySelectTrace FamilyOutputLeaf.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -20,7 +20,7 @@ Section Trace.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Definition FamilyBracketReceipt(e:env)(mi:nat)(a:sapp)(outer sub:list(nat*ety)):Prop:=
  exists si sf,Inv si/\st_w si=w/\Later w P R Fl sf/\
  (match a with Some bs=>let!xs:=app_subst 200 e mi bs outer in ret(xs++outer)|None=>ret outer end)si=Good(sub,sf).

@@ -1,6 +1,6 @@
 (* Canonical semantic readings of the actual family method output setter. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  Merge CanonTypes CanonBodyTy CtxWalk TyOfSubst SigReadingSubst ProvideResultMethod ProvideResultFunction ProvideResultReading ProvideResultCanonical ProvideResultSubst ProvideResultContext.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -25,7 +25,7 @@ Section Method.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma output_receiver_resolve:forall mi pa s recv sf,
  resolve_type_symbol mi pa s=Good(recv,sf)->Inv s->st_w s=w->In mi(w_order w)->
  sf=s/\A.resolve_sym W(gm_path(get_mod w mi))pa=Some(gs_id recv)/\

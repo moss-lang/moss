@@ -1,6 +1,6 @@
 (* A successful family leaf scan contains methods and context wrappers only. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=Audit.Elaboration.
@@ -88,7 +88,7 @@ Proof. intros W u H;apply family_shape_no_outputs;exact(proj1 H). Qed.
 Section Shape.
 Variable w:Elab.world. Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Notation path_of mi:=(gm_path(get_mod w mi)).
 Theorem family_leaves_ok_shape:forall f mi ps specs s s',
  family_leaves_ok f mi ps specs s=Good(true,s')->

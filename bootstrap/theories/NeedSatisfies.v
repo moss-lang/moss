@@ -1,6 +1,6 @@
 (* The actual need checker and satisfaction-map emitter establish Satisfies. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr Merge CtxWalk CtxMerge
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr Merge CtxWalk CtxMerge
  CanonTypes InstantiateTr NeedExec NeedMapExec SmapExec InfoShape.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -64,7 +64,7 @@ Lemma need_satisfies : forall mi e callee info s ps sn sm s' c F C Cs,
  require_needs mi e callee info s=Good(ps,sn)->
  smap_at(fi_env info)e ps sn=Good(sm,s')->Inv s->Later w P R Fl s'->
  CxRel w R Fl c e F C ->
- CtxOfIE(BodySound.W w R Fl)(gs_id callee)Cs(map(key_tr Fl)(fi_needs info))->
+ CtxOfIE(BodySoundCore.W w R Fl)(gs_id callee)Cs(map(key_tr Fl)(fi_needs info))->
  A.c_sub Cs=suf Fl(en_uf(fi_env info))->fi_merges info=en_uf(fi_env info)->
  Tri(en_uf(fi_env info))->AppsShape info->Forall(fun k=>key_ok k=true)(fi_needs info)->
  (forall k,nofun k=true->key_ok k=true->

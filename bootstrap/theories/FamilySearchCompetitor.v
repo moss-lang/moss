@@ -1,6 +1,6 @@
 (* A real bound semantic competitor is retained by its actual scanner visit. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  CanonBodyTy Merge CanonTypes TyOfSubst SourceReadingExtend FunctorDeclExec
  FamilySelectTrace FamilyClassifierReverse FamilyMarkerContext FamilyMarkerSpecialize FamilyMarkedSubst
  FamilyCandidateComplete FamilySemanticLeaf FamilyLeafScan FamilyScanSpecialize FamilyCandidateRoute FamilySearchRetains FamilyFoldExec.
@@ -17,7 +17,7 @@ Section Competitor.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Ltac competitor_prefix H Hi Hw L a si E Ii Wi Li:=
  match type of H with mbind ?m ?k ?s=Good(?v,?sf)=>
  let O:=fresh"O"in assert(O:ok m)by okt;

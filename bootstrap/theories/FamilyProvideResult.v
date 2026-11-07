@@ -1,7 +1,7 @@
 (* Actual family applications provide exactly their declared method results. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
- CtxMerge NominalSupport FamilyShapeExec FamilyResultExec FamilyResultFold FamilyResultWalk
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+ KeyTranslation NominalSupport FamilyShapeExec FamilyResultExec FamilyResultFold FamilyResultWalk
  ProvideResultContext ProvideResultFold TySupport.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -10,7 +10,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem family_provide_result_entries:forall c e F C g n names args res gens (out:nat->ty) s e' keys s',
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->
  A.Family W(gs_id g)->provide_result e g gens s=Good((e',keys),s')->

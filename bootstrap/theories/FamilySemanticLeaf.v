@@ -1,6 +1,6 @@
 (* Family result receivers are already canonical under the caller's resolved merges. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab BodySound BodyTr CtxMerge Merge CanonTypes
+From NM Require Import Audit NMap Sx Elab BodySoundCore BodyTr CtxMerge Merge CanonTypes
  TyOfSubst ProvideResultSubst FamilyOutputLeaf FamilyReceiverTransfer FamilyMarkerSpecialize FamilyShapeExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -34,7 +34,7 @@ Proof.
 Qed.
 Section Canonical.
 Variable w:Elab.world. Variables(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma family_target_self_subrel:forall c e F C matching,
  CxRel w R Fl c e F C->
  SubRel(A.c_sub C)(family_semantic_target C matching)(family_semantic_target C matching).

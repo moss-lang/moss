@@ -1,6 +1,6 @@
 (* Method-table extension, including duplicate-signature unification. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  Merge CanonTypes SourceClean ContextClean CtxWalk CtxMethod MethodRows.
 Import ListNotations.
 Module A:=Audit.Elaboration.

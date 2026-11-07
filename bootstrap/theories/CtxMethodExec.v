@@ -1,6 +1,6 @@
 (* The actual method assumption step satisfies ItemEntries and its tables. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore BodySoundCore BodyTy
  Merge CanonTypes SourceClean ContextClean ContextWalkClean CtxWalk CtxMethod CtxMethodTable
  MethodLookup MethodClean MethodKind SigSound FreeTypesExec.
 Import ListNotations.
@@ -10,7 +10,7 @@ Section Method.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma recvty_exec:forall mi recv tm tmr e s this s',
  (match nassoc(gs_id recv)tm with Some y=>ret y|None=>symbol_type 200 mi recv tm e end)s=Good(this,s')->
  Inv s->st_w s=w->nget(w_syms w)(gs_id recv)=Some recv->TmRel Fl tm tmr e->Later w P R Fl s'->

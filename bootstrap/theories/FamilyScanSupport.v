@@ -1,6 +1,6 @@
 (* Real bracket and receiver executions preserve the supported nominal domains. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy
  Merge CanonTypes CanonBodyTy NominalSupport SourceSupport FamilyLeafScan FamilyScanSpecialize FamilyReceiverExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -18,7 +18,7 @@ Section Support.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma family_receipt_support:forall e mi a outer sub,
  FamilyBracketReceipt w (P:=P) R Fl e mi a outer sub->In mi(w_order w)->
  EnvSupport W e->(forall k y,tn_get e k=Some y->WFty y)->

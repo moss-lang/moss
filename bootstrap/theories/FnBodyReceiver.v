@@ -1,7 +1,7 @@
 (* The attached-body receiver read is a supported complete nominal type. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySound BodyTr BodyTy
- BodyData CanonBodyTy CanonTypes ContextClean NominalSupport TagArgsExec FnBodyTrace FnBodyOps.
+ BodyDataHelpers CanonBodyTy CanonTypes ContextClean NominalSupport TagArgsExec FnBodyTrace FnBodyOps.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
 Lemma ok_body_receiver:forall g e,ok(body_receiver g e).

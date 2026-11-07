@@ -1,6 +1,6 @@
 (* Actual marked environments and the specialization's unchanged caller meanings. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound CoreMoss BodySound BodyTr BindType
+From NM Require Import Audit NMap Sx Elab ElabSound CoreMoss BodySoundCore BodyTr BindType
  CanonTypes NominalSupport FamilyMarkersExec FamilyMarkedSubst.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -28,7 +28,7 @@ Qed.
 Section Marked.
 Variable w:Elab.world.
 Variables(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma family_mark_env_at:forall marks c e0 e F C s em sf,
  mfold family_mark_env_step e marks s=Good(em,sf)->en_uf e=en_uf e0->CxRel w R Fl c e F C->
  (forall p g,In(p,g)marks->canon e0(YAbs g)=YAbs g)->

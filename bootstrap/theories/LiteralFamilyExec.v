@@ -1,6 +1,6 @@
 (* Literal arithmetic uses the same actual on-demand family application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyTr BodyTy
  CanonTypes NominalSupport TySupport SourceSupport MethodKeyTr EtyTyExec BodyLit LiteralDirect
  ProvideResultContext FamilySelectTrace FamilyMatchingCtx FamilyApplyRestore FamilySelectedApply ProvidedFamilyExec.
 Import ListNotations.
@@ -41,11 +41,11 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall x y,Fl x=Fl y->x=y.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Variable checked:st.
 Hypothesis Hcontexts:check_contexts checked=Good(tt,checked).
 Hypothesis Hchecked:st_w checked=w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem literal_family_exec:forall fuel,LiteralFamilyStep w P R Fl fuel.
 Proof.
  intros fuel c e ox T oy m s x t sf Run F C Hi Ii Ifwd HC Hp WT ST Miss.

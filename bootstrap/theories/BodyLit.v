@@ -16,7 +16,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Ascii String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound BodyData BodyOps LiteralResult.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound BodyDataHelpers BodyOps LiteralResult.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Local Open Scope string_scope.

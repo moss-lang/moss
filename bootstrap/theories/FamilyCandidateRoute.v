@@ -1,6 +1,6 @@
 (* A semantic competitor's real scanned leaf cannot be skipped by matching. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr BodyTy Merge CanonTypes
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy Merge CanonTypes
  NominalSupport TySupport SourceSupport SourceReadingExtend TyOfSubst PMatchComplete
  FamilySelectTrace FamilyRawSolution FamilyMarkedSubst FamilyCandidateComplete
  FamilyLeafScan FamilyScanSpecialize FamilyScanSupport.
@@ -23,7 +23,7 @@ Section Retention.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem family_candidate_route_retains:forall c e em r F C mi mid u fg marks found lmi rg mg sub s found' sf
  ps seed sm table origin outer ob tm sp completed,
  (forall x y,Fl x=Fl y->x=y)->A.WorldOf b W->

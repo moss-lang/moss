@@ -12,12 +12,23 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound BodyData Merge CanonTypes.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound BodyDataHelpers Merge CanonTypes.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Local Open Scope list_scope.
 
 From NM Require Import NominalSupport.
+
+Tactic Notation "bi" hyp(H) "as" ident(a) ident(s1) ident(H1) :=
+  apply bind_inv in H as (a & s1 & H1 & H).
+
+Ltac nogood H := exfalso;
+  solve [repeat (cbn beta iota zeta in H;
+                 first [ exact (err_not_good _ _ _ _ _ _ H) | discriminate H
+                       | apply bind_inv in H as (? & ? & ? & H) ])].
+
+Ltac okstep' H L Hi Hi' Fs' := destruct (L _ _ _ Hi H) as [Hi' Fs'].
+
 
 Module A := Audit.Elaboration.
 

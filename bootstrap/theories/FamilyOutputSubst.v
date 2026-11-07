@@ -1,6 +1,6 @@
 (* Actual context/output brackets carry well formed, supported meanings. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy
  CanonBodyTy SourceSupport NominalSupport FamilyMethodExec.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -9,7 +9,7 @@ Section Substitution.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma family_result_subst:forall c e F C mi a outer ob s sub sf,
  (match a with Some bs=>let!xs:=app_subst 200 e mi bs outer in ret(xs++outer)|None=>ret outer end)s=Good(sub,sf)->
  Inv s->st_w s=w->In mi(w_order w)->Later w P R Fl sf->CxRel w R Fl c e F C->

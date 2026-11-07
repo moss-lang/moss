@@ -1,6 +1,6 @@
 (* Temporary inferred type readings installed by an actual family application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySound BodyTr BodyData BindType
+From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr NatAssoc BindType
  NominalSupport NominalMergeSupport CanonTypes.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -69,7 +69,7 @@ Qed.
 Section Matching.
 Variable w:Elab.world.
 Variables(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma family_matching_install_at:forall th c e0 e F C s e' sf,
  mfold family_install_step e th s=Good(e',sf)->
  en_uf e=en_uf e0->CxRel w R Fl c e F C->

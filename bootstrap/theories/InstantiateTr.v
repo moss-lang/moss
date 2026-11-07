@@ -1,6 +1,6 @@
 (* Complete declaration rereading agrees with semantic caller substitution. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySound BodyTr Merge CanonTypes CtxMerge.
+From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr Merge CanonTypes KeyTranslation.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Lemma lookup_nlook : forall g s, Audit.lookup_subst g s=A.nlook g s.
