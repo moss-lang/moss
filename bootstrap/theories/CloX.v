@@ -144,7 +144,7 @@ Definition capply (l : rlk) (th : subst) (pl : plan) : nat -> renv -> mstate -> 
                       | None => match cb k (rapply_env (rp_x R) d h th (d2 ++ dc)) [] st with
                       | inl (d3, _, st3) =>
                           match rcompose_dyn d3 (inst_smap th Dr) with
-                          | Some dr => inl (rresult_env (rp_x R) d3 Dr dr, st3)
+                          | Some dr => inl (rresult_env (rp_x R) th d3 Dr dr, st3)
                           | None => inr (XR (XErr e_compose) [] st3)
                           end
                       | inr rr => inr rr

@@ -135,7 +135,7 @@ Definition capply (u : usym) (th : subst) (pl : smap) : nat -> cached_env -> mst
                   | Some d2 =>
                       match cb k (rapply_env P d h th (cappend d2 dc)) [] st with
                       | inl(d3,_,st3)=>match rcompose_dyn d3(inst_smap th Dr)with
-                        |Some dr=>inl(rresult_env P d3 Dr dr,st3)
+                        |Some dr=>inl(rresult_env P th d3 Dr dr,st3)
                         |None=>inr(XR(XErr e_compose)[]st3)end
                       |inr rr=>inr rr end
                   | None => inr (XR (XErr e_chain) [] st)

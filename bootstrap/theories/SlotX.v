@@ -159,7 +159,8 @@ Definition rapply_env P d h th dc := rcall_env P d
  (filter (fun p => existsb (Nat.eqb (fst p)) (xp_inputs P h)) th) dc.
 Definition rresult_types (Dr : tele) (d : renv) : renv :=
  filter (fun p => existsb (item_eqb (fst p)) Dr) (rtype_env d).
-Definition rresult_env P d Dr dr := if xreify P then dr ++ rresult_types Dr d else dr.
+Definition rresult_env P th d Dr dr := if xreify P then
+ dr ++ rinst d (xresult_generations th Dr) ++ rresult_types Dr d else dr.
 Definition rflag d b := match rtype_env d with [] => b | _ => false end.
 Definition rcast_env d : xdenv := map (fun p => (ITy (fst p),XDType (snd p))) (rdtypes d).
 (* Ordinary tags do not inspect runtime types. Avoid constructing their
@@ -784,7 +785,7 @@ with rinterp_apply (fuel : nat) (R : rprog) (d : renv) (l : rlk) (th : subst)
                       match rinterp_binds k R (rapply_env (rp_x R) d h th (d2 ++ dc)) [] st bs with
                       | inl (d3, _, st3) =>
                           match rcompose_dyn d3 (inst_smap th Dr) with
-                          | Some dr => inl (rresult_env (rp_x R) d3 Dr dr, st3)
+                          | Some dr => inl (rresult_env (rp_x R) th d3 Dr dr, st3)
                           | None => inr (XR (XErr e_compose) [] st3)
                           end
                       | inr rr => inr rr
@@ -1118,10 +1119,10 @@ Proof.
  - constructor.
  - destruct (existsb (item_eqb i) Dr); simpl; auto; constructor; auto.
 Qed.
-Lemma rresult_env_rel : forall P re d Dr rc dc, envrel re d -> envrel rc dc ->
- envrel (rresult_env P re Dr rc) (xresult_env P d Dr dc).
+Lemma rresult_env_rel : forall P th re d Dr rc dc, envrel re d -> envrel rc dc ->
+ envrel (rresult_env P th re Dr rc) (xresult_env P th d Dr dc).
 Proof.
- intros; unfold rresult_env,xresult_env; destruct (xreify P); auto using envrel_app,rresult_types_rel.
+ intros; unfold rresult_env,xresult_env; destruct (xreify P); auto using envrel_app,rresult_types_rel,rinst_rel.
 Qed.
 
 Lemma rchain_rel : forall sms re d, envrel re d -> crel (rchain re sms) (xrun_chain d sms).

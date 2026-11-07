@@ -226,12 +226,16 @@ Proof.
   destruct (xreify P); [apply cache_of_push|reflexivity].
 Qed.
 
-Lemma cache_of_result_env : forall P d Dr dr,
-  CachedClo.rresult_env P (cache_of d) Dr (cache_of dr) =
-    cache_of (SlotX.rresult_env P d Dr dr).
+Lemma cache_of_result_env : forall P th d Dr dr,
+  CachedClo.rresult_env P th (cache_of d) Dr (cache_of dr) =
+    cache_of (SlotX.rresult_env P th d Dr dr).
 Proof.
   intros. unfold CachedClo.rresult_env, SlotX.rresult_env, SlotX.rresult_types.
-  destruct (xreify P); [apply cache_of_append|reflexivity].
+  destruct (xreify P); [|reflexivity].
+  rewrite <- !cache_of_append.
+  f_equal;f_equal;apply cache_eq_of_raw.
+  - apply cache_inst_valid.
+  - apply cache_inst_raw,cache_of_valid.
 Qed.
 
 Lemma cache_of_inst_keys : forall th d,

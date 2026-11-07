@@ -374,8 +374,8 @@ Definition fapply_env (P : xprog) (fe : fenv) (h : usym) (th : subst) (dc : fenv
 Definition fresult_types (Dr : tele) (fe : fenv) : list (item * fentry) :=
   map (fun p => (ITy (fst p), FType (snd p)))
     (filter (fun p => existsb (item_eqb (ITy (fst p))) Dr) (ftypes fe)).
-Definition fresult_env (P : xprog) (fe : fenv) (Dr : tele) (dr : list (item * fentry)) : list (item * fentry) :=
-  if xreify P then dr ++ fresult_types Dr fe else dr.
+Definition fresult_env (P : xprog) (th : subst) (fe : fenv) (Dr : tele) (dr : list (item * fentry)) : list (item * fentry) :=
+  if xreify P then dr ++ finst fe (xresult_generations th Dr) ++ fresult_types Dr fe else dr.
 
 Definition fprim_entry (fe : fenv) (i : item) (p : prim) : fentry :=
   match p, i with
@@ -489,11 +489,12 @@ Proof.
 Qed.
 Lemma lrel_app : forall a b c d, lrel a b -> lrel c d -> lrel (a ++ c) (b ++ d).
 Proof. intros a b c d H Hc. induction H; simpl; auto. constructor; auto. Qed.
-Lemma fresult_env_rel : forall P Dr fe d dr dr', envrel fe d -> lrel dr dr' ->
-  lrel (fresult_env P fe Dr dr) (xresult_env P d Dr dr').
+Lemma fresult_env_rel : forall P th Dr fe d dr dr', envrel fe d -> lrel dr dr' ->
+  lrel (fresult_env P th fe Dr dr) (xresult_env P th d Dr dr').
 Proof.
-  intros P Dr fe d dr dr' H Hd. unfold fresult_env, xresult_env. destruct (xreify P); auto.
-  apply lrel_app; auto. apply fresult_types_rel; exact H.
+  intros P th Dr fe d dr dr' H Hd. unfold fresult_env, xresult_env. destruct (xreify P); auto.
+  apply lrel_app;[exact Hd|].
+  apply lrel_app;[apply finst_rel;exact H|apply fresult_types_rel;exact H].
 Qed.
 
 (* ===================== 4. The interpreter ================================ *)
@@ -835,7 +836,7 @@ with fxinterp_apply (fuel : nat) (P : xprog) (d : fenv) (u : usym) (th : subst)
                       match fxinterp_binds k P (fapply_env P d h th (fapp d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
                           match fcompose d3 (inst_smap th Dr) with
-                          | Some dr => inl (fresult_env P d3 Dr dr, st3)
+                          | Some dr => inl (fresult_env P th d3 Dr dr, st3)
                           | None => inr (XR (XErr e_compose) [] st3)
                           end
                       | inr rr => inr rr

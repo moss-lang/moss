@@ -261,9 +261,10 @@ Proof.
  rewrite (lookup_subst_filter_keys (fun u=>existsb(item_eqb(ITy u))Dr) t(xdtypes d)).
  destruct(existsb(item_eqb(ITy t))Dr);[apply envrel_meta;exact H|constructor].
 Qed.
-Lemma fresult_env_rel : forall P Dr fe d dr raw,envrel fe d->envrel dr raw->
- envrel(fresult_env P fe Dr dr)(xresult_env P d Dr raw).
+Lemma fresult_env_rel : forall P th Dr fe d dr raw,envrel fe d->envrel dr raw->
+ envrel(fresult_env P th fe Dr dr)(xresult_env P th d Dr raw).
 Proof.
- intros P Dr fe d dr raw H Hr;unfold fresult_env,xresult_env;destruct(xreify P);[|exact Hr].
- apply envrel_merge;[exact Hr|apply fresult_types_rel;exact H].
+ intros P th Dr fe d dr raw H Hr;unfold fresult_env,xresult_env;destruct(xreify P);[|exact Hr].
+ apply envrel_merge;[exact Hr|].
+ apply envrel_merge;[apply finst_rel;exact H|apply fresult_types_rel;exact H].
 Qed.

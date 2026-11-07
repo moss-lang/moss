@@ -592,11 +592,12 @@ Lemma prim_at_eq : forall p tau ws st, run_prim_at P' p tau ws st = run_prim_at 
 Proof. intros. unfold run_prim_at. rewrite Hprim. reflexivity. Qed.
 Lemma reify_eq : xreify P'=xreify P.
 Proof. unfold xreify; rewrite Hcast,Himmutable;reflexivity. Qed.
-Lemma result_env_rel : forall S d d' Dr dr dr', agree R S d d' -> lrel2 R dr dr' ->
-  lrel2 R (xresult_env P d Dr dr) (xresult_env P' d' Dr dr').
+Lemma result_env_rel : forall S d d' th Dr dr dr', agree R S d d' -> lrel2 R dr dr' ->
+  lrel2 R (xresult_env P th d Dr dr) (xresult_env P' th d' Dr dr').
 Proof.
-  intros S d d' Dr dr dr' H Hd. unfold xresult_env. rewrite reify_eq. destruct (xreify P); [|exact Hd].
+  intros S d d' th Dr dr dr' H Hd. unfold xresult_env. rewrite reify_eq. destruct (xreify P); [|exact Hd].
   apply lrel2_app; [exact Hd|].
+  apply lrel2_app;[rewrite (@agree_inst R S d d' (xresult_generations th Dr) H);apply lrel2_refl|].
   unfold xresult_types. rewrite !xtype_env_pairs, (agree_types H). apply lrel2_refl.
 Qed.
 

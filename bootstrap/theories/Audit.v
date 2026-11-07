@@ -1531,8 +1531,16 @@ Definition xapply_env (P : xprog) (d : xdenv) (h : usym) (th : subst) (dc : xden
    its executable non-type provisions. Captured input types remain private. *)
 Definition xresult_types (Dr : tele) (d3 : xdenv) : xdenv :=
   filter (fun p => existsb (item_eqb (fst p)) Dr) (xtype_env d3).
-Definition xresult_env (P : xprog) (d3 : xdenv) (Dr : tele) (dr : xdenv) : xdenv :=
-  if xreify P then dr ++ xresult_types Dr d3 else dr.
+(* A result type also has a fresh name in the caller. Transfer its actual
+   meaning to that generation before the caller uses it in a GC cast. *)
+Definition xresult_generations (th : subst) (Dr : tele) : subst :=
+  flat_map (fun i => match i with
+    | ITy source => match lookup_subst source th with
+      | Some (TAbs fresh) => [(fresh, TAbs source)]
+      | _ => [] end
+    | _ => [] end) Dr.
+Definition xresult_env (P : xprog) (th : subst) (d3 : xdenv) (Dr : tele) (dr : xdenv) : xdenv :=
+  if xreify P then dr ++ xinst d3 (xresult_generations th Dr) ++ xresult_types Dr d3 else dr.
 
 (* Outcomes.  XOk/XErr/XFuel are the core's Ok/Err/OutOfFuel; XRet and XBrk
    are control transfers; XTrap is a Wasm trap (well-defined failure),
@@ -2036,7 +2044,7 @@ with xinterp_apply (fuel : nat) (P : xprog) (d : xdenv) (u : usym) (th : subst)
                       match xinterp_binds k P (xapply_env P d h th (d2 ++ dc)) [] st bs with
                       | inl (d3, _, st3) =>
                           match xcompose d3 (inst_smap th Dr) with
-                          | Some dr => inl (xresult_env P d3 Dr dr, st3)
+                          | Some dr => inl (xresult_env P th d3 Dr dr, st3)
                           | None => inr (XR (XErr e_compose) [] st3)
                           end
                       | inr rr => inr rr

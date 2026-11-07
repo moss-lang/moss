@@ -1227,7 +1227,7 @@ Proof. reflexivity. Qed.
 
 Lemma xapply_env_emb : forall Sg d h th dc, xapply_env (emb_prog Sg) d h th dc = dc.
 Proof. reflexivity. Qed.
-Lemma xresult_env_emb : forall Sg d Dr dc, xresult_env (emb_prog Sg) d Dr dc = dc.
+Lemma xresult_env_emb : forall Sg th d Dr dc, xresult_env (emb_prog Sg) th d Dr dc = dc.
 Proof. reflexivity. Qed.
 
 Lemma cons_step : forall k, CONS k -> CONS (S k).

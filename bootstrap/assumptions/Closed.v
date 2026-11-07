@@ -10,7 +10,6 @@
    - semantics.md [D71] ("Why it is sound": "no Admitted, no axioms beyond
      the development's"): Narrowing.v's three. *)
 From NM Require CoreMoss D84 Specialization Narrowing DumpRoundTrip.
-From NM Require InputGenerationAllocate InputGenerationRuntime.
 
 (* [D78], CoreMoss.v's header *)
 Print Assumptions NM.CoreMoss.eval_deterministic.
@@ -51,13 +50,3 @@ Print Assumptions NM.Narrowing.wf_ty_narrowed.
 Print Assumptions NM.Narrowing.narrowed_soundness.
 
 Print Assumptions NM.DumpRoundTrip.dump_reads.
-
-(* Private input scopes retain generation meanings across source rebinding. *)
-Print Assumptions NM.InputGenerationMerge.private_rebind_read.
-Print Assumptions NM.InputGenerationPlan.link_input_canonical_read.
-Print Assumptions NM.InputGenerationPlan.source_frame_name_readback.
-Print Assumptions NM.InputGenerationAllocate.reserved_link_input_plan.
-Print Assumptions NM.InputGenerationAllocate.reserved_input_symbols.
-Print Assumptions NM.InputGenerationAllocate.reserved_private_scope.
-Print Assumptions NM.InputGenerationRuntime.old_input_survives_output_shadowing.
-Print Assumptions NM.InputGenerationRuntime.private_capture_grounding_survives_caller_rebinding.

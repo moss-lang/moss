@@ -123,3 +123,15 @@ Definition certificate_roots :=
   @NM.LazyOracle.Certified.fast_engine_agrees).
 
 Print Assumptions certificate_roots.
+
+From NM Require InputGenerationAllocate InputGenerationRuntime.
+
+(* Private input scopes retain generation meanings across source rebinding. *)
+Print Assumptions NM.InputGenerationMerge.private_rebind_read.
+Print Assumptions NM.InputGenerationPlan.link_input_canonical_read.
+Print Assumptions NM.InputGenerationPlan.source_frame_name_readback.
+Print Assumptions NM.InputGenerationAllocate.reserved_link_input_plan.
+Print Assumptions NM.InputGenerationAllocate.reserved_input_symbols.
+Print Assumptions NM.InputGenerationAllocate.reserved_private_scope.
+Print Assumptions NM.InputGenerationRuntime.old_input_survives_output_shadowing.
+Print Assumptions NM.InputGenerationRuntime.private_capture_grounding_survives_caller_rebinding.

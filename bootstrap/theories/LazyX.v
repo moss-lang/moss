@@ -134,7 +134,8 @@ Lemma force_result_rows : forall Dr rows,force_rows(result_rows Dr rows)=
  filter(fun p=>existsb(item_eqb(ITy(fst p)))Dr)(force_rows rows).
 Proof. reflexivity. Qed.
 Definition fresult_types Dr d:=FEnv [] (result_rows Dr(meta d))None.
-Definition fresult_env P d Dr dr:=if xreify P then fmerge dr(fresult_types Dr d)else dr.
+Definition fresult_env P th d Dr dr:=if xreify P then
+ fmerge dr(fmerge(finst d(xresult_generations th Dr))(fresult_types Dr d))else dr.
 Definition fprim_entry d i p:=match p,i with
  |PBox _,IMth tau _ _|PArrNew _,IMth tau _ _=>FPrimAt p(fground d tau)|_,_=>FPrim p end.
 Definition fcast P d n th w:=match lookup_cast n(xp_cast P)with
@@ -494,7 +495,7 @@ with fxinterp_apply (fuel : nat) (P : xprog) (d : fenv) (u : usym) (th : subst)
                       match fxinterp_binds k P (fapply_env P d h th (fmerge d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
                           match fcompose d3 (inst_smap th Dr) with
-                          | Some dr => inl (fresult_env P d3 Dr dr, st3)
+                          | Some dr => inl (fresult_env P th d3 Dr dr, st3)
                           | None => inr (XR (XErr e_compose) [] st3)
                           end
                       | inr rr => inr rr

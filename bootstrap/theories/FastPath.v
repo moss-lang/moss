@@ -31,6 +31,7 @@
 
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
 From NM Require Import Audit CoreMoss MossX FastX Prune SlotX FoldX CloX.
+From NM Require Import InputGenerationExports.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -402,14 +403,15 @@ Proof.
   rewrite Mode. destruct (xreify P); [|exact Hc].
   apply lr_app; [apply lr_inst with S; exact Hd|eapply lr_close; eauto].
 Qed.
-Lemma lr_result : forall P P' S d d' Dr dr dr',
+Lemma lr_result : forall P P' S d d' th Dr dr dr',
   xreify P' = xreify P -> agx S d d' -> lr dr dr' ->
-  lr (xresult_env P d Dr dr) (xresult_env P' d' Dr dr').
+  lr (xresult_env P th d Dr dr) (xresult_env P' th d' Dr dr').
 Proof.
-  intros P P' S d d' Dr dr dr' Mode Hd Hr. unfold xresult_env.
+  intros P P' S d d' th Dr dr dr' Mode Hd Hr. unfold xresult_env.
   rewrite Mode. destruct (xreify P); [|exact Hr].
   unfold xresult_types. rewrite !xtype_env_pairs, (agx_types Hd).
   apply lr_app; [exact Hr|].
+  apply lr_app; [apply lr_inst with S;exact Hd|].
   generalize (xdtypes d'). intro types. induction types as [|[t tau] types IH]; cbn [ftype_pairs map filter fst].
   - constructor.
   - destruct (existsb (item_eqb (ITy t)) Dr); auto. constructor; auto.
@@ -671,16 +673,16 @@ Proof.
   intros S d d' h th dc dc' Hd Hc. unfold xapply_env.
   rewrite Hinputs. eapply lr_call; eauto.
 Qed.
-Lemma result_plain : forall d dr, xresult_env P d Dr dr = dr.
+Lemma result_plain : forall th d dr, xresult_env P th d Dr dr = dr.
 Proof.
-  intros d dr. unfold xresult_env, xresult_types. destruct (xreify P); [|reflexivity].
+  intros th d dr. unfold xresult_env, xresult_types. destruct (xreify P); [|reflexivity].
   assert (E : filter (fun p => existsb (item_eqb (fst p)) Dr) (xtype_env d) = []).
   { clear -Hresults. induction d as [|[i a] d IH]; [reflexivity|].
     destruct i,a; cbn [xtype_env filter fst]; try exact IH.
     destruct (existsb (item_eqb (ITy t)) Dr) eqn:InTy; [|exact IH].
     apply existsb_exists in InTy as [j [In Eq]]. apply item_eqb_eq in Eq. subst j.
     rewrite forallb_forall in Hresults. specialize (Hresults _ In). discriminate. }
-  rewrite E, app_nil_r. reflexivity.
+  rewrite E,(xresult_generations_typefree th Dr Hresults);cbn[xinst];rewrite app_nil_r;reflexivity.
 Qed.
 Lemma prim_at_eq : forall p tau ws st, run_prim_at P' p tau ws st = run_prim_at P p tau ws st.
 Proof. intros. unfold run_prim_at. rewrite Hprim. reflexivity. Qed.

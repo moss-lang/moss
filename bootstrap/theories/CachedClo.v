@@ -50,9 +50,9 @@ Definition rprim_entry d i p := match p,i with
   | _,_ => QPrim p end.
 Definition rflag d b := match cache_rows d with []=>b|_=>false end.
 Definition rtyped_cast P d n th w := SlotX.rtyped_cast P (cache_raw d) n th w.
-Definition rresult_env P d Dr dr := if xreify P then
+Definition rresult_env P th d Dr dr := if xreify P then
   let rows := filter (fun p => existsb (item_eqb(fst p)) Dr) (cache_rows d) in
-  cappend dr (cache_of rows) else dr.
+  cappend dr (cappend (rinst d (xresult_generations th Dr)) (cache_of rows)) else dr.
 Definition instantiate_scalar_fast th d := match th with
   | []=>d
   | _::_=>CachedEnv (CloScalar.instantiate_scalar_fast th (cache_raw d))
@@ -175,7 +175,7 @@ Definition capply (l : rlk) (th : subst) (pl : plan) : nat -> cached_env -> msta
                       | None => match cb k (rapply_env (rp_x R) d h th (cappend d2 (cache_of dc))) [] st with
                       | inl (d3, _, st3) =>
                           match rcompose_dyn d3 (inst_smap th Dr) with
-                          | Some dr => inl (rresult_env (rp_x R) d3 Dr dr, st3)
+                          | Some dr => inl (rresult_env (rp_x R) th d3 Dr dr, st3)
                           | None => inr (XR (XErr e_compose) [] st3)
                           end
                       | inr rr => inr rr

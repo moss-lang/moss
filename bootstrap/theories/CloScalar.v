@@ -1,6 +1,6 @@
 (* Exact, optional scalar-family preparation for closure execution. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss MossX SlotX.
+From NM Require Import Audit CoreMoss MossX SlotX InputGenerationExports.
 Import ListNotations.
 Definition scalar_rb(b:rbind):bool:=match b with
  |RBPrim _ p=>match p with PBox _|PArrNew _=>false|_=>true end|_=>false end.
@@ -63,7 +63,7 @@ Theorem prepared_scalar_execution:forall Dr bs count result R k d st th,
  prepare_scalar Dr bs=Some(count,result)->
  (match rinterp_binds k R d [] st bs with
  |inl(d3,_,st3)=>match rcompose_dyn d3(inst_smap th Dr)with
-  |Some dr=>inl(rresult_env(rp_x R)d3 Dr dr,st3)
+  |Some dr=>inl(rresult_env(rp_x R)th d3 Dr dr,st3)
   |None=>inr(XR(XErr e_compose)[]st3)end
  |inr rr=>inr rr end)=
  if Nat.ltb count k then inl(instantiate_scalar th result,st)else inr(XR XFuel [] st).
@@ -75,7 +75,7 @@ Proof.
  injection H as <- <-;rewrite(scalar_binds R bs k d [] st Binds).
  destruct(Nat.ltb(length bs)k);[|reflexivity].
  rewrite(scalar_compose Dr _ formal th d Keys Read).
- unfold rresult_env;destruct(xreify(rp_x R));[rewrite(scalar_result_types Dr _ Keys),app_nil_r|];reflexivity.
+ unfold rresult_env;destruct(xreify(rp_x R));[rewrite(scalar_result_types Dr _ Keys),(xresult_generations_typefree th Dr Keys);cbn[rinst];rewrite app_nil_r|];reflexivity.
 Qed.
 
 Lemma scalar_item_nil:forall i,app_subst_item [] i=i.
