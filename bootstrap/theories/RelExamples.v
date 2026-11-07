@@ -7,7 +7,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit CoreMoss MossX NMap Sx Elab RelSupport BxBridged RelExampleData RelExampleWasm.
+From NM Require Import Audit CoreMoss MossX NMap Sx Elab RelSupport BxBridged RelExampleData RelExampleWasm RelExampleWasi.
 Import ListNotations.
 Import Audit.Elaboration.
 Local Open Scope string_scope.
@@ -22,9 +22,9 @@ Definition S_br : st := RelExampleData.S_br.
 Definition W_br : Elaboration.world := RelExampleData.W_br.
 
 
-(* Reuse the checked Wasm subcontext rather than rebuilding its items for
-   each function. All remaining goals use the ordinary relation tactics. *)
-Ltac items_hook ::= exact wasm_entries.
+(* Reuse the checked Wasm and Wasi subcontexts for each function.
+   All remaining goals use the ordinary relation tactics. *)
+Ltac items_hook ::= first [exact wasm_entries | exact wasi_entries].
 
 (* The contexts of the functions involved, formed once: main and put
    assume Wasm, Wasi; bang assumes Wasm; app assumes MiniStd. *)

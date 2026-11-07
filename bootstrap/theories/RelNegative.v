@@ -111,7 +111,12 @@ Proof.
   repeat match goal with H : Forall2 _ (w_reqs _ _) _ |- _ => vm_compute in H; inversion H; subst; clear H end.
   (* the context's locals: just the parameter *)
   destruct Hctx as (dc & es & tm & er & tmr & σ & Hdc & Hit & Hroot & Hmg & -> & Hn).
-  assert (Nm : ~ IsMainFn W_ne 365) by notmain.
+  (* Check the scope directly rather than destructing the whole world. *)
+  assert (Nm : ~ IsMainFn W_ne 365).
+  { intros (main_decl & main_name & main_params & main_return & main_body &
+            main_module & MainDecl & MainAst & MainScope).
+    refine (no_scope S_ne NSName "main" 365 _ main_module MainScope).
+    vm_compute; reflexivity. }
   destruct (root_nonmain _ _ _ _ _ _ Nm Hroot) as [-> ->]. rewrite app_nil_r in *.
   (* the body: a block whose tail is the match *)
   inversion Hblk; subst.
