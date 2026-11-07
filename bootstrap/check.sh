@@ -17,21 +17,22 @@ fail() { echo "check.sh: $*" >&2; exit 1; }
 echo "check.sh: compiling all Rocq theories (${DUNE_PROFILE:-dev} profile)" >&2
 dune_jobs=()
 if [ -n "${DUNE_JOBS:-}" ]; then dune_jobs=(-j "$DUNE_JOBS"); fi
-dune build --profile "${DUNE_PROFILE:-dev}" "${dune_jobs[@]}" @theories/all
+build_dir="${DUNE_BUILD_DIR:-_build}"
+dune build --build-dir "$build_dir" --profile "${DUNE_PROFILE:-dev}" "${dune_jobs[@]}" @theories/all
 echo "check.sh: auditing certificate assumptions and closed theorems" >&2
 for f in Certificate Closed; do
-  rocq c -q -no-glob -Q _build/default/theories NM -o _build/$f.vo assumptions/$f.v > _build/$f.log
+  rocq c -q -no-glob -Q "$build_dir/default/theories" NM -o "$build_dir/$f.vo" assumptions/$f.v > "$build_dir/$f.log"
 done
 
 corelib=$(rocq c -where)/theories
 prims=$(sed -n 's/^Primitive \([A-Za-z0-9_]*\).*/\1/p' "$corelib"/Numbers/Cyclic/Int63/PrimInt63.v \
   "$corelib"/Floats/PrimFloat.v "$corelib"/Array/PrimArray.v)
 # Each assumption is a line `Name : type`, its type continuing on indented lines.
-other=$(grep -v -e '^Axioms:$' -e '^Closed under the global context$' -e '^ ' _build/Certificate.log \
+other=$(grep -v -e '^Axioms:$' -e '^Closed under the global context$' -e '^ ' "$build_dir/Certificate.log" \
   | sed 's/ :.*//; s/.*\.//' | grep -vxF "$prims" || true)
 [ -z "$other" ] || fail "the certificate assumes more than the kernel's primitives:" $other
 
-open=$(grep -vx 'Closed under the global context' _build/Closed.log || true)
+open=$(grep -vx 'Closed under the global context' "$build_dir/Closed.log" || true)
 [ -z "$open" ] || fail "a theorem of assumptions/Closed.v is not closed: $open"
 
 if grep -nE '\b(Admitted|admit)\.' theories/*.v ocaml/*.v; then fail "Admitted"; fi
