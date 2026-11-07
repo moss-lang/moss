@@ -95,3 +95,32 @@ Example frame_output_shadowing_keeps_the_new_generation:
   (frame_result_generations[(2,TAbs 20);(2,TNom 99[])][ITy 2])=
  [(ITy 20,XDType(TNom 100[]))].
 Proof. split;reflexivity. Qed.
+
+(* The executable result transfer is now the same pure operation. *)
+Lemma frame_result_generations_exec : forall theta outputs,
+ frame_result_generations theta outputs=xresult_generations theta outputs.
+Proof. reflexivity. Qed.
+Lemma frame_result_environment_exec : forall P theta body outputs returned,
+ frame_result_environment P theta body outputs returned=xresult_env P theta body outputs returned.
+Proof. reflexivity. Qed.
+Corollary runtime_result_private_lookup : forall P theta body outputs returned source fresh,
+ xreify P=true->Forall(fun p=>is_ty_item(fst p)=false)returned->
+ NoDup(map fst(xresult_generations theta outputs))->
+ In(ITy source)outputs->lookup_subst source theta=Some(TAbs fresh)->
+ lookup_xdenv(ITy fresh)(xresult_env P theta body outputs returned)=
+ Some(XDType(xground body(TAbs source))).
+Proof. intros;eapply frame_result_private_lookup;eassumption. Qed.
+Corollary runtime_result_private_grounding : forall P theta body outputs returned source fresh,
+ xreify P=true->Forall(fun p=>is_ty_item(fst p)=false)returned->
+ NoDup(map fst(xresult_generations theta outputs))->
+ In(ITy source)outputs->lookup_subst source theta=Some(TAbs fresh)->
+ xground(xresult_env P theta body outputs returned)(TAbs fresh)=xground body(TAbs source).
+Proof. intros;eapply frame_result_private_grounding;eassumption. Qed.
+
+Lemma xresult_generations_typefree : forall theta outputs,
+ forallb(fun i=>negb(is_ty_item i))outputs=true->xresult_generations theta outputs=[].
+Proof.
+ intros theta outputs;induction outputs as[|item outputs IH];intro Free;[reflexivity|].
+ apply andb_true_iff in Free as[Head Tail].
+ destruct item;cbn in Head;try discriminate;cbn[xresult_generations flat_map];apply IH;exact Tail.
+Qed.
