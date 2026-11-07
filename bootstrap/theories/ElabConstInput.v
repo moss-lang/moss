@@ -2,8 +2,19 @@
    InfoInv travels forward through actual prefixes (okI); unlike the final
    static facts in ca_L, it is never pulled backwards from the last state. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant InfoPreserve BodySound FwdInvariant FwdReadonly FwdPreserve FwdSynthInv FwdProgramInv.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant InfoPreserve BodySoundCore FwdInvariant FwdReadonly FwdPreserve FwdSynthInv FwdProgramInv.
 Import ListNotations.
+(* Restoring local-variable slots leaves the two provenance tables intact. *)
+Local Lemma input_info_vars:forall vs n s,InfoInv s->InfoInv(s_vars vs n s).
+Proof.
+ intros vs n s I.
+ assert(F:FrL s(s_vars vs n s)).
+ {constructor;cbn;auto;[exists[];rewrite app_nil_r;reflexivity|apply ReqsSolve.ext_refl]. }
+ constructor;cbn[s_vars st_info st_wrappers].
+ - intros x info Lookup;exact(info_entry_keep _ _ _ _ (I x info Lookup)F).
+ - intros provider id Lookup;exact(wrapper_entry_keep _ _ _ _ (info_wrappers _ I _ _ Lookup)F).
+Qed.
+
 Lemma info_reqs_ni:forall x,NI(reqs x).
 Proof. intros;unfold reqs;apply ni_type_requirements. Qed.
 #[export]Hint Resolve info_reqs_ni:nidb.
@@ -103,7 +114,7 @@ Proof.
  intros s a s' Hi Ii Fi H L Q.
  destruct(okqi_with_vars_inv A init m s a s' Hi H)as(s3&H3&->&Hi1).
  apply ca_Q_vars. apply ca_L_vars in L.
- exact(proj2 Hm _ _ _ Hi1(info_vars _ _ _ Ii)Fi H3 L(ca_Q_vars C _ _ _ Q)).
+ exact(proj2 Hm _ _ _ Hi1(input_info_vars _ _ _ Ii)Fi H3 L(ca_Q_vars C _ _ _ Q)).
 Qed.
 End CacheInput.
 Create HintDb okqidb.

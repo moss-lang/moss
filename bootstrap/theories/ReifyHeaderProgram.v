@@ -1,7 +1,7 @@
 (* Actual source function headers survive the entire successful elaboration. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
- InfoInvariant InfoPreserve ElabProgramInput FwdInvariant FwdPreserve FwdReadonly FwdSynthInv FwdProgramInv
+ InfoInvariant InfoPreserve ProgramInfo FwdInvariant FwdPreserve FwdReadonly FwdSynthInv FwdProgramInv
  FnReadonly FnHistory FnStable FnEmitStable FnSynthStable FnCompleted
  ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderPresent ReifyHeaderHistory.
 From NM Require Import ProgramTail.
