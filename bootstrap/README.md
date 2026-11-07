@@ -89,7 +89,8 @@ errors and positions included.
     their signatures, and abstract functors with Rule A's captures and
     pins) and its type safety for `xinterp`: a well-typed program never
     produces `XErr`, at any fuel, GC heap included.
-    [`XHeap.v`](theories/XHeap.v) states the GC primitives' law and
+    `Audit.Heap.HEAP_LAWS` states the GC primitives' law,
+    [`XHeap.v`](theories/XHeap.v) re-exports it, and
     [`XHeapC.v`](theories/XHeapC.v) proves it
     of MossX's GC heap, which is a trie ([`HTrie.v`](theories/HTrie.v))
     rather than a primitive array, so that no array axiom is needed.
@@ -247,6 +248,15 @@ decision), and the obligations, as module types (Part VI):
   the parsed one. The loader proof uses the round-trip theorem from
   `DumpRoundTrip.v`, and the loader checks the theorem's name restrictions
   at the serialization boundary.
+- `DUMP_CONTRACT` states serialization round-trip and elaborator adapter
+  guarantees. `SOURCE_PROGRESS` states the checked world-reading and
+  function-frame milestones.
+- `RUNTIME_SAFETY` states MossX expression and entry-point safety, including
+  safety of a lowered program given its typing certificate. `Heap.HEAP_LAWS`
+  states the laws that the concrete GC primitives satisfy.
+- `ORACLE_AGREEMENT` states what the cached interpreter computes, including
+  the conditions on the tables built by the OCaml driver and the exceptions
+  for fuel exhaustion and stuck reference runs.
 - **The family fast path** (`Audit.v` DRAFT NOTE 24) is proved, and is
   not the elaborator's: the elaborator applies a family exactly by rule 7
   as drafted. Applying the platform's memory family at every memory
@@ -258,9 +268,8 @@ decision), and the obligations, as module types (Part VI):
   up, when a syntactic check shows that nothing binds, copies or renames
   the family. `FastPath.fast_run`: the result is exactly the elaborated
   program's, at every fuel at which that run does not run out of fuel;
-  `Certified.v` binds it (`fast_path_agrees`), and composed with
-  `CachedCloFacts.engine_agrees` (`CachedCloFacts.fast_engine_agrees`) it covers the default
-  pipeline.
+  `OracleCertified` binds it as `fast_path_agrees` and binds the combined
+  result for the default pipeline as `fast_engine_agrees`.
 
 Outside Rocq, what is trusted is the OCaml driver (reading files and
 arguments, printing, and the engine's tables, below), Rocq's extraction,

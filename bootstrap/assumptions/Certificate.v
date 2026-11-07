@@ -1,13 +1,13 @@
-(* The certificate: everything Certified.v binds to Audit.v's PROVED_NOW,
-   and the executable roots Extract2.v extracts.  Their assumptions are
+(* The checked contracts in Audit.v, supporting proof milestones, and
+   the executable roots Extract2.v extracts. Their assumptions are
    transitively everything the guarantee rests on, and check.sh requires
    them to be only the kernel's `Primitive` declarations (Rocq's primitive
    integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Certified Parse FastPath Prune SlotX FoldX
-  CachedClo CachedCloFacts FunctionFrameProgram XElabTyped.
+  CachedClo CachedCloFacts XHeapC.
 
 Print Assumptions NM.Certified.Certified.elaborate.
-Print Assumptions NM.Certified.elaborate_sx_reads.
+Print Assumptions NM.Certified.DumpCertified.elaborate_sx_reads.
 Print Assumptions NM.Certified.Certified.eval_deterministic.
 Print Assumptions NM.Certified.Certified.interp_sound.
 Print Assumptions NM.Certified.Certified.interp_complete.
@@ -20,14 +20,14 @@ Print Assumptions NM.Certified.Certified.Typed.
 Print Assumptions NM.Certified.Certified.typed_safe.
 Print Assumptions NM.Certified.Certified.typed_inhabited.
 Print Assumptions NM.Certified.Certified.method_choice_unique.
-Print Assumptions NM.Certified.x_typed_safe.
-Print Assumptions NM.Certified.x_run_main_safe.
-Print Assumptions NM.Certified.x_typed_inhabited.
-Print Assumptions NM.Certified.x_heap_inhabited.
-Print Assumptions NM.Certified.x_heap_mono.
-Print Assumptions NM.Certified.x_heap_empty.
-Print Assumptions NM.Certified.x_heap_other.
-Print Assumptions NM.Certified.x_heap_gc.
+Print Assumptions NM.Certified.RuntimeCertified.expression_safe.
+Print Assumptions NM.Certified.RuntimeCertified.main_safe.
+Print Assumptions NM.Certified.RuntimeCertified.main_typing_inhabited.
+Print Assumptions NM.Certified.RuntimeCertified.heap_example.
+Print Assumptions NM.XHeapC.ConcreteHeap.heap_mono.
+Print Assumptions NM.XHeapC.ConcreteHeap.heap_empty.
+Print Assumptions NM.XHeapC.ConcreteHeap.heap_other.
+Print Assumptions NM.XHeapC.ConcreteHeap.heap_gc.
 Print Assumptions NM.Certified.FrontEndCertified.lexer_sound.
 Print Assumptions NM.Certified.FrontEndCertified.lexer_complete.
 Print Assumptions NM.Certified.FrontEndCertified.parse.
@@ -37,25 +37,35 @@ Print Assumptions NM.Certified.LoaderCertified.load.
 Print Assumptions NM.Certified.LoaderCertified.load_sound.
 Print Assumptions NM.Certified.elaborate_sx.
 Print Assumptions NM.Certified.run_main.
-Print Assumptions NM.Certified.fast_path.
-Print Assumptions NM.Certified.fast_path_agrees.
-Print Assumptions NM.Certified.fast_path_engine_agrees.
+Print Assumptions NM.Certified.OracleCertified.fast_path_agrees.
+Print Assumptions NM.Certified.OracleCertified.engine_agrees.
+Print Assumptions NM.Certified.OracleCertified.mapped_engine_agrees.
+Print Assumptions NM.Certified.OracleCertified.slot_engine_agrees.
+Print Assumptions NM.Certified.OracleCertified.compiled_engine_agrees.
+Print Assumptions NM.Certified.OracleCertified.fast_engine_agrees.
+(* Supporting lemmas for the source soundness proof. *)
 Print Assumptions NM.Certified.world_reads.
 Print Assumptions NM.Certified.elaborate_world_reads.
 Print Assumptions NM.Certified.world_of_reading.
 Print Assumptions NM.Certified.world_resolves.
 Print Assumptions NM.Certified.context_method_named.
 Print Assumptions NM.Certified.context_type_meanings.
-Print Assumptions NM.Certified.dump_reads.
+Print Assumptions NM.Certified.DumpCertified.dump_reads.
 Print Assumptions NM.Certified.elaboration_frame.
 Print Assumptions NM.Certified.assume_types_exact.
 
 (* Partial verification milestone: actual function-frame coverage and
    runtime safety given an explicit typing certificate. These do not assert
    that every accepted source program supplies that certificate. *)
-Print Assumptions NM.FunctionFrameProgram.actual_function_frame_specifications_total.
-Print Assumptions NM.XElabTyped.typed_runtime_never_err.
-Print Assumptions NM.XElabTyped.certified_reification_never_err.
+Print Assumptions NM.Certified.SourceCertified.elaborate_metadata_projects.
+Print Assumptions NM.Certified.SourceCertified.loader_reads.
+Print Assumptions NM.Certified.SourceCertified.world_of_reading.
+Print Assumptions NM.Certified.SourceCertified.world_resolves.
+Print Assumptions NM.Certified.SourceCertified.elaborate_world_of.
+Print Assumptions NM.Certified.SourceCertified.context_type_meanings.
+Print Assumptions NM.Certified.SourceCertified.function_frames_total.
+Print Assumptions NM.Certified.RuntimeCertified.typed_runtime_never_err.
+Print Assumptions NM.Certified.RuntimeCertified.certified_reification_never_err.
 
 (* The front end moss_m2.ml runs on a source file: the Gallina lexer,
    parser and bundler (the driver only reads files), whose output the

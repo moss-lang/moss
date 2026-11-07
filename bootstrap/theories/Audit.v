@@ -19,8 +19,9 @@
 (*   Part IV   The primitives' signatures and the one law the theorems use. *)
 (*   Part V    The declarative elaboration relation (DRAFT, for the         *)
 (*             designer's review).                                           *)
-(*   Part VI   The obligations, as module types: PROVED_NOW (what          *)
-(*             Certified.v binds today) and COMPLETE (the whole contract).  *)
+(*   Part VI   Checked contracts for the front end, source milestones,     *)
+(*             runtime safety, heap laws and interpreter agreement.        *)
+(*             COMPLETE records the pending end-to-end obligations.        *)
 (*                                                                           *)
 (* What is deliberately NOT here: the typing judgment `has_ty` of Core Moss *)
 (* and everything about it (contexts, satisfaction, merging, wf_gsig, the   *)
@@ -2819,7 +2820,7 @@ End PrimNames.
 (* STATUS: DRAFT, for the designer's review.  The elaborator (Elab.v) is
    neither shown sound nor complete for it; Certified.v lists both as
    pending.  RelExamples.v checks it on examples.  Proved toward soundness
-   (WorldSound.v, bound as Certified.world_reads): the loader's reading of
+   (WorldSound.v, bound as SourceCertified.loader_reads): the loader's reading of
    an accepted bundle meets every condition of WorldOf (V.1) except the
    requirement lists and the field numbering.
 
@@ -4963,7 +4964,7 @@ End Elaboration.
       `XApply F θ [] e` into `XApplyBr F [(h, bs', ps)] e`, where ps is the
       pairs of inst_smap θ Dr whose requirement e may look up and bs' the
       primitives they read.  PROVED (FastPath.fast_run, bound as
-      Certified.fast_path_agrees): for every program, argv, rd and fuel, the
+      OracleCertified.fast_path_agrees): for every program, argv, rd and fuel, the
       transformed program's run equals the original's unless the original
       reports XFuel; with CloX.engine_agrees, Certified.fast_path_engine_agrees
       covers the default pipeline.
@@ -5650,8 +5651,426 @@ Module Type PROVED_NOW.
     choice_of x1 = choice_of x2.
 End PROVED_NOW.
 
-(* The whole contract.  Certified.v does NOT bind this yet; the obligations
-   below PROVED_NOW are pending (see Certified.v for the list). *)
+(* Store typing and the laws that the concrete GC primitives satisfy. *)
+Module HeapAddress.
+Local Open Scope uint63_scope.
+
+(* The bits of a key, low first, up to the last 1. *)
+Fixpoint key_go (fuel : nat) (a : int) : list bool :=
+  match fuel with
+  | O => []
+  | S f => if a =? 0 then [] else (a land 1 =? 1) :: key_go f (a >> 1)
+  end.
+
+Definition key (a : int) : list bool := key_go 63 a.
+
+End HeapAddress.
+
+Module Heap.
+Local Unset Implicit Arguments.
+Import HeapAddress.
+(* A store typing: an address's kind (true: an array) and what its
+   contents (a box's value, an array's elements) satisfy.  It is keyed by
+   an address's bits (HeapAddress.key), so that no law needs a fact about
+   machine-integer equality. *)
+Definition hty : Type := list bool -> option (bool * (xvalue -> Prop)).
+
+(* Ψ' extends Ψ: every address Ψ types, Ψ' types the same way. *)
+Definition hext (Psi Psi' : hty) : Prop :=
+  forall a k Q, Psi a = Some (k, Q) -> Psi' a = Some (k, Q).
+
+(* w is a reference (a tag over a heap address) of kind k whose contents
+   satisfy Q. *)
+Definition href (Psi : hty) (k : bool) (w : xvalue) (Q : xvalue -> Prop) : Prop :=
+  exists n a, w = XVTag n (XVRef a) /\ Psi (key a) = Some (k, Q).
+
+(* What a GC primitive needs of its arguments, for contents satisfying Q. *)
+Definition gc_pre (Psi : hty) (p : prim) (ws : list xvalue) (Q : xvalue -> Prop) : Prop :=
+  match p, ws with
+  | PBox _, [v] => Q v
+  | PDeref, [r] => href Psi false r Q
+  | PRefSet, [r; v] => href Psi false r Q /\ Q v
+  | PArrNew _, [v; XVI32 _] => Q v
+  | PArrLen, [r] => href Psi true r Q
+  | PArrGet, [r; XVI32 _] => href Psi true r Q
+  | PArrSet, [r; XVI32 _; v] => href Psi true r Q /\ Q v
+  | PArrFill, [r; XVI32 _; v; XVI32 _] => href Psi true r Q /\ Q v
+  | PArrCopy, [r; XVI32 _; r2; XVI32 _; XVI32 _] =>
+      href Psi true r Q /\ exists Q2, href Psi true r2 Q2 /\ forall x, Q2 x -> Q x
+  | _, _ => False
+  end.
+
+(* What it gives back, when it gives a value w, with Ψ' its store typing after. *)
+Definition gc_post (Psi Psi' : hty) (p : prim) (Q : xvalue -> Prop) (w : xvalue) : Prop :=
+  hext Psi Psi' /\
+  match p with
+  | PBox rf => exists a, w = XVTag rf (XVRef a) /\ Psi (key a) = None /\ Psi' (key a) = Some (false, Q)
+  | PArrNew ar => exists a, w = XVTag ar (XVRef a) /\ Psi (key a) = None /\ Psi' (key a) = Some (true, Q)
+  | PDeref | PArrGet => Q w
+  | PArrLen => exists n, w = XVI32 n
+  | _ => w = XVUnit
+  end.
+
+Definition is_gc (p : prim) : bool :=
+  match p with
+  | PBox _ | PDeref | PRefSet | PArrNew _ | PArrLen | PArrGet | PArrSet
+  | PArrFill | PArrCopy => true
+  | _ => false
+  end.
+
+Module Type HEAP_LAWS (Import Prims : PRIM_SEMANTICS).
+  Parameter heap_ok : hty -> mstate -> Prop.
+
+  (* the invariant holds of fewer addresses, and of weaker predicates *)
+  Axiom heap_mono : forall Psi Psi' st,
+    heap_ok Psi st ->
+    (forall a k Q', Psi' a = Some (k, Q') ->
+       exists Q, Psi a = Some (k, Q) /\ forall v, Q v -> Q' v) ->
+    heap_ok Psi' st.
+
+  (* of no address at all, it holds of any machine *)
+  Axiom heap_empty : forall st, heap_ok (fun _ => None) st.
+
+  (* every other primitive keeps it *)
+  Axiom heap_other : forall P p ws st Psi,
+    is_gc p = false -> heap_ok Psi st -> heap_ok Psi (snd (run_prim P p ws st)).
+
+  (* the GC primitives: a value as gc_post says, or a trap *)
+  Axiom heap_gc : forall P p ws st Psi Q,
+    heap_ok Psi st -> gc_pre Psi p ws Q ->
+    match run_prim P p ws st with
+    | (XOk w, st') => exists Psi', heap_ok Psi' st' /\ gc_post Psi Psi' p Q w
+    | (XTrap _, st') => heap_ok Psi st'
+    | _ => False
+    end.
+End HEAP_LAWS.
+
+End Heap.
+
+(* Public guarantees for the serialization boundary. The codec itself
+   lives in Sx.v. *)
+Module Type DUMP_CONTRACT.
+  Parameter dump : Type.
+  Parameter dump_file : Input.afile -> dump.
+  Parameter read_file : dump -> Input.res Input.afile.
+  Parameter read_bundle : dump -> Input.res Input.bundle.
+  Parameter wf_names : Input.afile -> bool.
+  Parameter elaborate : Input.bundle -> Input.res xprogram.
+  Parameter elaborate_sx : dump -> Input.res xprogram.
+
+  Axiom dump_reads : forall f f',
+    wf_names f = true -> read_file (dump_file f) = Input.Good f' -> f' = f.
+  Axiom elaborate_sx_reads : forall x,
+    elaborate_sx x =
+      match read_bundle x with
+      | Input.Good b => elaborate b
+      | Input.Bad m => Input.Bad m
+      end.
+End DUMP_CONTRACT.
+
+Module SourceReading.
+Local Unset Implicit Arguments.
+Import Input Elaboration.
+
+(* The fields of WorldOf about the loader: everything but requirements and
+   field numbering. *)
+Record LoaderReading (b : bundle) (W : world) : Prop := {
+  lr_acyclic : exists rank : string -> nat, forall p m t imp,
+      Loaded b p -> module_of b p = Some m -> In (t, imp) (imports_of b m) ->
+      module_of b t <> None /\ rank t < rank p;
+  lr_decl_sound : forall s d, w_decl W s = Some d -> s <> 0 /\ Declared b d /\ kind_of (d_ast d) <> None;
+  lr_decl_complete : forall d, Declared b d -> kind_of (d_ast d) <> None ->
+      exists s, w_decl W s = Some d /\ forall s', w_decl W s' = Some d -> s' = s;
+  lr_exports : forall p ns n e, Loaded b p -> (w_exp W p ns n = Some e <-> Exports b W p ns n e);
+  lr_scope : forall p ns n e, Loaded b p -> (w_scope W p ns n = Some e <-> InScope b W p ns n e);
+  lr_attached : forall r n s, w_attached W r n = Some s <-> AttachedDecl W r n s;
+  lr_library : w_library W = Loader.library_dir (b_prelude b)
+}.
+
+(* The rest: requirements ([D71]/[D73]) and field numbering. *)
+Record ReqsReading (W : world) : Prop := {
+  rr_nodup : forall s, NoDup (w_reqs W s);
+  rr_plain : forall s k, kind_sym W s = Some k ->
+      k <> DKTag -> k <> DKAlias -> k <> DKType -> k <> DKUnit ->
+      forall t, In t (w_reqs W s) <-> AssumeTypes W s t;
+  rr_none : forall s, kind_sym W s = Some DKType \/ kind_sym W s = Some DKUnit -> w_reqs W s = [];
+  rr_closed : RelevanceClosed W (w_reqs W);
+  rr_least : forall R, RelevanceClosed W R ->
+      (forall s, kind_sym W s <> Some DKTag -> kind_sym W s <> Some DKAlias -> R s = w_reqs W s) ->
+      forall g, (kind_sym W g = Some DKTag \/ kind_sym W g = Some DKAlias) -> incl (w_reqs W g) (R g);
+  rr_listed : forall g d ps t n, w_decl W g = Some d -> nominal_body (d_ast d) = Some (ps, t) -> In n ps ->
+      exists x, resolve_sym W (d_mod d) [n] = Some x /\ AssumeTypes W g x
+}.
+
+End SourceReading.
+
+(* Checked milestones toward whole-source elaboration and runtime typing.
+   Metadata and frame specifications are artifacts of the implementation. *)
+Module Type SOURCE_PROGRESS (C : PROVED_NOW).
+  Parameter metadata frame_specs loaded_world : Type.
+  Parameter load_world : Input.bundle -> Input.res loaded_world.
+  Parameter read_world :
+    loaded_world -> (nat -> list nat) -> (string -> nat) -> Elaboration.world.
+  Parameter module_ids : loaded_world -> list nat.
+  Parameter module_path : loaded_world -> nat -> string.
+  Parameter resolve_path :
+    loaded_world -> nat -> Input.path -> Input.res (option Elaboration.ent).
+  Parameter cached_requirements : metadata -> nat -> option (list nat).
+  Parameter elaborate_with_metadata :
+    Input.bundle -> Input.res (xprogram * metadata).
+  Parameter function_frame_specifications :
+    metadata -> xprogram -> option frame_specs.
+  Parameter lower_runtime : metadata -> xprogram -> option xprogram.
+
+  Axiom elaborate_metadata_projects : forall b,
+    C.elaborate b =
+      match elaborate_with_metadata b with
+      | Input.Good (p, _) => Input.Good p
+      | Input.Bad msg => Input.Bad msg
+      end.
+  Axiom loader_reads : forall b w requirements fields,
+    load_world b = Input.Good w ->
+    SourceReading.LoaderReading b (read_world w requirements fields).
+  Axiom world_of_reading : forall b W,
+    SourceReading.LoaderReading b W -> SourceReading.ReqsReading W ->
+    (forall a c, Elaboration.w_fld W a = Elaboration.w_fld W c -> a = c) ->
+    Elaboration.WorldOf b W.
+  Axiom world_resolves : forall b w requirements fields i path entity,
+    load_world b = Input.Good w -> In i (module_ids w) ->
+    resolve_path w i path = Input.Good entity ->
+    Elaboration.resolve (read_world w requirements fields) (module_path w i) path = entity.
+  Axiom elaborate_world_of : forall b p,
+    C.elaborate b = Input.Good p ->
+    exists w source requirements,
+      load_world b = Input.Good w /\
+      elaborate_with_metadata b = Input.Good (p, source) /\
+      (forall x l, cached_requirements source x = Some l -> requirements x = l) /\
+      forall fields, (forall a c, fields a = fields c -> a = c) ->
+      Elaboration.WorldOf b (read_world w requirements fields).
+  Axiom context_type_meanings : forall W s Ctx needs,
+    Elaboration.CtxOf W s Ctx needs -> forall t x,
+    Elaboration.nlook t (Elaboration.c_ty Ctx) = Some x ->
+    x = Elaboration.canon Ctx (TAbs t).
+  Axiom function_frames_total : forall b p source,
+    elaborate_with_metadata b = Input.Good (p, source) ->
+    exists specs, function_frame_specifications source p = Some specs.
+End SOURCE_PROGRESS.
+
+(* The reference run, with the entry point and initial provisions supplied
+   by elaboration. Both the safety and agreement contracts refer to it. *)
+Module ReferenceRun (C : PROVED_NOW).
+  Definition run p argv read fuel st :=
+    C.X.run_main fuel (program_of p argv read) (xo_main p) (xo_env p) st.
+End ReferenceRun.
+
+(* Typing judgments supplied by the runtime proof. The contracts below
+   spell out how they constrain an initial configuration and its outcome. *)
+Module Type RUNTIME_TYPING (C : PROVED_NOW).
+  Parameter representation context locals store : Type.
+  Definition representations := nsym -> option representation.
+  Definition functors := usym -> option (tele * tele * subst).
+  Parameter context_items : context -> tele.
+  Parameter context_subst : context -> subst.
+  Parameter empty_store : store.
+  Parameter well_formed : gsig -> representations -> xprog -> functors -> Prop.
+  Parameter typed : gsig -> representations -> xprog -> functors ->
+    option ty -> bool -> context -> locals -> xexpr -> ty -> Prop.
+  Parameter grounded : subst -> context -> Prop.
+  Parameter provides : gsig -> representations -> xprog -> functors ->
+    store -> subst -> tele -> xdenv -> Prop.
+  Parameter locals_ok : gsig -> representations -> xprog ->
+    store -> subst -> tele -> locals -> xvenv -> Prop.
+  Parameter inputs_form : gsig -> tele -> context -> Prop.
+  Parameter store_ok : gsig -> representations -> xprog -> store -> C.Prims.mstate -> Prop.
+  Parameter store_extends : store -> store -> Prop.
+  Parameter value_typed : gsig -> representations -> xprog -> store -> xvalue -> ty -> Prop.
+  Parameter HeapNonempty : C.Prims.mstate -> Prop.
+End RUNTIME_TYPING.
+
+Module RuntimeSpec (C : PROVED_NOW) (Source : SOURCE_PROGRESS C)
+    (Import T : RUNTIME_TYPING C).
+  Module Ref := ReferenceRun C.
+
+  Record expression_typing := ExpressionTyping {
+    signature : gsig;
+    reps : representations;
+    funs : functors;
+    return_type : option ty;
+    in_loop : bool;
+    provisions : context;
+    local_types : locals;
+    result_type : ty;
+    grounding : subst;
+    store_typing : store
+  }.
+
+  Definition ReadyExpression t P d ge st e : Prop :=
+    let Sg := signature t in let Rp := reps t in let Fb := funs t in
+    let Phi := provisions t in let H := store_typing t in let g := grounding t in
+    well_formed Sg Rp P Fb /\
+    typed Sg Rp P Fb (return_type t) (in_loop t) Phi (local_types t) e (result_type t) /\
+    grounded g Phi /\
+    provides Sg Rp P Fb H g (context_items Phi) d /\
+    locals_ok Sg Rp P H g (context_items Phi) (local_types t) ge /\
+    store_ok Sg Rp P H st.
+
+  Definition SafeResult t P (r : C.X.xres) : Prop :=
+    let Sg := signature t in let Rp := reps t in
+    let Phi := provisions t in let g := grounding t in
+    exists H', store_extends (store_typing t) H' /\ store_ok Sg Rp P H' (C.X.xr_st r) /\
+    let locals_preserved := locals_ok Sg Rp P H' g (context_items Phi) (local_types t) (C.X.xr_g r) in
+    match C.X.xr_out r with
+    | XOk w =>
+        value_typed Sg Rp P H' w (app_subst g (app_subst (context_subst Phi) (result_type t))) /\
+        locals_preserved
+    | XRet w => exists rt, return_type t = Some rt /\ value_typed Sg Rp P H' w (app_subst g rt)
+    | XBrk => in_loop t = true /\ locals_preserved
+    | XErr _ => False
+    | _ => True
+    end.
+
+  Definition ReadyMain P main d : Prop :=
+    exists Sg Rp Fb Dm Sm body Phi ground,
+      well_formed Sg Rp P Fb /\
+      g_fn Sg main = Some (Dm, Sm, None) /\ fs_params Sm = [] /\
+      xp_fn P main = Some body /\ inputs_form Sg Dm Phi /\
+      grounded ground Phi /\
+      provides Sg Rp P Fb empty_store ground (context_items Phi) d.
+
+  Definition TypedRuntime p : Prop :=
+    forall argv read,
+    let P := program_of p argv read in
+    let main := xo_main p in
+    exists Sg Rp Fb inputs body Phi ground,
+      well_formed Sg Rp P Fb /\
+      g_fn Sg main = Some (inputs, mkSig [] TUnit, None) /\
+      xp_fn P main = Some body /\ inputs_form Sg inputs Phi /\
+      grounded ground Phi /\
+      provides Sg Rp P Fb empty_store ground (context_items Phi) (xo_env p).
+
+  Definition ReificationCertificate source raw result : Prop :=
+    Source.lower_runtime source raw = Some result /\ TypedRuntime result.
+End RuntimeSpec.
+
+Module Type RUNTIME_SAFETY (C : PROVED_NOW) (Source : SOURCE_PROGRESS C)
+    (T : RUNTIME_TYPING C).
+  Module Spec := RuntimeSpec C Source T.
+  Import Spec T.
+
+  Axiom expression_safe : forall typing P d g st e,
+    ReadyExpression typing P d g st e ->
+    forall fuel, SafeResult typing P (C.X.xinterp fuel P d g st e).
+  Axiom main_safe : forall P main d,
+    ReadyMain P main d ->
+    forall fuel st c, C.X.xr_out (C.X.run_main fuel P main d st) <> XErr c.
+  Axiom main_typing_inhabited : exists P main d, ReadyMain P main d.
+  Axiom heap_example : exists P main d st,
+    ReadyMain P main d /\ C.X.xr_out (C.X.run_main 30 P main d st) = XOk XVUnit /\
+    HeapNonempty (C.X.xr_st (C.X.run_main 30 P main d st)).
+  Axiom typed_runtime_never_err : forall p,
+    TypedRuntime p ->
+    forall fuel argv read st c, C.X.xr_out (Ref.run p argv read fuel st) <> XErr c.
+  Axiom certified_reification_never_err : forall source raw result,
+    ReificationCertificate source raw result ->
+    forall fuel argv read st c, C.X.xr_out (Ref.run result argv read fuel st) <> XErr c.
+End RUNTIME_SAFETY.
+
+(* The concrete slot syntax and executable closures are supplied by the
+   oracle. The equations relating its stages are part of the contract. *)
+Module Type ORACLE_PIPELINE (C : PROVED_NOW).
+  Parameter slot_program slot_expr slot_bind code bind_code scalar_cache : Type.
+  Parameter fast_program : xprogram -> xprogram.
+  Parameter slot_input : xprogram -> list (list int) ->
+    (list int -> option (list int)) -> slot_program.
+  Parameter slot_runtime : slot_program -> xprog.
+  Parameter slot_function : slot_program -> fsym -> option (slot_expr * slot_expr).
+  Parameter slot_functor : slot_program -> usym -> option (tele * list slot_bind).
+  Parameter fold_expr : xprog -> (fsym -> option slot_expr) -> nat -> nat -> slot_expr -> slot_expr.
+  Parameter fold_bind : xprog -> (fsym -> option slot_expr) -> nat -> nat -> slot_bind -> slot_bind.
+  Definition function_table := fsym -> option (code * code).
+  Definition functor_table := usym -> option (tele * bind_code * scalar_cache).
+  Parameter compile_expr : slot_program -> function_table -> functor_table -> slot_expr -> code.
+  Parameter compile_binds : slot_program -> function_table -> functor_table -> list slot_bind -> bind_code.
+  Parameter prepare_scalars : tele -> list slot_bind -> scalar_cache.
+  Parameter engine_run : function_table -> nat -> fsym -> xdenv -> C.Prims.mstate -> C.X.xres.
+  Parameter slot_run : nat -> slot_program -> fsym -> xdenv -> C.Prims.mstate -> C.X.xres.
+  Parameter mapped_run : nat -> xprog -> fsym -> xdenv -> C.Prims.mstate -> C.X.xres.
+End ORACLE_PIPELINE.
+
+Module OracleSpec (C : PROVED_NOW) (Import Engine : ORACLE_PIPELINE C).
+  Module Ref := ReferenceRun C.
+
+  Record tables := Tables {
+    static_bodies : fsym -> option slot_expr;
+    max_size : nat;
+    max_depth : nat;
+    folded_program : slot_program;
+    functions : function_table;
+    functors : functor_table
+  }.
+
+  Definition CompiledTables folded fns funs : Prop :=
+    (forall f, fns f =
+      option_map (fun '(bs, bd) => (compile_expr folded fns funs bs, compile_expr folded fns funs bd))
+        (slot_function folded f)) /\
+    (forall h, funs h =
+      option_map (fun '(Dr, bs) => (Dr, compile_binds folded fns funs bs, prepare_scalars Dr bs))
+        (slot_functor folded h)).
+
+  (* The driver supplies the pruned slot program's static bodies, the
+     correctly folded program, and tables satisfying the closure equations. *)
+  Definition Prepared p argv read (t : tables) : Prop :=
+    let original := slot_input p argv read in
+    let folded := folded_program t in
+    let P := slot_runtime original in
+    let tb := static_bodies t in let m := max_size t in let n := max_depth t in
+    let fns := functions t in let funs := functors t in
+    (forall f bs, tb f = Some bs -> exists bd, slot_function original f = Some (bs, bd)) /\
+    slot_runtime folded = P /\
+    (forall f, slot_function folded f =
+      option_map (fun '(bs, bd) => (fold_expr P tb m n bs, fold_expr P tb m n bd))
+        (slot_function original f)) /\
+    (forall h, slot_functor folded h =
+      option_map (fun '(Dr, bs) => (Dr, map (fold_bind P tb m n) bs))
+        (slot_functor original h)) /\
+    CompiledTables folded fns funs.
+
+  Definition out_of_fuel (r : C.X.xres) := C.X.xr_out r = XFuel.
+  Definition stuck (r : C.X.xres) := exists c, C.X.xr_out r = XErr c.
+  Definition run_prepared p t fuel st :=
+    engine_run (functions t) fuel (xo_main p) (xo_env p) st.
+End OracleSpec.
+
+Module Type ORACLE_AGREEMENT (C : PROVED_NOW) (Engine : ORACLE_PIPELINE C).
+  Module Spec := OracleSpec C Engine.
+  Import Spec Engine.
+
+  Axiom mapped_engine_agrees : forall fuel P main d st,
+    mapped_run fuel P main d st = C.X.run_main fuel P main d st.
+  Axiom slot_engine_agrees : forall p argv read fuel st,
+    stuck (Ref.run p argv read fuel st) \/
+    slot_run fuel (slot_input p argv read) (xo_main p) (xo_env p) st =
+      Ref.run p argv read fuel st.
+  Axiom compiled_engine_agrees : forall folded fns funs fuel main d st,
+    CompiledTables folded fns funs ->
+    engine_run fns fuel main d st = slot_run fuel folded main d st.
+
+  Axiom fast_path_agrees : forall p argv read fuel st,
+    out_of_fuel (Ref.run p argv read fuel st) \/
+    Ref.run (fast_program p) argv read fuel st = Ref.run p argv read fuel st.
+  Axiom engine_agrees : forall p argv read fuel st t,
+    Prepared p argv read t ->
+    stuck (Ref.run p argv read fuel st) \/
+    run_prepared p t fuel st = Ref.run p argv read fuel st.
+  Axiom fast_engine_agrees : forall p argv read fuel st t,
+    Prepared (fast_program p) argv read t ->
+    out_of_fuel (Ref.run p argv read fuel st) \/
+    stuck (Ref.run p argv read fuel st) \/
+    run_prepared (fast_program p) t fuel st = Ref.run p argv read fuel st.
+End ORACLE_AGREEMENT.
+
+(* Pending end-to-end source obligations. The checked component contracts
+   above are bound in Certified.v. *)
 Module Type COMPLETE.
   Include PROVED_NOW.
 

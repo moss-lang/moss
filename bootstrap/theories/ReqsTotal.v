@@ -21,6 +21,7 @@ Import ListNotations.
 Local Open Scope list_scope.
 
 Module A := Audit.Elaboration.
+Import Audit.SourceReading.
 
 Local Strategy opaque [Nat.of_num_uint].
 

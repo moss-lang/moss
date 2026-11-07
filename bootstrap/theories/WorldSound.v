@@ -1419,35 +1419,7 @@ Definition W_read (w : Elab.world) (R : nat -> list nat) (F : string -> nat) : A
                 end)
     R F (Elab.w_library w).
 
-(* The fields of WorldOf about the loader: everything but requirements and
-   field numbering. *)
-Record LoaderReading (b : bundle) (W : A.world) : Prop := {
-  lr_acyclic : exists rank : string -> nat, forall p m t imp,
-      A.Loaded b p -> A.module_of b p = Some m -> In (t, imp) (A.imports_of b m) ->
-      A.module_of b t <> None /\ rank t < rank p;
-  lr_decl_sound : forall s d, A.w_decl W s = Some d -> s <> 0 /\ A.Declared b d /\ A.kind_of (A.d_ast d) <> None;
-  lr_decl_complete : forall d, A.Declared b d -> A.kind_of (A.d_ast d) <> None ->
-      exists s, A.w_decl W s = Some d /\ forall s', A.w_decl W s' = Some d -> s' = s;
-  lr_exports : forall p ns n e, A.Loaded b p -> (A.w_exp W p ns n = Some e <-> A.Exports b W p ns n e);
-  lr_scope : forall p ns n e, A.Loaded b p -> (A.w_scope W p ns n = Some e <-> A.InScope b W p ns n e);
-  lr_attached : forall r n s, A.w_attached W r n = Some s <-> A.AttachedDecl W r n s;
-  lr_library : A.w_library W = Loader.library_dir (b_prelude b)
-}.
-
-(* The rest: requirements ([D71]/[D73]) and field numbering. *)
-Record ReqsReading (W : A.world) : Prop := {
-  rr_nodup : forall s, NoDup (A.w_reqs W s);
-  rr_plain : forall s k, A.kind_sym W s = Some k ->
-      k <> A.DKTag -> k <> A.DKAlias -> k <> A.DKType -> k <> A.DKUnit ->
-      forall t, In t (A.w_reqs W s) <-> A.AssumeTypes W s t;
-  rr_none : forall s, A.kind_sym W s = Some A.DKType \/ A.kind_sym W s = Some A.DKUnit -> A.w_reqs W s = [];
-  rr_closed : A.RelevanceClosed W (A.w_reqs W);
-  rr_least : forall R, A.RelevanceClosed W R ->
-      (forall s, A.kind_sym W s <> Some A.DKTag -> A.kind_sym W s <> Some A.DKAlias -> R s = A.w_reqs W s) ->
-      forall g, (A.kind_sym W g = Some A.DKTag \/ A.kind_sym W g = Some A.DKAlias) -> incl (A.w_reqs W g) (R g);
-  rr_listed : forall g d ps t n, A.w_decl W g = Some d -> A.nominal_body (A.d_ast d) = Some (ps, t) -> In n ps ->
-      exists x, A.resolve_sym W (A.d_mod d) [n] = Some x /\ A.AssumeTypes W g x
-}.
+Export Audit.SourceReading.
 
 Theorem worldof_of_reading : forall b W,
   LoaderReading b W -> ReqsReading W -> (forall a c, A.w_fld W a = A.w_fld W c -> a = c) -> A.WorldOf b W.
