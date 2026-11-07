@@ -1,6 +1,6 @@
 (* Source grouping never repeats an inferred substitution. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  NominalSupport TySupport SourceSupport CtxMerge Merge CanonTypes TypeReadingInj PMatchComplete PMatchExec
  InstantiateTr NeedReceiverFormation FamilyDemandTrace FamilyDemandCollect FamilySelectTrace
  FamilyMatchCanonical FamilyMatchingCtx MethodKeyTr FamilySearchCompetitor.

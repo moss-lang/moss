@@ -1,13 +1,13 @@
 (* The input context's own fixed readings supply the functor fields needed
    when checking a function body, including exact frozen application rows. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodySound BodyTr CtxWalk CtxMerge
+From NM Require Import Audit NMap Sx Elab BodySoundCore BodyTr CtxWalk CtxMerge
   ContextFixed FunctorDecl BindFunctorCtx.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Section Context.
 Variables(w:Elab.world)(R:nat->list nat)(Fl:string->nat).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem fn_context_functor_captures:forall f e C ns,
  A.CtxOf WW f C ns ->
  (forall k,nofun k=true->key_ok k=true->

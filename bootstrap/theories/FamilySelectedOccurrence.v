@@ -1,6 +1,6 @@
 (* Successful selection identifies a written method occurrence in every complete output reading. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy NominalSupport Merge
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy NominalSupport Merge
  CanonTypes CanonBodyTy TyOfSubst SourceReadingExtend TySupport FamilySelectTrace FamilyMatchTrace
  FamilySelectedLeaf FamilyMatchCanonical FamilyCandidateWitness FamilyMatchingCtx FamilyMarkerSpecialize
  FamilyMarkedSubst FamilyMarkersExec FamilyScanSpecialize FamilyProducedKey.
@@ -10,7 +10,7 @@ Section Occurrence.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem family_selected_occurrence:forall c e F C mi r mid s g matching sf es,
  A.WorldOf b W->family_member mi e r mid s=Good(Some(g,matching),sf)->
  Inv s->st_w s=w->Later w P R Fl sf->CxRel w R Fl c e F C->

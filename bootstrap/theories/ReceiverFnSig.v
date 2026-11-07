@@ -1,13 +1,13 @@
 (* Actual signature reads with an explicit method receiver retain validity/support. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr CanonTypes
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr CanonTypes
  CanonBodyTy NominalSupport TySupport SourceSupport SourceClean NeedMapExec FnSigExec.
 Import ListNotations.
 Section Receiver.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem fn_sig_receiver_properties:forall c e F C g r s sg s',
  fn_sig g(tymap e)e(Some r)s=Good(sg,s')->Inv s->st_w s=w->
  nget(w_syms w)(gs_id g)=Some g->CxRel w R Fl c e F C->WFty r->Support WW r->Later w P R Fl s'->

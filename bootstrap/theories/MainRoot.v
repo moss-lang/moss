@@ -10,7 +10,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySound BodyTy Merge CtxWalk CtxMerge InfoCache MethodLookup.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySoundCore BodyTy Merge CtxWalk CtxMerge InfoCache MethodLookup.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -76,7 +76,7 @@ Qed.
 Section Main.
 Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 
 Lemma kind_fn_decl : forall x g, nget (w_syms w) x = Some g -> gs_kind g = KFn ->
   exists n ps rt body, gs_decl g = ADFn RPlain n ps rt body.
@@ -87,7 +87,7 @@ Qed.
 
 Lemma scope_alias_mod : forall p n e, A.w_scope WW p A.NSAlias n = Some e -> exists q, e = A.EMod q.
 Proof.
-  intros p n e H. cbn [A.w_scope BodySound.W W_read] in H. destruct (find_mod w p (w_order w)); [|discriminate].
+  intros p n e H. cbn [A.w_scope BodySoundCore.W W_read] in H. destruct (find_mod w p (w_order w)); [|discriminate].
   destruct (sassoc n _); cbn in H; [injection H as <-; eauto | discriminate].
 Qed.
 
@@ -131,7 +131,7 @@ Proof.
       exact (eq_trans (loaded_scope_table b w R Fl Hload mi A.NSName "main"%string Hmi)
         ltac:(cbn [tbl]; rewrite Ex; reflexivity)).
     + intros (d & n' & ps' & rt' & body' & p & D & Da & Hsc).
-      cbn [A.w_scope BodySound.W W_read] in Hsc.
+      cbn [A.w_scope BodySoundCore.W W_read] in Hsc.
       destruct (find_mod w p (w_order w)) as [gm|] eqn:Ef; [|discriminate].
       destruct (find_mod_member w p (w_order w) gm Ef) as (mi & Hmi & <-).
       cbn [tbl] in Hsc.

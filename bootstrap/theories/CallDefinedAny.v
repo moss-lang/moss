@@ -1,8 +1,9 @@
+From NM Require Import BodyProofTools.
 From NM Require Import WrapperKeyReadonly.
 From NM Require Import CallFwdReadonly.
 (* Actual defined calls, including main; only real nonempty demand remains. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabMono WorldSound ElabFrame InfoPreserve BodySound BodyTy BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound ElabMono WorldSound ElabFrame InfoPreserve BodySoundCore BodyTy BodyTr
  CtxMerge MethodKeyTr CanonTypes CanonBodyTy NominalSupport EtyTyExec CallArgs ProviderSig SourceSatisfies
  LoaderOrigin MainRoot CallAbstract CallCacheExec DemandEmptyExec NeedMapExec CallDefinedCore CallThetaExec FnSigExec InstantiateTr CallDefined SourceSatisfiesAny.
 Import ListNotations.
@@ -12,9 +13,9 @@ Section Defined.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem defined_ready_any : forall f,OK w P R Fl f->
  forall c e g args s x t s' F C n ps rt body,
  defined_call_code f c e(gs_id g)g args s=Good((x,t),s')->

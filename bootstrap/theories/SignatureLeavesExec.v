@@ -1,7 +1,7 @@
 (* Exact raw D78 signature leaves. Effective last output readings are a
    separate, stronger compatibility check (CopyOutputExec). *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=Audit.Elaboration.
@@ -18,10 +18,10 @@ Proof. intros[x[dn|]];unfold leaf_eqb;cbn;rewrite ?Nat.eqb_refl,?String.eqb_refl
 Lemma leaf_aset_domain : forall (out:list(leaf*string)) (k:leaf) (text:string) (x:leaf),
  In x(map fst(aset leaf_eqb k text out)) <-> x=k\/In x(map fst out).
 Proof.
- intros out;induction out as[|[h old]rest IH];intros k text x;cbn[aset map fst];[firstorder congruence|].
+ intros out;induction out as[|[h old]rest IH];intros k text x;cbn[aset map fst];[cbn [In];intuition congruence|].
  destruct(leaf_eqb k h)eqn:E.
- - apply leaf_eqb_eq in E;subst;cbn;firstorder congruence.
- - cbn;rewrite IH;firstorder congruence.
+ - apply leaf_eqb_eq in E;subst;cbn;cbn [In];intuition congruence.
+ - cbn;rewrite IH;cbn [In];intuition congruence.
 Qed.
 Lemma leaf_fold_exact : forall
  (step:list(leaf*string)->spec->M(list(leaf*string)))
@@ -39,7 +39,16 @@ Proof.
    destruct(IH mid s found s')as[End Rest].
    + intros q Inq;eapply Steps;right;exact Inq.
    + exact H.
-   + split;[exact End|]. intro k;rewrite Rest,First;cbn;firstorder congruence.
+   + split;[exact End|]. intro k;rewrite Rest,First;cbn.
+     split.
+     * intros [[Old|Head]|(q&Here&Leaf)].
+       -- left;exact Old.
+       -- right;exists sp;split;[left;reflexivity|exact Head].
+       -- right;exists q;split;[right;exact Here|exact Leaf].
+     * intros [Old|(q&[Same|Here]&Leaf)].
+       -- left;left;exact Old.
+       -- subst q;left;right;exact Leaf.
+       -- right;exists q;split;assumption.
 Qed.
 
 Lemma result_method_leaf : forall W p pa dn br s k,
@@ -84,7 +93,7 @@ Qed.
 Section Loaded.
 Variable w:Elab.world. Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Notation path_of mi :=(gm_path(get_mod w mi)).
 Lemma signature_loaded_kind : forall x g,nget(w_syms w)x=Some g ->KindOK g.
 Proof.

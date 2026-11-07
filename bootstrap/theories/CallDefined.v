@@ -1,8 +1,9 @@
+From NM Require Import BodyProofTools.
 From NM Require Import WrapperKeyReadonly.
 From NM Require Import CallFwdReadonly.
 (* The ordinary no-demand branch of a defined call, from its actual run. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabMono WorldSound ElabFrame InfoPreserve BodySound BodyTy BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound ElabMono WorldSound ElabFrame InfoPreserve BodySoundCore BodyTy BodyTr
  CtxMerge MethodKeyTr CanonTypes CanonBodyTy NominalSupport EtyTyExec CallArgs ProviderSig SourceSatisfies
  LoaderOrigin MainRoot CallAbstract CallCacheExec DemandEmptyExec NeedMapExec CallDefinedCore CallThetaExec FnSigExec InstantiateTr.
 Import ListNotations.
@@ -13,7 +14,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem synth_call_defined_exec : forall f c e pa a args fid fnm ps rt body s x t s' F C,
  synth_call(S f)c e pa a args s=Good((x,t),s')->Inv s->CxRel w R Fl c e F C->st_w s=w->
  A.resolve_sym WW(A.fr_mod F)pa=Some fid->A.kind_sym WW fid=Some A.DKFn->

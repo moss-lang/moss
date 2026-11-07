@@ -1,6 +1,6 @@
 (* Checked provider signature matching uses the actual canonical readings. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  BodyTy SigSound TyOfSubst CanonTypes CanonBodyTy Merge.
 From NM Require Export SigReadingSubst.
 Import ListNotations.
@@ -26,7 +26,7 @@ Section Canonical.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma fn_sig_canonical:forall c e F C g this s sg s' recv n ps rt body,
  fn_sig g(tymap e)e this s=Good(sg,s') ->Inv s->st_w s=w ->
  CxRel w R Fl c e F C ->nget(w_syms w)(gs_id g)=Some g ->

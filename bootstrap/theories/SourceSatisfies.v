@@ -1,6 +1,6 @@
 (* Loaded callee contexts discharge the execution view used by Satisfies. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
  Merge CtxWalk CtxMerge CtxMethodExec InfoCache ContextFormationSupport NeedInfoExec InfoShape NeedSatisfies MethodKeyTr LoaderOrigin MainRoot.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -12,12 +12,12 @@ Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
 Theorem fn_info_satisfaction_nonroot : forall g si info s mi e ps sn sm s' c F C,
  nget(w_syms w)(gs_id g)=Some g->(forall t,gs_origin g<>OForwarder t)->
- ~A.IsMainFn(BodySound.W w R Fl)(gs_id g)->
+ ~A.IsMainFn(BodySoundCore.W w R Fl)(gs_id g)->
  (forall s0 m s1,st_w s0=w->is_main g s0=Good(m,s1)->m=false)->
  fn_info g si=Good(info,s)->require_needs mi e g info s=Good(ps,sn)->
  smap_at(fi_env info)e ps sn=Good(sm,s')->
  Inv si->InfoInv si->st_w si=w->Later w P R Fl s'->CxRel w R Fl c e F C->
- exists Cs,CtxOfIE(BodySound.W w R Fl)(gs_id g)Cs(map(key_tr Fl)(fi_needs info))/\
+ exists Cs,CtxOfIE(BodySoundCore.W w R Fl)(gs_id g)Cs(map(key_tr Fl)(fi_needs info))/\
  A.Satisfies C Cs(map(key_tr Fl)(fi_needs info))sm.
 Proof.
  intros g si info s mi e ps sn sm s' c F C Hg Nf Nm Nm' Ei En Es Hi Ii Hw L Hc.
@@ -39,11 +39,11 @@ Proof.
  eapply need_satisfies;[exact Hload|exact En|exact Es|exact Is|exact L|exact Hc|exact Ctx|exact Sub|exact Merges|exact Ti|exact Shape|exact Keys|exact Apps].
 Qed.
 Theorem fn_info_satisfaction_loaded : forall g si info s mi e ps sn sm s' c F C,
- nget(w_syms w)(gs_id g)=Some g->~A.IsMainFn(BodySound.W w R Fl)(gs_id g)->
+ nget(w_syms w)(gs_id g)=Some g->~A.IsMainFn(BodySoundCore.W w R Fl)(gs_id g)->
  fn_info g si=Good(info,s)->require_needs mi e g info s=Good(ps,sn)->
  smap_at(fi_env info)e ps sn=Good(sm,s')->
  Inv si->InfoInv si->st_w si=w->Later w P R Fl s'->CxRel w R Fl c e F C->
- exists Cs,CtxOfIE(BodySound.W w R Fl)(gs_id g)Cs(map(key_tr Fl)(fi_needs info))/\
+ exists Cs,CtxOfIE(BodySoundCore.W w R Fl)(gs_id g)Cs(map(key_tr Fl)(fi_needs info))/\
  A.Satisfies C Cs(map(key_tr Fl)(fi_needs info))sm.
 Proof.
  intros g si info s mi e ps sn sm s' c F C Hg Nm Ei En Es Hi Ii Hw L Hc.

@@ -1,7 +1,7 @@
 (* Every loaded declaration's input context is valid, including main's
    implicit platform-root entries. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  Merge CanonTypes CtxWalk CtxMerge CtxMethodExec ContextClean ContextSupport ContextWalkSupport
  ContextMergeSupport ContextFormationSupport NominalSupport InfoCache InfoPreserve
  LoaderOrigin MainRoot MainContextInfo RootContextSupport.
@@ -12,8 +12,8 @@ Section Loaded.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
-Notation WW:=(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma loaded_context_round_valid:forall g U s e needs final,
  nget(w_syms w)(gs_id g)=Some g->
  Tri U->UfOK U->UfSupport WW U->Inv s->st_w s=w->Later w P R Fl final->

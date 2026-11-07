@@ -1,6 +1,6 @@
 (* Actual family applications collected and sequenced before a call. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx ReifyData Elab ElabSound ElabFrame BodySound ApplyAbstractExec.
+From NM Require Import Audit NMap Sx ReifyData Elab ElabSound ElabFrame BodySoundCore ApplyAbstractExec.
 Import ListNotations.
 Local Open Scope list_scope.
 Definition demand_group:=((gsym*list(nat*ety))*list item)%type.

@@ -1,7 +1,8 @@
+From NM Require Import BodyProofTools.
 From NM Require Import WrapperKeyReadonly.
 (* Actual defined calls with arbitrary automatic family demands. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabMono WorldSound ElabFrame InfoPreserve BodySound BodyTy BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound ElabMono WorldSound ElabFrame InfoPreserve BodySoundCore BodyTy BodyTr
  CtxMerge MethodKeyTr CanonTypes CanonBodyTy NominalSupport EtyTyExec CallArgs ProviderSig SourceSatisfies
  LoaderOrigin MainRoot CallAbstract CallCacheExec NeedMapExec CallDefinedCore CallThetaExec FnSigExec InstantiateTr
  CallDefined CallDefinedAny SourceSatisfiesAny NeedReceiverFormation FamilyDemandExec FamilyDemandFrame CallFwdReadonly.
@@ -12,12 +13,12 @@ Section Defined.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
 Variable checked:st.
 Hypothesis Hcontexts:check_contexts checked=Good(tt,checked).
 Hypothesis Hchecked:st_w checked=w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem defined_demand_ex:forall f,OK w P R Fl f->
  forall c e g pa args exp s x t s' F C n ps rt body,
  defined_call_code f c e(gs_id g)g args s=Good((x,t),s')->
@@ -94,7 +95,7 @@ Section Final.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
 Theorem defined_demand_step:forall f,OK w P R Fl f->@DefinedDemandStep w P R Fl f.
 Proof.

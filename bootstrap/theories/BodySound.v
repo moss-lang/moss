@@ -51,35 +51,12 @@ From NM Require Export BodySoundCore.
 Include BodySoundCore.
 Local Strategy opaque [Nat.of_num_uint FUEL].
 
-Lemma info_vars : forall vs n s,InfoInv s->InfoInv(s_vars vs n s).
-Proof.
- intros vs n s I. apply(info_step s);[exact I| |reflexivity|reflexivity].
- constructor;cbn;auto;[exists[];rewrite app_nil_r;reflexivity|apply ext_refl].
-Qed.
+From NM Require Export BodyProofTools.
+Definition info_vars := BodyProofTools.info_vars.
+Definition fwd_vars := BodyProofTools.fwd_vars.
+Ltac cache_inv := BodyProofTools.cache_inv.
+Ltac fwd_inv := BodyProofTools.fwd_inv.
 
-Ltac cache_inv :=
- first [assumption|match goal with
- | |-InfoInv(s_vars ?vs ?n ?s)=>apply info_vars;cache_inv
- | E : ?m ?si = Good (?a,?sf) |- InfoInv ?sf =>
-   tryif constr_eq si sf then fail else idtac;
-   let O:=fresh "OI" in assert(O:okI m)by(first[solve[auto with okIdb]|okIt]);
-   eapply(proj2 O si a sf);[eassumption|cache_inv|exact E]
- end].
-
-Lemma fwd_vars : forall vs n s,FwdInv s->FwdInv(s_vars vs n s).
-Proof. intros vs n s I;exact I. Qed.
-Ltac fwd_inv :=
- first [assumption|match goal with
- | |-FwdInv(s_vars ?vs ?n ?s)=>apply fwd_vars;fwd_inv
- | E : ?m ?si = Good (?a,?sf), F : Fr ?si ?sf |- FwdInv ?sf =>
-   tryif constr_eq si sf then fail else idtac;
-   let K:=fresh "KF" in assert(K:keeps st_fwd m)by(first[solve[auto with keepsdb]|keepst]);
-   eapply fwd_inv_frame;[fwd_inv|exact F|exact(K si a sf E)]
- | E : ?m ?si = Good (?a,?sf) |- FwdInv ?sf =>
-   tryif constr_eq si sf then fail else idtac;
-   let O:=fresh "OF" in assert(O:okF m)by(first[solve[auto with fwdb]|fwt]);
-   eapply(proj2 O si a sf);[eassumption|fwd_inv|exact E]
- end].
 
 Section Bodies.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
@@ -270,37 +247,20 @@ Qed.
 (* 6. Expressions, blocks, statements                                        *)
 (* ======================================================================== *)
 
-Lemma join_tr : forall mi e a b0 exp s t s', join mi e a b0 exp s = Good (t,s') ->
-  Tri (en_uf e) /\ UfWF (en_uf e) -> WFty a -> WFty b0 -> opt_wf exp ->
-  A.Join (trF (canon e a)) (trF (canon e b0))
-    (option_map (fun t => trF (canon e t)) exp) (trF (canon e t)) /\ WFty t.
-Proof. intros mi e a b0 exp s t s' H [_ U] Wa Wb Wx. exact (join_canon_tr Fl mi e a b0 exp s t s' H U Wa Wb Wx). Qed.
+Local Notation join_tr := (@BodySoundCore.join_tr Fl).
 
-Lemma fits_tr : forall e t x, Tri (en_uf e) /\ UfWF (en_uf e) -> fits e t x = true ->
-  A.fits (trF (canon e t)) (trF (canon e x)).
-Proof. intros e t x _ H. exact (fits_canon_tr Fl e t x H). Qed.
+Local Notation fits_tr := (@BodySoundCore.fits_tr Fl).
 
-Lemma opt_fits_lift : forall a c, A.fits a c -> A.opt_fits a (Some c).
-Proof. intros a c H. exact H. Qed.
 
-Lemma elab_opt_fits_tr : forall e t exp, Tri (en_uf e) /\ UfWF (en_uf e) -> Elab.opt_fits e t exp = true ->
-  A.opt_fits (trF (canon e t)) (option_map (fun t => trF (canon e t)) exp).
-Proof. intros e t exp _ H. exact (opt_fits_canon_tr Fl e t exp H). Qed.
 
-Lemma varsin_frame : forall s F F', A.fr_var F' = A.fr_var F -> VarsIn s F -> VarsIn s F'.
-Proof. intros s F F' E H n k Hk. rewrite E. exact (H n k Hk). Qed.
+Local Notation elab_opt_fits_tr := (@BodySoundCore.elab_opt_fits_tr Fl).
 
-Lemma post_frame : forall s F F', A.fr_var F' = A.fr_var F -> Post s F -> Post s F'.
-Proof. intros s F F' E [L V]. split; [exact L | exact (varsin_frame s F F' E V)]. Qed.
+
+
+Local Notation post_frame := (@BodySoundCore.post_frame w P R Fl).
 
 (* the local a statement or path names, as the frame numbers it *)
-Lemma local_named : forall n s k s' s'' F, local_var n s = Good (k, s') -> Fr s' s'' -> Post s'' F ->
-  A.Named F n /\ A.var_of F n = k.
-Proof.
-  intros n s k s' s'' F H Fs Hp. destruct (post_back _ _ _ Fs Hp) as [_ V].
-  pose proof (V n k (local_var_spec _ _ _ _ H)) as E. unfold A.Named, A.var_of. rewrite E.
-  split; [discriminate | reflexivity].
-Qed.
+Local Notation local_named := (@BodySoundCore.local_named w P R Fl).
 
 Ltac stepok H L Hi Hi' Fs' := destruct (okstep _ _ _ _ _ L Hi H) as [Hi' Fs'].
 
@@ -398,8 +358,7 @@ Proof.
     + split; [destruct d; reflexivity|]. split; [destruct d;constructor|]. split; [reflexivity|]. destruct d; [right | left]; reflexivity.
 Qed.
 
-Lemma fold_stmts_app : forall xs ys tx, fold_stmts (xs ++ ys) tx = fold_stmts xs (fold_stmts ys tx).
-Proof. intros xs ys tx. induction xs as [|x r IH]; [reflexivity|]. cbn. rewrite IH. reflexivity. Qed.
+
 
 Lemma stmts_step : forall f, OK f -> StmtsOK (S f).
 Proof.
@@ -570,20 +529,9 @@ Proof.
       rewrite (is_never_tr Fl (canon e vt) (canon_wf e vt (proj2 (cr_uf _ _ _ _ Hc)) Wy)). apply A.BlkExprLast. exact Ey.
 Qed.
 
-Lemma ok_join : forall mi e a b0 exp, ok (join mi e a b0 exp).
-Proof. intros. unfold join. okt. Qed.
 
-Lemma bool_type_spec : forall mi s bt s', bool_type mi s = Good (bt, s') -> Later s ->
-  s' = s /\ exists bi x, sassoc "bool"%string (lang_modules w) = Some bi /\
-    sassoc "Bool"%string (gm_names (get_mod w bi)) = Some x /\ bt = YNom x [].
-Proof.
-  intros mi s bt s' H [Lw _ _ Ll]. unfold bool_type in H. binv H as bm s3 Hl. unfold lang in Hl.
-  binv Hl as st0 s4 Hg. injection Hg as E1 E2. subst st0 s4. injection Hl as E1 E2. subst bm s3.
-  rewrite Ll in H. destruct (sassoc "bool"%string (lang_modules w)) as [bi|] eqn:Eb; [|noerr H].
-  binv H as m s5 Hm. unfold the_mod in Hm. injection Hm as E1 E2. subst m s5.
-  rewrite Lw in H. destruct (sassoc "Bool"%string (gm_names (get_mod w bi))) as [x|] eqn:Ex; [|noerr H].
-  injection H as E1 E2. subst bt s'. split; [reflexivity|]. exists bi, x. auto.
-Qed.
+
+Local Notation bool_type_spec := (@BodySoundCore.bool_type_spec w P R Fl Hbool).
 
 Lemma cond_step : forall f, OK f -> CondOK (S f).
 Proof.
@@ -597,17 +545,13 @@ Proof.
   eapply A.CondBool; [exact (Hbool bi x Eb Ex) | exact Ey | exact (fits_tr e t0 _ (cr_uf _ _ _ _ Hc) Ef)].
 Qed.
 
-Lemma branch_tr : forall bl t, trF (block_bt bl t) = A.branch_ty bl (trF t).
-Proof. intros [ss [y|]] t; reflexivity. Qed.
+Local Notation branch_tr := (@BodySoundCore.branch_tr Fl).
 
-Lemma branch_canon_tr : forall e bl t, trF (canon e (block_bt bl t)) = A.branch_ty bl (trF (canon e t)).
-Proof. intros e [ss [y|]] t; reflexivity. Qed.
+Local Notation branch_canon_tr := (@BodySoundCore.branch_canon_tr Fl).
 
-Lemma block_bt_wf : forall bl t, WFty t -> WFty (block_bt bl t).
-Proof. intros [ss [y|]] t W0; cbn; [exact W0 | reflexivity]. Qed.
 
-Lemma block_bt_support : forall bl t, Support W t -> Support W(block_bt bl t).
-Proof. intros [ss [y|]] t S; [exact S|constructor]. Qed.
+
+Local Notation block_bt_support := (@BodySoundCore.block_bt_support w R Fl).
 
 Lemma if_step : forall f, OK f -> IfOK (S f).
 Proof.

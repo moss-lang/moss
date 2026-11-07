@@ -1,6 +1,6 @@
 (* Receiver instantiation installs meanings without changing canonical types. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame InfoPreserve WorldSound BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame InfoPreserve WorldSound BodySoundCore BodyTr BodyTy
  BindType CanonTypes Merge NominalSupport TyOfRestrict ProviderSig.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -21,7 +21,7 @@ Lemma ni_receiver_types:forall xs e,NI(receiver_types xs e).
 Proof. intros;unfold receiver_types;nit. Qed.
 Section Receiver.
 Variables(w:Elab.world)(R:nat->list nat)(Fl:string->nat).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Definition recv_sem(xs:list(nat*ety)):=map(fun p=>(fst p,tr Fl(snd p)))xs.
 Lemma receiver_types_context:forall xs c e F C s e2 s',
  receiver_types xs e s=Good(e2,s')->CxRel w R Fl c e F C->

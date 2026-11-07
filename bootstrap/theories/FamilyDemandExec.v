@@ -1,6 +1,6 @@
 (* The real collection and sequential family applications construct Demand. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  CtxMerge NominalSupport NeedReceiverFormation FamilyDemandTrace FamilyDemandCollect
  FamilyDemandDistinct FamilyDemandGroup FamilyMatchingCtx.
 Import ListNotations.
@@ -18,7 +18,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall x y,Fl x=Fl y->x=y.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem family_applications_demand:forall f c e0 F C0 wanted sc e s groups pre e' sf,
  A.WorldOf b W->check_contexts sc=Good(tt,sc)->st_w sc=w->
  CxRel w R Fl c e0 F C0->

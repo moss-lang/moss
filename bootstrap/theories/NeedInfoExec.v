@@ -1,6 +1,6 @@
 (* Structurally clean needs of actual callee contexts, including cache hits. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  Merge CanonTypes ContextClean CtxWalk CtxMerge InfoCache CtxMethodExec NeedKeys SettledWalk.
 Import ListNotations.
 Section Needs.

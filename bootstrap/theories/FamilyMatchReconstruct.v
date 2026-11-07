@@ -1,6 +1,6 @@
 (* The checked raw reconstruction is the semantic matching substitution. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySound BodyTr Merge CanonTypes
+From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr Merge CanonTypes
  TyOfSubst PMatchComplete PMatchExec PMatchSemanticImage FamilyCandidateComplete FamilyCandidateWitness
  FamilyMarkedSubst FamilyMatchingCtx FamilyMarkerSpecialize FamilyScanSpecialize.
 Import ListNotations.

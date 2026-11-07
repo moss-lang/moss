@@ -1,6 +1,6 @@
 (* Declaration support through actual assumption walking. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  CtxWalk Merge CanonTypes SourceClean ContextClean MethodClean ContextWalkClean
  NominalSupport NominalMergeSupport SourceSupport ContextSupport.
 Import ListNotations.
@@ -8,7 +8,7 @@ Section Walk.
 Variable w : Elab.world. Context {P : xprogram}.
 Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Ltac impossible H := exfalso; solve [repeat (cbn beta iota zeta in H;
   first [exact (err_not_good _ _ _ _ _ _ H) | discriminate H |
          apply bind_inv in H as (? & ? & ? & H)])].

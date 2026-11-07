@@ -1,6 +1,6 @@
 (* Every collected group retains a genuine selection made in the original environment. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  NominalSupport Merge CtxMerge CanonTypes InstantiateTr NeedReceiverFormation FamilyDemandTrace FamilySearchCompetitor MethodKeyTr.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -42,7 +42,7 @@ Section Collect.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Definition FamilyGroupSeed(c:cx)(e:env)(wanted:list item)(q:demand_group):Prop:=
  exists r mid s sf,
  family_member(cx_mod c)e r mid s=Good(Some(fst(fst q),snd(fst q)),sf)/\
