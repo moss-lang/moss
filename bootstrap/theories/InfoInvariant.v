@@ -1,6 +1,6 @@
 (* Raw provenance of actual fn_info cache entries. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ReqsSolve ReqsStable.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ReqsSolve ReqsStable.
 From NM Require Export FnInfoCore.
 Import ListNotations.
 Record FrL (s s' : st) : Prop := {

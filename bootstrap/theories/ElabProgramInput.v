@@ -2,26 +2,10 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame InfoPreserve ElabConstInput.
 Local Strategy opaque [fn_info].
-Lemma program_info_listed:okI check_listed.
-Proof. unfold check_listed;okIt. Qed.
-Lemma program_info_contexts:okI check_contexts.
-Proof. unfold check_contexts;okIt. Qed.
-Lemma program_info_runtime:okI check_runtime_library.
-Proof. unfold check_runtime_library;okIt. Qed.
-Lemma program_info_assumes:okI check_assumes.
-Proof. unfold check_assumes;okIt. Qed.
-Lemma program_info_lower:okI lower_all.
-Proof. unfold lower_all;okIt. Qed.
-Lemma program_info_platform:forall k p,okI(platform_entry k p).
-Proof. intros;unfold platform_entry;okIt. Qed.
-Lemma program_info_fun_env:forall g,okI(fun_env g).
-Proof. intros;apply okI_ni;[apply input_fun_env_ok|apply input_fun_env_ni|apply kwr_fun_env_input]. Qed.
+From NM Require Export ProgramInfo.
+Include ProgramInfo.
 #[local]Hint Resolve program_info_fun_env:okIdb.
-Lemma program_info_runtime_inputs:forall h,okI(runtime_provider_inputs h).
-Proof. intros;unfold runtime_provider_inputs;okIt. Qed.
-Lemma program_info_ety_ty:forall t,okI(ety_ty t).
-Proof. intros;unfold ety_ty;apply okI_ni;[apply ok_ety_ty_go|apply ni_ety_ty_go|keepst]. Qed.
-Ltac program_info:=first[
+Ltac program_info ::=first[
  lazymatch goal with
  | |-okI(check_main_signature _ _)=>apply okI_check_main_signature
  | |-okI(check_main_arity _)=>apply okI_check_main_arity

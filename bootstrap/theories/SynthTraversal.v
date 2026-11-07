@@ -1,12 +1,12 @@
-(* One fuel induction for the common elaborator traversal.
-   P describes preservation by ordinary computations. Lower is independent:
-   lower_body can satisfy an indexed property that depends on its owner.
-   Each client supplies the monad laws, its quiet-step rule, and the four
-   operations that may emit function bodies or update forwarder rows.
-   Quiet base computations also preserve function headers; this lets one
-   traversal serve both ordinary invariants and function-frame receipts. *)
+(* Compatibility algebra for synthesis preservation.
+   SemanticTraversal checks the common35-function induction once. This
+   interface supplies its constant/path steps from the simpler quiet-base
+   rule, so existing invariant instances keep the same statements and
+   arguments without repeating the compiler traversal. Lower remains an
+   independent owner-indexed property. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabFrame ElabKeeps ReadonlyHelpers ReifyHeader.
+From NM Require Import Audit NMap Sx Elab ElabFrameCore ElabKeeps ReadonlyHelpers ReifyHeader.
+From NM Require Import SemanticTraversal InfoInputs.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
@@ -44,6 +44,24 @@ Local Ltac generic_tac := repeat(fintros;first[solve[auto]|lazymatch goal with
   |_=>first[match m with context[match ?x with _=>_ end]=>destruct x end|let h:=head_of m in progress unfold h]
   end]
  end]).
+
+Local Lemma generic_const_zero:forall g,P(const_val 0 g).
+Proof. intro;cbn[const_val];generic_tac. Qed.
+Local Lemma generic_path_zero:forall c e p a,P(synth_path 0 c e p a).
+Proof. intros;cbn[synth_path];generic_tac. Qed.
+Local Lemma generic_const_step:forall fuel,(forall c e x exp,P(synth fuel c e x exp))->forall g,P(const_val(S fuel)g).
+Proof. intros;cbn[const_val];generic_tac. Qed.
+Local Lemma generic_path_step:forall fuel,(forall g,P(const_val fuel g))->forall c e p a,P(synth_path(S fuel)c e p a).
+Proof. intros;cbn[synth_path];generic_tac. Qed.
+Local Lemma generic_info:forall g,P(fn_info g).
+Proof. intro;generic_kept. Qed.
+Local Lemma generic_semantic_base:forall A(m:M A),keeps readonly_state m->InfoInputs.NI m->ok m->P m.
+Proof. intros A m K N O;apply P_base.
+ - eapply keeps_projection with(p:=readonly_state)(q:=fun x=>fst(fst(fst(fst x))));exact K.
+ - eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst(fst(fst x))));exact K.
+ - eapply keeps_projection with(p:=readonly_state)(q:=snd);exact K.
+ - exact O.
+Qed.
 Lemma synth_preservation_group : forall fuel,
   (forall c e x exp, P (synth fuel c e x exp)) /\
   (forall c e a exp, P (synth_arg fuel c e a exp)) /\
@@ -81,11 +99,9 @@ Lemma synth_preservation_group : forall fuel,
   (forall c e fg y, P (bind_functor fuel c e fg y)) /\
   (forall fg bg, P (link_body fuel fg bg)).
 Proof.
-  induction fuel as [|fuel IH].
-  { refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))); fintros; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; generic_tac. }
-  destruct IH as (I0 & I1 & I2 & I3 & I4 & I5 & I6 & I7 & I8 & I9 & I10 & I11 & I12 & I13 & I14 & I15 & I16 & I17 & I18 & I19 & I20 & I21 & I22 & I23 & I24 & I25 & I26 & I27 & I28 & I29 & I30 & I31 & I32 & I33 & I34).
-  refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))).
-  all: solve [fintros; first [apply P_wrapper|apply P_forwarder_step;exact I28|apply P_lower_body_step;exact I2|apply P_lambda_provider_step;exact I2|cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; generic_tac]].
+ exact (@SemanticTraversal.synth_preservation_group (@P) Lower Lower_zero
+ (fun fuel g=>P(const_val fuel g)) (fun fuel c e p a=>P(synth_path fuel c e p a))
+ generic_const_zero generic_path_zero (fun fuel c e p a H=>H) generic_const_step generic_path_step generic_info
+ P_ret P_bind P_map P_fold P_iter P_vars generic_semantic_base P_wrapper P_forwarder_step P_lower_body_step P_lambda_provider_step).
 Qed.
-
 End Traversal.

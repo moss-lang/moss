@@ -1,8 +1,23 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit NMap Sx Elab ElabFrame ElabInv FnReadonly SymReadonly LambdaCompletionOps LambdaCompletionEmit.
+From NM Require Import AllocationTraversal.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
+
+Local Lemma shared_ch_allocate : forall A mi name kind decl orig(k:nat->M A),
+ orig<>OSource->kind<>KTag /\kind<>KUnit->orig<>OLambda->
+ (forall target,orig<>OForwarder target)->(forall id,CH(k id))->
+ CH(mbind(new_sym mi name kind decl orig)k).
+Proof.
+ intros A mi name kind decl orig k Source Kind Lambda Forward K.
+ apply ch_new_sym_bind;[exact Source|exact Kind|exact Lambda|].
+ intro id;apply ch_at_of_ch;apply K.
+Qed.
+
+Local Lemma shared_ch_expect : forall fuel,
+ (forall tg,CH(forwarder fuel tg))->forall c e y,CH(expect_fn_provider(S fuel)c e y).
+Proof. intros fuel Forward c e y;cbn[expect_fn_provider];cht. Qed.
 
 Lemma ch_synth_group : forall fuel,
   (forall c e x exp, CH (synth fuel c e x exp)) /\
@@ -41,11 +56,12 @@ Lemma ch_synth_group : forall fuel,
   (forall c e fg y, CH (bind_functor fuel c e fg y)) /\
   (forall fg bg, CH (link_body fuel fg bg)).
 Proof.
-  induction fuel as [|fuel IH].
-  { refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))); fintros; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; cht. }
-  destruct IH as (I0 & I1 & I2 & I3 & I4 & I5 & I6 & I7 & I8 & I9 & I10 & I11 & I12 & I13 & I14 & I15 & I16 & I17 & I18 & I19 & I20 & I21 & I22 & I23 & I24 & I25 & I26 & I27 & I28 & I29 & I30 & I31 & I32 & I33 & I34).
-  refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))).
-  all: solve [fintros; first [apply ch_wrapper|apply ch_forwarder_step;exact I28|apply cha_lower_body_step;exact I2|apply ch_lambda_provider_step;exact I2|cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; cht]].
+ refine (@AllocationTraversal.synth_preservation_group (@CH) (fun fuel g=>CH_at(gs_id g)(lower_body fuel g)) _ (fun fuel tg=>CH(forwarder fuel tg)) _
+  (@ch_ret) (@ch_bind) (@ch_mmap) (@ch_mfold) (@ch_miter) (@ch_with_vars)
+  (fun A m F H S O=>@ch_keeps A m O F S) (@shared_ch_allocate) (@shared_ch_expect)
+  (@ch_wrapper) (@ch_forwarder_step) (@cha_lower_body_step) (@ch_lambda_provider_step)).
+ - intro g;cbn[lower_body];cht.
+ - intro tg;cbn[forwarder];cht.
 Qed.
 
 Lemma ch_synth : forall fuel c e x exp, CH (synth fuel c e x exp).

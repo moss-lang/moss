@@ -6,6 +6,7 @@ From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
  LambdaReadonly LambdaReadonlyEmit LambdaReadonlySynth FnPresentStable FnPresentSynth
  LambdaRows LambdaRowsPreserve LambdaRowsEmit LambdaRowsLower LambdaRowsSynth
  LambdaCompletion LambdaCompletionOps LambdaCompletionEmit LambdaCompletionSynth LambdaCompletionProgram.
+From NM Require Import ProgramTail ProgramTailPreserve.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].
@@ -90,4 +91,11 @@ Ltac lcrt:=repeat(fintros;first[solve[auto with lcrdb]|lazymatch goal with
     let h:=head_of m in progress unfold h]
  end]).
 Theorem lcr_elab_program:LCR elab_program.
-Proof. unfold elab_program;lcrt. Qed.
+Proof.
+ rewrite program_split.
+ apply lcr_bind;[lcrt|intro].
+ apply lcr_bind;[lcrt|intro].
+ apply lcr_bind;[lcrt|intro].
+ apply lcr_bind;[exact lcr_lower_all|intro].
+ apply lcr_of_lc_ch;[exact program_tail_lc|exact program_tail_ch].
+Qed.

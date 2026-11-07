@@ -23,17 +23,17 @@ Proof. intros e g H;unfold marker_generation_ids;apply in_app_iff;left;exact H. 
 Lemma marker_scope_type:forall e t g,In t(reify_scope_types e)->In g(ety_gens t)->
  In g(marker_generation_ids e).
 Proof.
- intros e t g Ht Hg;apply marker_scope_ids;unfold reify_generation_ids;apply nodup_In.
+ intros e t g Ht Hg;apply marker_scope_ids;unfold reify_generation_ids;rewrite dedup_nat_fast_eq;apply nodup_In.
  apply in_app_iff;right;apply in_app_iff;right;apply in_flat_map;exists t;split;assumption.
 Qed.
 Lemma marker_tn_key:forall e g,In g(map fst(en_tn e))->In g(marker_generation_ids e).
 Proof.
- intros e g H;apply marker_scope_ids;unfold reify_generation_ids;apply nodup_In.
+ intros e g H;apply marker_scope_ids;unfold reify_generation_ids;rewrite dedup_nat_fast_eq;apply nodup_In.
  apply in_app_iff;left;exact H.
 Qed.
 Lemma marker_uf_key:forall e g,In g(map fst(en_uf e))->In g(marker_generation_ids e).
 Proof.
- intros e g H;apply marker_scope_ids;unfold reify_generation_ids;apply nodup_In.
+ intros e g H;apply marker_scope_ids;unfold reify_generation_ids;rewrite dedup_nat_fast_eq;apply nodup_In.
  apply in_app_iff;right;apply in_app_iff;left;exact H.
 Qed.
 Lemma marker_app_receiver:forall e r mid raw stamp g,

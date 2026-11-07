@@ -1,6 +1,6 @@
 (* Actual eta-provider lookup supplies the physical symbol used by the cache. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ElabFrameAtoms.
 Import ListNotations.
 Definition PhysicalProvider(s:st)(g:gsym):Prop:=nget(st_syms s)(gs_id g)=Some g.
 Lemma sym_physical_provider:forall key s g sf,
@@ -54,6 +54,6 @@ Lemma match_fn_sig_keeps_physical:forall fuel c e pv wanted kind s sm sf,
  PhysicalProvider s pv->match_fn_sig fuel c e pv wanted kind s=Good(sm,sf)->Inv s->PhysicalProvider sf pv.
 Proof.
  intros fuel c e pv wanted kind s sm sf Physical Run Hi.
- destruct(ok_match_fn_sig fuel c e pv wanted kind _ _ _ Hi Run)as[If Frame].
+ destruct(ok_match_fn_sig_operation fuel c e pv wanted kind _ _ _ Hi Run)as[If Frame].
  exact(fr_keep _ _ Frame _ _ Physical).
 Qed.

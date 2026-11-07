@@ -4,6 +4,7 @@ From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
  InfoInvariant InfoPreserve ElabProgramInput FwdInvariant FwdPreserve FwdReadonly FwdSynthInv FwdProgramInv
  FnReadonly FnHistory FnStable FnEmitStable FnSynthStable FnCompleted
  ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderPresent ReifyHeaderHistory.
+From NM Require Import ProgramTail.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
@@ -60,7 +61,8 @@ Proof.
  apply hh_bind;[apply hh_keeps;[program_info|keepst|keepst]| |intro u3].
  1:history_fwd.
  apply hh_bind;[apply hh_lower_all|apply okF_lower_all|intro u4].
- apply hh_keeps;[program_info|keepst|keepst].
+ change (HH program_tail).
+ apply hh_keeps;[exact program_tail_info|exact program_tail_functions|exact program_tail_headers].
 Qed.
 Theorem elab_completed_source_headers:forall b w p final,
  load_world b=Good w->Inv(s_init w)->elab_program(s_init w)=Good(p,final)->

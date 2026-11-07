@@ -229,3 +229,13 @@ Proof. intros;unfold check_constant_effects;keepst. Qed.
 Lemma kr_check_provider_effects:forall mi bs,keeps readonly_state(check_provider_effects mi bs).
 Proof. intros;unfold check_provider_effects;keepst. Qed.
 #[export]Hint Resolve kr_check_constant_effects kr_check_provider_effects:keepsdb.
+
+(* Whole-program assumption checks revisit the same requirement helper under
+   several declaration kinds. Prove its complete readonly effect once. *)
+Lemma kr_check_assumed_requirements:forall mi e k,
+ keeps readonly_state(check_assumed_requirements mi e k).
+Proof. intros;unfold check_assumed_requirements;keepst. Qed.
+#[export]Hint Resolve kr_check_assumed_requirements:keepsdb.
+Lemma kr_check_assumes:keeps readonly_state check_assumes.
+Proof. unfold check_assumes;keepst. Qed.
+#[export]Hint Resolve kr_check_assumes:keepsdb.

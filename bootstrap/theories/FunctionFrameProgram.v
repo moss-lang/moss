@@ -5,6 +5,7 @@ From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFra
  FnCompleted FnCoverage ForwarderHistory ReifyHeader ReifyHeaderReadonly ReifyHeaderStable
  ReifyHeaderPresent ReifyHeaderProgram ReifyReach ReifyProgramWalk
  FunctionFrameHistory FunctionFrameOps FunctionFrameSynth.
+From NM Require Import ProgramTail.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].
@@ -32,7 +33,14 @@ Qed.
 #[local]Hint Resolve kf_entry_zero_width_bound kf_check_main_signature_bound
  kh_entry_zero_width kh_check_main_signature:keepsdb.
 Lemma ff_elab_program:FF elab_program.
-Proof. unfold elab_program;fft. Qed.
+Proof.
+ rewrite program_split.
+ apply ff_bind;[fft|intro].
+ apply ff_bind;[fft|intro].
+ apply ff_bind;[fft|intro].
+ apply ff_bind;[exact ff_lower_all|intro].
+ apply ff_keeps;[exact program_tail_ok|exact program_tail_functions|exact program_tail_headers].
+Qed.
 Theorem actual_final_function_frames:forall b w p final,
  load_world b=Good w->elab_program(s_init w)=Good(p,final)->
  forall f body,nassoc f(st_fns final)=Some body->FunctionFrameOrigin final f body.

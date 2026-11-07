@@ -1,6 +1,6 @@
 (* Body bindings retain the context's already solved merge. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import NMap Sx Elab ElabSound ElabFrame.
+From NM Require Import NMap Sx Elab ElabSound.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 

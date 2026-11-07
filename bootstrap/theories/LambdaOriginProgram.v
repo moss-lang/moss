@@ -5,6 +5,7 @@ From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFra
  ForwarderHistory ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderEmit ReifyHeaderSynth
  ReifyHeaderPresent FnCompleted LambdaOrigin LambdaOriginOps LambdaOriginEmit LambdaOriginSynth
  LambdaCompletion LambdaCompletionOps LambdaCompletionEmit LambdaCompletionSynth LambdaCompletionProgram.
+From NM Require Import ProgramTail ProgramTailPreserve.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].
@@ -84,7 +85,8 @@ Proof.
  apply lhp_bind;[apply lhp_keeps;[okt|keepst|keepst|keepst]|intro u2].
  apply lhp_bind;[apply lhp_keeps;[okt|keepst|keepst|keepst]|intro u3].
  apply lhp_bind;[apply lhp_lower_all|intro u4].
- apply lhp_of_lh;lht.
+ change (LHP program_tail).
+ apply lhp_of_lh;exact program_tail_lh.
 Qed.
 From NM Require Import FnCoverage.
 Theorem actual_final_generated_origins:forall b w p final,

@@ -22,7 +22,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore.
 Import ListNotations.
 
 Local Strategy opaque [Nat.of_num_uint].

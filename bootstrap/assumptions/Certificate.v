@@ -6,88 +6,93 @@
 From NM Require Certified Parse FastPath Prune SlotX FoldX
   CachedClo CachedCloFacts XHeapC.
 
-Print Assumptions NM.Certified.Certified.elaborate.
-Print Assumptions NM.Certified.DumpCertified.elaborate_sx_reads.
-Print Assumptions NM.Certified.Certified.eval_deterministic.
-Print Assumptions NM.Certified.Certified.interp_sound.
-Print Assumptions NM.Certified.Certified.interp_complete.
-Print Assumptions NM.Certified.Certified.spec_eval.
-Print Assumptions NM.Certified.Certified.xinterp_conservative.
-Print Assumptions NM.Certified.Certified.prim_law.
-Print Assumptions NM.Certified.Certified.prim_mlaw.
-Print Assumptions NM.Certified.Certified.prim_ulaw.
-Print Assumptions NM.Certified.Certified.Typed.
-Print Assumptions NM.Certified.Certified.typed_safe.
-Print Assumptions NM.Certified.Certified.typed_inhabited.
-Print Assumptions NM.Certified.Certified.method_choice_unique.
-Print Assumptions NM.Certified.RuntimeCertified.expression_safe.
-Print Assumptions NM.Certified.RuntimeCertified.main_safe.
-Print Assumptions NM.Certified.RuntimeCertified.main_typing_inhabited.
-Print Assumptions NM.Certified.RuntimeCertified.heap_example.
-Print Assumptions NM.XHeapC.ConcreteHeap.heap_mono.
-Print Assumptions NM.XHeapC.ConcreteHeap.heap_empty.
-Print Assumptions NM.XHeapC.ConcreteHeap.heap_other.
-Print Assumptions NM.XHeapC.ConcreteHeap.heap_gc.
-Print Assumptions NM.Certified.FrontEndCertified.lexer_sound.
-Print Assumptions NM.Certified.FrontEndCertified.lexer_complete.
-Print Assumptions NM.Certified.FrontEndCertified.parse.
-Print Assumptions NM.Certified.FrontEndCertified.parser_sound.
-Print Assumptions NM.Certified.FrontEndCertified.parser_complete.
-Print Assumptions NM.Certified.LoaderCertified.load.
-Print Assumptions NM.Certified.LoaderCertified.load_sound.
-Print Assumptions NM.Certified.elaborate_sx.
-Print Assumptions NM.Certified.run_main.
-Print Assumptions NM.Certified.OracleCertified.fast_path_agrees.
-Print Assumptions NM.Certified.OracleCertified.engine_agrees.
-Print Assumptions NM.Certified.OracleCertified.mapped_engine_agrees.
-Print Assumptions NM.Certified.OracleCertified.slot_engine_agrees.
-Print Assumptions NM.Certified.OracleCertified.compiled_engine_agrees.
-Print Assumptions NM.Certified.OracleCertified.fast_engine_agrees.
+(* One dependency traversal computes the union for every field below.
+   Closed.v separately checks the roots that must not assume primitives. *)
+Definition certificate_roots :=
+ (@NM.Certified.Certified.elaborate,
+  @NM.Certified.DumpCertified.elaborate_sx_reads,
+  @NM.Certified.Certified.eval_deterministic,
+  @NM.Certified.Certified.interp_sound,
+  @NM.Certified.Certified.interp_complete,
+  @NM.Certified.Certified.spec_eval,
+  @NM.Certified.Certified.xinterp_conservative,
+  @NM.Certified.Certified.prim_law,
+  @NM.Certified.Certified.prim_mlaw,
+  @NM.Certified.Certified.prim_ulaw,
+  @NM.Certified.Certified.Typed,
+  @NM.Certified.Certified.typed_safe,
+  @NM.Certified.Certified.typed_inhabited,
+  @NM.Certified.Certified.method_choice_unique,
+  @NM.Certified.RuntimeCertified.expression_safe,
+  @NM.Certified.RuntimeCertified.main_safe,
+  @NM.Certified.RuntimeCertified.main_typing_inhabited,
+  @NM.Certified.RuntimeCertified.heap_example,
+  @NM.XHeapC.ConcreteHeap.heap_mono,
+  @NM.XHeapC.ConcreteHeap.heap_empty,
+  @NM.XHeapC.ConcreteHeap.heap_other,
+  @NM.XHeapC.ConcreteHeap.heap_gc,
+  @NM.Certified.FrontEndCertified.lexer_sound,
+  @NM.Certified.FrontEndCertified.lexer_complete,
+  @NM.Certified.FrontEndCertified.parse,
+  @NM.Certified.FrontEndCertified.parser_sound,
+  @NM.Certified.FrontEndCertified.parser_complete,
+  @NM.Certified.LoaderCertified.load,
+  @NM.Certified.LoaderCertified.load_sound,
+  @NM.Certified.elaborate_sx,
+  @NM.Certified.run_main,
+  @NM.Certified.OracleCertified.fast_path_agrees,
+  @NM.Certified.OracleCertified.engine_agrees,
+  @NM.Certified.OracleCertified.mapped_engine_agrees,
+  @NM.Certified.OracleCertified.slot_engine_agrees,
+  @NM.Certified.OracleCertified.compiled_engine_agrees,
+  @NM.Certified.OracleCertified.fast_engine_agrees,
 (* Supporting lemmas for the source soundness proof. *)
-Print Assumptions NM.Certified.world_reads.
-Print Assumptions NM.Certified.elaborate_world_reads.
-Print Assumptions NM.Certified.world_of_reading.
-Print Assumptions NM.Certified.world_resolves.
-Print Assumptions NM.Certified.context_method_named.
-Print Assumptions NM.Certified.context_type_meanings.
-Print Assumptions NM.Certified.DumpCertified.dump_reads.
-Print Assumptions NM.Certified.elaboration_frame.
-Print Assumptions NM.Certified.assume_types_exact.
+  @NM.Certified.world_reads,
+  @NM.Certified.elaborate_world_reads,
+  @NM.Certified.world_of_reading,
+  @NM.Certified.world_resolves,
+  @NM.Certified.context_method_named,
+  @NM.Certified.context_type_meanings,
+  @NM.Certified.DumpCertified.dump_reads,
+  @NM.Certified.elaboration_frame,
+  @NM.Certified.assume_types_exact,
 
 (* Partial verification milestone: actual function-frame coverage and
    runtime safety given an explicit typing certificate. These do not assert
    that every accepted source program supplies that certificate. *)
-Print Assumptions NM.Certified.SourceCertified.elaborate_metadata_projects.
-Print Assumptions NM.Certified.SourceCertified.loader_reads.
-Print Assumptions NM.Certified.SourceCertified.world_of_reading.
-Print Assumptions NM.Certified.SourceCertified.world_resolves.
-Print Assumptions NM.Certified.SourceCertified.elaborate_world_of.
-Print Assumptions NM.Certified.SourceCertified.context_type_meanings.
-Print Assumptions NM.Certified.SourceCertified.function_frames_total.
-Print Assumptions NM.Certified.RuntimeCertified.typed_runtime_never_err.
-Print Assumptions NM.Certified.RuntimeCertified.certified_reification_never_err.
+  @NM.Certified.SourceCertified.elaborate_metadata_projects,
+  @NM.Certified.SourceCertified.loader_reads,
+  @NM.Certified.SourceCertified.world_of_reading,
+  @NM.Certified.SourceCertified.world_resolves,
+  @NM.Certified.SourceCertified.elaborate_world_of,
+  @NM.Certified.SourceCertified.context_type_meanings,
+  @NM.Certified.SourceCertified.function_frames_total,
+  @NM.Certified.RuntimeCertified.typed_runtime_never_err,
+  @NM.Certified.RuntimeCertified.certified_reification_never_err,
 
 (* The front end moss_m2.ml runs on a source file: the Gallina lexer,
    parser and bundler (the driver only reads files), whose output the
    elaborator above reads. *)
-Print Assumptions NM.Parse.load_bundle.
-Print Assumptions NM.Parse.bundle_sx.
+  @NM.Parse.load_bundle,
+  @NM.Parse.bundle_sx,
 
 (* The default engine (MOSS_ENGINE=fold), as moss_m2.ml runs it: the family
    fast path, pruning, pre-resolution, folding and closure compilation,
    then the run; and the theorem that makes it Audit's semantics, given the tables the driver
    builds (README.md, What is trusted). *)
-Print Assumptions NM.FastPath.fast_program.
-Print Assumptions NM.Prune.oracle_program.
-Print Assumptions NM.SlotX.shapes.
-Print Assumptions NM.SlotX.compile_fns.
-Print Assumptions NM.SlotX.compile_funs.
-Print Assumptions NM.FoldX.fold_e.
-Print Assumptions NM.FoldX.fold_b.
-Print Assumptions NM.CachedClo.cc.
-Print Assumptions NM.CachedClo.ccbs.
-Print Assumptions NM.CloScalar.prepare_scalar.
-Print Assumptions NM.CloScalar.prepared_scalar_execution.
-Print Assumptions NM.CachedClo.crun_main.
-Print Assumptions NM.CachedCloFacts.engine_agrees.
-Print Assumptions NM.CachedCloFacts.fast_engine_agrees.
+  @NM.FastPath.fast_program,
+  @NM.Prune.oracle_program,
+  @NM.SlotX.shapes,
+  @NM.SlotX.compile_fns,
+  @NM.SlotX.compile_funs,
+  @NM.FoldX.fold_e,
+  @NM.FoldX.fold_b,
+  @NM.CachedClo.cc,
+  @NM.CachedClo.ccbs,
+  @NM.CloScalar.prepare_scalar,
+  @NM.CloScalar.prepared_scalar_execution,
+  @NM.CachedClo.crun_main,
+  @NM.CachedCloFacts.engine_agrees,
+  @NM.CachedCloFacts.fast_engine_agrees).
+
+Print Assumptions certificate_roots.
