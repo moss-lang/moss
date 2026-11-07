@@ -4243,13 +4243,15 @@ with LambdaProvider (W : world) (P : xprogram) : frame -> cx -> list (name * opt
    that applications supply; 3d: pins may not rebind M(F); 3e: every item
    of F's result is made by the binds, at the types F promises. *)
 with LinkBody (W : world) (P : xprogram) : nat -> nat -> nat -> Prop :=
-| LB : forall u gg h dg n ps a r bodies Cg nsg Fg wrap Cb Fb made outs Cr ks binds0 binds,
+| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs Cr ks binds0 binds,
     w_decl W gg = Some dg -> d_ast dg = ADFunctor n ps a r (Some bodies) ->
-    FunCtx W gg Cg nsg ->
-    (* 3b *)
-    (forall k t, In k nsg -> ~ (exists Cu nsu, FunCtx W u Cu nsu /\ In k nsu) ->
+    FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
+    (* 3b: a captured value may mention fixed or privately captured types,
+       but no target input type supplied afresh by each application. *)
+    (forall k t, In k nsg -> ~ In k nsu ->
        match k with
-       | IVal v => forall vt, nlook v (c_vals Cg) = Some vt -> In t (gens vt) -> nlook t (c_ty Cg) = None
+       | IVal v => forall vt, nlook v (c_vals Cg) = Some vt -> In t (gens vt) ->
+           nlook t (c_ty Cu) <> None -> Fixed W u t
        | _ => True end) ->
     fr_mod Fg = d_mod dg -> fr_pins Fg = [] \/ (forall x, In x (fr_pins Fg) <-> Mentions W u x) ->
     BindItems W P Fg Cg (concat bodies) wrap Cb Fb made ->
