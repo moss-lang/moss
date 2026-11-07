@@ -1,0 +1,19 @@
+# An abstract application cannot replace an input mentioned by the result.
+# The old method provision would otherwise survive under its stale key.
+type T;
+fn .out();
+fn done();
+tag Concrete;
+functor Make: -> T;
+functor Maker: -> T { bind T = Concrete; }
+functor Target[T]: T -> T.out, done;
+functor Provider: T, Make -> T.out, done {
+  bind T.out = () => {};
+  bind Make;
+  bind done = () => {};
+}
+fn main() {
+  bind T = Concrete;
+  bind Make = Maker;
+  bind Target = Provider;
+}

@@ -7342,6 +7342,30 @@ assume Std {
       }
       let made = cg_env.read();
       let gmade = cg_genv.read();
+      # D84 3d covers abstract applications as well as direct type binds:
+      # the provider must preserve the result's polymorphic input types.
+      if closed & (cl_check.read() == 1) {
+        let mentions = int_list();
+        let fixed = int_list();
+        lower::functor_mentions(fu, mentions);
+        lower::functor_fixed(fu, fixed);
+        var i = 0;
+        while i < mentions.length() {
+          let t = mentions.get(i);
+          if !types::contains_sym(fixed, t) {
+            let at = types::ty_of_symbol(types::kd_abstract(), t);
+            if lower::canon(gmade, at) != lower::canon(gmark, at) {
+              cg_error(prog::e_functor_sig(), prog::sym_name.get(t));
+              cg_env.write(emark);
+              cg_genv.write(gmark);
+              pv_top.write(pmark);
+              pv_floor.write(floor);
+              return ();
+            }
+          }
+          i = i + 1;
+        }
+      }
       # The type each of the result's types was made (D78). Here, in a
       # specialization, it is that type; to the code after this, checked
       # once against the generic environment, it is a fresh generation

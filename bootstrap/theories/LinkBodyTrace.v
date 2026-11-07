@@ -1,6 +1,6 @@
 (* Exact executable stages of the fresh link-body path. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound.
+From NM Require Import ReifyData Audit NMap Sx Elab ElabSound LinkPins.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Infix "+++" := List.app (right associativity, at level 60).
@@ -148,6 +148,7 @@ let owner := ROLink (gs_id fg) (gs_id bg) in
 register_reify_code owner eg gneeds None ;;
 let! (xs,eb,_) := in_reify_code owner
  (with_vars [] (apply_body fuel (link_trace_context bg ef' xf rts dr roles) eg bg)) in
+check_link_pins (gs_mod bg) eb (cx_pins (link_trace_context bg ef' xf rts dr roles)) ;;
 link_trace_after_body fg bg ef eg ef' eb xf rts dr roles xs.
 
 Definition link_trace_fresh (fuel : nat) (fg bg : gsym) :=
@@ -210,6 +211,30 @@ Proof.
  apply bind_inv in Run as [[[promised dr] roles] [sv [View Run]]].
  apply bind_inv in Run as [[] [registered [Register Run]]].
  apply bind_inv in Run as [[[xs eb] cb] [bodyFinal [Body Run]]].
+ apply bind_inv in Run as [[] [checked [Pins Run]]].
+ apply check_link_pins_state in Pins;subst checked.
+ exists promised,dr,roles,sv,registered,xs,eb,cb,bodyFinal.
+ repeat split;assumption.
+Qed.
+
+Theorem link_body_fresh_pin_receipt : forall fuel fg bg ef eg gneeds xf rts s h final,
+ link_trace_after_capture fuel fg bg ef eg gneeds xf rts s = Good (h,final) ->
+ exists promised dr roles sv registered xs eb cb bodyFinal,
+ fresh_target_output_view ef fg s = Good ((promised,dr,roles),sv) /\
+ register_reify_code (ROLink (gs_id fg) (gs_id bg)) eg gneeds None sv = Good (tt,registered) /\
+ in_reify_code (ROLink (gs_id fg) (gs_id bg))
+  (with_vars [] (apply_body fuel (link_trace_context bg promised xf rts dr roles) eg bg))
+  registered = Good ((xs,eb,cb),bodyFinal) /\
+ check_link_pins (gs_mod bg) eb (cx_pins (link_trace_context bg promised xf rts dr roles)) bodyFinal = Good (tt,bodyFinal) /\
+ link_trace_after_body fg bg ef eg promised eb xf rts dr roles xs bodyFinal = Good (h,final).
+Proof.
+ intros fuel fg bg ef eg gneeds xf rts s h final Run.
+ unfold link_trace_after_capture in Run.
+ apply bind_inv in Run as [[[promised dr] roles] [sv [View Run]]].
+ apply bind_inv in Run as [[] [registered [Register Run]]].
+ apply bind_inv in Run as [[[xs eb] cb] [bodyFinal [Body Run]]].
+ apply bind_inv in Run as [[] [checked [Pins Run]]].
+ pose proof(check_link_pins_state _ _ _ _ _ Pins)as State;subst checked.
  exists promised,dr,roles,sv,registered,xs,eb,cb,bodyFinal.
  repeat split;assumption.
 Qed.

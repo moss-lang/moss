@@ -3717,6 +3717,17 @@ Definition check_provider_effects (mi : nat) (bs : list xbind) : M unit :=
   if forallb no_nonlocal_return_bind bs then ret tt
   else err mi "a bound functor body cannot return from its caller".
 
+(* D84 3d also constrains type changes made by abstract applications:
+   checking direct type binds alone does not preserve the result's inputs. *)
+Definition check_link_pins (mi : nat) (after : env) (pins : list nat) : M unit :=
+  miter (fun t =>
+    if ety_eqb (canon after (opt_default (YAbs t) (tn_get after t)))
+               (canon after (YAbs t))
+    then ret tt
+    else let! g := sym t in
+         err mi ("a functor provider changes the polymorphic result input `" ++
+                 gs_name g ++ "` (D84 3d)")) pins.
+
 Fixpoint synth (fuel : nat) (c : cx) (e : env) (x : aexpr) (exp : option ety) {struct fuel}
     : M (xexpr * ety) :=
   match fuel with 0 => deep | S f =>
@@ -5016,6 +5027,7 @@ with link_body (fuel : nat) (fg bg : gsym) {struct fuel} : M nat :=
       let owner := ROLink (gs_id fg) (gs_id bg) in
       register_reify_code owner eg gneeds None ;;
       let! (xs, eb, _) := in_reify_code owner (with_vars [] (apply_body f c eg bg)) in
+      check_link_pins mi eb (cx_pins c) ;;
       let! binds := mmap (fun x => match stmt_bind x with
                                    | Some b => ret b
                                    | None => fail "internal: a functor body made a statement"

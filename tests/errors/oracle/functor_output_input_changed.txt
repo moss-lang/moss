@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/functor_output_input_changed.moss: a functor provider changes the polymorphic result input `T` (D84 3d)]
