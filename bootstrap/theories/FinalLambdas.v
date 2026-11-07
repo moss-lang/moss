@@ -1,7 +1,7 @@
 (* Final program bodies for every historical row of a generated lambda.
    Source recursion placeholders have other origins and are not included. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabFrame.
+From NM Require Import Audit NMap Sx Elab ElabFrameCore.
 Import ListNotations.
 Definition FinalLambdas(P:xprogram)(s:st):Prop:=forall key body owner,
  In(key,body)(st_fns s)->nget(st_syms s)key=Some owner->gs_origin owner=OLambda->

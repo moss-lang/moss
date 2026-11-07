@@ -1,7 +1,7 @@
 (* Context method lookup follows MethodNamed: an attached declaration in
    the receiver's file, otherwise a detached declaration in this scope. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore.
 Import ListNotations.
 Module A := Audit.Elaboration.
 

@@ -1,8 +1,8 @@
 (* Declared signatures read in an explicit receiver context. Unlike the
    plain-function specialization, this also covers method context items. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
-  BodySound BodyTy CtxWalk.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore
+  BodySoundCore BodyTy CtxWalk.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A := Audit.Elaboration.
@@ -13,7 +13,7 @@ Variable w : Elab.world.
 Context {P : xprogram}.
 Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 Notation path_of mi := (gm_path (get_mod w mi)).
 

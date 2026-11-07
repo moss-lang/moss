@@ -1,6 +1,6 @@
 (* The actual signature visitor, read against the final fixed requirements. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame BodySound BodyTy.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
@@ -8,7 +8,7 @@ Section Visitor.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Notation path_of mi:=(gm_path(get_mod w mi)).
 Definition FreeStep(step:list nat->M(list nat))(mi:nat)(t:aty):Prop:=
  forall out s found s',step out s=Good(found,s')->Inv s->st_w s=w->In mi(w_order w)->Later w P R Fl s'->

@@ -1,13 +1,13 @@
 (* The fixed-input half of the actual mutually recursive visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy NestingTypesExec.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy NestingTypesExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Section FixedStep.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Definition MentionCovers(f:nat):Prop:=forall self mi specs out s found s',
  result_mentions_go f self mi specs out s=Good(found,s')->Inv s->st_w s=w->In mi(w_order w)->Later w P R Fl s'->
  forall sp t,In sp specs->A.ResultMentions WW self(gm_path(get_mod w mi))sp t->In t found.

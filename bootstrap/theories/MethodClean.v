@@ -1,6 +1,6 @@
 (* Chosen method declarations belong to the loaded source world. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound MethodLookup.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore MethodLookup.
 Import ListNotations.
 Module A := Audit.Elaboration.
 

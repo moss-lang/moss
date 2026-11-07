@@ -1,6 +1,6 @@
 (* Completeness of the executable mutually recursive fixed-input visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  FreeVisitorCore ResultMentionExec ResultMentionsFold FixedInputsStep NestingTypesExec MethodLookup MethodLookupNone.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -24,7 +24,7 @@ Section Covers.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Definition FixedCovers(f:nat):Prop:=forall g n names args res s found s',
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n(Some names)args res None->
  functor_fixed_go f g s=Good(found,s')->

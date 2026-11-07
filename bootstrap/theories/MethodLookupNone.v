@@ -1,6 +1,6 @@
 (* Successful absence agrees with the attached-first semantic lookup. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame MethodLookup MethodKind.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore MethodLookup MethodKind.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Theorem find_method_decl_none:forall b w R Fl mi recv n s s',

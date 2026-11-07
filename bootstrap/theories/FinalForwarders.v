@@ -1,7 +1,7 @@
 (* Static final-program meaning of symbols generated as abstract-fn forwarders.
    Unlike a current table lookup this fact remains true at recursion markers. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabFrame ForwarderHistory ForwarderTrace.
+From NM Require Import Audit NMap Sx Elab ElabFrameCore ForwarderHistory ForwarderTrace.
 Import ListNotations.
 Definition FinalForwarders(w:Elab.world)(P:xprogram)(s:st):Prop:=
  forall key g target,nget(st_syms s)key=Some g->gs_origin g=OForwarder target->key<>0 /\

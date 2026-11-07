@@ -1,7 +1,7 @@
 (* The physical method row invariant needed by full provision enumeration.
    It is separate from canonical lookup, which cannot constrain hidden rows. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodyTr.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodyTr.
 Import ListNotations.
 Lemma method_key_eqb_spec:forall a b,ety_eqb a b=true<->a=b.
 Proof. intros;split;[apply ety_eqb_true|intros<-;apply ety_eqb_refl]. Qed.

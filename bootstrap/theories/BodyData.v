@@ -20,7 +20,7 @@ From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMon
 From NM Require CoreMoss.
 From NM Require Export EtyTyExec.
 From NM Require Import TagArgsCore TagArgsExec PayloadExec NominalSupport NominalMergeSupport SourceSupport.
-From NM Require Import InfoPreserve.
+From NM Require Import InfoPreserve ReadonlyHelpers.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -579,8 +579,31 @@ Definition am_step (f' : nat) (c : cx) (e : env) (exp : option ety) (sty : ety)
   let! r := match result with None => ret bty | Some r => join (cx_mod c) e r bty exp end in
   ret (xarms ++ [(pat, bx)], covered ++ ah, catch || ca, Some r).
 
+(* Reuse arm preservation before unfolding its execution into semantic cases. *)
+Local Lemma info_compile_pattern_data : forall mi e p sty heads,
+ okI(compile_pattern mi e p sty heads).
+Proof.
+ intros;apply okI_ni;[apply ok_compile_pattern|unfold compile_pattern;nit|].
+ eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst(fst x)));apply kr_compile_pattern.
+Qed.
+#[local]Hint Resolve info_compile_pattern_data:okIdb.
+Local Lemma fwd_compile_pattern_data : forall mi e p sty heads,
+ okF(compile_pattern mi e p sty heads).
+Proof. intros;apply okF_readonly;[apply ok_compile_pattern|apply kw_compile_pattern]. Qed.
+#[local]Hint Resolve fwd_compile_pattern_data:fwdb.
+Local Lemma info_am_step : forall f c e exp sty acc arm,okI(am_step f c e exp sty acc arm).
+Proof.
+ intros f c e exp sty [[[xs hs]ca]res] [pt body].
+ unfold am_step;cbn[fst snd];destruct body;okIt.
+Qed.
+Local Lemma fwd_am_step : forall f c e exp sty acc arm,okF(am_step f c e exp sty acc arm).
+Proof.
+ intros f c e exp sty [[[xs hs]ca]res] [pt body].
+ unfold am_step;cbn[fst snd];destruct body;fwt.
+Qed.
+
 Lemma ok_am_step : forall f' c e exp sty acc arm, ok (am_step f' c e exp sty acc arm).
-Proof. intros. unfold am_step, compile_pattern, join. okt. Qed.
+Proof. intros;exact(proj1(info_am_step f' c e exp sty acc arm)). Qed.
 
 Definition res_ok (e : env) (exp : option ety) (res0 : option ety) (T R : ety) : Prop :=
   match res0 with None => R = T | Some r0 => jn e exp r0 T = Some R end.
@@ -601,6 +624,8 @@ Proof.
   right. cbn [mfold] in H. bi H as acc1 s1 H1. okstep' H1 (ok_am_step f' c e exp sty (xr0, cov0, ca0, res0) arm) Hi Hi1 Fs1.
   pose proof (proj2 (ok_mfold _ _ _ rest _ (ok_am_step f' c e exp sty) s1 _ _ Hi1 H)) as Fr1.
   pose proof (post_back w P R Fl _ _ F Fr1 Hp) as Hp1.
+  assert(Ii1:InfoInv s1) by exact(proj2(info_am_step f' c e exp sty (xr0,cov0,ca0,res0) arm) _ _ _ Hi Ii H1).
+  assert(Ifwd1:FwdInv s1) by exact(proj2(fwd_am_step f' c e exp sty (xr0,cov0,ca0,res0) arm) _ _ _ Hi Ifwd H1).
   destruct arm as [pt body]. unfold am_step in H1. cbn [fst snd] in H1.
   bi H1 as r2 s2 Hpt. destruct r2 as [[[pat binders] ah] ca1].
   okstep' Hpt (ok_compile_pattern (cx_mod c) e pt sty (fold_left hstep (members sty) [])) Hi Hi2 Fs2.
@@ -622,8 +647,8 @@ Proof.
   pose proof (canon_uf e e_arm Earm) as Ecanon.
   assert (Eexp : option_map (fun t => trF (canon e_arm t)) exp = option_map (fun t => trF (canon e t)) exp).
   { destruct exp; cbn [option_map]; [rewrite Ecanon|]; reflexivity. }
-  assert (Ii2 : InfoInv s2) by cache_inv.
-  assert (Ifwd2 : FwdInv s2) by fwd_inv.
+  assert (Ii2 : InfoInv s2) by exact(proj2(info_compile_pattern_data (cx_mod c) e pt sty (fold_left hstep (members sty) [])) _ _ _ Hi Ii Hpt).
+  assert (Ifwd2 : FwdInv s2) by exact(proj2(fwd_compile_pattern_data (cx_mod c) e pt sty (fold_left hstep (members sty) [])) _ _ _ Hi Ifwd Hpt).
   (* Every non-block constructor uses the same expression soundness fact. *)
   assert (ExprArm : forall y x ty last,
     synth f' c e_arm y exp s2 = Good ((x, ty), last) ->
@@ -661,7 +686,7 @@ Proof.
   rewrite Ecanon, Eexp in Hbr, Hof.
   assert (Wr : WFty r) by (destruct res0 as [r0|]; [destruct (jn_tr _ _ _ _ _ Ej (proj2 (cr_uf _ _ _ _ _ _ _ Hc)) Wr0 Wbt Wx) as [_ W']; exact W' | subst r; exact Wbt]).
   assert(Sr:Support WW r)by(destruct res0 as[r0|];[exact(jn_support _ _ _ _ _ Ej Sr0 Sbt Sx)|subst r;exact Sbt]).
-  destruct (IHr _ _ _ _ s1 xr cov ca res s' H Hi1 ltac:(cache_inv) ltac:(fwd_inv) ltac:(rewrite (fr_w _ _ Fs1); exact Hw) Hc Hp Ws Ss Wx Sx Wr Sr)
+  destruct (IHr _ _ _ _ s1 xr cov ca res s' H Hi1 Ii1 Ifwd1 ltac:(rewrite (fr_w _ _ Fs1); exact Hw) Hc Hp Ws Ss Wx Sx Wr Sr)
     as [(-> & -> & -> & -> & ->) | (xarms & covd & cad & T & R0 & -> & -> & -> & -> & Hl & Ho & WT & ST & WR & SR)].
   - (* the last arm *)
     exists [(pat, bx)], ah, ca1, bty, r. split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|].

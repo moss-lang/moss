@@ -1,6 +1,6 @@
 (* Actual source type reading preserves declaration and argument support. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  BodyTy SigSound CanonBodyTy PartialBodyTy SourceClean NominalSupport TySupport.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -18,14 +18,14 @@ Variable w:Elab.world.
 Context {P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 
 Lemma loaded_record_unowned : A.kind_sym WW A.rec_head=None.
 Proof.
  assert(E:nget(w_syms w)0=None).
  { destruct(nget(w_syms w)0)as[g|]eqn:Eg; [|reflexivity].
    exfalso. exact(loader_nonzero w R Fl b Hload 0 g Eg eq_refl). }
- unfold A.kind_sym,BodySound.W,WorldSound.W_read,A.rec_head.
+ unfold A.kind_sym,BodySoundCore.W,WorldSound.W_read,A.rec_head.
  cbn[A.w_decl]. rewrite E. reflexivity.
 Qed.
 

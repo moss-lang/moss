@@ -1,6 +1,6 @@
 (* Shared source tag argument reader; separated from body construct proofs. *)
 From Stdlib Require Import List.
-From NM Require Import Audit Sx Elab ElabSound ElabFrame.
+From NM Require Import Audit Sx Elab ElabSound ElabFrameCore.
 Import ListNotations.
 Definition tag_args(c:cx)(e:env)(g:gsym)(a:sapp):M(list(nat*ety)) :=
  let! tm:=match a with
