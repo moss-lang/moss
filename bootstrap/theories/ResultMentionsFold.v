@@ -1,6 +1,6 @@
 (* Actual left folds preserve and collect lower-bound mention facts. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound ReqsSolve.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore ReqsSolve.
 Import ListNotations.
 Lemma mentions_addl:forall l out t,
  In t(fold_left(fun o x=>if nmem x o then o else o++[x])l out)<->In t out\/In t l.

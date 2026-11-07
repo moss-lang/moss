@@ -1,6 +1,6 @@
 (* A definitional view of the actual result-item visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  FreeVisitorCore ResultMentionsFold FixedInputsStep.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -58,7 +58,7 @@ Section Rhs.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Definition rhs_type(q:path*spec):aty:=
  match snd q with Spec(Some p)_ a=>ATRef p a|_=>ATUnit end.
 Theorem result_rhs_rel:forall mi bs out s found s',

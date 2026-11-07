@@ -1,6 +1,6 @@
 (* Raw type validity is preserved while assumptions and their contexts merge. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy Merge CanonTypes SourceClean ContextClean MethodClean.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy Merge CanonTypes SourceClean ContextClean MethodClean.
 Import ListNotations.
 Local Open Scope list_scope.
 

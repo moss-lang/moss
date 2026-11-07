@@ -1,6 +1,6 @@
 (* Chosen methods are function declarations in the method namespace. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound BodySound BodyTy MethodLookup.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound BodySoundCore BodyTy MethodLookup.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Section Exports.

@@ -18,7 +18,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySound BodyTy Merge CanonTypes SourceClean ContextClean ContextWalkClean ResultMentionsCover ResultMentionsExact MethodRows.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy Merge CanonTypes SourceClean ContextClean ContextWalkClean ResultMentionsCover ResultMentionsExact MethodRows.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -56,13 +56,13 @@ Inductive lent :=
 | LMth (r : ety) (m : nat) (g : Elab.fsig) (a : Elab.inst)
 | LFun (u : nat) (fx : list (nat * ety)).
 
-(* ety_ok (BodySound.v): a type tr reads apart from every other such type. *)
+(* ety_ok (BodySoundCore.v): a type tr reads apart from every other such type. *)
 
 Section Walk.
 Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 Notation path_of mi := (gm_path (get_mod w mi)).
 

@@ -1,6 +1,6 @@
 (* The actual item-type enumeration, including nested contexts. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame BodySound BodyTy.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Theorem load_world_nesting_types:forall b w R Fl,
@@ -27,7 +27,7 @@ Section Outputs.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem result_types_rel:forall g n ps args res body s xs s',
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n ps args res body->
  result_types g s=Good(xs,s')->Inv s->st_w s=w->
@@ -53,7 +53,7 @@ Section Parameters.
 Variable w:Elab.world.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem functor_params_names:forall g n names args res body s keys s',
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n(Some names)args res body->
  functor_params g s=Good(Some keys,s')->Inv s->st_w s=w->
@@ -82,7 +82,7 @@ End Parameters.
 Section FixedDeclarations.
 Variable w:Elab.world.
 Variables(R:nat->list nat)(Fl:string->nat).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma fixed_named_iff:forall g n names args res t,
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n(Some names)args res None->
  A.Fixed WW(gs_id g)t<->

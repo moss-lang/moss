@@ -1,6 +1,6 @@
 (* Source type readings in a context carrying a nonempty merge. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy SigSound Merge CanonTypes TyOfSubst.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy SigSound Merge CanonTypes TyOfSubst.
 Import ListNotations.
 Module A := Audit.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].

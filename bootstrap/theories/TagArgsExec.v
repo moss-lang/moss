@@ -1,7 +1,7 @@
 (* Actual nominal-argument enumeration, independent of source bracket parsing. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
-  BodySound BodyTy ReqsSolve.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore
+  BodySoundCore BodyTy ReqsSolve.
 Import ListNotations.
 Module A := Audit.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
@@ -64,7 +64,7 @@ Variable w : Elab.world.
 Context {P : xprogram}.
 Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation path_of mi := (gm_path (get_mod w mi)).
 
 Theorem tag_args_rel_at : forall c e g a s xs s' tmr,
@@ -127,7 +127,7 @@ Hypothesis Hload : load_world b = Good w.
 Theorem tag_args_canonical : forall c e F C g a s xs s',
   tag_args c e g a s = Good(xs,s') -> Inv s -> st_w s=w ->
   CxRel w R Fl c e F C -> Later w P R Fl s' ->
-  exists bs, A.Brackets (BodySound.W w R Fl) (A.fr_mod F) (A.c_ty C) (gs_id g) a bs /\
+  exists bs, A.Brackets (BodySoundCore.W w R Fl) (A.fr_mod F) (A.c_ty C) (gs_id g) a bs /\
     Forall2 (fun r q=>fst q=r /\ A.nlook r (bs++A.c_ty C)=Some(snd q))
       (R(gs_id g)) (trxC Fl e xs) /\ Forall(fun p=>WFty(snd p)) xs.
 Proof.
@@ -179,7 +179,7 @@ Variable w:Elab.world.
 Context {P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 
 Lemma nominal_args_support : forall mi g tm s xs s',
  nominal_args mi g tm s=Good(xs,s') -> Inv s -> Later w P R Fl s' ->

@@ -1,6 +1,6 @@
 (* Source types cannot construct the reserved nominal record head. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame BodySound BodyTy CanonTypes.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore BodySoundCore BodyTy CanonTypes.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
