@@ -220,6 +220,8 @@ out of fuel (`FastPath.fast_run`):
   filtering run only if a type lookup observes them. This avoids allocating
   unused type parameters when ordinary arithmetic helpers call one another.
   Each forced stream still has exactly the reference list and lookup order.
+  Ordinary lookup selects the binding kind before scanning the value stream,
+  preserving the same first match while avoiding repeated kind comparisons.
   Calls construct the final environment directly, with a single suspended
   concatenation for the common proper-type case.
   Captured environments retain those streams;

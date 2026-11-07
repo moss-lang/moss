@@ -49,8 +49,24 @@ with fenv : Type :=
 Definition fempty := FEnv [] (Rows []) None.
 Fixpoint tlookup t (xs:list(tsym*fentry)) := match xs with
  |[]=>None|(u,en)::rest=>if Nat.eqb t u then Some en else tlookup t rest end.
-Fixpoint dlookup i (xs:list(item*fentry)) := match xs with
- |[]=>None|(j,en)::rest=>if item_eqb i j then Some en else dlookup i rest end.
+Fixpoint dlookup_generic i (xs:list(item*fentry)) := match xs with
+ |[]=>None|(j,en)::rest=>if item_eqb i j then Some en else dlookup_generic i rest end.
+(* Select the key family once per lookup, outside the environment scan. *)
+Definition dlookup (i:item):list(item*fentry)->option fentry:=
+ match i with
+ |ITy t=>fix look xs:=match xs with []=>None|(ITy u,en)::rest=>if Nat.eqb t u then Some en else look rest|_::rest=>look rest end
+ |IVal v=>fix look xs:=match xs with []=>None|(IVal w,en)::rest=>if Nat.eqb v w then Some en else look rest|_::rest=>look rest end
+ |IFn f=>fix look xs:=match xs with []=>None|(IFn h,en)::rest=>if Nat.eqb f h then Some en else look rest|_::rest=>look rest end
+ |IFun h=>fix look xs:=match xs with []=>None|(IFun j,en)::rest=>if Nat.eqb h j then Some en else look rest|_::rest=>look rest end
+ |IMth r m th=>fix look xs:=match xs with []=>None|(IMth r' m' th',en)::rest=>
+    if ty_eqb r r' && Nat.eqb m m' && subst_eqb th th' then Some en else look rest|_::rest=>look rest end end.
+Lemma dlookup_generic_eq : forall i xs,dlookup i xs=dlookup_generic i xs.
+Proof.
+ intros i xs;induction xs as[|[j en]rest IH];[destruct i;reflexivity|].
+ destruct i,j;cbn[dlookup dlookup_generic item_eqb]in *;try exact IH;
+ repeat match goal with |-context[if ?b then _ else _]=>destruct b end;first[reflexivity|exact IH].
+Qed.
+
 Definition flookup i d := match d with FEnv values types _=>match i with
  |ITy t=>tlookup t(force_rows types)|_=>dlookup i values end end.
 Definition fadd i en d := match d with FEnv values types meta=>match i with

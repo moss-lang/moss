@@ -16,7 +16,8 @@ Qed.
 Lemma dlookup_app : forall i a b,
  dlookup i(a++b)=match dlookup i a with Some en=>Some en|None=>dlookup i b end.
 Proof.
- intros i a;induction a as[|[j en]a IH];intro b;cbn;[reflexivity|].
+ intros i a b;repeat rewrite dlookup_generic_eq.
+ induction a as[|[j en]a IH];cbn;[reflexivity|].
  destruct(item_eqb i j);[reflexivity|apply IH].
 Qed.
 Lemma flookup_merge : forall a b i,
