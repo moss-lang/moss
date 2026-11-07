@@ -218,7 +218,9 @@ Local Ltac generic_reader :=
  try discriminate Run;injection Run as _ <-;reflexivity.
 
 Local Ltac generic_leaf := first[solve[generic_reader]|apply P_base;[solve[keepst]|solve[nit]|solve[okt]]].
-Local Ltac generic_tac := repeat(fintros;first[solve[auto 2]|lazymatch goal with
+(* The shortcut uses the previous fuel hypotheses. The structural cases
+   apply the construction methods. *)
+Local Ltac generic_tac := repeat(fintros;first[solve[clear P_base P_bind P_map P_fold P_iter P_vars P_fn_info P_wrapper P_forwarder_step P_lower_body_step P_lambda_provider_step Const_step Path_step;auto 2]|lazymatch goal with
  | |-P(fn_info _)=>apply P_fn_info
  | |-P(mbind _ _)=>apply P_bind
  | |-P(mmap _ _)=>apply P_map
