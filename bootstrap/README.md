@@ -264,9 +264,13 @@ decision), and the obligations, as module types (Part VI):
   bootstrap's time; so the oracle runs `FastPath.fast_program` of the
   elaborated program (before pruning; `MOSS_FASTPATH=0` skips it), which
   gives each application of a platform family whose members are
-  primitives (`Memories`) only the members the code after it can look
-  up, when a syntactic check shows that nothing binds, copies or renames
-  the family. `FastPath.fast_run`: the result is exactly the elaborated
+  nonallocating primitives (`Memories`) and whose results contain no types
+  only the members the code after it can look up, when a syntactic check
+  shows that nothing binds, copies or renames the family. This also applies
+  to programs with runtime type tracking: the simulation preserves their
+  complete type streams, including instantiation and type exports from
+  other families, so checked GC casts keep the same behavior.
+  `FastPath.fast_run`: the result is exactly the elaborated
   program's, at every fuel at which that run does not run out of fuel;
   `OracleCertified` binds it as `fast_path_agrees` and binds the combined
   result for the default pipeline as `fast_engine_agrees`.

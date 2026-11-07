@@ -38,6 +38,10 @@ The development includes proofs of:
 - Exact preparation and reuse of nonallocating scalar-family results in the
   closure engine, retaining type arguments, result order and fuel behavior
   ([`CloScalar.v`](theories/CloScalar.v)).
+- Narrowing nonallocating primitive families with no type results while
+  preserving runtime type meanings and checked GC casts
+  ([`FastPath.v`](theories/FastPath.v),
+  [`FastPathExamples.v`](theories/FastPathExamples.v)).
 
 “Checked” here describes proved component theorems, including their explicit
 premises. It does not assert that every premise has been discharged for every
