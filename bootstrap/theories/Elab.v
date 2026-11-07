@@ -3336,7 +3336,7 @@ Definition expect_defined_fn (mi : nat) (y : aexpr) : M gsym :=
 Definition expect_provider (c : cx) (e : env) (y : aexpr) (this : ety) : M gsym :=
   let mi := cx_mod c in
   match y with
-  | AEField (AEPath rp _) n =>
+  | AEField (AEPath rp None) n =>
       let! rt := resolve_sym mi rp in
       match rt with
       | Some rg =>
@@ -3351,7 +3351,7 @@ Definition expect_provider (c : cx) (e : env) (y : aexpr) (this : ety) : M gsym 
             match att with
             | Some ag =>
                 if is_some (fn_body ag) then
-                  match head this with
+                  match head (canon e this) with
                   | Some hh => if Nat.eqb hh (gs_id rg) then ret ag
                                else let! s := show this in
                                     err mi ("provider `" ++ gs_name ag ++ "` is attached to `" ++ gs_name rg ++ "`, not `" ++ s ++ "`")

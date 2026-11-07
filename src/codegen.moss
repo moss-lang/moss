@@ -5998,6 +5998,10 @@ assume Std {
         cg_error(c_unsupported(), prog::sym_name.get(sym));
         return ();
       }
+      if ast::d_of(value) == 1 {
+        cg_error(c_unsupported(), prog::sym_name.get(sym));
+        return ();
+      }
       let g = prog::resolve_path(m, ast::a_of(value));
       if !ast::is_some(g) {
         cg_error(prog::e_scope(), ast::path_last(ast::a_of(value)));
@@ -8905,6 +8909,10 @@ assume Std {
 
     fn named_fn(value: Int, m: Int): Int {
       if ast::kind_of(value) == ast::k_ex_path() {
+        # A provider names code; its substitutions come from the bind.
+        if ast::d_of(value) == 1 {
+          return ast::none();
+        }
         let sym = prog::resolve_path(m, ast::a_of(value));
         if ast::is_some(sym) {
           if is_compilable(sym) {
@@ -8918,6 +8926,9 @@ assume Std {
       if ast::kind_of(value) == ast::k_ex_field() {
         let obj = ast::a_of(value);
         if ast::kind_of(obj) == ast::k_ex_path() {
+          if ast::d_of(obj) == 1 {
+            return ast::none();
+          }
           let recv = prog::resolve_path(m, ast::a_of(obj));
           if ast::is_some(recv) {
             let found = prog::find_attached(

@@ -701,6 +701,12 @@ fn context_method_receiver_follows_alias() {
     agree("tests/wasi/context_alias_receiver.moss", &[], "");
 }
 
+/// Attached providers use the receiver after context merging.
+#[test]
+fn attached_provider_receiver_uses_merged_type() {
+    agree("tests/wasi/method_provider_merged_receiver.moss", &[], "");
+}
+
 #[test]
 fn functor_application_checks_merged_input_types() {
     let entry = "tests/wasi/functor_merge_apply.moss";

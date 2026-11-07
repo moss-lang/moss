@@ -165,7 +165,9 @@ no named `noop` and no wrapper to attach to. A method bind may carry a bracket a
 (`bind IntList.get[Elem=Int]=Ints.get;`), which is how a method declared
 once for several receivers is provided at one of them: the bindings
 interpret the abstract signature the provider is matched against, and they
-apply to that bind alone. No other kind of bind takes one.
+apply to that bind alone. No other kind of bind takes one. Named function
+and method providers are unapplied names; an explicit application belongs on the method bind's
+left-hand side, rather than on the provider name.
 
 Calling a defined function requires each of its needs to be available at
 the call site by key. Since a bound symbol may be known to the callee under

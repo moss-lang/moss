@@ -1,0 +1,9 @@
+# Named providers are unapplied names. These nonexistent bracket names
+# must not disappear when the receiver's attached method is selected.
+tag Receiver;
+fn Receiver.provide() {}
+fn .method();
+fn main() {
+  bind Receiver.method = Receiver[Missing=DoesNotExist].provide;
+  Receiver.method();
+}

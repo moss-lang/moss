@@ -34,13 +34,12 @@ The development includes proofs of:
   generated lambda/provider cases. These feed the remaining body-proof
   dispatcher in [`BodyPending.v`](theories/BodyPending.v); they do not yet
   establish soundness for every accepted bundle.
-- Anonymous method bindings, including explicit left-hand type brackets, now
-  follow from the
-  actual binding execution, with canonical receiver/signature readings and
-  the emitted method key/substitution
-  ([`BindMethodLambdaExec.v`](theories/BindMethodLambdaExec.v)).
-  [`BodyPending.v`](theories/BodyPending.v) excludes these cases from its
-  remaining binding callback; other provider cases remain open.
+- All method bindings follow from actual elaborator execution, including
+  anonymous providers, attached named methods, plain-function receiver
+  wrappers, and explicit left-hand type brackets
+  ([`BindMethodExec.v`](theories/BindMethodExec.v)).
+  [`BodyPending.v`](theories/BodyPending.v) excludes method bindings from
+  its remaining callback; non-method provider cases remain open.
 - Actual source Bool selection for every successful elaboration, including
   the absence case, with no pending body-soundness premises
   ([`MainProgramBool.v`](theories/MainProgramBool.v)).
@@ -102,10 +101,10 @@ not a termination or trap-freedom guarantee.
 `ComponentContracts.COMPLETE` additionally names elaboration completeness. No completeness
 claim is made here; completeness is outside the current soundness milestone.
 
-A known remaining native/oracle discrepancy is attached method-provider
-selection for a merged receiver: `expect_provider` still reads its head
-before canonicalization, so the oracle can reject a native-accepted program.
-The unfinished correction is outside this checkpoint.
+Attached method-provider selection now uses the canonical receiver in both
+native and oracle execution. Named providers reject right-hand applications
+rather than silently discarding them. Regression tests cover merged receiver
+contexts, ignored application names, and empty applications.
 
 ## Trust and validation boundaries
 

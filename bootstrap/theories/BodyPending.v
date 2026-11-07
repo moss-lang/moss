@@ -8,13 +8,13 @@
 (* Pending, assembled from BodyData (fields, records, match), BodyOps      *)
 (* (operators), BodyLit (literals), BodyConst (defined vals) and call_step,*)
 (* Actual library lookup, ordinary calls, attached calls, method families    *)
-(* and literal families are discharged here. The remaining source callbacks *)
-(* is MethodRemainingBindStep (the remaining provider binding cases).     *)
+(* and literal families are discharged here. The remaining source callback *)
+(* covers only non-method bindings (NonMethodRemainingBindStep).           *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyData BodyOps
-  BodyTag BodyConst BodyLit CallAbstract ProvidedDirect LiteralDirect BindSequence MethodCallRoutes AttachedCallNoDemand CallDefinedAny BindCopyDispatch BindFnDispatch BindLambdaDispatch BindMethodDispatch LibraryFacts FamilyCallbacks CallDefinedDemand AttachedCallDemand FunctorApplyExec.
+  BodyTag BodyConst BodyLit CallAbstract ProvidedDirect LiteralDirect BindSequence MethodCallRoutes AttachedCallNoDemand CallDefinedAny BindCopyDispatch BindFnDispatch BindLambdaDispatch BindMethodAllDispatch LibraryFacts FamilyCallbacks CallDefinedDemand AttachedCallDemand FunctorApplyExec.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -92,13 +92,13 @@ Proof.
  exact(@method_sound w P R Fl b Hload f IH(Hfamily f IH)(Hmethdefined f IH)
   c e o pa args exp s v t s' F C H Hi Ii Ifwd Hc Hp).
 Qed.
-Hypothesis Hmethod_remainingbind : forall f, OK w P R Fl f -> MethodRemainingBindStep w P R Fl f.
+Hypothesis Hnonmethod_remainingbind : forall f, OK w P R Fl f -> NonMethodRemainingBindStep w P R Fl f.
 Lemma Hlambda_remainingbind : forall f, OK w P R Fl f -> LambdaRemainingBindStep w P R Fl f.
 Proof.
  intros [|f] IH.
  - intros c e sp y s xs e1 c1 sf Run;discriminate Run.
- - exact (@residual_after_method_lambda w P R Fl b Hload HFl f
-     (ok_down w P R Fl f IH) (Hmethod_remainingbind (S f) IH)).
+ - exact (@residual_after_method_bindings w P R Fl b Hload Hworld HFl f
+     (ok_down w P R Fl f IH) (Hnonmethod_remainingbind (S f) IH)).
 Qed.
 Lemma Hremainingbind : forall f, OK w P R Fl f -> RemainingBindStep w P R Fl f.
 Proof.

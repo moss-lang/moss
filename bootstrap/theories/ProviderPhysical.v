@@ -35,6 +35,8 @@ Proof.
  try solve[eapply expect_defined_fn_physical;eassumption].
  match goal with o:aexpr|-_=>destruct o end;
  try solve[eapply expect_defined_fn_physical;eassumption].
+ match goal with a:sapp|-_=>destruct a end;
+ try solve[eapply expect_defined_fn_physical;eassumption].
  apply bind_inv in Run as(found&sr&Resolve&Run);destruct(resolve_sym_physical_provider _ _ _ _ _ Resolve Hi)as[-> Phys].
  destruct found as[rg|];[|eapply expect_defined_fn_physical;eassumption].
  destruct(kind_eqb(gs_kind rg)KUnit||kind_eqb(gs_kind rg)KTag);[|eapply expect_defined_fn_physical;eassumption].
@@ -45,7 +47,7 @@ Proof.
  Some key=>Some key|None=>assoc attached_eqb(gs_id rg,n)(gm_attached(get_mod(st_w s)(cx_mod c)))end)as[key|]eqn:Candidate.
  - apply bind_inv in Att as(pv&sp&Lookup&Ret);destruct(sym_physical_provider _ _ _ _ Lookup Hi)as[-> Physical].
    injection Ret as <- <-.
-   destruct(is_some(fn_body pv));[|provider_no_good Run];destruct(head this);[|provider_no_good Run].
+   destruct(is_some(fn_body pv));[|provider_no_good Run];destruct(head(canon e this));[|provider_no_good Run].
    destruct(Nat.eqb n0(gs_id rg));[|provider_no_good Run].
    injection Run as <- <-;split;[reflexivity|exact Physical].
  - injection Att as <- <-;provider_no_good Run.
