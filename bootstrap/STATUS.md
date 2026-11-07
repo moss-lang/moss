@@ -38,6 +38,11 @@ The development includes proofs of:
 - Exact preparation and reuse of nonallocating scalar-family results in the
   closure engine, retaining type arguments, result order and fuel behavior
   ([`CloScalar.v`](theories/CloScalar.v)).
+- Deferred runtime type substitutions and split captured environments,
+  with exact interpreter and closure-compiler agreement at every fuel
+  ([`LazyEnvFacts.v`](theories/LazyEnvFacts.v),
+  [`LazyInterpFacts.v`](theories/LazyInterpFacts.v),
+  [`LazyCloFacts.v`](theories/LazyCloFacts.v)); available as `MOSS_ENGINE=lazy`.
 - Narrowing nonallocating primitive families with no type results while
   preserving runtime type meanings and checked GC casts
   ([`FastPath.v`](theories/FastPath.v),

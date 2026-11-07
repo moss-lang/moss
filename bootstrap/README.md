@@ -110,7 +110,7 @@ errors and positions included.
   - [`Certified.v`](theories/Certified.v): binds the implementation to the
     obligations `Audit.v` states, as far as they are proved.
 - [`ocaml/`](ocaml): the oracle. [`Extract2.v`](ocaml/Extract2.v) is
-  the extraction to OCaml (`CachedClo.v` a second time on its own, with
+  the extraction to OCaml (`CachedClo.v` and `LazyClo.v` again on their own, with
   extraction's optimizations off; below), and `moss_m2.ml` the driver (it
   reads files and the command line, builds the engine's tables, and
   prints). The extracted code links against Rocq's own implementations of
@@ -206,10 +206,28 @@ out of fuel (`FastPath.fast_run`):
     happens once (`CachedCloFacts.cc_agrees`). Its environments cache the
     type substitution and type-only rows while preserving the raw environment
     and its lookup order. Extract2.v extracts CachedClo a second time
-    alone (`Extraction Library CachedClo`, last) with extraction's term
+    alone (`Extraction Library CachedClo`) with extraction's term
     optimizations off (`Set Extraction Flag 0`), so the code of a node's
     children and argument lists stays computed once, outside the closure
     that runs it, rather than being rebuilt at every evaluation.
+- `lazy`: [`LazyClo.v`](theories/LazyClo.v) compiles expressions directly
+  to closures over [`LazyX.v`](theories/LazyX.v)'s split environments.
+  Ordinary bindings, type bindings and the proper-type projection have
+  separate ordered streams. Captured environments retain those streams;
+  entering a closure does not rebuild its type projection. Type substitution
+  is deferred until a cast or allocating primitive observes it, and its
+  result is memoized by Rocq's standard coinductive extraction to OCaml
+  `Lazy.t`. A suspension captures only the type projection and the type,
+  so it does not retain a machine state or ordinary value bindings.
+  [`LazyEnvFacts.v`](theories/LazyEnvFacts.v) relates ordinary lookups and
+  type observations to the reference environment, including duplicate keys
+  and malformed type rows. [`LazyInterpFacts.v`](theories/LazyInterpFacts.v)
+  proves exact interpreter agreement at every fuel, and
+  [`LazyCloFacts.v`](theories/LazyCloFacts.v) proves closure compilation and
+  composes that agreement with pruning and the family fast path. This
+  engine remains opt-in while complete bootstrap measurements are pending.
+- `lazy-ref`: the same environments with AST dispatch
+  (`LazyInterpFacts.frun_main_eq`).
 - `clo`: the same without folding (`CachedCloFacts.crun_main_eq` and
   `SlotX.slot_oracle_agrees`);
 - `slot`: `SlotX.rinterp` on the pre-resolved program
@@ -296,6 +314,15 @@ extracted `CachedClo.prepare_scalar_cache`; `tbl_ok` requires those exact templa
 These are the hypotheses of `CachedCloFacts.engine_agrees`, and no theorem checks
 that the arrays meet them: that rests on reading `moss_m2.ml`'s
 `MOSS_ENGINE` block, and on testing against the `ref` engine.
+
+For `lazy`, the driver compiles the bodies in the elaborated program
+straight into two arrays. `LazyCloFacts.tbl_ok` requires each function entry
+and functor entry to be exactly the compiled first body for that symbol,
+and compiled closures read the same arrays. The driver fills entries in
+reverse order so the first definition wins, and finishes both arrays before
+running the program. This table construction remains trusted driver code;
+the exact engine theorem and the combined fast-path theorem are included
+in the certificate assumption audit alongside the existing engine roots.
 
 ## What it does not model
 

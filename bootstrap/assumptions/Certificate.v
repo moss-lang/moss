@@ -4,7 +4,7 @@
    them to be only the kernel's `Primitive` declarations (Rocq's primitive
    integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Certified Parse FastPath Prune SlotX FoldX
-  CachedClo CachedCloFacts XHeapC.
+  CachedClo CachedCloFacts LazyX LazyClo LazyInterpFacts LazyCloFacts XHeapC.
 
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
@@ -93,6 +93,17 @@ Definition certificate_roots :=
   @NM.CloScalar.prepared_scalar_execution,
   @NM.CachedClo.crun_main,
   @NM.CachedCloFacts.engine_agrees,
-  @NM.CachedCloFacts.fast_engine_agrees).
+  @NM.CachedCloFacts.fast_engine_agrees,
+
+(* The deferred-type engines, with exact environment/compiler agreement and
+   the same fast-path and pruning exceptions as the original pipeline. *)
+  @NM.LazyX.frun_main,
+  @NM.LazyClo.cc,
+  @NM.LazyClo.ccbs,
+  @NM.LazyClo.crun_main,
+  @NM.LazyInterpFacts.frun_main_eq,
+  @NM.LazyCloFacts.crun_main_eq,
+  @NM.LazyCloFacts.engine_agrees,
+  @NM.LazyCloFacts.fast_engine_agrees).
 
 Print Assumptions certificate_roots.

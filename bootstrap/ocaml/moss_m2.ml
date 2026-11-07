@@ -299,7 +299,11 @@ let () =
      - slot: SlotX.rrun_main on the pre-resolved program
        (SlotX.slot_oracle_agrees);
      - ref: Audit's interpreter itself (XS.run_main);
-     - fast: FastX.frun_main, map-keyed environments (FastX.frun_main_eq).
+     - fast: FastX.frun_main, map-keyed environments (FastX.frun_main_eq);
+     - lazy: split environments and deferred type substitutions, compiled
+       directly to closures (LazyCloFacts.crun_main_eq);
+     - lazy-ref: the same environments with AST dispatch
+       (LazyInterpFacts.frun_main_eq).
      The arrays below are trusted driver code, as the Hashtbl realizing
      program_of's xp_fn above is: they are the hypotheses of
      CloX.engine_agrees (README.md, What is trusted).  `table` realizes
@@ -310,6 +314,19 @@ let () =
      (the knot CloX.tbl_ok describes). *)
   let engine = match Sys.getenv_opt "MOSS_ENGINE" with Some e -> e | None -> "fold" in
   let r = match engine with
+    | "lazy-ref" -> LazyX.frun_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
+    | "lazy" ->
+        (* LazyCloFacts.tbl_ok: the first body for a symbol wins, as in
+           program_of's nlook. The compiled closures refer back to these
+           arrays, which are completely populated before evaluation starts. *)
+        let nf = 1 + List.fold_left (fun n (f,_) -> max n f) 0 p.Audit.xo_fns in
+        let nu = 1 + List.fold_left (fun n (u,_) -> max n u) 0 p.Audit.xo_funs in
+        let a = Array.make nf None and b = Array.make nu None in
+        let tbl f = if f >= 0 && f < nf then a.(f) else None in
+        let ftbl u = if u >= 0 && u < nu then b.(u) else None in
+        List.iter (fun (f,e) -> a.(f) <- Some (LazyClo.cc prog tbl ftbl e)) (List.rev p.Audit.xo_fns);
+        List.iter (fun (u,(dr,bs)) -> b.(u) <- Some (dr, LazyClo.ccbs prog tbl ftbl bs)) (List.rev p.Audit.xo_funs);
+        LazyClo.crun_main tbl max_int p.Audit.xo_main p.Audit.xo_env st0
     | "fast" -> FastX.frun_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
     | "ref" -> run_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
     | "slot" | "clo" | "fold" ->

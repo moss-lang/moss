@@ -1,7 +1,7 @@
 (* Extraction of the M2 oracle: the Gallina elaborator and MossX.run_main. *)
 From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
-From NM Require Import Audit CoreMoss MossX Sx Elab FastX Prune Parse SlotX FoldX FastPath CachedClo.
+From NM Require Import Audit CoreMoss MossX Sx Elab FastX Prune Parse SlotX FoldX FastPath CachedClo LazyX LazyClo.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".
@@ -37,14 +37,18 @@ Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
    (`lcons (cc e) cr`); as top-level 6-ary OCaml functions every call would
    go through caml_curry.  Inlined, each is a 4-ary closure built once, at
    closure-compile time.  Unchanged in meaning. *)
-Extraction Inline lnil lcons lvar lval bnil capply capply_r cbranch csnil cscons.
+Extraction Inline CachedClo.lnil CachedClo.lcons CachedClo.lvar CachedClo.lval
+  CachedClo.bnil CachedClo.capply CachedClo.capply_r CachedClo.cbranch csnil cscons
+  LazyClo.lnil LazyClo.lcons LazyClo.lvar LazyClo.lval LazyClo.bnil
+  LazyClo.capply LazyClo.capply_r LazyClo.cbranch.
 Extraction Blacklist String List Char Bool.
-Separate Extraction run_main frun_main fast_program oracle_program init_state xinterp f64_bits f64_of_bits elaborate_sx
+Separate Extraction run_main FastX.frun_main fast_program oracle_program init_state xinterp f64_bits f64_of_bits elaborate_sx
   parse_moss Dump.dump_file print_sx load_bundle bundle_sx print_bundle
-  rrun_main shapes compile_fns compile_funs cc ccbs crun_main fold_e fold_b.
+  rrun_main shapes compile_fns compile_funs CachedClo.cc CachedClo.ccbs CachedClo.crun_main fold_e fold_b
+  LazyX.frun_main LazyClo.cc LazyClo.ccbs LazyClo.crun_main.
 (* CachedClo again, alone (Extraction Library), with the extraction's term
    optimizations off (flag 0); this rewrites the CachedClo.ml written above, and
-   must stay last.  Its speed depends on where its closures are built,
+   must follow Separate Extraction.  Its speed depends on where its closures are built,
    and the optimizations may move them: inline `let ca := <list code> in
    fun n d g st => ..` (the argument list's code would then be rebuilt at
    every evaluation), or lift `fun n d g st` out of `fun e cr => match e
@@ -54,3 +58,5 @@ Separate Extraction run_main frun_main fast_program oracle_program init_state xi
 Set Extraction Flag 0.
 Extraction Library CloScalar.
 Extraction Library CachedClo.
+Extraction Library LazyX.
+Extraction Library LazyClo.
