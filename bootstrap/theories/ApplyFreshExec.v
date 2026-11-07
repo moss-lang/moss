@@ -1,6 +1,6 @@
 (* New output generations are genuinely fresh in the loaded source world. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy ApplyAbstractExec.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy ApplyAbstractExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Lemma new_sym_id:forall mi n k d o s id s',new_sym mi n k d o s=Good(id,s')->id=st_next s.
@@ -22,7 +22,7 @@ Proof.
 Qed.
 Theorem new_sym_fresh:forall s g mi n k d o id s',
  Inv s->st_w s=w->nget(w_syms w)(gs_id g)=Some g->
- new_sym mi n k d o s=Good(id,s')->A.Fresh(BodySound.W w R Fl)id.
+ new_sym mi n k d o s=Good(id,s')->A.Fresh(BodySoundCore.W w R Fl)id.
 Proof.
  intros s g mi n k d o id s' Hi Hw Hg E.
  pose proof(new_sym_id _ _ _ _ _ _ _ _ E)as ->.
@@ -42,7 +42,7 @@ Lemma output_generation_properties:forall e fg t s p s',
  nget(w_syms w)(gs_id fg)=Some fg->Inv s->st_w s=w->
  output_generation e fg t s=Good(p,s')->
  fst p=t /\ ((tn_get e t=None/\snd p=t)\/
- (tn_get e t<>None/\A.Fresh(BodySound.W w R Fl)(snd p)/\snd p<>t)).
+ (tn_get e t<>None/\A.Fresh(BodySoundCore.W w R Fl)(snd p)/\snd p<>t)).
 Proof.
  intros e fg t s p s' Hg Hi Hw E. unfold output_generation in E.
  destruct(tn_get e t)eqn:Here.
@@ -63,7 +63,7 @@ Proof. intros;unfold output_generation;okt. Qed.
 Section GeneratedList.
 Variables(b:bundle)(w:Elab.world)(R:nat->list nat)(Fl:string->nat). Context{P:xprogram}.
 Hypothesis Hload:load_world b=Good w.
-Let W:=BodySound.W w R Fl.
+Let W:=BodySoundCore.W w R Fl.
 Definition GenRel(e:env)(t:nat)(p:nat*nat):Prop:=fst p=t /\
  ((tn_get e t=None/\snd p=t)\/(tn_get e t<>None/\A.Fresh W(snd p)/\snd p<>t)).
 Theorem output_generations_rel:forall e fg ts s gens s',
@@ -121,7 +121,7 @@ Qed.
 
 Section ModelOutputs.
 Variable w:Elab.world. Variables(R:nat->list nat)(Fl:string->nat).
-Let W:=BodySound.W w R Fl.
+Let W:=BodySoundCore.W w R Fl.
 Definition generation_of(gens:list(nat*nat))(t:nat):nat:=opt_default t(nassoc t gens).
 Theorem generation_output_premise:forall c e F C rts gens ss th2 ss' th,
  CxRel w R Fl c e F C->Forall2(GenRel w R Fl e)rts gens->

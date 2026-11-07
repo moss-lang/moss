@@ -2,7 +2,7 @@ From NM Require Import WrapperKeyReadonly.
 (* A real named defined provider closes the ordinary function-bind branch. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve
- BodySound BodyTr BodyTy Merge CanonTypes ProviderSig FnProviderDefinedExec FnSigExec
+ BodySoundCore BodyTr BodyTy Merge CanonTypes ProviderSig FnProviderDefinedExec FnSigExec
  ProvideResultContext BindValue CallCacheExec SignatureLeavesExec.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -14,9 +14,9 @@ Section Bind.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem check_bind_named_defined:forall fuel c e pp pg s xs e' c' s' F C f u pn pps prt pbody,
  check_bind fuel c e(Spec(Some pp)None None)(AEPath pg None)s=Good((xs,e',c'),s')->
  A.resolve_sym WW(A.fr_mod F)pp=Some f ->A.kind_sym WW f=Some A.DKFn ->

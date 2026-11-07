@@ -1,7 +1,7 @@
 (* A definitional view of the actual result-item visitor. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
- FreeVisitorCore ResultMentionsFold FixedInputsStep.
+ FreeVisitorCore ResultMentionsFold.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque [Nat.of_num_uint FUEL free_type_syms type_requirements reqs].

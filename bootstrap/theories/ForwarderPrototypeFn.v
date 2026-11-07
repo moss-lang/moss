@@ -1,6 +1,6 @@
 (* The target provision in a first forwarder walk has an identity application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  CanonTypes CanonBodyTy CtxWalk SigSound InfoCache ForwarderPrototypeSeed FnSnapshotAlign.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -9,7 +9,7 @@ Section PrototypeFn.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem add_forwarder_function:forall fuel e mi target needs s e' needs' final n ps rt body,
  PrototypeSeed e(R(gs_id target))->nget(w_syms w)(gs_id target)=Some target->
  gs_kind target=KFn->gs_decl target=ADFn RPlain n ps rt body->

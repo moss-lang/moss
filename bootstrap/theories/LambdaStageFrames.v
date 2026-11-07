@@ -1,6 +1,6 @@
 (* Actual successful lambda suffixes supply the earlier static/body frames. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame BodySound
+From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore
  LambdaTrace LambdaSmapIdentity.
 Import ListNotations.
 Lemma ok_lambda_generated:forall fuel c en ps body sg this pid lets,

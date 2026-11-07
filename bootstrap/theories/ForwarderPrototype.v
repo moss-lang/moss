@@ -1,7 +1,7 @@
 (* Cached and newly computed forwarder contexts retain the actual identity
    application and a declaration signature read at requirement names. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr CtxWalk CtxMerge
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr CtxWalk CtxMerge
  InfoInvariant InfoPreserve InfoCache FnInfoCore ForwarderPrototypeSeed ForwarderPrototypeWalk FnSnapshotAlign.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -20,7 +20,7 @@ Section Prototype.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma forwarder_walk_info:forall g t target s e needs final n ps rt body,
  gs_origin g=OForwarder t->nget(w_syms w)t=Some target->gs_kind target=KFn->
  gs_decl target=ADFn RPlain n ps rt body->ReqTypes w R t->Inv s->st_w s=w->Later w P R Fl final->
@@ -31,7 +31,7 @@ Proof.
  intros g t target s e needs final n ps rt body Origin Loaded Kind Decl Types Hi Hw L Run.
  destruct(forwarder_merged_walk w (P:=P) R Fl b Hload g t target s e needs final n ps rt body
  Origin Loaded Kind Decl Types Hi Hw L Run)as[seed[sg[stamp[Seed[-> [Sig ->]]]]]].
- unfold ForwarderPrototype;cbn[A.w_reqs BodySound.W W_read fi_needs fi_apps fi_merges].
+ unfold ForwarderPrototype;cbn[A.w_reqs BodySoundCore.W W_read fi_needs fi_apps fi_merges].
  split;[exists(tr_sig Fl sg);exact Sig|]. split;[reflexivity|]. split.
  - cbn[map];rewrite get_app_freeze.
    unfold get_app;cbn[set_app set_fn en_apps];rewrite(seed_apps _ _ Seed).

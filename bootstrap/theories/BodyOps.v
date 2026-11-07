@@ -1,18 +1,19 @@
+From NM Require Import BodyProofTools.
 (* ------------------------------------------------------------------------ *)
 (* BodyOps.v — operators against V.6 (Track A, elaborate_sound step 2;    *)
-(* BodySound.v's Pending, pd_synth for AEUnary and AEBinary).              *)
+(* BodySoundCore.v's Pending, pd_synth for AEUnary and AEBinary).              *)
 (*                                                                           *)
 (* An operator is its library's detached method on the (left) operand      *)
 (* ([D68], and [D85]'s `for.` operators: Audit note 60), called as any     *)
 (* provided method is.  What this file assumes (section hypotheses):       *)
 (*   Hlang      the library modules the elaborator reads (lang_modules) are *)
-(*              Part V's LangSym: the generalization of BodySound's Hbool; *)
+(*              Part V's LangSym: the generalization of BodySoundCore's Hbool; *)
 (*   Hprovided  [the other half of Track A: calls and methods]              *)
 (*              provided_call is Part V's Provided.                         *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound BodyDataHelpers Merge CanonTypes.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyDataHelpers Merge CanonTypes.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -36,12 +37,12 @@ Local Strategy opaque [Nat.of_num_uint FUEL].
 
 Section Ops.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 
 (* [D45], [D68], [D85]: a declaration of a library module the elaborator
    reads (lang_modules) is the relation's LangSym (an obligation of the
-   library's shape, as BodySound's Hbool) *)
+   library's shape, as BodySoundCore's Hbool) *)
 Hypothesis Hlang : forall (short : string) (det : bool) (n : string) (li x : nat), sassoc short (lang_modules w) = Some li ->
   sassoc n (if det then gm_detached (get_mod w li) else gm_names (get_mod w li)) = Some x ->
   A.LangSym WW short (if det then A.NSDetached else A.NSName) n x.

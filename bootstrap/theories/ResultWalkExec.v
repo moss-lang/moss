@@ -1,7 +1,7 @@
 (* The actual general result visitor, with recursive contexts, sequential
    occurrences, and fixed readings derived from real mention availability. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  CtxWalk CtxMerge NominalSupport FamilyResultFold FamilyResultWalk
  OutputScopeExec ResultItemsFold ResultTypedLeaves ResultTrivialLeaves ResultSymbolShapes
  ProvideResultDomain ProvideResultReading ProvideResultFunction ProvideResultMethod ProvideFunctorContext.
@@ -14,7 +14,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma result_item_successor:forall self f,
  ResultItemsOK w (P:=P) R Fl self f->ResultItemOK w (P:=P) R Fl self(S f).
 Proof.

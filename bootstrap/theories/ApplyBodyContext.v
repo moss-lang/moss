@@ -1,6 +1,6 @@
 (* Enter a defined functor's module and restore the caller control frame. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab BodySound BodyTr CanonTypes.
+From NM Require Import Audit NMap Sx Elab BodySoundCore BodyTr CanonTypes.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Definition body_exit_frame(F inner:A.frame):A.frame:=

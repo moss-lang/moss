@@ -1,5 +1,5 @@
 (* ------------------------------------------------------------------------ *)
-(* BodyPending.v — BodySound.Pending from the construct lemmas (Track A,   *)
+(* BodyPending.v — BodySoundCore.Pending from the construct lemmas (Track A,   *)
 (* elaborate_sound step 2).                                                 *)
 (*                                                                           *)
 (* call_step is pd_synth for every AECall: a call the elaborator accepts   *)
@@ -13,7 +13,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound BodyData BodyOps
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyData BodyOps
   BodyTag BodyConst BodyLit CallAbstract ProvidedDirect LiteralDirect BindSequence MethodCallRoutes AttachedCallNoDemand CallDefinedAny BindCopyDispatch BindFnDispatch BindLambdaDispatch LibraryFacts FamilyCallbacks CallDefinedDemand AttachedCallDemand FunctorApplyExec.
 From NM Require Import InfoPreserve.
 Import ListNotations.
@@ -36,7 +36,7 @@ Ltac nogood H := exfalso;
 
 Section Pend.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 Notation trx := (BodyData.trx Fl).
 Variable b : bundle.
@@ -130,7 +130,7 @@ Proof.
   cbn [option_map ent_of] in Hres. bi H1 as g s3 Hs.
   destruct (sym_loader w R Fl b Hload _ _ _ _ _ _ Hi Hw Hres Hs) as [-> Hg].
   exists x. split; [unfold A.resolve_sym; rewrite (cr_mod _ _ _ _ _ _ _ Hc), Hres; reflexivity|].
-  unfold BodySound.W. rewrite (kind_sym_read b w R Fl Hload x g Hg).
+  unfold BodySoundCore.W. rewrite (kind_sym_read b w R Fl Hload x g Hg).
   destruct (gs_kind g); try nogood H1; [left | right]; reflexivity.
 Qed.
 

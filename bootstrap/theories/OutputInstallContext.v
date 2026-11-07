@@ -1,6 +1,6 @@
 (* Real generated output-type installation forms the result reader's type table. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr BodyTy Merge CanonTypes
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTr BodyTy Merge CanonTypes
  NominalSupport BindType ProvideResultExec ProvideResultContext ApplyFreshExec FamilyResultFold.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -32,7 +32,7 @@ Proof.
 Qed.
 Section Install.
 Variable w:Elab.world. Variables(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma output_install_fold:forall ts gens c e0 e F C s et sf,
  mfold(install_output_type gens)e ts s=Good(et,sf)->CxRel w R Fl c e F C->en_uf e=en_uf e0->
  (forall t,In t ts->nassoc t gens<>None)->

@@ -1,6 +1,6 @@
 (* Actual abstract-to-abstract functor binding. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  Merge CanonTypes CtxWalk CtxMerge FunctorContext ResultMentionsExact
  SignatureLeavesExec CopyFixedExec FunctorCopyContext FunctorCopyMap ProvideResultFixed.
 Import ListNotations.
@@ -18,7 +18,7 @@ Section Copy.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Ltac copy_frame E Hi NewI NewF :=
  lazymatch type of E with ?m ?s=Good(?a,?s')=>
  let O:=fresh"O"in assert(O:ok m)by okt;

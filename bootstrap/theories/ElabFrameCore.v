@@ -930,6 +930,9 @@ Proof. intros. unfold replay_reify_constant. okt. Qed.
 #[export] Hint Resolve ok_replay_reify_constant : okdb.
 
 (* The executable initial state is shared by operational input invariants. *)
+Lemma ok_fun_env : forall g, ok (fun_env g).
+Proof. intros;unfold fun_env;okt. all:apply ok_merged_walk_frame;intros;okt. Qed.
+
 Definition s_init (w : Elab.world) : st :=
   St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false [] (lang_modules w) [] (ReifyData.empty_reify_metadata ety key).
 

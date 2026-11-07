@@ -1,7 +1,7 @@
 (* The actual capture filter and allocation fold form the exact lexical
    context requested by LP, including every fresh capture slot. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore
  LambdaTrace LambdaCaptureNames LambdaCaptureContext LambdaCaptureFold LambdaCaptureTables LambdaCapturedLocals.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -24,7 +24,7 @@ Section Context.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem lambda_captured_context:forall c original F Co ps body s le pre lets sf bound,
  mfold(lambda_capture_one c original)(with_locals original[],[],[])(lambda_captured c original ps body)s=Good((le,pre,lets),sf)->
  Inv s->st_w s=w->nget(w_syms w)(gs_id bound)=Some bound->CxRel w R Fl c original F Co->Post w P R Fl sf F->

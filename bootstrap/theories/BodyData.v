@@ -1,8 +1,9 @@
+From NM Require Import BodyProofTools.
 (* ------------------------------------------------------------------------ *)
 (* BodyData.v — records, tags, fields and `match` against V.6 (Track A,    *)
-(* elaborate_sound step 2; BodySound.v's Pending, the data constructs).    *)
+(* elaborate_sound step 2; BodySoundCore.v's Pending, the data constructs).    *)
 (*                                                                           *)
-(* Each lemma here is BodySound.Pending's pd_synth for one construct: from  *)
+(* Each lemma here is BodySoundCore.Pending's pd_synth for one construct: from  *)
 (* the judgments at fuel f (OK f) to synth at f+1.  The helpers the        *)
 (* elaborator uses for a construct (synth_field, synth_match, …) run at    *)
 (* fuel f and call synth at f-1; ElabMono's fuel monotonicity gives OK f-1  *)
@@ -16,7 +17,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound Merge CanonTypes PatternSubst.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore Merge CanonTypes PatternSubst.
 From NM Require CoreMoss.
 From NM Require Export EtyTyExec.
 From NM Require Import TagArgsCore TagArgsExec PayloadExec NominalSupport NominalMergeSupport SourceSupport.
@@ -62,7 +63,7 @@ Definition mmap_pure := @EtyTyExec.mmap_pure.
 
 Section Data.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 Variable b : bundle.
 Hypothesis Hload : load_world b = Good w.

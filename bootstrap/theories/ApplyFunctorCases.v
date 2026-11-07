@@ -1,7 +1,7 @@
 From NM Require Import WrapperKeyReadonly.
 (* The actual application dispatcher resolves a loaded functor and preserves its inputs. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
  InfoPreserve FwdInvariant FwdReadonly.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -9,7 +9,7 @@ Section Cases.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem apply_functor_cases:forall f c e sp s xs e' c' sf F C,
  apply_functor(S f)c e sp s=Good((xs,e',c'),sf)->
  Inv s->InfoInv s->FwdInv s->st_w s=w->CxRel w R Fl c e F C->

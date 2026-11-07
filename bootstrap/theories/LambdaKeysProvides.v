@@ -1,7 +1,7 @@
 (* Real physical method rows and the genuine semantic receiver domain close
    the finite provision-key interface required by a lambda. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySound BodyTr CtxMerge NMapEnum
+From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr CtxMerge NMapEnum
  MethodRows LambdaKeysAvailable.
 Import ListNotations.
 Module A:=Audit.Elaboration.

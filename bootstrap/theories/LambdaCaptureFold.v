@@ -1,7 +1,7 @@
 (* The actual capture fold allocates distinct fresh slots and preserves the
    exact enclosing-local types, names, and generated binding order. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv BodySoundCore
  LambdaTrace LambdaCaptureStep LambdaCaptureContext NominalSupport.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -18,7 +18,7 @@ Section Capture.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem lambda_capture_fold:forall qs c original F Co le C pre lets s le' pre' lets' sf bound,
  mfold(lambda_capture_one c original)(le,pre,lets)qs s=Good((le',pre',lets'),sf)->
  Inv s->st_w s=w->nget(w_syms w)(gs_id bound)=Some bound->

@@ -1,7 +1,7 @@
 (* Actual value result installation, including canonical declaration reading
    and the full outgoing context relation. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTy
  Merge CanonTypes BindValue SourceSupport NominalSupport ProvideResultReading ProvideResultCanonical
  ProvideResultSubst TyOfSubst.
 Import ListNotations.
@@ -11,7 +11,7 @@ Section Value.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem provide_value_context_read:forall c e F C g t tm tmr out s e' keys s',
  provide_value_code e g t tm out s=Good((e',keys),s')->
  Inv s->st_w s=w->In(gs_mod g)(w_order w)->Later w P R Fl s'->

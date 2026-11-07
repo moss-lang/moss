@@ -1,7 +1,7 @@
 (* Actual method output formation preserves the full source context invariant. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
- Merge CanonTypes CanonBodyTy TySupport CtxWalk CtxMethodExec MethodLookup MethodLookupNone MethodKind MethodKeyTr SigSound FreeTypesExec
+ Merge CanonTypes CanonBodyTy TySupport CtxWalk MethodLookup MethodLookupNone MethodKind MethodKeyTr SigSound FreeTypesExec
  SourceClean SourceSupport FnSigExec NeedMapExec NominalSupport FamilyMethodExec
  FamilyResultFold ProvideResultMethod ProvideResultFunction ProvideResultReading ProvideResultContext.
 Import ListNotations.

@@ -64,4 +64,26 @@ Proof.
   - destruct rt as [t|]; [|injection H3 as <- _; reflexivity].
     exact (proj1 (ety_of_rel_at _ _ _ _ _ _ _ _ _ H3 Hi1 Hw1 Hgm Ht Wthis L)).
 Qed.
+Lemma recvty_exec:forall mi recv tm tmr e s this s',
+ (match nassoc(gs_id recv)tm with Some y=>ret y|None=>symbol_type 200 mi recv tm e end)s=Good(this,s')->
+ Inv s->st_w s=w->nget(w_syms w)(gs_id recv)=Some recv->TmRel Fl tm tmr e->Later w P R Fl s'->
+ A.RecvTy WW(gs_id recv)tmr(tr Fl this)/\WFty this.
+Proof.
+ intros mi recv tm tmr e s this s' H Hi Hw Hr TR L.
+ destruct(nassoc(gs_id recv)tm)as[y|]eqn:Nt.
+ - injection H as <- <-. split.
+   + unfold A.RecvTy. rewrite(proj1 TR(gs_id recv)),Nt;reflexivity.
+   + exact(proj1(proj2 TR)_ _ Nt).
+ - destruct(proj2(proj2(ty_all w R Fl b Hload 200))mi recv tm e s this s' tmr H Hi Hw Hr TR L)as[Wt Sem].
+   split;[|exact Wt]. unfold A.RecvTy. rewrite(proj1 TR(gs_id recv)),Nt.
+   rewrite(w_decl_rd w R Fl _ _ Hr). cbn[A.d_ast A.d_mod].
+   pose proof(load_world_kind b w Hload _ _ Hr)as KO. unfold KindOK in KO.
+   destruct(gs_kind recv)eqn:K;cbn in Sem;try contradiction.
+   + rewrite(proj1 TR(gs_id recv)),Nt in Sem;discriminate Sem.
+   + destruct Sem as(args&E&Fs). destruct(gs_decl recv);try(exists args;split;[exact E|exact Fs]).
+     cbn[A.kind_of kconv]in KO;discriminate KO.
+   + destruct Sem as(n&body&D&Et). rewrite D;exact Et.
+   + destruct Sem as(args&E&Fs). destruct(gs_decl recv);try(exists args;split;[exact E|exact Fs]).
+     cbn[A.kind_of kconv]in KO;discriminate KO.
+Qed.
 End Signature.

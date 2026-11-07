@@ -1,7 +1,7 @@
 (* Actual lambda generation discharges every LP premise: lexical captures,
    fresh slots, checked annotations, exact body and finite provision keys. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  InfoPreserve CanonTypes NominalSupport MethodRows CtxMerge
  LambdaAnnotations LambdaPrefixExec LambdaTrace LambdaInputTrace LambdaEntryInv LambdaStageFrames
  LambdaCaptureNames LambdaCaptureContext LambdaCaptureFold LambdaCaptureTables LambdaCapturedLocals LambdaCapturedContext
@@ -13,7 +13,7 @@ Section Provider.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem lambda_provider_sound:forall fuel c original ps rt body bound sg this what s pid pre sm final,
  OK w P R Fl fuel->lambda_provider fuel c original ps rt body bound sg this what s=Good((pid,pre,sm),final)->
  forall F Co,Inv s->InfoInv s->FwdInv s->st_w s=w->nget(w_syms w)(gs_id bound)=Some bound->

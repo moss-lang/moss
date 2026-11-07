@@ -1,7 +1,7 @@
 (* General actual result installation: only real application input availability
    and the generated output domain are required. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  CtxMerge NominalSupport NestingTypesExec ApplyFreshExec OutputInstallContext
  ProvideResultExec ProvideResultContext ProvideResultDomain ProvideResultFold
  FamilyResultFold ResultWalkExec ResultItemsFold.
@@ -28,7 +28,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem general_provide_result:forall c e F C g n names args res gens s e' keys sf,
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->
  provide_result e g gens s=Good((e',keys),sf)->

@@ -1,7 +1,7 @@
 (* Function outputs retain the shared signature/application snapshot at their
    actual declaration read, then freeze both meanings canonically. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  Merge CanonTypes TySupport SourceSupport SourceClean NominalSupport CanonBodyTy FnSigExec
  ProvideResultReading ProvideResultFunction ProvideResultCanonical ProvideResultContext.
 Import ListNotations.
@@ -11,7 +11,7 @@ Section Function.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem provide_function_context_read:forall c e F C g tm tmr out s e' keys s' rcv n ps rt body,
  provide_function_code e g tm out s=Good((e',keys),s')->
  Inv s->st_w s=w->nget(w_syms w)(gs_id g)=Some g->

@@ -1,7 +1,7 @@
 (* The generated lambda body satisfies the actual block judgment under its
    exact lexical context, at the type it really inferred. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame InfoPreserve BodySound BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame InfoPreserve BodySoundCore BodyTr
  CanonTypes NominalSupport LambdaTrace LambdaOwnContext LambdaCaptureTables LambdaCapturedLocals
  LambdaCaptureFold LambdaBodyContext LambdaNumbering LambdaGeneratedScope LambdaDeclarations.
 Import ListNotations.
@@ -24,7 +24,7 @@ Lemma lambda_checked_block_fits:forall W P F C block expected compiled inferred,
 Proof. intros W P F C block expected compiled inferred E;inversion E;subst;assumption. Qed.
 Section Body.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem lambda_generated_sound:forall fuel c original F Co le C ps body sg this pid lets registered compiled bodyFinal,
  OK w P R Fl fuel->
  lambda_generated_body fuel c(lambda_own_env ps sg this le lets)ps body sg this pid lets registered=Good(compiled,bodyFinal)->

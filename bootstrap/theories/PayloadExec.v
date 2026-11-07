@@ -1,7 +1,7 @@
 (* The actual payload reader, before specializing its argument environment. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
-  BodySound BodyTy SigSound.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore
+  BodySoundCore BodyTy SigSound.
 Import ListNotations.
 Module A := Audit.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL].
@@ -17,7 +17,7 @@ Theorem payload_type_rel_at : forall x g name ps body xs xsr e s pay s',
   payload_type (YNom x xs) e s = Good (pay,s') ->
   Inv s -> st_w s = w -> TmRel Fl xs xsr e ->
   Later w P R Fl s' ->
-  A.PayloadOf (BodySound.W w R Fl) x xsr (tr Fl pay) /\ WFty pay.
+  A.PayloadOf (BodySoundCore.W w R Fl) x xsr (tr Fl pay) /\ WFty pay.
 Proof.
   intros x g name ps body xs xsr e s pay s' Hg Hd E Hi Hw T L.
   pose proof (iv_loader _ Hi b ltac:(rewrite Hw; exact Hload) x g
@@ -39,7 +39,7 @@ Variable w : Elab.world.
 Context {P : xprogram}.
 Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 
 Theorem payload_type_complete : forall c e F C x xs s pay s',
   payload_type (YNom x xs) e s = Good(pay,s') -> Inv s -> st_w s=w ->
@@ -105,7 +105,7 @@ Variable w : Elab.world.
 Context {P : xprogram}.
 Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 
 Theorem payload_type_support : forall c e F C x xs s pay s',
  payload_type(YNom x xs)e s=Good(pay,s') -> Inv s -> st_w s=w ->

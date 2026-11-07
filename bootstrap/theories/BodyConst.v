@@ -1,20 +1,21 @@
+From NM Require Import BodyProofTools.
 (* ------------------------------------------------------------------------ *)
 (* BodyConst.v — a defined val's inlined initializer against ExConst       *)
-(* (Track A, elaborate_sound step 2; BodySound.v's Pending, pd_const).     *)
+(* (Track A, elaborate_sound step 2; BodySoundCore.v's Pending, pd_const).     *)
 (*                                                                           *)
 (* const_step is pd_const: from OK f to ConstOK at f+1.  A val elaborated  *)
 (* before is read from const_val's cache, whose entries the final state    *)
-(* keeps (Elab's cache only grows: ElabFrame's fx_consts) and BodySound's  *)
+(* keeps (Elab's cache only grows: ElabFrame's fx_consts) and BodySoundCore's  *)
 (* Later reads as ConstFact (lt_consts).  A val elaborated now is its      *)
 (* initializer, synthesized at fuel f in the frame of a fresh numbering.   *)
 (*                                                                           *)
 (* What this file assumes (section hypotheses):                             *)
-(*   Hty   BodySound.Pending's pd_ty: elab_type against TyOf (the other    *)
+(*   Hty   BodySoundCore.Pending's pd_ty: elab_type against TyOf (the other    *)
 (*         half of Track A, BodyTy.v on that branch).                       *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound Merge CanonTypes.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore Merge CanonTypes.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -35,7 +36,7 @@ Ltac nogood H := exfalso;
 
 Section Const.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 Variable b : bundle.
 Hypothesis Hload : load_world b = Good w.

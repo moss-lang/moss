@@ -1,6 +1,6 @@
 (* Literal arithmetic at a method already in force. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound ElabFrame ElabMono BodySound BodyLit
+From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound ElabFrame ElabMono BodySoundCore BodyLit
  EtyTyExec CanonTypes NominalSupport TySupport SourceSupport MethodKeyTr.
 Import ListNotations.
 Set Implicit Arguments.
@@ -9,7 +9,7 @@ Module LD := Audit.Elaboration.
 Section Direct.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b=Good w.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation tc := (fun e t => tr Fl (canon e t)).
 Theorem literal_direct : forall fuel c e ox T oy m sg s x t s' F C,
  get_mth e (canon e T) (gs_id m)=Some sg ->

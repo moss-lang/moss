@@ -3,7 +3,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
  InfoInvariant InfoPreserve FwdInvariant FwdReadonly FwdPreserve
- BodySound FnBodyScope LambdaTrace LambdaNumbering.
+ BodySoundCore FnBodyScope LambdaTrace LambdaNumbering.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Definition lambda_capture_declaration(q:string*nat*ety):M xstmt:=

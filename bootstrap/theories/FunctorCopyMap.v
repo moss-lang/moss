@@ -1,6 +1,6 @@
 (* Copy maps are the runtime keys of the two genuinely formed contexts. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTr
  Merge CanonTypes CtxWalk CtxMerge FunctorContext SmapExec NeedExec.
 Import ListNotations.
 Local Open Scope list_scope.

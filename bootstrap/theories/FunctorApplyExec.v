@@ -1,12 +1,12 @@
 (* General application follows from the remaining ordinary bind cases. *)
 From Stdlib Require Import String.
-From NM Require Import Audit Sx Elab BodySound BindSequence BindFnDispatch
+From NM Require Import Audit Sx Elab BodySoundCore BindSequence BindFnDispatch
  ApplyFunctorInduct AbstractApplyExec.
 Section Application.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:Audit.Elaboration.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:Audit.Elaboration.WorldOf b(BodySoundCore.W w R Fl).
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
 Theorem apply_bind_step:
  (forall f,OK w P R Fl f->RemainingBindStep w P R Fl f)->

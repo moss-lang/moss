@@ -134,7 +134,7 @@ Theorem actual_application_fixed:forall g n names args res s ef needs sf xf sx m
  A.nlook x(A.c_ty C)=Some here/\A.canon C here=A.canon C tx.
 Proof.
  intros g n names args res s ef needs sf xf sx mi e c F C fx sy sz Wo Hg D E Ex G I Hi Hw L Hc Fu.
- assert(Oe:ok(fun_env g))by(unfold fun_env;okt).
+ assert(Oe:ok(fun_env g))by(apply ElabFrameCore.ok_fun_env).
  destruct(Oe _ _ _ Hi E)as[If Ff].
  assert(Of:ok(functor_fixed g))by(unfold functor_fixed;okt).
  destruct(Of _ _ _ If Ex)as[Ix Fx].

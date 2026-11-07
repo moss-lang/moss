@@ -1,7 +1,7 @@
 From NM Require Import WrapperKeyReadonly.
 (* The actual on-demand method branch, including original-context arguments. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyTr BodyTy
  InfoPreserve FwdInvariant FwdReadonly FwdPreserve FwdSynthInv CanonTypes NominalSupport TySupport SourceSupport MethodKeyTr EtyTyExec CallArgs ProvidedDirect
  ProvideResultContext FamilySelectTrace FamilyMatchingCtx FamilyApplyRestore FamilySelectedApply.
 Import ListNotations.
@@ -51,11 +51,11 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall x y,Fl x=Fl y->x=y.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Variable checked:st.
 Hypothesis Hcontexts:check_contexts checked=Good(tt,checked).
 Hypothesis Hchecked:st_w checked=w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma family_sig_uf:forall e e2 sg,en_uf e2=en_uf e->output_sig Fl e2 sg=output_sig Fl e sg.
 Proof.
  intros e e2 sg Uf;unfold output_sig;f_equal.

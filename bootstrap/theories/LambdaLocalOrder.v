@@ -1,7 +1,7 @@
 (* Lambda captures and parameters have disjoint names, so their local-table
    installation order is observationally identical. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySound NominalSupport LambdaCaptureTables.
+From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore NominalSupport LambdaCaptureTables.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=Audit.Elaboration.
@@ -52,7 +52,7 @@ Proof.
 Qed.
 Section Context.
 Variables(w:Elab.world)(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma lambda_source_locals:forall rows c e F C,
  CxRel w R Fl c e F C->
  Forall(fun q=>WFty(fst(snd q))/\Support W(fst(snd q)))rows->
@@ -83,8 +83,8 @@ Lemma lambda_relocalize:forall rows1 rows2 C,
 Proof. intros;rewrite !lambda_locals_shape;destruct C;reflexivity. Qed.
 Theorem lambda_disjoint_source_context:forall w R Fl rows1 rows2 c e F C,
  CxRel w R Fl c e F C->
- Forall(fun q=>WFty(fst(snd q))/\Support(BodySound.W w R Fl)(fst(snd q)))rows1->
- Forall(fun q=>WFty(fst(snd q))/\Support(BodySound.W w R Fl)(fst(snd q)))rows2->
+ Forall(fun q=>WFty(fst(snd q))/\Support(BodySoundCore.W w R Fl)(fst(snd q)))rows1->
+ Forall(fun q=>WFty(fst(snd q))/\Support(BodySoundCore.W w R Fl)(fst(snd q)))rows2->
  (forall n,In n(map fst rows1)->~In n(map fst rows2))->
  CxRel w R Fl c
  (fold_left(fun en q=>set_local en(fst q)(fst(snd q))(snd(snd q)))rows2
@@ -92,7 +92,7 @@ Theorem lambda_disjoint_source_context:forall w R Fl rows1 rows2 c e F C,
  (lambda_add_locals(lambda_typed_locals Fl e rows1)(lambda_add_locals(lambda_typed_locals Fl e rows2)C)).
 Proof.
  intros w R Fl rows1 rows2 c e F C HC Good1 Good2 Disjoint.
- assert(All:Forall(fun q=>WFty(fst(snd q))/\Support(BodySound.W w R Fl)(fst(snd q)))(rows1++rows2))
+ assert(All:Forall(fun q=>WFty(fst(snd q))/\Support(BodySoundCore.W w R Fl)(fst(snd q)))(rows1++rows2))
  by(apply Forall_app;split;assumption).
  pose proof(lambda_source_locals w R Fl(rows1++rows2)c e F C HC All)as Actual.
  change(CxRel w R Fl c

@@ -1,6 +1,6 @@
 (* A forwarder settles in its first context-walk round. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr CtxWalk
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr CtxWalk
  InfoPreserve InfoCache FnInfoCore ForwarderPrototypeSeed ForwarderPrototypeFn FnSnapshotAlign.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -9,7 +9,7 @@ Section Walk.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem forwarder_first_walk:forall g t target s e needs final n ps rt body,
  gs_origin g=OForwarder t->nget(w_syms w)t=Some target->gs_kind target=KFn->
  gs_decl target=ADFn RPlain n ps rt body->ReqTypes w R t->

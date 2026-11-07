@@ -348,8 +348,7 @@ Proof.
 Qed.
 #[export] Hint Extern 1 (NI (merged_walk _ _)) => apply ni_merged_walk;intros;nit : nidb.
 Local Strategy opaque [slots_go elab_type app_subst symbol_type reqs type_requirements merged_walk].
-Lemma ok_fun_env_frame : forall g, ok (fun_env g).
-Proof. intros;unfold fun_env;okt. all:apply ok_merged_walk_frame;intros;okt. Qed.
+Definition ok_fun_env_frame := ElabFrameCore.ok_fun_env.
 Lemma ni_fun_env_frame : forall g, NI (fun_env g).
 Proof. intros;unfold fun_env;nit. Qed.
 Lemma okI_fun_env : forall g, okI (fun_env g).

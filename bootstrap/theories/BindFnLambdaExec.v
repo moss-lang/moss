@@ -1,8 +1,9 @@
+From NM Require Import BodyProofTools.
 (* A successful anonymous-function bind uses the actual complete lambda
    provider and the actual target signature/application snapshot. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve
- BodySound BodyTr BodyTy Merge CanonTypes ProviderSig FnSigExec ProvideResultContext BindValue
+ BodySoundCore BodyTr BodyTy Merge CanonTypes ProviderSig FnSigExec ProvideResultContext BindValue
  BindSequence CallCacheExec SignatureLeavesExec LambdaProviderExec.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -14,7 +15,7 @@ Section Bind.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem check_bind_function_lambda:forall fuel c e pp lps lrt lbody s xs e' c' sf F C f,
  OK w P R Fl fuel->
  check_bind(S fuel)c e(Spec(Some pp)None None)(AELam lps lrt lbody)s=Good((xs,e',c'),sf)->

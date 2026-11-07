@@ -1,6 +1,6 @@
 (* The body checker reads source types with their actual support invariant. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  CanonBodyTy NominalSupport SourceSupport.
 Module A:=Audit.Elaboration.
 Section BodyType.
@@ -11,8 +11,8 @@ Hypothesis Hload:load_world b=Good w.
 Theorem pd_ty_supported : forall t c e s d s',
  ety_of t(cx_mod c)(tymap e)e(cx_this c)s=Good(d,s') ->
  forall F C,Inv s -> CxRel w R Fl c e F C -> Later w P R Fl s' ->
- A.TyOf(BodySound.W w R Fl)(A.fr_mod F)(A.c_ty C)(A.fr_this F)t(tr Fl(canon e d)) /\
- WFty d /\ Support(BodySound.W w R Fl)d.
+ A.TyOf(BodySoundCore.W w R Fl)(A.fr_mod F)(A.c_ty C)(A.fr_this F)t(tr Fl(canon e d)) /\
+ WFty d /\ Support(BodySoundCore.W w R Fl)d.
 Proof.
  intros t c e s d s' E F C Hi Hc L.
  destruct(pd_ty_holds w R Fl b Hload _ _ _ _ _ _ E F C Hi Hc L)as[Ty Wd].

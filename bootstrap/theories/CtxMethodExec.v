@@ -11,28 +11,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Notation WW:=(BodySoundCore.W w R Fl).
-Lemma recvty_exec:forall mi recv tm tmr e s this s',
- (match nassoc(gs_id recv)tm with Some y=>ret y|None=>symbol_type 200 mi recv tm e end)s=Good(this,s')->
- Inv s->st_w s=w->nget(w_syms w)(gs_id recv)=Some recv->TmRel Fl tm tmr e->Later w P R Fl s'->
- A.RecvTy WW(gs_id recv)tmr(tr Fl this)/\WFty this.
-Proof.
- intros mi recv tm tmr e s this s' H Hi Hw Hr TR L.
- destruct(nassoc(gs_id recv)tm)as[y|]eqn:Nt.
- - injection H as <- <-. split.
-   + unfold A.RecvTy. rewrite(proj1 TR(gs_id recv)),Nt;reflexivity.
-   + exact(proj1(proj2 TR)_ _ Nt).
- - destruct(proj2(proj2(ty_all w R Fl b Hload 200))mi recv tm e s this s' tmr H Hi Hw Hr TR L)as[Wt Sem].
-   split;[|exact Wt]. unfold A.RecvTy. rewrite(proj1 TR(gs_id recv)),Nt.
-   rewrite(w_decl_rd w R Fl _ _ Hr). cbn[A.d_ast A.d_mod].
-   pose proof(load_world_kind b w Hload _ _ Hr)as KO. unfold KindOK in KO.
-   destruct(gs_kind recv)eqn:K;cbn in Sem;try contradiction.
-   + rewrite(proj1 TR(gs_id recv)),Nt in Sem;discriminate Sem.
-   + destruct Sem as(args&E&Fs). destruct(gs_decl recv);try(exists args;split;[exact E|exact Fs]).
-     cbn[A.kind_of kconv]in KO;discriminate KO.
-   + destruct Sem as(n&body&D&Et). rewrite D;exact Et.
-   + destruct Sem as(args&E&Fs). destruct(gs_decl recv);try(exists args;split;[exact E|exact Fs]).
-     cbn[A.kind_of kconv]in KO;discriminate KO.
-Qed.
+Definition recvty_exec := @SigSound.recvty_exec w P R Fl b Hload.
 Ltac impossible H:=exfalso;solve[repeat(cbn beta iota zeta in H;
  first[exact(err_not_good _ _ _ _ _ _ H)|discriminate H|apply bind_inv in H as(?&?&?&H)])].
 Ltac cstep H Hi Hw L a si E Ii Wi Li:=

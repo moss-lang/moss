@@ -1,7 +1,7 @@
 (* Normalized result leaves update exactly the table produced by the actual
    source setter; occurrence order is retained by the surrounding fold. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTy
  ProvideResultFold FamilyResultFold.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -22,7 +22,7 @@ Proof. intros;rewrite output_cx_functor,family_empty_self by assumption;now rewr
 Section Reading.
 Variable w:Elab.world.
 Variables(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma result_reading_canonical:forall c e F C tm tmr,
  CxRel w R Fl c e F C->
  (forall k,A.nlook k tmr=option_map(fun y=>tr Fl(canon e y))(nassoc k tm))->

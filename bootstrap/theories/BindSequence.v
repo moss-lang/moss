@@ -1,7 +1,8 @@
+From NM Require Import BodyProofTools.
 (* Source bind-item sequencing, with actual context and continuation updates. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
- BodyData BindType BindValue.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
+ BodyDataHelpers BindType BindValue.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -19,7 +20,7 @@ Proof.
 Qed.
 Section Sequence.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Definition BindResult(c:cx)(e:env)(F:A.frame)(C:A.cx)(it:spec*option aexpr)
  (xs:list xstmt)(e':env)(c':cx):Prop:=
  exists F1 C1 made wrap,CxRel w R Fl c' e' F1 C1 /\A.fr_var F1=A.fr_var F /\
@@ -93,7 +94,7 @@ Definition simple_bind(W:A.world)(F:A.frame)(sp:spec)(y:aexpr):nat:=
 Section Dispatch.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Definition ResidualBindStep(f:nat):Prop:=forall c e sp y s xs e' c' s',
  check_bind f c e sp y s=Good((xs,e',c'),s')->forall F C,
  simple_bind WW F sp y=0 ->Inv s->InfoInv s-> FwdInv s ->CxRel w R Fl c e F C->Post w P R Fl s' F->

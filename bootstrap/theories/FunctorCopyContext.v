@@ -1,7 +1,7 @@
 (* The actual copy guards and setter retain the fixed-input context. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
- BodySound BodyTr CanonTypes FunctorDecl BindFunctorCtx ProvideResultFixed CopyFixedExec
+ BodySoundCore BodyTr CanonTypes FunctorDecl BindFunctorCtx ProvideResultFixed CopyFixedExec
  ResultMentionsExact ResultMentionsNoDup.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -10,7 +10,7 @@ Section Copy.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 
 Theorem actual_functor_snapshot : forall g n names args res mi e c F C s xs sf sg stamp sa,
  nget(w_syms w)(gs_id g)=Some g ->gs_decl g=ADFunctor n names args res None ->

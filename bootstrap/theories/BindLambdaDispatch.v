@@ -1,6 +1,6 @@
 (* The remaining binding callback excludes the now-proved fn-lambda branch. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BindSequence
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BindSequence
  BindType BindCopyDispatch BindFnDispatch BindFnLambdaExec InfoPreserve.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -15,7 +15,7 @@ Section Dispatch.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Definition LambdaRemainingBindStep(f:nat):Prop:=forall c e sp y s xs e' c' sf,
  check_bind f c e sp y s=Good((xs,e',c'),sf)->forall F C,
  simple_bind W F sp y=0->abstract_copy_bind W F sp y=false->named_function_bind W F sp y=false->

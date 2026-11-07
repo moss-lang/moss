@@ -1,6 +1,6 @@
 (* Method assumptions: table update and source reading. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy Merge CanonTypes SourceClean ContextClean ContextWalkClean CtxWalk MethodClean SigSound MethodRows.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy Merge CanonTypes SourceClean ContextClean ContextWalkClean CtxWalk MethodClean MethodRows.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A := Audit.Elaboration.

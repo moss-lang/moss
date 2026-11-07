@@ -1,6 +1,7 @@
+From NM Require Import BodyProofTools.
 (* ------------------------------------------------------------------------ *)
 (* BodyLit.v — literals against V.6's ExLit (Track A, elaborate_sound step *)
-(* 2; BodySound.v's Pending, pd_synth for AELit).                          *)
+(* 2; BodySoundCore.v's Pending, pd_synth for AELit).                          *)
 (*                                                                           *)
 (* lit_step: the term the elaborator builds for a literal ([D68]: `zero`,   *)
 (* `one`, num.moss's `.add`/`.mul`/`.div` provided at the literal's type,  *)
@@ -16,7 +17,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Ascii String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound BodyDataHelpers BodyOps LiteralResult.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyDataHelpers BodyOps LiteralResult.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Local Open Scope string_scope.
@@ -56,7 +57,7 @@ Local Ltac fwd_inv := first
     eapply (proj2 Forward initial value final);
       [eassumption | fwd_inv | exact Run]
   end
- |BodySound.fwd_inv].
+ |BodyProofTools.fwd_inv].
 
 Lemma digits_val_fold : forall l v, A.digits_val l v = fold_left dstep l v.
 Proof. induction l as [|c r IH]; intro v; [reflexivity | cbn; rewrite IH; reflexivity]. Qed.
@@ -246,7 +247,7 @@ Definition float_lit_m (f : nat) (c : cx) (e : env) (why : string) (whole : list
 
 Section Lit.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 Notation LT C t x a b := (A.LitTerm WW C t x a b).
 Variable b : bundle.

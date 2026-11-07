@@ -1,7 +1,7 @@
 (* The actual fresh lambda symbol and historical emit receipt identify its
    final program body via the proved whole-program lambda history. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore
  ForwarderTrace FinalLambdas.
 Import ListNotations.
 Module A:=Audit.Elaboration.

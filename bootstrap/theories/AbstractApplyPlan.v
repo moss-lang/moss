@@ -1,6 +1,6 @@
 (* All real abstract-application obligations before the result reader. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx ReifyData Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx ReifyData Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  Merge CtxWalk CtxMerge FunctorContext FunctorSatisfies NeedSatisfiesGap FunctorFixedExec
  ApplyAbstractExec MethodKeyTr ApplyThetaExec ApplyFreshExec NestingTypesExec FunctorInputDomain.
 Import ListNotations.
@@ -9,7 +9,7 @@ Section Plan.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem abstract_application_plan:forall fuel c e F C g n names args res s pre e' c' sf,
  A.WorldOf b W->nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->
  apply_abstract fuel c e g s=Good((pre,e',c'),sf)->
@@ -33,7 +33,7 @@ Proof.
  intros fuel c e F C g n names args res s pre e' c' sf Wo Hg D E Hi Hw L HC.
  destruct(apply_abstract_phases _ _ _ _ _ _ _ _ _ E)
  as(ef&needs&sf0&xf&sx&sy&sz&pairs&sp&Av&Env&Fix&Guard&Input&Req&Tail).
- assert(Oe:ok(fun_env g))by(unfold fun_env;okt);destruct(Oe _ _ _ Hi Env)as[If Fenv].
+ assert(Oe:ok(fun_env g))by(apply ElabFrameCore.ok_fun_env);destruct(Oe _ _ _ Hi Env)as[If Fenv].
  assert(Wf:st_w sf0=w)by(rewrite(fr_w _ _ Fenv);exact Hw).
  assert(Of:ok(functor_fixed g))by(unfold functor_fixed;okt);destruct(Of _ _ _ If Fix)as[Ix Ffix].
  destruct(ok_miter _ _ _ (ok_fixed_guard(cx_mod c)e g _) _ _ _ Ix Guard)as[Iy Fguard].

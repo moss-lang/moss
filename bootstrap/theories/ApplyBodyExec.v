@@ -1,6 +1,6 @@
 (* A defined functor executes its real bind sequence in its declaring module. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  InfoPreserve BindSequence BodyUf ApplyBodyContext.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -8,7 +8,7 @@ Section Body.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem apply_body_from_items:forall f,OneStep w P R Fl f->
  forall c e F C pa g n names args res bodies s xs e' c' sf,
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res(Some bodies)->
