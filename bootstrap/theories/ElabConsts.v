@@ -22,7 +22,7 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import FinalLambdas Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv BodySound BodyConst InfoPreserve ElabConstInput ElabProgramInput FinalForwarders FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv ForwarderTrace.
 From NM Require Import ReadonlyHelpers.
-From NM Require Import InfoInputs SemanticTraversal.
+From NM Require Import InfoInputs SemanticTraversal ProgramTail.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -801,7 +801,7 @@ Lemma okc_check_assumes_phase:okc check_assumes.
 Proof. apply okqi_keeps;[exact(proj1 program_info_assumes)|eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst x));exact kr_check_assumes]. Qed.
 #[local]Hint Resolve okc_check_assumes_phase:okqidb.
 Lemma okc_platform_phase:forall k p,okc(platform_entry k p).
-Proof. intros;apply okqi_keeps;[exact(proj1(program_info_platform k p))|unfold platform_entry;keepst]. Qed.
+Proof. intros;apply okqi_keeps;[exact(proj1(program_info_platform k p))|eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst x));apply kr_platform_entry]. Qed.
 #[local]Hint Resolve okc_platform_phase:okqidb.
 Lemma cache_fwd_listed:okF check_listed.
 Proof. apply okF_readonly;[exact(proj1 program_info_listed)|unfold check_listed;keepst]. Qed.
@@ -844,7 +844,15 @@ Lemma cache_fwd_main_signature:forall g info,okF(check_main_signature g info).
 Proof. intros;apply okF_readonly;[apply ok_check_main_signature|apply kw_check_main_signature_present]. Qed.
 #[local]Hint Resolve cache_fwd_main_signature:inputfwdb.
 Lemma okc_elab_program : okc elab_program.
-Proof. unfold elab_program. program_qit. Qed.
+Proof.
+ rewrite program_split.
+ apply okqi_bind;[exact program_info_listed|exact cache_fwd_listed|exact okc_check_listed_phase|intros[]].
+ apply okqi_bind;[exact program_info_contexts|exact cache_fwd_contexts|exact okc_check_contexts_phase|intros[]].
+ apply okqi_bind;[exact program_info_runtime|exact cache_fwd_runtime|exact okc_check_runtime_library_phase|intros[]].
+ apply okqi_bind;[exact program_info_lower|exact okF_lower_all|exact okc_lower_phase|intros[]].
+ apply okqi_keeps;[exact program_tail_ok|].
+ eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst x));exact program_tail_readonly.
+Qed.
 
 Lemma consts_init : ConstInv (s_init w).
 Proof. intros k x t H. discriminate H. Qed.
