@@ -117,7 +117,45 @@ Ltac qifind3:=lazymatch goal with|-okqi _ (?F ?N ?a ?b)=>
 Ltac input_info:=first[
  lazymatch goal with
  | |-okI ?m=>let h:=head_of m in
- first[unify h compile_pattern;apply info_compile_pattern|unify h synth;apply okI_synth|unify h synth_arg;apply okI_synth_arg|unify h synth_block;apply okI_synth_block|unify h check_stmts;apply okI_check_stmts|unify h check_stmt;apply okI_check_stmt|unify h check_bool;apply okI_check_bool|unify h synth_if;apply okI_synth_if|unify h synth_match;apply okI_synth_match|unify h const_val;apply okI_const_val|unify h synth_path;apply okI_synth_path|unify h check_args;apply okI_check_args|unify h synth_call;apply okI_synth_call|unify h synth_record;apply okI_synth_record|unify h synth_field;apply okI_synth_field|unify h synth_method;apply okI_synth_method|unify h provided_call;apply okI_provided_call|unify h apply_family;apply okI_apply_family|unify h demand_needs;apply okI_demand_needs|unify h synth_operator;apply okI_synth_operator|unify h lang_call;apply okI_lang_call|unify h int_literal;apply okI_int_literal|unify h float_of;apply okI_float_of|unify h synth_literal;apply okI_synth_literal|unify h check_bind;apply okI_check_bind|unify h expect_fn_provider;apply okI_expect_fn_provider|unify h match_fn_sig;apply okI_match_fn_sig|unify h wrapper;apply okI_wrapper|unify h forwarder;apply okI_forwarder|unify h lower_body;apply okI_lower_body|unify h lambda_provider;apply okI_lambda_provider|unify h apply_functor;apply okI_apply_functor|unify h apply_body;apply okI_apply_body|unify h apply_abstract;apply okI_apply_abstract|unify h bind_functor;apply okI_bind_functor|unify h link_body;apply okI_link_body|unify h fn_info;apply okI_fn_info] end
+ lazymatch h with
+ | compile_pattern => apply info_compile_pattern
+ | synth => apply okI_synth
+ | synth_arg => apply okI_synth_arg
+ | synth_block => apply okI_synth_block
+ | check_stmts => apply okI_check_stmts
+ | check_stmt => apply okI_check_stmt
+ | check_bool => apply okI_check_bool
+ | synth_if => apply okI_synth_if
+ | synth_match => apply okI_synth_match
+ | const_val => apply okI_const_val
+ | synth_path => apply okI_synth_path
+ | check_args => apply okI_check_args
+ | synth_call => apply okI_synth_call
+ | synth_record => apply okI_synth_record
+ | synth_field => apply okI_synth_field
+ | synth_method => apply okI_synth_method
+ | provided_call => apply okI_provided_call
+ | apply_family => apply okI_apply_family
+ | demand_needs => apply okI_demand_needs
+ | synth_operator => apply okI_synth_operator
+ | lang_call => apply okI_lang_call
+ | int_literal => apply okI_int_literal
+ | float_of => apply okI_float_of
+ | synth_literal => apply okI_synth_literal
+ | check_bind => apply okI_check_bind
+ | expect_fn_provider => apply okI_expect_fn_provider
+ | match_fn_sig => apply okI_match_fn_sig
+ | wrapper => apply okI_wrapper
+ | forwarder => apply okI_forwarder
+ | lower_body => apply okI_lower_body
+ | lambda_provider => apply okI_lambda_provider
+ | apply_functor => apply okI_apply_functor
+ | apply_body => apply okI_apply_body
+ | apply_abstract => apply okI_apply_abstract
+ | bind_functor => apply okI_bind_functor
+ | link_body => apply okI_link_body
+ | fn_info => apply okI_fn_info
+ end end
  |lazymatch goal with
   | |-okI(match ?x with _=>_ end)=>destruct x;input_info
   | |-okI(mbind(new_sym _ _ _ _ _)_)=>okIt
@@ -131,7 +169,45 @@ Ltac input_info:=first[
  |solve[apply okI_ni;[okt|nit|keepst]]|solve[okIt]].
 Create HintDb inputfwdb.
 Ltac input_fwd_named:=lazymatch goal with|-okF ?m=>let h:=head_of m in
- first[unify h synth;apply okF_synth|unify h synth_arg;apply okF_synth_arg|unify h synth_block;apply okF_synth_block|unify h check_stmts;apply okF_check_stmts|unify h check_stmt;apply okF_check_stmt|unify h check_bool;apply okF_check_bool|unify h synth_if;apply okF_synth_if|unify h synth_match;apply okF_synth_match|unify h const_val;apply okF_const_val|unify h synth_path;apply okF_synth_path|unify h check_args;apply okF_check_args|unify h synth_call;apply okF_synth_call|unify h synth_record;apply okF_synth_record|unify h synth_field;apply okF_synth_field|unify h synth_method;apply okF_synth_method|unify h provided_call;apply okF_provided_call|unify h apply_family;apply okF_apply_family|unify h demand_needs;apply okF_demand_needs|unify h synth_operator;apply okF_synth_operator|unify h lang_call;apply okF_lang_call|unify h int_literal;apply okF_int_literal|unify h float_of;apply okF_float_of|unify h synth_literal;apply okF_synth_literal|unify h check_bind;apply okF_check_bind|unify h expect_fn_provider;apply okF_expect_fn_provider|unify h match_fn_sig;apply okF_match_fn_sig|unify h wrapper;apply okF_wrapper|unify h forwarder;apply okF_forwarder|unify h lower_body;apply okF_lower_body|unify h lambda_provider;apply okF_lambda_provider|unify h apply_functor;apply okF_apply_functor|unify h apply_body;apply okF_apply_body|unify h apply_abstract;apply okF_apply_abstract|unify h bind_functor;apply okF_bind_functor|unify h link_body;apply okF_link_body|unify h lower_all;exact okF_lower_all]end.
+ lazymatch h with
+ | synth => apply okF_synth
+ | synth_arg => apply okF_synth_arg
+ | synth_block => apply okF_synth_block
+ | check_stmts => apply okF_check_stmts
+ | check_stmt => apply okF_check_stmt
+ | check_bool => apply okF_check_bool
+ | synth_if => apply okF_synth_if
+ | synth_match => apply okF_synth_match
+ | const_val => apply okF_const_val
+ | synth_path => apply okF_synth_path
+ | check_args => apply okF_check_args
+ | synth_call => apply okF_synth_call
+ | synth_record => apply okF_synth_record
+ | synth_field => apply okF_synth_field
+ | synth_method => apply okF_synth_method
+ | provided_call => apply okF_provided_call
+ | apply_family => apply okF_apply_family
+ | demand_needs => apply okF_demand_needs
+ | synth_operator => apply okF_synth_operator
+ | lang_call => apply okF_lang_call
+ | int_literal => apply okF_int_literal
+ | float_of => apply okF_float_of
+ | synth_literal => apply okF_synth_literal
+ | check_bind => apply okF_check_bind
+ | expect_fn_provider => apply okF_expect_fn_provider
+ | match_fn_sig => apply okF_match_fn_sig
+ | wrapper => apply okF_wrapper
+ | forwarder => apply okF_forwarder
+ | lower_body => apply okF_lower_body
+ | lambda_provider => apply okF_lambda_provider
+ | apply_functor => apply okF_apply_functor
+ | apply_body => apply okF_apply_body
+ | apply_abstract => apply okF_apply_abstract
+ | bind_functor => apply okF_bind_functor
+ | link_body => apply okF_link_body
+ | lower_all => exact okF_lower_all
+ end end.
+
 Ltac input_fwd:=repeat(fintros;first[solve[input_fwd_named]|solve[auto with inputfwdb]|
  lazymatch goal with
  | |-okF(mbind _ _)=>apply okF_bind

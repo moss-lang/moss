@@ -437,6 +437,83 @@ Lemma cache_fwd_require_needs:forall mi e g i,okF(require_needs mi e g i).
 Proof. intros;apply okF_readonly;[unfold require_needs;okt|unfold require_needs;keepst]. Qed.
 #[local]Hint Resolve cache_fwd_family_member cache_fwd_require_needs:inputfwdb.
 
+(* Walk each monadic subtree once while establishing the three invariants
+   needed by cache-preserving bind.  Proving them independently at every bind
+   repeatedly traverses overlapping prefixes. *)
+Local Definition cache_step (C : Cache) {A} (m : M A) := okI m /\ okF m /\ okqi C m.
+Arguments cache_step : simpl never.
+Local Lemma cache_step_intro : forall C A (m : M A),
+  okqi C m -> okI m -> okF m -> cache_step C m.
+Proof. intros C A m Q I F; exact (conj I (conj F Q)). Qed.
+Local Lemma cache_step_cache : forall C A (m : M A), cache_step C m -> okqi C m.
+Proof. intros C A m [_ [_ Q]]; exact Q. Qed.
+Local Lemma cache_step_bind : forall C A B (m : M A) (k : A -> M B),
+  cache_step C m -> (forall a, cache_step C (k a)) -> cache_step C (mbind m k).
+Proof.
+  intros C A B m k [Im [Fm Qm]] K. split.
+  - apply okI_bind; [exact Im | intro a; exact (proj1 (K a))].
+  - split.
+    + apply okF_bind; [exact Fm | intro a; exact (proj1 (proj2 (K a)))].
+    + apply okqi_bind; [exact Im | exact Fm | exact Qm | intro a; exact (proj2 (proj2 (K a)))].
+Qed.
+Local Lemma cache_step_ret : forall C A (a : A), cache_step C (ret a).
+Proof. intros; split; [apply okI_ret | split; [apply okF_ret | apply okqi_ret]]. Qed.
+Local Lemma cache_step_mmap : forall C A B (f : A -> M B) xs,
+  (forall x, cache_step C (f x)) -> cache_step C (mmap f xs).
+Proof.
+  intros C A B f xs F. split.
+  - apply okI_mmap; intro x; exact (proj1 (F x)).
+  - split.
+    + apply okF_mmap; intro x; exact (proj1 (proj2 (F x))).
+    + apply okqi_mmap; intro x; [exact (proj1 (F x)) | exact (proj1 (proj2 (F x))) | exact (proj2 (proj2 (F x)))].
+Qed.
+Local Lemma cache_step_mfold : forall C A B (f : A -> B -> M A) xs acc,
+  (forall a x, cache_step C (f a x)) -> cache_step C (mfold f acc xs).
+Proof.
+  intros C A B f xs acc F. split.
+  - apply okI_mfold; intros a x; exact (proj1 (F a x)).
+  - split.
+    + apply okF_mfold; intros a x; exact (proj1 (proj2 (F a x))).
+    + apply okqi_mfold; intros a x; [exact (proj1 (F a x)) | exact (proj1 (proj2 (F a x))) | exact (proj2 (proj2 (F a x)))].
+Qed.
+Local Lemma cache_step_miter : forall C A (f : A -> M unit) xs,
+  (forall x, cache_step C (f x)) -> cache_step C (miter f xs).
+Proof.
+  intros C A f xs F. split.
+  - apply okI_miter; intro x; exact (proj1 (F x)).
+  - split.
+    + apply okF_miter; intro x; exact (proj1 (proj2 (F x))).
+    + apply okqi_miter; intro x; [exact (proj1 (F x)) | exact (proj1 (proj2 (F x))) | exact (proj2 (proj2 (F x)))].
+Qed.
+Local Lemma cache_step_with_vars : forall C A initial (m : M A),
+  cache_step C m -> cache_step C (with_vars initial m).
+Proof.
+  intros C A initial m [I [F Q]]. split.
+  - apply okI_with_vars; exact I.
+  - split; [apply okF_with_vars; exact F | apply okqi_with_vars; exact Q].
+Qed.
+Local Ltac cache_step_tac := repeat (fintros; lazymatch goal with
+    | |- cache_step _ (ret _) => apply cache_step_ret
+    (* Allocation and initialization must remain one atomic proof step. *)
+    | |- cache_step _ (mbind (new_sym _ _ _ _ _) _) =>
+        apply cache_step_intro; [solve [okqit] | solve [input_info] | solve [input_fwd]]
+    | |- cache_step _ (mbind _ _) => apply cache_step_bind
+    | |- cache_step _ (mmap _ _) => apply cache_step_mmap
+    | |- cache_step _ (mfold _ _ _) => apply cache_step_mfold
+    | |- cache_step _ (miter _ _) => apply cache_step_miter
+    | |- cache_step _ (with_vars _ _) => apply cache_step_with_vars
+    | |- cache_step _ (upd _) =>
+        apply cache_step_intro; [solve [okqi_keeps_leaf] | solve [input_info] | solve [input_fwd]]
+    | |- cache_step _ (fun s => _) =>
+        apply cache_step_intro; [solve [okqi_keeps_leaf] | solve [input_info] | solve [input_fwd]]
+    | |- cache_step _ (match ?x with _ => _ end) => destruct x
+    | |- cache_step _ ?m => first [
+        solve [apply cache_step_intro; [solve [auto with okqidb] | input_info | input_fwd]]
+        | solve [apply cache_step_intro; [okqi_keeps_lemma | input_info | input_fwd]]
+        | match m with context[match ?x with _ => _ end] => destruct x end
+        | let h := head_of m in progress unfold h]
+    end).
+
 Lemma okc_synth_group : forall fuel,
   (forall c e x exp, okc (synth fuel c e x exp)) /\
   (forall c e a exp, okc (synth_arg fuel c e a exp)) /\
@@ -481,7 +558,8 @@ Proof.
   10: exact (okc_synth_path_step fuel I8).
   9: exact (okc_const_val_step fuel I0).
   26: exact (okc_forwarder_step fuel I28).
-  all: solve [fintros; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; okqit].
+  (* Some operations, such as wrapper, need only the weaker cache property. *)
+  all: first [solve [fintros; apply cache_step_cache; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; cache_step_tac] | solve [fintros; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; okqit]].
 Qed.
 
 Lemma okc_synth : forall fuel c e x exp, okc (synth fuel c e x exp).
