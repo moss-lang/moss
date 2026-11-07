@@ -619,6 +619,12 @@ fn self_hosted_compiler_compiles_to_wasm() {
     assert_eq!(oracle_run("tests/wasi/prim.moss", &[]), mine);
 }
 
+/// Cached lookup must preserve shadowing, old heads, misses and hash collisions.
+#[test]
+fn compiler_environment_lookup_preserves_persistent_chains() {
+    agree("tests/compiler/env_lookup.moss", &[], "ok\n");
+}
+
 // `test_build.TestWasmBackend.test_self_hosted_lexer_compiles_to_wasm` is
 // `language::self_hosted_lexer::agrees_with_bootstrap_on_real_files` (which
 // includes src/lex.moss).

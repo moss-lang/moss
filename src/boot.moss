@@ -277,4 +277,5 @@ functor Boot: Std -> Compiler {
   bind lower::asm_nlen = int_list();
   bind lower::en_head = int_list();
   bind lower::en_link = int_list();
+  bind lower::en_find_cache = int_list();
 }

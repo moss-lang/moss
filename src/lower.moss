@@ -102,12 +102,17 @@ assume Std {
   val en_head: IntList;
   val en_link: IntList;
 
+  # A bounded memo table for env_find. Its six-cell rows hold a valid flag,
+  # the four lookup arguments, and the answer. It belongs to these immutable
+  # environment rows and is initialized empty alongside them in boot.moss.
+  val en_find_cache: IntList;
+
   context Lower =
     en_kind, en_recv, en_sym, en_a, en_b, en_next,
     nd_recv, nd_sym, nd_start, nd_len, nd_env, nd_app,
     dp_start, dp_len, dp_pool,
     asm_run, asm_len, asm_env, asm_nstart, asm_nlen,
-    en_head, en_link;
+    en_head, en_link, en_find_cache;
 
   assume Lower, ast::Ast, prog::Prog, types::Types, intern::Interner {
     # Environments.
@@ -159,7 +164,7 @@ assume Std {
 
     # The entry providing this key, or none. The chain is walked from the
     # head, so the innermost binding wins.
-    fn env_find(env: Int, kind: Int, recv: Int, sym: Int): Int {
+    fn env_find_uncached(env: Int, kind: Int, recv: Int, sym: Int): Int {
       var e = env;
       while ast::is_some(e) {
         if en_kind.get(e) == kind {
@@ -172,6 +177,40 @@ assume Std {
         e = en_next.get(e);
       }
       ast::none()
+    }
+
+    fn env_find(env: Int, kind: Int, recv: Int, sym: Int): Int {
+      # Masking keeps the index in range even when Int arithmetic wraps.
+      # A collision only replaces a memo row: a hit compares all arguments.
+      let at = ((env * 31 + recv * 7 + sym * 127 + kind) & 4095) * 6;
+      if en_find_cache.length() == 0 {
+        var i = 0;
+        while i < 24576 {
+          en_find_cache.push(0);
+          i = i + 1;
+        }
+      }
+      if en_find_cache.get(at) == 1 {
+        if en_find_cache.get(at + 1) == env {
+          if en_find_cache.get(at + 2) == kind {
+            if en_find_cache.get(at + 3) == recv {
+              if en_find_cache.get(at + 4) == sym {
+                return en_find_cache.get(at + 5);
+              }
+            }
+          }
+        }
+      }
+      let found = env_find_uncached(env, kind, recv, sym);
+      # en_kind/en_sym/en_recv/en_next are append-only. An old head's chain
+      # never changes when env_push adds a new head, so this answer stays valid.
+      en_find_cache.set(at + 1, env);
+      en_find_cache.set(at + 2, kind);
+      en_find_cache.set(at + 3, recv);
+      en_find_cache.set(at + 4, sym);
+      en_find_cache.set(at + 5, found);
+      en_find_cache.set(at, 1);
+      found
     }
 
     fn env_has(env: Int, kind: Int, recv: Int, sym: Int): Bool {
