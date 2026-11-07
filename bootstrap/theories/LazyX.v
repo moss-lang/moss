@@ -22,12 +22,13 @@ Inductive fentry : Type :=
 | FType : delayed_ty->fentry
 | FPrimAt : prim->ty->fentry
 with fenv : Type :=
-(* The streams preserve first-match order. The second contains every ITy row,
-   including malformed entries; the third contains only proper FType rows.
-   The distinction matters: xdtypes skips a malformed row without hiding a
-   later proper type, whereas ordinary ITy lookup sees that malformed row. *)
-| FEnv : list(item*fentry)->list(tsym*fentry)->list(tsym*fentry)->fenv.
-Definition fempty := FEnv [] [] [].
+(* The streams preserve first-match order. The second contains every ITy row.
+   None in the third field shares that stream as the proper-type projection;
+   Some stores a separate projection when malformed type rows occur.
+   xdtypes skips a malformed row without hiding a later proper type, whereas
+   ordinary ITy lookup sees that malformed row. *)
+| FEnv : list(item*fentry)->list(tsym*fentry)->option(list(tsym*fentry))->fenv.
+Definition fempty := FEnv [] [] None.
 Fixpoint tlookup t (xs:list(tsym*fentry)) := match xs with
  |[]=>None|(u,en)::rest=>if Nat.eqb t u then Some en else tlookup t rest end.
 Fixpoint dlookup i (xs:list(item*fentry)) := match xs with
@@ -35,18 +36,24 @@ Fixpoint dlookup i (xs:list(item*fentry)) := match xs with
 Definition flookup i d := match d with FEnv values types _=>match i with
  |ITy t=>tlookup t types|_=>dlookup i values end end.
 Definition fadd i en d := match d with FEnv values types meta=>match i with
- |ITy t=>FEnv values ((t,en)::types) (match en with FType _=>(t,en)::meta|_=>meta end)
+ |ITy t=>FEnv values ((t,en)::types)
+   (match en with
+    |FType _=>option_map(fun rows=>(t,en)::rows)meta
+    |_=>Some(match meta with Some rows=>rows|None=>types end)end)
  |_=>FEnv ((i,en)::values) types meta end end.
 (* Left-biased append preserves duplicate-key behavior in all three streams. *)
 Definition fmerge a b := match a,b with FEnv av atp am,FEnv bv btp bm=>
- FEnv(av++bv)(atp++btp)(am++bm)end.
+ FEnv(av++bv)(atp++btp)
+ (match am,bm with None,None=>None|_,_=>
+ Some((match am with Some rows=>rows|None=>atp end)++
+      (match bm with Some rows=>rows|None=>btp end))end)end.
 Fixpoint fcompose (d:fenv)(sm:smap):option fenv:=match sm with
  |[]=>Some fempty
  |(req,src)::rest=>match flookup src d,fcompose d rest with
  |Some en,Some tail=>Some(fadd req en tail)|_,_=>None end end.
 Fixpoint fchain (d:fenv)(sms:list smap):option fenv:=match sms with
  |[]=>Some d|sm::rest=>match fchain d rest with Some dm=>fcompose dm sm|None=>None end end.
-Definition meta d:=match d with FEnv _ _ types=>types end.
+Definition meta d:=match d with FEnv _ types more=>match more with Some rows=>rows|None=>types end end.
 Definition type_get_meta types t :option ty:=match tlookup t types with
  |Some(FType delayed)=>Some(force_ty delayed)|_=>None end.
 Definition type_get d:=type_get_meta(meta d).
@@ -61,16 +68,25 @@ CoFixpoint defer_ground types tau : delayed_ty := Hold(ground(type_get_meta type
 Lemma force_defer_ground:forall types tau,
  force_ty(defer_ground types tau)=ground(type_get_meta types)tau.
 Proof. reflexivity. Qed.
-Definition fattach_types d dc:=match dc with FEnv values types md=>
- FEnv values(types++meta d)(md++meta d)end.
+Definition fattach_types d dc:=match dc with FEnv values types more=>
+ FEnv values(types++meta d)(option_map(fun rows=>rows++meta d)more)end.
 Definition fbind_ty P d t tau:=if xreify P then fadd(ITy t)(FType(defer_ground(meta d)tau))d else d.
-Definition finst d th:=fold_right(fun p acc=>
- fadd(ITy(fst p))(FType(defer_ground(meta d)(snd p)))acc)fempty th.
+(* Every instantiation row is a proper type. Build one shared stream directly,
+   avoiding intermediate environments and duplicate list cells. *)
+Definition finst d th:=
+ let rows:=map(fun p=>(fst p,FType(defer_ground(meta d)(snd p))))th in
+ FEnv [] rows None.
+Lemma finst_fold_exact : forall d th, finst d th =
+ fold_right(fun p acc=>fadd(ITy(fst p))(FType(defer_ground(meta d)(snd p)))acc)fempty th.
+Proof.
+ intros d th;induction th as[|[t tau]th IH];[reflexivity|].
+ cbn[fold_right fst snd];rewrite <-IH;reflexivity.
+Qed.
 Definition fcall_env P d th dc:=if xreify P then fmerge(finst d th)(fattach_types d dc)else dc.
 Definition fapply_env P d h th dc:=fcall_env P d
  (filter(fun p=>existsb(Nat.eqb(fst p))(xp_inputs P h))th)dc.
 Definition fresult_types Dr d:=
- let rows:=filter(fun p=>existsb(item_eqb(ITy(fst p)))Dr)(meta d)in FEnv [] rows rows.
+ let rows:=filter(fun p=>existsb(item_eqb(ITy(fst p)))Dr)(meta d)in FEnv [] rows None.
 Definition fresult_env P d Dr dr:=if xreify P then fmerge dr(fresult_types Dr d)else dr.
 Definition fprim_entry d i p:=match p,i with
  |PBox _,IMth tau _ _|PArrNew _,IMth tau _ _=>FPrimAt p(fground d tau)|_,_=>FPrim p end.

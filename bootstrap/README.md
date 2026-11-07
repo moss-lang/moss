@@ -213,7 +213,10 @@ out of fuel (`FastPath.fast_run`):
 - `lazy`: [`LazyClo.v`](theories/LazyClo.v) compiles expressions directly
   to closures over [`LazyX.v`](theories/LazyX.v)'s split environments.
   Ordinary bindings, type bindings and the proper-type projection have
-  separate ordered streams. Captured environments retain those streams;
+  ordered streams. When every type row is proper, the type bindings and
+  proper-type projection share one list; malformed rows retain a separate
+  projection so ordinary lookup and type lookup keep their exact behavior.
+  Instantiation builds that shared list directly. Captured environments retain those streams;
   entering a closure does not rebuild its type projection. Type substitution
   is deferred until a cast or allocating primitive observes it, and its
   result is memoized by Rocq's standard coinductive extraction to OCaml
