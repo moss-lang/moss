@@ -40,6 +40,15 @@ The development includes proofs of:
   ([`BindMethodExec.v`](theories/BindMethodExec.v)).
   [`BodyPending.v`](theories/BodyPending.v) excludes method bindings from
   its remaining callback; non-method provider cases remain open.
+- Fresh linked-functor execution yields its input contexts, capture checks,
+  typed body and actual emission receipts. The assembler still requires four
+  explicit result-stage coherence conditions
+  ([`LinkBodySound.v`](theories/LinkBodySound.v)). The target result context
+  and output-key validity are proved from execution
+  ([`FunctorAbstractBodyContext.v`](theories/FunctorAbstractBodyContext.v),
+  [`LinkBodyResultView.v`](theories/LinkBodyResultView.v),
+  [`LinkOutputKeys.v`](theories/LinkOutputKeys.v)); these component proofs do
+  not discharge all four conditions.
 - Actual source Bool selection for every successful elaboration, including
   the absence case, with no pending body-soundness premises
   ([`MainProgramBool.v`](theories/MainProgramBool.v)).
@@ -105,6 +114,23 @@ Attached method-provider selection now uses the canonical receiver in both
 native and oracle execution. Named providers reject right-hand applications
 rather than silently discarding them. Regression tests cover merged receiver
 contexts, ignored application names, and empty applications.
+
+Linked outputs still have an alpha-capture bug: an old merged input
+representative can have the same identifier as a newly rebound output name.
+In the verified runtime reproducer, native execution prints `yn`, while the
+raw, reference and lazy oracle paths get stuck with `XErr 6`. The checked
+counterexample in
+[`LinkOutputCaptureBoundary.v`](theories/LinkOutputCaptureBoundary.v) records
+the conflicting output/body key readings. Fixing theta priority covers one
+ordering of the merged inputs; it does not remove this identity collision.
+
+A repair must separate rigid input generations from mutable source names
+through body bindings, result headers/refiling, linked/captured satisfaction
+maps and formal-versus-actual type arguments. [`Reify.v`](theories/Reify.v)
+already distinguishes name and generation maps, but its staged integration
+and typing proofs remain open. The four conditions in the fresh-link
+assembler remain explicit; the output regression is not treated as proved
+safe or rejected as invalid source.
 
 ## Trust and validation boundaries
 
