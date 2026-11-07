@@ -2,7 +2,7 @@
    all three declaration tables are included, independently of imports. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
-  FnHistory FnStable FnEmitStable FnSynthStable FnReadonly FnCompleted.
+  FnHistory FnStable FnEmitStable FnSynthStable FnReadonly FnCompleted ProgramInfo ProgramTail.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 #[local] Hint Resolve kf_entry_zero_width kf_check_main_signature : keepsdb.
@@ -214,15 +214,14 @@ Qed.
 
 Lemma elab_program_completes_defined:completes_defined elab_program.
 Proof.
- unfold elab_program.
- apply completes_bind_later;[solve[okt]|intros []].
- apply completes_bind_later;[solve[okt]|intros []].
- apply completes_bind_later;[solve[okt]|intros []].
+ rewrite program_split.
+ apply completes_bind_later;[exact(proj1 program_info_listed)|intros []].
+ apply completes_bind_later;[exact(proj1 program_info_contexts)|intros []].
+ apply completes_bind_later;[exact(proj1 program_info_runtime)|intros []].
  apply completes_bind_first;[exact lower_all_completes_defined|intros []].
- apply nf_preserves_defined.
- apply nf_keeps.
- - okt.
- - keepst.
+ apply nf_preserves_defined. apply nf_keeps.
+ - exact(proj1 program_tail_info).
+ - exact program_tail_functions.
 Qed.
 
 Theorem elab_program_defined_bodies_present:forall b s p final id g receiver name parameters result body,

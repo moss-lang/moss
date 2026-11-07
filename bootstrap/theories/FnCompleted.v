@@ -1,6 +1,7 @@
 (* Completed runs account for the loaded bodies visible after lowering. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant InfoPreserve ElabProgramInput FnReadonly FnHistory FnStable FnEmitStable FnSynthStable FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv LowerOne.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant InfoPreserve ProgramInfo FnReadonly FnHistory FnStable FnEmitStable FnSynthStable FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv LowerOne.
+From NM Require Import ProgramTail.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
@@ -190,7 +191,8 @@ Proof.
  apply fh_bind;[apply fh_keeps;[program_info|keepst]| |intro u3].
  1:history_fwd.
  apply fh_bind;[apply fh_lower_all|apply okF_lower_all|intro u4].
- apply fh_keeps;[program_info|keepst].
+ change (FH program_tail).
+ apply fh_keeps;[exact program_tail_info|exact program_tail_functions].
 Qed.
 
 Definition ProgramTables(m:M xprogram):Prop:=forall s p final,
