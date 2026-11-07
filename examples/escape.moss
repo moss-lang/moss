@@ -3,7 +3,6 @@
 assume Base {
   fn main() {
     bind StdBase;
-    print("\"Hello there,\"\n\\said I.\\");
-    putchar(char::newline);
+    print("\"Hello there,\"\n\\said I.\\\n");
   }
 }

@@ -35,9 +35,8 @@ assume Std {
   fn ns_detached(): Int { 1 }
   fn ns_alias(): Int { 2 }
 
-  # Error codes, one character each: there are no string literals (D48),
-  # and a diagnostic that names the symbol and says which rule it broke
-  # is most of the value of one.
+  # Stable one-character error codes in the compiler's diagnostic protocol.
+  # Reports also name the symbol that broke the rule.
   fn e_dup(): Int { 0 }        # duplicate definition
   fn e_scope(): Int { 1 }       # not in scope
   fn e_export(): Int { 2 }     # the module does not export it
@@ -229,7 +228,7 @@ assume Std {
     err_code, err_mod, err_name;
 
   assume Prog, ast::Ast, intern::Interner {
-    # A report says a code, a module and a name and nothing else (D48),
+    # A report says a code, a module and a name,
     # so the same three twice say nothing more. They do come twice: the
     # back end emits each body in two passes, and a type it elaborates
     # there — a tag's brackets at a construction — is elaborated in both.

@@ -4,8 +4,7 @@ assume Base {
   fn main() {
     bind StdBase;
     if true {
-      putchar(char::t);
-      putchar(char::newline);
+      print("t\n");
     }
   }
 }

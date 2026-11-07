@@ -27,6 +27,8 @@ import "../../lib/int.moss" use Int, IntOps, zero, one;
 import "../../lib/bool.moss" use Bool, true, false;
 import "../../lib/list.moss" use IntList, int_list;
 import "../../lib/std.moss" use Std, putchar;
+import "../../lib/string.moss" use String, StringLiterals, print;
+import "../../lib/byte.moss" as byte use ByteTypes;
 import "../../lib/float.moss" use Float, Floats;
 import "./doubledouble.moss" use Scalar, lift, BaseOps,
   DD, widen, dd_add, dd_neg, dd_mul, dd_div, dd_sqrt, dd_lt, dd_eq,
@@ -58,21 +60,20 @@ assume Int, Scalar {
 
 context Out =
   Bool, true, false, Bool.xor, Int, zero, one, IntOps, Char, putchar, Int.char,
+  ByteTypes, String, StringLiterals, print,
+  byte::x0a, byte::x20, byte::x28, byte::x29, byte::x2c, byte::x2d,
+  byte::x2e, byte::x30, byte::x3a, byte::x50, byte::x61, byte::x62,
+  byte::x63, byte::x64, byte::x65, byte::x66, byte::x67, byte::x68,
+  byte::x69, byte::x6c, byte::x6d, byte::x6e, byte::x6f, byte::x70,
+  byte::x71, byte::x72, byte::x73, byte::x74, byte::x75, byte::x76,
+  byte::x77,
   IntList, int_list, IntList.push[Elem=Int], IntList.get[Elem=Int, Index=Int],
   IntList.set[Elem=Int, Index=Int], IntList.length[Index=Int];
 
-# Printing, without string literals (D5): a character by its ASCII code,
-# and a word of up to six lowercase letters packed into an Int, base 32,
-# a = 1 (so `word(1156)` prints "add").
+# Dynamic digits still use character codes; fixed diagnostic text is quoted.
 assume Out {
-  fn word(w: Int) {
-    if w >= 32 { word(w / 32); }
-    putchar((w % 32 + 96).char());
-  }
-  fn ch(c: Int) { putchar(c.char()); }
-  fn sp() { ch(32); }
   fn int(n: Int) {
-    if n < zero { ch(45); int(-n); return; }
+    if n < zero { print("-"); int(-n); return; }
     if n >= 10 { int(n / 10); }
     putchar((n % 10 + 48).char());
   }
@@ -82,10 +83,10 @@ assume Out, BaseOps {
   # Nine significant digits, as d.dddddddde±n: enough to tell the halves
   # apart, not to reproduce either (the scaling by ten rounds).
   fn num(x: Scalar) {
-    if x != x { word(14 * 32 + 1); word(14); return; }            # nan
-    if x < lift(zero) { ch(45); num(-x); return; }
-    if x == lift(zero) { ch(48); return; }
-    if x - x != lift(zero) { word(9 * 1024 + 14 * 32 + 6); return; } # inf
+    if x != x { print("nan"); return; }
+    if x < lift(zero) { print("-"); num(-x); return; }
+    if x == lift(zero) { print("0"); return; }
+    if x - x != lift(zero) { print("inf"); return; }
     var y = x;
     var e = 0;
     while y >= lift(10) { y = y / lift(10); e = e + 1; }
@@ -93,34 +94,33 @@ assume Out, BaseOps {
     var m = (y * lift(100000000)).round();
     if m >= 1000000000 { m = m / 10; e = e + 1; }
     int(m / 100000000);
-    ch(46);
+    print(".");
     var d = 10000000;
     var r = m % 100000000;
     while d > zero { int(r / d); r = r % d; d = d / 10; }
-    ch(101);
+    print("e");
     int(e);
   }
-  fn bool(b: Bool) { if b { word(674469); } else { word(6337125); } }   # true, false
+  fn bool(b: Bool) { if b { print("true"); } else { print("false"); } }
 }
 
 assume Out, BaseOps, tol, state {
-  # Which word names operation `op`, packed as for `word`.
-  fn op_name(op: Int): Int {
-    if op == 1 { 1156 } else if op == 2 { 20130 } else if op == 3 { 13996 }    # add sub mul
-    else if op == 4 { 4406 } else if op == 5 { 640596 } else if op == 6 { 404 } # div sqrt lt
-    else if op == 7 { 244 } else if op == 8 { 389 } else if op == 9 { 229 }      # gt le ge
-    else if op == 10 { 177 } else if op == 11 { 453 } else if op == 12 { 19387844 } # eq ne round
-    else { 21583299 }                                                             # trunc
+  fn op_name(op: Int): String {
+    if op == 1 { "add" } else if op == 2 { "sub" } else if op == 3 { "mul" }
+    else if op == 4 { "div" } else if op == 5 { "sqrt" } else if op == 6 { "lt" }
+    else if op == 7 { "gt" } else if op == 8 { "le" } else if op == 9 { "ge" }
+    else if op == 10 { "eq" } else if op == 11 { "ne" } else if op == 12 { "round" }
+    else { "trunc" }
   }
 
   # "shadow: op N name", or for a decision, which is not an operation,
   # "shadow: after op N, name".
-  fn head(name: Int, after: Bool) {
-    word(645960183); ch(58); sp();                                      # shadow:
-    if after { word(1265842); sp(); }                                   # after
-    word(496); sp(); int(state.get(0));                                 # op N
-    if after { ch(44); }
-    sp(); word(name);
+  fn head(name: String, after: Bool) {
+    print("shadow: ");
+    if after { print("after "); }
+    print("op "); int(state.get(0));
+    if after { print(","); }
+    print(" "); print(name);
   }
 
   fn shadow_note(op: Scalar, said: Bool, a: Scalar, b: Scalar, x: Scalar, X: Scalar, q: Scalar) {
@@ -132,12 +132,12 @@ assume Out, BaseOps, tol, state {
         if q > tol {
           state.set(1, one);
           head(name, false);
-          ch(40); num(a); ch(44); sp(); num(b); ch(41);
-          sp(); word(139986516); word(19); ch(58); sp();                # departs:
-          ch(112); sp(); num(x); ch(44); sp();                          # p
-          ch(80); sp(); num(X); ch(44); sp();                           # P
-          word(18604); sp(); num(q);                                    # rel
-          ch(10);
+          print("("); num(a); print(", "); num(b); print(")");
+          print(" departs: ");
+          print("p "); num(x); print(", ");
+          print("P "); num(X); print(", ");
+          print("rel "); num(q);
+          print("\n");
         }
       }
       return;
@@ -145,17 +145,17 @@ assume Out, BaseOps, tol, state {
     if state.get(2) == zero {
       state.set(2, one);
       head(name, true);
-      ch(32); word(86030440); ch(58); sp();                             # branch:
+      print(" branch: ");
       if code >= 12 {
-        ch(112); sp(); num(a); sp(); num(x); ch(44); sp();
-        ch(80); sp(); num(b); sp(); num(X);
+        print("p "); num(a); print(" "); num(x); print(", ");
+        print("P "); num(b); print(" "); num(X);
       } else {
-        ch(112); sp(); ch(40); num(a); ch(44); sp(); num(b); ch(41); sp();
-        bool(said); ch(44); sp();
-        ch(80); sp(); ch(40); num(x); ch(44); sp(); num(X); ch(41); sp();
+        print("p ("); num(a); print(", "); num(b); print(") ");
+        bool(said); print(", ");
+        print("P ("); num(x); print(", "); num(X); print(") ");
         bool(said ^ true);
       }
-      ch(10);
+      print("\n");
     }
   }
 }

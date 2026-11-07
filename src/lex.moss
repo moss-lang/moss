@@ -573,7 +573,7 @@ assume Std {
       }
     }
 
-    # The keyword trie (D48: no string literals required). `c0` was already
+    # The keyword trie compares characters without allocating strings. `c0` was already
     # consumed by token_at.
     fn name_or_keyword(c0: Char): Token {
       if c0 == char::a {
