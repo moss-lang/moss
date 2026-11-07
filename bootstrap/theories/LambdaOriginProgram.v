@@ -73,6 +73,10 @@ From NM Require Import ReifyHeaderProgram.
  LambdaCompletionProgram.kf_check_main_signature_history
  LambdaCompletionProgram.ks_check_main_signature_history
  ReifyHeaderProgram.kh_entry_zero_width ReifyHeaderProgram.kh_check_main_signature:keepsdb.
+(* Share this leaf proof across all five declaration kinds in check_assumes. *)
+Local Lemma lh_check_assumed_requirements:forall mi e k,LH(check_assumed_requirements mi e k).
+Proof. intros;apply lh_keeps;[apply ok_check_assumed_requirements_frame|unfold check_assumed_requirements;keepst|unfold check_assumed_requirements;keepst|unfold check_assumed_requirements;keepst]. Qed.
+#[local]Hint Resolve lh_check_assumed_requirements:lhdb.
 Lemma lhp_elab_program:LHP elab_program.
 Proof.
  unfold elab_program.

@@ -700,6 +700,14 @@ Ltac okIfixind3 :=
     let n := fresh "n" in let IHn := fresh "IHn" in
     generalize N, a, b; intro n; induction n as [|n IHn]; intros; cbn beta iota end.
 
+Local Lemma okI_pure_input : forall A (f : st -> A),
+  okI (fun s => Good (f s, s)).
+Proof.
+  intros A f. split.
+  - apply ok_reader. intros s a final Run. injection Run as _ <-. reflexivity.
+  - intros s a final Is I Run. injection Run as _ <-. exact I.
+Qed.
+
 Ltac okIFt :=
   repeat (fintros; cbn zeta; lazymatch goal with
   | |- okIF _ (mbind _ _) => apply okIF_bind
@@ -726,6 +734,7 @@ with okIt :=
   | |- okI (miter _ _) => apply okI_miter
   | |- okI (with_vars _ _) => apply okI_with_vars
   | |- okI (upd _) => apply okI_ni; [okt | nit|keepst]
+  | |- okI (fun s => Good (_, s)) => apply okI_pure_input
   | |- okI (fun s => _) => apply okI_ni; [okt | nit|keepst]
   | |- okI ?t =>
       first [ (lazymatch t with match ?x with _ => _ end => destruct x end)

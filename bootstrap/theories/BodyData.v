@@ -622,17 +622,34 @@ Proof.
   pose proof (canon_uf e e_arm Earm) as Ecanon.
   assert (Eexp : option_map (fun t => trF (canon e_arm t)) exp = option_map (fun t => trF (canon e t)) exp).
   { destruct exp; cbn [option_map]; [rewrite Ecanon|]; reflexivity. }
+  assert (Ii2 : InfoInv s2) by cache_inv.
+  assert (Ifwd2 : FwdInv s2) by fwd_inv.
+  (* Every non-block constructor uses the same expression soundness fact. *)
+  assert (ExprArm : forall y x ty last,
+    synth f' c e_arm y exp s2 = Good ((x, ty), last) ->
+    Elab.opt_fits e_arm ty exp = true -> Post w P R Fl last F ->
+    (forall block, y <> AEBlock block) ->
+    A.Branch WW P F (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) (trbC e binders) C)
+      y (option_map (fun t => trF (canon e_arm t)) exp) x (trF (canon e_arm ty)) /\
+    A.opt_fits (trF (canon e_arm ty)) (option_map (fun t => trF (canon e_arm t)) exp) /\
+    WFty ty /\ Support WW ty).
+  {
+    intros y x ty last Run Fits Post Nonblock.
+    destruct (bs_synth _ _ _ _ _ IH c e_arm y exp s2 x ty last Run F _ Hi2 Ii2 Ifwd2 Hca Wx Sx Post)
+      as [Ex [Well Supported]].
+    split; [apply A.BranchExpr; [exact Nonblock | exact Ex] |].
+    split; [exact (elab_opt_fits_tr Fl e_arm ty exp (cr_uf _ _ _ _ _ _ _ Hca) Fits) |].
+    exact (conj Well Supported).
+  }
   (* the arm's body *)
   assert (Hbody : A.Branch WW P F (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) (trbC e binders) C)
                     body (option_map (fun t => trF (canon e_arm t)) exp) bx (trF (canon e_arm bty)) /\ A.opt_fits (trF (canon e_arm bty)) (option_map (fun t => trF (canon e_arm t)) exp) /\ WFty bty /\ Support WW bty).
   { destruct body; cbn beta iota in Hb;
       try (bi Hb as r5 s5 Hy; destruct r5 as [bx0 bt0];
            destruct (Elab.opt_fits e_arm bt0 exp) eqn:Eo; [|nogood Hb]; injection Hb as <- <- <-;
-           destruct (bs_synth _ _ _ _ _ IH c e_arm _ exp s2 bx0 bt0 s5 Hy F _ Hi2 ltac:(cache_inv) ltac:(fwd_inv) Hca Wx Sx Hp1) as [Ey [Wy Sy]];
-           split; [apply A.BranchExpr; [intros b6 E6; discriminate E6 | exact Ey]|];
-           split; [exact (elab_opt_fits_tr Fl e_arm bt0 exp (cr_uf _ _ _ _ _ _ _ Hca) Eo) |split;[exact Wy|exact Sy]]).
+           exact (ExprArm _ _ _ _ Hy Eo Hp1 ltac:(intros block Equal; discriminate Equal))).
     bi Hb as r5 s5 Hy. destruct r5 as [[bx0 t0] bt0]. injection Hb as <- <- <-.
-    destruct (bs_block _ _ _ _ _ IH c e_arm a exp s2 bx0 t0 bt0 s5 Hy F _ Hi2 ltac:(cache_inv) ltac:(fwd_inv) Hca Wx Sx Hp1) as (Eb & Wt & St & -> & _).
+    destruct (bs_block _ _ _ _ _ IH c e_arm a exp s2 bx0 t0 bt0 s5 Hy F _ Hi2 Ii2 Ifwd2 Hca Wx Sx Hp1) as (Eb & Wt & St & -> & _).
     split; [|split].
     - replace (trF (canon e_arm (opt_default (block_bt a t0) exp))) with
         (match option_map (fun t => trF (canon e_arm t)) exp with Some x => x | None => A.branch_ty a (trF (canon e_arm t0)) end)
