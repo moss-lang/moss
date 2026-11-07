@@ -1,10 +1,10 @@
 (* The fixed public interface used by the executable's primitive runtime.
-   Arguments and the file snapshot belong to Model.State, not the interface. *)
+   Arguments and the file snapshot belong to Model.state, not the interface. *)
 From Stdlib Require Import List.
 From NM Require Import Audit MossX XHeapC.
 
 Module Host <: HOST.
-  Definition State := MossX.mstate.
+  Definition state := MossX.mstate.
   Definition primitive := MossX.run_prim.
   Definition heap_ok := XHeapC.ConcreteHeap.heap_ok.
 End Host.

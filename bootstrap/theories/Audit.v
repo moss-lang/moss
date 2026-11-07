@@ -2198,7 +2198,7 @@ Definition prim_sig (p : prim) : option (list xty * xty) :=
    methods of `Memories` (D79 as amended, DRAFT NOTE 23): an address
    argument is an `Addr`, and memory.size and memory.grow receive the
    memory they are a method of.  MossX's primitives read the bare address
-   (MossX.mem_args); ValidInterface includes the law at these
+   (MossX.mem_args); interface_laws includes the law at these
    signatures. *)
 Definition prim_msig (p : prim) : option (list xty * xty) :=
   match p with
@@ -4629,30 +4629,30 @@ End Heap.
 (* Public source-to-world contract                                           *)
 (* ######################################################################## *)
 
-(* Rocq strings store bytes. Source contents must pass the UTF-8 check
+(* Rocq strings store bytes. source contents must pass the UTF-8 check
    below; paths use normalized absolute names in the modeled filesystem. *)
 Definition canonical_path (name : string) : bool :=
   Loader.is_abs name &&
   String.eqb (Loader.normalize "/" None name) name.
 
-Record Path := AbsolutePath {
+Record file_path := AbsolutePath {
   path_text : string;
   path_canonical : canonical_path path_text = true
 }.
-Definition Source := Path -> option string.
-(* Program is the concrete code representation. Admissible below states
+Definition source := file_path -> option string.
+(* program is the concrete code representation. Admissible below states
    its source-level typechecking condition; arbitrary code records may
    still be malformed. *)
-Definition Program := xprogram.
+Definition program := xprogram.
 
-Definition path_of_string (name : string) : option Path.
+Definition path_of_string (name : string) : option file_path.
 Proof.
   destruct (canonical_path name) eqn:Valid.
   - exact (Some (AbsolutePath name Valid)).
   - exact None.
 Defined.
 
-Definition source_read (source : Source) (name : string) : option string :=
+Definition source_read (source : source) (name : string) : option string :=
   match path_of_string name with
   | None => None
   | Some path =>
@@ -4666,30 +4666,30 @@ Definition source_read (source : Source) (name : string) : option string :=
    Public keeps arguments and the read-only file snapshot in the world too,
    so the default interface is one fixed value for every invocation. *)
 Module Type HOST.
-  Parameter State : Type.
-  Parameter primitive : xprog -> prim -> list xvalue -> State -> xout * State.
-  Parameter heap_ok : Heap.hty -> State -> Prop.
+  Parameter state : Type.
+  Parameter primitive : xprog -> prim -> list xvalue -> state -> xout * state.
+  Parameter heap_ok : Heap.hty -> state -> Prop.
 End HOST.
 
 Module Public (Host : HOST).
-  Record State := World {
+  Record state := World {
     arguments : list (list int);
     read_file : list int -> option (list int);
-    external : Host.State
+    external : Host.state
   }.
 
-  Record Interface := HostInterface {
+  Record interface := HostInterface {
     supports : prim -> bool;
-    primitive : xprog -> prim -> list xvalue -> Host.State -> xout * Host.State;
-    heap_ok : Heap.hty -> Host.State -> Prop
+    primitive : xprog -> prim -> list xvalue -> Host.state -> xout * Host.state;
+    heap_ok : Heap.hty -> Host.state -> Prop
   }.
 
   (* Unsupported operations have a defined stopping outcome in the existing
      primitive model; providing them does not promise a returning result. *)
-  Definition default_interface : Interface :=
+  Definition default_interface : interface :=
     HostInterface (fun _ => true) Host.primitive Host.heap_ok.
 
-  Definition runtime (program : Program) (initial : State) : xprog :=
+  Definition runtime (program : program) (initial : state) : xprog :=
     program_of program (arguments initial) (read_file initial).
 
   Definition primitive_result P result (out : xout) : Prop :=
@@ -4701,7 +4701,7 @@ Module Public (Host : HOST).
 
   (* Laws of supplied operations, under the platform's audited signatures.
      The source-side agreement with these signatures is Platform.Linked. *)
-  Definition interface_laws (P : xprog) (interface : Interface) : Prop :=
+  Definition interface_laws (P : xprog) (interface : interface) : Prop :=
     let step := primitive interface P in
     let valid_heap := heap_ok interface in
     (forall p params result values state,
@@ -4737,34 +4737,34 @@ Module Public (Host : HOST).
       | _ => False
       end).
 
-  Definition Compatible (program : Program) (interface : Interface) : Prop :=
+  Definition Compatible (program : program) (interface : interface) : Prop :=
     Platform.Ready program /\
     (forall operation, In operation (required_primitives program) -> supports interface operation = true) /\
     forall argv read, interface_laws (program_of program argv read) interface.
 
-  Definition ValidState (interface : Interface) (state : State) : Prop :=
+  Definition ValidState (interface : interface) (state : state) : Prop :=
     heap_ok interface (fun _ => None) (external state).
 
   (* Traps, exits and unsupported primitives are explicit outcomes. Wrong
      represents an internal error, including a missing interface operation. *)
-  Inductive Outcome :=
-  | Returned : xvalue -> Outcome
-  | Exited : int -> Outcome
-  | Trapped : nat -> Outcome
-  | Unsupported : nat -> Outcome
-  | Wrong : nat -> Outcome.
+  Inductive outcome :=
+  | Returned : xvalue -> outcome
+  | Exited : int -> outcome
+  | Trapped : nat -> outcome
+  | Unsupported : nat -> outcome
+  | Wrong : nat -> outcome.
 
-  Record Execution := Result {
-    outcome : Outcome;
-    final_state : State
+  Record execution := Result {
+    execution_outcome : outcome;
+    final_state : state
   }.
 
   (* None means this finite observation has not produced an outcome. *)
-  Definition Partial (A : Type) := nat -> option A.
+  Definition partial (A : Type) := nat -> option A.
   Definition e_missing_primitive := 15.
 
   Module ReferenceHost <: PRIM_SEMANTICS.
-    Definition mstate := (Interface * State)%type.
+    Definition mstate := (interface * state)%type.
     Definition run_prim P p values (machine : mstate) :=
       let '(interface, state) := machine in
       if supports interface p then
@@ -4774,7 +4774,7 @@ Module Public (Host : HOST).
   End ReferenceHost.
   Module Reference := XSem ReferenceHost.
 
-  Definition observe (result : Reference.xres) : option Execution :=
+  Definition observe (result : Reference.xres) : option execution :=
     let state := snd (Reference.xr_st result) in
     match Reference.xr_out result with
     | XOk value | XRet value => Some (Result (Returned value) state)
@@ -4786,20 +4786,20 @@ Module Public (Host : HOST).
     | XFuel => None
     end.
 
-  (* The build target is this platform. Source declarations and primitive
+  (* The build target is this platform. source declarations and primitive
      bindings are checked against one shared static reading of the bundle.
-     The prelude is fixed configuration and is read through Source too. *)
-  Definition Builds (prelude : Path) (source : Source) (entry : Path)
-      (program : Program) : Prop :=
+     The prelude is fixed configuration and is read through source too. *)
+  Definition Builds (prelude : file_path) (source : source) (entry : file_path)
+      (program : program) : Prop :=
     exists bundle world,
       Loader.Bundled (source_read source) "/" (path_text prelude) (path_text entry) bundle /\
       Elaboration.ElaboratesIn bundle world program /\ Platform.Linked world program.
 
-  Definition Admissible (prelude : Path) (program : Program) : Prop :=
+  Definition Admissible (prelude : file_path) (program : program) : Prop :=
     exists source entry, Builds prelude source entry program.
 
-  Definition Runs (program : Program) (interface : Interface)
-      (initial : State) (result : Execution) : Prop :=
+  Definition Runs (program : program) (interface : interface)
+      (initial : state) (result : execution) : Prop :=
     exists fuel,
       observe (Reference.run_main fuel (runtime program initial)
         (xo_main program) (xo_env program) (interface, initial)) = Some result.
@@ -4809,9 +4809,9 @@ Module Public (Host : HOST).
      Compatibility with the default interface follows from building;
      other compatible interfaces are covered by the same run/safety claims. *)
   Module Type CORRECT.
-    Parameter prelude : Path.
-    Parameter build : Source -> Path -> option Program.
-    Parameter run : Program -> Interface -> State -> Partial Execution.
+    Parameter prelude : file_path.
+    Parameter build : source -> file_path -> option program.
+    Parameter run : program -> interface -> state -> partial execution.
 
     Axiom build_sound : forall source entry program,
       build source entry = Some program ->

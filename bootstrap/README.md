@@ -260,6 +260,8 @@ out of fuel (`FastPath.fast_run`):
 **[Audit.v](theories/Audit.v)** is the self-contained language model and public build/run
 contract. It defines source files, syntax, elaboration, reference execution,
 the host interface laws, and both semantic predicates in the same file.
+Public data types use lowercase names; file_path distinguishes absolute
+filesystem paths from syntax-level name paths.
 Its final module type, **Public.CORRECT**, has exactly five obligations:
 
 - **build_sound**: every successful build satisfies Builds and produces a

@@ -23,22 +23,22 @@ Proof.
 Qed.
 
 Module Host <: HOST.
-  Definition State := nat.
-  Definition primitive (_ : xprog) (_ : prim) (_ : list xvalue) (state : State) :=
+  Definition state := nat.
+  Definition primitive (_ : xprog) (_ : prim) (_ : list xvalue) (state : state) :=
     (XUns 0, S state).
-  Definition heap_ok (_ : Heap.hty) (_ : State) := True.
+  Definition heap_ok (_ : Heap.hty) (_ : state) := True.
 End Host.
 Module Model := Public Host.
 Import Model.
 
-Definition test_interface : Interface := default_interface.
-Definition empty_interface : Interface := HostInterface (fun _ => false) Host.primitive Host.heap_ok.
-Definition initial : State := World [] (fun _ => None) 7.
-Definition unit_program : Program :=
+Definition test_interface : interface := default_interface.
+Definition empty_interface : interface := HostInterface (fun _ => false) Host.primitive Host.heap_ok.
+Definition initial : state := World [] (fun _ => None) 7.
+Definition unit_program : program :=
   XProgram [(1, XUnit)] [] 0 0 0 1 [] [] [] [] [] false [] [].
-Definition missing_main : Program :=
+Definition missing_main : program :=
   XProgram [] [] 0 0 0 1 [] [] [] [] [] false [] [].
-Definition primitive_program : Program :=
+Definition primitive_program : program :=
   XProgram [(1, XCallA 2 [])] [] 0 0 0 1 [(IFn 2, XDPrim (PUnsupported 0))]
     [] [] [] [] false [] [].
 
