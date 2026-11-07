@@ -726,6 +726,21 @@ fn functor_outputs_shadow_input_type_arguments() {
     assert_eq!(run_moss(&entry, PRELUDE), "yn");
 }
 
+/// Rebinding output T keeps the old, merged U generation usable.
+#[test]
+fn native_functor_outputs_preserve_merged_input_generations() {
+    let entry = "tests/regressions/functor_input_output_generations.moss";
+    assert_eq!(run_moss(entry, PRELUDE), "yn");
+}
+
+/// The oracle still captures the old input representative in its output keys.
+#[test]
+#[ignore = "Known oracle generation-capture bug; see bootstrap/STATUS.md"]
+fn oracle_functor_outputs_preserve_merged_input_generations() {
+    let entry = "tests/regressions/functor_input_output_generations.moss";
+    assert_eq!(oracle_run(entry, &[]), "yn");
+}
+
 /// D84's standing tests that run: a functor's own inputs read per
 /// application (`fn_input`), a captured val across frames, a captured
 /// memory, merged polymorphic inputs, arrays in a scratch memory, an
@@ -896,7 +911,7 @@ fn abstract_functor_binds_are_checked() {
             (
                 "functor_promise",
                 BIND_INT_CHANGES_RESULT,
-                "?X {0} main float\n?X {0} main trunc\n?X {0} main round\n",
+                "?X {} main Int\n",
             ),
             // Only a functor `Pick` is bound to where nothing reaches makes
             // `make` at another type than promised, and the application is
@@ -908,7 +923,7 @@ fn abstract_functor_binds_are_checked() {
             (
                 "functor_promise_candidate",
                 BIND_INT_CHANGES_RESULT,
-                "?X {} other make\n",
+                "?X {} other Int\n",
             ),
             // A bound functor relies only on its own argument signature for
             // the types its result mentions too.
@@ -1673,10 +1688,9 @@ fn an_uncalled_abstract_application_is_checked_by_the_bootstrap() {
 #[test]
 fn an_uncalled_abstract_application_is_checked_by_the_self_hosted_compiler() {
     let entry = wasi("functor_promise_unreached");
-    // D84: `Floats` has no list now.
-    let expected: String =
-        ["float", "trunc", "round"].iter().map(|item| format!("?X {entry} main {item}\n")).collect();
-    assert_eq!(report(&entry, PRELUDE), expected);
+    // The post-body pin check names the changed input before checking
+    // signatures of the promised result items.
+    assert_eq!(report(&entry, PRELUDE), format!("?X {entry} main Int\n"));
 }
 
 /// D20 and D16: a call needs everything the callee's declaration assumes,

@@ -1,0 +1,42 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type P;
+type T;
+type U;
+assume P { val seed: P; }
+assume T { val made: T; }
+context Left = T, seed[P=T];
+context Right = U, seed[P=U];
+fn .out(): Yes | No;
+tag Old;
+tag Concrete;
+tag Yes;
+tag No;
+functor Target[]: Right, Left -> T, made, T.out, U.out;
+functor Provider: Right, Left -> T, made, T.out, U.out {
+  bind T = Concrete;
+  bind made = Concrete;
+  bind T.out = () => Yes;
+  bind U.out = () => No;
+}
+assume Std, Right, Left, Target {
+  fn run_target() {
+    bind Target;
+    match made.out() { Yes => putchar(char::y), No => putchar(char::n) };
+    match seed.out() { Yes => putchar(char::y), No => putchar(char::n) };
+  }
+}
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind P = Old;
+    bind T = Old;
+    bind U = Old;
+    bind seed = Old;
+    bind Target = Provider;
+    run_target();
+  }
+}

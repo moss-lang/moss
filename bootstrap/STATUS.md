@@ -117,8 +117,11 @@ contexts, ignored application names, and empty applications.
 
 Linked outputs still have an alpha-capture bug: an old merged input
 representative can have the same identifier as a newly rebound output name.
-In the verified runtime reproducer, native execution prints `yn`, while the
-raw, reference and lazy oracle paths get stuck with `XErr 6`. The checked
+In the [runtime reproducer](../tests/regressions/functor_input_output_generations.moss),
+native execution prints `yn`. After the theta-priority correction, the oracle
+prints `n` for the first call and then gets stuck with `XErr 6`. The expected
+oracle behavior is recorded in a newly ignored regression test; the native
+control remains enabled. The checked
 counterexample in
 [`LinkOutputCaptureBoundary.v`](theories/LinkOutputCaptureBoundary.v) records
 the conflicting output/body key readings. Fixing theta priority covers one
