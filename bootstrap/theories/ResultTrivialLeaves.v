@@ -1,6 +1,6 @@
 (* Type declarations and already-defined outputs add no runtime slot. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  CtxWalk CtxMerge NominalSupport OutputScopeExec ProvideResultFold FamilyResultFold.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -24,7 +24,7 @@ Section Leaves.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem result_type_leaf:forall c e F C mi pa a outer ob out s sub sx g,
  (match a with Some bs=>let!xs:=app_subst 200 e mi bs outer in ret(xs++outer)|None=>ret outer end)s=Good(sub,sx)->
  A.resolve_sym W(gm_path(get_mod w mi))pa=Some(gs_id g)->

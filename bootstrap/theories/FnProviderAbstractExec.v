@@ -1,6 +1,6 @@
 (* The actual named abstract-provider branch builds a fresh typed forwarder. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr CtxWalk
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr CtxWalk
  CanonTypes InfoPreserve LoaderOrigin ForwarderTrace ForwarderHistory FinalForwarders
  FnProviderAbstractTrace FnProviderForwardSignature FnProviderForwardExec FnSnapshotAlign ProviderSig SignatureLeavesExec.
 Import ListNotations.
@@ -10,8 +10,8 @@ Section Abstract.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
-Notation WW:=(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem abstract_provider_sound:forall expectfuel matchfuel c e F C pa target provider wanted kind s mid sm final n ps rt,
  nget(w_syms w)(gs_id target)=Some target->gs_kind target=KFn->gs_decl target=ADFn RPlain n ps rt None->
  resolve_sym(cx_mod c)pa s=Good(Some target,s)->
@@ -44,7 +44,7 @@ Proof.
   assert(old=provider)by congruence;subst old.
   pose proof(load_world_source b w Hload _ _ Old)as Source;rewrite Origin in Source;discriminate. }
  assert(Fresh:A.Fresh WW(gs_id provider)).
- {split;[cbn[A.w_decl BodySound.W W_read];rewrite Absent;reflexivity|exact Nonzero]. }
+ {split;[cbn[A.w_decl BodySoundCore.W W_read];rewrite Absent;reflexivity|exact Nonzero]. }
  assert(Ast:A.ast_of WW(gs_id target)=Some(ADFn RPlain n ps rt None)).
  {change(option_map A.d_ast(A.w_decl(W_read w R Fl)(gs_id target))=Some(ADFn RPlain n ps rt None)).
   rewrite(w_decl_read w R Fl _ _ Loaded);cbn[option_map A.d_ast];rewrite Decl;reflexivity. }

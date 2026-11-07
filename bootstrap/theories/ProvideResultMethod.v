@@ -2,7 +2,7 @@
    instantiation.  Method output brackets do not use input relevance gates. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
- BodyTy CtxWalk CtxMethodExec MethodLookup MethodClean MethodKind SigSound
+ BodyTy CtxWalk MethodLookup MethodClean MethodKind SigSound
  FreeTypesExec MethodKeyTr ProvideResultReading ProvideResultFunction.
 Import ListNotations.
 Local Open Scope list_scope.

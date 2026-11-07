@@ -1,6 +1,6 @@
 (* Forwarder signature matching uses actual prototype and captured app coherence. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr
+From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  CanonTypes CtxWalk FnSnapshot FnSnapshotAlign FnProviderForwardSignature ForwarderTrace
  InfoInvariant InfoPreserve InfoCache ForwarderPrototype NeedMapExec InstantiateTr ProviderSig TyOfSubst.
 Import ListNotations.
@@ -12,8 +12,8 @@ Section Forward.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
-Notation WW:=(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem match_forwarder_captured_signature:forall fuel c e F C provider target wanted kind s sm final n ps rt,
  nget(st_syms s)(gs_id provider)=Some provider->gs_origin provider=OForwarder(gs_id target)->
  nget(w_syms w)(gs_id target)=Some target->gs_kind target=KFn->

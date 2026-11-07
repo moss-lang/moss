@@ -1,6 +1,6 @@
 (* Dispatch the concrete named defined-provider case before remaining bind cases. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv InfoPreserve BodySound BindSequence BindCopyDispatch BindFnDefinedExec BindFnAbstractExec.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv InfoPreserve BodySoundCore BindSequence BindCopyDispatch BindFnDefinedExec BindFnAbstractExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Definition named_function_bind(W:A.world)(F:A.frame)(sp:spec)(y:aexpr):bool:=
@@ -14,9 +14,9 @@ Definition named_function_bind(W:A.world)(F:A.frame)(sp:spec)(y:aexpr):bool:=
 Section Dispatch.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Definition RemainingBindStep(f:nat):Prop:=forall c e sp y s xs e' c' s',
  check_bind f c e sp y s=Good((xs,e',c'),s')->forall F C,
  simple_bind WW F sp y=0 ->abstract_copy_bind WW F sp y=false ->

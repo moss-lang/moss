@@ -1,6 +1,6 @@
 (* The actual captured rows supply the model's captured-local context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySound NominalSupport
+From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore NominalSupport
  LambdaCaptureFold LambdaCaptureTables.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -27,7 +27,7 @@ Proof. induction rows as[|[[n v]t]rows IH];[reflexivity|].
  (n,v)::map(fun q=>let '(n,v,_) :=q in(n,v))rows);f_equal;exact IH. Qed.
 Section Context.
 Variables(w:Elab.world)(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma capture_full_reading:forall c original F Co rows C,
  CxRel w R Fl c original F Co->Forall(captured_row_available original)rows->
  fold_left(lp_capture_one Co)(combine(map capture_name rows)(map capture_id rows))C=

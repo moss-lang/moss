@@ -1,6 +1,6 @@
 (* The successful lambda-provider prefix proves its annotation premises. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr
+From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  LambdaAnnotations ForwarderLowerCode.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -9,7 +9,7 @@ Section Prefix.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Notation tc:=(fun e t=>tr Fl(canon e t)).
 Theorem lambda_annotation_prefix:forall fuel c e F C ps rt body bound sg this what s pid pre sm final,
  lambda_provider fuel c e ps rt body bound sg this what s=Good((pid,pre,sm),final)->

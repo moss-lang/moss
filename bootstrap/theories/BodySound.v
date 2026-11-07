@@ -574,10 +574,19 @@ Proof.
   - binv H as r3 s3 H3. destruct r3 as [ex et]. binv H as tj s4 H4. injection H as <- <- <-.
     assert (Hbr : Inv s3 /\ Fr s2 s3 /\ forall F', Post s3 F' -> CxRel c e F' C ->
               (exists et', A.Branch W P F' C y (option_map (fun t => trF (canon e t)) exp) ex et' /\ (exp = None -> et' = trF (canon e et))) /\ WFty et /\ Support W et).
-    { destruct y as [| | | | | | |c5 b5 e5| | | |b5| | | | ]; cbn beta iota in H3;
-        try (destruct (okstep _ _ _ _ _ (ok_synth _ _ _ _ _) Hi2 H3) as [Hi3 Fs3]; split; [exact Hi3|]; split; [exact Fs3|];
-             intros F' Hp' Hc'; destruct (bs_synth _ IH c e _ exp s2 ex et s3 H3 F' C Hi2 ltac:(cache_inv) ltac:(fwd_inv) Hc' Hx Hxs Hp') as [Ey [Wy Sy]];
-             split; [exists (trF (canon e et)); split; [apply A.BranchExpr; [intros b6 E6; discriminate E6 | exact Ey] | reflexivity] | split;[exact Wy|exact Sy]]).
+    { assert (Plain : forall y0,
+          (forall b0, y0 <> AEBlock b0) ->
+          synth f c e y0 exp s2 = Good ((ex, et), s3) ->
+          Inv s3 /\ Fr s2 s3 /\ forall F', Post s3 F' -> CxRel c e F' C ->
+          (exists et', A.Branch W P F' C y0 (option_map (fun t => trF (canon e t)) exp) ex et' /\ (exp = None -> et' = trF (canon e et))) /\ WFty et /\ Support W et).
+      { intros y0 NotBlock Run.
+        destruct (okstep _ _ _ _ _ (ok_synth _ _ _ _ _) Hi2 Run) as [Hi3 Fs3].
+        split; [exact Hi3|]. split; [exact Fs3|].
+        intros F' Hp' Hc'.
+        destruct (bs_synth _ IH c e y0 exp s2 ex et s3 Run F' C Hi2 ltac:(cache_inv) ltac:(fwd_inv) Hc' Hx Hxs Hp') as [Ey [Wy Sy]].
+        split; [exists (trF (canon e et)); split; [apply A.BranchExpr; [exact NotBlock | exact Ey] | reflexivity] | split;[exact Wy|exact Sy]]. }
+      destruct y as [| | | | | | |c5 b5 e5| | | |b5| | | | ]; cbn beta iota in H3;
+        try (apply Plain; [intros b0 E0; discriminate E0 | exact H3]).
       - stepok H3 (ok_synth_if f c e (AEIf c5 b5 e5) exp) Hi2 Hi3 Fs3. split; [exact Hi3|]. split; [exact Fs3|].
         intros F' Hp' Hc'. destruct (bs_if _ IH c e _ exp s2 ex et s3 H3 F' C Hi2 ltac:(cache_inv) ltac:(fwd_inv) Hc' Hx Hxs Hp') as [Ey [Wy Sy]].
         split; [exists (trF (canon e et)); split; [apply A.BranchExpr; [intros b6 E6; discriminate E6 | exact Ey] | reflexivity] | split;[exact Wy|exact Sy]].

@@ -1,7 +1,7 @@
 (* Every result item reads brackets in the current complete output scope.
    This execution package applies to values, functions, methods and contexts. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTy
  CanonBodyTy CanonTypes Merge SourceSupport NominalSupport FamilyMethodExec.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -11,7 +11,7 @@ Section Scope.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem output_scope_execution:forall c e F C mi a outer ob s sub sx,
  (match a with Some bs=>let!xs:=app_subst 200 e mi bs outer in ret(xs++outer)|None=>ret outer end)s=Good(sub,sx)->
  Inv s->st_w s=w->In mi(w_order w)->Later w P R Fl sx->CxRel w R Fl c e F C->

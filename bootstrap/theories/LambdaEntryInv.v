@@ -3,7 +3,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
  InfoInvariant InfoPreserve WrapperReadonly FwdInvariant FwdReadonly FwdPreserve
- BodySound LambdaAnnotations LambdaTrace.
+ BodySoundCore LambdaAnnotations LambdaTrace.
 Import ListNotations.
 Definition LambdaEntryReadonly{X}(m:M X):Prop:=NI m/\keeps st_wrappers m/\keeps st_fwd m.
 Lemma lambda_entry_cache:forall X(m:M X),ok m->LambdaEntryReadonly m->okI m.

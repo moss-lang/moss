@@ -1,7 +1,7 @@
 (* Complete value/function output leaves after the actual symbol resolution.
    Their bracket scopes and snapshots come from actual source execution. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  CtxWalk CtxMerge NominalSupport ProvideResultMethod ProvideResultReading ProvideResultFunction ProvideResultContext ProvideResultFold
  ProvideFunctorContext ProvideResultDomain ProvideValueContext ProvideFunctionContext OutputScopeExec FamilyResultFold ResultLeafTables.
 Import ListNotations.
@@ -12,7 +12,7 @@ Section Leaves.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem result_value_leaf:forall c e F C mi pa a outer ob out s sub sx g n t e' keys sf,
  (match a with Some bs=>let!xs:=app_subst 200 e mi bs outer in ret(xs++outer)|None=>ret outer end)s=Good(sub,sx)->
  provide_value_code e g t(sub++tymap e)out sx=Good((e',keys),sf)->

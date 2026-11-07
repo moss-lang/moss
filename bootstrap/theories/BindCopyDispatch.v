@@ -1,6 +1,6 @@
 (* A checked copy is dispatched from real loaded abstract declarations. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  SignatureLeavesExec FunctorCopyExec BindSequence InfoPreserve.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -30,7 +30,7 @@ Section Copy.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem check_bind_abstract_copy:forall fuel c e pa pg s xs e' c' s' F C,
  A.WorldOf b WW ->
  check_bind fuel c e(Spec(Some pa)None None)(AEPath pg None)s=Good((xs,e',c'),s') ->
@@ -89,17 +89,17 @@ End Copy.
 Section Residual.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Definition OtherBindStep(f:nat):Prop:=forall c e sp y s xs e' c' s',
  check_bind f c e sp y s=Good((xs,e',c'),s')->forall F C,
- simple_bind(BodySound.W w R Fl)F sp y=0 ->
- abstract_copy_bind(BodySound.W w R Fl)F sp y=false ->
+ simple_bind(BodySoundCore.W w R Fl)F sp y=0 ->
+ abstract_copy_bind(BodySoundCore.W w R Fl)F sp y=false ->
  Inv s->InfoInv s-> FwdInv s ->CxRel w R Fl c e F C->Post w P R Fl s' F->
  BindResult w P R Fl c e F C(sp,Some y)xs e' c'.
 Theorem residual_after_abstract_copy:forall f,OtherBindStep f->ResidualBindStep w P R Fl f.
 Proof.
  intros f Other c e sp y s xs e' c' s' E F C Simple Hi Ii Ifwd Hc Hp.
- destruct(abstract_copy_bind(BodySound.W w R Fl)F sp y)eqn:Class.
+ destruct(abstract_copy_bind(BodySoundCore.W w R Fl)F sp y)eqn:Class.
  - destruct sp as[[pa|][dn|][br|]];cbn[abstract_copy_bind]in Class;try discriminate.
    destruct y;try discriminate Class.
    match goal with a:sapp|-_=>destruct a end;try discriminate Class.

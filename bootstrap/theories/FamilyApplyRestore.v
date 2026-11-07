@@ -21,7 +21,7 @@ Proof.
  intros fuel c e g n names args res s pre e' c' sf Hg D Fam E Hi Hw.
  destruct(apply_abstract_phases _ _ _ _ _ _ _ _ _ E)
  as(ef&needs&ss&xf&sx&sy&sz&pairs&sp&Av&Env&Fix&Guard&Input&Req&Tail).
- assert(Oe:ok(fun_env g))by(unfold fun_env;okt).
+ assert(Oe:ok(fun_env g))by(apply ElabFrameCore.ok_fun_env).
  destruct(Oe _ _ _ Hi Env)as[If Fenv].
  assert(Of:ok(functor_fixed g))by(unfold functor_fixed;okt).
  destruct(Of _ _ _ If Fix)as[Ix Ffix].

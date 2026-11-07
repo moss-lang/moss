@@ -1,6 +1,6 @@
 (* A lambda begins with all enclosing provisions and no enclosing locals. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySound NominalSupport FnSnapshot.
+From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore NominalSupport FnSnapshot.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Definition lambda_clear_context(C:A.cx):A.cx:=

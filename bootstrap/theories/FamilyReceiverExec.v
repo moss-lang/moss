@@ -1,7 +1,7 @@
 (* The selector's real receiver reader has the canonical semantic receiver meaning. *)
 From Stdlib Require Import List String.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
- CtxMethodExec Merge CanonTypes TyOfSubst ProvideResultSubst.
+ SigSound Merge CanonTypes TyOfSubst ProvideResultSubst.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Section Receiver.

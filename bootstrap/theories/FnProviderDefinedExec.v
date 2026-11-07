@@ -1,7 +1,7 @@
 (* Named defined providers use actual context satisfaction and signature checks. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve
- BodySound BodyTr BodyTy Merge CanonTypes ProviderSig SourceSatisfiesGaps CtxMerge SignatureLeavesExec.
+ BodySoundCore BodyTr BodyTy Merge CanonTypes ProviderSig SourceSatisfiesGaps CtxMerge SignatureLeavesExec.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=Audit.Elaboration.
@@ -12,9 +12,9 @@ Section Defined.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma canonical_type_fixed:forall c e F C t,CxRel w R Fl c e F C ->
  A.canon C(tr Fl(canon e t))=tr Fl(canon e t).
 Proof.
@@ -75,9 +75,9 @@ Section Named.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem expect_named_defined:forall fuel c e pa s pv s' F C u n ps rt body,
  expect_fn_provider fuel c e(AEPath pa None)s=Good(pv,s') ->
  Inv s->st_w s=w->CxRel w R Fl c e F C ->

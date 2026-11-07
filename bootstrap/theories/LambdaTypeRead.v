@@ -1,7 +1,7 @@
 (* Lambda annotations read in the enclosing type context, with their
    explicit receiver rather than the enclosing function's receiver. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  CanonTypes Merge CanonBodyTy SigSound TyOfSubst.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -10,7 +10,7 @@ Section Read.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem lambda_annotation_read:forall c e F C this syntax s actual final,
  ety_of syntax(cx_mod c)(tymap e)e this s=Good(actual,final)->
  Inv s->CxRel w R Fl c e F C->opt_wf this->Later w P R Fl final->

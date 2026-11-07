@@ -1,6 +1,7 @@
+From NM Require Import BodyProofTools.
 (* ------------------------------------------------------------------------ *)
 (* BodyTag.v — a tag applied to its payload against V.6's ExTag (Track A,  *)
-(* elaborate_sound step 2; BodySound.v's Pending, pd_synth for AECall at a *)
+(* elaborate_sound step 2; BodySoundCore.v's Pending, pd_synth for AECall at a *)
 (* tag).                                                                    *)
 (*                                                                           *)
 (* tag_step is pd_synth for `T(y)` / `T[..](y)` where `T` resolves to a     *)
@@ -15,7 +16,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import LibraryFacts Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound BodyData Merge CanonTypes PatternSubst.
+From NM Require Import LibraryFacts Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyData Merge CanonTypes PatternSubst.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -98,7 +99,7 @@ End Loader.
 
 Section Tag.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 Notation trx := (BodyData.trx Fl).
 Variable b : bundle.

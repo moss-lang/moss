@@ -2,14 +2,14 @@
    and extends the lambda's provision context by that exact type. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
- BodySound BindValue NominalSupport ApplyFreshExec LambdaTrace.
+ BodySoundCore BindValue NominalSupport ApplyFreshExec LambdaTrace.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Section Capture.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem lambda_capture_step:forall c original F Co le C pre lets n ty mu s le' pre' lets' sf bound,
  lambda_capture_one c original(le,pre,lets)(n,(ty,mu))s=Good((le',pre',lets'),sf)->
  Inv s->st_w s=w->nget(w_syms w)(gs_id bound)=Some bound->

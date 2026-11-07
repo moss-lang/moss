@@ -1,13 +1,13 @@
 (* Defined applications recurse only into genuinely smaller bind executions. *)
 From Stdlib Require Import List String Bool Arith Lia Wf_nat.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy BodyData
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy BodyDataHelpers
  InfoPreserve BindSequence BindCopyDispatch BindFnDispatch ApplyFunctorCases ApplyBodyExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Definition AbstractApplyStep(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat):Prop:=
  forall f c e F C pa g n names args res s xs e' c' sf,
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->
- A.resolve_sym(BodySound.W w R Fl)(A.fr_mod F)pa=Some(gs_id g)->
+ A.resolve_sym(BodySoundCore.W w R Fl)(A.fr_mod F)pa=Some(gs_id g)->
  apply_abstract f c e g s=Good((xs,e',c'),sf)->
  Inv s->InfoInv s->FwdInv s->st_w s=w->CxRel w R Fl c e F C->Post w P R Fl sf F->
  BindResult w P R Fl c e F C(Spec(Some pa)None None,None)xs e' c'.
@@ -15,7 +15,7 @@ Section Induction.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
 Theorem apply_from_abstract_and_remaining:
  AbstractApplyStep w P R Fl->

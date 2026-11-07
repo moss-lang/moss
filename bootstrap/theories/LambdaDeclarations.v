@@ -1,6 +1,6 @@
 (* Capture declarations use the lambda frame's actual allocated local slots. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore
  LambdaCaptureFold LambdaCapturedLocals LambdaGeneratedScope.
 Import ListNotations.
 Module A:=Audit.Elaboration.

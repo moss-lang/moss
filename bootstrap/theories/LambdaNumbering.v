@@ -1,6 +1,6 @@
 (* Actual fresh-frame slots number a lambda's parameters after its receiver. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound LambdaTrace LambdaOwnContext.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore LambdaTrace LambdaOwnContext.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=Audit.Elaboration.

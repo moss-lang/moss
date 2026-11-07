@@ -35,7 +35,7 @@ Proof. intros; apply lc_readonly_input; unfold require_needs; [okt|keepst]. Qed.
 Local Lemma lc_fun_env_input : forall g, LC (fun_env g).
 Proof.
  intros g; apply lc_readonly_input; [|apply kf_fun_env_input].
- unfold fun_env; okt. all: apply ok_merged_walk_frame; intros; okt.
+ apply ElabFrameCore.ok_fun_env.
 Qed.
 #[local] Hint Resolve lc_bind_fixed_present_input lc_copy_fixed_current_input lc_defined_link_inputs_input lc_copy_output_input lc_ety_of_input lc_payload_input lc_fn_sig_input lc_nominal_args_input lc_call_theta_input lc_smap_at_input lc_require_needs_input lc_fun_env_input : lcdb.
 Local Strategy opaque [slots_go elab_type app_subst symbol_type reqs type_requirements listed_params fn_info fun_env fn_sig ety_of payload_type nominal_args call_theta require_needs smap_at bind_fixed_present copy_fixed_current defined_link_inputs_compatible copy_output_compatible].

@@ -1,7 +1,7 @@
 (* Actual functor outputs install the fixed readings of the completed output
    scope, including bracket overrides, rather than an ambient approximation. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  BindFunctorCtx FunctorDecl BodyTy ProvideResultFixed ResultMentionsExact ResultMentionsNoDup.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -14,7 +14,7 @@ Section Functor.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem provide_functor_context_read:forall c e F C g tm tmr out s e' keys s' n names args res,
  provide_functor_code e g tm out s=Good((e',keys),s')->
  Inv s->st_w s=w->nget(w_syms w)(gs_id g)=Some g->

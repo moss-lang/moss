@@ -1,6 +1,6 @@
 (* Successful lambda annotation checks produce the actual LP premises. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  LambdaTypeRead CanonTypes LambdaAnnotationOps.
 Import ListNotations.
 Local Open Scope string_scope.
@@ -13,7 +13,7 @@ Section Checks.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Notation tc:=(fun e t=>tr Fl(canon e t)).
 Definition ParameterAnnotation(F:A.frame)(C:A.cx)(e:env)(this:option ety)(pq:name*option aty)(want:ty):Prop:=
  match snd pq with

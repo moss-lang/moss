@@ -24,7 +24,7 @@ Proof. intros mi walk H;unfold merged_walk;nit. Qed.
 #[export]Hint Extern 1 (NI(merged_walk _ _))=>apply input_merged_ni;intros;nit:nidb.
 Local Strategy opaque [merged_walk].
 Lemma input_fun_env_ok:forall g,ok(fun_env g).
-Proof. intros;unfold fun_env;okt. all:apply ok_merged_walk_frame;intros;okt. Qed.
+Proof. exact ElabFrameCore.ok_fun_env. Qed.
 Lemma input_fun_env_ni:forall g,NI(fun_env g).
 Proof. intros;unfold fun_env;nit. Qed.
 #[export]Hint Resolve input_fun_env_ok:okdb.

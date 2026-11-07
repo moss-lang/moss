@@ -1,12 +1,12 @@
 (* The abstract application rule, once its actual result reader has formed. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabFrame BodySound BindSequence ApplyFreshExec.
+From NM Require Import Audit NMap Sx Elab ElabFrame BodySoundCore BindSequence ApplyFreshExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Section Binding.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma cxrel_with_fresh:forall c e F C more,
  CxRel w R Fl c e F C->
  CxRel w R Fl(cx_with_fresh c(cx_fresh c++more))e(A.with_fresh F more)C.

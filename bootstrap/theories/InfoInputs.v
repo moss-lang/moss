@@ -1,6 +1,6 @@
 (* Information-table stability of type/context helpers, independent of the synthesis traversal. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ElabKeeps.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabKeeps.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL].
 Definition NI {A} (m : M A) : Prop := forall s a s', m s = Good (a, s') -> st_info s' = st_info s.
@@ -56,7 +56,7 @@ Ltac nifixind3 :=
     generalize N, a, b; intro n; induction n as [|n IHn]; intros; cbn beta iota end.
 
 Ltac nit :=
-  repeat (fintros; lazymatch goal with
+  repeat (keeps_intros; lazymatch goal with
   | |- NI (mbind _ _) => apply ni_bind
   | |- NI (mmap _ _) => apply ni_mmap
   | |- NI (mfold _ _ _) => apply ni_mfold
@@ -68,7 +68,7 @@ Ltac nit :=
             | (lazymatch t with ?F _ => is_fix F end; nifixind1)
             | (lazymatch t with ?F _ _ _ => is_fix F end; nifixind3)
             | match t with context [match ?x with _ => _ end] => destruct x end
-            | let h := head_of t in progress unfold h ]
+            | let h := keeps_head t in progress unfold h ]
   end).
 
 Lemma ni_fresh_marker:forall e,NI(fresh_marker e).
@@ -84,8 +84,8 @@ Lemma ni_mentioned_nominals_group : forall fuel,
   (forall t mi, NI (mentioned_nominals fuel t mi)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [mentioned_nominals]; nit. }
-  pose proof IH as I0. fintros; cbn [mentioned_nominals]; nit.
+  { keeps_intros; cbn [mentioned_nominals]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [mentioned_nominals]; nit.
 Qed.
 
 Lemma ni_mentioned_nominals : forall fuel t mi, NI (mentioned_nominals fuel t mi).
@@ -96,8 +96,8 @@ Lemma ni_walk_specs_group : forall fuel,
   (forall mi sp out, NI (walk_specs fuel mi sp out)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [walk_specs]; nit. }
-  pose proof IH as I0. fintros; cbn [walk_specs]; nit.
+  { keeps_intros; cbn [walk_specs]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [walk_specs]; nit.
 Qed.
 
 Lemma ni_walk_specs : forall fuel mi sp out, NI (walk_specs fuel mi sp out).
@@ -111,9 +111,9 @@ Lemma ni_free_type_syms_group : forall fuel,
   (forall g, NI (listed_params fuel g)).
 Proof.
   induction fuel as [|fuel IH].
-  { refine (conj _ (conj _ (conj _ _))); fintros; cbn [free_type_syms type_requirements solve_requirements listed_params]; nit. }
+  { refine (conj _ (conj _ (conj _ _))); keeps_intros; cbn [free_type_syms type_requirements solve_requirements listed_params]; nit. }
   destruct IH as (I0 & I1 & I2 & I3).
-  refine (conj _ (conj _ (conj _ _))); fintros; cbn [free_type_syms type_requirements solve_requirements listed_params]; nit.
+  refine (conj _ (conj _ (conj _ _))); keeps_intros; cbn [free_type_syms type_requirements solve_requirements listed_params]; nit.
 Qed.
 
 Lemma ni_free_type_syms : forall fuel t mi out, NI (free_type_syms fuel t mi out).
@@ -136,8 +136,8 @@ Lemma ni_show_go_group : forall fuel,
   (forall t, NI (show_go fuel t)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [show_go]; nit. }
-  pose proof IH as I0. fintros; cbn [show_go]; nit.
+  { keeps_intros; cbn [show_go]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [show_go]; nit.
 Qed.
 
 Lemma ni_show_go : forall fuel t, NI (show_go fuel t).
@@ -148,8 +148,8 @@ Lemma ni_unify_group : forall fuel,
   (forall e mi a b why, NI (unify fuel e mi a b why)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [unify]; nit. }
-  pose proof IH as I0. fintros; cbn [unify]; nit.
+  { keeps_intros; cbn [unify]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [unify]; nit.
 Qed.
 
 Lemma ni_unify : forall fuel e mi a b why, NI (unify fuel e mi a b why).
@@ -162,9 +162,9 @@ Lemma ni_elab_type_group : forall fuel,
   (forall mi g tm e, NI (symbol_type fuel mi g tm e)).
 Proof.
   induction fuel as [|fuel IH].
-  { refine (conj _ (conj _ _)); fintros; cbn [elab_type app_subst symbol_type]; nit. }
+  { refine (conj _ (conj _ _)); keeps_intros; cbn [elab_type app_subst symbol_type]; nit. }
   destruct IH as (I0 & I1 & I2).
-  refine (conj _ (conj _ _)); fintros; cbn [elab_type app_subst symbol_type]; nit.
+  refine (conj _ (conj _ _)); keeps_intros; cbn [elab_type app_subst symbol_type]; nit.
 Qed.
 
 Lemma ni_elab_type : forall fuel t mi tm e this, NI (elab_type fuel t mi tm e this).
@@ -184,9 +184,9 @@ Lemma ni_result_mentions_go_group : forall fuel,
   (forall g, NI (functor_fixed_go fuel g)).
 Proof.
   induction fuel as [|fuel IH].
-  { refine (conj _ _); fintros; cbn [result_mentions_go functor_fixed_go]; nit. }
+  { refine (conj _ _); keeps_intros; cbn [result_mentions_go functor_fixed_go]; nit. }
   destruct IH as (I0 & I1).
-  refine (conj _ _); fintros; cbn [result_mentions_go functor_fixed_go]; nit.
+  refine (conj _ _); keeps_intros; cbn [result_mentions_go functor_fixed_go]; nit.
 Qed.
 
 Lemma ni_result_mentions_go : forall fuel self mi specs out, NI (result_mentions_go fuel self mi specs out).
@@ -209,9 +209,9 @@ Lemma ni_add_symbol_item_group : forall fuel,
   (forall e mi sp outer needs, NI (add_spec fuel e mi sp outer needs)).
 Proof.
   induction fuel as [|fuel IH].
-  { refine (conj _ _); fintros; cbn [add_symbol_item add_spec]; nit. }
+  { refine (conj _ _); keeps_intros; cbn [add_symbol_item add_spec]; nit. }
   destruct IH as (I0 & I1).
-  refine (conj _ _); fintros; cbn [add_symbol_item add_spec]; nit.
+  refine (conj _ _); keeps_intros; cbn [add_symbol_item add_spec]; nit.
 Qed.
 
 Lemma ni_add_symbol_item : forall fuel e mi g subst needs, NI (add_symbol_item fuel e mi g subst needs).
@@ -226,8 +226,8 @@ Lemma ni_ety_ty_go_group : forall fuel,
   (forall t, NI (ety_ty_go fuel t)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [ety_ty_go]; nit. }
-  pose proof IH as I0. fintros; cbn [ety_ty_go]; nit.
+  { keeps_intros; cbn [ety_ty_go]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [ety_ty_go]; nit.
 Qed.
 
 Lemma ni_ety_ty_go : forall fuel t, NI (ety_ty_go fuel t).
@@ -238,8 +238,8 @@ Lemma ni_slots_go_group : forall fuel,
   (forall e t visiting, NI (slots_go fuel e t visiting)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [slots_go]; nit. }
-  pose proof IH as I0. fintros; cbn [slots_go]; nit.
+  { keeps_intros; cbn [slots_go]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [slots_go]; nit.
 Qed.
 
 Lemma ni_slots_go : forall fuel e t visiting, NI (slots_go fuel e t visiting).
@@ -250,8 +250,8 @@ Lemma ni_expand_spec_group : forall fuel,
   (forall mi sp out, NI (expand_spec fuel mi sp out)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [expand_spec]; nit. }
-  pose proof IH as I0. fintros; cbn [expand_spec]; nit.
+  { keeps_intros; cbn [expand_spec]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [expand_spec]; nit.
 Qed.
 
 Lemma ni_expand_spec : forall fuel mi sp out, NI (expand_spec fuel mi sp out).
@@ -262,8 +262,8 @@ Lemma ni_functor_total_group : forall fuel,
   (forall g, NI (functor_total fuel g)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [functor_total]; nit. }
-  pose proof IH as I0. fintros; cbn [functor_total]; nit.
+  { keeps_intros; cbn [functor_total]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [functor_total]; nit.
 Qed.
 
 Lemma ni_functor_total : forall fuel g, NI (functor_total fuel g).
@@ -274,8 +274,8 @@ Lemma ni_provide_spec_group : forall fuel,
   (forall e fg mi sp outer out, NI (provide_spec fuel e fg mi sp outer out)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [provide_spec]; nit. }
-  pose proof IH as I0. fintros; cbn [provide_spec]; nit.
+  { keeps_intros; cbn [provide_spec]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [provide_spec]; nit.
 Qed.
 
 Lemma ni_provide_spec : forall fuel e fg mi sp outer out, NI (provide_spec fuel e fg mi sp outer out).
@@ -329,8 +329,8 @@ Lemma ni_family_leaves_ok_group : forall fuel,
   (forall mi ps specs, NI (family_leaves_ok fuel mi ps specs)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [family_leaves_ok]; nit. }
-  pose proof IH as I0. fintros; cbn [family_leaves_ok]; nit.
+  { keeps_intros; cbn [family_leaves_ok]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [family_leaves_ok]; nit.
 Qed.
 
 Lemma ni_family_leaves_ok : forall fuel mi ps specs, NI (family_leaves_ok fuel mi ps specs).
@@ -341,8 +341,8 @@ Lemma ni_family_leaves_group : forall fuel,
   (forall e mi specs outer, NI (family_leaves fuel e mi specs outer)).
 Proof.
   induction fuel as [|fuel IH].
-  { fintros; cbn [family_leaves]; nit. }
-  pose proof IH as I0. fintros; cbn [family_leaves]; nit.
+  { keeps_intros; cbn [family_leaves]; nit. }
+  pose proof IH as I0. keeps_intros; cbn [family_leaves]; nit.
 Qed.
 
 Lemma ni_family_leaves : forall fuel e mi specs outer, NI (family_leaves fuel e mi specs outer).

@@ -2,7 +2,7 @@
    declared lexical context installs captures then parameters.  The successful
    frame-name check makes these two local views equivalent. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound NominalSupport SourceClean CanonTypes
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore NominalSupport SourceClean CanonTypes
  LambdaCaptureFold LambdaTrace LambdaOwnContext LambdaCaptureTables LambdaCapturedLocals LambdaLocalOrder LambdaNumbering.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -84,7 +84,7 @@ Proof.
 Qed.
 Section Context.
 Variables(w:Elab.world)(R:nat->list nat)(Fl:string->nat).
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem lambda_body_context:forall c original F Co le C ps sg this lets vars,
  CxRel w R Fl c original F Co->CxRel w R Fl c le F C->en_uf le=en_uf original->
  SigOK sg->SigSupport W sg->opt_wf this->opt_support W this->

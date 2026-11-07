@@ -1,6 +1,7 @@
+From NM Require Import BodyProofTools.
 (* Actual value provisions retain the body context and checked application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  NominalSupport NominalMergeSupport CanonTypes CtxWalk.
 From NM Require Import InfoPreserve.
 Import ListNotations.
@@ -27,7 +28,7 @@ Proof. intros W e k a stamp[T U V F M L];constructor;auto. Qed.
 Section Context.
 Variable w:Elab.world.
 Variables(R:nat->list nat)(Fl:string->nat).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma cxrel_value : forall c e F C v ty raw app stamp,
  CxRel w R Fl c e F C ->WFty ty ->Support WW ty ->
  app=map(fun q=>(fst q,option_map(tr Fl)(snd q)))raw ->
@@ -74,7 +75,7 @@ Definition bind_inst(Fl:string->nat)(e:env)(a:Elab.inst):A.inst :=
 Section AppReading.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma provision_app_canonical : forall c e F C g s a s',
  provision_app g(tymap e)false s=Good(a,s') ->Inv s ->
  CxRel w R Fl c e F C ->Later w P R Fl s' ->
@@ -102,7 +103,7 @@ Section Execution.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem check_bind_value_sound_full : forall f,OK w P R Fl f ->
  forall c e pp y s xs e' c' s' F C,
  check_bind(S f)c e(Spec(Some pp)None None)y s=Good((xs,e',c'),s') ->
