@@ -34,6 +34,12 @@ The development includes proofs of:
   generated lambda/provider cases. These feed the remaining body-proof
   dispatcher in [`BodyPending.v`](theories/BodyPending.v); they do not yet
   establish soundness for every accepted bundle.
+- Anonymous method bindings without left-hand brackets now follow from the
+  actual binding execution, with canonical receiver/signature readings and
+  the emitted method key/substitution
+  ([`BindMethodLambdaExec.v`](theories/BindMethodLambdaExec.v)).
+  [`BodyPending.v`](theories/BodyPending.v) excludes this case from its
+  remaining binding callback; other provider cases remain open.
 - Actual source Bool selection for every successful elaboration, including
   the absence case, with no pending body-soundness premises
   ([`MainProgramBool.v`](theories/MainProgramBool.v)).
