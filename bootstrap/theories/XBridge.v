@@ -16,7 +16,7 @@
 
 From Stdlib Require Import List Bool Arith Permutation String.
 
-From NM Require Import Audit CoreMoss XTyping MergeWf.
+From NM Require Import Audit CoreMoss XTyping MergeWf XBridgeCtx.
 Import ListNotations.
 Import Input Elaboration.
 
@@ -58,22 +58,23 @@ Hypothesis ctx_of_ok : forall s k, kind_sym W s = Some k -> has_ctx k = true ->
    (CoreMoss.merge_tele, [D43]) exactly as Part V's σ does.  This is the
    one place Part V's contexts (cx: meanings c_ty, merge c_sub, needs as a
    set) meet Core Moss's (ctx: items cA, merge cS). *)
+(* Include every type in force. In particular, main's root adds fixed
+   inputs not necessarily listed in w_reqs. Their order is immaterial to
+   call syntax: XtCall infers its type substitution independently. *)
+Definition types_of (s : nat) : list nat := map fst (c_ty (ctx_of s)).
+
 Variable needs_order : nat -> list item.
 (* A method need is read at its run-time key (note 28: θ, from c_apps):
    that is the item bodies are typed against (XtMeth reads θ from it). *)
 Definition tele_of (s : nat) : tele :=
-  map ITy (w_reqs W s) ++ map (rkey_of (ctx_of s)) (needs_order s).
+  map ITy (types_of s) ++ map (rkey_of (ctx_of s)) (needs_order s).
 Hypothesis tele_of_ok : forall s k, kind_sym W s = Some k -> has_ctx k = true ->
   exists PhiD, tele_ctx (tele_of s) = Some PhiD
   /\ Permutation (needs_order s) (needs_of s)
-  /\ tyreqs (cA PhiD) = w_reqs W s
+  /\ tyreqs (cA PhiD) = types_of s
   (* Core's merge is Part V's σ, and a requirement's meaning is its own
      generation under it *)
-  /\ (forall t, app_subst (cS PhiD) t = canon (ctx_of s) t)
-  /\ (forall r, In r (w_reqs W s) -> nlook r (c_ty (ctx_of s)) = Some (canon (ctx_of s) (TAbs r)))
-  (* and the context gives meanings to its requirements only (a bracket
-     binds only while the item it is on is read: Audit note 71) *)
-  /\ (forall t x, nlook t (c_ty (ctx_of s)) = Some x -> In t (w_reqs W s)).
+  /\ (forall t, app_subst (cS PhiD) t = canon (ctx_of s) t).
 
 (* BRIDGE-A3: declared types as functions.  A fn's or method's signature
    read in its own context (SigOf; a method's receiver is Core's
@@ -120,14 +121,15 @@ Hypothesis fb_of_body : forall h x, fb_of h = Some x -> funbody_of P h <> None.
    scalar reps.  They must be symbols no declaration has (and not the
    record head 0): the elaborator's symbol counter has such (ElabFrame's
    frame keeps new symbols above it). *)
-Variables nI32 nI64 nF32 nF64 : nsym.
-Hypothesis scalars_fresh : forall n, In n [nI32; nI64; nF32; nF64] -> n <> rec_head /\ w_decl W n = None.
-Hypothesis scalars_nodup : NoDup [nI32; nI64; nF32; nF64].
+Variables nI32 nI64 nF32 nF64 nStructRef nArrayRef : nsym.
+Hypothesis scalars_fresh : forall n, In n [nI32; nI64; nF32; nF64; nStructRef; nArrayRef] -> n <> rec_head /\ w_decl W n = None.
+Hypothesis scalars_nodup : NoDup [nI32; nI64; nF32; nF64; nStructRef; nArrayRef].
 
 (* ---- Σ. -------------------------------------------------------------- *)
 
 Definition is_scalar (n : nsym) : bool :=
-  Nat.eqb n nI32 || Nat.eqb n nI64 || Nat.eqb n nF32 || Nat.eqb n nF64.
+  Nat.eqb n nI32 || Nat.eqb n nI64 || Nat.eqb n nF32 || Nat.eqb n nF64 ||
+  Nat.eqb n nStructRef || Nat.eqb n nArrayRef.
 
 (* The platform's GC reference tags (lib/wasm.moss's `tag Ref[Boxed]
    (StructRef)` and `tag Array[Arrayed](ArrayRef)`), by the module the
@@ -146,6 +148,8 @@ Definition Rp_of (n : nsym) : option rep :=
   else if Nat.eqb n nI64 then Some RI64
   else if Nat.eqb n nF32 then Some RF32
   else if Nat.eqb n nF64 then Some RF64
+  else if Nat.eqb n nStructRef then Some (RHandle false)
+  else if Nat.eqb n nArrayRef then Some (RHandle true)
   else if is_some_eq wasm_ref n then Some (RRef (hd 0 (w_reqs W n)))
   else if is_some_eq wasm_arr n then Some (RArr (hd 0 (w_reqs W n)))
   else None.
@@ -154,8 +158,7 @@ Definition g_tag_of (n : nsym) : option (tele * ty) :=
   if is_scalar n then Some ([], TUnit)
   else if kind_is n DKUnit then Some ([], TUnit)
   else if kind_is n DKTag then
-    Some (map ITy (w_reqs W n),
-          match Rp_of n with Some _ => TUnit | None => pay_of n end)
+    Some (map ITy (w_reqs W n), pay_of n)
   else None.
 
 Definition Sg_of : gsig := mkGsig
@@ -234,12 +237,52 @@ Proof.
     [apply Nat.eqb_eq in E4; subst;
      destruct (scalars_fresh nF64 (or_intror (or_intror (or_intror (or_introl eq_refl))))) as [_ E];
      rewrite E in Hd; discriminate|].
+  destruct (Nat.eqb n nStructRef) eqn:E5;
+    [apply Nat.eqb_eq in E5; subst;
+     destruct (scalars_fresh nStructRef ltac:(simpl; tauto)) as [_ E]; rewrite E in Hd; discriminate|].
+  destruct (Nat.eqb n nArrayRef) eqn:E6;
+    [apply Nat.eqb_eq in E6; subst;
+     destruct (scalars_fresh nArrayRef ltac:(simpl; tauto)) as [_ E]; rewrite E in Hd; discriminate|].
   reflexivity.
 Qed.
 
 (* The scalar nominals are scalars to Rp and unit tags to Σ. *)
 Lemma Rp_of_I32 : Rp_of nI32 = Some RI32.
 Proof. unfold Rp_of. rewrite Nat.eqb_refl. reflexivity. Qed.
+
+Lemma raw_struct_distinct :
+  nStructRef <> nI32 /\ nStructRef <> nI64 /\
+  nStructRef <> nF32 /\ nStructRef <> nF64.
+Proof.
+  pose proof scalars_nodup as Hnd.
+  repeat match goal with H : NoDup (_ :: _) |- _ => inversion H; clear H; subst end.
+  simpl in *. intuition congruence.
+Qed.
+
+Lemma raw_array_distinct :
+  nArrayRef <> nI32 /\ nArrayRef <> nI64 /\ nArrayRef <> nF32 /\
+  nArrayRef <> nF64 /\ nArrayRef <> nStructRef.
+Proof.
+  pose proof scalars_nodup as Hnd.
+  repeat match goal with H : NoDup (_ :: _) |- _ => inversion H; clear H; subst end.
+  simpl in *. intuition congruence.
+Qed.
+
+Lemma Rp_of_StructRef : Rp_of nStructRef = Some (RHandle false).
+Proof.
+  destruct raw_struct_distinct as [H1 [H2 [H3 H4]]].
+  apply Nat.eqb_neq in H1. apply Nat.eqb_neq in H2.
+  apply Nat.eqb_neq in H3. apply Nat.eqb_neq in H4.
+  unfold Rp_of. rewrite H1, H2, H3, H4, Nat.eqb_refl. reflexivity.
+Qed.
+
+Lemma Rp_of_ArrayRef : Rp_of nArrayRef = Some (RHandle true).
+Proof.
+  destruct raw_array_distinct as [H1 [H2 [H3 [H4 H5]]]].
+  apply Nat.eqb_neq in H1. apply Nat.eqb_neq in H2.
+  apply Nat.eqb_neq in H3. apply Nat.eqb_neq in H4. apply Nat.eqb_neq in H5.
+  unfold Rp_of. rewrite H1, H2, H3, H4, H5, Nat.eqb_refl. reflexivity.
+Qed.
 
 Lemma g_tag_of_scalar : forall n, is_scalar n = true -> g_tag_of n = Some ([], TUnit).
 Proof. intros n H. unfold g_tag_of. rewrite H. reflexivity. Qed.
@@ -251,7 +294,7 @@ Proof.
   intros n Hk Hr. unfold g_tag_of. rewrite (scalar_not_declared _ _ Hk).
   assert (Hu : kind_is n DKUnit = false).
   { unfold kind_is in *. destruct (kind_sym W n) as [[]|]; try discriminate; reflexivity. }
-  rewrite Hu, Hk, Hr. reflexivity.
+  rewrite Hu, Hk. reflexivity.
 Qed.
 
 (* The record head is no symbol's (xwf_rec): 0 is never declared
@@ -266,10 +309,10 @@ Qed.
 Lemma scalar_zero : is_scalar rec_head = false.
 Proof.
   unfold is_scalar.
-  assert (Hne : forall n, In n [nI32; nI64; nF32; nF64] -> Nat.eqb rec_head n = false).
+  assert (Hne : forall n, In n [nI32; nI64; nF32; nF64; nStructRef; nArrayRef] -> Nat.eqb rec_head n = false).
   { intros n Hn. apply Nat.eqb_neq. intros E. destruct (scalars_fresh n Hn) as [H0 _].
     apply H0. symmetry. exact E. }
-  rewrite (Hne nI32), (Hne nI64), (Hne nF32), (Hne nF64); simpl; auto 6.
+  rewrite (Hne nI32), (Hne nI64), (Hne nF32), (Hne nF64), (Hne nStructRef), (Hne nArrayRef); simpl; auto 8.
 Qed.
 
 Lemma Sg_of_rec : Rp_of rec_head = None /\ g_tag Sg_of rec_head = None.
@@ -282,15 +325,15 @@ Proof.
     unfold is_some_eq.
     destruct wasm_ref as [r|] eqn:Er.
     + destruct (Nat.eqb r rec_head) eqn:E.
-      * apply Nat.eqb_eq in E. subst r. destruct (wasm_ref_ok rec_head eq_refl) as [[d [Hd _]] _].
+      * apply Nat.eqb_eq in E. subst r. destruct (wasm_ref_ok rec_head eq_refl) as [[d [p [Hd _]]] _].
         destruct (wo_decl_sound Hwo rec_head Hd) as [Hz _]. exfalso. apply Hz. reflexivity.
       * destruct wasm_arr as [a|] eqn:Ea; [| reflexivity].
         destruct (Nat.eqb a rec_head) eqn:E2; [| reflexivity].
-        apply Nat.eqb_eq in E2. subst a. destruct (wasm_arr_ok rec_head eq_refl) as [[d [Hd _]] _].
+        apply Nat.eqb_eq in E2. subst a. destruct (wasm_arr_ok rec_head eq_refl) as [[d [p [Hd _]]] _].
         destruct (wo_decl_sound Hwo rec_head Hd) as [Hz _]. exfalso. apply Hz. reflexivity.
     + destruct wasm_arr as [a|] eqn:Ea; [| reflexivity].
       destruct (Nat.eqb a rec_head) eqn:E2; [| reflexivity].
-      apply Nat.eqb_eq in E2. subst a. destruct (wasm_arr_ok rec_head eq_refl) as [[d [Hd _]] _].
+      apply Nat.eqb_eq in E2. subst a. destruct (wasm_arr_ok rec_head eq_refl) as [[d [p [Hd _]]] _].
       destruct (wo_decl_sound Hwo rec_head Hd) as [Hz _]. exfalso. apply Hz. reflexivity.
   - simpl. unfold g_tag_of. rewrite scalar_zero, !kind_is_zero. reflexivity.
 Qed.
@@ -632,7 +675,6 @@ Proof.
   pose proof (kind_is_sym _ _ Ek) as Hk.
   exists (mkCtx (map ITy (w_reqs W n)) []).
   split; [exact (reqs_tele_forms n DKTag Hk) |].
-  destruct (Rp_of n); [constructor |].
   pose proof (pay_of_ok n Ek) as Hp.
   inversion Hp as [s xs d n' ps t pay Hd Ha Hty E1 E2 E3]. subst s xs pay.
   apply (tyof_wf _ _ _ _ _ Hty).
@@ -674,13 +716,61 @@ Proof.
     inversion Hs; subst; (eapply exports_detached; [eassumption | reflexivity | reflexivity]).
 Qed.
 
+(* The fixed inputs root context puts in force are declared types. *)
+Lemma declared_kind : forall s d, w_decl W s = Some d ->
+  exists k, kind_sym W s = Some k.
+Proof.
+  intros s d Hd. destruct (wo_decl_sound Hwo s Hd) as [_ [_ Hk]].
+  unfold kind_sym. rewrite Hd. destruct (kind_of (d_ast d)) as [k|];
+    [exists k; reflexivity|contradiction].
+Qed.
+
+Lemma freein_types_all : forall p ty t,
+  Loaded b p -> FreeIn W (w_reqs W) p ty t -> kind_sym W t = Some DKType.
+Proof.
+  intros p ty t Hl H. induction H; auto.
+  destruct (resolve_sym_declared p pa g Hl H) as [d Hd].
+  destruct (declared_kind g d Hd) as [k Hk].
+  exact (reqs_are_types g k Hk x H1).
+Qed.
+
+Lemma resultmentions_type : forall self p sp t,
+  Loaded b p -> ResultMentions W self p sp t -> kind_sym W t = Some DKType.
+Proof.
+  intros self p sp t Hl H. revert Hl. induction H; intro Hl.
+  - destruct H0 as [Hk|Hk]; exact (reqs_are_types s _ Hk t H1).
+  - destruct H0 as [[-> Hk]|[_ Hreq]]; [exact Hk|].
+    destruct (resolve_sym_declared p pa r Hl H) as [d Hd].
+    destruct (declared_kind r d Hd) as [k Hk].
+    exact (reqs_are_types r k Hk t Hreq).
+  - exact (reqs_are_types m DKMeth (named_meth p r dn m Hl H0) t H1).
+  - eapply freein_types_all; [exact Hl|eassumption].
+  - apply IHResultMentions. exact (decl_loaded c dc H0).
+  - apply IHResultMentions. exact (decl_loaded u du H0).
+Qed.
+
+Lemma fixed_type : forall u t, Fixed W u t -> kind_sym W t = Some DKType.
+Proof.
+  intros u t [(d & ps & a & r & bod & sp & Hd & Hp & Hi & Hm & Hout) _].
+  exact (resultmentions_type _ _ _ _ (decl_loaded u d Hd) Hm).
+Qed.
+
+Lemma ctx_tys_are_types : forall s k,
+  kind_sym W s = Some k -> has_ctx k = true ->
+  forall t, In t (types_of s) -> kind_sym W t = Some DKType.
+Proof.
+  intros s k Hk Hc t Ht. destruct (type_key_nlook _ _ Ht) as [x Hx].
+  exact (ctx_tys_declared W fixed_type s (ctx_of s) (needs_of s)
+    (ctx_of_ok s k Hk Hc) t x Hx).
+Qed.
+
 Definition entry_ok (e : entry) : Prop :=
   match e with
   | NTy t => kind_sym W t = Some DKType
   | NVal v _ _ => exists d n t, w_decl W v = Some d /\ d_ast d = ADVal n t None
   | NFn f _ _ => kind_sym W f = Some DKFn
   | NMth _ m _ _ => kind_sym W m = Some DKMeth
-  | NFun u => exists d n ps a r, w_decl W u = Some d /\ d_ast d = ADFunctor n ps a r None
+  | NFun u _ => exists d n ps a r, w_decl W u = Some d /\ d_ast d = ADFunctor n ps a r None
   end.
 
 Fixpoint entries_ok p ob tm sp es tm' (H : ItemEntries W p ob tm sp es tm') {struct H} :
@@ -736,7 +826,7 @@ Definition entry_ok' (e : entry) : Prop :=
 Lemma root_items_ok : forall q es0 tm its es tm', RootItems W q es0 tm its es tm' -> Forall entry_ok' es.
 Proof.
   intros q es0 tm its es tm' H.
-  induction H as [es0 tm | es0 tm p a rest u du n ps args res xs es tm' Hr Hd Ha _ _ _ _ IH
+  induction H as [es0 tm | es0 tm p a rest u du n ps args res xs fx es tm' Hr Hd Ha _ _ _ _ _ IH
                  | es0 tm sp rest es tm' _ _ IH].
   - constructor.
   - apply Forall_app. split.
@@ -785,15 +875,20 @@ Qed.
 Definition need_ok (Phi : ctx) (i : item) : Prop :=
   match i with
   | ITy _ => True
-  | IVal x | IFn x => Forall (fun t => avail Phi (ITy t)) (w_reqs W x)
+  | IVal x | IFn x => Forall (fun t => avail Phi (ITy t)) (types_of x)
   | IMth rt m th => wf_ty Sg_of Phi rt /\ Forall (fun p => wf_ty Sg_of Phi (snd p)) th
       /\ msat th (tele_of m) (mkSig (sg_params (sig_of m)) (sg_ret (sig_of m)))
   | IFun u => Forall (fun x => avail Phi (ITy x)) (fixed_of u)
   end.
 
-Hypothesis tele_needs_ok : forall s k, kind_sym W s = Some k -> has_ctx k = true ->
+(* Functor fixed inputs follow from CtxOf and the complete type prefix;
+   only the other need classes remain to be supplied by elaboration. *)
+Definition nonfun_need_ok (Phi : ctx) (i : item) : Prop :=
+  match i with IFun _ => True | _ => need_ok Phi i end.
+Hypothesis tele_needs_nonfun_ok : forall s k,
+  kind_sym W s = Some k -> has_ctx k = true ->
   forall D1 i D2, tele_of s = D1 ++ i :: D2 ->
-  forall Phi, tele_ctx D1 = Some Phi -> need_ok Phi i.
+  forall Phi, tele_ctx D1 = Some Phi -> nonfun_need_ok Phi i.
 
 (* A telescope forms when it merges and each item is formed at its prefix. *)
 Lemma wf_tele_prefixes : forall D Phi Phi', merge_tele Phi D = Some Phi' ->
@@ -838,11 +933,88 @@ Proof.
 Qed.
 
 Lemma tyreqs_tele_of : forall s k, kind_sym W s = Some k -> has_ctx k = true ->
-  tyreqs (tele_of s) = w_reqs W s.
+  tyreqs (tele_of s) = types_of s.
 Proof.
   intros s k Hk Hc. apply tyreqs_laid. intros n Hn.
   destruct (tele_of_ok s k Hk Hc) as [_ [_ [Hperm _]]].
   exact (need_declared s k Hk Hc n (Permutation_in _ Hperm Hn)).
+Qed.
+
+(* A non-type item occurs after the complete type prefix. *)
+Lemma non_type_prefix : forall tys no D1 i D2,
+  (forall t, i <> ITy t) ->
+  map ITy tys ++ no = D1 ++ i :: D2 ->
+  exists ns1, D1 = map ITy tys ++ ns1.
+Proof.
+  induction tys as [|t tys IH]; intros no D1 i D2 Hnt E.
+  - exists D1. reflexivity.
+  - destruct D1 as [|j D1].
+    + cbn in E. injection E as Ei Er. exfalso. apply (Hnt t). symmetry. exact Ei.
+    + cbn in E. injection E as Ej Er. subst j.
+      destruct (IH no D1 i D2 Hnt Er) as (ns1 & ->).
+      exists ns1. reflexivity.
+Qed.
+
+Lemma tyreqs_item_in : forall D t, In t (tyreqs D) -> In (ITy t) D.
+Proof.
+  induction D as [|i D IH]; intros t H; [destruct H|].
+  destruct i; cbn in H |- *; try (right; apply IH; exact H).
+  destruct H as [->|H]; [left; reflexivity|right; apply IH; exact H].
+Qed.
+
+Lemma prefix_types_available : forall tys no D1 i D2 Phi,
+  (forall t, i <> ITy t) ->
+  map ITy tys ++ no = D1 ++ i :: D2 ->
+  tele_ctx D1 = Some Phi ->
+  forall t, In t tys -> avail Phi (ITy t).
+Proof.
+  intros tys no D1 i D2 Phi Hnt E Htc t Ht.
+  destruct (non_type_prefix tys no D1 i D2 Hnt E) as (ns1 & ->).
+  apply avail_ty_of_in. apply tyreqs_item_in.
+  apply (proj2 (tele_ctx_tyreqs _ Htc t)).
+  rewrite tyreqs_app, tyreqs_map_ITy'. apply in_or_app. left. exact Ht.
+Qed.
+
+Lemma in_fun_rkeys : forall C no u,
+  In (IFun u) (map (rkey_of C) no) -> In (IFun u) no.
+Proof.
+  intros C no u H. apply in_map_iff in H as (i & E & Hi).
+  destruct i; cbn [rkey_of] in E; try discriminate.
+  injection E as ->. exact Hi.
+Qed.
+
+Lemma fun_need_ok : forall s k u D1 D2 Phi,
+  kind_sym W s = Some k -> has_ctx k = true ->
+  tele_of s = D1 ++ IFun u :: D2 -> tele_ctx D1 = Some Phi ->
+  need_ok Phi (IFun u).
+Proof.
+  intros s k u D1 D2 Phi Hk Hc E Htc.
+  assert (Hiu : In (IFun u) (needs_order s)).
+  { assert (Hin : In (IFun u) (tele_of s)).
+    { rewrite E. apply in_or_app. right. left. reflexivity. }
+    unfold tele_of in Hin. apply in_app_or in Hin as [Hin|Hin].
+    - apply in_map_iff in Hin as (t & Ei & _). discriminate Ei.
+    - exact (in_fun_rkeys _ _ _ Hin). }
+  destruct (tele_of_ok s k Hk Hc) as [_ [_ [Hperm _]]].
+  assert (Hneed : In (IFun u) (needs_of s)) by exact (Permutation_in _ Hperm Hiu).
+  apply Forall_forall. intros t Ht.
+  apply (prefix_types_available (types_of s)
+    (map (rkey_of (ctx_of s)) (needs_order s)) D1 (IFun u) D2 Phi);
+    try exact E; try exact Htc; try (intros x H; discriminate H).
+  pose proof (ctx_fun_fixed W s (ctx_of s) (needs_of s)
+    (ctx_of_ok s k Hk Hc) u Hneed t (proj1 (fixed_of_ok u t) Ht)) as Hpres.
+  destruct (nlook t (c_ty (ctx_of s))) as [x|] eqn:Ex;
+    [exact (nlook_type_key _ _ _ Ex)|contradiction].
+Qed.
+
+Lemma tele_needs_ok : forall s k,
+  kind_sym W s = Some k -> has_ctx k = true ->
+  forall D1 i D2, tele_of s = D1 ++ i :: D2 ->
+  forall Phi, tele_ctx D1 = Some Phi -> need_ok Phi i.
+Proof.
+  intros s k Hk Hc D1 i D2 E Phi Htc.
+  pose proof (tele_needs_nonfun_ok s k Hk Hc D1 i D2 E Phi Htc) as Hn.
+  destruct i; try exact Hn. eapply fun_need_ok; eassumption.
 Qed.
 
 (* An item of a telescope laid out as types then needs (at C's run-time
@@ -899,7 +1071,7 @@ Proof.
   intros s k Hk Hc. destruct (tele_of_ok s k Hk Hc) as [PhiD [Htc _]].
   destruct (tele_of_ok s k Hk Hc) as [_ [_ [Hperm _]]].
   exists PhiD. split; [exact Htc |].
-  apply laid_tele_wf; [exact (reqs_are_types s k Hk) | | exact Htc | exact (tele_needs_ok s k Hk Hc)].
+  apply laid_tele_wf; [exact (ctx_tys_are_types s k Hk Hc) | | exact Htc | exact (tele_needs_ok s k Hk Hc)].
   intros n Hn. exact (need_declared s k Hk Hc n (Permutation_in _ Hperm Hn)).
 Qed.
 
@@ -922,10 +1094,11 @@ Proof.
   intros s k Hk Hc PhiD Htc t x Hx.
   destruct (tele_of_wf s k Hk Hc) as [PhiD' [Htc' Hw]].
   rewrite Htc in Htc'. injection Htc' as <-.
-  destruct (tele_of_ok s k Hk Hc) as [PhiD' [Htc' [_ [Hty [Hcan [Hmean Hkeys]]]]]].
+  destruct (tele_of_ok s k Hk Hc) as [PhiD' [Htc' [_ [Hty Hcan]]]].
   rewrite Htc in Htc'. injection Htc' as <-.
-  pose proof (Hkeys t x Hx) as Hr.
-  rewrite (Hmean t Hr) in Hx. injection Hx as <-.
+  pose proof (nlook_type_key _ _ _ Hx) as Hr.
+  rewrite (ctx_tys_self W s (ctx_of s) (needs_of s)
+    (ctx_of_ok s k Hk Hc) t x Hx).
   rewrite <- (Hcan (TAbs t)).
   apply (tele_canon_wf Sg_of Sg_of_tags_typeonly (tele_of s) PhiD Hw).
   rewrite Hty. exact Hr.
@@ -951,6 +1124,7 @@ Proof.
   - eapply WfTag; [exact H | exact (sat_add _ _ _ _ H0) | exact H2].
   - apply WfUnion; [exact H0 | exact H1 | exact H2].
   - apply WfRec; [exact H | exact H1].
+  - unfold Sg_of in H0;cbn in H0;discriminate.
 Qed.
 
 Lemma sig_wf : forall s k this Phi, kind_sym W s = Some k ->
@@ -1072,11 +1246,13 @@ Qed.
 Lemma Sg_of_wf : wf_gsig Sg_of.
 Proof.
   constructor.
-  - exact tag_decl_wf.
+  - intros n D taup Htag. destruct (tag_decl_wf _ _ _ Htag) as [PhiD [Wt Wpay]].
+    exists PhiD. split; [exact Wt|exact (wf_ty_frees Wpay)].
   - exact Sg_of_val_wf.
   - exact Sg_of_fn_wf.
   - exact Sg_of_mth_wf.
   - exact Sg_of_fun_wf.
+  - intros n D Impossible;discriminate Impossible.
 Qed.
 
 (* ---- Functor bodies (xwf_fb). ------------------------------------------ *)
@@ -1144,21 +1320,25 @@ Qed.
 
 (* ---- Bool (xwf_bool). ----------------------------------------------- *)
 
-(* BRIDGE-HBOOL (Track A's Hbool): lib/bool.moss declares `tag Bool(True |
-   False)` over the units True and False, which the relation's LangSym does
-   not fix by itself. *)
+(* The runtime validator permits absent Bool, and either declaration order
+   of its two unit alternatives.  This source-schema obligation must be discharged
+   by actual checker execution, not by trusting a chosen library directory. *)
 Hypothesis Hbool :
-  kind_is (xo_bool P) DKTag = true /\ w_reqs W (xo_bool P) = []
-  /\ pay_of (xo_bool P) = TUnion [TNom (xo_true P) []; TNom (xo_false P) []]
-  /\ kind_is (xo_true P) DKUnit = true /\ kind_is (xo_false P) DKUnit = true.
+  (xo_bool P = 0 /\ xo_true P = 0 /\ xo_false P = 0) \/
+  (kind_is (xo_bool P) DKTag = true /\ w_reqs W (xo_bool P) = [] /\
+   exists ms, pay_of (xo_bool P) = TUnion ms /\
+     incl ms [TNom (xo_true P) []; TNom (xo_false P) []] /\
+     In (TNom (xo_true P) []) ms /\ In (TNom (xo_false P) []) ms /\
+     kind_is (xo_true P) DKUnit = true /\ kind_is (xo_false P) DKUnit = true).
 
 (* A declared symbol without requirements has no representation. *)
 Lemma Rp_of_noreqs : forall n k, kind_is n k = true -> w_reqs W n = [] -> Rp_of n = None.
 Proof.
   intros n k Hk Hr. pose proof (scalar_not_declared _ _ Hk) as Hs. unfold is_scalar in Hs.
+  apply orb_false_iff in Hs as [Hs H6]. apply orb_false_iff in Hs as [Hs H5].
   apply orb_false_iff in Hs as [Hs H4]. apply orb_false_iff in Hs as [Hs H3].
   apply orb_false_iff in Hs as [H1 H2].
-  unfold Rp_of. rewrite H1, H2, H3, H4. unfold is_some_eq.
+  unfold Rp_of. rewrite H1, H2, H3, H4, H5, H6. unfold is_some_eq.
   destruct wasm_ref as [r|].
   - destruct (Nat.eqb r n) eqn:E.
     + apply Nat.eqb_eq in E. subst r. destruct (wasm_ref_ok n eq_refl) as [_ Hne]. contradiction.
@@ -1178,15 +1358,19 @@ Proof. intros n H. unfold g_tag_of. rewrite (scalar_not_declared _ _ H), H. refl
 
 Lemma Sg_of_bool : forall argv rd, bool_ok Sg_of Rp_of (program_of P argv rd).
 Proof.
-  intros argv rd. destruct Hbool as [Hb [Hbr [Hpay [Ht Hf]]]]. unfold bool_ok. cbn [xp_bool xp_true xp_false program_of].
-  split; [exact (Rp_of_noreqs _ _ Hb Hbr) |].
-  split; [exact (Rp_of_noreqs _ _ Ht (unit_noreqs _ Ht)) |].
-  split; [exact (Rp_of_noreqs _ _ Hf (unit_noreqs _ Hf)) |].
-  split; [| split; exists []; simpl; apply g_tag_of_unit; assumption].
-  exists []. simpl. unfold g_tag_of. rewrite (scalar_not_declared _ _ Hb).
-  assert (Hu : kind_is (xo_bool P) DKUnit = false).
-  { unfold kind_is in *. destruct (kind_sym W (xo_bool P)) as [[]|]; try discriminate; reflexivity. }
-  rewrite Hu, Hb, (Rp_of_noreqs _ _ Hb Hbr), Hbr, Hpay. reflexivity.
+  intros argv rd. unfold bool_ok. cbn [xp_bool xp_true xp_false program_of].
+  destruct Hbool as [Absent|[Hb [Hbr [ms [Hpay [Hincl [HinT [HinF [Ht Hf]]]]]]]]].
+  - left. exact Absent.
+  - right. split; [exact (Rp_of_noreqs _ _ Hb Hbr) |].
+    split; [exact (Rp_of_noreqs _ _ Ht (unit_noreqs _ Ht)) |].
+    split; [exact (Rp_of_noreqs _ _ Hf (unit_noreqs _ Hf)) |].
+    split; [| split; exists []; simpl; apply g_tag_of_unit; assumption].
+    exists [],ms. split.
+    + simpl. unfold g_tag_of. rewrite (scalar_not_declared _ _ Hb).
+      assert (Hu : kind_is (xo_bool P) DKUnit = false).
+      { unfold kind_is in *. destruct (kind_sym W (xo_bool P)) as [[]|]; try discriminate; reflexivity. }
+      rewrite Hu, Hb, Hbr, Hpay. reflexivity.
+    + exact (conj Hincl (conj HinT HinF)).
 Qed.
 
 End FromWorld.

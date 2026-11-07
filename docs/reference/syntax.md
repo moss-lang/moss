@@ -80,8 +80,10 @@ token or class of tokens.
   - `val`
   - `var`
   - `while`
+  - `_` (the wildcard pattern)
 - _name_: must start with a letter or underscore that can be followed by zero
-  or more letters, underscores, or numbers
+  or more letters, underscores, or numbers; `_` alone is reserved for the
+  wildcard pattern (`_x` and `x_` are names)
 - _string_: a quoted string, delimited by double quotes, may include escape sequences `\"`,
   `\\`, `\n`, `\r`, `\t`
 - _raw-string_: consecutive line-leading `> ` or bare `>` lines (see

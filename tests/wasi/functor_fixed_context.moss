@@ -1,0 +1,7 @@
+type A;
+type X;
+assume X { val v: X; }
+functor F[A]: A -> v;
+assume X { context C = F; }
+assume X, C { fn unused() {} }
+fn main() {}

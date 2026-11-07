@@ -26,7 +26,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Ascii Bool Arith PrimInt63 Uint63.
-From NM Require Import CoreMoss MossX NMap Sx.
+From NM Require Import Audit NMap Sx ReifyData.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Open Scope string_scope.
@@ -154,7 +154,8 @@ Record world : Type := World {
   w_entry : nat;
   w_syms : nmap gsym;
   w_nsyms : nat;                    (* symbols are 1 .. w_nsyms - 1 *)
-  w_files : nmap afile
+  w_files : nmap afile;
+  w_library : option string
 }.
 
 Definition err_in {A} (m : gmod) (msg : string) : res A := Bad (gm_path m ++ ": " ++ msg).
@@ -409,7 +410,7 @@ Fixpoint load (fuel : nat) (b : bundle) (loading : list string) (p : string) (st
 
 Definition load_world (b : bundle) : res world :=
   let* (e, st) := load 10000 b [] (b_entry b) (LSt [] NE NE [] NE 1 0) in
-  Good (World (ls_mods st) (ls_order st) e (ls_syms st) (ls_next_sym st) (ls_files st)).
+  Good (World (ls_mods st) (ls_order st) e (ls_syms st) (ls_next_sym st) (ls_files st) (Loader.library_dir (b_prelude b))).
 
 (* ---- resolution (collect.resolve_path, resolve_detached) ---- *)
 
@@ -545,6 +546,14 @@ Fixpoint ety_gens (t : ety) : list nat :=
   | _ => []
   end.
 
+(* A traversal budget computed from the fully elaborated type, including
+   any structure introduced by canonicalization. There is no fixed cap. *)
+Fixpoint ety_depth(t:ety):nat:=S(match t with
+ |YNom _ xs=>fold_right Nat.max 0(map(fun q=>ety_depth(snd q))xs)
+ |YUnion ms=>fold_right Nat.max 0(map ety_depth ms)
+ |YRec fs=>fold_right Nat.max 0(map(fun q=>ety_depth(snd q))fs)
+ |_=>0 end).
+
 (* Substituting generations (a functor result read at fresh ones). *)
 Fixpoint ety_subst (fuel : nat) (s : list (nat * ety)) (t : ety) : ety :=
   match fuel with
@@ -558,6 +567,9 @@ Fixpoint ety_subst (fuel : nat) (s : list (nat * ety)) (t : ety) : ety :=
       | _ => t
       end
   end.
+
+Definition ety_subst_full(s:list(nat*ety))(t:ety):ety:=
+ ety_subst(ety_depth t)s t.
 
 (* ===================== 4. Environments (lower.Env) ======================== *)
 
@@ -635,21 +647,17 @@ Definition set_app (e : env) (k : key) (a : inst) (stamp : nat) : env :=
       (en_funs e) (en_locals e) (aset key_eqb k (a, stamp) (en_apps e)).
 
 (* every provision in force, as the keys a lambda's needs list them *)
-Fixpoint nmap_elems {A} (m : nmap A) (base step : nat) (fuel : nat) : list (nat * A) :=
-  (* keys: the root is `base`; children at base + step and base + 2 step,
-     each with twice the step (the trie's numbering) *)
-  match fuel with
-  | 0 => []
-  | S f =>
-      match m with
-      | NE => []
-      | NN l v r =>
-          (match v with Some x => [(base, x)] | None => [] end)
-          +++ nmap_elems l (base + step) (2 * step) f
-          +++ nmap_elems r (base + 2 * step) (2 * step) f
-      end
+Fixpoint nmap_elems {A} (m : nmap A) (base step : nat) : list (nat * A) :=
+  (* Traverse the whole finite trie.  A fixed depth would silently omit
+     provisions from sufficiently large worlds.  Preserve preorder. *)
+  match m with
+  | NE => []
+  | NN l v r =>
+      (match v with Some x => [(base, x)] | None => [] end)
+      +++ nmap_elems l (base + step) (2 * step)
+      +++ nmap_elems r (base + 2 * step) (2 * step)
   end.
-Definition elems {A} (m : nmap A) : list (nat * A) := nmap_elems m 0 1 70.
+Definition elems {A} (m : nmap A) : list (nat * A) := nmap_elems m 0 1.
 
 Definition all_keys (e : env) : list key :=
   map (fun p => KyVal (fst p)) (elems (en_vals e))
@@ -738,7 +746,8 @@ Record st : Type := St {
   st_memory_used : bool;
   st_checked_total : list nat;
   st_lang : list (string * nat);   (* lib/{num,int,float,bool,wasm}.moss *)
-  st_unsup : list string           (* constructs the oracle does not model *)
+  st_unsup : list string;          (* constructs the oracle does not model *)
+  st_reify : reify_metadata ety key        (* checked metadata for immutable lowering *)
 }.
 
 Definition M (A : Type) : Type := st -> res (A * st).
@@ -774,79 +783,95 @@ Definition fresh : M nat :=
     St (st_w s) (st_syms s) (S (st_next s)) (st_reqs s) (st_sigsyms s) (st_info s)
        (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
        (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-       (st_checked_total s) (st_lang s) (st_unsup s)).
+       (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s)).
 
 (* record updates, one field each *)
 Definition s_syms (f : nmap gsym -> nmap gsym) (s : st) : st :=
   St (st_w s) (f (st_syms s)) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_reqs (f : nmap (list nat) -> nmap (list nat)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (f (st_reqs s)) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_sigsyms (f : nmap (list nat) -> nmap (list nat)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (f (st_sigsyms s)) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_info (f : nmap fninfo -> nmap fninfo) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (f (st_info s))
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_fns (f : list (nat * xexpr) -> list (nat * xexpr)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (f (st_fns s)) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_funs (f : list (nat * (tele * list xbind)) -> list (nat * (tele * list xbind))) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (f (st_funs s)) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_fwd (f : nmap nat -> nmap nat) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (f (st_fwd s)) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_links (f : list ((nat * nat) * nat) -> list ((nat * nat) * nat)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (f (st_links s)) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_flds (f : list (string * nat) -> list (string * nat)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (f (st_flds s)) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_consts (f : nmap (xexpr * ety) -> nmap (xexpr * ety)) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (f (st_consts s))
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_wrappers (f : nmap nat -> nmap nat) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (f (st_wrappers s)) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_vars (vs : list (string * nat)) (n : nat) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) vs n (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_memory (b u : bool) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (b || st_memory_bound s) (u || st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s).
+     (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s).
 Definition s_checked (f : list nat -> list nat) (s : st) : st :=
   St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (f (st_checked_total s)) (st_lang s) (st_unsup s).
+     (f (st_checked_total s)) (st_lang s) (st_unsup s) (st_reify s).
+
+Definition s_reify (f : reify_metadata ety key -> reify_metadata ety key) (s : st) : st :=
+  St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
+     (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
+     (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
+     (st_checked_total s) (st_lang s) (st_unsup s) (f (st_reify s)).
+
+Definition in_reify_code {A} (owner : reify_owner) (m : M A) : M A :=
+  let! before := get in
+  upd (s_reify (fun r =>
+      ReifyMetadata (Some owner) (rm_codes r) (rm_declarations r) (rm_constants r))) ;;
+  let! a := m in
+  upd (s_reify (fun r =>
+      ReifyMetadata (rm_owner (st_reify before))
+        (rm_codes r) (rm_declarations r) (rm_constants r))) ;;
+  ret a.
 
 Definition dummy_sym : gsym := GSym 0 0 "?" KUnit (ADUnit "?") None [] OSource.
 
@@ -1100,21 +1125,18 @@ with listed_params (fuel : nat) (g : gsym) : M (list nat) :=
 Definition reqs (s : nat) : M (list nat) := type_requirements 200 s.
 
 (* the requirements a method's or fn's signature mentions *)
+(* Recompute from the declaration: a memo entry is not an independent
+   source of signature requirements. Keep the write for diagnostics. *)
 Definition signature_type_syms (g : gsym) (rs : list nat) : M (list nat) :=
-  let! x := get in
-  match nget (st_sigsyms x) (gs_id g) with
-  | Some l => ret l
-  | None =>
-      let! found :=
-        match gs_decl g with
-        | ADFn _ _ ps ret_ _ =>
-            let! o := mfold (fun o p => free_type_syms 200 (snd p) (gs_mod g) o) [] ps in
-            match ret_ with Some r => free_type_syms 200 r (gs_mod g) o | None => ret o end
-        | _ => ret []
-        end in
-      let l := filter (fun t => nmem t found) rs in
-      upd (s_sigsyms (fun m => nset m (gs_id g) l)) ;; ret l
-  end.
+  let! found :=
+    match gs_decl g with
+    | ADFn _ _ ps ret_ _ =>
+        let! o := mfold (fun o p => free_type_syms 200 (snd p) (gs_mod g) o) [] ps in
+        match ret_ with Some r => free_type_syms 200 r (gs_mod g) o | None => ret o end
+    | _ => ret []
+    end in
+  let l := filter (fun t => nmem t found) rs in
+  upd (s_sigsyms (fun m => nset m (gs_id g) l)) ;; ret l.
 
 (* ===================== 7. Merging and type elaboration =================== *)
 
@@ -1143,6 +1165,152 @@ Fixpoint canon_go (fuel : nat) (uf : list (nat * ety)) (t : ety) {struct fuel} :
   end.
 Definition canon (e : env) (t : ety) : ety := canon_go (S (List.length (en_uf e))) (en_uf e) t.
 
+Definition reify_sig_raw (sg : fsig) : reify_signature ety :=
+  ReifySignature ety (map snd (sg_params sg)) (sg_ret sg) (sg_this sg).
+Definition reify_sig_types (sg : fsig) : list ety :=
+  map snd (sg_params sg) +++ sg_ret sg ::
+    match sg_this sg with Some t => [t] | None => [] end.
+
+Definition reify_sig (e : env) (sg : fsig) : reify_signature ety :=
+  ReifySignature ety (map (fun p => canon e (snd p)) (sg_params sg))
+    (canon e (sg_ret sg)) (option_map (canon e) (sg_this sg)).
+
+Definition reify_arguments (e : env) : list (nat * ety) :=
+  map (fun p => (fst p,canon e (snd p))) (tymap e).
+
+Definition reify_scope_types(e:env):list ety:= map snd (tymap e) +++ map snd (en_uf e) ++
+    map snd (elems (en_vals e)) ++
+    flat_map (fun p => reify_sig_types (snd p)) (elems (en_fns e)) ++
+    flat_map (fun p => flat_map (fun q => fst q :: reify_sig_types (snd q)) (snd p))
+      (elems (en_mths e)) ++
+    map (fun p => fst (snd p)) (en_locals e) ++
+    flat_map (fun p => flat_map (fun q => match snd q with
+       Some t => [t] | None => [] end) (fst (snd p))) (en_apps e).
+(* Test membership in the already deduplicated suffix. This preserves
+   nodup's last-occurrence order while avoiding repeated scans of duplicates. *)
+Definition dedup_nat_step (ys : list nat) (x : nat) : list nat :=
+ if in_dec Nat.eq_dec x ys then ys else x::ys.
+Definition dedup_nat_fast (xs : list nat) : list nat :=
+ fold_left dedup_nat_step (rev_append xs []) [].
+Lemma dedup_nat_fast_fold : forall xs,
+ dedup_nat_fast xs = fold_right (fun x ys => dedup_nat_step ys x) [] xs.
+Proof.
+ intro xs. unfold dedup_nat_fast. rewrite rev_append_rev, app_nil_r.
+ change (fold_left (fun ys x => dedup_nat_step ys x) (rev xs) [] = fold_right (fun x ys => dedup_nat_step ys x) [] xs).
+ rewrite <- (fold_left_rev_right (fun x ys => dedup_nat_step ys x) (rev xs) []).
+ rewrite rev_involutive. reflexivity.
+Qed.
+Lemma dedup_nat_fast_eq : forall xs, dedup_nat_fast xs=nodup Nat.eq_dec xs.
+Proof.
+ intro xs. rewrite dedup_nat_fast_fold.
+ induction xs as[|x xs IH];cbn [fold_right];[reflexivity|].
+ rewrite IH. unfold dedup_nat_step. cbn [nodup].
+ destruct(in_dec Nat.eq_dec x(nodup Nat.eq_dec xs))as[A|A];
+ destruct(in_dec Nat.eq_dec x xs)as[B|B];try reflexivity.
+ - exfalso;apply B. apply nodup_In in A;exact A.
+ - exfalso;apply A. apply nodup_In;exact B.
+Qed.
+
+Definition reify_generation_ids(e:env):list nat:= dedup_nat_fast (map fst (en_tn e) +++ map fst (en_uf e) ++
+    flat_map ety_gens (reify_scope_types e)).
+Definition reify_scope_of (e : env) : reify_scope ety key :=
+  let generations := map (fun t => (t,canon e (YAbs t))) (reify_generation_ids e) in
+  let values := elems (en_vals e) in
+  let functions := map (fun p => (fst p,reify_sig_raw (snd p))) (elems (en_fns e)) in
+  let methods := flat_map (fun p => map (fun q =>
+      ((fst q,fst p),reify_sig_raw (snd q))) (snd p)) (elems (en_mths e)) in
+  ReifyScope ety key (tymap e) generations (all_keys e)
+    values functions methods (en_apps e).
+
+
+(* Family patterns use fresh rigid markers.  Avoid every generation the
+   caller carries, even for independently supplied well formed contexts. *)
+Definition marker_generation_ids(e:env):list nat:=
+ reify_generation_ids e +++ flat_map(fun p=>
+   (match fst p with KyMth r _=>ety_gens r|_=>[]end) +++
+   map fst(fst(snd p)))(en_apps e).
+Definition marker_floor(e:env):nat:=
+ fold_right(fun g top=>Nat.max(S g)top)0(marker_generation_ids e).
+Definition fresh_marker(e:env):M nat:=
+ let floor:=marker_floor e in
+ fun s=>let id:=Nat.max(st_next s)floor in Good(id,
+  St(st_w s)(st_syms s)(S id)(st_reqs s)(st_sigsyms s)(st_info s)
+    (st_fns s)(st_funs s)(st_fwd s)(st_links s)(st_flds s)(st_consts s)
+    (st_wrappers s)(st_vars s)(st_nvar s)(st_memory_bound s)(st_memory_used s)
+    (st_checked_total s)(st_lang s)(st_unsup s)(st_reify s)).
+
+
+(* Also avoid generations supplied by the receiver itself. *)
+Definition fresh_marker_for(e:env)(receiver:ety):M nat:=
+ let floor:=Nat.max(marker_floor e)
+   (fold_right(fun g top=>Nat.max(S g)top)0(ety_gens receiver))in
+ fun s=>let id:=Nat.max(st_next s)floor in Good(id,
+  St(st_w s)(st_syms s)(S id)(st_reqs s)(st_sigsyms s)(st_info s)
+    (st_fns s)(st_funs s)(st_fwd s)(st_links s)(st_flds s)(st_consts s)
+    (st_wrappers s)(st_vars s)(st_nvar s)(st_memory_bound s)(st_memory_used s)
+    (st_checked_total s)(st_lang s)(st_unsup s)(st_reify s)).
+
+
+Definition register_reify_code (owner : reify_owner) (e : env) (inputs : list key)
+    (signature : option fsig) : M unit :=
+  let code := ReifyCode ety key owner (reify_scope_of e) inputs
+                (option_map (reify_sig e) signature) None [] in
+  upd (s_reify (fun r => ReifyMetadata (rm_owner r)
+    ((owner, code) :: rm_codes r) (rm_declarations r) (rm_constants r))).
+
+Definition record_reify_event (event : reify_event ety key) : M unit :=
+  upd (s_reify (fun r =>
+    let codes := match rm_owner r with
+    | None => rm_codes r
+    | Some owner => map (fun p =>
+        if reify_owner_eqb (fst p) owner then
+          let code := snd p in
+          (fst p, ReifyCode ety key (rc_owner ety key code)
+            (rc_scope ety key code) (rc_inputs ety key code)
+            (rc_signature ety key code) (rc_exports ety key code)
+            (event :: rc_events ety key code))
+        else p) (rm_codes r)
+    end in ReifyMetadata (rm_owner r) codes (rm_declarations r) (rm_constants r))).
+
+
+Definition record_reify_exports_at (owner : reify_owner) (types : list nat) (items : list key)
+    (inputs promised actual : env) (roles : list (nat * nat)) : M unit :=
+  upd (s_reify (fun r =>
+    ReifyMetadata (rm_owner r)
+      (map (fun p => if reify_owner_eqb (fst p) owner then
+        let code := snd p in
+        (fst p, ReifyCode ety key (rc_owner ety key code)
+          (rc_scope ety key code) (rc_inputs ety key code)
+          (rc_signature ety key code)
+          (Some (ReifyExports ety key types items (reify_scope_of promised)
+            (reify_scope_of actual) (reify_scope_of inputs) roles))
+          (rc_events ety key code))
+        else p) (rm_codes r)) (rm_declarations r) (rm_constants r))).
+
+Definition record_reify_exports (owner : reify_owner) (types : list nat) (items : list key)
+    (inputs promised actual : env) : M unit :=
+  record_reify_exports_at owner types items inputs promised actual (map (fun t => (t,t)) types).
+
+(* Cached constant IR is inlined at every read. Its annotation trace must
+   likewise be copied into each reader, even in a different code owner. *)
+Definition current_reify_events (r : reify_metadata ety key) : list (reify_event ety key) :=
+  match rm_owner r with
+  | None => []
+  | Some owner => match assoc reify_owner_eqb owner (rm_codes r) with
+      | Some code => rc_events ety key code | None => [] end
+  end.
+Definition remember_reify_constant (id start : nat) : M unit :=
+  upd (s_reify (fun r =>
+    let events := current_reify_events r in
+    let fragment := firstn (List.length events - start) events in
+    let constants := if is_some (assoc Nat.eqb id (rm_constants r)) then rm_constants r
+                     else (id,fragment) :: rm_constants r in
+    ReifyMetadata (rm_owner r) (rm_codes r) (rm_declarations r) constants)).
+Definition replay_reify_constant (id : nat) : M unit :=
+  let! s := get in
+  let events := opt_default [] (assoc Nat.eqb id (rm_constants (st_reify s))) in
+  miter record_reify_event (rev events).
+
 (* lower.instantiate: a declaration's type read at a use — each parameter
    becomes the generation of its symbol in force here *)
 Fixpoint inst_go (fuel : nat) (e : env) (t : ety) : ety :=
@@ -1157,7 +1325,16 @@ Fixpoint inst_go (fuel : nat) (e : env) (t : ety) : ety :=
       | _ => t
       end
   end.
-Definition instantiate (e : env) (t : ety) : ety := inst_go FUEL e t.
+(* Re-read declaration generations completely; a structural walk never
+   leaves a deeply nested suffix at its original generations. *)
+Fixpoint instantiate (e : env) (t : ety) : ety :=
+  match t with
+  | YAbs g => match tn_get e g with Some y => canon e y | None => canon e t end
+  | YNom n xs => YNom n (map (fun p => (fst p, instantiate e (snd p))) xs)
+  | YUnion ms => YUnion (map (instantiate e) ms)
+  | YRec fs => YRec (map (fun p => (fst p, instantiate e (snd p))) fs)
+  | _ => t
+  end.
 
 Definition fits (e : env) (t expected : ety) : bool := fits_raw (canon e t) (canon e expected).
 
@@ -1424,16 +1601,9 @@ Definition find_method_decl (mi : nat) (recv : gsym) (n : name) : M (option gsym
   match assoc attached_eqb (gs_id recv, n) (gm_attached hm) with
   | Some s => let! g := sym s in ret (Some g)
   | None =>
-      match assoc attached_eqb (gs_id recv, n) (gm_attached here) with
+      match sassoc n (gm_detached here) with
       | Some s => let! g := sym s in ret (Some g)
-      | None =>
-          match sassoc n (gm_detached here) with
-          | Some s => let! g := sym s in ret (Some g)
-          | None => match sassoc n (gm_detached hm) with
-                    | Some s => let! g := sym s in ret (Some g)
-                    | None => ret None
-                    end
-          end
+      | None => ret None
       end
   end.
 
@@ -1546,8 +1716,10 @@ with functor_fixed_go (fuel : nat) (g : gsym) {struct fuel} : M (list nat) :=
   end.
 
 Definition result_mentions (g : gsym) : M (list nat) :=
-  let '(_, r, _) := functor_parts g in result_mentions_go 17 (gs_id g) (gs_mod g) r [].
-Definition functor_fixed (g : gsym) : M (list nat) := functor_fixed_go 17 g.
+  let! n := walk_fuel in
+  let '(_, r, _) := functor_parts g in result_mentions_go (2 * n) (gs_id g) (gs_mod g) r [].
+Definition functor_fixed (g : gsym) : M (list nat) :=
+  let! n := walk_fuel in functor_fixed_go (2 * n) g.
 
 Definition add_need (needs : list key) (k : key) : list key :=
   if key_mem k needs then needs else needs +++ [k].
@@ -1667,7 +1839,7 @@ Fixpoint add_symbol_item (fuel : nat) (e : env) (mi : nat) (g : gsym) (subst : l
               (* m4, D84 rule 2: F is at an instantiation of X(F), which
                  assuming or listing it needs in force *)
               let! xs := functor_fixed g in
-              let absent := filter (fun x => negb (is_some (nassoc x tm))) xs in
+              let absent := filter (fun x => negb (is_some (tn_get e x))) xs in
               (match absent with
                | [] => ret tt
                | _ => let! ns := mmap (fun x => let! xg := sym x in ret (gs_name xg)) absent in
@@ -1675,7 +1847,7 @@ Fixpoint add_symbol_item (fuel : nat) (e : env) (mi : nat) (g : gsym) (subst : l
                               "` in force: `" ++ gs_name g ++ "` is fixed in them (D84, D20)")
                end) ;;
               let e := set_fun e (gs_id g) s in
-              let! e := setdefault_app e (KyFun (gs_id g)) (map (fun x => (x, nassoc x tm)) xs) in
+              let! e := setdefault_app e (KyFun (gs_id g)) (map (fun x => (x, tn_get e x)) xs) in
               ret (e, add_need needs (KyFun (gs_id g)))
           | _ => err mi ("cannot assume `" ++ gs_name g ++ "` (a " ++ kind_name (gs_kind g) ++ ")")
           end
@@ -1753,6 +1925,25 @@ Definition edges_eqb (a b : list (nat * ety)) : bool :=
 Definition env_with_edges (tn_edges uf_edges : list (nat * ety)) : env :=
   Env (map (fun p => (fst p, (snd p, 0))) tn_edges) uf_edges NE NE NE NE [] [].
 
+(* A result name is a new output role even when its old input generation
+   belonged to a merge class. Replace output roles first; canonicalize only
+   the remaining old generations. Structural substitution has no depth tail. *)
+Definition promised_result_type (body : env) (made : list (nat * ety)) (written : ety) : ety :=
+  canon body (instantiate (env_with_edges made []) written).
+
+(* Result functors retain the fixed interpretations captured at their
+   binding. A final result type rebind cannot relabel that capture. *)
+Definition result_functor_fixed_ok (body promised : env) (made : list (nat * ety))
+    (actual_key promised_key : key) : bool :=
+  let wanted := match get_app promised promised_key with Some (a,_) => a | None => [] end in
+  let actual := match get_app body actual_key with Some (a,_) => a | None => [] end in
+  forallb (fun p =>
+    let have := opt_default None (assoc Nat.eqb (fst p) actual) in
+    match have,snd p with
+    | Some got,Some want => ety_eqb (canon body got) (promised_result_type body made want)
+    | None,None => true
+    | _,_ => false end) wanted.
+
 (* lower.merged_walk: rebuild until the walk adds no edge, at most 8
    times.  A walk that still adds one in its 9th round, the check of the
    8th, is rejected: what it made is no merge of its telescope (Audit
@@ -1769,19 +1960,24 @@ Definition merged_walk (mi : nat) (walk : env -> M (env * list key)) : M (env * 
     end in
   go 8 [] [].
 
+(* Declaration-context snapshots contain provisions, never function locals.
+   Both callers construct these contexts from a fresh environment. *)
 Definition freeze_all_apps (e : env) : env :=
-  Env (en_tn e) (en_uf e) (en_vals e) (en_fns e) (en_mths e) (en_funs e) (en_locals e)
+  Env (en_tn e) (en_uf e) (en_vals e) (en_fns e) (en_mths e) (en_funs e) []
       (map (fun p => let '(k, (a, s)) := p in
                      (k, (freeze_app e (map (fun q => (fst q, match snd q with
                                                                | Some y => Some y
                                                                | None => tn_get e (fst q)
                                                                end)) a), s))) (en_apps e)).
 
-(* m4, D84 (8) and D37: whether g is its module's own `main` *)
+(* D84 (8), D37: a function named `main` in any loaded module's scope,
+   including an imported function renamed to main, gets the root context. *)
 Definition is_main (g : gsym) : M bool :=
   if negb (kind_eqb (gs_kind g) KFn) || is_some (gs_recv g) then ret false else
-  let! m := the_mod (gs_mod g) in
-  ret (match sassoc "main" (gm_names m) with Some s => Nat.eqb s (gs_id g) | None => false end).
+  let! s := get in
+  ret (existsb (fun mi => match sassoc "main" (gm_names (get_mod (st_w s) mi)) with
+                         | Some x => Nat.eqb x (gs_id g)
+                         | None => false end) (w_order (st_w s))).
 
 (* m4, D84 (8): the platform runs `main` in its root context: beside what
    `main` assumes, lib/wasm.moss's `Gc` (the platform's functors), with the
@@ -1857,7 +2053,7 @@ Definition unsupported (why : string) : M unit :=
   fun s => Good (tt, St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) (st_info s)
      (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
      (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-     (st_checked_total s) (st_lang s) (st_unsup s +++ [why])).
+     (st_checked_total s) (st_lang s) (st_unsup s +++ [why]) (st_reify s)).
 
 (* ===================== 9. Into MossX: keys, items, locals ================ *)
 
@@ -1899,8 +2095,8 @@ Definition call_theta (e : env) (g : gsym) : M subst :=
   mmap (fun r => let! y := ety_ty (canon e (instantiate e (YAbs r))) in ret (r, y)) rs.
 
 (* θ of a tag: its type's arguments. *)
-Definition tag_theta (xs : list (nat * ety)) : M subst :=
-  mmap (fun p => let! y := ety_ty (snd p) in ret (fst p, y)) xs.
+Definition tag_theta (e : env) (xs : list (nat * ety)) : M subst :=
+  mmap (fun p => let! y := ety_ty (canon e (snd p)) in ret (fst p, y)) xs.
 
 Definition smap_of (ps : list (key * key)) : M smap :=
   mmap (fun p => let! a := key_item (fst p) in let! b := key_item (snd p) in ret (a, b)) ps.
@@ -1978,6 +2174,39 @@ Fixpoint slots_go (fuel : nat) (e : env) (t : ety) (visiting : list ety) : M nat
   end.
 Definition layout_ok (e : env) (t : ety) : M unit := mbind (slots_go 300 e t []) (fun _ => ret tt).
 
+(* D39's native entry ABI has no argument or result lanes. Unit and Never
+   erase, records concatenate lanes, and ordinary tags use payload lanes.
+   A nominal unit and every union carry a discriminator and do not erase. *)
+Fixpoint entry_zero_width (fuel : nat) (e : env) (t : ety) : M bool :=
+  match fuel with
+  | 0 => fail "main return type nests too deeply (D39)"
+  | S f => match canon e t with
+      | YUnit | YNever => ret true
+      | YRec fs => mfold (fun zero p =>
+          let! field_zero := entry_zero_width f e (snd p) in ret (zero && field_zero)) true fs
+      | YNom n _ =>
+          let! g := sym n in
+          if kind_eqb (gs_kind g) KTag then
+            let! payload := payload_type (canon e t) e in entry_zero_width f e payload
+          else ret false
+      | _ => ret false
+      end
+  end.
+
+Definition check_main_arity (g : gsym) : M unit :=
+  match fn_params g with
+  | [] => ret tt
+  | _ => err (gs_mod g) "main must take no parameters (D39)"
+  end.
+
+Definition check_main_signature (g : gsym) (info : fninfo) : M unit :=
+  check_main_arity g ;;
+  let e := fi_env info in
+  let! signature := fn_sig g (tymap e) e None in
+  let! zero := entry_zero_width 300 e (sg_ret signature) in
+  if zero then ret tt
+  else err (gs_mod g) "main must return a type with no runtime lanes (D39)".
+
 (* ===================== 11. Needs and coherence (FnChecker: require_needs, merges) = *)
 
 Definition oety_eqb (a b : option ety) : bool :=
@@ -1989,7 +2218,8 @@ Definition oety_eqb (a b : option ety) : bool :=
 
 Definition require_merges (mi : nat) (e : env) (callee : gsym) (info : fninfo) : M unit :=
   miter (fun p =>
-           let '(k, v) := p in
+           let k := fst p in
+           let v := canon (env_with_edges [] (fi_merges info)) (YAbs k) in
            let mentioned := k :: ety_gens v in
            if forallb (fun t => is_some (tn_get e t)) mentioned then
              let lhs := canon e (instantiate e (YAbs k)) in
@@ -2035,7 +2265,7 @@ Definition require_needs (mi : nat) (e : env) (callee : gsym) (info : fninfo) : 
           let! s := show_key k in
           err mi ("calling `" ++ gs_name callee ++ "` needs " ++ s ++
                   ", which is not available in the context here")
-      | KyFun _ => if key_present e need then ret (need, need, false) else missing
+      | KyFun _ => if key_present e need then ret (need, need, true) else missing
       | _ => if key_present e need then ret (need, need, true) else missing
       end) (fi_needs info) in
   let bad := filter (fun p => let '(need, k, chk) := p in chk && incoherent e info need k) pairs in
@@ -2047,6 +2277,69 @@ Definition require_needs (mi : nat) (e : env) (callee : gsym) (info : fninfo) : 
               " at another instantiation than the one in the context here was provided at " ++
               "(a provision serves only the instantiation it was made at; D62)")
   end.
+
+(* D20: an assumed provision brings requirements, not just a signature.
+   Check them against the completed assume list, so list order is immaterial.
+   An item's explicit brackets are available while its requirements are read. *)
+Definition check_assumed_requirements (mi : nat) (e : env) (k : key) : M unit :=
+  let id := match k with KyVal x | KyFn x | KyFun x | KyMth _ x => x end in
+  let! g := sym id in
+  match k with
+  | KyFun _ => ret tt (* its fixed inputs are checked by add_symbol_item *)
+  | _ =>
+  let a := match get_app e k with Some (a, _) => a | None => [] end in
+  let! view := mfold (fun view q => match snd q with
+                                   | Some t => let! stamp := fresh in ret (set_tn view (fst q) t stamp)
+                                   | None => ret view
+                                   end) e a in
+  let! info := fn_info g in
+  let! rs := if kind_eqb (gs_kind g) KMethod then
+               let! rs := reqs id in signature_type_syms g rs
+             else ret (map fst (en_tn (fi_env info))) in
+  miter (fun t => if is_some (tn_get view t) then ret tt else
+                   let! tg := sym t in
+                   err mi ("assuming `" ++ gs_name g ++ "` needs `" ++ gs_name tg ++ "` in force (D20)")) rs ;;
+  let! _ := require_needs mi view g info in
+  ret tt
+  end.
+
+Fixpoint list_same {A} (eqb : A -> A -> bool) (xs ys : list A) : bool :=
+  match xs, ys with
+  | [], [] => true
+  | x :: xs, y :: ys => eqb x y && list_same eqb xs ys
+  | _, _ => false
+  end.
+
+Definition same_assume (a b : path * option name) : bool :=
+  list_same String.eqb (fst a) (fst b) &&
+  match snd a, snd b with
+  | None, None => true
+  | Some x, Some y => String.eqb x y
+  | _, _ => false
+  end.
+
+Definition check_assumes : M unit :=
+  let! s := get in
+  let w := st_w s in
+  (* Declarations sharing a module, nesting and root context have exactly
+     the same ambient requirements. Validate that context once. *)
+  let! _ := mfold (fun seen id => match nget (w_syms w) id with
+                  | Some g =>
+                      match gs_kind g with
+                      | KVal | KFn | KMethod | KCtx | KFunctor =>
+                          let! main := is_main g in
+                          if existsb (fun q => Nat.eqb (gs_mod (fst q)) (gs_mod g) &&
+                               Bool.eqb (snd q) main &&
+                               list_same same_assume (gs_assumes (fst q)) (gs_assumes g)) seen
+                          then ret seen else
+                          let! info := fn_info g in
+                          miter (check_assumed_requirements (gs_mod g) (fi_env info)) (fi_needs info) ;;
+                          ret ((g, main) :: seen)
+                      | _ => ret seen
+                      end
+                  | None => ret seen
+                  end) [] (seq 0 (w_nsyms w)) in
+  ret tt.
 
 (* ===================== 12. Syntax helpers ================================= *)
 
@@ -2091,42 +2384,56 @@ with has_break_s (s : astmt) : bool :=
   end.
 
 (* every single-segment name an expression might read as a local *)
-Fixpoint free_names_e (fuel : nat) (x : aexpr) : list string :=
-  match fuel with
-  | 0 => []
-  | S f =>
-      match x with
-      | AEPath [n] None => [n]
-      | AECall _ _ args => flat_map (free_names_e f) args
-      | AEField o _ => free_names_e f o
-      | AEMeth o _ args => free_names_e f o +++ flat_map (free_names_e f) args
-      | AERec _ _ fs => flat_map (fun p => match snd p with Some v => free_names_e f v | None => [fst p] end) fs
-      | AEIf c t el => free_names_e f c +++ free_names_b f t +++
-                       match el with Some y => free_names_e f y | None => [] end
-      | AEMatch s arms => free_names_e f s +++ flat_map (fun a => free_names_e f (snd a)) arms
-      | AEReturn (Some y) => free_names_e f y
-      | AEBlock b => free_names_b f b
-      | AEUnary _ y => free_names_e f y
-      | AEBinary _ l r => free_names_e f l +++ free_names_e f r
-      | AELam _ _ b => free_names_e f b
-      | _ => []
-      end
+(* Lexical capture reads the complete finite syntax tree.  The old fuel
+   parameter remains in the public wrappers, but never truncates names. *)
+Fixpoint free_names_complete_e (x : aexpr) : list string :=
+  match x with
+  | AEPath [n] None => [n]
+  | AECall _ _ args => flat_map free_names_complete_e args
+  | AEField o _ => free_names_complete_e o
+  | AEMeth o _ args => free_names_complete_e o +++ flat_map free_names_complete_e args
+  | AERec _ _ fs => flat_map (fun p => match snd p with
+                    | Some v => free_names_complete_e v | None => [fst p] end) fs
+  | AEIf c t el => free_names_complete_e c +++ free_names_complete_b t +++
+                  match el with Some y => free_names_complete_e y | None => [] end
+  | AEMatch value arms => free_names_complete_e value +++
+                        flat_map (fun a => free_names_complete_e (snd a)) arms
+  | AEReturn (Some y) => free_names_complete_e y
+  | AEBlock b => free_names_complete_b b
+  | AEUnary _ y => free_names_complete_e y
+  | AEBinary _ l r => free_names_complete_e l +++ free_names_complete_e r
+  | AELam _ _ body => free_names_complete_e body
+  | _ => []
   end
-with free_names_b (fuel : nat) (b : ablock) : list string :=
-  match fuel with
-  | 0 => []
-  | S f =>
-      match b with
-      | ABlock ss t =>
-          flat_map (fun s => match s with
-                             | ASLet _ _ y | ASVar _ _ y | ASExpr y => free_names_e f y
-                             | ASAssign n y => n :: free_names_e f y
-                             | ASBind its => flat_map (fun p => match snd p with Some y => free_names_e f y | None => [] end) its
-                             | ASWhile c bb => free_names_e f c +++ free_names_b f bb
-                             | ASLoop bb => free_names_b f bb
-                             end) ss +++
-          match t with Some y => free_names_e f y | None => [] end
-      end
+with free_names_complete_b (b : ablock) : list string :=
+  match b with
+  | ABlock statements tail => flat_map free_names_complete_s statements +++
+      match tail with Some value => free_names_complete_e value | None => [] end
+  end
+with free_names_complete_s (statement : astmt) : list string :=
+  match statement with
+  | ASLet _ _ value | ASVar _ _ value | ASExpr value => free_names_complete_e value
+  | ASAssign n value => n :: free_names_complete_e value
+  | ASBind items => flat_map (fun p => match snd p with
+                    | Some value => free_names_complete_e value | None => [] end) items
+  | ASWhile condition body => free_names_complete_e condition +++ free_names_complete_b body
+  | ASLoop body => free_names_complete_b body
+  end.
+Definition free_names_e (_fuel : nat) (x : aexpr) : list string := free_names_complete_e x.
+Definition free_names_b (_fuel : nat) (b : ablock) : list string := free_names_complete_b b.
+
+(* A receiver, explicit parameters and captured locals occupy distinct
+   names in a lambda frame, just as in an ordinary function frame. *)
+Fixpoint duplicate_local_name (names : list string) : option string :=
+  match names with
+  | [] => None
+  | name :: rest => if smem name rest then Some name else duplicate_local_name rest
+  end.
+Definition check_lambda_local_names (mi : nat) (names : list string) : M unit :=
+  match duplicate_local_name names with
+  | Some name => err mi ("anonymous function local `" ++ name ++
+      "` occurs twice among its receiver, parameters or captures (D70)")
+  | None => ret tt
   end.
 
 Definition lang_symbol (short n : string) (detached : bool) (why : string) (mi : nat) : M gsym :=
@@ -2202,7 +2509,8 @@ Fixpoint expand_spec (fuel : nat) (mi : nat) (sp : spec) (out : list (leaf * str
   end.
 
 Definition signature_items (mi : nat) (specs : list spec) : M (list (leaf * string)) :=
-  mfold (fun o sp => expand_spec 17 mi sp o) [] specs.
+  let! n := walk_fuel in
+  mfold (fun o sp => expand_spec n mi sp o) [] specs.
 
 (* lower.check_functor_total: a functor with a body binds its whole result *)
 Fixpoint functor_total (fuel : nat) (g : gsym) : M unit :=
@@ -2355,7 +2663,42 @@ Definition provide_result (e : env) (fg : gsym) (fresh_of : list (nat * nat)) : 
                               | None => ret e
                               end) e ts in
   let '(_, res, _) := functor_parts fg in
-  mfold (fun acc sp => provide_spec 17 (fst acc) fg (gs_mod fg) sp [] (snd acc)) (e, []) res.
+  let! n := walk_fuel in
+  mfold (fun acc sp => provide_spec n (fst acc) fg (gs_mod fg) sp [] (snd acc)) (e, []) res.
+
+(* Freeze the old input generations before installing fresh output roles.
+   A role placeholder is check-only: raw IR translates it back explicitly. *)
+Definition target_input_types (e : env) : env :=
+  Env (map (fun p => (fst p,(canon e (fst (snd p)),snd (snd p)))) (en_tn e))
+      (en_uf e) (en_vals e) (en_fns e) (en_mths e) (en_funs e) (en_locals e) (en_apps e).
+Definition fresh_target_output_view (e : env) (fg : gsym) : M (env * list key * list (nat * nat)) :=
+  let! ts := result_types fg in
+  let! roles := mmap (fun t => let! tg := sym t in
+      let! g := new_sym (gs_mod tg) (gs_name tg ++ "@result") KType
+                       (ADType (gs_name tg)) (OFresh t (gs_id fg)) in ret (t,g)) ts in
+  let! (view, keys) := provide_result (target_input_types e) fg roles in
+  ret (view, keys, roles).
+Definition output_role_types (roles : list (nat * nat)) : list (nat * ety) :=
+  map (fun p => (snd p,YAbs (fst p))) roles.
+Definition output_role_key (roles : list (nat * nat)) (k : key) : key :=
+  match k with KyMth r m => KyMth (instantiate (env_with_edges (output_role_types roles) []) r) m | _ => k end.
+Definition output_role_item (roles : list (nat * nat)) (i : item) : item :=
+  app_subst_item (map (fun p => (snd p,TAbs (fst p))) roles) i.
+
+(* The fixed inputs of a newly bound abstract functor must already be in
+   force, just as in the native binding check. *)
+Definition bind_fixed_present (mi : nat) (e : env) (fg : gsym) (xs : list nat) : M unit :=
+  miter (fun x => if is_some (tn_get e x) then ret tt else
+    let! xg := sym x in err mi ("binding `" ++ gs_name fg ++ "` needs `" ++ gs_name xg ++
+      "` in force: it is a fixed input (D84)")) xs.
+Definition copy_fixed_current (mi : nat) (e : env) (fg : gsym) (xs : list nat) : M unit :=
+  let recorded := match get_app e (KyFun (gs_id fg)) with Some (a,_) => a | None => [] end in
+  miter (fun x => match assoc Nat.eqb x recorded,tn_get e x with
+    | Some (Some was),Some now =>
+      if ety_eqb (canon e was) (canon e now) then ret tt else
+      let! xg := sym x in err mi ("copying `" ++ gs_name fg ++ "` after rebinding its fixed input `" ++
+        gs_name xg ++ "` changes its interpretation (D84)")
+    | _,_ => ret tt end) xs.
 
 Definition sig_eqb_in (e1 : env) (a : fsig) (e2 : env) (b : fsig) : bool :=
   Nat.eqb (List.length (sg_params a)) (List.length (sg_params b)) &&
@@ -2369,6 +2712,183 @@ Definition key_sig (e : env) (k : key) : option (list ety * ety) :=
   | KyFn f => option_map (fun s => (map snd (sg_params s), sg_ret s)) (nget (en_fns e) f)
   | KyMth t m => option_map (fun s => (map snd (sg_params s), sg_ret s)) (get_mth e t m)
   | KyFun _ => Some ([], YUnit)
+  end.
+
+(* Match only formal generations. Caller generations are rigid values;
+   replacements are single-pass, so their names are never solved in turn. *)
+Fixpoint copy_match_type (vars : list nat) (pat actual : ety)
+    (sol : list (nat * ety)) {struct pat} : option (list (nat * ety)) :=
+  match pat,actual with
+  | YAbs x,_ => if nmem x vars then
+      match nassoc x sol with Some t => if ety_eqb t actual then Some sol else None
+      | None => Some ((x,actual)::sol) end
+      else if ety_eqb pat actual then Some sol else None
+  | YUnit,YUnit | YNever,YNever => Some sol
+  | YNom n xs,YNom m ys => if Nat.eqb n m then
+      (fix go xs ys sol := match xs,ys with
+       | [],[] => Some sol
+       | (k,t)::xs,(l,u)::ys => if Nat.eqb k l then
+           match copy_match_type vars t u sol with Some next => go xs ys next | None => None end
+           else None
+       | _,_ => None end) xs ys sol else None
+  | YUnion xs,YUnion ys =>
+      (fix go xs ys sol := match xs,ys with
+       | [],[] => Some sol
+       | t::xs,u::ys => match copy_match_type vars t u sol with
+          Some next => go xs ys next | None => None end
+       | _,_ => None end) xs ys sol
+  | YRec xs,YRec ys =>
+      (fix go xs ys sol := match xs,ys with
+       | [],[] => Some sol
+       | (k,t)::xs,(l,u)::ys => if String.eqb k l then
+           match copy_match_type vars t u sol with Some next => go xs ys next | None => None end
+           else None
+       | _,_ => None end) xs ys sol
+  | _,_ => None
+  end.
+Definition copy_interpret (generic : env) (view : env) (t : ety) : ety :=
+  instantiate generic (canon view t).
+Definition copy_key (generic view : env) (k : key) : key :=
+  match k with KyMth r m => KyMth (copy_interpret generic view r) m | _ => k end.
+Definition copy_app_eq (generic a b : env) (ka kb : key) : bool :=
+  match get_app a ka,get_app b kb with
+  | Some (xs,_),Some (ys,_) =>
+      Nat.eqb (List.length xs) (List.length ys) &&
+      forallb (fun p => match assoc Nat.eqb (fst p) ys,snd p with
+        | Some (Some u),Some t => ety_eqb (copy_interpret generic a t) (copy_interpret generic b u)
+        | Some None,None => true | _,_ => false end) xs
+  | None,None => true | _,_ => false
+  end.
+Definition copy_slot_eq (generic a b : env) (ka kb : key) : bool :=
+  copy_app_eq generic a b ka kb &&
+  match key_sig a ka,key_sig b kb with
+  | Some (ps,t),Some (qs,u) =>
+      Nat.eqb (List.length ps) (List.length qs) &&
+      forallb (fun p => ety_eqb (copy_interpret generic a (fst p))
+                               (copy_interpret generic b (snd p))) (combine (t::ps) (u::qs))
+  | None,None => true | _,_ => false end.
+(* A captured provision keeps its old actual reading. Only G's prototype
+   is instantiated through the binding site; re-instantiating the stored
+   caller reading would erase the very stale-generation mismatch checked. *)
+Definition captured_type_at (site prototype : env) (t : ety) : ety :=
+  canon site (instantiate site (canon prototype t)).
+Definition captured_reading_compatible (site prototype : env) (formal actual : key) : bool :=
+  (match get_app prototype formal,get_app site actual with
+   | Some(xs,_),Some(ys,_) => Nat.eqb(List.length xs)(List.length ys) &&
+       forallb(fun p=>match assoc Nat.eqb(fst p)ys,snd p with
+         | Some(Some was),Some required =>
+             ety_eqb(captured_type_at site prototype required)(canon site was)
+         | Some None,None=>true|_,_=>false end)xs
+   | None,None=>true|_,_=>false end) &&
+  match key_sig prototype formal,key_sig site actual with
+  | Some(ps,t),Some(qs,u)=>Nat.eqb(List.length ps)(List.length qs) &&
+      forallb(fun p=>ety_eqb(captured_type_at site prototype(fst p))(canon site(snd p)))
+        (combine(t::ps)(u::qs))
+  | None,None=>true|_,_=>false end.
+Definition check_captured_reading (mi : nat) (site prototype : env) (formal actual : key) : M unit :=
+  if captured_reading_compatible site prototype formal actual then ret tt else
+    let! description:=show_key actual in
+    err mi ("captured " ++ description ++ " has another frozen interpretation than required (D84 3b)").
+
+Definition snapshot_type_at (scope : reify_scope ety key) (name : nat) : option ety :=
+  option_map (instantiate (env_with_edges (rs_generations ety key scope) []))
+    (nassoc name (rs_names ety key scope)).
+(* Check the actual post-body reading, including type effects of intermediate
+   functor applications. The pre-body spelling of a pin is insufficient. *)
+Definition check_link_fixed_current (mi : nat) (site : env) (fg bg : gsym)
+    (fixed : list nat) : M unit :=
+  match fixed with
+  | []=>ret tt
+  | _=>let! s:=get in
+      match assoc reify_owner_eqb (ROLink(gs_id fg)(gs_id bg)) (rm_codes(st_reify s)) with
+      | Some code=>match rc_exports ety key code with
+          | Some profile=>miter(fun name=>
+              match snapshot_type_at(rx_actual ety key profile)name,tn_get site name with
+              | Some after,Some before=>
+                  if ety_eqb(canon site(instantiate site after))(canon site before)
+                  then ret tt else let! tg:=sym name in
+                    err mi ("`" ++ gs_name bg ++ "` changes fixed input `" ++ gs_name tg ++
+                      "` in its actual body (D84 3d)")
+              | _,_=>err mi "linked body has no fixed input reading (D84 3d)"
+              end)fixed
+          | None=>fail "internal: linked body has no result profile" end
+      | None=>fail "internal: linked body has no checked code profile" end
+  end.
+
+Fixpoint copy_output_check (generic fv gv : env) (gkeys todo seen : list key) : bool :=
+  match todo with
+  | [] => true
+  | k::rest => let mapped := copy_key generic fv k in
+      if key_mem mapped seen then copy_output_check generic fv gv gkeys rest seen else
+      match find (fun h => key_eqb mapped (copy_key generic gv h)) (rev gkeys) with
+      | Some h => copy_slot_eq generic fv gv k h &&
+                    copy_output_check generic fv gv gkeys rest (mapped::seen)
+      | None => false end
+  end.
+Definition copy_outputs_match (generic fv gv : env) (fkeys gkeys : list key) : bool :=
+  copy_output_check generic fv gv gkeys (rev fkeys) [].
+
+Definition copy_output_compatible (mi : nat) (site ef eg : env) (fg bg : gsym)
+    (fixed : list nat) (fneeds gneeds : list key) : M (reify_exports ety key) :=
+  let formal := map (fun p => (fst p,canon ef (fst (snd p)))) (en_tn ef) in
+  let vars := fold_left (fun acc p => fold_left (fun acc x => if nmem x acc then acc else x::acc) (ety_gens (snd p)) acc) formal [] in
+  let solved := fold_left (fun acc x => match acc,tn_get ef x,tn_get site x with
+    | Some sol,Some pat,Some actual => copy_match_type vars (canon ef pat) (canon site actual) sol
+    | _,_,_ => None end) fixed (Some []) in
+  match solved with
+  | None => err mi ("fixed inputs of `" ++ gs_name fg ++ "` have incompatible types (D84)")
+  | Some solved =>
+    let! replacements := mmap (fun x => match nassoc x solved with
+      | Some t => ret (x,t)
+      | None => let! g := new_sym mi "@copy" KType (ADType "@copy") (OFresh x (gs_id fg)) in
+                ret (x,YAbs g) end) vars in
+    let subst := env_with_edges replacements [] in
+    let generic := env_with_edges
+       (map (fun p => (fst p,instantiate subst (snd p))) formal +++ replacements) [] in
+    (if forallb (fun p => match nassoc (fst p) formal with
+       | Some _ => match tn_get generic (fst p) with
+         | Some t => ety_eqb t (copy_interpret generic eg (fst (snd p)))
+         | None => false end
+       | None => false end) (en_tn eg) &&
+       forallb (fun k => match find (fun h => key_eqb (copy_key generic eg k)
+                                                    (copy_key generic ef h)) (rev fneeds) with
+         | Some h => copy_slot_eq generic eg ef k h | None => false end) gneeds
+     then ret tt else err mi ("`" ++ gs_name bg ++ "` cannot be copied to `" ++ gs_name fg ++
+                              "`: its input interpretation differs (D78)")) ;;
+    let! (fv,fkeys,roles) := fresh_target_output_view ef fg in
+    let! (gv,gkeys) := provide_result (target_input_types eg) bg roles in
+    (* Reversed keys select the last setter after specialization too. *)
+    (if copy_outputs_match generic fv gv fkeys gkeys then ret tt else
+      err mi ("`" ++ gs_name bg ++ "` cannot be copied to `" ++ gs_name fg ++
+              "`: its effective output interpretation differs (D78)")) ;;
+    ret (ReifyExports ety key (map fst roles) fkeys (reify_scope_of fv)
+          (reify_scope_of gv) (reify_scope_of ef) roles)
+  end.
+
+(* Linked provisions must satisfy G's own canonical input readings for
+   every application of F, including when G's context merged more types. *)
+Definition defined_link_inputs_compatible (mi : nat) (site ef eg : env) (fg bg : gsym)
+    (fixed : list nat) (fneeds gneeds : list key) : M unit :=
+  let formal := map (fun p => (fst p,canon ef (fst (snd p)))) (en_tn ef) in
+  let vars := fold_left (fun acc p => fold_left (fun acc x => if nmem x acc then acc else x::acc)
+               (ety_gens (snd p)) acc) formal [] in
+  let solved := fold_left (fun acc x => match acc,tn_get ef x,tn_get site x with
+    | Some sol,Some pat,Some actual => copy_match_type vars (canon ef pat) (canon site actual) sol
+    | _,_,_ => None end) fixed (Some []) in
+  match solved with
+  | None => err mi "defined functor binding has incompatible fixed inputs (D84)"
+  | Some solved =>
+      let! replacements := mmap (fun x => match nassoc x solved with
+        | Some t => ret (x,t)
+        | None => let! g := new_sym mi "@linked" KType (ADType "@linked") (OFresh x (gs_id fg)) in
+                  ret (x,YAbs g) end) vars in
+      let subst := env_with_edges replacements [] in
+      let generic := env_with_edges
+         (map (fun p => (fst p,instantiate subst (snd p))) formal +++ replacements) [] in
+      if forallb (fun k => if key_mem k fneeds then copy_slot_eq generic eg ef k k else true) gneeds
+      then ret tt
+      else err mi ("`" ++ gs_name bg ++ "` cannot provide `" ++ gs_name fg ++
+                   "`: its linked input interpretation differs (D84)")
   end.
 
 (* ===================== 12b. Families (m4, D84 rule 7) ===================== *)
@@ -2431,7 +2951,7 @@ Definition is_family (fg : gsym) : M bool :=
   | (_, res, None) =>
       if negb (kind_eqb (gs_kind fg) KFunctor) then ret false else
       let! ps := family_params fg in
-      family_leaves_ok 17 (gs_mod fg) ps res
+      let! n := walk_fuel in family_leaves_ok n (gs_mod fg) ps res
   | _ => ret false
   end.
 
@@ -2522,25 +3042,29 @@ Fixpoint pmatch (fuel : nat) (back : list (nat * nat)) (pat t : ety) (acc : list
 (* lower.family_member: the family in force producing the method key
    (r, m), with P(F) read off it (θ); two families producing it, or two
    items of one family at this key instance, are errors *)
+Definition pmatch_full(back:list(nat*nat))(pat t:ety)(acc:list(nat*ety)):=
+ pmatch(ety_depth pat)back pat t acc.
+
 Definition family_member (mi : nat) (e : env) (r : ety) (mid : nat) : M (option (gsym * list (nat * ety))) :=
   let! found := mfold (fun found u =>
       let! fg := sym u in
       let! fam := is_family fg in
       if negb fam then ret found else
       let! ps := family_params fg in
-      let! marks := mmap (fun p => let! k := fresh in ret (p, k)) ps in
+      let! marks := mmap (fun p => let! k := fresh_marker_for e r in ret (p, k)) ps in
       let! em := mfold (fun e q => let! s := fresh in ret (set_tn e (fst q) (YAbs (snd q)) s)) e marks in
       let '(_, res, _) := functor_parts fg in
-      let! leaves := family_leaves 17 em (gs_mod fg) res [] in
+      let! n := walk_fuel in
+      let! leaves := family_leaves n em (gs_mod fg) res [] in
       let back := map (fun q => (snd q, fst q)) marks in
       mfold (fun found lf =>
           let '(lmi, rg, m, subst) := lf in
           if negb (Nat.eqb (gs_id m) mid) then ret found else
           let! pat := receiver_at em lmi rg subst in
-          let th := pmatch FUEL back pat r [] in
+          let th := pmatch_full back pat r [] in
           let mentioned := filter (fun q => nmem (snd q) (ety_gens pat)) marks in
           if negb (forallb (fun q => is_some (nassoc (fst q) th)) mentioned) then ret found else
-          let at_th := canon e (ety_subst FUEL (map (fun q => (snd q, opt_default (YAbs (snd q)) (nassoc (fst q) th))) marks) pat) in
+          let at_th := canon e (ety_subst_full (map (fun q => (snd q, opt_default (YAbs (snd q)) (nassoc (fst q) th))) marks) pat) in
           if negb (ety_eqb at_th r) then ret found else
           match filter (fun q => Nat.eqb (gs_id (fst q)) u) found with
           | (_, th0) :: _ =>
@@ -2595,15 +3119,37 @@ Definition cx_restore (c : cx) (inner : cx) : cx := cx_with_fresh c (cx_fresh in
 
 Inductive arg : Type := AA (a : aexpr) | AB (x : xexpr) (t : ety).
 
+(* AB arguments in provided_call are the already elaborated operands of
+   literal arithmetic. Unlike ordinary source calls, these binary steps
+   must take and return exactly their receiver type (D68). *)
+Definition literal_sig_ok (e : env) (oty : ety) (args : list arg) (sg : fsig) : bool :=
+  match args with
+  | [AB _ aty] =>
+      match sg_params sg with
+      | [(_, pty)] => ety_eqb (canon e aty) (canon e oty) &&
+                     ety_eqb (canon e pty) (canon e oty) &&
+                     ety_eqb (canon e (sg_ret sg)) (canon e oty)
+      | _ => false
+      end
+  | _ => true
+  end.
+
+Definition check_literal_sig (e : env) (mi : nat) (m : gsym) (oty : ety) (args : list arg) (sg : fsig) : M unit :=
+  if literal_sig_ok e oty args sg then ret tt else
+  err mi ("a literal's `" ++ gs_name m ++ "` must take and return its own type (D68)").
+
 Definition is_never (t : ety) : bool := match t with YNever => true | _ => false end.
 Definition is_unit_or_never (t : ety) : bool := match t with YNever | YUnit => true | _ => false end.
 
-Definition join (mi : nat) (a b : ety) (exp : option ety) : M ety :=
+(* Branches join on their canonical types (canon: the merges in force), as
+   the relation reads them; the message shows them as written (Audit
+   note 59). *)
+Definition join (mi : nat) (e : env) (a b : ety) (exp : option ety) : M ety :=
   match exp with
   | Some t => ret t
   | None =>
-      if is_never a then ret b
-      else if is_never b || ety_eqb a b then ret a
+      if is_never (canon e a) then ret b
+      else if is_never (canon e b) || ety_eqb (canon e a) (canon e b) then ret a
       else let! sa := show a in let! sb := show b in
            err mi ("branches disagree: `" ++ sa ++ "` vs `" ++ sb ++ "` (annotate an expected type)")
   end.
@@ -2619,25 +3165,20 @@ Definition bool_type (mi : nat) : M ety :=
               end
   end.
 
-(* m4: whether module mi is one of the library's (lib/wasm.moss's directory) *)
+(* The library is the prelude's directory, including its subdirectories. *)
 Definition in_library (mi : nat) : M bool :=
-  let! w := lang "wasm" in
-  match w with
-  | None => ret false
-  | Some wm =>
-      let! lm := the_mod wm in
-      let! m := the_mod mi in
-      let dir := String.substring 0 (String.length (gm_path lm) - String.length "wasm.moss") (gm_path lm) in
-      ret (String.prefix dir (gm_path m))
-  end.
+  let! s := get in
+  ret (match w_library (st_w s) with
+       | Some dir => String.prefix dir (gm_path (get_mod (st_w s) mi))
+       | None => false
+       end).
 
 Definition is_platform_sym (name : string) (g : gsym) : M bool :=
   let! w := lang "wasm" in
   match w with
-  | Some wm => if Nat.eqb (gs_mod g) wm then
-                 let! m := the_mod wm in ret (match sassoc name (gm_names m) with
-                                             | Some s => Nat.eqb s (gs_id g) | None => false end)
-               else ret false
+  | Some wm => let! m := the_mod wm in
+               ret (match sassoc name (gm_names m) with
+                    | Some s => Nat.eqb s (gs_id g) | None => false end)
   | None => ret false
   end.
 
@@ -2827,6 +3368,26 @@ Definition expect_provider (c : cx) (e : env) (y : aexpr) (this : ety) : M gsym 
 
 Definition deep {A} : M A := fail "elaboration nests too deeply".
 
+(* Receiver adapters are cached by the physical provider symbol. *)
+Definition wrapper_create (pv : gsym) : M nat :=
+  let! info := fn_info pv in
+      let! sm := smap_at (fi_env info) (fi_env info) (map (fun k => (k, k)) (fi_needs info)) in
+      let! w := new_sym (gs_mod pv) (gs_name pv ++ "$recv") KFn (gs_decl pv) OLambda in
+      let n := List.length (fn_params pv) in
+      let! th := call_theta (fi_env info) pv in
+      register_reify_code (ROFunction w) (fi_env info) (fi_needs info) None ;;
+      emit_fn w (XCallD (gs_id pv) th sm (map XVar (seq 1 n))) ;;
+      upd (s_wrappers (fun m => nset m (gs_id pv) w)) ;;
+      ret w.
+
+Definition wrapper_cached (pv : gsym) : M nat :=
+  let! s := get in
+  match nget (st_wrappers s) (gs_id pv) with
+  | Some w => ret w
+  | None => let! physical := sym (gs_id pv) in wrapper_create physical
+  end.
+
+
 Definition opt_fits (e : env) (t : ety) (exp : option ety) : bool :=
   match exp with Some x => fits e t x | None => true end.
 
@@ -2847,6 +3408,196 @@ Definition inject_check (e : env) (t : ety) (exp : option ety) : M unit :=
   | None => ret tt
   end.
 
+(* Runtime primitives operate on machine shapes, not arbitrary declarations
+   sharing their spelling. The selected library is checked, not trusted. *)
+Definition runtime_names : list (string * string) :=
+  [("wasm", "I32"); ("wasm", "I64"); ("wasm", "F32"); ("wasm", "F64");
+   ("wasm", "StructRef"); ("wasm", "ArrayRef"); ("wasm", "Memory");
+   ("wasm", "Boxed"); ("wasm", "Arrayed"); ("wasm", "Ref");
+   ("wasm", "Array"); ("wasm", "Addr");
+   ("bool", "Bool"); ("bool", "True"); ("bool", "False")].
+
+Definition runtime_name_eqb (a b : string * string) : bool :=
+  String.eqb (fst a) (fst b) && String.eqb (snd a) (snd b).
+Definition runtime_schema := list ((string * string) * option nat).
+Definition runtime_id (sc : runtime_schema) (short n : string) : option nat :=
+  match assoc runtime_name_eqb (short, n) sc with Some x => x | None => None end.
+
+Definition runtime_symbols : M runtime_schema :=
+  mmap (fun q => let! lm := lang (fst q) in
+                  match lm with
+                  | None => ret (q, None)
+                  | Some mi => let! m := the_mod mi in ret (q, sassoc (snd q) (gm_names m))
+                  end) runtime_names.
+
+Definition runtime_abs (sc : runtime_schema) (n : string) (t : ety) : bool :=
+  match runtime_id sc "wasm" n with Some x => ety_eqb t (YAbs x) | None => false end.
+Definition runtime_nom (sc : runtime_schema) (short n : string) (t : ety) : bool :=
+  match runtime_id sc short n, t with
+  | Some x, YNom y _ => Nat.eqb x y
+  | _, _ => false
+  end.
+Definition runtime_content (sc : runtime_schema) (n par : string) (t : ety) : option ety :=
+  match runtime_id sc "wasm" n, runtime_id sc "wasm" par, t with
+  | Some x, Some p, YNom y xs => if Nat.eqb x y then nassoc p xs else None
+  | _, _, _ => None
+  end.
+
+Definition runtime_xty (sc : runtime_schema) (t : ety) (x : xty) : bool :=
+  match x with
+  | XTI32 => runtime_abs sc "I32" t
+  | XTI64 => runtime_abs sc "I64" t
+  | XTF32 => runtime_abs sc "F32" t
+  | XTF64 => runtime_abs sc "F64" t
+  | XTUnit => ety_eqb t YUnit
+  | XTBool => match runtime_id sc "bool" "Bool" with
+              | Some b => ety_eqb t (YNom b []) | None => false end
+  | XTAddr => runtime_nom sc "wasm" "Addr" t
+  | XTTag => match t with YNom _ _ => true | _ => false end
+  end.
+
+Fixpoint runtime_xtys (sc : runtime_schema) (ts : list ety) (xs : list xty) : bool :=
+  match ts, xs with
+  | [], [] => true
+  | t :: ts, x :: xs => runtime_xty sc t x && runtime_xtys sc ts xs
+  | _, _ => false
+  end.
+Definition runtime_signature (sc : runtime_schema) (ps : list ety) (r : ety)
+  (s : option (list xty * xty)) : bool :=
+  match s with
+  | Some (xs, x) => runtime_xtys sc ps xs && runtime_xty sc r x
+  | None => false
+  end.
+Definition runtime_ref (sc : runtime_schema) (arr : bool) (t content : ety) : bool :=
+  match runtime_content sc (if arr then "Array" else "Ref")
+                            (if arr then "Arrayed" else "Boxed") t with
+  | Some c => ety_eqb c content
+  | None => false
+  end.
+
+Definition runtime_gc_signature (sc : runtime_schema) (p : prim) (ps : list ety) (r : ety) : bool :=
+  match p, ps with
+  | PBox rf, [c] => match runtime_id sc "wasm" "Ref" with
+                   | Some x => Nat.eqb rf x && runtime_ref sc false r c
+                   | None => false end
+  | PDeref, [t] => runtime_ref sc false t r
+  | PRefSet, [t; c] => runtime_ref sc false t c && ety_eqb r YUnit
+  | PArrNew ar, [c; i] => runtime_abs sc "I32" i &&
+      match runtime_id sc "wasm" "Array" with
+      | Some x => Nat.eqb ar x && runtime_ref sc true r c | None => false end
+  | PArrLen, [t] => runtime_abs sc "I32" r && is_some (runtime_content sc "Array" "Arrayed" t)
+  | PArrGet, [t; i] => runtime_abs sc "I32" i && runtime_ref sc true t r
+  | PArrSet, [t; i; c] => runtime_abs sc "I32" i && runtime_ref sc true t c && ety_eqb r YUnit
+  | PArrFill, [t; i; c; n] => runtime_abs sc "I32" i && runtime_abs sc "I32" n &&
+      runtime_ref sc true t c && ety_eqb r YUnit
+  | PArrCopy, [t; i; t'; j; n] => runtime_abs sc "I32" i && runtime_abs sc "I32" j &&
+      runtime_abs sc "I32" n && ety_eqb r YUnit &&
+      match runtime_content sc "Array" "Arrayed" t, runtime_content sc "Array" "Arrayed" t' with
+      | Some c, Some c' => ety_eqb c c' | _, _ => false end
+  | _, _ => false
+  end.
+
+Definition runtime_primitive (sc : runtime_schema) (p : prim) (ps : list ety) (r : ety) : bool :=
+  match p with
+  | PUnsupported _ => true
+  (* unreachable never returns a value, including at the standard `|` result *)
+  | PUnreachable => match ps with [] => true | _ => false end
+  | _ => runtime_signature sc ps r (prim_sig p) ||
+         runtime_signature sc ps r (prim_msig p) || runtime_gc_signature sc p ps r
+  end.
+
+Definition check_runtime_primitive (mi : nat) (e : env) (p : prim) (ps : list ety) (r : ety) : M unit :=
+  let! sc := runtime_symbols in
+  if runtime_primitive sc p (map (canon e) ps) (canon e r) then ret tt
+  else err mi "platform primitive has an incompatible declared signature".
+
+Definition runtime_abstract_names : list string :=
+  ["I32"; "I64"; "F32"; "F64"; "StructRef"; "ArrayRef"; "Memory"; "Boxed"; "Arrayed"].
+
+Definition check_runtime_abstracts (sc : runtime_schema) : M unit :=
+  let! _ := mfold (fun seen n => match runtime_id sc "wasm" n with
+                   | None => ret seen
+                   | Some x =>
+                       let! g := sym x in
+                       if kind_eqb (gs_kind g) KType && negb (nmem x seen)
+                       then ret (x :: seen)
+                       else err (gs_mod g) ("platform type `" ++ n ++ "` must be a distinct abstract type")
+                   end) [] runtime_abstract_names in ret tt.
+
+Definition check_runtime_tag (sc : runtime_schema) (n param handle : string) : M unit :=
+  match runtime_id sc "wasm" n with
+  | None => ret tt
+  | Some x =>
+      let! g := sym x in
+      let! rs := reqs x in
+      match runtime_id sc "wasm" param, runtime_id sc "wasm" handle, rs with
+      | Some p, Some h, r :: _ =>
+          if kind_eqb (gs_kind g) KTag && Nat.eqb p r then
+            let! pay := payload_type (YNom x (map (fun r => (r, YAbs r)) rs)) empty_env in
+            if ety_eqb pay (YAbs h) then ret tt
+            else err (gs_mod g) ("platform tag `" ++ n ++ "` has an incompatible payload")
+          else err (gs_mod g) ("platform tag `" ++ n ++ "` has incompatible parameters")
+      | _, _, _ => err (gs_mod g) ("platform tag `" ++ n ++ "` has incompatible parameters")
+      end
+  end.
+
+Definition runtime_bool_tuple (sc : runtime_schema) : nat * nat * nat :=
+  match runtime_id sc "bool" "Bool" with
+  | None => (0, 0, 0)
+  | Some b => (b, opt_default 0 (runtime_id sc "bool" "True"),
+                  opt_default 0 (runtime_id sc "bool" "False"))
+  end.
+
+Definition check_runtime_bool (sc : runtime_schema) : M unit :=
+  match runtime_id sc "bool" "Bool" with
+  | None => ret tt
+  | Some b =>
+      let! g := sym b in
+      let! rs := reqs b in
+      match runtime_id sc "bool" "True", runtime_id sc "bool" "False", rs with
+      | Some t, Some f, [] =>
+          let! gt := sym t in let! gf := sym f in
+          if kind_eqb (gs_kind g) KTag && kind_eqb (gs_kind gt) KUnit &&
+             kind_eqb (gs_kind gf) KUnit && negb (Nat.eqb t f) then
+            let! pay := payload_type (YNom b []) empty_env in
+            if ety_eqb pay (YUnion [YNom t []; YNom f []]) ||
+               ety_eqb pay (YUnion [YNom f []; YNom t []]) then ret tt
+            else err (gs_mod g) "platform Bool must contain exactly True and False"
+          else err (gs_mod g) "platform Bool, True and False have incompatible declarations"
+      | _, _, _ => err (gs_mod g) "platform Bool, True and False have incompatible declarations"
+      end
+  end.
+
+(* Fresh machine heads are runtime type identities, never source symbols.
+   Replacing platform abstracts injectively makes runtime grounding the same
+   closed substitution used by XTyping, including raw GC handles. *)
+Definition runtime_machine_names : list string :=
+  ["I32"; "I64"; "F32"; "F64"; "StructRef"; "ArrayRef"].
+Definition runtime_machines (sc : runtime_schema) (base : nat) : subst :=
+  List.concat (map (fun q => match runtime_id sc "wasm" (snd q) with
+                            | Some t => [(t, TNom (base + fst q) [])]
+                            | None => []
+                            end) (combine (seq 0 6) runtime_machine_names)).
+
+Definition runtime_casts (sc : runtime_schema) (base : nat) : list (nsym * xcastspec) :=
+  (match runtime_id sc "wasm" "Ref", runtime_id sc "wasm" "Boxed", runtime_id sc "wasm" "StructRef" with
+   | Some n, Some t, Some h => [(n, XCastSpec false t (Some (h, TNom (base + 4) [])))]
+   | _, _, _ => []
+   end) +++
+  (match runtime_id sc "wasm" "Array", runtime_id sc "wasm" "Arrayed", runtime_id sc "wasm" "ArrayRef" with
+   | Some n, Some t, Some h => [(n, XCastSpec true t (Some (h, TNom (base + 5) [])))]
+   | _, _, _ => []
+   end).
+
+Definition check_runtime_library : M unit :=
+  let! sc := runtime_symbols in
+  check_runtime_abstracts sc ;;
+  check_runtime_bool sc ;;
+  check_runtime_tag sc "Ref" "Boxed" "StructRef" ;;
+  check_runtime_tag sc "Array" "Arrayed" "ArrayRef" ;;
+  check_runtime_tag sc "Addr" "Memory" "I32".
+
+
 (* D75/D81: the platform's binding of a functor lib/wasm.moss declares:
    the core's functor h whose body binds each result item to a primitive *)
 Definition platform_fun (fg : gsym) : M nat :=
@@ -2855,10 +3606,10 @@ Definition platform_fun (fg : gsym) : M nat :=
   | Some h => ret h
   | None =>
       let mi := gs_mod fg in
-      let! (ef, _) := fun_env fg in
+      let! (ef, platform_needs) := fun_env fg in
       (* the result in F's own terms, where its items' instantiations are *)
       let! rts := result_types fg in
-      let! (efr, _) := provide_result ef fg (map (fun t => (t, t)) rts) in
+      let! (efr, platform_results) := provide_result ef fg (map (fun t => (t, t)) rts) in
       let! wm := the_mod mi in
       let ref := opt_default 0 (sassoc "Ref" (gm_names wm)) in
       let arr := opt_default 0 (sassoc "Array" (gm_names wm)) in
@@ -2882,8 +3633,12 @@ Definition platform_fun (fg : gsym) : M nat :=
                             | "Array.fill" => Some PArrFill | "Array.copy" => Some PArrCopy
                             | _ => None
                             end in
+                  let check q := match key_sig efr k with
+                                 | Some (ps, rt) => check_runtime_primitive mi efr q (this :: ps) rt
+                                 | None => err mi "platform method has no declared signature"
+                                 end in
                   match pr with
-                  | Some q => ret (it, [XBPrim it q])
+                  | Some q => check q ;; ret (it, [XBPrim it q])
                   | None =>
                       (* m4, D79 as amended: `Memories`'s members, `Addr`'s
                          methods, are the memory primitives, which take their
@@ -2893,7 +3648,7 @@ Definition platform_fun (fg : gsym) : M nat :=
                       | Some q =>
                           if negb (Nat.eqb (gs_id r) addr) then
                             err mi ("the platform cannot provide `" ++ show_path p ++ "." ++ dn ++ "`")
-                          else ret (it, [XBPrim it q])
+                          else check q ;; ret (it, [XBPrim it q])
                       | None => err mi ("the platform cannot provide `" ++ show_path p ++ "." ++ dn ++ "`")
                       end
                   end
@@ -2901,6 +3656,8 @@ Definition platform_fun (fg : gsym) : M nat :=
           | _ => err mi "the platform cannot provide a non-method item"
           end) res in
       let! h := new_sym mi (gs_name fg) KFunctor (gs_decl fg) (OPlatformFun (gs_id fg)) in
+      register_reify_code (ROPlatform (gs_id fg)) ef platform_needs None ;;
+      record_reify_exports (ROPlatform (gs_id fg)) rts platform_results ef efr efr ;;
       upd (s_funs (fun l => (h, (map fst items, List.concat (map snd items))) :: l)) ;;
       upd (s_links (fun l => ((gs_id fg, gs_id fg), h) :: l)) ;;
       ret h
@@ -2924,6 +3681,41 @@ Definition no_provision (mi : nat) (e : env) (oty : ety) (m : gsym) (r : ety) (m
   | [] => err mi ("no method `." ++ nm ++ "` is available for `" ++ so ++ "` in the context here")
   end.
 
+(* A provider closure and a constant initializer have their own effect
+   boundary. Function declarations reference separate bodies, so their local
+   returns do not occur in this traversal. *)
+Fixpoint no_nonlocal_return_expr (e : xexpr) : bool :=
+  match e with
+  | XReturn _ => false
+  | XVar _ | XUnit | XVl _ | XBreak => true
+  | XTag _ _ x | XAssign _ x | XLoop x | XField x _ | XConst _ x => no_nonlocal_return_expr x
+  | XCallD _ _ _ xs | XCallA _ xs => forallb no_nonlocal_return_expr xs
+  | XMeth x _ _ xs => no_nonlocal_return_expr x && forallb no_nonlocal_return_expr xs
+  | XMatch x arms => no_nonlocal_return_expr x && forallb (fun p => no_nonlocal_return_expr (snd p)) arms
+  | XLet _ a b | XBindVal _ a b | XSeq a b | XWhile a b => no_nonlocal_return_expr a && no_nonlocal_return_expr b
+  | XIf a b c => no_nonlocal_return_expr a && no_nonlocal_return_expr b && no_nonlocal_return_expr c
+  | XBindTy _ _ x | XBindFn _ _ _ x | XBindMth _ _ _ _ _ x
+  | XBindFun _ _ _ _ x | XBindFunA _ _ _ x | XApply _ _ _ x
+  | XApplyR _ _ _ x | XBindFunSym _ _ x | XBindFunCopy _ _ x
+  | XBindPrim _ _ x => no_nonlocal_return_expr x
+  | XRec fs => forallb (fun p => no_nonlocal_return_expr (snd p)) fs
+  | XMatchP x arms => no_nonlocal_return_expr x && forallb (fun p => no_nonlocal_return_expr (snd p)) arms
+  | XApplyBr _ arms x => forallb (fun p => forallb no_nonlocal_return_bind (snd (fst p))) arms && no_nonlocal_return_expr x
+  end
+with no_nonlocal_return_bind (b : xbind) : bool :=
+  match b with
+  | XBVal _ x => no_nonlocal_return_expr x
+  | XBApplyBr _ arms => forallb (fun p => forallb no_nonlocal_return_bind (snd (fst p))) arms
+  | _ => true
+  end.
+
+Definition check_constant_effects (mi : nat) (x : xexpr) : M unit :=
+  if no_nonlocal_return_expr x then ret tt
+  else err mi "a constant initializer cannot return from its caller".
+Definition check_provider_effects (mi : nat) (bs : list xbind) : M unit :=
+  if forallb no_nonlocal_return_bind bs then ret tt
+  else err mi "a bound functor body cannot return from its caller".
+
 Fixpoint synth (fuel : nat) (c : cx) (e : env) (x : aexpr) (exp : option ety) {struct fuel}
     : M (xexpr * ety) :=
   match fuel with 0 => deep | S f =>
@@ -2936,7 +3728,7 @@ Fixpoint synth (fuel : nat) (c : cx) (e : env) (x : aexpr) (exp : option ety) {s
                 | None => err mi ("`this` is only legal inside method bodies" ++ cx_nothis c)
                 end
     | AEReturn None =>
-        if is_unit_or_never (sg_ret (cx_sig c)) then ret (XReturn XUnit, YNever)
+        if is_unit_or_never (canon e (sg_ret (cx_sig c))) then ret (XReturn XUnit, YNever)
         else let! s := show (sg_ret (cx_sig c)) in
              err mi ("`return` with no value, but the function returns `" ++ s ++ "`")
     | AEReturn (Some y) =>
@@ -3067,7 +3859,7 @@ with check_stmt (fuel : nat) (c : cx) (e : env) (s : astmt) {struct fuel}
       ret ([SLoop body], e, c, negb (has_break_b b))
   | ASExpr y =>
       let! (v, t) := synth f c e y None in
-      ret ([SExpr v], e, c, is_never t)
+      ret ([SExpr v], e, c, is_never (canon e t))
   end end
 
 with check_bool (fuel : nat) (c : cx) (e : env) (y : aexpr) {struct fuel} : M xexpr :=
@@ -3089,7 +3881,7 @@ with synth_if (fuel : nat) (c : cx) (e : env) (x : aexpr) (exp : option ety) {st
       match els with
       | None =>
           if negb (opt_fits e YUnit exp) then err mi "an `if` without `else` yields `()`"
-          else if negb (is_unit_or_never tty) then
+          else if negb (is_unit_or_never (canon e tty)) then
             let! s := show tty in err mi ("an `if` without `else` yields `()`, but its branch yields `" ++ s ++ "`")
           else ret (XIf cond tx XUnit, YUnit)
       | Some y =>
@@ -3098,7 +3890,7 @@ with synth_if (fuel : nat) (c : cx) (e : env) (x : aexpr) (exp : option ety) {st
                             | AEBlock b => let! (v, _, t) := synth_block f c e b exp in ret (v, t)
                             | _ => synth f c e y exp
                             end in
-          let! t := join mi tty ety exp in
+          let! t := join mi e tty ety exp in
           ret (XIf cond tx ex, t)
       end
   | _ => fail "internal: synth_if"
@@ -3108,7 +3900,9 @@ with synth_match (fuel : nat) (c : cx) (e : env) (s : aexpr) (arms : list (apat 
     (exp : option ety) {struct fuel} : M (xexpr * ety) :=
   match fuel with 0 => deep | S f =>
   let mi := cx_mod c in
-  let! (sx, sty) := synth f c e s None in
+  let! (sx, sty0) := synth f c e s None in
+  (* the scrutinee's type as the merges in force read it (Audit note 59) *)
+  let sty := canon e sty0 in
   let heads := fold_left (fun hs m => match head m with Some h => aset Nat.eqb h m hs | None => hs end)
                          (members sty) [] in
   let! (xarms, covered, catch, result) := mfold (fun acc arm =>
@@ -3123,7 +3917,7 @@ with synth_match (fuel : nat) (c : cx) (e : env) (s : aexpr) (arms : list (apat 
                else let! a := show bt in let! b := show (opt_default YUnit exp) in
                     err mi ("match arm yields `" ++ a ++ "`, expected `" ++ b ++ "`")
         end in
-      let! r := match result with None => ret bty | Some r => join mi r bty exp end in
+      let! r := match result with None => ret bty | Some r => join mi e r bty exp end in
       ret (xarms +++ [(pat, bx)], covered +++ ah, catch || ca, Some r)) ([], [], false, None) arms in
   if is_never sty then
     match arms with
@@ -3143,18 +3937,20 @@ with const_val (fuel : nat) (g : gsym) {struct fuel} : M (xexpr * ety) :=
   match fuel with 0 => deep | S f =>
   let! s := get in
   match nget (st_consts s) (gs_id g) with
-  | Some r => ret r
+  | Some r => replay_reify_constant (gs_id g) ;; ret r
   | None =>
       match gs_assumes g, gs_decl g with
       | _ :: _, _ => err (gs_mod g) ("defined val `" ++ gs_name g ++ "` cannot take assumptions yet (D50)")
       | [], ADVal _ t (Some init) =>
           let! declared := ety_of t (gs_mod g) [] empty_env None in
           let c := Cx (gs_mod g) (FSig [] declared None) None 0 [] "" [] [] in
+          let start := List.length (current_reify_events (st_reify s)) in
           let! (v, vt) := with_vars [] (synth f c empty_env init (Some declared)) in
           if fits empty_env vt declared then
             (* the cache only grows (Track A: BodySound's Later reads every
                entry; an initializer never caches its own val, which would
                recurse until the fuel runs out) *)
+            remember_reify_constant (gs_id g) start ;;
             upd (s_consts (fun m => match nget m (gs_id g) with
                                     | Some _ => m
                                     | None => nset m (gs_id g) (v, declared)
@@ -3187,7 +3983,10 @@ with synth_path (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) {struct fu
           let! g := sym s in
           match gs_kind g, gs_decl g with
           | KUnit, _ => ret (XTag s [] XUnit, YNom s [])
-          | KVal, ADVal _ _ (Some _) => const_val f g
+          | KVal, ADVal _ _ (Some _) =>
+              let! (initializer,t) := const_val f g in
+              check_constant_effects mi initializer ;;
+              ret (XConst s initializer,t)
           | KVal, _ => match nget (en_vals e) s with
                        | Some t => ret (XVl s, t)
                        | None => err mi ("`" ++ gs_name g ++ "` is not available in the context here (assume or bind it)")
@@ -3244,18 +4043,9 @@ with synth_call (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (args : li
                 let! x := show vt in let! z := show pay in
                 err mi ("payload of `" ++ gs_name g ++ "` is `" ++ x ++ "`, expected `" ++ z ++ "`")
               else
-                let! isref := is_platform_sym "Ref" g in
-                let! isarr := is_platform_sym "Array" g in
-                (* m4: a cast the oracle does not check.  lib/wasistd.moss's
-                   `GcArrays` rewraps the handle it took out of its own
-                   `Array[Item]`, at the `Arrayed` it was made at, so its
-                   casts succeed; anywhere else a program may forge one
-                   (tests/wasi/gc_forge.moss), and the cast is a trap the
-                   oracle would not take. *)
-                let! lib := in_library mi in
-                (if (isref || isarr) && negb lib then unsupported "D75: a reference built from a bare StructRef/ArrayRef (a checked cast)"
-                 else ret tt) ;;
-                let! th := tag_theta xs in
+                (* XTag performs the native checked cast for selected GC
+                   wrappers; reconstruction is valid in every source module. *)
+                let! th := tag_theta e xs in
                 ret (XTag s th v, tag_ty)
           | _ => err mi ("tag `" ++ gs_name g ++ "` takes exactly one payload")
           end
@@ -3332,7 +4122,7 @@ with synth_record (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (fs : li
               else
               let! xfs := mmap (fun q => let! i := fld_id (fst q) in
                                          ret (i, opt_default XUnit (sassoc (fst q) given))) ftys in
-              let! th := tag_theta xs in
+              let! th := tag_theta e xs in
               ret (XTag (gs_id g) th (XRec xfs), tag_ty)
           end
       | _ => err mi ("`" ++ gs_name g ++ "` does not have a record payload")
@@ -3449,10 +4239,11 @@ with provided_call (fuel : nat) (c : cx) (e : env) (ox : xexpr) (oty : ety) (m :
   | KyMth r mid =>
       match get_mth e r mid with
       | Some sg =>
+          check_literal_sig e mi m oty args sg ;;
           let! xs := check_args f c e (gs_name m) sg args in
           let! it := key_item_at e k in
           layout_ok e (sg_ret sg) ;;
-          ret (XMeth ox mid it xs, sg_ret sg)
+          ret (XMeth ox mid it xs, match args with [AB _ _] => oty | _ => sg_ret sg end)
       | None =>
           (* m4, D84 rule 7: a family in force producing the key is applied
              on demand, at θ read off the key, in a scope of its own *)
@@ -3463,10 +4254,11 @@ with provided_call (fuel : nat) (c : cx) (e : env) (ox : xexpr) (oty : ety) (m :
               let! (pre, e2) := apply_family f c e fg th [itk] in
               match get_mth e2 r mid with
               | Some sg =>
+                  check_literal_sig e mi m oty args sg ;;
                   let! xs := check_args f c e (gs_name m) sg args in
                   let! it := key_item_at e2 k in
                   layout_ok e (sg_ret sg) ;;
-                  ret (fold_stmts pre (XMeth ox mid it xs), sg_ret sg)
+                  ret (fold_stmts pre (XMeth ox mid it xs), match args with [AB _ _] => oty | _ => sg_ret sg end)
               | None => let! sr := show r in
                         err mi ("`" ++ gs_name fg ++ "` does not provide `" ++ sr ++ gs_name m ++ "` here (D84 rule 7)")
               end
@@ -3554,26 +4346,7 @@ with lang_call (fuel : nat) (c : cx) (e : env) (o : xexpr * ety) (n : string) (a
     (why : string) {struct fuel} : M (xexpr * ety) :=
   match fuel with 0 => deep | S f =>
   let! m := lang_symbol "num" n true why (cx_mod c) in
-  (* D68: a literal's arithmetic is provided here, at its type; a family in
-     force that would produce it is not applied (Audit note 64) *)
-  let! k := method_key e (cx_mod c) (snd o) m in
-  let call := provided_call f c e (fst o) (snd o) m (map (fun a => AB (fst a) (snd a)) args) in
-  match k with
-  | KyMth r mid =>
-      match get_mth e r mid with
-      | Some _ => call
-      | None =>
-          let! fam := family_member (cx_mod c) e r mid in
-          match fam with
-          | Some (fg, _) =>
-              let! so := show (snd o) in
-              err (cx_mod c) (why ++ " needs `." ++ n ++ "` provided at `" ++ so ++ "` here; `" ++ gs_name fg ++
-                              "` would produce it, but a literal's arithmetic is not a call (D68)")
-          | None => no_provision (cx_mod c) e (snd o) m r mid
-          end
-      end
-  | _ => call
-  end
+  provided_call f c e (fst o) (snd o) m (map (fun a => AB (fst a) (snd a)) args)
   end
 
 with int_literal (fuel : nat) (c : cx) (e : env) (ds : list ascii) (why : string) {struct fuel}
@@ -3696,6 +4469,7 @@ with check_bind (fuel : nat) (c : cx) (e : env) (sp : spec) (y : aexpr) {struct 
           let! e := provided_at e k m tm true in
           match k with
           | KyMth t mid => let! t' := ety_ty t in let! th := key_theta e k in
+                           record_reify_event (REMethod ety key t mid target (reify_sig e sg) (map (fun p => (fst p,canon e (snd p))) tm)) ;;
                            ret (pre +++ [SBindMth t' mid th target sm], e, c)
           | _ => fail "internal: method key"
           end
@@ -3720,6 +4494,7 @@ with check_bind (fuel : nat) (c : cx) (e : env) (sp : spec) (y : aexpr) {struct 
                                | None => ret tt end) ;;
                   let! stamp := fresh in
                   let! ty' := ety_ty (canon e ty) in
+                  record_reify_event (REType ety key s (canon e ty)) ;;
                   ret ([SBindTy s ty'], set_tn e s (canon e ty) stamp, c)
               | _ => err mi ("binding type `" ++ gs_name g ++ "` needs a type on the right")
               end
@@ -3734,6 +4509,7 @@ with check_bind (fuel : nat) (c : cx) (e : env) (sp : spec) (y : aexpr) {struct 
                   else
                     let e := set_val e s declared in
                     let! e := provided_at e (KyVal s) g (tymap e) false in
+                    record_reify_event (REValue ety key s (canon e declared) (reify_arguments e)) ;;
                     ret ([SBindVal s v], e, c)
               | _ => fail "internal: val"
               end
@@ -3749,6 +4525,7 @@ with check_bind (fuel : nat) (c : cx) (e : env) (sp : spec) (y : aexpr) {struct 
                 end in
               let e := set_fn e s sg in
               let! e := provided_at e (KyFn s) g (tymap e) false in
+              record_reify_event (REFunction ety key s target (reify_sig e sg) (reify_arguments e)) ;;
               ret (pre +++ [SBindFn s target sm], e, c)
           | k => err mi ("cannot bind `" ++ gs_name g ++ "` (a " ++ kind_name k ++ ")")
           end
@@ -3781,7 +4558,10 @@ with match_fn_sig (fuel : nat) (c : cx) (e : env) (pv : gsym) (wanted : fsig) (k
   let! info := fn_info pv in
   let! pairs := require_needs mi e pv info in
   let! got := fn_sig pv (tymap e) e None in
-  if sig_eqb_in e got e wanted then smap_at (fi_env info) e pairs
+  if sig_eqb_in e got e wanted then
+    record_reify_event (REProvider ety key (gs_id pv) (fi_needs info)
+      (reify_sig e got) (reify_arguments e)) ;;
+    smap_at (fi_env info) e pairs
   else
     let! gp := mmap (fun p => show (snd p)) (sg_params got) in
     let! gr := show (sg_ret got) in
@@ -3797,20 +4577,7 @@ with match_fn_sig (fuel : nat) (c : cx) (e : env) (pv : gsym) (wanted : fsig) (k
 (* translate.py's eta-expansion: a plain fn providing a method gets the
    receiver as its first argument and drops it (Core Moss deviation 4) *)
 with wrapper (fuel : nat) (pv : gsym) {struct fuel} : M nat :=
-  match fuel with 0 => deep | S f =>
-  let! s := get in
-  match nget (st_wrappers s) (gs_id pv) with
-  | Some w => ret w
-  | None =>
-      let! info := fn_info pv in
-      let! sm := smap_at (fi_env info) (fi_env info) (map (fun k => (k, k)) (fi_needs info)) in
-      let! w := new_sym (gs_mod pv) (gs_name pv ++ "$recv") KFn (gs_decl pv) OLambda in
-      let n := List.length (fn_params pv) in
-      let! th := call_theta (fi_env info) pv in
-      emit_fn w (XCallD (gs_id pv) th sm (map XVar (seq 1 n))) ;;
-      upd (s_wrappers (fun m => nset m (gs_id pv) w)) ;;
-      ret w
-  end end
+  match fuel with 0 => deep | S _ => wrapper_cached pv end
 
 (* D66: binding an abstract fn the context provides is sugar for binding a
    defined forwarder to it *)
@@ -3864,7 +4631,9 @@ with lower_body (fuel : nat) (g : gsym) {struct fuel} : M unit :=
       | None =>
       let c := Cx mi sg this 0 [] "" [] [] in
       emit_fn (gs_id g) XUnit ;;   (* a placeholder, so a recursive reference finds it lowered *)
-      let! (body, _, _) := with_vars vars (synth_block f c e b (Some (sg_ret sg))) in
+      register_reify_code (ROFunction (gs_id g)) e (fi_needs info) (Some sg) ;;
+      let! (body, _, _) := in_reify_code (ROFunction (gs_id g))
+        (with_vars vars (synth_block f c e b (Some (sg_ret sg)))) in
       (match this with Some t => layout_ok e t | None => ret tt end) ;;
       miter (fun p => layout_ok e (snd p)) (sg_params sg) ;;
       layout_ok e (sg_ret sg) ;;
@@ -3919,6 +4688,7 @@ with lambda_provider (fuel : nat) (c : cx) (e : env) (ps : list (name * option a
       let! st := fresh in
       let le := set_app (set_val le v t) (KyVal v) [] st in
       let! sv := local_var n in
+      record_reify_event (REValue ety key v (canon e t) (reify_arguments e)) ;;
       ret (le, pre +++ [SBindVal v (XVar sv)], lets +++ [(n, v, t)])) (with_locals e [], [], []) captured in
   let needs := all_keys le in
   let! pid := new_sym mi (gs_name bound) KFn
@@ -3931,10 +4701,12 @@ with lambda_provider (fuel : nat) (c : cx) (e : env) (ps : list (name * option a
               [] (cx_pins c) in
   let vars := (match this with Some _ => [("this", 0)] | None => [] end) in
   let vars := vars +++ combine names (seq (List.length vars) (List.length names)) in
-  let! fbody := with_vars vars (
+  check_lambda_local_names mi (map fst vars +++ map (fun q => let '(n, _, _) := q in n) lets) ;;
+  register_reify_code (ROFunction pid) le needs (Some lsig) ;;
+  let! fbody := in_reify_code (ROFunction pid) (with_vars vars (
       let! lx := mmap (fun q => let '(n, v, _) := q in let! x := local_var n in ret (SLet x (XVl v))) lets in
       let! (b, _, _) := synth_block f lc le (ABlock [] (Some body)) (Some (sg_ret sg)) in
-      ret (fold_stmts lx b)) in
+      ret (fold_stmts lx b))) in
   emit_fn pid fbody ;;
   let info := FInfo le needs (map (fun k => (k, match get_app le k with Some (a, _) => a | None => [] end)) needs) [] in
   upd (s_info (fun m => nset m pid info)) ;;
@@ -4011,10 +4783,10 @@ with apply_abstract (fuel : nat) (c : cx) (e : env) (fg : gsym) {struct fuel} : 
   miter (fun t => if is_some (tn_get e t) then ret tt
                   else let! tgg := sym t in
                        err mi ("applying `" ++ gs_name fg ++ "` needs `" ++ gs_name tgg ++ "`, which is not available in the context here")) argtys ;;
-  let site k := match k with KyMth r m => KyMth (canon e (instantiate e r)) m | _ => k end in
-  miter (fun k => if key_present e (site k) then ret tt
-                  else let! s := show_key (site k) in
-                       err mi ("applying `" ++ gs_name fg ++ "` needs " ++ s ++ ", which is not available in the context here")) needs ;;
+  let info := FInfo ef needs
+    (map (fun k => (k, match get_app ef k with Some (a, _) => a | None => [] end)) needs)
+    (merge_edges ef) in
+  let! pairs := require_needs mi e fg info in
   let! rts := result_types fg in
   let! gens := mmap (fun t => match tn_get e t with
                               | None => ret (t, t)
@@ -4025,8 +4797,11 @@ with apply_abstract (fuel : nat) (c : cx) (e : env) (fg : gsym) {struct fuel} : 
                               end) rts in
   let! th := mmap (fun t => let! y := ety_ty (canon e (opt_default YUnit (tn_get e t))) in ret (t, y)) argtys in
   let! th2 := mmap (fun p => ret (fst p, TAbs (snd p))) (filter (fun p => negb (Nat.eqb (fst p) (snd p))) gens) in
-  let! sm := smap_at ef e (map (fun k => (k, site k)) needs) in
-  let! (e', _) := provide_result e fg gens in
+  let! sm := smap_at ef e pairs in
+  let! (e', output_keys) := provide_result e fg gens in
+  record_reify_event (REApply ety key (gs_id fg) needs output_keys
+    (map (fun t => (t, canon e (opt_default YUnit (tn_get e t)))) argtys)
+    (map (fun p => (fst p, YAbs (snd p))) gens) (reify_scope_of e')) ;;
   ret ([SApply (gs_id fg) (th +++ th2) sm], e', cx_with_fresh c (cx_fresh c +++ map snd gens))
   end
 
@@ -4067,6 +4842,8 @@ with bind_functor (fuel : nat) (c : cx) (e : env) (fg : gsym) (y : aexpr) {struc
            end) ;;
           let! (ef, fneeds) := fun_env fg in
           let! (eg, gneeds) := fun_env bg in
+          let! target_fixed := functor_fixed fg in
+          bind_fixed_present mi e fg target_fixed ;;
           let! stamp := fresh in
           match bbody with
           | None =>
@@ -4077,17 +4854,25 @@ with bind_functor (fuel : nat) (c : cx) (e : env) (fg : gsym) (y : aexpr) {struc
                                            ", which `" ++ gs_name fg ++ "` does not take (D78)")) gneeds ;;
               (* m4, D84 rule 4: X(H) ⊆ X(F) (P(F) ⊆ P(H)) *)
               let! xh := functor_fixed bg in
+              copy_fixed_current mi e bg xh ;;
               let! xf := functor_fixed fg in
               miter (fun x => if nmem x xf then ret tt
                               else let! xg := sym x in
                                    err mi ("`" ++ gs_name bg ++ "` cannot be bound to `" ++ gs_name fg ++ "`: it is fixed in `" ++
                                            gs_name xg ++ "`, in which `" ++ gs_name fg ++ "` is polymorphic (D84 rule 4)")) xh ;;
+              (* An identity copy preserves its existing latent interface.
+                 Do not force its outputs to be formable before application. *)
+              let! copy_view := if Nat.eqb (gs_id fg) (gs_id bg) then ret None
+                                else let! view := copy_output_compatible mi e ef eg fg bg xf fneeds gneeds in
+                                     ret (Some view) in
               let! sm := smap_at eg ef (map (fun k => (k, k)) gneeds) in
               let e' := set_fun e (gs_id fg) stamp in
               let! s2 := fresh in
               let e' := set_app e' (KyFun (gs_id fg)) (map (fun x => (x, option_map (canon e) (tn_get e x))) xf) s2 in
+              record_reify_event (REFunctor ety key (gs_id fg) (gs_id bg) gneeds (reify_arguments e) copy_view) ;;
               ret ([SBindFunA (gs_id fg) (gs_id bg) sm], e')
           | Some _ =>
+              defined_link_inputs_compatible mi e ef eg fg bg target_fixed fneeds gneeds ;;
               functor_total 64 bg ;;
               let! h := link_body f fg bg in
               let linked := filter (fun k => key_mem k fneeds) gneeds in
@@ -4097,6 +4882,7 @@ with bind_functor (fuel : nat) (c : cx) (e : env) (fg : gsym) (y : aexpr) {struc
                               else let! s := show_key (site k) in
                                    err mi ("`" ++ gs_name bg ++ "`, bound to `" ++ gs_name fg ++ "`, captures " ++ s ++
                                            ", which is not available here (D84 3b)")) captured ;;
+              miter (fun k => check_captured_reading mi e eg k (site k)) captured ;;
               let! sm := smap_at eg ef (map (fun k => (k, k)) linked) in
               let! smc := smap_at eg e (map (fun k => (k, site k)) captured) in
               (* m4, D84 rule 7: a family's binding binds no val and applies no
@@ -4163,9 +4949,11 @@ with bind_functor (fuel : nat) (c : cx) (e : env) (fg : gsym) (y : aexpr) {struc
                       end
                   | _ => ret ep
                   end) e gbinds in
+              check_link_fixed_current mi e fg bg target_fixed ;;
               let e' := set_fun e (gs_id fg) stamp in
               let! s2 := fresh in
               let e' := set_app e' (KyFun (gs_id fg)) (map (fun x => (x, option_map (canon e) (tn_get e x))) xf) s2 in
+              record_reify_event (REFunctor ety key (gs_id fg) h gneeds (reify_arguments e) None) ;;
               ret ([SBindFun (gs_id fg) h sm smc], e')
           end
       end
@@ -4197,24 +4985,26 @@ with link_body (fuel : nat) (fg bg : gsym) {struct fuel} : M nat :=
                                               match key_sig eg k with Some (ps, rt) => flat_map ety_gens (rt :: ps) | None => [] end
                                | KyVal v => match nget (en_vals eg) v with Some t => ety_gens t | None => [] end
                                | KyFn fn => match key_sig eg k with Some (ps, rt) => flat_map ety_gens (rt :: ps) | None => [] end
-                               | KyFun _ => []
+                               | KyFun _ => match get_app eg k with
+                                   | Some (captured,_) => flat_map (fun p => match snd p with
+                                       | Some ty => ety_gens (canon eg ty) | None => [] end) captured
+                                   | None => [] end
                                end in
                match k with
-                      | KyMth _ _ | KyVal _ | KyFn _ =>
+                      | KyMth _ _ | KyVal _ | KyFn _ | KyFun _ =>
                           if negb (key_mem k fneeds) && existsb (fun g => nmem g argtys) mentions then
                             let! sk := show_key k in
                             err mi ("`" ++ gs_name bg ++ "`, bound to `" ++ gs_name fg ++ "`, captures " ++ sk ++
                                     ", which mentions a type each application of `" ++ gs_name fg ++ "` supplies (D84 3b)")
                           else ret tt
-                      | _ => ret tt
                       end) gneeds ;;
       (* m4: G may take a type F makes among its inputs as long as it binds
          it (it must make it, D78: checked below, as lower.functor_closure
          checks `made_here`); tests/wasi/arena.moss's InScratch takes Wasm
          and binds Memory *)
       (* F's result in F's own terms, its types as themselves *)
-      let! (ef', dr) := provide_result ef fg (map (fun t => (t, t)) rts) in
-      let mf := filter (fun g => negb (nmem g rts))
+      let! (ef', dr, output_roles) := fresh_target_output_view ef fg in
+      let mf := filter (fun g => negb (nmem g (rts +++ map snd output_roles)))
                        (flat_map (fun k => match k with KyMth r _ => ety_gens r | _ => [] end) dr
                         +++ flat_map (fun k => match key_sig ef' k with
                                               | Some (ps, r) => flat_map ety_gens (r :: ps)
@@ -4222,23 +5012,29 @@ with link_body (fuel : nat) (fg bg : gsym) {struct fuel} : M nat :=
       (* m4, D84 3d: pins may not change a type of P(F) ∩ M(F); X(F) may be
          pinned (a manifest equation, checked at the bind) *)
       let c := Cx mi (FSig [] YUnit None) None 0 [] "" [] (filter (fun t => negb (nmem t xf)) mf) in
-      let! (xs, eb, _) := with_vars [] (apply_body f c eg bg) in
+      let owner := ROLink (gs_id fg) (gs_id bg) in
+      register_reify_code owner eg gneeds None ;;
+      let! (xs, eb, _) := in_reify_code owner (with_vars [] (apply_body f c eg bg)) in
       let! binds := mmap (fun x => match stmt_bind x with
                                    | Some b => ret b
                                    | None => fail "internal: a functor body made a statement"
                                    end) xs in
+      check_provider_effects mi binds ;;
       (* where the body bound a result type, a result method item's key reads
          through it; the result is filed under the key as F declares it *)
       (* m4: and X(F) as the body pinned it (D84 3d: a pin is a manifest
          equation, so F's promise is read through it) *)
-      let made_tys := map (fun t => (t, canon eb (opt_default (YAbs t) (tn_get eb t)))) (rts +++ xf) in
-      let body_key k := match k with KyMth r m => KyMth (canon eb (instantiate eb r)) m | _ => k end in
+      let made_tys := map (fun p => (snd p,canon eb (opt_default (YAbs (fst p)) (tn_get eb (fst p))))) output_roles +++
+                      map (fun t => (t,canon eb (opt_default (YAbs t) (tn_get eb t)))) xf in
+      let body_key k := match k with KyMth r m =>
+        KyMth (canon eb (instantiate (env_with_edges made_tys []) r)) m | _ => k end in
       (* a result method item is filed under its key as F declares it (its
          receiver and θ in F's terms) besides the body's own key *)
       let! renames := mmap (fun k => match k, body_key k with
                                      | KyMth r m, KyMth r' _ =>
                                          let! t' := ety_ty r' in
-                                         let! it := key_item_at ef' k in
+                                         let! checked := key_item_at ef' k in
+                                         let it := output_role_item output_roles checked in
                                          match it with
                                          | IMth t0 _ th0 => ret [(t', m, (t0, th0))]
                                          | _ => ret []
@@ -4279,10 +5075,17 @@ with link_body (fuel : nat) (fg bg : gsym) {struct fuel} : M nat :=
                  err mi ("`" ++ gs_name bg ++ "`, bound to `" ++ gs_name fg ++ "`, does not provide " ++ sk ++ " (D78)")
                else ret tt) dr ;;
       miter (fun k =>
+               (match k with
+                | KyFun _ =>
+                    if result_functor_fixed_ok eb ef' made_tys (body_key k) k then ret tt
+                    else let! sk := show_key k in
+                         err mi ("`" ++ gs_name bg ++ "`, bound to `" ++ gs_name fg ++ "`, provides " ++ sk ++
+                                 " at another fixed interpretation than promised (D78)")
+                | _ => ret tt end) ;;
                match key_sig eb (body_key k), key_sig ef' k with
                | Some (p1, r1), Some (p2, r2) =>
                    if Nat.eqb (List.length p1) (List.length p2) &&
-                      forallb (fun q => ety_eqb (canon eb (fst q)) (canon eb (ety_subst FUEL made_tys (canon ef' (snd q)))))
+                      forallb (fun q => ety_eqb (canon eb (fst q)) (promised_result_type eb made_tys (snd q)))
                               (combine (r1 :: p1) (r2 :: p2))
                    then ret tt
                    else let! sk := show_key k in
@@ -4290,8 +5093,9 @@ with link_body (fuel : nat) (fg bg : gsym) {struct fuel} : M nat :=
                                 " at another type than `" ++ gs_name fg ++ "` promises (D78)")
                | _, _ => ret tt
                end) dr ;;
+      record_reify_exports_at owner rts dr ef ef' eb output_roles ;;
       let! h := new_sym mi (gs_name bg) KFunctor (gs_decl bg) (OLink (gs_id fg) (gs_id bg)) in
-      let! dri := mmap (key_item_at ef') dr in
+      let! dri := mmap (fun k => let! it := key_item_at ef' k in ret (output_role_item output_roles it)) dr in
       upd (s_funs (fun l => (h, (map ITy rts +++ dri, binds)) :: l)) ;;
       upd (s_links (fun l => ((gs_id fg, gs_id bg), h) :: l)) ;;
       ret h
@@ -4308,6 +5112,34 @@ Definition ELAB_FUEL : nat := 100000.
 
 (* xprogram, the elaborator's output, is audit-level: Audit.v, Part II. *)
 
+(* Validate the binding as main reads it, after its own context merges. *)
+Definition check_platform_entry_view (e : env) (k : key) (entry : xdentry) : M unit :=
+  match entry with
+  | XDVal (XVI32 _) =>
+      let! sc := runtime_symbols in
+      match key_sig e k with
+      | Some ([], t) => if runtime_abs sc "I32" (canon e t) then ret tt
+                        else fail "platform I32 constant has an incompatible assumed type"
+      | _ => fail "platform I32 constant has no assumed type"
+      end
+  | XDPrim p =>
+      match key_sig e k with
+      | Some (ps, r) => check_runtime_primitive 0 e p ps r
+      | None => fail "platform primitive has no assumed signature"
+      end
+  | XDFun _ _ _ =>
+      let! sc := runtime_symbols in
+      let fixed := match get_app e k with Some (a, _) => a | None => [] end in
+      if forallb (fun name => match runtime_id sc "wasm" name with
+          | Some t => match assoc Nat.eqb t fixed with
+              | Some (Some y) => runtime_abs sc name (canon e y)
+              | Some None => false
+              | None => true end
+          | None => true end) runtime_machine_names
+      then ret tt else fail "platform functor has an incompatible assumed fixed type"
+  | _ => ret tt
+  end.
+
 Definition platform_entry (k : key) (prims : list string) : M (option (xdentry * list string)) :=
   let! wm := lang "wasm" in
   let! pm := lang "wasip1" in
@@ -4317,15 +5149,30 @@ Definition platform_entry (k : key) (prims : list string) : M (option (xdentry *
   | KyVal v => let! g := sym v in
                if plat (gs_mod g) then
                  match gs_name g with
-                 | "i32_zero" => ret (Some (XDVal (XVI32 0%uint63), prims))
-                 | "i32_one" => ret (Some (XDVal (XVI32 1%uint63), prims))
+                 | "i32_zero" | "i32_one" =>
+                     let! info := fn_info g in
+                     match gs_decl g with
+                     | ADVal _ ty0 None =>
+                         let e := fi_env info in
+                         let! ty0 := ety_of ty0 (gs_mod g) (tymap e) e None in
+                         let! sc := runtime_symbols in
+                         if runtime_abs sc "I32" (canon e ty0) then
+                           ret (Some (XDVal (XVI32 (if String.eqb (gs_name g) "i32_zero" then 0 else 1)%uint63), prims))
+                         else err (gs_mod g) "platform I32 constant has an incompatible declared type"
+                     | _ => err (gs_mod g) "platform I32 constant must be an abstract value"
+                     end
                  | _ => ret None
                  end
                else ret None
   | KyFn fn => let! g := sym fn in
                if plat (gs_mod g) then
                  match prim_of_name (gs_name g) with
-                 | Some p => ret (Some (XDPrim p, prims))
+                 | Some p =>
+                     let! info := fn_info g in
+                     let e := fi_env info in
+                     let! sg := fn_sig g (tymap e) e None in
+                     check_runtime_primitive (gs_mod g) e p (map snd (sg_params sg)) (sg_ret sg) ;;
+                     ret (Some (XDPrim p, prims))
                  | None => ret (Some (XDPrim (PUnsupported (List.length prims)), prims +++ [gs_name g]))
                  end
                else ret None
@@ -4340,6 +5187,9 @@ Definition platform_entry (k : key) (prims : list string) : M (option (xdentry *
   | KyMth _ _ => ret None
   end.
 
+Definition module_function_ids (m : gmod) : list nat :=
+  map snd(gm_names m) +++ map snd(gm_detached m) +++ map snd(gm_attached m).
+
 Definition lower_all : M unit :=
   let! s := get in
   let w := st_w s in
@@ -4348,7 +5198,7 @@ Definition lower_all : M unit :=
            miter (fun sid => let! g := sym sid in
                              if is_some (fn_body g) && (kind_eqb (gs_kind g) KFn || kind_eqb (gs_kind g) KMethod)
                              then lower_body ELAB_FUEL g else ret tt)
-                 (map snd (gm_names m) +++ map snd (gm_attached m))) (w_order w).
+                 (module_function_ids m)) (w_order w).
 
 (* D73, of every tag, used or not: what it lists are types its assume
    nesting requires (Audit note 40; solve_requirements checks it only of
@@ -4361,9 +5211,70 @@ Definition check_listed : M unit :=
                   | None => ret tt
                   end) (seq 0 (w_nsyms w)).
 
+(* Reject a cycle even when no body ever uses the context. This check
+   reads the declaration graph only; it does not elaborate its items. *)
+Fixpoint context_acyclic (fuel : nat) (w : world) (stack : list nat) (g : gsym) : res unit :=
+  if nmem (gs_id g) stack then
+    err_in (get_mod w (gs_mod g)) ("context `" ++ gs_name g ++ "` nests in a cycle")
+  else match fuel with
+  | 0 => err_in (get_mod w (gs_mod g)) "contexts nest in a cycle"
+  | S f =>
+      match gs_kind g, gs_decl g with
+      | KCtx, ADCtx _ its =>
+          let fix go (specs : list spec) : res unit :=
+            match specs with
+            | [] => Good tt
+            | Spec (Some p) None _ :: rest =>
+                let* target := resolve_path w (gs_mod g) p in
+                let* _ := match target with
+                          | Some (ESym x) =>
+                              match nget (w_syms w) x with
+                              | Some h => if kind_eqb (gs_kind h) KCtx
+                                          then context_acyclic f w (gs_id g :: stack) h
+                                          else Good tt
+                              | None => Good tt
+                              end
+                          | _ => Good tt
+                          end in go rest
+            | _ :: rest => go rest
+            end in go its
+      | _, _ => Good tt
+      end
+  end.
+
+Definition check_contexts : M unit :=
+  let! s := get in
+  let w := st_w s in
+  lift (let fix go (ids : list nat) : res unit :=
+          match ids with
+          | [] => Good tt
+          | x :: rest =>
+              let* _ := match nget (w_syms w) x with
+                        | Some g => context_acyclic (S (w_nsyms w)) w [] g
+                        | None => Good tt
+                        end in go rest
+          end in go (seq 0 (w_nsyms w))).
+
+(* Generated providers retain their own formal type-input domain. Abstract
+   copies can have extra inputs which must not replace captured meanings. *)
+Definition runtime_provider_inputs (h : usym) : M (list tsym) :=
+  let! g := sym h in
+  match gs_origin g with
+  | OPlatformFun u =>
+      let! fg := sym u in let! (ef, _) := fun_env fg in ret (map fst (en_tn ef))
+  | OLink u v =>
+      let! fg := sym u in let! bg := sym v in
+      let! (ef, _) := fun_env fg in let! (eg, _) := fun_env bg in
+      ret (filter (fun t => nmem t (map fst (en_tn ef))) (map fst (en_tn eg)))
+  | _ => ret []
+  end.
+
 Definition elab_program : M xprogram :=
   check_listed ;;
+  check_contexts ;;
+  check_runtime_library ;;
   lower_all ;;
+  check_assumes ;;
   let! s := get in
   let w := st_w s in
   let entry := get_mod w (w_entry w) in
@@ -4373,11 +5284,13 @@ Definition elab_program : M xprogram :=
       let! mg := sym msym in
       if negb (is_defined_fn mg) then fail "unsupported: no main" else
       let! info := fn_info mg in
+      check_main_signature mg info ;;
       let! (env0, prims) := mfold (fun acc k =>
           let '(env0, prims) := acc in
           let! o := platform_entry k prims in
           match o with
-          | Some (en, prims') => let! it := key_item_at (fi_env info) k in ret (env0 +++ [(it, en)], prims')
+          | Some (en, prims') => check_platform_entry_view (fi_env info) k en ;;
+              let! it := key_item_at (fi_env info) k in ret (env0 +++ [(it, en)], prims')
           | None => let! sk := show_key k in
                     fail ("unsupported: main assumes " ++ sk ++ ", which only the bootstrap's native Std provides")
           end) ([], []) (fi_needs info) in
@@ -4388,32 +5301,54 @@ Definition elab_program : M xprogram :=
        | why :: _ => fail ("unsupported: " ++ why)
        | [] => ret tt
        end) ;;
-      let! bm := lang "bool" in
-      let! (b, t, fl) := match bm with
-                         | Some bi => let! m := the_mod bi in
-                                      ret (opt_default 0 (sassoc "Bool" (gm_names m)),
-                                           opt_default 0 (sassoc "True" (gm_names m)),
-                                           opt_default 0 (sassoc "False" (gm_names m)))
-                         | None => ret (0, 0, 0)
-                         end in
-      ret (XProgram (st_fns s) (st_funs s) b t fl msym env0 prims)
+      let! sc := runtime_symbols in
+      let '(b, t, fl) := runtime_bool_tuple sc in
+      let! input_types := mmap (fun p => let! ts := runtime_provider_inputs (fst p) in ret (fst p, ts)) (st_funs s) in
+      let! s := get in
+      let machines := runtime_machines sc (st_next s) in
+      let! main_types := mmap (fun q => let! tau := ety_ty (canon (fi_env info) (snd q)) in
+                                        ret (fst q, Audit.app_subst machines tau)) (tymap (fi_env info)) in
+      ret (XProgram (st_fns s) (st_funs s) b t fl msym
+             (xinst [] main_types +++ env0) prims (runtime_casts sc (st_next s)) input_types [] false [] [])
   end.
 
 Definition lang_modules (w : world) : list (string * nat) :=
   flat_map (fun mi =>
               let p := gm_path (get_mod w mi) in
-              flat_map (fun short => if ends_with ("lib/" ++ short ++ ".moss") p then [(short, mi)] else [])
+              flat_map (fun short =>
+                if match w_library w with
+                   | Some dir => String.eqb p (dir ++ short ++ ".moss")
+                   | None => false end then [(short, mi)] else [])
                        ["num"; "int"; "float"; "bool"; "wasm"; "wasip1"; "wasistd"; "access"])
            (w_order w).
 
 (* The elaborator: a total function from a bundle to a program or an error. *)
 Definition elaborate (b : bundle) : res xprogram :=
   let* w := load_world b in
-  let s0 := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false [] (lang_modules w) [] in
+  let s0 := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false [] (lang_modules w) [] (empty_reify_metadata ety key) in
   match elab_program s0 with
   | Good (p, _) => Good p
   | Bad m => Bad m
   end.
+
+(* The staged runtime pipeline retains checked source metadata.  The old
+   [elaborate] is deliberately the raw source translation for Track A. *)
+Definition elaborate_with_metadata (b : bundle) : res (xprogram * st) :=
+  let* w := load_world b in
+  let s0 := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0
+    false false [] (lang_modules w) [] (empty_reify_metadata ety key) in
+  elab_program s0.
+
+Lemma elaborate_with_metadata_project : forall b,
+    elaborate b =
+    match elaborate_with_metadata b with
+    | Good (p, _) => Good p
+    | Bad message => Bad message
+    end.
+Proof.
+  intro b. unfold elaborate, elaborate_with_metadata, rbind.
+  destruct (load_world b); reflexivity.
+Qed.
 
 (* From the CLI's tokens. *)
 Definition elaborate_sx (x : sx) : res xprogram :=

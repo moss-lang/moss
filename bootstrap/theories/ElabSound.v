@@ -25,7 +25,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import CoreMoss MossX NMap Sx Elab.
+From NM Require Import CoreMoss NMap Sx Elab.
 Import ListNotations.
 
 (* ===================== 1. Totality and determinism ======================= *)

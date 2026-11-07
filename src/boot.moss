@@ -121,6 +121,7 @@ functor Boot: Std -> Compiler {
   bind wops::op_kinds = int_list();
   bind wops::op_aligns = int_list();
   bind wops::op_res = int_list();
+  bind wops::op_args = int_list();
 
   bind codegen::fq_sym = int_list();
   bind codegen::fq_env = int_list();
@@ -192,6 +193,7 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_err_at = int_list();
   bind codegen::cg_where = cell_int();
   bind codegen::cg_genv = cell_int();
+  bind codegen::cg_gbase = cell_int();
   bind codegen::ch_run = int_list();
   bind codegen::ch_link = int_list();
   bind codegen::ch_head = int_list();
@@ -275,4 +277,5 @@ functor Boot: Std -> Compiler {
   bind lower::asm_nlen = int_list();
   bind lower::en_head = int_list();
   bind lower::en_link = int_list();
+  bind lower::en_find_cache = int_list();
 }

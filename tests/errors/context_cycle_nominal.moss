@@ -1,0 +1,19 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, proc_exit;
+
+# A cycle is rejected at declaration even when only a tag's requirements
+# traverse it; it need not be used to form a function body's context.
+type T;
+context A = T, B;
+context B = A;
+
+assume A {
+  tag Box[T](T);
+}
+
+assume Wasm, Wasi {
+  fn main() {
+    let b = Box[T=I32](w::i32_add(w::i32_one, w::i32_one));
+    match b { Box(x) => proc_exit(x), }
+  }
+}

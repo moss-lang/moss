@@ -1,0 +1,4 @@
+type Receiver;
+assume Receiver {
+  fn .private_method();
+}

@@ -70,3 +70,6 @@ tag Bad;
 # Numeric literals (D68).
 tag Integer;
 tag Decimal;
+
+# `_` alone: the wildcard pattern, not a name.
+tag Underscore;

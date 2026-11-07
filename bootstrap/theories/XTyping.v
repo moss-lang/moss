@@ -14,9 +14,9 @@
 (* Fb beside Σ and its body in P.  The bootstrap IR's                       *)
 (* XApplyBr, XBindFunSym and XBindFunCopy have no rule: FastPath.v (Track   *)
 (* D) proves the program that uses them runs as the one that does not.     *)
-(* The GC primitives (`Heap`, `Arrays`, `Mutable`) have                     *)
-(* no signature in Part IV and so no rule; nor do the memory primitives at  *)
-(* an `Addr` receiver (MossX.mem_args), which `prim_law` does not cover.    *)
+(* GC primitives are typed by gc_shape; memory methods use prim_msig and  *)
+(* pty_ok. Raw handles and checked Ref/Array wrappers retain allocation    *)
+(* metadata, while a rebound Ref payload remains an ordinary wrapper.     *)
 (*                                                                           *)
 (* Design.                                                                   *)
 (*  - Types are Core Moss's `ty`.  A side table `Rp` gives some nominal      *)
@@ -29,18 +29,17 @@
 (*    (`xp_fn`).  A fn is *defined* when P has a body for it.  Then         *)
 (*    `wf_gsig Sg` is exactly declaration formation, and every lemma of     *)
 (*    CoreMoss.v about the statics applies to Σ as it is.                   *)
-(*  - The θ of `XTag` and `XCallD` is not read by the dynamics, and the     *)
-(*    elaborator writes [] there (Audit.v, DRAFT NOTE 3): the rules take θ  *)
-(*    from the derivation, not from the term (Curry style).  For the same  *)
-(*    reason a type bind has an implicit form (`XtBindTyI`) beside          *)
-(*    `XBindTy`: the elaborator emits no `XBindTy`.  The θ of a method key *)
-(*    (`IMth`) and of an application stays syntactic: the dynamics reads it.*)
+(*  - Runtime type binds and syntactic θ are retained when the program    *)
+(*    has GC cast schemas. They ground allocation metadata and native     *)
+(*    Ref/Array cast requests. XtCall relates the emitted θ to the type   *)
+(*    instantiation in its derivation; XtCastTag uses the emitted θ.       *)
+(*    Ordinary tags still need no runtime type inspection.               *)
 (*  - A judgment carries the enclosing fn's result type R (None where       *)
 (*    `return` is not allowed) and whether `break` is allowed (L).          *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit CoreMoss HTrie.
+From NM Require Import Audit CoreMoss HTrie PayloadInst PayloadInstCore ReifyMaps ReifyContracts.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -53,7 +52,8 @@ Inductive rep : Type :=
 (* a GC reference (`Ref`) or GC array (`Array`): a tag over a heap address;
    the contents' type is the tag's θ at this symbol (`contents`) *)
 | RRef : tsym -> rep
-| RArr : tsym -> rep.
+| RArr : tsym -> rep
+| RHandle : bool -> rep.
 
 (* A store typing: an address's kind (true: an array) and its contents'
    type, keyed by the address's bits (HTrie.key, as XHeap.hty is). *)
@@ -83,6 +83,12 @@ Variable P : xprog.
    its body in P (`xp_fun`), as a fn has its body in P. *)
 Variable Fb : usym -> option (tele * tele * subst).
 
+(* Opaque heap handles may be injected into a union without changing their
+   value. This type predicate is enough to reconstitute an unwrapped payload. *)
+Inductive handle_type (k : bool) : ty -> Prop :=
+| HtNom : forall n th, Rp n = Some (RHandle k) -> handle_type k (TNom n th)
+| HtUnion : forall tau ms, handle_type k tau -> In tau ms -> handle_type k (TUnion ms).
+
 (* ===================== 2. Value typing =================================== *)
 
 (* Values against *closed* types (a grounding has been applied), at a store
@@ -92,7 +98,7 @@ Inductive xvt (H : sty) : xvalue -> ty -> Prop :=
 | XvTag : forall n D taup th w,
     Rp n = None ->
     g_tag Sg n = Some (D, taup) ->
-    xvt H w (app_subst th taup) ->
+    xvt H w (ordinary_payload P th taup) ->
     xvt H (XVTag n w) (TNom n th)
 | XvInj : forall w tau' ms,
     xvt H w tau' -> In tau' ms -> xvt H w (TUnion ms)
@@ -107,16 +113,40 @@ Inductive xvt (H : sty) : xvalue -> ty -> Prop :=
     map fst fs = map fst fts ->
     Forall2 (fun ft fw => xvt H (snd fw) (snd ft)) fts fs ->
     xvt H (XVRec fs) (TNom rec_nom fts)
-| XvRef : forall n th x a,
+| XvRef : forall n th x a D pay,
     Rp n = Some (RRef x) -> H (key a) = Some (false, contents th x) ->
+    g_tag Sg n = Some (D, pay) -> handle_type false (app_subst th pay) ->
     xvt H (XVTag n (XVRef a)) (TNom n th)
-| XvArr : forall n th x a,
+| XvArr : forall n th x a D pay,
     Rp n = Some (RArr x) -> H (key a) = Some (true, contents th x) ->
-    xvt H (XVTag n (XVRef a)) (TNom n th).
+    g_tag Sg n = Some (D, pay) -> handle_type true (app_subst th pay) ->
+    xvt H (XVTag n (XVRef a)) (TNom n th)
+| XvHandle : forall n th k tau a,
+    Rp n = Some (RHandle k) -> H (key a) = Some (k, tau) ->
+    xvt H (XVRefAt k tau a) (TNom n th)
+| XvLegacyHandle : forall n th k tau a,
+    Rp n = Some (RHandle k) -> H (key a) = Some (k, tau) ->
+    xvt H (XVRef a) (TNom n th)
+| XvRefAt : forall n th x a D pay,
+    Rp n = Some (RRef x) -> H (key a) = Some (false, contents th x) ->
+    g_tag Sg n = Some (D, pay) -> handle_type false (app_subst th pay) ->
+    xvt H (XVTag n (XVRefAt false (contents th x) a)) (TNom n th)
+| XvArrAt : forall n th x a D pay,
+    Rp n = Some (RArr x) -> H (key a) = Some (true, contents th x) ->
+    g_tag Sg n = Some (D, pay) -> handle_type true (app_subst th pay) ->
+    xvt H (XVTag n (XVRefAt true (contents th x) a)) (TNom n th)
+| XvReboundRef : forall n th (k : bool) x spec h expected D taup w,
+    Rp n = Some (if k then RArr x else RRef x) -> lookup_cast n (xp_cast P) = Some spec ->
+    xc_array spec = k ->
+    xc_handle spec = Some (h, expected) -> contents th h <> expected ->
+    g_tag Sg n = Some (D, taup) -> xvt H w (app_subst th taup) ->
+    xvt H (XVTag n w) (TNom n th).
 
 (* Bool, the type `if` and `while` test: the tag P names, over the union of
    its two units. *)
-Definition bool_ty : ty := TNom (xp_bool P) [].
+Definition bool_ty : ty := if Nat.eqb (xp_bool P) 0 then TUnion [] else TNom (xp_bool P) [].
+Lemma bool_ty_subst : forall s, app_subst s bool_ty = bool_ty.
+Proof. intro s; unfold bool_ty; destruct (Nat.eqb (xp_bool P) 0); reflexivity. Qed.
 
 (* A Part IV signature type, read as a Core Moss type (closed or not: each
    case is stable under substitution). *)
@@ -127,7 +157,7 @@ Definition pty_ok (tau : ty) (t : xty) : Prop :=
   | XTF32 => exists n th, tau = TNom n th /\ Rp n = Some RF32
   | XTF64 => exists n th, tau = TNom n th /\ Rp n = Some RF64
   | XTUnit => tau = TUnit
-  | XTBool => tau = bool_ty
+  | XTBool => xp_bool P <> 0 /\ tau = bool_ty
   (* an `Addr`: a tag over an I32 *)
   | XTAddr => exists n th D m thm, tau = TNom n th /\ Rp n = None
               /\ g_tag Sg n = Some (D, TNom m thm) /\ Rp m = Some RI32
@@ -141,18 +171,29 @@ Definition prim_sigs (p : prim) (ps : list xty) (r : xty) : Prop :=
   prim_sig p = Some (ps, r) \/ prim_msig p = Some (ps, r).
 
 (* t is a reference (k = false) or array (k = true) type with contents c. *)
+(* A GC primitive uses the selected checked wrapper, at its actual
+   machine-handle payload. Rebound arena wrappers use ordinary source code. *)
+Definition gc_schema (k : bool) (n : nsym) (th : subst) (x : tsym) : Prop :=
+  exists spec, lookup_cast n (xp_cast P) = Some spec /\
+    xc_array spec = k /\ xc_held spec = x /\
+    (match xc_handle spec with
+     | None => True
+     | Some (h, expected) => contents th h = expected
+     end) /\
+    exists D pay, g_tag Sg n = Some (D, pay) /\ handle_type k (app_subst th pay).
+
 Definition is_ref (k : bool) (t c : ty) : Prop :=
   exists n th x, t = TNom n th /\ Rp n = Some (if k then RArr x else RRef x)
-  /\ contents th x = c.
+  /\ contents th x = c /\ gc_schema k n th x.
 
 (* The GC primitives' signatures (XHeap.gc_pre / gc_post read as types). *)
 Definition gc_shape (p : prim) (taus : list ty) (ret : ty) : Prop :=
   match p, taus with
-  | PBox rf, [c] => exists th x, ret = TNom rf th /\ Rp rf = Some (RRef x) /\ contents th x = c
+  | PBox rf, [c] => exists th x, ret = TNom rf th /\ Rp rf = Some (RRef x) /\ contents th x = c /\ gc_schema false rf th x
   | PDeref, [r] => is_ref false r ret
   | PRefSet, [r; c] => is_ref false r c /\ ret = TUnit
   | PArrNew ar, [c; i] => pty_ok i XTI32
-      /\ exists th x, ret = TNom ar th /\ Rp ar = Some (RArr x) /\ contents th x = c
+      /\ exists th x, ret = TNom ar th /\ Rp ar = Some (RArr x) /\ contents th x = c /\ gc_schema true ar th x
   | PArrLen, [r] => (exists c, is_ref true r c) /\ pty_ok ret XTI32
   | PArrGet, [r; i] => pty_ok i XTI32 /\ is_ref true r ret
   | PArrSet, [r; i; c] => pty_ok i XTI32 /\ is_ref true r c /\ ret = TUnit
@@ -170,6 +211,13 @@ Definition prim_ok (p : prim) (taus : list ty) (ret : ty) : Prop :=
   \/ (exists ps r, prim_sigs p ps r /\ Forall2 pty_ok taus ps /\ pty_ok ret r)
   \/ gc_shape p taus ret.
 
+Definition prim_at_ok (p : prim) (held : ty) (taus : list ty) (ret : ty) : Prop :=
+  prim_ok p taus ret /\
+  match p, taus with
+  | PBox _, c :: _ | PArrNew _, c :: _ => held = c
+  | _, _ => False
+  end.
+
 (* ===================== 3. Patterns ======================================= *)
 
 (* The variables a pattern binds, in the order `match_pat` binds them, for
@@ -182,17 +230,25 @@ Inductive pat_ok (tau0 tau0s : ty) : xpat -> tenv -> Prop :=
     In (TNom n thn) ms ->
     Rp n = None ->
     g_tag Sg n = Some (D, taup) ->
+    ordinary_payload_ok P thn taup ->
     pat_ok tau0 tau0s (XPHead n ob [])
-      (match ob with Some x => [(x, app_subst thn taup)] | None => [] end)
+      (match ob with Some x => [(x, ordinary_payload P thn taup)] | None => [] end)
+| PoCastTag : forall n thn ms D taup ob x (k : bool),
+    members tau0s = Some ms -> In (TNom n thn) ms ->
+    Rp n = Some (if k then RArr x else RRef x) ->
+    g_tag Sg n = Some (D, taup) ->
+    pat_ok tau0 tau0s (XPHead n ob [])
+      (match ob with Some v => [(v, app_subst thn taup)] | None => [] end)
 (* a struct's fields, each bound to a variable *)
 | PoStruct : forall n thn ms D fts fs tys,
     members tau0s = Some ms ->
     In (TNom n thn) ms ->
     Rp n = None ->
     g_tag Sg n = Some (D, TNom rec_nom fts) ->
+    ordinary_payload_ok P thn (TNom rec_nom fts) ->
     Forall2 (fun fx t => assoc_ty (fst fx) fts = Some t) fs tys ->
     pat_ok tau0 tau0s (XPHead n None fs)
-      (combine (map snd fs) (map (app_subst thn) tys)).
+      (combine (map snd fs) (map (ordinary_payload P thn) tys)).
 
 Definition pat_head (p : xpat) : option nsym :=
   match p with XPHead n _ _ => Some n | XPAny _ => None end.
@@ -205,7 +261,7 @@ Definition exhaustive (tau0s : ty) (arms : list (xpat * xexpr)) : Prop :=
   (exists ob eb, In (XPAny ob, eb) arms)
   \/ (exists ms, members tau0s = Some ms /\
         Forall (fun mem => exists n th, mem = TNom n th
-                   /\ Rp n = None /\ g_tag Sg n <> None
+                   /\ (Rp n = None \/ exists (k : bool) x, Rp n = Some (if k then RArr x else RRef x)) /\ g_tag Sg n <> None
                    /\ exists ob fs eb, In (XPHead n ob fs, eb) arms) ms).
 
 (* ===================== 4. The judgment =================================== *)
@@ -248,8 +304,17 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
     g_tag Sg n = Some (D, tau0) ->
     sat Sg Phi th D ->
     Forall (fun p => wf_ty Sg Phi (snd p)) th ->
-    xhas R L Phi G e (app_subst (cS Phi) (app_subst th tau0)) ->
+    ordinary_payload_ok P th tau0 ->
+    xhas R L Phi G e (app_subst (cS Phi) (ordinary_payload P th tau0)) ->
     xhas R L Phi G (XTag n th0 e) (app_subst (cS Phi) (TNom n th))
+| XtCastTag : forall L Phi G n D tau0 th e spec,
+    lookup_cast n (xp_cast P) = Some spec ->
+    Rp n = Some (if xc_array spec then RArr (xc_held spec) else RRef (xc_held spec)) ->
+    g_tag Sg n = Some (D, tau0) ->
+    sat Sg Phi th D ->
+    Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+    xhas R L Phi G e (app_subst (cS Phi) (app_subst th tau0)) ->
+    xhas R L Phi G (XTag n th e) (app_subst (cS Phi) (TNom n th))
 | XtNeed : forall L Phi G f Df S args,
     g_fn Sg f = Some (Df, S, None) ->
     avail Phi (IFn f) ->
@@ -257,11 +322,16 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
             args (fs_params S) ->
     xhas R L Phi G (XCallA f args) (app_subst (cS Phi) (fs_ret S))
 | XtCall : forall L Phi G f Df S body th th0 sm args,
+    xp_immutable P = false ->
     g_fn Sg f = Some (Df, S, None) ->
     xp_fn P f = Some body ->
     sat Sg Phi th Df ->
     Forall (fun p => wf_ty Sg Phi (snd p)) th ->
     smap_ok Phi th sm Df ->
+    Forall (fun p => wf_ty Sg Phi (snd p)) th0 ->
+    (forall t, In t (tyreqs Df) ->
+      app_subst (cS Phi) (app_subst th0 (TAbs t)) =
+      app_subst (cS Phi) (app_subst th (TAbs t))) ->
     Forall2 (fun e tau =>
                xhas R L Phi G e (app_subst (cS Phi) (app_subst th tau)))
             args (fs_params S) ->
@@ -298,6 +368,7 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
     xhas R L Phi G (XBindTy t tau' e) tau
 (* the same, with the bind erased from the term (the elaborator's output) *)
 | XtBindTyI : forall L Phi G t tau' e tau,
+    xreify P = false ->
     g_ty Sg t = true ->
     t <> this_sym ->
     ~ In (ITy t) (cA Phi) ->
@@ -313,6 +384,7 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
     xhas R L (add_item (IVal v) Phi) G e tau ->
     xhas R L Phi G (XBindVal v e1 e) tau
 | XtBindFn : forall L Phi G f Df S f' D' S' body sm e tau,
+    xp_immutable P = false ->
     g_fn Sg f = Some (Df, S, None) ->
     g_fn Sg f' = Some (D', S', None) ->
     xp_fn P f' = Some body ->
@@ -323,6 +395,7 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
     xhas R L (add_item (IFn f) Phi) G e tau ->
     xhas R L Phi G (XBindFn f f' sm e) tau
 | XtBindMth : forall L Phi G tauk m Dm S th f' D' S' body sm tau0' rest e tau,
+    xp_immutable P = false ->
     g_mth Sg m = Some (Dm, S) ->
     wf_ty Sg Phi tauk ->
     msat th Dm S ->
@@ -358,6 +431,7 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
     xhas R L Phi G (XBindPrim (IMth tauk m th) p e) tau
 (* ---- abstract functors [D78], with Rule A's captures and pins (D84) ---- *)
 | XtBindFun : forall L Phi G u Du Dr h Dh Dc pins sm smc e tau,
+    xp_immutable P = false ->
     g_fun Sg u = Some (Du, Dr, None) ->
     Fb h = Some (Dh, Dc, pins) ->
     (exists bs, xp_fun P h = Some (Dr, bs)) ->
@@ -367,6 +441,7 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
     xhas R L (add_item (IFun u) Phi) G e tau ->
     xhas R L Phi G (XBindFun u h sm smc e) tau
 | XtBindFunA : forall L Phi G u Du Dr w Dw sm e tau,
+    xp_immutable P = false ->
     g_fun Sg u = Some (Du, Dr, None) ->
     g_fun Sg w = Some (Dw, Dr, None) ->
     avail Phi (IFun w) ->
@@ -376,6 +451,7 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
     xhas R L (add_item (IFun u) Phi) G e tau ->
     xhas R L Phi G (XBindFunA u w sm e) tau
 | XtApply : forall L Phi G u Du Dr th sm e tau,
+    xp_immutable P = false ->
     g_fun Sg u = Some (Du, Dr, None) ->
     avail Phi (IFun u) ->
     sat Sg Phi th Du ->
@@ -388,6 +464,57 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
     Forall (fun t => ~ In t (ty_frees tau)) (tyreqs Dr) ->
     ret_fresh (tyreqs Dr) R ->
     xhas R L Phi G (XApply u th sm e) tau
+(* Complete immutable provisioning retains formal type roles explicitly. *)
+| XtCallR : forall L Phi G f D S body PhiD slot sm args,
+    xp_immutable P=true ->g_fn Sg f=Some(D,S,None) ->xp_fn P f=Some body ->
+    tele_ctx D=Some PhiD ->reified_scope_closed Sg P(cA PhiD) ->
+    callable_map_contract Sg P Phi PhiD sm slot S ->
+    Forall2(fun e tau=>xhas R L Phi G e(app_subst(cS Phi)tau))args(fs_params slot) ->
+    xhas R L Phi G(XCallD f [] sm args)(app_subst(cS Phi)(fs_ret slot))
+| XtBindFnR : forall L Phi G f Df Sf code Dc Sc body PhiC sm e tau,
+    xp_immutable P=true ->g_fn Sg f=Some(Df,Sf,None) ->
+    g_fn Sg code=Some(Dc,Sc,None) ->xp_fn P code=Some body ->
+    tele_ctx Dc=Some PhiC ->reified_scope_closed Sg P(cA PhiC) ->
+    callable_map_contract Sg P Phi PhiC sm Sf Sc ->
+    reified_scope_closed Sg P(cA(add_item(IFn f)Phi)) ->
+    xhas R L(add_item(IFn f)Phi)G e tau ->
+    xhas R L Phi G(XBindFn f code sm e)tau
+| XtBindMthR : forall L Phi G rt m th Dm Sm code Dc Sc body PhiC sm e tau,
+    xp_immutable P=true ->g_mth Sg m=Some(Dm,Sm) ->
+    wf_ty Sg Phi rt ->msat th Dm Sm ->Forall(fun p=>wf_ty Sg Phi(snd p))th ->
+    g_fn Sg code=Some(Dc,Sc,None) ->xp_fn P code=Some body ->
+    tele_ctx Dc=Some PhiC ->reified_scope_closed Sg P(cA PhiC) ->
+    callable_map_contract Sg P Phi PhiC sm
+      (mkSig(rt::map(fun t=>app_subst(this_subst rt)(app_subst th t))(fs_params Sm))
+        (app_subst(this_subst rt)(app_subst th(fs_ret Sm))))Sc ->
+    reified_scope_closed Sg P(cA(add_item(IMth rt m th)Phi)) ->
+    xhas R L(add_item(IMth rt m th)Phi)G e tau ->
+    xhas R L Phi G(XBindMth rt m th code sm e)tau
+| XtBindFunR : forall L Phi G u h Du Dh Dr Dc pins PhiD PhiC sm smc code e tau,
+    xp_immutable P=true ->g_fun Sg u=Some(Du,Dr,None) ->
+    g_fun Sg h=Some(Dh,Dr,None) ->Fb h=Some(Dh,Dc,pins) ->xp_fun P h=Some code ->
+    tele_ctx Dh=Some PhiD ->tele_ctx Dc=Some PhiC ->
+    reified_scope_closed Sg P(cA PhiC) ->
+    functor_capture_contract Sg P Phi PhiD PhiC u h Dr pins sm smc ->
+    reified_scope_closed Sg P(cA(add_item(IFun u)Phi)) ->
+    xhas R L(add_item(IFun u)Phi)G e tau ->
+    xhas R L Phi G(XBindFun u h sm smc e)tau
+| XtBindFunAR : forall L Phi G u w Du Dw Dr sm e tau,
+    xp_immutable P=true ->g_fun Sg u=Some(Du,Dr,None) ->
+    g_fun Sg w=Some(Dw,Dr,None) ->avail Phi(IFun w) ->
+    (forall g,ctx_grounded g Phi ->
+      functor_link (runtime_signature Sg P)(xp_fixed_inst P)g u g w sm(identity_smap Dr)) ->
+    reified_scope_closed Sg P(cA(add_item(IFun u)Phi)) ->
+    xhas R L(add_item(IFun u)Phi)G e tau ->
+    xhas R L Phi G(XBindFunA u w sm e)tau
+| XtApplyR : forall L Phi G u Du Dr results inputs outputs e tau,
+    xp_immutable P=true ->g_fun Sg u=Some(Du,Dr,None) ->avail Phi(IFun u) ->
+    application_input_contract Sg P Phi u Du inputs ->
+    result_map_contract Sg P Phi u Du Dr results outputs ->
+    reified_scope_closed Sg P(cA(open_res results Phi)) ->
+    xhas R L(open_res results Phi)G e tau ->
+    wf_ty Sg Phi tau ->ret_wf Phi R ->
+    xhas R L Phi G(XApplyR u inputs outputs e)tau
 (* ---- MossX's extensions ---- *)
 (* a record, field by field in its type's order (a struct is XtTag over
    one) *)
@@ -409,8 +536,9 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
     app_subst (cS Phi) tau = TNom n th ->
     Rp n = None ->
     g_tag Sg n = Some (D, TNom rec_nom fts) ->
+    ordinary_payload_ok P th (TNom rec_nom fts) ->
     assoc_ty f fts = Some tf ->
-    xhas R L Phi G (XField e f) (app_subst th tf)
+    xhas R L Phi G (XField e f) (ordinary_payload P th tf)
 | XtSeq : forall L Phi G e1 e2 tau1 tau,
     xhas R L Phi G e1 tau1 ->
     xhas R L Phi G e2 tau ->
@@ -446,7 +574,23 @@ Inductive xhas (R : option ty) : bool -> ctx -> tenv -> xexpr -> ty -> Prop :=
     Forall2 (fun a Gb => pat_ok tau0 (app_subst (cS Phi) tau0) (fst a) Gb) arms Gbs ->
     Forall (fun Gb => Forall (fun p => incl (ty_frees (snd p)) (tyreqs (cA Phi))) Gb) Gbs ->
     Forall2 (fun a Gb => xhas R L Phi (Gb ++ G) (snd a) tau) arms Gbs ->
-    xhas R L Phi G (XMatchP e0 arms) tau.
+    xhas R L Phi G (XMatchP e0 arms) tau
+| XtConst : forall L Phi G id initializer tau,
+    xhas R L Phi G initializer tau ->
+    xhas R L Phi G (XConst id initializer) tau
+| XtGroundR : forall L Phi G e tau' tau,
+    xp_immutable P = true ->
+    xhas R L Phi G e tau' ->
+    (forall g, ctx_grounded g Phi -> app_subst g tau' = app_subst g tau) ->
+    wf_ty Sg Phi tau ->
+    xhas R L Phi G e tau
+(* An opaque formal capability with no declaration schema has no agreeing
+   runtime binding. Checked code under that assumption cannot execute. *)
+| XtUnreachableR : forall L Phi G e tau u,
+    xp_immutable P = true ->
+    avail Phi (IFun u) ->
+    g_fun Sg u = None ->
+    xhas R L Phi G e tau.
 
 (* A functor body's binds (CoreMoss.binds_ty): each checked with the earlier
    ones in force, a val's expression under no variables, no `return` and no
@@ -467,6 +611,7 @@ Inductive xbinds_ty : ctx -> list xbind -> ctx -> Prop :=
     xbinds_ty (add_item (IVal v) Phi) r Phi' ->
     xbinds_ty Phi (XBVal v e1 :: r) Phi'
 | XbFn : forall Phi f Df S f' D' S' body sm r Phi',
+    xp_immutable P = false ->
     g_fn Sg f = Some (Df, S, None) ->
     g_fn Sg f' = Some (D', S', None) ->
     xp_fn P f' = Some body ->
@@ -477,6 +622,7 @@ Inductive xbinds_ty : ctx -> list xbind -> ctx -> Prop :=
     xbinds_ty (add_item (IFn f) Phi) r Phi' ->
     xbinds_ty Phi (XBFn f f' sm :: r) Phi'
 | XbMth : forall Phi tauk m Dm S th f' D' S' body sm tau0' rest r Phi',
+    xp_immutable P = false ->
     g_mth Sg m = Some (Dm, S) ->
     wf_ty Sg Phi tauk ->
     msat th Dm S ->
@@ -510,6 +656,7 @@ Inductive xbinds_ty : ctx -> list xbind -> ctx -> Prop :=
     xbinds_ty (add_item (IMth tauk m th) Phi) r Phi' ->
     xbinds_ty Phi (XBPrim (IMth tauk m th) p :: r) Phi'
 | XbFun : forall Phi u Du Dr h Dh Dc pins sm smc r Phi',
+    xp_immutable P = false ->
     g_fun Sg u = Some (Du, Dr, None) ->
     Fb h = Some (Dh, Dc, pins) ->
     (exists bs, xp_fun P h = Some (Dr, bs)) ->
@@ -519,6 +666,7 @@ Inductive xbinds_ty : ctx -> list xbind -> ctx -> Prop :=
     xbinds_ty (add_item (IFun u) Phi) r Phi' ->
     xbinds_ty Phi (XBFun u h sm smc :: r) Phi'
 | XbFunA : forall Phi u Du Dr w Dw sm r Phi',
+    xp_immutable P = false ->
     g_fun Sg u = Some (Du, Dr, None) ->
     g_fun Sg w = Some (Dw, Dr, None) ->
     avail Phi (IFun w) ->
@@ -528,6 +676,7 @@ Inductive xbinds_ty : ctx -> list xbind -> ctx -> Prop :=
     xbinds_ty (add_item (IFun u) Phi) r Phi' ->
     xbinds_ty Phi (XBFunA u w sm :: r) Phi'
 | XbApply : forall Phi u Du Dr th sm r Phi',
+    xp_immutable P = false ->
     g_fun Sg u = Some (Du, Dr, None) ->
     avail Phi (IFun u) ->
     sat Sg Phi th Du ->
@@ -537,15 +686,66 @@ Inductive xbinds_ty : ctx -> list xbind -> ctx -> Prop :=
     res_coherent Sg Phi th Dr ->
     Forall (fun t => ~ In (ITy t) (cA Phi)) (tyreqs Dr) ->
     xbinds_ty (open_res (app_tele th Dr) Phi) r Phi' ->
-    xbinds_ty Phi (XBApply u th sm :: r) Phi'.
+    xbinds_ty Phi (XBApply u th sm :: r) Phi'
+| XbFnR : forall Phi f Df Sf code Dc Sc body PhiC sm r Phi',
+    xp_immutable P=true ->g_fn Sg f=Some(Df,Sf,None) ->
+    g_fn Sg code=Some(Dc,Sc,None) ->xp_fn P code=Some body ->
+    tele_ctx Dc=Some PhiC ->reified_scope_closed Sg P(cA PhiC) ->
+    callable_map_contract Sg P Phi PhiC sm Sf Sc ->
+    reified_scope_closed Sg P(cA(add_item(IFn f)Phi)) ->
+    xbinds_ty(add_item(IFn f)Phi)r Phi' ->
+    xbinds_ty Phi(XBFn f code sm::r)Phi'
+| XbMthR : forall Phi rt m th Dm Sm code Dc Sc body PhiC sm r Phi',
+    xp_immutable P=true ->g_mth Sg m=Some(Dm,Sm) ->
+    wf_ty Sg Phi rt ->msat th Dm Sm ->Forall(fun p=>wf_ty Sg Phi(snd p))th ->
+    g_fn Sg code=Some(Dc,Sc,None) ->xp_fn P code=Some body ->
+    tele_ctx Dc=Some PhiC ->reified_scope_closed Sg P(cA PhiC) ->
+    callable_map_contract Sg P Phi PhiC sm
+      (mkSig(rt::map(fun t=>app_subst(this_subst rt)(app_subst th t))(fs_params Sm))
+        (app_subst(this_subst rt)(app_subst th(fs_ret Sm))))Sc ->
+    reified_scope_closed Sg P(cA(add_item(IMth rt m th)Phi)) ->
+    xbinds_ty(add_item(IMth rt m th)Phi)r Phi' ->
+    xbinds_ty Phi(XBMth rt m th code sm::r)Phi'
+| XbFunR : forall Phi u h Du Dh Dr Dc pins PhiD PhiC sm smc code r Phi',
+    xp_immutable P=true ->g_fun Sg u=Some(Du,Dr,None) ->
+    g_fun Sg h=Some(Dh,Dr,None) ->Fb h=Some(Dh,Dc,pins) ->xp_fun P h=Some code ->
+    tele_ctx Dh=Some PhiD ->tele_ctx Dc=Some PhiC ->
+    reified_scope_closed Sg P(cA PhiC) ->
+    functor_capture_contract Sg P Phi PhiD PhiC u h Dr pins sm smc ->
+    reified_scope_closed Sg P(cA(add_item(IFun u)Phi)) ->
+    xbinds_ty(add_item(IFun u)Phi)r Phi' ->
+    xbinds_ty Phi(XBFun u h sm smc::r)Phi'
+| XbFunAR : forall Phi u w Du Dw Dr sm r Phi',
+    xp_immutable P=true ->g_fun Sg u=Some(Du,Dr,None) ->
+    g_fun Sg w=Some(Dw,Dr,None) ->avail Phi(IFun w) ->
+    (forall g,ctx_grounded g Phi ->
+      functor_link (runtime_signature Sg P)(xp_fixed_inst P)g u g w sm(identity_smap Dr)) ->
+    reified_scope_closed Sg P(cA(add_item(IFun u)Phi)) ->
+    xbinds_ty(add_item(IFun u)Phi)r Phi' ->
+    xbinds_ty Phi(XBFunA u w sm::r)Phi'
+| XbApplyR : forall Phi u Du Dr results inputs outputs r Phi',
+    xp_immutable P=true ->g_fun Sg u=Some(Du,Dr,None) ->avail Phi(IFun u) ->
+    application_input_contract Sg P Phi u Du inputs ->
+    result_map_contract Sg P Phi u Du Dr results outputs ->
+    reified_scope_closed Sg P(cA(open_res results Phi)) ->
+    xbinds_ty(open_res results Phi)r Phi' ->
+    xbinds_ty Phi(XBApplyR u inputs outputs::r)Phi'
+| XbUnreachableR : forall Phi bs Phi' u,
+    xp_immutable P = true ->
+    avail Phi (IFun u) ->
+    g_fun Sg u = None ->
+    xbinds_ty Phi bs Phi'.
+
 
 (* ===================== 5. Programs ======================================= *)
 
 (* Bool as `truthy` and Part IV's xvty read it. *)
 Definition bool_ok : Prop :=
+  (xp_bool P = 0 /\ xp_true P = 0 /\ xp_false P = 0) \/
   Rp (xp_bool P) = None /\ Rp (xp_true P) = None /\ Rp (xp_false P) = None
-  /\ (exists Db, g_tag Sg (xp_bool P)
-                 = Some (Db, TUnion [TNom (xp_true P) []; TNom (xp_false P) []]))
+  /\ (exists Db ms, g_tag Sg (xp_bool P) = Some (Db,TUnion ms)
+       /\ incl ms [TNom (xp_true P) []; TNom (xp_false P) []]
+       /\ In (TNom (xp_true P) []) ms /\ In (TNom (xp_false P) []) ms)
   /\ (exists Dt, g_tag Sg (xp_true P) = Some (Dt, TUnit))
   /\ (exists Df, g_tag Sg (xp_false P) = Some (Df, TUnit)).
 
@@ -561,7 +761,7 @@ Record xwf : Prop := {
      its linked arguments, captured inputs and pins form; its result is
      formed over them; and its binds, checked once there, leave every
      result item in force *)
-  xwf_fb : forall h Dh Dc pins Dr bs,
+  xwf_fb : xp_immutable P=false ->forall h Dh Dc pins Dr bs,
       Fb h = Some (Dh, Dc, pins) -> xp_fun P h = Some (Dr, bs) ->
       exists PhiD PhiC, wf_tele Sg empty_ctx Dh PhiD
       /\ wf_tele Sg empty_ctx Dc PhiC
@@ -570,13 +770,35 @@ Record xwf : Prop := {
            (mkCtx (cA (fun_ctx PhiD PhiC pins) ++ Dr) (cS (fun_ctx PhiD PhiC pins)))
       /\ exists PhiB, xbinds_ty (fun_ctx PhiD PhiC pins) bs PhiB
          /\ Forall (fun i => In i (cA PhiB)) Dr;
+  (* Immutable providers export a separate canonical result interface. *)
+  xwf_fb_r : xp_immutable P=true ->forall h Dh Dc pins Dr declared bs,
+      Fb h=Some(Dh,Dc,pins) ->g_fun Sg h=Some(Dh,Dr,None) ->
+      xp_fun P h=Some(declared,bs) ->exists PhiD PhiC PhiB,
+      wf_tele Sg empty_ctx Dh PhiD /\wf_tele Sg empty_ctx Dc PhiC /\
+      pins_ok pins PhiC /\
+      reified_scope_closed Sg P(cA(fun_ctx PhiD PhiC pins)) /\
+      xbinds_ty(fun_ctx PhiD PhiC pins)bs PhiB /\
+      body_export_contract Sg P(fun_ctx PhiD PhiC pins)PhiB Dh Dr(xp_exports P h);
+  xwf_reified_fun_inputs : xp_immutable P=true ->forall u Du Dr,
+      g_fun Sg u=Some(Du,Dr,None) ->reified_scope_closed Sg P Du;
   xwf_bodies : forall f D S body,
       g_fn Sg f = Some (D, S, None) -> xp_fn P f = Some body ->
       exists PhiD, wf_tele Sg empty_ctx D PhiD
       /\ xhas (Some (fs_ret S)) false PhiD (body_env S) body (fs_ret S);
   xwf_bool : bool_ok;
   (* the record head is no symbol's: records are only records *)
-  xwf_rec : Rp rec_nom = None /\ g_tag Sg rec_nom = None
+  xwf_rec : Rp rec_nom = None /\ g_tag Sg rec_nom = None;
+  xwf_cast : forall n spec, lookup_cast n (xp_cast P) = Some spec ->
+    Rp n = Some (if xc_array spec then RArr (xc_held spec) else RRef (xc_held spec));
+  xwf_cast_params : forall n spec D pay,
+    lookup_cast n (xp_cast P) = Some spec -> g_tag Sg n = Some (D, pay) ->
+    In (xc_held spec) (tyreqs D) /\
+    (forall h expected, xc_handle spec = Some (h, expected) -> In h (tyreqs D));
+  xwf_inputs : forall h Dh Dc pins, Fb h = Some (Dh, Dc, pins) ->
+    forall t, In t (xp_inputs P h) <-> In t (tyreqs Dh);
+  xwf_cast_closed : forall n spec h expected,
+    lookup_cast n (xp_cast P) = Some spec -> xc_handle spec = Some (h, expected) ->
+    closed_ty expected
 }.
 
 End XStatics.

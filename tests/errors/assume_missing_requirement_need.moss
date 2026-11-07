@@ -1,0 +1,5 @@
+fn seed();
+assume seed { fn f(); }
+# f requires seed as well as its signature's types.
+assume f { fn g() {} }
+fn main() {}

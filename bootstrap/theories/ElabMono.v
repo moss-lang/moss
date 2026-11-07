@@ -71,8 +71,8 @@ Ltac lfix3 :=
     let n := fresh "n" in let IHn := fresh "IHn" in
     generalize N, a, b; intro n; induction n as [|n IHn]; intros; cbn beta iota end.
 
-Ltac mt :=
-  repeat (lintros; lazymatch goal with
+Ltac mt_with previous :=
+  repeat (lintros; first [solve [previous ()]|lazymatch goal with
   | |- le_m ?x ?x => apply le_refl
   | |- le_m deep _ => apply le_deep
   | |- le_m (mbind _ _) (mbind _ _) => apply le_bind
@@ -86,7 +86,8 @@ Ltac mt :=
             | (lazymatch t with ?F _ _ _ => is_fix F end; lfix3)
             | match t with context [match ?x with _ => _ end] => destruct x end
             | let h := le_head t in progress unfold h ]
-  end).
+  end]).
+Ltac mt := mt_with ltac:(fun _ => fail).
 
 Definition Grp (f1 f2 : nat) : Prop :=
   (forall c e x exp, le_m (synth f1 c e x exp) (synth f2 c e x exp)) /\
@@ -129,7 +130,48 @@ Definition Grp (f1 f2 : nat) : Prop :=
 Lemma mono_step : forall f1 f2, Grp f1 f2 -> Grp (S f1) (S f2).
 Proof.
   intros f1 f2 IH. destruct IH as (I0 & I1 & I2 & I3 & I4 & I5 & I6 & I7 & I8 & I9 & I10 & I11 & I12 & I13 & I14 & I15 & I16 & I17 & I18 & I19 & I20 & I21 & I22 & I23 & I24 & I25 & I26 & I27 & I28 & I29 & I30 & I31 & I32 & I33 & I34).
-  refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (_))))))))))))))))))))))))))))))))))); lintros; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; mt.
+  refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (_))))))))))))))))))))))))))))))))))); lintros; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body];
+  (* Select recursive calls directly from the previous-fuel hypotheses. *)
+  mt_with ltac:(fun _ =>
+    lazymatch goal with |- le_m ?left ?right =>
+      let h := le_head left in lazymatch h with
+      | synth => apply I0
+      | synth_arg => apply I1
+      | synth_block => apply I2
+      | check_stmts => apply I3
+      | check_stmt => apply I4
+      | check_bool => apply I5
+      | synth_if => apply I6
+      | synth_match => apply I7
+      | const_val => apply I8
+      | synth_path => apply I9
+      | check_args => apply I10
+      | synth_call => apply I11
+      | synth_record => apply I12
+      | synth_field => apply I13
+      | synth_method => apply I14
+      | provided_call => apply I15
+      | apply_family => apply I16
+      | demand_needs => apply I17
+      | synth_operator => apply I18
+      | lang_call => apply I19
+      | int_literal => apply I20
+      | float_of => apply I21
+      | synth_literal => apply I22
+      | check_bind => apply I23
+      | expect_fn_provider => apply I24
+      | match_fn_sig => apply I25
+      | wrapper => apply I26
+      | forwarder => apply I27
+      | lower_body => apply I28
+      | lambda_provider => apply I29
+      | apply_functor => apply I30
+      | apply_body => apply I31
+      | apply_abstract => apply I32
+      | bind_functor => apply I33
+      | link_body => apply I34
+      end
+    end).
 Qed.
 
 Lemma mono_group : forall fuel, Grp fuel (S fuel).

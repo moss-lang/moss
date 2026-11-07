@@ -131,12 +131,18 @@
             DUNE_CACHE = "disabled"; # there is no home to keep it in
             buildPhase = ''
               runHook preBuild
+              # Audit and extract in one release-profile build tree, so the
+              # shared Rocq dependencies are compiled only once.
+              export DUNE_JOBS=$NIX_BUILD_CORES
+              DUNE_PROFILE=release bash check.sh
               dune build --release -j $NIX_BUILD_CORES ocaml/moss_m2.exe
               runHook postBuild
             '';
             installPhase = ''
               runHook preInstall
               install -D _build/default/ocaml/moss_m2.exe $out/bin/moss_m2
+              mkdir -p $out/share/moss/audit
+              cp _build/Certificate.log _build/Closed.log $out/share/moss/audit/
               runHook postInstall
             '';
           };
@@ -189,8 +195,8 @@
           # src/main.moss with the Rocq front end, elaborates it, and
           # interprets it compiling src/main.moss: what it writes is the
           # module the compiler written in src/ makes of itself, S1, without
-          # any compiled compiler involved. That takes about 20 minutes and
-          # 3 GB; local development reuses a compiler built before
+          # any compiled compiler involved. This interpreted self-compile
+          # is expensive; local development reuses a compiler built before
           # (CONTRIBUTING.md).
           #
           # S1, optimized, then compiles src/ again, and the result must be
@@ -211,17 +217,27 @@
                 export HOME=$TMPDIR # wasmtime wants a writable cache directory
                 # The interpreter recurses as deeply as the program it runs.
                 ulimit -s unlimited 2>/dev/null || ulimit -s "$(ulimit -H -s)"
-                (cd ${compilerSource} && ${oracle}/bin/moss_m2 --pages 2 \
+                bootstrap_started=$SECONDS
+                bootstrap_phase() {
+                  echo "bootstrap: $* (elapsed $((SECONDS - bootstrap_started))s)" >&2
+                }
+                bootstrap_phase "interpreting the compiler to produce S1"
+                (cd ${compilerSource} && MOSS_REF_TIME=1 ${oracle}/bin/moss_m2 --pages 2 \
                   --argv0 lib/prelude.moss src/main.moss src/main.moss) > s1.wasm
+                bootstrap_phase "validating S1"
                 wasm-tools validate --features=${validatorFeatures} s1.wasm
+                bootstrap_phase "optimizing S1"
                 wasm-opt ${wasmOptFlags} -O3 s1.wasm -o s1-opt.wasm
+                bootstrap_phase "running S1 to produce S2"
                 wasmtime run --argv0 lib/prelude.moss --dir ${compilerSource}::. \
                   s1-opt.wasm src/main.moss > s2.wasm
+                bootstrap_phase "checking the compiler fixpoint"
                 if ! cmp s1.wasm s2.wasm; then
                   echo "the compiler is not a fixpoint: S1 != S2" >&2
                   exit 1
                 fi
                 cp s1-opt.wasm $out
+                bootstrap_phase "complete"
               '';
           # Machine code for the compiler, compiled ahead of time by the same
           # Wasmtime the driver links, so the driver can just map it in.
@@ -429,23 +445,16 @@
       checks = forAll (
         pkgs:
         {
-          # The Rocq development of bootstrap/: every file compiles, and the
-          # certificate's assumptions are audited (bootstrap/check.sh says
-          # what is enforced). About five minutes and 6 GB.
+          # Building the oracle already compiles every theory and audits
+          # assumptions. Keep the named check without a second proof build.
           bootstrap-rocq =
-            pkgs.runCommand "moss-bootstrap-rocq"
-              {
-                nativeBuildInputs = (oracleTools pkgs).inputs;
-                DUNE_CACHE = "disabled"; # there is no home to keep it in
-              }
-              ''
-                cp -r ${self.packages.${pkgs.stdenv.hostPlatform.system}.oracle.src} bootstrap
-                chmod -R u+w bootstrap
-                export DUNE_JOBS=$NIX_BUILD_CORES
-                patchShebangs bootstrap/check.sh
-                bootstrap/check.sh
-                touch $out
-              '';
+            pkgs.runCommand "moss-bootstrap-rocq" { } ''
+              audit=${self.packages.${pkgs.stdenv.hostPlatform.system}.oracle}/share/moss/audit
+              test -s "$audit/Certificate.log"
+              test -s "$audit/Closed.log"
+              mkdir -p $out
+              cp "$audit/Certificate.log" "$audit/Closed.log" $out/
+            '';
           cli = pkgs.runCommand "moss-cli-check" { nativeBuildInputs = [ pkgs.wasm-tools ]; } ''
             moss=${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/moss
             source=${./.}/examples/hello.moss
@@ -597,7 +606,7 @@
         };
         # For working on bootstrap/: `dune build` there and
         # `bootstrap/check.sh` need nothing else.
-        bootstrap = pkgs.mkShellNoCC { buildInputs = (oracleTools pkgs).inputs; };
+        bootstrap = pkgs.mkShellNoCC { buildInputs = (oracleTools pkgs).inputs ++ [ pkgs.python3 ]; };
       });
       overlays.default = final: prev: {
         moss = self.packages.${prev.stdenv.hostPlatform.system}.default;

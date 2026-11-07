@@ -1,0 +1,8 @@
+type Foo; type A; type B; tag R; type U=();
+assume Foo { fn .gimme(): Foo; }
+context C1 = A, R.gimme[Foo=A];
+context C2 = B, R.gimme[Foo=B];
+context C3 = R.gimme[Foo=U];
+assume C1,C2,C3 { fn bad(): A { () } }
+fn give(): () { () }
+fn main() { bind Foo=U; bind B=R; bind A=R; bind R.gimme=give; match bad() { R => () } }

@@ -14,8 +14,13 @@ mod float;
 mod gensrc;
 mod language;
 mod selfhosted;
+mod runtime_platform;
+mod native_platform;
 mod validate;
 mod wasm_backend;
 
+mod solved_merges;
+
+mod bindings;
 mod string_literals;
 mod typed_reference_unions;

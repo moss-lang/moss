@@ -1,0 +1,10 @@
+import "../../../lib/wasm.moss" as w;
+
+assume w::StructRef, w::Heap {
+  fn needs_heap() {}
+}
+
+# This function gets the platform root context when imported as main.
+fn start() {
+  needs_heap();
+}

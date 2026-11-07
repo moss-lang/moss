@@ -61,6 +61,18 @@ Proof.
 Qed.
 
 (* A tag's satisfaction reads only the domain of θ. *)
+Lemma sat_typeonly_between : forall Other Phi th D Phi' th',
+  Forall (fun i => is_ty_item i = true) D -> sat Sg Phi th D -> map fst th' = map fst th ->
+  sat Other Phi' th' D.
+Proof.
+  intros Other Phi th D Phi' th' HD [PhiD [Htc [Hdom _]]] Hf.
+  destruct (merge_tele_typeonly D empty_ctx PhiD HD Htc (Forall_nil _)) as [Hs HA].
+  exists PhiD. split; [exact Htc |]. split; [rewrite Hf; exact Hdom |]. split.
+  - eapply Forall_impl; [| exact HA]. intros i Hi. left. exact Hi.
+  - unfold merge_respects. rewrite Hs. constructor.
+Qed.
+
+
 Lemma sat_typeonly : forall Phi th D Phi' th',
   Forall (fun i => is_ty_item i = true) D -> sat Sg Phi th D -> map fst th' = map fst th ->
   sat Sg Phi' th' D.
@@ -99,6 +111,8 @@ Proof.
   - intros ms _ IH Hnom Hnd. apply WfUnion; [exact IH | exact Hnom |].
     rewrite (heads_of_nom _ _ Hnom). rewrite (heads_of_nom _ _ Hnom) in Hnd. exact Hnd.
   - intros fts Hr _ IH. apply WfRec; [exact Hr | exact IH].
+  - intros n D th Hnone Hop Hsat Honly _ IH. eapply WfOpaque;[exact Hnone|exact Hop| |exact Honly|exact IH].
+    exact(sat_typeonly _ _ _ _ _ Honly Hsat eq_refl).
 Qed.
 
 (* ---- Substitution and subterms. ----------------------------------------- *)
@@ -141,6 +155,10 @@ Proof.
       destruct (Hnom m Hm) as [n [th ->]]. reflexivity.
   - intros fts Hr0 _ IH. rewrite app_subst_nom. apply WfRec; [exact Hr0 |].
     clear -IH. induction IH as [|p th Hp _ IHth]; constructor; [exact Hp | exact IHth].
+  - intros n D th Hnone Hop Hsat Honly _ IH. rewrite app_subst_nom.
+    eapply WfOpaque;[exact Hnone|exact Hop| |exact Honly|].
+    + exact(sat_typeonly _ _ _ _ _ Honly Hsat(map_fst_map_snd _ _)).
+    + clear -IH;induction IH;constructor;assumption.
 Qed.
 
 Lemma wf_ty_nom_args : forall Phi n th, wf_ty Sg Phi (TNom n th) -> Forall (fun p => wf_ty Sg Phi (snd p)) th.

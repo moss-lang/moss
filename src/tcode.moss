@@ -75,6 +75,7 @@ assume Std {
   fn tk_str(): Int { 58 }
   fn tk_integer(): Int { 59 }
   fn tk_decimal(): Int { 60 }
+  fn tk_underscore(): Int { 61 }
 
   fn token_code(t: Token): Int {
     match t {
@@ -139,6 +140,7 @@ assume Std {
       Str => tk_str(),
       Integer => tk_integer(),
       Decimal => tk_decimal(),
+      Underscore => tk_underscore(),
     }
   }
 }

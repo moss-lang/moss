@@ -759,8 +759,8 @@ Module FamilyVal.
     Proof.
       intros Hmain. constructor.
       - intros n D taup H.
-        destruct n as [|[|[|[|n]]]]; simpl in H; try discriminate;
-          injection H as <- <-; exists empty_ctx; split; constructor.
+        destruct n as [|[|[|[|n]]]]; simpl in H; try discriminate.
+        all: injection H as <- <-; exists empty_ctx; split; [apply WNil|cbn;intros x Bad;contradiction].
       - intros v D tauv H. destruct v as [|[|v]]; simpl in H; try discriminate.
         injection H as <- <-. exists empty_ctx. split; constructor.
       - intros f D S b H.
@@ -794,6 +794,7 @@ Module FamilyVal.
               | reflexivity | apply sat0_nil | apply smap_nil | reflexivity | reflexivity
               | reflexivity | reflexivity | apply BtNil].
           * constructor; [simpl; tauto | constructor].
+    - intros n D Impossible;discriminate Impossible.
     Qed.
   End Wf.
 
@@ -1246,8 +1247,8 @@ Module FamilyApply.
     Proof.
       intros Hmain. constructor.
       - intros n D taup H.
-        destruct n as [|[|[|[|n]]]]; simpl in H; try discriminate;
-          injection H as <- <-; exists empty_ctx; split; constructor.
+        destruct n as [|[|[|[|n]]]]; simpl in H; try discriminate.
+        all: injection H as <- <-; exists empty_ctx; split; [apply WNil|cbn;intros x Bad;contradiction].
       - intros v D tauv H. destruct v as [|[|v]]; simpl in H; try discriminate.
         injection H as <- <-. exists empty_ctx. split; constructor.
       - intros f D S b H.
@@ -1295,6 +1296,7 @@ Module FamilyApply.
           eexists. split.
           * eapply BtVal; [reflexivity | apply sat0_nil | exact loop_typed | apply BtNil].
           * constructor; [simpl; tauto | constructor].
+    - intros n D Impossible;discriminate Impossible.
     Qed.
 
     Lemma d84_of : wf_d84 S0.
