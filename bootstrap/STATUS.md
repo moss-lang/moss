@@ -34,6 +34,9 @@ The development includes proofs of:
   generated lambda/provider cases. These feed the remaining body-proof
   dispatcher in [`BodyPending.v`](theories/BodyPending.v); they do not yet
   establish soundness for every accepted bundle.
+- Actual source Bool selection for every successful elaboration, including
+  the absence case, with no pending body-soundness premises
+  ([`MainProgramBool.v`](theories/MainProgramBool.v)).
 - Completed source-function body proofs under explicit body-soundness and
   final-state premises ([`FnElabExec.v`](theories/FnElabExec.v)), whole-run
   generated-function frame receipts

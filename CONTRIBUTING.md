@@ -98,6 +98,15 @@ cd bootstrap
 dune build -j 2 theories/BodyPending.vo
 ```
 
+Keep Rocq checking within two minutes, including the full audit at integration
+checkpoints. Measure slow checks and investigate overruns rather than letting
+proof checking become an obstacle to iteration.
+
+On the local x86 Linux VM, keep full bootstrap runs within one hour. Start
+them periodically in the background and continue other work while they run.
+Record timings and investigate overruns; bootstrap completion should not
+block ongoing development.
+
 Use the full audit at integration checkpoints. Keep expensive stable
 computations and reusable witnesses separate from frequently edited proofs.
 

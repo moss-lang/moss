@@ -4,12 +4,14 @@
    them to be only the kernel's `Primitive` declarations (Rocq's primitive
    integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Certified Parse FastPath Prune SlotX FoldX
-  CachedClo CachedCloFacts LazyX LazyClo LazyInterpFacts LazyCloFacts LazyOracle XHeapC.
+  CachedClo CachedCloFacts LazyX LazyClo LazyInterpFacts LazyCloFacts LazyOracle XHeapC MainProgramBool.
 
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
 Definition certificate_roots :=
- (@NM.Certified.Certified.elaborate,
+ (@NM.MainProgramBool.main_program_bool,
+  @NM.MainProgramBool.elaborate_bool,
+  @NM.Certified.Certified.elaborate,
   @NM.Certified.elaborate_sx_reads,
   @NM.Certified.default_interface_laws,
   @NM.Certified.default_compatible,
