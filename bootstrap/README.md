@@ -216,7 +216,13 @@ out of fuel (`FastPath.fast_run`):
   ordered streams. When every type row is proper, the type bindings and
   proper-type projection share one list; malformed rows retain a separate
   projection so ordinary lookup and type lookup keep their exact behavior.
-  Instantiation builds that shared list directly. Captured environments retain those streams;
+  The type streams themselves are suspended: instantiation, append and
+  filtering run only if a type lookup observes them. This avoids allocating
+  unused type parameters when ordinary arithmetic helpers call one another.
+  Each forced stream still has exactly the reference list and lookup order.
+  Calls construct the final environment directly, with a single suspended
+  concatenation for the common proper-type case.
+  Captured environments retain those streams;
   entering a closure does not rebuild its type projection. Type substitution
   is deferred until a cast or allocating primitive observes it, and its
   result is memoized by Rocq's standard coinductive extraction to OCaml

@@ -21,7 +21,7 @@ Proof.
 Qed.
 Lemma flookup_merge : forall a b i,
  flookup i(fmerge a b)=match flookup i a with Some en=>Some en|None=>flookup i b end.
-Proof. intros [av atp am][bv btp bm]i;destruct i;cbn[flookup fmerge];auto using tlookup_app,dlookup_app. Qed.
+Proof. intros [av atp am][bv btp bm]i;destruct i;cbn[flookup fmerge];auto using tlookup_app,dlookup_app;rewrite force_append;apply tlookup_app. Qed.
 Lemma ground_exact : forall tau get s,
  (forall t,get t=lookup_subst t s)->ground get tau=Audit.app_subst s tau.
 Proof.
@@ -54,7 +54,7 @@ with envrel : fenv->xdenv->Prop:=
 | ERel : forall fe d,
  (forall i,flookup i fe=None->lookup_xdenv i d=None)->
  (forall i a,flookup i fe=Some a->exists b,lookup_xdenv i d=Some b/\erel a b)->
- (forall t,tyrel(tlookup t(meta fe))(lookup_subst t(xdtypes d)))->envrel fe d.
+ (forall t,tyrel(tlookup t(force_rows(meta fe)))(lookup_subst t(xdtypes d)))->envrel fe d.
 Definition orel(a:option fentry)(b:option xdentry):Prop:=match a,b with
  |Some x,Some y=>erel x y|None,None=>True|_,_=>False end.
 Lemma envrel_lookup : forall fe d i,envrel fe d->orel(flookup i fe)(lookup_xdenv i d).
@@ -65,10 +65,10 @@ Proof.
  - rewrite(Hn i E);exact I.
 Qed.
 Lemma envrel_meta : forall fe d,envrel fe d->forall t,
- tyrel(tlookup t(meta fe))(lookup_subst t(xdtypes d)).
+ tyrel(tlookup t(force_rows(meta fe)))(lookup_subst t(xdtypes d)).
 Proof. intros fe d H;inversion H;assumption. Qed.
 Lemma envrel_intro : forall fe d,
- (forall t,tyrel(tlookup t(meta fe))(lookup_subst t(xdtypes d)))->
+ (forall t,tyrel(tlookup t(force_rows(meta fe)))(lookup_subst t(xdtypes d)))->
  (forall i,orel(flookup i fe)(lookup_xdenv i d))->envrel fe d.
 Proof.
  intros fe d Ht H;constructor.
@@ -85,8 +85,8 @@ Lemma envrel_add : forall fe d i a b,
 Proof.
  intros [vs ts ms]d i a b Ha Hd;apply envrel_intro.
  - intro key;pose proof(envrel_meta Hd key)as Types.
-   destruct i;inversion Ha;subst;cbn[meta fadd xdtypes lookup_subst tlookup];try exact Types.
-   destruct ms;cbn[meta option_map tlookup]in *;destruct(Nat.eqb key t);[constructor|exact Types|constructor|exact Types].
+   destruct i;inversion Ha;subst;cbn[meta fadd xdtypes lookup_subst tlookup force_rows defer_cons];try exact Types.
+   destruct ms;cbn[meta option_map tlookup force_rows defer_cons]in *;destruct(Nat.eqb key t);[constructor|exact Types|constructor|exact Types].
  - intro j;rewrite flookup_fadd;cbn[lookup_xdenv].
    destruct(item_eqb j i);[exact Ha|apply envrel_lookup;exact Hd].
 Qed.
@@ -100,7 +100,7 @@ Lemma envrel_merge : forall fa a fb b,
  envrel fa a->envrel fb b->envrel(fmerge fa fb)(a++b).
 Proof.
  intros [av atp am]a[bv btp bm]b A B;apply envrel_intro.
- - intro t;destruct am,bm;cbn[fmerge meta];rewrite tlookup_app,FastX.xdtypes_app,lookup_subst_app;
+ - intro t;destruct am,bm;cbn[fmerge meta];rewrite force_append,tlookup_app,FastX.xdtypes_app,lookup_subst_app;
    apply tyrel_choice;[apply(envrel_meta A)|apply(envrel_meta B)|apply(envrel_meta A)|apply(envrel_meta B)|apply(envrel_meta A)|apply(envrel_meta B)|apply(envrel_meta A)|apply(envrel_meta B)].
  - intro i;rewrite flookup_merge,FastX.lookup_xdenv_app.
    pose proof(envrel_lookup i A)as L.
@@ -150,7 +150,7 @@ Qed.
 Lemma tyrel_orel : forall a b,tyrel a b->orel a(option_map XDType b).
 Proof. intros a b H;destruct H;cbn;[exact I|constructor]. Qed.
 Lemma type_rows_env_rel : forall rows types,
- (forall t,tyrel(tlookup t rows)(lookup_subst t types))->
+ (forall t,tyrel(tlookup t(force_rows rows))(lookup_subst t types))->
  envrel(FEnv [] rows None)(FastX.ftype_pairs types).
 Proof.
  intros rows types Types;apply envrel_intro.
@@ -182,15 +182,40 @@ Proof.
 Qed.
 Lemma finst_rel : forall fe d th,envrel fe d->envrel(finst fe th)(xinst d th).
 Proof.
- intros fe d th H;rewrite finst_fold_exact, xinst_map;induction th as[|[t tau]th IH];cbn[finst fold_right map fst snd].
- - apply envrel_empty.
- - apply envrel_add;[rewrite <-(deferred_ground_rel tau H);constructor|exact IH].
+ intros fe d th H;unfold finst.
+ assert(Pairs:xinst d th=FastX.ftype_pairs(map(fun p=>(fst p,xground d(snd p)))th)).
+ {rewrite xinst_map;unfold FastX.ftype_pairs;rewrite map_map;reflexivity. }
+ rewrite Pairs;clear Pairs.
+ apply type_rows_env_rel;intro t;rewrite force_inst_rows.
+ induction th as[|[u tau]th IH];cbn[tlookup lookup_subst map fst snd];[constructor|].
+ destruct(Nat.eqb t u);[|exact IH].
+ rewrite <-(deferred_ground_rel tau H);constructor.
+Qed.
+Lemma fcall_env_lookup : forall P d th dc i,
+ flookup i(fcall_env P d th dc)=
+ flookup i(if xreify P then fmerge(finst d th)(fattach_types d dc)else dc).
+Proof.
+ intros P d th [values types more]i;unfold fcall_env;destruct(xreify P);[|reflexivity].
+ destruct i;cbn[flookup fmerge finst fattach_types];try reflexivity.
+Qed.
+Lemma fcall_env_meta : forall P d th dc,
+ force_rows(meta(fcall_env P d th dc))=
+ force_rows(meta(if xreify P then fmerge(finst d th)(fattach_types d dc)else dc)).
+Proof.
+ intros P d th [values types more];unfold fcall_env;destruct(xreify P);[|reflexivity].
+ destruct more;cbn[fmerge finst fattach_types meta option_map];
+ rewrite force_call_rows,!force_append,force_inst_rows;reflexivity.
 Qed.
 Lemma fcall_env_rel : forall P fe d th fc dc,envrel fe d->envrel fc dc->
  envrel(fcall_env P fe th fc)(xcall_env P d th dc).
 Proof.
- intros P fe d th fc dc H Hc;unfold fcall_env,xcall_env;destruct(xreify P);[|exact Hc].
- apply envrel_merge;[apply finst_rel;exact H|apply fattach_types_rel;assumption].
+ intros P fe d th fc dc H Hc.
+ assert(Old:envrel(if xreify P then fmerge(finst fe th)(fattach_types fe fc)else fc)(xcall_env P d th dc)).
+ {unfold xcall_env;destruct(xreify P);[|exact Hc].
+  apply envrel_merge;[apply finst_rel;exact H|apply fattach_types_rel;assumption]. }
+ apply envrel_intro.
+ - intro t;rewrite fcall_env_meta;apply envrel_meta;exact Old.
+ - intro i;rewrite fcall_env_lookup;apply envrel_lookup;exact Old.
 Qed.
 Lemma fapply_env_rel : forall P fe d h th fc dc,envrel fe d->envrel fc dc->
  envrel(fapply_env P fe h th fc)(xapply_env P d h th dc).
@@ -230,8 +255,8 @@ Lemma fresult_types_rel : forall Dr fe d,envrel fe d->
 Proof.
  intros Dr fe d H;unfold fresult_types,xresult_types.
  rewrite FastX.xtype_env_pairs,FastX.xresult_pairs.
- apply type_rows_env_rel;intro t.
- rewrite (tlookup_filter_keys (fun u=>existsb(item_eqb(ITy u))Dr) t(meta fe)).
+ apply type_rows_env_rel;intro t;rewrite force_result_rows.
+ rewrite (tlookup_filter_keys (fun u=>existsb(item_eqb(ITy u))Dr) t(force_rows(meta fe))).
  rewrite (lookup_subst_filter_keys (fun u=>existsb(item_eqb(ITy u))Dr) t(xdtypes d)).
  destruct(existsb(item_eqb(ITy t))Dr);[apply envrel_meta;exact H|constructor].
 Qed.
