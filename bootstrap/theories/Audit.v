@@ -4330,8 +4330,8 @@ Definition InitialTypes(W:world)(C:cx)(types:subst):Prop:=
  forall key,nlook key types=option_map(app_subst(initial_machine_subst W base))(nlook key(c_ty C)).
 
 (* The relation.  [D16]: every defined fn is elaborated, reached or not. *)
-Definition Elaborates (b : bundle) (P : xprogram) : Prop :=
-  exists W, WorldOf b W /\
+Definition ElaboratesIn (b : bundle) (W : world) (P : xprogram) : Prop :=
+  WorldOf b W /\
     (forall f d rcv n ps rt body, w_decl W f = Some d -> d_ast d = ADFn rcv n ps rt (Some body) ->
        FnElab W P f) /\
     (* main: the entry's `main`, a defined fn assuming only what the
@@ -4346,8 +4346,205 @@ Definition Elaborates (b : bundle) (P : xprogram) : Prop :=
      LangSym W "bool" NSName "False" (xo_false P)
      \/ ((forall s, ~ LangSym W "bool" NSName "Bool" s) /\ xo_bool P = 0 /\ xo_true P = 0 /\ xo_false P = 0)).
 
+Definition Elaborates (b : bundle) (P : xprogram) : Prop :=
+  exists W, ElaboratesIn b W P.
+
 End Elaboration.
 
+
+(* The platform's source signatures. These checks relate library declarations
+   to the machine operations supplied at linking, using the same world as
+   elaboration. A matching name alone is insufficient. *)
+Module Platform.
+Import Input Elaboration.
+Local Open Scope string_scope.
+Local Open Scope list_scope.
+
+Definition MachineType (W : world) (name : string) (t : ty) : Prop :=
+  exists symbol, LangSym W "wasm" NSName name symbol /\
+    kind_sym W symbol = Some DKType /\ t = TAbs symbol.
+Definition NominalType (W : world) (library name : string) (t : ty) : Prop :=
+  exists symbol args, LangSym W library NSName name symbol /\ t = TNom symbol args.
+
+Definition ValueType (W : world) (t : ty) (shape : xty) : Prop :=
+  match shape with
+  | XTI32 => MachineType W "I32" t
+  | XTI64 => MachineType W "I64" t
+  | XTF32 => MachineType W "F32" t
+  | XTF64 => MachineType W "F64" t
+  | XTUnit => t = TUnit
+  | XTBool => exists symbol, LangSym W "bool" NSName "Bool" symbol /\ t = TNom symbol []
+  | XTAddr => NominalType W "wasm" "Addr" t
+  | XTTag => exists symbol args, t = TNom symbol args
+  end.
+Definition Signature (W : world) (params : list ty) (result : ty)
+    (signature : option (list xty * xty)) : Prop :=
+  exists inputs output, signature = Some (inputs, output) /\
+    Forall2 (ValueType W) params inputs /\ ValueType W result output.
+
+Definition ReferenceType (W : world) (array : bool) (t held : ty) : Prop :=
+  exists symbol parameter args,
+    LangSym W "wasm" NSName (if array then "Array" else "Ref") symbol /\
+    LangSym W "wasm" NSName (if array then "Arrayed" else "Boxed") parameter /\
+    t = TNom symbol args /\ nlook parameter args = Some held.
+
+Definition GCSignature (W : world) (operation : prim) (params : list ty)
+    (result : ty) : Prop :=
+  match operation, params with
+  | PBox symbol, [held] => LangSym W "wasm" NSName "Ref" symbol /\ ReferenceType W false result held
+  | PDeref, [reference] => ReferenceType W false reference result
+  | PRefSet, [reference; held] => ReferenceType W false reference held /\ result = TUnit
+  | PArrNew symbol, [held; count] => LangSym W "wasm" NSName "Array" symbol /\
+      MachineType W "I32" count /\ ReferenceType W true result held
+  | PArrLen, [array] => MachineType W "I32" result /\ exists held, ReferenceType W true array held
+  | PArrGet, [array; index] => MachineType W "I32" index /\ ReferenceType W true array result
+  | PArrSet, [array; index; held] => MachineType W "I32" index /\
+      ReferenceType W true array held /\ result = TUnit
+  | PArrFill, [array; index; held; count] => MachineType W "I32" index /\
+      MachineType W "I32" count /\ ReferenceType W true array held /\ result = TUnit
+  | PArrCopy, [dst; di; src; si; count] => MachineType W "I32" di /\
+      MachineType W "I32" si /\ MachineType W "I32" count /\ result = TUnit /\
+      exists held, ReferenceType W true dst held /\ ReferenceType W true src held
+  | _, _ => False
+  end.
+
+Definition PrimitiveSignature (W : world) (operation : prim)
+    (params : list ty) (result : ty) : Prop :=
+  match operation with
+  (* These operations never return a value, so impose no result type. *)
+  | PUnsupported _ => True
+  | PUnreachable => params = []
+  | _ => Signature W params result (prim_sig operation) \/
+      Signature W params result (prim_msig operation) \/ GCSignature W operation params result
+  end.
+
+Definition AtKey (W : world) (C : cx) (key : item) (operation : prim) : Prop :=
+  match key with
+  | IFn f => exists signature, nlook f (c_fns C) = Some signature /\
+      PrimitiveSignature W operation (sg_params signature) (sg_ret signature)
+  | IMth receiver method _ => exists signature,
+      mlook receiver method (c_mths C) = Some signature /\
+      PrimitiveSignature W operation (receiver :: sg_params signature) (sg_ret signature)
+  | _ => False
+  end.
+
+(* The platform families provide GC methods or methods of Addr. *)
+Definition MethodPrimitive (W : world) (key : item) (operation : prim) : Prop :=
+  exists receiver method theta d form name params result body,
+    key = IMth receiver method theta /\ w_decl W method = Some d /\
+    d_ast d = ADFn form name params result body /\
+    match form with
+    | RDetached =>
+        (name = "boxed" /\ exists symbol, LangSym W "wasm" NSName "Ref" symbol /\ operation = PBox symbol) \/
+        (name = "arrayed" /\ exists symbol, LangSym W "wasm" NSName "Array" symbol /\ operation = PArrNew symbol)
+    | RAttached path => exists symbol, resolve_sym W (d_mod d) [path] = Some symbol /\
+        ((LangSym W "wasm" NSName "Ref" symbol /\
+            ((name = "deref" /\ operation = PDeref) \/ (name = "set" /\ operation = PRefSet))) \/
+         (LangSym W "wasm" NSName "Array" symbol /\
+            ((name = "length" /\ operation = PArrLen) \/ (name = "get" /\ operation = PArrGet) \/
+             (name = "set" /\ operation = PArrSet) \/ (name = "fill" /\ operation = PArrFill) \/
+             (name = "copy" /\ operation = PArrCopy))) \/
+         (LangSym W "wasm" NSName "Addr" symbol /\ prim_of_name name = Some operation))
+    | RPlain => False
+    end.
+
+Definition Family (W : world) (P : xprogram) (source code : usym) : Prop :=
+  exists inputs needs outputs keys bindings,
+    FunCtx W source inputs needs /\
+    ProvideResult W source inputs (fun t => TAbs t) outputs keys /\
+    funbody_of P code = Some (keys, bindings) /\
+    Forall2 (fun key binding => exists operation,
+      binding = XBPrim key operation /\ MethodPrimitive W key operation /\
+      AtKey W outputs key operation) keys bindings.
+
+Definition Entry (W : world) (P : xprogram) (C : cx)
+    (key : item) (value : xdentry) : Prop :=
+  match key, value with
+  | IVal value, XDVal (XVI32 _) => exists t,
+      nlook value (c_vals C) = Some t /\ MachineType W "I32" t
+  | IFn _, XDPrim operation => AtKey W C key operation
+  | IFun source, XDFun code [] [] => Family W P source code
+  | _, _ => False
+  end.
+
+(* These source types have fixed runtime representations. Check their
+   declarations as well as the signatures that mention them. *)
+Definition abstract_names : list string :=
+  ["I32"; "I64"; "F32"; "F64"; "StructRef"; "ArrayRef"; "Memory"; "Boxed"; "Arrayed"].
+Definition TagLayout (W : world) (name parameter handle : string) : Prop :=
+  forall symbol, LangSym W "wasm" NSName name symbol ->
+  exists param raw rest,
+    LangSym W "wasm" NSName parameter param /\
+    LangSym W "wasm" NSName handle raw /\ kind_sym W symbol = Some DKTag /\
+    w_reqs W symbol = param :: rest /\
+    PayloadOf W symbol (map (fun t => (t, TAbs t)) (w_reqs W symbol)) (TAbs raw).
+Definition Layouts (W : world) : Prop :=
+  (forall name symbol, In name abstract_names -> LangSym W "wasm" NSName name symbol ->
+    kind_sym W symbol = Some DKType) /\
+  (forall left right symbol, In left abstract_names -> In right abstract_names ->
+    LangSym W "wasm" NSName left symbol -> LangSym W "wasm" NSName right symbol -> left = right) /\
+  TagLayout W "Ref" "Boxed" "StructRef" /\
+  TagLayout W "Array" "Arrayed" "ArrayRef" /\
+  TagLayout W "Addr" "Memory" "I32" /\
+  (forall symbol, LangSym W "bool" NSName "Bool" symbol ->
+    exists truth falsity,
+      LangSym W "bool" NSName "True" truth /\ LangSym W "bool" NSName "False" falsity /\
+      kind_sym W symbol = Some DKTag /\ kind_sym W truth = Some DKUnit /\
+      kind_sym W falsity = Some DKUnit /\ truth <> falsity /\ w_reqs W symbol = [] /\
+      (PayloadOf W symbol [] (TUnion [TNom truth []; TNom falsity []]) \/
+       PayloadOf W symbol [] (TUnion [TNom falsity []; TNom truth []]))).
+
+Definition Linked (W : world) (P : xprogram) : Prop :=
+  Layouts W /\
+  exists context needs types entries,
+    CtxOf W (xo_main P) context needs /\ InitialTypes W context types /\
+    xo_env P = xinst [] types ++ entries /\
+    Forall (fun entry => Entry W P context (fst entry) (snd entry)) entries.
+
+Definition Ready (P : xprogram) : Prop :=
+  exists bundle world, ElaboratesIn bundle world P /\ Linked world P.
+End Platform.
+
+(* The operations installed anywhere in a program, including captured
+   environments and platform-family bodies. Extra interface operations are
+   harmless; an interface must supply at least these requirements. *)
+Fixpoint expression_primitives (expression : xexpr) : list prim :=
+  match expression with
+  | XVar _ | XUnit | XVl _ | XBreak => []
+  | XTag _ _ e | XBindTy _ _ e | XBindFn _ _ _ e | XBindMth _ _ _ _ _ e
+  | XBindFun _ _ _ _ e | XBindFunA _ _ _ e | XApply _ _ _ e | XApplyR _ _ _ e
+  | XAssign _ e | XLoop e | XReturn e | XField e _ | XBindFunSym _ _ e
+  | XBindFunCopy _ _ e | XConst _ e => expression_primitives e
+  | XCallD _ _ _ args | XCallA _ args => flat_map expression_primitives args
+  | XMeth receiver _ _ args => expression_primitives receiver ++ flat_map expression_primitives args
+  | XMatch e arms => expression_primitives e ++ flat_map (fun arm => match arm with (_, _, body) => expression_primitives body end) arms
+  | XLet _ a b | XBindVal _ a b | XSeq a b | XWhile a b => expression_primitives a ++ expression_primitives b
+  | XIf a b c => expression_primitives a ++ expression_primitives b ++ expression_primitives c
+  | XRec fields => flat_map (fun field => expression_primitives (snd field)) fields
+  | XMatchP e arms => expression_primitives e ++ flat_map (fun arm => expression_primitives (snd arm)) arms
+  | XApplyBr _ branches e =>
+      flat_map (fun branch => match branch with (_, bindings, _) => flat_map binding_primitives bindings end) branches
+      ++ expression_primitives e
+  | XBindPrim _ operation e => operation :: expression_primitives e
+  end
+with binding_primitives (binding : xbind) : list prim :=
+  match binding with
+  | XBVal _ e => expression_primitives e
+  | XBApplyBr _ branches =>
+      flat_map (fun branch => match branch with (_, bindings, _) => flat_map binding_primitives bindings end) branches
+  | XBPrim _ operation => [operation]
+  | _ => []
+  end.
+Fixpoint entry_primitives (entry : xdentry) : list prim :=
+  match entry with
+  | XDPrim operation | XDPrimAt operation _ => [operation]
+  | XDClo _ captured | XDFun _ _ captured => flat_map (fun entry => entry_primitives (snd entry)) captured
+  | _ => []
+  end.
+Definition required_primitives (program : xprogram) : list prim :=
+  flat_map (fun fn => expression_primitives (snd fn)) (xo_fns program) ++
+  flat_map (fun fn => flat_map binding_primitives (snd (snd fn))) (xo_funs program) ++
+  flat_map (fun entry => entry_primitives (snd entry)) (xo_env program).
 
 Definition program_of (p : xprogram) (argv : list (list int)) (rd : list int -> option (list int)) : xprog :=
   mkXProg (fun f => Elaboration.nlook f (xo_fns p)) (fun u => Elaboration.nlook u (xo_funs p))
@@ -4465,30 +4662,36 @@ Definition source_read (source : Source) (name : string) : option string :=
       end
   end.
 
-(* The host chooses its machine-state representation. Locals and closures
-   are maintained by XSem; primitive-managed memory and external effects
-   belong to State. *)
-Module Type HOST_STATE.
+(* The concrete host chooses the primitive-managed state and operations.
+   Public keeps arguments and the read-only file snapshot in the world too,
+   so the default interface is one fixed value for every invocation. *)
+Module Type HOST.
   Parameter State : Type.
-End HOST_STATE.
+  Parameter primitive : xprog -> prim -> list xvalue -> State -> xout * State.
+  Parameter heap_ok : Heap.hty -> State -> Prop.
+End HOST.
 
-Module Public (Host : HOST_STATE).
-  Definition String := string.
-  Definition State := Host.State.
-
-  Record Interface := HostInterface {
+Module Public (Host : HOST).
+  Record State := World {
     arguments : list (list int);
     read_file : list int -> option (list int);
-    primitive : xprog -> prim -> list xvalue -> State -> xout * State;
-    heap_ok : Heap.hty -> State -> Prop
+    external : Host.State
   }.
 
-  Definition runtime (program : Program) (interface : Interface) : xprog :=
-    program_of program (arguments interface) (read_file interface).
+  Record Interface := HostInterface {
+    supports : prim -> bool;
+    primitive : xprog -> prim -> list xvalue -> Host.State -> xout * Host.State;
+    heap_ok : Heap.hty -> Host.State -> Prop
+  }.
 
-  (* A valid host obeys the primitive signatures and the heap laws. These
-     are explicit assumptions on the supplied operations, not assumptions
-     that the program itself executes safely. *)
+  (* Unsupported operations have a defined stopping outcome in the existing
+     primitive model; providing them does not promise a returning result. *)
+  Definition default_interface : Interface :=
+    HostInterface (fun _ => true) Host.primitive Host.heap_ok.
+
+  Definition runtime (program : Program) (initial : State) : xprog :=
+    program_of program (arguments initial) (read_file initial).
+
   Definition primitive_result P result (out : xout) : Prop :=
     match out with
     | XOk value => xvty P value result
@@ -4496,19 +4699,20 @@ Module Public (Host : HOST_STATE).
     | _ => False
     end.
 
-  Definition ValidInterface (program : Program) (interface : Interface) : Prop :=
-    let P := runtime program interface in
+  (* Laws of supplied operations, under the platform's audited signatures.
+     The source-side agreement with these signatures is Platform.Linked. *)
+  Definition interface_laws (P : xprog) (interface : Interface) : Prop :=
     let step := primitive interface P in
     let valid_heap := heap_ok interface in
     (forall p params result values state,
-      prim_sig p = Some (params, result) ->
+      supports interface p = true -> prim_sig p = Some (params, result) ->
       Forall2 (xvty P) values params ->
       primitive_result P result (fst (step p values state))) /\
     (forall p params result values state,
-      prim_msig p = Some (params, result) ->
+      supports interface p = true -> prim_msig p = Some (params, result) ->
       Forall2 (xvty P) values params ->
       primitive_result P result (fst (step p values state))) /\
-    (forall code values state,
+    (forall code values state, supports interface (PUnsupported code) = true ->
       fst (step (PUnsupported code) values state) = XUns code) /\
     (forall typing weaker state,
       valid_heap typing state ->
@@ -4519,9 +4723,11 @@ Module Public (Host : HOST_STATE).
       valid_heap weaker state) /\
     (forall state, valid_heap (fun _ => None) state) /\
     (forall p values state typing,
+      supports interface p = true ->
       Heap.is_gc p = false -> valid_heap typing state ->
       valid_heap typing (snd (step p values state))) /\
     (forall p values state typing predicate,
+      supports interface p = true ->
       valid_heap typing state -> Heap.gc_pre typing p values predicate ->
       match step p values state with
       | (XOk value, next) =>
@@ -4531,12 +4737,16 @@ Module Public (Host : HOST_STATE).
       | _ => False
       end).
 
-  Definition ValidState (interface : Interface) (state : State) : Prop :=
-    heap_ok interface (fun _ => None) state.
+  Definition Compatible (program : Program) (interface : Interface) : Prop :=
+    Platform.Ready program /\
+    (forall operation, In operation (required_primitives program) -> supports interface operation = true) /\
+    forall argv read, interface_laws (program_of program argv read) interface.
 
-  (* Outcomes preserve the final state even on a trap or explicit exit.
-     Unsupported marks a limit of the primitive model. Wrong represents
-     an internal error and is the outcome excluded by safety. *)
+  Definition ValidState (interface : Interface) (state : State) : Prop :=
+    heap_ok interface (fun _ => None) (external state).
+
+  (* Traps, exits and unsupported primitives are explicit outcomes. Wrong
+     represents an internal error, including a missing interface operation. *)
   Inductive Outcome :=
   | Returned : xvalue -> Outcome
   | Exited : int -> Outcome
@@ -4549,19 +4759,18 @@ Module Public (Host : HOST_STATE).
     final_state : State
   }.
 
-  (* A partial computation is observed at a finite fuel budget. None means
-     that this budget has not produced an outcome. Wrong is an explicit
-     result, so it cannot be confused with nontermination. *)
+  (* None means this finite observation has not produced an outcome. *)
   Definition Partial (A : Type) := nat -> option A.
+  Definition e_missing_primitive := 15.
 
-  (* The interface travels with the state so that the reference evaluator
-     can call the supplied operations. It is preserved by every primitive. *)
   Module ReferenceHost <: PRIM_SEMANTICS.
     Definition mstate := (Interface * State)%type.
     Definition run_prim P p values (machine : mstate) :=
       let '(interface, state) := machine in
-      let '(out, next) := primitive interface P p values state in
-      (out, (interface, next)).
+      if supports interface p then
+        let '(out, next) := primitive interface P p values (external state) in
+        (out, (interface, World (arguments state) (read_file state) next))
+      else (XErr e_missing_primitive, machine).
   End ReferenceHost.
   Module Reference := XSem ReferenceHost.
 
@@ -4577,15 +4786,14 @@ Module Public (Host : HOST_STATE).
     | XFuel => None
     end.
 
-  (* These predicates specify behavior independently of the implementation
-     functions build and run. The prelude is fixed by the implementation's
-     configuration and is resolved through the same Source as the entry. *)
+  (* The build target is this platform. Source declarations and primitive
+     bindings are checked against one shared static reading of the bundle.
+     The prelude is fixed configuration and is read through Source too. *)
   Definition Builds (prelude : Path) (source : Source) (entry : Path)
       (program : Program) : Prop :=
-    exists bundle,
-      Loader.Bundled (source_read source) "/" (path_text prelude)
-        (path_text entry) bundle /\
-      Elaboration.Elaborates bundle program.
+    exists bundle world,
+      Loader.Bundled (source_read source) "/" (path_text prelude) (path_text entry) bundle /\
+      Elaboration.ElaboratesIn bundle world program /\ Platform.Linked world program.
 
   Definition Admissible (prelude : Path) (program : Program) : Prop :=
     exists source entry, Builds prelude source entry program.
@@ -4593,14 +4801,13 @@ Module Public (Host : HOST_STATE).
   Definition Runs (program : Program) (interface : Interface)
       (initial : State) (result : Execution) : Prop :=
     exists fuel,
-      observe (Reference.run_main fuel (runtime program interface)
+      observe (Reference.run_main fuel (runtime program initial)
         (xo_main program) (xo_env program) (interface, initial)) = Some result.
 
-  (* The five public obligations. Implementations may report richer error
-     messages internally; build exposes success or failure here.
-     Build completeness promises acceptance, allowing the implementation
-     to choose its own fresh symbols and elaborated representation.
-     These end-to-end obligations remain pending. *)
+  (* The five public obligations remain pending. Completeness covers builds
+     for this platform and permits the implementation's own fresh symbols.
+     Compatibility with the default interface follows from building;
+     other compatible interfaces are covered by the same run/safety claims. *)
   Module Type CORRECT.
     Parameter prelude : Path.
     Parameter build : Source -> Path -> option Program.
@@ -4608,7 +4815,7 @@ Module Public (Host : HOST_STATE).
 
     Axiom build_sound : forall source entry program,
       build source entry = Some program ->
-      Builds prelude source entry program.
+      Builds prelude source entry program /\ Compatible program default_interface.
 
     Axiom build_complete : forall source entry,
       (exists program, Builds prelude source entry program) ->
@@ -4616,23 +4823,21 @@ Module Public (Host : HOST_STATE).
 
     Axiom run_sound : forall program interface initial,
       Admissible prelude program ->
-      ValidInterface program interface -> ValidState interface initial ->
+      Compatible program interface -> ValidState interface initial ->
       forall fuel result,
         run program interface initial fuel = Some result ->
         Runs program interface initial result.
 
     Axiom run_complete : forall program interface initial,
       Admissible prelude program ->
-      ValidInterface program interface -> ValidState interface initial ->
+      Compatible program interface -> ValidState interface initial ->
       forall result, Runs program interface initial result ->
         exists fuel, run program interface initial fuel = Some result.
 
-    (* Quantification over every finite observation covers internal errors
-       reached before an otherwise nonterminating execution. *)
     Axiom safety : forall source entry program,
       build source entry = Some program ->
       forall interface initial,
-      ValidInterface program interface -> ValidState interface initial ->
+      Compatible program interface -> ValidState interface initial ->
       forall fuel code final,
         run program interface initial fuel <> Some (Result (Wrong code) final).
   End CORRECT.

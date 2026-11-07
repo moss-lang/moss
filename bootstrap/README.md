@@ -262,14 +262,29 @@ contract. It defines source files, syntax, elaboration, reference execution,
 the host interface laws, and both semantic predicates in the same file.
 Its final module type, **Public.CORRECT**, has exactly five obligations:
 
-- **build_sound**: every successful build satisfies Builds.
+- **build_sound**: every successful build satisfies Builds and produces a
+  program compatible with the fixed default interface.
 - **build_complete**: every source admitted by Builds is accepted.
-- **run_sound**: for an admissible program and valid host/state, every
+- **run_sound**: for an admissible program, compatible interface and valid state, every
   terminating implementation result satisfies Runs.
 - **run_complete**: under those conditions, every terminating Runs
   execution is reproduced.
-- **safety**: building a program and supplying a valid host interface and
+- **safety**: building a program and supplying a compatible interface and
   state excludes an internal Wrong result at every finite observation.
+
+Builds includes platform linking: source declarations, primitive signatures,
+GC and memory layouts, and generated platform-family bindings must agree
+under the same static reading as elaboration. Compatible additionally
+requires the interface to supply every installed primitive and satisfy the
+primitive and heap laws. Arguments and the read-only file snapshot belong
+to the world state, so the default interface is fixed across invocations.
+
+[DefaultRuntime.v](theories/DefaultRuntime.v) instantiates the public model
+with the executable's primitive implementation and heap invariant. It proves
+the default interface laws and compatibility for platform-linked programs.
+Its DefaultGuarantees functor derives default-interface safety from the
+five public obligations, without an extra compatibility premise for callers.
+These bindings are exposed by Certified.v and included in the assumption audit.
 
 These end-to-end obligations are pending. Fuel represents finite
 observations of partial execution; fuel exhaustion is distinct from an

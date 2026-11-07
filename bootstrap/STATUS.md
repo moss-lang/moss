@@ -6,7 +6,11 @@ universal runtime typing certificate remain open**. The public contract is
 [`Audit.Public.CORRECT`](theories/Audit.v): build soundness and completeness,
 run soundness and completeness, and safety. These five end-to-end
 obligations remain pending. Audit.v defines Builds, Runs and their semantic
-dependencies directly.
+dependencies directly. Building also promises compatibility with the fixed
+default interface; execution and safety quantify over any compatible interface.
+[DefaultRuntime.v](theories/DefaultRuntime.v) proves the concrete default
+interface's primitive and heap laws. The source-to-platform link guarantee
+remains part of the pending build soundness proof.
 
 [Certified.v](theories/Certified.v) binds the existing component results in
 [ComponentContracts.v](theories/ComponentContracts.v).

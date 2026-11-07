@@ -11,6 +11,8 @@ From NM Require Certified Parse FastPath Prune SlotX FoldX
 Definition certificate_roots :=
  (@NM.Certified.Certified.elaborate,
   @NM.Certified.elaborate_sx_reads,
+  @NM.Certified.default_interface_laws,
+  @NM.Certified.default_compatible,
   @NM.Certified.Certified.eval_deterministic,
   @NM.Certified.Certified.interp_sound,
   @NM.Certified.Certified.interp_complete,

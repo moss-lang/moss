@@ -9,10 +9,17 @@ From NM Require Import Audit CoreMoss MossX Sx Elab Specialization RelFacts.
 From NM Require FastPath WorldSound ElabFrame ReqsTotal MethodLookup XBridgeCtx.
 From NM Require XTyping XSafety XExample XHeapC.
 From NM Require Parse FrontEnd FrontEndComplete FrontEndLoader DumpRoundTrip.
-From NM Require EarlyCertified.
+From NM Require EarlyCertified DefaultRuntime.
 Import ListNotations.
 
 Module Certified := EarlyCertified.Certified.
+
+(* The fixed public platform uses the same primitives and heap invariant as
+   the executable. The generic build/run contract remains unimplemented. *)
+Module PublicRuntime := DefaultRuntime.Model.
+Definition default_interface := DefaultRuntime.default_interface.
+Definition default_interface_laws := DefaultRuntime.default_interface_laws.
+Definition default_compatible := DefaultRuntime.default_compatible.
 
 (* Toward ComponentContracts.COMPLETE.elaborate_sound, step 1: the static
    world the elaborator's loader reads a bundle as satisfies every condition
