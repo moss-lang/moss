@@ -38,8 +38,7 @@ Proof.
  intros source raw result[Reified Typed];eapply typed_runtime_never_err;exact Typed.
 Qed.
 
-(* Remaining construction, not assumed here: every actual
-   [elaborate_with_metadata bundle = Good(raw,source)] must yield a result
-   satisfying [reified_typing_certificate source raw result]. Only after
-   that totality-and-typing theorem is proved can the driver and COMPLETE
-   statement quantify the runtime elaborator instead of the raw relation. *)
+(* Audit.SOURCE_RUNTIME_COMPLETE.source_runtime_certificate states the
+   remaining universal construction obligation. For every successful source
+   elaboration, lowering must succeed and supply the runtime typing
+   certificate used above. Certified.v does not implement that contract. *)

@@ -4,7 +4,7 @@
 (* operations and guarantees to the public contracts.                       *)
 (*                                                                           *)
 (* The module ascriptions below bind the checked contracts in Audit.v.      *)
-(* Pending: the rest of Audit.COMPLETE, i.e. exactly                         *)
+(* Pending: Audit.COMPLETE and Audit.SOURCE_RUNTIME_COMPLETE.              *)
 (*   - elaborate_sound      (elaborate b = Good p -> Elaborates b p); its    *)
 (*                           first step, the loader's reading, is bound     *)
 (*                           below (world_reads, WorldSound.v)              *)
@@ -12,6 +12,8 @@
 (*   - accepted_never_err   (accepted programs never get stuck, MossX)       *)
 (*   - elaborated_typed     (core-fragment output is Typed; the bridge from  *)
 (*                           the elaborator to typed_safe)                   *)
+(*   - source_runtime_certificate (accepted source lowers to a typed       *)
+(*                                 executable runtime program)             *)
 (* There is no Admitted, Axiom or Parameter in this file, and COMPLETE is    *)
 (* not claimed: `Certified` is ascribed PROVED_NOW only.                     *)
 (* ------------------------------------------------------------------------ *)
@@ -98,18 +100,6 @@ Proof. intro x. reflexivity. Qed.
 
 (* The other executable root. *)
 Definition run_main := MossX.XS.run_main.
-
-Module DumpCertified <: DUMP_CONTRACT.
-  Definition dump := Sx.sx.
-  Definition dump_file := Sx.Dump.dump_file.
-  Definition read_file := Sx.read_file.
-  Definition read_bundle := Sx.read_bundle.
-  Definition wf_names := DumpRoundTrip.wf_names.
-  Definition elaborate := Certified.elaborate.
-  Definition elaborate_sx := elaborate_sx.
-  Definition dump_reads := dump_reads.
-  Definition elaborate_sx_reads := elaborate_sx_reads.
-End DumpCertified.
 
 From NM Require FunctionFrameProgram ReifyProgramWalk ReifyProgram Reify XElabTyped
   XProvision XEnv CachedClo CachedCloFacts SlotX FoldX Prune.

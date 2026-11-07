@@ -1,4 +1,4 @@
-(* Early runtime implementations, ascribed to the unchanged Audit contracts. *)
+(* Early runtime implementations and the public interpreter correctness binding. *)
 From Stdlib Require Import List.
 From NM Require Import Audit CoreMoss MossX Elab Specialization RelFacts.
 From NM Require FastPath CachedClo CachedCloFacts SlotX FoldX Prune.
@@ -55,46 +55,18 @@ Module OraclePipeline <: ORACLE_PIPELINE Certified.
   Definition compile_binds := CachedClo.ccbs.
   Definition prepare_scalars := CachedClo.prepare_scalar_cache.
   Definition engine_run := CachedClo.crun_main.
-  Definition slot_run := SlotX.rrun_main.
-  Definition mapped_run := FastX.frun_main.
 End OraclePipeline.
 
 Module OracleCertified <: ORACLE_AGREEMENT Certified OraclePipeline.
   Module Spec := OracleSpec Certified OraclePipeline.
   Import Spec OraclePipeline.
 
-  Definition mapped_engine_agrees := FastX.frun_main_eq.
-  Definition slot_engine_agrees := SlotX.slot_oracle_agrees.
   Lemma option_map_pair {A B C : Type} (f : A * B -> C) pair :
     option_map f pair =
       match pair with Some (a, b) => Some (f (a, b)) | None => None end.
   Proof. destruct pair as [[a b]|]; reflexivity. Qed.
 
-  Lemma compiled_engine_agrees : forall folded fns funs fuel main d st,
-    CompiledTables folded fns funs ->
-    engine_run fns fuel main d st = slot_run fuel folded main d st.
-  Proof.
-    intros folded fns funs fuel main d st [Fns Funs].
-    setoid_rewrite option_map_pair in Fns. setoid_rewrite option_map_pair in Funs.
-    apply (@CachedCloFacts.crun_main_eq folded fns funs fuel main d st).
-    split; [exact Fns | exact Funs].
-  Qed.
-  Definition fast_path_agrees := FastPath.fast_run.
-
-  Lemma engine_agrees : forall p argv read fuel st t,
-    Prepared p argv read t ->
-    stuck (Ref.run p argv read fuel st) \/
-    run_prepared p t fuel st = Ref.run p argv read fuel st.
-  Proof.
-    intros p argv read fuel st t (Tb & X & Fn & Fun & Fns & Funs).
-    setoid_rewrite option_map_pair in Fn. setoid_rewrite option_map_pair in Fun.
-    setoid_rewrite option_map_pair in Fns. setoid_rewrite option_map_pair in Funs.
-    assert (Tables : CachedCloFacts.tbl_ok (folded_program t) (functions t) (functors t)).
-    { split; [exact Fns | exact Funs]. }
-    exact (@CachedCloFacts.engine_agrees p argv read fuel st _ _ _ _ _ _ Tb X Fn Fun Tables).
-  Qed.
-
-  Lemma fast_engine_agrees : forall p argv read fuel st t,
+  Lemma interpreter_correct : forall p argv read fuel st t,
     Prepared (fast_program p) argv read t ->
     out_of_fuel (Ref.run p argv read fuel st) \/
     stuck (Ref.run p argv read fuel st) \/

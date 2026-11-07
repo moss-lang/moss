@@ -72,8 +72,9 @@ successful elaboration, or record a fresh full-build result for this checkout.
 [`ReifyProgram.v`](theories/ReifyProgram.v) defines the staged runtime
 candidate. It is deliberately separate from the production driver.
 [`XElabTyped.v`](theories/XElabTyped.v) proves that a program *with* a runtime
-typing certificate never produces `XErr`; its final comment identifies the
-missing universal certificate-construction theorem. Consequently, this
+typing certificate never produces `XErr`.
+`Audit.SOURCE_RUNTIME_COMPLETE.source_runtime_certificate` states the pending
+universal certificate-construction obligation. Consequently, this
 checkpoint does **not** prove that every accepted source program avoids
 `XErr`. Type safety also permits modeled traps and fuel exhaustion; it is
 not a termination or trap-freedom guarantee.

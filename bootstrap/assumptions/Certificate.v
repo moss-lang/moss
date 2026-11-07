@@ -10,7 +10,7 @@ From NM Require Certified Parse FastPath Prune SlotX FoldX
    Closed.v separately checks the roots that must not assume primitives. *)
 Definition certificate_roots :=
  (@NM.Certified.Certified.elaborate,
-  @NM.Certified.DumpCertified.elaborate_sx_reads,
+  @NM.Certified.elaborate_sx_reads,
   @NM.Certified.Certified.eval_deterministic,
   @NM.Certified.Certified.interp_sound,
   @NM.Certified.Certified.interp_complete,
@@ -40,12 +40,7 @@ Definition certificate_roots :=
   @NM.Certified.LoaderCertified.load_sound,
   @NM.Certified.elaborate_sx,
   @NM.Certified.run_main,
-  @NM.Certified.OracleCertified.fast_path_agrees,
-  @NM.Certified.OracleCertified.engine_agrees,
-  @NM.Certified.OracleCertified.mapped_engine_agrees,
-  @NM.Certified.OracleCertified.slot_engine_agrees,
-  @NM.Certified.OracleCertified.compiled_engine_agrees,
-  @NM.Certified.OracleCertified.fast_engine_agrees,
+  @NM.Certified.OracleCertified.interpreter_correct,
 (* Supporting lemmas for the source soundness proof. *)
   @NM.Certified.world_reads,
   @NM.Certified.elaborate_world_reads,
@@ -53,7 +48,7 @@ Definition certificate_roots :=
   @NM.Certified.world_resolves,
   @NM.Certified.context_method_named,
   @NM.Certified.context_type_meanings,
-  @NM.Certified.DumpCertified.dump_reads,
+  @NM.Certified.dump_reads,
   @NM.Certified.elaboration_frame,
   @NM.Certified.assume_types_exact,
 

@@ -21,7 +21,8 @@
 (*             designer's review).                                           *)
 (*   Part VI   Checked contracts for the front end, source milestones,     *)
 (*             runtime safety, heap laws and interpreter agreement.        *)
-(*             COMPLETE records the pending end-to-end obligations.        *)
+(*             COMPLETE and SOURCE_RUNTIME_COMPLETE record the pending     *)
+(*             end-to-end obligations.                                     *)
 (*                                                                           *)
 (* What is deliberately NOT here: the typing judgment `has_ty` of Core Moss *)
 (* and everything about it (contexts, satisfaction, merging, wf_gsig, the   *)
@@ -1144,6 +1145,10 @@ End Loader.
 Set Implicit Arguments.
 
 (* ---- II.1 Core Moss (moved from CoreMoss.v; section numbers are its) ---- *)
+
+(* Core Moss isolates the abstract type, provision and functor machinery
+   for component proofs. The source elaborator targets the extension
+   MossX directly. The embedding theorem relates the two calculi. *)
 
 (* ===================== 1. Symbols ======================================== *)
 
@@ -4963,10 +4968,10 @@ End Elaboration.
       check), that pass files it as XDFunSym h and turns each
       `XApply F θ [] e` into `XApplyBr F [(h, bs', ps)] e`, where ps is the
       pairs of inst_smap θ Dr whose requirement e may look up and bs' the
-      primitives they read.  PROVED (FastPath.fast_run, bound as
-      OracleCertified.fast_path_agrees): for every program, argv, rd and fuel, the
+      primitives they read. PROVED (FastPath.fast_run): for every program,
+      argv, rd and fuel, the
       transformed program's run equals the original's unless the original
-      reports XFuel; with CloX.engine_agrees, Certified.fast_path_engine_agrees
+      reports XFuel; with CachedCloFacts.engine_agrees, OracleCertified.interpreter_correct
       covers the default pipeline.
 
    CHANGES THE SOUNDNESS PROOF FORCED (Track A, WorldSound.v):
@@ -5747,27 +5752,6 @@ End HEAP_LAWS.
 
 End Heap.
 
-(* Public guarantees for the serialization boundary. The codec itself
-   lives in Sx.v. *)
-Module Type DUMP_CONTRACT.
-  Parameter dump : Type.
-  Parameter dump_file : Input.afile -> dump.
-  Parameter read_file : dump -> Input.res Input.afile.
-  Parameter read_bundle : dump -> Input.res Input.bundle.
-  Parameter wf_names : Input.afile -> bool.
-  Parameter elaborate : Input.bundle -> Input.res xprogram.
-  Parameter elaborate_sx : dump -> Input.res xprogram.
-
-  Axiom dump_reads : forall f f',
-    wf_names f = true -> read_file (dump_file f) = Input.Good f' -> f' = f.
-  Axiom elaborate_sx_reads : forall x,
-    elaborate_sx x =
-      match read_bundle x with
-      | Input.Good b => elaborate b
-      | Input.Bad m => Input.Bad m
-      end.
-End DUMP_CONTRACT.
-
 Module SourceReading.
 Local Unset Implicit Arguments.
 Import Input Elaboration.
@@ -5975,6 +5959,17 @@ Module Type RUNTIME_SAFETY (C : PROVED_NOW) (Source : SOURCE_PROGRESS C)
     forall fuel argv read st c, C.X.xr_out (Ref.run result argv read fuel st) <> XErr c.
 End RUNTIME_SAFETY.
 
+(* Pending bridge from accepted source to the runtime safety contract.
+   This is an obligation, not a checked implementation. *)
+Module Type SOURCE_RUNTIME_COMPLETE (C : PROVED_NOW)
+    (Source : SOURCE_PROGRESS C) (T : RUNTIME_TYPING C).
+  Module Spec := RuntimeSpec C Source T.
+
+  Parameter source_runtime_certificate : forall b raw source,
+    Source.elaborate_with_metadata b = Input.Good (raw, source) ->
+    exists runtime, Spec.ReificationCertificate source raw runtime.
+End SOURCE_RUNTIME_COMPLETE.
+
 (* The concrete slot syntax and executable closures are supplied by the
    oracle. The equations relating its stages are part of the contract. *)
 Module Type ORACLE_PIPELINE (C : PROVED_NOW).
@@ -5993,8 +5988,6 @@ Module Type ORACLE_PIPELINE (C : PROVED_NOW).
   Parameter compile_binds : slot_program -> function_table -> functor_table -> list slot_bind -> bind_code.
   Parameter prepare_scalars : tele -> list slot_bind -> scalar_cache.
   Parameter engine_run : function_table -> nat -> fsym -> xdenv -> C.Prims.mstate -> C.X.xres.
-  Parameter slot_run : nat -> slot_program -> fsym -> xdenv -> C.Prims.mstate -> C.X.xres.
-  Parameter mapped_run : nat -> xprog -> fsym -> xdenv -> C.Prims.mstate -> C.X.xres.
 End ORACLE_PIPELINE.
 
 Module OracleSpec (C : PROVED_NOW) (Import Engine : ORACLE_PIPELINE C).
@@ -6045,24 +6038,10 @@ Module Type ORACLE_AGREEMENT (C : PROVED_NOW) (Engine : ORACLE_PIPELINE C).
   Module Spec := OracleSpec C Engine.
   Import Spec Engine.
 
-  Axiom mapped_engine_agrees : forall fuel P main d st,
-    mapped_run fuel P main d st = C.X.run_main fuel P main d st.
-  Axiom slot_engine_agrees : forall p argv read fuel st,
-    stuck (Ref.run p argv read fuel st) \/
-    slot_run fuel (slot_input p argv read) (xo_main p) (xo_env p) st =
-      Ref.run p argv read fuel st.
-  Axiom compiled_engine_agrees : forall folded fns funs fuel main d st,
-    CompiledTables folded fns funs ->
-    engine_run fns fuel main d st = slot_run fuel folded main d st.
-
-  Axiom fast_path_agrees : forall p argv read fuel st,
-    out_of_fuel (Ref.run p argv read fuel st) \/
-    Ref.run (fast_program p) argv read fuel st = Ref.run p argv read fuel st.
-  Axiom engine_agrees : forall p argv read fuel st t,
-    Prepared p argv read t ->
-    stuck (Ref.run p argv read fuel st) \/
-    run_prepared p t fuel st = Ref.run p argv read fuel st.
-  Axiom fast_engine_agrees : forall p argv read fuel st t,
+  (* Correctness of the default interpreter: the family fast path,
+     pruning, slots, folding and cached closures. Prepared records the
+     hypotheses on the tables constructed by the OCaml driver. *)
+  Axiom interpreter_correct : forall p argv read fuel st t,
     Prepared (fast_program p) argv read t ->
     out_of_fuel (Ref.run p argv read fuel st) \/
     stuck (Ref.run p argv read fuel st) \/

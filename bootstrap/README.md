@@ -284,21 +284,21 @@ decision), and the obligations, as module types (Part VI):
   the parsed one. The loader proof uses the round-trip theorem from
   `DumpRoundTrip.v`, and the loader checks the theorem's name restrictions
   at the serialization boundary.
-- `DUMP_CONTRACT` states serialization round-trip and elaborator adapter
-  guarantees. `SOURCE_PROGRESS` states the checked world-reading and
-  function-frame milestones.
+- `SOURCE_PROGRESS` states the checked world-reading and function-frame
+  milestones. The dump codec and its round-trip and adapter lemmas live
+  outside the public audit contract.
 - `RUNTIME_SAFETY` states MossX expression and entry-point safety, including
   safety of a lowered program given its typing certificate. `Heap.HEAP_LAWS`
   states the laws that the concrete GC primitives satisfy.
-- `ORACLE_AGREEMENT` states what the slot/fold cached interpreter computes, including
-  the conditions on the tables built by the OCaml driver and the exceptions
-  for fuel exhaustion and stuck reference runs.
+- `ORACLE_AGREEMENT.interpreter_correct` states the slot/fold pipeline's
+  correctness, including its driver table conditions and exceptions for
+  fuel exhaustion and stuck reference runs.
 - [`LazyOracle.v`](theories/LazyOracle.v)'s `DIRECT_PIPELINE` and
-  `DIRECT_AGREEMENT` state the direct engine's table equations, exact
-  interpreter/closure agreement, and the composed pruning/fast-path result.
-  `LazyOracle.Certified` binds `LazyX` and `LazyClo` to this contract, without
-  introducing slot syntax or scalar templates into their driver interface.
-  The bound theorems are included in the certificate assumption audit.
+  `DIRECT_AGREEMENT` state the default direct engine's table equations
+  and interpreter agreement. `LazyOracle.Certified` binds its implementation.
+- **Pending**, `SOURCE_RUNTIME_COMPLETE.source_runtime_certificate`: every
+  successful source elaboration must produce a successful immutable
+  lowering with a runtime typing certificate.
 - **The family fast path** (`Audit.v` DRAFT NOTE 24) is proved, and is
   not the elaborator's: the elaborator applies a family exactly by rule 7
   as drafted. Applying the platform's memory family at every memory
@@ -314,8 +314,8 @@ decision), and the obligations, as module types (Part VI):
   other families, so checked GC casts keep the same behavior.
   `FastPath.fast_run`: the result is exactly the elaborated
   program's, at every fuel at which that run does not run out of fuel;
-  `OracleCertified` and `LazyOracle.Certified` bind it as `fast_path_agrees`
-  and bind their combined pipeline results as `fast_engine_agrees`.
+  `OracleCertified.interpreter_correct` binds the slot/fold pipeline,
+  and `LazyOracle.Certified.fast_engine_agrees` binds the default pipeline.
 
 Outside Rocq, what is trusted is the OCaml driver (reading files and
 arguments, printing, and the engine's tables, below), Rocq's extraction,
