@@ -3,6 +3,7 @@ From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv LoaderOrigin
  FnReadonly SymReadonly FnBound FnBoundProgram FnPresentStable FnPresentSynth FnPresentProgram
  ForwarderHistory LambdaCompletion LambdaCompletionOps LambdaCompletionEmit LambdaCompletionSynth ForwarderTrace ForwarderProgramTables.
+From NM Require Import ProgramTail ProgramTailPreserve.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].
@@ -47,4 +48,11 @@ Lemma ks_check_main_signature_history:forall g info,keeps st_syms(check_main_sig
 Proof. intros;unfold check_main_signature;keepst. Qed.
 #[local]Hint Resolve kf_check_main_signature_history ks_check_main_signature_history:keepsdb.
 Lemma ch_elab_program:CH elab_program.
-Proof. unfold elab_program;cht. Qed.
+Proof.
+ rewrite program_split.
+ apply ch_bind;[cht|intro].
+ apply ch_bind;[cht|intro].
+ apply ch_bind;[cht|intro].
+ apply ch_bind;[exact ch_lower_all|intro].
+ exact program_tail_ch.
+Qed.

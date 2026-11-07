@@ -3,6 +3,7 @@ From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv LoaderOrigin
  FnReadonly SymReadonly FnBound FnBoundProgram FnPresentStable FnPresentSynth FnPresentProgram
  ForwarderHistory ForwarderHistoryOps ForwarderHistoryEmit ForwarderHistorySynth ForwarderTrace ForwarderProgramTables.
+From NM Require Import ProgramTail ProgramTailPreserve.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].
@@ -47,7 +48,14 @@ Lemma ks_check_main_signature_history:forall g info,keeps st_syms(check_main_sig
 Proof. intros;unfold check_main_signature;keepst. Qed.
 #[local]Hint Resolve kf_check_main_signature_history ks_check_main_signature_history:keepsdb.
 Lemma gh_elab_program:GH elab_program.
-Proof. unfold elab_program;ght. Qed.
+Proof.
+ rewrite program_split.
+ apply gh_bind;[ght|intro].
+ apply gh_bind;[ght|intro].
+ apply gh_bind;[ght|intro].
+ apply gh_bind;[exact gh_lower_all|intro].
+ exact program_tail_gh.
+Qed.
 Lemma nlook_source_lookup:forall A key(rows:list(nat*A)),Audit.Elaboration.nlook key rows=nassoc key rows.
 Proof. intros A key rows;induction rows as[|[k v]rows IH];cbn[Audit.Elaboration.nlook nassoc assoc];[reflexivity|].
  destruct(Nat.eqb key k);[reflexivity|exact IH]. Qed.

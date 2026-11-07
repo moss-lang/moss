@@ -1,6 +1,7 @@
 (* Allocation bounds through the actual top-level source-function traversal. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundEmit FnBoundSynth.
+From NM Require Import ProgramTail ProgramInfo.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].
 Lemma bf_bind_symbol:forall A id(k:gsym->M A),
@@ -32,4 +33,11 @@ Lemma kf_check_main_signature_bound:forall g info,keeps st_fns(check_main_signat
 Proof. intros;unfold check_main_signature;keepst. Qed.
 #[local]Hint Resolve kf_check_main_signature_bound:keepsdb.
 Lemma bf_elab_program:BF elab_program.
-Proof. unfold elab_program;bft. Qed.
+Proof.
+ rewrite program_split.
+ apply bf_bind;[apply bf_keeps;[exact(proj1 program_info_listed)|unfold check_listed;keepst]|intro u1].
+ apply bf_bind;[apply bf_keeps;[exact(proj1 program_info_contexts)|unfold check_contexts;keepst]|intro u2].
+ apply bf_bind;[apply bf_keeps;[exact(proj1 program_info_runtime)|unfold check_runtime_library;keepst]|intro u3].
+ apply bf_bind;[exact bf_lower_all|intro u4].
+ apply bf_keeps;[exact program_tail_ok|exact program_tail_functions].
+Qed.
