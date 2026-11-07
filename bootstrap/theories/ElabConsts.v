@@ -21,6 +21,7 @@
 
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import FinalLambdas Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv BodySound BodyConst InfoPreserve ElabConstInput ElabProgramInput FinalForwarders FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv ForwarderTrace.
+From NM Require Import ReadonlyHelpers.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -35,11 +36,11 @@ Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].
 #[export] Hint Extern 1 (keeps st_consts (ret _)) => apply keeps_ret : keepsdb.
 
 Lemma kc_mentioned_nominals : forall fuel t mi, keeps st_consts (mentioned_nominals fuel t mi).
-Proof. induction fuel; fintros; cbn [mentioned_nominals]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_mentioned_nominals : keepsdb.
 
 Lemma kc_walk_specs : forall fuel mi sp out, keeps st_consts (walk_specs fuel mi sp out).
-Proof. induction fuel; fintros; cbn [walk_specs]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_walk_specs : keepsdb.
 
 Lemma kc_free_type_syms_group : forall fuel,
@@ -47,92 +48,70 @@ Lemma kc_free_type_syms_group : forall fuel,
   (forall s, keeps st_consts (type_requirements fuel s)) /\
   (forall root, keeps st_consts (solve_requirements fuel root)) /\
   (forall g, keeps st_consts (listed_params fuel g)).
-Proof.
-  induction fuel as [|fuel IH].
-  { refine (conj _ (conj _ (conj _ _))); fintros; cbn [free_type_syms type_requirements solve_requirements listed_params]; keepst. }
-  destruct IH as (I0 & I1 & I2 & I3).
-  refine (conj _ (conj _ (conj _ _))); fintros; cbn [free_type_syms type_requirements solve_requirements listed_params]; keepst.
-Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 
 Lemma kc_free_type_syms : forall fuel t mi out, keeps st_consts (free_type_syms fuel t mi out).
-Proof. intros. apply kc_free_type_syms_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_type_requirements : forall fuel s, keeps st_consts (type_requirements fuel s).
-Proof. intros. apply kc_free_type_syms_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_solve_requirements : forall fuel root, keeps st_consts (solve_requirements fuel root).
-Proof. intros. apply kc_free_type_syms_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_listed_params : forall fuel g, keeps st_consts (listed_params fuel g).
-Proof. intros. apply kc_free_type_syms_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_free_type_syms kc_type_requirements kc_solve_requirements kc_listed_params : keepsdb.
 
 Lemma kc_reqs_frame : forall x, keeps st_consts (reqs x).
-Proof. intro x. rewrite reqs_frame_eq. apply kc_type_requirements. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_reqs_frame : keepsdb.
 Local Strategy opaque [reqs type_requirements].
 
 Lemma kc_show_go : forall fuel t, keeps st_consts (show_go fuel t).
-Proof. induction fuel; fintros; cbn [show_go]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_show_go : keepsdb.
 
 Lemma kc_unify : forall fuel e mi a b why, keeps st_consts (unify fuel e mi a b why).
-Proof. induction fuel; fintros; cbn [unify]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_unify : keepsdb.
 
 Lemma kc_elab_type_group : forall fuel,
   (forall t mi tm e this, keeps st_consts (elab_type fuel t mi tm e this)) /\
   (forall e mi bs outer, keeps st_consts (app_subst fuel e mi bs outer)) /\
   (forall mi g tm e, keeps st_consts (symbol_type fuel mi g tm e)).
-Proof.
-  induction fuel as [|fuel IH].
-  { refine (conj _ (conj _ _)); fintros; cbn [elab_type app_subst symbol_type]; keepst. }
-  destruct IH as (I0 & I1 & I2).
-  refine (conj _ (conj _ _)); fintros; cbn [elab_type app_subst symbol_type]; keepst.
-Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 
 Lemma kc_elab_type : forall fuel t mi tm e this, keeps st_consts (elab_type fuel t mi tm e this).
-Proof. intros. apply kc_elab_type_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_app_subst : forall fuel e mi bs outer, keeps st_consts (app_subst fuel e mi bs outer).
-Proof. intros. apply kc_elab_type_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_symbol_type : forall fuel mi g tm e, keeps st_consts (symbol_type fuel mi g tm e).
-Proof. intros. apply kc_elab_type_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_elab_type kc_app_subst kc_symbol_type : keepsdb.
 
 Lemma kc_result_mentions_go_group : forall fuel,
   (forall self mi specs out, keeps st_consts (result_mentions_go fuel self mi specs out)) /\
   (forall g, keeps st_consts (functor_fixed_go fuel g)).
-Proof.
-  induction fuel as [|fuel IH].
-  { refine (conj _ _); fintros; cbn [result_mentions_go functor_fixed_go]; keepst. }
-  destruct IH as (I0 & I1).
-  refine (conj _ _); fintros; cbn [result_mentions_go functor_fixed_go]; keepst.
-Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 
 Lemma kc_result_mentions_go : forall fuel self mi specs out, keeps st_consts (result_mentions_go fuel self mi specs out).
-Proof. intros. apply kc_result_mentions_go_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_functor_fixed_go : forall fuel g, keeps st_consts (functor_fixed_go fuel g).
-Proof. intros. apply kc_result_mentions_go_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_result_mentions_go kc_functor_fixed_go : keepsdb.
 
 Lemma kc_check_literal_sig : forall e mi m oty args sg,
   keeps st_consts (check_literal_sig e mi m oty args sg).
-Proof.
-  intros. unfold check_literal_sig. destruct (literal_sig_ok e oty args sg); keepst.
-Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_check_literal_sig : keepsdb.
 
 Lemma kc_add_symbol_item_group : forall fuel,
   (forall e mi g subst needs, keeps st_consts (add_symbol_item fuel e mi g subst needs)) /\
   (forall e mi sp outer needs, keeps st_consts (add_spec fuel e mi sp outer needs)).
-Proof.
-  induction fuel as [|fuel IH].
-  { refine (conj _ _); fintros; cbn [add_symbol_item add_spec]; keepst. }
-  destruct IH as (I0 & I1).
-  refine (conj _ _); fintros; cbn [add_symbol_item add_spec]; keepst.
-Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 
 Lemma kc_add_symbol_item : forall fuel e mi g subst needs, keeps st_consts (add_symbol_item fuel e mi g subst needs).
-Proof. intros. apply kc_add_symbol_item_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_add_spec : forall fuel e mi sp outer needs, keeps st_consts (add_spec fuel e mi sp outer needs).
-Proof. intros. apply kc_add_symbol_item_group. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_add_symbol_item kc_add_spec : keepsdb.
 
 Lemma kc_merged_walk_frame : forall mi walk,
@@ -141,41 +120,41 @@ Proof. intros mi walk H. unfold merged_walk. keepst. Qed.
 #[export] Hint Resolve kc_merged_walk_frame : keepsdb.
 Local Strategy opaque [merged_walk].
 Lemma kc_fun_env_input:forall g,keeps st_consts(fun_env g).
-Proof. intros;unfold fun_env;keepst. all:apply kc_merged_walk_frame;intros;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export]Hint Resolve kc_fun_env_input:keepsdb.
 Local Strategy opaque [fun_env].
 Lemma kc_fn_info_frame : forall g, keeps st_consts (fn_info g).
-Proof. intro g. unfold fn_info. keepst. all: apply kc_merged_walk_frame; intros; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_fn_info_frame : keepsdb.
 Local Strategy opaque [fn_info].
 
 Lemma kc_ety_ty_go : forall fuel t, keeps st_consts (ety_ty_go fuel t).
-Proof. induction fuel; fintros; cbn [ety_ty_go]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_ety_ty_go : keepsdb.
 
 Lemma kc_slots_go : forall fuel e t visiting, keeps st_consts (slots_go fuel e t visiting).
-Proof. induction fuel; fintros; cbn [slots_go]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_slots_go : keepsdb.
 Local Strategy opaque [slots_go].
 
 Lemma kc_expand_spec : forall fuel mi sp out, keeps st_consts (expand_spec fuel mi sp out).
-Proof. induction fuel; fintros; cbn [expand_spec]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_expand_spec : keepsdb.
 
 Lemma kc_functor_total : forall fuel g, keeps st_consts (functor_total fuel g).
-Proof. induction fuel; fintros; cbn [functor_total]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_functor_total : keepsdb.
 
 Lemma kc_provide_spec : forall fuel e fg mi sp outer out, keeps st_consts (provide_spec fuel e fg mi sp outer out).
-Proof. induction fuel; fintros; cbn [provide_spec]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_provide_spec : keepsdb.
 
 Lemma kc_family_leaves_ok : forall fuel mi ps specs, keeps st_consts (family_leaves_ok fuel mi ps specs).
-Proof. induction fuel; fintros; cbn [family_leaves_ok]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_family_leaves_ok : keepsdb.
 
 Lemma kc_family_leaves : forall fuel e mi specs outer, keeps st_consts (family_leaves fuel e mi specs outer).
-Proof. induction fuel; fintros; cbn [family_leaves]; keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[export] Hint Resolve kc_family_leaves : keepsdb.
 
 (* ======================================================================== *)
@@ -191,9 +170,9 @@ Ltac nogood H := exfalso;
                        | apply bind_inv in H as (? & ? & ? & H) ])].
 
 Lemma kc_check_constant_effects:forall mi x,keeps st_consts(check_constant_effects mi x).
-Proof. intros;unfold check_constant_effects;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_check_provider_effects:forall mi bs,keeps st_consts(check_provider_effects mi bs).
-Proof. intros;unfold check_provider_effects;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[local]Hint Resolve kc_check_constant_effects kc_check_provider_effects:keepsdb.
 
 Section Run.
@@ -258,35 +237,35 @@ Definition ConstCache : Cache := {|
 |}.
 
 Lemma kc_compile_pattern : forall mi e p sty heads, keeps st_consts (compile_pattern mi e p sty heads).
-Proof. intros;unfold compile_pattern;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma ok_compile_pattern_frame:forall mi e p sty heads,ok(compile_pattern mi e p sty heads).
 Proof. intros;exact(proj1(info_compile_pattern mi e p sty heads)). Qed.
 #[local]Hint Resolve kc_compile_pattern:keepsdb.
 #[local]Hint Resolve ok_compile_pattern_frame:okdb.
 Local Strategy opaque [compile_pattern].
 Lemma kc_payload_type_input:forall t e,keeps st_consts(payload_type t e).
-Proof. intros;unfold payload_type;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[local]Hint Resolve kc_payload_type_input:keepsdb.
 Lemma kc_check_relevant_input:forall mi g a,keeps st_consts(check_relevant mi g a).
-Proof. intros;unfold check_relevant;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[local]Hint Resolve kc_check_relevant_input:keepsdb.
 Lemma kc_fn_sig_input:forall g tm e this,keeps st_consts(fn_sig g tm e this).
-Proof. intros;unfold fn_sig;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[local]Hint Resolve kc_fn_sig_input:keepsdb.
 Lemma kc_ety_of_input:forall t mi tm e this,keeps st_consts(ety_of t mi tm e this).
-Proof. intros;unfold ety_of;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[local]Hint Resolve kc_ety_of_input:keepsdb.
 Local Strategy opaque [payload_type check_relevant fn_sig].
 Lemma kc_check_captured_reading : forall mi site prototype formal actual,
  keeps st_consts(check_captured_reading mi site prototype formal actual).
-Proof. intros;unfold check_captured_reading;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_check_link_fixed_current : forall mi site fg bg fixed,
  keeps st_consts(check_link_fixed_current mi site fg bg fixed).
-Proof. intros;unfold check_link_fixed_current;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_fresh_marker : forall e,keeps st_consts(fresh_marker e).
-Proof. intros;unfold fresh_marker;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 Lemma kc_fresh_marker_for : forall e r,keeps st_consts(fresh_marker_for e r).
-Proof. intros;unfold fresh_marker_for;keepst. Qed.
+Proof. intros; repeat split; intros; eapply keeps_projection with (p := readonly_state) (q := fun x => snd (fst x)); auto with keepsdb. Qed.
 #[local] Hint Resolve kc_check_captured_reading kc_check_link_fixed_current kc_fresh_marker kc_fresh_marker_for : keepsdb.
 
 Lemma cache_fwd_ety_of:forall t mi tm e this,okF(ety_of t mi tm e this).

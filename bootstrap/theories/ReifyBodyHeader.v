@@ -2,7 +2,7 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
  FnReadonly ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderSynth
- FnBodyParameters FnBodyTrace FnBodyReceiver FnBodyExec.
+ FnBodySlots FnBodyTrace FnBodyOps.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL fn_info fn_sig nominal_args].
 Lemma header_finish_body:forall g e needs sg this x,

@@ -1,7 +1,7 @@
 (* Anonymous functions retain their real checked code-entry metadata. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
- BodySound LambdaTrace FnReadonly FnPresentStable FnPresentEmit FnPresentSynth
+ LambdaTrace FnReadonly FnPresentStable FnPresentEmit FnPresentSynth
  ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderEmit ReifyHeaderSynth.
 Import ListNotations.
 Set Implicit Arguments.

@@ -1,7 +1,7 @@
 (* Actual anonymous-function stages, before semantic capture reasoning. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv BodySound
- LambdaAnnotations LambdaLocalNames BodyTy SymReadonly FnReadonly.
+From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
+ LambdaAnnotationOps LambdaLocalNames SymReadonly FnReadonly.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL ety_of smap_at].
@@ -79,7 +79,7 @@ Proof.
  destruct(Op _ _ _ I Params)as[I1 F1].
  apply bind_inv in Run as[u2[s2[Return Run]]].
  change(lambda_return_check c e this what rt(sg_ret sg)s1=Good(u2,s2))in Return.
- assert(Or:ok(lambda_return_check c e this what rt(sg_ret sg)))by(unfold lambda_return_check;okt;apply ok_ety_of).
+ assert(Or:ok(lambda_return_check c e this what rt(sg_ret sg)))by(unfold lambda_return_check;okt;apply ok_ety_of_trace).
  destruct(Or _ _ _ I1 Return)as[I2 F2].
  assert(PrefixSymbols:st_syms s2=st_syms s).
  {rewrite(ks_lambda_return_trace c e this what rt(sg_ret sg)_ _ _ Return).

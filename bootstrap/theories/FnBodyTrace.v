@@ -1,6 +1,6 @@
 (* Exact stages of a successful, previously absent source body. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame FnBodyParameters.
+From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame FnBodySlots.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL fn_info fn_sig nominal_args].

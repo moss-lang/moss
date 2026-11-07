@@ -18,7 +18,7 @@ Proof. intros;unfold check_main_signature;keepst. Qed.
 Lemma hh_lower_one:forall fuel id,HH(lower_one fuel id).
 Proof.
  intros fuel id;split;[exact(proj1(fh_lower_one fuel id))|].
- intros b s value final I Cache Fwd Load Run;unfold lower_one in Run.
+ intros b s value final I Cache Fwd Load Run;unfold lower_one, LowerOne.lower_one in Run.
  apply bind_inv in Run as[g[mid[Read Run]]].
  unfold sym in Read;destruct(nget(st_syms s)id)as[got|]eqn:At;[|discriminate].
  injection Read as <- <-.
@@ -40,7 +40,7 @@ Proof.
  intros b s value final I Cache Fwd Load Run;unfold lower_all in Run.
  apply bind_inv in Run as[s0[mid[Read Run]]];injection Read as <- <-.
  assert(Fold:HH(miter(fun mi=>miter(lower_one ELAB_FUEL)(module_function_ids(get_mod(st_w s)mi)))(w_order(st_w s)))).
- {apply hh_miter;[intro mi;apply hh_miter;[intro id;apply hh_lower_one|intro id;unfold lower_one;fwt]|intro mi;apply okF_miter;intro id;unfold lower_one;fwt]. }
+ {apply hh_miter;[intro mi;apply hh_miter;[intro id;apply hh_lower_one|intro id;unfold lower_one, LowerOne.lower_one;fwt]|intro mi;apply okF_miter;intro id;unfold lower_one, LowerOne.lower_one;fwt]. }
  exact(proj2 Fold b s value final I Cache Fwd Load Run).
 Qed.
 Lemma hh_keeps:forall A(m:M A),okI m->keeps st_fns m->keeps function_headers m->HH m.

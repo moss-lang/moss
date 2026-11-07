@@ -44,11 +44,11 @@ Proof. intros A f xs F;induction xs;cbn[miter];[apply lhp_ret|apply lhp_bind;[ap
 Lemma lhp_lower_one:forall fuel id,LHP(lower_one fuel id).
 Proof.
  intros fuel id;split.
- - unfold lower_one;apply ch_bind_symbol;intros g Id.
+ - unfold lower_one, LowerOne.lower_one;apply ch_bind_symbol;intros g Id.
    destruct(is_some(fn_body g)&&(kind_eqb(gs_kind g)KFn||kind_eqb(gs_kind g)KMethod));split;
    first[apply pf_lower_body|apply ch_lower_body|apply pf_ret|apply ch_at_of_ch,ch_ret].
  - split;[apply hp_lower_one|].
-   intros b w s value final Load I Bound W Run;unfold lower_one in Run.
+   intros b w s value final Load I Bound W Run;unfold lower_one, LowerOne.lower_one in Run.
    apply bind_inv in Run as[g[mid[Read Run]]];unfold sym in Read.
    destruct(nget(st_syms s)id)as[got|]eqn:At;[injection Read as <- <-|discriminate].
    destruct(is_some(fn_body got)&&(kind_eqb(gs_kind got)KFn||kind_eqb(gs_kind got)KMethod));

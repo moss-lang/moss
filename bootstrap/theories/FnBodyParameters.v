@@ -1,6 +1,6 @@
 (* Installing actual signature parameters preserves the complete body context. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr CanonTypes NominalSupport FnBodyContext.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr CanonTypes NominalSupport FnBodyContext FnBodySlots.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Local Open Scope list_scope.
@@ -51,9 +51,7 @@ Proof.
    intros i n At;rewrite slook_sassoc;change(sassoc n(combine names(seq 0(List.length names)))=Some i).
    exact(parameter_slots_at names 0 i n Nd At).
 Qed.
-Definition body_parameter_slots(this:option ety)(names:list string):list(string*nat):=
- let prefix:=match this with Some _=>[("this"%string,0)]|None=>[]end in
- prefix++combine names(seq(List.length prefix)(List.length names)).
+Definition body_parameter_slots := FnBodySlots.body_parameter_slots.
 Lemma parameter_numbering_any:forall w Fl g e sg this names,
  NoDup(map fst(body_parameter_slots this names))->
  A.Numbering(initial_body_frame w Fl g e sg(body_parameter_slots this names))
@@ -61,11 +59,11 @@ Lemma parameter_numbering_any:forall w Fl g e sg this names,
 Proof.
  intros w Fl g e sg this names Nd;unfold A.Numbering;cbn[A.fr_var initial_body_frame].
  split;[exact Nd|];split.
- - destruct this;cbn[body_parameter_slots map fst snd app List.length]in *.
+ - destruct this;cbn[body_parameter_slots FnBodySlots.body_parameter_slots map fst snd app List.length]in *.
    + rewrite parameter_slots_snd. change(NoDup(seq 0(S(List.length names))));apply seq_NoDup.
    + rewrite parameter_slots_snd;apply seq_NoDup.
  - intros i n At;rewrite slook_sassoc.
-   destruct this;cbn[body_parameter_slots app List.length option_map]in *.
+   destruct this;cbn[body_parameter_slots FnBodySlots.body_parameter_slots app List.length option_map]in *.
    + cbn[map fst]in Nd;rewrite parameter_slots_fst in Nd.
      inversion Nd as[|x xs Absent Tail];subst.
      cbn[sassoc assoc fst snd]. destruct(String.eqb n "this"%string)eqn:Eq.
@@ -79,7 +77,7 @@ Lemma body_parameter_shape:forall this names,
 Proof.
  intros this names Nd s;split;[exact Nd|];split;[|reflexivity].
  change(map snd(body_parameter_slots this names)=seq 0(List.length(body_parameter_slots this names))).
- destruct this;cbn[body_parameter_slots app List.length map snd].
+ destruct this;cbn[body_parameter_slots FnBodySlots.body_parameter_slots app List.length map snd].
  - rewrite parameter_slots_snd,combine_length,seq_length,Nat.min_id;reflexivity.
  - rewrite parameter_slots_snd,combine_length,seq_length,Nat.min_id;reflexivity.
 Qed.

@@ -69,7 +69,7 @@ Lemma lower_one_preserves_present : forall fuel key b s final id old,
   exists body,nassoc id(st_fns final)=Some body.
 Proof.
  intros fuel key b s final id old Inv Load Loaded Before Run.
- unfold lower_one in Run;apply bind_inv in Run as[g[mid[Read Run]]].
+ unfold lower_one, LowerOne.lower_one in Run;apply bind_inv in Run as[g[mid[Read Run]]].
  unfold sym in Read;destruct(nget(st_syms s)key)as[got|];[|discriminate].
  injection Read as <- <-.
  destruct(is_some(fn_body got)&&(kind_eqb(gs_kind got)KFn||kind_eqb(gs_kind got)KMethod)).
@@ -106,7 +106,7 @@ Proof.
  assert(LoadMid:load_world b=Good(st_w mid))by(rewrite(fr_w _ _ Frame);exact Load).
  assert(LoadedMid:nget(w_syms(st_w mid))id=Some g)by(rewrite(fr_w _ _ Frame);exact Loaded).
  destruct Visit as[Same|Visit].
- - subst key;unfold lower_one in First.
+ - subst key;unfold lower_one, LowerOne.lower_one in First.
    pose proof(iv_loader s Inv b Load id g Loaded)as Present.
    unfold sym,mbind in First;rewrite Present,Select in First.
    destruct(@lower_body_emits fuel g s mid Body First)as[body Emitted].
